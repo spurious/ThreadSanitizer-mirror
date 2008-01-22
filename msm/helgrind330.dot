@@ -2,7 +2,6 @@
 
 digraph helgrind330{
    NoAccess [shape=rectangle label="NoAccess"];
-
    New [shape=rectangle label="New"];
 
    Excl [shape=plaintext label=<<TABLE BGCOLOR="white"> <tr> 
