@@ -30,21 +30,21 @@ digraph helgrind330{
       </tr> </TABLE>>
     ]
 
-   NoAccess -> New   [fontcolor="black" label=" E1"];
-   New      -> Excl  [fontcolor="black" label=" E2"];
-   Excl     -> Excl  [fontcolor="black" label=" E3"];
-   Excl     -> ShR   [fontcolor="black" label=" E4"];
-   ShR      -> ShR   [fontcolor="black" label=" E5"];
+   NoAccess -> New   [fontcolor="black" label="E1"];
+   New      -> Excl  [fontcolor="black" label="E2"];
+   Excl     -> Excl  [fontcolor="black" label="E3"];
+   Excl     -> ShR   [fontcolor="black" label="E4"];
+   ShR      -> ShR   [fontcolor="black" label="E5"];
 
 // race may be reported here 
-   Excl     -> ShM   [fontcolor="red"   label=" E6"];
-   ShR      -> ShM   [fontcolor="red"   label=" E7"]; 
-   ShM      -> ShM   [fontcolor="red"   label=" E8"];
+   Excl     -> ShM   [fontcolor="red"   label="E6"];
+   ShR      -> ShM   [fontcolor="red"   label="E7"]; 
+   ShM      -> ShM   [fontcolor="red"   label="E8"];
 
 // thread join
-   ShM      -> Excl  [fontcolor="blue" label=" E9"];
-   ShR      -> Excl  [fontcolor="blue" label=" E10"];
-   ShM      -> ShM   [fontcolor="blue" label=" E11"];
-   ShR      -> ShR   [fontcolor="blue" label=" E11"];
+   ShM      -> Excl  [fontcolor="blue"  label="E9"];
+   ShR      -> Excl  [fontcolor="blue"  label="E10"];
+   ShM      -> ShM   [fontcolor="blue"  label="E11"];
+   ShR      -> ShR   [fontcolor="blue"  label="E12"];
 
 }
