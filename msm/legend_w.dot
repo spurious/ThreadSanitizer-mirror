@@ -1,0 +1,10 @@
+digraph msm1{
+  zw [shape=rectangle label=<<TABLE BGCOLOR="white"> <tr> 
+        <td colspan="3">State W</td> 
+      </tr> <tr> 
+        <td bgcolor='red'>W</td> 
+        <td>SS</td>
+        <td>LS</td>  
+      </tr> </TABLE>>
+    ]
+}
