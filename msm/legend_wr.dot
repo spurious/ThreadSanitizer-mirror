@@ -3,12 +3,12 @@ digraph msm1{
         <td colspan="3">State W-R</td> 
       </tr> <tr> 
         <td bgcolor="red">W:</td>
-        <td>SSw</td>
-        <td>LSw</td>  
+        <td>SSW</td>
+        <td>LSW</td>  
       </tr> <tr> 
         <td bgcolor="green">R:</td>
-        <td>SSr</td>
-        <td>LSr</td>  
+        <td>SSR</td>
+        <td>LSR</td>  
       </tr> </TABLE>>
     ]
 }
