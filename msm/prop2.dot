@@ -8,8 +8,8 @@ digraph prop2 {
         <td colspan="3">Read</td> 
       </tr> <tr> 
         <td bgcolor="green">R:</td>
-        <td> SS </td>
-        <td> LS </td>
+        <td> SSR </td>
+        <td> LSR </td>
       </tr> </TABLE>>
     ]
 
@@ -17,8 +17,8 @@ digraph prop2 {
         <td colspan="3">Write</td> 
       </tr> <tr> 
         <td bgcolor="red">W:</td>
-        <td> SS </td>
-        <td> LS </td>
+        <td> SSW </td>
+        <td> LSW </td>
       </tr> </TABLE>>
     ]
 
@@ -31,8 +31,8 @@ digraph prop2 {
         <td> LSW </td>
       </tr> <tr> 
         <td bgcolor="green">R:</td>
-        <td> SSW </td>
-        <td> LSW </td>
+        <td> SSR </td>
+        <td> LSR </td>
       </tr> </TABLE>>
     ]
 
@@ -46,11 +46,11 @@ digraph prop2 {
    Read     -> Read        [label="E4"];
    Read     -> Write       [label="E5"];
    Write    -> Write       [label="E6"];
-   Write    -> WriteRead   [label="Ex"];
-   Write    -> Read        [label="Ex"];
-   WriteRead-> WriteRead   [label="Ex"];
-   WriteRead-> Read        [label="Ex"];
-   WriteRead-> Write       [label="Ex"];
+   Write    -> Read        [label="E7"];
+   Write    -> WriteRead   [label="E8"];
+   WriteRead-> Read        [label="E9"];
+   WriteRead-> Write       [label="E10"];
+   WriteRead-> WriteRead   [label="E11"];
 
 
 }
