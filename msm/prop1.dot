@@ -25,7 +25,7 @@ digraph prop1 {
    New      -> Read   [label="E2"];
    New      -> Write  [label="E3"];
    Read     -> Read   [label="E4"];
-   Read     -> Write  [label="E5"];
-   Write    -> Write  [label="E6"];
+   Read     -> Write  [label="E5" color="red" fontcolor="red"];
+   Write    -> Write  [label="E6" color="red" fontcolor="red"];
    Write    -> Read   [label="E7"];
 }
