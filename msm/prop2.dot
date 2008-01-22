@@ -45,12 +45,12 @@ digraph prop2 {
    New      -> Write       [label="E3"];
    Read     -> Read        [label="E4"];
    Read     -> Write       [label="E5"];
-   Write    -> Write       [label="E6"];
-   Write    -> Read        [label="E7"];
-   Write    -> WriteRead   [label="E8"];
+   Write    -> Read         [label="E6"];
+   Write    -> WriteRead   [label="E7"];
+   Write    -> Write        [label="E8"];
    WriteRead-> Read        [label="E9"];
-   WriteRead-> Write       [label="E10"];
-   WriteRead-> WriteRead   [label="E11"];
+   WriteRead-> WriteRead   [label="E10"];
+   WriteRead-> Write       [label="E11"];
 
 
 }
