@@ -1,0 +1,31 @@
+digraph prop1 {
+   NoAccess [shape=rectangle label="NoAccess"];
+   New   [shape=rectangle label="New"];
+
+   Read  [shape=plaintext label=<<TABLE BGCOLOR="white"> <tr> 
+        <td colspan="3">Read</td> 
+      </tr> <tr> 
+        <td bgcolor="green">R:</td>
+        <td> SS </td>
+        <td> LS </td>
+      </tr> </TABLE>>
+    ]
+
+   Write  [shape=plaintext label=<<TABLE BGCOLOR="white"> <tr> 
+        <td colspan="3">Write</td> 
+      </tr> <tr> 
+        <td bgcolor="red">W:</td>
+        <td> SS </td>
+        <td> LS </td>
+      </tr> </TABLE>>
+    ]
+
+
+   NoAccess -> New    [label="E1"];
+   New      -> Read   [label="E2"];
+   New      -> Write  [label="E3"];
+   Read     -> Read   [label="E4"];
+   Read     -> Write  [label="E5"];
+   Write    -> Write  [label="E6"];
+   Write    -> Read   [label="E7"];
+}
