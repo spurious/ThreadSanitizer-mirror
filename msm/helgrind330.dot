@@ -1,0 +1,50 @@
+// This graph show the memory state machine in helgrind 3.3.0
+
+digraph helgrind330{
+   NoAccess [shape=rectangle label="NoAccess"];
+
+   New [shape=rectangle label="New"];
+
+   Excl [shape=plaintext label=<<TABLE BGCOLOR="white"> <tr> 
+        <td colspan="1">Excl</td> 
+      </tr> <tr> 
+        <td>S</td>
+      </tr> </TABLE>>
+    ]
+    
+    ShM  [shape=plaintext label=<<TABLE BGCOLOR="white"> <tr> 
+        <td colspan="3">ShM</td> 
+      </tr> <tr> 
+        <td bgcolor="red">W:</td>
+        <td> TS </td>
+        <td> LS </td>
+      </tr> </TABLE>>
+    ]
+
+    ShR  [shape=plaintext label=<<TABLE BGCOLOR="white"> <tr> 
+        <td colspan="3">ShR</td> 
+      </tr> <tr> 
+        <td bgcolor="green">R:</td>
+        <td> TS </td>
+        <td> LS </td>
+      </tr> </TABLE>>
+    ]
+
+   NoAccess -> New   [fontcolor="black" label=" E1"];
+   New      -> Excl  [fontcolor="black" label=" E2"];
+   Excl     -> Excl  [fontcolor="black" label=" E3"];
+   Excl     -> ShR   [fontcolor="black" label=" E4"];
+   ShR      -> ShR   [fontcolor="black" label=" E5"];
+
+// race may be reported here 
+   Excl     -> ShM   [fontcolor="red"   label=" E6"];
+   ShR      -> ShM   [fontcolor="red"   label=" E7"]; 
+   ShM      -> ShM   [fontcolor="red"   label=" E8"];
+
+// thread join
+   ShM      -> Excl  [fontcolor="blue" label=" E9"];
+   ShR      -> Excl  [fontcolor="blue" label=" E10"];
+   ShM      -> ShM   [fontcolor="blue" label=" E11"];
+   ShR      -> ShR   [fontcolor="blue" label=" E11"];
+
+}

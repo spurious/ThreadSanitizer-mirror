@@ -1,5 +1,5 @@
 digraph msm1{
-  zw [shape=rectangle label=<<TABLE BGCOLOR="white"> <tr> 
+  zw [shape=plaintext label=<<TABLE BGCOLOR="white"> <tr> 
         <td colspan="3">State W-R</td> 
       </tr> <tr> 
         <td bgcolor="red">W:</td>
