@@ -1,0 +1,31 @@
+digraph prop2_simp {
+   NoAccess [shape=rectangle label="NoAccess"];
+   New   [shape=rectangle label="New"];
+
+
+
+
+
+   WriteRead  [shape=plaintext label=<<TABLE BGCOLOR="white"> <tr> 
+        <td colspan="3">WriteRead</td> 
+      </tr> <tr> 
+        <td bgcolor="red">W:</td>
+        <td> SSW </td>
+        <td> LSW </td>
+      </tr> <tr> 
+        <td bgcolor="green">R:</td>
+        <td> SSR </td>
+        <td> LSR </td>
+      </tr> </TABLE>>
+    ]
+
+
+
+
+
+   NoAccess -> New         [label="E1"];
+   New      -> WriteRead   [label="E2"];
+   WriteRead-> WriteRead   [label="E3"];
+
+
+}
