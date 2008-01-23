@@ -141,10 +141,13 @@ void Worker() {
 }
 
 void Parent() {
-  ThreadPool pool(1);
-  pool.StartWorkers();
-  pool.Add(NewCallback(Worker));
+  MyThread t(Worker);
+  t.Start();
+//  ThreadPool pool(1);
+//  pool.StartWorkers();
+//  pool.Add(NewCallback(Worker));
   GLOB = 2;
+  t.Join();
 }
 void Run() {
   ANNOTATE_EXPECT_RACE(&GLOB);

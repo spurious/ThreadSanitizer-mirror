@@ -1056,6 +1056,7 @@ static inline WordSetID un_SHVAL_Sh_lset ( SVal w32 ) {
 //   11SSSSSSSSSSSSSSSSSSSSSSSSrrrrrrrrrrrrrrLLLLLLLLLLLLLLLLLLLLLLLL Write
 //     \_______ 24 ___________/              \________ 24 __________/
 // 
+//   0100000000000000000000000000000000000000000000000000000000000000 Race
 //   0000000000000000000000000000000000000000000000000000001000000000 New
 //   0000000000000000000000000000000000000000000000000000000100000000 NoAccess
 //   0000000000000000000000000000000000000000000000000000000000000000 Invalid
@@ -1069,6 +1070,8 @@ static inline WordSetID un_SHVAL_Sh_lset ( SVal w32 ) {
 
 const int SEGMENT_SET_BITS = 24;
 const int LOCK_SET_BITS    = 24;
+
+const ULong SHVAL_Race = 1ULL << 62;
 
 typedef struct { // attempt to improve type-safety and readability. 
   UWord x;
@@ -3192,9 +3195,27 @@ static void msm__show_state_change ( Thread* thr_acc, Addr a, Int szB,
 static SVal prop1_memory_state_machine(
     Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
 {
+
+  if (sv_old == SHVAL_Race) return sv_old;
+    
+
+  Bool do_trace = clo_trace_level > 0 && clo_trace_addr == a;
   int i;
   // SVal sv_new = SHVAL_Invalid;
   SVal sv_new = sv_old;
+  tl_assert(clo_use_msm_prop1);
+
+  // current locks. 
+  LockSet    currLS;
+  currLS.x = is_w ? add_BHL(thr->locksetA)
+                  :         thr->locksetW;
+
+  SegmentID  currS = thr->csegid;
+  SegmentSet newSS;
+  LockSet    newLS;
+  newSS.x = 0;
+  newLS.x = 0;
+
   tl_assert(is_sane_Thread(thr));
 
   // NoAccess
@@ -3205,14 +3226,8 @@ static SVal prop1_memory_state_machine(
 
   // New
   if (is_SHVAL_New(sv_old)) {
-    LockSet ls;
-    SegmentSet ss;
-    ls.x = is_w ? add_BHL(thr->locksetA)
-                :         thr->locksetW;
-
-    ss.x = HG_(singletonWS)(univ_ssets, thr->csegid);
-
-    return prop1_mk_SHVAL_RW(is_w, ss, ls);
+    newSS.x = HG_(singletonWS)(univ_ssets, currS);
+    return prop1_mk_SHVAL_RW(is_w, newSS, currLS);
   }
 
 
@@ -3221,27 +3236,71 @@ static SVal prop1_memory_state_machine(
   Bool was_w       = prop1_is_SHVAL_W(sv_old);
   SegmentSet oldSS = prop1_get_SHVAL_SS(sv_old);
   LockSet    oldLS = prop1_get_SHVAL_LS(sv_old);
-  SegmentID  currS = thr->csegid;
+
   // bit vector that stores HB(oldSS[i],S).
   // Obviously, it does not work with segment sets with >= 64 segments (FIXME). 
   ULong hb_mask = 0; 
   int oldSS_size = HG_(cardinalityWS)(univ_ssets, oldSS.x);
+  if(do_trace)  VG_(printf)("%p: size=%d; seg=%d; T=%p\n", 
+                            a, oldSS_size, (int)currS, thr);
   tl_assert(oldSS_size < 64);
 
   // compute hb_mask
   for (i = 0; i < oldSS_size; i++) {
     SegmentID S = HG_(ElementOfWS)(univ_ssets, oldSS.x, i);
-    if(S == currS 
-       || map_segments_lookup(S)->thr == thr
-       || happens_before(S, currS)) {
-      hb_mask &= 1ULL << i;
+    if (do_trace) VG_(printf)("\tS=%d; T=%p\n", (int)S,
+                         map_segments_lookup(S)->thr); 
+    Bool hb = False;
+    if      (S == currS)                         hb = True;
+    else if (map_segments_lookup(S)->thr == thr) hb = True;
+    else if (happens_before(S, currS)) {
+      hb = True;
+      if (do_trace) VG_(printf)("\t\tHB(oldSS[%d],currS)\n", i);
     }
+    if(hb)  hb_mask |= 1ULL << i;
   }
+
+  if(do_trace) VG_(printf)("hb_mask=%llx\n", hb_mask);
 
   // hb_all is true iff HB(oldSS,S)
   Bool hb_all = hb_mask == ((1ULL << oldSS_size) - 1);
 
+  // update lock set. 
+  if (hb_all) {
+    newLS = currLS;
+  } else {
+    newLS.x = HG_(intersectWS)(univ_lsets, oldLS.x, currLS.x);
+  }
 
+  // update the thread set 
+  newSS.x = HG_(singletonWS)(univ_ssets, currS);
+  if (!hb_all) {
+    for (i = 0; i < oldSS_size; i++) {
+      if((hb_mask & (1ULL << i)) == 0) {
+        newSS.x = HG_(addToWS)(univ_ssets, newSS.x, 
+                               HG_(ElementOfWS)(univ_ssets, oldSS.x, i));
+      }
+    } 
+  }
+
+  if(do_trace) VG_(printf)("new size: %d\n", 
+                           HG_(cardinalityWS)(univ_ssets, newSS.x));
+
+
+  // update the state 
+  Bool now_w = is_w || (was_w && !hb_all);
+
+  // generate new SVal
+  sv_new = prop1_mk_SHVAL_RW(now_w, newSS, newLS);
+
+  // report the race if needed
+  if (now_w && HG_(isEmptyWS)(univ_lsets, newLS.x)) {
+    record_error_Race( thr, 
+                       a, is_w, sz, sv_old, sv_new,
+                       maybe_get_lastlock_initpoint(a) );
+    // put this is Race state
+    sv_new = SHVAL_Race;
+  }
 
   return sv_new; 
 }
@@ -7916,7 +7975,7 @@ Bool hg_handle_client_request ( ThreadId tid, UWord* args, UWord* ret)
             only runs once the thread has been low-level created. */
          tl_assert(my_thr != NULL);
 
-//         VG_(message)(Vg_UserMsg, "CREATE %p (#%d)", my_thr, my_thr->errmsg_index);
+         VG_(message)(Vg_UserMsg, "CREATE %p (#%d)", my_thr, my_thr->errmsg_index);
          /* So now we know that (pthread_t)args[1] is associated with
             (Thread*)my_thr.  Note that down. */
          if (0)
@@ -8750,8 +8809,15 @@ static void hg_pp_Error ( Error* err )
       err_ga = VG_(get_error_address)(err);
 
       /* Format the low level state print descriptions */
-      show_shadow_w32(old_buf, sizeof(old_buf), old_state);
-      show_shadow_w32(new_buf, sizeof(new_buf), new_state);
+      if (clo_use_msm_prop1) {
+        old_buf[0] = 'x';
+        old_buf[1] = 0;
+        new_buf[0] = 'z';
+        new_buf[1] = 0; // FIXME
+      }else {
+        show_shadow_w32(old_buf, sizeof(old_buf), old_state);
+        show_shadow_w32(new_buf, sizeof(new_buf), new_state);
+      }
 
       /* Now we have to 'announce' the threadset mentioned in the
          error message, if it hasn't already been announced.
@@ -8759,6 +8825,20 @@ static void hg_pp_Error ( Error* err )
          depends on the nature of the transition involved.  So now
          fall into a case analysis of the error state transitions. */
 
+      if (clo_use_msm_prop1) {
+         VG_(message)(Vg_UserMsg,
+                      "prop1: Possible data race during %s of size %d at %p",
+                      what, szB, err_ga);
+         VG_(pp_ExeContext)( VG_(get_error_where)(err) );
+
+         //pp_AddrInfo(err_addr, &extra->addrinfo);
+         VG_(message)(Vg_UserMsg, "zzz %llx %llx\n", old_state, new_state);
+//         VG_(message)(Vg_UserMsg,
+//                      "  Old state 0x%08x=%s, new state 0x%08x=%s",
+//                      old_state, old_buf, new_state, new_buf);
+
+      }
+      else 
       /* CASE of Excl -> ShM */
       if (is_SHVAL_Excl(old_state) && is_SHVAL_ShM(new_state)) {
          SegmentID old_segid;

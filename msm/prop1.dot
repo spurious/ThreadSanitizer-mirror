@@ -19,6 +19,7 @@ digraph prop1 {
     ]
 
 
+
    NoAccess -> New    [label="E1"];
    New      -> Read   [label="E2"];
    New      -> Write  [label="E3"];
