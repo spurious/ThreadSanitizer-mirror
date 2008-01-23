@@ -1,6 +1,6 @@
 digraph msm1{
   zw [shape=plaintext label=<<TABLE BGCOLOR="white"> <tr> 
-        <td colspan="2">State R</td> 
+        <td colspan="2">State X</td> 
       </tr> <tr> 
         <td>SS</td>
         <td>LS</td>  
