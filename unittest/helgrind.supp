@@ -4,3 +4,8 @@
     Helgrind:Race
     fun:pthread_spin_init
 }
+{
+    spin lock: pthread_spin_init
+    Helgrind:Race
+    fun:pthread_barrier_wait
+}

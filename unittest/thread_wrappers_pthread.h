@@ -438,5 +438,16 @@ class ThreadPool {
   }
 };
 
+// Wrapper for pthread_barrier_t. 
+class Barrier{
+ public:
+  explicit Barrier(int n_threads) {CHECK(0 == pthread_barrier_init(&b_, 0, n_threads));}
+  ~Barrier()                      {CHECK(0 == pthread_barrier_destroy(&b_));}
+  void Block()                    {pthread_barrier_wait(&b_);}
+ private:
+  pthread_barrier_t b_;
+};
+
+
 
 #endif // THREAD_WRAPPERS_PTHREAD_H

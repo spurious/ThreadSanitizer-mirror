@@ -737,7 +737,7 @@ void Run() {
 }  // namespace test15
 
 
-// test16: FP. Barrier, 2 threads. {{{1
+// test16: FP. Barrier (emulated by CV), 2 threads. {{{1
 namespace test16 {
 // Worker1:                                     Worker2:
 // 1. MU.Lock()                                 a. MU.Lock()
@@ -787,7 +787,7 @@ void Run() {
 }  // namespace test16
 
 
-// test17: FP. Barrier, 3 threads. {{{1
+// test17: FP. Barrier (emulated by CV), 3 threads. {{{1
 namespace test17 {
 // Same as test16, but with 3 threads.
 int     GLOB = 0;
@@ -1621,7 +1621,7 @@ void Run() {
 }  // namespace test37
 
 
-// test38: FP. Synchronization via Mutex, then PCQ. 4 threads. W/W {{{1
+// test38: FP. Synchronization via Mutexes and PCQ. 4 threads. W/W {{{1
 namespace test38 {
 // Fusion of test29 and test36. 
 
@@ -1631,11 +1631,17 @@ namespace test38 {
 //    MU1.Unlock()        MU1.Unlock()                                  
 //    Q1.Put()            Q2.Put()                                      
 //    Q1.Put()            Q2.Put()                                      
-//    MU1.Lock()          MU1.Lock()        Q1.Get()       Q1.Get()
-//    MU2.Lock()          MU2.Lock()        Q2.Get()       Q2.Get()
-//    write(GLOB)         write(GLOB)       MU2.Lock()     MU2.Lock()
-//    MU2.Unlock()        MU2.Unlock()      write(GLOB)    write(GLOB)
-//    MU1.Unlock()        MU1.Unlock()      MU2.Unlock()   MU2.Unlock()
+//    MU1.Lock()          MU1.Lock()        
+//    MU2.Lock()          MU2.Lock()        
+//    write(GLOB)         write(GLOB)       
+//    MU2.Unlock()        MU2.Unlock()      
+//    MU1.Unlock()        MU1.Unlock()     sleep          sleep
+//                                         Q1.Get()       Q1.Get()
+//                                         Q2.Get()       Q2.Get()
+//                                         MU2.Lock()     MU2.Lock()
+//                                         write(GLOB)    write(GLOB)
+//                                         MU2.Unlock()   MU2.Unlock()
+//
 
 
 ProducerConsumerQueue *Q1, *Q2;
@@ -1661,6 +1667,7 @@ void Putter1() { Putter(Q1); }
 void Putter2() { Putter(Q2); }
 
 void Getter() {
+  sleep(1);
   Q1->Get();
   Q2->Get();
 
@@ -1673,7 +1680,7 @@ void Getter() {
 
 void Run() {
   ANNOTATE_EXPECT_RACE(&GLOB);
-  printf("test29:\n");
+  printf("test38:\n");
   Q1 = new ProducerConsumerQueue(INT_MAX);
   Q2 = new ProducerConsumerQueue(INT_MAX);
   MyThreadArray t(Getter, Getter, Putter1, Putter2);
@@ -1684,6 +1691,33 @@ void Run() {
   delete Q2;
 }
 }  // namespace test38
+
+// test39: FP. Barrier. {{{1
+namespace test39 {
+// Same as test17 but uses Barrier class (pthread_barrier_t). 
+int     GLOB = 0;
+const int N_threads = 3;
+Barrier barrier(N_threads);
+
+void Worker() {
+  MU.Lock();
+  GLOB++;
+  MU.Unlock();
+  barrier.Block();
+  CHECK(GLOB == N_threads);
+}
+void Run() {
+  ANNOTATE_EXPECT_RACE(&GLOB);
+  printf("test39:\n");
+  ThreadPool pool(N_threads);
+  pool.StartWorkers();
+  for (int i = 0; i < N_threads; i++) {
+    pool.Add(NewCallback(Worker));
+  }
+  printf("\tGLOB=%d\n", GLOB);
+}
+}  // namespace test39
+
 
 
 // testXX: {{{1
@@ -1748,6 +1782,7 @@ static struct {
   { test36::Run, FEATURE },
   { test37::Run, FEATURE },
   { test38::Run, FEATURE },
+  { test39::Run, FEATURE },
   {NULL, 0 }
 };
 
