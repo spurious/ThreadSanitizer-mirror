@@ -12,18 +12,16 @@ digraph helgrind330{
     ]
     
     ShM  [shape=plaintext label=<<TABLE BGCOLOR="white"> <tr> 
-        <td colspan="3">ShM</td> 
+        <td colspan="2">ShM</td> 
       </tr> <tr> 
-        <td bgcolor="red">W:</td>
         <td> TS </td>
         <td> LS </td>
       </tr> </TABLE>>
     ]
 
     ShR  [shape=plaintext label=<<TABLE BGCOLOR="white"> <tr> 
-        <td colspan="3">ShR</td> 
+        <td colspan="2">ShR</td> 
       </tr> <tr> 
-        <td bgcolor="green">R:</td>
         <td> TS </td>
         <td> LS </td>
       </tr> </TABLE>>

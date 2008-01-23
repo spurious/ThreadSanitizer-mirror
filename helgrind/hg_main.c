@@ -169,6 +169,9 @@ static Int  clo_trace_level = 0;
    SCE_{THREADS,LOCKS,BIGRANGE,ACCESS,LAOG}. */
 static Int clo_sanity_flags = 0;
 
+
+static Bool clo_use_msm_prop1 = False; // use prop1 memory state machine. 
+
 /* This has to do with printing error messages.  See comments on
    announce_threadset() and summarise_threadset().  Perhaps it
    should be a command line option. */
@@ -581,6 +584,7 @@ static WordFM* map_locks = NULL; /* WordFM LockAddr Lock* */
 
 /* The word-set universes for thread sets and lock sets. */
 static WordSetU* univ_tsets = NULL; /* sets of Thread* */
+static WordSetU* univ_ssets = NULL; /* sets of SegmentsID */
 static WordSetU* univ_lsets = NULL; /* sets of Lock* */
 static WordSetU* univ_laog  = NULL; /* sets of Lock*, for LAOG */
 
@@ -988,12 +992,6 @@ static inline SVal mk_SHVAL_Excl ( SegmentID tseg ) {
    return (((SVal)1) << 62) | (((SVal)tseg) << N_SEGID_SHIFT);
 }
 
-static inline SVal mk_SHVAL_ExclM ( SegmentID tseg ) {
-  return mk_SHVAL_Excl(tseg);
-}
-static inline SVal mk_SHVAL_ExclR ( SegmentID tseg ) {
-  return mk_SHVAL_Excl(tseg);
-}
 #define SHVAL_New      (((SVal)2)<<8)
 #define SHVAL_NoAccess (((SVal)1)<<8)
 #define SHVAL_Invalid  (((SVal)0)<<8)
@@ -1009,12 +1007,6 @@ static inline Bool is_SHVAL_Sh ( SVal w32 ) {
 }
 static inline Bool is_SHVAL_Excl ( SVal w32 ) {
    return (w32 >> 62) == 1; 
-}
-static inline Bool is_SHVAL_ExclM ( SVal w32 ) {
-  return is_SHVAL_Excl(w32);
-}
-static inline Bool is_SHVAL_ExclR ( SVal w32 ) {
-  return is_SHVAL_Excl(w32);
 }
 static inline Bool is_SHVAL_New ( SVal w32 ) {
    return w32 == SHVAL_New;
@@ -1055,6 +1047,91 @@ static inline WordSetID un_SHVAL_Sh_lset ( SVal w32 ) {
    tl_assert(is_SHVAL_Sh(w32));
    return (w32 >> N_LSID_SHIFT) & N_LSID_MASK;
 }
+
+// ---------------- prop1 ------------------
+// Proposal1: http://code.google.com/p/data-race-test/wiki/MSMProp1
+//
+//
+//   10SSSSSSSSSSSSSSSSSSSSSSSSrrrrrrrrrrrrrrLLLLLLLLLLLLLLLLLLLLLLLL Read
+//   11SSSSSSSSSSSSSSSSSSSSSSSSrrrrrrrrrrrrrrLLLLLLLLLLLLLLLLLLLLLLLL Write
+//     \_______ 24 ___________/              \________ 24 __________/
+// 
+//   0000000000000000000000000000000000000000000000000000001000000000 New
+//   0000000000000000000000000000000000000000000000000000000100000000 NoAccess
+//   0000000000000000000000000000000000000000000000000000000000000000 Invalid
+//   \______________________________64______________________________/
+//
+//   r - reserved bits 
+//   S - segment set bits 
+//   L - lock set bits 
+
+//------------- segment set, lock set --------------
+
+const int SEGMENT_SET_BITS = 24;
+const int LOCK_SET_BITS    = 24;
+
+typedef struct { // attempt to improve type-safety and readability. 
+  UWord x;
+}SegmentSet;
+
+static inline Bool prop1_SS_valid (SegmentSet ss) {
+  return ss.x < (1ULL << SEGMENT_SET_BITS);
+}
+
+typedef struct { // attempt to improve type-safety and readability. 
+  WordSet x;
+}LockSet;
+
+static inline Bool prop1_LS_valid (LockSet ls) {
+  return ls.x < (1ULL << LOCK_SET_BITS);
+}
+
+
+static inline SVal prop1_mk_SHVAL_RW (Bool is_w, SegmentSet ss, LockSet ls) {
+  tl_assert(prop1_SS_valid(ss));
+  tl_assert(prop1_LS_valid(ls));
+  return (1ULL << 63) 
+      |  ((SVal)is_w << 62) 
+      |  ((SVal)ss.x << (62-SEGMENT_SET_BITS)) 
+      |  ((SVal)ls.x);
+}
+static inline SVal prop1_mk_SHVAL_R (SegmentSet ss, LockSet ls) {
+  return prop1_mk_SHVAL_RW(False, ss, ls);
+}
+static inline SVal prop1_mk_SHVAL_W (SegmentSet ss, LockSet ls) {
+  return prop1_mk_SHVAL_RW(True, ss, ls);
+}
+
+static inline SegmentSet prop1_get_SHVAL_SS (SVal sv) {
+  SegmentSet ss;
+  int shift = 62 - SEGMENT_SET_BITS;
+  int mask  = (1 << SEGMENT_SET_BITS) - 1;
+  ss.x = (sv >> shift) & mask;
+  tl_assert(prop1_SS_valid(ss));
+  return ss;
+}
+static inline LockSet prop1_get_SHVAL_LS (SVal sv) {
+  LockSet ls;
+  ls.x = sv & ((1ULL << LOCK_SET_BITS) - 1);
+  tl_assert(prop1_LS_valid(ls));
+  return ls;
+}
+
+static inline Bool prop1_is_SHVAL_RW (SVal sv) {
+  return (sv >> 63) != 0;
+} 
+static inline Bool prop1_is_SHVAL_R (SVal sv) {
+  tl_assert(prop1_is_SHVAL_RW(sv));
+  return ((sv >> 62) & 1) == 0;
+}
+static inline Bool prop1_is_SHVAL_W (SVal sv) {
+  tl_assert(prop1_is_SHVAL_RW(sv));
+  return ((sv >> 62) & 1) == 1;
+}
+
+
+// ---------------------- end prop1 ---------------
+
 
 
 /*----------------------------------------------------------------*/
@@ -1274,12 +1351,8 @@ static void show_shadow_w32 ( /*OUT*/Char* buf, Int nBuf, SVal w32 )
                    un_SHVAL_ShR_tset(w32), un_SHVAL_ShR_lset(w32));
    }
    else
-   if (is_SHVAL_ExclM(w32)) {
-      VG_(sprintf)(buf, "ExclM(%u)", un_SHVAL_Excl(w32));
-   }
-   else
-   if (is_SHVAL_ExclR(w32)) {
-      VG_(sprintf)(buf, "ExclR(%u)", un_SHVAL_Excl(w32));
+   if (is_SHVAL_Excl(w32)) {
+      VG_(sprintf)(buf, "Excl(%u)", un_SHVAL_Excl(w32));
    }
    else
    if (is_SHVAL_New(w32)) {
@@ -1321,12 +1394,11 @@ void show_shadow_w32_for_user ( /*OUT*/Char* buf, Int nBuf, SVal w32 )
    if (is_SHVAL_Excl(w32)) {
       SegmentID segid  = un_SHVAL_Excl(w32);
       Segment*  mb_seg = map_segments_maybe_lookup(segid);
-      char wr = is_SHVAL_ExclM(w32) ? 'W' : 'R';
       if (mb_seg && mb_seg->thr && is_sane_Thread(mb_seg->thr)) {
-         VG_(sprintf)(buf, "Exclusive%c(thr#%d)", wr, 
+         VG_(sprintf)(buf, "Exclusive(thr#%d)", 
                       mb_seg->thr->errmsg_index);
       } else {
-         VG_(sprintf)(buf, "Exclusive%c(segid=%u)", wr, un_SHVAL_Excl(w32));
+         VG_(sprintf)(buf, "Exclusive(segid=%u)", un_SHVAL_Excl(w32));
       }
    }
    else
@@ -1479,6 +1551,10 @@ static void initialise_data_structures ( void )
    univ_tsets = HG_(newWordSetU)( hg_zalloc, hg_free, 8/*cacheSize*/ );
    tl_assert(univ_tsets != NULL);
 
+   tl_assert(univ_ssets == NULL);
+   univ_ssets = HG_(newWordSetU)( hg_zalloc, hg_free, 8/*cacheSize*/ );
+   tl_assert(univ_ssets != NULL);
+
    tl_assert(univ_lsets == NULL);
    univ_lsets = HG_(newWordSetU)( hg_zalloc, hg_free, 8/*cacheSize*/ );
    tl_assert(univ_lsets != NULL);
@@ -1518,7 +1594,7 @@ static void initialise_data_structures ( void )
       complaining) */
    tl_assert( sizeof(__bus_lock) == 4 );
    shadow_mem_set8( NULL/*unused*/, __bus_lock_Lock->guestaddr, 
-                                    mk_SHVAL_ExclM(segid) );
+                                    mk_SHVAL_Excl(segid) );
    shmem__set_mbHasLocks( __bus_lock_Lock->guestaddr, True );
 
    all__sanity_check("initialise_data_structures");
@@ -3108,6 +3184,71 @@ static void msm__show_state_change ( Thread* thr_acc, Addr a, Int szB,
    }
 }
 
+//----------------------- prop1 -----------------
+// See http://code.google.com/p/data-race-test/wiki/MSMProp1 
+// for description. 
+//
+// This routine is not (yet) optimized for performance. 
+static SVal prop1_memory_state_machine(
+    Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
+{
+  int i;
+  // SVal sv_new = SHVAL_Invalid;
+  SVal sv_new = sv_old;
+  tl_assert(is_sane_Thread(thr));
+
+  // NoAccess
+  if (is_SHVAL_NoAccess(sv_old)) {
+    // TODO: complain
+    return sv_old;
+  }
+
+  // New
+  if (is_SHVAL_New(sv_old)) {
+    LockSet ls;
+    SegmentSet ss;
+    ls.x = is_w ? add_BHL(thr->locksetA)
+                :         thr->locksetW;
+
+    ss.x = HG_(singletonWS)(univ_ssets, thr->csegid);
+
+    return prop1_mk_SHVAL_RW(is_w, ss, ls);
+  }
+
+
+  // Read or Write
+  tl_assert(prop1_is_SHVAL_RW(sv_old));
+  Bool was_w       = prop1_is_SHVAL_W(sv_old);
+  SegmentSet oldSS = prop1_get_SHVAL_SS(sv_old);
+  LockSet    oldLS = prop1_get_SHVAL_LS(sv_old);
+  SegmentID  currS = thr->csegid;
+  // bit vector that stores HB(oldSS[i],S).
+  // Obviously, it does not work with segment sets with >= 64 segments (FIXME). 
+  ULong hb_mask = 0; 
+  int oldSS_size = HG_(cardinalityWS)(univ_ssets, oldSS.x);
+  tl_assert(oldSS_size < 64);
+
+  // compute hb_mask
+  for (i = 0; i < oldSS_size; i++) {
+    SegmentID S = HG_(ElementOfWS)(univ_ssets, oldSS.x, i);
+    if(S == currS 
+       || map_segments_lookup(S)->thr == thr
+       || happens_before(S, currS)) {
+      hb_mask &= 1ULL << i;
+    }
+  }
+
+  // hb_all is true iff HB(oldSS,S)
+  Bool hb_all = hb_mask == ((1ULL << oldSS_size) - 1);
+
+
+
+  return sv_new; 
+}
+
+//----------------------- end prop1 -----------------
+
+
 
 /* Here are some MSM stats from startup/shutdown of OpenOffice.
 
@@ -3142,6 +3283,8 @@ static
 SVal msm__handle_read ( Thread* thr_acc, Addr a, SVal wold, Int szB )
 {
    SVal wnew = SHVAL_Invalid;
+   if (clo_use_msm_prop1) 
+     return prop1_memory_state_machine(False, thr_acc, a, wold, szB);
 
    tl_assert(is_sane_Thread(thr_acc));
 
@@ -3166,7 +3309,7 @@ SVal msm__handle_read ( Thread* thr_acc, Addr a, SVal wold, Int szB )
       }
       if (happens_before(segid_old, thr_acc->csegid)) {
          /* -> Excl(segid-of-this-thread) */
-         wnew = mk_SHVAL_ExclR(thr_acc->csegid);
+         wnew = mk_SHVAL_Excl(thr_acc->csegid);
          stats__msm_read_Excl_transfer++;
          goto changed;
       }
@@ -3241,7 +3384,7 @@ SVal msm__handle_read ( Thread* thr_acc, Addr a, SVal wold, Int szB )
    /* New */
    if (is_SHVAL_New(wold)) {
       /* read New -> Excl(segid) */
-      wnew = mk_SHVAL_ExclR( thr_acc->csegid);
+      wnew = mk_SHVAL_Excl( thr_acc->csegid);
       stats__msm_read_New_to_Excl++;
       goto changed;
    } 
@@ -3278,6 +3421,8 @@ static
 SVal msm__handle_write ( Thread* thr_acc, Addr a, SVal wold, Int szB )
 {
    SVal wnew = SHVAL_Invalid;
+   if (clo_use_msm_prop1) 
+     return prop1_memory_state_machine(True, thr_acc, a, wold, szB);
 
    tl_assert(is_sane_Thread(thr_acc));
 
@@ -3286,7 +3431,7 @@ SVal msm__handle_write ( Thread* thr_acc, Addr a, SVal wold, Int szB )
    /* New */
    if (LIKELY(is_SHVAL_New(wold))) {
       /* write New -> Excl(segid) */
-      wnew = mk_SHVAL_ExclM( thr_acc->csegid );
+      wnew = mk_SHVAL_Excl( thr_acc->csegid );
       stats__msm_write_New_to_Excl++;
       goto changed;
    }
@@ -3312,7 +3457,7 @@ SVal msm__handle_write ( Thread* thr_acc, Addr a, SVal wold, Int szB )
       }
       if (happens_before(segid_old, thr_acc->csegid)) {
          /* -> Excl(segid-of-this-thread) */
-         wnew = mk_SHVAL_ExclM(thr_acc->csegid);
+         wnew = mk_SHVAL_Excl(thr_acc->csegid);
          stats__msm_write_Excl_transfer++;
          goto changed;
       }
@@ -3404,8 +3549,7 @@ SVal msm__handle_write ( Thread* thr_acc, Addr a, SVal wold, Int szB )
                     HG_(cardinalityWS(univ_tsets, tset_new)));
         if (HG_(isSingletonWS)( univ_tsets, tset_new, (Word)thr_acc )) {
           /* This word returns to Excl state */
-          wnew = 1 ? mk_SHVAL_ExclM(thr_acc->csegid)
-              : mk_SHVAL_ExclR(thr_acc->csegid);
+          wnew = mk_SHVAL_Excl(thr_acc->csegid);
         } else {
           wnew = 1 ? mk_SHVAL_ShM(tset_new, lset_new)
               : mk_SHVAL_ShR(tset_new, lset_new);
@@ -3985,7 +4129,6 @@ Bool sequentialise_CacheLine ( /*OUT*/SVal* dst, Word nDst, CacheLine* src )
    return anyShared;
 }
 
-extern void zoo();
 static __attribute__((noinline)) void cacheline_wback ( UWord wix )
 {
    Word        i, j;
@@ -5198,6 +5341,7 @@ static void shadow_mem_make_NoAccess ( Thread* thr, Addr aIN, SizeT len )
      HG_(initIterFM)( map_shmem );
      while (HG_(nextIterFM)( map_shmem,
                              (Word*)&ga, (Word*)&sm )) {
+        Bool anySh = False;
         tl_assert(sm);
         stats_SMs++;
         /* Skip this SecMap if the summary bit indicates it is safe to
@@ -5205,7 +5349,6 @@ static void shadow_mem_make_NoAccess ( Thread* thr, Addr aIN, SizeT len )
         if (!sm->mbHasShared)
            continue;
         stats_SMs_scanned++;
-        Bool anySh = False;
         initSecMapIter( &itr );
         while (stepSecMapIter( &w32p, &itr, sm )) {
            Bool isM;
@@ -5877,6 +6020,7 @@ void evh__HG_PTHREAD_JOIN_POST ( ThreadId stay_tid, Thread* quit_thr )
 
    stats_SMs = stats_SMs_scanned = stats_reExcls = 0;
    HG_(initIterFM)( map_shmem );
+   if (clo_use_msm_prop1 == False)
    while (HG_(nextIterFM)( map_shmem,
                            (Word*)&ga, (Word*)&sm )) {
       SecMapIter itr;
@@ -5925,8 +6069,7 @@ void evh__HG_PTHREAD_JOIN_POST ( ThreadId stay_tid, Thread* quit_thr )
          }
          if (HG_(isSingletonWS)( univ_tsets, tset_new, (Word)thr_s )) {
             /* This word returns to Excl state */
-            wnew = isM ? mk_SHVAL_ExclM(thr_s->csegid)
-                       : mk_SHVAL_ExclR(thr_s->csegid);
+            wnew = mk_SHVAL_Excl(thr_s->csegid);
             stats_reExcls++;
          } else {
             wnew = isM ? mk_SHVAL_ShM(tset_new, lset_old)
@@ -8795,6 +8938,9 @@ static Bool hg_process_cmd_line_option ( Char* arg )
       clo_happens_before = 1;
    else if (VG_CLO_STREQ(arg, "--happens-before=all"))
       clo_happens_before = 2;
+
+   else if (VG_CLO_STREQ(arg, "--prop1"))
+      clo_use_msm_prop1 = True;
 
    else if (VG_CLO_STREQ(arg, "--gen-vcg=no"))
       clo_gen_vcg = 0;

@@ -3,18 +3,16 @@ digraph prop1 {
    New   [shape=rectangle label="New"];
 
    Read  [shape=plaintext label=<<TABLE BGCOLOR="white"> <tr> 
-        <td colspan="3">Read</td> 
+        <td colspan="2">Read</td> 
       </tr> <tr> 
-        <td bgcolor="green">R:</td>
         <td> SS </td>
         <td> LS </td>
       </tr> </TABLE>>
     ]
 
    Write  [shape=plaintext label=<<TABLE BGCOLOR="white"> <tr> 
-        <td colspan="3">Write</td> 
+        <td colspan="2">Write</td> 
       </tr> <tr> 
-        <td bgcolor="red">W:</td>
         <td> SS </td>
         <td> LS </td>
       </tr> </TABLE>>
