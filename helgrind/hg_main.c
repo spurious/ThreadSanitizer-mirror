@@ -153,6 +153,8 @@ static Int clo_happens_before = 2;  /* default setting */
 /* Generate .vcg output of the happens-before graph?
    0: no  1: yes, without VTSs  2: yes, with VTSs */
 static Int clo_gen_vcg = 0;
+// similar for dot
+static Int clo_gen_dot = 0;
 
 /* When comparing race errors for equality, should the race address be
    taken into account?  For users, no, but for verification purposes
@@ -371,6 +373,7 @@ typedef
       /* DEBUGGING ONLY: what does 'other' arise from?  
          c=thread creation, j=join, s=cvsignal, S=semaphore */
       Char other_hint;
+      SegmentID id; 
    }
    Segment;
 
@@ -659,6 +662,7 @@ static Segment* mk_Segment ( Thread* thr, Segment* prev, Segment* other ) {
    seg->other_hint = ' ';
    seg->magic      = Segment_MAGIC;
    seg->admin      = admin_segments;
+   seg->id         = 0;
    admin_segments = seg;
    stats__mk_Segment++;
    return seg;
@@ -1729,6 +1733,7 @@ static void map_locks_delete ( Addr ga )
 /*----------------------------------------------------------------*/
 
 static void segments__generate_vcg ( void ); /* fwds */
+static void segments__generate_dot ( void ); /* fwds */
 
 /*--------------- SegmentID to Segment* maps ---------------*/
 
@@ -1759,6 +1764,7 @@ static void map_segments_add ( SegmentID segid, Segment* seg )
 {
    /* This is a bit inefficient.  Oh well. */
    tl_assert( !HG_(lookupFM)( map_segments, NULL, NULL, segid ));
+   seg->id = segid; 
    HG_(addToFM)( map_segments, (Word)segid, (Word)seg );
 }
 
@@ -2337,7 +2343,7 @@ static Bool happens_before ( SegmentID segid1, SegmentID segid2 )
    tl_assert(seg2->vts);
 
    hbV = cmpGEQ_VTS( seg2->vts, seg1->vts );
-   if (clo_sanity_flags & SCE_HBEFORE) {
+   if (clo_use_msm_prop1 || clo_sanity_flags & SCE_HBEFORE) {
       /* Crosscheck the vector-timestamp comparison result against that
          obtained from the explicit graph approach.  Can be very
          slow. */
@@ -2348,12 +2354,14 @@ static Bool happens_before ( SegmentID segid1, SegmentID segid2 )
       hbG = hbV;
    }
 
-   if (hbV != hbG) {
-      VG_(printf)("seg1 %p  seg2 %p  hbV %d  hbG %d\n", 
-                  seg1,seg2,(Int)hbV,(Int)hbG);
-      segments__generate_vcg();
+   if (!clo_use_msm_prop1) { // FIXME!!
+     if (hbV != hbG) {
+       VG_(printf)("seg1 %p  seg2 %p  hbV %d  hbG %d\n", 
+                   seg1,seg2,(Int)hbV,(Int)hbG);
+       segments__generate_vcg();
+     }
+     tl_assert(hbV == hbG);
    }
-   tl_assert(hbV == hbG);
 
    iNSERT_POINT = (1*HBEFORE__N_CACHE)/4 - 1;
    /* if (iNSERT_POINT > 4) iNSERT_POINT = 4; */
@@ -2370,7 +2378,7 @@ static Bool happens_before ( SegmentID segid1, SegmentID segid2 )
    return hbG;
 }
 
-/*--------------- generating .vcg output ---------------*/
+/*--------------- generating .vcg/.dot output ---------------*/
 
 static void segments__generate_vcg ( void )
 {
@@ -2426,6 +2434,52 @@ static void segments__generate_vcg ( void )
          VG_(printf)(PFX "edge: { sourcename: \"%p\" targetname: \"%p\""
                      " color: %s }\n", seg->other, seg, colour );
       }
+   }
+   VG_(printf)(PFX "}\n");
+#undef PFX
+}
+
+// similar to segments__generate_vcg.
+static void segments__generate_dot ( void )
+{
+#define PFX "xxxxxx"
+   /* Edge colours:
+         Black  -- the chain of .prev links
+         Green  -- thread creation, link to parent
+         Red    -- thread exit, link to exiting thread
+         Yellow -- signal edge
+         Pink   -- semaphore-up edge
+   */
+   Segment* seg;
+//   HChar vtsstr[128];
+   VG_(printf)(PFX "digraph Segments { \n");
+   for (seg = admin_segments; seg; seg=seg->admin) {
+
+      VG_(printf)(PFX "%d [label=\"S%d/T%d\"];\n", 
+                  seg->id-(1<<24), seg->id-(1<<24), seg->thr->errmsg_index);
+
+
+      if (seg->prev) 
+         VG_(printf)(PFX "%d->%d [color=\"green\"];\n", 
+                     seg->prev->id-(1<<24), seg->id-(1<<24));
+      if (seg->other) 
+         VG_(printf)(PFX "%d->%d [color=\"blue\"];\n", 
+                     seg->other->id-(1<<24), seg->id-(1<<24));
+#if 0
+      if (seg->other) {
+         HChar* colour = "orange";
+         switch (seg->other_hint) {
+            case 'c': colour = "darkgreen";  break; /* creation */
+            case 'j': colour = "red";        break; /* join (exit) */
+            case 's': colour = "orange";     break; /* signal */
+            case 'S': colour = "pink";       break; /* sem_post->wait */
+            case 'u': colour = "cyan";       break; /* unlock */
+            default: tl_assert(0);
+         }
+         VG_(printf)(PFX "edge: { sourcename: \"%p\" targetname: \"%p\""
+                     " color: %s }\n", seg->other, seg, colour );
+      }
+#endif
    }
    VG_(printf)(PFX "}\n");
 #undef PFX
@@ -3305,8 +3359,8 @@ static inline SVal prop1_memory_state_machine(
   Bool hb_all = hb_mask == ((1ULL << oldSS_size) - 1);
   
   
-//  if(do_trace) VG_(printf)("hb_mask=%llx; hb_all=%d\n", 
-//                           hb_mask, hb_all);
+  if(do_trace) VG_(printf)("hb_mask=%llx; hb_all=%d\n", 
+                           hb_mask, hb_all);
 
   // update lock set. 
   if (hb_all) {
@@ -3346,7 +3400,9 @@ done:
 
   if (do_trace) {
     prop1_show_shval(buf, sizeof(buf), sv_new);
-    VG_(message)(Vg_UserMsg, "TRACE: %p %s", a, buf);
+    VG_(message)(Vg_UserMsg, "TRACE: S%d/T%d %c %p %s", 
+                 (int)currS-(1<<24), thr->errmsg_index, 
+                 is_w ? 'w' : 'r', a, buf);
     if (1 || clo_trace_level >= 2) {
       ThreadId tid = map_threads_maybe_reverse_lookup_SLOW(thr);
       if (tid != VG_INVALID_THREADID) {
@@ -5571,6 +5627,20 @@ void evhH__start_new_segment_for_thread ( /*OUT*/SegmentID* new_segidP,
    thr->csegid = *new_segidP;
 }
 
+// create a fake segment which does not belong to any thread. 
+static 
+void evhH__start_new_fake_segment ( /*OUT*/SegmentID* new_segidP,
+                                    /*OUT*/Segment**  new_segP )
+{
+   tl_assert(new_segP);
+   tl_assert(new_segidP);
+   *new_segP = mk_Segment( NULL /*thr*/, NULL /*cur_seg*/, NULL/*other*/ );
+   *new_segidP = alloc_SegmentID();
+   map_segments_add( *new_segidP, *new_segP );
+}
+
+
+
 
 /* The lock at 'lock_ga' has acquired a writer.  Make all necessary
    updates, and also do all possible error checks. */
@@ -6068,10 +6138,10 @@ void evh__HG_PTHREAD_JOIN_POST ( ThreadId stay_tid, Thread* quit_thr )
    SecMap*  sm;
    Thread*  thr_s;
    Thread*  thr_q;
-   VG_(message)(Vg_UserMsg, "JOIN %p (#%d); #TSETs: %d", 
-                quit_thr, 
-                quit_thr->errmsg_index,
-                (Int)HG_(cardinalityWSU)( univ_tsets ));
+//   VG_(message)(Vg_UserMsg, "JOIN %p (#%d); #TSETs: %d", 
+//                quit_thr, 
+//                quit_thr->errmsg_index,
+//                (Int)HG_(cardinalityWSU)( univ_tsets ));
 //   HG_(ppWSU)(univ_tsets);
 
 
@@ -6524,6 +6594,8 @@ static void evh__HG_PTHREAD_COND_SIGNAL_PRE ( ThreadId tid, void* cond )
    Thread*   thr;
    SegmentID new_segid;
    Segment*  new_seg;
+   SegmentID fake_segid;
+   Segment*  fake_seg;
 
    if (SHOW_EVENTS >= 1)
       VG_(printf)("evh__HG_PTHREAD_COND_SIGNAL_PRE(ctid=%d, cond=%p)\n", 
@@ -6549,8 +6621,32 @@ static void evh__HG_PTHREAD_COND_SIGNAL_PRE ( ThreadId tid, void* cond )
       new_seg->vts = tick_VTS( new_seg->thr, new_seg->prev->vts );
 
       /* ... and add the binding. */
-      HG_(addToFM)( map_cond_to_Segment, (Word)cond,
+      if (!clo_use_msm_prop1) {
+        HG_(addToFM)( map_cond_to_Segment, (Word)cond,
                                          (Word)(new_seg->prev) );
+      } else {
+        // create a fake segment.                                         
+        Segment *signalling_seg = NULL;
+        evhH__start_new_fake_segment ( &fake_segid, &fake_seg );
+        tl_assert( is_sane_SegmentID(fake_segid) );
+        tl_assert( is_sane_Segment(fake_seg) );
+        tl_assert( fake_seg->prev == NULL );
+        tl_assert( fake_seg->other == NULL );
+        // FIXME prop1: what shall we put here? 
+        fake_seg->vts = tick_VTS( thr, new_seg->prev->vts );
+        fake_seg->other = new_seg->prev;
+
+
+        // FIXME. This is bad as it allows CV to be used just once. 
+        HG_(lookupFM)( map_cond_to_Segment, 
+                       NULL, (Word*)&signalling_seg,
+                       (Word)cond );
+        if (signalling_seg != 0) {
+          fake_seg->prev = signalling_seg;
+        }
+        HG_(addToFM)( map_cond_to_Segment, (Word)cond, (Word)(fake_seg) );
+      }
+
    }
 }
 
@@ -8037,7 +8133,7 @@ Bool hg_handle_client_request ( ThreadId tid, UWord* args, UWord* ret)
             only runs once the thread has been low-level created. */
          tl_assert(my_thr != NULL);
 
-         VG_(message)(Vg_UserMsg, "CREATE %p (#%d)", my_thr, my_thr->errmsg_index);
+//         VG_(message)(Vg_UserMsg, "CREATE %p (#%d)", my_thr, my_thr->errmsg_index);
          /* So now we know that (pthread_t)args[1] is associated with
             (Thread*)my_thr.  Note that down. */
          if (0)
@@ -9087,6 +9183,12 @@ static Bool hg_process_cmd_line_option ( Char* arg )
    else if (VG_CLO_STREQ(arg, "--gen-vcg=yes-w-vts"))
       clo_gen_vcg = 2;
 
+
+   else if (VG_CLO_STREQ(arg, "--gen-dot=no"))
+      clo_gen_dot = 0;
+   else if (VG_CLO_STREQ(arg, "--gen-dot=yes"))
+      clo_gen_dot = 1;
+
    else if (VG_CLO_STREQ(arg, "--cmp-race-err-addrs=no"))
       clo_cmp_race_err_addrs = False;
    else if (VG_CLO_STREQ(arg, "--cmp-race-err-addrs=yes"))
@@ -9171,6 +9273,8 @@ static void hg_fini ( Int exitcode )
 
    if (clo_gen_vcg > 0)
       segments__generate_vcg();
+   if (clo_gen_dot > 0)
+      segments__generate_dot();
 
    {
      Addr ptr;

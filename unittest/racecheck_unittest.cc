@@ -556,7 +556,7 @@ void Parent() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB, "test11. FP. ");
+  ANNOTATE_EXPECT_RACE(&GLOB, "test11. FP. Fixed by MSMProp1.");
   printf("test11:\n");
   Parent();
   printf("\tGLOB=%d\n", GLOB);
@@ -600,7 +600,7 @@ void Getter() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB, "test12. FP.");
+  ANNOTATE_EXPECT_RACE(&GLOB, "test12. FP. Fixed by MSMProp1.");
   printf("test12:\n");
   MyThreadArray t(Putter, Getter);
   t.Start();
@@ -649,7 +649,7 @@ void Waiter() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB, "test13. FP.");
+  ANNOTATE_EXPECT_RACE(&GLOB, "test13. FP. Fixed by MSMProp1.");
   printf("test13:\n");
   COND = 0;
 
@@ -692,7 +692,7 @@ void Getter() {
   GLOB++;
 }
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB, "test14. FP.");
+  ANNOTATE_EXPECT_RACE(&GLOB, "test14. FP. Fixed by MSMProp1.");
   printf("test14:\n");
   MyThreadArray t(Getter, Putter1, Putter2);
   t.Start();
@@ -780,7 +780,7 @@ void Worker() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB, "test16. FP.");
+  ANNOTATE_EXPECT_RACE(&GLOB, "test16. FP. Fixed by MSMProp1 + Barrier support.");
   COND = 2;
   printf("test16:\n");
   MyThreadArray t(Worker, Worker);
@@ -812,7 +812,7 @@ void Worker() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB, "test17. FP.");
+  ANNOTATE_EXPECT_RACE(&GLOB, "test17. FP. Fixed by MSMProp1 + Barrier support.");
   COND = 3;
   printf("test17:\n");
   MyThreadArray t(Worker, Worker, Worker);
@@ -1403,7 +1403,7 @@ void Parent() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB, "test32. FP.");
+  ANNOTATE_EXPECT_RACE(&GLOB, "test32. FP. Fixed by MSMProp1.");
   printf("test32:\n");
   Parent();
   printf("\tGLOB=%d\n", GLOB);
@@ -1711,7 +1711,7 @@ void Worker() {
   CHECK(GLOB == N_threads);
 }
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB, "test 39. FP.");
+  ANNOTATE_EXPECT_RACE(&GLOB, "test39. FP. Barrier.");
   printf("test39:\n");
   ThreadPool pool(N_threads);
   pool.StartWorkers();
