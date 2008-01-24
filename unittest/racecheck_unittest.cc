@@ -323,7 +323,7 @@ void Waiter() {
   GLOB = 2;
 }
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB, "test05. FP.");
+  ANNOTATE_EXPECT_RACE(&GLOB, "test05. FP. Unavoidable.");
   printf("test05:\n");
   Waiter();
   printf("\tGLOB=%d\n", GLOB);
@@ -504,7 +504,7 @@ void Reader() {
 }
 
 void Run() {
-//  ANNOTATE_EXPECT_RACE(&GLOB, "test10. TODO.");
+  ANNOTATE_EXPECT_RACE(&GLOB, "test10. TP. (FN in helgrind 3.3.0). Fixed by MSMProp1.");
   printf("test10:\n");
   MyThreadArray t(Writer, Reader);
   t.Start();
@@ -1723,21 +1723,92 @@ void Run() {
 }  // namespace test39
 
 
-// test40: TMP. {{{1
+// test40: FP. Synchronization via Mutexes and PCQ. 4 threads. W/W {{{1
 namespace test40 {
+// Similar to test38 but with different order of events (due to sleep). 
+
+// Putter1:            Putter2:           Getter1:       Getter2:
+//    MU1.Lock()          MU1.Lock()                                    
+//    write(GLOB)         write(GLOB)                                   
+//    MU1.Unlock()        MU1.Unlock()                                  
+//    Q1.Put()            Q2.Put()                                      
+//    Q1.Put()            Q2.Put()                                      
+//                                        Q1.Get()       Q1.Get()     
+//                                        Q2.Get()       Q2.Get()     
+//                                        MU2.Lock()     MU2.Lock()   
+//                                        write(GLOB)    write(GLOB)  
+//                                        MU2.Unlock()   MU2.Unlock()
+//                                         
+//    MU1.Lock()          MU1.Lock()                                       
+//    MU2.Lock()          MU2.Lock()                                       
+//    write(GLOB)         write(GLOB)                                      
+//    MU2.Unlock()        MU2.Unlock()                                     
+//    MU1.Unlock()        MU1.Unlock() 
+
+
+ProducerConsumerQueue *Q1, *Q2;
+int     GLOB = 0;
+
+void Putter(ProducerConsumerQueue *q) {
+  MU1.Lock();
+  GLOB++;
+  MU1.Unlock();
+
+  q->Put(NULL);
+  q->Put(NULL);
+  sleep(1);
+
+  MU1.Lock();
+  MU2.Lock();
+  GLOB++;
+  MU2.Unlock();
+  MU1.Unlock();
+
+}
+
+void Putter1() { Putter(Q1); }
+void Putter2() { Putter(Q2); }
+
+void Getter() {
+  Q1->Get();
+  Q2->Get();
+
+  MU2.Lock();
+  GLOB++;
+  MU2.Unlock();
+
+  usleep(50000); //  TODO: remove this when FP in test32 is fixed. 
+}
+
+void Run() {
+  ANNOTATE_EXPECT_RACE(&GLOB, "test40. FP. Complex Stuff. Fixed by MSMProp1. ");
+  printf("test40:\n");
+  Q1 = new ProducerConsumerQueue(INT_MAX);
+  Q2 = new ProducerConsumerQueue(INT_MAX);
+  MyThreadArray t(Getter, Getter, Putter1, Putter2);
+  t.Start();
+  t.Join();
+  printf("\tGLOB=%d\n", GLOB);
+  delete Q1;
+  delete Q2;
+}
+}  // namespace test40
+
+// testTMP: TMP. {{{1
+namespace testTMP {
 ProducerConsumerQueue Q(INT_MAX); 
 
 void Putter() {
   Q.Put(NULL);
 }
 void Run() {
-  printf("test40:\n");
+  printf("testTMP:\n");
   MyThreadArray t(Putter);
   t.Start(); 
   Q.Get();
   t.Join();
 }
-}  // namespace test40
+}  // namespace testTMP
 
 
 
@@ -1805,6 +1876,7 @@ static struct {
   { test38::Run, FEATURE },
   { test39::Run, FEATURE },
   { test40::Run, FEATURE },
+  { testTMP::Run, FEATURE },
   {NULL, 0 }
 };
 

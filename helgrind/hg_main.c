@@ -3286,7 +3286,8 @@ static void prop1_show_shval(char *buf, int buf_size, SVal sv)
 // for description. 
 //
 // This routine is not (yet) optimized for performance. 
-static inline SVal prop1_memory_state_machine(
+static 
+SVal prop1_memory_state_machine(
     Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
 {
 
