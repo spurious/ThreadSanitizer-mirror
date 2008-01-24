@@ -79,6 +79,22 @@
                                  _arg1,_arg2,_arg3,0,0); \
    } while (0)
 
+#define DO_CREQ_v_WWWW(_creqF, _ty1F,_arg1F, _ty2F,_arg2F,\
+		      _ty3F,_arg3F, _ty4F, _arg4F)       \
+   do {                                                  \
+      Word _unused_res, _arg1, _arg2, _arg3, _arg4;      \
+      assert(sizeof(_ty1F) == sizeof(Word));             \
+      assert(sizeof(_ty2F) == sizeof(Word));             \
+      assert(sizeof(_ty3F) == sizeof(Word));             \
+      assert(sizeof(_ty4F) == sizeof(Word));             \
+      _arg1 = (Word)(_arg1F);                            \
+      _arg2 = (Word)(_arg2F);                            \
+      _arg3 = (Word)(_arg3F);                            \
+      _arg4 = (Word)(_arg4F);                            \
+      VALGRIND_DO_CLIENT_REQUEST(_unused_res, 0,         \
+                              (_creqF),                  \
+                             _arg1,_arg2,_arg3,_arg4,0); \
+   } while (0)
 
 
 
@@ -169,16 +185,16 @@ ANN_FUNC(void, AnnotatePCQGet, const char *file, int line, void *uniq_id)
   DO_CREQ_v_W(_VG_USERREQ__HG_POSIX_SEM_DESTROY_PRE, void*, uniq_id);
 }
 
-ANN_FUNC(void, AnnotateExpectRace, const char *file, int line, void *mem)
+ANN_FUNC(void, AnnotateExpectRace, const char *file, int line, void *mem, char *description)
 {
   const char *name = "AnnotateExpectRace";
   ANN_TRACE("--#%d %s[%p] %s:%d\n", tid, name, mem, file, line);
-  DO_CREQ_v_WWW(_VG_USERREQ__HG_EXPECT_RACE, void*,mem, char*, file, long, (long)line);
+  DO_CREQ_v_WWWW(_VG_USERREQ__HG_EXPECT_RACE, void*,mem, char*,description, char*, file, long, (long)line);
 }
 
 ANN_FUNC(void, AnnotateNewMemory, char *file, int line, void *mem, long size)
 {
-  const char *name = "AnnotateExpectRace";
+  const char *name = "AnnotateNewMemory";
   ANN_TRACE("--#%d %s[%p,%d] %s:%d\n", tid, name, mem, (int)size, file, line);
  VALGRIND_HG_CLEAN_MEMORY(mem, size);
 }

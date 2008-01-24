@@ -89,7 +89,7 @@ ANNOTATION(AnnotateCondVarSignalAll,void *cv);
 ANNOTATION(AnnotatePCQPut,  void *uniq_id);
 ANNOTATION(AnnotatePCQGet,  void *uniq_id);
 ANNOTATION(AnnotateNewMemory, void *mem, long size);
-ANNOTATION(AnnotateExpectRace, void *mem);
+ANNOTATION(AnnotateExpectRace, void *mem, const char *description);
 
 /// Insert right after the lock is created. 
 #define ANNOTATE_RWLOCK_CREATE(lock) \
@@ -135,8 +135,8 @@ ANNOTATION(AnnotateExpectRace, void *mem);
             AnnotateNewMemory(__FILE__, __LINE__, mem, size)
 
 /// Insert at the beginning of a unit test. 
-#define ANNOTATE_EXPECT_RACE(mem) \
-            AnnotateExpectRace(__FILE__, __LINE__, mem)
+#define ANNOTATE_EXPECT_RACE(mem, description) \
+            AnnotateExpectRace(__FILE__, __LINE__, mem, description)
 
 
 

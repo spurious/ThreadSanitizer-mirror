@@ -381,6 +381,7 @@ typedef
 typedef 
    struct _ExpectedError {
       Addr ptr;    ///< Pointer from the client request. 
+      char *descr; ///< Arbitrary text supplied by client. 
       char *file;  ///< File name (for debug output). 
       int   line;  ///< Line number (for debug output)
       Bool detected; ///< Will be set once an error with 'ptr' is detected. 
@@ -1073,20 +1074,16 @@ const int LOCK_SET_BITS    = 24;
 
 const ULong SHVAL_Race = 1ULL << 62;
 
-typedef struct { // attempt to improve type-safety and readability. 
-  UWord x;
-}SegmentSet;
+typedef UWord SegmentSet;
+typedef  WordSetID LockSet;
 
 static inline Bool prop1_SS_valid (SegmentSet ss) {
-  return ss.x < (1ULL << SEGMENT_SET_BITS);
+  return ss < (1ULL << SEGMENT_SET_BITS);
 }
 
-typedef struct { // attempt to improve type-safety and readability. 
-  WordSet x;
-}LockSet;
 
 static inline Bool prop1_LS_valid (LockSet ls) {
-  return ls.x < (1ULL << LOCK_SET_BITS);
+  return ls < (1ULL << LOCK_SET_BITS);
 }
 
 
@@ -1095,8 +1092,8 @@ static inline SVal prop1_mk_SHVAL_RW (Bool is_w, SegmentSet ss, LockSet ls) {
   tl_assert(prop1_LS_valid(ls));
   return (1ULL << 63) 
       |  ((SVal)is_w << 62) 
-      |  ((SVal)ss.x << (62-SEGMENT_SET_BITS)) 
-      |  ((SVal)ls.x);
+      |  ((SVal)ss << (62-SEGMENT_SET_BITS)) 
+      |  ((SVal)ls);
 }
 static inline SVal prop1_mk_SHVAL_R (SegmentSet ss, LockSet ls) {
   return prop1_mk_SHVAL_RW(False, ss, ls);
@@ -1109,13 +1106,13 @@ static inline SegmentSet prop1_get_SHVAL_SS (SVal sv) {
   SegmentSet ss;
   int shift = 62 - SEGMENT_SET_BITS;
   int mask  = (1 << SEGMENT_SET_BITS) - 1;
-  ss.x = (sv >> shift) & mask;
+  ss = (sv >> shift) & mask;
   tl_assert(prop1_SS_valid(ss));
   return ss;
 }
 static inline LockSet prop1_get_SHVAL_LS (SVal sv) {
   LockSet ls;
-  ls.x = sv & ((1ULL << LOCK_SET_BITS) - 1);
+  ls = sv & ((1ULL << LOCK_SET_BITS) - 1);
   tl_assert(prop1_LS_valid(ls));
   return ls;
 }
@@ -1131,6 +1128,8 @@ static inline Bool prop1_is_SHVAL_W (SVal sv) {
   tl_assert(prop1_is_SHVAL_RW(sv));
   return ((sv >> 62) & 1) == 1;
 }
+
+
 
 
 // ---------------------- end prop1 ---------------
@@ -2115,14 +2114,15 @@ static ExpectedError *get_expected_error (Addr ptr)
   if (HG_(lookupFM)( map_expected_errors,
                      NULL/*keyP*/, (Word*)&expected_error, (Word)ptr)) {
     tl_assert(expected_error->ptr == ptr);
-    VG_(printf)("Found expected race: %s:%d %p\n",
-                expected_error->file, expected_error->line, ptr);
+    VG_(printf)("Found expected race: %s:%d %p\t%s\n",
+                expected_error->file, expected_error->line, ptr, expected_error->descr);
     return expected_error;
   }
   return NULL;
 }
 
 static Bool maybe_set_expected_error (Addr ptr,
+                                      char *description, 
                                       char *file, 
                                       int line, 
                                       Bool is_benign)
@@ -2141,8 +2141,9 @@ static Bool maybe_set_expected_error (Addr ptr,
    error->ptr = ptr;
    error->detected = False;
    error->is_benign = is_benign;
-   error->file = file; /* need to copy?*/
-   error->line = line;
+   error->descr = description;
+   error->file  = file; /* need to copy?*/
+   error->line  = line;
    tl_assert(error);
    HG_(addToFM)( map_expected_errors, (Word)ptr, (Word)error );
    return True;
@@ -2365,7 +2366,7 @@ static Bool happens_before ( SegmentID segid1, SegmentID segid2 )
    hbefore__cache[iNSERT_POINT].result = hbG;
 
    if (0)
-   VG_(printf)("hb %d %d\n", (Int)segid1-(1<<24), (Int)segid2-(1<<24));
+   VG_(printf)("hb(S%d,S%d)=%d\n", (Int)segid1-(1<<24), (Int)segid2-(1<<24), hbG);
    return hbG;
 }
 
@@ -3188,46 +3189,93 @@ static void msm__show_state_change ( Thread* thr_acc, Addr a, Int szB,
 }
 
 //----------------------- prop1 -----------------
+
+static void prop1_show_shval(char *buf, int buf_size, SVal sv)
+{
+  tl_assert(buf_size >= 100);
+  if (sv == SHVAL_Invalid) {
+    VG_(sprintf)(buf, "Invalid");
+  } else if (sv == SHVAL_NoAccess) {
+    VG_(sprintf)(buf, "NoAccess");
+  } else if (sv == SHVAL_New) {
+    VG_(sprintf)(buf, "New");
+  } else if (sv == SHVAL_Race) {
+    VG_(sprintf)(buf, "Race");
+  } else {
+    tl_assert(prop1_is_SHVAL_RW(sv));
+    int i;
+    Bool is_w     = prop1_is_SHVAL_W(sv);
+    SegmentSet ss = prop1_get_SHVAL_SS(sv);
+    LockSet    ls = prop1_get_SHVAL_LS(sv);
+    int n_segments = HG_(cardinalityWS(univ_ssets, ss));
+    int n_locks    = HG_(cardinalityWS(univ_lsets, ls));
+    VG_(sprintf)(buf, "%c #SS=%d #LS=%d ", 
+                 is_w ? 'W' : 'R', n_segments, n_locks);
+
+    for (i = 0; i < n_segments; i++) {
+      if (VG_(strlen(buf)) > buf_size - 20) {
+        VG_(sprintf)(buf + VG_(strlen)(buf), "...");
+        break;
+      }
+      SegmentID S = HG_(ElementOfWS)(univ_ssets, ss, i);
+      VG_(sprintf)(buf + VG_(strlen)(buf), "S%d/T%d ", 
+                   (int)S-(1<<24), map_segments_lookup(S)->thr->errmsg_index);
+    }
+  }
+}
+
+
+
+//
+//
 // See http://code.google.com/p/data-race-test/wiki/MSMProp1 
 // for description. 
 //
 // This routine is not (yet) optimized for performance. 
-static SVal prop1_memory_state_machine(
+static inline SVal prop1_memory_state_machine(
     Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
 {
 
+  char buf[200];
+  // we already reported a race, don't bother again. 
   if (sv_old == SHVAL_Race) return sv_old;
+
+  Bool is_race = False;
     
 
-  Bool do_trace = clo_trace_level > 0 && clo_trace_addr == a;
+  Bool do_trace = clo_trace_level > 0 
+               && a >= clo_trace_addr 
+               && a < (clo_trace_addr+sz);
+
   int i;
-  // SVal sv_new = SHVAL_Invalid;
-  SVal sv_new = sv_old;
+
+  SVal sv_new = SHVAL_Invalid;
   tl_assert(clo_use_msm_prop1);
 
   // current locks. 
-  LockSet    currLS;
-  currLS.x = is_w ? add_BHL(thr->locksetA)
-                  :         thr->locksetW;
+  LockSet    currLS = is_w ?         thr->locksetW
+                           : add_BHL(thr->locksetA);
 
   SegmentID  currS = thr->csegid;
-  SegmentSet newSS;
-  LockSet    newLS;
-  newSS.x = 0;
-  newLS.x = 0;
+  SegmentSet newSS = 0;
+  LockSet    newLS = 0;
 
   tl_assert(is_sane_Thread(thr));
+
+
 
   // NoAccess
   if (is_SHVAL_NoAccess(sv_old)) {
     // TODO: complain
-    return sv_old;
+    sv_new = sv_old;
+    goto done;
   }
 
   // New
   if (is_SHVAL_New(sv_old)) {
-    newSS.x = HG_(singletonWS)(univ_ssets, currS);
-    return prop1_mk_SHVAL_RW(is_w, newSS, currLS);
+    newSS = HG_(singletonWS)(univ_ssets, currS);
+    sv_new = prop1_mk_SHVAL_RW(is_w, newSS, currLS);
+    goto done;
   }
 
 
@@ -3240,61 +3288,75 @@ static SVal prop1_memory_state_machine(
   // bit vector that stores HB(oldSS[i],S).
   // Obviously, it does not work with segment sets with >= 64 segments (FIXME). 
   ULong hb_mask = 0; 
-  int oldSS_size = HG_(cardinalityWS)(univ_ssets, oldSS.x);
-  if(do_trace)  VG_(printf)("%p: size=%d; seg=%d; T=%p\n", 
-                            a, oldSS_size, (int)currS, thr);
+  int oldSS_size = HG_(cardinalityWS)(univ_ssets, oldSS);
   tl_assert(oldSS_size < 64);
 
   // compute hb_mask
   for (i = 0; i < oldSS_size; i++) {
-    SegmentID S = HG_(ElementOfWS)(univ_ssets, oldSS.x, i);
-    if (do_trace) VG_(printf)("\tS=%d; T=%p\n", (int)S,
-                         map_segments_lookup(S)->thr); 
-    Bool hb = False;
-    if      (S == currS)                         hb = True;
-    else if (map_segments_lookup(S)->thr == thr) hb = True;
-    else if (happens_before(S, currS)) {
-      hb = True;
-      if (do_trace) VG_(printf)("\t\tHB(oldSS[%d],currS)\n", i);
+    SegmentID S = HG_(ElementOfWS)(univ_ssets, oldSS, i);
+    if (S == currS  // Same segment. 
+        || map_segments_lookup(S)->thr == thr // Same thread. 
+        || happens_before(S, currS)) { // different thread, but happens-before.
+      hb_mask |= 1ULL << i;
     }
-    if(hb)  hb_mask |= 1ULL << i;
   }
-
-  if(do_trace) VG_(printf)("hb_mask=%llx\n", hb_mask);
 
   // hb_all is true iff HB(oldSS,S)
   Bool hb_all = hb_mask == ((1ULL << oldSS_size) - 1);
+  
+  
+//  if(do_trace) VG_(printf)("hb_mask=%llx; hb_all=%d\n", 
+//                           hb_mask, hb_all);
 
   // update lock set. 
   if (hb_all) {
     newLS = currLS;
   } else {
-    newLS.x = HG_(intersectWS)(univ_lsets, oldLS.x, currLS.x);
+    newLS = HG_(intersectWS)(univ_lsets, oldLS, currLS);
   }
 
   // update the thread set 
-  newSS.x = HG_(singletonWS)(univ_ssets, currS);
+  newSS = HG_(singletonWS)(univ_ssets, currS);
   if (!hb_all) {
     for (i = 0; i < oldSS_size; i++) {
       if((hb_mask & (1ULL << i)) == 0) {
-        newSS.x = HG_(addToWS)(univ_ssets, newSS.x, 
-                               HG_(ElementOfWS)(univ_ssets, oldSS.x, i));
+        newSS = HG_(addToWS)(univ_ssets, newSS, 
+                               HG_(ElementOfWS)(univ_ssets, oldSS, i));
       }
     } 
   }
 
-  if(do_trace) VG_(printf)("new size: %d\n", 
-                           HG_(cardinalityWS)(univ_ssets, newSS.x));
+//  if(do_trace) VG_(printf)("new size: %d\n", 
+//                           HG_(cardinalityWS)(univ_ssets, newSS));
 
 
   // update the state 
   Bool now_w = is_w || (was_w && !hb_all);
 
+
   // generate new SVal
   sv_new = prop1_mk_SHVAL_RW(now_w, newSS, newLS);
 
+  is_race = now_w 
+         && HG_(isEmptyWS)(univ_lsets, newLS)
+        && !HG_(isSingletonWS)(univ_ssets, newSS, currS);
+
+
+done:
+
+  if (do_trace) {
+    prop1_show_shval(buf, sizeof(buf), sv_new);
+    VG_(message)(Vg_UserMsg, "TRACE: %p %s", a, buf);
+    if (1 || clo_trace_level >= 2) {
+      ThreadId tid = map_threads_maybe_reverse_lookup_SLOW(thr);
+      if (tid != VG_INVALID_THREADID) {
+        VG_(get_and_pp_StackTrace)( tid, 8 );
+      }
+    }
+  }
+
   // report the race if needed
-  if (now_w && HG_(isEmptyWS)(univ_lsets, newLS.x)) {
+  if (is_race) {
     record_error_Race( thr, 
                        a, is_w, sz, sv_old, sv_new,
                        maybe_get_lastlock_initpoint(a) );
@@ -6006,10 +6068,10 @@ void evh__HG_PTHREAD_JOIN_POST ( ThreadId stay_tid, Thread* quit_thr )
    SecMap*  sm;
    Thread*  thr_s;
    Thread*  thr_q;
-//   VG_(message)(Vg_UserMsg, "JOIN %p (#%d); #TSETs: %d", 
-//                quit_thr, 
-//                quit_thr->errmsg_index,
-//                (Int)HG_(cardinalityWSU)( univ_tsets ));
+   VG_(message)(Vg_UserMsg, "JOIN %p (#%d); #TSETs: %d", 
+                quit_thr, 
+                quit_thr->errmsg_index,
+                (Int)HG_(cardinalityWSU)( univ_tsets ));
 //   HG_(ppWSU)(univ_tsets);
 
 
@@ -8140,21 +8202,15 @@ Bool hg_handle_client_request ( ThreadId tid, UWord* args, UWord* ret)
          break;
       }
 
-      case _VG_USERREQ__HG_EXPECT_RACE: { // void*, char *, int
-        Addr ptr   = (Addr)args[1];
-        char *file = (char*)args[2];
-        int line   = (int)  args[3];
-        maybe_set_expected_error(ptr, file, line, False);
+      case _VG_USERREQ__HG_EXPECT_RACE: { // void*, char*, char *, int
+        Addr ptr    = (Addr)args[1];
+        char *descr = (char*)args[2];
+        char *file  = (char*)args[3];
+        int line    = (int)  args[4];
+        maybe_set_expected_error(ptr, descr, file, line, False);
         break;
       }
 
-      case VG_USERREQ__HG_BENIGN_RACE: { // void*, char *, int
-        Addr ptr  = (Addr)args[1];
-        char *file = (char*)args[2];
-        int line   = (int)  args[3];
-        maybe_set_expected_error(ptr, file, line, True);
-        break;
-      }
 
       default:
          /* Unhandled Helgrind client request! */
@@ -8830,9 +8886,11 @@ static void hg_pp_Error ( Error* err )
                       "prop1: Possible data race during %s of size %d at %p",
                       what, szB, err_ga);
          VG_(pp_ExeContext)( VG_(get_error_where)(err) );
-
+         // FIXME: add reasonable output. 
          //pp_AddrInfo(err_addr, &extra->addrinfo);
-         VG_(message)(Vg_UserMsg, "zzz %llx %llx\n", old_state, new_state);
+         VG_(message)(Vg_UserMsg, "zzz thr #%d %llx %llx\n", 
+                      thr_acc->errmsg_index, 
+                      old_state, new_state);
 //         VG_(message)(Vg_UserMsg,
 //                      "  Old state 0x%08x=%s, new state 0x%08x=%s",
 //                      old_state, old_buf, new_state, new_buf);
@@ -9121,8 +9179,9 @@ static void hg_fini ( Int exitcode )
      while (HG_(nextIterFM)( map_expected_errors, (Word*)&ptr,
                              (Word*)&expected_error )) {
        if(expected_error->detected == False) {
-         VG_(printf)("Expected race was not detected: %s:%d %p\n", 
-                     expected_error->file, expected_error->line, ptr);
+         VG_(printf)("Expected race was not detected: %s:%d %p\t%s\n", 
+                     expected_error->file, expected_error->line, 
+                     ptr, expected_error->descr);
        }
      }
      HG_(doneIterFM) ( map_expected_errors );

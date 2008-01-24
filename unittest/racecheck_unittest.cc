@@ -146,11 +146,12 @@ void Parent() {
 //  ThreadPool pool(1);
 //  pool.StartWorkers();
 //  pool.Add(NewCallback(Worker));
+//  usleep(100000);
   GLOB = 2;
   t.Join();
 }
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB);
+  ANNOTATE_EXPECT_RACE(&GLOB, "test01. TP.");
   printf("test01:\n");
   Parent();
   printf("\tGLOB=%d\n", GLOB);
@@ -277,7 +278,7 @@ void Run() {
   t.Join();
   printf("\tGLOB=%d\n", GLOB);
 }
-}  // namespace test01
+}  // namespace test04
 
 
 // test05: FP. Synchronization via CondVar, but waiter does not block. {{{1
@@ -322,7 +323,7 @@ void Waiter() {
   GLOB = 2;
 }
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB);
+  ANNOTATE_EXPECT_RACE(&GLOB, "test05. FP.");
   printf("test05:\n");
   Waiter();
   printf("\tGLOB=%d\n", GLOB);
@@ -468,7 +469,7 @@ void Reader() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB);
+  ANNOTATE_EXPECT_RACE(&GLOB, "test09. TP.");
   printf("test09:\n");
   MyThreadArray t(Writer, Reader);
   t.Start();
@@ -503,7 +504,7 @@ void Reader() {
 }
 
 void Run() {
-//  ANNOTATE_EXPECT_RACE(&GLOB);
+//  ANNOTATE_EXPECT_RACE(&GLOB, "test10. TODO.");
   printf("test10:\n");
   MyThreadArray t(Writer, Reader);
   t.Start();
@@ -555,7 +556,7 @@ void Parent() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB);
+  ANNOTATE_EXPECT_RACE(&GLOB, "test11. FP. ");
   printf("test11:\n");
   Parent();
   printf("\tGLOB=%d\n", GLOB);
@@ -599,7 +600,7 @@ void Getter() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB);
+  ANNOTATE_EXPECT_RACE(&GLOB, "test12. FP.");
   printf("test12:\n");
   MyThreadArray t(Putter, Getter);
   t.Start();
@@ -648,7 +649,7 @@ void Waiter() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB);
+  ANNOTATE_EXPECT_RACE(&GLOB, "test13. FP.");
   printf("test13:\n");
   COND = 0;
 
@@ -691,7 +692,7 @@ void Getter() {
   GLOB++;
 }
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB);
+  ANNOTATE_EXPECT_RACE(&GLOB, "test14. FP.");
   printf("test14:\n");
   MyThreadArray t(Getter, Putter1, Putter2);
   t.Start();
@@ -779,7 +780,7 @@ void Worker() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB);
+  ANNOTATE_EXPECT_RACE(&GLOB, "test16. FP.");
   COND = 2;
   printf("test16:\n");
   MyThreadArray t(Worker, Worker);
@@ -811,7 +812,7 @@ void Worker() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB);
+  ANNOTATE_EXPECT_RACE(&GLOB, "test17. FP.");
   COND = 3;
   printf("test17:\n");
   MyThreadArray t(Worker, Worker, Worker);
@@ -906,7 +907,7 @@ void Waiter() {
   GLOB = 2;
 }
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB);
+  ANNOTATE_EXPECT_RACE(&GLOB, "test20. TP.");
   printf("test20:\n");
   Waiter();
   printf("\tGLOB=%d\n", GLOB);
@@ -933,7 +934,7 @@ void Waiter() {
   GLOB = 2;
 }
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB);
+  ANNOTATE_EXPECT_RACE(&GLOB, "test21. TP.");
   printf("test21:\n");
   Waiter();
   printf("\tGLOB=%d\n", GLOB);
@@ -966,7 +967,7 @@ void Waiter() {
   GLOB = 2;
 }
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB);
+  ANNOTATE_EXPECT_RACE(&GLOB, "test22. TP.");
   printf("test22:\n");
   Waiter();
   printf("\tGLOB=%d\n", GLOB);
@@ -1115,7 +1116,7 @@ void Waiter() {
   GLOB = 2;
 }
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB);
+  ANNOTATE_EXPECT_RACE(&GLOB, "test26. TP");
   printf("test26:\n");
   Waiter();
   printf("\tGLOB=%d\n", GLOB);
@@ -1176,7 +1177,7 @@ void Getter() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB);
+  ANNOTATE_EXPECT_RACE(&GLOB, "test28. FP.");
   printf("test28:\n");
   MyThreadArray t(Getter, Putter, Putter);
   t.Start();
@@ -1217,7 +1218,7 @@ void Getter() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB);
+  ANNOTATE_EXPECT_RACE(&GLOB, "test29. FP.");
   printf("test29:\n");
   Q1 = new ProducerConsumerQueue(INT_MAX);
   Q2 = new ProducerConsumerQueue(INT_MAX);
@@ -1288,7 +1289,7 @@ void Reader() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE((void*)(&BOUNDARY));
+  ANNOTATE_EXPECT_RACE((void*)(&BOUNDARY), "test 30. Sync via 'safe' race.");
   printf("test30:\n");
   MyThreadArray t(Writer, Reader, Reader, Reader);
   t.Start();
@@ -1342,7 +1343,7 @@ void Writer2() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE((void*)(&BOUNDARY));
+  ANNOTATE_EXPECT_RACE((void*)(&BOUNDARY), "test31. Sync via 'safe' race.");
   printf("test31:\n");
   MyThreadArray t(Writer1, Writer2);
   t.Start();
@@ -1402,7 +1403,7 @@ void Parent() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB);
+  ANNOTATE_EXPECT_RACE(&GLOB, "test32. FP.");
   printf("test32:\n");
   Parent();
   printf("\tGLOB=%d\n", GLOB);
@@ -1588,7 +1589,7 @@ void Getter() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB);
+  ANNOTATE_EXPECT_RACE(&GLOB, "test36. FP.");
   printf("test36:\n");
   MyThreadArray t(Getter, Putter, Putter);
   t.Start();
@@ -1682,7 +1683,7 @@ void Getter() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB);
+  ANNOTATE_EXPECT_RACE(&GLOB, "test38. FP.");
   printf("test38:\n");
   Q1 = new ProducerConsumerQueue(INT_MAX);
   Q2 = new ProducerConsumerQueue(INT_MAX);
@@ -1710,7 +1711,7 @@ void Worker() {
   CHECK(GLOB == N_threads);
 }
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB);
+  ANNOTATE_EXPECT_RACE(&GLOB, "test 39. FP.");
   printf("test39:\n");
   ThreadPool pool(N_threads);
   pool.StartWorkers();
@@ -1720,6 +1721,23 @@ void Run() {
   printf("\tGLOB=%d\n", GLOB);
 }
 }  // namespace test39
+
+
+// test40: TMP. {{{1
+namespace test40 {
+ProducerConsumerQueue Q(INT_MAX); 
+
+void Putter() {
+  Q.Put(NULL);
+}
+void Run() {
+  printf("test40:\n");
+  MyThreadArray t(Putter);
+  t.Start(); 
+  Q.Get();
+  t.Join();
+}
+}  // namespace test40
 
 
 
@@ -1786,6 +1804,7 @@ static struct {
   { test37::Run, FEATURE },
   { test38::Run, FEATURE },
   { test39::Run, FEATURE },
+  { test40::Run, FEATURE },
   {NULL, 0 }
 };
 
