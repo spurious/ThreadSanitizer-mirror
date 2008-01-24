@@ -1,0 +1,22 @@
+digraph barrier1 {
+  Seg1_Thr1 [color = green];
+  Seg2_Thr1 [color = green];
+  
+  Seg1_Thr2 [color = blue];
+  Seg2_Thr2 [color = blue];
+
+  Seg1_Thr3 [color = orange];
+  Seg2_Thr3 [color = orange];
+
+  Seg1_Thr1 -> Seg2_Thr1;
+  Seg1_Thr2 -> Seg2_Thr2;
+  Seg1_Thr3 -> Seg2_Thr3;
+
+  Seg1_Thr1 -> Seg2_Thr2 [color = red];
+  Seg1_Thr1 -> Seg2_Thr3 [color = red];
+  Seg1_Thr2 -> Seg2_Thr1 [color = red];
+  Seg1_Thr2 -> Seg2_Thr3 [color = red];
+  Seg1_Thr3 -> Seg2_Thr1 [color = red];
+  Seg1_Thr3 -> Seg2_Thr2 [color = red];
+
+}
