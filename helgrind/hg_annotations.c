@@ -198,3 +198,7 @@ ANN_FUNC(void, AnnotateNewMemory, char *file, int line, void *mem, long size)
   ANN_TRACE("--#%d %s[%p,%d] %s:%d\n", tid, name, mem, (int)size, file, line);
  VALGRIND_HG_CLEAN_MEMORY(mem, size);
 }
+
+ANN_FUNC(void, AnnotateNoOp, char *file, int line, void *arg)
+{
+}

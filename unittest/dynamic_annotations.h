@@ -91,6 +91,8 @@ ANNOTATION(AnnotatePCQGet,  void *uniq_id);
 ANNOTATION(AnnotateNewMemory, void *mem, long size);
 ANNOTATION(AnnotateExpectRace, void *mem, const char *description);
 
+ANNOTATION(AnnotateNoOp, void *arg);
+
 /// Insert right after the lock is created. 
 #define ANNOTATE_RWLOCK_CREATE(lock) \
            AnnotateRWLockCreate(__FILE__, __LINE__, lock)
@@ -138,6 +140,9 @@ ANNOTATION(AnnotateExpectRace, void *mem, const char *description);
 #define ANNOTATE_EXPECT_RACE(mem, description) \
             AnnotateExpectRace(__FILE__, __LINE__, mem, description)
 
+/// A no-op. Insert where you like for testing the interceptors. 
+#define ANNOTATE_NO_OP(arg) \
+            AnnotateNoOp(__FILE__, __LINE__, arg)
 
 
 #endif  // DYNAMIC_ANNOTATIONS_H__

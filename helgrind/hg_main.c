@@ -48,6 +48,8 @@
 #include "pub_tool_options.h"
 #include "pub_tool_xarray.h"
 #include "pub_tool_stacktrace.h"
+#include "../coregrind/pub_core_execontext.h" // For extract_StackTrace. FIXME
+#include "pub_tool_debuginfo.h" // For Vg_SectPLT. 
 
 #include "helgrind.h"
 
@@ -3400,6 +3402,7 @@ SVal prop1_memory_state_machine(
 done:
 
   if (do_trace) {
+
     prop1_show_shval(buf, sizeof(buf), sv_new);
     VG_(message)(Vg_UserMsg, "TRACE: S%d/T%d %c %p %s", 
                  (int)currS-(1<<24), thr->errmsg_index, 
@@ -3414,6 +3417,20 @@ done:
 
   // report the race if needed
   if (is_race) {
+
+    // hack to avoid races while loading dynamic libraries. 
+    ThreadId tid = map_threads_maybe_reverse_lookup_SLOW(thr);
+    if (tid != VG_INVALID_THREADID) {
+      ExeContext *context = VG_(record_ExeContext)( tid, 0 );
+      Addr *stack = VG_(extract_StackTrace) (context);
+      if(do_trace) VG_(printf)("ZZ: %p\n", stack[0]);
+      if (VG_(seginfo_sect_kind)(stack[0]) == Vg_SectPLT) {
+        // ignore this race. 
+        return sv_new; 
+      }
+    }
+
+    // ok, now record the race. 
     record_error_Race( thr, 
                        a, is_w, sz, sv_old, sv_new,
                        maybe_get_lastlock_initpoint(a) );
@@ -6637,6 +6654,8 @@ static void evh__HG_PTHREAD_COND_SIGNAL_PRE ( ThreadId tid, void* cond )
         fake_seg->vts = tick_VTS( thr, new_seg->prev->vts );
         fake_seg->other = new_seg->prev;
 
+//        VG_(printf)("Fake segment: S%d/T%D\n", 
+//                    fake_seg->id, thr->errmsg_index) ;
 
         // FIXME. This is bad as it allows CV to be used just once. 
         HG_(lookupFM)( map_cond_to_Segment, 

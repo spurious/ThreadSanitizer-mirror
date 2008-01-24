@@ -1794,6 +1794,22 @@ void Run() {
 }
 }  // namespace test40
 
+// test41: TMP. {{{1
+namespace test41 {
+int     GLOB = 0;
+void Worker() {
+  ANNOTATE_NO_OP(NULL);
+}
+void Run() {
+  printf("test41:\n");
+  MyThreadArray t(Worker, Worker, Worker);
+  t.Start();
+  t.Join();
+  printf("\tGLOB=%d\n", GLOB);
+}
+}  // namespace test41
+
+
 // testTMP: TMP. {{{1
 namespace testTMP {
 ProducerConsumerQueue Q(INT_MAX); 
@@ -1876,6 +1892,7 @@ static struct {
   { test38::Run, FEATURE },
   { test39::Run, FEATURE },
   { test40::Run, FEATURE },
+  { test41::Run, FEATURE },
   { testTMP::Run, FEATURE },
   {NULL, 0 }
 };
