@@ -1289,7 +1289,7 @@ void Reader() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE((void*)(&BOUNDARY), "test 30. Sync via 'safe' race.");
+  ANNOTATE_EXPECT_RACE((void*)(&BOUNDARY), "test30. Sync via 'safe' race.");
   printf("test30:\n");
   MyThreadArray t(Writer, Reader, Reader, Reader);
   t.Start();
