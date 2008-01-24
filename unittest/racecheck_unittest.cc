@@ -1810,21 +1810,57 @@ void Run() {
 }  // namespace test41
 
 
-// testTMP: TMP. {{{1
-namespace testTMP {
-ProducerConsumerQueue Q(INT_MAX); 
+// test42: TN. Using the same cond var several times. {{{1
+namespace test42 {
+int GLOB = 0;
+int COND = 0;
+int N_threads = 3;
+Barrier barrier(N_threads); 
 
-void Putter() {
-  Q.Put(NULL);
+void Worker1() {
+  GLOB=1;
+
+  MU.Lock(); 
+  COND = 1;
+  CV.Signal();
+  MU.Unlock();
+
+  MU.Lock(); 
+  while (COND != 0) 
+    CV.Wait(&MU);
+  ANNOTATE_CONDVAR_WAIT(&CV, &MU);
+  MU.Unlock();
+
+  GLOB=3;
+
 }
+
+void Worker2() {
+
+  MU.Lock(); 
+  while (COND != 1) 
+    CV.Wait(&MU);
+  ANNOTATE_CONDVAR_WAIT(&CV, &MU);
+  MU.Unlock();
+
+  GLOB=2;
+
+  MU.Lock(); 
+  COND = 0;
+  CV.Signal();
+  MU.Unlock();
+
+}
+
 void Run() {
-  printf("testTMP:\n");
-  MyThreadArray t(Putter);
+//  ANNOTATE_EXPECT_RACE(&GLOB, "test42. TN. debugging.");
+  printf("test42:\n");
+  MyThreadArray t(Worker1, Worker2);
   t.Start(); 
-  Q.Get();
   t.Join();
+  printf("\tGLOB=%d\n", GLOB);
 }
-}  // namespace testTMP
+}  // namespace test42
 
 
 
@@ -1893,7 +1929,7 @@ static struct {
   { test39::Run, FEATURE },
   { test40::Run, FEATURE },
   { test41::Run, FEATURE },
-  { testTMP::Run, FEATURE },
+  { test42::Run, FEATURE },
   {NULL, 0 }
 };
 

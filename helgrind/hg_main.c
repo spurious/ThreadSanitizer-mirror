@@ -8531,23 +8531,23 @@ static void record_error_Race ( Thread* thr,
    tl_assert(szB == 8 || szB == 4 || szB == 2 || szB == 1);
 
    {
-     ExpectedError *expected_error = get_expected_error((Word)data_addr);
-     if (expected_error) {
-       expected_error->detected = True;
-       return;
-     }
+      ExpectedError *expected_error = get_expected_error((Word)data_addr);
+      if (expected_error) {
+         expected_error->detected = True;
+         return;
+      }
    }
    {
-     // hack to avoid races while loading dynamic libraries. 
-     ThreadId tid = map_threads_maybe_reverse_lookup_SLOW(thr);
-     if (tid != VG_INVALID_THREADID) {
-       ExeContext *context = VG_(record_ExeContext)( tid, 0 );
-       Addr *stack = VG_(extract_StackTrace) (context);
-       if (VG_(seginfo_sect_kind)(stack[0]) == Vg_SectPLT) {
-         // ignore this race. 
-         return; 
-       }
-     }
+      // hack to avoid races while loading dynamic libraries. 
+      ThreadId tid = map_threads_maybe_reverse_lookup_SLOW(thr);
+      if (tid != VG_INVALID_THREADID) {
+         ExeContext *context = VG_(record_ExeContext)( tid, 0 );
+         Addr *stack = VG_(extract_StackTrace) (context);
+         if (VG_(seginfo_sect_kind)(stack[0]) == Vg_SectPLT) {
+            // ignore this race. 
+            return; 
+         }
+      }
    }
 
 
@@ -9549,26 +9549,4 @@ VG_DETERMINE_INTERFACE_VERSION(hg_pre_clo_init)
 /*--- end                                                hg_main.c ---*/
 /*--------------------------------------------------------------------*/
 
-
-#if 0      
-      /* else */ {
-         /* Enter the shared-modified (ShM) state. */
-         WordSetID tset, lset;
-         /* This location has been accessed by precisely two threads.
-            Make an appropriate tset. */
-         // FIXME: performance: duplicate map_segments_lookup(segid_old)
-         // since must also be done in happens_before()
-         Segment* seg_old = map_segments_lookup( segid_old );
-         Thread*  thr_old = seg_old->thr;
-         tset = HG_(doubletonWS)( univ_tsets, (Word)thr_old, (Word)thr_acc );
-         lset = thr_acc->locksetW; /* write ==> use only w-held locks */
-         wnew = mk_SHVAL_ShM( tset, lset );
-         if (HG_(isEmptyWS)(univ_lsets, lset)) {
-            record_error_Race( thr_acc, 
-                               a, True/*isWrite*/, szB, wold, wnew,
-                               maybe_get_lastlock_initpoint(a) );
-         }
-         stats__msm_write_Excl_to_ShM++;
-         goto changed;
-      }
-#endif
+// vim:shiftwidth=3:softtabstop=3:expandtab:foldmethod=marker
