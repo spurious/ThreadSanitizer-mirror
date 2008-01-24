@@ -1711,13 +1711,15 @@ void Worker() {
   CHECK(GLOB == N_threads);
 }
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB, "test39. FP. Barrier.");
+  ANNOTATE_EXPECT_RACE(&GLOB, "test39. FP. Fixed my MSMProp1. Barrier.");
   printf("test39:\n");
-  ThreadPool pool(N_threads);
-  pool.StartWorkers();
-  for (int i = 0; i < N_threads; i++) {
-    pool.Add(NewCallback(Worker));
-  }
+  {
+    ThreadPool pool(N_threads);
+    pool.StartWorkers();
+    for (int i = 0; i < N_threads; i++) {
+      pool.Add(NewCallback(Worker));
+    }
+  } // all folks are joined here. 
   printf("\tGLOB=%d\n", GLOB);
 }
 }  // namespace test39
@@ -1781,7 +1783,7 @@ void Getter() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB, "test40. FP. Complex Stuff. Fixed by MSMProp1. ");
+  ANNOTATE_EXPECT_RACE(&GLOB, "test40. FP. Fixed by MSMProp1. Complex Stuff.");
   printf("test40:\n");
   Q1 = new ProducerConsumerQueue(INT_MAX);
   Q2 = new ProducerConsumerQueue(INT_MAX);
@@ -1794,18 +1796,16 @@ void Run() {
 }
 }  // namespace test40
 
-// test41: TMP. {{{1
+// test41: TN. Test for race that appears when loading a dynamic symbol. {{{1
 namespace test41 {
-int     GLOB = 0;
 void Worker() {
-  ANNOTATE_NO_OP(NULL);
+  ANNOTATE_NO_OP(NULL); // An empty function, loaded from dll. 
 }
 void Run() {
   printf("test41:\n");
   MyThreadArray t(Worker, Worker, Worker);
   t.Start();
   t.Join();
-  printf("\tGLOB=%d\n", GLOB);
 }
 }  // namespace test41
 

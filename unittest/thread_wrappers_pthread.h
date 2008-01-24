@@ -443,7 +443,13 @@ class Barrier{
  public:
   explicit Barrier(int n_threads) {CHECK(0 == pthread_barrier_init(&b_, 0, n_threads));}
   ~Barrier()                      {CHECK(0 == pthread_barrier_destroy(&b_));}
-  void Block()                    {pthread_barrier_wait(&b_);}
+  void Block() {
+    // helgrind 3.3.0 does not have an interceptor for barrier.
+    // but our current local version does. 
+    // ANNOTATE_CONDVAR_SIGNAL(this);
+    pthread_barrier_wait(&b_);
+    // ANNOTATE_CONDVAR_WAIT(this, this);
+  }
  private:
   pthread_barrier_t b_;
 };
