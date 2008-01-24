@@ -3418,18 +3418,6 @@ done:
   // report the race if needed
   if (is_race) {
 
-    // hack to avoid races while loading dynamic libraries. 
-    ThreadId tid = map_threads_maybe_reverse_lookup_SLOW(thr);
-    if (tid != VG_INVALID_THREADID) {
-      ExeContext *context = VG_(record_ExeContext)( tid, 0 );
-      Addr *stack = VG_(extract_StackTrace) (context);
-      if(do_trace) VG_(printf)("ZZ: %p\n", stack[0]);
-      if (VG_(seginfo_sect_kind)(stack[0]) == Vg_SectPLT) {
-        // ignore this race. 
-        return sv_new; 
-      }
-    }
-
     // ok, now record the race. 
     record_error_Race( thr, 
                        a, is_w, sz, sv_old, sv_new,
@@ -8549,6 +8537,19 @@ static void record_error_Race ( Thread* thr,
        return;
      }
    }
+   {
+     // hack to avoid races while loading dynamic libraries. 
+     ThreadId tid = map_threads_maybe_reverse_lookup_SLOW(thr);
+     if (tid != VG_INVALID_THREADID) {
+       ExeContext *context = VG_(record_ExeContext)( tid, 0 );
+       Addr *stack = VG_(extract_StackTrace) (context);
+       if (VG_(seginfo_sect_kind)(stack[0]) == Vg_SectPLT) {
+         // ignore this race. 
+         return; 
+       }
+     }
+   }
+
 
    VG_(maybe_record_error)( map_threads_reverse_lookup_SLOW(thr),
                             XE_Race, data_addr, NULL, &xe );
