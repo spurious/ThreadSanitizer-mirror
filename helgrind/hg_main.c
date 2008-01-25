@@ -1058,10 +1058,10 @@ static inline WordSetID un_SHVAL_Sh_lset ( SVal w32 ) {
 // ---------------- prop1 ------------------
 // Proposal1: http://code.google.com/p/data-race-test/wiki/MSMProp1
 //
-//
-//   10SSSSSSSSSSSSSSSSSSSSSSSSrrrrrrrrrrrrrrLLLLLLLLLLLLLLLLLLLLLLLL Read
-//   11SSSSSSSSSSSSSSSSSSSSSSSSrrrrrrrrrrrrrrLLLLLLLLLLLLLLLLLLLLLLLL Write
-//     \_______ 24 ___________/              \________ 24 __________/
+//   SVal:
+//   10SSSSSSSSSSSSSSSSSSSSSSSSSSrrrrrrrrrrrrLLLLLLLLLLLLLLLLLLLLLLLL Read
+//   11SSSSSSSSSSSSSSSSSSSSSSSSSSrrrrrrrrrrrrLLLLLLLLLLLLLLLLLLLLLLLL Write
+//     \_______ 26 _____________/            \________ 24 __________/
 // 
 //   0100000000000000000000000000000000000000000000000000000000000000 Race
 //   0000000000000000000000000000000000000000000000000000001000000000 New
@@ -1072,20 +1072,79 @@ static inline WordSetID un_SHVAL_Sh_lset ( SVal w32 ) {
 //   r - reserved bits 
 //   S - segment set bits 
 //   L - lock set bits 
+//
+//
+//   S: 
+//   1SSSSSSSSSSSSSSSSSSSSSSS Just one segment. 
+//   0SSSSSSSSSSSSSSSSSSSSSSS A real segment set. 
+//   
 
 //------------- segment set, lock set --------------
 
-const int SEGMENT_SET_BITS = 24;
+const int SEGMENT_SET_BITS = 26;
 const int LOCK_SET_BITS    = 24;
 
 const ULong SHVAL_Race = 1ULL << 62;
 
-typedef UWord SegmentSet;
+typedef ULong SegmentSet;
 typedef  WordSetID LockSet;
 
 static inline Bool prop1_SS_valid (SegmentSet ss) {
   return ss < (1ULL << SEGMENT_SET_BITS);
 }
+
+#define SS_SINGLETON 1
+
+
+static inline Bool prop1_SS_is_singleton (SegmentSet ss)
+{
+   if (SS_SINGLETON)
+      return (ss & (1ULL << (SEGMENT_SET_BITS-1))) != 0;
+   else 
+      return HG_(cardinalityWS(univ_ssets, ss) == 1);
+}
+
+static inline int prop1_SS_get_size (SegmentSet ss) 
+{
+   if (prop1_SS_is_singleton(ss)) return 1;
+   return HG_(cardinalityWS(univ_ssets, ss));
+}
+
+static inline SegmentSet prop1_SS_mk_singleton (SegmentID ss)
+{
+   if (SS_SINGLETON) {
+      tl_assert(is_sane_SegmentID(ss));
+//      ss -= 1 << 24; 
+      ss |= (1ULL << (SEGMENT_SET_BITS-1));
+      tl_assert(prop1_SS_is_singleton(ss));
+      return ss;
+   } else {
+      return HG_(singletonWS)(univ_ssets, ss);
+   }
+}
+
+static inline SegmentID prop1_SS_get_singleton (SegmentSet ss)
+{
+   if (SS_SINGLETON) {
+      tl_assert(prop1_SS_is_singleton(ss));
+      ss &= ~(1ULL << (SEGMENT_SET_BITS-1));
+//      ss += 1 << 24; 
+      tl_assert(is_sane_SegmentID(ss));
+//      VG_(printf)("ZZ: %d\n", (int)ss);
+      return ss;
+   } else {
+//      VG_(printf)("ZZ: %d\n", (int)ss);
+      return HG_(ElementOfWS)(univ_ssets, ss, 0);
+   }
+}
+
+static inline SegmentID prop1_SS_get_element (SegmentSet ss, int i)
+{
+   if (prop1_SS_is_singleton(ss))
+      return prop1_SS_get_singleton(ss);
+   return HG_(ElementOfWS)(univ_ssets, ss, i);
+}
+
 
 
 static inline Bool prop1_LS_valid (LockSet ls) {
@@ -1096,10 +1155,12 @@ static inline Bool prop1_LS_valid (LockSet ls) {
 static inline SVal prop1_mk_SHVAL_RW (Bool is_w, SegmentSet ss, LockSet ls) {
   tl_assert(prop1_SS_valid(ss));
   tl_assert(prop1_LS_valid(ls));
-  return (1ULL << 63) 
+  SVal res = (1ULL << 63) 
       |  ((SVal)is_w << 62) 
       |  ((SVal)ss << (62-SEGMENT_SET_BITS)) 
       |  ((SVal)ls);
+//  VG_(printf)("XX %llx\n", res);
+  return res;
 }
 static inline SVal prop1_mk_SHVAL_R (SegmentSet ss, LockSet ls) {
   return prop1_mk_SHVAL_RW(False, ss, ls);
@@ -1381,6 +1442,21 @@ void show_shadow_w32_for_user ( /*OUT*/Char* buf, Int nBuf, SVal w32 )
    char tset_buf[1000];
    tl_assert(nBuf-1 >= 99);
    VG_(memset)(buf, 0, nBuf);
+
+   if (clo_use_msm_prop1) {
+      if (is_SHVAL_New(w32)) {
+         VG_(sprintf)(buf, "%s", "New");
+      }
+      else
+      if (is_SHVAL_NoAccess(w32)) {
+         VG_(sprintf)(buf, "%s", "NoAccess");
+      }
+      else {
+         VG_(sprintf)(buf, "%s", "FIXME");
+      }
+      return;
+   }
+
    if (is_SHVAL_ShM(w32)) {
       WordSetID tset = un_SHVAL_ShM_tset(w32);
       WordSetID lset = del_BHL( un_SHVAL_ShM_lset(w32) );
@@ -3263,7 +3339,7 @@ static void prop1_show_shval(char *buf, int buf_size, SVal sv)
     Bool is_w     = prop1_is_SHVAL_W(sv);
     SegmentSet ss = prop1_get_SHVAL_SS(sv);
     LockSet    ls = prop1_get_SHVAL_LS(sv);
-    int n_segments = HG_(cardinalityWS(univ_ssets, ss));
+    int n_segments = prop1_SS_get_size(ss);
     int n_locks    = HG_(cardinalityWS(univ_lsets, ls));
     VG_(sprintf)(buf, "%c #SS=%d #LS=%d ", 
                  is_w ? 'W' : 'R', n_segments, n_locks);
@@ -3273,7 +3349,7 @@ static void prop1_show_shval(char *buf, int buf_size, SVal sv)
         VG_(sprintf)(buf + VG_(strlen)(buf), "...");
         break;
       }
-      SegmentID S = HG_(ElementOfWS)(univ_ssets, ss, i);
+      SegmentID S = prop1_SS_get_element(ss, i);
       VG_(sprintf)(buf + VG_(strlen)(buf), "S%d/T%d ", 
                    (int)S-(1<<24), map_segments_lookup(S)->thr->errmsg_index);
     }
@@ -3293,140 +3369,168 @@ SVal prop1_memory_state_machine(
     Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
 {
 
-  char buf[200];
-  // we already reported a race, don't bother again. 
-  if (sv_old == SHVAL_Race) return sv_old;
-
-  Bool is_race = False;
-    
-
-  Bool do_trace = clo_trace_level > 0 
-               && a >= clo_trace_addr 
-               && a < (clo_trace_addr+sz);
-
-  int i;
-
-  SVal sv_new = SHVAL_Invalid;
-  tl_assert(clo_use_msm_prop1);
-
-  // current locks. 
-  LockSet    currLS = is_w ?         thr->locksetW
-                           : add_BHL(thr->locksetA);
-
-  SegmentID  currS = thr->csegid;
-  SegmentSet newSS = 0;
-  LockSet    newLS = 0;
-
-  tl_assert(is_sane_Thread(thr));
+   SVal sv_new = SHVAL_Invalid;
+   char buf[200];
+   // we already reported a race, don't bother again. 
+   if (sv_old == SHVAL_Race) {
+      return sv_old;
+   }
 
 
 
-  // NoAccess
-  if (is_SHVAL_NoAccess(sv_old)) {
-    // TODO: complain
-    sv_new = sv_old;
-    goto done;
-  }
 
-  // New
-  if (is_SHVAL_New(sv_old)) {
-    newSS = HG_(singletonWS)(univ_ssets, currS);
-    sv_new = prop1_mk_SHVAL_RW(is_w, newSS, currLS);
-    goto done;
-  }
+   Bool is_race = False;
 
 
-  // Read or Write
-  tl_assert(prop1_is_SHVAL_RW(sv_old));
-  Bool was_w       = prop1_is_SHVAL_W(sv_old);
-  SegmentSet oldSS = prop1_get_SHVAL_SS(sv_old);
-  LockSet    oldLS = prop1_get_SHVAL_LS(sv_old);
+   Bool do_trace = clo_trace_level > 0 
+         && a >= clo_trace_addr 
+         && a < (clo_trace_addr+sz);
 
-  // bit vector that stores HB(oldSS[i],S).
-  // Obviously, it does not work with segment sets with >= 64 segments (FIXME). 
-  ULong hb_mask = 0; 
-  int oldSS_size = HG_(cardinalityWS)(univ_ssets, oldSS);
-  tl_assert(oldSS_size < 64);
+   tl_assert (sv_old != 0xc000004000000000ULL); // FIXME prop1
 
-  // compute hb_mask
-  for (i = 0; i < oldSS_size; i++) {
-    SegmentID S = HG_(ElementOfWS)(univ_ssets, oldSS, i);
-    if (S == currS  // Same segment. 
-        || map_segments_lookup(S)->thr == thr // Same thread. 
-        || happens_before(S, currS)) { // different thread, but happens-before.
-      hb_mask |= 1ULL << i;
-    }
-  }
+   int i;
 
-  // hb_all is true iff HB(oldSS,S)
-  Bool hb_all = hb_mask == ((1ULL << oldSS_size) - 1);
-  
-  
-  if(do_trace) VG_(printf)("hb_mask=%llx; hb_all=%d\n", 
-                           hb_mask, hb_all);
+   tl_assert(clo_use_msm_prop1);
 
-  // update lock set. 
-  if (hb_all) {
-    newLS = currLS;
-  } else {
-    newLS = HG_(intersectWS)(univ_lsets, oldLS, currLS);
-  }
 
-  // update the thread set 
-  newSS = HG_(singletonWS)(univ_ssets, currS);
-  if (!hb_all) {
-    for (i = 0; i < oldSS_size; i++) {
-      if((hb_mask & (1ULL << i)) == 0) {
-        newSS = HG_(addToWS)(univ_ssets, newSS, 
-                               HG_(ElementOfWS)(univ_ssets, oldSS, i));
+   SegmentID  currS = thr->csegid;
+   SegmentSet newSS = 0;
+   LockSet    newLS = 0;
+
+   tl_assert(is_sane_Thread(thr));
+
+   // NoAccess
+   if (is_SHVAL_NoAccess(sv_old)) {
+      // TODO: complain
+      sv_new = sv_old;
+      goto done;
+   }
+
+   // current locks. 
+   LockSet    currLS = is_w ?         thr->locksetW
+         : add_BHL(thr->locksetA);
+
+   // New
+   if (is_SHVAL_New(sv_old)) {
+//       newSS = HG_(singletonWS)(univ_ssets, currS);
+       newSS = prop1_SS_mk_singleton(currS);
+      sv_new = prop1_mk_SHVAL_RW(is_w, newSS, currLS);
+      sv_new |= 5ULL << 26;
+      goto done;
+   }
+
+
+   // Read or Write
+   tl_assert(prop1_is_SHVAL_RW(sv_old));
+   Bool was_w       = prop1_is_SHVAL_W(sv_old);
+   SegmentSet oldSS = prop1_get_SHVAL_SS(sv_old);
+   LockSet    oldLS = prop1_get_SHVAL_LS(sv_old);
+
+
+   // bit vector that stores HB(oldSS[i],S).
+   // Obviously, it does not work with segment sets with >= 64 segments (FIXME). 
+   ULong hb_mask = 0; 
+   int oldSS_size;
+   if (prop1_SS_is_singleton(oldSS)) {
+      oldSS_size = 1;
+   } else {
+      tl_assert (HG_(cardinalityWSU(univ_ssets)) > oldSS);
+      oldSS_size = HG_(cardinalityWS)(univ_ssets, oldSS);
+   }
+   tl_assert(oldSS_size < 64);
+
+
+   // compute hb_mask
+   for (i = 0; i < oldSS_size; i++) {
+      SegmentID S = prop1_SS_get_element(oldSS, i);
+      if (S == currS  // Same segment. 
+          || map_segments_lookup(S)->thr == thr // Same thread. 
+          || happens_before(S, currS)) { // different thread, but happens-before.
+         hb_mask |= 1ULL << i;
       }
-    } 
-  }
+   }
 
-//  if(do_trace) VG_(printf)("new size: %d\n", 
-//                           HG_(cardinalityWS)(univ_ssets, newSS));
-
-
-  // update the state 
-  Bool now_w = is_w || (was_w && !hb_all);
+   // hb_all is true iff HB(oldSS,S)
+   Bool hb_all = hb_mask == ((1ULL << oldSS_size) - 1);
 
 
-  // generate new SVal
-  sv_new = prop1_mk_SHVAL_RW(now_w, newSS, newLS);
+   if(do_trace) VG_(printf)("hb_mask=%llx; hb_all=%d\n", 
+                            hb_mask, hb_all);
 
-  is_race = now_w 
+   // update lock set. 
+   if (hb_all) {
+      newLS = currLS;
+   } else {
+      newLS = HG_(intersectWS)(univ_lsets, oldLS, currLS);
+   }
+
+   // update the thread set 
+//   newSS = HG_(singletonWS)(univ_ssets, currS);
+   newSS = prop1_SS_mk_singleton(currS);
+   if (!hb_all) {
+//      tl_assert(0);
+      for (i = 0; i < oldSS_size; i++) {
+         if((hb_mask & (1ULL << i)) == 0) {
+//            SegmentID S = HG_(ElementOfWS)(univ_ssets, oldSS, i);
+            SegmentID S = prop1_SS_get_element(oldSS, i);
+            if (prop1_SS_is_singleton(newSS)) {
+               newSS = HG_(doubletonWS)(univ_ssets, currS, S);
+            } else {
+               newSS = HG_(addToWS)(univ_ssets, newSS, S);
+            }
+         }
+      } 
+   }
+
+
+//   tl_assert (prop1_SS_is_singleton(newSS));
+
+   //  if(do_trace) VG_(printf)("new size: %d\n", 
+   //                           HG_(cardinalityWS)(univ_ssets, newSS));
+
+
+   // update the state 
+   Bool now_w = is_w || (was_w && !hb_all);
+
+
+   // generate new SVal
+   sv_new = prop1_mk_SHVAL_RW(now_w, newSS, newLS);
+
+   is_race = now_w 
          && HG_(isEmptyWS)(univ_lsets, newLS)
-        && !HG_(isSingletonWS)(univ_ssets, newSS, currS);
+         && !prop1_SS_is_singleton(newSS);
+//         && !HG_(isSingletonWS)(univ_ssets, newSS, currS);
 
+   sv_new |= 7ULL << 26;
 
 done:
 
-  if (do_trace) {
+   if (do_trace) {
 
-    prop1_show_shval(buf, sizeof(buf), sv_new);
-    VG_(message)(Vg_UserMsg, "TRACE: S%d/T%d %c %p %s", 
-                 (int)currS-(1<<24), thr->errmsg_index, 
-                 is_w ? 'w' : 'r', a, buf);
-    if (1 || clo_trace_level >= 2) {
-      ThreadId tid = map_threads_maybe_reverse_lookup_SLOW(thr);
-      if (tid != VG_INVALID_THREADID) {
-        VG_(get_and_pp_StackTrace)( tid, 8 );
+      prop1_show_shval(buf, sizeof(buf), sv_new);
+      VG_(message)(Vg_UserMsg, "TRACE: %p S%d/T%d %c %llx %s", a, 
+                   (int)currS-(1<<24), thr->errmsg_index, 
+                   is_w ? 'w' : 'r', sv_new, buf);
+      if (clo_trace_level >= 2) {
+         ThreadId tid = map_threads_maybe_reverse_lookup_SLOW(thr);
+         if (tid != VG_INVALID_THREADID) {
+            VG_(get_and_pp_StackTrace)( tid, 8 );
+         }
       }
-    }
-  }
+   }
 
-  // report the race if needed
-  if (is_race) {
+   // report the race if needed
+   if (is_race) {
 
-    // ok, now record the race. 
-    record_error_Race( thr, 
-                       a, is_w, sz, sv_old, sv_new,
-                       maybe_get_lastlock_initpoint(a) );
-    // put this is Race state
-    sv_new = SHVAL_Race;
-  }
+      // ok, now record the race. 
+      record_error_Race( thr, 
+                         a, is_w, sz, sv_old, sv_new,
+                         maybe_get_lastlock_initpoint(a) );
+      // put this is Race state
+      sv_new = SHVAL_Race;
+   }
 
-  return sv_new; 
+   return sv_new; 
 }
 
 //----------------------- end prop1 -----------------
@@ -5515,6 +5619,7 @@ static void shadow_mem_make_NoAccess ( Thread* thr, Addr aIN, SizeT len )
       of all ShM and ShR states.
       Optimisation 1: skip SecMaps which do not have .mbHasShared set
    */
+   if (!clo_use_msm_prop1) // FIXME prop1
    { Int        stats_SMs = 0, stats_SMs_scanned = 0;
      Addr       ga;
      SecMap*    sm;
