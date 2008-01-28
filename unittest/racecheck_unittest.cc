@@ -50,6 +50,7 @@
 #include THREAD_WRAPPERS
 
 #include <vector>
+#include <map>
 #include <algorithm>
 
 // The tests are
@@ -82,6 +83,56 @@
 Mutex   MU, MU1, MU2; 
 CondVar CV; 
 int     COND = 0;
+
+
+typedef void (*void_func_void_t)(void);
+enum TEST_FLAG{
+  FEATURE          = 1 << 0, 
+  STABILITY        = 1 << 1, 
+  PERFORMANCE      = 1 << 2,
+  EXCLUDE_FROM_ALL = 1 << 3
+};
+
+struct Test{
+  void_func_void_t f_;
+  int flags_;
+  Test(void_func_void_t f, int flags) 
+    : f_(f)
+    , flags_(flags)
+  {}
+  Test() : f_(0), flags_(0) {}
+};
+std::map<int, Test> TheMapOfTests;
+
+
+struct TestAdder {
+  TestAdder(void_func_void_t f, int id, int flags = FEATURE) {
+    CHECK(TheMapOfTests.count(id) == 0);
+    TheMapOfTests[id] = Test(f, flags);
+  }
+};
+
+#define REGISTER_TEST(f, id)         TestAdder add_test_##id (f, id);
+#define REGISTER_TEST2(f, id, flags) TestAdder add_test_##id (f, id, flags);
+
+int main(int argc, char** argv) { // {{{1
+  if (argc > 1) {
+    for (int i = 1; i < argc; i++) {
+      int f_num = atoi(argv[i]);
+      CHECK(TheMapOfTests.count(f_num));
+      TheMapOfTests[f_num].f_();
+    }
+  } else {
+    for (std::map<int,Test>::iterator it = TheMapOfTests.begin(); 
+        it != TheMapOfTests.end();
+        ++it) {
+      if(it->second.flags_ & EXCLUDE_FROM_ALL) continue;
+      it->second.f_();
+    } 
+  }
+}
+
+
 
 static bool ArgIsOne(int *arg) { return *arg == 1; };
 static bool ArgIsZero(int *arg) { return *arg == 0; };
@@ -126,11 +177,15 @@ class MyThreadArray {
 
 
 
-// test00: TN. A no-op test. {{{1
-namespace test00 {
+// testXX: {{{1
+namespace testXX {
+int     GLOB = 0;
 void Run() {
+  printf("testXX:\n");
+  printf("\tGLOB=%d\n", GLOB);
 }
-}  // namespace test00
+REGISTER_TEST(Run, 0)
+}  // namespace testXX
 
 
 // test01: TP. Simple race (write vs write). {{{1
@@ -156,6 +211,7 @@ void Run() {
   Parent();
   printf("\tGLOB=%d\n", GLOB);
 }
+REGISTER_TEST(Run, 1);
 }  // namespace test01
 
 
@@ -203,6 +259,7 @@ void Run() {
   Waiter();
   printf("\tGLOB=%d\n", GLOB);
 }
+REGISTER_TEST(Run, 2);
 }  // namespace test02
 
 
@@ -246,6 +303,7 @@ void Run() {
   Waiter();
   printf("\tGLOB=%d\n", GLOB);
 }
+REGISTER_TEST(Run, 3);
 }  // namespace test03
 
 // test04: TN. Synchronization via PCQ. {{{1
@@ -278,6 +336,7 @@ void Run() {
   t.Join();
   printf("\tGLOB=%d\n", GLOB);
 }
+REGISTER_TEST(Run, 4);
 }  // namespace test04
 
 
@@ -328,6 +387,7 @@ void Run() {
   Waiter();
   printf("\tGLOB=%d\n", GLOB);
 }
+REGISTER_TEST(Run, 5);
 }  // namespace test05
 
 
@@ -375,6 +435,7 @@ void Run() {
   Waiter();
   printf("\tGLOB=%d\n", GLOB);
 }
+REGISTER_TEST(Run, 6);
 }  // namespace test06
 
 
@@ -422,6 +483,7 @@ void Run() {
   Waiter();
   printf("\tGLOB=%d\n", GLOB);
 }
+REGISTER_TEST(Run, 7);
 }  // namespace test07
 
 // test08: TN. Synchronization via thread start/join. {{{1
@@ -451,6 +513,7 @@ void Run() {
   Parent();
   printf("\tGLOB=%d\n", GLOB);
 }
+REGISTER_TEST(Run, 8);
 }  // namespace test08
 
 
@@ -476,6 +539,7 @@ void Run() {
   t.Join();
   printf("\tGLOB=%d\n", GLOB);
 }
+REGISTER_TEST(Run, 9);
 }  // namespace test09
 
 
@@ -511,6 +575,7 @@ void Run() {
   t.Join();
   printf("\tGLOB=%d\n", GLOB);
 }
+REGISTER_TEST(Run, 10);
 }  // namespace test10
 
 
@@ -561,6 +626,7 @@ void Run() {
   Parent();
   printf("\tGLOB=%d\n", GLOB);
 }
+REGISTER_TEST(Run, 11);
 }  // namespace test11
 
 
@@ -607,6 +673,7 @@ void Run() {
   t.Join();
   printf("\tGLOB=%d\n", GLOB);
 }
+REGISTER_TEST(Run, 12);
 }  // namespace test12
 
 
@@ -659,6 +726,7 @@ void Run() {
 
   printf("\tGLOB=%d\n", GLOB);
 }
+REGISTER_TEST(Run, 13);
 }  // namespace test13
 
 
@@ -699,6 +767,7 @@ void Run() {
   t.Join();
   printf("\tGLOB=%d\n", GLOB);
 }
+REGISTER_TEST(Run, 14);
 }  // namespace test14
 
 
@@ -738,6 +807,7 @@ void Run() {
   t.Join();
   printf("\tGLOB=%d\n", GLOB);
 }
+REGISTER_TEST(Run, 15);
 }  // namespace test15
 
 
@@ -788,6 +858,7 @@ void Run() {
   t.Join();
   printf("\tGLOB=%d\n", GLOB);
 }
+REGISTER_TEST(Run, 16);
 }  // namespace test16
 
 
@@ -820,6 +891,7 @@ void Run() {
   t.Join();
   printf("\tGLOB=%d\n", GLOB);
 }
+REGISTER_TEST(Run, 17);
 }  // namespace test17
 
 
@@ -853,6 +925,7 @@ void Run() {
   Waiter();
   printf("\tGLOB=%d\n", GLOB);
 }
+REGISTER_TEST(Run, 18);
 }  // namespace test18
 
 // test19: TN. Synchronization via AwaitWithTimeout(). {{{1
@@ -884,6 +957,7 @@ void Run() {
   Waiter();
   printf("\tGLOB=%d\n", GLOB);
 }
+REGISTER_TEST(Run, 19);
 }  // namespace test19
 
 // test20: TP. Incorrect synchronization via AwaitWhen(), timeout. {{{1
@@ -912,6 +986,7 @@ void Run() {
   Waiter();
   printf("\tGLOB=%d\n", GLOB);
 }
+REGISTER_TEST(Run, 20);
 }  // namespace test20
 
 // test21: TP. Incorrect synchronization via LockWhenWithTimeout(). {{{1
@@ -939,6 +1014,7 @@ void Run() {
   Waiter();
   printf("\tGLOB=%d\n", GLOB);
 }
+REGISTER_TEST(Run, 21);
 }  // namespace test21
 
 // test22: TP. Incorrect synchronization via CondVar::WaitWithTimeout(). {{{1
@@ -972,6 +1048,7 @@ void Run() {
   Waiter();
   printf("\tGLOB=%d\n", GLOB);
 }
+REGISTER_TEST(Run, 22);
 }  // namespace test22
 
 // test23: TN. TryLock, ReaderLock, ReaderTryLock. {{{1
@@ -1033,6 +1110,7 @@ void Run() {
   t.Join();
   printf("\tGLOB=%d\n", GLOB);
 }
+REGISTER_TEST(Run, 23);
 }  // namespace test23
 
 // test24: TN. Synchronization via ReaderLockWhen(). {{{1
@@ -1063,6 +1141,7 @@ void Run() {
   Waiter();
   printf("\tGLOB=%d\n", GLOB);
 }
+REGISTER_TEST(Run, 24);
 }  // namespace test24
 
 // test25: TN. Synchronization via ReaderLockWhenWithTimeout(). {{{1
@@ -1094,6 +1173,7 @@ void Run() {
   Waiter();
   printf("\tGLOB=%d\n", GLOB);
 }
+REGISTER_TEST(Run, 25);
 }  // namespace test25
 
 // test26: TP. Incorrect synchronization via ReaderLockWhenWithTimeout(). {{{1
@@ -1121,11 +1201,13 @@ void Run() {
   Waiter();
   printf("\tGLOB=%d\n", GLOB);
 }
+REGISTER_TEST(Run, 26);
 }  // namespace test26
 
 
 // test27: TN. Simple synchronization via SpinLock. {{{1
 namespace test27 {
+#ifndef NO_SPINLOCK
 int     GLOB = 0;
 SpinLock MU;
 void Worker() {
@@ -1142,6 +1224,8 @@ void Run() {
   t.Join();
   printf("\tGLOB=%d\n", GLOB);
 }
+REGISTER_TEST(Run, 27);
+#endif // NO_SPINLOCK
 }  // namespace test27
 
 
@@ -1184,6 +1268,7 @@ void Run() {
   t.Join();
   printf("\tGLOB=%d\n", GLOB);
 }
+REGISTER_TEST(Run, 28);
 }  // namespace test28
 
 
@@ -1229,6 +1314,7 @@ void Run() {
   delete Q1;
   delete Q2;
 }
+REGISTER_TEST(Run, 29);
 }  // namespace test29
 
 
@@ -1296,6 +1382,7 @@ void Run() {
   t.Join();
   printf("\tGLOB=%d\n", GLOB[N-1]);
 }
+REGISTER_TEST(Run, 30);
 }  // namespace test30
 
 
@@ -1350,6 +1437,7 @@ void Run() {
   t.Join();
   printf("\tGLOB=%d\n", GLOB[N-1]);
 }
+REGISTER_TEST(Run, 31);
 }  // namespace test31
 
 
@@ -1409,6 +1497,7 @@ void Run() {
   printf("\tGLOB=%d\n", GLOB);
 }
 
+REGISTER_TEST(Run, 32);
 }  // namespace test32
 
 
@@ -1461,6 +1550,7 @@ void Run() {
   printf("\tGLOB=%d; ARR[1]=%d; ARR[7]=%d; ARR[N-1]=%d\n", 
          GLOB, ARR[1], ARR[7], ARR[N-1]);
 }
+REGISTER_TEST2(Run, 33, STABILITY|EXCLUDE_FROM_ALL);
 }  // namespace test33
 
 
@@ -1499,6 +1589,7 @@ void Run() {
   }
   printf("\tGLOB=%d\n", GLOB);
 }
+REGISTER_TEST2(Run, 34, STABILITY|EXCLUDE_FROM_ALL);
 }  // namespace test34
 
 
@@ -1546,6 +1637,7 @@ void Run() {
     delete mus[i];
   }
 }
+REGISTER_TEST2(Run, 35, PERFORMANCE|EXCLUDE_FROM_ALL);
 }  // namespace test35
 
 
@@ -1596,6 +1688,7 @@ void Run() {
   t.Join();
   printf("\tGLOB=%d\n", GLOB);
 }
+REGISTER_TEST(Run, 36);
 }  // namespace test36
 
 
@@ -1622,6 +1715,7 @@ void Run() {
   t.Join();
   printf("\tGLOB=%d\n", GLOB);
 }
+REGISTER_TEST(Run, 37);
 }  // namespace test37
 
 
@@ -1694,10 +1788,12 @@ void Run() {
   delete Q1;
   delete Q2;
 }
+REGISTER_TEST(Run, 38);
 }  // namespace test38
 
 // test39: FP. Barrier. {{{1
 namespace test39 {
+#ifndef NO_BARRIER
 // Same as test17 but uses Barrier class (pthread_barrier_t). 
 int     GLOB = 0;
 const int N_threads = 3;
@@ -1722,6 +1818,8 @@ void Run() {
   } // all folks are joined here. 
   printf("\tGLOB=%d\n", GLOB);
 }
+REGISTER_TEST(Run, 39);
+#endif // NO_BARRIER
 }  // namespace test39
 
 
@@ -1794,6 +1892,7 @@ void Run() {
   delete Q1;
   delete Q2;
 }
+REGISTER_TEST(Run, 40);
 }  // namespace test40
 
 // test41: TN. Test for race that appears when loading a dynamic symbol. {{{1
@@ -1807,6 +1906,7 @@ void Run() {
   t.Start();
   t.Join();
 }
+REGISTER_TEST(Run, 41);
 }  // namespace test41
 
 
@@ -1815,7 +1915,6 @@ namespace test42 {
 int GLOB = 0;
 int COND = 0;
 int N_threads = 3;
-Barrier barrier(N_threads); 
 
 void Worker1() {
   GLOB=1;
@@ -1860,96 +1959,119 @@ void Run() {
   t.Join();
   printf("\tGLOB=%d\n", GLOB);
 }
+REGISTER_TEST(Run, 42);
 }  // namespace test42
 
 
 
-// testXX: {{{1
-namespace testXX {
+// test43 TODO.: {{{1
+namespace test43 {
+// 
+// Putter:            Getter: 
+// 1. write          
+// 2. Q.Put() --\
+// 3. read       \--> a. Q.Get()    
+//                    b. read
 int     GLOB = 0;
+ProducerConsumerQueue Q(INT_MAX);
+void Putter() {
+  GLOB = 1;
+  Q.Put(NULL);
+  CHECK(GLOB == 1);
+}
+void Getter() {
+  Q.Get();
+  usleep(100000);
+  CHECK(GLOB == 1);
+}
 void Run() {
-  printf("testXX:\n");
+  printf("test43:\n");
+  MyThreadArray t(Putter, Getter);
+  t.Start();
+  t.Join();
   printf("\tGLOB=%d\n", GLOB);
 }
-}  // namespace testXX
+REGISTER_TEST(Run, 43)
+}  // namespace test43
 
 
-// List of all tests. {{{1
-typedef void (*void_func_void_t)(void);
-enum TEST_FLAG{
-  FEATURE          = 1 << 0, 
-  STABILITY        = 1 << 1, 
-  PERFORMANCE      = 1 << 2,
-  EXCLUDE_FROM_ALL = 1 << 3
-};
-
-static struct {
-  void_func_void_t f;
-  int flags;
-}all_tests [] = {
-  { test00::Run, FEATURE },
-  { test01::Run, FEATURE },
-  { test02::Run, FEATURE },
-  { test03::Run, FEATURE },
-  { test04::Run, FEATURE },
-  { test05::Run, FEATURE },
-  { test06::Run, FEATURE },
-  { test07::Run, FEATURE },
-  { test08::Run, FEATURE },
-  { test09::Run, FEATURE },
-  { test10::Run, FEATURE },
-  { test11::Run, FEATURE },
-  { test12::Run, FEATURE },
-  { test13::Run, FEATURE },
-  { test14::Run, FEATURE },
-  { test15::Run, FEATURE },
-  { test16::Run, FEATURE },
-  { test17::Run, FEATURE },
-  { test18::Run, FEATURE },
-  { test19::Run, FEATURE },
-  { test20::Run, FEATURE },
-  { test21::Run, FEATURE },
-  { test22::Run, FEATURE },
-  { test23::Run, FEATURE },
-  { test24::Run, FEATURE },
-  { test25::Run, FEATURE },
-  { test26::Run, FEATURE },
-  { test27::Run, FEATURE },
-  { test28::Run, FEATURE },
-  { test29::Run, FEATURE },
-  { test30::Run, FEATURE },
-  { test31::Run, FEATURE },
-  { test32::Run, FEATURE },
-  { test33::Run, STABILITY|EXCLUDE_FROM_ALL },
-  { test34::Run, STABILITY|EXCLUDE_FROM_ALL },
-  { test35::Run, PERFORMANCE|EXCLUDE_FROM_ALL },
-  { test36::Run, FEATURE },
-  { test37::Run, FEATURE },
-  { test38::Run, FEATURE },
-  { test39::Run, FEATURE },
-  { test40::Run, FEATURE },
-  { test41::Run, FEATURE },
-  { test42::Run, FEATURE },
-  {NULL, 0 }
-};
-
-
-int main(int argc, char** argv) { // {{{1
-  int f_num = 0;
-  if (argc == 2) {
-    f_num = atoi(argv[1]);
-  }
-  CHECK(f_num >= 0 && f_num < sizeof(all_tests)/sizeof(all_tests[0]));
-  
-  if (f_num == 0) {
-    for (int i = 1; all_tests[i].f; i++) {
-      if(all_tests[i].flags & EXCLUDE_FROM_ALL) continue;
-      all_tests[i].f();
-    } 
-  } else {
-    CHECK(all_tests[f_num].f);
-    all_tests[f_num].f();
-  }
+// test44 TODO.: {{{1
+namespace test44 {
+// 
+// Putter:            Getter: 
+// 1. read          
+// 2. Q.Put() --\
+// 3. MU.Lock()  \--> a. Q.Get()    
+// 4. write
+// 5. Mu.Unlock()                   
+//                    b. MU.Lock()
+//                    c. write
+//                    d. MU.Unlock();              
+int     GLOB = 0;
+ProducerConsumerQueue Q(INT_MAX);
+void Putter() {
+  CHECK(GLOB == 0);
+  Q.Put(NULL);
+  MU.Lock();
+  GLOB++;
+  MU.Unlock();
 }
+void Getter() {
+  Q.Get();
+  usleep(100000);
+  MU.Lock();
+  GLOB++;
+  MU.Unlock();
+}
+void Run() {
+  printf("test44:\n");
+  MyThreadArray t(Putter, Getter);
+  t.Start();
+  t.Join();
+  printf("\tGLOB=%d\n", GLOB);
+}
+REGISTER_TEST(Run, 44)
+}  // namespace test44
 
-//vim: fm:manual
+
+// test45 TODO.: {{{1
+namespace test45 {
+// 
+// Putter:            Getter: 
+// 1. read          
+// 2. Q.Put() --\
+// 3. MU.Lock()  \--> a. Q.Get()    
+// 4. write
+// 5. Mu.Unlock()                   
+//                    b. MU.Lock()
+//                    c. read
+//                    d. MU.Unlock();              
+int     GLOB = 0;
+ProducerConsumerQueue Q(INT_MAX);
+void Putter() {
+  CHECK(GLOB == 0);
+  Q.Put(NULL);
+  MU.Lock();
+  GLOB++;
+  MU.Unlock();
+}
+void Getter() {
+  Q.Get();
+  usleep(100000);
+  MU.Lock();
+  CHECK(GLOB <= 1);
+  MU.Unlock();
+}
+void Run() {
+  printf("test45:\n");
+  MyThreadArray t(Putter, Getter);
+  t.Start();
+  t.Join();
+  printf("\tGLOB=%d\n", GLOB);
+}
+REGISTER_TEST(Run, 45)
+}  // namespace test45
+
+
+// End {{{1
+// vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker

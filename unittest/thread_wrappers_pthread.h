@@ -87,6 +87,7 @@ static inline void timeval2timespec(timeval *const tv,
 
 class CondVar;
 
+#ifndef NO_SPINLOCK
 /// helgrind does not (yet) support spin locks, so we annotate them.
 class SpinLock {
  public:
@@ -109,6 +110,7 @@ class SpinLock {
  private:
   pthread_spinlock_t mu_;
 };
+#endif // NO_SPINLOCK
 
 /// Just a boolean condition. Used by Mutex::LockWhen and similar. 
 class Condition {
@@ -335,6 +337,9 @@ class ProducerConsumerQueue {
 
 /// Function pointer with zero, one or two parameters. 
 struct Closure {
+  typedef void (*F0)();
+  typedef void (*F1)(void *arg1);
+  typedef void (*F2)(void *arg1, void *arg2);
   int  n_params; 
   void *f; 
   void *param1; 
@@ -342,15 +347,15 @@ struct Closure {
 
   void Execute() {
     if (n_params == 0) {
-      reinterpret_cast<void (*)()>(f)();
+      (F0(f))();
       return;
     }
     if (n_params == 1) {
-      reinterpret_cast<void (*)(void *)>(f)(param1);
+      (F1(f))(param1);
       return;
     }
     CHECK(n_params == 2);
-    reinterpret_cast<void (*)(void *, void*)>(f)(param1, param2);
+    (F2(f))(param1, param2);
   }
 }; 
 
@@ -358,7 +363,7 @@ template <class T>
 Closure *NewCallback(T f) {
   Closure *res = new Closure;
   res->n_params = 0;
-  res->f = reinterpret_cast<void*>(f);
+  res->f = (void*)(f);
   res->param1 = NULL;
   res->param2 = NULL;
   return res;
@@ -368,7 +373,7 @@ template <class T>
 Closure *NewCallback(T f, void *p1) {
   Closure *res = new Closure;
   res->n_params = 1;
-  res->f = reinterpret_cast<void*>(f);
+  res->f = (void*)(f);
   res->param1 = p1;
   res->param2 = NULL;
   return res;
@@ -438,7 +443,8 @@ class ThreadPool {
   }
 };
 
-// Wrapper for pthread_barrier_t. 
+#ifndef NO_BARRIER
+/// Wrapper for pthread_barrier_t. 
 class Barrier{
  public:
   explicit Barrier(int n_threads) {CHECK(0 == pthread_barrier_init(&b_, 0, n_threads));}
@@ -454,6 +460,9 @@ class Barrier{
   pthread_barrier_t b_;
 };
 
+#endif // NO_BARRIER
+
 
 
 #endif // THREAD_WRAPPERS_PTHREAD_H
+// vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker
