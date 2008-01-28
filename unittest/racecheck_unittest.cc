@@ -568,7 +568,7 @@ void Reader() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB, "test10. TP. (FN in helgrind 3.3.0). Fixed by MSMProp1.");
+//  ANNOTATE_EXPECT_RACE(&GLOB, "test10. FN in helgrind 3.3.0");
   printf("test10:\n");
   MyThreadArray t(Writer, Reader);
   t.Start();
@@ -1964,12 +1964,12 @@ REGISTER_TEST(Run, 42);
 
 
 
-// test43 TODO.: {{{1
+// test43 TN.: {{{1
 namespace test43 {
 // 
 // Putter:            Getter: 
 // 1. write          
-// 2. Q.Put() --\
+// 2. Q.Put() --\     .
 // 3. read       \--> a. Q.Get()    
 //                    b. read
 int     GLOB = 0;
@@ -1995,12 +1995,12 @@ REGISTER_TEST(Run, 43)
 }  // namespace test43
 
 
-// test44 TODO.: {{{1
+// test44 FP.: {{{1
 namespace test44 {
 // 
 // Putter:            Getter: 
 // 1. read          
-// 2. Q.Put() --\
+// 2. Q.Put() --\     .
 // 3. MU.Lock()  \--> a. Q.Get()    
 // 4. write
 // 5. Mu.Unlock()                   
@@ -2024,6 +2024,7 @@ void Getter() {
   MU.Unlock();
 }
 void Run() {
+  ANNOTATE_EXPECT_RACE(&GLOB, "test44. FP. ");
   printf("test44:\n");
   MyThreadArray t(Putter, Getter);
   t.Start();
@@ -2034,12 +2035,12 @@ REGISTER_TEST(Run, 44)
 }  // namespace test44
 
 
-// test45 TODO.: {{{1
+// test45 TN.: {{{1
 namespace test45 {
 // 
 // Putter:            Getter: 
 // 1. read          
-// 2. Q.Put() --\
+// 2. Q.Put() --\     .
 // 3. MU.Lock()  \--> a. Q.Get()    
 // 4. write
 // 5. Mu.Unlock()                   
