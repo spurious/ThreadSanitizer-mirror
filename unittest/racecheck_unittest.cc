@@ -1964,7 +1964,7 @@ REGISTER_TEST(Run, 42);
 
 
 
-// test43 TN.: {{{1
+// test43: TN. {{{1
 namespace test43 {
 // 
 // Putter:            Getter: 
@@ -1995,7 +1995,7 @@ REGISTER_TEST(Run, 43)
 }  // namespace test43
 
 
-// test44 FP.: {{{1
+// test44: FP. {{{1
 namespace test44 {
 // 
 // Putter:            Getter: 
@@ -2035,7 +2035,7 @@ REGISTER_TEST(Run, 44)
 }  // namespace test44
 
 
-// test45 TN.: {{{1
+// test45: TN. {{{1
 namespace test45 {
 // 
 // Putter:            Getter: 
@@ -2072,6 +2072,48 @@ void Run() {
 }
 REGISTER_TEST(Run, 45)
 }  // namespace test45
+
+
+// test46: FN. {{{1
+namespace test46 {
+// 
+// Putter:            Getter: 
+// 1. write          
+// 3. MU.Lock()      
+// 4. write
+// 5. MU.Unlock()                   
+//                    a. MU.Lock()
+//                    b. write
+//                    c. MU.Unlock();              
+int     GLOB = 0;
+ProducerConsumerQueue Q(INT_MAX);
+void Putter() {
+  GLOB++;
+  MU.Lock();
+  GLOB++;
+  MU.Unlock();
+}
+void Getter() {
+  usleep(500000);
+  MU.Lock();
+  GLOB++;
+  MU.Unlock();
+
+  // just a print. 
+  // If we move it to Run()  we will get report in MSMHelgrind 
+  // due to its false positive (test32). 
+  MU.Lock();
+  printf("\tGLOB=%d\n", GLOB);
+  MU.Unlock();
+}
+void Run() {
+  printf("test46:\n");
+  MyThreadArray t(Putter, Getter);
+  t.Start();
+  t.Join();
+}
+REGISTER_TEST(Run, 46)
+}  // namespace test46
 
 
 // End {{{1
