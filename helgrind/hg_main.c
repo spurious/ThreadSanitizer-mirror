@@ -1093,49 +1093,32 @@ static inline Bool prop1_SS_valid (SegmentSet ss) {
   return ss < (1ULL << SEGMENT_SET_BITS);
 }
 
-#define SS_SINGLETON 1
-
-
 static inline Bool prop1_SS_is_singleton (SegmentSet ss)
 {
-   if (SS_SINGLETON)
-      return (ss & (1ULL << (SEGMENT_SET_BITS-1))) != 0;
-   else 
-      return HG_(cardinalityWS(univ_ssets, ss) == 1);
+   return (ss & (1ULL << (SEGMENT_SET_BITS-1))) != 0;
 }
 
 static inline int prop1_SS_get_size (SegmentSet ss) 
 {
    if (prop1_SS_is_singleton(ss)) return 1;
+   tl_assert (HG_(cardinalityWSU(univ_ssets)) > ss);
    return HG_(cardinalityWS(univ_ssets, ss));
 }
 
 static inline SegmentSet prop1_SS_mk_singleton (SegmentID ss)
 {
-   if (SS_SINGLETON) {
-      tl_assert(is_sane_SegmentID(ss));
-//      ss -= 1 << 24; 
-      ss |= (1ULL << (SEGMENT_SET_BITS-1));
-      tl_assert(prop1_SS_is_singleton(ss));
-      return ss;
-   } else {
-      return HG_(singletonWS)(univ_ssets, ss);
-   }
+   tl_assert(is_sane_SegmentID(ss));
+   ss |= (1ULL << (SEGMENT_SET_BITS-1));
+   tl_assert(prop1_SS_is_singleton(ss));
+   return ss;
 }
 
 static inline SegmentID prop1_SS_get_singleton (SegmentSet ss)
 {
-   if (SS_SINGLETON) {
-      tl_assert(prop1_SS_is_singleton(ss));
-      ss &= ~(1ULL << (SEGMENT_SET_BITS-1));
-//      ss += 1 << 24; 
-      tl_assert(is_sane_SegmentID(ss));
-//      VG_(printf)("ZZ: %d\n", (int)ss);
-      return ss;
-   } else {
-//      VG_(printf)("ZZ: %d\n", (int)ss);
-      return HG_(ElementOfWS)(univ_ssets, ss, 0);
-   }
+   tl_assert(prop1_SS_is_singleton(ss));
+   ss &= ~(1ULL << (SEGMENT_SET_BITS-1));
+   tl_assert(is_sane_SegmentID(ss));
+   return ss;
 }
 
 static inline SegmentID prop1_SS_get_element (SegmentSet ss, int i)
@@ -1144,7 +1127,6 @@ static inline SegmentID prop1_SS_get_element (SegmentSet ss, int i)
       return prop1_SS_get_singleton(ss);
    return HG_(ElementOfWS)(univ_ssets, ss, i);
 }
-
 
 
 static inline Bool prop1_LS_valid (LockSet ls) {
@@ -3369,22 +3351,22 @@ SVal prop1_memory_state_machine(
     Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
 {
 
-   SVal sv_new = SHVAL_Invalid;
-   char buf[200];
-   // we already reported a race, don't bother again. 
-   if (sv_old == SHVAL_Race) {
-      return sv_old;
-   }
-
-
-
-
    Bool is_race = False;
-
-
+   SVal sv_new = SHVAL_Invalid;
    Bool do_trace = clo_trace_level > 0 
          && a >= clo_trace_addr 
          && a < (clo_trace_addr+sz);
+
+   SegmentID  currS = thr->csegid;
+
+   char buf[200];
+
+   if (sv_old == SHVAL_Race) {
+      // we already reported a race, don't bother again. 
+      sv_new = sv_old;
+      goto done;
+   }
+
 
    tl_assert (sv_old != 0xc000004000000000ULL); // FIXME prop1
 
@@ -3393,7 +3375,6 @@ SVal prop1_memory_state_machine(
    tl_assert(clo_use_msm_prop1);
 
 
-   SegmentID  currS = thr->csegid;
    SegmentSet newSS = 0;
    LockSet    newLS = 0;
 
@@ -3408,14 +3389,13 @@ SVal prop1_memory_state_machine(
 
    // current locks. 
    LockSet    currLS = is_w ?         thr->locksetW
-         : add_BHL(thr->locksetA);
+                            : add_BHL(thr->locksetA);
 
    // New
    if (is_SHVAL_New(sv_old)) {
-//       newSS = HG_(singletonWS)(univ_ssets, currS);
-       newSS = prop1_SS_mk_singleton(currS);
+      newSS = prop1_SS_mk_singleton(currS);
       sv_new = prop1_mk_SHVAL_RW(is_w, newSS, currLS);
-      sv_new |= 5ULL << 26;
+      sv_new |= 5ULL << 26; // debugging. 
       goto done;
    }
 
@@ -3429,14 +3409,10 @@ SVal prop1_memory_state_machine(
 
    // bit vector that stores HB(oldSS[i],S).
    // Obviously, it does not work with segment sets with >= 64 segments (FIXME). 
+   // On the other hand, if we have a shared value accessed by more 
+   // than 64 threads, we are already in trouble performance-wise.
    ULong hb_mask = 0; 
-   int oldSS_size;
-   if (prop1_SS_is_singleton(oldSS)) {
-      oldSS_size = 1;
-   } else {
-      tl_assert (HG_(cardinalityWSU(univ_ssets)) > oldSS);
-      oldSS_size = HG_(cardinalityWS)(univ_ssets, oldSS);
-   }
+   int oldSS_size = prop1_SS_get_size(oldSS);;
    tl_assert(oldSS_size < 64);
 
 
@@ -3450,7 +3426,7 @@ SVal prop1_memory_state_machine(
       }
    }
 
-   // hb_all is true iff HB(oldSS,S)
+   // hb_all = HB(oldSS,S)
    Bool hb_all = hb_mask == ((1ULL << oldSS_size) - 1);
 
 
@@ -3465,15 +3441,13 @@ SVal prop1_memory_state_machine(
    }
 
    // update the thread set 
-//   newSS = HG_(singletonWS)(univ_ssets, currS);
    newSS = prop1_SS_mk_singleton(currS);
    if (!hb_all) {
-//      tl_assert(0);
       for (i = 0; i < oldSS_size; i++) {
          if((hb_mask & (1ULL << i)) == 0) {
-//            SegmentID S = HG_(ElementOfWS)(univ_ssets, oldSS, i);
             SegmentID S = prop1_SS_get_element(oldSS, i);
             if (prop1_SS_is_singleton(newSS)) {
+               tl_assert(currS != S);
                newSS = HG_(doubletonWS)(univ_ssets, currS, S);
             } else {
                newSS = HG_(addToWS)(univ_ssets, newSS, S);
@@ -3482,16 +3456,8 @@ SVal prop1_memory_state_machine(
       } 
    }
 
-
-//   tl_assert (prop1_SS_is_singleton(newSS));
-
-   //  if(do_trace) VG_(printf)("new size: %d\n", 
-   //                           HG_(cardinalityWS)(univ_ssets, newSS));
-
-
    // update the state 
    Bool now_w = is_w || (was_w && !hb_all);
-
 
    // generate new SVal
    sv_new = prop1_mk_SHVAL_RW(now_w, newSS, newLS);
@@ -3499,9 +3465,8 @@ SVal prop1_memory_state_machine(
    is_race = now_w 
          && HG_(isEmptyWS)(univ_lsets, newLS)
          && !prop1_SS_is_singleton(newSS);
-//         && !HG_(isSingletonWS)(univ_ssets, newSS, currS);
 
-   sv_new |= 7ULL << 26;
+   sv_new |= 7ULL << 26; // debugging.
 
 done:
 
@@ -3511,10 +3476,10 @@ done:
       VG_(message)(Vg_UserMsg, "TRACE: %p S%d/T%d %c %llx %s", a, 
                    (int)currS-(1<<24), thr->errmsg_index, 
                    is_w ? 'w' : 'r', sv_new, buf);
-      if (clo_trace_level >= 2) {
+      if (1 || clo_trace_level >= 2) {
          ThreadId tid = map_threads_maybe_reverse_lookup_SLOW(thr);
          if (tid != VG_INVALID_THREADID) {
-            VG_(get_and_pp_StackTrace)( tid, 8 );
+            VG_(get_and_pp_StackTrace)( tid, 15);
          }
       }
    }

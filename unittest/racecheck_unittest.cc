@@ -2003,7 +2003,7 @@ namespace test44 {
 // 2. Q.Put() --\     .
 // 3. MU.Lock()  \--> a. Q.Get()    
 // 4. write
-// 5. Mu.Unlock()                   
+// 5. MU.Unlock()                   
 //                    b. MU.Lock()
 //                    c. write
 //                    d. MU.Unlock();              
@@ -2013,18 +2013,18 @@ void Putter() {
   CHECK(GLOB == 0);
   Q.Put(NULL);
   MU.Lock();
-  GLOB++;
+  GLOB = 1;
   MU.Unlock();
 }
 void Getter() {
   Q.Get();
   usleep(100000);
   MU.Lock();
-  GLOB++;
+  GLOB = 1;
   MU.Unlock();
 }
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB, "test44. FP. ");
+  ANNOTATE_EXPECT_RACE(&GLOB, "test44. FP. Fixed by MSMProp1.");
   printf("test44:\n");
   MyThreadArray t(Putter, Getter);
   t.Start();
@@ -2043,7 +2043,7 @@ namespace test45 {
 // 2. Q.Put() --\     .
 // 3. MU.Lock()  \--> a. Q.Get()    
 // 4. write
-// 5. Mu.Unlock()                   
+// 5. MU.Unlock()                   
 //                    b. MU.Lock()
 //                    c. read
 //                    d. MU.Unlock();              
