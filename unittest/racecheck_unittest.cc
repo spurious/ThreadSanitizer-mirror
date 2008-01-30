@@ -2089,7 +2089,7 @@ namespace test46 {
 // 1. write          
 // 2. MU.Lock()      
 // 3. write
-// 4. MU.Unlock()                   
+// 4. MU.Unlock()      (sleep)              
 //                    a. MU.Lock()
 //                    b. write
 //                    c. MU.Unlock();              
