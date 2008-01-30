@@ -2125,7 +2125,9 @@ REGISTER_TEST(Run, 46)
 
 // test47: TP. {{{1
 namespace test47 {
-// 
+// A true race that can not be detected by a pure happens-before 
+// race detector. 
+//
 // First:                             Second: 
 // 1. write                          
 // 2. MU.Lock()                      
