@@ -2085,14 +2085,14 @@ REGISTER_TEST(Run, 45)
 // test46: FN. {{{1
 namespace test46 {
 // 
-// First:             Second: 
-// 1. write          
-// 2. MU.Lock()      
-// 3. write
-// 4. MU.Unlock()      (sleep)              
-//                    a. MU.Lock()
-//                    b. write
-//                    c. MU.Unlock();              
+// First:                             Second: 
+// 1. write                          
+// 2. MU.Lock()                      
+// 3. write                       
+// 4. MU.Unlock()                      (sleep)              
+//                                    a. MU.Lock()
+//                                    b. write
+//                                    c. MU.Unlock();              
 int     GLOB = 0;
 void First() {
   GLOB++;
@@ -2121,6 +2121,39 @@ void Run() {
 }
 REGISTER_TEST(Run, 46)
 }  // namespace test46
+
+
+// test47: TP. {{{1
+namespace test47 {
+// 
+// First:                             Second: 
+// 1. write                          
+// 2. MU.Lock()                      
+// 3. MU.Unlock()                      (sleep)              
+//                                    a. MU.Lock()
+//                                    b. MU.Unlock();              
+//                                    c. write
+int     GLOB = 0;
+void First() {
+  GLOB=1;
+  MU.Lock();
+  MU.Unlock();
+}
+void Second() {
+  usleep(500000);
+  MU.Lock();
+  MU.Unlock();
+  GLOB++;
+}
+void Run() {
+  printf("test47:\n");
+  MyThreadArray t(First, Second);
+  t.Start();
+  t.Join();
+  printf("\tGLOB=%d\n", GLOB);
+}
+REGISTER_TEST(Run, 47)
+}  // namespace test47
 
 
 // End {{{1
