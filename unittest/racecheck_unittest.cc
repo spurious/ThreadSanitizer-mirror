@@ -1696,6 +1696,14 @@ REGISTER_TEST(Run, 36);
 namespace test37 {
 int     GLOB = 0;
 // Similar to test10, but properly locked. 
+// Writer:             Reader: 
+// 1. MU.Lock()      
+// 2. write
+// 3. MU.Unlock()                   
+//                    a. MU.Lock()
+//                    b. read
+//                    c. MU.Unlock();              
+
 void Writer() {
   MU.Lock();
   GLOB = 3; 
@@ -2077,23 +2085,22 @@ REGISTER_TEST(Run, 45)
 // test46: FN. {{{1
 namespace test46 {
 // 
-// Putter:            Getter: 
+// First:             Second: 
 // 1. write          
-// 3. MU.Lock()      
-// 4. write
-// 5. MU.Unlock()                   
+// 2. MU.Lock()      
+// 3. write
+// 4. MU.Unlock()                   
 //                    a. MU.Lock()
 //                    b. write
 //                    c. MU.Unlock();              
 int     GLOB = 0;
-ProducerConsumerQueue Q(INT_MAX);
-void Putter() {
+void First() {
   GLOB++;
   MU.Lock();
   GLOB++;
   MU.Unlock();
 }
-void Getter() {
+void Second() {
   usleep(500000);
   MU.Lock();
   GLOB++;
@@ -2108,7 +2115,7 @@ void Getter() {
 }
 void Run() {
   printf("test46:\n");
-  MyThreadArray t(Putter, Getter);
+  MyThreadArray t(First, Second);
   t.Start();
   t.Join();
 }

@@ -623,18 +623,19 @@ static UWord stats__mk_Segment = 0;
 
 static inline Bool is_sane_LockN ( Lock* lock ); /* fwds */
 
-static Thread* mk_Thread ( SegmentID csegid ) {
+static Thread* mk_Thread ( SegmentID *csegid ) {
    static Int indx      = 1;
    Thread* thread       = hg_zalloc( sizeof(Thread) );
    thread->locksetA     = HG_(emptyWS)( univ_lsets );
    thread->locksetW     = HG_(emptyWS)( univ_lsets );
-   thread->csegid       = csegid;
    thread->magic        = Thread_MAGIC;
    thread->created_at   = NULL;
    thread->announced    = False;
    thread->errmsg_index = indx++;
    thread->admin        = admin_threads;
    admin_threads        = thread;
+   *csegid             |= (thread->errmsg_index % 256);
+   thread->csegid       = *csegid;
    return thread;
 }
 // Make a new lock which is unlocked (hence ownerless)
@@ -911,7 +912,20 @@ static inline Bool is_sane_ThreadId ( ThreadId coretid ) {
 static SegmentID alloc_SegmentID ( void ) {
    static SegmentID next = 0x1000000;
    tl_assert(is_sane_SegmentID(next));
-   return next++;
+
+   // FIXME: awful hack 
+   // For MSMProp1 we need to check that 
+   // a SegmentId belongs to a Thread. 
+   // We need to do it very fast but may not do it very 
+   // accurate. 
+   //
+   // We store (thr->errmsg_index % 256) in 
+   // lower 8 bits of SegmentID. 
+   //
+   // That's bad, need to implement a better way. 
+   //
+
+   return next += 256; 
 }
 
 /* --------- Shadow memory --------- */
@@ -1570,6 +1584,7 @@ static void pp_everything ( Int flags, Char* caller )
 static void map_segments_add ( SegmentID segid, Segment* seg );
 static void shmem__invalidate_scache ( void );
 static void hbefore__invalidate_cache ( void );
+static void hbefore__invalidate_htable ( void );
 static void shmem__set_mbHasLocks ( Addr a, Bool b );
 static Bool shmem__get_mbHasLocks ( Addr a );
 static void shadow_mem_set8 ( Thread* uu_thr_acc, Addr a, SVal svNew );
@@ -1603,6 +1618,7 @@ static void initialise_data_structures ( void )
    map_segments = HG_(newFM)( hg_zalloc, hg_free, NULL/*unboxed Word cmp*/);
    tl_assert(map_segments != NULL);
    hbefore__invalidate_cache();
+   hbefore__invalidate_htable();
 
    tl_assert(sizeof(Addr) == sizeof(Word));
    tl_assert(map_locks == NULL);
@@ -1641,10 +1657,10 @@ static void initialise_data_structures ( void )
    // FIXME: code duplication in ev__post_thread_create
    segid = alloc_SegmentID();
    seg   = mk_Segment( NULL, NULL, NULL );
-   map_segments_add( segid, seg );
 
    /* a Thread for the new thread ... */
-   thr = mk_Thread( segid );
+   thr = mk_Thread( &segid );
+   map_segments_add( segid, seg );
    seg->thr = thr;
 
    /* Give the thread a starting-off vector timestamp. */
@@ -1801,11 +1817,17 @@ static Segment* map_segments_lookup ( SegmentID segid )
 {
    Bool     found;
    Segment* seg = NULL;
+
+   // TODO. map_segments_lookup became rather hot with MSMProp1.
+   // Need to make cheaper mapping between segid and segment. 
+   //
+
    tl_assert( is_sane_SegmentID(segid) );
    found = HG_(lookupFM)( map_segments,
                           NULL, (Word*)&seg, (Word)segid );
    tl_assert(found);
    tl_assert(seg != NULL);
+
    return seg;
 }
 
@@ -2364,16 +2386,35 @@ static void hbefore__invalidate_cache ( void )
    }
 }
 
+
+// HBEFORE__N_HTABLE should be a prime number 
+// #define HBEFORE__N_HTABLE 104729
+// #define HBEFORE__N_HTABLE 49999
+ #define HBEFORE__N_HTABLE 19997
+
+
+
+static ULong hbefore__hash_table[HBEFORE__N_HTABLE];
+static void hbefore__invalidate_htable ( void )
+{  
+   VG_(memset)(hbefore__hash_table, 0, sizeof(hbefore__hash_table));
+}
+
+
+
+
 static Bool happens_before ( SegmentID segid1, SegmentID segid2 )
 {
    Bool    hbG, hbV;
-   Int     i, j, iNSERT_POINT;
+//   Int     i, j, iNSERT_POINT;
    Segment *seg1, *seg2;
    tl_assert(is_sane_SegmentID(segid1));
    tl_assert(is_sane_SegmentID(segid2));
    tl_assert(segid1 != segid2);
    stats__hbefore_queries++;
    stats__hbefore_probes++;
+
+#ifdef HBEFORE_CACHE  
    if (segid1 == hbefore__cache[0].segid1 
        && segid2 == hbefore__cache[0].segid2) {
       stats__hbefore_cache0s++;
@@ -2391,6 +2432,21 @@ static Bool happens_before ( SegmentID segid1, SegmentID segid2 )
          return tmp.result;
       }
    }
+#else 
+   {
+      ULong seg_1_and_2 = ((ULong)segid1) << 32 | (ULong)(segid2);
+      ULong cached  = hbefore__hash_table[seg_1_and_2 % HBEFORE__N_HTABLE];
+      if (cached == seg_1_and_2) {
+         stats__hbefore_cache0s++;
+         return False;
+      }
+
+      if (cached == (seg_1_and_2 | (1ULL << 63))) {
+         stats__hbefore_cache0s++;
+         return True;
+      }
+   }
+#endif
    /* Not found.  Search the graph and add an entry to the cache. */
    stats__hbefore_gsearches++;
 
@@ -2423,6 +2479,7 @@ static Bool happens_before ( SegmentID segid1, SegmentID segid2 )
      tl_assert(hbV == hbG);
    }
 
+#ifdef HBEFORE_CACHE
    iNSERT_POINT = (1*HBEFORE__N_CACHE)/4 - 1;
    /* if (iNSERT_POINT > 4) iNSERT_POINT = 4; */
 
@@ -2432,7 +2489,13 @@ static Bool happens_before ( SegmentID segid1, SegmentID segid2 )
    hbefore__cache[iNSERT_POINT].segid1 = segid1;
    hbefore__cache[iNSERT_POINT].segid2 = segid2;
    hbefore__cache[iNSERT_POINT].result = hbG;
-
+#else
+   {
+      ULong seg_1_and_2 = ((ULong)segid1) << 32 | (ULong)(segid2);
+      ULong cache = hbG ? (seg_1_and_2 | (1ULL << 63)) : seg_1_and_2;
+      hbefore__hash_table[seg_1_and_2 % HBEFORE__N_HTABLE] = cache;
+   }
+#endif
    if (0)
    VG_(printf)("hb(S%d,S%d)=%d\n", (Int)segid1-(1<<24), (Int)segid2-(1<<24), hbG);
    return hbG;
@@ -3395,7 +3458,7 @@ SVal prop1_memory_state_machine(
    if (is_SHVAL_New(sv_old)) {
       newSS = prop1_SS_mk_singleton(currS);
       sv_new = prop1_mk_SHVAL_RW(is_w, newSS, currLS);
-      sv_new |= 5ULL << 26; // debugging. 
+      // sv_new |= 5ULL << 26; // debugging. 
       goto done;
    }
 
@@ -3420,7 +3483,8 @@ SVal prop1_memory_state_machine(
    for (i = 0; i < oldSS_size; i++) {
       SegmentID S = prop1_SS_get_element(oldSS, i);
       if (S == currS  // Same segment. 
-          || map_segments_lookup(S)->thr == thr // Same thread. 
+//          || map_segments_lookup(S)->thr == thr // Same thread. 
+          || ((S % 256) == (thr->errmsg_index % 256)) // see alloc_SegmentID()        
           || happens_before(S, currS)) { // different thread, but happens-before.
          hb_mask |= 1ULL << i;
       }
@@ -3463,10 +3527,10 @@ SVal prop1_memory_state_machine(
    sv_new = prop1_mk_SHVAL_RW(now_w, newSS, newLS);
 
    is_race = now_w 
-         && HG_(isEmptyWS)(univ_lsets, newLS)
-         && !prop1_SS_is_singleton(newSS);
+         && !prop1_SS_is_singleton(newSS)
+         && HG_(isEmptyWS)(univ_lsets, newLS);
 
-   sv_new |= 7ULL << 26; // debugging.
+   // sv_new |= 7ULL << 26; // debugging.
 
 done:
 
@@ -5699,6 +5763,7 @@ void evhH__start_new_segment_for_thread ( /*OUT*/SegmentID* new_segidP,
                                       at their owner thread. */
    *new_segP = mk_Segment( thr, cur_seg, NULL/*other*/ );
    *new_segidP = alloc_SegmentID();
+   *new_segidP |= thr->errmsg_index % 256;
    map_segments_add( *new_segidP, *new_segP );
    thr->csegid = *new_segidP;
 }
@@ -6110,10 +6175,10 @@ void evh__pre_thread_ll_create ( ThreadId parent, ThreadId child )
       // FIXME: code duplication from init_data_structures
       segid_c = alloc_SegmentID();
       seg_c   = mk_Segment( NULL/*thr*/, NULL/*prev*/, NULL/*other*/ );
-      map_segments_add( segid_c, seg_c );
 
       /* a Thread for the new thread ... */
-      thr_c = mk_Thread( segid_c );
+      thr_c = mk_Thread( &segid_c );
+      map_segments_add( segid_c, seg_c );
       seg_c->thr = thr_c;
 
       /* and bind it in the thread-map table */
@@ -6701,6 +6766,7 @@ static void evh__HG_PTHREAD_COND_SIGNAL_PRE ( ThreadId tid, void* cond )
         HG_(addToFM)( map_cond_to_Segment, (Word)cond,
                                          (Word)(new_seg->prev) );
       } else {
+        static Thread fake_thread; 
         // create a fake segment.                                         
         Segment *signalling_seg = NULL;
         evhH__start_new_fake_segment ( &fake_segid, &fake_seg );
@@ -6709,7 +6775,7 @@ static void evh__HG_PTHREAD_COND_SIGNAL_PRE ( ThreadId tid, void* cond )
         tl_assert( fake_seg->prev == NULL );
         tl_assert( fake_seg->other == NULL );
         // FIXME prop1: what shall we put here? 
-        fake_seg->vts = tick_VTS( thr, new_seg->prev->vts );
+        fake_seg->vts = tick_VTS( &fake_thread, new_seg->vts );
         fake_seg->other = new_seg->prev;
 
 //        VG_(printf)("Fake segment: S%d/T%D\n", 
