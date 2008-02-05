@@ -53,7 +53,6 @@
 #include <sys/time.h>
 #include <time.h>
 
-#define DYNAMIC_ANNOTATIONS  // Enable dynamic annotations. 
 #include "dynamic_annotations.h"
 
 #include <assert.h>

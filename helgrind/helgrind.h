@@ -95,6 +95,10 @@ typedef
       _VG_USERREQ__HG_GET_THREAD_ID,              /* -> Thread ID */
       _VG_USERREQ__HG_GET_MY_SEGMENT,             /* -> Segment* */
       _VG_USERREQ__HG_EXPECT_RACE,                /* void*, char*, char*, int */
+      _VG_USERREQ__HG_PCQ_CREATE,                 /* void* */
+      _VG_USERREQ__HG_PCQ_DESTROY,                /* void* */
+      _VG_USERREQ__HG_PCQ_PUT,                    /* void* */
+      _VG_USERREQ__HG_PCQ_GET,                    /* void* */
    } Vg_TCheckClientRequest;
 
 /* Clean memory state.  This makes Helgrind forget everything it knew

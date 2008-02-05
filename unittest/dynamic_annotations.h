@@ -26,10 +26,10 @@
 // Author: Konstantin Serebryany <opensource@google.com> 
 //
 // This file defines dynamic annotations for use with dynamic analysis 
-// tool like valgrind, PIN, etc. 
+// tool such as valgrind, PIN, etc. 
 //
-// Dynamic annotation is a source code annotation which affects 
-// the generated code (i.e. not a comment). 
+// Dynamic annotation is a source code annotation that affects 
+// the generated code (that is, the annotation is not a comment). 
 // Each such annotation is attached to a particular
 // instruction and/or to a particular object (address) in the program.
 //
@@ -37,9 +37,9 @@
 // (e.g. ANNOTATE_NEW_MEMORY). 
 //
 // Actual implementation of these macros may differ depending on the 
-// dynamic analysis tool beeing used. 
+// dynamic analysis tool being used. 
 //
-// Right now this file supports the following dynamic analysis tools: 
+// This file supports the following dynamic analysis tools: 
 // - None (DYNAMIC_ANNOTATIONS is not defined). 
 //    Macros are defined empty. 
 // - Helgrind (DYNAMIC_ANNOTATIONS is defined). 
@@ -49,12 +49,11 @@
 //
 // To link your program with annotations enabled, add a new file 
 // with the following lines to your program: 
-//    #define DYNAMIC_ANNOTATIONS
 //    #define DYNAMIC_ANNOTATIONS_HERE
 //    #include "dynamic_annotations.h"  
 //
 //
-// FIXME: using __attribute__((noinline)) might be simpler, 
+// TODO: using __attribute__((noinline)) might be simpler, 
 // but it is less portable. 
 //
 #ifndef DYNAMIC_ANNOTATIONS_H__
@@ -63,18 +62,18 @@
 
 #ifdef DYNAMIC_ANNOTATIONS
 // Annotations are enabled. 
-# ifdef DYNAMIC_ANNOTATIONS_HERE
-// Actually define the annotations as functions with empty body. 
-#  define ANNOTATION(name, arglist...) \
-    extern "C" void name (const char *file, int line, arglist) {}
-# else
-// Just declare the functions. 
-#  define ANNOTATION(name, arglist...) \
-    extern "C" void name (const char *file, int line, arglist); 
-# endif
+  #ifdef DYNAMIC_ANNOTATIONS_HERE
+    // Actually define the annotations as functions with empty body. 
+    #define ANNOTATION(name, arglist...) \
+      extern "C" void name (const char *file, int line, arglist) {}
+  #else
+    // Just declare the functions. 
+    #define ANNOTATION(name, arglist...) \
+      extern "C" void name (const char *file, int line, arglist); 
+  #endif  // DYNAMIC_ANNOTATIONS_HERE
 #else  // !DYNAMIC_ANNOTATIONS
-// Annotations are disabled. Define an empty inlinable function. 
-# define ANNOTATION(name, arglist...) \
+  // Annotations are disabled. Define an empty inlinable function. 
+  #define ANNOTATION(name, arglist...) \
     static inline void name (const char *file, int line, arglist) {}
 #endif
 
@@ -86,63 +85,80 @@ ANNOTATION(AnnotateRWLockReleased, void *lock, long is_w);
 ANNOTATION(AnnotateCondVarWait,     void *cv, void *lock);
 ANNOTATION(AnnotateCondVarSignal,   void *cv);
 ANNOTATION(AnnotateCondVarSignalAll,void *cv);
-ANNOTATION(AnnotatePCQPut,  void *uniq_id);
-ANNOTATION(AnnotatePCQGet,  void *uniq_id);
+ANNOTATION(AnnotatePCQCreate,   void *pcq);
+ANNOTATION(AnnotatePCQDestroy,  void *pcq);
+ANNOTATION(AnnotatePCQPut,      void *pcq);
+ANNOTATION(AnnotatePCQGet,      void *pcq);
 ANNOTATION(AnnotateNewMemory, void *mem, long size);
 ANNOTATION(AnnotateExpectRace, void *mem, const char *description);
+ANNOTATION(AnnotateBenignRace, void *mem, const char *description);
 
 ANNOTATION(AnnotateNoOp, void *arg);
 
-/// Insert right after the lock is created. 
+// Insert right after the lock is created. 
 #define ANNOTATE_RWLOCK_CREATE(lock) \
            AnnotateRWLockCreate(__FILE__, __LINE__, lock)
 
-/// Insert right before the lock is destroyed. 
+// Insert right before the lock is destroyed. 
 #define ANNOTATE_RWLOCK_DESTROY(lock) \
            AnnotateRWLockDestroy(__FILE__, __LINE__, lock)
 
-/// Insert right after the point were 'lock' is acquired.
-/// Set is_w=1 for write lock, is_w=0 for reader lock. 
+// Insert right after the point were 'lock' is acquired.
+// Set is_w=1 for write lock, is_w=0 for reader lock. 
 #define ANNOTATE_RWLOCK_ACQUIRED(lock, is_w) \
             AnnotateRWLockAcquired(__FILE__, __LINE__, lock, is_w)
 
-/// Insert right before the point where 'lock' is released. 
+// Insert right before the point where 'lock' is released. 
 #define ANNOTATE_RWLOCK_RELEASED(lock, is_w) \
             AnnotateRWLockReleased(__FILE__, __LINE__, lock, is_w)
 
-/// Insert right after the point where wait has succeeded. 
-/// 'lock' can be the same address as 'cv'. 
+// Insert right after the point where wait has succeeded. 
+// 'lock' can be the same address as 'cv'. 
 #define ANNOTATE_CONDVAR_WAIT(cv, lock) \
             AnnotateCondVarWait(__FILE__, __LINE__, cv, lock)
-/// Insert right before the signal. 
+// Insert right before the signal. 
 #define ANNOTATE_CONDVAR_SIGNAL(cv) \
             AnnotateCondVarSignal(__FILE__, __LINE__, cv)
-/// Same as ANNOTATE_CONDVAR_SIGNAL.
+// Same as ANNOTATE_CONDVAR_SIGNAL.
 #define ANNOTATE_CONDVAR_SIGNAL_ALL(cv) \
             AnnotateCondVarSignalAll(__FILE__, __LINE__, cv)
 
-/// Insert right before putting element into the queue (in Put()). 
-/// 'uniq_id' should be put into queue. 
-#define ANNOTATE_PCQ_PUT(uniq_id) \
-            AnnotatePCQPut(__FILE__, __LINE__, \
-                           reinterpret_cast<void*>(uniq_id))
+// Insert into the PCQ constructor. 
+#define ANNOTATE_PCQ_CREATE(pcq) \
+            AnnotatePCQCreate(__FILE__, __LINE__, pcq)
 
-/// Insert rigth after getting element from the queue (in Get()). 
-#define ANNOTATE_PCQ_GET(uniq_id) \
-            AnnotatePCQGet(__FILE__, __LINE__, \
-                           reinterpret_cast<void*>(uniq_id))
+// Insert into the PCQ destructor. 
+#define ANNOTATE_PCQ_DESTROY(pcq) \
+            AnnotatePCQDestroy(__FILE__, __LINE__, pcq)
 
-/// Insert at the very end of malloc-like function. 
+// Insert right before putting element into the queue (in Put()). 
+#define ANNOTATE_PCQ_PUT(pcq) \
+            AnnotatePCQPut(__FILE__, __LINE__, pcq)
+
+// Insert right after getting element from the queue (in Get()). 
+#define ANNOTATE_PCQ_GET(pcq) \
+            AnnotatePCQGet(__FILE__, __LINE__, pcq)
+
+// Insert this right after the memory is allocated by 
+// a non-standard memory allocator,
+// e.g. after it is extracted from a free-list.
 #define ANNOTATE_NEW_MEMORY(mem, size) \
             AnnotateNewMemory(__FILE__, __LINE__, mem, size)
 
-/// Insert at the beginning of a unit test. 
+// Insert at the beginning of a unit test. 
 #define ANNOTATE_EXPECT_RACE(mem, description) \
             AnnotateExpectRace(__FILE__, __LINE__, mem, description)
 
-/// A no-op. Insert where you like for testing the interceptors. 
+// Marks that we have a benign race on 'mem'.
+// Insert at the point where 'mem' exists, preferably close to the point
+// where the race happens.
+#define ANNOTATE_BENIGN_RACE(mem) \
+            AnnotateBenignRace(__FILE__, __LINE__, arg)
+
+// A no-op. Insert where you like for testing the interceptors. 
 #define ANNOTATE_NO_OP(arg) \
             AnnotateNoOp(__FILE__, __LINE__, arg)
 
 
-#endif  // DYNAMIC_ANNOTATIONS_H__
+
+#endif  // DYNAMIC_ANNOTATIONS_H__/

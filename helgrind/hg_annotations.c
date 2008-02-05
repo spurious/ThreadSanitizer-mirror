@@ -168,21 +168,32 @@ ANN_FUNC(void, AnnotateCondVarSignalAll, const char *file, int line, void *cv)
 }
 
 
-ANN_FUNC(void, AnnotatePCQPut, const char *file, int line, void *uniq_id)
+ANN_FUNC(void, AnnotatePCQCreate, const char *file, int line, void *pcq)
 {
-  const char *name = "AnnotatePCQPut";
-  ANN_TRACE("--#%d %s[%p] %s:%d\n", tid, name, uniq_id, file, line);
-  DO_CREQ_v_WW(_VG_USERREQ__HG_POSIX_SEM_INIT_POST, void*, uniq_id, unsigned long, 0);
-  DO_CREQ_v_W(_VG_USERREQ__HG_POSIX_SEM_POST_PRE, void*, uniq_id);
+  const char *name = "AnnotatePCQCreate";
+  ANN_TRACE("--#%d %s[%p] %s:%d\n", tid, name, pcq, file, line);
+  DO_CREQ_v_W(_VG_USERREQ__HG_PCQ_CREATE,   void*,pcq);
 }
 
+ANN_FUNC(void, AnnotatePCQDestroy, const char *file, int line, void *pcq)
+{
+  const char *name = "AnnotatePCQDestroy";
+  ANN_TRACE("--#%d %s[%p] %s:%d\n", tid, name, pcq, file, line);
+  DO_CREQ_v_W(_VG_USERREQ__HG_PCQ_DESTROY,   void*,pcq);
+}
 
-ANN_FUNC(void, AnnotatePCQGet, const char *file, int line, void *uniq_id)
+ANN_FUNC(void, AnnotatePCQPut, const char *file, int line, void *pcq)
+{
+  const char *name = "AnnotatePCQPut";
+  ANN_TRACE("--#%d %s[%p] %s:%d\n", tid, name, pcq, file, line);
+  DO_CREQ_v_W(_VG_USERREQ__HG_PCQ_PUT,   void*,pcq);
+}
+
+ANN_FUNC(void, AnnotatePCQGet, const char *file, int line, void *pcq)
 {
   const char *name = "AnnotatePCQGet";
-  ANN_TRACE("--#%d %s[%p] %s:%d\n", tid, name, uniq_id, file, line);
-  DO_CREQ_v_W(_VG_USERREQ__HG_POSIX_SEM_WAIT_POST,   void*,uniq_id);
-  DO_CREQ_v_W(_VG_USERREQ__HG_POSIX_SEM_DESTROY_PRE, void*, uniq_id);
+  ANN_TRACE("--#%d %s[%p] %s:%d\n", tid, name, pcq, file, line);
+  DO_CREQ_v_W(_VG_USERREQ__HG_PCQ_GET,   void*,pcq);
 }
 
 ANN_FUNC(void, AnnotateExpectRace, const char *file, int line, void *mem, char *description)

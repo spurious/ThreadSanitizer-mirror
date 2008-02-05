@@ -33,7 +33,8 @@
 // with any other library that supports threads, locks, cond vars, etc. 
 // 
 // To compile with pthreads: 
-//   g++  racecheck_unittest.cc dynamic_annotations.cc -lpthread -g
+//   g++  racecheck_unittest.cc dynamic_annotations.cc 
+//        -lpthread -g -DDYNAMIC_ANNOTATIONS=1
 // 
 // To compile with different library: 
 //   1. cp thread_wrappers_pthread.h thread_wrappers_yourlib.h
@@ -1238,7 +1239,8 @@ namespace test28 {
 // 4. Q.Put() ---------\                                 /------- D. Q.Put()
 // 5. MU.Lock()         \-------> a. Q.Get()            /         E. MU.Lock()
 // 6. read(GLOB)                  b. Q.Get() <---------/          F. read(GLOB)
-// 7. MU.Unlock()                 c. read(GLOB)                   G. MU.Unlock()
+// 7. MU.Unlock()                   (sleep)                       G. MU.Unlock()
+//                                c. read(GLOB)
 ProducerConsumerQueue Q(INT_MAX);
 int     GLOB = 0;
 
@@ -1257,6 +1259,7 @@ void Putter() {
 void Getter() {
   Q.Get();
   Q.Get();
+  usleep(100000);
   CHECK(GLOB == 2);
 }
 
@@ -1298,6 +1301,7 @@ void Putter2() { Putter(Q2); }
 void Getter() {
   Q1->Get();
   Q2->Get();
+  usleep(100000);
   CHECK(GLOB == 2);
   usleep(50000); //  TODO: remove this when FP in test32 is fixed. 
 }
@@ -2123,7 +2127,7 @@ REGISTER_TEST(Run, 46)
 }  // namespace test46
 
 
-// test47: TP. {{{1
+// test47: TP. Not detected by pure happens-before detectors. {{{1
 namespace test47 {
 // A true race that can not be detected by a pure happens-before 
 // race detector. 
@@ -2148,6 +2152,7 @@ void Second() {
   GLOB++;
 }
 void Run() {
+  ANNOTATE_EXPECT_RACE(&GLOB, "test47. TP. Not detected by pure HB.");
   printf("test47:\n");
   MyThreadArray t(First, Second);
   t.Start();

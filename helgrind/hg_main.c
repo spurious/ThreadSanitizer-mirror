@@ -175,6 +175,7 @@ static Int clo_sanity_flags = 0;
 
 
 static Bool clo_use_msm_prop1 = False; // use prop1 memory state machine. 
+static Bool clo_use_msm_prop1_empty = False; // use an empty machine instead of prop1. 
 
 /* This has to do with printing error messages.  See comments on
    announce_threadset() and summarise_threadset().  Perhaps it
@@ -1149,14 +1150,15 @@ static inline Bool prop1_LS_valid (LockSet ls) {
 
 
 static inline SVal prop1_mk_SHVAL_RW (Bool is_w, SegmentSet ss, LockSet ls) {
-  tl_assert(prop1_SS_valid(ss));
-  tl_assert(prop1_LS_valid(ls));
-  SVal res = (1ULL << 63) 
-      |  ((SVal)is_w << 62) 
-      |  ((SVal)ss << (62-SEGMENT_SET_BITS)) 
-      |  ((SVal)ls);
-//  VG_(printf)("XX %llx\n", res);
-  return res;
+   SVal res;
+   tl_assert(prop1_SS_valid(ss));
+   tl_assert(prop1_LS_valid(ls));
+   res = (1ULL << 63) 
+         |  ((SVal)is_w << 62) 
+         |  ((SVal)ss << (62-SEGMENT_SET_BITS)) 
+         |  ((SVal)ls);
+   //  VG_(printf)("XX %llx\n", res);
+   return res;
 }
 static inline SVal prop1_mk_SHVAL_R (SegmentSet ss, LockSet ls) {
   return prop1_mk_SHVAL_RW(False, ss, ls);
@@ -2236,6 +2238,104 @@ static Bool maybe_set_expected_error (Addr ptr,
    HG_(addToFM)( map_expected_errors, (Word)ptr, (Word)error );
    return True;
 }
+
+/*------- PCQ (aka ProducerConsumerQueue, Message queue) ------ */
+/*
+  Producer-consumer queue (aka Message queue) creates 
+  happens-before relation. 
+  Put() is like posting a semaphore and 
+  Get() is like waiting on that semaphore. 
+
+  When Get() is called, helgrind has to find the corresponding Put().
+
+  For each PCQ we maintain a structure that contains the number 
+  of puts and the number of gets. 
+  The n-th Put() corresponds to n-th Get(). 
+
+
+  TODO:
+  Currently we reuse semaphore routines evh__HG_POSIX_SEM_*.  
+  It's better to have separate implementations for Put()/Get(). 
+
+*/
+typedef struct {
+   Word  client_pcq; // just for consistency checking. 
+   int   n_puts;
+   int   n_gets; 
+} PCQ;
+
+static WordFM *pcq_map = NULL; // WordFM client_pcq my_pcq
+
+// Create PCQ for client_pcq. Should be called 
+// when the client creates its PCQ. 
+static void pcq_create(Word client_pcq)
+{
+   PCQ *my_pcq;
+   if (pcq_map == NULL) {
+      // first time init. 
+      pcq_map = HG_(newFM)( hg_zalloc, hg_free, NULL);
+      tl_assert(pcq_map != NULL);
+   }
+
+   my_pcq = (PCQ*) hg_zalloc(sizeof(PCQ));
+   my_pcq->client_pcq = client_pcq;
+   my_pcq->n_puts     = 0;
+   my_pcq->n_gets     = 0;
+
+   tl_assert(!HG_(lookupFM)(pcq_map, NULL, NULL, client_pcq));
+   HG_(addToFM)(pcq_map, client_pcq, (Word)my_pcq);
+}
+
+// Destroy PCQ (called when client PCQ is destroyed). 
+static void pcq_destroy(Word client_pcq)
+{
+   PCQ *my_pcq;
+   Word old_client_pcq;
+   Bool found = HG_(delFromFM)(pcq_map, &old_client_pcq, 
+                               (Word*)&my_pcq, client_pcq);
+   tl_assert(found == True);
+   tl_assert(old_client_pcq == client_pcq);
+   tl_assert(my_pcq->client_pcq == client_pcq);
+}
+
+// fwds
+static void evh__HG_POSIX_SEM_WAIT_POST ( ThreadId tid, void* sem );
+static void evh__HG_POSIX_SEM_POST_PRE ( ThreadId tid, void* sem );
+
+// Handle PCQ::Put().
+static void pcq_put(ThreadId tid, Word client_pcq)
+{
+   PCQ *my_pcq;
+   Word old_client_pcq;
+   Bool found = HG_(lookupFM)(pcq_map, &old_client_pcq, 
+                              (Word*)&my_pcq, client_pcq);
+   tl_assert(found == True);
+   tl_assert(old_client_pcq == client_pcq);
+   tl_assert(my_pcq->client_pcq == client_pcq);
+
+   evh__HG_POSIX_SEM_POST_PRE(tid, 
+                              (void*)((client_pcq << 5) ^ my_pcq->n_puts)
+                              );
+   my_pcq->n_puts++;
+}
+
+// Handle PCQ::Get(). 
+static void pcq_get(ThreadId tid, Word client_pcq)
+{
+   PCQ *my_pcq;
+   Word old_client_pcq;
+   Bool found = HG_(lookupFM)(pcq_map, &old_client_pcq, 
+                              (Word*)&my_pcq, client_pcq);
+   tl_assert(found == True);
+   tl_assert(old_client_pcq == client_pcq);
+   tl_assert(my_pcq->client_pcq == client_pcq);
+
+   evh__HG_POSIX_SEM_WAIT_POST(tid,
+                              (void*)((client_pcq << 5) ^ my_pcq->n_gets)
+                               );
+   my_pcq->n_gets++;
+}
+
 
 
 /*------------ searching the happens-before graph ------------*/
@@ -3369,36 +3469,36 @@ static void msm__show_state_change ( Thread* thr_acc, Addr a, Int szB,
 
 static void prop1_show_shval(char *buf, int buf_size, SVal sv)
 {
-  tl_assert(buf_size >= 100);
-  if (sv == SHVAL_Invalid) {
-    VG_(sprintf)(buf, "Invalid");
-  } else if (sv == SHVAL_NoAccess) {
-    VG_(sprintf)(buf, "NoAccess");
-  } else if (sv == SHVAL_New) {
-    VG_(sprintf)(buf, "New");
-  } else if (sv == SHVAL_Race) {
-    VG_(sprintf)(buf, "Race");
-  } else {
-    tl_assert(prop1_is_SHVAL_RW(sv));
-    int i;
-    Bool is_w     = prop1_is_SHVAL_W(sv);
-    SegmentSet ss = prop1_get_SHVAL_SS(sv);
-    LockSet    ls = prop1_get_SHVAL_LS(sv);
-    int n_segments = prop1_SS_get_size(ss);
-    int n_locks    = HG_(cardinalityWS(univ_lsets, ls));
-    VG_(sprintf)(buf, "%c #SS=%d #LS=%d ", 
-                 is_w ? 'W' : 'R', n_segments, n_locks);
+   tl_assert(buf_size >= 100);
+   if (sv == SHVAL_Invalid) {
+      VG_(sprintf)(buf, "Invalid");
+   } else if (sv == SHVAL_NoAccess) {
+      VG_(sprintf)(buf, "NoAccess");
+   } else if (sv == SHVAL_New) {
+      VG_(sprintf)(buf, "New");
+   } else if (sv == SHVAL_Race) {
+      VG_(sprintf)(buf, "Race");
+   } else {
+      int i;
+      Bool is_w     = prop1_is_SHVAL_W(sv);
+      SegmentSet ss = prop1_get_SHVAL_SS(sv);
+      LockSet    ls = prop1_get_SHVAL_LS(sv);
+      int n_segments = prop1_SS_get_size(ss);
+      int n_locks    = HG_(cardinalityWS(univ_lsets, ls));
+      VG_(sprintf)(buf, "%c #SS=%d #LS=%d ", 
+                   is_w ? 'W' : 'R', n_segments, n_locks);
 
-    for (i = 0; i < n_segments; i++) {
-      if (VG_(strlen(buf)) > buf_size - 20) {
-        VG_(sprintf)(buf + VG_(strlen)(buf), "...");
-        break;
+      for (i = 0; i < n_segments; i++) {
+         SegmentID S;
+         if (VG_(strlen(buf)) > buf_size - 20) {
+            VG_(sprintf)(buf + VG_(strlen)(buf), "...");
+            break;
+         }
+         S = prop1_SS_get_element(ss, i);
+         VG_(sprintf)(buf + VG_(strlen)(buf), "S%d/T%d ", 
+                      (int)S-(1<<24), map_segments_lookup(S)->thr->errmsg_index);
       }
-      SegmentID S = prop1_SS_get_element(ss, i);
-      VG_(sprintf)(buf + VG_(strlen)(buf), "S%d/T%d ", 
-                   (int)S-(1<<24), map_segments_lookup(S)->thr->errmsg_index);
-    }
-  }
+   }
 }
 
 
@@ -3413,6 +3513,8 @@ static
 SVal prop1_memory_state_machine(
     Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
 {
+
+   if (clo_use_msm_prop1_empty) return sv_old;
 
    Bool is_race = False;
    SVal sv_new = SHVAL_Invalid;
@@ -8451,6 +8553,23 @@ Bool hg_handle_client_request ( ThreadId tid, UWord* args, UWord* ret)
         break;
       }
 
+      case _VG_USERREQ__HG_PCQ_CREATE: { // void *
+         pcq_create(args[1]);
+         break;
+      }
+      case _VG_USERREQ__HG_PCQ_DESTROY: { // void *
+         pcq_destroy(args[1]);
+         break;
+      }
+      case _VG_USERREQ__HG_PCQ_PUT: { // void *
+         pcq_put(tid, args[1]);
+         break;
+      }
+      case _VG_USERREQ__HG_PCQ_GET: { // void *
+         pcq_get(tid, args[1]);
+         break;
+      }
+
 
       default:
          /* Unhandled Helgrind client request! */
@@ -9332,6 +9451,8 @@ static Bool hg_process_cmd_line_option ( Char* arg )
 
    else if (VG_CLO_STREQ(arg, "--prop1"))
       clo_use_msm_prop1 = True;
+   else if (VG_CLO_STREQ(arg, "--prop1-empty"))
+      clo_use_msm_prop1_empty = True;
 
    else if (VG_CLO_STREQ(arg, "--gen-vcg=no"))
       clo_gen_vcg = 0;
