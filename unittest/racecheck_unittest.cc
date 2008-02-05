@@ -1656,9 +1656,12 @@ namespace test36 {
 // 4. Q.Put() ---------\                                 /------- D. Q.Put()
 // 5. MU1.Lock()        \-------> a. Q.Get()            /         E. MU1.Lock()  
 // 6. MU.Lock()                   b. Q.Get() <---------/          F. MU.Lock()   
-// 7. write(GLOB)                 c. MU1.Lock()                   G. write(GLOB) 
-// 8. MU.Unlock()                 d. write(GLOB)                  H. MU.Unlock() 
-// 9. MU1.Unlock()                e. MU1.Unlock()                 I. MU1.Unlock()
+// 7. write(GLOB)                                                 G. write(GLOB) 
+// 8. MU.Unlock()                                                 H. MU.Unlock() 
+// 9. MU1.Unlock()                  (sleep)                       I. MU1.Unlock()
+//                                c. MU1.Lock()   
+//                                d. write(GLOB)  
+//                                e. MU1.Unlock() 
 ProducerConsumerQueue Q(INT_MAX);
 int     GLOB = 0;
 
@@ -1679,6 +1682,7 @@ void Putter() {
 void Getter() {
   Q.Get();
   Q.Get();
+  usleep(100000);
   MU1.Lock();
   GLOB++;
   MU1.Unlock();
