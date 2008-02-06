@@ -174,8 +174,10 @@ static Int  clo_trace_level = 0;
 static Int clo_sanity_flags = 0;
 
 
-static Bool clo_use_msm_prop1 = False; // use prop1 memory state machine. 
-static Bool clo_use_msm_prop1_empty = False; // use an empty machine instead of prop1. 
+static Bool clo_msm_prop1 = False; // use prop1 memory state machine. 
+static int  clo_msm_prop1_n = 1; 
+static int  clo_msm_prop1_i = 0;
+
 
 /* This has to do with printing error messages.  See comments on
    announce_threadset() and summarise_threadset().  Perhaps it
@@ -1441,7 +1443,7 @@ void show_shadow_w32_for_user ( /*OUT*/Char* buf, Int nBuf, SVal w32 )
    tl_assert(nBuf-1 >= 99);
    VG_(memset)(buf, 0, nBuf);
 
-   if (clo_use_msm_prop1) {
+   if (clo_msm_prop1) {
       if (is_SHVAL_New(w32)) {
          VG_(sprintf)(buf, "%s", "New");
       }
@@ -2559,7 +2561,7 @@ static Bool happens_before ( SegmentID segid1, SegmentID segid2 )
    tl_assert(seg2->vts);
 
    hbV = cmpGEQ_VTS( seg2->vts, seg1->vts );
-   if (clo_use_msm_prop1 || clo_sanity_flags & SCE_HBEFORE) {
+   if (clo_msm_prop1 || clo_sanity_flags & SCE_HBEFORE) {
       /* Crosscheck the vector-timestamp comparison result against that
          obtained from the explicit graph approach.  Can be very
          slow. */
@@ -2570,7 +2572,7 @@ static Bool happens_before ( SegmentID segid1, SegmentID segid2 )
       hbG = hbV;
    }
 
-   if (!clo_use_msm_prop1) { // FIXME!!
+   if (!clo_msm_prop1) { // FIXME!!
      if (hbV != hbG) {
        VG_(printf)("seg1 %p  seg2 %p  hbV %d  hbG %d\n", 
                    seg1,seg2,(Int)hbV,(Int)hbG);
@@ -3502,6 +3504,7 @@ static void prop1_show_shval(char *buf, int buf_size, SVal sv)
 }
 
 
+static inline Bool address_may_be_ignored ( Addr a ); // fwds
 
 //
 //
@@ -3513,8 +3516,7 @@ static
 SVal prop1_memory_state_machine(
     Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
 {
-
-   if (clo_use_msm_prop1_empty) return sv_old;
+   tl_assert (!address_may_be_ignored(a));
 
    Bool is_race = False;
    SVal sv_new = SHVAL_Invalid;
@@ -3537,7 +3539,7 @@ SVal prop1_memory_state_machine(
 
    int i;
 
-   tl_assert(clo_use_msm_prop1);
+   tl_assert(clo_msm_prop1);
 
 
    SegmentSet newSS = 0;
@@ -3577,8 +3579,9 @@ SVal prop1_memory_state_machine(
    // On the other hand, if we have a shared value accessed by more 
    // than 64 threads, we are already in trouble performance-wise.
    ULong hb_mask = 0; 
-   int oldSS_size = prop1_SS_get_size(oldSS);;
-   tl_assert(oldSS_size < 64);
+   int oldSS_size = prop1_SS_get_size(oldSS);
+   // tl_assert(oldSS_size < 64);
+   if (oldSS_size >= 64) oldSS_size = 63;
 
 
    // compute hb_mask
@@ -3701,7 +3704,7 @@ static
 SVal msm__handle_read ( Thread* thr_acc, Addr a, SVal wold, Int szB )
 {
    SVal wnew = SHVAL_Invalid;
-   if (clo_use_msm_prop1) 
+   if (clo_msm_prop1) 
      return prop1_memory_state_machine(False, thr_acc, a, wold, szB);
 
    tl_assert(is_sane_Thread(thr_acc));
@@ -3839,7 +3842,7 @@ static
 SVal msm__handle_write ( Thread* thr_acc, Addr a, SVal wold, Int szB )
 {
    SVal wnew = SHVAL_Invalid;
-   if (clo_use_msm_prop1) 
+   if (clo_msm_prop1) 
      return prop1_memory_state_machine(True, thr_acc, a, wold, szB);
 
    tl_assert(is_sane_Thread(thr_acc));
@@ -4730,6 +4733,23 @@ static void shmem__flush_and_invalidate_scache ( void ) {
 
 /* ------------ Basic shadow memory read/write ops ------------ */
 
+// If (clo_msm_prop1_n >= 2) we handle only addresses that 
+// equal clo_msm_prop1_i modulo clo_msm_prop1_n. 
+static inline Bool address_may_be_ignored ( Addr a ) {
+   Word w = (Word) a;
+   int n = clo_msm_prop1_n;
+   int i = clo_msm_prop1_i;
+   if (n == 1) return False;
+   if (n <= 0) return True;
+   if (n == 7)  if (((w >> 3) % 7) != i) return True;
+   if (n == 13)  if (((w >> 3) % 13) != i) return True;
+   if (n == 16)  if (((w >> 3) % 16) != i) return True;
+   if (n == 31)  if (((w >> 3) % 31) != i) return True;
+   if (((w >> 3) % n) != i) return True;
+   return False;
+}
+
+
 static inline Bool aligned16 ( Addr a ) {
    return 0 == (a & 1);
 }
@@ -4977,6 +4997,7 @@ static void shadow_mem_read8 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
    UWord      cloff, tno, toff;
    SVal       svOld, svNew;
    UShort     descr;
+   if (address_may_be_ignored(a)) return;
    stats__cline_read8s++;
    cl    = get_cacheline(a);
    cloff = get_cacheline_offset(a);
@@ -5001,6 +5022,7 @@ static void shadow_mem_read16 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
    UWord      cloff, tno, toff;
    SVal       svOld, svNew;
    UShort     descr;
+   if (address_may_be_ignored(a)) return;
    stats__cline_read16s++;
    if (UNLIKELY(!aligned16(a))) goto slowcase;
    cl    = get_cacheline(a);
@@ -5037,6 +5059,7 @@ static void shadow_mem_read32_SLOW ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
    UWord      cloff, tno, toff;
    SVal       svOld, svNew;
    UShort     descr;
+   if (address_may_be_ignored(a)) return;
    if (UNLIKELY(!aligned32(a))) goto slowcase;
    cl    = get_cacheline(a);
    cloff = get_cacheline_offset(a);
@@ -5072,6 +5095,7 @@ static void shadow_mem_read32 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
    SVal       svOld, svNew;
    UShort     descr;
    stats__cline_read32s++;
+   if (address_may_be_ignored(a)) return;
    if (UNLIKELY(!aligned32(a))) goto slowcase;
    cl    = get_cacheline(a);
    cloff = get_cacheline_offset(a);
@@ -5097,6 +5121,7 @@ static void shadow_mem_read64 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
    SVal       svOld, svNew;
    UShort     descr;
    stats__cline_read64s++;
+   if (address_may_be_ignored(a)) return;
    if (UNLIKELY(!aligned64(a))) goto slowcase;
    cl    = get_cacheline(a);
    cloff = get_cacheline_offset(a);
@@ -5124,6 +5149,7 @@ static void shadow_mem_write8 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
    UWord      cloff, tno, toff;
    SVal       svOld, svNew;
    UShort     descr;
+   if (address_may_be_ignored(a)) return;
    stats__cline_write8s++;
    cl    = get_cacheline(a);
    cloff = get_cacheline_offset(a);
@@ -5149,6 +5175,7 @@ static void shadow_mem_write16 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
    SVal       svOld, svNew;
    UShort     descr;
    stats__cline_write16s++;
+   if (address_may_be_ignored(a)) return;
    if (UNLIKELY(!aligned16(a))) goto slowcase;
    cl    = get_cacheline(a);
    cloff = get_cacheline_offset(a);
@@ -5184,6 +5211,7 @@ static void shadow_mem_write32_SLOW ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
    UWord      cloff, tno, toff;
    SVal       svOld, svNew;
    UShort     descr;
+   if (address_may_be_ignored(a)) return;
    if (UNLIKELY(!aligned32(a))) goto slowcase;
    cl    = get_cacheline(a);
    cloff = get_cacheline_offset(a);
@@ -5218,6 +5246,7 @@ static void shadow_mem_write32 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
    UWord      cloff, tno, toff;
    SVal       svOld, svNew;
    UShort     descr;
+   if (address_may_be_ignored(a)) return;
    stats__cline_write32s++;
    if (UNLIKELY(!aligned32(a))) goto slowcase;
    cl    = get_cacheline(a);
@@ -5243,6 +5272,7 @@ static void shadow_mem_write64 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
    UWord      cloff, tno, toff;
    SVal       svOld, svNew;
    UShort     descr;
+   if (address_may_be_ignored(a)) return;
    stats__cline_write64s++;
    if (UNLIKELY(!aligned64(a))) goto slowcase;
    cl    = get_cacheline(a);
@@ -5271,6 +5301,7 @@ static void shadow_mem_set8 ( Thread* uu_thr_acc, Addr a, SVal svNew ) {
    UWord      cloff, tno, toff;
    UShort     descr;
    stats__cline_set8s++;
+   if (address_may_be_ignored(a)) return;
    cl    = get_cacheline(a);
    cloff = get_cacheline_offset(a);
    tno   = get_treeno(a);
@@ -5289,6 +5320,7 @@ static void shadow_mem_set16 ( Thread* uu_thr_acc, Addr a, SVal svNew ) {
    CacheLine* cl; 
    UWord      cloff, tno, toff;
    UShort     descr;
+   if (address_may_be_ignored(a)) return;
    stats__cline_set16s++;
    if (UNLIKELY(!aligned16(a))) goto slowcase;
    cl    = get_cacheline(a);
@@ -5325,6 +5357,7 @@ static void shadow_mem_set32 ( Thread* uu_thr_acc, Addr a, SVal svNew ) {
    CacheLine* cl; 
    UWord      cloff, tno, toff;
    UShort     descr;
+   if (address_may_be_ignored(a)) return;
    stats__cline_set32s++;
    if (UNLIKELY(!aligned32(a))) goto slowcase;
    cl    = get_cacheline(a);
@@ -5363,8 +5396,8 @@ inline
 static void shadow_mem_set64 ( Thread* uu_thr_acc, Addr a, SVal svNew ) {
    CacheLine* cl; 
    UWord      cloff, tno, toff;
+   if (address_may_be_ignored(a)) return;
    stats__cline_set64s++;
-//   COUNT;
    if (UNLIKELY(!aligned64(a))) goto slowcase;
 
    cl    = get_cacheline(a);
@@ -5423,7 +5456,7 @@ static void shadow_mem_copy8 ( Addr src, Addr dst, Bool normalise ) {
 
 
 /* ------------ Shadow memory range setting ops ------------ */
-// inline // KCC
+inline 
 static void shadow_mem_modify_range(
                Thread* thr, 
                Addr    a, 
@@ -5750,7 +5783,7 @@ static void shadow_mem_make_NoAccess ( Thread* thr, Addr aIN, SizeT len )
       of all ShM and ShR states.
       Optimisation 1: skip SecMaps which do not have .mbHasShared set
    */
-   if (!clo_use_msm_prop1) // FIXME prop1
+   if (!clo_msm_prop1) // FIXME prop1
    { Int        stats_SMs = 0, stats_SMs_scanned = 0;
      Addr       ga;
      SecMap*    sm;
@@ -6454,7 +6487,7 @@ void evh__HG_PTHREAD_JOIN_POST ( ThreadId stay_tid, Thread* quit_thr )
 
    stats_SMs = stats_SMs_scanned = stats_reExcls = 0;
    HG_(initIterFM)( map_shmem );
-   if (clo_use_msm_prop1 == False)
+   if (clo_msm_prop1 == False)
    while (HG_(nextIterFM)( map_shmem,
                            (Word*)&ga, (Word*)&sm )) {
       SecMapIter itr;
@@ -6864,7 +6897,7 @@ static void evh__HG_PTHREAD_COND_SIGNAL_PRE ( ThreadId tid, void* cond )
       new_seg->vts = tick_VTS( new_seg->thr, new_seg->prev->vts );
 
       /* ... and add the binding. */
-      if (!clo_use_msm_prop1) {
+      if (!clo_msm_prop1) {
         HG_(addToFM)( map_cond_to_Segment, (Word)cond,
                                          (Word)(new_seg->prev) );
       } else {
@@ -9237,7 +9270,7 @@ static void hg_pp_Error ( Error* err )
       err_ga = VG_(get_error_address)(err);
 
       /* Format the low level state print descriptions */
-      if (clo_use_msm_prop1) {
+      if (clo_msm_prop1) {
         old_buf[0] = 'x';
         old_buf[1] = 0;
         new_buf[0] = 'z';
@@ -9253,7 +9286,7 @@ static void hg_pp_Error ( Error* err )
          depends on the nature of the transition involved.  So now
          fall into a case analysis of the error state transitions. */
 
-      if (clo_use_msm_prop1) {
+      if (clo_msm_prop1) {
          VG_(message)(Vg_UserMsg,
                       "prop1: Possible data race during %s of size %d at %p",
                       what, szB, err_ga);
@@ -9450,9 +9483,14 @@ static Bool hg_process_cmd_line_option ( Char* arg )
       clo_happens_before = 2;
 
    else if (VG_CLO_STREQ(arg, "--prop1"))
-      clo_use_msm_prop1 = True;
-   else if (VG_CLO_STREQ(arg, "--prop1-empty"))
-      clo_use_msm_prop1_empty = True;
+      clo_msm_prop1 = True;
+   else if (VG_CLO_STREQN(10, arg, "--prop1-n=")) {
+      clo_msm_prop1_n = VG_(atoll)(&arg[10]);
+   }
+   else if (VG_CLO_STREQN(10, arg, "--prop1-i=")) {
+      clo_msm_prop1_i = VG_(atoll)(&arg[10]);
+   }
+
 
    else if (VG_CLO_STREQ(arg, "--gen-vcg=no"))
       clo_gen_vcg = 0;

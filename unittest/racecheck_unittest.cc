@@ -2264,9 +2264,9 @@ int     GLOB = 0;
 //  4. while(COND)        /     e. MU.Unock()
 //       CV.Wait(MU) <---/
 //  5. MU.Unlock()
-//  6. write(GLOB)		f. MU.Lock()
-//  				g. write(GLOB)
-//  				h. MU.Unlock()
+//  6. write(GLOB)              f. MU.Lock()
+//                              g. write(GLOB)
+//                              h. MU.Unlock()
 
 
 void Waker() {
@@ -2301,6 +2301,7 @@ void Waiter() {
   GLOB = 2;
 }
 void Run() {
+  ANNOTATE_EXPECT_RACE(&GLOB, "test50. TP.");
   printf("test50:\n");
   Waiter();
   printf("\tGLOB=%d\n", GLOB);
@@ -2322,9 +2323,9 @@ int     COND = 0;
 // 1. Start(Waker)              
 // 2. MU.Lock()          
 // 3. while(COND)               
-//       CV.Wait(MU)<-\
-// 4. MU.Unlock()      \       
-// 5. write(GLOB)	\	a. write(GLOB)
+//       CV.Wait(MU)<-\         .
+// 4. MU.Unlock()      \        .
+// 5. write(GLOB)       \       a. write(GLOB)
 //                       \      b. MU.Lock()
 //                        \     c. COND = 1
 //                         \--- d. CV.Signal()
@@ -2335,7 +2336,7 @@ int     COND = 0;
 //                              g. MU.Lock()
 //                              h. COND = 1
 //                    LOST<---- i. CV.Signal()
-//  				j. MU.Unlock()
+//                              j. MU.Unlock()
 
 void Waker() {
 
@@ -2373,6 +2374,7 @@ void Waiter() {
   GLOB = 3;
 }
 void Run() {
+  ANNOTATE_EXPECT_RACE(&GLOB, "test51. TP.");
   printf("test51:\n");
   Waiter();
   printf("\tGLOB=%d\n", GLOB);
@@ -2381,7 +2383,7 @@ REGISTER_TEST(Run, 51);
 }  // namespace test51
 
 
-// test52: TN. Synchronization via CondVar: problem with several signals. {{{1
+// test52: TP. Synchronization via CondVar: problem with several signals. {{{1
 namespace test52 {
 int     GLOB = 0;
 int     COND = 0;
@@ -2399,13 +2401,13 @@ int     COND = 0;
 //                              
 // 2. MU.Lock()       
 // 3. while(COND)               
-//       CV.Wait(MU)<-\
+//       CV.Wait(MU)<-\         .
 // 4. MU.Unlock()      \        f. GLOB = 2
-// 5. GLOB = 3		\	
+// 5. GLOB = 3          \       .
 //                       \      g. MU.Lock()
 //                        \     h. COND = 1
 //                         \--- i. CV.Signal()
-//  				j. MU.Unlock()
+//                              j. MU.Unlock()
 
 void Waker() {
 
@@ -2441,6 +2443,7 @@ void Waiter() {
   GLOB = 3;
 }
 void Run() {
+  ANNOTATE_EXPECT_RACE(&GLOB, "test52. TP.");
   printf("test52:\n");
   Waiter();
   printf("\tGLOB=%d\n", GLOB);
