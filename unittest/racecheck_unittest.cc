@@ -428,6 +428,9 @@ void Waiter() {
   while(COND != 1)
     CV.Wait(&MU);
   ANNOTATE_CONDVAR_WAIT(&CV, &MU);
+  // evh__HG_PTHREAD_COND_WAIT_PRE( Waker, &CV,&MU );
+  //VALGRIND_HG_POST_WAIT(&CV);
+
   MU.Unlock();
   GLOB = 2;
 }
@@ -1303,7 +1306,7 @@ void Getter() {
   Q2->Get();
   usleep(100000);
   CHECK(GLOB == 2);
-  usleep(50000); //  TODO: remove this when FP in test32 is fixed. 
+  usleep(48000); //  TODO: remove this when FP in test32 is fixed. 
 }
 
 void Run() {
@@ -1348,7 +1351,7 @@ namespace test30 {
 // (if we ever want to annotate this synchronization scheme at all). 
 
 
-const int N = 50;
+const int N = 48;
 static int GLOB[N];
 volatile int BOUNDARY = 0;
 
@@ -1401,7 +1404,7 @@ namespace test31 {
 // 3. BOUNDARY++;                          c. write(GLOB[i]: i < n)
 //
 
-const int N = 50;
+const int N = 48;
 static int GLOB[N];
 volatile int BOUNDARY = 0;
 
@@ -1476,7 +1479,7 @@ void Writer() {
 }
 
 void Reader() {
-  usleep(500000);
+  usleep(480000);
   MU.Lock();
   CHECK(GLOB != 777);
   MU.Unlock();
@@ -1511,7 +1514,7 @@ int     GLOB = 0;
 // Here we access N memory locations from within log(N) threads. 
 // We do it in such a way that helgrind creates nearly all possible TSETs. 
 // Then we join all threads and start again (N_iter times). 
-const int N_iter = 50;
+const int N_iter = 48;
 const int Nlog  = 15;
 const int N     = 1 << Nlog;
 static int ARR[N];
@@ -1562,7 +1565,7 @@ REGISTER_TEST2(Run, 33, STABILITY|EXCLUDE_FROM_ALL);
 namespace test34 {
 // Similar to test33, but for lock sets. 
 int     GLOB = 0;
-const int N_iter = 50;
+const int N_iter = 48;
 const int Nlog = 10;
 const int N    = 1 << Nlog;
 static int ARR[N];
@@ -1606,7 +1609,7 @@ namespace test35 {
 // TODO: need to figure out the best way for performance testing. 
 int **ARR; 
 const int N_mu   = 10000;
-const int N_free = 500000;
+const int N_free = 480000;
 
 void Worker() {
   for (int i = 0; i < N_free; i++) 
@@ -1789,7 +1792,7 @@ void Getter() {
   GLOB++;
   MU2.Unlock();
 
-  usleep(50000); //  TODO: remove this when FP in test32 is fixed. 
+  usleep(48000); //  TODO: remove this when FP in test32 is fixed. 
 }
 
 void Run() {
@@ -1893,7 +1896,7 @@ void Getter() {
   GLOB++;
   MU2.Unlock();
 
-  usleep(50000); //  TODO: remove this when FP in test32 is fixed. 
+  usleep(48000); //  TODO: remove this when FP in test32 is fixed. 
 }
 
 void Run() {
@@ -2109,7 +2112,7 @@ void First() {
   MU.Unlock();
 }
 void Second() {
-  usleep(500000);
+  usleep(480000);
   MU.Lock();
   GLOB++;
   MU.Unlock();
@@ -2150,7 +2153,7 @@ void First() {
   MU.Unlock();
 }
 void Second() {
-  usleep(500000);
+  usleep(480000);
   MU.Lock();
   MU.Unlock();
   GLOB++;
@@ -2165,6 +2168,285 @@ void Run() {
 }
 REGISTER_TEST(Run, 47)
 }  // namespace test47
+
+
+// test48: FN. Simple race (single write vs multiple reads). {{{1
+namespace test48 {
+int     GLOB = 0;
+// same as test10 but with single writer and  multiple readers
+// A simple data race between single writer and  multiple readers. 
+// Write happens before Reads (enforced by sleep(1)), 
+
+// 
+// Writer:                    Readers:
+// 1. write(GLOB)             a. sleep(long enough so that GLOB 
+//                                is most likely initialized by Writer)
+//                            b. read(GLOB)
+// 
+//
+// Eraser algorithm does not detect the race here, 
+// see Section 2.2 of http://citeseer.ist.psu.edu/savage97eraser.html. 
+//
+void Writer() {
+  GLOB = 3; 
+}
+void Reader() {
+  sleep(1);
+  CHECK(GLOB != -777);
+}
+
+void Run() {
+//  ANNOTATE_EXPECT_RACE(&GLOB, "test48. FN in helgrind 3.3.0")
+  printf("test48:\n");
+  MyThreadArray t(Writer, Reader,Reader,Reader);
+  t.Start();
+  t.Join();
+  printf("\tGLOB=%d\n", GLOB);
+}
+REGISTER_TEST(Run, 48)
+}  // namespace test48
+
+
+// test49: FN. Simple race (single write vs multiple reads). {{{1
+namespace test49 {
+int     GLOB = 0;
+// same as test10 but with multiple read operations done by a single reader
+// A simple data race between writer and readers. 
+// Write happens before Read (enforced by sleep(1)), 
+// 
+// Writer:                    Reader:
+// 1. write(GLOB)             a. sleep(long enough so that GLOB 
+//                                is most likely initialized by Writer)
+//                            b. read(GLOB)
+//                            c. read(GLOB)
+//                            d. read(GLOB)
+//                            e. read(GLOB)
+// 
+//
+// Eraser algorithm does not detect the race here, 
+// see Section 2.2 of http://citeseer.ist.psu.edu/savage97eraser.html. 
+//
+void Writer() {
+  GLOB = 3; 
+}
+void Reader() {
+  sleep(1);
+  CHECK(GLOB != -777);
+  CHECK(GLOB != -777);
+  CHECK(GLOB != -777);
+  CHECK(GLOB != -777);
+}
+
+void Run() {
+//  ANNOTATE_EXPECT_RACE(&GLOB, "test49. FN in helgrind 3.3.0");
+  printf("test49:\n");
+  MyThreadArray t(Writer, Reader);
+  t.Start();
+  t.Join();
+  printf("\tGLOB=%d\n", GLOB);
+}
+REGISTER_TEST(Run, 49);
+}  // namespace test49
+
+
+// test50: TP. Synchronization via CondVar. {{{1
+namespace test50 {
+int     GLOB = 0;
+// Two last write accesses to GLOB are not synchronized 
+//
+// Waiter:                      Waker: 
+// 1. COND = 0
+// 2. Start(Waker)              
+// 3. MU.Lock()                 a. write(GLOB)
+//                              b. MU.Lock()
+//                              c. COND = 1
+//                         /--- d. CV.Signal()
+//  4. while(COND)        /     e. MU.Unock()
+//       CV.Wait(MU) <---/
+//  5. MU.Unlock()
+//  6. write(GLOB)		f. MU.Lock()
+//  				g. write(GLOB)
+//  				h. MU.Unlock()
+
+
+void Waker() {
+  usleep(10000);  // Make sure the waiter blocks.
+
+  GLOB = 1;
+
+  MU.Lock();
+  COND = 1;
+  CV.Signal(); 
+  MU.Unlock();
+
+  MU.Lock();
+  GLOB = 3; 
+  MU.Unlock();
+
+
+}
+
+void Waiter() {
+  ThreadPool pool(1);
+  pool.StartWorkers();
+  COND = 0;
+  pool.Add(NewCallback(Waker));
+ 
+  MU.Lock();
+  while(COND != 1)
+    CV.Wait(&MU);
+  MU.Unlock();
+  ANNOTATE_CONDVAR_WAIT(&CV, &MU);
+
+  GLOB = 2;
+}
+void Run() {
+  printf("test50:\n");
+  Waiter();
+  printf("\tGLOB=%d\n", GLOB);
+}
+REGISTER_TEST(Run, 50);
+}  // namespace test50
+
+
+// test51: TP. Synchronization via CondVar: problem with several signals. {{{1
+namespace test51 {
+int     GLOB = 0;
+int     COND = 0;
+
+
+// scheduler dependent results because of several signals
+// second signal will be lost
+//
+// Waiter:                      Waker: 
+// 1. Start(Waker)              
+// 2. MU.Lock()          
+// 3. while(COND)               
+//       CV.Wait(MU)<-\
+// 4. MU.Unlock()      \       
+// 5. write(GLOB)	\	a. write(GLOB)
+//                       \      b. MU.Lock()
+//                        \     c. COND = 1
+//                         \--- d. CV.Signal()
+//                              e. MU.Unock()
+//                              
+//                              f. write(GLOB)
+//                              
+//                              g. MU.Lock()
+//                              h. COND = 1
+//                    LOST<---- i. CV.Signal()
+//  				j. MU.Unlock()
+
+void Waker() {
+
+  usleep(10000);  // Make sure the waiter blocks.
+
+  GLOB = 1;
+  
+  MU.Lock();
+  COND = 1;
+  CV.Signal(); 
+  MU.Unlock();
+
+  usleep(10000);  // Make sure the waiter is signalled.
+
+  GLOB = 2;
+
+  MU.Lock();
+  COND = 1;
+  CV.Signal();   //Lost Signal
+  MU.Unlock();
+}
+
+void Waiter() {
+
+  ThreadPool pool(1);
+  pool.StartWorkers();
+  pool.Add(NewCallback(Waker));
+ 
+  MU.Lock();
+  while(COND != 1)
+    CV.Wait(&MU);
+  MU.Unlock();
+
+
+  GLOB = 3;
+}
+void Run() {
+  printf("test51:\n");
+  Waiter();
+  printf("\tGLOB=%d\n", GLOB);
+}
+REGISTER_TEST(Run, 51);
+}  // namespace test51
+
+
+// test52: TN. Synchronization via CondVar: problem with several signals. {{{1
+namespace test52 {
+int     GLOB = 0;
+int     COND = 0;
+
+// same as test51 but the first signal will be lost
+// scheduler dependent results because of several signals
+//
+// Waiter:                      Waker: 
+// 1. Start(Waker)              
+//                              a. write(GLOB)
+//                              b. MU.Lock()
+//                              c. COND = 1
+//                    LOST<---- d. CV.Signal()
+//                              e. MU.Unock()
+//                              
+// 2. MU.Lock()       
+// 3. while(COND)               
+//       CV.Wait(MU)<-\
+// 4. MU.Unlock()      \        f. GLOB = 2
+// 5. GLOB = 3		\	
+//                       \      g. MU.Lock()
+//                        \     h. COND = 1
+//                         \--- i. CV.Signal()
+//  				j. MU.Unlock()
+
+void Waker() {
+
+  GLOB = 1;
+  
+  MU.Lock();
+  COND = 1;
+  CV.Signal();    //lost signal
+  MU.Unlock();
+
+  usleep(20000);  // Make sure the waiter blocks
+
+  GLOB = 2;
+
+  MU.Lock();
+  COND = 1;
+  CV.Signal(); 
+  MU.Unlock();  
+}
+
+void Waiter() {
+  ThreadPool pool(1);
+  pool.StartWorkers();
+  pool.Add(NewCallback(Waker));
+ 
+  usleep(10000);  // Make sure the first signal will be lost
+
+  MU.Lock();
+  while(COND != 1)
+    CV.Wait(&MU);
+  MU.Unlock();
+  
+  GLOB = 3;
+}
+void Run() {
+  printf("test52:\n");
+  Waiter();
+  printf("\tGLOB=%d\n", GLOB);
+}
+REGISTER_TEST(Run, 52);
+}  // namespace test52
 
 
 // End {{{1
