@@ -2401,9 +2401,9 @@ int     COND = 0;
 //                              
 // 2. MU.Lock()       
 // 3. while(COND)               
-//       CV.Wait(MU)<-\         .
-// 4. MU.Unlock()      \        f. GLOB = 2
-// 5. GLOB = 3          \       .
+//       CV.Wait(MU)<-\         
+// 4. MU.Unlock()      \        f. write(GLOB)
+// 5. write(GLOB)       \       
 //                       \      g. MU.Lock()
 //                        \     h. COND = 1
 //                         \--- i. CV.Signal()
