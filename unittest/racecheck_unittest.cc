@@ -116,6 +116,22 @@ struct TestAdder {
 #define REGISTER_TEST(f, id)         TestAdder add_test_##id (f, id);
 #define REGISTER_TEST2(f, id, flags) TestAdder add_test_##id (f, id, flags);
 
+static bool ArgIsOne(int *arg) { return *arg == 1; };
+static bool ArgIsZero(int *arg) { return *arg == 0; };
+
+// Put everything into stderr.
+#define printf(args...) fprintf(stderr, args)
+
+
+// Call ANNOTATE_EXPECT_RACE only if 'machine' env variable is defined. 
+// Useful to test against several different machines. 
+#define ANNOTATE_EXPECT_RACE_FOR_MACHINE(mem, descr, machine) \
+    while(getenv(machine)) {\
+      ANNOTATE_EXPECT_RACE(mem, descr); \
+      break;\
+    }\
+
+
 int main(int argc, char** argv) { // {{{1
   if (argc > 1) {
     for (int i = 1; i < argc; i++) {
@@ -135,11 +151,6 @@ int main(int argc, char** argv) { // {{{1
 
 
 
-static bool ArgIsOne(int *arg) { return *arg == 1; };
-static bool ArgIsZero(int *arg) { return *arg == 0; };
-
-// Put everything into stderr.
-#define printf(args...) fprintf(stderr, args)
 
 // An array of threads. Create/start/join all elements at once. {{{1
 class MyThreadArray {
@@ -572,7 +583,7 @@ void Reader() {
 }
 
 void Run() {
-//  ANNOTATE_EXPECT_RACE(&GLOB, "test10. FN in helgrind 3.3.0");
+  ANNOTATE_EXPECT_RACE_FOR_MACHINE(&GLOB, "test10. FN in MSMHelgrind.", "MSMProp1");
   printf("test10:\n");
   MyThreadArray t(Writer, Reader);
   t.Start();
@@ -2196,7 +2207,7 @@ void Reader() {
 }
 
 void Run() {
-//  ANNOTATE_EXPECT_RACE(&GLOB, "test48. FN in helgrind 3.3.0")
+  ANNOTATE_EXPECT_RACE_FOR_MACHINE(&GLOB, "test48. FN in MSMHelgrind.", "MSMProp1");
   printf("test48:\n");
   MyThreadArray t(Writer, Reader,Reader,Reader);
   t.Start();
@@ -2238,7 +2249,7 @@ void Reader() {
 }
 
 void Run() {
-//  ANNOTATE_EXPECT_RACE(&GLOB, "test49. FN in helgrind 3.3.0");
+  ANNOTATE_EXPECT_RACE_FOR_MACHINE(&GLOB, "test49. FN in MSMHelgrind.", "MSMProp1");
   printf("test49:\n");
   MyThreadArray t(Writer, Reader);
   t.Start();
@@ -2502,6 +2513,7 @@ void User() {
 }
 
 void Run() {
+  ANNOTATE_EXPECT_RACE_FOR_MACHINE(&GLOB, "test53. Implicit semaphore", "MSMProp1");
   printf("test53:\n");
   MyThreadArray t(Initializer, User, User);
   t.Start();
