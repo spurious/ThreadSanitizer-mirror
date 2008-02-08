@@ -153,8 +153,8 @@ ANNOTATION(AnnotateNoOp, void *arg);
 // Marks that we have a benign race on 'mem'.
 // Insert at the point where 'mem' exists, preferably close to the point
 // where the race happens.
-#define ANNOTATE_BENIGN_RACE(mem) \
-            AnnotateBenignRace(__FILE__, __LINE__, arg)
+#define ANNOTATE_BENIGN_RACE(arg, description) \
+            AnnotateBenignRace(__FILE__, __LINE__, arg, description)
 
 // Report that we want to trace all memory accesses to this memory location,
 #define ANNOTATE_TRACE_MEMORY(arg) \

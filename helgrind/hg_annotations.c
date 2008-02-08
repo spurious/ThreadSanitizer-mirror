@@ -203,6 +203,13 @@ ANN_FUNC(void, AnnotateExpectRace, const char *file, int line, void *mem, char *
   DO_CREQ_v_WWWW(_VG_USERREQ__HG_EXPECT_RACE, void*,mem, char*,description, char*, file, long, (long)line);
 }
 
+ANN_FUNC(void, AnnotateBenignRace, const char *file, int line, void *mem, char *description)
+{
+  const char *name = "AnnotateBenignRace";
+  ANN_TRACE("--#%d %s[%p] %s:%d\n", tid, name, mem, file, line);
+  DO_CREQ_v_WWWW(VG_USERREQ__HG_BENIGN_RACE, void*,mem, char*,description, char*, file, long, (long)line);
+}
+
 ANN_FUNC(void, AnnotateNewMemory, char *file, int line, void *mem, long size)
 {
   const char *name = "AnnotateNewMemory";

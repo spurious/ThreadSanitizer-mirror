@@ -8619,6 +8619,16 @@ Bool hg_handle_client_request ( ThreadId tid, UWord* args, UWord* ret)
         break;
       }
 
+      case VG_USERREQ__HG_BENIGN_RACE: { // void*, char*, char *, int
+        Addr ptr    = (Addr)args[1];
+        char *descr = (char*)args[2];
+        char *file  = (char*)args[3];
+        int line    = (int)  args[4];
+        maybe_set_expected_error(ptr, descr, file, line, True);
+        break;
+      }
+
+
       case _VG_USERREQ__HG_PCQ_CREATE: { // void *
          pcq_create(args[1]);
          break;

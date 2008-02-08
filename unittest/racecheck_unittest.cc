@@ -2605,5 +2605,27 @@ REGISTER_TEST2(Run, 55, FEATURE|EXCLUDE_FROM_ALL);
 
 
 
+// test56: TP. Use of ANNOTATE_BENIGN_RACE. {{{1
+namespace test56 {
+// For whatever reason the user wants to treat 
+// a race on GLOB as a benign race. 
+int     GLOB = 0;
+
+void Worker() {
+  GLOB++;
+}
+
+void Run() {
+  ANNOTATE_BENIGN_RACE(&GLOB, "test56. Use of ANNOTATE_BENIGN_RACE.");
+  printf("test56:\n");
+  MyThreadArray t(Worker, Worker, Worker, Worker);
+  t.Start();
+  t.Join();
+  printf("\tGLOB=%d\n", GLOB);
+}
+REGISTER_TEST(Run, 56)
+}  // namespace test56
+
+
 // End {{{1
 // vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker
