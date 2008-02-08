@@ -2610,6 +2610,7 @@ namespace test56 {
 // For whatever reason the user wants to treat 
 // a race on GLOB as a benign race. 
 int     GLOB = 0;
+int     GLOB2 = 0;
 
 void Worker() {
   GLOB++;
@@ -2617,6 +2618,7 @@ void Worker() {
 
 void Run() {
   ANNOTATE_BENIGN_RACE(&GLOB, "test56. Use of ANNOTATE_BENIGN_RACE.");
+  ANNOTATE_BENIGN_RACE(&GLOB2, "No race. The tool should be silent");
   printf("test56:\n");
   MyThreadArray t(Worker, Worker, Worker, Worker);
   t.Start();
@@ -2625,6 +2627,30 @@ void Run() {
 }
 REGISTER_TEST(Run, 56)
 }  // namespace test56
+
+
+// test57: TN: Correct use of atomics. {{{1
+namespace test57 {
+int     GLOB = 0;
+void Writer() {
+  for (int i = 0; i < 10; i++) {
+    __sync_add_and_fetch(&GLOB, 1);
+    usleep(1000);
+  }
+}
+void Reader() {
+  while (GLOB < 20) usleep(1000);
+}
+void Run() {
+  printf("test57:\n");
+  MyThreadArray t(Writer, Writer, Reader, Reader);
+  t.Start();
+  t.Join();
+  CHECK(GLOB == 20);
+  printf("\tGLOB=%d\n", GLOB);
+}
+REGISTER_TEST(Run, 57)
+}  // namespace test57
 
 
 // End {{{1

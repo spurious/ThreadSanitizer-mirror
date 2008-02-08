@@ -2236,7 +2236,7 @@ static void mem_trace_on(Word mem)
       mem_trace_map = HG_(newFM)( hg_zalloc, hg_free, NULL);
    }
    HG_(addToFM)(mem_trace_map, mem, mem);
-   VG_(printf)("trace on: %p\n", mem);
+//   VG_(printf)("trace on: %p\n", mem);
 }
 static Bool mem_trace_is_on(Word mem)
 {
@@ -3544,6 +3544,13 @@ SVal prop1_memory_state_machine(
 
    char buf[200];
 
+   int i;
+   SegmentSet newSS = 0;
+   LockSet    newLS = 0;
+
+   // current locks. 
+   LockSet    currLS = is_w ? thr->locksetW
+                            : thr->locksetA;
 
    if (clo_trace_level > 0 && mem_trace_is_on(a)) {
       do_trace = True;
@@ -3557,16 +3564,31 @@ SVal prop1_memory_state_machine(
    }
 
 
-//   tl_assert (sv_old != 0xc000004000000000ULL); // FIXME prop1
+   if (__bus_lock_Lock->heldBy
+       && (is_SHVAL_New(sv_old) || prop1_is_SHVAL_R(sv_old))) {
+      // BHL is held and we are in 'Read' or 'New' state. 
+      // User is doing something very smart with LOCK prefix.
+      // Just ignore this memory location. 
+      sv_new = SHVAL_Race;
 
-   int i;
+      // VG_(printf)("Ignoring memory %p accessed with LOCK prefix at\n", a);
+      // VG_(get_and_pp_StackTrace)(map_threads_reverse_lookup_SLOW(thr), 5);
+
+      goto done; 
+      // TODO: a better scheme might be: 
+      // When we see a first write with BHL held we do: 
+      // - If we are in state 'Read' or 'New', change the state to 'BHL'. 
+      // - If we are in state 'Write', report a race.
+      //
+      // When we are in state BHL: 
+      // - Any read keeps us in state 'BHL'. 
+      // - Any write with BHL held keeps us in state 'BHL'. 
+      // - Any other write is a race.
+   }
+
+
 
    tl_assert(clo_msm_prop1);
-
-
-   SegmentSet newSS = 0;
-   LockSet    newLS = 0;
-
    tl_assert(is_sane_Thread(thr));
 
    // NoAccess
@@ -3576,9 +3598,6 @@ SVal prop1_memory_state_machine(
       goto done;
    }
 
-   // current locks. 
-   LockSet    currLS = is_w ? thr->locksetW
-                            : thr->locksetA;
 
    // New
    if (is_SHVAL_New(sv_old)) {
@@ -3588,8 +3607,6 @@ SVal prop1_memory_state_machine(
       goto done;
    }
 
-   currLS = is_w ? thr->locksetW
-                 : add_BHL(thr->locksetA);
 
    // Read or Write
    tl_assert(prop1_is_SHVAL_RW(sv_old));
@@ -3671,6 +3688,11 @@ done:
          prop1_show_lockset(thr->locksetW);
          VG_(printf)("\n");
       }
+
+      if (__bus_lock_Lock->heldBy) {
+         VG_(printf)("BHL is held\n");
+      }
+
       prop1_show_shval(buf, sizeof(buf), sv_new);
       VG_(message)(Vg_UserMsg, "TRACE: %p S%d/T%d %c %llx %s", a, 
                    (int)currS-(1<<24), thr->errmsg_index, 
@@ -9646,7 +9668,7 @@ static void hg_fini ( Int exitcode )
      HG_(initIterFM)( map_expected_errors );
      while (HG_(nextIterFM)( map_expected_errors, (Word*)&ptr,
                              (Word*)&expected_error )) {
-       if(expected_error->detected == False) {
+       if(expected_error->detected == False && !expected_error->is_benign) {
          VG_(printf)("Expected race was not detected: %s:%d %p\t%s\n", 
                      expected_error->file, expected_error->line, 
                      ptr, expected_error->descr);
