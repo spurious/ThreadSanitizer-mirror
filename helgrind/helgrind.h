@@ -99,6 +99,7 @@ typedef
       _VG_USERREQ__HG_PCQ_DESTROY,                /* void* */
       _VG_USERREQ__HG_PCQ_PUT,                    /* void* */
       _VG_USERREQ__HG_PCQ_GET,                    /* void* */
+      _VG_USERREQ__HG_TRACE_MEM,                  /* void* */
    } Vg_TCheckClientRequest;
 
 /* Clean memory state.  This makes Helgrind forget everything it knew

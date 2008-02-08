@@ -207,9 +207,21 @@ ANN_FUNC(void, AnnotateNewMemory, char *file, int line, void *mem, long size)
 {
   const char *name = "AnnotateNewMemory";
   ANN_TRACE("--#%d %s[%p,%d] %s:%d\n", tid, name, mem, (int)size, file, line);
- VALGRIND_HG_CLEAN_MEMORY(mem, size);
+  VALGRIND_HG_CLEAN_MEMORY(mem, size);
 }
 
-ANN_FUNC(void, AnnotateNoOp, char *file, int line, void *arg)
+
+ANN_FUNC(void, AnnotateTraceMemory, char *file, int line, void *mem)
 {
+  const char *name = "AnnotateTraceMemory";
+  ANN_TRACE("--#%d %s[%p] %s:%d\n", tid, name, mem, file, line);
+  DO_CREQ_v_W(_VG_USERREQ__HG_TRACE_MEM,   void*, mem);
+}
+
+ANN_FUNC(void, AnnotateNoOp, char *file, int line, void *mem)
+{
+  // TODO (remove this)
+  const char *name = "AnnotateTraceMemory";
+  ANN_TRACE("--#%d %s[%p] %s:%d\n", tid, name, mem, file, line);
+  DO_CREQ_v_W(_VG_USERREQ__HG_TRACE_MEM,   void*, mem);
 }

@@ -92,6 +92,7 @@ ANNOTATION(AnnotatePCQGet,      void *pcq);
 ANNOTATION(AnnotateNewMemory, void *mem, long size);
 ANNOTATION(AnnotateExpectRace, void *mem, const char *description);
 ANNOTATION(AnnotateBenignRace, void *mem, const char *description);
+ANNOTATION(AnnotateTraceMemory, void *mem);
 
 ANNOTATION(AnnotateNoOp, void *arg);
 
@@ -154,6 +155,10 @@ ANNOTATION(AnnotateNoOp, void *arg);
 // where the race happens.
 #define ANNOTATE_BENIGN_RACE(mem) \
             AnnotateBenignRace(__FILE__, __LINE__, arg)
+
+// Report that we want to trace all memory accesses to this memory location,
+#define ANNOTATE_TRACE_MEMORY(arg) \
+            AnnotateTraceMemory(__FILE__, __LINE__, arg)
 
 // A no-op. Insert where you like for testing the interceptors. 
 #define ANNOTATE_NO_OP(arg) \

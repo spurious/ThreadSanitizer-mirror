@@ -400,7 +400,7 @@ typedef
 
 /* ------ CacheLine ------ */
 
-#define N_LINE_BITS      6 /* must be >= 3 */
+#define N_LINE_BITS      5 /* must be >= 3 */
 #define N_LINE_ARANGE    (1 << N_LINE_BITS)
 #define N_LINE_TREES     (N_LINE_ARANGE >> 3)
 
@@ -466,7 +466,7 @@ typedef
    Each SecMap must hold a power-of-2 number of CacheLines.  Hence
    N_SECMAP_BITS must >= N_LINE_BITS.
 */
-#define N_SECMAP_BITS   12
+#define N_SECMAP_BITS   13
 #define N_SECMAP_ARANGE (1 << N_SECMAP_BITS)
 
 // # CacheLines held by a SecMap
@@ -549,7 +549,7 @@ static Bool stepSecMapIter ( /*OUT*/SVal** pVal,
 
 /* ------ Cache ------ */
 
-#define N_WAY_BITS 18 // KCC
+#define N_WAY_BITS 16
 #define N_WAY_NENT (1 << N_WAY_BITS)
 
 /* Each tag is the address of the associated CacheLine, rounded down
@@ -626,7 +626,7 @@ static UWord stats__mk_Segment = 0;
 
 static inline Bool is_sane_LockN ( Lock* lock ); /* fwds */
 
-static Thread* mk_Thread ( SegmentID *csegid ) {
+static Thread* mk_Thread ( SegmentID csegid ) {
    static Int indx      = 1;
    Thread* thread       = hg_zalloc( sizeof(Thread) );
    thread->locksetA     = HG_(emptyWS)( univ_lsets );
@@ -637,8 +637,7 @@ static Thread* mk_Thread ( SegmentID *csegid ) {
    thread->errmsg_index = indx++;
    thread->admin        = admin_threads;
    admin_threads        = thread;
-   *csegid             |= (thread->errmsg_index % 256);
-   thread->csegid       = *csegid;
+   thread->csegid       = csegid;
    return thread;
 }
 // Make a new lock which is unlocked (hence ownerless)
@@ -915,20 +914,7 @@ static inline Bool is_sane_ThreadId ( ThreadId coretid ) {
 static SegmentID alloc_SegmentID ( void ) {
    static SegmentID next = 0x1000000;
    tl_assert(is_sane_SegmentID(next));
-
-   // FIXME: awful hack 
-   // For MSMProp1 we need to check that 
-   // a SegmentId belongs to a Thread. 
-   // We need to do it very fast but may not do it very 
-   // accurate. 
-   //
-   // We store (thr->errmsg_index % 256) in 
-   // lower 8 bits of SegmentID. 
-   //
-   // That's bad, need to implement a better way. 
-   //
-
-   return next += 256; 
+   return next++;
 }
 
 /* --------- Shadow memory --------- */
@@ -1663,7 +1649,7 @@ static void initialise_data_structures ( void )
    seg   = mk_Segment( NULL, NULL, NULL );
 
    /* a Thread for the new thread ... */
-   thr = mk_Thread( &segid );
+   thr = mk_Thread( segid );
    map_segments_add( segid, seg );
    seg->thr = thr;
 
@@ -2240,6 +2226,26 @@ static Bool maybe_set_expected_error (Addr ptr,
    HG_(addToFM)( map_expected_errors, (Word)ptr, (Word)error );
    return True;
 }
+
+/*------- mem trace -------------------------------------------*/
+/* a client may request to trace certain memory (for better debugging) */
+static WordFM *mem_trace_map = NULL;
+static void mem_trace_on(Word mem)
+{
+   if (!mem_trace_map) {
+      mem_trace_map = HG_(newFM)( hg_zalloc, hg_free, NULL);
+   }
+   HG_(addToFM)(mem_trace_map, mem, mem);
+   VG_(printf)("trace on: %p\n", mem);
+}
+static Bool mem_trace_is_on(Word mem)
+{
+
+   return mem_trace_map != NULL 
+         && HG_(lookupFM)(mem_trace_map, NULL, NULL, mem);
+}
+
+
 
 /*------- PCQ (aka ProducerConsumerQueue, Message queue) ------ */
 /*
@@ -3468,6 +3474,16 @@ static void msm__show_state_change ( Thread* thr_acc, Addr a, Int szB,
 }
 
 //----------------------- prop1 -----------------
+//
+
+static void prop1_show_lockset(LockSet ls)
+{
+   int i, n = HG_(cardinalityWS(univ_lsets, ls));
+   for (i = 0; i < n; i++) {
+      Lock *lk = (Lock*)HG_(ElementOfWS)(univ_lsets, ls, i);
+      VG_(printf)("L%p ", lk);
+   }
+}
 
 static void prop1_show_shval(char *buf, int buf_size, SVal sv)
 {
@@ -3528,14 +3544,20 @@ SVal prop1_memory_state_machine(
 
    char buf[200];
 
+
+   if (clo_trace_level > 0 && mem_trace_is_on(a)) {
+      do_trace = True;
+   }
+
    if (sv_old == SHVAL_Race) {
       // we already reported a race, don't bother again. 
       sv_new = sv_old;
+      do_trace = clo_trace_level > 0;
       goto done;
    }
 
 
-   tl_assert (sv_old != 0xc000004000000000ULL); // FIXME prop1
+//   tl_assert (sv_old != 0xc000004000000000ULL); // FIXME prop1
 
    int i;
 
@@ -3555,8 +3577,8 @@ SVal prop1_memory_state_machine(
    }
 
    // current locks. 
-   LockSet    currLS = is_w ?         thr->locksetW
-                            : add_BHL(thr->locksetA);
+   LockSet    currLS = is_w ? thr->locksetW
+                            : thr->locksetA;
 
    // New
    if (is_SHVAL_New(sv_old)) {
@@ -3566,6 +3588,8 @@ SVal prop1_memory_state_machine(
       goto done;
    }
 
+   currLS = is_w ? thr->locksetW
+                 : add_BHL(thr->locksetA);
 
    // Read or Write
    tl_assert(prop1_is_SHVAL_RW(sv_old));
@@ -3588,8 +3612,7 @@ SVal prop1_memory_state_machine(
    for (i = 0; i < oldSS_size; i++) {
       SegmentID S = prop1_SS_get_element(oldSS, i);
       if (S == currS  // Same segment. 
-//          || map_segments_lookup(S)->thr == thr // Same thread. 
-          || ((S % 256) == (thr->errmsg_index % 256)) // see alloc_SegmentID()        
+          || map_segments_lookup(S)->thr == thr // Same thread. 
           || happens_before(S, currS)) { // different thread, but happens-before.
          hb_mask |= 1ULL << i;
       }
@@ -3639,8 +3662,15 @@ SVal prop1_memory_state_machine(
 
 done:
 
+
    if (do_trace) {
 
+      prop1_show_lockset(thr->locksetA);
+      VG_(printf)("\n");
+      if (thr->locksetA != thr->locksetW) {
+         prop1_show_lockset(thr->locksetW);
+         VG_(printf)("\n");
+      }
       prop1_show_shval(buf, sizeof(buf), sv_new);
       VG_(message)(Vg_UserMsg, "TRACE: %p S%d/T%d %c %llx %s", a, 
                    (int)currS-(1<<24), thr->errmsg_index, 
@@ -3651,6 +3681,10 @@ done:
             VG_(get_and_pp_StackTrace)( tid, 15);
          }
       }
+   }
+
+   if (clo_trace_level > 0 && !do_trace) {
+      is_race = False;
    }
 
    // report the race if needed
@@ -5898,7 +5932,6 @@ void evhH__start_new_segment_for_thread ( /*OUT*/SegmentID* new_segidP,
                                       at their owner thread. */
    *new_segP = mk_Segment( thr, cur_seg, NULL/*other*/ );
    *new_segidP = alloc_SegmentID();
-   *new_segidP |= thr->errmsg_index % 256;
    map_segments_add( *new_segidP, *new_segP );
    thr->csegid = *new_segidP;
 }
@@ -6312,7 +6345,7 @@ void evh__pre_thread_ll_create ( ThreadId parent, ThreadId child )
       seg_c   = mk_Segment( NULL/*thr*/, NULL/*prev*/, NULL/*other*/ );
 
       /* a Thread for the new thread ... */
-      thr_c = mk_Thread( &segid_c );
+      thr_c = mk_Thread( segid_c );
       map_segments_add( segid_c, seg_c );
       seg_c->thr = thr_c;
 
@@ -8602,6 +8635,11 @@ Bool hg_handle_client_request ( ThreadId tid, UWord* args, UWord* ret)
          pcq_get(tid, args[1]);
          break;
       }
+      case _VG_USERREQ__HG_TRACE_MEM: { // void *
+         mem_trace_on(args[1]);
+         break;
+      }
+
 
 
       default:
@@ -9614,6 +9652,8 @@ static void hg_fini ( Int exitcode )
          VG_(printf)("\n");
          HG_(ppWSUstats)( univ_tsets, "univ_tsets" );
          VG_(printf)("\n");
+         HG_(ppWSUstats)( univ_ssets, "univ_ssets" );
+         VG_(printf)("\n");
          HG_(ppWSUstats)( univ_lsets, "univ_lsets" );
          VG_(printf)("\n");
          HG_(ppWSUstats)( univ_laog,  "univ_laog" );
@@ -9638,6 +9678,8 @@ static void hg_fini ( Int exitcode )
                   (Int)HG_(cardinalityWSU)( univ_lsets ));
       VG_(printf)("      threadsets: %,8d unique thread sets\n",
                   (Int)HG_(cardinalityWSU)( univ_tsets ));
+      VG_(printf)("     segmentsets: %,8d unique segment sets\n",
+                  (Int)HG_(cardinalityWSU)( univ_ssets ));
       VG_(printf)("       univ_laog: %,8d unique lock sets\n",
                   (Int)HG_(cardinalityWSU)( univ_laog ));
 

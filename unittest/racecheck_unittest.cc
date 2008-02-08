@@ -2452,5 +2452,106 @@ REGISTER_TEST(Run, 52);
 }  // namespace test52
 
 
+// test53: TN. TODO {{{1
+namespace test53 {
+// Correctly synchronized test, but the common lockset is empty. 
+// MSMHelgrind still does not complain since it does not maintain the lockset
+// at the exclusive state. 
+//
+// Initializer:                  Users
+// 1. MU1.Lock() 
+// 2. write(GLOB) 
+// 3. FLAG = true
+// 4. MU1.Unlock()
+//                               a. MU1.Lock()
+//                               b. f = FLAG;
+//                               c. MU1.Unlock()
+//                               d. if (!f) goto a.
+//                               e. MU2.Lock()
+//                               f. write(GLOB)
+//                               g. MU2.Unlock()
+//
+// In some cases it would be possible to annotate the code with 
+// ANNOTATE_CONDVAR_WAIT/ANNOTATE_CONDVAR_SIGNAL, but in some cases not.
+
+int     GLOB = 0;
+bool    FLAG = false;
+
+void Initializer() {
+  MU1.Lock();
+  GLOB = 1000;
+  FLAG = true;
+  MU1.Unlock();
+  usleep(100000); // just in case
+}
+
+void User() {
+  bool f = false;
+  while(!f) {
+    MU1.Lock();
+    f = FLAG;
+    MU1.Unlock();
+    usleep(10000);
+  }
+  // at this point Initializer will not access GLOB again
+  MU2.Lock();
+  CHECK(GLOB >= 1000);
+  GLOB++;
+  printf("\tGLOB=%d\n", GLOB);
+  MU2.Unlock();
+}
+
+void Run() {
+  printf("test53:\n");
+  MyThreadArray t(Initializer, User, User);
+  t.Start();
+  t.Join();
+}
+REGISTER_TEST(Run, 53)
+}  // namespace test53
+
+
+// test54: TN. TODO {{{1
+namespace test54 {
+// Same as test53, but annotated. 
+int     GLOB = 0;
+bool    FLAG = false;
+
+void Initializer() {
+  MU1.Lock();
+  GLOB = 1000;
+  FLAG = true;
+  ANNOTATE_CONDVAR_SIGNAL(&GLOB);
+  MU1.Unlock();
+  usleep(100000); // just in case
+}
+
+void User() {
+  bool f = false;
+  while(!f) {
+    MU1.Lock();
+    f = FLAG;
+    MU1.Unlock();
+    usleep(10000);
+  }
+  // at this point Initializer will not access GLOB again
+  ANNOTATE_CONDVAR_WAIT(&GLOB, &GLOB);
+  MU2.Lock();
+  CHECK(GLOB >= 1000);
+  GLOB++;
+  printf("\tGLOB=%d\n", GLOB);
+  MU2.Unlock();
+}
+
+void Run() {
+  printf("test54:\n");
+  MyThreadArray t(Initializer, User, User);
+  t.Start();
+  t.Join();
+}
+REGISTER_TEST(Run, 54)
+}  // namespace test54
+
+
 // End {{{1
 // vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker
