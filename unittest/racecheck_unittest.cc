@@ -178,15 +178,15 @@ class MyThreadArray {
 
 
 
-// testXX: {{{1
-namespace testXX {
+// test00: {{{1
+namespace test00 {
 int     GLOB = 0;
 void Run() {
-  printf("testXX:\n");
+  printf("test00:\n");
   printf("\tGLOB=%d\n", GLOB);
 }
-REGISTER_TEST(Run, 0)
-}  // namespace testXX
+REGISTER_TEST(Run, 00)
+}  // namespace test00
 
 
 // test01: TP. Simple race (write vs write). {{{1
@@ -2401,9 +2401,9 @@ int     COND = 0;
 //                              
 // 2. MU.Lock()       
 // 3. while(COND)               
-//       CV.Wait(MU)<-\         
+//       CV.Wait(MU)<-\         .
 // 4. MU.Unlock()      \        f. write(GLOB)
-// 5. write(GLOB)       \       
+// 5. write(GLOB)       \       .
 //                       \      g. MU.Lock()
 //                        \     h. COND = 1
 //                         \--- i. CV.Signal()
@@ -2452,11 +2452,14 @@ REGISTER_TEST(Run, 52);
 }  // namespace test52
 
 
-// test53: TN. TODO {{{1
+// test53: TN. Synchronization via implicit semaphore. {{{1
 namespace test53 {
-// Correctly synchronized test, but the common lockset is empty. 
+// Correctly synchronized test, but the common lockset is empty.
+// The variable FLAG works as an implicit semaphore. 
 // MSMHelgrind still does not complain since it does not maintain the lockset
-// at the exclusive state. 
+// at the exclusive state. But MSMProp1 does complain. 
+// See also test54. 
+// 
 //
 // Initializer:                  Users
 // 1. MU1.Lock() 
@@ -2471,8 +2474,6 @@ namespace test53 {
 //                               f. write(GLOB)
 //                               g. MU2.Unlock()
 //
-// In some cases it would be possible to annotate the code with 
-// ANNOTATE_CONDVAR_WAIT/ANNOTATE_CONDVAR_SIGNAL, but in some cases not.
 
 int     GLOB = 0;
 bool    FLAG = false;
@@ -2497,7 +2498,6 @@ void User() {
   MU2.Lock();
   CHECK(GLOB >= 1000);
   GLOB++;
-  printf("\tGLOB=%d\n", GLOB);
   MU2.Unlock();
 }
 
@@ -2506,12 +2506,13 @@ void Run() {
   MyThreadArray t(Initializer, User, User);
   t.Start();
   t.Join();
+  printf("\tGLOB=%d\n", GLOB);
 }
 REGISTER_TEST(Run, 53)
 }  // namespace test53
 
 
-// test54: TN. TODO {{{1
+// test54: TN. Synchronization via implicit semaphore. Annotated {{{1
 namespace test54 {
 // Same as test53, but annotated. 
 int     GLOB = 0;
@@ -2539,7 +2540,6 @@ void User() {
   MU2.Lock();
   CHECK(GLOB >= 1000);
   GLOB++;
-  printf("\tGLOB=%d\n", GLOB);
   MU2.Unlock();
 }
 
@@ -2548,6 +2548,7 @@ void Run() {
   MyThreadArray t(Initializer, User, User);
   t.Start();
   t.Join();
+  printf("\tGLOB=%d\n", GLOB);
 }
 REGISTER_TEST(Run, 54)
 }  // namespace test54
@@ -2555,7 +2556,11 @@ REGISTER_TEST(Run, 54)
 
 // test55: FP. Synchronization with TryLock. Not easy for race detectors {{{1
 namespace test55 {  
-// Correct synchronization with TryLock and Lock. 
+// "Correct" synchronization with TryLock and Lock. 
+//
+// This scheme is actually very risky. 
+// It is covered in detail in this video: 
+// http://youtube.com/watch?v=mrvAqvtWYb4 (slide 36, near 3/4 of the video). 
 int     GLOB = 0;
 
 void Worker_Lock() {
@@ -2571,10 +2576,8 @@ void Worker_TryLock() {
     }
     else 
       MU.Unlock();
-
     usleep(100); 
   }
-
   GLOB = 2; 
 }
 
@@ -2585,7 +2588,7 @@ void Run() {
   t.Join();
   printf("\tGLOB=%d\n", GLOB);
 }
-REGISTER_TEST(Run, 55);
+REGISTER_TEST2(Run, 55, FEATURE|EXCLUDE_FROM_ALL);
 }  // namespace test55
 
 
