@@ -2553,5 +2553,42 @@ REGISTER_TEST(Run, 54)
 }  // namespace test54
 
 
+// test55: FP. Synchronization with TryLock. Not easy for race detectors {{{1
+namespace test55 {  
+// Correct synchronization with TryLock and Lock. 
+int     GLOB = 0;
+
+void Worker_Lock() {
+  GLOB = 1;
+  MU.Lock();
+}
+
+void Worker_TryLock() {
+  while (true) {
+    if (!MU.TryLock()) {
+      MU.Unlock();
+      break;
+    }
+    else 
+      MU.Unlock();
+
+    usleep(100); 
+  }
+
+  GLOB = 2; 
+}
+
+void Run() {
+  printf("test55:\n");
+  MyThreadArray t(Worker_Lock, Worker_TryLock);
+  t.Start();
+  t.Join();
+  printf("\tGLOB=%d\n", GLOB);
+}
+REGISTER_TEST(Run, 55);
+}  // namespace test55
+
+
+
 // End {{{1
 // vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker
