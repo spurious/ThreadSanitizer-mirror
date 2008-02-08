@@ -2572,7 +2572,7 @@ namespace test55 {
 //
 // This scheme is actually very risky. 
 // It is covered in detail in this video: 
-// http://youtube.com/watch?v=mrvAqvtWYb4 (slide 36, near 3/4 of the video). 
+// http://youtube.com/watch?v=mrvAqvtWYb4 (slide 36, near 50-th minute). 
 int     GLOB = 0;
 
 void Worker_Lock() {
