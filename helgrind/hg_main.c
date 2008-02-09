@@ -2236,7 +2236,7 @@ static void mem_trace_on(Word mem)
       mem_trace_map = HG_(newFM)( hg_zalloc, hg_free, NULL);
    }
    HG_(addToFM)(mem_trace_map, mem, mem);
-//   VG_(printf)("trace on: %p\n", mem);
+   VG_(printf)("trace on: %p\n", mem);
 }
 static Bool mem_trace_is_on(Word mem)
 {
