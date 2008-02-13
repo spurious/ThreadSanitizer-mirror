@@ -225,10 +225,10 @@ ANN_FUNC(void, AnnotateTraceMemory, char *file, int line, void *mem)
   DO_CREQ_v_W(_VG_USERREQ__HG_TRACE_MEM,   void*, mem);
 }
 
+#undef TRACE_ANN_FNS 
+#define TRACE_ANN_FNS 1
 ANN_FUNC(void, AnnotateNoOp, char *file, int line, void *mem)
 {
-  // TODO (remove this)
-  const char *name = "AnnotateTraceMemory";
+  const char *name = "AnnotateNoOp";
   ANN_TRACE("--#%d %s[%p] %s:%d\n", tid, name, mem, file, line);
-  DO_CREQ_v_W(_VG_USERREQ__HG_TRACE_MEM,   void*, mem);
 }

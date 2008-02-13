@@ -114,9 +114,13 @@ ANNOTATION(AnnotateNoOp, void *arg);
             AnnotateRWLockReleased(__FILE__, __LINE__, lock, is_w)
 
 // Insert right after the point where wait has succeeded. 
-// 'lock' can be the same address as 'cv'. 
-#define ANNOTATE_CONDVAR_WAIT(cv, lock) \
+#define ANNOTATE_CONDVAR_LOCK_WAIT(cv, lock) \
             AnnotateCondVarWait(__FILE__, __LINE__, cv, lock)
+
+// Variant of ANNOTATE_CONDVAR_LOCK_WAIT, but w/o lock.
+#define ANNOTATE_CONDVAR_WAIT(cv) \
+            AnnotateCondVarWait(__FILE__, __LINE__, cv, NULL)
+
 // Insert right before the signal. 
 #define ANNOTATE_CONDVAR_SIGNAL(cv) \
             AnnotateCondVarSignal(__FILE__, __LINE__, cv)

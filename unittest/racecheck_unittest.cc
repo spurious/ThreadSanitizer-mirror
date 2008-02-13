@@ -438,9 +438,7 @@ void Waiter() {
   MU.Lock();
   while(COND != 1)
     CV.Wait(&MU);
-  ANNOTATE_CONDVAR_WAIT(&CV, &MU);
-  // evh__HG_PTHREAD_COND_WAIT_PRE( Waker, &CV,&MU );
-  //VALGRIND_HG_POST_WAIT(&CV);
+  ANNOTATE_CONDVAR_LOCK_WAIT(&CV, &MU);
 
   MU.Unlock();
   GLOB = 2;
@@ -1383,8 +1381,7 @@ void Reader() {
   do {
     n = BOUNDARY;
     if (n == 0) continue; 
-    ANNOTATE_CONDVAR_WAIT(reinterpret_cast<void*>(n),
-                          reinterpret_cast<void*>(n));
+    ANNOTATE_CONDVAR_WAIT(reinterpret_cast<void*>(n));
     for (int i = 0; i < n; i++) {
       CHECK(GLOB[i] == i);
     }
@@ -1436,8 +1433,7 @@ void Writer2() {
   do {
     n = BOUNDARY;
     if (n == 0) continue; 
-    ANNOTATE_CONDVAR_WAIT(reinterpret_cast<void*>(n),
-                          reinterpret_cast<void*>(n));
+    ANNOTATE_CONDVAR_WAIT(reinterpret_cast<void*>(n));
     for (int i = 0; i < n; i++) {
       if(GLOB[i] == i) {
         GLOB[i]++;
@@ -1837,7 +1833,7 @@ void Worker() {
   CHECK(GLOB == N_threads);
 }
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB, "test39. FP. Fixed my MSMProp1. Barrier.");
+  ANNOTATE_EXPECT_RACE(&GLOB, "test39. FP. Fixed by MSMProp1. Barrier.");
   printf("test39:\n");
   {
     ThreadPool pool(N_threads);
@@ -1957,7 +1953,7 @@ void Worker1() {
   MU.Lock(); 
   while (COND != 0) 
     CV.Wait(&MU);
-  ANNOTATE_CONDVAR_WAIT(&CV, &MU);
+  ANNOTATE_CONDVAR_LOCK_WAIT(&CV, &MU);
   MU.Unlock();
 
   GLOB=3;
@@ -1969,7 +1965,7 @@ void Worker2() {
   MU.Lock(); 
   while (COND != 1) 
     CV.Wait(&MU);
-  ANNOTATE_CONDVAR_WAIT(&CV, &MU);
+  ANNOTATE_CONDVAR_LOCK_WAIT(&CV, &MU);
   MU.Unlock();
 
   GLOB=2;
@@ -2307,7 +2303,7 @@ void Waiter() {
   while(COND != 1)
     CV.Wait(&MU);
   MU.Unlock();
-  ANNOTATE_CONDVAR_WAIT(&CV, &MU);
+  ANNOTATE_CONDVAR_LOCK_WAIT(&CV, &MU);
 
   GLOB = 2;
 }
@@ -2548,7 +2544,7 @@ void User() {
     usleep(10000);
   }
   // at this point Initializer will not access GLOB again
-  ANNOTATE_CONDVAR_WAIT(&GLOB, &GLOB);
+  ANNOTATE_CONDVAR_WAIT(&GLOB);
   MU2.Lock();
   CHECK(GLOB >= 1000);
   GLOB++;

@@ -177,7 +177,7 @@ class Mutex {
     while(cond.Eval() == false) {
       pthread_cond_wait(&cv_, &mu_);
     }
-    ANNOTATE_CONDVAR_WAIT(&cv_, &mu_);
+    ANNOTATE_CONDVAR_LOCK_WAIT(&cv_, &mu_);
   }
 
   bool WaitLoopWithTimeout(Condition cond, int millis) {
@@ -191,7 +191,7 @@ class Mutex {
       retcode = pthread_cond_timedwait(&cv_, &mu_, &timeout);
     }
     if(retcode == 0) {
-      ANNOTATE_CONDVAR_WAIT(&cv_, &mu_);
+      ANNOTATE_CONDVAR_LOCK_WAIT(&cv_, &mu_);
     }
     return cond.Eval();
   }
