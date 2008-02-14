@@ -2649,5 +2649,123 @@ REGISTER_TEST(Run, 57)
 }  // namespace test57
 
 
+// test58: TN. User defined synchronization. {{{1
+namespace test58 {
+int     GLOB1 = 1;
+int     GLOB2 = 2;
+int     FLAG1 = 0;
+int     FLAG2 = 0;
+
+// Correctly synchronized test, but the common lockset is empty.
+// The variables FLAG1 and FLAG2 used for synchronization and as 
+// temporary variables for swapping two global values.
+// Such kind of synchronization is rarely used (Excluded from all tests??).
+
+void Worker2() {
+  FLAG1=GLOB2;
+
+  while(!FLAG2);
+  GLOB2=FLAG2;
+}
+
+void Worker1() {
+  FLAG2=GLOB1;
+
+  while(!FLAG1);
+  GLOB1=FLAG1;
+}
+
+void Run() {
+  printf("test58:\n");
+  MyThreadArray t(Worker1, Worker2);
+  t.Start();
+  t.Join();
+  printf("\tGLOB1=%d\n", GLOB1);
+  printf("\tGLOB2=%d\n", GLOB2);
+}
+REGISTER_TEST2(Run, 58, FEATURE|EXCLUDE_FROM_ALL)
+}  // namespace test58
+
+
+
+// test59: TN. User defined synchronization. Annotated {{{1
+namespace test59 {
+int     COND = 0;
+int     GLOB1 = 1;
+int     GLOB2 = 2;
+int     FLAG1 = 0;
+int     FLAG2 = 0;
+// same as test 58 but annotated
+
+void Worker2() {
+  FLAG1=GLOB2;
+  ANNOTATE_CONDVAR_SIGNAL(&COND);
+  while(!FLAG2);
+  GLOB2=FLAG2;
+}
+
+void Worker1() {
+  FLAG2=GLOB1;
+  ANNOTATE_CONDVAR_WAIT(&COND);
+  while(!FLAG1);
+  GLOB1=FLAG1;
+}
+
+void Run() {
+  printf("test59:\n");
+  MyThreadArray t(Worker1, Worker2);
+  t.Start();
+  t.Join();
+  printf("\tGLOB1=%d\n", GLOB1);
+  printf("\tGLOB2=%d\n", GLOB2);
+}
+REGISTER_TEST(Run, 59)
+}  // namespace test59
+
+
+// test60: TN. Coorect synchronization using signal-wait {{{1
+namespace test60 {
+int     COND = 0;
+int     GLOB1 = 1;
+int     GLOB2 = 2;
+int     FLAG2 = 0;
+int     FLAG1 = 0;
+// same as test 59 but synchronized with signal-wait 
+
+void Worker2() {
+  FLAG1=GLOB2;
+  usleep(1000);  // make sure Worker1 blocks
+
+  MU.Lock();
+  COND = 1;
+  CV.Signal();    
+  MU.Unlock();
+
+  GLOB2=FLAG2;
+}
+
+void Worker1() {
+  FLAG2=GLOB1;
+
+  MU.Lock();
+  while(COND != 1)
+    CV.Wait(&MU);
+  MU.Unlock();
+
+  GLOB1=FLAG1;
+}
+
+void Run() {
+  printf("test60:\n");
+  MyThreadArray t(Worker1, Worker2);
+  t.Start();
+  t.Join();
+  printf("\tGLOB1=%d\n", GLOB1);
+  printf("\tGLOB2=%d\n", GLOB2);
+}
+REGISTER_TEST(Run, 60)
+}  // namespace test60
+
+
 // End {{{1
 // vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker
