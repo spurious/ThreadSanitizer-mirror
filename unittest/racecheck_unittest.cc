@@ -2819,5 +2819,36 @@ REGISTER_TEST(Run, 61)
 }  // namespace test61
 
 
+// test62: STAB. Create as many segments as possible. {{{1
+namespace test62 {
+// Helgrind 3.3.0 will fail as it has a hard limit of < 2^24 segments. 
+// A better scheme is to implement garbage collection for segments. 
+ProducerConsumerQueue Q(INT_MAX);
+const int N = 1 << 22;
+
+void Putter() {
+  for (int i = 0; i < N; i++){
+    if ((i % (N / 8)) == 0) {
+      printf("i=%d\n", i);
+    }
+    Q.Put(NULL);
+  }
+}
+
+void Getter() {
+  for (int i = 0; i < N; i++)
+    Q.Get();
+}
+
+void Run() {
+  printf("test62:\n");
+  MyThreadArray t(Putter, Getter);
+  t.Start();
+  t.Join();
+}
+REGISTER_TEST2(Run, 62, STABILITY|EXCLUDE_FROM_ALL)
+}  // namespace test62
+
+
 // End {{{1
 // vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker
