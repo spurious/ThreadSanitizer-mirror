@@ -225,6 +225,14 @@ ANN_FUNC(void, AnnotateTraceMemory, char *file, int line, void *mem)
   DO_CREQ_v_W(_VG_USERREQ__HG_TRACE_MEM,   void*, mem);
 }
 
+ANN_FUNC(void, AnnotateMutexIsUsedAsCondVar, char *file, int line, void *mu)
+{
+  const char *name = "AnnotateMutexIsUsedAsCondVar";
+  ANN_TRACE("--#%d %s[%p] %s:%d\n", tid, name, mu, file, line);
+  DO_CREQ_v_W(_VG_USERREQ__HG_MUTEX_IS_USED_AS_CONDVAR,   void*, mu);
+}
+
+
 #undef TRACE_ANN_FNS 
 #define TRACE_ANN_FNS 1
 ANN_FUNC(void, AnnotateNoOp, char *file, int line, void *mem)

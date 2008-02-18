@@ -2245,6 +2245,22 @@ static Bool mem_trace_is_on(Word mem)
          && HG_(lookupFM)(mem_trace_map, NULL, NULL, mem);
 }
 
+/*---------- MU is used as CV -------------------------*/
+static WordFM *mu_is_cv_map = NULL;
+static void set_mu_is_cv(Word mu)
+{
+   if (!mu_is_cv_map) {
+      mu_is_cv_map = HG_(newFM) (hg_zalloc, hg_free, NULL);
+   }
+   HG_(addToFM)(mu_is_cv_map, mu, mu);
+   VG_(printf)("mu is cv: %p\n", mu);
+}
+
+static Bool mu_is_cv(Word mu)
+{
+   return mu_is_cv_map != NULL
+         && HG_(lookupFM)(mu_is_cv_map, NULL, NULL, mu);
+}
 
 
 /*------- PCQ (aka ProducerConsumerQueue, Message queue) ------ */
@@ -2772,6 +2788,8 @@ static inline UWord shmem__get_SecMap_offset ( Addr a ) {
 
 /*--------------- SecMap allocation --------------- */
 
+static inline Bool address_may_be_ignored ( Addr a ); // fwds
+
 static HChar* shmem__bigchunk_next = NULL;
 static HChar* shmem__bigchunk_end1 = NULL;
 
@@ -2797,11 +2815,15 @@ static void* shmem__bigchunk_alloc ( SizeT n )
    return shmem__bigchunk_next - n;
 }
 
-static SecMap* shmem__alloc_SecMap ( void )
+static SecMap* shmem__alloc_SecMap ( Addr a, char *from )
 {
    Word    i, j;
    SecMap* sm = shmem__bigchunk_alloc( sizeof(SecMap) );
    if (0) VG_(printf)("alloc_SecMap %p\n",sm);
+
+//   VG_(printf)("alloc_SecMap: %p %d %s\n", 
+//               a, (int)(((Word)a >> 5) % clo_msm_prop1_n), from);
+
    tl_assert(sm);
    sm->magic       = SecMap_MAGIC;
    sm->mbHasLocks  = False; /* dangerous */
@@ -2827,13 +2849,14 @@ static SecMap* shmem__find_or_alloc_SecMap ( Addr ga )
 {
    SecMap* sm    = NULL;
    Addr    gaKey = shmem__round_to_SecMap_base(ga);
+//   tl_assert(!address_may_be_ignored(ga));
    if (HG_(lookupFM)( map_shmem,
                       NULL/*keyP*/, (Word*)&sm, (Word)gaKey )) {
       /* Found; address of SecMap is in sm */
       tl_assert(sm);
    } else {
       /* create a new one */
-      sm = shmem__alloc_SecMap();
+      sm = shmem__alloc_SecMap(ga, "shmem__find_or_alloc_SecMap");
       tl_assert(sm);
       HG_(addToFM)( map_shmem, (Word)gaKey, (Word)sm );
    }
@@ -2863,12 +2886,13 @@ static void shmem__set_mbHasLocks ( Addr a, Bool b )
    SecMap* sm;
    Addr aKey = shmem__round_to_SecMap_base(a);
    tl_assert(b == False || b == True);
+   if (b == False && address_may_be_ignored(a)) return;
    if (HG_(lookupFM)( map_shmem,
                       NULL/*keyP*/, (Word*)&sm, (Word)aKey )) {
       /* Found; address of SecMap is in sm */
    } else {
       /* create a new one */
-      sm = shmem__alloc_SecMap();
+      sm = shmem__alloc_SecMap(a, "shmem__set_mbHasLocks");
       tl_assert(sm);
       HG_(addToFM)( map_shmem, (Word)aKey, (Word)sm );
    }
@@ -2880,12 +2904,13 @@ static void shmem__set_mbHasShared ( Addr a, Bool b )
    SecMap* sm;
    Addr aKey = shmem__round_to_SecMap_base(a);
    tl_assert(b == False || b == True);
+   if (b == False && address_may_be_ignored(a)) return;
    if (HG_(lookupFM)( map_shmem,
                       NULL/*keyP*/, (Word*)&sm, (Word)aKey )) {
       /* Found; address of SecMap is in sm */
    } else {
       /* create a new one */
-      sm = shmem__alloc_SecMap();
+      sm = shmem__alloc_SecMap(a, "shmem__set_mbHasShared");
       tl_assert(sm);
       HG_(addToFM)( map_shmem, (Word)aKey, (Word)sm );
    }
@@ -3520,7 +3545,6 @@ static void prop1_show_shval(char *buf, int buf_size, SVal sv)
 }
 
 
-static inline Bool address_may_be_ignored ( Addr a ); // fwds
 
 //
 //
@@ -3559,7 +3583,7 @@ SVal prop1_memory_state_machine(
    if (sv_old == SHVAL_Race) {
       // we already reported a race, don't bother again. 
       sv_new = sv_old;
-      do_trace = clo_trace_level > 0;
+      // do_trace = clo_trace_level > 0;
       goto done;
    }
 
@@ -3628,10 +3652,21 @@ SVal prop1_memory_state_machine(
    // compute hb_mask
    for (i = 0; i < oldSS_size; i++) {
       SegmentID S = prop1_SS_get_element(oldSS, i);
+      Bool hb = False;
       if (S == currS  // Same segment. 
           || map_segments_lookup(S)->thr == thr // Same thread. 
-          || happens_before(S, currS)) { // different thread, but happens-before.
+          || happens_before(S, currS)) { // different thread, but happens-before
+         hb = True;
+      }
+      if (hb) {
          hb_mask |= 1ULL << i;
+      }
+      if (do_trace) {
+         VG_(printf)("HB(S%d/T%d,cur)=%d\n",
+                     S - (1<< 24), 
+                     map_segments_lookup(S)->thr->errmsg_index,
+                     hb
+                     );
       }
    }
 
@@ -4795,13 +4830,17 @@ static inline Bool address_may_be_ignored ( Addr a ) {
    Word w = (Word) a;
    int n = clo_msm_prop1_n;
    int i = clo_msm_prop1_i;
+   const int sh = N_SECMAP_BITS;
    if (n == 1) return False;
-   if (n <= 0) return True;
-   if (n == 7)  if (((w >> 3) % 7) != i) return True;
-   if (n == 13)  if (((w >> 3) % 13) != i) return True;
-   if (n == 16)  if (((w >> 3) % 16) != i) return True;
-   if (n == 31)  if (((w >> 3) % 31) != i) return True;
-   if (((w >> 3) % n) != i) return True;
+   else if (n <= 0) return True;
+#if 1
+   else if ((n & (n-1)) == 0) { if (((w >> sh) & (n-1)) != i) return True;}
+   else if (n == 3)  { if (((w >> sh) % 3) != i) return True; }
+   else if (n == 7)  { if (((w >> sh) % 7) != i) return True; }
+   else if (n == 13) { if (((w >> sh) % 13) != i) return True; }
+   else if (n == 31) { if (((w >> sh) % 31) != i) return True; }
+#endif
+   else if (((w >> sh) % n) != i) return True;
    return False;
 }
 
@@ -4834,6 +4873,7 @@ static inline CacheLine* get_cacheline ( Addr a )
    Addr       tag = a & ~(N_LINE_ARANGE - 1);
    UWord      wix = (a >> N_LINE_BITS) & (N_WAY_NENT - 1);
    stats__cache_totrefs++;
+//   tl_assert(!address_may_be_ignored(a));
    if (LIKELY(tag == cache_shmem.tags0[wix])) {
       return &cache_shmem.lyns0[wix];
    } else {
@@ -5935,6 +5975,9 @@ static void shadow_mem_make_NoAccess ( Thread* thr, Addr aIN, SizeT len )
 
 /*--------- Event handler helpers (evhH__* functions) ---------*/
 
+static void evhH__do_cv_signal(Thread *thr, Word cond);
+static Bool evhH__do_cv_wait(Thread *thr, Word cond, Bool must_match_signal);
+
 /* Create a new segment for 'thr', making it depend (.prev) on its
    existing segment, bind together the SegmentID and Segment, and
    return both of them.  Also update 'thr' so it references the new
@@ -6056,6 +6099,12 @@ void evhH__post_thread_w_acquires_lock ( Thread* thr,
    thr->locksetW = HG_(addToWS)( univ_lsets, thr->locksetW, (Word)lk );
    /* fall through */
 
+   if (mu_is_cv(lock_ga) ) {
+
+      VG_(printf)("mu is cv: w-lock\n");
+      evhH__do_cv_wait(thr, lock_ga, False);
+   }
+
   error:
    tl_assert(is_sane_LockN(lk));
 }
@@ -6124,6 +6173,11 @@ void evhH__post_thread_r_acquires_lock ( Thread* thr,
    thr->locksetA = HG_(addToWS)( univ_lsets, thr->locksetA, (Word)lk );
    /* but don't update thr->locksetW, since lk is only rd-held */
    /* fall through */
+
+   if (mu_is_cv(lock_ga) ) {
+      VG_(printf)("mu is cv: r-lock\n");
+      evhH__do_cv_wait(thr, lock_ga, False);
+   }
 
   error:
    tl_assert(is_sane_LockN(lk));
@@ -6236,6 +6290,10 @@ void evhH__pre_thread_releases_lock ( Thread* thr,
    }
    /* fall through */
 
+   if (mu_is_cv(lock_ga) ) {
+      VG_(printf)("mu is cv: unlock\n");
+      evhH__do_cv_signal(thr, lock_ga);
+   }
   error:
    tl_assert(is_sane_LockN(lock));
 }
@@ -6646,7 +6704,7 @@ static
 void evh__pre_mem_read_asciiz ( CorePart part, ThreadId tid,
                                 Char* s, Addr a ) {
    Int len;
-   if (SHOW_EVENTS >= 1)
+   if (SHOW_EVENTS >= 2)
       VG_(printf)("evh__pre_mem_asciiz(ctid=%d, \"%s\", %p)\n", 
                   (Int)tid, s, (void*)a );
    // FIXME: think of a less ugly hack
@@ -6659,7 +6717,7 @@ void evh__pre_mem_read_asciiz ( CorePart part, ThreadId tid,
 static
 void evh__pre_mem_write ( CorePart part, ThreadId tid, Char* s,
                           Addr a, SizeT size ) {
-   if (SHOW_EVENTS >= 1)
+   if (SHOW_EVENTS >= 2)
       VG_(printf)("evh__pre_mem_write(ctid=%d, \"%s\", %p, %lu)\n", 
                   (Int)tid, s, (void*)a, size );
    shadow_mem_write_range( map_threads_lookup(tid), a, size);
@@ -6669,7 +6727,7 @@ void evh__pre_mem_write ( CorePart part, ThreadId tid, Char* s,
 
 static
 void evh__new_mem_heap ( Addr a, SizeT len, Bool is_inited ) {
-   if (SHOW_EVENTS >= 1)
+   if (SHOW_EVENTS >= 2)
       VG_(printf)("evh__new_mem_heap(%p, %lu, inited=%d)\n", 
                   (void*)a, len, (Int)is_inited );
    // FIXME: this is kinda stupid
@@ -6684,7 +6742,7 @@ void evh__new_mem_heap ( Addr a, SizeT len, Bool is_inited ) {
 
 static
 void evh__die_mem_heap ( Addr a, SizeT len ) {
-   if (SHOW_EVENTS >= 1)
+   if (SHOW_EVENTS >= 2)
       VG_(printf)("evh__die_mem_heap(%p, %lu)\n", (void*)a, len );
    shadow_mem_make_NoAccess( get_current_Thread(), a, len );
    if (len >= SCE_BIGRANGE_T && (clo_sanity_flags & SCE_BIGRANGE))
@@ -6737,21 +6795,27 @@ void evh__mem_help_write_N(Addr a, SizeT size) {
 
 static void evh__bus_lock(void) {
    Thread* thr;
-   if (0) VG_(printf)("evh__bus_lock()\n");
    thr = get_current_Thread();
    tl_assert(thr); /* cannot fail - Thread* must already exist */
+   if (0) {
+      VG_(printf)("evh__bus_lock(ctid=%d)\n", thr->errmsg_index);
+      VG_(get_and_pp_StackTrace)(map_threads_reverse_lookup_SLOW(thr), 15);
+   }
    evhH__post_thread_w_acquires_lock( thr, LK_nonRec, (Addr)&__bus_lock );
 }
 static void evh__bus_unlock(void) {
    Thread* thr;
-   if (0) VG_(printf)("evh__bus_unlock()\n");
    thr = get_current_Thread();
    tl_assert(thr); /* cannot fail - Thread* must already exist */
+   if (0) VG_(printf)("evh__bus_unlock(ctid=%d)\n", thr->errmsg_index);
    evhH__pre_thread_releases_lock( thr, (Addr)&__bus_lock, False/*!isRDWR*/ );
 }
 
 
+
+
 /* -------------- events to do with mutexes -------------- */
+
 
 /* EXPOSITION only: by intercepting lock init events we can show the
    user where the lock was initialised, rather than only being able to
@@ -6913,32 +6977,14 @@ static void map_cond_to_Segment_INIT ( void ) {
    }
 }
 
-static void evh__HG_PTHREAD_COND_SIGNAL_PRE ( ThreadId tid, void* cond )
-{
-   /* 'tid' has signalled on 'cond'.  Start a new segment for this
-      thread, and make a binding from 'cond' to our old segment in the
-      mapping.  This is later used by other thread(s) which
-      successfully exit from a pthread_cond_wait on the same cv; then
-      they know what the signalling segment was, so a dependency edge
-      back to it can be constructed. */
 
-   Thread*   thr;
+void evhH__do_cv_signal(Thread *thr, Word cond)
+{
    SegmentID new_segid;
    Segment*  new_seg;
    SegmentID fake_segid;
    Segment*  fake_seg;
-
-   if (SHOW_EVENTS >= 1)
-      VG_(printf)("evh__HG_PTHREAD_COND_SIGNAL_PRE(ctid=%d, cond=%p)\n", 
-                  (Int)tid, (void*)cond );
-
    map_cond_to_Segment_INIT();
-   thr = map_threads_maybe_lookup( tid );
-   tl_assert(thr); /* cannot fail - Thread* must already exist */
-
-   // error-if: mutex is bogus
-   // error-if: mutex is not locked
-
    if (clo_happens_before >= 2) {
       /* create a new segment ... */
       new_segid = 0; /* bogus */
@@ -6982,6 +7028,86 @@ static void evh__HG_PTHREAD_COND_SIGNAL_PRE ( ThreadId tid, void* cond )
       }
 
    }
+
+}
+
+
+Bool evhH__do_cv_wait(Thread *thr, Word cond, Bool must_match_signal)
+{
+   SegmentID new_segid;
+   Segment*  new_seg;
+   Segment*  signalling_seg;
+   Bool      found;
+   map_cond_to_Segment_INIT();
+   if (clo_happens_before >= 2) {
+      /* create a new segment ... */
+      new_segid = 0; /* bogus */
+      new_seg   = NULL;
+      evhH__start_new_segment_for_thread( &new_segid, &new_seg, thr );
+      tl_assert( is_sane_SegmentID(new_segid) );
+      tl_assert( is_sane_Segment(new_seg) );
+      tl_assert( new_seg->thr == thr );
+      tl_assert( is_sane_Segment(new_seg->prev) );
+      tl_assert( new_seg->other == NULL);
+
+      /* and find out which thread signalled us; then add a dependency
+         edge back to it. */
+      signalling_seg = NULL;
+      found = HG_(lookupFM)( map_cond_to_Segment, 
+                             NULL, (Word*)&signalling_seg,
+                                   (Word)cond );
+      if (found) {
+         tl_assert(is_sane_Segment(signalling_seg));
+         tl_assert(new_seg->prev);
+         tl_assert(new_seg->prev->vts);
+         new_seg->other      = signalling_seg;
+         new_seg->other_hint = 's';
+         tl_assert(new_seg->other->vts);
+         new_seg->vts = tickL_and_joinR_VTS( 
+                           new_seg->thr, 
+                           new_seg->prev->vts,
+                           new_seg->other->vts );
+         return True;
+      } else {
+         if (must_match_signal) {
+            /* Hmm.  How can a wait on 'cond' succeed if nobody signalled
+               it?  If this happened it would surely be a bug in the
+               threads library.  Or one of those fabled "spurious
+               wakeups". */
+            record_error_Misc( thr, "Bug in libpthread: pthread_cond_wait "
+                               "succeeded on"
+                               " without prior pthread_cond_post");
+         }
+         tl_assert(new_seg->prev->vts);
+         new_seg->vts = tick_VTS( new_seg->thr, new_seg->prev->vts );
+         return False;
+      }
+   }
+   return False;
+}
+
+static void evh__HG_PTHREAD_COND_SIGNAL_PRE ( ThreadId tid, void* cond )
+{
+   /* 'tid' has signalled on 'cond'.  Start a new segment for this
+      thread, and make a binding from 'cond' to our old segment in the
+      mapping.  This is later used by other thread(s) which
+      successfully exit from a pthread_cond_wait on the same cv; then
+      they know what the signalling segment was, so a dependency edge
+      back to it can be constructed. */
+
+   Thread*   thr;
+
+   if (SHOW_EVENTS >= 1)
+      VG_(printf)("evh__HG_PTHREAD_COND_SIGNAL_PRE(ctid=%d, cond=%p)\n", 
+                  (Int)tid, (void*)cond );
+
+   thr = map_threads_maybe_lookup( tid );
+   tl_assert(thr); /* cannot fail - Thread* must already exist */
+
+   // error-if: mutex is bogus
+   // error-if: mutex is not locked
+   evhH__do_cv_signal(thr, (Word)cond);
+
 }
 
 /* returns True if it reckons 'mutex' is valid and held by this
@@ -7048,10 +7174,6 @@ static void evh__HG_PTHREAD_COND_WAIT_POST ( ThreadId tid,
       the new segment back to it. */
 
    Thread*   thr;
-   SegmentID new_segid;
-   Segment*  new_seg;
-   Segment*  signalling_seg;
-   Bool      found;
 
    if (SHOW_EVENTS >= 1)
       VG_(printf)("evh__HG_PTHREAD_COND_WAIT_POST"
@@ -7063,47 +7185,7 @@ static void evh__HG_PTHREAD_COND_WAIT_POST ( ThreadId tid,
    tl_assert(thr); /* cannot fail - Thread* must already exist */
 
    // error-if: cond is also associated with a different mutex
-
-   if (clo_happens_before >= 2) {
-      /* create a new segment ... */
-      new_segid = 0; /* bogus */
-      new_seg   = NULL;
-      evhH__start_new_segment_for_thread( &new_segid, &new_seg, thr );
-      tl_assert( is_sane_SegmentID(new_segid) );
-      tl_assert( is_sane_Segment(new_seg) );
-      tl_assert( new_seg->thr == thr );
-      tl_assert( is_sane_Segment(new_seg->prev) );
-      tl_assert( new_seg->other == NULL);
-
-      /* and find out which thread signalled us; then add a dependency
-         edge back to it. */
-      signalling_seg = NULL;
-      found = HG_(lookupFM)( map_cond_to_Segment, 
-                             NULL, (Word*)&signalling_seg,
-                                   (Word)cond );
-      if (found) {
-         tl_assert(is_sane_Segment(signalling_seg));
-         tl_assert(new_seg->prev);
-         tl_assert(new_seg->prev->vts);
-         new_seg->other      = signalling_seg;
-         new_seg->other_hint = 's';
-         tl_assert(new_seg->other->vts);
-         new_seg->vts = tickL_and_joinR_VTS( 
-                           new_seg->thr, 
-                           new_seg->prev->vts,
-                           new_seg->other->vts );
-      } else {
-         /* Hmm.  How can a wait on 'cond' succeed if nobody signalled
-            it?  If this happened it would surely be a bug in the
-            threads library.  Or one of those fabled "spurious
-            wakeups". */
-         record_error_Misc( thr, "Bug in libpthread: pthread_cond_wait "
-                                 "succeeded on"
-                                 " without prior pthread_cond_post");
-         tl_assert(new_seg->prev->vts);
-         new_seg->vts = tick_VTS( new_seg->thr, new_seg->prev->vts );
-      }
-   }
+   evhH__do_cv_wait(thr, (Word)cond, True);
 }
 
 
@@ -8672,6 +8754,10 @@ Bool hg_handle_client_request ( ThreadId tid, UWord* args, UWord* ret)
          break;
       }
 
+      case _VG_USERREQ__HG_MUTEX_IS_USED_AS_CONDVAR: { // void *
+         set_mu_is_cv(args[1]);
+         break;
+      }
 
 
       default:

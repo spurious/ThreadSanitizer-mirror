@@ -93,6 +93,7 @@ ANNOTATION(AnnotateNewMemory, void *mem, long size);
 ANNOTATION(AnnotateExpectRace, void *mem, const char *description);
 ANNOTATION(AnnotateBenignRace, void *mem, const char *description);
 ANNOTATION(AnnotateTraceMemory, void *mem);
+ANNOTATION(AnnotateMutexIsUsedAsCondVar, void *mu);
 
 ANNOTATION(AnnotateNoOp, void *arg);
 
@@ -159,6 +160,11 @@ ANNOTATION(AnnotateNoOp, void *arg);
 // where the race happens.
 #define ANNOTATE_BENIGN_RACE(arg, description) \
             AnnotateBenignRace(__FILE__, __LINE__, arg, description)
+
+// Report that the mutex 'mu' should be treated as in pure happens-before detector.
+#define ANNOTATE_MUTEX_IS_USED_AS_CONDVAR(mu) \
+            AnnotateMutexIsUsedAsCondVar(__FILE__, __LINE__, ((char*)mu + sizeof(pthread_cond_t)))
+
 
 // Report that we want to trace all memory accesses to this memory location,
 #define ANNOTATE_TRACE_MEMORY(arg) \

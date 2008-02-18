@@ -2690,7 +2690,8 @@ REGISTER_TEST2(Run, 58, FEATURE|EXCLUDE_FROM_ALL)
 
 // test59: TN. User defined synchronization. Annotated {{{1
 namespace test59 {
-int     COND = 0;
+int     COND1 = 0;
+int     COND2 = 0;
 int     GLOB1 = 1;
 int     GLOB2 = 2;
 int     FLAG1 = 0;
@@ -2699,20 +2700,24 @@ int     FLAG2 = 0;
 
 void Worker2() {
   FLAG1=GLOB2;
-  ANNOTATE_CONDVAR_SIGNAL(&COND);
+  ANNOTATE_CONDVAR_SIGNAL(&COND2);
   while(!FLAG2);
+  ANNOTATE_CONDVAR_WAIT(&COND1);
   GLOB2=FLAG2;
 }
 
 void Worker1() {
   FLAG2=GLOB1;
-  ANNOTATE_CONDVAR_WAIT(&COND);
+  ANNOTATE_CONDVAR_SIGNAL(&COND1);
   while(!FLAG1);
+  ANNOTATE_CONDVAR_WAIT(&COND2);
   GLOB1=FLAG1;
 }
 
 void Run() {
   printf("test59:\n");
+  ANNOTATE_BENIGN_RACE(&FLAG1, "synchronization via 'safe' race");
+  ANNOTATE_BENIGN_RACE(&FLAG2, "synchronization via 'safe' race");
   MyThreadArray t(Worker1, Worker2);
   t.Start();
   t.Join();
@@ -2730,7 +2735,8 @@ int     GLOB1 = 1;
 int     GLOB2 = 2;
 int     FLAG2 = 0;
 int     FLAG1 = 0;
-// same as test 59 but synchronized with signal-wait 
+// same as test 59 but synchronized with signal-wait.
+
 
 void Worker2() {
   FLAG1=GLOB2;
@@ -2763,8 +2769,49 @@ void Run() {
   printf("\tGLOB1=%d\n", GLOB1);
   printf("\tGLOB2=%d\n", GLOB2);
 }
-REGISTER_TEST(Run, 60)
+REGISTER_TEST2(Run, 60, FEATURE|EXCLUDE_FROM_ALL)
 }  // namespace test60
+
+
+// test61 TN: Synchronization via Mutex as in happens-before, annotated. {{{1
+namespace test61 {
+Mutex MU;
+int     GLOB = 0;
+int     *P1 = NULL, *P2 = NULL;
+
+void Putter() {
+  ANNOTATE_MUTEX_IS_USED_AS_CONDVAR(&MU);
+  MU.Lock();
+  if (P1 == NULL) {
+    P1 = &GLOB;
+    *P1 = 1;
+  } 
+  MU.Unlock();
+}
+
+void Getter() {
+  bool done  = false;
+  usleep(100000);
+  while (!done) {
+    MU.Lock();
+    if (P1) done = true;
+    P2 = P1; 
+    P1 = NULL;
+    MU.Unlock();
+  }
+  *P2 = 2;
+}
+
+
+void Run() {
+  printf("test61:\n");
+  MyThreadArray t(Putter, Getter);
+  t.Start();
+  t.Join();
+  printf("\tGLOB=%d\n", GLOB);
+}
+REGISTER_TEST(Run, 61)
+}  // namespace test61
 
 
 // End {{{1
