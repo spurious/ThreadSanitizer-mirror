@@ -2773,11 +2773,15 @@ REGISTER_TEST2(Run, 60, FEATURE|EXCLUDE_FROM_ALL)
 }  // namespace test60
 
 
-// test61 TN: Synchronization via Mutex as in happens-before, annotated. {{{1
+// test61: TN. Synchronization via Mutex as in happens-before, annotated. {{{1
 namespace test61 {
 Mutex MU;
 int     GLOB = 0;
 int     *P1 = NULL, *P2 = NULL;
+
+// In this test Mutex lock/unlock operations introduce happens-before relation. 
+// We annotate the code so that MU is treated as in pure happens-before detector. 
+
 
 void Putter() {
   ANNOTATE_MUTEX_IS_USED_AS_CONDVAR(&MU);
@@ -2791,12 +2795,13 @@ void Putter() {
 
 void Getter() {
   bool done  = false;
-  usleep(100000);
   while (!done) {
     MU.Lock();
-    if (P1) done = true;
-    P2 = P1; 
-    P1 = NULL;
+    if (P1) {
+      done = true;
+      P2 = P1; 
+      P1 = NULL;
+    }
     MU.Unlock();
   }
   *P2 = 2;
