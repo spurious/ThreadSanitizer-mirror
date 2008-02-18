@@ -9427,10 +9427,8 @@ static void hg_pp_Error ( Error* err )
 
       /* Format the low level state print descriptions */
       if (clo_msm_prop1) {
-        old_buf[0] = 'x';
-        old_buf[1] = 0;
-        new_buf[0] = 'z';
-        new_buf[1] = 0; // FIXME
+        prop1_show_shval(old_buf, sizeof(old_buf), old_state);
+        prop1_show_shval(new_buf, sizeof(new_buf), new_state);
       }else {
         show_shadow_w32(old_buf, sizeof(old_buf), old_state);
         show_shadow_w32(new_buf, sizeof(new_buf), new_state);
@@ -9444,14 +9442,12 @@ static void hg_pp_Error ( Error* err )
 
       if (clo_msm_prop1) {
          VG_(message)(Vg_UserMsg,
-                      "prop1: Possible data race during %s of size %d at %p",
+                      "prop1: T%d: Possible data race during %s of size %d at %p",
+                      thr_acc->errmsg_index, 
                       what, szB, err_ga);
          VG_(pp_ExeContext)( VG_(get_error_where)(err) );
-         // FIXME: add reasonable output. 
-         //pp_AddrInfo(err_addr, &extra->addrinfo);
-         VG_(message)(Vg_UserMsg, "zzz thr #%d %llx %llx\n", 
-                      thr_acc->errmsg_index, 
-                      old_state, new_state);
+         VG_(message)(Vg_UserMsg, "old state: %llx %s", old_state, old_buf);
+         VG_(message)(Vg_UserMsg, "new state: %llx %s", new_state, new_buf);
 //         VG_(message)(Vg_UserMsg,
 //                      "  Old state 0x%08x=%s, new state 0x%08x=%s",
 //                      old_state, old_buf, new_state, new_buf);
