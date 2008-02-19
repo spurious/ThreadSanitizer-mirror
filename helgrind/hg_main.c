@@ -8714,6 +8714,16 @@ Bool hg_handle_client_request ( ThreadId tid, UWord* args, UWord* ret)
          break;
       }
 
+      case _VG_USERREQ__HG_GET_SEGMENT_ID: { // -> SegmentID
+         Thread*   thr;
+         thr = map_threads_maybe_lookup( tid );
+         tl_assert(thr); /* cannot fail */
+         *ret = (UWord)thr->csegid - (1 << 24);
+         break;
+      }
+
+
+
       case _VG_USERREQ__HG_EXPECT_RACE: { // void*, char*, char *, int
         Addr ptr    = (Addr)args[1];
         char *descr = (char*)args[2];

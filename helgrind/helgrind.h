@@ -95,6 +95,7 @@ typedef
       _VG_USERREQ__HG_POSIX_SEM_POST_PRE,         /* sem_t* */
       _VG_USERREQ__HG_POSIX_SEM_WAIT_POST,        /* sem_t* */
       _VG_USERREQ__HG_GET_THREAD_ID,              /* -> Thread ID */
+      _VG_USERREQ__HG_GET_SEGMENT_ID,             /* -> Segment ID */
       _VG_USERREQ__HG_GET_MY_SEGMENT,             /* -> Segment* */
       _VG_USERREQ__HG_EXPECT_RACE,                /* void*, char*, char*, int */
       _VG_USERREQ__HG_PCQ_CREATE,                 /* void* */
@@ -141,6 +142,13 @@ typedef
     _qzz_res;                                                     \
    })
 
+#define VALGRIND_HG_SEGMENT_ID  __extension__                      \
+   ({ unsigned int _qzz_res;                                       \
+    VALGRIND_DO_CLIENT_REQUEST(_qzz_res, 0 ,                      \
+                               _VG_USERREQ__HG_GET_SEGMENT_ID,     \
+                               0, 0, 0, 0, 0);                    \
+    _qzz_res;                                                     \
+   })
 
 
 #endif /* __HELGRIND_H */

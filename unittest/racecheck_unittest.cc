@@ -2859,5 +2859,34 @@ REGISTER_TEST2(Run, 62, STABILITY|EXCLUDE_FROM_ALL)
 }  // namespace test62
 
 
+// test63: STAB. Create as many segments as possible and do it fast. {{{1
+namespace test63 {
+// Helgrind 3.3.0 will fail as it has a hard limit of < 2^24 segments. 
+// A better scheme is to implement garbage collection for segments. 
+const int N = 1 << 24;
+int C = 0;
+
+void Putter() {
+  for (int i = 0; i < N; i++){
+    if ((i % (N / 8)) == 0) {
+      printf("i=%d\n", i);
+    }
+    ANNOTATE_CONDVAR_SIGNAL(&C);
+  }
+}
+
+void Getter() {
+}
+
+void Run() {
+  printf("test63:\n");
+  MyThreadArray t(Putter, Getter);
+  t.Start();
+  t.Join();
+}
+REGISTER_TEST2(Run, 63, STABILITY|EXCLUDE_FROM_ALL)
+}  // namespace test63
+
+
 // End {{{1
 // vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker

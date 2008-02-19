@@ -111,8 +111,9 @@
     do{\
       if(TRACE_ANN_FNS){\
         int tid = VALGRIND_HG_THREAD_ID;\
+        int sid = VALGRIND_HG_SEGMENT_ID;\
         fprintf(stderr, args);\
-        if(tid != 999999) fflush(stderr);\
+        if(tid != 999999 && sid != 999999) fflush(stderr);\
       }\
     }while(0)
 
@@ -238,5 +239,5 @@ ANN_FUNC(void, AnnotateMutexIsUsedAsCondVar, char *file, int line, void *mu)
 ANN_FUNC(void, AnnotateNoOp, char *file, int line, void *mem)
 {
   const char *name = "AnnotateNoOp";
-  ANN_TRACE("--#%d %s[%p] %s:%d\n", tid, name, mem, file, line);
+  ANN_TRACE("--#%d/%d %s[%p] %s:%d\n", tid, sid, name, mem, file, line);
 }
