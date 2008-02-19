@@ -2728,7 +2728,7 @@ REGISTER_TEST(Run, 59)
 }  // namespace test59
 
 
-// test60: TN. Corect synchronization using signal-wait {{{1
+// test60: TN. Correct synchronization using signal-wait {{{1
 namespace test60 {
 int     COND1 = 0;
 int     COND2 = 0;
