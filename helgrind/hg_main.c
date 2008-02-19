@@ -365,20 +365,15 @@ typedef
    from some other thread.  Segments are never freed (!) */
 typedef
    struct _Segment {
-      /* ADMIN */
-      struct _Segment* admin;
-      UInt             magic;
-      /* USEFUL */
-      UInt             dfsver; /* Version # for depth-first searches */
       Thread*          thr;    /* The thread that I am part of */
       struct _Segment* prev;   /* The previous segment in this thread */
       struct _Segment* other;  /* Possibly a segment from some other 
                                   thread, which happened-before me */
       XArray*          vts;    /* XArray of ScalarTS */
+      UInt             dfsver; /* Version # for depth-first searches */
       /* DEBUGGING ONLY: what does 'other' arise from?  
          c=thread creation, j=join, s=cvsignal, S=semaphore */
       Char other_hint;
-      SegmentID id; 
    }
    Segment;
 
@@ -576,7 +571,7 @@ static Thread* admin_threads = NULL;
 static Lock* admin_locks = NULL;
 
 /* Admin linked list of Segments */
-static Segment* admin_segments = NULL;
+// static Segment* admin_segments = NULL;
 
 /* Shadow memory primary map */
 static WordFM* map_shmem = NULL; /* WordFM Addr SecMap* */
@@ -586,7 +581,7 @@ static Cache   cache_shmem;
 static Thread** map_threads = NULL; /* Array[VG_N_THREADS] of Thread* */
 
 /* Mapping table for thread segments IDs to Segment* */
-static WordFM* map_segments = NULL; /* WordFM SegmentID Segment* */
+// static WordFM* map_segments = NULL; /* WordFM SegmentID Segment* */
 
 /* Mapping table for lock guest addresses to Lock* */
 static WordFM* map_locks = NULL; /* WordFM LockAddr Lock* */
@@ -605,6 +600,63 @@ static Lock* __bus_lock_Lock = NULL;
 
 static WordFM *map_expected_errors = NULL; /* WordFM Addr ExpectedError */
 
+/* --------------- Segment vector --------------- */
+// Segments are organized into N1 chunks, each chunk contains N2 Segments. 
+// SegmentID is an index in this array of chunks: 
+//   chunk_index    = SegmentID / N1
+//   index_in_chunk = SegmentID % N1
+// New chunks are allocated as needed.
+//
+// SegmentID=0 is not allowed (used for sanity checking).
+// So, SegmentID > 0 && SegmentID < N1*N2. 
+// 
+// TODO: when we reach limit of N1*N2 segments we need to start 
+// recycling old segments instead of exiting. 
+
+enum {
+   SEGMENT_ID_MAX           = 1 << 24, // N1*N2
+   SEGMENT_ID_CHUNK_SIZE    = 1 << 14, // N2
+   SEGMENT_ID_N_CHUNKS      = SEGMENT_ID_MAX / SEGMENT_ID_CHUNK_SIZE // N1
+};
+
+static struct {
+   ULong    size; 
+   Segment *chunks[SEGMENT_ID_N_CHUNKS];
+} SegmentArray ={1, {0}};
+
+
+// Add a new segment, return its number
+static ULong SEG_add(void) 
+{
+   ULong index, chunk_index, elem_index;
+   // increment size 
+   SegmentArray.size = (SegmentArray.size + 1) % SEGMENT_ID_MAX;
+   if (SegmentArray.size == 0) {
+      VG_(printf)("Helgrind: Fatal internal error -- cannot continue.\n");
+      VG_(printf)("SegmentArray: wrapped around\n");
+      tl_assert(0);
+      SegmentArray.size = 2;
+   }
+
+   index = SegmentArray.size - 1;
+   chunk_index = index / SEGMENT_ID_CHUNK_SIZE;
+   elem_index  = index % SEGMENT_ID_CHUNK_SIZE;
+   if (SegmentArray.chunks[chunk_index] == NULL) {
+      // VG_(printf)("SegmentArray: new chunk %d\n", (int)chunk_index);
+      SegmentArray.chunks[chunk_index] =  hg_zalloc(sizeof(Segment) * SEGMENT_ID_CHUNK_SIZE);
+   }
+   VG_(memset)(&SegmentArray.chunks[chunk_index][elem_index], 0, sizeof(Segment));
+   // VG_(printf)("SegmentArray: new segment %d\n", (int)index);
+   return index;
+}
+
+static Segment *SEG_get(ULong n)
+{
+   tl_assert(n > 0); 
+   tl_assert(n < SEGMENT_ID_MAX);
+   tl_assert(SegmentArray.chunks[n / SEGMENT_ID_CHUNK_SIZE] != NULL);
+   return &SegmentArray.chunks[n / SEGMENT_ID_CHUNK_SIZE][n % SEGMENT_ID_CHUNK_SIZE];
+}
 /*----------------------------------------------------------------*/
 /*--- Simple helpers for the data structures                   ---*/
 /*----------------------------------------------------------------*/
@@ -657,24 +709,24 @@ static Lock* mk_LockN ( LockKind kind, Addr guestaddr ) {
    admin_locks            = lock;
    return lock;
 }
-static Segment* mk_Segment ( Thread* thr, Segment* prev, Segment* other ) {
-   Segment* seg    = hg_zalloc( sizeof(Segment) );
+
+static SegmentID mk_Segment ( Thread* thr, Segment* prev, Segment* other ) {
+   ULong id        = SEG_add();
+   Segment* seg    = SEG_get(id);
    seg->dfsver     = 0;
    seg->thr        = thr;
    seg->prev       = prev;
    seg->other      = other;
    seg->vts        = NULL;
    seg->other_hint = ' ';
-   seg->magic      = Segment_MAGIC;
-   seg->admin      = admin_segments;
-   seg->id         = 0;
-   admin_segments = seg;
+//   seg->magic      = Segment_MAGIC;
+//   seg->id         = id;
    stats__mk_Segment++;
-   return seg;
+   return id;
 }
 
 static inline Bool is_sane_Segment ( Segment* seg ) {
-   return seg != NULL && seg->magic == Segment_MAGIC;
+   return seg != NULL; //  && seg->magic == Segment_MAGIC;
 }
 static inline Bool is_sane_Thread ( Thread* thr ) {
    return thr != NULL && thr->magic == Thread_MAGIC;
@@ -898,24 +950,14 @@ static void remove_Lock_from_locksets_of_all_owning_Threads( Lock* lk )
 }
 
 /* --------- xxxID functions --------- */
-
-/* Proposal (for debugging sanity):
-
-   SegmentIDs from 0x1000000 .. 0x1FFFFFF (16777216)
-
-   All other xxxID handles are invalid.
-*/
 static inline Bool is_sane_SegmentID ( SegmentID tseg ) {
-   return tseg >= 0x1000000 && tseg <= 0x1FFFFFF;
+   return tseg >= 1 && tseg <= SEGMENT_ID_MAX;
 }
 static inline Bool is_sane_ThreadId ( ThreadId coretid ) {
    return coretid >= 0 && coretid < VG_N_THREADS;
 }
-static SegmentID alloc_SegmentID ( void ) {
-   static SegmentID next = 0x1000000;
-   tl_assert(is_sane_SegmentID(next));
-   return next++;
-}
+
+
 
 /* --------- Shadow memory --------- */
 
@@ -1348,8 +1390,8 @@ static void pp_Segment ( Int d, Segment* s )
 {
    space(d+0); VG_(printf)("Segment %p {\n", s);
    if (sHOW_ADMIN) {
-   space(d+3); VG_(printf)("admin  %p\n",   s->admin);
-   space(d+3); VG_(printf)("magic  0x%x\n", (UInt)s->magic);
+//   space(d+3); VG_(printf)("admin  %p\n",   s->admin);
+//   space(d+3); VG_(printf)("magic  0x%x\n", (UInt)s->magic);
    }
    space(d+3); VG_(printf)("dfsver    %u\n", s->dfsver);
    space(d+3); VG_(printf)("thr       %p\n", s->thr);
@@ -1357,7 +1399,7 @@ static void pp_Segment ( Int d, Segment* s )
    space(d+3); VG_(printf)("other[%c] %p\n", s->other_hint, s->other);
    space(d+0); VG_(printf)("}\n");
 }
-
+#if 0
 static void pp_admin_segments ( Int d )
 {
    Int      i, n;
@@ -1375,20 +1417,17 @@ static void pp_admin_segments ( Int d )
    }
    space(d); VG_(printf)("}\n", n);
 }
-
+#endif
 static void pp_map_segments ( Int d )
 {
-   SegmentID segid;
-   Segment*  seg;
+   ULong i;
    space(d); VG_(printf)("map_segments (%d entries) {\n", 
-                         (Int)HG_(sizeFM)( map_segments ));
-   HG_(initIterFM)( map_segments );
-   while (HG_(nextIterFM)( map_segments, (Word*)&segid,
-                                         (Word*)&seg )) {
+                         (Int)SegmentArray.size);
+   for (i = 1; i < SegmentArray.size; i++) {
       space(d+3);
-      VG_(printf)("segid 0x%x -> Segment %p\n", (UInt)segid, seg);
+     //  VG_(printf)("segid 0x%x -> Segment %p\n", (UInt)i, SEG_get(i));
+      pp_Segment(d+3, SEG_get(i));
    }
-   HG_(doneIterFM)( map_segments );
    space(d); VG_(printf)("}\n");
 }
 
@@ -1548,8 +1587,8 @@ static void pp_everything ( Int flags, Char* caller )
       pp_map_locks(d+3);
    }
    if (flags & PP_SEGMENTS) {
-      VG_(printf)("\n");
-      pp_admin_segments(d+3);
+      // VG_(printf)("\n");
+      // pp_admin_segments(d+3);
       VG_(printf)("\n");
       pp_map_segments(d+3);
    }
@@ -1571,7 +1610,6 @@ static void pp_everything ( Int flags, Char* caller )
 /*----------------------------------------------------------------*/
 
 /* fwds */
-static void map_segments_add ( SegmentID segid, Segment* seg );
 static void shmem__invalidate_scache ( void );
 static void hbefore__invalidate_cache ( void );
 static void hbefore__invalidate_htable ( void );
@@ -1589,7 +1627,7 @@ static void initialise_data_structures ( void )
    /* Get everything initialised and zeroed. */
    tl_assert(admin_threads == NULL);
    tl_assert(admin_locks == NULL);
-   tl_assert(admin_segments == NULL);
+//   tl_assert(admin_segments == NULL);
 
    tl_assert(sizeof(Addr) == sizeof(Word));
    tl_assert(map_shmem == NULL);
@@ -1604,9 +1642,6 @@ static void initialise_data_structures ( void )
    /* re <=: < on 64-bit platforms, == on 32-bit ones */
    tl_assert(sizeof(SegmentID) <= sizeof(Word));
    tl_assert(sizeof(Segment*) == sizeof(Word));
-   tl_assert(map_segments == NULL);
-   map_segments = HG_(newFM)( hg_zalloc, hg_free, NULL/*unboxed Word cmp*/);
-   tl_assert(map_segments != NULL);
    hbefore__invalidate_cache();
    hbefore__invalidate_htable();
 
@@ -1645,12 +1680,11 @@ static void initialise_data_structures ( void )
 
    /* a segment for the new thread ... */
    // FIXME: code duplication in ev__post_thread_create
-   segid = alloc_SegmentID();
-   seg   = mk_Segment( NULL, NULL, NULL );
+   segid   = mk_Segment( NULL, NULL, NULL );
+   seg     = SEG_get(segid);
 
    /* a Thread for the new thread ... */
    thr = mk_Thread( segid );
-   map_segments_add( segid, seg );
    seg->thr = thr;
 
    /* Give the thread a starting-off vector timestamp. */
@@ -1794,7 +1828,6 @@ static void map_locks_delete ( Addr ga )
 
 
 /*----------------------------------------------------------------*/
-/*--- map_segments :: WordFM SegmentID Segment*                ---*/
 /*--- the DAG of thread segments                               ---*/
 /*----------------------------------------------------------------*/
 
@@ -1805,39 +1838,15 @@ static void segments__generate_dot ( void ); /* fwds */
 
 static Segment* map_segments_lookup ( SegmentID segid )
 {
-   Bool     found;
-   Segment* seg = NULL;
-
-   // TODO. map_segments_lookup became rather hot with MSMProp1.
-   // Need to make cheaper mapping between segid and segment. 
-   //
-
-   tl_assert( is_sane_SegmentID(segid) );
-   found = HG_(lookupFM)( map_segments,
-                          NULL, (Word*)&seg, (Word)segid );
-   tl_assert(found);
-   tl_assert(seg != NULL);
-
-   return seg;
+   return SEG_get(segid);
 }
 
 static Segment* map_segments_maybe_lookup ( SegmentID segid )
 {
-   Bool     found;
-   Segment* seg = NULL;
-   tl_assert( is_sane_SegmentID(segid) );
-   found = HG_(lookupFM)( map_segments,
-                          NULL, (Word*)&seg, (Word)segid );
-   if (!found) tl_assert(seg == NULL);
-   return seg;
-}
-
-static void map_segments_add ( SegmentID segid, Segment* seg )
-{
-   /* This is a bit inefficient.  Oh well. */
-   tl_assert( !HG_(lookupFM)( map_segments, NULL, NULL, segid ));
-   seg->id = segid; 
-   HG_(addToFM)( map_segments, (Word)segid, (Word)seg );
+   if (is_sane_SegmentID(segid)) {
+      return SEG_get(segid);
+   }
+   return NULL;
 }
 
 /*--------------- to do with Vector Timestamps ---------------*/
@@ -2621,7 +2630,7 @@ static Bool happens_before ( SegmentID segid1, SegmentID segid2 )
    }
 #endif
    if (0)
-   VG_(printf)("hb(S%d,S%d)=%d\n", (Int)segid1-(1<<24), (Int)segid2-(1<<24), hbG);
+   VG_(printf)("hb(S%d,S%d)=%d\n", (Int)segid1, (Int)segid2, hbG);
    return hbG;
 }
 
@@ -2638,6 +2647,7 @@ static void segments__generate_vcg ( void )
          Pink   -- semaphore-up edge
    */
    Segment* seg;
+   ULong i;
    HChar vtsstr[128];
    VG_(printf)(PFX "graph: { title: \"Segments\"\n");
    VG_(printf)(PFX "orientation: top_to_bottom\n");
@@ -2646,8 +2656,8 @@ static void segments__generate_vcg ( void )
    VG_(printf)(PFX "x: 20\n");
    VG_(printf)(PFX "y: 20\n");
    VG_(printf)(PFX "color: lightgrey\n");
-   for (seg = admin_segments; seg; seg=seg->admin) {
-
+   for (i = 1; i < SegmentArray.size; i++) {
+      seg = SEG_get(i);
       VG_(printf)(PFX "node: { title: \"%p\" color: lightcyan "
                   "textcolor: darkgreen label: \"Seg %p\\n", 
                   seg, seg);
@@ -2685,10 +2695,10 @@ static void segments__generate_vcg ( void )
    VG_(printf)(PFX "}\n");
 #undef PFX
 }
-
 // similar to segments__generate_vcg.
 static void segments__generate_dot ( void )
 {
+#if 0
 #define PFX "xxxxxx"
    /* Edge colours:
          Black  -- the chain of .prev links
@@ -2698,20 +2708,21 @@ static void segments__generate_dot ( void )
          Pink   -- semaphore-up edge
    */
    Segment* seg;
+   ULong i;
 //   HChar vtsstr[128];
    VG_(printf)(PFX "digraph Segments { \n");
-   for (seg = admin_segments; seg; seg=seg->admin) {
-
+   for (i = 1; i < SegmentArray.size; i++) {
+      seg = SEG_get(i);
       VG_(printf)(PFX "%d [label=\"S%d/T%d\"];\n", 
-                  seg->id-(1<<24), seg->id-(1<<24), seg->thr->errmsg_index);
+                  seg->id, seg->id, seg->thr->errmsg_index);
 
 
       if (seg->prev) 
          VG_(printf)(PFX "%d->%d [color=\"green\"];\n", 
-                     seg->prev->id-(1<<24), seg->id-(1<<24));
+                     seg->prev->id, seg->id);
       if (seg->other) 
          VG_(printf)(PFX "%d->%d [color=\"blue\"];\n", 
-                     seg->other->id-(1<<24), seg->id-(1<<24));
+                     seg->other->id, seg->id);
 #if 0
       if (seg->other) {
          HChar* colour = "orange";
@@ -2730,8 +2741,8 @@ static void segments__generate_dot ( void )
    }
    VG_(printf)(PFX "}\n");
 #undef PFX
+#endif
 }
-
 
 /*----------------------------------------------------------------*/
 /*--- map_shmem :: WordFM Addr SecMap                          ---*/
@@ -3134,12 +3145,9 @@ static void segments__sanity_check ( Char* who )
    //   the Segment graph is a dag (no cycles)
    //   all of the Segment graph must be reachable from the segids
    //      mentioned in the Threads
-   // # entries in admin_segments == # entries in map_segments
-   for (i = 0, seg = admin_segments;  seg;  i++, seg = seg->admin)
-      ;
-   if (i != HG_(sizeFM)(map_segments)) BAD("1");
    // for seg in Segments {
-   for (seg = admin_segments; seg; seg = seg->admin) {
+   for (i = 1; i < SegmentArray.size; i++) {
+      seg = SEG_get(i);
       if (!is_sane_Segment(seg)) BAD("2");
       if (!is_sane_Thread(seg->thr)) BAD("3");
       if (!seg->vts) BAD("4");
@@ -3539,7 +3547,7 @@ static void prop1_show_shval(char *buf, int buf_size, SVal sv)
          }
          S = prop1_SS_get_element(ss, i);
          VG_(sprintf)(buf + VG_(strlen)(buf), "S%d/T%d ", 
-                      (int)S-(1<<24), map_segments_lookup(S)->thr->errmsg_index);
+                      (int)S, map_segments_lookup(S)->thr->errmsg_index);
       }
    }
 }
@@ -3663,7 +3671,7 @@ SVal prop1_memory_state_machine(
       }
       if (do_trace) {
          VG_(printf)("HB(S%d/T%d,cur)=%d\n",
-                     S - (1<< 24), 
+                     S, 
                      map_segments_lookup(S)->thr->errmsg_index,
                      hb
                      );
@@ -3730,7 +3738,7 @@ done:
 
       prop1_show_shval(buf, sizeof(buf), sv_new);
       VG_(message)(Vg_UserMsg, "TRACE: %p S%d/T%d %c %llx %s", a, 
-                   (int)currS-(1<<24), thr->errmsg_index, 
+                   (int)currS, thr->errmsg_index, 
                    is_w ? 'w' : 'r', sv_new, buf);
       if (1 || clo_trace_level >= 2) {
          ThreadId tid = map_threads_maybe_reverse_lookup_SLOW(thr);
@@ -5995,9 +6003,8 @@ void evhH__start_new_segment_for_thread ( /*OUT*/SegmentID* new_segidP,
    tl_assert(cur_seg);
    tl_assert(cur_seg->thr == thr); /* all sane segs should point back
                                       at their owner thread. */
-   *new_segP = mk_Segment( thr, cur_seg, NULL/*other*/ );
-   *new_segidP = alloc_SegmentID();
-   map_segments_add( *new_segidP, *new_segP );
+   *new_segidP = mk_Segment( thr, cur_seg, NULL/*other*/ );
+   *new_segP   = SEG_get(*new_segidP);
    thr->csegid = *new_segidP;
 }
 
@@ -6008,9 +6015,8 @@ void evhH__start_new_fake_segment ( /*OUT*/SegmentID* new_segidP,
 {
    tl_assert(new_segP);
    tl_assert(new_segidP);
-   *new_segP = mk_Segment( NULL /*thr*/, NULL /*cur_seg*/, NULL/*other*/ );
-   *new_segidP = alloc_SegmentID();
-   map_segments_add( *new_segidP, *new_segP );
+   *new_segidP = mk_Segment( NULL /*thr*/, NULL /*cur_seg*/, NULL/*other*/ );
+   *new_segP   = SEG_get(*new_segidP);
 }
 
 
@@ -6421,12 +6427,11 @@ void evh__pre_thread_ll_create ( ThreadId parent, ThreadId child )
 
       /* Create a new thread record for the child. */
       // FIXME: code duplication from init_data_structures
-      segid_c = alloc_SegmentID();
-      seg_c   = mk_Segment( NULL/*thr*/, NULL/*prev*/, NULL/*other*/ );
+      segid_c   = mk_Segment( NULL/*thr*/, NULL/*prev*/, NULL/*other*/ );
+      seg_c     = SEG_get(segid_c);
 
       /* a Thread for the new thread ... */
       thr_c = mk_Thread( segid_c );
-      map_segments_add( segid_c, seg_c );
       seg_c->thr = thr_c;
 
       /* and bind it in the thread-map table */
@@ -8718,7 +8723,7 @@ Bool hg_handle_client_request ( ThreadId tid, UWord* args, UWord* ret)
          Thread*   thr;
          thr = map_threads_maybe_lookup( tid );
          tl_assert(thr); /* cannot fail */
-         *ret = (UWord)thr->csegid - (1 << 24);
+         *ret = (UWord)thr->csegid;
          break;
       }
 

@@ -2302,8 +2302,8 @@ void Waiter() {
   MU.Lock();
   while(COND != 1)
     CV.Wait(&MU);
-  MU.Unlock();
   ANNOTATE_CONDVAR_LOCK_WAIT(&CV, &MU);
+  MU.Unlock();
 
   GLOB = 2;
 }
@@ -2728,7 +2728,7 @@ REGISTER_TEST(Run, 59)
 }  // namespace test59
 
 
-// test60: TN. Coorect synchronization using signal-wait {{{1
+// test60: TN. Corect synchronization using signal-wait {{{1
 namespace test60 {
 int     COND1 = 0;
 int     COND2 = 0;
@@ -2749,6 +2749,7 @@ void Worker2() {
   MU.Lock();
   while(COND2 != 1)
     CV.Wait(&MU);
+  ANNOTATE_CONDVAR_LOCK_WAIT(&CV, &MU);
   MU.Unlock();
 
   GLOB2=FLAG2;
@@ -2765,6 +2766,7 @@ void Worker1() {
   MU.Lock();
   while(COND1 != 1)
     CV.Wait(&MU);
+  ANNOTATE_CONDVAR_LOCK_WAIT(&CV, &MU);
   MU.Unlock();
 
   GLOB1=FLAG1;
