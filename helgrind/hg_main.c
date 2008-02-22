@@ -1,4 +1,3 @@
-
 /*--------------------------------------------------------------------*/
 /*--- Helgrind: a Valgrind tool for detecting errors               ---*/
 /*--- in threaded programs.                              hg_main.c ---*/
@@ -371,6 +370,7 @@ typedef
                                   thread, which happened-before me */
       XArray*          vts;    /* XArray of ScalarTS */
       UInt             dfsver; /* Version # for depth-first searches */
+      UInt             refcount; /* Refrence count (for recycling). Hopefully, 32 bit is enough. */
       /* DEBUGGING ONLY: what does 'other' arise from?  
          c=thread creation, j=join, s=cvsignal, S=semaphore */
       Char other_hint;
@@ -620,15 +620,15 @@ enum {
 };
 
 static struct {
-   ULong    size; 
+   UInt    size; 
    Segment *chunks[SEGMENT_ID_N_CHUNKS];
 } SegmentArray ={1, {0}};
 
 
 // Add a new segment, return its number
-static ULong SEG_add(void) 
+static SegmentID SEG_add(void) 
 {
-   ULong index, chunk_index, elem_index;
+   UInt index, chunk_index, elem_index;
    // increment size 
    SegmentArray.size = (SegmentArray.size + 1) % SEGMENT_ID_MAX;
    if (SegmentArray.size == 0) {
@@ -650,13 +650,30 @@ static ULong SEG_add(void)
    return index;
 }
 
-static Segment *SEG_get(ULong n)
+static inline Bool SEG_is_sane(SegmentID n)
 {
-   tl_assert(n > 0); 
-   tl_assert(n < SEGMENT_ID_MAX);
-   tl_assert(SegmentArray.chunks[n / SEGMENT_ID_CHUNK_SIZE] != NULL);
+   return (n > 0) 
+       && (n < SEGMENT_ID_MAX)
+       && (SegmentArray.chunks[n / SEGMENT_ID_CHUNK_SIZE] != NULL);
+}
+
+static inline Segment *SEG_get(SegmentID n)
+{  
+   tl_assert(SEG_is_sane(n));
    return &SegmentArray.chunks[n / SEGMENT_ID_CHUNK_SIZE][n % SEGMENT_ID_CHUNK_SIZE];
 }
+
+static inline UInt SEG_ref(SegmentID n)
+{
+   return ++SEG_get(n)->refcount;
+}
+
+static inline UInt SEG_unref(SegmentID n)
+{
+   Segment *seg = SEG_get(n);
+   return --seg->refcount;
+}
+
 /*----------------------------------------------------------------*/
 /*--- Simple helpers for the data structures                   ---*/
 /*----------------------------------------------------------------*/
@@ -950,9 +967,6 @@ static void remove_Lock_from_locksets_of_all_owning_Threads( Lock* lk )
 }
 
 /* --------- xxxID functions --------- */
-static inline Bool is_sane_SegmentID ( SegmentID tseg ) {
-   return tseg >= 1 && tseg <= SEGMENT_ID_MAX;
-}
 static inline Bool is_sane_ThreadId ( ThreadId coretid ) {
    return coretid >= 0 && coretid < VG_N_THREADS;
 }
@@ -1040,7 +1054,7 @@ static inline SVal mk_SHVAL_ShR ( WordSetID tset, WordSetID lset ) {
    }
 }
 static inline SVal mk_SHVAL_Excl ( SegmentID tseg ) {
-   tl_assert(is_sane_SegmentID(tseg));
+   tl_assert(SEG_is_sane(tseg));
    return (((SVal)1) << 62) | (((SVal)tseg) << N_SEGID_SHIFT);
 }
 
@@ -1152,7 +1166,7 @@ static inline int prop1_SS_get_size (SegmentSet ss)
 
 static inline SegmentSet prop1_SS_mk_singleton (SegmentID ss)
 {
-   tl_assert(is_sane_SegmentID(ss));
+   tl_assert(SEG_is_sane(ss));
    ss |= (1ULL << (SEGMENT_SET_BITS-1));
    tl_assert(prop1_SS_is_singleton(ss));
    return ss;
@@ -1162,7 +1176,7 @@ static inline SegmentID prop1_SS_get_singleton (SegmentSet ss)
 {
    tl_assert(prop1_SS_is_singleton(ss));
    ss &= ~(1ULL << (SEGMENT_SET_BITS-1));
-   tl_assert(is_sane_SegmentID(ss));
+   tl_assert(SEG_is_sane(ss));
    return ss;
 }
 
@@ -1248,7 +1262,7 @@ void summarise_threadset ( WordSetID tset, Char* buf, UInt nBuf ); /* fwds */
 #define PP_LOCKS        (1<<2)
 #define PP_SEGMENTS     (1<<3)
 #define PP_SHMEM_SHARED (1<<4)
-#define PP_ALL (PP_THREADS | PP_LOCKS | PP_SEGMENTS | PP_SHMEM_SHARED)
+#define PP_ALL (PP_THREADS | PP_LOCKS | PP_SEGMENTS /*| PP_SHMEM_SHARED*/)
 
 
 static const Int sHOW_ADMIN = 0;
@@ -1397,28 +1411,10 @@ static void pp_Segment ( Int d, Segment* s )
    space(d+3); VG_(printf)("thr       %p\n", s->thr);
    space(d+3); VG_(printf)("prev      %p\n", s->prev);
    space(d+3); VG_(printf)("other[%c] %p\n", s->other_hint, s->other);
+   space(d+3); VG_(printf)("refcount  %u\n", s->refcount);
    space(d+0); VG_(printf)("}\n");
 }
-#if 0
-static void pp_admin_segments ( Int d )
-{
-   Int      i, n;
-   Segment* s;
-   for (n = 0, s = admin_segments;  s;  n++, s = s->admin) {
-      /* nothing */
-   }
-   space(d); VG_(printf)("admin_segments (%d records) {\n", n);
-   for (i = 0, s = admin_segments;  s;  i++, s = s->admin) {
-      if (0) {
-         space(n); 
-         VG_(printf)("admin_segments record %d of %d:\n", i, n);
-      }
-      pp_Segment(d+3, s);
-   }
-   space(d); VG_(printf)("}\n", n);
-}
-#endif
-static void pp_map_segments ( Int d )
+static void pp_all_segments ( Int d )
 {
    ULong i;
    space(d); VG_(printf)("map_segments (%d entries) {\n", 
@@ -1587,10 +1583,8 @@ static void pp_everything ( Int flags, Char* caller )
       pp_map_locks(d+3);
    }
    if (flags & PP_SEGMENTS) {
-      // VG_(printf)("\n");
-      // pp_admin_segments(d+3);
       VG_(printf)("\n");
-      pp_map_segments(d+3);
+      pp_all_segments(d+3);
    }
    if (flags & PP_SHMEM_SHARED) {
       VG_(printf)("\n");
@@ -1843,7 +1837,7 @@ static Segment* map_segments_lookup ( SegmentID segid )
 
 static Segment* map_segments_maybe_lookup ( SegmentID segid )
 {
-   if (is_sane_SegmentID(segid)) {
+   if (SEG_is_sane(segid)) {
       return SEG_get(segid);
    }
    return NULL;
@@ -2262,7 +2256,7 @@ static void set_mu_is_cv(Word mu)
       mu_is_cv_map = HG_(newFM) (hg_zalloc, hg_free, NULL);
    }
    HG_(addToFM)(mu_is_cv_map, mu, mu);
-   VG_(printf)("mu is cv: %p\n", mu);
+//   VG_(printf)("mu is cv: %p\n", mu);
 }
 
 static Bool mu_is_cv(Word mu)
@@ -2510,7 +2504,7 @@ static void hbefore__invalidate_cache ( void )
 {
    Int i;
    SegmentID bogus = 0;
-   tl_assert(!is_sane_SegmentID(bogus));
+   tl_assert(!SEG_is_sane(bogus));
    stats__hbefore_invals++;
    for (i = 0; i < HBEFORE__N_CACHE; i++) {
       hbefore__cache[i].segid1 = bogus;
@@ -2522,8 +2516,9 @@ static void hbefore__invalidate_cache ( void )
 
 // HBEFORE__N_HTABLE should be a prime number 
 // #define HBEFORE__N_HTABLE 104729
-// #define HBEFORE__N_HTABLE 49999
- #define HBEFORE__N_HTABLE 19997
+// #define HBEFORE__N_HTABLE 399989
+ #define HBEFORE__N_HTABLE 49999
+// #define HBEFORE__N_HTABLE 19997
 
 
 
@@ -2533,16 +2528,18 @@ static void hbefore__invalidate_htable ( void )
    VG_(memset)(hbefore__hash_table, 0, sizeof(hbefore__hash_table));
 }
 
-
+// #define HBEFORE_CACHE 1 
 
 
 static Bool happens_before ( SegmentID segid1, SegmentID segid2 )
 {
    Bool    hbG, hbV;
-//   Int     i, j, iNSERT_POINT;
+#ifdef HBEFORE_CACHE
+   Int     i, j, iNSERT_POINT;
+#endif 
    Segment *seg1, *seg2;
-   tl_assert(is_sane_SegmentID(segid1));
-   tl_assert(is_sane_SegmentID(segid2));
+   tl_assert(SEG_is_sane(segid1));
+   tl_assert(SEG_is_sane(segid2));
    tl_assert(segid1 != segid2);
    stats__hbefore_queries++;
    stats__hbefore_probes++;
@@ -2592,7 +2589,7 @@ static Bool happens_before ( SegmentID segid1, SegmentID segid2 )
    tl_assert(seg2->vts);
 
    hbV = cmpGEQ_VTS( seg2->vts, seg1->vts );
-   if (clo_msm_prop1 || clo_sanity_flags & SCE_HBEFORE) {
+   if (/*clo_msm_prop1 || */clo_sanity_flags & SCE_HBEFORE) {
       /* Crosscheck the vector-timestamp comparison result against that
          obtained from the explicit graph approach.  Can be very
          slow. */
@@ -2603,11 +2600,10 @@ static Bool happens_before ( SegmentID segid1, SegmentID segid2 )
       hbG = hbV;
    }
 
-   if (!clo_msm_prop1) { // FIXME!!
+   if (1) {
      if (hbV != hbG) {
        VG_(printf)("seg1 %p  seg2 %p  hbV %d  hbG %d\n", 
                    seg1,seg2,(Int)hbV,(Int)hbG);
-       segments__generate_vcg();
      }
      tl_assert(hbV == hbG);
    }
@@ -3045,7 +3041,7 @@ static void threads__sanity_check ( Char* who )
          // thread
          if (!thread_is_a_holder_of_Lock(thr,lk)) BAD("3");
          // Thread.csegid is a valid SegmentID
-         if (!is_sane_SegmentID(thr->csegid)) BAD("4");
+         if (!SEG_is_sane(thr->csegid)) BAD("4");
          // and the associated Segment has .thr == t
          seg = map_segments_maybe_lookup(thr->csegid);
          if (!is_sane_Segment(seg)) BAD("5");
@@ -3209,7 +3205,7 @@ static void shmem__sanity_check ( Char* who )
             // map_segments_lookup maps to a sane Segment(seg)
             Segment*  seg;
             SegmentID segid = un_SHVAL_Excl(w32);
-            if (!is_sane_SegmentID(segid)) BAD("3");
+            if (!SEG_is_sane(segid)) BAD("3");
             seg = map_segments_maybe_lookup(segid);
             if (!is_sane_Segment(seg)) BAD("4");
          } 
@@ -3514,7 +3510,7 @@ static void prop1_show_lockset(LockSet ls)
    int i, n = HG_(cardinalityWS(univ_lsets, ls));
    for (i = 0; i < n; i++) {
       Lock *lk = (Lock*)HG_(ElementOfWS)(univ_lsets, ls, i);
-      VG_(printf)("L%p ", lk);
+      VG_(printf)("L:%p/%p ", lk, lk->guestaddr);
    }
 }
 
@@ -3552,6 +3548,32 @@ static void prop1_show_shval(char *buf, int buf_size, SVal sv)
    }
 }
 
+
+// so far, a useless experiment
+void prop1_segment_ref_update(SVal sv_old, SVal sv_new)
+{  
+   int i;
+   tl_assert(sv_old != sv_new);
+   if (prop1_is_SHVAL_RW(sv_old)) {
+      // unref old segments 
+      SegmentSet SS = prop1_get_SHVAL_SS(sv_old);
+      int SS_size = prop1_SS_get_size(SS);
+      for (i = 0; i < SS_size; i++) {
+         SegmentID S = prop1_SS_get_element(SS, i);
+         UInt r = SEG_unref(S);
+         if (S > 1 && (r == 0 || r == (UInt)-1)) VG_(printf)("unref: %u %u\n", S, r);
+      }
+   }
+   if (prop1_is_SHVAL_RW(sv_new)) {
+      // ref new segments 
+      SegmentSet SS = prop1_get_SHVAL_SS(sv_new);
+      int SS_size = prop1_SS_get_size(SS);
+      for (i = 0; i < SS_size; i++) {
+         SegmentID S = prop1_SS_get_element(SS, i);
+         SEG_ref(S);
+      }
+   }
+}
 
 
 //
@@ -3763,6 +3785,9 @@ done:
       sv_new = SHVAL_Race;
    }
 
+//   if (sv_old != sv_new) {
+//      prop1_segment_ref_update(sv_old, sv_new);
+//   }
    return sv_new; 
 }
 
@@ -3821,7 +3846,7 @@ SVal msm__handle_read ( Thread* thr_acc, Addr a, SVal wold, Int szB )
            -> ShR
       */
       SegmentID segid_old = un_SHVAL_Excl(wold);
-      tl_assert(is_sane_SegmentID(segid_old));
+      tl_assert(SEG_is_sane(segid_old));
       if (LIKELY(segid_old == thr_acc->csegid)) {
          /* no change */
          stats__msm_read_Excl_nochange++;
@@ -3969,7 +3994,7 @@ SVal msm__handle_write ( Thread* thr_acc, Addr a, SVal wold, Int szB )
            -> ShM
       */
       SegmentID segid_old = un_SHVAL_Excl(wold);
-      tl_assert(is_sane_SegmentID(segid_old));
+      tl_assert(SEG_is_sane(segid_old));
       if (segid_old == thr_acc->csegid) {
          /* no change */
          stats__msm_write_Excl_nochange++;
@@ -6008,6 +6033,7 @@ void evhH__start_new_segment_for_thread ( /*OUT*/SegmentID* new_segidP,
    thr->csegid = *new_segidP;
 }
 
+#if 0
 // create a fake segment which does not belong to any thread. 
 static 
 void evhH__start_new_fake_segment ( /*OUT*/SegmentID* new_segidP,
@@ -6018,7 +6044,7 @@ void evhH__start_new_fake_segment ( /*OUT*/SegmentID* new_segidP,
    *new_segidP = mk_Segment( NULL /*thr*/, NULL /*cur_seg*/, NULL/*other*/ );
    *new_segP   = SEG_get(*new_segidP);
 }
-
+#endif 
 
 
 
@@ -6106,8 +6132,7 @@ void evhH__post_thread_w_acquires_lock ( Thread* thr,
    /* fall through */
 
    if (mu_is_cv(lock_ga) ) {
-
-      VG_(printf)("mu is cv: w-lock\n");
+//      VG_(printf)("mu is cv: w-lock %p\n", lock_ga);
       evhH__do_cv_wait(thr, lock_ga, False);
    }
 
@@ -6181,7 +6206,7 @@ void evhH__post_thread_r_acquires_lock ( Thread* thr,
    /* fall through */
 
    if (mu_is_cv(lock_ga) ) {
-      VG_(printf)("mu is cv: r-lock\n");
+//      VG_(printf)("mu is cv: r-lock %p\n", lock_ga);
       evhH__do_cv_wait(thr, lock_ga, False);
    }
 
@@ -6297,7 +6322,7 @@ void evhH__pre_thread_releases_lock ( Thread* thr,
    /* fall through */
 
    if (mu_is_cv(lock_ga) ) {
-      VG_(printf)("mu is cv: unlock\n");
+//      VG_(printf)("mu is cv: unlock %p\n", lock_ga);
       evhH__do_cv_signal(thr, lock_ga);
    }
   error:
@@ -6467,7 +6492,7 @@ void evh__pre_thread_ll_create ( ThreadId parent, ThreadId child )
            Segment*  new_seg   = NULL;
            evhH__start_new_segment_for_thread( &new_segid, &new_seg, 
                                                thr_p );
-           tl_assert(is_sane_SegmentID(new_segid));
+           tl_assert(SEG_is_sane(new_segid));
            tl_assert(is_sane_Segment(new_seg));
            new_seg->vts = tick_VTS( thr_p, new_seg->prev->vts );
            tl_assert(new_seg->other == NULL);
@@ -6557,7 +6582,7 @@ void evh__HG_PTHREAD_JOIN_POST ( ThreadId stay_tid, Thread* quit_thr )
       SegmentID new_segid = 0; /* bogus */
       Segment*  new_seg   = NULL;
       evhH__start_new_segment_for_thread( &new_segid, &new_seg, thr_s );
-      tl_assert(is_sane_SegmentID(new_segid));
+      tl_assert(SEG_is_sane(new_segid));
       tl_assert(is_sane_Segment(new_seg));
       /* and make it depend on the quitter's last segment */
       tl_assert(new_seg->other == NULL);
@@ -6987,15 +7012,13 @@ void evhH__do_cv_signal(Thread *thr, Word cond)
 {
    SegmentID new_segid;
    Segment*  new_seg;
-   SegmentID fake_segid;
-   Segment*  fake_seg;
    map_cond_to_Segment_INIT();
    if (clo_happens_before >= 2) {
       /* create a new segment ... */
       new_segid = 0; /* bogus */
       new_seg   = NULL;
       evhH__start_new_segment_for_thread( &new_segid, &new_seg, thr );
-      tl_assert( is_sane_SegmentID(new_segid) );
+      tl_assert( SEG_is_sane(new_segid) );
       tl_assert( is_sane_Segment(new_seg) );
       tl_assert( new_seg->thr == thr );
       tl_assert( is_sane_Segment(new_seg->prev) );
@@ -7004,32 +7027,47 @@ void evhH__do_cv_signal(Thread *thr, Word cond)
 
       /* ... and add the binding. */
       if (!clo_msm_prop1) {
-        HG_(addToFM)( map_cond_to_Segment, (Word)cond,
-                                         (Word)(new_seg->prev) );
+         HG_(addToFM)( map_cond_to_Segment, (Word)cond,
+                       (Word)(new_seg->prev) );
       } else {
-        static Thread fake_thread; 
-        // create a fake segment.                                         
-        Segment *signalling_seg = NULL;
-        evhH__start_new_fake_segment ( &fake_segid, &fake_seg );
-        tl_assert( is_sane_SegmentID(fake_segid) );
-        tl_assert( is_sane_Segment(fake_seg) );
-        tl_assert( fake_seg->prev == NULL );
-        tl_assert( fake_seg->other == NULL );
-        // FIXME prop1: what shall we put here? 
-        fake_seg->vts = tick_VTS( &fake_thread, new_seg->vts );
-        fake_seg->other = new_seg->prev;
+         static Thread *fake_thread; 
+         SegmentID fake_segid;
+         Segment*  fake_seg;
+         Segment *signalling_seg = NULL;
 
-//        VG_(printf)("Fake segment: S%d/T%D\n", 
-//                    fake_seg->id, thr->errmsg_index) ;
+         if (fake_thread == NULL) {
+            SegmentID segid = mk_Segment(NULL, NULL, NULL);
+            Segment  *seg   = SEG_get(segid);
+            fake_thread     = mk_Thread(segid);
+            seg->thr        = fake_thread;
+            seg->vts        = singleton_VTS(seg->thr, 1);
+         }
 
-        // FIXME. This is bad as it allows CV to be used just once. 
-        HG_(lookupFM)( map_cond_to_Segment, 
-                       NULL, (Word*)&signalling_seg,
-                       (Word)cond );
-        if (signalling_seg != 0) {
-          fake_seg->prev = signalling_seg;
-        }
-        HG_(addToFM)( map_cond_to_Segment, (Word)cond, (Word)(fake_seg) );
+
+         // create a fake segment.                                         
+         evhH__start_new_segment_for_thread(&fake_segid, &fake_seg, fake_thread);
+         tl_assert( SEG_is_sane(fake_segid) );
+         tl_assert( is_sane_Segment(fake_seg) );
+         tl_assert( fake_seg->prev != NULL );
+         tl_assert( fake_seg->other == NULL );
+         // FIXME prop1: what shall we put here? 
+         fake_seg->vts = NULL;
+         fake_seg->other = new_seg->prev;
+
+         //        VG_(printf)("Fake segment: S%d/T%D\n", 
+         //                    fake_seg->id, thr->errmsg_index) ;
+
+         // FIXME. This is bad as it allows CV to be used just once. 
+         HG_(lookupFM)( map_cond_to_Segment, 
+                        NULL, (Word*)&signalling_seg,
+                        (Word)cond );
+         if (signalling_seg != 0) {
+            fake_seg->prev = signalling_seg; 
+         }
+         fake_seg->vts  = tickL_and_joinR_VTS(fake_thread, 
+                                              fake_seg->prev->vts, 
+                                              fake_seg->other->vts);
+         HG_(addToFM)( map_cond_to_Segment, (Word)cond, (Word)(fake_seg) );
       }
 
    }
@@ -7049,7 +7087,7 @@ Bool evhH__do_cv_wait(Thread *thr, Word cond, Bool must_match_signal)
       new_segid = 0; /* bogus */
       new_seg   = NULL;
       evhH__start_new_segment_for_thread( &new_segid, &new_seg, thr );
-      tl_assert( is_sane_SegmentID(new_segid) );
+      tl_assert( SEG_is_sane(new_segid) );
       tl_assert( is_sane_Segment(new_seg) );
       tl_assert( new_seg->thr == thr );
       tl_assert( is_sane_Segment(new_seg->prev) );
@@ -7451,7 +7489,7 @@ void evh__HG_POSIX_SEM_INIT_POST ( ThreadId tid, void* sem, UWord value )
       tl_assert(thr); /* cannot fail - Thread* must already exist */
 
       evhH__start_new_segment_for_thread( &new_segid, &new_seg, thr );
-      tl_assert( is_sane_SegmentID(new_segid) );
+      tl_assert( SEG_is_sane(new_segid) );
       tl_assert( is_sane_Segment(new_seg) );
       tl_assert( new_seg->thr == thr );
       tl_assert( is_sane_Segment(new_seg->prev) );
@@ -7500,7 +7538,7 @@ static void evh__HG_POSIX_SEM_POST_PRE ( ThreadId tid, void* sem )
       new_segid = 0; /* bogus */
       new_seg   = NULL;
       evhH__start_new_segment_for_thread( &new_segid, &new_seg, thr );
-      tl_assert( is_sane_SegmentID(new_segid) );
+      tl_assert( SEG_is_sane(new_segid) );
       tl_assert( is_sane_Segment(new_seg) );
       tl_assert( new_seg->thr == thr );
       tl_assert( is_sane_Segment(new_seg->prev) );
@@ -7538,7 +7576,7 @@ static void evh__HG_POSIX_SEM_WAIT_POST ( ThreadId tid, void* sem )
       new_segid = 0; /* bogus */
       new_seg   = NULL;
       evhH__start_new_segment_for_thread( &new_segid, &new_seg, thr );
-      tl_assert( is_sane_SegmentID(new_segid) );
+      tl_assert( SEG_is_sane(new_segid) );
       tl_assert( is_sane_Segment(new_seg) );
       tl_assert( new_seg->thr == thr );
       tl_assert( is_sane_Segment(new_seg->prev) );
@@ -8704,7 +8742,7 @@ Bool hg_handle_client_request ( ThreadId tid, UWord* args, UWord* ret)
          thr = map_threads_maybe_lookup( tid );
          tl_assert(thr); /* cannot fail */
          segid = thr->csegid;
-         tl_assert(is_sane_SegmentID(segid));
+         tl_assert(SEG_is_sane(segid));
          seg = map_segments_lookup( segid );
          tl_assert(seg);
          *ret = (UWord)seg;
@@ -9476,7 +9514,7 @@ static void hg_pp_Error ( Error* err )
          Thread*   old_thr; 
          WordSetID new_tset;
          old_segid = un_SHVAL_Excl( old_state );
-         tl_assert(is_sane_SegmentID(old_segid));
+         tl_assert(SEG_is_sane(old_segid));
          old_seg = map_segments_lookup( old_segid );
          tl_assert(is_sane_Segment(old_seg));
          tl_assert(old_seg->thr);

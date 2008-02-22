@@ -293,7 +293,7 @@ int     GLOB = 0;
 // 5. write(GLOB)
 
 void Waker() {
-  sleep(1);  // Make sure the waiter blocks.
+  usleep(100000);  // Make sure the waiter blocks.
   GLOB = 1; 
 
   MU.Lock();
@@ -386,7 +386,7 @@ void Waiter() {
   pool.StartWorkers();
   COND = 0;
   pool.Add(NewCallback(Waker));
-  sleep(1);  // Make sure the signaller gets first.
+  usleep(100000);  // Make sure the signaller gets first.
   MU.Lock();
   while(COND != 1)
     CV.Wait(&MU);
@@ -434,7 +434,7 @@ void Waiter() {
   pool.StartWorkers();
   COND = 0;
   pool.Add(NewCallback(Waker));
-  sleep(1);  // Make sure the signaller gets first.
+  usleep(100000);  // Make sure the signaller gets first.
   MU.Lock();
   while(COND != 1)
     CV.Wait(&MU);
@@ -456,7 +456,7 @@ REGISTER_TEST(Run, 6);
 namespace test07 {  
 int     GLOB = 0;
 // Two write accesses to GLOB are synchronized via conditional critical section. 
-// Note that LockWhen() happens after COND has been set (due to sleep(1))! 
+// Note that LockWhen() happens after COND has been set (due to sleep)! 
 // We have to annotate Waker with ANNOTATE_CONDVAR_SIGNAL(), otherwise 
 // ANNOTATE_CONDVAR_WAIT() will succeed w/o signal. 
 //
@@ -484,7 +484,7 @@ void Waiter() {
   pool.StartWorkers();
   COND = 0;
   pool.Add(NewCallback(Waker));
-  sleep(1);  // Make sure the signaller gets there first.
+  usleep(100000);  // Make sure the signaller gets there first.
 
   MU.LockWhen(Condition(&ArgIsOne, &COND));  // calls ANNOTATE_CONDVAR_WAIT
   MU.Unlock();  // Waker is done! 
@@ -534,10 +534,10 @@ REGISTER_TEST(Run, 8);
 namespace test09 {
 int     GLOB = 0;
 // A simple data race between writer and reader. 
-// Write happens after read (enforced by sleep(1)). 
+// Write happens after read (enforced by sleep). 
 // Usually, easily detectable by a race detector. 
 void Writer() {
-  sleep(1);
+  usleep(100000);
   GLOB = 3; 
 }
 void Reader() {
@@ -560,7 +560,7 @@ REGISTER_TEST(Run, 9);
 namespace test10 {
 int     GLOB = 0;
 // A simple data race between writer and reader. 
-// Write happens before Read (enforced by sleep(1)), 
+// Write happens before Read (enforced by sleep), 
 // otherwise this test is the same as test09. 
 // 
 // Writer:                    Reader:
@@ -576,7 +576,7 @@ void Writer() {
   GLOB = 3; 
 }
 void Reader() {
-  sleep(1);
+  usleep(100000);
   CHECK(GLOB != -777);
 }
 
@@ -914,7 +914,7 @@ int     GLOB = 0;
 // Same as test03, but uses Mutex::Await() instead of Mutex::LockWhen(). 
 
 void Waker() {
-  sleep(1);  // Make sure the waiter blocks.
+  usleep(100000);  // Make sure the waiter blocks.
   GLOB = 1; 
 
   MU.Lock();
@@ -946,7 +946,7 @@ namespace test19 {
 int     GLOB = 0;
 // Same as test18, but with AwaitWithTimeout. Do not timeout. 
 void Waker() {
-  sleep(1);  // Make sure the waiter blocks.
+  usleep(100000);  // Make sure the waiter blocks.
   GLOB = 1; 
 
   MU.Lock();
@@ -1132,7 +1132,7 @@ int     GLOB = 0;
 // Same as test03, but uses ReaderLockWhen(). 
 
 void Waker() {
-  sleep(1);  // Make sure the waiter blocks.
+  usleep(100000);  // Make sure the waiter blocks.
   GLOB = 1; 
 
   MU.Lock();
@@ -1164,7 +1164,7 @@ int     GLOB = 0;
 // We do not timeout. 
 
 void Waker() {
-  sleep(1);  // Make sure the waiter blocks.
+  usleep(100000);  // Make sure the waiter blocks.
   GLOB = 1; 
 
   MU.Lock();
@@ -1728,7 +1728,7 @@ void Writer() {
   MU.Unlock();
 }
 void Reader() {
-  sleep(1);
+  usleep(100000);
   MU.Lock();
   CHECK(GLOB != -777);
   MU.Unlock();
@@ -1791,7 +1791,7 @@ void Putter1() { Putter(Q1); }
 void Putter2() { Putter(Q2); }
 
 void Getter() {
-  sleep(1);
+  usleep(100000);
   Q1->Get();
   Q2->Get();
 
@@ -1882,7 +1882,7 @@ void Putter(ProducerConsumerQueue *q) {
 
   q->Put(NULL);
   q->Put(NULL);
-  sleep(1);
+  usleep(100000);
 
   MU1.Lock();
   MU2.Lock();
@@ -2198,7 +2198,7 @@ void Writer() {
   GLOB = 3; 
 }
 void Reader() {
-  sleep(1);
+  usleep(100000);
   CHECK(GLOB != -777);
 }
 
@@ -2237,7 +2237,7 @@ void Writer() {
   GLOB = 3; 
 }
 void Reader() {
-  sleep(1);
+  usleep(100000);
   CHECK(GLOB != -777);
   CHECK(GLOB != -777);
   CHECK(GLOB != -777);
