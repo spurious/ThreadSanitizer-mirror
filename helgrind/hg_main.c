@@ -177,6 +177,8 @@ static Bool clo_msm_prop1 = False; // use prop1 memory state machine.
 static int  clo_msm_prop1_n = 1; 
 static int  clo_msm_prop1_i = 0;
 
+// See want_to_skip_instrumentation_for_addr().
+static char *clo_fn_white_list = NULL;
 
 /* This has to do with printing error messages.  See comments on
    announce_threadset() and summarise_threadset().  Perhaps it
@@ -3548,7 +3550,7 @@ static void prop1_show_shval(char *buf, int buf_size, SVal sv)
    }
 }
 
-
+#if 0
 // so far, a useless experiment
 void prop1_segment_ref_update(SVal sv_old, SVal sv_new)
 {  
@@ -3574,7 +3576,7 @@ void prop1_segment_ref_update(SVal sv_old, SVal sv_new)
       }
    }
 }
-
+#endif 
 
 //
 //
@@ -3601,6 +3603,21 @@ SVal prop1_memory_state_machine(
    int i;
    SegmentSet newSS = 0;
    LockSet    newLS = 0;
+
+   if (0) {
+      // profile each N-th access for some value of N 
+      static int counter = 0;
+      if ((counter % (1024 * 128)) == 0) {
+         ThreadId tid = map_threads_maybe_reverse_lookup_SLOW(thr);
+         if (tid != VG_INVALID_THREADID) {
+            VG_(printf)("sample: ");
+            VG_(get_and_pp_StackTrace)( tid, 1);
+         }
+      }
+      counter++;
+   }
+
+
 
    // current locks. 
    LockSet    currLS = is_w ? thr->locksetW
@@ -7228,7 +7245,7 @@ static void evh__HG_PTHREAD_COND_WAIT_POST ( ThreadId tid,
    tl_assert(thr); /* cannot fail - Thread* must already exist */
 
    // error-if: cond is also associated with a different mutex
-   evhH__do_cv_wait(thr, (Word)cond, True);
+   evhH__do_cv_wait(thr, (Word)cond, /*True*/ False);
 }
 
 
@@ -8417,6 +8434,83 @@ static void instrument_memory_bus_event ( IRSB* bbOut, IRMBusEvent event )
 }
 
 
+/**
+  Handle clo_fn_white_list (--fn-white-list). 
+  This command line flag is a coma separated list of function names
+  (wildcards with '?' and '*' can be used). 
+  If this flag is present, only the functions listed in it should be instrumented. 
+  If the flag is preceeded by '!', the list becomes a blacklist. 
+  The function names are demangled. 
+
+ Examples: 
+   --fn-white-list=foo               -- Instrument only the function 'foo'
+   --fn-white-list='!BAR::*,*Z?Z*'   -- Instrument all function except those
+                                   from namespace BAR and those matching *Z?Z*
+
+
+  This function takes the address 'addr' of an instruction, 
+  finds the corresponding function name and matches the name against
+  the white/black list. 
+
+  It returns True if the function needs to be skipped. 
+*/
+
+static Bool want_to_skip_instrumentation_for_addr ( Addr addr ) 
+{
+   int i;
+   char func_name[1000];
+   Bool match = False; 
+   
+   // parsed white list 
+   static int list_size;
+   static char ** list;
+   static Bool is_white_list = True; 
+
+
+   if (!clo_fn_white_list) return False;
+   if (!VG_(get_fnname(addr, func_name, sizeof(func_name) - 1))) {
+      // did not find the name -- instrument 
+      return False;
+   }
+   
+   // parse the white list 
+   if (!list_size) {
+      char *s = clo_fn_white_list; 
+      // VG_(printf)("White list: %s\n", clo_fn_white_list);
+      tl_assert(s);
+      if (*s == '!') {
+         is_white_list = False;
+         ++s;
+      }
+      tl_assert (*s != '\0');
+      list_size = 1;
+      // count comas 
+      for (i = 0; s[i]; i++, list_size += s[i] == ',');
+      list = (char**)hg_zalloc(list_size * sizeof (char *));
+      i = 0;
+      list[i++] = s;
+      while (*s) {
+         if (*s == ',') {
+            *s = 0;
+            list[i++] = s+1;
+         }
+         s++;
+      }
+      tl_assert(i == list_size);
+   }
+   
+   // match this function name against the list 
+   // TODO: do we need to cache it? 
+   for (i = 0; i < list_size; i++) {
+      match = VG_(string_match)(list[i], func_name);
+      if (match) break;
+   }
+
+//   VG_(printf)("Func: %s; skip=%s; match=%d\n", 
+//               func_name, clo_fn_white_list, match);
+   return match != is_white_list;
+}
+
 static
 IRSB* hg_instrument ( VgCallbackClosure* closure,
                       IRSB* bbIn,
@@ -8426,6 +8520,7 @@ IRSB* hg_instrument ( VgCallbackClosure* closure,
 {
    Int   i;
    IRSB* bbOut;
+   Bool do_instrumentation = True;
 
    if (gWordTy != hWordTy) {
       /* We don't currently support this case. */
@@ -8445,17 +8540,25 @@ IRSB* hg_instrument ( VgCallbackClosure* closure,
       i++;
    }
 
+   if (i < bbIn->stmts_used) {
+      tl_assert(bbIn->stmts[i]->tag == Ist_IMark);
+      if (want_to_skip_instrumentation_for_addr(bbIn->stmts[i]->Ist.IMark.addr)) {
+         do_instrumentation = False;
+      }
+   }
+
+
    for (/*use current i*/; i < bbIn->stmts_used; i++) {
       IRStmt* st = bbIn->stmts[i];
       tl_assert(st);
       tl_assert(isFlatIRStmt(st));
-      switch (st->tag) {
+      if (do_instrumentation) switch (st->tag) {
          case Ist_NoOp:
          case Ist_AbiHint:
          case Ist_Put:
          case Ist_PutI:
-         case Ist_IMark:
          case Ist_Exit:
+         case Ist_IMark:
             /* None of these can contain any memory references. */
             break;
 
@@ -9696,6 +9799,9 @@ static Bool hg_process_cmd_line_option ( Char* arg )
       clo_msm_prop1_i = VG_(atoll)(&arg[10]);
    }
 
+   else if (VG_CLO_STREQN(16, arg, "--fn-white-list=")) {
+      clo_fn_white_list = &arg[16];
+   }
 
    else if (VG_CLO_STREQ(arg, "--gen-vcg=no"))
       clo_gen_vcg = 0;
@@ -9783,6 +9889,10 @@ static void hg_print_debug_usage ( void )
 
 static void hg_post_clo_init ( void )
 {
+   if (clo_fn_white_list) {
+      // don't cross function boundaries if white list is present 
+      VG_(clo_vex_control).guest_chase_thresh = 0;
+   }
 }
 
 static void hg_fini ( Int exitcode )
