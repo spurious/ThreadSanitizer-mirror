@@ -278,20 +278,24 @@ class MyThread {
                                                  c. HG_SEM_DESTROY_PRE(sem)
 
 
+  And even cleaner way is to pass all the bookkeeping to helgrind. 
+  See ANNOTATE_PCQ_*.
+
 */
 class ProducerConsumerQueue {
  public:
-  ProducerConsumerQueue(int unused) {}
-  ~ProducerConsumerQueue() { CHECK(q_.empty()); }
+  ProducerConsumerQueue(int unused) {ANNOTATE_PCQ_CREATE(this);}
+  ~ProducerConsumerQueue() { CHECK(q_.empty()); ANNOTATE_PCQ_DESTROY(this);}
 
   // Put. 
   void Put(void *item) {
     mu_.Lock();
       item_t *t = new item_t;
       t->item = item;
-      sem_init(&t->sem, 0, 0);
-      sem_post(&t->sem);
+//      sem_init(&t->sem, 0, 0);
+//      sem_post(&t->sem);
       q_.push(t);
+      ANNOTATE_PCQ_PUT(this);
     mu_.Unlock();
   }
 
@@ -308,9 +312,10 @@ class ProducerConsumerQueue {
       if (!q_.empty()) {
         item_t *t = q_.front();
         q_.pop();
+        ANNOTATE_PCQ_GET(this);
         item       = t->item;
-        sem_wait(&t->sem);
-        sem_destroy(&t->sem); 
+//        sem_wait(&t->sem);
+//        sem_destroy(&t->sem); 
         delete t;
         have_item = true;
       }
