@@ -7076,12 +7076,17 @@ void evhH__do_cv_signal(Thread *thr, Word cond)
                         (Word)cond );
          if (signalling_seg != 0) {
             fake_seg->prev = signalling_seg; 
+
          }
          fake_seg->vts  = tickL_and_joinR_VTS(fake_thread, 
                                               fake_seg->prev->vts, 
                                               fake_seg->other->vts);
          HG_(addToFM)( map_cond_to_Segment, (Word)cond, (Word)(fake_seg) );
-         // FIXME. This is bad as it allows CV to be used just once. 
+         // FIXME. This is bad as it allows CV to be used just once. (??)
+         //
+         // FIXME. At this point the old signalling_seg is not needed any more
+         // if we use only VTS. If we stop using HB graph, we can have only
+         // one fake segment for a CV. 
       }
 
    }
