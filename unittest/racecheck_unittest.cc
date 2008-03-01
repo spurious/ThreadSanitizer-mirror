@@ -2985,5 +2985,106 @@ REGISTER_TEST(Run, 65)
 }  // namespace test65
 
 
+// test66: TN. Two separate pairs of signaller/waiter using the same CV. {{{1
+namespace test66 {
+int     GLOB1 = 0;
+int     GLOB2 = 0;
+int     C1 = 0;
+int     C2 = 0;
+
+void Signaller1() {
+  GLOB1 = 1;
+  MU.Lock();
+  C1 = 1;
+  CV.Signal();
+  MU.Unlock();
+}
+
+void Signaller2() {
+  GLOB2 = 1;
+  usleep(100000);
+  MU.Lock();
+  C2 = 1;
+  CV.Signal();
+  MU.Unlock();
+}
+
+void Waiter1() {
+  MU.Lock();
+  while (C1 != 1) CV.Wait(&MU);
+  ANNOTATE_CONDVAR_WAIT(&CV);
+  MU.Unlock();
+  GLOB1 = 2;
+}
+
+void Waiter2() {
+  MU.Lock();
+  while (C2 != 1) CV.Wait(&MU);
+  ANNOTATE_CONDVAR_WAIT(&CV);
+  MU.Unlock();
+  GLOB2 = 2;
+}
+
+void Run() {
+  printf("test66:\n");
+  MyThreadArray t(Signaller1, Signaller2, Waiter1, Waiter2);
+  t.Start();
+  t.Join();
+  printf("\tGLOB=%d/%d\n", GLOB1, GLOB2);
+}
+REGISTER_TEST(Run, 66)
+}  // namespace test66
+
+
+// test67: TP. Race between Signaller1 and Waiter2 {{{1
+namespace test67 {
+// Similar to test66, but there is a real race here. 
+int     GLOB = 0;
+int     C1 = 0;
+int     C2 = 0;
+
+void Signaller1() {
+  GLOB = 1;
+  MU.Lock();
+  C1 = 1;
+  CV.Signal();
+  MU.Unlock();
+}
+
+void Signaller2() {
+  usleep(100000);
+  MU.Lock();
+  C2 = 1;
+  CV.Signal();
+  MU.Unlock();
+}
+
+void Waiter1() {
+  MU.Lock();
+  while (C1 != 1) CV.Wait(&MU);
+  ANNOTATE_CONDVAR_WAIT(&CV);
+  MU.Unlock();
+}
+
+void Waiter2() {
+  MU.Lock();
+  while (C2 != 1) CV.Wait(&MU);
+  ANNOTATE_CONDVAR_WAIT(&CV);
+  MU.Unlock();
+  GLOB = 2;
+}
+
+void Run() {
+  ANNOTATE_EXPECT_RACE(&GLOB, "TP. Race between Signaller1 and Waiter2");
+  printf("test67:\n");
+  MyThreadArray t(Signaller1, Signaller2, Waiter1, Waiter2);
+  t.Start();
+  t.Join();
+  printf("\tGLOB=%d\n", GLOB);
+}
+REGISTER_TEST(Run, 67)
+}  // namespace test67
+
+
 // End {{{1
 // vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker

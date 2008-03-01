@@ -6050,19 +6050,6 @@ void evhH__start_new_segment_for_thread ( /*OUT*/SegmentID* new_segidP,
    thr->csegid = *new_segidP;
 }
 
-#if 0
-// create a fake segment which does not belong to any thread. 
-static 
-void evhH__start_new_fake_segment ( /*OUT*/SegmentID* new_segidP,
-                                    /*OUT*/Segment**  new_segP )
-{
-   tl_assert(new_segP);
-   tl_assert(new_segidP);
-   *new_segidP = mk_Segment( NULL /*thr*/, NULL /*cur_seg*/, NULL/*other*/ );
-   *new_segP   = SEG_get(*new_segidP);
-}
-#endif 
-
 
 
 /* The lock at 'lock_ga' has acquired a writer.  Make all necessary
@@ -7082,7 +7069,7 @@ void evhH__do_cv_signal(Thread *thr, Word cond)
                                               fake_seg->prev->vts, 
                                               fake_seg->other->vts);
          HG_(addToFM)( map_cond_to_Segment, (Word)cond, (Word)(fake_seg) );
-         // FIXME. This is bad as it allows CV to be used just once. (??)
+         // FIXME. test67 gives false negative. 
          //
          // FIXME. At this point the old signalling_seg is not needed any more
          // if we use only VTS. If we stop using HB graph, we can have only
