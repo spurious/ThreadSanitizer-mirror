@@ -2591,7 +2591,7 @@ static Bool happens_before ( SegmentID segid1, SegmentID segid2 )
    tl_assert(seg2->vts);
 
    hbV = cmpGEQ_VTS( seg2->vts, seg1->vts );
-   if (/*clo_msm_prop1 || */clo_sanity_flags & SCE_HBEFORE) {
+   if (clo_sanity_flags & SCE_HBEFORE) {
       /* Crosscheck the vector-timestamp comparison result against that
          obtained from the explicit graph approach.  Can be very
          slow. */
@@ -7067,14 +7067,10 @@ void evhH__do_cv_signal(Thread *thr, Word cond)
          tl_assert( is_sane_Segment(fake_seg) );
          tl_assert( fake_seg->prev != NULL );
          tl_assert( fake_seg->other == NULL );
-         // FIXME prop1: what shall we put here? 
          fake_seg->vts = NULL;
          fake_seg->other = new_seg->prev;
 
-         //        VG_(printf)("Fake segment: S%d/T%D\n", 
-         //                    fake_seg->id, thr->errmsg_index) ;
 
-         // FIXME. This is bad as it allows CV to be used just once. 
          HG_(lookupFM)( map_cond_to_Segment, 
                         NULL, (Word*)&signalling_seg,
                         (Word)cond );
@@ -7085,6 +7081,7 @@ void evhH__do_cv_signal(Thread *thr, Word cond)
                                               fake_seg->prev->vts, 
                                               fake_seg->other->vts);
          HG_(addToFM)( map_cond_to_Segment, (Word)cond, (Word)(fake_seg) );
+         // FIXME. This is bad as it allows CV to be used just once. 
       }
 
    }
