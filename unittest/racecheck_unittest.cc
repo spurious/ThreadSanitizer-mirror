@@ -2890,5 +2890,100 @@ REGISTER_TEST2(Run, 63, STABILITY|EXCLUDE_FROM_ALL)
 }  // namespace test63
 
 
+// test64: TP. T2 happens-before T3, but T1 is independent. Reads in T1/T2. {{{1
+namespace test64 {
+// True race between T1 and T3: 
+//
+// T1:                   T2:                   T3: 
+// 1. read(GLOB)         (sleep)
+//                       a. read(GLOB)
+//                       b. Q.Put() ----->    A. Q.Get()
+//                                            B. write(GLOB) 
+//
+//
+
+int     GLOB = 0;
+ProducerConsumerQueue Q(INT_MAX);
+
+void T1() {
+  CHECK(GLOB == 0);
+}
+
+void T2() {
+  usleep(100000);
+  CHECK(GLOB == 0);
+  Q.Put(NULL);
+}
+
+void T3() {
+  Q.Get();
+  GLOB = 1;
+}
+
+
+void Run() {
+  ANNOTATE_EXPECT_RACE(&GLOB, "TP.");
+  printf("test64:\n");
+  MyThreadArray t(T1, T2, T3);
+  t.Start();
+  t.Join();
+  printf("\tGLOB=%d\n", GLOB);
+}
+REGISTER_TEST(Run, 64)
+}  // namespace test64
+
+
+// test65: TP. T2 happens-before T3, but T1 is independent. Writes in T1/T2. {{{1
+namespace test65 {
+// Similar to test64. 
+// True race between T1 and T3: 
+//
+// T1:                   T2:                   T3: 
+// 1. MU.Lock()
+// 2. write(GLOB)
+// 3. MU.Unlock()         (sleep)
+//                       a. MU.Lock()
+//                       b. write(GLOB)
+//                       c. MU.Unlock()
+//                       d. Q.Put() ----->    A. Q.Get()
+//                                            B. write(GLOB) 
+//
+//
+
+int     GLOB = 0;
+ProducerConsumerQueue Q(INT_MAX);
+
+void T1() {
+  MU.Lock();
+  GLOB++;
+  MU.Unlock();
+}
+
+void T2() {
+  usleep(100000);
+  MU.Lock();
+  GLOB++;
+  MU.Unlock();
+  Q.Put(NULL);
+}
+
+void T3() {
+  Q.Get();
+  GLOB = 1;
+}
+
+
+void Run() {
+  ANNOTATE_EXPECT_RACE(&GLOB, "TP.");
+  printf("test65:\n");
+  MyThreadArray t(T1, T2, T3);
+  t.Start();
+  t.Join();
+  printf("\tGLOB=%d\n", GLOB);
+}
+REGISTER_TEST(Run, 65)
+}  // namespace test65
+
+
 // End {{{1
 // vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker
