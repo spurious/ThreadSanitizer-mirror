@@ -607,7 +607,7 @@ REGISTER_TEST(Run, 10);
 namespace test11 {
 int     GLOB = 0;
 void Worker() {
-  usleep(10000);
+  usleep(100000);
   CHECK(GLOB != 777); 
 
   MU.Lock();
