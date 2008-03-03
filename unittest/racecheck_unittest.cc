@@ -87,11 +87,12 @@ int     COND = 0;
 
 
 typedef void (*void_func_void_t)(void);
-enum TEST_FLAG{
-  FEATURE          = 1 << 0, 
-  STABILITY        = 1 << 1, 
-  PERFORMANCE      = 1 << 2,
-  EXCLUDE_FROM_ALL = 1 << 3
+enum TEST_FLAG {
+  FEATURE           = 1 << 0, 
+  STABILITY         = 1 << 1, 
+  PERFORMANCE       = 1 << 2,
+  EXCLUDE_FROM_ALL  = 1 << 3,
+  NEEDS_ANNOTATIONS = 1 << 4
 };
 
 struct Test{
@@ -134,16 +135,23 @@ static bool ArgIsZero(int *arg) { return *arg == 0; };
 
 int main(int argc, char** argv) { // {{{1
   if (argc > 1) {
+    // the tests are listed in command line flags 
     for (int i = 1; i < argc; i++) {
       int f_num = atoi(argv[i]);
       CHECK(TheMapOfTests.count(f_num));
       TheMapOfTests[f_num].f_();
     }
   } else {
+    bool run_tests_with_annotations = false;
+    if (getenv("DRT_ALLOW_ANNOTATIONS")) {
+      run_tests_with_annotations = true;
+    }
     for (std::map<int,Test>::iterator it = TheMapOfTests.begin(); 
         it != TheMapOfTests.end();
         ++it) {
       if(it->second.flags_ & EXCLUDE_FROM_ALL) continue;
+      if((it->second.flags_ & NEEDS_ANNOTATIONS)
+         && run_tests_with_annotations == false) continue;
       it->second.f_();
     } 
   }
@@ -193,7 +201,7 @@ class MyThreadArray {
 namespace test00 {
 int     GLOB = 0;
 void Run() {
-  printf("test00:\n");
+  printf("test00: negative\n");
   printf("\tGLOB=%d\n", GLOB);
 }
 REGISTER_TEST(Run, 00)
@@ -219,7 +227,7 @@ void Parent() {
 }
 void Run() {
   ANNOTATE_EXPECT_RACE(&GLOB, "test01. TP.");
-  printf("test01:\n");
+  printf("test01: positive\n");
   Parent();
   printf("\tGLOB=%d\n", GLOB);
 }
@@ -267,7 +275,7 @@ void Waiter() {
   GLOB = 2;
 }
 void Run() {
-  printf("test02:\n");
+  printf("test02: negative\n");
   Waiter();
   printf("\tGLOB=%d\n", GLOB);
 }
@@ -311,11 +319,11 @@ void Waiter() {
   GLOB = 2;
 }
 void Run() {
-  printf("test03:\n");
+  printf("test03: negative\n");
   Waiter();
   printf("\tGLOB=%d\n", GLOB);
 }
-REGISTER_TEST(Run, 3);
+REGISTER_TEST2(Run, 3, FEATURE|NEEDS_ANNOTATIONS);
 }  // namespace test03
 
 // test04: TN. Synchronization via PCQ. {{{1
@@ -342,7 +350,7 @@ void Getter() {
 }
 
 void Run() {
-  printf("test04:\n");
+  printf("test04: negative\n");
   MyThreadArray t(Putter, Getter);
   t.Start(); 
   t.Join();
@@ -395,7 +403,7 @@ void Waiter() {
 }
 void Run() {
   ANNOTATE_EXPECT_RACE(&GLOB, "test05. FP. Unavoidable.");
-  printf("test05:\n");
+  printf("test05: unavoidable false positive\n");
   Waiter();
   printf("\tGLOB=%d\n", GLOB);
 }
@@ -444,11 +452,11 @@ void Waiter() {
   GLOB = 2;
 }
 void Run() {
-  printf("test06:\n");
+  printf("test06: negative\n");
   Waiter();
   printf("\tGLOB=%d\n", GLOB);
 }
-REGISTER_TEST(Run, 6);
+REGISTER_TEST2(Run, 6, FEATURE|NEEDS_ANNOTATIONS);
 }  // namespace test06
 
 
@@ -492,11 +500,11 @@ void Waiter() {
   GLOB = 2;
 }
 void Run() {
-  printf("test07:\n");
+  printf("test07: negative\n");
   Waiter();
   printf("\tGLOB=%d\n", GLOB);
 }
-REGISTER_TEST(Run, 7);
+REGISTER_TEST2(Run, 7, FEATURE|NEEDS_ANNOTATIONS);
 }  // namespace test07
 
 // test08: TN. Synchronization via thread start/join. {{{1
@@ -522,7 +530,7 @@ void Parent() {
   GLOB = 3;
 }
 void Run() {
-  printf("test08:\n");
+  printf("test08: negative\n");
   Parent();
   printf("\tGLOB=%d\n", GLOB);
 }
@@ -546,7 +554,7 @@ void Reader() {
 
 void Run() {
   ANNOTATE_EXPECT_RACE(&GLOB, "test09. TP.");
-  printf("test09:\n");
+  printf("test09: positive\n");
   MyThreadArray t(Writer, Reader);
   t.Start();
   t.Join();
@@ -582,7 +590,7 @@ void Reader() {
 
 void Run() {
   ANNOTATE_EXPECT_RACE_FOR_MACHINE(&GLOB, "test10. FN in MSMHelgrind.", "MSMProp1");
-  printf("test10:\n");
+  printf("test10: positive\n");
   MyThreadArray t(Writer, Reader);
   t.Start();
   t.Join();
@@ -635,7 +643,7 @@ void Parent() {
 
 void Run() {
   ANNOTATE_EXPECT_RACE(&GLOB, "test11. FP. Fixed by MSMProp1.");
-  printf("test11:\n");
+  printf("test11: negative\n");
   Parent();
   printf("\tGLOB=%d\n", GLOB);
 }
@@ -680,7 +688,7 @@ void Getter() {
 
 void Run() {
   ANNOTATE_EXPECT_RACE(&GLOB, "test12. FP. Fixed by MSMProp1.");
-  printf("test12:\n");
+  printf("test12: negative\n");
   MyThreadArray t(Putter, Getter);
   t.Start();
   t.Join();
@@ -730,7 +738,7 @@ void Waiter() {
 
 void Run() {
   ANNOTATE_EXPECT_RACE(&GLOB, "test13. FP. Fixed by MSMProp1.");
-  printf("test13:\n");
+  printf("test13: negative\n");
   COND = 0;
 
   MyThreadArray t(Waker, Waiter);
@@ -739,7 +747,7 @@ void Run() {
 
   printf("\tGLOB=%d\n", GLOB);
 }
-REGISTER_TEST(Run, 13);
+REGISTER_TEST2(Run, 13, FEATURE|NEEDS_ANNOTATIONS);
 }  // namespace test13
 
 
@@ -774,7 +782,7 @@ void Getter() {
 }
 void Run() {
   ANNOTATE_EXPECT_RACE(&GLOB, "test14. FP. Fixed by MSMProp1.");
-  printf("test14:\n");
+  printf("test14: negative\n");
   MyThreadArray t(Getter, Putter1, Putter2);
   t.Start();
   t.Join();
@@ -814,7 +822,7 @@ void Waiter() {
 
 void Run() {
   COND = 0;
-  printf("test15:\n");
+  printf("test15: negative\n");
   MyThreadArray t(Waker, Waiter, Waiter);
   t.Start();
   t.Join();
@@ -865,13 +873,13 @@ void Worker() {
 void Run() {
   ANNOTATE_EXPECT_RACE(&GLOB, "test16. FP. Fixed by MSMProp1 + Barrier support.");
   COND = 2;
-  printf("test16:\n");
+  printf("test16: negative\n");
   MyThreadArray t(Worker, Worker);
   t.Start();
   t.Join();
   printf("\tGLOB=%d\n", GLOB);
 }
-REGISTER_TEST(Run, 16);
+REGISTER_TEST2(Run, 16, FEATURE|NEEDS_ANNOTATIONS);
 }  // namespace test16
 
 
@@ -898,13 +906,13 @@ void Worker() {
 void Run() {
   ANNOTATE_EXPECT_RACE(&GLOB, "test17. FP. Fixed by MSMProp1 + Barrier support.");
   COND = 3;
-  printf("test17:\n");
+  printf("test17: negative\n");
   MyThreadArray t(Worker, Worker, Worker);
   t.Start();
   t.Join();
   printf("\tGLOB=%d\n", GLOB);
 }
-REGISTER_TEST(Run, 17);
+REGISTER_TEST2(Run, 17, FEATURE|NEEDS_ANNOTATIONS);
 }  // namespace test17
 
 
@@ -934,11 +942,11 @@ void Waiter() {
   GLOB = 2;
 }
 void Run() {
-  printf("test18:\n");
+  printf("test18: negative\n");
   Waiter();
   printf("\tGLOB=%d\n", GLOB);
 }
-REGISTER_TEST(Run, 18);
+REGISTER_TEST2(Run, 18, FEATURE|NEEDS_ANNOTATIONS);
 }  // namespace test18
 
 // test19: TN. Synchronization via AwaitWithTimeout(). {{{1
@@ -966,11 +974,11 @@ void Waiter() {
   GLOB = 2;
 }
 void Run() {
-  printf("test19:\n");
+  printf("test19: negative\n");
   Waiter();
   printf("\tGLOB=%d\n", GLOB);
 }
-REGISTER_TEST(Run, 19);
+REGISTER_TEST2(Run, 19, FEATURE|NEEDS_ANNOTATIONS);
 }  // namespace test19
 
 // test20: TP. Incorrect synchronization via AwaitWhen(), timeout. {{{1
@@ -995,11 +1003,11 @@ void Waiter() {
 }
 void Run() {
   ANNOTATE_EXPECT_RACE(&GLOB, "test20. TP.");
-  printf("test20:\n");
+  printf("test20: positive\n");
   Waiter();
   printf("\tGLOB=%d\n", GLOB);
 }
-REGISTER_TEST(Run, 20);
+REGISTER_TEST2(Run, 20, FEATURE|NEEDS_ANNOTATIONS);
 }  // namespace test20
 
 // test21: TP. Incorrect synchronization via LockWhenWithTimeout(). {{{1
@@ -1023,11 +1031,11 @@ void Waiter() {
 }
 void Run() {
   ANNOTATE_EXPECT_RACE(&GLOB, "test21. TP.");
-  printf("test21:\n");
+  printf("test21: positive\n");
   Waiter();
   printf("\tGLOB=%d\n", GLOB);
 }
-REGISTER_TEST(Run, 21);
+REGISTER_TEST2(Run, 21, FEATURE|NEEDS_ANNOTATIONS);
 }  // namespace test21
 
 // test22: TP. Incorrect synchronization via CondVar::WaitWithTimeout(). {{{1
@@ -1057,7 +1065,7 @@ void Waiter() {
 }
 void Run() {
   ANNOTATE_EXPECT_RACE(&GLOB, "test22. TP.");
-  printf("test22:\n");
+  printf("test22: positive\n");
   Waiter();
   printf("\tGLOB=%d\n", GLOB);
 }
@@ -1113,7 +1121,7 @@ void Worker_Lock() {
 }
 
 void Run() {
-  printf("test23:\n");
+  printf("test23: negative\n");
   MyThreadArray t(Worker_TryLock, 
                   Worker_ReaderTryLock, 
                   Worker_ReaderLock,
@@ -1150,11 +1158,11 @@ void Waiter() {
   GLOB = 2;
 }
 void Run() {
-  printf("test24:\n");
+  printf("test24: negative\n");
   Waiter();
   printf("\tGLOB=%d\n", GLOB);
 }
-REGISTER_TEST(Run, 24);
+REGISTER_TEST2(Run, 24, FEATURE|NEEDS_ANNOTATIONS);
 }  // namespace test24
 
 // test25: TN. Synchronization via ReaderLockWhenWithTimeout(). {{{1
@@ -1182,11 +1190,11 @@ void Waiter() {
   GLOB = 2;
 }
 void Run() {
-  printf("test25:\n");
+  printf("test25: negative\n");
   Waiter();
   printf("\tGLOB=%d\n", GLOB);
 }
-REGISTER_TEST(Run, 25);
+REGISTER_TEST2(Run, 25, FEATURE|NEEDS_ANNOTATIONS);
 }  // namespace test25
 
 // test26: TP. Incorrect synchronization via ReaderLockWhenWithTimeout(). {{{1
@@ -1210,11 +1218,11 @@ void Waiter() {
 }
 void Run() {
   ANNOTATE_EXPECT_RACE(&GLOB, "test26. TP");
-  printf("test26:\n");
+  printf("test26: positive\n");
   Waiter();
   printf("\tGLOB=%d\n", GLOB);
 }
-REGISTER_TEST(Run, 26);
+REGISTER_TEST2(Run, 26, FEATURE|NEEDS_ANNOTATIONS);
 }  // namespace test26
 
 
@@ -1231,13 +1239,13 @@ void Worker() {
 }
 
 void Run() {
-  printf("test27:\n");
+  printf("test27: negative\n");
   MyThreadArray t(Worker, Worker, Worker, Worker);
   t.Start();
   t.Join();
   printf("\tGLOB=%d\n", GLOB);
 }
-REGISTER_TEST(Run, 27);
+REGISTER_TEST2(Run, 27, FEATURE|NEEDS_ANNOTATIONS);
 #endif // NO_SPINLOCK
 }  // namespace test27
 
@@ -1277,7 +1285,7 @@ void Getter() {
 
 void Run() {
   ANNOTATE_EXPECT_RACE(&GLOB, "test28. FP.");
-  printf("test28:\n");
+  printf("test28: negative\n");
   MyThreadArray t(Getter, Putter, Putter);
   t.Start();
   t.Join();
@@ -1320,7 +1328,7 @@ void Getter() {
 
 void Run() {
   ANNOTATE_EXPECT_RACE(&GLOB, "test29. FP.");
-  printf("test29:\n");
+  printf("test29: negative\n");
   Q1 = new ProducerConsumerQueue(INT_MAX);
   Q2 = new ProducerConsumerQueue(INT_MAX);
   MyThreadArray t(Getter, Getter, Putter1, Putter2);
@@ -1391,13 +1399,13 @@ void Reader() {
 
 void Run() {
   ANNOTATE_EXPECT_RACE((void*)(&BOUNDARY), "test30. Sync via 'safe' race.");
-  printf("test30:\n");
+  printf("test30: negative\n");
   MyThreadArray t(Writer, Reader, Reader, Reader);
   t.Start();
   t.Join();
   printf("\tGLOB=%d\n", GLOB[N-1]);
 }
-REGISTER_TEST(Run, 30);
+REGISTER_TEST2(Run, 30, FEATURE|NEEDS_ANNOTATIONS);
 }  // namespace test30
 
 
@@ -1445,13 +1453,13 @@ void Writer2() {
 
 void Run() {
   ANNOTATE_EXPECT_RACE((void*)(&BOUNDARY), "test31. Sync via 'safe' race.");
-  printf("test31:\n");
+  printf("test31: negative\n");
   MyThreadArray t(Writer1, Writer2);
   t.Start();
   t.Join();
   printf("\tGLOB=%d\n", GLOB[N-1]);
 }
-REGISTER_TEST(Run, 31);
+REGISTER_TEST2(Run, 31, FEATURE|NEEDS_ANNOTATIONS);
 }  // namespace test31
 
 
@@ -1506,7 +1514,7 @@ void Parent() {
 
 void Run() {
   ANNOTATE_EXPECT_RACE(&GLOB, "test32. FP. Fixed by MSMProp1.");
-  printf("test32:\n");
+  printf("test32: negative\n");
   Parent();
   printf("\tGLOB=%d\n", GLOB);
 }
@@ -1700,7 +1708,7 @@ void Getter() {
 
 void Run() {
   ANNOTATE_EXPECT_RACE(&GLOB, "test36. FP.");
-  printf("test36:\n");
+  printf("test36: negative \n");
   MyThreadArray t(Getter, Putter, Putter);
   t.Start();
   t.Join();
@@ -1735,7 +1743,7 @@ void Reader() {
 }
 
 void Run() {
-  printf("test37:\n");
+  printf("test37: negative\n");
   MyThreadArray t(Writer, Reader);
   t.Start();
   t.Join();
@@ -1804,7 +1812,7 @@ void Getter() {
 
 void Run() {
   ANNOTATE_EXPECT_RACE(&GLOB, "test38. FP.");
-  printf("test38:\n");
+  printf("test38: negative\n");
   Q1 = new ProducerConsumerQueue(INT_MAX);
   Q2 = new ProducerConsumerQueue(INT_MAX);
   MyThreadArray t(Getter, Getter, Putter1, Putter2);
@@ -1834,7 +1842,7 @@ void Worker() {
 }
 void Run() {
   ANNOTATE_EXPECT_RACE(&GLOB, "test39. FP. Fixed by MSMProp1. Barrier.");
-  printf("test39:\n");
+  printf("test39: negative\n");
   {
     ThreadPool pool(N_threads);
     pool.StartWorkers();
@@ -1908,7 +1916,7 @@ void Getter() {
 
 void Run() {
   ANNOTATE_EXPECT_RACE(&GLOB, "test40. FP. Fixed by MSMProp1. Complex Stuff.");
-  printf("test40:\n");
+  printf("test40: negative\n");
   Q1 = new ProducerConsumerQueue(INT_MAX);
   Q2 = new ProducerConsumerQueue(INT_MAX);
   MyThreadArray t(Getter, Getter, Putter1, Putter2);
@@ -1927,12 +1935,12 @@ void Worker() {
   ANNOTATE_NO_OP(NULL); // An empty function, loaded from dll. 
 }
 void Run() {
-  printf("test41:\n");
+  printf("test41: negative\n");
   MyThreadArray t(Worker, Worker, Worker);
   t.Start();
   t.Join();
 }
-REGISTER_TEST(Run, 41);
+REGISTER_TEST2(Run, 41, FEATURE|NEEDS_ANNOTATIONS);
 }  // namespace test41
 
 
@@ -1979,13 +1987,13 @@ void Worker2() {
 
 void Run() {
 //  ANNOTATE_EXPECT_RACE(&GLOB, "test42. TN. debugging.");
-  printf("test42:\n");
+  printf("test42: negative\n");
   MyThreadArray t(Worker1, Worker2);
   t.Start(); 
   t.Join();
   printf("\tGLOB=%d\n", GLOB);
 }
-REGISTER_TEST(Run, 42);
+REGISTER_TEST2(Run, 42, FEATURE|NEEDS_ANNOTATIONS);
 }  // namespace test42
 
 
@@ -2011,7 +2019,7 @@ void Getter() {
   CHECK(GLOB == 1);
 }
 void Run() {
-  printf("test43:\n");
+  printf("test43: negative\n");
   MyThreadArray t(Putter, Getter);
   t.Start();
   t.Join();
@@ -2051,7 +2059,7 @@ void Getter() {
 }
 void Run() {
   ANNOTATE_EXPECT_RACE(&GLOB, "test44. FP. Fixed by MSMProp1.");
-  printf("test44:\n");
+  printf("test44: negative\n");
   MyThreadArray t(Putter, Getter);
   t.Start();
   t.Join();
@@ -2090,7 +2098,7 @@ void Getter() {
   MU.Unlock();
 }
 void Run() {
-  printf("test45:\n");
+  printf("test45: negative\n");
   MyThreadArray t(Putter, Getter);
   t.Start();
   t.Join();
@@ -2132,7 +2140,7 @@ void Second() {
   MU.Unlock();
 }
 void Run() {
-  printf("test46:\n");
+  printf("test46: (false) negative\n");
   MyThreadArray t(First, Second);
   t.Start();
   t.Join();
@@ -2167,7 +2175,7 @@ void Second() {
 }
 void Run() {
   ANNOTATE_EXPECT_RACE(&GLOB, "test47. TP. Not detected by pure HB.");
-  printf("test47:\n");
+  printf("test47: positive\n");
   MyThreadArray t(First, Second);
   t.Start();
   t.Join();
@@ -2204,7 +2212,7 @@ void Reader() {
 
 void Run() {
   ANNOTATE_EXPECT_RACE_FOR_MACHINE(&GLOB, "test48. FN in MSMHelgrind.", "MSMProp1");
-  printf("test48:\n");
+  printf("test48: positive\n");
   MyThreadArray t(Writer, Reader,Reader,Reader);
   t.Start();
   t.Join();
@@ -2246,7 +2254,7 @@ void Reader() {
 
 void Run() {
   ANNOTATE_EXPECT_RACE_FOR_MACHINE(&GLOB, "test49. FN in MSMHelgrind.", "MSMProp1");
-  printf("test49:\n");
+  printf("test49: positive\n");
   MyThreadArray t(Writer, Reader);
   t.Start();
   t.Join();
@@ -2309,11 +2317,11 @@ void Waiter() {
 }
 void Run() {
   ANNOTATE_EXPECT_RACE(&GLOB, "test50. TP.");
-  printf("test50:\n");
+  printf("test50: positive\n");
   Waiter();
   printf("\tGLOB=%d\n", GLOB);
 }
-REGISTER_TEST(Run, 50);
+REGISTER_TEST2(Run, 50, FEATURE|NEEDS_ANNOTATIONS);
 }  // namespace test50
 
 
@@ -2382,7 +2390,7 @@ void Waiter() {
 }
 void Run() {
   ANNOTATE_EXPECT_RACE(&GLOB, "test51. TP.");
-  printf("test51:\n");
+  printf("test51: positive\n");
   Waiter();
   printf("\tGLOB=%d\n", GLOB);
 }
@@ -2451,7 +2459,7 @@ void Waiter() {
 }
 void Run() {
   ANNOTATE_EXPECT_RACE(&GLOB, "test52. TP.");
-  printf("test52:\n");
+  printf("test52: positive\n");
   Waiter();
   printf("\tGLOB=%d\n", GLOB);
 }
@@ -2510,7 +2518,7 @@ void User() {
 
 void Run() {
   ANNOTATE_EXPECT_RACE_FOR_MACHINE(&GLOB, "test53. Implicit semaphore", "MSMProp1");
-  printf("test53:\n");
+  printf("test53: positive\n");
   MyThreadArray t(Initializer, User, User);
   t.Start();
   t.Join();
@@ -2552,13 +2560,13 @@ void User() {
 }
 
 void Run() {
-  printf("test54:\n");
+  printf("test54: negative\n");
   MyThreadArray t(Initializer, User, User);
   t.Start();
   t.Join();
   printf("\tGLOB=%d\n", GLOB);
 }
-REGISTER_TEST(Run, 54)
+REGISTER_TEST2(Run, 54, FEATURE|NEEDS_ANNOTATIONS)
 }  // namespace test54
 
 
@@ -2615,13 +2623,13 @@ void Worker() {
 void Run() {
   ANNOTATE_BENIGN_RACE(&GLOB, "test56. Use of ANNOTATE_BENIGN_RACE.");
   ANNOTATE_BENIGN_RACE(&GLOB2, "No race. The tool should be silent");
-  printf("test56:\n");
+  printf("test56: positive\n");
   MyThreadArray t(Worker, Worker, Worker, Worker);
   t.Start();
   t.Join();
   printf("\tGLOB=%d\n", GLOB);
 }
-REGISTER_TEST(Run, 56)
+REGISTER_TEST2(Run, 56, FEATURE|NEEDS_ANNOTATIONS)
 }  // namespace test56
 
 
@@ -2638,7 +2646,7 @@ void Reader() {
   while (GLOB < 20) usleep(1000);
 }
 void Run() {
-  printf("test57:\n");
+  printf("test57: negative\n");
   MyThreadArray t(Writer, Writer, Reader, Reader);
   t.Start();
   t.Join();
@@ -2715,7 +2723,7 @@ void Worker1() {
 }
 
 void Run() {
-  printf("test59:\n");
+  printf("test59: negative\n");
   ANNOTATE_BENIGN_RACE(&FLAG1, "synchronization via 'safe' race");
   ANNOTATE_BENIGN_RACE(&FLAG2, "synchronization via 'safe' race");
   MyThreadArray t(Worker1, Worker2);
@@ -2724,7 +2732,7 @@ void Run() {
   printf("\tGLOB1=%d\n", GLOB1);
   printf("\tGLOB2=%d\n", GLOB2);
 }
-REGISTER_TEST(Run, 59)
+REGISTER_TEST2(Run, 59, FEATURE|NEEDS_ANNOTATIONS)
 }  // namespace test59
 
 
@@ -2773,14 +2781,14 @@ void Worker1() {
 }
 
 void Run() {
-  printf("test60:\n");
+  printf("test60: negative\n");
   MyThreadArray t(Worker1, Worker2);
   t.Start();
   t.Join();
   printf("\tGLOB1=%d\n", GLOB1);
   printf("\tGLOB2=%d\n", GLOB2);
 }
-REGISTER_TEST(Run, 60)
+REGISTER_TEST2(Run, 60, FEATURE|NEEDS_ANNOTATIONS)
 }  // namespace test60
 
 
@@ -2820,13 +2828,13 @@ void Getter() {
 
 
 void Run() {
-  printf("test61:\n");
+  printf("test61: negative\n");
   MyThreadArray t(Putter, Getter);
   t.Start();
   t.Join();
   printf("\tGLOB=%d\n", GLOB);
 }
-REGISTER_TEST(Run, 61)
+REGISTER_TEST2(Run, 61, FEATURE|NEEDS_ANNOTATIONS)
 }  // namespace test61
 
 
@@ -2923,7 +2931,7 @@ void T3() {
 
 void Run() {
   ANNOTATE_EXPECT_RACE(&GLOB, "TP.");
-  printf("test64:\n");
+  printf("test64: positive\n");
   MyThreadArray t(T1, T2, T3);
   t.Start();
   t.Join();
@@ -2975,7 +2983,7 @@ void T3() {
 
 void Run() {
   ANNOTATE_EXPECT_RACE(&GLOB, "TP.");
-  printf("test65:\n");
+  printf("test65: positive\n");
   MyThreadArray t(T1, T2, T3);
   t.Start();
   t.Join();
@@ -3026,13 +3034,13 @@ void Waiter2() {
 }
 
 void Run() {
-  printf("test66:\n");
+  printf("test66: negative\n");
   MyThreadArray t(Signaller1, Signaller2, Waiter1, Waiter2);
   t.Start();
   t.Join();
   printf("\tGLOB=%d/%d\n", GLOB1, GLOB2);
 }
-REGISTER_TEST(Run, 66)
+REGISTER_TEST2(Run, 66, FEATURE|NEEDS_ANNOTATIONS)
 }  // namespace test66
 
 
@@ -3075,14 +3083,14 @@ void Waiter2() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB, "TP. Race between Signaller1 and Waiter2");
-  printf("test67:\n");
+  ANNOTATE_EXPECT_RACE(&GLOB, "test67. TP. Race between Signaller1 and Waiter2");
+  printf("test67: positive\n");
   MyThreadArray t(Signaller1, Signaller2, Waiter1, Waiter2);
   t.Start();
   t.Join();
   printf("\tGLOB=%d\n", GLOB);
 }
-REGISTER_TEST(Run, 67)
+REGISTER_TEST2(Run, 67, FEATURE|NEEDS_ANNOTATIONS)
 }  // namespace test67
 
 
