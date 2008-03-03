@@ -1,0 +1,388 @@
+Index: include/pub_tool_libcassert.h
+===================================================================
+--- include/pub_tool_libcassert.h	(revision 7535)
++++ include/pub_tool_libcassert.h	(working copy)
+@@ -33,8 +33,9 @@
+ 
+ #define tl_assert(expr)                                                 \
+   ((void) ((expr) ? 0 :                                                 \
+-           (VG_(assert_fail) (/*isCore?*/False, #expr,                  \
+-                              __FILE__, __LINE__, __PRETTY_FUNCTION__,  \
++           (VG_(assert_fail) (/*isCore?*/False, (const Char*)#expr,     \
++                              (const Char*)__FILE__, __LINE__,          \
++                              (const Char*)__PRETTY_FUNCTION__,         \
+                               ""),                                      \
+                               0)))
+ 
+Index: none/nl_cxx_demo.cc
+===================================================================
+--- none/nl_cxx_demo.cc	(revision 0)
++++ none/nl_cxx_demo.cc	(revision 0)
+@@ -0,0 +1,184 @@
++// A C++ demo. 
++
++// Exceptions and RTTI are not allowed as they require RTL support. 
++// Both are disabled by command line flags. 
++
++
++// Regular C header files have to be surrounded by
++// extern "C" { }
++extern "C" {
++#include "pub_tool_basics.h"
++#include "pub_tool_aspacemgr.h"
++#include "pub_tool_libcassert.h"
++#include "pub_tool_libcbase.h"
++#include "pub_tool_libcprint.h"
++#include "pub_tool_mallocfree.h"
++}
++
++#include "nl_cxx_demo.h"
++
++// standard operators new/delete can not be used since they are defined 
++// in the RTL. We define our own versions instead. 
++void *operator new (size_t size) {
++  return VG_(malloc)(size);
++}
++void *operator new [](size_t size) {
++  return VG_(malloc)(size);
++}
++void operator delete (void *p) {
++  VG_(free)(p);
++}
++void operator delete [](void *p) {
++  VG_(free)(p);
++}
++
++
++
++namespace VG {
++// Coregrind utilities written in C++ could be placed inside 
++// VG:: namespace. 
++// If VG:: does not look unique enough, we could say 
++// #define VG SOMETHING_UNIQUE 
++// in the top-level C++ header file. 
++
++UInt printf(const char *format, ...)
++{
++  UInt ret;
++  va_list vargs;
++  va_start(vargs, format);
++  ret = VG_(vprintf)(format, vargs);
++  va_end(vargs);
++  return ret;
++}
++
++// Templates are welcome for type-safety and readability. 
++
++// a minimalistic replacement for std::vector<T>. 
++template <class T> 
++class vector {
++ public: 
++  vector(): beg_(0), end_(0), end_alloc_(0) {}
++  size_t size() const {return end_ - beg_;}
++  size_t capacity() const {return end_alloc_ - beg_;}
++  T &operator [] (size_t i) {
++    tl_assert(i < size());
++    return beg_[i];
++  }
++  void push_back(const T &t) {
++    ensure_capacity(size()+1);
++    *end_ = t;
++    end_++;
++  }
++  ~vector() {
++    if (beg_) delete beg_;
++  }
++ private: 
++  void ensure_capacity(size_t required_capacity) {
++    if (capacity() >= required_capacity) return;
++    size_t new_capacity = capacity();
++    if (new_capacity == 0) {
++      new_capacity = 16;
++    } else {
++      new_capacity *= 2;
++    }
++    if (new_capacity < required_capacity) {
++      new_capacity = required_capacity; // maybe pick nearest power of two? 
++    }
++    T *new_beg = new T[new_capacity];
++    T *new_end = new_beg + size();
++    T *new_end_alloc = new_beg + new_capacity;
++    VG_(memcpy(new_beg, beg_, sizeof(T) * size()));
++    delete beg_;
++    beg_ = new_beg;
++    end_ = new_end;
++    end_alloc_ = new_end_alloc;
++  }
++
++  // beg_<= end_ <= end_alloc_
++  T *beg_;
++  T *end_;
++  T *end_alloc_; 
++};
++
++
++
++
++};  // namespace VG
++
++
++
++namespace NL {
++// Tools may define their functions inside their namespaces 
++// instead of using macros like HG_, etc. 
++
++class X{
++ public: 
++  X(Int x) :x_(x) { VG::printf("X::X(%d)\n", x_);}
++  ~X()            { VG::printf("X::~X(%d)\n", x_);}
++ private:
++  Int x_;
++};
++
++struct V_A      {virtual void show_me(){VG::printf("I'm A\n");} virtual ~V_A(){}};
++struct V_B: V_A {virtual void show_me(){VG::printf("I'm B\n");} virtual ~V_B(){}};
++
++void Test() {
++  VG::printf("CXX_Demo: Begin\n");
++  {
++    // can use 'using namespace VG' or 'using VG::printf'
++    using namespace VG;
++    printf("Test CTOR/DTOR:\n");
++    X x(1);
++  }
++
++
++  // test new/delete and their [] versions 
++  Int *scalar = new Int;
++  delete scalar;
++
++  Int *array = new Int [10];
++  delete [] array;
++
++  // Test virtual functions
++  V_A *a = new V_B; 
++  a->show_me();
++  delete a;
++  a = new V_A;
++  a->show_me();
++  delete a;
++
++  // test vector 
++  VG::vector<Int> vec;
++  for (int i = 0; i < 100; i++) vec.push_back(i);
++  for (int i = 0; i < 100; i++) tl_assert(vec[i] == i);
++
++
++  VG::printf("CXX_Demo: End\n");
++}
++
++
++// Global or static objects may not have CTOR/DTOR since that requires RTL. 
++// static X glob_x(2);
++
++// Global or static objects w/o CTOR/DTOR are fine. 
++class NO_CTOR_DTOR {
++ public:
++  Int x_;
++};
++// Note that the compiler might issue a warning for unused static object. 
++static NO_CTOR_DTOR no_ctor_dtor;
++
++
++
++
++}; // namespaces NL
++
++
++
++
++extern "C" Int CXX_Demo() {
++  // Functions that are visible and used by C modules 
++  // have to be declared as 'xtern "C"' 
++  NL::Test();
++  return 123;
++}
+Index: none/nl_cxx_demo.h
+===================================================================
+--- none/nl_cxx_demo.h	(revision 0)
++++ none/nl_cxx_demo.h	(revision 0)
+@@ -0,0 +1,42 @@
++#ifndef CXX_DEMO
++#define CXX_DEMO 
++
++// To be defined in one top-level C++ header file 
++#ifdef __cplusplus 
++#define EXTERN_C_OPEN extern "C" {
++#define EXTERN_C_CLOSE }
++#else
++#define EXTERN_C_OPEN
++#define EXTERN_C_CLOSE
++#endif
++
++// in C++, size_t has to be 'unsigned int' (for 32-bit) 
++// or 'unsigned long int' (for 64-bit). 
++// So we can't just use 'long' for both. 
++#ifdef __cplusplus
++#include <cstddef> // most portable way to define size_t
++#endif // __cplusplus
++
++// End of top-level C++ header file. 
++
++// Regular C++ header file. 
++//
++
++// Anything that is C++ specific sholud go under
++// #ifdef __cplusplus
++#ifdef __cplusplus
++class SomeClass {};
++#endif // __cplusplus
++
++// All function declarations should be inside 
++// EXTERN_C_OPEN/EXTERN_C_CLOSE
++// At least if these functions are to be used 
++// in both C and C++ modules. 
++
++EXTERN_C_OPEN
++
++Int CXX_Demo(void);
++
++EXTERN_C_CLOSE
++
++#endif // CXX_DEMO
+Index: none/Makefile.am
+===================================================================
+--- none/Makefile.am	(revision 7535)
++++ none/Makefile.am	(working copy)
+@@ -20,11 +20,12 @@
+ noinst_PROGRAMS += none-ppc64-aix5
+ endif
+ 
+-NONE_SOURCES_COMMON = nl_main.c
++NONE_SOURCES_COMMON = nl_main.c nl_cxx_demo.cc
+ 
+ none_x86_linux_SOURCES      = $(NONE_SOURCES_COMMON)
+ none_x86_linux_CPPFLAGS     = $(AM_CPPFLAGS_X86_LINUX)
+ none_x86_linux_CFLAGS       = $(AM_CFLAGS_X86_LINUX)
++none_x86_linux_CXXFLAGS     = $(AM_CXXFLAGS_X86_LINUX)
+ none_x86_linux_DEPENDENCIES = $(COREGRIND_LIBS_X86_LINUX)
+ none_x86_linux_LDADD        = $(TOOL_LDADD_X86_LINUX)
+ none_x86_linux_LDFLAGS      = $(TOOL_LDFLAGS_X86_LINUX)
+@@ -32,6 +33,7 @@
+ none_amd64_linux_SOURCES      = $(NONE_SOURCES_COMMON)
+ none_amd64_linux_CPPFLAGS     = $(AM_CPPFLAGS_AMD64_LINUX)
+ none_amd64_linux_CFLAGS       = $(AM_CFLAGS_AMD64_LINUX)
++none_amd64_linux_CXXFLAGS     = $(AM_CXXFLAGS_AMD64_LINUX)
+ none_amd64_linux_DEPENDENCIES = $(COREGRIND_LIBS_AMD64_LINUX)
+ none_amd64_linux_LDADD        = $(TOOL_LDADD_AMD64_LINUX)
+ none_amd64_linux_LDFLAGS      = $(TOOL_LDFLAGS_AMD64_LINUX)
+@@ -39,6 +41,7 @@
+ none_ppc32_linux_SOURCES      = $(NONE_SOURCES_COMMON)
+ none_ppc32_linux_CPPFLAGS     = $(AM_CPPFLAGS_PPC32_LINUX)
+ none_ppc32_linux_CFLAGS       = $(AM_CFLAGS_PPC32_LINUX)
++none_ppc32_linux_CXXFLAGS     = $(AM_CXXFLAGS_PPC32_LINUX)
+ none_ppc32_linux_DEPENDENCIES = $(COREGRIND_LIBS_PPC32_LINUX)
+ none_ppc32_linux_LDADD        = $(TOOL_LDADD_PPC32_LINUX)
+ none_ppc32_linux_LDFLAGS      = $(TOOL_LDFLAGS_PPC32_LINUX)
+@@ -46,6 +49,7 @@
+ none_ppc64_linux_SOURCES      = $(NONE_SOURCES_COMMON)
+ none_ppc64_linux_CPPFLAGS     = $(AM_CPPFLAGS_PPC64_LINUX)
+ none_ppc64_linux_CFLAGS       = $(AM_CFLAGS_PPC64_LINUX)
++none_ppc64_linux_CXXFLAGS     = $(AM_CXXFLAGS_PPC64_LINUX)
+ none_ppc64_linux_DEPENDENCIES = $(COREGRIND_LIBS_PPC64_LINUX)
+ none_ppc64_linux_LDADD        = $(TOOL_LDADD_PPC64_LINUX)
+ none_ppc64_linux_LDFLAGS      = $(TOOL_LDFLAGS_PPC64_LINUX)
+@@ -53,6 +57,7 @@
+ none_ppc32_aix5_SOURCES      = $(NONE_SOURCES_COMMON)
+ none_ppc32_aix5_CPPFLAGS     = $(AM_CPPFLAGS_PPC32_AIX5)
+ none_ppc32_aix5_CFLAGS       = $(AM_CFLAGS_PPC32_AIX5)
++none_ppc32_aix5_CXXFLAGS     = $(AM_CXXFLAGS_PPC32_AIX5)
+ none_ppc32_aix5_DEPENDENCIES = $(COREGRIND_LIBS_PPC32_AIX5)
+ none_ppc32_aix5_LDADD        = $(TOOL_LDADD_PPC32_AIX5)
+ none_ppc32_aix5_LDFLAGS      = $(TOOL_LDFLAGS_PPC32_AIX5)
+@@ -60,6 +65,7 @@
+ none_ppc64_aix5_SOURCES      = $(NONE_SOURCES_COMMON)
+ none_ppc64_aix5_CPPFLAGS     = $(AM_CPPFLAGS_PPC64_AIX5)
+ none_ppc64_aix5_CFLAGS       = $(AM_CFLAGS_PPC64_AIX5)
++none_ppc64_aix5_CXXFLAGS     = $(AM_CXXFLAGS_PPC64_AIX5)
+ none_ppc64_aix5_DEPENDENCIES = $(COREGRIND_LIBS_PPC64_AIX5)
+ none_ppc64_aix5_LDADD        = $(TOOL_LDADD_PPC64_AIX5)
+ none_ppc64_aix5_LDFLAGS      = $(TOOL_LDFLAGS_PPC64_AIX5)
+Index: none/nl_main.c
+===================================================================
+--- none/nl_main.c	(revision 7535)
++++ none/nl_main.c	(working copy)
+@@ -30,9 +30,11 @@
+ 
+ #include "pub_tool_basics.h"
+ #include "pub_tool_tooliface.h"
++#include "nl_cxx_demo.h"
+ 
+ static void nl_post_clo_init(void)
+ {
++  CXX_Demo();
+ }
+ 
+ static
+Index: Makefile.flags.am
+===================================================================
+--- Makefile.flags.am	(revision 7535)
++++ Makefile.flags.am	(working copy)
+@@ -4,6 +4,7 @@
+ AM_CFLAGS_BASE = -O2 -g -Wmissing-prototypes -Wall -Wshadow \
+                  -Wpointer-arith -Wstrict-prototypes -Wmissing-declarations \
+                  -fno-strict-aliasing
++AM_CXXFLAGS_BASE = -O2 -g -fno-exceptions -fno-rtti -Wall 
+ 
+ # These flags are used for building the preload shared objects.
+ # The aim is to give reasonable performance but also to have good
+@@ -16,33 +17,41 @@
+ AM_CPPFLAGS_X86_LINUX     = $(add_includes_x86_linux)
+ AM_CFLAGS_X86_LINUX       = $(WERROR) @FLAG_M32@ @PREFERRED_STACK_BOUNDARY@ \
+ 			 	$(AM_CFLAGS_BASE)
++AM_CXXFLAGS_X86_LINUX     = $(WERROR) @FLAG_M32@ @PREFERRED_STACK_BOUNDARY@ \
++			 	$(AM_CXXFLAGS_BASE)
+ AM_CCASFLAGS_X86_LINUX    = $(add_includes_x86_linux) @FLAG_M32@ -g
+ 
+ AM_FLAG_M3264_AMD64_LINUX = @FLAG_M64@
+ AM_CPPFLAGS_AMD64_LINUX   = $(add_includes_amd64_linux)
+ AM_CFLAGS_AMD64_LINUX     = $(WERROR) @FLAG_M64@ -fomit-frame-pointer \
+ 				@PREFERRED_STACK_BOUNDARY@ $(AM_CFLAGS_BASE)
++AM_CXXFLAGS_AMD64_LINUX   = $(WERROR) @FLAG_M64@ -fomit-frame-pointer \
++				@PREFERRED_STACK_BOUNDARY@ $(AM_CXXFLAGS_BASE)
+ AM_CCASFLAGS_AMD64_LINUX  = $(add_includes_amd64_linux) @FLAG_M64@ -g
+ 
+ AM_FLAG_M3264_PPC32_LINUX = @FLAG_M32@
+ AM_CPPFLAGS_PPC32_LINUX   = $(add_includes_ppc32_linux)
+ AM_CFLAGS_PPC32_LINUX     = $(WERROR) @FLAG_M32@ $(AM_CFLAGS_BASE)
++AM_CXXFLAGS_PPC32_LINUX   = $(WERROR) @FLAG_M32@ $(AM_CXXFLAGS_BASE)
+ AM_CCASFLAGS_PPC32_LINUX  = $(add_includes_ppc32_linux) -Wa,-maltivec @FLAG_M32@ -g
+ 
+ AM_FLAG_M3264_PPC64_LINUX = @FLAG_M64@
+ AM_CPPFLAGS_PPC64_LINUX   = $(add_includes_ppc64_linux)
+ AM_CFLAGS_PPC64_LINUX     = $(WERROR) @FLAG_M64@ $(AM_CFLAGS_BASE)
++AM_CXXFLAGS_PPC64_LINUX   = $(WERROR) @FLAG_M64@ $(AM_CXXFLAGS_BASE)
+ AM_CCASFLAGS_PPC64_LINUX  = $(add_includes_ppc64_linux) -Wa,-maltivec @FLAG_M64@ -g
+ 
+ AM_FLAG_M3264_PPC32_AIX5  = @FLAG_MAIX32@
+ AM_CPPFLAGS_PPC32_AIX5    = $(add_includes_ppc32_aix5)
+ AM_CFLAGS_PPC32_AIX5      = $(WERROR) @FLAG_MAIX32@ -mcpu=powerpc $(AM_CFLAGS_BASE)
++AM_CXXFLAGS_PPC32_AIX5    = $(WERROR) @FLAG_MAIX32@ -mcpu=powerpc $(AM_CXXFLAGS_BASE)
+ AM_CCASFLAGS_PPC32_AIX5   = $(add_includes_ppc32_aix5) \
+ 				@FLAG_MAIX32@ -mcpu=powerpc -g
+ 
+ AM_FLAG_M3264_PPC64_AIX5  = @FLAG_MAIX64@
+ AM_CPPFLAGS_PPC64_AIX5    = $(add_includes_ppc64_aix5)
+ AM_CFLAGS_PPC64_AIX5      = $(WERROR) @FLAG_MAIX64@ -mcpu=powerpc64 $(AM_CFLAGS_BASE)
++AM_CXXFLAGS_PPC64_AIX5    = $(WERROR) @FLAG_MAIX64@ -mcpu=powerpc64 $(AM_CXXFLAGS_BASE)
+ AM_CCASFLAGS_PPC64_AIX5   = $(add_includes_ppc64_aix5) \
+ 				@FLAG_MAIX64@ -mcpu=powerpc64 -g
+ 
+@@ -53,6 +62,7 @@
+ AM_FLAG_M3264_PRI = $(AM_FLAG_M3264_@VG_PLATFORM_PRI@)
+ AM_CPPFLAGS_PRI   = $(AM_CPPFLAGS_@VG_PLATFORM_PRI@)
+ AM_CFLAGS_PRI     = $(AM_CFLAGS_@VG_PLATFORM_PRI@)
++AM_CXXFLAGS_PRI   = $(AM_CXXFLAGS_@VG_PLATFORM_PRI@)
+ AM_CCASFLAGS_PRI  = $(AM_CCASFLAGS_@VG_PLATFORM_PRI@)
+ 
+ if VGP_HAVE_SECONDARY
