@@ -3044,9 +3044,13 @@ REGISTER_TEST2(Run, 66, FEATURE|NEEDS_ANNOTATIONS)
 }  // namespace test66
 
 
-// test67: TP. Race between Signaller1 and Waiter2 {{{1
+// test67: FN. Race between Signaller1 and Waiter2 {{{1
 namespace test67 {
 // Similar to test66, but there is a real race here. 
+//
+// Here we create a happens-before arc between Signaller1 and Waiter2
+// even though there should be no such arc. 
+// However, it's probably improssible (or just very hard) to avoid it. 
 int     GLOB = 0;
 int     C1 = 0;
 int     C2 = 0;

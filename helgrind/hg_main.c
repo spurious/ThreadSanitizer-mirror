@@ -7069,7 +7069,7 @@ void evhH__do_cv_signal(Thread *thr, Word cond)
                                               fake_seg->prev->vts, 
                                               fake_seg->other->vts);
          HG_(addToFM)( map_cond_to_Segment, (Word)cond, (Word)(fake_seg) );
-         // FIXME. test67 gives false negative. 
+         // FIXME. test67 gives false negative. Not sure if it is fixable.
          //
          // FIXME. At this point the old signalling_seg is not needed any more
          // if we use only VTS. If we stop using HB graph, we can have only
