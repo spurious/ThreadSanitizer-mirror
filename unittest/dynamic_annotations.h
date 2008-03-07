@@ -94,6 +94,8 @@ ANNOTATION(AnnotateExpectRace, void *mem, const char *description);
 ANNOTATION(AnnotateBenignRace, void *mem, const char *description);
 ANNOTATION(AnnotateTraceMemory, void *mem);
 ANNOTATION(AnnotateMutexIsUsedAsCondVar, void *mu);
+ANNOTATION(AnnotateIgnoreReadsBegin, void *);
+ANNOTATION(AnnotateIgnoreReadsEnd, void *);
 
 ANNOTATION(AnnotateNoOp, void *arg);
 
@@ -174,6 +176,12 @@ ANNOTATION(AnnotateNoOp, void *arg);
 #define ANNOTATE_NO_OP(arg) \
             AnnotateNoOp(__FILE__, __LINE__, arg)
 
+// Instruct the race detector to ignore all reads in the section 
+// defined by ANNOTATE_IGNORE_READS_BEGIN/ANNOTATE_IGNORE_READS_END
+#define ANNOTATE_IGNORE_READS_BEGIN() \
+            AnnotateIgnoreReadsBegin(__FILE__, __LINE__, NULL /*reserved*/)
+#define ANNOTATE_IGNORE_READS_END() \
+            AnnotateIgnoreReadsEnd(__FILE__, __LINE__, NULL /*reserved*/)
 
 
 #endif  // DYNAMIC_ANNOTATIONS_H__/

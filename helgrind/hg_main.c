@@ -173,7 +173,7 @@ static Int  clo_trace_level = 0;
 static Int clo_sanity_flags = 0;
 
 
-static Bool clo_msm_prop1 = False; // use prop1 memory state machine. 
+static Bool clo_msm_prop1 = True; // use prop1 memory state machine. 
 static int  clo_msm_prop1_n = 1; 
 static int  clo_msm_prop1_i = 0;
 
@@ -299,6 +299,7 @@ typedef
       /* Place where parent was when this thread was created. */
       ExeContext* created_at;
       Bool        announced;
+      Bool        ignore_reads; 
       /* Index for generating references in error messages. */
       Int         errmsg_index;
    }
@@ -1655,7 +1656,7 @@ static void initialise_data_structures ( void )
    tl_assert(univ_tsets != NULL);
 
    tl_assert(univ_ssets == NULL);
-   univ_ssets = HG_(newWordSetU)( hg_zalloc, hg_free, 8/*cacheSize*/ );
+   univ_ssets = HG_(newWordSetU)( hg_zalloc, hg_free, 32/*cacheSize*/ );
    tl_assert(univ_ssets != NULL);
 
    tl_assert(univ_lsets == NULL);
@@ -2235,13 +2236,15 @@ static Bool maybe_set_expected_error (Addr ptr,
 /*------- mem trace -------------------------------------------*/
 /* a client may request to trace certain memory (for better debugging) */
 static WordFM *mem_trace_map = NULL;
-static void mem_trace_on(Word mem)
+static void mem_trace_on(Word mem, ThreadId tid)
 {
+   if (clo_trace_level <= 0) return;
    if (!mem_trace_map) {
       mem_trace_map = HG_(newFM)( hg_zalloc, hg_free, NULL);
    }
    HG_(addToFM)(mem_trace_map, mem, mem);
    VG_(printf)("trace on: %p\n", mem);
+   VG_(get_and_pp_StackTrace)( tid, 15);
 }
 static Bool mem_trace_is_on(Word mem)
 {
@@ -3590,6 +3593,7 @@ SVal prop1_memory_state_machine(
 {
    tl_assert (!address_may_be_ignored(a));
 
+
    Bool is_race = False;
    SVal sv_new = SHVAL_Invalid;
    Bool do_trace = clo_trace_level > 0 
@@ -3634,6 +3638,11 @@ SVal prop1_memory_state_machine(
       goto done;
    }
 
+   if (thr->ignore_reads && !is_w) {
+      // ignore this read
+      sv_new = sv_old;
+      goto done;
+   }
 
    if (__bus_lock_Lock->heldBy
        && (is_SHVAL_New(sv_old) || prop1_is_SHVAL_R(sv_old))) {
@@ -5815,6 +5824,13 @@ static void shadow_mem_make_New ( Thread* thr, Addr a, SizeT len )
 
    8. Tell laog that these locks have disappeared.
 */
+
+static UWord stats__make_noaccess_count = 0;
+static UWord stats__make_noaccess_locks = 0;
+static UWord stats__make_noaccess_iter  = 0;
+
+
+
 static void shadow_mem_make_NoAccess ( Thread* thr, Addr aIN, SizeT len )
 {
    Lock*     lk;
@@ -5838,13 +5854,14 @@ static void shadow_mem_make_NoAccess ( Thread* thr, Addr aIN, SizeT len )
    lastSM  = shmem__round_to_SecMap_base( lastA );
    tl_assert(firstSM <= lastSM);
 
-   mbHasLocks = False;
-   for (sma = firstSM; sma <= lastSM; sma += N_SECMAP_ARANGE) {
-      if (shmem__get_mbHasLocks(sma)) {
-         mbHasLocks = True;
-         break;
-      }
-   }
+//   mbHasLocks = False;
+   mbHasLocks = True;
+//   for (sma = firstSM; sma <= lastSM; sma += N_SECMAP_ARANGE) {
+//      if (shmem__get_mbHasLocks(sma)) {
+//         mbHasLocks = True;
+//         break;
+//      }
+//   }
 
    /* --- Step 2 --- */
 
@@ -5883,11 +5900,25 @@ static void shadow_mem_make_NoAccess ( Thread* thr, Addr aIN, SizeT len )
    VG_(printf)("shadow_mem_make_NoAccess(%p, %u, %p): maybe slow case\n",
                (void*)firstA, (UWord)len, (void*)lastA);
    locksToDelete = HG_(emptyWS)( univ_lsets );
+
+   {
+      static int count;
+      count++;
+      if ((count % (1024 * 64)) == 1) {
+         ThreadId tid = map_threads_maybe_reverse_lookup_SLOW(thr);
+         if (tid != VG_INVALID_THREADID) {
+            VG_(get_and_pp_StackTrace)( tid, 10);
+         }
+      }
+   }
    
    // Iterate all locks that are within range [firstA, lastA]. 
+   stats__make_noaccess_count++;
+   // stats__make_noaccess_locks += HG_(sizeFM)(map_locks); // EXPENSIVE
    HG_(initIterWithStartFM)( map_locks, firstA );
    while (HG_(nextIterFM)( map_locks, (Word*)&gla, (Word*)&lk ) 
           && (Word)gla <= (Word)lastA) {
+      stats__make_noaccess_iter++;
       tl_assert(is_sane_LockN(lk));
       tl_assert((Word)gla >= (Word)firstA);
       tl_assert((Word)gla <= (Word)lastA);
@@ -5916,68 +5947,6 @@ static void shadow_mem_make_NoAccess ( Thread* thr, Addr aIN, SizeT len )
 
    /* --- Step 6 --- */
 
-    { // KCC
-   shmem__flush_and_invalidate_scache();
-
-   /* --- Step 7 --- */
-
-   if (0) 
-   VG_(printf)("shadow_mem_make_NoAccess(%p, %u, %p): definitely slow case\n",
-               (void*)firstA, (UWord)len, (void*)lastA);
-
-   /* Modify all shadow words, by removing locksToDelete from the lockset
-      of all ShM and ShR states.
-      Optimisation 1: skip SecMaps which do not have .mbHasShared set
-   */
-   if (!clo_msm_prop1) // FIXME prop1
-   { Int        stats_SMs = 0, stats_SMs_scanned = 0;
-     Addr       ga;
-     SecMap*    sm;
-     SecMapIter itr;
-     SVal*      w32p = NULL;
-
-     HG_(initIterFM)( map_shmem );
-     while (HG_(nextIterFM)( map_shmem,
-                             (Word*)&ga, (Word*)&sm )) {
-        Bool anySh = False;
-        tl_assert(sm);
-        stats_SMs++;
-        /* Skip this SecMap if the summary bit indicates it is safe to
-           do so. */
-        if (!sm->mbHasShared)
-           continue;
-        stats_SMs_scanned++;
-        initSecMapIter( &itr );
-        while (stepSecMapIter( &w32p, &itr, sm )) {
-           Bool isM;
-           SVal wold, wnew; 
-           UInt lset_old, tset_old, lset_new;
-           wold = *w32p;
-           if (LIKELY( !is_SHVAL_Sh(wold) ))
-              continue;
-           isM      = is_SHVAL_ShM(wold);
-           lset_old = un_SHVAL_Sh_lset(wold);
-           tset_old = un_SHVAL_Sh_tset(wold);
-           lset_new = HG_(minusWS)( univ_lsets, lset_old, locksToDelete );
-           wnew     = isM ? mk_SHVAL_ShM(tset_old, lset_new)
-                          : mk_SHVAL_ShR(tset_old, lset_new);
-           if (wnew != wold)
-              *w32p = wnew;
-           anySh = True;
-        }
-	if (!anySh) {
-//           VG_(printf)("XXXXXXXXXXXXXXXXXXXXXXXXXXXXX discr\n");
-           tl_assert(sm->mbHasShared);
-           sm->mbHasShared = False;
-	}
-     }
-     HG_(doneIterFM)( map_shmem );
-     if (SHOW_EXPENSIVE_STUFF)
-        VG_(printf)("shadow_mem_make_NoAccess: %d SMs, %d scanned\n", 
-                    stats_SMs, stats_SMs_scanned);
-   }
-
-   } // KCC
 
    /* Now we have to free up the Locks in locksToDelete and remove
       any mention of them from admin_locks and map_locks.  This is
@@ -8895,7 +8864,7 @@ Bool hg_handle_client_request ( ThreadId tid, UWord* args, UWord* ret)
          break;
       }
       case _VG_USERREQ__HG_TRACE_MEM: { // void *
-         mem_trace_on(args[1]);
+         mem_trace_on(args[1], tid);
          break;
       }
 
@@ -8903,6 +8872,23 @@ Bool hg_handle_client_request ( ThreadId tid, UWord* args, UWord* ret)
          set_mu_is_cv(args[1]);
          break;
       }
+      
+      case _VG_USERREQ__HG_IGNORE_READS_BEGIN: {
+         Thread *thr = map_threads_maybe_lookup( tid );
+         tl_assert(thr); /* cannot fail */
+         tl_assert(!thr->ignore_reads);
+         thr->ignore_reads = True;
+         break;
+      }
+      case _VG_USERREQ__HG_IGNORE_READS_END: {
+         Thread *thr = map_threads_maybe_lookup( tid );
+         tl_assert(thr); /* cannot fail */
+         tl_assert(thr->ignore_reads);
+         thr->ignore_reads = False;
+         break;
+      }
+
+
 
 
       default:
@@ -10038,6 +10024,13 @@ static void hg_fini ( Int exitcode )
                  stats__cline_64to32pulldown,
                  stats__cline_32to16pulldown,
                  stats__cline_16to8pulldown );
+
+      VG_(printf)("\n");
+      VG_(printf)("   MakeNoAccess: c=%lu l=%lu i=%lu\n",
+                  stats__make_noaccess_count,
+                  stats__make_noaccess_locks,
+                  stats__make_noaccess_iter
+                  );
 
       VG_(printf)("\n");
    }

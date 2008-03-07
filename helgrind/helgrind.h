@@ -103,7 +103,9 @@ typedef
       _VG_USERREQ__HG_PCQ_PUT,                    /* void* */
       _VG_USERREQ__HG_PCQ_GET,                    /* void* */
       _VG_USERREQ__HG_TRACE_MEM,                  /* void* */
-      _VG_USERREQ__HG_MUTEX_IS_USED_AS_CONDVAR,  /* void* */
+      _VG_USERREQ__HG_MUTEX_IS_USED_AS_CONDVAR,   /* void* */
+      _VG_USERREQ__HG_IGNORE_READS_BEGIN,         /* none */
+      _VG_USERREQ__HG_IGNORE_READS_END,           /* none */
    } Vg_TCheckClientRequest;
 
 /* Clean memory state.  This makes Helgrind forget everything it knew

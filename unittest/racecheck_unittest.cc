@@ -3087,7 +3087,7 @@ void Waiter2() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB, "test67. TP. Race between Signaller1 and Waiter2");
+  ANNOTATE_EXPECT_RACE(&GLOB, "test67. FN. Race between Signaller1 and Waiter2");
   printf("test67: positive\n");
   MyThreadArray t(Signaller1, Signaller2, Waiter1, Waiter2);
   t.Start();
@@ -3096,6 +3096,106 @@ void Run() {
 }
 REGISTER_TEST2(Run, 67, FEATURE|NEEDS_ANNOTATIONS)
 }  // namespace test67
+
+
+// test68: TP. Writes are protected by MU, reads are not. {{{1
+namespace test68 {
+// In this test, all writes to GLOB are protected by a mutex 
+// but some reads go unprotected. 
+// This is certainly a race, but in some cases such code could occur in 
+// a correct program. For example, the unprotected reads may be used 
+// for showing statistics and are not required to be precise. 
+int     GLOB = 0;
+int     COND = 0;
+const int N_writers = 3;
+
+void Writer() {
+  for (int i = 0; i < 100; i++) {
+    MU.Lock();
+    GLOB++;
+    MU.Unlock();
+  }
+
+  // we are done
+  MU1.Lock();
+  COND++;
+  MU1.Unlock();
+}
+
+void Reader() {
+  bool cont = true;
+  while (cont) {
+    CHECK(GLOB >= 0);
+
+    // are we done?
+    MU1.Lock();
+    if (COND == N_writers)
+      cont = false;
+    MU1.Unlock();
+  }
+}
+
+void Run() {
+  ANNOTATE_EXPECT_RACE(&GLOB, "TP. Writes are protected, reads are not.");
+  printf("test68: positive\n");
+  MyThreadArray t(Reader, Writer, Writer, Writer);
+  t.Start();
+  t.Join();
+  printf("\tGLOB=%d\n", GLOB);
+}
+REGISTER_TEST(Run, 68)
+}  // namespace test68
+
+
+// test69:  {{{1
+namespace test69 {
+// This is the same as test68, but annotated. 
+// We do not want to annotate GLOB as a benign race 
+// because we want to allow racy reads only in certain places. 
+//
+// TODO: 
+int     GLOB = 0;
+int     COND = 0;
+const int N_writers = 3;
+int     FAKE_MU = 0;
+
+void Writer() {
+  for (int i = 0; i < 10; i++) {
+    MU.Lock();
+    GLOB++;
+    MU.Unlock();
+  }
+
+  // we are done
+  MU1.Lock();
+  COND++;
+  MU1.Unlock();
+}
+
+void Reader() {
+  bool cont = true;
+  while (cont) {
+    ANNOTATE_IGNORE_READS_BEGIN();
+    CHECK(GLOB >= 0);
+    ANNOTATE_IGNORE_READS_END();
+
+    // are we done?
+    MU1.Lock();
+    if (COND == N_writers)
+      cont = false;
+    MU1.Unlock();
+  }
+}
+
+void Run() {
+  printf("test69: negative\n");
+  MyThreadArray t(Reader, Writer, Writer, Writer);
+  t.Start();
+  t.Join();
+  printf("\tGLOB=%d\n", GLOB);
+}
+REGISTER_TEST(Run, 69)
+}  // namespace test69
 
 
 // End {{{1

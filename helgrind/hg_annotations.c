@@ -218,7 +218,19 @@ ANN_FUNC(void, AnnotateNewMemory, char *file, int line, void *mem, long size)
   VALGRIND_HG_CLEAN_MEMORY(mem, size);
 }
 
+ANN_FUNC(void, AnnotateIgnoreReadsBegin, char *file, int line, void *mu)
+{
+  const char *name = "AnnotateIgnoreReadsBegin";
+  ANN_TRACE("--#%d %s[%p] %s:%d\n", tid, name, mu, file, line);
+  DO_CREQ_v_W(_VG_USERREQ__HG_IGNORE_READS_BEGIN,   void*, mu);
+}
 
+ANN_FUNC(void, AnnotateIgnoreReadsEnd, char *file, int line, void *mu)
+{
+  const char *name = "AnnotateIgnoreReadsEnd";
+  ANN_TRACE("--#%d %s[%p] %s:%d\n", tid, name, mu, file, line);
+  DO_CREQ_v_W(_VG_USERREQ__HG_IGNORE_READS_END,   void*, mu);
+}
 
 ANN_FUNC(void, AnnotateMutexIsUsedAsCondVar, char *file, int line, void *mu)
 {
@@ -228,8 +240,6 @@ ANN_FUNC(void, AnnotateMutexIsUsedAsCondVar, char *file, int line, void *mu)
 }
 
 
-//#undef TRACE_ANN_FNS 
-//#define TRACE_ANN_FNS 1
 ANN_FUNC(void, AnnotateNoOp, char *file, int line, void *mem)
 {
   const char *name = "AnnotateNoOp";
@@ -243,3 +253,6 @@ ANN_FUNC(void, AnnotateTraceMemory, char *file, int line, void *mem)
   ANN_TRACE("--#%d %s[%p] %s:%d\n", tid, name, mem, file, line);
   DO_CREQ_v_W(_VG_USERREQ__HG_TRACE_MEM,   void*, mem);
 }
+
+#undef TRACE_ANN_FNS 
+#define TRACE_ANN_FNS 1
