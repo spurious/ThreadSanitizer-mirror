@@ -3197,6 +3197,19 @@ void Run() {
 REGISTER_TEST(Run, 69)
 }  // namespace test69
 
+// test70: STAB. Check that TRACE_MEMORY works. {{{1
+namespace test70 {
+int     GLOB = 0;
+void Run() {
+  printf("test70: negative\n");
+  ANNOTATE_TRACE_MEMORY(&GLOB);
+  GLOB = 1;
+  printf("\tGLOB=%d\n", GLOB);
+}
+REGISTER_TEST(Run, 70)
+}  // namespace test70
+
+
 
 // End {{{1
 // vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker
