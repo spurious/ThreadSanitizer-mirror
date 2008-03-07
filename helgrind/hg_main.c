@@ -9768,11 +9768,11 @@ static Bool hg_process_cmd_line_option ( Char* arg )
 
    else if (VG_CLO_STREQ(arg, "--prop1"))
       clo_msm_prop1 = True;
-   else if (VG_CLO_STREQN(10, arg, "--prop1-n=")) {
-      clo_msm_prop1_n = VG_(atoll)(&arg[10]);
+   else if (VG_CLO_STREQN(11, arg, "--ignore-n=")) {
+      clo_msm_prop1_n = VG_(atoll)(&arg[11]);
    }
-   else if (VG_CLO_STREQN(10, arg, "--prop1-i=")) {
-      clo_msm_prop1_i = VG_(atoll)(&arg[10]);
+   else if (VG_CLO_STREQN(11, arg, "--ignore-i=")) {
+      clo_msm_prop1_i = VG_(atoll)(&arg[11]);
    }
 
    else if (VG_CLO_STREQN(16, arg, "--fn-white-list=")) {
