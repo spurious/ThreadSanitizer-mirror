@@ -382,7 +382,7 @@ typedef
 
 /**
   This structure contains data from 
-  VG_USERREQ__HG_BENIGN_RACE or _VG_USERREQ__HG_EXPECT_RACE client request. 
+  VG_USERREQ__HG_BENIGN_RACE or VG_USERREQ__HG_EXPECT_RACE client request. 
 */
 typedef 
    struct _ExpectedError {
@@ -5901,12 +5901,13 @@ static void shadow_mem_make_NoAccess ( Thread* thr, Addr aIN, SizeT len )
                (void*)firstA, (UWord)len, (void*)lastA);
    locksToDelete = HG_(emptyWS)( univ_lsets );
 
-   {
+   if (0) { // profile
       static int count;
       count++;
-      if ((count % (1024 * 64)) == 1) {
+      if ((count % (1024 * 64)) == 0) {
          ThreadId tid = map_threads_maybe_reverse_lookup_SLOW(thr);
          if (tid != VG_INVALID_THREADID) {
+            VG_(printf)("MakeNoAccess: ");
             VG_(get_and_pp_StackTrace)( tid, 10);
          }
       }
@@ -8828,7 +8829,7 @@ Bool hg_handle_client_request ( ThreadId tid, UWord* args, UWord* ret)
 
 
 
-      case _VG_USERREQ__HG_EXPECT_RACE: { // void*, char*, char *, int
+      case VG_USERREQ__HG_EXPECT_RACE: { // void*, char*, char *, int
         Addr ptr    = (Addr)args[1];
         char *descr = (char*)args[2];
         char *file  = (char*)args[3];
@@ -8847,40 +8848,40 @@ Bool hg_handle_client_request ( ThreadId tid, UWord* args, UWord* ret)
       }
 
 
-      case _VG_USERREQ__HG_PCQ_CREATE: { // void *
+      case VG_USERREQ__HG_PCQ_CREATE: { // void *
          pcq_create(args[1]);
          break;
       }
-      case _VG_USERREQ__HG_PCQ_DESTROY: { // void *
+      case VG_USERREQ__HG_PCQ_DESTROY: { // void *
          pcq_destroy(args[1]);
          break;
       }
-      case _VG_USERREQ__HG_PCQ_PUT: { // void *
+      case VG_USERREQ__HG_PCQ_PUT: { // void *
          pcq_put(tid, args[1]);
          break;
       }
-      case _VG_USERREQ__HG_PCQ_GET: { // void *
+      case VG_USERREQ__HG_PCQ_GET: { // void *
          pcq_get(tid, args[1]);
          break;
       }
-      case _VG_USERREQ__HG_TRACE_MEM: { // void *
+      case VG_USERREQ__HG_TRACE_MEM: { // void *
          mem_trace_on(args[1], tid);
          break;
       }
 
-      case _VG_USERREQ__HG_MUTEX_IS_USED_AS_CONDVAR: { // void *
+      case VG_USERREQ__HG_MUTEX_IS_USED_AS_CONDVAR: { // void *
          set_mu_is_cv(args[1]);
          break;
       }
       
-      case _VG_USERREQ__HG_IGNORE_READS_BEGIN: {
+      case VG_USERREQ__HG_IGNORE_READS_BEGIN: {
          Thread *thr = map_threads_maybe_lookup( tid );
          tl_assert(thr); /* cannot fail */
          tl_assert(!thr->ignore_reads);
          thr->ignore_reads = True;
          break;
       }
-      case _VG_USERREQ__HG_IGNORE_READS_END: {
+      case VG_USERREQ__HG_IGNORE_READS_END: {
          Thread *thr = map_threads_maybe_lookup( tid );
          tl_assert(thr); /* cannot fail */
          tl_assert(thr->ignore_reads);

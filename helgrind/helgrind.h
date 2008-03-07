@@ -97,15 +97,15 @@ typedef
       _VG_USERREQ__HG_GET_THREAD_ID,              /* -> Thread ID */
       _VG_USERREQ__HG_GET_SEGMENT_ID,             /* -> Segment ID */
       _VG_USERREQ__HG_GET_MY_SEGMENT,             /* -> Segment* */
-      _VG_USERREQ__HG_EXPECT_RACE,                /* void*, char*, char*, int */
-      _VG_USERREQ__HG_PCQ_CREATE,                 /* void* */
-      _VG_USERREQ__HG_PCQ_DESTROY,                /* void* */
-      _VG_USERREQ__HG_PCQ_PUT,                    /* void* */
-      _VG_USERREQ__HG_PCQ_GET,                    /* void* */
-      _VG_USERREQ__HG_TRACE_MEM,                  /* void* */
-      _VG_USERREQ__HG_MUTEX_IS_USED_AS_CONDVAR,   /* void* */
-      _VG_USERREQ__HG_IGNORE_READS_BEGIN,         /* none */
-      _VG_USERREQ__HG_IGNORE_READS_END,           /* none */
+      VG_USERREQ__HG_EXPECT_RACE,                /* void*, char*, char*, int */
+      VG_USERREQ__HG_PCQ_CREATE,                 /* void* */
+      VG_USERREQ__HG_PCQ_DESTROY,                /* void* */
+      VG_USERREQ__HG_PCQ_PUT,                    /* void* */
+      VG_USERREQ__HG_PCQ_GET,                    /* void* */
+      VG_USERREQ__HG_TRACE_MEM,                  /* void* */
+      VG_USERREQ__HG_MUTEX_IS_USED_AS_CONDVAR,   /* void* */
+      VG_USERREQ__HG_IGNORE_READS_BEGIN,         /* none */
+      VG_USERREQ__HG_IGNORE_READS_END,           /* none */
    } Vg_TCheckClientRequest;
 
 /* Clean memory state.  This makes Helgrind forget everything it knew
@@ -133,24 +133,6 @@ typedef
                                addr, descr, __FILE__, __LINE__, 0);       \
   }while(0)
 
-/** Get the thread ID (the one ID which is printed in error messages). 
-    This macro should be used for testing helgrind. 
-*/
-#define VALGRIND_HG_THREAD_ID  __extension__                      \
-   ({ unsigned int _qzz_res;                                       \
-    VALGRIND_DO_CLIENT_REQUEST(_qzz_res, 0 ,                      \
-                               _VG_USERREQ__HG_GET_THREAD_ID,     \
-                               0, 0, 0, 0, 0);                    \
-    _qzz_res;                                                     \
-   })
-
-#define VALGRIND_HG_SEGMENT_ID  __extension__                      \
-   ({ unsigned int _qzz_res;                                       \
-    VALGRIND_DO_CLIENT_REQUEST(_qzz_res, 0 ,                      \
-                               _VG_USERREQ__HG_GET_SEGMENT_ID,     \
-                               0, 0, 0, 0, 0);                    \
-    _qzz_res;                                                     \
-   })
 
 
 #endif /* __HELGRIND_H */

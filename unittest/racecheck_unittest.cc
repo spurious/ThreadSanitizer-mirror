@@ -589,7 +589,7 @@ void Reader() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE_FOR_MACHINE(&GLOB, "test10. FN in MSMHelgrind.", "MSMProp1");
+  ANNOTATE_EXPECT_RACE(&GLOB, "test10. FN in MSMHelgrind.");
   printf("test10: positive\n");
   MyThreadArray t(Writer, Reader);
   t.Start();
@@ -2211,7 +2211,7 @@ void Reader() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE_FOR_MACHINE(&GLOB, "test48. FN in MSMHelgrind.", "MSMProp1");
+  ANNOTATE_EXPECT_RACE(&GLOB, "test48. FN in MSMHelgrind.");
   printf("test48: positive\n");
   MyThreadArray t(Writer, Reader,Reader,Reader);
   t.Start();
@@ -2253,7 +2253,7 @@ void Reader() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE_FOR_MACHINE(&GLOB, "test49. FN in MSMHelgrind.", "MSMProp1");
+  ANNOTATE_EXPECT_RACE(&GLOB, "test49. FN in MSMHelgrind.");
   printf("test49: positive\n");
   MyThreadArray t(Writer, Reader);
   t.Start();
@@ -2517,7 +2517,7 @@ void User() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE_FOR_MACHINE(&GLOB, "test53. Implicit semaphore", "MSMProp1");
+  ANNOTATE_EXPECT_RACE(&GLOB, "test53. Implicit semaphore");
   printf("test53: positive\n");
   MyThreadArray t(Initializer, User, User);
   t.Start();

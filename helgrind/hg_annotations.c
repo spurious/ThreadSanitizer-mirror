@@ -100,7 +100,21 @@
 
 #define TRACE_ANN_FNS 0
 
+#define VALGRIND_HG_THREAD_ID  __extension__                      \
+   ({ unsigned int _qzz_res;                                       \
+    VALGRIND_DO_CLIENT_REQUEST(_qzz_res, 0 ,                      \
+                               _VG_USERREQ__HG_GET_THREAD_ID,     \
+                               0, 0, 0, 0, 0);                    \
+    _qzz_res;                                                     \
+   })
 
+#define VALGRIND_HG_SEGMENT_ID  __extension__                      \
+   ({ unsigned int _qzz_res;                                       \
+    VALGRIND_DO_CLIENT_REQUEST(_qzz_res, 0 ,                      \
+                               _VG_USERREQ__HG_GET_SEGMENT_ID,     \
+                               0, 0, 0, 0, 0);                    \
+    _qzz_res;                                                     \
+   })
 
 
 #define ANN_FUNC(ret_ty, f, args...) \
@@ -131,7 +145,6 @@ ANN_FUNC(void, AnnotateRWLockDestroy, const char *file, int line, void *lock)
   ANN_TRACE("--#%d %s[%p] %s:%d\n", tid, name, lock, file, line);
   DO_CREQ_v_W(_VG_USERREQ__HG_PTHREAD_RWLOCK_DESTROY_PRE, void*, lock);
 }
-
 
 ANN_FUNC(void, AnnotateRWLockAcquired, const char *file, int line, void *lock, int is_w)
 {
@@ -173,35 +186,35 @@ ANN_FUNC(void, AnnotatePCQCreate, const char *file, int line, void *pcq)
 {
   const char *name = "AnnotatePCQCreate";
   ANN_TRACE("--#%d %s[%p] %s:%d\n", tid, name, pcq, file, line);
-  DO_CREQ_v_W(_VG_USERREQ__HG_PCQ_CREATE,   void*,pcq);
+  DO_CREQ_v_W(VG_USERREQ__HG_PCQ_CREATE,   void*,pcq);
 }
 
 ANN_FUNC(void, AnnotatePCQDestroy, const char *file, int line, void *pcq)
 {
   const char *name = "AnnotatePCQDestroy";
   ANN_TRACE("--#%d %s[%p] %s:%d\n", tid, name, pcq, file, line);
-  DO_CREQ_v_W(_VG_USERREQ__HG_PCQ_DESTROY,   void*,pcq);
+  DO_CREQ_v_W(VG_USERREQ__HG_PCQ_DESTROY,   void*,pcq);
 }
 
 ANN_FUNC(void, AnnotatePCQPut, const char *file, int line, void *pcq)
 {
   const char *name = "AnnotatePCQPut";
   ANN_TRACE("--#%d %s[%p] %s:%d\n", tid, name, pcq, file, line);
-  DO_CREQ_v_W(_VG_USERREQ__HG_PCQ_PUT,   void*,pcq);
+  DO_CREQ_v_W(VG_USERREQ__HG_PCQ_PUT,   void*,pcq);
 }
 
 ANN_FUNC(void, AnnotatePCQGet, const char *file, int line, void *pcq)
 {
   const char *name = "AnnotatePCQGet";
   ANN_TRACE("--#%d %s[%p] %s:%d\n", tid, name, pcq, file, line);
-  DO_CREQ_v_W(_VG_USERREQ__HG_PCQ_GET,   void*,pcq);
+  DO_CREQ_v_W(VG_USERREQ__HG_PCQ_GET,   void*,pcq);
 }
 
 ANN_FUNC(void, AnnotateExpectRace, const char *file, int line, void *mem, char *description)
 {
   const char *name = "AnnotateExpectRace";
   ANN_TRACE("--#%d %s[%p] %s:%d\n", tid, name, mem, file, line);
-  DO_CREQ_v_WWWW(_VG_USERREQ__HG_EXPECT_RACE, void*,mem, char*,description, char*, file, long, (long)line);
+  DO_CREQ_v_WWWW(VG_USERREQ__HG_EXPECT_RACE, void*,mem, char*,description, char*, file, long, (long)line);
 }
 
 ANN_FUNC(void, AnnotateBenignRace, const char *file, int line, void *mem, char *description)
@@ -222,21 +235,21 @@ ANN_FUNC(void, AnnotateIgnoreReadsBegin, char *file, int line, void *mu)
 {
   const char *name = "AnnotateIgnoreReadsBegin";
   ANN_TRACE("--#%d %s[%p] %s:%d\n", tid, name, mu, file, line);
-  DO_CREQ_v_W(_VG_USERREQ__HG_IGNORE_READS_BEGIN,   void*, mu);
+  DO_CREQ_v_W(VG_USERREQ__HG_IGNORE_READS_BEGIN,   void*, mu);
 }
 
 ANN_FUNC(void, AnnotateIgnoreReadsEnd, char *file, int line, void *mu)
 {
   const char *name = "AnnotateIgnoreReadsEnd";
   ANN_TRACE("--#%d %s[%p] %s:%d\n", tid, name, mu, file, line);
-  DO_CREQ_v_W(_VG_USERREQ__HG_IGNORE_READS_END,   void*, mu);
+  DO_CREQ_v_W(VG_USERREQ__HG_IGNORE_READS_END,   void*, mu);
 }
 
 ANN_FUNC(void, AnnotateMutexIsUsedAsCondVar, char *file, int line, void *mu)
 {
   const char *name = "AnnotateMutexIsUsedAsCondVar";
   ANN_TRACE("--#%d %s[%p] %s:%d\n", tid, name, mu, file, line);
-  DO_CREQ_v_W(_VG_USERREQ__HG_MUTEX_IS_USED_AS_CONDVAR,   void*, mu);
+  DO_CREQ_v_W(VG_USERREQ__HG_MUTEX_IS_USED_AS_CONDVAR,   void*, mu);
 }
 
 
@@ -251,7 +264,7 @@ ANN_FUNC(void, AnnotateTraceMemory, char *file, int line, void *mem)
 {
   const char *name = "AnnotateTraceMemory";
   ANN_TRACE("--#%d %s[%p] %s:%d\n", tid, name, mem, file, line);
-  DO_CREQ_v_W(_VG_USERREQ__HG_TRACE_MEM,   void*, mem);
+  DO_CREQ_v_W(VG_USERREQ__HG_TRACE_MEM,   void*, mem);
 }
 
 #undef TRACE_ANN_FNS 
