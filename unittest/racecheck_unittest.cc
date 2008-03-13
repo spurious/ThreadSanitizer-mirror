@@ -3263,5 +3263,65 @@ REGISTER_TEST(Run, 71)
 }  // namespace test71
 
 
+// test72: STAB. Stress test for the number of segment sets (SSETs). {{{1
+namespace test72 {
+// Variation of test33. 
+// Instead of creating Nlog*N_iter threads, 
+// we create Nlog threads and do N_iter barriers. 
+int     GLOB = 0;
+const int N_iter = 20;
+const int Nlog  = 15;
+const int N     = 1 << Nlog;
+static int ARR[N];
+Barrier *barriers[N_iter];
+
+void Worker() {
+  MU.Lock();
+  int n = ++GLOB;
+  MU.Unlock();
+
+  n %= Nlog;
+
+  for (int it = 0; it < N_iter; it++) {
+
+    for (int i = 0; i < N; i++) {
+      // ARR[i] is accessed by threads from i-th subset 
+      if (i & (1 << n)) {
+        CHECK(ARR[i] == 0);
+      }
+    }
+    barriers[it]->Block();
+  }
+}
+
+void Run() {
+  printf("test72:\n");
+
+  std::vector<MyThread*> vec(Nlog);
+
+  for (int i = 0; i < N_iter; i++)
+    barriers[i] = new Barrier(Nlog);
+
+  // Create and start Nlog threads
+  for (int i = 0; i < Nlog; i++) {
+    vec[i] = new MyThread(Worker);
+    vec[i]->Start();
+  }
+  
+  // Join all threads. 
+  for (int i = 0; i < Nlog; i++) {
+    vec[i]->Join();
+    delete vec[i];
+  }
+  for (int i = 0; i < N_iter; i++)
+    delete barriers[i];
+
+  printf("\tGLOB=%d; ARR[1]=%d; ARR[7]=%d; ARR[N-1]=%d\n", 
+         GLOB, ARR[1], ARR[7], ARR[N-1]);
+}
+REGISTER_TEST2(Run, 72, STABILITY|EXCLUDE_FROM_ALL);
+}  // namespace test72
+
+
 // End {{{1
 // vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker
