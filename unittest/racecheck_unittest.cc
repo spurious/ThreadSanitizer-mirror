@@ -3213,7 +3213,7 @@ REGISTER_TEST(Run, 70)
 
 // test71: TN. strlen, index. {{{1
 namespace test71 {
-// This test is a reproducer a benign race in strlen (as well as index, etc). 
+// This test is a reproducer for a benign race in strlen (as well as index, etc). 
 // Some implementations of strlen may read up to 7 bytes past the end of the string 
 // thus touching memory which may not belong to this string. 
 // Such race is benign because the data read past the end of the string is not used.
