@@ -3211,41 +3211,51 @@ REGISTER_TEST(Run, 70)
 
 
 
-// test71: Strlen. {{{1
+// test71: TN. strlen, index. {{{1
 namespace test71 {
 // This test is a reproducer a benign race in strlen (as well as index, etc). 
 // Some implementations of strlen may read up to 7 bytes past the end of the string 
 // thus touching memory which may not belong to this string. 
 // Such race is benign because the data read past the end of the string is not used.
+//
+// Here, we allocate a 8-byte aligned string str and initialize first 5 bytes.
+// Then one thread calls strlen(str) (as well as index & rindex)
+// and another thread initializes str[5]..str[7]. 
+//
+// This can be fixed in Helgrind by intercepting strlen and replacing it 
+// with a simpler implementation. 
 
-char    *strX, *strY;
+char    *str;
 void WorkerX() {
-  usleep(500000);
-  CHECK(strlen(strX) == 2);
+  usleep(100000);
+  CHECK(strlen(str) == 4);
+  CHECK(index(str, 'X') == str);
+  CHECK(index(str, 'x') == str+1);
+  CHECK(rindex(str, 'X') == str+2);
+  CHECK(rindex(str, 'x') == str+3);
 }
 void WorkerY() {
-  strY[0] = 'Y';
-  strY[1] = 'Y';
-  strY[2] = 'Y';
-  strY[3] = 'Y';
-  strY[4] = '\0';
+  str[5] = 'Y';
+  str[6] = 'Y';
+  str[7] = '\0';
 }
 
 void Run() {
-  strX = new char[8];
-  strX[0] = 'X';
-  strX[1] = 'X';
-  strX[2] = '\0';
-  strY    = strX + 3;
+  str = new char[8];
+  str[0] = 'X';
+  str[1] = 'x';
+  str[2] = 'X';
+  str[3] = 'x';
+  str[4] = '\0';
 
-  printf("test71: strlen (may detect a benign race)\n");
-  MyThread t1(WorkerX);
-  MyThread t2(WorkerY);
+  printf("test71: negative (strlen & index)\n");
+  MyThread t1(WorkerY);
+  MyThread t2(WorkerX);
   t1.Start();
   t2.Start();
   t1.Join();
   t2.Join();
-  printf("\tstrX=%s; strY=%s\n", strX, strY);
+  printf("\tstrX=%s; strY=%s\n", str, str+5);
 }
 REGISTER_TEST2(Run, 71, FEATURE|EXCLUDE_FROM_ALL)
 }  // namespace test71
