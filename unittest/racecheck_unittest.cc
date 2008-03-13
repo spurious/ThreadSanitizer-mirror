@@ -3211,5 +3211,45 @@ REGISTER_TEST(Run, 70)
 
 
 
+// test71: Strlen. {{{1
+namespace test71 {
+// This test is a reproducer a benign race in strlen (as well as index, etc). 
+// Some implementations of strlen may read up to 7 bytes past the end of the string 
+// thus touching memory which may not belong to this string. 
+// Such race is benign because the data read past the end of the string is not used.
+
+char    *strX, *strY;
+void WorkerX() {
+  usleep(500000);
+  CHECK(strlen(strX) == 2);
+}
+void WorkerY() {
+  strY[0] = 'Y';
+  strY[1] = 'Y';
+  strY[2] = 'Y';
+  strY[3] = 'Y';
+  strY[4] = '\0';
+}
+
+void Run() {
+  strX = new char[8];
+  strX[0] = 'X';
+  strX[1] = 'X';
+  strX[2] = '\0';
+  strY    = strX + 3;
+
+  printf("test71: strlen (may detect a benign race)\n");
+  MyThread t1(WorkerX);
+  MyThread t2(WorkerY);
+  t1.Start();
+  t2.Start();
+  t1.Join();
+  t2.Join();
+  printf("\tstrX=%s; strY=%s\n", strX, strY);
+}
+REGISTER_TEST2(Run, 71, FEATURE|EXCLUDE_FROM_ALL)
+}  // namespace test71
+
+
 // End {{{1
 // vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker

@@ -3587,6 +3587,14 @@ void prop1_segment_ref_update(SVal sv_old, SVal sv_new)
 // for description. 
 //
 // This routine is not (yet) optimized for performance. 
+//
+
+static int stats__prop1_rw = 0;
+static int stats__prop1_ss_doubleton = 0;
+static int stats__prop1_ss_update = 0;
+static int stats__prop1_ss_add = 0;
+
+
 static 
 SVal prop1_memory_state_machine(
     Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
@@ -3742,14 +3750,18 @@ SVal prop1_memory_state_machine(
 
    // update the thread set 
    newSS = prop1_SS_mk_singleton(currS);
+   stats__prop1_rw++;
    if (!hb_all) {
+      stats__prop1_ss_update++;
       for (i = 0; i < oldSS_size; i++) {
          if((hb_mask & (1ULL << i)) == 0) {
             SegmentID S = prop1_SS_get_element(oldSS, i);
             if (prop1_SS_is_singleton(newSS)) {
                tl_assert(currS != S);
                newSS = HG_(doubletonWS)(univ_ssets, currS, S);
+               stats__prop1_ss_doubleton++;
             } else {
+               stats__prop1_ss_add++;
                newSS = HG_(addToWS)(univ_ssets, newSS, S);
             }
          }
@@ -10032,6 +10044,13 @@ static void hg_fini ( Int exitcode )
                   stats__make_noaccess_locks,
                   stats__make_noaccess_iter
                   );
+
+      VG_(printf)("\n");
+      VG_(printf)("   MSM: \n");
+      VG_(printf)("      rw:         %llu\n", stats__prop1_rw);
+      VG_(printf)("      update:     %llu\n", stats__prop1_ss_update);
+      VG_(printf)("      add:        %llu\n", stats__prop1_ss_add);
+      VG_(printf)("      doubleton:  %llu\n", stats__prop1_ss_doubleton);
 
       VG_(printf)("\n");
    }

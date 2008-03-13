@@ -50,6 +50,9 @@
 #include <queue>
 #include <stdio.h>
 
+#include <string>
+using namespace std;
+
 #include <sys/time.h>
 #include <time.h>
 
