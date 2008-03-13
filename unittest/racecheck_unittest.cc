@@ -3231,8 +3231,10 @@ void WorkerX() {
   CHECK(strlen(str) == 4);
   CHECK(index(str, 'X') == str);
   CHECK(index(str, 'x') == str+1);
+  CHECK(index(str, 'Y') == NULL);
   CHECK(rindex(str, 'X') == str+2);
   CHECK(rindex(str, 'x') == str+3);
+  CHECK(rindex(str, 'Y') == NULL);
 }
 void WorkerY() {
   str[5] = 'Y';
@@ -3257,7 +3259,7 @@ void Run() {
   t2.Join();
   printf("\tstrX=%s; strY=%s\n", str, str+5);
 }
-REGISTER_TEST2(Run, 71, FEATURE|EXCLUDE_FROM_ALL)
+REGISTER_TEST(Run, 71)
 }  // namespace test71
 
 
