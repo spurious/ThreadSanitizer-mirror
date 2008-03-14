@@ -3272,7 +3272,8 @@ int     GLOB = 0;
 const int N_iter = 20;
 const int Nlog  = 15;
 const int N     = 1 << Nlog;
-static int ARR[N];
+static int ARR1[N];
+static int ARR2[N];
 Barrier *barriers[N_iter];
 
 void Worker() {
@@ -3283,11 +3284,20 @@ void Worker() {
   n %= Nlog;
 
   for (int it = 0; it < N_iter; it++) {
+    // Iterate N_iter times, block on barrier after each iteration. 
+    // This way Helgrind will create new segments after each barrier. 
 
-    for (int i = 0; i < N; i++) {
-      // ARR[i] is accessed by threads from i-th subset 
-      if (i & (1 << n)) {
-        CHECK(ARR[i] == 0);
+    for (int x = 0; x < 2; x++) { 
+      // run the innter loop twice. 
+      // When a memory location is accessed second time it is likely 
+      // that the state (SVal) will be unchanged. 
+      // The memory machine may optimize this case. 
+      for (int i = 0; i < N; i++) {
+        // ARR1[i] and ARR2[N-1-i] are accessed by threads from i-th subset 
+        if (i & (1 << n)) {
+          CHECK(ARR1[i] == 0);
+          CHECK(ARR2[N-1-i] == 0);
+        }
       }
     }
     barriers[it]->Block();
@@ -3317,9 +3327,9 @@ void Run() {
     delete barriers[i];
 
   printf("\tGLOB=%d; ARR[1]=%d; ARR[7]=%d; ARR[N-1]=%d\n", 
-         GLOB, ARR[1], ARR[7], ARR[N-1]);
+         GLOB, ARR1[1], ARR1[7], ARR1[N-1]);
 }
-REGISTER_TEST2(Run, 72, STABILITY|EXCLUDE_FROM_ALL);
+REGISTER_TEST2(Run, 72, STABILITY|PERFORMANCE|EXCLUDE_FROM_ALL);
 }  // namespace test72
 
 
