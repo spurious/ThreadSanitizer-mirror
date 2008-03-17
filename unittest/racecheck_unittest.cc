@@ -3269,8 +3269,8 @@ namespace test72 {
 // Instead of creating Nlog*N_iter threads, 
 // we create Nlog threads and do N_iter barriers. 
 int     GLOB = 0;
-const int N_iter = 30;
-const int Nlog  = 15;
+const int N_iter = 50;
+const int Nlog  = 16;
 const int N     = 1 << Nlog;
 static int ARR1[N];
 static int ARR2[N];
