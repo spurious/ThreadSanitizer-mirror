@@ -3269,11 +3269,11 @@ namespace test72 {
 // Instead of creating Nlog*N_iter threads, 
 // we create Nlog threads and do N_iter barriers. 
 int     GLOB = 0;
-const int N_iter = 50;
+const int N_iter = 30;
 const int Nlog  = 16;
 const int N     = 1 << Nlog;
-static int ARR1[N];
-static int ARR2[N];
+static int64_t ARR1[N];
+static int64_t ARR2[N];
 Barrier *barriers[N_iter];
 
 void Worker() {
@@ -3304,6 +3304,7 @@ void Worker() {
   }
 }
 
+
 void Run() {
   printf("test72:\n");
 
@@ -3331,6 +3332,96 @@ void Run() {
 }
 REGISTER_TEST2(Run, 72, STABILITY|PERFORMANCE|EXCLUDE_FROM_ALL);
 }  // namespace test72
+
+
+// test73: STAB. Stress test for the number of (SSETs), different access sizes. {{{1
+namespace test73 {
+// Variation of test72. 
+// We perform accesses of different sizes to the same location. 
+int     GLOB = 0;
+const int N_iter = 1;
+const int Nlog  = 16;
+const int N     = 1 << Nlog;
+static int ARR1[N];
+Barrier *barriers[N_iter];
+
+void Worker() {
+  MU.Lock();
+  int n = ++GLOB;
+  MU.Unlock();
+
+  n %= Nlog;
+
+  for (int it = 0; it < N_iter; it++) {
+    // Iterate N_iter times, block on barrier after each iteration. 
+    // This way Helgrind will create new segments after each barrier. 
+
+    for (int x = 0; x < 4; x++) { 
+      // run the innter loop twice. 
+      // When a memory location is accessed second time it is likely 
+      // that the state (SVal) will be unchanged. 
+      // The memory machine may optimize this case. 
+      for (int i = 0; i < N; i++) {
+        // ARR1[i] are accessed by threads from i-th subset 
+        if (i & (1 << n)) {
+          for (int off = 0; off < (1 << x); off++) {
+            switch(x) {
+              case 0: CHECK(          ARR1  [i * (1<<x) + off] == 0); break;
+              case 1: CHECK(((int*)  (ARR1))[i * (1<<x) + off] == 0); break;
+              case 2: CHECK(((short*)(ARR1))[i * (1<<x) + off] == 0); break;
+              case 3: CHECK(((char*) (ARR1))[i * (1<<x) + off] == 0); break;
+            }
+          }
+        }
+      }
+    }
+    barriers[it]->Block();
+  }
+}
+
+
+
+void Run() {
+  printf("test73:\n");
+
+  std::vector<MyThread*> vec(Nlog);
+
+  for (int i = 0; i < N_iter; i++)
+    barriers[i] = new Barrier(Nlog);
+
+  // Create and start Nlog threads
+  for (int i = 0; i < Nlog; i++) {
+    vec[i] = new MyThread(Worker);
+    vec[i]->Start();
+  }
+  
+  // Join all threads. 
+  for (int i = 0; i < Nlog; i++) {
+    vec[i]->Join();
+    delete vec[i];
+  }
+  for (int i = 0; i < N_iter; i++)
+    delete barriers[i];
+
+  printf("\tGLOB=%d; ARR[1]=%d; ARR[7]=%d; ARR[N-1]=%d\n", 
+         GLOB, ARR1[1], ARR1[7], ARR1[N-1]);
+}
+REGISTER_TEST2(Run, 73, STABILITY|PERFORMANCE|EXCLUDE_FROM_ALL);
+}  // namespace test73
+
+
+// test74: PERF. A lot of lock/unlock calls. {{{1
+namespace    test74 {
+const int N = 100000;
+void Run() {
+  printf("test74: perf\n");
+  for (int i = 0; i < N; i++ ) {
+    MU.Lock();
+    MU.Unlock();
+  }
+}
+REGISTER_TEST(Run, 74)
+}  // namespace test74
 
 
 // End {{{1
