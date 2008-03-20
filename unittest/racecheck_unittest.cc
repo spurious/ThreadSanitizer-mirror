@@ -3288,7 +3288,7 @@ void Worker() {
     // This way Helgrind will create new segments after each barrier. 
 
     for (int x = 0; x < 2; x++) { 
-      // run the innter loop twice. 
+      // run the inner loop twice. 
       // When a memory location is accessed second time it is likely 
       // that the state (SVal) will be unchanged. 
       // The memory machine may optimize this case. 
@@ -3328,7 +3328,7 @@ void Run() {
     delete barriers[i];
 
   printf("\tGLOB=%d; ARR[1]=%d; ARR[7]=%d; ARR[N-1]=%d\n", 
-         GLOB, ARR1[1], ARR1[7], ARR1[N-1]);
+         GLOB, (int)ARR1[1], (int)ARR1[7], (int)ARR1[N-1]);
 }
 REGISTER_TEST2(Run, 72, STABILITY|PERFORMANCE|EXCLUDE_FROM_ALL);
 }  // namespace test72
@@ -3339,10 +3339,11 @@ namespace test73 {
 // Variation of test72. 
 // We perform accesses of different sizes to the same location. 
 int     GLOB = 0;
-const int N_iter = 1;
+const int N_iter = 10;
 const int Nlog  = 16;
 const int N     = 1 << Nlog;
-static int ARR1[N];
+static int64_t ARR1[N];
+static int ARR2[N];
 Barrier *barriers[N_iter];
 
 void Worker() {
@@ -3357,10 +3358,6 @@ void Worker() {
     // This way Helgrind will create new segments after each barrier. 
 
     for (int x = 0; x < 4; x++) { 
-      // run the innter loop twice. 
-      // When a memory location is accessed second time it is likely 
-      // that the state (SVal) will be unchanged. 
-      // The memory machine may optimize this case. 
       for (int i = 0; i < N; i++) {
         // ARR1[i] are accessed by threads from i-th subset 
         if (i & (1 << n)) {
@@ -3370,6 +3367,11 @@ void Worker() {
               case 1: CHECK(((int*)  (ARR1))[i * (1<<x) + off] == 0); break;
               case 2: CHECK(((short*)(ARR1))[i * (1<<x) + off] == 0); break;
               case 3: CHECK(((char*) (ARR1))[i * (1<<x) + off] == 0); break;
+            }
+            switch(x) {
+              case 1: CHECK(((int*)  (ARR2))[i * (1<<x) + off] == 0); break;
+              case 2: CHECK(((short*)(ARR2))[i * (1<<x) + off] == 0); break;
+              case 3: CHECK(((char*) (ARR2))[i * (1<<x) + off] == 0); break;
             }
           }
         }
