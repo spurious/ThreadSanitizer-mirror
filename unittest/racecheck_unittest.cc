@@ -3481,9 +3481,10 @@ struct RefCountedClass {
 
   ~RefCountedClass() {
     CHECK(ref_ == 0);     // race may be reported here 
-    int data_val = data_; // and/or here     
-                         // if no appropriate measures are taken. 
+    int data_val = data_; // and here     
+                          // if MU is not annotated
     data_ = 0;
+    ref_ = -1;
     printf("\tRefCountedClass::data_ = %d\n", data_val);
   }
 
@@ -3495,6 +3496,7 @@ struct RefCountedClass {
 
   void Ref() {
     MU.Lock();
+    CHECK(ref_ >= 0);
     ref_++;
     MU.Unlock();
   }
