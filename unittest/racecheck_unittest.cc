@@ -3406,7 +3406,7 @@ void Run() {
     delete barriers[i];
 
   printf("\tGLOB=%d; ARR[1]=%d; ARR[7]=%d; ARR[N-1]=%d\n", 
-         GLOB, ARR1[1], ARR1[7], ARR1[N-1]);
+         GLOB, (int)ARR1[1], (int)ARR1[7], (int)ARR1[N-1]);
 }
 REGISTER_TEST2(Run, 73, STABILITY|PERFORMANCE|EXCLUDE_FROM_ALL);
 }  // namespace test73
@@ -3424,6 +3424,120 @@ void Run() {
 }
 REGISTER_TEST(Run, 74)
 }  // namespace test74
+
+
+// test75: TN. Test for sem_post, sem_wait, sem_trywait. {{{1
+namespace test75 {
+int     GLOB = 0;
+sem_t   sem[2];
+
+void Poster() {
+  GLOB = 1;
+  sem_post(&sem[0]);
+  sem_post(&sem[1]);
+}
+
+void Waiter() {
+  sem_wait(&sem[0]);
+  CHECK(GLOB==1);
+}
+void TryWaiter() {
+  usleep(500000);
+  sem_trywait(&sem[1]);
+  CHECK(GLOB==1);
+}
+
+void Run() {
+  sem_init(&sem[0], 0, 0);
+  sem_init(&sem[1], 0, 0);
+
+  printf("test75: negative\n");
+  {
+    MyThreadArray t(Poster, Waiter);
+    t.Start();
+    t.Join();
+  }
+  GLOB = 2;
+  {
+    MyThreadArray t(Poster, TryWaiter);
+    t.Start();
+    t.Join();
+  }
+  printf("\tGLOB=%d\n", GLOB);
+
+  sem_destroy(&sem[0]);
+  sem_destroy(&sem[1]);
+}
+REGISTER_TEST(Run, 75)
+}  // namespace test75
+
+// test76: FP. Ref counting. {{{1
+namespace test76 {
+int     GLOB = 0;
+Mutex MU; // global mutex, protects RefCountedStruct::ref
+Barrier barrier(4);
+struct RefCountedStruct {
+  int ref; 
+  int data;
+  Mutex mu; // data member mutex, protects data 
+
+  RefCountedStruct() {
+    ref = 0;
+    data = 0;
+  }
+
+  ~RefCountedStruct() {
+    CHECK(ref == 0);     // race may be reported here 
+    int data_val = data; // and/or here     
+                         // if no appropriate measures are taken. 
+    data = 0;
+    printf("\t data = %d\n", data_val);
+  }
+
+  void AccessData() {
+    this->mu.Lock();
+    this->data++;
+    this->mu.Unlock();
+  }
+
+  void Ref() {
+    MU.Lock();
+    ref++;
+    MU.Unlock();
+  }
+
+  void Unref() {
+    MU.Lock();
+    ref--;
+    bool do_delete = ref == 0;
+    MU.Unlock();
+    if (do_delete) {
+      delete this;
+    } 
+  }
+};
+
+RefCountedStruct *object = NULL; 
+
+void Worker() {
+  object->Ref();
+  barrier.Block();
+  object->AccessData();
+  object->Unref();
+}
+
+void Run() {
+  object = new RefCountedStruct; 
+
+  MyThreadArray t(Worker, Worker, Worker, Worker);
+  t.Start();
+  t.Join();
+
+  printf("test76: negative\n");
+}
+REGISTER_TEST(Run, 76)
+}  // namespace test76
+
 
 
 // End {{{1
