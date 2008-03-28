@@ -3471,72 +3471,102 @@ void Run() {
 REGISTER_TEST(Run, 75)
 }  // namespace test75
 
-// test76: FP. Ref counting. {{{1
-namespace test76 {
-int     GLOB = 0;
-Mutex MU; // global mutex, protects RefCountedStruct::ref
-Barrier barrier(4);
-struct RefCountedStruct {
-  int ref; 
-  int data;
-  Mutex mu; // data member mutex, protects data 
-
-  RefCountedStruct() {
-    ref = 0;
-    data = 0;
+// RefCountedClass {{{1
+struct RefCountedClass {
+ public:
+  RefCountedClass() {
+    ref_ = 0;
+    data_ = 0;
   }
 
-  ~RefCountedStruct() {
-    CHECK(ref == 0);     // race may be reported here 
-    int data_val = data; // and/or here     
+  ~RefCountedClass() {
+    CHECK(ref_ == 0);     // race may be reported here 
+    int data_val = data_; // and/or here     
                          // if no appropriate measures are taken. 
-    data = 0;
-    printf("\t data = %d\n", data_val);
+    data_ = 0;
+    printf("\tRefCountedClass::data_ = %d\n", data_val);
   }
 
   void AccessData() {
-    this->mu.Lock();
-    this->data++;
-    this->mu.Unlock();
+    this->mu_.Lock();
+    this->data_++;
+    this->mu_.Unlock();
   }
 
   void Ref() {
     MU.Lock();
-    ref++;
+    ref_++;
     MU.Unlock();
   }
 
   void Unref() {
     MU.Lock();
-    ref--;
-    bool do_delete = ref == 0;
+    ref_--;
+    bool do_delete = ref_ == 0;
     MU.Unlock();
     if (do_delete) {
       delete this;
     } 
   }
+
+  static void Annotate_MU() {
+    ANNOTATE_MUTEX_IS_USED_AS_CONDVAR(&MU);
+  }
+ private: 
+  int data_;
+  Mutex mu_; // protects data_ 
+
+  int ref_; 
+  static Mutex MU; // protects ref_
 };
 
-RefCountedStruct *object = NULL; 
+Mutex RefCountedClass::MU;
 
+// test76: FP. Ref counting, no annotations. {{{1
+namespace test76 {
+int     GLOB = 0;
+Barrier barrier(4);
+RefCountedClass *object = NULL; 
 void Worker() {
   object->Ref();
   barrier.Block();
   object->AccessData();
   object->Unref();
 }
-
 void Run() {
-  object = new RefCountedStruct; 
-
+  printf("test76: false positive (ref counting)\n");
+  object = new RefCountedClass; 
   MyThreadArray t(Worker, Worker, Worker, Worker);
   t.Start();
   t.Join();
-
-  printf("test76: negative\n");
 }
 REGISTER_TEST(Run, 76)
 }  // namespace test76
+
+
+
+// test77: TN. Ref counting, MU is annotated. {{{1
+namespace test77 {
+// same as test76, but RefCountedClass::MU is annotated. 
+int     GLOB = 0;
+Barrier barrier(4);
+RefCountedClass *object = NULL; 
+void Worker() {
+  object->Ref();
+  barrier.Block();
+  object->AccessData();
+  object->Unref();
+}
+void Run() {
+  printf("test77: true negative (annotated ref counting)\n");
+  RefCountedClass::Annotate_MU();
+  object = new RefCountedClass; 
+  MyThreadArray t(Worker, Worker, Worker, Worker);
+  t.Start();
+  t.Join();
+}
+REGISTER_TEST(Run, 77)
+}  // namespace test77
 
 
 
