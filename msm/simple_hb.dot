@@ -1,0 +1,40 @@
+digraph simple_hb {
+//  orientation=landscape; 
+
+  
+  Seg1_Thr1 [color = green];
+  Seg2_Thr1 [color = green];
+  Seg3_Thr1 [color = green];
+  
+  Seg1_Thr2 [color = blue];
+  Seg2_Thr2 [color = blue];
+  Seg3_Thr2 [color = blue];
+
+
+  Seg1_Thr1 -> Seg2_Thr1;
+  Seg1_Thr2 -> Seg2_Thr2;
+
+  Seg2_Thr1 -> Seg3_Thr1;
+  Seg2_Thr2 -> Seg3_Thr2;
+
+  Seg1_Thr1 -> Seg2_Thr2 [label="HB" color=red]; 
+  Seg2_Thr2 -> Seg3_Thr1 [label="HB" color=red]; 
+
+  subgraph cluster1 {
+    style = "setlinewidth(0)";
+    Seg1_Thr1;
+    Seg1_Thr2;
+  }
+  subgraph cluster2 {
+    style = "setlinewidth(0)";
+    Seg2_Thr1;
+    Seg2_Thr2;
+  }
+  subgraph cluster3 {
+    style = "setlinewidth(0)";
+    Seg3_Thr1;
+    Seg3_Thr2;
+  }
+
+
+}

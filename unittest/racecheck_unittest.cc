@@ -3572,5 +3572,33 @@ REGISTER_TEST(Run, 77)
 
 
 
+// test300: {{{1
+namespace test300 {
+int     GLOB = 0;
+void Run() {
+}
+REGISTER_TEST(Run, 300)
+}  // namespace test300
+
+// test301: {{{1
+namespace test301 {
+int     GLOB = 0;
+
+void Worker() {
+  GLOB++; 
+}
+
+void Run() {  
+  printf("test301: simple race.\n");
+  MyThreadArray t(Worker, Worker, Worker);
+  t.Start();
+  t.Join();
+  CHECK(GLOB >= 0);
+}
+REGISTER_TEST(Run, 301)
+}  // namespace test301
+
+
+
 // End {{{1
 // vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker

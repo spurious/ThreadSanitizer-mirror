@@ -1,0 +1,33 @@
+digraph prop1 {
+   New   [shape=rectangle label="New"];
+
+   Read  [shape=plaintext label=<<TABLE BGCOLOR="white"> <tr> 
+        <td colspan="2">Read</td> 
+      </tr> <tr> 
+        <td> SS </td>
+        <td> LS </td>
+      </tr> </TABLE>>
+    ]
+
+   Write  [shape=plaintext label=<<TABLE BGCOLOR="white"> <tr> 
+        <td colspan="2">Write</td> 
+      </tr> <tr> 
+        <td> SS </td>
+        <td> LS </td>
+      </tr> </TABLE>>
+    ]
+
+    Race;
+
+
+
+   New      -> Read   [label="E1"];
+   New      -> Write  [label="E2"];
+   Read     -> Read   [label="E3"];
+   Write    -> Read   [label="E4"];
+   Read     -> Write  [label="E5" ];
+   Write    -> Write  [label="E6"];
+
+   Read     -> Race [label="E7" color="red" fontcolor="red"];
+   Write    -> Race [label="E8" color="red" fontcolor="red"];
+}
