@@ -51,6 +51,7 @@
 #include THREAD_WRAPPERS
 
 #include <vector>
+#include <string>
 #include <map>
 #include <algorithm>
 
@@ -92,7 +93,8 @@ enum TEST_FLAG {
   STABILITY         = 1 << 1, 
   PERFORMANCE       = 1 << 2,
   EXCLUDE_FROM_ALL  = 1 << 3,
-  NEEDS_ANNOTATIONS = 1 << 4
+  NEEDS_ANNOTATIONS = 1 << 4,
+  RACE_DEMO         = 1 << 5
 };
 
 struct Test{
@@ -3475,6 +3477,7 @@ REGISTER_TEST(Run, 75)
 struct RefCountedClass {
  public:
   RefCountedClass() {
+    annotate_unref = false;
     ref_ = 0;
     data_ = 0;
   }
@@ -3505,8 +3508,14 @@ struct RefCountedClass {
     MU.Lock();
     ref_--;
     bool do_delete = ref_ == 0;
+    if (annotate_unref) {
+      ANNOTATE_CONDVAR_SIGNAL(this);
+    }
     MU.Unlock();
     if (do_delete) {
+      if (annotate_unref) {
+        ANNOTATE_CONDVAR_WAIT(this);
+      }
       delete this;
     } 
   }
@@ -3514,7 +3523,16 @@ struct RefCountedClass {
   static void Annotate_MU() {
     ANNOTATE_MUTEX_IS_USED_AS_CONDVAR(&MU);
   }
+  void Annotate_Unref() {
+    annotate_unref = true;
+  }
+  void Annotate_Race() {
+    ANNOTATE_BENIGN_RACE(&this->data_, "needs annotation");
+    ANNOTATE_BENIGN_RACE(&this->ref_, "needs annotation");
+  }
  private: 
+  bool annotate_unref;
+
   int data_;
   Mutex mu_; // protects data_ 
 
@@ -3538,11 +3556,12 @@ void Worker() {
 void Run() {
   printf("test76: false positive (ref counting)\n");
   object = new RefCountedClass; 
+  object->Annotate_Race();
   MyThreadArray t(Worker, Worker, Worker, Worker);
   t.Start();
   t.Join();
 }
-REGISTER_TEST(Run, 76)
+REGISTER_TEST2(Run, 76, FEATURE|EXCLUDE_FROM_ALL)
 }  // namespace test76
 
 
@@ -3560,7 +3579,7 @@ void Worker() {
   object->Unref();
 }
 void Run() {
-  printf("test77: true negative (annotated ref counting)\n");
+  printf("test77: true negative (ref counting), mutex is annotated\n");
   RefCountedClass::Annotate_MU();
   object = new RefCountedClass; 
   MyThreadArray t(Worker, Worker, Worker, Worker);
@@ -3572,31 +3591,104 @@ REGISTER_TEST(Run, 77)
 
 
 
+// test78: TN. Ref counting, Unref is annotated. {{{1
+namespace test78 {
+// same as test76, but RefCountedClass::Unref is annotated. 
+int     GLOB = 0;
+Barrier barrier(4);
+RefCountedClass *object = NULL; 
+void Worker() {
+  object->Ref();
+  barrier.Block();
+  object->AccessData();
+  object->Unref();
+}
+void Run() {
+  printf("test78: true negative (ref counting), Unref is annotated\n");
+  RefCountedClass::Annotate_MU();
+  object = new RefCountedClass; 
+  MyThreadArray t(Worker, Worker, Worker, Worker);
+  t.Start();
+  t.Join();
+}
+REGISTER_TEST(Run, 78)
+}  // namespace test78
+
+
+
 // test300: {{{1
 namespace test300 {
 int     GLOB = 0;
 void Run() {
 }
-REGISTER_TEST(Run, 300)
+REGISTER_TEST2(Run, 300, RACE_DEMO)
 }  // namespace test300
 
-// test301: {{{1
+// test301: Simple race.  {{{1
 namespace test301 {
 int     GLOB = 0;
 
-void Worker() {
-  GLOB++; 
-}
+void Worker1() {  GLOB++; }
+void Worker2() {  GLOB++; }
+void Worker3() {  GLOB++; }
 
 void Run() {  
   printf("test301: simple race.\n");
-  MyThreadArray t(Worker, Worker, Worker);
-  t.Start();
-  t.Join();
+  MyThread t1(Worker1), t2(Worker2), t3(Worker3);
+  t1.Start();  
+  t2.Start();  
+  t3.Start();
+  t1.Join();   t2.Join();   t3.Join();
   CHECK(GLOB >= 0);
 }
-REGISTER_TEST(Run, 301)
+REGISTER_TEST2(Run, 301, RACE_DEMO)
 }  // namespace test301
+
+
+
+// test302: Need to trace the memory to understand the report. {{{1
+namespace test302 {
+int     GLOB = 0;
+
+void Worker1() { CHECK(GLOB >= 0); }
+void Worker2() { sleep(1); MU.Lock(); CHECK(GLOB >= 0); MU.Unlock();}
+void Worker3() { sleep(2); MU.Lock(); CHECK(GLOB >= 0); MU.Unlock();}
+void Worker4() { sleep(3); MU.Lock(); GLOB++;           MU.Unlock();}
+
+void Run() {  
+  printf("test302: a race that needs memory tracing.\n");
+  ANNOTATE_TRACE_MEMORY(&GLOB);
+  MyThreadArray t(Worker1, Worker2, Worker3, Worker4);
+  t.Start();  
+  t.Join(); 
+  CHECK(GLOB >= 0);
+}
+REGISTER_TEST2(Run, 302, RACE_DEMO)
+}  // namespace test302
+
+
+
+// test303: Can not trace the memory, since it is a library object. {{{1
+namespace test303 {
+string *STR;
+
+void Worker1() {sleep(0); MU.Lock(); CHECK(STR->length() >= 4); MU.Unlock();}
+void Worker2() {sleep(1);            CHECK(STR->length() >= 4);}
+void Worker3() {sleep(2); MU.Lock(); CHECK(STR->length() >= 4); MU.Unlock();}
+void Worker4() {sleep(3); MU.Lock(); *STR += " + a very very long string"; MU.Unlock();  }
+
+void Run() {  
+  STR = new string ("The String");
+  printf("test303: a race where memory tacing does not work.\n");
+  MyThreadArray t(Worker1, Worker2, Worker3, Worker4);
+  t.Start();  
+  t.Join(); 
+
+  printf("%s\n", STR->c_str());
+  delete STR;
+}
+REGISTER_TEST2(Run, 303, RACE_DEMO)
+}  // namespace test303
 
 
 
