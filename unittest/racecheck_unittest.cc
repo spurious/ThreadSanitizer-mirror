@@ -152,6 +152,7 @@ int main(int argc, char** argv) { // {{{1
         it != TheMapOfTests.end();
         ++it) {
       if(it->second.flags_ & EXCLUDE_FROM_ALL) continue;
+      if(it->second.flags_ & RACE_DEMO) continue;
       if((it->second.flags_ & NEEDS_ANNOTATIONS)
          && run_tests_with_annotations == false) continue;
       it->second.f_();
@@ -3628,17 +3629,19 @@ REGISTER_TEST2(Run, 300, RACE_DEMO)
 namespace test301 {
 int     GLOB = 0;
 
-void Worker1() {  GLOB++; }
-void Worker2() {  GLOB++; }
-void Worker3() {  GLOB++; }
+void Worker1() { GLOB++; }
+void Worker2() { GLOB++; }
+void Worker3() { GLOB++; }
+void Worker4() { GLOB++; }
 
 void Run() {  
   printf("test301: simple race.\n");
-  MyThread t1(Worker1), t2(Worker2), t3(Worker3);
+  MyThread t1(Worker1), t2(Worker2), t3(Worker3), t4 (Worker4);
   t1.Start();  
   t2.Start();  
   t3.Start();
-  t1.Join();   t2.Join();   t3.Join();
+  t4.Start();
+  t1.Join();   t2.Join();   t3.Join(); t4.Join();
   CHECK(GLOB >= 0);
 }
 REGISTER_TEST2(Run, 301, RACE_DEMO)
@@ -3679,7 +3682,7 @@ void Worker4() {sleep(3); MU.Lock(); *STR += " + a very very long string"; MU.Un
 
 void Run() {  
   STR = new string ("The String");
-  printf("test303: a race where memory tacing does not work.\n");
+  printf("test303: a race where memory tracing does not work.\n");
   MyThreadArray t(Worker1, Worker2, Worker3, Worker4);
   t.Start();  
   t.Join(); 
