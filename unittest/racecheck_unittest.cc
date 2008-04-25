@@ -3693,18 +3693,16 @@ REGISTER_TEST2(Run, 302, RACE_DEMO)
 namespace test303 {
 int     GLOB = 0;
 
+Mutex MU;
 void Worker1() { CHECK(GLOB >= 0); }
-void Worker2() { sleep(1); MU.Lock(); CHECK(GLOB >= 0); MU.Unlock();}
-void Worker3() { sleep(2); MU.Lock(); CHECK(GLOB >= 0); MU.Unlock();}
-void Worker4() { sleep(3); MU.Lock(); GLOB++;           MU.Unlock();}
+void Worker2() { MU.Lock(); GLOB=1;  MU.Unlock();}
 
 void Run() {  
-  printf("test303: a race that needs memory tracing.\n");
+  printf("test303: a race that needs annotations.\n");
   ANNOTATE_TRACE_MEMORY(&GLOB);
-  MyThreadArray t(Worker1, Worker2, Worker3, Worker4);
+  MyThreadArray t(Worker1, Worker2);
   t.Start();  
   t.Join(); 
-  CHECK(GLOB >= 0);
 }
 REGISTER_TEST2(Run, 303, RACE_DEMO)
 }  // namespace test303
