@@ -3629,8 +3629,10 @@ REGISTER_TEST2(Run, 300, RACE_DEMO)
 namespace test301 {
 int     GLOB = 0;
 
-void Worker1() { GLOB=1; }
-void Worker2() { GLOB=2; }
+Mutex MU1;
+Mutex MU2;
+void Worker1() { MU1.Lock(); GLOB=1; MU1.Unlock(); }
+void Worker2() { MU2.Lock(); GLOB=1; MU2.Unlock(); }
 
 void Run() {  
   printf("test301: simple race.\n");
