@@ -3644,10 +3644,53 @@ void Run() {
 REGISTER_TEST2(Run, 301, RACE_DEMO)
 }  // namespace test301
 
-
-
-// test302: Need to trace the memory to understand the report. {{{1
+// test302: Complex race which happens at least twice.  {{{1
 namespace test302 {
+// In this test we have many different accesses to GLOB and only one access 
+// is not synchronized properly. 
+int     GLOB = 0;
+
+Mutex MU1;
+Mutex MU2;
+void Worker() {
+  for(int i = 0; i < 100; i++) {
+    switch(i % 4) {
+      case 0:
+        // This read is protected correctly. 
+        MU1.Lock(); CHECK(GLOB >= 0); MU1.Unlock();
+        break;
+      case 1:
+        // Here we used the wrong lock! The reason of the race is here. 
+        MU2.Lock(); CHECK(GLOB >= 0); MU2.Unlock();
+        break;
+      case 2:
+        // This read is protected correctly. 
+        MU1.Lock(); CHECK(GLOB >= 0); MU1.Unlock();
+        break;
+      case 3:
+        // This write is protected correctly. 
+        MU1.Lock(); GLOB++; MU1.Unlock();
+        break;
+    }
+    // sleep a bit so that the threads interleave 
+    // and the race happens at least twice. 
+    usleep(100); 
+  }
+}
+
+void Run() {  
+  printf("test302: Complex race that happens twice.\n");
+  MyThread t1(Worker), t2(Worker);
+  t1.Start();  
+  t2.Start();  
+  t1.Join();   t2.Join();
+}
+REGISTER_TEST2(Run, 302, RACE_DEMO)
+}  // namespace test302
+
+
+// test303: Need to trace the memory to understand the report. {{{1
+namespace test303 {
 int     GLOB = 0;
 
 void Worker1() { CHECK(GLOB >= 0); }
@@ -3656,20 +3699,20 @@ void Worker3() { sleep(2); MU.Lock(); CHECK(GLOB >= 0); MU.Unlock();}
 void Worker4() { sleep(3); MU.Lock(); GLOB++;           MU.Unlock();}
 
 void Run() {  
-  printf("test302: a race that needs memory tracing.\n");
+  printf("test303: a race that needs memory tracing.\n");
   ANNOTATE_TRACE_MEMORY(&GLOB);
   MyThreadArray t(Worker1, Worker2, Worker3, Worker4);
   t.Start();  
   t.Join(); 
   CHECK(GLOB >= 0);
 }
-REGISTER_TEST2(Run, 302, RACE_DEMO)
-}  // namespace test302
+REGISTER_TEST2(Run, 303, RACE_DEMO)
+}  // namespace test303
 
 
 
-// test303: Can not trace the memory, since it is a library object. {{{1
-namespace test303 {
+// test304: Can not trace the memory, since it is a library object. {{{1
+namespace test304 {
 string *STR;
 
 void Worker1() {sleep(0); MU.Lock(); CHECK(STR->length() >= 4); MU.Unlock();}
@@ -3679,7 +3722,7 @@ void Worker4() {sleep(3); MU.Lock(); *STR += " + a very very long string"; MU.Un
 
 void Run() {  
   STR = new string ("The String");
-  printf("test303: a race where memory tracing does not work.\n");
+  printf("test304: a race where memory tracing does not work.\n");
   MyThreadArray t(Worker1, Worker2, Worker3, Worker4);
   t.Start();  
   t.Join(); 
@@ -3687,8 +3730,8 @@ void Run() {
   printf("%s\n", STR->c_str());
   delete STR;
 }
-REGISTER_TEST2(Run, 303, RACE_DEMO)
-}  // namespace test303
+REGISTER_TEST2(Run, 304, RACE_DEMO)
+}  // namespace test304
 
 
 
