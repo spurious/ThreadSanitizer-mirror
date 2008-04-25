@@ -3713,10 +3713,22 @@ REGISTER_TEST2(Run, 303, RACE_DEMO)
 namespace test304 {
 string *STR;
 
-void Worker1() {sleep(0); MU.Lock(); CHECK(STR->length() >= 4); MU.Unlock();}
-void Worker2() {sleep(1);            CHECK(STR->length() >= 4);}
-void Worker3() {sleep(2); MU.Lock(); CHECK(STR->length() >= 4); MU.Unlock();}
-void Worker4() {sleep(3); MU.Lock(); *STR += " + a very very long string"; MU.Unlock();  }
+void Worker1() {
+  sleep(0); 
+  MU.Lock(); CHECK(STR->length() >= 4); MU.Unlock();
+}
+void Worker2() {
+  sleep(1);            
+  CHECK(STR->length() >= 4); // Unprotected! 
+}
+void Worker3() {
+  sleep(2); 
+  MU.Lock(); CHECK(STR->length() >= 4); MU.Unlock();
+}
+void Worker4() {
+  sleep(3); 
+  MU.Lock(); *STR += " + a very very long string"; MU.Unlock();  
+}
 
 void Run() {  
   STR = new string ("The String");
