@@ -3715,18 +3715,22 @@ string *STR;
 
 void Worker1() {
   sleep(0); 
+  ANNOTATE_CONDVAR_SIGNAL((void*)0xDEADBEAF);
   MU.Lock(); CHECK(STR->length() >= 4); MU.Unlock();
 }
 void Worker2() {
   sleep(1);            
+  ANNOTATE_CONDVAR_SIGNAL((void*)0xDEADBEAF);
   CHECK(STR->length() >= 4); // Unprotected! 
 }
 void Worker3() {
   sleep(2); 
+  ANNOTATE_CONDVAR_SIGNAL((void*)0xDEADBEAF);
   MU.Lock(); CHECK(STR->length() >= 4); MU.Unlock();
 }
 void Worker4() {
   sleep(3); 
+  ANNOTATE_CONDVAR_SIGNAL((void*)0xDEADBEAF);
   MU.Lock(); *STR += " + a very very long string"; MU.Unlock();  
 }
 
