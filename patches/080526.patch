@@ -1,0 +1,532 @@
+Index: helgrind/hg_main.c
+===================================================================
+--- helgrind/hg_main.c	(revision 8131)
++++ helgrind/hg_main.c	(working copy)
+@@ -317,6 +317,18 @@
+ // Very time and memory consuming! 
+ static Bool clo_pure_happens_before = False;
+ 
++// If true, all races inside a C++ destructor will be ignored. 
++static Bool clo_ignore_in_dtor = False;
++
++// Print no more than this number of traces after a race has been detected.
++static UInt clo_trace_after_race = 50;
++
++
++// Size of context for locks. Usually should be less than --num-callers 
++// since collecting context for locks is quite expensive. 
++static UInt clo_exe_context_for_locks = 9;
++
++
+ /* This has to do with printing error messages.  See comments on
+    announce_threadset() and summarise_threadset().  Perhaps it
+    should be a command line option. */
+@@ -995,7 +1007,8 @@
+       ThreadId tid;
+       tl_assert(HG_(isEmptyBag)(&lk->heldBy));
+       tid = map_threads_maybe_reverse_lookup_SLOW(thr);
+-      lk->acquired_at = VG_(record_ExeContext(tid, 0/*first_ip_delta*/));
++      lk->acquired_at = VG_(record_ExeContext_N(tid, 0/*first_ip_delta*/, 
++                                                clo_exe_context_for_locks));
+    } else {
+       tl_assert(!HG_(isEmptyBag)(&lk->heldBy));
+    }
+@@ -1052,7 +1065,8 @@
+       tl_assert(HG_(isEmptyBag)(&lk->heldBy));
+       tid = map_threads_maybe_reverse_lookup_SLOW(thr);
+       lk->acquired_at = 
+-          VG_(record_ExeContext(tid, 0/*first_ip_delta*/));
++          VG_(record_ExeContext_N(tid, 0/*first_ip_delta*/, 
++                                  clo_exe_context_for_locks));
+    } else {
+       tl_assert(!HG_(isEmptyBag)(&lk->heldBy));
+    }
+@@ -2280,7 +2294,7 @@
+ static void mem_trace_on(UWord mem, ThreadId tid)
+ {
+    Thread *thr =  map_threads_lookup( tid );
+-   if (clo_trace_level <= 0 && mem != 0xDEADBEAFUL) return;
++   if (clo_trace_level <= 0) return;
+    if (!mem_trace_map) {
+       mem_trace_map = HG_(newFM)( hg_zalloc, hg_free, NULL);
+    }
+@@ -2288,7 +2302,7 @@
+    VG_(message)(Vg_UserMsg, "ENABLED TRACE {{{: %p; S%d/T%d", mem, 
+                (Int)thr->csegid,
+                (Int)thr->errmsg_index);
+-   if (clo_trace_level >= 2 || mem == 0xDEADBEAF) {
++   if (clo_trace_level >= 2) {
+       VG_(get_and_pp_StackTrace)( tid, 15);
+    }
+    VG_(message)(Vg_UserMsg, "}}}");
+@@ -3547,7 +3561,7 @@
+                  // different thread, but happens-before
+       *hb_all_p = True;
+       newSS = SS_mk_singleton(currS);
+-      if (UNLIKELY(do_trace)) {
++      if (UNLIKELY(0 && do_trace)) {
+          VG_(printf)("HB(S%d/T%d,cur)=1\n",
+                      S, SEG_get(S)->thr->errmsg_index);
+       }
+@@ -3556,7 +3570,7 @@
+       // Not happened-before. Leave this segment in SS.
+       tl_assert(currS != S);
+       newSS = HG_(doubletonWS)(univ_ssets, currS, S);
+-      if (UNLIKELY(do_trace)) {
++      if (UNLIKELY(0 && do_trace)) {
+          VG_(printf)("HB(S%d/T%d,cur)=0\n",
+                      S, SEG_get(S)->thr->errmsg_index);
+       }
+@@ -3622,7 +3636,7 @@
+          hb = True;
+       }
+       // trace 
+-      if (do_trace) {
++      if (0 && do_trace) {
+          VG_(printf)("HB(S%d/T%d,cur)=%d\n",
+                      S, SEG_get(S)->thr->errmsg_index, hb);
+       }
+@@ -3726,8 +3740,32 @@
+ }
+ 
+ 
++// One such object is associated with each traced address.
++typedef struct {
++   UInt n_accesses;
++   // more fields are likely to be added in the future. 
++} TraceInfo;
+ 
+ 
++static WordFM *trace_info_map; // addr->TraceInfo;
++
++static TraceInfo *get_trace_info(Addr a)
++{
++   UWord  key, val;
++   TraceInfo *res;
++   if (!trace_info_map) {
++      trace_info_map = HG_(newFM)( hg_zalloc, hg_free, NULL);
++   }
++
++   if (HG_(lookupFM)(trace_info_map, &key, &val, a)) {
++      tl_assert(key == (UWord)a);
++      return (TraceInfo*)val;
++   }
++   res = (TraceInfo*)hg_zalloc(sizeof(TraceInfo)); // zero-initialized
++   HG_(addToFM)(trace_info_map, (UWord)a, (UWord)res);
++   return res;
++}
++
+ static void msm_do_trace(Thread *thr, 
+                          Addr a, 
+                          SVal sv_old, 
+@@ -3741,8 +3779,20 @@
+       // don't trace if the state is unchanged.
+       return; 
+    }
++   
++   TraceInfo *info = get_trace_info(a);
++   info->n_accesses++;
++
++   if (info->n_accesses > clo_trace_after_race) {
++      // we already printed too many traces
++      return;
++   }
++
++
+    show_sval(buf, sizeof(buf), sv_new);
+-   VG_(message)(Vg_UserMsg, "TRACE {{{: Access = {%p S%d/T%d %s} State = {%s}", a, 
++   VG_(message)(Vg_UserMsg, 
++                "TRACE[%d] {{{: Access = {%p S%d/T%d %s} State = {%s}", 
++                info->n_accesses, a, 
+                 (int)thr->csegid, thr->errmsg_index, 
+                 is_w ? "write" : "read", buf);
+    if (trace_level >= 2) {
+@@ -3761,6 +3811,9 @@
+ 
+    VG_(message)(Vg_UserMsg, "}}}");
+    VG_(message)(Vg_UserMsg, ""); // empty line
++
++
++
+ }
+ 
+ static INLINE 
+@@ -3899,7 +3952,8 @@
+    if (is_race && get_SHVAL_TRACE_BIT(sv_old)) {
+       // Race is found for the second time. 
+       // Stop tracing and start ignoring this memory location.
+-      VG_(message)(Vg_UserMsg, "Race on %p is found again", a);
++      VG_(message)(Vg_UserMsg, "Race on %p is found again after %u accesses",
++                   a, get_trace_info(a)->n_accesses);
+       sv_new = SHVAL_Ignore;
+       is_race = False;
+    }
+@@ -8886,11 +8940,25 @@
+    return sizeof(XError);
+ }
+ 
++// Ugly. Need to return a value from apply_StackTrace()...
++static Bool destructor_detected = False;
++// A callback to be passed to apply_StackTrace(). 
++// A function is a DTOR iff it contains '::~'.
++static void detect_destructor(UInt n, Addr ip)
++{
++   static UChar buf[4096];
++   VG_(describe_IP)(ip, buf, sizeof(buf));
++   if (VG_(strstr)(buf, "::~")) {
++      destructor_detected = True;
++   }
++}
++
+ static Bool record_error_Race ( Thread* thr, 
+                                 Addr data_addr, Bool isWrite, Int szB,
+                                 SVal old_sv, SVal new_sv,
+                                 ExeContext* mb_lastlock ) {
+    XError xe;
++   ThreadId tid = map_threads_maybe_reverse_lookup_SLOW(thr);
+    tl_assert( is_sane_Thread(thr) );
+    init_XError(&xe);
+    xe.tag = XE_Race;
+@@ -8915,7 +8983,6 @@
+       any reported races.  It appears that ld.so does intentionally
+       racey things in PLTs and it's simplest just to ignore it. */
+    if (1) {
+-      ThreadId tid = map_threads_maybe_reverse_lookup_SLOW(thr);
+       if (tid != VG_INVALID_THREADID) {
+          Addr ip_at_error = VG_(get_IP)( tid );
+          if (VG_(seginfo_sect_kind)(NULL, 0, ip_at_error) == Vg_SectPLT) {
+@@ -8934,9 +9001,20 @@
+       }
+    }
+ 
++   destructor_detected = False;
++   if (1) {
++      // check if the stack trace contains a DTOR
++      ExeContext *context = VG_(record_ExeContext)(tid,-1/*first_ip_delta*/);
++      VG_(apply_ExeContext)(detect_destructor, context, 1000);
++      if (destructor_detected && clo_ignore_in_dtor) return False;
++   }
++
+    Bool res = VG_(maybe_record_error)( map_threads_reverse_lookup_SLOW(thr),
+                             XE_Race, data_addr, NULL, &xe );
+ 
++   if (res && destructor_detected) {
++      VG_(message)(Vg_UserMsg, "NOTE: this race was detected inside a DTOR");
++   }
+    return res;
+ }
+ 
+@@ -9594,6 +9672,12 @@
+       if (clo_max_segment_set_size < 4)
+          clo_max_segment_set_size = 4;
+    }
++   else if (VG_CLO_STREQN(19, arg, "--trace-after-race=")) {
++      clo_trace_after_race = VG_(atoll)(&arg[19]);
++   }
++   else if (VG_CLO_STREQN(24, arg, "--exe-context-for-locks=")) {
++      clo_exe_context_for_locks = VG_(atoll)(&arg[24]);
++   }
+ 
+    else if (VG_CLO_STREQ(arg, "--ss-recycle=yes"))
+       clo_ss_recycle = True;
+@@ -9605,6 +9689,11 @@
+    else if (VG_CLO_STREQ(arg, "--more-context=no"))
+       clo_more_context = False;
+ 
++   else if (VG_CLO_STREQ(arg, "--ignore-in-dtor=yes"))
++      clo_ignore_in_dtor = True;
++   else if (VG_CLO_STREQ(arg, "--ignore-in-dtor=no"))
++      clo_ignore_in_dtor = False;
++
+    else if (VG_CLO_STREQ(arg, "--pure-happens-before=yes"))
+       clo_pure_happens_before = True;
+    else if (VG_CLO_STREQ(arg, "--pure-happens-before=no"))
+Index: include/pub_tool_threadstate.h
+===================================================================
+--- include/pub_tool_threadstate.h	(revision 8131)
++++ include/pub_tool_threadstate.h	(working copy)
+@@ -36,7 +36,7 @@
+    scheduler algorithms is surely O(N) in the number of threads, since
+    that's simple, at least.  And (in practice) we hope that most
+    programs do not need many threads. */
+-#define VG_N_THREADS 300
++#define VG_N_THREADS 1000
+ 
+ /* Special magic value for an invalid ThreadId.  It corresponds to
+    LinuxThreads using zero as the initial value for
+Index: include/pub_tool_execontext.h
+===================================================================
+--- include/pub_tool_execontext.h	(revision 8131)
++++ include/pub_tool_execontext.h	(working copy)
+@@ -57,6 +57,12 @@
+ extern 
+ ExeContext* VG_(record_ExeContext) ( ThreadId tid, Word first_ip_delta );
+ 
++// Same as record_ExeContext, but request `n_ips_requested` ips 
++// instead of the value of --num-callers. 
++extern 
++ExeContext* VG_(record_ExeContext_N) ( ThreadId tid, Word first_ip_delta,
++                                       UInt n_ips_requested );
++
+ // Trivial version of VG_(record_ExeContext), which just records the
+ // thread's current program counter but does not do any stack
+ // unwinding.  This is useful in some rare cases when we suspect the
+Index: coregrind/m_execontext.c
+===================================================================
+--- coregrind/m_execontext.c	(revision 8131)
++++ coregrind/m_execontext.c	(working copy)
+@@ -164,6 +164,16 @@
+ }
+ 
+ 
++void VG_(apply_ExeContext)( void(*action)(UInt n, Addr ip),
++                            ExeContext* ec, UInt n_ips ) 
++{
++  VG_(apply_StackTrace)(action, ec->ips, 
++                        n_ips < ec->n_ips ? n_ips : ec->n_ips);
++}
++
++
++
++
+ /* Compare two ExeContexts, comparing all callers. */
+ Bool VG_(eq_ExeContext) ( VgRes res, ExeContext* e1, ExeContext* e2 )
+ {
+@@ -281,7 +291,8 @@
+ }
+ 
+ static ExeContext* record_ExeContext_wrk ( ThreadId tid, Word first_ip_delta,
+-                                           Bool first_ip_only )
++                                           Bool first_ip_only, 
++                                           UInt n_ips_requested )
+ {
+    Int         i;
+    Addr        ips[VG_DEEPEST_BACKTRACE];
+@@ -298,21 +309,21 @@
+    vg_assert(sizeof(void*) == sizeof(Addr));
+ 
+    init_ExeContext_storage();
+-   vg_assert(VG_(clo_backtrace_size) >= 1 &&
+-             VG_(clo_backtrace_size) <= VG_DEEPEST_BACKTRACE);
++   vg_assert(n_ips_requested >= 1 &&
++             n_ips_requested <= VG_DEEPEST_BACKTRACE);
+ 
+    if (first_ip_only) {
+       vg_assert(VG_(is_valid_tid)(tid));
+       n_ips = 1;
+       ips[0] = VG_(get_IP)(tid);
+    } else {
+-      n_ips = VG_(get_StackTrace)( tid, ips, VG_(clo_backtrace_size),
++      n_ips = VG_(get_StackTrace)( tid, ips, n_ips_requested,
+                                    NULL/*array to dump SP values in*/,
+                                    NULL/*array to dump FP values in*/,
+                                    first_ip_delta );
+    }
+ 
+-   tl_assert(n_ips >= 1 && n_ips <= VG_(clo_backtrace_size));
++   tl_assert(n_ips >= 1 && n_ips <= n_ips_requested);
+ 
+    /* Now figure out if we've seen this one before.  First hash it so
+       as to determine the list number. */
+@@ -393,12 +404,22 @@
+ 
+ ExeContext* VG_(record_ExeContext)( ThreadId tid, Word first_ip_delta ) {
+    return record_ExeContext_wrk( tid, first_ip_delta,
+-                                      False/*!first_ip_only*/ );
++                                      False/*!first_ip_only*/, 
++                                      VG_(clo_backtrace_size) );
+ }
+ 
++ExeContext* VG_(record_ExeContext_N)( ThreadId tid, Word first_ip_delta, 
++                                      UInt n_ips_requested ) {
++   return record_ExeContext_wrk( tid, first_ip_delta,
++                                      False/*!first_ip_only*/, 
++                                      n_ips_requested );
++}
++
++
++
+ ExeContext* VG_(record_depth_1_ExeContext)( ThreadId tid ) {
+    return record_ExeContext_wrk( tid, 0/*first_ip_delta*/,
+-                                      True/*first_ip_only*/ );
++                                      True/*first_ip_only*/, 1);
+ }
+ 
+ 
+@@ -407,6 +428,12 @@
+    return e->ips;
+ }  
+ 
++UInt VG_(extract_StackTraceSize) ( ExeContext* e )
++{                                  
++   return e->n_ips;
++}  
++
++
+ /*--------------------------------------------------------------------*/
+ /*--- end                                           m_execontext.c ---*/
+ /*--------------------------------------------------------------------*/
+Index: coregrind/m_errormgr.c
+===================================================================
+--- coregrind/m_errormgr.c	(revision 8131)
++++ coregrind/m_errormgr.c	(working copy)
+@@ -184,7 +184,8 @@
+    enum { 
+       NoName,     /* Error case */
+       ObjName,    /* Name is of an shared object file. */
+-      FunName     /* Name is of a function. */
++      FunName,    /* Name is of a function. */
++      Wildcard    /* Wildcard '*', i.e. any number of functions. */
+    }
+    SuppLocTy;
+ 
+@@ -927,7 +928,12 @@
+       p->ty = ObjName;
+       return True;
+    }
+-   VG_(printf)("location should start with fun: or obj:\n");
++   if (VG_(strncmp)(p->name, "*", 1) == 0) {
++      // leave the name 
++      p->ty = Wildcard;
++      return True;
++   }
++   VG_(printf)("location should start with 'fun:', 'obj:' or '*'\n");
+    return False;
+ }
+ 
+@@ -1083,6 +1089,13 @@
+             eof = VG_(get_line) ( fd, buf, N_BUF );
+          } while (!eof && !VG_STREQ(buf, "}"));
+       }
++      tl_assert(i >= 1);
++      while (i > 0 && tmp_callers[i-1].ty == Wildcard) {
++         i--;
++      }
++      if(i == 0) {
++        BOMB("the stack trace contains only wildcards");
++      }
+ 
+       // Copy tmp_callers[] into supp->callers[]
+       supp->n_callers = i;
+@@ -1090,7 +1103,6 @@
+       for (i = 0; i < supp->n_callers; i++) {
+          supp->callers[i] = tmp_callers[i];
+       }
+-
+       supp->next = suppressions;
+       suppressions = supp;
+    }
+@@ -1148,18 +1160,22 @@
+ static
+ Bool supp_matches_callers(Error* err, Supp* su)
+ {
+-   Int i;
++   Int err_i, su_i;
+    Char caller_name[ERRTXT_LEN];
+    StackTrace ips = VG_(extract_StackTrace)(err->where);
++   UInt       n_ips = VG_(extract_StackTraceSize)(err->where);
++   Bool has_asterisk = False;
+ 
+-   for (i = 0; i < su->n_callers; i++) {
+-      Addr a = ips[i];
+-      vg_assert(su->callers[i].name != NULL);
++   err_i = 0;
++   su_i = 0;
++   while (su_i < su->n_callers && err_i < n_ips) {
++      Addr a = ips[err_i];
++      vg_assert(su->callers[su_i].name != NULL);
+       // The string to be used in the unknown case ("???") can be anything
+       // that couldn't be a valid function or objname.  --gen-suppressions
+       // prints 'obj:*' for such an entry, which will match any string we
+       // use.
+-      switch (su->callers[i].ty) {
++      switch (su->callers[su_i].ty) {
+          case ObjName: 
+             if (!VG_(get_objname)(a, caller_name, ERRTXT_LEN))
+                VG_(strcpy)(caller_name, "???");
+@@ -1174,13 +1190,33 @@
+             if (!VG_(get_fnname_Z_demangle_only)(a, caller_name, ERRTXT_LEN))
+                VG_(strcpy)(caller_name, "???");
+             break;
++         case Wildcard:
++            has_asterisk = True;
++            su_i++;
++            continue;
++            break;
+          default: VG_(tool_panic)("supp_matches_callers");
+       }
+-      if (0) VG_(printf)("cmp %s %s\n", su->callers[i].name, caller_name);
+-      if (!VG_(string_match)(su->callers[i].name, caller_name))
+-         return False;
++      tl_assert(su->callers[su_i].ty != Wildcard);
++      if (0) VG_(printf)("cmp %s %s\n", su->callers[su_i].name, caller_name);
++      if (!VG_(string_match)(su->callers[su_i].name, caller_name)) {
++         if (!has_asterisk)
++            return False;
++         // we are handling asterisk, just go to the next element of ips. 
++         err_i++;
++         continue;
++      }
++      // we found a match, no more asterisk... 
++      has_asterisk = False;
++      su_i++;
++      err_i++;
+    }
+ 
++   if (has_asterisk) {
++      // we were still trying to match asterisk. No match. 
++      return False;
++   }
++
+    /* If we reach here, it's a match */
+    return True;
+ }
+@@ -1193,6 +1229,7 @@
+ {
+    Supp* su;
+    Supp* su_prev;
++   Supp* result = NULL;
+ 
+    /* stats gathering */
+    em_supplist_searches++;
+@@ -1202,6 +1239,8 @@
+    for (su = suppressions; su != NULL; su = su->next) {
+       em_supplist_cmps++;
+       if (supp_matches_error(su, err) && supp_matches_callers(err, su)) {
++         result = su;
++#if 1
+          /* got a match.  Move this entry to the head of the list
+             in the hope of making future searches cheaper. */
+          if (su_prev) {
+@@ -1210,11 +1249,15 @@
+             su->next = suppressions;
+             suppressions = su;
+          }
+-         return su;
++         return result;
++#else 
++        // used for testing the suppressions mechanism.
++        VG_(printf)("Found match: %s\n", su->sname);
++#endif
+       }
+       su_prev = su;
+    }
+-   return NULL;      /* no matches */
++   return result;
+ }
+ 
+ /* Show accumulated error-list and suppression-list search stats. 
+Index: coregrind/pub_core_execontext.h
+===================================================================
+--- coregrind/pub_core_execontext.h	(revision 8131)
++++ coregrind/pub_core_execontext.h	(working copy)
+@@ -52,6 +52,9 @@
+ // pub_core_stacktrace.h also.)
+ extern /*StackTrace*/Addr* VG_(extract_StackTrace) ( ExeContext* e );
+ 
++// Return the number of elements in ExeContext.
++extern UInt VG_(extract_StackTraceSize) ( ExeContext* e );
++
+ #endif   // __PUB_CORE_EXECONTEXT_H
+ 
+ /*--------------------------------------------------------------------*/
