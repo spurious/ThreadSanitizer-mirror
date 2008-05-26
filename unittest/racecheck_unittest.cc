@@ -3749,5 +3749,31 @@ REGISTER_TEST2(Run, 304, RACE_DEMO)
 
 
 
+// test350: Simple race with deep stack. {{{1
+namespace test350 {
+int     GLOB = 0;
+
+void F9() {GLOB++;}
+void F8() {F9();}
+void F7() {F8();}
+void F6() {F7();}
+void F5() {F6();}
+void F4() {F5();}
+void F3() {F4();}
+void F2() {F3();}
+void F1() {F2();}
+void Worker() { F1();}
+
+void Run() {  
+  printf("test350: simple race with deep stack.\n");
+  MyThread t1(Worker), t2(Worker);
+  t1.Start();  
+  t2.Start();  
+  t1.Join();   t2.Join();
+}
+REGISTER_TEST2(Run, 350, RACE_DEMO)
+
+}  // namespace test350
+
 // End {{{1
 // vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker

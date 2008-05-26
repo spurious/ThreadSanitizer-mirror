@@ -253,12 +253,6 @@ ANN_FUNC(void, AnnotateMutexIsUsedAsCondVar, char *file, int line, void *mu)
 }
 
 
-ANN_FUNC(void, AnnotateNoOp, char *file, int line, void *mem)
-{
-  const char *name = "AnnotateNoOp";
-  ANN_TRACE("--#%d/%d %s[%p] %s:%d\n", tid, sid, name, mem, file, line);
-}
-
 
 ANN_FUNC(void, AnnotateTraceMemory, char *file, int line, void *mem)
 {
@@ -269,3 +263,9 @@ ANN_FUNC(void, AnnotateTraceMemory, char *file, int line, void *mem)
 
 #undef TRACE_ANN_FNS 
 #define TRACE_ANN_FNS 1
+
+ANN_FUNC(void, AnnotateNoOp, char *file, int line, void *mem)
+{
+  const char *name = "AnnotateNoOp";
+  ANN_TRACE("--#%d/%d %s[%p] %s:%d\n", tid, sid, name, mem, file, line);
+}
