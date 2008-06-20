@@ -3749,6 +3749,39 @@ REGISTER_TEST2(Run, 304, RACE_DEMO)
 
 
 
+// test305: A bit more tricky: two locks used inconsistenly. {{{1
+namespace test305 {
+int     GLOB = 0;
+
+// In this test GLOB is protected by MU1 and MU2, but inconsistently.
+// The TRACES observed by helgrind are: 
+// TRACE[1]: Access{T2/S2 wr} -> new State{Mod; #LS=2; #SS=1; T2/S2}
+// TRACE[2]: Access{T4/S9 wr} -> new State{Mod; #LS=1; #SS=2; T2/S2, T4/S9}
+// TRACE[3]: Access{T5/S13 wr} -> new State{Mod; #LS=1; #SS=3; T2/S2, T4/S9, T5/S13}
+// TRACE[4]: Access{T6/S19 wr} -> new State{Mod; #LS=0; #SS=4; T2/S2, T4/S9, T5/S13, T6/S19}
+//
+// The guilty access is either Worker2() or Worker4(), depending on 
+// which mutex is supposed to protect GLOB.
+Mutex MU1;
+Mutex MU2;
+void Worker1() { MU1.Lock(); MU2.Lock(); GLOB=1; MU2.Unlock(); MU1.Unlock(); }
+void Worker2() { MU1.Lock();             GLOB=2;               MU1.Unlock(); }
+void Worker3() { MU1.Lock(); MU2.Lock(); GLOB=3; MU2.Unlock(); MU1.Unlock(); }
+void Worker4() {             MU2.Lock(); GLOB=4; MU2.Unlock();               }
+
+void Run() {  
+  ANNOTATE_TRACE_MEMORY(&GLOB);
+  printf("test305: simple race.\n");
+  MyThread t1(Worker1), t2(Worker2), t3(Worker3), t4(Worker4);
+  t1.Start(); usleep(100);
+  t2.Start(); usleep(100); 
+  t3.Start(); usleep(100);
+  t4.Start(); usleep(100);
+  t1.Join(); t2.Join(); t3.Join(); t4.Join();
+}
+REGISTER_TEST2(Run, 305, RACE_DEMO)
+}  // namespace test305
+
 // test350: Simple race with deep stack. {{{1
 namespace test350 {
 int     GLOB = 0;
