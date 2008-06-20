@@ -3702,7 +3702,6 @@ struct AtomicRefCountedClass {
   }
   void Annotate_Race() {
     ANNOTATE_BENIGN_RACE(&this->data_, "needs annotation");
-    ANNOTATE_BENIGN_RACE(&this->ref_, "needs annotation");
   }
  private: 
   bool annotate_unref_;
@@ -3717,7 +3716,7 @@ struct AtomicRefCountedClass {
 namespace test80 {
 int     GLOB = 0;
 Barrier barrier(4);
-RefCountedClass *object = NULL; 
+AtomicRefCountedClass *object = NULL; 
 void Worker() {
   object->Ref();
   barrier.Block();
@@ -3726,7 +3725,7 @@ void Worker() {
 }
 void Run() {
   printf("test80: false positive (ref counting)\n");
-  object = new RefCountedClass; 
+  object = new AtomicRefCountedClass; 
   object->Annotate_Race();
   MyThreadArray t(Worker, Worker, Worker, Worker);
   t.Start();
@@ -3741,7 +3740,7 @@ namespace test81 {
 // same as test80, but Unref is annotated.
 int     GLOB = 0;
 Barrier barrier(4);
-RefCountedClass *object = NULL; 
+AtomicRefCountedClass *object = NULL; 
 void Worker() {
   object->Ref();
   barrier.Block();
@@ -3750,7 +3749,7 @@ void Worker() {
 }
 void Run() {
   printf("test81: negative (annotated ref counting)\n");
-  object = new RefCountedClass; 
+  object = new AtomicRefCountedClass; 
   object->AnnotateUnref();
   MyThreadArray t(Worker, Worker, Worker, Worker);
   t.Start();
