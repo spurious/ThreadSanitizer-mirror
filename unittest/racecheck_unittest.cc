@@ -53,6 +53,7 @@
 #include <vector>
 #include <string>
 #include <map>
+#include <ext/hash_map>
 #include <algorithm>
 
 // The tests are
@@ -177,6 +178,7 @@ class MyThreadArray {
     for(int i = 0; i < 4; i++) {
       if(ar_[i]) {
         ar_[i]->Start();
+        usleep(10);
       }
     }
   }
@@ -3615,6 +3617,43 @@ void Run() {
 REGISTER_TEST(Run, 78)
 }  // namespace test78
 
+
+
+// test79 TN. Swap. {{{1
+namespace test79 {
+__gnu_cxx::hash_map<int, int> MAP;
+
+// Here we use swap to pass hash_map between threads.
+// The synchronization is correct, but w/o ANNOTATE_MUTEX_IS_USED_AS_CONDVAR
+// Helgrind will complain.
+
+void Worker1() {
+  __gnu_cxx::hash_map<int, int> tmp;
+  MU.Lock();
+  // We swap the new empty map 'tmp' with 'MAP'.
+  MAP.swap(tmp); 
+  MU.Unlock();
+  // tmp (which is the old version of MAP) is destroyed here.
+}
+
+void Worker2() {
+  MU.Lock();
+  MAP[1]++;  // Just update MAP under MU.
+  MU.Unlock();
+}
+
+void Worker3() { Worker1(); } 
+void Worker4() { Worker2(); } 
+
+void Run() {
+  ANNOTATE_MUTEX_IS_USED_AS_CONDVAR(&MU);
+  printf("test79: negative\n");
+  MyThreadArray t(Worker1, Worker2, Worker3, Worker4);
+  t.Start();
+  t.Join();
+}
+REGISTER_TEST2(Run, 79, EXCLUDE_FROM_ALL)
+}  // namespace test79
 
 
 // test300: {{{1
