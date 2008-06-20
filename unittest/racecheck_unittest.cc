@@ -3480,7 +3480,7 @@ REGISTER_TEST(Run, 75)
 struct RefCountedClass {
  public:
   RefCountedClass() {
-    annotate_unref = false;
+    annotate_unref_ = false;
     ref_ = 0;
     data_ = 0;
   }
@@ -3511,12 +3511,12 @@ struct RefCountedClass {
     MU.Lock();
     ref_--;
     bool do_delete = ref_ == 0;
-    if (annotate_unref) {
+    if (annotate_unref_) {
       ANNOTATE_CONDVAR_SIGNAL(this);
     }
     MU.Unlock();
     if (do_delete) {
-      if (annotate_unref) {
+      if (annotate_unref_) {
         ANNOTATE_CONDVAR_WAIT(this);
       }
       delete this;
@@ -3526,15 +3526,15 @@ struct RefCountedClass {
   static void Annotate_MU() {
     ANNOTATE_MUTEX_IS_USED_AS_CONDVAR(&MU);
   }
-  void Annotate_Unref() {
-    annotate_unref = true;
+  void AnnotateUnref() {
+    annotate_unref_ = true;
   }
   void Annotate_Race() {
     ANNOTATE_BENIGN_RACE(&this->data_, "needs annotation");
     ANNOTATE_BENIGN_RACE(&this->ref_, "needs annotation");
   }
  private: 
-  bool annotate_unref;
+  bool annotate_unref_;
 
   int data_;
   Mutex mu_; // protects data_ 
@@ -3564,7 +3564,7 @@ void Run() {
   t.Start();
   t.Join();
 }
-REGISTER_TEST2(Run, 76, FEATURE|EXCLUDE_FROM_ALL)
+REGISTER_TEST2(Run, 76, FEATURE)
 }  // namespace test76
 
 
@@ -3652,8 +3652,112 @@ void Run() {
   t.Start();
   t.Join();
 }
-REGISTER_TEST2(Run, 79, EXCLUDE_FROM_ALL)
+REGISTER_TEST(Run, 79)
 }  // namespace test79
+
+
+// AtomicRefCountedClass. {{{1
+// Same as RefCountedClass, but using atomic ops instead of mutex.
+struct AtomicRefCountedClass {
+ public:
+  AtomicRefCountedClass() {
+    annotate_unref_ = false;
+    ref_ = 0;
+    data_ = 0;
+  }
+
+  ~AtomicRefCountedClass() {
+    CHECK(ref_ == 0);     // race may be reported here 
+    int data_val = data_; // and here     
+    data_ = 0;
+    ref_ = -1;
+    printf("\tRefCountedClass::data_ = %d\n", data_val);
+  }
+
+  void AccessData() {
+    this->mu_.Lock();
+    this->data_++;
+    this->mu_.Unlock();
+  }
+
+  void Ref() {
+    __sync_add_and_fetch(&ref_, 1);
+  }
+
+  void Unref() {
+    // DISCLAIMER: I am not sure I've implemented this correctly
+    // (might require some memory barrier, etc).
+    // But this implementation of reference counting is enough for 
+    // the purpose of Helgrind demonstration.
+    __sync_sub_and_fetch(&ref_, 1);
+    if (annotate_unref_) { ANNOTATE_CONDVAR_SIGNAL(this); }
+    if (ref_ == 0) {
+      if (annotate_unref_) { ANNOTATE_CONDVAR_WAIT(this); }
+      delete this;
+    } 
+  }
+
+  void AnnotateUnref() {
+    annotate_unref_ = true;
+  }
+  void Annotate_Race() {
+    ANNOTATE_BENIGN_RACE(&this->data_, "needs annotation");
+    ANNOTATE_BENIGN_RACE(&this->ref_, "needs annotation");
+  }
+ private: 
+  bool annotate_unref_;
+
+  Mutex mu_; 
+  int data_; // under mu_
+
+  int ref_;  // used in atomic ops.
+};
+
+// test80: FP. Ref counting with atomics, no annotations. {{{1
+namespace test80 {
+int     GLOB = 0;
+Barrier barrier(4);
+RefCountedClass *object = NULL; 
+void Worker() {
+  object->Ref();
+  barrier.Block();
+  object->AccessData();
+  object->Unref(); // All the tricky stuff is here.
+}
+void Run() {
+  printf("test80: false positive (ref counting)\n");
+  object = new RefCountedClass; 
+  object->Annotate_Race();
+  MyThreadArray t(Worker, Worker, Worker, Worker);
+  t.Start();
+  t.Join();
+}
+REGISTER_TEST2(Run, 80, FEATURE|EXCLUDE_FROM_ALL)
+}  // namespace test80
+
+
+// test81: TN. Ref counting with atomics, Unref is annotated. {{{1
+namespace test81 {
+// same as test80, but Unref is annotated.
+int     GLOB = 0;
+Barrier barrier(4);
+RefCountedClass *object = NULL; 
+void Worker() {
+  object->Ref();
+  barrier.Block();
+  object->AccessData();
+  object->Unref(); // All the tricky stuff is here.
+}
+void Run() {
+  printf("test81: negative (annotated ref counting)\n");
+  object = new RefCountedClass; 
+  object->AnnotateUnref();
+  MyThreadArray t(Worker, Worker, Worker, Worker);
+  t.Start();
+  t.Join();
+}
+REGISTER_TEST2(Run, 81, FEATURE|EXCLUDE_FROM_ALL)
+}  // namespace test81
 
 
 // test300: {{{1
