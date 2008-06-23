@@ -3759,6 +3759,94 @@ REGISTER_TEST2(Run, 81, FEATURE|EXCLUDE_FROM_ALL)
 }  // namespace test81
 
 
+// test82: Object published w/o synchronization. {{{1
+namespace test82 {
+
+// Writer creates a new object and makes the pointer visible to the Reader.
+// Reader waits until the object pointer is non-null and reads the object. 
+//
+// On Core 2 Duo this test will sometimes (quite rarely) fail in 
+// the CHECK below, at least if compiled with -O2.
+
+class FOO {
+ public: 
+  FOO() {
+    idx_ = rand() % 1024;
+    arr_[idx_] = 77777;
+  }
+  static void check(volatile FOO *foo) {
+    CHECK(foo->arr_[foo->idx_] == 77777);
+  }
+ private:
+  int idx_;
+  int arr_[1024];
+};
+
+const int N = 10000;
+static volatile FOO *foo[N];
+
+void Writer() {
+  for (int i = 0; i < N; i++) {
+    foo[i] = new FOO;
+    usleep(100);
+  }
+}
+
+void Reader() {
+  for (int i = 0; i < N; i++) {
+    while (!foo[i]) {
+      MU.Lock();   // this is NOT a synchronization, 
+      MU.Unlock(); // it just helps foo[i] to become visible in Reader.
+    }
+    if ((i % 100) == 0) {
+      printf("rd %d\n", i);
+    }
+    // At this point Reader() sees the new value of foo[i] 
+    // but in very rare cases will not see the new value of foo[i]->arr_.
+    // Thus this CHECK will sometimes fail.
+    FOO::check(foo[i]);
+  }
+}
+
+void Run() {
+  printf("test82: positive\n");
+  MyThreadArray t(Writer, Reader);
+  t.Start();
+  t.Join();
+}
+REGISTER_TEST2(Run, 82, FEATURE|EXCLUDE_FROM_ALL)
+}  // namespace test82
+
+
+// test83: Object published w/o synchronization (simple version){{{1
+namespace test83 {
+// A simplified version of test83 (example of a wrong code).
+// This test, though incorrect, will almost never fail.
+volatile static int *ptr = NULL;
+
+void Writer() {
+  usleep(100);
+  ptr = new int(777);
+}
+
+void Reader() {
+  while(!ptr) {
+    MU.Lock(); // Not a synchronization!
+    MU.Unlock(); 
+  }
+  CHECK(*ptr == 777);
+}
+
+void Run() {
+//  printf("test83: positive\n");
+  MyThreadArray t(Writer, Reader);
+  t.Start();
+  t.Join();
+}
+REGISTER_TEST2(Run, 83, FEATURE|EXCLUDE_FROM_ALL)
+}  // namespace test83
+
+
 // test300: {{{1
 namespace test300 {
 int     GLOB = 0;
