@@ -3767,6 +3767,17 @@ namespace test82 {
 //
 // On Core 2 Duo this test will sometimes (quite rarely) fail in 
 // the CHECK below, at least if compiled with -O2.
+//
+// The sequence of events:: 
+// Thread1:                  Thread2: 
+//   a. arr_[...] = ...
+//   b. foo[i]    = ...
+//                           A. ... = foo[i]; // non NULL
+//                           B. ... = arr_[...]; 
+// 
+//  Since there is no proper synchronization, during the even (B)
+//  Thread2 may not see the result of the event (a). 
+//
 
 class FOO {
  public: 
