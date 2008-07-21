@@ -50,12 +50,26 @@
 #endif 
 #include THREAD_WRAPPERS
 
+// Helgrind memory usage testing stuff
+// If not present in dynamic_annotations.h/.cc - ignore
+#ifndef ANNOTATE_RESET_STATS
+#define ANNOTATE_RESET_STATS()
+#endif
+#ifndef ANNOTATE_PRINT_STATS
+#define ANNOTATE_PRINT_STATS()
+#endif
+#ifndef ANNOTATE_PRINT_MEMORY_USAGE
+#define ANNOTATE_PRINT_MEMORY_USAGE(a)
+#endif
+//
+
 #include <vector>
 #include <string>
 #include <map>
 #include <ext/hash_map>
 #include <algorithm>
 #include <cstring>      // strlen(), index(), rindex()
+#include <ctime>
 
 // The tests are
 // - Stability tests (marked STAB)
@@ -96,8 +110,13 @@ enum TEST_FLAG {
   PERFORMANCE       = 1 << 2,
   EXCLUDE_FROM_ALL  = 1 << 3,
   NEEDS_ANNOTATIONS = 1 << 4,
-  RACE_DEMO         = 1 << 5
+  RACE_DEMO         = 1 << 5,
+  MEMORY_USAGE      = 1 << 6,
+  PRINT_STATS       = 1 << 7
 };
+
+// Put everything into stderr.
+#define printf(args...) fprintf(stderr, args)
 
 struct Test{
   void_func_void_t f_;
@@ -107,6 +126,18 @@ struct Test{
     , flags_(flags)
   {}
   Test() : f_(0), flags_(0) {}
+  void Run() {
+     ANNOTATE_RESET_STATS();
+     if (flags_ & PERFORMANCE) {
+        clock_t start = clock();
+        f_();
+        clock_t end   = clock();
+        printf ("Time: %4dms\n", (int)((end-start)/(CLOCKS_PER_SEC/1000)));
+     } else
+        f_();
+     if (flags_ & PRINT_STATS)
+        ANNOTATE_PRINT_STATS();
+  }
 };
 std::map<int, Test> TheMapOfTests;
 
@@ -124,10 +155,6 @@ struct TestAdder {
 static bool ArgIsOne(int *arg) { return *arg == 1; };
 static bool ArgIsZero(int *arg) { return *arg == 0; };
 
-// Put everything into stderr.
-#define printf(args...) fprintf(stderr, args)
-
-
 // Call ANNOTATE_EXPECT_RACE only if 'machine' env variable is defined. 
 // Useful to test against several different machines. 
 #define ANNOTATE_EXPECT_RACE_FOR_MACHINE(mem, descr, machine) \
@@ -138,12 +165,20 @@ static bool ArgIsZero(int *arg) { return *arg == 0; };
 
 
 int main(int argc, char** argv) { // {{{1
-  if (argc > 1) {
+  if (argc == 2 && !strcmp(argv[1], "benchmark")) {
+     for (std::map<int,Test>::iterator it = TheMapOfTests.begin(); 
+         it != TheMapOfTests.end();
+         ++it) {
+       if(!(it->second.flags_ & PERFORMANCE)) continue;
+       it->second.Run();
+     }      
+  } else if (argc > 1) {
+     
     // the tests are listed in command line flags 
     for (int i = 1; i < argc; i++) {
       int f_num = atoi(argv[i]);
       CHECK(TheMapOfTests.count(f_num));
-      TheMapOfTests[f_num].f_();
+      TheMapOfTests[f_num].Run();
     }
   } else {
     bool run_tests_with_annotations = false;
@@ -157,13 +192,10 @@ int main(int argc, char** argv) { // {{{1
       if(it->second.flags_ & RACE_DEMO) continue;
       if((it->second.flags_ & NEEDS_ANNOTATIONS)
          && run_tests_with_annotations == false) continue;
-      it->second.f_();
+      it->second.Run();
     } 
   }
 }
-
-
-
 
 // An array of threads. Create/start/join all elements at once. {{{1
 class MyThreadArray {
@@ -4159,6 +4191,291 @@ void Run() {
 REGISTER_TEST2(Run, 350, RACE_DEMO)
 
 }  // namespace test350
+
+// test501: Manually call PRINT_* annotations {{{1
+namespace test501 {
+int  COUNTER = 0;
+int     GLOB = 0;
+Mutex muCounter, muGlob[65];
+
+void Worker() {
+   muCounter.Lock();
+   int myId = ++COUNTER;
+   muCounter.Unlock();
+  
+   usleep(100);
+  
+   muGlob[myId].Lock();
+   muGlob[0].Lock();
+   GLOB++;
+   muGlob[0].Unlock();
+   muGlob[myId].Unlock();
+}
+
+void Worker_1() {
+   MyThreadArray ta (Worker, Worker, Worker, Worker);
+   ta.Start();
+   usleep(500000);
+   ta.Join ();   
+}
+
+void Worker_2() {
+   MyThreadArray ta (Worker_1, Worker_1, Worker_1, Worker_1);
+   ta.Start();
+   usleep(300000);
+   ta.Join ();   
+}
+
+void Run() {
+   ANNOTATE_RESET_STATS();
+   MyThreadArray ta (Worker_2, Worker_2, Worker_2, Worker_2);
+   ta.Start();
+   usleep(100000);
+   ta.Join ();
+   ANNOTATE_PRINT_MEMORY_USAGE(0);
+   ANNOTATE_PRINT_STATS();
+}
+
+REGISTER_TEST2(Run, 501, FEATURE)
+}  // namespace test501
+
+// test502: produce lots of segments without cross-thread relations
+namespace test502 {
+
+/*
+ * This test produces ~1Gb of memory usage when run with the following options:
+ * 
+ * --tool=helgrind
+ * --trace-after-race=0
+ * --num-callers=2
+ * --more-context=no
+ */
+
+Mutex MU;
+int     GLOB = 0;
+
+void TP() {
+   for (int i = 0; i < 750000; i++) {
+      MU.Lock();
+      GLOB++;
+      MU.Unlock();
+   }
+}
+
+void Run() {
+   MyThreadArray t(TP, TP);
+   
+   printf("Wait 5 sec...\n"); // useful when monitoring memory usage graph
+   usleep(5*1000*1000);
+   
+   printf("Start!\n");
+   t.Start();
+   t.Join();
+}
+
+REGISTER_TEST2(Run, 502, MEMORY_USAGE | PRINT_STATS)
+}  // namespace test502
+
+// test503: produce lots of segments with simple HB-relations
+// HB cache-miss rate is ~55%
+namespace test503 {
+
+//  |- |  |  |  |  |
+//  | \|  |  |  |  |
+//  |  |- |  |  |  |
+//  |  | \|  |  |  |
+//  |  |  |- |  |  |
+//  |  |  | \|  |  |
+//  |  |  |  |- |  |
+//  |  |  |  | \|  |
+//  |  |  |  |  |- |
+//  |  |  |  |  | \|
+//  |  |  |  |  |  |----
+//->|  |  |  |  |  |
+//  |- |  |  |  |  |
+//  | \|  |  |  |  |
+//     ...
+  
+const int N_threads = 32;
+int       GLOB = 0;
+ProducerConsumerQueue *Q[N_threads];
+int GLOB_limit = 1000;
+
+bool end = false;
+int count = 0;
+Mutex count_mu;
+
+void Worker(){
+   count_mu.Lock();
+   int myId = count;
+   count++;
+   count_mu.Unlock();
+   
+   ProducerConsumerQueue &myQ = *Q[myId], &nextQ = *Q[(myId+1) % N_threads];
+   
+   // this code produces a new SS with each new segment
+   while (true) {
+      myQ.Get();
+      if (end)
+         break;
+      GLOB++;
+      if (GLOB % 100 == 0)
+         printf("%8i\n", GLOB);
+      
+      if (myId == 0 && GLOB > GLOB_limit) {
+         end = true;
+         for (int i = 1; i < N_threads; i++)
+            Q[i]->Put(NULL);
+         break;
+      } else
+         nextQ.Put(NULL);
+   }
+}
+
+void Run() {
+   for (int i = 0; i < N_threads; i++)
+      Q[i] = new ProducerConsumerQueue(1);
+   Q[0]->Put(NULL);
+   
+   printf("Start!\n");
+   {
+      
+      ThreadPool pool(N_threads);
+      pool.StartWorkers();
+      for (int i = 0; i < N_threads; i++) {
+         pool.Add(NewCallback(Worker));
+      }
+   } // all folks are joined here.
+   
+   for (int i = 0; i < N_threads; i++)
+      delete Q[i];
+}
+
+REGISTER_TEST2(Run, 503, MEMORY_USAGE | PRINT_STATS | PERFORMANCE)
+}  // namespace test503
+
+// test504: force massive cache fetch-wback (50% misses, mostly CacheLineZ)
+namespace test504 {
+
+const int N_THREADS = 2,
+          CACHELINE_COUNT = 1 << 16,
+          CACHELINE_SIZE  = 1 << 6,
+          CACHE_SIZE = CACHELINE_COUNT * CACHELINE_SIZE;
+
+// int gives us ~4x speed of the byte test
+// 4x array size gives us
+// total multiplier of 16x over the cachesize 
+// so we can neglect the cached-at-the-end memory
+const int ARRAY_SIZE = 4 * CACHE_SIZE;
+int array[ARRAY_SIZE];
+
+int count = 0;
+Mutex count_mu;
+
+void Worker() {
+   count_mu.Lock();
+   int myId = ++count;
+   count_mu.Unlock();
+   
+   // all threads write to different memory locations,
+   // so no synchronization mechanisms are needed
+   int lower_bound = ARRAY_SIZE * (myId-1) / N_THREADS,
+       upper_bound = ARRAY_SIZE * ( myId ) / N_THREADS;
+   for (int i = lower_bound; i < upper_bound; i += CACHELINE_SIZE / sizeof(array[0])) {
+      array[i] = i; // each array-write generates a cache miss
+   }
+}
+
+void Run() {
+   MyThreadArray t(Worker, Worker);
+   t.Start();
+   t.Join();
+}
+
+REGISTER_TEST2(Run, 504, PERFORMANCE | PRINT_STATS)
+}  // namespace test504
+
+// test505: force massive cache fetch-wback (60% misses)
+// modification of test504 - more threads, byte accesses and lots of mutexes
+// so it produces lots of CacheLineF misses (30-50% of CacheLineZ misses)
+namespace test505 {
+
+const int N_THREADS = 2,
+          CACHELINE_COUNT = 1 << 16,
+          CACHELINE_SIZE  = 1 << 6,
+          CACHE_SIZE = CACHELINE_COUNT * CACHELINE_SIZE;
+
+const int ARRAY_SIZE = 4 * CACHE_SIZE;
+int array[ARRAY_SIZE];
+
+int count = 0;
+Mutex count_mu;
+
+void Worker() {
+   const int N_MUTEXES = 5;
+   Mutex mu[N_MUTEXES];
+   count_mu.Lock();
+   int myId = ++count;
+   count_mu.Unlock();
+   
+   // all threads write to different memory locations,
+   // so no synchronization mechanisms are needed
+   int lower_bound = ARRAY_SIZE * (myId-1) / N_THREADS,
+       upper_bound = ARRAY_SIZE * ( myId ) / N_THREADS;
+   for (int mutex_id = 0; mutex_id < N_MUTEXES; mutex_id++) {
+      Mutex *m = & mu[mutex_id];
+      m->Lock();
+      for (int i = lower_bound + mutex_id, cnt = 0; 
+               i < upper_bound;
+               i += CACHELINE_SIZE / sizeof(array[0]), cnt++) {
+         array[i] = i; // each array-write generates a cache miss
+      }
+      m->Unlock();
+   }
+}
+
+void Run() {
+   MyThreadArray t(Worker, Worker);
+   t.Start();
+   t.Join();
+}
+
+REGISTER_TEST2(Run, 505, PERFORMANCE | PRINT_STATS | EXCLUDE_FROM_ALL)
+}  // namespace test505
+
+// test506: massive HB's using Barriers
+// HB cache miss is ~74%
+// segments consume 20x more memory than SSs
+// modification of test39 {{{1
+namespace test506 {
+#ifndef NO_BARRIER
+// Same as test17 but uses Barrier class (pthread_barrier_t). 
+int     GLOB = 0;
+const int N_threads = 32,
+          ITERATIONS = 1000;
+Barrier barrier(N_threads);
+
+void Worker() {
+  for (int i = 0; i < ITERATIONS; i++) {
+     MU.Lock();
+     GLOB++;
+     MU.Unlock();
+     barrier.Block();
+  }
+}
+void Run() {
+  {
+    ThreadPool pool(N_threads);
+    pool.StartWorkers();
+    for (int i = 0; i < N_threads; i++) {
+      pool.Add(NewCallback(Worker));
+    }
+  } // all folks are joined here.
+  CHECK(GLOB == N_threads * ITERATIONS);
+}
+REGISTER_TEST2(Run, 506, PERFORMANCE | PRINT_STATS);
+#endif // NO_BARRIER
+}  // namespace test506
 
 // End {{{1
 // vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker

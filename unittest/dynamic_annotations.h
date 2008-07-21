@@ -102,6 +102,9 @@ ANNOTATION(AnnotateTraceMemory, void *mem);
 ANNOTATION(AnnotateMutexIsUsedAsCondVar, void *mu);
 ANNOTATION(AnnotateIgnoreReadsBegin, void *);
 ANNOTATION(AnnotateIgnoreReadsEnd, void *);
+ANNOTATION(AnnotatePrintMemoryUsage, long);
+ANNOTATION(AnnotatePrintStats, void *);
+ANNOTATION(AnnotateResetStats, void *);
 
 ANNOTATION(AnnotateNoOp, void *arg);
 
@@ -189,6 +192,11 @@ ANNOTATION(AnnotateNoOp, void *arg);
 #define ANNOTATE_IGNORE_READS_END() \
             AnnotateIgnoreReadsEnd(__FILE__, __LINE__, NULL /*reserved*/)
 
-
+#define ANNOTATE_PRINT_MEMORY_USAGE(flags) \
+            AnnotatePrintMemoryUsage(__FILE__, __LINE__, flags)
+#define ANNOTATE_PRINT_STATS() \
+            AnnotatePrintStats(__FILE__, __LINE__, NULL /*reserved*/)
+#define ANNOTATE_RESET_STATS() \
+            AnnotateResetStats(__FILE__, __LINE__, NULL /*reserved*/)
 
 #endif  // DYNAMIC_ANNOTATIONS_H__/
