@@ -121,6 +121,10 @@
     ret_ty I_WRAP_SONAME_FNNAME_ZZ(NONE,f)(args); \
     ret_ty I_WRAP_SONAME_FNNAME_ZZ(NONE,f)(args)
 
+#define ANN_FUNC0(ret_ty, f) \
+    ret_ty I_WRAP_SONAME_FNNAME_ZZ(NONE,f)(void); \
+    ret_ty I_WRAP_SONAME_FNNAME_ZZ(NONE,f)(void)
+
 #define ANN_TRACE(args...) \
     do{\
       if(TRACE_ANN_FNS){\
@@ -268,4 +272,9 @@ ANN_FUNC(void, AnnotateNoOp, char *file, int line, void *mem)
 {
   const char *name = "AnnotateNoOp";
   ANN_TRACE("--#%d/%d %s[%p] %s:%d\n", tid, sid, name, mem, file, line);
+}
+
+ANN_FUNC0(int, RunningOnValgrind)
+{
+  return RUNNING_ON_VALGRIND;
 }

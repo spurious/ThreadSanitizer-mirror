@@ -63,15 +63,21 @@
 #ifdef DYNAMIC_ANNOTATIONS
 // Annotations are enabled. 
   #ifdef DYNAMIC_ANNOTATIONS_HERE
+    // Return true if the program is running under valgrind, false otherwise.
+    extern "C" bool RunningOnValgrind();
     // Actually define the annotations as functions with empty body. 
     #define ANNOTATION(name, arglist...) \
       extern "C" void name (const char *file, int line, arglist) {}
   #else
+    // If the program is run under valgrind, this call will be intercepted 
+    // and non-zero value will be returned. 
+    extern "C" bool RunningOnValgrind() { return 0; }
     // Just declare the functions. 
     #define ANNOTATION(name, arglist...) \
       extern "C" void name (const char *file, int line, arglist); 
   #endif  // DYNAMIC_ANNOTATIONS_HERE
 #else  // !DYNAMIC_ANNOTATIONS
+  extern "C" bool RunningOnValgrind() { return 0; }
   // Annotations are disabled. Define an empty inlinable function. 
   #define ANNOTATION(name, arglist...) \
     static inline void name (const char *file, int line, arglist) {}
@@ -182,6 +188,7 @@ ANNOTATION(AnnotateNoOp, void *arg);
             AnnotateIgnoreReadsBegin(__FILE__, __LINE__, NULL /*reserved*/)
 #define ANNOTATE_IGNORE_READS_END() \
             AnnotateIgnoreReadsEnd(__FILE__, __LINE__, NULL /*reserved*/)
+
 
 
 #endif  // DYNAMIC_ANNOTATIONS_H__/

@@ -149,6 +149,7 @@ class Mutex {
   Mutex() {
     CHECK(0 == pthread_mutex_init(&mu_, NULL));
     CHECK(0 == pthread_cond_init(&cv_, NULL));
+    signal_at_unlock_ = false;
   }
   ~Mutex() {
     CHECK(0 == pthread_cond_destroy(&cv_));
@@ -157,7 +158,9 @@ class Mutex {
   void Lock()          { CHECK(0 == pthread_mutex_lock(&mu_));}
   bool TryLock()       { return (0 == pthread_mutex_trylock(&mu_));}
   void Unlock() {
-    CHECK(0 == pthread_cond_signal(&cv_)); 
+    if (signal_at_unlock_) {
+      CHECK(0 == pthread_cond_signal(&cv_)); 
+    }
     CHECK(0 == pthread_mutex_unlock(&mu_));
   }
   void ReaderLock()    { Lock(); }
@@ -178,6 +181,7 @@ class Mutex {
  private:
 
   void WaitLoop(Condition cond) {
+    signal_at_unlock_ = true;
     while(cond.Eval() == false) {
       pthread_cond_wait(&cv_, &mu_);
     }
@@ -191,6 +195,7 @@ class Mutex {
     gettimeofday(&now, NULL);
     timeval2timespec(&now, &timeout, millis);
 
+    signal_at_unlock_ = true;
     while (cond.Eval() == false && retcode == 0) {
       retcode = pthread_cond_timedwait(&cv_, &mu_, &timeout);
     }
@@ -205,6 +210,7 @@ class Mutex {
   // (See also racecheck_unittest.cc)
   pthread_cond_t  cv_; 
   pthread_mutex_t mu_;
+  bool            signal_at_unlock_;  // Set to true if Wait was called.
 };
 
 /// Wrapper for pthread_cond_t. 
