@@ -3858,6 +3858,42 @@ REGISTER_TEST2(Run, 83, FEATURE|EXCLUDE_FROM_ALL)
 }  // namespace test83
 
 
+// test84: TP. True race (regression test for a bug related to atomics){{{1
+namespace test84 {
+// Helgrind should not create HB arcs for the bus lock even when 
+// --pure-happens-before=yes is used.
+// Bug found in by Bart Van Assche, the test is taken from 
+// valgrind file drd/tests/atomic_var.c.
+static int s_x = 0;
+/* s_dummy[] ensures that s_x and s_y are not in the same cache line. */
+static char s_dummy[512];
+static int s_y = 0;
+
+void thread_func_1()
+{
+  s_y = 1;
+  __sync_add_and_fetch(&s_x, 1);
+}
+
+void thread_func_2()
+{
+  while (__sync_add_and_fetch(&s_x, 0) == 0)
+    ;
+  printf("y = %d\n", s_y);
+}
+
+
+void Run() {
+  printf("test84: positive\n");
+  ANNOTATE_EXPECT_RACE(&s_y, "TP. true race.");
+  MyThreadArray t(thread_func_1, thread_func_2);
+  t.Start();
+  t.Join();
+}
+REGISTER_TEST(Run, 84)
+}  // namespace test84
+
+
 // test300: {{{1
 namespace test300 {
 int     GLOB = 0;
