@@ -49,6 +49,7 @@
 #include <unistd.h>
 #include <queue>
 #include <stdio.h>
+#include <limits.h>   // INT_MAX
 
 #include <string>
 using namespace std;

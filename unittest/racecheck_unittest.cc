@@ -55,6 +55,7 @@
 #include <map>
 #include <ext/hash_map>
 #include <algorithm>
+#include <cstring>      // strlen(), index(), rindex()
 
 // The tests are
 // - Stability tests (marked STAB)
