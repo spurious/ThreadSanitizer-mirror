@@ -430,7 +430,7 @@ void Worker(int put_queue, int get_queue) {
         printf("Q[%d]: done %d\n", put_queue, n);
       }
       delete item;
-    } else {                 // GetAndServe.
+    } else {                 // TryGetAndServe.
       TryGetAndServe(get_queue);
     }
   }
