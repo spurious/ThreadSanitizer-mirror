@@ -3938,69 +3938,6 @@ REGISTER_TEST(Run, 85)
 }  // namespace test85
 
 
-// test86: Queue deadlock test (under construction). {{{1
-namespace  test86 {
-int     GLOB = 0;
-
-ProducerConsumerQueue Q1(INT_MAX), Q2(INT_MAX);
-CondVar cv1, cv2;
-bool c1 = false, c2 = false;
-Mutex mu1, mu2;
-int work_item1 = 0, work_item2 = 0;
-
-void Worker1() {
-  // Put work_item1.
-  Q1.Put(&work_item1);
-
-  // Wait for work_item1 completion.
-  mu1.Lock();
-  while (!c1) 
-    cv1.Wait(&mu1);
-  mu1.Unlock();
-
-  // Get an item.
-  void *item = Q2.Get();
-
-  // Signal item completion.
-  mu2.Lock();
-  *(reinterpret_cast<int*>(item)) = 1;
-  c2 = true;
-  cv2.Signal();
-  mu2.Unlock();
-}
-
-void Worker2() {
-  // Put work_item2.
-  Q2.Put(&work_item2);
-
-  // Wait for work_item2 completion.
-  mu2.Lock();
-  while (!c2) 
-    cv2.Wait(&mu2);
-  mu2.Unlock();
-
-  // Get an item.
-  void *item = Q1.Get();
-
-  // Signal item completion.
-  mu1.Lock();
-  *(reinterpret_cast<int*>(item)) = 1;
-  c1 = true;
-  cv1.Signal();
-  mu1.Unlock();
-}
-
-void Run() {
-  printf("test86: queue deadlock\n");
-  MyThreadArray t(Worker1, Worker2);
-  t.Start();
-  t.Join();
-  printf("work items: %d %d\n", work_item1, work_item2);
-}
-REGISTER_TEST2(Run, 86, FEATURE|EXCLUDE_FROM_ALL)
-}  // namespace test86
-
-
 // test300: {{{1
 namespace test300 {
 int     GLOB = 0;

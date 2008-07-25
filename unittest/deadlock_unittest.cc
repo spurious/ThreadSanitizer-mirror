@@ -94,9 +94,19 @@ struct TestAdder {
 // Put everything into stderr.
 #define printf(args...) fprintf(stderr, args)
 
+#ifndef MAIN_INIT_ACTION
+#define MAIN_INIT_ACTION
+#endif 
+
+
+static bool ArgIsOne(int *arg) { return *arg == 1; };
+static bool ArgIsZero(int *arg) { return *arg == 0; };
+static bool ArgIsFalse(bool *arg) { return *arg == false; }
+static bool ArgIsTrue(bool *arg) { return *arg == true; }
 
 
 int main(int argc, char** argv) { // {{{1
+  MAIN_INIT_ACTION;
   if (argc > 1) {
     // the tests are listed in command line flags 
     for (int i = 1; i < argc; i++) {
@@ -162,7 +172,8 @@ void Run() {
 }
 REGISTER_TEST(Run, 00)
 }  // namespace test00
-// test01: Simple deadlock. {{{1
+
+// test01: Simple deadlock, 2 threads. {{{1
 namespace test01 {
 Mutex mu1, mu2;
 void Worker1()  {
@@ -186,3 +197,82 @@ void Run() {
 }
 REGISTER_TEST(Run, 01)
 }  // namespace test01
+
+// test02: Simple deadlock, 4 threads. {{{1
+namespace test02 {
+Mutex mu1, mu2, mu3, mu4;
+void Worker1()  {
+  mu1.Lock();   mu2.Lock();
+  mu2.Unlock(); mu1.Unlock();
+}
+void Worker2()  {
+  usleep(1000);
+  mu2.Lock();   mu3.Lock();
+  mu3.Unlock(); mu2.Unlock();
+}
+void Worker3()  {
+  usleep(2000);
+  mu3.Lock();   mu4.Lock();
+  mu4.Unlock(); mu3.Unlock();
+}
+void Worker4()  {
+  usleep(3000);
+  mu4.Lock();   mu1.Lock();
+  mu1.Unlock(); mu4.Unlock();
+}
+void Run() {
+  MyThreadArray t(Worker1, Worker2, Worker3, Worker4);
+  t.Start();
+  t.Join();
+  printf("test02: positive, simple deadlock\n");
+}
+REGISTER_TEST(Run, 02)
+}  // namespace test02
+
+// test03: Queue deadlock test (under construction). {{{1
+namespace  test03 {
+
+ProducerConsumerQueue Q[2] = {INT_MAX, INT_MAX};
+bool cond[2] = {false, false};
+Mutex mu[2];
+int work_item[2] = {0, 0};
+
+void PutAndWait(int idx) {
+  // Put work_item1.
+  Q[idx].Put(&work_item[idx]);
+
+  // Wait for work_item1 completion.
+  mu[idx].LockWhen(Condition(&ArgIsTrue, &cond[idx]));
+  mu[idx].Unlock();
+}
+
+void GetAndSignal(int idx) {
+  // Get an item.
+  void *item = Q[idx].Get();
+
+  // Signal item completion.
+  mu[idx].Lock();
+  *(reinterpret_cast<int*>(item)) = 1;
+  cond[idx] = true;
+  mu[idx].Unlock();
+
+}
+
+void Worker1() {
+  PutAndWait(0);
+  GetAndSignal(1);
+}
+
+void Worker2() {
+  PutAndWait(1);
+  GetAndSignal(0);
+}
+
+void Run() {
+  printf("test03: queue deadlock\n");
+  MyThreadArray t(Worker1, Worker2);
+  t.Start();
+  t.Join();
+}
+REGISTER_TEST(Run, 03)
+}  // namespace test03
