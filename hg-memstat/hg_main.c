@@ -1104,12 +1104,17 @@ static void lockN_release ( Lock* lk, Thread* thr )
 {
    Bool b;
    
+   const int PP_MEM_INTERVAL = 10;
+   
    // TODO: eliminate this hack (move somewhere else/optimize?) 
    static UInt lastCallTime = 0;
    UInt currTime;
    currTime = VG_(read_millisecond_timer)();
-   if (UNLIKELY(currTime > lastCallTime + 1000)) {
-      pp_memory_usage (0, "1s timer");
+   if (UNLIKELY(currTime > lastCallTime + PP_MEM_INTERVAL * 1000)) {
+      char temp[100] = "";
+      VG_(sprintf) (temp, "%ds timer", PP_MEM_INTERVAL);
+      pp_memory_usage (0, temp);
+      pp_stats(temp);
       lastCallTime = currTime;
    }
    // <-- hack ends */
@@ -1616,7 +1621,9 @@ static void pp_mem_segments ( Int d )
    // SegmentSets below   
    Word ss_bytes = 0;
    for (n = 0, i = 0; i < (Int)HG_(cardinalityWSU)(univ_ssets); n++, i++) {
-       if (!HG_(saneWS_SLOW(univ_ssets, i))) continue;
+       /*/optimized
+       if (!HG_(saneWS_SLOW(univ_ssets, i)))
+          continue; /**/
        ss_bytes += sizeof(Word) * HG_(cardinalityWS)(univ_ssets, i)
                 + sizeof(Word) * 4; // see definition of WordVec
    }
