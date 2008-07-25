@@ -100,13 +100,55 @@ struct TestAdder {
 
 
 static bool ArgIsOne(int *arg) { return *arg == 1; };
-static bool ArgIsZero(int *arg) { return *arg == 0; };
-static bool ArgIsFalse(bool *arg) { return *arg == false; }
-static bool ArgIsTrue(bool *arg) { return *arg == true; }
+
+
+ProducerConsumerQueue *Q[4] = {
+  new ProducerConsumerQueue(INT_MAX),
+  new ProducerConsumerQueue(INT_MAX),
+  new ProducerConsumerQueue(INT_MAX),
+  new ProducerConsumerQueue(INT_MAX)
+};
+Mutex mu[4];
+
+void PutAndWait(int *work_item, int idx) {
+  // Put work_item1.
+  Q[idx]->Put(work_item);
+
+  // Wait for work_item completion.
+  mu[idx].LockWhen(Condition(&ArgIsOne, work_item));
+  mu[idx].Unlock();
+}
+
+void GetAndServe(int idx) {
+  // Get an item.
+  int *item = reinterpret_cast<int*>(Q[idx]->Get());
+
+  // Handle work item and signal completion.
+  mu[idx].Lock();
+  *item = 1;
+  mu[idx].Unlock();
+}
+
+
+bool TryGetAndServe(int idx) {
+  // Get an item.
+  int *item;
+  if (Q[idx]->TryGet(reinterpret_cast<void**>(&item))) {
+    // Handle work item and signal completion.
+    mu[idx].Lock();
+    *item = 1;
+    mu[idx].Unlock();
+    return true;
+  } else {
+    return false;
+  }
+}
+
 
 
 int main(int argc, char** argv) { // {{{1
   MAIN_INIT_ACTION;
+  srand(time(0));
   if (argc > 1) {
     // the tests are listed in command line flags 
     for (int i = 1; i < argc; i++) {
@@ -164,6 +206,58 @@ class MyThreadArray {
 };
 
 
+// Set of threads that execute the same function.
+class MyThreadSet {
+ public:
+  typedef void (*F) (void);
+  MyThreadSet(F f, int count) 
+    : count_(count) {
+    CHECK(count_ >= 1 && count_ <= 1000);
+    ar_ = new MyThread* [count_];
+    for (int i = 0; i < count_; i++) {
+      ar_[i] = new MyThread(f);
+    }
+  }
+  void Start() {
+    for (int i = 0; i < count_; i++) {
+      ar_[i]->Start();
+    }
+  }
+  void Join() {
+    for (int i = 0; i < count_; i++) {
+      ar_[i]->Join();
+    }
+  }
+  ~MyThreadSet() {
+    for (int i = 0; i < count_; i++) {
+      delete ar_[i];
+    }
+    delete ar_;
+  }
+
+ private: 
+  MyThread **ar_;
+  int count_;
+};
+
+int ThreadId() {
+  static Mutex mu;
+  static map<pthread_t, int> m;
+
+  int id;
+  pthread_t self = pthread_self();
+
+  mu.Lock();
+  map<pthread_t, int>::iterator it = m.find(self);
+  if (it != m.end()) {
+    id = it->second;
+  } else {
+    id = m.size();
+    m[self] = id;
+  }
+  mu.Unlock();
+  return id;
+}
 
 // test00: {{{1
 namespace test00 {
@@ -229,45 +323,20 @@ void Run() {
 REGISTER_TEST(Run, 02)
 }  // namespace test02
 
-// test03: Queue deadlock test (under construction). {{{1
+// test03: Queue deadlock test, 2 workers. {{{1
+// This test will deadlock for sure.
 namespace  test03 {
 
-ProducerConsumerQueue Q[2] = {INT_MAX, INT_MAX};
-bool cond[2] = {false, false};
-Mutex mu[2];
-int work_item[2] = {0, 0};
-
-void PutAndWait(int idx) {
-  // Put work_item1.
-  Q[idx].Put(&work_item[idx]);
-
-  // Wait for work_item1 completion.
-  mu[idx].LockWhen(Condition(&ArgIsTrue, &cond[idx]));
-  mu[idx].Unlock();
-}
-
-void GetAndSignal(int idx) {
-  // Get an item.
-  void *item = Q[idx].Get();
-
-  // Signal item completion.
-  mu[idx].Lock();
-  *(reinterpret_cast<int*>(item)) = 1;
-  cond[idx] = true;
-  mu[idx].Unlock();
-
-}
-
 void Worker1() {
-  PutAndWait(0);
-  GetAndSignal(1);
+  int *item = new int (0);
+  PutAndWait(item, 0);
+  GetAndServe(1);
 }
-
 void Worker2() {
-  PutAndWait(1);
-  GetAndSignal(0);
+  int *item = new int (0);
+  PutAndWait(item, 1);
+  GetAndServe(0);
 }
-
 void Run() {
   printf("test03: queue deadlock\n");
   MyThreadArray t(Worker1, Worker2);
@@ -276,3 +345,112 @@ void Run() {
 }
 REGISTER_TEST(Run, 03)
 }  // namespace test03
+
+// test04: Queue deadlock test, 3 workers. {{{1
+// This test will deadlock for sure.
+namespace  test04 {
+
+void Worker1() {
+  int *item = new int (0);
+  PutAndWait(item, 0);
+  GetAndServe(1);
+}
+void Worker2() {
+  int *item = new int (0);
+  PutAndWait(item, 1);
+  GetAndServe(2);
+}
+
+void Worker3() {
+  int *item = new int (0);
+  PutAndWait(item, 2);
+  GetAndServe(0);
+}
+
+void Run() {
+  printf("test04: queue deadlock\n");
+  MyThreadArray t(Worker1, Worker2, Worker3);
+  t.Start();
+  t.Join();
+}
+REGISTER_TEST(Run, 04)
+}  // namespace test04
+
+// test05: Queue deadlock test, 1 worker set. {{{1
+// This test will deadlock after some number of served requests.
+namespace  test05 {
+
+int item_number = 0;
+
+
+// This function randomly enqueues work and waits on it or serves a piece of work.
+void Worker() {
+  while(true) {
+    int action = rand() % 100;
+    if (action <= 1) {        // PutAndWait.
+      int n = __sync_add_and_fetch(&item_number, 1);
+      int *item = new int(0);
+      PutAndWait(item, 0);
+      if ((n % 10000) == 0) {
+        printf("Done %d\n", n);
+      }
+      delete item;
+    } else {                 // GetAndServe.
+      TryGetAndServe(0);
+    }
+  }
+}
+
+
+void Run() {
+  printf("test05: queue deadlock\n");
+  MyThreadSet t(Worker, 5);
+  t.Start();
+  t.Join();
+}
+REGISTER_TEST(Run, 05)
+}  // namespace test05
+
+// test06: Queue deadlock test, 3 worker sets. {{{1
+// This test will deadlock after some number of served requests.
+namespace  test06 {
+
+int item_number[2] = {0, 0};
+
+// This function randomly enqueues work to queue 'put_queue' and waits on it 
+// or serves a piece of work from queue 'get_queue'.
+void Worker(int put_queue, int get_queue) {
+  while(true) {
+    int action = rand() % 1000;
+    if (action <= 100) {        // PutAndWait.
+      int n = __sync_add_and_fetch(&item_number[put_queue], 1);
+      int *item = new int(0);
+      PutAndWait(item, put_queue);
+      if ((n % 1000) == 0) {
+        printf("Q[%d]: done %d\n", put_queue, n);
+      }
+      delete item;
+    } else {                 // GetAndServe.
+      TryGetAndServe(get_queue);
+    }
+  }
+}
+
+void Worker1() { Worker(0, 1); }
+void Worker2() { Worker(1, 2); }
+void Worker3() { Worker(2, 0); }
+
+void Run() {
+  printf("test06: queue deadlock\n");
+  MyThreadSet t1(Worker1, 4);
+  MyThreadSet t2(Worker2, 4);
+  MyThreadSet t3(Worker3, 4);
+  t1.Start();
+  t2.Start();
+  t3.Start();
+  t1.Join();
+  t2.Join();
+  t3.Join();
+}
+REGISTER_TEST(Run, 06)
+}  // namespace test06

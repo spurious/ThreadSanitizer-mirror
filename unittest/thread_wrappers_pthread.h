@@ -311,7 +311,7 @@ class ProducerConsumerQueue {
 
   // Get. 
   // Spins if the queue is empty. 
-  // Real implementation woudl probably block on CV, 
+  // Real implementation would probably block on CV, 
   // but this is irrelevant for the unit tests. 
   void *Get() {
     void *item = NULL;
@@ -336,6 +336,31 @@ class ProducerConsumerQueue {
       usleep(1000); // don't burn CPU
     }
     return item;
+  }
+
+  // If queue is not empty, 
+  // remove an element from queue, put it into *res and return true.
+  // Otherwise return false.
+  bool TryGet(void **res) {
+    void *item = NULL;
+    bool have_item = false;
+    mu_.Lock();
+    if (!q_.empty()) {
+      item_t *t = q_.front();
+      q_.pop();
+      //        ANNOTATE_PCQ_GET(this);
+      item       = t->item;
+      sem_wait(&t->sem);
+      sem_destroy(&t->sem); 
+      delete t;
+      have_item = true;
+    }
+    mu_.Unlock();
+    if (have_item) {
+      *res = item;
+      return true;
+    }
+    return false;
   }
 
  private: 
