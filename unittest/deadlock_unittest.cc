@@ -380,7 +380,7 @@ REGISTER_TEST(Run, 04)
 // This test will deadlock after some number of served requests.
 namespace  test05 {
 
-int item_number = 0;
+int item_number = 0;  // Just for debug prints.
 
 
 // This function randomly enqueues work and waits on it or serves a piece of work.
@@ -415,7 +415,7 @@ REGISTER_TEST(Run, 05)
 // This test will deadlock after some number of served requests.
 namespace  test06 {
 
-int item_number[3] = {0, 0, 0};
+int item_number[3] = {0, 0, 0};  // Just for debug prints.
 
 // This function randomly enqueues work to queue 'put_queue' and waits on it 
 // or serves a piece of work from queue 'get_queue'.
