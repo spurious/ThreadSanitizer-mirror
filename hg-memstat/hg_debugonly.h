@@ -8,8 +8,8 @@
    This file is part of Helgrind, a Valgrind tool for detecting errors
    in threaded programs.
 
-   Copyright (C) 2007-2008 OpenWorks LLP
-       info@open-works.co.uk
+   Copyright (C) 2008-2008 Google Inc
+       opensource@google.com 
 
    This program is free software; you can redistribute it and/or
    modify it under the terms of the GNU General Public License as
@@ -27,11 +27,6 @@
    02111-1307, USA.
 
    The GNU General Public License is contained in the file COPYING.
-
-   Neither the names of the U.S. Department of Energy nor the
-   University of California nor the names of its contributors may be
-   used to endorse or promote products derived from this software
-   without prior written permission.
 */
 
 #ifndef __HG_DEBUGONLY_H
