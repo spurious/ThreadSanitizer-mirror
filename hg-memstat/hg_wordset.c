@@ -463,14 +463,16 @@ UWord HG_(cardinalityWSU) ( WordSetU* wsu )
 }
 
 
-UWord HG_(memoryConsumedWSU) ( WordSetU* wsu )
+UWord HG_(memoryConsumedWSU) ( WordSetU* wsu, UWord* count )
 {
-   UWord i, ret = 0;
+   UWord i, n, ret = 0;
    for (i = 0; i < HG_(cardinalityWSU)(wsu); i++) {
        if (!HG_(saneWS_SLOW(wsu, i)))
           continue;
+       n++;
        ret += sizeof(Word) * HG_(cardinalityWS)(wsu, i) + sizeof(WordVec);
    }
+   *count = n;
    return ret;
 }
 

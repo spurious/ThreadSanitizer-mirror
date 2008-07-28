@@ -1116,7 +1116,7 @@ static void lockN_release ( Lock* lk, Thread* thr )
       char temp[100] = "";
       VG_(sprintf) (temp, "%ds timer", PP_MEM_INTERVAL);
       pp_memory_usage (0, temp);
-      pp_stats(temp);
+      //pp_stats(temp);
       lastCallTime = currTime;
    }
    // <-- hack ends */
@@ -1545,7 +1545,7 @@ static void pp_admin_locks ( Int d )
 
 static void pp_mem_admin_locks ( Int d )
 {
-   Int   i, n;
+   Int   i, n = -1;
    Lock* lk;
    Word admin_locks_bytes = 0;
    for (n = 0, i = 0, lk = admin_locks;  lk;  n++, i++, lk = lk->admin) {
@@ -1556,13 +1556,9 @@ static void pp_mem_admin_locks ( Int d )
          (int)(admin_locks_bytes/1024), n);
    
    // LockSets below   
-   Word lockset_bytes = 0;
-   for (n = 0, i = 0; i < (Int)HG_(cardinalityWSU)(univ_lsets); n++, i++) {
-       if (!HG_(saneWS_SLOW(univ_lsets, i))) continue;
-       lockset_bytes += sizeof(Word) * HG_(cardinalityWS)( univ_lsets, i );
-   }
-   space(d); VG_(printf)("locksets: %6d kB (count = %d)\n",
-         (int)(lockset_bytes/1024), n);
+   Word lockset_bytes = HG_(memoryConsumedWSU) (univ_lsets, &n);
+   space(d); VG_(printf)("locksets: %6d kB (active = %d, total = %d)\n",
+         (int)(lockset_bytes/1024), n, HG_(cardinalityWSU) (univ_lsets));
 }
 
 static void pp_map_locks ( Int d )
@@ -1609,7 +1605,7 @@ static void pp_all_segments ( Int d )
 
 static void pp_mem_segments ( Int d )
 {
-   ULong i, n;
+   ULong i, n = -1;
    Word segments_bytes = 0, ss_bytes = 0;
    for (i = 1; i < SegmentArray.size; i++) {
       Segment* s = SEG_get(i);
@@ -1622,10 +1618,9 @@ static void pp_mem_segments ( Int d )
    
 
    // SegmentSets below
-   ss_bytes = HG_(memoryConsumedWSU) (univ_ssets);
-   n = HG_(cardinalityWSU) (univ_ssets);
-   space(d); VG_(printf)("seg.sets: %6d kB (count = %d)\n",
-         (int)(ss_bytes/1024), n);
+   ss_bytes = HG_(memoryConsumedWSU) (univ_ssets, &n);
+   space(d); VG_(printf)("seg.sets: %6d kB (active = %d, total = %d)\n",
+         (int)(ss_bytes/1024), n, HG_(cardinalityWSU) (univ_ssets));
 }
 
 // Just print all locks in the lockset 'ls'. 
@@ -7654,7 +7649,7 @@ static void pp_mem_laog ( Int d ) {
    Word laog_size_bytes = 0;
    Lock* me;
    LAOGLinks* links;
-   Int n, m;
+   Int n, m = -1;
    
    
    n = 0;
@@ -7674,10 +7669,10 @@ static void pp_mem_laog ( Int d ) {
       HG_(doneIterFM)( laog );
    }
       
-   laog_size_bytes = HG_(memoryConsumedWSU) (univ_laog);
-   m = HG_(cardinalityWSU) (univ_laog);   
-   space(d); VG_(printf)("laog:     %6d kB (%d laog, %d univ_laog)\n", 
-         (int)(laog_size_bytes/1024), n, m);    
+   laog_size_bytes = HG_(memoryConsumedWSU) (univ_laog, &m);
+   space(d); VG_(printf)("laog:     %6d kB (%d laog, "
+               "univ_laog: active = %d, total = %d)\n", 
+         (int)(laog_size_bytes/1024), n, m, HG_(cardinalityWSU) (univ_laog));
 }
    
 static Word cmp_LAOGLinkExposition ( UWord llx1W, UWord llx2W ) {
@@ -10223,8 +10218,10 @@ static void hg_fini ( Int exitcode )
 
 
 
-   if (VG_(clo_verbosity) >= 2)
-      pp_stats( "SK_(fini)" );
+   if (VG_(clo_verbosity) >= 2) {
+      pp_memory_usage(0, "SK_(fini)");
+      pp_stats( "SK_(fini)" );  
+   }
 }
 
 static void hg_pre_clo_init ( void )
