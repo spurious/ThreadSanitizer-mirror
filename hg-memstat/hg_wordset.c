@@ -383,7 +383,8 @@ void HG_(deleteWordSetU) ( WordSetU* wsu )
    WordVec* wv = NULL;
    void (*dealloc)(void*) = wsu->dealloc;
    tl_assert(wsu->vec2ix);
-   // TODO: iterate over "wsu->vec2ix" FM and call "delete_WV_for_FM" for KEYS
+   
+   // Iterate over "wsu->vec2ix" FM and call "delete_WV_for_FM" for KEYS
    // delete_WV_for_FM(wv) = { wv->owner->dealloc(wv) } = { wsu->dealloc(wv) }
    HG_(initIterAtFM)(wsu->vec2ix, 0);
    while (HG_(nextIterFM)(wsu->vec2ix, (Word*)&wv /*key*/, NULL /*val*/)) {
