@@ -88,6 +88,7 @@
 #include "helgrind.h"
 
 #define HG_(str) VGAPPEND(vgHelgrind_,str)
+#include "hg_debugonly.h"
 #include "hg_wordfm.h"
 #include "hg_wordset.h"
 
@@ -537,7 +538,7 @@ typedef
    from some other thread.  Segments are never freed (!) */
 typedef
    struct _Segment {
-      UInt             magic;
+      DEBUG_ONLY(UInt magic);
       /* USEFUL */
       UInt             dfsver; /* Version # for depth-first searches */
       Thread*          thr;    /* The thread that I am part of */
@@ -548,7 +549,7 @@ typedef
       ExeContext       *context; 
       /* DEBUGGING ONLY: what does 'other' arise from?  
          c=thread creation, j=join, s=cvsignal, S=semaphore */
-      Char other_hint;
+      DEBUG_ONLY(Char other_hint);
    }
    Segment;
 
@@ -922,14 +923,15 @@ static SegmentID mk_Segment ( Thread* thr, Segment* prev, Segment* other ) {
    seg->prev       = prev;
    seg->other      = other;
    seg->vts        = NULL;
-   seg->other_hint = ' ';
-   seg->magic      = Segment_MAGIC;
+   DEBUG_ONLY(seg->other_hint = ' ');
+   DEBUG_ONLY(seg->magic = Segment_MAGIC);
    stats__mk_Segment++;
    return id;
 }
 
 static inline Bool is_sane_Segment ( Segment* seg ) {
-   return seg != NULL && seg->magic == Segment_MAGIC;
+   DEBUG_ONLY(return seg != NULL && seg->magic == Segment_MAGIC);
+   RELEASE_ONLY(return 1);
 }
 static inline Bool is_sane_Thread ( Thread* thr ) {
    return thr != NULL && thr->magic == Thread_MAGIC;
@@ -1583,12 +1585,13 @@ static void pp_Segment ( Int d, Segment* s )
 {
    space(d+0); VG_(printf)("Segment %p {\n", s);
    if (sHOW_ADMIN) {
-   space(d+3); VG_(printf)("magic  0x%x\n", (UInt)s->magic);
+   DEBUG_ONLY(space(d+3); VG_(printf)("magic  0x%x\n", (UInt)s->magic));
    }
    space(d+3); VG_(printf)("dfsver    %u\n", s->dfsver);
    space(d+3); VG_(printf)("thr       %p\n", s->thr);
    space(d+3); VG_(printf)("prev      %p\n", s->prev);
-   space(d+3); VG_(printf)("other[%c] %p\n", s->other_hint, s->other);
+   DEBUG_ONLY(space(d+3); VG_(printf)("other[%c] %p\n", 
+                                 s->other_hint, s->other));
    space(d+0); VG_(printf)("}\n");
 }
 
@@ -1607,7 +1610,7 @@ static void pp_all_segments ( Int d )
 static void pp_mem_segments ( Int d )
 {
    ULong i, n;
-   Word segments_bytes = 0;
+   Word segments_bytes = 0, ss_bytes = 0;
    for (i = 1; i < SegmentArray.size; i++) {
       Segment* s = SEG_get(i);
       segments_bytes += sizeof(Segment);
@@ -1618,15 +1621,9 @@ static void pp_mem_segments ( Int d )
          (int)(segments_bytes / 1024), (Int)SegmentArray.size);
    
 
-   // SegmentSets below   
-   Word ss_bytes = 0;
-   for (n = 0, i = 0; i < (Int)HG_(cardinalityWSU)(univ_ssets); n++, i++) {
-       /*/optimized
-       if (!HG_(saneWS_SLOW(univ_ssets, i)))
-          continue; /**/
-       ss_bytes += sizeof(Word) * HG_(cardinalityWS)(univ_ssets, i)
-                + sizeof(Word) * 4; // see definition of WordVec
-   }
+   // SegmentSets below
+   ss_bytes = HG_(memoryConsumedWSU) (univ_ssets);
+   n = HG_(cardinalityWSU) (univ_ssets);
    space(d); VG_(printf)("seg.sets: %6d kB (count = %d)\n",
          (int)(ss_bytes/1024), n);
 }
@@ -2894,15 +2891,15 @@ static void segments__generate_vcg ( void )
          VG_(printf)(PFX "edge: { sourcename: \"%p\" targetname: \"%p\""
                      "color: black }\n", seg->prev, seg );
       if (seg->other) {
-         HChar* colour = "orange";
-         switch (seg->other_hint) {
+         HChar* colour = "N/A";
+         DEBUG_ONLY(switch (seg->other_hint) {
             case 'c': colour = "darkgreen";  break; /* creation */
             case 'j': colour = "red";        break; /* join (exit) */
             case 's': colour = "orange";     break; /* signal */
             case 'S': colour = "pink";       break; /* sem_post->wait */
             case 'u': colour = "cyan";       break; /* unlock */
             default: tl_assert(0);
-         }
+         })
          VG_(printf)(PFX "edge: { sourcename: \"%p\" targetname: \"%p\""
                      " color: %s }\n", seg->other, seg, colour );
       }
@@ -6573,7 +6570,7 @@ void evh__pre_thread_ll_create ( ThreadId parent, ThreadId child )
       if (clo_happens_before >= 1) {
          /* Make the child's new segment depend on the parent */
          seg_c->other = SEG_get( thr_p->csegid );
-         seg_c->other_hint = 'c';
+         DEBUG_ONLY(seg_c->other_hint = 'c');
          seg_c->vts = tick_VTS( thr_c, seg_c->other->vts );
          tl_assert(seg_c->prev == NULL);
          /* and start a new segment for the parent. */
@@ -6666,7 +6663,7 @@ void evh__HG_PTHREAD_JOIN_POST ( ThreadId stay_tid, Thread* quit_thr )
       /* and make it depend on the quitter's last segment */
       tl_assert(new_seg->other == NULL);
       new_seg->other = SEG_get( thr_q->csegid );
-      new_seg->other_hint = 'j';
+      DEBUG_ONLY(new_seg->other_hint = 'j');
       tl_assert(new_seg->thr == thr_s);
       new_seg->vts = tickL_and_joinR_VTS( thr_s, new_seg->prev->vts,
                                                  new_seg->other->vts );
@@ -7093,7 +7090,7 @@ Bool evhH__do_cv_wait(Thread *thr, Word cond, Bool must_match_signal)
          tl_assert(new_seg->prev);
          tl_assert(new_seg->prev->vts);
          new_seg->other      = signalling_seg;
-         new_seg->other_hint = 's';
+         DEBUG_ONLY(new_seg->other_hint = 's');
          tl_assert(new_seg->other->vts);
          new_seg->vts = tickL_and_joinR_VTS( 
                            new_seg->thr, 
@@ -7581,7 +7578,7 @@ static void evh__HG_POSIX_SEM_WAIT_POST ( ThreadId tid, void* sem )
          tl_assert(new_seg->prev);
          tl_assert(new_seg->prev->vts);
          new_seg->other      = posting_seg;
-         new_seg->other_hint = 'S';
+         DEBUG_ONLY(new_seg->other_hint = 'S');
          tl_assert(new_seg->other->vts);
          new_seg->vts = tickL_and_joinR_VTS( 
                            new_seg->thr, 
@@ -7657,7 +7654,7 @@ static void pp_mem_laog ( Int d ) {
    Word laog_size_bytes = 0;
    Lock* me;
    LAOGLinks* links;
-   Int n, m, i;
+   Int n, m;
    
    
    n = 0;
@@ -7677,12 +7674,8 @@ static void pp_mem_laog ( Int d ) {
       HG_(doneIterFM)( laog );
    }
       
-   for (m = 0, i = 0; i < (Int)HG_(cardinalityWSU)(univ_laog); m++, i++) {
-       if (!HG_(saneWS_SLOW(univ_laog, i))) continue;
-       laog_size_bytes += sizeof(Word) * HG_(cardinalityWS)(univ_laog, i)
-                + sizeof(Word) * 4; // see definition of WordVec
-   }
-   
+   laog_size_bytes = HG_(memoryConsumedWSU) (univ_laog);
+   m = HG_(cardinalityWSU) (univ_laog);   
    space(d); VG_(printf)("laog:     %6d kB (%d laog, %d univ_laog)\n", 
          (int)(laog_size_bytes/1024), n, m);    
 }
@@ -10065,6 +10058,7 @@ static void hg_reset_stats ()
 static void pp_stats ( Char * caller )
 {
    VG_(printf)("Overall helgrind statistics (caller = \"%s\") {\n", caller);
+      
    if (1) {
       HG_(ppWSUstats)( univ_ssets, "univ_ssets" );
       VG_(printf)("\n");

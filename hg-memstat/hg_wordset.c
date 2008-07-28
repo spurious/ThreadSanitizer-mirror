@@ -462,6 +462,18 @@ UWord HG_(cardinalityWSU) ( WordSetU* wsu )
    return wsu->ix2vec_used;
 }
 
+
+UWord HG_(memoryConsumedWSU) ( WordSetU* wsu )
+{
+   UWord i, ret = 0;
+   for (i = 0; i < HG_(cardinalityWSU)(wsu); i++) {
+       if (!HG_(saneWS_SLOW(wsu, i)))
+          continue;
+       ret += sizeof(Word) * HG_(cardinalityWS)(wsu, i) + sizeof(WordVec);
+   }
+   return ret;
+}
+
 void HG_(getPayloadWS) ( /*OUT*/UWord** words, /*OUT*/UWord* nWords, 
                          WordSetU* wsu, WordSet ws )
 {
