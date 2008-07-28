@@ -40,6 +40,7 @@
 #include "pub_tool_libcprint.h"
 
 #define HG_(str) VGAPPEND(vgHelgrind_,str)
+#include "hg_debugonly.h"
 #include "hg_wordfm.h"
 #include "hg_wordset.h"
 
@@ -134,10 +135,10 @@ typedef
 
 typedef
    struct {
-      WordSetU* owner; /* for sanity checking */
-      UWord*    words;
-      UWord     size; /* Really this should be SizeT */
-      UWord     refcount; 
+      UInt      size; /* Really this should be SizeT */
+      UInt      refcount;
+      DEBUG_ONLY(WordSetU* owner); /* for sanity checking */ 
+      UWord     words[];
    }
    WordVec;
 
@@ -190,7 +191,7 @@ struct _WordSetU {
    be careful to ensure that the pointed-to array is suitably aligned,
    but that should be OK since WordVec has a size of 3 machine words.
    To be on the safe side this is asserted for. */
-static WordVec* new_WV_of_size ( WordSetU* wsu, UWord sz )
+static WordVec* new_WV_of_size ( WordSetU* wsu, UInt sz )
 {
    HChar*   allocated_mem;
    WordVec* wv;
@@ -198,24 +199,11 @@ static WordVec* new_WV_of_size ( WordSetU* wsu, UWord sz )
    tl_assert(0 == (sizeof(WordVec) % sizeof(UWord)));
    allocated_mem = wsu->alloc( sizeof(WordVec) + (SizeT)sz * sizeof(UWord));
    wv = (WordVec*) allocated_mem;
-   wv->owner = wsu;
-   wv->words = NULL;
+   DEBUG_ONLY(wv->owner = wsu);
    wv->size = sz;
    wv->refcount = 0;
-   if (sz > 0) {
-      wv->words = (UWord*)(allocated_mem + sizeof(WordVec));
-      tl_assert(0 == (UWord)(wv->words) % sizeof(UWord));
-   }
+   tl_assert(0 == (UWord)(wv->words) % sizeof(UWord));
    return wv;
-}
-
-static void delete_WV ( WordVec* wv )
-{
-   void (*dealloc)(void*) = wv->owner->dealloc;
-   dealloc(wv);
-}
-static void delete_WV_for_FM ( UWord wv ) {
-   delete_WV( (WordVec*)wv );
 }
 
 static Word cmp_WordVecs_for_FM ( UWord wv1W, UWord wv2W )
@@ -283,7 +271,7 @@ static inline WordVec* do_ix2vec ( WordSetU* wsu, WordSet ws )
    wv = wsu->ix2vec[ws];
    /* Make absolutely sure that 'ws' is a member of 'wsu'. */
    tl_assert(wv);
-   tl_assert(wv->owner == wsu); /* YYY */
+   tl_debug_assert(wv->owner == wsu); /* YYY */
    return wv;
 }
 
@@ -299,17 +287,17 @@ static WordSet add_or_dealloc_WordVec( WordSetU* wsu, WordVec* wv_new )
    /* Really WordSet, but need something that can safely be casted to
       a Word* in the lookupFM.  Making it WordSet (which is 32 bits)
       causes failures on a 64-bit platform. */
-   tl_assert(wv_new->owner == wsu);
+   tl_debug_assert(wv_new->owner == wsu);
    have = HG_(lookupFM)( wsu->vec2ix, 
                          (Word*)&wv_old, (Word*)&ix_old,
                          (Word)wv_new );
    if (have) {
       tl_assert(wv_old != wv_new);
       tl_assert(wv_old);
-      tl_assert(wv_old->owner == wsu);
+      tl_debug_assert(wv_old->owner == wsu);
       tl_assert(ix_old < wsu->ix2vec_used);
       tl_assert(wsu->ix2vec[ix_old] == wv_old);
-      delete_WV( wv_new );
+      wsu->dealloc( wv_new );
       return (WordSet)ix_old;
    } else {
       ensure_ix2vec_space( wsu );
@@ -332,14 +320,14 @@ static WordSet find_or_alloc_and_add_WordVec( WordSetU* wsu, WordVec* wv_new )
    Bool     have;
    WordVec* wv_old;
    UWord/*Set*/ ix_old = -1;
-   tl_assert(wv_new->owner == wsu);
+   tl_debug_assert(wv_new->owner == wsu);
    have = HG_(lookupFM)( wsu->vec2ix, 
                          (Word*)&wv_old, (Word*)&ix_old,
                          (Word)wv_new );
    if (have) {
       tl_assert(wv_old != wv_new);
       tl_assert(wv_old);
-      tl_assert(wv_old->owner == wsu);
+      tl_debug_assert(wv_old->owner == wsu);
       tl_assert(ix_old < wsu->ix2vec_used);
       tl_assert(wsu->ix2vec[ix_old] == wv_old);
       return (WordSet)ix_old;
@@ -392,9 +380,21 @@ WordSetU* HG_(newWordSetU) ( void* (*alloc_nofail)( SizeT ),
 
 void HG_(deleteWordSetU) ( WordSetU* wsu )
 {
+   WordVec* wv = NULL;
    void (*dealloc)(void*) = wsu->dealloc;
    tl_assert(wsu->vec2ix);
-   HG_(deleteFM)( wsu->vec2ix, delete_WV_for_FM, NULL/*val-finalizer*/ );
+   // TODO: iterate over "wsu->vec2ix" FM and call "delete_WV_for_FM" for KEYS
+   // delete_WV_for_FM(wv) = { wv->owner->dealloc(wv) } = { wsu->dealloc(wv) }
+   HG_(initIterAtFM)(wsu->vec2ix, 0);
+   while (HG_(nextIterFM)(wsu->vec2ix, (Word*)&wv /*key*/, NULL /*val*/)) {
+      dealloc((WordVec*)wv);
+   }
+   HG_(doneIterFM) (wsu->vec2ix);
+   
+   HG_(deleteFM)( wsu->vec2ix, 
+                  NULL /*key-finalizer*/,
+                  NULL /*val-finalizer*/ );
+   
    if (wsu->ix2vec)
       dealloc(wsu->ix2vec);
    dealloc(wsu);
@@ -472,7 +472,8 @@ UWord HG_(memoryConsumedWSU) ( WordSetU* wsu, UWord* count )
        n++;
        ret += sizeof(Word) * HG_(cardinalityWS)(wsu, i) + sizeof(WordVec);
    }
-   *count = n;
+   if (count != NULL)
+      *count = n;
    return ret;
 }
 
@@ -550,7 +551,7 @@ void    HG_(recycleWS)      ( WordSetU *wsu, WordSet ws)
          tl_assert(wv->size >= 0);
          tl_assert(wv->refcount == 0);
          HG_(delFromFM)(wsu->vec2ix, NULL, NULL, (Word)wv);
-         delete_WV(wv);
+         wsu->dealloc(wv);
          wsu->ix2vec[ws_to_recycle] = NULL; 
          wsu->n_recycle++;
       }
@@ -590,8 +591,8 @@ Bool HG_(saneWS_SLOW) ( WordSetU* wsu, WordSet ws )
    wv = wsu->ix2vec[ws];
    if (!wv) 
       return False;
-   if (wv->owner != wsu) 
-      return False;
+   DEBUG_ONLY(if (wv->owner != wsu) 
+      return False);
    if (wv->size < 0) return False;
    if (wv->size > 0) {
       for (i = 0; i < wv->size-1; i++) {
@@ -616,13 +617,11 @@ Bool HG_(elemWS) ( WordSetU* wsu, WordSet ws, UWord w )
 
 WordSet HG_(doubletonWS) ( WordSetU* wsu, UWord w1, UWord w2 )
 {
-   UWord    wv_arr[2];
-   WordVec  wv_;
-   WordVec  *wv = &wv_;
+   char temp[sizeof(WordVec) + 2*sizeof(UWord)];
+   WordVec  *wv = (WordVec*)temp;
 
-   wv_.owner = wsu;
-   wv_.words = wv_arr;
-   wv_.size  = 2;
+   DEBUG_ONLY(wv->owner = wsu);
+   wv->size  = 2;
 
    wsu->n_doubleton++;
    if (w1 == w2) {
@@ -715,12 +714,14 @@ void HG_(ppWSUstats) ( WordSetU* wsu, HChar* name )
 WordSet HG_(addToWS) ( WordSetU* wsu, WordSet ws, UWord w )
 {
    UWord    k, j;
-   WordVec* wv = do_ix2vec( wsu, ws ); ;
-   UWord    wv_new_arr[wv->size+1]; // C99 array. 
-   WordVec  wv_new_ = {wsu, wv_new_arr, wv->size+1};  
-   WordVec  *wv_new = &wv_new_;
+   WordVec* wv = do_ix2vec( wsu, ws );
+   char     temp[sizeof(WordVec) + (wv->size+1)*sizeof(Word)]; // C99 array. 
+   WordVec  *wv_new = (WordVec*)temp;
    WordSet  result = (WordSet)(-1); /* bogus */
 
+   wv_new->size = wv->size + 1;
+   DEBUG_ONLY(wv_new->owner = wsu);
+   
    wsu->n_add++;
    WCache_LOOKUP_AND_RETURN(WordSet, wsu->cache_addTo, ws, w);
    wsu->n_add_uncached++;
@@ -759,10 +760,12 @@ WordSet HG_(delFromWS) ( WordSetU* wsu, WordSet ws, UWord w )
    UWord    i, j, k;
    WordSet  result = (WordSet)(-1); /* bogus */
    WordVec* wv = do_ix2vec( wsu, ws );
-   UWord    wv_new_arr[wv->size-1]; // C99 array. 
-   WordVec  wv_new_ = {wsu, wv_new_arr, wv->size-1};  
-   WordVec  *wv_new = &wv_new_;
-
+   char     temp[sizeof(WordVec) + (wv->size-1)*sizeof(Word)]; // C99 array. 
+   WordVec  *wv_new = (WordVec*)temp;
+   
+   wv_new->size = wv->size - 1;
+   DEBUG_ONLY(wv_new->owner = wsu);
+   
    wsu->n_del++;
 
    /* special case empty set */
