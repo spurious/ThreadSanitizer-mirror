@@ -133,14 +133,14 @@ typedef
 //---                       Implementation                       ---//
 //------------------------------------------------------------------//
 
-typedef
-   struct {
-      UInt      size; /* Really this should be SizeT */
-      UInt      refcount;
-      DEBUG_ONLY(WordSetU* owner); /* for sanity checking */ 
-      UWord     words[];
-   }
-   WordVec;
+#define TEMPLATE_WORDVEC(SIZE) struct {\
+   UInt      size; /* Really this should be SizeT */\
+   UInt      refcount;\
+   DEBUG_ONLY(WordSetU* owner); /* for sanity checking */\ 
+   UWord     words[SIZE];\
+} 
+
+typedef TEMPLATE_WORDVEC() WordVec;
 
 #define N_RECYCLE_CACHE_MAX 32
 
@@ -466,7 +466,7 @@ UWord HG_(cardinalityWSU) ( WordSetU* wsu )
 
 UWord HG_(memoryConsumedWSU) ( WordSetU* wsu, UWord* count )
 {
-   UWord i, n, ret = 0;
+   UWord i, n = 0, ret = 0;
    for (i = 0; i < HG_(cardinalityWSU)(wsu); i++) {
        if (!HG_(saneWS_SLOW(wsu, i)))
           continue;
@@ -618,8 +618,8 @@ Bool HG_(elemWS) ( WordSetU* wsu, WordSet ws, UWord w )
 
 WordSet HG_(doubletonWS) ( WordSetU* wsu, UWord w1, UWord w2 )
 {
-   char temp[sizeof(WordVec) + 2*sizeof(UWord)];
-   WordVec  *wv = (WordVec*)temp;
+   TEMPLATE_WORDVEC(2) temp;
+   WordVec  *wv = (WordVec*)&temp;
 
    DEBUG_ONLY(wv->owner = wsu);
    wv->size  = 2;
@@ -716,8 +716,8 @@ WordSet HG_(addToWS) ( WordSetU* wsu, WordSet ws, UWord w )
 {
    UWord    k, j;
    WordVec* wv = do_ix2vec( wsu, ws );
-   char     temp[sizeof(WordVec) + (wv->size+1)*sizeof(Word)]; // C99 array. 
-   WordVec  *wv_new = (WordVec*)temp;
+   TEMPLATE_WORDVEC(wv->size + 1) temp; // temp.words = C99 array 
+   WordVec  *wv_new = (WordVec*)&temp;
    WordSet  result = (WordSet)(-1); /* bogus */
 
    wv_new->size = wv->size + 1;
@@ -759,10 +759,10 @@ WordSet HG_(addToWS) ( WordSetU* wsu, WordSet ws, UWord w )
 WordSet HG_(delFromWS) ( WordSetU* wsu, WordSet ws, UWord w )
 {
    UWord    i, j, k;
-   WordSet  result = (WordSet)(-1); /* bogus */
    WordVec* wv = do_ix2vec( wsu, ws );
-   char     temp[sizeof(WordVec) + (wv->size-1)*sizeof(Word)]; // C99 array. 
-   WordVec  *wv_new = (WordVec*)temp;
+   TEMPLATE_WORDVEC(wv->size - 1) temp; // temp.words = C99 array 
+   WordVec  *wv_new = (WordVec*)&temp;
+   WordSet  result = (WordSet)(-1); /* bogus */
    
    wv_new->size = wv->size - 1;
    DEBUG_ONLY(wv_new->owner = wsu);
