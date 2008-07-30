@@ -4475,20 +4475,19 @@ void Run() {
 REGISTER_TEST2(Run, 503, MEMORY_USAGE | PRINT_STATS | PERFORMANCE)
 }  // namespace test503
 
-#undef CACHELINE_SIZE
 // test504: force massive cache fetch-wback (50% misses, mostly CacheLineZ)
 namespace test504 {
 
 const int N_THREADS = 2,
-          CACHELINE_COUNT = 1 << 16,
-          CACHELINE_SIZE  = 1 << 6,
-          CACHE_SIZE = CACHELINE_COUNT * CACHELINE_SIZE;
+          HG_CACHELINE_COUNT = 1 << 16,
+          HG_CACHELINE_SIZE  = 1 << 6,
+          HG_CACHE_SIZE = HG_CACHELINE_COUNT * HG_CACHELINE_SIZE;
 
 // int gives us ~4x speed of the byte test
 // 4x array size gives us
 // total multiplier of 16x over the cachesize 
 // so we can neglect the cached-at-the-end memory
-const int ARRAY_SIZE = 4 * CACHE_SIZE;
+const int ARRAY_SIZE = 4 * HG_CACHE_SIZE;
 int array[ARRAY_SIZE];
 
 int count = 0;
@@ -4503,7 +4502,7 @@ void Worker() {
    // so no synchronization mechanisms are needed
    int lower_bound = ARRAY_SIZE * (myId-1) / N_THREADS,
        upper_bound = ARRAY_SIZE * ( myId ) / N_THREADS;
-   for (int i = lower_bound; i < upper_bound; i += CACHELINE_SIZE / sizeof(array[0])) {
+   for (int i = lower_bound; i < upper_bound; i += HG_CACHELINE_SIZE / sizeof(array[0])) {
       array[i] = i; // each array-write generates a cache miss
    }
 }
@@ -4523,11 +4522,11 @@ REGISTER_TEST2(Run, 504, PERFORMANCE | PRINT_STATS)
 namespace test505 {
 
 const int N_THREADS = 2,
-          CACHELINE_COUNT = 1 << 16,
-          CACHELINE_SIZE  = 1 << 6,
-          CACHE_SIZE = CACHELINE_COUNT * CACHELINE_SIZE;
+          HG_CACHELINE_COUNT = 1 << 16,
+          HG_CACHELINE_SIZE  = 1 << 6,
+          HG_CACHE_SIZE = HG_CACHELINE_COUNT * HG_CACHELINE_SIZE;
 
-const int ARRAY_SIZE = 4 * CACHE_SIZE;
+const int ARRAY_SIZE = 4 * HG_CACHE_SIZE;
 int array[ARRAY_SIZE];
 
 int count = 0;
@@ -4549,7 +4548,7 @@ void Worker() {
       m->Lock();
       for (int i = lower_bound + mutex_id, cnt = 0; 
                i < upper_bound;
-               i += CACHELINE_SIZE / sizeof(array[0]), cnt++) {
+               i += HG_CACHELINE_SIZE / sizeof(array[0]), cnt++) {
          array[i] = i; // each array-write generates a cache miss
       }
       m->Unlock();
