@@ -116,7 +116,13 @@ enum TEST_FLAG {
 };
 
 // Put everything into stderr.
-#define printf(args...) fprintf(stderr, args)
+Mutex printf_mu;
+#define printf(args...) \
+    do{ \
+      printf_mu.Lock();\
+      fprintf(stderr, args);\
+      printf_mu.Unlock(); \
+    }while(0)
 
 struct Test{
   void_func_void_t f_;
@@ -154,6 +160,7 @@ struct TestAdder {
 
 static bool ArgIsOne(int *arg) { return *arg == 1; };
 static bool ArgIsZero(int *arg) { return *arg == 0; };
+static bool ArgIsTrue(bool *arg) { return *arg == true; };
 
 // Call ANNOTATE_EXPECT_RACE only if 'machine' env variable is defined. 
 // Useful to test against several different machines. 
@@ -163,8 +170,12 @@ static bool ArgIsZero(int *arg) { return *arg == 0; };
       break;\
     }\
 
+#ifndef MAIN_INIT_ACTION
+#define MAIN_INIT_ACTION
+#endif 
 
 int main(int argc, char** argv) { // {{{1
+  MAIN_INIT_ACTION;
   if (argc == 2 && !strcmp(argv[1], "benchmark")) {
      for (std::map<int,Test>::iterator it = TheMapOfTests.begin(); 
          it != TheMapOfTests.end();
@@ -3938,6 +3949,64 @@ REGISTER_TEST(Run, 85)
 }  // namespace test85
 
 
+// test86: Test for race inside DTOR (TODO) {{{1
+namespace test86 {
+
+bool flag_stop = false;
+bool flag_stopped = false;
+Mutex mu;
+
+ProducerConsumerQueue Q(INT_MAX);
+
+struct A {
+  A()  { printf("A::A()\n"); }
+  virtual ~A() { printf("A::~A()\n"); }
+  virtual void f() { }
+};
+
+struct B: A {
+  B()  { printf("B::B()\n"); }
+  virtual ~B() { 
+    printf("B::~B()\n"); 
+    mu.LockWhen(Condition(&ArgIsTrue, &flag_stopped));
+    mu.Unlock();
+    printf("B::~B() done\n"); 
+  }
+  virtual void f() { }
+};
+
+void Waiter() {
+  A *a = new B;
+  printf("Waiter: B created\n");
+  Q.Put(a);
+  usleep(100000); // so that Worker calls a->f() first.
+  printf("Waiter: deleting B (flag_stopped=%d)\n");
+  delete a;
+  printf("Waiter: B deleted\n");
+}
+
+void Worker() {
+  A *a = reinterpret_cast<A*>(Q.Get());
+  printf("Worker: got A\n");
+  a->f();
+  printf("Worker: done\n");
+    
+  mu.Lock();
+  flag_stopped = true;
+  ANNOTATE_CONDVAR_SIGNAL(&mu);
+  mu.Unlock();
+}
+
+void Run() {
+  printf("test86: positive, race inside DTOR\n");
+  MyThreadArray t(Waiter, Worker);
+  t.Start();
+  t.Join();
+}
+REGISTER_TEST(Run, 86)
+}  // namespace test86
+
+
 // test300: {{{1
 namespace test300 {
 int     GLOB = 0;
@@ -4291,6 +4360,7 @@ void Run() {
 REGISTER_TEST2(Run, 503, MEMORY_USAGE | PRINT_STATS | PERFORMANCE)
 }  // namespace test503
 
+#undef CACHELINE_SIZE
 // test504: force massive cache fetch-wback (50% misses, mostly CacheLineZ)
 namespace test504 {
 
