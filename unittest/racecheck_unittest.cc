@@ -3949,7 +3949,7 @@ REGISTER_TEST(Run, 85)
 }  // namespace test85
 
 
-// test86: Test for race inside DTOR: racey write to vptr. {{{1
+// test86: Test for race inside DTOR: racey write to vptr. Benign. {{{1
 namespace test86 {
 // This test shows a racey access to vptr (the pointer to vtbl).
 // We have class A and class B derived from A. 
@@ -3969,7 +3969,7 @@ namespace test86 {
 // 
 // Threa1:                                            Thread2: 
 // 1. A a* = new B;                                  
-// 2. Q.Put(a); ------------\                                     
+// 2. Q.Put(a); ------------\                         .            
 //                           \-------------------->   a. a = Q.Get();
 //                                                    b. a->f();
 //                                       /---------   c. flag_stopped = true;
@@ -4004,6 +4004,7 @@ struct B: A {
 
 void Waiter() {
   A *a = new B;
+  ANNOTATE_EXPECT_RACE(a, "expected race on a->vptr");
   printf("Waiter: B created\n");
   Q.Put(a);
   usleep(100000); // so that Worker calls a->f() first.
@@ -4032,6 +4033,65 @@ void Run() {
 }
 REGISTER_TEST(Run, 86)
 }  // namespace test86
+
+
+// test87: Test for race inside DTOR: racey write to vptr. Harmful.{{{1
+namespace test87 {
+// A variation of test86 where the race is harmful.
+bool flag_stopped = false;
+Mutex mu;
+
+ProducerConsumerQueue Q(INT_MAX);  // Used to pass A* between threads.
+
+struct A {
+  A()  { printf("A::A()\n"); }
+  virtual ~A() { printf("A::~A()\n"); }
+  virtual void f() = 0; // pure virtual.
+};
+
+struct B: A {
+  B()  { printf("B::B()\n"); }
+  virtual ~B() { 
+    // The race is here.    <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+    printf("B::~B()\n"); 
+    // wait until flag_stopped is true.
+    mu.LockWhen(Condition(&ArgIsTrue, &flag_stopped));
+    mu.Unlock();
+    printf("B::~B() done\n"); 
+  }
+  virtual void f() = 0; // pure virtual.
+};
+
+struct C: B {
+  C()  { printf("C::C()\n"); }
+  virtual ~C() { printf("C::~C()\n"); }
+  virtual void f() { }
+};
+
+void Waiter() {
+  A *a = new C;
+  Q.Put(a);
+  delete a;
+}
+
+void Worker() {
+  A *a = reinterpret_cast<A*>(Q.Get());
+  a->f();
+    
+  mu.Lock();
+  flag_stopped = true;
+  ANNOTATE_CONDVAR_SIGNAL(&mu);
+  mu.Unlock();
+}
+
+void Run() {
+  printf("test87: positive, race inside DTOR\n");
+  MyThreadArray t(Waiter, Worker);
+  t.Start();
+  t.Join();
+}
+REGISTER_TEST2(Run, 87, FEATURE|EXCLUDE_FROM_ALL)
+}  // namespace test87
 
 
 // test300: {{{1
