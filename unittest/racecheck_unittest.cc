@@ -3949,10 +3949,9 @@ REGISTER_TEST(Run, 85)
 }  // namespace test85
 
 
-// test86: Test for race inside DTOR (TODO) {{{1
+// test86: Test for race inside DTOR: racey write to vptr. {{{1
 namespace test86 {
 
-bool flag_stop = false;
 bool flag_stopped = false;
 Mutex mu;
 
@@ -3980,7 +3979,7 @@ void Waiter() {
   printf("Waiter: B created\n");
   Q.Put(a);
   usleep(100000); // so that Worker calls a->f() first.
-  printf("Waiter: deleting B (flag_stopped=%d)\n");
+  printf("Waiter: deleting B\n");
   delete a;
   printf("Waiter: B deleted\n");
 }
