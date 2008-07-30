@@ -3956,8 +3956,7 @@ namespace test86 {
 // Both classes have a virtual function f() and a virtual DTOR.
 // We create an object 'A *a = new B'
 // and pass this object from Thread1 to Thread2.
-// Thread2 calls a->f(). Since the object's dynamic type is B, 
-// this call reads a->vtpr.
+// Thread2 calls a->f(). This call reads a->vtpr.
 // Thread1 deletes the object. B::~B waits untill the object can be destroyed 
 // (flag_stopped == true) but at the very beginning of B::~B 
 // a->vptr is written to. 
