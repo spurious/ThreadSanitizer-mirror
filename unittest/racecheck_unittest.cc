@@ -4101,6 +4101,27 @@ REGISTER_TEST2(Run, 87, FEATURE|EXCLUDE_FROM_ALL)
 }  // namespace test87
 
 
+// test88: Test for ANNOTATE_IGNORE_WRITES_*{{{1
+namespace test88 {
+// a recey write annotated with ANNOTATE_IGNORE_WRITES_BEGIN/END.
+int     GLOB = 0;
+void Worker() {
+  ANNOTATE_IGNORE_WRITES_BEGIN();
+  GLOB = 1;
+  ANNOTATE_IGNORE_WRITES_END();
+}
+void Run() {
+  printf("test88: negative\n");
+  MyThread t(Worker);
+  t.Start();
+  GLOB = 1;
+  t.Join();
+  printf("\tGLOB=%d\n", GLOB);
+}
+REGISTER_TEST(Run, 88)
+}  // namespace test88
+
+
 // test300: {{{1
 namespace test300 {
 int     GLOB = 0;

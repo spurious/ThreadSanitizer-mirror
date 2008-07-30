@@ -121,9 +121,6 @@
     ret_ty I_WRAP_SONAME_FNNAME_ZZ(NONE,f)(args); \
     ret_ty I_WRAP_SONAME_FNNAME_ZZ(NONE,f)(args)
 
-#define ANN_FUNC0(ret_ty, f) \
-    ret_ty I_WRAP_SONAME_FNNAME_ZZ(NONE,f)(void); \
-    ret_ty I_WRAP_SONAME_FNNAME_ZZ(NONE,f)(void)
 
 #define ANN_TRACE(args...) \
     do{\
@@ -249,6 +246,22 @@ ANN_FUNC(void, AnnotateIgnoreReadsEnd, char *file, int line, void *mu)
   DO_CREQ_v_W(VG_USERREQ__HG_IGNORE_READS_END,   void*, mu);
 }
 
+ANN_FUNC(void, AnnotateIgnoreWritesBegin, char *file, int line, void *mu)
+{
+  const char *name = "AnnotateIgnoreWritesBegin";
+  ANN_TRACE("--#%d %s[%p] %s:%d\n", tid, name, mu, file, line);
+  DO_CREQ_v_W(VG_USERREQ__HG_IGNORE_WRITES_BEGIN,   void*, mu);
+}
+
+ANN_FUNC(void, AnnotateIgnoreWritesEnd, char *file, int line, void *mu)
+{
+  const char *name = "AnnotateIgnoreWritesEnd";
+  ANN_TRACE("--#%d %s[%p] %s:%d\n", tid, name, mu, file, line);
+  DO_CREQ_v_W(VG_USERREQ__HG_IGNORE_WRITES_END,   void*, mu);
+}
+
+
+
 ANN_FUNC(void, AnnotateMutexIsUsedAsCondVar, char *file, int line, void *mu)
 {
   const char *name = "AnnotateMutexIsUsedAsCondVar";
@@ -272,9 +285,4 @@ ANN_FUNC(void, AnnotateNoOp, char *file, int line, void *mem)
 {
   const char *name = "AnnotateNoOp";
   ANN_TRACE("--#%d/%d %s[%p] %s:%d\n", tid, sid, name, mem, file, line);
-}
-
-ANN_FUNC0(int, RunningOnValgrind)
-{
-  return RUNNING_ON_VALGRIND;
 }

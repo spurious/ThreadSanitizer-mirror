@@ -102,6 +102,8 @@ ANNOTATION(AnnotateTraceMemory, void *mem);
 ANNOTATION(AnnotateMutexIsUsedAsCondVar, void *mu);
 ANNOTATION(AnnotateIgnoreReadsBegin, void *);
 ANNOTATION(AnnotateIgnoreReadsEnd, void *);
+ANNOTATION(AnnotateIgnoreWritesBegin, void *);
+ANNOTATION(AnnotateIgnoreWritesEnd, void *);
 ANNOTATION(AnnotatePrintMemoryUsage, long);
 ANNOTATION(AnnotatePrintStats, void *);
 ANNOTATION(AnnotateResetStats, void *);
@@ -191,6 +193,13 @@ ANNOTATION(AnnotateNoOp, void *arg);
             AnnotateIgnoreReadsBegin(__FILE__, __LINE__, NULL /*reserved*/)
 #define ANNOTATE_IGNORE_READS_END() \
             AnnotateIgnoreReadsEnd(__FILE__, __LINE__, NULL /*reserved*/)
+
+// Same for writes.
+#define ANNOTATE_IGNORE_WRITES_BEGIN() \
+            AnnotateIgnoreWritesBegin(__FILE__, __LINE__, NULL /*reserved*/)
+#define ANNOTATE_IGNORE_WRITES_END() \
+            AnnotateIgnoreWritesEnd(__FILE__, __LINE__, NULL /*reserved*/)
+
 
 #define ANNOTATE_PRINT_MEMORY_USAGE(flags) \
             AnnotatePrintMemoryUsage(__FILE__, __LINE__, flags)
