@@ -206,9 +206,6 @@ static void hg_reset_stats ();
 // FIXME what is supposed to happen to locks in memory which
 // is relocated as a result of client realloc?
 
-// FIXME put referencing ThreadId into Thread and get
-// rid of the slow reverse mapping function.
-
 // FIXME accesses to NoAccess areas: change state to Excl?
 
 // FIXME report errors for accesses of NoAccess memory?
@@ -455,7 +452,8 @@ typedef
       /* USEFUL */
       WordSetID locksetA; /* WordSet of Lock* currently held by thread */
       WordSetID locksetW; /* subset of locksetA held in w-mode */
-      SegmentID csegid;  /* current thread segment for thread */
+      SegmentID csegid;   /* current thread segment for thread */
+      ThreadId  threadId; /* VG threadId / index of thread in map_threds */
       /* EXPOSITION */
       /* Place where parent was when this thread was created. */
       ExeContext* created_at;
@@ -781,7 +779,7 @@ static WordFM *map_expected_errors = NULL; /* WordFM Addr ExpectedError */
 static UWord stats__lockN_acquires = 0;
 static UWord stats__lockN_releases = 0;
 
-static ThreadId map_threads_maybe_reverse_lookup_SLOW ( Thread* ); /*fwds*/
+static ThreadId map_threads_maybe_reverse_lookup ( Thread* ); /*fwds*/
 
 #define Thread_MAGIC   0x504fc5e5
 #define LockN_MAGIC    0x6545b557 /* normal nonpersistent locks */
@@ -884,7 +882,7 @@ static ExeContext *SEG_get_context(SegmentID n)
 
 static inline Bool is_sane_LockN ( Lock* lock ); /* fwds */
 
-static Thread* mk_Thread ( SegmentID csegid ) {
+static Thread* mk_Thread ( SegmentID csegid, UWord threadId ) {
    static Int indx      = 1;
    Thread* thread       = hg_zalloc( sizeof(Thread) );
    thread->locksetA     = HG_(emptyWS)( univ_lsets );
@@ -895,6 +893,9 @@ static Thread* mk_Thread ( SegmentID csegid ) {
    thread->announced    = False;
    thread->errmsg_index = indx++;
    thread->admin        = admin_threads;
+   thread->threadId     = threadId;
+   if (threadId != VG_INVALID_THREADID)
+      map_threads[threadId] = thread;
    admin_threads        = thread;
    return thread;
 }
@@ -933,8 +934,16 @@ static inline Bool is_sane_Segment ( Segment* seg ) {
    DEBUG_ONLY(return seg != NULL && seg->magic == Segment_MAGIC);
    RELEASE_ONLY(return 1);
 }
+
+static inline Bool is_sane_ThreadId ( ThreadId coretid ) {
+   return coretid >= 0 && coretid < VG_N_THREADS;
+}
+
 static inline Bool is_sane_Thread ( Thread* thr ) {
-   return thr != NULL && thr->magic == Thread_MAGIC;
+   return thr != NULL && thr->magic == Thread_MAGIC
+          && is_sane_ThreadId(thr->threadId)
+          && (thr->threadId == VG_INVALID_THREADID
+                || map_threads[thr->threadId] == thr);
 }
 
 static Bool is_sane_Bag_of_Threads ( WordBag* bag )
@@ -1021,7 +1030,7 @@ static void lockN_acquire_writer ( Lock* lk, Thread* thr )
    if (lk->acquired_at == NULL) {
       ThreadId tid;
       tl_assert(HG_(isEmptyBag)(&lk->heldBy));
-      tid = map_threads_maybe_reverse_lookup_SLOW(thr);
+      tid = map_threads_maybe_reverse_lookup(thr);
       lk->acquired_at = VG_(record_depth_N_ExeContext)
                            (tid, 0/*first_ip_delta*/, 
                                  clo_num_callers_for_locks);
@@ -1079,7 +1088,7 @@ static void lockN_acquire_reader ( Lock* lk, Thread* thr )
    if (lk->acquired_at == NULL) {
       ThreadId tid;
       tl_assert(HG_(isEmptyBag)(&lk->heldBy));
-      tid = map_threads_maybe_reverse_lookup_SLOW(thr);
+      tid = map_threads_maybe_reverse_lookup(thr);
       lk->acquired_at
          = VG_(record_depth_N_ExeContext)
               (tid, 0/*first_ip_delta*/, clo_num_callers_for_locks);
@@ -1163,13 +1172,6 @@ static void remove_Lock_from_locksets_of_all_owning_Threads( Lock* lk )
       }
    }
    HG_(doneIterBag)( &lk->heldBy );
-}
-
-/* --------- xxxID functions --------- */
-
-
-static inline Bool is_sane_ThreadId ( ThreadId coretid ) {
-   return coretid >= 0 && coretid < VG_N_THREADS;
 }
 
 /* --------- Shadow memory --------- */
@@ -1885,16 +1887,13 @@ static void initialise_data_structures ( void )
    segid   = mk_Segment( NULL, NULL, NULL );
    seg     = SEG_get(segid);
 
-   /* a Thread for the new thread ... */
-   thr = mk_Thread( segid );
+   /* a Thread for the new thread and bind it in the thread-map table.
+      FIXME: assumes root ThreadId == 1. */
+   thr = mk_Thread( segid, 1 );
    seg->thr = thr;
 
    /* Give the thread a starting-off vector timestamp. */
    seg->vts = singleton_VTS( seg->thr, 1 );
-
-   /* and bind it in the thread-map table.
-      FIXME: assumes root ThreadId == 1. */
-   map_threads[1] = thr;
 
    tl_assert(VG_INVALID_THREADID == 0);
 
@@ -1934,25 +1933,21 @@ static inline Thread* map_threads_lookup ( ThreadId coretid )
 
 /* Do a reverse lookup.  Warning: POTENTIALLY SLOW.  Does not assert
    if 'thr' is not found in map_threads. */
-static ThreadId map_threads_maybe_reverse_lookup_SLOW ( Thread* thr )
+static ThreadId map_threads_maybe_reverse_lookup ( Thread* thr )
 {
    Int i;
    tl_assert(is_sane_Thread(thr));
    /* Check nobody used the invalid-threadid slot */
    tl_assert(VG_INVALID_THREADID >= 0 && VG_INVALID_THREADID < VG_N_THREADS);
    tl_assert(map_threads[VG_INVALID_THREADID] == NULL);
-   for (i = 0; i < VG_N_THREADS; i++) {
-      if (i != VG_INVALID_THREADID && map_threads[i] == thr)
-         return (ThreadId)i;
-   }
-   return VG_INVALID_THREADID;
+   return thr->threadId;
 }
 
 /* Do a reverse lookup.  Warning: POTENTIALLY SLOW.  Asserts if 'thr'
    is not found in map_threads. */
-static ThreadId map_threads_reverse_lookup_SLOW ( Thread* thr )
+static ThreadId map_threads_reverse_lookup ( Thread* thr )
 {
-   ThreadId tid = map_threads_maybe_reverse_lookup_SLOW( thr );
+   ThreadId tid = map_threads_maybe_reverse_lookup( thr );
    tl_assert(tid != VG_INVALID_THREADID);
    return tid;
 }
@@ -1964,7 +1959,9 @@ static void map_threads_delete ( ThreadId coretid )
    tl_assert( is_sane_ThreadId(coretid) );
    thr = map_threads[coretid];
    tl_assert(thr);
-   map_threads[coretid] = NULL;
+   if (coretid != VG_INVALID_THREADID)
+      map_threads[coretid] = NULL;
+   thr->threadId = VG_INVALID_THREADID;
 }
 
 
@@ -3654,7 +3651,7 @@ static void msm__show_state_change ( Thread* thr_acc, Addr a, Int szB,
       VG_(message)(Vg_UserMsg, 
                    "TRACE: %p %s %d thr#%d :: %s --> %s",
                    a, how, szB, thr_acc->errmsg_index, txt_old, txt_new );
-      tid = map_threads_maybe_reverse_lookup_SLOW(thr_acc);
+      tid = map_threads_maybe_reverse_lookup(thr_acc);
       if (tid != VG_INVALID_THREADID) {
          VG_(get_and_pp_StackTrace)( tid, 8 );
       }
@@ -3935,7 +3932,7 @@ static void msm_do_trace(Thread *thr,
                 (Int)thr->csegid, 
                 is_w ? "wr" : "rd", a, buf);
    if (trace_level >= 2) {
-      ThreadId tid = map_threads_maybe_reverse_lookup_SLOW(thr);
+      ThreadId tid = map_threads_maybe_reverse_lookup(thr);
       if (tid != VG_INVALID_THREADID) {
          VG_(message)(Vg_UserMsg, " Access stack trace:");
          VG_(get_and_pp_StackTrace)( tid, 15);
@@ -4005,7 +4002,7 @@ SVal memory_state_machine(Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
       sv_new = SHVAL_Ignore;
 
       // VG_(printf)("Ignoring memory %p accessed with LOCK prefix at\n", a);
-      // VG_(get_and_pp_StackTrace)(map_threads_reverse_lookup_SLOW(thr), 5);
+      // VG_(get_and_pp_StackTrace)(map_threads_reverse_lookup(thr), 5);
 
       goto done; 
       // TODO: a better scheme might be: 
@@ -6066,7 +6063,7 @@ void evhH__start_new_segment_for_thread ( /*OUT*/SegmentID* new_segidP,
    *new_segP   = SEG_get(*new_segidP);
    thr->csegid = *new_segidP;
 
-   ThreadId tid = map_threads_maybe_reverse_lookup_SLOW(thr);
+   ThreadId tid = map_threads_maybe_reverse_lookup(thr);
    if (clo_more_context && tid != VG_INVALID_THREADID)
       SEG_set_context(*new_segidP,
                       VG_(record_ExeContext)(tid,-1/*first_ip_delta*/));
@@ -6100,7 +6097,7 @@ void evhH__post_thread_w_acquires_lock ( Thread* thr,
    /* Try to find the lock.  If we can't, then create a new one with
       kind 'lkk'. */
    lk = map_locks_lookup_or_create( 
-           lkk, lock_ga, map_threads_reverse_lookup_SLOW(thr) );
+           lkk, lock_ga, map_threads_reverse_lookup(thr) );
    tl_assert( is_sane_LockN(lk) );
    shmem__set_mbHasLocks( lock_ga, True );
 
@@ -6196,7 +6193,7 @@ void evhH__post_thread_r_acquires_lock ( Thread* thr,
       hence the first assertion. */
    tl_assert(lkk == LK_rdwr);
    lk = map_locks_lookup_or_create( 
-           lkk, lock_ga, map_threads_reverse_lookup_SLOW(thr) );
+           lkk, lock_ga, map_threads_reverse_lookup(thr) );
    tl_assert( is_sane_LockN(lk) );
    shmem__set_mbHasLocks( lock_ga, True );
 
@@ -6527,12 +6524,9 @@ void evh__pre_thread_ll_create ( ThreadId parent, ThreadId child )
       segid_c   = mk_Segment( NULL/*thr*/, NULL/*prev*/, NULL/*other*/ );
       seg_c     = SEG_get(segid_c);
 
-      /* a Thread for the new thread ... */
-      thr_c = mk_Thread( segid_c );
+      /* a Thread for the new thread and bind it in the thread-map table */
+      thr_c = mk_Thread( segid_c, child );
       seg_c->thr = thr_c;
-
-      /* and bind it in the thread-map table */
-      map_threads[child] = thr_c;
 
       /* Record where the parent is so we can later refer to this in
          error messages.
@@ -6669,7 +6663,7 @@ void evh__HG_PTHREAD_JOIN_POST ( ThreadId stay_tid, Thread* quit_thr )
       notification feeds through into evh__pre_thread_ll_exit,
       which should clear the map_threads entry for it.  Hence we
       expect there to be no map_threads entry at this point. */
-   tl_assert( map_threads_maybe_reverse_lookup_SLOW(thr_q)
+   tl_assert( map_threads_maybe_reverse_lookup(thr_q)
               == VG_INVALID_THREADID);
 
    if (clo_sanity_flags & SCE_THREADS)
@@ -7018,7 +7012,7 @@ void evhH__do_cv_signal(Thread *thr, Word cond)
    if (fake_thread == NULL) {
       SegmentID segid = mk_Segment(NULL, NULL, NULL);
       Segment  *seg   = SEG_get(segid);
-      fake_thread     = mk_Thread(segid);
+      fake_thread     = mk_Thread(segid, VG_INVALID_THREADID);
       seg->thr        = fake_thread;
       seg->vts        = singleton_VTS(seg->thr, 1);
    }
@@ -9140,7 +9134,7 @@ static Bool record_error_Race ( Thread* thr,
                                 SVal old_sv, SVal new_sv,
                                 ExeContext* mb_lastlock ) {
    XError xe;
-   ThreadId tid = map_threads_maybe_reverse_lookup_SLOW(thr);
+   ThreadId tid = map_threads_maybe_reverse_lookup(thr);
    tl_assert( is_sane_Thread(thr) );
    init_XError(&xe);
    xe.tag = XE_Race;
@@ -9191,7 +9185,7 @@ static Bool record_error_Race ( Thread* thr,
       if (destructor_detected && clo_ignore_in_dtor) return False;
    }
 
-   Bool res = VG_(maybe_record_error)( map_threads_reverse_lookup_SLOW(thr),
+   Bool res = VG_(maybe_record_error)( map_threads_reverse_lookup(thr),
                             XE_Race, data_addr, NULL, &xe );
 
    if (res && destructor_detected) {
@@ -9209,7 +9203,7 @@ static void record_error_FreeMemLock ( Thread* thr, Lock* lk ) {
    xe.XE.FreeMemLock.thr  = thr;
    xe.XE.FreeMemLock.lock = mk_LockP_from_LockN(lk);
    // FIXME: tid vs thr
-   VG_(maybe_record_error)( map_threads_reverse_lookup_SLOW(thr),
+   VG_(maybe_record_error)( map_threads_reverse_lookup(thr),
                             XE_FreeMemLock, 0, NULL, &xe );
 }
 
@@ -9222,7 +9216,7 @@ static void record_error_UnlockUnlocked ( Thread* thr, Lock* lk ) {
    xe.XE.UnlockUnlocked.thr  = thr;
    xe.XE.UnlockUnlocked.lock = mk_LockP_from_LockN(lk);
    // FIXME: tid vs thr
-   VG_(maybe_record_error)( map_threads_reverse_lookup_SLOW(thr),
+   VG_(maybe_record_error)( map_threads_reverse_lookup(thr),
                             XE_UnlockUnlocked, 0, NULL, &xe );
 }
 
@@ -9238,7 +9232,7 @@ static void record_error_UnlockForeign ( Thread* thr,
    xe.XE.UnlockForeign.owner = owner;
    xe.XE.UnlockForeign.lock  = mk_LockP_from_LockN(lk);
    // FIXME: tid vs thr
-   VG_(maybe_record_error)( map_threads_reverse_lookup_SLOW(thr),
+   VG_(maybe_record_error)( map_threads_reverse_lookup(thr),
                             XE_UnlockForeign, 0, NULL, &xe );
 }
 
@@ -9250,7 +9244,7 @@ static void record_error_UnlockBogus ( Thread* thr, Addr lock_ga ) {
    xe.XE.UnlockBogus.thr     = thr;
    xe.XE.UnlockBogus.lock_ga = lock_ga;
    // FIXME: tid vs thr
-   VG_(maybe_record_error)( map_threads_reverse_lookup_SLOW(thr),
+   VG_(maybe_record_error)( map_threads_reverse_lookup(thr),
                             XE_UnlockBogus, 0, NULL, &xe );
 }
 
@@ -9267,7 +9261,7 @@ void record_error_LockOrder ( Thread* thr, Addr before_ga, Addr after_ga,
    xe.XE.LockOrder.after_ga  = after_ga;
    xe.XE.LockOrder.after_ec  = after_ec;
    // FIXME: tid vs thr
-   VG_(maybe_record_error)( map_threads_reverse_lookup_SLOW(thr),
+   VG_(maybe_record_error)( map_threads_reverse_lookup(thr),
                             XE_LockOrder, 0, NULL, &xe );
 }
 
@@ -9285,7 +9279,7 @@ void record_error_PthAPIerror ( Thread* thr, HChar* fnname,
    xe.XE.PthAPIerror.err    = err;
    xe.XE.PthAPIerror.errstr = string_table_strdup(errstr);
    // FIXME: tid vs thr
-   VG_(maybe_record_error)( map_threads_reverse_lookup_SLOW(thr),
+   VG_(maybe_record_error)( map_threads_reverse_lookup(thr),
                             XE_PthAPIerror, 0, NULL, &xe );
 }
 
@@ -9298,7 +9292,7 @@ static void record_error_Misc ( Thread* thr, HChar* errstr ) {
    xe.XE.Misc.thr    = thr;
    xe.XE.Misc.errstr = string_table_strdup(errstr);
    // FIXME: tid vs thr
-   VG_(maybe_record_error)( map_threads_reverse_lookup_SLOW(thr),
+   VG_(maybe_record_error)( map_threads_reverse_lookup(thr),
                             XE_Misc, 0, NULL, &xe );
 }
 
