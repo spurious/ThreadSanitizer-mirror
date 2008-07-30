@@ -1545,7 +1545,7 @@ static void pp_admin_locks ( Int d )
 
 static void pp_mem_admin_locks ( Int d )
 {
-   Int   i, n = -1;
+   UWord i, n = -1, lockset_bytes;
    Lock* lk;
    Word admin_locks_bytes = 0;
    for (n = 0, i = 0, lk = admin_locks;  lk;  n++, i++, lk = lk->admin) {
@@ -1556,7 +1556,7 @@ static void pp_mem_admin_locks ( Int d )
          (int)(admin_locks_bytes/1024), n);
    
    // LockSets below   
-   Word lockset_bytes = HG_(memoryConsumedWSU) (univ_lsets, &n);
+   lockset_bytes = HG_(memoryConsumedWSU) (univ_lsets, &n);
    space(d); VG_(printf)("locksets: %6d kB (active = %d, total = %d)\n",
          (int)(lockset_bytes/1024), n, HG_(cardinalityWSU) (univ_lsets));
 }
@@ -1605,8 +1605,8 @@ static void pp_all_segments ( Int d )
 
 static void pp_mem_segments ( Int d )
 {
-   ULong i, n = -1;
-   Word segments_bytes = 0, ss_bytes = 0;
+   ULong i;
+   UWord n = -1, segments_bytes = 0, ss_bytes = 0;
    for (i = 1; i < SegmentArray.size; i++) {
       Segment* s = SEG_get(i);
       segments_bytes += sizeof(Segment);
@@ -1737,7 +1737,6 @@ static void pp_mem_shmem ( Int d ) {
         compressed_bytes = 0;
    Addr    ga;
    SecMap* sm;
-   Int i;
    HG_(initIterFM)( map_shmem );
    while (HG_(nextIterFM)( map_shmem, (Word*)&ga,
                                       (Word*)&sm )) {
@@ -1789,9 +1788,9 @@ static void pp_everything ( Int flags, Char* caller )
 
 static void pp_memory_usage ( Int flags, Char* caller )
 {  
-   if (flags == 0)
-      flags = PP_ALL;
    Int d = 0;
+   if (flags == 0)
+      flags = PP_ALL;   
    VG_(printf)("\n");
    VG_(printf)("Memory usage statistics (caller = \"%s\") {\n"
                "   time: %9dms from start\n", 
@@ -7646,13 +7645,10 @@ typedef
 
 
 static void pp_mem_laog ( Int d ) {
-   Word laog_size_bytes = 0;
+   UWord laog_size_bytes = 0, m = -1;
    Lock* me;
    LAOGLinks* links;
-   Int n, m = -1;
-   
-   
-   n = 0;
+   Int n = 0;
    if ( laog ) {
       HG_(initIterFM)( laog );
       me = NULL;
@@ -9981,7 +9977,7 @@ static void hg_post_clo_init ( void )
 {
 }
 
-static void hg_reset_stats ()
+static void hg_reset_stats ( void )
 {
    stats__cache_Z_fetches      = 0;
    stats__cache_Z_wbacks       = 0;
