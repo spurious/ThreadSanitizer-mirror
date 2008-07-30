@@ -760,7 +760,11 @@ WordSet HG_(delFromWS) ( WordSetU* wsu, WordSet ws, UWord w )
 {
    UWord    i, j, k;
    WordVec* wv = do_ix2vec( wsu, ws );
-   TEMPLATE_WORDVEC(wv->size - 1) temp; // temp.words = C99 array 
+   
+   // BHL lockset may produce HG_(delFromWS) calls with wv->size == 0.
+   // max_0_size = max(0, (Word)wv->size - 1)
+   UWord max_0_size = (wv->size > 0) ? (wv->size - 1) : 0;                                    
+   TEMPLATE_WORDVEC(max_0_size) temp; // temp.words = C99 array 
    WordVec  *wv_new = (WordVec*)&temp;
    WordSet  result = (WordSet)(-1); /* bogus */
    
