@@ -4038,6 +4038,14 @@ REGISTER_TEST(Run, 86)
 // test87: Test for race inside DTOR: racey write to vptr. Harmful.{{{1
 namespace test87 {
 // A variation of test86 where the race is harmful.
+// Here we have class C derived from B. 
+// We create an object 'A *a = new C' in Thread1 and pass it to Thread2.
+// Thread2 calls a->f(). 
+// Thread1 calls 'delete a'. 
+// It first calls C::~C, then B::~B where it rewrites the vptr to point 
+// to B::vtbl. This is a problem because Thread2 might not have called a->f() 
+// and now it will call B::f instead of C::f.
+//
 bool flag_stopped = false;
 Mutex mu;
 
