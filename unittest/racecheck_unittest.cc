@@ -4106,12 +4106,12 @@ namespace test88 {
 // a recey write annotated with ANNOTATE_IGNORE_WRITES_BEGIN/END.
 int     GLOB = 0;
 void Worker() {
-//  ANNOTATE_IGNORE_WRITES_BEGIN();
+  ANNOTATE_IGNORE_WRITES_BEGIN();
   GLOB = 1;
-//  ANNOTATE_IGNORE_WRITES_END();
+  ANNOTATE_IGNORE_WRITES_END();
 }
 void Run() {
-  printf("test88: negative\n");
+  printf("test88: negative, test for ANNOTATE_IGNORE_WRITES_*\n");
   MyThread t(Worker);
   t.Start();
   GLOB = 1;
