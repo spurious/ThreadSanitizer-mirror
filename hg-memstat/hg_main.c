@@ -459,8 +459,9 @@ typedef
       ExeContext* created_at;
       Bool        announced;
       Bool        ignore_reads; 
-      /* Index for generating references in error messages. */
-      Int         errmsg_index;
+      /* Unique thread identifier for generating references in error messages
+         and correctly calculating cmpGEQ_VTS even after thread exit. */
+      Int         threadUID;
    }
    Thread;
 
@@ -525,8 +526,8 @@ typedef
 /* Scalar Timestamp */
 typedef
    struct {
-      Thread* thr;
-      UWord   tym;
+      int  thrUID; /* threadUID of the thread with corresponding TS*/
+      UInt tym;
    }
    ScalarTS;
 
@@ -891,7 +892,7 @@ static Thread* mk_Thread ( SegmentID csegid, UWord threadId ) {
    thread->magic        = Thread_MAGIC;
    thread->created_at   = NULL;
    thread->announced    = False;
-   thread->errmsg_index = indx++;
+   thread->threadUID = indx++;
    thread->admin        = admin_threads;
    thread->threadId     = threadId;
    if (threadId != VG_INVALID_THREADID)
@@ -1681,7 +1682,7 @@ static void show_sval ( /*OUT*/Char* buf, Int nBuf, SVal sv )
          S = SS_get_element(ss, i);
          if (i > 0)  VG_(sprintf)(buf + VG_(strlen)(buf), ", ");
          VG_(sprintf)(buf + VG_(strlen)(buf), "T%d/S%d", 
-                      (Int)SEG_get(S)->thr->errmsg_index, (Int)S);
+                      (Int)SEG_get(S)->thr->threadUID, (Int)S);
       }
    } else {
       VG_(sprintf)(buf, "Invalid-shadow-word(%u)", sv);
@@ -1827,7 +1828,7 @@ static void hbefore__invalidate_htable ( void );
 static void shmem__set_mbHasLocks ( Addr a, Bool b );
 static Bool shmem__get_mbHasLocks ( Addr a );
 static void shadow_mem_set8 ( Thread* uu_thr_acc, Addr a, SVal svNew );
-static XArray* singleton_VTS ( Thread* thr, UWord tym );
+static XArray* singleton_VTS ( Thread* thr, UInt tym );
 
 static void initialise_data_structures ( void )
 {
@@ -1931,15 +1932,23 @@ static inline Thread* map_threads_lookup ( ThreadId coretid )
    return thr;
 }
 
+static inline Thread* map_threads_lookup_by_UID_SLOW (int threadUID) {
+   UInt i;
+   for (i = 0; i < VG_N_THREADS; i++)
+      if (map_threads[i] && map_threads[i]->threadUID == threadUID)
+         return map_threads[i];
+   return NULL;
+}
+
 /* Do a reverse lookup.  Warning: POTENTIALLY SLOW.  Does not assert
    if 'thr' is not found in map_threads. */
 static ThreadId map_threads_maybe_reverse_lookup ( Thread* thr )
 {
-   Int i;
    tl_assert(is_sane_Thread(thr));
    /* Check nobody used the invalid-threadid slot */
    tl_assert(VG_INVALID_THREADID >= 0 && VG_INVALID_THREADID < VG_N_THREADS);
    tl_assert(map_threads[VG_INVALID_THREADID] == NULL);
+   // hmmm, but the fake_thread in evhH__do_cv_signal does... 
    return thr->threadId;
 }
 
@@ -1954,6 +1963,10 @@ static ThreadId map_threads_reverse_lookup ( Thread* thr )
 
 static void map_threads_delete ( ThreadId coretid )
 {
+   /* From now on, you can't use threadId to search thread
+      because it may be reused by valgrind.
+      If you still need to identify thread with something except Thread*, use
+      threadUID instead. */
    Thread* thr;
    tl_assert(coretid != 0);
    tl_assert( is_sane_ThreadId(coretid) );
@@ -2046,7 +2059,7 @@ static Bool is_sane_VTS ( XArray* vts )
       for (i = 0; i < n-1; i++) {
          st1 = VG_(indexXA)( vts, i );
          st2 = VG_(indexXA)( vts, i+1 );
-         if (st1->thr >= st2->thr)
+         if (st1->thrUID >= st2->thrUID)
             return False;
          if (st1->tym == 0 || st2->tym == 0)
             return False;
@@ -2058,14 +2071,14 @@ static Bool is_sane_VTS ( XArray* vts )
 static XArray* new_VTS ( void ) {
    return VG_(newXA)( hg_zalloc, hg_free, sizeof(ScalarTS) );
 }
-static XArray* singleton_VTS ( Thread* thr, UWord tym ) {
+static XArray* singleton_VTS ( Thread* thr, UInt tym ) {
    ScalarTS st;
    XArray*  vts;
    tl_assert(thr);
    tl_assert(tym >= 1);
    vts = new_VTS();
    tl_assert(vts);
-   st.thr = thr;
+   st.thrUID = thr->threadUID;
    st.tym = tym;
    VG_(addToXA)( vts, &st );
    return vts;
@@ -2076,8 +2089,8 @@ static Bool cmpGEQ_VTS ( XArray* a, XArray* b )
 {
    // TODO: this is expensive!
    Word     ia, ib, useda, usedb;
-   UWord    tyma, tymb;
-   Thread*  thr;
+   UInt     tyma, tymb;
+   Int      thrUID;
    ScalarTS *tmpa, *tmpb;
 
    Bool all_leq = True;
@@ -2093,7 +2106,7 @@ static Bool cmpGEQ_VTS ( XArray* a, XArray* b )
    while (1) {
 
       /* This logic is to enumerate triples (thr, tyma, tymb) drawn
-         from a and b in order, where thr is the next Thread*
+         from a and b in order, where thr is the next threadUID
          occurring in either a or b, and tyma/b are the relevant
          scalar timestamps, taking into account implicit zeroes. */
       tl_assert(ia >= 0 && ia <= useda);
@@ -2108,7 +2121,7 @@ static Bool cmpGEQ_VTS ( XArray* a, XArray* b )
       if (ia == useda && ib != usedb) {
          /* a empty, use up b */
          tmpb = VG_(indexXA)( b, ib );
-         thr  = tmpb->thr;
+         thrUID = tmpb->thrUID;
          tyma = 0;
          tymb = tmpb->tym;
          ib++;
@@ -2117,33 +2130,33 @@ static Bool cmpGEQ_VTS ( XArray* a, XArray* b )
       if (ia != useda && ib == usedb) {
          /* b empty, use up a */
          tmpa = VG_(indexXA)( a, ia );
-         thr  = tmpa->thr;
+         thrUID = tmpa->thrUID;
          tyma = tmpa->tym;
          tymb = 0;
          ia++;
       }
       else {
-         /* both not empty; extract lowest-Thread*'d triple */
+         /* both not empty; extract lowest-threadUID'd triple */
          tmpa = VG_(indexXA)( a, ia );
          tmpb = VG_(indexXA)( b, ib );
-         if (tmpa->thr < tmpb->thr) {
-            /* a has the lowest unconsidered Thread* */
-            thr  = tmpa->thr;
+         if (tmpa->thrUID < tmpb->thrUID) {
+            /* a has the lowest unconsidered threadUID */
+            thrUID = tmpa->thrUID;
             tyma = tmpa->tym;
             tymb = 0;
             ia++;
          }
          else
-         if (tmpa->thr > tmpb->thr) {
-            /* b has the lowest unconsidered Thread* */
-            thr  = tmpb->thr;
+         if (tmpa->thrUID > tmpb->thrUID) {
+            /* b has the lowest unconsidered threadUID */
+            thrUID = tmpb->thrUID;
             tyma = 0;
             tymb = tmpb->tym;
             ib++;
          } else {
-            /* they both next mention the same Thread* */
-            tl_assert(tmpa->thr == tmpb->thr);
-            thr  = tmpa->thr; /* == tmpb->thr */
+            /* they both next mention the same threadUID */
+            tl_assert(tmpa->thrUID == tmpb->thrUID);
+            thrUID = tmpa->thrUID; /* == tmpb->thrId */
             tyma = tmpa->tym;
             tymb = tmpb->tym;
             ia++;
@@ -2179,8 +2192,8 @@ static
 XArray* tickL_and_joinR_VTS ( Thread* thra, XArray* a, XArray* b )
 {
    Word     ia, ib, useda, usedb, ticks_found;
-   UWord    tyma, tymb, tymMax;
-   Thread*  thr;
+   UInt     tyma, tymb, tymMax;
+   Int      thrUID;
    XArray*  res;
    ScalarTS *tmpa, *tmpb;
 
@@ -2196,7 +2209,7 @@ XArray* tickL_and_joinR_VTS ( Thread* thra, XArray* a, XArray* b )
    while (1) {
 
       /* This logic is to enumerate triples (thr, tyma, tymb) drawn
-         from a and b in order, where thr is the next Thread*
+         from a and b in order, where thr is the next threadUID
          occurring in either a or b, and tyma/b are the relevant
          scalar timestamps, taking into account implicit zeroes. */
       tl_assert(ia >= 0 && ia <= useda);
@@ -2211,7 +2224,7 @@ XArray* tickL_and_joinR_VTS ( Thread* thra, XArray* a, XArray* b )
       if (ia == useda && ib != usedb) {
          /* a empty, use up b */
          tmpb = VG_(indexXA)( b, ib );
-         thr  = tmpb->thr;
+         thrUID = tmpb->thrUID;
          tyma = 0;
          tymb = tmpb->tym;
          ib++;
@@ -2220,33 +2233,33 @@ XArray* tickL_and_joinR_VTS ( Thread* thra, XArray* a, XArray* b )
       if (ia != useda && ib == usedb) {
          /* b empty, use up a */
          tmpa = VG_(indexXA)( a, ia );
-         thr  = tmpa->thr;
+         thrUID = tmpa->thrUID;
          tyma = tmpa->tym;
          tymb = 0;
          ia++;
       }
       else {
-         /* both not empty; extract lowest-Thread*'d triple */
+         /* both not empty; extract lowest-threadUID'd triple */
          tmpa = VG_(indexXA)( a, ia );
          tmpb = VG_(indexXA)( b, ib );
-         if (tmpa->thr < tmpb->thr) {
-            /* a has the lowest unconsidered Thread* */
-            thr  = tmpa->thr;
+         if (tmpa->thrUID < tmpb->thrUID) {
+            /* a has the lowest unconsidered threadUID */
+            thrUID = tmpa->thrUID;
             tyma = tmpa->tym;
             tymb = 0;
             ia++;
          }
          else
-         if (tmpa->thr > tmpb->thr) {
-            /* b has the lowest unconsidered Thread* */
-            thr  = tmpb->thr;
+         if (tmpa->thrUID > tmpb->thrUID) {
+            /* b has the lowest unconsidered threadUID */
+            thrUID = tmpb->thrUID;
             tyma = 0;
             tymb = tmpb->tym;
             ib++;
          } else {
-            /* they both next mention the same Thread* */
-            tl_assert(tmpa->thr == tmpb->thr);
-            thr  = tmpa->thr; /* == tmpb->thr */
+            /* they both next mention the same threadUID */
+            tl_assert(tmpa->thrUID == tmpb->thrUID);
+            thrUID = tmpa->thrUID; /* == tmpb->thrUID */
             tyma = tmpa->tym;
             tymb = tmpb->tym;
             ia++;
@@ -2256,7 +2269,7 @@ XArray* tickL_and_joinR_VTS ( Thread* thra, XArray* a, XArray* b )
 
       /* having laboriously determined (thr, tyma, tymb), do something
          useful with it. */
-      if (thr == thra) {
+      if (thrUID == thra->threadUID) {
          if (tyma > 0) {
             /* VTS 'a' actually supplied this value; it is not a
                default zero.  Do the required 'tick' action. */
@@ -2270,7 +2283,7 @@ XArray* tickL_and_joinR_VTS ( Thread* thra, XArray* a, XArray* b )
       tymMax = tyma > tymb ? tyma : tymb;
       if (tymMax > 0) {
          ScalarTS st;
-         st.thr = thr;
+         st.thrUID = thrUID;
          st.tym = tymMax;
          VG_(addToXA)( res, &st );
       }
@@ -2296,18 +2309,19 @@ static XArray* tick_VTS ( Thread* me, XArray* vts ) {
    ScalarTS* here = NULL;
    ScalarTS  tmp;
    XArray*   res;
-   Word      i, n; 
+   Word      i, n;
+   Int       me_UID = me->threadUID;
    tl_assert(me);
    tl_assert(is_sane_VTS(vts));
-   if (0) VG_(printf)("tick vts thrno %ld szin %d\n",
-                      (Word)me->errmsg_index, (Int)VG_(sizeXA)(vts) );
+   if (0) VG_(printf)("tick vts thrno %d szin %d\n", 
+                           me_UID, (Int)VG_(sizeXA)(vts) );
    res = new_VTS();
    n = VG_(sizeXA)( vts );
    for (i = 0; i < n; i++) {
       here = VG_(indexXA)( vts, i );
-      if (me < here->thr) {
+      if (me_UID < here->thrUID) {
          /* We just went past 'me', without seeing it. */
-         tmp.thr = me;
+         tmp.thrUID = me_UID;
          tmp.tym = 1;
          VG_(addToXA)( res, &tmp );
          tmp = *here;
@@ -2315,7 +2329,7 @@ static XArray* tick_VTS ( Thread* me, XArray* vts ) {
          i++;
          break;
       } 
-      else if (me == here->thr) {
+      else if (me_UID == here->thrUID) {
          tmp = *here;
          tmp.tym++;
          VG_(addToXA)( res, &tmp );
@@ -2328,8 +2342,8 @@ static XArray* tick_VTS ( Thread* me, XArray* vts ) {
       }
    }
    tl_assert(i >= 0 && i <= n);
-   if (i == n && here && here->thr < me) {
-      tmp.thr = me;
+   if (i == n && here && here->thrUID < me_UID) {
+      tmp.thrUID = me_UID;
       tmp.tym = 1;
       VG_(addToXA)( res, &tmp );
    } else {
@@ -2340,8 +2354,8 @@ static XArray* tick_VTS ( Thread* me, XArray* vts ) {
       }
    }
    tl_assert(is_sane_VTS(res));
-   if (0) VG_(printf)("tick vts thrno %ld szou %d\n",
-                      (Word)me->errmsg_index, (Int)VG_(sizeXA)(res) );
+   if (0) VG_(printf)("tick vts thrno %d szou %d\n",
+                         me_UID, (Int)VG_(sizeXA)(res) );
    return res;
 }
 
@@ -2358,8 +2372,7 @@ static void show_VTS ( HChar* buf, Int nBuf, XArray* vts ) {
       tl_assert(avail >= 10);
       st = VG_(indexXA)( vts, i );
       VG_(memset)(unit, 0, sizeof(unit));
-      VG_(sprintf)(unit, i < n-1 ? "%ld:%ld " : "%ld:%ld",
-                         (Word)st->thr->errmsg_index, st->tym);
+      VG_(sprintf)(unit, i < n-1 ? "%d:%ld " : "%d:%ld", st->thrUID, st->tym);
       if (avail < VG_(strlen)(unit) + 10/*let's say*/) {
          VG_(strcat)(buf, " ...]");
          return;
@@ -2429,7 +2442,7 @@ static void mem_trace_on(UWord mem, ThreadId tid)
    HG_(addToFM)(mem_trace_map, mem, mem);
    VG_(message)(Vg_UserMsg, "ENABLED TRACE {{{: %p; S%d/T%d", mem, 
                (Int)thr->csegid,
-               (Int)thr->errmsg_index);
+               (Int)thr->threadUID);
    if (clo_trace_level >= 2) {
       VG_(get_and_pp_StackTrace)( tid, 15);
    }
@@ -2864,10 +2877,10 @@ static void segments__generate_vcg ( void )
       VG_(printf)(PFX "node: { title: \"%p\" color: lightcyan "
                   "textcolor: darkgreen label: \"Seg %p\\n", 
                   seg, seg);
-      if (seg->thr->errmsg_index == 1) {
+      if (seg->thr->threadUID == 1) {
          VG_(printf)("ROOT_THREAD");
       } else {
-         VG_(printf)("Thr# %d", seg->thr->errmsg_index);
+         VG_(printf)("Thr# %d", seg->thr->threadUID);
       }
 
       if (clo_gen_vcg >= 2) {
@@ -3650,7 +3663,7 @@ static void msm__show_state_change ( Thread* thr_acc, Addr a, Int szB,
       announce_one_thread( thr_acc );
       VG_(message)(Vg_UserMsg, 
                    "TRACE: %p %s %d thr#%d :: %s --> %s",
-                   a, how, szB, thr_acc->errmsg_index, txt_old, txt_new );
+                   a, how, szB, thr_acc->threadUID, txt_old, txt_new );
       tid = map_threads_maybe_reverse_lookup(thr_acc);
       if (tid != VG_INVALID_THREADID) {
          VG_(get_and_pp_StackTrace)( tid, 8 );
@@ -3659,7 +3672,7 @@ static void msm__show_state_change ( Thread* thr_acc, Addr a, Int szB,
       /* Just print one line */
       VG_(message)(Vg_UserMsg, 
                    "TRACE: %p %s %d thr#%d :: %22s --> %22s",
-                   a, how, szB, thr_acc->errmsg_index, txt_old, txt_new );
+                   a, how, szB, thr_acc->threadUID, txt_old, txt_new );
    }
 }
 
@@ -3692,7 +3705,7 @@ SegmentSet do_SS_update_SINGLE ( /*OUT*/Bool* hb_all_p,
       newSS = SS_mk_singleton(currS);
       if (UNLIKELY(0 && do_trace)) {
          VG_(printf)("HB(S%d/T%d,cur)=1\n",
-                     S, SEG_get(S)->thr->errmsg_index);
+                     S, SEG_get(S)->thr->threadUID);
       }
    } else {
       *hb_all_p = False;
@@ -3701,7 +3714,7 @@ SegmentSet do_SS_update_SINGLE ( /*OUT*/Bool* hb_all_p,
       newSS = HG_(doubletonWS)(univ_ssets, currS, S);
       if (UNLIKELY(0 && do_trace)) {
          VG_(printf)("HB(S%d/T%d,cur)=0\n",
-                     S, SEG_get(S)->thr->errmsg_index);
+                     S, SEG_get(S)->thr->threadUID);
       }
    }
    return newSS;
@@ -3767,7 +3780,7 @@ SegmentSet do_SS_update_MULTI ( /*OUT*/Bool* hb_all_p,
       // trace 
       if (0 && do_trace) {
          VG_(printf)("HB(S%d/T%d,cur)=%d\n",
-                     S, SEG_get(S)->thr->errmsg_index, hb);
+                     S, SEG_get(S)->thr->threadUID, hb);
       }
       // fill in add_vec or del_vec
       if (!hb) {
@@ -3928,7 +3941,7 @@ static void msm_do_trace(Thread *thr,
    VG_(message)(Vg_UserMsg, 
                 "TRACE[%d] {{{: Access{T%d/S%d %s %p} -> new State{%s}", 
                 info->n_accesses,
-                (Int)thr->errmsg_index, 
+                (Int)thr->threadUID, 
                 (Int)thr->csegid, 
                 is_w ? "wr" : "rd", a, buf);
    if (trace_level >= 2) {
@@ -6546,7 +6559,7 @@ void evh__pre_thread_ll_create ( ThreadId parent, ThreadId child )
         thr_c->created_at = VG_(record_ExeContext)(parent, first_ip_delta);
 
         if (clo_trace_level >= 1) {
-           VG_(message)(Vg_UserMsg, "Created thread: T%d", thr_c->errmsg_index);
+           VG_(message)(Vg_UserMsg, "Created thread: T%d", thr_c->threadUID);
            if (clo_trace_level >= 2) {
               VG_(pp_ExeContext)(thr_c->created_at);
            }
@@ -8794,7 +8807,7 @@ Bool hg_handle_client_request ( ThreadId tid, UWord* args, UWord* ret)
          Thread*   thr;
          thr = map_threads_maybe_lookup( tid );
          tl_assert(thr); /* cannot fail */
-         *ret = (UWord)thr->errmsg_index;
+         *ret = (UWord)thr->threadUID;
          break;
       }
 
@@ -9347,19 +9360,19 @@ static Bool hg_eq_Error ( VgRes not_used, Error* e1, Error* e2 )
 
 static void announce_one_thread ( Thread* thr ) {
    tl_assert(is_sane_Thread(thr));
-   tl_assert(thr->errmsg_index >= 1);
+   tl_assert(thr->threadUID >= 1);
    if (thr->announced)
       return;
-   if (thr->errmsg_index == 1/*FIXME: this hardwires an assumption
+   if (thr->threadUID == 1/*FIXME: this hardwires an assumption
                                about the identity of the root
                                thread*/) {
       tl_assert(thr->created_at == NULL);
       VG_(message)(Vg_UserMsg, "Thread T%d is the program's root thread",
-                   thr->errmsg_index);
+                   thr->threadUID);
    } else {
       tl_assert(thr->created_at != NULL);
       VG_(message)(Vg_UserMsg, "Thread T%d was created",
-                   thr->errmsg_index);
+                   thr->threadUID);
       VG_(pp_ExeContext)( thr->created_at );
    }
    VG_(message)(Vg_UserMsg, "");
@@ -9384,15 +9397,15 @@ static int add_threads_from_sval_to_array (SVal sv, XArray *xa)
 
 /* Given a WordSetID in univ_tsets (that is, a Thread set ID), produce
    an XArray* with the corresponding Thread*'s sorted by their
-   errmsg_index fields.  This is for printing out thread sets in
+   threadUID fields.  This is for printing out thread sets in
    repeatable orders, which is important for for repeatable regression
    testing.  The returned XArray* is dynamically allocated (of course)
    and so must be hg_freed by the caller. */
 static Int cmp_Thread_by_errmsg_index ( void* thr1V, void* thr2V ) {
    Thread* thr1 = *(Thread**)thr1V;
    Thread* thr2 = *(Thread**)thr2V;
-   if (thr1->errmsg_index < thr2->errmsg_index) return -1;
-   if (thr1->errmsg_index > thr2->errmsg_index) return  1;
+   if (thr1->threadUID < thr2->threadUID) return -1;
+   if (thr1->threadUID > thr2->threadUID) return  1;
    return 0;
 }
 
@@ -9409,7 +9422,7 @@ static void hg_pp_Error ( Error* err )
       announce_one_thread( xe->XE.Misc.thr );
       VG_(message)(Vg_UserMsg,
                   "Thread #%d: %s",
-                  (Int)xe->XE.Misc.thr->errmsg_index,
+                  (Int)xe->XE.Misc.thr->threadUID,
                   xe->XE.Misc.errstr);
       VG_(pp_ExeContext)( VG_(get_error_where)(err) );
       break;
@@ -9421,7 +9434,7 @@ static void hg_pp_Error ( Error* err )
       announce_one_thread( xe->XE.LockOrder.thr );
       VG_(message)(Vg_UserMsg,
                   "Thread #%d: lock order \"%p before %p\" violated",
-                  (Int)xe->XE.LockOrder.thr->errmsg_index,
+                  (Int)xe->XE.LockOrder.thr->threadUID,
                   (void*)xe->XE.LockOrder.before_ga,
                   (void*)xe->XE.LockOrder.after_ga);
       VG_(pp_ExeContext)( VG_(get_error_where)(err) );
@@ -9444,7 +9457,7 @@ static void hg_pp_Error ( Error* err )
       announce_one_thread( xe->XE.PthAPIerror.thr );
       VG_(message)(Vg_UserMsg,
                   "Thread #%d's call to %s failed",
-                  (Int)xe->XE.PthAPIerror.thr->errmsg_index,
+                  (Int)xe->XE.PthAPIerror.thr->threadUID,
                   xe->XE.PthAPIerror.fnname);
       VG_(message)(Vg_UserMsg,
                   "   with error code %ld (%s)",
@@ -9460,7 +9473,7 @@ static void hg_pp_Error ( Error* err )
       announce_one_thread( xe->XE.UnlockBogus.thr );
       VG_(message)(Vg_UserMsg,
                    "Thread #%d unlocked an invalid lock at %p ",
-                   (Int)xe->XE.UnlockBogus.thr->errmsg_index,
+                   (Int)xe->XE.UnlockBogus.thr->threadUID,
                    (void*)xe->XE.UnlockBogus.lock_ga);
       VG_(pp_ExeContext)( VG_(get_error_where)(err) );
       break;
@@ -9476,9 +9489,9 @@ static void hg_pp_Error ( Error* err )
       VG_(message)(Vg_UserMsg,
                    "Thread #%d unlocked lock at %p "
                    "currently held by thread #%d",
-                   (Int)xe->XE.UnlockForeign.thr->errmsg_index,
+                   (Int)xe->XE.UnlockForeign.thr->threadUID,
                    (void*)xe->XE.UnlockForeign.lock->guestaddr,
-                   (Int)xe->XE.UnlockForeign.owner->errmsg_index );
+                   (Int)xe->XE.UnlockForeign.owner->threadUID );
       VG_(pp_ExeContext)( VG_(get_error_where)(err) );
       if (xe->XE.UnlockForeign.lock->appeared_at) {
          VG_(message)(Vg_UserMsg,
@@ -9496,7 +9509,7 @@ static void hg_pp_Error ( Error* err )
       announce_one_thread( xe->XE.UnlockUnlocked.thr );
       VG_(message)(Vg_UserMsg,
                    "Thread #%d unlocked a not-locked lock at %p ",
-                   (Int)xe->XE.UnlockUnlocked.thr->errmsg_index,
+                   (Int)xe->XE.UnlockUnlocked.thr->threadUID,
                    (void*)xe->XE.UnlockUnlocked.lock->guestaddr);
       VG_(pp_ExeContext)( VG_(get_error_where)(err) );
       if (xe->XE.UnlockUnlocked.lock->appeared_at) {
@@ -9516,7 +9529,7 @@ static void hg_pp_Error ( Error* err )
       VG_(message)(Vg_UserMsg,
                    "Thread #%d deallocated location %p "
                    "containing a locked lock",
-                   (Int)xe->XE.FreeMemLock.thr->errmsg_index,
+                   (Int)xe->XE.FreeMemLock.thr->threadUID,
                    (void*)xe->XE.FreeMemLock.lock->guestaddr);
       VG_(pp_ExeContext)( VG_(get_error_where)(err) );
       if (xe->XE.FreeMemLock.lock->appeared_at) {
@@ -9552,7 +9565,7 @@ static void hg_pp_Error ( Error* err )
       show_sval(old_buf, sizeof(old_buf), old_state);
       show_sval(new_buf, sizeof(new_buf), new_state);
       
-      // Announce the threads in order (sorted by errmsg_index). 
+      // Announce the threads in order (sorted by threadUID). 
       // This is required to simplify regression testing. 
       thread_xa = VG_(newXA)( hg_zalloc, hg_free, sizeof(Thread*) );
       tl_assert(thread_xa);
@@ -9569,7 +9582,7 @@ static void hg_pp_Error ( Error* err )
 
       VG_(message)(Vg_UserMsg,
                    "T%d: Possible data race during %s of size %d at %p",
-                   thr_acc->errmsg_index, 
+                   thr_acc->threadUID, 
                    what, szB, err_ga);
       VG_(pp_ExeContext)( VG_(get_error_where)(err) );
       VG_(message)(Vg_UserMsg, "  old state = {%s}", old_buf);
@@ -9582,7 +9595,7 @@ static void hg_pp_Error ( Error* err )
             ExeContext *context = SEG_get_context(segid);
             if (context) {
                VG_(message)(Vg_UserMsg, " T%d/S%d starts", 
-                            (Int)SEG_get(segid)->thr->errmsg_index,
+                            (Int)SEG_get(segid)->thr->threadUID,
                             (Int)segid);
                VG_(pp_ExeContext)(context);
             }
@@ -9655,7 +9668,7 @@ static void hg_pp_Error ( Error* err )
                       old_state, old_buf, new_state, new_buf);
          VG_(message)(Vg_UserMsg,
                       "  Old state: owned exclusively by thread #%d",
-                      old_thr->errmsg_index);
+                      old_thr->threadUID);
          // This should always show exactly 2 threads
          summarise_threadset( new_tset, new_tset_buf, sizeof(new_tset_buf) );
          VG_(message)(Vg_UserMsg,
@@ -9663,7 +9676,7 @@ static void hg_pp_Error ( Error* err )
                       new_tset_buf );
          VG_(message)(Vg_UserMsg,
                       "  Reason:    this thread, #%d, holds no locks at all",
-                      thr_acc->errmsg_index);
+                      thr_acc->threadUID);
       }
       else 
       /* Case of ShR/M -> ShM */
@@ -9697,7 +9710,7 @@ static void hg_pp_Error ( Error* err )
          VG_(message)(Vg_UserMsg,
                       "  Reason:    this thread, #%d, holds no "
                       "consistent locks",
-                      thr_acc->errmsg_index);
+                      thr_acc->threadUID);
          if (xe->XE.Race.mb_lastlock) {
             VG_(message)(Vg_UserMsg, "  Last consistently used lock for %p was "
                                      "first observed", err_ga);
