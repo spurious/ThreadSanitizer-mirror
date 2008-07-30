@@ -3951,11 +3951,37 @@ REGISTER_TEST(Run, 85)
 
 // test86: Test for race inside DTOR: racey write to vptr. {{{1
 namespace test86 {
+// This test shows a racey access to vptr (the pointer to vtbl).
+// We have class A and class B derived from A. 
+// Both classes have a virtual function f() and a virtual DTOR.
+// We create an object 'A *a = new B'
+// and pass this object from Thread1 to Thread2.
+// Thread2 calls a->f(). Since the object's dynamic type is B, 
+// this call reads a->vtpr.
+// Thread1 deletes the object. B::~B waits untill the object can be destroyed 
+// (flag_stopped == true) but at the very beginning of B::~B 
+// a->vptr is written to. 
+// So, we have a race on a->vptr. 
+// On this particular test this race is benign, but test87 shows 
+// how such race could harm.
+//
+//
+// 
+// Threa1:                                            Thread2: 
+// 1. A a* = new B;                                  
+// 2. Q.Put(a); ------------\                                     
+//                           \-------------------->   a. a = Q.Get();
+//                                                    b. a->f();
+//                                       /---------   c. flag_stopped = true;
+// 3. delete a;                         /
+//    waits untill flag_stopped <------/
+//    inside the dtor
+// 
 
 bool flag_stopped = false;
 Mutex mu;
 
-ProducerConsumerQueue Q(INT_MAX);
+ProducerConsumerQueue Q(INT_MAX);  // Used to pass A* between threads.
 
 struct A {
   A()  { printf("A::A()\n"); }
@@ -3966,7 +3992,9 @@ struct A {
 struct B: A {
   B()  { printf("B::B()\n"); }
   virtual ~B() { 
+    // The race is here.    <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
     printf("B::~B()\n"); 
+    // wait until flag_stopped is true.
     mu.LockWhen(Condition(&ArgIsTrue, &flag_stopped));
     mu.Unlock();
     printf("B::~B() done\n"); 
