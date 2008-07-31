@@ -4568,8 +4568,8 @@ REGISTER_TEST2(Run, 505, PERFORMANCE | PRINT_STATS | EXCLUDE_FROM_ALL)
 }  // namespace test505
 
 // test506: massive HB's using Barriers
-// HB cache miss is ~74%
-// segments consume 20x more memory than SSs
+// HB cache miss is ~40%
+// segments consume 10x more memory than SSs
 // modification of test39 {{{1
 namespace test506 {
 #ifndef NO_BARRIER
@@ -4577,17 +4577,20 @@ namespace test506 {
 int     GLOB = 0;
 const int N_threads = 32,
           ITERATIONS = 1000;
-Barrier barrier(N_threads);
+Barrier *barrier[ITERATIONS];
 
 void Worker() {
   for (int i = 0; i < ITERATIONS; i++) {
      MU.Lock();
      GLOB++;
      MU.Unlock();
-     barrier.Block();
+     barrier[i]->Block();
   }
 }
 void Run() {
+  for (int i = 0; i < ITERATIONS; i++) {
+     barrier[i] = new Barrier(N_threads);
+  }
   {
     ThreadPool pool(N_threads);
     pool.StartWorkers();
@@ -4596,6 +4599,9 @@ void Run() {
     }
   } // all folks are joined here.
   CHECK(GLOB == N_threads * ITERATIONS);
+  for (int i = 0; i < ITERATIONS; i++) {
+     delete barrier[i];
+  }
 }
 REGISTER_TEST2(Run, 506, PERFORMANCE | PRINT_STATS | EXCLUDE_FROM_ALL);
 #endif // NO_BARRIER
