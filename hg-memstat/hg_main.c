@@ -1126,7 +1126,7 @@ static void lockN_release ( Lock* lk, Thread* thr )
       char temp[100] = "";
       VG_(sprintf) (temp, "%ds timer", PP_MEM_INTERVAL);
       pp_memory_usage (0, temp);
-      //pp_stats(temp);
+      pp_stats(temp);
       lastCallTime = currTime;
    }
    // <-- hack ends */
