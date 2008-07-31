@@ -4350,6 +4350,7 @@ void Worker_2() {
 
 void Run() {
    ANNOTATE_RESET_STATS();
+   printf("test501: Manually call PRINT_* annotations.\n");
    MyThreadArray ta (Worker_2, Worker_2, Worker_2, Worker_2);
    ta.Start();
    usleep(100000);
@@ -4386,11 +4387,8 @@ void TP() {
 
 void Run() {
    MyThreadArray t(TP, TP);
+   printf("test502: produce lots of segments without cross-thread relations\n");
    
-   printf("Wait 5 sec...\n"); // useful when monitoring memory usage graph
-   usleep(5*1000*1000);
-   
-   printf("Start!\n");
    t.Start();
    t.Join();
 }
@@ -4398,8 +4396,8 @@ void Run() {
 REGISTER_TEST2(Run, 502, MEMORY_USAGE | PRINT_STATS | EXCLUDE_FROM_ALL)
 }  // namespace test502
 
-// test503: produce lots of segments with simple HB-relations
-// HB cache-miss rate is ~55% {{{1
+// test503: produce lots of segments with simple HB-relations {{{1
+// HB cache-miss rate is ~55%
 namespace test503 {
 
 //  |- |  |  |  |  |
@@ -4455,13 +4453,13 @@ void Worker(){
 }
 
 void Run() {
+   printf("test503: produce lots of segments with simple HB-relations\n");
    for (int i = 0; i < N_threads; i++)
       Q[i] = new ProducerConsumerQueue(1);
    Q[0]->Put(NULL);
    
-   printf("Start!\n");
-   {
-      
+   
+   {      
       ThreadPool pool(N_threads);
       pool.StartWorkers();
       for (int i = 0; i < N_threads; i++) {
@@ -4511,6 +4509,7 @@ void Worker() {
 }
 
 void Run() {
+   printf("test504: force massive CacheLineZ fetch-wback\n");
    MyThreadArray t(Worker, Worker);
    t.Start();
    t.Join();
@@ -4519,9 +4518,9 @@ void Run() {
 REGISTER_TEST2(Run, 504, PERFORMANCE | PRINT_STATS | EXCLUDE_FROM_ALL)
 }  // namespace test504
 
-// test505: force massive cache fetch-wback (60% misses)
+// test505: force massive cache fetch-wback (60% misses) {{{1
 // modification of test504 - more threads, byte accesses and lots of mutexes
-// so it produces lots of CacheLineF misses (30-50% of CacheLineZ misses) {{{1
+// so it produces lots of CacheLineF misses (30-50% of CacheLineZ misses)
 namespace test505 {
 
 const int N_THREADS = 2,
@@ -4559,6 +4558,7 @@ void Worker() {
 }
 
 void Run() {
+   printf("test505: force massive CacheLineF fetch-wback\n");
    MyThreadArray t(Worker, Worker);
    t.Start();
    t.Join();
@@ -4567,10 +4567,10 @@ void Run() {
 REGISTER_TEST2(Run, 505, PERFORMANCE | PRINT_STATS | EXCLUDE_FROM_ALL)
 }  // namespace test505
 
-// test506: massive HB's using Barriers
+// test506: massive HB's using Barriers {{{1
 // HB cache miss is ~40%
 // segments consume 10x more memory than SSs
-// modification of test39 {{{1
+// modification of test39
 namespace test506 {
 #ifndef NO_BARRIER
 // Same as test17 but uses Barrier class (pthread_barrier_t). 
@@ -4588,6 +4588,7 @@ void Worker() {
   }
 }
 void Run() {
+  printf("test506: massive HB's using Barriers\n");
   for (int i = 0; i < ITERATIONS; i++) {
      barrier[i] = new Barrier(N_threads);
   }
