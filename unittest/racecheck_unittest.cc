@@ -143,6 +143,8 @@ struct Test{
         f_();
      if (flags_ & PRINT_STATS)
         ANNOTATE_PRINT_STATS();
+     if (flags_ & MEMORY_USAGE)
+        ANNOTATE_PRINT_MEMORY_USAGE(0);
   }
 };
 std::map<int, Test> TheMapOfTests;
@@ -183,8 +185,7 @@ int main(int argc, char** argv) { // {{{1
        if(!(it->second.flags_ & PERFORMANCE)) continue;
        it->second.Run();
      }      
-  } else if (argc > 1) {
-     
+  } else if (argc > 1) {     
     // the tests are listed in command line flags 
     for (int i = 1; i < argc; i++) {
       int f_num = atoi(argv[i]);
@@ -4357,10 +4358,10 @@ void Run() {
    ANNOTATE_PRINT_STATS();
 }
 
-REGISTER_TEST2(Run, 501, FEATURE)
+REGISTER_TEST2(Run, 501, FEATURE | EXCLUDE_FROM_ALL)
 }  // namespace test501
 
-// test502: produce lots of segments without cross-thread relations
+// test502: produce lots of segments without cross-thread relations {{{1
 namespace test502 {
 
 /*
@@ -4394,11 +4395,11 @@ void Run() {
    t.Join();
 }
 
-REGISTER_TEST2(Run, 502, MEMORY_USAGE | PRINT_STATS)
+REGISTER_TEST2(Run, 502, MEMORY_USAGE | PRINT_STATS | EXCLUDE_FROM_ALL)
 }  // namespace test502
 
 // test503: produce lots of segments with simple HB-relations
-// HB cache-miss rate is ~55%
+// HB cache-miss rate is ~55% {{{1
 namespace test503 {
 
 //  |- |  |  |  |  |
@@ -4472,10 +4473,11 @@ void Run() {
       delete Q[i];
 }
 
-REGISTER_TEST2(Run, 503, MEMORY_USAGE | PRINT_STATS | PERFORMANCE)
+REGISTER_TEST2(Run, 503, MEMORY_USAGE | PRINT_STATS
+                  | PERFORMANCE | EXCLUDE_FROM_ALL)
 }  // namespace test503
 
-// test504: force massive cache fetch-wback (50% misses, mostly CacheLineZ)
+// test504: force massive cache fetch-wback (50% misses, mostly CacheLineZ) {{{1
 namespace test504 {
 
 const int N_THREADS = 2,
@@ -4486,7 +4488,7 @@ const int N_THREADS = 2,
 // int gives us ~4x speed of the byte test
 // 4x array size gives us
 // total multiplier of 16x over the cachesize 
-// so we can neglect the cached-at-the-end memory
+// so we can neglect the cached-at-the-end memory 
 const int ARRAY_SIZE = 4 * HG_CACHE_SIZE;
 int array[ARRAY_SIZE];
 
@@ -4502,7 +4504,8 @@ void Worker() {
    // so no synchronization mechanisms are needed
    int lower_bound = ARRAY_SIZE * (myId-1) / N_THREADS,
        upper_bound = ARRAY_SIZE * ( myId ) / N_THREADS;
-   for (int i = lower_bound; i < upper_bound; i += HG_CACHELINE_SIZE / sizeof(array[0])) {
+   for (int i = lower_bound; i < upper_bound; 
+            i += HG_CACHELINE_SIZE / sizeof(array[0])) {
       array[i] = i; // each array-write generates a cache miss
    }
 }
@@ -4513,12 +4516,12 @@ void Run() {
    t.Join();
 }
 
-REGISTER_TEST2(Run, 504, PERFORMANCE | PRINT_STATS)
+REGISTER_TEST2(Run, 504, PERFORMANCE | PRINT_STATS | EXCLUDE_FROM_ALL)
 }  // namespace test504
 
 // test505: force massive cache fetch-wback (60% misses)
 // modification of test504 - more threads, byte accesses and lots of mutexes
-// so it produces lots of CacheLineF misses (30-50% of CacheLineZ misses)
+// so it produces lots of CacheLineF misses (30-50% of CacheLineZ misses) {{{1
 namespace test505 {
 
 const int N_THREADS = 2,
@@ -4594,7 +4597,7 @@ void Run() {
   } // all folks are joined here.
   CHECK(GLOB == N_threads * ITERATIONS);
 }
-REGISTER_TEST2(Run, 506, PERFORMANCE | PRINT_STATS);
+REGISTER_TEST2(Run, 506, PERFORMANCE | PRINT_STATS | EXCLUDE_FROM_ALL);
 #endif // NO_BARRIER
 }  // namespace test506
 
