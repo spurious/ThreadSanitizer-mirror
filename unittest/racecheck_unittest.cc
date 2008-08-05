@@ -4684,5 +4684,38 @@ void Run() {
 REGISTER_TEST2(Run, 508, PERFORMANCE/* | PRINT_STATS*/ | EXCLUDE_FROM_ALL);
 }  // namespace test508
 
+// test509: avl_find_node benchmark {{{1
+// 10+% of CPU consumption by avl_find_node
+namespace test509 {
+const int N_THREADS    = 16,
+          ITERATIONS   = 1 << 8;
+
+void Worker() {
+  std::vector<Mutex*> mu_list;
+  for (int i = 0; i < ITERATIONS; i++) {
+    Mutex * mu = new Mutex();
+    mu_list.push_back(mu);
+    mu->Lock();
+  }
+  for (int i = ITERATIONS - 1; i >= 0; i--) {
+    Mutex * mu = mu_list[i];
+    mu->Unlock();
+    delete mu;
+  }
+}
+
+void Run() {
+  printf("test509: avl_find_node benchmark\n");
+  {
+    ThreadPool pool(N_THREADS);
+    pool.StartWorkers();
+    for (int i = 0; i < N_THREADS; i++) {
+      pool.Add(NewCallback(Worker));
+    }
+  } // all folks are joined here.
+}
+REGISTER_TEST2(Run, 509, PERFORMANCE/* | PRINT_STATS*/ | EXCLUDE_FROM_ALL);
+}  // namespace test509
+
 // End {{{1
 // vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker
