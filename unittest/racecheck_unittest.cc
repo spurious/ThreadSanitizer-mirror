@@ -4608,5 +4608,81 @@ REGISTER_TEST2(Run, 506, PERFORMANCE | PRINT_STATS | EXCLUDE_FROM_ALL);
 #endif // NO_BARRIER
 }  // namespace test506
 
+// test507: vgHelgrind_initIterAtFM/stackClear benchmark {{{1
+// vgHelgrind_initIterAtFM/stackClear consume ~8.5%/5.5% CPU
+namespace test507 {
+const int N_THREADS    = 1,
+          BUFFER_SIZE  = 1,
+          ITERATIONS   = 1 << 20;
+
+void Foo() {
+  struct T {
+    char temp;
+    T() {
+      ANNOTATE_RWLOCK_CREATE(&temp);
+    }
+    ~T() {
+      ANNOTATE_RWLOCK_DESTROY(&temp);
+    }
+  } s[BUFFER_SIZE];
+}
+
+void Worker() {
+  for (int j = 0; j < ITERATIONS; j++) {
+    Foo();
+  }
+}
+
+void Run() {
+  printf("test507: vgHelgrind_initIterAtFM/stackClear benchmark\n");
+  {
+    ThreadPool pool(N_THREADS);
+    pool.StartWorkers();
+    for (int i = 0; i < N_THREADS; i++) {
+      pool.Add(NewCallback(Worker));
+    }
+  } // all folks are joined here.
+}
+REGISTER_TEST2(Run, 507, PERFORMANCE/* | PRINT_STATS*/ | EXCLUDE_FROM_ALL);
+}  // namespace test507
+
+// test508: cmp_WordVecs_for_FM benchmark {{{1
+// 50+% of CPU consumption by cmp_WordVecs_for_FM
+namespace test508 {
+const int N_THREADS    = 1,
+          BUFFER_SIZE  = 1 << 10,
+          ITERATIONS   = 1 << 9;
+
+void Foo() {
+  struct T {
+    char temp;
+    T() {
+      ANNOTATE_RWLOCK_CREATE(&temp);
+    }
+    ~T() {
+      ANNOTATE_RWLOCK_DESTROY(&temp);
+    }
+  } s[BUFFER_SIZE];
+}
+
+void Worker() {
+  for (int j = 0; j < ITERATIONS; j++) {
+    Foo();
+  }
+}
+
+void Run() {
+  printf("test508: cmp_WordVecs_for_FM benchmark\n");
+  {
+    ThreadPool pool(N_THREADS);
+    pool.StartWorkers();
+    for (int i = 0; i < N_THREADS; i++) {
+      pool.Add(NewCallback(Worker));
+    }
+  } // all folks are joined here.
+}
+REGISTER_TEST2(Run, 508, PERFORMANCE/* | PRINT_STATS*/ | EXCLUDE_FROM_ALL);
+}  // namespace test508
+
 // End {{{1
 // vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker
