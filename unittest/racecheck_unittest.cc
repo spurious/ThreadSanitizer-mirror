@@ -4194,6 +4194,7 @@ REGISTER_TEST2(Run, 89, FEATURE|EXCLUDE_FROM_ALL)
 namespace test90 {
 // The Publisher creates an object and safely publishes it under a mutex.
 // Readers access the object read-only.
+// See also test91.
 //
 // Without annotations Helgrind will issue a false positive in Reader(). 
 //
