@@ -454,3 +454,30 @@ void Run() {
 }
 REGISTER_TEST(Run, 06)
 }  // namespace test06
+// test07: Simple deadlock which actually deadlocks, 2 threads. {{{1
+namespace test07 {
+Mutex mu1, mu2;
+void Worker1()  {
+  mu1.Lock();
+  usleep(100000);
+  mu2.Lock();
+  mu2.Unlock();
+  mu1.Unlock();
+}
+void Worker2()  {
+  mu2.Lock();
+  usleep(100000);
+  mu1.Lock();
+  mu1.Unlock();
+  mu2.Unlock();
+}
+void Run() {
+  mu1.EnableDebugLog("mu1");
+  mu2.EnableDebugLog("mu2");
+  printf("test07: positive, simple deadlock\n");
+  MyThreadArray t(Worker1, Worker2);
+  t.Start();
+  t.Join();
+}
+REGISTER_TEST(Run, 07)
+}  // namespace test07

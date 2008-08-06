@@ -4123,6 +4123,166 @@ REGISTER_TEST(Run, 88)
 }  // namespace test88
 
 
+// test89: Test for debug info. {{{1
+namespace test89 {
+// Simlpe races with different objects (stack, heap globals; scalars, structs).
+// Also, if run with --trace-level=2 this test will show a sequence of 
+// CTOR and DTOR calls.
+struct STRUCT {
+  int a, b, c;
+};
+
+struct A {
+  int a;  
+  A() { 
+    ANNOTATE_TRACE_MEMORY(&a);
+    a = 1; 
+  } 
+  virtual ~A() {
+    a = 4;
+  }
+}; 
+
+struct B : A {  
+  B()  { CHECK(a == 1); } 
+  virtual ~B() { CHECK(a == 3); }
+};
+struct C : B {
+  C()  { a = 2; }
+  virtual ~C() { a = 3; } 
+};
+
+int            GLOBAL = 0;
+int           *STACK  = 0;
+STRUCT         GLOB_STRUCT;
+STRUCT        *STACK_STRUCT;
+STRUCT        *HEAP_STRUCT;
+
+void Worker() {
+  GLOBAL = 1;
+  *STACK = 1;
+  GLOB_STRUCT.b   = 1;
+  STACK_STRUCT->b = 1;
+  HEAP_STRUCT->b  = 1;
+}
+
+void Run() {
+  int stack_var = 0;
+  STACK = &stack_var;
+
+  STRUCT stack_struct;
+  STACK_STRUCT = &stack_struct;
+
+  HEAP_STRUCT = new STRUCT;
+
+  printf("test89: negative\n");
+  MyThreadArray t(Worker, Worker);
+  t.Start();
+  t.Join();
+
+  delete HEAP_STRUCT;
+
+  A *a = new C;
+  printf("Using 'a->a':  %d\n", a->a);
+  delete a;
+}
+REGISTER_TEST2(Run, 89, FEATURE|EXCLUDE_FROM_ALL)
+}  // namespace test89
+
+
+// test90: FP. Test for a safely-published pointer (read-only). {{{1
+namespace test90 {
+// The Publisher creates an object and safely publishes it under a mutex.
+// Readers access the object read-only.
+//
+// Without annotations Helgrind will issue a false positive in Reader(). 
+//
+// Choices for annotations: 
+//   -- ANNOTATE_CONDVAR_SIGNAL/ANNOTATE_CONDVAR_WAIT
+//   -- ANNOTATE_MUTEX_IS_USED_AS_CONDVAR
+//   -- ANNOTATE_PUBLISH_POINTER (not yet available).
+
+int     *GLOB = 0;
+
+void Publisher() {
+  usleep(1000);
+  
+  MU.Lock();
+  GLOB = new int;
+  *GLOB = 777;
+  ANNOTATE_EXPECT_RACE(GLOB, "This is a false positve");
+  MU.Unlock();
+}
+
+void Reader() {
+  while (true) {
+    MU.Lock();
+    int *p = GLOB;
+    MU.Unlock();
+    if (p) {
+      CHECK(*p == 777);  // Race is reported here.
+      break;
+    }
+  }
+}
+
+void Run() {
+  printf("test90: false positive (safely published pointer).\n");
+  MyThreadArray t(Publisher, Reader, Reader, Reader);
+  t.Start();
+  t.Join();
+  printf("\t*GLOB=%d\n", *GLOB);
+}
+REGISTER_TEST(Run, 90)
+}  // namespace test90
+
+
+// test91: FP. Test for a safely-published pointer (read-write). {{{1
+namespace test91 {
+// Similar to test90.
+// The Publisher creates an object and safely publishes it under a mutex MU1.
+// Accessors get the object under MU1 and access it (read/write) under MU2.
+//
+// Without annotations Helgrind will issue a false positive in Accessor(). 
+
+int     *GLOB = 0;
+
+void Publisher() {
+  usleep(1000);
+  
+  MU1.Lock();
+  GLOB = new int;
+  *GLOB = 777;
+  ANNOTATE_EXPECT_RACE(GLOB, "This is a false positve");
+  MU1.Unlock();
+}
+
+void Accessor() {
+  while (true) {
+    MU1.Lock();
+    int *p = GLOB;
+    MU1.Unlock();
+    if (p) {
+      MU2.Lock();
+      (*p)++;  // Race is reported here.
+      CHECK(*p >  777);  
+      MU2.Unlock();
+      break;
+    }
+  }
+}
+
+void Run() {
+  printf("test91: false positive (safely published pointer, read/write).\n");
+  MyThreadArray t(Publisher, Accessor, Accessor, Accessor);
+  t.Start();
+  t.Join();
+  printf("\t*GLOB=%d\n", *GLOB);
+}
+REGISTER_TEST(Run, 91)
+}  // namespace test91
+
+
 // test300: {{{1
 namespace test300 {
 int     GLOB = 0;
@@ -4575,8 +4735,8 @@ namespace test506 {
 #ifndef NO_BARRIER
 // Same as test17 but uses Barrier class (pthread_barrier_t). 
 int     GLOB = 0;
-const int N_threads = 32,
-          ITERATIONS = 1000;
+const int N_threads = 64,
+          ITERATIONS = 100000;
 Barrier *barrier[ITERATIONS];
 
 void Worker() {
@@ -4603,6 +4763,7 @@ void Run() {
   for (int i = 0; i < ITERATIONS; i++) {
      delete barrier[i];
   }
+  printf("GLOB=%d\n", GLOB);
 }
 REGISTER_TEST2(Run, 506, PERFORMANCE | PRINT_STATS | EXCLUDE_FROM_ALL);
 #endif // NO_BARRIER
