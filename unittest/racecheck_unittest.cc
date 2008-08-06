@@ -4205,8 +4205,6 @@ namespace test90 {
 int     *GLOB = 0;
 
 void Publisher() {
-  usleep(1000);
-  
   MU.Lock();
   GLOB = new int;
   *GLOB = 777;
@@ -4248,8 +4246,6 @@ namespace test91 {
 int     *GLOB = 0;
 
 void Publisher() {
-  usleep(1000);
-  
   MU1.Lock();
   GLOB = new int;
   *GLOB = 777;
