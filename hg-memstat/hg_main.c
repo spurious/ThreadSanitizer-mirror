@@ -95,7 +95,7 @@
 static void pp_memory_usage ( Int flags, Char* caller );
 static void pp_mem_laog ( Int d );
 static void pp_stats ( Char * caller );
-static void hg_reset_stats ();
+static void hg_reset_stats ( void );
 
 /*----------------------------------------------------------------*/
 /*--- Documentation on CacheLine/CacheLineZ/CacheLineF stuff   ---*/
@@ -1613,7 +1613,8 @@ static void pp_mem_segments ( Int d )
    for (i = 1; i < SegmentArray.size; i++) {
       Segment* s = SEG_get(i);
       segments_bytes += sizeof(Segment);
-      segments_bytes += VG_(sizeXA)(s->vts) * sizeof(ScalarTS);
+      //segments_bytes += VG_(sizeXA)(s->vts) * sizeof(ScalarTS);
+      segments_bytes += VG_(bytesXA)(s->vts);
       // TODO: sizeof(ExeContext) ???
    }
    space(d); VG_(printf)("segments: %6d kB (count = %d) \n",
