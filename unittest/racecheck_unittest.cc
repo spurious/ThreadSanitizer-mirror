@@ -4733,7 +4733,7 @@ namespace test506 {
 // Same as test17 but uses Barrier class (pthread_barrier_t). 
 int     GLOB = 0;
 const int N_threads = 64,
-          ITERATIONS = 100000;
+          ITERATIONS = 1000;
 Barrier *barrier[ITERATIONS];
 
 void Worker() {
@@ -4876,6 +4876,36 @@ void Run() {
 }
 REGISTER_TEST2(Run, 509, PERFORMANCE/* | PRINT_STATS*/ | EXCLUDE_FROM_ALL);
 }  // namespace test509
+
+// test510: SS-recycle test {{{1
+// this tests shows the case where only ~1% of SS are recycled
+namespace test510 {
+const int N_THREADS    = 16,
+          ITERATIONS   = 1 << 10;
+int GLOB = 0;
+
+void Worker() {
+  usleep(100000);
+  for (int i = 0; i < ITERATIONS; i++) {
+    ANNOTATE_CONDVAR_SIGNAL((void*)0xDeadBeef);
+    GLOB++;
+    usleep(10);
+  }
+}
+
+void Run() {
+  //ANNOTATE_BENIGN_RACE(&GLOB, "Test");
+  printf("test510: SS-recycle test\n");
+  {
+    ThreadPool pool(N_THREADS);
+    pool.StartWorkers();
+    for (int i = 0; i < N_THREADS; i++) {
+      pool.Add(NewCallback(Worker));
+    }
+  } // all folks are joined here.  
+}
+REGISTER_TEST2(Run, 510, MEMORY_USAGE | PRINT_STATS | EXCLUDE_FROM_ALL);
+}  // namespace test510
 
 // End {{{1
 // vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker
