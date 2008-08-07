@@ -6077,9 +6077,17 @@ void evhH__start_new_segment_for_thread ( /*OUT*/SegmentID* new_segidP,
    thr->csegid = *new_segidP;
 
    ThreadId tid = map_threads_maybe_reverse_lookup(thr);
-   if (clo_more_context && tid != VG_INVALID_THREADID)
+   if (clo_more_context && tid != VG_INVALID_THREADID) {
       SEG_set_context(*new_segidP,
                       VG_(record_ExeContext)(tid,-1/*first_ip_delta*/));
+#if 0
+      if (*new_segidP % 50 == 0) {
+        VG_(printf)("Segment sample (SegmentID = %d) {\n", (int)*new_segidP);
+        VG_(pp_ExeContext)((*new_segP)->context);
+        VG_(printf)("}\n");
+      }
+#endif
+   }
 }
 
 
