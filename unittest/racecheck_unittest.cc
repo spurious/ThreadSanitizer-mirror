@@ -4783,6 +4783,7 @@ void Foo() {
       ANNOTATE_RWLOCK_DESTROY(&temp);
     }
   } s[BUFFER_SIZE];
+  s->temp = '\0';
 }
 
 void Worker() {
@@ -4821,6 +4822,7 @@ void Foo() {
       ANNOTATE_RWLOCK_DESTROY(&temp);
     }
   } s[BUFFER_SIZE];
+  s->temp = '\0';
 }
 
 void Worker() {
