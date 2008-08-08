@@ -90,7 +90,6 @@ Bool    HG_(saneWS_SLOW)    ( WordSetU*, WordSet );
 void    HG_(refWS)          ( WordSetU*, WordSet, UWord );
 UWord   HG_(unrefWS)        ( WordSetU*, WordSet, UWord );
 UWord   HG_(getRefWS)       ( WordSetU*, WordSet );
-void    HG_(recycleWS)      ( WordSetU*, WordSet );
 
 
 

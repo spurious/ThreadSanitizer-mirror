@@ -1399,6 +1399,15 @@ static inline void SHVAL_SS_ref(SVal sv) {
    }
 }
 
+// If sv has a non-singleton SS, decrement it's refcount by 1.
+static inline void SHVAL_SS_unref(SVal sv) {
+   if (LIKELY(is_SHVAL_RM(sv))) {
+      SegmentSet ss = get_SHVAL_SS(sv);
+      if (UNLIKELY(!SS_is_singleton(ss))) {
+         SS_unref(ss, 1);
+      }
+   }
+}
 
 /*----------------------------------------------------------------*/
 /*--- Print out the primary data structures                    ---*/
@@ -3723,7 +3732,6 @@ SegmentSet do_SS_update_SINGLE ( /*OUT*/Bool* hb_all_p,
 
 static __attribute__((noinline))
 SegmentSet do_SS_update_MULTI ( /*OUT*/Bool* hb_all_p,
-                                /*OUT*/Bool* oldSS_has_active_segment,
                                 Thread* thr,
                                 Bool do_trace,
                                 SegmentSet oldSS, SegmentID currS )
@@ -3745,14 +3753,11 @@ SegmentSet do_SS_update_MULTI ( /*OUT*/Bool* hb_all_p,
 
    tl_assert(oldSS_size <= clo_max_segment_set_size);
 
-   *oldSS_has_active_segment = False;
-
    // fill in the arrays add_vec/del_vec and try a shortcut
    add_vec[add_size++] = currS;
    for (i = 0; i < oldSS_size; i++) {
       SegmentID S = SS_get_element(oldSS, i);
       if (currS == S) {
-         *oldSS_has_active_segment = True;
          // shortcut: 
          // currS is already contained in oldSS, so we don't need to add it. 
          // Since oldSS is a max frontier 
@@ -3768,10 +3773,6 @@ SegmentSet do_SS_update_MULTI ( /*OUT*/Bool* hb_all_p,
       // compute happens-before
       Bool hb = False;
       Thread *thr_of_S = SEG_get(S)->thr;
-
-      if (thr_of_S->csegid == S) {
-         *oldSS_has_active_segment = True;
-      }
 
       if (thr_of_S == thr // Same thread. 
           || happens_before(S, currS)) {
@@ -3852,7 +3853,6 @@ SegmentSet do_SS_update_MULTI ( /*OUT*/Bool* hb_all_p,
 
 inline
 static SegmentSet do_SS_update ( /*OUT*/Bool* hb_all_p, 
-                                 /*OUT*/Bool* may_recycle_oldSS_p,
                                  Thread* thr,
                                  Bool do_trace,
                                  SegmentSet oldSS, SegmentID currS,
@@ -3870,19 +3870,13 @@ static SegmentSet do_SS_update ( /*OUT*/Bool* hb_all_p,
          tl_assert(HG_(saneWS_SLOW)(univ_ssets, newSS));
       }
    } else {
-      newSS = do_SS_update_MULTI( hb_all_p, &oldSS_has_active_segment,
-                                  thr, do_trace, oldSS, currS );
+      newSS = do_SS_update_MULTI( hb_all_p, thr, do_trace, oldSS, currS );
       if (clo_ss_recycle && newSS != oldSS) {
          if (!SS_is_singleton(newSS)) {
             SS_ref(newSS, sz);
             tl_assert(HG_(saneWS_SLOW)(univ_ssets, newSS));
          }
-         if (SS_unref(oldSS, sz) == 0 && !oldSS_has_active_segment) {
-            // reference count dropped to zero and oldSS does not contain 
-            // active segments. There is no way for this SS to appear again. 
-            // Tell the caller that oldSS can be recycled. 
-            *may_recycle_oldSS_p = True;
-         }
+         SS_unref(oldSS, sz);
       }
    }
    return newSS;
@@ -3980,10 +3974,13 @@ SVal memory_state_machine(Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
    SegmentID  currS = thr->csegid;
    SegmentSet newSS = 0;
    LockSet    newLS = 0;
-   Bool       may_recycle_oldSS = False;
 
    // current locks. 
    LockSet    currLS = is_w ? thr->locksetW : thr->locksetA;
+   
+   // increment refcount so sv_old isn't deleted between
+   //   do_SS_update and record_error_Race calls
+   SHVAL_SS_ref(sv_old);
 
    // Check if trace was requested for this address by a client request.
    if (UNLIKELY(clo_trace_level > 0 && mem_trace_is_on(a))) {
@@ -4045,8 +4042,7 @@ SVal memory_state_machine(Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
       tl_assert(is_SHVAL_valid_SLOW(sv_old));
       // update the segment set and compute hb_all
       oldSS = get_SHVAL_SS(sv_old);
-      newSS = do_SS_update(&hb_all, &may_recycle_oldSS, 
-                           thr, trace_level >= 1, oldSS, currS, sz);
+      newSS = do_SS_update(&hb_all, thr, trace_level >= 1, oldSS, currS, sz);
 
 
       // update lock set. 
@@ -4115,11 +4111,10 @@ SVal memory_state_machine(Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
             record_error_Race( thr, 
                          a, is_w, sz, sv_old, sv_new,
                          maybe_get_lastlock_initpoint(a) );
-      // never recycle segment sets in sv_old/sv_new
-      SHVAL_SS_ref(sv_old);
-      SHVAL_SS_ref(sv_new);
-      may_recycle_oldSS = False;
       if (race_was_recorded) {
+         // never recycle segment sets in sv_old/sv_new
+         SHVAL_SS_ref(sv_old);
+         SHVAL_SS_ref(sv_new);
          // if we did record a race and if this mem was not traced before, 
          // turn tracing on.
          sv_new = mk_SHVAL_RM(is_w, SS_mk_singleton(currS), currLS);
@@ -4130,10 +4125,8 @@ SVal memory_state_machine(Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
          sv_new = SHVAL_Ignore;
       }
    }
-
-   if (may_recycle_oldSS) {
-      SS_recycle(oldSS);
-   }
+   
+   SHVAL_SS_unref(sv_old);
 
    return sv_new; 
 }

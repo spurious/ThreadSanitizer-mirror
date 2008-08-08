@@ -142,7 +142,7 @@ typedef
 
 typedef TEMPLATE_WORDVEC() WordVec;
 
-#define N_RECYCLE_CACHE_MAX 32
+#define N_RECYCLE_CACHE_MAX 256
 
 /* ix2vec[0 .. ix2vec_used-1] are pointers to the lock sets (WordVecs)
    really.  vec2ix is the inverse mapping, mapping WordVec* to the
@@ -509,7 +509,11 @@ UWord    HG_(unrefWS)        ( WordSetU *wsu, WordSet ws, UWord sz)
    tl_assert(wv->size >= 0);
    tl_assert(wv->refcount >= sz);
    wv->refcount -= sz;
-   return wv->refcount;
+   UInt rc = wv->refcount; 
+   if (rc == 0)
+      HG_(recycleWS)(wsu, ws);
+   // wv may not be present already   
+   return rc;
 }
 
 // Get the current refcount of ws.
@@ -548,8 +552,12 @@ void    HG_(recycleWS)      ( WordSetU *wsu, WordSet ws)
       UInt i;
       for (i = 0; i < wsu->recycle_cache_n; i++) {
          WordSet ws_to_recycle = wsu->recycle_cache[i];
+         if (wsu->ix2vec[ws_to_recycle] == NULL)
+            continue;
          WordVec *wv = do_ix2vec( wsu, ws_to_recycle );
          tl_assert(wv->size >= 0);
+         if (wv->refcount > 0)
+            continue;
          tl_assert(wv->refcount == 0);
          HG_(delFromFM)(wsu->vec2ix, NULL, NULL, (Word)wv);
          wsu->dealloc(wv);
@@ -661,7 +669,7 @@ void HG_(ppWS) ( WordSetU* wsu, WordSet ws )
    WordVec* wv;
    tl_assert(wsu);
    wv = do_ix2vec( wsu, ws );
-   VG_(printf)("{");
+   VG_(printf)("[refc = %d] {", wv->refcount);
    for (i = 0; i < wv->size; i++) {
       VG_(printf)("%p", (void*)wv->words[i]);
       if (i < wv->size-1)
