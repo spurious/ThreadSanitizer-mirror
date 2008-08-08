@@ -4283,7 +4283,7 @@ REGISTER_TEST(Run, 91)
 
 // test92: FP. Test for a safely-published pointer (read-write). {{{1
 namespace test92 {
-// Similar to test92, but annotated with ANNOTATE_PUBLISH_OBJECT.
+// Similar to test91, but annotated with ANNOTATE_PUBLISH_OBJECT.
 //
 //
 // Publisher:                                       Accessors: 
