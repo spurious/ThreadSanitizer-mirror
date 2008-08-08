@@ -232,6 +232,13 @@ ANN_FUNC(void, AnnotateNewMemory, char *file, int line, void *mem, long size)
   VALGRIND_HG_CLEAN_MEMORY(mem, size);
 }
 
+ANN_FUNC(void, AnnotatePublishObject, char *file, int line, void *mem, long size)
+{
+  const char *name = "AnnotatePublishObject";
+  ANN_TRACE("--#%d %s[%p,%d] %s:%d\n", tid, name, mem, (int)size, file, line);
+  DO_CREQ_v_WW(VG_USERREQ__HG_PUBLISH_OBJECT,   void*, mem, long, size);
+}
+
 ANN_FUNC(void, AnnotateIgnoreReadsBegin, char *file, int line, void *mu)
 {
   const char *name = "AnnotateIgnoreReadsBegin";

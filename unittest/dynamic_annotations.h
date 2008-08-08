@@ -107,6 +107,7 @@ ANNOTATION(AnnotateIgnoreWritesEnd, void *);
 ANNOTATION(AnnotatePrintMemoryUsage, long);
 ANNOTATION(AnnotatePrintStats, void *);
 ANNOTATION(AnnotateResetStats, void *);
+ANNOTATION(AnnotatePublishObject, void *, long);
 
 ANNOTATION(AnnotateNoOp, void *arg);
 
@@ -163,6 +164,19 @@ ANNOTATION(AnnotateNoOp, void *arg);
 // e.g. after it is extracted from a free-list.
 #define ANNOTATE_NEW_MEMORY(mem, size) \
             AnnotateNewMemory(__FILE__, __LINE__, mem, size)
+
+// Report that the object of size 'size' stored in 'object_pointer'
+// has been created and is about to be published safely. 
+// The race checker will create a happens-before arc between the call 
+// ANNOTATE_PUBLISH_OBJECT_SIZED(object,size) and subsequent 
+// reads from a memory in the range [object, object+size).
+#define ANNOTATE_PUBLISH_OBJECT_SIZED(object_pointer, size) \
+            AnnotatePublishObject(__FILE__, __LINE__, object_pointer, size);
+
+// A variation of ANNOTATE_PUBLISH_OBJECT_SIZED with the size 
+// computed by sizeof(*object_pointer).
+#define ANNOTATE_PUBLISH_OBJECT(object_pointer) \
+            ANNOTATE_PUBLISH_OBJECT_SIZED(object_pointer, sizeof(*object_pointer))
 
 // Insert at the beginning of a unit test. 
 #define ANNOTATE_EXPECT_RACE(mem, description) \

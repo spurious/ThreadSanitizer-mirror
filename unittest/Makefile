@@ -4,7 +4,7 @@ HELGRIND='valgrind --tool=helgrind'
 TEST=0
 CXX=g++
 
-all: build run
+all: build 
 
 build: racecheck_unittest
 

@@ -890,9 +890,9 @@ namespace test16 {
 // 3. MU.Unlock()                               c. MU.Unlock()
 // 4. MU2.Lock()                                d. MU2.Lock()
 // 5. COND--                                    e. COND--
-// 6. ANNOTATE_CONDVAR_SIGNAL(MU2) >>>>>V       .
+// 6. ANNOTATE_CONDVAR_SIGNAL(MU2) ---->V       .
 // 7. MU2.Await(COND == 0) <------------+------ f. ANNOTATE_CONDVAR_SIGNAL(MU2)
-// 8. MU2.Unlock()                      V>>>>>> g. MU2.Await(COND == 0)
+// 8. MU2.Unlock()                      V-----> g. MU2.Await(COND == 0)
 // 9. read(GLOB)                                h. MU2.Unlock()
 //                                              i. read(GLOB)
 //
@@ -4201,7 +4201,7 @@ namespace test90 {
 // Choices for annotations: 
 //   -- ANNOTATE_CONDVAR_SIGNAL/ANNOTATE_CONDVAR_WAIT
 //   -- ANNOTATE_MUTEX_IS_USED_AS_CONDVAR
-//   -- ANNOTATE_PUBLISH_POINTER (not yet available).
+//   -- ANNOTATE_PUBLISH_OBJECT (not yet available).
 
 int     *GLOB = 0;
 
@@ -4209,7 +4209,7 @@ void Publisher() {
   MU.Lock();
   GLOB = new int;
   *GLOB = 777;
-  ANNOTATE_EXPECT_RACE(GLOB, "This is a false positve");
+  ANNOTATE_EXPECT_RACE(GLOB, "test90. This is a false positve");
   MU.Unlock();
 }
 
@@ -4243,6 +4243,7 @@ namespace test91 {
 // Accessors get the object under MU1 and access it (read/write) under MU2.
 //
 // Without annotations Helgrind will issue a false positive in Accessor(). 
+//
 
 int     *GLOB = 0;
 
@@ -4250,7 +4251,7 @@ void Publisher() {
   MU1.Lock();
   GLOB = new int;
   *GLOB = 777;
-  ANNOTATE_EXPECT_RACE(GLOB, "This is a false positve");
+  ANNOTATE_EXPECT_RACE(GLOB, "test91. This is a false positve");
   MU1.Unlock();
 }
 
@@ -4278,6 +4279,70 @@ void Run() {
 }
 REGISTER_TEST(Run, 91)
 }  // namespace test91
+
+
+// test92: FP. Test for a safely-published pointer (read-write). {{{1
+namespace test92 {
+// Similar to test92, but annotated with ANNOTATE_PUBLISH_OBJECT.
+//
+//
+// Publisher:                                       Accessors: 
+//
+// 1. MU1.Lock()
+// 2. Create GLOB.
+// 3. ANNOTATE_PUBLISH_OBJECT(GLOB) ----\            .
+// 4. MU1.Unlock()                       \           .
+//                                        \          a. MU1.Lock()
+//                                         \         b. Get GLOB
+//                                          \        c. MU1.Lock()
+//                                           \-->    d. Access memort pointed by GLOB
+//
+//  A happens-before arc is created between ANNOTATE_PUBLISH_OBJECT and 
+//  reads from GLOB.
+
+int     *GLOB = 0;
+
+void Publisher() {
+  MU1.Lock();
+  int count = 10;
+  GLOB = new int[10];
+  for (int i = 0; i < count; i++) {
+    GLOB[i] = 777;
+  }
+#ifdef ANNOTATE_PUBLISH_OBJECT_SIZED
+  ANNOTATE_PUBLISH_OBJECT_SIZED(GLOB, sizeof(*GLOB) * count);
+#endif
+  MU1.Unlock();
+}
+
+void Accessor(int index) {
+  while (true) {
+    MU1.Lock();
+    int *p = GLOB;
+    MU1.Unlock();
+    if (p) {
+      MU2.Lock();
+      p[index]++;  // Race is reported here (if the annotation is not working).
+      CHECK(p[index] ==  778);  
+      MU2.Unlock();
+      break;
+    }
+  }
+}
+
+void Accessor0() { Accessor(0); }
+void Accessor5() { Accessor(5); }
+void Accessor9() { Accessor(9); }
+
+void Run() {
+  printf("test92: safely published pointer, read/write, annotated.\n");
+  MyThreadArray t(Publisher, Accessor0, Accessor5, Accessor9);
+  t.Start();
+  t.Join();
+  printf("\t*GLOB=%d\n", *GLOB);
+}
+REGISTER_TEST(Run, 92)
+}  // namespace test92
 
 
 // test300: {{{1
