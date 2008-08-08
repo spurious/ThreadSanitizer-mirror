@@ -4214,6 +4214,7 @@ void Publisher() {
 }
 
 void Reader() {
+  usleep(100000);
   while (true) {
     MU.Lock();
     int *p = GLOB;
@@ -4256,6 +4257,7 @@ void Publisher() {
 }
 
 void Accessor() {
+  usleep(10000);
   while (true) {
     MU1.Lock();
     int *p = GLOB;
@@ -4281,7 +4283,7 @@ REGISTER_TEST(Run, 91)
 }  // namespace test91
 
 
-// test92: FP. Test for a safely-published pointer (read-write). {{{1
+// test92: TN. Test for a safely-published pointer (read-write), annotated. {{{1
 namespace test92 {
 // Similar to test91, but annotated with ANNOTATE_PUBLISH_OBJECT.
 //
@@ -4295,11 +4297,10 @@ namespace test92 {
 //                                        \          a. MU1.Lock()
 //                                         \         b. Get GLOB
 //                                          \        c. MU1.Lock()
-//                                           \-->    d. Access memort pointed by GLOB
+//                                           \-->    d. Access GLOB
 //
 //  A happens-before arc is created between ANNOTATE_PUBLISH_OBJECT and 
-//  reads from GLOB.
-
+//  accesses to GLOB.
 
 struct ObjType {
   int arr[10];
@@ -4313,9 +4314,8 @@ void Publisher() {
   for (int i = 0; i < 10; i++) {
     GLOB->arr[i] = 777;
   }
-#ifdef ANNOTATE_PUBLISH_OBJECT
-  ANNOTATE_PUBLISH_OBJECT(GLOB);
-#endif
+  // This annotation should go right before the object is published.
+  ANNOTATE_PUBLISH_OBJECT(GLOB);    
   MU1.Unlock();
 }
 
@@ -4347,6 +4347,32 @@ void Run() {
 }
 REGISTER_TEST(Run, 92)
 }  // namespace test92
+
+
+// test93: TP. Test for incorrect usage of ANNOTATE_PUBLISH_OBJECT. {{{1
+namespace test93 {
+int     GLOB = 0;
+
+void Reader() {
+  CHECK(GLOB == 0);
+}
+
+void Publisher() {
+  usleep(10000);
+  // Incorrect, used after the memory has been accessed in another thread. 
+  ANNOTATE_PUBLISH_OBJECT(&GLOB); 
+}
+
+void Run() {
+  printf("test93: positive, misuse of ANNOTATE_PUBLISH_OBJECT\n");
+  MyThreadArray t(Reader, Publisher);
+  t.Start();
+  t.Join();
+  printf("\tGLOB=%d\n", GLOB);
+}
+REGISTER_TEST(Run, 93)
+}  // namespace test93
+
 
 
 // test300: {{{1
