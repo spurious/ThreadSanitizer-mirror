@@ -4300,17 +4300,22 @@ namespace test92 {
 //  A happens-before arc is created between ANNOTATE_PUBLISH_OBJECT and 
 //  reads from GLOB.
 
-int     *GLOB = 0;
+
+struct ObjType {
+  int arr[10];
+};
+
+ObjType *GLOB = 0;
 
 void Publisher() {
   MU1.Lock();
   int count = 10;
-  GLOB = new int[10];
+  GLOB = new ObjType;
   for (int i = 0; i < count; i++) {
-    GLOB[i] = 777;
+    GLOB->arr[i] = 777;
   }
-#ifdef ANNOTATE_PUBLISH_OBJECT_SIZED
-  ANNOTATE_PUBLISH_OBJECT_SIZED(GLOB, sizeof(*GLOB) * count);
+#ifdef ANNOTATE_PUBLISH_OBJECT
+  ANNOTATE_PUBLISH_OBJECT(GLOB);
 #endif
   MU1.Unlock();
 }
@@ -4318,12 +4323,12 @@ void Publisher() {
 void Accessor(int index) {
   while (true) {
     MU1.Lock();
-    int *p = GLOB;
+    ObjType *p = GLOB;
     MU1.Unlock();
     if (p) {
       MU2.Lock();
-      p[index]++;  // Race is reported here (if the annotation is not working).
-      CHECK(p[index] ==  778);  
+      p->arr[index]++;  // Race is reported here (if the annotation is not working).
+      CHECK(p->arr[index] ==  778);  
       MU2.Unlock();
       break;
     }
@@ -4339,7 +4344,7 @@ void Run() {
   MyThreadArray t(Publisher, Accessor0, Accessor5, Accessor9);
   t.Start();
   t.Join();
-  printf("\t*GLOB=%d\n", *GLOB);
+  printf("\t*GLOB=%d\n", GLOB->arr[0]);
 }
 REGISTER_TEST(Run, 92)
 }  // namespace test92
