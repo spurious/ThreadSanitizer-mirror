@@ -4309,9 +4309,8 @@ ObjType *GLOB = 0;
 
 void Publisher() {
   MU1.Lock();
-  int count = 10;
   GLOB = new ObjType;
-  for (int i = 0; i < count; i++) {
+  for (int i = 0; i < 10; i++) {
     GLOB->arr[i] = 777;
   }
 #ifdef ANNOTATE_PUBLISH_OBJECT
@@ -4327,7 +4326,7 @@ void Accessor(int index) {
     MU1.Unlock();
     if (p) {
       MU2.Lock();
-      p->arr[index]++;  // Race is reported here (if the annotation is not working).
+      p->arr[index]++;  // W/o the annotations the race will be reported here.
       CHECK(p->arr[index] ==  778);  
       MU2.Unlock();
       break;
