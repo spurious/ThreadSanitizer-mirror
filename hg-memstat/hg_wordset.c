@@ -592,15 +592,18 @@ Bool HG_(saneWS_SLOW) ( WordSetU* wsu, WordSet ws )
    wv = wsu->ix2vec[ws];
    if (!wv) 
       return False;
-   DEBUG_ONLY(if (wv->owner != wsu) 
-      return False);
-   if (wv->size < 0) return False;
-   if (wv->size > 0) {
-      for (i = 0; i < wv->size-1; i++) {
-         if (wv->words[i] >= wv->words[i+1])
-            return False;
+   DEBUG_ONLY(
+      if (wv->owner != wsu) 
+         return False
+      if (wv->size < 0)
+         return False;
+      if (wv->size > 0) {
+         for (i = 0; i < wv->size-1; i++) {
+            if (wv->words[i] >= wv->words[i+1])
+               return False;
+         }
       }
-   }
+   );
    return True;
 }
 
