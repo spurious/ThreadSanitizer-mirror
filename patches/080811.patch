@@ -1,0 +1,599 @@
+Index: helgrind.h
+===================================================================
+--- helgrind.h	(revision 8520)
++++ helgrind.h	(working copy)
+@@ -73,6 +73,9 @@
+       VG_USERREQ__HG_MUTEX_IS_USED_AS_CONDVAR,   /* void* */
+       VG_USERREQ__HG_IGNORE_READS_BEGIN,         /* none */
+       VG_USERREQ__HG_IGNORE_READS_END,           /* none */
++      VG_USERREQ__HG_IGNORE_WRITES_BEGIN,        /* none */
++      VG_USERREQ__HG_IGNORE_WRITES_END,          /* none */
++      VG_USERREQ__HG_PUBLISH_MEMORY_RANGE,       /* void *, long */
+ 
+ 
+       /* The rest are for Helgrind's internal use.  Not for end-user
+Index: hg_main.c
+===================================================================
+--- hg_main.c	(revision 8520)
++++ hg_main.c	(working copy)
+@@ -454,6 +454,7 @@
+       ExeContext* created_at;
+       Bool        announced;
+       Bool        ignore_reads; 
++      Bool        ignore_writes; 
+       /* Index for generating references in error messages. */
+       Int         errmsg_index;
+    }
+@@ -849,6 +850,11 @@
+                               [n % SEGMENT_ID_CHUNK_SIZE];
+ }
+ 
++static inline Thread *SEG_thr(SegmentID n)
++{
++   return SEG_get(n)->thr;
++}
++
+ static void SEG_set_context(SegmentID n, ExeContext *context) 
+ {
+    if (SCE_SVALS)
+@@ -1156,8 +1162,8 @@
+ 
+ //
+ //   SVal:
+-//   10SSSSSSSSSSSSSSSSSSSSSSSSSSrrrrTrrrrrrrLLLLLLLLLLLLLLLLLLLLLLLL Read
+-//   11SSSSSSSSSSSSSSSSSSSSSSSSSSrrrrTrrrrrrrLLLLLLLLLLLLLLLLLLLLLLLL Mod
++//   10SSSSSSSSSSSSSSSSSSSSSSSSSSrrrrTrPrrrrrLLLLLLLLLLLLLLLLLLLLLLLL Read
++//   11SSSSSSSSSSSSSSSSSSSSSSSSSSrrrrTrPrrrrrLLLLLLLLLLLLLLLLLLLLLLLL Mod
+ //     \_______ 26 _____________/            \________ 24 __________/
+ // 
+ //   0100000000000000000000000000000000000000000000000000000000000001 Ignore
+@@ -1169,13 +1175,14 @@
+ //   S - segment set bits 
+ //   L - lock set bits 
+ //   T - trace bit
++//   P - published bit
+ //
+ //   It's crucial that no valid SVal has a value of zero, since zero
+ //   has a special meaning for the LineZ/LineF mechanism (see
+ //   "lineZ->dict[0] == 0" in get_ZF_by_index).
+ //
+ //
+-//   S: 
++//   S (segment set bits): 
+ //   1SSSSSSSSSSSSSSSSSSSSSSS Just one segment. 
+ //   0SSSSSSSSSSSSSSSSSSSSSSS A real segment set. 
+ //
+@@ -1183,14 +1190,19 @@
+ //   When set, the trace bit indicates that we want to trace each access 
+ //   to this memory (we output the trace only when the state changes).
+ //
++//   P (published bit): 
++//   Set when a PUBLISH_MEMORY_RANGE client request has been called on the pointer 
++//   to this memory. See comments below (search for PUBLISH_MEMORY_RANGE).
+ //
++//
+ //   
+ 
+ //------------- segment set, lock set --------------
+ 
+-#define N_SEG_SEG_BITS     26
+-#define N_LOCK_SET_BITS    24
+-#define TRACE_BIT_POSITION 31
++#define N_SEG_SEG_BITS          (26)
++#define N_LOCK_SET_BITS         (24)
++#define TRACE_BIT_POSITION      (31)
++#define PUBLISHED_BIT_POSITION  (33)
+ 
+ #define SHVAL_New       ((SVal)(2<<8))
+ #define SHVAL_Invalid   ((SVal)(0))
+@@ -1298,7 +1310,16 @@
+    return sv | ((SVal)trace_bit << TRACE_BIT_POSITION);
+ }
+ 
++static inline Bool get_SHVAL_PUBLISHED_BIT (SVal sv) {
++   return 1 == ((sv >> PUBLISHED_BIT_POSITION) & 1);
++}
+ 
++static inline SVal set_SHVAL_PUBLISHED_BIT (SVal sv, Bool published_bit) {
++   return sv | ((SVal)published_bit << PUBLISHED_BIT_POSITION);
++}
++
++
++
+ static inline SegmentSet get_SHVAL_SS (SVal sv) {
+    SegmentSet ss;
+    Int   shift = 62 - N_SEG_SEG_BITS;
+@@ -1590,6 +1611,13 @@
+       VG_(sprintf)(buf, "%s; #LS=%d; #SS=%d; ", 
+                    name, n_locks, (Int)n_segments);
+ 
++      if (get_SHVAL_TRACE_BIT(sv)) {
++         VG_(sprintf)(buf + VG_(strlen)(buf), "TR; ");
++      }
++      if (get_SHVAL_PUBLISHED_BIT(sv)) {
++         VG_(sprintf)(buf + VG_(strlen)(buf), "PB; ");
++      }
++
+       for (i = 0; i < n_segments; i++) {
+          SegmentID S;
+          if (VG_(strlen(buf)) > nBuf - 20) {
+@@ -2261,9 +2289,13 @@
+   if (HG_(lookupFM)( map_expected_errors,
+                      NULL/*keyP*/, (Word*)&expected_error, (Word)ptr)) {
+     tl_assert(expected_error->addr == ptr);
+-    VG_(printf)("Found expected race: %s:%d %p\t%s\n",
++    if (!expected_error->is_benign) {
++       // Print expected errors inside unit tests, 
++       // but don't print benign races.
++       VG_(printf)("Found expected race: %s:%d %p\t%s\n",
+                 expected_error->file, expected_error->line, 
+                 ptr, expected_error->descr);
++    }
+     return expected_error;
+   }
+   return NULL;
+@@ -3380,6 +3412,11 @@
+ static void record_error_Misc ( Thread*, HChar* );
+ static void announce_one_thread ( Thread* thr ); /* fwds */
+ 
++static void evhH__do_cv_signal(Thread *thr, Word cond); 
++static Bool evhH__do_cv_wait(Thread *thr, Word cond, Bool must_match_signal);
++
++
++
+ // KCC: If you agree with the new scheme of handling BHL, 
+ // KCC: add_BHL/del_BHL could be deleted completely. 
+ // KCC: Now these functions are commented out to avoid compiler warnings.
+@@ -3547,8 +3584,102 @@
+    }
+ }
+ 
++//-------------------------------------------
++// PUBLISH_MEMORY_RANGE client request.
+ //
++// We create a happens-before arc between a call to PUBLISH_MEMORY_RANGE(ptr, size)
++// and an memory access in range [ptr, ptr+size). 
+ //
++// Example:
++//
++// Publisher:                                               Accessors:
++//                                                         
++// 1. MU1.Lock()                                           
++// 2. Create GLOB.                                         
++// 3. ANNOTATE_PUBLISH_MEMORY_RANGE(GLOB, size) -\          .
++// 4. MU1.Unlock()                                \         .
++//                                                 \        a. MU1.Lock()
++//                                                  \       b. Get GLOB
++//                                                   \      c. MU1.Lock()
++//                                                    \---> d. Access GLOB
++//
++//  A happens-before arc is created between ANNOTATE_PUBLISH_MEMORY_RANGE and
++//  reads from GLOB. 
++//
++//  
++//
++
++
++static WordFM* published_memory_map = NULL; /* Addr -> SizeT */
++SegmentID release_segment = 0;
++
++// 'from' part of the happens-before arc.
++static void published_memory_range_release (Thread *thr, Addr a, SizeT len) 
++{
++   if (0) VG_(printf)("PUBLISH_MEMORY_RANGE: release: T%d/S%d %p %lu\n", 
++                      thr->errmsg_index, thr->csegid, a, len);
++
++   if (published_memory_map == NULL) {
++      published_memory_map = HG_(newFM)( hg_zalloc, hg_free, NULL);
++   }
++
++   // Put 'len' into the map. 
++   // FM has the equivalent of upper_bound() (initIterAtFM) but does not have 
++   // and equivalent for lower_bound(). So, we store a+len in this map.
++   HG_(addToFM)(published_memory_map, a + len, (UWord)len);
++   // Create the 'from' part of the HB-arc.
++   evhH__do_cv_signal(thr, a);
++}
++
++// 'to' part of the happens-before arc.
++// Return true if a new segment has been created.
++static Bool published_memory_range_acquire (Thread *thr, Addr a) 
++{
++   tl_assert(published_memory_map);  // The map must be created already.
++   Addr addr = 0;
++   SizeT len = 0;
++   // Check if we have this address in map.
++   HG_(initIterAtFM)(published_memory_map, a);
++   if (HG_(nextIterFM)(published_memory_map, (Word*)&addr, (Word*)&len)) {
++      addr -= len;  // We stored a+len in the map.
++      if (a >= addr && a < addr + len) {  
++         // 'a' is indeed within [addr, addr+len). 
++         if (0) VG_(printf)("PUBLISH_MEMORY_RANGE: acquire: T%d/S%d %p %lu\n",  
++                            thr->errmsg_index, thr->csegid, a, len);
++         // This will create a new segment only if the current segment 
++         // does not happen-after the corresponding segment from 
++         // published_memory_range_release().
++         return evhH__do_cv_wait(thr, addr, False);
++      }
++   } else {
++      tl_assert(0);  // Must not happen.
++   }
++   return False;
++}
++
++// forget about published memory, i.e. remove all pointers within
++// [first, last) from published_memory_map.
++static void published_memory_range_forget (Addr first, Addr last)
++{
++   Addr addr = 0;
++   SizeT len = 0;
++   Bool do_repeat = False;
++   if (!published_memory_map) return;
++   do {
++      do_repeat = False;
++      HG_(initIterAtFM)(published_memory_map, first);
++      while (HG_(nextIterFM)(published_memory_map, (Word*)&addr, (Word*)&len)
++             && (addr-len) >= first && (addr - len) < last) {
++         HG_(delFromFM)(published_memory_map, NULL, NULL, addr);
++         do_repeat = True;
++         first = addr + 1;
++         break;
++      }
++   } while (do_repeat);
++}
++
++//
++//
+ // See http://code.google.com/p/data-race-test/wiki/MSMProp1 
+ // for description. 
+ //
+@@ -3863,6 +3994,10 @@
+       sv_new = sv_old;
+       goto done;
+    }
++   if (UNLIKELY(is_w && thr->ignore_writes)) {
++      sv_new = sv_old;
++      goto done;
++   }
+ 
+ 
+    if (UNLIKELY(is_SHVAL_Ignore(sv_old))) {
+@@ -3904,6 +4039,14 @@
+       if (UNLIKELY(get_SHVAL_TRACE_BIT(sv_old))) { 
+          trace_level = 2;
+       }
++
++      if (UNLIKELY(get_SHVAL_PUBLISHED_BIT(sv_old))) {
++         if (published_memory_range_acquire(thr, a)) {
++            // we have created a new segment.
++            tl_assert(currS != thr->csegid);
++            currS = thr->csegid;
++         }
++      }
+       
+       was_m = is_SHVAL_M(sv_old);
+ 
+@@ -3930,7 +4073,9 @@
+       // generate new SVal
+       sv_new = mk_SHVAL_RM(now_m, newSS, newLS);
+       sv_new = set_SHVAL_TRACE_BIT(sv_new, get_SHVAL_TRACE_BIT(sv_old));
++      sv_new = set_SHVAL_PUBLISHED_BIT(sv_new, get_SHVAL_PUBLISHED_BIT(sv_old));
+ 
++
+       is_race = now_m && !SS_is_singleton(newSS)
+                       && HG_(isEmptyWS)(univ_lsets, newLS);
+ 
+@@ -3969,6 +4114,7 @@
+       // Stop tracing and start ignoring this memory location.
+       VG_(message)(Vg_UserMsg, "Race on %p is found again after %u accesses",
+                    a, get_trace_info(a)->n_accesses);
++      VG_(message)(Vg_UserMsg, ""); // Empty line.
+       sv_new = SHVAL_Ignore;
+       is_race = False;
+    }
+@@ -3989,6 +4135,8 @@
+          // turn tracing on.
+          sv_new = mk_SHVAL_RM(is_w, SS_mk_singleton(currS), currLS);
+          sv_new = set_SHVAL_TRACE_BIT(sv_new, True);
++         sv_new = set_SHVAL_PUBLISHED_BIT(sv_new, 
++                                          get_SHVAL_PUBLISHED_BIT(sv_old));
+          msm_do_trace(thr, a, sv_old, sv_new, is_w, 2);
+       } else {
+          // put this in Ignore state
+@@ -5787,6 +5935,7 @@
+ 
+    // turn off memory trace
+    mem_trace_off(firstA, lastA);
++   published_memory_range_forget(firstA, lastA);
+ 
+    /* --- Step 2 --- */
+ 
+@@ -5907,7 +6056,32 @@
+    if (0) all__sanity_check("Make NoAccess");
+ }
+ 
++// Set the published bit for all bytes in range [aIN, aIN + size).
++// Return true if all the memory either belongs to thread 'thr' or uninitialized.
++static Bool  shadow_mem_set_published( Thread* thr, Addr aIN, SizeT len )
++{
++   Bool res = True;
++   SizeT i;
++   for (i = 0; i < len; i++) {
++      Addr a = aIN + i;
++      SVal sv_old = shadow_mem_get8(a);
++      if (is_SHVAL_RM(sv_old)) {
++         SegmentSet ss = get_SHVAL_SS(sv_old);
++         if (!SS_is_singleton(ss) || SEG_thr(SS_get_singleton(ss)) != thr) {
++            // This memory does not belong to the current thread.
++            res = False;
++         }
++         SVal sv_new = set_SHVAL_PUBLISHED_BIT(sv_old, True);
++         shadow_mem_set8(thr, a, sv_new);
++      } else {
++         // User requested PUBLISH_MEMORY_RANGE on an uninitialized memory. 
++         // Might be ok though, we are not memcheck after all.
++      }
++   }   
++   return res;
++}
+ 
++
+ /*----------------------------------------------------------------*/
+ /*--- Event handlers (evh__* functions)                        ---*/
+ /*--- plus helpers (evhH__* functions)                         ---*/
+@@ -5916,8 +6090,6 @@
+ /*--------- Event handler helpers (evhH__* functions) ---------*/
+ 
+ 
+-static void evhH__do_cv_signal(Thread *thr, Word cond);
+-static Bool evhH__do_cv_wait(Thread *thr, Word cond, Bool must_match_signal);
+ 
+ /* Create a new segment for 'thr', making it depend (.prev) on its
+    existing segment, bind together the SegmentID and Segment, and
+@@ -6374,6 +6546,39 @@
+ }
+ 
+ static
++void evh__publish_memory_range ( Addr a, SizeT len ) {
++   if (SHOW_EVENTS >= 2)
++      VG_(printf)("evh__publish_memory_range(%p, %lu)\n", (void*)a, len );
++ 
++   Thread *thr = get_current_Thread();
++   // Set the PUBLISHED bit in all svals in range [a, a+len)
++   if (!shadow_mem_set_published(thr, a, len )) {
++      // This memory has been accessed by another thread before this one.
++      // This is likely a misuse of PUBLISH_MEMORY_RANGE client request.
++      // And also this is likely a race.
++      HChar buff[120];
++      VG_(sprintf)(buff, 
++                   "Possible data race or misuse of PUBLISH_MEMORY_RANGE(%p, %lu).", 
++                   a, len);
++      record_error_Misc(thr, buff);
++   }
++
++   // Create a 'from' part of the happens-before arc.
++   published_memory_range_release( get_current_Thread(), a, len);
++
++
++   // TODO(kcc): need to compress svals back. 
++   // shmem__flush_and_invalidate_scache() helps, but it is expensive.
++   // If PUBLISH_MEMORY_RANGE becomes hot, may need to do somthing different.
++   shmem__flush_and_invalidate_scache();
++
++
++   if (len >= SCE_BIGRANGE_T && (clo_sanity_flags & SCE_BIGRANGE))
++      all__sanity_check("evh__publish_memory_range-post");
++}
++
++
++static
+ void evh__pre_thread_ll_create ( ThreadId parent, ThreadId child )
+ {
+    if (SHOW_EVENTS >= 1)
+@@ -6855,7 +7060,7 @@
+    signallings/broadcasts.
+ */
+ 
+-/* pthread_mutex_cond* -> Segment* */
++/* pthread_mutex_cond* -> SegmentID */
+ static WordFM* map_cond_to_Segment = NULL;
+ 
+ static void map_cond_to_Segment_INIT ( void ) {
+@@ -6872,7 +7077,8 @@
+    Segment*  new_seg;
+    SegmentID fake_segid;
+    Segment*  fake_seg;
+-   Segment *signalling_seg = NULL;
++   SegmentID signalling_segid = 0;
++   Word      word_temp = 0;
+ 
+    map_cond_to_Segment_INIT();
+    if (clo_happens_before < 2) return;
+@@ -6908,21 +7114,21 @@
+    fake_seg->other = new_seg->prev;
+ 
+ 
+-   HG_(lookupFM)( map_cond_to_Segment, 
+-                  NULL, (Word*)&signalling_seg,
+-                  (Word)cond );
+-   if (signalling_seg != 0) {
+-      fake_seg->prev = signalling_seg; 
+-
++   if (HG_(lookupFM)(map_cond_to_Segment, NULL, (Word*)&word_temp, (Word)cond)) {
++      signalling_segid = (SegmentID)(word_temp); // I hate type-unsefe stuff!
++      tl_assert(signalling_segid);
++      fake_seg->prev = SEG_get(signalling_segid); 
+    }
+-   fake_seg->vts  = tickL_and_joinR_VTS(fake_thread, 
+-                                        fake_seg->prev->vts, 
+-                                        fake_seg->other->vts);
+-   HG_(addToFM)( map_cond_to_Segment, (Word)cond, (Word)(fake_seg) );
++   fake_seg->vts = tickL_and_joinR_VTS(fake_thread, 
++                                       fake_seg->prev->vts, 
++                                       fake_seg->other->vts);
++   HG_(addToFM)( map_cond_to_Segment, (Word)cond, (Word)(fake_segid) );
++   //VG_(printf)("HB map: put %p %d\n", cond, fake_segid);
++   
+    // FIXME. test67 gives false negative. 
+    // But this looks more like a feature than a bug. 
+    //
+-   // FIXME. At this point the old signalling_seg is not needed any more
++   // FIXME. At this point the old signalling_segid is not needed any more
+    // if we use only VTS. If we stop using HB graph, we can have only
+    // one fake segment for a CV. 
+ 
+@@ -6931,56 +7137,74 @@
+ 
+ Bool evhH__do_cv_wait(Thread *thr, Word cond, Bool must_match_signal)
+ {
+-   SegmentID new_segid;
+-   Segment*  new_seg;
+-   Segment*  signalling_seg;
+-   Bool      found;
++   SegmentID new_segid = 0;
++   Segment*  new_seg = NULL;
++   Word      word_temp = 0;
++   SegmentID signalling_segid = 0;
+    map_cond_to_Segment_INIT();
+-   if (clo_happens_before >= 2) {
+-      /* create a new segment ... */
+-      new_segid = 0; /* bogus */
+-      new_seg   = NULL;
+-      evhH__start_new_segment_for_thread( &new_segid, &new_seg, thr );
+-      tl_assert( SEG_id_is_sane(new_segid) );
+-      tl_assert( is_sane_Segment(new_seg) );
+-      tl_assert( new_seg->thr == thr );
+-      tl_assert( is_sane_Segment(new_seg->prev) );
+-      tl_assert( new_seg->other == NULL);
+ 
+-      /* and find out which thread signalled us; then add a dependency
+-         edge back to it. */
+-      signalling_seg = NULL;
+-      found = HG_(lookupFM)( map_cond_to_Segment, 
+-                             NULL, (Word*)&signalling_seg,
+-                                   (Word)cond );
+-      if (found) {
+-         tl_assert(is_sane_Segment(signalling_seg));
+-         tl_assert(new_seg->prev);
+-         tl_assert(new_seg->prev->vts);
+-         new_seg->other      = signalling_seg;
+-         new_seg->other_hint = 's';
+-         tl_assert(new_seg->other->vts);
+-         new_seg->vts = tickL_and_joinR_VTS( 
+-                           new_seg->thr, 
+-                           new_seg->prev->vts,
+-                           new_seg->other->vts );
+-         return True;
+-      } else {
+-         if (must_match_signal) {
+-            /* Hmm.  How can a wait on 'cond' succeed if nobody signalled
+-               it?  If this happened it would surely be a bug in the
+-               threads library.  Or one of those fabled "spurious
+-               wakeups". */
+-            record_error_Misc( thr, "Bug in libpthread: pthread_cond_wait "
+-                               "succeeded on"
+-                               " without prior pthread_cond_post");
+-         }
+-         tl_assert(new_seg->prev->vts);
+-         new_seg->vts = tick_VTS( new_seg->thr, new_seg->prev->vts );
+-         return False;
+-      }
++   if (clo_happens_before < 2) return False;
++
++   if (HG_(lookupFM)( map_cond_to_Segment, NULL, (Word*)&word_temp, (Word)cond)) {
++      signalling_segid = (SegmentID)word_temp;
++      tl_assert(signalling_segid);
+    }
+-   return False;
++
++   if (signalling_segid && happens_before(signalling_segid, thr->csegid)) {
++      // The signalling segment already happens-after the current one. 
++      // Thread1:                  Thread2:
++      // 1. SIGNAL  -------->      a. WAIT
++      //                           b. WAIT
++      // A HB-arc has been created for a previous WAIT in this thread.
++      // No need to create another segment.
++      return False;
++   }
++
++   if (!signalling_segid && !must_match_signal) {
++      // No one signalled us before, and we don't want to  report this 
++      // as an error (e.g. SIGNAL and WAIT are annotations, not a real condvar)
++      return False;
++   }
++
++
++   /* create a new segment ... */
++   evhH__start_new_segment_for_thread( &new_segid, &new_seg, thr );
++   tl_assert( SEG_id_is_sane(new_segid) );
++   tl_assert( is_sane_Segment(new_seg) );
++   tl_assert( new_seg->thr == thr );
++   tl_assert( is_sane_Segment(new_seg->prev) );
++   tl_assert( new_seg->other == NULL);
++
++   /* and find out which thread signalled us; then add a dependency
++      edge back to it. */
++   if (signalling_segid) {
++      // VG_(printf)("HB map: get %p %d\n", cond, signalling_segid);
++      tl_assert(SEG_id_is_sane(signalling_segid));
++      tl_assert(new_seg->prev);
++      tl_assert(new_seg->prev->vts);
++      new_seg->other      = SEG_get(signalling_segid);
++      new_seg->other_hint = 's';
++      tl_assert(new_seg->other->vts);
++      new_seg->vts = tickL_and_joinR_VTS( 
++            new_seg->thr, 
++            new_seg->prev->vts,
++            new_seg->other->vts );
++      tl_assert(SEG_id_is_sane(signalling_segid));
++      tl_assert(SEG_id_is_sane(new_segid));
++      return True;
++   } else {
++      tl_assert(must_match_signal);
++      /* Hmm.  How can a wait on 'cond' succeed if nobody signalled
++         it?  If this happened it would surely be a bug in the
++         threads library.  Or one of those fabled "spurious
++         wakeups". */
++      record_error_Misc( thr, "Bug in libpthread: pthread_cond_wait "
++                         "succeeded on"
++                         " without prior pthread_cond_post");
++      tl_assert(new_seg->prev->vts);
++      new_seg->vts = tick_VTS( new_seg->thr, new_seg->prev->vts );
++      return False;
++   }
+ }
+ 
+ 
+ 
+ 
+@@ -8715,6 +8940,30 @@
+          break;
+       }
+ 
++      // These two requests are similar to IGNORE_READS_{BEGIN,END}
++      // but will let you ignore writes.
++      case VG_USERREQ__HG_IGNORE_WRITES_BEGIN: {
++         Thread *thr = map_threads_maybe_lookup( tid );
++         tl_assert(thr); /* cannot fail */
++         tl_assert(!thr->ignore_writes);
++         thr->ignore_writes = True;
++         break;
++      }
++      case VG_USERREQ__HG_IGNORE_WRITES_END: {
++         Thread *thr = map_threads_maybe_lookup( tid );
++         tl_assert(thr); /* cannot fail */
++         tl_assert(thr->ignore_writes);
++         thr->ignore_writes = False;
++         break;
++      }
++
++      case VG_USERREQ__HG_PUBLISH_MEMORY_RANGE: {
++         Addr   ptr   = (Addr)  args[1];
++         SizeT  size  = (SizeT) args[2];
++         evh__publish_memory_range(ptr, size);
++         break;
++      }
++
+       default:
+          /* Unhandled Helgrind client request! */
+         tl_assert2(0, "unhandled Helgrind client request!");
