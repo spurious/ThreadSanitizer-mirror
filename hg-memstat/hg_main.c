@@ -1293,13 +1293,6 @@ static inline UInt SS_unref(SegmentSet ss, UWord sz) {
    return HG_(unrefWS) (univ_ssets, ss, sz);
 }
 
-// recycle a non-singleton SS which has refcount zero.
-static inline void SS_recycle(SegmentSet ss) {
-   tl_assert(!SS_is_singleton(ss));
-   HG_(recycleWS)(univ_ssets, ss);
-}
-
-
 static inline Bool LS_valid (LockSet ls) {
    return ls < (1 << N_LOCK_SET_BITS);
 }
@@ -3859,7 +3852,6 @@ static SegmentSet do_SS_update ( /*OUT*/Bool* hb_all_p,
                                  UWord sz)
 {  
    SegmentSet newSS;
-   Bool oldSS_has_active_segment = False;
    if (LIKELY(SS_is_singleton(oldSS))) {
       // we don't care if oldSS contains an active segment since oldSS 
       // is a singleton and we don't want to recycle it. 

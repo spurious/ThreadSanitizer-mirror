@@ -489,44 +489,6 @@ void HG_(getPayloadWS) ( /*OUT*/UWord** words, /*OUT*/UWord* nWords,
    *words  = wv->words;
 }
 
-
-// Increment the refcount of ws by sz. 
-void    HG_(refWS)          ( WordSetU *wsu, WordSet ws, UWord sz)
-{
-   WordVec* wv;
-   tl_assert(wsu);
-   wv = do_ix2vec( wsu, ws );
-   tl_assert(wv->size >= 0);
-   wv->refcount += sz;
-}
-
-// Decrement the refcount of ws by sz and return the new refcount value.
-UWord    HG_(unrefWS)        ( WordSetU *wsu, WordSet ws, UWord sz)
-{
-   WordVec* wv;
-   tl_assert(wsu);
-   wv = do_ix2vec( wsu, ws );
-   tl_assert(wv->size >= 0);
-   tl_assert(wv->refcount >= sz);
-   wv->refcount -= sz;
-   UInt rc = wv->refcount; 
-   if (rc == 0)
-      HG_(recycleWS)(wsu, ws);
-   // wv may not be present already   
-   return rc;
-}
-
-// Get the current refcount of ws.
-UWord    HG_(getRefWS)        ( WordSetU *wsu, WordSet ws)
-{
-   WordVec* wv;
-   tl_assert(wsu);
-   wv = do_ix2vec( wsu, ws );
-   tl_assert(wv->size >= 0);
-   return wv->refcount;
-}
-
-
 /*
    WordSet Recycling. 
    Once HG_(recycleWS) is called on a ws, 
@@ -543,6 +505,7 @@ UWord    HG_(getRefWS)        ( WordSetU *wsu, WordSet ws)
    - Do not call deleteWV, instead maintain our own free list (?). 
    - Recycle the slot wsu->ix2vec[ws] (will complicate sanity checking). 
 */
+void    HG_(recycleWS)      ( WordSetU *wsu, WordSet ws);
 void    HG_(recycleWS)      ( WordSetU *wsu, WordSet ws) 
 {
    tl_assert(wsu);
@@ -574,6 +537,42 @@ void    HG_(recycleWS)      ( WordSetU *wsu, WordSet ws)
    wsu->recycle_cache[wsu->recycle_cache_n++] = ws;
 }
 
+// Increment the refcount of ws by sz. 
+void    HG_(refWS)          ( WordSetU *wsu, WordSet ws, UInt sz)
+{
+   WordVec* wv;
+   tl_assert(wsu);
+   wv = do_ix2vec( wsu, ws );
+   tl_assert(wv->size >= 0);
+   wv->refcount += sz;
+}
+
+// Decrement the refcount of ws by sz and return the new refcount value.
+UInt    HG_(unrefWS)        ( WordSetU *wsu, WordSet ws, UInt sz)
+{
+   WordVec* wv;
+   UInt rc;
+   tl_assert(wsu);
+   wv = do_ix2vec( wsu, ws );
+   tl_assert(wv->size >= 0);
+   tl_assert(wv->refcount >= sz);
+   wv->refcount -= sz;
+   rc = wv->refcount; 
+   if (rc == 0)
+      HG_(recycleWS)(wsu, ws);
+   // wv may not be present already   
+   return rc;
+}
+
+// Get the current refcount of ws.
+UWord    HG_(getRefWS)        ( WordSetU *wsu, WordSet ws)
+{
+   WordVec* wv;
+   tl_assert(wsu);
+   wv = do_ix2vec( wsu, ws );
+   tl_assert(wv->size >= 0);
+   return wv->refcount;
+}
 
 Bool HG_(plausibleWS) ( WordSetU* wsu, WordSet ws )
 {
@@ -586,7 +585,7 @@ Bool HG_(plausibleWS) ( WordSetU* wsu, WordSet ws )
 Bool HG_(saneWS_SLOW) ( WordSetU* wsu, WordSet ws )
 {
    WordVec* wv;
-   UWord    i;
+   DEBUG_ONLY(UWord    i);
    if (wsu == NULL) return False;
    if (ws < 0 || ws >= wsu->ix2vec_used)
       return False;

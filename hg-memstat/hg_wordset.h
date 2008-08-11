@@ -87,8 +87,8 @@ WordSet HG_(isSubsetOf)     ( WordSetU*, WordSet, WordSet );
 
 Bool    HG_(plausibleWS)    ( WordSetU*, WordSet );
 Bool    HG_(saneWS_SLOW)    ( WordSetU*, WordSet );
-void    HG_(refWS)          ( WordSetU*, WordSet, UWord );
-UWord   HG_(unrefWS)        ( WordSetU*, WordSet, UWord );
+void    HG_(refWS)          ( WordSetU*, WordSet, UInt );
+UInt    HG_(unrefWS)        ( WordSetU*, WordSet, UInt );
 UWord   HG_(getRefWS)       ( WordSetU*, WordSet );
 
 
