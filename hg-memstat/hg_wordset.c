@@ -601,7 +601,7 @@ Bool HG_(saneWS_SLOW) ( WordSetU* wsu, WordSet ws )
       return False;
    DEBUG_ONLY(
       if (wv->owner != wsu) 
-         return False
+         return False;
       if (wv->size < 0)
          return False;
       if (wv->size > 0) {
