@@ -94,6 +94,7 @@
 
 static void pp_memory_usage ( Int flags, Char* caller );
 static void pp_mem_laog ( Int d );
+void pp_fake_segment_stats ( Int d );
 static void pp_stats ( Char * caller );
 static void hg_reset_stats ( void );
 
@@ -789,6 +790,7 @@ static ThreadId map_threads_maybe_reverse_lookup ( Thread* ); /*fwds*/
 #define SecMap_MAGIC   0x571e58cb
 
 static UWord stats__mk_Segment = 0;
+static UWord stats__fake_VTS_bytes_trashed = 0;
 
 /* --------------- Segment vector --------------- */
 // Segments are organized into N1 chunks, each chunk contains N2 Segments. 
@@ -1474,7 +1476,7 @@ static void pp_mem_admin_threads ( Int d )
       admin_threads_bytes += sizeof(Thread);
       // TODO: csegid ?
    }
-   space(d); VG_(printf)("threads:  %6d kB (count = %d)\n",
+   space(d); VG_(printf)("threads:  %7d kB (count = %d)\n",
          (int)(admin_threads_bytes/1024), n);
 }
 
@@ -1557,12 +1559,12 @@ static void pp_mem_admin_locks ( Int d )
       admin_locks_bytes += sizeof(Lock);
       // TODO: lk->heldBy ?
    }
-   space(d); VG_(printf)("locks:    %6d kB (count = %d)\n",
+   space(d); VG_(printf)("locks:    %7d kB (count = %d)\n",
          (int)(admin_locks_bytes/1024), n);
    
    // LockSets below   
    lockset_bytes = HG_(memoryConsumedWSU) (univ_lsets, &n);
-   space(d); VG_(printf)("locksets: %6d kB (active = %d, total = %d)\n",
+   space(d); VG_(printf)("locksets: %7d kB (active = %d, total = %d)\n",
          (int)(lockset_bytes/1024), n, HG_(cardinalityWSU) (univ_lsets));
 }
 
@@ -1615,17 +1617,19 @@ static void pp_mem_segments ( Int d )
    for (i = 1; i < SegmentArray.size; i++) {
       Segment* s = SEG_get(i);
       segments_bytes += sizeof(Segment);
-      //segments_bytes += VG_(sizeXA)(s->vts) * sizeof(ScalarTS);
-      segments_bytes += VG_(bytesXA)(s->vts);
+      if (s->vts)
+         segments_bytes += VG_(bytesXA)(s->vts);
       // TODO: sizeof(ExeContext) ???
    }
-   space(d); VG_(printf)("segments: %6d kB (count = %d) \n",
+   space(d); VG_(printf)("segments: %7d kB (count = %d) \n",
          (int)(segments_bytes / 1024), (Int)SegmentArray.size);
-   
+   space(d); VG_(printf)("Trashed fake-VTS bytes: %7d kB\n",
+                  (Int)(stats__fake_VTS_bytes_trashed/1024));
+   pp_fake_segment_stats(d);
 
    // SegmentSets below
    ss_bytes = HG_(memoryConsumedWSU) (univ_ssets, &n);
-   space(d); VG_(printf)("seg.sets: %6d kB (active = %d, total = %d)\n",
+   space(d); VG_(printf)("seg.sets: %7d kB (active = %d, total = %d)\n",
          (int)(ss_bytes/1024), n, HG_(cardinalityWSU) (univ_ssets));
 }
 
@@ -1757,7 +1761,7 @@ static void pp_mem_shmem ( Int d ) {
             + sm->linesF_size * sizeof(CacheLineF);
    }
    HG_(doneIterFM) ( map_shmem );
-   space(d); VG_(printf)("sh.memory %6d kB (uncompressed = %d kB)\n", 
+   space(d); VG_(printf)("sh.memory %7d kB (uncompressed = %d kB)\n", 
          (int)(compressed_bytes/1024), (int)(shmem_size_bytes/1024)); 
 }
 
@@ -6992,6 +6996,80 @@ static void map_cond_to_Segment_INIT ( void ) {
    }
 }
 
+WordFM * signal_stat_FM = NULL;
+
+typedef struct {
+   Int  threadUID; /* VG_INVALID_THREADID if more than one thread*/
+   Bool multiple_thread_access;
+   UWord n_access;
+} SignalInfo;
+
+SignalInfo * new_SignalInfo (Int threadUID) {
+   SignalInfo * ret = hg_zalloc(sizeof(SignalInfo));
+   ret->threadUID   = threadUID;
+   ret->multiple_thread_access = False;
+   ret->n_access    = 1;
+   return ret;
+}
+
+void record_new_fake_seg (Thread *thr, Word cond)
+{
+   UWord found_key, found_val;
+   SignalInfo * data = NULL;
+   if (signal_stat_FM == NULL)
+      signal_stat_FM = HG_(newFM)( hg_zalloc, hg_free, NULL );
+   
+   if (HG_(lookupFM)(signal_stat_FM, &found_key, &found_val, cond)) {
+      // there was a fake segment for "cond"
+      data = (SignalInfo*)found_val;
+      data->n_access++;
+      if (!data->multiple_thread_access) {
+         if (data->threadUID != thr->threadUID) {
+            data->multiple_thread_access = True;
+            data->threadUID = VG_INVALID_THREADID;
+         } else
+            tl_assert(data->threadUID != VG_INVALID_THREADID);
+      } else
+         tl_assert(data->threadUID == VG_INVALID_THREADID);
+   } else {
+      data = new_SignalInfo(thr->threadUID);
+      HG_(addToFM)(signal_stat_FM, cond, (UWord)data);
+   }
+}
+
+void pp_fake_segment_stats ( Int d ) {
+   UWord total_conds = 0,
+         conds_N_1 = 0,
+         conds_N_multi = 0,
+         total_fake_segments = 0,         
+         N_1 = 0,
+         N_multi = 0,
+         iter_key, iter_value;
+   SignalInfo * data = NULL;
+   if (signal_stat_FM == NULL) {
+      space(d); VG_(printf)("No fake segments yet...\n");
+      return;
+   }
+   HG_(initIterFM)(signal_stat_FM);
+   while (HG_(nextIterFM)(signal_stat_FM, &iter_key, &iter_value)) {
+      data = (SignalInfo*)iter_value;
+      total_conds++;
+      total_fake_segments += data->n_access;
+      if (data->multiple_thread_access) {
+         conds_N_multi++;
+         N_multi += data->n_access;
+      } else {
+         conds_N_1++;
+         N_1 += data->n_access;
+      }
+   }
+   HG_(doneIterFM)(signal_stat_FM);
+   space(d); VG_(printf)("Fakes: fakes = %d, 1-thr = %d, multi-thr = %d\n",
+                     total_fake_segments, N_1, N_multi);
+   space(d); VG_(printf)("CVs: total = %d, 1-thr = %d, multi-thr = %d\n",
+                     total_conds, conds_N_1, conds_N_multi);
+}
+
 void evhH__do_cv_signal(Thread *thr, Word cond)
 {
    static Thread *fake_thread; 
@@ -7024,7 +7102,7 @@ void evhH__do_cv_signal(Thread *thr, Word cond)
       seg->vts        = singleton_VTS(seg->thr, 1);
    }
 
-
+   record_new_fake_seg (thr, cond);
    // create a fake segment.                                         
    evhH__start_new_segment_for_thread(&fake_segid, &fake_seg, fake_thread);
    tl_assert( SEG_id_is_sane(fake_segid) );
@@ -7039,12 +7117,16 @@ void evhH__do_cv_signal(Thread *thr, Word cond)
                   NULL, (Word*)&signalling_seg,
                   (Word)cond );
    if (signalling_seg != 0) {
-      fake_seg->prev = signalling_seg; 
-
+      fake_seg->prev = signalling_seg;
    }
    fake_seg->vts  = tickL_and_joinR_VTS(fake_thread, 
                                         fake_seg->prev->vts, 
                                         fake_seg->other->vts);
+   if (signalling_seg != 0) {
+      stats__fake_VTS_bytes_trashed += VG_(bytesXA)(signalling_seg->vts);
+      VG_(deleteXA)(signalling_seg->vts);
+      signalling_seg->vts = NULL;
+   }
    HG_(addToFM)( map_cond_to_Segment, (Word)cond, (Word)(fake_seg) );
    // FIXME. test67 gives false negative. 
    // But this looks more like a feature than a bug. 
@@ -7667,7 +7749,7 @@ static void pp_mem_laog ( Int d ) {
    }
       
    laog_size_bytes = HG_(memoryConsumedWSU) (univ_laog, &m);
-   space(d); VG_(printf)("laog:     %6d kB (%d laog, "
+   space(d); VG_(printf)("laog:     %7d kB (%d laog, "
                "univ_laog: active = %d, total = %d)\n", 
          (int)(laog_size_bytes/1024), n, m, HG_(cardinalityWSU) (univ_laog));
 }
@@ -10032,6 +10114,7 @@ static void hg_reset_stats ( void )
    stats__secmap_linesF_bytes  = 0;
    stats__secmap_iterator_steppings = 0;
    stats__mk_Segment       = 0;
+   stats__fake_VTS_bytes_trashed = 0;
    stats__msm_Ignore       = 0;
    stats__msm_R_to_R       = 0;
    stats__msm_R_to_M       = 0;
