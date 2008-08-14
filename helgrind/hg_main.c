@@ -3772,8 +3772,8 @@ static void published_memory_range_release (Thread *thr, Addr a, SizeT len)
 // Return true if a new segment has been created.
 static Bool published_memory_range_acquire (Thread *thr, Addr a) 
 {
-   tl_assert(published_memory_map);  // The map must be created already.
    Addr addr = 0;
+   tl_assert(published_memory_map);  // The map must be created already.
    SizeT len = 0;
    // Check if we have this address in map.
    HG_(initIterAtFM)(published_memory_map, a);
@@ -10304,6 +10304,8 @@ static void hg_print_usage ( void )
 "    --trace-after-race=<N>   limits tracing of racey addresses  [50]\n"
 "    --num-callers-for-locks=<N>  show <N> callers in stack traces\n"
 "                                 for lock acquisitions/releases [9]\n"
+"    --memstat-interval=<T>   if non-zero, print memory usage stats and \n"
+"                             overall stats with <T> seconds interval\n"
    );
    VG_(replacement_malloc_print_usage)();
 }
