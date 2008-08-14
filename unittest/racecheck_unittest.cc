@@ -4374,7 +4374,7 @@ REGISTER_TEST(Run, 93)
 }  // namespace test93
 
 
-// test94: FN. Exhibits a bug in do_cv_signal/fake segment logic {{{1
+// test94: TP. Check do_cv_signal/fake segment logic {{{1
 namespace test94 {
 int     GLOB = 0;
 
@@ -4416,8 +4416,8 @@ void Thr4() {
   GLOB = 2; // READ: no HB-relation between CV.Signal and CV2.Wait !
 }
 void Run() {
-  printf("test94: FN. do_cv_signal bug exhibition\n");
-  ANNOTATE_EXPECT_RACE(&GLOB, "test94: FN. do_cv_signal/fakesegment logic bug");
+  printf("test94: TP. Check do_cv_signal/fake segment logic\n");
+  ANNOTATE_EXPECT_RACE(&GLOB, "test94: TP.");
   MyThreadArray mta(Thr1, Thr2, Thr3, Thr4);
   mta.Start();
   mta.Join();
@@ -4426,7 +4426,7 @@ void Run() {
 REGISTER_TEST(Run, 94);
 }  // namespace test94
 
-// test95: TP. Correct do_cv_signal/fake segment logic exhibition {{{1
+// test95: TP. Check do_cv_signal/fake segment logic {{{1
 namespace test95 {
 int     GLOB = 0;
 
@@ -4468,7 +4468,7 @@ void Thr4() {
   GLOB = 2; // READ: no HB-relation between CV.Signal and CV2.Wait !
 }
 void Run() {
-  printf("test95: TP.\n");
+  printf("test95: TP. Check do_cv_signal/fake segment logic\n");
   ANNOTATE_EXPECT_RACE(&GLOB, "test95: TP.");
   MyThreadArray mta(Thr1, Thr2, Thr3, Thr4);
   mta.Start();

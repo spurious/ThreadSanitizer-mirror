@@ -7116,16 +7116,26 @@ void evhH__do_cv_signal(Thread *thr, Word cond)
    HG_(lookupFM)( map_cond_to_Segment, 
                   NULL, (Word*)&signalling_seg,
                   (Word)cond );
-   if (signalling_seg != 0) {
+   if (signalling_seg != NULL) {
+      // There was a signal on this CV already
       fake_seg->prev = signalling_seg;
-   }
-   fake_seg->vts  = tickL_and_joinR_VTS(fake_thread, 
-                                        fake_seg->prev->vts, 
-                                        fake_seg->other->vts);
-   if (signalling_seg != 0) {
+      fake_seg->vts  = tickL_and_joinR_VTS(fake_thread, 
+                                           fake_seg->prev->vts, 
+                                           fake_seg->other->vts);
       stats__fake_VTS_bytes_trashed += VG_(bytesXA)(signalling_seg->vts);
       VG_(deleteXA)(signalling_seg->vts);
       signalling_seg->vts = NULL;
+   } else {
+      XArray * fake_VTS = new_VTS();
+      ScalarTS st;
+      st.thrUID = fake_thread->threadUID;
+      st.tym = 1;
+      VG_(addToXA)( fake_VTS, &st );
+      fake_seg->prev = NULL;
+      fake_seg->vts  = tickL_and_joinR_VTS(fake_thread, 
+                                           fake_VTS, 
+                                           fake_seg->other->vts);
+      VG_(deleteXA)(fake_VTS);
    }
    HG_(addToFM)( map_cond_to_Segment, (Word)cond, (Word)(fake_seg) );
    // FIXME. test67 gives false negative. 
