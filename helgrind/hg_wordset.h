@@ -57,6 +57,10 @@ void HG_(deleteWordSetU) ( WordSetU* );
 /* Get the number of elements in this WordSetU. */
 UWord HG_(cardinalityWSU) ( WordSetU* );
 
+/* Get the number of memory bytes consumed by WSU.
+   Also you can get the number of active WordSets in it (count) */
+UWord HG_(memoryConsumedWSU) ( WordSetU*, UWord* count );
+
 /* Show performance stats for this WordSetU. */
 void HG_(ppWSUstats) ( WordSetU* wsu, HChar* name );
 
@@ -83,10 +87,9 @@ WordSet HG_(isSubsetOf)     ( WordSetU*, WordSet, WordSet );
 
 Bool    HG_(plausibleWS)    ( WordSetU*, WordSet );
 Bool    HG_(saneWS_SLOW)    ( WordSetU*, WordSet );
-void    HG_(refWS)          ( WordSetU*, WordSet, UWord );
-UWord   HG_(unrefWS)        ( WordSetU*, WordSet, UWord );
+void    HG_(refWS)          ( WordSetU*, WordSet, UInt );
+UInt    HG_(unrefWS)        ( WordSetU*, WordSet, UInt );
 UWord   HG_(getRefWS)       ( WordSetU*, WordSet );
-void    HG_(recycleWS)      ( WordSetU*, WordSet );
 
 
 

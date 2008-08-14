@@ -76,6 +76,9 @@ typedef
       VG_USERREQ__HG_IGNORE_WRITES_BEGIN,        /* none */
       VG_USERREQ__HG_IGNORE_WRITES_END,          /* none */
       VG_USERREQ__HG_PUBLISH_MEMORY_RANGE,       /* void *, long */
+      VG_USERREQ__HG_PRINT_MEMORY_USAGE,         /* int  */
+      VG_USERREQ__HG_PRINT_STATS,                /* none */
+      VG_USERREQ__HG_RESET_STATS,                /* none */
 
 
       /* The rest are for Helgrind's internal use.  Not for end-user
