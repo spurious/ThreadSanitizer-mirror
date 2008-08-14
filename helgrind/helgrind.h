@@ -11,7 +11,7 @@
    This file is part of Helgrind, a Valgrind tool for detecting errors
    in threaded programs.
 
-   Copyright (C) 2007-2007 OpenWorks LLP
+   Copyright (C) 2007-2008 OpenWorks LLP
       info@open-works.co.uk
 
    Redistribution and use in source and binary forms, with or without
@@ -63,8 +63,20 @@
 typedef
    enum {
       VG_USERREQ__HG_CLEAN_MEMORY = VG_USERREQ_TOOL_BASE('H','G'),
+      VG_USERREQ__HG_BENIGN_RACE,                /* void*, char*, char*, int */
+      VG_USERREQ__HG_EXPECT_RACE,                /* void*, char*, char*, int */
+      VG_USERREQ__HG_PCQ_CREATE,                 /* void* */
+      VG_USERREQ__HG_PCQ_DESTROY,                /* void* */
+      VG_USERREQ__HG_PCQ_PUT,                    /* void* */
+      VG_USERREQ__HG_PCQ_GET,                    /* void* */
+      VG_USERREQ__HG_TRACE_MEM,                  /* void* */
+      VG_USERREQ__HG_MUTEX_IS_USED_AS_CONDVAR,   /* void* */
+      VG_USERREQ__HG_IGNORE_READS_BEGIN,         /* none */
+      VG_USERREQ__HG_IGNORE_READS_END,           /* none */
+      VG_USERREQ__HG_IGNORE_WRITES_BEGIN,        /* none */
+      VG_USERREQ__HG_IGNORE_WRITES_END,          /* none */
+      VG_USERREQ__HG_PUBLISH_MEMORY_RANGE,       /* void *, long */
 
-      VG_USERREQ__HG_BENIGN_RACE, 
 
       /* The rest are for Helgrind's internal use.  Not for end-user
          use.  Do not use them unless you are a Valgrind developer. */
@@ -94,18 +106,9 @@ typedef
       _VG_USERREQ__HG_POSIX_SEM_DESTROY_PRE,      /* sem_t* */
       _VG_USERREQ__HG_POSIX_SEM_POST_PRE,         /* sem_t* */
       _VG_USERREQ__HG_POSIX_SEM_WAIT_POST,        /* sem_t* */
-      _VG_USERREQ__HG_GET_THREAD_ID,              /* -> Thread ID */
-      _VG_USERREQ__HG_GET_SEGMENT_ID,             /* -> Segment ID */
       _VG_USERREQ__HG_GET_MY_SEGMENT,             /* -> Segment* */
-      VG_USERREQ__HG_EXPECT_RACE,                /* void*, char*, char*, int */
-      VG_USERREQ__HG_PCQ_CREATE,                 /* void* */
-      VG_USERREQ__HG_PCQ_DESTROY,                /* void* */
-      VG_USERREQ__HG_PCQ_PUT,                    /* void* */
-      VG_USERREQ__HG_PCQ_GET,                    /* void* */
-      VG_USERREQ__HG_TRACE_MEM,                  /* void* */
-      VG_USERREQ__HG_MUTEX_IS_USED_AS_CONDVAR,   /* void* */
-      VG_USERREQ__HG_IGNORE_READS_BEGIN,         /* none */
-      VG_USERREQ__HG_IGNORE_READS_END,           /* none */
+      _VG_USERREQ__HG_GET_THREAD_ID,              /* -> Thread ID */
+      _VG_USERREQ__HG_GET_SEGMENT_ID              /* -> Segment ID */
    } Vg_TCheckClientRequest;
 
 /* Clean memory state.  This makes Helgrind forget everything it knew
@@ -119,20 +122,5 @@ typedef
                                 _qzz_start, _qzz_len, 0, 0, 0);	          \
      (void)0;                                                             \
    } while(0)
-
-/** Mark the address 'addr' as the address where we expect a data race. 
-    The races will not be reported for this address.
-    If the data race for this address is not detected, 
-    helgrind will complain at the very end. 
-
-    This macro should be used for testing helgrind, mainly in unit tests.  
- */
-#define VALGRIND_HG_EXPECT_RACE(addr, descr)                              \
-  do{ unsigned long _qzz_res;                                             \
-    VALGRIND_DO_CLIENT_REQUEST(_qzz_res, 0, _VG_USERREQ__HG_EXPECT_RACE,  \
-                               addr, descr, __FILE__, __LINE__, 0);       \
-  }while(0)
-
-
 
 #endif /* __HELGRIND_H */

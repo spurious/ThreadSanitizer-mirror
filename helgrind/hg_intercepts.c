@@ -1,14 +1,14 @@
 
 /*--------------------------------------------------------------------*/
 /*--- pthread intercepts for thread checking.                      ---*/
-/*---                                              tc_intercepts.c ---*/
+/*---                                              hg_intercepts.c ---*/
 /*--------------------------------------------------------------------*/
 
 /*
    This file is part of Helgrind, a Valgrind tool for detecting errors
    in threaded programs.
 
-   Copyright (C) 2007-2007 OpenWorks LLP
+   Copyright (C) 2007-2008 OpenWorks LLP
       info@open-works.co.uk
 
    This program is free software; you can redistribute it and/or
@@ -54,7 +54,7 @@
 
 
 /*----------------------------------------------------------------*/
-/*---                                                          ---*/
+/*--- Basic stuff                                              ---*/
 /*----------------------------------------------------------------*/
 
 #define PTH_FUNC(ret_ty, f, args...) \
@@ -752,6 +752,8 @@ PTH_FUNC(int, pthreadZubarrierZuwait, // pthread_barrier_wait.
 }
 
 
+
+
 /*----------------------------------------------------------------*/
 /*--- pthread_rwlock_t functions                               ---*/
 /*----------------------------------------------------------------*/
@@ -823,6 +825,7 @@ PTH_FUNC(int, pthreadZurwlockZudestroy, // pthread_rwlock_destroy
 }
 
 
+// pthread_rwlock_wrlock
 PTH_FUNC(int, pthreadZurwlockZuwrlock, // pthread_rwlock_wrlock
 	 pthread_rwlock_t* rwlock)
 {
@@ -833,8 +836,9 @@ PTH_FUNC(int, pthreadZurwlockZuwrlock, // pthread_rwlock_wrlock
       fprintf(stderr, "<< pthread_rwl_wlk %p", rwlock); fflush(stderr);
    }
 
-   DO_CREQ_v_WW(_VG_USERREQ__HG_PTHREAD_RWLOCK_LOCK_PRE,
-                pthread_rwlock_t*,rwlock, long,1/*isW*/);
+   DO_CREQ_v_WWW(_VG_USERREQ__HG_PTHREAD_RWLOCK_LOCK_PRE,
+                 pthread_rwlock_t*,rwlock, 
+                 long,1/*isW*/, long,0/*!isTryLock*/);
 
    CALL_FN_W_W(ret, fn, rwlock);
 
@@ -852,6 +856,7 @@ PTH_FUNC(int, pthreadZurwlockZuwrlock, // pthread_rwlock_wrlock
 }
 
 
+// pthread_rwlock_rdlock
 PTH_FUNC(int, pthreadZurwlockZurdlock, // pthread_rwlock_rdlock
 	 pthread_rwlock_t* rwlock)
 {
@@ -862,8 +867,9 @@ PTH_FUNC(int, pthreadZurwlockZurdlock, // pthread_rwlock_rdlock
       fprintf(stderr, "<< pthread_rwl_rlk %p", rwlock); fflush(stderr);
    }
 
-   DO_CREQ_v_WW(_VG_USERREQ__HG_PTHREAD_RWLOCK_LOCK_PRE,
-                pthread_rwlock_t*,rwlock, long,0/*!isW*/);
+   DO_CREQ_v_WWW(_VG_USERREQ__HG_PTHREAD_RWLOCK_LOCK_PRE,
+                 pthread_rwlock_t*,rwlock,
+                 long,0/*!isW*/, long,0/*!isTryLock*/);
 
    CALL_FN_W_W(ret, fn, rwlock);
 
@@ -881,6 +887,81 @@ PTH_FUNC(int, pthreadZurwlockZurdlock, // pthread_rwlock_rdlock
 }
 
 
+// pthread_rwlock_trywrlock
+PTH_FUNC(int, pthreadZurwlockZutrywrlock, // pthread_rwlock_trywrlock
+	 pthread_rwlock_t* rwlock)
+{
+   int    ret;
+   OrigFn fn;
+   VALGRIND_GET_ORIG_FN(fn);
+   if (TRACE_PTH_FNS) {
+      fprintf(stderr, "<< pthread_rwl_trywlk %p", rwlock); fflush(stderr);
+   }
+
+   DO_CREQ_v_WWW(_VG_USERREQ__HG_PTHREAD_RWLOCK_LOCK_PRE,
+                 pthread_rwlock_t*,rwlock, 
+                 long,1/*isW*/, long,1/*isTryLock*/);
+
+   CALL_FN_W_W(ret, fn, rwlock);
+
+   /* There's a hole here: libpthread now knows the lock is locked,
+      but the tool doesn't, so some other thread could run and detect
+      that the lock has been acquired by someone (this thread).  Does
+      this matter?  Not sure, but I don't think so. */
+
+   if (ret == 0 /*success*/) {
+      DO_CREQ_v_WW(_VG_USERREQ__HG_PTHREAD_RWLOCK_LOCK_POST,
+                   pthread_rwlock_t*,rwlock, long,1/*isW*/);
+   } else { 
+      if (ret != EBUSY)
+         DO_PthAPIerror( "pthread_rwlock_trywrlock", ret );
+   }
+
+   if (TRACE_PTH_FNS) {
+      fprintf(stderr, " :: rwl_trywlk -> %d >>\n", ret);
+   }
+   return ret;
+}
+
+
+// pthread_rwlock_tryrdlock
+PTH_FUNC(int, pthreadZurwlockZutryrdlock, // pthread_rwlock_tryrdlock
+	 pthread_rwlock_t* rwlock)
+{
+   int    ret;
+   OrigFn fn;
+   VALGRIND_GET_ORIG_FN(fn);
+   if (TRACE_PTH_FNS) {
+      fprintf(stderr, "<< pthread_rwl_tryrlk %p", rwlock); fflush(stderr);
+   }
+
+   DO_CREQ_v_WWW(_VG_USERREQ__HG_PTHREAD_RWLOCK_LOCK_PRE,
+                 pthread_rwlock_t*,rwlock, 
+                 long,0/*!isW*/, long,1/*isTryLock*/);
+
+   CALL_FN_W_W(ret, fn, rwlock);
+
+   /* There's a hole here: libpthread now knows the lock is locked,
+      but the tool doesn't, so some other thread could run and detect
+      that the lock has been acquired by someone (this thread).  Does
+      this matter?  Not sure, but I don't think so. */
+
+   if (ret == 0 /*success*/) {
+      DO_CREQ_v_WW(_VG_USERREQ__HG_PTHREAD_RWLOCK_LOCK_POST,
+                   pthread_rwlock_t*,rwlock, long,0/*!isW*/);
+   } else { 
+      if (ret != EBUSY)
+         DO_PthAPIerror( "pthread_rwlock_tryrdlock", ret );
+   }
+
+   if (TRACE_PTH_FNS) {
+      fprintf(stderr, " :: rwl_tryrlk -> %d >>\n", ret);
+   }
+   return ret;
+}
+
+
+// pthread_rwlock_unlock
 PTH_FUNC(int, pthreadZurwlockZuunlock, // pthread_rwlock_unlock
 	 pthread_rwlock_t* rwlock)
 {
@@ -994,14 +1075,14 @@ PTH_FUNC(int, semZudestroyZAZa, sem_t* sem)
 /* glibc-2.5 has sem_wait (amd64-linux); match sem_wait
              and sem_wait@@GLIBC_2.1 (x86-linux); match sem_wait@* */
 /* wait: decrement semaphore - acquire lockage */
-static int sem_wait_WRK(sem_t* sem)
+static int sem_wait_WRK(sem_t* sem, const char *name, int is_try)
 {
    OrigFn fn;
    int    ret;
    VALGRIND_GET_ORIG_FN(fn);
 
    if (TRACE_SEM_FNS) {
-      fprintf(stderr, "<< sem_wait(%p) ", sem);
+      fprintf(stderr, "<< %s(%p) ", name, sem);
       fflush(stderr);
    }
 
@@ -1010,22 +1091,32 @@ static int sem_wait_WRK(sem_t* sem)
    if (ret == 0) {
       DO_CREQ_v_W(_VG_USERREQ__HG_POSIX_SEM_WAIT_POST, sem_t*,sem);
    } else {
-      DO_PthAPIerror( "sem_wait", errno );
+      if (!is_try) {
+         DO_PthAPIerror( name, errno );
+      }
    }
 
    if (TRACE_SEM_FNS) {
-      fprintf(stderr, " sem_wait -> %d >>\n", ret);
+      fprintf(stderr, " %s -> %d >>\n", name, ret);
       fflush(stderr);
    }
 
    return ret;
 }
 PTH_FUNC(int, semZuwait, sem_t* sem) { /* sem_wait */
-   return sem_wait_WRK(sem);
+   return sem_wait_WRK(sem, "sem_wait", 0);
 }
 PTH_FUNC(int, semZuwaitZAZa, sem_t* sem) { /* sem_wait@* */
-   return sem_wait_WRK(sem);
+   return sem_wait_WRK(sem, "sem_wait", 0);
 }
+PTH_FUNC(int, semZutrywait, sem_t* sem) { /* sem_trywait */
+   return sem_wait_WRK(sem, "sem_trywait", 1);
+}
+PTH_FUNC(int, semZutrywaitZAZa, sem_t* sem) { /* sem_trywait@* */
+   return sem_wait_WRK(sem, "sem_trywait", 1);
+}
+
+
 
 
 /* glibc-2.5 has sem_post (amd64-linux); match sem_post
@@ -1188,8 +1279,9 @@ QT4_FUNC(void, ZuZZN14QReadWriteLock11lockForReadEv,
       fflush(stderr);
    }
 
-   DO_CREQ_v_WW(_VG_USERREQ__HG_PTHREAD_RWLOCK_LOCK_PRE,
-                void*,self, long,0/*!isW*/);
+   DO_CREQ_v_WWW(_VG_USERREQ__HG_PTHREAD_RWLOCK_LOCK_PRE,
+                 void*,self,
+                 long,0/*!isW*/, long,0/*!isTryLock*/);
 
    CALL_FN_v_W(fn, self);
 
@@ -1214,8 +1306,9 @@ QT4_FUNC(void, ZuZZN14QReadWriteLock12lockForWriteEv,
       fflush(stderr);
    }
 
-   DO_CREQ_v_WW(_VG_USERREQ__HG_PTHREAD_RWLOCK_LOCK_PRE,
-                void*,self, long,1/*isW*/);
+   DO_CREQ_v_WWW(_VG_USERREQ__HG_PTHREAD_RWLOCK_LOCK_PRE,
+                 void*,self,
+                 long,1/*isW*/, long,0/*!isTryLock*/);
 
    CALL_FN_v_W(fn, self);
 
@@ -1254,6 +1347,195 @@ QT4_FUNC(void, ZuZZN14QReadWriteLock6unlockEv,
 }
 
 
+/*----------------------------------------------------------------*/
+/*--- Replace glibc's wretched optimised string fns (again!)   ---*/
+/*----------------------------------------------------------------*/
+
+#include "pub_tool_redir.h"   /* VG_REPLACE_FUNCTION_ZU */
+
+/* Why we have to do all this nonsense:
+
+   Some implementations of strlen may read up to 7 bytes past the end
+   of the string thus touching memory which may not belong to this
+   string.
+
+   Such race is benign because the data read past the end of the
+   string is not used.
+*/
+
+/* BEGIN tiresome boilerplate.  All this stuff is copied from
+   memcheck/mc_replace_strmem.c.  If you update that, consider
+   updating this too (and vice versa). */
+
+/* --- Soname of the standard C library. --- */
+
+#if defined(VGO_linux)
+#  define  m_libc_soname     libcZdsoZa              // libc.so*
+#elif defined(VGP_ppc32_aix5)
+   /* AIX has both /usr/lib/libc.a and /usr/lib/libc_r.a. */
+#  define  m_libc_soname     libcZaZdaZLshrZdoZR     // libc*.a(shr.o)
+#elif defined(VGP_ppc64_aix5)
+#  define  m_libc_soname     libcZaZdaZLshrZu64ZdoZR // libc*.a(shr_64.o)
+#else
+#  error "Unknown platform"
+#endif
+
+/* --- Sonames for Linux ELF linkers. --- */
+
+#define  m_ld_linux_so_2         ldZhlinuxZdsoZd2           // ld-linux.so.2
+#define  m_ld_linux_x86_64_so_2  ldZhlinuxZhx86Zh64ZdsoZd2  // ld-linux-x86-64.so.2
+#define  m_ld64_so_1             ld64ZdsoZd1                // ld64.so.1
+#define  m_ld_so_1               ldZdsoZd1                  // ld.so.1
+
+/* END tiresome boilerplate */
+
+
+// --- MEMCPY -----------------------------------------------------
+//
+#define MEMCPY(soname, fnname) \
+   void* VG_REPLACE_FUNCTION_ZU(soname,fnname) \
+            ( void *dst, const void *src, SizeT len ); \
+   void* VG_REPLACE_FUNCTION_ZU(soname,fnname) \
+            ( void *dst, const void *src, SizeT len ) \
+   { \
+      register char *d; \
+      register char *s; \
+      \
+      if (len == 0) \
+         return dst; \
+      \
+      if ( dst > src ) { \
+         d = (char *)dst + len - 1; \
+         s = (char *)src + len - 1; \
+         while ( len >= 4 ) { \
+            *d-- = *s--; \
+            *d-- = *s--; \
+            *d-- = *s--; \
+            *d-- = *s--; \
+            len -= 4; \
+         } \
+         while ( len-- ) { \
+            *d-- = *s--; \
+         } \
+      } else if ( dst < src ) { \
+         d = (char *)dst; \
+         s = (char *)src; \
+         while ( len >= 4 ) { \
+            *d++ = *s++; \
+            *d++ = *s++; \
+            *d++ = *s++; \
+            *d++ = *s++; \
+            len -= 4; \
+         } \
+         while ( len-- ) { \
+            *d++ = *s++; \
+         } \
+      } \
+      return dst; \
+   }
+
+MEMCPY(m_libc_soname, memcpy)
+MEMCPY(m_ld_so_1,     memcpy) /* ld.so.1 */
+MEMCPY(m_ld64_so_1,   memcpy) /* ld64.so.1 */
+/* icc9 blats these around all over the place.  Not only in the main
+   executable but various .so's.  They are highly tuned and read
+   memory beyond the source boundary (although work correctly and
+   never go across page boundaries), so give errors when run natively,
+   at least for misaligned source arg.  Just intercepting in the exe
+   only until we understand more about the problem.  See
+   http://bugs.kde.org/show_bug.cgi?id=139776
+ */
+MEMCPY(NONE, _intel_fast_memcpy)
+
+
+// --- STRCHR and INDEX -------------------------------------------
+//
+#define STRCHR(soname, fnname) \
+   char* VG_REPLACE_FUNCTION_ZU(soname,fnname) ( const char* s, int c ); \
+   char* VG_REPLACE_FUNCTION_ZU(soname,fnname) ( const char* s, int c ) \
+   { \
+      UChar  ch = (UChar)((UInt)c); \
+      UChar* p  = (UChar*)s; \
+      while (True) { \
+         if (*p == ch) return p; \
+         if (*p == 0) return NULL; \
+         p++; \
+      } \
+   }
+
+// Apparently index() is the same thing as strchr()
+STRCHR(m_libc_soname,          strchr)
+STRCHR(m_ld_linux_so_2,        strchr)
+STRCHR(m_ld_linux_x86_64_so_2, strchr)
+STRCHR(m_libc_soname,          index)
+STRCHR(m_ld_linux_so_2,        index)
+STRCHR(m_ld_linux_x86_64_so_2, index)
+
+
+// --- STRCMP -----------------------------------------------------
+//
+#define STRCMP(soname, fnname) \
+   int VG_REPLACE_FUNCTION_ZU(soname,fnname) \
+          ( const char* s1, const char* s2 ); \
+   int VG_REPLACE_FUNCTION_ZU(soname,fnname) \
+          ( const char* s1, const char* s2 ) \
+   { \
+      register unsigned char c1; \
+      register unsigned char c2; \
+      while (True) { \
+         c1 = *(unsigned char *)s1; \
+         c2 = *(unsigned char *)s2; \
+         if (c1 != c2) break; \
+         if (c1 == 0) break; \
+         s1++; s2++; \
+      } \
+      if ((unsigned char)c1 < (unsigned char)c2) return -1; \
+      if ((unsigned char)c1 > (unsigned char)c2) return 1; \
+      return 0; \
+   }
+
+STRCMP(m_libc_soname,          strcmp)
+STRCMP(m_ld_linux_x86_64_so_2, strcmp)
+STRCMP(m_ld64_so_1,            strcmp)
+
+
+// --- STRLEN -----------------------------------------------------
+//
+// Note that this replacement often doesn't get used because gcc inlines
+// calls to strlen() with its own built-in version.  This can be very
+// confusing if you aren't expecting it.  Other small functions in this file
+// may also be inline by gcc.
+#define STRLEN(soname, fnname) \
+   SizeT VG_REPLACE_FUNCTION_ZU(soname,fnname)( const char* str ); \
+   SizeT VG_REPLACE_FUNCTION_ZU(soname,fnname)( const char* str ) \
+   { \
+      SizeT i = 0; \
+      while (str[i] != 0) i++; \
+      return i; \
+   }
+
+STRLEN(m_libc_soname,          strlen)
+STRLEN(m_ld_linux_so_2,        strlen)
+STRLEN(m_ld_linux_x86_64_so_2, strlen)
+
+
+// --- STRCPY -----------------------------------------------------
+//
+#define STRCPY(soname, fnname) \
+   char* VG_REPLACE_FUNCTION_ZU(soname, fnname) ( char* dst, const char* src ); \
+   char* VG_REPLACE_FUNCTION_ZU(soname, fnname) ( char* dst, const char* src ) \
+   { \
+      Char* dst_orig = dst; \
+      \
+      while (*src) *dst++ = *src++; \
+      *dst = 0; \
+      \
+      return dst_orig; \
+   }
+
+STRCPY(m_libc_soname, strcpy)
+
+
 /*--------------------------------------------------------------------*/
-/*--- end                                          tc_intercepts.c ---*/
+/*--- end                                          hg_intercepts.c ---*/
 /*--------------------------------------------------------------------*/
