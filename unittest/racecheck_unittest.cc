@@ -4374,6 +4374,109 @@ REGISTER_TEST(Run, 93)
 }  // namespace test93
 
 
+// test94: FN. Exhibits a bug in do_cv_signal/fake segment logic {{{1
+namespace test94 {
+int     GLOB = 0;
+
+int COND  = 0;
+int COND2 = 0;
+Mutex MU, MU2;
+CondVar CV, CV2;
+
+void Thr1() {
+  usleep(10000);  // Make sure the waiter blocks.
+  
+  GLOB = 1; // WRITE 
+
+  MU.Lock();
+  COND = 1;
+  CV.Signal(); 
+  MU.Unlock();
+}
+void Thr2() {
+  usleep(1000*1000); // Make sure CV2.Signal() "happens after" CV.Signal()
+  usleep(10000);  // Make sure the waiter blocks.
+  
+  MU2.Lock();
+  COND2 = 1;
+  CV2.Signal(); 
+  MU2.Unlock();
+}
+void Thr3() {
+  MU.Lock();
+  while(COND != 1)
+    CV.Wait(&MU);
+  MU.Unlock();  
+}
+void Thr4() {
+  MU2.Lock();
+  while(COND2 != 1)
+    CV2.Wait(&MU2);
+  MU2.Unlock();
+  GLOB = 2; // READ: no HB-relation between CV.Signal and CV2.Wait !
+}
+void Run() {
+  printf("test94: FN. do_cv_signal bug exhibition\n");
+  ANNOTATE_EXPECT_RACE(&GLOB, "test94: FN. do_cv_signal/fakesegment logic bug");
+  MyThreadArray mta(Thr1, Thr2, Thr3, Thr4);
+  mta.Start();
+  mta.Join();
+  printf("\tGLOB=%d\n", GLOB);
+}
+REGISTER_TEST(Run, 94);
+}  // namespace test94
+
+// test95: TP. Correct do_cv_signal/fake segment logic exhibition {{{1
+namespace test95 {
+int     GLOB = 0;
+
+int COND  = 0;
+int COND2 = 0;
+Mutex MU, MU2;
+CondVar CV, CV2;
+
+void Thr1() {
+  usleep(1000*1000); // Make sure CV2.Signal() "happens before" CV.Signal()
+  usleep(10000);  // Make sure the waiter blocks.
+  
+  GLOB = 1; // WRITE 
+
+  MU.Lock();
+  COND = 1;
+  CV.Signal(); 
+  MU.Unlock();
+}
+void Thr2() {
+  usleep(10000);  // Make sure the waiter blocks.
+  
+  MU2.Lock();
+  COND2 = 1;
+  CV2.Signal(); 
+  MU2.Unlock();
+}
+void Thr3() {
+  MU.Lock();
+  while(COND != 1)
+    CV.Wait(&MU);
+  MU.Unlock();  
+}
+void Thr4() {
+  MU2.Lock();
+  while(COND2 != 1)
+    CV2.Wait(&MU2);
+  MU2.Unlock();
+  GLOB = 2; // READ: no HB-relation between CV.Signal and CV2.Wait !
+}
+void Run() {
+  printf("test95: TP.\n");
+  ANNOTATE_EXPECT_RACE(&GLOB, "test95: TP.");
+  MyThreadArray mta(Thr1, Thr2, Thr3, Thr4);
+  mta.Start();
+  mta.Join();
+  printf("\tGLOB=%d\n", GLOB);
+}
+REGISTER_TEST(Run, 95);
+}  // namespace test95
 
 // test300: {{{1
 namespace test300 {
