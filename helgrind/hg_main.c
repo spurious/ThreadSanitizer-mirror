@@ -444,6 +444,8 @@ typedef  UInt  SegmentID;
    encode thread-sets and lock-sets in 32-bit shadow words. */
 typedef  WordSet  WordSetID;
 
+typedef  UInt       SegmentSet;
+typedef  WordSetID  LockSet;  /* UInt */
 
 /* Stores information about a thread.  Addresses of these also serve
    as unique thread identifiers and so are never freed, so they should
@@ -454,8 +456,8 @@ typedef
       struct _Thread* admin;
       UInt            magic;
       /* USEFUL */
-      WordSetID locksetA; /* WordSet of Lock* currently held by thread */
-      WordSetID locksetW; /* subset of locksetA held in w-mode */
+      LockSet   locksetA; /* WordSet of Lock* currently held by thread */
+      LockSet   locksetW; /* subset of locksetA held in w-mode */
       SegmentID csegid;   /* current thread segment for thread */
       ThreadId  threadId; /* VG threadId / index of thread in map_threds */
       /* EXPOSITION */
@@ -1184,6 +1186,10 @@ static void remove_Lock_from_locksets_of_all_owning_Threads( Lock* lk )
    HG_(doneIterBag)( &lk->heldBy );
 }
 
+static inline LockSet get_access_LS (Thread * thr, Bool is_write) {
+   return (is_write ? thr->locksetW : thr->locksetA);
+}
+
 /* --------- Shadow memory --------- */
 
 static inline Bool is_valid_scache_tag ( Addr tag ) {
@@ -1244,9 +1250,6 @@ static inline Bool is_sane_SecMap ( SecMap* sm ) {
 #define SHVAL_New       ((SVal)(2<<8))
 #define SHVAL_Invalid   ((SVal)(0))
 #define SHVAL_Ignore    ((SVal)((1ULL << 62)+1))
-
-typedef  UInt       SegmentSet;
-typedef  WordSetID  LockSet;  /* UInt */
 
 static inline Bool SS_valid (SegmentSet ss) {
    return ss < (1 << N_SEG_SET_BITS);
@@ -3981,33 +3984,45 @@ SegmentSet do_SS_update_MULTI ( /*OUT*/Bool* hb_all_p,
 }
 
 inline
-static SegmentSet do_SS_update ( /*OUT*/Bool* hb_all_p, 
-                                 Thread* thr,
-                                 Bool do_trace,
-                                 SegmentSet oldSS, SegmentID currS,
-                                 UWord sz)
+static void do_SVal_update ( Bool is_write, Addr a, UWord sz,
+                                   Thread* thr, Bool do_trace,
+                                   SVal    sv_old, 
+                                   /*OUT*/SVal* sv_new)
 {  
-   SegmentSet newSS;
+   SegmentSet oldSS = get_SHVAL_SS(sv_old),
+              newSS = 0;
+   LockSet    oldLS = get_SHVAL_LS(sv_old),
+              newLS = 0,
+             currLS = get_access_LS(thr, is_write);
+
+   Bool       hb_all = False, was_m, now_m;
+   
    if (LIKELY(SS_is_singleton(oldSS))) {
-      // we don't care if oldSS contains an active segment since oldSS 
-      // is a singleton and we don't want to recycle it. 
-      newSS = do_SS_update_SINGLE( hb_all_p, thr, do_trace, oldSS, currS );
-      if (UNLIKELY(clo_ss_recycle && !SS_is_singleton(newSS))) {
-         // newSS is not singleton => newSS != oldSS. 
-         SS_ref(newSS, sz);
-         tl_assert(HG_(saneWS_SLOW)(univ_ssets, newSS));
-      }
+      newSS = do_SS_update_SINGLE( &hb_all, thr, do_trace, oldSS, thr->csegid );
    } else {
-      newSS = do_SS_update_MULTI( hb_all_p, thr, do_trace, oldSS, currS );
-      if (clo_ss_recycle && newSS != oldSS) {
-         if (!SS_is_singleton(newSS)) {
-            SS_ref(newSS, sz);
-            tl_assert(HG_(saneWS_SLOW)(univ_ssets, newSS));
-         }
-         SS_unref(oldSS, sz);
-      }
+      newSS = do_SS_update_MULTI( &hb_all, thr, do_trace, oldSS, thr->csegid );
    }
-   return newSS;
+   
+   if (!SS_is_singleton(newSS)) {
+      tl_assert(HG_(saneWS_SLOW)(univ_ssets, newSS));
+   }
+   
+   if (hb_all) {
+      newLS = currLS;
+   } else {
+      oldLS = get_SHVAL_LS(sv_old);
+      newLS = HG_(intersectWS)(univ_lsets, oldLS, currLS);
+      if (clo_more_context && oldLS != newLS)
+         record_last_lock_lossage( a, oldLS, newLS );
+   }
+   
+   was_m = is_SHVAL_M(sv_old);
+   now_m = is_write ? True : (was_m && !hb_all);
+   
+   // generate new SVal
+   *sv_new = mk_SHVAL_RM(now_m, newSS, newLS);
+   *sv_new = set_SHVAL_TRACE_BIT(*sv_new, get_SHVAL_TRACE_BIT(sv_old));
+   *sv_new = set_SHVAL_PUBLISHED_BIT(*sv_new, get_SHVAL_PUBLISHED_BIT(sv_old));
 }
 
 
@@ -4092,25 +4107,14 @@ static void msm_do_trace(Thread *thr,
 static INLINE 
 SVal memory_state_machine(Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
 {
-   SegmentSet oldSS = 0;
-   LockSet    oldLS;
-   Bool       hb_all      = False;
    Bool       is_race     = False;
    SVal       sv_new      = SHVAL_Invalid;
    int        trace_level = 
                    (a >= clo_trace_addr  && a < (clo_trace_addr+sz))
                    ? clo_trace_level : 0;
-   SegmentID  currS = thr->csegid;
-   SegmentSet newSS = 0;
+   SegmentSet newSS = 0, oldSS = 0;
    LockSet    newLS = 0;
-
-   // current locks. 
-   LockSet    currLS = is_w ? thr->locksetW : thr->locksetA;
    
-   // increment refcount so sv_old isn't deleted between
-   //   do_SS_update and record_error_Race calls
-   SHVAL_SS_ref(sv_old);
-
    // Check if trace was requested for this address by a client request.
    if (UNLIKELY(clo_trace_level > 0 && mem_trace_is_on(a))) {
       trace_level = clo_trace_level;
@@ -4171,39 +4175,20 @@ SVal memory_state_machine(Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
       }
 
       if (UNLIKELY(get_SHVAL_PUBLISHED_BIT(sv_old))) {
-         if (published_memory_range_acquire(thr, a)) {
-            // we have created a new segment.
-            tl_assert(currS != thr->csegid);
-            currS = thr->csegid;
-         }
+         published_memory_range_acquire(thr, a);
       }
       
       was_m = is_SHVAL_M(sv_old);
 
       tl_assert(is_SHVAL_valid_SLOW(sv_old));
-      // update the segment set and compute hb_all
-      oldSS = get_SHVAL_SS(sv_old);
-      newSS = do_SS_update(&hb_all, thr, trace_level >= 1, oldSS, currS, sz);
-
-
-      // update lock set. 
-      if (hb_all) {
-         newLS = currLS;
-      } else {
-         oldLS = get_SHVAL_LS(sv_old);
-         newLS = HG_(intersectWS)(univ_lsets, oldLS, currLS);
-         if (clo_more_context && oldLS != newLS)
-            record_last_lock_lossage( a, oldLS, newLS );
-      }
+      do_SVal_update(is_w, a, sz, 
+                      thr, trace_level >= 1, 
+                      sv_old, &sv_new);
+      newSS = get_SHVAL_SS(sv_new);
+      newLS = get_SHVAL_LS(sv_new);
 
       // update the state 
-      now_m = is_w ? True : (was_m && !hb_all);
-
-      // generate new SVal
-      sv_new = mk_SHVAL_RM(now_m, newSS, newLS);
-      sv_new = set_SHVAL_TRACE_BIT(sv_new, get_SHVAL_TRACE_BIT(sv_old));
-      sv_new = set_SHVAL_PUBLISHED_BIT(sv_new, get_SHVAL_PUBLISHED_BIT(sv_old));
-
+      now_m = is_SHVAL_M(sv_new);
 
       is_race = now_m && !SS_is_singleton(newSS)
                       && HG_(isEmptyWS)(univ_lsets, newLS);
@@ -4219,8 +4204,8 @@ SVal memory_state_machine(Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
    // New
    if (UNLIKELY(is_SHVAL_New(sv_old))) {
       stats__msm_New_to_M++; 
-      newSS = SS_mk_singleton(currS);
-      sv_new = mk_SHVAL_RM(is_w, newSS, currLS);
+      newSS = SS_mk_singleton(thr->csegid);
+      sv_new = mk_SHVAL_RM(is_w, newSS, get_access_LS(thr, is_w));
       goto done;
    }
 
@@ -4264,7 +4249,8 @@ SVal memory_state_machine(Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
          SHVAL_SS_ref(sv_new);
          // if we did record a race and if this mem was not traced before, 
          // turn tracing on.
-         sv_new = mk_SHVAL_RM(is_w, SS_mk_singleton(currS), currLS);
+         sv_new = mk_SHVAL_RM(is_w, SS_mk_singleton(thr->csegid), 
+                                    get_access_LS(thr, is_w));
          sv_new = set_SHVAL_TRACE_BIT(sv_new, True);
          sv_new = set_SHVAL_PUBLISHED_BIT(sv_new, 
                                           get_SHVAL_PUBLISHED_BIT(sv_old));
@@ -4274,8 +4260,13 @@ SVal memory_state_machine(Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
          sv_new = SHVAL_Ignore;
       }
    }
-   
-   SHVAL_SS_unref(sv_old);
+
+   oldSS = get_SHVAL_SS(sv_old);
+   newSS = get_SHVAL_SS(sv_new);
+   if (clo_ss_recycle && newSS != oldSS) {
+      SHVAL_SS_ref(sv_new);
+      SHVAL_SS_unref(sv_old);
+   }
 
    return sv_new; 
 }
