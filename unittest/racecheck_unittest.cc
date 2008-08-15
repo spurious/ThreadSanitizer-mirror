@@ -3822,13 +3822,15 @@ namespace test82 {
 // 
 //  Since there is no proper synchronization, during the even (B)
 //  Thread2 may not see the result of the event (a). 
-//
+//  On x86 and x86_64 this happens due to compiler reordering instructions.
+//  On other arcitectures it may also happen due to cashe inconsistency.
 
 class FOO {
  public: 
   FOO() {
     idx_ = rand() % 1024;
     arr_[idx_] = 77777;
+  //   __asm__ __volatile__("" : : : "memory"); // this fixes! 
   }
   static void check(volatile FOO *foo) {
     CHECK(foo->arr_[foo->idx_] == 77777);
@@ -3838,7 +3840,7 @@ class FOO {
   int arr_[1024];
 };
 
-const int N = 10000;
+const int N = 100000;
 static volatile FOO *foo[N];
 
 void Writer() {
@@ -4201,7 +4203,7 @@ namespace test90 {
 // Choices for annotations: 
 //   -- ANNOTATE_CONDVAR_SIGNAL/ANNOTATE_CONDVAR_WAIT
 //   -- ANNOTATE_MUTEX_IS_USED_AS_CONDVAR
-//   -- ANNOTATE_PUBLISH_OBJECT (not yet available).
+//   -- ANNOTATE_PUBLISH_MEMORY_RANGE (not yet available).
 
 int     *GLOB = 0;
 
@@ -4285,21 +4287,21 @@ REGISTER_TEST(Run, 91)
 
 // test92: TN. Test for a safely-published pointer (read-write), annotated. {{{1
 namespace test92 {
-// Similar to test91, but annotated with ANNOTATE_PUBLISH_OBJECT.
+// Similar to test91, but annotated with ANNOTATE_PUBLISH_MEMORY_RANGE.
 //
 //
 // Publisher:                                       Accessors: 
 //
 // 1. MU1.Lock()
 // 2. Create GLOB.
-// 3. ANNOTATE_PUBLISH_OBJECT(GLOB) ----\            .
+// 3. ANNOTATE_PUBLISH_...(GLOB) -------\            .
 // 4. MU1.Unlock()                       \           .
 //                                        \          a. MU1.Lock()
 //                                         \         b. Get GLOB
 //                                          \        c. MU1.Lock()
 //                                           \-->    d. Access GLOB
 //
-//  A happens-before arc is created between ANNOTATE_PUBLISH_OBJECT and 
+//  A happens-before arc is created between ANNOTATE_PUBLISH_MEMORY_RANGE and 
 //  accesses to GLOB.
 
 struct ObjType {
@@ -4315,7 +4317,7 @@ void Publisher() {
     GLOB->arr[i] = 777;
   }
   // This annotation should go right before the object is published.
-  ANNOTATE_PUBLISH_OBJECT(GLOB);    
+  ANNOTATE_PUBLISH_MEMORY_RANGE(GLOB, sizeof(*GLOB));
   MU1.Unlock();
 }
 
@@ -4349,7 +4351,7 @@ REGISTER_TEST(Run, 92)
 }  // namespace test92
 
 
-// test93: TP. Test for incorrect usage of ANNOTATE_PUBLISH_OBJECT. {{{1
+// test93: TP. Test for incorrect usage of ANNOTATE_PUBLISH_MEMORY_RANGE. {{{1
 namespace test93 {
 int     GLOB = 0;
 
@@ -4360,11 +4362,11 @@ void Reader() {
 void Publisher() {
   usleep(10000);
   // Incorrect, used after the memory has been accessed in another thread. 
-  ANNOTATE_PUBLISH_OBJECT(&GLOB); 
+  ANNOTATE_PUBLISH_MEMORY_RANGE(&GLOB, sizeof(GLOB)); 
 }
 
 void Run() {
-  printf("test93: positive, misuse of ANNOTATE_PUBLISH_OBJECT\n");
+  printf("test93: positive, misuse of ANNOTATE_PUBLISH_MEMORY_RANGE\n");
   MyThreadArray t(Reader, Publisher);
   t.Start();
   t.Join();
