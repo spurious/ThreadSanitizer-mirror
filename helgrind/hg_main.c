@@ -1410,21 +1410,21 @@ static inline Bool is_SHVAL_valid_SLOW ( SVal sv) {
 }
 
 // If sv has a non-singleton SS, increment it's refcount by 1.
-static inline void SHVAL_SS_ref(SVal sv) {
+static inline void SHVAL_SS_ref(SVal sv, UInt sz) {
    if (LIKELY(is_SHVAL_RM(sv))) {
       SegmentSet ss = get_SHVAL_SS(sv);
       if (UNLIKELY(!SS_is_singleton(ss))) {
-         SS_ref(ss, 1);
+         SS_ref(ss, sz);
       }
    }
 }
 
 // If sv has a non-singleton SS, decrement it's refcount by 1.
-static inline void SHVAL_SS_unref(SVal sv) {
+static inline void SHVAL_SS_unref(SVal sv, UInt sz) {
    if (LIKELY(is_SHVAL_RM(sv))) {
       SegmentSet ss = get_SHVAL_SS(sv);
       if (UNLIKELY(!SS_is_singleton(ss))) {
-         SS_unref(ss, 1);
+         SS_unref(ss, sz);
       }
    }
 }
@@ -4184,6 +4184,7 @@ SVal memory_state_machine(Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
       do_SVal_update(is_w, a, sz, 
                       thr, trace_level >= 1, 
                       sv_old, &sv_new);
+      tl_assert(is_SHVAL_valid_SLOW(sv_new));
       newSS = get_SHVAL_SS(sv_new);
       newLS = get_SHVAL_LS(sv_new);
 
@@ -4245,8 +4246,8 @@ SVal memory_state_machine(Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
                          maybe_get_lastlock_initpoint(a) );
       if (race_was_recorded) {
          // never recycle segment sets in sv_old/sv_new
-         SHVAL_SS_ref(sv_old);
-         SHVAL_SS_ref(sv_new);
+         SHVAL_SS_ref(sv_old, 1);
+         SHVAL_SS_ref(sv_new, 1);
          // if we did record a race and if this mem was not traced before, 
          // turn tracing on.
          sv_new = mk_SHVAL_RM(is_w, SS_mk_singleton(thr->csegid), 
@@ -4264,8 +4265,8 @@ SVal memory_state_machine(Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
    oldSS = get_SHVAL_SS(sv_old);
    newSS = get_SHVAL_SS(sv_new);
    if (clo_ss_recycle && newSS != oldSS) {
-      SHVAL_SS_ref(sv_new);
-      SHVAL_SS_unref(sv_old);
+      SHVAL_SS_ref  (sv_new, sz);
+      SHVAL_SS_unref(sv_old, sz);
    }
 
    return sv_new; 
