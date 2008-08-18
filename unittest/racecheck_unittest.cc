@@ -1673,8 +1673,8 @@ namespace test35 {
 //
 // TODO: need to figure out the best way for performance testing. 
 int **ARR; 
-const int N_mu   = 10000;
-const int N_free = 480000;
+const int N_mu   = 25000;
+const int N_free = 48000;
 
 void Worker() {
   for (int i = 0; i < N_free; i++) 
@@ -3389,7 +3389,7 @@ namespace test73 {
 // Variation of test72. 
 // We perform accesses of different sizes to the same location. 
 int     GLOB = 0;
-const int N_iter = 10;
+const int N_iter = 2;
 const int Nlog  = 16;
 const int N     = 1 << Nlog;
 static int64_t ARR1[N];
@@ -4776,7 +4776,7 @@ namespace test503 {
 const int N_threads = 32;
 int       GLOB = 0;
 ProducerConsumerQueue *Q[N_threads];
-int GLOB_limit = 1000;
+int GLOB_limit = 4000;
 
 bool end = false;
 int count = 0;
@@ -4796,8 +4796,6 @@ void Worker(){
       if (end)
          break;
       GLOB++;
-      if (GLOB % 100 == 0)
-         printf("%8i\n", GLOB);
       
       if (myId == 0 && GLOB > GLOB_limit) {
          end = true;
@@ -4844,7 +4842,8 @@ const int N_THREADS = 2,
 // 4x array size gives us
 // total multiplier of 16x over the cachesize 
 // so we can neglect the cached-at-the-end memory 
-const int ARRAY_SIZE = 4 * HG_CACHE_SIZE;
+const int ARRAY_SIZE = 4 * HG_CACHE_SIZE,
+          ITERATIONS = 30;
 int array[ARRAY_SIZE];
 
 int count = 0;
@@ -4859,6 +4858,7 @@ void Worker() {
    // so no synchronization mechanisms are needed
    int lower_bound = ARRAY_SIZE * (myId-1) / N_THREADS,
        upper_bound = ARRAY_SIZE * ( myId ) / N_THREADS;
+   for (int j = 0; j < ITERATIONS; j++)
    for (int i = lower_bound; i < upper_bound; 
             i += HG_CACHELINE_SIZE / sizeof(array[0])) {
       array[i] = i; // each array-write generates a cache miss
@@ -4885,7 +4885,8 @@ const int N_THREADS = 2,
           HG_CACHELINE_SIZE  = 1 << 6,
           HG_CACHE_SIZE = HG_CACHELINE_COUNT * HG_CACHELINE_SIZE;
 
-const int ARRAY_SIZE = 4 * HG_CACHE_SIZE;
+const int ARRAY_SIZE = 4 * HG_CACHE_SIZE,
+          ITERATIONS = 5;
 int array[ARRAY_SIZE];
 
 int count = 0;
@@ -4902,6 +4903,7 @@ void Worker() {
    // so no synchronization mechanisms are needed
    int lower_bound = ARRAY_SIZE * (myId-1) / N_THREADS,
        upper_bound = ARRAY_SIZE * ( myId ) / N_THREADS;
+   for (int j = 0; j < ITERATIONS; j++)
    for (int mutex_id = 0; mutex_id < N_MUTEXES; mutex_id++) {
       Mutex *m = & mu[mutex_id];
       m->Lock();
@@ -4960,7 +4962,6 @@ void Run() {
   for (int i = 0; i < ITERATIONS; i++) {
      delete barrier[i];
   }
-  printf("GLOB=%d\n", GLOB);
 }
 REGISTER_TEST2(Run, 506, PERFORMANCE | PRINT_STATS | EXCLUDE_FROM_ALL);
 #endif // NO_BARRIER
