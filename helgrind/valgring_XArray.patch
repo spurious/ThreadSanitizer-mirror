@@ -1,0 +1,36 @@
+Index: include/pub_tool_xarray.h
+===================================================================
+--- include/pub_tool_xarray.h	(revision 8449)
++++ include/pub_tool_xarray.h	(working copy)
+@@ -83,9 +83,12 @@
+ extern Bool VG_(lookupXA) ( XArray*, void* key, 
+                             /*OUT*/Word* first, /*OUT*/Word* last );
+ 
+-/* How elements are there in this XArray now? */
++/* How many elements are there in this XArray now? */
+ extern Word VG_(sizeXA) ( XArray* );
+ 
++/* How many bytes of memory does this XArray consume? */
++extern Word VG_(bytesXA) ( XArray* );
++
+ /* Index into the XArray.  Checks bounds and bombs if the index is
+    invalid.  What this returns is the address of the specified element
+    in the array, not (of course) the element itself.  Note that the
+Index: coregrind/m_xarray.c
+===================================================================
+--- coregrind/m_xarray.c	(revision 8449)
++++ coregrind/m_xarray.c	(working copy)
+@@ -253,6 +253,13 @@
+    return xa->usedsizeE;
+ }
+ 
++Word VG_(bytesXA) ( XArray* xao )
++{
++   struct _XArray* xa = (struct _XArray*)xao;
++   vg_assert(xa);
++   return xa->totsizeE * xa->elemSzB + sizeof(struct _XArray);
++}
++
+ void VG_(dropTailXA) ( XArray* xao, Word n )
+ {
+    struct _XArray* xa = (struct _XArray*)xao;
