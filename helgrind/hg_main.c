@@ -545,6 +545,7 @@ typedef
 typedef
    struct _Segment {
       DEBUG_ONLY(UInt magic);
+      SegmentID        id;
       /* USEFUL */
       UInt             dfsver; /* Version # for depth-first searches */
       Thread*          thr;    /* The thread that I am part of */
@@ -554,8 +555,10 @@ typedef
       XArray*          vts;    /* XArray of ScalarTS */
       ExeContext       *context; 
       /* DEBUGGING ONLY: what does 'other' arise from?  
-         c=thread creation, j=join, s=cvsignal, S=semaphore */
+         c=thread creation, j=join, s=cvsignal, S=semaphore,
+         F=fake segment, R=recycled */
       DEBUG_ONLY(Char other_hint);
+      UInt             refcount;
    }
    Segment;
 
@@ -796,6 +799,9 @@ static ThreadId map_threads_maybe_reverse_lookup ( Thread* ); /*fwds*/
 #define SecMap_MAGIC   0x571e58cb
 
 static UWord stats__mk_Segment = 0;
+static UWord stats__segments_recycled = 0;
+static UWord stats__recycled_segments_reused = 0;
+
 static UWord stats__fake_VTS_bytes_trashed = 0;
 
 /* --------------- Segment vector --------------- */
@@ -814,27 +820,39 @@ static UWord stats__fake_VTS_bytes_trashed = 0;
 #define SEGMENT_ID_MAX        (1 << 24) // N1*N2
 #define SEGMENT_ID_CHUNK_SIZE (1 << 14) // N2
 #define SEGMENT_ID_N_CHUNKS   (SEGMENT_ID_MAX / SEGMENT_ID_CHUNK_SIZE) // N1
+#define SEGMENT_RECYCLE_BUFFER_SIZE 16
 
 static struct {
-   UInt    size; 
+   UInt    size,
+           recycled_buff_count,
+           recycled_buff[SEGMENT_RECYCLE_BUFFER_SIZE];
    Segment *chunks[SEGMENT_ID_N_CHUNKS];
-} SegmentArray ={1, {0}};
+} SegmentArray ={1, 0, {0}, {0}};
 
 
 // Add a new segment, return its number
 static SegmentID SEG_add(void) 
 {
    UInt index, chunk_index, elem_index;
-   // increment size 
-   SegmentArray.size = (SegmentArray.size + 1) % SEGMENT_ID_MAX;
-   if (SegmentArray.size == 0) {
-      VG_(printf)("Helgrind: Fatal internal error -- cannot continue.\n");
-      VG_(printf)("SegmentArray: wrapped around\n");
-      tl_assert(0);
-      SegmentArray.size = 2;
+   if (SegmentArray.recycled_buff_count > 0) {
+      // re-use recycled segment entry
+      index = SegmentArray.recycled_buff[0];
+      SegmentArray.recycled_buff_count--;
+      SegmentArray.recycled_buff[0]
+                 = SegmentArray.recycled_buff[SegmentArray.recycled_buff_count];
+      stats__recycled_segments_reused++;
+   } else {
+      // increment size 
+      SegmentArray.size = (SegmentArray.size + 1) % SEGMENT_ID_MAX;
+      if (SegmentArray.size == 0) {
+         VG_(printf)("Helgrind: Fatal internal error -- cannot continue.\n");
+         VG_(printf)("SegmentArray: wrapped around\n");
+         tl_assert(0);
+         SegmentArray.size = 2;
+      }
+   
+      index = SegmentArray.size - 1;
    }
-
-   index = SegmentArray.size - 1;
    chunk_index = index / SEGMENT_ID_CHUNK_SIZE;
    elem_index  = index % SEGMENT_ID_CHUNK_SIZE;
    if (SegmentArray.chunks[chunk_index] == NULL) {
@@ -844,6 +862,7 @@ static SegmentID SEG_add(void)
    }
    VG_(memset)(&SegmentArray.chunks[chunk_index][elem_index], 
                0, sizeof(Segment));
+   SegmentArray.chunks[chunk_index][elem_index].id = index;
    // VG_(printf)("SegmentArray: new segment %d\n", (int)index);
    return index;
 }
@@ -852,7 +871,9 @@ static inline Bool SEG_id_is_sane(SegmentID n)
 {
    return (n > 0) 
        && (n < SEGMENT_ID_MAX)
-       && (SegmentArray.chunks[n / SEGMENT_ID_CHUNK_SIZE] != NULL);
+       && (SegmentArray.chunks[n / SEGMENT_ID_CHUNK_SIZE] != NULL)
+       &&  SegmentArray.chunks[n / SEGMENT_ID_CHUNK_SIZE]
+                              [n % SEGMENT_ID_CHUNK_SIZE].id == n;
 }
 
 static inline Segment *SEG_get(SegmentID n)
@@ -861,6 +882,73 @@ static inline Segment *SEG_get(SegmentID n)
       tl_assert(SEG_id_is_sane(n));
    return &SegmentArray.chunks[n / SEGMENT_ID_CHUNK_SIZE]
                               [n % SEGMENT_ID_CHUNK_SIZE];
+}
+
+static void SEG_recycle(SegmentID id)
+{
+   Segment * seg = SEG_get(id);
+   DEBUG_ONLY(seg->magic = ~Segment_MAGIC);
+   DEBUG_ONLY(seg->other_hint = 'R');
+   VG_(deleteXA)(seg->vts);
+   seg->vts = NULL;  
+   seg->prev = NULL;
+   seg->other = NULL;
+   seg->thr = NULL;
+#ifndef SCE_REFCOUNTING   
+   if (SegmentArray.recycled_buff_count < SEGMENT_RECYCLE_BUFFER_SIZE) {
+      SegmentArray.recycled_buff[SegmentArray.recycled_buff_count] = id;
+      SegmentArray.recycled_buff_count++;
+   }
+#endif
+   stats__segments_recycled++;
+}
+
+static inline void SEG_ref(SegmentID n, UInt count)
+{
+   Segment * seg = SEG_get(n);
+   tl_assert(seg);
+   seg->refcount += count;
+}
+
+static inline void SEG_ref_1 (Word segid) {
+   SEG_ref((SegmentID)segid, 1);
+}
+
+static inline void SEG_ref_prev (Segment * seg) {
+   SEG_ref_1(seg->prev->id);
+}
+
+static inline UInt SEG_unref_ptr (Segment * seg, UInt count)
+{
+   tl_assert(seg);
+   if (seg->refcount < count) {
+      VG_(printf)("SEG_unref(%d, %d): %d/%c", seg->id, count, 
+                              seg->refcount, seg->other_hint);
+      VG_(printf)(" -> FUCKUP!\n");
+      tl_assert(seg->refcount >= count);
+   }
+
+   tl_assert(seg->refcount >= count);
+   seg->refcount -= count;
+   if (seg->refcount > 0)
+      return seg->refcount;
+   SEG_recycle(seg->id);
+   return 0;
+}
+
+static inline UInt SEG_unref(SegmentID n, UInt count)
+{
+   Segment * seg = SEG_get(n);
+   return SEG_unref_ptr(seg, count);
+}
+
+static void SEG_unref_1 (Word segid) {
+   SEG_unref((SegmentID)segid, 1);
+}
+
+static inline void SEG_unref_prev (Segment * seg) {
+   tl_assert(seg->prev);
+   SEG_unref_1(seg->prev->id);
 }
 
 static inline Segment *SEG_maybe_get(SegmentID n)
@@ -902,6 +990,7 @@ static Thread* mk_Thread ( SegmentID csegid, UWord threadId ) {
    thread->locksetA     = HG_(emptyWS)( univ_lsets );
    thread->locksetW     = HG_(emptyWS)( univ_lsets );
    thread->csegid       = csegid;
+   SEG_ref_1(thread->csegid);
    thread->magic        = Thread_MAGIC;
    thread->created_at   = NULL;
    thread->announced    = False;
@@ -938,6 +1027,8 @@ static SegmentID mk_Segment ( Thread* thr, Segment* prev, Segment* other ) {
    seg->prev       = prev;
    seg->other      = other;
    seg->vts        = NULL;
+   seg->refcount   = 0;
+   //seg->id         = id; // seg->id is already assigned by SEG_add
    DEBUG_ONLY(seg->other_hint = ' ');
    DEBUG_ONLY(seg->magic = Segment_MAGIC);
    stats__mk_Segment++;
@@ -1299,16 +1390,20 @@ static inline SegmentID SS_get_element (SegmentSet ss, UWord i) {
 
 // increment the ref count for a non-singleton SS. 
 static inline void SS_ref(SegmentSet ss, UWord sz) {
-   tl_assert(!SS_is_singleton(ss));
-   HG_(refWS) (univ_ssets, ss, sz);
+   if (SS_is_singleton(ss)) 
+      SEG_ref(SS_get_singleton_UNCHECKED(ss), sz);
+   else
+      HG_(refWS) (univ_ssets, ss, sz);
 }
 
 
 // decrement the ref count of a non-singleton SS and return 
 // the new value of ref count
 static inline UInt SS_unref(SegmentSet ss, UWord sz) {
-   tl_assert(!SS_is_singleton(ss));
-   return HG_(unrefWS) (univ_ssets, ss, sz);
+   if (SS_is_singleton(ss))
+      return SEG_unref (SS_get_singleton_UNCHECKED(ss), sz);
+   else
+      return HG_(unrefWS) (univ_ssets, ss, sz);
 }
 
 static inline Bool LS_valid (LockSet ls) {
@@ -1413,9 +1508,7 @@ static inline Bool is_SHVAL_valid_SLOW ( SVal sv) {
 static inline void SHVAL_SS_ref(SVal sv, UInt sz) {
    if (LIKELY(is_SHVAL_RM(sv))) {
       SegmentSet ss = get_SHVAL_SS(sv);
-      if (UNLIKELY(!SS_is_singleton(ss))) {
-         SS_ref(ss, sz);
-      }
+      SS_ref(ss, sz);
    }
 }
 
@@ -1423,9 +1516,7 @@ static inline void SHVAL_SS_ref(SVal sv, UInt sz) {
 static inline void SHVAL_SS_unref(SVal sv, UInt sz) {
    if (LIKELY(is_SHVAL_RM(sv))) {
       SegmentSet ss = get_SHVAL_SS(sv);
-      if (UNLIKELY(!SS_is_singleton(ss))) {
-         SS_unref(ss, sz);
-      }
+      SS_unref(ss, sz);
    }
 }
 
@@ -1638,19 +1729,44 @@ static void pp_all_segments ( Int d )
 static void pp_mem_segments ( Int d )
 {
    ULong i;
-   UWord n = -1, segments_bytes = 0, ss_bytes = 0;
+   UWord n = -1, segments_bytes = 0, ss_bytes = 0, active_SEG = 0;
+   DEBUG_ONLY(
+      UWord hint_distr[256];
+      const char HINT_CHARS[] = "cjsSFR";
+      unsigned char * hint_char = (unsigned char*)HINT_CHARS;
+   );
+   
+   DEBUG_ONLY(
+      while (*hint_char) {
+         hint_distr[*hint_char] = 0;
+         hint_char++;
+      }
+      hint_char = (unsigned char*)HINT_CHARS;
+   );
+   
    for (i = 1; i < SegmentArray.size; i++) {
       Segment* s = SEG_get(i);
       segments_bytes += sizeof(Segment);
-      if (s->vts)
+      if (s->vts) {
          segments_bytes += VG_(bytesXA)(s->vts);
+         active_SEG++;
+      }
+      DEBUG_ONLY(hint_distr[(unsigned char)s->other_hint]++);
       // TODO: sizeof(ExeContext) ???
    }
-   space(d); VG_(printf)("segments: %7d kB (count = %d) \n",
-         (int)(segments_bytes / 1024), (Int)SegmentArray.size);
-   space(d); VG_(printf)("Trashed fake-VTS bytes: %7d kB\n",
-                  (Int)(stats__fake_VTS_bytes_trashed/1024));
-   pp_fake_segment_stats(d);
+   space(d); VG_(printf)("segments: %7d kB (active = %d, total = %d) \n",
+         (int)(segments_bytes / 1024), (Int)active_SEG, (Int)SegmentArray.size);
+   DEBUG_ONLY(
+      space(d+3); 
+      while (*hint_char) {
+         if (hint_char != (unsigned char*)HINT_CHARS)
+            VG_(printf)(", ");
+         VG_(printf)("%c = %d", *hint_char, hint_distr[*hint_char]);
+         hint_char++;
+      }
+      VG_(printf)("\n");
+      hint_char = (unsigned char*)HINT_CHARS;
+   );
 
    // SegmentSets below
    ss_bytes = HG_(memoryConsumedWSU) (univ_ssets, &n);
@@ -1904,15 +2020,21 @@ static void initialise_data_structures ( void )
    HG_(addToFM)( map_locks, (Word)&__bus_lock, (Word)__bus_lock_Lock );
 
    tl_assert(univ_ssets == NULL);
-   univ_ssets = HG_(newWordSetU)( hg_zalloc, hg_free, 64/*cacheSize*/ );
+   univ_ssets = HG_(newWordSetU)( hg_zalloc, hg_free, 
+                                  SEG_ref_1, SEG_unref_1,
+                                  64/*cacheSize*/ );
    tl_assert(univ_ssets != NULL);
 
    tl_assert(univ_lsets == NULL);
-   univ_lsets = HG_(newWordSetU)( hg_zalloc, hg_free, 12/*cacheSize*/ );
+   univ_lsets = HG_(newWordSetU)( hg_zalloc, hg_free, 
+                                  NULL, NULL,
+                                  12/*cacheSize*/ );
    tl_assert(univ_lsets != NULL);
 
    tl_assert(univ_laog == NULL);
-   univ_laog = HG_(newWordSetU)( hg_zalloc, hg_free, 32/*cacheSize*/ );
+   univ_laog = HG_(newWordSetU)( hg_zalloc, hg_free, 
+                                 NULL, NULL,
+                                 32/*cacheSize*/ );
    tl_assert(univ_laog != NULL);
 
    tl_assert(map_expected_errors == NULL);
@@ -6233,7 +6355,9 @@ void evhH__start_new_segment_for_thread ( /*OUT*/SegmentID* new_segidP,
                                       at their owner thread. */
    *new_segidP = mk_Segment( thr, cur_seg, NULL/*other*/ );
    *new_segP   = SEG_get(*new_segidP);
+   SEG_ref_1(*new_segidP);
    thr->csegid = *new_segidP;
+   
 
    ThreadId tid = map_threads_maybe_reverse_lookup(thr);
    if (clo_more_context && tid != VG_INVALID_THREADID) {
@@ -6783,6 +6907,7 @@ void evh__pre_thread_ll_create ( ThreadId parent, ThreadId child )
            tl_assert(is_sane_Segment(new_seg));
            new_seg->vts = tick_VTS( thr_p, new_seg->prev->vts );
            tl_assert(new_seg->other == NULL);
+           SEG_unref_prev(new_seg); // evhH__start_new_segment_for_thread
          }
       }
    }
@@ -6868,6 +6993,7 @@ void evh__HG_PTHREAD_JOIN_POST ( ThreadId stay_tid, Thread* quit_thr )
       tl_assert(new_seg->thr == thr_s);
       new_seg->vts = tickL_and_joinR_VTS( thr_s, new_seg->prev->vts,
                                                  new_seg->other->vts );
+      SEG_unref_prev(new_seg); // evhH__start_new_segment_for_thread
    }
 
       /* This holds because, at least when using NPTL as the thread
@@ -7307,7 +7433,7 @@ void evhH__do_cv_signal(Thread *thr, Word cond)
    }
 
    record_new_fake_seg (thr, cond);
-   // create a fake segment.                                         
+   // create a fake segment.           
    evhH__start_new_segment_for_thread(&fake_segid, &fake_seg, fake_thread);
    tl_assert( SEG_id_is_sane(fake_segid) );
    tl_assert( is_sane_Segment(fake_seg) );
@@ -7315,6 +7441,7 @@ void evhH__do_cv_signal(Thread *thr, Word cond)
    tl_assert( fake_seg->other == NULL );
    fake_seg->vts = NULL;
    fake_seg->other = new_seg->prev;
+   DEBUG_ONLY(fake_seg->other_hint = 'F');
 
 
    if (HG_(lookupFM)(map_cond_to_Segment, NULL, (Word*)&word_temp, (Word)cond)) {
@@ -7322,21 +7449,19 @@ void evhH__do_cv_signal(Thread *thr, Word cond)
       tl_assert(signalling_segid);
       signalling_seg = SEG_get(signalling_segid);
       tl_assert(signalling_seg);
+      SEG_unref_prev(fake_seg); // evhH__start_new_segment_for_thread (fake thr)
       fake_seg->prev = signalling_seg;      
       fake_seg->vts = tickL_and_joinR_VTS(fake_thread, 
                                           fake_seg->prev->vts, 
                                           fake_seg->other->vts);
-      // The previous fake segment is not needed any more. 
-      // For now just recycle its vts.
-      stats__fake_VTS_bytes_trashed += VG_(bytesXA)(signalling_seg->vts);
-      VG_(deleteXA)(signalling_seg->vts);
-      signalling_seg->vts = NULL;
+      SEG_unref_1(signalling_segid); // lookupFM, addToFM soon
    } else {
       XArray * fake_VTS = new_VTS();
       ScalarTS st;
       st.thrUID = fake_thread->threadUID;
       st.tym = 1;
       VG_(addToXA)( fake_VTS, &st );
+      SEG_unref_prev(fake_seg); // evhH__start_new_segment_for_thread (fake thr)
       fake_seg->prev = NULL;
       fake_seg->vts  = tickL_and_joinR_VTS(fake_thread,
                                            fake_VTS,
@@ -7344,6 +7469,9 @@ void evhH__do_cv_signal(Thread *thr, Word cond)
       VG_(deleteXA)(fake_VTS);
    }
    HG_(addToFM)( map_cond_to_Segment, (Word)cond, (Word)(fake_segid) );
+   SEG_ref_1(fake_segid); // addToFM
+
+   SEG_unref_prev(new_seg);  // evhH__start_new_segment_for_thread (signal thr)
    //VG_(printf)("HB map: put %p %d\n", cond, fake_segid);
    
    // FIXME. test67 gives false negative. 
@@ -7412,6 +7540,7 @@ Bool evhH__do_cv_wait(Thread *thr, Word cond, Bool must_match_signal)
             new_seg->other->vts );
       tl_assert(SEG_id_is_sane(signalling_segid));
       tl_assert(SEG_id_is_sane(new_segid));
+      SEG_unref_prev(new_seg); // evhH__start_new_segment_for_thread
       return True;
    } else {
       tl_assert(must_match_signal);
@@ -7424,6 +7553,7 @@ Bool evhH__do_cv_wait(Thread *thr, Word cond, Bool must_match_signal)
                          " without prior pthread_cond_post");
       tl_assert(new_seg->prev->vts);
       new_seg->vts = tick_VTS( new_seg->thr, new_seg->prev->vts );
+      SEG_unref_prev(new_seg); // evhH__start_new_segment_for_thread
       return False;
    }
 }
@@ -7758,7 +7888,9 @@ static void evh__HG_POSIX_SEM_DESTROY_PRE ( ThreadId tid, void* sem )
    /* Empty out the semaphore's segment stack.  This way of doing it
       is stupid, but at least it's easy. */
    do {
-     seg = mb_pop_Segment_for_sem( sem );
+      seg = mb_pop_Segment_for_sem( sem );
+      if (seg)
+         SEG_unref_1(seg->id);
    } while (seg);
 
    tl_assert(!seg);
@@ -7776,7 +7908,9 @@ void evh__HG_POSIX_SEM_INIT_POST ( ThreadId tid, void* sem, UWord value )
    /* Empty out the semaphore's segment stack.  This way of doing it
       is stupid, but at least it's easy. */
    do {
-     seg = mb_pop_Segment_for_sem( sem );
+      seg = mb_pop_Segment_for_sem( sem );
+      if (seg)
+         SEG_unref_1(seg->id);
    } while (seg);
    tl_assert(!seg);
 
@@ -7797,6 +7931,7 @@ void evh__HG_POSIX_SEM_INIT_POST ( ThreadId tid, void* sem, UWord value )
       tl_assert( is_sane_Segment(new_seg->prev) );
       tl_assert( new_seg->prev->vts );
       new_seg->vts = tick_VTS( new_seg->thr, new_seg->prev->vts );
+      SEG_unref_prev(new_seg); // evhH__start_new_segment_for_thread
 
       if (value > 10000) {
          /* If we don't do this, the following while loop runs us out
@@ -7808,6 +7943,7 @@ void evh__HG_POSIX_SEM_INIT_POST ( ThreadId tid, void* sem, UWord value )
 
       while (value > 0) {
          push_Segment_for_sem( sem, new_seg->prev );
+         SEG_ref_prev(new_seg);
          value--;
       }
    }
@@ -7839,6 +7975,7 @@ static void evh__HG_POSIX_SEM_POST_PRE ( ThreadId tid, void* sem )
       /* create a new segment ... */
       new_segid = 0; /* bogus */
       new_seg   = NULL;
+      SEG_ref_1(thr->csegid);
       evhH__start_new_segment_for_thread( &new_segid, &new_seg, thr );
       tl_assert( SEG_id_is_sane(new_segid) );
       tl_assert( is_sane_Segment(new_seg) );
@@ -7849,6 +7986,9 @@ static void evh__HG_POSIX_SEM_POST_PRE ( ThreadId tid, void* sem )
 
       /* ... and add the binding. */
       push_Segment_for_sem( sem, new_seg->prev );
+      SEG_ref_prev(new_seg); // push_Segment
+      
+      SEG_unref_prev(new_seg); // evhH__start_new_segment_for_thread
    }
 }
 
@@ -7898,6 +8038,8 @@ static void evh__HG_POSIX_SEM_WAIT_POST ( ThreadId tid, void* sem )
                            new_seg->thr, 
                            new_seg->prev->vts,
                            new_seg->other->vts );
+         SEG_unref_1(posting_seg->id); // pop_Segment
+         SEG_unref_prev(new_seg); // evhH__start_new_segment_for_thread
       } else {
          /* Hmm.  How can a wait on 'sem' succeed if nobody posted to
             it?  If this happened it would surely be a bug in the
@@ -7906,6 +8048,7 @@ static void evh__HG_POSIX_SEM_WAIT_POST ( ThreadId tid, void* sem )
                                  " semaphore without prior sem_post");
          tl_assert(new_seg->prev->vts);
          new_seg->vts = tick_VTS( new_seg->thr, new_seg->prev->vts );
+         SEG_unref_prev(new_seg); // evhH__start_new_segment_for_thread
       }
    }
 }
@@ -10380,6 +10523,8 @@ static void hg_reset_stats ( void )
    stats__secmap_linesF_bytes  = 0;
    stats__secmap_iterator_steppings = 0;
    stats__mk_Segment       = 0;
+   stats__segments_recycled = 0;
+   stats__recycled_segments_reused = 0;
    stats__fake_VTS_bytes_trashed = 0;
    stats__msm_Ignore       = 0;
    stats__msm_R_to_R       = 0;
@@ -10424,6 +10569,8 @@ static void pp_stats ( Char * caller )
    VG_(printf)("\n");
    VG_(printf)("        segments: %,11lu Segment objects allocated\n", 
                stats__mk_Segment);
+   VG_(printf)("              %,11lu recycled, %,11lu reused\n",
+               stats__segments_recycled, stats__recycled_segments_reused);
    VG_(printf)("        locksets: %,11ld unique lock sets\n",
                (Word)HG_(cardinalityWSU)( univ_lsets ));
    VG_(printf)("     segmentsets: %,11ld unique segment sets\n",

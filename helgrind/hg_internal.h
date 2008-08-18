@@ -43,4 +43,6 @@
 #define tl_debug_assert(a)  
 #endif
 
+//#define SCE_REFCOUNTING
+
 #endif /* ! __HG_DEBUGONLY_H */

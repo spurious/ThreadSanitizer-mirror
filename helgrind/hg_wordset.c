@@ -142,7 +142,11 @@ typedef
 
 typedef TEMPLATE_WORDVEC() WordVec;
 
+#ifdef SCE_REFCOUNTING
+#define N_RECYCLE_CACHE_MAX 1
+#else
 #define N_RECYCLE_CACHE_MAX 256
+#endif
 
 /* ix2vec[0 .. ix2vec_used-1] are pointers to the lock sets (WordVecs)
    really.  vec2ix is the inverse mapping, mapping WordVec* to the
@@ -151,6 +155,8 @@ typedef TEMPLATE_WORDVEC() WordVec;
 struct _WordSetU {
       void*     (*alloc)(SizeT);
       void      (*dealloc)(void*);
+      void      (*elem_ref)  (Word);
+      void      (*elem_unref)(Word);
       WordFM*   vec2ix; /* WordVec-to-WordSet mapping tree */
       WordVec** ix2vec; /* WordSet-to-WordVec mapping array */
       UWord     ix2vec_size;
@@ -204,6 +210,24 @@ static WordVec* new_WV_of_size ( WordSetU* wsu, UInt sz )
    wv->refcount = 0;
    tl_assert(0 == (UWord)(wv->words) % sizeof(UWord));
    return wv;
+}
+
+static void new_WV_created ( WordSetU* wsu, WordSet ws ) {
+   UWord i, nWords, *words;
+   if (wsu->elem_ref == NULL)
+      return;
+   HG_(getPayloadWS)( &words, &nWords, wsu, ws );
+   for (i = 0; i < nWords; i++)
+      wsu->elem_ref(words[i]);
+}
+
+static void WV_pre_delete ( WordSetU* wsu, WordSet ws ) {
+   UWord i, nWords, *words;
+   if (wsu->elem_unref == NULL)
+      return;
+   HG_(getPayloadWS)( &words, &nWords, wsu, ws );
+   for (i = 0; i < nWords; i++)
+      wsu->elem_unref(words[i]);
 }
 
 static Word cmp_WordVecs_for_FM ( UWord wv1W, UWord wv2W )
@@ -303,12 +327,14 @@ static WordSet add_or_dealloc_WordVec( WordSetU* wsu, WordVec* wv_new )
       ensure_ix2vec_space( wsu );
       tl_assert(wsu->ix2vec);
       tl_assert(wsu->ix2vec_used < wsu->ix2vec_size);
-      wsu->ix2vec[wsu->ix2vec_used] = wv_new;
-      HG_(addToFM)( wsu->vec2ix, (Word)wv_new, (Word)wsu->ix2vec_used );
-      if (0) VG_(printf)("aodW %d\n", (Int)wsu->ix2vec_used );
+      WordSet new_ws = wsu->ix2vec_used;
+      wsu->ix2vec[new_ws] = wv_new;
+      HG_(addToFM)( wsu->vec2ix, (Word)wv_new, (Word)new_ws );
+      if (0) VG_(printf)("aodW %d\n", (Int)new_ws);
       wsu->ix2vec_used++;
       tl_assert(wsu->ix2vec_used <= wsu->ix2vec_size);
-      return (WordSet)(wsu->ix2vec_used - 1);
+      new_WV_created(wsu, new_ws);
+      return new_ws;
    }
 }
 
@@ -342,12 +368,14 @@ static WordSet find_or_alloc_and_add_WordVec( WordSetU* wsu, WordVec* wv_new )
       ensure_ix2vec_space( wsu );
       tl_assert(wsu->ix2vec);
       tl_assert(wsu->ix2vec_used < wsu->ix2vec_size);
-      wsu->ix2vec[wsu->ix2vec_used] = wv_new;
-      HG_(addToFM)( wsu->vec2ix, (Word)wv_new, (Word)wsu->ix2vec_used );
-      if (0) VG_(printf)("aodW %d\n", (Int)wsu->ix2vec_used );
+      WordSet new_ws = (WordSet)wsu->ix2vec_used;
+      wsu->ix2vec[new_ws] = wv_new;
+      HG_(addToFM)( wsu->vec2ix, (Word)wv_new, (Word)new_ws );
+      if (0) VG_(printf)("aodW %d\n", (Int)new_ws );
       wsu->ix2vec_used++;
       tl_assert(wsu->ix2vec_used <= wsu->ix2vec_size);
-      return (WordSet)(wsu->ix2vec_used - 1);
+      new_WV_created(wsu, new_ws);
+      return new_ws;
    }
 }
 
@@ -355,6 +383,8 @@ static WordSet find_or_alloc_and_add_WordVec( WordSetU* wsu, WordVec* wv_new )
 
 WordSetU* HG_(newWordSetU) ( void* (*alloc_nofail)( SizeT ),
                              void  (*dealloc)(void*),
+                             void  (*elem_ref)  (Word),
+                             void  (*elem_unref)(Word),
                              Word  cacheSize )
 {
    WordSetU* wsu;
@@ -364,6 +394,8 @@ WordSetU* HG_(newWordSetU) ( void* (*alloc_nofail)( SizeT ),
    VG_(memset)( wsu, 0, sizeof(WordSetU) );
    wsu->alloc   = alloc_nofail;
    wsu->dealloc = dealloc;
+   wsu->elem_ref   = elem_ref;
+   wsu->elem_unref = elem_unref;
    wsu->vec2ix  = HG_(newFM)( alloc_nofail, dealloc, cmp_WordVecs_for_FM );
    wsu->ix2vec_used = 0;
    wsu->ix2vec_size = 0;
@@ -380,6 +412,7 @@ WordSetU* HG_(newWordSetU) ( void* (*alloc_nofail)( SizeT ),
 
 void HG_(deleteWordSetU) ( WordSetU* wsu )
 {
+   WordSet  ws = 0;
    WordVec* wv = NULL;
    void (*dealloc)(void*) = wsu->dealloc;
    tl_assert(wsu->vec2ix);
@@ -387,7 +420,8 @@ void HG_(deleteWordSetU) ( WordSetU* wsu )
    // Iterate over "wsu->vec2ix" FM and call "delete_WV_for_FM" for KEYS
    // delete_WV_for_FM(wv) = { wv->owner->dealloc(wv) } = { wsu->dealloc(wv) }
    HG_(initIterAtFM)(wsu->vec2ix, 0);
-   while (HG_(nextIterFM)(wsu->vec2ix, (Word*)&wv /*key*/, NULL /*val*/)) {
+   while (HG_(nextIterFM)(wsu->vec2ix, (Word*)&wv /*key*/, (Word)&ws /*val*/)) {
+      WV_pre_delete (wsu, ws);
       dealloc((WordVec*)wv);
    }
    HG_(doneIterFM) (wsu->vec2ix);
@@ -509,7 +543,9 @@ void    HG_(recycleWS)      ( WordSetU *wsu, WordSet ws);
 void    HG_(recycleWS)      ( WordSetU *wsu, WordSet ws) 
 {
    tl_assert(wsu);
-
+   tl_assert(wsu->recycle_cache_n < N_RECYCLE_CACHE_MAX);
+   wsu->recycle_cache[wsu->recycle_cache_n++] = ws;
+   
    if (wsu->recycle_cache_n == N_RECYCLE_CACHE_MAX) {
       // cache is full, do the recycling
       UInt i;
@@ -521,6 +557,7 @@ void    HG_(recycleWS)      ( WordSetU *wsu, WordSet ws)
          tl_assert(wv->size >= 0);
          if (wv->refcount > 0)
             continue;
+         WV_pre_delete (wsu, ws_to_recycle);
          tl_assert(wv->refcount == 0);
          HG_(delFromFM)(wsu->vec2ix, NULL, NULL, (Word)wv);
          wsu->dealloc(wv);
@@ -533,8 +570,6 @@ void    HG_(recycleWS)      ( WordSetU *wsu, WordSet ws)
       WCache_INVAL(wsu->cache_minus);
       wsu->recycle_cache_n = 0;
    }
-   tl_assert(wsu->recycle_cache_n < N_RECYCLE_CACHE_MAX);
-   wsu->recycle_cache[wsu->recycle_cache_n++] = ws;
 }
 
 // Increment the refcount of ws by sz. 
