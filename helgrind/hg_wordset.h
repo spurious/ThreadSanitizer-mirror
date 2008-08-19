@@ -91,10 +91,12 @@ Bool    HG_(plausibleWS)    ( WordSetU*, WordSet );
 Bool    HG_(saneWS_SLOW)    ( WordSetU*, WordSet );
 void    HG_(refWS)          ( WordSetU*, WordSet, UInt );
 UInt    HG_(unrefWS)        ( WordSetU*, WordSet, UInt );
+void    HG_(WSU_doGC)       ( WordSetU* );
+
 UWord   HG_(getRefWS)       ( WordSetU*, WordSet );
 
 
-
+void    HG_(ppWSU)          ( WordSetU* );
 void    HG_(ppWS)           ( WordSetU*, WordSet );
 void    HG_(getPayloadWS)   ( /*OUT*/UWord** words, /*OUT*/UWord* nWords, 
                              WordSetU*, WordSet );

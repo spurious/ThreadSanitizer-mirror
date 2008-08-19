@@ -144,8 +144,10 @@ typedef TEMPLATE_WORDVEC() WordVec;
 
 #ifdef SCE_REFCOUNTING
 #define N_RECYCLE_CACHE_MAX 1
+#define GC_STEP_SIZE 0xFFFFFFFF
 #else
 #define N_RECYCLE_CACHE_MAX 256
+#define GC_STEP_SIZE 65536
 #endif
 
 /* ix2vec[0 .. ix2vec_used-1] are pointers to the lock sets (WordVecs)
@@ -170,6 +172,7 @@ struct _WordSetU {
       /* recycle cache */
       UWord     recycle_cache[N_RECYCLE_CACHE_MAX];
       UInt      recycle_cache_n;
+      UInt      last_gc_ix;
       /* Stats */
       UWord     n_add;
       UWord     n_add_uncached;
@@ -406,6 +409,7 @@ WordSetU* HG_(newWordSetU) ( void* (*alloc_nofail)( SizeT ),
    WCache_INIT(wsu->cache_minus,     cacheSize);
    empty = new_WV_of_size( wsu, 0 );
    wsu->empty = add_or_dealloc_WordVec( wsu, empty );
+   HG_(refWS)(wsu, 0, 1);
 
    return wsu;
 }
@@ -599,6 +603,33 @@ UInt    HG_(unrefWS)        ( WordSetU *wsu, WordSet ws, UInt sz)
    return rc;
 }
 
+void    HG_(WSU_doGC) ( WordSetU* wsu )
+{
+   WordVec* wv;
+   UInt i, startId, endId, wsu_size;
+   UInt toCheck = GC_STEP_SIZE;
+   
+   wsu_size = wsu->ix2vec_used;
+   if (toCheck >= wsu_size)
+      toCheck = wsu_size - 1;
+   startId = (wsu->last_gc_ix)%wsu_size;
+   endId   = (startId + toCheck)%wsu_size;
+
+   tl_assert(wsu->ix2vec_used <= wsu->ix2vec_size);
+   if (wsu->ix2vec_used > 0)
+      tl_assert(wsu->ix2vec);
+   else
+      return;
+   
+   for (i = startId; i != endId; i = (i+1)%wsu_size) {
+       wv = wsu->ix2vec[i];
+       if (wv == NULL || wv->refcount > 0)
+          continue;
+       HG_(recycleWS)(wsu, i);
+   }
+   wsu->last_gc_ix = i;
+}
+
 // Get the current refcount of ws.
 UWord    HG_(getRefWS)        ( WordSetU *wsu, WordSet ws)
 {
@@ -697,6 +728,19 @@ WordSet HG_(isSubsetOf) ( WordSetU* wsu, WordSet small, WordSet big )
    return small == HG_(intersectWS)( wsu, small, big );
 }
 
+void HG_(ppWSU)( WordSetU* wsu )
+{
+   UWord i, n = 0;
+   for (i = 1; i < HG_(cardinalityWSU)(wsu); i++) {
+       if (!HG_(saneWS_SLOW(wsu, i)))
+          continue;
+       n++;
+       VG_(printf)("SS#%d ", i);
+       HG_(ppWS)( wsu, i );
+       VG_(printf)("\n");
+   }
+}
+
 void HG_(ppWS) ( WordSetU* wsu, WordSet ws )
 {
    UWord    i;
@@ -705,7 +749,7 @@ void HG_(ppWS) ( WordSetU* wsu, WordSet ws )
    wv = do_ix2vec( wsu, ws );
    VG_(printf)("[refc = %d] {", wv->refcount);
    for (i = 0; i < wv->size; i++) {
-      VG_(printf)("%p", (void*)wv->words[i]);
+      VG_(printf)("%d", (void*)wv->words[i]);
       if (i < wv->size-1)
          VG_(printf)(",");
    }

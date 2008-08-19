@@ -820,26 +820,41 @@ static UWord stats__fake_VTS_bytes_trashed = 0;
 #define SEGMENT_ID_MAX        (1 << 24) // N1*N2
 #define SEGMENT_ID_CHUNK_SIZE (1 << 14) // N2
 #define SEGMENT_ID_N_CHUNKS   (SEGMENT_ID_MAX / SEGMENT_ID_CHUNK_SIZE) // N1
-#define SEGMENT_RECYCLE_BUFFER_SIZE 16
+
+#ifdef SCE_REFCOUNTING
+#define SEGMENT_RECYCLE_BUFFER_SIZE 1
+#else
+#define SEGMENT_RECYCLE_BUFFER_SIZE 1024
+#endif
 
 static struct {
    UInt    size,
+   
+           /* All recycled segment IDs go to recycled_buff.
+            * We need to buffer SEGMENT_RECYCLE_BUFFER_SIZE of them to avoid
+            * cleaning hbefore_cache too often */
            recycled_buff_count,
-           recycled_buff[SEGMENT_RECYCLE_BUFFER_SIZE];
+           recycled_buff[SEGMENT_RECYCLE_BUFFER_SIZE],
+           
+           /* IDs of segments that were recycled go to reuse_buff
+            * after hbefore_cache cleaning.
+            * We can re-use those IDs for new segments */
+           reuse_buff_count,
+           reuse_buff[2 * SEGMENT_RECYCLE_BUFFER_SIZE];
    Segment *chunks[SEGMENT_ID_N_CHUNKS];
-} SegmentArray ={1, 0, {0}, {0}};
+} SegmentArray ={1, 0, {0}, 0, {0}, {0}};
 
 
 // Add a new segment, return its number
 static SegmentID SEG_add(void) 
 {
    UInt index, chunk_index, elem_index;
-   if (SegmentArray.recycled_buff_count > 0) {
+   if (SegmentArray.reuse_buff_count > 0) {
       // re-use recycled segment entry
-      index = SegmentArray.recycled_buff[0];
-      SegmentArray.recycled_buff_count--;
-      SegmentArray.recycled_buff[0]
-                 = SegmentArray.recycled_buff[SegmentArray.recycled_buff_count];
+      index = SegmentArray.reuse_buff[0];
+      SegmentArray.reuse_buff_count--;
+      SegmentArray.reuse_buff[0]
+                 = SegmentArray.reuse_buff[SegmentArray.reuse_buff_count];
       stats__recycled_segments_reused++;
    } else {
       // increment size 
@@ -884,23 +899,56 @@ static inline Segment *SEG_get(SegmentID n)
                               [n % SEGMENT_ID_CHUNK_SIZE];
 }
 
+static void hbefore__invalidate_htable ( void );
+
 static void SEG_recycle(SegmentID id)
 {
+   UInt i;
    Segment * seg = SEG_get(id);
    DEBUG_ONLY(seg->magic = ~Segment_MAGIC);
    DEBUG_ONLY(seg->other_hint = 'R');
+   stats__segments_recycled++;
    VG_(deleteXA)(seg->vts);
-   seg->vts = NULL;  
+   seg->vts = NULL;
+   if (clo_sanity_flags & SCE_HBEFORE)
+      return; // this segment can be used in DFS, don't re-use its id
+   seg->id = 0xDEADBEEF;
    seg->prev = NULL;
    seg->other = NULL;
    seg->thr = NULL;
-#ifndef SCE_REFCOUNTING   
-   if (SegmentArray.recycled_buff_count < SEGMENT_RECYCLE_BUFFER_SIZE) {
-      SegmentArray.recycled_buff[SegmentArray.recycled_buff_count] = id;
-      SegmentArray.recycled_buff_count++;
+#ifndef SCE_REFCOUNTING
+   SegmentArray.recycled_buff[SegmentArray.recycled_buff_count] = id;
+   SegmentArray.recycled_buff_count++;
+   
+   if (SegmentArray.recycled_buff_count == SEGMENT_RECYCLE_BUFFER_SIZE) {
+      // TODO: performance - memcpy?
+      
+      /*
+       * recycled_buff reuse_buff
+       * 11111111      2222222233333333
+       *      \            \        \
+       *       -------      ---      -- wasted
+       *              \        \
+       * 00000000      1111111122222222
+       *    Empty
+       */
+      
+      // First we forget about the 33333333 part
+      if (SegmentArray.reuse_buff_count > SEGMENT_RECYCLE_BUFFER_SIZE)
+         SegmentArray.reuse_buff_count = SEGMENT_RECYCLE_BUFFER_SIZE;
+      for (i = 0; i < SEGMENT_RECYCLE_BUFFER_SIZE; i++) {
+         // then we move 22222222 to the old 33333333 place
+         SegmentArray.reuse_buff[i + SEGMENT_RECYCLE_BUFFER_SIZE]
+                                 = SegmentArray.reuse_buff[i];
+         // and 11111111 to the old 22222222 place
+         SegmentArray.reuse_buff[i] = SegmentArray.recycled_buff[i];
+      }
+      // we've just added SEGMENT_RECYCLE_BUFFER_SIZE id's to reuse
+      SegmentArray.reuse_buff_count += SEGMENT_RECYCLE_BUFFER_SIZE;
+      SegmentArray.recycled_buff_count = 0;
+      hbefore__invalidate_htable();
    }
 #endif
-   stats__segments_recycled++;
 }
 
 static inline void SEG_ref(SegmentID n, UInt count)
@@ -1702,13 +1750,15 @@ static void pp_map_locks ( Int d )
 
 static void pp_Segment ( Int d, Segment* s )
 {
-   space(d+0); VG_(printf)("Segment %p {\n", s);
+   space(d+0); VG_(printf)("Segment #%d %p {\n", s->id, s);
    if (sHOW_ADMIN) {
    DEBUG_ONLY(space(d+3); VG_(printf)("magic  0x%x\n", (UInt)s->magic));
    }
+   space(d+3); VG_(printf)("id        %u\n", s->id);
    space(d+3); VG_(printf)("dfsver    %u\n", s->dfsver);
-   space(d+3); VG_(printf)("thr       %p\n", s->thr);
+   space(d+3); VG_(printf)("thr[%04d] %p\n", s->thr->threadId, s->thr);
    space(d+3); VG_(printf)("prev      %p\n", s->prev);
+   space(d+3); VG_(printf)("refcount  %d\n", s->refcount);
    DEBUG_ONLY(space(d+3); VG_(printf)("other[%c] %p\n", 
                                  s->other_hint, s->other));
    space(d+0); VG_(printf)("}\n");
@@ -1732,7 +1782,7 @@ static void pp_mem_segments ( Int d )
    UWord n = -1, segments_bytes = 0, ss_bytes = 0, active_SEG = 0;
    DEBUG_ONLY(
       UWord hint_distr[256];
-      const char HINT_CHARS[] = "cjsSFR";
+      const char HINT_CHARS[] = "cjsSFR12345";
       unsigned char * hint_char = (unsigned char*)HINT_CHARS;
    );
    
@@ -1754,8 +1804,8 @@ static void pp_mem_segments ( Int d )
       DEBUG_ONLY(hint_distr[(unsigned char)s->other_hint]++);
       // TODO: sizeof(ExeContext) ???
    }
-   space(d); VG_(printf)("segments: %7d kB (active = %d, total = %d) \n",
-         (int)(segments_bytes / 1024), (Int)active_SEG, (Int)SegmentArray.size);
+   space(d); VG_(printf)("segments: %7d kB (active = %d, in mem = %d, total = %d) \n",
+         (int)(segments_bytes / 1024), (Int)active_SEG, (Int)SegmentArray.size, stats__mk_Segment);
    DEBUG_ONLY(
       space(d+3); 
       while (*hint_char) {
@@ -1979,7 +2029,6 @@ static void pp_memory_usage ( Int flags, Char* caller )
 
 /* fwds */
 static void shmem__invalidate_scache ( void );
-static void hbefore__invalidate_htable ( void );
 static void shmem__set_mbHasLocks ( Addr a, Bool b );
 static Bool shmem__get_mbHasLocks ( Addr a );
 static void shadow_mem_set8 ( Thread* uu_thr_acc, Addr a, SVal svNew );
@@ -3067,7 +3116,9 @@ static void segments__generate_vcg ( void )
             case 's': colour = "orange";     break; /* signal */
             case 'S': colour = "pink";       break; /* sem_post->wait */
             case 'u': colour = "cyan";       break; /* unlock */
-            default: tl_assert(0);
+            case 'F': colour = "blue";       break; /* this is a fake segment */
+            case 'R': colour = "black";      break; /* this one is recycled */
+            default: colour = "black"; /* 1234 */
          })
          VG_(printf)(PFX "edge: { sourcename: \"%p\" targetname: \"%p\""
                      " color: %s }\n", seg->other, seg, colour );
@@ -6363,6 +6414,9 @@ void evhH__start_new_segment_for_thread ( /*OUT*/SegmentID* new_segidP,
    if (clo_more_context && tid != VG_INVALID_THREADID) {
       SEG_set_context(*new_segidP,
                       VG_(record_ExeContext)(tid,-1/*first_ip_delta*/));
+   if (*new_segidP % 100 == 0) {
+      HG_(WSU_doGC)(univ_ssets);
+   }
 #if 0
       if (*new_segidP % 50 == 0) {
         VG_(printf)("Segment sample (SegmentID = %d) {\n", (int)*new_segidP);
@@ -7421,6 +7475,7 @@ void evhH__do_cv_signal(Thread *thr, Word cond)
    tl_assert( is_sane_Segment(new_seg->prev) );
    tl_assert( new_seg->prev->vts );
    new_seg->vts = tick_VTS( new_seg->thr, new_seg->prev->vts );
+   DEBUG_ONLY(new_seg->other_hint = '1');
 
    /* ... and add the binding. */
 
@@ -7523,6 +7578,7 @@ Bool evhH__do_cv_wait(Thread *thr, Word cond, Bool must_match_signal)
    tl_assert( new_seg->thr == thr );
    tl_assert( is_sane_Segment(new_seg->prev) );
    tl_assert( new_seg->other == NULL);
+   DEBUG_ONLY(new_seg->other_hint = '2');
 
    /* and find out which thread signalled us; then add a dependency
       edge back to it. */
@@ -7930,6 +7986,7 @@ void evh__HG_POSIX_SEM_INIT_POST ( ThreadId tid, void* sem, UWord value )
       tl_assert( new_seg->thr == thr );
       tl_assert( is_sane_Segment(new_seg->prev) );
       tl_assert( new_seg->prev->vts );
+      DEBUG_ONLY(new_seg->other_hint = '3');
       new_seg->vts = tick_VTS( new_seg->thr, new_seg->prev->vts );
       SEG_unref_prev(new_seg); // evhH__start_new_segment_for_thread
 
@@ -7982,6 +8039,7 @@ static void evh__HG_POSIX_SEM_POST_PRE ( ThreadId tid, void* sem )
       tl_assert( new_seg->thr == thr );
       tl_assert( is_sane_Segment(new_seg->prev) );
       tl_assert( new_seg->prev->vts );
+      DEBUG_ONLY(new_seg->other_hint = '4');
       new_seg->vts = tick_VTS( new_seg->thr, new_seg->prev->vts );
 
       /* ... and add the binding. */
@@ -8023,6 +8081,7 @@ static void evh__HG_POSIX_SEM_WAIT_POST ( ThreadId tid, void* sem )
       tl_assert( new_seg->thr == thr );
       tl_assert( is_sane_Segment(new_seg->prev) );
       tl_assert( new_seg->other == NULL);
+      DEBUG_ONLY(new_seg->other_hint = '5');
 
       /* and find out which thread posted last on sem; then add a
          dependency edge back to it. */
@@ -10713,7 +10772,7 @@ static void hg_fini ( Int exitcode )
 
    if (VG_(clo_verbosity) >= 2) {
       pp_memory_usage(0, "SK_(fini)");
-      pp_stats( "SK_(fini)" );  
+      pp_stats( "SK_(fini)" );
    }
 }
 
