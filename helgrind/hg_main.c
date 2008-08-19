@@ -903,6 +903,8 @@ static void hbefore__invalidate_htable ( void );
 
 static void SEG_recycle(SegmentID id)
 {
+   if (clo_sanity_flags & SCE_HBEFORE)
+      return; // this segment can be used in DFS, don't re-use its id
    UInt i;
    Segment * seg = SEG_get(id);
    DEBUG_ONLY(seg->magic = ~Segment_MAGIC);
@@ -910,8 +912,6 @@ static void SEG_recycle(SegmentID id)
    stats__segments_recycled++;
    VG_(deleteXA)(seg->vts);
    seg->vts = NULL;
-   if (clo_sanity_flags & SCE_HBEFORE)
-      return; // this segment can be used in DFS, don't re-use its id
    seg->id = 0xDEADBEEF;
    seg->prev = NULL;
    seg->other = NULL;
