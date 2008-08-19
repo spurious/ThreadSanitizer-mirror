@@ -969,13 +969,6 @@ static inline void SEG_ref_prev (Segment * seg) {
 static inline UInt SEG_unref_ptr (Segment * seg, UInt count)
 {
    tl_assert(seg);
-   if (seg->refcount < count) {
-      VG_(printf)("SEG_unref(%d, %d): %d/%c", seg->id, count, 
-                              seg->refcount, seg->other_hint);
-      VG_(printf)(" -> FUCKUP!\n");
-      tl_assert(seg->refcount >= count);
-   }
-
    tl_assert(seg->refcount >= count);
    seg->refcount -= count;
    if (seg->refcount > 0)
@@ -6201,6 +6194,7 @@ static void shadow_mem_make_New ( Thread* thr, Addr a, SizeT len )
 */
 static void shadow_mem_make_NoAccess ( Thread* thr, Addr aIN, SizeT len )
 {
+   UInt i;
    Lock*     lk;
    Addr      gla, sma, firstSM, lastSM, firstA, lastA;
    WordSetID locksToDelete;
@@ -6232,6 +6226,11 @@ static void shadow_mem_make_NoAccess ( Thread* thr, Addr aIN, SizeT len )
    // turn off memory trace
    mem_trace_off(firstA, lastA);
    published_memory_range_forget(firstA, lastA);
+   for (i = 0; i < len; i++) {
+      Addr a = aIN + i;
+      SVal sval = shadow_mem_get8(a);
+      SHVAL_SS_unref(sval, 1);
+   }
 
    /* --- Step 2 --- */
 
@@ -8032,7 +8031,6 @@ static void evh__HG_POSIX_SEM_POST_PRE ( ThreadId tid, void* sem )
       /* create a new segment ... */
       new_segid = 0; /* bogus */
       new_seg   = NULL;
-      SEG_ref_1(thr->csegid);
       evhH__start_new_segment_for_thread( &new_segid, &new_seg, thr );
       tl_assert( SEG_id_is_sane(new_segid) );
       tl_assert( is_sane_Segment(new_seg) );
