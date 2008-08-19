@@ -5108,5 +5108,42 @@ void Run() {
 REGISTER_TEST2(Run, 510, MEMORY_USAGE | PRINT_STATS | EXCLUDE_FROM_ALL);
 }  // namespace test510
 
+// test511: Segment refcounting test ('1' refcounting) {{{1
+namespace test511 {
+int GLOB = 0;
+
+void Run () {
+   for (int i = 0; i < 300; i++) {
+      ANNOTATE_CONDVAR_SIGNAL(&GLOB);
+      usleep(1000);
+      GLOB++;
+      ANNOTATE_CONDVAR_WAIT(&GLOB);
+      if (i % 100 == 0)
+         ANNOTATE_PRINT_MEMORY_USAGE(0);
+   }
+}
+REGISTER_TEST2(Run, 511, MEMORY_USAGE | PRINT_STATS | EXCLUDE_FROM_ALL);
+}  // namespace test511
+
+// test512: Segment refcounting test ('S' refcounting) {{{1
+namespace test512 {
+int GLOB = 0;
+sem_t SEM;
+
+void Run () {
+   sem_init(&SEM, 0, 0);
+   for (int i = 0; i < 300; i++) {
+      sem_post(&SEM);
+      usleep(1000);
+      GLOB++;
+      sem_wait(&SEM);
+      /*if (i % 100 == 0)
+         ANNOTATE_PRINT_MEMORY_USAGE(0);*/
+   }
+   sem_destroy(&SEM);
+}
+REGISTER_TEST2(Run, 512, MEMORY_USAGE | PRINT_STATS | EXCLUDE_FROM_ALL);
+}  // namespace test512
+
 // End {{{1
 // vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker
