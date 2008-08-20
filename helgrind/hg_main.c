@@ -6226,11 +6226,14 @@ static void shadow_mem_make_NoAccess ( Thread* thr, Addr aIN, SizeT len )
    // turn off memory trace
    mem_trace_off(firstA, lastA);
    published_memory_range_forget(firstA, lastA);
+   /*
+    * TODO: - check why this is incorrect
+    *       - make it more efficient
    for (i = 0; i < len; i++) {
       Addr a = aIN + i;
       SVal sval = shadow_mem_get8(a);
       SHVAL_SS_unref(sval, 1);
-   }
+   }*/
 
    /* --- Step 2 --- */
 
