@@ -1990,6 +1990,7 @@ static void pp_everything ( Int flags, Char* caller )
 static void pp_memory_usage ( Int flags, Char* caller )
 {  
    Int d = 0;
+   UInt print_time = VG_(read_millisecond_timer)();
    if (flags == 0)
       flags = PP_ALL;   
    VG_(printf)("\n");
@@ -2009,6 +2010,8 @@ static void pp_memory_usage ( Int flags, Char* caller )
    if (flags & PP_SHMEM_SHARED) {
       pp_mem_shmem(d+3);
    }
+   print_time = VG_(read_millisecond_timer)() - print_time;
+   space(d+3); VG_(printf)("Stats calculation took %dms\n", print_time);
    VG_(printf)("}\n");
    VG_(printf)("\n");
 }
