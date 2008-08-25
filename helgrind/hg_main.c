@@ -828,33 +828,27 @@ static UWord stats__fake_VTS_bytes_trashed = 0;
 #endif
 
 static struct {
-   UInt    size,
-   
-           /* All recycled segment IDs go to recycled_buff.
-            * We need to buffer SEGMENT_RECYCLE_BUFFER_SIZE of them to avoid
-            * cleaning hbefore_cache too often */
-           recycled_buff_count,
-           recycled_buff[SEGMENT_RECYCLE_BUFFER_SIZE],
-           
-           /* IDs of segments that were recycled go to reuse_buff
-            * after hbefore_cache cleaning.
-            * We can re-use those IDs for new segments */
-           reuse_buff_count,
-           reuse_buff[2 * SEGMENT_RECYCLE_BUFFER_SIZE];
+   UInt    size;
+   /* Buffer of recycled segment IDs available to reuse */
+   XArray* recycled_buff; 
    Segment *chunks[SEGMENT_ID_N_CHUNKS];
-} SegmentArray ={1, 0, {0}, 0, {0}, {0}};
+} SegmentArray ={1, NULL, {0}};
 
 
 // Add a new segment, return its number
 static SegmentID SEG_add(void) 
 {
    UInt index, chunk_index, elem_index;
-   if (SegmentArray.reuse_buff_count > 0) {
-      // re-use recycled segment entry
-      index = SegmentArray.reuse_buff[0];
-      SegmentArray.reuse_buff_count--;
-      SegmentArray.reuse_buff[0]
-                 = SegmentArray.reuse_buff[SegmentArray.reuse_buff_count];
+   XArray * rec_buff;
+   if (SegmentArray.recycled_buff == NULL) {
+      SegmentArray.recycled_buff = VG_(newXA)(hg_zalloc, hg_free, sizeof(Word));
+   }
+   rec_buff = SegmentArray.recycled_buff;
+   if (VG_(sizeXA)(rec_buff) > 0) {
+      // There are some recycled segment IDs.
+      // Get and reuse the index from the tail of the SegmentArray.recycled_buff   
+      index = *(UInt*)VG_(indexXA)(rec_buff, VG_(sizeXA)(rec_buff) - 1);
+      VG_(dropTailXA)(rec_buff, 1);
       stats__recycled_segments_reused++;
    } else {
       // increment size 
@@ -903,51 +897,24 @@ static void hbefore__invalidate_htable ( void );
 
 static void SEG_recycle(SegmentID id)
 {
+   Segment * seg;
    if (clo_sanity_flags & SCE_HBEFORE)
       return; // this segment can be used in DFS, don't re-use its id
-   UInt i;
-   Segment * seg = SEG_get(id);
+   seg = SEG_get(id);
    DEBUG_ONLY(seg->magic = ~Segment_MAGIC);
    DEBUG_ONLY(seg->other_hint = 'R');
    stats__segments_recycled++;
-   VG_(deleteXA)(seg->vts);
-   seg->vts = NULL;
+   if (seg->vts) {
+      VG_(deleteXA)(seg->vts);
+      seg->vts = NULL;
+   }
    seg->id = 0xDEADBEEF;
    seg->prev = NULL;
    seg->other = NULL;
    seg->thr = NULL;
 #ifndef SCE_REFCOUNTING
-   SegmentArray.recycled_buff[SegmentArray.recycled_buff_count] = id;
-   SegmentArray.recycled_buff_count++;
-   
-   if (SegmentArray.recycled_buff_count == SEGMENT_RECYCLE_BUFFER_SIZE) {
-      // TODO: performance - memcpy?
-      
-      /*
-       * recycled_buff reuse_buff
-       * 11111111      2222222233333333
-       *      \            \        \
-       *       -------      ---      -- wasted
-       *              \        \
-       * 00000000      1111111122222222
-       *    Empty
-       */
-      
-      // First we forget about the 33333333 part
-      if (SegmentArray.reuse_buff_count > SEGMENT_RECYCLE_BUFFER_SIZE)
-         SegmentArray.reuse_buff_count = SEGMENT_RECYCLE_BUFFER_SIZE;
-      for (i = 0; i < SEGMENT_RECYCLE_BUFFER_SIZE; i++) {
-         // then we move 22222222 to the old 33333333 place
-         SegmentArray.reuse_buff[i + SEGMENT_RECYCLE_BUFFER_SIZE]
-                                 = SegmentArray.reuse_buff[i];
-         // and 11111111 to the old 22222222 place
-         SegmentArray.reuse_buff[i] = SegmentArray.recycled_buff[i];
-      }
-      // we've just added SEGMENT_RECYCLE_BUFFER_SIZE id's to reuse
-      SegmentArray.reuse_buff_count += SEGMENT_RECYCLE_BUFFER_SIZE;
-      SegmentArray.recycled_buff_count = 0;
-      hbefore__invalidate_htable();
-   }
+   tl_assert(SegmentArray.recycled_buff);
+   VG_(addToXA)(SegmentArray.recycled_buff, &id);
 #endif
 }
 
@@ -973,11 +940,10 @@ static inline UInt SEG_unref_ptr (Segment * seg, UInt count)
    seg->refcount -= count;
    if (seg->refcount > 0)
       return seg->refcount;
-   SEG_recycle(seg->id);
    return 0;
 }
 
-static inline UInt SEG_unref(SegmentID n, UInt count)
+static inline UInt SEG_unref (SegmentID n, UInt count)
 {
    Segment * seg = SEG_get(n);
    return SEG_unref_ptr(seg, count);
@@ -1060,8 +1026,13 @@ static Lock* mk_LockN ( LockKind kind, Addr guestaddr ) {
    admin_locks            = lock;
    return lock;
 }
+
+static void maybe_do_GC ( Bool force );
+
 static SegmentID mk_Segment ( Thread* thr, Segment* prev, Segment* other ) {
-   SegmentID id    = SEG_add();
+   SegmentID id;
+   maybe_do_GC(False);
+   id    = SEG_add();
    Segment* seg    = SEG_get(id);
    seg->dfsver     = 0;
    seg->thr        = thr;
@@ -1430,21 +1401,21 @@ static inline SegmentID SS_get_element (SegmentSet ss, UWord i) {
 }
 
 // increment the ref count for a non-singleton SS. 
-static inline void SS_ref(SegmentSet ss, UWord sz) {
+static inline void SS_ref(SegmentSet ss) {
    if (SS_is_singleton(ss)) 
-      SEG_ref(SS_get_singleton_UNCHECKED(ss), sz);
+      SEG_ref_1(SS_get_singleton_UNCHECKED(ss));
    else
-      HG_(refWS) (univ_ssets, ss, sz);
+      HG_(refWS) (univ_ssets, ss, 1);
 }
 
 
 // decrement the ref count of a non-singleton SS and return 
 // the new value of ref count
-static inline UInt SS_unref(SegmentSet ss, UWord sz) {
+static inline void SS_unref(SegmentSet ss) {
    if (SS_is_singleton(ss))
-      return SEG_unref (SS_get_singleton_UNCHECKED(ss), sz);
+      SEG_unref_1(SS_get_singleton_UNCHECKED(ss));
    else
-      return HG_(unrefWS) (univ_ssets, ss, sz);
+      HG_(unrefWS)(univ_ssets, ss, 1);
 }
 
 static inline Bool LS_valid (LockSet ls) {
@@ -1545,19 +1516,19 @@ static inline Bool is_SHVAL_valid_SLOW ( SVal sv) {
    return True;
 }
 
-// If sv has a non-singleton SS, increment it's refcount by 1.
-static inline void SHVAL_SS_ref(SVal sv, UInt sz) {
+// If sv has a SS, increment it's refcount by 1.
+static inline void SHVAL_SS_ref(SVal sv) {
    if (LIKELY(is_SHVAL_RM(sv))) {
       SegmentSet ss = get_SHVAL_SS(sv);
-      SS_ref(ss, sz);
+      SS_ref(ss);
    }
 }
 
-// If sv has a non-singleton SS, decrement it's refcount by 1.
-static inline void SHVAL_SS_unref(SVal sv, UInt sz) {
+// If sv has a SS, decrement it's refcount by 1.
+static inline void SHVAL_SS_unref(SVal sv) {
    if (LIKELY(is_SHVAL_RM(sv))) {
       SegmentSet ss = get_SHVAL_SS(sv);
-      SS_unref(ss, sz);
+      SS_unref(ss);
    }
 }
 
@@ -4281,7 +4252,7 @@ SVal memory_state_machine(Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
    int        trace_level = 
                    (a >= clo_trace_addr  && a < (clo_trace_addr+sz))
                    ? clo_trace_level : 0;
-   SegmentSet newSS = 0, oldSS = 0;
+   SegmentSet newSS = 0;
    LockSet    newLS = 0;
    
    // Check if trace was requested for this address by a client request.
@@ -4415,8 +4386,8 @@ SVal memory_state_machine(Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
                          maybe_get_lastlock_initpoint(a) );
       if (race_was_recorded) {
          // never recycle segment sets in sv_old/sv_new
-         SHVAL_SS_ref(sv_old, 1);
-         SHVAL_SS_ref(sv_new, 1);
+         SHVAL_SS_ref(sv_old);
+         SHVAL_SS_ref(sv_new);
          // if we did record a race and if this mem was not traced before, 
          // turn tracing on.
          sv_new = mk_SHVAL_RM(is_w, SS_mk_singleton(thr->csegid), 
@@ -4429,13 +4400,6 @@ SVal memory_state_machine(Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
          // put this in Ignore state
          sv_new = SHVAL_Ignore;
       }
-   }
-
-   oldSS = get_SHVAL_SS(sv_old);
-   newSS = get_SHVAL_SS(sv_new);
-   if (clo_ss_recycle && newSS != oldSS) {
-      SHVAL_SS_ref  (sv_new, sz);
-      SHVAL_SS_unref(sv_old, sz);
    }
 
    return sv_new; 
@@ -4460,6 +4424,44 @@ static void laog__handle_lock_deletions    ( WordSetID ); /* fwds */
 static inline Thread* get_current_Thread ( void ); /* fwds */
 
 /* ------------ CacheLineF and CacheLineZ related ------------ */
+/* Reference counters are valid only when no memory range is cached.
+   In order to do GC, we periodically flush_and_invalidate/invalidate all 
+   caches and re-count reference counters for memory ranges.
+   Afterwards, we recycle all Segments/SSs with refcount == 0.
+   The main idea is taken from YARD
+    
+   See maybe_do_GC for details. */
+
+static void rcinc_LineF ( CacheLineF* lineF ) {
+   UWord i;
+   tl_assert(lineF->inUse);
+   for (i = 0; i < N_LINE_ARANGE; i++)
+      SHVAL_SS_ref(lineF->w64s[i]);
+}
+
+static void rcdec_LineF ( CacheLineF* lineF ) {
+   UWord i;
+   tl_assert(lineF->inUse);
+   for (i = 0; i < N_LINE_ARANGE; i++)
+      SHVAL_SS_unref(lineF->w64s[i]);
+}
+
+static void rcinc_LineZ ( CacheLineZ* lineZ ) {
+   tl_assert(lineZ->dict[0] != 0);
+   SHVAL_SS_ref(lineZ->dict[0]);
+   if (lineZ->dict[1] != 0) SHVAL_SS_ref(lineZ->dict[1]);
+   if (lineZ->dict[2] != 0) SHVAL_SS_ref(lineZ->dict[2]);
+   if (lineZ->dict[3] != 0) SHVAL_SS_ref(lineZ->dict[3]);
+}
+
+static void rcdec_LineZ ( CacheLineZ* lineZ ) {
+   tl_assert(lineZ->dict[0] != 0);
+   SHVAL_SS_unref(lineZ->dict[0]);
+   if (lineZ->dict[1] != 0) SHVAL_SS_unref(lineZ->dict[1]);
+   if (lineZ->dict[2] != 0) SHVAL_SS_unref(lineZ->dict[2]);
+   if (lineZ->dict[3] != 0) SHVAL_SS_unref(lineZ->dict[3]);
+}
+
 inline
 static void write_twobit_array ( UChar* arr, UWord ix, UWord b2 ) {
    Word bix, shft, mask, prep;
@@ -4556,8 +4558,10 @@ void find_Z_for_writing ( /*OUT*/SecMap** smp,
       tl_assert(fix >= 0 && fix < sm->linesF_size);
       lineF = &sm->linesF[fix];
       tl_assert(lineF->inUse);
+      rcdec_LineF(lineF);
       lineF->inUse = False;
-   }
+   } else 
+      rcdec_LineZ(lineZ);
    *smp  = sm;
    *zixp = zix;
 }
@@ -5074,6 +5078,7 @@ static __attribute__((noinline)) void cacheline_wback ( UWord wix )
    if (LIKELY(i == N_LINE_ARANGE)) {
       /* Construction of the compressed representation was
          successful. */
+      rcinc_LineZ(lineZ);
       stats__cache_Z_wbacks++;
    } else {
       /* Cannot use the compressed(z) representation.  Use the full(f)
@@ -5102,6 +5107,7 @@ static __attribute__((noinline)) void cacheline_wback ( UWord wix )
          }
       }
       tl_assert(i == N_LINE_ARANGE);
+      rcinc_LineF(lineF);
       stats__cache_F_wbacks++;
    }
 
@@ -5191,7 +5197,31 @@ static void shmem__flush_and_invalidate_scache ( void ) {
    stats__cache_invals++;
 }
 
-
+static void maybe_do_GC ( Bool force ) 
+{
+   UInt i, recycled = 0, in_use = 0;
+   static UInt last_gc_time = 0;
+   if (!force && VG_(read_millisecond_timer)() - last_gc_time < 10000)
+      return;
+   last_gc_time = VG_(read_millisecond_timer)();/**/
+   
+   shmem__flush_and_invalidate_scache ();
+   HG_(WSU_doGC)(univ_ssets);
+   
+   for (i = 1; i < SegmentArray.size; i++) {
+      Segment * seg = &SegmentArray.chunks[i / SEGMENT_ID_CHUNK_SIZE]
+                                          [i % SEGMENT_ID_CHUNK_SIZE];
+      if (seg->refcount > 0) {
+         tl_assert(seg->thr);
+         in_use++;
+      } else if (seg->thr != NULL){
+         SEG_recycle(i);
+         recycled++;
+      }
+   }
+   if (0) VG_(printf)("SEG: recycled %5d WordSets; %5d/%5d in use\n",
+                                    recycled, in_use, SegmentArray.size);
+}
 /* ------------ Basic shadow memory read/write ops ------------ */
 
 // handle clo_ignore_n and clo_ignore_i.
@@ -6114,6 +6144,7 @@ static void shadow_mem_make_New ( Thread* thr, Addr a, SizeT len )
             lineZ->dict[1] = lineZ->dict[2] = lineZ->dict[3] = 0;
             for (i = 0; i < N_LINE_ARANGE/4; i++)
                lineZ->ix2s[i] = 0; /* all refer to dict[0] */
+            rcinc_LineZ(lineZ);
          }
          aligned_start += N_LINE_ARANGE;
          aligned_len -= N_LINE_ARANGE;
@@ -6197,7 +6228,6 @@ static void shadow_mem_make_New ( Thread* thr, Addr a, SizeT len )
 */
 static void shadow_mem_make_NoAccess ( Thread* thr, Addr aIN, SizeT len )
 {
-   UInt i;
    Lock*     lk;
    Addr      gla, sma, firstSM, lastSM, firstA, lastA;
    WordSetID locksToDelete;
@@ -6419,9 +6449,6 @@ void evhH__start_new_segment_for_thread ( /*OUT*/SegmentID* new_segidP,
    if (clo_more_context && tid != VG_INVALID_THREADID) {
       SEG_set_context(*new_segidP,
                       VG_(record_ExeContext)(tid,-1/*first_ip_delta*/));
-   if (*new_segidP % 100 == 0) {
-      HG_(WSU_doGC)(univ_ssets);
-   }
 #if 0
       if (*new_segidP % 50 == 0) {
         VG_(printf)("Segment sample (SegmentID = %d) {\n", (int)*new_segidP);
@@ -10746,6 +10773,7 @@ static void pp_stats ( Char * caller )
 
 static void hg_fini ( Int exitcode )
 {
+   maybe_do_GC(True);
    if (SHOW_DATA_STRUCTURES)
       pp_everything( PP_ALL, "SK_(fini)" );
    

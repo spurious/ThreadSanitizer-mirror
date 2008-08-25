@@ -43,6 +43,17 @@
 #define tl_debug_assert(a)  
 #endif
 
+/* 
+ * If SCE_REFCOUNTING is defined, the recycled Segment/SS IDs are not reused.
+ * It is very useful to track refcounting/garbage collection bugs using existing
+ * assertions and sanity checks
+ */ 
 //#define SCE_REFCOUNTING
+
+// Re-defining inline's is useful to have full stack traces for all assertions
+/*
+#define inline __attribute__((noinline))
+#define INLINE __attribute__((noinline))
+*/
 
 #endif /* ! __HG_DEBUGONLY_H */

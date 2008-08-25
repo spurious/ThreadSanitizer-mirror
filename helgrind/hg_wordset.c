@@ -38,6 +38,7 @@
 #include "pub_tool_libcassert.h"
 #include "pub_tool_libcbase.h"
 #include "pub_tool_libcprint.h"
+#include "pub_tool_xarray.h"
 
 #define HG_(str) VGAPPEND(vgHelgrind_,str)
 #include "hg_internal.h"
@@ -169,10 +170,8 @@ struct _WordSetU {
       WCache    cache_delFrom;
       WCache    cache_intersect;
       WCache    cache_minus;
-      /* recycle cache */
-      UWord     recycle_cache[N_RECYCLE_CACHE_MAX];
-      UInt      recycle_cache_n;
-      UInt      last_gc_ix;
+      /* Buffer of recycled IDs available to reuse */
+      XArray *  recycled_buff;
       /* Stats */
       UWord     n_add;
       UWord     n_add_uncached;
@@ -191,6 +190,7 @@ struct _WordSetU {
       UWord     n_anyElementOf;
       UWord     n_elementOf;
       UWord     n_isSubsetOf;
+      UWord     n_create;
       UWord     n_recycle;
    };
 
@@ -215,6 +215,8 @@ static WordVec* new_WV_of_size ( WordSetU* wsu, UInt sz )
    return wv;
 }
 
+/* This function is called after allocating a new WordVec.
+   It calls ref function for each element of WV (if such function present). */
 static void new_WV_created ( WordSetU* wsu, WordSet ws ) {
    UWord i, nWords, *words;
    if (wsu->elem_ref == NULL)
@@ -224,6 +226,8 @@ static void new_WV_created ( WordSetU* wsu, WordSet ws ) {
       wsu->elem_ref(words[i]);
 }
 
+/* This function is called before deallocating a WordVec.
+   It calls unref function for each element of WV (if such function present). */
 static void WV_pre_delete ( WordSetU* wsu, WordSet ws ) {
    UWord i, nWords, *words;
    if (wsu->elem_unref == NULL)
@@ -231,6 +235,24 @@ static void WV_pre_delete ( WordSetU* wsu, WordSet ws ) {
    HG_(getPayloadWS)( &words, &nWords, wsu, ws );
    for (i = 0; i < nWords; i++)
       wsu->elem_unref(words[i]);
+}
+
+/* Return a unique WordSetID. The returned ID may be already used before
+   and recycled afterwards (SCE_REFCOUNTING must be undefined). */
+static WordSet new_WS_ID ( WordSetU* wsu )
+{
+   UInt size;
+   WordSet ret;
+   wsu->n_create++;
+   size = VG_(sizeXA)(wsu->recycled_buff);
+   if (size == 0) {
+      // Recycled buffer is empty - generate new unique index
+      return wsu->ix2vec_used++;
+   }
+   // Get and reuse the index from the tail of the recycled_buff
+   ret = *(WordSet*)VG_(indexXA)(wsu->recycled_buff, size - 1);
+   VG_(dropTailXA)(wsu->recycled_buff, 1);
+   return ret;
 }
 
 static Word cmp_WordVecs_for_FM ( UWord wv1W, UWord wv2W )
@@ -309,6 +331,7 @@ static inline WordVec* do_ix2vec ( WordSetU* wsu, WordSet ws )
 static WordSet add_or_dealloc_WordVec( WordSetU* wsu, WordVec* wv_new )
 {
    Bool     have;
+   WordSet  new_ws;
    WordVec* wv_old;
    UWord/*Set*/ ix_old = -1;
    /* Really WordSet, but need something that can safely be casted to
@@ -330,11 +353,10 @@ static WordSet add_or_dealloc_WordVec( WordSetU* wsu, WordVec* wv_new )
       ensure_ix2vec_space( wsu );
       tl_assert(wsu->ix2vec);
       tl_assert(wsu->ix2vec_used < wsu->ix2vec_size);
-      WordSet new_ws = wsu->ix2vec_used;
+      new_ws = new_WS_ID(wsu);
       wsu->ix2vec[new_ws] = wv_new;
       HG_(addToFM)( wsu->vec2ix, (Word)wv_new, (Word)new_ws );
       if (0) VG_(printf)("aodW %d\n", (Int)new_ws);
-      wsu->ix2vec_used++;
       tl_assert(wsu->ix2vec_used <= wsu->ix2vec_size);
       new_WV_created(wsu, new_ws);
       return new_ws;
@@ -347,6 +369,7 @@ static WordSet add_or_dealloc_WordVec( WordSetU* wsu, WordVec* wv_new )
 static WordSet find_or_alloc_and_add_WordVec( WordSetU* wsu, WordVec* wv_new )
 {
    Bool     have;
+   WordSet  new_ws;
    WordVec* wv_old;
    UWord/*Set*/ ix_old = -1;
    tl_debug_assert(wv_new->owner == wsu);
@@ -371,11 +394,10 @@ static WordSet find_or_alloc_and_add_WordVec( WordSetU* wsu, WordVec* wv_new )
       ensure_ix2vec_space( wsu );
       tl_assert(wsu->ix2vec);
       tl_assert(wsu->ix2vec_used < wsu->ix2vec_size);
-      WordSet new_ws = (WordSet)wsu->ix2vec_used;
+      new_ws = new_WS_ID(wsu);
       wsu->ix2vec[new_ws] = wv_new;
       HG_(addToFM)( wsu->vec2ix, (Word)wv_new, (Word)new_ws );
       if (0) VG_(printf)("aodW %d\n", (Int)new_ws );
-      wsu->ix2vec_used++;
       tl_assert(wsu->ix2vec_used <= wsu->ix2vec_size);
       new_WV_created(wsu, new_ws);
       return new_ws;
@@ -407,6 +429,7 @@ WordSetU* HG_(newWordSetU) ( void* (*alloc_nofail)( SizeT ),
    WCache_INIT(wsu->cache_delFrom,   cacheSize);
    WCache_INIT(wsu->cache_intersect, cacheSize);
    WCache_INIT(wsu->cache_minus,     cacheSize);
+   wsu->recycled_buff = VG_(newXA) (alloc_nofail, dealloc, sizeof(WordSet));
    empty = new_WV_of_size( wsu, 0 );
    wsu->empty = add_or_dealloc_WordVec( wsu, empty );
    HG_(refWS)(wsu, 0, 1);
@@ -424,7 +447,7 @@ void HG_(deleteWordSetU) ( WordSetU* wsu )
    // Iterate over "wsu->vec2ix" FM and call "delete_WV_for_FM" for KEYS
    // delete_WV_for_FM(wv) = { wv->owner->dealloc(wv) } = { wsu->dealloc(wv) }
    HG_(initIterAtFM)(wsu->vec2ix, 0);
-   while (HG_(nextIterFM)(wsu->vec2ix, (Word*)&wv /*key*/, (Word)&ws /*val*/)) {
+   while (HG_(nextIterFM)(wsu->vec2ix, (UWord*)&wv /*K*/, (UWord*)&ws /*V*/)) {
       WV_pre_delete (wsu, ws);
       dealloc((WordVec*)wv);
    }
@@ -531,49 +554,29 @@ void HG_(getPayloadWS) ( /*OUT*/UWord** words, /*OUT*/UWord* nWords,
    WordSet Recycling. 
    Once HG_(recycleWS) is called on a ws, 
    the memory allocated for ws is freed and ws is removed from vec2ix. 
-   The slot wsu->ix2vec[ws] is assigned NULL and remains NULL forever. 
-   We also have to flush cashes (otherwise if the user creates a new set 
-   equal to the recycled one, cache may return the index of the recycled ws). 
-
-   We maintain a cache os WordSets to recycle and do recycling 
-   every N_RECYCLE_CACHE_MAX call to HG_(recycleWS). 
-   This is done to minimize the number of addTo/delFrom/etc cache invals.
-
-   Possible improvement to this scheme: 
-   - Do not call deleteWV, instead maintain our own free list (?). 
-   - Recycle the slot wsu->ix2vec[ws] (will complicate sanity checking). 
-*/
-void    HG_(recycleWS)      ( WordSetU *wsu, WordSet ws);
-void    HG_(recycleWS)      ( WordSetU *wsu, WordSet ws) 
-{
-   tl_assert(wsu);
-   tl_assert(wsu->recycle_cache_n < N_RECYCLE_CACHE_MAX);
-   wsu->recycle_cache[wsu->recycle_cache_n++] = ws;
+   The slot wsu->ix2vec[ws] is assigned NULL and remains NULL until 
+   the "ws" ID is re-used. 
    
-   if (wsu->recycle_cache_n == N_RECYCLE_CACHE_MAX) {
-      // cache is full, do the recycling
-      UInt i;
-      for (i = 0; i < wsu->recycle_cache_n; i++) {
-         WordSet ws_to_recycle = wsu->recycle_cache[i];
-         if (wsu->ix2vec[ws_to_recycle] == NULL)
-            continue;
-         WordVec *wv = do_ix2vec( wsu, ws_to_recycle );
-         tl_assert(wv->size >= 0);
-         if (wv->refcount > 0)
-            continue;
-         WV_pre_delete (wsu, ws_to_recycle);
-         tl_assert(wv->refcount == 0);
-         HG_(delFromFM)(wsu->vec2ix, NULL, NULL, (Word)wv);
-         wsu->dealloc(wv);
-         wsu->ix2vec[ws_to_recycle] = NULL; 
-         wsu->n_recycle++;
-      }
-      WCache_INVAL(wsu->cache_addTo);
-      WCache_INVAL(wsu->cache_delFrom);
-      WCache_INVAL(wsu->cache_intersect);
-      WCache_INVAL(wsu->cache_minus);
-      wsu->recycle_cache_n = 0;
-   }
+   It is necesarily to flush WordSetU caches after calling recycleWS 
+*/
+void    recycleWS      ( WordSetU *wsu, WordSet ws);
+void    recycleWS      ( WordSetU *wsu, WordSet ws) 
+{
+   WordVec * wv;
+   tl_assert(wsu);
+   tl_assert(wsu->ix2vec[ws]);
+   
+   wv = do_ix2vec( wsu, ws );
+   tl_assert(wv->size >= 0);
+   tl_assert(wv->refcount == 0);
+   WV_pre_delete (wsu, ws);
+   HG_(delFromFM)(wsu->vec2ix, NULL, NULL, (Word)wv);
+   wsu->dealloc(wv);
+   wsu->ix2vec[ws] = NULL;
+   wsu->n_recycle++;
+#ifndef SCE_REFCOUNTING
+   VG_(addToXA)(wsu->recycled_buff, &ws);
+#endif
 }
 
 // Increment the refcount of ws by sz. 
@@ -590,44 +593,44 @@ void    HG_(refWS)          ( WordSetU *wsu, WordSet ws, UInt sz)
 UInt    HG_(unrefWS)        ( WordSetU *wsu, WordSet ws, UInt sz)
 {
    WordVec* wv;
-   UInt rc;
    tl_assert(wsu);
    wv = do_ix2vec( wsu, ws );
    tl_assert(wv->size >= 0);
    tl_assert(wv->refcount >= sz);
    wv->refcount -= sz;
-   rc = wv->refcount; 
-   if (rc == 0)
-      HG_(recycleWS)(wsu, ws);
-   // wv may not be present already   
-   return rc;
+   return wv->refcount;
 }
 
+/* Recycles all WordSet's with refcount == 0.
+   WordSet IDs may be buffered inside recycled_buff for reusage in the future */
 void    HG_(WSU_doGC) ( WordSetU* wsu )
 {
+   UInt i, recycled = 0, in_use = 0;
    WordVec* wv;
-   UInt i, startId, endId, wsu_size;
-   UInt toCheck = GC_STEP_SIZE;
    
-   wsu_size = wsu->ix2vec_used;
-   if (toCheck >= wsu_size)
-      toCheck = wsu_size - 1;
-   startId = (wsu->last_gc_ix)%wsu_size;
-   endId   = (startId + toCheck)%wsu_size;
-
    tl_assert(wsu->ix2vec_used <= wsu->ix2vec_size);
    if (wsu->ix2vec_used > 0)
       tl_assert(wsu->ix2vec);
    else
       return;
    
-   for (i = startId; i != endId; i = (i+1)%wsu_size) {
+   for (i = 1; i < wsu->ix2vec_used; i++) {
        wv = wsu->ix2vec[i];
-       if (wv == NULL || wv->refcount > 0)
-          continue;
-       HG_(recycleWS)(wsu, i);
+       if (wv == NULL)
+          continue; // "i" was recycled, not re-used yet
+       if (wv->refcount > 0) {
+          in_use++;
+          continue; // "i" is an active WordSet
+       }
+       recycleWS(wsu, i);
+       recycled++;
    }
-   wsu->last_gc_ix = i;
+   if (0) VG_(printf)("GC:  recycled %5d WordSets; %5d/%5d in use\n",
+                                 recycled, in_use, wsu->ix2vec_used);
+   WCache_INVAL(wsu->cache_addTo);
+   WCache_INVAL(wsu->cache_delFrom);
+   WCache_INVAL(wsu->cache_intersect);
+   WCache_INVAL(wsu->cache_minus);
 }
 
 // Get the current refcount of ws.
@@ -759,7 +762,8 @@ void HG_(ppWS) ( WordSetU* wsu, WordSet ws )
 void HG_(ppWSUstats) ( WordSetU* wsu, HChar* name )
 {
    Int i;
-   Int d_size = 10;
+   WordVec * wv;
+   Int size, d_size = 10;
    Int size_distribution[10] = {0,0,0,0,0,0,0,0,0,0};
 
    VG_(printf)("   WordSet \"%s\":\n", name);
@@ -781,13 +785,14 @@ void HG_(ppWSUstats) ( WordSetU* wsu, HChar* name )
    VG_(printf)("      elementOf    %,10u\n",   wsu->n_elementOf);
    VG_(printf)("      isSubsetOf   %,10u\n",   wsu->n_isSubsetOf);
    VG_(printf)("      cardinality  %,10u\n",   (int)HG_(cardinalityWSU)(wsu));
+   VG_(printf)("      created      %,10u\n",   wsu->n_create);
    VG_(printf)("      recycled     %,10u\n",   wsu->n_recycle);
 
    // compute and print size distributions 
    for (i = 0; i < (Int)HG_(cardinalityWSU)(wsu); i++) {
       if (!HG_(saneWS_SLOW(wsu, i))) continue;
-      WordVec *wv = do_ix2vec( wsu, i );
-      Int size = wv->size;
+      wv = do_ix2vec( wsu, i );
+      size = wv->size;
       if (size >= d_size) size = d_size-1;
       size_distribution[size]++;
    }
