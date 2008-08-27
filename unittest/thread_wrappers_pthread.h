@@ -292,6 +292,7 @@ class MyThread {
   See ANNOTATE_PCQ_*.
 
 */
+
 class ProducerConsumerQueue {
  public:
   ProducerConsumerQueue(int unused) {ANNOTATE_PCQ_CREATE(this);}
@@ -302,8 +303,10 @@ class ProducerConsumerQueue {
     mu_.Lock();
       item_t *t = new item_t;
       t->item = item;
+#ifndef DRT_NO_SEM      
       sem_init(&t->sem, 0, 0);
       sem_post(&t->sem);
+#endif
       q_.push(t);
 //      ANNOTATE_PCQ_PUT(this);
     mu_.Unlock();
@@ -324,8 +327,10 @@ class ProducerConsumerQueue {
         q_.pop();
 //        ANNOTATE_PCQ_GET(this);
         item       = t->item;
+#ifndef DRT_NO_SEM      
         sem_wait(&t->sem);
         sem_destroy(&t->sem); 
+#endif
         delete t;
         have_item = true;
       }
@@ -350,8 +355,10 @@ class ProducerConsumerQueue {
       q_.pop();
       //        ANNOTATE_PCQ_GET(this);
       item       = t->item;
+#ifndef DRT_NO_SEM      
       sem_wait(&t->sem);
       sem_destroy(&t->sem); 
+#endif
       delete t;
       have_item = true;
     }

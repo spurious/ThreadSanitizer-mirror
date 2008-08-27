@@ -98,7 +98,6 @@
 // some specific behaviour of the race detector's scheduler.
 
 // Globals and utilities used by several tests. {{{1
-Mutex   MU, MU1, MU2; 
 CondVar CV; 
 int     COND = 0;
 
@@ -276,7 +275,8 @@ void Parent() {
   t.Join();
 }
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB, "test01. TP.");
+//  ANNOTATE_EXPECT_RACE(&GLOB, "test01. TP.");
+  ANNOTATE_BENIGN_RACE(&GLOB, "test01. TP.");
   printf("test01: positive\n");
   Parent();
   printf("\tGLOB=%d\n", GLOB);
@@ -302,6 +302,7 @@ int     GLOB = 0;
 //       CV.Wait(MU) <---/
 //  5. MU.Unlock()
 //  6. write(GLOB)
+Mutex   MU; 
 
 void Waker() {
   usleep(10000);  // Make sure the waiter blocks.
@@ -349,6 +350,7 @@ int     GLOB = 0;
 // 3. MU.LockWhen(COND==1) <---/     
 // 4. MU.Unlock()
 // 5. write(GLOB)
+Mutex   MU; 
 
 void Waker() {
   usleep(100000);  // Make sure the waiter blocks.
@@ -430,6 +432,7 @@ int     GLOB = 0;
 //       CV.Wait(MU) <<< not called   
 //  5. MU.Unlock()      
 //  6. write(GLOB)      
+Mutex   MU; 
 
 void Waker() {
   GLOB = 1; 
@@ -478,6 +481,8 @@ int     GLOB = 0;
 //  6. ANNOTATE_CONDVAR_WAIT(CV, MU) <----/
 //  5. MU.Unlock()      
 //  6. write(GLOB)      
+
+Mutex   MU; 
 
 void Waker() {
   GLOB = 1; 
@@ -529,6 +534,7 @@ int     GLOB = 0;
 // 4. MU.Unlock()
 // 5. write(GLOB)
 
+Mutex   MU; 
 void Waker() {
   GLOB = 1; 
 
@@ -664,6 +670,7 @@ REGISTER_TEST(Run, 10);
 //
 namespace test11 {
 int     GLOB = 0;
+Mutex   MU; 
 void Worker() {
   usleep(100000);
   CHECK(GLOB != 777); 
@@ -692,7 +699,7 @@ void Parent() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB, "test11. FP. Fixed by MSMProp1.");
+//  ANNOTATE_EXPECT_RACE(&GLOB, "test11. FP. Fixed by MSMProp1.");
   printf("test11: negative\n");
   Parent();
   printf("\tGLOB=%d\n", GLOB);
@@ -718,6 +725,7 @@ int     GLOB = 0;
 //                               e. write(GLOB)
                                
 ProducerConsumerQueue Q(INT_MAX);
+Mutex   MU; 
 
 void Putter() {
   MU.Lock();
@@ -737,7 +745,7 @@ void Getter() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB, "test12. FP. Fixed by MSMProp1.");
+//  ANNOTATE_EXPECT_RACE(&GLOB, "test12. FP. Fixed by MSMProp1.");
   printf("test12: negative\n");
   MyThreadArray t(Putter, Getter);
   t.Start();
@@ -765,6 +773,8 @@ int     GLOB = 0;
 //                                     \----> d. MU.LockWhen(COND == 1)
 //                                            e. MU.Unlock()
 //                                            f. write(GLOB)
+Mutex   MU; 
+
 void Waker() {
   MU.Lock();
   GLOB++; 
@@ -787,7 +797,7 @@ void Waiter() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB, "test13. FP. Fixed by MSMProp1.");
+//  ANNOTATE_EXPECT_RACE(&GLOB, "test13. FP. Fixed by MSMProp1.");
   printf("test13: negative\n");
   COND = 0;
 
@@ -831,7 +841,7 @@ void Getter() {
   GLOB++;
 }
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB, "test14. FP. Fixed by MSMProp1.");
+//  ANNOTATE_EXPECT_RACE(&GLOB, "test14. FP. Fixed by MSMProp1.");
   printf("test14: negative\n");
   MyThreadArray t(Getter, Putter1, Putter2);
   t.Start();
@@ -853,6 +863,7 @@ namespace test15 {
 //                                          c. read(GLOB)
 
 int     GLOB = 0;
+Mutex   MU; 
 
 void Waker() {
   GLOB = 2;
@@ -904,6 +915,7 @@ namespace test16 {
 //
 //
 int     GLOB = 0;
+Mutex   MU; 
 Mutex MU2; 
 
 void Worker() {
@@ -921,7 +933,7 @@ void Worker() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB, "test16. FP. Fixed by MSMProp1 + Barrier support.");
+//  ANNOTATE_EXPECT_RACE(&GLOB, "test16. FP. Fixed by MSMProp1 + Barrier support.");
   COND = 2;
   printf("test16: negative\n");
   MyThreadArray t(Worker, Worker);
@@ -937,6 +949,7 @@ REGISTER_TEST2(Run, 16, FEATURE|NEEDS_ANNOTATIONS);
 namespace test17 {
 // Same as test16, but with 3 threads.
 int     GLOB = 0;
+Mutex   MU; 
 Mutex MU2; 
 
 void Worker() {
@@ -954,7 +967,7 @@ void Worker() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB, "test17. FP. Fixed by MSMProp1 + Barrier support.");
+//  ANNOTATE_EXPECT_RACE(&GLOB, "test17. FP. Fixed by MSMProp1 + Barrier support.");
   COND = 3;
   printf("test17: negative\n");
   MyThreadArray t(Worker, Worker, Worker);
@@ -969,6 +982,7 @@ REGISTER_TEST2(Run, 17, FEATURE|NEEDS_ANNOTATIONS);
 // test18: TN. Synchronization via Await(), signaller gets there first. {{{1
 namespace test18 {  
 int     GLOB = 0;
+Mutex   MU; 
 // Same as test03, but uses Mutex::Await() instead of Mutex::LockWhen(). 
 
 void Waker() {
@@ -1003,6 +1017,7 @@ REGISTER_TEST2(Run, 18, FEATURE|NEEDS_ANNOTATIONS);
 namespace test19 {  
 int     GLOB = 0;
 // Same as test18, but with AwaitWithTimeout. Do not timeout. 
+Mutex   MU; 
 void Waker() {
   usleep(100000);  // Make sure the waiter blocks.
   GLOB = 1; 
@@ -1034,6 +1049,7 @@ REGISTER_TEST2(Run, 19, FEATURE|NEEDS_ANNOTATIONS);
 // test20: TP. Incorrect synchronization via AwaitWhen(), timeout. {{{1
 namespace test20 {  
 int     GLOB = 0;
+Mutex   MU; 
 // True race. We timeout in AwaitWhen.
 void Waker() {
   GLOB = 1; 
@@ -1064,6 +1080,7 @@ REGISTER_TEST2(Run, 20, FEATURE|NEEDS_ANNOTATIONS);
 namespace test21 {  
 int     GLOB = 0;
 // True race. We timeout in LockWhenWithTimeout().
+Mutex   MU; 
 void Waker() {
   GLOB = 1; 
   usleep(100 * 1000);
@@ -1091,6 +1108,7 @@ REGISTER_TEST2(Run, 21, FEATURE|NEEDS_ANNOTATIONS);
 // test22: TP. Incorrect synchronization via CondVar::WaitWithTimeout(). {{{1
 namespace test22 {  
 int     GLOB = 0;
+Mutex   MU; 
 // True race. We timeout in CondVar::WaitWithTimeout().
 void Waker() {
   GLOB = 1; 
@@ -1126,6 +1144,7 @@ REGISTER_TEST(Run, 22);
 namespace test23 {  
 // Correct synchronization with TryLock, Lock, ReaderTryLock, ReaderLock. 
 int     GLOB = 0;
+Mutex   MU; 
 void Worker_TryLock() {
   for (int i = 0; i < 20; i++) {
     while (true) {
@@ -1187,6 +1206,7 @@ REGISTER_TEST(Run, 23);
 // test24: TN. Synchronization via ReaderLockWhen(). {{{1
 namespace test24 {  
 int     GLOB = 0;
+Mutex   MU; 
 // Same as test03, but uses ReaderLockWhen(). 
 
 void Waker() {
@@ -1218,6 +1238,7 @@ REGISTER_TEST2(Run, 24, FEATURE|NEEDS_ANNOTATIONS);
 // test25: TN. Synchronization via ReaderLockWhenWithTimeout(). {{{1
 namespace test25 {  
 int     GLOB = 0;
+Mutex   MU; 
 // Same as test24, but uses ReaderLockWhenWithTimeout(). 
 // We do not timeout. 
 
@@ -1250,6 +1271,7 @@ REGISTER_TEST2(Run, 25, FEATURE|NEEDS_ANNOTATIONS);
 // test26: TP. Incorrect synchronization via ReaderLockWhenWithTimeout(). {{{1
 namespace test26 {  
 int     GLOB = 0;
+Mutex   MU; 
 // Same as test25, but we timeout and incorrectly assume happens-before. 
 
 void Waker() {
@@ -1313,6 +1335,7 @@ namespace test28 {
 //                                c. read(GLOB)
 ProducerConsumerQueue Q(INT_MAX);
 int     GLOB = 0;
+Mutex   MU; 
 
 void Putter() {
   MU.Lock();
@@ -1349,6 +1372,7 @@ REGISTER_TEST(Run, 28);
 namespace test29 {
 // Similar to test28, but has two Getters and two PCQs. 
 ProducerConsumerQueue *Q1, *Q2;
+Mutex   MU; 
 int     GLOB = 0;
 
 void Putter(ProducerConsumerQueue *q) {
@@ -1536,6 +1560,7 @@ namespace test32 {
 // it is required to trigger the false positive in helgrind 3.3.0. 
 //
 int     GLOB = 0;
+Mutex   MU; 
 
 void Writer() {
   MU.Lock();
@@ -1563,7 +1588,7 @@ void Parent() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB, "test32. FP. Fixed by MSMProp1.");
+//  ANNOTATE_EXPECT_RACE(&GLOB, "test32. FP. Fixed by MSMProp1.");
   printf("test32: negative\n");
   Parent();
   printf("\tGLOB=%d\n", GLOB);
@@ -1583,6 +1608,7 @@ const int N_iter = 48;
 const int Nlog  = 15;
 const int N     = 1 << Nlog;
 static int ARR[N];
+Mutex   MU; 
 
 void Worker() {
   MU.Lock();
@@ -1732,6 +1758,7 @@ namespace test36 {
 //                                e. MU1.Unlock() 
 ProducerConsumerQueue Q(INT_MAX);
 int     GLOB = 0;
+Mutex   MU, MU1; 
 
 void Putter() {
   MU.Lock();
@@ -1771,6 +1798,7 @@ REGISTER_TEST(Run, 36);
 // test37: TN. Simple synchronization (write vs read). {{{1
 namespace test37 {
 int     GLOB = 0;
+Mutex   MU; 
 // Similar to test10, but properly locked. 
 // Writer:             Reader: 
 // 1. MU.Lock()      
@@ -1828,6 +1856,7 @@ namespace test38 {
 
 ProducerConsumerQueue *Q1, *Q2;
 int     GLOB = 0;
+Mutex   MU, MU1, MU2; 
 
 void Putter(ProducerConsumerQueue *q) {
   MU1.Lock();
@@ -1882,6 +1911,7 @@ namespace test39 {
 int     GLOB = 0;
 const int N_threads = 3;
 Barrier barrier(N_threads);
+Mutex   MU; 
 
 void Worker() {
   MU.Lock();
@@ -1891,7 +1921,7 @@ void Worker() {
   CHECK(GLOB == N_threads);
 }
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB, "test39. FP. Fixed by MSMProp1. Barrier.");
+//  ANNOTATE_EXPECT_RACE(&GLOB, "test39. FP. Fixed by MSMProp1. Barrier.");
   printf("test39: negative\n");
   {
     ThreadPool pool(N_threads);
@@ -1932,6 +1962,7 @@ namespace test40 {
 
 ProducerConsumerQueue *Q1, *Q2;
 int     GLOB = 0;
+Mutex   MU, MU1, MU2; 
 
 void Putter(ProducerConsumerQueue *q) {
   MU1.Lock();
@@ -1965,7 +1996,7 @@ void Getter() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB, "test40. FP. Fixed by MSMProp1. Complex Stuff.");
+//  ANNOTATE_EXPECT_RACE(&GLOB, "test40. FP. Fixed by MSMProp1. Complex Stuff.");
   printf("test40: negative\n");
   Q1 = new ProducerConsumerQueue(INT_MAX);
   Q2 = new ProducerConsumerQueue(INT_MAX);
@@ -1999,6 +2030,7 @@ namespace test42 {
 int GLOB = 0;
 int COND = 0;
 int N_threads = 3;
+Mutex   MU; 
 
 void Worker1() {
   GLOB=1;
@@ -2092,6 +2124,7 @@ namespace test44 {
 //                    c. write
 //                    d. MU.Unlock();              
 int     GLOB = 0;
+Mutex   MU; 
 ProducerConsumerQueue Q(INT_MAX);
 void Putter() {
   CHECK(GLOB == 0);
@@ -2108,7 +2141,7 @@ void Getter() {
   MU.Unlock();
 }
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB, "test44. FP. Fixed by MSMProp1.");
+//  ANNOTATE_EXPECT_RACE(&GLOB, "test44. FP. Fixed by MSMProp1.");
   printf("test44: negative\n");
   MyThreadArray t(Putter, Getter);
   t.Start();
@@ -2132,6 +2165,7 @@ namespace test45 {
 //                    c. read
 //                    d. MU.Unlock();              
 int     GLOB = 0;
+Mutex   MU; 
 ProducerConsumerQueue Q(INT_MAX);
 void Putter() {
   CHECK(GLOB == 0);
@@ -2170,6 +2204,7 @@ namespace test46 {
 //                                    b. write
 //                                    c. MU.Unlock();              
 int     GLOB = 0;
+Mutex   MU; 
 void First() {
   GLOB++;
   MU.Lock();
@@ -2212,6 +2247,7 @@ namespace test47 {
 //                                    b. MU.Unlock();              
 //                                    c. write
 int     GLOB = 0;
+Mutex   MU; 
 void First() {
   GLOB=1;
   MU.Lock();
@@ -2317,6 +2353,7 @@ REGISTER_TEST(Run, 49);
 // test50: TP. Synchronization via CondVar. {{{1
 namespace test50 {
 int     GLOB = 0;
+Mutex   MU; 
 // Two last write accesses to GLOB are not synchronized 
 //
 // Waiter:                      Waker: 
@@ -2379,6 +2416,7 @@ REGISTER_TEST2(Run, 50, FEATURE|NEEDS_ANNOTATIONS);
 namespace test51 {
 int     GLOB = 0;
 int     COND = 0;
+Mutex   MU; 
 
 
 // scheduler dependent results because of several signals
@@ -2452,6 +2490,7 @@ REGISTER_TEST(Run, 51);
 namespace test52 {
 int     GLOB = 0;
 int     COND = 0;
+Mutex   MU; 
 
 // same as test51 but the first signal will be lost
 // scheduler dependent results because of several signals
@@ -2517,7 +2556,7 @@ REGISTER_TEST(Run, 52);
 }  // namespace test52
 
 
-// test53: TN. Synchronization via implicit semaphore. {{{1
+// test53: FP. Synchronization via implicit semaphore. {{{1
 namespace test53 {
 // Correctly synchronized test, but the common lockset is empty.
 // The variable FLAG works as an implicit semaphore. 
@@ -2542,6 +2581,7 @@ namespace test53 {
 
 int     GLOB = 0;
 bool    FLAG = false;
+Mutex   MU1, MU2; 
 
 void Initializer() {
   MU1.Lock();
@@ -2568,7 +2608,7 @@ void User() {
 
 void Run() {
   ANNOTATE_EXPECT_RACE(&GLOB, "test53. Implicit semaphore");
-  printf("test53: positive\n");
+  printf("test53: false positive\n");
   MyThreadArray t(Initializer, User, User);
   t.Start();
   t.Join();
@@ -2583,6 +2623,7 @@ namespace test54 {
 // Same as test53, but annotated. 
 int     GLOB = 0;
 bool    FLAG = false;
+Mutex   MU1, MU2; 
 
 void Initializer() {
   MU1.Lock();
@@ -2628,6 +2669,7 @@ namespace test55 {
 // It is covered in detail in this video: 
 // http://youtube.com/watch?v=mrvAqvtWYb4 (slide 36, near 50-th minute). 
 int     GLOB = 0;
+Mutex   MU; 
 
 void Worker_Lock() {
   GLOB = 1;
@@ -2794,6 +2836,7 @@ int     GLOB1 = 1;
 int     GLOB2 = 2;
 int     FLAG2 = 0;
 int     FLAG1 = 0;
+Mutex   MU; 
 // same as test 59 but synchronized with signal-wait.
 
 void Worker2() {
@@ -2980,7 +3023,7 @@ void T3() {
 
 
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB, "TP.");
+  ANNOTATE_EXPECT_RACE(&GLOB, "test64: TP.");
   printf("test64: positive\n");
   MyThreadArray t(T1, T2, T3);
   t.Start();
@@ -3009,6 +3052,7 @@ namespace test65 {
 //
 
 int     GLOB = 0;
+Mutex   MU; 
 ProducerConsumerQueue Q(INT_MAX);
 
 void T1() {
@@ -3032,7 +3076,7 @@ void T3() {
 
 
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB, "TP.");
+  ANNOTATE_EXPECT_RACE(&GLOB, "test65. TP.");
   printf("test65: positive\n");
   MyThreadArray t(T1, T2, T3);
   t.Start();
@@ -3049,6 +3093,7 @@ int     GLOB1 = 0;
 int     GLOB2 = 0;
 int     C1 = 0;
 int     C2 = 0;
+Mutex   MU; 
 
 void Signaller1() {
   GLOB1 = 1;
@@ -3104,6 +3149,7 @@ namespace test67 {
 int     GLOB = 0;
 int     C1 = 0;
 int     C2 = 0;
+Mutex   MU; 
 
 void Signaller1() {
   GLOB = 1;
@@ -3144,7 +3190,7 @@ void Run() {
   t.Join();
   printf("\tGLOB=%d\n", GLOB);
 }
-REGISTER_TEST2(Run, 67, FEATURE|NEEDS_ANNOTATIONS)
+REGISTER_TEST2(Run, 67, FEATURE|NEEDS_ANNOTATIONS|EXCLUDE_FROM_ALL)
 }  // namespace test67
 
 
@@ -3158,6 +3204,7 @@ namespace test68 {
 int     GLOB = 0;
 int     COND = 0;
 const int N_writers = 3;
+Mutex MU, MU1;
 
 void Writer() {
   for (int i = 0; i < 100; i++) {
@@ -3208,6 +3255,7 @@ int     GLOB = 0;
 int     COND = 0;
 const int N_writers = 3;
 int     FAKE_MU = 0;
+Mutex MU, MU1;
 
 void Writer() {
   for (int i = 0; i < 10; i++) {
@@ -3325,6 +3373,7 @@ const int N     = 1 << Nlog;
 static int64_t ARR1[N];
 static int64_t ARR2[N];
 Barrier *barriers[N_iter];
+Mutex   MU; 
 
 void Worker() {
   MU.Lock();
@@ -3395,6 +3444,7 @@ const int N     = 1 << Nlog;
 static int64_t ARR1[N];
 static int ARR2[N];
 Barrier *barriers[N_iter];
+Mutex   MU; 
 
 void Worker() {
   MU.Lock();
@@ -3465,6 +3515,7 @@ REGISTER_TEST2(Run, 73, STABILITY|PERFORMANCE|EXCLUDE_FROM_ALL);
 // test74: PERF. A lot of lock/unlock calls. {{{1
 namespace    test74 {
 const int N = 100000;
+Mutex   MU; 
 void Run() {
   printf("test74: perf\n");
   for (int i = 0; i < N; i++ ) {
@@ -3498,6 +3549,7 @@ void TryWaiter() {
 }
 
 void Run() {
+#ifndef DRT_NO_SEM
   sem_init(&sem[0], 0, 0);
   sem_init(&sem[1], 0, 0);
 
@@ -3517,6 +3569,7 @@ void Run() {
 
   sem_destroy(&sem[0]);
   sem_destroy(&sem[1]);
+#endif
 }
 REGISTER_TEST(Run, 75)
 }  // namespace test75
@@ -3667,6 +3720,7 @@ REGISTER_TEST(Run, 78)
 // test79 TN. Swap. {{{1
 namespace test79 {
 __gnu_cxx::hash_map<int, int> MAP;
+Mutex   MU; 
 
 // Here we use swap to pass hash_map between threads.
 // The synchronization is correct, but w/o ANNOTATE_MUTEX_IS_USED_AS_CONDVAR
@@ -3842,6 +3896,7 @@ class FOO {
 
 const int N = 100000;
 static volatile FOO *foo[N];
+Mutex   MU; 
 
 void Writer() {
   for (int i = 0; i < N; i++) {
@@ -3881,6 +3936,7 @@ namespace test83 {
 // A simplified version of test83 (example of a wrong code).
 // This test, though incorrect, will almost never fail.
 volatile static int *ptr = NULL;
+Mutex   MU; 
 
 void Writer() {
   usleep(100);
@@ -3933,7 +3989,7 @@ void thread_func_2()
 void Run() {
   CHECK(s_dummy[0] == 0);  // Avoid compiler warning about 's_dummy unused'.
   printf("test84: positive\n");
-  ANNOTATE_EXPECT_RACE(&s_y, "TP. true race.");
+  ANNOTATE_EXPECT_RACE(&s_y, "test84: TP. true race.");
   MyThreadArray t(thread_func_1, thread_func_2);
   t.Start();
   t.Join();
@@ -4006,25 +4062,28 @@ struct B: A {
 
 void Waiter() {
   A *a = new B;
-  ANNOTATE_EXPECT_RACE(a, "expected race on a->vptr");
+  ANNOTATE_EXPECT_RACE(a, "test86: expected race on a->vptr");
   printf("Waiter: B created\n");
   Q.Put(a);
   usleep(100000); // so that Worker calls a->f() first.
   printf("Waiter: deleting B\n");
   delete a;
   printf("Waiter: B deleted\n");
+  usleep(100000);
+  printf("Waiter: done\n");
 }
 
 void Worker() {
   A *a = reinterpret_cast<A*>(Q.Get());
   printf("Worker: got A\n");
   a->f();
-  printf("Worker: done\n");
     
   mu.Lock();
   flag_stopped = true;
   ANNOTATE_CONDVAR_SIGNAL(&mu);
   mu.Unlock();
+  usleep(200000);
+  printf("Worker: done\n");
 }
 
 void Run() {
@@ -4206,6 +4265,7 @@ namespace test90 {
 //   -- ANNOTATE_PUBLISH_MEMORY_RANGE (not yet available).
 
 int     *GLOB = 0;
+Mutex   MU; 
 
 void Publisher() {
   MU.Lock();
@@ -4213,10 +4273,11 @@ void Publisher() {
   *GLOB = 777;
   ANNOTATE_EXPECT_RACE(GLOB, "test90. This is a false positve");
   MU.Unlock();
+  usleep(200000);
 }
 
 void Reader() {
-  usleep(100000);
+  usleep(10000);
   while (true) {
     MU.Lock();
     int *p = GLOB;
@@ -4249,6 +4310,7 @@ namespace test91 {
 //
 
 int     *GLOB = 0;
+Mutex   MU, MU1, MU2; 
 
 void Publisher() {
   MU1.Lock();
@@ -4309,6 +4371,7 @@ struct ObjType {
 };
 
 ObjType *GLOB = 0;
+Mutex   MU, MU1, MU2; 
 
 void Publisher() {
   MU1.Lock();
@@ -4575,6 +4638,7 @@ REGISTER_TEST2(Run, 303, RACE_DEMO)
 // test304: Can not trace the memory, since it is a library object. {{{1
 namespace test304 {
 string *STR;
+Mutex   MU; 
 
 void Worker1() {
   sleep(0); 
@@ -4937,6 +5001,7 @@ int     GLOB = 0;
 const int N_threads = 64,
           ITERATIONS = 1000;
 Barrier *barrier[ITERATIONS];
+Mutex   MU; 
 
 void Worker() {
   for (int i = 0; i < ITERATIONS; i++) {
