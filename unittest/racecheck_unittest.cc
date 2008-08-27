@@ -3229,6 +3229,7 @@ void Reader() {
     if (COND == N_writers)
       cont = false;
     MU1.Unlock();
+    usleep(100);
   }
 }
 
@@ -3282,6 +3283,7 @@ void Reader() {
     if (COND == N_writers)
       cont = false;
     MU1.Unlock();
+    usleep(100);
   }
 }
 
@@ -3382,7 +3384,10 @@ void Worker() {
 
   n %= Nlog;
 
+  long t = clock();
+
   for (int it = 0; it < N_iter; it++) {
+    if(n == 0) printf("Iter: %d; %ld\n", it, clock() - t);
     // Iterate N_iter times, block on barrier after each iteration. 
     // This way Helgrind will create new segments after each barrier. 
 
