@@ -3384,10 +3384,14 @@ void Worker() {
 
   n %= Nlog;
 
-  long t = clock();
+  long t0 = clock();
+  long t = t0;
 
   for (int it = 0; it < N_iter; it++) {
-    if(n == 0) printf("Iter: %d; %ld\n", it, clock() - t);
+    if(n == 0) {
+      printf("Iter: %d; %ld %ld\n", it, clock() - t, clock() - t0);
+      t = clock();
+    }
     // Iterate N_iter times, block on barrier after each iteration. 
     // This way Helgrind will create new segments after each barrier. 
 
