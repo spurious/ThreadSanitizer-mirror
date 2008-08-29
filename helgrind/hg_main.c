@@ -2376,7 +2376,6 @@ XArray* tickL_and_joinR_VTS ( Thread* thra, XArray* a, XArray* b )
 
    tl_assert(a);
    tl_assert(b);
-   tl_assert(thra);
    useda = VG_(sizeXA)( a );
    usedb = VG_(sizeXA)( b );
 
@@ -2446,7 +2445,7 @@ XArray* tickL_and_joinR_VTS ( Thread* thra, XArray* a, XArray* b )
 
       /* having laboriously determined (thr, tyma, tymb), do something
          useful with it. */
-      if (thrUID == thra->threadUID) {
+      if (thra && thrUID == thra->threadUID) {
          if (tyma > 0) {
             /* VTS 'a' actually supplied this value; it is not a
                default zero.  Do the required 'tick' action. */
@@ -7535,22 +7534,14 @@ void evhH__do_cv_signal(Thread *thr, Word cond)
       tl_assert(signalling_seg);
       SEG_unref_prev(fake_seg); // evhH__start_new_segment_for_thread (fake thr)
       fake_seg->prev = signalling_seg;      
-      fake_seg->vts = tickL_and_joinR_VTS(fake_thread, 
+      fake_seg->vts = tickL_and_joinR_VTS(NULL, 
                                           fake_seg->prev->vts, 
                                           fake_seg->other->vts);
       SEG_unref_1(signalling_segid); // lookupFM, addToFM soon
    } else {
-      XArray * fake_VTS = new_VTS();
-      ScalarTS st;
-      st.thrUID = fake_thread->threadUID;
-      st.tym = 1;
-      VG_(addToXA)( fake_VTS, &st );
       SEG_unref_prev(fake_seg); // evhH__start_new_segment_for_thread (fake thr)
       fake_seg->prev = NULL;
-      fake_seg->vts  = tickL_and_joinR_VTS(fake_thread,
-                                           fake_VTS,
-                                           fake_seg->other->vts);
-      VG_(deleteXA)(fake_VTS);
+      fake_seg->vts  = VG_(cloneXA)(fake_seg->other->vts);
    }
    HG_(addToFM)( map_cond_to_Segment, (Word)cond, (Word)(fake_segid) );
    SEG_ref_1(fake_segid); // addToFM
