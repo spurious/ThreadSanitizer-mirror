@@ -91,7 +91,7 @@ Bool    HG_(plausibleWS)    ( WordSetU*, WordSet );
 Bool    HG_(saneWS_SLOW)    ( WordSetU*, WordSet );
 void    HG_(refWS)          ( WordSetU*, WordSet, UInt );
 UInt    HG_(unrefWS)        ( WordSetU*, WordSet, UInt );
-void    HG_(WSU_doGC)       ( WordSetU* );
+void    HG_(WSU_doGC)       ( WordSetU*, Bool );
 
 UWord   HG_(getRefWS)       ( WordSetU*, WordSet );
 

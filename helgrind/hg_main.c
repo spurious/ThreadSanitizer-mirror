@@ -822,17 +822,18 @@ static UWord stats__fake_VTS_bytes_trashed = 0;
 #define SEGMENT_ID_N_CHUNKS   (SEGMENT_ID_MAX / SEGMENT_ID_CHUNK_SIZE) // N1
 
 #ifdef SCE_REFCOUNTING
-#define SEGMENT_RECYCLE_BUFFER_SIZE 1
+const UWord SEGMENT_GC_STEP = -1;
 #else
-#define SEGMENT_RECYCLE_BUFFER_SIZE 1024
+const UWord SEGMENT_GC_STEP = 65536;
 #endif
 
 static struct {
    UInt    size;
    /* Buffer of recycled segment IDs available to reuse */
    XArray* recycled_buff; 
+   UInt    last_gc_ix;
    Segment *chunks[SEGMENT_ID_N_CHUNKS];
-} SegmentArray ={1, NULL, {0}};
+} SegmentArray ={1, NULL, 0, {0}};
 
 
 // Add a new segment, return its number
@@ -5197,14 +5198,22 @@ static void maybe_do_GC ( Bool force )
 {
    UInt i, recycled = 0, in_use = 0;
    static UInt last_gc_time = 0;
-   if (!force && VG_(read_millisecond_timer)() - last_gc_time < 10000)
+   if (!force && VG_(read_millisecond_timer)() - last_gc_time < 1500)
       return;
    last_gc_time = VG_(read_millisecond_timer)();/**/
    
    shmem__flush_and_invalidate_scache ();
-   HG_(WSU_doGC)(univ_ssets);
+   HG_(WSU_doGC)(univ_ssets, force);
    
-   for (i = 1; i < SegmentArray.size; i++) {
+   UInt SA_size = SegmentArray.size,
+        startId = SegmentArray.last_gc_ix % SA_size,
+        count   = 0,
+        toCheck = force ? SA_size : SEGMENT_GC_STEP;
+   if (toCheck > SA_size)
+      toCheck = SA_size;
+   for (i = startId, count = 0; count < toCheck; i = (i+1)%SA_size, count++) {
+      if (i == 0)
+         continue;
       Segment * seg = &SegmentArray.chunks[i / SEGMENT_ID_CHUNK_SIZE]
                                           [i % SEGMENT_ID_CHUNK_SIZE];
       if (seg->refcount > 0) {
@@ -5215,8 +5224,12 @@ static void maybe_do_GC ( Bool force )
          recycled++;
       }
    }
+   SegmentArray.last_gc_ix = i;
    if (0) VG_(printf)("SEG: recycled %5d WordSets; %5d/%5d in use\n",
                                     recycled, in_use, SegmentArray.size);
+   if (1)
+      VG_(printf)("GC took %3dms\n",
+            VG_(read_millisecond_timer)() - last_gc_time);
 }
 /* ------------ Basic shadow memory read/write ops ------------ */
 
@@ -10629,10 +10642,10 @@ static void pp_stats ( Char * caller )
    if (1) {
       HG_(ppWSUstats)( univ_ssets, "univ_ssets" );
       VG_(printf)("\n");
-      HG_(ppWSUstats)( univ_lsets, "univ_lsets" );
+      /*HG_(ppWSUstats)( univ_lsets, "univ_lsets" );
       VG_(printf)("\n");
       HG_(ppWSUstats)( univ_laog,  "univ_laog" );
-      VG_(printf)("\n");
+      VG_(printf)("\n");*/
    }
 
    VG_(printf)(" hbefore: %,10lu queries\n",        stats__hbefore_queries);

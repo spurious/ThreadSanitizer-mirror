@@ -143,14 +143,6 @@ typedef
 
 typedef TEMPLATE_WORDVEC() WordVec;
 
-#ifdef SCE_REFCOUNTING
-#define N_RECYCLE_CACHE_MAX 1
-#define GC_STEP_SIZE 0xFFFFFFFF
-#else
-#define N_RECYCLE_CACHE_MAX 256
-#define GC_STEP_SIZE 65536
-#endif
-
 /* ix2vec[0 .. ix2vec_used-1] are pointers to the lock sets (WordVecs)
    really.  vec2ix is the inverse mapping, mapping WordVec* to the
    corresponding ix2vec entry number.  The two mappings are mutually
@@ -172,6 +164,7 @@ struct _WordSetU {
       WCache    cache_minus;
       /* Buffer of recycled IDs available to reuse */
       XArray *  recycled_buff;
+      UWord     last_gc_ix;
       /* Stats */
       UWord     n_add;
       UWord     n_add_uncached;
@@ -601,11 +594,18 @@ UInt    HG_(unrefWS)        ( WordSetU *wsu, WordSet ws, UInt sz)
    return wv->refcount;
 }
 
+#ifdef SCE_REFCOUNTING
+const UWord GC_STEP_SIZE = -1;
+#else
+const UWord GC_STEP_SIZE = 32768;
+#endif
+
 /* Recycles all WordSet's with refcount == 0.
    WordSet IDs may be buffered inside recycled_buff for reusage in the future */
-void    HG_(WSU_doGC) ( WordSetU* wsu )
+void    HG_(WSU_doGC) ( WordSetU* wsu, Bool full_recycle )
 {
-   UInt i, recycled = 0, in_use = 0;
+   UInt i, recycled = 0, in_use = 0, count = 0;
+   UInt startId, wsu_size, toCheck = GC_STEP_SIZE;
    WordVec* wv;
    
    tl_assert(wsu->ix2vec_used <= wsu->ix2vec_size);
@@ -614,7 +614,17 @@ void    HG_(WSU_doGC) ( WordSetU* wsu )
    else
       return;
    
-   for (i = 1; i < wsu->ix2vec_used; i++) {
+   wsu_size = wsu->ix2vec_used;
+   if (toCheck > wsu_size)
+      toCheck = wsu_size;
+   if (full_recycle) {
+      startId = 0;
+      toCheck = wsu_size;
+   } else {
+      startId = (wsu->last_gc_ix)%wsu_size;
+   }
+   
+   for (i = startId, count = 0; count < toCheck; i = (i+1)%wsu_size, count++) {
        wv = wsu->ix2vec[i];
        if (wv == NULL)
           continue; // "i" was recycled, not re-used yet
@@ -625,6 +635,7 @@ void    HG_(WSU_doGC) ( WordSetU* wsu )
        recycleWS(wsu, i);
        recycled++;
    }
+   wsu->last_gc_ix = i;
    if (0) VG_(printf)("GC:  recycled %5d WordSets; %5d/%5d in use\n",
                                  recycled, in_use, wsu->ix2vec_used);
    WCache_INVAL(wsu->cache_addTo);
