@@ -4385,9 +4385,6 @@ SVal memory_state_machine(Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
                          a, is_w, sz, sv_old, sv_new,
                          maybe_get_lastlock_initpoint(a) );
       if (race_was_recorded) {
-         // never recycle segment sets in sv_old/sv_new
-         SHVAL_SS_ref(sv_old);
-         SHVAL_SS_ref(sv_new);
          // if we did record a race and if this mem was not traced before, 
          // turn tracing on.
          sv_new = mk_SHVAL_RM(is_w, SS_mk_singleton(thr->csegid), 
@@ -9733,7 +9730,7 @@ static Bool record_error_Race ( Thread* thr,
    xe.XE.Race.block_szB      = 0;
    xe.XE.Race.block_rwoffset = 0;
    xe.XE.Race.block_allocdAt = NULL;
-
+   
    // FIXME: tid vs thr
    tl_assert(isWrite == False || isWrite == True);
    tl_assert(szB == 8 || szB == 4 || szB == 2 || szB == 1);
@@ -9771,8 +9768,11 @@ static Bool record_error_Race ( Thread* thr,
    Bool res = VG_(maybe_record_error)( map_threads_reverse_lookup(thr),
                             XE_Race, data_addr, NULL, &xe );
 
-   if (res && destructor_detected) {
-      VG_(message)(Vg_UserMsg, "NOTE: this race was detected inside a DTOR");
+   if (res) {
+      SHVAL_SS_ref(old_sv);
+      SHVAL_SS_ref(new_sv);
+      if (destructor_detected)
+         VG_(message)(Vg_UserMsg, "NOTE: this race was detected inside a DTOR");
    }
    return res;
 }
