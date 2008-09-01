@@ -899,8 +899,8 @@ static void hbefore__invalidate_htable ( void );
 static void SEG_recycle(SegmentID id)
 {
    Segment * seg;
-   if (clo_sanity_flags & SCE_HBEFORE)
-      return; // this segment can be used in DFS, don't re-use its id
+   if (clo_sanity_flags > 0)
+      return; // sanity checks do call is_sane_SEG so we shouldn't recycle SEGs
    seg = SEG_get(id);
    DEBUG_ONLY(seg->magic = ~Segment_MAGIC);
    DEBUG_ONLY(seg->other_hint = 'R');
