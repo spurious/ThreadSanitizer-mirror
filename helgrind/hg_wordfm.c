@@ -72,6 +72,7 @@
 
 
 #define HG_(str) VGAPPEND(vgHelgrind_,str)
+#include "hg_internal.h"
 #include "hg_wordfm.h"
 
 //------------------------------------------------------------------//
@@ -439,10 +440,12 @@ static void stackClear(WordFM* fm)
 {
    Int i;
    tl_assert(fm);
-   for (i = 0; i < WFM_STKMAX; i++) {
-      fm->nodeStack[i] = NULL;
-      fm->numStack[i]  = 0;
-   }
+   DEBUG_ONLY(
+      for (i = 0; i < WFM_STKMAX; i++) {
+         fm->nodeStack[i] = NULL;
+         fm->numStack[i]  = 0;
+      }
+   );
    fm->stackTop = 0;
 }
 
