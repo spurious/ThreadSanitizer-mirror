@@ -4552,6 +4552,47 @@ void Run() {
 REGISTER_TEST(Run, 95);
 }  // namespace test95
 
+// test96: FP. tricky LockSet behaviour {{{1
+// 3 threads access the same memory with three different
+// locksets: {A, B}, {B, C}, {C, A}.
+// These locksets have empty intersection
+namespace test96 {
+int     GLOB = 0;
+
+Mutex A, B, C;
+
+void Thr1() {
+  A.Lock();
+  B.Lock();
+  GLOB++;
+  B.Unlock();
+  A.Unlock();
+}
+void Thr2() {
+   B.Lock();
+   C.Lock();
+   GLOB++;
+   C.Unlock();
+   B.Unlock();
+}
+void Thr3() {
+   A.Lock();
+   C.Lock();
+   GLOB++;
+   C.Unlock();
+   A.Unlock(); 
+}
+void Run() {
+  printf("test96: FP. tricky LockSet behaviour\n");
+  ANNOTATE_EXPECT_RACE(&GLOB, "test96: FP.");
+  MyThreadArray mta(Thr1, Thr2, Thr3);
+  mta.Start();
+  mta.Join();
+  printf("\tGLOB=%d\n", GLOB);
+}
+REGISTER_TEST(Run, 96);
+}  // namespace test96
+
 // test300: {{{1
 namespace test300 {
 int     GLOB = 0;
