@@ -5227,7 +5227,7 @@ static void maybe_do_GC ( Bool force )
    SegmentArray.last_gc_ix = i;
    if (0) VG_(printf)("SEG: recycled %5d WordSets; %5d/%5d in use\n",
                                     recycled, in_use, SegmentArray.size);
-   if (1)
+   if (0)
       VG_(printf)("GC took %3dms\n",
             VG_(read_millisecond_timer)() - last_gc_time);
 }
@@ -5501,7 +5501,7 @@ static Bool valid_value_is_below_me_16 ( UShort descr, UWord toff ) {
    }
 }
 
-static void shadow_mem_read8 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
+static void shadow_mem_read8 ( Thread* thr_acc, Addr a ) {
    CacheLine* cl; 
    UWord      cloff, tno, toff;
    SVal       svOld, svNew;
@@ -5523,7 +5523,7 @@ static void shadow_mem_read8 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
    svNew = msm_handle_read( thr_acc, a, svOld, 1 );
    cl->svals[cloff] = svNew;
 }
-static void shadow_mem_read16 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
+static void shadow_mem_read16 ( Thread* thr_acc, Addr a ) {
    CacheLine* cl; 
    UWord      cloff, tno, toff;
    SVal       svOld, svNew;
@@ -5553,12 +5553,12 @@ static void shadow_mem_read16 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
    return;
   slowcase: /* misaligned, or must go further down the tree */
    stats__cline_16to8splits++;
-   shadow_mem_read8( thr_acc, a + 0, 0/*unused*/ );
-   shadow_mem_read8( thr_acc, a + 1, 0/*unused*/ );
+   shadow_mem_read8( thr_acc, a + 0 );
+   shadow_mem_read8( thr_acc, a + 1 );
 }
 
 __attribute__((noinline))
-static void shadow_mem_read32_SLOW ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
+static void shadow_mem_read32_SLOW ( Thread* thr_acc, Addr a ) {
    CacheLine* cl; 
    UWord      cloff, tno, toff;
    SVal       svOld, svNew;
@@ -5586,11 +5586,11 @@ static void shadow_mem_read32_SLOW ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
    return;
   slowcase: /* misaligned, or must go further down the tree */
    stats__cline_32to16splits++;
-   shadow_mem_read16( thr_acc, a + 0, 0/*unused*/ );
-   shadow_mem_read16( thr_acc, a + 2, 0/*unused*/ );
+   shadow_mem_read16( thr_acc, a + 0 );
+   shadow_mem_read16( thr_acc, a + 2 );
 }
 inline
-static void shadow_mem_read32 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
+static void shadow_mem_read32 ( Thread* thr_acc, Addr a ) {
    CacheLine* cl; 
    UWord      cloff, tno, toff;
    UShort     descr;
@@ -5608,11 +5608,11 @@ static void shadow_mem_read32 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
    }
    return;
   slowcase: /* misaligned, or not at this level in the tree */
-   shadow_mem_read32_SLOW( thr_acc, a, uuOpaque );
+   shadow_mem_read32_SLOW( thr_acc, a );
 }
 
 inline
-static void shadow_mem_read64 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
+static void shadow_mem_read64 ( Thread* thr_acc, Addr a ) {
    CacheLine* cl; 
    UWord      cloff, tno, toff;
    SVal       svOld, svNew;
@@ -5634,11 +5634,11 @@ static void shadow_mem_read64 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
    return;
   slowcase: /* misaligned, or must go further down the tree */
    stats__cline_64to32splits++;
-   shadow_mem_read32( thr_acc, a + 0, 0/*unused*/ );
-   shadow_mem_read32( thr_acc, a + 4, 0/*unused*/ );
+   shadow_mem_read32( thr_acc, a + 0 );
+   shadow_mem_read32( thr_acc, a + 4 );
 }
 
-static void shadow_mem_write8 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
+static void shadow_mem_write8 ( Thread* thr_acc, Addr a ) {
    CacheLine* cl; 
    UWord      cloff, tno, toff;
    SVal       svOld, svNew;
@@ -5660,7 +5660,7 @@ static void shadow_mem_write8 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
    svNew = msm_handle_write( thr_acc, a, svOld, 1 );
    cl->svals[cloff] = svNew;
 }
-static void shadow_mem_write16 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
+static void shadow_mem_write16 ( Thread* thr_acc, Addr a ) {
    CacheLine* cl; 
    UWord      cloff, tno, toff;
    SVal       svOld, svNew;
@@ -5689,12 +5689,12 @@ static void shadow_mem_write16 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
    return;
   slowcase: /* misaligned, or must go further down the tree */
    stats__cline_16to8splits++;
-   shadow_mem_write8( thr_acc, a + 0, 0/*unused*/ );
-   shadow_mem_write8( thr_acc, a + 1, 0/*unused*/ );
+   shadow_mem_write8( thr_acc, a + 0 );
+   shadow_mem_write8( thr_acc, a + 1 );
 }
 
 __attribute__((noinline))
-static void shadow_mem_write32_SLOW ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
+static void shadow_mem_write32_SLOW ( Thread* thr_acc, Addr a ) {
    CacheLine* cl; 
    UWord      cloff, tno, toff;
    SVal       svOld, svNew;
@@ -5722,11 +5722,11 @@ static void shadow_mem_write32_SLOW ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
    return;
   slowcase: /* misaligned, or must go further down the tree */
    stats__cline_32to16splits++;
-   shadow_mem_write16( thr_acc, a + 0, 0/*unused*/ );
-   shadow_mem_write16( thr_acc, a + 2, 0/*unused*/ );
+   shadow_mem_write16( thr_acc, a + 0 );
+   shadow_mem_write16( thr_acc, a + 2 );
 }
 inline
-static void shadow_mem_write32 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
+static void shadow_mem_write32 ( Thread* thr_acc, Addr a ) {
    CacheLine* cl; 
    UWord      cloff, tno, toff;
    UShort     descr;
@@ -5744,11 +5744,11 @@ static void shadow_mem_write32 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
    }
    return;
   slowcase: /* misaligned, or must go further down the tree */
-   shadow_mem_write32_SLOW( thr_acc, a, uuOpaque );
+   shadow_mem_write32_SLOW( thr_acc, a );
 }
 
 inline
-static void shadow_mem_write64 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
+static void shadow_mem_write64 ( Thread* thr_acc, Addr a ) {
    CacheLine* cl; 
    UWord      cloff, tno, toff;
    SVal       svOld, svNew;
@@ -5770,8 +5770,8 @@ static void shadow_mem_write64 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
    return;
   slowcase: /* misaligned, or must go further down the tree */
    stats__cline_64to32splits++;
-   shadow_mem_write32( thr_acc, a + 0, 0/*unused*/ );
-   shadow_mem_write32( thr_acc, a + 4, 0/*unused*/ );
+   shadow_mem_write32( thr_acc, a + 0 );
+   shadow_mem_write32( thr_acc, a + 4 );
 }
 
 static void shadow_mem_set8 ( Thread* uu_thr_acc, Addr a, SVal svNew ) {
@@ -7175,28 +7175,28 @@ void evh__mem_help_read_1(Addr a, Addr sp) {
    if (HACKY_FILTER 
        && ((UWord)(a - sp + VG_STACK_REDZONE_SZB)) <= HACKY_FILTER_SIZE)
       return;
-   shadow_mem_read8( get_current_Thread_in_C_C(), a, 0/*unused*/ );
+   shadow_mem_read8( get_current_Thread_in_C_C(), a );
 }
 static VG_REGPARM(2)
 void evh__mem_help_read_2(Addr a, Addr sp) {
    if (HACKY_FILTER 
        && ((UWord)(a - sp + VG_STACK_REDZONE_SZB)) <= HACKY_FILTER_SIZE)
       return;
-   shadow_mem_read16( get_current_Thread_in_C_C(), a, 0/*unused*/ );
+   shadow_mem_read16( get_current_Thread_in_C_C(), a );
 }
 static VG_REGPARM(2)
 void evh__mem_help_read_4(Addr a, Addr sp) {
    if (HACKY_FILTER 
        && ((UWord)(a - sp + VG_STACK_REDZONE_SZB)) <= HACKY_FILTER_SIZE)
       return;
-   shadow_mem_read32( get_current_Thread_in_C_C(), a, 0/*unused*/ );
+   shadow_mem_read32( get_current_Thread_in_C_C(), a );
 }
 static VG_REGPARM(2)
 void evh__mem_help_read_8(Addr a, Addr sp) {
    if (HACKY_FILTER 
        && ((UWord)(a - sp + VG_STACK_REDZONE_SZB)) <= HACKY_FILTER_SIZE)
       return;
-   shadow_mem_read64( get_current_Thread_in_C_C(), a, 0/*unused*/ );
+   shadow_mem_read64( get_current_Thread_in_C_C(), a );
 }
 static VG_REGPARM(3)
 void evh__mem_help_read_N(Addr a, SizeT size, Addr sp) {
@@ -7211,28 +7211,28 @@ void evh__mem_help_write_1(Addr a, Addr sp) {
    if (HACKY_FILTER
        && ((UWord)(a - sp + VG_STACK_REDZONE_SZB)) <= HACKY_FILTER_SIZE)
       return;
-   shadow_mem_write8( get_current_Thread_in_C_C(), a, 0/*unused*/ );
+   shadow_mem_write8( get_current_Thread_in_C_C(), a );
 }
 static VG_REGPARM(2)
 void evh__mem_help_write_2(Addr a, Addr sp) {
    if (HACKY_FILTER
        && ((UWord)(a - sp + VG_STACK_REDZONE_SZB)) <= HACKY_FILTER_SIZE)
       return;
-   shadow_mem_write16( get_current_Thread_in_C_C(), a, 0/*unused*/ );
+   shadow_mem_write16( get_current_Thread_in_C_C(), a );
 }
 static VG_REGPARM(2)
 void evh__mem_help_write_4(Addr a, Addr sp) {
    if (HACKY_FILTER
        && ((UWord)(a - sp + VG_STACK_REDZONE_SZB)) <= HACKY_FILTER_SIZE)
       return;
-   shadow_mem_write32( get_current_Thread_in_C_C(), a, 0/*unused*/ );
+   shadow_mem_write32( get_current_Thread_in_C_C(), a );
 }
 static VG_REGPARM(2)
 void evh__mem_help_write_8(Addr a, Addr sp) {
    if (HACKY_FILTER
        && ((UWord)(a - sp + VG_STACK_REDZONE_SZB)) <= HACKY_FILTER_SIZE)
       return;
-   shadow_mem_write64( get_current_Thread_in_C_C(), a, 0/*unused*/ );
+   shadow_mem_write64( get_current_Thread_in_C_C(), a );
 }
 static VG_REGPARM(3)
 void evh__mem_help_write_N(Addr a, SizeT size, Addr sp) {
