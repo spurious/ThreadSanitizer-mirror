@@ -1,27 +1,39 @@
 digraph exa1 {
   rankdir="LR"
-  node [shape=plaintext fontname="Courier" rankdir="LR"];
+  node [shape=plaintext style="bold" fontname="Courier" rankdir="LR" labeljust="r" fontsize=18];
    T1  [label=<<TABLE BGCOLOR="white">  
-      <tr>  <td port="1"> Thread T1 </td> </tr> 
+      <tr>  <td port="0"> Thread T1 </td> </tr> 
       <tr>  <td> A = ... </td> </tr> 
-      <tr>  <td port="signal"> Signal(H) </td> </tr> 
-      <tr>  <td> WriterLock(L) </td> </tr> 
+      <tr>  <td bgcolor="lightblue" port="signal"> Signal(H) </td> </tr> 
+      <tr>  <td bgcolor="yellow"> WriterLock(L) </td> </tr> 
       <tr>  <td> B = ... </td> </tr> 
-      <tr>  <td> Unlock(L) </td> </tr> 
-      <tr>  <td> ...  </td> </tr> 
+      <tr>  <td bgcolor="yellow"> Unlock(L) </td> </tr> 
+      <tr>  <td>   </td> </tr> 
+      <tr>  <td>   </td> </tr> 
+      <tr>  <td>   </td> </tr> 
+      <tr>  <td>   </td> </tr> 
+      <tr>  <td bgcolor="lightblue" port="wait"> Wait(H) </td> </tr> 
+      <tr>  <td> A = ... </td> </tr> 
       </TABLE>>
     ]
 
    T2 [label=<<TABLE BGCOLOR="white">  
-      <tr>  <td> Thread T2 </td> </tr> 
-      <tr>  <td> ...  </td> </tr> 
-      <tr>  <td port="wait"> Wait(H) </td> </tr> 
+      <tr>  <td port="0"> Thread T2 </td> </tr> 
+      <tr>  <td>   </td> </tr> 
+      <tr>  <td>   </td> </tr> 
+      <tr>  <td bgcolor="lightblue" port="wait"> Wait(H) </td> </tr> 
       <tr>  <td> A = ... </td> </tr> 
-      <tr>  <td> ReaderLock(L) </td> </tr> 
+      <tr>  <td>   </td> </tr> 
+      <tr>  <td bgcolor="yellow"> ReaderLock(L) </td> </tr> 
       <tr>  <td> ... = B </td> </tr> 
-      <tr>  <td> Unlock(L) </td> </tr> 
+      <tr>  <td bgcolor="yellow"> Unlock(L) </td> </tr> 
+      <tr>  <td bgcolor="lightblue" port="signal"> Signal(H) </td> </tr> 
+      <tr>  <td>  </td> </tr> 
+      <tr>  <td>  </td> </tr> 
       </TABLE>>
     ]
 
-    T1:signal -> T2:wait [rankdir="LR"];
+    T1:0 -> T2:0 [color="white" style="invis"];
+    T1:signal -> T2:wait;
+    T2:signal -> T1:wait;
 }
