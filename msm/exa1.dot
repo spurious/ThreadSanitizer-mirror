@@ -1,0 +1,4 @@
+digraph exa1 {
+  a -> b;
+
+}
