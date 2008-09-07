@@ -1,8 +1,8 @@
 digraph exa1 {
   rankdir="LR"
-  node [shape=plaintext style="bold" fontname="Courier" rankdir="LR" labeljust="r" fontsize=18];
+  node [shape=plaintext fontname="Helvetica" rankdir="LR" labeljust="r" fontsize=18 ];
    T1  [label=<<TABLE BGCOLOR="white">  
-      <tr>  <td port="0"> Thread T1 </td> </tr> 
+      <tr>  <td port="0" > Thread T1 </td> </tr> 
       <tr>  <td> A = ... </td> </tr> 
       <tr>  <td bgcolor="yellow" port="signal"> Signal(H) </td> </tr> 
       <tr>  <td bgcolor="lightblue"> WriterLock(L) </td> </tr> 
