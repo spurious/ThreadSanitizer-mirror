@@ -4,15 +4,15 @@ digraph exa1 {
    T1  [label=<<TABLE BGCOLOR="white">  
       <tr>  <td port="0"> Thread T1 </td> </tr> 
       <tr>  <td> A = ... </td> </tr> 
-      <tr>  <td bgcolor="lightblue" port="signal"> Signal(H) </td> </tr> 
-      <tr>  <td bgcolor="yellow"> WriterLock(L) </td> </tr> 
+      <tr>  <td bgcolor="yallow" port="signal"> Signal(H) </td> </tr> 
+      <tr>  <td bgcolor="lightblue"> WriterLock(L) </td> </tr> 
       <tr>  <td> B = ... </td> </tr> 
-      <tr>  <td bgcolor="yellow"> Unlock(L) </td> </tr> 
+      <tr>  <td bgcolor="lightblue"> Unlock(L) </td> </tr> 
       <tr>  <td>   </td> </tr> 
       <tr>  <td>   </td> </tr> 
       <tr>  <td>   </td> </tr> 
       <tr>  <td>   </td> </tr> 
-      <tr>  <td bgcolor="lightblue" port="wait"> Wait(H) </td> </tr> 
+      <tr>  <td bgcolor="yallow" port="wait"> Wait(H) </td> </tr> 
       <tr>  <td> A = ... </td> </tr> 
       </TABLE>>
     ]
@@ -21,13 +21,13 @@ digraph exa1 {
       <tr>  <td port="0"> Thread T2 </td> </tr> 
       <tr>  <td>   </td> </tr> 
       <tr>  <td>   </td> </tr> 
-      <tr>  <td bgcolor="lightblue" port="wait"> Wait(H) </td> </tr> 
+      <tr>  <td bgcolor="yallow" port="wait"> Wait(H) </td> </tr> 
       <tr>  <td> A = ... </td> </tr> 
       <tr>  <td>   </td> </tr> 
-      <tr>  <td bgcolor="yellow"> ReaderLock(L) </td> </tr> 
+      <tr>  <td bgcolor="lightblue"> ReaderLock(L) </td> </tr> 
       <tr>  <td> ... = B </td> </tr> 
-      <tr>  <td bgcolor="yellow"> Unlock(L) </td> </tr> 
-      <tr>  <td bgcolor="lightblue" port="signal"> Signal(H) </td> </tr> 
+      <tr>  <td bgcolor="lightblue"> Unlock(L) </td> </tr> 
+      <tr>  <td bgcolor="yallow" port="signal"> Signal(H) </td> </tr> 
       <tr>  <td>  </td> </tr> 
       <tr>  <td>  </td> </tr> 
       </TABLE>>
