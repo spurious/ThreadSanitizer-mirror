@@ -1,0 +1,28 @@
+digraph exa1 {
+  rankdir="LR"
+  node [shape=plaintext fontname="Helvetica" rankdir="LR" labeljust="r" fontsize=18 ];
+   T1  [label=<<TABLE BGCOLOR="white">  
+      <tr>  <td port="0"> Thread T1 </td> </tr> 
+      <tr>  <td> Seg1 </td> </tr> 
+      <tr>  <td bgcolor="yellow" port="signal"> Signal(H) </td> </tr> 
+      <tr>  <td> Seg3   </td> </tr> 
+      <tr>  <td port="end">   </td> </tr> 
+      </TABLE>>
+    ]
+
+
+   T2  [label=<<TABLE BGCOLOR="white">  
+      <tr>  <td port="0"> Thread T2 </td> </tr> 
+      <tr>  <td> Seg2 </td> </tr> 
+      <tr>  <td>   </td> </tr> 
+      <tr>  <td bgcolor="yellow" port="wait"> Wait(H) </td> </tr> 
+      <tr>  <td port="end"> Seg4   </td> </tr> 
+      </TABLE>>
+    ]
+
+
+
+    T1:0 -> T2:0 [color="white" style="invis"];
+    T1:end -> T2:end [color="white" style="invis"];
+    T1:signal -> T2:wait;
+}
