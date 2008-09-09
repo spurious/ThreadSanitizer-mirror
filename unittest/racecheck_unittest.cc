@@ -3389,7 +3389,7 @@ void Worker() {
 
   for (int it = 0; it < N_iter; it++) {
     if(n == 0) {
-      printf("Iter: %d; %ld %ld\n", it, clock() - t, clock() - t0);
+      //printf("Iter: %d; %ld %ld\n", it, clock() - t, clock() - t0);
       t = clock();
     }
     // Iterate N_iter times, block on barrier after each iteration. 
@@ -3435,8 +3435,8 @@ void Run() {
   for (int i = 0; i < N_iter; i++)
     delete barriers[i];
 
-  printf("\tGLOB=%d; ARR[1]=%d; ARR[7]=%d; ARR[N-1]=%d\n", 
-         GLOB, (int)ARR1[1], (int)ARR1[7], (int)ARR1[N-1]);
+  /*printf("\tGLOB=%d; ARR[1]=%d; ARR[7]=%d; ARR[N-1]=%d\n", 
+         GLOB, (int)ARR1[1], (int)ARR1[7], (int)ARR1[N-1]);*/
 }
 REGISTER_TEST2(Run, 72, STABILITY|PERFORMANCE|EXCLUDE_FROM_ALL);
 }  // namespace test72
@@ -3514,8 +3514,8 @@ void Run() {
   for (int i = 0; i < N_iter; i++)
     delete barriers[i];
 
-  printf("\tGLOB=%d; ARR[1]=%d; ARR[7]=%d; ARR[N-1]=%d\n", 
-         GLOB, (int)ARR1[1], (int)ARR1[7], (int)ARR1[N-1]);
+  /*printf("\tGLOB=%d; ARR[1]=%d; ARR[7]=%d; ARR[N-1]=%d\n", 
+         GLOB, (int)ARR1[1], (int)ARR1[7], (int)ARR1[N-1]);*/
 }
 REGISTER_TEST2(Run, 73, STABILITY|PERFORMANCE|EXCLUDE_FROM_ALL);
 }  // namespace test73
@@ -4864,7 +4864,8 @@ void Run() {
    t.Join();
 }
 
-REGISTER_TEST2(Run, 502, MEMORY_USAGE | PRINT_STATS | EXCLUDE_FROM_ALL)
+REGISTER_TEST2(Run, 502, MEMORY_USAGE | PRINT_STATS | EXCLUDE_FROM_ALL
+                              | PERFORMANCE)
 }  // namespace test502
 
 // test503: produce lots of segments with simple HB-relations {{{1
