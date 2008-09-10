@@ -1032,9 +1032,10 @@ static void maybe_do_GC ( Bool force );
 
 static SegmentID mk_Segment ( Thread* thr, Segment* prev, Segment* other ) {
    SegmentID id;
+   Segment* seg;
    maybe_do_GC(False);
-   id    = SEG_add();
-   Segment* seg    = SEG_get(id);
+   id  = SEG_add();
+   seg = SEG_get(id);
    seg->dfsver     = 0;
    seg->thr        = thr;
    seg->prev       = prev;
@@ -3916,8 +3917,8 @@ static void published_memory_range_release (Thread *thr, Addr a, SizeT len)
 static Bool published_memory_range_acquire (Thread *thr, Addr a) 
 {
    Addr addr = 0;
-   tl_assert(published_memory_map);  // The map must be created already.
    SizeT len = 0;
+   tl_assert(published_memory_map);  // The map must be created already.
    // Check if we have this address in map.
    HG_(initIterAtFM)(published_memory_map, a);
    if (HG_(nextIterFM)(published_memory_map, (Word*)&addr, (Word*)&len)) {
@@ -4028,6 +4029,8 @@ SegmentSet do_SS_update_MULTI ( /*OUT*/Bool* hb_all_p,
    // fill in the arrays add_vec/del_vec and try a shortcut
    add_vec[add_size++] = currS;
    for (i = 0; i < oldSS_size; i++) {
+      Bool hb;
+      Thread *thr_of_S;
       SegmentID S = SS_get_element(oldSS, i);
       if (currS == S) {
          // shortcut: 
@@ -4043,9 +4046,8 @@ SegmentSet do_SS_update_MULTI ( /*OUT*/Bool* hb_all_p,
          return oldSS;
       }
       // compute happens-before
-      Bool hb = False;
-      Thread *thr_of_S = SEG_get(S)->thr;
-
+      hb = False;
+      thr_of_S = SEG_get(S)->thr;
       if (thr_of_S == thr // Same thread. 
           || happens_before(S, currS)) {
              // different thread, but happens-before
@@ -4202,12 +4204,13 @@ static void msm_do_trace(Thread *thr,
                          ) 
 {
    HChar buf[200];
+   TraceInfo *info;
    if (sv_old == sv_new) {
       // don't trace if the state is unchanged.
       return; 
    }
    
-   TraceInfo *info = get_trace_info(a);
+   info = get_trace_info(a);
    info->n_accesses++;
 
    if (info->n_accesses > max_access_num_to_print) {
@@ -5194,28 +5197,22 @@ static void shmem__flush_and_invalidate_scache ( void ) {
    stats__cache_invals++;
 }
 
-static void maybe_do_GC ( Bool force ) 
+static void do_SEG_GC ( Bool all)
 {
-   UInt i, recycled = 0, in_use = 0;
-   static UInt last_gc_time = 0;
-   if (!force && VG_(read_millisecond_timer)() - last_gc_time < 1500)
-      return;
-   last_gc_time = VG_(read_millisecond_timer)();/**/
-   
-   shmem__flush_and_invalidate_scache ();
-   HG_(WSU_doGC)(univ_ssets, force);
-   
-   UInt SA_size = SegmentArray.size,
+   UInt i,
+        recycled = 0,
+        in_use = 0,
+        SA_size = SegmentArray.size,
         startId = SegmentArray.last_gc_ix % SA_size,
         count   = 0,
-        toCheck = force ? SA_size : SEGMENT_GC_STEP;
+        toCheck = all ? SA_size : SEGMENT_GC_STEP;
    if (toCheck > SA_size)
       toCheck = SA_size;
    for (i = startId, count = 0; count < toCheck; i = (i+1)%SA_size, count++) {
-      if (i == 0)
-         continue;
       Segment * seg = &SegmentArray.chunks[i / SEGMENT_ID_CHUNK_SIZE]
                                           [i % SEGMENT_ID_CHUNK_SIZE];
+      if (i == 0)
+         continue;
       if (seg->refcount > 0) {
          tl_assert(seg->thr);
          in_use++;
@@ -5227,6 +5224,19 @@ static void maybe_do_GC ( Bool force )
    SegmentArray.last_gc_ix = i;
    if (0) VG_(printf)("SEG: recycled %5d WordSets; %5d/%5d in use\n",
                                     recycled, in_use, SegmentArray.size);
+}
+
+static void maybe_do_GC ( Bool force ) 
+{   
+   static UInt last_gc_time = 0;
+   if (!force && VG_(read_millisecond_timer)() - last_gc_time < 1500)
+      return;
+   last_gc_time = VG_(read_millisecond_timer)();/**/
+   
+   shmem__flush_and_invalidate_scache ();
+   HG_(WSU_doGC)(univ_ssets, force);   
+   do_SEG_GC(force);
+   
    if (0)
       VG_(printf)("GC took %3dms\n",
             VG_(read_millisecond_timer)() - last_gc_time);
@@ -6131,11 +6141,13 @@ static void shadow_mem_make_New ( Thread* thr, Addr a, SizeT len )
       stats__cache_make_New_inZrep += (ULong)aligned_len;
 
       while (1) {
+         Addr  tag;
+         UWord wix;
          if (aligned_start >= after_start)
             break;
          tl_assert(get_cacheline_offset(aligned_start) == 0);
-         Addr  tag = aligned_start & ~(N_LINE_ARANGE - 1);
-         UWord wix = (aligned_start >> N_LINE_BITS) & (N_WAY_NENT - 1);
+         tag = aligned_start & ~(N_LINE_ARANGE - 1);
+         wix = (aligned_start >> N_LINE_BITS) & (N_WAY_NENT - 1);
          if (tag == cache_shmem.tags0[wix]) {
             UWord i;
             for (i = 0; i < N_LINE_ARANGE / 8; i++)
@@ -6404,6 +6416,7 @@ static Bool  shadow_mem_set_published( Thread* thr, Addr aIN, SizeT len )
 {
    Bool res = True;
    SizeT i;
+   SVal sv_new;
    for (i = 0; i < len; i++) {
       Addr a = aIN + i;
       SVal sv_old = shadow_mem_get8(a);
@@ -6413,7 +6426,7 @@ static Bool  shadow_mem_set_published( Thread* thr, Addr aIN, SizeT len )
             // This memory does not belong to the current thread.
             res = False;
          }
-         SVal sv_new = set_SHVAL_PUBLISHED_BIT(sv_old, True);
+         sv_new = set_SHVAL_PUBLISHED_BIT(sv_old, True);
          shadow_mem_set8(thr, a, sv_new);
       } else {
          // User requested PUBLISH_MEMORY_RANGE on an uninitialized memory. 
@@ -6443,6 +6456,7 @@ void evhH__start_new_segment_for_thread ( /*OUT*/SegmentID* new_segidP,
                                           Thread* thr )
 {
    Segment* cur_seg;
+   ThreadId tid;
    tl_assert(new_segP);
    tl_assert(new_segidP);
    tl_assert(is_sane_Thread(thr));
@@ -6456,7 +6470,7 @@ void evhH__start_new_segment_for_thread ( /*OUT*/SegmentID* new_segidP,
    thr->csegid = *new_segidP;
    
 
-   ThreadId tid = map_threads_maybe_reverse_lookup(thr);
+   tid = map_threads_maybe_reverse_lookup(thr);
    if (clo_more_context && tid != VG_INVALID_THREADID) {
       SEG_set_context(*new_segidP,
                       VG_(record_ExeContext)(tid,-1/*first_ip_delta*/));
@@ -6899,10 +6913,10 @@ void evh__die_mem ( Addr a, SizeT len ) {
 
 static
 void evh__publish_memory_range ( Addr a, SizeT len ) {
+   Thread *thr = get_current_Thread();
    if (SHOW_EVENTS >= 2)
       VG_(printf)("evh__publish_memory_range(%p, %lu)\n", (void*)a, len );
- 
-   Thread *thr = get_current_Thread();
+    
    // Set the PUBLISHED bit in all svals in range [a, a+len)
    if (!shadow_mem_set_published(thr, a, len )) {
       // This memory has been accessed by another thread before this one.
@@ -9720,6 +9734,7 @@ static Bool record_error_Race ( Thread* thr,
                                 SVal old_sv, SVal new_sv,
                                 ExeContext* mb_lastlock ) {
    XError xe;
+   Bool  res;
    ThreadId tid = map_threads_maybe_reverse_lookup(thr);
    tl_assert( is_sane_Thread(thr) );
    init_XError(&xe);
@@ -9771,7 +9786,7 @@ static Bool record_error_Race ( Thread* thr,
       if (destructor_detected && clo_ignore_in_dtor) return False;
    }
 
-   Bool res = VG_(maybe_record_error)( map_threads_reverse_lookup(thr),
+   res = VG_(maybe_record_error)( map_threads_reverse_lookup(thr),
                             XE_Race, data_addr, NULL, &xe );
 
    if (res) {
