@@ -5930,14 +5930,16 @@ static void shadow_mem_copy8 ( Addr src, Addr dst, Bool normalise ) {
 
 /* ------------ Shadow memory range setting ops ------------ */
 
+typedef void (*shadow_mem_modify_range_callback)(Thread*,Addr,SVal);
+
 static void shadow_mem_modify_range(
                Thread* thr, 
                Addr    a, 
                SizeT   len,
-               void    (*fn8) (Thread*,Addr,SVal),
-               void    (*fn16)(Thread*,Addr,SVal),
-               void    (*fn32)(Thread*,Addr,SVal),
-               void    (*fn64)(Thread*,Addr,SVal),
+               shadow_mem_modify_range_callback    fn8,
+               shadow_mem_modify_range_callback    fn16,
+               shadow_mem_modify_range_callback    fn32,
+               shadow_mem_modify_range_callback    fn64,
                SVal    opaque
             )
 {
@@ -6036,19 +6038,19 @@ static void shadow_mem_copy_range ( Addr src, Addr dst, SizeT len )
 
 static void shadow_mem_read_range ( Thread* thr, Addr a, SizeT len ) {
    shadow_mem_modify_range( thr, a, len, 
-                            shadow_mem_read8,
-                            shadow_mem_read16,
-                            shadow_mem_read32,
-                            shadow_mem_read64,
+                            (shadow_mem_modify_range_callback)shadow_mem_read8,
+                            (shadow_mem_modify_range_callback)shadow_mem_read16,
+                            (shadow_mem_modify_range_callback)shadow_mem_read32,
+                            (shadow_mem_modify_range_callback)shadow_mem_read64,
                             0/*opaque,ignored*/ );
 }
 
 static void shadow_mem_write_range ( Thread* thr, Addr a, SizeT len ) {
    shadow_mem_modify_range( thr, a, len, 
-                            shadow_mem_write8,
-                            shadow_mem_write16,
-                            shadow_mem_write32,
-                            shadow_mem_write64,
+                            (shadow_mem_modify_range_callback)shadow_mem_write8,
+                            (shadow_mem_modify_range_callback)shadow_mem_write16,
+                            (shadow_mem_modify_range_callback)shadow_mem_write32,
+                            (shadow_mem_modify_range_callback)shadow_mem_write64,
                             0/*opaque,ignored*/ );
 }
 
@@ -7427,7 +7429,7 @@ typedef struct {
    UWord n_access;
 } SignalInfo;
 
-SignalInfo * new_SignalInfo (Int threadUID) {
+static SignalInfo * new_SignalInfo (Int threadUID) {
    SignalInfo * ret = hg_zalloc(sizeof(SignalInfo));
    ret->threadUID   = threadUID;
    ret->multiple_thread_access = False;
@@ -7435,7 +7437,7 @@ SignalInfo * new_SignalInfo (Int threadUID) {
    return ret;
 }
 
-void record_new_fake_seg (Thread *thr, Word cond)
+static void record_new_fake_seg (Thread *thr, Word cond)
 {
    UWord found_key, found_val;
    SignalInfo * data = NULL;
