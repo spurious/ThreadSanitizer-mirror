@@ -311,6 +311,9 @@ static UInt clo_max_segment_set_size = 20;
 // If true, segment set recycling is enabled. 
 static Bool clo_ss_recycle = True;
 
+// If true, dead lock detection is enabled.
+static Bool clo_detect_deadlocks = True;
+
 // If true, we record the contexts of 
 //   - last lock lossage and 
 //   - segment creation
@@ -5234,6 +5237,7 @@ static void maybe_do_GC ( Bool force )
    last_gc_time = VG_(read_millisecond_timer)();/**/
    
    shmem__flush_and_invalidate_scache ();
+   hbefore__invalidate_htable();
    HG_(WSU_doGC)(univ_ssets, force);   
    do_SEG_GC(force);
    
@@ -8527,6 +8531,7 @@ static void laog__pre_thread_acquires_lock (
    UWord*   ls_words;
    Word     ls_size, i;
    Lock*    other;
+   if (!clo_detect_deadlocks) return;
 
    /* There's no point in tracking the BHL with this mechanism, as
       that just wastes time, and the lock is always at the "top" of
@@ -8622,6 +8627,7 @@ static void laog__handle_one_lock_deletion ( Lock* lk )
    WordSetID preds, succs;
    Word preds_size, succs_size, i, j;
    UWord *preds_words, *succs_words;
+   if (!clo_detect_deadlocks) return;
 
    preds = laog__preds( lk );
    succs = laog__succs( lk );
@@ -8653,6 +8659,7 @@ static void laog__handle_lock_deletions (
 {
    Word   i, ws_size;
    UWord* ws_words;
+   if (!clo_detect_deadlocks) return;
 
    if (!laog)
       laog = HG_(newFM)( hg_zalloc, hg_free, NULL/*unboxedcmp*/ );
@@ -10467,7 +10474,12 @@ static Bool hg_process_cmd_line_option ( Char* arg )
       clo_ss_recycle = True;
    else if (VG_CLO_STREQ(arg, "--ss-recycle=no"))
       clo_ss_recycle = False;
-  
+
+   else if (VG_CLO_STREQ(arg, "--detect_deadlocks=yes"))
+      clo_detect_deadlocks = True;
+   else if (VG_CLO_STREQ(arg, "--detect_deadlocks=no"))
+      clo_detect_deadlocks = False;
+
    else if (VG_CLO_STREQ(arg, "--more-context=yes"))
       clo_more_context = True;
    else if (VG_CLO_STREQ(arg, "--more-context=no"))
@@ -10874,7 +10886,7 @@ static void hg_pre_clo_init ( void )
                                    hg_cli__realloc,
                                    HG_CLI__MALLOC_REDZONE_SZB );
 
-   VG_(needs_var_info)();
+   //   VG_(needs_var_info)();
 
    //VG_(needs_xml_output)          ();
 
