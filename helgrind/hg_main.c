@@ -311,6 +311,10 @@ static UInt clo_max_segment_set_size = 20;
 // If true, segments and segment set garbage collection is enabled. 
 static Bool clo_do_gc = True;
 
+// If true, ignore all accesses to cachelines while they are done 
+// by only one thread. This may lead to false negatives
+static Bool clo_fast_excl_mode = False;
+
 // If true, dead lock detection is enabled.
 static Bool clo_detect_deadlocks = True;
 
@@ -617,6 +621,10 @@ typedef
 
 typedef
    struct {
+      Int excl_tid; /* Used only if --fast-excl-mode=yes
+            0 if this CacheLineZ had ever been fetched
+               (that means it was accessed by more than one thread)
+            otherwise it contains the creator thrread UID */
       SVal  dict[4]; /* can represent up to 4 diff values in the line */
       UChar ix2s[N_LINE_ARANGE/4]; /* array of N_LINE_ARANGE 2-bit
                                       dict indexes */
@@ -3184,6 +3192,7 @@ static void* shmem__bigchunk_alloc ( SizeT n )
    return shmem__bigchunk_next - n;
 }
 
+static inline Thread* get_current_Thread ( void ); /* fwds */
 static SecMap* shmem__alloc_SecMap ( void )
 {
    Word    i, j;
@@ -3193,6 +3202,7 @@ static SecMap* shmem__alloc_SecMap ( void )
    sm->magic       = SecMap_MAGIC;
    sm->mbHasLocks  = False; /* dangerous */
    for (i = 0; i < N_SECMAP_ZLINES; i++) {
+      sm->linesZ[i].excl_tid = get_current_Thread()->threadUID;
       sm->linesZ[i].dict[0] = SHVAL_New;
       sm->linesZ[i].dict[1] = 0; /* completely invalid SHVAL */
       sm->linesZ[i].dict[2] = 0;
@@ -5158,6 +5168,7 @@ static __attribute__((noinline)) void cacheline_fetch ( UWord wix )
       }
       stats__cache_F_fetches++;
    } else {
+      lineZ->excl_tid = 0; // invalidate the exclusiveness flag
       for (i = 0; i < N_LINE_ARANGE; i++) {
          SVal sv;
          UWord ix = read_twobit_array( lineZ->ix2s, i );
@@ -5296,6 +5307,34 @@ static inline UWord get_tree_offset ( Addr a ) {
 
 static __attribute__((noinline))
        CacheLine* get_cacheline_MISS ( Addr a ); /* fwds */
+
+static inline Int get_CacheLineZ_excl_tid ( Addr a )
+{
+   /* return 0 if not CacheLineZ,
+      CacheLineZ::excl_tid otherwise (could be 0 as well)
+    */
+   CacheLineZ * lineZ;
+   Addr zix, tag;
+   SecMap* sm;
+   UWord   smoff;
+      
+   if (clo_fast_excl_mode == False)
+      return 0;
+   
+   tag = a & ~(N_LINE_ARANGE - 1);
+   sm  = shmem__find_or_alloc_SecMap(tag);
+   smoff = shmem__get_SecMap_offset(tag);
+
+   tl_assert(0 == (smoff & (N_LINE_ARANGE - 1)));
+   zix = smoff >> N_LINE_BITS;
+   tl_assert(zix < N_SECMAP_ZLINES);
+   lineZ = &sm->linesZ[zix];
+   
+   if (lineZ->dict[0] == 0)
+      return 0;
+   return lineZ->excl_tid;
+}
+
 static inline CacheLine* get_cacheline ( Addr a )
 {
    /* tag is 'a' with the in-line offset masked out, 
@@ -5522,6 +5561,7 @@ static void shadow_mem_read8 ( Thread* thr_acc, Addr a ) {
    UWord      cloff, tno, toff;
    SVal       svOld, svNew;
    UShort     descr;
+   if (LIKELY(get_CacheLineZ_excl_tid(a) == thr_acc->threadUID)) return;
    if (UNLIKELY(clo_ignore_n != 1 && address_may_be_ignored(a))) return;
    stats__cline_read8s++;
    cl    = get_cacheline(a);
@@ -5544,6 +5584,7 @@ static void shadow_mem_read16 ( Thread* thr_acc, Addr a ) {
    UWord      cloff, tno, toff;
    SVal       svOld, svNew;
    UShort     descr;
+   if (LIKELY(get_CacheLineZ_excl_tid(a) == thr_acc->threadUID)) return;
    if (UNLIKELY(clo_ignore_n != 1 && address_may_be_ignored(a))) return;
    stats__cline_read16s++;
    if (UNLIKELY(!aligned16(a))) goto slowcase;
@@ -5610,6 +5651,7 @@ static void shadow_mem_read32 ( Thread* thr_acc, Addr a ) {
    CacheLine* cl; 
    UWord      cloff, tno, toff;
    UShort     descr;
+   if (LIKELY(get_CacheLineZ_excl_tid(a) == thr_acc->threadUID)) return;
    if (UNLIKELY(clo_ignore_n != 1 && address_may_be_ignored(a))) return;
    stats__cline_read32s++;
    if (UNLIKELY(!aligned32(a))) goto slowcase;
@@ -5633,6 +5675,7 @@ static void shadow_mem_read64 ( Thread* thr_acc, Addr a ) {
    UWord      cloff, tno, toff;
    SVal       svOld, svNew;
    UShort     descr;
+   if (LIKELY(get_CacheLineZ_excl_tid(a) == thr_acc->threadUID)) return;
    if (UNLIKELY(clo_ignore_n != 1 && address_may_be_ignored(a))) return;
    stats__cline_read64s++;
    if (UNLIKELY(!aligned64(a))) goto slowcase;
@@ -5659,6 +5702,7 @@ static void shadow_mem_write8 ( Thread* thr_acc, Addr a ) {
    UWord      cloff, tno, toff;
    SVal       svOld, svNew;
    UShort     descr;
+   if (LIKELY(get_CacheLineZ_excl_tid(a) == thr_acc->threadUID)) return;
    if (UNLIKELY(clo_ignore_n != 1 && address_may_be_ignored(a))) return;
    stats__cline_write8s++;
    cl    = get_cacheline(a);
@@ -5681,6 +5725,7 @@ static void shadow_mem_write16 ( Thread* thr_acc, Addr a ) {
    UWord      cloff, tno, toff;
    SVal       svOld, svNew;
    UShort     descr;
+   if (LIKELY(get_CacheLineZ_excl_tid(a) == thr_acc->threadUID)) return;
    if (UNLIKELY(clo_ignore_n != 1 && address_may_be_ignored(a))) return;
    stats__cline_write16s++;
    if (UNLIKELY(!aligned16(a))) goto slowcase;
@@ -5746,6 +5791,7 @@ static void shadow_mem_write32 ( Thread* thr_acc, Addr a ) {
    CacheLine* cl; 
    UWord      cloff, tno, toff;
    UShort     descr;
+   if (LIKELY(get_CacheLineZ_excl_tid(a) == thr_acc->threadUID)) return;
    if (UNLIKELY(clo_ignore_n != 1 && address_may_be_ignored(a))) return;
    stats__cline_write32s++;
    if (UNLIKELY(!aligned32(a))) goto slowcase;
@@ -5769,6 +5815,7 @@ static void shadow_mem_write64 ( Thread* thr_acc, Addr a ) {
    UWord      cloff, tno, toff;
    SVal       svOld, svNew;
    UShort     descr;
+   if (LIKELY(get_CacheLineZ_excl_tid(a) == thr_acc->threadUID)) return;
    if (UNLIKELY(clo_ignore_n != 1 && address_may_be_ignored(a))) return;
    stats__cline_write64s++;
    if (UNLIKELY(!aligned64(a))) goto slowcase;
@@ -6169,6 +6216,7 @@ static void shadow_mem_make_New ( Thread* thr, Addr a, SizeT len )
             tl_assert(sm);
             tl_assert(zix >= 0 && zix < N_SECMAP_ZLINES);
             lineZ = &sm->linesZ[zix];
+            lineZ->excl_tid = thr->threadUID;
             lineZ->dict[0] = SHVAL_New;
             lineZ->dict[1] = lineZ->dict[2] = lineZ->dict[3] = 0;
             for (i = 0; i < N_LINE_ARANGE/4; i++)
@@ -10477,6 +10525,11 @@ static Bool hg_process_cmd_line_option ( Char* arg )
    else if (VG_CLO_STREQ(arg, "--do-gc=no"))
       clo_do_gc = False;
 
+   else if (VG_CLO_STREQ(arg, "--fast-excl-mode=yes"))
+      clo_fast_excl_mode = True;
+   else if (VG_CLO_STREQ(arg, "--fast-excl-mode=no"))
+      clo_fast_excl_mode = False;
+
    else if (VG_CLO_STREQ(arg, "--detect_deadlocks=yes"))
       clo_detect_deadlocks = True;
    else if (VG_CLO_STREQ(arg, "--detect_deadlocks=no"))
@@ -10556,6 +10609,7 @@ static void hg_print_usage ( void )
 "    --ignore-n=<N>           speedup hack; add documentation\n"
 "    --ignore-i=<N>           speedup hack; add documentation\n"
 "    --do-gc=no|yes           recycle segments and segment sets [yes]\n"
+"    --fast-excl-mode=no|yes  optimize cache for accesses made by one thread\n"
 "    --pure-happens-before=no|yes\n"
 "                             be a pure-happens-before detector  [no]\n"
 "    --more-context=no|yes    record context at lock lossage\n"
