@@ -308,8 +308,8 @@ static UWord clo_ignore_i = 0;
 static UInt clo_max_segment_set_size = 20;
 
 
-// If true, segment set recycling is enabled. 
-static Bool clo_ss_recycle = True;
+// If true, segments and segment set garbage collection is enabled. 
+static Bool clo_do_gc = True;
 
 // If true, dead lock detection is enabled.
 static Bool clo_detect_deadlocks = True;
@@ -1508,7 +1508,7 @@ static inline Bool is_SHVAL_valid ( SVal sv) {
 static inline Bool is_SHVAL_valid_SLOW ( SVal sv) {
    if (!is_SHVAL_valid(sv)) return False;
 #if 0
-   if (clo_ss_recycle && is_SHVAL_RM(sv)) {
+   if (clo_do_gc && is_SHVAL_RM(sv)) {
       SegmentSet SS = get_SHVAL_SS(sv); 
       if (!SS_is_singleton(SS)) {
          if (!(HG_(saneWS_SLOW(univ_ssets, SS)))) {
@@ -5233,6 +5233,8 @@ static void maybe_do_GC ( Bool force )
 {   
    static UInt last_gc_time = 0;
    if (!force && VG_(read_millisecond_timer)() - last_gc_time < 1500)
+      return;
+   if (clo_do_gc == False)
       return;
    last_gc_time = VG_(read_millisecond_timer)();/**/
    
@@ -10470,10 +10472,10 @@ static Bool hg_process_cmd_line_option ( Char* arg )
       clo_memstat_interval = VG_(atoll)(&arg[19]);
    }
 
-   else if (VG_CLO_STREQ(arg, "--ss-recycle=yes"))
-      clo_ss_recycle = True;
-   else if (VG_CLO_STREQ(arg, "--ss-recycle=no"))
-      clo_ss_recycle = False;
+   else if (VG_CLO_STREQ(arg, "--do-gc=yes"))
+      clo_do_gc = True;
+   else if (VG_CLO_STREQ(arg, "--do-gc=no"))
+      clo_do_gc = False;
 
    else if (VG_CLO_STREQ(arg, "--detect_deadlocks=yes"))
       clo_detect_deadlocks = True;
@@ -10553,7 +10555,7 @@ static void hg_print_usage ( void )
 "                             limit mem use by limiting SegSet sizes [20]\n"
 "    --ignore-n=<N>           speedup hack; add documentation\n"
 "    --ignore-i=<N>           speedup hack; add documentation\n"
-"    --ss-recycle=no|yes      recycle segment sets [yes]\n"
+"    --do-gc=no|yes           recycle segments and segment sets [yes]\n"
 "    --pure-happens-before=no|yes\n"
 "                             be a pure-happens-before detector  [no]\n"
 "    --more-context=no|yes    record context at lock lossage\n"
