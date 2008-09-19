@@ -4593,6 +4593,38 @@ void Run() {
 REGISTER_TEST(Run, 96);
 }  // namespace test96
 
+// test97: This test shows false negative with --fast-excl-mode=yes {{{1
+namespace test97 {
+const int CACHELINE_SIZE = 64;
+
+Mutex MU;
+
+const int ARRAY_SIZE = CACHELINE_SIZE * 4 / sizeof(int);
+int array[ARRAY_SIZE];
+int * GLOB = &array[ARRAY_SIZE/2];
+/*
+  We use sizeof(array) == 4 * CACHELINE_SIZE to be sure that GLOB points
+  to a memory inside a CacheLineZ which is inside array's memory range 
+ */
+
+void Reader() {
+   usleep(1000);
+   CHECK(777 == *GLOB);
+}
+
+void Run() {
+   MyThreadArray t(Reader);
+   ANNOTATE_EXPECT_RACE(GLOB, "test97: TP, FN with --fast-excl-mode=yes");
+   printf("test97: This test shows false negative with --fast-excl-mode=yes\n");
+   
+   t.Start();
+   *GLOB = 777;
+   t.Join();
+}
+
+REGISTER_TEST2(Run, 97, FEATURE)
+}  // namespace test97
+
 // test300: {{{1
 namespace test300 {
 int     GLOB = 0;
@@ -4891,7 +4923,7 @@ namespace test503 {
 const int N_threads = 32;
 int       GLOB = 0;
 ProducerConsumerQueue *Q[N_threads];
-int GLOB_limit = 4000;
+int GLOB_limit = 100000;
 
 bool end = false;
 int count = 0;
