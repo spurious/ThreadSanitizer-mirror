@@ -5308,18 +5308,17 @@ static inline UWord get_tree_offset ( Addr a ) {
 static __attribute__((noinline))
        CacheLine* get_cacheline_MISS ( Addr a ); /* fwds */
 
+// return -1 if not CacheLineZ,
+// CacheLineZ::excl_tid otherwise
 static inline Int get_CacheLineZ_excl_tid ( Addr a )
 {
-   /* return 0 if not CacheLineZ,
-      CacheLineZ::excl_tid otherwise (could be 0 as well)
-    */
    CacheLineZ * lineZ;
    Addr zix, tag;
    SecMap* sm;
    UWord   smoff;
       
    if (clo_fast_excl_mode == False)
-      return 0;
+      return -1;
    
    tag = a & ~(N_LINE_ARANGE - 1);
    sm  = shmem__find_or_alloc_SecMap(tag);
@@ -5331,7 +5330,7 @@ static inline Int get_CacheLineZ_excl_tid ( Addr a )
    lineZ = &sm->linesZ[zix];
    
    if (lineZ->dict[0] == 0)
-      return 0;
+      return -1;
    return lineZ->excl_tid;
 }
 
