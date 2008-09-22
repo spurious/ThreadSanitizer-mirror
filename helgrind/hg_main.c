@@ -1814,7 +1814,7 @@ static void show_lockset(LockSet ls)
    for (i = 0; i < nWords; i++) {
       Lock* lk = (Lock*)word[i];
       //      VG_(message)(Vg_UserMsg, "   L:%p/%p", lk, lk->guestaddr);
-      VG_(message)(Vg_UserMsg, "   Lock located at %p and first observed",
+      VG_(message)(Vg_UserMsg, "  Lock located at %p and first observed",
                                lk->guestaddr);
       if (lk->acquired_at) {
          VG_(pp_ExeContext)(lk->acquired_at);
@@ -10386,7 +10386,7 @@ static void hg_pp_Error ( Error* err )
          VG_(message)(Vg_UserMsg, "  Last consistently used lock for %p was "
                                   "first observed", err_ga);
          VG_(pp_ExeContext)(xe->XE.Race.mb_lastlock);
-      } else {
+      } else if (clo_more_context){
          VG_(message)(Vg_UserMsg, "  Location 0x%lX has never been protected "
                                   "by any lock", err_ga);
       }
