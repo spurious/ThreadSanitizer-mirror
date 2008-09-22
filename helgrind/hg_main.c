@@ -332,6 +332,10 @@ static Bool clo_pure_happens_before = False;
 // If true, all races inside a C++ destructor will be ignored. 
 static Bool clo_ignore_in_dtor = False;
 
+// Ignore all accesses to a memory loaction after it has been accessed 
+// with the bus lock (BHL) held.
+static Bool clo_ignore_after_bus_lock = True;
+
 // Print no more than this number of traces after a race has been detected.
 static UInt clo_trace_after_race = 50;
 
@@ -4298,7 +4302,8 @@ SVal memory_state_machine(Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
    }
 
    if (UNLIKELY(!HG_(isEmptyBag_UNCHECKED)(&__bus_lock_Lock->heldBy)
-                && (is_SHVAL_New(sv_old) || is_SHVAL_R(sv_old)))) {
+                && (is_SHVAL_New(sv_old) || is_SHVAL_R(sv_old))
+                && clo_ignore_after_bus_lock)) {
       stats__msm_BHL_hack++;
       // BHL is held and we are in 'Read' or 'New' state. 
       // User is doing something very smart with LOCK prefix.
@@ -10543,6 +10548,12 @@ static Bool hg_process_cmd_line_option ( Char* arg )
       clo_ignore_in_dtor = True;
    else if (VG_CLO_STREQ(arg, "--ignore-in-dtor=no"))
       clo_ignore_in_dtor = False;
+
+   else if (VG_CLO_STREQ(arg, "--ignore-after-bus-lock=yes"))
+      clo_ignore_after_bus_lock = True;
+   else if (VG_CLO_STREQ(arg, "--ignore-after-bus-lock=no"))
+      clo_ignore_after_bus_lock = False;
+
 
    else if (VG_CLO_STREQ(arg, "--pure-happens-before=yes"))
       clo_pure_happens_before = True;
