@@ -1157,6 +1157,60 @@ PTH_FUNC(int, semZupostZAZa, sem_t* sem) { /* sem_post@* */
 }
 
 
+// socket/file IO that creates happens-before arcs.
+
+static void *SocketMagic(int s) {
+  return (void*)0xDEADFBAD;
+}
+
+PTH_FUNC(long, send, int s, void *buf, long len, int flags) {
+   OrigFn fn;
+   long    ret;
+   VALGRIND_GET_ORIG_FN(fn);
+//   fprintf(stderr, "T%d socket send: %d %ld\n", VALGRIND_HG_THREAD_ID, s, len);
+   void *o = SocketMagic(s);
+   DO_CREQ_v_W(_VG_USERREQ__HG_PTHREAD_COND_SIGNAL_PRE, void*, o);
+   CALL_FN_W_WWWW(ret, fn, s, buf, len, flags);
+   return ret;
+}
+
+
+
+PTH_FUNC(long, recv, int s, void *buf, long len, int flags) {
+   OrigFn fn;
+   long    ret;
+   VALGRIND_GET_ORIG_FN(fn);
+   CALL_FN_W_WWWW(ret, fn, s, buf, len, flags);
+//   fprintf(stderr, "T%d socket recv: %d %ld %ld\n", VALGRIND_HG_THREAD_ID, s, len, ret);
+   void *o = SocketMagic(s);
+   DO_CREQ_v_WW(_VG_USERREQ__HG_PTHREAD_COND_WAIT_POST, void *, o, void *, o);
+   return ret;
+}
+
+
+PTH_FUNC(long, read, int s, void *a2, long count) {
+   OrigFn fn;
+   long    ret;
+   VALGRIND_GET_ORIG_FN(fn);
+   CALL_FN_W_WWW(ret, fn, s, a2, count);
+//   fprintf(stderr, "T%d socket read: %d %ld %ld\n", VALGRIND_HG_THREAD_ID, s, count, ret);
+   void *o = SocketMagic(s);
+   DO_CREQ_v_WW(_VG_USERREQ__HG_PTHREAD_COND_WAIT_POST, void *, o, void *, o);
+   return ret;
+}
+
+PTH_FUNC(long, write, int s, void *a2, long a3) {
+   OrigFn fn;
+   long    ret;
+   VALGRIND_GET_ORIG_FN(fn);
+//   fprintf(stderr, "T%d socket write: %d\n", VALGRIND_HG_THREAD_ID, s);
+   void *o = SocketMagic(s);
+   DO_CREQ_v_W(_VG_USERREQ__HG_PTHREAD_COND_SIGNAL_PRE, void*, o);
+   CALL_FN_W_WWW(ret, fn, s, a2, a3);
+   return ret;
+}
+
+
 
 /*----------------------------------------------------------------*/
 /*--- Qt 4 threading functions (w/ GNU name mangling)          ---*/
