@@ -4661,7 +4661,7 @@ void Reader() {
 }
 
 void Run() {
-  printf("test98: negative\n");
+  printf("test98: negative, synchronization via I/O\n");
   char in_name[100];
   char out_name[100];
   // we open two files, on for reading and one for writing, 
