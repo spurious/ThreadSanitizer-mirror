@@ -70,6 +70,10 @@
 #include <algorithm>
 #include <cstring>      // strlen(), index(), rindex()
 #include <ctime>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
 
 // The tests are
 // - Stability tests (marked STAB)
@@ -4624,6 +4628,64 @@ void Run() {
 
 REGISTER_TEST2(Run, 97, FEATURE)
 }  // namespace test97
+
+// test98: Synchronization via read/write (or send/recv). {{{1
+namespace test98 {
+// The synchronization here is done by a pair of read/write calls
+// that create a happens-before arc. Same may be done with send/recv.
+// Such synchronization is quite unusual in real programs 
+// (why would one synchronizae via a file or socket?), but 
+// quite possible in unittests where one threads runs for producer 
+// and one for consumer.
+//
+// A race detector has to create a happens-before arcs for  
+// {read,send}->{write,recv} even if the file descriptors are different.
+//
+int     GLOB = 0;
+int fd_out = -1;
+int fd_in  = -1;
+
+void Writer() {
+  usleep(1000);
+  GLOB = 1;
+  const char *str = "Hey there!\n";
+  write(fd_out, str, strlen(str));
+}
+
+void Reader() {
+  char buff[100];
+  while (read(fd_in, buff, 100) == 0)
+    sleep(1);
+  printf("read: %s\n", buff);
+  GLOB = 2;
+}
+
+void Run() {
+  printf("test98: negative\n");
+  char in_name[100];
+  char out_name[100];
+  // we open two files, on for reading and one for writing, 
+  // but the files are actually the same (symlinked).
+  sprintf(in_name,  "/tmp/racecheck_unittest_in.%d", getpid());
+  sprintf(out_name, "/tmp/racecheck_unittest_out.%d", getpid());
+  fd_out = creat(out_name, O_WRONLY | S_IRWXU);
+  symlink(out_name, in_name);
+  fd_in  = open(in_name, 0, O_RDONLY);
+  CHECK(fd_out >= 0);
+  CHECK(fd_in  >= 0);
+  MyThreadArray t(Writer, Reader);
+  t.Start();
+  t.Join();
+  printf("\tGLOB=%d\n", GLOB);
+  // cleanup
+  close(fd_in);
+  close(fd_out);
+  unlink(in_name);
+  unlink(out_name);
+}
+REGISTER_TEST(Run, 98)
+}  // namespace test98
+
 
 // test300: {{{1
 namespace test300 {
