@@ -4599,15 +4599,15 @@ REGISTER_TEST(Run, 96);
 
 // test97: This test shows false negative with --fast-excl-mode=yes {{{1
 namespace test97 {
-const int CACHELINE_SIZE = 64;
+const int HG_CACHELINE_SIZE = 64;
 
 Mutex MU;
 
-const int ARRAY_SIZE = CACHELINE_SIZE * 4 / sizeof(int);
+const int ARRAY_SIZE = HG_CACHELINE_SIZE * 4 / sizeof(int);
 int array[ARRAY_SIZE];
 int * GLOB = &array[ARRAY_SIZE/2];
 /*
-  We use sizeof(array) == 4 * CACHELINE_SIZE to be sure that GLOB points
+  We use sizeof(array) == 4 * HG_CACHELINE_SIZE to be sure that GLOB points
   to a memory inside a CacheLineZ which is inside array's memory range 
  */
 
@@ -4685,6 +4685,40 @@ void Run() {
 }
 REGISTER_TEST(Run, 98)
 }  // namespace test98
+
+
+// test99: TP. Unit test for a bug in LockWhen*. {{{1
+namespace test99 {
+
+
+bool GLOB = false;
+Mutex mu;
+
+static void Thread1() {
+  for (int i = 0; i < 100; i++) {
+    mu.LockWhenWithTimeout(Condition(&ArgIsTrue, &GLOB), 5);
+    GLOB = false;
+    mu.Unlock();
+    usleep(10000);
+  }
+}
+
+static void Thread2() {
+  for (int i = 0; i < 100; i++) {
+    mu.Lock();
+    mu.Unlock();
+    usleep(10000);
+  }
+}
+
+void Run() {
+  printf("test99: regression test for LockWhen*\n");
+  MyThreadArray t(Thread1, Thread2);
+  t.Start();
+  t.Join();
+}
+REGISTER_TEST(Run, 99);
+}  // namespace test99
 
 
 // test300: {{{1
