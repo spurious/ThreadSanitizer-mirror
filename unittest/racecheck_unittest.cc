@@ -212,6 +212,26 @@ int main(int argc, char** argv) { // {{{1
   }
 }
 
+// Hack for our experiments with multi-threaded detector.
+extern "C" void *DetectorThreadFunc(void *) {
+  printf("Hey there! I am DetectorThreadFunc()\n");
+}
+
+struct DetectorThread {
+ public:
+  DetectorThread() {
+    CHECK(0 == pthread_create(&t_, NULL, DetectorThreadFunc, NULL));
+  };
+  ~DetectorThread() {
+    CHECK(0 == pthread_join(t_, NULL));
+  }
+ private:
+  pthread_t t_;
+};
+
+static DetectorThread the_detector_thread;
+
+
 // An array of threads. Create/start/join all elements at once. {{{1
 class MyThreadArray {
  public:
