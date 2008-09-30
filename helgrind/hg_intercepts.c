@@ -1163,6 +1163,38 @@ static void *SocketMagic(int s) {
   return (void*)0xDEADFBAD;
 }
 
+#define VALGRIND_HG_THREAD_ID  __extension__                      \
+   ({ unsigned int _qzz_res;                                       \
+    VALGRIND_DO_CLIENT_REQUEST(_qzz_res, 0 ,                      \
+                               _VG_USERREQ__HG_GET_THREAD_ID,     \
+                               0, 0, 0, 0, 0);                    \
+    _qzz_res;                                                     \
+   })
+
+int I_WRAP_SONAME_FNNAME_ZZ(NONE, epoll_wait) (int epfd, void * events, int maxevents, int timeout) {
+   OrigFn fn;
+   long    ret;
+   VALGRIND_GET_ORIG_FN(fn);
+//   fprintf(stderr, "T%d socket epoll_wait: %d\n", VALGRIND_HG_THREAD_ID, epfd);
+   void *o = SocketMagic(epfd);
+   DO_CREQ_v_WW(_VG_USERREQ__HG_PTHREAD_COND_WAIT_POST, void *, o, void *, o);
+   CALL_FN_W_WWWW(ret, fn, epfd, events, maxevents, timeout);
+   return ret;
+}
+
+int I_WRAP_SONAME_FNNAME_ZZ(NONE, epoll_ctl)(int epfd, int op, int fd, void *event) {
+   OrigFn fn;
+   long    ret;
+   VALGRIND_GET_ORIG_FN(fn);
+//   fprintf(stderr, "T%d socket epoll_ctl: %d\n", VALGRIND_HG_THREAD_ID, epfd);
+   void *o = SocketMagic(epfd);
+   DO_CREQ_v_W(_VG_USERREQ__HG_PTHREAD_COND_SIGNAL_PRE, void*, o);
+   CALL_FN_W_WWWW(ret, fn, epfd, op, fd, event);
+   return ret;
+}
+
+
+
 PTH_FUNC(long, send, int s, void *buf, long len, int flags) {
    OrigFn fn;
    long    ret;
@@ -1173,8 +1205,6 @@ PTH_FUNC(long, send, int s, void *buf, long len, int flags) {
    CALL_FN_W_WWWW(ret, fn, s, buf, len, flags);
    return ret;
 }
-
-
 
 PTH_FUNC(long, recv, int s, void *buf, long len, int flags) {
    OrigFn fn;
