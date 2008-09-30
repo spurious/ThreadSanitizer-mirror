@@ -94,7 +94,6 @@
 
 static void pp_memory_usage ( Int flags, Char* caller );
 static void pp_mem_laog ( Int d );
-void pp_fake_segment_stats ( Int d );
 static void pp_stats ( Char * caller );
 static void hg_reset_stats ( void );
 
@@ -5211,7 +5210,7 @@ static __attribute__((noinline)) void cacheline_fetch ( UWord wix )
       }
       stats__cache_F_fetches++;
    } else {
-      lineZ->excl_tid = 0; // invalidate the exclusiveness flag
+      lineZ->excl_tid = -1; // invalidate the exclusiveness flag
       for (i = 0; i < N_LINE_ARANGE; i++) {
          SVal sv;
          UWord ix = read_twobit_array( lineZ->ix2s, i );
@@ -7531,80 +7530,6 @@ static void map_cond_to_Segment_INIT ( void ) {
    }
 }
 
-WordFM * signal_stat_FM = NULL;
-
-typedef struct {
-   Int  threadUID; /* VG_INVALID_THREADID if more than one thread*/
-   Bool multiple_thread_access;
-   UWord n_access;
-} SignalInfo;
-
-static SignalInfo * new_SignalInfo (Int threadUID) {
-   SignalInfo * ret = hg_zalloc(sizeof(SignalInfo));
-   ret->threadUID   = threadUID;
-   ret->multiple_thread_access = False;
-   ret->n_access    = 1;
-   return ret;
-}
-
-static void record_new_fake_seg (Thread *thr, Word cond)
-{
-   UWord found_key, found_val;
-   SignalInfo * data = NULL;
-   if (signal_stat_FM == NULL)
-      signal_stat_FM = HG_(newFM)( hg_zalloc, hg_free, NULL );
-   
-   if (HG_(lookupFM)(signal_stat_FM, &found_key, &found_val, cond)) {
-      // there was a fake segment for "cond"
-      data = (SignalInfo*)found_val;
-      data->n_access++;
-      if (!data->multiple_thread_access) {
-         if (data->threadUID != thr->threadUID) {
-            data->multiple_thread_access = True;
-            data->threadUID = VG_INVALID_THREADID;
-         } else
-            tl_assert(data->threadUID != VG_INVALID_THREADID);
-      } else
-         tl_assert(data->threadUID == VG_INVALID_THREADID);
-   } else {
-      data = new_SignalInfo(thr->threadUID);
-      HG_(addToFM)(signal_stat_FM, cond, (UWord)data);
-   }
-}
-
-void pp_fake_segment_stats ( Int d ) {
-   UWord total_conds = 0,
-         conds_N_1 = 0,
-         conds_N_multi = 0,
-         total_fake_segments = 0,         
-         N_1 = 0,
-         N_multi = 0,
-         iter_key, iter_value;
-   SignalInfo * data = NULL;
-   if (signal_stat_FM == NULL) {
-      space(d); VG_(printf)("No fake segments yet...\n");
-      return;
-   }
-   HG_(initIterFM)(signal_stat_FM);
-   while (HG_(nextIterFM)(signal_stat_FM, &iter_key, &iter_value)) {
-      data = (SignalInfo*)iter_value;
-      total_conds++;
-      total_fake_segments += data->n_access;
-      if (data->multiple_thread_access) {
-         conds_N_multi++;
-         N_multi += data->n_access;
-      } else {
-         conds_N_1++;
-         N_1 += data->n_access;
-      }
-   }
-   HG_(doneIterFM)(signal_stat_FM);
-   space(d); VG_(printf)("Fakes: fakes = %d, 1-thr = %d, multi-thr = %d\n",
-                     total_fake_segments, N_1, N_multi);
-   space(d); VG_(printf)("CVs: total = %d, 1-thr = %d, multi-thr = %d\n",
-                     total_conds, conds_N_1, conds_N_multi);
-}
-
 void evhH__do_cv_signal(Thread *thr, Word cond)
 {
    static Thread *fake_thread; 
@@ -7640,7 +7565,6 @@ void evhH__do_cv_signal(Thread *thr, Word cond)
       seg->vts        = singleton_VTS(seg->thr, 1);
    }
 
-   record_new_fake_seg (thr, cond);
    // create a fake segment.           
    evhH__start_new_segment_for_thread(&fake_segid, &fake_seg, fake_thread);
    tl_assert( SEG_id_is_sane(fake_segid) );
