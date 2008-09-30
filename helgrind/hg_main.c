@@ -315,6 +315,8 @@ static Bool clo_do_gc = True;
 // by only one thread. This may lead to false negatives
 static Bool clo_fast_excl_mode = False;
 
+static Bool clo_initialization_state = False;
+
 // If true, dead lock detection is enabled.
 static Bool clo_detect_deadlocks = True;
 
@@ -1325,8 +1327,8 @@ static inline Bool is_sane_SecMap ( SecMap* sm ) {
 
 //
 //   SVal:
-//   10SSSSSSSSSSSSSSSSSSSSSSSSSSrrrrTrPrrrrrLLLLLLLLLLLLLLLLLLLLLLLL Read
-//   11SSSSSSSSSSSSSSSSSSSSSSSSSSrrrrTrPrrrrrLLLLLLLLLLLLLLLLLLLLLLLL Mod
+//   10SSSSSSSSSSSSSSSSSSSSSSSSSSrrrrTrPrIrrrLLLLLLLLLLLLLLLLLLLLLLLL Read
+//   11SSSSSSSSSSSSSSSSSSSSSSSSSSrrrrTrPrIrrrLLLLLLLLLLLLLLLLLLLLLLLL Mod
 //     \_______ 26 _____________/            \________ 24 __________/
 // 
 //   0100000000000000000000000000000000000000000000000000000000000001 Ignore
@@ -1339,6 +1341,7 @@ static inline Bool is_sane_SecMap ( SecMap* sm ) {
 //   L - lock set bits 
 //   T - trace bit
 //   P - published bit
+//   I - initialization bit
 //
 //   It's crucial that no valid SVal has a value of zero, since zero
 //   has a special meaning for the LineZ/LineF mechanism (see
@@ -1357,6 +1360,13 @@ static inline Bool is_sane_SecMap ( SecMap* sm ) {
 //   Set when a PUBLISH_MEMORY_RANGE client request has been called on the pointer 
 //   to this memory. See comments below (search for PUBLISH_MEMORY_RANGE).
 //
+//   I (initialization bit):
+//   - The initialization_bit is set for each new memory location.
+//   - If the initialization_bit is set:
+//      - If the new access happens in the same thread as the previous access, 
+//        the initialization_bit remains set.
+//      - Otherwise the initialization_bit is cleared and we transition to 
+//        exclusive state containing the new thread's segment.
 //
 //   
 
@@ -1366,6 +1376,7 @@ static inline Bool is_sane_SecMap ( SecMap* sm ) {
 #define N_LOCK_SET_BITS         (24)
 #define TRACE_BIT_POSITION      (31)
 #define PUBLISHED_BIT_POSITION  (33)
+#define INITIALIZATION_BIT_POSITION  (35)
 
 #define SHVAL_New       ((SVal)(2<<8))
 #define SHVAL_Invalid   ((SVal)(0))
@@ -1474,6 +1485,15 @@ static inline Bool get_SHVAL_PUBLISHED_BIT (SVal sv) {
 static inline SVal set_SHVAL_PUBLISHED_BIT (SVal sv, Bool published_bit) {
    return sv | ((SVal)published_bit << PUBLISHED_BIT_POSITION);
 }
+
+static inline Bool get_SHVAL_INITIALIZATION_BIT (SVal sv) {
+   return 1 == ((sv >> INITIALIZATION_BIT_POSITION) & 1);
+}
+
+static inline SVal set_SHVAL_INITIALIZATION_BIT (SVal sv, Bool published_bit) {
+   return sv | ((SVal)published_bit << INITIALIZATION_BIT_POSITION);
+}
+
 
 
 
@@ -1858,6 +1878,10 @@ static void show_sval ( /*OUT*/Char* buf, Int nBuf, SVal sv )
       if (get_SHVAL_PUBLISHED_BIT(sv)) {
          VG_(sprintf)(buf + VG_(strlen)(buf), "PB; ");
       }
+      if (get_SHVAL_INITIALIZATION_BIT(sv) && clo_initialization_state) {
+         VG_(sprintf)(buf + VG_(strlen)(buf), "IB; ");
+      }
+
 
       for (i = 0; i < n_segments; i++) {
          SegmentID S;
@@ -3981,14 +4005,14 @@ static void published_memory_range_forget (Addr first, Addr last)
 // See http://code.google.com/p/data-race-test/wiki/MSMProp1 
 // for description. 
 //
-// This routine is not (yet) fully optimized for performance. 
-// TODO: handle state with one segment in segment set separately 
-// for better performance. 
 static inline
-SegmentSet do_SS_update_SINGLE ( /*OUT*/Bool* hb_all_p, 
-                                 Thread* thr,
+SegmentSet do_SS_update_SINGLE ( Thread* thr,
                                  Bool do_trace,
-                                 SegmentSet oldSS, SegmentID currS )
+                                 SegmentSet oldSS, SegmentID currS,
+                                 Bool initialization_bit,
+                                 /*OUT*/Bool *new_initialization_bit,
+                                 /*OUT*/Bool* hb_all_p
+                                 )
 {
    // update the segment set and compute hb_all
    /* case where oldSS is a single segment */
@@ -3997,16 +4021,22 @@ SegmentSet do_SS_update_SINGLE ( /*OUT*/Bool* hb_all_p,
    tl_assert(SS_is_singleton(oldSS));
    stats__msm_oldSS_single++;
    S = SS_get_singleton_UNCHECKED(oldSS);
-   if (LIKELY(S == currS  // Same segment. 
-              || SEG_get(S)->thr == thr // Same thread. 
-              || happens_before(S, currS))) {
-                 // different thread, but happens-before
-      *hb_all_p = True;
-      newSS = SS_mk_singleton(currS);
-      if (UNLIKELY(0 && do_trace)) {
-         VG_(printf)("HB(S%d/T%d,cur)=1\n",
-                     S, SEG_get(S)->thr->threadUID);
-      }
+   *hb_all_p = True;
+   *new_initialization_bit = False;
+   newSS = SS_mk_singleton(currS);
+   if (LIKELY(S == currS || SEG_get(S)->thr == thr)) {  
+      // Same segment or thread. 
+      // Cary the initialization_bit.
+      *new_initialization_bit = initialization_bit;
+   } else if (happens_before(S, currS)) {  
+      // We are in different thread, but happens-before is true.
+      // Remain in exclusive state, but drop the initialization_bit.
+      ;
+   } else if (initialization_bit && clo_initialization_state) {
+      // We are in initialization state and this access 
+      // is the first access from another thread.
+      // Remain in exclusive state, but drop the initialization_bit.
+      ;
    } else {
       *hb_all_p = False;
       // Not happened-before. Leave this segment in SS.
@@ -4155,9 +4185,13 @@ static void do_SVal_update ( Bool is_write, Addr a, UWord sz,
              currLS = get_access_LS(thr, is_write);
 
    Bool       hb_all = False, was_m, now_m;
+   Bool       new_initialization_bit = False;
    
    if (LIKELY(SS_is_singleton(oldSS))) {
-      newSS = do_SS_update_SINGLE( &hb_all, thr, do_trace, oldSS, thr->csegid );
+      newSS = do_SS_update_SINGLE(thr, do_trace, oldSS, 
+                                   thr->csegid, 
+                                   get_SHVAL_INITIALIZATION_BIT(sv_old),
+                                   &new_initialization_bit, &hb_all);
    } else {
       newSS = do_SS_update_MULTI( &hb_all, thr, do_trace, oldSS, thr->csegid );
    }
@@ -4179,9 +4213,11 @@ static void do_SVal_update ( Bool is_write, Addr a, UWord sz,
    now_m = is_write ? True : (was_m && !hb_all);
    
    // generate new SVal
-   *sv_new = mk_SHVAL_RM(now_m, newSS, newLS);
-   *sv_new = set_SHVAL_TRACE_BIT(*sv_new, get_SHVAL_TRACE_BIT(sv_old));
-   *sv_new = set_SHVAL_PUBLISHED_BIT(*sv_new, get_SHVAL_PUBLISHED_BIT(sv_old));
+   SVal res = mk_SHVAL_RM(now_m, newSS, newLS);
+   res = set_SHVAL_TRACE_BIT(res, get_SHVAL_TRACE_BIT(sv_old));  // TODO: copy these bits at once.
+   res = set_SHVAL_PUBLISHED_BIT(res, get_SHVAL_PUBLISHED_BIT(sv_old));
+   res = set_SHVAL_INITIALIZATION_BIT(res, new_initialization_bit);
+   *sv_new = res;
 }
 
 
@@ -4368,6 +4404,7 @@ SVal memory_state_machine(Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
       stats__msm_New_to_M++; 
       newSS = SS_mk_singleton(thr->csegid);
       sv_new = mk_SHVAL_RM(is_w, newSS, get_access_LS(thr, is_w));
+      sv_new = set_SHVAL_INITIALIZATION_BIT(sv_new, True);
       goto done;
    }
 
@@ -4413,6 +4450,7 @@ SVal memory_state_machine(Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
          sv_new = set_SHVAL_TRACE_BIT(sv_new, True);
          sv_new = set_SHVAL_PUBLISHED_BIT(sv_new, 
                                           get_SHVAL_PUBLISHED_BIT(sv_old));
+         sv_new = set_SHVAL_INITIALIZATION_BIT(sv_new, True);
          msm_do_trace(thr, a, sv_old, sv_new, is_w, 2, clo_trace_after_race);
       } else {
          // put this in Ignore state
@@ -10533,6 +10571,11 @@ static Bool hg_process_cmd_line_option ( Char* arg )
       clo_fast_excl_mode = True;
    else if (VG_CLO_STREQ(arg, "--fast-excl-mode=no"))
       clo_fast_excl_mode = False;
+
+   else if (VG_CLO_STREQ(arg, "--initialization-state=yes"))
+      clo_initialization_state = True;
+   else if (VG_CLO_STREQ(arg, "--initialization-state=no"))
+      clo_initialization_state = False;
 
    else if (VG_CLO_STREQ(arg, "--detect_deadlocks=yes"))
       clo_detect_deadlocks = True;

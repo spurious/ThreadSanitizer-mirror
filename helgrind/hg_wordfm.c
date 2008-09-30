@@ -438,14 +438,14 @@ AvlNode* avl_find_node ( AvlNode* t, Word k, Word(*kCmp)(UWord,UWord) )
 // Clear the iterator stack.
 static void stackClear(WordFM* fm)
 {
-   Int i;
+//   Int i;
    tl_assert(fm);
-   DEBUG_ONLY(
-      for (i = 0; i < WFM_STKMAX; i++) {
-         fm->nodeStack[i] = NULL;
-         fm->numStack[i]  = 0;
-      }
-   );
+//   DEBUG_ONLY(
+//      for (i = 0; i < WFM_STKMAX; i++) {
+//         fm->nodeStack[i] = NULL;
+//         fm->numStack[i]  = 0;
+//      }
+//   );
    fm->stackTop = 0;
 }
 
