@@ -649,7 +649,7 @@ void Reader() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB, "test10. FN in MSMHelgrind.");
+  ANNOTATE_EXPECT_RACE(&GLOB, "test10. TP. FN in MSMHelgrind.");
   printf("test10: positive\n");
   MyThreadArray t(Writer, Reader);
   t.Start();
@@ -2301,7 +2301,7 @@ void Reader() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB, "test48. FN in MSMHelgrind.");
+  ANNOTATE_EXPECT_RACE(&GLOB, "test48. TP. FN in MSMHelgrind.");
   printf("test48: positive\n");
   MyThreadArray t(Writer, Reader,Reader,Reader);
   t.Start();
@@ -2343,7 +2343,7 @@ void Reader() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB, "test49. FN in MSMHelgrind.");
+  ANNOTATE_EXPECT_RACE(&GLOB, "test49. TP. FN in MSMHelgrind.");
   printf("test49: positive\n");
   MyThreadArray t(Writer, Reader);
   t.Start();
@@ -2611,8 +2611,8 @@ void User() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB, "test53. Implicit semaphore");
-  printf("test53: false positive\n");
+  ANNOTATE_EXPECT_RACE(&GLOB, "test53. FP. Implicit semaphore");
+  printf("test53: FP. false positive, Implicit semaphore\n");
   MyThreadArray t(Initializer, User, User);
   t.Start();
   t.Join();
@@ -4284,7 +4284,7 @@ void Publisher() {
   MU.Lock();
   GLOB = new int;
   *GLOB = 777;
-  ANNOTATE_EXPECT_RACE(GLOB, "test90. This is a false positve");
+  ANNOTATE_EXPECT_RACE(GLOB, "test90. FP. This is a false positve");
   MU.Unlock();
   usleep(200000);
 }
@@ -4329,7 +4329,7 @@ void Publisher() {
   MU1.Lock();
   GLOB = new int;
   *GLOB = 777;
-  ANNOTATE_EXPECT_RACE(GLOB, "test91. This is a false positve");
+  ANNOTATE_EXPECT_RACE(GLOB, "test91. FP. This is a false positve");
   MU1.Unlock();
 }
 
@@ -4618,7 +4618,7 @@ void Reader() {
 
 void Run() {
    MyThreadArray t(Reader);
-   ANNOTATE_EXPECT_RACE(GLOB, "test97: TP, FN with --fast-excl-mode=yes");
+   ANNOTATE_EXPECT_RACE(GLOB, "test97: TP. FN with --fast-excl-mode=yes");
    printf("test97: This test shows false negative with --fast-excl-mode=yes\n");
    
    t.Start();
@@ -4719,6 +4719,47 @@ void Run() {
 }
 REGISTER_TEST(Run, 99);
 }  // namespace test99
+
+
+// test100: Test for initialization bit. {{{1
+namespace test100 {
+int     G1 = 0;
+int     G2 = 0;
+int     G3 = 0;
+int     G4 = 0;
+
+void Creator() {
+  G1 = 1; CHECK(G1);
+  G2 = 1;
+  G3 = 1; CHECK(G3);
+  G4 = 1;
+}
+
+void Worker1() {
+  usleep(100000);
+  CHECK(G1);
+  CHECK(G2);
+  G3 = 3;
+  G4 = 3;
+}
+
+void Worker2() {
+
+}
+
+
+void Run() {
+  printf("test100: test for initialization bit. \n");
+  MyThreadArray t(Creator, Worker1, Worker2);
+  ANNOTATE_TRACE_MEMORY(&G1);
+  ANNOTATE_TRACE_MEMORY(&G2);
+  ANNOTATE_TRACE_MEMORY(&G3);
+  ANNOTATE_TRACE_MEMORY(&G4);
+  t.Start();
+  t.Join();
+}
+REGISTER_TEST2(Run, 100, FEATURE|EXCLUDE_FROM_ALL)
+}  // namespace test100
 
 
 // test300: {{{1
