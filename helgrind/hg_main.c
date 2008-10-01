@@ -3184,10 +3184,10 @@ static UWord stats__cline_16to8pulldown  = 0; // # calls to pulldown_to_8
 
 static SVal shadow_mem_get8 ( Addr a ); /* fwds */
 
-static inline Addr shmem__round_to_SecMap_base ( Addr a ) {
+static INLINE Addr shmem__round_to_SecMap_base ( Addr a ) {
    return a & ~(N_SECMAP_ARANGE - 1);
 }
-static inline UWord shmem__get_SecMap_offset ( Addr a ) {
+static INLINE UWord shmem__get_SecMap_offset ( Addr a ) {
    return a & (N_SECMAP_ARANGE - 1);
 }
 
@@ -3249,7 +3249,7 @@ static SecMap* shmem__alloc_SecMap ( void )
 typedef struct { Addr gaKey; SecMap* sm; } SMCacheEnt;
 static SMCacheEnt smCache[3] = { {1,NULL}, {1,NULL}, {1,NULL} };
 
-static SecMap* shmem__find_SecMap ( Addr ga ) 
+static INLINE SecMap* shmem__find_SecMap ( Addr ga ) 
 {
    SecMap* sm    = NULL;
    Addr    gaKey = shmem__round_to_SecMap_base(ga);
@@ -3284,7 +3284,7 @@ static SecMap* shmem__find_SecMap ( Addr ga )
    return sm;
 }
 
-static SecMap* shmem__find_or_alloc_SecMap ( Addr ga )
+static INLINE SecMap* shmem__find_or_alloc_SecMap ( Addr ga )
 {
    SecMap* sm = shmem__find_SecMap ( ga );
    if (LIKELY(sm)) {
@@ -5352,26 +5352,26 @@ static __attribute__((noinline))
 
 // return -1 if not CacheLineZ,
 // CacheLineZ::excl_tid otherwise
-static inline Int get_CacheLineZ_excl_tid ( Addr a )
+static INLINE Int get_CacheLineZ_excl_tid ( Addr a )
 {
    CacheLineZ * lineZ;
    Addr zix, tag;
    SecMap* sm;
    UWord   smoff;
       
-   if (clo_fast_excl_mode == False)
+   if (LIKELY(clo_fast_excl_mode == False))
       return -1;
    
-   tag = a & ~(N_LINE_ARANGE - 1);
-   sm  = shmem__find_or_alloc_SecMap(tag);
+   tag   = a & ~(N_LINE_ARANGE - 1); // tag = first Addr inside CacheLine
+   sm    = shmem__find_or_alloc_SecMap(tag);
    smoff = shmem__get_SecMap_offset(tag);
 
-   tl_assert(0 == (smoff & (N_LINE_ARANGE - 1)));
-   zix = smoff >> N_LINE_BITS;
-   tl_assert(zix < N_SECMAP_ZLINES);
+   tl_debug_assert(0 == (smoff & (N_LINE_ARANGE - 1)));
+   zix = smoff >> N_LINE_BITS; // index of CacheLineZ inside SecMap
+   tl_debug_assert(zix < N_SECMAP_ZLINES);
    lineZ = &sm->linesZ[zix];
    
-   if (lineZ->dict[0] == 0)
+   if (UNLIKELY(lineZ->dict[0] == 0)) // CacheLineF, can't be excl
       return -1;
    return lineZ->excl_tid;
 }
