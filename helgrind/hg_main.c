@@ -1828,7 +1828,7 @@ static void pp_mem_segments ( Int d )
 }
 
 // Just print all locks in the lockset 'ls'. 
-static void show_lockset(LockSet ls)
+static void show_lockset(LockSet ls, LockSet shval_ls)
 {
    UWord* word;
    UWord  nWords, i;
@@ -1840,8 +1840,9 @@ static void show_lockset(LockSet ls)
    for (i = 0; i < nWords; i++) {
       Lock* lk = (Lock*)word[i];
       //      VG_(message)(Vg_UserMsg, "   L:%p/%p", lk, lk->guestaddr);
-      VG_(message)(Vg_UserMsg, "  Lock located at %p and first observed",
-                               lk->guestaddr);
+      Bool is_in_shval_ls = HG_(elemWS)(univ_lsets, shval_ls, (Word)lk);
+      VG_(message)(Vg_UserMsg, "  Lock located at %p%s and first observed",
+                   lk->guestaddr, is_in_shval_ls ? " [in LS]" : "");
       if (lk->acquired_at) {
          VG_(pp_ExeContext)(lk->acquired_at);
       }  
@@ -4290,7 +4291,8 @@ static void msm_do_trace(Thread *thr,
    }
 
    VG_(message)(Vg_UserMsg, " Locks held:");
-   show_lockset(is_w ? thr->locksetW : thr->locksetA);
+   show_lockset(is_w ? thr->locksetW : thr->locksetA,
+                     get_SHVAL_LS(sv_new));
    if (!HG_(isEmptyBag)(&__bus_lock_Lock->heldBy)) {
       VG_(message)(Vg_UserMsg, " BHL is held\n");
    }
