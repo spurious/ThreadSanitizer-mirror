@@ -4632,7 +4632,7 @@ int * GLOB = &array[ARRAY_SIZE/2];
  */
 
 void Reader() {
-   usleep(1000);
+   usleep(100000);
    CHECK(777 == *GLOB);
 }
 
