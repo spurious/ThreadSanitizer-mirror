@@ -215,6 +215,7 @@ int main(int argc, char** argv) { // {{{1
 // Hack for our experiments with multi-threaded detector.
 extern "C" void *DetectorThreadFunc(void *) {
   printf("Hey there! I am DetectorThreadFunc()\n");
+  return NULL;
 }
 
 struct DetectorThread {
