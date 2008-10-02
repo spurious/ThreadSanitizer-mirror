@@ -340,6 +340,9 @@ static Bool clo_ignore_after_bus_lock = True;
 // Print no more than this number of traces after a race has been detected.
 static UInt clo_trace_after_race = 50;
 
+// Print on-line info about a detected race that was annotated as benign.
+static Bool clo_show_benign_races = False;
+
 
 // Size of context for locks. Usually should be less than --num-callers 
 // since collecting context for locks is quite expensive. 
@@ -2609,9 +2612,9 @@ static ExpectedError *get_expected_error (Addr ptr)
   if (HG_(lookupFM)( map_expected_errors,
                      NULL/*keyP*/, (Word*)&expected_error, (Word)ptr)) {
     tl_assert(expected_error->addr == ptr);
-    if (!expected_error->is_benign) {
+    if (!expected_error->is_benign || clo_show_benign_races) {
        // Print expected errors inside unit tests, 
-       // but don't print benign races.
+       // but don't print benign races (unless clo_show_benign_races==True).
        VG_(printf)("Found expected race: %s:%d %p\t%s\n",
                 expected_error->file, expected_error->line, 
                 ptr, expected_error->descr);
@@ -10450,8 +10453,22 @@ static void hg_print_extra_suppression_info ( Error* err )
 /*--- Setup                                                    ---*/
 /*----------------------------------------------------------------*/
 
+#define BOOLEAN_FLAG(name, var) \
+      do {\
+         if (VG_CLO_STREQ(arg, (name "=yes"))) {\
+            var = True;\
+            return True;\
+         } else if (VG_CLO_STREQ(arg, (name "=no"))) {\
+            var = False;\
+            return True;\
+         }\
+      }while(0)
+
 static Bool hg_process_cmd_line_option ( Char* arg )
 {
+
+   BOOLEAN_FLAG("--show-benign-races", clo_show_benign_races);
+
    if      (VG_CLO_STREQ(arg, "--happens-before=none"))
       clo_happens_before = 0;
    else if (VG_CLO_STREQ(arg, "--happens-before=threads"))
@@ -10520,6 +10537,7 @@ static Bool hg_process_cmd_line_option ( Char* arg )
       clo_ignore_after_bus_lock = True;
    else if (VG_CLO_STREQ(arg, "--ignore-after-bus-lock=no"))
       clo_ignore_after_bus_lock = False;
+
 
 
    else if (VG_CLO_STREQ(arg, "--pure-happens-before=yes"))
