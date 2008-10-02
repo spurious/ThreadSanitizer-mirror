@@ -5451,5 +5451,58 @@ void Run () {
 REGISTER_TEST2(Run, 512, MEMORY_USAGE | PRINT_STATS | EXCLUDE_FROM_ALL);
 }  // namespace test512
 
+// test513: --fast-excl-mode benchmark {{{1
+namespace test513 {
+
+const int N_THREADS = 2,
+          HG_CACHELINE_SIZE  = 1 << 6,
+          ARRAY_SIZE = HG_CACHELINE_SIZE * 512,
+          MUTEX_ID_BITS = 8,
+          MUTEX_ID_MASK = (1 << MUTEX_ID_BITS) - 1;
+
+// Each thread has its own cacheline and tackles with it intensively
+const int ITERATIONS = 4096;
+int array[N_THREADS][ARRAY_SIZE];
+
+int count = 0;
+Mutex count_mu;
+Mutex mutex_arr[N_THREADS][MUTEX_ID_BITS];
+
+void Worker() {
+   count_mu.Lock();
+   int myId = count++;
+   count_mu.Unlock();
+   
+   // all threads write to different memory locations
+   for (int j = 0; j < ITERATIONS; j++) {
+      int mutex_mask = j & MUTEX_ID_BITS;
+      for (int m = 0; m < MUTEX_ID_BITS; m++)
+         if (mutex_mask & (1 << m))
+            mutex_arr[myId][m].Lock();
+      
+      for (int i = 0; i < ARRAY_SIZE; i++) {
+         array[myId][i] = i;
+      }
+      
+      for (int m = 0; m < MUTEX_ID_BITS; m++)
+         if (mutex_mask & (1 << m))
+            mutex_arr[myId][m].Unlock();
+   }
+}
+
+void Run() {
+   printf("test513: --fast-excl-mode benchmark\n");
+   {
+      ThreadPool pool(N_THREADS);
+      pool.StartWorkers();
+      for (int i = 0; i < N_THREADS; i++) {
+         pool.Add(NewCallback(Worker));
+      }
+   } // all folks are joined here.
+}
+
+REGISTER_TEST2(Run, 513, PERFORMANCE | PRINT_STATS | EXCLUDE_FROM_ALL)
+}  // namespace test513
+
 // End {{{1
 // vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker
