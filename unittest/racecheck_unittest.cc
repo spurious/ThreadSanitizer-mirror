@@ -2403,7 +2403,7 @@ Mutex   MU;
 
 
 void Waker() {
-  usleep(10000);  // Make sure the waiter blocks.
+  usleep(100000);  // Make sure the waiter blocks.
 
   GLOB = 1;
 
@@ -2434,7 +2434,7 @@ void Waiter() {
   GLOB = 2;
 }
 void Run() {
-  ANNOTATE_EXPECT_RACE(&GLOB, "test50. TP.");
+  ANNOTATE_EXPECT_RACE_FOR_HYBRID1(&GLOB, "test50. TP.");
   printf("test50: positive\n");
   Waiter();
   printf("\tGLOB=%d\n", GLOB);
