@@ -4842,6 +4842,42 @@ void Run() {
 REGISTER_TEST(Run, 101)
 }  // namespace test101
 
+// test102: --fast-excl-mode=yes vs. --initialization-bit=yes {{{1
+namespace test102 {
+const int HG_CACHELINE_SIZE = 64;
+
+Mutex MU;
+
+const int ARRAY_SIZE = HG_CACHELINE_SIZE * 4 / sizeof(int);
+int array[ARRAY_SIZE + 1];
+int * GLOB = &array[ARRAY_SIZE/2];
+/*
+  We use sizeof(array) == 4 * HG_CACHELINE_SIZE to be sure that GLOB points
+  to a memory inside a CacheLineZ which is inside array's memory range 
+ */
+
+void Reader() {
+   usleep(100000);
+   CHECK(777 == GLOB[0]);
+   usleep(200000);
+   CHECK(777 == GLOB[1]);
+}
+
+void Run() {
+   MyThreadArray t(Reader);
+   ANNOTATE_EXPECT_RACE_FOR_HYBRID1(GLOB+0, "test102: TP. FN with --fast-excl-mode=yes");
+   ANNOTATE_EXPECT_RACE_FOR_HYBRID1(GLOB+1, "test102: TP");
+   printf("test102: --fast-excl-mode=yes vs. --initialization-bit=yes\n");
+   
+   t.Start();
+   GLOB[0] = 777;
+   usleep(200000);
+   GLOB[1] = 777;
+   t.Join();
+}
+
+REGISTER_TEST2(Run, 102, FEATURE)
+}  // namespace test102
 
 // test300: {{{1
 namespace test300 {
