@@ -4783,6 +4783,60 @@ REGISTER_TEST2(Run, 100, FEATURE|EXCLUDE_FROM_ALL)
 }  // namespace test100
 
 
+// test101: TN. Two signals and two waits. {{{1
+namespace test101 {
+Mutex MU;
+CondVar CV;
+int     GLOB = 0;
+
+int C1 = 0, C2 = 0;
+
+void Signaller() {
+  usleep(100000);
+  MU.Lock();
+  C1 = 1;
+  CV.Signal();
+  printf("signal\n");
+  MU.Unlock();
+
+  GLOB = 1;
+
+  usleep(500000);
+  MU.Lock();
+  C2 = 1;
+  CV.Signal();
+  printf("signal\n");
+  MU.Unlock();
+}
+
+void Waiter() {
+  MU.Lock();
+  while(!C1) 
+    CV.Wait(&MU);
+  printf("wait\n");
+  MU.Unlock();
+
+  MU.Lock();
+  while(!C2) 
+    CV.Wait(&MU);
+  printf("wait\n");
+  MU.Unlock();
+
+  GLOB = 2;
+
+}
+
+void Run() {
+  printf("test101: negative\n");
+  MyThreadArray t(Waiter, Signaller);
+  t.Start();
+  t.Join();
+  printf("\tGLOB=%d\n", GLOB);
+}
+REGISTER_TEST(Run, 101)
+}  // namespace test101
+
+
 // test300: {{{1
 namespace test300 {
 int     GLOB = 0;
