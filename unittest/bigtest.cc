@@ -37,6 +37,12 @@
 
 #include "thread_wrappers_pthread.h"
 
+class Mutex64: public Mutex {
+   // force sizeof(Mutex64) >= 64
+private:
+   char ___[(sizeof(Mutex) > 64) ? (0) : (64 - sizeof(Mutex))];
+};
+
 struct TestStats {
    // Contains information about what resources does specific test utilize and
    // how much
@@ -55,19 +61,19 @@ struct TestStats {
 
 struct Test{
    typedef void (*void_func_void_t)(void);
-   typedef TestStats (*TestStats_func_void_t)(void);
+   //typedef TestStats (*TestStats_func_void_t)(void);
    
-   TestStats_func_void_t GetStats_;
+   //TestStats_func_void_t GetStats_;
    void_func_void_t Run_;
    
-   Test() : GetStats_(0), Run_(0) {}
-   Test(int id, TestStats_func_void_t _GetStats, void_func_void_t _Run) 
-   : GetStats_(_GetStats)
-   , Run_(_Run)
+   Test() : /*GetStats_(0), */Run_(0) {}
+   Test(int id, /*TestStats_func_void_t _GetStats, */void_func_void_t _Run) 
+   : //GetStats_(_GetStats),
+     Run_(_Run)
    {}
-   TestStats GetStats() {
+   /*TestStats GetStats() {
       return GetStats_();
-   }
+   }*/
    void Run() {
       Run_();
    }
@@ -76,11 +82,11 @@ struct Test{
 std::map<int, Test> TheMapOfTests;
 
 struct TestAdder {
-   TestAdder(int id, Test::TestStats_func_void_t _GetStats, 
+   TestAdder(int id, //Test::TestStats_func_void_t _GetStats, 
                      Test::void_func_void_t _Run)
    {
       CHECK(TheMapOfTests.count(id) == 0);
-      TheMapOfTests[id] = Test(id, _GetStats, _Run);
+      TheMapOfTests[id] = Test(id, /*_GetStats,*/ _Run);
    }
 };
 
@@ -119,21 +125,157 @@ class MyThreadArray {
   MyThread *ar_[4];
 };
 
-#define REGISTER_TEST(id) TestAdder add_test(id, GetStats, Run)
+#define REGISTER_TEST(id) TestAdder add_test(id, Run)
+
+ThreadPool * mainThreadPool;
 
 // Simple test that does nothing {{{1
 namespace test00 {   
-   TestStats GetStats() {
-      TestStats ts;
-      memset(&ts, 0, sizeof(ts));
-      return ts;
-   }
-   
    void Run() {}
    
    REGISTER_TEST(00);
 } // namespace test00
 
+// 2 threads access the same memory location holding one common lock {{{1
+namespace test01 {
+   const int NUM_CONTEXTS = 16;
+   const int NUM_ITERATIONS = 16;
+   const int DATA_SIZE = 128;
+   
+   struct TestContext {
+      Mutex MU;
+      char data[DATA_SIZE];
+   } contexts[NUM_CONTEXTS];
+
+   void Worker(TestContext * context) {
+      Mutex * MU = &context->MU;
+      for (int i = 0; i < NUM_ITERATIONS; i++) {
+         MU->Lock();
+         for (int j = 0; j < DATA_SIZE; j++)
+            context->data[j] = 77;
+         MU->Unlock();
+      }
+   }
+
+   void Run() {
+      int id = rand() % NUM_CONTEXTS;
+      for (int i = 0; i < 2; i++)
+         mainThreadPool->Add(NewCallback(Worker, &contexts[id]));
+   }
+   
+   REGISTER_TEST(01);
+} // namespace test01
+
+// 2 threads access the same memory location holding different LS {{{1
+namespace test02 {
+   const int NUM_CONTEXTS = 16;
+   const int DATA_SIZE = 128;
+   const int NUM_ITERATIONS = 16;
+      
+   struct TestContext {
+      Mutex MU;
+      char data[DATA_SIZE];
+   } contexts[NUM_CONTEXTS];
+
+   void Worker(TestContext * context) {
+      std::vector<Mutex*> LS;
+      // STL nightmare here {{{1
+      {
+         std::vector<int> tmp_LS;
+         for (int i = 0; i < NUM_CONTEXTS; i++)
+            tmp_LS.push_back(i);
+         std::random_shuffle(tmp_LS.begin(), tmp_LS.end());
+         
+         for (int i = 0; i < NUM_CONTEXTS/4; i++)
+            LS.push_back(&contexts[tmp_LS[i]].MU);
+         LS.push_back(&context->MU);
+         std::sort(LS.begin(), LS.end());
+         std::vector<Mutex*>::iterator new_end = std::unique(LS.begin(), LS.end());
+         LS.erase(new_end, LS.end());
+         /*std::string ls = "LS: ";
+         for (std::vector<Mutex*>::iterator it = LS.begin(); it != LS.end(); it++) {
+            char temp[128];
+            sprintf(temp, "0x%X ", *it);
+            ls += temp;
+         } 
+         ls += "\n";
+      printf(ls.c_str());*/
+      } // end of STL nightmare :-)
+      
+      for (int i = 0; i < NUM_ITERATIONS; i++) {
+         for (std::vector<Mutex*>::iterator it = LS.begin(); it != LS.end(); it++)
+            (*it)->Lock();
+         for (int j = 0; j < DATA_SIZE; j++)
+            context->data[j] = 77;
+         for (std::vector<Mutex*>::iterator it = LS.begin(); it != LS.end(); it++)
+            (*it)->Unlock();
+      }
+   }
+
+   void Run() {
+      int id = rand() % NUM_CONTEXTS;
+      for (int i = 0; i < 2; i++)
+         mainThreadPool->Add(NewCallback(Worker, &contexts[id]));
+   }
+   
+   REGISTER_TEST(02);
+} // namespace test02
+
+// T1 publishes a memory location to T2 using Signal-Wait {{{1
+namespace test03 {
+   const int DATA_SIZE = 1024;
+   
+   struct TestContext {
+      Mutex MU;
+      CondVar CV;
+      char * data;
+      TestContext () : data(NULL) {}
+   };
+
+   void Signaller(TestContext * context) {
+      char * temp = new char[DATA_SIZE]; 
+      for (int i = 0; i < DATA_SIZE; i++)
+         temp[i] = 77;
+
+      Mutex   * MU = &context->MU;
+      CondVar * CV = &context->CV;
+      MU->Lock();
+         context->data = temp;
+         CV->Signal();
+      MU->Unlock();
+   }
+
+   void Waiter(TestContext * context) {
+      Mutex   * MU = &context->MU;
+      CondVar * CV = &context->CV;
+      MU->Lock();
+      while (context->data == NULL)
+         CV->Wait(MU);
+      ANNOTATE_CONDVAR_LOCK_WAIT(CV, MU);         
+      MU->Unlock();
+      
+      for (int i = 0; i < DATA_SIZE; i++)
+         CHECK(77 == context->data[i]);
+      
+      delete [] context->data;
+   }
+   
+   void Run() {
+      TestContext * tc = new TestContext();
+      mainThreadPool->Add(NewCallback(Signaller, tc));
+      mainThreadPool->Add(NewCallback(Waiter, tc));
+   }
+   
+   REGISTER_TEST(03);
+} // namespace test03
+
 int main () {
+   mainThreadPool = new ThreadPool(3);
+   mainThreadPool->StartWorkers();
+   test01::Run();
+   test02::Run();
+   test03::Run();
+   delete mainThreadPool;
+   
    return 0;
 }
