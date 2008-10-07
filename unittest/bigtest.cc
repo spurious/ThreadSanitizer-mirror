@@ -51,7 +51,7 @@ struct TestStats {
    long nCV_Signals; // number of CondVar->Signal's
    long nCV_Waits;   // number of CondVar->Wait's
    long nMutexes;    // number of Mutexes used by the test
-   long nMutex_Lock_Unlock; // number of Mutex (Lock-Unlock)s
+   long nMutex_Lock_Unlock; // number of Mutex64 (Lock-Unlock)s
    // TODO: cache lines?
    long nBytes_Excl;    // number of bytes accessed from only one thread
    long nBytes_NonExcl; // number of bytes accessed from more than one thread
@@ -143,12 +143,12 @@ namespace test01 {
    const int DATA_SIZE = 128;
    
    struct TestContext {
-      Mutex MU;
+      Mutex64 MU;
       char data[DATA_SIZE];
    } contexts[NUM_CONTEXTS];
 
    void Worker(TestContext * context) {
-      Mutex * MU = &context->MU;
+      Mutex64 * MU = &context->MU;
       for (int i = 0; i < NUM_ITERATIONS; i++) {
          MU->Lock();
          for (int j = 0; j < DATA_SIZE; j++)
@@ -173,12 +173,12 @@ namespace test02 {
    const int NUM_ITERATIONS = 16;
       
    struct TestContext {
-      Mutex MU;
+      Mutex64 MU;
       char data[DATA_SIZE];
    } contexts[NUM_CONTEXTS];
 
    void Worker(TestContext * context) {
-      std::vector<Mutex*> LS;
+      std::vector<Mutex64*> LS;
       // STL nightmare here {{{1
       {
          std::vector<int> tmp_LS;
@@ -190,10 +190,10 @@ namespace test02 {
             LS.push_back(&contexts[tmp_LS[i]].MU);
          LS.push_back(&context->MU);
          std::sort(LS.begin(), LS.end());
-         std::vector<Mutex*>::iterator new_end = std::unique(LS.begin(), LS.end());
+         std::vector<Mutex64*>::iterator new_end = std::unique(LS.begin(), LS.end());
          LS.erase(new_end, LS.end());
          /*std::string ls = "LS: ";
-         for (std::vector<Mutex*>::iterator it = LS.begin(); it != LS.end(); it++) {
+         for (std::vector<Mutex64*>::iterator it = LS.begin(); it != LS.end(); it++) {
             char temp[128];
             sprintf(temp, "0x%X ", *it);
             ls += temp;
@@ -203,11 +203,11 @@ namespace test02 {
       } // end of STL nightmare :-)
       
       for (int i = 0; i < NUM_ITERATIONS; i++) {
-         for (std::vector<Mutex*>::iterator it = LS.begin(); it != LS.end(); it++)
+         for (std::vector<Mutex64*>::iterator it = LS.begin(); it != LS.end(); it++)
             (*it)->Lock();
          for (int j = 0; j < DATA_SIZE; j++)
             context->data[j] = 77;
-         for (std::vector<Mutex*>::iterator it = LS.begin(); it != LS.end(); it++)
+         for (std::vector<Mutex64*>::iterator it = LS.begin(); it != LS.end(); it++)
             (*it)->Unlock();
       }
    }
@@ -226,7 +226,7 @@ namespace test03 {
    const int DATA_SIZE = 1024;
    
    struct TestContext {
-      Mutex MU;
+      Mutex64 MU;
       CondVar CV;
       char * data;
       TestContext () : data(NULL) {}
@@ -237,7 +237,7 @@ namespace test03 {
       for (int i = 0; i < DATA_SIZE; i++)
          temp[i] = 77;
 
-      Mutex   * MU = &context->MU;
+      Mutex64 * MU = &context->MU;
       CondVar * CV = &context->CV;
       MU->Lock();
          context->data = temp;
@@ -246,7 +246,7 @@ namespace test03 {
    }
 
    void Waiter(TestContext * context) {
-      Mutex   * MU = &context->MU;
+      Mutex64 * MU = &context->MU;
       CondVar * CV = &context->CV;
       MU->Lock();
       while (context->data == NULL)
