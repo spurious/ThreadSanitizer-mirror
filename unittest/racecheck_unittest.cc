@@ -220,7 +220,7 @@ int main(int argc, char** argv) { // {{{1
 
 // Hack for our experiments with multi-threaded detector.
 extern "C" void *DetectorThreadFunc(void *) {
-  printf("Hey there! I am DetectorThreadFunc()\n");
+//  printf("Hey there! I am DetectorThreadFunc()\n");
   return NULL;
 }
 
@@ -308,6 +308,7 @@ void Parent() {
 void Run() {
 //  ANNOTATE_EXPECT_RACE(&GLOB, "test01. TP.");
   ANNOTATE_BENIGN_RACE(&GLOB, "test01. TP.");
+  ANNOTATE_TRACE_MEMORY(&GLOB);
   printf("test01: positive\n");
   Parent();
   printf("\tGLOB=%d\n", GLOB);
@@ -1952,6 +1953,7 @@ void Worker() {
   CHECK(GLOB == N_threads);
 }
 void Run() {
+  ANNOTATE_TRACE_MEMORY(&GLOB);
 //  ANNOTATE_EXPECT_RACE(&GLOB, "test39. FP. Fixed by MSMProp1. Barrier.");
   printf("test39: negative\n");
   {
@@ -4615,6 +4617,7 @@ void Thr3() {
 }
 void Run() {
   printf("test96: FP. tricky LockSet behaviour\n");
+  ANNOTATE_TRACE_MEMORY(&GLOB);
   ANNOTATE_EXPECT_RACE_FOR_HYBRID1(&GLOB, "test96: FP.");
   MyThreadArray mta(Thr1, Thr2, Thr3);
   mta.Start();
