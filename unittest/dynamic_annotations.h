@@ -59,6 +59,7 @@
 #ifndef DYNAMIC_ANNOTATIONS_H__
 #define DYNAMIC_ANNOTATIONS_H__
 
+#include <unistd.h>
 
 #ifdef DYNAMIC_ANNOTATIONS
 // Annotations are enabled. 
@@ -214,6 +215,13 @@ ANNOTATION(AnnotateNoOp, void *arg);
 #define ANNOTATE_IGNORE_WRITES_END() \
             AnnotateIgnoreWritesEnd(__FILE__, __LINE__, NULL /*reserved*/)
 
+template <class T>
+inline T ANNOTATE_UNPROTECTED_READ(const volatile T &x) {
+  ANNOTATE_IGNORE_READS_BEGIN();
+  T res = x;
+  ANNOTATE_IGNORE_READS_END();
+  return res;
+}
 
 #define ANNOTATE_PRINT_MEMORY_USAGE(flags) \
             AnnotatePrintMemoryUsage(__FILE__, __LINE__, flags)
