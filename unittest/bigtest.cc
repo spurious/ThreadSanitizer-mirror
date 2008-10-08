@@ -269,12 +269,82 @@ namespace test03 {
    REGISTER_TEST(03);
 } // namespace test03
 
+// 2 threads access their own memory ranges (heap) {{{1
+namespace test04 {
+   const int NUM_ITERATIONS = 16;
+   const int DATA_SIZE = 128;
+   
+   void Worker() {
+      char * data = new char[DATA_SIZE]; 
+      for (int i = 0; i < NUM_ITERATIONS; i++) {
+         for (int j = 0; j < DATA_SIZE; j++)
+            data[j] = 77;
+      }
+      delete [] data;
+   }
+
+   void Run() {
+      for (int i = 0; i < 2; i++)
+         mainThreadPool->Add(NewCallback(Worker));
+   }
+   
+   REGISTER_TEST(04);
+} // namespace test04
+
+// 2 threads access their own memory ranges (stack) {{{1
+namespace test05 {
+   const int NUM_ITERATIONS = 16;
+   const int DATA_SIZE = 128;
+   
+   void Worker() {
+      char data[DATA_SIZE]; 
+      for (int i = 0; i < NUM_ITERATIONS; i++) {
+         for (int j = 0; j < DATA_SIZE; j++)
+            data[j] = 77;
+      }
+   }
+
+   void Run() {
+      for (int i = 0; i < 2; i++)
+         mainThreadPool->Add(NewCallback(Worker));
+   }
+   
+   REGISTER_TEST(05);
+} // namespace test05
+
+// 2 threads access a single integer with atomics {{{1
+namespace test06 {
+   const int NUM_ITERATIONS = 16;
+   const int DATA_SIZE = 128;
+   const int CONTEXT_COUNT = 16;
+   
+   int contexts[CONTEXT_COUNT];
+   
+   void Worker(void * context) {
+      int * cntxt = (int*)context;
+      for (int i = 0; i < NUM_ITERATIONS; i++) {
+         __sync_add_and_fetch(cntxt, 1);
+      }
+   }
+
+   void Run() {
+      int id = rand() % CONTEXT_COUNT;
+      for (int i = 0; i < 2; i++)
+         mainThreadPool->Add(NewCallback(Worker, &contexts[id]));
+   }
+   
+   REGISTER_TEST(06);
+} // namespace test06
+
 int main () {
    mainThreadPool = new ThreadPool(3);
    mainThreadPool->StartWorkers();
    test01::Run();
    test02::Run();
    test03::Run();
+   test04::Run();
+   test05::Run();
+   test06::Run();
    delete mainThreadPool;
    
    return 0;
