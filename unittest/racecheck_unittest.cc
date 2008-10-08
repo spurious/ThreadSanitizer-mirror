@@ -4882,6 +4882,44 @@ void Run() {
 REGISTER_TEST2(Run, 102, FEATURE)
 }  // namespace test102
 
+// test103: Access different memory locations with different LockSets {{{1
+namespace test103 {
+const int N_MUTEXES = 6;
+const int LOCKSET_INTERSECTION_SIZE = 3;
+
+int data[1 << LOCKSET_INTERSECTION_SIZE] = {0};
+Mutex MU[N_MUTEXES];
+
+inline int LS_to_idx (int ls) {
+   return (ls >> (N_MUTEXES - LOCKSET_INTERSECTION_SIZE))
+            & ((1 << LOCKSET_INTERSECTION_SIZE) - 1);
+}
+
+void Worker() {
+   for (int ls = 0; ls < (1 << N_MUTEXES); ls++) {
+      if (LS_to_idx(ls) == 0)
+         continue;
+      for (int m = 0; m < N_MUTEXES; m++)
+         if (ls & (1 << m))
+            MU[m].Lock();
+      
+      data[LS_to_idx(ls)]++;
+      
+      for (int m = 0; m < N_MUTEXES; m++)
+         if (ls & (1 << m))
+            MU[m].Unlock();
+   }
+}
+
+void Run() {
+   printf("test103: Access different memory locations with different LockSets\n");
+   MyThreadArray t(Worker, Worker, Worker, Worker);
+   t.Start();
+   t.Join();
+}
+REGISTER_TEST2(Run, 103, FEATURE)
+}  // namespace test103
+
 // test300: {{{1
 namespace test300 {
 int     GLOB = 0;
