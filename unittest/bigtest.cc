@@ -179,9 +179,10 @@ namespace one_lock {
 // Accessing memory locations holding random LockSets {{{1
 namespace multiple_locks {
    // TODO: make these constants as parameters
-   const int NUM_CONTEXTS = 16;
-   const int DATA_SIZE = 128;
+   const int NUM_CONTEXTS   = 16;
+   const int DATA_SIZE      = 128;
    const int NUM_ITERATIONS = 16;
+   const int LOCKSET_SIZE   = 4;
       
    struct TestContext {
       Mutex64 MU;
@@ -201,7 +202,7 @@ namespace multiple_locks {
          std::random_shuffle(tmp_LS.begin(), tmp_LS.end());
          
          // TODO: #LS as a parameter
-         for (int i = 0; i < NUM_CONTEXTS/4; i++)
+         for (int i = 0; i < LOCKSET_SIZE; i++)
             LS.push_back(&contexts[tmp_LS[i]].MU);
          
          // This LS should contain context's Mutex to have proper synchronization
@@ -225,6 +226,28 @@ namespace multiple_locks {
       }
    }
    REGISTER_PATTERN(201);
+   
+   const int MAX_LOCKSET_SIZE   = 4;
+   const int NUM_LOCKSETS = 1 << MAX_LOCKSET_SIZE;
+   Mutex64 ls_mu[MAX_LOCKSET_SIZE];
+   char ls_data[NUM_LOCKSETS][DATA_SIZE];
+   // Access random context holding a corresponding LockSet
+   void Pattern202() {
+      printf("Pattern202\n");
+      int ls_idx = rand() % NUM_LOCKSETS;
+      char * data = ls_data[ls_idx];
+      for (int i = 0; i < MAX_LOCKSET_SIZE; i++)
+         if (ls_idx & (1 << i))
+            ls_mu[i].Lock();
+      
+      for (int j = 0; j < DATA_SIZE; j++)
+         data[j] = 77;
+      
+      for (int i = 0; i < MAX_LOCKSET_SIZE; i++)
+         if (ls_idx & (1 << i))
+            ls_mu[i].Unlock();
+   }
+   REGISTER_PATTERN(202);
 } // namespace multiple_locks
 
 // Publishing objects using different synchronization patterns {{{1
