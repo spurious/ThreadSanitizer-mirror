@@ -274,6 +274,38 @@ namespace publishing {
       }
       REGISTER_PATTERN(302);
    }
+   
+   namespace condvar {
+      const int NUM_CONTEXTS = 3;
+      struct TestContext {
+         Mutex64 MU;
+         CondVar CV;
+      } contexts[NUM_CONTEXTS];
+   
+      // Signal a random CV
+      void Pattern311() {
+         printf("Pattern311\n");
+         int id = rand() % NUM_CONTEXTS;
+         TestContext * context = &contexts[id];
+         context->MU.Lock();
+         context->CV.Signal();
+         context->MU.Unlock();
+      }
+      REGISTER_PATTERN(311);
+      
+      // Wait on a random CV
+      bool Pattern312() {
+         int id = rand() % NUM_CONTEXTS;
+         TestContext * context = &contexts[id];
+         context->MU.Lock();
+         bool ret = !context->CV.WaitWithTimeout(&context->MU, 0);
+         context->MU.Unlock();
+         if (ret)
+            printf("Pattern312\n");
+         return ret;
+      }
+      REGISTER_PATTERN(312);
+   }
 } // namespace publishing
 
 // Threads work with their memory exclusively
