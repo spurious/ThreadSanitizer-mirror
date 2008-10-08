@@ -61,113 +61,124 @@ struct TestStats {
 
 struct Test{
    typedef void (*void_func_void_t)(void);
+   
+   /* may return false to indicate smth like "Wait didn't succeed" */
+   typedef bool (*bool_func_void_t)(void);
    //typedef TestStats (*TestStats_func_void_t)(void);
    
    //TestStats_func_void_t GetStats_;
-   void_func_void_t Run_;
+   void_func_void_t Run_v_;
+   bool_func_void_t Run_b_;
    
-   Test() : /*GetStats_(0), */Run_(0) {}
+   Test() : /*GetStats_(0), */Run_v_(0), Run_b_(0) {}
    Test(int id, /*TestStats_func_void_t _GetStats, */void_func_void_t _Run) 
-   : //GetStats_(_GetStats),
-     Run_(_Run)
-   {}
+      : //GetStats_(_GetStats),
+        Run_v_(_Run), Run_b_(0) {}
+   Test(int id, /*TestStats_func_void_t _GetStats, */bool_func_void_t _Run) 
+      : //GetStats_(_GetStats),
+        Run_v_(0), Run_b_(_Run) {}
    /*TestStats GetStats() {
       return GetStats_();
    }*/
-   void Run() {
-      Run_();
+   bool Run() {
+      if (Run_v_ == NULL) {
+         CHECK(Run_b_ != NULL);
+         return (*Run_b_)();
+      } else {
+         Run_v_();
+         return true;
+      }
    }
 };
 
-std::map<int, Test> TheMapOfTests;
+typedef std::map<int, Test> MapOfTests;
+MapOfTests the_map_of_tests;
 
 struct TestAdder {
    TestAdder(int id, //Test::TestStats_func_void_t _GetStats, 
                      Test::void_func_void_t _Run)
    {
-      CHECK(TheMapOfTests.count(id) == 0);
-      TheMapOfTests[id] = Test(id, /*_GetStats,*/ _Run);
+      CHECK(the_map_of_tests.count(id) == 0);
+      the_map_of_tests[id] = Test(id, /*_GetStats,*/ _Run);
+   }
+   TestAdder(int id, //Test::TestStats_func_void_t _GetStats, 
+                     Test::bool_func_void_t _Run)
+   {
+      CHECK(the_map_of_tests.count(id) == 0);
+      the_map_of_tests[id] = Test(id, /*_GetStats,*/ _Run);
    }
 };
 
-class MyThreadArray {
- public:
-  typedef void (*F) (void);
-  MyThreadArray(F f1, F f2 = NULL, F f3 = NULL, F f4 = NULL) {
-    ar_[0] = new MyThread(f1);
-    ar_[1] = f2 ? new MyThread(f2) : NULL;
-    ar_[2] = f3 ? new MyThread(f3) : NULL;
-    ar_[3] = f4 ? new MyThread(f4) : NULL;
-  }
-  void Start() {
-    for(int i = 0; i < 4; i++) {
-      if(ar_[i]) {
-        ar_[i]->Start();
-        usleep(10);
-      }
-    }
-  }
-
-  void Join() {
-    for(int i = 0; i < 4; i++) {
-      if(ar_[i]) {
-        ar_[i]->Join();
-      }
-    }
-  }
-
-  ~MyThreadArray() {
-    for(int i = 0; i < 4; i++) {
-      delete ar_[i];
-    }
-  }
- private:
-  MyThread *ar_[4];
-};
-
-#define REGISTER_TEST(id) TestAdder add_test(id, Run)
+#define REGISTER_PATTERN(id) TestAdder add_test##id(id, Pattern##id)
 
 ThreadPool * mainThreadPool;
 
-// Simple test that does nothing {{{1
-namespace test00 {   
-   void Run() {}
-   
-   REGISTER_TEST(0);
-} // namespace test00
+// Print everything under a mutex
+Mutex printf_mu;
+#define printf(args...) \
+    do{ \
+      printf_mu.Lock();\
+      fprintf(stdout, args);\
+      printf_mu.Unlock(); \
+    }while(0)
 
-// 2 threads access the same memory location holding one common lock {{{1
-namespace test01 {
+// Accessing memory locations holding one lock {{{1
+namespace one_lock {
+   // TODO: make these constants as parameters
    const int NUM_CONTEXTS = 16;
-   const int NUM_ITERATIONS = 16;
    const int DATA_SIZE = 128;
+   const int NUM_ITERATIONS = 16;
    
    struct TestContext {
       Mutex64 MU;
       char data[DATA_SIZE];
    } contexts[NUM_CONTEXTS];
-
-   void Worker(TestContext * context) {
-      Mutex64 * MU = &context->MU;
+   
+   // Write accesses
+   void Pattern101() {    
+      printf("Pattern101\n");  
+      int id = rand() % NUM_CONTEXTS;
+      TestContext * context = &contexts[id];
       for (int i = 0; i < NUM_ITERATIONS; i++) {
-         MU->Lock();
-         for (int j = 0; j < DATA_SIZE; j++)
-            context->data[j] = 77;
-         MU->Unlock();
+         context->MU.Lock();
+            for (int j = 0; j < DATA_SIZE; j++) {
+               context->data[j] = 77; // write
+            }
+         context->MU.Unlock();
       }
    }
-
-   void Run() {
-      int id = rand() % NUM_CONTEXTS;
-      for (int i = 0; i < 2; i++)
-         mainThreadPool->Add(NewCallback(Worker, &contexts[id]));
-   }
+   REGISTER_PATTERN(101);
    
-   REGISTER_TEST(1);
-} // namespace test01
+   // Read accesses
+   void Pattern102() {
+      printf("Pattern102\n");
+      int id = rand() % NUM_CONTEXTS;
+      TestContext * context = &contexts[id];
+      for (int i = 0; i < NUM_ITERATIONS; i++) {
+         int temp = 0;
+         context->MU.Lock();
+            for (int j = 0; j < DATA_SIZE; j++) {
+               temp += context->data[j]; // read
+            }
+         context->MU.Unlock();
+      }
+   }
+   REGISTER_PATTERN(102);
+   
+   int atomic_integers[NUM_CONTEXTS] = {0};
+   // Atomic increment
+   void Pattern103() {
+      printf("Pattern103\n");
+      int id = rand() % NUM_CONTEXTS;
+      for (int i = 0; i < NUM_ITERATIONS; i++)
+         __sync_add_and_fetch(&atomic_integers[id], 1);
+   }
+   REGISTER_PATTERN(103);
+} // namespace one_lock
 
-// 2 threads access the same memory location holding different LS {{{1
-namespace test02 {
+// Accessing memory locations holding random LockSets {{{1
+namespace multiple_locks {
+   // TODO: make these constants as parameters
    const int NUM_CONTEXTS = 16;
    const int DATA_SIZE = 128;
    const int NUM_ITERATIONS = 16;
@@ -177,29 +188,31 @@ namespace test02 {
       char data[DATA_SIZE];
    } contexts[NUM_CONTEXTS];
 
-   void Worker(TestContext * context) {
+   // Access random context holding a random LS including context->MU
+   void Pattern201() {
+      printf("Pattern201\n");
+      TestContext * context = &contexts[rand() % NUM_CONTEXTS]; 
       std::vector<Mutex64*> LS;
-      // STL nightmare here {{{1
+      // STL nightmare starts here - calculate random LS{{{1
       {
          std::vector<int> tmp_LS;
          for (int i = 0; i < NUM_CONTEXTS; i++)
             tmp_LS.push_back(i);
          std::random_shuffle(tmp_LS.begin(), tmp_LS.end());
          
+         // TODO: #LS as a parameter
          for (int i = 0; i < NUM_CONTEXTS/4; i++)
             LS.push_back(&contexts[tmp_LS[i]].MU);
-         LS.push_back(&context->MU);
+         
+         // This LS should contain context's Mutex to have proper synchronization
+         LS.push_back(&context->MU);         
+         
+         // LS should be sorted to avoid deadlocks
          std::sort(LS.begin(), LS.end());
+         
+         // LS should not contain context->MU twice
          std::vector<Mutex64*>::iterator new_end = std::unique(LS.begin(), LS.end());
          LS.erase(new_end, LS.end());
-         /*std::string ls = "LS: ";
-         for (std::vector<Mutex64*>::iterator it = LS.begin(); it != LS.end(); it++) {
-            char temp[128];
-            sprintf(temp, "0x%X ", *it);
-            ls += temp;
-         } 
-         ls += "\n";
-      printf(ls.c_str());*/
       } // end of STL nightmare :-)
       
       for (int i = 0; i < NUM_ITERATIONS; i++) {
@@ -211,199 +224,151 @@ namespace test02 {
             (*it)->Unlock();
       }
    }
+   REGISTER_PATTERN(201);
+} // namespace multiple_locks
 
-   void Run() {
-      int id = rand() % NUM_CONTEXTS;
-      for (int i = 0; i < 2; i++)
-         mainThreadPool->Add(NewCallback(Worker, &contexts[id]));
-   }
+// Publishing objects using different synchronization patterns {{{1
+namespace publishing {
+   namespace pcq {
+      const int NUM_CONTEXTS = 16;
    
-   REGISTER_TEST(2);
-} // namespace test02
-
-// T1 publishes a memory location to T2 using Signal-Wait {{{1
-namespace test03 {
-   const int DATA_SIZE = 1024;
+      struct TestContext {
+         ProducerConsumerQueue pcq;
+         
+         TestContext() : pcq(0) {}
+         ~TestContext() {
+            void * ptr = NULL;
+            // Erase the contents of the PCQ. We assume NULL can't be there
+            pcq.Put(NULL);
+            while(ptr = pcq.Get())
+               delete [] (char*)ptr;
+         }
+      } contexts[NUM_CONTEXTS];
    
-   struct TestContext {
-      Mutex64 MU;
-      CondVar CV;
-      char * data;
-      TestContext () : data(NULL) {}
-   };
-
-   void Signaller(TestContext * context) {
-      char * temp = new char[DATA_SIZE]; 
-      for (int i = 0; i < DATA_SIZE; i++)
-         temp[i] = 77;
-
-      Mutex64 * MU = &context->MU;
-      CondVar * CV = &context->CV;
-      MU->Lock();
-         context->data = temp;
-         CV->Signal();
-      MU->Unlock();
-   }
-
-   void Waiter(TestContext * context) {
-      Mutex64 * MU = &context->MU;
-      CondVar * CV = &context->CV;
-      MU->Lock();
-      while (context->data == NULL)
-         CV->Wait(MU);
-      ANNOTATE_CONDVAR_LOCK_WAIT(CV, MU);         
-      MU->Unlock();
+      // Publish a random string into a random PCQ
+      void Pattern301() {
+         printf("Pattern301\n");
+         TestContext * context = &contexts[rand() % NUM_CONTEXTS];
+         // TODO: str_len as a parameter
+         int str_len = 1 + (rand() % 255);
+         char * str = new char[str_len + 1];
+         CHECK(str != NULL);
+         for (int i = 0; i < str_len; i++)
+            str[i] = 'a';
+         str[str_len] = '\0';
+         context->pcq.Put(str);
+      }
+      REGISTER_PATTERN(301);
       
-      for (int i = 0; i < DATA_SIZE; i++)
-         CHECK(77 == context->data[i]);
+      // Read a published string from a random PCQ. MAYFAIL!
+      bool Pattern302() {
+         printf("Pattern302\n");
+         TestContext * context = &contexts[rand() % NUM_CONTEXTS];
+         char * str = NULL;
+         if (context->pcq.TryGet((void**)&str)) {
+            int tmp = strlen(str);
+            delete [] str;
+            return true;
+         }
+         return false;
+      }
+      REGISTER_PATTERN(302);
+   }
+} // namespace publishing
+
+// Threads work with their memory exclusively
+namespace thread_local {
+   // Thread accesses heap
+   void Pattern401() {
+      printf("Pattern401\n");
+      // TODO: parameters
+      const int DATA_SIZE  = 1024;
+      const int ITERATIONS = 16;
       
-      delete [] context->data;
-   }
-   
-   void Run() {
-      TestContext * tc = new TestContext();
-      mainThreadPool->Add(NewCallback(Signaller, tc));
-      mainThreadPool->Add(NewCallback(Waiter, tc));
-   }
-   
-   REGISTER_TEST(3);
-} // namespace test03
-
-// 2 threads access their own memory ranges (heap) {{{1
-namespace test04 {
-   const int NUM_ITERATIONS = 16;
-   const int DATA_SIZE = 128;
-   
-   void Worker() {
-      char * data = new char[DATA_SIZE]; 
-      for (int i = 0; i < NUM_ITERATIONS; i++) {
-         for (int j = 0; j < DATA_SIZE; j++)
-            data[j] = 77;
+      char * temp = new char[DATA_SIZE + 1];
+      for (int i = 1; i <= ITERATIONS; i++) {
+         memset(temp, i, DATA_SIZE);
+         temp[DATA_SIZE] = 0;
+         int size = strlen(temp);
       }
-      delete [] data;
+      delete [] temp;
    }
-
-   void Run() {
-      for (int i = 0; i < 2; i++)
-         mainThreadPool->Add(NewCallback(Worker));
-   }
+   REGISTER_PATTERN(401);
    
-   REGISTER_TEST(4);
-} // namespace test04
-
-// 2 threads access their own memory ranges (stack) {{{1
-namespace test05 {
-   const int NUM_ITERATIONS = 16;
-   const int DATA_SIZE = 128;
-   
-   void Worker() {
-      char data[DATA_SIZE]; 
-      for (int i = 0; i < NUM_ITERATIONS; i++) {
-         for (int j = 0; j < DATA_SIZE; j++)
-            data[j] = 77;
-      }
-   }
-
-   void Run() {
-      for (int i = 0; i < 2; i++)
-         mainThreadPool->Add(NewCallback(Worker));
-   }
-   
-   REGISTER_TEST(5);
-} // namespace test05
-
-// 2 threads access a single integer with atomics {{{1
-namespace test06 {
-   const int NUM_ITERATIONS = 16;
-   const int CONTEXT_COUNT = 16;
-   
-   int contexts[CONTEXT_COUNT];
-   
-   void Worker(int * context) {
-      for (int i = 0; i < NUM_ITERATIONS; i++) {
-         __sync_add_and_fetch(context, 1);
-      }
-   }
-
-   void Run() {
-      int id = rand() % CONTEXT_COUNT;
-      for (int i = 0; i < 2; i++)
-         mainThreadPool->Add(NewCallback(Worker, &contexts[id]));
-   }
-   
-   REGISTER_TEST(6);
-} // namespace test06
-
-// T1 publishes objects to T2 using PCQ {{{1
-namespace test07 {
-   const int ITERATIONS = 128;
-   const int DATA_SIZE = 1024;
-   
-   void Signaller(ProducerConsumerQueue * pcq) {
-      for (int j = 0; j < ITERATIONS; j++) {
-         char * temp = new char[DATA_SIZE]; 
-         for (int i = 0; i < DATA_SIZE; i++)
-            temp[i] = 77;
-         pcq->Put(temp);
-      }
-      pcq->Put(NULL);
-   }
-
-   void Waiter(ProducerConsumerQueue * pcq) {
-      char * temp;
-      while (temp = (char*)pcq->Get()) {      
-         for (int i = 0; i < DATA_SIZE; i++)
-            CHECK(77 == temp[i]);
-      }
+   // Thread accesses stack
+   void Pattern402() {
+      printf("Pattern402\n");
+      // TODO: parameters
+      const int DATA_SIZE  = 1024;
+      const int ITERATIONS = 16;
       
-      delete pcq;
-   }
-   
-   void Run() {
-      ProducerConsumerQueue * pcq = new ProducerConsumerQueue(-1);
-      mainThreadPool->Add(NewCallback(Signaller, pcq));
-      mainThreadPool->Add(NewCallback(Waiter, pcq));
-   }
-   
-   REGISTER_TEST(7);
-} // namespace test07
-
-// 2 threads access an integer w/o synchronization (benign race) {{{1
-namespace test08 {
-   const int NUM_ITERATIONS = 10;
-   const int CONTEXT_COUNT = 16;
-   
-   int contexts[CONTEXT_COUNT];
-   
-   void Worker(int * context) {
-      for (int i = 0; i < NUM_ITERATIONS; i++) {
-         (*context)++;
-         usleep(10);
+      char temp[DATA_SIZE];
+      for (int i = 1; i <= ITERATIONS; i++) {
+         memset(temp, i, DATA_SIZE);
+         temp[DATA_SIZE] = 0;
+         int size = strlen(temp);
       }
    }
+   REGISTER_PATTERN(402);
+} // namespace thread_local
 
-   void Run() {
-      int id = rand() % CONTEXT_COUNT;
-      for (int i = 0; i < 2; i++) {
-         ANNOTATE_BENIGN_RACE(&contexts[id], "test08");
-         mainThreadPool->Add(NewCallback(Worker, &contexts[id]));
-      }
-   }
+// Different benign races scenarios
+namespace benign_races {
+   namespace stats {
+      int simple_counter = 0;
+      
+      int odd_counter = 1;
+      Mutex64 odd_counter_mu;
+      
+      struct __ {
+         __() {
+            ANNOTATE_BENIGN_RACE(&simple_counter, "Pattern501");
+         }
+      } _;
    
-   REGISTER_TEST(8);
-} // namespace test08
+      void Pattern501() {
+         simple_counter++;
+      }
+      REGISTER_PATTERN(501);
+      
+      // increment odd_counter, but first check it is >0 (double-check) 
+      void Pattern502() {
+         printf("Pattern502\n");
+         if (ANNOTATE_UNPROTECTED_READ(odd_counter) > 0) {
+            odd_counter_mu.Lock();
+            if (odd_counter > 0)
+               odd_counter++;
+            odd_counter_mu.Unlock();
+         }
+      }
+      REGISTER_PATTERN(502);
+   }
+      
+} // namespace benign_races
+
+void PatternDispatcher() {
+   std::vector<int> availablePatterns;
+   for (MapOfTests::iterator it = the_map_of_tests.begin();
+         it != the_map_of_tests.end(); it++) {
+      availablePatterns.push_back(it->first);
+   }
+   for (int i = 0; i < 16; i++) {
+      //int idx = rand() % availablePatterns.size();
+      int idx = i % availablePatterns.size();      
+      int test_idx = availablePatterns[idx];
+      // TODO: the above code should be replaced with a proper randomizer
+      // with a "specify distribution function" feature
+      the_map_of_tests[test_idx].Run();
+   }
+}
 
 int main () {
-   mainThreadPool = new ThreadPool(3);
+   const int N = 3;
+   mainThreadPool = new ThreadPool(N);
    mainThreadPool->StartWorkers();
-   test01::Run();
-   test02::Run();
-   test03::Run();
-   test04::Run();
-   test05::Run();
-   test06::Run();
-   test07::Run();
-   test08::Run();
+   for (int i = 0; i < N; i++) {
+      mainThreadPool->Add(NewCallback(PatternDispatcher));
+   }
    delete mainThreadPool;
    
    return 0;
