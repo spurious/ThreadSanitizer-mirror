@@ -234,7 +234,10 @@ namespace multiple_locks {
    // Access random context holding a corresponding LockSet
    void Pattern202() {
       printf("Pattern202\n");
-      int ls_idx = rand() % NUM_LOCKSETS;
+      int ls_idx = 0;      
+      while (ls_idx == 0)
+         ls_idx = rand() % NUM_LOCKSETS;
+      
       char * data = ls_data[ls_idx];
       for (int i = 0; i < MAX_LOCKSET_SIZE; i++)
          if (ls_idx & (1 << i))
@@ -407,6 +410,7 @@ void PatternDispatcher() {
          it != the_map_of_tests.end(); it++) {
       availablePatterns.push_back(it->first);
    }
+   //printf("Available: %d patterns\n", availablePatterns.size());
    for (int i = 0; i < 16; i++) {
       //int idx = rand() % availablePatterns.size();
       int idx = i % availablePatterns.size();      
