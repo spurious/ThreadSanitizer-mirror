@@ -133,7 +133,7 @@ ThreadPool * mainThreadPool;
 namespace test00 {   
    void Run() {}
    
-   REGISTER_TEST(00);
+   REGISTER_TEST(0);
 } // namespace test00
 
 // 2 threads access the same memory location holding one common lock {{{1
@@ -163,7 +163,7 @@ namespace test01 {
          mainThreadPool->Add(NewCallback(Worker, &contexts[id]));
    }
    
-   REGISTER_TEST(01);
+   REGISTER_TEST(1);
 } // namespace test01
 
 // 2 threads access the same memory location holding different LS {{{1
@@ -218,7 +218,7 @@ namespace test02 {
          mainThreadPool->Add(NewCallback(Worker, &contexts[id]));
    }
    
-   REGISTER_TEST(02);
+   REGISTER_TEST(2);
 } // namespace test02
 
 // T1 publishes a memory location to T2 using Signal-Wait {{{1
@@ -266,7 +266,7 @@ namespace test03 {
       mainThreadPool->Add(NewCallback(Waiter, tc));
    }
    
-   REGISTER_TEST(03);
+   REGISTER_TEST(3);
 } // namespace test03
 
 // 2 threads access their own memory ranges (heap) {{{1
@@ -288,7 +288,7 @@ namespace test04 {
          mainThreadPool->Add(NewCallback(Worker));
    }
    
-   REGISTER_TEST(04);
+   REGISTER_TEST(4);
 } // namespace test04
 
 // 2 threads access their own memory ranges (stack) {{{1
@@ -309,13 +309,12 @@ namespace test05 {
          mainThreadPool->Add(NewCallback(Worker));
    }
    
-   REGISTER_TEST(05);
+   REGISTER_TEST(5);
 } // namespace test05
 
 // 2 threads access a single integer with atomics {{{1
 namespace test06 {
    const int NUM_ITERATIONS = 16;
-   const int DATA_SIZE = 128;
    const int CONTEXT_COUNT = 16;
    
    int contexts[CONTEXT_COUNT];
@@ -332,7 +331,7 @@ namespace test06 {
          mainThreadPool->Add(NewCallback(Worker, &contexts[id]));
    }
    
-   REGISTER_TEST(06);
+   REGISTER_TEST(6);
 } // namespace test06
 
 // T1 publishes objects to T2 using PCQ {{{1
@@ -366,8 +365,33 @@ namespace test07 {
       mainThreadPool->Add(NewCallback(Waiter, pcq));
    }
    
-   REGISTER_TEST(07);
+   REGISTER_TEST(7);
 } // namespace test07
+
+// 2 threads access an integer w/o synchronization (benign race) {{{1
+namespace test08 {
+   const int NUM_ITERATIONS = 10;
+   const int CONTEXT_COUNT = 16;
+   
+   int contexts[CONTEXT_COUNT];
+   
+   void Worker(int * context) {
+      for (int i = 0; i < NUM_ITERATIONS; i++) {
+         (*context)++;
+         usleep(10);
+      }
+   }
+
+   void Run() {
+      int id = rand() % CONTEXT_COUNT;
+      for (int i = 0; i < 2; i++) {
+         ANNOTATE_BENIGN_RACE(&contexts[id], "test08");
+         mainThreadPool->Add(NewCallback(Worker, &contexts[id]));
+      }
+   }
+   
+   REGISTER_TEST(8);
+} // namespace test08
 
 int main () {
    mainThreadPool = new ThreadPool(3);
@@ -379,6 +403,7 @@ int main () {
    test05::Run();
    test06::Run();
    test07::Run();
+   test08::Run();
    delete mainThreadPool;
    
    return 0;
