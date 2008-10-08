@@ -320,10 +320,9 @@ namespace test06 {
    
    int contexts[CONTEXT_COUNT];
    
-   void Worker(void * context) {
-      int * cntxt = (int*)context;
+   void Worker(int * context) {
       for (int i = 0; i < NUM_ITERATIONS; i++) {
-         __sync_add_and_fetch(cntxt, 1);
+         __sync_add_and_fetch(context, 1);
       }
    }
 
@@ -336,6 +335,40 @@ namespace test06 {
    REGISTER_TEST(06);
 } // namespace test06
 
+// T1 publishes objects to T2 using PCQ {{{1
+namespace test07 {
+   const int ITERATIONS = 128;
+   const int DATA_SIZE = 1024;
+   
+   void Signaller(ProducerConsumerQueue * pcq) {
+      for (int j = 0; j < ITERATIONS; j++) {
+         char * temp = new char[DATA_SIZE]; 
+         for (int i = 0; i < DATA_SIZE; i++)
+            temp[i] = 77;
+         pcq->Put(temp);
+      }
+      pcq->Put(NULL);
+   }
+
+   void Waiter(ProducerConsumerQueue * pcq) {
+      char * temp;
+      while (temp = (char*)pcq->Get()) {      
+         for (int i = 0; i < DATA_SIZE; i++)
+            CHECK(77 == temp[i]);
+      }
+      
+      delete pcq;
+   }
+   
+   void Run() {
+      ProducerConsumerQueue * pcq = new ProducerConsumerQueue(-1);
+      mainThreadPool->Add(NewCallback(Signaller, pcq));
+      mainThreadPool->Add(NewCallback(Waiter, pcq));
+   }
+   
+   REGISTER_TEST(07);
+} // namespace test07
+
 int main () {
    mainThreadPool = new ThreadPool(3);
    mainThreadPool->StartWorkers();
@@ -345,6 +378,7 @@ int main () {
    test04::Run();
    test05::Run();
    test06::Run();
+   test07::Run();
    delete mainThreadPool;
    
    return 0;
