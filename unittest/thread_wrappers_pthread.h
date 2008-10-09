@@ -295,8 +295,11 @@ class MyThread {
 
 class ProducerConsumerQueue {
  public:
-  ProducerConsumerQueue(int unused) {ANNOTATE_PCQ_CREATE(this);}
-  ~ProducerConsumerQueue() { CHECK(q_.empty()); ANNOTATE_PCQ_DESTROY(this);}
+  ProducerConsumerQueue(int unused) {
+    x_ = 0; ANNOTATE_PCQ_CREATE(this);
+    ANNOTATE_TRACE_MEMORY(&x_);
+  }
+  ~ProducerConsumerQueue() { x_++; CHECK(q_.empty()); ANNOTATE_PCQ_DESTROY(this);}
 
   // Put. 
   void Put(void *item) {
@@ -308,6 +311,7 @@ class ProducerConsumerQueue {
       sem_post(&t->sem);
 #endif
       q_.push(t);
+      x_++;
 //      ANNOTATE_PCQ_PUT(this);
     mu_.Unlock();
   }
@@ -322,6 +326,7 @@ class ProducerConsumerQueue {
     while(true) {
       bool have_item = false;
       mu_.Lock();
+      x_++;
       if (!q_.empty()) {
         item_t *t = q_.front();
         q_.pop();
@@ -350,6 +355,7 @@ class ProducerConsumerQueue {
     void *item = NULL;
     bool have_item = false;
     mu_.Lock();
+    x_++;
     if (!q_.empty()) {
       item_t *t = q_.front();
       q_.pop();
@@ -377,6 +383,7 @@ class ProducerConsumerQueue {
   };
   Mutex             mu_;
   std::queue<item_t*> q_; // protected by mu_
+  int                 x_; // for internal testing
 };
 
 
