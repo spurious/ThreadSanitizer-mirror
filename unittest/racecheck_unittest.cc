@@ -306,8 +306,7 @@ void Parent() {
   t.Join();
 }
 void Run() {
-//  ANNOTATE_EXPECT_RACE(&GLOB, "test01. TP.");
-  ANNOTATE_BENIGN_RACE(&GLOB, "test01. TP.");
+  ANNOTATE_EXPECT_RACE_FOR_HYBRID1(&GLOB, "test01. TP.");
   ANNOTATE_TRACE_MEMORY(&GLOB);
   printf("test01: positive\n");
   Parent();
