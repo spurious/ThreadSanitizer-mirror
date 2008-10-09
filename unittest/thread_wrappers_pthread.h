@@ -297,7 +297,7 @@ class ProducerConsumerQueue {
  public:
   ProducerConsumerQueue(int unused) {
     x_ = 0; ANNOTATE_PCQ_CREATE(this);
-    ANNOTATE_TRACE_MEMORY(&x_);
+    // ANNOTATE_TRACE_MEMORY(&x_);
   }
   ~ProducerConsumerQueue() { x_++; CHECK(q_.empty()); ANNOTATE_PCQ_DESTROY(this);}
 
