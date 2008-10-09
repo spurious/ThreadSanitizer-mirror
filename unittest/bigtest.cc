@@ -221,7 +221,7 @@ namespace multiple_locks {
             (*it)->Lock();
          for (int j = 0; j < DATA_SIZE; j++)
             context->data[j] = 77;
-         for (std::vector<Mutex64*>::iterator it = LS.begin(); it != LS.end(); it++)
+         for (std::vector<Mutex64*>::reverse_iterator it = LS.rbegin(); it != LS.rend(); it++)
             (*it)->Unlock();
       }
    }
@@ -246,7 +246,7 @@ namespace multiple_locks {
       for (int j = 0; j < DATA_SIZE; j++)
          data[j] = 77;
       
-      for (int i = 0; i < MAX_LOCKSET_SIZE; i++)
+      for (int i = MAX_LOCKSET_SIZE - 1; i >= 0; i--)
          if (ls_idx & (1 << i))
             ls_mu[i].Unlock();
    }
