@@ -115,23 +115,24 @@ ThreadPool * mainThreadPool;
 
 // Print everything under a mutex
 Mutex printf_mu;
-#define printf(args...) \
+/*#define printf(args...) \
     do{ \
       printf_mu.Lock();\
       fprintf(stdout, args);\
       printf_mu.Unlock(); \
-    }while(0)
+    }while(0)/**/
+#define printf(args...) do{}while(0)
 
 // Accessing memory locations holding one lock {{{1
 namespace one_lock {
    // TODO: make these constants as parameters
-   const int NUM_CONTEXTS = 16;
-   const int DATA_SIZE = 128;
-   const int NUM_ITERATIONS = 16;
+   const int NUM_CONTEXTS = 256;
+   const int DATA_SIZE = 4096;
+   const int NUM_ITERATIONS = 1;
    
    struct TestContext {
       Mutex64 MU;
-      char data[DATA_SIZE];
+      int data[DATA_SIZE];
    } contexts[NUM_CONTEXTS];
    
    // Write accesses
@@ -142,7 +143,8 @@ namespace one_lock {
       for (int i = 0; i < NUM_ITERATIONS; i++) {
          context->MU.Lock();
             for (int j = 0; j < DATA_SIZE; j++) {
-               context->data[j] = 77; // write
+               for (int k = 0; k < 10; k++)
+                  context->data[j] = 77; // write
             }
          context->MU.Unlock();
       }
@@ -158,7 +160,8 @@ namespace one_lock {
          int temp = 0;
          context->MU.Lock();
             for (int j = 0; j < DATA_SIZE; j++) {
-               temp += context->data[j]; // read
+               for (int k = 0; k < 10; k++)
+                  temp += context->data[j]; // read
             }
          context->MU.Unlock();
       }
@@ -179,14 +182,14 @@ namespace one_lock {
 // Accessing memory locations holding random LockSets {{{1
 namespace multiple_locks {
    // TODO: make these constants as parameters
-   const int NUM_CONTEXTS   = 16;
-   const int DATA_SIZE      = 128;
-   const int NUM_ITERATIONS = 16;
-   const int LOCKSET_SIZE   = 4;
+   const int NUM_CONTEXTS   = 1024;
+   const int DATA_SIZE      = 4096;
+   const int NUM_ITERATIONS = 1;
+   const int LOCKSET_SIZE   = 2;
       
    struct TestContext {
       Mutex64 MU;
-      char data[DATA_SIZE];
+      int data[DATA_SIZE];
    } contexts[NUM_CONTEXTS];
 
    // Access random context holding a random LS including context->MU
@@ -227,7 +230,7 @@ namespace multiple_locks {
    }
    REGISTER_PATTERN(201);
    
-   const int MAX_LOCKSET_SIZE   = 4;
+   const int MAX_LOCKSET_SIZE   = 3;
    const int NUM_LOCKSETS = 1 << MAX_LOCKSET_SIZE;
    Mutex64 ls_mu[MAX_LOCKSET_SIZE];
    char ls_data[NUM_LOCKSETS][DATA_SIZE];
@@ -267,7 +270,7 @@ namespace publishing {
             // Erase the contents of the PCQ. We assume NULL can't be there
             pcq.Put(NULL);
             while(ptr = pcq.Get())
-               delete [] (char*)ptr;
+               free(ptr);
          }
       } contexts[NUM_CONTEXTS];
    
@@ -277,10 +280,9 @@ namespace publishing {
          TestContext * context = &contexts[rand() % NUM_CONTEXTS];
          // TODO: str_len as a parameter
          int str_len = 1 + (rand() % 255);
-         char * str = new char[str_len + 1];
+         char * str = (char*)malloc(str_len + 1);
          CHECK(str != NULL);
-         for (int i = 0; i < str_len; i++)
-            str[i] = 'a';
+         memset(str, 'a', str_len);
          str[str_len] = '\0';
          context->pcq.Put(str);
       }
@@ -293,7 +295,7 @@ namespace publishing {
          char * str = NULL;
          if (context->pcq.TryGet((void**)&str)) {
             int tmp = strlen(str);
-            delete [] str;
+            free(str);
             return true;
          }
          return false;
@@ -302,10 +304,12 @@ namespace publishing {
    }
    
    namespace condvar {
-      const int NUM_CONTEXTS = 3;
+      const int NUM_CONTEXTS = 80;
       struct TestContext {
          Mutex64 MU;
          CondVar CV;
+         char * data;
+         TestContext () { data = NULL; }
       } contexts[NUM_CONTEXTS];
    
       // Signal a random CV
@@ -314,6 +318,14 @@ namespace publishing {
          int id = rand() % NUM_CONTEXTS;
          TestContext * context = &contexts[id];
          context->MU.Lock();
+         if (context->data) {
+            int tmp = strlen(context->data); // read
+            free(context->data);
+         }
+         int LEN = 1 + rand() % 512;
+         context->data = (char*)malloc(LEN + 1);
+         memset(context->data, 'a', LEN);
+         context->data[LEN] = '\0';
          context->CV.Signal();
          context->MU.Unlock();
       }
@@ -324,7 +336,12 @@ namespace publishing {
          int id = rand() % NUM_CONTEXTS;
          TestContext * context = &contexts[id];
          context->MU.Lock();
-         bool ret = !context->CV.WaitWithTimeout(&context->MU, 0);
+         bool ret = !context->CV.WaitWithTimeout(&context->MU, 10);
+         if (ret && context->data) {
+            int tmp = strlen(context->data);
+            free(context->data);
+            context->data = NULL;
+         }
          context->MU.Unlock();
          if (ret)
             printf("Pattern312\n");
@@ -343,13 +360,13 @@ namespace thread_local {
       const int DATA_SIZE  = 1024;
       const int ITERATIONS = 16;
       
-      char * temp = new char[DATA_SIZE + 1];
+      char * temp = (char*)malloc(DATA_SIZE + 1);
       for (int i = 1; i <= ITERATIONS; i++) {
          memset(temp, i, DATA_SIZE);
          temp[DATA_SIZE] = 0;
          int size = strlen(temp);
       }
-      delete [] temp;
+      free(temp);
    }
    REGISTER_PATTERN(401);
    
@@ -404,17 +421,43 @@ namespace benign_races {
       
 } // namespace benign_races
 
+const int N_THREADS = 23;
+
 void PatternDispatcher() {
+   std::map<int, int> moc;
+   moc[102] = 10;
+   moc[201] = 5;
+   /*moc[301] = 360/N_THREADS;
+   moc[302] = 56/N_THREADS;*/
+   moc[311] = 3600/N_THREADS;
+   moc[312] = 10*560/N_THREADS;
+   moc[401] = 5000/N_THREADS;
+   
    std::vector<int> availablePatterns;
    for (MapOfTests::iterator it = the_map_of_tests.begin();
          it != the_map_of_tests.end(); it++) {
       availablePatterns.push_back(it->first);
    }
-   //printf("Available: %d patterns\n", availablePatterns.size());
-   for (int i = 0; i < 16; i++) {
-      //int idx = rand() % availablePatterns.size();
-      int idx = i % availablePatterns.size();      
-      int test_idx = availablePatterns[idx];
+
+   int total = 0;
+   for (std::map<int,int>::iterator it = moc.begin(); it != moc.end(); it++) {
+      total += it->second;
+   }
+   
+   printf("Total tests: %d\n", total);
+   CHECK(total > 0);
+     
+   for (int i = 0; i < total; i++) {
+      int rnd = rand() % total;
+      int test_idx = -1;
+      for (std::map<int,int>::iterator it = moc.begin(); it != moc.end(); it++) {
+         if (rnd < it->second) {
+            test_idx = it->first;
+            break;
+         }
+         rnd -= it->second;
+      }
+      CHECK(test_idx >= 0);
       // TODO: the above code should be replaced with a proper randomizer
       // with a "specify distribution function" feature
       the_map_of_tests[test_idx].Run();
@@ -422,10 +465,9 @@ void PatternDispatcher() {
 }
 
 int main () {
-   const int N = 3;
-   mainThreadPool = new ThreadPool(N);
+   mainThreadPool = new ThreadPool(N_THREADS);
    mainThreadPool->StartWorkers();
-   for (int i = 0; i < N; i++) {
+   for (int i = 0; i < N_THREADS; i++) {
       mainThreadPool->Add(NewCallback(PatternDispatcher));
    }
    delete mainThreadPool;
