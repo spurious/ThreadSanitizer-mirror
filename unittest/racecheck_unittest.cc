@@ -2257,7 +2257,7 @@ void Second() {
   MU.Unlock();
 }
 void Run() {
-  printf("test46: (false) negative\n");
+  ANNOTATE_TRACE_MEMORY(&GLOB);
   MyThreadArray t(First, Second);
   t.Start();
   t.Join();
@@ -4918,6 +4918,66 @@ void Run() {
 }
 REGISTER_TEST2(Run, 103, FEATURE)
 }  // namespace test103
+
+// test104: TP. Simple race (write vs write). Heap mem. {{{1
+namespace test104 {
+int     *GLOB = NULL;
+void Worker() {
+  *GLOB = 1; 
+}
+
+void Parent() {
+  MyThread t(Worker);
+  t.Start();
+  *GLOB = 2;
+  t.Join();
+}
+void Run() {
+  GLOB = new int;
+  *GLOB = 0;
+  ANNOTATE_EXPECT_RACE_FOR_HYBRID1(GLOB, "test104. TP.");
+  ANNOTATE_TRACE_MEMORY(GLOB);
+  printf("test104: positive\n");
+  Parent();
+  printf("\tGLOB=%d\n", *GLOB);
+  delete GLOB;
+}
+REGISTER_TEST(Run, 104);
+}  // namespace test104
+
+
+// test105: Checks how stack grows. {{{1
+namespace test105 {
+int     GLOB = 0;
+
+void F1() {
+  int ar[32];
+  ANNOTATE_TRACE_MEMORY(&ar[0]);
+  ANNOTATE_TRACE_MEMORY(&ar[31]);
+  ar[0] = 1;
+  ar[31] = 1;
+}
+
+void Worker() {
+  int ar[32];
+  ANNOTATE_TRACE_MEMORY(&ar[0]);
+  ANNOTATE_TRACE_MEMORY(&ar[31]);
+  ar[0] = 1;
+  ar[31] = 1;
+  F1();
+}
+
+void Run() {
+  printf("test105: negative\n");
+  Worker();
+  MyThread t(Worker);
+  t.Start();
+  t.Join();
+  printf("\tGLOB=%d\n", GLOB);
+}
+REGISTER_TEST(Run, 105)
+}  // namespace test105
+
 
 // test300: {{{1
 namespace test300 {
