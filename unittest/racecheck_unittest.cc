@@ -4980,6 +4980,32 @@ REGISTER_TEST(Run, 105)
 }  // namespace test105
 
 
+// test106: TN. pthread_once. {{{1
+namespace test106 {
+int     *GLOB = NULL;
+static pthread_once_t once = PTHREAD_ONCE_INIT;
+void Init() {
+  GLOB = new int;
+  *GLOB = 777;
+  ANNOTATE_TRACE_MEMORY(GLOB);
+}
+
+void Worker() {
+  pthread_once(&once, Init);
+  CHECK(*GLOB == 777);
+}
+
+void Run() {
+  printf("test106: negative\n");
+  MyThreadArray t(Worker, Worker, Worker, Worker);
+  t.Start();
+  t.Join();
+  printf("\tGLOB=%d\n", *GLOB);
+}
+REGISTER_TEST(Run, 106)
+}  // namespace test106
+
+
 // test300: {{{1
 namespace test300 {
 int     GLOB = 0;
