@@ -4929,13 +4929,14 @@ void Worker() {
 void Parent() {
   MyThread t(Worker);
   t.Start();
+  usleep(100000);
   *GLOB = 2;
   t.Join();
 }
 void Run() {
   GLOB = new int;
   *GLOB = 0;
-  ANNOTATE_EXPECT_RACE_FOR_HYBRID1(GLOB, "test104. TP.");
+  ANNOTATE_EXPECT_RACE(GLOB, "test104. TP.");
   ANNOTATE_TRACE_MEMORY(GLOB);
   printf("test104: positive\n");
   Parent();
@@ -4952,16 +4953,16 @@ int     GLOB = 0;
 
 void F1() {
   int ar[32];
-  ANNOTATE_TRACE_MEMORY(&ar[0]);
-  ANNOTATE_TRACE_MEMORY(&ar[31]);
+//  ANNOTATE_TRACE_MEMORY(&ar[0]);
+//  ANNOTATE_TRACE_MEMORY(&ar[31]);
   ar[0] = 1;
   ar[31] = 1;
 }
 
 void Worker() {
   int ar[32];
-  ANNOTATE_TRACE_MEMORY(&ar[0]);
-  ANNOTATE_TRACE_MEMORY(&ar[31]);
+//  ANNOTATE_TRACE_MEMORY(&ar[0]);
+//  ANNOTATE_TRACE_MEMORY(&ar[31]);
   ar[0] = 1;
   ar[31] = 1;
   F1();
