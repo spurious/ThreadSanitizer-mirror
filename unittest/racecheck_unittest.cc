@@ -218,6 +218,7 @@ int main(int argc, char** argv) { // {{{1
   }
 }
 
+#ifdef THREAD_WRAPPERS_PTHREAD_H
 // Hack for our experiments with multi-threaded detector.
 extern "C" void *DetectorThreadFunc(void *) {
 //  printf("Hey there! I am DetectorThreadFunc()\n");
@@ -237,6 +238,7 @@ struct DetectorThread {
 };
 
 static DetectorThread the_detector_thread;
+#endif
 
 
 // An array of threads. Create/start/join all elements at once. {{{1
@@ -4641,7 +4643,7 @@ int * GLOB = &array[ARRAY_SIZE/2];
  */
 
 void Reader() {
-   usleep(100000);
+   usleep(500000);
    CHECK(777 == *GLOB);
 }
 
@@ -4986,24 +4988,86 @@ int     *GLOB = NULL;
 static pthread_once_t once = PTHREAD_ONCE_INIT;
 void Init() {
   GLOB = new int;
-  *GLOB = 777;
   ANNOTATE_TRACE_MEMORY(GLOB);
+  *GLOB = 777;
 }
 
-void Worker() {
+void Worker0() {
+  pthread_once(&once, Init);
+}
+void Worker1() {
+  usleep(100000);
   pthread_once(&once, Init);
   CHECK(*GLOB == 777);
 }
 
+
 void Run() {
   printf("test106: negative\n");
-  MyThreadArray t(Worker, Worker, Worker, Worker);
+  MyThreadArray t(Worker0, Worker1, Worker1, Worker1);
   t.Start();
   t.Join();
   printf("\tGLOB=%d\n", *GLOB);
 }
 REGISTER_TEST(Run, 106)
 }  // namespace test106
+
+
+// test107: Test for ANNOTATE_EXPECT_RACE {{{1
+namespace test107 {
+int     GLOB = 0;
+void Run() {
+  printf("test107: negative\n");
+  ANNOTATE_EXPECT_RACE(&GLOB, "No race in fact. Just checking the tool."); 
+  printf("\tGLOB=%d\n", GLOB);
+}
+REGISTER_TEST2(Run, 107, FEATURE|EXCLUDE_FROM_ALL)
+}  // namespace test107
+
+
+// test108: TP. initialization of static object. {{{1
+namespace test108 {
+// Here we have a function-level static object. 
+// Starting from gcc 4 this is in fact therad safe, 
+// but is is not thread safe with many other compilers.
+//
+// In future it *may* make sense to support this kind of initialization 
+// (by intercepting __cxa_guard_acquire/__cxa_guard_release)
+class Foo {
+ public:
+  Foo() {
+    ANNOTATE_TRACE_MEMORY(&a_);
+    ANNOTATE_EXPECT_RACE_FOR_HYBRID1(&a_, "initialization of static object");
+    a_ = 42;
+  }
+  void Check() const { CHECK(a_ == 42); }
+ private:
+  int a_;
+};
+
+const Foo *GetFoo() {
+  static const Foo *foo = new Foo();
+  return foo;
+}
+void Worker0() {
+  GetFoo();
+}
+
+void Worker() {
+  usleep(200000);
+  const Foo *foo = GetFoo();
+  foo->Check();
+}
+
+
+void Run() {
+  printf("test108: positive, initialization of static object\n");
+  MyThreadArray t(Worker0, Worker, Worker);
+  t.Start();
+  t.Join();
+}
+REGISTER_TEST1(Run, 108, FEATURE|EXCLUDE_FROM_ALL)
+}  // namespace test108
 
 
 // test300: {{{1
