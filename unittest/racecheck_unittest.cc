@@ -5070,6 +5070,34 @@ REGISTER_TEST2(Run, 108, FEATURE|EXCLUDE_FROM_ALL)
 }  // namespace test108
 
 
+// test109: TN. Just many threads. {{{1
+namespace test109 {
+// Check that the detector correctly connects pthread_create and the new thread.
+const int N = 32;
+static int GLOB[N];
+
+void Worker(void *a) {
+  int *arg = (int*)a;
+  (*arg)++;
+}
+
+void Run() {
+  printf("test109: negative\n");
+  MyThread *t[N];
+  for (int i  = 0; i < N; i++) t[i] = new MyThread(Worker);
+  for (int i  = 0; i < N; i++) {
+    GLOB[i] = 1;
+    t[i]->Start(&GLOB[i]);
+  }
+  for (int i  = 0; i < N; i++) t[i]->Join();
+  for (int i  = 0; i < N; i++) delete t[i];
+
+  printf("\tGLOB=%d\n", GLOB[13]);
+}
+REGISTER_TEST(Run, 109)
+}  // namespace test109
+
+
 // test300: {{{1
 namespace test300 {
 int     GLOB = 0;
