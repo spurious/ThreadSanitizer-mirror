@@ -30,17 +30,31 @@
 #include <vector>
 #include <string>
 #include <map>
+#include <set>
 #include <ext/hash_map>
 #include <algorithm>
 #include <cstring>      // strlen(), index(), rindex()
 #include <ctime>
+#include <math.h>
 
 #include "thread_wrappers_pthread.h"
+#include "linear_solver.h"
 
 class Mutex64: public Mutex {
    // force sizeof(Mutex64) >= 64
 private:
    char ___[(sizeof(Mutex) > 64) ? (0) : (64 - sizeof(Mutex))];
+};
+
+enum StatType {
+   //N_THREADS,
+   N_CV,
+   N_CV_SIGNALS,
+   N_CV_WAITS,
+   N_MUTEXES,
+   N_MUTEX_LOCK_UNLOCK//,
+   /*N_RACEY_ACCESSES,
+   N_MEM_ACCESSES*/
 };
 
 struct TestStats {
@@ -94,63 +108,205 @@ struct Test{
 typedef std::map<int, Test> MapOfTests;
 MapOfTests the_map_of_tests;
 
+class GoalStats {
+public:
+   typedef std::vector<StatType> TypesVector;
+private:
+   //TODO: think of better names
+   std::map<StatType, int> goal;
+   TypesVector types;
+   Vector * stats;
+   typedef std::set<void (*)()> void_f_void_set;
+   void_f_void_set param_registerers, param_appliers;
+   std::vector<double*> parameters;
+   Matrix * cost_m;
+   bool calculated;
+   
+   template<typename T> static int v_find(const std::vector<T> & vec, const T & val) {
+      for (int i = 0; i < vec.size(); i++)
+         if (vec[i] == val)
+            return i;
+      return -1;
+   }
+public:
+   GoalStats(): stats(NULL), cost_m(NULL), calculated(false) {}
+   ~GoalStats() { delete stats; delete cost_m; }
+   
+   // Note that this function is called before main()
+   void AddPattern(void (*register_func)(), void (*paramapply_func)()) {
+      param_registerers.insert(register_func);
+      param_appliers.insert(paramapply_func);
+   }   
+   
+   void RegisterPatterns() {
+      for(void_f_void_set::iterator i = param_registerers.begin();
+            i != param_registerers.end(); i++)
+      {
+         (*(*i))(); // call each param_registerer
+      }
+   }
+   
+   void AddGoal(StatType type, int value) {
+      CHECK(stats == NULL);
+      CHECK(goal.find(type) == goal.end());
+      goal[type] = value;
+      types.push_back(type);
+   }
+   
+   void CompileStatsIntoVector() {
+      CHECK(stats == NULL);
+      CHECK(types.size() == goal.size());
+      stats = new Vector(types.size());
+      for (int i = 0; i < types.size(); i++)
+         (*stats)[i] = goal[types[i]];
+      cost_m = new Matrix(types.size(), 0);
+   }
+   
+   const Vector & GetStatsVector() {
+      return *stats;
+   }
+   
+   TypesVector GetTypes() {
+      CHECK(stats != NULL);
+      return types;
+   }
+   
+   void RegisterParameter(double * param) {
+      CHECK(stats != NULL);
+      int param_id = parameters.size();
+      parameters.push_back(param);
+      cost_m->IncN();
+   }
+   
+   void SetParameterStat(StatType stat_type, double * param, double cost) {
+      int type_id = v_find(types, stat_type);
+      if (type_id == -1)
+         return; // this stat type isn't required - ignore
+      
+      int param_id = v_find(parameters, param);
+      CHECK(param_id != -1);         
+      
+      cost_m->At(type_id, param_id) = cost;
+   }
+   
+   void CalculateAndApplyParameters() {
+      CHECK(calculated == false);
+      printf("Cost matrix:\n%s\n", cost_m->ToString().c_str());
+      printf("Stats vector:\n%s\n", stats->ToString().c_str());
+      Vector params = EstimateParameters(*cost_m, *stats, 0.05);
+      CHECK(params.GetSize() == parameters.size());
+      for (int i = 0; i < parameters.size(); i++) {
+         printf("param[%i] = %lf\n", i, params[i]);
+         *(parameters[i]) = params[i];
+      }
+      
+      for (void_f_void_set::iterator i = param_appliers.begin();
+               i != param_appliers.end(); i++)
+      {
+         (*(*i))();
+      }
+      calculated = true;
+   }
+} goals;
+
 struct TestAdder {
    TestAdder(int id, //Test::TestStats_func_void_t _GetStats, 
-                     Test::void_func_void_t _Run)
+                     Test::void_func_void_t _Run,
+                     void (*paramreg)(void),
+                     void (*paramapply)(void))
    {
       CHECK(the_map_of_tests.count(id) == 0);
       the_map_of_tests[id] = Test(id, /*_GetStats,*/ _Run);
+      goals.AddPattern(paramreg, paramapply);
    }
    TestAdder(int id, //Test::TestStats_func_void_t _GetStats, 
-                     Test::bool_func_void_t _Run)
+                     Test::bool_func_void_t _Run,
+                     void (*paramreg)(void),
+                     void (*paramapply)(void))
    {
       CHECK(the_map_of_tests.count(id) == 0);
       the_map_of_tests[id] = Test(id, /*_GetStats,*/ _Run);
+      goals.AddPattern(paramreg, paramapply);
    }
 };
 
-#define REGISTER_PATTERN(id) TestAdder add_test##id(id, Pattern##id)
+#define REGISTER_PATTERN(id) TestAdder add_test##id(id, Pattern##id, \
+                             ParametersRegistration##id, ApplyParameters##id)
 
 ThreadPool * mainThreadPool;
+std::map<int, double> map_of_counts; // test -> average run count
 
 // Print everything under a mutex
 Mutex printf_mu;
+#define printf(args...) do{}while(0)
 /*#define printf(args...) \
     do{ \
       printf_mu.Lock();\
       fprintf(stdout, args);\
       printf_mu.Unlock(); \
     }while(0)/**/
-#define printf(args...) do{}while(0)
+
+
+inline double round(double lf) {
+   return floor(lf + 0.5);
+}
 
 // Accessing memory locations holding one lock {{{1
 namespace one_lock {
-   // TODO: make these constants as parameters
-   const int NUM_CONTEXTS = 256;
-   const int DATA_SIZE = 4096;
-   const int NUM_ITERATIONS = 1;
+   struct Params {
+      double num_contexts;      
+      int NUM_CONTEXTS;
+
+      double num_iterations_times_runcount;
+      int NUM_ITERATIONS;
+      
+      //double data_size_times_;
+      static const int DATA_SIZE = 1024;
+   } params;
    
    struct TestContext {
       Mutex64 MU;
-      int data[DATA_SIZE];
-   } contexts[NUM_CONTEXTS];
+      int * data;
+      TestContext() {
+         data = new int[params.DATA_SIZE];
+      }
+   } *contexts;
    
    // Write accesses
    void Pattern101() {    
       printf("Pattern101\n");  
-      int id = rand() % NUM_CONTEXTS;
+      int id = rand() % params.NUM_CONTEXTS;
       TestContext * context = &contexts[id];
-      for (int i = 0; i < NUM_ITERATIONS; i++) {
+      for (int i = 0; i < params.NUM_ITERATIONS; i++) {
          context->MU.Lock();
-            for (int j = 0; j < DATA_SIZE; j++) {
+            for (int j = 0; j < params.DATA_SIZE; j++) {
                for (int k = 0; k < 10; k++)
                   context->data[j] = 77; // write
             }
          context->MU.Unlock();
       }
    }
+   void ParametersRegistration101() {
+      map_of_counts[101] = 100;
+      //goals.RegisterParameter(&map_of_counts[101]);
+      
+      goals.RegisterParameter(&params.num_iterations_times_runcount);
+      goals.SetParameterStat(N_MUTEX_LOCK_UNLOCK, &params.num_iterations_times_runcount, 3 /*don't ask why*/);
+      
+      goals.RegisterParameter(&params.num_contexts);
+      goals.SetParameterStat(N_MUTEXES, &params.num_contexts, 1);
+   }
+   void ApplyParameters101() {
+      printf("%lf, %lf\n", params.num_contexts, params.num_iterations_times_runcount);
+      params.NUM_CONTEXTS = round(params.num_contexts);
+      CHECK(params.NUM_CONTEXTS > 0);
+      params.NUM_ITERATIONS = round(params.num_iterations_times_runcount / map_of_counts[101]);
+      
+      contexts = new TestContext[params.NUM_CONTEXTS];
+   }
    REGISTER_PATTERN(101);
    
+   /* other tests...
    // Read accesses
    void Pattern102() {
       printf("Pattern102\n");
@@ -177,8 +333,9 @@ namespace one_lock {
          __sync_add_and_fetch(&atomic_integers[id], 1);
    }
    REGISTER_PATTERN(103);
+   */
 } // namespace one_lock
-
+/* other namespaces...
 // Accessing memory locations holding random LockSets {{{1
 namespace multiple_locks {
    // TODO: make these constants as parameters
@@ -255,10 +412,11 @@ namespace multiple_locks {
    }
    REGISTER_PATTERN(202);
 } // namespace multiple_locks
+*/
 
 // Publishing objects using different synchronization patterns {{{1
 namespace publishing {
-   namespace pcq {
+   /*namespace pcq {
       const int NUM_CONTEXTS = 16;
    
       struct TestContext {
@@ -301,39 +459,62 @@ namespace publishing {
          return false;
       }
       REGISTER_PATTERN(302);
-   }
+   }*/
    
    namespace condvar {
-      const int NUM_CONTEXTS = 80;
+      struct Params {
+         double num_contexts;
+         int NUM_CONTEXTS;
+         
+         int DATA_SIZE;
+         Params() {
+            DATA_SIZE = 1;
+         }
+      } params;
       struct TestContext {
          Mutex64 MU;
          CondVar CV;
          char * data;
          TestContext () { data = NULL; }
-      } contexts[NUM_CONTEXTS];
+      } *contexts;
    
       // Signal a random CV
       void Pattern311() {
          printf("Pattern311\n");
-         int id = rand() % NUM_CONTEXTS;
+         int id = rand() % params.NUM_CONTEXTS;
          TestContext * context = &contexts[id];
          context->MU.Lock();
          if (context->data) {
             int tmp = strlen(context->data); // read
             free(context->data);
          }
-         int LEN = 1 + rand() % 512;
+         int LEN = params.DATA_SIZE;
          context->data = (char*)malloc(LEN + 1);
          memset(context->data, 'a', LEN);
          context->data[LEN] = '\0';
          context->CV.Signal();
          context->MU.Unlock();
       }
+      void ParametersRegistration311() {
+         double * num_CV_Signals = &map_of_counts[311];
+         goals.RegisterParameter(num_CV_Signals);
+         goals.SetParameterStat(N_CV_SIGNALS, num_CV_Signals, 1);
+         goals.SetParameterStat(N_MUTEX_LOCK_UNLOCK, num_CV_Signals, 9 /* don't ask why */);
+         
+         goals.RegisterParameter(&params.num_contexts);
+         goals.SetParameterStat(N_CV, &params.num_contexts, 1);
+         goals.SetParameterStat(N_MUTEXES, &params.num_contexts, 1);
+      }
+      void ApplyParameters311() {
+         params.NUM_CONTEXTS = round(params.num_contexts);
+         CHECK(params.NUM_CONTEXTS > 0);        
+         contexts = new TestContext[params.NUM_CONTEXTS];
+      }
       REGISTER_PATTERN(311);
       
       // Wait on a random CV
       bool Pattern312() {
-         int id = rand() % NUM_CONTEXTS;
+         int id = rand() % params.NUM_CONTEXTS;
          TestContext * context = &contexts[id];
          context->MU.Lock();
          bool ret = !context->CV.WaitWithTimeout(&context->MU, 10);
@@ -345,12 +526,24 @@ namespace publishing {
          context->MU.Unlock();
          if (ret)
             printf("Pattern312\n");
+         else
+            printf("Pattern312 failed\n");
          return ret;
+      }
+      void ParametersRegistration312() {
+         //TODO: stats???
+         double * num_CV_Waits = &map_of_counts[312];
+         goals.RegisterParameter(num_CV_Waits);
+         goals.SetParameterStat(N_CV_WAITS, num_CV_Waits, .1);
+         goals.SetParameterStat(N_MUTEX_LOCK_UNLOCK, num_CV_Waits, 16);
+      }
+      void ApplyParameters312() {
       }
       REGISTER_PATTERN(312);
    }
 } // namespace publishing
 
+/*
 // Threads work with their memory exclusively
 namespace thread_local {
    // Thread accesses heap
@@ -420,51 +613,65 @@ namespace benign_races {
    }
       
 } // namespace benign_races
+*/
 
-const int N_THREADS = 23;
+const int N_THREADS = 2;
 
-void PatternDispatcher() {
-   std::map<int, int> moc;
-   moc[102] = 10;
-   moc[201] = 5;
-   /*moc[301] = 360/N_THREADS;
-   moc[302] = 56/N_THREADS;*/
-   moc[311] = 3600/N_THREADS;
-   moc[312] = 10*560/N_THREADS;
-   moc[401] = 5000/N_THREADS;
-   
+void PatternDispatcher() {   
    std::vector<int> availablePatterns;
    for (MapOfTests::iterator it = the_map_of_tests.begin();
          it != the_map_of_tests.end(); it++) {
-      availablePatterns.push_back(it->first);
+      if (map_of_counts[it->first] > 0.0)
+         availablePatterns.push_back(it->first);
    }
 
+   std::map<int, int> this_thread_runcounts;
+   
    int total = 0;
-   for (std::map<int,int>::iterator it = moc.begin(); it != moc.end(); it++) {
-      total += it->second;
+   for (std::map<int,double>::iterator it = map_of_counts.begin(); it != map_of_counts.end(); it++) {
+      CHECK(it->second >= 0.0);
+      int count = round(it->second / N_THREADS);
+      this_thread_runcounts[it->first] = count;
+      total += count; 
    }
    
-   printf("Total tests: %d\n", total);
+   //printf("Total tests: %d\n", total);
    CHECK(total > 0);
      
    for (int i = 0; i < total; i++) {
+   //while (total > 0) {
       int rnd = rand() % total;
       int test_idx = -1;
-      for (std::map<int,int>::iterator it = moc.begin(); it != moc.end(); it++) {
-         if (rnd < it->second) {
+      for (std::map<int,int>::iterator it = this_thread_runcounts.begin(); it != this_thread_runcounts.end(); it++) {
+         int this_test_count = it->second;
+         if (rnd < this_test_count) {
             test_idx = it->first;
             break;
          }
-         rnd -= it->second;
+         rnd -= this_test_count;
       }
       CHECK(test_idx >= 0);
       // TODO: the above code should be replaced with a proper randomizer
       // with a "specify distribution function" feature
-      the_map_of_tests[test_idx].Run();
+      if (the_map_of_tests[test_idx].Run()) {
+      /*   this_thread_runcounts[test_idx]--;
+         total--;*/
+      }
    }
 }
 
 int main () {
+   goals.AddGoal(N_MUTEXES, 1800);
+   goals.AddGoal(N_MUTEX_LOCK_UNLOCK, 107000);/**/
+   
+   goals.AddGoal(N_CV, 80);
+   goals.AddGoal(N_CV_SIGNALS, 3600);
+   //goals.AddGoal(N_CV_WAITS, 561);
+   goals.CompileStatsIntoVector();
+   Vector statsVector = goals.GetStatsVector();
+   goals.RegisterPatterns();
+   goals.CalculateAndApplyParameters();
+   
    mainThreadPool = new ThreadPool(N_THREADS);
    mainThreadPool->StartWorkers();
    for (int i = 0; i < N_THREADS; i++) {
