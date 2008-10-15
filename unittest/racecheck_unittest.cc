@@ -5066,7 +5066,7 @@ void Run() {
   t.Start();
   t.Join();
 }
-REGISTER_TEST1(Run, 108, FEATURE|EXCLUDE_FROM_ALL)
+REGISTER_TEST2(Run, 108, FEATURE|EXCLUDE_FROM_ALL)
 }  // namespace test108
 
 
