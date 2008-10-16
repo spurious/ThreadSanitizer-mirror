@@ -5071,9 +5071,12 @@ REGISTER_TEST2(Run, 108, FEATURE)
 }  // namespace test108
 
 
-// test109: TN. Just many threads. {{{1
+// test109: TN. Checking happens before between parent and child threads. {{{1
 namespace test109 {
-// Check that the detector correctly connects pthread_create and the new thread.
+// Check that the detector correctly connects 
+//   pthread_create with the new thread
+// and 
+//   thread exit with pthread_join
 const int N = 32;
 static int GLOB[N];
 
@@ -5087,10 +5090,14 @@ void Run() {
   MyThread *t[N];
   for (int i  = 0; i < N; i++) t[i] = new MyThread(Worker, &GLOB[i]);
   for (int i  = 0; i < N; i++) {
+    ANNOTATE_TRACE_MEMORY(&GLOB[i]);
     GLOB[i] = 1;
     t[i]->Start();
   }
-  for (int i  = 0; i < N; i++) t[i]->Join();
+  for (int i  = 0; i < N; i++) {
+    t[i]->Join();
+    GLOB[i]++;
+  }
   for (int i  = 0; i < N; i++) delete t[i];
 
   printf("\tGLOB=%d\n", GLOB[13]);
