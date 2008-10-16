@@ -5085,10 +5085,10 @@ void Worker(void *a) {
 void Run() {
   printf("test109: negative\n");
   MyThread *t[N];
-  for (int i  = 0; i < N; i++) t[i] = new MyThread(Worker);
+  for (int i  = 0; i < N; i++) t[i] = new MyThread(Worker, &GLOB[i]);
   for (int i  = 0; i < N; i++) {
     GLOB[i] = 1;
-    t[i]->Start(&GLOB[i]);
+    t[i]->Start();
   }
   for (int i  = 0; i < N; i++) t[i]->Join();
   for (int i  = 0; i < N; i++) delete t[i];

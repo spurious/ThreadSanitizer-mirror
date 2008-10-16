@@ -246,8 +246,8 @@ class MyThread {
       :w_(reinterpret_cast<worker_t>(worker)), arg_(arg){}
 
   ~MyThread(){ w_ = NULL; arg_ = NULL;}
-  void Start(void *arg = NULL) { CHECK(0 == pthread_create(&t_, NULL, w_, arg));}
-  void Join()                  { CHECK(0 == pthread_join(t_, NULL));}
+  void Start() { CHECK(0 == pthread_create(&t_, NULL, w_, arg_));}
+  void Join()  { CHECK(0 == pthread_join(t_, NULL));}
  private:
   pthread_t t_;
   worker_t  w_;
@@ -452,7 +452,7 @@ class ThreadPool {
   explicit ThreadPool(int n_threads) 
     : queue_(INT_MAX) {
     for (int i = 0; i < n_threads; i++) {
-      MyThread *thread = new MyThread(&ThreadPool::Worker);
+      MyThread *thread = new MyThread(&ThreadPool::Worker, this);
       workers_.push_back(thread);
     }
   }
@@ -460,7 +460,7 @@ class ThreadPool {
   //! Start all threads. 
   void StartWorkers() {
     for (int i = 0; i < workers_.size(); i++) {
-      workers_[i]->Start(this);
+      workers_[i]->Start();
     }
   }
 
