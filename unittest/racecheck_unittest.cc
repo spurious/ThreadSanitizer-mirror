@@ -5009,7 +5009,7 @@ void Run() {
   t.Join();
   printf("\tGLOB=%d\n", *GLOB);
 }
-REGISTER_TEST2(Run, 106, FEATURE | EXCLUDE_FROM_ALL)
+REGISTER_TEST2(Run, 106, FEATURE)
 }  // namespace test106
 
 
@@ -5025,19 +5025,20 @@ REGISTER_TEST2(Run, 107, FEATURE|EXCLUDE_FROM_ALL)
 }  // namespace test107
 
 
-// test108: TP. initialization of static object. {{{1
+// test108: TN. initialization of static object. {{{1
 namespace test108 {
 // Here we have a function-level static object. 
-// Starting from gcc 4 this is in fact therad safe, 
+// Starting from gcc 4 this is therad safe, 
 // but is is not thread safe with many other compilers.
 //
-// In future it *may* make sense to support this kind of initialization 
-// (by intercepting __cxa_guard_acquire/__cxa_guard_release)
+// Helgrind supports this kind of initialization by 
+// intercepting __cxa_guard_acquire/__cxa_guard_release 
+// and ignoring all accesses between them. 
+// Helgrind also intercepts pthread_once in the same manner. 
 class Foo {
  public:
   Foo() {
     ANNOTATE_TRACE_MEMORY(&a_);
-    ANNOTATE_EXPECT_RACE_FOR_HYBRID1(&a_, "initialization of static object");
     a_ = 42;
   }
   void Check() const { CHECK(a_ == 42); }
@@ -5061,12 +5062,12 @@ void Worker() {
 
 
 void Run() {
-  printf("test108: positive, initialization of static object\n");
+  printf("test108: negative, initialization of static object\n");
   MyThreadArray t(Worker0, Worker, Worker);
   t.Start();
   t.Join();
 }
-REGISTER_TEST2(Run, 108, FEATURE|EXCLUDE_FROM_ALL)
+REGISTER_TEST2(Run, 108, FEATURE)
 }  // namespace test108
 
 
