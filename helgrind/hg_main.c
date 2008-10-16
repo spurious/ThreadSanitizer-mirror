@@ -9458,14 +9458,14 @@ Bool hg_handle_client_request ( ThreadId tid, UWord* args, UWord* ret)
       case VG_USERREQ__HG_IGNORE_READS_BEGIN: {
          Thread *thr = map_threads_maybe_lookup( tid );
          tl_assert(thr); /* cannot fail */
-         tl_assert(!thr->ignore_reads);
+         // tl_assert(!thr->ignore_reads);
          thr->ignore_reads = True;
          break;
       }
       case VG_USERREQ__HG_IGNORE_READS_END: {
          Thread *thr = map_threads_maybe_lookup( tid );
          tl_assert(thr); /* cannot fail */
-         tl_assert(thr->ignore_reads);
+         // tl_assert(thr->ignore_reads);
          thr->ignore_reads = False;
          break;
       }
