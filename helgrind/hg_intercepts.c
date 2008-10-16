@@ -61,6 +61,16 @@
    ret_ty I_WRAP_SONAME_FNNAME_ZZ(libpthreadZdsoZd0,f)(args); \
    ret_ty I_WRAP_SONAME_FNNAME_ZZ(libpthreadZdsoZd0,f)(args)
 
+#define NONE_FUNC(ret_ty, f, args...) \
+   ret_ty I_WRAP_SONAME_FNNAME_ZZ(NONE,f)(args); \
+   ret_ty I_WRAP_SONAME_FNNAME_ZZ(NONE,f)(args)
+
+// libstdcZpZpZa = libstdc++
+#define LIBSTDCXX_FUNC(ret_ty, f, args...) \
+   ret_ty I_WRAP_SONAME_FNNAME_ZZ(libstdcZpZpZa,f)(args); \
+   ret_ty I_WRAP_SONAME_FNNAME_ZZ(libstdcZpZpZa,f)(args)
+
+
 // Do a client request.  This is a macro rather than a function 
 // so as to avoid having an extra function in the stack trace.
 
@@ -1171,7 +1181,7 @@ static void *SocketMagic(int s) {
     _qzz_res;                                                     \
    })
 
-int I_WRAP_SONAME_FNNAME_ZZ(NONE, epoll_wait) (int epfd, void * events, int maxevents, int timeout) {
+NONE_FUNC(int, epoll_wait, int epfd, void * events, int maxevents, int timeout) {
    OrigFn fn;
    long    ret;
    VALGRIND_GET_ORIG_FN(fn);
@@ -1182,7 +1192,7 @@ int I_WRAP_SONAME_FNNAME_ZZ(NONE, epoll_wait) (int epfd, void * events, int maxe
    return ret;
 }
 
-int I_WRAP_SONAME_FNNAME_ZZ(NONE, epoll_ctl)(int epfd, int op, int fd, void *event) {
+NONE_FUNC(int, epoll_ctl, int epfd, int op, int fd, void *event) {
    OrigFn fn;
    long    ret;
    VALGRIND_GET_ORIG_FN(fn);
@@ -1237,6 +1247,65 @@ PTH_FUNC(long, write, int s, void *a2, long a3) {
    void *o = SocketMagic(s);
    DO_CREQ_v_W(_VG_USERREQ__HG_PTHREAD_COND_SIGNAL_PRE, void*, o);
    CALL_FN_W_WWW(ret, fn, s, a2, a3);
+   return ret;
+}
+
+/* 
+  Support for pthread_once and function-level static objects.
+
+  pthread_once is supported by simply ignoring everything that happens 
+  inside pthread_once.
+
+  Another approach would be to SIGNAL when pthread_once with a given 
+  pthread_once_t is called for the first time and to WAIT after 
+  each pthread_once. But implementing this is a bit tricky and probably
+  not worth it. 
+
+  Thread safe initialization of function-level static objects is 
+  supported in gcc (strarting from 4.something). 
+  The generated code calls __cxa_guard_acquire (which in turn 
+  calls pthread_once) and then calls __cxa_guard_release. 
+  We simply ignore everything between __cxa_guard_acquire 
+  and __cxa_guard_release. pthread_once interceptor does the rest.
+
+  For examples, see test106 and test108 at 
+  http://code.google.com/p/data-race-test/source/browse/trunk/unittest/racecheck_unittest.cc
+*/
+
+PTH_FUNC(int, pthreadZuonce, void *ctl, void *rtn) {
+   OrigFn fn;
+   int    ret;
+   VALGRIND_GET_ORIG_FN(fn);
+   DO_CREQ_v_W(VG_USERREQ__HG_IGNORE_READS_BEGIN, void*, 0);
+   DO_CREQ_v_W(VG_USERREQ__HG_IGNORE_WRITES_BEGIN, void*, 0);
+   // fprintf(stderr, "T%d: ->pthread_once\n", VALGRIND_HG_THREAD_ID);
+   CALL_FN_W_WW(ret, fn, ctl, rtn);
+   // fprintf(stderr, "T%d: <-pthread_once\n", VALGRIND_HG_THREAD_ID);
+   DO_CREQ_v_W(VG_USERREQ__HG_IGNORE_WRITES_END, void*, 0);
+   DO_CREQ_v_W(VG_USERREQ__HG_IGNORE_READS_END, void*, 0);
+   return ret;
+}
+
+LIBSTDCXX_FUNC(long, ZuZucxaZuguardZuacquire, void *p) {
+   OrigFn fn;
+   long    ret;
+   VALGRIND_GET_ORIG_FN(fn);
+   // fprintf(stderr, "T%d: ->__cxa_guard_acquire\n", VALGRIND_HG_THREAD_ID);
+   CALL_FN_W_W(ret, fn, p);
+   DO_CREQ_v_W(VG_USERREQ__HG_IGNORE_WRITES_BEGIN, void*, 0);
+   DO_CREQ_v_W(VG_USERREQ__HG_IGNORE_READS_BEGIN, void*, 0);
+   // fprintf(stderr, "T%d: <-__cxa_guard_acquire\n", VALGRIND_HG_THREAD_ID);
+   return ret;
+}
+LIBSTDCXX_FUNC(long, ZuZucxaZuguardZurelease, void *p) {
+   OrigFn fn;
+   long    ret;
+   VALGRIND_GET_ORIG_FN(fn);
+   // fprintf(stderr, "T%d: ->__cxa_guard_release\n", VALGRIND_HG_THREAD_ID);
+   CALL_FN_W_W(ret, fn, p);
+   // fprintf(stderr, "T%d: <-__cxa_guard_release\n", VALGRIND_HG_THREAD_ID);
+   DO_CREQ_v_W(VG_USERREQ__HG_IGNORE_READS_END, void*, 0);
+   DO_CREQ_v_W(VG_USERREQ__HG_IGNORE_WRITES_END, void*, 0);
    return ret;
 }
 

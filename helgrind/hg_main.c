@@ -7135,6 +7135,9 @@ void evh__pre_thread_ll_exit ( ThreadId quit_tid )
    if (SHOW_EVENTS >= 1)
       VG_(printf)("evh__pre_thread_ll_exit(thr=%d)\n",
                   (Int)quit_tid );
+   if (clo_trace_level >= 1) {
+      VG_(message)(Vg_UserMsg, "Exited thread: T%d", (int)quit_tid);
+   }
 
    /* quit_tid has disappeared without joining to any other thread.
       Therefore there is no synchronisation event associated with its
