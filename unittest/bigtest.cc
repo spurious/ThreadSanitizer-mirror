@@ -474,8 +474,13 @@ namespace publishing {
       struct TestContext {
          Mutex64 MU;
          CondVar CV;
+         int CV_Signalled;
+         
          char * data;
-         TestContext () { data = NULL; }
+         TestContext () {
+            data = NULL;
+            CV_Signalled = 0;
+         }
       } *contexts;
    
       // Signal a random CV
@@ -493,6 +498,7 @@ namespace publishing {
          memset(context->data, 'a', LEN);
          context->data[LEN] = '\0';
          context->CV.Signal();
+         context->CV_Signalled = params.NUM_CONTEXTS;
          context->MU.Unlock();
       }
       void ParametersRegistration311() {
@@ -514,9 +520,19 @@ namespace publishing {
       
       // Wait on a random CV
       bool Pattern312() {
-         int id = rand() % params.NUM_CONTEXTS;
-         TestContext * context = &contexts[id];
+         int nAttempts = 0,
+             id = rand() % params.NUM_CONTEXTS;
+         TestContext * context;
+                           
+         do {
+            if (nAttempts++ > params.NUM_CONTEXTS)
+               return false;
+            context = &contexts[id];
+            id = (id + 1) % params.NUM_CONTEXTS;
+         } while (ANNOTATE_UNPROTECTED_READ(context->CV_Signalled) == 0);
+         
          context->MU.Lock();
+         context->CV_Signalled--;
          bool ret = !context->CV.WaitWithTimeout(&context->MU, 10);
          if (ret && context->data) {
             int tmp = strlen(context->data);
@@ -534,7 +550,7 @@ namespace publishing {
          //TODO: stats???
          double * num_CV_Waits = &map_of_counts[312];
          goals.RegisterParameter(num_CV_Waits);
-         goals.SetParameterStat(N_CV_WAITS, num_CV_Waits, .1);
+         goals.SetParameterStat(N_CV_WAITS, num_CV_Waits, 1);
          goals.SetParameterStat(N_MUTEX_LOCK_UNLOCK, num_CV_Waits, 16);
       }
       void ApplyParameters312() {
@@ -615,7 +631,7 @@ namespace benign_races {
 } // namespace benign_races
 */
 
-const int N_THREADS = 2;
+const int N_THREADS = 23;
 
 void PatternDispatcher() {   
    std::vector<int> availablePatterns;
@@ -662,11 +678,11 @@ void PatternDispatcher() {
 
 int main () {
    goals.AddGoal(N_MUTEXES, 1800);
-   goals.AddGoal(N_MUTEX_LOCK_UNLOCK, 107000);/**/
+   //goals.AddGoal(N_MUTEX_LOCK_UNLOCK, 107000);/**/
    
    goals.AddGoal(N_CV, 80);
    goals.AddGoal(N_CV_SIGNALS, 3600);
-   //goals.AddGoal(N_CV_WAITS, 561);
+   goals.AddGoal(N_CV_WAITS, 561);
    goals.CompileStatsIntoVector();
    Vector statsVector = goals.GetStatsVector();
    goals.RegisterPatterns();
