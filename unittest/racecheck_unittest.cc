@@ -219,25 +219,6 @@ int main(int argc, char** argv) { // {{{1
 }
 
 #ifdef THREAD_WRAPPERS_PTHREAD_H
-// Hack for our experiments with multi-threaded detector.
-extern "C" void *DetectorThreadFunc(void *) {
-//  printf("Hey there! I am DetectorThreadFunc()\n");
-  return NULL;
-}
-
-struct DetectorThread {
- public:
-  DetectorThread() {
-    CHECK(0 == pthread_create(&t_, NULL, DetectorThreadFunc, NULL));
-  };
-  ~DetectorThread() {
-    CHECK(0 == pthread_join(t_, NULL));
-  }
- private:
-  pthread_t t_;
-};
-
-static DetectorThread the_detector_thread;
 #endif
 
 
@@ -5081,6 +5062,8 @@ const int N = 32;
 static int GLOB[N];
 
 void Worker(void *a) {
+  usleep(10000);
+//  printf("--Worker : %ld %p\n", (int*)a - GLOB, (void*)pthread_self());
   int *arg = (int*)a;
   (*arg)++;
 }
@@ -5088,14 +5071,19 @@ void Worker(void *a) {
 void Run() {
   printf("test109: negative\n");
   MyThread *t[N];
-  for (int i  = 0; i < N; i++) t[i] = new MyThread(Worker, &GLOB[i]);
+  for (int i  = 0; i < N; i++) {
+    t[i] = new MyThread(Worker, &GLOB[i]);
+  }
   for (int i  = 0; i < N; i++) {
     ANNOTATE_TRACE_MEMORY(&GLOB[i]);
     GLOB[i] = 1;
     t[i]->Start();
+//    printf("--Started: %p\n", (void*)t[i]->tid());
   }
   for (int i  = 0; i < N; i++) {
+//    printf("--Joining: %p\n", (void*)t[i]->tid());
     t[i]->Join();
+//    printf("--Joined : %p\n", (void*)t[i]->tid());
     GLOB[i]++;
   }
   for (int i  = 0; i < N; i++) delete t[i];

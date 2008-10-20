@@ -678,11 +678,11 @@ void PatternDispatcher() {
 
 int main () {
    goals.AddGoal(N_MUTEXES, 1800);
-   //goals.AddGoal(N_MUTEX_LOCK_UNLOCK, 107000);/**/
+   goals.AddGoal(N_MUTEX_LOCK_UNLOCK, 107000);/**/
    
    goals.AddGoal(N_CV, 80);
    goals.AddGoal(N_CV_SIGNALS, 3600);
-   goals.AddGoal(N_CV_WAITS, 561);
+//   goals.AddGoal(N_CV_WAITS, 561);
    goals.CompileStatsIntoVector();
    Vector statsVector = goals.GetStatsVector();
    goals.RegisterPatterns();

@@ -248,6 +248,7 @@ class MyThread {
   ~MyThread(){ w_ = NULL; arg_ = NULL;}
   void Start() { CHECK(0 == pthread_create(&t_, NULL, w_, arg_));}
   void Join()  { CHECK(0 == pthread_join(t_, NULL));}
+  pthread_t tid() const { return t_; }
  private:
   pthread_t t_;
   worker_t  w_;
