@@ -4320,19 +4320,12 @@ SVal memory_state_machine(Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
       trace_level = clo_trace_level;
    }
 
+   tl_debug_assert(!(!is_w && thr->ignore_reads));
+   tl_debug_assert(!(is_w && thr->ignore_writes));
+
    if (UNLIKELY(clo_ignore_n != 1)) {
       tl_assert(!address_may_be_ignored(a));
    }
-
-   if (UNLIKELY(!is_w && thr->ignore_reads)) {
-      sv_new = sv_old;
-      goto done;
-   }
-   if (UNLIKELY(is_w && thr->ignore_writes)) {
-      sv_new = sv_old;
-      goto done;
-   }
-
 
    if (UNLIKELY(is_SHVAL_Ignore(sv_old))) {
       // we already reported a race, don't bother again. 
@@ -6146,6 +6139,8 @@ static void shadow_mem_copy_range ( Addr src, Addr dst, SizeT len )
 }
 
 static void shadow_mem_read_range ( Thread* thr, Addr a, SizeT len ) {
+   if (UNLIKELY(thr->ignore_reads > 0))
+      return;
    shadow_mem_modify_range( thr, a, len, 
                             (shadow_mem_modify_range_callback)shadow_mem_read8,
                             (shadow_mem_modify_range_callback)shadow_mem_read16,
@@ -6155,6 +6150,8 @@ static void shadow_mem_read_range ( Thread* thr, Addr a, SizeT len ) {
 }
 
 static void shadow_mem_write_range ( Thread* thr, Addr a, SizeT len ) {
+   if (UNLIKELY(thr->ignore_writes > 0))
+      return;
    shadow_mem_modify_range( thr, a, len, 
                             (shadow_mem_modify_range_callback)shadow_mem_write8,
                             (shadow_mem_modify_range_callback)shadow_mem_write16,
@@ -7291,74 +7288,104 @@ void evh__die_mem_heap ( Addr a, SizeT len ) {
 
 static VG_REGPARM(2)
 void evh__mem_help_read_1(Addr a, Addr sp) {
+   Thread * thr = get_current_Thread_in_C_C();
    if (HACKY_FILTER 
        && ((UWord)(a - sp + VG_STACK_REDZONE_SZB)) <= HACKY_FILTER_SIZE)
       return;
-   shadow_mem_read8( get_current_Thread_in_C_C(), a );
+   if (UNLIKELY(thr->ignore_reads > 0))
+      return;
+   shadow_mem_read8( thr, a );
 }
 static VG_REGPARM(2)
 void evh__mem_help_read_2(Addr a, Addr sp) {
+   Thread * thr = get_current_Thread_in_C_C();
    if (HACKY_FILTER 
        && ((UWord)(a - sp + VG_STACK_REDZONE_SZB)) <= HACKY_FILTER_SIZE)
       return;
-   shadow_mem_read16( get_current_Thread_in_C_C(), a );
+   if (UNLIKELY(thr->ignore_reads > 0))
+      return;
+   shadow_mem_read16( thr, a );
 }
 static VG_REGPARM(2)
 void evh__mem_help_read_4(Addr a, Addr sp) {
+   Thread * thr = get_current_Thread_in_C_C();
    if (HACKY_FILTER 
        && ((UWord)(a - sp + VG_STACK_REDZONE_SZB)) <= HACKY_FILTER_SIZE)
       return;
-   shadow_mem_read32( get_current_Thread_in_C_C(), a );
+   if (UNLIKELY(thr->ignore_reads > 0))
+      return;
+   shadow_mem_read32( thr, a );
 }
 static VG_REGPARM(2)
 void evh__mem_help_read_8(Addr a, Addr sp) {
+   Thread * thr = get_current_Thread_in_C_C();
    if (HACKY_FILTER 
        && ((UWord)(a - sp + VG_STACK_REDZONE_SZB)) <= HACKY_FILTER_SIZE)
       return;
-   shadow_mem_read64( get_current_Thread_in_C_C(), a );
+   if (UNLIKELY(thr->ignore_reads > 0))
+      return;
+   shadow_mem_read64( thr, a );
 }
 static VG_REGPARM(3)
 void evh__mem_help_read_N(Addr a, SizeT size, Addr sp) {
+   Thread * thr = get_current_Thread_in_C_C();
    if (HACKY_FILTER 
        && ((UWord)(a - sp + VG_STACK_REDZONE_SZB)) <= HACKY_FILTER_SIZE)
       return;
-   shadow_mem_read_range( get_current_Thread_in_C_C(), a, size );
+   if (UNLIKELY(thr->ignore_reads > 0))
+      return;
+   shadow_mem_read_range( thr, a, size );
 }
 
 static VG_REGPARM(2)
 void evh__mem_help_write_1(Addr a, Addr sp) {
+   Thread * thr = get_current_Thread_in_C_C();
    if (HACKY_FILTER
        && ((UWord)(a - sp + VG_STACK_REDZONE_SZB)) <= HACKY_FILTER_SIZE)
       return;
-   shadow_mem_write8( get_current_Thread_in_C_C(), a );
+   if (UNLIKELY(thr->ignore_writes > 0))
+      return;
+   shadow_mem_write8( thr, a );
 }
 static VG_REGPARM(2)
 void evh__mem_help_write_2(Addr a, Addr sp) {
+   Thread * thr = get_current_Thread_in_C_C();
    if (HACKY_FILTER
        && ((UWord)(a - sp + VG_STACK_REDZONE_SZB)) <= HACKY_FILTER_SIZE)
       return;
-   shadow_mem_write16( get_current_Thread_in_C_C(), a );
+   if (UNLIKELY(thr->ignore_writes > 0))
+      return;
+   shadow_mem_write16( thr, a );
 }
 static VG_REGPARM(2)
 void evh__mem_help_write_4(Addr a, Addr sp) {
+   Thread * thr = get_current_Thread_in_C_C();
    if (HACKY_FILTER
        && ((UWord)(a - sp + VG_STACK_REDZONE_SZB)) <= HACKY_FILTER_SIZE)
       return;
-   shadow_mem_write32( get_current_Thread_in_C_C(), a );
+   if (UNLIKELY(thr->ignore_writes > 0))
+      return;
+   shadow_mem_write32( thr, a );
 }
 static VG_REGPARM(2)
 void evh__mem_help_write_8(Addr a, Addr sp) {
+   Thread * thr = get_current_Thread_in_C_C();
    if (HACKY_FILTER
        && ((UWord)(a - sp + VG_STACK_REDZONE_SZB)) <= HACKY_FILTER_SIZE)
       return;
-   shadow_mem_write64( get_current_Thread_in_C_C(), a );
+   if (UNLIKELY(thr->ignore_writes > 0))
+      return;
+   shadow_mem_write64( thr, a );
 }
 static VG_REGPARM(3)
 void evh__mem_help_write_N(Addr a, SizeT size, Addr sp) {
+   Thread * thr = get_current_Thread_in_C_C();
    if (HACKY_FILTER
        && ((UWord)(a - sp + VG_STACK_REDZONE_SZB)) <= HACKY_FILTER_SIZE)
       return;
-   shadow_mem_write_range( get_current_Thread_in_C_C(), a, size );
+   if (UNLIKELY(thr->ignore_writes > 0))
+      return;
+   shadow_mem_write_range( thr, a, size );
 }
 
 static void evh__bus_lock(void) {
@@ -9464,7 +9491,7 @@ Bool hg_handle_client_request ( ThreadId tid, UWord* args, UWord* ret)
       case VG_USERREQ__HG_IGNORE_READS_END: {
          Thread *thr = map_threads_maybe_lookup( tid );
          tl_assert(thr); /* cannot fail */
-         tl_assert(thr->ignore_reads);
+         tl_assert(thr->ignore_reads > 0);
          thr->ignore_reads--;
          break;
       }
@@ -9480,7 +9507,7 @@ Bool hg_handle_client_request ( ThreadId tid, UWord* args, UWord* ret)
       case VG_USERREQ__HG_IGNORE_WRITES_END: {
          Thread *thr = map_threads_maybe_lookup( tid );
          tl_assert(thr); /* cannot fail */
-         tl_assert(thr->ignore_writes);
+         tl_assert(thr->ignore_writes > 0);
          thr->ignore_writes--;
          break;
       }
