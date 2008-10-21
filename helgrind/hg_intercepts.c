@@ -48,6 +48,7 @@
 #include "pub_tool_basics.h"
 #include "valgrind.h"
 #include "helgrind.h"
+#include "pub_tool_libcassert.h"
 
 #define TRACE_PTH_FNS 0
 #define TRACE_QT4_FNS 0
@@ -146,6 +147,48 @@
 #include <errno.h>
 #include <pthread.h>
 
+#define LD_FUNC(ret_ty, f, args...) \
+   ret_ty I_WRAP_SONAME_FNNAME_ZZ(ldZhZa,f)(args); \
+   ret_ty I_WRAP_SONAME_FNNAME_ZZ(ldZhZa,f)(args)
+
+static inline void IGNORE_READ_WRITES_BEGIN(void);
+static inline void IGNORE_READ_WRITES_BEGIN(void) {
+   DO_CREQ_v_W(VG_USERREQ__HG_IGNORE_READS_BEGIN,  void*, NULL);
+   DO_CREQ_v_W(VG_USERREQ__HG_IGNORE_WRITES_BEGIN, void*, NULL);
+}
+
+static inline void IGNORE_READ_WRITES_END(void);
+static inline void IGNORE_READ_WRITES_END(void) {
+   DO_CREQ_v_W(VG_USERREQ__HG_IGNORE_READS_END,  void*, NULL);
+   DO_CREQ_v_W(VG_USERREQ__HG_IGNORE_WRITES_END, void*, NULL);
+}
+
+LD_FUNC(long, doZulookupZux, void * arg1, void * arg2, void * arg3,
+        void * arg4, void * arg5, void * arg6, void * arg7, void * arg8,
+        void * arg9, void * arg10, void * arg11)
+{
+   long result;
+   OrigFn fn;
+   VALGRIND_GET_ORIG_FN(fn);   
+   IGNORE_READ_WRITES_BEGIN();
+   CALL_FN_W_11W(result, fn, arg1, arg2, arg3, arg4, arg5, arg6,
+                    arg7, arg8, arg9, arg10, arg11);
+   IGNORE_READ_WRITES_END();
+   return result;
+}
+
+LD_FUNC(Word, ZaZudlZustartZa, void * arg)
+{
+   Word result;
+   OrigFn fn;
+   VALGRIND_GET_ORIG_FN(fn);
+   // why is this not called???
+   tl_assert(0);
+   IGNORE_READ_WRITES_BEGIN();
+   CALL_FN_W_W(result, fn, arg);
+   IGNORE_READ_WRITES_END();
+   return result;
+}
 
 /* A lame version of strerror which doesn't use the real libc
    strerror_r, since using the latter just generates endless more
