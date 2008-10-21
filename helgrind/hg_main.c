@@ -479,8 +479,8 @@ typedef
       /* Place where parent was when this thread was created. */
       ExeContext* created_at;
       Bool        announced;
-      Bool        ignore_reads; 
-      Bool        ignore_writes; 
+      Int        ignore_reads; 
+      Int        ignore_writes; 
       /* Unique thread identifier for generating references in error messages
          and correctly calculating cmpGEQ_VTS even after thread exit. */
       Int         threadUID;
@@ -9458,15 +9458,14 @@ Bool hg_handle_client_request ( ThreadId tid, UWord* args, UWord* ret)
       case VG_USERREQ__HG_IGNORE_READS_BEGIN: {
          Thread *thr = map_threads_maybe_lookup( tid );
          tl_assert(thr); /* cannot fail */
-         // tl_assert(!thr->ignore_reads);
-         thr->ignore_reads = True;
+         thr->ignore_reads++;
          break;
       }
       case VG_USERREQ__HG_IGNORE_READS_END: {
          Thread *thr = map_threads_maybe_lookup( tid );
          tl_assert(thr); /* cannot fail */
-         // tl_assert(thr->ignore_reads);
-         thr->ignore_reads = False;
+         tl_assert(thr->ignore_reads);
+         thr->ignore_reads--;
          break;
       }
 
@@ -9475,15 +9474,14 @@ Bool hg_handle_client_request ( ThreadId tid, UWord* args, UWord* ret)
       case VG_USERREQ__HG_IGNORE_WRITES_BEGIN: {
          Thread *thr = map_threads_maybe_lookup( tid );
          tl_assert(thr); /* cannot fail */
-         // tl_assert(!thr->ignore_writes);
-         thr->ignore_writes = True;
+         thr->ignore_writes++;
          break;
       }
       case VG_USERREQ__HG_IGNORE_WRITES_END: {
          Thread *thr = map_threads_maybe_lookup( tid );
          tl_assert(thr); /* cannot fail */
-         // tl_assert(thr->ignore_writes);
-         thr->ignore_writes = False;
+         tl_assert(thr->ignore_writes);
+         thr->ignore_writes--;
          break;
       }
 
