@@ -5094,6 +5094,26 @@ REGISTER_TEST(Run, 109)
 }  // namespace test109
 
 
+// test110: TP. Simple race with stack object. {{{1
+namespace test110 {
+int     *GLOB = 0;
+void Worker() {
+  (*GLOB)++;
+}
+void Run() {
+  int x = 0;
+  GLOB = &x;
+  ANNOTATE_EXPECT_RACE(GLOB, "real race on stack object");
+  MyThreadArray t(Worker, Worker, Worker);
+  t.Start();
+  t.Join();
+  printf("test110: positive (race on a stack object)\n");
+  printf("\tGLOB=%d\n", *GLOB);
+}
+REGISTER_TEST(Run, 110)
+}  // namespace test110
+
+
 // test300: {{{1
 namespace test300 {
 int     GLOB = 0;

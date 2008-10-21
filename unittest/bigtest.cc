@@ -199,6 +199,7 @@ public:
          printf("param[%i] = %lf\n", i, params[i]);
          *(parameters[i]) = params[i];
       }
+      fflush(stdout);
       
       for (void_f_void_set::iterator i = param_appliers.begin();
                i != param_appliers.end(); i++)
