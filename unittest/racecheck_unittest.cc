@@ -73,6 +73,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <malloc.h>
 
 
 // The tests are
@@ -5094,21 +5095,83 @@ REGISTER_TEST(Run, 109)
 }  // namespace test109
 
 
-// test110: TP. Simple race with stack object. {{{1
+// test110: TP. Simple races with stack, global and heap objects. {{{1
 namespace test110 {
-int     *GLOB = 0;
+int        GLOB = 0;
+static int STATIC;
+
+int       *STACK = 0;
+
+int       *MALLOC;
+int       *CALLOC;
+int       *REALLOC;
+int       *VALLOC;
+int       *PVALLOC;
+int       *MEMALIGN;
+
+int       *NEW;
+int       *NEW_ARR;
+
 void Worker() {
-  (*GLOB)++;
+  GLOB++;
+  STATIC++;
+
+  (*STACK)++;
+
+  (*MALLOC)++;
+  (*CALLOC)++;
+  (*REALLOC)++;
+  (*VALLOC)++;
+  (*PVALLOC)++;
+  (*MEMALIGN)++;
+
+  (*NEW)++;
+  (*NEW_ARR)++;
 }
 void Run() {
   int x = 0;
-  GLOB = &x;
-  ANNOTATE_EXPECT_RACE(GLOB, "real race on stack object");
+  STACK = &x;
+
+  MALLOC = (int*)malloc(sizeof(int));
+  CALLOC = (int*)calloc(1, sizeof(int));
+  REALLOC = (int*)realloc(NULL, sizeof(int));
+  VALLOC = (int*)valloc(sizeof(int));
+  PVALLOC = (int*)pvalloc(sizeof(int));
+  MEMALIGN = (int*)memalign(64, sizeof(int));
+
+  NEW     = new int;
+  NEW_ARR = new int[10];
+
+
+  ANNOTATE_EXPECT_RACE(STACK, "real race on stack object");
+  ANNOTATE_EXPECT_RACE(&GLOB, "real race on global object");
+  ANNOTATE_EXPECT_RACE(&STATIC, "real race on a static global object");
+  ANNOTATE_EXPECT_RACE(MALLOC, "real race on a malloc-ed object");
+  ANNOTATE_EXPECT_RACE(CALLOC, "real race on a calloc-ed object");
+  ANNOTATE_EXPECT_RACE(REALLOC, "real race on a realloc-ed object");
+  ANNOTATE_EXPECT_RACE(VALLOC, "real race on a valloc-ed object");
+  ANNOTATE_EXPECT_RACE(PVALLOC, "real race on a pvalloc-ed object");
+  ANNOTATE_EXPECT_RACE(MEMALIGN, "real race on a memalign-ed object");
+
+  ANNOTATE_EXPECT_RACE(NEW, "real race on a new-ed object");
+  ANNOTATE_EXPECT_RACE(NEW_ARR, "real race on a new[]-ed object");
+
   MyThreadArray t(Worker, Worker, Worker);
   t.Start();
   t.Join();
   printf("test110: positive (race on a stack object)\n");
-  printf("\tGLOB=%d\n", *GLOB);
+  printf("\tSTACK=%d\n", *STACK);
+  CHECK(GLOB <= 3);
+  CHECK(STATIC <= 3);
+
+  free(MALLOC);
+  free(CALLOC);
+  free(REALLOC);
+  free(VALLOC);
+  free(PVALLOC);
+  free(MEMALIGN);
+  delete NEW;
+  delete [] NEW_ARR;
 }
 REGISTER_TEST(Run, 110)
 }  // namespace test110
