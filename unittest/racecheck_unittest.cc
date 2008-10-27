@@ -5586,7 +5586,7 @@ const int N_THREADS = 2,
 
 const int ARRAY_SIZE = 4 * HG_CACHE_SIZE,
           ITERATIONS = 5;
-int array[ARRAY_SIZE];
+int64_t array[ARRAY_SIZE];
 
 int count = 0;
 Mutex count_mu;
