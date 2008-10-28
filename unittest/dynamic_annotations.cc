@@ -1,6 +1,6 @@
 #define DYNAMIC_ANNOTATIONS_HERE // see dynamic_annotations.h
 #include "dynamic_annotations.h"  
-
+/*
 #include <pthread.h>
 #include <stdio.h>
 #include <assert.h>
@@ -22,4 +22,4 @@ struct DetectorThread {
   pthread_t t_;
 };
 
-static DetectorThread the_detector_thread;
+static DetectorThread the_detector_thread; */
