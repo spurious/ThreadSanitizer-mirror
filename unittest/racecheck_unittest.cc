@@ -5136,7 +5136,7 @@ void Run() {
   CALLOC = (int*)calloc(1, sizeof(int));
   REALLOC = (int*)realloc(NULL, sizeof(int));
   VALLOC = (int*)valloc(sizeof(int));
-  PVALLOC = (int*)pvalloc(sizeof(int));
+  PVALLOC = (int*)valloc(sizeof(int));  // TODO: pvalloc breaks helgrind.
   MEMALIGN = (int*)memalign(64, sizeof(int));
 
   NEW     = new int;
@@ -5342,6 +5342,30 @@ void Run() {
 }
 REGISTER_TEST2(Run, 305, RACE_DEMO)
 }  // namespace test305
+
+// test306: Two locks are used to protect a var.  {{{1
+namespace test306 {
+int     GLOB = 0;
+// Thread1 and Thread2 access the var under two locks.
+// Thread3 uses no locks.
+
+Mutex MU1;
+Mutex MU2;
+void Worker1() { MU1.Lock(); MU2.Lock(); GLOB=1; MU2.Unlock(); MU1.Unlock(); }
+void Worker2() { MU1.Lock(); MU2.Lock(); GLOB=3; MU2.Unlock(); MU1.Unlock(); }
+void Worker3() {                         GLOB=4;               }
+
+void Run() {  
+  ANNOTATE_TRACE_MEMORY(&GLOB);
+  printf("test306: simple race.\n");
+  MyThread t1(Worker1), t2(Worker2), t3(Worker3);
+  t1.Start(); usleep(100);
+  t2.Start(); usleep(100); 
+  t3.Start(); usleep(100);
+  t1.Join(); t2.Join(); t3.Join();
+}
+REGISTER_TEST2(Run, 306, RACE_DEMO)
+}  // namespace test306
 
 // test350: Simple race with deep stack. {{{1
 namespace test350 {
