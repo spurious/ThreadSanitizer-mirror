@@ -35,11 +35,11 @@
 //TODO: check? better way?
 #ifndef HG_DEBUG_OPTION
 #define DEBUG_ONLY(a)      a
-#define RELEASE_ONLY(a)
+#define DEBUG_MODE (1)
 #define tl_debug_assert(a) tl_assert(a)
 #else
 #define DEBUG_ONLY(a)
-#define RELEASE_ONLY(a)    a
+#define DEBUG_MODE (0)
 #define tl_debug_assert(a)  
 #endif
 

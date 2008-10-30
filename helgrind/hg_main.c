@@ -1069,8 +1069,10 @@ static SegmentID mk_Segment ( Thread* thr, Segment* prev, Segment* other ) {
 }
 
 static inline Bool is_sane_Segment ( Segment* seg ) {
-   DEBUG_ONLY(return seg != NULL && seg->magic == Segment_MAGIC);
-   RELEASE_ONLY(return 1);
+   if (DEBUG_MODE) {
+      return seg != NULL && seg->magic == Segment_MAGIC;
+   }
+   return 1;
 }
 
 static inline Bool is_sane_ThreadId ( ThreadId coretid ) {
@@ -1789,13 +1791,13 @@ static void pp_mem_segments ( Int d )
       unsigned char * hint_char = (unsigned char*)HINT_CHARS;
    );
    
-   DEBUG_ONLY(
+   if (DEBUG_MODE) {
       while (*hint_char) {
          hint_distr[*hint_char] = 0;
          hint_char++;
       }
       hint_char = (unsigned char*)HINT_CHARS;
-   );
+   };
    
    for (i = 1; i < SegmentArray.size; i++) {
       Segment* s = SEG_get(i);
@@ -1809,7 +1811,7 @@ static void pp_mem_segments ( Int d )
    }
    space(d); VG_(printf)("segments: %7d kB (active = %d, in mem = %d, total = %d) \n",
          (int)(segments_bytes / 1024), (Int)active_SEG, (Int)SegmentArray.size, stats__mk_Segment);
-   DEBUG_ONLY(
+   if (DEBUG_MODE)  { 
       space(d+3); 
       while (*hint_char) {
          if (hint_char != (unsigned char*)HINT_CHARS)
@@ -1819,8 +1821,7 @@ static void pp_mem_segments ( Int d )
       }
       VG_(printf)("\n");
       hint_char = (unsigned char*)HINT_CHARS;
-   );
-
+   }
    // SegmentSets below
    ss_bytes = HG_(memoryConsumedWSU) (univ_ssets, &n);
    space(d); VG_(printf)("seg.sets: %7d kB (active = %d, total = %d)\n",
@@ -1841,11 +1842,18 @@ static void show_lockset(LockSet ls, LockSet shval_ls)
       Lock* lk = (Lock*)word[i];
       //      VG_(message)(Vg_UserMsg, "   L:%p/%p", lk, lk->guestaddr);
       Bool is_in_shval_ls = HG_(elemWS)(univ_lsets, shval_ls, (Word)lk);
-      VG_(message)(Vg_UserMsg, "  Lock located at %p%s and first observed",
-                   lk->guestaddr, is_in_shval_ls ? " [in LS]" : "");
       if (lk->acquired_at) {
+         VG_(message)(Vg_UserMsg, "  Lock located at %p%s and last acquired at",
+                   lk->guestaddr, is_in_shval_ls ? " [in LS]" : "");
          VG_(pp_ExeContext)(lk->acquired_at);
-      }  
+      } else if (lk->appeared_at) {
+         VG_(message)(Vg_UserMsg, "  Lock located at %p%s and first observed at",
+                   lk->guestaddr, is_in_shval_ls ? " [in LS]" : "");
+         VG_(pp_ExeContext)(lk->appeared_at);
+      } else {
+         VG_(message)(Vg_UserMsg, "  Lock located at %p%s",
+                   lk->guestaddr, is_in_shval_ls ? " [in LS]" : "");
+      }
    }
 }
 
@@ -10381,7 +10389,14 @@ static void hg_pp_Error ( Error* err )
       }
 #endif /* 0 */
       /* show the last lock lossage info */
-      if (xe->XE.Race.mb_lastlock) {
+      LockSet old_lock_set = get_SHVAL_LS(old_state);
+      if (!HG_(isEmptyWS)(univ_lsets, old_lock_set)) {
+         VG_(message)(Vg_UserMsg, 
+                      "  Previous accesses to %p were guarded by the following lock(s):",
+                                  err_ga);
+         show_lockset(old_lock_set, 0);
+         
+      } else if (xe->XE.Race.mb_lastlock) {
          VG_(message)(Vg_UserMsg, "  Last consistently used lock for %p was "
                                   "first observed", err_ga);
          VG_(pp_ExeContext)(xe->XE.Race.mb_lastlock);
