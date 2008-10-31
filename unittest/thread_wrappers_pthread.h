@@ -213,6 +213,7 @@ class Mutex {
   bool            signal_at_unlock_;  // Set to true if Wait was called.
 };
 
+
 /// Wrapper for pthread_cond_t. 
 class CondVar {
  public:
@@ -256,96 +257,34 @@ class MyThread {
 };
 
 
-
-
-
-/** Just a message queue. 
-    
-    Race checker can not understand that message queue creates
-    a happens-before relation between Put() and Get(). 
-    We help race checker by creating a semaphore: 
-
-    Sender:                                     Receiver: 
-    1. sem_init(sem, 0, 0)                    
-    2. sem_post(sem)       -----\              
-    3. Put({item,sem})           \               
-                                  \            a. {item,sem} = Get()
-                                   \---------> b. sem_wait(sem)
-                                               c. sem_destroy(sem)
-
-    Here we actually create a semaphore and do post/wait(). 
-    With helgrind the same effect could be achieved by calling user requests 
-    _VG_USERREQ__HG_POSIX_SEM_* on a fake semaphore. 
-
-
-    static long fake;
-      Sender:                                    Receiver:
-      1. AtomicIncrement(fake)                  
-      2. HG_SEM_INIT_POST(fake)      
-      3. HG_SEM_POST_PRE(fake) -------    
-      4. Put({item,fake})             \           
-                                       \         a. {item, sem} = Get()
-                                        ------>  b. HG_SEM_WAIT_POST(sem)
-                                                 c. HG_SEM_DESTROY_PRE(sem)
-
-
-  And even cleaner way is to pass all the bookkeeping to helgrind. 
-  See ANNOTATE_PCQ_*.
-
-*/
-
+/// Just a message queue.
 class ProducerConsumerQueue {
  public:
   ProducerConsumerQueue(int unused) {
-    x_ = 0; ANNOTATE_PCQ_CREATE(this);
-    // ANNOTATE_TRACE_MEMORY(&x_);
+    //ANNOTATE_PCQ_CREATE(this);
   }
-  ~ProducerConsumerQueue() { x_++; CHECK(q_.empty()); ANNOTATE_PCQ_DESTROY(this);}
+  ~ProducerConsumerQueue() {
+    CHECK(q_.empty());
+    //ANNOTATE_PCQ_DESTROY(this);
+  }
 
   // Put. 
   void Put(void *item) {
     mu_.Lock();
-      item_t *t = new item_t;
-      t->item = item;
-#ifndef DRT_NO_SEM      
-      sem_init(&t->sem, 0, 0);
-      sem_post(&t->sem);
-#endif
-      q_.push(t);
-      x_++;
-//      ANNOTATE_PCQ_PUT(this);
+      q_.push(item);
+      ANNOTATE_CONDVAR_SIGNAL(&mu_); // LockWhen in Get()
+      //ANNOTATE_PCQ_PUT(this);
     mu_.Unlock();
   }
 
   // Get. 
-  // Spins if the queue is empty. 
-  // Real implementation would probably block on CV, 
-  // but this is irrelevant for the unit tests. 
-  void *Get() {
-    void *item = NULL;
-    void *sem = NULL;
-    while(true) {
-      bool have_item = false;
-      mu_.Lock();
-      x_++;
-      if (!q_.empty()) {
-        item_t *t = q_.front();
-        q_.pop();
-//        ANNOTATE_PCQ_GET(this);
-        item       = t->item;
-#ifndef DRT_NO_SEM      
-        sem_wait(&t->sem);
-        sem_destroy(&t->sem); 
-#endif
-        delete t;
-        have_item = true;
-      }
-      mu_.Unlock();
-      if (have_item) {
-        break;
-      }
-      usleep(1000); // don't burn CPU
-    }
+  // Blocks if the queue is empty. 
+  void *Get() {    
+    mu_.LockWhen(Condition(IsQueueNotEmpty, &q_));
+      void * item;
+      bool ok = TryGetInternal(&item);
+      CHECK(ok);    
+    mu_.Unlock();
     return item;
   }
 
@@ -353,38 +292,29 @@ class ProducerConsumerQueue {
   // remove an element from queue, put it into *res and return true.
   // Otherwise return false.
   bool TryGet(void **res) {
-    void *item = NULL;
-    bool have_item = false;
     mu_.Lock();
-    x_++;
-    if (!q_.empty()) {
-      item_t *t = q_.front();
-      q_.pop();
-      //        ANNOTATE_PCQ_GET(this);
-      item       = t->item;
-#ifndef DRT_NO_SEM      
-      sem_wait(&t->sem);
-      sem_destroy(&t->sem); 
-#endif
-      delete t;
-      have_item = true;
-    }
+      bool ok = TryGetInternal(res);
     mu_.Unlock();
-    if (have_item) {
-      *res = item;
-      return true;
-    }
-    return false;
+    return ok;
   }
 
- private: 
-  struct item_t{
-    void  *item; 
-    sem_t sem;
-  };
-  Mutex             mu_;
-  std::queue<item_t*> q_; // protected by mu_
-  int                 x_; // for internal testing
+ private:
+  Mutex mu_;
+  std::queue<void*> q_; // protected by mu_
+  
+  // Requires mu_
+  bool TryGetInternal(void ** item_ptr) {     
+    if (q_.empty())
+      return false;
+    *item_ptr = q_.front();
+    q_.pop();
+    //ANNOTATE_PCQ_GET(this);
+    return true;
+  }
+  
+  static bool IsQueueNotEmpty(std::queue<void*> * queue) {
+     return !queue->empty();
+  }
 };
 
 

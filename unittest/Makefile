@@ -1,18 +1,14 @@
-# simple make file, nothing special. 
+GCC = /home/timurrrr/mixed_gcc/g++
 
-HELGRIND='valgrind --tool=helgrind' 
-TEST=0
-CXX=g++
 
-all: build 
+default: 64
 
-build: racecheck_unittest
+64:
+	${GCC}  racecheck_unittest.cc dynamic_annotations.cc -lpthread -g \
+		-DDYNAMIC_ANNOTATIONS=1 -o bin
+		
+	${GCC}  bigtest.cc dynamic_annotations.cc -lpthread -g \
+		-DDYNAMIC_ANNOTATIONS=1 -o bigtest	
 
-racecheck_unittest: racecheck_unittest.cc thread_wrappers_pthread.h dynamic_annotations.cc dynamic_annotations.h
-	$(CXX) -DDYNAMIC_ANNOTATIONS=1  racecheck_unittest.cc dynamic_annotations.cc -lpthread -g -o $@
-
-run: 
-	$(HELGRIND) --suppressions=helgrind.supp  ./racecheck_unittest $(TEST)
-
-clean: 
-	rm -f racecheck_unittest 
+clean:
+	rm bin bigtest

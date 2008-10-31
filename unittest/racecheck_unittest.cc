@@ -5507,7 +5507,7 @@ const int N_threads = 32;
 const int ARRAY_SIZE = 128;
 int       GLOB[ARRAY_SIZE];
 ProducerConsumerQueue *Q[N_threads];
-int GLOB_limit = 25000;
+int GLOB_limit = 100000;
 int count = -1;
 
 void Worker(){
