@@ -1,13 +1,13 @@
-GCC = /home/timurrrr/mixed_gcc/g++
+CXX=g++
 
 
 default: 64
 
 64:
-	${GCC}  racecheck_unittest.cc dynamic_annotations.cc -lpthread -g \
+	${CXX}  racecheck_unittest.cc dynamic_annotations.cc -lpthread -g \
 		-DDYNAMIC_ANNOTATIONS=1 -o bin
 		
-	${GCC}  bigtest.cc dynamic_annotations.cc -lpthread -g \
+	${CXX}  bigtest.cc dynamic_annotations.cc -lpthread -g \
 		-DDYNAMIC_ANNOTATIONS=1 -o bigtest	
 
 clean:
