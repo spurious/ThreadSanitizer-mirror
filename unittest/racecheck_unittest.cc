@@ -70,6 +70,7 @@
 #include <algorithm>
 #include <cstring>      // strlen(), index(), rindex()
 #include <ctime>
+#include <sys/time.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -128,6 +129,12 @@ Mutex printf_mu;
       printf_mu.Unlock(); \
     }while(0)
 
+long GetTimeInMs() {
+   struct timeval tv;
+   gettimeofday(&tv, NULL);
+   return (tv.tv_sec * 1000L) + (tv.tv_usec / 1000L);
+}
+
 struct Test{
   void_func_void_t f_;
   int flags_;
@@ -139,10 +146,10 @@ struct Test{
   void Run() {
      ANNOTATE_RESET_STATS();
      if (flags_ & PERFORMANCE) {
-        clock_t start = clock();
+        long start = GetTimeInMs();
         f_();
-        clock_t end   = clock();
-        printf ("Time: %4dms\n", (int)((end-start)/(CLOCKS_PER_SEC/1000)));
+        long end = GetTimeInMs();
+        printf ("Time: %4ldms\n", end-start);
      } else
         f_();
      if (flags_ & PRINT_STATS)
@@ -5497,36 +5504,28 @@ namespace test503 {
 //     ...
   
 const int N_threads = 32;
-int       GLOB = 0;
+const int ARRAY_SIZE = 128;
+int       GLOB[ARRAY_SIZE];
 ProducerConsumerQueue *Q[N_threads];
-int GLOB_limit = 100000;
-
-bool end = false;
-int count = 0;
-Mutex count_mu;
+int GLOB_limit = 25000;
+int count = -1;
 
 void Worker(){
-   count_mu.Lock();
-   int myId = count;
-   count++;
-   count_mu.Unlock();
+   int myId = __sync_add_and_fetch(&count, 1);
    
    ProducerConsumerQueue &myQ = *Q[myId], &nextQ = *Q[(myId+1) % N_threads];
    
    // this code produces a new SS with each new segment
-   while (true) {
-      myQ.Get();
-      if (end)
-         break;
-      GLOB++;
+   while (myQ.Get() != NULL) {
+      for (int i = 0; i < ARRAY_SIZE; i++)
+         GLOB[i]++;
       
-      if (myId == 0 && GLOB > GLOB_limit) {
-         end = true;
-         for (int i = 1; i < N_threads; i++)
+      if (myId == 0 && GLOB[0] > GLOB_limit) {
+         // Stop all threads
+         for (int i = 0; i < N_threads; i++)
             Q[i]->Put(NULL);
-         break;
       } else
-         nextQ.Put(NULL);
+         nextQ.Put(GLOB);
    }
 }
 
@@ -5534,8 +5533,7 @@ void Run() {
    printf("test503: produce lots of segments with simple HB-relations\n");
    for (int i = 0; i < N_threads; i++)
       Q[i] = new ProducerConsumerQueue(1);
-   Q[0]->Put(NULL);
-   
+   Q[0]->Put(GLOB);
    
    {      
       ThreadPool pool(N_threads);
