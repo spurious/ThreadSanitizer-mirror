@@ -155,7 +155,7 @@ public:
    }
 };
 
-Vector EstimateParameters(Matrix & perf_m, Vector & stats_v, double rel_diff)
+Vector EstimateParameters(const Matrix & perf_m, const Vector & stats_v, double rel_diff, int * iter_count = NULL)
 {
    /*
     *  Goal: find Vector<N> parameters:
@@ -170,11 +170,92 @@ Vector EstimateParameters(Matrix & perf_m, Vector & stats_v, double rel_diff)
    int N = perf_m.GetN(), M = perf_m.GetM();
    CHECK(stats_v.GetSize() == M);
    Vector current(N);
+
+   // First, let's find out those lines in matrix having only one non-zero coefficient
+   // and if we have any, decrease the dimension of our matrix
+   {
+      int count_easy_param = 0;
+      std::vector<int> parameters_set(N); // N (line#) -> M (row#) of the only nonzero element; -1 if 0/2+
+      for (int n = 0; n < N; n++) {
+         parameters_set[n] = -1;
+      }
+      // we may detect & assert unresolvable conflicts like the following
+      // /1\       /1\
+      // |1| * p = |2|
+      // \1/       \3/
+
+      // Find out those 0000*0000 lines 
+      for (int m = 0; m < M; m++) {
+         int zero_id = -1; // -1 = not found, -2 = found twice, else - idx
+         for (int n = 0; n < N; n++) {
+            const double & m_n = perf_m.At(m,n);
+            if (m_n != 0.0) {
+               if (zero_id == -1) {
+                  zero_id = n;
+               } else if (zero_id >= 0) {
+                  zero_id = -2;
+                  break;
+               }
+            }
+         }
+         if (zero_id >= 0) {
+            CHECK(parameters_set[zero_id] == -1);
+            parameters_set[zero_id] = m;
+            count_easy_param++;
+            current[zero_id] = stats_v[m] / perf_m.At(m, zero_id);
+         }
+      }
+
+      if (count_easy_param > 0) {
+         //printf("tmp = %s\n", current.ToString().c_str());
+  
+         //printf("\n\nDecreasing the dimensions!\n");
+         std::vector<int> new_m_to_old(M - count_easy_param),
+                          new_n_to_old(N - count_easy_param);
+         for (int m = 0; m < M; m++) {
+            // see increments later
+            new_m_to_old[m] = m;
+         }
+         int cur_n = 0;
+         for (int n = 0; n < N; n++) {
+            if (parameters_set[n] == -1) {
+               new_n_to_old[cur_n] = n;
+               cur_n++;
+            } else {
+               for (int m = parameters_set[n]; m < M - count_easy_param; m++) {
+                  new_m_to_old[m]++;
+               }
+            }
+         }
+
+         Vector auto_stats = perf_m.MultiplyRight(current), // we have these stats for sure ...
+                diff_stats = stats_v - auto_stats; // ... and we need to get these stats more
+      
+         // Formulate the sub-problem (sub-matrix & sub-stats)
+         Matrix new_m(M - count_easy_param, N - count_easy_param);
+         Vector new_stats(M - count_easy_param);
+         for (int m = 0; m < M - count_easy_param; m++) {
+            new_stats[m] = diff_stats[new_m_to_old[m]];
+            CHECK(new_stats[m] >= 0.0);
+            for (int n = 0; n < N - count_easy_param; n++)
+               new_m.At(m,n) = perf_m.At(new_m_to_old[m], new_n_to_old[n]);
+         }
+         
+         // Solve the submatrix and put the results back
+         Vector new_param = EstimateParameters(new_m, new_stats, rel_diff, iter_count);
+         for (int n = 0; n < N - count_easy_param; n++) {
+            current[new_n_to_old[n]] = new_param[n];
+         }
+         return current;
+      }
+   }
+
    bool stop_condition = false;
    double prev_distance = stats_v.Len2();
+
    //printf("Initial distance = %.1lf\n", prev_distance); 
-      
    while (stop_condition == false) {
+      (*iter_count)++;
       Vector m_by_curr(M);
       m_by_curr.Copy(perf_m.MultiplyRight(current));
       Vector derivative(N); // this is actually "-derivative/2" :-)
@@ -201,6 +282,7 @@ Vector EstimateParameters(Matrix & perf_m, Vector & stats_v, double rel_diff)
             if (step < 0.00001) {
                stop_condition = true;
             }
+            (*iter_count)++;
          } while (new_distance >= prev_distance && !stop_condition);
          
          prev_distance = new_distance;

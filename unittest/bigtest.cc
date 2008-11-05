@@ -57,7 +57,7 @@ enum StatType {
    /*N_RACEY_ACCESSES*/
 };
 
-struct Test{
+class Test{
    typedef void (*void_func_void_t)(void);
    
    /* may return false to indicate smth like "Wait didn't succeed" */
@@ -67,17 +67,14 @@ struct Test{
    //TestStats_func_void_t GetStats_;
    void_func_void_t Run_v_;
    bool_func_void_t Run_b_;
-   
-   Test() : /*GetStats_(0), */Run_v_(0), Run_b_(0) {}
-   Test(int id, /*TestStats_func_void_t _GetStats, */void_func_void_t _Run) 
-      : //GetStats_(_GetStats),
-        Run_v_(_Run), Run_b_(0) {}
-   Test(int id, /*TestStats_func_void_t _GetStats, */bool_func_void_t _Run) 
-      : //GetStats_(_GetStats),
-        Run_v_(0), Run_b_(_Run) {}
-   /*TestStats GetStats() {
-      return GetStats_();
-   }*/
+ public:
+   Test() : Run_v_(0), Run_b_(0) {}
+   Test(int id, void_func_void_t _Run) : Run_v_(_Run), Run_b_(0) {
+     CHECK(Run_v_ != NULL);
+   }
+   Test(int id, bool_func_void_t _Run) : Run_v_(0), Run_b_(_Run) {
+     CHECK(Run_b_ != NULL);
+   }
    bool Run() {
       if (Run_v_ == NULL) {
          CHECK(Run_b_ != NULL);
@@ -177,46 +174,48 @@ public:
       CHECK(calculated == false);
       printf("Cost matrix:\n%s\n", cost_m->ToString().c_str());
       printf("Stats vector:\n%s\n", stats->ToString().c_str());
-      Vector params = EstimateParameters(*cost_m, *stats, 0.0005);
+      int iterations = 0;
+      Vector params = EstimateParameters(*cost_m, *stats, 0.0005, &iterations);
       CHECK(params.GetSize() == parameters.size());
+      /*params[0] = 1000;
+      params[1] = 3600;
+      params[2] = 80;
+      params[3] = 0;
+      params[4] = 19530;
+      params[5] = 1720;*/
+      printf("Parameters (estimated in %d steps) :\n", iterations);
       for (int i = 0; i < parameters.size(); i++) {
          printf("param[%i] = %lf\n", i, params[i]);
          *(parameters[i]) = params[i];
       }
       printf("Est. stats: %s\n", cost_m->MultiplyRight(params).ToString().c_str());
-      fflush(stdout);
       
       for (void_f_void_set::iterator i = param_appliers.begin();
                i != param_appliers.end(); i++)
       {
          (*(*i))();
       }
+      fflush(stdout);
+
       calculated = true;
    }
 } goals;
 
+template <typename RetVal>
 struct TestAdder {
-   TestAdder(int id, //Test::TestStats_func_void_t _GetStats, 
-                     Test::void_func_void_t _Run,
+   TestAdder(int id, RetVal (*_Run)(),
                      void (*paramreg)(void),
                      void (*paramapply)(void))
    {
       CHECK(the_map_of_tests.count(id) == 0);
-      the_map_of_tests[id] = Test(id, /*_GetStats,*/ _Run);
-      goals.AddPattern(paramreg, paramapply);
-   }
-   TestAdder(int id, //Test::TestStats_func_void_t _GetStats, 
-                     Test::bool_func_void_t _Run,
-                     void (*paramreg)(void),
-                     void (*paramapply)(void))
-   {
-      CHECK(the_map_of_tests.count(id) == 0);
-      the_map_of_tests[id] = Test(id, /*_GetStats,*/ _Run);
+      the_map_of_tests[id] = Test(id, _Run);
       goals.AddPattern(paramreg, paramapply);
    }
 };
 
-#define REGISTER_PATTERN(id) TestAdder add_test##id(id, Pattern##id, \
+#define REGISTER_PATTERN(id) TestAdder<void> add_test##id(id, Pattern##id, \
+                             ParametersRegistration##id, ApplyParameters##id)
+#define REGISTER_PATTERN_PROB(id) TestAdder<bool> add_test##id(id, Pattern##id, \
                              ParametersRegistration##id, ApplyParameters##id)
 
 ThreadPool * mainThreadPool;
@@ -286,6 +285,8 @@ namespace one_lock {
       goals.SetParameterStat(N_MUTEXES, &params.num_contexts, 1);
    }
    void ApplyParameters101() {
+      if (map_of_counts[101] < 1.0)
+         map_of_counts[101] = 1.0;
       printf("%lf, %lf\n", params.num_contexts, params.num_iterations_times_runcount);
       params.NUM_CONTEXTS = round(params.num_contexts);
       if (params.NUM_CONTEXTS <= 0)
@@ -294,11 +295,6 @@ namespace one_lock {
       
       contexts = new TestContext[params.NUM_CONTEXTS];
    }
-   /*void TMP101() {
-      params.NUM_ITERATIONS = 100;
-      params.NUM_CONTEXTS = 100;
-      contexts = new TestContext[params.NUM_CONTEXTS];
-   }*/
    REGISTER_PATTERN(101);
    
    /* other tests...
@@ -319,6 +315,7 @@ namespace one_lock {
    }
    REGISTER_PATTERN(102);
    
+   /*
    int atomic_integers[NUM_CONTEXTS] = {0};
    // Atomic increment
    void Pattern103() {
@@ -413,7 +410,15 @@ namespace multiple_locks {
 namespace publishing {
    /*namespace pcq {
       const int NUM_CONTEXTS = 16;
-   
+      
+      struct Params {
+        double num_contexts;
+        int NUM_CONTEXTS;
+
+        double data_size_times_runcount;
+        int DATA_SIZE;
+      } params;
+
       struct TestContext {
          ProducerConsumerQueue pcq;
          
@@ -425,14 +430,14 @@ namespace publishing {
             while(ptr = pcq.Get())
                free(ptr);
          }
-      } contexts[NUM_CONTEXTS];
+      } * contexts;
    
       // Publish a random string into a random PCQ
       void Pattern301() {
          printf("Pattern301\n");
-         TestContext * context = &contexts[rand() % NUM_CONTEXTS];
+         TestContext * context = &contexts[rand() % params.NUM_CONTEXTS];
          // TODO: str_len as a parameter
-         int str_len = 1 + (rand() % 255);
+         int str_len = 1 + (rand() % params.DATA_SIZE);
          char * str = (char*)malloc(str_len + 1);
          CHECK(str != NULL);
          memset(str, 'a', str_len);
@@ -461,11 +466,20 @@ namespace publishing {
          double num_contexts;
          int NUM_CONTEXTS;
          
+         double data_size_times_runcount;
          int DATA_SIZE;
          Params() {
             DATA_SIZE = 1;
          }
+
+         const static int REDO = 100;
+         const static double HIT_PROBABILITY = 0.5; // estimate. TODO: think of a better idea
+
+         double EstimateRuncount() {
+            return map_of_counts[311] + HIT_PROBABILITY * map_of_counts[312];
+         }
       } params;
+
       struct TestContext {
          Mutex64 MU;
          CondVar CV;
@@ -485,12 +499,13 @@ namespace publishing {
          TestContext * context = &contexts[id];
          context->MU.Lock();
          if (context->data) {
-            int tmp = strlen(context->data); // read
             free(context->data);
          }
          int LEN = params.DATA_SIZE;
          context->data = (char*)malloc(LEN + 1);
-         memset(context->data, 'a', LEN);
+         for (int i = 0; i < params.REDO; i++)
+            for (int j = 0; j < LEN; j++)
+               context->data[j] = 'a';
          context->data[LEN] = '\0';
          context->CV.Signal();
          context->CV_Signalled = params.NUM_CONTEXTS;
@@ -505,13 +520,31 @@ namespace publishing {
          goals.RegisterParameter(&params.num_contexts);
          goals.SetParameterStat(N_CV, &params.num_contexts, 1);
          goals.SetParameterStat(N_MUTEXES, &params.num_contexts, 1);
+
+         goals.RegisterParameter(&params.data_size_times_runcount);
+         goals.SetParameterStat(N_MEM_ACCESSES_K, &params.data_size_times_runcount,
+                                  (2*params.REDO) * (1.0 + params.HIT_PROBABILITY) / 1000.0);
       }
       void ApplyParameters311() {
-         params.NUM_CONTEXTS = round(params.num_contexts);
-         CHECK(params.NUM_CONTEXTS > 0);        
-         contexts = new TestContext[params.NUM_CONTEXTS];
+        if (map_of_counts[311] < 1.0)
+          map_of_counts[311] = 1.0;
+
+        params.DATA_SIZE = 1 + round(params.data_size_times_runcount / params.EstimateRuncount());
+        /*if (params.DATA_SIZE < 1)
+          params.DATA_SIZE = 1;*/
+
+        params.NUM_CONTEXTS = round(params.num_contexts);
+        if (params.NUM_CONTEXTS < 1)
+          params.NUM_CONTEXTS = 1;
+        contexts = new TestContext[params.NUM_CONTEXTS];
       }
-      //REGISTER_PATTERN(311);
+      /*void TMP311 ()  {
+        map_of_counts[311]  = 1000;
+        params.NUM_CONTEXTS = 100;
+        params.DATA_SIZE    = 10000;
+        contexts = new TestContext[params.NUM_CONTEXTS];
+      }*/
+      REGISTER_PATTERN(311);
       
       // Wait on a random CV
       bool Pattern312() {
@@ -542,15 +575,16 @@ namespace publishing {
          return ret;
       }
       void ParametersRegistration312() {
-         //TODO: stats???
          double * num_CV_Waits = &map_of_counts[312];
          goals.RegisterParameter(num_CV_Waits);
-         goals.SetParameterStat(N_CV_WAITS, num_CV_Waits, 1);
+         goals.SetParameterStat(N_CV_WAITS, num_CV_Waits, params.HIT_PROBABILITY);
          goals.SetParameterStat(N_MUTEX_LOCK_UNLOCK, num_CV_Waits, 16);
+         // N_MEM_ACCESSES_K is counted in ParametersRegistration312
       }
       void ApplyParameters312() {
+         //nothing to do, see ApplyParameters311
       }
-      //REGISTER_PATTERN(312);
+      REGISTER_PATTERN_PROB(312);
    }
 } // namespace publishing
 
@@ -671,20 +705,18 @@ void PatternDispatcher() {
    }
 }
 
-int main () {
-   goals.AddGoal(N_MEM_ACCESSES_K, 2*1000);
+int main() {
+   //publishing::condvar::TMP311();
+   goals.AddGoal(N_MEM_ACCESSES_K, 130000);
    goals.AddGoal(N_MUTEXES, 1800);
-   //goals.AddGoal(N_CV, 80);
-   //goals.AddGoal(N_MUTEX_LOCK_UNLOCK, 107000);
-   //goals.AddGoal(N_CV_SIGNALS, 3600);
-   //goals.AddGoal(N_CV_WAITS, 561);
+   goals.AddGoal(N_CV, 80);
+   goals.AddGoal(N_MUTEX_LOCK_UNLOCK, 107000);
+   goals.AddGoal(N_CV_SIGNALS, 3600);
+   goals.AddGoal(N_CV_WAITS, 500);
    goals.CompileStatsIntoVector();
    Vector statsVector = goals.GetStatsVector();
    goals.RegisterPatterns();
    goals.CalculateAndApplyParameters();/**/
-   
-   /*map_of_counts[101] = 100;
-   one_lock::TMP101();*/
    
    mainThreadPool = new ThreadPool(N_THREADS);
    mainThreadPool->StartWorkers();
