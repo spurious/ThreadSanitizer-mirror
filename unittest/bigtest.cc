@@ -52,25 +52,9 @@ enum StatType {
    N_CV_SIGNALS,
    N_CV_WAITS,
    N_MUTEXES,
-   N_MUTEX_LOCK_UNLOCK//,
-   /*N_RACEY_ACCESSES,
-   N_MEM_ACCESSES*/
-};
-
-struct TestStats {
-   // Contains information about what resources does specific test utilize and
-   // how much
-   long nThreads;
-   long nCV;         // number of CondVar's used by the test
-   long nCV_Signals; // number of CondVar->Signal's
-   long nCV_Waits;   // number of CondVar->Wait's
-   long nMutexes;    // number of Mutexes used by the test
-   long nMutex_Lock_Unlock; // number of Mutex64 (Lock-Unlock)s
-   // TODO: cache lines?
-   long nBytes_Excl;    // number of bytes accessed from only one thread
-   long nBytes_NonExcl; // number of bytes accessed from more than one thread
-   long nRaceyAccesses; // number of data races in the test
-   long nTotalMemoryAccesses;
+   N_MUTEX_LOCK_UNLOCK,
+   N_MEM_ACCESSES_K, // kiloaccesses
+   /*N_RACEY_ACCESSES*/
 };
 
 struct Test{
@@ -193,12 +177,13 @@ public:
       CHECK(calculated == false);
       printf("Cost matrix:\n%s\n", cost_m->ToString().c_str());
       printf("Stats vector:\n%s\n", stats->ToString().c_str());
-      Vector params = EstimateParameters(*cost_m, *stats, 0.05);
+      Vector params = EstimateParameters(*cost_m, *stats, 0.0005);
       CHECK(params.GetSize() == parameters.size());
       for (int i = 0; i < parameters.size(); i++) {
          printf("param[%i] = %lf\n", i, params[i]);
          *(parameters[i]) = params[i];
       }
+      printf("Est. stats: %s\n", cost_m->MultiplyRight(params).ToString().c_str());
       fflush(stdout);
       
       for (void_f_void_set::iterator i = param_appliers.begin();
@@ -262,7 +247,8 @@ namespace one_lock {
       int NUM_ITERATIONS;
       
       //double data_size_times_;
-      static const int DATA_SIZE = 1024;
+      static const int DATA_SIZE = 128;
+      static const int REDO_CNT  = 2;
    } params;
    
    struct TestContext {
@@ -281,7 +267,7 @@ namespace one_lock {
       for (int i = 0; i < params.NUM_ITERATIONS; i++) {
          context->MU.Lock();
             for (int j = 0; j < params.DATA_SIZE; j++) {
-               for (int k = 0; k < 10; k++)
+               for (int k = 0; k < params.REDO_CNT; k++)
                   context->data[j] = 77; // write
             }
          context->MU.Unlock();
@@ -293,6 +279,8 @@ namespace one_lock {
       
       goals.RegisterParameter(&params.num_iterations_times_runcount);
       goals.SetParameterStat(N_MUTEX_LOCK_UNLOCK, &params.num_iterations_times_runcount, 3 /*don't ask why*/);
+      goals.SetParameterStat(N_MEM_ACCESSES_K, &params.num_iterations_times_runcount,
+                             params.DATA_SIZE * params.REDO_CNT * 2.0 / 1000.0);
       
       goals.RegisterParameter(&params.num_contexts);
       goals.SetParameterStat(N_MUTEXES, &params.num_contexts, 1);
@@ -300,11 +288,17 @@ namespace one_lock {
    void ApplyParameters101() {
       printf("%lf, %lf\n", params.num_contexts, params.num_iterations_times_runcount);
       params.NUM_CONTEXTS = round(params.num_contexts);
-      CHECK(params.NUM_CONTEXTS > 0);
+      if (params.NUM_CONTEXTS <= 0)
+         params.NUM_CONTEXTS = 1;
       params.NUM_ITERATIONS = round(params.num_iterations_times_runcount / map_of_counts[101]);
       
       contexts = new TestContext[params.NUM_CONTEXTS];
    }
+   /*void TMP101() {
+      params.NUM_ITERATIONS = 100;
+      params.NUM_CONTEXTS = 100;
+      contexts = new TestContext[params.NUM_CONTEXTS];
+   }*/
    REGISTER_PATTERN(101);
    
    /* other tests...
@@ -517,7 +511,7 @@ namespace publishing {
          CHECK(params.NUM_CONTEXTS > 0);        
          contexts = new TestContext[params.NUM_CONTEXTS];
       }
-      REGISTER_PATTERN(311);
+      //REGISTER_PATTERN(311);
       
       // Wait on a random CV
       bool Pattern312() {
@@ -556,12 +550,12 @@ namespace publishing {
       }
       void ApplyParameters312() {
       }
-      REGISTER_PATTERN(312);
+      //REGISTER_PATTERN(312);
    }
 } // namespace publishing
 
 /*
-// Threads work with their memory exclusively
+// Threads work with their memory exclusively {{{1
 namespace thread_local {
    // Thread accesses heap
    void Pattern401() {
@@ -597,7 +591,7 @@ namespace thread_local {
    REGISTER_PATTERN(402);
 } // namespace thread_local
 
-// Different benign races scenarios
+// Different benign races scenarios {{{1
 namespace benign_races {
    namespace stats {
       int simple_counter = 0;
@@ -632,15 +626,15 @@ namespace benign_races {
 } // namespace benign_races
 */
 
-const int N_THREADS = 23;
+const int N_THREADS = 20;
 
 void PatternDispatcher() {   
-   std::vector<int> availablePatterns;
+   /*std::vector<int> availablePatterns;
    for (MapOfTests::iterator it = the_map_of_tests.begin();
          it != the_map_of_tests.end(); it++) {
       if (map_of_counts[it->first] > 0.0)
          availablePatterns.push_back(it->first);
-   }
+   }*/
 
    std::map<int, int> this_thread_runcounts;
    
@@ -678,16 +672,19 @@ void PatternDispatcher() {
 }
 
 int main () {
+   goals.AddGoal(N_MEM_ACCESSES_K, 2*1000);
    goals.AddGoal(N_MUTEXES, 1800);
-   goals.AddGoal(N_MUTEX_LOCK_UNLOCK, 107000);/**/
-   
-   goals.AddGoal(N_CV, 80);
-   goals.AddGoal(N_CV_SIGNALS, 3600);
-//   goals.AddGoal(N_CV_WAITS, 561);
+   //goals.AddGoal(N_CV, 80);
+   //goals.AddGoal(N_MUTEX_LOCK_UNLOCK, 107000);
+   //goals.AddGoal(N_CV_SIGNALS, 3600);
+   //goals.AddGoal(N_CV_WAITS, 561);
    goals.CompileStatsIntoVector();
    Vector statsVector = goals.GetStatsVector();
    goals.RegisterPatterns();
-   goals.CalculateAndApplyParameters();
+   goals.CalculateAndApplyParameters();/**/
+   
+   /*map_of_counts[101] = 100;
+   one_lock::TMP101();*/
    
    mainThreadPool = new ThreadPool(N_THREADS);
    mainThreadPool->StartWorkers();

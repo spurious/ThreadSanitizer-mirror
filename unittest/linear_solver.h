@@ -58,6 +58,8 @@ public:
       return ret;      
    }
    
+   inline double Len () const { return sqrt(Len2()); }
+   
    string ToString () const {
       char temp[1024] = "(";
       for (int i = 0; i < N; i++)
@@ -169,14 +171,19 @@ Vector EstimateParameters(Matrix & perf_m, Vector & stats_v, double rel_diff)
    CHECK(stats_v.GetSize() == M);
    Vector current(N);
    bool stop_condition = false;
-   double prev_distance = stats_v.Len2(); 
+   double prev_distance = stats_v.Len2();
+   //printf("Initial distance = %.1lf\n", prev_distance); 
       
    while (stop_condition == false) {
       Vector m_by_curr(M);
       m_by_curr.Copy(perf_m.MultiplyRight(current));
       Vector derivative(N); // this is actually "-derivative/2" :-)
       derivative.Copy(perf_m.MultiplyLeft(stats_v - m_by_curr));
-      
+
+      if (derivative.Len() > 1000.0) {
+         derivative = derivative * (1000.0 / derivative.Len());
+      }
+
       // Descend according to the gradient
       {
          Vector new_curr(N);
@@ -191,8 +198,9 @@ Vector EstimateParameters(Matrix & perf_m, Vector & stats_v, double rel_diff)
             new_curr = current + derivative*step;
             step /= 2.0;
             new_distance = (perf_m.MultiplyRight(new_curr) - stats_v).Len2();
-            if (step < 0.0001)
+            if (step < 0.00001) {
                stop_condition = true;
+            }
          } while (new_distance >= prev_distance && !stop_condition);
          
          prev_distance = new_distance;
