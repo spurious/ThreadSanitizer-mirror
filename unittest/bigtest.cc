@@ -223,8 +223,8 @@ std::map<int, double> map_of_counts; // test -> average run count
 
 // Print everything under a mutex
 Mutex printf_mu;
-#define printf(args...) do{}while(0)
-/*#define printf(args...) \
+//#define printf(args...) do{}while(0)
+#define printf(args...) \
     do{ \
       printf_mu.Lock();\
       fprintf(stdout, args);\
@@ -234,6 +234,12 @@ Mutex printf_mu;
 
 inline double round(double lf) {
    return floor(lf + 0.5);
+}
+
+inline long GetTimeInMs() {
+  struct timeval tv;
+  gettimeofday(&tv, NULL);
+  return (tv.tv_sec * 1000L) + (tv.tv_usec / 1000L);
 }
 
 // Accessing memory locations holding one lock {{{1
@@ -260,7 +266,6 @@ namespace one_lock {
    
    // Write accesses
    void Pattern101() {    
-      printf("Pattern101\n");  
       int id = rand() % params.NUM_CONTEXTS;
       TestContext * context = &contexts[id];
       for (int i = 0; i < params.NUM_ITERATIONS; i++) {
@@ -287,7 +292,6 @@ namespace one_lock {
    void ApplyParameters101() {
       if (map_of_counts[101] < 1.0)
          map_of_counts[101] = 1.0;
-      printf("%lf, %lf\n", params.num_contexts, params.num_iterations_times_runcount);
       params.NUM_CONTEXTS = round(params.num_contexts);
       if (params.NUM_CONTEXTS <= 0)
          params.NUM_CONTEXTS = 1;
@@ -300,7 +304,6 @@ namespace one_lock {
    /* other tests...
    // Read accesses
    void Pattern102() {
-      printf("Pattern102\n");
       int id = rand() % NUM_CONTEXTS;
       TestContext * context = &contexts[id];
       for (int i = 0; i < NUM_ITERATIONS; i++) {
@@ -319,7 +322,6 @@ namespace one_lock {
    int atomic_integers[NUM_CONTEXTS] = {0};
    // Atomic increment
    void Pattern103() {
-      printf("Pattern103\n");
       int id = rand() % NUM_CONTEXTS;
       for (int i = 0; i < NUM_ITERATIONS; i++)
          __sync_add_and_fetch(&atomic_integers[id], 1);
@@ -343,7 +345,6 @@ namespace multiple_locks {
 
    // Access random context holding a random LS including context->MU
    void Pattern201() {
-      printf("Pattern201\n");
       TestContext * context = &contexts[rand() % NUM_CONTEXTS]; 
       std::vector<Mutex64*> LS;
       // STL nightmare starts here - calculate random LS{{{1
@@ -385,7 +386,6 @@ namespace multiple_locks {
    char ls_data[NUM_LOCKSETS][DATA_SIZE];
    // Access random context holding a corresponding LockSet
    void Pattern202() {
-      printf("Pattern202\n");
       int ls_idx = 0;      
       while (ls_idx == 0)
          ls_idx = rand() % NUM_LOCKSETS;
@@ -434,7 +434,6 @@ namespace publishing {
    
       // Publish a random string into a random PCQ
       void Pattern301() {
-         printf("Pattern301\n");
          TestContext * context = &contexts[rand() % params.NUM_CONTEXTS];
          // TODO: str_len as a parameter
          int str_len = 1 + (rand() % params.DATA_SIZE);
@@ -448,7 +447,6 @@ namespace publishing {
       
       // Read a published string from a random PCQ. MAYFAIL!
       bool Pattern302() {
-         printf("Pattern302\n");
          TestContext * context = &contexts[rand() % NUM_CONTEXTS];
          char * str = NULL;
          if (context->pcq.TryGet((void**)&str)) {
@@ -473,7 +471,7 @@ namespace publishing {
          }
 
          const static int REDO = 100;
-         const static double HIT_PROBABILITY = 0.5; // estimate. TODO: think of a better idea
+         const static double HIT_PROBABILITY = 0.3; // estimate. TODO: think of a better idea
 
          double EstimateRuncount() {
             return map_of_counts[311] + HIT_PROBABILITY * map_of_counts[312];
@@ -494,7 +492,6 @@ namespace publishing {
    
       // Signal a random CV
       void Pattern311() {
-         printf("Pattern311\n");
          int id = rand() % params.NUM_CONTEXTS;
          TestContext * context = &contexts[id];
          context->MU.Lock();
@@ -568,10 +565,6 @@ namespace publishing {
             context->data = NULL;
          }
          context->MU.Unlock();
-         if (ret)
-            printf("Pattern312\n");
-         else
-            printf("Pattern312 failed\n");
          return ret;
       }
       void ParametersRegistration312() {
@@ -593,7 +586,6 @@ namespace publishing {
 namespace thread_local {
    // Thread accesses heap
    void Pattern401() {
-      printf("Pattern401\n");
       // TODO: parameters
       const int DATA_SIZE  = 1024;
       const int ITERATIONS = 16;
@@ -610,7 +602,6 @@ namespace thread_local {
    
    // Thread accesses stack
    void Pattern402() {
-      printf("Pattern402\n");
       // TODO: parameters
       const int DATA_SIZE  = 1024;
       const int ITERATIONS = 16;
@@ -646,7 +637,6 @@ namespace benign_races {
       
       // increment odd_counter, but first check it is >0 (double-check) 
       void Pattern502() {
-         printf("Pattern502\n");
          if (ANNOTATE_UNPROTECTED_READ(odd_counter) > 0) {
             odd_counter_mu.Lock();
             if (odd_counter > 0)
@@ -680,7 +670,6 @@ void PatternDispatcher() {
       total += count; 
    }
    
-   //printf("Total tests: %d\n", total);
    CHECK(total > 0);
      
    for (int i = 0; i < total; i++) {
@@ -706,6 +695,7 @@ void PatternDispatcher() {
 }
 
 int main() {
+   long init = GetTimeInMs();
    //publishing::condvar::TMP311();
    goals.AddGoal(N_MEM_ACCESSES_K, 130000);
    goals.AddGoal(N_MUTEXES, 1800);
@@ -717,13 +707,17 @@ int main() {
    Vector statsVector = goals.GetStatsVector();
    goals.RegisterPatterns();
    goals.CalculateAndApplyParameters();/**/
-   
+
+   long start = GetTimeInMs();
+   printf("\nParameters calculated in %dms\nBenchmarking...\n", start - init);
    mainThreadPool = new ThreadPool(N_THREADS);
    mainThreadPool->StartWorkers();
    for (int i = 0; i < N_THREADS; i++) {
       mainThreadPool->Add(NewCallback(PatternDispatcher));
    }
    delete mainThreadPool;
+   long end = GetTimeInMs();
+   printf("...done in %dms\n", end - start);
    
    return 0;
 }
