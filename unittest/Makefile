@@ -1,9 +1,7 @@
 CXX=g++
 
 
-default: 64
-
-64:
+all:
 	${CXX}  racecheck_unittest.cc dynamic_annotations.cc -lpthread -g \
 		-DDYNAMIC_ANNOTATIONS=1 -o racecheck_unittest
 		

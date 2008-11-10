@@ -5374,6 +5374,42 @@ void Run() {
 REGISTER_TEST2(Run, 306, RACE_DEMO)
 }  // namespace test306
 
+// 307: Simple race, code with control flow  {{{1
+namespace test307 {
+int     GLOB = 0;
+volatile /*to fake the compiler*/ bool some_condition = true;
+
+
+void SomeFunc() { }
+
+int FunctionWithControlFlow() {  
+  int res = 0;
+
+  res++;
+  SomeFunc();                // "--keep-history=1" will point here. 
+  if (some_condition) {      // "--keep-history=2" will point here. 
+    if (some_condition) {     
+      res++;                 // "--keep-history=3" will point here.
+      GLOB++;                // "--keep-history=4" will point here.
+    }
+  }
+  return res;
+}
+
+void Worker1() { FunctionWithControlFlow(); }
+void Worker2() { FunctionWithControlFlow(); }
+void Worker3() { FunctionWithControlFlow(); }
+void Worker4() { FunctionWithControlFlow(); }
+
+void Run() {  
+  printf("test307: simple race, code with control flow\n");
+  MyThreadArray t1(Worker1, Worker2, Worker3, Worker4);
+  t1.Start();  
+  t1.Join();
+}
+REGISTER_TEST2(Run, 307, RACE_DEMO)
+}  // namespace test307
+
 // test350: Simple race with deep stack. {{{1
 namespace test350 {
 int     GLOB = 0;
