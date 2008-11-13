@@ -48,7 +48,7 @@ private:
 
 enum StatType {
    ZZZERO,
-   //N_THREADS,
+   N_THREADS,
    N_CV,
    N_CV_SIGNALS,
    N_CV_WAITS,
@@ -651,7 +651,9 @@ namespace benign_races {
 } // namespace benign_races
 */
 
-const int N_THREADS = 20;
+typedef std::map<std::string, StatType> StatMap;
+StatMap statNames;
+int nThreads = 2;
 
 void PatternDispatcher() {   
    /*std::vector<int> availablePatterns;
@@ -666,7 +668,7 @@ void PatternDispatcher() {
    int total = 0;
    for (std::map<int,double>::iterator it = map_of_counts.begin(); it != map_of_counts.end(); it++) {
       CHECK(it->second >= 0.0);
-      int count = round(it->second / N_THREADS);
+      int count = round(it->second / nThreads);
       this_thread_runcounts[it->first] = count;
       total += count; 
    }
@@ -695,11 +697,24 @@ void PatternDispatcher() {
    }
 }
 
-typedef std::map<std::string, StatType> StatMap;
-StatMap statNames;
+namespace N_THREADS_hack {
+  double nThreads_double = 2.0;
+
+  void Registerer() {
+    goals.RegisterParameter(&nThreads_double);
+    goals.SetParameterStat(N_THREADS, &nThreads_double, 1);
+  }
+
+  void Applier() {
+    nThreads = round(nThreads_double);
+    CHECK(nThreads >= 2);
+  }
+}
 
 void RegisterStatNames() {
 #define REGISTER_STAT_NAME(a) statNames[#a] = a
+  goals.AddPattern(N_THREADS_hack::Registerer, N_THREADS_hack::Applier);
+  REGISTER_STAT_NAME(N_THREADS);
   REGISTER_STAT_NAME(N_CV);
   REGISTER_STAT_NAME(N_CV_SIGNALS);
   REGISTER_STAT_NAME(N_CV_WAITS);
@@ -708,17 +723,18 @@ void RegisterStatNames() {
   REGISTER_STAT_NAME(N_MEM_ACCESSES_K);
 }
 
-int main(int argc, char **argv) {
+int main(int argc, const char **argv) {
    long init = GetTimeInMs();
    RegisterStatNames();
+   const char *default_goals[] = {"N_THREADS=20", "N_MEM_ACCESSES_K=130000",
+        "N_MUTEXES=1800", "N_CV=80", "N_MUTEX_LOCK_UNLOCK=107000",
+        "N_CV_SIGNALS=3600", "N_CV_WAITS=500"};
+   const char ** goal_list = NULL;
+   int goal_cnt = 0;
    if (argc == 1) {
       printf("Running the default pattern\n");
-      goals.AddGoal(N_MEM_ACCESSES_K, 130000);
-      goals.AddGoal(N_MUTEXES, 1800);
-      goals.AddGoal(N_CV, 80);
-      goals.AddGoal(N_MUTEX_LOCK_UNLOCK, 107000);
-      goals.AddGoal(N_CV_SIGNALS, 3600);
-      goals.AddGoal(N_CV_WAITS, 500);
+      goal_list = default_goals;
+      goal_cnt  = sizeof(default_goals) / sizeof(*default_goals);
    } else if (argc == 2 && !strcmp(argv[1], "--help")) {
       printf("Usage: bigtest [PARAM=VALUE] ...\n  Available params: ");
       for (StatMap::iterator i = statNames.begin(); i != statNames.end(); i++) {
@@ -728,8 +744,14 @@ int main(int argc, char **argv) {
       printf("\n");
       return 0;
    } else {
-      for (int i = 1; i < argc; i++) {
-         const char * goal = argv[i];
+     goal_list = argv + 1;
+     goal_cnt  = argc - 1;
+   }
+   
+   {
+      // Parse goal strings
+      for (int i = 0; i < goal_cnt; i++) {
+         const char * goal = goal_list[i];
          char stat[256] = "";
          int stat_val = -1, j = 0;
          for (; j < sizeof(stat) - 1 
@@ -751,19 +773,21 @@ int main(int argc, char **argv) {
          }
          goals.AddGoal(statNames[stat], stat_val);
       }
+      printf("\n");
    }
    goals.CompileStatsIntoVector();
    Vector statsVector = goals.GetStatsVector();
    goals.RegisterPatterns();
    goals.CalculateAndApplyParameters();/**/
-
    long start = GetTimeInMs();
    printf("\nParameters calculated in %dms\nBenchmarking...\n", start - init);
-   mainThreadPool = new ThreadPool(N_THREADS);
+   // Start (N_THREADS - 1) new threads...
+   mainThreadPool = new ThreadPool(nThreads - 1);
    mainThreadPool->StartWorkers();
-   for (int i = 0; i < N_THREADS; i++) {
+   for (int i = 0; i < nThreads - 1; i++) {
       mainThreadPool->Add(NewCallback(PatternDispatcher));
    }
+   PatternDispatcher(); // and 1 more in the main thread
    delete mainThreadPool;
    long end = GetTimeInMs();
    printf("...done in %dms\n", end - start);
