@@ -47,6 +47,7 @@ private:
 };
 
 enum StatType {
+   ZZZERO,
    //N_THREADS,
    N_CV,
    N_CV_SIGNALS,
@@ -694,15 +695,63 @@ void PatternDispatcher() {
    }
 }
 
-int main() {
+typedef std::map<std::string, StatType> StatMap;
+StatMap statNames;
+
+void RegisterStatNames() {
+#define REGISTER_STAT_NAME(a) statNames[#a] = a
+  REGISTER_STAT_NAME(N_CV);
+  REGISTER_STAT_NAME(N_CV_SIGNALS);
+  REGISTER_STAT_NAME(N_CV_WAITS);
+  REGISTER_STAT_NAME(N_MUTEXES);
+  REGISTER_STAT_NAME(N_MUTEX_LOCK_UNLOCK);
+  REGISTER_STAT_NAME(N_MEM_ACCESSES_K);
+}
+
+int main(int argc, char **argv) {
    long init = GetTimeInMs();
-   //publishing::condvar::TMP311();
-   goals.AddGoal(N_MEM_ACCESSES_K, 130000);
-   goals.AddGoal(N_MUTEXES, 1800);
-   goals.AddGoal(N_CV, 80);
-   goals.AddGoal(N_MUTEX_LOCK_UNLOCK, 107000);
-   goals.AddGoal(N_CV_SIGNALS, 3600);
-   goals.AddGoal(N_CV_WAITS, 500);
+   RegisterStatNames();
+   if (argc == 1) {
+      printf("Running the default pattern\n");
+      goals.AddGoal(N_MEM_ACCESSES_K, 130000);
+      goals.AddGoal(N_MUTEXES, 1800);
+      goals.AddGoal(N_CV, 80);
+      goals.AddGoal(N_MUTEX_LOCK_UNLOCK, 107000);
+      goals.AddGoal(N_CV_SIGNALS, 3600);
+      goals.AddGoal(N_CV_WAITS, 500);
+   } else if (argc == 2 && !strcmp(argv[1], "--help")) {
+      printf("Usage: bigtest [PARAM=VALUE] ...\n  Available params: ");
+      for (StatMap::iterator i = statNames.begin(); i != statNames.end(); i++) {
+         printf ("%s%s", (i == statNames.begin()) ? "" : ", ",
+                         (*i).first.c_str());
+      }
+      printf("\n");
+      return 0;
+   } else {
+      for (int i = 1; i < argc; i++) {
+         const char * goal = argv[i];
+         char stat[256] = "";
+         int stat_val = -1, j = 0;
+         for (; j < sizeof(stat) - 1 
+                  && goal[j] != '='
+                  && goal[j] != '\0'; j++) {
+            stat[j] = goal[j];
+         }
+         stat[j] = '\0';
+         if (goal[j] == '=')
+             sscanf(goal + j + 1, "%i", &stat_val);
+         printf("%s = %i\n", stat, stat_val);
+         if (goal[j] != '='
+             || strlen(stat) == 0
+             || stat_val < 0
+             || statNames.find(stat) == statNames.end()
+             ) {
+            fprintf(stderr, "Error parsing goal \"%s\"\n", goal);
+            CHECK(0);
+         }
+         goals.AddGoal(statNames[stat], stat_val);
+      }
+   }
    goals.CompileStatsIntoVector();
    Vector statsVector = goals.GetStatsVector();
    goals.RegisterPatterns();

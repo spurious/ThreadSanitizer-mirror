@@ -212,7 +212,7 @@ Vector EstimateParameters(const Matrix & perf_m, const Vector & stats_v, double 
          //printf("\n\nDecreasing the dimensions!\n");
          std::vector<int> new_m_to_old(M - count_easy_param),
                           new_n_to_old(N - count_easy_param);
-         for (int m = 0; m < M; m++) {
+         for (int m = 0; m < M - count_easy_param; m++) {
             // see increments later
             new_m_to_old[m] = m;
          }
