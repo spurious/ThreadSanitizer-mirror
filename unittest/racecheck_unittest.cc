@@ -193,6 +193,10 @@ static bool ArgIsTrue(bool *arg) { return *arg == true; };
 #define MAIN_INIT_ACTION
 #endif 
 
+#define NOINLINE __attribute__ ((noinline))
+extern "C" void NOINLINE AnnotateSetVerbosity(const char *, int, int) {};
+
+
 int main(int argc, char** argv) { // {{{1
   MAIN_INIT_ACTION;
   if (argc == 2 && !strcmp(argv[1], "benchmark")) {
@@ -5184,6 +5188,63 @@ REGISTER_TEST(Run, 110)
 }  // namespace test110
 
 
+// test111: TN. Unit test for a bug related to stack handling. {{{1
+namespace test111 {
+char     *GLOB = 0;
+bool COND = false;
+Mutex mu;
+const int N = 10000;
+
+void write_to_p(char *p, int val) {
+  for (int i = 0; i < N; i++) 
+    p[i] = val;
+}
+
+static bool ArgIsTrue(bool *arg) {
+//  printf("ArgIsTrue: %d tid=%d\n", *arg, (int)pthread_self());
+  return *arg == true; 
+}
+
+void f1() {
+  char some_stack[N];
+  write_to_p(some_stack, 1);
+  mu.LockWhen(Condition(&ArgIsTrue, &COND));
+  mu.Unlock();
+}
+
+void f2() {
+  char some_stack[N];
+  char some_more_stack[N];
+  write_to_p(some_stack, 2);
+  write_to_p(some_more_stack, 2);
+}
+
+void f0() { f2(); }
+
+void Worker1() {
+  f0();
+  f1();
+  f2();
+}
+
+void Worker2() {
+  usleep(100000);
+  mu.Lock();
+  COND = true;
+  mu.Unlock();
+}
+
+void Run() {
+  printf("test111: regression test\n");
+  MyThreadArray t(Worker1, Worker1, Worker2);
+//  AnnotateSetVerbosity(__FILE__, __LINE__, 3);
+  t.Start();
+  t.Join();
+//  AnnotateSetVerbosity(__FILE__, __LINE__, 1);
+}
+REGISTER_TEST2(Run, 111, FEATURE)
+}  // namespace test111
+
 // test300: {{{1
 namespace test300 {
 int     GLOB = 0;
@@ -5376,7 +5437,7 @@ REGISTER_TEST2(Run, 306, RACE_DEMO)
 
 // 307: Simple race, code with control flow  {{{1
 namespace test307 {
-int     GLOB = 0;
+int     *GLOB = 0;
 volatile /*to fake the compiler*/ bool some_condition = true;
 
 
@@ -5390,7 +5451,8 @@ int FunctionWithControlFlow() {
   if (some_condition) {      // "--keep-history=2" will point here. 
     if (some_condition) {     
       res++;                 // "--keep-history=3" will point here.
-      GLOB++;                // "--keep-history=4" will point here.
+      res++;
+      (*GLOB)++;             // "--keep-history=4" will point here.
     }
   }
   return res;
@@ -5402,6 +5464,8 @@ void Worker3() { FunctionWithControlFlow(); }
 void Worker4() { FunctionWithControlFlow(); }
 
 void Run() {  
+  GLOB = new int;
+  *GLOB = 1;
   printf("test307: simple race, code with control flow\n");
   MyThreadArray t1(Worker1, Worker2, Worker3, Worker4);
   t1.Start();  
