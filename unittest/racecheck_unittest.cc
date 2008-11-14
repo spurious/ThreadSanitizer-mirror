@@ -5245,6 +5245,69 @@ void Run() {
 REGISTER_TEST2(Run, 111, FEATURE)
 }  // namespace test111
 
+// test112: STAB. Test for ANNOTATE_PUBLISH_MEMORY_RANGE{{{1
+namespace test112 {
+char     *GLOB = 0;
+const int N = 100;
+Mutex mu;
+bool ready = false; // under mu
+int beg, end; // under mu
+
+Mutex mu1;
+
+void Worker() {
+
+  bool is_ready = false;
+  int b, e;
+  while (!is_ready) {
+    mu.Lock();
+    is_ready = ready;
+    b = beg;
+    e = end;
+    mu.Unlock();
+  }
+
+  mu1.Lock();
+  for (int i = b; i < e; i++) {
+    GLOB[i]++;
+  }
+  mu1.Unlock();
+}
+
+void PublishRange(int b, int e) {
+  MyThreadArray t(Worker, Worker);
+  ready = false; // runs before other threads
+  t.Start();
+
+  ANNOTATE_NEW_MEMORY(GLOB + b, e - b);
+  for (int j = b; j < e; j++) {
+    GLOB[j] = 0; 
+  }
+  ANNOTATE_PUBLISH_MEMORY_RANGE(GLOB + b, e - b);
+
+  // hand off 
+  mu.Lock();
+  ready = true;
+  beg = b;
+  end = e;
+  mu.Unlock();
+
+  t.Join();
+}
+
+void Run() {
+  printf("test112: stability (ANNOTATE_PUBLISH_MEMORY_RANGE)\n");
+  GLOB = new char [N];
+  
+  PublishRange(0, 10);
+  PublishRange(3, 5);
+
+  printf("GLOB = %d\n", (int)GLOB[0]);
+}
+REGISTER_TEST2(Run, 112, STABILITY)
+}  // namespace test112
+
+
 // test300: {{{1
 namespace test300 {
 int     GLOB = 0;
