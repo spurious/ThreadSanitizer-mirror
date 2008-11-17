@@ -324,6 +324,9 @@ static Bool clo_detect_deadlocks = True;
 //   - segment creation
 static Bool clo_more_context = True;
 
+// Keep history of previous accesses.
+static int clo_keep_history = 0;
+
 // If true, Helgrind starts behaving almost like 
 // a pure happens-before detector (i.e. it creates a happens-before
 // arc between each matching Unlock and Lock operations). 
@@ -783,6 +786,9 @@ static Cache   cache_shmem;
 
 /* Mapping table for core ThreadIds to Thread* */
 static Thread** map_threads = NULL; /* Array[VG_N_THREADS] of Thread* */
+
+// Number of threads created by pthread_create().
+static int n_threads_created = 0; 
 
 /* Mapping table for lock guest addresses to Lock* */
 static WordFM* map_locks = NULL; /* WordFM LockAddr Lock* */
@@ -7052,6 +7058,14 @@ void evh__publish_memory_range ( Addr a, SizeT len ) {
 static
 void evh__pre_thread_ll_create ( ThreadId parent, ThreadId child )
 {
+   n_threads_created++;
+   
+   if (n_threads_created == 1) {
+      // we've create our first thread. Start keeping history (if asked).
+      if (clo_keep_history) 
+         clo_more_context = True;
+   }
+
    if (SHOW_EVENTS >= 1)
       VG_(printf)("evh__pre_thread_ll_create(p=%d, c=%d)\n",
                   (Int)parent, (Int)child );
@@ -7798,7 +7812,7 @@ static Bool evh__HG_PTHREAD_COND_WAIT_PRE ( ThreadId tid,
           && HG_(elemBag)( &lk->heldBy, (Word)thr ) == 0) {
          lk_valid = False;
          record_error_Misc( 
-            thr, "pthread_cond_{timed}wait called with mutex "
+            thr, "pgnalthread_cond_{timed}wait called with mutex "
                  "held by a different thread" );
       }
    }
@@ -8952,6 +8966,36 @@ static void* hg_cli__realloc ( ThreadId tid, void* payloadV, SizeT new_size )
 /*--- Instrumentation                                        ---*/
 /*--------------------------------------------------------------*/
 
+
+static void evh__create_new_segment_for_history(void) {
+   Thread * thr = get_current_Thread_in_C_C();  
+   if (n_threads_created == 0) return;
+   tl_assert(clo_more_context);
+   tl_assert(thr);
+   tl_assert(clo_keep_history);
+   SegmentID new_segid = 0;
+   Segment*  new_seg = NULL;
+   evhH__start_new_segment_for_thread( &new_segid, &new_seg, thr );
+   tl_assert( SEG_id_is_sane(new_segid) );
+   tl_assert( is_sane_Segment(new_seg) );
+   tl_assert( new_seg->thr == thr );
+   tl_assert( is_sane_Segment(new_seg->prev) );
+   new_seg->vts = VG_(cloneXA)(new_seg->prev->vts);
+}
+
+
+static void instrument_create_new_segment_for_history(IRSB *bbOut) {
+   if (!clo_keep_history) return;
+   HChar*   hName    = "evh__create_new_segment_for_history";
+   IRDirty* di = unsafeIRDirty_0_N( 0,
+                           hName, 
+                           VG_(fnptr_to_fnentry)(evh__create_new_segment_for_history),
+                           mkIRExprVec_0());
+   addStmtToIRSB( bbOut, IRStmt_Dirty(di));
+}
+
+
+
 static void instrument_mem_access ( IRSB*   bbOut, 
                                     IRExpr* addr,
                                     Int     szB,
@@ -8967,6 +9011,10 @@ static void instrument_mem_access ( IRSB*   bbOut,
    IRDirty* di       = NULL;
    IRTemp   sp;
    IRExpr*  spE;
+
+   if (clo_keep_history >= 4) {
+      instrument_create_new_segment_for_history(bbOut);
+   }
 
    tl_assert(isIRAtom(addr));
    tl_assert(hWordTy_szB == 4 || hWordTy_szB == 8);
@@ -9099,6 +9147,8 @@ static void instrument_memory_bus_event ( IRSB* bbOut, IRMBusEvent event )
 }
 
 
+
+
 static
 IRSB* hg_instrument ( VgCallbackClosure* closure,
                       IRSB* bbIn,
@@ -9127,10 +9177,12 @@ IRSB* hg_instrument ( VgCallbackClosure* closure,
       i++;
    }
 
+   int first = i;
    for (/*use current i*/; i < bbIn->stmts_used; i++) {
       IRStmt* st = bbIn->stmts[i];
       tl_assert(st);
       tl_assert(isFlatIRStmt(st));
+      if (i == first) instrument_create_new_segment_for_history(bbOut);
       switch (st->tag) {
          case Ist_NoOp:
          case Ist_AbiHint:
@@ -10249,7 +10301,10 @@ static void hg_pp_Error ( Error* err )
             SegmentID segid = SS_get_element(SS, i);
             ExeContext *context = SEG_get_context(segid);
             if (context) {
-               VG_(message)(Vg_UserMsg, " T%d/S%d starts", 
+               if (i == 0 && clo_keep_history) {
+                  VG_(message)(Vg_UserMsg, "  Concurrent access(es) happened at or after these points:"); 
+               }
+               VG_(message)(Vg_UserMsg, "   T%d/S%d:", 
                             (Int)SEG_get(segid)->thr->threadUID,
                             (Int)segid);
                VG_(pp_ExeContext)(context);
@@ -10572,6 +10627,9 @@ static Bool hg_process_cmd_line_option ( Char* arg )
       clo_more_context = True;
    else if (VG_CLO_STREQ(arg, "--more-context=no"))
       clo_more_context = False;
+
+   else if (VG_CLO_STREQN(15, arg, "--keep-history="))
+      clo_keep_history = VG_(atoll)(&arg[15]);
 
    else if (VG_CLO_STREQ(arg, "--ignore-in-dtor=yes"))
       clo_ignore_in_dtor = True;
