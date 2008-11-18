@@ -5193,7 +5193,7 @@ namespace test111 {
 char     *GLOB = 0;
 bool COND = false;
 Mutex mu;
-const int N = 10000;
+const int N = 1000000;
 
 void write_to_p(char *p, int val) {
   for (int i = 0; i < N; i++) 
@@ -5248,7 +5248,7 @@ REGISTER_TEST2(Run, 111, FEATURE)
 // test112: STAB. Test for ANNOTATE_PUBLISH_MEMORY_RANGE{{{1
 namespace test112 {
 char     *GLOB = 0;
-const int N = 100;
+const int N = 64 * 5;
 Mutex mu;
 bool ready = false; // under mu
 int beg, end; // under mu
@@ -5301,6 +5301,21 @@ void Run() {
   
   PublishRange(0, 10);
   PublishRange(3, 5);
+
+  PublishRange(12, 13);
+  PublishRange(10, 14);
+
+  PublishRange(15, 17);
+  PublishRange(16, 18);
+
+  // do few more random publishes.
+  for (int i = 0; i < 20; i++) {
+    int beg = rand() % N;
+    int size = (rand() % (N - beg)) + 1;
+    CHECK(size > 0);
+    CHECK(beg + size <= N);
+    PublishRange(beg, beg + size);
+  }
 
   printf("GLOB = %d\n", (int)GLOB[0]);
 }
