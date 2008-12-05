@@ -160,9 +160,13 @@ struct Test{
 };
 std::map<int, Test> TheMapOfTests;
 
+#define NOINLINE __attribute__ ((noinline))
+extern "C" void NOINLINE AnnotateSetVerbosity(const char *, int, int) {};
+
 
 struct TestAdder {
   TestAdder(void_func_void_t f, int id, int flags = FEATURE) {
+    // AnnotateSetVerbosity(__FILE__, __LINE__, 0);
     CHECK(TheMapOfTests.count(id) == 0);
     TheMapOfTests[id] = Test(f, flags);
   }
@@ -193,8 +197,6 @@ static bool ArgIsTrue(bool *arg) { return *arg == true; };
 #define MAIN_INIT_ACTION
 #endif 
 
-#define NOINLINE __attribute__ ((noinline))
-extern "C" void NOINLINE AnnotateSetVerbosity(const char *, int, int) {};
 
 
 int main(int argc, char** argv) { // {{{1
@@ -4854,9 +4856,9 @@ int * GLOB = &array[ARRAY_SIZE/2];
  */
 
 void Reader() {
-   usleep(100000);
-   CHECK(777 == GLOB[0]);
    usleep(200000);
+   CHECK(777 == GLOB[0]);
+   usleep(400000);
    CHECK(777 == GLOB[1]);
 }
 
@@ -4868,7 +4870,7 @@ void Run() {
    
    t.Start();
    GLOB[0] = 777;
-   usleep(200000);
+   usleep(100000);
    GLOB[1] = 777;
    t.Join();
 }
@@ -5513,7 +5515,7 @@ void Run() {
 REGISTER_TEST2(Run, 306, RACE_DEMO)
 }  // namespace test306
 
-// 307: Simple race, code with control flow  {{{1
+// test307: Simple race, code with control flow  {{{1
 namespace test307 {
 int     *GLOB = 0;
 volatile /*to fake the compiler*/ bool some_condition = true;
@@ -5533,13 +5535,14 @@ int FunctionWithControlFlow() {
       (*GLOB)++;             // "--keep-history=4" will point here.
     }
   }
+  usleep(100000);
   return res;
 }
 
 void Worker1() { FunctionWithControlFlow(); }
-void Worker2() { FunctionWithControlFlow(); }
-void Worker3() { FunctionWithControlFlow(); }
-void Worker4() { FunctionWithControlFlow(); }
+void Worker2() { Worker1(); }
+void Worker3() { Worker2(); }
+void Worker4() { Worker3(); }
 
 void Run() {  
   GLOB = new int;
@@ -5551,6 +5554,50 @@ void Run() {
 }
 REGISTER_TEST2(Run, 307, RACE_DEMO)
 }  // namespace test307
+
+// test308: Example of double-checked-locking  {{{1
+namespace test308 {
+
+
+struct Foo {
+  int a;
+};
+
+static int   is_inited = 0;
+static Mutex lock;
+static Foo  *foo;
+
+void InitMe() {
+  if (!is_inited) {
+    lock.Lock();
+      if (!is_inited) {
+        is_inited = 1;
+        foo = new Foo;
+        foo->a = 42;
+      }
+    lock.Unlock();
+  }
+}
+
+void UseMe() { 
+  InitMe();
+  CHECK(foo && foo->a == 42); 
+}
+
+void Worker1() { UseMe(); }
+void Worker2() { UseMe(); }
+void Worker3() { UseMe(); }
+
+
+void Run() {  
+  ANNOTATE_TRACE_MEMORY(&is_inited);
+  printf("test308: Example of double-checked-locking\n");
+  MyThreadArray t1(Worker1, Worker2, Worker3);
+  t1.Start();  
+  t1.Join();
+}
+REGISTER_TEST2(Run, 308, RACE_DEMO)
+}  // namespace test308
 
 // test350: Simple race with deep stack. {{{1
 namespace test350 {
