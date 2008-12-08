@@ -5571,9 +5571,9 @@ void InitMe() {
   if (!is_inited) {
     lock.Lock();
       if (!is_inited) {
-        is_inited = 1;
         foo = new Foo;
         foo->a = 42;
+        is_inited = 1;
       }
     lock.Unlock();
   }
