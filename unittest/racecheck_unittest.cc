@@ -5328,7 +5328,7 @@ REGISTER_TEST2(Run, 112, STABILITY)
 // test113: PERF. A lot of lock/unlock calls. Many locks {{{1
 namespace    test113 {
 const int kNumIter = 100000;
-const int kNumLocks = 5;
+const int kNumLocks = 7;
 Mutex   MU[kNumLocks]; 
 void Run() {
   printf("test113: perf\n");
