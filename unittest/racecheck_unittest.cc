@@ -5325,6 +5325,26 @@ REGISTER_TEST2(Run, 112, STABILITY)
 }  // namespace test112
 
 
+// test113: PERF. A lot of lock/unlock calls. Many locks {{{1
+namespace    test113 {
+const int kNumIter = 100000;
+const int kNumLocks = 5;
+Mutex   MU[kNumLocks]; 
+void Run() {
+  printf("test113: perf\n");
+  for (int i = 0; i < kNumIter; i++ ) {
+    for (int j = 0; j < kNumLocks; j++) {
+      if (i & (1 << j)) MU[j].Lock();
+    }
+    for (int j = kNumLocks - 1; j >= 0; j--) {
+      if (i & (1 << j)) MU[j].Unlock();
+    }
+  }
+}
+REGISTER_TEST(Run, 113)
+}  // namespace test113
+
+
 // test300: {{{1
 namespace test300 {
 int     GLOB = 0;
