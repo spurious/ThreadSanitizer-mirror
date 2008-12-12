@@ -5368,6 +5368,55 @@ REGISTER_TEST(Run, 114)
 }  // namespace test114
 
 
+// test115: TN. sem_open. {{{1
+namespace    test115 {
+int tid = 0;
+Mutex mu;
+const char *kSemName = "drt-test-sem";
+
+int GLOB = 0;
+
+void Worker() {
+  mu.Lock();
+  int my_tid = tid++;
+  mu.Unlock();
+
+  if (my_tid == 0) {
+    GLOB = 1;
+  }
+
+  // if the detector observes a happens-before arc between 
+  // sem_open and sem_wait, it will be silent.
+  sem_t *sem = sem_open(kSemName, O_CREAT, 0600, 3); 
+  CHECK(sem != SEM_FAILED);
+  CHECK(sem_wait(sem) == 0);
+
+  if (my_tid > 0) {
+    CHECK(GLOB == 1);
+  }
+}
+
+void Run() {
+  printf("test115: stab (sem_open())\n");
+
+  // just check that sem_open is not completely broken
+  sem_unlink(kSemName);
+  sem_t* sem = sem_open(kSemName, O_CREAT, 0600, 1);
+  CHECK(sem != SEM_FAILED);
+  CHECK(sem_wait(sem) == 0);
+  sem_unlink(kSemName);
+
+  // check that sem_open and sem_wait create a happens-before arc.
+  MyThreadArray t(Worker, Worker, Worker);
+  t.Start();
+  t.Join();
+  // clean up
+  sem_unlink(kSemName);
+}
+REGISTER_TEST(Run, 115)
+}  // namespace test115
+
+
 // test300: {{{1
 namespace test300 {
 int     GLOB = 0;
