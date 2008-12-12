@@ -2830,7 +2830,7 @@ int     FLAG2 = 0;
 void Worker2() {
   FLAG1=GLOB2;
   ANNOTATE_CONDVAR_SIGNAL(&COND2);
-  while(!FLAG2);
+  while(!FLAG2) usleep(1);
   ANNOTATE_CONDVAR_WAIT(&COND1);
   GLOB2=FLAG2;
 }
@@ -2838,7 +2838,7 @@ void Worker2() {
 void Worker1() {
   FLAG2=GLOB1;
   ANNOTATE_CONDVAR_SIGNAL(&COND1);
-  while(!FLAG1);
+  while(!FLAG1) usleep(1);
   ANNOTATE_CONDVAR_WAIT(&COND2);
   GLOB1=FLAG1;
 }
@@ -5345,6 +5345,29 @@ REGISTER_TEST(Run, 113)
 }  // namespace test113
 
 
+// test114: STAB. Recursive lock. {{{1
+namespace    test114 {
+int Bar() {
+  static int bar = 1;
+  return bar;
+}
+int Foo() {
+  static int foo = Bar();
+  return foo;
+}
+void Worker() {
+  static int x = Foo();
+}
+void Run() {
+  printf("test114: stab\n");
+  MyThreadArray t(Worker, Worker);
+  t.Start();
+  t.Join();
+}
+REGISTER_TEST(Run, 114)
+}  // namespace test114
+
+
 // test300: {{{1
 namespace test300 {
 int     GLOB = 0;
@@ -5618,6 +5641,28 @@ void Run() {
 }
 REGISTER_TEST2(Run, 308, RACE_DEMO)
 }  // namespace test308
+
+// test309: Simple race on an STL object.  {{{1
+namespace test309 {
+string  GLOB;
+
+void Worker1() { 
+  GLOB="Thread1";
+}
+void Worker2() { 
+  usleep(100000);
+  GLOB="Booooooooooo"; 
+}
+
+void Run() {  
+  printf("test309: simple race on an STL object.\n");
+  MyThread t1(Worker1), t2(Worker2);
+  t1.Start();  
+  t2.Start();  
+  t1.Join();   t2.Join();
+}
+REGISTER_TEST2(Run, 309, RACE_DEMO)
+}  // namespace test309
 
 // test350: Simple race with deep stack. {{{1
 namespace test350 {
