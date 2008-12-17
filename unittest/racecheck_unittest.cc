@@ -543,17 +543,18 @@ REGISTER_TEST2(Run, 6, FEATURE|NEEDS_ANNOTATIONS);
 }  // namespace test06
 
 
-// test07: TN. Synchronization via LockWhen() but Waker gets there first. {{{1
+// test07: TN. Synchronization via LockWhen(), Signaller is observed first. {{{1
 namespace test07 {  
 int     GLOB = 0;
-// Two write accesses to GLOB are synchronized via conditional critical section. 
-// Note that LockWhen() happens after COND has been set (due to sleep)! 
-// We have to annotate Waker with ANNOTATE_CONDVAR_SIGNAL(), otherwise 
-// ANNOTATE_CONDVAR_WAIT() will succeed w/o signal. 
+bool    COND = 0;
+// Two write accesses to GLOB are synchronized via conditional critical section.
+// LockWhen() is observed after COND has been set (due to sleep). 
+// We have to annotate Signaller with ANNOTATE_CONDVAR_SIGNAL(), otherwise 
+// ANNOTATE_CONDVAR_WAIT() in LockWhen will not catch a signal. 
 //
-// Waiter:                           Waker: 
+// Waiter:                           Signaller: 
 // 1. COND = 0
-// 2. Start(Waker)              
+// 2. Start(Signaller)              
 //                                   a. write(GLOB)
 //                                   b. MU.Lock()
 //                                   c. COND = 1
@@ -563,25 +564,24 @@ int     GLOB = 0;
 // 5. write(GLOB)
 
 Mutex   MU; 
-void Waker() {
+void Signaller() {
   GLOB = 1; 
-
   MU.Lock();
-  COND = 1; // We are done! Tell the Waiter. 
+  COND = true; // We are done! Tell the Waiter. 
   ANNOTATE_CONDVAR_SIGNAL(&MU);
   MU.Unlock(); // does not call ANNOTATE_CONDVAR_SIGNAL;
 }
 void Waiter() {
-  ThreadPool pool(1);
-  pool.StartWorkers();
-  COND = 0;
-  pool.Add(NewCallback(Waker));
+  COND = false;
+  MyThread t(Signaller);
+  t.Start();
   usleep(100000);  // Make sure the signaller gets there first.
-
-  MU.LockWhen(Condition(&ArgIsOne, &COND));  // calls ANNOTATE_CONDVAR_WAIT
-  MU.Unlock();  // Waker is done! 
-
-  GLOB = 2;
+  
+  MU.LockWhen(Condition(&ArgIsTrue, &COND));  // calls ANNOTATE_CONDVAR_WAIT
+  MU.Unlock();  // Signaller is done! 
+  
+  GLOB = 2; // If LockWhen didn't catch the signal, a race may be reported here.
+  t.Join();
 }
 void Run() {
   printf("test07: negative\n");
@@ -5357,6 +5357,7 @@ int Foo() {
 }
 void Worker() {
   static int x = Foo();
+  CHECK(x == 1);
 }
 void Run() {
   printf("test114: stab\n");
@@ -5415,6 +5416,104 @@ void Run() {
 }
 REGISTER_TEST(Run, 115)
 }  // namespace test115
+
+
+// test116: TN. some operations with string<> objects. {{{1
+namespace test116 {
+
+void Worker() {
+  string A[10], B[10], C[10];
+  for (int i = 0; i < 1000; i++) {
+    for (int j = 0; j < 10; j++) {
+      string &a = A[j];
+      string &b = B[j];
+      string &c = C[j];
+      a = "sdl;fkjhasdflksj df";
+      b = "sdf sdf;ljsd ";
+      c = "'sfdf df";
+      c = b;
+      a = c;
+      b = a;
+      swap(a,b);
+      swap(b,c);
+    }
+    for (int j = 0; j < 10; j++) {
+      string &a = A[j];
+      string &b = B[j];
+      string &c = C[j];
+      a.clear();
+      b.clear();
+      c.clear();
+    }
+  }
+}
+
+void Run() {
+  printf("test116: negative (strings)\n");
+  MyThreadArray t(Worker, Worker, Worker);
+  t.Start();
+  t.Join();
+}
+REGISTER_TEST2(Run, 116, FEATURE|EXCLUDE_FROM_ALL)
+}  // namespace test116
+
+// test117: TN. Many calls to function-scope static init. {{{1
+namespace test117 {
+const int N = 50;
+
+int Foo() {
+  usleep(20000);
+  return 1;
+}
+
+void Worker(void *a) {
+  static int foo = Foo();
+  CHECK(foo == 1);
+}
+
+void Run() {
+  printf("test117: negative\n");
+  MyThread *t[N];
+  for (int i  = 0; i < N; i++) {
+    t[i] = new MyThread(Worker);
+  }
+  for (int i  = 0; i < N; i++) {
+    t[i]->Start();
+  }
+  for (int i  = 0; i < N; i++) {
+    t[i]->Join();
+  }
+  for (int i  = 0; i < N; i++) delete t[i];
+}
+REGISTER_TEST(Run, 117)
+}  // namespace test117
+
+
+
+// test118 PERF: One signal, multiple waits. {{{1
+namespace   test118 {
+int     GLOB = 0;
+const int kNumIter = 1000000;
+void Signaller() {
+  usleep(10000);
+  ANNOTATE_CONDVAR_SIGNAL(&GLOB);
+}
+void Waiter() {
+  for (int i = 0; i < kNumIter; i++) {
+    ANNOTATE_CONDVAR_WAIT(&GLOB);
+    if (i == kNumIter / 2) 
+      usleep(50000);
+  }
+}
+void Run() {
+  printf("test118: negative\n");
+  MyThreadArray t(Signaller, Waiter, Waiter, Waiter);
+  t.Start();
+  t.Join();
+  printf("\tGLOB=%d\n", GLOB);
+}
+REGISTER_TEST(Run, 118)
+}  // namespace test118
 
 
 // test300: {{{1
