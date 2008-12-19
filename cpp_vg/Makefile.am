@@ -10,7 +10,8 @@ TOOLS =		memcheck \
 		lackey \
 		none \
 		helgrind \
-		drd
+		drd \
+		cppgrind
 
 EXP_TOOLS = 	exp-omega \
 		exp-ptrcheck
