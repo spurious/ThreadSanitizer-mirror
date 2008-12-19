@@ -65,9 +65,9 @@ extern const ToolInfo VG_(tool_info);
 /* Every tool must include this macro somewhere, exactly once. */
 #define VG_DETERMINE_INTERFACE_VERSION(pre_clo_init)           \
    const ToolInfo VG_(tool_info) = {                           \
-      .sizeof_ToolInfo   = sizeof(ToolInfo),                   \
-      .interface_version = VG_CORE_INTERFACE_VERSION,          \
-      .tl_pre_clo_init   = pre_clo_init,                       \
+      sizeof_ToolInfo   : sizeof(ToolInfo),                   \
+      interface_version : VG_CORE_INTERFACE_VERSION,          \
+      tl_pre_clo_init   : pre_clo_init,                       \
    };
 
 /* ------------------------------------------------------------------ */
