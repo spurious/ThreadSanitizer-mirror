@@ -214,6 +214,20 @@ class Mutex {
 };
 
 
+class MutexLock {  // Scoped Mutex Locker/Unlocker
+ public:
+  MutexLock(Mutex *mu) 
+    : mu_(mu) {
+    mu_->Lock();
+  }
+  ~MutexLock() {
+    mu_->Unlock();
+  }
+ private:
+  Mutex *mu_;
+};
+
+
 /// Wrapper for pthread_cond_t. 
 class CondVar {
  public:
@@ -239,11 +253,11 @@ class MyThread {
  public: 
   typedef void *(*worker_t)(void*);
 
-  MyThread(worker_t worker, void *arg = NULL) 
+  MyThread(worker_t worker, void *arg = NULL, const char *name = "") 
       :w_(worker), arg_(arg){}
-  MyThread(void (*worker)(void), void *arg = NULL)   
+  MyThread(void (*worker)(void), void *arg = NULL, const char *name = "")   
       :w_(reinterpret_cast<worker_t>(worker)), arg_(arg){}
-  MyThread(void (*worker)(void *), void *arg = NULL) 
+  MyThread(void (*worker)(void *), void *arg = NULL, const char *name = "") 
       :w_(reinterpret_cast<worker_t>(worker)), arg_(arg){}
 
   ~MyThread(){ w_ = NULL; arg_ = NULL;}

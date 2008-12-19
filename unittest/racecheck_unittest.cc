@@ -5837,6 +5837,63 @@ void Run() {
 REGISTER_TEST2(Run, 309, RACE_DEMO)
 }  // namespace test309
 
+// test310: One more simple race.  {{{1
+namespace test310 {
+int     VAR = 0;  // GUARDED_BY(mu1)
+
+Mutex mu1;  // Protects VAR.
+Mutex mu2;  // Unrelated to VAR.
+Mutex mu3;  // Unrelated to VAR.
+
+void Writer1() {
+  MutexLock lock3(&mu3);  // This lock is unrelated to VAR.
+  MutexLock lock1(&mu1);  // Protect VAR.
+  VAR = 1; 
+}
+
+void Writer2() {
+  MutexLock lock2(&mu2);  // This lock is unrelated to VAR.
+  MutexLock lock1(&mu1);  // Protect VAR.
+  int some_unrelated_stuff = 0;
+  if (some_unrelated_stuff == 0)
+    some_unrelated_stuff++;
+  VAR = 2; 
+}
+
+
+void Reader() {
+  MutexLock lock2(&mu2);  // Oh, gosh, this is a wrong mutex!
+  CHECK(VAR <= 2); 
+}
+
+// Some functions to make the stack trace non-trivial.
+void DoWrite1() { Writer1();  }
+void Thread1()  { DoWrite1(); }
+
+void DoWrite2() { Writer2();  }
+void Thread2()  { DoWrite2(); }
+
+void DoRead()  { Reader();  }
+void Thread3() { DoRead();  }
+
+void Run() {  
+  printf("test310: simple race.\n");
+  VAR = 0;
+  MyThread t1(Thread1, NULL, "writer1"), 
+           t2(Thread2, NULL, "writer2"), 
+           t3(Thread3, NULL, "buggy reader");
+  t1.Start();  
+  t2.Start();  
+  usleep(100000);  // Let the writers go first.
+  t3.Start();  
+
+  t1.Join();   
+  t2.Join();
+  t3.Join();
+}
+REGISTER_TEST2(Run, 310, RACE_DEMO)
+}  // namespace test310
+
 // test350: Simple race with deep stack. {{{1
 namespace test350 {
 int     GLOB = 0;
