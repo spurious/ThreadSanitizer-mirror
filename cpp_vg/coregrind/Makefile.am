@@ -222,7 +222,12 @@ COREGRIND_SOURCES_COMMON = \
 	m_replacemalloc/replacemalloc_core.c \
 	m_scheduler/scheduler.c \
 	m_scheduler/sema.c \
-	m_syswrap/syswrap-main.c
+	m_syswrap/syswrap-main.c \
+	m_stl/symbols.cc \
+	m_stl/src/tree.cc \
+	m_stl/src/string-inst.cc \
+	m_stl/src/functexcept.cc
+#TODO: add more sources above
 
 COREGRIND_LINUX_SOURCE = \
 	m_coredump/coredump-elf.c \
@@ -252,6 +257,7 @@ libcoregrind_x86_linux_a_SOURCES = \
 	m_syswrap/syswrap-x86-linux.c
 
 libcoregrind_x86_linux_a_CPPFLAGS = $(AM_CPPFLAGS_X86_LINUX)
+libcoregrind_x86_linux_a_CXXFLAGS = $(AM_CXXFLAGS_X86_LINUX)
 libcoregrind_x86_linux_a_CFLAGS = $(AM_CFLAGS_X86_LINUX)
 libcoregrind_x86_linux_a_CCASFLAGS = $(AM_CCASFLAGS_X86_LINUX)
 
@@ -265,6 +271,7 @@ libcoregrind_amd64_linux_a_SOURCES = \
 	m_syswrap/syswrap-amd64-linux.c
 
 libcoregrind_amd64_linux_a_CPPFLAGS = $(AM_CPPFLAGS_AMD64_LINUX)
+libcoregrind_amd64_linux_a_CXXFLAGS = $(AM_CXXFLAGS_AMD64_LINUX)
 libcoregrind_amd64_linux_a_CFLAGS = $(AM_CFLAGS_AMD64_LINUX)
 libcoregrind_amd64_linux_a_CCASFLAGS = $(AM_CCASFLAGS_AMD64_LINUX)
 
@@ -278,6 +285,7 @@ libcoregrind_ppc32_linux_a_SOURCES = \
 	m_syswrap/syswrap-ppc32-linux.c
 
 libcoregrind_ppc32_linux_a_CPPFLAGS = $(AM_CPPFLAGS_PPC32_LINUX)
+libcoregrind_ppc32_linux_a_CXXFLAGS = $(AM_CXXFLAGS_XXC32_LINUX)
 libcoregrind_ppc32_linux_a_CFLAGS = $(AM_CFLAGS_PPC32_LINUX)
 libcoregrind_ppc32_linux_a_CCASFLAGS = $(AM_CCASFLAGS_PPC32_LINUX)
 
@@ -291,6 +299,7 @@ libcoregrind_ppc64_linux_a_SOURCES = \
 	m_syswrap/syswrap-ppc64-linux.c
 
 libcoregrind_ppc64_linux_a_CPPFLAGS = $(AM_CPPFLAGS_PPC64_LINUX)
+libcoregrind_ppc64_linux_a_CXXFLAGS = $(AM_CXXFLAGS_XXC64_LINUX)
 libcoregrind_ppc64_linux_a_CFLAGS = $(AM_CFLAGS_PPC64_LINUX)
 libcoregrind_ppc64_linux_a_CCASFLAGS = $(AM_CCASFLAGS_PPC64_LINUX)
 
@@ -304,6 +313,7 @@ libcoregrind_ppc32_aix5_a_SOURCES = \
 	m_syswrap/syswrap-ppc32-aix5.c
 
 libcoregrind_ppc32_aix5_a_CPPFLAGS = $(AM_CPPFLAGS_PPC32_AIX5)
+libcoregrind_ppc32_aix5_a_CXXFLAGS = $(AM_CXXFLAGS_XXC32_AIX5)
 libcoregrind_ppc32_aix5_a_CFLAGS = $(AM_CFLAGS_PPC32_AIX5)
 libcoregrind_ppc32_aix5_a_CCASFLAGS = $(AM_CCASFLAGS_PPC32_AIX5)
 libcoregrind_ppc32_aix5_a_AR = $(AR) -X32 cru
@@ -318,6 +328,7 @@ libcoregrind_ppc64_aix5_a_SOURCES = \
 	m_syswrap/syswrap-ppc64-aix5.c
 
 libcoregrind_ppc64_aix5_a_CPPFLAGS = $(AM_CPPFLAGS_PPC64_AIX5)
+libcoregrind_ppc64_aix5_a_CXXFLAGS = $(AM_CXXFLAGS_XXC64_AIX5)
 libcoregrind_ppc64_aix5_a_CFLAGS = $(AM_CFLAGS_PPC64_AIX5)
 libcoregrind_ppc64_aix5_a_CCASFLAGS = $(AM_CCASFLAGS_PPC64_AIX5)
 libcoregrind_ppc64_aix5_a_AR = $(AR) -X64 cru
