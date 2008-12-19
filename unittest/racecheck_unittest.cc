@@ -5493,27 +5493,52 @@ REGISTER_TEST(Run, 117)
 // test118 PERF: One signal, multiple waits. {{{1
 namespace   test118 {
 int     GLOB = 0;
-const int kNumIter = 1000000;
+const int kNumIter = 2000000;
 void Signaller() {
-  usleep(10000);
+  usleep(50000);
   ANNOTATE_CONDVAR_SIGNAL(&GLOB);
 }
 void Waiter() {
   for (int i = 0; i < kNumIter; i++) {
     ANNOTATE_CONDVAR_WAIT(&GLOB);
     if (i == kNumIter / 2) 
-      usleep(50000);
+      usleep(100000);
   }
 }
 void Run() {
-  printf("test118: negative\n");
-  MyThreadArray t(Signaller, Waiter, Waiter, Waiter);
+  printf("test118: perf\n");
+  MyThreadArray t(Signaller, Waiter, Signaller, Waiter);
   t.Start();
   t.Join();
   printf("\tGLOB=%d\n", GLOB);
 }
 REGISTER_TEST(Run, 118)
 }  // namespace test118
+
+
+// test119: TP. Testing that malloc does not introduce any HB arc. {{{1
+namespace test119 {
+int     GLOB = 0;
+void Worker1() {
+  GLOB = 1;
+  free(malloc(123));
+}
+void Worker2() {
+  usleep(100000);
+  free(malloc(345));
+  GLOB = 2;
+}
+void Run() {
+  printf("test119: positive (checking if malloc creates HB arcs)\n");
+  ANNOTATE_EXPECT_RACE_FOR_HYBRID1(&GLOB, "true race");
+  GLOB = 0;
+  MyThreadArray t(Worker1, Worker2);
+  t.Start();
+  t.Join();
+  printf("\tGLOB=%d\n", GLOB);
+}
+REGISTER_TEST(Run, 119)
+}  // namespace test119
 
 
 // test300: {{{1
