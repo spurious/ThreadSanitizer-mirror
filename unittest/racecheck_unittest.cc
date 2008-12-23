@@ -637,6 +637,7 @@ void Reader() {
 }
 
 void Run() {
+  ANNOTATE_TRACE_MEMORY(&GLOB);
   ANNOTATE_EXPECT_RACE_FOR_HYBRID1(&GLOB, "test09. TP.");
   printf("test09: positive\n");
   MyThreadArray t(Writer, Reader);
@@ -4591,26 +4592,23 @@ int     GLOB = 0;
 Mutex A, B, C;
 
 void Thr1() {
-  A.Lock();
-  B.Lock();
+  MutexLock a(&A);
+  MutexLock b(&B);
   GLOB++;
-  B.Unlock();
-  A.Unlock();
 }
+
 void Thr2() {
-   B.Lock();
-   C.Lock();
-   GLOB++;
-   C.Unlock();
-   B.Unlock();
+  MutexLock b(&B);
+  MutexLock c(&C);
+  GLOB++;
 }
+
 void Thr3() {
-   A.Lock();
-   C.Lock();
-   GLOB++;
-   C.Unlock();
-   A.Unlock(); 
+  MutexLock a(&A);
+  MutexLock c(&C);
+  GLOB++;
 }
+
 void Run() {
   printf("test96: FP. tricky LockSet behaviour\n");
   ANNOTATE_TRACE_MEMORY(&GLOB);
@@ -4618,6 +4616,7 @@ void Run() {
   MyThreadArray mta(Thr1, Thr2, Thr3);
   mta.Start();
   mta.Join();
+  CHECK(GLOB == 3);
   printf("\tGLOB=%d\n", GLOB);
 }
 REGISTER_TEST(Run, 96);
@@ -5377,6 +5376,15 @@ const char *kSemName = "drt-test-sem";
 
 int GLOB = 0;
 
+sem_t *DoSemOpen() {
+  // TODO: there is some race report inside sem_open 
+  // for which suppressions do not work... (???)
+  ANNOTATE_IGNORE_WRITES_BEGIN();
+  sem_t *sem = sem_open(kSemName, O_CREAT, 0600, 3); 
+  ANNOTATE_IGNORE_WRITES_END();
+  return sem;
+}
+
 void Worker() {
   mu.Lock();
   int my_tid = tid++;
@@ -5388,7 +5396,7 @@ void Worker() {
 
   // if the detector observes a happens-before arc between 
   // sem_open and sem_wait, it will be silent.
-  sem_t *sem = sem_open(kSemName, O_CREAT, 0600, 3); 
+  sem_t *sem = DoSemOpen(); 
   CHECK(sem != SEM_FAILED);
   CHECK(sem_wait(sem) == 0);
 
@@ -5402,7 +5410,7 @@ void Run() {
 
   // just check that sem_open is not completely broken
   sem_unlink(kSemName);
-  sem_t* sem = sem_open(kSemName, O_CREAT, 0600, 1);
+  sem_t* sem = DoSemOpen();
   CHECK(sem != SEM_FAILED);
   CHECK(sem_wait(sem) == 0);
   sem_unlink(kSemName);
@@ -5540,6 +5548,72 @@ void Run() {
 REGISTER_TEST(Run, 119)
 }  // namespace test119
 
+
+// test120: TP. {{{1
+namespace test120 {
+int     GLOB = 0;
+
+void Thread1() {
+  GLOB = 1;
+  CHECK(GLOB);
+}
+
+void Thread2() {
+  usleep(100000);
+  CHECK(GLOB >= 0);
+}
+
+void Run() {
+  printf("test120: positive\n");
+  MyThreadArray t(Thread1, Thread2);
+  GLOB = 1;
+  t.Start();
+  t.Join();
+  printf("\tGLOB=%d\n", GLOB);
+}
+REGISTER_TEST(Run, 120)
+}  // namespace test120
+
+
+// test121: Example of double-checked-locking  {{{1
+namespace test121 {
+struct Foo {
+  int a;
+};
+
+static int   is_inited = 0;
+static Mutex mu;
+static Foo  *foo;
+
+void InitMe() {
+  if (!foo) {
+    MutexLock lock(&mu);
+    if (!foo) {
+      foo = new Foo;
+      foo->a = 42;
+    }
+  }
+}
+
+void UseMe() { 
+  InitMe();
+  CHECK(foo && foo->a == 42); 
+}
+
+void Worker1() { UseMe(); }
+void Worker2() { UseMe(); }
+void Worker3() { UseMe(); }
+
+
+void Run() {  
+  ANNOTATE_TRACE_MEMORY(&is_inited);
+  printf("test121: Example of double-checked-locking\n");
+  MyThreadArray t1(Worker1, Worker2, Worker3);
+  t1.Start();  
+  t1.Join();
+}
+REGISTER_TEST(Run, 121)
+}  // namespace test121
 
 // test300: {{{1
 namespace test300 {
@@ -5773,8 +5847,6 @@ REGISTER_TEST2(Run, 307, RACE_DEMO)
 
 // test308: Example of double-checked-locking  {{{1
 namespace test308 {
-
-
 struct Foo {
   int a;
 };
@@ -5839,31 +5911,31 @@ REGISTER_TEST2(Run, 309, RACE_DEMO)
 
 // test310: One more simple race.  {{{1
 namespace test310 {
-int     VAR = 0;  // GUARDED_BY(mu1)
+int     *PTR = NULL;  // GUARDED_BY(mu1)
 
-Mutex mu1;  // Protects VAR.
-Mutex mu2;  // Unrelated to VAR.
-Mutex mu3;  // Unrelated to VAR.
+Mutex mu1;  // Protects PTR.
+Mutex mu2;  // Unrelated to PTR.
+Mutex mu3;  // Unrelated to PTR.
 
 void Writer1() {
-  MutexLock lock3(&mu3);  // This lock is unrelated to VAR.
-  MutexLock lock1(&mu1);  // Protect VAR.
-  VAR = 1; 
+  MutexLock lock3(&mu3);  // This lock is unrelated to PTR.
+  MutexLock lock1(&mu1);  // Protect PTR.
+  *PTR = 1; 
 }
 
 void Writer2() {
-  MutexLock lock2(&mu2);  // This lock is unrelated to VAR.
-  MutexLock lock1(&mu1);  // Protect VAR.
+  MutexLock lock2(&mu2);  // This lock is unrelated to PTR.
+  MutexLock lock1(&mu1);  // Protect PTR.
   int some_unrelated_stuff = 0;
   if (some_unrelated_stuff == 0)
     some_unrelated_stuff++;
-  VAR = 2; 
+  *PTR = 2; 
 }
 
 
 void Reader() {
   MutexLock lock2(&mu2);  // Oh, gosh, this is a wrong mutex!
-  CHECK(VAR <= 2); 
+  CHECK(*PTR <= 2); 
 }
 
 // Some functions to make the stack trace non-trivial.
@@ -5878,7 +5950,9 @@ void Thread3() { DoRead();  }
 
 void Run() {  
   printf("test310: simple race.\n");
-  VAR = 0;
+  PTR = new int;
+  ANNOTATE_TRACE_MEMORY(PTR);
+  *PTR = 0;
   MyThread t1(Thread1, NULL, "writer1"), 
            t2(Thread2, NULL, "writer2"), 
            t3(Thread3, NULL, "buggy reader");
