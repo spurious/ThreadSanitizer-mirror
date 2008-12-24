@@ -6,6 +6,7 @@ extern "C" {
 #include "pub_tool_libcassert.h"
 #include "pub_tool_libcbase.h"
 #include "pub_tool_libcprint.h"
+#include "pub_tool_mallocfree.h"
 }
 
 #ifndef USE_STLPORT
@@ -15,6 +16,8 @@ extern "C" {
 #include "m_stl/std/map"
 #include "m_stl/std/set"
 
+#define STL_FROM "libstdc++/gcc-4.3.2"
+
 using namespace std;
 #else
 // using cppgrind/stlport
@@ -22,6 +25,8 @@ using namespace std;
 #include "stlport/string"
 #include "stlport/map"
 #include "stlport/set"
+
+#define STL_FROM "stlport 5.2.0"
 
 using namespace stlport;
 #endif
@@ -138,6 +143,8 @@ static void cp_pre_clo_init(void)
    VG_(basic_tool_funcs)        (cp_post_clo_init,
                                  cp_instrument,
                                  cp_fini);
+
+   VG_(printf)("Using " STL_FROM " as STL implementation\n");
 
    DoVectorTest();
    DoMapTest();

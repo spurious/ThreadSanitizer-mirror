@@ -69,7 +69,7 @@ public:
   ;
 #else
   {
-    void *__result = malloc(__n);
+    void *__result = VG_(malloc)("stlport", __n);
     if (__result == 0) {
       _STLP_THROW_BAD_ALLOC;
     }
@@ -77,7 +77,7 @@ public:
   }
 #endif
 
-  static void _STLP_CALL deallocate(void* __p, size_t /* __n */) { free((char*)__p); }
+  static void _STLP_CALL deallocate(void* __p, size_t /* __n */) { VG_(free)((char*)__p); }
 #if !defined (_STLP_USE_NO_IOSTREAMS)
   static __oom_handler_type _STLP_CALL set_malloc_handler(__oom_handler_type __f);
 #endif
@@ -577,4 +577,3 @@ _STLP_END_NAMESPACE
 // Local Variables:
 // mode:C++
 // End:
-
