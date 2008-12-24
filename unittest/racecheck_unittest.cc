@@ -4619,7 +4619,7 @@ void Run() {
 REGISTER_TEST(Run, 96);
 }  // namespace test96
 
-// test97: This test shows false negative with --fast-excl-mode=yes {{{1
+// test97: This test shows false negative with --fast-mode=yes {{{1
 namespace test97 {
 const int HG_CACHELINE_SIZE = 64;
 
@@ -4640,8 +4640,8 @@ void Reader() {
 
 void Run() {
    MyThreadArray t(Reader);
-   ANNOTATE_EXPECT_RACE_FOR_TSAN(GLOB, "test97: TP. FN with --fast-excl-mode=yes");
-   printf("test97: This test shows false negative with --fast-excl-mode=yes\n");
+   ANNOTATE_EXPECT_RACE_FOR_TSAN(GLOB, "test97: TP. FN with --fast-mode=yes");
+   printf("test97: This test shows false negative with --fast-mode=yes\n");
    
    t.Start();
    *GLOB = 777;
@@ -4837,7 +4837,7 @@ void Run() {
 REGISTER_TEST(Run, 101)
 }  // namespace test101
 
-// test102: --fast-excl-mode=yes vs. --initialization-bit=yes {{{1
+// test102: --fast-mode=yes vs. --initialization-bit=yes {{{1
 namespace test102 {
 const int HG_CACHELINE_SIZE = 64;
 
@@ -4860,9 +4860,9 @@ void Reader() {
 
 void Run() {
    MyThreadArray t(Reader);
-   ANNOTATE_EXPECT_RACE_FOR_TSAN(GLOB+0, "test102: TP. FN with --fast-excl-mode=yes");
+   ANNOTATE_EXPECT_RACE_FOR_TSAN(GLOB+0, "test102: TP. FN with --fast-mode=yes");
    ANNOTATE_EXPECT_RACE_FOR_TSAN(GLOB+1, "test102: TP");
-   printf("test102: --fast-excl-mode=yes vs. --initialization-bit=yes\n");
+   printf("test102: --fast-mode=yes vs. --initialization-bit=yes\n");
    
    t.Start();
    GLOB[0] = 777;
@@ -6461,7 +6461,7 @@ void Run () {
 REGISTER_TEST2(Run, 512, MEMORY_USAGE | PRINT_STATS | EXCLUDE_FROM_ALL);
 }  // namespace test512
 
-// test513: --fast-excl-mode benchmark {{{1
+// test513: --fast-mode benchmark {{{1
 namespace test513 {
 
 const int N_THREADS = 2,
@@ -6501,7 +6501,7 @@ void Worker() {
 }
 
 void Run() {
-   printf("test513: --fast-excl-mode benchmark\n");
+   printf("test513: --fast-mode benchmark\n");
    {
       ThreadPool pool(N_THREADS);
       pool.StartWorkers();
