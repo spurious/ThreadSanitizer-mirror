@@ -7,12 +7,24 @@ extern "C" {
 #include "pub_tool_libcbase.h"
 #include "pub_tool_libcprint.h"
 }
+
+#ifndef USE_STLPORT
+// using coregrind/m_stl
 #include "m_stl/std/vector"
 #include "m_stl/std/string"
 #include "m_stl/std/map"
 #include "m_stl/std/set"
 
 using namespace std;
+#else
+// using cppgrind/stlport
+#include "stlport/vector"
+#include "stlport/string"
+#include "stlport/map"
+#include "stlport/set"
+
+using namespace stlport;
+#endif
 
 struct ltstr
 {
