@@ -184,14 +184,16 @@ static bool ArgIsTrue(bool *arg) { return *arg == true; };
 // Supported machines so far:
 //   MSM_HYBRID1             -- aka MSMProp1
 //   MSM_HYBRID1_INIT_STATE  -- aka MSMProp1 with --initialization-state=yes
+//   MSM_THREAD_SANITIZER    -- ThreadSanitizer's state machine
 #define ANNOTATE_EXPECT_RACE_FOR_MACHINE(mem, descr, machine) \
     while(getenv(machine)) {\
       ANNOTATE_EXPECT_RACE(mem, descr); \
       break;\
     }\
 
-#define ANNOTATE_EXPECT_RACE_FOR_HYBRID1(mem, descr) \
-    ANNOTATE_EXPECT_RACE_FOR_MACHINE(mem, descr, "MSM_HYBRID1")
+#define ANNOTATE_EXPECT_RACE_FOR_TSAN(mem, descr) \
+    ANNOTATE_EXPECT_RACE_FOR_MACHINE(mem, descr, "MSM_THREAD_SANITIZER")
+
 
 #ifndef MAIN_INIT_ACTION
 #define MAIN_INIT_ACTION
@@ -303,7 +305,7 @@ void Parent() {
   t.Join();
 }
 void Run() {
-  ANNOTATE_EXPECT_RACE_FOR_HYBRID1(&GLOB, "test01. TP.");
+  ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test01. TP.");
   ANNOTATE_TRACE_MEMORY(&GLOB);
   printf("test01: positive\n");
   Parent();
@@ -483,7 +485,7 @@ void Waiter() {
   GLOB = 2;
 }
 void Run() {
-  ANNOTATE_EXPECT_RACE_FOR_HYBRID1(&GLOB, "test05. FP. Unavoidable.");
+  ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test05. FP. Unavoidable in hybrid scheme.");
   printf("test05: unavoidable false positive\n");
   Waiter();
   printf("\tGLOB=%d\n", GLOB);
@@ -638,7 +640,7 @@ void Reader() {
 
 void Run() {
   ANNOTATE_TRACE_MEMORY(&GLOB);
-  ANNOTATE_EXPECT_RACE_FOR_HYBRID1(&GLOB, "test09. TP.");
+  ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test09. TP.");
   printf("test09: positive\n");
   MyThreadArray t(Writer, Reader);
   t.Start();
@@ -674,7 +676,7 @@ void Reader() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE_FOR_HYBRID1(&GLOB, "test10. TP. FN in MSMHelgrind.");
+  ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test10. TP. FN in MSMHelgrind.");
   printf("test10: positive\n");
   MyThreadArray t(Writer, Reader);
   t.Start();
@@ -1097,7 +1099,7 @@ void Waiter() {
   GLOB = 2;
 }
 void Run() {
-  ANNOTATE_EXPECT_RACE_FOR_HYBRID1(&GLOB, "test20. TP.");
+  ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test20. TP.");
   printf("test20: positive\n");
   Waiter();
   printf("\tGLOB=%d\n", GLOB);
@@ -1126,7 +1128,7 @@ void Waiter() {
   GLOB = 2;
 }
 void Run() {
-  ANNOTATE_EXPECT_RACE_FOR_HYBRID1(&GLOB, "test21. TP.");
+  ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test21. TP.");
   printf("test21: positive\n");
   Waiter();
   printf("\tGLOB=%d\n", GLOB);
@@ -1161,7 +1163,7 @@ void Waiter() {
   GLOB = 2;
 }
 void Run() {
-  ANNOTATE_EXPECT_RACE_FOR_HYBRID1(&GLOB, "test22. TP.");
+  ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test22. TP.");
   printf("test22: positive\n");
   Waiter();
   printf("\tGLOB=%d\n", GLOB);
@@ -1318,7 +1320,7 @@ void Waiter() {
   GLOB = 2;
 }
 void Run() {
-  ANNOTATE_EXPECT_RACE_FOR_HYBRID1(&GLOB, "test26. TP");
+  ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test26. TP");
   printf("test26: positive\n");
   Waiter();
   printf("\tGLOB=%d\n", GLOB);
@@ -1351,7 +1353,7 @@ REGISTER_TEST2(Run, 27, FEATURE|NEEDS_ANNOTATIONS);
 }  // namespace test27
 
 
-// test28: FP. Synchronization via Mutex, then PCQ. 3 threads {{{1
+// test28: TN. Synchronization via Mutex, then PCQ. 3 threads {{{1
 namespace test28 {
 // Putter1:                       Getter:                         Putter2:        
 // 1. MU.Lock()                                                   A. MU.Lock()
@@ -1386,7 +1388,6 @@ void Getter() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE_FOR_HYBRID1(&GLOB, "test28. FP.");
   printf("test28: negative\n");
   MyThreadArray t(Getter, Putter, Putter);
   t.Start();
@@ -1397,7 +1398,7 @@ REGISTER_TEST(Run, 28);
 }  // namespace test28
 
 
-// test29: FP. Synchronization via Mutex, then PCQ. 4 threads. {{{1
+// test29: TN. Synchronization via Mutex, then PCQ. 4 threads. {{{1
 namespace test29 {
 // Similar to test28, but has two Getters and two PCQs. 
 ProducerConsumerQueue *Q1, *Q2;
@@ -1430,7 +1431,6 @@ void Getter() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE_FOR_HYBRID1(&GLOB, "test29. FP.");
   printf("test29: negative\n");
   Q1 = new ProducerConsumerQueue(INT_MAX);
   Q2 = new ProducerConsumerQueue(INT_MAX);
@@ -1768,7 +1768,7 @@ REGISTER_TEST2(Run, 35, PERFORMANCE|EXCLUDE_FROM_ALL);
 }  // namespace test35
 
 
-// test36: FP. Synchronization via Mutex, then PCQ. 3 threads. W/W {{{1
+// test36: TN. Synchronization via Mutex, then PCQ. 3 threads. W/W {{{1
 namespace test36 {
 // variation of test28 (W/W instead of W/R) 
 
@@ -1813,7 +1813,6 @@ void Getter() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE_FOR_HYBRID1(&GLOB, "test36. FP.");
   printf("test36: negative \n");
   MyThreadArray t(Getter, Putter, Putter);
   t.Start();
@@ -1860,7 +1859,7 @@ REGISTER_TEST(Run, 37);
 }  // namespace test37
 
 
-// test38: FP. Synchronization via Mutexes and PCQ. 4 threads. W/W {{{1
+// test38: TN. Synchronization via Mutexes and PCQ. 4 threads. W/W {{{1
 namespace test38 {
 // Fusion of test29 and test36. 
 
@@ -1919,7 +1918,6 @@ void Getter() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE_FOR_HYBRID1(&GLOB, "test38. FP.");
   printf("test38: negative\n");
   Q1 = new ProducerConsumerQueue(INT_MAX);
   Q2 = new ProducerConsumerQueue(INT_MAX);
@@ -2290,7 +2288,7 @@ void Second() {
   GLOB++;
 }
 void Run() {
-  ANNOTATE_EXPECT_RACE_FOR_HYBRID1(&GLOB, "test47. TP. Not detected by pure HB.");
+  ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test47. TP. Not detected by pure HB.");
   printf("test47: positive\n");
   MyThreadArray t(First, Second);
   t.Start();
@@ -2327,7 +2325,7 @@ void Reader() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE_FOR_HYBRID1(&GLOB, "test48. TP. FN in MSMHelgrind.");
+  ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test48. TP. FN in MSMHelgrind.");
   printf("test48: positive\n");
   MyThreadArray t(Writer, Reader,Reader,Reader);
   t.Start();
@@ -2369,7 +2367,7 @@ void Reader() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE_FOR_HYBRID1(&GLOB, "test49. TP. FN in MSMHelgrind.");
+  ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test49. TP. FN in MSMHelgrind.");
   printf("test49: positive\n");
   MyThreadArray t(Writer, Reader);
   t.Start();
@@ -2433,7 +2431,7 @@ void Waiter() {
   GLOB = 2;
 }
 void Run() {
-  ANNOTATE_EXPECT_RACE_FOR_HYBRID1(&GLOB, "test50. TP.");
+  ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test50. TP.");
   printf("test50: positive\n");
   Waiter();
   printf("\tGLOB=%d\n", GLOB);
@@ -2637,7 +2635,7 @@ void User() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE_FOR_HYBRID1(&GLOB, "test53. FP. Implicit semaphore");
+  ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test53. FP. Implicit semaphore");
   printf("test53: FP. false positive, Implicit semaphore\n");
   MyThreadArray t(Initializer, User, User);
   t.Start();
@@ -3053,7 +3051,7 @@ void T3() {
 
 
 void Run() {
-  ANNOTATE_EXPECT_RACE_FOR_HYBRID1(&GLOB, "test64: TP.");
+  ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test64: TP.");
   printf("test64: positive\n");
   MyThreadArray t(T1, T2, T3);
   t.Start();
@@ -3106,7 +3104,7 @@ void T3() {
 
 
 void Run() {
-  ANNOTATE_EXPECT_RACE_FOR_HYBRID1(&GLOB, "test65. TP.");
+  ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test65. TP.");
   printf("test65: positive\n");
   MyThreadArray t(T1, T2, T3);
   t.Start();
@@ -4028,7 +4026,7 @@ void thread_func_2()
 void Run() {
   CHECK(s_dummy[0] == 0);  // Avoid compiler warning about 's_dummy unused'.
   printf("test84: positive\n");
-  ANNOTATE_EXPECT_RACE_FOR_HYBRID1(&s_y, "test84: TP. true race.");
+  ANNOTATE_EXPECT_RACE_FOR_TSAN(&s_y, "test84: TP. true race.");
   MyThreadArray t(thread_func_1, thread_func_2);
   t.Start();
   t.Join();
@@ -4310,7 +4308,7 @@ void Publisher() {
   MU.Lock();
   GLOB = new int;
   *GLOB = 777;
-  ANNOTATE_EXPECT_RACE_FOR_HYBRID1(GLOB, "test90. FP. This is a false positve");
+  ANNOTATE_EXPECT_RACE_FOR_TSAN(GLOB, "test90. FP. This is a false positve");
   MU.Unlock();
   usleep(200000);
 }
@@ -4355,7 +4353,7 @@ void Publisher() {
   MU1.Lock();
   GLOB = new int;
   *GLOB = 777;
-  ANNOTATE_EXPECT_RACE_FOR_HYBRID1(GLOB, "test91. FP. This is a false positve");
+  ANNOTATE_EXPECT_RACE_FOR_TSAN(GLOB, "test91. FP. This is a false positve");
   MU1.Unlock();
 }
 
@@ -4521,7 +4519,7 @@ void Thr4() {
 }
 void Run() {
   printf("test94: TP. Check do_cv_signal/fake segment logic\n");
-  ANNOTATE_EXPECT_RACE_FOR_HYBRID1(&GLOB, "test94: TP.");
+  ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test94: TP.");
   MyThreadArray mta(Thr1, Thr2, Thr3, Thr4);
   mta.Start();
   mta.Join();
@@ -4573,7 +4571,7 @@ void Thr4() {
 }
 void Run() {
   printf("test95: TP. Check do_cv_signal/fake segment logic\n");
-  ANNOTATE_EXPECT_RACE_FOR_HYBRID1(&GLOB, "test95: TP.");
+  ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test95: TP.");
   MyThreadArray mta(Thr1, Thr2, Thr3, Thr4);
   mta.Start();
   mta.Join();
@@ -4582,7 +4580,7 @@ void Run() {
 REGISTER_TEST(Run, 95);
 }  // namespace test95
 
-// test96: FP. tricky LockSet behaviour {{{1
+// test96: TN. tricky LockSet behaviour {{{1
 // 3 threads access the same memory with three different
 // locksets: {A, B}, {B, C}, {C, A}.
 // These locksets have empty intersection
@@ -4591,19 +4589,19 @@ int     GLOB = 0;
 
 Mutex A, B, C;
 
-void Thr1() {
+void Thread1() {
   MutexLock a(&A);
   MutexLock b(&B);
   GLOB++;
 }
 
-void Thr2() {
+void Thread2() {
   MutexLock b(&B);
   MutexLock c(&C);
   GLOB++;
 }
 
-void Thr3() {
+void Thread3() {
   MutexLock a(&A);
   MutexLock c(&C);
   GLOB++;
@@ -4612,8 +4610,7 @@ void Thr3() {
 void Run() {
   printf("test96: FP. tricky LockSet behaviour\n");
   ANNOTATE_TRACE_MEMORY(&GLOB);
-  ANNOTATE_EXPECT_RACE_FOR_HYBRID1(&GLOB, "test96: FP.");
-  MyThreadArray mta(Thr1, Thr2, Thr3);
+  MyThreadArray mta(Thread1, Thread2, Thread3);
   mta.Start();
   mta.Join();
   CHECK(GLOB == 3);
@@ -4643,7 +4640,7 @@ void Reader() {
 
 void Run() {
    MyThreadArray t(Reader);
-   ANNOTATE_EXPECT_RACE_FOR_HYBRID1(GLOB, "test97: TP. FN with --fast-excl-mode=yes");
+   ANNOTATE_EXPECT_RACE_FOR_TSAN(GLOB, "test97: TP. FN with --fast-excl-mode=yes");
    printf("test97: This test shows false negative with --fast-excl-mode=yes\n");
    
    t.Start();
@@ -4863,8 +4860,8 @@ void Reader() {
 
 void Run() {
    MyThreadArray t(Reader);
-   ANNOTATE_EXPECT_RACE_FOR_HYBRID1(GLOB+0, "test102: TP. FN with --fast-excl-mode=yes");
-   ANNOTATE_EXPECT_RACE_FOR_HYBRID1(GLOB+1, "test102: TP");
+   ANNOTATE_EXPECT_RACE_FOR_TSAN(GLOB+0, "test102: TP. FN with --fast-excl-mode=yes");
+   ANNOTATE_EXPECT_RACE_FOR_TSAN(GLOB+1, "test102: TP");
    printf("test102: --fast-excl-mode=yes vs. --initialization-bit=yes\n");
    
    t.Start();
@@ -5538,7 +5535,7 @@ void Worker2() {
 }
 void Run() {
   printf("test119: positive (checking if malloc creates HB arcs)\n");
-  ANNOTATE_EXPECT_RACE_FOR_HYBRID1(&GLOB, "true race");
+  ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "true race");
   GLOB = 0;
   MyThreadArray t(Worker1, Worker2);
   t.Start();
@@ -5549,22 +5546,23 @@ REGISTER_TEST(Run, 119)
 }  // namespace test119
 
 
-// test120: TP. {{{1
+// test120: TP. Thread1: write then read. Thread2: read. {{{1
 namespace test120 {
 int     GLOB = 0;
 
 void Thread1() {
-  GLOB = 1;
-  CHECK(GLOB);
+  GLOB = 1;           // write
+  CHECK(GLOB);        // read
 }
 
 void Thread2() {
   usleep(100000);
-  CHECK(GLOB >= 0);
+  CHECK(GLOB >= 0);   // read
 }
 
 void Run() {
   printf("test120: positive\n");
+  ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "TP (T1: write then read, T2: read)");
   MyThreadArray t(Thread1, Thread2);
   GLOB = 1;
   t.Start();
@@ -5575,7 +5573,7 @@ REGISTER_TEST(Run, 120)
 }  // namespace test120
 
 
-// test121: Example of double-checked-locking  {{{1
+// test121: TP. Example of double-checked-locking  {{{1
 namespace test121 {
 struct Foo {
   int a;
@@ -5589,7 +5587,9 @@ void InitMe() {
   if (!foo) {
     MutexLock lock(&mu);
     if (!foo) {
+      ANNOTATE_EXPECT_RACE_FOR_TSAN(&foo, "double-checked locking (ptr)");
       foo = new Foo;
+      ANNOTATE_EXPECT_RACE_FOR_TSAN(&foo->a, "double-checkd locking (obj)");
       foo->a = 42;
     }
   }
@@ -5607,7 +5607,7 @@ void Worker3() { UseMe(); }
 
 void Run() {  
   ANNOTATE_TRACE_MEMORY(&is_inited);
-  printf("test121: Example of double-checked-locking\n");
+  printf("test121: TP. Example of double-checked-locking\n");
   MyThreadArray t1(Worker1, Worker2, Worker3);
   t1.Start();  
   t1.Join();
