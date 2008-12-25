@@ -223,7 +223,7 @@ COREGRIND_SOURCES_COMMON = \
 	m_scheduler/scheduler.c \
 	m_scheduler/sema.c \
 	m_syswrap/syswrap-main.c \
-	m_stl/symbols.cc \
+	m_cplusplus_support.cc \
 	m_stl/src/tree.cc \
 	m_stl/src/string-inst.cc \
 	m_stl/src/functexcept.cc

@@ -1,5 +1,5 @@
-STL_FLAGS = -I$(top_srcdir)/include/m_stl # libstdc++/gcc
-# STL_FLAGS = -I$(top_srcdir)/include/stlport -DUSE_STLPORT # STLPORT
+#STL_FLAGS = -I$(top_srcdir)/include/m_stl # libstdc++/gcc
+STL_FLAGS = -I$(top_srcdir)/include/stlport -DUSE_STLPORT # STLPORT
 # don't forget to make clean before re-building the tool with different STL impl
 
 include $(top_srcdir)/Makefile.tool.am
