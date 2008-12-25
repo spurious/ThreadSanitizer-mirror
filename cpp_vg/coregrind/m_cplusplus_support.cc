@@ -10,7 +10,6 @@ extern "C" {
 
 
 #include <new>
-#include <vector> // TODO(kcc) what is the right thing to include for allocator?
 #include "include/pub_tool_cplusplus.h"
 
 
@@ -60,6 +59,8 @@ void operator delete [](void *p) {
 }
 
 //---------------------- Memmove and friends -------------- {{{1
+
+// kcc: I am not sure we really need these...
 
 void * memmove ( void * destination, const void * source, size_t num ) {
   return VG_(memmove)(destination, source, num);

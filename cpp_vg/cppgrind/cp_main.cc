@@ -124,11 +124,23 @@ static void huge_vector_test() {
 }
 
 
+// This allocator can be used to replace the standard allocator 
+// in STL containers.
+template <class T, const char **cc>
+class CCAlloc : public std::allocator<T> {
+ public:
+  T* allocate(long n, const void *hint = 0) {
+    ScopedMallocCostCenter cost_center(*cc);
+    return std::allocator<T>::allocate(n, hint);
+  }
+};
 
-const char *kCustomVectorAlloc = "custom vector";
+const char *kCustomVectorAlloc = "cppgrind: custom vector";
 typedef vector<double, CCAlloc<double, &kCustomVectorAlloc> > CustomVec;
 
 static void huge_custom_vector_test() {
+  // create (and not delete) a CustomVec to check 
+  // that the heap profiler will see it.
   CustomVec *vec = new CustomVec;
   for (int i = 0; i < 1000000; i++) {
     vec->push_back((double)i);
@@ -136,7 +148,7 @@ static void huge_custom_vector_test() {
 }
 
 static void all_cpp_test() {
-  ScopedMallocCostCenter cc("cppgrind_test");
+  ScopedMallocCostCenter cc("cppgrind: test");
   DoVectorTest();
   DoMapTest();
   DoSetTest();
@@ -144,7 +156,7 @@ static void all_cpp_test() {
 
   huge_vector_test();
   {  
-    ScopedMallocCostCenter cc2("huge vector");
+    ScopedMallocCostCenter cc2("cppgrind: huge vector");
     huge_vector_test();
   }
   huge_vector_test();
