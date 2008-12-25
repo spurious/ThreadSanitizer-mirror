@@ -116,7 +116,7 @@ inline void DoStringTest() {
 
 static void huge_vector_test() {
   // we create a huge vector and don't delete it 
-  // so that the heap profilier can see it. 
+  // so that the heap profiler can see it. 
   vector<int> *v = new vector<int>;
   for (int i = 0; i < 1000000; i++) {
     v->push_back(i);
@@ -125,7 +125,10 @@ static void huge_vector_test() {
 
 
 // This allocator can be used to replace the standard allocator 
-// in STL containers.
+// in STL containers. 
+// This works with stlport, but it is still recommended to 
+// use ScopedMallocCostCenter instead.
+// With libstdc++ it doesn't work. It can be fixed, but probably not worth it. 
 template <class T, const char **cc>
 class CCAlloc : public std::allocator<T> {
  public:

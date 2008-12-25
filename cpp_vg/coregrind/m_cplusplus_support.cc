@@ -42,11 +42,11 @@ void PopMallocCostCenter() { g_malloc_stack.Pop(); }
 
 
 void *operator new (size_t size) {
-//  VG_(printf)("new %ld\n", size);
+//  VG_(printf)("new %ld %s\n", size, g_malloc_stack.Top());
   return VG_(malloc)((HChar*)g_malloc_stack.Top(), size);
 }
 void *operator new [](size_t size) {
-//  VG_(printf)("new[] %ld\n", size);
+//  VG_(printf)("new [] %ld %s\n", size, g_malloc_stack.Top());
   return VG_(malloc)((HChar*)g_malloc_stack.Top(), size);
 }
 void operator delete (void *p) {
