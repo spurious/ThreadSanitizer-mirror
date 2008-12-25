@@ -15,3 +15,14 @@ class ScopedMallocCostCenter {
 #endif
   }
 };
+
+// This allocator can be used to replace the standard allocator 
+// in STL containers.
+template <class T, const char **cc>
+class CCAlloc : public std::allocator<T> {
+ public:
+  T* allocate(long n, const void *hint = 0) {
+    ScopedMallocCostCenter cost_center(*cc);
+    return std::allocator<T>::allocate(n, hint);
+  }
+};

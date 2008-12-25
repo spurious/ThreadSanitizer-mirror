@@ -41,14 +41,14 @@ struct ltstr
   }
 };
 
-///////////////// Vector {{{1
+///////////////// Vector 
 inline void DoVectorTest() {
   vector<int> V;
   V.insert(V.begin(), 3);
   tl_assert(V.size() == 1 && V.capacity() >= 1 && V[0] == 3);
 } // DoVectorTest()
 
-///////////////// Map {{{1
+///////////////// Map
 inline void DoMapTest() {
   map<const char*, int, ltstr> months;
 
@@ -75,7 +75,7 @@ inline void DoMapTest() {
   VG_(printf)("Next (in alphabetical order) is %s\n", (*next).first);
 } // DoMapTest()
 
-///////////////// Set {{{1
+///////////////// Set 
 inline void DoSetTest() {
   set<int> tree;
   tree.insert(1);
@@ -97,7 +97,7 @@ inline void DoSetTest() {
   }
 } // DoSetTest()
 
-///////////////// String {{{1
+///////////////// String 
 inline void DoStringTest() {
 #if 1
   string s(10u, ' ');           // Create a string of ten blanks.
@@ -113,6 +113,44 @@ inline void DoStringTest() {
   VG_(printf)("%s\n", s.c_str());
 #endif
 } // DoStringTest()
+
+static void huge_vector_test() {
+  // we create a huge vector and don't delete it 
+  // so that the heap profilier can see it. 
+  vector<int> *v = new vector<int>;
+  for (int i = 0; i < 1000000; i++) {
+    v->push_back(i);
+  }
+}
+
+
+
+const char *kCustomVectorAlloc = "custom vector";
+typedef vector<double, CCAlloc<double, &kCustomVectorAlloc> > CustomVec;
+
+static void huge_custom_vector_test() {
+  CustomVec *vec = new CustomVec;
+  for (int i = 0; i < 1000000; i++) {
+    vec->push_back((double)i);
+  }
+}
+
+static void all_cpp_test() {
+  ScopedMallocCostCenter cc("cppgrind_test");
+  DoVectorTest();
+  DoMapTest();
+  DoSetTest();
+  DoStringTest();
+
+  huge_vector_test();
+  {  
+    ScopedMallocCostCenter cc2("huge vector");
+    huge_vector_test();
+  }
+  huge_vector_test();
+  huge_custom_vector_test();
+}
+
 
 ///////////////// Valgrind Tool stuff {{{1
 static void cp_post_clo_init(void)
@@ -131,22 +169,7 @@ IRSB* cp_instrument ( VgCallbackClosure* closure,
 
 static void cp_fini(Int exitcode)
 {
-   ScopedMallocCostCenter cc("cppgrind_test");
-   DoVectorTest();
-   DoMapTest();
-   DoSetTest();
-   DoStringTest();
-
-   {  
-      ScopedMallocCostCenter cc2("huge vector");
-      vector<int> *v = new vector<int>;
-      for (int i = 0; i < 1000000; i++) {
-      //  VG_(printf)("i=%d\n", i);
-        v->push_back(i);
-      }
-
-   }
-
+  all_cpp_test();
 }
 
 static void cp_pre_clo_init(void)

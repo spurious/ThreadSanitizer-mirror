@@ -8,9 +8,10 @@ extern "C" {
   #include "pub_tool_libcprint.h"
 }
 
-#include "include/pub_tool_cplusplus.h"
 
 #include <new>
+#include <vector> // TODO(kcc) what is the right thing to include for allocator?
+#include "include/pub_tool_cplusplus.h"
 
 
 //---------------------- C++ malloc support -------------- {{{1
