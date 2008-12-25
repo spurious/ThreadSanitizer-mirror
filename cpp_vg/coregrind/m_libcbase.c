@@ -470,7 +470,7 @@ void* VG_(memcpy) ( void *dest, const void *src, SizeT sz )
 
 void* VG_(memmove)(void *dest, const void *src, SizeT sz)
 {
-   SizeT i;
+   Long i;
    if (sz == 0)
       return dest;
    if (dest < src) {
@@ -726,4 +726,3 @@ UInt VG_(random)( /*MOD*/UInt* pSeed )
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/
 /*--------------------------------------------------------------------*/
-
