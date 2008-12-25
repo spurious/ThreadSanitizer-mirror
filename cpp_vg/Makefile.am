@@ -3,19 +3,11 @@ AUTOMAKE_OPTIONS = foreign 1.7 dist-bzip2
 
 include $(top_srcdir)/Makefile.all.am 
 
-TOOLS =		memcheck \
-		cachegrind \
-		callgrind \
-		massif \
-		lackey \
-		none \
-		helgrind \
-		drd \
+# kcc removed all tools to speedup compilation 
+TOOLS =			none \
 		cppgrind
 
-EXP_TOOLS = 	exp-omega \
-		exp-ptrcheck
-
+EXP_TOOLS = 	
 # Put docs last because building the HTML is slow and we want to get
 # everything else working before we try it.
 SUBDIRS = include coregrind . tests perf auxprogs $(TOOLS) $(EXP_TOOLS) docs

@@ -31,6 +31,8 @@ using namespace std;
 using namespace stlport;
 #endif
 
+#include "include/pub_tool_cplusplus.h"
+
 struct ltstr
 {
   bool operator()(const char* s1, const char* s2) const
@@ -129,6 +131,22 @@ IRSB* cp_instrument ( VgCallbackClosure* closure,
 
 static void cp_fini(Int exitcode)
 {
+   ScopedMallocCostCenter cc("cppgrind_test");
+   DoVectorTest();
+   DoMapTest();
+   DoSetTest();
+   DoStringTest();
+
+   {  
+      ScopedMallocCostCenter cc2("huge vector");
+      vector<int> *v = new vector<int>;
+      for (int i = 0; i < 1000000; i++) {
+      //  VG_(printf)("i=%d\n", i);
+        v->push_back(i);
+      }
+
+   }
+
 }
 
 static void cp_pre_clo_init(void)
@@ -146,10 +164,6 @@ static void cp_pre_clo_init(void)
 
    VG_(printf)("Using " STL_FROM " as STL implementation\n");
 
-   DoVectorTest();
-   DoMapTest();
-   DoSetTest();
-   DoStringTest();
    /* No needs, no core events to track */
 }
 
