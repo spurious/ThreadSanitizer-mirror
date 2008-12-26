@@ -121,6 +121,9 @@ static void huge_vector_test() {
   for (int i = 0; i < 1000000; i++) {
     v->push_back(i);
   }
+  for (int i = 0; i < 1000000; i++) {
+    tl_assert((*v)[i] == i);
+  }
 }
 
 

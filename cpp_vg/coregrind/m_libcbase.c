@@ -470,7 +470,7 @@ void* VG_(memcpy) ( void *dest, const void *src, SizeT sz )
 
 void* VG_(memmove)(void *dest, const void *src, SizeT sz)
 {
-   Long i;
+   SizeT i;
    if (sz == 0)
       return dest;
    if (dest < src) {
@@ -479,8 +479,10 @@ void* VG_(memmove)(void *dest, const void *src, SizeT sz)
       }
    }
    else if (dest > src) {
-      for (i = sz - 1; i >= 0; i--) {
-         ((UChar*)dest)[i] = ((UChar*)src)[i];
+      UChar *d = (UChar*)dest + sz - 1;
+      UChar *s = (UChar*)src + sz - 1;
+      for (; d >= (UChar*)dest; d--, s--) {
+         *d = *s;
       }
    }
    return dest;
