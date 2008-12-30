@@ -5968,6 +5968,77 @@ void Run() {
 REGISTER_TEST2(Run, 310, RACE_DEMO)
 }  // namespace test310
 
+// test311: Yet another simple race.  {{{1
+namespace test311 {
+int     *PTR = NULL;  // GUARDED_BY(mu1)
+
+Mutex mu1;  // Protects PTR.
+Mutex mu2;  // Unrelated to PTR.
+Mutex mu3;  // Unrelated to PTR.
+
+void GoodWriter1() {
+  MutexLock lock3(&mu3);  // This lock is unrelated to PTR.
+  MutexLock lock1(&mu1);  // Protect PTR.
+  *PTR = 1; 
+}
+
+void GoodWriter2() {
+  MutexLock lock2(&mu2);  // This lock is unrelated to PTR.
+  MutexLock lock1(&mu1);  // Protect PTR.
+  int some_unrelated_stuff = 0;
+  if (some_unrelated_stuff == 0)
+    some_unrelated_stuff++;
+  *PTR = 2; 
+}
+
+void GoodReader() {
+  MutexLock lock1(&mu1);  // Protect PTR.
+  CHECK(*PTR >= 0); 
+}
+
+void BuggyWriter() {
+  MutexLock lock2(&mu2);  // Wrong mutex!
+  *PTR = 3;
+}
+
+// Some functions to make the stack trace non-trivial.
+void DoWrite1() { GoodWriter1();  }
+void Thread1()  { DoWrite1(); }
+
+void DoWrite2() { GoodWriter2();  }
+void Thread2()  { DoWrite2(); }
+
+void DoGoodRead()  { GoodReader();  }
+void Thread3()     { DoGoodRead();  }
+
+void DoBadWrite()  { BuggyWriter(); }
+void Thread4()     { DoBadWrite(); }
+
+void Run() {  
+  printf("test311: simple race.\n");
+  PTR = new int;
+  ANNOTATE_TRACE_MEMORY(PTR);
+  *PTR = 0;
+  MyThread t1(Thread1, NULL, "good writer1"), 
+           t2(Thread2, NULL, "good writer2"), 
+           t3(Thread3, NULL, "good reader"),
+           t4(Thread4, NULL, "buggy writer");
+  t1.Start();  
+  t3.Start();  
+  // t2 goes after t3. This way a pure happens-before detector has no chance.
+  usleep(10000);
+  t2.Start();  
+  usleep(100000);  // Let the good folks go first.
+  t4.Start();  
+
+  t1.Join();   
+  t2.Join();
+  t3.Join();
+  t4.Join();
+}
+REGISTER_TEST2(Run, 311, RACE_DEMO)
+}  // namespace test311
+
 // test350: Simple race with deep stack. {{{1
 namespace test350 {
 int     GLOB = 0;
