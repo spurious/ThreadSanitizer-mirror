@@ -50,6 +50,13 @@
 #endif 
 #include THREAD_WRAPPERS
 
+#ifndef NEEDS_SEPERATE_RW_LOCK
+#define RWLock Mutex // Mutex does work as an rw-lock.
+#define WriterLockScoped MutexLock
+#define ReaderLockScoped ReaderMutexLock
+#endif // !NEEDS_SEPERATE_RW_LOCK
+
+
 // Helgrind memory usage testing stuff
 // If not present in dynamic_annotations.h/.cc - ignore
 #ifndef ANNOTATE_RESET_STATS
@@ -5614,6 +5621,45 @@ void Run() {
 }
 REGISTER_TEST(Run, 121)
 }  // namespace test121
+
+// test122 TP: Simple test with RWLock {{{1
+namespace  test122 {
+int     VAR1 = 0;
+int     VAR2 = 0;
+RWLock mu;
+
+void WriteWhileHoldingReaderLock(int *p) {
+  ReaderLockScoped lock(&mu);  // Reader lock for writing. -- bug.
+  (*p)++;
+}
+
+void CorrectWrite(int *p) {
+  WriterLockScoped lock(&mu);
+  (*p)++;
+}
+
+void Thread1() { WriteWhileHoldingReaderLock(&VAR1); } 
+void Thread2() { CorrectWrite(&VAR1); }
+void Thread3() { CorrectWrite(&VAR2); }
+void Thread4() { WriteWhileHoldingReaderLock(&VAR2); } 
+
+
+void Run() {
+  printf("test122: positive (rw-lock)\n");
+  VAR1 = 0;
+  VAR2 = 0;
+  ANNOTATE_TRACE_MEMORY(&VAR1);
+  ANNOTATE_TRACE_MEMORY(&VAR2);
+  ANNOTATE_EXPECT_RACE_FOR_TSAN(&VAR1, "TP. ReaderLock-ed while writing");
+  ANNOTATE_EXPECT_RACE_FOR_TSAN(&VAR2, "TP. ReaderLock-ed while writing");
+  MyThreadArray t(Thread1, Thread2, Thread3, Thread4);
+  t.Start();
+  t.Join();
+  printf("\tGLOB=%d\n", VAR1);
+}
+REGISTER_TEST(Run, 122)
+}  // namespace test122
+
 
 // test300: {{{1
 namespace test300 {

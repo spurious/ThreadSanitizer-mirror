@@ -248,6 +248,49 @@ class CondVar {
 };
 
 
+// pthreads do not allow to use condvar with rwlock so we can't make
+// ReaderLock method of Mutex to be the real rw-lock.
+// So, we need a special lock class to test reader locks. 
+#define NEEDS_SEPERATE_RW_LOCK
+class RWLock {
+ public:
+  void Lock() { CHECK(0 == pthread_rwlock_wrlock(&mu_)); }
+  void ReaderLock() { CHECK(0 == pthread_rwlock_rdlock(&mu_)); }
+  void Unlock() { CHECK(0 == pthread_rwlock_unlock(&mu_)); }
+  void ReaderUnlock() { CHECK(0 == pthread_rwlock_unlock(&mu_)); }
+ private:
+  pthread_rwlock_t mu_;
+};
+
+class ReaderLockScoped {  // Scoped RWLock Locker/Unlocker
+ public:
+  ReaderLockScoped(RWLock *mu) 
+    : mu_(mu) {
+    mu_->ReaderLock();
+  }
+  ~ReaderLockScoped() {
+    mu_->ReaderUnlock();
+  }
+ private:
+  RWLock *mu_;
+};
+
+class WriterLockScoped {  // Scoped RWLock Locker/Unlocker
+ public:
+  WriterLockScoped(RWLock *mu) 
+    : mu_(mu) {
+    mu_->Lock();
+  }
+  ~WriterLockScoped() {
+    mu_->Unlock();
+  }
+ private:
+  RWLock *mu_;
+};
+
+
+
+
 /// Wrapper for pthread_create()/pthread_join().
 class MyThread {
  public: 
