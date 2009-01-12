@@ -6335,7 +6335,7 @@ void Run() {
 REGISTER_TEST2(Run, 400, RACE_DEMO)
 }  // namespace test400
 
-// test401: Demo of a simple false positive. {{{1
+// test401: Demo of false positive caused by reference counting. {{{1
 namespace test401 {
 // A simplified example of reference counting.
 // DecRef() does ref count increment in a way unfriendly to race detectors.
