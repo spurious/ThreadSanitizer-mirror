@@ -6261,6 +6261,7 @@ void Thread2() {
   vec->pop_back();
 }
 
+//---- Sub-optimal code ---------
 size_t NumberOfElementsLeft() {
   MutexLock lock(&mu);
   return vec->size(); 
@@ -6271,16 +6272,24 @@ void WaitForAllThreadsToFinish_InefficientAndTsanUnfriendly() {
     ; // sleep or print or do nothing. 
   }
   // It is now safe to access vec w/o lock.
+  // But a hybrid detector (like ThreadSanitizer) can't see it. 
+  // Solutions: 
+  //   1. Use pure happens-before detector (e.g. "tsan --pure-happens-before")
+  //   2. Call ANNOTATE_MUTEX_IS_USED_AS_CONDVAR(&mu) 
+  //      in InitAllBeforeStartingThreads()
+  //   3. (preferred) Use WaitForAllThreadsToFinish_Good() (see below).   
   CHECK(vec->empty());
   delete vec;
 }
 
-bool NoElementsLeft() {
-  return vec->empty();
+//----- Better code -----------
+
+bool NoElementsLeft(vector<int> *v) {
+  return v->empty();
 }
 
 void WaitForAllThreadsToFinish_Good() {
-  mu.LockWhen(Condition(NoElementsLeft));
+  mu.LockWhen(Condition(NoElementsLeft, vec));
   mu.Unlock();
 
   // It is now safe to access vec w/o lock.
