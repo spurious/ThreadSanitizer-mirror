@@ -6240,6 +6240,32 @@ void Run() {
 REGISTER_TEST2(Run, 311, RACE_DEMO)
 }  // namespace test311
 
+// test350: Simple race with deep stack. {{{1
+namespace test350 {
+int     GLOB = 0;
+
+void F9() {GLOB++;}
+void F8() {F9();}
+void F7() {F8();}
+void F6() {F7();}
+void F5() {F6();}
+void F4() {F5();}
+void F3() {F4();}
+void F2() {F3();}
+void F1() {F2();}
+void Worker() { F1();}
+
+void Run() {  
+  printf("test350: simple race with deep stack.\n");
+  MyThread t1(Worker), t2(Worker);
+  t1.Start();  
+  t2.Start();  
+  t1.Join();   t2.Join();
+}
+REGISTER_TEST2(Run, 350, RACE_DEMO)
+
+}  // namespace test350
+
 // test400: Demo of a simple false positive. {{{1
 namespace test400 {
 static Mutex mu;
@@ -6309,31 +6335,55 @@ void Run() {
 REGISTER_TEST2(Run, 400, RACE_DEMO)
 }  // namespace test400
 
-// test350: Simple race with deep stack. {{{1
-namespace test350 {
-int     GLOB = 0;
+// test401: Demo of a simple false positive. {{{1
+namespace test401 {
+// A simplified example of reference counting.
+// DecRef() does ref count increment in a way unfriendly to race detectors.
+// DecRefAnnotated() does the same in a friendly way.
 
-void F9() {GLOB++;}
-void F8() {F9();}
-void F7() {F8();}
-void F6() {F7();}
-void F5() {F6();}
-void F4() {F5();}
-void F3() {F4();}
-void F2() {F3();}
-void F1() {F2();}
-void Worker() { F1();}
+static vector<int> *vec;
+static int ref_count;
 
-void Run() {  
-  printf("test350: simple race with deep stack.\n");
-  MyThread t1(Worker), t2(Worker);
-  t1.Start();  
-  t2.Start();  
-  t1.Join();   t2.Join();
+void InitAllBeforeStartingThreads(int number_of_threads) {
+  vec = new vector<int>;
+  vec->push_back(1);
+  ref_count = number_of_threads;
 }
-REGISTER_TEST2(Run, 350, RACE_DEMO)
 
-}  // namespace test350
+// Correct, but unfriendly to race detectors.
+int DecRef() {
+  return __sync_add_and_fetch(&ref_count, -1);
+}
+
+// Correct and friendly to race detectors.
+int DecRefAnnotated() {
+  ANNOTATE_CONDVAR_SIGNAL(&ref_count);
+  int res = __sync_add_and_fetch(&ref_count, -1);
+  if (res == 0) {
+    ANNOTATE_CONDVAR_WAIT(&ref_count);
+  }
+  return res;
+}
+
+void ThreadWorker() {
+  CHECK(ref_count > 0);  
+  CHECK(vec->size() == 1);
+  if (DecRef() == 0) {  // Use DecRefAnnotated() instead!
+    // No one uses vec now ==> delete it.
+    delete vec;  // A false race may be reported here. 
+    vec = NULL;
+  }
+}
+
+void Run() {
+  MyThreadArray t(ThreadWorker, ThreadWorker, ThreadWorker);
+  InitAllBeforeStartingThreads(3 /*number of threads*/);
+  t.Start();
+  t.Join();
+  CHECK(vec == 0);
+}
+REGISTER_TEST2(Run, 401, RACE_DEMO)
+}  // namespace test401
 
 // test501: Manually call PRINT_* annotations {{{1
 namespace test501 {
