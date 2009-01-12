@@ -5655,10 +5655,165 @@ void Run() {
   MyThreadArray t(Thread1, Thread2, Thread3, Thread4);
   t.Start();
   t.Join();
-  printf("\tGLOB=%d\n", VAR1);
 }
 REGISTER_TEST(Run, 122)
 }  // namespace test122
+
+
+// test123 TP: accesses of different sizes. {{{1
+namespace test123 {
+
+uint64_t MEM[8];
+
+#define GenericWrite(p,size,off) { \
+  if (size == 64) {\
+    CHECK(off == 0);\
+    (p)[off] = 1;\
+  } else if (size == 32) {\
+    CHECK(off <= 2);\
+    uint32_t *x = (uint32_t*)(p);\
+    x[off] = 1;\
+  } else if (size == 16) {\
+    CHECK(off <= 4);\
+    uint16_t *x = (uint16_t*)(p);\
+    x[off] = 1;\
+  } else if (size == 8) {\
+    CHECK(off <= 8);\
+    uint8_t *x = (uint8_t*)(p);\
+    x[off] = 1;\
+  } else {\
+    CHECK(0);\
+  }\
+}\
+
+// Q. Hey dude, why so many functions? 
+// A. I need different stack traces for different accesses.
+
+void Wr64_0() { GenericWrite(&MEM[0], 64, 0); } 
+void Wr64_1() { GenericWrite(&MEM[1], 64, 0); } 
+void Wr64_2() { GenericWrite(&MEM[2], 64, 0); } 
+void Wr64_3() { GenericWrite(&MEM[3], 64, 0); } 
+void Wr64_4() { GenericWrite(&MEM[4], 64, 0); } 
+void Wr64_5() { GenericWrite(&MEM[5], 64, 0); } 
+void Wr64_6() { GenericWrite(&MEM[6], 64, 0); } 
+void Wr64_7() { GenericWrite(&MEM[7], 64, 0); } 
+
+void Wr32_0() { GenericWrite(&MEM[0], 32, 0); } 
+void Wr32_1() { GenericWrite(&MEM[1], 32, 1); } 
+void Wr32_2() { GenericWrite(&MEM[2], 32, 0); } 
+void Wr32_3() { GenericWrite(&MEM[3], 32, 1); } 
+void Wr32_4() { GenericWrite(&MEM[4], 32, 0); } 
+void Wr32_5() { GenericWrite(&MEM[5], 32, 1); } 
+void Wr32_6() { GenericWrite(&MEM[6], 32, 0); } 
+void Wr32_7() { GenericWrite(&MEM[7], 32, 1); } 
+
+void Wr16_0() { GenericWrite(&MEM[0], 16, 0); } 
+void Wr16_1() { GenericWrite(&MEM[1], 16, 1); } 
+void Wr16_2() { GenericWrite(&MEM[2], 16, 2); } 
+void Wr16_3() { GenericWrite(&MEM[3], 16, 3); } 
+void Wr16_4() { GenericWrite(&MEM[4], 16, 0); } 
+void Wr16_5() { GenericWrite(&MEM[5], 16, 1); } 
+void Wr16_6() { GenericWrite(&MEM[6], 16, 2); } 
+void Wr16_7() { GenericWrite(&MEM[7], 16, 3); } 
+
+void Wr8_0() { GenericWrite(&MEM[0], 8, 0); } 
+void Wr8_1() { GenericWrite(&MEM[1], 8, 1); } 
+void Wr8_2() { GenericWrite(&MEM[2], 8, 2); } 
+void Wr8_3() { GenericWrite(&MEM[3], 8, 3); } 
+void Wr8_4() { GenericWrite(&MEM[4], 8, 4); } 
+void Wr8_5() { GenericWrite(&MEM[5], 8, 5); } 
+void Wr8_6() { GenericWrite(&MEM[6], 8, 6); } 
+void Wr8_7() { GenericWrite(&MEM[7], 8, 7); } 
+
+void WriteAll64() {
+  Wr64_0();
+  Wr64_1();
+  Wr64_2();
+  Wr64_3();
+  Wr64_4();
+  Wr64_5();
+  Wr64_6();
+  Wr64_7();
+}
+
+void WriteAll32() {
+  Wr32_0();
+  Wr32_1();
+  Wr32_2();
+  Wr32_3();
+  Wr32_4();
+  Wr32_5();
+  Wr32_6();
+  Wr32_7();
+}
+
+void WriteAll16() {
+  Wr16_0();
+  Wr16_1();
+  Wr16_2();
+  Wr16_3();
+  Wr16_4();
+  Wr16_5();
+  Wr16_6();
+  Wr16_7();
+}
+
+void WriteAll8() {
+  Wr8_0();
+  Wr8_1();
+  Wr8_2();
+  Wr8_3();
+  Wr8_4();
+  Wr8_5();
+  Wr8_6();
+  Wr8_7();
+}
+
+void W00() { WriteAll64(); } 
+void W01() { WriteAll64(); } 
+void W02() { WriteAll64(); } 
+
+void W10() { WriteAll32(); } 
+void W11() { WriteAll32(); } 
+void W12() { WriteAll32(); } 
+
+void W20() { WriteAll16(); } 
+void W21() { WriteAll16(); } 
+void W22() { WriteAll16(); } 
+
+void W30() { WriteAll8(); } 
+void W31() { WriteAll8(); } 
+void W32() { WriteAll8(); } 
+
+typedef void (*F)(void);
+
+void TestTwoSizes(F f1, F f2) {
+  // first f1, then f2
+  ANNOTATE_NEW_MEMORY(MEM, sizeof(MEM));
+  memset(MEM, 0, sizeof(MEM));
+  MyThreadArray t1(f1, f2);
+  t1.Start();
+  t1.Join();
+  // reverse order
+  ANNOTATE_NEW_MEMORY(MEM, sizeof(MEM));
+  memset(MEM, 0, sizeof(MEM));
+  MyThreadArray t2(f2, f1);
+  t2.Start();
+  t2.Join();
+}
+
+void Run() {
+  printf("test123: positive (different sizes)\n");
+  TestTwoSizes(W00, W10);
+//  TestTwoSizes(W01, W20);
+//  TestTwoSizes(W02, W30);
+//  TestTwoSizes(W11, W21);
+//  TestTwoSizes(W12, W31);
+//  TestTwoSizes(W22, W32);
+
+}
+REGISTER_TEST2(Run, 123, FEATURE|EXCLUDE_FROM_ALL)
+}  // namespace test123
 
 
 // test300: {{{1
@@ -6084,6 +6239,66 @@ void Run() {
 }
 REGISTER_TEST2(Run, 311, RACE_DEMO)
 }  // namespace test311
+
+// test400: Demo of a simple false positive. {{{1
+namespace test400 {
+static Mutex mu;
+static vector<int> *vec; // GUARDED_BY(mu);
+
+void InitAllBeforeStartingThreads() {
+  vec = new vector<int>;
+  vec->push_back(1);
+  vec->push_back(2);
+}
+
+void Thread1() {
+  MutexLock lock(&mu);
+  vec->pop_back();
+}
+
+void Thread2() {
+  MutexLock lock(&mu);
+  vec->pop_back();
+}
+
+size_t NumberOfElementsLeft() {
+  MutexLock lock(&mu);
+  return vec->size(); 
+}
+
+void WaitForAllThreadsToFinish_InefficientAndTsanUnfriendly() {
+  while(NumberOfElementsLeft()) {
+    ; // sleep or print or do nothing. 
+  }
+  // It is now safe to access vec w/o lock.
+  CHECK(vec->empty());
+  delete vec;
+}
+
+bool NoElementsLeft() {
+  return vec->empty();
+}
+
+void WaitForAllThreadsToFinish_Good() {
+  mu.LockWhen(Condition(NoElementsLeft));
+  mu.Unlock();
+
+  // It is now safe to access vec w/o lock.
+  CHECK(vec->empty());
+  delete vec;
+}
+
+
+void Run() {
+  MyThreadArray t(Thread1, Thread2);
+  InitAllBeforeStartingThreads();
+  t.Start();
+  WaitForAllThreadsToFinish_InefficientAndTsanUnfriendly();
+//  WaitForAllThreadsToFinish_Good();
+  t.Join();
+}
+REGISTER_TEST2(Run, 400, RACE_DEMO)
+}  // namespace test400
 
 // test350: Simple race with deep stack. {{{1
 namespace test350 {

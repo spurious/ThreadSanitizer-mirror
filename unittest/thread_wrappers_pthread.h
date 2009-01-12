@@ -124,6 +124,9 @@ class Condition {
   Condition(bool (*func)(T*), T* arg) 
   : func_(reinterpret_cast<func_t>(func)), arg_(arg) {}
 
+  Condition(bool (*func)()) 
+  : func_(reinterpret_cast<func_t>(func)), arg_(NULL) {}
+
   bool Eval() { return func_(arg_); }
  private:
   func_t func_;
@@ -149,7 +152,8 @@ class Mutex {
   Mutex() {
     CHECK(0 == pthread_mutex_init(&mu_, NULL));
     CHECK(0 == pthread_cond_init(&cv_, NULL));
-    signal_at_unlock_ = false;
+    signal_at_unlock_ = true;  // Always signal at Unlock to make 
+                               // Mutex more friendly to hybrid detectors.
   }
   ~Mutex() {
     CHECK(0 == pthread_cond_destroy(&cv_));
