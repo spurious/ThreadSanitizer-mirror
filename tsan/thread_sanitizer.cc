@@ -763,10 +763,14 @@ class Lock {
       }
     }
     CHECK(lock);
-    CHECK(lock->last_lock_site_);
-    Report("   L%d (%p)\n%s", 
-           lock->lid_.raw(), lock->lock_addr_,
-           lock->last_lock_site_->ToString().c_str());
+    if(lock->last_lock_site_) {
+      Report("   L%d (%p)\n%s", 
+             lock->lid_.raw(), lock->lock_addr_,
+             lock->last_lock_site_->ToString().c_str());
+    } else {
+      Report("   L%d (p). This lock was probably destroyed" 
+                 "w/o calling Unlock()\n", lock->lid_.raw(), lock->lock_addr_);
+    }
   }
 
   static void InitClassMembers() {
@@ -5125,6 +5129,13 @@ static IgnoreLists *g_ignore_lists;
 // Setup the list of functions/images/files to ignore.
 static void SetupIgnore() {
   g_ignore_lists = new IgnoreLists;
+  // add some major ignore entries so that tsan is sane 
+  // even w/o any ignore file.
+  g_ignore_lists->objs.push_back("*/libpthread-*");
+  g_ignore_lists->objs.push_back("*/ld-2*.so");
+  g_ignore_lists->files.push_back("*ts_valgrind_intercepts.c");
+  
+  // Now read the ignore files.
   for (size_t i = 0; i < G_flags->ignore.size(); i++) {
     string file_name = G_flags->ignore[i];
     Report("INFO: Reading ignore file: %s\n", file_name.c_str());
