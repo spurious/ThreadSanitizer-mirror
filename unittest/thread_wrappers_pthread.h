@@ -263,6 +263,7 @@ class RWLock {
   void Unlock() { CHECK(0 == pthread_rwlock_unlock(&mu_)); }
   void ReaderUnlock() { CHECK(0 == pthread_rwlock_unlock(&mu_)); }
  private:
+  pthread_cond_t dummy; // Damn, this requires some redesign...
   pthread_rwlock_t mu_;
 };
 

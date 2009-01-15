@@ -5270,6 +5270,7 @@ void Worker() {
     b = beg;
     e = end;
     mu.Unlock();
+    usleep(1000);
   }
 
   mu1.Lock();
@@ -5814,6 +5815,94 @@ void Run() {
 }
 REGISTER_TEST2(Run, 123, FEATURE|EXCLUDE_FROM_ALL)
 }  // namespace test123
+
+
+// test124: What happens if we delete an unlocked lock? {{{1
+namespace test124 {
+// This test does not worg with pthreads (you can't call 
+// pthread_mutex_destroy on a locked lock).
+int     GLOB = 0;
+const int N = 1000;
+void Worker() {
+  Mutex *a_large_local_array_of_mutexes;
+  a_large_local_array_of_mutexes = new Mutex[N];
+  for (int i = 0; i < N; i++) {
+    a_large_local_array_of_mutexes[i].Lock();
+  }
+  delete []a_large_local_array_of_mutexes;
+  GLOB = 1; 
+}
+
+void Run() {
+  printf("test124: negative\n");
+  MyThreadArray t(Worker, Worker, Worker);
+  t.Start();
+  t.Join();
+  printf("\tGLOB=%d\n", GLOB);
+}
+REGISTER_TEST2(Run, 124, FEATURE|EXCLUDE_FROM_ALL)
+}  // namespace test124
+
+
+// test125 TN: Backwards lock (annotated). {{{1
+namespace test125 {
+// This test uses "Backwards mutex" locking protocol. 
+// We take a *reader* lock when writing to a per-thread data 
+// (GLOB[thread_num])  and we take a *writer* lock when we 
+// are reading from the entire array at once.
+//
+// Such locking protocol is not understood by ThreadSanitizer's 
+// hybrid state machine. So, you either have to use a pure-happens-before 
+// detector ("tsan --pure-happens-before") or apply pure happens-before mode 
+// to this particular lock by using ANNOTATE_MUTEX_IS_USED_AS_CONDVAR(&mu).
+
+const int n_threads = 3;
+RWLock   mu;
+int     GLOB[n_threads];
+
+int adder_num; // updated atomically.
+
+void Adder() {
+  int my_num = __sync_fetch_and_add(&adder_num, 1);
+
+  ReaderLockScoped lock(&mu);
+  GLOB[my_num]++;
+}
+
+void Aggregator() {
+  int sum = 0;
+  {
+    WriterLockScoped lock(&mu);
+    for (int i = 0; i < n_threads; i++) {
+      sum += GLOB[i];
+    }
+  }
+  printf("sum=%d\n", sum);
+}
+
+void Run() {
+  printf("test125: negative\n");
+
+  ANNOTATE_MUTEX_IS_USED_AS_CONDVAR(&mu);
+
+  // run Adders, then Aggregator
+  {
+    MyThreadArray t(Adder, Adder, Adder, Aggregator);
+    t.Start();
+    t.Join();
+  }
+
+  // Run Aggregator first.
+  adder_num = 0;
+  {
+    MyThreadArray t(Aggregator, Adder, Adder, Adder);
+    t.Start();
+    t.Join();
+  }
+
+}
+REGISTER_TEST(Run, 125)
+}  // namespace test125
 
 
 // test300: {{{1
