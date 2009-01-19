@@ -146,6 +146,8 @@ struct FLAGS {
   bool        announce_threads;
   bool        full_output; 
   bool        show_states;
+  bool        show_proc_self_status;
+  bool        show_valgrind_context;  // debug-only
   bool        show_pc;
   bool        color;  // Colorify terminal output.
 

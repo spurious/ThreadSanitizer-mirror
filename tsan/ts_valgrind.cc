@@ -888,7 +888,7 @@ void ts_pre_clo_init(void) {
   VG_(details_version)         ((Char*)NULL);
   VG_(details_description)     ((Char*)"a data race detector");
   VG_(details_copyright_author)(
-      (Char*)"TODO(kcc) add copyright notice");
+      (Char*)"Copyright (C) 2008-2009, and GNU GPL'd, by Google Inc.");
   VG_(details_bug_reports_to)  ((Char*)"TODO(kcc)");
 
   VG_(basic_tool_funcs)        (ts_post_clo_init,

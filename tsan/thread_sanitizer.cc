@@ -51,6 +51,27 @@ bool g_so_far_only_one_thread = false;
 
 FLAGS *G_flags = NULL;
 
+//--------- Utils --------------- {{{1
+// Read the contents of a file to string. Valgrind version.
+static string ReadFileToString(const string &file_name) {
+  SysRes sres = VG_(open)((const Char*)file_name.c_str(), VKI_O_RDONLY, 0 );
+  if (sres.isError) {
+    Report("WARNING: can not open file %s\n", file_name.c_str());
+    exit(1);
+  }
+  int fd = sres.res;
+  char buff[257] = {0};
+  int n_read;
+  string res;
+  while ((n_read = VG_(read)(fd, buff, sizeof(buff) - 1)) > 0) {
+    buff[n_read] = 0;
+    res += buff;
+  }
+
+  VG_(close)(fd);
+  return res;
+}
+
 //--------- Stats ------------------- {{{1
 // Statistic counters for the entire tool.
 struct Stats {
@@ -642,6 +663,10 @@ class StackTrace {
     }
     Printf("\n");
   }
+
+  ExeContext *ToValgrindExeContext() {
+    return VG_(make_ExeContext_from_StackTrace)((Addr*)arr_, size_);
+  }
   
   struct Less {
     bool operator () (const StackTrace *t1, const StackTrace *t2) const {
@@ -1067,12 +1092,12 @@ LockSet::LSCache *LockSet::ls_int_cache_;
 static string TwoLockSetsToString(LSID rd_lockset, LSID wr_lockset) {
   string res;
   if (rd_lockset == wr_lockset) {
-    res = "locks: ";
+    res = "locks held: ";
     res += LockSet::ToString(wr_lockset);
   } else {
-    res = "writer locks: ";
+    res = "writer locks held: ";
     res += LockSet::ToString(wr_lockset);
-    res += "; reader locks: ";
+    res += "; reader locks held: ";
     res += LockSet::ToString(rd_lockset);
   }
   return res;
@@ -2547,6 +2572,9 @@ class CacheLine {
   }
 
   static void InitClassMembers() {
+    if (DEBUG_MODE) {
+      Printf("sizeof(CacheLine) = %ld\n", sizeof(CacheLine));
+    }
     free_list_ = new FreeList(sizeof(CacheLine), 1024);
   }
 
@@ -2559,9 +2587,7 @@ class CacheLine {
 
 
   uintptr_t tag_;
-
   TID creator_tid_;
-
   Mask used_;
   Mask traced_;
   Mask racey_;
@@ -2618,47 +2644,62 @@ class Cache {
     for (int i = 0; i < kNumLines; i++) {
       lines_[i] = NULL;
     }
-    for (Map::iterator i = map_.begin(); i != map_.end(); ++i) {
+    for (Map::iterator i = storage_.begin(); i != storage_.end(); ++i) {
       CacheLine *line = i->second;
       CacheLine::Delete(line);
     }
-    map_.clear();
+    storage_.clear();
   }
 
-// private:
-
-
+ private:
   NOINLINE CacheLine *WriteBackAndFetch(uintptr_t tag, uintptr_t cli) {
     ScopedMallocCostCenter cc("Cache::WriteBackAndFetch");
     CacheLine *res;
-    CacheLine **line_for_this_tag = &map_[tag];
+    size_t old_storage_size = storage_.size();
+    CacheLine **line_for_this_tag = &storage_[tag];
     CacheLine *old_line = lines_[cli];
     if (*line_for_this_tag == NULL) {
+      CHECK(storage_.size() == old_storage_size + 1);
       res = CacheLine::CreateNewCacheLine(tag);
       *line_for_this_tag = res;
       lines_[cli]        = res;
       G_stats->cache_new_line++;
-      return res;
     } else {
       res = *line_for_this_tag;
       lines_[cli]        = res;
       G_stats->cache_fetch++;
     }
+
     if (old_line) {
       if (old_line->used().Empty()) {
-        map_.erase(old_line->tag());
+        storage_.erase(old_line->tag());
         CacheLine::Delete(old_line);
         G_stats->cache_delete_empty_line++;
-      }
-      static int c = 0;
-      c++;
-      if (0 && DEBUG_MODE && (c % 1024) == 1) {
-        Printf("Cache Size=%ld %s\n", map_.size(), old_line->used().ToString().c_str());
-        G_stats->PrintStatsForCache(); // ZZZ
+      } else if (DEBUG_MODE && 0) {
+        DebugOnlyCheckCacheLineWhichWeReplace(old_line);
       }
     }
     DCHECK(res->tag() == tag);
     return res;
+  }
+
+  void DebugOnlyCheckCacheLineWhichWeReplace(CacheLine *old_line) {
+    static int c = 0;
+    c++;
+    if ((c % 1024) == 1) {
+      set<int64_t> s;
+      for (int i = 0; i < 64; i++) {
+        if (old_line->used().Get(i)) {
+          int64_t sval = *(int64_t*)old_line->GetValuePointer(i);
+          // Printf("%p ", sval);
+          s.insert(sval);
+        }
+      }
+      Printf("\n[%d] Cache Size=%ld %s different values: %ld\n", c,
+             storage_.size(), old_line->used().ToString().c_str(), 
+             s.size());
+      G_stats->PrintStatsForCache();
+    }
   }
 
   static const int kNumLines = 1 << 16;
@@ -2666,7 +2707,7 @@ class Cache {
 
   // tag => CacheLine
   typedef map<uintptr_t, CacheLine*> Map;  // TODO: is hash_map better than map?
-  Map map_;
+  Map storage_;
 };
 
 static  Cache *G_cache;
@@ -3728,6 +3769,25 @@ class ReportStorage {
     CHECK(thr->lsid(false) == seg->lsid(false));
     CHECK(thr->lsid(true) == seg->lsid(true));
 
+
+    ExeContext *valgrindish_context = stack_trace->ToValgrindExeContext();
+    if (VG_(unique_error)(GetVgTid(), XS_Race, 0, NULL, 
+                          race_report, valgrindish_context, 
+                          False, False, False)) {
+      // This is a HACK. Valgrind ExeContext is sometimes broken and hence 
+      // suppressions may fail. We create an ExeContext from tsan's stack trace 
+      // and check if it should be suppressed (see comments for unique_error).
+      if (G_flags->show_valgrind_context) {
+        Report("------ ThreadSanitizer StackTrace: -------\n");
+        VG_(pp_ExeContext)(valgrindish_context);
+        Report("------ valgrind ExeContext: -------\n");
+        VG_(pp_ExeContext)(VG_(record_ExeContext)(VG_(get_running_tid)(), 0));
+      }
+      // this error was suppressed -- return.
+      delete race_report;
+      return false;
+    }
+
     if (ERROR_IS_RECORDED != VG_(maybe_record_error)(
         GetVgTid(), XS_Race, 0, NULL, race_report) ) {
       StackTrace::Delete(stack_trace);
@@ -3763,7 +3823,7 @@ class ReportStorage {
       if (Segment::HappensBeforeOrSameThread(concurrent_sid, sid)) continue;
       Thread *concurrent_thr = Thread::Get(seg->tid());
       if (!printed_header) {
-        Report("  %sConcurrent %s happened at or after these points:%s\n",
+        Report("  %sConcurrent %s happened at (OR AFTER) these points:%s\n",
                c_cyan, descr, c_default);
         printed_header = true;
       }
@@ -3800,6 +3860,12 @@ class ReportStorage {
 
 
     set<LID> all_locks;
+
+    if (G_flags->show_valgrind_context) {
+      ExeContext *context = VG_(record_ExeContext)(VG_(get_running_tid)(), 0);
+      VG_(pp_ExeContext)(context);
+    }
+
     // Note the {{{ and }}}. These are for vim folds.
     Report("%sWARNING: %s data race during %s of size %d at %p: {{{%s\n", 
            c_red,
@@ -4024,6 +4090,7 @@ class Detector {
     
     EventSampler::ShowSamples();
     ShowStats();
+    ShowProcSelfStatus();
   }
 
 
@@ -4100,6 +4167,12 @@ class Detector {
 #endif
   }
 
+  void ShowProcSelfStatus() {
+    if (G_flags->show_proc_self_status) {
+      string str = ReadFileToString("/proc/self/status");
+      Printf("%s", str.c_str());
+    }
+  }
 
   void ShowStats() {
     if (G_flags->show_stats) {
@@ -4340,6 +4413,15 @@ class Detector {
       Lock::Create(lock_addr);
     } else {
       CHECK(e_->type() == LOCK_DESTROY);
+      // When destroying a lock, we must unlock it. 
+      // A locked pthread_mutex_t can not be destroyed, 
+      // but other lock types can.
+      Lock *lock = Lock::Lookup(lock_addr);
+      CHECK(lock);
+      if (lock->wr_held() || lock->rd_held()) {
+        // TODO: this leads to failures.
+        // cur_thread_->HandleUnlock(lock_addr);
+      }
       Lock::Destroy(lock_addr);
     }
   }
@@ -4624,7 +4706,7 @@ class Detector {
     Thread *thr = Thread::Get(tid);
     if (thr->ignore(is_w)) return;
     if (thr->bus_lock_is_set()) return;
-    if (g_so_far_only_one_thread) return;
+    if (UNLIKELY(g_so_far_only_one_thread)) return;
 
     DCHECK(thr->lsid(false) == thr->segment()->lsid(false));
     DCHECK(thr->lsid(true) == thr->segment()->lsid(true));
@@ -4637,7 +4719,6 @@ class Detector {
     CacheLine *cache_line = G_cache->GetLine(addr, __LINE__);
     
     if (FastModeCheckAndUpdateCreatorTid(cache_line, tid)) return;
-
 
     if        (size == 8 && cache_line->SameValueStored(addr, 8)) {
       HandleMemoryAccessHelper(is_w, cache_line, addr, size, tid, thr);
@@ -4697,7 +4778,8 @@ class Detector {
     info.stack_trace = cur_thread_->CreateStackTrace();
     // cur_thread_->PopCallStack();
 
-    // CHECK(!G_heap_map->count(a));  // we may have two calls to AnnotateNewMemory.
+    // CHECK(!G_heap_map->count(a));  // we may have two calls 
+                                      //  to AnnotateNewMemory.
     (*G_heap_map)[a] = info;
   }
 
@@ -4793,6 +4875,7 @@ class Detector {
         }
       }
     }
+    ShowProcSelfStatus();
   }
 
   // THR_JOIN_BEFORE
@@ -4971,6 +5054,8 @@ void ThreadSanitizerParseFlags(vector<string> &args) {
   FindBoolFlag("announce_threads", false, &args, &G_flags->announce_threads);
   FindBoolFlag("full_output", false, &args, &G_flags->full_output);
   FindBoolFlag("show_states", false, &args, &G_flags->show_states);
+  FindBoolFlag("show_proc_self_status", false, &args, &G_flags->show_proc_self_status);
+  FindBoolFlag("show_valgrind_context", false, &args, &G_flags->show_valgrind_context);
   FindBoolFlag("show_pc", false, &args, &G_flags->show_pc);
   FindBoolFlag("ignore_in_dtor", true, &args, &G_flags->ignore_in_dtor);
 
@@ -5029,25 +5114,6 @@ void ThreadSanitizerParseFlags(vector<string> &args) {
 
 //--------- ThreadSanitizer ------------------ {{{1
 
-// Read the contents of a file to string. Valgrind version.
-static string ReadFileToString(const string &file_name) {
-  SysRes sres = VG_(open)((const Char*)file_name.c_str(), VKI_O_RDONLY, 0 );
-  if (sres.isError) {
-    Report("WARNING: can not open file %s\n", file_name.c_str());
-    exit(1);
-  }
-  int fd = sres.res;
-  char buff[257] = {0};
-  int n_read;
-  string res;
-  while ((n_read = VG_(read)(fd, buff, sizeof(buff) - 1)) > 0) {
-    buff[n_read] = 0;
-    res += buff;
-  }
-
-  VG_(close)(fd);
-  return res;
-}
 
 // This function is taken from valgrind's m_libcbase.c (thanks GPL!).
 static bool FastRecursiveStringMatch (const char* pat, const char* str, int *depth) {
@@ -5129,7 +5195,7 @@ static IgnoreLists *g_ignore_lists;
 // Setup the list of functions/images/files to ignore.
 static void SetupIgnore() {
   g_ignore_lists = new IgnoreLists;
-  // add some major ignore entries so that tsan is sane 
+  // add some major ignore entries so that tsan remains sane 
   // even w/o any ignore file.
   g_ignore_lists->objs.push_back("*/libpthread-*");
   g_ignore_lists->objs.push_back("*/ld-2*.so");
@@ -5277,6 +5343,9 @@ extern void ThreadSanitizerPrintReport(ThreadSanitizerReport *report) {
 // - Handle INC as just one write
 //   - same for memset, etc
 // - Implement correct handling of memory accesses with different sizes.
-//
+// - Do not create HB arcs between RdUnlock and RdLock
+// - Compress cache lines 
+// - Optimize the case where a threads signals twice in a row on the same
+//   address.
 // end. {{{1
 // vim:shiftwidth=2:softtabstop=2:expandtab:tw=80

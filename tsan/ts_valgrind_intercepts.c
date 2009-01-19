@@ -254,7 +254,6 @@ WRAP_MALLOC(NONE, _Znam);
 WRAP_MALLOC(NONE, _Znwm);
 WRAP_MALLOC(NONE, _Znaj);
 WRAP_MALLOC(NONE, _Znwj);
-//WRAP_MALLOC(NONE, _ZnwjPv);
 
 WRAP_CALLOC(m_libc_soname, calloc);
 WRAP_CALLOC(NONE, calloc);
