@@ -16,6 +16,13 @@ digraph exa1 {
       <tr>  <td> A = ... </td> </tr> 
       </TABLE>>
     ]
+  T1  [shape=plaintext label=<<TABLE BGCOLOR="white"> <tr> 
+        <td colspan="2">RdO</td> 
+      </tr> <tr> 
+        <td> SS </td>
+        <td> LS </td>
+      </tr> </TABLE>>
+    ]
 
    T2 [label=<<TABLE BGCOLOR="white">  
       <tr>  <td port="0"> Thread T2 </td> </tr> 
