@@ -6,8 +6,8 @@ digraph exa1 {
       <tr>  <td> X = 1 </td> </tr> 
       <tr>  <td >   </td> </tr> 
       <tr>  <td >   </td> </tr> 
-      <tr>  <td bgcolor="green" port="lock">   Lock() </td> </tr> 
-      <tr>  <td bgcolor="green" port="unlock"> Unlock() </td> </tr> 
+      <tr>  <td bgcolor="green" port="lock">  E1: Lock() </td> </tr> 
+      <tr>  <td bgcolor="green" port="unlock"> E2: Unlock() </td> </tr> 
       <tr>  <td port="end">   </td> </tr> 
       </TABLE>>
     ]
@@ -15,8 +15,8 @@ digraph exa1 {
    T2  [label=<<TABLE BGCOLOR="white">  
       <tr>  <td port="0"> Thread2 </td> </tr> 
       <tr>  <td >   </td> </tr> 
-      <tr>  <td bgcolor="green" port="lock">   Lock() </td> </tr> 
-      <tr>  <td bgcolor="green" port="unlock"> Unlock() </td> </tr> 
+      <tr>  <td bgcolor="green" port="lock">   E3: Lock() </td> </tr> 
+      <tr>  <td bgcolor="green" port="unlock"> E4: Unlock() </td> </tr> 
       <tr>  <td >   </td> </tr> 
       <tr>  <td >   </td> </tr> 
       <tr>  <td port="end"> X = 2 </td> </tr> 
