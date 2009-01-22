@@ -4,6 +4,8 @@ digraph exa1 {
    T1  [label=<<TABLE BGCOLOR="white">  
       <tr>  <td port="0"> Thread1 </td> </tr> 
       <tr>  <td> X = 1 </td> </tr> 
+      <tr>  <td >   </td> </tr> 
+      <tr>  <td >   </td> </tr> 
       <tr>  <td bgcolor="green" port="lock">   Lock() </td> </tr> 
       <tr>  <td bgcolor="green" port="unlock"> Unlock() </td> </tr> 
       <tr>  <td port="end">   </td> </tr> 
@@ -15,6 +17,8 @@ digraph exa1 {
       <tr>  <td >   </td> </tr> 
       <tr>  <td bgcolor="green" port="lock">   Lock() </td> </tr> 
       <tr>  <td bgcolor="green" port="unlock"> Unlock() </td> </tr> 
+      <tr>  <td >   </td> </tr> 
+      <tr>  <td >   </td> </tr> 
       <tr>  <td port="end"> X = 2 </td> </tr> 
       </TABLE>>
     ]
@@ -24,5 +28,5 @@ digraph exa1 {
 
     T1:end -> T2:end [color="white" style="invis"];
     T1:0 -> T2:0 [color="white" style="invis"];
-    T2:lock -> T1:unlock;
+    T2:unlock -> T1:lock;
 }
