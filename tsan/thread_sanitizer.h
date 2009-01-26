@@ -131,6 +131,7 @@ struct FLAGS {
   vector<string> ignore;
   string         log_file;
   intptr_t         max_n_threads;
+  bool            compress_cache_lines;
   
   intptr_t         sample_events;
   intptr_t         sample_events_depth;

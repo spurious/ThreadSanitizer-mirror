@@ -137,9 +137,11 @@ struct Stats {
            "    fast      = %'ld\n"
            "    new       = %'ld\n"
            "    delete    = %'ld\n"
-           "    fetch     = %'ld\n",
+           "    fetch     = %'ld\n"
+           "    storage   = %'ld\n",
            cache_fast_get, cache_new_line, 
-           cache_delete_empty_line, cache_fetch);
+           cache_delete_empty_line, cache_fetch, 
+           cache_max_storage_size);
   }
 
   void PrintStatsForSeg() {
@@ -194,6 +196,7 @@ struct Stats {
   uintptr_t cache_new_line;
   uintptr_t cache_delete_empty_line;
   uintptr_t cache_fetch;
+  uintptr_t cache_max_storage_size;
 
   uintptr_t mops_total;
   uintptr_t mops_uniq;
@@ -2506,11 +2509,37 @@ class ShadowValue {
 };
 
 //--------- CacheLine --------------- {{{1
-class CacheLine {
+class CacheLineBase {
+ protected:
+  uintptr_t tag_;
+  TID creator_tid_;
+  bool is_compressed_;
+  Mask used_;
+  Mask traced_;
+  Mask racey_;
+  Mask published_;
+};
+
+// Uncompressed line. Just a vector of 64 shadow values. 
+class CacheLineUncompressed : public CacheLineBase {
  public:
   static const uintptr_t kLineSizeBits = 6;  // Don't change this.
   static const uintptr_t kLineSize = 1 << kLineSizeBits;
+ protected:
+  ShadowValue vals_[kLineSize];
+};
 
+// Compressed line. Few shadow values and their positions.
+class CacheLineCompressed : public CacheLineBase {
+ public:
+  static const uintptr_t kCompressedLineSize = 10;
+  uintptr_t   n_vals;
+  ShadowValue vals[kCompressedLineSize];
+  Mask        positions[kCompressedLineSize];
+};
+
+class CacheLine : public CacheLineUncompressed {
+ public:
 
   static CacheLine *CreateNewCacheLine(uintptr_t tag) {
     ScopedMallocCostCenter cc("CreateNewCacheLine");
@@ -2571,6 +2600,9 @@ class CacheLine {
     return false;
   }
 
+  static CacheLine *Compress(CacheLine *line);
+  static CacheLine *Uncompress(CacheLine *line);
+
   static void InitClassMembers() {
     if (DEBUG_MODE) {
       Printf("sizeof(CacheLine) = %ld\n", sizeof(CacheLine));
@@ -2580,24 +2612,39 @@ class CacheLine {
 
  private:
 
-  CacheLine(uint64_t tag) 
-      : tag_(tag),
-        creator_tid_() { }
+  CacheLine(uint64_t tag) { 
+    tag_ = tag;
+    is_compressed_ = false;
+  }
   ~CacheLine() { }
 
-
-  uintptr_t tag_;
-  TID creator_tid_;
-  Mask used_;
-  Mask traced_;
-  Mask racey_;
-  Mask published_;
-  ShadowValue vals_[kLineSize];
+  // no non-static data members.
 
   static FreeList *free_list_;
 };
 
 FreeList *CacheLine::free_list_;
+
+
+//static 
+CacheLine *CacheLine::Compress(CacheLine *line) {
+  if (!G_flags->compress_cache_lines) {
+    return line;
+  }
+  CHECK(0);
+}
+// static 
+CacheLine *CacheLine::Uncompress(CacheLine *line) {
+  if (!G_flags->compress_cache_lines) {
+    DCHECK(!line->is_compressed_);
+    return line;
+  }
+  if (!line->is_compressed_) {
+    return line;
+  }
+  CHECK(0);
+}
+
 
 // If range [a,b) fits into one line, return that line's tag.
 // Else range [a,b) belongs is broken into these ranges: 
@@ -2629,8 +2676,7 @@ class Cache {
     uintptr_t tag = CacheLine::ComputeTag(a);
     DCHECK(tag <= a);
     DCHECK(tag + CacheLine::kLineSize > a);
-    // cli = Cache Line Index
-    uintptr_t cli = (a >> CacheLine::kLineSizeBits) & (kNumLines - 1);
+    uintptr_t cli = ComputeCacheLineIndexInCache(a);
     CacheLine *res = lines_[cli];
     if (LIKELY(res && res->tag() == tag)) {
       G_stats->cache_fast_get++;
@@ -2651,7 +2697,38 @@ class Cache {
     storage_.clear();
   }
 
+  void PrintStorageStats() {
+    if (!G_flags->show_stats) return;
+    map<size_t, int> sizes;
+    for (Map::iterator i = storage_.begin(); i != storage_.end(); ++i) {
+      CacheLine *line = i->second;
+      uintptr_t cli = ComputeCacheLineIndexInCache(line->tag());
+      if (lines_[cli] == line) {
+        // this line is in cache -- ignore it.
+        continue;
+      }
+      set<int64_t> s;
+      for (int i = 0; i < 64; i++) {
+        if (line->used().Get(i)) {
+          int64_t sval = *(int64_t*)line->GetValuePointer(i);
+          s.insert(sval);
+        }
+      }
+      sizes[s.size()]++;
+    }
+    Printf("Storage sizes: %ld\n", storage_.size());
+    for (size_t size = 0; size <= 64; size++) {
+      if (sizes[size]) {
+        Printf("  %ld => %d\n", size, sizes[size]);
+      }
+    }
+  }
+
  private:
+  INLINE uintptr_t ComputeCacheLineIndexInCache(uintptr_t addr) {
+    return (addr >> CacheLine::kLineSizeBits) & (kNumLines - 1);
+  }
+
   NOINLINE CacheLine *WriteBackAndFetch(uintptr_t tag, uintptr_t cli) {
     ScopedMallocCostCenter cc("Cache::WriteBackAndFetch");
     CacheLine *res;
@@ -2659,27 +2736,41 @@ class Cache {
     CacheLine **line_for_this_tag = &storage_[tag];
     CacheLine *old_line = lines_[cli];
     if (*line_for_this_tag == NULL) {
+      // creating a nea cache line
       CHECK(storage_.size() == old_storage_size + 1);
       res = CacheLine::CreateNewCacheLine(tag);
       *line_for_this_tag = res;
       lines_[cli]        = res;
       G_stats->cache_new_line++;
     } else {
+      // taking an existing cache line from storage.
       res = *line_for_this_tag;
+      DCHECK(!res->used()->Empty());
       lines_[cli]        = res;
       G_stats->cache_fetch++;
     }
+
 
     if (old_line) {
       if (old_line->used().Empty()) {
         storage_.erase(old_line->tag());
         CacheLine::Delete(old_line);
         G_stats->cache_delete_empty_line++;
-      } else if (DEBUG_MODE && 0) {
-        DebugOnlyCheckCacheLineWhichWeReplace(old_line);
+      } else {
+        if (DEBUG_MODE && 0) {
+          DebugOnlyCheckCacheLineWhichWeReplace(old_line);
+        }
       }
     }
     DCHECK(res->tag() == tag);
+
+    if (G_stats->cache_max_storage_size < storage_.size()) {
+      G_stats->cache_max_storage_size = storage_.size();
+      // if ((storage_.size() % (1024 * 64)) == 0) {
+      //  PrintStorageStats();
+      // }
+    }
+
     return res;
   }
 
@@ -3813,7 +3904,8 @@ class ReportStorage {
 
 
 
-  static void PrintConcurrentSegmentSet(SSID ssid, TID tid, SID sid, bool is_w, 
+  static void PrintConcurrentSegmentSet(SSID ssid, TID tid, SID sid, 
+                                        LSID lsid, bool is_w, 
                                         const char *descr, set<LID> *locks) {
     if (ssid.IsEmpty()) return;
     bool printed_header = false;
@@ -3821,6 +3913,7 @@ class ReportStorage {
       SID concurrent_sid = SegmentSet::GetSIDForNonSingleton(ssid, s, __LINE__);
       Segment *seg = Segment::Get(concurrent_sid);
       if (Segment::HappensBeforeOrSameThread(concurrent_sid, sid)) continue;
+      if (!LockSet::IntersectionIsEmpty(lsid, seg->lsid(is_w))) continue; 
       Thread *concurrent_thr = Thread::Get(seg->tid());
       if (!printed_header) {
         Report("  %sConcurrent %s happened at (OR AFTER) these points:%s\n",
@@ -3852,11 +3945,12 @@ class ReportStorage {
 
     AnnounceThreadsInSegmentSet(race->new_sval.rd_ssid());
     AnnounceThreadsInSegmentSet(race->new_sval.wr_ssid());
+    bool is_w = race->last_access_is_w;
     TID     tid = race->last_access_tid;
     Thread *thr = Thread::Get(tid);
     SID     sid = race->last_access_sid;
+    LSID    lsid = race->last_acces_lsid[is_w];
 
-    bool is_w = race->last_access_is_w;
 
 
     set<LID> all_locks;
@@ -3883,9 +3977,6 @@ class ReportStorage {
                                race->last_acces_lsid[true]).c_str()
           );
 
-    if (G_flags->show_states) {
-      Report("   S%d\n", sid.raw());
-    }
     Report("%s", race->last_access_stack_trace->ToString().c_str());
     //Report(" sid=%d; vts=%s\n", thr->sid().raw(), 
     //       thr->vts()->ToString().c_str());
@@ -3895,10 +3986,10 @@ class ReportStorage {
     }
     if (G_flags->keep_history) {
       PrintConcurrentSegmentSet(race->new_sval.wr_ssid(), 
-                                tid, sid, true, "write(s)", &all_locks);
+                                tid, sid, lsid, true, "write(s)", &all_locks);
       if (is_w) {
         PrintConcurrentSegmentSet(race->new_sval.rd_ssid(), 
-                                  tid, sid, false, "read(s)", &all_locks);
+                                  tid, sid, lsid, false, "read(s)", &all_locks);
       }
     } else {
       Report("  %sAccess history is disabled. " 
@@ -4063,6 +4154,7 @@ class Detector {
   }
 
   void HandleProgramEnd() {
+    // Report("ThreadSanitizerValgrind: done\n");
     // check if we found all expected races (for unit tests only).
     for (ExpectedRacesMap::iterator it = G_expected_races_map->begin(); 
          it != G_expected_races_map->end(); ++it) {
@@ -4091,6 +4183,7 @@ class Detector {
     EventSampler::ShowSamples();
     ShowStats();
     ShowProcSelfStatus();
+    // Report("ThreadSanitizerValgrind: exiting\n");
   }
 
 
@@ -4177,6 +4270,7 @@ class Detector {
   void ShowStats() {
     if (G_flags->show_stats) {
       G_stats->PrintStats();
+      G_cache->PrintStorageStats();
     }
   }
 
@@ -5065,6 +5159,7 @@ void ThreadSanitizerParseFlags(vector<string> &args) {
   FindIntFlag("dry_run", 0, &args, &G_flags->dry_run);
   FindIntFlag("max_sid", kMaxSID, &args, &G_flags->max_sid);
   FindBoolFlag("report_races", true, &args, &G_flags->report_races);
+  FindBoolFlag("compress_cache_lines", false, &args, &G_flags->compress_cache_lines);
 
   FindIntFlag("sample_events", 0, &args, &G_flags->sample_events);
   FindIntFlag("sample_events_depth", 2, &args, &G_flags->sample_events_depth);
@@ -5079,6 +5174,7 @@ void ThreadSanitizerParseFlags(vector<string> &args) {
   FindBoolFlag("detect_thread_create", false, &args, &G_flags->detect_thread_create);
 
   FindIntFlag("trace_addr", 0, &args, (intptr_t*)&G_flags->trace_addr);
+
 
 
 //  FindIntFlag("num_callers", 15, &args, &G_flags->num_callers);
@@ -5347,5 +5443,8 @@ extern void ThreadSanitizerPrintReport(ThreadSanitizerReport *report) {
 // - Compress cache lines 
 // - Optimize the case where a threads signals twice in a row on the same
 //   address.
+// - Fix --ignore-in-dtor if --demangle=no.
+// - Be able to change the size of the history stack trace via a command line
+//   flag.
 // end. {{{1
 // vim:shiftwidth=2:softtabstop=2:expandtab:tw=80
