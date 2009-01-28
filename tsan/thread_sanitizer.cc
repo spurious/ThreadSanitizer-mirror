@@ -4214,7 +4214,7 @@ class Detector {
       ForgetAllStateAndStartOver("Thread Sanitizer has run out of segment IDs");
     }
 
-    if(G_flags->sample_events) {
+    if(UNLIKELY(G_flags->sample_events)) {
       static EventSampler sampler;
       sampler.Sample(tid, "SampleSblockEnter");
     }
@@ -4829,6 +4829,11 @@ class Detector {
     CacheLine *cache_line = G_cache->GetLine(addr, __LINE__);
     
     if (FastModeCheckAndUpdateCreatorTid(cache_line, tid)) return;
+
+    if (UNLIKELY(G_flags->keep_history >= 2)) {
+      // Keep the precise history. Very SLOW! 
+      HandleSblockEnter(tid, GetVgPcOfCurrentThread());
+    }
 
     if        (size == 8 && cache_line->SameValueStored(addr, 8)) {
       HandleMemoryAccessHelper(is_w, cache_line, addr, size, tid, thr);
