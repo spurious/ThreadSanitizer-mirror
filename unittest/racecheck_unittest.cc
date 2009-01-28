@@ -6122,12 +6122,12 @@ int FunctionWithControlFlow() {
   int res = 0;
 
   res++;
-  SomeFunc();                // "--keep-history=1" will point here. 
-  if (some_condition) {      // "--keep-history=2" will point here. 
+  SomeFunc();                // "--keep-history=1" will point somewhere here. 
+  if (some_condition) {      // Or here 
     if (some_condition) {     
-      res++;                 // "--keep-history=3" will point here.
+      res++;                 // Or here.
       res++;
-      (*GLOB)++;             // "--keep-history=4" will point here.
+      (*GLOB)++;             // "--keep-history=2" will point here (experimental).
     }
   }
   usleep(100000);
