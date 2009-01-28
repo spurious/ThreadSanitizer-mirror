@@ -301,21 +301,28 @@ class MyThread {
  public: 
   typedef void *(*worker_t)(void*);
 
-  MyThread(worker_t worker, void *arg = NULL, const char *name = "") 
-      :w_(worker), arg_(arg){}
-  MyThread(void (*worker)(void), void *arg = NULL, const char *name = "")   
-      :w_(reinterpret_cast<worker_t>(worker)), arg_(arg){}
-  MyThread(void (*worker)(void *), void *arg = NULL, const char *name = "") 
-      :w_(reinterpret_cast<worker_t>(worker)), arg_(arg){}
+  MyThread(worker_t worker, void *arg = NULL, const char *name = NULL) 
+      :w_(worker), arg_(arg), name_(name) {}
+  MyThread(void (*worker)(void), void *arg = NULL, const char *name = NULL)   
+      :w_(reinterpret_cast<worker_t>(worker)), arg_(arg), name_(name) {}
+  MyThread(void (*worker)(void *), void *arg = NULL, const char *name = NULL) 
+      :w_(reinterpret_cast<worker_t>(worker)), arg_(arg), name_(name) {}
 
   ~MyThread(){ w_ = NULL; arg_ = NULL;}
-  void Start() { CHECK(0 == pthread_create(&t_, NULL, w_, arg_));}
+  void Start() { CHECK(0 == pthread_create(&t_, NULL, (worker_t)ThreadBody, this));}
   void Join()  { CHECK(0 == pthread_join(t_, NULL));}
   pthread_t tid() const { return t_; }
  private:
+  static void ThreadBody(MyThread *my_thread) {
+    if (my_thread->name_) {
+      ANNOTATE_THREAD_NAME(my_thread->name_);
+    }
+    my_thread->w_(my_thread->arg_);
+  }
   pthread_t t_;
   worker_t  w_;
   void     *arg_;
+  const char *name_;
 };
 
 

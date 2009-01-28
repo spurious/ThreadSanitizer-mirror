@@ -109,6 +109,7 @@ ANNOTATION(AnnotatePrintMemoryUsage, long);
 ANNOTATION(AnnotatePrintStats, void *);
 ANNOTATION(AnnotateResetStats, void *);
 ANNOTATION(AnnotatePublishMemoryRange, void *, long);
+ANNOTATION(AnnotateThreadName, const char *thread_name);
 
 ANNOTATION(AnnotateNoOp, void *arg);
 
@@ -197,6 +198,11 @@ ANNOTATION(AnnotateNoOp, void *arg);
 // Report that we want to trace all memory accesses to this memory location,
 #define ANNOTATE_TRACE_MEMORY(arg) \
             AnnotateTraceMemory(__FILE__, __LINE__, arg)
+
+// Report the current thread name to a race detector.
+#define ANNOTATE_THREAD_NAME(name) \
+            AnnotateThreadName(__FILE__, __LINE__, name)
+
 
 // A no-op. Insert where you like for testing the interceptors. 
 #define ANNOTATE_NO_OP(arg) \
