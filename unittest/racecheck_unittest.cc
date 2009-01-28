@@ -212,9 +212,14 @@ int main(int argc, char** argv) { // {{{1
   MAIN_INIT_ACTION;
   if (argc == 2 && !strcmp(argv[1], "benchmark")) {
      for (std::map<int,Test>::iterator it = TheMapOfTests.begin(); 
-         it != TheMapOfTests.end();
-         ++it) {
+         it != TheMapOfTests.end(); ++it) {
        if(!(it->second.flags_ & PERFORMANCE)) continue;
+       it->second.Run();
+     }    
+  } else if (argc == 2 && !strcmp(argv[1], "demo")) {
+     for (std::map<int,Test>::iterator it = TheMapOfTests.begin(); 
+         it != TheMapOfTests.end();  ++it) {
+       if(!(it->second.flags_ & RACE_DEMO)) continue;
        it->second.Run();
      }      
   } else if (argc > 1) {     
@@ -6364,6 +6369,7 @@ void Func18() { Func17(); }
 void Func19() { Func18(); }
 void Worker() { Func19(); }
 void Run() {
+  printf("test312: simple race with deep stack.\n");
   MyThreadArray t(Worker, Worker, Worker);
   t.Start();
   t.Join();
@@ -6371,31 +6377,6 @@ void Run() {
 REGISTER_TEST2(Run, 312, RACE_DEMO)
 }  // namespace test312
 
-// test350: Simple race with deep stack. {{{1
-namespace test350 {
-int     GLOB = 0;
-
-void F9() {GLOB++;}
-void F8() {F9();}
-void F7() {F8();}
-void F6() {F7();}
-void F5() {F6();}
-void F4() {F5();}
-void F3() {F4();}
-void F2() {F3();}
-void F1() {F2();}
-void Worker() { F1();}
-
-void Run() {  
-  printf("test350: simple race with deep stack.\n");
-  MyThread t1(Worker), t2(Worker);
-  t1.Start();  
-  t2.Start();  
-  t1.Join();   t2.Join();
-}
-REGISTER_TEST2(Run, 350, RACE_DEMO)
-
-}  // namespace test350
 
 // test400: Demo of a simple false positive. {{{1
 namespace test400 {
