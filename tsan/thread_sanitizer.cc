@@ -31,7 +31,9 @@
 //--------- Constants --------------- {{{1
 // Segment ID (SID)      is in range [1, kMaxSID-1]
 // Segment Set ID (SSID) is in range [-kMaxSID+1, -1]
-const int kMaxSID = (1 << 23);
+// This is not a compile-time constant, but it can only be changed 
+// at startup.
+int kMaxSID = (1 << 23);
 
 // Lock ID (LID)      is in range [1, kMaxLID-1]
 // Lock Set ID (LSID) is in range [-kMaxLID+1, -1]
@@ -4193,8 +4195,7 @@ class Detector {
     G_stats->events[SBLOCK_ENTER]++;
 
     // Are we out of segment IDs?
-    int max_sid = G_flags->max_sid;
-    if (Segment::NumberOfSegments() > ((max_sid * 15) / 16)) {
+    if (Segment::NumberOfSegments() > ((kMaxSID * 15) / 16)) {
       ForgetAllStateAndStartOver("Thread Sanitizer has run out of segment IDs");
     }
 
@@ -5157,7 +5158,6 @@ void ThreadSanitizerParseFlags(vector<string> &args) {
   FindBoolFlag("color", false, &args, &G_flags->color);
 
   FindIntFlag("dry_run", 0, &args, &G_flags->dry_run);
-  FindIntFlag("max_sid", kMaxSID, &args, &G_flags->max_sid);
   FindBoolFlag("report_races", true, &args, &G_flags->report_races);
   FindBoolFlag("compress_cache_lines", false, &args, &G_flags->compress_cache_lines);
 
@@ -5174,6 +5174,16 @@ void ThreadSanitizerParseFlags(vector<string> &args) {
   FindBoolFlag("detect_thread_create", false, &args, &G_flags->detect_thread_create);
 
   FindIntFlag("trace_addr", 0, &args, (intptr_t*)&G_flags->trace_addr);
+
+
+
+  FindIntFlag("max_sid", kMaxSID, &args, &G_flags->max_sid);
+
+  kMaxSID = G_flags->max_sid;
+  if (kMaxSID <= 100000) {
+    Printf("Error: max-sid should be at least 100000. Exiting\n");
+    exit(1);
+  }
 
 
 
