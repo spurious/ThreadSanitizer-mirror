@@ -39,8 +39,8 @@ int kMaxSID = (1 << 23);
 // Lock Set ID (LSID) is in range [-kMaxLID+1, -1]
 const int kMaxLID = (1 << 23);
 
-// This is a constant for extreme performance.
-const int kSizeOfHistoryStackTrace = 10;
+// This is not a compile-time constant, but it can be changed only at startup.
+int kSizeOfHistoryStackTrace = 10;
 
 // Maximal number of segments in a SegmentSet. 
 // If you change this constant, you also need to change several places 
@@ -649,6 +649,7 @@ class StackTrace {
         break;
       // ... and after the default thread func. TODO: customize it.
       if (rtn_and_file.find("Thread::ThreadBody(") == 0 ||
+          rtn_and_file.find("ThreadSanitizerStartThread") == 0 ||
           rtn_and_file.find("start_thread ") == 0) {
         break;
       }
@@ -1568,10 +1569,10 @@ class Segment {
     SID sid;
     Segment *seg;
     if (reusable_sids_->empty()) {
-      CHECK(n_segments_ < kMaxSID);
 
       G_stats->seg_create++;
-      seg = &all_segments_[n_segments_];
+      CHECK(n_segments_ < kMaxSID);
+      seg = GetSegmentByIndex(n_segments_);
 
       VTS::Delete(seg->vts_);
 
@@ -1728,21 +1729,33 @@ class Segment {
 
 
   static void InitClassMembers() {
-    all_segments_  = new Segment[kMaxSID];
+
+    CHECK(sizeof(Segment) == 
+          4 * sizeof(int32_t) // ref_count_, tid_, lsid_[2]
+          + 1 * sizeof(void*) // vts_
+          + 1 * sizeof(uintptr_t) // embedded_stack_trace_[1]
+          );
+    actual_size_of_segment_ = sizeof(Segment) + 
+        (kSizeOfHistoryStackTrace - 1) * sizeof(uintptr_t);
+    Report("INFO: Allocating %'ld (%'ld * %'ld) bytes for Segments.\n", 
+           actual_size_of_segment_ * kMaxSID, actual_size_of_segment_, kMaxSID);
+
+    all_segments_  = new uint8_t[kMaxSID * actual_size_of_segment_];
     n_segments_    = 1;
     reusable_sids_ = new vector<SID>;
     recycled_sids_ = new vector<SID>;
 
     // initialize all_segments_[0] with garbage
-    memset(all_segments_, -1, sizeof(Segment));
-    CHECK(sizeof(Segment) == 4 * sizeof(int32_t) +
-          (1 + kSizeOfHistoryStackTrace) * sizeof(void*));
+    memset(all_segments_, -1, actual_size_of_segment_);
   }
  private:
+  static Segment *GetSegmentByIndex(int32_t index) {
+    return (Segment*)&all_segments_[index * actual_size_of_segment_];
+  }
   static Segment *GetInternal(SID sid) {
     DCHECK(sid.valid());
     DCHECK(sid.raw() < n_segments_);
-    Segment *res = &all_segments_[sid.raw()];
+    Segment *res = GetSegmentByIndex(sid.raw());
     return res;
   }
 
@@ -1751,16 +1764,18 @@ class Segment {
   TID      tid_;
   LSID     lsid_[2];
   VTS *vts_;
-  uintptr_t embedded_stack_trace_[kSizeOfHistoryStackTrace];
+  uintptr_t embedded_stack_trace_[1];
 
   // static class members.
-  static Segment *all_segments_;  // Array of kMaxSID Segments.
+  static uint8_t *all_segments_;  // Array of kMaxSID Segments.
+  static size_t actual_size_of_segment_;
   static int32_t n_segments_;
   static vector<SID> *reusable_sids_;
   static vector<SID> *recycled_sids_;
 };
 
-Segment          *Segment::all_segments_;
+uint8_t          *Segment::all_segments_;
+size_t            Segment::actual_size_of_segment_;
 int32_t           Segment::n_segments_;
 vector<SID>      *Segment::reusable_sids_;
 vector<SID>      *Segment::recycled_sids_;
@@ -5178,13 +5193,19 @@ void ThreadSanitizerParseFlags(vector<string> &args) {
 
 
   FindIntFlag("max_sid", kMaxSID, &args, &G_flags->max_sid);
-
   kMaxSID = G_flags->max_sid;
   if (kMaxSID <= 100000) {
     Printf("Error: max-sid should be at least 100000. Exiting\n");
     exit(1);
   }
 
+
+  FindIntFlag("num_callers_in_history", kSizeOfHistoryStackTrace, &args, 
+              &G_flags->num_callers_in_history);
+  kSizeOfHistoryStackTrace = G_flags->num_callers_in_history;
+  if (G_flags->keep_history == 0) {
+    kSizeOfHistoryStackTrace = 1;
+  }
 
 
 //  FindIntFlag("num_callers", 15, &args, &G_flags->num_callers);

@@ -157,6 +157,7 @@ struct FLAGS {
 
   intptr_t     dry_run;
   intptr_t     max_sid;
+  intptr_t     num_callers_in_history;
   bool         report_races;
   bool    detect_thread_create;
 };
