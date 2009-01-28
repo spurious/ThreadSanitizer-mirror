@@ -6339,6 +6339,38 @@ void Run() {
 REGISTER_TEST2(Run, 311, RACE_DEMO)
 }  // namespace test311
 
+// test312: A test with a very deep stack. {{{1
+namespace test312 {
+int     GLOB = 0;
+void RaceyWrite() { GLOB++; }
+void Func1() { RaceyWrite(); }
+void Func2() { Func1(); }
+void Func3() { Func2(); }
+void Func4() { Func3(); }
+void Func5() { Func4(); }
+void Func6() { Func5(); }
+void Func7() { Func6(); }
+void Func8() { Func7(); }
+void Func9() { Func8(); }
+void Func10() { Func9(); }
+void Func11() { Func10(); }
+void Func12() { Func11(); }
+void Func13() { Func12(); }
+void Func14() { Func13(); }
+void Func15() { Func14(); }
+void Func16() { Func15(); }
+void Func17() { Func16(); }
+void Func18() { Func17(); }
+void Func19() { Func18(); }
+void Worker() { Func19(); }
+void Run() {
+  MyThreadArray t(Worker, Worker, Worker);
+  t.Start();
+  t.Join();
+}
+REGISTER_TEST2(Run, 312, RACE_DEMO)
+}  // namespace test312
+
 // test350: Simple race with deep stack. {{{1
 namespace test350 {
 int     GLOB = 0;
