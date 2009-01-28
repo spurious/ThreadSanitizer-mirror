@@ -6119,19 +6119,18 @@ volatile /*to fake the compiler*/ bool some_condition = true;
 void SomeFunc() { }
 
 int FunctionWithControlFlow() {  
-  int res = 0;
-
-  res++;
+  int unrelated_stuff = 0;
+  unrelated_stuff++;
   SomeFunc();                // "--keep-history=1" will point somewhere here. 
   if (some_condition) {      // Or here 
     if (some_condition) {     
-      res++;                 // Or here.
-      res++;
+      unrelated_stuff++;     // Or here.
+      unrelated_stuff++;
       (*GLOB)++;             // "--keep-history=2" will point here (experimental).
     }
   }
   usleep(100000);
-  return res;
+  return unrelated_stuff;
 }
 
 void Worker1() { FunctionWithControlFlow(); }
