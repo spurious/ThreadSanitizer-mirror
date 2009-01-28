@@ -5475,7 +5475,5 @@ extern void ThreadSanitizerPrintReport(ThreadSanitizerReport *report) {
 // - Optimize the case where a threads signals twice in a row on the same
 //   address.
 // - Fix --ignore-in-dtor if --demangle=no.
-// - Be able to change the size of the history stack trace via a command line
-//   flag.
 // end. {{{1
 // vim:shiftwidth=2:softtabstop=2:expandtab:tw=80
