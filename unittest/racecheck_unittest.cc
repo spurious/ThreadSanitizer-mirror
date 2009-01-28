@@ -5915,19 +5915,29 @@ REGISTER_TEST2(Run, 300, RACE_DEMO)
 
 // test301: Simple race.  {{{1
 namespace test301 {
-int     GLOB = 0;
+Mutex mu1;  // This Mutex guards var.
+Mutex mu2;  // This Mutex is not related to var.
+int   var;  // GUARDED_BY(mu1)
 
-Mutex MU1;
-Mutex MU2;
-void Worker1() { MU1.Lock(); GLOB=1; MU1.Unlock(); }
-void Worker2() { MU2.Lock(); GLOB=1; MU2.Unlock(); }
+void Thread1() {  // Runs in thread named 'test-thread-1'.
+  MutexLock lock(&mu1);  // Correct Mutex.
+  var = 1; 
+}
+
+void Thread2() {  // Runs in thread named 'test-thread-2'.
+  MutexLock lock(&mu2);  // Wrong Mutex.
+  var = 2; 
+}
 
 void Run() {  
+  var = 0;
   printf("test301: simple race.\n");
-  MyThread t1(Worker1), t2(Worker2);
+  MyThread t1(Thread1, NULL, "test-thread-1");
+  MyThread t2(Thread2, NULL, "test-thread-2");
   t1.Start();  
   t2.Start();  
-  t1.Join();   t2.Join();
+  t1.Join();   
+  t2.Join();
 }
 REGISTER_TEST2(Run, 301, RACE_DEMO)
 }  // namespace test301
