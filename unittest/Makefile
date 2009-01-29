@@ -1,12 +1,17 @@
 CXX=g++
 
+SUFFIX=
+CXXFLAGS=
 
-all: racecheck_unittest bigtest
+all: racecheck_unittest${SUFFIX} bigtest${SUFFIX}
+O1: 
+	make SUFFIX=.O1 CXXFLAGS="-O1 -fno-inline"
+O2: 
+	make SUFFIX=.O2 CXXFLAGS="-O2 -fno-inline"
+all_opt: all O1 O2
 
-racecheck_unittest: racecheck_unittest.cc dynamic_annotations.h thread_wrappers_pthread.h
-	${CXX}  racecheck_unittest.cc dynamic_annotations.cc -lpthread -g -DDYNAMIC_ANNOTATIONS=1 -o racecheck_unittest
-bigtest: bigtest.cc dynamic_annotations.h thread_wrappers_pthread.h
-	${CXX}  bigtest.cc dynamic_annotations.cc -lpthread -g -DDYNAMIC_ANNOTATIONS=1 -o bigtest
+%${SUFFIX}: %.cc dynamic_annotations.h thread_wrappers_pthread.h
+	${CXX} ${CXXFLAGS} $< dynamic_annotations.cc -lpthread -g -DDYNAMIC_ANNOTATIONS=1 -o $@
 
 clean:
-	rm -f racecheck_unittest bigtest
+	rm -f racecheck_unittest bigtest *.O1 *.O2
