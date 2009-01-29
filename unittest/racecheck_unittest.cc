@@ -6289,9 +6289,6 @@ void GoodWriter1() {
 void GoodWriter2() {
   MutexLock lock2(&mu2);  // This lock is unrelated to PTR.
   MutexLock lock1(&mu1);  // Protect PTR.
-  int some_unrelated_stuff = 0;
-  if (some_unrelated_stuff == 0)
-    some_unrelated_stuff++;
   *PTR = 2; 
 }
 
