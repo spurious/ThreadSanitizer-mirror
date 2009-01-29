@@ -228,11 +228,14 @@ void evh__die_mem ( Addr a, SizeT len ) {
 
 
 void ts_post_clo_init(void) {
-  Report("ThreadSanitizerValgrind:\n");
   G_flags = new FLAGS;
   InitCommandLineOptions();
   ThreadSanitizerParseFlags(*g_command_line_options);
+  if (G_flags->html) 
+    Report("<pre>\n");
+  Report("ThreadSanitizerValgrind:\n");
   ThreadSanitizerInit();
+
   g_valgrind_threads = new ValgrindThread[VG_N_THREADS];
 }
 

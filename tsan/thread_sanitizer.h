@@ -151,6 +151,7 @@ struct FLAGS {
   bool        show_valgrind_context;  // debug-only
   bool        show_pc;
   bool        color;  // Colorify terminal output.
+  bool        html;  // Output in html format.
 
   intptr_t  debug_level;
   intptr_t  trace_level;

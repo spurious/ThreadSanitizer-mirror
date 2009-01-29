@@ -390,14 +390,14 @@ class SSID: public ID {
 
 //--------- Colors ----------------------------- {{{1
 // Colors for ascii terminals. 
-const char *c_bold    = "\033[01;01m";
-const char *c_red     = "\033[01;31m";
-const char *c_green   = "\033[01;32m";
-const char *c_cyan    = "\033[01;35m";
-const char *c_lblue   = "\033[01;36m";
-const char *c_dblue   = "\033[01;34m";
-const char *c_yellow  = "\033[01;33m";
-const char *c_default = "\033[00;0m";
+const char *c_bold    = "";
+const char *c_red     = "";
+const char *c_green   = "";
+const char *c_cyan    = "";
+const char *c_lblue   = "";
+const char *c_dblue   = "";
+const char *c_yellow  = "";
+const char *c_default = "";
 
 
 //--------- IntPairToBoolCache ------ {{{1
@@ -5176,6 +5176,7 @@ void ThreadSanitizerParseFlags(vector<string> &args) {
 
   FindBoolFlag("show_stats", false, &args, &G_flags->show_stats);
   FindBoolFlag("color", false, &args, &G_flags->color);
+  FindBoolFlag("html", false, &args, &G_flags->html);
 
   FindIntFlag("dry_run", 0, &args, &G_flags->dry_run);
   FindBoolFlag("report_races", true, &args, &G_flags->report_races);
@@ -5407,11 +5408,25 @@ extern void ThreadSanitizerInit() {
 
   SetupIgnore();
 
-
-  if (!G_flags->color) {
-    // Disable colors. :( 
-    c_bold = c_red = c_green = c_cyan = c_lblue = 
-        c_dblue = c_yellow = c_default = "";
+  if (G_flags->html) {
+    c_bold    = "<font ><b>";
+    c_red     = "<font color=red><b>";
+    c_green   = "<font color=green><b>";
+    c_cyan    = "<font color=cyan><b>";
+    c_lblue   = "<font color=blue><b>";
+    c_dblue   = "<font color=darkblue><b>";
+    c_yellow  = "<font color=yellow><b>";
+    c_default = "</b></font>";
+  } else if (G_flags->color) {
+    // Enable ANSI colors. 
+    c_bold    = "\033[01;01m";
+    c_red     = "\033[01;31m";
+    c_green   = "\033[01;32m";
+    c_cyan    = "\033[01;35m";
+    c_lblue   = "\033[01;36m";
+    c_dblue   = "\033[01;34m";
+    c_yellow  = "\033[01;33m";
+    c_default = "\033[00;0m";
   }
 
 
