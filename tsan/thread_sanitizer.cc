@@ -799,8 +799,8 @@ class Lock {
              lock->lid_.raw(), lock->lock_addr_,
              lock->last_lock_site_->ToString().c_str());
     } else {
-      Report("   L%d (p). This lock was probably destroyed" 
-                 "w/o calling Unlock()\n", lock->lid_.raw(), lock->lock_addr_);
+      Report("   L%d (%p). This lock was probably destroyed" 
+                 " w/o calling Unlock()\n", lock->lid_.raw(), lock->lock_addr_);
     }
   }
 
@@ -3977,6 +3977,14 @@ class ReportStorage {
       VG_(pp_ExeContext)(context);
     }
 
+    if (G_flags->html) {
+      n_reports++;
+      Report("<b id=race%d>Race report #%d; </b>"
+             "<a href=\"#race%d\">Next;</a>  " 
+             "<a href=\"#race%d\">Prev;</a>\n", 
+             n_reports, n_reports, n_reports+1, n_reports-1);
+    }
+
     // Note the {{{ and }}}. These are for vim folds.
     Report("%sWARNING: %s data race during %s of size %d at %p: {{{%s\n", 
            c_red,
@@ -4080,8 +4088,11 @@ class ReportStorage {
   
 
   map<StackTrace *, int, StackTrace::Less> reported_stacks_;
-
+  static int n_reports;
 };
+
+// static 
+int ReportStorage::n_reports = 0; 
 
 //--------- Event Sampling ---------------- {{{1
 // This class samples (profiles) events.
