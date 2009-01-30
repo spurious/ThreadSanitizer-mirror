@@ -515,6 +515,24 @@ class Barrier{
 
 #endif // NO_BARRIER
 
+class BlockingCounter {
+ public:
+  explicit BlockingCounter(int initial_count) :
+    count_(initial_count) {}
+  bool DecrementCount() {
+    MutexLock lock(&mu_);
+    count_--;
+  }
+  void Wait() {
+    mu_.LockWhen(Condition(&IsZero, &count_));
+    mu_.Unlock();
+  }
+ private:
+  static bool IsZero(int *arg) { return *arg == 0; }
+  Mutex mu_;
+  int count_;
+};
+
 
 
 #endif // THREAD_WRAPPERS_PTHREAD_H

@@ -5909,6 +5909,28 @@ void Run() {
 REGISTER_TEST(Run, 125)
 }  // namespace test125
 
+// test126 TN: test for BlockingCounter {{{1
+namespace  test126 {
+BlockingCounter *blocking_counter;
+int     GLOB = 0;
+void Worker() {
+  CHECK(blocking_counter);
+  CHECK(GLOB == 0);
+  blocking_counter->DecrementCount();
+}
+void Run() {
+  printf("test126: negative\n");
+  MyThreadArray t(Worker, Worker, Worker);
+  blocking_counter = new BlockingCounter(3);
+  t.Start();
+  blocking_counter->Wait();
+  GLOB = 1;
+  t.Join();
+  printf("\tGLOB=%d\n", GLOB);
+}
+REGISTER_TEST(Run, 126)
+}  // namespace test126
+
 
 // test300: {{{1
 namespace test300 {
