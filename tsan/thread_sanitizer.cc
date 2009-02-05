@@ -389,13 +389,13 @@ class SSID: public ID {
 };
 
 //--------- Colors ----------------------------- {{{1
-// Colors for ascii terminals. 
+// Colors for ansi terminals and for html. 
 const char *c_bold    = "";
 const char *c_red     = "";
 const char *c_green   = "";
+const char *c_magenta = "";
 const char *c_cyan    = "";
-const char *c_lblue   = "";
-const char *c_dblue   = "";
+const char *c_blue    = "";
 const char *c_yellow  = "";
 const char *c_default = "";
 
@@ -1306,7 +1306,7 @@ class VTS {
     return a_less_than_b;
   }
 
-  const size_t size() const { 
+  size_t size() const { 
     DCHECK(ref_count_);
     return size_;
   }
@@ -2649,6 +2649,7 @@ CacheLine *CacheLine::Compress(CacheLine *line) {
     return line;
   }
   CHECK(0);
+  return NULL;
 }
 // static 
 CacheLine *CacheLine::Uncompress(CacheLine *line) {
@@ -2660,6 +2661,7 @@ CacheLine *CacheLine::Uncompress(CacheLine *line) {
     return line;
   }
   CHECK(0);
+  return NULL;
 }
 
 
@@ -2717,8 +2719,8 @@ class Cache {
   void PrintStorageStats() {
     if (!G_flags->show_stats) return;
     map<size_t, int> sizes;
-    for (Map::iterator i = storage_.begin(); i != storage_.end(); ++i) {
-      CacheLine *line = i->second;
+    for (Map::iterator it = storage_.begin(); it != storage_.end(); ++it) {
+      CacheLine *line = it->second;
       uintptr_t cli = ComputeCacheLineIndexInCache(line->tag());
       if (lines_[cli] == line) {
         // this line is in cache -- ignore it.
@@ -3934,7 +3936,7 @@ class ReportStorage {
       Thread *concurrent_thr = Thread::Get(seg->tid());
       if (!printed_header) {
         Report("  %sConcurrent %s happened at (OR AFTER) these points:%s\n",
-               c_cyan, descr, c_default);
+               c_magenta, descr, c_default);
         printed_header = true;
       }
 
@@ -4019,7 +4021,7 @@ class ReportStorage {
     } else {
       Report("  %sAccess history is disabled. " 
              "Consider running with --keep-history=1 for better reports.%s\n",
-             c_dblue, c_default);
+             c_cyan, c_default);
     }
 
     if (race->racey_addr_was_published) {
@@ -4056,7 +4058,7 @@ class ReportStorage {
       }
     }
 
-    Report("%s}}}%s\n", c_red, c_default);
+    Report("}}}\n");
   }
 
  private:
@@ -4068,7 +4070,7 @@ class ReportStorage {
     if (heap_info.ptr) {
       sprintf(buff, "  %sLocation %p is %ld bytes inside a block starting at %p"
              " of size %ld allocated by T%d from heap:%s\n", 
-             c_lblue, 
+             c_blue, 
              (void*)a, (long)(a - heap_info.ptr), (void*)heap_info.ptr, 
              (long)heap_info.size, heap_info.tid.raw(), c_default);
       return string(buff) + heap_info.stack_trace->ToString().c_str();
@@ -4079,7 +4081,7 @@ class ReportStorage {
     if (VG_(get_datasym_and_offset)(a, (Char*)buff, kBufLen, &offset) ){
       string symbol_descr = buff;
       sprintf(buff, "  %sAddress %p is %d bytes inside data symbol \"", 
-              c_lblue, (void*)a, (int)offset);
+              c_blue, (void*)a, (int)offset);
       return buff + symbol_descr + "\"" + c_default + "\n";
     }
     return "";
@@ -4742,7 +4744,6 @@ class Detector {
     if (UNLIKELY(is_published)) {
       const VTS *signaller_vts = GetPublisherVTS(addr);
       CHECK(signaller_vts);
-      string old_vts = thr->vts()->ToString();
       thr->NewSegmentForWait(signaller_vts);
     }
 
@@ -4860,10 +4861,10 @@ class Detector {
       G_stats->n_access1++;
     } else {
       // slow case 
-      for (uintptr_t addr = a; addr < b; addr++) {
-        CacheLine *cache_line = G_cache->GetLine(addr, __LINE__);
+      for (uintptr_t x = a; x < b; x++) {
+        cache_line = G_cache->GetLine(x, __LINE__);
         if (FastModeCheckAndUpdateCreatorTid(cache_line, tid)) return;
-        HandleMemoryAccessHelper(is_w, cache_line, addr, size, tid, thr);
+        HandleMemoryAccessHelper(is_w, cache_line, x, size, tid, thr);
         G_stats->n_access_slow++;
       }
     }
@@ -5176,7 +5177,6 @@ void ThreadSanitizerParseFlags(vector<string> &args) {
                &G_flags->show_expected_races);
   FindBoolFlag("demangle", true, &args, &G_flags->demangle);
 
-  FindBoolFlag("show_summary", true, &args, &G_flags->show_summary);
   FindBoolFlag("announce_threads", false, &args, &G_flags->announce_threads);
   FindBoolFlag("full_output", false, &args, &G_flags->full_output);
   FindBoolFlag("show_states", false, &args, &G_flags->show_states);
@@ -5184,6 +5184,7 @@ void ThreadSanitizerParseFlags(vector<string> &args) {
   FindBoolFlag("show_valgrind_context", false, &args, &G_flags->show_valgrind_context);
   FindBoolFlag("show_pc", false, &args, &G_flags->show_pc);
   FindBoolFlag("ignore_in_dtor", true, &args, &G_flags->ignore_in_dtor);
+  FindBoolFlag("exit_after_main", false, &args, &G_flags->exit_after_main);
 
   FindBoolFlag("show_stats", false, &args, &G_flags->show_stats);
   FindBoolFlag("color", false, &args, &G_flags->color);
@@ -5228,12 +5229,6 @@ void ThreadSanitizerParseFlags(vector<string> &args) {
 //  FindIntFlag("num_callers", 15, &args, &G_flags->num_callers);
   // we get num-callers from valgrind flags. 
   G_flags->num_callers = VG_(clo_backtrace_size);
-
-
-  vector<string> log_file;
-  log_file.push_back("-");
-  FindStringFlag("log_file", &args, &log_file);
-  G_flags->log_file = log_file.back();
 
   G_flags->max_n_threads        = 20000;
 
@@ -5423,21 +5418,21 @@ extern void ThreadSanitizerInit() {
     c_bold    = "<font ><b>";
     c_red     = "<font color=red><b>";
     c_green   = "<font color=green><b>";
+    c_magenta = "<font color=magenta><b>";
     c_cyan    = "<font color=cyan><b>";
-    c_lblue   = "<font color=blue><b>";
-    c_dblue   = "<font color=darkblue><b>";
+    c_blue   = "<font color=blue><b>";
     c_yellow  = "<font color=yellow><b>";
     c_default = "</b></font>";
   } else if (G_flags->color) {
     // Enable ANSI colors. 
-    c_bold    = "\033[01;01m";
-    c_red     = "\033[01;31m";
-    c_green   = "\033[01;32m";
-    c_cyan    = "\033[01;35m";
-    c_lblue   = "\033[01;36m";
-    c_dblue   = "\033[01;34m";
-    c_yellow  = "\033[01;33m";
-    c_default = "\033[00;0m";
+    c_bold    = "\033[1m";
+    c_red     = "\033[31m";
+    c_green   = "\033[32m";
+    c_yellow  = "\033[33m";
+    c_blue    = "\033[34m";
+    c_magenta = "\033[35m";
+    c_cyan    = "\033[36m";
+    c_default = "\033[0m";
   }
 
 

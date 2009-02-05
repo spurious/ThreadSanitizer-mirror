@@ -34,6 +34,8 @@
 enum {
   TSREQ_NOOP = VG_USERREQ_TOOL_BASE('T','S'),
   TSREQ_CLEAN_MEMORY,               
+  TSREQ_MAIN_IN,
+  TSREQ_MAIN_OUT,
   TSREQ_MALLOC,
   TSREQ_FREE,
   TSREQ_BENIGN_RACE,                

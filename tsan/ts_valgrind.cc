@@ -399,6 +399,7 @@ VG_REGPARM(2)
   void evh__mem_help_read_N(Addr a, SizeT size) { Mop(a, false, size); }
 
 
+  extern "C" void VG_(show_all_errors)();
 
 Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
   if (!VG_IS_TOOL_USERREQ('T', 'S', args[0]))
@@ -417,6 +418,17 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
       break;
     case TSREQ_CLEAN_MEMORY:
       Put(MALLOC, ts_tid, pc, /*ptr=*/args[1], /*size=*/args[2]);
+      break;
+    case TSREQ_MAIN_IN:
+      // Report("INFO: Entred main(); argc=%d\n", (int)args[1]);
+      break;
+    case TSREQ_MAIN_OUT:
+      if (G_flags->exit_after_main) {
+        Report("INFO: Exited main(); ret=%d\n", (int)args[1]);
+        VG_(show_all_errors)();
+        ThreadSanitizerFini();
+        exit((int)args[1]);
+      }
       break;
     case TSREQ_MALLOC: 
       // Printf("Malloc: %p %ld\n", args[1], args[2]);

@@ -203,6 +203,21 @@ static inline void IGNORE_ALL_END(void) {
 
 
 
+//-------------- Wrapper for main() -------- {{{1
+#define MAIN_WRAPPER_DECL \
+ int I_WRAP_SONAME_FNNAME_ZU(NONE,main) (long argc, char **argv, char **env) 
+
+MAIN_WRAPPER_DECL;
+MAIN_WRAPPER_DECL {
+  int ret; 
+  OrigFn fn;
+  VALGRIND_GET_ORIG_FN(fn);
+  DO_CREQ_v_WW(TSREQ_MAIN_IN,  long, argc, char **, argv); 
+  CALL_FN_W_WWW(ret, fn, argc, argv, env);
+  DO_CREQ_v_W(TSREQ_MAIN_OUT,  void*, ret); 
+  return ret; 
+}
+
 //-------------- MALLOC -------------------- {{{1
 
 #define WRAP_MALLOC(soname, fnname) \

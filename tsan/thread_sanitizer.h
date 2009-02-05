@@ -33,6 +33,8 @@
 #include "ts_setup.h"
 #include "ts_valgrind.h"
 
+
+
 #include "stlport/set"
 #include "stlport/map"
 #include "stlport/hash_map"
@@ -54,6 +56,8 @@
 #define strdup(a) (char*)VG_(strdup)((HChar*)"strdup", (const Char*)a)
 #define snprintf(a,b,c...)     VG_(snprintf)((Char*)a,b,c)
 #define exit VG_(exit)
+#define abort VG_(abort)
+#define memmove VG_(memmove)
 #define usleep(a) /*nothing. TODO.*/
 
 extern "C" long my_strtol(const char *srt, char **end);
@@ -129,7 +133,6 @@ struct FLAGS {
   intptr_t         max_segment_set_size;
   vector<string> file_prefix_to_cut;
   vector<string> ignore;
-  string         log_file;
   intptr_t         max_n_threads;
   bool            compress_cache_lines;
   
@@ -142,8 +145,8 @@ struct FLAGS {
   bool        fast_mode;
   bool        pure_happens_before;
   bool        ignore_in_dtor;
+  bool        exit_after_main;
   bool        demangle;
-  bool        show_summary;
   bool        announce_threads;
   bool        full_output; 
   bool        show_states;
