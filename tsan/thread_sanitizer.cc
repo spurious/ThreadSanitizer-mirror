@@ -74,6 +74,21 @@ static string ReadFileToString(const string &file_name) {
   return res;
 }
 
+// Sets the contents of the file 'file_name' to 'str'.
+static void OpenFileWriteStringAndClose(const string &file_name, 
+                                        const string &str) {
+  SysRes sres = VG_(open)((const Char*)file_name.c_str(), 
+                          VKI_O_WRONLY|VKI_O_CREAT|VKI_O_TRUNC,
+                          VKI_S_IRUSR|VKI_S_IWUSR);
+  if (sres.isError) {
+    Report("WARNING: can not open file %s\n", file_name.c_str());
+    exit(1);
+  }
+  int fd = sres.res;
+  VG_(write)(fd, str.c_str(), str.size());
+  VG_(close)(fd);
+}
+
 //--------- Stats ------------------- {{{1
 // Statistic counters for the entire tool.
 struct Stats {
@@ -3979,12 +3994,21 @@ class ReportStorage {
       VG_(pp_ExeContext)(context);
     }
 
+    n_reports++;
     if (G_flags->html) {
-      n_reports++;
       Report("<b id=race%d>Race report #%d; </b>"
              "<a href=\"#race%d\">Next;</a>  " 
              "<a href=\"#race%d\">Prev;</a>\n", 
              n_reports, n_reports, n_reports+1, n_reports-1);
+    }
+
+    if (!G_flags->summary_file.empty()) {
+      char buff[100];
+      sprintf(buff, "ThreadSanitizer: %d data race(s) reported\n", n_reports);
+      // We overwrite the contents of this file with the new summary. 
+      // We don't do that at the end because even if we crash later
+      // we will already have the summary.
+      OpenFileWriteStringAndClose(G_flags->summary_file, buff);
     }
 
     // Note the {{{ and }}}. These are for vim folds.
@@ -5208,6 +5232,11 @@ void ThreadSanitizerParseFlags(vector<string> &args) {
 
   FindIntFlag("trace_addr", 0, &args, (intptr_t*)&G_flags->trace_addr);
 
+  vector<string> summary_file_tmp;
+  FindStringFlag("summary_file", &args, &summary_file_tmp);
+  if (summary_file_tmp.size() > 0) {
+    G_flags->summary_file = summary_file_tmp.back();
+  }
 
 
   FindIntFlag("max_sid", kMaxSID, &args, &G_flags->max_sid);

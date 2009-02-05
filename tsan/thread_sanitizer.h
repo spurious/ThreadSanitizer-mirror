@@ -125,16 +125,17 @@ string Demangle(const char *str);
 
 //--------- FLAGS ---------------------------------- {{{1
 struct FLAGS {
-  bool        ignore_stack;
+  bool             ignore_stack;
   intptr_t         verbosity;
-  bool         show_stats;
-  bool        show_expected_races;
-  uintptr_t   trace_addr;
+  bool             show_stats;
+  bool             show_expected_races;
+  uintptr_t        trace_addr;
   intptr_t         max_segment_set_size;
-  vector<string> file_prefix_to_cut;
-  vector<string> ignore;
+  vector<string>   file_prefix_to_cut;
+  vector<string>   ignore;
+  string           summary_file; 
   intptr_t         max_n_threads;
-  bool            compress_cache_lines;
+  bool             compress_cache_lines;
   
   intptr_t         sample_events;
   intptr_t         sample_events_depth;
