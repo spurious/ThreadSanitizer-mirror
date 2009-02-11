@@ -6417,7 +6417,7 @@ void Run() {
   Worker(4);
   printf("\tGLOB=%d\n", GLOB);
 }
-REGISTER_TEST(Run, 313)
+REGISTER_TEST2(Run, 313, RACE_DEMO)
 }  // namespace test313
 
 
