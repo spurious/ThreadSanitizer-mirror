@@ -2109,11 +2109,10 @@ class SegmentSet {
     INLINE bool operator () (const SegmentSet *ss1, const SegmentSet *ss2) const {
       DCHECK(ss1->size() == n);
       DCHECK(ss2->size() == n);
-      if (n >= 3 && ss1->GetSID(3) != ss2->GetSID(3)) return false;
-      if (n >= 2 && ss1->GetSID(2) != ss2->GetSID(2)) return false;
+      if (n > 3 && ss1->GetSID(3) != ss2->GetSID(3)) return false;
+      if (n > 2 && ss1->GetSID(2) != ss2->GetSID(2)) return false;
       return ss1->GetSID(0) == ss2->GetSID(0) && 
              ss1->GetSID(1) == ss2->GetSID(1);
-
     }
   };
 
