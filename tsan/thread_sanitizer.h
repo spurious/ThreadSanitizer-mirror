@@ -136,6 +136,7 @@ struct FLAGS {
   string           summary_file; 
   intptr_t         max_n_threads;
   bool             compress_cache_lines;
+  bool             unlock_on_mutex_destroy;
   
   intptr_t         sample_events;
   intptr_t         sample_events_depth;
@@ -164,7 +165,7 @@ struct FLAGS {
   intptr_t     max_sid;
   intptr_t     num_callers_in_history;
   bool         report_races;
-  bool    detect_thread_create;
+  bool         detect_thread_create;
 };
 
 extern FLAGS *G_flags;

@@ -256,7 +256,7 @@ void Report(const char *format, ...) {
     int ret = vsnprintf(buff, buff_size, format, args);
     va_end(args);
     if (ret < buff_size) break;
-    delete buff;
+    delete [] buff;
     buff_size *= 2;
     buff = new char[buff_size];
     // Printf("Resized buff: %d\n", buff_size);
@@ -367,7 +367,7 @@ class LID: public ID {
 
 // LockSet ID.
 // Empty lockset: id == 0
-// Signleton:     id > 0 (id == Lock's id)
+// Singleton:     id > 0 (id == Lock's id)
 // Tuple:         id < 0
 class LSID: public ID {
  public:
@@ -1665,7 +1665,6 @@ class Segment {
     if (recycled_sids_->size() > kRecyclePeriod
         && reusable_sids_->empty()) {
       recycled_sids_->swap(*reusable_sids_);
-//      FlushHBCache();
     }
     return true;
   }
@@ -1858,7 +1857,8 @@ class SegmentSet {
   static NOINLINE void RecycleAllUnused() {
     total_unused_ = 0;
     int n_recycled = 0;
-    for (size_t i = 0; i < vec_->size(); i++) {
+    size_t size = vec_->size();
+    for (size_t i = 0; i < size; i++) {
       SegmentSet *ss = (*vec_)[i];
       CHECK(ss);
       // If it is positive -- it is still used.
@@ -4569,8 +4569,10 @@ class Detector {
       Lock *lock = Lock::Lookup(lock_addr);
       CHECK(lock);
       if (lock->wr_held() || lock->rd_held()) {
-        // TODO: this leads to failures.
-        // cur_thread_->HandleUnlock(lock_addr);
+        if (G_flags->unlock_on_mutex_destroy) {
+          // TODO: this leads to failures.
+          cur_thread_->HandleUnlock(lock_addr);
+        }
       }
       Lock::Destroy(lock_addr);
     }
@@ -5220,6 +5222,7 @@ void ThreadSanitizerParseFlags(vector<string> &args) {
   FindIntFlag("dry_run", 0, &args, &G_flags->dry_run);
   FindBoolFlag("report_races", true, &args, &G_flags->report_races);
   FindBoolFlag("compress_cache_lines", false, &args, &G_flags->compress_cache_lines);
+  FindBoolFlag("unlock_on_mutex_destroy", false, &args, &G_flags->unlock_on_mutex_destroy);
 
   FindIntFlag("sample_events", 0, &args, &G_flags->sample_events);
   FindIntFlag("sample_events_depth", 2, &args, &G_flags->sample_events_depth);
@@ -5532,6 +5535,7 @@ extern void ThreadSanitizerPrintReport(ThreadSanitizerReport *report) {
 // - Compress cache lines 
 // - Optimize the case where a threads signals twice in a row on the same
 //   address.
+// - Unlock locks on destroy.
 // - Fix --ignore-in-dtor if --demangle=no.
 // end. {{{1
 // vim:shiftwidth=2:softtabstop=2:expandtab:tw=80
