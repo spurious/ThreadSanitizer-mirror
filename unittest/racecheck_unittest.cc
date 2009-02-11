@@ -5931,33 +5931,6 @@ void Run() {
 REGISTER_TEST(Run, 126)
 }  // namespace test126
 
-// test127 TP: test for thread graph output {{{1
-namespace  test127 {
-BlockingCounter *blocking_counter;
-int     GLOB = 0;
-void Worker(int depth) {
-  CHECK(depth >= 0);
-  if (depth > 0) {
-    ThreadPool pool(2);
-    pool.StartWorkers();
-    pool.Add(NewCallback(Worker, depth-1));
-    pool.Add(NewCallback(Worker, depth-1));
-
-
-}
-void Run() {
-  printf("test126: negative\n");
-  MyThreadArray t(Worker, Worker, Worker);
-  blocking_counter = new BlockingCounter(3);
-  t.Start();
-  blocking_counter->Wait();
-  GLOB = 1;
-  t.Join();
-  printf("\tGLOB=%d\n", GLOB);
-}
-REGISTER_TEST(Run, 127)
-}  // namespace test126
-
 
 // test300: {{{1
 namespace test300 {
@@ -6421,6 +6394,32 @@ void Run() {
 }
 REGISTER_TEST2(Run, 312, RACE_DEMO)
 }  // namespace test312
+
+// test313 TP: test for thread graph output {{{1
+namespace  test313 {
+BlockingCounter *blocking_counter;
+int     GLOB = 0;
+
+// Worker(N) will do 2^N increments of GLOB, each increment in a separate thread
+void Worker(int depth) {
+  CHECK(depth >= 0);
+  if (depth > 0) {
+    ThreadPool pool(2);
+    pool.StartWorkers();
+    pool.Add(NewCallback(Worker, (void*)(depth-1)));
+    pool.Add(NewCallback(Worker, (void*)(depth-1)));
+  } else {
+    GLOB++; // Race here
+  }
+}
+void Run() {
+  printf("test127: positive\n");
+  Worker(4);
+  printf("\tGLOB=%d\n", GLOB);
+}
+REGISTER_TEST(Run, 313)
+}  // namespace test313
+
 
 
 // test400: Demo of a simple false positive. {{{1
