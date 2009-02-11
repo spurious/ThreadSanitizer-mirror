@@ -5931,6 +5931,33 @@ void Run() {
 REGISTER_TEST(Run, 126)
 }  // namespace test126
 
+// test127 TP: test for thread graph output {{{1
+namespace  test127 {
+BlockingCounter *blocking_counter;
+int     GLOB = 0;
+void Worker(int depth) {
+  CHECK(depth >= 0);
+  if (depth > 0) {
+    ThreadPool pool(2);
+    pool.StartWorkers();
+    pool.Add(NewCallback(Worker, depth-1));
+    pool.Add(NewCallback(Worker, depth-1));
+
+
+}
+void Run() {
+  printf("test126: negative\n");
+  MyThreadArray t(Worker, Worker, Worker);
+  blocking_counter = new BlockingCounter(3);
+  t.Start();
+  blocking_counter->Wait();
+  GLOB = 1;
+  t.Join();
+  printf("\tGLOB=%d\n", GLOB);
+}
+REGISTER_TEST(Run, 127)
+}  // namespace test126
+
 
 // test300: {{{1
 namespace test300 {

@@ -437,6 +437,7 @@ Closure *NewCallback(T f, void *p1) {
   Usage: 
   {
     ThreadPool pool(n_workers);
+    pool.StartWorkers();
     pool.Add(NewCallback(func_with_no_args));
     pool.Add(NewCallback(func_with_one_arg, arg));
     pool.Add(NewCallback(func_with_two_args, arg1, arg2));
