@@ -5535,6 +5535,8 @@ extern void ThreadSanitizerPrintReport(ThreadSanitizerReport *report) {
 // - Optimize the case where a threads signals twice in a row on the same
 //   address.
 // - Unlock locks on destroy.
+//   Depends on: give a warning instead of an assert if a lock is released by a
+//   thread that did not acquire it.
 // - Fix --ignore-in-dtor if --demangle=no.
 // end. {{{1
 // vim:shiftwidth=2:softtabstop=2:expandtab:tw=80
