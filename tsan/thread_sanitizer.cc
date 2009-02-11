@@ -2197,9 +2197,9 @@ class SegmentSet {
   static int                   total_unused_;
 
 
+  SID     sids_[kMaxSegmentSetSize];
   int32_t size_;
   int32_t ref_count_;
-  SID     sids_[kMaxSegmentSetSize];
 };
 
 SegmentSet::Map      *SegmentSet::map_;
