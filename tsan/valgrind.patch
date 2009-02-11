@@ -1,6 +1,6 @@
 Index: include/pub_tool_tooliface.h
 ===================================================================
---- include/pub_tool_tooliface.h	(revision 8942)
+--- include/pub_tool_tooliface.h	(revision 9063)
 +++ include/pub_tool_tooliface.h	(working copy)
 @@ -64,11 +64,23 @@
  
@@ -28,7 +28,7 @@ Index: include/pub_tool_tooliface.h
  /* Basic tool functions */
 Index: include/pub_tool_libcassert.h
 ===================================================================
---- include/pub_tool_libcassert.h	(revision 8942)
+--- include/pub_tool_libcassert.h	(revision 9063)
 +++ include/pub_tool_libcassert.h	(working copy)
 @@ -31,18 +31,20 @@
  #ifndef __PUB_TOOL_LIBCBASSERT_H
@@ -63,7 +63,7 @@ Index: include/pub_tool_libcassert.h
  __attribute__ ((__noreturn__))
 Index: include/pub_tool_errormgr.h
 ===================================================================
---- include/pub_tool_errormgr.h	(revision 8942)
+--- include/pub_tool_errormgr.h	(revision 9063)
 +++ include/pub_tool_errormgr.h	(working copy)
 @@ -62,6 +62,14 @@
  Char*       VG_(get_error_string)  ( Error* err );
@@ -95,9 +95,9 @@ Index: include/pub_tool_errormgr.h
     error -- useful for errors that can only happen once.  The errors can be
 Index: configure.in
 ===================================================================
---- configure.in	(revision 8942)
+--- configure.in	(revision 9063)
 +++ configure.in	(working copy)
-@@ -1629,6 +1629,9 @@
+@@ -1717,6 +1717,9 @@
     helgrind/Makefile
     helgrind/tests/Makefile
     helgrind/docs/Makefile
@@ -109,7 +109,7 @@ Index: configure.in
     massif/perf/Makefile
 Index: Makefile.flags.am
 ===================================================================
---- Makefile.flags.am	(revision 8942)
+--- Makefile.flags.am	(revision 9063)
 +++ Makefile.flags.am	(working copy)
 @@ -5,6 +5,7 @@
                   -Wpointer-arith -Wstrict-prototypes -Wmissing-declarations \
@@ -162,16 +162,16 @@ Index: Makefile.flags.am
  				@FLAG_MAIX64@ -mcpu=powerpc64 -g
  
 @@ -54,6 +63,7 @@
- AM_FLAG_M3264_PRI = $(AM_FLAG_M3264_@VG_PLATFORM_PRI@)
- AM_CPPFLAGS_PRI   = $(AM_CPPFLAGS_@VG_PLATFORM_PRI@)
- AM_CFLAGS_PRI     = $(AM_CFLAGS_@VG_PLATFORM_PRI@)
-+AM_CXXFLAGS_PRI     = $(AM_CXXFLAGS_@VG_PLATFORM_PRI@)
- AM_CCASFLAGS_PRI  = $(AM_CCASFLAGS_@VG_PLATFORM_PRI@)
+ AM_FLAG_M3264_PRI = $(AM_FLAG_M3264_@VGCONF_PLATFORM_PRI_CAPS@)
+ AM_CPPFLAGS_PRI   = $(AM_CPPFLAGS_@VGCONF_PLATFORM_PRI_CAPS@)
+ AM_CFLAGS_PRI     = $(AM_CFLAGS_@VGCONF_PLATFORM_PRI_CAPS@)
++AM_CXXFLAGS_PR    = $(AM_CXXFLAGS_@VG_PLATFORM_PRI@)
+ AM_CCASFLAGS_PRI  = $(AM_CCASFLAGS_@VGCONF_PLATFORM_PRI_CAPS@)
  
- if VGP_HAVE_SECONDARY
+ if VGCONF_HAVE_PLATFORM_SEC_CAPS
 Index: Makefile.am
 ===================================================================
---- Makefile.am	(revision 8942)
+--- Makefile.am	(revision 9063)
 +++ Makefile.am	(working copy)
 @@ -10,6 +10,7 @@
  		lackey \
@@ -183,7 +183,7 @@ Index: Makefile.am
  EXP_TOOLS = 	exp-omega \
 Index: coregrind/m_errormgr.c
 ===================================================================
---- coregrind/m_errormgr.c	(revision 8942)
+--- coregrind/m_errormgr.c	(revision 9063)
 +++ coregrind/m_errormgr.c	(working copy)
 @@ -482,7 +482,7 @@
  /* Top-level entry point to the error management subsystem.
