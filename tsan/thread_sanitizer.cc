@@ -3123,6 +3123,9 @@ struct Thread {
         Report("INFO: T%d has been created by T%d at this point: {{{\n%s}}}\n", 
                tid_.raw(), parent_tid_.raw(), 
                creation_context_->ToString().c_str());
+        Thread * parent = GetIfExists(parent_tid_);
+        CHECK(parent);
+        parent->Announce();
       } else {
         Report("INFO: T%d has been created by T%d. "
                "Use --announce-threads to see the creation stack.\n",
