@@ -2175,7 +2175,7 @@ class SegmentSet {
       DCHECK(kMaxSegmentSetSize == 4);
     }
  
-#if 0
+#if 1
     typedef hash_map<SegmentSet*, SSID, SSHash<2>, SSEq<2> > Map2;
     typedef hash_map<SegmentSet*, SSID, SSHash<3>, SSEq<3> > Map3;
     typedef hash_map<SegmentSet*, SSID, SSHash<4>, SSEq<4> > Map4;
