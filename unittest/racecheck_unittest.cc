@@ -6426,14 +6426,14 @@ void Worker(int depth) {
   if (depth > 0) {
     ThreadPool pool(2);
     pool.StartWorkers();
-    pool.Add(NewCallback(Worker, (void*)(depth-1)));
-    pool.Add(NewCallback(Worker, (void*)(depth-1)));
+    pool.Add(NewCallback(Worker, depth-1));
+    pool.Add(NewCallback(Worker, depth-1));
   } else {
     GLOB++; // Race here
   }
 }
 void Run() {
-  printf("test127: positive\n");
+  printf("test313: positive\n");
   Worker(4);
   printf("\tGLOB=%d\n", GLOB);
 }

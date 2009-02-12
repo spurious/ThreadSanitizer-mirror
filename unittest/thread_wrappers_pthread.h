@@ -412,8 +412,7 @@ struct Closure {
   }
 }; 
 
-template <class T>
-Closure *NewCallback(T f) {
+Closure *NewCallback(void (*f)()) {
   Closure *res = new Closure;
   res->n_params = 0;
   res->f = (void*)(f);
@@ -422,16 +421,27 @@ Closure *NewCallback(T f) {
   return res;
 }
 
-template <class T>
-Closure *NewCallback(T f, void *p1) {
+template <class P1>
+Closure *NewCallback(void (*f)(P1), P1 p1) {
+  CHECK(sizeof(P1) <= sizeof(void*));
   Closure *res = new Closure;
   res->n_params = 1;
   res->f = (void*)(f);
-  res->param1 = p1;
+  res->param1 = (void*)p1;
   res->param2 = NULL;
   return res;
 }
 
+template <class T, class P1, class P2>
+Closure *NewCallback(void (*f)(P1, P2), P1 p1, P2 p2) {
+  CHECK(sizeof(P1) <= sizeof(void*));
+  Closure *res = new Closure;
+  res->n_params = 2;
+  res->f = (void*)(f);
+  res->param1 = (void*)p1;
+  res->param2 = (void*)p2;
+  return res;
+}
 
 /*! A thread pool that uses ProducerConsumerQueue. 
   Usage: 
