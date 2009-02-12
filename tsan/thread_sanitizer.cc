@@ -5242,7 +5242,7 @@ void ThreadSanitizerParseFlags(vector<string> &args) {
   FindIntFlag("dry_run", 0, &args, &G_flags->dry_run);
   FindBoolFlag("report_races", true, &args, &G_flags->report_races);
   FindBoolFlag("compress_cache_lines", false, &args, &G_flags->compress_cache_lines);
-  FindBoolFlag("unlock_on_mutex_destroy", false, &args, &G_flags->unlock_on_mutex_destroy);
+  FindBoolFlag("unlock_on_mutex_destroy", true, &args, &G_flags->unlock_on_mutex_destroy);
 
   FindIntFlag("sample_events", 0, &args, &G_flags->sample_events);
   FindIntFlag("sample_events_depth", 2, &args, &G_flags->sample_events_depth);
@@ -5555,9 +5555,6 @@ extern void ThreadSanitizerPrintReport(ThreadSanitizerReport *report) {
 // - Compress cache lines 
 // - Optimize the case where a threads signals twice in a row on the same
 //   address.
-// - Unlock locks on destroy.
-//   Depends on: give a warning instead of an assert if a lock is released by a
-//   thread that did not acquire it.
 // - Fix --ignore-in-dtor if --demangle=no.
 // end. {{{1
 // vim:shiftwidth=2:softtabstop=2:expandtab:tw=80
