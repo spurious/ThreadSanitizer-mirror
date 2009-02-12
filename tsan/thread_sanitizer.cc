@@ -49,7 +49,7 @@ const int kMaxSegmentSetSize = 4;
 
 //--------- Globals --------------- {{{1
 
-bool g_so_far_only_one_thread = false;
+bool g_so_far_only_one_thread = true;
 
 FLAGS *G_flags = NULL;
 
