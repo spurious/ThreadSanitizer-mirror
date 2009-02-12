@@ -5951,6 +5951,28 @@ void Run() {
 REGISTER_TEST(Run, 127)
 }  // namespace test127
 
+// test128. Suppressed code in concurrent accesses {{{1
+// Please use --suppressions=unittest.supp flag when running this test.
+namespace test128 {
+Mutex mu;
+int GLOB = 0;
+void Worker() {
+  usleep(100000);
+  mu.Lock();
+  GLOB++;
+  mu.Unlock();
+}
+void ThisFunctionShouldBeSuppressed() {
+  GLOB++;
+}
+void Run() {
+  printf("test128: Suppressed code in concurrent accesses.\n");
+  MyThreadArray t(Worker, ThisFunctionShouldBeSuppressed);
+  t.Start();
+  t.Join();
+}
+REGISTER_TEST2(Run, 128, FEATURE | EXCLUDE_FROM_ALL)
+}  // namespace test128
 
 // test300: {{{1
 namespace test300 {
