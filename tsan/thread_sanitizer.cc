@@ -881,32 +881,38 @@ class LockSet {
     ls_add_cache_->Insert(lsid.raw(), lid.raw(), res.raw());
     return res;
   }
-  
-  NOINLINE static LSID Remove(LSID lsid, Lock *lock) {
-    CHECK(!lsid.IsEmpty());
+ 
+  // If lock is present in lsid, set new_lsid to (lsid \ lock) and return true.
+  // Otherwise set new_lsid to lsid and return false.
+  NOINLINE static bool Remove(LSID lsid, Lock *lock, LSID *new_lsid) {
+    *new_lsid = lsid;
+    if (lsid.IsEmpty()) return false;
     LID lid = lock->lid();
 
     if (lsid.IsSingleton()) {
       // removing the only lock -> LSID(0)
-      CHECK(lsid.Singleton() == lid);
+      if (lsid.Singleton() != lid) return false;
       G_stats->ls_remove_from_singleton++;
-      return LSID(0);
+      *new_lsid = LSID(0);
+      return true;
     }
 
     int cache_res;
     if (ls_rem_cache_->Lookup(lsid.raw(), lid.raw(), &cache_res)) {
       G_stats->ls_rem_cache_hit++;
-      return LSID(cache_res);
+      *new_lsid = LSID(cache_res);
+      return true;
     }
 
     LSSet set = Get(lsid);
     LSSet::iterator it = set.find(lid);
-    CHECK(it != set.end());  // lock must be present.
+    if (it == set.end()) return false;
     set.erase(it);
     G_stats->ls_remove_from_multi++;
     LSID res = ComputeId(set);
     ls_rem_cache_->Insert(lsid.raw(), lid.raw(), res.raw());
-    return res;
+    *new_lsid = res;
+    return true;
   }
 
   NOINLINE static bool IntersectionIsEmpty(LSID lsid1, LSID lsid2) {
@@ -3325,11 +3331,11 @@ struct Thread {
 
     if (is_w_lock) {
       lock->WrUnlock();
-      wr_lockset_ = LockSet::Remove(wr_lockset_, lock);
-      rd_lockset_ = LockSet::Remove(rd_lockset_, lock);
+      LockSet::Remove(wr_lockset_, lock, &wr_lockset_);
+      LockSet::Remove(rd_lockset_, lock, &rd_lockset_);
     } else {
       lock->RdUnlock();
-      rd_lockset_ = LockSet::Remove(rd_lockset_, lock);
+      LockSet::Remove(rd_lockset_, lock, &rd_lockset_);
     }
 
     NewSegmentForLockingEvent();
