@@ -5932,6 +5932,26 @@ REGISTER_TEST(Run, 126)
 }  // namespace test126
 
 
+// test127. Bad code: unlocking a mutex locked by another thread. {{{1
+namespace test127 {
+Mutex mu;
+void Thread1() {
+  mu.Lock();
+}
+void Thread2() {
+  usleep(100000);
+  mu.Unlock();
+}
+void Run() {
+  printf("test127: unlocking a mutex locked by another thread.\n");
+  MyThreadArray t(Thread1, Thread2);
+  t.Start();
+  t.Join();
+}
+REGISTER_TEST(Run, 127)
+}  // namespace test127
+
+
 // test300: {{{1
 namespace test300 {
 int     GLOB = 0;
