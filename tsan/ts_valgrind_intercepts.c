@@ -404,7 +404,9 @@ PTH_FUNC(int, pthreadZucreateZAZa, // pthread_create@*
    xargs[1] = (Word)arg;
    xargs[2] = 1; /* serves as a spinlock -- sigh */
 
-   CALL_FN_W_WWWW(ret, fn, thread,attr,ThreadSanitizerStartThread,&xargs[0]);
+   IGNORE_ALL_BEGIN();
+     CALL_FN_W_WWWW(ret, fn, thread,attr,ThreadSanitizerStartThread,&xargs[0]);
+   IGNORE_ALL_END();
 
    if (ret == 0) {
       /* we have to wait for the child to notify the tool of its
