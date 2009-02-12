@@ -789,8 +789,7 @@ class Lock {
 
   string ToString() const {
     char buff[100];
-    sprintf(buff, "lk[a=%p,lid=%d,rd=%d,wr=%d]", 
-            (void*)lock_addr(), lid_.raw(), rd_held(), wr_held());
+    sprintf(buff, "L%d (%p)", lid_.raw(), (void*)lock_addr());
     return string(buff);
   }
 
@@ -810,12 +809,12 @@ class Lock {
     }
     CHECK(lock);
     if(lock->last_lock_site_) {
-      Report("   L%d (%p)\n%s", 
-             lock->lid_.raw(), lock->lock_addr_,
+      Report("   %s\n%s", 
+             lock->ToString().c_str(),
              lock->last_lock_site_->ToString().c_str());
     } else {
-      Report("   L%d (%p). This lock was probably destroyed" 
-                 " w/o calling Unlock()\n", lock->lid_.raw(), lock->lock_addr_);
+      Report("   %s. This lock was probably destroyed"
+                 " w/o calling Unlock()\n", lock->ToString().c_str());
     }
   }
 
@@ -3297,7 +3296,7 @@ struct Thread {
       lock->WrLock(CreateStackTrace());
     } else {
       if (lock->wr_held()) {
-        PrintStackTrace();
+        ReportStackTrace();
       }
       rd_lockset_ = LockSet::Add(rd_lockset_, lock);
       lock->RdLock(CreateStackTrace());
@@ -3329,13 +3328,24 @@ struct Thread {
       }
     }
 
+    bool removed = false;
+
     if (is_w_lock) {
       lock->WrUnlock();
-      LockSet::Remove(wr_lockset_, lock, &wr_lockset_);
-      LockSet::Remove(rd_lockset_, lock, &rd_lockset_);
+      removed =  LockSet::Remove(wr_lockset_, lock, &wr_lockset_)
+              && LockSet::Remove(rd_lockset_, lock, &rd_lockset_);
     } else {
       lock->RdUnlock();
-      LockSet::Remove(rd_lockset_, lock, &rd_lockset_);
+      removed = LockSet::Remove(rd_lockset_, lock, &rd_lockset_);
+    }
+
+    if (!removed) {
+      // TODO(kcc): do we need to issue a real valgrind-ish warning?
+      Report("WARNING: Lock %s was released by thread T%d"
+             " which did not acquire this lock.\n",
+             lock->ToString().c_str(),
+             tid().raw());
+      ReportStackTrace();
     }
 
     NewSegmentForLockingEvent();
@@ -3600,9 +3610,9 @@ struct Thread {
   }
 
 
-  void PrintStackTrace(uintptr_t pc = 0, int max_len = -1) {
+  void ReportStackTrace(uintptr_t pc = 0, int max_len = -1) {
     StackTrace *trace = CreateStackTrace(pc, max_len);
-    Printf("%s", trace->ToString().c_str());
+    Report("%s", trace->ToString().c_str());
     StackTrace::Delete(trace);
   }
 
@@ -4488,23 +4498,23 @@ class Detector {
       Printf("T%d: EXPECT_RACE: %p '%s'\n", e_->tid(), 
              e_->a(), 
              expected_race.description);
-      cur_thread_->PrintStackTrace(e_->pc());
+      cur_thread_->ReportStackTrace(e_->pc());
     }
 
   }
 
   void HandleStackTrace() {
     e_->Print();
-    cur_thread_->PrintStackTrace();
+    cur_thread_->ReportStackTrace();
   }
 
   // HB_LOCK
   void HandleHBLock() {
     if (G_flags->verbosity >= 2) {
       e_->Print();
-//      cur_thread_->PrintStackTrace();
+//      cur_thread_->ReportStackTrace();
     }
-//    cur_thread_->PrintStackTrace(); 
+//    cur_thread_->ReportStackTrace(); 
     Lock *lock = Lock::LookupOrCreate(e_->a());
     CHECK(lock);
     lock->set_is_pure_happens_before(true);
@@ -4538,7 +4548,7 @@ class Detector {
   void HandleLockBefore() {
     if (G_flags->verbosity >= 2) {
       e_->Print();
-    //  thr->PrintStackTrace();
+    //  thr->ReportStackTrace();
     }
     cur_thread_->HandleLockBefore(e_->a());
   }
@@ -4546,7 +4556,7 @@ class Detector {
   void HandleLock(bool is_w_lock) {
     if (G_flags->verbosity >= 2) {
       e_->Print();
-      cur_thread_->PrintStackTrace();
+      cur_thread_->ReportStackTrace();
     }
     cur_thread_->HandleLock(is_w_lock);
   }
@@ -4555,7 +4565,7 @@ class Detector {
   void HandleUnlock() {
     if (G_flags->verbosity >= 2) {
       e_->Print();
-      cur_thread_->PrintStackTrace();
+      cur_thread_->ReportStackTrace();
     }
     cur_thread_->HandleUnlock(e_->a());
   }
@@ -4564,7 +4574,7 @@ class Detector {
   void HandleLockCreateOrDestroy() {
     uintptr_t lock_addr = e_->a();
     if (e_->type() == LOCK_CREATE) {
-//      cur_thread_->PrintStackTrace();
+//      cur_thread_->ReportStackTrace();
       Lock::Create(lock_addr);
     } else {
       CHECK(e_->type() == LOCK_DESTROY);
@@ -4610,7 +4620,7 @@ class Detector {
   void HandleWaitBefore() {
     if (G_flags->verbosity >= 2) {
       e_->Print();
-      cur_thread_->PrintStackTrace();
+      cur_thread_->ReportStackTrace();
     }
     cur_thread_->HandleWaitBefore(e_->a(), e_->info());
   }
@@ -4788,7 +4798,7 @@ class Detector {
              tid.raw(), is_w ? "wr" : "rd", 
              size, addr, new_sval.ToString().c_str(),
              is_published ? " P" : "");
-      thr->PrintStackTrace(GetVgPcOfCurrentThread());
+      thr->ReportStackTrace(GetVgPcOfCurrentThread());
     }
 
     // Check for race.
@@ -4923,7 +4933,7 @@ class Detector {
              Segment::ToString(cur_thread_->sid()).c_str(),
              cur_thread_->segment()->vts()->ToString().c_str()
              );
-      // cur_thread_->PrintStackTrace(e_->pc());
+      // cur_thread_->ReportStackTrace(e_->pc());
     }
 
     uintptr_t b = a + size;
@@ -4949,7 +4959,7 @@ class Detector {
     uintptr_t a = e_->a();
     if (G_flags->verbosity >= 2) {
       e_->Print();
-    //  cur_thread_->PrintStackTrace(e_->pc());
+    //  cur_thread_->ReportStackTrace(e_->pc());
     }
     if(!G_heap_map->count(a))
       return;
