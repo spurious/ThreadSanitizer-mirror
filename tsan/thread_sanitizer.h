@@ -245,6 +245,10 @@ extern void ThreadSanitizerHandleRtnExit(int32_t tid);
 extern void ThreadSanitizerPrintReport(ThreadSanitizerReport *report);
 extern void ThreadSanitizerPrintUsage();
 
+extern bool g_so_far_only_one_thread;
+extern bool g_has_entered_main;
+extern bool g_has_exited_main;
+
 //--------- Event ------------------------- {{{1
 class Event {
  public:

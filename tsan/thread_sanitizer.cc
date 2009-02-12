@@ -50,6 +50,8 @@ const int kMaxSegmentSetSize = 4;
 //--------- Globals --------------- {{{1
 
 bool g_so_far_only_one_thread = true;
+bool g_has_entered_main = false;
+bool g_has_exited_main = false;
 
 FLAGS *G_flags = NULL;
 
@@ -4574,18 +4576,21 @@ class Detector {
   void HandleLockCreateOrDestroy() {
     uintptr_t lock_addr = e_->a();
     if (e_->type() == LOCK_CREATE) {
-//      cur_thread_->ReportStackTrace();
       Lock::Create(lock_addr);
     } else {
       CHECK(e_->type() == LOCK_DESTROY);
-      // When destroying a lock, we must unlock it. 
-      // A locked pthread_mutex_t can not be destroyed, 
-      // but other lock types can.
+      // A locked pthread_mutex_t can not be destroyed but other lock types can.
+      // When destroying a lock, we must unlock it.
+      // If there is a bug in a program when someone attempts to unlock
+      // a destoyed lock, we are likely to fail in an assert.
+      //
+      // We do not unlock-on-destroy after main() has exited. 
+      // This is because global Mutex objects may be desctructed while threads
+      // holding them are still running. Urgh...
       Lock *lock = Lock::Lookup(lock_addr);
       CHECK(lock);
       if (lock->wr_held() || lock->rd_held()) {
-        if (G_flags->unlock_on_mutex_destroy) {
-          // TODO: this leads to failures.
+        if (G_flags->unlock_on_mutex_destroy && !g_has_exited_main) {
           cur_thread_->HandleUnlock(lock_addr);
         }
       }

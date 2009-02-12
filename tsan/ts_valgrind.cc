@@ -420,9 +420,11 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
       Put(MALLOC, ts_tid, pc, /*ptr=*/args[1], /*size=*/args[2]);
       break;
     case TSREQ_MAIN_IN:
+      g_has_entered_main = true;
       // Report("INFO: Entred main(); argc=%d\n", (int)args[1]);
       break;
     case TSREQ_MAIN_OUT:
+      g_has_exited_main = true;
       if (G_flags->exit_after_main) {
         Report("INFO: Exited main(); ret=%d\n", (int)args[1]);
         VG_(show_all_errors)();
