@@ -104,7 +104,7 @@ using std::lexicographical_compare_3way;
   #define DEBUG_MODE (1)
   #define INLINE
 #else
-  #define DCHECK(a)
+  #define DCHECK(a) do { if (0) { if (a) {} } } while(0)
   #define DEBUG_MODE (0)
   #define INLINE  inline  __attribute__ ((always_inline))
 #endif

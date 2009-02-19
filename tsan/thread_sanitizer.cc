@@ -2785,7 +2785,7 @@ class Cache {
     } else {
       // taking an existing cache line from storage.
       res = *line_for_this_tag;
-      DCHECK(!res->used()->Empty());
+      DCHECK(!res->used().Empty());
       lines_[cli]        = res;
       G_stats->cache_fetch++;
     }
