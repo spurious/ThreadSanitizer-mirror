@@ -309,6 +309,20 @@ string PcToRtnNameAndFilePos(uintptr_t pc) {
   return rtn_name + " " + file_name + ":" + buff;
 }
 
+class ScopeTimer {
+ public:
+  ScopeTimer(const char * what) : what_(what) {
+    start_ = VG_(read_millisecond_timer)();
+  }
+  ~ScopeTimer() {
+    UInt end = VG_(read_millisecond_timer)();
+    Printf("%s: %,dms\n", what_, end - start_);
+  }
+ private:
+  const char * what_;
+  UInt start_;
+};
+
 //--------- ID ---------------------- {{{1
 // We wrap int32_t into ID class and then inherit various ID type from ID.
 // This is done in an attempt to implement type safety of IDs, i.e. 
@@ -1853,29 +1867,6 @@ class SegmentSet {
     return res;
   }
 
-
-  static INLINE void RecycleAllUnusedIfNeeded() {
-    const int kRecycleThreashold = DEBUG_MODE ? 100 : 10000;
-    if (total_unused_ >= kRecycleThreashold) {  // TODO
-      RecycleAllUnused();
-    }
-  }
-
-  static NOINLINE void RecycleAllUnused() {
-    total_unused_ = 0;
-    int n_recycled = 0;
-    size_t size = vec_->size();
-    for (size_t i = 0; i < size; i++) {
-      SegmentSet *ss = (*vec_)[i];
-      CHECK(ss);
-      // If it is positive -- it is still used.
-      // If it is negative -- it is already recycled.
-      if (ss->ref_count_) continue; 
-      ss->RecycleOneSegmentSet(SSID(-(int)i - 1));
-      n_recycled++;
-    }
-  }
-
   void RecycleOneSegmentSet(SSID ssid) {
     DCHECK(ref_count_ == 0);
     DCHECK(ssid.valid());
@@ -1892,8 +1883,6 @@ class SegmentSet {
       Segment::Unref(sid, "SegmentSet::Recycle");
     }
   
-    this->ref_count_ = -999;  // avoid recycling it again. 
-    reused_->push_back(ssid);
     map_->Erase(this);
     G_stats->ss_recycle++;
   }
@@ -1925,7 +1914,7 @@ class SegmentSet {
       DCHECK(sset->ref_count_ > 0);
       sset->ref_count_--;
       if (sset->ref_count_ == 0) {
-        total_unused_++;
+        reused_->push_back(ssid);
       }
     }
   }
@@ -1957,7 +1946,6 @@ class SegmentSet {
     }
     map_->Clear();
     vec_->clear();
-    total_unused_ = 0;
     reused_->clear();
   }
 
@@ -2021,17 +2009,27 @@ class SegmentSet {
     DCHECK(sizeof(int32_t) == sizeof(SID));
     SSID res_ssid;
     SegmentSet *res_ss = 0;
-    if (!reused_->empty()) {
-      // reuse one
+
+    while (reused_->size() > G_flags->segment_set_recycle_queue_size) {
       res_ssid = reused_->back();
       reused_->pop_back();
       int idx = -res_ssid.raw()-1;
       res_ss = (*vec_)[idx];
       DCHECK(res_ss);
       DCHECK(res_ss == Get(res_ssid));
-      DCHECK(res_ss->ref_count_ == -999);
-      G_stats->ss_reuse++;
-    } else {
+      DCHECK(res_ss->ref_count_ >= 0);
+      if (res_ss->ref_count_ == 0) {
+        // reuse one
+        res_ss->RecycleOneSegmentSet(res_ssid);
+        G_stats->ss_reuse++;
+        break;
+      } else {
+        // this SSID is still in use, try another one or create new
+        res_ss = 0;
+      }
+    }
+
+    if (res_ss == 0) {
       // create a new one
       ScopedMallocCostCenter cc("SegmentSet::CreateNewSegmentSet");
       G_stats->ss_create++;
@@ -2201,7 +2199,6 @@ class SegmentSet {
   static Map                  *map_;
   static vector<SegmentSet *> *vec_;
   static vector<SSID>         *reused_;
-  static int                   total_unused_;
 
 
   SID     sids_[kMaxSegmentSetSize];
@@ -2212,7 +2209,6 @@ class SegmentSet {
 SegmentSet::Map      *SegmentSet::map_;
 vector<SegmentSet *> *SegmentSet::vec_;
 vector<SSID>         *SegmentSet::reused_;
-int                   SegmentSet::total_unused_;
 
 
 
@@ -4822,7 +4818,6 @@ class Detector {
                                      old_sval.rd_ssid());
     RefAndUnrefTwoSegSetsIfDifferent(new_sval.wr_ssid(),
                                      old_sval.wr_ssid());
-    SegmentSet::RecycleAllUnusedIfNeeded();
 
     *sval_p = new_sval;
 
@@ -5191,6 +5186,14 @@ static void FindIntFlag(const char *name, intptr_t default_val,
   } while(cont); 
 }
 
+static void FindUIntFlag(const char *name, intptr_t default_val,
+                 vector<string> *args, uintptr_t *retval) {
+  intptr_t signed_int;
+  FindIntFlag(name, default_val, args, &signed_int);
+  CHECK(signed_int >= 0);
+  *retval = signed_int;
+}
+
 void FindStringFlag(const char *name, vector<string> *args,
                     vector<string> *retval) {
   bool cont = false;
@@ -5220,6 +5223,8 @@ void ThreadSanitizerParseFlags(vector<string> &args) {
 
   FindBoolFlag("ignore_stack", true, &args, &G_flags->ignore_stack);
   FindIntFlag("keep_history", 1, &args, &G_flags->keep_history);
+  FindUIntFlag("segment_set_recycle_queue_size", DEBUG_MODE ? 10 : 10000, &args,
+               &G_flags->segment_set_recycle_queue_size);
   FindBoolFlag("fast_mode", true, &args, &G_flags->fast_mode);
   FindBoolFlag("pure_happens_before", false, &args, &G_flags->pure_happens_before);
   FindBoolFlag("show_expected_races", false, &args, 

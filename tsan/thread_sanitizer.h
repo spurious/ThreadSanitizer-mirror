@@ -131,6 +131,7 @@ struct FLAGS {
   bool             show_expected_races;
   uintptr_t        trace_addr;
   intptr_t         max_segment_set_size;
+  uintptr_t        segment_set_recycle_queue_size;
   vector<string>   file_prefix_to_cut;
   vector<string>   ignore;
   string           summary_file; 
