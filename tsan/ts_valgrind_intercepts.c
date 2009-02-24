@@ -259,12 +259,29 @@ MAIN_WRAPPER_DECL {
     return ret; \
   }
 
+#define WRAP_POSIX_MEMALIGN(soname, fnname) \
+  int I_WRAP_SONAME_FNNAME_ZU(soname,fnname) (void **ptr, long a, long size);\
+  int I_WRAP_SONAME_FNNAME_ZU(soname,fnname) (void **ptr, long a, long size){\
+    OrigFn fn;\
+    int ret;\
+    VALGRIND_GET_ORIG_FN(fn);\
+    IGNORE_ALL_BEGIN(); \
+      CALL_FN_W_WWW(ret, fn, ptr, a, size); \
+    IGNORE_ALL_END(); \
+    if (ret == 0) \
+      DO_CREQ_v_WW(TSREQ_MALLOC,  void*, *ptr, long, size); \
+    return ret; \
+  }
+
+
 
 WRAP_MALLOC(m_libc_soname, malloc);
-
 WRAP_MALLOC(NONE, malloc);
-WRAP_MALLOC(NONE, vmalloc);
-WRAP_MALLOC(NONE, pvmalloc);
+
+WRAP_MALLOC(m_libc_soname, valloc);
+WRAP_MALLOC(NONE, valloc);
+WRAP_MALLOC(m_libc_soname, pvalloc);
+WRAP_MALLOC(NONE, pvalloc);
 WRAP_MALLOC(NONE, _Znam);
 WRAP_MALLOC(NONE, _Znwm);
 WRAP_MALLOC(NONE, _Znaj);
@@ -275,7 +292,10 @@ WRAP_CALLOC(NONE, calloc);
 
 WRAP_REALLOC(m_libc_soname, realloc); // TODO: handle free inside realloc
 WRAP_REALLOC(NONE, realloc); // TODO: handle free inside realloc
+WRAP_REALLOC(m_libc_soname, memalign);
 WRAP_REALLOC(NONE, memalign);
+WRAP_POSIX_MEMALIGN(m_libc_soname, posix_memalign);
+WRAP_POSIX_MEMALIGN(NONE, posix_memalign);
 
 
 #define WRAP_FREE(soname, fnname) \
