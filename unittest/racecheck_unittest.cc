@@ -5129,6 +5129,7 @@ int       *REALLOC;
 int       *VALLOC;
 int       *PVALLOC;
 int       *MEMALIGN;
+int       *POSIX_MEMALIGN;
 
 int       *NEW;
 int       *NEW_ARR;
@@ -5145,6 +5146,7 @@ void Worker() {
   (*VALLOC)++;
   (*PVALLOC)++;
   (*MEMALIGN)++;
+  (*POSIX_MEMALIGN)++;
 
   (*NEW)++;
   (*NEW_ARR)++;
@@ -5159,6 +5161,7 @@ void Run() {
   VALLOC = (int*)valloc(sizeof(int));
   PVALLOC = (int*)valloc(sizeof(int));  // TODO: pvalloc breaks helgrind.
   MEMALIGN = (int*)memalign(64, sizeof(int));
+  CHECK(0 == posix_memalign((void**)&POSIX_MEMALIGN, 64, sizeof(int)));
 
   NEW     = new int;
   NEW_ARR = new int[10];
@@ -5173,6 +5176,7 @@ void Run() {
   ANNOTATE_EXPECT_RACE(VALLOC, "real race on a valloc-ed object");
   ANNOTATE_EXPECT_RACE(PVALLOC, "real race on a pvalloc-ed object");
   ANNOTATE_EXPECT_RACE(MEMALIGN, "real race on a memalign-ed object");
+  ANNOTATE_EXPECT_RACE(POSIX_MEMALIGN, "real race on a posix_memalign-ed object");
 
   ANNOTATE_EXPECT_RACE(NEW, "real race on a new-ed object");
   ANNOTATE_EXPECT_RACE(NEW_ARR, "real race on a new[]-ed object");
@@ -5191,6 +5195,7 @@ void Run() {
   free(VALLOC);
   free(PVALLOC);
   free(MEMALIGN);
+  free(POSIX_MEMALIGN);
   delete NEW;
   delete [] NEW_ARR;
 }
