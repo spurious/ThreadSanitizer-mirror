@@ -52,7 +52,7 @@ const int kMaxSegmentSetSize = 4;
 
 //--------- Globals --------------- {{{1
 
-bool g_so_far_only_one_thread = true;
+bool g_so_far_only_one_thread = false;
 bool g_has_entered_main = false;
 bool g_has_exited_main = false;
 
@@ -274,7 +274,7 @@ void Report(const char *format, ...) {
   for (int i = 0; i < len; i++) {
     if (last_was_new_line) 
       res += pid_buff;
-    last_was_new_line = buff[i] == '\n';
+    last_was_new_line = (buff[i] == '\n');
     res += buff[i];
   }
 
@@ -353,7 +353,7 @@ class ID {
   T id_;
 };
 
-// Thread ID
+// Thread ID.
 // id >= 0
 class TID: public ID {
  public:
@@ -366,8 +366,8 @@ class TID: public ID {
 
 const int32_t TID::kInvalidTID = -1;
 
-// Segment ID
-// id > 0
+// Segment ID.
+// id > 0 && id < kMaxSID
 class SID: public ID {
  public:
   explicit SID(T id) : ID(id) {}
@@ -376,7 +376,7 @@ class SID: public ID {
 };
 
 // Lock ID. 
-// id > 0
+// id > 0 && id < kMaxLID
 class LID: public ID {
  public:
   explicit LID(T id) : ID(id) {}
@@ -408,7 +408,7 @@ class SSID: public ID {
  public:
   explicit SSID(T id) : ID(id) {}
   explicit SSID(SID sid) : ID(sid.raw()) {}
-  SSID(): ID(0) {}
+  SSID(): ID(INT_MAX) {}
   bool valid() const { 
     return raw() != 0 && raw() < kMaxSID && raw() > -kMaxSID; 
   }
@@ -420,6 +420,8 @@ class SSID: public ID {
     DCHECK(IsSingleton());
     return SID(raw()); 
   }
+  // TODO(timurrrr): need to start SegmentSetArray indices from 1
+  // to avoid "int ???() { return -raw() - 1; }"
 };
 
 //--------- Colors ----------------------------- {{{1
@@ -468,7 +470,7 @@ class IntPairToBoolCache {
     CHECK(a > 0);
     CHECK(b > 0);
     int64_t x = a;
-    return x << 32 | b;
+    return (x << 32) | b;
   } 
   uint64_t arr_[kSize];
 };
@@ -552,6 +554,7 @@ class FreeList {
     CHECK((obj_size_ % sizeof(void*)) == 0);
     CHECK(chunk_size_ >= 1);
   }
+
   void *Allocate() {
     if (!list_) 
       AllocateNewChunk();
@@ -754,7 +757,6 @@ class Lock {
   //  map_.erase(lock_addr);
   }
 
-
   static NOINLINE Lock *LookupOrCreate(uintptr_t lock_addr) {
     ScopedMallocCostCenter cc("LockLookup");
     Lock **lock = &(*map_)[lock_addr];
@@ -765,6 +767,7 @@ class Lock {
     }
     return *lock;
   }
+
   static NOINLINE Lock *Lookup(uintptr_t lock_addr) {
     ScopedMallocCostCenter cc("LockLookup");
     Map::iterator it = map_->find(lock_addr);
@@ -1126,8 +1129,8 @@ class LockSet {
 
 };
 
-LockSet::Map  *LockSet::map_ = NULL;
-LockSet::Vec *LockSet::vec_ = NULL;
+LockSet::Map *LockSet::map_;
+LockSet::Vec *LockSet::vec_;
 const char *LockSet::kLockSetVecAllocCC = "kLockSetVecAllocCC";
 LockSet::LSCache *LockSet::ls_add_cache_;
 LockSet::LSCache *LockSet::ls_rem_cache_;
@@ -1172,10 +1175,12 @@ class VTS {
     size_t rounded_size = RoundUpSizeForEfficientUseOfFreeList(size);
     DCHECK(size <= rounded_size);
     if (rounded_size <= kNumberOfFreeLists) {
+      // Small chunk, use FreeList.
       ScopedMallocCostCenter cc("VTS::Create (from free list)");
       mem = free_lists_[rounded_size]->Allocate();
       G_stats->vts_create_small++;
     } else {
+      // Large chunk, use new/delete instead of FreeList.
       ScopedMallocCostCenter cc("VTS::Create (from new[])");
       mem = new int8_t[MemoryRequiredForOneVts(size)];
       G_stats->vts_create_big++;
@@ -1185,6 +1190,7 @@ class VTS {
     return res;
   }
 
+  // TODO(timurrrr): rename Delete/Clone with Unref/Ref
   static void Delete(VTS *vts) {
     if (!vts) return;
     CHECK(vts->ref_count_ > 0);
@@ -1243,6 +1249,7 @@ class VTS {
     const TS *b = &vts_b->arr_[0];
     const TS *a_max = a + vts_a->size();
     const TS *b_max = b + vts_b->size();
+    // TODO(timurrrr): comment the loop below.
     while (a < a_max && b < b_max) {
       if (a->tid < b->tid) {
         *t = *a;
@@ -1507,7 +1514,7 @@ class Mask {
   void Clear(uintptr_t idx) { m_ &= ~(1ULL << idx); } 
   bool Empty() const {return m_ == 0; }
 
-  // clear bits in range [a,b)
+  // Clear bits in range [a,b) and return old [a,b) range.
   Mask ClearRangeAndReturnOld(uintptr_t a, uintptr_t b) {
     DCHECK(a < b);
     DCHECK(b <= 64);
@@ -1555,8 +1562,6 @@ class Mask {
     }
   }
 
-
-  // this &= m
   void Subtract(Mask m) { m_ &= ~m.m_; } 
   void Union(Mask m) { m_ |= m.m_; }
 
@@ -1613,6 +1618,7 @@ class Segment {
       CHECK(n_segments_ < kMaxSID);
       seg = GetSegmentByIndex(n_segments_);
 
+      // This VTS may not be empty due to ForgetAllState().
       VTS::Delete(seg->vts_);
 
       if (DEBUG_MODE && G_flags->debug_level >= 3 &&
@@ -1717,6 +1723,7 @@ class Segment {
     n_segments_ = 1;
     reusable_sids_->clear();
     recycled_sids_->clear();
+    // vts_'es will be freed in AddNewSegment.
   }
 
   static string ToString(SID sid) {
@@ -1805,7 +1812,12 @@ class Segment {
   uintptr_t embedded_stack_trace_[1];
 
   // static class members.
-  static uint8_t *all_segments_;  // Array of kMaxSID Segments.
+
+  // Array of kMaxSID Segments. The size of the Segment is not known at compile
+  // time, but is constant after reading command line flags. So we use an array
+  // of kMaxSID*actual_sizeof(Segment) to store segments.
+  static uint8_t *all_segments_;
+
   static size_t actual_size_of_segment_;
   static int32_t n_segments_;
   static vector<SID> *reusable_sids_;
@@ -1963,12 +1975,17 @@ class SegmentSet {
     return Get(ssid)->size(); 
   }
 
-  SID GetSID       (int32_t i) const { return sids_[i]; }
-  void SetSID(int32_t i, SID sid) { sids_[i] = sid; }
+  SID GetSID (int32_t i) const {
+    DCHECK(i >= 0 && i < size_);
+    return sids_[i];
+  }
 
+  void SetSID(int32_t i, SID sid) {
+    DCHECK(i >= 0 && i < size_);
+    sids_[i] = sid;
+  }
 
-
-  static SID GetSIDForNonSingleton(SSID ssid, int32_t i, int line) {
+  static SID GetSID(SSID ssid, int32_t i, int line) {
     DCHECK(ssid.valid());
     if (ssid.IsSingleton()) {
       DCHECK(i == 0);
@@ -1983,7 +2000,7 @@ class SegmentSet {
   }
 
   static Segment *GetSegmentForNonSingleton(SSID ssid, int32_t i, int line) {
-    return Segment::Get(GetSIDForNonSingleton(ssid, i, line));
+    return Segment::Get(GetSID(ssid, i, line));
   }
 
   void NOINLINE Validate(int line) const;
@@ -2131,6 +2148,7 @@ class SegmentSet {
       if (n == 2) return res;
       if (n == 3) return res ^ ss->GetSID(2).raw();
       if (n == 4) return res ^ ss->GetSID(2).raw() ^ ss->GetSID(3).raw();
+      CHECK(0);
     }
   };
 
@@ -2146,28 +2164,34 @@ class SegmentSet {
    public:
     SSID GetIdOrZero(SegmentSet *ss) {
       int size = ss->size();
-      CheckSize(size);
-      if (size == 2) return GetIdOrZeroFromMap(map2, ss);
-      if (size == 3) return GetIdOrZeroFromMap(map3, ss);
-      if (size == 4) return GetIdOrZeroFromMap(map4, ss);
-      CHECK(0);
-      return SSID(0);
+      switch(size) {
+        case 2: return GetIdOrZeroFromMap(map2, ss);
+        case 3: return GetIdOrZeroFromMap(map3, ss);
+        case 4: return GetIdOrZeroFromMap(map4, ss);
+        default: CHECK(0);
+      }
     }
 
     void Insert(SegmentSet *ss, SSID id) {
       int size = ss->size();
       CheckSize(size);
-      if (size == 2) map2[ss] = id;  
-      if (size == 3) map3[ss] = id;  
-      if (size == 4) map4[ss] = id;  
+      switch(size) {
+        case 2: map2[ss] = id; break;
+        case 3: map3[ss] = id; break;
+        case 4: map4[ss] = id; break;
+        default: CHECK(0);
+      }
     }
     
     void Erase(SegmentSet *ss) {
       int size = ss->size();
       CheckSize(size);
-      if (size == 2) CHECK(map2.erase(ss));
-      if (size == 3) CHECK(map3.erase(ss));
-      if (size == 4) CHECK(map4.erase(ss));
+      switch(size) {
+        case 2: CHECK(map2.erase(ss)); break;
+        case 3: CHECK(map3.erase(ss)); break;
+        case 4: CHECK(map4.erase(ss)); break;
+        default: CHECK(0);
+      }
     }
   
     void Clear() {
@@ -2184,6 +2208,7 @@ class SegmentSet {
     }
  
 #if 1
+    // TODO(timurrrr): consider making a custom hash_table.
     typedef hash_map<SegmentSet*, SSID, SSHash<2>, SSEq<2> > Map2;
     typedef hash_map<SegmentSet*, SSID, SSHash<3>, SSEq<3> > Map3;
     typedef hash_map<SegmentSet*, SSID, SSHash<4>, SSEq<4> > Map4;
@@ -2200,12 +2225,12 @@ class SegmentSet {
 //  typedef map<SegmentSet*, SSID, Less> Map;
 
   static Map                  *map_;
-  static vector<SegmentSet *> *vec_;
+  static vector<SegmentSet *> *vec_; // TODO(kcc): use vector<SegmentSet> instead.
   static vector<SSID>         *reused_;
 
 
   SID     sids_[kMaxSegmentSetSize];
-  int32_t size_;
+  int32_t size_; // TODO(kcc): consider deleting size_ at all.
   int32_t ref_count_;
 };
 
@@ -2232,6 +2257,7 @@ SSID SegmentSet::RemoveSegmentFromSS(SSID old_ssid, SID sid_to_remove) {
 
 
 // static
+// TODO(timurrrr): describe this, see ThreadSanitizerAlgorithm names.
 SSID SegmentSet::AddSegmentToSS(SSID old_ssid, SID new_sid) {
   // TODO: add caching
   DCHECK(new_sid.valid());
@@ -2291,7 +2317,7 @@ SSID SegmentSet::RemoveSegmentFromTupleSS(SSID ssid, SID sid_to_remove) {
     DCHECK(sid.valid());
     Segment::AssertLive(sid, __LINE__);
     if (Segment::HappensBeforeOrSameThread(sid, sid_to_remove))
-      continue;  // And this too.
+      continue;  // Skip this segment from the result.
     tmp_sids[new_size++] = sid;
   }
 
@@ -2428,7 +2454,7 @@ string SegmentSet::ToStringWithLocks(SSID ssid) {
   if (ssid.IsEmpty()) return "";
   string res = "";
   for (int i = 0; i < Size(ssid); i++) {
-    SID sid = GetSIDForNonSingleton(ssid, i, __LINE__);
+    SID sid = GetSID(ssid, i, __LINE__);
     if (i) res += ", ";
     res += Segment::ToStringWithLocks(sid);
   }
@@ -2490,24 +2516,18 @@ void SegmentSet::Test() {
   CHECK(ssid6.raw() == 6);
 }
 
-
-
-
-
-
 //--------- Shadow Value ------------ {{{1
 class ShadowValue {
  public:
   ShadowValue() {
-    rd_ssid_ = 0xDEADBEAF;
-    wr_ssid_ = 0xDEADBEAF;
+    rd_ssid_ = 0xDEADBEEF;
+    wr_ssid_ = 0xDEADBEEF;
   }  
-  ShadowValue(int) { Clear(); }
+
   void Clear() { 
     rd_ssid_ = 0;
     wr_ssid_ = 0;
   }
-
 
   bool IsNew() const { return rd_ssid_ == 0 && wr_ssid_ == 0; }
   // new experimental state machine.
@@ -2517,7 +2537,6 @@ class ShadowValue {
     rd_ssid_ = rd_ssid.raw();
     wr_ssid_ = wr_ssid.raw();
   }
-
 
   // comparison 
   bool operator == (const ShadowValue &sval) const { 
@@ -2547,6 +2566,9 @@ class ShadowValue {
 
 //--------- CacheLine --------------- {{{1
 class CacheLineBase {
+ public:
+  static const uintptr_t kLineSizeBits = 6;  // Don't change this.
+  static const uintptr_t kLineSize = 1 << kLineSizeBits;
  protected:
   uintptr_t tag_;
   TID creator_tid_;
@@ -2559,9 +2581,6 @@ class CacheLineBase {
 
 // Uncompressed line. Just a vector of 64 shadow values. 
 class CacheLineUncompressed : public CacheLineBase {
- public:
-  static const uintptr_t kLineSizeBits = 6;  // Don't change this.
-  static const uintptr_t kLineSize = 1 << kLineSizeBits;
  protected:
   ShadowValue vals_[kLineSize];
 };
@@ -2613,8 +2632,11 @@ class CacheLine : public CacheLineUncompressed {
     racey_.Clear();
   }
 
-  ShadowValue *GetValuePointer(uintptr_t offset) { return  &vals_[offset]; }
-  ShadowValue  GetValue(uintptr_t offset) {return vals_[offset]; }
+  ShadowValue *GetValuePointer(uintptr_t offset) {
+    DCHECK(offset < kLineSize);
+    return  &vals_[offset];
+  }
+  ShadowValue  GetValue(uintptr_t offset) { return *GetValuePointer(offset); }
 
   static uintptr_t ComputeOffset(uintptr_t a) { 
     return a & (kLineSize - 1); 
@@ -2626,7 +2648,7 @@ class CacheLine : public CacheLineUncompressed {
     return ComputeTag(a) + kLineSize;
   }
 
-
+  // TODO(timurrrr): add a comment on how this actually works.
   bool SameValueStored(uintptr_t addr, uintptr_t size) {
     uintptr_t off = ComputeOffset(addr);
     if (off & (size - 1)) return false; // Not aligned.
@@ -3962,7 +3984,7 @@ class ReportStorage {
     if (ssid.IsEmpty()) return;
     bool printed_header = false;
     for (int s = 0; s < SegmentSet::Size(ssid); s++) {
-      SID concurrent_sid = SegmentSet::GetSIDForNonSingleton(ssid, s, __LINE__);
+      SID concurrent_sid = SegmentSet::GetSID(ssid, s, __LINE__);
       Segment *seg = Segment::Get(concurrent_sid);
       if (Segment::HappensBeforeOrSameThread(concurrent_sid, sid)) continue;
       if (!LockSet::IntersectionIsEmpty(lsid, seg->lsid(is_w))) continue; 
@@ -4678,7 +4700,7 @@ class Detector {
 
     // check all write-write pairs
     for (int w1 = 0; w1 < wr_ss_size; w1++) {
-      SID w1_sid = SegmentSet::GetSIDForNonSingleton(wr_ssid, w1, __LINE__);
+      SID w1_sid = SegmentSet::GetSID(wr_ssid, w1, __LINE__);
       Segment *w1_seg = Segment::Get(w1_sid);
       LSID w1_ls = w1_seg->lsid(true);
       for (int w2 = w1 + 1; w2 < wr_ss_size; w2++) {
@@ -4691,7 +4713,7 @@ class Detector {
       }
       // check all write-read pairs
       for (int r = 0; r < rd_ss_size; r++) {
-        SID r_sid = SegmentSet::GetSIDForNonSingleton(rd_ssid, r, __LINE__);
+        SID r_sid = SegmentSet::GetSID(rd_ssid, r, __LINE__);
         Segment *r_seg = Segment::Get(r_sid);
         LSID r_ls = r_seg->lsid(false);
         if (Segment::HappensBeforeOrSameThread(w1_sid, r_sid)) 
@@ -4709,7 +4731,7 @@ class Detector {
   // Return true if the new state is race.
   bool INLINE MemoryStateMachine(ShadowValue old_sval, Thread *thr, 
                                  bool is_w, bool tracing, ShadowValue *res) {
-    ShadowValue new_sval(0);
+    ShadowValue new_sval;
     SID cur_sid = thr->sid();
     DCHECK(cur_sid.valid());
 
@@ -4781,7 +4803,7 @@ class Detector {
     if (!cache_line->used().Get(offset)) {
       cache_line->used().Set(offset);
       cache_line->published().Clear(offset);
-      old_sval = ShadowValue(0);
+      old_sval.Clear();
     } else {
       old_sval = *sval_p;
     }
@@ -4891,6 +4913,7 @@ class Detector {
 
     CacheLine *cache_line = G_cache->GetLine(addr, __LINE__);
     
+    // TODO(timurrrr): bug with unaligned access that touches two CacheLines.
     if (FastModeCheckAndUpdateCreatorTid(cache_line, tid)) return;
 
     if (UNLIKELY(G_flags->keep_history >= 2)) {
@@ -5457,6 +5480,7 @@ bool ThreadSanitizerWantToInstrumentSblock(uintptr_t pc) {
 
 extern void ThreadSanitizerInit() {
   ScopedMallocCostCenter cc("ThreadSanitizerInit");
+  g_so_far_only_one_thread = true;
   CHECK(sizeof(ShadowValue) == 8);
   CHECK(G_flags);
   G_stats        = new Stats;
@@ -5475,6 +5499,8 @@ extern void ThreadSanitizerInit() {
   LockSet::InitClassMembers();
   EventSampler::InitClassMembers();
   VTS::InitClassMembers();
+  // TODO(timurrrr): make sure *::InitClassMembers() are called only once for
+  // each class
   g_publish_info_map = new PublishInfoMap;
   g_stack_trace_free_list = new StackTraceFreeList;
   g_pcq_map = new PCQMap;
