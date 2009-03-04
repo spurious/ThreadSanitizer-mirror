@@ -5594,5 +5594,6 @@ extern void ThreadSanitizerPrintReport(ThreadSanitizerReport *report) {
 // - Optimize the case where a threads signals twice in a row on the same
 //   address.
 // - Fix --ignore-in-dtor if --demangle=no.
+// - Use cpplint (http://code.google.com/p/google-styleguide)
 // end. {{{1
 // vim:shiftwidth=2:softtabstop=2:expandtab:tw=80
