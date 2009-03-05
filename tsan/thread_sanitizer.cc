@@ -475,73 +475,100 @@ class IntPairToBoolCache {
   uint64_t arr_[kSize];
 };
 
-//--------- IntPairToIntCache ------ {{{1
-template <int kHtableSize, int kArraySize = 8>
-class IntPairToIntCache {
+//--------- PairCache & IntPairToIntCache ------ {{{1
+template <typename A, typename B, typename Ret, int kHtableSize, int kArraySize = 8>
+class PairCache {
  public:
-  IntPairToIntCache() {
+  PairCache() {
+    CHECK(sizeof(Entry) == sizeof(A) + sizeof(B) + sizeof(Ret));
     Flush();
   }
   void Flush() {
     memset(this, 0, sizeof(*this));
   }
-  void Insert(int a, int b, int v) {
+  void Insert(A a, B b, Ret v) {
     // fill the hash table
-    uint32_t idx  = compute_idx(a, b);
-    htable_[idx+0] = a;
-    htable_[idx+1] = b;
-    htable_[idx+2] = v;
+    if (kHtableSize != 0) {
+      uint32_t idx  = compute_idx(a, b);
+      htable_[idx].Fill(a, b, v);
+    }
     
     // fill the array
-    int dummy;
+    Ret dummy;
     if (kArraySize != 0 && !ArrayLookup(a, b, &dummy)) {
       int pos = array_pos_;
-      array_[3*pos+0] = a;
-      array_[3*pos+1] = b;
-      array_[3*pos+2] = v;
+      array_[pos].Fill(a, b, v);
       array_pos_ = (array_pos_ + 1) % (kArraySize);
     }
   }
-  bool Lookup(int a, int b, int *v) {
+  bool Lookup(A a, B b, Ret *v) {
     // check the array
     if (kArraySize != 0 && ArrayLookup(a, b, v)) {
       G_stats->ls_cache_fast++;
       return true;
     }
     // check the hash table.
-    uint32_t idx  = compute_idx(a, b);
-    int prev_a = htable_[idx+0];
-    int prev_b = htable_[idx+1];
-    if (prev_a == a && prev_b == b) {
-      *v = htable_[idx+2];
-      return true;
+    if (kHtableSize != 0) {
+      uint32_t idx  = compute_idx(a, b);
+      Entry & prev_e = htable_[idx];
+      if (prev_e.Match(a, b)) {
+        *v = prev_e.v;
+        return true;
+      }
     }
     return false;
   }
  private:
+  struct Entry {
+    A a;
+    B b;
+    Ret v;
+    void Fill(A a, B b, Ret v) {
+      this->a = a;
+      this->b = b;
+      this->v = v;
+    }
+    bool Match(A a, B b) const {
+      return this->a == a && this->b == b;
+    }
+  };
 
-  bool ArrayLookup(int a, int b, int *v) {
-    for (int i = 0; i < kArraySize; i++) {  
-      if (a == array_[3*i+0] && b == array_[3*i+1]) {
-        *v = array_[3*i+2]; 
+  bool ArrayLookup(A a, B b, Ret *v) {
+    for (int i = 0; i < kArraySize; i++) {
+      Entry & entry = array_[i];
+      if (entry.Match(a, b)) {
+        *v = entry.v; 
         return true;
       }
     }
     return false;
   }
 
-  uint32_t compute_idx(int a, int b) {
-    return 3 * (combine2(a, b) % kHtableSize);
+  uint32_t compute_idx(A a, B b) {
+    if (kHtableSize == 0)
+      return 0;
+    else
+      return (combine2(a, b) % max(kHtableSize, 1));
   }
-  uint32_t combine2(int a, int b) {
+
+  static uint32_t combine2(int a, int b) {
     return (a << 16) ^ b;
   }
 
-  int htable_[kHtableSize * 3];
+  static uint32_t combine2(SSID a, SID b) {
+    return combine2(a.raw(), b.raw());
+  }
 
-  int array_[kArraySize * 3];
+  Entry htable_[kHtableSize];
+
+  Entry array_[kArraySize];
   int array_pos_;
 };
+
+template<int kHtableSize, int kArraySize = 8>
+class IntPairToIntCache
+  : public PairCache<int, int, int, kHtableSize, kArraySize>
+{ };
 
 //--------- FreeList --------------- {{{1
 class FreeList {
