@@ -26,15 +26,15 @@
 // Author: Konstantin Serebryany.
 // Author: Timur Iskhodzhanov.
 
-// You can find the details on this tool at 
+// You can find the details on this tool at
 // http://code.google.com/p/data-race-test
 
 #include "thread_sanitizer.h"
 #include <stdarg.h>
-//--------- Constants --------------- {{{1
+// -------- Constants --------------- {{{1
 // Segment ID (SID)      is in range [1, kMaxSID-1]
 // Segment Set ID (SSID) is in range [-kMaxSID+1, -1]
-// This is not a compile-time constant, but it can only be changed 
+// This is not a compile-time constant, but it can only be changed
 // at startup.
 int kMaxSID = (1 << 23);
 
@@ -45,12 +45,12 @@ const int kMaxLID = (1 << 23);
 // This is not a compile-time constant, but it can be changed only at startup.
 int kSizeOfHistoryStackTrace = 10;
 
-// Maximal number of segments in a SegmentSet. 
-// If you change this constant, you also need to change several places 
-// in SegmentSet code. 
+// Maximal number of segments in a SegmentSet.
+// If you change this constant, you also need to change several places
+// in SegmentSet code.
 const int kMaxSegmentSetSize = 4;
 
-//--------- Globals --------------- {{{1
+// -------- Globals --------------- {{{1
 
 bool g_so_far_only_one_thread = false;
 bool g_has_entered_main = false;
@@ -58,10 +58,10 @@ bool g_has_exited_main = false;
 
 FLAGS *G_flags = NULL;
 
-//--------- Utils --------------- {{{1
+// -------- Utils --------------- {{{1
 // Read the contents of a file to string. Valgrind version.
 static string ReadFileToString(const string &file_name) {
-  SysRes sres = VG_(open)((const Char*)file_name.c_str(), VKI_O_RDONLY, 0 );
+  SysRes sres = VG_(open)((const Char*)file_name.c_str(), VKI_O_RDONLY, 0);
   if (sres.isError) {
     Report("WARNING: can not open file %s\n", file_name.c_str());
     exit(1);
@@ -80,9 +80,9 @@ static string ReadFileToString(const string &file_name) {
 }
 
 // Sets the contents of the file 'file_name' to 'str'.
-static void OpenFileWriteStringAndClose(const string &file_name, 
+static void OpenFileWriteStringAndClose(const string &file_name,
                                         const string &str) {
-  SysRes sres = VG_(open)((const Char*)file_name.c_str(), 
+  SysRes sres = VG_(open)((const Char*)file_name.c_str(),
                           VKI_O_WRONLY|VKI_O_CREAT|VKI_O_TRUNC,
                           VKI_S_IRUSR|VKI_S_IWUSR);
   if (sres.isError) {
@@ -94,7 +94,7 @@ static void OpenFileWriteStringAndClose(const string &file_name,
   VG_(close)(fd);
 }
 
-//--------- Stats ------------------- {{{1
+// -------- Stats ------------------- {{{1
 // Statistic counters for the entire tool.
 struct Stats {
   Stats() {
@@ -103,18 +103,20 @@ struct Stats {
 
   void PrintStats() {
     PrintEventStats();
-    Printf("   VTS: created small/big: %'ld / %'ld; deleted: %'ld; cloned: %'ld\n", 
+    Printf("   VTS: created small/big: %'ld / %'ld; "
+           "deleted: %'ld; cloned: %'ld\n",
            vts_create_small, vts_create_big, vts_delete, vts_clone);
     Printf("   vts_total_size  = %'ld; avg=%'ld\n",
-           vts_total_size, vts_total_size / (vts_create_small + vts_create_big + 1));
+           vts_total_size,
+           vts_total_size / (vts_create_small + vts_create_big + 1));
     Printf("   n_seg_hb        = %'ld\n", n_seg_hb);
     Printf("   n_vts_hb        = %'ld\n", n_vts_hb);
     Printf("   n_vts_hb_cached = %'ld\n", n_vts_hb_cached);
     Printf("   memory access:\n"
-           "     1: %'ld\n" 
-           "     2: %'ld\n" 
-           "     4: %'ld\n" 
-           "     8: %'ld\n" 
+           "     1: %'ld\n"
+           "     2: %'ld\n"
+           "     4: %'ld\n"
+           "     8: %'ld\n"
            "     s: %'ld\n",
            n_access1, n_access2, n_access4, n_access8, n_access_slow);
     PrintStatsForCache();
@@ -122,16 +124,16 @@ struct Stats {
 //           "    total  = %'ld\n"
 //           "    unique = %'ld\n",
 //           mops_total, mops_uniq);
-    Printf("   Publish: set: %'ld; get: %'ld; clear: %'ld\n", 
+    Printf("   Publish: set: %'ld; get: %'ld; clear: %'ld\n",
            publish_set, publish_get, publish_clear);
 
     Printf("   PcTo: all: %'ld rtn: %'ld\n", pc_to_strings, pc_to_rtn_name);
 
-    Printf("   StackTrace: create: %'ld; delete %'ld\n", 
+    Printf("   StackTrace: create: %'ld; delete %'ld\n",
            stack_trace_create, stack_trace_delete);
 
-    Printf("   History segments: same: %'ld; reuse: %'ld; new: %'ld\n", 
-           history_uses_same_segment, history_reuses_segment, 
+    Printf("   History segments: same: %'ld; reuse: %'ld; new: %'ld\n",
+           history_uses_same_segment, history_reuses_segment,
            history_creates_new_segment);
     Printf("   Forget all history: %'ld\n", n_forgets);
 
@@ -139,8 +141,8 @@ struct Stats {
       Printf("   Fast mode: first time      : %'ld;\n"
              "              still in creator: %'ld;\n"
              "              transition      : %'ld;\n"
-             "              mt              : %'ld;\n", 
-             fast_mode_first_time, fast_mode_still_in_creator, 
+             "              mt              : %'ld;\n",
+             fast_mode_first_time, fast_mode_still_in_creator,
              fast_mode_transition, fast_mode_mt);
     PrintStatsForSeg();
     PrintStatsForSS();
@@ -148,35 +150,35 @@ struct Stats {
   }
 
   void PrintStatsForSS() {
-    Printf("   SegmentSet: created: %'ld; reused: %'ld;" 
-           " find: %'ld; recycle: %'ld\n", 
+    Printf("   SegmentSet: created: %'ld; reused: %'ld;"
+           " find: %'ld; recycle: %'ld\n",
            ss_create, ss_reuse, ss_find, ss_recycle);
-    Printf("        sizes: 2: %'ld; 3: %'ld; 4: %'ld; other: %'ld\n", 
+    Printf("        sizes: 2: %'ld; 3: %'ld; 4: %'ld; other: %'ld\n",
            ss_size_2, ss_size_3, ss_size_4, ss_size_other);
   }
   void PrintStatsForCache() {
-    Printf("   Cache:\n" 
+    Printf("   Cache:\n"
            "    fast      = %'ld\n"
            "    new       = %'ld\n"
            "    delete    = %'ld\n"
            "    fetch     = %'ld\n"
            "    storage   = %'ld\n",
-           cache_fast_get, cache_new_line, 
-           cache_delete_empty_line, cache_fetch, 
+           cache_fast_get, cache_new_line,
+           cache_delete_empty_line, cache_fetch,
            cache_max_storage_size);
   }
 
   void PrintStatsForSeg() {
-    Printf("   Segment: created: %'ld; reused: %'ld\n", 
+    Printf("   Segment: created: %'ld; reused: %'ld\n",
            seg_create, seg_reuse);
   }
 
   void PrintStatsForLS() {
-    Printf("   LockSet add: 0: %'ld; 1 : %'ld; n : %'ld\n", 
+    Printf("   LockSet add: 0: %'ld; 1 : %'ld; n : %'ld\n",
            ls_add_to_empty, ls_add_to_singleton, ls_add_to_multi);
-    Printf("   LockSet rem: 1: %'ld; n : %'ld\n", 
+    Printf("   LockSet rem: 1: %'ld; n : %'ld\n",
            ls_remove_from_singleton, ls_remove_from_multi);
-    Printf("   LockSet cache: add : %'ld; rem : %'ld; fast: %'ld\n", 
+    Printf("   LockSet cache: add : %'ld; rem : %'ld; fast: %'ld\n",
            ls_add_cache_hit, ls_rem_cache_hit, ls_cache_fast);
   }
 
@@ -184,7 +186,7 @@ struct Stats {
     uintptr_t total = 0;
     for (int i = 0; i < LAST_EVENT; i++) {
       if (events[i]) {
-        Printf("  %25s: %'ld\n", Event::TypeString((EventType)i), 
+        Printf("  %25s: %'ld\n", Event::TypeString((EventType)i),
                events[i]);
       }
       total += events[i];
@@ -208,11 +210,11 @@ struct Stats {
   uintptr_t n_seg_hb;
 
   uintptr_t ls_add_to_empty, ls_add_to_singleton, ls_add_to_multi,
-            ls_remove_from_singleton, ls_remove_from_multi, 
-            ls_add_cache_hit, ls_rem_cache_hit, 
+            ls_remove_from_singleton, ls_remove_from_multi,
+            ls_add_cache_hit, ls_rem_cache_hit,
             ls_cache_fast;
 
-  uintptr_t n_access1, n_access2, n_access4, n_access8, n_access_slow; 
+  uintptr_t n_access1, n_access2, n_access4, n_access8, n_access_slow;
 
   uintptr_t cache_fast_get;
   uintptr_t cache_new_line;
@@ -223,7 +225,8 @@ struct Stats {
   uintptr_t mops_total;
   uintptr_t mops_uniq;
 
-  uintptr_t vts_create_big, vts_create_small, vts_clone, vts_delete, vts_total_size;
+  uintptr_t vts_create_big, vts_create_small,
+            vts_clone, vts_delete, vts_total_size;
 
   uintptr_t ss_create, ss_reuse, ss_find, ss_recycle;
   uintptr_t ss_size_2, ss_size_3, ss_size_4, ss_size_other;
@@ -232,26 +235,27 @@ struct Stats {
 
   uintptr_t publish_set, publish_get, publish_clear;
 
-  uintptr_t fast_mode_first_time, fast_mode_still_in_creator, 
+  uintptr_t fast_mode_first_time, fast_mode_still_in_creator,
             fast_mode_transition, fast_mode_mt;
 
   uintptr_t pc_to_strings, pc_to_rtn_name;
 
   uintptr_t stack_trace_create, stack_trace_delete;
 
-  uintptr_t history_uses_same_segment, history_creates_new_segment, history_reuses_segment;
+  uintptr_t history_uses_same_segment, history_creates_new_segment,
+            history_reuses_segment;
 
   uintptr_t n_forgets;
 };
 
 static Stats *G_stats;
 
-//--------- Util ----------------------------- {{{1
-// Like Print(), but prepend each line with ==XXXXX==, 
+// -------- Util ----------------------------- {{{1
+// Like Print(), but prepend each line with ==XXXXX==,
 // where XXXXX is the pid.
 void Report(const char *format, ...) {
   int buff_size = 1024*16;
-  char *buff = new char [buff_size];
+  char *buff = new char[buff_size];
 
   va_list args;
 
@@ -268,11 +272,11 @@ void Report(const char *format, ...) {
   }
 
   char pid_buff[100];
-  sprintf(pid_buff, "==%d== ", getpid());
+  snprintf(pid_buff, sizeof(pid_buff), "==%d== ", getpid());
   int len = strlen(buff);
   bool last_was_new_line = true;
   for (int i = 0; i < len; i++) {
-    if (last_was_new_line) 
+    if (last_was_new_line)
       res += pid_buff;
     last_was_new_line = (buff[i] == '\n');
     res += buff[i];
@@ -293,7 +297,8 @@ string PcToRtnNameAndFilePos(uintptr_t pc) {
   string file_name;
   string rtn_name;
   int line_no = -1;
-  PcToStrings(pc, G_flags->demangle, &img_name, &rtn_name, &file_name, &line_no);
+  PcToStrings(pc, G_flags->demangle, &img_name, &rtn_name,
+              &file_name, &line_no);
   for (size_t i = 0; i < G_flags->file_prefix_to_cut.size(); i++) {
     string prefix_to_cut = G_flags->file_prefix_to_cut[i];
     size_t pos = file_name.find(prefix_to_cut);
@@ -301,20 +306,20 @@ string PcToRtnNameAndFilePos(uintptr_t pc) {
       file_name = file_name.substr(pos + prefix_to_cut.size());
     }
     if (file_name.find("./") == 0) {  // remove leading ./
-      file_name = file_name.substr(2); 
+      file_name = file_name.substr(2);
     }
   }
   if (file_name == "") {
     return rtn_name + " " + img_name;
   }
   char buff[10];
-  sprintf(buff, "%d", line_no);
+  snprintf(buff, sizeof(buff), "%d", line_no);
   return rtn_name + " " + file_name + ":" + buff;
 }
 
 class ScopeTimer {
  public:
-  ScopeTimer(const char * what) : what_(what) {
+  explicit ScopeTimer(const char * what) : what_(what) {
     start_ = VG_(read_millisecond_timer)();
   }
   ~ScopeTimer() {
@@ -326,15 +331,15 @@ class ScopeTimer {
   UInt start_;
 };
 
-//--------- ID ---------------------- {{{1
+// -------- ID ---------------------- {{{1
 // We wrap int32_t into ID class and then inherit various ID type from ID.
-// This is done in an attempt to implement type safety of IDs, i.e. 
+// This is done in an attempt to implement type safety of IDs, i.e.
 // to make it impossible to make implicit cast from one ID type to another.
 class ID {
  public:
   typedef int32_t T;
   explicit ID(T id) : id_(id) {}
-  ID (const ID &id) : id_(id.id_) {}
+  ID(const ID &id) : id_(id.id_) {}
   bool operator ==  (const ID &id) const { return id_ == id.id_; }
   bool operator !=  (const ID &id) const { return id_ != id.id_; }
   bool operator <  (const ID &id) const { return id_ < id.id_; }
@@ -349,7 +354,7 @@ class ID {
     return *this;
   }
   T raw() const { return id_; }
- private: 
+ private:
   T id_;
 };
 
@@ -375,7 +380,7 @@ class SID: public ID {
   bool valid() const { return raw() > 0 && raw() < kMaxSID; }
 };
 
-// Lock ID. 
+// Lock ID.
 // id > 0 && id < kMaxLID
 class LID: public ID {
  public:
@@ -392,8 +397,8 @@ class LSID: public ID {
  public:
   explicit LSID(T id) : ID(id) {}
   LSID() : ID(INT_MAX) {}
-  bool valid() const { 
-    return raw() < kMaxLID && raw() > -(kMaxLID); 
+  bool valid() const {
+    return raw() < kMaxLID && raw() > -(kMaxLID);
   }
   bool IsEmpty() const { return raw() == 0; }
   bool IsSingleton() const { return raw() > 0; }
@@ -409,23 +414,23 @@ class SSID: public ID {
   explicit SSID(T id) : ID(id) {}
   explicit SSID(SID sid) : ID(sid.raw()) {}
   SSID(): ID(INT_MAX) {}
-  bool valid() const { 
-    return raw() != 0 && raw() < kMaxSID && raw() > -kMaxSID; 
+  bool valid() const {
+    return raw() != 0 && raw() < kMaxSID && raw() > -kMaxSID;
   }
   bool IsValidOrEmpty() { return raw() < kMaxSID && raw() > -kMaxSID; }
   bool IsEmpty() const { return raw() == 0; }
   bool IsSingleton() const {return raw() > 0; }
   bool IsTuple() const {return raw() < 0; }
-  SID  Singleton() const { 
+  SID  Singleton() const {
     DCHECK(IsSingleton());
-    return SID(raw()); 
+    return SID(raw());
   }
   // TODO(timurrrr): need to start SegmentSetArray indices from 1
   // to avoid "int ???() { return -raw() - 1; }"
 };
 
-//--------- Colors ----------------------------- {{{1
-// Colors for ansi terminals and for html. 
+// -------- Colors ----------------------------- {{{1
+// Colors for ansi terminals and for html.
 const char *c_bold    = "";
 const char *c_red     = "";
 const char *c_green   = "";
@@ -436,7 +441,7 @@ const char *c_yellow  = "";
 const char *c_default = "";
 
 
-//--------- IntPairToBoolCache ------ {{{1
+// -------- IntPairToBoolCache ------ {{{1
 template <int kSize>
 class IntPairToBoolCache {
  public:
@@ -447,7 +452,7 @@ class IntPairToBoolCache {
     memset(arr_, 0, sizeof(arr_));
   }
   void Insert(int a, int b, bool val) {
-    uint64_t comb = combine2(a,b);
+    uint64_t comb = combine2(a, b);
     uint64_t idx  = comb % kSize;
     if (val) {
       comb |= 1ULL << 63;
@@ -455,7 +460,7 @@ class IntPairToBoolCache {
     arr_[idx] = comb;
   }
   bool Lookup(int a, int b, bool *val) {
-    uint64_t comb = combine2(a,b);
+    uint64_t comb = combine2(a, b);
     uint64_t idx  = comb % kSize;
     uint64_t prev = arr_[idx];
     uint64_t valbit = prev & (1ULL << 63);
@@ -467,16 +472,17 @@ class IntPairToBoolCache {
   }
  private:
   uint64_t combine2(int a, int b) {
-    CHECK(a > 0);
-    CHECK(b > 0);
+    CHECK_GT(a, 0);
+    CHECK_GT(b, 0);
     int64_t x = a;
     return (x << 32) | b;
-  } 
+  }
   uint64_t arr_[kSize];
 };
 
-//--------- PairCache & IntPairToIntCache ------ {{{1
-template <typename A, typename B, typename Ret, int kHtableSize, int kArraySize = 8>
+// -------- PairCache & IntPairToIntCache ------ {{{1
+template <typename A, typename B, typename Ret,
+         int kHtableSize, int kArraySize = 8>
 class PairCache {
  public:
   PairCache() {
@@ -492,7 +498,7 @@ class PairCache {
       uint32_t idx  = compute_idx(a, b);
       htable_[idx].Fill(a, b, v);
     }
-    
+
     // fill the array
     Ret dummy;
     if (kArraySize != 0 && !ArrayLookup(a, b, &dummy)) {
@@ -537,7 +543,7 @@ class PairCache {
     for (int i = 0; i < kArraySize; i++) {
       Entry & entry = array_[i];
       if (entry.Match(a, b)) {
-        *v = entry.v; 
+        *v = entry.v;
         return true;
       }
     }
@@ -567,35 +573,34 @@ class PairCache {
 
 template<int kHtableSize, int kArraySize = 8>
 class IntPairToIntCache
-  : public PairCache<int, int, int, kHtableSize, kArraySize>
-{ };
+  : public PairCache<int, int, int, kHtableSize, kArraySize> {};
 
-//--------- FreeList --------------- {{{1
+// -------- FreeList --------------- {{{1
 class FreeList {
  public:
-  FreeList(int obj_size, int chunk_size) 
+  FreeList(int obj_size, int chunk_size)
     : list_(0),
-      obj_size_(obj_size), 
+      obj_size_(obj_size),
       chunk_size_(chunk_size) {
-    CHECK(obj_size_ >= (int)sizeof(void*));
-    CHECK((obj_size_ % sizeof(void*)) == 0);
-    CHECK(chunk_size_ >= 1);
+    CHECK_GE(obj_size_, static_cast<int>(sizeof(NULL)));
+    CHECK((obj_size_ % sizeof(NULL)) == 0);
+    CHECK_GE(chunk_size_, 1);
   }
 
   void *Allocate() {
-    if (!list_) 
+    if (!list_)
       AllocateNewChunk();
     CHECK(list_);
     List *head = list_;
     list_ = list_->next;
-    return (void*)head;
+    return reinterpret_cast<void*>(head);
   }
 
   void Deallocate(void *ptr) {
     if (DEBUG_MODE) {
       memset(ptr, 0xac, obj_size_);
     }
-    List *new_head = (List*)ptr;
+    List *new_head = reinterpret_cast<List*>(ptr);
     new_head->next = list_;
     list_ = new_head;
   }
@@ -607,7 +612,7 @@ class FreeList {
       memset(new_mem, 0xab, obj_size_ * chunk_size_);
     }
     for (int i = 0; i < chunk_size_; i++) {
-      List *new_head = (List*)(new_mem + obj_size_ * i);
+      List *new_head = reinterpret_cast<List*>(new_mem + obj_size_ * i);
       new_head->next = list_;
       list_ = new_head;
     }
@@ -621,18 +626,18 @@ class FreeList {
   const int obj_size_;
   const int chunk_size_;
 };
-//--------- StackTrace -------------- {{{1
+// -------- StackTrace -------------- {{{1
 class StackTraceFreeList {
  public:
   uintptr_t *GetNewMemForStackTrace(size_t capacity) {
     DCHECK(capacity <= (size_t)G_flags->num_callers);
-    return (uintptr_t*)free_lists_[capacity]->Allocate();
+    return reinterpret_cast<uintptr_t*>(free_lists_[capacity]->Allocate());
   }
   void TakeStackTraceBack(uintptr_t *mem, size_t capacity) {
-    DCHECK(capacity <= (size_t)G_flags->num_callers);  
+    DCHECK(capacity <= (size_t)G_flags->num_callers);
     free_lists_[capacity]->Deallocate(mem);
   }
-  
+
   StackTraceFreeList() {
     size_t n = G_flags->num_callers + 1;
     free_lists_ = new FreeList *[n];
@@ -641,24 +646,24 @@ class StackTraceFreeList {
       free_lists_[i] = new FreeList((i+2) * sizeof(uintptr_t), 1024);
     }
   }
- private: 
-  
-  FreeList **free_lists_; // Array of G_flags->num_callers lists.
+ private:
+
+  FreeList **free_lists_;  // Array of G_flags->num_callers lists.
 };
 
 static StackTraceFreeList *g_stack_trace_free_list;
 
 class StackTrace {
  public:
-  static StackTrace *CreateNewEmptyStackTrace(size_t size, 
+  static StackTrace *CreateNewEmptyStackTrace(size_t size,
                                               size_t capacity = 0) {
     ScopedMallocCostCenter cc("StackTrace::CreateNewEmptyStackTrace()");
     DCHECK(g_stack_trace_free_list);
-    if (capacity == 0) 
+    if (capacity == 0)
       capacity = size;
     uintptr_t *mem = g_stack_trace_free_list->GetNewMemForStackTrace(capacity);
     DCHECK(mem);
-    StackTrace *res = new (mem) StackTrace(size, capacity);
+    StackTrace *res = new(mem) StackTrace(size, capacity);
     return res;
   }
 
@@ -698,8 +703,9 @@ class StackTrace {
 
       if (i == 0) res += c_bold;
       if (G_flags->show_pc) {
-        snprintf(buff, kBuffSize, "%s#%-2d %p: ", 
-                 indent, (int)i, (void*)emb_trace[i]);
+        snprintf(buff, kBuffSize, "%s#%-2d %p: ",
+                 indent, static_cast<int>(i),
+                 reinterpret_cast<void*>(emb_trace[i]));
       } else {
         snprintf(buff, kBuffSize, "%s#%-2d ", indent, static_cast<int>(i));
       }
@@ -727,27 +733,28 @@ class StackTrace {
     if (size() == 0) return "EMPTY STACK TRACE\n";
     return EmbeddedStackTraceToString(arr_, size(), indent);
   }
-  
+
   void PrintRaw() const {
     for (size_t i = 0; i < size(); i++) {
-      Printf("%p ", arr_[i]); 
+      Printf("%p ", arr_[i]);
     }
     Printf("\n");
   }
 
   ExeContext *ToValgrindExeContext() {
-    return VG_(make_ExeContext_from_StackTrace)((Addr*)arr_, size_);
+    return VG_(make_ExeContext_from_StackTrace)(
+        reinterpret_cast<Addr*>(arr_), size_);
   }
-  
+
   struct Less {
-    bool operator () (const StackTrace *t1, const StackTrace *t2) const {
+    bool operator() (const StackTrace *t1, const StackTrace *t2) const {
       return lexicographical_compare_3way (t1->arr_, t1->arr_ + t1->size(),
                                            t2->arr_, t2->arr_ + t2->size()) < 0;
     }
   };
 
  private:
-  StackTrace(size_t size, size_t capacity) 
+  StackTrace(size_t size, size_t capacity)
     : size_(size),
       capacity_(capacity) {
   }
@@ -756,12 +763,12 @@ class StackTrace {
 
   size_t size_;
   size_t capacity_;
-  uintptr_t arr_[]; 
+  uintptr_t arr_[];
 };
 
 
 
-//--------- Lock -------------------- {{{1
+// -------- Lock -------------------- {{{1
 const char *kLockAllocCC = "kLockAllocCC";
 class Lock {
  public:
@@ -803,7 +810,7 @@ class Lock {
     return it->second;
   }
 
-  int       rd_held()   const { return rd_held_; } 
+  int       rd_held()   const { return rd_held_; }
   int       wr_held()   const { return wr_held_; }
   uintptr_t lock_addr() const { return lock_addr_; }
   LID       lid()       const { return lid_; }
@@ -811,7 +818,7 @@ class Lock {
 
   void set_is_pure_happens_before(bool x) { is_pure_happens_before_ = x; }
 
-  void WrLock(StackTrace *lock_site) { 
+  void WrLock(StackTrace *lock_site) {
     CHECK(!rd_held_);
     wr_held_++;
     StackTrace::Delete(last_lock_site_);
@@ -839,7 +846,8 @@ class Lock {
 
   string ToString() const {
     char buff[100];
-    sprintf(buff, "L%d (%p)", lid_.raw(), (void*)lock_addr());
+    snprintf(buff, sizeof(buff),
+             "L%d (%p)", lid_.raw(), reinterpret_cast<void*>(lock_addr()));
     return string(buff);
   }
 
@@ -858,8 +866,8 @@ class Lock {
       }
     }
     CHECK(lock);
-    if(lock->last_lock_site_) {
-      Report("   %s\n%s", 
+    if (lock->last_lock_site_) {
+      Report("   %s\n%s",
              lock->ToString().c_str(),
              lock->last_lock_site_->ToString().c_str());
     } else {
@@ -873,7 +881,7 @@ class Lock {
   }
 
  private:
-  Lock(uintptr_t lock_addr, int32_t lid) 
+  Lock(uintptr_t lock_addr, int32_t lid)
     : lock_addr_(lock_addr),
       lid_(lid),
       rd_held_(0),
@@ -898,7 +906,7 @@ class Lock {
 
 Lock::Map *Lock::map_;
 
-//--------- LockSet ----------------- {{{1
+// -------- LockSet ----------------- {{{1
 class LockSet {
  public:
   NOINLINE static LSID Add(LSID lsid, Lock *lock) {
@@ -930,7 +938,7 @@ class LockSet {
     ls_add_cache_->Insert(lsid.raw(), lid.raw(), res.raw());
     return res;
   }
- 
+
   // If lock is present in lsid, set new_lsid to (lsid \ lock) and return true.
   // Otherwise set new_lsid to lsid and return false.
   NOINLINE static bool Remove(LSID lsid, Lock *lock, LSID *new_lsid) {
@@ -966,7 +974,7 @@ class LockSet {
 
   NOINLINE static bool IntersectionIsEmpty(LSID lsid1, LSID lsid2) {
     // at least one empty
-    if (lsid1.IsEmpty() || lsid2.IsEmpty()) 
+    if (lsid1.IsEmpty() || lsid2.IsEmpty())
       return true;  // empty
 
     // both singletons
@@ -991,8 +999,8 @@ class LockSet {
     const LSSet &set2 = Get(lsid2);
 
     LID intersection[min(set1.size(), set2.size())];
-    LID *end = set_intersection(set1.begin(), set1.end(), 
-                            set2.begin(), set2.end(), 
+    LID *end = set_intersection(set1.begin(), set1.end(),
+                            set2.begin(), set2.end(),
                             intersection);
     return end == intersection;
   }
@@ -1001,7 +1009,7 @@ class LockSet {
     // TODO(kcc): avoid code duplication with IntersectionIsEmpty().
     ScopedMallocCostCenter cc("LockSet::Intersect");
     // at least one empty
-    if (lsid1.IsEmpty() || lsid2.IsEmpty()) 
+    if (lsid1.IsEmpty() || lsid2.IsEmpty())
       return LSID(0);  // empty
 
     // both singletons
