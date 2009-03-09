@@ -230,7 +230,7 @@ void evh__die_mem ( Addr a, SizeT len ) {
 void ts_post_clo_init(void) {
   G_flags = new FLAGS;
   InitCommandLineOptions();
-  ThreadSanitizerParseFlags(*g_command_line_options);
+  ThreadSanitizerParseFlags(g_command_line_options);
   if (G_flags->html) {
     Report("<pre>\n"
            "<br id=race0>"

@@ -1,9 +1,9 @@
 /*
-  This file is part of ThreadSanitizer, a dynamic data race detector 
+  This file is part of ThreadSanitizer, a dynamic data race detector
   based on Valgrind.
 
   Copyright (C) 2008-2009 Google Inc
-     opensource@google.com 
+     opensource@google.com
 
   This program is free software; you can redistribute it and/or
   modify it under the terms of the GNU General Public License as
@@ -665,7 +665,8 @@ class StackTrace {
   static void Delete(StackTrace *trace) {
     if (!trace) return;
     DCHECK(g_stack_trace_free_list);
-    g_stack_trace_free_list->TakeStackTraceBack((uintptr_t*)trace, trace->capacity());
+    g_stack_trace_free_list->TakeStackTraceBack(
+        reinterpret_cast<uintptr_t*>(trace), trace->capacity());
   }
 
   size_t size() const { return size_; }
@@ -700,7 +701,7 @@ class StackTrace {
         snprintf(buff, kBuffSize, "%s#%-2d %p: ", 
                  indent, (int)i, (void*)emb_trace[i]);
       } else {
-        snprintf(buff, kBuffSize, "%s#%-2d ", indent, (int)i);
+        snprintf(buff, kBuffSize, "%s#%-2d ", indent, static_cast<int>(i));
       }
       res += buff;
 
@@ -997,7 +998,7 @@ class LockSet {
   }
 
   NOINLINE static LSID Intersect(LSID lsid1, LSID lsid2) {
-    // TODO: avoid code duplication with IntersectionIsEmpty().
+    // TODO(kcc): avoid code duplication with IntersectionIsEmpty().
     ScopedMallocCostCenter cc("LockSet::Intersect");
     // at least one empty
     if (lsid1.IsEmpty() || lsid2.IsEmpty()) 
@@ -1025,11 +1026,11 @@ class LockSet {
     const LSSet &set2 = Get(lsid2);
 
     LID intersection[min(set1.size(), set2.size())];
-    LID *end = set_intersection(set1.begin(), set1.end(), 
-                                set2.begin(), set2.end(), 
+    LID *end = set_intersection(set1.begin(), set1.end(),
+                                set2.begin(), set2.end(),
                                 intersection);
     if (intersection == end) {
-      return LSID(0); // empty
+      return LSID(0);  // empty
     }
     if (end - intersection == 1) {
       return LSID(intersection[0].raw());  // Singleton
@@ -1046,16 +1047,16 @@ class LockSet {
     if (lsid.IsEmpty()) {
       return "{}";
     } else if (lsid.IsSingleton()) {
-      sprintf(buff, "{L%d}", lsid.raw());
+      snprintf(buff, sizeof(buff), "{L%d}", lsid.raw());
       return buff;
     }
     const LSSet &set = Get(lsid);
-    sprintf(buff, "{");
+    snprintf(buff, sizeof(buff), "{");
     string res = buff;
     bool first = true;
     for (LSSet::const_iterator it = set.begin(); it != set.end(); ++it) {
       if (!first) res += ", ";
-      sprintf(buff, "L%d", it->raw());
+      snprintf(buff, sizeof(buff), "L%d", it->raw());
       res += buff;
       first = false;
     }
@@ -1063,12 +1064,12 @@ class LockSet {
     return res;
   }
 
-  static void ReportLockSetWithContexts(LSID lsid, 
+  static void ReportLockSetWithContexts(LSID lsid,
                                         set<LID> *locks_reported,
                                         const char *descr) {
     if (lsid.IsEmpty()) return;
     Report("%s%s%s\n", c_green, descr, c_default);
-    if (lsid.IsSingleton()) { 
+    if (lsid.IsSingleton()) {
       LID lid = lsid.Singleton();
       Lock::ReportLockWithOrWithoutContext(lid,
                                            locks_reported->count(lid) == 0);
@@ -1077,8 +1078,8 @@ class LockSet {
       const LSSet &set = Get(lsid);
       for (LSSet::const_iterator it = set.begin(); it != set.end(); ++it) {
         LID lid = *it;
-        Lock::ReportLockWithOrWithoutContext(lid, 
-                                             locks_reported->count(lid) == 0);
+        Lock::ReportLockWithOrWithoutContext(lid,
+                                     locks_reported->count(lid) == 0);
         locks_reported->insert(lid);
       }
     }
@@ -1086,7 +1087,7 @@ class LockSet {
 
   static void AddLocksToSet(LSID lsid, set<LID> *locks) {
     if (lsid.IsEmpty()) return;
-    if (lsid.IsSingleton()) { 
+    if (lsid.IsSingleton()) {
       locks->insert(lsid.Singleton());
     } else {
       const LSSet &set = Get(lsid);
@@ -1114,14 +1115,14 @@ class LockSet {
   static LSSet &Get(LSID lsid) {
     int idx = -lsid.raw() - 1;
     DCHECK(idx >= 0);
-    DCHECK(idx < (int)vec_->size());
+    DCHECK(idx < static_cast<int>(vec_->size()));
     return (*vec_)[idx];
   }
 
   static LSID ComputeId(const LSSet &set) {
     if (set.empty()) {
       // empty lock set has id 0.
-      return LSID(0); 
+      return LSID(0);
     }
     if (set.size() == 1) {
       // signleton lock set has lsid == lid.
@@ -1141,7 +1142,7 @@ class LockSet {
 
   typedef map<LSSet, int32_t> Map;
   static Map *map_;
-    
+
   static const char *kLockSetVecAllocCC;
   typedef vector<LSSet, CCAlloc<LSSet, &kLockSetVecAllocCC> > Vec;
   static Vec *vec_;
@@ -1153,7 +1154,6 @@ class LockSet {
   static LSCache *ls_add_cache_;
   static LSCache *ls_rem_cache_;
   static LSCache *ls_int_cache_;
-
 };
 
 LockSet::Map *LockSet::map_;
@@ -1181,14 +1181,14 @@ static string TwoLockSetsToString(LSID rd_lockset, LSID wr_lockset) {
 
 
 
-//--------- VTS ------------------ {{{1
+// -------- VTS ------------------ {{{1
 
 class VTS {
  public:
   static size_t MemoryRequiredForOneVts(size_t size) {
     return sizeof(VTS) + size * sizeof(TS);
   }
-  
+
   static size_t RoundUpSizeForEfficientUseOfFreeList(size_t size) {
     if (size < 32) return size;
     if (size < 64) return (size + 7) & ~7;
@@ -1212,7 +1212,7 @@ class VTS {
       mem = new int8_t[MemoryRequiredForOneVts(size)];
       G_stats->vts_create_big++;
     }
-    VTS *res = new (mem) VTS(size);
+    VTS *res = new(mem) VTS(size);
     G_stats->vts_total_size += size;
     return res;
   }
@@ -1220,16 +1220,16 @@ class VTS {
   // TODO(timurrrr): rename Delete/Clone with Unref/Ref
   static void Delete(VTS *vts) {
     if (!vts) return;
-    CHECK(vts->ref_count_ > 0);
+    CHECK_GT(vts->ref_count_, 0);
     vts->ref_count_--;
     if (vts->ref_count_ == 0) {
       G_stats->vts_delete++;
-      size_t size = vts->size_; // can't use vts->size().
+      size_t size = vts->size_;  // can't use vts->size().
       size_t rounded_size = RoundUpSizeForEfficientUseOfFreeList(size);
       if (rounded_size <= kNumberOfFreeLists) {
         free_lists_[rounded_size]->Deallocate(vts);
       } else {
-        delete vts; 
+        delete vts;
       }
     }
   }
@@ -1240,7 +1240,7 @@ class VTS {
     res->arr_[0].clk = clk;
     return res;
   }
-  
+
   VTS *Clone() {
     G_stats->vts_clone++;
     ref_count_++;
@@ -1265,9 +1265,9 @@ class VTS {
   static VTS *JoinAndTick(const VTS *vts_a, const VTS *vts_b, TID id_to_tick) {
     CHECK(vts_a->ref_count_);
     CHECK(vts_b->ref_count_);
-    //Printf("JoinAndTick: id_to_tick=%d\n%s\n%s\n", 
-    //       id_to_tick.raw(), 
-    //       vts_a->ToString().c_str(), 
+    //Printf("JoinAndTick: id_to_tick=%d\n%s\n%s\n",
+    //       id_to_tick.raw(),
+    //       vts_a->ToString().c_str(),
     //       vts_b->ToString().c_str());
     bool found = false;
     TS result_ts[vts_a->size() + vts_b->size()];
@@ -1280,7 +1280,7 @@ class VTS {
     while (a < a_max && b < b_max) {
       if (a->tid < b->tid) {
         *t = *a;
-        if (t->tid == id_to_tick) { 
+        if (t->tid == id_to_tick) {
           t->clk++;
           found = true;
         }
@@ -1355,7 +1355,7 @@ class VTS {
     bool a_less_than_b = false;
     while (a < a_max && b < b_max) {
       if (a->tid < b->tid) {
-        // a->tid is not present in b. 
+        // a->tid is not present in b.
         return false;
       } else if (a->tid > b->tid) {
         // b->tid is not present in a.
@@ -1363,7 +1363,7 @@ class VTS {
         b++;
       } else {
         // this tid is present in both VTSs. Compare clocks.
-        if (a->clk > b->clk) return false; 
+        if (a->clk > b->clk) return false;
         if (a->clk < b->clk) a_less_than_b = true;
         a++;
         b++;
@@ -1379,7 +1379,7 @@ class VTS {
     return a_less_than_b;
   }
 
-  size_t size() const { 
+  size_t size() const {
     DCHECK(ref_count_);
     return size_;
   }
@@ -1389,20 +1389,20 @@ class VTS {
     string res = "[";
     for (size_t i = 0; i < size(); i++) {
       char buff[100];
-      sprintf(buff, "%d:%d;", arr_[i].tid.raw(), arr_[i].clk);
+      snprintf(buff, sizeof(buff), "%d:%d;", arr_[i].tid.raw(), arr_[i].clk);
       if (i) res += " ";
       res += buff;
     }
     return res + "]";
   }
-  
+
   void print(const char *name) const {
     string str = ToString();
     Printf("%s: %s\n", name, str.c_str());
   }
 
   static void TestHappensBefore() {
-    // TODO: need more tests here... 
+    // TODO(kcc): need more tests here...
     static const char *test_vts[] = {
       "[0:1;]",
       "[0:4; 2:1;]",
@@ -1411,21 +1411,20 @@ class VTS {
       "[0:4; 3:2; 4:2;]",
       "[0:4; 3:3; 4:1;]",
       NULL
-    };  
+    };
 
     for (int i = 0; test_vts[i]; i++) {
       const VTS *vts1 = Parse(test_vts[i]);
       for (int j = 0; test_vts[j]; j++) {
         const VTS *vts2 = Parse(test_vts[j]);
         bool hb  = HappensBefore(vts1, vts2);
-        Printf("HB = %d\n   %s\n   %s\n", (int)hb, 
+        Printf("HB = %d\n   %s\n   %s\n", static_cast<int>(hb),
                vts1->ToString().c_str(),
                vts2->ToString().c_str());
         delete vts2;
       }
       delete vts1;
     }
-  
   }
 
   static void Test() {
@@ -1436,7 +1435,7 @@ class VTS {
     VTS *v4 = CreateSingleton(TID(3));
 
     VTS *v12 = JoinAndTick(v1, v2, TID());
-    v12->print("v12"); 
+    v12->print("v12");
     VTS *v34 = JoinAndTick(v3, v4, TID());
     v34->print("v34");
 
@@ -1453,7 +1452,7 @@ class VTS {
 
   // Parse VTS string in the form "[0:4; 3:6; 4:2;]".
   static VTS *Parse(const char *str) {
-#if 1 // TODO(kcc): need sscanf in valgrind
+#if 1  // TODO(kcc): need sscanf in valgrind
     return NULL;
 #else
     vector<TS> vec;
@@ -1484,18 +1483,18 @@ class VTS {
     free_lists_ = new FreeList *[kNumberOfFreeLists+1];
     free_lists_[0] = 0;
     for (size_t  i = 1; i <= kNumberOfFreeLists; i++) {
-      free_lists_[i] = new FreeList(MemoryRequiredForOneVts(i), 
+      free_lists_[i] = new FreeList(MemoryRequiredForOneVts(i),
                                     (kNumberOfFreeLists * 4) / i);
     }
   }
 
  private:
-  VTS(size_t size) 
-    : ref_count_(1), 
+  explicit VTS(size_t size)
+    : ref_count_(1),
       size_(size) {
     uniq_id_counter_++;
     // If we've got overflow, we are in trouble, need to have 64-bits...
-    CHECK(uniq_id_counter_ > 0);  
+    CHECK_GT(uniq_id_counter_, 0);
     uniq_id_ = uniq_id_counter_;
   }
   ~VTS() {}
@@ -1519,7 +1518,7 @@ class VTS {
   typedef IntPairToBoolCache<kCacheSize> HBCache;
   static HBCache *hb_cache_;
 
-  static const size_t kNumberOfFreeLists = 512; // Must be power of two.
+  static const size_t kNumberOfFreeLists = 512;  // Must be power of two.
 //  static const size_t kNumberOfFreeLists = 64; // Must be power of two.
   static FreeList **free_lists_;  // Array of kNumberOfFreeLists elements.
 };
@@ -1530,15 +1529,15 @@ FreeList **VTS::free_lists_;
 
 
 
-//--------- Mask -------------------- {{{1
+// -------- Mask -------------------- {{{1
 class Mask {
- public: 
+ public:
   Mask() : m_(0) {}
   Mask(const Mask &m) : m_(m.m_) { }
   explicit Mask(uintptr_t m) : m_(m) { }
   bool Get(uintptr_t idx) const   { return m_ & (1ULL << idx); }
   void Set(uintptr_t idx)   { m_ |= 1ULL << idx; }
-  void Clear(uintptr_t idx) { m_ &= ~(1ULL << idx); } 
+  void Clear(uintptr_t idx) { m_ &= ~(1ULL << idx); }
   bool Empty() const {return m_ == 0; }
 
   // Clear bits in range [a,b) and return old [a,b) range.
@@ -1589,11 +1588,11 @@ class Mask {
     }
   }
 
-  void Subtract(Mask m) { m_ &= ~m.m_; } 
+  void Subtract(Mask m) { m_ &= ~m.m_; }
   void Union(Mask m) { m_ |= m.m_; }
 
-  static Mask Intersection(Mask m1, Mask m2) { return Mask(m1.m_ & m2.m_); } 
-  
+  static Mask Intersection(Mask m1, Mask m2) { return Mask(m1.m_ & m2.m_); }
+
 
   void Clear() { m_ = 0; }
 
@@ -1619,7 +1618,7 @@ class Mask {
   uint64_t m_;
 };
 
-//--------- Segment -------------------{{{1
+// -------- Segment -------------------{{{1
 class Segment {
  public:
 
@@ -1632,7 +1631,7 @@ class Segment {
 
   // static methods
 
-  static SID AddNewSegment(TID tid, VTS *vts, 
+  static SID AddNewSegment(TID tid, VTS *vts,
                            LSID rd_lockset, LSID wr_lockset) {
     ScopedMallocCostCenter malloc_cc("Segment::AddNewSegment()");
     DCHECK(vts);
@@ -1640,7 +1639,6 @@ class Segment {
     SID sid;
     Segment *seg;
     if (reusable_sids_->empty()) {
-
       G_stats->seg_create++;
       CHECK(n_segments_ < kMaxSID);
       seg = GetSegmentByIndex(n_segments_);
@@ -1688,7 +1686,7 @@ class Segment {
       }
       Segment *seg = GetInternal(sid);
       if (!seg->vts()) {
-        Printf("Segment::AssertLive: failed on sid=%d line=%d\n", 
+        Printf("Segment::AssertLive: failed on sid=%d line=%d\n",
                sid.raw(), line);
       }
       DCHECK(seg->vts());
@@ -1710,9 +1708,9 @@ class Segment {
 
   static bool RecycleOneSid(SID sid) {
     ScopedMallocCostCenter malloc_cc("Segment::RecycleOneSid()");
-    static const size_t kRecyclePeriod = 10000; // TODO: test it!
+    static const size_t kRecyclePeriod = 10000;  // TODO(kcc): test it!
     Segment *seg = GetInternal(sid);
-    DCHECK(!seg->ref_count_);
+    DCHECK(seg->ref_count_ == 0);
     DCHECK(sid.raw() < n_segments_);
     if (!seg->vts()) return false;  // Already recycled.
     seg->tid_ = TID();
@@ -1728,23 +1726,23 @@ class Segment {
 
   int ref_count() const {return ref_count_; }
 
-  static void INLINE Ref(SID sid, const char *where) { 
+  static void INLINE Ref(SID sid, const char *where) {
     Segment *seg = GetInternal(sid);
     if (DEBUG_MODE && G_flags->debug_level >= 3)
-      Printf("SegRef   : %d ref=%d %s\n", sid.raw(), seg->ref_count_, where);  
+      Printf("SegRef   : %d ref=%d %s\n", sid.raw(), seg->ref_count_, where);
     DCHECK(seg->ref_count_ >= 0);
-    seg->ref_count_++; 
+    seg->ref_count_++;
   }
-  static void INLINE Unref(SID sid, const char *where) { 
+  static void INLINE Unref(SID sid, const char *where) {
     Segment *seg = GetInternal(sid);
     if (DEBUG_MODE && G_flags->debug_level >= 3)
-      Printf("SegUnref : %d ref=%d %s\n", sid.raw(), seg->ref_count_, where);  
+      Printf("SegUnref : %d ref=%d %s\n", sid.raw(), seg->ref_count_, where);
     DCHECK(seg->ref_count_ > 0);
-    seg->ref_count_--; 
+    seg->ref_count_--;
     if (seg->ref_count_ == 0) {
       RecycleOneSid(sid);
     }
-  } 
+  }
 
   static void ForgetAllState() {
     n_segments_ = 1;
@@ -1755,20 +1753,20 @@ class Segment {
 
   static string ToString(SID sid) {
     char buff[100];
-    sprintf(buff, "T%d/S%d", Get(sid)->tid().raw(), sid.raw());
+    snprintf(buff, sizeof(buff), "T%d/S%d", Get(sid)->tid().raw(), sid.raw());
     return buff;
   }
 
   static string ToStringTidOnly(SID sid) {
     char buff[100];
-    sprintf(buff, "T%d", Get(sid)->tid().raw());
+    snprintf(buff, sizeof(buff), "T%d", Get(sid)->tid().raw());
     return buff;
   }
 
   static string ToStringWithLocks(SID sid) {
     char buff[100];
     Segment *seg = Get(sid);
-    sprintf(buff, "T%d/S%d ", seg->tid().raw(), sid.raw());
+    snprintf(buff, sizeof(buff), "T%d/S%d ", seg->tid().raw(), sid.raw());
     string res = buff;
     res += TwoLockSetsToString(seg->lsid(false), seg->lsid(true));
     return res;
@@ -1791,25 +1789,23 @@ class Segment {
     const VTS *vts_b = seg_b->vts();
     res = VTS::HappensBeforeCached(vts_a, vts_b);
     if (0 && DEBUG_MODE) {
-      Printf("HB = %d\n  %s\n  %s\n", res, 
-           vts_a->ToString().c_str(), vts_b->ToString().c_str()); 
+      Printf("HB = %d\n  %s\n  %s\n", res,
+           vts_a->ToString().c_str(), vts_b->ToString().c_str());
     }
     return res;
   }
 
   static int32_t NumberOfSegments() { return n_segments_; }
 
-
   static void InitClassMembers() {
-
-    CHECK(sizeof(Segment) == 
-          4 * sizeof(int32_t) // ref_count_, tid_, lsid_[2]
-          + 1 * sizeof(void*) // vts_
-          + 1 * sizeof(uintptr_t) // embedded_stack_trace_[1]
+    CHECK(sizeof(Segment) ==
+          4 * sizeof(int32_t)  // ref_count_, tid_, lsid_[2]
+          + 1 * sizeof(void*)  // vts_
+          + 1 * sizeof(uintptr_t)  // embedded_stack_trace_[1]
           );
-    actual_size_of_segment_ = sizeof(Segment) + 
+    actual_size_of_segment_ = sizeof(Segment) +
         (kSizeOfHistoryStackTrace - 1) * sizeof(uintptr_t);
-    Report("INFO: Allocating %'ld (%'ld * %'ld) bytes for Segments.\n", 
+    Report("INFO: Allocating %'ld (%'ld * %'ld) bytes for Segments.\n",
            actual_size_of_segment_ * kMaxSID, actual_size_of_segment_, kMaxSID);
 
     all_segments_  = new uint8_t[kMaxSID * actual_size_of_segment_];
@@ -1822,7 +1818,8 @@ class Segment {
   }
  private:
   static Segment *GetSegmentByIndex(int32_t index) {
-    return (Segment*)&all_segments_[index * actual_size_of_segment_];
+    return reinterpret_cast<Segment*>(
+        &all_segments_[index * actual_size_of_segment_]);
   }
   static Segment *GetInternal(SID sid) {
     DCHECK(sid.valid());
@@ -1857,23 +1854,22 @@ int32_t           Segment::n_segments_;
 vector<SID>      *Segment::reusable_sids_;
 vector<SID>      *Segment::recycled_sids_;
 
-//--------- SegmentSet -------------- {{{1
+// -------- SegmentSet -------------- {{{1
 class SegmentSet {
  public:
-
   static NOINLINE SSID AddSegmentToSS(SSID old_ssid, SID new_sid);
-  static INLINE   SSID AddSegmentToSingletonSS(SSID ssid, SID new_sid);
-  static INLINE   SSID AddSegmentToTupleSS(SSID ssid, SID new_sid);
   static NOINLINE SSID RemoveSegmentFromSS(SSID old_ssid, SID sid_to_remove);
-  static INLINE   SSID RemoveSegmentFromTupleSS(SSID old_ssid, SID sid_to_remove);
 
+  static INLINE SSID AddSegmentToSingletonSS(SSID ssid, SID new_sid);
+  static INLINE SSID AddSegmentToTupleSS(SSID ssid, SID new_sid);
+  static INLINE SSID RemoveSegmentFromTupleSS(SSID old_ssid, SID sid_to_remove);
 
   SSID ComputeSSID() {
     SSID res = map_->GetIdOrZero(this);
-    CHECK(res.raw() != 0);
+    CHECK_NE(res.raw(), 0);
     return res;
   }
-  
+
 
   static void AssertLive(SSID ssid, int line) {
     DCHECK(ssid.valid());
@@ -1883,14 +1879,14 @@ class SegmentSet {
       } else {
         DCHECK(ssid.IsTuple());
         int idx = -ssid.raw()-1;
-        DCHECK(idx < (int)vec_->size());
+        DCHECK(idx < static_cast<int>(vec_->size()));
         DCHECK(idx >= 0);
         SegmentSet *res = (*vec_)[idx];
         DCHECK(res);
         DCHECK(res->ref_count_ >= 0);
 
         if (!res) {
-          Printf("SegmentSet::AssertLive failed at line %d (ssid=%d)\n", 
+          Printf("SegmentSet::AssertLive failed at line %d (ssid=%d)\n",
                  line, ssid.raw());
           DCHECK(0);
         }
@@ -1902,7 +1898,7 @@ class SegmentSet {
     DCHECK(ssid.valid());
     DCHECK(!ssid.IsSingleton());
     int idx = -ssid.raw()-1;
-    DCHECK(idx < (int)vec_->size() && idx >= 0);
+    DCHECK(idx < static_cast<int>(vec_->size()) && idx >= 0);
     SegmentSet *res = (*vec_)[idx];
     DCHECK(res);
     DCHECK(res->size() >= 2);
@@ -1914,7 +1910,7 @@ class SegmentSet {
     DCHECK(ssid.valid());
     DCHECK(!ssid.IsSingleton());
     int idx = -ssid.raw()-1;
-    DCHECK(idx < (int)vec_->size() && idx >= 0);
+    DCHECK(idx < static_cast<int>(vec_->size()) && idx >= 0);
     CHECK((*vec_)[idx] == this);
     // Printf("SegmentSet::RecycleOneSegmentSet: %d\n", ssid.raw());
     //
@@ -1924,8 +1920,10 @@ class SegmentSet {
       SID sid = this->GetSID(i);
       Segment::Unref(sid, "SegmentSet::Recycle");
     }
-  
+    ref_count_ = -1;
+
     map_->Erase(this);
+    ready_to_be_reused_->push_back(ssid);
     G_stats->ss_recycle++;
   }
 
@@ -1935,14 +1933,14 @@ class SegmentSet {
       Segment::Ref(ssid.Singleton(), where);
     } else {
       SegmentSet *sset = Get(ssid);
-      // Printf("SSRef   : %d ref=%d %s\n", ssid.raw(), sset->ref_count_, where);  
+      // Printf("SSRef   : %d ref=%d %s\n", ssid.raw(), sset->ref_count_, where);
       DCHECK(sset->ref_count_ >= 0);
       sset->ref_count_++;
     }
   }
 
   static void INLINE RefIfNotEmpty(SSID ssid, const char *where) {
-    if (!ssid.IsEmpty()) 
+    if (!ssid.IsEmpty())
       Ref(ssid, where);
   }
 
@@ -1956,14 +1954,55 @@ class SegmentSet {
       DCHECK(sset->ref_count_ > 0);
       sset->ref_count_--;
       if (sset->ref_count_ == 0) {
-        reused_->push_back(ssid);
+        // We don't delete unused SSID straightaway due to performance reasons
+        // (to avoid flushing caches too often and because SSID may be reused
+        // again soon)
+        //
+        // Instead, we use two queues (deques):
+        //    ready_to_be_recycled_ and ready_to_be_reused_.
+        // The algorithm is following:
+        // 1) When refcount_ becomes zero, we push the SSID into
+        //    ready_to_be_recycled_.
+        // 2) When ready_to_be_recycled_ becomes too large, we call
+        //    FlushRecycleQueue().
+        //    In FlushRecycleQueue(), we pop the first half of
+        //    ready_to_be_recycled_ and for each popped SSID we do
+        //     * if "refcount_ > 0", do nothing (this SSID is in use again)
+        //     * otherwise, we recycle this SSID (delete its VTS, etc) and push
+        //       it into ready_to_be_reused_
+        // 3) When a new SegmentSet is about to be created, we re-use SSID from
+        //    ready_to_be_reused_ (if available)
+        ready_to_be_recycled_->push_back(ssid);
+        if (UNLIKELY(ready_to_be_recycled_->size() >
+                     2 * G_flags->segment_set_recycle_queue_size)) {
+          FlushRecycleQueue();
+        }
       }
     }
   }
 
+  static void FlushRecycleQueue() {
+    while (ready_to_be_recycled_->size() >
+        G_flags->segment_set_recycle_queue_size) {
+      SSID rec_ssid = ready_to_be_recycled_->front();
+      ready_to_be_recycled_->pop_front();
+      int idx = -rec_ssid.raw()-1;
+      SegmentSet *rec_ss = (*vec_)[idx];
+      DCHECK(rec_ss);
+      DCHECK(rec_ss == Get(rec_ssid));
+      // We should check that this SSID haven't been referenced again.
+      if (rec_ss->ref_count_ == 0) {
+        rec_ss->RecycleOneSegmentSet(rec_ssid);
+      }
+    }
+
+    // SSIDs will be reused soon - need to flush some caches.
+    FlushCaches();
+  }
+
   string ToString() const;
-  void Print() { 
-    Printf("SS%d:%s\n", -ComputeSSID().raw(), ToString().c_str()); 
+  void Print() {
+    Printf("SS%d:%s\n", -ComputeSSID().raw(), ToString().c_str());
   }
 
   static string ToString(SSID ssid) {
@@ -1981,6 +2020,10 @@ class SegmentSet {
 
   static string ToStringWithLocks(SSID ssid);
 
+  static void FlushCaches() {
+    add_segment_cache_->Flush();
+    remove_segment_cache_->Flush();
+  }
 
   static void ForgetAllState() {
     for (size_t i = 0; i < vec_->size(); i++) {
@@ -1988,7 +2031,9 @@ class SegmentSet {
     }
     map_->Clear();
     vec_->clear();
-    reused_->clear();
+    ready_to_be_reused_->clear();
+    ready_to_be_recycled_->clear();
+    FlushCaches();
   }
 
 
@@ -1999,10 +2044,10 @@ class SegmentSet {
   static int32_t Size(SSID ssid) {
     if (ssid.IsEmpty()) return 0;
     if (ssid.IsSingleton()) return 1;
-    return Get(ssid)->size(); 
+    return Get(ssid)->size();
   }
 
-  SID GetSID (int32_t i) const {
+  SID GetSID(int32_t i) const {
     DCHECK(i >= 0 && i < size_);
     return sids_[i];
   }
@@ -2037,18 +2082,21 @@ class SegmentSet {
 
   static void InitClassMembers() {
     map_    = new Map;
-    vec_    = new vector<SegmentSet *>; 
-    reused_ = new vector<SSID>; 
+    vec_    = new vector<SegmentSet *>;
+    ready_to_be_recycled_ = new deque<SSID>;
+    ready_to_be_reused_ = new deque<SSID>;
+    add_segment_cache_ = new SsidSidToSidCache;
+    remove_segment_cache_ = new SsidSidToSidCache;
   }
 
- private: 
-  SegmentSet(int32_t size)  // Private CTOR
+ private:
+  explicit SegmentSet(int32_t size)  // Private CTOR
     : size_(size),
       ref_count_(0) {
-  }  
+  }
   SegmentSet() { }
 
-  static INLINE SSID AllocateAndCopy (SegmentSet *ss) {
+  static INLINE SSID AllocateAndCopy(SegmentSet *ss) {
     int32_t size = ss->size();
     DCHECK(ss->ref_count_ == 0);
     DCHECK(size >= 2);
@@ -2057,26 +2105,16 @@ class SegmentSet {
     SSID res_ssid;
     SegmentSet *res_ss = 0;
 
-    while (reused_->size() > G_flags->segment_set_recycle_queue_size) {
-      res_ssid = reused_->back();
-      reused_->pop_back();
+    if (!ready_to_be_reused_->empty()) {
+      res_ssid = ready_to_be_reused_->front();
+      ready_to_be_reused_->pop_front();
       int idx = -res_ssid.raw()-1;
       res_ss = (*vec_)[idx];
       DCHECK(res_ss);
       DCHECK(res_ss == Get(res_ssid));
-      DCHECK(res_ss->ref_count_ >= 0);
-      if (res_ss->ref_count_ == 0) {
-        // reuse one
-        res_ss->RecycleOneSegmentSet(res_ssid);
-        G_stats->ss_reuse++;
-        break;
-      } else {
-        // this SSID is still in use, try another one or create new
-        res_ss = 0;
-      }
-    }
-
-    if (res_ss == 0) {
+      DCHECK(res_ss->ref_count_ == -1);
+      G_stats->ss_reuse++;
+    } else {
       // create a new one
       ScopedMallocCostCenter cc("SegmentSet::CreateNewSegmentSet");
       G_stats->ss_create++;
@@ -2098,7 +2136,7 @@ class SegmentSet {
     return res_ssid;
   }
 
-  static NOINLINE SSID FindExistingOrAlocateAndCopy (SegmentSet *ss) {
+  static NOINLINE SSID FindExistingOrAlocateAndCopy(SegmentSet *ss) {
     if (DEBUG_MODE) {
       int size = ss->size();
       if (size == 2) G_stats->ss_size_2++;
@@ -2114,7 +2152,7 @@ class SegmentSet {
       G_stats->ss_find++;
       return ssid;
     }
-    // If no such set, create one. 
+    // If no such set, create one.
     return AllocateAndCopy(ss);
   }
 
@@ -2143,7 +2181,8 @@ class SegmentSet {
   // static data members
   template <int n>
   struct Less {
-    INLINE bool operator () (const SegmentSet *ss1, const SegmentSet *ss2) const {
+    INLINE bool operator() (const SegmentSet *ss1,
+                            const SegmentSet *ss2) const {
       DCHECK(ss1->size() == n);
       DCHECK(ss2->size() == n);
       for (int i = 0; i < n; i++) {
@@ -2156,21 +2195,23 @@ class SegmentSet {
   };
 
 
-  template <int n> 
+  template <int n>
   struct SSEq {
-    INLINE bool operator () (const SegmentSet *ss1, const SegmentSet *ss2) const {
+    INLINE bool operator() (const SegmentSet *ss1,
+                            const SegmentSet *ss2) const {
       DCHECK(ss1->size() == n);
       DCHECK(ss2->size() == n);
       if (n > 3 && ss1->GetSID(3) != ss2->GetSID(3)) return false;
       if (n > 2 && ss1->GetSID(2) != ss2->GetSID(2)) return false;
-      return ss1->GetSID(0) == ss2->GetSID(0) && 
+      return ss1->GetSID(0) == ss2->GetSID(0) &&
              ss1->GetSID(1) == ss2->GetSID(1);
     }
   };
 
   template <int n>
   struct SSHash {
-    INLINE uintptr_t operator () (const SegmentSet *ss) const {
+    // TODO(timurrrr): think of a better hash function.
+    INLINE uintptr_t operator() (const SegmentSet *ss) const {
       uintptr_t res = ss->GetSID(0).raw() ^ ss->GetSID(1).raw();
       if (n == 2) return res;
       if (n == 3) return res ^ ss->GetSID(2).raw();
@@ -2180,9 +2221,9 @@ class SegmentSet {
   };
 
   template <class MapType>
-  static SSID GetIdOrZeroFromMap(MapType &map, SegmentSet *ss) {
-    typename MapType::iterator it = map.find(ss);
-    if (it == map.end())
+  static SSID GetIdOrZeroFromMap(MapType *map, const SegmentSet *ss) {
+    typename MapType::iterator it = map->find(ss);
+    if (it == map->end())
       return SSID(0);
     return it->second;
   }
@@ -2191,10 +2232,10 @@ class SegmentSet {
    public:
     SSID GetIdOrZero(SegmentSet *ss) {
       int size = ss->size();
-      switch(size) {
-        case 2: return GetIdOrZeroFromMap(map2, ss);
-        case 3: return GetIdOrZeroFromMap(map3, ss);
-        case 4: return GetIdOrZeroFromMap(map4, ss);
+      switch (size) {
+        case 2: return GetIdOrZeroFromMap(&map2, ss);
+        case 3: return GetIdOrZeroFromMap(&map3, ss);
+        case 4: return GetIdOrZeroFromMap(&map4, ss);
         default: CHECK(0);
       }
     }
@@ -2202,25 +2243,25 @@ class SegmentSet {
     void Insert(SegmentSet *ss, SSID id) {
       int size = ss->size();
       CheckSize(size);
-      switch(size) {
+      switch (size) {
         case 2: map2[ss] = id; break;
         case 3: map3[ss] = id; break;
         case 4: map4[ss] = id; break;
         default: CHECK(0);
       }
     }
-    
+
     void Erase(SegmentSet *ss) {
       int size = ss->size();
       CheckSize(size);
-      switch(size) {
+      switch (size) {
         case 2: CHECK(map2.erase(ss)); break;
         case 3: CHECK(map3.erase(ss)); break;
         case 4: CHECK(map4.erase(ss)); break;
         default: CHECK(0);
       }
     }
-  
+
     void Clear() {
       map2.clear();
       map3.clear();
@@ -2228,18 +2269,18 @@ class SegmentSet {
     }
 
    private:
-    void CheckSize(int size) { 
+    void CheckSize(int size) {
       DCHECK(size >= 2);
       DCHECK(size <= kMaxSegmentSetSize);
       DCHECK(kMaxSegmentSetSize == 4);
     }
- 
+
 #if 1
     // TODO(timurrrr): consider making a custom hash_table.
     typedef hash_map<SegmentSet*, SSID, SSHash<2>, SSEq<2> > Map2;
     typedef hash_map<SegmentSet*, SSID, SSHash<3>, SSEq<3> > Map3;
     typedef hash_map<SegmentSet*, SSID, SSHash<4>, SSEq<4> > Map4;
-#else 
+#else
     typedef map<SegmentSet*, SSID, Less<2> > Map2;
     typedef map<SegmentSet*, SSID, Less<3> > Map3;
     typedef map<SegmentSet*, SSID, Less<4> > Map4;
@@ -2252,18 +2293,26 @@ class SegmentSet {
 //  typedef map<SegmentSet*, SSID, Less> Map;
 
   static Map                  *map_;
-  static vector<SegmentSet *> *vec_; // TODO(kcc): use vector<SegmentSet> instead.
-  static vector<SSID>         *reused_;
+  // TODO(kcc): use vector<SegmentSet> instead.
+  static vector<SegmentSet *> *vec_;
+  static deque<SSID>         *ready_to_be_reused_;
+  static deque<SSID>         *ready_to_be_recycled_;
 
+  typedef PairCache<SSID, SID, SSID, 1009, 1> SsidSidToSidCache;
+  static SsidSidToSidCache    *add_segment_cache_;
+  static SsidSidToSidCache    *remove_segment_cache_;
 
   SID     sids_[kMaxSegmentSetSize];
-  int32_t size_; // TODO(kcc): consider deleting size_ at all.
+  int32_t size_;  // TODO(kcc): consider deleting size_ at all.
   int32_t ref_count_;
 };
 
 SegmentSet::Map      *SegmentSet::map_;
 vector<SegmentSet *> *SegmentSet::vec_;
-vector<SSID>         *SegmentSet::reused_;
+deque<SSID>         *SegmentSet::ready_to_be_reused_;
+deque<SSID>         *SegmentSet::ready_to_be_recycled_;
+SegmentSet::SsidSidToSidCache    *SegmentSet::add_segment_cache_;
+SegmentSet::SsidSidToSidCache    *SegmentSet::remove_segment_cache_;
 
 
 
@@ -2271,25 +2320,37 @@ vector<SSID>         *SegmentSet::reused_;
 SSID SegmentSet::RemoveSegmentFromSS(SSID old_ssid, SID sid_to_remove) {
   DCHECK(old_ssid.IsValidOrEmpty());
   DCHECK(sid_to_remove.valid());
-
-  if (old_ssid.IsEmpty()) return old_ssid;  // Nothing to remove.
-  if (old_ssid.IsSingleton()) {
-    SID sid = old_ssid.Singleton();
-    if (Segment::HappensBeforeOrSameThread(sid, sid_to_remove)) 
-      return SSID(0);  // Empty.
-    return old_ssid;
+  SSID res;
+  if (remove_segment_cache_->Lookup(old_ssid, sid_to_remove, &res)) {
+    return res;
   }
-  return RemoveSegmentFromTupleSS(old_ssid, sid_to_remove);
+
+  if (old_ssid.IsEmpty()) {
+    res = old_ssid;  // Nothing to remove.
+  } else if (LIKELY(old_ssid.IsSingleton())) {
+    SID sid = old_ssid.Singleton();
+    if (Segment::HappensBeforeOrSameThread(sid, sid_to_remove))
+      res = SSID(0);  // Empty.
+    else
+      res = old_ssid;
+  } else {
+    res = RemoveSegmentFromTupleSS(old_ssid, sid_to_remove);
+  }
+  remove_segment_cache_->Insert(old_ssid, sid_to_remove, res);
+  return res;
 }
 
 
 // static
 // TODO(timurrrr): describe this, see ThreadSanitizerAlgorithm names.
 SSID SegmentSet::AddSegmentToSS(SSID old_ssid, SID new_sid) {
-  // TODO: add caching
   DCHECK(new_sid.valid());
   SSID res;
-  if (old_ssid.IsSingleton()) {
+  if (add_segment_cache_->Lookup(old_ssid, new_sid, &res)) {
+    SegmentSet::AssertLive(res, __LINE__);
+    return res;
+  }
+  if (LIKELY(old_ssid.IsSingleton())) {
     res = AddSegmentToSingletonSS(old_ssid, new_sid);
   } else if (old_ssid.IsEmpty()) {
     res = SSID(new_sid);
@@ -2297,6 +2358,7 @@ SSID SegmentSet::AddSegmentToSS(SSID old_ssid, SID new_sid) {
     res = AddSegmentToTupleSS(old_ssid, new_sid);
   }
   SegmentSet::AssertLive(res, __LINE__);
+  add_segment_cache_->Insert(old_ssid, new_sid, res);
   return res;
 }
 
@@ -2305,7 +2367,7 @@ SSID SegmentSet::AddSegmentToSingletonSS(SSID ssid, SID new_sid) {
   CHECK(ssid.IsSingleton());
   CHECK(ssid.valid());
   SID old_sid(ssid.raw());
-  if (old_sid == new_sid) {  // Same segment. 
+  if (LIKELY(old_sid == new_sid)) {  // Same segment.
     return ssid;
   }
   CHECK(old_sid.valid());
@@ -2313,7 +2375,7 @@ SSID SegmentSet::AddSegmentToSingletonSS(SSID ssid, SID new_sid) {
   Segment::AssertLive(new_sid, __LINE__);
   TID old_tid = Segment::Get(old_sid)->tid();
   TID new_tid = Segment::Get(new_sid)->tid();
-  if (old_tid == new_tid) {  // Same thread.
+  if (LIKELY(old_tid == new_tid)) {  // Same thread.
     return SSID(new_sid.raw());
   }
   if (Segment::HappensBefore(old_sid, new_sid)) {
@@ -2321,7 +2383,7 @@ SSID SegmentSet::AddSegmentToSingletonSS(SSID ssid, SID new_sid) {
     return SSID(new_sid.raw());
   }
   // another segment, no happens-before relation.
-  return old_tid < new_tid 
+  return old_tid < new_tid
       ? DoubletonSSID(old_sid, new_sid)
       : DoubletonSSID(new_sid, old_sid);
 }
@@ -2333,10 +2395,11 @@ SSID SegmentSet::RemoveSegmentFromTupleSS(SSID ssid, SID sid_to_remove) {
   SegmentSet *ss = Get(ssid);
   int32_t old_size = ss->size();
   CHECK(old_size <= kMaxSegmentSetSize);
-  
+
 
   int32_t new_size = 0;
-  SID tmp_sids[kMaxSegmentSetSize];
+  SegmentSet tmp(new_size);
+  SID * tmp_sids = tmp.sids_;
   CHECK(sizeof(int32_t) == sizeof(SID));
 
   for (int i = 0; i < old_size; i++) {
@@ -2348,13 +2411,11 @@ SSID SegmentSet::RemoveSegmentFromTupleSS(SSID ssid, SID sid_to_remove) {
     tmp_sids[new_size++] = sid;
   }
 
-  if (new_size == 0) return SSID(0); 
-  if (new_size == 1) return SSID(tmp_sids[0]);
   if (new_size == old_size) return ssid;
+  if (new_size == 0) return SSID(0);
+  if (new_size == 1) return SSID(tmp_sids[0]);
 
-  SegmentSet tmp(new_size);
-  for (int i = 0; i < new_size; i++)
-    tmp.sids_[i] = tmp_sids[i];
+  tmp.size_ = new_size;
   if (DEBUG_MODE) tmp.Validate(__LINE__);
 
   SSID res = FindExistingOrAlocateAndCopy(&tmp);
@@ -2388,7 +2449,7 @@ SSID SegmentSet::AddSegmentToTupleSS(SSID ssid, SID new_sid) {
     TID            tid = seg->tid();
 
     if (sid == new_sid) {
-      // we are trying to insert a sid which is already there. 
+      // we are trying to insert a sid which is already there.
       // SS will not change.
       return ssid;
     }
@@ -2416,7 +2477,7 @@ SSID SegmentSet::AddSegmentToTupleSS(SSID ssid, SID new_sid) {
     tmp_sids[new_size++] = new_sid;
   }
 
-  CHECK(new_size > 0);
+  CHECK_GT(new_size, 0);
   if (new_size == 1) {
     return SSID(new_sid.raw());  // Singleton.
   }
@@ -2428,7 +2489,7 @@ SSID SegmentSet::AddSegmentToTupleSS(SSID ssid, SID new_sid) {
 
     if (tmp_sids[seg_to_forget] == new_sid) {
       seg_to_forget++;
-      if (seg_to_forget == kMaxSegmentSetSize) 
+      if (seg_to_forget == kMaxSegmentSetSize)
         seg_to_forget = 0;
     }
     for (int i = seg_to_forget; i < new_size - 1; i++) {
@@ -2440,20 +2501,20 @@ SSID SegmentSet::AddSegmentToTupleSS(SSID ssid, SID new_sid) {
   CHECK(new_size <= kMaxSegmentSetSize);
   SegmentSet tmp(new_size);
   for (int i = 0; i < new_size; i++)
-    tmp.sids_[i] = tmp_sids[i];
+    tmp.sids_[i] = tmp_sids[i];  // TODO(timurrrr): avoid copying?
   if (DEBUG_MODE) tmp.Validate(__LINE__);
 
   SSID res = FindExistingOrAlocateAndCopy(&tmp);
   if (DEBUG_MODE) Get(res)->Validate(__LINE__);
   return res;
 }
- 
+
 
 
 void NOINLINE SegmentSet::Validate(int line) const {
-  // This is expensive! 
+  // This is expensive!
   for (int i = 0; i < size(); i++) {
-    for (int j = i + 1; j < size(); j++){
+    for (int j = i + 1; j < size(); j++) {
       SID sid1 = GetSID(i);
       SID sid2 = GetSID(j);
       CHECK(sid1.valid());
@@ -2463,12 +2524,12 @@ void NOINLINE SegmentSet::Validate(int line) const {
       bool hb1 = Segment::HappensBefore(sid1, sid2);
       bool hb2 = Segment::HappensBefore(sid2, sid1);
       if (hb1 || hb2) {
-        Printf("BAD at line %d: %d %d %s %s\n   %s\n   %s\n", line, (int)hb1, (int)hb2,
+        Printf("BAD at line %d: %d %d %s %s\n   %s\n   %s\n",
+               line, static_cast<int>(hb1), static_cast<int>(hb2),
                Segment::ToString(sid1).c_str(),
                Segment::ToString(sid2).c_str(),
                Segment::Get(sid1)->vts()->ToString().c_str(),
-               Segment::Get(sid2)->vts()->ToString().c_str()
-              );
+               Segment::Get(sid2)->vts()->ToString().c_str());
       }
       CHECK(!Segment::HappensBefore(GetSID(i), GetSID(j)));
       CHECK(!Segment::HappensBefore(GetSID(j), GetSID(i)));
@@ -2501,15 +2562,17 @@ string SegmentSet::ToString() const {
   return res;
 }
 
-// static 
+// static
 void SegmentSet::Test() {
-  LSID ls(0); // dummy
+  LSID ls(0);  // dummy
   SID sid1 = Segment::AddNewSegment(TID(0), VTS::Parse("[0:2;]"), ls, ls);
   SID sid2 = Segment::AddNewSegment(TID(1), VTS::Parse("[0:1; 1:1]"), ls, ls);
   SID sid3 = Segment::AddNewSegment(TID(2), VTS::Parse("[0:1; 2:1]"), ls, ls);
   SID sid4 = Segment::AddNewSegment(TID(3), VTS::Parse("[0:1; 3:1]"), ls, ls);
-  SID sid5 = Segment::AddNewSegment(TID(4), VTS::Parse("[0:3; 2:2; 3:2;]"), ls, ls);
-  SID sid6 = Segment::AddNewSegment(TID(4), VTS::Parse("[0:3; 1:2; 2:2; 3:2;]"), ls, ls);
+  SID sid5 = Segment::AddNewSegment(TID(4), VTS::Parse("[0:3; 2:2; 3:2;]"),
+                                    ls, ls);
+  SID sid6 = Segment::AddNewSegment(TID(4), VTS::Parse("[0:3; 1:2; 2:2; 3:2;]"),
+                                    ls, ls);
 
 
   // SS1:{T0/S1, T2/S3}
@@ -2539,19 +2602,19 @@ void SegmentSet::Test() {
   SSID ssid6 = SegmentSet::AddSegmentToTupleSS(d4->ComputeSSID(), sid6);
   CHECK(ssid6.IsSingleton());
   Printf("%s\n", ToString(ssid6).c_str());
-  CHECK(sid6.raw() == 6);
-  CHECK(ssid6.raw() == 6);
+  CHECK_EQ(sid6.raw(), 6);
+  CHECK_EQ(ssid6.raw(), 6);
 }
 
-//--------- Shadow Value ------------ {{{1
+// -------- Shadow Value ------------ {{{1
 class ShadowValue {
  public:
   ShadowValue() {
     rd_ssid_ = 0xDEADBEEF;
     wr_ssid_ = 0xDEADBEEF;
-  }  
+  }
 
-  void Clear() { 
+  void Clear() {
     rd_ssid_ = 0;
     wr_ssid_ = 0;
   }
@@ -2565,12 +2628,12 @@ class ShadowValue {
     wr_ssid_ = wr_ssid.raw();
   }
 
-  // comparison 
-  bool operator == (const ShadowValue &sval) const { 
-    return rd_ssid_ == sval.rd_ssid_ && 
+  // comparison
+  bool operator == (const ShadowValue &sval) const {
+    return rd_ssid_ == sval.rd_ssid_ &&
         wr_ssid_ == sval.wr_ssid_;
   }
-  bool operator != (const ShadowValue &sval) const { 
+  bool operator != (const ShadowValue &sval) const {
     return !(*this == sval);
   }
 
@@ -2579,10 +2642,9 @@ class ShadowValue {
     if (IsNew()) {
       return "{New}";
     }
-    sprintf(buff, "Reads: %s; Writes: %s", 
+    snprintf(buff, sizeof(buff), "Reads: %s; Writes: %s",
             SegmentSet::ToStringWithLocks(rd_ssid()).c_str(),
-            SegmentSet::ToStringWithLocks(wr_ssid()).c_str()
-           );
+            SegmentSet::ToStringWithLocks(wr_ssid()).c_str());
     return buff;
   }
 
@@ -2591,7 +2653,7 @@ class ShadowValue {
   int32_t wr_ssid_;
 };
 
-//--------- CacheLine --------------- {{{1
+// -------- CacheLine --------------- {{{1
 class CacheLineBase {
  public:
   static const uintptr_t kLineSizeBits = 6;  // Don't change this.
@@ -2606,7 +2668,7 @@ class CacheLineBase {
   Mask published_;
 };
 
-// Uncompressed line. Just a vector of 64 shadow values. 
+// Uncompressed line. Just a vector of 64 shadow values.
 class CacheLineUncompressed : public CacheLineBase {
  protected:
   ShadowValue vals_[kLineSize];
@@ -2637,11 +2699,11 @@ class CacheLine : public CacheLineUncompressed {
 
   Mask &used()   { return used_;  }
   Mask &traced() { return traced_; }
-  Mask &published() { return published_; } 
+  Mask &published() { return published_; }
   Mask &racey()  { return racey_; }
-  uint64_t tag() { return tag_; } 
+  uint64_t tag() { return tag_; }
 
-  TID creator_tid() const { return creator_tid_; } 
+  TID creator_tid() const { return creator_tid_; }
   void set_creator_tid(TID tid) { creator_tid_ = tid; }
 
 
@@ -2665,10 +2727,10 @@ class CacheLine : public CacheLineUncompressed {
   }
   ShadowValue  GetValue(uintptr_t offset) { return *GetValuePointer(offset); }
 
-  static uintptr_t ComputeOffset(uintptr_t a) { 
-    return a & (kLineSize - 1); 
+  static uintptr_t ComputeOffset(uintptr_t a) {
+    return a & (kLineSize - 1);
   }
-  static uintptr_t ComputeTag(uintptr_t a) { 
+  static uintptr_t ComputeTag(uintptr_t a) {
     return a & ~(kLineSize - 1);
   }
   static uintptr_t ComputeNextTag(uintptr_t a) {
@@ -2678,10 +2740,10 @@ class CacheLine : public CacheLineUncompressed {
   // TODO(timurrrr): add a comment on how this actually works.
   bool SameValueStored(uintptr_t addr, uintptr_t size) {
     uintptr_t off = ComputeOffset(addr);
-    if (off & (size - 1)) return false; // Not aligned.
+    if (off & (size - 1)) return false;  // Not aligned.
     DCHECK(off + size <= kLineSize);
     DCHECK(size == 2 || size == 4 || size == 8);
-    if (used_.GetRange(off + 1, off + size) == 0) 
+    if (used_.GetRange(off + 1, off + size) == 0)
       return true;
     return false;
   }
@@ -2697,8 +2759,7 @@ class CacheLine : public CacheLineUncompressed {
   }
 
  private:
-
-  CacheLine(uint64_t tag) { 
+  explicit CacheLine(uint64_t tag) {
     tag_ = tag;
     is_compressed_ = false;
   }
@@ -2712,7 +2773,7 @@ class CacheLine : public CacheLineUncompressed {
 FreeList *CacheLine::free_list_;
 
 
-//static 
+// static
 CacheLine *CacheLine::Compress(CacheLine *line) {
   if (!G_flags->compress_cache_lines) {
     return line;
@@ -2720,7 +2781,7 @@ CacheLine *CacheLine::Compress(CacheLine *line) {
   CHECK(0);
   return NULL;
 }
-// static 
+// static
 CacheLine *CacheLine::Uncompress(CacheLine *line) {
   if (!G_flags->compress_cache_lines) {
     DCHECK(!line->is_compressed_);
@@ -2735,16 +2796,16 @@ CacheLine *CacheLine::Uncompress(CacheLine *line) {
 
 
 // If range [a,b) fits into one line, return that line's tag.
-// Else range [a,b) belongs is broken into these ranges: 
+// Else range [a,b) belongs is broken into these ranges:
 //   [a, line1_tag)
 //   [line1_tag, line2_tag)
 //   [line2_tag, b)
-uintptr_t GetCacheLinesForRange(uintptr_t a, uintptr_t b, 
-                                     uintptr_t *line1_tag, uintptr_t *line2_tag) {
+uintptr_t GetCacheLinesForRange(uintptr_t a, uintptr_t b,
+                                uintptr_t *line1_tag, uintptr_t *line2_tag) {
   uintptr_t a_tag = CacheLine::ComputeTag(a);
   uintptr_t next_tag = CacheLine::ComputeNextTag(a);
   if (b < next_tag) {
-    return a_tag;   
+    return a_tag;
   }
   *line1_tag = next_tag;
   *line2_tag = CacheLine::ComputeTag(b);
@@ -2752,12 +2813,12 @@ uintptr_t GetCacheLinesForRange(uintptr_t a, uintptr_t b,
 }
 
 
-//--------- Cache ------------------ {{{1
+// -------- Cache ------------------ {{{1
 class Cache {
  public:
   Cache() {
     ForgetAllState();
-  } 
+  }
 
   // HOT
   INLINE CacheLine *GetLine(uintptr_t a, int call_site) {
@@ -2798,7 +2859,7 @@ class Cache {
       set<int64_t> s;
       for (int i = 0; i < 64; i++) {
         if (line->used().Get(i)) {
-          int64_t sval = *(int64_t*)line->GetValuePointer(i);
+          int64_t sval = *reinterpret_cast<int64_t*>(line->GetValuePointer(i));
           s.insert(sval);
         }
       }
@@ -2869,13 +2930,14 @@ class Cache {
       set<int64_t> s;
       for (int i = 0; i < 64; i++) {
         if (old_line->used().Get(i)) {
-          int64_t sval = *(int64_t*)old_line->GetValuePointer(i);
+          int64_t sval = *reinterpret_cast<int64_t*>(
+                            old_line->GetValuePointer(i));
           // Printf("%p ", sval);
           s.insert(sval);
         }
       }
       Printf("\n[%d] Cache Size=%ld %s different values: %ld\n", c,
-             storage_.size(), old_line->used().ToString().c_str(), 
+             storage_.size(), old_line->used().ToString().c_str(),
              s.size());
       G_stats->PrintStatsForCache();
     }
@@ -2885,29 +2947,30 @@ class Cache {
   CacheLine *lines_[kNumLines];
 
   // tag => CacheLine
-  typedef map<uintptr_t, CacheLine*> Map;  // TODO: is hash_map better than map?
+  // TODO(kcc): is hash_map better than map?
+  typedef map<uintptr_t, CacheLine*> Map;
   Map storage_;
 };
 
 static  Cache *G_cache;
 
-//--------- Published range -------------------- {{{1
+// -------- Published range -------------------- {{{1
 struct PublishInfo {
-  uintptr_t tag;    ///< Tag of the cache line where the mem is published.
-  Mask      mask;  ///< The bits that are actually published.
-  VTS      *vts;    ///< The point where this range has been published.
+  uintptr_t tag;   // Tag of the cache line where the mem is published.
+  Mask      mask;  // The bits that are actually published.
+  VTS      *vts;   // The point where this range has been published.
 };
 
 
-typedef multimap<uintptr_t, PublishInfo> PublishInfoMap; 
+typedef multimap<uintptr_t, PublishInfo> PublishInfoMap;
 
-/// Maps 'mem+size' to the PublishInfoMap{mem, size, vts}.
+// Maps 'mem+size' to the PublishInfoMap{mem, size, vts}.
 static PublishInfoMap *g_publish_info_map;
 
 const int kDebugPublish = 0;
 
-// Get a VTS where 'a' has been published, 
-// return NULL if 'a' was not published. 
+// Get a VTS where 'a' has been published,
+// return NULL if 'a' was not published.
 static const VTS *GetPublisherVTS(uintptr_t a) {
   uintptr_t tag = CacheLine::ComputeTag(a);
   uintptr_t off = CacheLine::ComputeOffset(a);
@@ -2955,7 +3018,7 @@ static void UnpublishMemory(CacheLine *line, Mask mask) {
   typedef PublishInfoMap::iterator Iter;
   bool deleted_some = true;
   if (kDebugPublish)
-    Printf(" UnpublishRange: %p %s\n", 
+    Printf(" UnpublishRange: %p %s\n",
            line->tag(), mask.ToString().c_str());
   while (deleted_some) {
     deleted_some = false;
@@ -2964,10 +3027,12 @@ static void UnpublishMemory(CacheLine *line, Mask mask) {
       PublishInfo &info = it->second;
       DCHECK(info.tag == line->tag());
       if (kDebugPublish)
-        Printf("?UnpublishRange: %p %s\n", line->tag(), info.mask.ToString().c_str());
+        Printf("?UnpublishRange: %p %s\n", line->tag(),
+               info.mask.ToString().c_str());
       info.mask.Subtract(mask);
       if (kDebugPublish)
-        Printf("+UnpublishRange: %p %s\n", line->tag(), info.mask.ToString().c_str());
+        Printf("+UnpublishRange: %p %s\n", line->tag(),
+               info.mask.ToString().c_str());
       G_stats->publish_clear++;
       if (info.mask.Empty()) {
         VTS::Delete(info.vts);
@@ -2981,7 +3046,7 @@ static void UnpublishMemory(CacheLine *line, Mask mask) {
 }
 
 // Publish range [a, b) in addr's CacheLine with vts.
-static void PublishRangeInOneLine(uintptr_t addr, uintptr_t a, 
+static void PublishRangeInOneLine(uintptr_t addr, uintptr_t a,
                                   uintptr_t b, VTS *vts) {
   ScopedMallocCostCenter cc("PublishRangeInOneLine");
   DCHECK(addr);
@@ -2991,9 +3056,9 @@ static void PublishRangeInOneLine(uintptr_t addr, uintptr_t a,
   CHECK(CheckSanityOfPublishedMemory(tag, __LINE__));
   CacheLine *line = G_cache->GetLine(tag, __LINE__);
 
-  if (1 || line->published().GetRange(a,b)) {
+  if (1 || line->published().GetRange(a, b)) {
     Mask mask(0);
-    mask.SetRange(a,b);
+    mask.SetRange(a, b);
     // TODO(timurrrr): add warning for re-publishing.
     UnpublishMemory(line, mask);
   }
@@ -3007,7 +3072,7 @@ static void PublishRangeInOneLine(uintptr_t addr, uintptr_t a,
   g_publish_info_map->insert(make_pair(tag, pub_info));
   G_stats->publish_set++;
   if (kDebugPublish)
-    Printf("PublishRange   : %p %s vts=%p\n", 
+    Printf("PublishRange   : %p %s vts=%p\n",
            tag, pub_info.mask.ToString().c_str(), vts);
   CHECK(CheckSanityOfPublishedMemory(tag, __LINE__));
 }
@@ -3022,9 +3087,9 @@ static void PublishRange(uintptr_t a, uintptr_t b, VTS *vts) {
   }
   uintptr_t a_tag = CacheLine::ComputeTag(a);
   PublishRangeInOneLine(a, a - a_tag, CacheLine::kLineSize, vts);
-  for (uintptr_t tag_i = line1_tag; tag_i < line2_tag; 
+  for (uintptr_t tag_i = line1_tag; tag_i < line2_tag;
        tag_i += CacheLine::kLineSize) {
-    PublishRangeInOneLine(tag_i, 0, CacheLine::kLineSize, 
+    PublishRangeInOneLine(tag_i, 0, CacheLine::kLineSize,
                           vts->Clone());
   }
   if (b > line2_tag) {
@@ -3035,12 +3100,12 @@ static void PublishRange(uintptr_t a, uintptr_t b, VTS *vts) {
 
 
 
-//--------- Clear Memory State ------------------ {{{1
+// -------- Clear Memory State ------------------ {{{1
 
-static void INLINE UnrefSegmentsInMemoryRange(uintptr_t a, uintptr_t b, 
+static void INLINE UnrefSegmentsInMemoryRange(uintptr_t a, uintptr_t b,
                                                 Mask mask, CacheLine *line) {
   DCHECK(!mask.Empty());
-  for (uintptr_t x = a; x < b; x++) { // slow?
+  for (uintptr_t x = a; x < b; x++) {  // slow?
     if (!mask.Get(x)) continue;
     ShadowValue sval = line->GetValue(x);
     SSID rd_ssid = sval.rd_ssid();
@@ -3058,7 +3123,7 @@ static void INLINE UnrefSegmentsInMemoryRange(uintptr_t a, uintptr_t b,
 
 
 void INLINE ClearMemoryStateInOneLine(uintptr_t addr,
-                                      uintptr_t beg, uintptr_t end, 
+                                      uintptr_t beg, uintptr_t end,
                                       bool is_new_mem) {
   CacheLine *line = G_cache->GetLine(addr, __LINE__);
   DCHECK(line);
@@ -3073,7 +3138,7 @@ void INLINE ClearMemoryStateInOneLine(uintptr_t addr,
   Mask old_used = line->ClearRangeAndReturnOld(beg, end);
   if (UNLIKELY(!is_new_mem && !old_used.Empty())) {
     UnrefSegmentsInMemoryRange(beg, end, old_used, line);
-  } 
+  }
   if (line->used().Empty()) {
     line->set_creator_tid(TID());
   }
@@ -3086,10 +3151,10 @@ void INLINE ClearMemoryState(uintptr_t a, uintptr_t b, bool is_new_mem) {
   DCHECK(a < b);
   if (a == b) return;
   uintptr_t line1_tag = 0, line2_tag = 0;
-  uintptr_t single_line_tag = GetCacheLinesForRange(a, b, 
+  uintptr_t single_line_tag = GetCacheLinesForRange(a, b,
                                                     &line1_tag, &line2_tag);
   if (single_line_tag) {
-    ClearMemoryStateInOneLine(a, a - single_line_tag, 
+    ClearMemoryStateInOneLine(a, a - single_line_tag,
                               b - single_line_tag, is_new_mem);
     return;
   }
@@ -3097,7 +3162,7 @@ void INLINE ClearMemoryState(uintptr_t a, uintptr_t b, bool is_new_mem) {
   uintptr_t a_tag = CacheLine::ComputeTag(a);
   ClearMemoryStateInOneLine(a, a - a_tag, CacheLine::kLineSize, is_new_mem);
 
-  for (uintptr_t tag_i = line1_tag; tag_i < line2_tag; 
+  for (uintptr_t tag_i = line1_tag; tag_i < line2_tag;
        tag_i += CacheLine::kLineSize) {
     ClearMemoryStateInOneLine(tag_i, 0, CacheLine::kLineSize, is_new_mem);
   }
@@ -3106,7 +3171,8 @@ void INLINE ClearMemoryState(uintptr_t a, uintptr_t b, bool is_new_mem) {
     ClearMemoryStateInOneLine(line2_tag, 0, b - line2_tag, is_new_mem);
   }
 
-  if (DEBUG_MODE && G_flags->debug_level >= 2) {  // check that we've cleared it. Slow! 
+  if (DEBUG_MODE && G_flags->debug_level >= 2) {
+    // Check that we've cleared it. Slow!
     for (uintptr_t x = a; x < b; x++) {
       uintptr_t off = CacheLine::ComputeOffset(x);
       CacheLine *line = G_cache->GetLine(x, __LINE__);
@@ -3117,13 +3183,13 @@ void INLINE ClearMemoryState(uintptr_t a, uintptr_t b, bool is_new_mem) {
 
 
 
-//--------- Thread ------------------ {{{1
+// -------- Thread ------------------ {{{1
 struct Thread {
  public:
-  Thread(TID tid, TID parent_tid, VTS *vts, StackTrace *creation_context) 
+  Thread(TID tid, TID parent_tid, VTS *vts, StackTrace *creation_context)
     : is_running_(true),
-      tid_(tid), 
-      sid_(0), 
+      tid_(tid),
+      sid_(0),
       parent_tid_(parent_tid),
       max_sp_(0),
       min_sp_(-1),
@@ -3138,7 +3204,7 @@ struct Thread {
       wait_cv_(0),
       wait_mu_(0),
       wait_cv_and_mu_set_(false),
-      bus_lock_is_set_(false), 
+      bus_lock_is_set_(false),
       vts_at_exit_(NULL) {
 
     NewSegmentWithoutUnrefingOld("Thread Creation", vts);
@@ -3156,7 +3222,7 @@ struct Thread {
   TID tid() const { return tid_; }
   TID parent_tid() const { return parent_tid_; }
 
-  // STACK 
+  // STACK
   uintptr_t max_sp() const { return max_sp_; }
   uintptr_t min_sp() const { return min_sp_; }
   uintptr_t cur_sp() const { return cur_sp_; }
@@ -3170,10 +3236,9 @@ struct Thread {
     if (tid_ == TID(0)) {
       Report("INFO: T0 is program's main thread\n");
     } else {
-
       if (G_flags->announce_threads) {
-        Report("INFO: T%d has been created by T%d at this point: {{{\n%s}}}\n", 
-               tid_.raw(), parent_tid_.raw(), 
+        Report("INFO: T%d has been created by T%d at this point: {{{\n%s}}}\n",
+               tid_.raw(), parent_tid_.raw(),
                creation_context_->ToString().c_str());
         Thread * parent = GetIfExists(parent_tid_);
         CHECK(parent);
@@ -3189,7 +3254,7 @@ struct Thread {
 
   string ThreadName() const {
     char buff[100];
-    sprintf(buff, "T%d", tid().raw());
+    snprintf(buff, sizeof(buff), "T%d", tid().raw());
     string res = buff;
     if (thread_name_.length() > 0) {
       res += " (";
@@ -3199,11 +3264,11 @@ struct Thread {
     return res;
   }
 
-  bool MemoryIsInStack (uintptr_t a) {
+  bool MemoryIsInStack(uintptr_t a) {
     return a >= min_sp_ && a <= max_sp_;
   }
 
-  // TODO: how to compute this?? 
+  // TODO(kcc): how to compute this??
   static uintptr_t ThreadStackSize() {
     return 8 * 1024 * 1024;
   }
@@ -3251,32 +3316,32 @@ struct Thread {
   void set_thread_name(const char *name) {
     thread_name_ = string(name);
   }
-  
+
   void HandleThreadEnd() {
     is_running_ = false;
     vts_at_exit_ = vts()->Clone();
   }
 
   void HandleThreadJoinBefore(pthread_t join_child_ptid) {
-    CHECK(join_child_ptid_ == 0);
-    CHECK(join_child_ptid != 0);
+    CHECK_EQ(join_child_ptid_, 0);
+    CHECK_NE(join_child_ptid, 0);
     join_child_ptid_ = join_child_ptid;
   }
 
   // Return the TID of the joined child and it's vts
   TID HandleThreadJoinAfter(VTS **vts_at_exit) {
     if (0) {
-      Printf("T%d: Joined child : pthread_t=%p size=%ld\n", 
-             tid().raw(), join_child_ptid_, ptid_to_tid_->size());  
+      Printf("T%d: Joined child : pthread_t=%p size=%ld\n",
+             tid().raw(), join_child_ptid_, ptid_to_tid_->size());
     }
-    CHECK(join_child_ptid_ != 0);
+    CHECK_NE(join_child_ptid_, 0);
     CHECK(ptid_to_tid_->count(join_child_ptid_));
     TID child_tid = (*ptid_to_tid_)[join_child_ptid_];
     ptid_to_tid_->erase(join_child_ptid_);
     join_child_ptid_ = 0;
     *vts_at_exit = Thread::Get(child_tid)->vts_at_exit_;
     if (0)
-    Printf("T%d: vts_at_exit_: %s\n", child_tid.raw(), 
+    Printf("T%d: vts_at_exit_: %s\n", child_tid.raw(),
            (*vts_at_exit)->ToString().c_str());
     return child_tid;
   }
@@ -3294,15 +3359,16 @@ struct Thread {
   static Thread *Get(TID tid) {
     CHECK(tid.raw() < NumberOfThreads());
     return (*all_threads_)[tid.raw()];
-  } 
+  }
 
   static TID Add(Thread *thr) {
-    // Printf("Thread::Add %d %d\n", thr->tid().raw(), (int)all_threads_->size());
+    // Printf("Thread::Add %d %d\n", thr->tid().raw(),
+    //        (int)all_threads_->size());
     TID tid = thr->tid();
-    while(tid.raw() > (int32_t)all_threads_->size()) {
+    while (tid.raw() > static_cast<int32_t>(all_threads_->size())) {
       all_threads_->push_back(NULL);
     }
-    if (tid.raw() == (int32_t)all_threads_->size()){
+    if (tid.raw() == static_cast<int32_t>(all_threads_->size())) {
       all_threads_->push_back(thr);
     } else {
       CHECK(tid.raw() < (int32_t)all_threads_->size());
@@ -3315,10 +3381,10 @@ struct Thread {
 
 
   // Locks
-  
+
   void set_bus_lock_is_set(bool is_set) { bus_lock_is_set_ = is_set; }
-  bool bus_lock_is_set() const { return bus_lock_is_set_; } 
-  
+  bool bus_lock_is_set() const { return bus_lock_is_set_; }
+
   void HandleLockBefore(uintptr_t mu) {
     lock_mu_ = mu;
   }
@@ -3330,7 +3396,7 @@ struct Thread {
   void HandleLock(uintptr_t lock_addr, bool is_w_lock) {
     Lock *lock = Lock::LookupOrCreate(lock_addr);
     // NOTE: we assume that all locks can be acquired recurively.
-    // No warning about recursive locking will be issued. 
+    // No warning about recursive locking will be issued.
     if (is_w_lock) {
       // Recursive locks are properly handled because LockSet is in fact a
       // multiset.
@@ -3352,10 +3418,10 @@ struct Thread {
     NewSegmentForLockingEvent();
 
     if (G_flags->verbosity >= 2)
-      Printf("T%d %sLock   %p; %s\n", 
-           tid_.raw(), 
-           is_w_lock ? "Wr" : "Rd", 
-           lock_addr, 
+      Printf("T%d %sLock   %p; %s\n",
+           tid_.raw(),
+           is_w_lock ? "Wr" : "Rd",
+           lock_addr,
            LockSet::ToString(lsid(is_w_lock)).c_str());
   }
 
@@ -3394,10 +3460,10 @@ struct Thread {
     NewSegmentForLockingEvent();
 
     if (G_flags->verbosity >= 2)
-      Printf("T%d %sUnlock %p; %s\n", 
-           tid_.raw(), 
-           is_w_lock ? "Wr" : "Rd", 
-           lock_addr, 
+      Printf("T%d %sUnlock %p; %s\n",
+           tid_.raw(),
+           is_w_lock ? "Wr" : "Rd",
+           lock_addr,
            LockSet::ToString(lsid(is_w_lock)).c_str());
   }
 
@@ -3406,7 +3472,7 @@ struct Thread {
   }
 
   // CondVar
-  
+
   void HandleWaitBefore(uintptr_t cv, uintptr_t mu) {
     CHECK(wait_cv_and_mu_set_ == false);
     wait_cv_and_mu_set_ = true;
@@ -3437,12 +3503,11 @@ struct Thread {
     }
 
     if (G_flags->verbosity >= 2) {
-      Printf("T%d: %s: %p (%p):\n    %s %s\n", tid_.raw(), 
+      Printf("T%d: %s: %p (%p):\n    %s %s\n", tid_.raw(),
              timed_out ? "TimedOutWait" : "Wait",
              cv, mu,
              vts()->ToString().c_str(),
-             Segment::ToString(sid()).c_str()
-             );
+             Segment::ToString(sid()).c_str());
     }
   }
 
@@ -3458,24 +3523,23 @@ struct Thread {
     }
     NewSegmentForSignal();
     if (G_flags->verbosity >= 2)
-      Printf("T%d: Signal: %p:\n    %s %s\n    %s\n", tid_.raw(), cv, 
+      Printf("T%d: Signal: %p:\n    %s %s\n    %s\n", tid_.raw(), cv,
              vts()->ToString().c_str(), Segment::ToString(sid()).c_str(),
              (signaller->vts)->ToString().c_str());
-      
   }
 
-
-  void INLINE NewSegmentWithoutUnrefingOld(const char *call_site, VTS *new_vts) {
+  void INLINE NewSegmentWithoutUnrefingOld(const char *call_site,
+                                           VTS *new_vts) {
     DCHECK(new_vts);
-    SID new_sid = Segment::AddNewSegment(tid(), new_vts, 
+    SID new_sid = Segment::AddNewSegment(tid(), new_vts,
                                          rd_lockset_, wr_lockset_);
     SID old_sid = sid();
     sid_ = new_sid;
     Segment::Ref(new_sid, "Thread::NewSegmentWithoutUnrefingOld");
 
     FillEmbeddedStackTrace(segment()->embedded_stack_trace());
-    if (0) 
-    Printf("2: %s T%d/S%d old_sid=%d NewSegment: %s\n", call_site, 
+    if (0)
+    Printf("2: %s T%d/S%d old_sid=%d NewSegment: %s\n", call_site,
            tid().raw(), sid().raw(), old_sid.raw(),
          vts()->ToString().c_str());
   }
@@ -3506,26 +3570,26 @@ struct Thread {
     uintptr_t *emb_trace = seg->embedded_stack_trace();
 
     size_t n = call_stack_.size();
-    // check at most 3 top entries of the call stack. 
+    // check at most 3 top entries of the call stack.
     // If they match the current segment, don't create a new segment.
     if (*emb_trace &&  // This stack trace was filled
         call_stack_.size() >= 3 &&
-        emb_trace[0] == call_stack_[n-1] && 
-        emb_trace[1] == call_stack_[n-2] && 
-        emb_trace[2] == call_stack_[n-3]) {  
+        emb_trace[0] == call_stack_[n-1] &&
+        emb_trace[1] == call_stack_[n-2] &&
+        emb_trace[2] == call_stack_[n-3]) {
       G_stats->history_uses_same_segment++;
       return;
     }
 
 
     if (seg->ref_count() == 1) {
-      // The current segment is not used anywhere, 
+      // The current segment is not used anywhere,
       // so just replace the stack trace in it.
       FillEmbeddedStackTrace(emb_trace);
       G_stats->history_reuses_segment++;
       return;
     }
-    
+
     G_stats->history_creates_new_segment++;
     VTS *new_vts = vts()->Clone();
     NewSegment("HandleSblockEnter", new_vts);
@@ -3534,10 +3598,9 @@ struct Thread {
   void NewSegmentForWait(const VTS *signaller_vts) {
     const VTS *current_vts   = vts();
     if (0)
-    Printf("T%d NewSegmentForWait: \n  %s\n  %s\n", tid().raw(), 
+    Printf("T%d NewSegmentForWait: \n  %s\n  %s\n", tid().raw(),
            current_vts->ToString().c_str(),
-           signaller_vts->ToString().c_str()
-           );
+           signaller_vts->ToString().c_str());
     // We don't want to create a happens-before arc if it will be redundant.
     if (!VTS::HappensBeforeCached(signaller_vts, current_vts)) {
       VTS *new_vts = VTS::JoinAndTick(current_vts, signaller_vts, TID());
@@ -3554,7 +3617,7 @@ struct Thread {
   }
 
 
-  // Barrier 
+  // Barrier
   void HandleBarrierBefore(uintptr_t barrier) {
     barrier_addr_ = barrier;
     HandleSignal(barrier_addr_);
@@ -3565,7 +3628,7 @@ struct Thread {
   }
 
   // Call stack  -------------
-  
+
   void PushCallStack(uintptr_t pc) {
     call_stack_.push_back(pc);
   }
@@ -3616,7 +3679,7 @@ struct Thread {
   }
 
   uintptr_t CallStackTopPc() const {
-    if (call_stack_.empty()) 
+    if (call_stack_.empty())
       return 0;
     return call_stack_.back();
   }
@@ -3639,8 +3702,8 @@ struct Thread {
     }
   }
 
-  INLINE StackTrace *CreateStackTrace(uintptr_t pc = 0, 
-                                      int max_len = -1, 
+  INLINE StackTrace *CreateStackTrace(uintptr_t pc = 0,
+                                      int max_len = -1,
                                       int capacity = 0) {
     if (!call_stack_.empty() && pc) {
       call_stack_.back() = pc;
@@ -3649,7 +3712,7 @@ struct Thread {
       max_len = G_flags->num_callers;
     }
     int size = call_stack_.size();
-    if (size > max_len) 
+    if (size > max_len)
       size = max_len;
     StackTrace *res = StackTrace::CreateNewEmptyStackTrace(size, capacity);
     FillStackTrace(res, size);
@@ -3665,7 +3728,7 @@ struct Thread {
 
 
   bool NOINLINE CallStackContainsDtor() {
-    // TODO: can check this w/o demangling?
+    // TODO(kcc): can check this w/o demangling?
     for (int i = call_stack_.size() - 1; i >= 0; i--) {
       uintptr_t pc = call_stack_[i];
       string str = PcToRtnNameWithStats(pc, false);
@@ -3710,13 +3773,13 @@ struct Thread {
 
 
 
-  TID    tid_;          ///< This thread's tid.
-  SID    sid_;          ///< Current segment ID.
-  TID    parent_tid_;   ///< Parent's tid.
-  uintptr_t  max_sp_;    
-  uintptr_t  min_sp_;    
-  uintptr_t  cur_sp_;   ///< Current sp value.
-  uintptr_t  new_sp_;   ///< Value of SP after recent change.
+  TID    tid_;         // This thread's tid.
+  SID    sid_;         // Current segment ID.
+  TID    parent_tid_;  // Parent's tid.
+  uintptr_t  max_sp_;
+  uintptr_t  min_sp_;
+  uintptr_t  cur_sp_;  // Current sp value.
+  uintptr_t  new_sp_;  // Value of SP after recent change.
   StackTrace *creation_context_;
   bool      announced_;
 
@@ -3739,7 +3802,7 @@ struct Thread {
 
   uintptr_t barrier_addr_;
 
-  int      ignore_[2]; // 0 for reads, 1 for writes.
+  int ignore_[2];  // 0 for reads, 1 for writes.
   StackTrace *ignore_context_[2];
 
 
@@ -3755,9 +3818,9 @@ struct Thread {
   struct Signaller {
     VTS *vts;
   };
-  
+
   class SignallerMap: public map<uintptr_t, Signaller> {
-    public: 
+    public:
      void ClearAndDeleteElements() {
        for (iterator it = begin(); it != end(); ++it) {
          VTS::Delete(it->second.vts);
@@ -3778,7 +3841,7 @@ Thread::SignallerMap       *Thread::signaller_map_;
 map<pthread_t, TID>        *Thread::ptid_to_tid_;
 
 
-//--------- PCQ --------------------- {{{1
+// -------- PCQ --------------------- {{{1
 struct PCQ {
   uintptr_t pcq_addr;
   deque<VTS*> putters;
@@ -3787,9 +3850,9 @@ struct PCQ {
 typedef map<uintptr_t, PCQ> PCQMap;
 static PCQMap *g_pcq_map;
 
-//--------- Forget all state -------- {{{1
-// We need to forget all state and start over because we've 
-// run out of some resources (most likely, segment IDs). 
+// -------- Forget all state -------- {{{1
+// We need to forget all state and start over because we've
+// run out of some resources (most likely, segment IDs).
 // Experimental code, not stable.
 static void ForgetAllStateAndStartOver(const char *reason) {
   if (0) {
@@ -3815,14 +3878,14 @@ static void ForgetAllStateAndStartOver(const char *reason) {
 
   for (PCQMap::iterator it = g_pcq_map->begin(); it != g_pcq_map->end(); ++it) {
     PCQ &pcq = it->second;
-    for (deque<VTS*>::iterator it2 = pcq.putters.begin(); 
+    for (deque<VTS*>::iterator it2 = pcq.putters.begin();
          it2 != pcq.putters.end(); ++it2) {
       VTS::Delete(*it2);
       *it2 = VTS::CreateSingleton(TID(0), 1);
     }
   }
 }
-//--------- Expected Race ---------------------- {{{1
+// -------- Expected Race ---------------------- {{{1
 // Information about expected races.
 struct ExpectedRace {
   bool        is_benign;
@@ -3835,7 +3898,7 @@ typedef  map<uintptr_t, ExpectedRace> ExpectedRacesMap;
 static ExpectedRacesMap *G_expected_races_map;
 
 
-//--------- Heap info ---------------------- {{{1
+// -------- Heap info ---------------------- {{{1
 // Information about heap memory.
 struct HeapInfo {
   uintptr_t   ptr;
@@ -3856,17 +3919,17 @@ static HeapInfo IsHeapMem(uintptr_t a) {
   null_info.size = 0;
   null_info.stack_trace = 0;
   HeapMap::iterator it = G_heap_map->lower_bound(a);
-  if (it == G_heap_map->end()) 
+  if (it == G_heap_map->end())
     return null_info;
   CHECK(it->second.ptr >= a);
-  if (it->second.ptr == a) 
+  if (it->second.ptr == a)
     return it->second;
   if (it != G_heap_map->begin()) {
     // try prev
     --it;
     HeapInfo &info = it->second;
     CHECK(info.ptr < a);
-    if (info.ptr + info.size > a) 
+    if (info.ptr + info.size > a)
       return info;
   }
   return null_info;
@@ -3876,7 +3939,7 @@ static HeapInfo IsHeapMem(uintptr_t a) {
 
 
 
-//--------- ThreadSanitizerReport -------------- {{{1
+// -------- ThreadSanitizerReport -------------- {{{1
 struct ThreadSanitizerReport {
   // Types of reports. Right now we support races only.
   enum ReportType {
@@ -3894,7 +3957,7 @@ struct ThreadSanitizerDataRaceReport : public ThreadSanitizerReport {
   SID         last_access_sid;
   StackTrace *last_access_stack_trace;
   bool        last_access_is_w;
-  LSID        last_acces_lsid[2]; 
+  LSID        last_acces_lsid[2];
 
   ShadowValue new_sval;
   ShadowValue old_sval;
@@ -3904,12 +3967,12 @@ struct ThreadSanitizerDataRaceReport : public ThreadSanitizerReport {
 };
 
 
-//--------- Report Storage --------------------- {{{1
+// -------- Report Storage --------------------- {{{1
 class ReportStorage {
  public:
-  bool NOINLINE AddReport(TID tid, uintptr_t pc, bool is_w, uintptr_t addr, 
-                          int size, 
-                          ShadowValue old_sval, ShadowValue new_sval, 
+  bool NOINLINE AddReport(TID tid, uintptr_t pc, bool is_w, uintptr_t addr,
+                          int size,
+                          ShadowValue old_sval, ShadowValue new_sval,
                           bool is_published) {
     Thread *thr = Thread::Get(tid);
 //    if (old_sval.racey()) {
@@ -3933,13 +3996,13 @@ class ReportStorage {
     int n_reports_for_this_context = reported_stacks_[stack_trace]++;
 
     if (n_reports_for_this_context > 0) {
-      // we already reported a race here. 
+      // we already reported a race here.
       StackTrace::Delete(stack_trace);
       return false;
     }
 
 
-    ThreadSanitizerDataRaceReport *race_report = 
+    ThreadSanitizerDataRaceReport *race_report =
         new ThreadSanitizerDataRaceReport;
 
     race_report->type = ThreadSanitizerReport::DATA_RACE;
@@ -3963,11 +4026,11 @@ class ReportStorage {
 
 
     ExeContext *valgrindish_context = stack_trace->ToValgrindExeContext();
-    if (VG_(unique_error)(GetVgTid(), XS_Race, 0, NULL, 
-                          race_report, valgrindish_context, 
+    if (VG_(unique_error)(GetVgTid(), XS_Race, 0, NULL,
+                          race_report, valgrindish_context,
                           False, False, False)) {
-      // This is a HACK. Valgrind ExeContext is sometimes broken and hence 
-      // suppressions may fail. We create an ExeContext from tsan's stack trace 
+      // This is a HACK. Valgrind ExeContext is sometimes broken and hence
+      // suppressions may fail. We create an ExeContext from tsan's stack trace
       // and check if it should be suppressed (see comments for unique_error).
       if (G_flags->show_valgrind_context) {
         Report("------ ThreadSanitizer StackTrace: -------\n");
@@ -4005,8 +4068,8 @@ class ReportStorage {
 
 
 
-  static void PrintConcurrentSegmentSet(SSID ssid, TID tid, SID sid, 
-                                        LSID lsid, bool is_w, 
+  static void PrintConcurrentSegmentSet(SSID ssid, TID tid, SID sid,
+                                        LSID lsid, bool is_w,
                                         const char *descr, set<LID> *locks) {
     if (ssid.IsEmpty()) return;
     bool printed_header = false;
@@ -4014,7 +4077,7 @@ class ReportStorage {
       SID concurrent_sid = SegmentSet::GetSID(ssid, s, __LINE__);
       Segment *seg = Segment::Get(concurrent_sid);
       if (Segment::HappensBeforeOrSameThread(concurrent_sid, sid)) continue;
-      if (!LockSet::IntersectionIsEmpty(lsid, seg->lsid(is_w))) continue; 
+      if (!LockSet::IntersectionIsEmpty(lsid, seg->lsid(is_w))) continue;
       Thread *concurrent_thr = Thread::Get(seg->tid());
       if (!printed_header) {
         Report("  %sConcurrent %s happened at (OR AFTER) these points:%s\n",
@@ -4022,9 +4085,9 @@ class ReportStorage {
         printed_header = true;
       }
 
-      Report("   %s (%s):\n", 
+      Report("   %s (%s):\n",
              concurrent_thr->ThreadName().c_str(),
-             TwoLockSetsToString(seg->lsid(false), 
+             TwoLockSetsToString(seg->lsid(false),
                                  seg->lsid(true)).c_str());
       if (G_flags->show_states) {
         Report("   S%d\n", concurrent_sid.raw());
@@ -4037,12 +4100,12 @@ class ReportStorage {
   }
 
 
-  static void PrintReport(ThreadSanitizerReport *report) { 
+  static void PrintReport(ThreadSanitizerReport *report) {
     // right now -- only data races.
     CHECK(report);
     CHECK(report->type == ThreadSanitizerReport::DATA_RACE);
     ThreadSanitizerDataRaceReport *race =
-        (ThreadSanitizerDataRaceReport*)report;
+        reinterpret_cast<ThreadSanitizerDataRaceReport*>(report);
 
     AnnounceThreadsInSegmentSet(race->new_sval.rd_ssid());
     AnnounceThreadsInSegmentSet(race->new_sval.wr_ssid());
@@ -4064,53 +4127,53 @@ class ReportStorage {
     n_reports++;
     if (G_flags->html) {
       Report("<b id=race%d>Race report #%d; </b>"
-             "<a href=\"#race%d\">Next;</a>  " 
-             "<a href=\"#race%d\">Prev;</a>\n", 
+             "<a href=\"#race%d\">Next;</a>  "
+             "<a href=\"#race%d\">Prev;</a>\n",
              n_reports, n_reports, n_reports+1, n_reports-1);
     }
 
     if (!G_flags->summary_file.empty()) {
       char buff[100];
-      sprintf(buff, "ThreadSanitizer: %d data race(s) reported\n", n_reports);
-      // We overwrite the contents of this file with the new summary. 
+      snprintf(buff, sizeof(buff),
+               "ThreadSanitizer: %d data race(s) reported\n", n_reports);
+      // We overwrite the contents of this file with the new summary.
       // We don't do that at the end because even if we crash later
       // we will already have the summary.
       OpenFileWriteStringAndClose(G_flags->summary_file, buff);
     }
 
     // Note the {{{ and }}}. These are for vim folds.
-    Report("%sWARNING: %s data race during %s of size %d at %p: {{{%s\n", 
+    Report("%sWARNING: %s data race during %s of size %d at %p: {{{%s\n",
            c_red,
-           race->is_expected ? "Expected" : "Possible", 
-           is_w ? "write" : "read", 
-           race->last_access_size, 
+           race->is_expected ? "Expected" : "Possible",
+           is_w ? "write" : "read",
+           race->last_access_size,
            race->racey_addr,
            c_default);
     CHECK(race->last_access_stack_trace);
     LockSet::AddLocksToSet(race->last_acces_lsid[false], &all_locks);
     LockSet::AddLocksToSet(race->last_acces_lsid[true], &all_locks);
-    Report("   %s (%s):\n", 
+    Report("   %s (%s):\n",
            thr->ThreadName().c_str(),
-           TwoLockSetsToString(race->last_acces_lsid[false], 
-                               race->last_acces_lsid[true]).c_str()
-          );
+           TwoLockSetsToString(race->last_acces_lsid[false],
+                               race->last_acces_lsid[true]).c_str());
 
     Report("%s", race->last_access_stack_trace->ToString().c_str());
-    //Report(" sid=%d; vts=%s\n", thr->sid().raw(), 
+    // Report(" sid=%d; vts=%s\n", thr->sid().raw(),
     //       thr->vts()->ToString().c_str());
     if (G_flags->show_states) {
       Report(" old state: %s\n", race->old_sval.ToString().c_str());
       Report(" new state: %s\n", race->new_sval.ToString().c_str());
     }
     if (G_flags->keep_history) {
-      PrintConcurrentSegmentSet(race->new_sval.wr_ssid(), 
+      PrintConcurrentSegmentSet(race->new_sval.wr_ssid(),
                                 tid, sid, lsid, true, "write(s)", &all_locks);
       if (is_w) {
-        PrintConcurrentSegmentSet(race->new_sval.rd_ssid(), 
+        PrintConcurrentSegmentSet(race->new_sval.rd_ssid(),
                                   tid, sid, lsid, false, "read(s)", &all_locks);
       }
     } else {
-      Report("  %sAccess history is disabled. " 
+      Report("  %sAccess history is disabled. "
              "Consider running with --keep-history=1 for better reports.%s\n",
              c_cyan, c_default);
     }
@@ -4122,18 +4185,18 @@ class ReportStorage {
       Report("%s", race->racey_addr_description.c_str());
     }
     if (race->is_expected) {
-      Report(" Description: \"%s\"\n", 
+      Report(" Description: \"%s\"\n",
              (*G_expected_races_map)[race->racey_addr].description);
     }
     set<LID>  locks_reported;
 
     if (!all_locks.empty()) {
       string all_locks_str;
-      for (set<LID>::iterator it = all_locks.begin(); 
+      for (set<LID>::iterator it = all_locks.begin();
            it != all_locks.end(); ++it) {
         LID lid = *it;
         char buff[100];
-        sprintf(buff, "L%d", lid.raw());
+        snprintf(buff, sizeof(buff), "L%d", lid.raw());
         if (it != all_locks.begin())
           all_locks_str += ", ";
         all_locks_str += buff;
@@ -4142,7 +4205,7 @@ class ReportStorage {
              "(reporting last lock sites):%s {%s}\n",
              c_green, c_default, all_locks_str.c_str());
 
-      for (set<LID>::iterator it = all_locks.begin(); 
+      for (set<LID>::iterator it = all_locks.begin();
            it != all_locks.end(); ++it) {
         LID lid = *it;
         Lock::ReportLockWithOrWithoutContext(lid, true);
@@ -4159,55 +4222,61 @@ class ReportStorage {
     char buff[kBufLen+1];
     HeapInfo heap_info = IsHeapMem(a);
     if (heap_info.ptr) {
-      sprintf(buff, "  %sLocation %p is %ld bytes inside a block starting at %p"
-             " of size %ld allocated by T%d from heap:%s\n", 
-             c_blue, 
-             (void*)a, (long)(a - heap_info.ptr), (void*)heap_info.ptr, 
-             (long)heap_info.size, heap_info.tid.raw(), c_default);
+      snprintf(buff, sizeof(buff),
+             "  %sLocation %p is %ld bytes inside a block starting at %p"
+             " of size %ld allocated by T%d from heap:%s\n",
+             c_blue,
+             reinterpret_cast<void*>(a),
+             static_cast<intptr_t>(a - heap_info.ptr),
+             reinterpret_cast<void*>(heap_info.ptr),
+             static_cast<intptr_t>(heap_info.size),
+             heap_info.tid.raw(), c_default);
       return string(buff) + heap_info.stack_trace->ToString().c_str();
-    } 
+    }
 
 
     OffT offset;
-    if (VG_(get_datasym_and_offset)(a, (Char*)buff, kBufLen, &offset) ){
+    if (VG_(get_datasym_and_offset)(a, reinterpret_cast<Char*>(buff),
+                                    kBufLen, &offset)) {
       string symbol_descr = buff;
-      sprintf(buff, "  %sAddress %p is %d bytes inside data symbol \"", 
-              c_blue, (void*)a, (int)offset);
+      snprintf(buff, sizeof(buff),
+              "  %sAddress %p is %d bytes inside data symbol \"",
+              c_blue, reinterpret_cast<void*>(a), static_cast<int>(offset));
       return buff + symbol_descr + "\"" + c_default + "\n";
     }
     return "";
   }
 
-  
+
 
   map<StackTrace *, int, StackTrace::Less> reported_stacks_;
   static int n_reports;
 };
 
-// static 
-int ReportStorage::n_reports = 0; 
+// static
+int ReportStorage::n_reports = 0;
 
-//--------- Event Sampling ---------------- {{{1
+// -------- Event Sampling ---------------- {{{1
 // This class samples (profiles) events.
 // Instances of this class should all be static.
 class EventSampler {
  public:
 
-  // Sample one event 
+  // Sample one event
   void Sample(TID tid, const char *event_name) {
-    CHECK(G_flags->sample_events != 0);
+    CHECK_NE(G_flags->sample_events, 0);
     (counter_)++;
-    if ((counter_ & ((1 << G_flags->sample_events) - 1)) != 0) 
+    if ((counter_ & ((1 << G_flags->sample_events) - 1)) != 0)
       return;
     string pos =  Thread::Get(tid)->
         CallStackToStringRtnOnly(G_flags->sample_events_depth);
     (*samples_)[event_name][pos]++;
   }
-   
+
   // Show existing samples
   static void ShowSamples() {
     if (G_flags->sample_events == 0) return;
-    for (SampleMapMap::iterator it1 = samples_->begin(); 
+    for (SampleMapMap::iterator it1 = samples_->begin();
          it1 != samples_->end(); ++it1) {
       string name = it1->first;
       SampleMap &m = it1->second;
@@ -4222,12 +4291,12 @@ class EventSampler {
         if (n_samples * 1000 < total) continue;
         reverted_map[n_samples] = it2->first;
       }
-      Printf("%s: total samples %'d (~%'lld events)\n", name.c_str(), 
+      Printf("%s: total samples %'d (~%'lld events)\n", name.c_str(),
              total,
              (int64_t)total << G_flags->sample_events);
-      for (map<int,string>::iterator it = reverted_map.begin(); 
+      for (map<int, string>::iterator it = reverted_map.begin();
            it != reverted_map.end(); ++it) {
-        Printf("%s: %d%%%% %s\n", name.c_str(), 
+        Printf("%s: %d%%%% %s\n", name.c_str(),
                (it->first * 1000) / total, it->second.c_str());
       }
       Printf("\n");
@@ -4238,20 +4307,20 @@ class EventSampler {
   static void InitClassMembers() {
     samples_ = new SampleMapMap;
   }
- private: 
+ private:
 
   int counter_;
 
   typedef map<string, int> SampleMap;
   typedef map<string, SampleMap> SampleMapMap;
-  static SampleMapMap *samples_;     
+  static SampleMapMap *samples_;
 };
 
 EventSampler::SampleMapMap *EventSampler::samples_;
 
 
 
-//--------- Detector ---------------------- {{{1
+// -------- Detector ---------------------- {{{1
 // Basically, a collection of event handlers.
 class Detector {
  public:
@@ -4261,14 +4330,14 @@ class Detector {
     HandleOneEventInternal(event);
   }
 
-  void INLINE HandleMemoryAccess(int32_t tid, 
-                          uintptr_t addr, uintptr_t size, 
+  void INLINE HandleMemoryAccess(int32_t tid,
+                          uintptr_t addr, uintptr_t size,
                           bool is_w) {
     G_stats->events[is_w ? WRITE : READ]++;
     HandleMemoryAccessInternal(TID(tid), addr, size, is_w);
   }
 
-  void INLINE HandleStackMemChange(int32_t tid, uintptr_t addr,   
+  void INLINE HandleStackMemChange(int32_t tid, uintptr_t addr,
                                    uintptr_t size, bool is_new) {
     G_stats->events[is_new ? STACK_MEM_NEW : STACK_MEM_DIE]++;
     HandleStackMem(TID(tid), addr, size, is_new);
@@ -4277,30 +4346,30 @@ class Detector {
   void HandleProgramEnd() {
     // Report("ThreadSanitizerValgrind: done\n");
     // check if we found all expected races (for unit tests only).
-    for (ExpectedRacesMap::iterator it = G_expected_races_map->begin(); 
+    for (ExpectedRacesMap::iterator it = G_expected_races_map->begin();
          it != G_expected_races_map->end(); ++it) {
       ExpectedRace race = it->second;
       if (race.count == 0 && !race.is_benign) {
-        Printf("Missing an expected race on %p: %s (annotated at %s)\n", 
-               it->first, 
+        Printf("Missing an expected race on %p: %s (annotated at %s)\n",
+               it->first,
                race.description,
                PcToRtnNameAndFilePos(race.pc).c_str());
       }
     }
 
-    // check if there is not deleted memory 
+    // check if there is not deleted memory
     // (for debugging free() interceptors, not for leak detection)
     if (0) {
-      for (HeapMap::iterator it = G_heap_map->begin(); 
+      for (HeapMap::iterator it = G_heap_map->begin();
            it != G_heap_map->end(); ++it) {
         HeapInfo &info = it->second;
-        Printf("Not free()-ed memory: \n%s\n", 
+        Printf("Not free()-ed memory: \n%s\n",
                info.stack_trace->ToString().c_str());
       }
     }
 
     // CheckLiveSegments();
-    
+
     EventSampler::ShowSamples();
     ShowStats();
     ShowProcSelfStatus();
@@ -4310,7 +4379,7 @@ class Detector {
 
 
   void INLINE HandleSblockEnter(TID tid, uintptr_t pc) {
-    Thread::Get(tid)->HandleSblockEnter(pc);  
+    Thread::Get(tid)->HandleSblockEnter(pc);
     G_stats->events[SBLOCK_ENTER]++;
 
     // Are we out of segment IDs?
@@ -4318,7 +4387,7 @@ class Detector {
       ForgetAllStateAndStartOver("Thread Sanitizer has run out of segment IDs");
     }
 
-    if(UNLIKELY(G_flags->sample_events)) {
+    if (UNLIKELY(G_flags->sample_events)) {
       static EventSampler sampler;
       sampler.Sample(tid, "SampleSblockEnter");
     }
@@ -4338,7 +4407,7 @@ class Detector {
  private:
 
   void CheckLiveSegments() {
-    if (!(DEBUG_MODE && G_flags->debug_level >= 3)) 
+    if (!(DEBUG_MODE && G_flags->debug_level >= 3))
       return;
 #if 0
     Cache::Map::iterator it;
@@ -4366,11 +4435,11 @@ class Detector {
         }
       }
     }
-    Printf("lines total  : %d\n", (int)G_cache->map_.size());
+    Printf("lines total  : %d\n", static_cast<int>(G_cache->map_.size()));
     Printf("lines live   : %d\n", n_live_lines);
-    Printf("Segs  live   : %d  /  %d\n", (int)sids.size(), 
+    Printf("Segs  live   : %d  /  %d\n", static_cast<int>(sids.size()),
            Segment::NumLiveSegments());
-    Printf("SegSets live : %d\n", (int)ssids.size());
+    Printf("SegSets live : %d\n", static_cast<int>(ssids.size()));
     for (int s = 1; s < Segment::NumberOfSegments(); s++) {
       SID sid(s);
       if (Segment::Alive(sid) && sids.count(sid) == 0) {
@@ -4406,9 +4475,9 @@ class Detector {
       Thread::Get(TID(e_->tid()))->SetTopPc(e_->pc());
     }
 
-    switch(type) {
+    switch (type) {
       case THR_CREATE_AFTER   : HandleThreadCreateAfter(); break;
-      case THR_START   : 
+      case THR_START   :
         HandleThreadStart(TID(e_->tid()), TID(e_->info()), e_->pc());
         break;
 
@@ -4417,7 +4486,7 @@ class Detector {
 
       case THR_END     : HandleThreadEnd(TID(e_->tid()));     break;
       case MALLOC      : HandleMalloc();     break;
-      case FREE        : HandleFree();         break;                          
+      case FREE        : HandleFree();         break;
 
 
       case LOCK_BEFORE : HandleLockBefore();   break;
@@ -4425,7 +4494,7 @@ class Detector {
       case READER_LOCK : HandleLock(false);    break;
       case UNLOCK      : HandleUnlock();       break;
 
-      case LOCK_CREATE: 
+      case LOCK_CREATE:
       case LOCK_DESTROY: HandleLockCreateOrDestroy(); break;
 
       case BUS_LOCK_ACQUIRE   : HandleBusLock(true);  break;
@@ -4444,26 +4513,26 @@ class Detector {
       case PCQ_PUT      : HandlePcqPut();      break;
       case PCQ_GET      : HandlePcqGet();      break;
 
-  
+
       case EXPECT_RACE : HandleExpectRace();   break;
 
       case HB_LOCK     : HandleHBLock();       break;
 
-      case IGNORE_READS_BEG: HandleIgnore(false, true); break;
-      case IGNORE_READS_END: HandleIgnore(false, false); break;
-      case IGNORE_WRITES_BEG: HandleIgnore(true, true); break;
-      case IGNORE_WRITES_END: HandleIgnore(true, false); break;
+      case IGNORE_READS_BEG:  HandleIgnore(false, true);  break;
+      case IGNORE_READS_END:  HandleIgnore(false, false); break;
+      case IGNORE_WRITES_BEG: HandleIgnore(true, true);   break;
+      case IGNORE_WRITES_END: HandleIgnore(true, false);  break;
 
-      case SET_THREAD_NAME: 
-        cur_thread_->set_thread_name((const char*)e_->a()); 
+      case SET_THREAD_NAME:
+        cur_thread_->set_thread_name((const char*)e_->a());
         break;
 
-      case PUBLISH_RANGE : HandlePublishRange();   break;
+      case PUBLISH_RANGE : HandlePublishRange(); break;
 
-      case TRACE_MEM   : HandleTraceMem();        break;
+      case TRACE_MEM   : HandleTraceMem();   break;
+      case STACK_TRACE : HandleStackTrace(); break;
+      case NOOP        : CHECK(0);           break;  // can't happen.
       case VERBOSITY   : e_->Print(); G_flags->verbosity = e_->info(); break;
-      case STACK_TRACE : HandleStackTrace();   break;
-      case NOOP        : CHECK(0);            break; // can't happen.
       default                 : break;
     }
 
@@ -4473,7 +4542,7 @@ class Detector {
     }
   }
 
-  // PCQ_CREATE, PCQ_DESTROY, PCQ_PUT, PCQ_GET 
+  // PCQ_CREATE, PCQ_DESTROY, PCQ_PUT, PCQ_GET
   void HandlePcqCreate() {
     if (G_flags->verbosity >= 2) {
       e_->Print();
@@ -4525,7 +4594,7 @@ class Detector {
     PublishRange(mem, mem + size, cur_thread_->segment()->vts()->Clone());
 
     cur_thread_->NewSegmentForSignal();
-    //Printf("Publish: [%p, %p)\n", mem, mem+size);
+    // Printf("Publish: [%p, %p)\n", mem, mem+size);
   }
 
   void HandleIgnore(bool is_w, bool on) {
@@ -4539,17 +4608,16 @@ class Detector {
   void HandleExpectRace() {
     ExpectedRace expected_race;
     expected_race.count = 0;
-    expected_race.is_benign = (bool)e_->info();
+    expected_race.is_benign = static_cast<bool>(e_->info());
     expected_race.description = (const char*)e_->pc();
     expected_race.pc = cur_thread_->GetCallstackEntry(1);
     (*G_expected_races_map)[e_->a()] = expected_race;
     if (G_flags->verbosity >= 2) {
-      Printf("T%d: EXPECT_RACE: %p '%s'\n", e_->tid(), 
-             e_->a(), 
+      Printf("T%d: EXPECT_RACE: %p '%s'\n", e_->tid(),
+             e_->a(),
              expected_race.description);
       cur_thread_->ReportStackTrace(e_->pc());
     }
-
   }
 
   void HandleStackTrace() {
@@ -4563,7 +4631,7 @@ class Detector {
       e_->Print();
 //      cur_thread_->ReportStackTrace();
     }
-//    cur_thread_->ReportStackTrace(); 
+//    cur_thread_->ReportStackTrace();
     Lock *lock = Lock::LookupOrCreate(e_->a());
     CHECK(lock);
     lock->set_is_pure_happens_before(true);
@@ -4577,7 +4645,7 @@ class Detector {
     ClearMemoryState(a, b, false);
   }
 
-  void INLINE HandleStackMem(TID tid, uintptr_t addr, 
+  void INLINE HandleStackMem(TID tid, uintptr_t addr,
                              uintptr_t size, bool is_new_mem) {
     uintptr_t a = addr;
     DCHECK(size > 0);
@@ -4585,9 +4653,9 @@ class Detector {
     uintptr_t b = a + size;
     if (is_new_mem)
       ClearMemoryStateOnStackNewMem(a, b);
-    else 
+    else
       ClearMemoryStateOnStackDieMem(a, b);
-    if(G_flags->sample_events) {
+    if (G_flags->sample_events) {
       static EventSampler sampler;
       sampler.Sample(tid, "SampleStackChange");
     }
@@ -4631,7 +4699,7 @@ class Detector {
       // If there is a bug in a program when someone attempts to unlock
       // a destoyed lock, we are likely to fail in an assert.
       //
-      // We do not unlock-on-destroy after main() has exited. 
+      // We do not unlock-on-destroy after main() has exited.
       // This is because global Mutex objects may be desctructed while threads
       // holding them are still running. Urgh...
       Lock *lock = Lock::Lookup(lock_addr);
@@ -4650,7 +4718,7 @@ class Detector {
     if (G_flags->verbosity >= 3) {
       e_->Print();
     }
-    // TODO: do something smarter with atomics.
+    // TODO(kcc): do something smarter with atomics.
     if (is_acquire) {
 //      cur_thread_->HandleLock(kTheBusLock, true);
       cur_thread_->set_bus_lock_is_set(true);
@@ -4705,21 +4773,33 @@ class Detector {
     if (G_flags->verbosity >= 2) e_->Print();
   }
 
-  INLINE void RefAndUnrefTwoSegSetsIfDifferent(SSID new_ssid, SSID old_ssid) {
-    if (new_ssid != old_ssid) {
-      if (!new_ssid.IsEmpty()) {
-        SegmentSet::Ref(new_ssid, "RefAndUnrefTwoSegSetsIfDifferent");
-      }
-      if (!old_ssid.IsEmpty()) {
-        SegmentSet::Unref(old_ssid, "RefAndUnrefTwoSegSetsIfDifferent");
-      }
+  INLINE void RefAndUnrefTwoSegSetPairsIfDifferent(SSID new_ssid1,
+                                                   SSID old_ssid1,
+                                                   SSID new_ssid2,
+                                                   SSID old_ssid2) {
+    bool recycle_1 = new_ssid1 != old_ssid1,
+         recycle_2 = new_ssid2 != old_ssid2;
+    if (recycle_1 && !new_ssid1.IsEmpty()) {
+      SegmentSet::Ref(new_ssid1, "RefAndUnrefTwoSegSetPairsIfDifferent");
+    }
+
+    if (recycle_2 && !new_ssid2.IsEmpty()) {
+      SegmentSet::Ref(new_ssid2, "RefAndUnrefTwoSegSetPairsIfDifferent");
+    }
+
+    if (recycle_1 && !old_ssid1.IsEmpty()) {
+      SegmentSet::Unref(old_ssid1, "RefAndUnrefTwoSegSetPairsIfDifferent");
+    }
+
+    if (recycle_2 && !old_ssid2.IsEmpty()) {
+      SegmentSet::Unref(old_ssid2, "RefAndUnrefTwoSegSetPairsIfDifferent");
     }
   }
 
 
-  // return true if the current pair of read/write segment sets 
+  // return true if the current pair of read/write segment sets
   // describes a race.
-  bool NOINLINE CheckIfRace(SSID rd_ssid, SSID wr_ssid) { 
+  bool NOINLINE CheckIfRace(SSID rd_ssid, SSID wr_ssid) {
     int wr_ss_size = SegmentSet::Size(wr_ssid);
     int rd_ss_size = SegmentSet::Size(rd_ssid);
 
@@ -4743,7 +4823,7 @@ class Detector {
         SID r_sid = SegmentSet::GetSID(rd_ssid, r, __LINE__);
         Segment *r_seg = Segment::Get(r_sid);
         LSID r_ls = r_seg->lsid(false);
-        if (Segment::HappensBeforeOrSameThread(w1_sid, r_sid)) 
+        if (Segment::HappensBeforeOrSameThread(w1_sid, r_sid))
           continue;
         if (LockSet::IntersectionIsEmpty(w1_ls, r_ls)) {
           return true;
@@ -4756,14 +4836,14 @@ class Detector {
   // New experimental state machine.
   // Set *res to the new state.
   // Return true if the new state is race.
-  bool INLINE MemoryStateMachine(ShadowValue old_sval, Thread *thr, 
-                                 bool is_w, bool tracing, ShadowValue *res) {
+  bool INLINE MemoryStateMachine(ShadowValue old_sval, Thread *thr,
+                                 bool is_w, ShadowValue *res) {
     ShadowValue new_sval;
     SID cur_sid = thr->sid();
     DCHECK(cur_sid.valid());
 
-    if (old_sval.IsNew()) {
-      // We see this memory for the first time. 
+    if (UNLIKELY(old_sval.IsNew())) {
+      // We see this memory for the first time.
       DCHECK(cur_sid.valid());
       Segment::Ref(cur_sid, "MSM (new mem)");
       if (is_w) {
@@ -4784,7 +4864,7 @@ class Detector {
       new_wr_ssid = SegmentSet::AddSegmentToSS(old_wr_ssid, cur_sid);
     } else {
       new_rd_ssid = SegmentSet::AddSegmentToSS(old_rd_ssid, cur_sid);
-      new_wr_ssid = old_wr_ssid; 
+      new_wr_ssid = old_wr_ssid;
     }
 
     if (UNLIKELY(G_flags->sample_events > 0)) {
@@ -4797,20 +4877,22 @@ class Detector {
 
     new_sval.set(new_rd_ssid, new_wr_ssid);
     *res = new_sval;
+    if (new_sval == old_sval)
+      return false;
 
-    if (new_wr_ssid.IsTuple() || 
+    if (new_wr_ssid.IsTuple() ||
         (!new_wr_ssid.IsEmpty() && !new_rd_ssid.IsEmpty())) {
       return CheckIfRace(new_rd_ssid, new_wr_ssid);
     }
     return false;
   }
- 
 
-  INLINE ShadowValue HandleMemoryAccessHelper(bool is_w, 
+
+  INLINE ShadowValue HandleMemoryAccessHelper(bool is_w,
                                               CacheLine *cache_line,
-                                              uintptr_t addr, 
+                                              uintptr_t addr,
                                               uintptr_t size,
-                                              TID tid, 
+                                              TID tid,
                                               Thread *thr
                                              ) {
     uintptr_t offset = CacheLine::ComputeOffset(addr);
@@ -4827,7 +4909,7 @@ class Detector {
 
     ShadowValue *sval_p = cache_line->GetValuePointer(offset);
     ShadowValue old_sval;
-    if (!cache_line->used().Get(offset)) {
+    if (UNLIKELY(!cache_line->used().Get(offset))) {
       cache_line->used().Set(offset);
       cache_line->published().Clear(offset);
       old_sval.Clear();
@@ -4837,18 +4919,18 @@ class Detector {
 
     bool is_published = cache_line->published().Get(offset);
     // We check only the first bit for publishing, oh well.
-    
+
     if (UNLIKELY(is_published)) {
       const VTS *signaller_vts = GetPublisherVTS(addr);
       CHECK(signaller_vts);
       thr->NewSegmentForWait(signaller_vts);
     }
 
-    bool is_race = MemoryStateMachine(old_sval, thr, is_w, tracing, &new_sval);
+    bool is_race = MemoryStateMachine(old_sval, thr, is_w, &new_sval);
 
     if (UNLIKELY(tracing)) {
-      Printf("TRACE: T%d %s[%d] addr=%p sval: %s%s\n", 
-             tid.raw(), is_w ? "wr" : "rd", 
+      Printf("TRACE: T%d %s[%d] addr=%p sval: %s%s\n",
+             tid.raw(), is_w ? "wr" : "rd",
              size, addr, new_sval.ToString().c_str(),
              is_published ? " P" : "");
       thr->ReportStackTrace(GetVgPcOfCurrentThread());
@@ -4857,18 +4939,18 @@ class Detector {
     // Check for race.
     if (UNLIKELY(is_race)) {
       if (G_flags->report_races && !cache_line->racey().Get(offset)) {
-        reports_.AddReport(tid, GetVgPcOfCurrentThread(), is_w, addr, size, 
+        reports_.AddReport(tid, GetVgPcOfCurrentThread(), is_w, addr, size,
                            old_sval, new_sval, is_published);
       }
       // new_sval.set_racey(true);
       cache_line->racey().Set(offset);
-    }   
+    }
 
 
     // Ref/Unref segments
-    RefAndUnrefTwoSegSetsIfDifferent(new_sval.rd_ssid(),
-                                     old_sval.rd_ssid());
-    RefAndUnrefTwoSegSetsIfDifferent(new_sval.wr_ssid(),
+    RefAndUnrefTwoSegSetPairsIfDifferent(new_sval.rd_ssid(),
+                                     old_sval.rd_ssid(),
+                                     new_sval.wr_ssid(),
                                      old_sval.wr_ssid());
 
     *sval_p = new_sval;
@@ -4911,13 +4993,11 @@ class Detector {
   }
 
 
-  INLINE void HandleMemoryAccessInternal(TID tid, 
-                                         uintptr_t addr, uintptr_t size, 
+  INLINE void HandleMemoryAccessInternal(TID tid,
+                                         uintptr_t addr, uintptr_t size,
                                          bool is_w) {
-
-
     if (UNLIKELY(G_flags->sample_events > 0)) {
-      const char *type = 
+      const char *type =
           (cur_thread_->ignore(true) || cur_thread_->ignore(false))
           ? "SampleMemoryAccessIgnored"
           : "SampleMemoryAccess";
@@ -4939,12 +5019,12 @@ class Detector {
     uintptr_t b = a + size;
 
     CacheLine *cache_line = G_cache->GetLine(addr, __LINE__);
-    
+
     // TODO(timurrrr): bug with unaligned access that touches two CacheLines.
     if (FastModeCheckAndUpdateCreatorTid(cache_line, tid)) return;
 
     if (UNLIKELY(G_flags->keep_history >= 2)) {
-      // Keep the precise history. Very SLOW! 
+      // Keep the precise history. Very SLOW!
       HandleSblockEnter(tid, GetVgPcOfCurrentThread());
     }
 
@@ -4961,7 +5041,7 @@ class Detector {
       HandleMemoryAccessHelper(is_w, cache_line, addr, size, tid, thr);
       G_stats->n_access1++;
     } else {
-      // slow case 
+      // slow case
       for (uintptr_t x = a; x < b; x++) {
         cache_line = G_cache->GetLine(x, __LINE__);
         if (FastModeCheckAndUpdateCreatorTid(cache_line, tid)) return;
@@ -4982,14 +5062,13 @@ class Detector {
   void HandleMalloc() {
     TID tid = cur_tid_;
     uintptr_t a = e_->a();
-    uintptr_t size = e_->info(); 
+    uintptr_t size = e_->info();
 
     if (G_flags->verbosity >= 2) {
-      Printf("T%d MALLOC: %p %p %s %s\n", 
-             tid.raw(), size, a,  
+      Printf("T%d MALLOC: %p %p %s %s\n",
+             tid.raw(), size, a,
              Segment::ToString(cur_thread_->sid()).c_str(),
-             cur_thread_->segment()->vts()->ToString().c_str()
-             );
+             cur_thread_->segment()->vts()->ToString().c_str());
       // cur_thread_->ReportStackTrace(e_->pc());
     }
 
@@ -5006,7 +5085,7 @@ class Detector {
     info.stack_trace = cur_thread_->CreateStackTrace();
     // cur_thread_->PopCallStack();
 
-    // CHECK(!G_heap_map->count(a));  // we may have two calls 
+    // CHECK(!G_heap_map->count(a));  // we may have two calls
                                       //  to AnnotateNewMemory.
     (*G_heap_map)[a] = info;
   }
@@ -5018,7 +5097,7 @@ class Detector {
       e_->Print();
     //  cur_thread_->ReportStackTrace(e_->pc());
     }
-    if(!G_heap_map->count(a))
+    if (!G_heap_map->count(a))
       return;
     // update G_heap_map
     // CHECK(G_heap_map->count(a));
@@ -5027,7 +5106,7 @@ class Detector {
     StackTrace::Delete(info.stack_trace);
     G_heap_map->erase(a);
 
-    uintptr_t size = info.size; 
+    uintptr_t size = info.size;
     ClearMemoryStateOnFree(a, a + size);
   }
 
@@ -5052,25 +5131,24 @@ class Detector {
       parent->NewSegmentForSignal();
 
       if (G_flags->verbosity >= 2) {
-        Printf("T%d:  THR_START   : %s %s\n", child_tid.raw(), 
-               //Segment::ToString(sid).c_str(),
+        Printf("T%d:  THR_START   : %s %s\n", child_tid.raw(),
+               // Segment::ToString(sid).c_str(),
                parent->vts()->ToString().c_str(),
-               vts->ToString().c_str()
-              );
+               vts->ToString().c_str());
         if (G_flags->verbosity >= 2 && creation_context)
           Printf("%s", creation_context->ToString().c_str());
       }
-
     }
 
-    Thread *new_thread = new Thread(child_tid, parent_tid, vts, creation_context);
+    Thread *new_thread = new Thread(child_tid, parent_tid,
+                                    vts, creation_context);
     cur_thread_ = Thread::Get(child_tid);
     CHECK(new_thread == cur_thread_);
   }
 
 
   void HandleThreadCreateAfter() {
-    Thread::SetThreadPthreadT(TID(e_->tid()),(pthread_t)e_->a());
+    Thread::SetThreadPthreadT(TID(e_->tid()), (pthread_t)e_->a());
   }
 
   // THR_END
@@ -5081,15 +5159,14 @@ class Detector {
       child->HandleThreadEnd();
 
       if (G_flags->debug_level >= 3)
-        Printf("T%d: end %p %p (%ld)\n", tid.raw(), 
-             child->max_sp(), child->min_sp(), 
+        Printf("T%d: end %p %p (%ld)\n", tid.raw(),
+             child->max_sp(), child->min_sp(),
              child->max_sp() - child->min_sp());
 
       if (G_flags->verbosity >= 2) {
-        Printf("T%d:  THR_END     : %s %s\n", tid.raw(), 
+        Printf("T%d:  THR_END     : %s %s\n", tid.raw(),
                Segment::ToString(child->sid()).c_str(),
-               child->vts()->ToString().c_str()
-               );
+               child->vts()->ToString().c_str());
       }
     }
     Thread *thr = Thread::Get(tid);
@@ -5098,7 +5175,7 @@ class Detector {
         Report("WARNING: T%d ended while the 'ignore %s' bit is set\n",
                rd_or_rw ? "writes" : "reads", tid.raw());
         if (G_flags->debug_level >= 1) {
-          Report("Last ignore call was here: \n%s\n", 
+          Report("Last ignore call was here: \n%s\n",
                  thr->GetLastIgnoreContext(rd_or_rw)->ToString().c_str());
         }
       }
@@ -5112,7 +5189,7 @@ class Detector {
     Thread *parent_thr = Thread::Get(parent_tid);
     parent_thr->HandleThreadJoinBefore((pthread_t)e_->a());
     if (G_flags->verbosity >= 2) {
-      Printf("T%d:  THR_JOIN_BEFORE\n", 
+      Printf("T%d:  THR_JOIN_BEFORE\n",
              parent_tid.raw());
     }
   }
@@ -5128,7 +5205,7 @@ class Detector {
     Segment::AssertLive(parent_thr->sid(),  __LINE__);
     parent_thr->NewSegmentForWait(vts_at_exit);
     if (G_flags->verbosity >= 2) {
-      Printf("T%d:  THR_JOIN_AFTER T%d  : %s\n", tid.raw(), 
+      Printf("T%d:  THR_JOIN_AFTER T%d  : %s\n", tid.raw(),
              child_tid.raw(), parent_thr->vts()->ToString().c_str());
     }
   }
@@ -5142,13 +5219,11 @@ class Detector {
 
 static Detector        *G_detector;
 
-//--------- Flags ------------------------- {{{1
-const char *usage_str = 
+// -------- Flags ------------------------- {{{1
+const char *usage_str =
 "Usage:\n"
 "  %s [options] program_to_test [program's options]\n"
 "See %s for details\n";
-;
-
 
 void ThreadSanitizerPrintUsage() {
   Printf(usage_str, TSAN_PROGRAM_NAME, TSAN_URL);
@@ -5183,7 +5258,7 @@ static bool FlagNameMatch(const string &arg, const string &flag, string *val) {
   return true;
 }
 
-static void FindBoolFlag(const char *name, bool default_val, 
+static void FindBoolFlag(const char *name, bool default_val,
                   vector<string> *args, bool *retval) {
   *retval = default_val;
   bool cont = false;
@@ -5194,6 +5269,7 @@ static void FindBoolFlag(const char *name, bool default_val,
       string &str = *it;
       string flag_value;
       if (!FlagNameMatch(str, name, &flag_value)) continue;
+
       if (flag_value == "")            *retval = true;
       else if (flag_value == "1")     *retval = true;
       else if (flag_value == "true")  *retval = true;
@@ -5201,7 +5277,9 @@ static void FindBoolFlag(const char *name, bool default_val,
       else if (flag_value == "0")     *retval = false;
       else if (flag_value == "false") *retval = false;
       else if (flag_value == "no")    *retval = false;
-      else ReportUnknownFlagAndExit(str);
+      else
+        ReportUnknownFlagAndExit(str);
+
       if (G_flags->verbosity >= 1) {
         Printf("%40s => %s\n", name, *retval ? "true" : "false");
       }
@@ -5211,7 +5289,7 @@ static void FindBoolFlag(const char *name, bool default_val,
       cont = true;
       args->erase(it);
     }
-  } while(cont); 
+  } while (cont);
 }
 
 static void FindIntFlag(const char *name, intptr_t default_val,
@@ -5228,7 +5306,7 @@ static void FindIntFlag(const char *name, intptr_t default_val,
       char *end_ptr;
       const char *beg_ptr = flag_value.c_str();
       intptr_t int_val = my_strtol(beg_ptr, &end_ptr);
-      if (flag_value.empty() || beg_ptr + flag_value.size() != end_ptr) 
+      if (flag_value.empty() || beg_ptr + flag_value.size() != end_ptr)
         ReportUnknownFlagAndExit(str);
       *retval = int_val;
       if (G_flags->verbosity >= 1) {
@@ -5240,14 +5318,14 @@ static void FindIntFlag(const char *name, intptr_t default_val,
       cont = true;
       args->erase(it);
     }
-  } while(cont); 
+  } while (cont);
 }
 
 static void FindUIntFlag(const char *name, intptr_t default_val,
                  vector<string> *args, uintptr_t *retval) {
   intptr_t signed_int;
   FindIntFlag(name, default_val, args, &signed_int);
-  CHECK(signed_int >= 0);
+  CHECK_GE(signed_int, 0);
   *retval = signed_int;
 }
 
@@ -5271,71 +5349,76 @@ void FindStringFlag(const char *name, vector<string> *args,
       cont = true;
       args->erase(it);
     }
-  } while(cont); 
+  } while (cont);
 }
 
-void ThreadSanitizerParseFlags(vector<string> &args) { 
+void ThreadSanitizerParseFlags(vector<string> *args) {
   // Check this first.
-  FindIntFlag("v", 0, &args, &G_flags->verbosity);
+  FindIntFlag("v", 0, args, &G_flags->verbosity);
 
-  FindBoolFlag("ignore_stack", true, &args, &G_flags->ignore_stack);
-  FindIntFlag("keep_history", 1, &args, &G_flags->keep_history);
-  FindUIntFlag("segment_set_recycle_queue_size", DEBUG_MODE ? 10 : 10000, &args,
+  FindBoolFlag("ignore_stack", true, args, &G_flags->ignore_stack);
+  FindIntFlag("keep_history", 1, args, &G_flags->keep_history);
+  FindUIntFlag("segment_set_recycle_queue_size", DEBUG_MODE ? 10 : 10000, args,
                &G_flags->segment_set_recycle_queue_size);
-  FindBoolFlag("fast_mode", true, &args, &G_flags->fast_mode);
-  FindBoolFlag("pure_happens_before", false, &args, &G_flags->pure_happens_before);
-  FindBoolFlag("show_expected_races", false, &args, 
+  FindBoolFlag("fast_mode", true, args, &G_flags->fast_mode);
+  FindBoolFlag("pure_happens_before", false, args,
+               &G_flags->pure_happens_before);
+  FindBoolFlag("show_expected_races", false, args,
                &G_flags->show_expected_races);
-  FindBoolFlag("demangle", true, &args, &G_flags->demangle);
+  FindBoolFlag("demangle", true, args, &G_flags->demangle);
 
-  FindBoolFlag("announce_threads", false, &args, &G_flags->announce_threads);
-  FindBoolFlag("full_output", false, &args, &G_flags->full_output);
-  FindBoolFlag("show_states", false, &args, &G_flags->show_states);
-  FindBoolFlag("show_proc_self_status", false, &args, &G_flags->show_proc_self_status);
-  FindBoolFlag("show_valgrind_context", false, &args, &G_flags->show_valgrind_context);
-  FindBoolFlag("show_pc", false, &args, &G_flags->show_pc);
-  FindBoolFlag("ignore_in_dtor", true, &args, &G_flags->ignore_in_dtor);
-  FindBoolFlag("exit_after_main", false, &args, &G_flags->exit_after_main);
+  FindBoolFlag("announce_threads", false, args, &G_flags->announce_threads);
+  FindBoolFlag("full_output", false, args, &G_flags->full_output);
+  FindBoolFlag("show_states", false, args, &G_flags->show_states);
+  FindBoolFlag("show_proc_self_status", false, args,
+               &G_flags->show_proc_self_status);
+  FindBoolFlag("show_valgrind_context", false, args,
+               &G_flags->show_valgrind_context);
+  FindBoolFlag("show_pc", false, args, &G_flags->show_pc);
+  FindBoolFlag("ignore_in_dtor", true, args, &G_flags->ignore_in_dtor);
+  FindBoolFlag("exit_after_main", false, args, &G_flags->exit_after_main);
 
-  FindBoolFlag("show_stats", false, &args, &G_flags->show_stats);
-  FindBoolFlag("color", false, &args, &G_flags->color);
-  FindBoolFlag("html", false, &args, &G_flags->html);
+  FindBoolFlag("show_stats", false, args, &G_flags->show_stats);
+  FindBoolFlag("color", false, args, &G_flags->color);
+  FindBoolFlag("html", false, args, &G_flags->html);
 
-  FindIntFlag("dry_run", 0, &args, &G_flags->dry_run);
-  FindBoolFlag("report_races", true, &args, &G_flags->report_races);
-  FindBoolFlag("compress_cache_lines", false, &args, &G_flags->compress_cache_lines);
-  FindBoolFlag("unlock_on_mutex_destroy", true, &args, &G_flags->unlock_on_mutex_destroy);
+  FindIntFlag("dry_run", 0, args, &G_flags->dry_run);
+  FindBoolFlag("report_races", true, args, &G_flags->report_races);
+  FindBoolFlag("compress_cache_lines", false, args,
+               &G_flags->compress_cache_lines);
+  FindBoolFlag("unlock_on_mutex_destroy", true, args,
+               &G_flags->unlock_on_mutex_destroy);
 
-  FindIntFlag("sample_events", 0, &args, &G_flags->sample_events);
-  FindIntFlag("sample_events_depth", 2, &args, &G_flags->sample_events_depth);
+  FindIntFlag("sample_events", 0, args, &G_flags->sample_events);
+  FindIntFlag("sample_events_depth", 2, args, &G_flags->sample_events_depth);
 
-  FindIntFlag("debug_level", 1, &args, &G_flags->debug_level);
-  FindIntFlag("trace_level", 0, &args, &G_flags->trace_level);
+  FindIntFlag("debug_level", 1, args, &G_flags->debug_level);
+  FindIntFlag("trace_level", 0, args, &G_flags->trace_level);
 
 
-  FindStringFlag("file_prefix_to_cut", &args, &G_flags->file_prefix_to_cut);
-  FindStringFlag("ignore", &args, &G_flags->ignore);
+  FindStringFlag("file_prefix_to_cut", args, &G_flags->file_prefix_to_cut);
+  FindStringFlag("ignore", args, &G_flags->ignore);
 
-  FindBoolFlag("detect_thread_create", false, &args, &G_flags->detect_thread_create);
+  FindBoolFlag("detect_thread_create", false, args,
+               &G_flags->detect_thread_create);
 
-  FindIntFlag("trace_addr", 0, &args, (intptr_t*)&G_flags->trace_addr);
+  FindIntFlag("trace_addr", 0, args,
+              reinterpret_cast<intptr_t*>(&G_flags->trace_addr));
 
   vector<string> summary_file_tmp;
-  FindStringFlag("summary_file", &args, &summary_file_tmp);
+  FindStringFlag("summary_file", args, &summary_file_tmp);
   if (summary_file_tmp.size() > 0) {
     G_flags->summary_file = summary_file_tmp.back();
   }
 
-
-  FindIntFlag("max_sid", kMaxSID, &args, &G_flags->max_sid);
+  FindIntFlag("max_sid", kMaxSID, args, &G_flags->max_sid);
   kMaxSID = G_flags->max_sid;
   if (kMaxSID <= 100000) {
     Printf("Error: max-sid should be at least 100000. Exiting\n");
     exit(1);
   }
 
-
-  FindIntFlag("num_callers_in_history", kSizeOfHistoryStackTrace, &args, 
+  FindIntFlag("num_callers_in_history", kSizeOfHistoryStackTrace, args,
               &G_flags->num_callers_in_history);
   kSizeOfHistoryStackTrace = G_flags->num_callers_in_history;
   if (G_flags->keep_history == 0) {
@@ -5343,8 +5426,8 @@ void ThreadSanitizerParseFlags(vector<string> &args) {
   }
 
 
-//  FindIntFlag("num_callers", 15, &args, &G_flags->num_callers);
-  // we get num-callers from valgrind flags. 
+//  FindIntFlag("num_callers", 15, args, &G_flags->num_callers);
+  // we get num-callers from valgrind flags.
   G_flags->num_callers = VG_(clo_backtrace_size);
 
   G_flags->max_n_threads        = 20000;
@@ -5363,31 +5446,32 @@ void ThreadSanitizerParseFlags(vector<string> &args) {
   }
 
 
-  if (!args.empty()) {
-    ReportUnknownFlagAndExit(args.front());
+  if (!args->empty()) {
+    ReportUnknownFlagAndExit(args->front());
   }
 }
 
-//--------- ThreadSanitizer ------------------ {{{1
+// -------- ThreadSanitizer ------------------ {{{1
 
 
 // This function is taken from valgrind's m_libcbase.c (thanks GPL!).
-static bool FastRecursiveStringMatch (const char* pat, const char* str, int *depth) {
-  CHECK((*depth) < 10000);
+static bool FastRecursiveStringMatch(const char* pat, const char* str,
+                                     int *depth) {
+  CHECK_LT((*depth), 10000);
   (*depth)++;
   for (;;) {
     switch (*pat) {
       case '\0':(*depth)--;
-                return (*str=='\0');
+                return (*str == '\0');
       case '*': do {
-                  if (FastRecursiveStringMatch(pat+1,str, depth)) {
+                  if (FastRecursiveStringMatch(pat+1, str, depth)) {
                     (*depth)--;
                     return True;
                   }
                 } while (*str++);
                   (*depth)--;
                   return False;
-      case '?': if (*str++=='\0') {
+      case '?': if (*str++ == '\0') {
                   (*depth)--;
                   return False;
                 }
@@ -5406,7 +5490,7 @@ static bool FastRecursiveStringMatch (const char* pat, const char* str, int *dep
     }
   }
 }
-                                                                                                                                                                                                                                                                                                                                                                                                                                       
+
 
 static bool StringMatch(const string &pattern, const string &str) {
   int depth = 0;
@@ -5429,7 +5513,7 @@ void SplitStringIntoLinesAndRemoveBlanksAndComments(
       continue;
     }
     if (ch == ' ' || ch == '\t') continue;
-    if (ch == '#' ) {
+    if (ch == '#') {
       in_comment = true;
       continue;
     }
@@ -5451,12 +5535,12 @@ static IgnoreLists *g_ignore_lists;
 // Setup the list of functions/images/files to ignore.
 static void SetupIgnore() {
   g_ignore_lists = new IgnoreLists;
-  // add some major ignore entries so that tsan remains sane 
+  // add some major ignore entries so that tsan remains sane
   // even w/o any ignore file.
   g_ignore_lists->objs.push_back("*/libpthread-*");
   g_ignore_lists->objs.push_back("*/ld-2*.so");
   g_ignore_lists->files.push_back("*ts_valgrind_intercepts.c");
-  
+
   // Now read the ignore files.
   for (size_t i = 0; i < G_flags->ignore.size(); i++) {
     string file_name = G_flags->ignore[i];
@@ -5489,15 +5573,15 @@ bool ThreadSanitizerWantToInstrumentSblock(uintptr_t pc) {
   PcToStrings(pc, false, &img_name, &rtn_name, &file_name, &line_no);
 
   for (size_t i = 0; i < g_ignore_lists->files.size(); i++) {
-    if (StringMatch(g_ignore_lists->files[i], file_name)) 
+    if (StringMatch(g_ignore_lists->files[i], file_name))
       return False;
   }
   for (size_t i = 0; i < g_ignore_lists->objs.size(); i++) {
-    if (StringMatch(g_ignore_lists->objs[i], img_name)) 
+    if (StringMatch(g_ignore_lists->objs[i], img_name))
       return False;
   }
   for (size_t i = 0; i < g_ignore_lists->funcs.size(); i++) {
-    if (StringMatch(g_ignore_lists->funcs[i], rtn_name)) 
+    if (StringMatch(g_ignore_lists->funcs[i], rtn_name))
       return False;
   }
 
@@ -5508,7 +5592,7 @@ bool ThreadSanitizerWantToInstrumentSblock(uintptr_t pc) {
 extern void ThreadSanitizerInit() {
   ScopedMallocCostCenter cc("ThreadSanitizerInit");
   g_so_far_only_one_thread = true;
-  CHECK(sizeof(ShadowValue) == 8);
+  CHECK_EQ(sizeof(ShadowValue), 8);
   CHECK(G_flags);
   G_stats        = new Stats;
   G_detector     = new Detector;
@@ -5544,7 +5628,7 @@ extern void ThreadSanitizerInit() {
     c_yellow  = "<font color=yellow><b>";
     c_default = "</b></font>";
   } else if (G_flags->color) {
-    // Enable ANSI colors. 
+    // Enable ANSI colors.
     c_bold    = "\033[1m";
     c_red     = "\033[31m";
     c_green   = "\033[32m";
@@ -5554,7 +5638,6 @@ extern void ThreadSanitizerInit() {
     c_cyan    = "\033[36m";
     c_default = "\033[0m";
   }
-
 
   if (G_flags->verbosity >= 1) {
     Report("INFO: Started pid %d\n",  getpid());
@@ -5569,26 +5652,22 @@ extern void ThreadSanitizerHandleOneEvent(Event *event) {
   G_detector->HandleOneEvent(event);
 }
 
-void INLINE ThreadSanitizerHandleMemoryAccess(int32_t tid, 
-                                              uintptr_t addr, uintptr_t size, 
+void INLINE ThreadSanitizerHandleMemoryAccess(int32_t tid,
+                                              uintptr_t addr, uintptr_t size,
                                               bool is_w) {
   G_detector->HandleMemoryAccess(tid, addr, size, is_w);
 }
 
-
-void INLINE ThreadSanitizerHandleStackMemChange(int32_t tid, uintptr_t addr, 
+void INLINE ThreadSanitizerHandleStackMemChange(int32_t tid, uintptr_t addr,
                                                 uintptr_t size, bool is_new) {
-
   G_detector->HandleStackMemChange(tid, addr, size, is_new);
 }
-
 
 void INLINE ThreadSanitizerEnterSblock(int32_t tid, uintptr_t pc) {
   G_detector->HandleSblockEnter(TID(tid), pc);
 }
 
-
-void INLINE ThreadSanitizerHandleRtnCall(int32_t tid, uintptr_t call_pc, 
+void INLINE ThreadSanitizerHandleRtnCall(int32_t tid, uintptr_t call_pc,
                                          uintptr_t target_pc) {
   G_detector->HandleRtnCall(TID(tid), call_pc, target_pc);
 }
@@ -5600,8 +5679,8 @@ extern void ThreadSanitizerPrintReport(ThreadSanitizerReport *report) {
   ReportStorage::PrintReport(report);
 }
 
-//--------- ts_inst_valgrind.cc -------------------------- {{{1
-// gcc doesnt't have cross-file inlining, so do it ourselves, 
+// -------- ts_inst_valgrind.cc -------------------------- {{{1
+// gcc doesnt't have cross-file inlining, so do it ourselves,
 // but only in optimized build.
 #if not defined(DEBUG)
 #define TS_INSTR_VALGRIND_HERE
@@ -5609,7 +5688,7 @@ extern void ThreadSanitizerPrintReport(ThreadSanitizerReport *report) {
 #endif
 
 
-//--------- TODO -------------------------- {{{1
+// -------- TODO -------------------------- {{{1
 // - Support configurable aliases for function names (is it doable in valgrind)?
 // - Correctly support atomic operations (not just ignore).
 // - Implement initialization state. (do we need it if we have fast-mode?)
@@ -5617,7 +5696,7 @@ extern void ThreadSanitizerPrintReport(ThreadSanitizerReport *report) {
 //   - same for memset, etc
 // - Implement correct handling of memory accesses with different sizes.
 // - Do not create HB arcs between RdUnlock and RdLock
-// - Compress cache lines 
+// - Compress cache lines
 // - Optimize the case where a threads signals twice in a row on the same
 //   address.
 // - Fix --ignore-in-dtor if --demangle=no.

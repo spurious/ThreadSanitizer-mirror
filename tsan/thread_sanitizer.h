@@ -33,8 +33,6 @@
 #include "ts_setup.h"
 #include "ts_valgrind.h"
 
-
-
 #include "stlport/set"
 #include "stlport/map"
 #include "stlport/hash_map"
@@ -48,6 +46,12 @@
 
 
 #define CHECK tl_assert
+#define CHECK_GT(X, Y) tl_assert((X) >  (Y))
+#define CHECK_LT(X, Y) tl_assert((X) < (Y))
+#define CHECK_GE(X, Y) tl_assert((X) >= (Y))
+#define CHECK_LE(X, Y) tl_assert((X) <= (Y))
+#define CHECK_NE(X, Y) tl_assert((X) != (Y))
+#define CHECK_EQ(X, Y) tl_assert((X) == (Y))
 #define sprintf(arg1, arg2...) VG_(sprintf)((Char*)arg1, (HChar*)arg2)
 #define vsnprintf(a1, a2, a3, a4) VG_(vsnprintf)((Char*)a1, a2, a3, a4)
 #define getpid VG_(getpid)
@@ -236,7 +240,7 @@ extern void ThreadSanitizerHandleMemoryAccess(int32_t tid,
                                               bool is_w);
 extern void ThreadSanitizerHandleStackMemChange(int32_t tid, uintptr_t addr, 
                                                 uintptr_t size, bool is_new);
-extern void ThreadSanitizerParseFlags(vector<string> &args);
+extern void ThreadSanitizerParseFlags(vector<string>* args);
 extern bool ThreadSanitizerWantToInstrumentSblock(uintptr_t pc);
 
 extern void ThreadSanitizerEnterSblock(int32_t tid, uintptr_t pc);
