@@ -5979,6 +5979,41 @@ void Run() {
 REGISTER_TEST2(Run, 128, FEATURE | EXCLUDE_FROM_ALL)
 }  // namespace test128
 
+// test129: TN. Synchronization via ReaderLockWhen(). {{{1
+namespace test129 {  
+int     GLOB = 0;
+Mutex   MU; 
+bool WeirdCondition(int* param) {
+  *param = GLOB;
+  return GLOB > 0;
+}
+void Waiter() {
+  int param = 0;
+  MU.ReaderLockWhen(Condition(WeirdCondition, &param));
+  MU.ReaderUnlock();
+  CHECK(GLOB > 0);
+  CHECK(param > 0);
+}
+void Waker() {
+  usleep(100000);  // Make sure the waiter blocks.
+  MU.Lock();
+  GLOB++;          // We are done! Tell the Waiter. 
+  MU.Unlock();     // calls ANNOTATE_CONDVAR_SIGNAL;
+}
+void Run() {
+  printf("test129: Synchronization via ReaderLockWhen()\n");
+  {
+    GLOB = 0;
+    ThreadPool pool(1);
+    pool.StartWorkers();
+    pool.Add(NewCallback(Waiter));
+    Waker();
+  }
+  printf("\tGLOB=%d\n", GLOB);
+}
+REGISTER_TEST2(Run, 129, FEATURE);
+}  // namespace test129
+
 // test300: {{{1
 namespace test300 {
 int     GLOB = 0;
