@@ -6016,16 +6016,39 @@ REGISTER_TEST2(Run, 129, FEATURE);
 
 // test130: TN. Per-thread. {{{1
 namespace test130 {
+// This test verifies that the race detector handles __thread
+// (thread-local storage) correctly.
+// As of 09-03-30 ThreadSanitizer has a bug: 
+//   - Thread1 starts
+//   - Thread1 touches per_thread_global
+//   - Thread1 ends
+//   - Thread2 starts (and there is no happens-before relation between it and
+//   Thread1)
+//   - Thread2 touches per_thread_global
+// It may happen so that Thread2 will have per_thread_global in the same address
+// as Thread1. Since there is no happens-before relation between threads, 
+// ThreadSanitizer reports a race.
 
 static __thread int per_thread_global = 0;
 
-void Worker() {
-  printf("Per-thread: %x\n", &per_thread_global);
+void RealWorker() {  // Touch per_thread_global.
+  // printf("Per-thread: %x\n", &per_thread_global);
   per_thread_global++;
 }
 
+void Worker() {  // Spawn few threads that touch per_thread_global.
+  MyThreadArray t(RealWorker, RealWorker, RealWorker, RealWorker);
+  t.Start();
+  t.Join();
+}
+void Worker0() { sleep(0); Worker(); }
+void Worker1() { sleep(1); Worker(); }
+void Worker2() { sleep(2); Worker(); }
+void Worker3() { sleep(3); Worker(); }
+
+
 void Run() {
-  MyThreadArray t(Worker, Worker, Worker);
+  MyThreadArray t(Worker0, Worker1, Worker2, Worker3);
   t.Start();
   t.Join();
   printf("\tper_thread_global=%d\n", per_thread_global);
