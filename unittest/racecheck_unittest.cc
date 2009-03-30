@@ -6016,8 +6016,8 @@ REGISTER_TEST2(Run, 129, FEATURE);
 
 // test130: TN. Per-thread. {{{1
 namespace test130 {
-// This test verifies that the race detector handles __thread
-// (thread-local storage) correctly.
+// This test verifies that the race detector handles 
+// thread-local storage (TLS) correctly.
 // As of 09-03-30 ThreadSanitizer has a bug: 
 //   - Thread1 starts
 //   - Thread1 touches per_thread_global
@@ -6028,12 +6028,19 @@ namespace test130 {
 // It may happen so that Thread2 will have per_thread_global in the same address
 // as Thread1. Since there is no happens-before relation between threads, 
 // ThreadSanitizer reports a race.
+//
+// The same test also checks that stack has no similar problem.
 
 static __thread int per_thread_global = 0;
 
 void RealWorker() {  // Touch per_thread_global.
   // printf("Per-thread: %x\n", &per_thread_global);
   per_thread_global++;
+  int stack_var = 0;
+  stack_var++;
+  printf("Stack: %x %d; Per-Thread: %x %d\n", 
+         &stack_var, stack_var,
+         &per_thread_global, per_thread_global);
 }
 
 void Worker() {  // Spawn few threads that touch per_thread_global.
