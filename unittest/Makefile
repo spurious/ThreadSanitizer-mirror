@@ -3,7 +3,7 @@ CXX=g++
 SUFFIX=
 CXXFLAGS=
 
-all: racecheck_unittest${SUFFIX} bigtest${SUFFIX}
+all: racecheck_unittest${SUFFIX} bigtest${SUFFIX} false_sharing_unittest${SUFFIX}
 O1: 
 	make SUFFIX=.O1 CXXFLAGS="-O1 -fno-inline"
 O2: 

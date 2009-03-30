@@ -6014,6 +6014,27 @@ void Run() {
 REGISTER_TEST2(Run, 129, FEATURE);
 }  // namespace test129
 
+// test130: TN. Per-thread. {{{1
+namespace test130 {
+
+static __thread int per_thread_global = 0;
+
+void Worker() {
+  printf("Per-thread: %x\n", &per_thread_global);
+  per_thread_global++;
+}
+
+int     GLOB = 0;
+void Run() {
+  MyThreadArray t(Worker, Worker, Worker);
+  t.Start();
+  t.Join();
+  printf("\tGLOB=%d\n", GLOB);
+}
+REGISTER_TEST(Run, 130)
+}  // namespace test130
+
+
 // test300: {{{1
 namespace test300 {
 int     GLOB = 0;
