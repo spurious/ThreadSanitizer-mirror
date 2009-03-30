@@ -6024,12 +6024,11 @@ void Worker() {
   per_thread_global++;
 }
 
-int     GLOB = 0;
 void Run() {
   MyThreadArray t(Worker, Worker, Worker);
   t.Start();
   t.Join();
-  printf("\tGLOB=%d\n", GLOB);
+  printf("\tper_thread_global=%d\n", per_thread_global);
 }
 REGISTER_TEST(Run, 130)
 }  // namespace test130
