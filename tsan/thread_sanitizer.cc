@@ -3201,8 +3201,6 @@ struct Thread {
       parent_tid_(parent_tid),
       max_sp_(0),
       min_sp_(-1),
-      cur_sp_(0),
-      new_sp_(0),
       creation_context_(creation_context),
       announced_(false),
       join_child_ptid_(0),
@@ -3233,10 +3231,6 @@ struct Thread {
   // STACK
   uintptr_t max_sp() const { return max_sp_; }
   uintptr_t min_sp() const { return min_sp_; }
-  uintptr_t cur_sp() const { return cur_sp_; }
-  uintptr_t new_sp() const { return new_sp_; }
-  void set_cur_sp(uintptr_t sp)   { cur_sp_ = sp;}
-  void set_new_sp(uintptr_t sp)   { new_sp_ = sp;}
 
   bool Announce() {
     if (announced_) return false;
@@ -3786,8 +3780,6 @@ struct Thread {
   TID    parent_tid_;  // Parent's tid.
   uintptr_t  max_sp_;
   uintptr_t  min_sp_;
-  uintptr_t  cur_sp_;  // Current sp value.
-  uintptr_t  new_sp_;  // Value of SP after recent change.
   StackTrace *creation_context_;
   bool      announced_;
 
