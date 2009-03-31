@@ -5208,7 +5208,7 @@ namespace test111 {
 char     *GLOB = 0;
 bool COND = false;
 Mutex mu;
-const int N = 1000000;
+const int N = 3000;
 
 void write_to_p(char *p, int val) {
   for (int i = 0; i < N; i++) 
@@ -6031,7 +6031,7 @@ namespace test130 {
 //
 // test131 does the same for stack.
 
-static __thread int per_thread_global[10000] = {0};
+static __thread int per_thread_global[100] = {0};
 
 void RealWorker() {  // Touch per_thread_global.
   per_thread_global[42]++;
