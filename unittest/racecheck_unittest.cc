@@ -6029,18 +6029,12 @@ namespace test130 {
 // as Thread1. Since there is no happens-before relation between threads, 
 // ThreadSanitizer reports a race.
 //
-// The same test also checks that stack has no similar problem.
+// test131 does the same for stack.
 
-static __thread int per_thread_global = 0;
+static __thread int per_thread_global[10000] = {0};
 
 void RealWorker() {  // Touch per_thread_global.
-  // printf("Per-thread: %x\n", &per_thread_global);
-  per_thread_global++;
-  int stack_var = 0;
-  stack_var++;
-  printf("Stack: %x %d; Per-Thread: %x %d\n", 
-         &stack_var, stack_var,
-         &per_thread_global, per_thread_global);
+  per_thread_global[42]++;
 }
 
 void Worker() {  // Spawn few threads that touch per_thread_global.
@@ -6058,10 +6052,38 @@ void Run() {
   MyThreadArray t(Worker0, Worker1, Worker2, Worker3);
   t.Start();
   t.Join();
-  printf("\tper_thread_global=%d\n", per_thread_global);
+  printf("\tper_thread_global=%d\n", per_thread_global[42]);
 }
 REGISTER_TEST(Run, 130)
 }  // namespace test130
+
+
+// test131: TN. Stack. {{{1
+namespace test131 {
+// Same as test130, but for stack.
+
+void RealWorker() {  // Touch stack.
+  int stack_var = 0;
+  stack_var++;
+}
+
+void Worker() {  // Spawn few threads that touch stack.
+  MyThreadArray t(RealWorker, RealWorker, RealWorker, RealWorker);
+  t.Start();
+  t.Join();
+}
+void Worker0() { sleep(0); Worker(); }
+void Worker1() { sleep(1); Worker(); }
+void Worker2() { sleep(2); Worker(); }
+void Worker3() { sleep(3); Worker(); }
+
+void Run() {
+  MyThreadArray t(Worker0, Worker1, Worker2, Worker3);
+  t.Start();
+  t.Join();
+}
+REGISTER_TEST(Run, 131)
+}  // namespace test131
 
 
 // test300: {{{1
