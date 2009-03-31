@@ -94,7 +94,7 @@ void Printf(const char *format, ...) {
 
 // TODO: make this rtn public
 extern "C" {
-  Bool VG_(get_fnname_nodemangle) ( Addr a, Char* buf, Int nbuf );
+  Bool VG_(get_fnname_no_cxx_demangle) ( Addr a, Char* buf, Int nbuf );
 }
 
 
@@ -109,7 +109,7 @@ string PcToRtnName(uintptr_t pc, bool demangle) {
       return g_buff1;
     }
   } else {
-    if(VG_(get_fnname_nodemangle)(pc, (Char*)g_buff1, kBuffSize)) {
+    if(VG_(get_fnname_no_cxx_demangle)(pc, (Char*)g_buff1, kBuffSize)) {
       return g_buff1;
     }
   }
