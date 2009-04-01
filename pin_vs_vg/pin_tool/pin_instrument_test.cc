@@ -6,12 +6,14 @@
 #include <map>
 
 //---------- Instrumentation functions ---------
+#include "pin.H"
+
 void InsertBeforeEvent_MemoryAccessIf_READ(ADDRINT pc) {
-  benchmark.OnMemAccess(false);
+  Benchmark_OnMemAccess(false);
 }
 
 void InsertBeforeEvent_MemoryAccessIf_WRITE(ADDRINT pc) {
-  benchmark.OnMemAccess(true);
+  Benchmark_OnMemAccess(true);
 }
 
 //-------------- PIN callbacks ---------------
@@ -22,14 +24,14 @@ void CallbackForTRACE(TRACE trace, void *v) {
       /*if (INS_IsStackRead(ins) || INS_IsStackWrite(ins)) 
         continue;*/
       if (INS_IsMemoryRead(ins)) {
-        benchmark.OnMemAccessInstrumentation(false);
+        Benchmark_OnMemAccessInstrumentation(false);
         // TODO: use INS_InsertPredicatedCall instead?
         INS_InsertCall(ins, IPOINT_BEFORE,
                        (AFUNPTR)InsertBeforeEvent_MemoryAccessIf_READ,
                        IARG_INST_PTR, IARG_END);
       }
       if (INS_IsMemoryWrite(ins)) {
-        benchmark.OnMemAccessInstrumentation(true);
+        Benchmark_OnMemAccessInstrumentation(true);
         INS_InsertCall(ins, IPOINT_BEFORE,
                        (AFUNPTR)InsertBeforeEvent_MemoryAccessIf_WRITE,
                        IARG_INST_PTR, IARG_END);
@@ -39,7 +41,7 @@ void CallbackForTRACE(TRACE trace, void *v) {
 }
 
 static void CallbackForFini(INT32 code, void *v) {
-  benchmark.OnExit(code);
+  Benchmark_OnExit(code);
 }
 
 KNOB<int> KnobN(KNOB_MODE_WRITEONCE, "pintool", "N", "5", "Specify 'N'");
@@ -50,8 +52,8 @@ int main(INT32 argc, CHAR **argv)
   PIN_Init(argc, argv);
   PIN_AddFiniFunction(CallbackForFini, 0);
   TRACE_AddInstrumentFunction(CallbackForTRACE, 0);
-  benchmark.Initialize();
-  benchmark.SetNumDivisionsPerMemAccess(KnobN.Value());
+  Benchmark_Initialize();
+  Benchmark_SetNumDivisionsPerMemAccess(KnobN.Value());
   PIN_StartProgram();
   return 0;
 }

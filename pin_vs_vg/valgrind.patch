@@ -1,0 +1,28 @@
+Index: configure.in
+===================================================================
+--- configure.in	(revision 9505)
++++ configure.in	(working copy)
+@@ -1671,6 +1671,9 @@
+    drd/docs/Makefile
+    drd/scripts/download-and-build-splash2
+    drd/tests/Makefile
++   testgrind/Makefile
++   testgrind/docs/Makefile
++   testgrind/tests/Makefile
+ )
+ 
+ cat<<EOF
+Index: Makefile.am
+===================================================================
+--- Makefile.am	(revision 9505)
++++ Makefile.am	(working copy)
+@@ -10,7 +10,8 @@
+ 		lackey \
+ 		none \
+ 		helgrind \
+-		drd
++		drd \
++		testgrind
+ 
+ EXP_TOOLS = 	exp-omega \
+ 		exp-ptrcheck
