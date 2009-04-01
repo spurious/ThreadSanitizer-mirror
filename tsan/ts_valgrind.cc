@@ -361,6 +361,10 @@ void evh__pre_thread_ll_create ( ThreadId parent, ThreadId child ) {
       parent > 0 ? VgTidToTsTid(parent) : 0);
 }
 
+void evh__pre_thread_first_insn(const ThreadId tid) {
+  Put(THR_FIRST_INSN, VgTidToTsTid(tid), GetVgPc(tid), 0, 0);
+}
+
 
 void evh__pre_thread_ll_exit ( ThreadId quit_tid ) {
 //  Printf("T%d quiting thread; stack size=%ld\n",
@@ -996,6 +1000,7 @@ void ts_pre_clo_init(void) {
 
    */
    VG_(track_pre_thread_ll_create)( evh__pre_thread_ll_create );
+   VG_(track_pre_thread_first_insn)( evh__pre_thread_first_insn );
    VG_(track_pre_thread_ll_exit)  ( evh__pre_thread_ll_exit );
 
 //

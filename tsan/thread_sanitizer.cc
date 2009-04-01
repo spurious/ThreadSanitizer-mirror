@@ -3200,7 +3200,7 @@ struct Thread {
       sid_(0),
       parent_tid_(parent_tid),
       max_sp_(0),
-      min_sp_(-1),
+      min_sp_(0),
       creation_context_(creation_context),
       announced_(false),
       join_child_ptid_(0),
@@ -3231,6 +3231,19 @@ struct Thread {
   // STACK
   uintptr_t max_sp() const { return max_sp_; }
   uintptr_t min_sp() const { return min_sp_; }
+
+  void SetStack(uintptr_t stack_min, uintptr_t stack_max) {
+    CHECK(stack_min < stack_max);
+    // Stay sane. Expect stack less than 32M.
+    CHECK(stack_max - stack_min < 32 * 1024 *1024);
+    min_sp_ = stack_min;
+    max_sp_ = stack_max;
+  }
+
+  bool MemoryIsInStack(uintptr_t a) {
+    return a >= min_sp_ && a <= max_sp_;
+  }
+
 
   bool Announce() {
     if (announced_) return false;
@@ -3266,9 +3279,6 @@ struct Thread {
     return res;
   }
 
-  bool MemoryIsInStack(uintptr_t a) {
-    return a >= min_sp_ && a <= max_sp_;
-  }
 
   // TODO(kcc): how to compute this??
   static uintptr_t ThreadStackSize() {
@@ -4227,9 +4237,9 @@ class ReportStorage {
              " of size %ld allocated by T%d from heap:%s\n",
              c_blue,
              reinterpret_cast<void*>(a),
-             static_cast<intptr_t>(a - heap_info.ptr),
+             static_cast<long>(a - heap_info.ptr),
              reinterpret_cast<void*>(heap_info.ptr),
-             static_cast<intptr_t>(heap_info.size),
+             static_cast<long>(heap_info.size),
              heap_info.tid.raw(), c_default);
       return string(buff) + heap_info.stack_trace->ToString().c_str();
     }
@@ -4244,6 +4254,59 @@ class ReportStorage {
               c_blue, reinterpret_cast<void*>(a), static_cast<int>(offset));
       return buff + symbol_descr + "\"" + c_default + "\n";
     }
+
+    // Is this stack?
+    for (int i = 0; i < Thread::NumberOfThreads(); i++) {
+      Thread *t = Thread::Get(TID(i));
+      if (!t->is_running()) continue;
+      if (t->MemoryIsInStack(a)) {
+        snprintf(buff, sizeof(buff),
+                 "  %sLocation %p is %ld bytes inside T%d's stack [%p,%p]%s\n",
+                 c_blue,
+                 reinterpret_cast<void*>(a),
+                 static_cast<long>(t->max_sp() - a),
+                 i,
+                 reinterpret_cast<void*>(t->min_sp()),
+                 reinterpret_cast<void*>(t->max_sp()),
+                 c_default
+                );
+        return buff;
+      }
+    }
+
+    if (G_flags->debug_level >= 2) {
+      string res;
+      // Is this near stack?
+      for (int i = 0; i < Thread::NumberOfThreads(); i++) {
+        Thread *t = Thread::Get(TID(i));
+        const uintptr_t kMaxStackDiff = 1024 * 16;
+        uintptr_t diff1 = a - t->max_sp();
+        uintptr_t diff2 = t->min_sp() - a;
+        if (diff1 < kMaxStackDiff || 
+            diff2 < kMaxStackDiff ||
+            t->MemoryIsInStack(a)) {
+          uintptr_t diff = t->MemoryIsInStack(a) ? 0 : 
+              (diff1 < kMaxStackDiff ? diff1 : diff2);
+          snprintf(buff, sizeof(buff),
+                   "  %sLocation %p is within %d bytes outside T%d's stack [%p,%p]%s\n",
+                   c_blue,
+                   reinterpret_cast<void*>(a),
+                   static_cast<int>(diff),
+                   i,
+                   reinterpret_cast<void*>(t->min_sp()),
+                   reinterpret_cast<void*>(t->max_sp()),
+                   c_default
+                  );
+          res += buff;
+        }
+      }
+      if (res.size() > 0) {
+        return res +
+            "  This report _may_ indicate that valgrind incorrectly "
+            "computed the stack boundaries\n";
+      }
+    }
+
     return "";
   }
 
@@ -4479,6 +4542,9 @@ class Detector {
       case THR_CREATE_AFTER   : HandleThreadCreateAfter(); break;
       case THR_START   :
         HandleThreadStart(TID(e_->tid()), TID(e_->info()), e_->pc());
+        break;
+      case THR_FIRST_INSN:
+        HandleThreadFirstInsn(TID(e_->tid()));
         break;
 
       case THR_JOIN_BEFORE    : HandleThreadJoinBefore();   break;
@@ -5144,6 +5210,38 @@ class Detector {
                                     vts, creation_context);
     cur_thread_ = Thread::Get(child_tid);
     CHECK(new_thread == cur_thread_);
+
+  }
+
+  // Executes before the first instruction of the thread but after the thread 
+  // has been set up (e.g. the stack is in place).
+  void HandleThreadFirstInsn(TID tid) {
+    uintptr_t stack_max  = VG_(thread_get_stack_max)(GetVgTid());
+    uintptr_t stack_size = VG_(thread_get_stack_size)(GetVgTid());
+    uintptr_t stack_min  = stack_max - stack_size;
+#ifdef HAS_HACK_thread_get_tls_max 
+    // Sometimes valgrind incorectly computes stack_max. 
+    // Before this is fixed, we use thread_get_tls_max (available only on amd64
+    // only with a separate patch for ../coregrind/m_machine.c and
+    // ../include/pub_tool_machine.h) to adjust stack_max.
+    // TODO(kcc): remove this when thread_get_stack_size is fixed.
+    uintptr_t tls = VG_(thread_get_tls_max(GetVgTid()));
+    if (tls != 0 && tls > stack_max && tls - stack_max < 1024 * 1024) {
+      if (G_flags->debug_level >= 2) {
+        Printf("TLS_HACK: adjusting stack_max by %ld bytes: %x -> %x\n",
+               tls - stack_max, stack_max, tls);
+      }
+      stack_max = tls;
+    }
+#endif
+
+    if (G_flags->debug_level >= 2)
+      Printf("T%d: stack_min=%p stack_max=%p (%ld) tls=%p\n", tid.raw(),
+             stack_min, stack_max, stack_size, tls);
+
+    Thread *thr = Thread::Get(tid);
+    thr->SetStack(stack_min, stack_max);
+    ClearMemoryState(thr->min_sp(), thr->max_sp(), /*is_new_mem=*/true);
   }
 
 
@@ -5158,17 +5256,16 @@ class Detector {
       Thread *child = Thread::Get(tid);
       child->HandleThreadEnd();
 
-      if (G_flags->debug_level >= 3)
-        Printf("T%d: end %p %p (%ld)\n", tid.raw(),
-             child->max_sp(), child->min_sp(),
-             child->max_sp() - child->min_sp());
 
       if (G_flags->verbosity >= 2) {
         Printf("T%d:  THR_END     : %s %s\n", tid.raw(),
                Segment::ToString(child->sid()).c_str(),
                child->vts()->ToString().c_str());
       }
+      ClearMemoryState(child->min_sp(), child->max_sp(), /*is_new_mem=*/false);
     }
+
+
     Thread *thr = Thread::Get(tid);
     for (int rd_or_rw = 0; rd_or_rw <= 1; rd_or_rw++) {
       if (thr->ignore(rd_or_rw)) {
@@ -5701,5 +5798,6 @@ extern void ThreadSanitizerPrintReport(ThreadSanitizerReport *report) {
 //   address.
 // - Fix --ignore-in-dtor if --demangle=no.
 // - Use cpplint (http://code.google.com/p/google-styleguide)
+// - Get rid of annoying casts in printfs.
 // end. {{{1
 // vim:shiftwidth=2:softtabstop=2:expandtab:tw=80
