@@ -2714,6 +2714,13 @@ class CacheLine : public CacheLineUncompressed {
   TID creator_tid() const { return creator_tid_; }
   void set_creator_tid(TID tid) { creator_tid_ = tid; }
 
+  // Return true if this line has no useful information in it.
+  bool Empty() {
+    if (!used().Empty()) return false;
+    if (creator_tid() != TID()) return false;
+    if (!traced().Empty()) return false;
+    return true;
+  }
 
   Mask ClearRangeAndReturnOld(uint64_t from, uint64_t to) {
     traced_.ClearRange(from, to);
@@ -2902,14 +2909,14 @@ class Cache {
     } else {
       // taking an existing cache line from storage.
       res = *line_for_this_tag;
-      DCHECK(!res->used().Empty());
+      DCHECK(!res->Empty());
       lines_[cli]        = res;
       G_stats->cache_fetch++;
     }
 
 
     if (old_line) {
-      if (old_line->used().Empty()) {
+      if (old_line->Empty()) {
         storage_.erase(old_line->tag());
         CacheLine::Delete(old_line);
         G_stats->cache_delete_empty_line++;
@@ -3148,6 +3155,12 @@ void INLINE ClearMemoryStateInOneLine(uintptr_t addr,
     UnrefSegmentsInMemoryRange(beg, end, old_used, line);
   }
   if (line->used().Empty()) {
+    if (UNLIKELY(G_flags->trace_level > 0 && line->creator_tid() != TID())) {
+          if (G_flags->trace_addr >= line->tag() &&
+              G_flags->trace_addr <  line->tag() + CacheLine::kLineSize) {
+            Printf("TRACE: cleared creator_tid for line %p\n", line->tag());
+          }
+    }
     line->set_creator_tid(TID());
   }
 }
@@ -4959,19 +4972,12 @@ class Detector {
                                               uintptr_t addr,
                                               uintptr_t size,
                                               TID tid,
-                                              Thread *thr
+                                              Thread *thr,
+                                              bool tracing
                                              ) {
     uintptr_t offset = CacheLine::ComputeOffset(addr);
     ShadowValue new_sval;
 
-    bool tracing = false;
-    if (UNLIKELY(G_flags->trace_level >= 1)) {
-      if (UNLIKELY(cache_line->traced().Get(offset))) {
-        tracing = true;
-      } else if (UNLIKELY(addr == G_flags->trace_addr)) {
-        tracing = true;
-      }
-    }
 
     ShadowValue *sval_p = cache_line->GetValuePointer(offset);
     ShadowValue old_sval;
@@ -5027,35 +5033,50 @@ class Detector {
 
   // return true if we can skip the memory access
   // due to fast mode. AddSegmentToSS the creator_tid()
-  INLINE bool FastModeCheckAndUpdateCreatorTid(CacheLine *cache_line, TID tid) {
+  INLINE bool FastModeCheckAndUpdateCreatorTid(CacheLine *cache_line, 
+                                               TID tid, 
+                                               bool tracing) {
     // See
     // http://code.google.com/p/data-race-test/wiki/ThreadSanitizerAlgorithm#Fast_mode
     // for the details.
 
     if (!G_flags->fast_mode) return false;
+    bool res = false;
+    int case_num = 0;
     const TID kInvalidTID = TID();
     TID creator_tid = cache_line->creator_tid();
     if (cache_line->used().Empty() && creator_tid == kInvalidTID) {
       // we see this cache line for the first time (since it has been cleared).
       cache_line->set_creator_tid(tid);
       G_stats->fast_mode_first_time++;
-      return true;
+      res = true;
+      case_num = 1;
     } else if (creator_tid == tid) {
       // We are still in the same tid. Just return.
       DCHECK(cache_line->used().Empty());
       G_stats->fast_mode_still_in_creator++;
-      return true;
+      res = true;
+      case_num = 2;
     } else if (creator_tid != kInvalidTID) {
       // we are transitioning from the creator tid.
       DCHECK(cache_line->used().Empty());
       cache_line->set_creator_tid(kInvalidTID);
       G_stats->fast_mode_transition++;
+      res = false;
+      case_num = 3;
     } else {
       DCHECK(!cache_line->used().Empty());
       DCHECK(creator_tid == kInvalidTID);
       G_stats->fast_mode_mt++;
+      res = false;
+      case_num = 4;
     }
-    return false;
+    if (UNLIKELY(tracing)) {
+      Printf("TRACE: T%d line=%p; tag=%p; creator=%d/%d; fast-mode, case#%d\n",
+             tid.raw(), cache_line, cache_line->tag(),
+             creator_tid.raw(), cache_line->creator_tid().raw(), case_num);
+    }
+    return res;
   }
 
 
@@ -5074,7 +5095,6 @@ class Detector {
     Thread *thr = Thread::Get(tid);
     if (thr->ignore(is_w)) return;
     if (thr->bus_lock_is_set()) return;
-    if (UNLIKELY(g_so_far_only_one_thread)) return;
 
     DCHECK(thr->lsid(false) == thr->segment()->lsid(false));
     DCHECK(thr->lsid(true) == thr->segment()->lsid(true));
@@ -5086,8 +5106,19 @@ class Detector {
 
     CacheLine *cache_line = G_cache->GetLine(addr, __LINE__);
 
+    bool tracing = false;
+    if (UNLIKELY(G_flags->trace_level >= 1)) {
+      if (UNLIKELY(cache_line->traced().Get(CacheLine::ComputeOffset(a)))) {
+        tracing = true;
+      } else if (UNLIKELY(addr == G_flags->trace_addr)) {
+        tracing = true;
+      }
+    }
+
     // TODO(timurrrr): bug with unaligned access that touches two CacheLines.
-    if (FastModeCheckAndUpdateCreatorTid(cache_line, tid)) return;
+    if (FastModeCheckAndUpdateCreatorTid(cache_line, tid, tracing)) return;
+
+    if (UNLIKELY(g_so_far_only_one_thread)) return;
 
     if (UNLIKELY(G_flags->keep_history >= 2)) {
       // Keep the precise history. Very SLOW!
@@ -5095,23 +5126,23 @@ class Detector {
     }
 
     if        (size == 8 && cache_line->SameValueStored(addr, 8)) {
-      HandleMemoryAccessHelper(is_w, cache_line, addr, size, tid, thr);
+      HandleMemoryAccessHelper(is_w, cache_line, addr, size, tid, thr, tracing);
       G_stats->n_access8++;
     } else if (size == 4 && cache_line->SameValueStored(addr, 4)) {
-      HandleMemoryAccessHelper(is_w, cache_line, addr, size, tid, thr);
+      HandleMemoryAccessHelper(is_w, cache_line, addr, size, tid, thr, tracing);
       G_stats->n_access4++;
     } else if (size == 2 && cache_line->SameValueStored(addr, 2)) {
-      HandleMemoryAccessHelper(is_w, cache_line, addr, size, tid, thr);
+      HandleMemoryAccessHelper(is_w, cache_line, addr, size, tid, thr, tracing);
       G_stats->n_access2++;
     } else if (size == 1) {
-      HandleMemoryAccessHelper(is_w, cache_line, addr, size, tid, thr);
+      HandleMemoryAccessHelper(is_w, cache_line, addr, size, tid, thr, tracing);
       G_stats->n_access1++;
     } else {
       // slow case
       for (uintptr_t x = a; x < b; x++) {
         cache_line = G_cache->GetLine(x, __LINE__);
-        if (FastModeCheckAndUpdateCreatorTid(cache_line, tid)) return;
-        HandleMemoryAccessHelper(is_w, cache_line, x, size, tid, thr);
+        if (FastModeCheckAndUpdateCreatorTid(cache_line, tid, tracing)) return;
+        HandleMemoryAccessHelper(is_w, cache_line, x, size, tid, thr, tracing);
         G_stats->n_access_slow++;
       }
     }
