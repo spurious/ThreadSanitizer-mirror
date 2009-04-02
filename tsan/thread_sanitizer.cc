@@ -3770,7 +3770,7 @@ struct Thread {
 
 
   static void ForgetAllState() {
-    G_flags->debug_level = 2;
+    // G_flags->debug_level = 2;
     for (int i = 0; i < Thread::NumberOfThreads(); i++) {
       Thread *thr = Get(TID(i));
       VTS *singleton_vts = VTS::CreateSingleton(TID(i), 2);
