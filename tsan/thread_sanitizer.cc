@@ -5264,11 +5264,11 @@ class Detector {
       }
       stack_max = tls;
     }
-#endif
 
     if (G_flags->debug_level >= 2)
       Printf("T%d: stack_min=%p stack_max=%p (%ld) tls=%p\n", tid.raw(),
              stack_min, stack_max, stack_size, tls);
+#endif
 
     Thread *thr = Thread::Get(tid);
     thr->SetStack(stack_min, stack_max);
