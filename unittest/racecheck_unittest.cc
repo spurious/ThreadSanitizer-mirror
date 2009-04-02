@@ -309,10 +309,6 @@ void Worker() {
 void Parent() {
   MyThread t(Worker);
   t.Start();
-//  ThreadPool pool(1);
-//  pool.StartWorkers();
-//  pool.Add(NewCallback(Worker));
-//  usleep(100000);
   GLOB = 2;
   t.Join();
 }
@@ -6038,7 +6034,7 @@ void RealWorker() {  // Touch per_thread_global.
 }
 
 void Worker() {  // Spawn few threads that touch per_thread_global.
-  MyThreadArray t(RealWorker, RealWorker, RealWorker, RealWorker);
+  MyThreadArray t(RealWorker, RealWorker);
   t.Start();
   t.Join();
 }
@@ -6047,12 +6043,11 @@ void Worker1() { sleep(1); Worker(); }
 void Worker2() { sleep(2); Worker(); }
 void Worker3() { sleep(3); Worker(); }
 
-
 void Run() {
   printf("test130: Per-thread\n");
-  MyThreadArray t(Worker0, Worker1, Worker2, Worker3);
-  t.Start();
-  t.Join();
+  MyThreadArray t1(Worker0, Worker1, Worker2, Worker3);
+  t1.Start();
+  t1.Join();
   printf("\tper_thread_global=%d\n", per_thread_global[1]);
 }
 REGISTER_TEST(Run, 130)
@@ -6069,7 +6064,7 @@ void RealWorker() {  // Touch stack.
 }
 
 void Worker() {  // Spawn few threads that touch stack.
-  MyThreadArray t(RealWorker, RealWorker, RealWorker, RealWorker);
+  MyThreadArray t(RealWorker, RealWorker);
   t.Start();
   t.Join();
 }
@@ -6086,6 +6081,56 @@ void Run() {
 }
 REGISTER_TEST(Run, 131)
 }  // namespace test131
+
+
+// test132: TP. Simple race (write vs write). Works in fast-mode. {{{1
+namespace test132 {
+int     GLOB = 0;
+void Worker() { GLOB = 1; }
+
+void Run1() {
+  printf("test132: positive; &GLOB=%p\n", &GLOB);
+  ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test132");
+  ANNOTATE_TRACE_MEMORY(&GLOB);
+  GLOB = 7;
+  MyThreadArray t(Worker, Worker);
+  t.Start();
+  t.Join();
+}
+
+void Run() {
+//  MyThread t(Run1);
+//  t.Start();
+//  t.Join();
+  Run1();
+}
+REGISTER_TEST(Run, 132);
+}  // namespace test132
+
+
+// test133: TP. Simple race (write vs write). Works in fast mode. {{{1
+namespace test133 {
+// Same as test132, but everything is run from a separate thread spawned from
+// the main thread.
+int     GLOB = 0;
+void Worker() { GLOB = 1; }
+
+void Run1() {
+  printf("test133: positive; &GLOB=%p\n", &GLOB);
+  ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test133");
+  ANNOTATE_TRACE_MEMORY(&GLOB);
+  GLOB = 7;
+  MyThreadArray t(Worker, Worker);
+  t.Start();
+  t.Join();
+}
+void Run() {
+  MyThread t(Run1);
+  t.Start();
+  t.Join();
+}
+REGISTER_TEST(Run, 133);
+}  // namespace test133
 
 
 // test300: {{{1
