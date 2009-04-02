@@ -6099,9 +6099,6 @@ void Run1() {
 }
 
 void Run() {
-//  MyThread t(Run1);
-//  t.Start();
-//  t.Join();
   Run1();
 }
 REGISTER_TEST(Run, 132);
