@@ -1558,8 +1558,8 @@ class Mask {
       res = m_;
       m_ = 0;
     } else {
-      uintptr_t t = (1ULL << n_bits_in_mask);
-      uintptr_t mask = (t - 1) << a;
+      uint64_t t = (1ULL << n_bits_in_mask);
+      uint64_t mask = (t - 1) << a;
       res = m_ & mask;
       m_ &= ~mask;
     }
@@ -1577,8 +1577,8 @@ class Mask {
     if (n_bits_in_mask == 64) {
       m_ = ~0;
     } else {
-      uintptr_t t = (1ULL << n_bits_in_mask);
-      uintptr_t mask = (t - 1) << a;
+      uint64_t t = (1ULL << n_bits_in_mask);
+      uint64_t mask = (t - 1) << a;
       m_ |= mask;
     }
   }
@@ -1590,8 +1590,8 @@ class Mask {
     if (n_bits_in_mask == 64) {
       return m_;
     } else {
-      uintptr_t t = (1ULL << n_bits_in_mask);
-      uintptr_t mask = (t - 1) << a;
+      uint64_t t = (1ULL << n_bits_in_mask);
+      uint64_t mask = (t - 1) << a;
       return m_ & mask;
     }
   }
@@ -3087,13 +3087,16 @@ static void PublishRangeInOneLine(uintptr_t addr, uintptr_t a,
   g_publish_info_map->insert(make_pair(tag, pub_info));
   G_stats->publish_set++;
   if (kDebugPublish)
-    Printf("PublishRange   : %p %s vts=%p\n",
-           tag, pub_info.mask.ToString().c_str(), vts);
+    Printf("PublishRange   : [%p,%p) %p %s vts=%p\n",
+           a, b, tag, pub_info.mask.ToString().c_str(), vts);
   CHECK(CheckSanityOfPublishedMemory(tag, __LINE__));
 }
 
 // Publish memory range [a, b).
 static void PublishRange(uintptr_t a, uintptr_t b, VTS *vts) {
+  if (kDebugPublish)
+    Printf("PublishRange   : [%p,%p), size=%d, tag=%p\n", 
+           a, b, (int)(b - a), CacheLine::ComputeTag(a));
   uintptr_t line1_tag = 0, line2_tag = 0;
   uintptr_t tag = GetCacheLinesForRange(a, b, &line1_tag, &line2_tag);
   if (tag) {
