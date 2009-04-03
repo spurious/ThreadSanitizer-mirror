@@ -6185,7 +6185,7 @@ namespace test135 {
 
 void SubWorker() {
   const long SIZE = 65536;
-  for (int i = 0; i < 1024; i++) {
+  for (int i = 0; i < 32; i++) {
     int *ptr = (int*)mmap(NULL, SIZE, PROT_READ | PROT_WRITE,
                           MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     *ptr = 42;
