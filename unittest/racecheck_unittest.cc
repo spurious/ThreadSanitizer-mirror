@@ -82,6 +82,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <malloc.h>
+#include <sys/mman.h>  // mmap
 
 
 // The tests are
@@ -5128,6 +5129,7 @@ int       *VALLOC;
 int       *PVALLOC;
 int       *MEMALIGN;
 int       *POSIX_MEMALIGN;
+int       *MMAP;
 
 int       *NEW;
 int       *NEW_ARR;
@@ -5145,6 +5147,7 @@ void Worker() {
   (*PVALLOC)++;
   (*MEMALIGN)++;
   (*POSIX_MEMALIGN)++;
+  (*MMAP)++;
 
   (*NEW)++;
   (*NEW_ARR)++;
@@ -5160,6 +5163,8 @@ void Run() {
   PVALLOC = (int*)valloc(sizeof(int));  // TODO: pvalloc breaks helgrind.
   MEMALIGN = (int*)memalign(64, sizeof(int));
   CHECK(0 == posix_memalign((void**)&POSIX_MEMALIGN, 64, sizeof(int)));
+  MMAP = (int*)mmap(NULL, sizeof(int), PROT_READ | PROT_WRITE,
+                    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
   NEW     = new int;
   NEW_ARR = new int[10];
@@ -5175,6 +5180,7 @@ void Run() {
   ANNOTATE_EXPECT_RACE(PVALLOC, "real race on a pvalloc-ed object");
   ANNOTATE_EXPECT_RACE(MEMALIGN, "real race on a memalign-ed object");
   ANNOTATE_EXPECT_RACE(POSIX_MEMALIGN, "real race on a posix_memalign-ed object");
+  ANNOTATE_EXPECT_RACE(MMAP, "real race on a mmap-ed object");
 
   ANNOTATE_EXPECT_RACE(NEW, "real race on a new-ed object");
   ANNOTATE_EXPECT_RACE(NEW_ARR, "real race on a new[]-ed object");
@@ -5194,6 +5200,7 @@ void Run() {
   free(PVALLOC);
   free(MEMALIGN);
   free(POSIX_MEMALIGN);
+  munmap(MMAP, sizeof(int));
   delete NEW;
   delete [] NEW_ARR;
 }
@@ -5983,7 +5990,7 @@ namespace test129 {
 int     GLOB = 0;
 Mutex   MU; 
 bool WeirdCondition(int* param) {
-  *param = GLOB;
+  *param = GLOB;  // a write into Waiter's memory
   return GLOB > 0;
 }
 void Waiter() {
@@ -5996,18 +6003,15 @@ void Waiter() {
 void Waker() {
   usleep(100000);  // Make sure the waiter blocks.
   MU.Lock();
-  GLOB++;          // We are done! Tell the Waiter. 
+  GLOB++;
   MU.Unlock();     // calls ANNOTATE_CONDVAR_SIGNAL;
 }
 void Run() {
   printf("test129: Synchronization via ReaderLockWhen()\n");
-  {
-    GLOB = 0;
-    ThreadPool pool(1);
-    pool.StartWorkers();
-    pool.Add(NewCallback(Waiter));
-    Waker();
-  }
+  MyThread mt(Waiter, NULL, "Waiter Thread");
+  mt.Start();
+  Waker();
+  mt.Join();
   printf("\tGLOB=%d\n", GLOB);
 }
 REGISTER_TEST2(Run, 129, FEATURE);
@@ -6176,6 +6180,33 @@ void Run() {
 REGISTER_TEST(Run, 134)
 }  // namespace test134
 
+// test135 TN. Swap. Variant of test79. {{{1
+namespace test135 {
+
+void SubWorker() {
+  const long SIZE = 65536;
+  for (int i = 0; i < 1024; i++) {
+    int *ptr = (int*)mmap(NULL, SIZE, PROT_READ | PROT_WRITE,
+                          MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    *ptr = 42;
+    munmap(ptr, SIZE);
+  }
+}
+
+void Worker() {
+  MyThreadArray t(SubWorker, SubWorker, SubWorker, SubWorker);
+  t.Start();
+  t.Join();
+}
+
+void Run() {
+  printf("test135: negative (mmap)\n");
+  MyThreadArray t(Worker, Worker, Worker, Worker);
+  t.Start();
+  t.Join();
+}
+REGISTER_TEST(Run, 135)
+}  // namespace test135
 
 // test300: {{{1
 namespace test300 {
