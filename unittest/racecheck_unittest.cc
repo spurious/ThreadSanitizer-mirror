@@ -253,15 +253,17 @@ int main(int argc, char** argv) { // {{{1
 // An array of threads. Create/start/join all elements at once. {{{1
 class MyThreadArray {
  public:
+  static const int kSize = 5;
   typedef void (*F) (void);
-  MyThreadArray(F f1, F f2 = NULL, F f3 = NULL, F f4 = NULL) {
+  MyThreadArray(F f1, F f2 = NULL, F f3 = NULL, F f4 = NULL, F f5 = NULL) {
     ar_[0] = new MyThread(f1);
     ar_[1] = f2 ? new MyThread(f2) : NULL;
     ar_[2] = f3 ? new MyThread(f3) : NULL;
     ar_[3] = f4 ? new MyThread(f4) : NULL;
+    ar_[4] = f5 ? new MyThread(f5) : NULL;
   }
   void Start() {
-    for(int i = 0; i < 4; i++) {
+    for(int i = 0; i < kSize; i++) {
       if(ar_[i]) {
         ar_[i]->Start();
         usleep(10);
@@ -270,7 +272,7 @@ class MyThreadArray {
   }
 
   void Join() {
-    for(int i = 0; i < 4; i++) {
+    for(int i = 0; i < kSize; i++) {
       if(ar_[i]) {
         ar_[i]->Join();
       }
@@ -278,12 +280,12 @@ class MyThreadArray {
   }
 
   ~MyThreadArray() {
-    for(int i = 0; i < 4; i++) {
+    for(int i = 0; i < kSize; i++) {
       delete ar_[i];
     }
   }
  private:
-  MyThread *ar_[4];
+  MyThread *ar_[kSize];
 };
 
 
@@ -5292,6 +5294,7 @@ void PublishRange(int b, int e) {
   t.Start();
 
   ANNOTATE_NEW_MEMORY(GLOB + b, e - b);
+  ANNOTATE_TRACE_MEMORY(GLOB + b);
   for (int j = b; j < e; j++) {
     GLOB[j] = 0; 
   }
@@ -6128,6 +6131,50 @@ void Run() {
 }
 REGISTER_TEST(Run, 133);
 }  // namespace test133
+
+
+// test134 TN. Swap. Variant of test79. {{{1
+namespace test134 {
+__gnu_cxx::hash_map<int, int> map;
+Mutex   mu;
+// Here we use swap to pass hash_map between threads.
+// The synchronization is correct, but w/o the annotation
+// any hybrid detector will complain.
+
+// Swap is very unfriendly to the lock-set (and hybrid) race detectors.
+// Since tmp is destructed outside the mutex, we need to have a happens-before
+// arc between any prior access to map and here.
+// Since the internals of tmp are created ouside the mutex and are passed to
+// other thread, we need to have a h-b arc between here and any future access.
+// These arc can be created by SIGNAL/WAIT annotations, but it is much simpler
+// to apply pure-happens-before mode to the mutex mu.
+void Swapper() {
+  __gnu_cxx::hash_map<int, int> tmp;
+  MutexLock lock(&mu);
+  ANNOTATE_CONDVAR_WAIT(&map);
+  // We swap the new empty map 'tmp' with 'map'.
+  map.swap(tmp); 
+  ANNOTATE_CONDVAR_SIGNAL(&map);
+  // tmp (which is the old version of map) is destroyed here.
+}
+
+void Worker() {
+  MutexLock lock(&mu);
+  ANNOTATE_CONDVAR_WAIT(&map);
+  map[1]++;
+  ANNOTATE_CONDVAR_SIGNAL(&map);
+}
+
+void Run() {
+  printf("test134: negative (swap)\n");
+  // Shorter way:
+  // ANNOTATE_MUTEX_IS_USED_AS_CONDVAR(&mu);
+  MyThreadArray t(Worker, Worker, Swapper, Worker, Worker);
+  t.Start();
+  t.Join();
+}
+REGISTER_TEST(Run, 134)
+}  // namespace test134
 
 
 // test300: {{{1
