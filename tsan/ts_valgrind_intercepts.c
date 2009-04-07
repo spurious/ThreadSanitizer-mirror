@@ -273,6 +273,19 @@ MAIN_WRAPPER_DECL {
     return ret; \
   }
 
+#define WRAP_MMAP(soname, fnname) \
+  int I_WRAP_SONAME_FNNAME_ZU(soname,fnname) (void *ptr, long size, long a, long b, long c, long d);\
+  int I_WRAP_SONAME_FNNAME_ZU(soname,fnname) (void *ptr, long size, long a, long b, long c, long d){\
+    OrigFn fn;\
+    int ret;\
+    VALGRIND_GET_ORIG_FN(fn);\
+    IGNORE_ALL_BEGIN(); \
+      CALL_FN_W_6W(ret, fn, ptr, size, a, b, c, d); \
+    IGNORE_ALL_END(); \
+    if (ret != 0) \
+      DO_CREQ_v_WW(TSREQ_MALLOC,  void*, ret, long, size); \
+    return ret; \
+  }
 
 
 WRAP_MALLOC(m_libc_soname, malloc);
@@ -297,6 +310,11 @@ WRAP_REALLOC(NONE, memalign);
 WRAP_POSIX_MEMALIGN(m_libc_soname, posix_memalign);
 WRAP_POSIX_MEMALIGN(NONE, posix_memalign);
 
+// TODO(timurrrr): handle munmap.
+// Looks like munmap may be used to free page-sized subregions of memory
+// returned my mmap. This could be nasty. Need investigation.
+WRAP_MMAP(m_libc_soname, mmap);
+WRAP_MMAP(NONE, mmap);
 
 #define WRAP_FREE(soname, fnname) \
   void I_WRAP_SONAME_FNNAME_ZU(soname,fnname) (void *ptr); \
