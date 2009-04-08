@@ -3100,7 +3100,7 @@ static void PublishRangeInOneLine(uintptr_t addr, uintptr_t a,
 // Publish memory range [a, b).
 static void PublishRange(uintptr_t a, uintptr_t b, VTS *vts) {
   if (kDebugPublish)
-    Printf("PublishRange   : [%p,%p), size=%d, tag=%p\n", 
+    Printf("PublishRange   : [%p,%p), size=%d, tag=%p\n",
            a, b, (int)(b - a), CacheLine::ComputeTag(a));
   uintptr_t line1_tag = 0, line2_tag = 0;
   uintptr_t tag = GetCacheLinesForRange(a, b, &line1_tag, &line2_tag);
@@ -4303,10 +4303,10 @@ class ReportStorage {
         const uintptr_t kMaxStackDiff = 1024 * 16;
         uintptr_t diff1 = a - t->max_sp();
         uintptr_t diff2 = t->min_sp() - a;
-        if (diff1 < kMaxStackDiff || 
+        if (diff1 < kMaxStackDiff ||
             diff2 < kMaxStackDiff ||
             t->MemoryIsInStack(a)) {
-          uintptr_t diff = t->MemoryIsInStack(a) ? 0 : 
+          uintptr_t diff = t->MemoryIsInStack(a) ? 0 :
               (diff1 < kMaxStackDiff ? diff1 : diff2);
           snprintf(buff, sizeof(buff),
                    "  %sLocation %p is within %d bytes outside T%d's stack [%p,%p]%s\n",
@@ -5041,8 +5041,8 @@ class Detector {
 
   // return true if we can skip the memory access
   // due to fast mode. AddSegmentToSS the creator_tid()
-  INLINE bool FastModeCheckAndUpdateCreatorTid(CacheLine *cache_line, 
-                                               TID tid, 
+  INLINE bool FastModeCheckAndUpdateCreatorTid(CacheLine *cache_line,
+                                               TID tid,
                                                bool tracing) {
     // See
     // http://code.google.com/p/data-race-test/wiki/ThreadSanitizerAlgorithm#Fast_mode
@@ -5249,17 +5249,16 @@ class Detector {
                                     vts, creation_context);
     cur_thread_ = Thread::Get(child_tid);
     CHECK(new_thread == cur_thread_);
-
   }
 
-  // Executes before the first instruction of the thread but after the thread 
+  // Executes before the first instruction of the thread but after the thread
   // has been set up (e.g. the stack is in place).
   void HandleThreadFirstInsn(TID tid) {
     uintptr_t stack_max  = VG_(thread_get_stack_max)(GetVgTid());
     uintptr_t stack_size = VG_(thread_get_stack_size)(GetVgTid());
     uintptr_t stack_min  = stack_max - stack_size;
-#ifdef HAS_HACK_thread_get_tls_max 
-    // Sometimes valgrind incorectly computes stack_max. 
+#ifdef HAS_HACK_thread_get_tls_max
+    // Sometimes valgrind incorectly computes stack_max.
     // Before this is fixed, we use thread_get_tls_max (available only on amd64
     // only with a separate patch for ../coregrind/m_machine.c and
     // ../include/pub_tool_machine.h) to adjust stack_max.
