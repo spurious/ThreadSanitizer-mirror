@@ -352,6 +352,7 @@ void ts_fini(Int exitcode) {
 
 
 void evh__pre_thread_ll_create ( ThreadId parent, ThreadId child ) {
+  tl_assert(parent != child);
   tl_assert(g_valgrind_threads[child].zero_based_uniq_tid == -1);
   g_valgrind_threads[child].zero_based_uniq_tid = g_uniq_thread_id_counter++;
   g_valgrind_threads[child].ignore_all = 0;
