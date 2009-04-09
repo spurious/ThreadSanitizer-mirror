@@ -714,7 +714,7 @@ namespace test11 {
 int     GLOB = 0;
 Mutex   MU; 
 void Worker() {
-  usleep(100000);
+  usleep(200000);
   CHECK(GLOB != 777); 
 
   MU.Lock();
@@ -4343,6 +4343,7 @@ void Run() {
   t.Start();
   t.Join();
   printf("\t*GLOB=%d\n", *GLOB);
+  delete GLOB;
 }
 REGISTER_TEST(Run, 90)
 }  // namespace test90
@@ -4390,6 +4391,7 @@ void Run() {
   t.Start();
   t.Join();
   printf("\t*GLOB=%d\n", *GLOB);
+  delete GLOB;
 }
 REGISTER_TEST(Run, 91)
 }  // namespace test91
