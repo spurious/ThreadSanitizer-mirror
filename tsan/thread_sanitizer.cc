@@ -5177,6 +5177,9 @@ class Detector {
       // cur_thread_->ReportStackTrace(e_->pc());
     }
 
+    if (a == 0)
+      return;
+
     uintptr_t b = a + size;
     ClearMemoryStateOnMalloc(a, b);
     // update heap_map
