@@ -202,6 +202,8 @@ static bool ArgIsTrue(bool *arg) { return *arg == true; };
 #define ANNOTATE_EXPECT_RACE_FOR_TSAN(mem, descr) \
     ANNOTATE_EXPECT_RACE_FOR_MACHINE(mem, descr, "MSM_THREAD_SANITIZER")
 
+inline bool TSAN_PURE_HAPPENS_BEFORE() { return !!getenv("TSAN_PURE_HAPPENS_BEFORE"); }
+inline bool TSAN_FAST_MODE()           { return !!getenv("TSAN_FAST_MODE"); }
 
 #ifndef MAIN_INIT_ACTION
 #define MAIN_INIT_ACTION
@@ -211,6 +213,7 @@ static bool ArgIsTrue(bool *arg) { return *arg == true; };
 
 int main(int argc, char** argv) { // {{{1
   MAIN_INIT_ACTION;
+  printf("FLAGS [phb=%i, fm=%i]\n", TSAN_PURE_HAPPENS_BEFORE(), TSAN_FAST_MODE());
   if (argc == 2 && !strcmp(argv[1], "benchmark")) {
      for (std::map<int,Test>::iterator it = TheMapOfTests.begin(); 
          it != TheMapOfTests.end(); ++it) {
@@ -496,7 +499,8 @@ void Waiter() {
   GLOB = 2;
 }
 void Run() {
-  ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test05. FP. Unavoidable in hybrid scheme.");
+  if (!TSAN_PURE_HAPPENS_BEFORE())
+    ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test05. FP. Unavoidable in hybrid scheme.");
   printf("test05: unavoidable false positive\n");
   Waiter();
   printf("\tGLOB=%d\n", GLOB);
@@ -2299,7 +2303,8 @@ void Second() {
   GLOB++;
 }
 void Run() {
-  ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test47. TP. Not detected by pure HB.");
+  if (!TSAN_PURE_HAPPENS_BEFORE())
+    ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test47. TP. Not detected by pure HB.");
   printf("test47: positive\n");
   MyThreadArray t(First, Second);
   t.Start();
@@ -2402,7 +2407,7 @@ Mutex   MU;
 //                              b. MU.Lock()
 //                              c. COND = 1
 //                         /--- d. CV.Signal()
-//  4. while(COND)        /     e. MU.Unock()
+//  4. while(COND != 1)   /     e. MU.Unock()
 //       CV.Wait(MU) <---/
 //  5. MU.Unlock()
 //  6. write(GLOB)              f. MU.Lock()
@@ -2420,11 +2425,10 @@ void Waker() {
   CV.Signal(); 
   MU.Unlock();
 
+  usleep(100000);
   MU.Lock();
   GLOB = 3; 
   MU.Unlock();
-
-
 }
 
 void Waiter() {
@@ -2646,7 +2650,8 @@ void User() {
 }
 
 void Run() {
-  ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test53. FP. Implicit semaphore");
+  if (!TSAN_PURE_HAPPENS_BEFORE())
+    ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test53. FP. Implicit semaphore");
   printf("test53: FP. false positive, Implicit semaphore\n");
   MyThreadArray t(Initializer, User, User);
   t.Start();
@@ -3115,7 +3120,8 @@ void T3() {
 
 
 void Run() {
-  ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test65. TP.");
+  if (!TSAN_PURE_HAPPENS_BEFORE())
+    ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test65. TP.");
   printf("test65: positive\n");
   MyThreadArray t(T1, T2, T3);
   t.Start();
@@ -4319,7 +4325,8 @@ void Publisher() {
   MU.Lock();
   GLOB = new int;
   *GLOB = 777;
-  ANNOTATE_EXPECT_RACE_FOR_TSAN(GLOB, "test90. FP. This is a false positve");
+  if (!TSAN_PURE_HAPPENS_BEFORE())
+    ANNOTATE_EXPECT_RACE_FOR_TSAN(GLOB, "test90. FP. This is a false positve");
   MU.Unlock();
   usleep(200000);
 }
@@ -4365,7 +4372,8 @@ void Publisher() {
   MU1.Lock();
   GLOB = new int;
   *GLOB = 777;
-  ANNOTATE_EXPECT_RACE_FOR_TSAN(GLOB, "test91. FP. This is a false positve");
+  if (!TSAN_PURE_HAPPENS_BEFORE())
+    ANNOTATE_EXPECT_RACE_FOR_TSAN(GLOB, "test91. FP. This is a false positve");
   MU1.Unlock();
 }
 
@@ -5648,6 +5656,7 @@ int     VAR2 = 0;
 RWLock mu;
 
 void WriteWhileHoldingReaderLock(int *p) {
+  usleep(100000);
   ReaderLockScoped lock(&mu);  // Reader lock for writing. -- bug.
   (*p)++;
 }
@@ -5669,8 +5678,10 @@ void Run() {
   VAR2 = 0;
   ANNOTATE_TRACE_MEMORY(&VAR1);
   ANNOTATE_TRACE_MEMORY(&VAR2);
-  ANNOTATE_EXPECT_RACE_FOR_TSAN(&VAR1, "TP. ReaderLock-ed while writing");
-  ANNOTATE_EXPECT_RACE_FOR_TSAN(&VAR2, "TP. ReaderLock-ed while writing");
+  if (!TSAN_PURE_HAPPENS_BEFORE()) {
+    ANNOTATE_EXPECT_RACE_FOR_TSAN(&VAR1, "test122. TP. ReaderLock-ed while writing");
+    ANNOTATE_EXPECT_RACE_FOR_TSAN(&VAR2, "test122. TP. ReaderLock-ed while writing");
+  }
   MyThreadArray t(Thread1, Thread2, Thread3, Thread4);
   t.Start();
   t.Join();
