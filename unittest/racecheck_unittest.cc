@@ -4647,18 +4647,18 @@ int * GLOB = &array[ARRAY_SIZE/2];
  */
 
 void Reader() {
-   usleep(500000);
-   CHECK(777 == *GLOB);
+  usleep(500000);
+  CHECK(777 == *GLOB);
 }
 
 void Run() {
-   MyThreadArray t(Reader);
-   ANNOTATE_EXPECT_RACE_FOR_TSAN(GLOB, "test97: TP. FN with --fast-mode=yes");
-   printf("test97: This test shows false negative with --fast-mode=yes\n");
-   
-   t.Start();
-   *GLOB = 777;
-   t.Join();
+  MyThreadArray t(Reader);
+  ANNOTATE_EXPECT_RACE_FOR_TSAN(GLOB, "test97: TP. FN with --fast-mode=yes");
+  printf("test97: This test shows false negative with --fast-mode=yes\n");
+
+  t.Start();
+  *GLOB = 777;
+  t.Join();
 }
 
 REGISTER_TEST2(Run, 97, FEATURE)
@@ -4862,26 +4862,26 @@ int * GLOB = &array[ARRAY_SIZE/2];
 /*
   We use sizeof(array) == 4 * HG_CACHELINE_SIZE to be sure that GLOB points
   to a memory inside a CacheLineZ which is inside array's memory range 
- */
+*/
 
 void Reader() {
-   usleep(200000);
-   CHECK(777 == GLOB[0]);
-   usleep(400000);
-   CHECK(777 == GLOB[1]);
+  usleep(200000);
+  CHECK(777 == GLOB[0]);
+  usleep(400000);
+  CHECK(777 == GLOB[1]);
 }
 
 void Run() {
-   MyThreadArray t(Reader);
-   ANNOTATE_EXPECT_RACE_FOR_TSAN(GLOB+0, "test102: TP. FN with --fast-mode=yes");
-   ANNOTATE_EXPECT_RACE_FOR_TSAN(GLOB+1, "test102: TP");
-   printf("test102: --fast-mode=yes vs. --initialization-bit=yes\n");
-   
-   t.Start();
-   GLOB[0] = 777;
-   usleep(100000);
-   GLOB[1] = 777;
-   t.Join();
+  MyThreadArray t(Reader);
+  ANNOTATE_EXPECT_RACE_FOR_TSAN(GLOB+0, "test102: TP. FN with --fast-mode=yes");
+  ANNOTATE_EXPECT_RACE_FOR_TSAN(GLOB+1, "test102: TP");
+  printf("test102: --fast-mode=yes vs. --initialization-bit=yes\n");
+
+  t.Start();
+  GLOB[0] = 777;
+  usleep(100000);
+  GLOB[1] = 777;
+  t.Join();
 }
 
 REGISTER_TEST2(Run, 102, FEATURE)
