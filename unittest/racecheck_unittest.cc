@@ -4024,7 +4024,7 @@ namespace test84 {
 static int s_x = 0;
 /* s_dummy[] ensures that s_x and s_y are not in the same cache line. */
 static char s_dummy[512] = {0};
-static int s_y = 0;
+static int s_y;
 
 void thread_func_1()
 {
@@ -4043,6 +4043,7 @@ void thread_func_2()
 void Run() {
   CHECK(s_dummy[0] == 0);  // Avoid compiler warning about 's_dummy unused'.
   printf("test84: positive\n");
+  s_y = 0;
   ANNOTATE_EXPECT_RACE_FOR_TSAN(&s_y, "test84: TP. true race.");
   MyThreadArray t(thread_func_1, thread_func_2);
   t.Start();
@@ -4499,7 +4500,7 @@ REGISTER_TEST2(Run, 93, FEATURE|EXCLUDE_FROM_ALL)
 
 // test94: TP. Check do_cv_signal/fake segment logic {{{1
 namespace test94 {
-int     GLOB = 0;
+int     GLOB;
 
 int COND  = 0;
 int COND2 = 0;
@@ -4539,6 +4540,7 @@ void Thr4() {
   GLOB = 2; // READ: no HB-relation between CV.Signal and CV2.Wait !
 }
 void Run() {
+  GLOB = 0;
   printf("test94: TP. Check do_cv_signal/fake segment logic\n");
   ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test94: TP.");
   MyThreadArray mta(Thr1, Thr2, Thr3, Thr4);
@@ -4661,7 +4663,8 @@ void Reader() {
 
 void Run() {
   MyThreadArray t(Reader);
-  ANNOTATE_EXPECT_RACE_FOR_TSAN(GLOB, "test97: TP. FN with --fast-mode=yes");
+  if (!TSAN_FAST_MODE())
+    ANNOTATE_EXPECT_RACE_FOR_TSAN(GLOB, "test97: TP. FN with --fast-mode=yes");
   printf("test97: This test shows false negative with --fast-mode=yes\n");
 
   t.Start();
@@ -4881,13 +4884,14 @@ void Reader() {
 
 void Run() {
   MyThreadArray t(Reader);
-  ANNOTATE_EXPECT_RACE_FOR_TSAN(GLOB+0, "test102: TP. FN with --fast-mode=yes");
+  if (!TSAN_FAST_MODE())
+    ANNOTATE_EXPECT_RACE_FOR_TSAN(GLOB+0, "test102: TP. FN with --fast-mode=yes");
   ANNOTATE_EXPECT_RACE_FOR_TSAN(GLOB+1, "test102: TP");
   printf("test102: --fast-mode=yes vs. --initialization-bit=yes\n");
 
   t.Start();
   GLOB[0] = 777;
-  usleep(100000);
+  usleep(400000);
   GLOB[1] = 777;
   t.Join();
 }
@@ -5428,6 +5432,7 @@ void Worker() {
   // if the detector observes a happens-before arc between 
   // sem_open and sem_wait, it will be silent.
   sem_t *sem = DoSemOpen(); 
+  usleep(100000);
   CHECK(sem != SEM_FAILED);
   CHECK(sem_wait(sem) == 0);
 
@@ -5611,9 +5616,9 @@ REGISTER_TEST(Run, 120)
 namespace test121 {
 struct Foo {
   int a;
+  int b[15];
 };
 
-static int   is_inited = 0;
 static Mutex mu;
 static Foo  *foo;
 
@@ -5621,9 +5626,10 @@ void InitMe() {
   if (!foo) {
     MutexLock lock(&mu);
     if (!foo) {
-      ANNOTATE_EXPECT_RACE_FOR_TSAN(&foo, "double-checked locking (ptr)");
+      ANNOTATE_EXPECT_RACE_FOR_TSAN(&foo, "test121. Double-checked locking (ptr)");
       foo = new Foo;
-      ANNOTATE_EXPECT_RACE_FOR_TSAN(&foo->a, "double-checkd locking (obj)");
+      if (!TSAN_FAST_MODE())
+        ANNOTATE_EXPECT_RACE_FOR_TSAN(&foo->a, "test121. Double-checked locking (obj)");
       foo->a = 42;
     }
   }
@@ -5640,11 +5646,12 @@ void Worker3() { UseMe(); }
 
 
 void Run() {  
-  ANNOTATE_TRACE_MEMORY(&is_inited);
+  foo = NULL;
   printf("test121: TP. Example of double-checked-locking\n");
   MyThreadArray t1(Worker1, Worker2, Worker3);
   t1.Start();  
   t1.Join();
+  delete foo;
 }
 REGISTER_TEST(Run, 121)
 }  // namespace test121
