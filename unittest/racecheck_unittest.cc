@@ -6225,7 +6225,7 @@ void Swapper() {
   MutexLock lock(&mu);
   ANNOTATE_CONDVAR_WAIT(&map);
   // We swap the new empty map 'tmp' with 'map'.
-  map.swap(tmp); 
+  map.swap(tmp);
   ANNOTATE_CONDVAR_SIGNAL(&map);
   // tmp (which is the old version of map) is destroyed here.
 }
