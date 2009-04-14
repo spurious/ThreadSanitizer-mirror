@@ -83,6 +83,7 @@
 #include <fcntl.h>
 #include <malloc.h>
 #include <sys/mman.h>  // mmap
+#include <errno.h>
 
 
 // The tests are
@@ -6104,6 +6105,7 @@ static __thread int per_thread_global[10] = {0};
 
 void RealWorker() {  // Touch per_thread_global.
   per_thread_global[1]++;
+  errno++;
 }
 
 void Worker() {  // Spawn few threads that touch per_thread_global.
