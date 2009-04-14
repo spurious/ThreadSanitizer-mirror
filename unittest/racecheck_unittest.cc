@@ -202,8 +202,16 @@ static bool ArgIsTrue(bool *arg) { return *arg == true; };
 #define ANNOTATE_EXPECT_RACE_FOR_TSAN(mem, descr) \
     ANNOTATE_EXPECT_RACE_FOR_MACHINE(mem, descr, "MSM_THREAD_SANITIZER")
 
-inline bool TSAN_PURE_HAPPENS_BEFORE() { return !!getenv("TSAN_PURE_HAPPENS_BEFORE"); }
-inline bool TSAN_FAST_MODE()           { return !!getenv("TSAN_FAST_MODE"); }
+inline bool Tsan_PureHappensBefore() {
+  return getenv("TSAN_PURE_HAPPENS_BEFORE") != NULL;
+}
+
+inline bool Tsan_FastMode()           {
+  return getenv("TSAN_FAST_MODE") != NULL;
+}
+
+// Initialize *(mem) to 0 if Tsan_FastMode.
+#define FAST_MODE_INIT(mem) do { if (Tsan_FastMode()) { *(mem) = 0; } } while(0)
 
 #ifndef MAIN_INIT_ACTION
 #define MAIN_INIT_ACTION
@@ -213,7 +221,7 @@ inline bool TSAN_FAST_MODE()           { return !!getenv("TSAN_FAST_MODE"); }
 
 int main(int argc, char** argv) { // {{{1
   MAIN_INIT_ACTION;
-  printf("FLAGS [phb=%i, fm=%i]\n", TSAN_PURE_HAPPENS_BEFORE(), TSAN_FAST_MODE());
+  printf("FLAGS [phb=%i, fm=%i]\n", Tsan_PureHappensBefore(), Tsan_FastMode());
   if (argc == 2 && !strcmp(argv[1], "benchmark")) {
      for (std::map<int,Test>::iterator it = TheMapOfTests.begin(); 
          it != TheMapOfTests.end(); ++it) {
@@ -319,6 +327,7 @@ void Parent() {
   t.Join();
 }
 void Run() {
+  FAST_MODE_INIT(&GLOB);
   ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test01. TP.");
   ANNOTATE_TRACE_MEMORY(&GLOB);
   printf("test01: positive\n");
@@ -499,7 +508,8 @@ void Waiter() {
   GLOB = 2;
 }
 void Run() {
-  if (!TSAN_PURE_HAPPENS_BEFORE())
+  FAST_MODE_INIT(&GLOB);
+  if (!Tsan_PureHappensBefore())
     ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test05. FP. Unavoidable in hybrid scheme.");
   printf("test05: unavoidable false positive\n");
   Waiter();
@@ -655,6 +665,7 @@ void Reader() {
 
 void Run() {
   ANNOTATE_TRACE_MEMORY(&GLOB);
+  FAST_MODE_INIT(&GLOB);
   ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test09. TP.");
   printf("test09: positive\n");
   MyThreadArray t(Writer, Reader);
@@ -691,6 +702,7 @@ void Reader() {
 }
 
 void Run() {
+  FAST_MODE_INIT(&GLOB);
   ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test10. TP. FN in MSMHelgrind.");
   printf("test10: positive\n");
   MyThreadArray t(Writer, Reader);
@@ -1114,6 +1126,7 @@ void Waiter() {
   GLOB = 2;
 }
 void Run() {
+  FAST_MODE_INIT(&GLOB);
   ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test20. TP.");
   printf("test20: positive\n");
   Waiter();
@@ -1143,6 +1156,7 @@ void Waiter() {
   GLOB = 2;
 }
 void Run() {
+  FAST_MODE_INIT(&GLOB);
   ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test21. TP.");
   printf("test21: positive\n");
   Waiter();
@@ -1178,6 +1192,7 @@ void Waiter() {
   GLOB = 2;
 }
 void Run() {
+  FAST_MODE_INIT(&GLOB);
   ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test22. TP.");
   printf("test22: positive\n");
   Waiter();
@@ -1335,6 +1350,7 @@ void Waiter() {
   GLOB = 2;
 }
 void Run() {
+  FAST_MODE_INIT(&GLOB);
   ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test26. TP");
   printf("test26: positive\n");
   Waiter();
@@ -1516,6 +1532,7 @@ void Reader() {
 }
 
 void Run() {
+  FAST_MODE_INIT(&BOUNDARY);
   ANNOTATE_EXPECT_RACE((void*)(&BOUNDARY), "test30. Sync via 'safe' race.");
   printf("test30: negative\n");
   MyThreadArray t(Writer, Reader, Reader, Reader);
@@ -1570,6 +1587,7 @@ void Writer2() {
 }
 
 void Run() {
+  FAST_MODE_INIT(&BOUNDARY);
   ANNOTATE_EXPECT_RACE((void*)(&BOUNDARY), "test31. Sync via 'safe' race.");
   printf("test31: negative\n");
   MyThreadArray t(Writer1, Writer2);
@@ -2303,7 +2321,8 @@ void Second() {
   GLOB++;
 }
 void Run() {
-  if (!TSAN_PURE_HAPPENS_BEFORE())
+  FAST_MODE_INIT(&GLOB);
+  if (!Tsan_PureHappensBefore())
     ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test47. TP. Not detected by pure HB.");
   printf("test47: positive\n");
   MyThreadArray t(First, Second);
@@ -2341,6 +2360,7 @@ void Reader() {
 }
 
 void Run() {
+  FAST_MODE_INIT(&GLOB);
   ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test48. TP. FN in MSMHelgrind.");
   printf("test48: positive\n");
   MyThreadArray t(Writer, Reader,Reader,Reader);
@@ -2383,6 +2403,7 @@ void Reader() {
 }
 
 void Run() {
+  FAST_MODE_INIT(&GLOB);
   ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test49. TP. FN in MSMHelgrind.");
   printf("test49: positive\n");
   MyThreadArray t(Writer, Reader);
@@ -2446,6 +2467,7 @@ void Waiter() {
   GLOB = 2;
 }
 void Run() {
+  FAST_MODE_INIT(&GLOB);
   ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test50. TP.");
   printf("test50: positive\n");
   Waiter();
@@ -2520,6 +2542,7 @@ void Waiter() {
   GLOB = 3;
 }
 void Run() {
+  FAST_MODE_INIT(&GLOB);
   ANNOTATE_EXPECT_RACE(&GLOB, "test51. TP.");
   printf("test51: positive\n");
   Waiter();
@@ -2590,6 +2613,7 @@ void Waiter() {
   GLOB = 3;
 }
 void Run() {
+  FAST_MODE_INIT(&GLOB);
   ANNOTATE_EXPECT_RACE(&GLOB, "test52. TP.");
   printf("test52: positive\n");
   Waiter();
@@ -2650,7 +2674,8 @@ void User() {
 }
 
 void Run() {
-  if (!TSAN_PURE_HAPPENS_BEFORE())
+  FAST_MODE_INIT(&GLOB);
+  if (!Tsan_PureHappensBefore())
     ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test53. FP. Implicit semaphore");
   printf("test53: FP. false positive, Implicit semaphore\n");
   MyThreadArray t(Initializer, User, User);
@@ -3067,6 +3092,7 @@ void T3() {
 
 
 void Run() {
+  FAST_MODE_INIT(&GLOB);
   ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test64: TP.");
   printf("test64: positive\n");
   MyThreadArray t(T1, T2, T3);
@@ -3120,7 +3146,8 @@ void T3() {
 
 
 void Run() {
-  if (!TSAN_PURE_HAPPENS_BEFORE())
+  FAST_MODE_INIT(&GLOB);
+  if (!Tsan_PureHappensBefore())
     ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test65. TP.");
   printf("test65: positive\n");
   MyThreadArray t(T1, T2, T3);
@@ -3228,6 +3255,7 @@ void Waiter2() {
 }
 
 void Run() {
+  FAST_MODE_INIT(&GLOB);
   ANNOTATE_EXPECT_RACE(&GLOB, "test67. FN. Race between Signaller1 and Waiter2");
   printf("test67: positive\n");
   MyThreadArray t(Signaller1, Signaller2, Waiter1, Waiter2);
@@ -3279,6 +3307,7 @@ void Reader() {
 }
 
 void Run() {
+  FAST_MODE_INIT(&GLOB);
   ANNOTATE_EXPECT_RACE(&GLOB, "TP. Writes are protected, reads are not.");
   printf("test68: positive\n");
   MyThreadArray t(Reader, Writer, Writer, Writer);
@@ -4043,7 +4072,7 @@ void thread_func_2()
 void Run() {
   CHECK(s_dummy[0] == 0);  // Avoid compiler warning about 's_dummy unused'.
   printf("test84: positive\n");
-  s_y = 0;
+  FAST_MODE_INIT(&s_y);
   ANNOTATE_EXPECT_RACE_FOR_TSAN(&s_y, "test84: TP. true race.");
   MyThreadArray t(thread_func_1, thread_func_2);
   t.Start();
@@ -4100,7 +4129,9 @@ struct A {
   A()  { printf("A::A()\n"); }
   virtual ~A() { printf("A::~A()\n"); }
   virtual void f() { }
-};
+
+  uintptr_t padding[15];
+} __attribute__ ((aligned (64)));
 
 struct B: A {
   B()  { printf("B::B()\n"); }
@@ -4117,7 +4148,8 @@ struct B: A {
 
 void Waiter() {
   A *a = new B;
-  ANNOTATE_EXPECT_RACE(a, "test86: expected race on a->vptr");
+  if (!Tsan_FastMode())
+    ANNOTATE_EXPECT_RACE(a, "test86: expected race on a->vptr");
   printf("Waiter: B created\n");
   Q.Put(a);
   usleep(100000); // so that Worker calls a->f() first.
@@ -4135,7 +4167,6 @@ void Worker() {
     
   mu.Lock();
   flag_stopped = true;
-  ANNOTATE_CONDVAR_SIGNAL(&mu);
   mu.Unlock();
   usleep(200000);
   printf("Worker: done\n");
@@ -4324,9 +4355,9 @@ Mutex   MU;
 
 void Publisher() {
   MU.Lock();
-  GLOB = new int;
+  GLOB = (int*)memalign(64, sizeof(int));
   *GLOB = 777;
-  if (!TSAN_PURE_HAPPENS_BEFORE())
+  if (!Tsan_PureHappensBefore() && !Tsan_FastMode())
     ANNOTATE_EXPECT_RACE_FOR_TSAN(GLOB, "test90. FP. This is a false positve");
   MU.Unlock();
   usleep(200000);
@@ -4351,7 +4382,7 @@ void Run() {
   t.Start();
   t.Join();
   printf("\t*GLOB=%d\n", *GLOB);
-  delete GLOB;
+  free(GLOB);
 }
 REGISTER_TEST(Run, 90)
 }  // namespace test90
@@ -4371,9 +4402,9 @@ Mutex   MU, MU1, MU2;
 
 void Publisher() {
   MU1.Lock();
-  GLOB = new int;
+  GLOB = (int*)memalign(64, sizeof(int));
   *GLOB = 777;
-  if (!TSAN_PURE_HAPPENS_BEFORE())
+  if (!Tsan_PureHappensBefore() && !Tsan_FastMode())
     ANNOTATE_EXPECT_RACE_FOR_TSAN(GLOB, "test91. FP. This is a false positve");
   MU1.Unlock();
 }
@@ -4400,7 +4431,7 @@ void Run() {
   t.Start();
   t.Join();
   printf("\t*GLOB=%d\n", *GLOB);
-  delete GLOB;
+  free(GLOB);
 }
 REGISTER_TEST(Run, 91)
 }  // namespace test91
@@ -4540,9 +4571,9 @@ void Thr4() {
   GLOB = 2; // READ: no HB-relation between CV.Signal and CV2.Wait !
 }
 void Run() {
-  GLOB = 0;
-  printf("test94: TP. Check do_cv_signal/fake segment logic\n");
+  FAST_MODE_INIT(&GLOB);
   ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test94: TP.");
+  printf("test94: TP. Check do_cv_signal/fake segment logic\n");
   MyThreadArray mta(Thr1, Thr2, Thr3, Thr4);
   mta.Start();
   mta.Join();
@@ -4593,8 +4624,9 @@ void Thr4() {
   GLOB = 2; // READ: no HB-relation between CV.Signal and CV2.Wait !
 }
 void Run() {
-  printf("test95: TP. Check do_cv_signal/fake segment logic\n");
+  FAST_MODE_INIT(&GLOB);
   ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test95: TP.");
+  printf("test95: TP. Check do_cv_signal/fake segment logic\n");
   MyThreadArray mta(Thr1, Thr2, Thr3, Thr4);
   mta.Start();
   mta.Join();
@@ -4663,7 +4695,7 @@ void Reader() {
 
 void Run() {
   MyThreadArray t(Reader);
-  if (!TSAN_FAST_MODE())
+  if (!Tsan_FastMode())
     ANNOTATE_EXPECT_RACE_FOR_TSAN(GLOB, "test97: TP. FN with --fast-mode=yes");
   printf("test97: This test shows false negative with --fast-mode=yes\n");
 
@@ -4884,7 +4916,7 @@ void Reader() {
 
 void Run() {
   MyThreadArray t(Reader);
-  if (!TSAN_FAST_MODE())
+  if (!Tsan_FastMode())
     ANNOTATE_EXPECT_RACE_FOR_TSAN(GLOB+0, "test102: TP. FN with --fast-mode=yes");
   ANNOTATE_EXPECT_RACE_FOR_TSAN(GLOB+1, "test102: TP");
   printf("test102: --fast-mode=yes vs. --initialization-bit=yes\n");
@@ -4952,14 +4984,14 @@ void Parent() {
   t.Join();
 }
 void Run() {
-  GLOB = new int;
+  GLOB = (int*)memalign(64, sizeof(int));
   *GLOB = 0;
   ANNOTATE_EXPECT_RACE(GLOB, "test104. TP.");
   ANNOTATE_TRACE_MEMORY(GLOB);
   printf("test104: positive\n");
   Parent();
   printf("\tGLOB=%d\n", *GLOB);
-  delete GLOB;
+  free(GLOB);
 }
 REGISTER_TEST(Run, 104);
 }  // namespace test104
@@ -5184,19 +5216,32 @@ void Run() {
   NEW_ARR = new int[10];
 
 
+  FAST_MODE_INIT(STACK);
   ANNOTATE_EXPECT_RACE(STACK, "real race on stack object");
+  FAST_MODE_INIT(&GLOB);
   ANNOTATE_EXPECT_RACE(&GLOB, "real race on global object");
+  FAST_MODE_INIT(&STATIC);
   ANNOTATE_EXPECT_RACE(&STATIC, "real race on a static global object");
+  FAST_MODE_INIT(MALLOC);
   ANNOTATE_EXPECT_RACE(MALLOC, "real race on a malloc-ed object");
+  FAST_MODE_INIT(CALLOC);
   ANNOTATE_EXPECT_RACE(CALLOC, "real race on a calloc-ed object");
+  FAST_MODE_INIT(REALLOC);
   ANNOTATE_EXPECT_RACE(REALLOC, "real race on a realloc-ed object");
+  FAST_MODE_INIT(VALLOC);
   ANNOTATE_EXPECT_RACE(VALLOC, "real race on a valloc-ed object");
+  FAST_MODE_INIT(PVALLOC);
   ANNOTATE_EXPECT_RACE(PVALLOC, "real race on a pvalloc-ed object");
+  FAST_MODE_INIT(MEMALIGN);
   ANNOTATE_EXPECT_RACE(MEMALIGN, "real race on a memalign-ed object");
+  FAST_MODE_INIT(POSIX_MEMALIGN);
   ANNOTATE_EXPECT_RACE(POSIX_MEMALIGN, "real race on a posix_memalign-ed object");
+  FAST_MODE_INIT(MMAP);
   ANNOTATE_EXPECT_RACE(MMAP, "real race on a mmap-ed object");
 
+  FAST_MODE_INIT(NEW);
   ANNOTATE_EXPECT_RACE(NEW, "real race on a new-ed object");
+  FAST_MODE_INIT(NEW_ARR);
   ANNOTATE_EXPECT_RACE(NEW_ARR, "real race on a new[]-ed object");
 
   MyThreadArray t(Worker, Worker, Worker);
@@ -5574,8 +5619,9 @@ void Worker2() {
 }
 void Run() {
   printf("test119: positive (checking if malloc creates HB arcs)\n");
-  ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "true race");
-  GLOB = 0;
+  FAST_MODE_INIT(&GLOB);
+  if (!(Tsan_PureHappensBefore() && kMallocUsesMutex))
+    ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "true race");
   MyThreadArray t(Worker1, Worker2);
   t.Start();
   t.Join();
@@ -5600,8 +5646,9 @@ void Thread2() {
 }
 
 void Run() {
-  printf("test120: positive\n");
+  FAST_MODE_INIT(&GLOB);
   ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "TP (T1: write then read, T2: read)");
+  printf("test120: positive\n");
   MyThreadArray t(Thread1, Thread2);
   GLOB = 1;
   t.Start();
@@ -5615,9 +5662,8 @@ REGISTER_TEST(Run, 120)
 // test121: TP. Example of double-checked-locking  {{{1
 namespace test121 {
 struct Foo {
-  int a;
-  int b[15];
-};
+  uintptr_t a, b[15];
+} __attribute__ ((aligned (64)));
 
 static Mutex mu;
 static Foo  *foo;
@@ -5628,7 +5674,7 @@ void InitMe() {
     if (!foo) {
       ANNOTATE_EXPECT_RACE_FOR_TSAN(&foo, "test121. Double-checked locking (ptr)");
       foo = new Foo;
-      if (!TSAN_FAST_MODE())
+      if (!Tsan_FastMode())
         ANNOTATE_EXPECT_RACE_FOR_TSAN(&foo->a, "test121. Double-checked locking (obj)");
       foo->a = 42;
     }
@@ -5646,7 +5692,7 @@ void Worker3() { UseMe(); }
 
 
 void Run() {  
-  foo = NULL;
+  FAST_MODE_INIT(&foo);
   printf("test121: TP. Example of double-checked-locking\n");
   MyThreadArray t1(Worker1, Worker2, Worker3);
   t1.Start();  
@@ -5685,7 +5731,7 @@ void Run() {
   VAR2 = 0;
   ANNOTATE_TRACE_MEMORY(&VAR1);
   ANNOTATE_TRACE_MEMORY(&VAR2);
-  if (!TSAN_PURE_HAPPENS_BEFORE()) {
+  if (!Tsan_PureHappensBefore()) {
     ANNOTATE_EXPECT_RACE_FOR_TSAN(&VAR1, "test122. TP. ReaderLock-ed while writing");
     ANNOTATE_EXPECT_RACE_FOR_TSAN(&VAR2, "test122. TP. ReaderLock-ed while writing");
   }
@@ -6116,8 +6162,9 @@ int     GLOB = 0;
 void Worker() { GLOB = 1; }
 
 void Run1() {
-  printf("test132: positive; &GLOB=%p\n", &GLOB);
+  FAST_MODE_INIT(&GLOB);
   ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test132");
+  printf("test132: positive; &GLOB=%p\n", &GLOB);
   ANNOTATE_TRACE_MEMORY(&GLOB);
   GLOB = 7;
   MyThreadArray t(Worker, Worker);
@@ -6140,8 +6187,9 @@ int     GLOB = 0;
 void Worker() { GLOB = 1; }
 
 void Run1() {
-  printf("test133: positive; &GLOB=%p\n", &GLOB);
+  FAST_MODE_INIT(&GLOB);
   ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test133");
+  printf("test133: positive; &GLOB=%p\n", &GLOB);
   ANNOTATE_TRACE_MEMORY(&GLOB);
   GLOB = 7;
   MyThreadArray t(Worker, Worker);

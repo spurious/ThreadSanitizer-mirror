@@ -65,6 +65,9 @@ using namespace std;
 #endif 
 #define CHECK assert
 
+/// Set this to true if malloc() uses mutex on your platform as this may
+/// introduce a happens-before arc for a pure happens-before race detector.
+const bool kMallocUsesMutex = false;
 
 /// Current time in milliseconds. 
 static inline int64_t GetCurrentTimeMillis() {
