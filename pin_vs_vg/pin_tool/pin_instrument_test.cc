@@ -1,12 +1,25 @@
 #include "pin.H"
+#include "sys/time.h"
+#include "time.h"
 
-#define tool_printf printf
+FILE * OUTPUT = NULL;
+#define tool_printf(A, B...) \
+  do { \
+    if (OUTPUT != NULL) { \
+      fprintf(OUTPUT, A, B); \
+      fflush(OUTPUT); \
+    } \
+  } while(0)
 
 #include "../common/drd_benchmark_simple.h"
-#include <map>
+
+long GetTimeInMilliseconds() {
+  struct timeval now;
+  gettimeofday(&now, NULL);
+  return now.tv_sec * 1000 + now.tv_usec / 1000;
+}
 
 //---------- Instrumentation functions ---------
-#include "pin.H"
 
 void InsertBeforeEvent_MemoryAccessIf_READ(ADDRINT pc) {
   Benchmark_OnMemAccess(false);
@@ -48,6 +61,7 @@ KNOB<int> KnobN(KNOB_MODE_WRITEONCE, "pintool", "N", "5", "Specify 'N'");
 //---------------- main ---------------
 int main(INT32 argc, CHAR **argv)
 {
+  OUTPUT = fopen("test.log", "wt");
   PIN_InitSymbols();
   PIN_Init(argc, argv);
   PIN_AddFiniFunction(CallbackForFini, 0);
@@ -55,5 +69,7 @@ int main(INT32 argc, CHAR **argv)
   Benchmark_Initialize();
   Benchmark_SetNumDivisionsPerMemAccess(KnobN.Value());
   PIN_StartProgram();
+  if (OUTPUT != NULL)
+    fclose(OUTPUT);
   return 0;
 }

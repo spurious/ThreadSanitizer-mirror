@@ -5,6 +5,8 @@
 #include "pub_tool_libcassert.h"
 #include "pub_tool_libcbase.h"
 #include "pub_tool_libcprint.h"
+#include "pub_tool_vki.h"
+#include "pub_tool_libcproc.h"
 #include "pub_tool_mallocfree.h"
 #include "pub_tool_machine.h"
 #include "pub_tool_options.h"
@@ -14,6 +16,10 @@
 #define tool_printf VG_(printf)
 typedef Int bool;
 #include "drd_benchmark_simple.h"
+
+long GetTimeInMilliseconds(void) {
+  return VG_(read_millisecond_timer)();
+}
 
 static void tg_post_clo_init(void)
 {

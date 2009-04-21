@@ -4,10 +4,9 @@
 # Author: timurrrr@google.com (Timur Iskhodzhanov)
 
 # Get PIN
-wget http://www.pintool.org/cgi-bin/download.cgi?file=pin-2.6-24110-gcc.4.0.0-ia32_intel64-linux.tar.gz
-tar xvfz pin-2.6-24110-gcc.4.0.0-ia32_intel64-linux.tar.gz
-mv pin-2.5-24110-gcc.4.0.0-ia32_intel64-linux pin # note the wrong name of the
-                                                  # extracted directory :-)
+wget http://www.pintool.org/cgi-bin/download.cgi?file=pin-2.6-25945-gcc.4.0.0-ia32_intel64-linux.tar.gz
+tar xvfz pin-2.6-25945-gcc.4.0.0-ia32_intel64-linux.tar.gz
+mv pin-2.6-25945-gcc.4.0.0-ia32_intel64-linux pin
 
 # Get Valgrind
 svn co svn://svn.valgrind.org/valgrind/tags/VALGRIND_3_4_1 valgrind

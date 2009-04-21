@@ -4,11 +4,14 @@
 #ifndef DRD_BENCHMARK_SIMPLE_H_
 #define DRD_BENCHMARK_SIMPLE_H_
 
+long GetTimeInMilliseconds(void);
+
 struct DrdBenchmarkSimple {
   long long dynamic_memory_access_count,
             static_memory_access_count;
   int num_divisions_per_memaccess;
   volatile int a, b;
+  long start_time;
 } benchmark;
 
 inline void Benchmark_Initialize(void);
@@ -18,6 +21,7 @@ inline void Benchmark_Initialize(void) {
   benchmark.num_divisions_per_memaccess = 5;
   benchmark.a = 0xDEADBEEF;
   benchmark.b = 0x1010;
+  benchmark.start_time = GetTimeInMilliseconds();
 }
 
 inline void Benchmark_OnMemAccessInstrumentation(bool is_write);
@@ -36,6 +40,7 @@ inline void Benchmark_OnMemAccess(bool is_write) {
 
 inline void Benchmark_OnExit(int exit_code);
 inline void Benchmark_OnExit(int exit_code) {
+  long elapsed_time = GetTimeInMilliseconds() - benchmark.start_time;
   tool_printf("Memory accesses:\n"
               "  instrumented = %lld\n"
               "  executed     = %lld\n"
@@ -43,6 +48,7 @@ inline void Benchmark_OnExit(int exit_code) {
               benchmark.static_memory_access_count,
               benchmark.dynamic_memory_access_count,
               benchmark.num_divisions_per_memaccess);
+  tool_printf("Elapsed time: %ldms\n", elapsed_time);
 }
 
 inline void Benchmark_SetNumDivisionsPerMemAccess(int value);
