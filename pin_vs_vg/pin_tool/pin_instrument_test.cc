@@ -2,13 +2,11 @@
 #include "sys/time.h"
 #include "time.h"
 
-FILE * OUTPUT = NULL;
 #define tool_printf(A, B...) \
   do { \
-    if (OUTPUT != NULL) { \
-      fprintf(OUTPUT, A, B); \
-      fflush(OUTPUT); \
-    } \
+    char buffer[1024] = ""; \
+    sprintf(buffer, A, B); \
+    LOG(buffer); \
   } while(0)
 
 #include "../common/drd_benchmark_simple.h"
@@ -61,15 +59,15 @@ KNOB<int> KnobN(KNOB_MODE_WRITEONCE, "pintool", "N", "5", "Specify 'N'");
 //---------------- main ---------------
 int main(INT32 argc, CHAR **argv)
 {
-  OUTPUT = fopen("test.log", "wt");
   PIN_InitSymbols();
-  PIN_Init(argc, argv);
+  if (PIN_Init(argc, argv)) {
+    printf("Error parsing command line\n");
+    return 1;
+  }
   PIN_AddFiniFunction(CallbackForFini, 0);
   TRACE_AddInstrumentFunction(CallbackForTRACE, 0);
   Benchmark_Initialize();
   Benchmark_SetNumDivisionsPerMemAccess(KnobN.Value());
   PIN_StartProgram();
-  if (OUTPUT != NULL)
-    fclose(OUTPUT);
   return 0;
 }
