@@ -82,7 +82,7 @@ static void DescribeAccesses(TypedCallsites *c) {
   fprintf(stderr, "Race found between these points\n");
   std::set<pthread_t> reported_accessors;
   for (int t = 1; t >= 0; t--) {  // Iterate starting from writers.
-    for (int i = 0; i != c->type[t].size(); i++) {
+    for (size_t i = 0; i != c->type[t].size(); i++) {
       CallSite *s = &c->type[t][i];
       if (reported_accessors.insert(s->thread).second) {
         // Report each accessor just once.
@@ -119,9 +119,9 @@ void RaceChecker::Start(RaceChecker::Type type, const volatile void *address) {
         c->type[READ].size() + c->type[WRITE].size() > 1) {
       // Race only if a writer is a different thread from another accessor.
       bool is_race = false;
-      for (int w = 0; !is_race && w != c->type[WRITE].size(); w++) {
+      for (size_t w = 0; !is_race && w != c->type[WRITE].size(); w++) {
         for (int t = 0; !is_race && t != 2; t++) {
-          for (int i = 0; !is_race && i != c->type[t].size(); i++) {
+          for (size_t i = 0; !is_race && i != c->type[t].size(); i++) {
             is_race = (c->type[WRITE][w].thread != c->type[t][i].thread);
           }
         }
