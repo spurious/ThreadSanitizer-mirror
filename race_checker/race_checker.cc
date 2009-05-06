@@ -135,7 +135,7 @@ void RaceChecker::Start(RaceChecker::Type type, const volatile void *address) {
     }
     race_checker_mu.Unlock();
     if (race_checker_sleep_ms != 0) {
-      usleep(race_checker_sleep_ms);
+      usleep(race_checker_sleep_ms * 1000);
     }
   }
 }
