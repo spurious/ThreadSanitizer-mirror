@@ -7094,7 +7094,7 @@ const int N_THREADS = 2,
           HG_CACHE_SIZE = HG_CACHELINE_COUNT * HG_CACHELINE_SIZE;
 
 const int ARRAY_SIZE = 4 * HG_CACHE_SIZE,
-          ITERATIONS = 5;
+          ITERATIONS = 3;
 int64_t array[ARRAY_SIZE];
 
 int count = 0;
@@ -7212,7 +7212,7 @@ void Run() {
     }
   } // all folks are joined here.
 }
-REGISTER_TEST2(Run, 507, PERFORMANCE/* | PRINT_STATS*/ | EXCLUDE_FROM_ALL);
+REGISTER_TEST2(Run, 507, EXCLUDE_FROM_ALL);
 }  // namespace test507
 
 // test508: cmp_WordVecs_for_FM benchmark {{{1
@@ -7251,7 +7251,7 @@ void Run() {
     }
   } // all folks are joined here.
 }
-REGISTER_TEST2(Run, 508, PERFORMANCE/* | PRINT_STATS*/ | EXCLUDE_FROM_ALL);
+REGISTER_TEST2(Run, 508, EXCLUDE_FROM_ALL);
 }  // namespace test508
 
 // test509: avl_find_node benchmark {{{1
@@ -7284,7 +7284,7 @@ void Run() {
     }
   } // all folks are joined here.
 }
-REGISTER_TEST2(Run, 509, PERFORMANCE/* | PRINT_STATS*/ | EXCLUDE_FROM_ALL);
+REGISTER_TEST2(Run, 509, EXCLUDE_FROM_ALL);
 }  // namespace test509
 
 // test510: SS-recycle test {{{1
@@ -7364,7 +7364,7 @@ const int N_THREADS = 2,
           MUTEX_ID_MASK = (1 << MUTEX_ID_BITS) - 1;
 
 // Each thread has its own cacheline and tackles with it intensively
-const int ITERATIONS = 4096;
+const int ITERATIONS = 1024;
 int array[N_THREADS][ARRAY_SIZE];
 
 int count = 0;
