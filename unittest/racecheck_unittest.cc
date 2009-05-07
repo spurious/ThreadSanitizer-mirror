@@ -6278,6 +6278,35 @@ void Run() {
 REGISTER_TEST(Run, 135)
 }  // namespace test135
 
+// test136 TP. Races on stack variables. {{{1
+namespace test136 {
+int GLOB = 0;
+ProducerConsumerQueue q(10);
+
+void Worker() {
+  int stack;
+  int *tmp = (int*)q.Get();
+  (*tmp)++;
+  int *racey = &stack;
+  q.Put(racey);
+  (*racey)++;
+  usleep(150000);
+  // We may miss the races if we sleep less due to die_memory events...
+}
+
+void Run() {
+  int tmp = 0;
+  printf("test136: TP. Races on stack variables.\n");
+  q.Put(&tmp);
+  MyThreadArray t(Worker, Worker, Worker, Worker);
+  t.Start();
+  t.Join();
+  q.Get();
+}
+
+REGISTER_TEST2(Run, 136, FEATURE | EXCLUDE_FROM_ALL)
+}  // namespace test136
+
 // test300: {{{1
 namespace test300 {
 int     GLOB = 0;
