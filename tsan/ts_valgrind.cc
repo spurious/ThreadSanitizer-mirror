@@ -353,7 +353,11 @@ void ts_fini(Int exitcode) {
 
 void evh__pre_thread_ll_create ( ThreadId parent, ThreadId child ) {
   tl_assert(parent != child);
-  tl_assert(g_valgrind_threads[child].zero_based_uniq_tid == -1);
+  //  Printf("thread_create: %d->%d\n", parent, child);
+  if (g_valgrind_threads[child].zero_based_uniq_tid != -1) {
+    Printf("ThreadSanitizer WARNING: reusing TID %d w/o exiting thread\n",
+           child);
+  }
   g_valgrind_threads[child].zero_based_uniq_tid = g_uniq_thread_id_counter++;
   g_valgrind_threads[child].ignore_all = 0;
   // Printf("VG: T%d: VG_THR_START: parent=%d\n", VgTidToTsTid(child), VgTidToTsTid(parent));
@@ -368,6 +372,7 @@ void evh__pre_thread_first_insn(const ThreadId tid) {
 
 
 void evh__pre_thread_ll_exit ( ThreadId quit_tid ) {
+//  Printf("thread_exit: %d\n", quit_tid);
 //  Printf("T%d quiting thread; stack size=%ld\n",
 //         VgTidToTsTid(quit_tid),
 //         (int)g_valgrind_threads[quit_tid].call_stack.size());

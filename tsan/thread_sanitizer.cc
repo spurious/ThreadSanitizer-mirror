@@ -94,6 +94,16 @@ static void OpenFileWriteStringAndClose(const string &file_name,
   VG_(close)(fd);
 }
 
+template<typename T>
+static inline T tsan_bswap(T in) {
+  if (sizeof(in) == 8)
+    return __builtin_bswap64(in);
+  else if (sizeof(in) == 4)
+    return __builtin_bswap32(in);
+  else
+    CHECK(0);
+}
+
 // -------- Stats ------------------- {{{1
 // Statistic counters for the entire tool.
 struct Stats {
@@ -155,6 +165,25 @@ struct Stats {
            ss_create, ss_reuse, ss_find, ss_recycle);
     Printf("        sizes: 2: %'ld; 3: %'ld; 4: %'ld; other: %'ld\n",
            ss_size_2, ss_size_3, ss_size_4, ss_size_other);
+
+    // SSEq is called at least (ss_find + ss_recycle) times since
+    // FindExistingOrAlocateAndCopy calls map_.find()
+    // and RecycleOneSegmentSet calls map_.erase(it)
+    // Both find() and erase(it) require at least one call to SSHash and SSEq.
+    //
+    // Apart from SSHash call locations mentioned above,
+    // SSHash is called for each AllocateAndCopy (ss_create + ss_reuse) times
+    // for insert() AFTER it has already been called
+    // by FindExistingOrAlocateAndCopy in case find() returned map_.end().
+    // Hence the factor of 2.
+    uintptr_t sseq_estimated = ss_find + ss_recycle,
+            sshash_estimated = sseq_estimated + 2 * (ss_create + ss_reuse);
+    Printf("   SSHash called %12ld times (vs. %12ld = +%d%%)\n"
+           "   SSEq   called %12ld times (vs. %12ld = +%d%%)\n",
+            sshash_calls, sshash_estimated,
+            (sshash_calls - sshash_estimated)/(sshash_estimated/100 + 1),
+            sseq_calls,   sseq_estimated,
+            (sseq_calls   - sseq_estimated  )/(sseq_estimated/100 + 1));
   }
   void PrintStatsForCache() {
     Printf("   Cache:\n"
@@ -230,6 +259,8 @@ struct Stats {
 
   uintptr_t ss_create, ss_reuse, ss_find, ss_recycle;
   uintptr_t ss_size_2, ss_size_3, ss_size_4, ss_size_other;
+
+  uintptr_t sshash_calls, sseq_calls;
 
   uintptr_t seg_create, seg_reuse;
 
@@ -1928,9 +1959,9 @@ class SegmentSet {
     // Printf("SegmentSet::RecycleOneSegmentSet: %d\n", ssid.raw());
     //
     // Recycle segments
-    int size = this->size();
-    for (int i = 0; i < size; i++) {
+    for (int i = 0; i < kMaxSegmentSetSize; i++) {
       SID sid = this->GetSID(i);
+      if (sid.raw() == 0) break;
       Segment::Unref(sid, "SegmentSet::Recycle");
     }
     ref_count_ = -1;
@@ -2052,8 +2083,6 @@ class SegmentSet {
 
   static void Test();
 
-  int32_t size() const { return size_; }
-
   static int32_t Size(SSID ssid) {
     if (ssid.IsEmpty()) return 0;
     if (ssid.IsSingleton()) return 1;
@@ -2061,12 +2090,14 @@ class SegmentSet {
   }
 
   SID GetSID(int32_t i) const {
-    DCHECK(i >= 0 && i < size_);
+    DCHECK(i >= 0 && i < kMaxSegmentSetSize);
+    DCHECK(i == 0 || sids_[i-1].raw() != 0);
     return sids_[i];
   }
 
   void SetSID(int32_t i, SID sid) {
-    DCHECK(i >= 0 && i < size_);
+    DCHECK(i >= 0 && i < kMaxSegmentSetSize);
+    DCHECK(i == 0 || sids_[i-1].raw() != 0);
     sids_[i] = sid;
   }
 
@@ -2103,17 +2134,27 @@ class SegmentSet {
   }
 
  private:
-  explicit SegmentSet(int32_t size)  // Private CTOR
-    : size_(size),
-      ref_count_(0) {
+  SegmentSet()  // Private CTOR
+    : ref_count_(0) {
+    // sids_ are filled with zeroes due to SID default CTOR.
+    if (DEBUG_MODE) {
+      for (int i = 0; i < kMaxSegmentSetSize; i++)
+        CHECK_EQ(sids_[i].raw(), 0);
+    }
   }
-  SegmentSet() { }
+
+  int size() const {
+    for (int i = 0; i < kMaxSegmentSetSize; i++) {
+      if (sids_[i].raw() == 0) {
+        CHECK_GE(i, 2);
+        return i;
+      }
+    }
+    return kMaxSegmentSetSize;
+  }
 
   static INLINE SSID AllocateAndCopy(SegmentSet *ss) {
-    int32_t size = ss->size();
     DCHECK(ss->ref_count_ == 0);
-    DCHECK(size >= 2);
-    DCHECK(size <= kMaxSegmentSetSize);
     DCHECK(sizeof(int32_t) == sizeof(SID));
     SSID res_ssid;
     SegmentSet *res_ss = 0;
@@ -2124,9 +2165,11 @@ class SegmentSet {
       int idx = -res_ssid.raw()-1;
       res_ss = (*vec_)[idx];
       DCHECK(res_ss);
-      DCHECK(res_ss == Get(res_ssid));
       DCHECK(res_ss->ref_count_ == -1);
       G_stats->ss_reuse++;
+      for (int i = 0; i < kMaxSegmentSetSize; i++) {
+        res_ss->sids_[i] = SID(0);
+      }
     } else {
       // create a new one
       ScopedMallocCostCenter cc("SegmentSet::CreateNewSegmentSet");
@@ -2137,14 +2180,14 @@ class SegmentSet {
       CHECK(res_ssid.valid());
     }
     DCHECK(res_ss);
-    res_ss->size_ = size;
     res_ss->ref_count_ = 0;
-    DCHECK(res_ss == Get(res_ssid));
-    for (int i = 0; i < size; i++) {
+    for (int i = 0; i < kMaxSegmentSetSize; i++) {
       SID sid = ss->GetSID(i);
+      if (sid.raw() == 0) break;
       Segment::Ref(sid, "SegmentSet::FindExistingOrAlocateAndCopy");
       res_ss->SetSID(i, sid);
     }
+    DCHECK(res_ss == Get(res_ssid));
     map_->Insert(res_ss, res_ssid);
     return res_ssid;
   }
@@ -2170,7 +2213,7 @@ class SegmentSet {
   }
 
   static INLINE SSID DoubletonSSID(SID sid1, SID sid2) {
-    SegmentSet tmp(2);
+    SegmentSet tmp;
     tmp.SetSID(0, sid1);
     tmp.SetSID(1, sid2);
     return FindExistingOrAlocateAndCopy(&tmp);
@@ -2189,47 +2232,53 @@ class SegmentSet {
     return Get(ssid);
   }
 
-
-
   // static data members
-  template <int n>
   struct Less {
     INLINE bool operator() (const SegmentSet *ss1,
                             const SegmentSet *ss2) const {
-      DCHECK(ss1->size() == n);
-      DCHECK(ss2->size() == n);
-      for (int i = 0; i < n; i++) {
-        SID sid1 = ss1->GetSID(i);
-        SID sid2 = ss2->GetSID(i);
+      for (int i = 0; i < kMaxSegmentSetSize; i++) {
+        SID sid1 = ss1->sids_[i],
+            sid2 = ss2->sids_[i];
         if (sid1 != sid2) return sid1 < sid2;
       }
       return false;
     }
   };
 
-
-  template <int n>
   struct SSEq {
     INLINE bool operator() (const SegmentSet *ss1,
                             const SegmentSet *ss2) const {
-      DCHECK(ss1->size() == n);
-      DCHECK(ss2->size() == n);
-      if (n > 3 && ss1->GetSID(3) != ss2->GetSID(3)) return false;
-      if (n > 2 && ss1->GetSID(2) != ss2->GetSID(2)) return false;
-      return ss1->GetSID(0) == ss2->GetSID(0) &&
-             ss1->GetSID(1) == ss2->GetSID(1);
+      G_stats->sseq_calls++;
+
+      for (int i = 0; i < kMaxSegmentSetSize; i++) {
+        SID sid1 = ss1->sids_[i],
+            sid2 = ss2->sids_[i];
+        if (sid1 != sid2) return false;
+      }
+      return true;
     }
   };
 
-  template <int n>
   struct SSHash {
-    // TODO(timurrrr): think of a better hash function.
     INLINE uintptr_t operator() (const SegmentSet *ss) const {
-      uintptr_t res = ss->GetSID(0).raw() ^ ss->GetSID(1).raw();
-      if (n == 2) return res;
-      if (n == 3) return res ^ ss->GetSID(2).raw();
-      if (n == 4) return res ^ ss->GetSID(2).raw() ^ ss->GetSID(3).raw();
-      CHECK(0);
+      uintptr_t res = 0;
+
+      uintptr_t* sids_array = (uintptr_t*)ss->sids_;
+
+      // Check that sids_ are word-aligned and we can optimize the calculation
+      // of the SSHash with machine words.
+      // Requires even number of SIDs in SS on x64.
+      DCHECK((uintptr_t)&ss->sids_[0] % sizeof(*sids_array) == 0);
+      DCHECK(sizeof(ss->sids_) % sizeof(*sids_array) == 0);
+
+      G_stats->sshash_calls++;
+      
+      for (size_t i = 0; i < sizeof(ss->sids_) / sizeof(*sids_array); i++) {
+        uintptr_t tmp = sids_array[i];
+        if (i % 2 == 1) tmp = tsan_bswap(tmp);
+        res = res ^ tmp;
+      }
+      return res;
     }
   };
 
@@ -2244,63 +2293,29 @@ class SegmentSet {
   class Map {
    public:
     SSID GetIdOrZero(SegmentSet *ss) {
-      int size = ss->size();
-      switch (size) {
-        case 2: return GetIdOrZeroFromMap(&map2, ss);
-        case 3: return GetIdOrZeroFromMap(&map3, ss);
-        case 4: return GetIdOrZeroFromMap(&map4, ss);
-        default: CHECK(0);
-      }
+      return GetIdOrZeroFromMap(&map_, ss);
     }
 
     void Insert(SegmentSet *ss, SSID id) {
-      int size = ss->size();
-      CheckSize(size);
-      switch (size) {
-        case 2: map2[ss] = id; break;
-        case 3: map3[ss] = id; break;
-        case 4: map4[ss] = id; break;
-        default: CHECK(0);
-      }
+      map_[ss] = id;
     }
 
     void Erase(SegmentSet *ss) {
-      int size = ss->size();
-      CheckSize(size);
-      switch (size) {
-        case 2: CHECK(map2.erase(ss)); break;
-        case 3: CHECK(map3.erase(ss)); break;
-        case 4: CHECK(map4.erase(ss)); break;
-        default: CHECK(0);
-      }
+      CHECK(map_.erase(ss));
     }
 
     void Clear() {
-      map2.clear();
-      map3.clear();
-      map4.clear();
+      map_.clear();
     }
 
    private:
-    void CheckSize(int size) {
-      DCHECK(size >= 2);
-      DCHECK(size <= kMaxSegmentSetSize);
-      DCHECK(kMaxSegmentSetSize == 4);
-    }
-
 #if 1
     // TODO(timurrrr): consider making a custom hash_table.
-    typedef hash_map<SegmentSet*, SSID, SSHash<2>, SSEq<2> > Map2;
-    typedef hash_map<SegmentSet*, SSID, SSHash<3>, SSEq<3> > Map3;
-    typedef hash_map<SegmentSet*, SSID, SSHash<4>, SSEq<4> > Map4;
+    typedef hash_map<SegmentSet*, SSID, SSHash, SSEq > MapType__;
 #else
-    typedef map<SegmentSet*, SSID, Less<2> > Map2;
-    typedef map<SegmentSet*, SSID, Less<3> > Map3;
-    typedef map<SegmentSet*, SSID, Less<4> > Map4;
+    typedef map<SegmentSet*, SSID, Less > MapType__;
 #endif
-    Map2 map2;
-    Map3 map3;
-    Map4 map4;
+    MapType__ map_;
   };
 
 //  typedef map<SegmentSet*, SSID, Less> Map;
@@ -2315,10 +2330,11 @@ class SegmentSet {
   static SsidSidToSidCache    *add_segment_cache_;
   static SsidSidToSidCache    *remove_segment_cache_;
 
+  // sids_ contains up to kMaxSegmentSetSize SIDs.
+  // Contains zeros at the end if size < kMaxSegmentSetSize.
   SID     sids_[kMaxSegmentSetSize];
-  int32_t size_;  // TODO(kcc): consider deleting size_ at all.
   int32_t ref_count_;
-};
+} __attribute__ ((aligned (sizeof(uintptr_t))));
 
 SegmentSet::Map      *SegmentSet::map_;
 vector<SegmentSet *> *SegmentSet::vec_;
@@ -2406,17 +2422,15 @@ SSID SegmentSet::RemoveSegmentFromTupleSS(SSID ssid, SID sid_to_remove) {
   DCHECK(ssid.valid());
   AssertLive(ssid, __LINE__);
   SegmentSet *ss = Get(ssid);
-  int32_t old_size = ss->size();
-  CHECK(old_size <= kMaxSegmentSetSize);
 
-
-  int32_t new_size = 0;
-  SegmentSet tmp(new_size);
+  int32_t old_size = 0, new_size = 0;
+  SegmentSet tmp;
   SID * tmp_sids = tmp.sids_;
   CHECK(sizeof(int32_t) == sizeof(SID));
 
-  for (int i = 0; i < old_size; i++) {
+  for (int i = 0; i < kMaxSegmentSetSize; i++, old_size++) {
     SID sid = ss->GetSID(i);
+    if (sid.raw() == 0) break;
     DCHECK(sid.valid());
     Segment::AssertLive(sid, __LINE__);
     if (Segment::HappensBeforeOrSameThread(sid, sid_to_remove))
@@ -2428,7 +2442,6 @@ SSID SegmentSet::RemoveSegmentFromTupleSS(SSID ssid, SID sid_to_remove) {
   if (new_size == 0) return SSID(0);
   if (new_size == 1) return SSID(tmp_sids[0]);
 
-  tmp.size_ = new_size;
   if (DEBUG_MODE) tmp.Validate(__LINE__);
 
   SSID res = FindExistingOrAlocateAndCopy(&tmp);
@@ -2442,20 +2455,19 @@ SSID SegmentSet::AddSegmentToTupleSS(SSID ssid, SID new_sid) {
   DCHECK(ssid.valid());
   AssertLive(ssid, __LINE__);
   SegmentSet *ss = Get(ssid);
-  int32_t old_size = ss->size();
-  CHECK(old_size <= kMaxSegmentSetSize);
 
   Segment::AssertLive(new_sid, __LINE__);
   const Segment *new_seg = Segment::Get(new_sid);
   TID            new_tid = new_seg->tid();
 
-  int32_t new_size = 0;
+  int32_t old_size = 0, new_size = 0;
   SID tmp_sids[kMaxSegmentSetSize + 1];
   CHECK(sizeof(int32_t) == sizeof(SID));
   bool inserted_new_sid = false;
   // traverse all SID in current ss. tids are ordered.
-  for (int i = 0; i < old_size; i++) {
-    SID            sid = ss->GetSID(i);
+  for (int i = 0; i < kMaxSegmentSetSize; i++, old_size++) {
+    SID sid = ss->GetSID(i);
+    if (sid.raw() == 0) break;
     DCHECK(sid.valid());
     Segment::AssertLive(sid, __LINE__);
     const Segment *seg = Segment::Get(sid);
@@ -2512,7 +2524,7 @@ SSID SegmentSet::AddSegmentToTupleSS(SSID ssid, SID new_sid) {
   }
 
   CHECK(new_size <= kMaxSegmentSetSize);
-  SegmentSet tmp(new_size);
+  SegmentSet tmp;
   for (int i = 0; i < new_size; i++)
     tmp.sids_[i] = tmp_sids[i];  // TODO(timurrrr): avoid copying?
   if (DEBUG_MODE) tmp.Validate(__LINE__);
@@ -2526,14 +2538,17 @@ SSID SegmentSet::AddSegmentToTupleSS(SSID ssid, SID new_sid) {
 
 void NOINLINE SegmentSet::Validate(int line) const {
   // This is expensive!
-  for (int i = 0; i < size(); i++) {
-    for (int j = i + 1; j < size(); j++) {
-      SID sid1 = GetSID(i);
+  int my_size = size();
+  for (int i = 0; i < my_size; i++) {
+    SID sid1 = GetSID(i);
+    CHECK(sid1.valid());
+    Segment::AssertLive(sid1, __LINE__);
+
+    for (int j = i + 1; j < my_size; j++) {
       SID sid2 = GetSID(j);
-      CHECK(sid1.valid());
       CHECK(sid2.valid());
-      Segment::AssertLive(sid1, __LINE__);
       Segment::AssertLive(sid2, __LINE__);
+
       bool hb1 = Segment::HappensBefore(sid1, sid2);
       bool hb2 = Segment::HappensBefore(sid2, sid1);
       if (hb1 || hb2) {
@@ -2548,6 +2563,10 @@ void NOINLINE SegmentSet::Validate(int line) const {
       CHECK(!Segment::HappensBefore(GetSID(j), GetSID(i)));
       CHECK(Segment::Get(sid1)->tid() < Segment::Get(sid2)->tid());
     }
+  }
+
+  for (int i = my_size; i < kMaxSegmentSetSize; i++) {
+    CHECK_EQ(sids_[i].raw(), 0);
   }
 }
 
@@ -2566,10 +2585,11 @@ string SegmentSet::ToString() const {
   Validate(__LINE__);
   string res = "{";
   for (int i = 0; i < size(); i++) {
+    SID sid = GetSID(i);
     if (i) res += ", ";
-    CHECK(GetSID(i).valid());
-    Segment::AssertLive(GetSID(i), __LINE__);
-    res += Segment::ToStringTidOnly(GetSID(i)).c_str();
+    CHECK(sid.valid());
+    Segment::AssertLive(sid, __LINE__);
+    res += Segment::ToStringTidOnly(sid).c_str();
   }
   res += "}";
   return res;
@@ -2623,8 +2643,10 @@ void SegmentSet::Test() {
 class ShadowValue {
  public:
   ShadowValue() {
-    rd_ssid_ = 0xDEADBEEF;
-    wr_ssid_ = 0xDEADBEEF;
+    if (DEBUG_MODE) {
+      rd_ssid_ = 0xDEADBEEF;
+      wr_ssid_ = 0xDEADBEEF;
+    }
   }
 
   void Clear() {
@@ -2967,8 +2989,11 @@ class Cache {
   CacheLine *lines_[kNumLines];
 
   // tag => CacheLine
-  // TODO(kcc): is hash_map better than map?
+#if 1
+  typedef hash_map<uintptr_t, CacheLine*> Map;
+#else
   typedef map<uintptr_t, CacheLine*> Map;
+#endif
   Map storage_;
 };
 
@@ -4130,16 +4155,23 @@ class ReportStorage {
     }
   }
 
+  static void SetProgramFinished() {
+    CHECK(!program_finished_);
+    program_finished_ = true;
+  }
 
   static void PrintReport(ThreadSanitizerReport *report) {
+    bool short_report = program_finished_;
     // right now -- only data races.
     CHECK(report);
     CHECK(report->type == ThreadSanitizerReport::DATA_RACE);
     ThreadSanitizerDataRaceReport *race =
         reinterpret_cast<ThreadSanitizerDataRaceReport*>(report);
 
-    AnnounceThreadsInSegmentSet(race->new_sval.rd_ssid());
-    AnnounceThreadsInSegmentSet(race->new_sval.wr_ssid());
+    if (!short_report) {
+      AnnounceThreadsInSegmentSet(race->new_sval.rd_ssid());
+      AnnounceThreadsInSegmentSet(race->new_sval.wr_ssid());
+    }
     bool is_w = race->last_access_is_w;
     TID     tid = race->last_access_tid;
     Thread *thr = Thread::Get(tid);
@@ -4181,15 +4213,22 @@ class ReportStorage {
            race->last_access_size,
            race->racey_addr,
            c_default);
-    CHECK(race->last_access_stack_trace);
-    LockSet::AddLocksToSet(race->last_acces_lsid[false], &all_locks);
-    LockSet::AddLocksToSet(race->last_acces_lsid[true], &all_locks);
-    Report("   %s (%s):\n",
-           thr->ThreadName().c_str(),
-           TwoLockSetsToString(race->last_acces_lsid[false],
-                               race->last_acces_lsid[true]).c_str());
+    if (!short_report) {
+      LockSet::AddLocksToSet(race->last_acces_lsid[false], &all_locks);
+      LockSet::AddLocksToSet(race->last_acces_lsid[true], &all_locks);
+      Report("   %s (%s):\n",
+             thr->ThreadName().c_str(),
+             TwoLockSetsToString(race->last_acces_lsid[false],
+                                 race->last_acces_lsid[true]).c_str());
+    }
 
+    CHECK(race->last_access_stack_trace);
     Report("%s", race->last_access_stack_trace->ToString().c_str());
+    if (short_report) {
+      Report(" See the full version of this report above.\n");
+      Report("}}}\n");
+      return;
+    }
     // Report(" sid=%d; vts=%s\n", thr->sid().raw(),
     //       thr->vts()->ToString().c_str());
     if (G_flags->show_states) {
@@ -4251,6 +4290,26 @@ class ReportStorage {
   static string DescribeMemory(uintptr_t a) {
     const int kBufLen = 1023;
     char buff[kBufLen+1];
+
+    // Is this stack?
+    for (int i = 0; i < Thread::NumberOfThreads(); i++) {
+      Thread *t = Thread::Get(TID(i));
+      if (!t->is_running()) continue;
+      if (t->MemoryIsInStack(a)) {
+        snprintf(buff, sizeof(buff),
+                 "  %sLocation %p is %ld bytes inside T%d's stack [%p,%p]%s\n",
+                 c_blue,
+                 reinterpret_cast<void*>(a),
+                 static_cast<long>(t->max_sp() - a),
+                 i,
+                 reinterpret_cast<void*>(t->min_sp()),
+                 reinterpret_cast<void*>(t->max_sp()),
+                 c_default
+                );
+        return buff;
+      }
+    }
+
     HeapInfo heap_info = IsHeapMem(a);
     if (heap_info.ptr) {
       snprintf(buff, sizeof(buff),
@@ -4274,25 +4333,6 @@ class ReportStorage {
               "  %sAddress %p is %d bytes inside data symbol \"",
               c_blue, reinterpret_cast<void*>(a), static_cast<int>(offset));
       return buff + symbol_descr + "\"" + c_default + "\n";
-    }
-
-    // Is this stack?
-    for (int i = 0; i < Thread::NumberOfThreads(); i++) {
-      Thread *t = Thread::Get(TID(i));
-      if (!t->is_running()) continue;
-      if (t->MemoryIsInStack(a)) {
-        snprintf(buff, sizeof(buff),
-                 "  %sLocation %p is %ld bytes inside T%d's stack [%p,%p]%s\n",
-                 c_blue,
-                 reinterpret_cast<void*>(a),
-                 static_cast<long>(t->max_sp() - a),
-                 i,
-                 reinterpret_cast<void*>(t->min_sp()),
-                 reinterpret_cast<void*>(t->max_sp()),
-                 c_default
-                );
-        return buff;
-      }
     }
 
     if (G_flags->debug_level >= 2) {
@@ -4335,10 +4375,12 @@ class ReportStorage {
 
   map<StackTrace *, int, StackTrace::Less> reported_stacks_;
   static int n_reports;
+  static bool program_finished_;
 };
 
 // static
 int ReportStorage::n_reports = 0;
+bool ReportStorage::program_finished_ = false;
 
 // -------- Event Sampling ---------------- {{{1
 // This class samples (profiles) events.
@@ -5304,6 +5346,8 @@ class Detector {
                child->vts()->ToString().c_str());
       }
       ClearMemoryState(child->min_sp(), child->max_sp(), /*is_new_mem=*/false);
+    } else {
+      ReportStorage::SetProgramFinished();
     }
 
 
