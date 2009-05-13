@@ -6297,8 +6297,33 @@ void Run() {
 REGISTER_TEST(Run, 135)
 }  // namespace test135
 
-// test136 TP. Races on stack variables. {{{1
+// test136: Create many threads. {{{1
 namespace test136 {
+const int N = 10000;
+int count = 0;
+void Worker() {
+  int c = __sync_add_and_fetch(&count, 1);
+  printf("+%04d\n", c);
+  sleep(100);
+  printf("-%04d\n", c);
+}
+void Run() {
+  printf("test136: many threads.\n");
+  MyThread *threads[N];
+  for (int i = 0; i < N; i++) {
+    threads[i] = new MyThread(Worker);
+    threads[i]->Start();
+  }
+  for (int i = 0; i < N; i++) {
+    threads[i]->Join();
+    delete threads[i];
+  }
+}
+REGISTER_TEST2(Run, 136, EXCLUDE_FROM_ALL)
+}  // namespace test136
+
+// test137 TP. Races on stack variables. {{{1
+namespace test137 {
 int GLOB = 0;
 ProducerConsumerQueue q(10);
 
@@ -6315,7 +6340,7 @@ void Worker() {
 
 void Run() {
   int tmp = 0;
-  printf("test136: TP. Races on stack variables.\n");
+  printf("test137: TP. Races on stack variables.\n");
   q.Put(&tmp);
   MyThreadArray t(Worker, Worker, Worker, Worker);
   t.Start();
@@ -6324,7 +6349,7 @@ void Run() {
 }
 
 REGISTER_TEST2(Run, 136, FEATURE | EXCLUDE_FROM_ALL)
-}  // namespace test136
+}  // namespace test137
 
 // test300: {{{1
 namespace test300 {
