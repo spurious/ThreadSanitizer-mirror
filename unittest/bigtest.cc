@@ -469,10 +469,11 @@ namespace publishing {
          int DATA_SIZE;
          Params() {
             DATA_SIZE = 1;
+            HIT_PROBABILITY = 0.3; // estimate. TODO: think of a better idea
          }
 
          const static int REDO = 100;
-         const static double HIT_PROBABILITY = 0.3; // estimate. TODO: think of a better idea
+         double HIT_PROBABILITY;
 
          double EstimateRuncount() {
             return map_of_counts[311] + HIT_PROBABILITY * map_of_counts[312];

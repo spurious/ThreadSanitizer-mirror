@@ -51,6 +51,10 @@
 #include <stdio.h>
 #include <limits.h>   // INT_MAX
 
+#ifdef OS_MACOSX
+#include <libkern/OSAtomic.h>
+#endif
+
 #include <string>
 using namespace std;
 
@@ -95,6 +99,8 @@ class CondVar;
 
 #ifndef NO_SPINLOCK
 /// helgrind does not (yet) support spin locks, so we annotate them.
+
+#ifndef OS_MACOSX
 class SpinLock {
  public:
   SpinLock() {
@@ -116,6 +122,31 @@ class SpinLock {
  private:
   pthread_spinlock_t mu_;
 };
+
+#else
+
+class SpinLock {
+ public:
+  // Mac OS X version.
+  SpinLock() : mu_(OS_SPINLOCK_INIT) {
+    ANNOTATE_RWLOCK_CREATE((void*)&mu_);
+  }
+  ~SpinLock() {
+    ANNOTATE_RWLOCK_DESTROY((void*)&mu_);
+  }
+  void Lock() {
+    OSSpinLockLock(&mu_);
+    ANNOTATE_RWLOCK_ACQUIRED((void*)&mu_, 1);
+  }
+  void Unlock() {
+    ANNOTATE_RWLOCK_RELEASED((void*)&mu_, 1);
+    OSSpinLockUnlock(&mu_);
+  }
+ private:
+  OSSpinLock mu_;
+};
+#endif // OS_MACOSX
+
 #endif // NO_SPINLOCK
 
 /// Just a boolean condition. Used by Mutex::LockWhen and similar. 
@@ -261,6 +292,8 @@ class CondVar {
 #define NEEDS_SEPERATE_RW_LOCK
 class RWLock {
  public:
+  RWLock() { CHECK(0 == pthread_rwlock_init(&mu_, NULL)); }
+  ~RWLock() { CHECK(0 == pthread_rwlock_destroy(&mu_)); }
   void Lock() { CHECK(0 == pthread_rwlock_wrlock(&mu_)); }
   void ReaderLock() { CHECK(0 == pthread_rwlock_rdlock(&mu_)); }
   void Unlock() { CHECK(0 == pthread_rwlock_unlock(&mu_)); }
@@ -547,7 +580,28 @@ class BlockingCounter {
   int count_;
 };
 
+int AtomicIncrement(volatile int *value, int increment);
 
+#ifndef OS_MACOSX
+inline int AtomicIncrement(volatile int *value, int increment) {
+  return __sync_add_and_fetch(value, increment);
+}
+
+#else
+// Mac OS X version.
+inline int AtomicIncrement(volatile int *value, int increment) {
+  return OSAtomicAdd32(increment, value);
+}
+
+// TODO(timurrrr) this is a hack
+#define memalign(A,B) malloc(B)
+
+// TODO(timurrrr) this is a hack
+int posix_memalign(void **out, size_t al, size_t size) {
+  *out = memalign(al, size);
+  return (*out == 0);
+}
+#endif // OS_MACOSX
 
 #endif // THREAD_WRAPPERS_PTHREAD_H
 // vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker

@@ -81,10 +81,13 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#include <malloc.h>
 #include <sys/mman.h>  // mmap
 #include <errno.h>
+#include <stdlib.h>
 
+#ifndef OS_MACOSX
+#include <malloc.h>
+#endif
 
 // The tests are
 // - Stability tests (marked STAB)
@@ -2800,7 +2803,7 @@ namespace test57 {
 int     GLOB = 0;
 void Writer() {
   for (int i = 0; i < 10; i++) {
-    __sync_add_and_fetch(&GLOB, 1);
+    AtomicIncrement(&GLOB, 1);
     usleep(1000);
   }
 }
@@ -3440,6 +3443,7 @@ REGISTER_TEST(Run, 71)
 
 // test72: STAB. Stress test for the number of segment sets (SSETs). {{{1
 namespace test72 {
+#ifndef NO_BARRIER
 // Variation of test33. 
 // Instead of creating Nlog*N_iter threads, 
 // we create Nlog threads and do N_iter barriers. 
@@ -3514,11 +3518,13 @@ void Run() {
          GLOB, (int)ARR1[1], (int)ARR1[7], (int)ARR1[N-1]);*/
 }
 REGISTER_TEST2(Run, 72, STABILITY|PERFORMANCE|EXCLUDE_FROM_ALL);
+#endif // NO_BARRIER
 }  // namespace test72
 
 
 // test73: STAB. Stress test for the number of (SSETs), different access sizes. {{{1
 namespace test73 {
+#ifndef NO_BARRIER
 // Variation of test72. 
 // We perform accesses of different sizes to the same location. 
 int     GLOB = 0;
@@ -3593,6 +3599,7 @@ void Run() {
          GLOB, (int)ARR1[1], (int)ARR1[7], (int)ARR1[N-1]);*/
 }
 REGISTER_TEST2(Run, 73, STABILITY|PERFORMANCE|EXCLUDE_FROM_ALL);
+#endif // NO_BARRIER
 }  // namespace test73
 
 
@@ -3729,6 +3736,7 @@ Mutex RefCountedClass::MU;
 
 // test76: FP. Ref counting, no annotations. {{{1
 namespace test76 {
+#ifndef NO_BARRIER
 int     GLOB = 0;
 Barrier barrier(4);
 RefCountedClass *object = NULL; 
@@ -3747,12 +3755,14 @@ void Run() {
   t.Join();
 }
 REGISTER_TEST2(Run, 76, FEATURE)
+#endif // NO_BARRIER
 }  // namespace test76
 
 
 
 // test77: TN. Ref counting, MU is annotated. {{{1
 namespace test77 {
+#ifndef NO_BARRIER
 // same as test76, but RefCountedClass::MU is annotated. 
 int     GLOB = 0;
 Barrier barrier(4);
@@ -3772,12 +3782,14 @@ void Run() {
   t.Join();
 }
 REGISTER_TEST(Run, 77)
+#endif // NO_BARRIER
 }  // namespace test77
 
 
 
 // test78: TN. Ref counting, Unref is annotated. {{{1
 namespace test78 {
+#ifndef NO_BARRIER
 // same as test76, but RefCountedClass::Unref is annotated. 
 int     GLOB = 0;
 Barrier barrier(4);
@@ -3797,6 +3809,7 @@ void Run() {
   t.Join();
 }
 REGISTER_TEST(Run, 78)
+#endif // NO_BARRIER
 }  // namespace test78
 
 
@@ -3864,7 +3877,7 @@ struct AtomicRefCountedClass {
   }
 
   void Ref() {
-    __sync_add_and_fetch(&ref_, 1);
+    AtomicIncrement(&ref_, 1);
   }
 
   void Unref() {
@@ -3872,7 +3885,7 @@ struct AtomicRefCountedClass {
     // (might require some memory barrier, etc).
     // But this implementation of reference counting is enough for 
     // the purpose of Helgrind demonstration.
-    __sync_sub_and_fetch(&ref_, 1);
+    AtomicIncrement(&ref_, -1);
     if (annotate_unref_) { ANNOTATE_CONDVAR_SIGNAL(this); }
     if (ref_ == 0) {
       if (annotate_unref_) { ANNOTATE_CONDVAR_WAIT(this); }
@@ -3897,6 +3910,7 @@ struct AtomicRefCountedClass {
 
 // test80: FP. Ref counting with atomics, no annotations. {{{1
 namespace test80 {
+#ifndef NO_BARRIER
 int     GLOB = 0;
 Barrier barrier(4);
 AtomicRefCountedClass *object = NULL; 
@@ -3915,11 +3929,13 @@ void Run() {
   t.Join();
 }
 REGISTER_TEST2(Run, 80, FEATURE|EXCLUDE_FROM_ALL)
+#endif // NO_BARRIER
 }  // namespace test80
 
 
 // test81: TN. Ref counting with atomics, Unref is annotated. {{{1
 namespace test81 {
+#ifndef NO_BARRIER
 // same as test80, but Unref is annotated.
 int     GLOB = 0;
 Barrier barrier(4);
@@ -3939,6 +3955,7 @@ void Run() {
   t.Join();
 }
 REGISTER_TEST2(Run, 81, FEATURE|EXCLUDE_FROM_ALL)
+#endif // NO_BARRIER
 }  // namespace test81
 
 
@@ -4059,12 +4076,12 @@ static int s_y;
 void thread_func_1()
 {
   s_y = 1;
-  __sync_add_and_fetch(&s_x, 1);
+  AtomicIncrement(&s_x, 1);
 }
 
 void thread_func_2()
 {
-  while (__sync_add_and_fetch(&s_x, 0) == 0)
+  while (AtomicIncrement(&s_x, 0) == 0)
     ;
   printf("y = %d\n", s_y);
 }
@@ -5211,7 +5228,7 @@ void Run() {
   MEMALIGN = (int*)memalign(64, sizeof(int));
   CHECK(0 == posix_memalign((void**)&POSIX_MEMALIGN, 64, sizeof(int)));
   MMAP = (int*)mmap(NULL, sizeof(int), PROT_READ | PROT_WRITE,
-                    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+                    MAP_PRIVATE | MAP_ANON, -1, 0);
 
   NEW     = new int;
   NEW_ARR = new int[10];
@@ -5946,7 +5963,7 @@ int     GLOB[n_threads];
 int adder_num; // updated atomically.
 
 void Adder() {
-  int my_num = __sync_fetch_and_add(&adder_num, 1);
+  int my_num = AtomicIncrement(&adder_num, 1);
 
   ReaderLockScoped lock(&mu);
   GLOB[my_num]++;
@@ -6086,6 +6103,7 @@ REGISTER_TEST2(Run, 129, FEATURE);
 
 // test130: TN. Per-thread. {{{1
 namespace test130 {
+#ifndef NO_TLS
 // This test verifies that the race detector handles 
 // thread-local storage (TLS) correctly.
 // As of 09-03-30 ThreadSanitizer has a bug: 
@@ -6126,6 +6144,7 @@ void Run() {
   printf("\tper_thread_global=%d\n", per_thread_global[1]);
 }
 REGISTER_TEST(Run, 130)
+#endif // NO_TLS
 }  // namespace test130
 
 
@@ -6257,7 +6276,7 @@ void SubWorker() {
   const long SIZE = 65536;
   for (int i = 0; i < 32; i++) {
     int *ptr = (int*)mmap(NULL, SIZE, PROT_READ | PROT_WRITE,
-                          MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+                          MAP_PRIVATE | MAP_ANON, -1, 0);
     *ptr = 42;
     munmap(ptr, SIZE);
   }
@@ -6883,13 +6902,13 @@ void InitAllBeforeStartingThreads(int number_of_threads) {
 
 // Correct, but unfriendly to race detectors.
 int DecRef() {
-  return __sync_add_and_fetch(&ref_count, -1);
+  return AtomicIncrement(&ref_count, -1);
 }
 
 // Correct and friendly to race detectors.
 int DecRefAnnotated() {
   ANNOTATE_CONDVAR_SIGNAL(&ref_count);
-  int res = __sync_add_and_fetch(&ref_count, -1);
+  int res = AtomicIncrement(&ref_count, -1);
   if (res == 0) {
     ANNOTATE_CONDVAR_WAIT(&ref_count);
   }
@@ -7027,7 +7046,7 @@ int GLOB_limit = 100000;
 int count = -1;
 
 void Worker(){
-   int myId = __sync_add_and_fetch(&count, 1);
+   int myId = AtomicIncrement(&count, 1);
    
    ProducerConsumerQueue &myQ = *Q[myId], &nextQ = *Q[(myId+1) % N_threads];
    
