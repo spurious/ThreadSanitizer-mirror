@@ -6297,29 +6297,26 @@ void Run() {
 REGISTER_TEST(Run, 135)
 }  // namespace test135
 
-// test136: Create many threads. {{{1
+// test136. Unlock twice. {{{1
 namespace test136 {
-const int N = 10000;
-int count = 0;
-void Worker() {
-  int c = __sync_add_and_fetch(&count, 1);
-  printf("+%04d\n", c);
-  sleep(100);
-  printf("-%04d\n", c);
-}
 void Run() {
-  printf("test136: many threads.\n");
-  MyThread *threads[N];
-  for (int i = 0; i < N; i++) {
-    threads[i] = new MyThread(Worker);
-    threads[i]->Start();
-  }
-  for (int i = 0; i < N; i++) {
-    threads[i]->Join();
-    delete threads[i];
-  }
+  printf("test136: unlock twice\n");
+  pthread_mutexattr_t attr;
+  CHECK(0 == pthread_mutexattr_init(&attr));
+  CHECK(0 == pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_ERRORCHECK));
+
+  pthread_mutex_t mu;
+  CHECK(0 == pthread_mutex_init(&mu, &attr));
+  CHECK(0 == pthread_mutex_lock(&mu));
+  CHECK(0 == pthread_mutex_unlock(&mu));
+  int ret_unlock = pthread_mutex_unlock(&mu);  // unlocking twice.
+  int ret_destroy = pthread_mutex_destroy(&mu);
+  printf("  pthread_mutex_unlock returned %d\n", ret_unlock);
+  printf("  pthread_mutex_destroy returned %d\n", ret_destroy);
+
 }
-REGISTER_TEST2(Run, 136, EXCLUDE_FROM_ALL)
+
+REGISTER_TEST(Run, 136)
 }  // namespace test136
 
 // test137 TP. Races on stack variables. {{{1
