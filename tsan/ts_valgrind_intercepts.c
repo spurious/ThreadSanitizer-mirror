@@ -1882,6 +1882,12 @@ ANN_FUNC(void, AnnotateThreadName, char *file, int line, const char *thread_name
   DO_CREQ_v_W(TSREQ_SET_THREAD_NAME, const char *, thread_name);
 }
 
+ANN_FUNC(void, AnnotateLockName, char *file, int line, void *lock, const char *thread_name)
+{
+  const char *name = "AnnotateLockName";
+  ANN_TRACE("--#%d %s[%p] %s:%d\n", tid, name, thread_name, file, line);
+  DO_CREQ_v_WW(TSREQ_SET_LOCK_NAME, void *, lock, const char *, thread_name);
+}
 
 
 ANN_FUNC(void, AnnotateMutexIsUsedAsCondVar, char *file, int line, void *mu)

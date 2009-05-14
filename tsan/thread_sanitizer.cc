@@ -367,6 +367,10 @@ class ScopeTimer {
   UInt start_;
 };
 
+extern "C" void * memmove(void *a, const void *b, size_t size) {
+  return VG_(memmove)(a,b, size);
+}
+
 // -------- ID ---------------------- {{{1
 // We wrap int32_t into ID class and then inherit various ID type from ID.
 // This is done in an attempt to implement type safety of IDs, i.e.
@@ -880,11 +884,35 @@ class Lock {
     rd_held_--;
   }
 
+  void set_name(const char *name) { name_ = name; }
+  const char *name() const { return name_; }
+
   string ToString() const {
+    string res;
     char buff[100];
-    snprintf(buff, sizeof(buff),
-             "L%d (%p)", lid_.raw(), reinterpret_cast<void*>(lock_addr()));
-    return string(buff);
+    snprintf(buff, sizeof(buff), "L%d ", lid_.raw());
+    // do we need to print the address?
+    // reinterpret_cast<void*>(lock_addr()));
+    res = buff;
+    res += name() ? ("\"" + string(name()) + "\"" ) : "unnamed";
+    return res;
+  }
+
+  static Lock *LIDtoLock(LID lid) {
+    // slow, but needed only for reports.
+    for (Map::iterator it = map_->begin(); it != map_->end(); ++it) {
+      Lock *l = it->second;
+      if (l->lid_ == lid) {
+        return l;
+      }
+    }
+    return NULL;
+  }
+
+  static string ToString(LID lid) {
+    Lock *lock = LIDtoLock(lid);
+    CHECK(lock);
+    return lock->ToString();
   }
 
   static void ReportLockWithOrWithoutContext(LID lid, bool with_context) {
@@ -892,15 +920,7 @@ class Lock {
       Report("   L%d\n", lid.raw());
       return;
     }
-    // slow, but needed only for reports.
-    Lock *lock = NULL;
-    for (Map::iterator it = map_->begin(); it != map_->end(); ++it) {
-      Lock *l = it->second;
-      if (l->lid_ == lid) {
-        lock = l;
-        break;
-      }
-    }
+    Lock *lock = LIDtoLock(lid);
     CHECK(lock);
     if (lock->last_lock_site_) {
       Report("   %s\n%s",
@@ -923,7 +943,8 @@ class Lock {
       rd_held_(0),
       wr_held_(0),
       is_pure_happens_before_(false),
-      last_lock_site_(0) {
+      last_lock_site_(0),
+      name_(NULL) {
   }
 
   // Data members
@@ -933,6 +954,7 @@ class Lock {
   int       wr_held_;
   bool      is_pure_happens_before_;
   StackTrace *last_lock_site_;
+  const char *name_;
 
   // Static members
   typedef map<uintptr_t, Lock*> Map;
@@ -1087,22 +1109,16 @@ class LockSet {
 
 
   static string ToString(LSID lsid) {
-    char buff[1000];
     if (lsid.IsEmpty()) {
       return "{}";
     } else if (lsid.IsSingleton()) {
-      snprintf(buff, sizeof(buff), "{L%d}", lsid.raw());
-      return buff;
+      return "{" + Lock::ToString(lsid.Singleton()) + "}";
     }
     const LSSet &set = Get(lsid);
-    snprintf(buff, sizeof(buff), "{");
-    string res = buff;
-    bool first = true;
+    string res = "{";
     for (LSSet::const_iterator it = set.begin(); it != set.end(); ++it) {
-      if (!first) res += ", ";
-      snprintf(buff, sizeof(buff), "L%d", it->raw());
-      res += buff;
-      first = false;
+      if (it != set.begin()) res += ", ";
+      res += Lock::ToString(*it);
     }
     res += "}";
     return res;
@@ -2272,7 +2288,7 @@ class SegmentSet {
       DCHECK(sizeof(ss->sids_) % sizeof(*sids_array) == 0);
 
       G_stats->sshash_calls++;
-      
+
       for (size_t i = 0; i < sizeof(ss->sids_) / sizeof(*sids_array); i++) {
         uintptr_t tmp = sids_array[i];
         if (i % 2 == 1) tmp = tsan_bswap(tmp);
@@ -3237,6 +3253,43 @@ void INLINE ClearMemoryState(uintptr_t a, uintptr_t b, bool is_new_mem) {
 
 
 
+// -------- ThreadSanitizerReport -------------- {{{1
+struct ThreadSanitizerReport {
+  // Types of reports.
+  enum ReportType {
+    DATA_RACE,
+    UNLOCK_FOREIGN,
+    UNLOCK_NONLOCKED
+  };
+
+  ReportType type;
+};
+
+// DATA_RACE.
+struct ThreadSanitizerDataRaceReport : public ThreadSanitizerReport {
+  uintptr_t   racey_addr;
+  string      racey_addr_description;
+  uintptr_t   last_access_size;
+  TID         last_access_tid;
+  SID         last_access_sid;
+  StackTrace *last_access_stack_trace;
+  bool        last_access_is_w;
+  LSID        last_acces_lsid[2];
+
+  ShadowValue new_sval;
+  ShadowValue old_sval;
+
+  bool        is_expected;
+  bool        racey_addr_was_published;
+};
+
+// Report for bad unlock (UNLOCK_FOREIGN, UNLOCK_NONLOCKED).
+struct ThreadSanitizerBadUnlockReport : public ThreadSanitizerReport {
+  TID tid;
+  StackTrace *stack_trace;
+  LID lid;
+};
+
 // -------- Thread ------------------ {{{1
 struct Thread {
  public:
@@ -3452,6 +3505,17 @@ struct Thread {
     lock_mu_ = 0;
   }
   void HandleLock(uintptr_t lock_addr, bool is_w_lock) {
+
+    if (G_flags->verbosity >= 1) {
+      Printf("T%d %sLock   %p; %s\n",
+           tid_.raw(),
+           is_w_lock ? "Wr" : "Rd",
+           lock_addr,
+           LockSet::ToString(lsid(is_w_lock)).c_str());
+
+      ReportStackTrace(0, 7);
+    }
+
     Lock *lock = Lock::LookupOrCreate(lock_addr);
     // NOTE: we assume that all locks can be acquired recurively.
     // No warning about recursive locking will be issued.
@@ -3475,19 +3539,23 @@ struct Thread {
 
     NewSegmentForLockingEvent();
 
-    if (G_flags->verbosity >= 2)
-      Printf("T%d %sLock   %p; %s\n",
-           tid_.raw(),
-           is_w_lock ? "Wr" : "Rd",
-           lock_addr,
-           LockSet::ToString(lsid(is_w_lock)).c_str());
   }
 
   void HandleUnlock(uintptr_t lock_addr) {
     Lock *lock = Lock::Lookup(lock_addr);
     CHECK(lock);
-
     bool is_w_lock = lock->wr_held();
+
+    if (G_flags->verbosity >= 1) {
+      Printf("T%d %sUnlock %p; %s\n",
+             tid_.raw(),
+             is_w_lock ? "Wr" : "Rd",
+             lock_addr,
+             LockSet::ToString(lsid(is_w_lock)).c_str());
+      ReportStackTrace(0, 7);
+    }
+
+
 
     if (G_flags->pure_happens_before || lock->is_pure_happens_before()) {
       HandleSignal(lock->lock_addr());
@@ -3495,8 +3563,19 @@ struct Thread {
       }
     }
 
-    bool removed = false;
+    if (!lock->wr_held() && !lock->rd_held()) {
+      ThreadSanitizerBadUnlockReport *report =
+          new ThreadSanitizerBadUnlockReport;
+      report->type = ThreadSanitizerReport::UNLOCK_NONLOCKED;
+      report->tid = tid();
+      report->lid = lock->lid();
+      report->stack_trace = CreateStackTrace();
+      VG_(maybe_record_error)(GetVgTid(), XS_UnlockNonLocked, 0, NULL,
+                              report);
+      return;
+    }
 
+    bool removed = false;
     if (is_w_lock) {
       lock->WrUnlock();
       removed =  LockSet::Remove(wr_lockset_, lock, &wr_lockset_)
@@ -3507,22 +3586,18 @@ struct Thread {
     }
 
     if (!removed) {
-      // TODO(kcc): do we need to issue a real valgrind-ish warning?
-      Report("WARNING: Lock %s was released by thread T%d"
-             " which did not acquire this lock.\n",
-             lock->ToString().c_str(),
-             tid().raw());
-      ReportStackTrace();
+      ThreadSanitizerBadUnlockReport *report =
+          new ThreadSanitizerBadUnlockReport;
+      report->type = ThreadSanitizerReport::UNLOCK_FOREIGN;
+      report->tid = tid();
+      report->lid = lock->lid();
+      report->stack_trace = CreateStackTrace();
+      VG_(maybe_record_error)(GetVgTid(), XS_UnlockForeign, 0, NULL,
+                              report);
     }
 
     NewSegmentForLockingEvent();
 
-    if (G_flags->verbosity >= 2)
-      Printf("T%d %sUnlock %p; %s\n",
-           tid_.raw(),
-           is_w_lock ? "Wr" : "Rd",
-           lock_addr,
-           LockSet::ToString(lsid(is_w_lock)).c_str());
   }
 
   LSID lsid(bool is_w) {
@@ -3995,34 +4070,6 @@ static HeapInfo IsHeapMem(uintptr_t a) {
 
 
 
-// -------- ThreadSanitizerReport -------------- {{{1
-struct ThreadSanitizerReport {
-  // Types of reports. Right now we support races only.
-  enum ReportType {
-    DATA_RACE
-  };
-
-  ReportType type;
-};
-
-struct ThreadSanitizerDataRaceReport : public ThreadSanitizerReport {
-  uintptr_t   racey_addr;
-  string      racey_addr_description;
-  uintptr_t   last_access_size;
-  TID         last_access_tid;
-  SID         last_access_sid;
-  StackTrace *last_access_stack_trace;
-  bool        last_access_is_w;
-  LSID        last_acces_lsid[2];
-
-  ShadowValue new_sval;
-  ShadowValue old_sval;
-
-  bool        is_expected;
-  bool        racey_addr_was_published;
-};
-
-
 // -------- Report Storage --------------------- {{{1
 class ReportStorage {
  public:
@@ -4160,14 +4207,8 @@ class ReportStorage {
     program_finished_ = true;
   }
 
-  static void PrintReport(ThreadSanitizerReport *report) {
+  static void PrintRaceReport(ThreadSanitizerDataRaceReport *race) {
     bool short_report = program_finished_;
-    // right now -- only data races.
-    CHECK(report);
-    CHECK(report->type == ThreadSanitizerReport::DATA_RACE);
-    ThreadSanitizerDataRaceReport *race =
-        reinterpret_cast<ThreadSanitizerDataRaceReport*>(report);
-
     if (!short_report) {
       AnnounceThreadsInSegmentSet(race->new_sval.rd_ssid());
       AnnounceThreadsInSegmentSet(race->new_sval.wr_ssid());
@@ -4198,7 +4239,7 @@ class ReportStorage {
     if (!G_flags->summary_file.empty()) {
       char buff[100];
       snprintf(buff, sizeof(buff),
-               "ThreadSanitizer: %d data race(s) reported\n", n_reports);
+               "ThreadSanitizer: %d warning(s) reported\n", n_reports);
       // We overwrite the contents of this file with the new summary.
       // We don't do that at the end because even if we crash later
       // we will already have the summary.
@@ -4226,7 +4267,7 @@ class ReportStorage {
     Report("%s", race->last_access_stack_trace->ToString().c_str());
     if (short_report) {
       Report(" See the full version of this report above.\n");
-      Report("}}}\n");
+      Report("}%s\n", "}}");
       return;
     }
     // Report(" sid=%d; vts=%s\n", thr->sid().raw(),
@@ -4283,6 +4324,32 @@ class ReportStorage {
     }
 
     Report("}}}\n");
+
+  }
+
+  static void PrintReport(ThreadSanitizerReport *report) {
+    CHECK(report);
+    if (report->type == ThreadSanitizerReport::UNLOCK_FOREIGN) {
+      ThreadSanitizerBadUnlockReport *bad_unlock =
+          reinterpret_cast<ThreadSanitizerBadUnlockReport*>(report);
+      Report("WARNING: Lock %s was released by thread T%d"
+             " which did not acquire this lock.\n%s",
+             Lock::ToString(bad_unlock->lid).c_str(),
+             bad_unlock->tid.raw(),
+             bad_unlock->stack_trace->ToString().c_str());
+    } else if (report->type == ThreadSanitizerReport::UNLOCK_NONLOCKED) {
+      ThreadSanitizerBadUnlockReport *bad_unlock =
+          reinterpret_cast<ThreadSanitizerBadUnlockReport*>(report);
+      Report("WARNING: Unlocking a non-locked lock %s in thread T%d\n%s",
+             Lock::ToString(bad_unlock->lid).c_str(),
+             bad_unlock->tid.raw(),
+             bad_unlock->stack_trace->ToString().c_str());
+    } else {
+      CHECK(report->type == ThreadSanitizerReport::DATA_RACE);
+      ThreadSanitizerDataRaceReport *race =
+          reinterpret_cast<ThreadSanitizerDataRaceReport*>(report);
+      PrintRaceReport(race);
+    }
   }
 
  private:
@@ -4654,6 +4721,13 @@ class Detector {
 
       case SET_THREAD_NAME:
         cur_thread_->set_thread_name((const char*)e_->a());
+        break;
+      case SET_LOCK_NAME: {
+          uintptr_t lock_addr = e_->a();
+          const char *name = reinterpret_cast<const char *>(e_->info());
+          Lock *lock = Lock::LookupOrCreate(lock_addr);
+          lock->set_name(name);
+        }
         break;
 
       case PUBLISH_RANGE : HandlePublishRange(); break;

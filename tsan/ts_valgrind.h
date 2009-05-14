@@ -51,7 +51,12 @@ extern "C" {
 
 
 enum {
-  XS_Race = 1234
+  // Data race.
+  XS_Race = 1234,
+  // Unlocking a lock that is held by another thread.
+  XS_UnlockForeign,
+  // Unlocking a lock that is not locked.
+  XS_UnlockNonLocked
 };
 
 extern uintptr_t GetVgPcOfCurrentThread();

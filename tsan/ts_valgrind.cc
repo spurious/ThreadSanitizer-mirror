@@ -1,9 +1,9 @@
 /*
-  This file is part of ThreadSanitizer, a dynamic data race detector 
+  This file is part of ThreadSanitizer, a dynamic data race detector
   based on Valgrind.
 
   Copyright (C) 2008-2009 Google Inc
-     opensource@google.com 
+     opensource@google.com
   Copyright (C) 2007-2008 OpenWorks LLP
       info@open-works.co.uk
 
@@ -26,8 +26,8 @@
 */
 
 // Author: Konstantin Serebryany.
-// Parts of the code in this file are taken from Helgrind, 
-// a data race detector written by Julian Seward. 
+// Parts of the code in this file are taken from Helgrind,
+// a data race detector written by Julian Seward.
 
 
 
@@ -51,8 +51,8 @@ class MallocCostCenterStack {
     DCHECK(size_ > 0);
     size_--;
   }
-  const char *Top() { 
-    return size_ ? malloc_cost_centers_[size_ - 1] : "default_cc"; 
+  const char *Top() {
+    return size_ ? malloc_cost_centers_[size_ - 1] : "default_cc";
   }
  private:
   static const int kMaxMallocStackSize = 100;
@@ -61,7 +61,7 @@ class MallocCostCenterStack {
 };
 
 // Not thread-safe. Need to make it thread-local once we are multi-threaded.
-static MallocCostCenterStack g_malloc_stack; 
+static MallocCostCenterStack g_malloc_stack;
 
 void PushMallocCostCenter(const char *cc) { g_malloc_stack.Push(cc); }
 void PopMallocCostCenter() { g_malloc_stack.Pop(); }
@@ -122,8 +122,8 @@ void PcToStrings(uintptr_t pc, bool demangle,
   const int kBuffSize = 1024 * 10 - 1;
   Bool has_dirname = False;
 
-  if (VG_(get_filename_linenum) 
-      (pc, (Char*)g_buff1, kBuffSize, (Char*)g_buff2, kBuffSize, 
+  if (VG_(get_filename_linenum)
+      (pc, (Char*)g_buff1, kBuffSize, (Char*)g_buff2, kBuffSize,
        &has_dirname, (UInt*)line_no) &&
       has_dirname) {
     *file_name = string(g_buff2) + "/" + g_buff1;
@@ -179,7 +179,7 @@ struct ValgrindThread {
 
   int ignore_all;
 
-  ValgrindThread() 
+  ValgrindThread()
     : zero_based_uniq_tid(-1),
       ignore_all(0) {
   }
@@ -268,7 +268,7 @@ void evh__new_frame ( Addr sp_post_call_insn,
 
 
   if (G_flags->verbosity >= 2) {
-    Printf("T%d: >>: %s\n", VgTidToTsTid(vg_tid), 
+    Printf("T%d: >>: %s\n", VgTidToTsTid(vg_tid),
            PcToRtnNameAndFilePos(record.pc).c_str());
   }
 }
@@ -277,7 +277,7 @@ static INLINE void evh__new_mem_stack_helper ( Addr a, SizeT len ) {
   ThreadId vg_tid = GetVgTid();
   if (!g_valgrind_threads[vg_tid].ignore_all) {
     // avoid stack updates when ignore is on.
-    // TODO: is that right? 
+    // TODO: is that right?
     int32_t ts_tid = VgTidToTsTid(vg_tid);
     ThreadSanitizerHandleStackMemChange(ts_tid, a, len, true);
   }
@@ -387,7 +387,7 @@ static INLINE void Mop(Addr a, bool is_w, SizeT size) {
   if (g_valgrind_threads[vg_tid].ignore_all) {
     //static int counter;
     //counter++;
-    //if ((counter % 1024) == 0) 
+    //if ((counter % 1024) == 0)
     //  Printf("ignore: %s\n", PcToRtnNameAndFilePos(pc).c_str());
     return;
   }
@@ -403,9 +403,9 @@ VG_REGPARM(1) void evh__mem_help_read_1(Addr a) { Mop(a, false, 1); }
 VG_REGPARM(1) void evh__mem_help_read_2(Addr a) { Mop(a, false, 2); }
 VG_REGPARM(1) void evh__mem_help_read_4(Addr a) { Mop(a, false, 4); }
 VG_REGPARM(1) void evh__mem_help_read_8(Addr a) { Mop(a, false, 8); }
-VG_REGPARM(2) 
+VG_REGPARM(2)
   void evh__mem_help_write_N(Addr a, SizeT size) { Mop(a, true, size); }
-VG_REGPARM(2) 
+VG_REGPARM(2)
   void evh__mem_help_read_N(Addr a, SizeT size) { Mop(a, false, size); }
 
 
@@ -442,7 +442,7 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
         exit((int)args[1]);
       }
       break;
-    case TSREQ_MALLOC: 
+    case TSREQ_MALLOC:
       // Printf("Malloc: %p %ld\n", args[1], args[2]);
       Put(MALLOC, ts_tid, pc, /*ptr=*/args[1], /*size=*/args[2]);
       break;
@@ -451,11 +451,11 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
       Put(FREE, ts_tid, pc, /*ptr=*/args[1], 0);
       break;
     case TSREQ_BENIGN_RACE:
-      Put(EXPECT_RACE, ts_tid, /*descr=*/args[2], 
+      Put(EXPECT_RACE, ts_tid, /*descr=*/args[2],
           /*p=*/args[1], /*is_benign=*/1);
       break;
     case TSREQ_EXPECT_RACE:
-      Put(EXPECT_RACE, ts_tid, /*descr=*/args[2], 
+      Put(EXPECT_RACE, ts_tid, /*descr=*/args[2],
           /*p=*/args[1], /*is_benign*/0);
       break;
     case TSREQ_PCQ_CREATE:
@@ -477,19 +477,22 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
       Put(HB_LOCK, ts_tid, pc, /*lock=*/args[1], 0);
       break;
     case TSREQ_IGNORE_READS_BEGIN:
-      Put(IGNORE_READS_BEG, ts_tid, pc, 0, 0);  
+      Put(IGNORE_READS_BEG, ts_tid, pc, 0, 0);
       break;
     case TSREQ_IGNORE_READS_END:
-      Put(IGNORE_READS_END, ts_tid, pc, 0, 0);  
+      Put(IGNORE_READS_END, ts_tid, pc, 0, 0);
       break;
     case TSREQ_IGNORE_WRITES_BEGIN:
-      Put(IGNORE_WRITES_BEG, ts_tid, pc, 0, 0);  
+      Put(IGNORE_WRITES_BEG, ts_tid, pc, 0, 0);
       break;
     case TSREQ_IGNORE_WRITES_END:
-      Put(IGNORE_WRITES_END, ts_tid, pc, 0, 0);  
+      Put(IGNORE_WRITES_END, ts_tid, pc, 0, 0);
       break;
-    case TSREQ_SET_THREAD_NAME: 
+    case TSREQ_SET_THREAD_NAME:
       Put(SET_THREAD_NAME, ts_tid, pc, /*name=*/args[1], 0);
+      break;
+    case TSREQ_SET_LOCK_NAME:
+      Put(SET_LOCK_NAME, ts_tid, pc, /*lock=*/args[1], /*name=*/args[2]);
       break;
     case TSREQ_IGNORE_ALL_BEGIN:
       g_valgrind_threads[vg_tid].ignore_all++;
@@ -561,7 +564,7 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
 
 
 
-static void evh__create_new_segment_for_history(void) { 
+static void evh__create_new_segment_for_history(void) {
   ThreadId vg_tid = GetVgTid();
   uintptr_t pc = GetVgPc(vg_tid);
   if (g_valgrind_threads[vg_tid].ignore_all) return;
@@ -595,7 +598,7 @@ static IRTemp gen_Get_SP ( IRSB*           bbOut,
 static void ts_instrument_create_new_segment_for_history(IRSB *bbOut) {
    HChar*   hName    = (HChar*)"evh__create_new_segment_for_history";
    IRDirty* di = unsafeIRDirty_0_N( 0,
-                           hName, 
+                           hName,
                            VG_(fnptr_to_fnentry)((void*)evh__create_new_segment_for_history),
                            mkIRExprVec_0());
    addStmtToIRSB( bbOut, IRStmt_Dirty(di));
@@ -617,19 +620,19 @@ static void ts_instrument_final_jump (
         = gen_Get_SP( sbOut, layout, sizeofIRType(hWordTy) );
     IRExpr **args = mkIRExprVec_2(
         IRExpr_RdTmp(sp_post_call_insn),
-        next 
+        next
         );
     IRDirty* di = unsafeIRDirty_0_N(
         2/*regparms*/,
         (char*)"evh__new_frame",
         VG_(fnptr_to_fnentry)((void*) &evh__new_frame ),
-        args ); 
+        args );
     addStmtToIRSB( sbOut, IRStmt_Dirty(di) );
   }
 }
 
 
-static void instrument_mem_access ( IRSB*   bbOut, 
+static void instrument_mem_access ( IRSB*   bbOut,
                                     IRExpr* addr,
                                     Int     szB,
                                     Bool    isStore,
@@ -702,7 +705,7 @@ static void instrument_mem_access ( IRSB*   bbOut,
             hAddr = (void*)&evh__mem_help_read_8;
             argv = mkIRExprVec_1( addr );
             break;
-         default: 
+         default:
             tl_assert(szB > 8 && szB <= 512); /* stay sane */
             regparms = 2;
             hName = "evh__mem_help_read_N";
@@ -729,7 +732,7 @@ static void instrument_mem_access ( IRSB*   bbOut,
 
 static IRSB* ts_instrument ( VgCallbackClosure* closure,
                              IRSB* bbIn,
-                             VexGuestLayout* layout, 
+                             VexGuestLayout* layout,
                              VexGuestExtents* vge,
                              IRType gWordTy, IRType hWordTy ) {
   if (G_flags->dry_run >= 2) return bbIn;
@@ -737,7 +740,7 @@ static IRSB* ts_instrument ( VgCallbackClosure* closure,
   IRSB* bbOut;
   Bool x86busLocked = False;
 
-  bool instrument_memory = 
+  bool instrument_memory =
       ThreadSanitizerWantToInstrumentSblock(closure->nraddr);
 
 
@@ -764,7 +767,7 @@ static IRSB* ts_instrument ( VgCallbackClosure* closure,
     tl_assert(st);
     tl_assert(isFlatIRStmt(st));
 
-    if (i == first 
+    if (i == first
         && instrument_memory
         && G_flags->keep_history >= 1) {
       ts_instrument_create_new_segment_for_history(bbOut);
@@ -799,9 +802,9 @@ static IRSB* ts_instrument ( VgCallbackClosure* closure,
 
       case Ist_Store:
         if (!x86busLocked & instrument_memory)
-          instrument_mem_access( 
-              bbOut, 
-              st->Ist.Store.addr, 
+          instrument_mem_access(
+              bbOut,
+              st->Ist.Store.addr,
               sizeofIRType(typeOfIRExpr(bbIn->tyenv, st->Ist.Store.data)),
               True/*isStore*/,
               sizeofIRType(hWordTy)
@@ -833,7 +836,7 @@ static IRSB* ts_instrument ( VgCallbackClosure* closure,
                           dataSize = d->mSize;
                           if (d->mFx == Ifx_Read || d->mFx == Ifx_Modify) {
                             if (instrument_memory) {
-                              instrument_mem_access( 
+                              instrument_mem_access(
                                   bbOut, d->mAddr, dataSize, False/*!isStore*/,
                                   sizeofIRType(hWordTy)
                                   );
@@ -841,7 +844,7 @@ static IRSB* ts_instrument ( VgCallbackClosure* closure,
                           }
                           if (d->mFx == Ifx_Write || d->mFx == Ifx_Modify) {
                             if (instrument_memory) {
-                              instrument_mem_access( 
+                              instrument_mem_access(
                                   bbOut, d->mAddr, dataSize, True/*isStore*/,
                                   sizeofIRType(hWordTy)
                                   );
@@ -887,17 +890,22 @@ static Bool recognised_suppression ( Char* name, Supp *su )
          return True;                          \
       }
    TRY("Race",           XS_Race);
+   TRY("UnlockForeign",  XS_UnlockForeign);
+   TRY("UnlockNonLocked",  XS_UnlockNonLocked);
    return False;
 #  undef TRY
 }
 
 
-static Bool read_extra_suppression_info(Int fd, Char* buf, Int nBuf, Supp* su) { 
-  return True; 
+static Bool read_extra_suppression_info(Int fd, Char* buf, Int nBuf, Supp* su) {
+  return True;
 }
 static Bool error_matches_suppression(Error* err, Supp* su) {
   switch (VG_(get_supp_kind)(su)) {
     case XS_Race:           return VG_(get_error_kind)(err) == XS_Race;
+    case XS_UnlockForeign:  return VG_(get_error_kind)(err) == XS_UnlockForeign;
+    case XS_UnlockNonLocked:
+                          return VG_(get_error_kind)(err) == XS_UnlockNonLocked;
   }
   return False;
 }
@@ -905,7 +913,9 @@ static void print_extra_suppression_info( Error* err ) { }
 static Char* get_error_name ( Error* err )
 {
    switch (VG_(get_error_kind)(err)) {
-      case XS_Race:           return (Char*)"Race";
+      case XS_Race:            return (Char*)"Race";
+      case XS_UnlockForeign:   return (Char*)"UnlockForeign";
+      case XS_UnlockNonLocked: return (Char*)"UnlockNonLocked";
    }
    tl_assert(0);
    return NULL;
@@ -945,7 +955,7 @@ void ts_pre_clo_init(void) {
 
 //   VG_(needs_var_info)(); // optional
 
-/*  
+/*
    VG_(needs_core_errors)         ();
 
 

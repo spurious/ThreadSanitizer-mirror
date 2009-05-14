@@ -61,7 +61,6 @@
 #define snprintf(a,b,c...)     VG_(snprintf)((Char*)a,b,c)
 #define exit VG_(exit)
 #define abort VG_(abort)
-#define memmove VG_(memmove)
 #define usleep(a) /*nothing. TODO.*/
 
 extern "C" long my_strtol(const char *srt, char **end);
@@ -221,6 +220,7 @@ enum EventType {
   IGNORE_WRITES_BEG,
   IGNORE_WRITES_END,
   SET_THREAD_NAME,
+  SET_LOCK_NAME,
   TRACE_MEM,        
   EXPECT_RACE,
   VERBOSITY,    
@@ -331,6 +331,7 @@ class Event {
       "IGNORE_WRITES_BEG",
       "IGNORE_WRITES_END",
       "SET_THREAD_NAME",
+      "SET_LOCK_NAME",
       "TRACE_MEM",
       "EXPECT_RACE",
       "VERBOSITY",
