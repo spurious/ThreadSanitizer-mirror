@@ -12,6 +12,8 @@ if [ "$OUTPUT_PREFIX" == "" ]; then
   OUTPUT_PREFIX="results/$OUTPUT_PREFIX"
 fi
 
-valgrind/inst/bin/valgrind --tool=testgrind --N=${NUM_DIVISIONS} --log-file="${OUTPUT_PREFIX}_valgrind.log" $@
+export TIMEFORMAT="VALGRIND: %R"
+time valgrind/inst/bin/valgrind --tool=testgrind --N=${NUM_DIVISIONS} --log-file="${OUTPUT_PREFIX}_valgrind.log" $@ 2>&1 >/dev/null
 
-pin/pin -t pin_tool/pin_instrument_test.so -logfile "${OUTPUT_PREFIX}_pin.log" -N ${NUM_DIVISIONS} -- $@
+export TIMEFORMAT="PIN: %R"
+time pin/pin -t pin_tool/pin_instrument_test.so -logfile "${OUTPUT_PREFIX}_pin.log" -N ${NUM_DIVISIONS} -- $@ 2>&1 >/dev/null
