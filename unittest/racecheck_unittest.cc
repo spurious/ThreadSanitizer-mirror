@@ -3698,6 +3698,7 @@ struct RefCountedClass {
 
   void Unref() {
     MU.Lock();
+    CHECK(ref_ > 0);
     ref_--;
     bool do_delete = ref_ == 0;
     if (annotate_unref_) {
@@ -6347,6 +6348,66 @@ void Run() {
 
 REGISTER_TEST2(Run, 137, FEATURE | EXCLUDE_FROM_ALL)
 }  // namespace test137
+
+// test138 FN. Two closures hit the same thread in ThreadPool. {{{1
+namespace test138 {
+int GLOB = 0;
+
+void Worker() {
+  usleep(100000);
+  GLOB++;
+}
+
+void Run() {
+  FAST_MODE_INIT(&GLOB);
+  printf("test138: FN. Two closures hit the same thread in ThreadPool.\n");
+
+  // When using thread pools, two concurrent callbacks might be scheduled
+  // onto the same executor thread. As a result, unnecessary happens-before
+  // relation may be introduced between callbacks.
+  // If we set the number of executor threads to 1, any known data
+  // race detector will be silent. However, the same situation may happen
+  // with any number of executor threads (with some probability).
+  ThreadPool tp(1);
+  tp.StartWorkers();
+  tp.Add(NewCallback(Worker));
+  tp.Add(NewCallback(Worker));
+}
+
+REGISTER_TEST2(Run, 138, FEATURE)
+}  // namespace test138
+
+// test139: FN. A true race hidden by reference counting annotation. {{{1
+namespace test139 {
+int GLOB = 0;
+RefCountedClass *obj;
+
+void Worker1() {
+  GLOB++;  // First access.
+  obj->Unref();
+}
+
+void Worker2() {
+  usleep(100000);
+  obj->Unref();
+  GLOB++;  // Second access.
+}
+
+void Run() {
+  FAST_MODE_INIT(&GLOB);
+  printf("test139: FN. A true race hidden by reference counting annotation.\n");
+
+  obj = new RefCountedClass;
+  obj->AnnotateUnref();
+  obj->Ref();
+  obj->Ref();
+  MyThreadArray mt(Worker1, Worker2);
+  mt.Start();
+  mt.Join();
+}
+
+REGISTER_TEST2(Run, 139, FEATURE)
+}  // namespace test139
 
 // test300: {{{1
 namespace test300 {
