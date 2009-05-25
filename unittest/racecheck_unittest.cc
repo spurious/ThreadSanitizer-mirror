@@ -6240,28 +6240,28 @@ Mutex   mu;
 // arc between any prior access to map and here.
 // Since the internals of tmp are created ouside the mutex and are passed to
 // other thread, we need to have a h-b arc between here and any future access.
-// These arc can be created by SIGNAL/WAIT annotations, but it is much simpler
-// to apply pure-happens-before mode to the mutex mu.
+// These arcs can be created by HAPPENS_{BEFORE,AFTER} annotations, but it is
+// much simpler to apply pure-happens-before mode to the mutex mu.
 void Swapper() {
   __gnu_cxx::hash_map<int, int> tmp;
   MutexLock lock(&mu);
-  ANNOTATE_CONDVAR_WAIT(&map);
+  ANNOTATE_HAPPENS_AFTER(&map);
   // We swap the new empty map 'tmp' with 'map'.
   map.swap(tmp);
-  ANNOTATE_CONDVAR_SIGNAL(&map);
+  ANNOTATE_HAPPENS_BEFORE(&map);
   // tmp (which is the old version of map) is destroyed here.
 }
 
 void Worker() {
   MutexLock lock(&mu);
-  ANNOTATE_CONDVAR_WAIT(&map);
+  ANNOTATE_HAPPENS_AFTER(&map);
   map[1]++;
-  ANNOTATE_CONDVAR_SIGNAL(&map);
+  ANNOTATE_HAPPENS_BEFORE(&map);
 }
 
 void Run() {
   printf("test134: negative (swap)\n");
-  // Shorter way:
+  // ********************** Shorter way: ***********************
   // ANNOTATE_MUTEX_IS_USED_AS_CONDVAR(&mu);
   MyThreadArray t(Worker, Worker, Swapper, Worker, Worker);
   t.Start();
