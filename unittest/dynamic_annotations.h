@@ -145,6 +145,10 @@ ANNOTATION(AnnotateNoOp, void *arg);
 #define ANNOTATE_CONDVAR_SIGNAL_ALL(cv) \
             AnnotateCondVarSignalAll(__FILE__, __LINE__, cv)
 
+// Aliases for ANNOTATE_CONDVAR_SIGNAL / ANNOTATE_CONDVAR_WAIT
+#define ANNOTATE_HAPPENS_BEFORE ANNOTATE_CONDVAR_SIGNAL
+#define ANNOTATE_HAPPENS_AFTER  ANNOTATE_CONDVAR_WAIT
+
 // Insert into the PCQ constructor. 
 #define ANNOTATE_PCQ_CREATE(pcq) \
             AnnotatePCQCreate(__FILE__, __LINE__, pcq)
