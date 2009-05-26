@@ -109,6 +109,7 @@ ANNOTATION(AnnotatePrintMemoryUsage, long);
 ANNOTATION(AnnotatePrintStats, void *);
 ANNOTATION(AnnotateResetStats, void *);
 ANNOTATION(AnnotatePublishMemoryRange, void *, long);
+ANNOTATION(AnnotateUnpublishMemoryRange, void *, long);
 ANNOTATION(AnnotateThreadName, const char *thread_name);
 
 ANNOTATION(AnnotateNoOp, void *arg);
@@ -178,6 +179,10 @@ ANNOTATION(AnnotateNoOp, void *arg);
 // reads from a memory in the range [object, object+size).
 #define ANNOTATE_PUBLISH_MEMORY_RANGE(object_pointer, size) \
             AnnotatePublishMemoryRange(__FILE__, __LINE__, object_pointer, size);
+
+// TODO
+#define ANNOTATE_UNPUBLISH_MEMORY_RANGE(object_pointer, size) \
+         AnnotateUnpublishMemoryRange(__FILE__, __LINE__, object_pointer, size);
 
 // A variation of ANNOTATE_PUBLISH_MEMORY_RANGE with the size 
 // computed by sizeof(*object_pointer).
