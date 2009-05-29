@@ -4746,7 +4746,7 @@ void Writer() {
   usleep(1000);
   GLOB = 1;
   const char *str = "Hey there!\n";
-  write(fd_out, str, strlen(str));
+  write(fd_out, str, strlen(str) + 1);
 }
 
 void Reader() {

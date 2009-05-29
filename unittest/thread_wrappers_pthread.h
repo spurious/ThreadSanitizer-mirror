@@ -437,14 +437,13 @@ struct Closure {
   void Execute() {
     if (n_params == 0) {
       (F0(f))();
-      return;
-    }
-    if (n_params == 1) {
+    } else if (n_params == 1) {
       (F1(f))(param1);
-      return;
+    } else {
+      CHECK(n_params == 2);
+      (F2(f))(param1, param2);
     }
-    CHECK(n_params == 2);
-    (F2(f))(param1, param2);
+    delete this;
   }
 }; 
 
@@ -525,6 +524,7 @@ class ThreadPool {
     }
     for (int i = 0; i < workers_.size(); i++) {
       workers_[i]->Join();
+      delete workers_[i];
     }
   }
  private:
