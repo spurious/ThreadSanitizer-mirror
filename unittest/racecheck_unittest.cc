@@ -580,8 +580,7 @@ int     GLOB = 0;
 bool    COND = 0;
 // Two write accesses to GLOB are synchronized via conditional critical section.
 // LockWhen() is observed after COND has been set (due to sleep). 
-// We have to annotate Signaller with ANNOTATE_CONDVAR_SIGNAL(), otherwise 
-// ANNOTATE_CONDVAR_WAIT() in LockWhen will not catch a signal. 
+// Unlock() calls ANNOTATE_CONDVAR_SIGNAL().
 //
 // Waiter:                           Signaller: 
 // 1. COND = 0
@@ -589,8 +588,8 @@ bool    COND = 0;
 //                                   a. write(GLOB)
 //                                   b. MU.Lock()
 //                                   c. COND = 1
-//                              /--- d. ANNOTATE_CONDVAR_SIGNAL(&MU); 
-// 3. MU.LockWhen(COND==1) <---/     e. MU.Unlock()
+//                              /--- d. MU.Unlock calls ANNOTATE_CONDVAR_SIGNAL
+// 3. MU.LockWhen(COND==1) <---/
 // 4. MU.Unlock()
 // 5. write(GLOB)
 
@@ -599,8 +598,7 @@ void Signaller() {
   GLOB = 1; 
   MU.Lock();
   COND = true; // We are done! Tell the Waiter. 
-  ANNOTATE_CONDVAR_SIGNAL(&MU);
-  MU.Unlock(); // does not call ANNOTATE_CONDVAR_SIGNAL;
+  MU.Unlock(); // calls ANNOTATE_CONDVAR_SIGNAL;
 }
 void Waiter() {
   COND = false;
