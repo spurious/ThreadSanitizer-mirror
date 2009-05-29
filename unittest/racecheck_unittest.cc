@@ -4367,7 +4367,7 @@ namespace test90 {
 // Choices for annotations: 
 //   -- ANNOTATE_CONDVAR_SIGNAL/ANNOTATE_CONDVAR_WAIT
 //   -- ANNOTATE_MUTEX_IS_USED_AS_CONDVAR
-//   -- ANNOTATE_PUBLISH_MEMORY_RANGE (not yet available).
+//   -- ANNOTATE_PUBLISH_MEMORY_RANGE.
 
 int     *GLOB = 0;
 Mutex   MU; 
@@ -6436,10 +6436,10 @@ void Swapper() {
   tmp[1] = tmp[2] = tmp[3] = 0;
   {
     MutexLock lock(&mu);
+    container.swap(tmp);
     // we are unpublishing the old container.
     ANNOTATE_UNPUBLISH_MEMORY_RANGE(&container, sizeof(container));
-    container.swap(tmp);
-    // we are publishing the new container. 
+    // we are publishing the new container.
     ANNOTATE_PUBLISH_MEMORY_RANGE(&container, sizeof(container));
   }
   tmp[1]++;
@@ -6453,7 +6453,7 @@ void Worker() {
   int *v = &container[2];
   for (int i = 0; i < 10; i++) {
     // if uncommented, this will break ANNOTATE_UNPUBLISH_MEMORY_RANGE():
-    // ANNOTATE_HAPPENS_BEFORE(v); 
+    // ANNOTATE_HAPPENS_BEFORE(v);
     if (i % 3) {
       (*v)++;
     }
@@ -6461,7 +6461,7 @@ void Worker() {
 }
 
 void Run() {
-  printf("test140: negative (swap)\n"); 
+  printf("test140: negative (swap) %p\n", &container);
   MyThreadArray t(Worker, Worker, Swapper, Worker, Worker);
   t.Start();
   t.Join();
