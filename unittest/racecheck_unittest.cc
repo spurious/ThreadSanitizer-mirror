@@ -84,6 +84,7 @@
 #include <sys/mman.h>  // mmap
 #include <errno.h>
 #include <stdlib.h>
+#include <dirent.h>
 
 #ifndef OS_MACOSX
 #include <malloc.h>
@@ -6466,6 +6467,75 @@ void Run() {
 }
 REGISTER_TEST(Run, 140)
 }  // namespace test140
+
+// test141 FP. unlink/fopen, rmdir/opendir. {{{1
+namespace test141 {
+int GLOB1 = 0,
+    GLOB2 = 0;
+char *dir_name = NULL,
+     *filename = NULL;
+
+void Waker1() {
+  usleep(100000);
+  GLOB1 = 1;  // Write
+  // unlink deletes a file 'filename'
+  // which exits spin-loop in Waiter1().
+  printf("  Deleting file...\n");
+  CHECK(unlink(filename) == 0);
+}
+
+void Waiter1() {
+  FILE *tmp;
+  while ((tmp = fopen(filename, "r")) != NULL) {
+    fclose(tmp);
+    usleep(10000);
+  }
+  printf("  ...file has been deleted\n");
+  GLOB1 = 2;  // Write
+}
+
+void Waker2() {
+  usleep(100000);
+  GLOB2 = 1;  // Write
+  // rmdir deletes a directory 'dir_name'
+  // which exit spin-loop in Waker().
+  printf("  Deleting directory...\n");
+  CHECK(rmdir(dir_name) == 0);
+}
+
+void Waiter2() {
+  DIR *tmp;
+  while ((tmp = opendir(dir_name)) != NULL) {
+    closedir(tmp);
+    usleep(10000);
+  }
+  printf("  ...directory has been deleted\n");
+  GLOB2 = 2;
+}
+
+void Run() {
+  FAST_MODE_INIT(&GLOB1);
+  FAST_MODE_INIT(&GLOB2);
+  printf("test141: FP. unlink/fopen, rmdir/opendir.\n");
+
+  dir_name = tempnam("/tmp", NULL);
+  mkdir(dir_name, 0700);
+
+  filename = tempnam(dir_name, NULL);
+  FILE *fp = fopen(filename, "w");
+  CHECK(fp);
+  fclose(fp);
+
+  MyThreadArray mta1(Waker1, Waiter1);
+  mta1.Start();
+  mta1.Join();
+
+  MyThreadArray mta2(Waker2, Waiter2);
+  mta2.Start();
+  mta2.Join();
+}
+REGISTER_TEST(Run, 141)
+}  // namespace test141
 
 // test300: {{{1
 namespace test300 {
