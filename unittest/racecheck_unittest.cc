@@ -6612,8 +6612,12 @@ REGISTER_TEST(Run, 142)
 
 // test143: TP. Check PCQ_* annotations. {{{1
 namespace test143 {
-// True positive. We have a race on GLOB. 
-// Pure h-b will not see it. PCQ_* annotations do not hide this race.
+// True positive.
+// We have a race on GLOB between Putter and one of the Getters.
+// Pure h-b will not see it.
+// If FifoMessageQueue was annotated using HAPPENS_BEFORE/AFTER, the race would
+// be missed too.
+// PCQ_* annotations do not hide this race.
 int     GLOB = 0;
 
 FifoMessageQueue q;
@@ -6629,8 +6633,8 @@ void Getter() {
   CHECK(GLOB == 1);  // Race here
 }
 
-
 void Run() {
+  q.Put(1);
   if (!Tsan_PureHappensBefore()) {
     ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "true races");
   }
