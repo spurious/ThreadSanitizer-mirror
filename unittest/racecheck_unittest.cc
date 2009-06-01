@@ -73,6 +73,7 @@
 #include <vector>
 #include <string>
 #include <map>
+#include <queue>
 #include <ext/hash_map>
 #include <algorithm>
 #include <cstring>      // strlen(), index(), rindex()
@@ -6536,6 +6537,113 @@ void Run() {
 }
 REGISTER_TEST(Run, 141)
 }  // namespace test141
+
+
+// Simple FIFO queue annotated with PCQ annotations. {{{1
+class FifoMessageQueue {
+ public:
+  FifoMessageQueue() { ANNOTATE_PCQ_CREATE(this); }
+  ~FifoMessageQueue() { ANNOTATE_PCQ_DESTROY(this); }
+  // Send a message. 'message' should be positive.
+  void Put(int message) {
+    CHECK(message);
+    MutexLock lock(&mu_);
+    ANNOTATE_PCQ_PUT(this);
+    q_.push(message);
+  }
+  // Return the message from the queue and pop it 
+  // or return 0 if there are no messages.
+  int Get() {
+    MutexLock lock(&mu_);
+    if (q_.empty()) return 0;
+    int res = q_.front();
+    q_.pop();
+    ANNOTATE_PCQ_GET(this);
+    return res;
+  }
+ private:
+  Mutex mu_;
+  queue<int> q_;
+};
+
+
+// test142: TN. Check PCQ_* annotations. {{{1
+namespace test142 {
+// Putter writes to array[i] and sends a message 'i'.
+// Getters receive messages and read array[message].
+// PCQ_* annotations calm down the hybrid detectors.
+
+const int N = 1000;
+int array[N+1];
+
+FifoMessageQueue q;
+
+void Putter() {
+  for (int i = 1; i <= N; i++) {
+    array[i] = i*i;
+    q.Put(i);
+    usleep(1000);
+  }
+}
+
+void Getter() {
+  int non_zero_received  = 0;
+  for (int i = 1; i <= N; i++) {
+    int res = q.Get();
+    if (res > 0) {
+      CHECK(array[res] = res * res);
+      non_zero_received++;
+    }
+    usleep(1000);
+  }
+  printf("T=%d: non_zero_received=%d\n", 
+         (int)pthread_self(), non_zero_received);
+} 
+
+void Run() {
+  printf("test142: tests PCQ annotations\n");
+  MyThreadArray t(Putter, Getter, Getter);
+  t.Start();
+  t.Join();
+}
+REGISTER_TEST(Run, 142)
+}  // namespace test142
+
+
+// test143: TP. Check PCQ_* annotations. {{{1
+namespace test143 {
+// True positive. We have a race on GLOB. 
+// Pure h-b will not see it. PCQ_* annotations do not hide this race.
+int     GLOB = 0;
+
+FifoMessageQueue q;
+
+void Putter() {
+  GLOB = 1;
+  q.Put(1);
+}
+
+void Getter() {
+  usleep(10000);
+  q.Get();
+  CHECK(GLOB == 1);  // Race here
+}
+
+
+void Run() {
+  if (!Tsan_PureHappensBefore()) {
+    ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "true races");
+  }
+  printf("test143: tests PCQ annotations (true positive)\n");
+  MyThreadArray t(Putter, Getter, Getter);
+  t.Start();
+  t.Join();
+}
+REGISTER_TEST(Run, 143);
+}  // namespace test143
+
+
+
 
 // test300: {{{1
 namespace test300 {
