@@ -1797,7 +1797,7 @@ void Run() {
   for (int i = 0; i < N_free; i++) delete ARR[i];
   delete [] ARR;
   
-  for (int i = 0; i < mus.size(); i++) {
+  for (size_t i = 0; i < mus.size(); i++) {
     delete mus[i];
   }
 }

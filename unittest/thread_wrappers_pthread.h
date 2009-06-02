@@ -505,7 +505,7 @@ class ThreadPool {
 
   //! Start all threads. 
   void StartWorkers() {
-    for (int i = 0; i < workers_.size(); i++) {
+    for (size_t i = 0; i < workers_.size(); i++) {
       workers_[i]->Start();
     }
   }
@@ -519,10 +519,10 @@ class ThreadPool {
 
   //! Wait workers to finish, then join all threads.
   ~ThreadPool() {
-    for (int i = 0; i < workers_.size(); i++) {
+    for (size_t i = 0; i < workers_.size(); i++) {
       Add(NULL);
     }
-    for (int i = 0; i < workers_.size(); i++) {
+    for (size_t i = 0; i < workers_.size(); i++) {
       workers_[i]->Join();
       delete workers_[i];
     }
@@ -569,6 +569,7 @@ class BlockingCounter {
   bool DecrementCount() {
     MutexLock lock(&mu_);
     count_--;
+    return count_ == 0;
   }
   void Wait() {
     mu_.LockWhen(Condition(&IsZero, &count_));
