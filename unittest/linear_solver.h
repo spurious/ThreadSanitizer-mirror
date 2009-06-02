@@ -180,9 +180,9 @@ Vector EstimateParameters(const Matrix & perf_m, const Vector & stats_v, double 
          parameters_set[n] = -1;
       }
       // we may detect & assert unresolvable conflicts like the following
-      // /1\       /1\
+      // |1|       |1|    
       // |1| * p = |2|
-      // \1/       \3/
+      // |1|       |3|
 
       // Find out those 0000*0000 lines 
       for (int m = 0; m < M; m++) {

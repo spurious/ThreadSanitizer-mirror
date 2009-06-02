@@ -12,7 +12,7 @@ O2:
 all_opt: all O1 O2
 
 %${SUFFIX}: %.cc dynamic_annotations.h thread_wrappers_pthread.h
-	${CXX} ${CXXFLAGS} $< -Wall dynamic_annotations.cc -lpthread -g -DDYNAMIC_ANNOTATIONS=1 -o $@
+	${CXX} ${CXXFLAGS} $< -Wall -Werror -Wno-sign-compare  dynamic_annotations.cc -lpthread -g -DDYNAMIC_ANNOTATIONS=1 -o $@
 
 clean:
 	rm -f racecheck_unittest bigtest *.O1 *.O2

@@ -155,7 +155,7 @@ public:
    
    void RegisterParameter(double * param) {
       CHECK(stats != NULL);
-      int param_id = parameters.size();
+      // int param_id = parameters.size();
       parameters.push_back(param);
       cost_m->IncN();
    }
@@ -319,7 +319,7 @@ namespace one_lock {
    }
    REGISTER_PATTERN(102);
    
-   /*
+
    int atomic_integers[NUM_CONTEXTS] = {0};
    // Atomic increment
    void Pattern103() {
@@ -562,7 +562,7 @@ namespace publishing {
          context->CV_Signalled--;
          bool ret = !context->CV.WaitWithTimeout(&context->MU, 10);
          if (ret && context->data) {
-            int tmp = strlen(context->data);
+            // int tmp = strlen(context->data);
             free(context->data);
             context->data = NULL;
          }
@@ -781,7 +781,8 @@ int main(int argc, const char **argv) {
    goals.RegisterPatterns();
    goals.CalculateAndApplyParameters();/**/
    long start = GetTimeInMs();
-   printf("\nParameters calculated in %dms\nBenchmarking...\n", start - init);
+   printf("\nParameters calculated in %dms\nBenchmarking...\n", 
+          (int)(start - init));
    // Start (N_THREADS - 1) new threads...
    mainThreadPool = new ThreadPool(nThreads - 1);
    mainThreadPool->StartWorkers();
@@ -791,7 +792,7 @@ int main(int argc, const char **argv) {
    PatternDispatcher(); // and 1 more in the main thread
    delete mainThreadPool;
    long end = GetTimeInMs();
-   printf("...done in %dms\n", end - start);
+   printf("...done in %dms\n", (int)(end - start));
    
    return 0;
 }
