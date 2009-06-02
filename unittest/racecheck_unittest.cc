@@ -1487,7 +1487,7 @@ namespace test30 {
 //
 // Writer:                                 Reader1, Reader2, ..., ReaderN: 
 // 1. write(GLOB[i]: i >= BOUNDARY)        a. n = BOUNDARY
-// 2. ANNOTATE_SIGNAL(BOUNDARY+1) -------> b. ANNOTATE_WAIT(n)
+// 2. HAPPENS_BEFORE(BOUNDARY+1)  -------> b. HAPPENS_AFTER(n)
 // 3. BOUNDARY++;                          c. read(GLOB[i]: i < n)
 //
 // Here we have a 'safe' race on accesses to BOUNDARY and 
@@ -1500,10 +1500,6 @@ namespace test30 {
 // are free to rearrange memory operations. 
 // I am actually sure that this scheme is wrong unless we use 
 // some smart memory fencing... 
-//
-// For this unit test we use ANNOTATE_CONDVAR_WAIT/ANNOTATE_CONDVAR_SIGNAL 
-// but for real life we will need separate annotations 
-// (if we ever want to annotate this synchronization scheme at all). 
 
 
 const int N = 48;
@@ -1555,7 +1551,7 @@ namespace test31 {
 //
 // Writer1:                                Writer2 
 // 1. write(GLOB[i]: i >= BOUNDARY)        a. n = BOUNDARY
-// 2. ANNOTATE_SIGNAL(BOUNDARY+1) -------> b. ANNOTATE_WAIT(n)
+// 2. HAPPENS_BEFORE(BOUNDARY+1)  -------> b. HAPPENS_AFTER(n)
 // 3. BOUNDARY++;                          c. write(GLOB[i]: i < n)
 //
 
