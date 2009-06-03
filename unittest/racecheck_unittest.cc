@@ -74,7 +74,6 @@
 #include <string>
 #include <map>
 #include <queue>
-#include <ext/hash_map>
 #include <algorithm>
 #include <cstring>      // strlen(), index(), rindex()
 #include <ctime>
@@ -3813,15 +3812,20 @@ REGISTER_TEST(Run, 78)
 
 // test79 TN. Swap. {{{1
 namespace test79 {
-__gnu_cxx::hash_map<int, int> MAP;
+#if 0
+typedef __gnu_cxx::hash_map<int, int> map_t;
+#else
+typedef std::map<int, int> map_t;
+#endif
+map_t   MAP;
 Mutex   MU; 
 
-// Here we use swap to pass hash_map between threads.
+// Here we use swap to pass MAP between threads.
 // The synchronization is correct, but w/o ANNOTATE_MUTEX_IS_USED_AS_CONDVAR
 // Helgrind will complain.
 
 void Worker1() {
-  __gnu_cxx::hash_map<int, int> tmp;
+  map_t tmp;
   MU.Lock();
   // We swap the new empty map 'tmp' with 'MAP'.
   MAP.swap(tmp); 
@@ -6225,9 +6229,14 @@ REGISTER_TEST(Run, 133);
 
 // test134 TN. Swap. Variant of test79. {{{1
 namespace test134 {
-__gnu_cxx::hash_map<int, int> map;
+#if 0
+typedef __gnu_cxx::hash_map<int, int> map_t;
+#else
+typedef std::map<int, int> map_t;
+#endif
+map_t   map;
 Mutex   mu;
-// Here we use swap to pass hash_map between threads.
+// Here we use swap to pass map between threads.
 // The synchronization is correct, but w/o the annotation
 // any hybrid detector will complain.
 
@@ -6239,7 +6248,7 @@ Mutex   mu;
 // These arcs can be created by HAPPENS_{BEFORE,AFTER} annotations, but it is
 // much simpler to apply pure-happens-before mode to the mutex mu.
 void Swapper() {
-  __gnu_cxx::hash_map<int, int> tmp;
+  map_t tmp;
   MutexLock lock(&mu);
   ANNOTATE_HAPPENS_AFTER(&map);
   // We swap the new empty map 'tmp' with 'map'.
@@ -6407,8 +6416,11 @@ REGISTER_TEST2(Run, 139, FEATURE)
 
 // test140 TN. Swap. Variant of test79 and test134. {{{1
 namespace test140 {
-//typedef std::map<int,int>             Container;
- typedef __gnu_cxx::hash_map<int, int> Container;
+#if 0
+typedef __gnu_cxx::hash_map<int, int> Container;
+#else
+typedef std::map<int,int>             Container;
+#endif
 Mutex mu;
 static Container container;
 
@@ -6515,13 +6527,13 @@ void Run() {
   FAST_MODE_INIT(&GLOB2);
   printf("test141: FP. unlink/fopen, rmdir/opendir.\n");
 
-  dir_name = tempnam("/tmp", NULL);
-  mkdir(dir_name, 0700);
+  dir_name = strdup("/tmp/tsan-XXXXXX");
+  mkdtemp(dir_name);
 
-  filename = tempnam(dir_name, NULL);
-  FILE *fp = fopen(filename, "w");
-  CHECK(fp);
-  fclose(fp);
+  filename = strdup((std::string() + dir_name + "/XXXXXX").c_str());
+  const int fd = mkstemp(filename);
+  CHECK(fd >= 0);
+  close(fd);
 
   MyThreadArray mta1(Waker1, Waiter1);
   mta1.Start();
@@ -6530,6 +6542,10 @@ void Run() {
   MyThreadArray mta2(Waker2, Waiter2);
   mta2.Start();
   mta2.Join();
+  free(filename);
+  filename = 0;
+  free(dir_name);
+  dir_name = 0;
 }
 REGISTER_TEST(Run, 141)
 }  // namespace test141
