@@ -86,7 +86,7 @@
 #include <stdlib.h>
 #include <dirent.h>
 
-#ifndef OS_MACOSX
+#ifndef _APPLE_
 #include <malloc.h>
 #endif
 
