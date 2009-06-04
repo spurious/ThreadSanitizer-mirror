@@ -43,7 +43,7 @@
 // - None (DYNAMIC_ANNOTATIONS is not defined). 
 //    Macros are defined empty. 
 // - Helgrind (DYNAMIC_ANNOTATIONS is defined). 
-//    Macros are defined as calls to non-inlinable empty functions 
+//    Macros are defined as calls to non-inlineable empty functions 
 //    that are intercepted by helgrind (starting from version TODO). 
 //
 //
@@ -79,7 +79,7 @@
   #endif  // DYNAMIC_ANNOTATIONS_HERE
 #else  // !DYNAMIC_ANNOTATIONS
   extern "C" bool RunningOnValgrind() { return 0; }
-  // Annotations are disabled. Define an empty inlinable function. 
+  // Annotations are disabled. Define an empty inlineable function. 
   #define ANNOTATION(name, arglist...) \
     static inline void name (const char *file, int line, arglist) {}
 #endif
