@@ -6531,7 +6531,7 @@ void Run() {
   printf("test141: FP. unlink/fopen, rmdir/opendir.\n");
 
   dir_name = strdup("/tmp/tsan-XXXXXX");
-  mkdtemp(dir_name);
+  CHECK(mkdtemp(dir_name) != 0);
 
   filename = strdup((std::string() + dir_name + "/XXXXXX").c_str());
   const int fd = mkstemp(filename);
@@ -6545,6 +6545,7 @@ void Run() {
   MyThreadArray mta2(Waker2, Waiter2);
   mta2.Start();
   mta2.Join();
+
   free(filename);
   filename = 0;
   free(dir_name);
