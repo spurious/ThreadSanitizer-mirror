@@ -5221,6 +5221,8 @@ void Worker() {
   (*NEW_ARR)++;
 }
 void Run() {
+  printf("test110: positive (race on a stack object)\n");
+
   int x = 0;
   STACK = &x;
 
@@ -5269,7 +5271,6 @@ void Run() {
   MyThreadArray t(Worker, Worker, Worker);
   t.Start();
   t.Join();
-  printf("test110: positive (race on a stack object)\n");
   printf("\tSTACK=%d\n", *STACK);
   CHECK(GLOB <= 3);
   CHECK(STATIC <= 3);
@@ -6420,6 +6421,7 @@ REGISTER_TEST2(Run, 139, FEATURE)
 // test140 TN. Swap. Variant of test79 and test134. {{{1
 namespace test140 {
 #if 0
+#if 0
 typedef __gnu_cxx::hash_map<int, int> Container;
 #else
 typedef std::map<int,int>             Container;
@@ -6478,6 +6480,7 @@ void Run() {
   t.Join();
 }
 REGISTER_TEST(Run, 140)
+#endif
 }  // namespace test140
 
 // test141 FP. unlink/fopen, rmdir/opendir. {{{1
