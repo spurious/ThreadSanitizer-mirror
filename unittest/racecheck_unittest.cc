@@ -7038,24 +7038,24 @@ Mutex mu1;  // Protects PTR.
 Mutex mu2;  // Unrelated to PTR.
 Mutex mu3;  // Unrelated to PTR.
 
-void GoodWriter1() {
+void GoodWriter1() {      // Runs in Thread1
   MutexLock lock3(&mu3);  // This lock is unrelated to PTR.
   MutexLock lock1(&mu1);  // Protect PTR.
   *PTR = 1; 
 }
 
-void GoodWriter2() {
+void GoodWriter2() {      // Runs in Thread2
   MutexLock lock2(&mu2);  // This lock is unrelated to PTR.
   MutexLock lock1(&mu1);  // Protect PTR.
   *PTR = 2; 
 }
 
-void GoodReader() {
+void GoodReader() {      // Runs in Thread3
   MutexLock lock1(&mu1);  // Protect PTR.
   CHECK(*PTR >= 0); 
 }
 
-void BuggyWriter() {
+void BuggyWriter() {      // Runs in Thread4
   MutexLock lock2(&mu2);  // Wrong mutex!
   *PTR = 3;
 }
