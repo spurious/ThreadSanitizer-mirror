@@ -321,24 +321,24 @@ REGISTER_TEST(Run, 00)
 // test01: TP. Simple race (write vs write). {{{1
 namespace test01 {
 int     GLOB = 0;
-void Worker() {
+
+void Worker1() {
   GLOB = 1; 
 }
 
-void Parent() {
-  MyThread t(Worker);
-  t.Start();
+void Worker2() {
   GLOB = 2;
-  t.Join();
 }
+
 void Run() {
   FAST_MODE_INIT(&GLOB);
   ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test01. TP.");
   ANNOTATE_TRACE_MEMORY(&GLOB);
   printf("test01: positive\n");
-  Parent();
-  const int tmp = GLOB;
-  printf("\tGLOB=%d\n", tmp);
+  MyThreadArray t(Worker1, Worker2);
+  t.Start();
+  t.Join();
+  printf("\tGLOB=%d\n", GLOB);
 }
 REGISTER_TEST(Run, 1);
 }  // namespace test01
