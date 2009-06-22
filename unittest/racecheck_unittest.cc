@@ -6665,8 +6665,35 @@ void Run() {
 REGISTER_TEST(Run, 143);
 }  // namespace test143
 
+// test144: Unit-test for a bug in fast-mode {{{1
+namespace test144 {
+struct Foo {
+  int a, b;
+} __attribute__ ((aligned (64)));
 
+struct Foo GLOB;
+int &RACEY = GLOB.a;
 
+void Worker() {
+  RACEY++;
+}
+
+void Run() {
+  printf("test144: fast-mode bug\n");
+  ANNOTATE_TRACE_MEMORY(&RACEY);
+  ANNOTATE_EXPECT_RACE_FOR_TSAN(&RACEY, "Real race");
+  FAST_MODE_INIT(&RACEY);
+
+  // This line resets GLOB's creator_tid (bug).
+  ANNOTATE_NEW_MEMORY(&GLOB.b, sizeof(GLOB.b));  
+
+  MyThreadArray t(Worker, Worker);
+  t.Start();
+  t.Join();
+}
+
+REGISTER_TEST2(Run, 144, EXCLUDE_FROM_ALL);
+}  // namespace test144
 
 // test300: {{{1
 namespace test300 {
