@@ -6685,7 +6685,7 @@ void Run() {
   FAST_MODE_INIT(&RACEY);
 
   // This line resets GLOB's creator_tid (bug).
-  ANNOTATE_NEW_MEMORY(&GLOB.b, sizeof(GLOB.b));  
+  ANNOTATE_NEW_MEMORY(&GLOB.b, sizeof(GLOB.b));
 
   MyThreadArray t(Worker, Worker);
   t.Start();
@@ -6694,6 +6694,42 @@ void Run() {
 
 REGISTER_TEST2(Run, 144, EXCLUDE_FROM_ALL);
 }  // namespace test144
+
+// test145: Unit-test for a bug in fast-mode {{{1
+namespace test145 {
+// A variation of test144 for dynamic memory.
+
+struct Foo {
+  int a, b;
+} __attribute__ ((aligned (64)));
+
+struct Foo *GLOB;
+int *RACEY = NULL;
+
+void Worker() {
+  (*RACEY)++;
+}
+
+void Run() {
+  printf("test145: fast-mode bug\n");
+
+  GLOB = new Foo;
+  RACEY = &(GLOB->a);
+  ANNOTATE_TRACE_MEMORY(RACEY);
+  ANNOTATE_EXPECT_RACE_FOR_TSAN(RACEY, "Real race");
+  FAST_MODE_INIT(RACEY);
+
+  // This line resets GLOB's creator_tid (bug).
+  ANNOTATE_NEW_MEMORY(&(GLOB->b), sizeof(GLOB->b));
+
+  MyThreadArray t(Worker, Worker);
+  t.Start();
+  t.Join();
+  delete GLOB;
+}
+
+REGISTER_TEST2(Run, 145, EXCLUDE_FROM_ALL);
+}  // namespace test145
 
 // test300: {{{1
 namespace test300 {
