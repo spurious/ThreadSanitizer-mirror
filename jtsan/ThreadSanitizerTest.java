@@ -138,11 +138,11 @@ public class ThreadSanitizerTest extends TestCase {
   }
 
   public void testNegative2() throws Exception {
-    describe("Correct code: two writes to a volatile int");
+    describe("Correct code: two writes to a volatile boolean");
     new ThreadRunner2() {
-      volatile int volatile_var_;
-      public void thread1() { volatile_var_ = 1; }
-      public void thread2() { volatile_var_ = 2; }
+      volatile boolean volatile_bool = false;
+      public void thread1() { volatile_bool = true; }
+      public void thread2() { while(!volatile_bool); }
     };
   }
 
