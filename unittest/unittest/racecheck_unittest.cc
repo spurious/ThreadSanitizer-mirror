@@ -502,10 +502,6 @@ void Waker() {
 }
 
 void Waiter() {
-  ThreadPool pool(1);
-  pool.StartWorkers();
-  COND = 0;
-  pool.Add(NewCallback(Waker));
   usleep(100000);  // Make sure the signaller gets first.
   MU.Lock();
   while(COND != 1)
@@ -514,11 +510,14 @@ void Waiter() {
   GLOB = 2;
 }
 void Run() {
+  printf("test05: unavoidable false positive\n");
   FAST_MODE_INIT(&GLOB);
+  COND = 0;
   if (!Tsan_PureHappensBefore())
     ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test05. FP. Unavoidable in hybrid scheme.");
-  printf("test05: unavoidable false positive\n");
-  Waiter();
+  MyThreadArray t(Waker, Waiter);
+  t.Start();
+  t.Join();
   printf("\tGLOB=%d\n", GLOB);
 }
 REGISTER_TEST(Run, 5);
@@ -1118,11 +1117,6 @@ void Waker() {
   usleep(100 * 1000);
 }
 void Waiter() {
-  ThreadPool pool(1);
-  pool.StartWorkers();
-  COND = 0;
-  pool.Add(NewCallback(Waker));
-
   MU.Lock();
   CHECK(!MU.AwaitWithTimeout(Condition(&ArgIsOne, &COND), 100));
   MU.Unlock();
@@ -1130,10 +1124,13 @@ void Waiter() {
   GLOB = 2;
 }
 void Run() {
+  printf("test20: positive\n");
+  COND = 0;
   FAST_MODE_INIT(&GLOB);
   ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test20. TP.");
-  printf("test20: positive\n");
-  Waiter();
+  MyThreadArray t(Waker, Waiter);
+  t.Start();
+  t.Join();
   printf("\tGLOB=%d\n", GLOB);
 }
 REGISTER_TEST2(Run, 20, FEATURE|NEEDS_ANNOTATIONS);
@@ -1149,21 +1146,19 @@ void Waker() {
   usleep(100 * 1000);
 }
 void Waiter() {
-  ThreadPool pool(1);
-  pool.StartWorkers();
-  COND = 0;
-  pool.Add(NewCallback(Waker));
-
   CHECK(!MU.LockWhenWithTimeout(Condition(&ArgIsOne, &COND), 100));
   MU.Unlock();
 
   GLOB = 2;
 }
 void Run() {
+  printf("test21: positive\n");
+  COND = 0;
   FAST_MODE_INIT(&GLOB);
   ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test21. TP.");
-  printf("test21: positive\n");
-  Waiter();
+  MyThreadArray t(Waker, Waiter);
+  t.Start();
+  t.Join();
   printf("\tGLOB=%d\n", GLOB);
 }
 REGISTER_TEST2(Run, 21, FEATURE|NEEDS_ANNOTATIONS);
@@ -1179,12 +1174,7 @@ void Waker() {
   usleep(100 * 1000);
 }
 void Waiter() {
-  ThreadPool pool(1);
-  pool.StartWorkers();
-  COND = 0;
-  pool.Add(NewCallback(Waker));
-
-  int64_t ms_left_to_wait = 100; 
+  int64_t ms_left_to_wait = 100;
   int64_t deadline_ms = GetCurrentTimeMillis() + ms_left_to_wait;
   MU.Lock();
   while(COND != 1 && ms_left_to_wait > 0) {
@@ -1196,10 +1186,13 @@ void Waiter() {
   GLOB = 2;
 }
 void Run() {
+  printf("test22: positive\n");
+  COND = 0;
   FAST_MODE_INIT(&GLOB);
   ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test22. TP.");
-  printf("test22: positive\n");
-  Waiter();
+  MyThreadArray t(Waker, Waiter);
+  t.Start();
+  t.Join();
   printf("\tGLOB=%d\n", GLOB);
 }
 REGISTER_TEST(Run, 22);
@@ -1344,20 +1337,19 @@ void Waker() {
   usleep(10000);
 }
 void Waiter() {
-  ThreadPool pool(1);
-  pool.StartWorkers();
-  COND = 0;
-  pool.Add(NewCallback(Waker));
   CHECK(!MU.ReaderLockWhenWithTimeout(Condition(&ArgIsOne, &COND), 100));
   MU.ReaderUnlock();
 
   GLOB = 2;
 }
 void Run() {
+  printf("test26: positive\n");
+  COND = 0;
   FAST_MODE_INIT(&GLOB);
   ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test26. TP");
-  printf("test26: positive\n");
-  Waiter();
+  MyThreadArray t(Waker, Waiter);
+  t.Start();
+  t.Join();
   printf("\tGLOB=%d\n", GLOB);
 }
 REGISTER_TEST2(Run, 26, FEATURE|NEEDS_ANNOTATIONS);
@@ -2453,11 +2445,6 @@ void Waker() {
 }
 
 void Waiter() {
-  ThreadPool pool(1);
-  pool.StartWorkers();
-  COND = 0;
-  pool.Add(NewCallback(Waker));
- 
   MU.Lock();
   while(COND != 1)
     CV.Wait(&MU);
@@ -2467,10 +2454,13 @@ void Waiter() {
   GLOB = 2;
 }
 void Run() {
+  printf("test50: positive\n");
+  COND = 0;
   FAST_MODE_INIT(&GLOB);
   ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test50. TP.");
-  printf("test50: positive\n");
-  Waiter();
+  MyThreadArray t(Waker, Waiter);
+  t.Start();
+  t.Join();
   printf("\tGLOB=%d\n", GLOB);
 }
 REGISTER_TEST2(Run, 50, FEATURE|NEEDS_ANNOTATIONS);
@@ -2528,11 +2518,6 @@ void Waker() {
 }
 
 void Waiter() {
-
-  ThreadPool pool(1);
-  pool.StartWorkers();
-  pool.Add(NewCallback(Waker));
- 
   MU.Lock();
   while(COND != 1)
     CV.Wait(&MU);
@@ -2545,7 +2530,9 @@ void Run() {
   FAST_MODE_INIT(&GLOB);
   ANNOTATE_EXPECT_RACE(&GLOB, "test51. TP.");
   printf("test51: positive\n");
-  Waiter();
+  MyThreadArray t(Waiter, Waker);
+  t.Start();
+  t.Join();
   printf("\tGLOB=%d\n", GLOB);
 }
 REGISTER_TEST(Run, 51);
@@ -2588,7 +2575,7 @@ void Waker() {
   CV.Signal();    //lost signal
   MU.Unlock();
 
-  usleep(20000);  // Make sure the waiter blocks
+  usleep(200000);  // Make sure the waiter blocks
 
   GLOB = 2;
 
@@ -2599,11 +2586,7 @@ void Waker() {
 }
 
 void Waiter() {
-  ThreadPool pool(1);
-  pool.StartWorkers();
-  pool.Add(NewCallback(Waker));
- 
-  usleep(10000);  // Make sure the first signal will be lost
+  usleep(50000);  // Make sure the first signal will be lost
 
   MU.Lock();
   while(COND != 1)
@@ -2613,10 +2596,12 @@ void Waiter() {
   GLOB = 3;
 }
 void Run() {
+  printf("test52: positive\n");
   FAST_MODE_INIT(&GLOB);
   ANNOTATE_EXPECT_RACE(&GLOB, "test52. TP.");
-  printf("test52: positive\n");
-  Waiter();
+  MyThreadArray t(Waker, Waiter);
+  t.Start();
+  t.Join();
   printf("\tGLOB=%d\n", GLOB);
 }
 REGISTER_TEST(Run, 52);
