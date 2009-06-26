@@ -3,7 +3,7 @@
   framework.
 
   Copyright (C) 2008-2008 Google Inc
-     opensource@google.com 
+     opensource@google.com
 
   This program is free software; you can redistribute it and/or
   modify it under the terms of the GNU General Public License as
@@ -23,20 +23,20 @@
   The GNU General Public License is contained in the file COPYING.
 */
 
-// Author: Konstantin Serebryany <opensource@google.com> 
+// Author: Konstantin Serebryany <opensource@google.com>
 //
-// This file contains a set of unit tests for a data race detection tool. 
+// This file contains a set of unit tests for a data race detection tool.
 //
 //
 //
 // This test can be compiled with pthreads (default) or
-// with any other library that supports threads, locks, cond vars, etc. 
-// 
-// To compile with pthreads: 
-//   g++  racecheck_unittest.cc dynamic_annotations.cc 
+// with any other library that supports threads, locks, cond vars, etc.
+//
+// To compile with pthreads:
+//   g++  racecheck_unittest.cc dynamic_annotations.cc
 //        -lpthread -g -DDYNAMIC_ANNOTATIONS=1
-// 
-// To compile with different library: 
+//
+// To compile with different library:
 //   1. cp thread_wrappers_pthread.h thread_wrappers_yourlib.h
 //   2. edit thread_wrappers_yourlib.h
 //   3. add '-DTHREAD_WRAPPERS="thread_wrappers_yourlib.h"' to your compilation.
@@ -44,10 +44,10 @@
 //
 
 // This test must not include any other file specific to threading library,
-// everything should be inside THREAD_WRAPPERS. 
-#ifndef THREAD_WRAPPERS 
+// everything should be inside THREAD_WRAPPERS.
+#ifndef THREAD_WRAPPERS
 # define THREAD_WRAPPERS "thread_wrappers_pthread.h"
-#endif 
+#endif
 #include THREAD_WRAPPERS
 
 #ifndef NEEDS_SEPERATE_RW_LOCK
@@ -94,37 +94,37 @@
 // - Stability tests (marked STAB)
 // - Performance tests (marked PERF)
 // - Feature tests
-//   - TN (true negative) : no race exists and the tool is silent. 
-//   - TP (true positive) : a race exists and reported. 
-//   - FN (false negative): a race exists but not reported. 
-//   - FP (false positive): no race exists but the tool reports it. 
+//   - TN (true negative) : no race exists and the tool is silent.
+//   - TP (true positive) : a race exists and reported.
+//   - FN (false negative): a race exists but not reported.
+//   - FP (false positive): no race exists but the tool reports it.
 //
 // The feature tests are marked according to the behavior of helgrind 3.3.0.
 //
-// TP and FP tests are annotated with ANNOTATE_EXPECT_RACE, 
-// so, no error reports should be seen when running under helgrind. 
+// TP and FP tests are annotated with ANNOTATE_EXPECT_RACE,
+// so, no error reports should be seen when running under helgrind.
 //
-// When some of the FP cases are fixed in helgrind we'll need 
+// When some of the FP cases are fixed in helgrind we'll need
 // to update this test.
 //
-// Each test resides in its own namespace. 
-// Namespaces are named test01, test02, ... 
-// Please, *DO NOT* change the logic of existing tests nor rename them. 
-// Create a new test instead. 
+// Each test resides in its own namespace.
+// Namespaces are named test01, test02, ...
+// Please, *DO NOT* change the logic of existing tests nor rename them.
+// Create a new test instead.
 //
-// Some tests use sleep()/usleep(). 
-// This is not a synchronization, but a simple way to trigger 
+// Some tests use sleep()/usleep().
+// This is not a synchronization, but a simple way to trigger
 // some specific behaviour of the race detector's scheduler.
 
 // Globals and utilities used by several tests. {{{1
-CondVar CV; 
+CondVar CV;
 int     COND = 0;
 
 
 typedef void (*void_func_void_t)(void);
 enum TEST_FLAG {
-  FEATURE           = 1 << 0, 
-  STABILITY         = 1 << 1, 
+  FEATURE           = 1 << 0,
+  STABILITY         = 1 << 1,
   PERFORMANCE       = 1 << 2,
   EXCLUDE_FROM_ALL  = 1 << 3,
   NEEDS_ANNOTATIONS = 1 << 4,
@@ -151,7 +151,7 @@ long GetTimeInMs() {
 struct Test{
   void_func_void_t f_;
   int flags_;
-  Test(void_func_void_t f, int flags) 
+  Test(void_func_void_t f, int flags)
     : f_(f)
     , flags_(flags)
   {}
@@ -192,8 +192,8 @@ static bool ArgIsOne(int *arg) { return *arg == 1; };
 static bool ArgIsZero(int *arg) { return *arg == 0; };
 static bool ArgIsTrue(bool *arg) { return *arg == true; };
 
-// Call ANNOTATE_EXPECT_RACE only if 'machine' env variable is defined. 
-// Useful to test against several different machines. 
+// Call ANNOTATE_EXPECT_RACE only if 'machine' env variable is defined.
+// Useful to test against several different machines.
 // Supported machines so far:
 //   MSM_HYBRID1             -- aka MSMProp1
 //   MSM_HYBRID1_INIT_STATE  -- aka MSMProp1 with --initialization-state=yes
@@ -220,7 +220,7 @@ inline bool Tsan_FastMode()           {
 
 #ifndef MAIN_INIT_ACTION
 #define MAIN_INIT_ACTION
-#endif 
+#endif
 
 
 
@@ -228,19 +228,19 @@ int main(int argc, char** argv) { // {{{1
   MAIN_INIT_ACTION;
   printf("FLAGS [phb=%i, fm=%i]\n", Tsan_PureHappensBefore(), Tsan_FastMode());
   if (argc == 2 && !strcmp(argv[1], "benchmark")) {
-     for (std::map<int,Test>::iterator it = TheMapOfTests.begin(); 
+     for (std::map<int,Test>::iterator it = TheMapOfTests.begin();
          it != TheMapOfTests.end(); ++it) {
        if(!(it->second.flags_ & PERFORMANCE)) continue;
        it->second.Run();
-     }    
+     }
   } else if (argc == 2 && !strcmp(argv[1], "demo")) {
-     for (std::map<int,Test>::iterator it = TheMapOfTests.begin(); 
+     for (std::map<int,Test>::iterator it = TheMapOfTests.begin();
          it != TheMapOfTests.end();  ++it) {
        if(!(it->second.flags_ & RACE_DEMO)) continue;
        it->second.Run();
-     }      
-  } else if (argc > 1) {     
-    // the tests are listed in command line flags 
+     }
+  } else if (argc > 1) {
+    // the tests are listed in command line flags
     for (int i = 1; i < argc; i++) {
       int f_num = atoi(argv[i]);
       CHECK(TheMapOfTests.count(f_num));
@@ -251,7 +251,7 @@ int main(int argc, char** argv) { // {{{1
     if (getenv("DRT_ALLOW_ANNOTATIONS")) {
       run_tests_with_annotations = true;
     }
-    for (std::map<int,Test>::iterator it = TheMapOfTests.begin(); 
+    for (std::map<int,Test>::iterator it = TheMapOfTests.begin();
         it != TheMapOfTests.end();
         ++it) {
       if(it->second.flags_ & EXCLUDE_FROM_ALL) continue;
@@ -259,7 +259,7 @@ int main(int argc, char** argv) { // {{{1
       if((it->second.flags_ & NEEDS_ANNOTATIONS)
          && run_tests_with_annotations == false) continue;
       it->second.Run();
-    } 
+    }
   }
 }
 
@@ -323,7 +323,7 @@ namespace test01 {
 int     GLOB = 0;
 
 void Worker1() {
-  GLOB = 1; 
+  GLOB = 1;
 }
 
 void Worker2() {
@@ -347,12 +347,12 @@ REGISTER_TEST(Run, 1);
 // test02: TN. Synchronization via CondVar. {{{1
 namespace test02 {
 int     GLOB = 0;
-// Two write accesses to GLOB are synchronized because 
-// the pair of CV.Signal() and CV.Wait() establish happens-before relation. 
+// Two write accesses to GLOB are synchronized because
+// the pair of CV.Signal() and CV.Wait() establish happens-before relation.
 //
-// Waiter:                      Waker: 
+// Waiter:                      Waker:
 // 1. COND = 0
-// 2. Start(Waker)              
+// 2. Start(Waker)
 // 3. MU.Lock()                 a. write(GLOB)
 //                              b. MU.Lock()
 //                              c. COND = 1
@@ -361,15 +361,15 @@ int     GLOB = 0;
 //       CV.Wait(MU) <---/
 //  5. MU.Unlock()
 //  6. write(GLOB)
-Mutex   MU; 
+Mutex   MU;
 
 void Waker() {
   usleep(100000);  // Make sure the waiter blocks.
-  GLOB = 1; 
+  GLOB = 1;
 
   MU.Lock();
   COND = 1;
-  CV.Signal(); 
+  CV.Signal();
   MU.Unlock();
 }
 
@@ -394,29 +394,29 @@ REGISTER_TEST(Run, 2);
 
 
 // test03: TN. Synchronization via LockWhen, signaller gets there first. {{{1
-namespace test03 {  
+namespace test03 {
 int     GLOB = 0;
-// Two write accesses to GLOB are synchronized via conditional critical section. 
-// Note that LockWhen() happens first (we use sleep(1) to make sure)! 
+// Two write accesses to GLOB are synchronized via conditional critical section.
+// Note that LockWhen() happens first (we use sleep(1) to make sure)!
 //
-// Waiter:                           Waker: 
+// Waiter:                           Waker:
 // 1. COND = 0
-// 2. Start(Waker)              
+// 2. Start(Waker)
 //                                   a. write(GLOB)
 //                                   b. MU.Lock()
 //                                   c. COND = 1
 //                              /--- d. MU.Unlock()
-// 3. MU.LockWhen(COND==1) <---/     
+// 3. MU.LockWhen(COND==1) <---/
 // 4. MU.Unlock()
 // 5. write(GLOB)
-Mutex   MU; 
+Mutex   MU;
 
 void Waker() {
   usleep(100000);  // Make sure the waiter blocks.
-  GLOB = 1; 
+  GLOB = 1;
 
   MU.Lock();
-  COND = 1; // We are done! Tell the Waiter. 
+  COND = 1; // We are done! Tell the Waiter.
   MU.Unlock(); // calls ANNOTATE_CONDVAR_SIGNAL;
 }
 void Waiter() {
@@ -425,7 +425,7 @@ void Waiter() {
   COND = 0;
   pool.Add(NewCallback(Waker));
   MU.LockWhen(Condition(&ArgIsOne, &COND));  // calls ANNOTATE_CONDVAR_WAIT
-  MU.Unlock();  // Waker is done! 
+  MU.Unlock();  // Waker is done!
 
   GLOB = 2;
 }
@@ -440,18 +440,18 @@ REGISTER_TEST2(Run, 3, FEATURE|NEEDS_ANNOTATIONS);
 // test04: TN. Synchronization via PCQ. {{{1
 namespace test04 {
 int     GLOB = 0;
-ProducerConsumerQueue Q(INT_MAX); 
-// Two write accesses to GLOB are separated by PCQ Put/Get. 
+ProducerConsumerQueue Q(INT_MAX);
+// Two write accesses to GLOB are separated by PCQ Put/Get.
 //
 // Putter:                        Getter:
-// 1. write(GLOB)                
+// 1. write(GLOB)
 // 2. Q.Put() ---------\          .
 //                      \-------> a. Q.Get()
 //                                b. write(GLOB)
 
 
 void Putter() {
-  GLOB = 1; 
+  GLOB = 1;
   Q.Put(NULL);
 }
 
@@ -463,7 +463,7 @@ void Getter() {
 void Run() {
   printf("test04: negative\n");
   MyThreadArray t(Putter, Getter);
-  t.Start(); 
+  t.Start();
   t.Join();
   printf("\tGLOB=%d\n", GLOB);
 }
@@ -472,32 +472,32 @@ REGISTER_TEST(Run, 4);
 
 
 // test05: FP. Synchronization via CondVar, but waiter does not block. {{{1
-// Since CondVar::Wait() is not called, we get a false positive. 
+// Since CondVar::Wait() is not called, we get a false positive.
 namespace test05 {
 int     GLOB = 0;
-// Two write accesses to GLOB are synchronized via CondVar. 
-// But race detector can not see it. 
-// See this for details: 
-// http://www.valgrind.org/docs/manual/hg-manual.html#hg-manual.effective-use. 
+// Two write accesses to GLOB are synchronized via CondVar.
+// But race detector can not see it.
+// See this for details:
+// http://www.valgrind.org/docs/manual/hg-manual.html#hg-manual.effective-use.
 //
-// Waiter:                                  Waker: 
-// 1. COND = 0                         
-// 2. Start(Waker)                          
+// Waiter:                                  Waker:
+// 1. COND = 0
+// 2. Start(Waker)
 // 3. MU.Lock()                             a. write(GLOB)
 //                                          b. MU.Lock()
 //                                          c. COND = 1
 //                                          d. CV.Signal()
 //  4. while(COND)                          e. MU.Unlock()
-//       CV.Wait(MU) <<< not called   
-//  5. MU.Unlock()      
-//  6. write(GLOB)      
-Mutex   MU; 
+//       CV.Wait(MU) <<< not called
+//  5. MU.Unlock()
+//  6. write(GLOB)
+Mutex   MU;
 
 void Waker() {
-  GLOB = 1; 
+  GLOB = 1;
   MU.Lock();
   COND = 1;
-  CV.Signal(); 
+  CV.Signal();
   MU.Unlock();
 }
 
@@ -527,11 +527,11 @@ REGISTER_TEST(Run, 5);
 // test06: TN. Synchronization via CondVar, but Waker gets there first.  {{{1
 namespace test06 {
 int     GLOB = 0;
-// Same as test05 but we annotated the Wait() loop. 
+// Same as test05 but we annotated the Wait() loop.
 //
-// Waiter:                                            Waker: 
-// 1. COND = 0                                   
-// 2. Start(Waker)                                    
+// Waiter:                                            Waker:
+// 1. COND = 0
+// 2. Start(Waker)
 // 3. MU.Lock()                                       a. write(GLOB)
 //                                                    b. MU.Lock()
 //                                                    c. COND = 1
@@ -539,16 +539,16 @@ int     GLOB = 0;
 //  4. while(COND)                          /         e. MU.Unlock()
 //       CV.Wait(MU) <<< not called        /
 //  6. ANNOTATE_CONDVAR_WAIT(CV, MU) <----/
-//  5. MU.Unlock()      
-//  6. write(GLOB)      
+//  5. MU.Unlock()
+//  6. write(GLOB)
 
-Mutex   MU; 
+Mutex   MU;
 
 void Waker() {
-  GLOB = 1; 
+  GLOB = 1;
   MU.Lock();
   COND = 1;
-  CV.Signal(); 
+  CV.Signal();
   MU.Unlock();
 }
 
@@ -576,16 +576,16 @@ REGISTER_TEST2(Run, 6, FEATURE|NEEDS_ANNOTATIONS);
 
 
 // test07: TN. Synchronization via LockWhen(), Signaller is observed first. {{{1
-namespace test07 {  
+namespace test07 {
 int     GLOB = 0;
 bool    COND = 0;
 // Two write accesses to GLOB are synchronized via conditional critical section.
-// LockWhen() is observed after COND has been set (due to sleep). 
+// LockWhen() is observed after COND has been set (due to sleep).
 // Unlock() calls ANNOTATE_CONDVAR_SIGNAL().
 //
-// Waiter:                           Signaller: 
+// Waiter:                           Signaller:
 // 1. COND = 0
-// 2. Start(Signaller)              
+// 2. Start(Signaller)
 //                                   a. write(GLOB)
 //                                   b. MU.Lock()
 //                                   c. COND = 1
@@ -594,11 +594,11 @@ bool    COND = 0;
 // 4. MU.Unlock()
 // 5. write(GLOB)
 
-Mutex   MU; 
+Mutex   MU;
 void Signaller() {
-  GLOB = 1; 
+  GLOB = 1;
   MU.Lock();
-  COND = true; // We are done! Tell the Waiter. 
+  COND = true; // We are done! Tell the Waiter.
   MU.Unlock(); // calls ANNOTATE_CONDVAR_SIGNAL;
 }
 void Waiter() {
@@ -606,10 +606,10 @@ void Waiter() {
   MyThread t(Signaller);
   t.Start();
   usleep(100000);  // Make sure the signaller gets there first.
-  
+
   MU.LockWhen(Condition(&ArgIsTrue, &COND));  // calls ANNOTATE_CONDVAR_WAIT
-  MU.Unlock();  // Signaller is done! 
-  
+  MU.Unlock();  // Signaller is done!
+
   GLOB = 2; // If LockWhen didn't catch the signal, a race may be reported here.
   t.Join();
 }
@@ -624,7 +624,7 @@ REGISTER_TEST2(Run, 7, FEATURE|NEEDS_ANNOTATIONS);
 // test08: TN. Synchronization via thread start/join. {{{1
 namespace test08 {
 int     GLOB = 0;
-// Three accesses to GLOB are separated by thread start/join. 
+// Three accesses to GLOB are separated by thread start/join.
 //
 // Parent:                        Worker:
 // 1. write(GLOB)
@@ -633,7 +633,7 @@ int     GLOB = 0;
 // 3. Join(Worker) <------------
 // 4. write(GLOB)
 void Worker() {
-  GLOB = 2; 
+  GLOB = 2;
 }
 
 void Parent() {
@@ -655,12 +655,12 @@ REGISTER_TEST(Run, 8);
 // test09: TP. Simple race (read vs write). {{{1
 namespace test09 {
 int     GLOB = 0;
-// A simple data race between writer and reader. 
-// Write happens after read (enforced by sleep). 
-// Usually, easily detectable by a race detector. 
+// A simple data race between writer and reader.
+// Write happens after read (enforced by sleep).
+// Usually, easily detectable by a race detector.
 void Writer() {
   usleep(100000);
-  GLOB = 3; 
+  GLOB = 3;
 }
 void Reader() {
   CHECK(GLOB != -777);
@@ -683,21 +683,21 @@ REGISTER_TEST(Run, 9);
 // test10: FN. Simple race (write vs read). {{{1
 namespace test10 {
 int     GLOB = 0;
-// A simple data race between writer and reader. 
-// Write happens before Read (enforced by sleep), 
-// otherwise this test is the same as test09. 
-// 
+// A simple data race between writer and reader.
+// Write happens before Read (enforced by sleep),
+// otherwise this test is the same as test09.
+//
 // Writer:                    Reader:
-// 1. write(GLOB)             a. sleep(long enough so that GLOB 
+// 1. write(GLOB)             a. sleep(long enough so that GLOB
 //                                is most likely initialized by Writer)
 //                            b. read(GLOB)
-// 
 //
-// Eraser algorithm does not detect the race here, 
-// see Section 2.2 of http://citeseer.ist.psu.edu/savage97eraser.html. 
+//
+// Eraser algorithm does not detect the race here,
+// see Section 2.2 of http://citeseer.ist.psu.edu/savage97eraser.html.
 //
 void Writer() {
-  GLOB = 3; 
+  GLOB = 3;
 }
 void Reader() {
   usleep(100000);
@@ -718,23 +718,23 @@ REGISTER_TEST(Run, 10);
 
 
 // test11: FP. Synchronization via CondVar, 2 workers. {{{1
-// This test is properly synchronized, but currently (Dec 2007) 
-// helgrind reports a false positive. 
+// This test is properly synchronized, but currently (Dec 2007)
+// helgrind reports a false positive.
 //
-// Parent:                              Worker1, Worker2: 
+// Parent:                              Worker1, Worker2:
 // 1. Start(workers)                    a. read(GLOB)
 // 2. MU.Lock()                         b. MU.Lock()
 // 3. while(COND != 2)        /-------- c. CV.Signal()
 //      CV.Wait(&MU) <-------/          d. MU.Unlock()
 // 4. MU.Unlock()
-// 5. write(GLOB) 
+// 5. write(GLOB)
 //
 namespace test11 {
 int     GLOB = 0;
-Mutex   MU; 
+Mutex   MU;
 void Worker() {
   usleep(200000);
-  CHECK(GLOB != 777); 
+  CHECK(GLOB != 777);
 
   MU.Lock();
   COND++;
@@ -772,11 +772,11 @@ REGISTER_TEST(Run, 11);
 // test12: FP. Synchronization via Mutex, then via PCQ. {{{1
 namespace test12 {
 int     GLOB = 0;
-// This test is properly synchronized, but currently (Dec 2007) 
-// helgrind reports a false positive. 
+// This test is properly synchronized, but currently (Dec 2007)
+// helgrind reports a false positive.
 //
-// First, we write to GLOB under MU, then we synchronize via PCQ, 
-// which is essentially a semaphore. 
+// First, we write to GLOB under MU, then we synchronize via PCQ,
+// which is essentially a semaphore.
 //
 // Putter:                       Getter:
 // 1. MU.Lock()                  a. MU.Lock()
@@ -784,13 +784,13 @@ int     GLOB = 0;
 // 3. MU.Unlock()                c. MU.Unlock()
 // 4. Q.Put()   ---------------> d. Q.Get()
 //                               e. write(GLOB)
-                               
+
 ProducerConsumerQueue Q(INT_MAX);
-Mutex   MU; 
+Mutex   MU;
 
 void Putter() {
   MU.Lock();
-  GLOB++; 
+  GLOB++;
   MU.Unlock();
 
   Q.Put(NULL);
@@ -798,7 +798,7 @@ void Putter() {
 
 void Getter() {
   MU.Lock();
-  GLOB++; 
+  GLOB++;
   MU.Unlock();
 
   Q.Get();
@@ -818,9 +818,9 @@ REGISTER_TEST(Run, 12);
 
 
 // test13: FP. Synchronization via Mutex, then via LockWhen. {{{1
-namespace test13 { 
+namespace test13 {
 int     GLOB = 0;
-// This test is essentially the same as test12, but uses LockWhen 
+// This test is essentially the same as test12, but uses LockWhen
 // instead of PCQ.
 //
 // Waker:                                     Waiter:
@@ -829,16 +829,16 @@ int     GLOB = 0;
 // 3. MU.Unlock()                             c. MU.Unlock()
 // 4. MU.Lock()                               .
 // 5. COND = 1                                .
-// 6. ANNOTATE_CONDVAR_SIGNAL -------\        .        
+// 6. ANNOTATE_CONDVAR_SIGNAL -------\        .
 // 7. MU.Unlock()                     \       .
 //                                     \----> d. MU.LockWhen(COND == 1)
 //                                            e. MU.Unlock()
 //                                            f. write(GLOB)
-Mutex   MU; 
+Mutex   MU;
 
 void Waker() {
   MU.Lock();
-  GLOB++; 
+  GLOB++;
   MU.Unlock();
 
   MU.Lock();
@@ -849,7 +849,7 @@ void Waker() {
 
 void Waiter() {
   MU.Lock();
-  GLOB++; 
+  GLOB++;
   MU.Unlock();
 
   MU.LockWhen(Condition(&ArgIsOne, &COND));
@@ -875,12 +875,12 @@ REGISTER_TEST2(Run, 13, FEATURE|NEEDS_ANNOTATIONS);
 // test14: FP. Synchronization via PCQ, reads, 2 workers. {{{1
 namespace test14 {
 int     GLOB = 0;
-// This test is properly synchronized, but currently (Dec 2007) 
-// helgrind reports a false positive. 
+// This test is properly synchronized, but currently (Dec 2007)
+// helgrind reports a false positive.
 //
-// This test is similar to test11, but uses PCQ (semaphore). 
+// This test is similar to test11, but uses PCQ (semaphore).
 //
-// Putter2:                  Putter1:                     Getter: 
+// Putter2:                  Putter1:                     Getter:
 // 1. read(GLOB)             a. read(GLOB)
 // 2. Q2.Put() ----\         b. Q1.Put() -----\           .
 //                  \                          \--------> A. Q1.Get()
@@ -898,7 +898,7 @@ void Putter2() {
 }
 void Getter() {
   Q1.Get();
-  Q2.Get(); 
+  Q2.Get();
   GLOB++;
 }
 void Run() {
@@ -924,7 +924,7 @@ namespace test15 {
 //                                          c. read(GLOB)
 
 int     GLOB = 0;
-Mutex   MU; 
+Mutex   MU;
 
 void Waker() {
   GLOB = 2;
@@ -969,22 +969,22 @@ namespace test16 {
 //                                              i. read(GLOB)
 //
 //
-// TODO: This way we may create too many edges in happens-before graph. 
-// Arndt Mühlenfeld in his PhD (TODO: link) suggests creating special nodes in 
-// happens-before graph to reduce the total number of edges. 
-// See figure 3.14. 
+// TODO: This way we may create too many edges in happens-before graph.
+// Arndt Mühlenfeld in his PhD (TODO: link) suggests creating special nodes in
+// happens-before graph to reduce the total number of edges.
+// See figure 3.14.
 //
 //
 int     GLOB = 0;
-Mutex   MU; 
-Mutex MU2; 
+Mutex   MU;
+Mutex MU2;
 
 void Worker() {
   MU.Lock();
-  GLOB++; 
+  GLOB++;
   MU.Unlock();
 
-  MU2.Lock(); 
+  MU2.Lock();
   COND--;
   ANNOTATE_CONDVAR_SIGNAL(&MU2);
   MU2.Await(Condition(&ArgIsZero, &COND));
@@ -1010,15 +1010,15 @@ REGISTER_TEST2(Run, 16, FEATURE|NEEDS_ANNOTATIONS);
 namespace test17 {
 // Same as test16, but with 3 threads.
 int     GLOB = 0;
-Mutex   MU; 
-Mutex MU2; 
+Mutex   MU;
+Mutex MU2;
 
 void Worker() {
   MU.Lock();
-  GLOB++; 
+  GLOB++;
   MU.Unlock();
 
-  MU2.Lock(); 
+  MU2.Lock();
   COND--;
   ANNOTATE_CONDVAR_SIGNAL(&MU2);
   MU2.Await(Condition(&ArgIsZero, &COND));
@@ -1041,17 +1041,17 @@ REGISTER_TEST2(Run, 17, FEATURE|NEEDS_ANNOTATIONS);
 
 
 // test18: TN. Synchronization via Await(), signaller gets there first. {{{1
-namespace test18 {  
+namespace test18 {
 int     GLOB = 0;
-Mutex   MU; 
-// Same as test03, but uses Mutex::Await() instead of Mutex::LockWhen(). 
+Mutex   MU;
+// Same as test03, but uses Mutex::Await() instead of Mutex::LockWhen().
 
 void Waker() {
   usleep(100000);  // Make sure the waiter blocks.
-  GLOB = 1; 
+  GLOB = 1;
 
   MU.Lock();
-  COND = 1; // We are done! Tell the Waiter. 
+  COND = 1; // We are done! Tell the Waiter.
   MU.Unlock(); // calls ANNOTATE_CONDVAR_SIGNAL;
 }
 void Waiter() {
@@ -1062,7 +1062,7 @@ void Waiter() {
 
   MU.Lock();
   MU.Await(Condition(&ArgIsOne, &COND));  // calls ANNOTATE_CONDVAR_WAIT
-  MU.Unlock();  // Waker is done! 
+  MU.Unlock();  // Waker is done!
 
   GLOB = 2;
 }
@@ -1075,16 +1075,16 @@ REGISTER_TEST2(Run, 18, FEATURE|NEEDS_ANNOTATIONS);
 }  // namespace test18
 
 // test19: TN. Synchronization via AwaitWithTimeout(). {{{1
-namespace test19 {  
+namespace test19 {
 int     GLOB = 0;
-// Same as test18, but with AwaitWithTimeout. Do not timeout. 
-Mutex   MU; 
+// Same as test18, but with AwaitWithTimeout. Do not timeout.
+Mutex   MU;
 void Waker() {
   usleep(100000);  // Make sure the waiter blocks.
-  GLOB = 1; 
+  GLOB = 1;
 
   MU.Lock();
-  COND = 1; // We are done! Tell the Waiter. 
+  COND = 1; // We are done! Tell the Waiter.
   MU.Unlock(); // calls ANNOTATE_CONDVAR_SIGNAL;
 }
 void Waiter() {
@@ -1108,12 +1108,12 @@ REGISTER_TEST2(Run, 19, FEATURE|NEEDS_ANNOTATIONS);
 }  // namespace test19
 
 // test20: TP. Incorrect synchronization via AwaitWhen(), timeout. {{{1
-namespace test20 {  
+namespace test20 {
 int     GLOB = 0;
-Mutex   MU; 
+Mutex   MU;
 // True race. We timeout in AwaitWhen.
 void Waker() {
-  GLOB = 1; 
+  GLOB = 1;
   usleep(100 * 1000);
 }
 void Waiter() {
@@ -1137,12 +1137,12 @@ REGISTER_TEST2(Run, 20, FEATURE|NEEDS_ANNOTATIONS);
 }  // namespace test20
 
 // test21: TP. Incorrect synchronization via LockWhenWithTimeout(). {{{1
-namespace test21 {  
+namespace test21 {
 int     GLOB = 0;
 // True race. We timeout in LockWhenWithTimeout().
-Mutex   MU; 
+Mutex   MU;
 void Waker() {
-  GLOB = 1; 
+  GLOB = 1;
   usleep(100 * 1000);
 }
 void Waiter() {
@@ -1165,12 +1165,12 @@ REGISTER_TEST2(Run, 21, FEATURE|NEEDS_ANNOTATIONS);
 }  // namespace test21
 
 // test22: TP. Incorrect synchronization via CondVar::WaitWithTimeout(). {{{1
-namespace test22 {  
+namespace test22 {
 int     GLOB = 0;
-Mutex   MU; 
+Mutex   MU;
 // True race. We timeout in CondVar::WaitWithTimeout().
 void Waker() {
-  GLOB = 1; 
+  GLOB = 1;
   usleep(100 * 1000);
 }
 void Waiter() {
@@ -1199,15 +1199,15 @@ REGISTER_TEST(Run, 22);
 }  // namespace test22
 
 // test23: TN. TryLock, ReaderLock, ReaderTryLock. {{{1
-namespace test23 {  
-// Correct synchronization with TryLock, Lock, ReaderTryLock, ReaderLock. 
+namespace test23 {
+// Correct synchronization with TryLock, Lock, ReaderTryLock, ReaderLock.
 int     GLOB = 0;
-Mutex   MU; 
+Mutex   MU;
 void Worker_TryLock() {
   for (int i = 0; i < 20; i++) {
     while (true) {
       if (MU.TryLock()) {
-        GLOB++; 
+        GLOB++;
         MU.Unlock();
         break;
       }
@@ -1220,7 +1220,7 @@ void Worker_ReaderTryLock() {
   for (int i = 0; i < 20; i++) {
     while (true) {
       if (MU.ReaderTryLock()) {
-        CHECK(GLOB != 777); 
+        CHECK(GLOB != 777);
         MU.ReaderUnlock();
         break;
       }
@@ -1232,7 +1232,7 @@ void Worker_ReaderTryLock() {
 void Worker_ReaderLock() {
   for (int i = 0; i < 20; i++) {
     MU.ReaderLock();
-    CHECK(GLOB != 777); 
+    CHECK(GLOB != 777);
     MU.ReaderUnlock();
     usleep(1000);
   }
@@ -1249,8 +1249,8 @@ void Worker_Lock() {
 
 void Run() {
   printf("test23: negative\n");
-  MyThreadArray t(Worker_TryLock, 
-                  Worker_ReaderTryLock, 
+  MyThreadArray t(Worker_TryLock,
+                  Worker_ReaderTryLock,
                   Worker_ReaderLock,
                   Worker_Lock
                   );
@@ -1262,17 +1262,17 @@ REGISTER_TEST(Run, 23);
 }  // namespace test23
 
 // test24: TN. Synchronization via ReaderLockWhen(). {{{1
-namespace test24 {  
+namespace test24 {
 int     GLOB = 0;
-Mutex   MU; 
-// Same as test03, but uses ReaderLockWhen(). 
+Mutex   MU;
+// Same as test03, but uses ReaderLockWhen().
 
 void Waker() {
   usleep(100000);  // Make sure the waiter blocks.
-  GLOB = 1; 
+  GLOB = 1;
 
   MU.Lock();
-  COND = 1; // We are done! Tell the Waiter. 
+  COND = 1; // We are done! Tell the Waiter.
   MU.Unlock(); // calls ANNOTATE_CONDVAR_SIGNAL;
 }
 void Waiter() {
@@ -1294,18 +1294,18 @@ REGISTER_TEST2(Run, 24, FEATURE|NEEDS_ANNOTATIONS);
 }  // namespace test24
 
 // test25: TN. Synchronization via ReaderLockWhenWithTimeout(). {{{1
-namespace test25 {  
+namespace test25 {
 int     GLOB = 0;
-Mutex   MU; 
-// Same as test24, but uses ReaderLockWhenWithTimeout(). 
-// We do not timeout. 
+Mutex   MU;
+// Same as test24, but uses ReaderLockWhenWithTimeout().
+// We do not timeout.
 
 void Waker() {
   usleep(100000);  // Make sure the waiter blocks.
-  GLOB = 1; 
+  GLOB = 1;
 
   MU.Lock();
-  COND = 1; // We are done! Tell the Waiter. 
+  COND = 1; // We are done! Tell the Waiter.
   MU.Unlock(); // calls ANNOTATE_CONDVAR_SIGNAL;
 }
 void Waiter() {
@@ -1327,13 +1327,13 @@ REGISTER_TEST2(Run, 25, FEATURE|NEEDS_ANNOTATIONS);
 }  // namespace test25
 
 // test26: TP. Incorrect synchronization via ReaderLockWhenWithTimeout(). {{{1
-namespace test26 {  
+namespace test26 {
 int     GLOB = 0;
-Mutex   MU; 
-// Same as test25, but we timeout and incorrectly assume happens-before. 
+Mutex   MU;
+// Same as test25, but we timeout and incorrectly assume happens-before.
 
 void Waker() {
-  GLOB = 1; 
+  GLOB = 1;
   usleep(10000);
 }
 void Waiter() {
@@ -1363,7 +1363,7 @@ int     GLOB = 0;
 SpinLock MU;
 void Worker() {
   MU.Lock();
-  GLOB++; 
+  GLOB++;
   MU.Unlock();
   usleep(10000);
 }
@@ -1382,7 +1382,7 @@ REGISTER_TEST2(Run, 27, FEATURE|NEEDS_ANNOTATIONS);
 
 // test28: TN. Synchronization via Mutex, then PCQ. 3 threads {{{1
 namespace test28 {
-// Putter1:                       Getter:                         Putter2:        
+// Putter1:                       Getter:                         Putter2:
 // 1. MU.Lock()                                                   A. MU.Lock()
 // 2. write(GLOB)                                                 B. write(GLOB)
 // 3. MU.Unlock()                                                 C. MU.Unlock()
@@ -1393,7 +1393,7 @@ namespace test28 {
 //                                c. read(GLOB)
 ProducerConsumerQueue Q(INT_MAX);
 int     GLOB = 0;
-Mutex   MU; 
+Mutex   MU;
 
 void Putter() {
   MU.Lock();
@@ -1427,9 +1427,9 @@ REGISTER_TEST(Run, 28);
 
 // test29: TN. Synchronization via Mutex, then PCQ. 4 threads. {{{1
 namespace test29 {
-// Similar to test28, but has two Getters and two PCQs. 
+// Similar to test28, but has two Getters and two PCQs.
 ProducerConsumerQueue *Q1, *Q2;
-Mutex   MU; 
+Mutex   MU;
 int     GLOB = 0;
 
 void Putter(ProducerConsumerQueue *q) {
@@ -1454,7 +1454,7 @@ void Getter() {
   Q2->Get();
   usleep(100000);
   CHECK(GLOB == 2);
-  usleep(48000); //  TODO: remove this when FP in test32 is fixed. 
+  usleep(48000); //  TODO: remove this when FP in test32 is fixed.
 }
 
 void Run() {
@@ -1474,24 +1474,24 @@ REGISTER_TEST(Run, 29);
 
 // test30: TN. Synchronization via 'safe' race. Writer vs multiple Readers. {{{1
 namespace test30 {
-// This test shows a very risky kind of synchronization which is very easy 
-// to get wrong. Actually, I am not sure I've got it right. 
+// This test shows a very risky kind of synchronization which is very easy
+// to get wrong. Actually, I am not sure I've got it right.
 //
-// Writer:                                 Reader1, Reader2, ..., ReaderN: 
+// Writer:                                 Reader1, Reader2, ..., ReaderN:
 // 1. write(GLOB[i]: i >= BOUNDARY)        a. n = BOUNDARY
 // 2. HAPPENS_BEFORE(BOUNDARY+1)  -------> b. HAPPENS_AFTER(n)
 // 3. BOUNDARY++;                          c. read(GLOB[i]: i < n)
 //
-// Here we have a 'safe' race on accesses to BOUNDARY and 
-// no actual races on accesses to GLOB[]: 
-// Writer writes to GLOB[i] where i>=BOUNDARY and then increments BOUNDARY. 
-// Readers read BOUNDARY and read GLOB[i] where i<BOUNDARY. 
+// Here we have a 'safe' race on accesses to BOUNDARY and
+// no actual races on accesses to GLOB[]:
+// Writer writes to GLOB[i] where i>=BOUNDARY and then increments BOUNDARY.
+// Readers read BOUNDARY and read GLOB[i] where i<BOUNDARY.
 //
-// I am not completely sure that this scheme guaranties no race between 
-// accesses to GLOB since compilers and CPUs 
-// are free to rearrange memory operations. 
-// I am actually sure that this scheme is wrong unless we use 
-// some smart memory fencing... 
+// I am not completely sure that this scheme guaranties no race between
+// accesses to GLOB since compilers and CPUs
+// are free to rearrange memory operations.
+// I am actually sure that this scheme is wrong unless we use
+// some smart memory fencing...
 
 
 const int N = 48;
@@ -1514,7 +1514,7 @@ void Reader() {
   int n;
   do {
     n = BOUNDARY;
-    if (n == 0) continue; 
+    if (n == 0) continue;
     ANNOTATE_HAPPENS_AFTER(reinterpret_cast<void*>(n));
     for (int i = 0; i < n; i++) {
       CHECK(GLOB[i] == i);
@@ -1538,10 +1538,10 @@ REGISTER_TEST2(Run, 30, FEATURE|NEEDS_ANNOTATIONS);
 
 // test31: TN. Synchronization via 'safe' race. Writer vs Writer. {{{1
 namespace test31 {
-// This test is similar to test30, but 
-// it has one Writer instead of mulitple Readers. 
+// This test is similar to test30, but
+// it has one Writer instead of mulitple Readers.
 //
-// Writer1:                                Writer2 
+// Writer1:                                Writer2
 // 1. write(GLOB[i]: i >= BOUNDARY)        a. n = BOUNDARY
 // 2. HAPPENS_BEFORE(BOUNDARY+1)  -------> b. HAPPENS_AFTER(n)
 // 3. BOUNDARY++;                          c. write(GLOB[i]: i < n)
@@ -1567,7 +1567,7 @@ void Writer2() {
   int n;
   do {
     n = BOUNDARY;
-    if (n == 0) continue; 
+    if (n == 0) continue;
     ANNOTATE_HAPPENS_AFTER(reinterpret_cast<void*>(n));
     for (int i = 0; i < n; i++) {
       if(GLOB[i] == i) {
@@ -1593,16 +1593,16 @@ REGISTER_TEST2(Run, 31, FEATURE|NEEDS_ANNOTATIONS);
 
 // test32: FP. Synchronization via thread create/join. W/R. {{{1
 namespace test32 {
-// This test is well synchronized but helgrind 3.3.0 reports a race. 
+// This test is well synchronized but helgrind 3.3.0 reports a race.
 //
-// Parent:                   Writer:               Reader:  
+// Parent:                   Writer:               Reader:
 // 1. Start(Reader) -----------------------\       .
 //                                          \      .
 // 2. Start(Writer) ---\                     \     .
 //                      \---> a. MU.Lock()    \--> A. sleep(long enough)
-//                            b. write(GLOB)     
+//                            b. write(GLOB)
 //                      /---- c. MU.Unlock()
-// 3. Join(Writer) <---/                           
+// 3. Join(Writer) <---/
 //                                                 B. MU.Lock()
 //                                                 C. read(GLOB)
 //                                   /------------ D. MU.Unlock()
@@ -1610,11 +1610,11 @@ namespace test32 {
 // 5. write(GLOB)
 //
 //
-// The call to sleep() in Reader is not part of synchronization, 
-// it is required to trigger the false positive in helgrind 3.3.0. 
+// The call to sleep() in Reader is not part of synchronization,
+// it is required to trigger the false positive in helgrind 3.3.0.
 //
 int     GLOB = 0;
-Mutex   MU; 
+Mutex   MU;
 
 void Writer() {
   MU.Lock();
@@ -1632,11 +1632,11 @@ void Reader() {
 void Parent() {
   MyThread r(Reader);
   MyThread w(Writer);
-  r.Start(); 
+  r.Start();
   w.Start();
 
-  w.Join();  // 'w' joins first. 
-  r.Join(); 
+  w.Join();  // 'w' joins first.
+  r.Join();
 
   GLOB = 2;
 }
@@ -1655,14 +1655,14 @@ REGISTER_TEST(Run, 32);
 // test33: STAB. Stress test for the number of thread sets (TSETs). {{{1
 namespace test33 {
 int     GLOB = 0;
-// Here we access N memory locations from within log(N) threads. 
-// We do it in such a way that helgrind creates nearly all possible TSETs. 
-// Then we join all threads and start again (N_iter times). 
+// Here we access N memory locations from within log(N) threads.
+// We do it in such a way that helgrind creates nearly all possible TSETs.
+// Then we join all threads and start again (N_iter times).
 const int N_iter = 48;
 const int Nlog  = 15;
 const int N     = 1 << Nlog;
 static int ARR[N];
-Mutex   MU; 
+Mutex   MU;
 
 void Worker() {
   MU.Lock();
@@ -1671,7 +1671,7 @@ void Worker() {
 
   n %= Nlog;
   for (int i = 0; i < N; i++) {
-    // ARR[i] is accessed by threads from i-th subset 
+    // ARR[i] is accessed by threads from i-th subset
     if (i & (1 << n)) {
         CHECK(ARR[i] == 0);
     }
@@ -1691,7 +1691,7 @@ void Run() {
     for (int i = 0; i < Nlog; i++) {
       vec[i]->Start();
     }
-    // Join all threads. 
+    // Join all threads.
     for (int i = 0; i < Nlog; i++) {
       vec[i]->Join();
       delete vec[i];
@@ -1699,7 +1699,7 @@ void Run() {
     printf("------------------\n");
   }
 
-  printf("\tGLOB=%d; ARR[1]=%d; ARR[7]=%d; ARR[N-1]=%d\n", 
+  printf("\tGLOB=%d; ARR[1]=%d; ARR[7]=%d; ARR[N-1]=%d\n",
          GLOB, ARR[1], ARR[7], ARR[N-1]);
 }
 REGISTER_TEST2(Run, 33, STABILITY|EXCLUDE_FROM_ALL);
@@ -1708,7 +1708,7 @@ REGISTER_TEST2(Run, 33, STABILITY|EXCLUDE_FROM_ALL);
 
 // test34: STAB. Stress test for the number of locks sets (LSETs). {{{1
 namespace test34 {
-// Similar to test33, but for lock sets. 
+// Similar to test33, but for lock sets.
 int     GLOB = 0;
 const int N_iter = 48;
 const int Nlog = 10;
@@ -1748,16 +1748,16 @@ REGISTER_TEST2(Run, 34, STABILITY|EXCLUDE_FROM_ALL);
 // test35: PERF. Lots of mutexes and lots of call to free().  {{{1
 namespace test35 {
 // Helgrind 3.3.0 has very slow in shadow_mem_make_NoAccess(). Fixed locally.
-// With the fix helgrind runs this test about a minute.  
-// Without the fix -- about 5 minutes. (on c2d 2.4GHz). 
+// With the fix helgrind runs this test about a minute.
+// Without the fix -- about 5 minutes. (on c2d 2.4GHz).
 //
-// TODO: need to figure out the best way for performance testing. 
-int **ARR; 
+// TODO: need to figure out the best way for performance testing.
+int **ARR;
 const int N_mu   = 25000;
 const int N_free = 48000;
 
 void Worker() {
-  for (int i = 0; i < N_free; i++) 
+  for (int i = 0; i < N_free; i++)
     CHECK(777 == *ARR[i]);
 }
 
@@ -1776,15 +1776,15 @@ void Run() {
     ARR[i] = new int(777);
   }
 
-  // Need to put all ARR[i] into shared state in order 
-  // to trigger the performance bug. 
+  // Need to put all ARR[i] into shared state in order
+  // to trigger the performance bug.
   MyThreadArray t(Worker, Worker);
   t.Start();
   t.Join();
-  
+
   for (int i = 0; i < N_free; i++) delete ARR[i];
   delete [] ARR;
-  
+
   for (size_t i = 0; i < mus.size(); i++) {
     delete mus[i];
   }
@@ -1795,24 +1795,24 @@ REGISTER_TEST2(Run, 35, PERFORMANCE|EXCLUDE_FROM_ALL);
 
 // test36: TN. Synchronization via Mutex, then PCQ. 3 threads. W/W {{{1
 namespace test36 {
-// variation of test28 (W/W instead of W/R) 
+// variation of test28 (W/W instead of W/R)
 
-// Putter1:                       Getter:                         Putter2:        
+// Putter1:                       Getter:                         Putter2:
 // 1. MU.Lock();                                                  A. MU.Lock()
 // 2. write(GLOB)                                                 B. write(GLOB)
 // 3. MU.Unlock()                                                 C. MU.Unlock()
 // 4. Q.Put() ---------\                                 /------- D. Q.Put()
-// 5. MU1.Lock()        \-------> a. Q.Get()            /         E. MU1.Lock()  
-// 6. MU.Lock()                   b. Q.Get() <---------/          F. MU.Lock()   
-// 7. write(GLOB)                                                 G. write(GLOB) 
-// 8. MU.Unlock()                                                 H. MU.Unlock() 
+// 5. MU1.Lock()        \-------> a. Q.Get()            /         E. MU1.Lock()
+// 6. MU.Lock()                   b. Q.Get() <---------/          F. MU.Lock()
+// 7. write(GLOB)                                                 G. write(GLOB)
+// 8. MU.Unlock()                                                 H. MU.Unlock()
 // 9. MU1.Unlock()                  (sleep)                       I. MU1.Unlock()
-//                                c. MU1.Lock()   
-//                                d. write(GLOB)  
-//                                e. MU1.Unlock() 
+//                                c. MU1.Lock()
+//                                d. write(GLOB)
+//                                e. MU1.Unlock()
 ProducerConsumerQueue Q(INT_MAX);
 int     GLOB = 0;
-Mutex   MU, MU1; 
+Mutex   MU, MU1;
 
 void Putter() {
   MU.Lock();
@@ -1851,19 +1851,19 @@ REGISTER_TEST(Run, 36);
 // test37: TN. Simple synchronization (write vs read). {{{1
 namespace test37 {
 int     GLOB = 0;
-Mutex   MU; 
-// Similar to test10, but properly locked. 
-// Writer:             Reader: 
-// 1. MU.Lock()      
+Mutex   MU;
+// Similar to test10, but properly locked.
+// Writer:             Reader:
+// 1. MU.Lock()
 // 2. write
-// 3. MU.Unlock()                   
+// 3. MU.Unlock()
 //                    a. MU.Lock()
 //                    b. read
-//                    c. MU.Unlock();              
+//                    c. MU.Unlock();
 
 void Writer() {
   MU.Lock();
-  GLOB = 3; 
+  GLOB = 3;
   MU.Unlock();
 }
 void Reader() {
@@ -1886,18 +1886,18 @@ REGISTER_TEST(Run, 37);
 
 // test38: TN. Synchronization via Mutexes and PCQ. 4 threads. W/W {{{1
 namespace test38 {
-// Fusion of test29 and test36. 
+// Fusion of test29 and test36.
 
 // Putter1:            Putter2:           Getter1:       Getter2:
-//    MU1.Lock()          MU1.Lock()                                    
-//    write(GLOB)         write(GLOB)                                   
-//    MU1.Unlock()        MU1.Unlock()                                  
-//    Q1.Put()            Q2.Put()                                      
-//    Q1.Put()            Q2.Put()                                      
-//    MU1.Lock()          MU1.Lock()        
-//    MU2.Lock()          MU2.Lock()        
-//    write(GLOB)         write(GLOB)       
-//    MU2.Unlock()        MU2.Unlock()      
+//    MU1.Lock()          MU1.Lock()
+//    write(GLOB)         write(GLOB)
+//    MU1.Unlock()        MU1.Unlock()
+//    Q1.Put()            Q2.Put()
+//    Q1.Put()            Q2.Put()
+//    MU1.Lock()          MU1.Lock()
+//    MU2.Lock()          MU2.Lock()
+//    write(GLOB)         write(GLOB)
+//    MU2.Unlock()        MU2.Unlock()
 //    MU1.Unlock()        MU1.Unlock()     sleep          sleep
 //                                         Q1.Get()       Q1.Get()
 //                                         Q2.Get()       Q2.Get()
@@ -1909,7 +1909,7 @@ namespace test38 {
 
 ProducerConsumerQueue *Q1, *Q2;
 int     GLOB = 0;
-Mutex   MU, MU1, MU2; 
+Mutex   MU, MU1, MU2;
 
 void Putter(ProducerConsumerQueue *q) {
   MU1.Lock();
@@ -1939,7 +1939,7 @@ void Getter() {
   GLOB++;
   MU2.Unlock();
 
-  usleep(48000); //  TODO: remove this when FP in test32 is fixed. 
+  usleep(48000); //  TODO: remove this when FP in test32 is fixed.
 }
 
 void Run() {
@@ -1959,11 +1959,11 @@ REGISTER_TEST(Run, 38);
 // test39: FP. Barrier. {{{1
 namespace test39 {
 #ifndef NO_BARRIER
-// Same as test17 but uses Barrier class (pthread_barrier_t). 
+// Same as test17 but uses Barrier class (pthread_barrier_t).
 int     GLOB = 0;
 const int N_threads = 3;
 Barrier barrier(N_threads);
-Mutex   MU; 
+Mutex   MU;
 
 void Worker() {
   MU.Lock();
@@ -1982,7 +1982,7 @@ void Run() {
     for (int i = 0; i < N_threads; i++) {
       pool.Add(NewCallback(Worker));
     }
-  } // all folks are joined here. 
+  } // all folks are joined here.
   printf("\tGLOB=%d\n", GLOB);
 }
 REGISTER_TEST(Run, 39);
@@ -1992,30 +1992,30 @@ REGISTER_TEST(Run, 39);
 
 // test40: FP. Synchronization via Mutexes and PCQ. 4 threads. W/W {{{1
 namespace test40 {
-// Similar to test38 but with different order of events (due to sleep). 
+// Similar to test38 but with different order of events (due to sleep).
 
 // Putter1:            Putter2:           Getter1:       Getter2:
-//    MU1.Lock()          MU1.Lock()                                    
-//    write(GLOB)         write(GLOB)                                   
-//    MU1.Unlock()        MU1.Unlock()                                  
-//    Q1.Put()            Q2.Put()                                      
-//    Q1.Put()            Q2.Put()                                      
-//                                        Q1.Get()       Q1.Get()     
-//                                        Q2.Get()       Q2.Get()     
-//                                        MU2.Lock()     MU2.Lock()   
-//                                        write(GLOB)    write(GLOB)  
+//    MU1.Lock()          MU1.Lock()
+//    write(GLOB)         write(GLOB)
+//    MU1.Unlock()        MU1.Unlock()
+//    Q1.Put()            Q2.Put()
+//    Q1.Put()            Q2.Put()
+//                                        Q1.Get()       Q1.Get()
+//                                        Q2.Get()       Q2.Get()
+//                                        MU2.Lock()     MU2.Lock()
+//                                        write(GLOB)    write(GLOB)
 //                                        MU2.Unlock()   MU2.Unlock()
-//                                         
-//    MU1.Lock()          MU1.Lock()                                       
-//    MU2.Lock()          MU2.Lock()                                       
-//    write(GLOB)         write(GLOB)                                      
-//    MU2.Unlock()        MU2.Unlock()                                     
-//    MU1.Unlock()        MU1.Unlock() 
+//
+//    MU1.Lock()          MU1.Lock()
+//    MU2.Lock()          MU2.Lock()
+//    write(GLOB)         write(GLOB)
+//    MU2.Unlock()        MU2.Unlock()
+//    MU1.Unlock()        MU1.Unlock()
 
 
 ProducerConsumerQueue *Q1, *Q2;
 int     GLOB = 0;
-Mutex   MU, MU1, MU2; 
+Mutex   MU, MU1, MU2;
 
 void Putter(ProducerConsumerQueue *q) {
   MU1.Lock();
@@ -2045,7 +2045,7 @@ void Getter() {
   GLOB++;
   MU2.Unlock();
 
-  usleep(48000); //  TODO: remove this when FP in test32 is fixed. 
+  usleep(48000); //  TODO: remove this when FP in test32 is fixed.
 }
 
 void Run() {
@@ -2066,7 +2066,7 @@ REGISTER_TEST(Run, 40);
 // test41: TN. Test for race that appears when loading a dynamic symbol. {{{1
 namespace test41 {
 void Worker() {
-  ANNOTATE_NO_OP(NULL); // An empty function, loaded from dll. 
+  ANNOTATE_NO_OP(NULL); // An empty function, loaded from dll.
 }
 void Run() {
   printf("test41: negative\n");
@@ -2083,18 +2083,18 @@ namespace test42 {
 int GLOB = 0;
 int COND = 0;
 int N_threads = 3;
-Mutex   MU; 
+Mutex   MU;
 
 void Worker1() {
   GLOB=1;
 
-  MU.Lock(); 
+  MU.Lock();
   COND = 1;
   CV.Signal();
   MU.Unlock();
 
-  MU.Lock(); 
-  while (COND != 0) 
+  MU.Lock();
+  while (COND != 0)
     CV.Wait(&MU);
   ANNOTATE_CONDVAR_LOCK_WAIT(&CV, &MU);
   MU.Unlock();
@@ -2105,15 +2105,15 @@ void Worker1() {
 
 void Worker2() {
 
-  MU.Lock(); 
-  while (COND != 1) 
+  MU.Lock();
+  while (COND != 1)
     CV.Wait(&MU);
   ANNOTATE_CONDVAR_LOCK_WAIT(&CV, &MU);
   MU.Unlock();
 
   GLOB=2;
 
-  MU.Lock(); 
+  MU.Lock();
   COND = 0;
   CV.Signal();
   MU.Unlock();
@@ -2124,7 +2124,7 @@ void Run() {
 //  ANNOTATE_EXPECT_RACE(&GLOB, "test42. TN. debugging.");
   printf("test42: negative\n");
   MyThreadArray t(Worker1, Worker2);
-  t.Start(); 
+  t.Start();
   t.Join();
   printf("\tGLOB=%d\n", GLOB);
 }
@@ -2135,11 +2135,11 @@ REGISTER_TEST2(Run, 42, FEATURE|NEEDS_ANNOTATIONS);
 
 // test43: TN. {{{1
 namespace test43 {
-// 
-// Putter:            Getter: 
-// 1. write          
+//
+// Putter:            Getter:
+// 1. write
 // 2. Q.Put() --\     .
-// 3. read       \--> a. Q.Get()    
+// 3. read       \--> a. Q.Get()
 //                    b. read
 int     GLOB = 0;
 ProducerConsumerQueue Q(INT_MAX);
@@ -2166,18 +2166,18 @@ REGISTER_TEST(Run, 43)
 
 // test44: FP. {{{1
 namespace test44 {
-// 
-// Putter:            Getter: 
-// 1. read          
+//
+// Putter:            Getter:
+// 1. read
 // 2. Q.Put() --\     .
-// 3. MU.Lock()  \--> a. Q.Get()    
+// 3. MU.Lock()  \--> a. Q.Get()
 // 4. write
-// 5. MU.Unlock()                   
+// 5. MU.Unlock()
 //                    b. MU.Lock()
 //                    c. write
-//                    d. MU.Unlock();              
+//                    d. MU.Unlock();
 int     GLOB = 0;
-Mutex   MU; 
+Mutex   MU;
 ProducerConsumerQueue Q(INT_MAX);
 void Putter() {
   CHECK(GLOB == 0);
@@ -2207,18 +2207,18 @@ REGISTER_TEST(Run, 44)
 
 // test45: TN. {{{1
 namespace test45 {
-// 
-// Putter:            Getter: 
-// 1. read          
+//
+// Putter:            Getter:
+// 1. read
 // 2. Q.Put() --\     .
-// 3. MU.Lock()  \--> a. Q.Get()    
+// 3. MU.Lock()  \--> a. Q.Get()
 // 4. write
-// 5. MU.Unlock()                   
+// 5. MU.Unlock()
 //                    b. MU.Lock()
 //                    c. read
-//                    d. MU.Unlock();              
+//                    d. MU.Unlock();
 int     GLOB = 0;
-Mutex   MU; 
+Mutex   MU;
 ProducerConsumerQueue Q(INT_MAX);
 void Putter() {
   CHECK(GLOB == 0);
@@ -2247,17 +2247,17 @@ REGISTER_TEST(Run, 45)
 
 // test46: FN. {{{1
 namespace test46 {
-// 
-// First:                             Second: 
-// 1. write                          
-// 2. MU.Lock()                      
-// 3. write                       
-// 4. MU.Unlock()                      (sleep)              
+//
+// First:                             Second:
+// 1. write
+// 2. MU.Lock()
+// 3. write
+// 4. MU.Unlock()                      (sleep)
 //                                    a. MU.Lock()
 //                                    b. write
-//                                    c. MU.Unlock();              
+//                                    c. MU.Unlock();
 int     GLOB = 0;
-Mutex   MU; 
+Mutex   MU;
 void First() {
   GLOB++;
   MU.Lock();
@@ -2270,9 +2270,9 @@ void Second() {
   GLOB++;
   MU.Unlock();
 
-  // just a print. 
-  // If we move it to Run()  we will get report in MSMHelgrind 
-  // due to its false positive (test32). 
+  // just a print.
+  // If we move it to Run()  we will get report in MSMHelgrind
+  // due to its false positive (test32).
   MU.Lock();
   printf("\tGLOB=%d\n", GLOB);
   MU.Unlock();
@@ -2289,18 +2289,18 @@ REGISTER_TEST(Run, 46)
 
 // test47: TP. Not detected by pure happens-before detectors. {{{1
 namespace test47 {
-// A true race that can not be detected by a pure happens-before 
-// race detector. 
+// A true race that can not be detected by a pure happens-before
+// race detector.
 //
-// First:                             Second: 
-// 1. write                          
-// 2. MU.Lock()                      
-// 3. MU.Unlock()                      (sleep)              
+// First:                             Second:
+// 1. write
+// 2. MU.Lock()
+// 3. MU.Unlock()                      (sleep)
 //                                    a. MU.Lock()
-//                                    b. MU.Unlock();              
+//                                    b. MU.Unlock();
 //                                    c. write
 int     GLOB = 0;
-Mutex   MU; 
+Mutex   MU;
 void First() {
   GLOB=1;
   MU.Lock();
@@ -2330,21 +2330,21 @@ REGISTER_TEST(Run, 47)
 namespace test48 {
 int     GLOB = 0;
 // same as test10 but with single writer and  multiple readers
-// A simple data race between single writer and  multiple readers. 
-// Write happens before Reads (enforced by sleep(1)), 
+// A simple data race between single writer and  multiple readers.
+// Write happens before Reads (enforced by sleep(1)),
 
-// 
+//
 // Writer:                    Readers:
-// 1. write(GLOB)             a. sleep(long enough so that GLOB 
+// 1. write(GLOB)             a. sleep(long enough so that GLOB
 //                                is most likely initialized by Writer)
 //                            b. read(GLOB)
-// 
 //
-// Eraser algorithm does not detect the race here, 
-// see Section 2.2 of http://citeseer.ist.psu.edu/savage97eraser.html. 
+//
+// Eraser algorithm does not detect the race here,
+// see Section 2.2 of http://citeseer.ist.psu.edu/savage97eraser.html.
 //
 void Writer() {
-  GLOB = 3; 
+  GLOB = 3;
 }
 void Reader() {
   usleep(100000);
@@ -2368,23 +2368,23 @@ REGISTER_TEST(Run, 48)
 namespace test49 {
 int     GLOB = 0;
 // same as test10 but with multiple read operations done by a single reader
-// A simple data race between writer and readers. 
-// Write happens before Read (enforced by sleep(1)), 
-// 
+// A simple data race between writer and readers.
+// Write happens before Read (enforced by sleep(1)),
+//
 // Writer:                    Reader:
-// 1. write(GLOB)             a. sleep(long enough so that GLOB 
+// 1. write(GLOB)             a. sleep(long enough so that GLOB
 //                                is most likely initialized by Writer)
 //                            b. read(GLOB)
 //                            c. read(GLOB)
 //                            d. read(GLOB)
 //                            e. read(GLOB)
-// 
 //
-// Eraser algorithm does not detect the race here, 
-// see Section 2.2 of http://citeseer.ist.psu.edu/savage97eraser.html. 
+//
+// Eraser algorithm does not detect the race here,
+// see Section 2.2 of http://citeseer.ist.psu.edu/savage97eraser.html.
 //
 void Writer() {
-  GLOB = 3; 
+  GLOB = 3;
 }
 void Reader() {
   usleep(100000);
@@ -2410,12 +2410,12 @@ REGISTER_TEST(Run, 49);
 // test50: TP. Synchronization via CondVar. {{{1
 namespace test50 {
 int     GLOB = 0;
-Mutex   MU; 
-// Two last write accesses to GLOB are not synchronized 
+Mutex   MU;
+// Two last write accesses to GLOB are not synchronized
 //
-// Waiter:                      Waker: 
+// Waiter:                      Waker:
 // 1. COND = 0
-// 2. Start(Waker)              
+// 2. Start(Waker)
 // 3. MU.Lock()                 a. write(GLOB)
 //                              b. MU.Lock()
 //                              c. COND = 1
@@ -2435,12 +2435,12 @@ void Waker() {
 
   MU.Lock();
   COND = 1;
-  CV.Signal(); 
+  CV.Signal();
   MU.Unlock();
 
   usleep(100000);
   MU.Lock();
-  GLOB = 3; 
+  GLOB = 3;
   MU.Unlock();
 }
 
@@ -2471,16 +2471,16 @@ REGISTER_TEST2(Run, 50, FEATURE|NEEDS_ANNOTATIONS);
 namespace test51 {
 int     GLOB = 0;
 int     COND = 0;
-Mutex   MU; 
+Mutex   MU;
 
 
 // scheduler dependent results because of several signals
 // second signal will be lost
 //
-// Waiter:                      Waker: 
-// 1. Start(Waker)              
-// 2. MU.Lock()          
-// 3. while(COND)               
+// Waiter:                      Waker:
+// 1. Start(Waker)
+// 2. MU.Lock()
+// 3. while(COND)
 //       CV.Wait(MU)<-\         .
 // 4. MU.Unlock()      \        .
 // 5. write(GLOB)       \       a. write(GLOB)
@@ -2488,9 +2488,9 @@ Mutex   MU;
 //                        \     c. COND = 1
 //                         \--- d. CV.Signal()
 //                              e. MU.Unlock()
-//                              
+//
 //                              f. write(GLOB)
-//                              
+//
 //                              g. MU.Lock()
 //                              h. COND = 1
 //                    LOST<---- i. CV.Signal()
@@ -2501,10 +2501,10 @@ void Waker() {
   usleep(10000);  // Make sure the waiter blocks.
 
   GLOB = 1;
-  
+
   MU.Lock();
   COND = 1;
-  CV.Signal(); 
+  CV.Signal();
   MU.Unlock();
 
   usleep(10000);  // Make sure the waiter is signalled.
@@ -2543,21 +2543,21 @@ REGISTER_TEST(Run, 51);
 namespace test52 {
 int     GLOB = 0;
 int     COND = 0;
-Mutex   MU; 
+Mutex   MU;
 
 // same as test51 but the first signal will be lost
 // scheduler dependent results because of several signals
 //
-// Waiter:                      Waker: 
-// 1. Start(Waker)              
+// Waiter:                      Waker:
+// 1. Start(Waker)
 //                              a. write(GLOB)
 //                              b. MU.Lock()
 //                              c. COND = 1
 //                    LOST<---- d. CV.Signal()
 //                              e. MU.Unlock()
-//                              
-// 2. MU.Lock()       
-// 3. while(COND)               
+//
+// 2. MU.Lock()
+// 3. while(COND)
 //       CV.Wait(MU)<-\         .
 // 4. MU.Unlock()      \        f. write(GLOB)
 // 5. write(GLOB)       \       .
@@ -2569,7 +2569,7 @@ Mutex   MU;
 void Waker() {
 
   GLOB = 1;
-  
+
   MU.Lock();
   COND = 1;
   CV.Signal();    //lost signal
@@ -2581,8 +2581,8 @@ void Waker() {
 
   MU.Lock();
   COND = 1;
-  CV.Signal(); 
-  MU.Unlock();  
+  CV.Signal();
+  MU.Unlock();
 }
 
 void Waiter() {
@@ -2592,7 +2592,7 @@ void Waiter() {
   while(COND != 1)
     CV.Wait(&MU);
   MU.Unlock();
-  
+
   GLOB = 3;
 }
 void Run() {
@@ -2611,15 +2611,15 @@ REGISTER_TEST(Run, 52);
 // test53: FP. Synchronization via implicit semaphore. {{{1
 namespace test53 {
 // Correctly synchronized test, but the common lockset is empty.
-// The variable FLAG works as an implicit semaphore. 
+// The variable FLAG works as an implicit semaphore.
 // MSMHelgrind still does not complain since it does not maintain the lockset
-// at the exclusive state. But MSMProp1 does complain. 
-// See also test54. 
-// 
+// at the exclusive state. But MSMProp1 does complain.
+// See also test54.
+//
 //
 // Initializer:                  Users
-// 1. MU1.Lock() 
-// 2. write(GLOB) 
+// 1. MU1.Lock()
+// 2. write(GLOB)
 // 3. FLAG = true
 // 4. MU1.Unlock()
 //                               a. MU1.Lock()
@@ -2633,7 +2633,7 @@ namespace test53 {
 
 int     GLOB = 0;
 bool    FLAG = false;
-Mutex   MU1, MU2; 
+Mutex   MU1, MU2;
 
 void Initializer() {
   MU1.Lock();
@@ -2674,10 +2674,10 @@ REGISTER_TEST(Run, 53)
 
 // test54: TN. Synchronization via implicit semaphore. Annotated {{{1
 namespace test54 {
-// Same as test53, but annotated. 
+// Same as test53, but annotated.
 int     GLOB = 0;
 bool    FLAG = false;
-Mutex   MU1, MU2; 
+Mutex   MU1, MU2;
 
 void Initializer() {
   MU1.Lock();
@@ -2716,14 +2716,14 @@ REGISTER_TEST2(Run, 54, FEATURE|NEEDS_ANNOTATIONS)
 
 
 // test55: FP. Synchronization with TryLock. Not easy for race detectors {{{1
-namespace test55 {  
-// "Correct" synchronization with TryLock and Lock. 
+namespace test55 {
+// "Correct" synchronization with TryLock and Lock.
 //
-// This scheme is actually very risky. 
-// It is covered in detail in this video: 
-// http://youtube.com/watch?v=mrvAqvtWYb4 (slide 36, near 50-th minute). 
+// This scheme is actually very risky.
+// It is covered in detail in this video:
+// http://youtube.com/watch?v=mrvAqvtWYb4 (slide 36, near 50-th minute).
 int     GLOB = 0;
-Mutex   MU; 
+Mutex   MU;
 
 void Worker_Lock() {
   GLOB = 1;
@@ -2736,11 +2736,11 @@ void Worker_TryLock() {
       MU.Unlock();
       break;
     }
-    else 
+    else
       MU.Unlock();
-    usleep(100); 
+    usleep(100);
   }
-  GLOB = 2; 
+  GLOB = 2;
 }
 
 void Run() {
@@ -2757,8 +2757,8 @@ REGISTER_TEST2(Run, 55, FEATURE|EXCLUDE_FROM_ALL);
 
 // test56: TP. Use of ANNOTATE_BENIGN_RACE. {{{1
 namespace test56 {
-// For whatever reason the user wants to treat 
-// a race on GLOB as a benign race. 
+// For whatever reason the user wants to treat
+// a race on GLOB as a benign race.
 int     GLOB = 0;
 int     GLOB2 = 0;
 
@@ -2811,7 +2811,7 @@ int     FLAG1 = 0;
 int     FLAG2 = 0;
 
 // Correctly synchronized test, but the common lockset is empty.
-// The variables FLAG1 and FLAG2 used for synchronization and as 
+// The variables FLAG1 and FLAG2 used for synchronization and as
 // temporary variables for swapping two global values.
 // Such kind of synchronization is rarely used (Excluded from all tests??).
 
@@ -2892,7 +2892,7 @@ int     GLOB1 = 1;
 int     GLOB2 = 2;
 int     FLAG2 = 0;
 int     FLAG1 = 0;
-Mutex   MU; 
+Mutex   MU;
 // same as test 59 but synchronized with signal-wait.
 
 void Worker2() {
@@ -2900,7 +2900,7 @@ void Worker2() {
 
   MU.Lock();
   COND1 = 1;
-  CV.Signal();    
+  CV.Signal();
   MU.Unlock();
 
   MU.Lock();
@@ -2917,7 +2917,7 @@ void Worker1() {
 
   MU.Lock();
   COND2 = 1;
-  CV.Signal();    
+  CV.Signal();
   MU.Unlock();
 
   MU.Lock();
@@ -2947,8 +2947,8 @@ Mutex MU;
 int     GLOB = 0;
 int     *P1 = NULL, *P2 = NULL;
 
-// In this test Mutex lock/unlock operations introduce happens-before relation. 
-// We annotate the code so that MU is treated as in pure happens-before detector. 
+// In this test Mutex lock/unlock operations introduce happens-before relation.
+// We annotate the code so that MU is treated as in pure happens-before detector.
 
 
 void Putter() {
@@ -2957,7 +2957,7 @@ void Putter() {
   if (P1 == NULL) {
     P1 = &GLOB;
     *P1 = 1;
-  } 
+  }
   MU.Unlock();
 }
 
@@ -2967,7 +2967,7 @@ void Getter() {
     MU.Lock();
     if (P1) {
       done = true;
-      P2 = P1; 
+      P2 = P1;
       P1 = NULL;
     }
     MU.Unlock();
@@ -2989,8 +2989,8 @@ REGISTER_TEST2(Run, 61, FEATURE|NEEDS_ANNOTATIONS)
 
 // test62: STAB. Create as many segments as possible. {{{1
 namespace test62 {
-// Helgrind 3.3.0 will fail as it has a hard limit of < 2^24 segments. 
-// A better scheme is to implement garbage collection for segments. 
+// Helgrind 3.3.0 will fail as it has a hard limit of < 2^24 segments.
+// A better scheme is to implement garbage collection for segments.
 ProducerConsumerQueue Q(INT_MAX);
 const int N = 1 << 22;
 
@@ -3020,8 +3020,8 @@ REGISTER_TEST2(Run, 62, STABILITY|EXCLUDE_FROM_ALL)
 
 // test63: STAB. Create as many segments as possible and do it fast. {{{1
 namespace test63 {
-// Helgrind 3.3.0 will fail as it has a hard limit of < 2^24 segments. 
-// A better scheme is to implement garbage collection for segments. 
+// Helgrind 3.3.0 will fail as it has a hard limit of < 2^24 segments.
+// A better scheme is to implement garbage collection for segments.
 const int N = 1 << 24;
 int C = 0;
 
@@ -3049,13 +3049,13 @@ REGISTER_TEST2(Run, 63, STABILITY|EXCLUDE_FROM_ALL)
 
 // test64: TP. T2 happens-before T3, but T1 is independent. Reads in T1/T2. {{{1
 namespace test64 {
-// True race between T1 and T3: 
+// True race between T1 and T3:
 //
-// T1:                   T2:                   T3: 
+// T1:                   T2:                   T3:
 // 1. read(GLOB)         (sleep)
 //                       a. read(GLOB)
 //                       b. Q.Put() ----->    A. Q.Get()
-//                                            B. write(GLOB) 
+//                                            B. write(GLOB)
 //
 //
 
@@ -3093,10 +3093,10 @@ REGISTER_TEST(Run, 64)
 
 // test65: TP. T2 happens-before T3, but T1 is independent. Writes in T1/T2. {{{1
 namespace test65 {
-// Similar to test64. 
-// True race between T1 and T3: 
+// Similar to test64.
+// True race between T1 and T3:
 //
-// T1:                   T2:                   T3: 
+// T1:                   T2:                   T3:
 // 1. MU.Lock()
 // 2. write(GLOB)
 // 3. MU.Unlock()         (sleep)
@@ -3104,12 +3104,12 @@ namespace test65 {
 //                       b. write(GLOB)
 //                       c. MU.Unlock()
 //                       d. Q.Put() ----->    A. Q.Get()
-//                                            B. write(GLOB) 
+//                                            B. write(GLOB)
 //
 //
 
 int     GLOB = 0;
-Mutex   MU; 
+Mutex   MU;
 ProducerConsumerQueue Q(INT_MAX);
 
 void T1() {
@@ -3152,7 +3152,7 @@ int     GLOB1 = 0;
 int     GLOB2 = 0;
 int     C1 = 0;
 int     C2 = 0;
-Mutex   MU; 
+Mutex   MU;
 
 void Signaller1() {
   GLOB1 = 1;
@@ -3200,15 +3200,15 @@ REGISTER_TEST2(Run, 66, FEATURE|NEEDS_ANNOTATIONS)
 
 // test67: FN. Race between Signaller1 and Waiter2 {{{1
 namespace test67 {
-// Similar to test66, but there is a real race here. 
+// Similar to test66, but there is a real race here.
 //
 // Here we create a happens-before arc between Signaller1 and Waiter2
-// even though there should be no such arc. 
-// However, it's probably improssible (or just very hard) to avoid it. 
+// even though there should be no such arc.
+// However, it's probably improssible (or just very hard) to avoid it.
 int     GLOB = 0;
 int     C1 = 0;
 int     C2 = 0;
-Mutex   MU; 
+Mutex   MU;
 
 void Signaller1() {
   GLOB = 1;
@@ -3256,11 +3256,11 @@ REGISTER_TEST2(Run, 67, FEATURE|NEEDS_ANNOTATIONS|EXCLUDE_FROM_ALL)
 
 // test68: TP. Writes are protected by MU, reads are not. {{{1
 namespace test68 {
-// In this test, all writes to GLOB are protected by a mutex 
-// but some reads go unprotected. 
-// This is certainly a race, but in some cases such code could occur in 
-// a correct program. For example, the unprotected reads may be used 
-// for showing statistics and are not required to be precise. 
+// In this test, all writes to GLOB are protected by a mutex
+// but some reads go unprotected.
+// This is certainly a race, but in some cases such code could occur in
+// a correct program. For example, the unprotected reads may be used
+// for showing statistics and are not required to be precise.
 int     GLOB = 0;
 int     COND = 0;
 const int N_writers = 3;
@@ -3308,11 +3308,11 @@ REGISTER_TEST(Run, 68)
 
 // test69:  {{{1
 namespace test69 {
-// This is the same as test68, but annotated. 
-// We do not want to annotate GLOB as a benign race 
-// because we want to allow racy reads only in certain places. 
+// This is the same as test68, but annotated.
+// We do not want to annotate GLOB as a benign race
+// because we want to allow racy reads only in certain places.
 //
-// TODO: 
+// TODO:
 int     GLOB = 0;
 int     COND = 0;
 const int N_writers = 3;
@@ -3374,17 +3374,17 @@ REGISTER_TEST(Run, 70)
 
 // test71: TN. strlen, index. {{{1
 namespace test71 {
-// This test is a reproducer for a benign race in strlen (as well as index, etc). 
-// Some implementations of strlen may read up to 7 bytes past the end of the string 
-// thus touching memory which may not belong to this string. 
+// This test is a reproducer for a benign race in strlen (as well as index, etc).
+// Some implementations of strlen may read up to 7 bytes past the end of the string
+// thus touching memory which may not belong to this string.
 // Such race is benign because the data read past the end of the string is not used.
 //
 // Here, we allocate a 8-byte aligned string str and initialize first 5 bytes.
 // Then one thread calls strlen(str) (as well as index & rindex)
-// and another thread initializes str[5]..str[7]. 
+// and another thread initializes str[5]..str[7].
 //
-// This can be fixed in Helgrind by intercepting strlen and replacing it 
-// with a simpler implementation. 
+// This can be fixed in Helgrind by intercepting strlen and replacing it
+// with a simpler implementation.
 
 char    *str;
 void WorkerX() {
@@ -3427,9 +3427,9 @@ REGISTER_TEST(Run, 71)
 // test72: STAB. Stress test for the number of segment sets (SSETs). {{{1
 namespace test72 {
 #ifndef NO_BARRIER
-// Variation of test33. 
-// Instead of creating Nlog*N_iter threads, 
-// we create Nlog threads and do N_iter barriers. 
+// Variation of test33.
+// Instead of creating Nlog*N_iter threads,
+// we create Nlog threads and do N_iter barriers.
 int     GLOB = 0;
 const int N_iter = 30;
 const int Nlog  = 16;
@@ -3437,7 +3437,7 @@ const int N     = 1 << Nlog;
 static int64_t ARR1[N];
 static int64_t ARR2[N];
 Barrier *barriers[N_iter];
-Mutex   MU; 
+Mutex   MU;
 
 void Worker() {
   MU.Lock();
@@ -3454,16 +3454,16 @@ void Worker() {
       //printf("Iter: %d; %ld %ld\n", it, clock() - t, clock() - t0);
       t = clock();
     }
-    // Iterate N_iter times, block on barrier after each iteration. 
-    // This way Helgrind will create new segments after each barrier. 
+    // Iterate N_iter times, block on barrier after each iteration.
+    // This way Helgrind will create new segments after each barrier.
 
-    for (int x = 0; x < 2; x++) { 
-      // run the inner loop twice. 
-      // When a memory location is accessed second time it is likely 
-      // that the state (SVal) will be unchanged. 
-      // The memory machine may optimize this case. 
+    for (int x = 0; x < 2; x++) {
+      // run the inner loop twice.
+      // When a memory location is accessed second time it is likely
+      // that the state (SVal) will be unchanged.
+      // The memory machine may optimize this case.
       for (int i = 0; i < N; i++) {
-        // ARR1[i] and ARR2[N-1-i] are accessed by threads from i-th subset 
+        // ARR1[i] and ARR2[N-1-i] are accessed by threads from i-th subset
         if (i & (1 << n)) {
           CHECK(ARR1[i] == 0);
           CHECK(ARR2[N-1-i] == 0);
@@ -3488,8 +3488,8 @@ void Run() {
     vec[i] = new MyThread(Worker);
     vec[i]->Start();
   }
-  
-  // Join all threads. 
+
+  // Join all threads.
   for (int i = 0; i < Nlog; i++) {
     vec[i]->Join();
     delete vec[i];
@@ -3497,7 +3497,7 @@ void Run() {
   for (int i = 0; i < N_iter; i++)
     delete barriers[i];
 
-  /*printf("\tGLOB=%d; ARR[1]=%d; ARR[7]=%d; ARR[N-1]=%d\n", 
+  /*printf("\tGLOB=%d; ARR[1]=%d; ARR[7]=%d; ARR[N-1]=%d\n",
          GLOB, (int)ARR1[1], (int)ARR1[7], (int)ARR1[N-1]);*/
 }
 REGISTER_TEST2(Run, 72, STABILITY|PERFORMANCE|EXCLUDE_FROM_ALL);
@@ -3508,8 +3508,8 @@ REGISTER_TEST2(Run, 72, STABILITY|PERFORMANCE|EXCLUDE_FROM_ALL);
 // test73: STAB. Stress test for the number of (SSETs), different access sizes. {{{1
 namespace test73 {
 #ifndef NO_BARRIER
-// Variation of test72. 
-// We perform accesses of different sizes to the same location. 
+// Variation of test72.
+// We perform accesses of different sizes to the same location.
 int     GLOB = 0;
 const int N_iter = 2;
 const int Nlog  = 16;
@@ -3517,7 +3517,7 @@ const int N     = 1 << Nlog;
 static int64_t ARR1[N];
 static int ARR2[N];
 Barrier *barriers[N_iter];
-Mutex   MU; 
+Mutex   MU;
 
 void Worker() {
   MU.Lock();
@@ -3527,12 +3527,12 @@ void Worker() {
   n %= Nlog;
 
   for (int it = 0; it < N_iter; it++) {
-    // Iterate N_iter times, block on barrier after each iteration. 
-    // This way Helgrind will create new segments after each barrier. 
+    // Iterate N_iter times, block on barrier after each iteration.
+    // This way Helgrind will create new segments after each barrier.
 
-    for (int x = 0; x < 4; x++) { 
+    for (int x = 0; x < 4; x++) {
       for (int i = 0; i < N; i++) {
-        // ARR1[i] are accessed by threads from i-th subset 
+        // ARR1[i] are accessed by threads from i-th subset
         if (i & (1 << n)) {
           for (int off = 0; off < (1 << x); off++) {
             switch(x) {
@@ -3569,8 +3569,8 @@ void Run() {
     vec[i] = new MyThread(Worker);
     vec[i]->Start();
   }
-  
-  // Join all threads. 
+
+  // Join all threads.
   for (int i = 0; i < Nlog; i++) {
     vec[i]->Join();
     delete vec[i];
@@ -3578,7 +3578,7 @@ void Run() {
   for (int i = 0; i < N_iter; i++)
     delete barriers[i];
 
-  /*printf("\tGLOB=%d; ARR[1]=%d; ARR[7]=%d; ARR[N-1]=%d\n", 
+  /*printf("\tGLOB=%d; ARR[1]=%d; ARR[7]=%d; ARR[N-1]=%d\n",
          GLOB, (int)ARR1[1], (int)ARR1[7], (int)ARR1[N-1]);*/
 }
 REGISTER_TEST2(Run, 73, STABILITY|PERFORMANCE|EXCLUDE_FROM_ALL);
@@ -3589,7 +3589,7 @@ REGISTER_TEST2(Run, 73, STABILITY|PERFORMANCE|EXCLUDE_FROM_ALL);
 // test74: PERF. A lot of lock/unlock calls. {{{1
 namespace    test74 {
 const int N = 100000;
-Mutex   MU; 
+Mutex   MU;
 void Run() {
   printf("test74: perf\n");
   for (int i = 0; i < N; i++ ) {
@@ -3658,8 +3658,8 @@ struct RefCountedClass {
   }
 
   ~RefCountedClass() {
-    CHECK(ref_ == 0);     // race may be reported here 
-    int data_val = data_; // and here     
+    CHECK(ref_ == 0);     // race may be reported here
+    int data_val = data_; // and here
                           // if MU is not annotated
     data_ = 0;
     ref_ = -1;
@@ -3693,7 +3693,7 @@ struct RefCountedClass {
         ANNOTATE_CONDVAR_WAIT(this);
       }
       delete this;
-    } 
+    }
   }
 
   static void Annotate_MU() {
@@ -3706,13 +3706,13 @@ struct RefCountedClass {
     ANNOTATE_BENIGN_RACE(&this->data_, "needs annotation");
     ANNOTATE_BENIGN_RACE(&this->ref_, "needs annotation");
   }
- private: 
+ private:
   bool annotate_unref_;
 
   int data_;
-  Mutex mu_; // protects data_ 
+  Mutex mu_; // protects data_
 
-  int ref_; 
+  int ref_;
   static Mutex MU; // protects ref_
 };
 
@@ -3723,7 +3723,7 @@ namespace test76 {
 #ifndef NO_BARRIER
 int     GLOB = 0;
 Barrier barrier(4);
-RefCountedClass *object = NULL; 
+RefCountedClass *object = NULL;
 void Worker() {
   object->Ref();
   barrier.Block();
@@ -3732,7 +3732,7 @@ void Worker() {
 }
 void Run() {
   printf("test76: false positive (ref counting)\n");
-  object = new RefCountedClass; 
+  object = new RefCountedClass;
   object->Annotate_Race();
   MyThreadArray t(Worker, Worker, Worker, Worker);
   t.Start();
@@ -3747,10 +3747,10 @@ REGISTER_TEST2(Run, 76, FEATURE)
 // test77: TN. Ref counting, MU is annotated. {{{1
 namespace test77 {
 #ifndef NO_BARRIER
-// same as test76, but RefCountedClass::MU is annotated. 
+// same as test76, but RefCountedClass::MU is annotated.
 int     GLOB = 0;
 Barrier barrier(4);
-RefCountedClass *object = NULL; 
+RefCountedClass *object = NULL;
 void Worker() {
   object->Ref();
   barrier.Block();
@@ -3760,7 +3760,7 @@ void Worker() {
 void Run() {
   printf("test77: true negative (ref counting), mutex is annotated\n");
   RefCountedClass::Annotate_MU();
-  object = new RefCountedClass; 
+  object = new RefCountedClass;
   MyThreadArray t(Worker, Worker, Worker, Worker);
   t.Start();
   t.Join();
@@ -3774,10 +3774,10 @@ REGISTER_TEST(Run, 77)
 // test78: TN. Ref counting, Unref is annotated. {{{1
 namespace test78 {
 #ifndef NO_BARRIER
-// same as test76, but RefCountedClass::Unref is annotated. 
+// same as test76, but RefCountedClass::Unref is annotated.
 int     GLOB = 0;
 Barrier barrier(4);
-RefCountedClass *object = NULL; 
+RefCountedClass *object = NULL;
 void Worker() {
   object->Ref();
   barrier.Block();
@@ -3787,7 +3787,7 @@ void Worker() {
 void Run() {
   printf("test78: true negative (ref counting), Unref is annotated\n");
   RefCountedClass::Annotate_MU();
-  object = new RefCountedClass; 
+  object = new RefCountedClass;
   MyThreadArray t(Worker, Worker, Worker, Worker);
   t.Start();
   t.Join();
@@ -3806,7 +3806,7 @@ typedef __gnu_cxx::hash_map<int, int> map_t;
 typedef std::map<int, int> map_t;
 #endif
 map_t   MAP;
-Mutex   MU; 
+Mutex   MU;
 
 // Here we use swap to pass MAP between threads.
 // The synchronization is correct, but w/o ANNOTATE_MUTEX_IS_USED_AS_CONDVAR
@@ -3816,7 +3816,7 @@ void Worker1() {
   map_t tmp;
   MU.Lock();
   // We swap the new empty map 'tmp' with 'MAP'.
-  MAP.swap(tmp); 
+  MAP.swap(tmp);
   MU.Unlock();
   // tmp (which is the old version of MAP) is destroyed here.
 }
@@ -3827,8 +3827,8 @@ void Worker2() {
   MU.Unlock();
 }
 
-void Worker3() { Worker1(); } 
-void Worker4() { Worker2(); } 
+void Worker3() { Worker1(); }
+void Worker4() { Worker2(); }
 
 void Run() {
   ANNOTATE_MUTEX_IS_USED_AS_CONDVAR(&MU);
@@ -3852,8 +3852,8 @@ struct AtomicRefCountedClass {
   }
 
   ~AtomicRefCountedClass() {
-    CHECK(ref_ == 0);     // race may be reported here 
-    int data_val = data_; // and here     
+    CHECK(ref_ == 0);     // race may be reported here
+    int data_val = data_; // and here
     data_ = 0;
     ref_ = -1;
     printf("\tRefCountedClass::data_ = %d\n", data_val);
@@ -3872,14 +3872,14 @@ struct AtomicRefCountedClass {
   void Unref() {
     // DISCLAIMER: I am not sure I've implemented this correctly
     // (might require some memory barrier, etc).
-    // But this implementation of reference counting is enough for 
+    // But this implementation of reference counting is enough for
     // the purpose of Helgrind demonstration.
     AtomicIncrement(&ref_, -1);
     if (annotate_unref_) { ANNOTATE_CONDVAR_SIGNAL(this); }
     if (ref_ == 0) {
       if (annotate_unref_) { ANNOTATE_CONDVAR_WAIT(this); }
       delete this;
-    } 
+    }
   }
 
   void AnnotateUnref() {
@@ -3888,10 +3888,10 @@ struct AtomicRefCountedClass {
   void Annotate_Race() {
     ANNOTATE_BENIGN_RACE(&this->data_, "needs annotation");
   }
- private: 
+ private:
   bool annotate_unref_;
 
-  Mutex mu_; 
+  Mutex mu_;
   int data_; // under mu_
 
   int ref_;  // used in atomic ops.
@@ -3902,7 +3902,7 @@ namespace test80 {
 #ifndef NO_BARRIER
 int     GLOB = 0;
 Barrier barrier(4);
-AtomicRefCountedClass *object = NULL; 
+AtomicRefCountedClass *object = NULL;
 void Worker() {
   object->Ref();
   barrier.Block();
@@ -3911,7 +3911,7 @@ void Worker() {
 }
 void Run() {
   printf("test80: false positive (ref counting)\n");
-  object = new AtomicRefCountedClass; 
+  object = new AtomicRefCountedClass;
   object->Annotate_Race();
   MyThreadArray t(Worker, Worker, Worker, Worker);
   t.Start();
@@ -3928,7 +3928,7 @@ namespace test81 {
 // same as test80, but Unref is annotated.
 int     GLOB = 0;
 Barrier barrier(4);
-AtomicRefCountedClass *object = NULL; 
+AtomicRefCountedClass *object = NULL;
 void Worker() {
   object->Ref();
   barrier.Block();
@@ -3937,7 +3937,7 @@ void Worker() {
 }
 void Run() {
   printf("test81: negative (annotated ref counting)\n");
-  object = new AtomicRefCountedClass; 
+  object = new AtomicRefCountedClass;
   object->AnnotateUnref();
   MyThreadArray t(Worker, Worker, Worker, Worker);
   t.Start();
@@ -3952,29 +3952,29 @@ REGISTER_TEST2(Run, 81, FEATURE|EXCLUDE_FROM_ALL)
 namespace test82 {
 
 // Writer creates a new object and makes the pointer visible to the Reader.
-// Reader waits until the object pointer is non-null and reads the object. 
+// Reader waits until the object pointer is non-null and reads the object.
 //
-// On Core 2 Duo this test will sometimes (quite rarely) fail in 
+// On Core 2 Duo this test will sometimes (quite rarely) fail in
 // the CHECK below, at least if compiled with -O2.
 //
-// The sequence of events:: 
-// Thread1:                  Thread2: 
+// The sequence of events::
+// Thread1:                  Thread2:
 //   a. arr_[...] = ...
 //   b. foo[i]    = ...
 //                           A. ... = foo[i]; // non NULL
-//                           B. ... = arr_[...]; 
-// 
+//                           B. ... = arr_[...];
+//
 //  Since there is no proper synchronization, during the even (B)
-//  Thread2 may not see the result of the event (a). 
+//  Thread2 may not see the result of the event (a).
 //  On x86 and x86_64 this happens due to compiler reordering instructions.
 //  On other arcitectures it may also happen due to cashe inconsistency.
 
 class FOO {
- public: 
+ public:
   FOO() {
     idx_ = rand() % 1024;
     arr_[idx_] = 77777;
-  //   __asm__ __volatile__("" : : : "memory"); // this fixes! 
+  //   __asm__ __volatile__("" : : : "memory"); // this fixes!
   }
   static void check(volatile FOO *foo) {
     CHECK(foo->arr_[foo->idx_] == 77777);
@@ -3986,7 +3986,7 @@ class FOO {
 
 const int N = 100000;
 static volatile FOO *foo[N];
-Mutex   MU; 
+Mutex   MU;
 
 void Writer() {
   for (int i = 0; i < N; i++) {
@@ -3998,13 +3998,13 @@ void Writer() {
 void Reader() {
   for (int i = 0; i < N; i++) {
     while (!foo[i]) {
-      MU.Lock();   // this is NOT a synchronization, 
+      MU.Lock();   // this is NOT a synchronization,
       MU.Unlock(); // it just helps foo[i] to become visible in Reader.
     }
     if ((i % 100) == 0) {
       printf("rd %d\n", i);
     }
-    // At this point Reader() sees the new value of foo[i] 
+    // At this point Reader() sees the new value of foo[i]
     // but in very rare cases will not see the new value of foo[i]->arr_.
     // Thus this CHECK will sometimes fail.
     FOO::check(foo[i]);
@@ -4026,7 +4026,7 @@ namespace test83 {
 // A simplified version of test83 (example of a wrong code).
 // This test, though incorrect, will almost never fail.
 volatile static int *ptr = NULL;
-Mutex   MU; 
+Mutex   MU;
 
 void Writer() {
   usleep(100);
@@ -4036,7 +4036,7 @@ void Writer() {
 void Reader() {
   while(!ptr) {
     MU.Lock(); // Not a synchronization!
-    MU.Unlock(); 
+    MU.Unlock();
   }
   CHECK(*ptr == 777);
 }
@@ -4053,9 +4053,9 @@ REGISTER_TEST2(Run, 83, FEATURE|EXCLUDE_FROM_ALL)
 
 // test84: TP. True race (regression test for a bug related to atomics){{{1
 namespace test84 {
-// Helgrind should not create HB arcs for the bus lock even when 
+// Helgrind should not create HB arcs for the bus lock even when
 // --pure-happens-before=yes is used.
-// Bug found in by Bart Van Assche, the test is taken from 
+// Bug found in by Bart Van Assche, the test is taken from
 // valgrind file drd/tests/atomic_var.c.
 static int s_x = 0;
 /* s_dummy[] ensures that s_x and s_y are not in the same cache line. */
@@ -4102,30 +4102,30 @@ REGISTER_TEST(Run, 85)
 // test86: Test for race inside DTOR: racey write to vptr. Benign. {{{1
 namespace test86 {
 // This test shows a racey access to vptr (the pointer to vtbl).
-// We have class A and class B derived from A. 
+// We have class A and class B derived from A.
 // Both classes have a virtual function f() and a virtual DTOR.
 // We create an object 'A *a = new B'
 // and pass this object from Thread1 to Thread2.
 // Thread2 calls a->f(). This call reads a->vtpr.
-// Thread1 deletes the object. B::~B waits untill the object can be destroyed 
-// (flag_stopped == true) but at the very beginning of B::~B 
-// a->vptr is written to. 
-// So, we have a race on a->vptr. 
-// On this particular test this race is benign, but test87 shows 
+// Thread1 deletes the object. B::~B waits untill the object can be destroyed
+// (flag_stopped == true) but at the very beginning of B::~B
+// a->vptr is written to.
+// So, we have a race on a->vptr.
+// On this particular test this race is benign, but test87 shows
 // how such race could harm.
 //
 //
-// 
-// Threa1:                                            Thread2: 
-// 1. A a* = new B;                                  
-// 2. Q.Put(a); ------------\                         .            
+//
+// Threa1:                                            Thread2:
+// 1. A a* = new B;
+// 2. Q.Put(a); ------------\                         .
 //                           \-------------------->   a. a = Q.Get();
 //                                                    b. a->f();
 //                                       /---------   c. flag_stopped = true;
 // 3. delete a;                         /
 //    waits untill flag_stopped <------/
 //    inside the dtor
-// 
+//
 
 bool flag_stopped = false;
 Mutex mu;
@@ -4142,13 +4142,13 @@ struct A {
 
 struct B: A {
   B()  { printf("B::B()\n"); }
-  virtual ~B() { 
+  virtual ~B() {
     // The race is here.    <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
-    printf("B::~B()\n"); 
+    printf("B::~B()\n");
     // wait until flag_stopped is true.
     mu.LockWhen(Condition(&ArgIsTrue, &flag_stopped));
     mu.Unlock();
-    printf("B::~B() done\n"); 
+    printf("B::~B() done\n");
   }
   virtual void f() { }
 };
@@ -4171,7 +4171,7 @@ void Worker() {
   A *a = reinterpret_cast<A*>(Q.Get());
   printf("Worker: got A\n");
   a->f();
-    
+
   mu.Lock();
   flag_stopped = true;
   mu.Unlock();
@@ -4192,12 +4192,12 @@ REGISTER_TEST(Run, 86)
 // test87: Test for race inside DTOR: racey write to vptr. Harmful.{{{1
 namespace test87 {
 // A variation of test86 where the race is harmful.
-// Here we have class C derived from B. 
+// Here we have class C derived from B.
 // We create an object 'A *a = new C' in Thread1 and pass it to Thread2.
-// Thread2 calls a->f(). 
-// Thread1 calls 'delete a'. 
-// It first calls C::~C, then B::~B where it rewrites the vptr to point 
-// to B::vtbl. This is a problem because Thread2 might not have called a->f() 
+// Thread2 calls a->f().
+// Thread1 calls 'delete a'.
+// It first calls C::~C, then B::~B where it rewrites the vptr to point
+// to B::vtbl. This is a problem because Thread2 might not have called a->f()
 // and now it will call B::f instead of C::f.
 //
 bool flag_stopped = false;
@@ -4213,13 +4213,13 @@ struct A {
 
 struct B: A {
   B()  { printf("B::B()\n"); }
-  virtual ~B() { 
+  virtual ~B() {
     // The race is here.    <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
-    printf("B::~B()\n"); 
+    printf("B::~B()\n");
     // wait until flag_stopped is true.
     mu.LockWhen(Condition(&ArgIsTrue, &flag_stopped));
     mu.Unlock();
-    printf("B::~B() done\n"); 
+    printf("B::~B() done\n");
   }
   virtual void f() = 0; // pure virtual.
 };
@@ -4239,7 +4239,7 @@ void Waiter() {
 void Worker() {
   A *a = reinterpret_cast<A*>(Q.Get());
   a->f();
-    
+
   mu.Lock();
   flag_stopped = true;
   ANNOTATE_CONDVAR_SIGNAL(&mu);
@@ -4280,30 +4280,30 @@ REGISTER_TEST(Run, 88)
 // test89: Test for debug info. {{{1
 namespace test89 {
 // Simlpe races with different objects (stack, heap globals; scalars, structs).
-// Also, if run with --trace-level=2 this test will show a sequence of 
+// Also, if run with --trace-level=2 this test will show a sequence of
 // CTOR and DTOR calls.
 struct STRUCT {
   int a, b, c;
 };
 
 struct A {
-  int a;  
-  A() { 
+  int a;
+  A() {
     ANNOTATE_TRACE_MEMORY(&a);
-    a = 1; 
-  } 
+    a = 1;
+  }
   virtual ~A() {
     a = 4;
   }
-}; 
+};
 
-struct B : A {  
-  B()  { CHECK(a == 1); } 
+struct B : A {
+  B()  { CHECK(a == 1); }
   virtual ~B() { CHECK(a == 3); }
 };
 struct C : B {
   C()  { a = 2; }
-  virtual ~C() { a = 3; } 
+  virtual ~C() { a = 3; }
 };
 
 int            GLOBAL = 0;
@@ -4350,15 +4350,15 @@ namespace test90 {
 // Readers access the object read-only.
 // See also test91.
 //
-// Without annotations Helgrind will issue a false positive in Reader(). 
+// Without annotations Helgrind will issue a false positive in Reader().
 //
-// Choices for annotations: 
+// Choices for annotations:
 //   -- ANNOTATE_CONDVAR_SIGNAL/ANNOTATE_CONDVAR_WAIT
 //   -- ANNOTATE_MUTEX_IS_USED_AS_CONDVAR
 //   -- ANNOTATE_PUBLISH_MEMORY_RANGE.
 
 int     *GLOB = 0;
-Mutex   MU; 
+Mutex   MU;
 
 void Publisher() {
   MU.Lock();
@@ -4401,11 +4401,11 @@ namespace test91 {
 // The Publisher creates an object and safely publishes it under a mutex MU1.
 // Accessors get the object under MU1 and access it (read/write) under MU2.
 //
-// Without annotations Helgrind will issue a false positive in Accessor(). 
+// Without annotations Helgrind will issue a false positive in Accessor().
 //
 
 int     *GLOB = 0;
-Mutex   MU, MU1, MU2; 
+Mutex   MU, MU1, MU2;
 
 void Publisher() {
   MU1.Lock();
@@ -4425,7 +4425,7 @@ void Accessor() {
     if (p) {
       MU2.Lock();
       (*p)++;  // Race is reported here.
-      CHECK(*p >  777);  
+      CHECK(*p >  777);
       MU2.Unlock();
       break;
     }
@@ -4449,7 +4449,7 @@ namespace test92 {
 // Similar to test91, but annotated with ANNOTATE_PUBLISH_MEMORY_RANGE.
 //
 //
-// Publisher:                                       Accessors: 
+// Publisher:                                       Accessors:
 //
 // 1. MU1.Lock()
 // 2. Create GLOB.
@@ -4460,7 +4460,7 @@ namespace test92 {
 //                                          \        c. MU1.Unlock()
 //                                           \-->    d. Access GLOB
 //
-//  A happens-before arc is created between ANNOTATE_PUBLISH_MEMORY_RANGE and 
+//  A happens-before arc is created between ANNOTATE_PUBLISH_MEMORY_RANGE and
 //  accesses to GLOB.
 
 struct ObjType {
@@ -4468,7 +4468,7 @@ struct ObjType {
 };
 
 ObjType *GLOB = 0;
-Mutex   MU, MU1, MU2; 
+Mutex   MU, MU1, MU2;
 
 void Publisher() {
   MU1.Lock();
@@ -4489,7 +4489,7 @@ void Accessor(int index) {
     if (p) {
       MU2.Lock();
       p->arr[index]++;  // W/o the annotations the race will be reported here.
-      CHECK(p->arr[index] ==  778);  
+      CHECK(p->arr[index] ==  778);
       MU2.Unlock();
       break;
     }
@@ -4521,8 +4521,8 @@ void Reader() {
 
 void Publisher() {
   usleep(10000);
-  // Incorrect, used after the memory has been accessed in another thread. 
-  ANNOTATE_PUBLISH_MEMORY_RANGE(&GLOB, sizeof(GLOB)); 
+  // Incorrect, used after the memory has been accessed in another thread.
+  ANNOTATE_PUBLISH_MEMORY_RANGE(&GLOB, sizeof(GLOB));
 }
 
 void Run() {
@@ -4547,28 +4547,28 @@ CondVar CV, CV2;
 
 void Thr1() {
   usleep(10000);  // Make sure the waiter blocks.
-  
-  GLOB = 1; // WRITE 
+
+  GLOB = 1; // WRITE
 
   MU.Lock();
   COND = 1;
-  CV.Signal(); 
+  CV.Signal();
   MU.Unlock();
 }
 void Thr2() {
   usleep(1000*1000); // Make sure CV2.Signal() "happens after" CV.Signal()
   usleep(10000);  // Make sure the waiter blocks.
-  
+
   MU2.Lock();
   COND2 = 1;
-  CV2.Signal(); 
+  CV2.Signal();
   MU2.Unlock();
 }
 void Thr3() {
   MU.Lock();
   while(COND != 1)
     CV.Wait(&MU);
-  MU.Unlock();  
+  MU.Unlock();
 }
 void Thr4() {
   MU2.Lock();
@@ -4601,27 +4601,27 @@ CondVar CV, CV2;
 void Thr1() {
   usleep(1000*1000); // Make sure CV2.Signal() "happens before" CV.Signal()
   usleep(10000);  // Make sure the waiter blocks.
-  
-  GLOB = 1; // WRITE 
+
+  GLOB = 1; // WRITE
 
   MU.Lock();
   COND = 1;
-  CV.Signal(); 
+  CV.Signal();
   MU.Unlock();
 }
 void Thr2() {
   usleep(10000);  // Make sure the waiter blocks.
-  
+
   MU2.Lock();
   COND2 = 1;
-  CV2.Signal(); 
+  CV2.Signal();
   MU2.Unlock();
 }
 void Thr3() {
   MU.Lock();
   while(COND != 1)
     CV.Wait(&MU);
-  MU.Unlock();  
+  MU.Unlock();
 }
 void Thr4() {
   MU2.Lock();
@@ -4692,7 +4692,7 @@ int array[ARRAY_SIZE];
 int * GLOB = &array[ARRAY_SIZE/2];
 /*
   We use sizeof(array) == 4 * HG_CACHELINE_SIZE to be sure that GLOB points
-  to a memory inside a CacheLineZ which is inside array's memory range 
+  to a memory inside a CacheLineZ which is inside array's memory range
  */
 
 void Reader() {
@@ -4718,12 +4718,12 @@ REGISTER_TEST2(Run, 97, FEATURE)
 namespace test98 {
 // The synchronization here is done by a pair of read/write calls
 // that create a happens-before arc. Same may be done with send/recv.
-// Such synchronization is quite unusual in real programs 
-// (why would one synchronizae via a file or socket?), but 
-// quite possible in unittests where one threads runs for producer 
+// Such synchronization is quite unusual in real programs
+// (why would one synchronizae via a file or socket?), but
+// quite possible in unittests where one threads runs for producer
 // and one for consumer.
 //
-// A race detector has to create a happens-before arcs for  
+// A race detector has to create a happens-before arcs for
 // {read,send}->{write,recv} even if the file descriptors are different.
 //
 int     GLOB = 0;
@@ -4749,7 +4749,7 @@ void Run() {
   printf("test98: negative, synchronization via I/O\n");
   char in_name[100];
   char out_name[100];
-  // we open two files, on for reading and one for writing, 
+  // we open two files, on for reading and one for writing,
   // but the files are actually the same (symlinked).
   sprintf(in_name,  "/tmp/racecheck_unittest_in.%d", getpid());
   sprintf(out_name, "/tmp/racecheck_unittest_out.%d", getpid());
@@ -4875,13 +4875,13 @@ void Signaller() {
 
 void Waiter() {
   MU.Lock();
-  while(!C1) 
+  while(!C1)
     CV.Wait(&MU);
   printf("wait\n");
   MU.Unlock();
 
   MU.Lock();
-  while(!C2) 
+  while(!C2)
     CV.Wait(&MU);
   printf("wait\n");
   MU.Unlock();
@@ -4911,7 +4911,7 @@ int array[ARRAY_SIZE + 1];
 int * GLOB = &array[ARRAY_SIZE/2];
 /*
   We use sizeof(array) == 4 * HG_CACHELINE_SIZE to be sure that GLOB points
-  to a memory inside a CacheLineZ which is inside array's memory range 
+  to a memory inside a CacheLineZ which is inside array's memory range
 */
 
 void Reader() {
@@ -4980,7 +4980,7 @@ REGISTER_TEST2(Run, 103, FEATURE)
 namespace test104 {
 int     *GLOB = NULL;
 void Worker() {
-  *GLOB = 1; 
+  *GLOB = 1;
 }
 
 void Parent() {
@@ -5073,7 +5073,7 @@ namespace test107 {
 int     GLOB = 0;
 void Run() {
   printf("test107: negative\n");
-  ANNOTATE_EXPECT_RACE(&GLOB, "No race in fact. Just checking the tool."); 
+  ANNOTATE_EXPECT_RACE(&GLOB, "No race in fact. Just checking the tool.");
   printf("\tGLOB=%d\n", GLOB);
 }
 REGISTER_TEST2(Run, 107, FEATURE|EXCLUDE_FROM_ALL)
@@ -5082,14 +5082,14 @@ REGISTER_TEST2(Run, 107, FEATURE|EXCLUDE_FROM_ALL)
 
 // test108: TN. initialization of static object. {{{1
 namespace test108 {
-// Here we have a function-level static object. 
-// Starting from gcc 4 this is therad safe, 
+// Here we have a function-level static object.
+// Starting from gcc 4 this is therad safe,
 // but is is not thread safe with many other compilers.
 //
-// Helgrind supports this kind of initialization by 
-// intercepting __cxa_guard_acquire/__cxa_guard_release 
-// and ignoring all accesses between them. 
-// Helgrind also intercepts pthread_once in the same manner. 
+// Helgrind supports this kind of initialization by
+// intercepting __cxa_guard_acquire/__cxa_guard_release
+// and ignoring all accesses between them.
+// Helgrind also intercepts pthread_once in the same manner.
 class Foo {
  public:
   Foo() {
@@ -5128,9 +5128,9 @@ REGISTER_TEST2(Run, 108, FEATURE)
 
 // test109: TN. Checking happens before between parent and child threads. {{{1
 namespace test109 {
-// Check that the detector correctly connects 
+// Check that the detector correctly connects
 //   pthread_create with the new thread
-// and 
+// and
 //   thread exit with pthread_join
 const int N = 32;
 static int GLOB[N];
@@ -5283,13 +5283,13 @@ Mutex mu;
 const int N = 3000;
 
 void write_to_p(char *p, int val) {
-  for (int i = 0; i < N; i++) 
+  for (int i = 0; i < N; i++)
     p[i] = val;
 }
 
 static bool ArgIsTrue(bool *arg) {
 //  printf("ArgIsTrue: %d tid=%d\n", *arg, (int)pthread_self());
-  return *arg == true; 
+  return *arg == true;
 }
 
 void f1() {
@@ -5370,11 +5370,11 @@ void PublishRange(int b, int e) {
   ANNOTATE_NEW_MEMORY(GLOB + b, e - b);
   ANNOTATE_TRACE_MEMORY(GLOB + b);
   for (int j = b; j < e; j++) {
-    GLOB[j] = 0; 
+    GLOB[j] = 0;
   }
   ANNOTATE_PUBLISH_MEMORY_RANGE(GLOB + b, e - b);
 
-  // hand off 
+  // hand off
   mu.Lock();
   ready = true;
   beg = b;
@@ -5387,7 +5387,7 @@ void PublishRange(int b, int e) {
 void Run() {
   printf("test112: stability (ANNOTATE_PUBLISH_MEMORY_RANGE)\n");
   GLOB = new char [N];
-  
+
   PublishRange(0, 10);
   PublishRange(3, 5);
 
@@ -5416,7 +5416,7 @@ REGISTER_TEST2(Run, 112, STABILITY)
 namespace    test113 {
 const int kNumIter = 100000;
 const int kNumLocks = 7;
-Mutex   MU[kNumLocks]; 
+Mutex   MU[kNumLocks];
 void Run() {
   printf("test113: perf\n");
   for (int i = 0; i < kNumIter; i++ ) {
@@ -5465,10 +5465,10 @@ const char *kSemName = "drt-test-sem";
 int GLOB = 0;
 
 sem_t *DoSemOpen() {
-  // TODO: there is some race report inside sem_open 
+  // TODO: there is some race report inside sem_open
   // for which suppressions do not work... (???)
   ANNOTATE_IGNORE_WRITES_BEGIN();
-  sem_t *sem = sem_open(kSemName, O_CREAT, 0600, 3); 
+  sem_t *sem = sem_open(kSemName, O_CREAT, 0600, 3);
   ANNOTATE_IGNORE_WRITES_END();
   return sem;
 }
@@ -5482,9 +5482,9 @@ void Worker() {
     GLOB = 1;
   }
 
-  // if the detector observes a happens-before arc between 
+  // if the detector observes a happens-before arc between
   // sem_open and sem_wait, it will be silent.
-  sem_t *sem = DoSemOpen(); 
+  sem_t *sem = DoSemOpen();
   usleep(100000);
   CHECK(sem != SEM_FAILED);
   CHECK(sem_wait(sem) == 0);
@@ -5598,7 +5598,7 @@ void Signaller() {
 void Waiter() {
   for (int i = 0; i < kNumIter; i++) {
     ANNOTATE_CONDVAR_WAIT(&GLOB);
-    if (i == kNumIter / 2) 
+    if (i == kNumIter / 2)
       usleep(100000);
   }
 }
@@ -5689,9 +5689,9 @@ void InitMe() {
   }
 }
 
-void UseMe() { 
+void UseMe() {
   InitMe();
-  CHECK(foo && foo->a == 42); 
+  CHECK(foo && foo->a == 42);
 }
 
 void Worker1() { UseMe(); }
@@ -5699,11 +5699,11 @@ void Worker2() { UseMe(); }
 void Worker3() { UseMe(); }
 
 
-void Run() {  
+void Run() {
   FAST_MODE_INIT(&foo);
   printf("test121: TP. Example of double-checked-locking\n");
   MyThreadArray t1(Worker1, Worker2, Worker3);
-  t1.Start();  
+  t1.Start();
   t1.Join();
   delete foo;
 }
@@ -5727,10 +5727,10 @@ void CorrectWrite(int *p) {
   (*p)++;
 }
 
-void Thread1() { WriteWhileHoldingReaderLock(&VAR1); } 
+void Thread1() { WriteWhileHoldingReaderLock(&VAR1); }
 void Thread2() { CorrectWrite(&VAR1); }
 void Thread3() { CorrectWrite(&VAR2); }
-void Thread4() { WriteWhileHoldingReaderLock(&VAR2); } 
+void Thread4() { WriteWhileHoldingReaderLock(&VAR2); }
 
 
 void Run() {
@@ -5777,44 +5777,44 @@ uint64_t MEM[8];
   }\
 }\
 
-// Q. Hey dude, why so many functions? 
+// Q. Hey dude, why so many functions?
 // A. I need different stack traces for different accesses.
 
-void Wr64_0() { GenericWrite(&MEM[0], 64, 0); } 
-void Wr64_1() { GenericWrite(&MEM[1], 64, 0); } 
-void Wr64_2() { GenericWrite(&MEM[2], 64, 0); } 
-void Wr64_3() { GenericWrite(&MEM[3], 64, 0); } 
-void Wr64_4() { GenericWrite(&MEM[4], 64, 0); } 
-void Wr64_5() { GenericWrite(&MEM[5], 64, 0); } 
-void Wr64_6() { GenericWrite(&MEM[6], 64, 0); } 
-void Wr64_7() { GenericWrite(&MEM[7], 64, 0); } 
+void Wr64_0() { GenericWrite(&MEM[0], 64, 0); }
+void Wr64_1() { GenericWrite(&MEM[1], 64, 0); }
+void Wr64_2() { GenericWrite(&MEM[2], 64, 0); }
+void Wr64_3() { GenericWrite(&MEM[3], 64, 0); }
+void Wr64_4() { GenericWrite(&MEM[4], 64, 0); }
+void Wr64_5() { GenericWrite(&MEM[5], 64, 0); }
+void Wr64_6() { GenericWrite(&MEM[6], 64, 0); }
+void Wr64_7() { GenericWrite(&MEM[7], 64, 0); }
 
-void Wr32_0() { GenericWrite(&MEM[0], 32, 0); } 
-void Wr32_1() { GenericWrite(&MEM[1], 32, 1); } 
-void Wr32_2() { GenericWrite(&MEM[2], 32, 0); } 
-void Wr32_3() { GenericWrite(&MEM[3], 32, 1); } 
-void Wr32_4() { GenericWrite(&MEM[4], 32, 0); } 
-void Wr32_5() { GenericWrite(&MEM[5], 32, 1); } 
-void Wr32_6() { GenericWrite(&MEM[6], 32, 0); } 
-void Wr32_7() { GenericWrite(&MEM[7], 32, 1); } 
+void Wr32_0() { GenericWrite(&MEM[0], 32, 0); }
+void Wr32_1() { GenericWrite(&MEM[1], 32, 1); }
+void Wr32_2() { GenericWrite(&MEM[2], 32, 0); }
+void Wr32_3() { GenericWrite(&MEM[3], 32, 1); }
+void Wr32_4() { GenericWrite(&MEM[4], 32, 0); }
+void Wr32_5() { GenericWrite(&MEM[5], 32, 1); }
+void Wr32_6() { GenericWrite(&MEM[6], 32, 0); }
+void Wr32_7() { GenericWrite(&MEM[7], 32, 1); }
 
-void Wr16_0() { GenericWrite(&MEM[0], 16, 0); } 
-void Wr16_1() { GenericWrite(&MEM[1], 16, 1); } 
-void Wr16_2() { GenericWrite(&MEM[2], 16, 2); } 
-void Wr16_3() { GenericWrite(&MEM[3], 16, 3); } 
-void Wr16_4() { GenericWrite(&MEM[4], 16, 0); } 
-void Wr16_5() { GenericWrite(&MEM[5], 16, 1); } 
-void Wr16_6() { GenericWrite(&MEM[6], 16, 2); } 
-void Wr16_7() { GenericWrite(&MEM[7], 16, 3); } 
+void Wr16_0() { GenericWrite(&MEM[0], 16, 0); }
+void Wr16_1() { GenericWrite(&MEM[1], 16, 1); }
+void Wr16_2() { GenericWrite(&MEM[2], 16, 2); }
+void Wr16_3() { GenericWrite(&MEM[3], 16, 3); }
+void Wr16_4() { GenericWrite(&MEM[4], 16, 0); }
+void Wr16_5() { GenericWrite(&MEM[5], 16, 1); }
+void Wr16_6() { GenericWrite(&MEM[6], 16, 2); }
+void Wr16_7() { GenericWrite(&MEM[7], 16, 3); }
 
-void Wr8_0() { GenericWrite(&MEM[0], 8, 0); } 
-void Wr8_1() { GenericWrite(&MEM[1], 8, 1); } 
-void Wr8_2() { GenericWrite(&MEM[2], 8, 2); } 
-void Wr8_3() { GenericWrite(&MEM[3], 8, 3); } 
-void Wr8_4() { GenericWrite(&MEM[4], 8, 4); } 
-void Wr8_5() { GenericWrite(&MEM[5], 8, 5); } 
-void Wr8_6() { GenericWrite(&MEM[6], 8, 6); } 
-void Wr8_7() { GenericWrite(&MEM[7], 8, 7); } 
+void Wr8_0() { GenericWrite(&MEM[0], 8, 0); }
+void Wr8_1() { GenericWrite(&MEM[1], 8, 1); }
+void Wr8_2() { GenericWrite(&MEM[2], 8, 2); }
+void Wr8_3() { GenericWrite(&MEM[3], 8, 3); }
+void Wr8_4() { GenericWrite(&MEM[4], 8, 4); }
+void Wr8_5() { GenericWrite(&MEM[5], 8, 5); }
+void Wr8_6() { GenericWrite(&MEM[6], 8, 6); }
+void Wr8_7() { GenericWrite(&MEM[7], 8, 7); }
 
 void WriteAll64() {
   Wr64_0();
@@ -5860,21 +5860,21 @@ void WriteAll8() {
   Wr8_7();
 }
 
-void W00() { WriteAll64(); } 
-void W01() { WriteAll64(); } 
-void W02() { WriteAll64(); } 
+void W00() { WriteAll64(); }
+void W01() { WriteAll64(); }
+void W02() { WriteAll64(); }
 
-void W10() { WriteAll32(); } 
-void W11() { WriteAll32(); } 
-void W12() { WriteAll32(); } 
+void W10() { WriteAll32(); }
+void W11() { WriteAll32(); }
+void W12() { WriteAll32(); }
 
-void W20() { WriteAll16(); } 
-void W21() { WriteAll16(); } 
-void W22() { WriteAll16(); } 
+void W20() { WriteAll16(); }
+void W21() { WriteAll16(); }
+void W22() { WriteAll16(); }
 
-void W30() { WriteAll8(); } 
-void W31() { WriteAll8(); } 
-void W32() { WriteAll8(); } 
+void W30() { WriteAll8(); }
+void W31() { WriteAll8(); }
+void W32() { WriteAll8(); }
 
 typedef void (*F)(void);
 
@@ -5909,7 +5909,7 @@ REGISTER_TEST2(Run, 123, FEATURE|EXCLUDE_FROM_ALL)
 
 // test124: What happens if we delete an unlocked lock? {{{1
 namespace test124 {
-// This test does not worg with pthreads (you can't call 
+// This test does not worg with pthreads (you can't call
 // pthread_mutex_destroy on a locked lock).
 int     GLOB = 0;
 const int N = 1000;
@@ -5920,7 +5920,7 @@ void Worker() {
     a_large_local_array_of_mutexes[i].Lock();
   }
   delete []a_large_local_array_of_mutexes;
-  GLOB = 1; 
+  GLOB = 1;
 }
 
 void Run() {
@@ -5936,14 +5936,14 @@ REGISTER_TEST2(Run, 124, FEATURE|EXCLUDE_FROM_ALL)
 
 // test125 TN: Backwards lock (annotated). {{{1
 namespace test125 {
-// This test uses "Backwards mutex" locking protocol. 
-// We take a *reader* lock when writing to a per-thread data 
-// (GLOB[thread_num])  and we take a *writer* lock when we 
+// This test uses "Backwards mutex" locking protocol.
+// We take a *reader* lock when writing to a per-thread data
+// (GLOB[thread_num])  and we take a *writer* lock when we
 // are reading from the entire array at once.
 //
-// Such locking protocol is not understood by ThreadSanitizer's 
-// hybrid state machine. So, you either have to use a pure-happens-before 
-// detector ("tsan --pure-happens-before") or apply pure happens-before mode 
+// Such locking protocol is not understood by ThreadSanitizer's
+// hybrid state machine. So, you either have to use a pure-happens-before
+// detector ("tsan --pure-happens-before") or apply pure happens-before mode
 // to this particular lock by using ANNOTATE_MUTEX_IS_USED_AS_CONDVAR(&mu).
 
 const int n_threads = 3;
@@ -6060,9 +6060,9 @@ REGISTER_TEST2(Run, 128, FEATURE | EXCLUDE_FROM_ALL)
 }  // namespace test128
 
 // test129: TN. Synchronization via ReaderLockWhen(). {{{1
-namespace test129 {  
+namespace test129 {
 int     GLOB = 0;
-Mutex   MU; 
+Mutex   MU;
 bool WeirdCondition(int* param) {
   *param = GLOB;  // a write into Waiter's memory
   return GLOB > 0;
@@ -6094,9 +6094,9 @@ REGISTER_TEST2(Run, 129, FEATURE);
 // test130: TN. Per-thread. {{{1
 namespace test130 {
 #ifndef NO_TLS
-// This test verifies that the race detector handles 
+// This test verifies that the race detector handles
 // thread-local storage (TLS) correctly.
-// As of 09-03-30 ThreadSanitizer has a bug: 
+// As of 09-03-30 ThreadSanitizer has a bug:
 //   - Thread1 starts
 //   - Thread1 touches per_thread_global
 //   - Thread1 ends
@@ -6104,7 +6104,7 @@ namespace test130 {
 //   Thread1)
 //   - Thread2 touches per_thread_global
 // It may happen so that Thread2 will have per_thread_global in the same address
-// as Thread1. Since there is no happens-before relation between threads, 
+// as Thread1. Since there is no happens-before relation between threads,
 // ThreadSanitizer reports a race.
 //
 // test131 does the same for stack.
@@ -6418,7 +6418,7 @@ static Container container;
 // The synchronization is correct, but w/o the annotation
 // any hybrid detector will complain.
 //
-// Unlike the test134, we try to have a minimal set of annotations 
+// Unlike the test134, we try to have a minimal set of annotations
 // so that extra h-b arcs do not hide other races.
 
 // Swap is very unfriendly to the lock-set (and hybrid) race detectors.
@@ -6555,7 +6555,7 @@ class FifoMessageQueue {
     ANNOTATE_PCQ_PUT(this);
     q_.push(message);
   }
-  // Return the message from the queue and pop it 
+  // Return the message from the queue and pop it
   // or return 0 if there are no messages.
   int Get() {
     MutexLock lock(&mu_);
@@ -6600,9 +6600,9 @@ void Getter() {
     }
     usleep(1000);
   }
-  printf("T=%d: non_zero_received=%d\n", 
+  printf("T=%d: non_zero_received=%d\n",
          (int)pthread_self(), non_zero_received);
-} 
+}
 
 void Run() {
   printf("test142: tests PCQ annotations\n");
@@ -6732,22 +6732,22 @@ int   var;  // GUARDED_BY(mu1)
 
 void Thread1() {  // Runs in thread named 'test-thread-1'.
   MutexLock lock(&mu1);  // Correct Mutex.
-  var = 1; 
+  var = 1;
 }
 
 void Thread2() {  // Runs in thread named 'test-thread-2'.
   MutexLock lock(&mu2);  // Wrong Mutex.
-  var = 2; 
+  var = 2;
 }
 
-void Run() {  
+void Run() {
   var = 0;
   printf("test301: simple race.\n");
   MyThread t1(Thread1, NULL, "test-thread-1");
   MyThread t2(Thread2, NULL, "test-thread-2");
-  t1.Start();  
-  t2.Start();  
-  t1.Join();   
+  t1.Start();
+  t2.Start();
+  t1.Join();
   t2.Join();
 }
 REGISTER_TEST2(Run, 301, RACE_DEMO)
@@ -6755,8 +6755,8 @@ REGISTER_TEST2(Run, 301, RACE_DEMO)
 
 // test302: Complex race which happens at least twice.  {{{1
 namespace test302 {
-// In this test we have many different accesses to GLOB and only one access 
-// is not synchronized properly. 
+// In this test we have many different accesses to GLOB and only one access
+// is not synchronized properly.
 int     GLOB = 0;
 
 Mutex MU1;
@@ -6765,33 +6765,33 @@ void Worker() {
   for(int i = 0; i < 100; i++) {
     switch(i % 4) {
       case 0:
-        // This read is protected correctly. 
+        // This read is protected correctly.
         MU1.Lock(); CHECK(GLOB >= 0); MU1.Unlock();
         break;
       case 1:
-        // Here we used the wrong lock! The reason of the race is here. 
+        // Here we used the wrong lock! The reason of the race is here.
         MU2.Lock(); CHECK(GLOB >= 0); MU2.Unlock();
         break;
       case 2:
-        // This read is protected correctly. 
+        // This read is protected correctly.
         MU1.Lock(); CHECK(GLOB >= 0); MU1.Unlock();
         break;
       case 3:
-        // This write is protected correctly. 
+        // This write is protected correctly.
         MU1.Lock(); GLOB++; MU1.Unlock();
         break;
     }
-    // sleep a bit so that the threads interleave 
-    // and the race happens at least twice. 
-    usleep(100); 
+    // sleep a bit so that the threads interleave
+    // and the race happens at least twice.
+    usleep(100);
   }
 }
 
-void Run() {  
+void Run() {
   printf("test302: Complex race that happens twice.\n");
   MyThread t1(Worker), t2(Worker);
-  t1.Start();  
-  t2.Start();  
+  t1.Start();
+  t2.Start();
   t1.Join();   t2.Join();
 }
 REGISTER_TEST2(Run, 302, RACE_DEMO)
@@ -6806,12 +6806,12 @@ Mutex MU;
 void Worker1() { CHECK(GLOB >= 0); }
 void Worker2() { MU.Lock(); GLOB=1;  MU.Unlock();}
 
-void Run() {  
+void Run() {
   printf("test303: a race that needs annotations.\n");
   ANNOTATE_TRACE_MEMORY(&GLOB);
   MyThreadArray t(Worker1, Worker2);
-  t.Start();  
-  t.Join(); 
+  t.Start();
+  t.Join();
 }
 REGISTER_TEST2(Run, 303, RACE_DEMO)
 }  // namespace test303
@@ -6821,35 +6821,35 @@ REGISTER_TEST2(Run, 303, RACE_DEMO)
 // test304: Can not trace the memory, since it is a library object. {{{1
 namespace test304 {
 string *STR;
-Mutex   MU; 
+Mutex   MU;
 
 void Worker1() {
-  sleep(0); 
+  sleep(0);
   ANNOTATE_CONDVAR_SIGNAL((void*)0xDEADBEAF);
   MU.Lock(); CHECK(STR->length() >= 4); MU.Unlock();
 }
 void Worker2() {
-  sleep(1);            
+  sleep(1);
   ANNOTATE_CONDVAR_SIGNAL((void*)0xDEADBEAF);
-  CHECK(STR->length() >= 4); // Unprotected! 
+  CHECK(STR->length() >= 4); // Unprotected!
 }
 void Worker3() {
-  sleep(2); 
+  sleep(2);
   ANNOTATE_CONDVAR_SIGNAL((void*)0xDEADBEAF);
   MU.Lock(); CHECK(STR->length() >= 4); MU.Unlock();
 }
 void Worker4() {
-  sleep(3); 
+  sleep(3);
   ANNOTATE_CONDVAR_SIGNAL((void*)0xDEADBEAF);
-  MU.Lock(); *STR += " + a very very long string"; MU.Unlock();  
+  MU.Lock(); *STR += " + a very very long string"; MU.Unlock();
 }
 
-void Run() {  
+void Run() {
   STR = new string ("The String");
   printf("test304: a race where memory tracing does not work.\n");
   MyThreadArray t(Worker1, Worker2, Worker3, Worker4);
-  t.Start();  
-  t.Join(); 
+  t.Start();
+  t.Join();
 
   printf("%s\n", STR->c_str());
   delete STR;
@@ -6864,13 +6864,13 @@ namespace test305 {
 int     GLOB = 0;
 
 // In this test GLOB is protected by MU1 and MU2, but inconsistently.
-// The TRACES observed by helgrind are: 
+// The TRACES observed by helgrind are:
 // TRACE[1]: Access{T2/S2 wr} -> new State{Mod; #LS=2; #SS=1; T2/S2}
 // TRACE[2]: Access{T4/S9 wr} -> new State{Mod; #LS=1; #SS=2; T2/S2, T4/S9}
 // TRACE[3]: Access{T5/S13 wr} -> new State{Mod; #LS=1; #SS=3; T2/S2, T4/S9, T5/S13}
 // TRACE[4]: Access{T6/S19 wr} -> new State{Mod; #LS=0; #SS=4; T2/S2, T4/S9, T5/S13, T6/S19}
 //
-// The guilty access is either Worker2() or Worker4(), depending on 
+// The guilty access is either Worker2() or Worker4(), depending on
 // which mutex is supposed to protect GLOB.
 Mutex MU1;
 Mutex MU2;
@@ -6879,12 +6879,12 @@ void Worker2() { MU1.Lock();             GLOB=2;               MU1.Unlock(); }
 void Worker3() { MU1.Lock(); MU2.Lock(); GLOB=3; MU2.Unlock(); MU1.Unlock(); }
 void Worker4() {             MU2.Lock(); GLOB=4; MU2.Unlock();               }
 
-void Run() {  
+void Run() {
   ANNOTATE_TRACE_MEMORY(&GLOB);
   printf("test305: simple race.\n");
   MyThread t1(Worker1), t2(Worker2), t3(Worker3), t4(Worker4);
   t1.Start(); usleep(100);
-  t2.Start(); usleep(100); 
+  t2.Start(); usleep(100);
   t3.Start(); usleep(100);
   t4.Start(); usleep(100);
   t1.Join(); t2.Join(); t3.Join(); t4.Join();
@@ -6904,12 +6904,12 @@ void Worker1() { MU1.Lock(); MU2.Lock(); GLOB=1; MU2.Unlock(); MU1.Unlock(); }
 void Worker2() { MU1.Lock(); MU2.Lock(); GLOB=3; MU2.Unlock(); MU1.Unlock(); }
 void Worker3() {                         GLOB=4;               }
 
-void Run() {  
+void Run() {
   ANNOTATE_TRACE_MEMORY(&GLOB);
   printf("test306: simple race.\n");
   MyThread t1(Worker1), t2(Worker2), t3(Worker3);
   t1.Start(); usleep(100);
-  t2.Start(); usleep(100); 
+  t2.Start(); usleep(100);
   t3.Start(); usleep(100);
   t1.Join(); t2.Join(); t3.Join();
 }
@@ -6924,12 +6924,12 @@ volatile /*to fake the compiler*/ bool some_condition = true;
 
 void SomeFunc() { }
 
-int FunctionWithControlFlow() {  
+int FunctionWithControlFlow() {
   int unrelated_stuff = 0;
   unrelated_stuff++;
-  SomeFunc();                // "--keep-history=1" will point somewhere here. 
-  if (some_condition) {      // Or here 
-    if (some_condition) {     
+  SomeFunc();                // "--keep-history=1" will point somewhere here.
+  if (some_condition) {      // Or here
+    if (some_condition) {
       unrelated_stuff++;     // Or here.
       unrelated_stuff++;
       (*GLOB)++;             // "--keep-history=2" will point here (experimental).
@@ -6944,12 +6944,12 @@ void Worker2() { Worker1(); }
 void Worker3() { Worker2(); }
 void Worker4() { Worker3(); }
 
-void Run() {  
+void Run() {
   GLOB = new int;
   *GLOB = 1;
   printf("test307: simple race, code with control flow\n");
   MyThreadArray t1(Worker1, Worker2, Worker3, Worker4);
-  t1.Start();  
+  t1.Start();
   t1.Join();
 }
 REGISTER_TEST2(Run, 307, RACE_DEMO)
@@ -6977,9 +6977,9 @@ void InitMe() {
   }
 }
 
-void UseMe() { 
+void UseMe() {
   InitMe();
-  CHECK(foo && foo->a == 42); 
+  CHECK(foo && foo->a == 42);
 }
 
 void Worker1() { UseMe(); }
@@ -6987,11 +6987,11 @@ void Worker2() { UseMe(); }
 void Worker3() { UseMe(); }
 
 
-void Run() {  
+void Run() {
   ANNOTATE_TRACE_MEMORY(&is_inited);
   printf("test308: Example of double-checked-locking\n");
   MyThreadArray t1(Worker1, Worker2, Worker3);
-  t1.Start();  
+  t1.Start();
   t1.Join();
 }
 REGISTER_TEST2(Run, 308, RACE_DEMO)
@@ -7001,19 +7001,19 @@ REGISTER_TEST2(Run, 308, RACE_DEMO)
 namespace test309 {
 string  GLOB;
 
-void Worker1() { 
+void Worker1() {
   GLOB="Thread1";
 }
-void Worker2() { 
+void Worker2() {
   usleep(100000);
-  GLOB="Booooooooooo"; 
+  GLOB="Booooooooooo";
 }
 
-void Run() {  
+void Run() {
   printf("test309: simple race on an STL object.\n");
   MyThread t1(Worker1), t2(Worker2);
-  t1.Start();  
-  t2.Start();  
+  t1.Start();
+  t2.Start();
   t1.Join();   t2.Join();
 }
 REGISTER_TEST2(Run, 309, RACE_DEMO)
@@ -7030,7 +7030,7 @@ Mutex mu3;  // Unrelated to PTR.
 void Writer1() {
   MutexLock lock3(&mu3);  // This lock is unrelated to PTR.
   MutexLock lock1(&mu1);  // Protect PTR.
-  *PTR = 1; 
+  *PTR = 1;
 }
 
 void Writer2() {
@@ -7039,13 +7039,13 @@ void Writer2() {
   int some_unrelated_stuff = 0;
   if (some_unrelated_stuff == 0)
     some_unrelated_stuff++;
-  *PTR = 2; 
+  *PTR = 2;
 }
 
 
 void Reader() {
   MutexLock lock2(&mu2);  // Oh, gosh, this is a wrong mutex!
-  CHECK(*PTR <= 2); 
+  CHECK(*PTR <= 2);
 }
 
 // Some functions to make the stack trace non-trivial.
@@ -7058,20 +7058,20 @@ void Thread2()  { DoWrite2(); }
 void DoRead()  { Reader();  }
 void Thread3() { DoRead();  }
 
-void Run() {  
+void Run() {
   printf("test310: simple race.\n");
   PTR = new int;
   ANNOTATE_TRACE_MEMORY(PTR);
   *PTR = 0;
-  MyThread t1(Thread1, NULL, "writer1"), 
-           t2(Thread2, NULL, "writer2"), 
+  MyThread t1(Thread1, NULL, "writer1"),
+           t2(Thread2, NULL, "writer2"),
            t3(Thread3, NULL, "buggy reader");
-  t1.Start();  
-  t2.Start();  
+  t1.Start();
+  t2.Start();
   usleep(100000);  // Let the writers go first.
-  t3.Start();  
+  t3.Start();
 
-  t1.Join();   
+  t1.Join();
   t2.Join();
   t3.Join();
 }
@@ -7089,18 +7089,18 @@ Mutex mu3;  // Unrelated to PTR.
 void GoodWriter1() {      // Runs in Thread1
   MutexLock lock3(&mu3);  // This lock is unrelated to PTR.
   MutexLock lock1(&mu1);  // Protect PTR.
-  *PTR = 1; 
+  *PTR = 1;
 }
 
 void GoodWriter2() {      // Runs in Thread2
   MutexLock lock2(&mu2);  // This lock is unrelated to PTR.
   MutexLock lock1(&mu1);  // Protect PTR.
-  *PTR = 2; 
+  *PTR = 2;
 }
 
 void GoodReader() {      // Runs in Thread3
   MutexLock lock1(&mu1);  // Protect PTR.
-  CHECK(*PTR >= 0); 
+  CHECK(*PTR >= 0);
 }
 
 void BuggyWriter() {      // Runs in Thread4
@@ -7121,24 +7121,24 @@ void Thread3()     { DoGoodRead();  }
 void DoBadWrite()  { BuggyWriter(); }
 void Thread4()     { DoBadWrite(); }
 
-void Run() {  
+void Run() {
   printf("test311: simple race.\n");
   PTR = new int;
   ANNOTATE_TRACE_MEMORY(PTR);
   *PTR = 0;
-  MyThread t1(Thread1, NULL, "good writer1"), 
-           t2(Thread2, NULL, "good writer2"), 
+  MyThread t1(Thread1, NULL, "good writer1"),
+           t2(Thread2, NULL, "good writer2"),
            t3(Thread3, NULL, "good reader"),
            t4(Thread4, NULL, "buggy writer");
-  t1.Start();  
-  t3.Start();  
+  t1.Start();
+  t3.Start();
   // t2 goes after t3. This way a pure happens-before detector has no chance.
   usleep(10000);
-  t2.Start();  
+  t2.Start();
   usleep(100000);  // Let the good folks go first.
-  t4.Start();  
+  t4.Start();
 
-  t1.Join();   
+  t1.Join();
   t2.Join();
   t3.Join();
   t4.Join();
@@ -7230,20 +7230,20 @@ void Thread2() {
 //---- Sub-optimal code ---------
 size_t NumberOfElementsLeft() {
   MutexLock lock(&mu);
-  return vec->size(); 
+  return vec->size();
 }
 
 void WaitForAllThreadsToFinish_InefficientAndTsanUnfriendly() {
   while(NumberOfElementsLeft()) {
-    ; // sleep or print or do nothing. 
+    ; // sleep or print or do nothing.
   }
   // It is now safe to access vec w/o lock.
-  // But a hybrid detector (like ThreadSanitizer) can't see it. 
-  // Solutions: 
+  // But a hybrid detector (like ThreadSanitizer) can't see it.
+  // Solutions:
   //   1. Use pure happens-before detector (e.g. "tsan --pure-happens-before")
-  //   2. Call ANNOTATE_MUTEX_IS_USED_AS_CONDVAR(&mu) 
+  //   2. Call ANNOTATE_MUTEX_IS_USED_AS_CONDVAR(&mu)
   //      in InitAllBeforeStartingThreads()
-  //   3. (preferred) Use WaitForAllThreadsToFinish_Good() (see below).   
+  //   3. (preferred) Use WaitForAllThreadsToFinish_Good() (see below).
   CHECK(vec->empty());
   delete vec;
 }
@@ -7306,11 +7306,11 @@ int DecRefAnnotated() {
 }
 
 void ThreadWorker() {
-  CHECK(ref_count > 0);  
+  CHECK(ref_count > 0);
   CHECK(vec->size() == 1);
   if (DecRef() == 0) {  // Use DecRefAnnotated() instead!
     // No one uses vec now ==> delete it.
-    delete vec;  // A false race may be reported here. 
+    delete vec;  // A false race may be reported here.
     vec = NULL;
   }
 }
@@ -7335,9 +7335,9 @@ void Worker() {
    muCounter.Lock();
    int myId = ++COUNTER;
    muCounter.Unlock();
-  
+
    usleep(100);
-  
+
    muGlob[myId].Lock();
    muGlob[0].Lock();
    GLOB++;
@@ -7349,14 +7349,14 @@ void Worker_1() {
    MyThreadArray ta (Worker, Worker, Worker, Worker);
    ta.Start();
    usleep(500000);
-   ta.Join ();   
+   ta.Join ();
 }
 
 void Worker_2() {
    MyThreadArray ta (Worker_1, Worker_1, Worker_1, Worker_1);
    ta.Start();
    usleep(300000);
-   ta.Join ();   
+   ta.Join ();
 }
 
 void Run() {
@@ -7378,7 +7378,7 @@ namespace test502 {
 
 /*
  * This test produces ~1Gb of memory usage when run with the following options:
- * 
+ *
  * --tool=helgrind
  * --trace-after-race=0
  * --num-callers=2
@@ -7399,7 +7399,7 @@ void TP() {
 void Run() {
    MyThreadArray t(TP, TP);
    printf("test502: produce lots of segments without cross-thread relations\n");
-   
+
    t.Start();
    t.Join();
 }
@@ -7427,7 +7427,7 @@ namespace test503 {
 //  |- |  |  |  |  |
 //  | \|  |  |  |  |
 //     ...
-  
+
 const int N_threads = 32;
 const int ARRAY_SIZE = 128;
 int       GLOB[ARRAY_SIZE];
@@ -7437,14 +7437,14 @@ int count = -1;
 
 void Worker(){
    int myId = AtomicIncrement(&count, 1);
-   
+
    ProducerConsumerQueue &myQ = *Q[myId], &nextQ = *Q[(myId+1) % N_threads];
-   
+
    // this code produces a new SS with each new segment
    while (myQ.Get() != NULL) {
       for (int i = 0; i < ARRAY_SIZE; i++)
          GLOB[i]++;
-      
+
       if (myId == 0 && GLOB[0] > GLOB_limit) {
          // Stop all threads
          for (int i = 0; i < N_threads; i++)
@@ -7459,15 +7459,15 @@ void Run() {
    for (int i = 0; i < N_threads; i++)
       Q[i] = new ProducerConsumerQueue(1);
    Q[0]->Put(GLOB);
-   
-   {      
+
+   {
       ThreadPool pool(N_threads);
       pool.StartWorkers();
       for (int i = 0; i < N_threads; i++) {
          pool.Add(NewCallback(Worker));
       }
    } // all folks are joined here.
-   
+
    for (int i = 0; i < N_threads; i++)
       delete Q[i];
 }
@@ -7486,8 +7486,8 @@ const int N_THREADS = 2,
 
 // int gives us ~4x speed of the byte test
 // 4x array size gives us
-// total multiplier of 16x over the cachesize 
-// so we can neglect the cached-at-the-end memory 
+// total multiplier of 16x over the cachesize
+// so we can neglect the cached-at-the-end memory
 const int ARRAY_SIZE = 4 * HG_CACHE_SIZE,
           ITERATIONS = 30;
 int array[ARRAY_SIZE];
@@ -7499,13 +7499,13 @@ void Worker() {
    count_mu.Lock();
    int myId = ++count;
    count_mu.Unlock();
-   
+
    // all threads write to different memory locations,
    // so no synchronization mechanisms are needed
    int lower_bound = ARRAY_SIZE * (myId-1) / N_THREADS,
        upper_bound = ARRAY_SIZE * ( myId ) / N_THREADS;
    for (int j = 0; j < ITERATIONS; j++)
-   for (int i = lower_bound; i < upper_bound; 
+   for (int i = lower_bound; i < upper_bound;
             i += HG_CACHELINE_SIZE / sizeof(array[0])) {
       array[i] = i; // each array-write generates a cache miss
    }
@@ -7544,7 +7544,7 @@ void Worker() {
    count_mu.Lock();
    int myId = ++count;
    count_mu.Unlock();
-   
+
    // all threads write to different memory locations,
    // so no synchronization mechanisms are needed
    int lower_bound = ARRAY_SIZE * (myId-1) / N_THREADS,
@@ -7553,7 +7553,7 @@ void Worker() {
    for (int mutex_id = 0; mutex_id < N_MUTEXES; mutex_id++) {
       Mutex *m = & mu[mutex_id];
       m->Lock();
-      for (int i = lower_bound + mutex_id, cnt = 0; 
+      for (int i = lower_bound + mutex_id, cnt = 0;
                i < upper_bound;
                i += HG_CACHELINE_SIZE / sizeof(array[0]), cnt++) {
          array[i] = i; // each array-write generates a cache miss
@@ -7578,12 +7578,12 @@ REGISTER_TEST2(Run, 505, PERFORMANCE | PRINT_STATS | EXCLUDE_FROM_ALL)
 // modification of test39
 namespace test506 {
 #ifndef NO_BARRIER
-// Same as test17 but uses Barrier class (pthread_barrier_t). 
+// Same as test17 but uses Barrier class (pthread_barrier_t).
 int     GLOB = 0;
 const int N_threads = 64,
           ITERATIONS = 1000;
 Barrier *barrier[ITERATIONS];
-Mutex   MU; 
+Mutex   MU;
 
 void Worker() {
   for (int i = 0; i < ITERATIONS; i++) {
@@ -7750,7 +7750,7 @@ void Run() {
     for (int i = 0; i < N_THREADS; i++) {
       pool.Add(NewCallback(Worker));
     }
-  } // all folks are joined here.  
+  } // all folks are joined here.
 }
 REGISTER_TEST2(Run, 510, MEMORY_USAGE | PRINT_STATS | EXCLUDE_FROM_ALL);
 }  // namespace test510
@@ -7813,18 +7813,18 @@ void Worker() {
    count_mu.Lock();
    int myId = count++;
    count_mu.Unlock();
-   
+
    // all threads write to different memory locations
    for (int j = 0; j < ITERATIONS; j++) {
       int mutex_mask = j & MUTEX_ID_BITS;
       for (int m = 0; m < MUTEX_ID_BITS; m++)
          if (mutex_mask & (1 << m))
             mutex_arr[myId][m].Lock();
-      
+
       for (int i = 0; i < ARRAY_SIZE; i++) {
          array[myId][i] = i;
       }
-      
+
       for (int m = 0; m < MUTEX_ID_BITS; m++)
          if (mutex_mask & (1 << m))
             mutex_arr[myId][m].Unlock();
