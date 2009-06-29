@@ -3393,9 +3393,15 @@ void WorkerX() {
   CHECK(index(str, 'X') == str);
   CHECK(index(str, 'x') == str+1);
   CHECK(index(str, 'Y') == NULL);
+  CHECK(strchr(str, 'X') == str);
+  CHECK(strchr(str, 'x') == str+1);
+  CHECK(strchr(str, 'Y') == NULL);
   CHECK(rindex(str, 'X') == str+2);
   CHECK(rindex(str, 'x') == str+3);
   CHECK(rindex(str, 'Y') == NULL);
+  CHECK(strrchr(str, 'X') == str+2);
+  CHECK(strrchr(str, 'x') == str+3);
+  CHECK(strrchr(str, 'Y') == NULL);
 }
 void WorkerY() {
   str[5] = 'Y';
