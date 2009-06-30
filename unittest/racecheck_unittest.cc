@@ -6411,7 +6411,7 @@ REGISTER_TEST2(Run, 139, FEATURE)
 
 // test140 TN. Swap. Variant of test79 and test134. {{{1
 namespace test140 {
-#if 0
+#ifdef ANNOTATE_UNPUBLISH_MEMORY_RANGE
 #if 0
 typedef __gnu_cxx::hash_map<int, int> Container;
 #else
@@ -6471,7 +6471,7 @@ void Run() {
   t.Join();
 }
 REGISTER_TEST(Run, 140)
-#endif
+#endif // defined (ANNOTATE_UNPUBLISH_MEMORY_RANGE)
 }  // namespace test140
 
 // test141 FP. unlink/fopen, rmdir/opendir. {{{1
