@@ -50,6 +50,7 @@
 #include <queue>
 #include <stdio.h>
 #include <limits.h>   // INT_MAX
+#include <errno.h>
 
 #ifdef __APPLE__
 #include <libkern/OSAtomic.h>
@@ -305,6 +306,20 @@ class RWLock {
   void ReaderLock() { CHECK(0 == pthread_rwlock_rdlock(&mu_)); }
   void Unlock() { CHECK(0 == pthread_rwlock_unlock(&mu_)); }
   void ReaderUnlock() { CHECK(0 == pthread_rwlock_unlock(&mu_)); }
+  bool TryLock() {
+    int res = pthread_rwlock_trywrlock(&mu_);
+    if (res != 0) {
+      CHECK(EBUSY == res);
+    }
+    return (res == 0);
+  }
+  bool ReaderTryLock() {
+    int res = pthread_rwlock_tryrdlock(&mu_);
+    if (res != 0) {
+      CHECK(EBUSY == res);
+    }
+    return (res == 0);
+  }
  private:
   pthread_cond_t dummy; // Damn, this requires some redesign...
   pthread_rwlock_t mu_;
