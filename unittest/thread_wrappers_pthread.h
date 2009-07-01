@@ -51,9 +51,10 @@
 #include <stdio.h>
 #include <limits.h>   // INT_MAX
 
-#ifdef _APPLE_
+#ifdef __APPLE__
 #include <libkern/OSAtomic.h>
 #define NO_BARRIER
+#define NO_UNNAMED_SEM
 #define NO_TLS
 #endif
 
@@ -73,7 +74,11 @@ using namespace std;
 
 /// Set this to true if malloc() uses mutex on your platform as this may
 /// introduce a happens-before arc for a pure happens-before race detector.
+#ifdef __APPLE__
+const bool kMallocUsesMutex = true;
+#else
 const bool kMallocUsesMutex = false;
+#endif
 
 /// Current time in milliseconds. 
 static inline int64_t GetCurrentTimeMillis() {
@@ -102,7 +107,7 @@ class CondVar;
 #ifndef NO_SPINLOCK
 /// helgrind does not (yet) support spin locks, so we annotate them.
 
-#ifndef _APPLE_
+#ifndef __APPLE__
 class SpinLock {
  public:
   SpinLock() {
@@ -147,7 +152,7 @@ class SpinLock {
  private:
   OSSpinLock mu_;
 };
-#endif // _APPLE_
+#endif // __APPLE__
 
 #endif // NO_SPINLOCK
 
@@ -585,7 +590,7 @@ class BlockingCounter {
 
 int AtomicIncrement(volatile int *value, int increment);
 
-#ifndef _APPLE_
+#ifndef __APPLE__
 inline int AtomicIncrement(volatile int *value, int increment) {
   return __sync_add_and_fetch(value, increment);
 }
@@ -604,7 +609,7 @@ int posix_memalign(void **out, size_t al, size_t size) {
   *out = memalign(al, size);
   return (*out == 0);
 }
-#endif // _APPLE_
+#endif // __APPLE__
 
 #endif // THREAD_WRAPPERS_PTHREAD_H
 // vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker
