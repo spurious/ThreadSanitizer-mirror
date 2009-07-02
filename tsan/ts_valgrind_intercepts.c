@@ -105,6 +105,10 @@ static inline int  VALGRIND_TS_SEGMENT_ID(void) {
    ret_ty I_WRAP_SONAME_FNNAME_ZZ(NONE,f)(args); \
    ret_ty I_WRAP_SONAME_FNNAME_ZZ(NONE,f)(args)
 
+#define LIBC_FUNC(ret_ty, f, args...) \
+   ret_ty I_WRAP_SONAME_FNNAME_ZZ(m_libc_soname,f)(args); \
+   ret_ty I_WRAP_SONAME_FNNAME_ZZ(m_libc_soname,f)(args)
+
 // libstdcZpZpZa = libstdc++
 #define LIBSTDCXX_FUNC(ret_ty, f, args...) \
    ret_ty I_WRAP_SONAME_FNNAME_ZZ(libstdcZpZpZa,f)(args); \
@@ -1414,7 +1418,7 @@ PTH_FUNC(sem_t *, semZuopenZAZa, const char *name, int oflag,
 
 // socket/file IO that creates happens-before arcs.
 
-static void *SocketMagic(int s) {
+static void *SocketMagic(long s) {
   return (void*)0xDEADFBAD;
 }
 
@@ -1494,6 +1498,51 @@ PTH_FUNC(long, write, int s, void *a2, long a3) {
    o = SocketMagic(s);
    DO_CREQ_v_W(TSREQ_PTHREAD_COND_SIGNAL_PRE, void*, o);
    CALL_FN_W_WWW(ret, fn, s, a2, a3);
+   return ret;
+}
+
+LIBC_FUNC(long, unlink, void *path) {
+   OrigFn fn;
+   long    ret;
+   void *o;
+   VALGRIND_GET_ORIG_FN(fn);
+   o = SocketMagic((long)path);
+   DO_CREQ_v_W(TSREQ_PTHREAD_COND_SIGNAL_PRE, void*, o);
+   CALL_FN_W_W(ret, fn, path);
+   return ret;
+}
+
+LIBC_FUNC(int, open, void *path, int flags, int mode) {
+   OrigFn fn;
+   long    ret;
+   void *o;
+   VALGRIND_GET_ORIG_FN(fn);
+   o = SocketMagic((long)path);
+   DO_CREQ_v_W(TSREQ_PTHREAD_COND_SIGNAL_PRE, void*, o);
+   CALL_FN_W_WWW(ret, fn, path, flags, mode);
+   do_wait_pre_and_post(o, 0);
+   return ret;
+}
+
+LIBC_FUNC(int, rmdir, void *path) {
+   OrigFn fn;
+   long    ret;
+   void *o;
+   VALGRIND_GET_ORIG_FN(fn);
+   o = SocketMagic((long)path);
+   DO_CREQ_v_W(TSREQ_PTHREAD_COND_SIGNAL_PRE, void*, o);
+   CALL_FN_W_W(ret, fn, path);
+   return ret;
+}
+
+LIBC_FUNC(long, opendir, void *path) {
+   OrigFn fn;
+   long    ret;
+   void *o;
+   VALGRIND_GET_ORIG_FN(fn);
+   CALL_FN_W_W(ret, fn, path);
+   o = SocketMagic((long)path);
+   do_wait_pre_and_post(o, 0);
    return ret;
 }
 
@@ -1616,9 +1665,11 @@ LIBSTDCXX_FUNC(long, ZuZucxaZuguardZurelease, void *p) {
       return dst; \
    }
 
-MEMCPY(m_libc_soname, memcpy)
-MEMCPY(m_ld_so_1,     memcpy) /* ld.so.1 */
-MEMCPY(m_ld64_so_1,   memcpy) /* ld64.so.1 */
+MEMCPY(VG_Z_LIBC_SONAME, memcpy)
+#if defined(VGO_linux)
+MEMCPY(VG_Z_LD_SO_1,     memcpy) /* ld.so.1 */
+MEMCPY(VG_Z_LD64_SO_1,   memcpy) /* ld64.so.1 */
+#endif
 /* icc9 blats these around all over the place.  Not only in the main
    executable but various .so's.  They are highly tuned and read
    memory beyond the source boundary (although work correctly and
@@ -1646,12 +1697,40 @@ MEMCPY(NONE, _intel_fast_memcpy)
    }
 
 // Apparently index() is the same thing as strchr()
-STRCHR(m_libc_soname,          strchr)
-STRCHR(m_ld_linux_so_2,        strchr)
-STRCHR(m_ld_linux_x86_64_so_2, strchr)
-STRCHR(m_libc_soname,          index)
-STRCHR(m_ld_linux_so_2,        index)
-STRCHR(m_ld_linux_x86_64_so_2, index)
+STRCHR(VG_Z_LIBC_SONAME,          strchr)
+STRCHR(VG_Z_LIBC_SONAME,          index)
+#if defined(VGO_linux)
+STRCHR(VG_Z_LD_LINUX_SO_2,        strchr)
+STRCHR(VG_Z_LD_LINUX_X86_64_SO_2, strchr)
+STRCHR(VG_Z_LD_LINUX_SO_2,        index)
+STRCHR(VG_Z_LD_LINUX_X86_64_SO_2, index)
+#endif
+
+
+// --- STRRCHR RINDEX -----------------------------------------------------
+//
+#define STRRCHR(soname, fnname) \
+   char* VG_REPLACE_FUNCTION_ZU(soname,fnname)( const char* str, int c ); \
+   char* VG_REPLACE_FUNCTION_ZU(soname,fnname)( const char* str, int c ) \
+   { \
+      Char* ret = NULL; \
+      SizeT i = 0; \
+      while (str[i] != 0) { \
+        if (str[i] == c) \
+          ret = (Char*)&str[i]; \
+        i++; \
+      } \
+      return ret; \
+   }
+
+STRRCHR(VG_Z_LIBC_SONAME,          strrchr)
+STRRCHR(VG_Z_LIBC_SONAME,          rindex)
+#if defined(VGO_linux)
+STRRCHR(VG_Z_LD_LINUX_SO_2,        strrchr)
+STRRCHR(VG_Z_LD_LINUX_X86_64_SO_2, strrchr)
+STRRCHR(VG_Z_LD_LINUX_SO_2,        rindex)
+STRRCHR(VG_Z_LD_LINUX_X86_64_SO_2, rindex)
+#endif
 
 
 // --- STRCMP -----------------------------------------------------
@@ -1676,9 +1755,11 @@ STRCHR(m_ld_linux_x86_64_so_2, index)
       return 0; \
    }
 
-STRCMP(m_libc_soname,          strcmp)
-STRCMP(m_ld_linux_x86_64_so_2, strcmp)
-STRCMP(m_ld64_so_1,            strcmp)
+STRCMP(VG_Z_LIBC_SONAME,          strcmp)
+#if defined(VGO_linux)
+STRCMP(VG_Z_LD_LINUX_X86_64_SO_2, strcmp)
+STRCMP(VG_Z_LD64_SO_1,            strcmp)
+#endif
 
 
 // --- STRLEN -----------------------------------------------------
@@ -1696,9 +1777,11 @@ STRCMP(m_ld64_so_1,            strcmp)
       return i; \
    }
 
-STRLEN(m_libc_soname,          strlen)
-STRLEN(m_ld_linux_so_2,        strlen)
-STRLEN(m_ld_linux_x86_64_so_2, strlen)
+STRLEN(VG_Z_LIBC_SONAME,          strlen)
+#if defined(VGO_linux)
+STRLEN(VG_Z_LD_LINUX_SO_2,        strlen)
+STRLEN(VG_Z_LD_LINUX_X86_64_SO_2, strlen)
+#endif
 
 
 // --- STRCPY -----------------------------------------------------
@@ -1715,7 +1798,7 @@ STRLEN(m_ld_linux_x86_64_so_2, strlen)
       return dst_orig; \
    }
 
-STRCPY(m_libc_soname, strcpy)
+STRCPY(VG_Z_LIBC_SONAME, strcpy)
 
 
 //------------------------ Annotations ---------------- {{{1
@@ -1845,6 +1928,13 @@ ANN_FUNC(void, AnnotatePublishMemoryRange, char *file, int line, void *mem, long
   const char *name = "AnnotatePublishMemoryRange";
   ANN_TRACE("--#%d %s[%p,%d] %s:%d\n", tid, name, mem, (int)size, file, line);
   DO_CREQ_v_WW(TSREQ_PUBLISH_MEMORY_RANGE,   void*, mem, long, size);
+}
+
+ANN_FUNC(void, AnnotateUnpublishMemoryRange, char *file, int line, void *mem, long size)
+{
+  const char *name = "AnnotateUnpublishMemoryRange";
+  ANN_TRACE("--#%d %s[%p,%d] %s:%d\n", tid, name, mem, (int)size, file, line);
+  DO_CREQ_v_WW(TSREQ_UNPUBLISH_MEMORY_RANGE,   void*, mem, long, size);
 }
 
 ANN_FUNC(void, AnnotateIgnoreReadsBegin, char *file, int line, void *mu)

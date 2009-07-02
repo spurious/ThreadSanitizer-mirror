@@ -55,6 +55,7 @@ enum {
   TSREQ_IGNORE_ALL_BEGIN,        
   TSREQ_IGNORE_ALL_END,          
   TSREQ_PUBLISH_MEMORY_RANGE,       
+  TSREQ_UNPUBLISH_MEMORY_RANGE,
   TSREQ_PRINT_MEMORY_USAGE,         
   TSREQ_PRINT_STATS,                
   TSREQ_RESET_STATS,                
@@ -78,7 +79,8 @@ enum {
   TSREQ_POSIX_SEM_WAIT_POST,        
   TSREQ_GET_MY_SEGMENT,             
   TSREQ_GET_THREAD_ID,              
-  TSREQ_GET_SEGMENT_ID              
+  TSREQ_GET_VG_THREAD_ID,
+  TSREQ_GET_SEGMENT_ID
 };
 #endif // TS_VALGRIND_CLIENT_REQUESTS_H__
 // end. {{{1

@@ -503,6 +503,9 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
     case TSREQ_PUBLISH_MEMORY_RANGE:
       Put(PUBLISH_RANGE, ts_tid, pc, /*mem=*/args[1], /*size=*/args[2]);
       break;
+    case TSREQ_UNPUBLISH_MEMORY_RANGE:
+      Put(UNPUBLISH_RANGE, ts_tid, pc, /*mem=*/args[1], /*size=*/args[2]);
+      break;
     case TSREQ_PRINT_MEMORY_USAGE:
     case TSREQ_PRINT_STATS:
     case TSREQ_RESET_STATS:
@@ -554,6 +557,9 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
       break;
     case TSREQ_GET_THREAD_ID:
       *ret = ts_tid;
+      break;
+    case TSREQ_GET_VG_THREAD_ID:
+      *ret = vg_tid;
       break;
     case TSREQ_GET_SEGMENT_ID:
       break;
@@ -787,17 +793,13 @@ static IRSB* ts_instrument ( VgCallbackClosure* closure,
         switch (st->Ist.MBE.event) {
           case Imbe_Fence:
             break; /* not interesting */
-          case Imbe_BusLock:
-            tl_assert(x86busLocked == False);
-            x86busLocked = True;
-            break;
-          case Imbe_BusUnlock:
-            tl_assert(x86busLocked == True);
-            x86busLocked = False;
-            break;
           default:
-            goto unhandled;
+            ppIRStmt(st);
+            tl_assert(0);
         }
+        break;
+
+      case Ist_CAS:
         break;
 
       case Ist_Store:
@@ -858,7 +860,6 @@ static IRSB* ts_instrument ( VgCallbackClosure* closure,
                       }
 
       default:
-unhandled:
                       ppIRStmt(st);
                       tl_assert(0);
 

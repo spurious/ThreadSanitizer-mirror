@@ -62,11 +62,11 @@ FLAGS *G_flags = NULL;
 // Read the contents of a file to string. Valgrind version.
 static string ReadFileToString(const string &file_name) {
   SysRes sres = VG_(open)((const Char*)file_name.c_str(), VKI_O_RDONLY, 0);
-  if (sres.isError) {
+  if (sr_isError(sres)) {
     Report("WARNING: can not open file %s\n", file_name.c_str());
     exit(1);
   }
-  int fd = sres.res;
+  int fd = sr_Res(sres);
   char buff[257] = {0};
   int n_read;
   string res;
@@ -85,23 +85,32 @@ static void OpenFileWriteStringAndClose(const string &file_name,
   SysRes sres = VG_(open)((const Char*)file_name.c_str(),
                           VKI_O_WRONLY|VKI_O_CREAT|VKI_O_TRUNC,
                           VKI_S_IRUSR|VKI_S_IWUSR);
-  if (sres.isError) {
+  if (sr_isError(sres)) {
     Report("WARNING: can not open file %s\n", file_name.c_str());
     exit(1);
   }
-  int fd = sres.res;
+  int fd = sr_Res(sres);
   VG_(write)(fd, str.c_str(), str.size());
   VG_(close)(fd);
 }
 
-template<typename T>
-static inline T tsan_bswap(T in) {
-  if (sizeof(in) == 8)
-    return __builtin_bswap64(in);
-  else if (sizeof(in) == 4)
-    return __builtin_bswap32(in);
-  else
-    CHECK(0);
+inline uintptr_t tsan_bswap(uintptr_t x) {
+#if defined(VGO_linux)
+#if VEX_HOST_WORDSIZE == 8
+  return __builtin_bswap64(x);
+#elif VEX_HOST_WORDSIZE == 4
+  return __builtin_bswap32(x);
+#endif // VEX_HOST_WORDSIZE
+
+#elif defined(VGO_darwin)
+#if VEX_HOST_WORDSIZE == 8
+  __asm__("bswapq %0" : "=r" (x) : "0" (x));
+  return x;
+#elif VEX_HOST_WORDSIZE == 4
+  __asm__("bswapl %0" : "=r" (x) : "0" (x));
+  return x;
+#endif  // VEX_HOST_WORDSIZE
+#endif  // OS
 }
 
 // -------- Stats ------------------- {{{1
@@ -890,11 +899,13 @@ class Lock {
   string ToString() const {
     string res;
     char buff[100];
-    snprintf(buff, sizeof(buff), "L%d ", lid_.raw());
+    snprintf(buff, sizeof(buff), "L%d", lid_.raw());
     // do we need to print the address?
     // reinterpret_cast<void*>(lock_addr()));
     res = buff;
-    res += name() ? ("\"" + string(name()) + "\"" ) : "unnamed";
+    if (name()) {
+      res += string(" ") + name();
+    }
     return res;
   }
 
@@ -1920,7 +1931,6 @@ class SegmentSet {
   static NOINLINE SSID AddSegmentToSS(SSID old_ssid, SID new_sid);
   static NOINLINE SSID RemoveSegmentFromSS(SSID old_ssid, SID sid_to_remove);
 
-  static INLINE SSID AddSegmentToSingletonSS(SSID ssid, SID new_sid);
   static INLINE SSID AddSegmentToTupleSS(SSID ssid, SID new_sid);
   static INLINE SSID RemoveSegmentFromTupleSS(SSID old_ssid, SID sid_to_remove);
 
@@ -1944,6 +1954,7 @@ class SegmentSet {
         SegmentSet *res = (*vec_)[idx];
         DCHECK(res);
         DCHECK(res->ref_count_ >= 0);
+        res->Validate(line);
 
         if (!res) {
           Printf("SegmentSet::AssertLive failed at line %d (ssid=%d)\n",
@@ -2235,13 +2246,13 @@ class SegmentSet {
     return FindExistingOrAlocateAndCopy(&tmp);
   }
 
-
   // testing only
   static SegmentSet *AddSegmentToTupleSS(SegmentSet *ss, SID new_sid) {
     SSID ssid = AddSegmentToTupleSS(ss->ComputeSSID(), new_sid);
     AssertLive(ssid, __LINE__);
     return Get(ssid);
   }
+
   static SegmentSet *Doubleton(SID sid1, SID sid2) {
     SSID ssid = DoubletonSSID(sid1, sid2);
     AssertLive(ssid, __LINE__);
@@ -2387,50 +2398,77 @@ SSID SegmentSet::RemoveSegmentFromSS(SSID old_ssid, SID sid_to_remove) {
 
 
 // static
-// TODO(timurrrr): describe this, see ThreadSanitizerAlgorithm names.
+//
+// This method returns a SSID of a SegmentSet containing "new_sid" and all those
+// segments from "old_ssid" which do not happen-before "new_sid".
+//
+// For details, see
+// http://code.google.com/p/data-race-test/wiki/ThreadSanitizerAlgorithm#State_machine
 SSID SegmentSet::AddSegmentToSS(SSID old_ssid, SID new_sid) {
+  DCHECK(old_ssid.raw() == 0 || old_ssid.valid());
   DCHECK(new_sid.valid());
+  Segment::AssertLive(new_sid, __LINE__);
   SSID res;
+
+  // These two TIDs will only be used if old_ssid.IsSingleton() == true.
+  TID old_tid;
+  TID new_tid;
+
+  if (LIKELY(old_ssid.IsSingleton())) {
+    SID old_sid(old_ssid.raw());
+    DCHECK(old_sid.valid());
+    Segment::AssertLive(old_sid, __LINE__);
+
+    if (UNLIKELY(old_sid == new_sid)) {
+      // The new segment equals the old one - nothing has changed.
+      return old_ssid;
+    }
+
+    old_tid = Segment::Get(old_sid)->tid();
+    new_tid = Segment::Get(new_sid)->tid();
+    if (LIKELY(old_tid == new_tid)) {
+      // The new segment is in the same thread - just replace the SID.
+      return SSID(new_sid);
+    }
+
+    if (Segment::HappensBefore(old_sid, new_sid)) {
+      // The new segment is in another thread, but old segment
+      // happens before the new one - just replace the SID.
+      return SSID(new_sid);
+    }
+
+    // The only other case is Signleton->Doubleton transition, see below.
+  } else if (LIKELY(old_ssid.IsEmpty())) {
+    return SSID(new_sid);
+  }
+
+  // Lookup the cache.
   if (add_segment_cache_->Lookup(old_ssid, new_sid, &res)) {
     SegmentSet::AssertLive(res, __LINE__);
     return res;
   }
+
   if (LIKELY(old_ssid.IsSingleton())) {
-    res = AddSegmentToSingletonSS(old_ssid, new_sid);
-  } else if (old_ssid.IsEmpty()) {
-    res = SSID(new_sid);
+    // Signleton->Doubleton transition.
+    // These two TIDs were initialized before cache lookup (see above).
+    DCHECK(old_tid.valid());
+    DCHECK(new_tid.valid());
+
+    SID old_sid(old_ssid.raw());
+    DCHECK(old_sid.valid());
+
+    res = (old_tid < new_tid
+      ? DoubletonSSID(old_sid, new_sid)
+      : DoubletonSSID(new_sid, old_sid));
   } else {
     res = AddSegmentToTupleSS(old_ssid, new_sid);
   }
   SegmentSet::AssertLive(res, __LINE__);
-  add_segment_cache_->Insert(old_ssid, new_sid, res);
-  return res;
-}
 
-// static
-SSID SegmentSet::AddSegmentToSingletonSS(SSID ssid, SID new_sid) {
-  CHECK(ssid.IsSingleton());
-  CHECK(ssid.valid());
-  SID old_sid(ssid.raw());
-  if (LIKELY(old_sid == new_sid)) {  // Same segment.
-    return ssid;
-  }
-  CHECK(old_sid.valid());
-  Segment::AssertLive(old_sid, __LINE__);
-  Segment::AssertLive(new_sid, __LINE__);
-  TID old_tid = Segment::Get(old_sid)->tid();
-  TID new_tid = Segment::Get(new_sid)->tid();
-  if (LIKELY(old_tid == new_tid)) {  // Same thread.
-    return SSID(new_sid.raw());
-  }
-  if (Segment::HappensBefore(old_sid, new_sid)) {
-    // Another thread, but old segment happens before new one.
-    return SSID(new_sid.raw());
-  }
-  // another segment, no happens-before relation.
-  return old_tid < new_tid
-      ? DoubletonSSID(old_sid, new_sid)
-      : DoubletonSSID(new_sid, old_sid);
+  // Put the result into cache.
+  add_segment_cache_->Insert(old_ssid, new_sid, res);
+
+  return res;
 }
 
 SSID SegmentSet::RemoveSegmentFromTupleSS(SSID ssid, SID sid_to_remove) {
@@ -2707,12 +2745,31 @@ class ShadowValue {
 // -------- CacheLine --------------- {{{1
 class CacheLineBase {
  public:
+  // Returns true iff the cacheline is accessed by more than one threads or
+  // fast-mode is disabled.
+  bool IsShared() const {
+    if (creator_tid_.raw() == kSharedID)
+      return true;
+    if (creator_tid_.valid() || creator_tid_.raw() == kFastModeID)
+      return false;
+    CHECK(0);
+    return true;
+  }
+
   static const uintptr_t kLineSizeBits = 6;  // Don't change this.
   static const uintptr_t kLineSize = 1 << kLineSizeBits;
+  static const int32_t kFastModeID = -2;
+  static const int32_t kSharedID = -3;
  protected:
   uintptr_t tag_;
   TID creator_tid_;
   bool is_compressed_;
+
+  // Bits in 'used_' are set for those bytes in the CacheLine,
+  // * which were accessed (if IsShared() == false)
+  // * only for the first bytes of recorded accesses (otherwise)
+  // You need to Clear() this mask when CacheLine makes a transition from
+  // fast-mode (exclusive) into shared.
   Mask used_;
   Mask traced_;
   Mask racey_;
@@ -2756,12 +2813,16 @@ class CacheLine : public CacheLineUncompressed {
 
   TID creator_tid() const { return creator_tid_; }
   void set_creator_tid(TID tid) { creator_tid_ = tid; }
+  void ResetCreatorTID() {
+    creator_tid_ = TID(G_flags->fast_mode ? kFastModeID : kSharedID);
+  }
 
   // Return true if this line has no useful information in it.
   bool Empty() {
     if (!used().Empty()) return false;
-    if (creator_tid() != TID()) return false;
+    if (creator_tid().raw() != kSharedID) return false;
     if (!traced().Empty()) return false;
+    if (!published().Empty()) return false;
     return true;
   }
 
@@ -2810,6 +2871,9 @@ class CacheLine : public CacheLineUncompressed {
   static CacheLine *Uncompress(CacheLine *line);
 
   static void InitClassMembers() {
+    CHECK(!TID(kFastModeID).valid());
+    CHECK(!TID(kSharedID).valid());
+
     if (DEBUG_MODE) {
       Printf("sizeof(CacheLine) = %ld\n", sizeof(CacheLine));
     }
@@ -2820,6 +2884,7 @@ class CacheLine : public CacheLineUncompressed {
   explicit CacheLine(uint64_t tag) {
     tag_ = tag;
     is_compressed_ = false;
+    ResetCreatorTID();
   }
   ~CacheLine() { }
 
@@ -2830,7 +2895,6 @@ class CacheLine : public CacheLineUncompressed {
 
 FreeList *CacheLine::free_list_;
 
-
 // static
 CacheLine *CacheLine::Compress(CacheLine *line) {
   if (!G_flags->compress_cache_lines) {
@@ -2839,6 +2903,7 @@ CacheLine *CacheLine::Compress(CacheLine *line) {
   CHECK(0);
   return NULL;
 }
+
 // static
 CacheLine *CacheLine::Uncompress(CacheLine *line) {
   if (!G_flags->compress_cache_lines) {
@@ -2852,12 +2917,12 @@ CacheLine *CacheLine::Uncompress(CacheLine *line) {
   return NULL;
 }
 
-
 // If range [a,b) fits into one line, return that line's tag.
-// Else range [a,b) belongs is broken into these ranges:
+// Else range [a,b) is broken into these ranges:
 //   [a, line1_tag)
 //   [line1_tag, line2_tag)
 //   [line2_tag, b)
+// and 0 is returned.
 uintptr_t GetCacheLinesForRange(uintptr_t a, uintptr_t b,
                                 uintptr_t *line1_tag, uintptr_t *line2_tag) {
   uintptr_t a_tag = CacheLine::ComputeTag(a);
@@ -2869,7 +2934,6 @@ uintptr_t GetCacheLinesForRange(uintptr_t a, uintptr_t b,
   *line2_tag = CacheLine::ComputeTag(b);
   return 0;
 }
-
 
 // -------- Cache ------------------ {{{1
 class Cache {
@@ -3073,13 +3137,13 @@ static bool CheckSanityOfPublishedMemory(uintptr_t tag, int line) {
   return true;
 }
 
-// Un-publish bytes from 'line' that are set in 'mask'
-static void UnpublishMemory(CacheLine *line, Mask mask) {
+// Clear the publish attribute for the bytes from 'line' that are set in 'mask'
+static void ClearPublishedAttribute(CacheLine *line, Mask mask) {
   CHECK(CheckSanityOfPublishedMemory(line->tag(), __LINE__));
   typedef PublishInfoMap::iterator Iter;
   bool deleted_some = true;
   if (kDebugPublish)
-    Printf(" UnpublishRange: %p %s\n",
+    Printf(" ClearPublishedAttribute: %p %s\n",
            line->tag(), mask.ToString().c_str());
   while (deleted_some) {
     deleted_some = false;
@@ -3088,11 +3152,11 @@ static void UnpublishMemory(CacheLine *line, Mask mask) {
       PublishInfo &info = it->second;
       DCHECK(info.tag == line->tag());
       if (kDebugPublish)
-        Printf("?UnpublishRange: %p %s\n", line->tag(),
+        Printf("?ClearPublishedAttribute: %p %s\n", line->tag(),
                info.mask.ToString().c_str());
       info.mask.Subtract(mask);
       if (kDebugPublish)
-        Printf("+UnpublishRange: %p %s\n", line->tag(),
+        Printf("+ClearPublishedAttribute: %p %s\n", line->tag(),
                info.mask.ToString().c_str());
       G_stats->publish_clear++;
       if (info.mask.Empty()) {
@@ -3121,15 +3185,20 @@ static void PublishRangeInOneLine(uintptr_t addr, uintptr_t a,
     Mask mask(0);
     mask.SetRange(a, b);
     // TODO(timurrrr): add warning for re-publishing.
-    UnpublishMemory(line, mask);
+    ClearPublishedAttribute(line, mask);
   }
 
+
   line->published().SetRange(a, b);
+
+  // If the memory is published, it should be marked as used, otherwise
+  // the published attribute will not work.
+  line->used().SetRange(a,b);
 
   PublishInfo pub_info;
   pub_info.tag  = tag;
   pub_info.mask.SetRange(a, b);
-  pub_info.vts  = vts;
+  pub_info.vts  = vts->Clone();
   g_publish_info_map->insert(make_pair(tag, pub_info));
   G_stats->publish_set++;
   if (kDebugPublish)
@@ -3140,6 +3209,7 @@ static void PublishRangeInOneLine(uintptr_t addr, uintptr_t a,
 
 // Publish memory range [a, b).
 static void PublishRange(uintptr_t a, uintptr_t b, VTS *vts) {
+  CHECK(a < b);
   if (kDebugPublish)
     Printf("PublishRange   : [%p,%p), size=%d, tag=%p\n",
            a, b, (int)(b - a), CacheLine::ComputeTag(a));
@@ -3153,16 +3223,12 @@ static void PublishRange(uintptr_t a, uintptr_t b, VTS *vts) {
   PublishRangeInOneLine(a, a - a_tag, CacheLine::kLineSize, vts);
   for (uintptr_t tag_i = line1_tag; tag_i < line2_tag;
        tag_i += CacheLine::kLineSize) {
-    PublishRangeInOneLine(tag_i, 0, CacheLine::kLineSize,
-                          vts->Clone());
+    PublishRangeInOneLine(tag_i, 0, CacheLine::kLineSize, vts);
   }
   if (b > line2_tag) {
-    PublishRangeInOneLine(line2_tag, 0, b - line2_tag, vts->Clone());
+    PublishRangeInOneLine(line2_tag, 0, b - line2_tag, vts);
   }
 }
-
-
-
 
 // -------- Clear Memory State ------------------ {{{1
 
@@ -3197,20 +3263,32 @@ void INLINE ClearMemoryStateInOneLine(uintptr_t addr,
   Mask published = line->published();
   if (UNLIKELY(!published.Empty())) {
     Mask mask(published.GetRange(beg, end));
-    UnpublishMemory(line, mask);
+    ClearPublishedAttribute(line, mask);
   }
   Mask old_used = line->ClearRangeAndReturnOld(beg, end);
-  if (UNLIKELY(!is_new_mem && !old_used.Empty())) {
-    UnrefSegmentsInMemoryRange(beg, end, old_used, line);
-  }
-  if (line->used().Empty()) {
-    if (UNLIKELY(G_flags->trace_level > 0 && line->creator_tid() != TID())) {
-          if (G_flags->trace_addr >= line->tag() &&
-              G_flags->trace_addr <  line->tag() + CacheLine::kLineSize) {
-            Printf("TRACE: cleared creator_tid for line %p\n", line->tag());
-          }
+  if (line->IsShared()) {
+    if (UNLIKELY(!is_new_mem && !old_used.Empty())) {
+      UnrefSegmentsInMemoryRange(beg, end, old_used, line);
     }
-    line->set_creator_tid(TID());
+  }
+
+  if (line->used().Empty()) {
+    if (UNLIKELY(G_flags->trace_level > 0 &&
+        line->creator_tid().raw() != CacheLine::kFastModeID)) {
+      if (G_flags->trace_addr >= line->tag() &&
+          G_flags->trace_addr <  line->tag() + CacheLine::kLineSize) {
+        Printf("TRACE: cleared creator_tid for line %p\n", line->tag());
+      }
+    }
+    line->ResetCreatorTID();
+  }
+
+  if (!line->IsShared()) {
+    if (is_new_mem) {
+      line->used().SetRange(beg, end);
+    } else {
+      line->used().ClearRange(beg, end);
+    }
   }
 }
 
@@ -3543,7 +3621,17 @@ struct Thread {
 
   void HandleUnlock(uintptr_t lock_addr) {
     Lock *lock = Lock::Lookup(lock_addr);
+#ifndef VGO_darwin
     CHECK(lock);
+#else
+    // TODO(glider): add CHECK(lock) here after finding out why do some Mac OS
+    // libraries unlock the locks unnecessarily.
+    if (lock == NULL) {
+      if(G_flags->verbosity >= 1)
+          Report("ATTENTION: trying to unlock a non-locked lock\n");
+      return;
+    }
+#endif
     bool is_w_lock = lock->wr_held();
 
     if (G_flags->verbosity >= 1) {
@@ -3972,6 +4060,31 @@ Thread::SignallerMap       *Thread::signaller_map_;
 map<pthread_t, TID>        *Thread::ptid_to_tid_;
 
 
+// -------- Unpublish memory range [a,b) {{{1
+// Create happens-before arcs from all previous accesses to memory [a,b)
+// to here.
+static void UnpublishRange(uintptr_t a, uintptr_t b, Thread *thread) {
+  CHECK(a < b);
+  for (uintptr_t x = a; x < b; x++) {
+    CacheLine *line = G_cache->GetLine(x, __LINE__);
+    CHECK(line);
+    ShadowValue sval = line->GetValue(CacheLine::ComputeOffset(x));
+    if (sval.IsNew()) continue;
+    // Printf("UnpublishRange: %x %s\n", x, sval.ToString().c_str());
+    SSID ssids[2];
+    ssids[0] = sval.rd_ssid();
+    ssids[1] = sval.wr_ssid();
+    for (int i = 0; i < 2; i++) {
+      SSID ssid = ssids[i];
+      if (ssid.IsEmpty()) continue;
+      for (int j = 0; j < SegmentSet::Size(ssid); j++) {
+        SID sid = SegmentSet::GetSID(ssid, j, __LINE__);
+        thread->NewSegmentForWait(Segment::Get(sid)->vts());
+      }
+    }
+  }
+}
+
 // -------- PCQ --------------------- {{{1
 struct PCQ {
   uintptr_t pcq_addr;
@@ -4392,7 +4505,7 @@ class ReportStorage {
     }
 
 
-    OffT offset;
+    PtrdiffT offset;
     if (VG_(get_datasym_and_offset)(a, reinterpret_cast<Char*>(buff),
                                     kBufLen, &offset)) {
       string symbol_descr = buff;
@@ -4731,6 +4844,7 @@ class Detector {
         break;
 
       case PUBLISH_RANGE : HandlePublishRange(); break;
+      case UNPUBLISH_RANGE : HandleUnpublishRange(); break;
 
       case TRACE_MEM   : HandleTraceMem();   break;
       case STACK_TRACE : HandleStackTrace(); break;
@@ -4794,10 +4908,21 @@ class Detector {
     uintptr_t mem = e_->a();
     uintptr_t size = e_->info();
 
-    PublishRange(mem, mem + size, cur_thread_->segment()->vts()->Clone());
+    VTS *vts = cur_thread_->segment()->vts();
+    PublishRange(mem, mem + size, vts);
 
     cur_thread_->NewSegmentForSignal();
     // Printf("Publish: [%p, %p)\n", mem, mem+size);
+  }
+
+  // UNPUBLISH_RANGE
+  void HandleUnpublishRange() {
+    if (G_flags->verbosity >= 2) {
+      e_->Print();
+    }
+    uintptr_t mem = e_->a();
+    uintptr_t size = e_->info();
+    UnpublishRange(mem, mem + size, cur_thread_);
   }
 
   void HandleIgnore(bool is_w, bool on) {
@@ -5125,10 +5250,12 @@ class Detector {
     bool is_race = MemoryStateMachine(old_sval, thr, is_w, &new_sval);
 
     if (UNLIKELY(tracing)) {
-      Printf("TRACE: T%d %s[%d] addr=%p sval: %s%s\n",
+      Printf("TRACE: T%d %s[%d] addr=%p sval: %s%s; line=%p (P=%s)\n",
              tid.raw(), is_w ? "wr" : "rd",
              size, addr, new_sval.ToString().c_str(),
-             is_published ? " P" : "");
+             is_published ? " P" : "",
+             cache_line,
+             cache_line->published().ToString().c_str());
       thr->ReportStackTrace(GetVgPcOfCurrentThread());
     }
 
@@ -5155,8 +5282,7 @@ class Detector {
     return new_sval;
   }
 
-  // return true if we can skip the memory access
-  // due to fast mode. AddSegmentToSS the creator_tid()
+  // return true if we can skip the memory access due to fast mode.
   INLINE bool FastModeCheckAndUpdateCreatorTid(CacheLine *cache_line,
                                                TID tid,
                                                bool tracing) {
@@ -5164,12 +5290,15 @@ class Detector {
     // http://code.google.com/p/data-race-test/wiki/ThreadSanitizerAlgorithm#Fast_mode
     // for the details.
 
-    if (!G_flags->fast_mode) return false;
+    if (cache_line->IsShared()) {
+      G_stats->fast_mode_mt++;
+      return false;
+    }
+
     bool res = false;
     int case_num = 0;
-    const TID kInvalidTID = TID();
     TID creator_tid = cache_line->creator_tid();
-    if (cache_line->used().Empty() && creator_tid == kInvalidTID) {
+    if (creator_tid.raw() == CacheLine::kFastModeID) {
       // we see this cache line for the first time (since it has been cleared).
       cache_line->set_creator_tid(tid);
       G_stats->fast_mode_first_time++;
@@ -5177,23 +5306,18 @@ class Detector {
       case_num = 1;
     } else if (creator_tid == tid) {
       // We are still in the same tid. Just return.
-      DCHECK(cache_line->used().Empty());
       G_stats->fast_mode_still_in_creator++;
       res = true;
       case_num = 2;
-    } else if (creator_tid != kInvalidTID) {
-      // we are transitioning from the creator tid.
-      DCHECK(cache_line->used().Empty());
-      cache_line->set_creator_tid(kInvalidTID);
+    } else {
+      CHECK(creator_tid.valid());
+      // We are transitioning from exclusive mode into shared for this
+      // cacheline. Please see the comment before the declaration of used_.
+      cache_line->used().Clear();
+      cache_line->set_creator_tid(TID(CacheLine::kSharedID));
       G_stats->fast_mode_transition++;
       res = false;
       case_num = 3;
-    } else {
-      DCHECK(!cache_line->used().Empty());
-      DCHECK(creator_tid == kInvalidTID);
-      G_stats->fast_mode_mt++;
-      res = false;
-      case_num = 4;
     }
     if (UNLIKELY(tracing)) {
       Printf("TRACE: T%d line=%p; tag=%p; creator=%d/%d; fast-mode, case#%d\n",
@@ -5225,14 +5349,23 @@ class Detector {
 
     G_stats->memory_access_sizes_[size <= 16 ? size : 17 ]++;
 
-    uintptr_t a = addr;
-    uintptr_t b = a + size;
+    uintptr_t a = addr,
+              b = a + size,
+              offset = CacheLine::ComputeOffset(a);
 
+#ifdef VGO_darwin
+    /* Memory accesses of size 16 during libobjc.A.dylib initialization cause
+     * ThreadSanitizer to crash on Darwin, therefore we skip them. This can lead
+     * to missed races, however.
+     * TODO(glider): fix this problem.
+     */
+    if (size == 16) return;
+#endif
     CacheLine *cache_line = G_cache->GetLine(addr, __LINE__);
 
     bool tracing = false;
     if (UNLIKELY(G_flags->trace_level >= 1)) {
-      if (UNLIKELY(cache_line->traced().Get(CacheLine::ComputeOffset(a)))) {
+      if (UNLIKELY(cache_line->traced().Get(offset))) {
         tracing = true;
       } else if (UNLIKELY(addr == G_flags->trace_addr)) {
         tracing = true;
@@ -5240,7 +5373,12 @@ class Detector {
     }
 
     // TODO(timurrrr): bug with unaligned access that touches two CacheLines.
-    if (FastModeCheckAndUpdateCreatorTid(cache_line, tid, tracing)) return;
+    if (FastModeCheckAndUpdateCreatorTid(cache_line, tid, tracing)) {
+      uintptr_t upper_bound = min(offset + size,
+                                  (uintptr_t) CacheLine::kLineSize);
+      cache_line->used().SetRange(offset, upper_bound);
+      return;
+    }
 
     if (UNLIKELY(g_so_far_only_one_thread)) return;
 
@@ -5264,9 +5402,16 @@ class Detector {
     } else {
       // slow case
       for (uintptr_t x = a; x < b; x++) {
-        cache_line = G_cache->GetLine(x, __LINE__);
-        if (FastModeCheckAndUpdateCreatorTid(cache_line, tid, tracing)) return;
-        HandleMemoryAccessHelper(is_w, cache_line, x, size, tid, thr, tracing);
+        offset = CacheLine::ComputeOffset(x);
+        CacheLine *cl_for_x = G_cache->GetLine(x, __LINE__);
+        if (cl_for_x->tag() != cache_line->tag()) {
+          cache_line = G_cache->GetLine(x, __LINE__);
+          if (FastModeCheckAndUpdateCreatorTid(cache_line, tid, tracing)) {
+            cache_line->used().Set(offset);
+            continue;
+          }
+        }
+        HandleMemoryAccessHelper(is_w, cache_line, x, 1, tid, thr, tracing);
         G_stats->n_access_slow++;
       }
     }
@@ -5795,6 +5940,11 @@ static void SetupIgnore() {
   // even w/o any ignore file.
   g_ignore_lists->objs.push_back("*/libpthread-*");
   g_ignore_lists->objs.push_back("*/ld-2*.so");
+#ifdef VGO_darwin
+  g_ignore_lists->objs.push_back("/usr/lib/dyld");
+  g_ignore_lists->objs.push_back("/usr/lib/libobjc.A.dylib");
+  g_ignore_lists->objs.push_back("*/libSystem.*.dylib");
+#endif
   g_ignore_lists->files.push_back("*ts_valgrind_intercepts.c");
 
   // Now read the ignore files.
