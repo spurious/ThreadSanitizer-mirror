@@ -6802,6 +6802,16 @@ void Run() {
 REGISTER_TEST(Run, 146);
 } // namespace test146
 
+// test147: allocating 1.5G of mem. {{{1
+namespace test147 {
+void Run() {
+  printf("test147: malloc 1.5G\n");
+  free(malloc((1 << 30) + (1 << 29)));
+}
+REGISTER_TEST(Run, 147)
+}  // namespace test147
+
+
 // test300: {{{1
 namespace test300 {
 int     GLOB = 0;
