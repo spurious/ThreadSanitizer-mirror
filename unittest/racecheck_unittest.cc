@@ -223,7 +223,25 @@ inline bool Tsan_FastMode()           {
 #define MAIN_INIT_ACTION
 #endif
 
+int ParseInt(const char *str) {
+  int ret = 0;
+  const char *cur = str;
+  do {
+    if (!isdigit(*cur)) {
+      printf("%s is not a valid number\n", str);
+      exit(1);
+    }
 
+    ret = ret*10 + (*cur - '0');
+  } while (*(++cur));
+  return ret;
+}
+
+class RandomGenerator {
+ public:
+  RandomGenerator(int seed) { srand(seed); }
+  size_t operator( )(size_t n) const { return rand() % n; }
+};
 
 int main(int argc, char** argv) { // {{{1
   MAIN_INIT_ACTION;
@@ -231,36 +249,49 @@ int main(int argc, char** argv) { // {{{1
 
   std::vector<int> tests_to_run;
   std::set<int> tests_to_exclude;
+  int shuffle_seed = 0;  // non-zero to shuffle.
 
-  int arg_cur = 1;
-  while (arg_cur < argc) {
-    if (!strcmp(argv[arg_cur], "benchmark")) {
+  int id = 1;
+  while (id < argc) {
+    char *cur_arg = argv[id];
+    if (!strcmp(cur_arg, "benchmark")) {
       for (std::map<int,Test>::iterator it = TheMapOfTests.begin();
         it != TheMapOfTests.end(); ++it) {
         if(it->second.flags_ & PERFORMANCE)
           tests_to_run.push_back(it->first);
       }
-    } else if (!strcmp(argv[arg_cur], "demo")) {
+    } else if (!strcmp(cur_arg, "demo")) {
       for (std::map<int,Test>::iterator it = TheMapOfTests.begin();
         it != TheMapOfTests.end();  ++it) {
         if(it->second.flags_ & RACE_DEMO)
           tests_to_run.push_back(it->first);
       }
-    } else {
-      // the test is included/excluded in the command line flags
-      int f_num = atoi(argv[arg_cur]);
-      if (f_num >= 0) {
-        CHECK(TheMapOfTests.count(f_num));
-        tests_to_run.push_back(f_num);
+    } else if (!strncmp(cur_arg, "shuffle", 7)) {
+      if (strlen(cur_arg) == 7) {
+        shuffle_seed = GetTimeInMs();
+        printf("Shuffling with seed = %i\n", shuffle_seed);
       } else {
-        // Exclude (-f_num).
-        f_num = -f_num;
-        CHECK(TheMapOfTests.count(f_num));
-        tests_to_exclude.insert(f_num);
+        CHECK(cur_arg[7] == '=');
+        shuffle_seed = ParseInt(cur_arg + 8);
+      }
+    } else {
+      if (isdigit(cur_arg[0])) {
+        // Enqueue the test specified.
+        int test_id = ParseInt(cur_arg);
+        CHECK(TheMapOfTests.count(test_id));
+        tests_to_run.push_back(test_id);
+      } else if (cur_arg[0] == '-') {
+        // Exclude the test specified.
+        int test_id = ParseInt(cur_arg + 1);
+        CHECK(TheMapOfTests.count(test_id));
+        tests_to_exclude.insert(test_id);
+      } else {
+        printf("Unknown argument: %s\n", cur_arg);
+        exit(1);
       }
     }
 
-    arg_cur++;
+    id++;
   }
 
   if (tests_to_run.size() == 0) {
@@ -278,6 +309,11 @@ int main(int argc, char** argv) { // {{{1
          && run_tests_with_annotations == false) continue;
       tests_to_run.push_back(it->first);
     }
+  }
+
+  if (shuffle_seed > 0) {
+    RandomGenerator rnd(shuffle_seed);
+    random_shuffle(tests_to_run.begin(), tests_to_run.end(), rnd);
   }
 
   for (size_t i = 0; i < tests_to_run.size(); i++) {
