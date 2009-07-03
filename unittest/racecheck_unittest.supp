@@ -1,0 +1,14 @@
+{
+   fun:*test127*
+   ThreadSanitizer:UnlockForeign
+   ...
+   fun:*test127*
+}
+
+{
+   fun:*test136*
+   ThreadSanitizer:UnlockNonLocked
+   ...
+   fun:*test136*
+}
+
