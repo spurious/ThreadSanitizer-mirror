@@ -73,6 +73,7 @@
 #include <vector>
 #include <string>
 #include <map>
+#include <set>
 #include <queue>
 #include <algorithm>
 #include <cstring>      // strlen(), index(), rindex()
@@ -227,26 +228,43 @@ inline bool Tsan_FastMode()           {
 int main(int argc, char** argv) { // {{{1
   MAIN_INIT_ACTION;
   printf("FLAGS [phb=%i, fm=%i]\n", Tsan_PureHappensBefore(), Tsan_FastMode());
-  if (argc == 2 && !strcmp(argv[1], "benchmark")) {
-     for (std::map<int,Test>::iterator it = TheMapOfTests.begin();
-         it != TheMapOfTests.end(); ++it) {
-       if(!(it->second.flags_ & PERFORMANCE)) continue;
-       it->second.Run();
-     }
-  } else if (argc == 2 && !strcmp(argv[1], "demo")) {
-     for (std::map<int,Test>::iterator it = TheMapOfTests.begin();
-         it != TheMapOfTests.end();  ++it) {
-       if(!(it->second.flags_ & RACE_DEMO)) continue;
-       it->second.Run();
-     }
-  } else if (argc > 1) {
-    // the tests are listed in command line flags
-    for (int i = 1; i < argc; i++) {
-      int f_num = atoi(argv[i]);
-      CHECK(TheMapOfTests.count(f_num));
-      TheMapOfTests[f_num].Run();
+
+  std::vector<int> tests_to_run;
+  std::set<int> tests_to_exclude;
+
+  int arg_cur = 1;
+  while (arg_cur < argc) {
+    if (!strcmp(argv[arg_cur], "benchmark")) {
+      for (std::map<int,Test>::iterator it = TheMapOfTests.begin();
+        it != TheMapOfTests.end(); ++it) {
+        if(it->second.flags_ & PERFORMANCE)
+          tests_to_run.push_back(it->first);
+      }
+    } else if (!strcmp(argv[arg_cur], "demo")) {
+      for (std::map<int,Test>::iterator it = TheMapOfTests.begin();
+        it != TheMapOfTests.end();  ++it) {
+        if(it->second.flags_ & RACE_DEMO)
+          tests_to_run.push_back(it->first);
+      }
+    } else {
+      // the test is included/excluded in the command line flags
+      int f_num = atoi(argv[arg_cur]);
+      if (f_num >= 0) {
+        CHECK(TheMapOfTests.count(f_num));
+        tests_to_run.push_back(f_num);
+      } else {
+        // Exclude (-f_num).
+        f_num = -f_num;
+        CHECK(TheMapOfTests.count(f_num));
+        tests_to_exclude.insert(f_num);
+      }
     }
-  } else {
+
+    arg_cur++;
+  }
+
+  if (tests_to_run.size() == 0) {
+    printf("No tests specified.\nRunning default set of tests...\n");
     bool run_tests_with_annotations = false;
     if (getenv("DRT_ALLOW_ANNOTATIONS")) {
       run_tests_with_annotations = true;
@@ -258,7 +276,16 @@ int main(int argc, char** argv) { // {{{1
       if(it->second.flags_ & RACE_DEMO) continue;
       if((it->second.flags_ & NEEDS_ANNOTATIONS)
          && run_tests_with_annotations == false) continue;
-      it->second.Run();
+      tests_to_run.push_back(it->first);
+    }
+  }
+
+  for (size_t i = 0; i < tests_to_run.size(); i++) {
+    int test_id = tests_to_run[i];
+    if (tests_to_exclude.count(test_id) > 0) {
+      printf("test%i was excluded\n", test_id);
+    } else {
+      TheMapOfTests[test_id].Run();
     }
   }
 }
