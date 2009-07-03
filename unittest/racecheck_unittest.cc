@@ -228,7 +228,7 @@ int ParseInt(const char *str) {
   const char *cur = str;
   do {
     if (!isdigit(*cur)) {
-      printf("%s is not a valid number\n", str);
+      printf("\"%s\" is not a valid number\n", str);
       exit(1);
     }
 
