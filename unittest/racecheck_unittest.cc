@@ -6836,7 +6836,7 @@ void Worker3() {
   usleep(1000000);
   if (MU.ReaderTryLock()) {
     printf("\treading GLOB4: %d\n", GLOB4);
-    MU.Unlock();
+    MU.ReaderUnlock();
   } else {
     CHECK(0);
   }
