@@ -31,26 +31,31 @@
  * Author: Konstantin Serebryany <opensource@google.com>
  *
  * This file contains unittests for a race detector for java.
- *
  */
 
-
-// JUnit imports.
-import junit.framework.TestCase;
-import junit.framework.Test;
-import junit.framework.TestSuite;
-import junit.framework.Assert;
-import org.junit.runner.JUnitCore;
-
-// Other imports.
 import java.util.TreeMap;
+import java.util.concurrent.CountDownLatch;
 
 // All tests for a Java race detector.
-public class ThreadSanitizerTest extends TestCase {
+public class ThreadSanitizerTest {
 
   public static void main (String[] args) {
     System.out.println("ThreadSanitizerTest:");
-    org.junit.runner.JUnitCore.runClasses(ThreadSanitizerTest.class);
+    ThreadSanitizerTest t = new ThreadSanitizerTest();
+    t.testPositive1();
+    t.testPositive2();
+    t.testNegative1();
+    t.testNegative2();
+    t.testNegative3();
+    t.testNegative4();
+    t.testNegative5();
+    t.testNegative6();
+    t.testNegative7();
+    t.testNegative8();
+    t.testNegative9();
+    t.testNegative10();
+    t.testNegative11();
+    t.testNegative12();
   }
 
   class ThreadRunner {
@@ -90,7 +95,8 @@ public class ThreadSanitizerTest extends TestCase {
           threads[i].join();
         }
         tearDown();
-      } catch (Exception e) {
+      } catch (java.lang.InterruptedException e) {
+        System.out.println("InterruptedException");
       }
     }
   }
@@ -111,8 +117,9 @@ public class ThreadSanitizerTest extends TestCase {
     try { Thread.sleep(500); } catch (Exception e) { }
   }
 
+
   //------------------ Positive tests ---------------------
-  public void testPositive1() throws Exception {
+  public void testPositive1() {
     describe("Simple race: two unlocked writes");
     new ThreadRunner2() {
       public void thread1() { shared_var = 1; }
@@ -120,7 +127,7 @@ public class ThreadSanitizerTest extends TestCase {
     };
   }
 
-  public void testPositive2() throws Exception {
+  public void testPositive2() {
     describe("Simple race: one locked and one unlocked write");
     new ThreadRunner2() {
       public void thread1() { shared_var++; }
@@ -129,7 +136,7 @@ public class ThreadSanitizerTest extends TestCase {
   }
 
   //------------------ Negative tests ---------------------
-  public void testNegative1() throws Exception {
+  public void testNegative1() {
     describe("Correct code: two locked updates");
     new ThreadRunner2() {
       public void thread1() { synchronized(this) { shared_var++; } }
@@ -137,7 +144,7 @@ public class ThreadSanitizerTest extends TestCase {
     };
   }
 
-  public void testNegative2() throws Exception {
+  public void testNegative2() {
     describe("Correct code: two writes to a volatile boolean");
     new ThreadRunner2() {
       volatile boolean volatile_bool = false;
@@ -146,7 +153,7 @@ public class ThreadSanitizerTest extends TestCase {
     };
   }
 
-  public void testNegative3() throws Exception {
+  public void testNegative3() {
     describe("Correct code: sending a message via a locked object");
     new ThreadRunner2() {
       Integer locked_object;
@@ -168,19 +175,18 @@ public class ThreadSanitizerTest extends TestCase {
           shortSleep();
         }
         message++;
-        Assert.assertNotNull(message);
-        Assert.assertEquals(message.intValue(), 43);
+        assert message.intValue() == 43;
       }
     };
   }
 
-  public void testNegative4() throws Exception {
+  public void testNegative4() {
     describe("Correct code: passing ownership via a locked boolean");
     new ThreadRunner2() {
       private boolean signal = false;
 
       public void thread1() {
-        Assert.assertEquals(shared_var, 0);
+        assert shared_var == 0;
         shared_var = 1;
         longSleep();
         synchronized(this) {
@@ -195,14 +201,14 @@ public class ThreadSanitizerTest extends TestCase {
           }
           shortSleep();
         }
-        Assert.assertEquals(shared_var, 1);
+        assert shared_var == 1;
         shared_var = 2;
       }
     };
   }
 
 
-  public void testNegative5() throws Exception {
+  public void testNegative5() {
     describe("Correct code: passing ownership via a locked map");
     new ThreadRunner2() {
       private TreeMap<Integer, Integer> map;
@@ -229,13 +235,12 @@ public class ThreadSanitizerTest extends TestCase {
           shortSleep();
         }
         message++;
-        Assert.assertNotNull(message);
-        Assert.assertEquals(message.intValue(), 43);
+        assert message == 43;
       }
     };
   }
 
-  public void testNegative6() throws Exception {
+  public void testNegative6() {
     describe("Correct code: passing object ownership via a locked boolean; 4 threads");
     new ThreadRunner4() {
       Object lock;
@@ -266,15 +271,14 @@ public class ThreadSanitizerTest extends TestCase {
           }
           shortSleep();
         }
-        Assert.assertNotNull(shared_obj);
-        Assert.assertEquals(shared_obj.intValue(), 2);
+        assert shared_obj == 2;
       }
       public void thread4() { thread3(); }
     };
   }
 
 
-  public void testNegative7() throws Exception {
+  public void testNegative7() {
     describe("Correct code: reg test for MTRAT (broken as of 11/06/09)");
     new ThreadRunner3() {
       Object lock;
@@ -298,7 +302,7 @@ public class ThreadSanitizerTest extends TestCase {
     };
   }
 
-  public void testNegative8() throws Exception {
+  public void testNegative8() {
     describe("Correct code: accessing different fields of class by different threads");
     new ThreadRunner4() {
       int a, b;
@@ -315,7 +319,7 @@ public class ThreadSanitizerTest extends TestCase {
     };
   }
 
-  public void testNegative9() throws Exception {
+  public void testNegative9() {
     describe("Correct code: notify/wait");
     new ThreadRunner2() {
       boolean done;
@@ -346,7 +350,7 @@ public class ThreadSanitizerTest extends TestCase {
     };
   }
 
-  public void testNegative10() throws Exception {
+  public void testNegative10() {
     describe("Correct code: notify/wait; 4 threads");
     new ThreadRunner4() {
       int counter;
@@ -359,7 +363,7 @@ public class ThreadSanitizerTest extends TestCase {
       }
 
       public void tearDown() {
-        Assert.assertEquals(shared_var, 4);
+        assert shared_var == 3;
       }
 
       public synchronized void send() {
@@ -393,21 +397,43 @@ public class ThreadSanitizerTest extends TestCase {
     };
   }
 
-  public void testNegative11() throws Exception {
+  public void testNegative11() {
     describe("Correct code: synchronization via thread create/join");
-
-    class ThreadThatAccessesInteger extends Thread {
-      public ThreadThatAccessesInteger(Integer o) { obj = o; }
-      private Integer obj;
-      public void run () { obj++; }
-    }
-
-    Integer obj = new Integer(0);
-    obj++;
-    Thread t = new ThreadThatAccessesInteger(obj);
+    class Foo { public int a; }
+    final Foo foo = new Foo();
+    foo.a++;
+    Thread t = new Thread() { public void run () { foo.a++; } };
     t.start();
-    try { t.join(); } catch (Exception e) { }
-    obj++;
-    Assert.assertEquals(obj.intValue(), 3);
+    try { t.join(); } catch (Exception e) { assert false; }
+    foo.a++;
+    assert foo.a == 3;
+  }
+
+  public void testNegative12() {
+    describe("Correct code: CountDownLatch");
+    new ThreadRunner4() {
+      CountDownLatch latch;
+      public void setUp() {
+        latch = new CountDownLatch(3);
+        shared_var = 0;
+      }
+
+      public void thread1() {
+        try {
+          latch.await();
+        } catch (InterruptedException ex) { }
+        assert shared_var == 3;
+        shared_var = 4;
+      }
+
+      public void thread2() {
+        synchronized (this) {
+          shared_var++;
+        }
+        latch.countDown();
+      }
+      public void thread3() { thread2(); }
+      public void thread4() { thread2(); }
+    };
   }
 }
