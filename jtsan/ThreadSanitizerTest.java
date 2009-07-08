@@ -33,6 +33,7 @@
  * This file contains unittests for a race detector for java.
  */
 
+import java.lang.reflect.Method;
 import java.util.TreeMap;
 import java.util.concurrent.CountDownLatch;
 
@@ -42,20 +43,21 @@ public class ThreadSanitizerTest {
   public static void main (String[] args) {
     System.out.println("ThreadSanitizerTest:");
     ThreadSanitizerTest t = new ThreadSanitizerTest();
-    t.testPositive1();
-    t.testPositive2();
-    t.testNegative1();
-    t.testNegative2();
-    t.testNegative3();
-    t.testNegative4();
-    t.testNegative5();
-    t.testNegative6();
-    t.testNegative7();
-    t.testNegative8();
-    t.testNegative9();
-    t.testNegative10();
-    t.testNegative11();
-    t.testNegative12();
+
+    // invoke all methods that start with 'test'
+    Class test_class = ThreadSanitizerTest.class;
+    Method[] methods = test_class.getDeclaredMethods();
+    for (Method method : methods) {
+      String method_name = method.getName();
+      if (method_name.startsWith("test")) {
+        System.out.println("Running " + method_name);
+        try {
+          method.invoke(t);
+        } catch (Exception e) {
+          assert false;
+        }
+      }
+    }
   }
 
   class ThreadRunner {
@@ -107,7 +109,7 @@ public class ThreadSanitizerTest {
   class ThreadRunner4 extends ThreadRunner { public int  nThreads() { return 4; } }
 
   private void describe(String str) {
-    System.out.println("---------- " + str);
+    System.out.println("      " + str);
   }
 
   private void shortSleep() {
