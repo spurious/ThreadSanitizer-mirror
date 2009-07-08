@@ -42,6 +42,7 @@ import java.util.regex.Matcher;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.concurrent.atomic.AtomicInteger;
 
 // All tests for a Java race detector.
 public class ThreadSanitizerTest {
@@ -581,6 +582,18 @@ public class ThreadSanitizerTest {
         shared_var++;
         lock.writeLock().unlock();
       }
+    };
+  }
+
+  public void testNegative_AtomicInteger() {
+    describe("Correct code: AtomicInteger");
+    final AtomicInteger i = new AtomicInteger();
+    new ThreadRunner4() {
+      public void tearDown() { assert i.intValue() == 4; }
+      public void thread1() { i.incrementAndGet(); }
+      public void thread2() { i.incrementAndGet(); }
+      public void thread3() { i.incrementAndGet(); }
+      public void thread4() { i.incrementAndGet(); }
     };
   }
 }
