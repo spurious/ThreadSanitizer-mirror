@@ -37,6 +37,7 @@ import java.lang.reflect.Method;
 import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Semaphore;
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
 
@@ -97,7 +98,7 @@ public class ThreadSanitizerTest {
         try {
           method.invoke(t);
         } catch (Exception e) {
-          assert false;
+          assert false : e;
         }
       }
     }
@@ -214,7 +215,7 @@ public class ThreadSanitizerTest {
   }
 
   public void testNegative2() {
-    describe("Correct code: two writes to a volatile boolean");
+    describe("Correct code: two accesses to a volatile boolean");
     new ThreadRunner2() {
       volatile boolean volatile_bool = false;
       public void thread1() { volatile_bool = true; }
@@ -478,7 +479,7 @@ public class ThreadSanitizerTest {
     assert foo.a == 3;
   }
 
-  public void testNegative12() {
+  public void testNegative_CountDownLatch() {
     describe("Correct code: CountDownLatch");
     new ThreadRunner4() {
       CountDownLatch latch;
@@ -505,4 +506,30 @@ public class ThreadSanitizerTest {
       public void thread4() { thread2(); }
     };
   }
+  
+  public void testNegative_Semaphore() {
+    describe("Correct code: Semaphore");
+    new ThreadRunner2() {
+      Semaphore sem;
+      public void setUp() {
+        sem = new Semaphore(0);
+      }
+
+      public void tearDown() {
+        assert shared_var == 2;
+      }
+
+      public void thread1() {
+        longSleep();
+        shared_var = 1;
+        sem.release();
+      } 
+
+      public void thread2() {
+        try { sem.acquire(); } catch (Exception e) { assert false : e; }
+        shared_var = 2;
+      }
+    };
+  }
+
 }
