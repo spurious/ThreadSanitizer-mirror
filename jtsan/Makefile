@@ -1,5 +1,6 @@
 # Pass the correct path to MTRAT.
 MTRAT=mtrat
+TESTS=
 
 # Build the unittests.
 ThreadSanitizerTest.class: ThreadSanitizerTest.java
@@ -7,11 +8,11 @@ ThreadSanitizerTest.class: ThreadSanitizerTest.java
 
 # Run the unittests natively.
 run: ThreadSanitizerTest.class
-	java -ea -cp . ThreadSanitizerTest
+	java -ea -cp . ThreadSanitizerTest ${TESTS}
 
 # Run the unittests under MTRAT.
 mtrat: ThreadSanitizerTest.class
-	$(MTRAT) -ea -cp . ThreadSanitizerTest
+	$(MTRAT) -ea -cp . ThreadSanitizerTest ${TESTS}
 
 # Clean
 clean:

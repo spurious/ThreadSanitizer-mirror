@@ -35,22 +35,65 @@
 
 import java.lang.reflect.Method;
 import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.concurrent.CountDownLatch;
+import java.util.regex.Pattern;
+import java.util.regex.Matcher;
 
 // All tests for a Java race detector.
 public class ThreadSanitizerTest {
 
+  // Run tests.
+  // If no arguments given, run all tests.
+  // If there are parameters not starting with '-', run tests that match the regexp.
+  // If there are parameters starting with '-', exclude tests that match the regexp.
   public static void main (String[] args) {
     System.out.println("ThreadSanitizerTest:");
     ThreadSanitizerTest t = new ThreadSanitizerTest();
 
+    String tests_to_run = new String();
+    String tests_to_exclude = new String();
+
+    for (String arg: args) {
+      if (arg.startsWith("--")) {
+        // Parameter. Don't need them yet.
+      } else if (arg.startsWith("-")) {
+        // test to exclude.
+        if (tests_to_exclude.length() > 0) {
+          tests_to_exclude += "|";
+        } 
+        tests_to_exclude += arg.substring(1);
+      } else {
+        // test to run.
+        if (tests_to_run.length() > 0) {
+          tests_to_run += "|";
+        } 
+        tests_to_run += arg;
+      }
+    }
+
+    if (tests_to_run.length() == 0) {
+      tests_to_run = "test.*";
+    } else {
+      System.out.println("Running tests:  " + tests_to_run);
+    }
+
+    if (tests_to_exclude.length() > 0) {
+      System.out.println("Excluded tests: " + tests_to_exclude);
+    }
+
     // invoke all methods that start with 'test'
     Class test_class = ThreadSanitizerTest.class;
     Method[] methods = test_class.getDeclaredMethods();
+    Pattern positive_pattern = Pattern.compile(tests_to_run);
+    Pattern negative_pattern = Pattern.compile(tests_to_exclude);
     for (Method method : methods) {
       String method_name = method.getName();
-      if (method_name.startsWith("test")) {
-        System.out.println("Running " + method_name);
+      if (method_name.startsWith("test") &&
+          positive_pattern.matcher(method_name).matches() &&
+          !negative_pattern.matcher(method_name).matches() ) {
+        System.out.println("======================= " + method_name +
+                           " =======================");
         try {
           method.invoke(t);
         } catch (Exception e) {
@@ -109,7 +152,7 @@ public class ThreadSanitizerTest {
   class ThreadRunner4 extends ThreadRunner { public int  nThreads() { return 4; } }
 
   private void describe(String str) {
-    System.out.println("      " + str);
+    System.out.println(str);
   }
 
   private void shortSleep() {
