@@ -36,10 +36,12 @@
 import java.lang.reflect.Method;
 import java.util.TreeMap;
 import java.util.TreeSet;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Semaphore;
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
+
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 // All tests for a Java race detector.
 public class ThreadSanitizerTest {
@@ -204,6 +206,35 @@ public class ThreadSanitizerTest {
       }
     };
   }
+
+  public void testPositive_WritingUnderReaderLock() {
+    describe("Race: writing under a reader lock");
+    final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
+    new ThreadRunner4() {
+      public void tearDown() {
+        // may print 4, 3, or even 2
+        System.out.println("shared_var = " + shared_var);
+      }
+      public void thread1() {
+        // writing with a reader lock held
+        lock.readLock().lock();
+        int t = shared_var;
+        shortSleep();  // Put this sleep here so that the race may actually happen.
+        shared_var = t + 1;
+        lock.readLock().unlock();
+      }
+      public void thread2() { thread1(); }
+      public void thread3() { thread1(); }
+
+      public void thread4() {
+        // writing with a writer lock held
+        lock.writeLock().lock();
+        shared_var++;
+        lock.writeLock().unlock();
+      }
+    };
+  }
+
 
   //------------------ Negative tests ---------------------
   public void testNegative1() {
@@ -509,12 +540,8 @@ public class ThreadSanitizerTest {
   
   public void testNegative_Semaphore() {
     describe("Correct code: Semaphore");
+    final Semaphore sem = new Semaphore(0);
     new ThreadRunner2() {
-      Semaphore sem;
-      public void setUp() {
-        sem = new Semaphore(0);
-      }
-
       public void tearDown() {
         assert shared_var == 2;
       }
@@ -531,5 +558,29 @@ public class ThreadSanitizerTest {
       }
     };
   }
-
+  
+  public void testNegative_ReadWriteLock() {
+    describe("Correct code: ReadWriteLock");
+    final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
+    new ThreadRunner3() {
+      public void thread1() {
+        // reading with a reader lock held
+        lock.readLock().lock();
+        int v = shared_var;
+        lock.readLock().unlock();
+      }
+      public void thread2() {
+        // reading with a writer lock held
+        lock.writeLock().lock();
+        int v = shared_var;
+        lock.writeLock().unlock();
+      }
+      public void thread3() {
+        // writing with a writer lock held
+        lock.writeLock().lock();
+        shared_var++;
+        lock.writeLock().unlock();
+      }
+    };
+  }
 }
