@@ -164,19 +164,43 @@ public class ThreadSanitizerTest {
 
 
   //------------------ Positive tests ---------------------
-  public void testPositive1() {
-    describe("Simple race: two unlocked writes");
+  public void testPositive_WW_NoLocks() {
+    describe("Race: two unlocked writes");
     new ThreadRunner2() {
       public void thread1() { shared_var = 1; }
       public void thread2() { shared_var = 2; }
     };
   }
 
-  public void testPositive2() {
-    describe("Simple race: one locked and one unlocked write");
+  public void testPositive_WW_LockedVsUnlocked() {
+    describe("Race: one locked and one unlocked write");
     new ThreadRunner2() {
       public void thread1() { shared_var++; }
       public void thread2() { synchronized(this) { shared_var++; } }
+    };
+  }
+
+  public void testPositive_WW_DifferentLocks() {
+    describe("Race: two writes locked with different locks");
+    final Object lock = new Object();
+    new ThreadRunner2() {
+      public void thread1() { synchronized(lock) { shared_var++; } }
+      public void thread2() { synchronized(this) { shared_var++; } }
+    };
+  }
+
+  public void testPositive_WW_LockInBetween() {
+    describe("Race: two unlocked writes, ciritcal sections between them");
+    new ThreadRunner2() {
+      public void thread1() { 
+        shared_var = 1;
+        synchronized(this) {}
+      }
+      public void thread2() { 
+        longSleep();
+        synchronized(this) {}
+        shared_var = 2; 
+      }
     };
   }
 
