@@ -6753,7 +6753,7 @@ void Run() {
   t.Join();
 }
 
-REGISTER_TEST2(Run, 144, EXCLUDE_FROM_ALL);
+REGISTER_TEST(Run, 144);
 }  // namespace test144
 
 // test145: Unit-test for a bug in fast-mode {{{1
@@ -6789,7 +6789,7 @@ void Run() {
   delete GLOB;
 }
 
-REGISTER_TEST2(Run, 145, EXCLUDE_FROM_ALL);
+REGISTER_TEST(Run, 145);
 }  // namespace test145
 
 // test146: TP. Unit test for RWLock::TryLock and RWLock::ReaderTryLock. {{{1
