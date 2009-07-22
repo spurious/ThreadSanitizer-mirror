@@ -3,11 +3,12 @@
 
 VALGRIND_REV=10454
 VEX_REV=1908
-TSAN_REV=1089
+TSAN_REV=1092
 VALGRIND_DIR=`pwd`
 
 # Check that the SVN version in $VALGRIND_DIR/VEX is equal to $VEX_REV
-cd VEX && if ! svn info | grep "Revision: ${VEX_REV}" >/dev/null
+cd VEX
+if ! svn info | grep "Revision: ${VEX_REV}" >/dev/null
 then
   echo "WARNING:" >&2
   echo "Either you run the script from outside of the valgrind directory" >&2
