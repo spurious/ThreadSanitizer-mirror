@@ -2765,12 +2765,8 @@ class CacheLineBase {
   TID creator_tid_;
   bool is_compressed_;
 
-  // Bits in 'used_' are set for those bytes in the CacheLine,
-  // * which were accessed (if IsShared() == false)
-  // * only for the first bytes of recorded accesses (otherwise)
-  // You need to Clear() this mask when CacheLine makes a transition from
-  // fast-mode (exclusive) into shared.
-  Mask used_;
+  Mask has_shadow_value_;
+  Mask fast_mode_used_;
   Mask traced_;
   Mask racey_;
   Mask published_;
@@ -2805,11 +2801,21 @@ class CacheLine : public CacheLineUncompressed {
     free_list_->Deallocate(line);
   }
 
-  Mask &used()   { return used_;  }
+  const Mask &has_shadow_value() const { return has_shadow_value_;  }
+  Mask &fast_mode_used()   { return fast_mode_used_;  }
   Mask &traced() { return traced_; }
   Mask &published() { return published_; }
   Mask &racey()  { return racey_; }
   uint64_t tag() { return tag_; }
+
+  // Add a new shadow value to a place where there was no shadow value before.
+  void AddNewSvalAtOffset(uint64_t off) {
+    CHECK(!has_shadow_value().Get(off));
+    DCHECK(this->IsShared());
+    has_shadow_value_.Set(off);
+    published_.Clear(off);
+    GetValuePointer(off)->Clear();
+  }
 
   TID creator_tid() const { return creator_tid_; }
   void set_creator_tid(TID tid) { creator_tid_ = tid; }
@@ -2819,22 +2825,26 @@ class CacheLine : public CacheLineUncompressed {
 
   // Return true if this line has no useful information in it.
   bool Empty() {
-    if (!used().Empty()) return false;
-    if (creator_tid().raw() != kSharedID) return false;
+    // The line has shadow values.
+    if (!has_shadow_value().Empty()) return false;
+    // If the line is traced or published, we want to keep it.
     if (!traced().Empty()) return false;
     if (!published().Empty()) return false;
+    // No shadow values, but has creator tid.
+    if (creator_tid().valid()) return false;
     return true;
   }
 
-  Mask ClearRangeAndReturnOld(uint64_t from, uint64_t to) {
+  Mask ClearRangeAndReturnOldUsed(uint64_t from, uint64_t to) {
     traced_.ClearRange(from, to);
     published_.ClearRange(from, to);
     racey_.ClearRange(from, to);
-    return used_.ClearRangeAndReturnOld(from, to);
+    return has_shadow_value_.ClearRangeAndReturnOld(from, to);
   }
 
   void Clear() {
-    used_.Clear();
+    has_shadow_value_.Clear();
+    fast_mode_used_.Clear();
     traced_.Clear();
     published_.Clear();
     racey_.Clear();
@@ -2862,7 +2872,7 @@ class CacheLine : public CacheLineUncompressed {
     if (off & (size - 1)) return false;  // Not aligned.
     DCHECK(off + size <= kLineSize);
     DCHECK(size == 2 || size == 4 || size == 8);
-    if (used_.GetRange(off + 1, off + size) == 0)
+    if (has_shadow_value_.GetRange(off + 1, off + size) == 0)
       return true;
     return false;
   }
@@ -2884,6 +2894,7 @@ class CacheLine : public CacheLineUncompressed {
   explicit CacheLine(uint64_t tag) {
     tag_ = tag;
     is_compressed_ = false;
+    Clear();
     ResetCreatorTID();
   }
   ~CacheLine() { }
@@ -2980,7 +2991,7 @@ class Cache {
       }
       set<int64_t> s;
       for (int i = 0; i < 64; i++) {
-        if (line->used().Get(i)) {
+        if (line->has_shadow_value().Get(i)) {
           int64_t sval = *reinterpret_cast<int64_t*>(line->GetValuePointer(i));
           s.insert(sval);
         }
@@ -3051,7 +3062,7 @@ class Cache {
     if ((c % 1024) == 1) {
       set<int64_t> s;
       for (int i = 0; i < 64; i++) {
-        if (old_line->used().Get(i)) {
+        if (old_line->has_shadow_value().Get(i)) {
           int64_t sval = *reinterpret_cast<int64_t*>(
                             old_line->GetValuePointer(i));
           // Printf("%p ", sval);
@@ -3059,7 +3070,7 @@ class Cache {
         }
       }
       Printf("\n[%d] Cache Size=%ld %s different values: %ld\n", c,
-             storage_.size(), old_line->used().ToString().c_str(),
+             storage_.size(), old_line->has_shadow_value().ToString().c_str(),
              s.size());
       G_stats->PrintStatsForCache();
     }
@@ -3188,12 +3199,7 @@ static void PublishRangeInOneLine(uintptr_t addr, uintptr_t a,
     ClearPublishedAttribute(line, mask);
   }
 
-
   line->published().SetRange(a, b);
-
-  // If the memory is published, it should be marked as used, otherwise
-  // the published attribute will not work.
-  line->used().SetRange(a,b);
 
   PublishInfo pub_info;
   pub_info.tag  = tag;
@@ -3265,30 +3271,33 @@ void INLINE ClearMemoryStateInOneLine(uintptr_t addr,
     Mask mask(published.GetRange(beg, end));
     ClearPublishedAttribute(line, mask);
   }
-  Mask old_used = line->ClearRangeAndReturnOld(beg, end);
+  Mask old_used = line->ClearRangeAndReturnOldUsed(beg, end);
   if (line->IsShared()) {
     if (UNLIKELY(!is_new_mem && !old_used.Empty())) {
       UnrefSegmentsInMemoryRange(beg, end, old_used, line);
     }
+  } else {
+    // Line is in fast mode. No shadow values.
+    CHECK(line->has_shadow_value().Empty());
   }
 
-  if (line->used().Empty()) {
+  if (line->fast_mode_used().Empty() && line->has_shadow_value().Empty()) {
     if (UNLIKELY(G_flags->trace_level > 0 &&
-        line->creator_tid().raw() != CacheLine::kFastModeID)) {
+                 line->creator_tid().raw() != CacheLine::kFastModeID)) {
       if (G_flags->trace_addr >= line->tag() &&
           G_flags->trace_addr <  line->tag() + CacheLine::kLineSize) {
         Printf("TRACE: cleared creator_tid for line %p\n", line->tag());
       }
     }
     line->ResetCreatorTID();
+    DCHECK(line->has_shadow_value().Empty());
   }
 
-  if (!line->IsShared()) {
-    if (is_new_mem) {
-      line->used().SetRange(beg, end);
-    } else {
-      line->used().ClearRange(beg, end);
-    }
+  // This is used only by fast mode.
+  if (is_new_mem) {
+    line->fast_mode_used().SetRange(beg, end);
+  } else {
+    line->fast_mode_used().ClearRange(beg, end);
   }
 }
 
@@ -3296,8 +3305,8 @@ void INLINE ClearMemoryStateInOneLine(uintptr_t addr,
 
 // clear memory state for [a,b)
 void INLINE ClearMemoryState(uintptr_t a, uintptr_t b, bool is_new_mem) {
-  DCHECK(a < b);
   if (a == b) return;
+  CHECK(a < b);
   uintptr_t line1_tag = 0, line2_tag = 0;
   uintptr_t single_line_tag = GetCacheLinesForRange(a, b,
                                                     &line1_tag, &line2_tag);
@@ -3324,7 +3333,7 @@ void INLINE ClearMemoryState(uintptr_t a, uintptr_t b, bool is_new_mem) {
     for (uintptr_t x = a; x < b; x++) {
       uintptr_t off = CacheLine::ComputeOffset(x);
       CacheLine *line = G_cache->GetLine(x, __LINE__);
-      CHECK(!line->used().Get(off));
+      CHECK(!line->has_shadow_value().Get(off));
     }
   }
 }
@@ -4068,8 +4077,9 @@ static void UnpublishRange(uintptr_t a, uintptr_t b, Thread *thread) {
   for (uintptr_t x = a; x < b; x++) {
     CacheLine *line = G_cache->GetLine(x, __LINE__);
     CHECK(line);
-    ShadowValue sval = line->GetValue(CacheLine::ComputeOffset(x));
-    if (sval.IsNew()) continue;
+    uintptr_t off = CacheLine::ComputeOffset(x);
+    if (!line->has_shadow_value().Get(off)) continue;
+    ShadowValue sval = line->GetValue(off);
     // Printf("UnpublishRange: %x %s\n", x, sval.ToString().c_str());
     SSID ssids[2];
     ssids[0] = sval.rd_ssid();
@@ -4079,6 +4089,7 @@ static void UnpublishRange(uintptr_t a, uintptr_t b, Thread *thread) {
       if (ssid.IsEmpty()) continue;
       for (int j = 0; j < SegmentSet::Size(ssid); j++) {
         SID sid = SegmentSet::GetSID(ssid, j, __LINE__);
+        if (Segment::Get(sid)->tid() == thread->tid()) continue;
         thread->NewSegmentForWait(Segment::Get(sid)->vts());
       }
     }
@@ -4674,8 +4685,6 @@ class Detector {
       }
     }
 
-    // CheckLiveSegments();
-
     EventSampler::ShowSamples();
     ShowStats();
     ShowProcSelfStatus();
@@ -4711,49 +4720,6 @@ class Detector {
 
 
  private:
-
-  void CheckLiveSegments() {
-    if (!(DEBUG_MODE && G_flags->debug_level >= 3))
-      return;
-#if 0
-    Cache::Map::iterator it;
-    int n_live_lines = 0;
-    set<SID> sids;
-    set<SSID> ssids;
-    for (it = G_cache->map_.begin(); it != G_cache->map_.end(); ++it) {
-      CacheLine *line = it->second;
-      CHECK(line->tag() == it->first);
-      if (line->used().Empty()) continue;
-      n_live_lines++;
-      for (uintptr_t i = 0; i < 64; i++) {
-        if (!line->used().Get(i)) continue;
-        ShadowValue sval = line->GetValue(i);
-        SSID ssid = sval.msm1_ssid();
-        if (ssid.IsSingleton()) {
-          sids.insert(ssid.Singleton());
-        } else {
-          ssids.insert(ssid);
-          SegmentSet *sset = SegmentSet::Get(ssid);
-          for (int j = 0; j < sset->size(); j++) {
-            SID sid = sset->GetSID(j);
-            sids.insert(sid);
-          }
-        }
-      }
-    }
-    Printf("lines total  : %d\n", static_cast<int>(G_cache->map_.size()));
-    Printf("lines live   : %d\n", n_live_lines);
-    Printf("Segs  live   : %d  /  %d\n", static_cast<int>(sids.size()),
-           Segment::NumLiveSegments());
-    Printf("SegSets live : %d\n", static_cast<int>(ssids.size()));
-    for (int s = 1; s < Segment::NumberOfSegments(); s++) {
-      SID sid(s);
-      if (Segment::Alive(sid) && sids.count(sid) == 0) {
-        Printf("zz: %d\n", sid.raw());
-      }
-    }
-#endif
-  }
 
   void ShowProcSelfStatus() {
     if (G_flags->show_proc_self_status) {
@@ -5227,16 +5193,12 @@ class Detector {
     uintptr_t offset = CacheLine::ComputeOffset(addr);
     ShadowValue new_sval;
 
-
-    ShadowValue *sval_p = cache_line->GetValuePointer(offset);
-    ShadowValue old_sval;
-    if (UNLIKELY(!cache_line->used().Get(offset))) {
-      cache_line->used().Set(offset);
-      cache_line->published().Clear(offset);
-      old_sval.Clear();
-    } else {
-      old_sval = *sval_p;
+    DCHECK(cache_line->IsShared());
+    if (UNLIKELY(!cache_line->has_shadow_value().Get(offset))) {
+      cache_line->AddNewSvalAtOffset(offset);
     }
+    ShadowValue *sval_p = cache_line->GetValuePointer(offset);
+    ShadowValue old_sval = *sval_p;
 
     bool is_published = cache_line->published().Get(offset);
     // We check only the first bit for publishing, oh well.
@@ -5295,25 +5257,29 @@ class Detector {
       return false;
     }
 
+    // If the line is in the fast mode, there should be no svals.
+
     bool res = false;
     int case_num = 0;
     TID creator_tid = cache_line->creator_tid();
     if (creator_tid.raw() == CacheLine::kFastModeID) {
+      DCHECK(cache_line->has_shadow_value().Empty());
       // we see this cache line for the first time (since it has been cleared).
       cache_line->set_creator_tid(tid);
       G_stats->fast_mode_first_time++;
       res = true;
       case_num = 1;
     } else if (creator_tid == tid) {
+      DCHECK(cache_line->has_shadow_value().Empty());
       // We are still in the same tid. Just return.
       G_stats->fast_mode_still_in_creator++;
       res = true;
       case_num = 2;
     } else {
+      DCHECK(cache_line->has_shadow_value().Empty());
       CHECK(creator_tid.valid());
       // We are transitioning from exclusive mode into shared for this
-      // cacheline. Please see the comment before the declaration of used_.
-      cache_line->used().Clear();
+      // cacheline.
       cache_line->set_creator_tid(TID(CacheLine::kSharedID));
       G_stats->fast_mode_transition++;
       res = false;
@@ -5353,14 +5319,6 @@ class Detector {
               b = a + size,
               offset = CacheLine::ComputeOffset(a);
 
-#ifdef VGO_darwin
-    /* Memory accesses of size 16 during libobjc.A.dylib initialization cause
-     * ThreadSanitizer to crash on Darwin, therefore we skip them. This can lead
-     * to missed races, however.
-     * TODO(glider): fix this problem.
-     */
-    if (size == 16) return;
-#endif
     CacheLine *cache_line = G_cache->GetLine(addr, __LINE__);
 
     bool tracing = false;
@@ -5376,7 +5334,7 @@ class Detector {
     if (FastModeCheckAndUpdateCreatorTid(cache_line, tid, tracing)) {
       uintptr_t upper_bound = min(offset + size,
                                   (uintptr_t) CacheLine::kLineSize);
-      cache_line->used().SetRange(offset, upper_bound);
+      cache_line->fast_mode_used().SetRange(offset, upper_bound);
       return;
     }
 
@@ -5403,14 +5361,12 @@ class Detector {
       // slow case
       for (uintptr_t x = a; x < b; x++) {
         offset = CacheLine::ComputeOffset(x);
-        CacheLine *cl_for_x = G_cache->GetLine(x, __LINE__);
-        if (cl_for_x->tag() != cache_line->tag()) {
-          cache_line = G_cache->GetLine(x, __LINE__);
-          if (FastModeCheckAndUpdateCreatorTid(cache_line, tid, tracing)) {
-            cache_line->used().Set(offset);
-            continue;
-          }
+        cache_line = G_cache->GetLine(x, __LINE__);
+        if (FastModeCheckAndUpdateCreatorTid(cache_line, tid, tracing)) {
+          cache_line->fast_mode_used().Set(offset);
+          continue;
         }
+        DCHECK(cache_line->IsShared());
         HandleMemoryAccessHelper(is_w, cache_line, x, 1, tid, thr, tracing);
         G_stats->n_access_slow++;
       }
@@ -5442,6 +5398,7 @@ class Detector {
       return;
 
     uintptr_t b = a + size;
+    CHECK(a <= b);
     ClearMemoryStateOnMalloc(a, b);
     // update heap_map
     HeapInfo info;

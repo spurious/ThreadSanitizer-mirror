@@ -744,7 +744,6 @@ static IRSB* ts_instrument ( VgCallbackClosure* closure,
   if (G_flags->dry_run >= 2) return bbIn;
   Int   i;
   IRSB* bbOut;
-  Bool x86busLocked = False;
 
   bool instrument_memory =
       ThreadSanitizerWantToInstrumentSblock(closure->nraddr);
@@ -803,7 +802,7 @@ static IRSB* ts_instrument ( VgCallbackClosure* closure,
         break;
 
       case Ist_Store:
-        if (!x86busLocked & instrument_memory)
+        if (instrument_memory)
           instrument_mem_access(
               bbOut,
               st->Ist.Store.addr,
@@ -881,6 +880,7 @@ static void pp_Error ( Error* err ) {
   void *extra = VG_(get_error_extra)(err);
   ThreadSanitizerPrintReport((ThreadSanitizerReport*)extra);
 }
+
 static UInt update_extra ( Error* err ) { return 0; }
 
 static Bool recognised_suppression ( Char* name, Supp *su )

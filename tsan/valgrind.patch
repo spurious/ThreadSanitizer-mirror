@@ -1,6 +1,6 @@
 Index: Makefile.all.am
 ===================================================================
---- Makefile.all.am	(revision 10399)
+--- Makefile.all.am	(revision 10454)
 +++ Makefile.all.am	(working copy)
 @@ -91,6 +91,9 @@
  	@FLAG_W_NO_FORMAT_ZERO_LENGTH@ \
@@ -38,7 +38,7 @@ Index: Makefile.all.am
  if VGCONF_HAVE_PLATFORM_SEC
 Index: include/pub_tool_libcassert.h
 ===================================================================
---- include/pub_tool_libcassert.h	(revision 10399)
+--- include/pub_tool_libcassert.h	(revision 10454)
 +++ include/pub_tool_libcassert.h	(working copy)
 @@ -31,18 +31,20 @@
  #ifndef __PUB_TOOL_LIBCBASSERT_H
@@ -73,7 +73,7 @@ Index: include/pub_tool_libcassert.h
  __attribute__ ((__noreturn__))
 Index: include/pub_tool_errormgr.h
 ===================================================================
---- include/pub_tool_errormgr.h	(revision 10399)
+--- include/pub_tool_errormgr.h	(revision 10454)
 +++ include/pub_tool_errormgr.h	(working copy)
 @@ -62,6 +62,14 @@
  Char*       VG_(get_error_string)  ( Error* err );
@@ -103,11 +103,36 @@ Index: include/pub_tool_errormgr.h
  
  /* Similar to VG_(maybe_record_error)(), except this one doesn't record the
     error -- useful for errors that can only happen once.  The errors can be
+Index: include/vki/vki-x86-linux.h
+===================================================================
+--- include/vki/vki-x86-linux.h	(revision 10454)
++++ include/vki/vki-x86-linux.h	(working copy)
+@@ -479,12 +479,15 @@
+ 	 ((nr)   << _VKI_IOC_NRSHIFT) | \
+ 	 ((size) << _VKI_IOC_SIZESHIFT))
+ 
+-/* provoke compile error for invalid uses of size argument */
+-extern unsigned int __vki_invalid_size_argument_for_IOC;
++/* The trunk version of the code below intentionally leads to compile-time
++ * error if anything is wrong with type "t".
++ * However, the original code is not C++-compiler-friendly.
++ *
++ * As a workaround, we produce a "division by zero" warning if anything is wrong
++ * with 't'. */
+ #define _VKI_IOC_TYPECHECK(t) \
+-	((sizeof(t) == sizeof(t[1]) && \
+-	  sizeof(t) < (1 << _VKI_IOC_SIZEBITS)) ? \
+-	  sizeof(t) : __vki_invalid_size_argument_for_IOC)
++	(sizeof(t) / (sizeof(t) == sizeof(t[1]) && \
++	  sizeof(t) < (1 << _VKI_IOC_SIZEBITS)))
+ 
+ /* used to create numbers */
+ #define _VKI_IO(type,nr)	_VKI_IOC(_VKI_IOC_NONE,(type),(nr),0)
 Index: configure.in
 ===================================================================
---- configure.in	(revision 10399)
+--- configure.in	(revision 10454)
 +++ configure.in	(working copy)
-@@ -1840,6 +1840,9 @@
+@@ -1875,6 +1875,9 @@
     helgrind/Makefile
     helgrind/tests/Makefile
     helgrind/docs/Makefile
@@ -119,7 +144,7 @@ Index: configure.in
     massif/perf/Makefile
 Index: Makefile.am
 ===================================================================
---- Makefile.am	(revision 10399)
+--- Makefile.am	(revision 10454)
 +++ Makefile.am	(working copy)
 @@ -10,6 +10,7 @@
  		lackey \
@@ -128,10 +153,10 @@ Index: Makefile.am
 +		tsan \
  		drd
  
- EXP_TOOLS = 	exp-ptrcheck
+ EXP_TOOLS = 	exp-ptrcheck \
 Index: coregrind/m_errormgr.c
 ===================================================================
---- coregrind/m_errormgr.c	(revision 10399)
+--- coregrind/m_errormgr.c	(revision 10454)
 +++ coregrind/m_errormgr.c	(working copy)
 @@ -476,7 +476,7 @@
  /* Top-level entry point to the error management subsystem.

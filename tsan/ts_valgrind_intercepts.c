@@ -41,6 +41,8 @@
 #include "pub_tool_basics.h"
 #include "pub_tool_libcassert.h"
 #include "pub_tool_redir.h"   
+#include "pub_tool_threadstate.h"
+#include "pub_tool_tooliface.h"
 
 #include "ts_valgrind_client_requests.h"
 
@@ -50,69 +52,46 @@
 
 //----------- Basic stuff --------------------------- {{{1
 
-/* BEGIN tiresome boilerplate.  All this stuff is copied from
-   memcheck/mc_replace_strmem.c.  If you update that, consider
-   updating this too (and vice versa). */
-
-/* --- Soname of the standard C library. --- */
-
-#if defined(VGO_linux)
-#  define  m_libc_soname     libcZdsoZa              // libc.so*
-#elif defined(VGP_ppc32_aix5)
-   /* AIX has both /usr/lib/libc.a and /usr/lib/libc_r.a. */
-#  define  m_libc_soname     libcZaZdaZLshrZdoZR     // libc*.a(shr.o)
-#elif defined(VGP_ppc64_aix5)
-#  define  m_libc_soname     libcZaZdaZLshrZu64ZdoZR // libc*.a(shr_64.o)
-#else
-#  error "Unknown platform"
-#endif
-
-
-
-/* --- Sonames for Linux ELF linkers. --- */
-
-#define  m_ld_linux_so_2         ldZhlinuxZdsoZd2           // ld-linux.so.2
-#define  m_ld_linux_x86_64_so_2  ldZhlinuxZhx86Zh64ZdsoZd2  // ld-linux-x86-64.so.2
-#define  m_ld64_so_1             ld64ZdsoZd1                // ld64.so.1
-#define  m_ld_so_1               ldZdsoZd1                  // ld.so.1
-
-/* END tiresome boilerplate */
-
-
 static inline int VALGRIND_TS_THREAD_ID(void) {
-  unsigned int _qzz_res;                                       
-  VALGRIND_DO_CLIENT_REQUEST(_qzz_res, 0 ,                      
-                             TSREQ_GET_THREAD_ID,     
-                             0, 0, 0, 0, 0);                   
-  return _qzz_res;                                                    
+  unsigned int _qzz_res;
+  VALGRIND_DO_CLIENT_REQUEST(_qzz_res, 0 ,
+                             TSREQ_GET_THREAD_ID,
+                             0, 0, 0, 0, 0);
+  return _qzz_res;
+}
+
+static inline int VALGRIND_VG_THREAD_ID(void) {
+  unsigned int _qzz_res;
+  VALGRIND_DO_CLIENT_REQUEST(_qzz_res, 0 ,
+                             TSREQ_GET_VG_THREAD_ID,
+                             0, 0, 0, 0, 0);
+  return _qzz_res;
 }
 
 static inline int  VALGRIND_TS_SEGMENT_ID(void) {
-  unsigned int _qzz_res;                                       
-  VALGRIND_DO_CLIENT_REQUEST(_qzz_res, 0 ,                      
-                             TSREQ_GET_SEGMENT_ID,     
-                             0, 0, 0, 0, 0);                    
-  return _qzz_res;                                                     
+  unsigned int _qzz_res;
+  VALGRIND_DO_CLIENT_REQUEST(_qzz_res, 0 ,
+                             TSREQ_GET_SEGMENT_ID,
+                             0, 0, 0, 0, 0);
+  return _qzz_res;
 }
 
-
-
 #define PTH_FUNC(ret_ty, f, args...) \
-   ret_ty I_WRAP_SONAME_FNNAME_ZZ(libpthreadZdsoZd0,f)(args); \
-   ret_ty I_WRAP_SONAME_FNNAME_ZZ(libpthreadZdsoZd0,f)(args)
+   ret_ty I_WRAP_SONAME_FNNAME_ZZ(VG_Z_LIBPTHREAD_SONAME,f)(args); \
+   ret_ty I_WRAP_SONAME_FNNAME_ZZ(VG_Z_LIBPTHREAD_SONAME,f)(args)
 
 #define NONE_FUNC(ret_ty, f, args...) \
    ret_ty I_WRAP_SONAME_FNNAME_ZZ(NONE,f)(args); \
    ret_ty I_WRAP_SONAME_FNNAME_ZZ(NONE,f)(args)
 
 #define LIBC_FUNC(ret_ty, f, args...) \
-   ret_ty I_WRAP_SONAME_FNNAME_ZZ(m_libc_soname,f)(args); \
-   ret_ty I_WRAP_SONAME_FNNAME_ZZ(m_libc_soname,f)(args)
+   ret_ty I_WRAP_SONAME_FNNAME_ZZ(VG_Z_LIBC_SONAME,f)(args); \
+   ret_ty I_WRAP_SONAME_FNNAME_ZZ(VG_Z_LIBC_SONAME,f)(args)
 
 // libstdcZpZpZa = libstdc++
 #define LIBSTDCXX_FUNC(ret_ty, f, args...) \
-   ret_ty I_WRAP_SONAME_FNNAME_ZZ(libstdcZpZpZa,f)(args); \
-   ret_ty I_WRAP_SONAME_FNNAME_ZZ(libstdcZpZpZa,f)(args)
+   ret_ty I_WRAP_SONAME_FNNAME_ZZ(VG_Z_LIBSTDCXX_SONAME,f)(args); \
+   ret_ty I_WRAP_SONAME_FNNAME_ZZ(VG_Z_LIBSTDCXX_SONAME,f)(args)
 
 
 // Do a client request.  This is a macro rather than a function 
@@ -140,7 +119,7 @@ static inline int  VALGRIND_TS_SEGMENT_ID(void) {
                                  _arg1,_arg2,0,0,0);     \
    } while (0)
 
-#define DO_CREQ_W_WW(_resF, _creqF, _ty1F,_arg1F, _ty2F,_arg2F)	\
+#define DO_CREQ_W_WW(_resF, _creqF, _ty1F,_arg1F, _ty2F,_arg2F) \
    do {                                                  \
       Word _res, _arg1, _arg2;                           \
       assert(sizeof(_ty1F) == sizeof(Word));             \
@@ -190,9 +169,9 @@ static inline int  VALGRIND_TS_SEGMENT_ID(void) {
 #define DO_PthAPIerror(_fnnameF, _errF)                  \
    do {                                                  \
       char* _fnname = (char*)(_fnnameF);                 \
-      long  _err    = (long)(int)(_errF);	         \
+      long  _err    = (long)(int)(_errF);                \
       char* _errstr = lame_strerror(_err);               \
-      DO_CREQ_v_WWW(TSREQ_PTH_API_ERROR,       \
+      DO_CREQ_v_WWW(TSREQ_PTH_API_ERROR,                 \
                     char*,_fnname,                       \
                     long,_err, char*,_errstr);           \
    } while (0)
@@ -286,38 +265,87 @@ MAIN_WRAPPER_DECL {
     IGNORE_ALL_BEGIN(); \
       CALL_FN_W_6W(ret, fn, ptr, size, a, b, c, d); \
     IGNORE_ALL_END(); \
-    DO_CREQ_v_WW(TSREQ_MALLOC,  void*, ret, long, size); \
+    if (ret != (void*)-1) { \
+      DO_CREQ_v_WW(TSREQ_MALLOC,  void*, ret, long, size); \
+    } \
+    return ret; \
+  }
+
+#define WRAP_ZONE_MALLOC(soname, fnname) \
+  void* I_WRAP_SONAME_FNNAME_ZU(soname,fnname) (void* zone, SizeT n); \
+  void* I_WRAP_SONAME_FNNAME_ZU(soname,fnname) (void* zone, SizeT n) { \
+    void* ret; \
+    OrigFn fn;\
+    VALGRIND_GET_ORIG_FN(fn);\
+    IGNORE_ALL_BEGIN(); \
+      CALL_FN_W_WW(ret, fn, zone, n); \
+    IGNORE_ALL_END(); \
+    DO_CREQ_v_WW(TSREQ_MALLOC,  void*, ret, long, n); \
+    return ret; \
+  }
+
+#define WRAP_ZONE_CALLOC(soname, fnname) \
+  void* I_WRAP_SONAME_FNNAME_ZU(soname,fnname) (void* zone, SizeT n, SizeT c); \
+  void* I_WRAP_SONAME_FNNAME_ZU(soname,fnname) (void* zone, SizeT n, SizeT c) { \
+    void* ret; \
+    OrigFn fn;\
+    VALGRIND_GET_ORIG_FN(fn);\
+    IGNORE_ALL_BEGIN(); \
+      CALL_FN_W_WWW(ret, fn, zone, n, c); \
+    IGNORE_ALL_END(); \
+    DO_CREQ_v_WW(TSREQ_MALLOC,  void*, ret, long, n * c); \
+    return ret; \
+  }
+
+#define WRAP_ZONE_REALLOC(soname, fnname) \
+  void* I_WRAP_SONAME_FNNAME_ZU(soname,fnname) (void* zone, void *ptr, SizeT n); \
+  void* I_WRAP_SONAME_FNNAME_ZU(soname,fnname) (void* zone, void *ptr, SizeT n) { \
+    void* ret; \
+    OrigFn fn;\
+    VALGRIND_GET_ORIG_FN(fn);\
+    IGNORE_ALL_BEGIN(); \
+      CALL_FN_W_WWW(ret, fn, zone, ptr, n); \
+    IGNORE_ALL_END(); \
+    DO_CREQ_v_WW(TSREQ_MALLOC, void*, ret, long, n); \
     return ret; \
   }
 
 
-WRAP_MALLOC(m_libc_soname, malloc);
+WRAP_ZONE_MALLOC(VG_Z_LIBC_SONAME, malloc_zone_malloc);
+WRAP_ZONE_CALLOC(VG_Z_LIBC_SONAME, malloc_zone_calloc);
+WRAP_ZONE_REALLOC(VG_Z_LIBC_SONAME, malloc_zone_realloc);
+
+WRAP_MALLOC(VG_Z_LIBC_SONAME, malloc);
 WRAP_MALLOC(NONE, malloc);
 
-WRAP_MALLOC(m_libc_soname, valloc);
+WRAP_MALLOC(VG_Z_LIBC_SONAME, valloc);
 WRAP_MALLOC(NONE, valloc);
-WRAP_MALLOC(m_libc_soname, pvalloc);
+WRAP_MALLOC(VG_Z_LIBC_SONAME, pvalloc);
 WRAP_MALLOC(NONE, pvalloc);
 WRAP_MALLOC(NONE, _Znam);
 WRAP_MALLOC(NONE, _Znwm);
 WRAP_MALLOC(NONE, _Znaj);
 WRAP_MALLOC(NONE, _Znwj);
 
-WRAP_CALLOC(m_libc_soname, calloc);
+WRAP_CALLOC(VG_Z_LIBC_SONAME, calloc);
 WRAP_CALLOC(NONE, calloc);
 
-WRAP_REALLOC(m_libc_soname, realloc); // TODO: handle free inside realloc
+WRAP_REALLOC(VG_Z_LIBC_SONAME, realloc); // TODO: handle free inside realloc
 WRAP_REALLOC(NONE, realloc); // TODO: handle free inside realloc
-WRAP_REALLOC(m_libc_soname, memalign);
+WRAP_REALLOC(VG_Z_LIBC_SONAME, memalign);
 WRAP_REALLOC(NONE, memalign);
-WRAP_POSIX_MEMALIGN(m_libc_soname, posix_memalign);
+WRAP_POSIX_MEMALIGN(VG_Z_LIBC_SONAME, posix_memalign);
 WRAP_POSIX_MEMALIGN(NONE, posix_memalign);
 
 // TODO(timurrrr): handle munmap.
 // Looks like munmap may be used to free page-sized subregions of memory
 // returned my mmap. This could be nasty. Need investigation.
-WRAP_MMAP(m_libc_soname, mmap);
+
+#ifndef VGO_darwin
+// TODO(glider): we should handle mmap on Darwin correctly.
+WRAP_MMAP(VG_Z_LIBC_SONAME, mmap);
 WRAP_MMAP(NONE, mmap);
+#endif
 
 #define WRAP_FREE(soname, fnname) \
   void I_WRAP_SONAME_FNNAME_ZU(soname,fnname) (void *ptr); \
@@ -330,7 +358,19 @@ WRAP_MMAP(NONE, mmap);
     IGNORE_ALL_END(); \
   }
 
-WRAP_FREE(m_libc_soname, free);
+#define WRAP_ZONE_FREE(soname, fnname) \
+  void I_WRAP_SONAME_FNNAME_ZU(soname,fnname) (void *zone, void *ptr); \
+  void I_WRAP_SONAME_FNNAME_ZU(soname,fnname) (void *zone, void *ptr) { \
+    OrigFn fn;\
+    VALGRIND_GET_ORIG_FN(fn);\
+    DO_CREQ_v_W(TSREQ_FREE, void*, ptr); \
+    IGNORE_ALL_BEGIN(); \
+      CALL_FN_v_WW(fn, zone, ptr); \
+    IGNORE_ALL_END(); \
+  }
+
+WRAP_FREE(VG_Z_LIBC_SONAME, free);
+WRAP_ZONE_FREE(VG_Z_LIBC_SONAME, malloc_zone_free);
 
 WRAP_FREE(NONE, free);
 WRAP_FREE(NONE, _ZdlPv);
@@ -406,6 +446,42 @@ static char* lame_strerror ( long err )
 }
 
 
+// libpthread sentry functions.
+// Darwin implementations of several libpthread functions call other functions
+// that are intercepted by ThreadSanitizer as well. To avoid reacting on those
+// functions twice the status of each Valgrind thread is stored in the
+// tid_inside_pthread_lib array and all the client requests from the inner
+// pthread functions are ignored.
+
+static int tid_inside_pthread_lib[VG_N_THREADS];
+
+// A pthread_*() function must call pthread_lib_enter() if its implementation
+// calls or is called by another pthread_*() function. The function that
+// called pthread_lib_enter() should perform client requests to ThreadSanitizer
+// iff the return value of pthread_lib_enter() is equal to 1.
+static int pthread_lib_enter(void) {
+  int ret = 1, tid;
+  IGNORE_ALL_BEGIN();
+  tid = VALGRIND_VG_THREAD_ID();
+  if (tid_inside_pthread_lib[tid]++) {
+    ret = 0;
+  } else {
+    ret = 1;
+  }
+  IGNORE_ALL_END();
+  return ret;
+}
+
+// A pthread_*() function must call pthread_lib_exit() iff it has called
+// pthread_lib_enter().
+static void pthread_lib_exit(void) {
+  int tid;
+  IGNORE_ALL_BEGIN();
+  tid = VALGRIND_VG_THREAD_ID();
+  tid_inside_pthread_lib[tid]--;
+  IGNORE_ALL_END();
+}
+
 /*----------------------------------------------------------------*/
 /*--- pthread_create, pthread_join, pthread_exit               ---*/
 /*----------------------------------------------------------------*/
@@ -428,10 +504,8 @@ static void* ThreadSanitizerStartThread ( void* xargsV )
    return (void*) fn( (void*)arg );
 }
 
-// pthread_create
-PTH_FUNC(int, pthreadZucreateZAZa, // pthread_create@*
-              pthread_t *thread, const pthread_attr_t *attr,
-              void *(*start) (void *), void *arg)
+static int pthread_create_WRK(pthread_t *thread, const pthread_attr_t *attr,
+                              void *(*start) (void *), void *arg)
 {
    int    ret;
    OrigFn fn;
@@ -471,9 +545,19 @@ PTH_FUNC(int, pthreadZucreateZAZa, // pthread_create@*
    return ret;
 }
 
+PTH_FUNC(int, pthreadZucreate, // pthread_create (Darwin)
+              pthread_t *thread, const pthread_attr_t *attr,
+              void *(*start) (void *), void *arg) {
+   return pthread_create_WRK(thread, attr, start, arg);
+}
+PTH_FUNC(int, pthreadZucreateZAZa, // pthread_create@* (Linux)
+              pthread_t *thread, const pthread_attr_t *attr,
+              void *(*start) (void *), void *arg) {
+   return pthread_create_WRK(thread, attr, start, arg);
+}
+
 // pthread_join
-PTH_FUNC(int, pthreadZujoin, // pthread_join
-              pthread_t thread, void** value_pointer)
+static int pthread_join_WRK(pthread_t thread, void** value_pointer)
 {
    int ret;
    OrigFn fn;
@@ -498,6 +582,20 @@ PTH_FUNC(int, pthreadZujoin, // pthread_join
    }
    return ret;
 }
+
+PTH_FUNC(int, pthreadZujoin, // pthread_join (Linux)
+              pthread_t thread, void** value_pointer)
+{
+  return pthread_join_WRK(thread, value_pointer);
+}
+
+PTH_FUNC(int, pthreadZujoin$Za, // pthread_join$* (Darwin)
+              pthread_t thread, void** value_pointer)
+{
+  return pthread_join_WRK(thread, value_pointer);
+}
+
+
 
 /* Behaviour of pthread_join on NPTL:
 
@@ -547,7 +645,8 @@ done.  No way the joiner can return before the thread is gone.
 
 /* Handled:   pthread_mutex_init pthread_mutex_destroy
               pthread_mutex_lock
-              pthread_mutex_trylock pthread_mutex_timedlock
+              pthread_mutex_trylock
+              pthread_mutex_timedlock
               pthread_mutex_unlock
 
    Unhandled: pthread_spin_init pthread_spin_destroy 
@@ -626,13 +725,19 @@ PTH_FUNC(int, pthreadZumutexZulock, // pthread_mutex_lock
 {
    int    ret;
    OrigFn fn;
+   int is_outermost;
    VALGRIND_GET_ORIG_FN(fn);
    if (TRACE_PTH_FNS) {
       fprintf(stderr, "<< pthread_mxlock %p", mutex); fflush(stderr);
    }
 
-   DO_CREQ_v_WWW(TSREQ_PTHREAD_RWLOCK_LOCK_PRE,
-                 pthread_mutex_t*,mutex, long, 1/*is_w*/, long,0/*!isTryLock*/);
+   is_outermost = pthread_lib_enter();
+
+   if (is_outermost)
+      DO_CREQ_v_WWW(TSREQ_PTHREAD_RWLOCK_LOCK_PRE,
+                    pthread_mutex_t*, mutex,
+                    long, 1/*is_w*/,
+                    long, 0/*!isTryLock*/);
 
    CALL_FN_W_W(ret, fn, mutex);
 
@@ -641,16 +746,19 @@ PTH_FUNC(int, pthreadZumutexZulock, // pthread_mutex_lock
       that the lock has been acquired by someone (this thread).  Does
       this matter?  Not sure, but I don't think so. */
 
-   if (ret == 0 /*success*/) {
-      DO_CREQ_v_WW(TSREQ_PTHREAD_RWLOCK_LOCK_POST,
-                  pthread_mutex_t*,mutex, long, 1);
-   } else { 
-      DO_PthAPIerror( "pthread_mutex_lock", ret );
+   if (is_outermost) {
+      if ((ret == 0 /*success*/)) {
+         DO_CREQ_v_WW(TSREQ_PTHREAD_RWLOCK_LOCK_POST,
+                      pthread_mutex_t*,mutex, long, 1);
+      } else {
+         DO_PthAPIerror( "pthread_mutex_lock", ret );
+      }
    }
 
    if (TRACE_PTH_FNS) {
       fprintf(stderr, " :: mxlock -> %d >>\n", ret);
    }
+   pthread_lib_exit();
    return ret;
 }
 
@@ -658,11 +766,10 @@ PTH_FUNC(int, pthreadZumutexZulock, // pthread_mutex_lock
 // pthread_mutex_trylock.  The handling needed here is very similar
 // to that for pthread_mutex_lock, except that we need to tell
 // the pre-lock creq that this is a trylock-style operation, and
-// therefore not to complain if the lock is nonrecursive and 
+// therefore not to complain if the lock is nonrecursive and
 // already locked by this thread -- because then it'll just fail
 // immediately with EBUSY.
-PTH_FUNC(int, pthreadZumutexZutrylock, // pthread_mutex_trylock
-              pthread_mutex_t *mutex)
+static int pthread_mutex_trylock_WRK(pthread_mutex_t *mutex)
 {
    int    ret;
    OrigFn fn;
@@ -695,10 +802,17 @@ PTH_FUNC(int, pthreadZumutexZutrylock, // pthread_mutex_trylock
    return ret;
 }
 
+PTH_FUNC(int, pthreadZumutexZutrylock, // pthread_mutex_trylock
+              pthread_mutex_t *mutex)
+{
+  return pthread_mutex_trylock_WRK(mutex);
+}
+
 
 // pthread_mutex_timedlock.  Identical logic to pthread_mutex_trylock.
+// Not implemented in Darwin pthreads.
 PTH_FUNC(int, pthreadZumutexZutimedlock, // pthread_mutex_timedlock
-	 pthread_mutex_t *mutex,
+   pthread_mutex_t *mutex,
          void* timeout)
 {
    int    ret;
@@ -777,28 +891,27 @@ PTH_FUNC(int, pthreadZumutexZuunlock, // pthread_mutex_unlock
 */
 
 // pthread_cond_wait
-PTH_FUNC(int, pthreadZucondZuwaitZAZa, // pthread_cond_wait@*
-              pthread_cond_t* cond, pthread_mutex_t* mutex)
+static int pthread_cond_wait_WRK(pthread_cond_t* cond, pthread_mutex_t* mutex)
 {
   int ret;
   OrigFn fn;
 
+  int is_outermost = pthread_lib_enter();
   VALGRIND_GET_ORIG_FN(fn);
 
   if (TRACE_PTH_FNS) {
     fprintf(stderr, "<< pthread_cond_wait %p %p", cond, mutex);
     fflush(stderr);
   }
-
+  if (is_outermost)
   DO_CREQ_v_WW(TSREQ_PTHREAD_COND_WAIT_PRE,
-               pthread_cond_t*,cond, pthread_mutex_t*,mutex);
-
+                              pthread_cond_t*,cond, pthread_mutex_t*,mutex);
 
   CALL_FN_W_WW(ret, fn, cond,mutex);
 
-
+  if (is_outermost)
   DO_CREQ_v_WW(TSREQ_PTHREAD_COND_WAIT_POST,
-               pthread_cond_t*,cond, pthread_mutex_t*,mutex);
+                              pthread_cond_t*,cond, pthread_mutex_t*,mutex);
 
   if (ret != 0) {
     DO_PthAPIerror( "pthread_cond_wait", ret );
@@ -808,17 +921,32 @@ PTH_FUNC(int, pthreadZucondZuwaitZAZa, // pthread_cond_wait@*
     fprintf(stderr, " cowait -> %d >>\n", ret);
   }
 
+  pthread_lib_exit();
+
   return ret;
+}
+
+PTH_FUNC(int, pthreadZucondZuwaitZAZa, // pthread_cond_wait@*
+              pthread_cond_t* cond, pthread_mutex_t* mutex)
+{
+  return pthread_cond_wait_WRK(cond, mutex);
+}
+
+PTH_FUNC(int, pthreadZucondZuwait$Za, // pthread_cond_wait$*
+              pthread_cond_t* cond, pthread_mutex_t* mutex)
+{
+  return pthread_cond_wait_WRK(cond, mutex);
 }
 
 
 // pthread_cond_timedwait
-PTH_FUNC(int, pthreadZucondZutimedwaitZAZa, // pthread_cond_timedwait@*
-         pthread_cond_t* cond, pthread_mutex_t* mutex, 
-         struct timespec* abstime)
+static int pthread_cond_timedwait_WRK(pthread_cond_t* cond,
+                                      pthread_mutex_t* mutex,
+                                      struct timespec* abstime)
 {
    int ret;
    OrigFn fn;
+   int is_outermost = pthread_lib_enter();
    VALGRIND_GET_ORIG_FN(fn);
 
    if (TRACE_PTH_FNS) {
@@ -830,19 +958,20 @@ PTH_FUNC(int, pthreadZucondZutimedwaitZAZa, // pthread_cond_timedwait@*
    /* Tell the tool a cond-wait is about to happen, so it can check
       for bogus argument values.  In return it tells us whether it
       thinks the mutex is valid or not. */
-   DO_CREQ_v_WW(TSREQ_PTHREAD_COND_WAIT_PRE,
-                pthread_cond_t*,cond, pthread_mutex_t*,mutex);
+   if (is_outermost) DO_CREQ_v_WW(TSREQ_PTHREAD_COND_WAIT_PRE,
+                               pthread_cond_t*,cond, pthread_mutex_t*,mutex);
 
 
    CALL_FN_W_WWW(ret, fn, cond,mutex,abstime);
 
-   if (ret == 0) {
-      DO_CREQ_v_WW(TSREQ_PTHREAD_COND_WAIT_POST,
-                   pthread_cond_t*,cond, pthread_mutex_t*,mutex);
-   } else {
-      DO_CREQ_v_WW(TSREQ_PTHREAD_COND_TWAIT_POST,
-                   pthread_cond_t*,cond, pthread_mutex_t*,mutex);
-
+   if (is_outermost) {
+      if (ret == 0) {
+         DO_CREQ_v_WW(TSREQ_PTHREAD_COND_WAIT_POST,
+                      pthread_cond_t*,cond, pthread_mutex_t*,mutex);
+      } else {
+         DO_CREQ_v_WW(TSREQ_PTHREAD_COND_TWAIT_POST,
+                      pthread_cond_t*,cond, pthread_mutex_t*,mutex);
+      }
    }
 
    if (ret != 0 && ret != ETIMEDOUT) {
@@ -853,13 +982,27 @@ PTH_FUNC(int, pthreadZucondZutimedwaitZAZa, // pthread_cond_timedwait@*
       fprintf(stderr, " cotimedwait -> %d >>\n", ret);
    }
 
+   pthread_lib_exit();
    return ret;
+}
+
+PTH_FUNC(int, pthreadZucondZutimedwaitZAZa, // pthread_cond_timedwait@*
+         pthread_cond_t* cond, pthread_mutex_t* mutex, 
+         struct timespec* abstime)
+{
+  return pthread_cond_timedwait_WRK(cond, mutex, abstime);
+}
+
+PTH_FUNC(int, pthreadZucondZutimedwait$Za, // pthread_cond_timedwait$*
+         pthread_cond_t* cond, pthread_mutex_t* mutex, 
+         struct timespec* abstime)
+{
+  return pthread_cond_timedwait_WRK(cond, mutex, abstime);
 }
 
 
 // pthread_cond_signal
-PTH_FUNC(int, pthreadZucondZusignalZAZa, // pthread_cond_signal@*
-              pthread_cond_t* cond)
+static int pthread_cond_signal_WRK(pthread_cond_t* cond)
 {
    int ret;
    OrigFn fn;
@@ -886,16 +1029,27 @@ PTH_FUNC(int, pthreadZucondZusignalZAZa, // pthread_cond_signal@*
    return ret;
 }
 
+PTH_FUNC(int, pthreadZucondZusignal, // pthread_cond_signal
+              pthread_cond_t* cond)
+{
+  return pthread_cond_signal_WRK(cond);
+}
+
+PTH_FUNC(int, pthreadZucondZusignalZAZa, // pthread_cond_signal@*
+              pthread_cond_t* cond)
+{
+  return pthread_cond_signal_WRK(cond);
+}
 
 // pthread_cond_broadcast
 // Note, this is pretty much identical, from a dependency-graph
 // point of view, with cond_signal, so the code is duplicated.
 // Maybe it should be commoned up.
-PTH_FUNC(int, pthreadZucondZubroadcastZAZa, // pthread_cond_broadcast@*
-              pthread_cond_t* cond)
+static int pthread_cond_broadcast_WRK(pthread_cond_t* cond)
 {
    int ret;
    OrigFn fn;
+   pthread_lib_enter();
    VALGRIND_GET_ORIG_FN(fn);
 
    if (TRACE_PTH_FNS) {
@@ -916,9 +1070,21 @@ PTH_FUNC(int, pthreadZucondZubroadcastZAZa, // pthread_cond_broadcast@*
       fprintf(stderr, " cobro -> %d >>\n", ret);
    }
 
+   pthread_lib_exit();
    return ret;
 }
 
+PTH_FUNC(int, pthreadZucondZubroadcast, // pthread_cond_broadcast
+              pthread_cond_t* cond)
+{
+  return pthread_cond_broadcast_WRK(cond);
+}
+
+PTH_FUNC(int, pthreadZucondZubroadcastZAZa, // pthread_cond_broadcast@*
+              pthread_cond_t* cond)
+{
+  return pthread_cond_broadcast_WRK(cond);
+}
 
 static void do_wait_pre_and_post(void *cv, void *mu) {
   // fprintf(stderr, "do_wait_pre_and_post: %p %p\n", cv, mu);
@@ -929,8 +1095,11 @@ static void do_wait_pre_and_post(void *cv, void *mu) {
 /*----------------------------------------------------------------*/
 /*--- pthread_barrier_t functions                              ---*/
 /*----------------------------------------------------------------*/
-PTH_FUNC(int, pthreadZubarrierZuwait, // pthread_barrier_wait. 
-              pthread_barrier_t* b)
+#if defined(VGO_darwin)
+typedef void pthread_barrier_t;
+#endif
+// pthread_barrier_wait
+static int pthread_barrier_wait_WRK(pthread_barrier_t* b)
 {
    int ret;
    OrigFn fn;
@@ -958,8 +1127,11 @@ PTH_FUNC(int, pthreadZubarrierZuwait, // pthread_barrier_wait.
    return ret;
 }
 
-
-
+PTH_FUNC(int, pthreadZubarrierZuwait, // pthread_barrier_wait
+              pthread_barrier_t* b)
+{
+  return pthread_barrier_wait_WRK(b);
+}
 
 /*----------------------------------------------------------------*/
 /*--- pthread_rwlock_t functions                               ---*/
@@ -978,9 +1150,8 @@ PTH_FUNC(int, pthreadZubarrierZuwait, // pthread_barrier_wait.
 */
 
 // pthread_rwlock_init
-PTH_FUNC(int, pthreadZurwlockZuinit, // pthread_rwlock_init
-              pthread_rwlock_t *rwl,
-              pthread_rwlockattr_t* attr)
+static int pthread_rwlock_init_WRK(pthread_rwlock_t *rwl,
+                                   pthread_rwlockattr_t* attr)
 {
    int    ret;
    OrigFn fn;
@@ -1004,10 +1175,22 @@ PTH_FUNC(int, pthreadZurwlockZuinit, // pthread_rwlock_init
    return ret;
 }
 
+PTH_FUNC(int, pthreadZurwlockZuinit, // pthread_rwlock_init
+              pthread_rwlock_t *rwl,
+              pthread_rwlockattr_t* attr)
+{
+  return pthread_rwlock_init_WRK(rwl, attr);
+}
+
+PTH_FUNC(int, pthreadZurwlockZuinit$Za, // pthread_rwlock_init$*
+              pthread_rwlock_t *rwl,
+              pthread_rwlockattr_t* attr)
+{
+  return pthread_rwlock_init_WRK(rwl, attr);
+}
 
 // pthread_rwlock_destroy
-PTH_FUNC(int, pthreadZurwlockZudestroy, // pthread_rwlock_destroy
-              pthread_rwlock_t *rwl)
+static int pthread_rwlock_destroy_WRK( pthread_rwlock_t *rwl)
 {
    int    ret;
    OrigFn fn;
@@ -1031,10 +1214,21 @@ PTH_FUNC(int, pthreadZurwlockZudestroy, // pthread_rwlock_destroy
    return ret;
 }
 
+PTH_FUNC(int, pthreadZurwlockZudestroy, // pthread_rwlock_destroy
+              pthread_rwlock_t *rwl)
+{
+  return pthread_rwlock_destroy_WRK(rwl);
+}
+
+PTH_FUNC(int, pthreadZurwlockZudestroy$Za, // pthread_rwlock_destroy$*
+              pthread_rwlock_t *rwl)
+{
+  return pthread_rwlock_destroy_WRK(rwl);
+}
+
 
 // pthread_rwlock_wrlock
-PTH_FUNC(int, pthreadZurwlockZuwrlock, // pthread_rwlock_wrlock
-	 pthread_rwlock_t* rwlock)
+static int pthread_rwlock_wrlock_WRK(pthread_rwlock_t* rwlock)
 {
    int    ret;
    OrigFn fn;
@@ -1062,10 +1256,20 @@ PTH_FUNC(int, pthreadZurwlockZuwrlock, // pthread_rwlock_wrlock
    return ret;
 }
 
+PTH_FUNC(int, pthreadZurwlockZuwrlock, // pthread_rwlock_wrlock
+	 pthread_rwlock_t* rwlock)
+{
+  return pthread_rwlock_wrlock_WRK(rwlock);
+}
+
+PTH_FUNC(int, pthreadZurwlockZuwrlock$Za, // pthread_rwlock_wrlock$*
+	 pthread_rwlock_t* rwlock)
+{
+  return pthread_rwlock_wrlock_WRK(rwlock);
+}
 
 // pthread_rwlock_rdlock
-PTH_FUNC(int, pthreadZurwlockZurdlock, // pthread_rwlock_rdlock
-	 pthread_rwlock_t* rwlock)
+static int pthread_rwlock_rdlock_WRK(pthread_rwlock_t* rwlock)
 {
    int    ret;
    OrigFn fn;
@@ -1093,10 +1297,20 @@ PTH_FUNC(int, pthreadZurwlockZurdlock, // pthread_rwlock_rdlock
    return ret;
 }
 
+PTH_FUNC(int, pthreadZurwlockZurdlock, // pthread_rwlock_rdlock
+	 pthread_rwlock_t* rwlock)
+{
+  return pthread_rwlock_rdlock_WRK(rwlock);
+}
+
+PTH_FUNC(int, pthreadZurwlockZurdlock$Za, // pthread_rwlock_rdlock$*
+	 pthread_rwlock_t* rwlock)
+{
+  return pthread_rwlock_rdlock_WRK(rwlock);
+}
 
 // pthread_rwlock_trywrlock
-PTH_FUNC(int, pthreadZurwlockZutrywrlock, // pthread_rwlock_trywrlock
-	 pthread_rwlock_t* rwlock)
+static int pthread_rwlock_trywrlock_WRK(pthread_rwlock_t* rwlock)
 {
    int    ret;
    OrigFn fn;
@@ -1130,10 +1344,20 @@ PTH_FUNC(int, pthreadZurwlockZutrywrlock, // pthread_rwlock_trywrlock
    return ret;
 }
 
+PTH_FUNC(int, pthreadZurwlockZutrywrlock, // pthread_rwlock_trywrlock
+	 pthread_rwlock_t* rwlock)
+{
+  return pthread_rwlock_trywrlock_WRK(rwlock);
+}
+
+PTH_FUNC(int, pthreadZurwlockZutrywrlock$Za, // pthread_rwlock_trywrlock$*
+	 pthread_rwlock_t* rwlock)
+{
+  return pthread_rwlock_trywrlock_WRK(rwlock);
+}
 
 // pthread_rwlock_tryrdlock
-PTH_FUNC(int, pthreadZurwlockZutryrdlock, // pthread_rwlock_tryrdlock
-	 pthread_rwlock_t* rwlock)
+static int pthread_rwlock_tryrdlock_WRK(pthread_rwlock_t* rwlock)
 {
    int    ret;
    OrigFn fn;
@@ -1167,10 +1391,21 @@ PTH_FUNC(int, pthreadZurwlockZutryrdlock, // pthread_rwlock_tryrdlock
    return ret;
 }
 
+PTH_FUNC(int, pthreadZurwlockZutryrdlock, // pthread_rwlock_tryrdlock
+	 pthread_rwlock_t* rwlock)
+{
+  return pthread_rwlock_tryrdlock_WRK(rwlock);
+}
+
+PTH_FUNC(int, pthreadZurwlockZutryrdlock$Za, // pthread_rwlock_tryrdlock$*
+	 pthread_rwlock_t* rwlock)
+{
+  return pthread_rwlock_tryrdlock_WRK(rwlock);
+}
+
 
 // pthread_rwlock_unlock
-PTH_FUNC(int, pthreadZurwlockZuunlock, // pthread_rwlock_unlock
-	 pthread_rwlock_t* rwlock)
+static int pthread_rwlock_unlock_WRK(pthread_rwlock_t* rwlock)
 {
    int    ret;
    OrigFn fn;
@@ -1197,6 +1432,17 @@ PTH_FUNC(int, pthreadZurwlockZuunlock, // pthread_rwlock_unlock
    return ret;
 }
 
+PTH_FUNC(int, pthreadZurwlockZuunlock, // pthread_rwlock_unlock
+	 pthread_rwlock_t* rwlock)
+{
+  return pthread_rwlock_unlock_WRK(rwlock);
+}
+
+PTH_FUNC(int, pthreadZurwlockZuunlock$Za, // pthread_rwlock_unlock$*
+	 pthread_rwlock_t* rwlock)
+{
+  return pthread_rwlock_unlock_WRK(rwlock);
+}
 
 /*----------------------------------------------------------------*/
 /*--- POSIX semaphores                                         ---*/
@@ -1219,7 +1465,8 @@ PTH_FUNC(int, pthreadZurwlockZuunlock, // pthread_rwlock_unlock
 */
 
 /* glibc-2.5 has sem_init@@GLIBC_2.2.5 (amd64-linux)
-             and sem_init@@GLIBC_2.1 (x86-linux): match sem_init@* */
+             and sem_init@@GLIBC_2.1 (x86-linux): match sem_init@*   
+   sem_init is not implemented for Darwin. */
 PTH_FUNC(int, semZuinitZAZa, sem_t* sem, int pshared, unsigned long value)
 {
    OrigFn fn;
@@ -1249,9 +1496,7 @@ PTH_FUNC(int, semZuinitZAZa, sem_t* sem, int pshared, unsigned long value)
 }
 
 
-/* glibc-2.5 has sem_destroy@@GLIBC_2.2.5 (amd64-linux)
-             and sem_destroy@@GLIBC_2.1 (x86-linux); match sem_destroy@* */
-PTH_FUNC(int, semZudestroyZAZa, sem_t* sem)
+static int sem_destroy_WRK(sem_t* sem)
 {
    OrigFn fn;
    int    ret;
@@ -1278,6 +1523,18 @@ PTH_FUNC(int, semZudestroyZAZa, sem_t* sem)
    return ret;
 }
 
+/* glibc-2.5 has sem_destroy@@GLIBC_2.2.5 (amd64-linux)
+             and sem_destroy@@GLIBC_2.1 (x86-linux); match sem_destroy@* */
+PTH_FUNC(int, semZudestroyZAZa, sem_t* sem)
+{
+  return sem_destroy_WRK(sem);
+}
+
+// Darwin has sem_destroy.
+PTH_FUNC(int, semZudestroy, sem_t* sem)
+{
+  return sem_destroy_WRK(sem);
+}
 
 /* glibc-2.5 has sem_wait (amd64-linux); match sem_wait
              and sem_wait@@GLIBC_2.1 (x86-linux); match sem_wait@* */
@@ -1316,10 +1573,16 @@ PTH_FUNC(int, semZuwait, sem_t* sem) { /* sem_wait */
 PTH_FUNC(int, semZuwaitZAZa, sem_t* sem) { /* sem_wait@* */
    return sem_wait_WRK(sem, "sem_wait", 0);
 }
+PTH_FUNC(int, semZuwait$Za, sem_t* sem) { /* sem_wait$* */
+   return sem_wait_WRK(sem, "sem_wait", 0);
+}
 PTH_FUNC(int, semZutrywait, sem_t* sem) { /* sem_trywait */
    return sem_wait_WRK(sem, "sem_trywait", 1);
 }
 PTH_FUNC(int, semZutrywaitZAZa, sem_t* sem) { /* sem_trywait@* */
+   return sem_wait_WRK(sem, "sem_trywait", 1);
+}
+PTH_FUNC(int, semZutrywait$Za, sem_t* sem) { /* sem_trywait$* */
    return sem_wait_WRK(sem, "sem_trywait", 1);
 }
 
@@ -1364,7 +1627,11 @@ PTH_FUNC(int, semZupostZAZa, sem_t* sem) { /* sem_post@* */
    VALGRIND_GET_ORIG_FN(fn);
    return sem_post_WRK(fn, sem);
 }
-
+PTH_FUNC(int, semZupost$Za, sem_t* sem) { /* sem_post$* */
+   OrigFn fn;
+   VALGRIND_GET_ORIG_FN(fn);
+   return sem_post_WRK(fn, sem);
+}
 
 /* From man page: 
    sem_t *sem_open(const char *name, int oflag, ...);
@@ -1501,6 +1768,8 @@ PTH_FUNC(long, write, int s, void *a2, long a3) {
    return ret;
 }
 
+/* Linux: unlink
+ * Darwin: unlink */
 LIBC_FUNC(long, unlink, void *path) {
    OrigFn fn;
    long    ret;
@@ -1512,7 +1781,9 @@ LIBC_FUNC(long, unlink, void *path) {
    return ret;
 }
 
-LIBC_FUNC(int, open, void *path, int flags, int mode) {
+/* Linux: open
+ * Darwin: open$NOCANCEL$UNIX2003 */
+static int open_WRK(void *path, int flags, int mode) {
    OrigFn fn;
    long    ret;
    void *o;
@@ -1524,6 +1795,15 @@ LIBC_FUNC(int, open, void *path, int flags, int mode) {
    return ret;
 }
 
+LIBC_FUNC(int, open, void *path, int flags, int mode) {
+  return open_WRK(path, flags, mode);
+}
+LIBC_FUNC(int, open$Za, void *path, int flags, int mode) {
+  return open_WRK(path, flags, mode);
+}
+
+/* Linux: rmdir
+ * Darwin: rmdir */
 LIBC_FUNC(int, rmdir, void *path) {
    OrigFn fn;
    long    ret;
@@ -1535,7 +1815,9 @@ LIBC_FUNC(int, rmdir, void *path) {
    return ret;
 }
 
-LIBC_FUNC(long, opendir, void *path) {
+/* Linux: opendir
+ * Darwin: opendir$UNIX2003 */
+static long opendir_WRK(void *path) {
    OrigFn fn;
    long    ret;
    void *o;
@@ -1544,6 +1826,14 @@ LIBC_FUNC(long, opendir, void *path) {
    o = SocketMagic((long)path);
    do_wait_pre_and_post(o, 0);
    return ret;
+}
+
+LIBC_FUNC(long, opendir, void *path) {
+  return opendir_WRK(path);
+}
+
+LIBC_FUNC(long, opendir$Za, void *path) {
+  return opendir_WRK(path);
 }
 
 /* 
@@ -1705,6 +1995,7 @@ STRCHR(VG_Z_LD_LINUX_X86_64_SO_2, strchr)
 STRCHR(VG_Z_LD_LINUX_SO_2,        index)
 STRCHR(VG_Z_LD_LINUX_X86_64_SO_2, index)
 #endif
+
 
 
 // --- STRRCHR RINDEX -----------------------------------------------------
