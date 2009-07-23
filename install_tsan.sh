@@ -6,24 +6,22 @@ VEX_REV=1908
 TSAN_REV=1092
 VALGRIND_DIR=`pwd`
 
-# Check that the SVN version in $VALGRIND_DIR/VEX is equal to $VEX_REV
-cd VEX
-if ! svn info | grep "Revision: ${VEX_REV}" >/dev/null
-then
-  echo "WARNING:" >&2
-  echo "Either you run the script from outside of the valgrind directory" >&2
-  echo "or the VEX revision number is different the one we used (r${VEX_REV})." >&2
-  echo "The patch may not apply" >&2
-fi
-cd $VALGRIND_DIR
+check_revisions() {
+  if ! svn info | grep "Revision: ${VALGRIND_REV}" >/dev/null; then
+    return 1
+  fi
+  if ! svn info VEX | grep "Revision: ${VEX_REV}" >/dev/null; then
+    return 1
+  fi
+    return 0
+}
 
-# Check that the SVN version in $VALGRIND_DIR is equal to $VALGRIND_REV
-if ! svn info | grep "Revision: ${VALGRIND_REV}" >/dev/null
-then
-  echo "WARNING:" >&2
+if ! check_revisions; then
+  echo "ERROR:" >&2
   echo "Either you run the script from outside of the valgrind directory" >&2
-  echo "or the revision number is different the one we used (r${VALGRIND_REV})." >&2
-  echo "The patch may not apply" >&2
+  echo "or the Valgrind/VEX revision numbers are different those we used." >&2
+  echo "Please sync with revisions (r${VALGRIND_REV}/r${VEX_REV}, respectively)." >&2
+  exit 1
 fi
 
 set -x
