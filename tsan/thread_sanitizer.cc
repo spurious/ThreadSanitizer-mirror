@@ -95,22 +95,21 @@ static void OpenFileWriteStringAndClose(const string &file_name,
 }
 
 inline uintptr_t tsan_bswap(uintptr_t x) {
-#if defined(VGO_linux)
 #if VEX_HOST_WORDSIZE == 8
+#if defined(HAS_BUILTIN_BSWAP64)
   return __builtin_bswap64(x);
-#elif VEX_HOST_WORDSIZE == 4
-  return __builtin_bswap32(x);
-#endif // VEX_HOST_WORDSIZE
-
-#elif defined(VGO_darwin)
-#if VEX_HOST_WORDSIZE == 8
+#else
   __asm__("bswapq %0" : "=r" (x) : "0" (x));
   return x;
+#endif // HAS_BUILTIN_BSWAP64
 #elif VEX_HOST_WORDSIZE == 4
+#if defined(HAS_BUILTIN_BSWAP32)
+  return __builtin_bswap32(x);
+#else
   __asm__("bswapl %0" : "=r" (x) : "0" (x));
   return x;
-#endif  // VEX_HOST_WORDSIZE
-#endif  // OS
+#endif // HAS_BUILTIN_BSWAP32
+#endif // VEX_HOST_WORDSIZE
 }
 
 // -------- Stats ------------------- {{{1

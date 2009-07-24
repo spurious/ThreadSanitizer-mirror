@@ -132,16 +132,59 @@ Index: configure.in
 ===================================================================
 --- configure.in	(revision 10454)
 +++ configure.in	(working copy)
-@@ -1875,6 +1875,9 @@
-    helgrind/Makefile
-    helgrind/tests/Makefile
-    helgrind/docs/Makefile
+@@ -1354,7 +1354,42 @@
+   AC_DEFINE(HAVE_BUILTIN_EXPECT, 1, [Define to 1 if gcc supports __builtin_expect.])
+ fi
+ 
++# does this compiler support __builtin_bswap32?
++AC_MSG_CHECKING([if gcc supports __builtin_bswap32])
+ 
++AC_TRY_LINK(, [
++return __builtin_bswap32(0x12345678) == 0x78563412
++],
++[
++ac_have_builtin_bswap32=yes
++AC_MSG_RESULT([yes])
++], [
++ac_have_builtin_bswap32=no
++AC_MSG_RESULT([no])
++])
++if test x$ac_have_builtin_bswap32 = xyes ; then
++  AC_DEFINE(HAVE_BUILTIN_BSWAP32, 1, [Define to 1 if gcc supports __builtin_bswap32.])
++fi
++
++# does this compiler support __builtin_bswap64?
++AC_MSG_CHECKING([if gcc supports __builtin_bswap64])
++
++
++AC_TRY_LINK(, [
++return __builtin_bswap64(0x12345678ffffffffLL) == 0xffffffff78563412LL
++],
++[
++ac_have_builtin_bswap64=yes
++AC_MSG_RESULT([yes])
++], [
++ac_have_builtin_bswap64=no
++AC_MSG_RESULT([no])
++])
++if test x$ac_have_builtin_bswap64 = xyes ; then
++  AC_DEFINE(HAVE_BUILTIN_BSWAP64, 1, [Define to 1 if gcc ports __builtin_bswap64.])
++fi
++
++
+ # does the ppc assembler support "mtocrf" et al?
+ AC_MSG_CHECKING([if ppc32/64 as supports mtocrf/mfocrf])
+ 
+@@ -1872,6 +1907,9 @@
+    callgrind/callgrind_control
+    callgrind/tests/Makefile
+    callgrind/docs/Makefile
 +   tsan/Makefile
 +   tsan/tests/Makefile
 +   tsan/docs/Makefile
-    massif/Makefile
-    massif/tests/Makefile
-    massif/perf/Makefile
+    helgrind/Makefile
+    helgrind/tests/Makefile
+    helgrind/docs/Makefile
 Index: Makefile.am
 ===================================================================
 --- Makefile.am	(revision 10454)
