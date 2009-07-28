@@ -197,6 +197,16 @@ Index: Makefile.am
  		drd
  
  EXP_TOOLS = 	exp-ptrcheck \
+@@ -26,7 +27,8 @@
+ 		callgrind \
+ 		massif \
+ 		lackey \
+-		none
++		none \
++		tsan
+ 
+   TEST_EXP_TOOLS = exp-bbv
+ endif
 Index: coregrind/m_errormgr.c
 ===================================================================
 --- coregrind/m_errormgr.c	(revision 10454)
