@@ -128,6 +128,36 @@ Index: include/vki/vki-x86-linux.h
  
  /* used to create numbers */
  #define _VKI_IO(type,nr)	_VKI_IOC(_VKI_IOC_NONE,(type),(nr),0)
+Index: include/pub_tool_basics.h
+===================================================================
+--- include/pub_tool_basics.h	(revision 10454)
++++ include/pub_tool_basics.h	(working copy)
+@@ -192,16 +192,19 @@
+    }
+    SysRes;
+ #elif defined(VGO_darwin)
++  typedef
++  enum {
++     SysRes_MACH=40,  // MACH, result is _wLO
++     SysRes_MDEP,     // MDEP, result is _wLO
++     SysRes_UNIX_OK,  // UNIX, success, result is _wHI:_wLO
++     SysRes_UNIX_ERR  // UNIX, error,   error  is _wHI:_wLO
++  } ret_mode_t;
++
+ typedef
+    struct {
+       UWord _wLO;
+       UWord _wHI;
+-      enum { 
+-         SysRes_MACH=40,  // MACH, result is _wLO
+-         SysRes_MDEP,     // MDEP, result is _wLO
+-         SysRes_UNIX_OK,  // UNIX, success, result is _wHI:_wLO
+-         SysRes_UNIX_ERR  // UNIX, error,   error  is _wHI:_wLO
+-      } _mode;
++      ret_mode_t _mode;
+    }
+    SysRes;
+ #else
 Index: configure.in
 ===================================================================
 --- configure.in	(revision 10454)
