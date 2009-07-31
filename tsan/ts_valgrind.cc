@@ -876,6 +876,8 @@ static Bool eq_Error ( VgRes not_used, Error* e1, Error* e2 ) {
   return True;
 }
 
+static void before_pp_Error ( Error* err ) { }
+
 static void pp_Error ( Error* err ) {
   void *extra = VG_(get_error_extra)(err);
   ThreadSanitizerPrintReport((ThreadSanitizerReport*)extra);
@@ -898,7 +900,7 @@ static Bool recognised_suppression ( Char* name, Supp *su )
 }
 
 
-static Bool read_extra_suppression_info(Int fd, Char* buf, Int nBuf, Supp* su) {
+static Bool read_extra_suppression_info(Int fd, Char** buf, SizeT* nBuf, Supp* su) {
   return True;
 }
 static Bool error_matches_suppression(Error* err, Supp* su) {
@@ -944,6 +946,7 @@ void ts_pre_clo_init(void) {
                                   ts_print_debug_usage);
 
   VG_(needs_tool_errors)         (eq_Error,
+                                  before_pp_Error,
                                   pp_Error,
                                   False, //show TIDs for errors
                                   update_extra,

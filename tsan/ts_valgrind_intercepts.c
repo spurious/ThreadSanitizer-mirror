@@ -1731,6 +1731,19 @@ PTH_FUNC(long, send, int s, void *buf, long len, int flags) {
    return ret;
 }
 
+PTH_FUNC(long, sendmsg, int s, void *msg, int flags) {
+   OrigFn fn;
+   long    ret;
+   void *o;
+   VALGRIND_GET_ORIG_FN(fn);
+   o = SocketMagic(s);
+   DO_CREQ_v_W(TSREQ_PTHREAD_COND_SIGNAL_PRE, void*, o);
+   CALL_FN_W_WWW(ret, fn, s, msg, flags);
+   return ret;
+}
+
+// TODO(timurrrr): sendto
+
 PTH_FUNC(long, recv, int s, void *buf, long len, int flags) {
    OrigFn fn;
    long    ret;
@@ -1739,10 +1752,30 @@ PTH_FUNC(long, recv, int s, void *buf, long len, int flags) {
    CALL_FN_W_WWWW(ret, fn, s, buf, len, flags);
 //   fprintf(stderr, "T%d socket recv: %d %ld %ld\n", VALGRIND_TS_THREAD_ID, s, len, ret);
    o = SocketMagic(s);
-   do_wait_pre_and_post(o, 0);
+   if (ret >= 0) {
+      // Do client request only if we received something
+      // or the connection was closed.
+      do_wait_pre_and_post(o, 0);
+   }
    return ret;
 }
 
+PTH_FUNC(long, recvmsg, int s, void *msg, int flags) {
+   OrigFn fn;
+   long    ret;
+   void *o;
+   VALGRIND_GET_ORIG_FN(fn);
+   CALL_FN_W_WWW(ret, fn, s, msg, flags);
+   o = SocketMagic(s);
+   if (ret >= 0) {
+      // Do client request only if we received something
+      // or the connection was closed.
+      do_wait_pre_and_post(o, 0);
+   }
+   return ret;
+}
+
+// TODO(timurrrr): recvfrom
 
 PTH_FUNC(long, read, int s, void *a2, long count) {
    OrigFn fn;
@@ -1752,7 +1785,10 @@ PTH_FUNC(long, read, int s, void *a2, long count) {
    CALL_FN_W_WWW(ret, fn, s, a2, count);
 //   fprintf(stderr, "T%d socket read: %d %ld %ld\n", VALGRIND_TS_THREAD_ID, s, count, ret);
    o = SocketMagic(s);
-   do_wait_pre_and_post(o, 0);
+   if (ret >= 0) {
+      // Do client request only if we read something or the EOF was reached.
+      do_wait_pre_and_post(o, 0);
+   }
    return ret;
 }
 
