@@ -2141,6 +2141,23 @@ class SegmentSet {
     }
   }
 
+  static bool INLINE Contains(SSID ssid, SID seg) {
+    if (LIKELY(ssid.IsSingleton())) {
+      return ssid.Singleton() == seg;
+    } else if (LIKELY(ssid.IsEmpty())) {
+      return false;
+    }
+
+    SegmentSet *ss = Get(ssid);
+    for (int i = 0; i < kMaxSegmentSetSize; i++) {
+      SID sid = ss->GetSID(i);
+      if (sid.raw() == 0) break;
+      if (sid == seg)
+        return true;
+    }
+    return false;
+  }
+
   static Segment *GetSegmentForNonSingleton(SSID ssid, int32_t i, int line) {
     return Segment::Get(GetSID(ssid, i, line));
   }
@@ -2533,6 +2550,12 @@ SSID SegmentSet::AddSegmentToTupleSS(SSID ssid, SID new_sid) {
     }
 
     if (tid == new_tid) {
+      if (seg->vts() == new_seg->vts()) {
+        // Optimization: if a segment with the same VTS as the current is
+        // already inside SS, don't modify the SS.
+        // Improves performance with --keep-history >= 1.
+        return ssid;
+      }
       // we have another segment from the same thread => replace it.
       tmp_sids[new_size++] = new_sid;
       inserted_new_sid = true;
@@ -2834,7 +2857,7 @@ class CacheLine : public CacheLineUncompressed {
     return true;
   }
 
-  Mask ClearRangeAndReturnOldUsed(uint64_t from, uint64_t to) {
+  INLINE Mask ClearRangeAndReturnOldUsed(uint64_t from, uint64_t to) {
     traced_.ClearRange(from, to);
     published_.ClearRange(from, to);
     racey_.ClearRange(from, to);
@@ -5156,7 +5179,12 @@ class Detector {
       new_rd_ssid = SegmentSet::RemoveSegmentFromSS(old_rd_ssid, cur_sid);
       new_wr_ssid = SegmentSet::AddSegmentToSS(old_wr_ssid, cur_sid);
     } else {
-      new_rd_ssid = SegmentSet::AddSegmentToSS(old_rd_ssid, cur_sid);
+      if (SegmentSet::Contains(old_wr_ssid, cur_sid)) {
+        // cur_sid is already in old_wr_ssid, no change to SSrd is required.
+        new_rd_ssid = old_rd_ssid;
+      } else {
+        new_rd_ssid = SegmentSet::AddSegmentToSS(old_rd_ssid, cur_sid);
+      }
       new_wr_ssid = old_wr_ssid;
     }
 
