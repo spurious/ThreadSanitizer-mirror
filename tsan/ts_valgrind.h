@@ -56,7 +56,9 @@ enum {
   // Unlocking a lock that is held by another thread.
   XS_UnlockForeign,
   // Unlocking a lock that is not locked.
-  XS_UnlockNonLocked
+  XS_UnlockNonLocked,
+  // Operating a non-existing lock.
+  XS_InvalidLock
 };
 
 extern uintptr_t GetVgPcOfCurrentThread();

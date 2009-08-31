@@ -732,8 +732,88 @@ static void instrument_mem_access ( IRSB*   bbOut,
 }
 
 
+void instrument_statement ( IRStmt* st, IRSB* bbIn, IRSB* bbOut, IRType hWordTy ) {
+  switch (st->tag) {
+    case Ist_NoOp:
+    case Ist_AbiHint:
+    case Ist_Put:
+    case Ist_PutI:
+    case Ist_IMark:
+    case Ist_Exit:
+      /* None of these can contain any memory references. */
+      break;
 
+    case Ist_MBE:
+      //instrument_memory_bus_event( bbOut, st->Ist.MBE.event );
+      switch (st->Ist.MBE.event) {
+        case Imbe_Fence:
+          break; /* not interesting */
+        default:
+          ppIRStmt(st);
+          tl_assert(0);
+      }
+      break;
 
+    case Ist_CAS:
+      break;
+
+    case Ist_Store:
+      instrument_mem_access(
+        bbOut,
+        st->Ist.Store.addr,
+        sizeofIRType(typeOfIRExpr(bbIn->tyenv, st->Ist.Store.data)),
+        True/*isStore*/,
+        sizeofIRType(hWordTy)
+      );
+      break;
+
+    case Ist_WrTmp: {
+      IRExpr* data = st->Ist.WrTmp.data;
+      if (data->tag == Iex_Load) {
+        instrument_mem_access(
+            bbOut,
+            data->Iex.Load.addr,
+            sizeofIRType(data->Iex.Load.ty),
+            False/*!isStore*/,
+            sizeofIRType(hWordTy)
+            );
+      }
+      break;
+    }
+
+    case Ist_Dirty: {
+      Int      dataSize;
+      IRDirty* d = st->Ist.Dirty.details;
+      if (d->mFx != Ifx_None) {
+        /* This dirty helper accesses memory.  Collect the
+           details. */
+        tl_assert(d->mAddr != NULL);
+        tl_assert(d->mSize != 0);
+        dataSize = d->mSize;
+        if (d->mFx == Ifx_Read || d->mFx == Ifx_Modify) {
+          instrument_mem_access(
+            bbOut, d->mAddr, dataSize, False/*!isStore*/,
+            sizeofIRType(hWordTy)
+          );
+        }
+        if (d->mFx == Ifx_Write || d->mFx == Ifx_Modify) {
+          instrument_mem_access(
+            bbOut, d->mAddr, dataSize, True/*isStore*/,
+            sizeofIRType(hWordTy)
+          );
+        }
+      } else {
+        tl_assert(d->mAddr == NULL);
+        tl_assert(d->mSize == 0);
+      }
+      break;
+    }
+
+    default:
+      ppIRStmt(st);
+      tl_assert(0);
+  } /* switch (st->tag) */
+}
 
 
 static IRSB* ts_instrument ( VgCallbackClosure* closure,
@@ -772,97 +852,12 @@ static IRSB* ts_instrument ( VgCallbackClosure* closure,
     tl_assert(st);
     tl_assert(isFlatIRStmt(st));
 
-    if (i == first
-        && instrument_memory
-        && G_flags->keep_history >= 1) {
-      ts_instrument_create_new_segment_for_history(bbOut);
+    if (instrument_memory) {
+      if (i == first && G_flags->keep_history >= 1) {
+        ts_instrument_create_new_segment_for_history(bbOut);
+      }
+      instrument_statement(st, bbIn, bbOut, hWordTy);
     }
-    switch (st->tag) {
-      case Ist_NoOp:
-      case Ist_AbiHint:
-      case Ist_Put:
-      case Ist_PutI:
-      case Ist_IMark:
-      case Ist_Exit:
-        /* None of these can contain any memory references. */
-        break;
-
-      case Ist_MBE:
-        //instrument_memory_bus_event( bbOut, st->Ist.MBE.event );
-        switch (st->Ist.MBE.event) {
-          case Imbe_Fence:
-            break; /* not interesting */
-          default:
-            ppIRStmt(st);
-            tl_assert(0);
-        }
-        break;
-
-      case Ist_CAS:
-        break;
-
-      case Ist_Store:
-        if (instrument_memory)
-          instrument_mem_access(
-              bbOut,
-              st->Ist.Store.addr,
-              sizeofIRType(typeOfIRExpr(bbIn->tyenv, st->Ist.Store.data)),
-              True/*isStore*/,
-              sizeofIRType(hWordTy)
-              );
-        break;
-
-      case Ist_WrTmp: {
-                        IRExpr* data = st->Ist.WrTmp.data;
-                        if (data->tag == Iex_Load && instrument_memory) {
-                          instrument_mem_access(
-                              bbOut,
-                              data->Iex.Load.addr,
-                              sizeofIRType(data->Iex.Load.ty),
-                              False/*!isStore*/,
-                              sizeofIRType(hWordTy)
-                              );
-                        }
-                        break;
-                      }
-
-      case Ist_Dirty: {
-                        Int      dataSize;
-                        IRDirty* d = st->Ist.Dirty.details;
-                        if (d->mFx != Ifx_None) {
-                          /* This dirty helper accesses memory.  Collect the
-                             details. */
-                          tl_assert(d->mAddr != NULL);
-                          tl_assert(d->mSize != 0);
-                          dataSize = d->mSize;
-                          if (d->mFx == Ifx_Read || d->mFx == Ifx_Modify) {
-                            if (instrument_memory) {
-                              instrument_mem_access(
-                                  bbOut, d->mAddr, dataSize, False/*!isStore*/,
-                                  sizeofIRType(hWordTy)
-                                  );
-                            }
-                          }
-                          if (d->mFx == Ifx_Write || d->mFx == Ifx_Modify) {
-                            if (instrument_memory) {
-                              instrument_mem_access(
-                                  bbOut, d->mAddr, dataSize, True/*isStore*/,
-                                  sizeofIRType(hWordTy)
-                                  );
-                            }
-                          }
-                        } else {
-                          tl_assert(d->mAddr == NULL);
-                          tl_assert(d->mSize == 0);
-                        }
-                        break;
-                      }
-
-      default:
-                      ppIRStmt(st);
-                      tl_assert(0);
-
-    } /* switch (st->tag) */
 
     addStmtToIRSB( bbOut, st );
   } /* iterate over bbIn->stmts */
@@ -895,6 +890,7 @@ static Bool recognised_suppression ( Char* name, Supp *su )
    TRY("Race",           XS_Race);
    TRY("UnlockForeign",  XS_UnlockForeign);
    TRY("UnlockNonLocked",  XS_UnlockNonLocked);
+   TRY("InvalidLock",    XS_InvalidLock);
    return False;
 #  undef TRY
 }
@@ -909,16 +905,21 @@ static Bool error_matches_suppression(Error* err, Supp* su) {
     case XS_UnlockForeign:  return VG_(get_error_kind)(err) == XS_UnlockForeign;
     case XS_UnlockNonLocked:
                           return VG_(get_error_kind)(err) == XS_UnlockNonLocked;
+    case XS_InvalidLock:    return VG_(get_error_kind)(err) == XS_InvalidLock;
   }
   return False;
 }
-static void print_extra_suppression_info( Error* err ) { }
+static Bool get_extra_suppression_info(Error* err,
+                                       /*OUT*/Char* buf, Int nBuf) {
+  return False;
+}
 static Char* get_error_name ( Error* err )
 {
    switch (VG_(get_error_kind)(err)) {
       case XS_Race:            return (Char*)"Race";
       case XS_UnlockForeign:   return (Char*)"UnlockForeign";
       case XS_UnlockNonLocked: return (Char*)"UnlockNonLocked";
+      case XS_InvalidLock:     return (Char*)"InvalidLock";
    }
    tl_assert(0);
    return NULL;
@@ -954,7 +955,7 @@ void ts_pre_clo_init(void) {
                                   read_extra_suppression_info,
                                   error_matches_suppression,
                                   get_error_name,
-                                  print_extra_suppression_info);
+                                  get_extra_suppression_info);
 
 
 //   VG_(needs_var_info)(); // optional

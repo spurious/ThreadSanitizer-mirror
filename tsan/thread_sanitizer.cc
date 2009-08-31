@@ -974,6 +974,31 @@ class Lock {
 
 Lock::Map *Lock::map_;
 
+// -------- FixedArray--------------- {{{1
+template <typename T, size_t SizeLimit = 1024>
+class FixedArray {
+ public:
+  explicit FixedArray(size_t array_size)
+      : size_(array_size),
+        array_((array_size <= SizeLimit
+                ? alloc_space_
+                : new T[array_size])) { }
+
+  ~FixedArray() {
+    if (array_ != alloc_space_) {
+      delete[] array_;
+    }
+  }
+
+  T* begin() { return array_; }
+  T& operator[](int i)             { return array_[i]; }
+
+ private:
+  const size_t size_;
+  T* array_;
+  T alloc_space_[SizeLimit];
+};
+
 // -------- LockSet ----------------- {{{1
 class LockSet {
  public:
@@ -1066,11 +1091,11 @@ class LockSet {
     const LSSet &set1 = Get(lsid1);
     const LSSet &set2 = Get(lsid2);
 
-    LID intersection[min(set1.size(), set2.size())];
+    FixedArray<LID> intersection(min(set1.size(), set2.size()));
     LID *end = set_intersection(set1.begin(), set1.end(),
                             set2.begin(), set2.end(),
-                            intersection);
-    return end == intersection;
+                            intersection.begin());
+    return end == intersection.begin();
   }
 
   NOINLINE static LSID Intersect(LSID lsid1, LSID lsid2) {
@@ -1101,17 +1126,17 @@ class LockSet {
     const LSSet &set1 = Get(lsid1);
     const LSSet &set2 = Get(lsid2);
 
-    LID intersection[min(set1.size(), set2.size())];
+    FixedArray<LID> intersection(min(set1.size(), set2.size()));
     LID *end = set_intersection(set1.begin(), set1.end(),
                                 set2.begin(), set2.end(),
-                                intersection);
-    if (intersection == end) {
+                                intersection.begin());
+    if (intersection.begin() == end) {
       return LSID(0);  // empty
     }
-    if (end - intersection == 1) {
+    if (end - intersection.begin() == 1) {
       return LSID(intersection[0].raw());  // Singleton
     }
-    LSSet set(intersection, end);
+    LSSet set(intersection.begin(), end);
     return ComputeId(set);
   }
 
@@ -1340,8 +1365,8 @@ class VTS {
     //       vts_a->ToString().c_str(),
     //       vts_b->ToString().c_str());
     bool found = false;
-    TS result_ts[vts_a->size() + vts_b->size()];
-    TS *t = result_ts;
+    FixedArray<TS> result_ts(vts_a->size() + vts_b->size());
+    TS *t = result_ts.begin();
     const TS *a = &vts_a->arr_[0];
     const TS *b = &vts_b->arr_[0];
     const TS *a_max = a + vts_a->size();
@@ -1395,7 +1420,7 @@ class VTS {
 
     if (id_to_tick.IsValid()) { CHECK(found == true); }
 
-    VTS *res = VTS::Create(t - result_ts);
+    VTS *res = VTS::Create(t - result_ts.begin());
     for (size_t i = 0; i < res->size(); i++) {
       res->arr_[i] = result_ts[i];
     }
@@ -3368,7 +3393,8 @@ struct ThreadSanitizerReport {
   enum ReportType {
     DATA_RACE,
     UNLOCK_FOREIGN,
-    UNLOCK_NONLOCKED
+    UNLOCK_NONLOCKED,
+    INVALID_LOCK
   };
 
   ReportType type;
@@ -3397,6 +3423,13 @@ struct ThreadSanitizerBadUnlockReport : public ThreadSanitizerReport {
   TID tid;
   StackTrace *stack_trace;
   LID lid;
+};
+
+// Report for invalid lock addresses (INVALID_LOCK).
+struct ThreadSanitizerInvalidLockReport : public ThreadSanitizerReport {
+  TID tid;
+  StackTrace *stack_trace;
+  uintptr_t lock_addr;
 };
 
 // -------- Thread ------------------ {{{1
@@ -3652,17 +3685,18 @@ struct Thread {
 
   void HandleUnlock(uintptr_t lock_addr) {
     Lock *lock = Lock::Lookup(lock_addr);
-#ifndef VGO_darwin
-    CHECK(lock);
-#else
-    // TODO(glider): add CHECK(lock) here after finding out why do some Mac OS
-    // libraries unlock the locks unnecessarily.
+    // If the lock is not found, report an error.
     if (lock == NULL) {
-      if(G_flags->verbosity >= 1)
-          Report("ATTENTION: trying to unlock a non-locked lock\n");
+      ThreadSanitizerInvalidLockReport *report =
+          new ThreadSanitizerInvalidLockReport;
+      report->type = ThreadSanitizerReport::INVALID_LOCK;
+      report->tid = tid();
+      report->lock_addr = lock_addr;
+      report->stack_trace = CreateStackTrace();
+      VG_(maybe_record_error)(GetVgTid(), XS_InvalidLock, 0, NULL,
+                              report);
       return;
     }
-#endif
     bool is_w_lock = lock->wr_held();
 
     if (G_flags->verbosity >= 1) {
@@ -4490,6 +4524,13 @@ class ReportStorage {
              Lock::ToString(bad_unlock->lid).c_str(),
              bad_unlock->tid.raw(),
              bad_unlock->stack_trace->ToString().c_str());
+    } else if (report->type == ThreadSanitizerReport::INVALID_LOCK) {
+      ThreadSanitizerInvalidLockReport *invalid_lock =
+          reinterpret_cast<ThreadSanitizerInvalidLockReport*>(report);
+      Report("WARNING: accessing an invalid lock %p in thread T%d\n%s",
+             invalid_lock->lock_addr,
+             invalid_lock->tid.raw(),
+             invalid_lock->stack_trace->ToString().c_str());
     } else {
       CHECK(report->type == ThreadSanitizerReport::DATA_RACE);
       ThreadSanitizerDataRaceReport *race =
@@ -5019,7 +5060,18 @@ class Detector {
       // This is because global Mutex objects may be desctructed while threads
       // holding them are still running. Urgh...
       Lock *lock = Lock::Lookup(lock_addr);
-      CHECK(lock);
+      // If the lock is not found, report an error.
+      if (lock == NULL) {
+        ThreadSanitizerInvalidLockReport *report =
+            new ThreadSanitizerInvalidLockReport;
+        report->type = ThreadSanitizerReport::INVALID_LOCK;
+        report->tid = cur_tid_;
+        report->lock_addr = lock_addr;
+        report->stack_trace = cur_thread_->CreateStackTrace();
+        VG_(maybe_record_error)(GetVgTid(), XS_InvalidLock, 0, NULL,
+                                report);
+        return;
+      }
       if (lock->wr_held() || lock->rd_held()) {
         if (G_flags->unlock_on_mutex_destroy && !g_has_exited_main) {
           cur_thread_->HandleUnlock(lock_addr);
