@@ -2,7 +2,7 @@ Index: Makefile.all.am
 ===================================================================
 --- Makefile.all.am	(revision 10886)
 +++ Makefile.all.am	(working copy)
-@@ -91,6 +91,16 @@
+@@ -91,6 +91,15 @@
  	@FLAG_W_NO_FORMAT_ZERO_LENGTH@ \
  	-fno-strict-aliasing
  
@@ -12,14 +12,13 @@ Index: Makefile.all.am
 +  -fno-rtti \
 +  -fno-stack-protector \
 +  -Wall \
-+  -Istlport \
-+  -Wvla
++  -Istlport
 +
 +
  # These flags are used for building the preload shared objects.
  # The aim is to give reasonable performance but also to have good
  # stack traces, since users often see stack traces extending 
-@@ -135,11 +145,15 @@
+@@ -135,11 +144,15 @@
  AM_FLAG_M3264_X86_LINUX   = @FLAG_M32@
  AM_CFLAGS_X86_LINUX       = @FLAG_M32@ @PREFERRED_STACK_BOUNDARY@ \
  			 	$(AM_CFLAGS_BASE)
@@ -35,7 +34,7 @@ Index: Makefile.all.am
  AM_CCASFLAGS_AMD64_LINUX  = $(AM_CPPFLAGS_AMD64_LINUX) @FLAG_M64@ -g
  
  AM_FLAG_M3264_PPC32_LINUX = @FLAG_M32@
-@@ -178,6 +192,7 @@
+@@ -178,6 +191,7 @@
  AM_FLAG_M3264_PRI = $(AM_FLAG_M3264_@VGCONF_PLATFORM_PRI_CAPS@)
  AM_CPPFLAGS_PRI   = $(AM_CPPFLAGS_@VGCONF_PLATFORM_PRI_CAPS@)
  AM_CFLAGS_PRI     = $(AM_CFLAGS_@VGCONF_PLATFORM_PRI_CAPS@)
