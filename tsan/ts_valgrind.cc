@@ -236,7 +236,11 @@ void ts_post_clo_init(void) {
            "<br id=race0>"
            "<a href=\"#race1\">Go to first race report</a>\n");
   }
-  Report("ThreadSanitizerValgrind:\n");
+  Report("ThreadSanitizerValgrind: "
+         "pure-happens-before=%s fast-mode=%s ignore-in-dtor=%s\n",
+         G_flags->pure_happens_before ? "yes" : "no",
+         G_flags->fast_mode ? "yes" : "no",
+         G_flags->ignore_in_dtor ? "yes" : "no");
   ThreadSanitizerInit();
 
   g_valgrind_threads = new ValgrindThread[VG_N_THREADS];

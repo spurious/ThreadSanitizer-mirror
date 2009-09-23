@@ -137,6 +137,7 @@ struct FLAGS {
   uintptr_t        segment_set_recycle_queue_size;
   vector<string>   file_prefix_to_cut;
   vector<string>   ignore;
+  vector<string>   cut_stack_below;
   string           summary_file; 
   intptr_t         max_n_threads;
   bool             compress_cache_lines;

@@ -112,6 +112,48 @@ inline uintptr_t tsan_bswap(uintptr_t x) {
 #endif // VEX_HOST_WORDSIZE
 }
 
+// This function is taken from valgrind's m_libcbase.c (thanks GPL!).
+static bool FastRecursiveStringMatch(const char* pat, const char* str,
+                                     int *depth) {
+  CHECK_LT((*depth), 10000);
+  (*depth)++;
+  for (;;) {
+    switch (*pat) {
+      case '\0':(*depth)--;
+                return (*str == '\0');
+      case '*': do {
+                  if (FastRecursiveStringMatch(pat+1, str, depth)) {
+                    (*depth)--;
+                    return True;
+                  }
+                } while (*str++);
+                  (*depth)--;
+                  return False;
+      case '?': if (*str++ == '\0') {
+                  (*depth)--;
+                  return False;
+                }
+                pat++;
+                break;
+      case '\\':if (*++pat == '\0') {
+                  (*depth)--;
+                  return False; /* spurious trailing \ in pattern */
+                }
+                /* falls through to ... */
+      default : if (*pat++ != *str++) {
+                  (*depth)--;
+                  return False;
+                }
+                break;
+    }
+  }
+}
+
+static bool StringMatch(const string &pattern, const string &str) {
+  int depth = 0;
+  return FastRecursiveStringMatch(pattern.c_str(), str.c_str(), &depth);
+}
+
 // -------- Stats ------------------- {{{1
 // Statistic counters for the entire tool.
 struct Stats {
@@ -763,15 +805,20 @@ class StackTrace {
       if (i == 0) res += c_default;
       res += "\n";
 
-      // don't print after main
+      // don't print after main ...
       if (rtn_and_file.find("main ") == 0)
         break;
-      // ... and after the default thread func. TODO: customize it.
-      if (rtn_and_file.find("Thread::ThreadBody(") == 0 ||
-          rtn_and_file.find("ThreadSanitizerStartThread") == 0 ||
-          rtn_and_file.find("start_thread ") == 0) {
-        break;
+      // ... and after some default functions (see ThreadSanitizerParseFlags())
+      // and some more functions specified via command line flag.
+      bool should_break = false;
+      for (size_t i = 0; i < G_flags->cut_stack_below.size(); i++) {
+        if (StringMatch(G_flags->cut_stack_below[i], rtn_and_file)) {
+          should_break = true;
+          break;
+        }
       }
+      if (should_break)
+        break;
     }
     return res;
   }
@@ -5862,6 +5909,11 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
     kSizeOfHistoryStackTrace = 1;
   }
 
+  // Cut stack under the following default functions.
+  G_flags->cut_stack_below.push_back("Thread*ThreadBody(*");
+  G_flags->cut_stack_below.push_back("ThreadSanitizerStartThread*");
+  G_flags->cut_stack_below.push_back("start_thread *");
+  FindStringFlag("cut_stack_below", args, &G_flags->cut_stack_below);
 
 //  FindIntFlag("num_callers", 15, args, &G_flags->num_callers);
   // we get num-callers from valgrind flags.
@@ -5889,50 +5941,6 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
 }
 
 // -------- ThreadSanitizer ------------------ {{{1
-
-
-// This function is taken from valgrind's m_libcbase.c (thanks GPL!).
-static bool FastRecursiveStringMatch(const char* pat, const char* str,
-                                     int *depth) {
-  CHECK_LT((*depth), 10000);
-  (*depth)++;
-  for (;;) {
-    switch (*pat) {
-      case '\0':(*depth)--;
-                return (*str == '\0');
-      case '*': do {
-                  if (FastRecursiveStringMatch(pat+1, str, depth)) {
-                    (*depth)--;
-                    return True;
-                  }
-                } while (*str++);
-                  (*depth)--;
-                  return False;
-      case '?': if (*str++ == '\0') {
-                  (*depth)--;
-                  return False;
-                }
-                pat++;
-                break;
-      case '\\':if (*++pat == '\0') {
-                  (*depth)--;
-                  return False; /* spurious trailing \ in pattern */
-                }
-                /* falls through to ... */
-      default : if (*pat++ != *str++) {
-                  (*depth)--;
-                  return False;
-                }
-                break;
-    }
-  }
-}
-
-
-static bool StringMatch(const string &pattern, const string &str) {
-  int depth = 0;
-  return FastRecursiveStringMatch(pattern.c_str(), str.c_str(), &depth);
-}
 
 void SplitStringIntoLinesAndRemoveBlanksAndComments(
     const string &str, vector<string> *lines) {
