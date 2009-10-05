@@ -23,25 +23,25 @@
   The GNU General Public License is contained in the file COPYING.
 */
 
-// Author: Konstantin Serebryany <opensource@google.com>
-//
-// This file contains a set of unit tests for a data race detection tool.
-//
-//
-//
-// This test can be compiled with pthreads (default) or
-// with any other library that supports threads, locks, cond vars, etc.
-//
-// To compile with pthreads:
-//   g++  racecheck_unittest.cc dynamic_annotations.cc
-//        -lpthread -g -DDYNAMIC_ANNOTATIONS=1
-//
-// To compile with different library:
-//   1. cp thread_wrappers_pthread.h thread_wrappers_yourlib.h
-//   2. edit thread_wrappers_yourlib.h
-//   3. add '-DTHREAD_WRAPPERS="thread_wrappers_yourlib.h"' to your compilation.
-//
-//
+/* Author: Konstantin Serebryany <opensource@google.com>
+
+ This file contains a set of unit tests for a data race detection tool.
+
+ This test can be compiled with pthreads (default) or
+ with any other library that supports threads, locks, cond vars, etc.
+
+ To compile with pthreads:
+<pre>
+   g++ -g racecheck_unittest.cc \
+   -I../dynamic_annotations ../dynamic_annotations/dynamic_annotations.cc \
+        -lpthread -g -DDYNAMIC_ANNOTATIONS_ENABLED=1
+</pre>
+
+ To compile with different library:
+   1. cp thread_wrappers_pthread.h thread_wrappers_yourlib.h
+   2. edit thread_wrappers_yourlib.h
+   3. add '-DTHREAD_WRAPPERS="thread_wrappers_yourlib.h"' to your compilation.
+*/
 
 // This test must not include any other file specific to threading library,
 // everything should be inside THREAD_WRAPPERS.

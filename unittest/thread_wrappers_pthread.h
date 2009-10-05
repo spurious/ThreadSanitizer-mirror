@@ -194,8 +194,7 @@ class Mutex {
   Mutex() {
     CHECK(0 == pthread_mutex_init(&mu_, NULL));
     CHECK(0 == pthread_cond_init(&cv_, NULL));
-    signal_at_unlock_ = true;  // Always signal at Unlock to make 
-                               // Mutex more friendly to hybrid detectors.
+    signal_at_unlock_ = false;
   }
   ~Mutex() {
     CHECK(0 == pthread_cond_destroy(&cv_));
@@ -204,8 +203,9 @@ class Mutex {
   void Lock()          { CHECK(0 == pthread_mutex_lock(&mu_));}
   bool TryLock()       { return (0 == pthread_mutex_trylock(&mu_));}
   void Unlock() {
+    ANNOTATE_HAPPENS_BEFORE(this);
     if (signal_at_unlock_) {
-      CHECK(0 == pthread_cond_signal(&cv_)); 
+      CHECK(0 == pthread_cond_signal(&cv_));
     }
     CHECK(0 == pthread_mutex_unlock(&mu_));
   }
@@ -231,7 +231,7 @@ class Mutex {
     while(cond.Eval() == false) {
       pthread_cond_wait(&cv_, &mu_);
     }
-    ANNOTATE_CONDVAR_LOCK_WAIT(&cv_, &mu_);
+    ANNOTATE_HAPPENS_AFTER(this);
   }
 
   bool WaitLoopWithTimeout(Condition cond, int millis) {
@@ -242,21 +242,19 @@ class Mutex {
     timeval2timespec(&now, &timeout, millis);
 
     signal_at_unlock_ = true;
+
     while (cond.Eval() == false && retcode == 0) {
       retcode = pthread_cond_timedwait(&cv_, &mu_, &timeout);
     }
     if(retcode == 0) {
-      ANNOTATE_CONDVAR_LOCK_WAIT(&cv_, &mu_);
+      ANNOTATE_HAPPENS_AFTER(this);
     }
     return cond.Eval();
   }
 
-  // A hack. cv_ should be the first data member so that 
-  // ANNOTATE_CONDVAR_WAIT(&MU, &MU) and ANNOTATE_CONDVAR_SIGNAL(&MU) works. 
-  // (See also racecheck_unittest.cc)
+  pthread_mutex_t mu_;  // Must be the first member.
   pthread_cond_t  cv_; 
-  pthread_mutex_t mu_;
-  bool            signal_at_unlock_;  // Set to true if Wait was called.
+  bool signal_at_unlock_;  // Set to true if Wait was called.
 };
 
 
@@ -321,7 +319,6 @@ class RWLock {
     return (res == 0);
   }
  private:
-  pthread_cond_t dummy; // Damn, this requires some redesign...
   pthread_rwlock_t mu_;
 };
 
