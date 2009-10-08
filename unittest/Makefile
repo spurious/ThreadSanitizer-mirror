@@ -17,7 +17,7 @@ DYNAMIC_ANNOTATIONS_CC=${DYNAMIC_ANNOTATIONS_DIR}/dynamic_annotations.cc
 DYNAMIC_ANNOTATIONS=${DYNAMIC_ANNOTATIONS_CC} ${DYNAMIC_ANNOTATIONS_H}
 
 %${SUFFIX}: %.cc ${DYNAMIC_ANNOTATIONS} thread_wrappers_pthread.h
-	${CXX} ${CXXFLAGS} $< -Wall -Werror -Wno-sign-compare -Wshadow -Wempty-body  \
+	${CXX} ${CXXFLAGS} $< -Wall -Werror -Wno-sign-compare -Wshadow  \
 		 -I${DYNAMIC_ANNOTATIONS_DIR} ${DYNAMIC_ANNOTATIONS_CC} \
 		 -lpthread -g -DDYNAMIC_ANNOTATIONS_ENABLED=1 -o $@
 
