@@ -6874,6 +6874,46 @@ void Run() {
 REGISTER_TEST(Run, 147)
 }  // namespace test147
 
+// test148: FN. 3 threads, h-b hides race between T1 and T3.
+namespace test148 {
+int GLOB = 0;
+int COND = 0;
+Mutex mu;
+CondVar cv;
+
+void Signaller() {
+  GLOB = 1;
+  mu.Lock();
+  COND = 1;
+  cv.Signal();
+  mu.Unlock();
+}
+
+void Waiter() {
+  usleep(100000);
+  mu.Lock();
+  while (COND == 0)
+    cv.Wait(&mu);
+  ANNOTATE_CONDVAR_LOCK_WAIT(&cv, &mu);
+  GLOB = 2;
+  mu.Unlock();
+}
+
+void Racer() {
+  usleep(500000);
+  mu.Lock();
+  GLOB = 3;
+  mu.Unlock();
+}
+
+void Run() {
+  printf("test148: FN. 3 threads, h-b hides race between T1 and T3.\n");
+  MyThreadArray mta(Signaller, Waiter, Racer);
+  mta.Start();
+  mta.Join();
+}
+REGISTER_TEST(Run, 148)
+}  // namespace test148
 
 // test300: {{{1
 namespace test300 {
