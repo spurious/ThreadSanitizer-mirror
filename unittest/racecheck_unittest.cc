@@ -6874,7 +6874,7 @@ void Run() {
 REGISTER_TEST(Run, 147)
 }  // namespace test147
 
-// test148: FN. 3 threads, h-b hides race between T1 and T3.
+// test148: FN. 3 threads, h-b hides race between T1 and T3. {{{1
 namespace test148 {
 int GLOB = 0;
 int COND = 0;
