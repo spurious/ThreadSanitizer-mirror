@@ -6865,7 +6865,7 @@ void Run() {
 REGISTER_TEST(Run, 146);
 } // namespace test146
 
-// test147: allocating 1.5G of mem. {{{1
+// test147: allocating 1.5G of mem in one chunk. {{{1
 namespace test147 {
 void Run() {
   printf("test147: malloc 1.5G\n");
@@ -6914,6 +6914,26 @@ void Run() {
 }
 REGISTER_TEST(Run, 148)
 }  // namespace test148
+
+// test149: allocate and memset lots of of mem in several chunks. {{{1
+namespace test149 {
+void Run() {
+  int kChunkSize = 1 << 26;
+  printf("test149: malloc 8x%dM\n", kChunkSize / (1 << 20));
+  void *mem[8];
+  for (int i = 0; i < 8; i++) {
+    mem[i] = malloc(kChunkSize);
+    memset(mem[i], 0, kChunkSize);
+    printf("+");
+  }
+  for (int i = 0; i < 8; i++) {
+    free(mem[i]);
+    printf("-");
+  }
+  printf(" Done\n");
+}
+REGISTER_TEST(Run, 149)
+}  // namespace test149
 
 // test300: {{{1
 namespace test300 {
@@ -8045,4 +8065,4 @@ REGISTER_TEST2(Run, 513, PERFORMANCE | PRINT_STATS | EXCLUDE_FROM_ALL)
 }  // namespace test513
 
 // End {{{1
-// vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker
+ // vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker
