@@ -4,9 +4,10 @@ make
 
 export MSM_THREAD_SANITIZER=1
 PARAM="$@"
+TSAN=${TSAN:-tsan}
 
 run() {
-  env $ENV tsan $FLAGS \
+  env $ENV $TSAN $FLAGS \
     --error-exitcode=1 --gen-suppressions=all \
     --suppressions=racecheck_unittest.supp \
     ./racecheck_unittest $PARAM || exit 1
