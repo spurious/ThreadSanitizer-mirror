@@ -5746,8 +5746,10 @@ REGISTER_TEST(Run, 120)
 // test121: TP. Example of double-checked-locking  {{{1
 namespace test121 {
 struct Foo {
-  uintptr_t a, b[15];
-} __attribute__ ((aligned (64)));
+  uintptr_t padding1[16];
+  uintptr_t a;
+  uintptr_t padding2[16];
+};
 
 static Mutex mu;
 static Foo  *foo;
