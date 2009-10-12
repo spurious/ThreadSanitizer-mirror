@@ -3100,6 +3100,10 @@ class Cache {
     }
   }
 
+  size_t StorageSizeMb() {
+    return (storage_.size() * sizeof(CacheLine)) >> 20;
+  }
+
  private:
   INLINE uintptr_t ComputeCacheLineIndexInCache(uintptr_t addr) {
     return (addr >> CacheLine::kLineSizeBits) & (kNumLines - 1);
@@ -4211,10 +4215,9 @@ static PCQMap *g_pcq_map;
 // -------- Forget all state -------- {{{1
 // We need to forget all state and start over because we've
 // run out of some resources (most likely, segment IDs).
-// Experimental code, not stable.
 static void ForgetAllStateAndStartOver(const char *reason) {
+  Report("INFO: %s. Flushing state.\n", reason);
   if (0) {
-    Report("INFO: %s.\n", reason);
     Report("INFO: Thread Sanitizer will now forget all history.\n");
     Report("INFO: This is experimental, and may fail!\n");
     if (G_flags->keep_history > 0) {
@@ -4802,15 +4805,22 @@ class Detector {
   }
 
 
+  void FlushIfNeeded() {
+    // Are we out of segment IDs?
+    if (Segment::NumberOfSegments() > ((kMaxSID * 15) / 16)) {
+      ForgetAllStateAndStartOver("ThreadSanitizer has run out of segment IDs");
+    }
+    // Are we out of cache lines?
+    if (G_cache->StorageSizeMb() > (size_t)G_flags->max_cache_size_mb) {
+      ForgetAllStateAndStartOver("ThreadSanitizer has run out of cache lines");
+    }
+  }
 
   void INLINE HandleSblockEnter(TID tid, uintptr_t pc) {
     Thread::Get(tid)->HandleSblockEnter(pc);
     G_stats->events[SBLOCK_ENTER]++;
 
-    // Are we out of segment IDs?
-    if (Segment::NumberOfSegments() > ((kMaxSID * 15) / 16)) {
-      ForgetAllStateAndStartOver("Thread Sanitizer has run out of segment IDs");
-    }
+    FlushIfNeeded();
 
     if (UNLIKELY(G_flags->sample_events)) {
       static EventSampler sampler;
@@ -4821,6 +4831,8 @@ class Detector {
   void HandleRtnCall(TID tid, uintptr_t call_pc, uintptr_t target_pc) {
     G_stats->events[RTN_CALL]++;
     Thread::Get(tid)->HandleRtnCall(call_pc, target_pc);
+
+    FlushIfNeeded();
   }
 
   void HandleRtnExit(TID tid) {
@@ -5888,6 +5900,8 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
 
   FindIntFlag("trace_addr", 0, args,
               reinterpret_cast<intptr_t*>(&G_flags->trace_addr));
+
+  FindIntFlag("max_cache_size_mb", 2048, args, &G_flags->max_cache_size_mb);
 
   vector<string> summary_file_tmp;
   FindStringFlag("summary_file", args, &summary_file_tmp);

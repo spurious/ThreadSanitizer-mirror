@@ -133,7 +133,6 @@ struct FLAGS {
   bool             show_stats;
   bool             show_expected_races;
   uintptr_t        trace_addr;
-  intptr_t         max_segment_set_size;
   uintptr_t        segment_set_recycle_queue_size;
   vector<string>   file_prefix_to_cut;
   vector<string>   ignore;
@@ -168,6 +167,7 @@ struct FLAGS {
 
   intptr_t     dry_run;
   intptr_t     max_sid;
+  intptr_t     max_cache_size_mb;
   intptr_t     num_callers_in_history;
   bool         report_races;
   bool         detect_thread_create;
