@@ -1404,45 +1404,29 @@ class VTS {
     return res;
   }
 
-  static VTS *JoinAndTick(const VTS *vts_a, const VTS *vts_b, TID id_to_tick) {
+  static VTS *Join(const VTS *vts_a, const VTS *vts_b) {
     CHECK(vts_a->ref_count_);
     CHECK(vts_b->ref_count_);
-    //Printf("JoinAndTick: id_to_tick=%d\n%s\n%s\n",
-    //       id_to_tick.raw(),
-    //       vts_a->ToString().c_str(),
-    //       vts_b->ToString().c_str());
-    bool found = false;
     FixedArray<TS> result_ts(vts_a->size() + vts_b->size());
     TS *t = result_ts.begin();
     const TS *a = &vts_a->arr_[0];
     const TS *b = &vts_b->arr_[0];
     const TS *a_max = a + vts_a->size();
     const TS *b_max = b + vts_b->size();
-    // TODO(timurrrr): comment the loop below.
     while (a < a_max && b < b_max) {
       if (a->tid < b->tid) {
         *t = *a;
-        if (t->tid == id_to_tick) {
-          t->clk++;
-          found = true;
-        }
         a++;
         t++;
       } else if (a->tid > b->tid) {
         *t = *b;
-        CHECK(t->tid != id_to_tick);
         b++;
         t++;
       } else {
         if (a->clk >= b->clk) {
           *t = *a;
-          if (t->tid == id_to_tick) {
-            t->clk++;
-            found = true;
-          }
         } else {
           *t = *b;
-          CHECK(t->tid != id_to_tick);
         }
         a++;
         b++;
@@ -1451,21 +1435,14 @@ class VTS {
     }
     while (a < a_max) {
       *t = *a;
-      if (t->tid == id_to_tick) {
-        t->clk++;
-        found = true;
-      }
       a++;
       t++;
     }
     while (b < b_max) {
       *t = *b;
-      CHECK(t->tid != id_to_tick);
       b++;
       t++;
     }
-
-    if (id_to_tick.IsValid()) { CHECK(found == true); }
 
     VTS *res = VTS::Create(t - result_ts.begin());
     for (size_t i = 0; i < res->size(); i++) {
@@ -1576,15 +1553,10 @@ class VTS {
     VTS *v3 = CreateSingleton(TID(2));
     VTS *v4 = CreateSingleton(TID(3));
 
-    VTS *v12 = JoinAndTick(v1, v2, TID());
+    VTS *v12 = Join(v1, v2);
     v12->print("v12");
-    VTS *v34 = JoinAndTick(v3, v4, TID());
+    VTS *v34 = Join(v3, v4);
     v34->print("v34");
-
-    VTS *all = JoinAndTick(v12, v34, TID(1));
-    all->print("all");
-    VTS *all2 = CopyAndTick(all, TID(3));
-    all2->print("al2");
 
     VTS *x1 = Parse("[0:4; 3:6; 4:2;]");
     CHECK(x1);
@@ -3854,7 +3826,7 @@ struct Thread {
     if (!signaller->vts) {
       signaller->vts = vts()->Clone();
     } else {
-      VTS *new_vts = VTS::JoinAndTick(signaller->vts, vts(), TID());
+      VTS *new_vts = VTS::Join(signaller->vts, vts());
       VTS::Delete(signaller->vts);
       signaller->vts = new_vts;
     }
@@ -3940,7 +3912,7 @@ struct Thread {
            signaller_vts->ToString().c_str());
     // We don't want to create a happens-before arc if it will be redundant.
     if (!VTS::HappensBeforeCached(signaller_vts, current_vts)) {
-      VTS *new_vts = VTS::JoinAndTick(current_vts, signaller_vts, TID());
+      VTS *new_vts = VTS::Join(current_vts, signaller_vts);
       NewSegment("NewSegmentForWait", new_vts);
     }
     DCHECK(VTS::HappensBeforeCached(signaller_vts, vts()));
@@ -5588,7 +5560,7 @@ class Detector {
       VTS *parent_vts = parent->vts()->Clone();
       creation_context = parent->CreateStackTrace(pc);
       VTS *singleton = VTS::CreateSingleton(child_tid);
-      vts = VTS::JoinAndTick(singleton, parent_vts, TID());
+      vts = VTS::Join(singleton, parent_vts);
       VTS::Delete(singleton);
       VTS::Delete(parent_vts);
 
