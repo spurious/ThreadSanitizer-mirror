@@ -6934,8 +6934,32 @@ void Run() {
   }
   printf(" Done\n");
 }
-REGISTER_TEST(Run, 149)
+REGISTER_TEST2(Run, 149, EXCLUDE_FROM_ALL)  // TODO(kcc): enable it back
 }  // namespace test149
+
+// test150: race which is detected after one of the thread has joined. {{{1
+namespace test150 {
+int     GLOB = 0;
+void Writer1() { GLOB++; }
+void Writer2() {
+  usleep(500000);
+  GLOB++;
+}
+void Run() {
+  printf("test150: real race\n");
+  FAST_MODE_INIT(&GLOB);
+  ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "real race");
+  MyThread t1(Writer1);
+  MyThread t2(Writer2);
+  t1.Start();
+  t2.Start();
+  t1.Join();
+  t2.Join();
+  printf("\tGLOB=%d\n", GLOB);
+}
+REGISTER_TEST(Run, 150)
+}  // namespace test150
+
 
 // test300: {{{1
 namespace test300 {
