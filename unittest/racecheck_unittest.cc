@@ -6961,6 +6961,27 @@ REGISTER_TEST(Run, 150)
 }  // namespace test150
 
 
+// test151: stress for the size of vector time clock. {{{1
+namespace test151 {
+int kNumThreads = 100;
+int kNumSegments = 5000000;
+void Void() { }
+void Run() {
+  printf("test151: stress\n");
+  printf("Creating %d threads\n", kNumThreads);
+  for (int i = 0; i < kNumThreads; i++) {
+    MyThread t(Void);  
+    t.Start();
+    t.Join();
+  }
+  printf("Creating %d segments\n", kNumSegments);
+  for (int i = 0; i < kNumSegments; i++) {
+    ANNOTATE_HAPPENS_BEFORE(NULL);
+  }
+}
+REGISTER_TEST2(Run, 151, PERFORMANCE | EXCLUDE_FROM_ALL)  // TODO(kcc): enable
+}  // namespace test151
+
 // test300: {{{1
 namespace test300 {
 int     GLOB = 0;
