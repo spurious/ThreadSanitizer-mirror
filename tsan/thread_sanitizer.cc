@@ -5820,6 +5820,23 @@ void FindStringFlag(const char *name, vector<string> *args,
   } while (cont);
 }
 
+size_t GetMemoryLimitInMb() {
+  // Parse the memory limit section of /proc/self/limits.
+  string proc_self_limits = ReadFileToString("/proc/self/limits");
+  const char *max_addr_space = "Max address space";
+  size_t pos = proc_self_limits.find(max_addr_space);
+  if (pos == string::npos) return 0;
+  pos += strlen(max_addr_space);
+  while(proc_self_limits[pos] == ' ') pos++;
+  if (proc_self_limits[pos] == 'u') 
+    return 0;  // 'unlimited'.
+  char *end;
+  size_t result = my_strtol(proc_self_limits.c_str() + pos, &end);
+  result >>= 20;
+  return result;
+}
+
+
 void ThreadSanitizerParseFlags(vector<string> *args) {
   // Check this first.
   FindIntFlag("v", 0, args, &G_flags->verbosity);
@@ -5874,6 +5891,10 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
               reinterpret_cast<intptr_t*>(&G_flags->trace_addr));
 
   FindIntFlag("max_cache_size_mb", 2048, args, &G_flags->max_cache_size_mb);
+  FindIntFlag("max_mem_in_mb", 0, args, &G_flags->max_mem_in_mb);
+  if (G_flags->max_mem_in_mb == 0) {
+    G_flags->max_mem_in_mb = GetMemoryLimitInMb();
+  }
 
   vector<string> summary_file_tmp;
   FindStringFlag("summary_file", args, &summary_file_tmp);

@@ -168,6 +168,7 @@ struct FLAGS {
   intptr_t     dry_run;
   intptr_t     max_sid;
   intptr_t     max_cache_size_mb;
+  intptr_t     max_mem_in_mb;
   intptr_t     num_callers_in_history;
   bool         report_races;
   bool         detect_thread_create;

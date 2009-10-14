@@ -241,6 +241,9 @@ void ts_post_clo_init(void) {
          G_flags->pure_happens_before ? "yes" : "no",
          G_flags->fast_mode ? "yes" : "no",
          G_flags->ignore_in_dtor ? "yes" : "no");
+  if (G_flags->max_mem_in_mb) {
+    Report("Memory limit: %dMB\n", (int)G_flags->max_mem_in_mb);
+  }
   ThreadSanitizerInit();
 
   g_valgrind_threads = new ValgrindThread[VG_N_THREADS];
