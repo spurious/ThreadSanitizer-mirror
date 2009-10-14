@@ -259,11 +259,9 @@ static inline void Put(EventType type, int32_t tid, uintptr_t pc,
 
 
 /* CALLED FROM GENERATED CODE */
-VG_REGPARM(3)
+VG_REGPARM(2)
 void evh__new_frame ( Addr sp_post_call_insn,
-                          Addr pc_post_call_insn,
-                          Addr fp_at_call_insn,
-                          Word sp_adjust ) {
+                      Addr pc_post_call_insn) {
   ThreadId vg_tid = GetVgTid();
   CallStackRecord record;
   record.pc = pc_post_call_insn;
@@ -577,7 +575,7 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
 
 
 
-static void evh__create_new_segment_for_history(void) {
+VG_REGPARM(0) static void evh__create_new_segment_for_history(void) {
   ThreadId vg_tid = GetVgTid();
   uintptr_t pc = GetVgPc(vg_tid);
   if (g_valgrind_threads[vg_tid].ignore_all) return;
