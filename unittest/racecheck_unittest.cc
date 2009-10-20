@@ -6976,11 +6976,40 @@ void Run() {
   }
   printf("Creating %d segments\n", kNumSegments);
   for (int i = 0; i < kNumSegments; i++) {
+    if (i % (kNumSegments / 50) == 0)
+      printf(".");
     ANNOTATE_HAPPENS_BEFORE(NULL);
   }
+  printf(" done\n");
 }
 REGISTER_TEST2(Run, 151, PERFORMANCE | EXCLUDE_FROM_ALL)  // TODO(kcc): enable
 }  // namespace test151
+
+// test152: atexit -> exit creates a h-b arc. {{{1
+namespace test152 {
+int     GLOB = 0;
+MyThread *t;
+
+void AtExitCallback() {
+  GLOB++;
+}
+
+void AtExitThread() {
+  GLOB++;
+  atexit(AtExitCallback);
+}
+
+void Run() {
+  FAST_MODE_INIT(&GLOB);
+  ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "not a race; Needs to be fixed in tsan");
+  printf("test152: negative (atexit)\n");
+  t = new MyThread(AtExitThread);
+  t->Start(); // We don't join it.
+//  printf("\tGLOB=%d\n", GLOB);
+}
+REGISTER_TEST(Run, 152)
+}  // namespace test152
+
 
 // test300: {{{1
 namespace test300 {
