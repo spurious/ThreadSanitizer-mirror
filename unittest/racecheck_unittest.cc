@@ -7001,7 +7001,6 @@ void AtExitThread() {
 
 void Run() {
   FAST_MODE_INIT(&GLOB);
-  ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "not a race; Needs to be fixed in tsan");
   printf("test152: negative (atexit)\n");
   t = new MyThread(AtExitThread);
   t->Start(); // We don't join it.
