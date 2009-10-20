@@ -1682,9 +1682,34 @@ PTH_FUNC(sem_t *, semZuopenZAZa, const char *name, int oflag,
 }
 
 
+// atexit -> exit create a h-b arc.
+static void *AtExitMagic() {
+  return (void*)0x12345678;
+}
+
+#define ATEXIT_BODY { \
+   OrigFn fn;\
+   long    ret;\
+   VALGRIND_GET_ORIG_FN(fn);\
+   DO_CREQ_v_W(TSREQ_PTHREAD_COND_SIGNAL_PRE, void*, AtExitMagic());\
+   CALL_FN_W_W(ret, fn, callback);\
+   return ret;\
+}\
+
+NONE_FUNC(long, atexit, void *callback)  ATEXIT_BODY
+LIBC_FUNC(long, atexit, void *callback)  ATEXIT_BODY
+
+#define EXIT_BODY { \
+   OrigFn fn;\
+   VALGRIND_GET_ORIG_FN(fn);\
+   do_wait_pre_and_post(AtExitMagic(), 0);\
+   CALL_FN_v_W(fn, x);\
+}\
+
+LIBC_FUNC(void, exit, int x) EXIT_BODY
+NONE_FUNC(void, exit, int x) EXIT_BODY
 
 // socket/file IO that creates happens-before arcs.
-
 static void *SocketMagic(long s) {
   return (void*)0xDEADFBAD;
 }
