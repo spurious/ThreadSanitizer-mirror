@@ -5892,9 +5892,12 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
 
   FindIntFlag("max_cache_size_mb", 2048, args, &G_flags->max_cache_size_mb);
   FindIntFlag("max_mem_in_mb", 0, args, &G_flags->max_mem_in_mb);
+#if 0
+  // TODO(kcc): this doesn't work on some platforms.
   if (G_flags->max_mem_in_mb == 0) {
     G_flags->max_mem_in_mb = GetMemoryLimitInMb();
   }
+#endif
 
   vector<string> summary_file_tmp;
   FindStringFlag("summary_file", args, &summary_file_tmp);
