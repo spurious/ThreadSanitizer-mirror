@@ -37,7 +37,7 @@
 #include <ctime>
 #include <math.h>
 
-#include "thread_wrappers_pthread.h"
+#include "thread_wrappers.h"
 #include "linear_solver.h"
 
 class Mutex64: public Mutex {

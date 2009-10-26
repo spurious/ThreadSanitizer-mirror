@@ -46,7 +46,7 @@
 // This test must not include any other file specific to threading library,
 // everything should be inside THREAD_WRAPPERS.
 #ifndef THREAD_WRAPPERS
-# define THREAD_WRAPPERS "thread_wrappers_pthread.h"
+# define THREAD_WRAPPERS "thread_wrappers.h"
 #endif
 #include THREAD_WRAPPERS
 
