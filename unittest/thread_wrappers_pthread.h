@@ -53,11 +53,12 @@
 
 #define NOINLINE   __attribute__ ((noinline))
 #define ALIGNED(X) __attribute__ ((aligned (X)))
+const bool kMallocUsesMutex = false;
 
 #ifndef __APPLE__
-  #include <malloc.h> // memalign
   // Linux
-  const bool kMallocUsesMutex = false;
+  #include <malloc.h> // memalign
+
   int AtomicIncrement(volatile int *value, int increment) {
     return __sync_add_and_fetch(value, increment);
   }
@@ -67,7 +68,7 @@
   #define NO_BARRIER
   #define NO_UNNAMED_SEM
   #define NO_TLS
-  const bool kMallocUsesMutex = true;
+
   int AtomicIncrement(volatile int *value, int increment) {
     return OSAtomicAdd32(increment, value);
   }
