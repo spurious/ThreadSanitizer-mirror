@@ -75,7 +75,7 @@ class Condition {
 
 // Define platform-specific types, constant and functions {{{1
 int AtomicIncrement(volatile int *value, int increment);
-int GetCurrentTimeMillis();
+int GetTimeInMs();
 
 /// This constant is true if malloc() uses mutex on your platform as this may
 /// introduce a happens-before arc for a pure happens-before race detector.

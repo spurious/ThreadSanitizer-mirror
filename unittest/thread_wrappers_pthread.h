@@ -40,13 +40,22 @@
 #ifndef THREAD_WRAPPERS_PTHREADS_H_
 #define THREAD_WRAPPERS_PTHREADS_H_
 
+#include <dirent.h>
 #include <errno.h>
 #include <pthread.h>
 #include <semaphore.h>
+#include <stdlib.h>
+#include <sys/mman.h>  // mmap
 #include <sys/time.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
+#define NOINLINE   __attribute__ ((noinline))
+#define ALIGNED(X) __attribute__ ((aligned (X)))
+
 #ifndef __APPLE__
+  #include <malloc.h> // memalign
   // Linux
   const bool kMallocUsesMutex = false;
   int AtomicIncrement(volatile int *value, int increment) {
@@ -74,7 +83,7 @@
 #endif
 
 
-int GetCurrentTimeMillis() {
+int GetTimeInMs() {
   struct timeval now;
   gettimeofday(&now, NULL);
   return (int)(now.tv_sec * 1000 + now.tv_usec / 1000);

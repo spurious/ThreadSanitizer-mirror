@@ -237,12 +237,6 @@ inline double round(double lf) {
    return floor(lf + 0.5);
 }
 
-inline long GetTimeInMs() {
-  struct timeval tv;
-  gettimeofday(&tv, NULL);
-  return (tv.tv_sec * 1000L) + (tv.tv_usec / 1000L);
-}
-
 // Accessing memory locations holding one lock {{{1
 namespace one_lock {
    struct Params {

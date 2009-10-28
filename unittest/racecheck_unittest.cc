@@ -78,18 +78,8 @@
 #include <algorithm>
 #include <cstring>      // strlen(), index(), rindex()
 #include <ctime>
-#include <sys/time.h>
-#include <sys/types.h>
-#include <sys/stat.h>
 #include <fcntl.h>
-#include <sys/mman.h>  // mmap
-#include <errno.h>
 #include <stdlib.h>
-#include <dirent.h>
-
-#ifndef __APPLE__
-#include <malloc.h>
-#endif
 
 // The tests are
 // - Stability tests (marked STAB)
@@ -143,12 +133,6 @@ Mutex printf_mu;
       printf_mu.Unlock(); \
     }while(0)
 
-long GetTimeInMs() {
-   struct timeval tv;
-   gettimeofday(&tv, NULL);
-   return (tv.tv_sec * 1000L) + (tv.tv_usec / 1000L);
-}
-
 struct Test{
   void_func_void_t f_;
   int flags_;
@@ -174,7 +158,6 @@ struct Test{
 };
 std::map<int, Test> TheMapOfTests;
 
-#define NOINLINE __attribute__ ((noinline))
 extern "C" void NOINLINE AnnotateSetVerbosity(const char *, int, int) {};
 
 
@@ -1238,11 +1221,11 @@ void Waker() {
 }
 void Waiter() {
   int64_t ms_left_to_wait = 100;
-  int64_t deadline_ms = GetCurrentTimeMillis() + ms_left_to_wait;
+  int64_t deadline_ms = GetTimeInMs() + ms_left_to_wait;
   MU.Lock();
   while(COND != 1 && ms_left_to_wait > 0) {
     CV.WaitWithTimeout(&MU, ms_left_to_wait);
-    ms_left_to_wait = deadline_ms - GetCurrentTimeMillis();
+    ms_left_to_wait = deadline_ms - GetTimeInMs();
   }
   MU.Unlock();
 
@@ -4207,7 +4190,7 @@ struct A {
   virtual void f() { }
 
   uintptr_t padding[15];
-} __attribute__ ((aligned (64)));
+} ALIGNED(64);
 
 struct B: A {
   B()  { printf("B::B()\n"); }
@@ -6732,7 +6715,7 @@ REGISTER_TEST(Run, 143);
 namespace test144 {
 struct Foo {
   int a, b;
-} __attribute__ ((aligned (64)));
+} ALIGNED(64);
 
 struct Foo GLOB;
 int &RACEY = GLOB.a;
@@ -6764,7 +6747,7 @@ namespace test145 {
 
 struct Foo {
   int a, b;
-} __attribute__ ((aligned (64)));
+} ALIGNED(64);
 
 struct Foo *GLOB;
 int *RACEY = NULL;
