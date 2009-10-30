@@ -59,14 +59,25 @@ bool g_has_exited_main = false;
 FLAGS *G_flags = NULL;
 
 // -------- Utils --------------- {{{1
-// Read the contents of a file to string. Valgrind version.
-static string ReadFileToString(const string &file_name) {
+static int OpenFileReadOnly(const string &file_name, bool die_if_failed) {
   SysRes sres = VG_(open)((const Char*)file_name.c_str(), VKI_O_RDONLY, 0);
   if (sr_isError(sres)) {
-    Report("WARNING: can not open file %s\n", file_name.c_str());
-    exit(1);
+    if (die_if_failed) {
+      Report("ERROR: can not open file %s\n", file_name.c_str());
+      exit(1);
+    } else {
+      return -1;
+    }
   }
-  int fd = sr_Res(sres);
+  return sr_Res(sres);
+}
+
+// Read the contents of a file to string. Valgrind version.
+static string ReadFileToString(const string &file_name, bool die_if_failed) {
+  int fd = OpenFileReadOnly(file_name, die_if_failed);
+  if (fd == -1) {
+    return string();
+  }
   char buff[257] = {0};
   int n_read;
   string res;
@@ -74,9 +85,36 @@ static string ReadFileToString(const string &file_name) {
     buff[n_read] = 0;
     res += buff;
   }
-
   VG_(close)(fd);
   return res;
+}
+
+
+// Get the current memory footprint of myself (parse /proc/self/status).
+static size_t GetVmSizeInMb() {
+#ifdef VGO_linux
+  static int fd = -2;
+  if (fd == -2) {  // safe since valgrind is single-threaded.
+    fd = OpenFileReadOnly("/proc/self/status", false);
+  }
+  if (fd < 0) return 0;
+  char buff[10 * 1024];
+  VG_(lseek)(fd, 0, SEEK_SET);
+  int n_read = VG_(read)(fd, buff, sizeof(buff) - 1);
+  buff[n_read] = 0;
+  const char *vm_size_name = "VmSize:";
+  const int   vm_size_name_len = 7;
+  const char *vm_size_str = (const char *)VG_(strstr)((Char*)buff,
+                                                      (Char*)vm_size_name);
+  if (!vm_size_str) return 0;
+  vm_size_str += vm_size_name_len;
+  while(*vm_size_str == ' ') vm_size_str++;
+  char *end;
+  size_t vm_size_in_kb = my_strtol(vm_size_str, &end);
+  return vm_size_in_kb >> 10;
+#else
+  return 0;
+#endif
 }
 
 // Sets the contents of the file 'file_name' to 'str'.
@@ -1324,7 +1362,6 @@ static string TwoLockSetsToString(LSID rd_lockset, LSID wr_lockset) {
 
 
 // -------- VTS ------------------ {{{1
-
 class VTS {
  public:
   static size_t MemoryRequiredForOneVts(size_t size) {
@@ -3072,10 +3109,6 @@ class Cache {
     }
   }
 
-  size_t StorageSizeMb() {
-    return (storage_.size() * sizeof(CacheLine)) >> 20;
-  }
-
  private:
   INLINE uintptr_t ComputeCacheLineIndexInCache(uintptr_t addr) {
     return (addr >> CacheLine::kLineSizeBits) & (kNumLines - 1);
@@ -4776,15 +4809,48 @@ class Detector {
     // Report("ThreadSanitizerValgrind: exiting\n");
   }
 
+  void FlushIfOutOfMem() {
+    static int max_vm_size;
+    static int soft_limit;
+    const int hard_limit = G_flags->max_mem_in_mb;
+    const int minimal_soft_limit = (hard_limit * 13) / 16;
+    const int print_info_limit   = (hard_limit * 12) / 16;
+
+    CHECK(hard_limit > 0);
+
+    int vm_size_in_mb = GetVmSizeInMb();
+    if (max_vm_size < vm_size_in_mb) {
+      max_vm_size = vm_size_in_mb;
+      if (max_vm_size > print_info_limit) {
+        Report("INFO: ThreadSanitizer's VmSize: %dM\n", (int)max_vm_size);
+      }
+    }
+
+    if (soft_limit == 0) {
+      soft_limit = minimal_soft_limit;
+    }
+
+    if (vm_size_in_mb > soft_limit) {
+      ForgetAllStateAndStartOver(
+          "ThreadSanitizer is running close to its memory limit");
+      soft_limit = vm_size_in_mb + 1;
+    }
+  }
 
   void FlushIfNeeded() {
     // Are we out of segment IDs?
     if (Segment::NumberOfSegments() > ((kMaxSID * 15) / 16)) {
       ForgetAllStateAndStartOver("ThreadSanitizer has run out of segment IDs");
     }
-    // Are we out of cache lines?
-    if (G_cache->StorageSizeMb() > (size_t)G_flags->max_cache_size_mb) {
-      ForgetAllStateAndStartOver("ThreadSanitizer has run out of cache lines");
+    // Are we out of memory?
+    if (G_flags->max_mem_in_mb > 0) {
+      static int counter;
+      const int kFreq = 1014 * 16;
+      counter++;
+      if ((counter % kFreq) == 0) {  // Don't do it too often.
+        // TODO(kcc): find a way to check memory limit more frequently.
+        FlushIfOutOfMem();
+      }
     }
   }
 
@@ -4817,8 +4883,10 @@ class Detector {
 
   void ShowProcSelfStatus() {
     if (G_flags->show_proc_self_status) {
-      string str = ReadFileToString("/proc/self/status");
-      Printf("%s", str.c_str());
+      string str = ReadFileToString("/proc/self/status", false);
+      if (!str.empty()) {
+        Printf("%s", str.c_str());
+      }
     }
   }
 
@@ -5820,9 +5888,10 @@ void FindStringFlag(const char *name, vector<string> *args,
   } while (cont);
 }
 
-size_t GetMemoryLimitInMb() {
+static size_t GetMemoryLimitInMbFromProcSelfLimits() {
+#ifdef VGO_linux
   // Parse the memory limit section of /proc/self/limits.
-  string proc_self_limits = ReadFileToString("/proc/self/limits");
+  string proc_self_limits = ReadFileToString("/proc/self/limits", false);
   const char *max_addr_space = "Max address space";
   size_t pos = proc_self_limits.find(max_addr_space);
   if (pos == string::npos) return 0;
@@ -5834,6 +5903,25 @@ size_t GetMemoryLimitInMb() {
   size_t result = my_strtol(proc_self_limits.c_str() + pos, &end);
   result >>= 20;
   return result;
+#else
+  return 0;
+#endif
+}
+
+static size_t GetMemoryLimitInMb() {
+  // Try /proc/self/limits.
+  size_t from_proc_self = GetMemoryLimitInMbFromProcSelfLimits();
+  if (from_proc_self) {
+    return from_proc_self;
+  }
+  // Try env.
+  const char *from_env_str =
+    (const char*)VG_(getenv)((Char*)"VALGRIND_MEMORY_LIMIT_IN_MB");
+  if (from_env_str) {
+    char *end;
+    return my_strtol(from_env_str, &end);
+  }
+  return 0;
 }
 
 
@@ -5884,20 +5972,16 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   FindStringFlag("file_prefix_to_cut", args, &G_flags->file_prefix_to_cut);
   FindStringFlag("ignore", args, &G_flags->ignore);
 
-  FindBoolFlag("detect_thread_create", false, args,
-               &G_flags->detect_thread_create);
+  FindBoolFlag("thread_coverage", false, args,
+               &G_flags->thread_coverage);
 
   FindIntFlag("trace_addr", 0, args,
               reinterpret_cast<intptr_t*>(&G_flags->trace_addr));
 
-  FindIntFlag("max_cache_size_mb", 2048, args, &G_flags->max_cache_size_mb);
   FindIntFlag("max_mem_in_mb", 0, args, &G_flags->max_mem_in_mb);
-#if 0
-  // TODO(kcc): this doesn't work on some platforms.
   if (G_flags->max_mem_in_mb == 0) {
     G_flags->max_mem_in_mb = GetMemoryLimitInMb();
   }
-#endif
 
   vector<string> summary_file_tmp;
   FindStringFlag("summary_file", args, &summary_file_tmp);
@@ -6005,7 +6089,7 @@ static void SetupIgnore() {
   for (size_t i = 0; i < G_flags->ignore.size(); i++) {
     string file_name = G_flags->ignore[i];
     Report("INFO: Reading ignore file: %s\n", file_name.c_str());
-    string str = ReadFileToString(file_name);
+    string str = ReadFileToString(file_name, true);
     vector<string> lines;
     SplitStringIntoLinesAndRemoveBlanksAndComments(str, &lines);
     for (size_t j = 0; j < lines.size(); j++) {
