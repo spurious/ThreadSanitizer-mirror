@@ -16,7 +16,7 @@ LIBS= -lpin  -lxed -ldwarf -lelf -ldl
 %.o: %.cc
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ -c $<
 
-all_tests: simple_pin_test.so
+all_tests: simple_pin_test.so ts_pin.so
 
 
 clean:
