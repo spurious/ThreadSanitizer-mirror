@@ -28,10 +28,25 @@
 #ifndef __THREAD_SANITIZER_H__
 #define __THREAD_SANITIZER_H__
 
+#include <glob.h>
 #include <stdint.h>
 
 #include "ts_setup.h"
-#include "ts_valgrind.h"
+
+#undef NDEBUG  // Assert is always on.
+
+// Valgrind compilation is the default one.
+// Define TS_NO_VALGRIND if you compile w/o valgrind.
+#ifndef TS_NO_VALGRIND
+# include "ts_valgrind.h"
+# define TS_VALGRIND
+# define CHECK tl_assert
+#else
+# include <assert.h>
+# define CHECK assert
+#endif // TS_NO_VALGRIND
+
+
 
 #include "stlport/set"
 #include "stlport/map"
@@ -45,13 +60,9 @@
 #include "stlport/algorithm"
 
 
-#define CHECK tl_assert
-#define CHECK_GT(X, Y) tl_assert((X) >  (Y))
-#define CHECK_LT(X, Y) tl_assert((X) < (Y))
-#define CHECK_GE(X, Y) tl_assert((X) >= (Y))
-#define CHECK_LE(X, Y) tl_assert((X) <= (Y))
-#define CHECK_NE(X, Y) tl_assert((X) != (Y))
-#define CHECK_EQ(X, Y) tl_assert((X) == (Y))
+#ifdef TS_VALGRIND
+
+// TODO(kcc) get rid of these macros.
 #define sprintf(arg1, arg2...) VG_(sprintf)((Char*)arg1, (HChar*)arg2)
 #define vsnprintf(a1, a2, a3, a4) VG_(vsnprintf)((Char*)a1, a2, a3, a4)
 #define getpid VG_(getpid)
@@ -60,10 +71,48 @@
 #define strdup(a) (char*)VG_(strdup)((HChar*)"strdup", (const Char*)a)
 #define snprintf(a,b,c...)     VG_(snprintf)((Char*)a,b,c)
 #define exit VG_(exit)
+#define read VG_(read)
+#define getenv(x) VG_(getenv)((Char*)x)
+#define close VG_(close)
+#define write VG_(write)
 #define abort VG_(abort)
 #define usleep(a) /*nothing. TODO.*/
 
-extern "C" long my_strtol(const char *srt, char **end);
+
+
+static inline ThreadId GetVgTid() {
+  extern ThreadId VG_(running_tid); // HACK: avoid calling get_running_tid()
+  ThreadId res = VG_(running_tid);
+  //DCHECK(res == VG_(get_running_tid)());
+  return res;
+}
+
+#else // No TS_VALGRIND
+#include <unistd.h>
+
+
+#define UNIMPLEMENTED() CHECK(0)
+
+#define UNLIKELY(x) __builtin_expect((x), 0)
+#define LIKELY(x)   __builtin_expect(!!(x), 1)
+
+class ScopedMallocCostCenter {
+ public:
+  ScopedMallocCostCenter(const char *cc) {
+    UNIMPLEMENTED();
+  }
+};
+
+
+inline uintptr_t GetPcOfCurrentThread() {
+  UNIMPLEMENTED();
+  return 0;
+}
+
+
+
+#endif // TS_VALGRIND
+
 
 template <class T, const char **cc>
 class CCAlloc : public std::allocator<T> {
@@ -74,12 +123,6 @@ class CCAlloc : public std::allocator<T> {
   }
 };
 
-static inline ThreadId GetVgTid() {
-  extern ThreadId VG_(running_tid); // HACK: avoid calling get_running_tid()
-  ThreadId res = VG_(running_tid);
-  //DCHECK(res == VG_(get_running_tid)());
-  return res;
-}
 
 
 using std::set;
@@ -102,6 +145,15 @@ using std::unique_copy;
 using std::lexicographical_compare_3way;
 
 
+#define CHECK_GT(X, Y) CHECK((X) >  (Y))
+#define CHECK_LT(X, Y) CHECK((X) < (Y))
+#define CHECK_GE(X, Y) CHECK((X) >= (Y))
+#define CHECK_LE(X, Y) CHECK((X) <= (Y))
+#define CHECK_NE(X, Y) CHECK((X) != (Y))
+#define CHECK_EQ(X, Y) CHECK((X) == (Y))
+
+
+
 #if defined(DEBUG) && DEBUG >= 1
   #define DCHECK(a) CHECK(a)
   #define DEBUG_MODE (1)
@@ -116,15 +168,17 @@ using std::lexicographical_compare_3way;
 
 
 
-//--------- Valgrind Exports ------------------- {{{1
+//--------- Utils ------------------- {{{1
 void Printf(const char *format, ...);
 void Report(const char *format, ...);
-void PcToStrings(uintptr_t pc, bool demangle, 
-                string *img_name, string *rtn_name, 
+void PcToStrings(uintptr_t pc, bool demangle,
+                string *img_name, string *rtn_name,
                 string *file_name, int *line_no);
 string PcToRtnNameAndFilePos(uintptr_t pc);
 string PcToRtnName(uintptr_t pc, bool demangle);
 string Demangle(const char *str);
+
+extern "C" long my_strtol(const char *str, char **end);
 
 //--------- FLAGS ---------------------------------- {{{1
 struct FLAGS {
@@ -185,6 +239,7 @@ enum EventType {
   READER_LOCK,  
   WRITER_LOCK,  
   UNLOCK,       
+  UNLOCK_OR_INIT,
   LOCK_CREATE,
   LOCK_DESTROY,
   BUS_LOCK_ACQUIRE, 
@@ -297,6 +352,7 @@ class Event {
       "READER_LOCK",
       "WRITER_LOCK",
       "UNLOCK",
+      "UNLOCK_OR_INIT",
       "LOCK_CREATE",
       "LOCK_DESTROY",
       "BUS_LOCK_ACQUIRE", 

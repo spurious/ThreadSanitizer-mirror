@@ -649,7 +649,7 @@ done.  No way the joiner can return before the thread is gone.
               pthread_mutex_timedlock
               pthread_mutex_unlock
 
-   Unhandled: pthread_spin_init pthread_spin_destroy 
+              pthread_spin_init pthread_spin_destroy
               pthread_spin_lock
               pthread_spin_trylock
               pthread_spin_unlock
@@ -681,7 +681,7 @@ PTH_FUNC(int, pthreadZumutexZuinit, // pthread_mutex_init
    if (ret == 0 /*success*/) {
       DO_CREQ_v_WW(TSREQ_PTHREAD_RWLOCK_CREATE_POST,
                    pthread_mutex_t*,mutex, long,mbRec);
-   } else { 
+   } else {
       DO_PthAPIerror( "pthread_mutex_init", ret );
    }
 
@@ -791,7 +791,7 @@ static int pthread_mutex_trylock_WRK(pthread_mutex_t *mutex)
    if (ret == 0 /*success*/) {
       DO_CREQ_v_WW(TSREQ_PTHREAD_RWLOCK_LOCK_POST,
                   pthread_mutex_t*,mutex, long, 1);
-   } else { 
+   } else {
       if (ret != EBUSY)
          DO_PthAPIerror( "pthread_mutex_trylock", ret );
    }
@@ -819,7 +819,7 @@ PTH_FUNC(int, pthreadZumutexZutimedlock, // pthread_mutex_timedlock
    OrigFn fn;
    VALGRIND_GET_ORIG_FN(fn);
    if (TRACE_PTH_FNS) {
-      fprintf(stderr, "<< pthread_mxtimedlock %p %p", mutex, timeout); 
+      fprintf(stderr, "<< pthread_mxtimedlock %p %p", mutex, timeout);
       fflush(stderr);
    }
 
@@ -836,7 +836,7 @@ PTH_FUNC(int, pthreadZumutexZutimedlock, // pthread_mutex_timedlock
    if (ret == 0 /*success*/) {
       DO_CREQ_v_WW(TSREQ_PTHREAD_RWLOCK_LOCK_POST,
                   pthread_mutex_t*,mutex, long, 1);
-   } else { 
+   } else {
       if (ret != ETIMEDOUT)
          DO_PthAPIerror( "pthread_mutex_timedlock", ret );
    }
@@ -868,7 +868,7 @@ PTH_FUNC(int, pthreadZumutexZuunlock, // pthread_mutex_unlock
    if (ret == 0 /*success*/) {
       DO_CREQ_v_W(TSREQ_PTHREAD_RWLOCK_UNLOCK_POST,
                   pthread_mutex_t*,mutex);
-   } else { 
+   } else {
       DO_PthAPIerror( "pthread_mutex_unlock", ret );
    }
 
@@ -876,6 +876,106 @@ PTH_FUNC(int, pthreadZumutexZuunlock, // pthread_mutex_unlock
       fprintf(stderr, " mxunlk -> %d >>\n", ret);
    }
    return ret;
+}
+
+// pthread_spin_init
+PTH_FUNC(int, pthreadZuspinZuinit, void *lock, int pshared) {
+  int    ret;
+  OrigFn fn;
+  const char *func = "pthread_spin_init";
+  VALGRIND_GET_ORIG_FN(fn);
+  if (TRACE_PTH_FNS) {
+    fprintf(stderr, "<< %s %p", func, lock);
+  }
+  CALL_FN_W_WW(ret, fn, lock, pshared);
+  if (ret == 0)  {
+    DO_CREQ_v_W(TSREQ_PTHREAD_SPIN_LOCK_INIT_OR_UNLOCK, void *, lock);
+  }
+  if (TRACE_PTH_FNS) {
+    fprintf(stderr, " -- %p >>\n", lock);
+  }
+  return ret;
+}
+
+// pthread_spin_destroy
+PTH_FUNC(int, pthreadZuspinZudestroy, void *lock) {
+  int    ret;
+  OrigFn fn;
+  const char *func = "pthread_spin_destroy";
+  VALGRIND_GET_ORIG_FN(fn);
+  if (TRACE_PTH_FNS) {
+    fprintf(stderr, "<< %s %p", func, lock);
+  }
+  DO_CREQ_v_W(TSREQ_PTHREAD_RWLOCK_DESTROY_PRE, void*, lock);
+  CALL_FN_W_W(ret, fn, lock);
+  if (TRACE_PTH_FNS) {
+    fprintf(stderr, " -- %p >>\n", lock);
+  }
+  return ret;
+}
+
+// pthread_spin_lock
+PTH_FUNC(int, pthreadZuspinZulock, void *lock) {
+  int    ret;
+  OrigFn fn;
+  const char *func = "pthread_spin_lock";
+  VALGRIND_GET_ORIG_FN(fn);
+  if (TRACE_PTH_FNS) {
+    fprintf(stderr, "<< %s %p", func, lock);
+  }
+  DO_CREQ_v_WWW(TSREQ_PTHREAD_RWLOCK_LOCK_PRE, void *, lock,
+               long, 1 /*is_w*/, long, 0 /*is_try_lock*/);
+  CALL_FN_W_W(ret, fn, lock);
+  if (ret == 0) {
+    DO_CREQ_v_WW(TSREQ_PTHREAD_RWLOCK_LOCK_POST, void *, lock,
+                 long, 1 /*is_w*/);
+  }
+  if (TRACE_PTH_FNS) {
+    fprintf(stderr, " -- %p >>\n", lock);
+  }
+  return ret;
+}
+
+// pthread_spin_trylock
+PTH_FUNC(int, pthreadZuspinZutrylock, void *lock) {
+  int    ret;
+  OrigFn fn;
+  const char *func = "pthread_spin_trylock";
+  VALGRIND_GET_ORIG_FN(fn);
+  if (TRACE_PTH_FNS) {
+    fprintf(stderr, "<< %s %p", func, lock);
+  }
+  DO_CREQ_v_WWW(TSREQ_PTHREAD_RWLOCK_LOCK_PRE, void *, lock,
+               long, 1 /*is_w*/, long, 1 /*is_try_lock*/);
+  CALL_FN_W_W(ret, fn, lock);
+  if (ret == 0) {
+    DO_CREQ_v_WW(TSREQ_PTHREAD_RWLOCK_LOCK_POST, void *, lock,
+                 long, 1 /*is_w*/);
+  }
+  if (TRACE_PTH_FNS) {
+    fprintf(stderr, " -- %p >>\n", lock);
+  }
+  return ret;
+}
+
+// pthread_spin_unlock
+PTH_FUNC(int, pthreadZuspinZuunlock, void *lock) {
+  int    ret;
+  OrigFn fn;
+  const char *func = "pthread_spin_unlock";
+  VALGRIND_GET_ORIG_FN(fn);
+  if (TRACE_PTH_FNS) {
+    fprintf(stderr, "<< %s %p", func, lock);
+  }
+  DO_CREQ_v_W(TSREQ_PTHREAD_RWLOCK_UNLOCK_PRE, void*, lock);
+  CALL_FN_W_W(ret, fn, lock);
+  if (ret == 0) {
+    DO_CREQ_v_W(TSREQ_PTHREAD_RWLOCK_UNLOCK_POST, void*, lock);
+  }
+  if (TRACE_PTH_FNS) {
+    fprintf(stderr, " -- %p >>\n", lock);
+  }
+  return ret;
 }
 
 
@@ -1683,7 +1783,7 @@ PTH_FUNC(sem_t *, semZuopenZAZa, const char *name, int oflag,
 
 
 // atexit -> exit create a h-b arc.
-static void *AtExitMagic() {
+static void *AtExitMagic(void) {
   return (void*)0x12345678;
 }
 
@@ -1713,10 +1813,6 @@ NONE_FUNC(void, exit, int x) EXIT_BODY
 static void *SocketMagic(long s) {
   return (void*)0xDEADFBAD;
 }
-
-
-
-
 
 NONE_FUNC(int, epoll_wait, int epfd, void * events, int maxevents, int timeout) {
    OrigFn fn;

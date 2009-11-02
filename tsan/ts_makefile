@@ -1,0 +1,14 @@
+CXX=g++
+CXXFLAGS=-g -DTS_NO_VALGRIND=1 -fno-exceptions
+CXXOPT=-O2
+LD=g++
+LDFLAGS=
+INCLUDES=-I. -I./stlport
+
+all: ts_offline
+
+ts_offline: ts_offline.o thread_sanitizer.o
+	$(LD) $(LDFLAGS) -o $@ $^
+
+%.o: %.cc
+	$(CXX) $(CXXFLAGS) $(CXXOPT) $(INCLUDES) -o $@ -c $<

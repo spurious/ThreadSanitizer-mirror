@@ -61,7 +61,7 @@ enum {
   XS_InvalidLock
 };
 
-extern uintptr_t GetVgPcOfCurrentThread();
+extern uintptr_t GetPcOfCurrentThread();
 
 
 // This stuff is temporary here.

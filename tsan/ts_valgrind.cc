@@ -82,7 +82,14 @@ void operator delete [](void *p) {
 
 
 
-//---------------------- TODO ------------------- {{{1
+//---------------------- Utils ------------------- {{{1
+extern "C" void * memmove(void *a, const void *b, size_t size) {
+  return VG_(memmove)(a,b, size);
+}
+
+extern "C" int memcmp(const void *a, const void *b, size_t c) {
+  return VG_(memcmp)(a,b,c);
+}
 
 void Printf(const char *format, ...) {
   va_list args;
@@ -164,7 +171,7 @@ static inline uintptr_t GetVgPc(ThreadId vg_tid) {
   return (uintptr_t)VG_(get_IP)(vg_tid);
 }
 
-uintptr_t GetVgPcOfCurrentThread() {
+uintptr_t GetPcOfCurrentThread() {
   return GetVgPc(GetVgTid());
 }
 
@@ -544,6 +551,9 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
       break;
     case TSREQ_PTHREAD_RWLOCK_UNLOCK_PRE:
       Put(UNLOCK, ts_tid, pc, /*lock=*/args[1], 0);
+      break;
+    case TSREQ_PTHREAD_SPIN_LOCK_INIT_OR_UNLOCK:
+      Put(UNLOCK_OR_INIT, ts_tid, pc, /*lock=*/args[1], 0);
       break;
     case TSREQ_PTHREAD_RWLOCK_UNLOCK_POST:
       break;

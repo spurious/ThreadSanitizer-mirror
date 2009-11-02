@@ -59,7 +59,8 @@ bool g_has_exited_main = false;
 FLAGS *G_flags = NULL;
 
 // -------- Utils --------------- {{{1
-static int OpenFileReadOnly(const string &file_name, bool die_if_failed) {
+int OpenFileReadOnly(const string &file_name, bool die_if_failed) {
+#ifdef TS_VALGRIND
   SysRes sres = VG_(open)((const Char*)file_name.c_str(), VKI_O_RDONLY, 0);
   if (sr_isError(sres)) {
     if (die_if_failed) {
@@ -70,10 +71,13 @@ static int OpenFileReadOnly(const string &file_name, bool die_if_failed) {
     }
   }
   return sr_Res(sres);
+#else // no TS_VALGRIND
+  UNIMPLEMENTED();
+#endif
 }
 
 // Read the contents of a file to string. Valgrind version.
-static string ReadFileToString(const string &file_name, bool die_if_failed) {
+string ReadFileToString(const string &file_name, bool die_if_failed) {
   int fd = OpenFileReadOnly(file_name, die_if_failed);
   if (fd == -1) {
     return string();
@@ -81,11 +85,11 @@ static string ReadFileToString(const string &file_name, bool die_if_failed) {
   char buff[257] = {0};
   int n_read;
   string res;
-  while ((n_read = VG_(read)(fd, buff, sizeof(buff) - 1)) > 0) {
+  while ((n_read = read(fd, buff, sizeof(buff) - 1)) > 0) {
     buff[n_read] = 0;
     res += buff;
   }
-  VG_(close)(fd);
+  close(fd);
   return res;
 }
 
@@ -100,7 +104,7 @@ static size_t GetVmSizeInMb() {
   if (fd < 0) return 0;
   char buff[10 * 1024];
   VG_(lseek)(fd, 0, SEEK_SET);
-  int n_read = VG_(read)(fd, buff, sizeof(buff) - 1);
+  int n_read = read(fd, buff, sizeof(buff) - 1);
   buff[n_read] = 0;
   const char *vm_size_name = "VmSize:";
   const int   vm_size_name_len = 7;
@@ -120,6 +124,7 @@ static size_t GetVmSizeInMb() {
 // Sets the contents of the file 'file_name' to 'str'.
 static void OpenFileWriteStringAndClose(const string &file_name,
                                         const string &str) {
+#ifdef TS_VALGRIND
   SysRes sres = VG_(open)((const Char*)file_name.c_str(),
                           VKI_O_WRONLY|VKI_O_CREAT|VKI_O_TRUNC,
                           VKI_S_IRUSR|VKI_S_IWUSR);
@@ -128,8 +133,11 @@ static void OpenFileWriteStringAndClose(const string &file_name,
     exit(1);
   }
   int fd = sr_Res(sres);
-  VG_(write)(fd, str.c_str(), str.size());
-  VG_(close)(fd);
+  write(fd, str.c_str(), str.size());
+  close(fd);
+#else
+  UNIMPLEMENTED();
+#endif
 }
 
 inline uintptr_t tsan_bswap(uintptr_t x) {
@@ -162,25 +170,25 @@ static bool FastRecursiveStringMatch(const char* pat, const char* str,
       case '*': do {
                   if (FastRecursiveStringMatch(pat+1, str, depth)) {
                     (*depth)--;
-                    return True;
+                    return true;
                   }
                 } while (*str++);
                   (*depth)--;
-                  return False;
+                  return false;
       case '?': if (*str++ == '\0') {
                   (*depth)--;
-                  return False;
+                  return false;
                 }
                 pat++;
                 break;
       case '\\':if (*++pat == '\0') {
                   (*depth)--;
-                  return False; /* spurious trailing \ in pattern */
+                  return false; /* spurious trailing \ in pattern */
                 }
                 /* falls through to ... */
       default : if (*pat++ != *str++) {
                   (*depth)--;
-                  return False;
+                  return false;
                 }
                 break;
     }
@@ -441,23 +449,6 @@ string PcToRtnNameAndFilePos(uintptr_t pc) {
   return rtn_name + " " + file_name + ":" + buff;
 }
 
-class ScopeTimer {
- public:
-  explicit ScopeTimer(const char * what) : what_(what) {
-    start_ = VG_(read_millisecond_timer)();
-  }
-  ~ScopeTimer() {
-    UInt end = VG_(read_millisecond_timer)();
-    Printf("%s: %,dms\n", what_, end - start_);
-  }
- private:
-  const char * what_;
-  UInt start_;
-};
-
-extern "C" void * memmove(void *a, const void *b, size_t size) {
-  return VG_(memmove)(a,b, size);
-}
 
 // -------- ID ---------------------- {{{1
 // We wrap int32_t into ID class and then inherit various ID type from ID.
@@ -874,10 +865,12 @@ class StackTrace {
     Printf("\n");
   }
 
+#ifdef TS_VALGRIND
   ExeContext *ToValgrindExeContext() {
     return VG_(make_ExeContext_from_StackTrace)(
         reinterpret_cast<Addr*>(arr_), size_);
   }
+#endif // TS_VALGRIND
 
   struct Less {
     bool operator() (const StackTrace *t1, const StackTrace *t2) const {
@@ -3749,8 +3742,12 @@ struct Thread {
       report->tid = tid();
       report->lock_addr = lock_addr;
       report->stack_trace = CreateStackTrace();
+#ifdef TS_VALGRIND
       VG_(maybe_record_error)(GetVgTid(), XS_InvalidLock, 0, NULL,
                               report);
+#else
+      UNIMPLEMENTED();
+#endif
       return;
     }
     bool is_w_lock = lock->wr_held();
@@ -3779,8 +3776,12 @@ struct Thread {
       report->tid = tid();
       report->lid = lock->lid();
       report->stack_trace = CreateStackTrace();
+#ifdef TS_VALGRIND
       VG_(maybe_record_error)(GetVgTid(), XS_UnlockNonLocked, 0, NULL,
                               report);
+#else
+      UNIMPLEMENTED();
+#endif
       return;
     }
 
@@ -3801,8 +3802,13 @@ struct Thread {
       report->tid = tid();
       report->lid = lock->lid();
       report->stack_trace = CreateStackTrace();
+#ifdef TS_VALGRIND
       VG_(maybe_record_error)(GetVgTid(), XS_UnlockForeign, 0, NULL,
                               report);
+#else
+      UNIMPLEMENTED();
+#endif
+
     }
 
     NewSegmentForLockingEvent();
@@ -4362,11 +4368,11 @@ class ReportStorage {
     CHECK(thr->lsid(false) == seg->lsid(false));
     CHECK(thr->lsid(true) == seg->lsid(true));
 
-
+#ifdef TS_VALGRIND
     ExeContext *valgrindish_context = stack_trace->ToValgrindExeContext();
     if (VG_(unique_error)(GetVgTid(), XS_Race, 0, NULL,
                           race_report, valgrindish_context,
-                          False, False, False)) {
+                          false, false, false)) {
       // This is a HACK. Valgrind ExeContext is sometimes broken and hence
       // suppressions may fail. We create an ExeContext from tsan's stack trace
       // and check if it should be suppressed (see comments for unique_error).
@@ -4387,6 +4393,9 @@ class ReportStorage {
       delete race_report;
       return false;
     }
+#else
+    UNIMPLEMENTED();
+#endif
 
     SegmentSet::RefIfNotEmpty(old_sval.rd_ssid(), "AddReport");
     SegmentSet::RefIfNotEmpty(new_sval.rd_ssid(), "AddReport");
@@ -4458,10 +4467,12 @@ class ReportStorage {
 
     set<LID> all_locks;
 
+#ifdef TS_VALGRIND
     if (G_flags->show_valgrind_context) {
       ExeContext *context = VG_(record_ExeContext)(VG_(get_running_tid)(), 0);
       VG_(pp_ExeContext)(context);
     }
+#endif // TS_VALGRIND
 
     n_reports++;
     if (G_flags->html) {
@@ -4634,6 +4645,7 @@ class ReportStorage {
     }
 
 
+#ifdef TS_VALGRIND
     PtrdiffT offset;
     if (VG_(get_datasym_and_offset)(a, reinterpret_cast<Char*>(buff),
                                     kBufLen, &offset)) {
@@ -4643,6 +4655,9 @@ class ReportStorage {
               c_blue, reinterpret_cast<void*>(a), static_cast<int>(offset));
       return buff + symbol_descr + "\"" + c_default + "\n";
     }
+#else // no TS_VALGRIND
+    UNIMPLEMENTED();
+#endif // TS_VALGRIND
 
     if (G_flags->debug_level >= 2) {
       string res;
@@ -4930,6 +4945,7 @@ class Detector {
       case WRITER_LOCK : HandleLock(true);     break;
       case READER_LOCK : HandleLock(false);    break;
       case UNLOCK      : HandleUnlock();       break;
+      case UNLOCK_OR_INIT : HandleUnlockOrInit(); break;
 
       case LOCK_CREATE:
       case LOCK_DESTROY: HandleLockCreateOrDestroy(); break;
@@ -5143,6 +5159,27 @@ class Detector {
     cur_thread_->HandleUnlock(e_->a());
   }
 
+  // UNLOCK_OR_INIT
+  // This is a hack to handle posix pthread_spin_unlock which is sometimes
+  // the same symbol as pthread_spin_init. We need to handle unlock as init
+  // if the lock was not seen before or if it is currently unlocked.
+  // TODO(kcc): is there a way to distinguish pthread_spin_init
+  // and pthread_spin_unlock?
+  void HandleUnlockOrInit() {
+    if (G_flags->verbosity >= 2) {
+      e_->Print();
+      cur_thread_->ReportStackTrace();
+    }
+    uintptr_t lock_addr = e_->a();
+    Lock *lock = Lock::Lookup(lock_addr);
+    if (lock && lock->wr_held()) {
+      // We know this lock and it is locked. Just unlock it.
+      cur_thread_->HandleUnlock(lock_addr);
+    } else {
+      // Never seen this lock or it is currently unlocked. Init it.
+      Lock::Create(lock_addr);
+    }
+  }
 
   void HandleLockCreateOrDestroy() {
     uintptr_t lock_addr = e_->a();
@@ -5167,8 +5204,12 @@ class Detector {
         report->tid = cur_tid_;
         report->lock_addr = lock_addr;
         report->stack_trace = cur_thread_->CreateStackTrace();
+#ifdef TS_VALGRIND
         VG_(maybe_record_error)(GetVgTid(), XS_InvalidLock, 0, NULL,
                                 report);
+#else
+        UNIMPLEMENTED();
+#endif
         return;
       }
       if (lock->wr_held() || lock->rd_held()) {
@@ -5396,13 +5437,13 @@ class Detector {
              is_published ? " P" : "",
              cache_line,
              cache_line->published().ToString().c_str());
-      thr->ReportStackTrace(GetVgPcOfCurrentThread());
+      thr->ReportStackTrace(GetPcOfCurrentThread());
     }
 
     // Check for race.
     if (UNLIKELY(is_race)) {
       if (G_flags->report_races && !cache_line->racey().Get(offset)) {
-        reports_.AddReport(tid, GetVgPcOfCurrentThread(), is_w, addr, size,
+        reports_.AddReport(tid, GetPcOfCurrentThread(), is_w, addr, size,
                            old_sval, new_sval, is_published);
       }
       // new_sval.set_racey(true);
@@ -5520,7 +5561,7 @@ class Detector {
 
     if (UNLIKELY(G_flags->keep_history >= 2)) {
       // Keep the precise history. Very SLOW!
-      HandleSblockEnter(tid, GetVgPcOfCurrentThread());
+      HandleSblockEnter(tid, GetPcOfCurrentThread());
     }
 
     if        (size == 8 && cache_line->SameValueStored(addr, 8)) {
@@ -5653,8 +5694,13 @@ class Detector {
   // Executes before the first instruction of the thread but after the thread
   // has been set up (e.g. the stack is in place).
   void HandleThreadFirstInsn(TID tid) {
+#ifdef TS_VALGRIND
     uintptr_t stack_max  = VG_(thread_get_stack_max)(GetVgTid());
     uintptr_t stack_size = VG_(thread_get_stack_size)(GetVgTid());
+#else
+    uintptr_t stack_max = 0, stack_size = 0;
+    UNIMPLEMENTED();
+#endif
     uintptr_t stack_min  = stack_max - stack_size;
 #ifdef HAS_HACK_thread_get_tls_max
     // Sometimes valgrind incorectly computes stack_max.
@@ -5916,7 +5962,7 @@ static size_t GetMemoryLimitInMb() {
   }
   // Try env.
   const char *from_env_str =
-    (const char*)VG_(getenv)((Char*)"VALGRIND_MEMORY_LIMIT_IN_MB");
+    (const char*)getenv("VALGRIND_MEMORY_LIMIT_IN_MB");
   if (from_env_str) {
     char *end;
     return my_strtol(from_env_str, &end);
@@ -6009,9 +6055,12 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   G_flags->cut_stack_below.push_back("start_thread *");
   FindStringFlag("cut_stack_below", args, &G_flags->cut_stack_below);
 
-//  FindIntFlag("num_callers", 15, args, &G_flags->num_callers);
+#ifdef TS_VALGRIND
   // we get num-callers from valgrind flags.
   G_flags->num_callers = VG_(clo_backtrace_size);
+#else
+  FindIntFlag("num_callers", 12, args, &G_flags->num_callers);
+#endif
 
   G_flags->max_n_threads        = 20000;
 
@@ -6118,18 +6167,18 @@ bool ThreadSanitizerWantToInstrumentSblock(uintptr_t pc) {
 
   for (size_t i = 0; i < g_ignore_lists->files.size(); i++) {
     if (StringMatch(g_ignore_lists->files[i], file_name))
-      return False;
+      return false;
   }
   for (size_t i = 0; i < g_ignore_lists->objs.size(); i++) {
     if (StringMatch(g_ignore_lists->objs[i], img_name))
-      return False;
+      return false;
   }
   for (size_t i = 0; i < g_ignore_lists->funcs.size(); i++) {
     if (StringMatch(g_ignore_lists->funcs[i], rtn_name))
-      return False;
+      return false;
   }
 
-  return True;
+  return true;
 }
 
 
@@ -6226,7 +6275,7 @@ extern void ThreadSanitizerPrintReport(ThreadSanitizerReport *report) {
 // -------- ts_inst_valgrind.cc -------------------------- {{{1
 // gcc doesnt't have cross-file inlining, so do it ourselves,
 // but only in optimized build.
-#if not defined(DEBUG)
+#if not defined(DEBUG) && defined(TS_VALGRIND)
 #define TS_INSTR_VALGRIND_HERE
 #include "ts_valgrind.cc"
 #endif
