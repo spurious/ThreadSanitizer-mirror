@@ -68,6 +68,7 @@ const bool kMallocUsesMutex = false;
   #define NO_BARRIER
   #define NO_UNNAMED_SEM
   #define NO_TLS
+  #define NO_SPINLOCK
 
   int AtomicIncrement(volatile int *value, int increment) {
     return OSAtomicAdd32(increment, value);
@@ -257,25 +258,19 @@ class WriterLockScoped {  // Scoped RWLock Locker/Unlocker
   RWLock *mu_;
 };
 
-#ifndef NO_SPINLOCK
-/// helgrind does not (yet) support spin locks, so we annotate them.
 #ifndef __APPLE__
 class SpinLock {
  public:
   SpinLock() {
     CHECK(0 == pthread_spin_init(&mu_, 0));
-    ANNOTATE_RWLOCK_CREATE((void*)&mu_);
   }
   ~SpinLock() {
-    ANNOTATE_RWLOCK_DESTROY((void*)&mu_);
     CHECK(0 == pthread_spin_destroy(&mu_));
   }
   void Lock() {
     CHECK(0 == pthread_spin_lock(&mu_));
-    ANNOTATE_RWLOCK_ACQUIRED((void*)&mu_, 1);
   }
   void Unlock() {
-    ANNOTATE_RWLOCK_RELEASED((void*)&mu_, 1);
     CHECK(0 == pthread_spin_unlock(&mu_));
   }
  private:
@@ -305,7 +300,6 @@ class SpinLock {
   OSSpinLock mu_;
 };
 #endif // __APPLE__
-#endif // NO_SPINLOCK
 
 /// Wrapper for pthread_create()/pthread_join().
 class MyThread {

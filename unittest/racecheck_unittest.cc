@@ -1404,7 +1404,6 @@ REGISTER_TEST2(Run, 26, FEATURE|NEEDS_ANNOTATIONS);
 
 // test27: TN. Simple synchronization via SpinLock. {{{1
 namespace test27 {
-#ifndef NO_SPINLOCK
 int     GLOB = 0;
 SpinLock MU;
 void Worker() {
@@ -1422,7 +1421,6 @@ void Run() {
   printf("\tGLOB=%d\n", GLOB);
 }
 REGISTER_TEST2(Run, 27, FEATURE|NEEDS_ANNOTATIONS);
-#endif // NO_SPINLOCK
 }  // namespace test27
 
 
