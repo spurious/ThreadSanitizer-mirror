@@ -6992,6 +6992,39 @@ void Run() {
 REGISTER_TEST(Run, 152)
 }  // namespace test152
 
+// test153:  test for vanilla pthread_spinlock_t {{{1
+namespace test153 {
+// pthread_spinlock_t is tricky because pthread_spin_unlock and
+// pthread_spin_init are the same symbol.
+int     GLOB = 0;
+pthread_spinlock_t lock;
+
+void Worker1() {
+  pthread_spin_lock(&lock);
+  GLOB++;
+  pthread_spin_unlock(&lock);
+}
+
+void Worker2() {
+  while (pthread_spin_trylock(&lock) != 0) { }
+  GLOB++;
+  pthread_spin_unlock(&lock);
+}
+
+
+void Run() {
+  printf("test153: pthread_spin_t\n");
+  for (int i = 0; i < 3; i++) {
+    // test few times on the same lock to check how init/destroy are handled.
+    pthread_spin_init(&lock, 0);
+    MyThreadArray t(Worker1, Worker1, Worker2, Worker2);
+    t.Start();
+    t.Join();
+    pthread_spin_destroy(&lock);
+  }
+}
+REGISTER_TEST(Run, 153)
+}  // namespace test153
 
 // test300: {{{1
 namespace test300 {
