@@ -6994,6 +6994,7 @@ REGISTER_TEST(Run, 152)
 
 // test153:  test for vanilla pthread_spinlock_t {{{1
 namespace test153 {
+#ifndef NO_SPINLOCK
 // pthread_spinlock_t is tricky because pthread_spin_unlock and
 // pthread_spin_init are the same symbol.
 int     GLOB = 0;
@@ -7024,6 +7025,7 @@ void Run() {
   }
 }
 REGISTER_TEST(Run, 153)
+#endif // NO_SPINLOCK
 }  // namespace test153
 
 // test300: {{{1
