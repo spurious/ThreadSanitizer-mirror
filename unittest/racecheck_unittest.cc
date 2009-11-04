@@ -7515,6 +7515,51 @@ REGISTER_TEST2(Run, 313, RACE_DEMO)
 }  // namespace test313
 
 
+// test314: minimalistic test for race in vptr. {{{1
+namespace test314 {
+// Race on vptr. Will run A::f() or B::f() depending on the timing.
+sem_t sem;
+
+struct A {
+  virtual void f() { printf ("A::f()\n"); }
+  virtual ~A() { sem_wait(&sem); }
+};
+
+struct B : A {
+  virtual void f() { printf ("B::f()\n"); }
+};
+
+static A *a;
+
+void Thread1() {
+  a->f();
+  sem_post(&sem);
+};
+
+void Thread2() {
+  delete a;
+}
+void Run() {
+  printf("test314: race on vptr; May print A::f() or B::f().\n");
+  sem_init(&sem, 0, 0);
+  { // Will print B::f()
+    a = new B;
+    MyThreadArray t(Thread1, Thread2);
+    t.Start();
+    t.Join();
+  }
+  { // Will print A::f()
+    a = new B;
+    MyThreadArray t(Thread2, Thread1);
+    t.Start();
+    t.Join();
+  }
+  sem_destroy(&sem);
+}
+REGISTER_TEST2(Run, 314, RACE_DEMO)
+}  // namespace test314
+
+
 
 // test400: Demo of a simple false positive. {{{1
 namespace test400 {
