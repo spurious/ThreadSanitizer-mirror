@@ -7574,6 +7574,39 @@ REGISTER_TEST2(Run, 314, RACE_DEMO)
 
 
 
+// test315: demo for hybrid's false positive. {{{1
+namespace test315 {
+int GLOB;
+Mutex mu;
+int flag;
+
+void Thread1() {
+  sleep(1);
+  mu.Lock();
+  bool f = flag;
+  mu.Unlock();
+  if (f) {
+    GLOB++;
+  }
+}
+
+void Thread2() {
+  GLOB++;
+  mu.Lock();
+  flag = true;
+  mu.Unlock();
+}
+
+void Run() {
+  GLOB = 0;
+  printf("test315: false positive of the hybrid state machine\n");
+  MyThreadArray t(Thread1, Thread2);
+  t.Start();
+  t.Join();
+}
+REGISTER_TEST2(Run, 315, RACE_DEMO)
+}  // namespace test315
+
 // test400: Demo of a simple false positive. {{{1
 namespace test400 {
 static Mutex mu;
