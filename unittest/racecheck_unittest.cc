@@ -2996,7 +2996,7 @@ int     *P1 = NULL, *P2 = NULL;
 
 
 void Putter() {
-  ANNOTATE_MUTEX_IS_USED_AS_CONDVAR(&MU);
+  ANNOTATE_PURE_HAPPENS_BEFORE_MUTEX(&MU);
   MU.Lock();
   if (P1 == NULL) {
     P1 = &GLOB;
@@ -3747,7 +3747,7 @@ struct RefCountedClass {
   }
 
   static void Annotate_MU() {
-    ANNOTATE_MUTEX_IS_USED_AS_CONDVAR(&MU);
+    ANNOTATE_PURE_HAPPENS_BEFORE_MUTEX(&MU);
   }
   void AnnotateUnref() {
     annotate_unref_ = true;
@@ -3859,7 +3859,7 @@ map_t   MAP;
 Mutex   MU;
 
 // Here we use swap to pass MAP between threads.
-// The synchronization is correct, but w/o ANNOTATE_MUTEX_IS_USED_AS_CONDVAR
+// The synchronization is correct, but w/o ANNOTATE_PURE_HAPPENS_BEFORE_MUTEX
 // Helgrind will complain.
 
 void Worker1() {
@@ -3881,7 +3881,7 @@ void Worker3() { Worker1(); }
 void Worker4() { Worker2(); }
 
 void Run() {
-  ANNOTATE_MUTEX_IS_USED_AS_CONDVAR(&MU);
+  ANNOTATE_PURE_HAPPENS_BEFORE_MUTEX(&MU);
   printf("test79: negative\n");
   MyThreadArray t(Worker1, Worker2, Worker3, Worker4);
   t.Start();
@@ -4404,7 +4404,7 @@ namespace test90 {
 //
 // Choices for annotations:
 //   -- ANNOTATE_CONDVAR_SIGNAL/ANNOTATE_CONDVAR_WAIT
-//   -- ANNOTATE_MUTEX_IS_USED_AS_CONDVAR
+//   -- ANNOTATE_PURE_HAPPENS_BEFORE_MUTEX
 //   -- ANNOTATE_PUBLISH_MEMORY_RANGE.
 
 int     *GLOB = 0;
@@ -6003,7 +6003,7 @@ namespace test125 {
 // Such locking protocol is not understood by ThreadSanitizer's
 // hybrid state machine. So, you either have to use a pure-happens-before
 // detector ("tsan --pure-happens-before") or apply pure happens-before mode
-// to this particular lock by using ANNOTATE_MUTEX_IS_USED_AS_CONDVAR(&mu).
+// to this particular lock by using ANNOTATE_PURE_HAPPENS_BEFORE_MUTEX(&mu).
 
 const int n_threads = 3;
 RWLock   mu;
@@ -6032,7 +6032,7 @@ void Aggregator() {
 void Run() {
   printf("test125: negative\n");
 
-  ANNOTATE_MUTEX_IS_USED_AS_CONDVAR(&mu);
+  ANNOTATE_PURE_HAPPENS_BEFORE_MUTEX(&mu);
 
   // run Adders, then Aggregator
   {
@@ -6315,7 +6315,7 @@ void Worker() {
 void Run() {
   printf("test134: negative (swap)\n");
   // ********************** Shorter way: ***********************
-  // ANNOTATE_MUTEX_IS_USED_AS_CONDVAR(&mu);
+  // ANNOTATE_PURE_HAPPENS_BEFORE_MUTEX(&mu);
   MyThreadArray t(Worker, Worker, Swapper, Worker, Worker);
   t.Start();
   t.Join();
@@ -7642,7 +7642,7 @@ void WaitForAllThreadsToFinish_InefficientAndTsanUnfriendly() {
   // But a hybrid detector (like ThreadSanitizer) can't see it.
   // Solutions:
   //   1. Use pure happens-before detector (e.g. "tsan --pure-happens-before")
-  //   2. Call ANNOTATE_MUTEX_IS_USED_AS_CONDVAR(&mu)
+  //   2. Call ANNOTATE_PURE_HAPPENS_BEFORE_MUTEX(&mu)
   //      in InitAllBeforeStartingThreads()
   //   3. (preferred) Use WaitForAllThreadsToFinish_Good() (see below).
   CHECK(vec->empty());
