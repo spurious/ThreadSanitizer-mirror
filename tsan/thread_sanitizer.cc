@@ -56,6 +56,9 @@ bool g_so_far_only_one_thread = false;
 bool g_has_entered_main = false;
 bool g_has_exited_main = false;
 
+// Incremented on each Lock and Unlock. Used by LockHistory.
+uint32_t g_lock_era = 0;
+
 FLAGS *G_flags = NULL;
 
 // -------- Utils --------------- {{{1
@@ -1052,6 +1055,21 @@ class Lock {
 
 Lock::Map *Lock::map_;
 
+// Returns a string like "L123,L234".
+static string SetOfLocksToString(const set<LID> &locks) {
+  string res;
+  for (set<LID>::const_iterator it = locks.begin();
+       it != locks.end(); ++it) {
+    LID lid = *it;
+    char buff[100];
+    snprintf(buff, sizeof(buff), "L%d", lid.raw());
+    if (it != locks.begin())
+      res += ", ";
+    res += buff;
+  }
+  return res;
+}
+
 // -------- FixedArray--------------- {{{1
 template <typename T, size_t SizeLimit = 1024>
 class FixedArray {
@@ -1772,6 +1790,7 @@ class Segment {
   TID tid() const { return TID(tid_); }
   uintptr_t *embedded_stack_trace() {return embedded_stack_trace_; }
   LSID  lsid(bool is_w) const { return lsid_[is_w]; }
+  uint32_t lock_era() const { return lock_era_; }
 
   // static methods
 
@@ -1812,6 +1831,7 @@ class Segment {
     seg->lsid_[0] = rd_lockset;
     seg->lsid_[1] = wr_lockset;
     seg->vts_ = vts;
+    seg->lock_era_ = g_lock_era;
     seg->embedded_stack_trace_[0] = 0;
     DCHECK(seg->vts_);
     return sid;
@@ -1944,6 +1964,7 @@ class Segment {
   static void InitClassMembers() {
     CHECK(sizeof(Segment) ==
           4 * sizeof(int32_t)  // ref_count_, tid_, lsid_[2]
+          + 1 * sizeof(uintptr_t) // lock_era_ + alignment.
           + 1 * sizeof(void*)  // vts_
           + 1 * sizeof(uintptr_t)  // embedded_stack_trace_[1]
           );
@@ -1977,6 +1998,7 @@ class Segment {
   TID      tid_;
   LSID     lsid_[2];
   VTS *vts_;
+  uint32_t lock_era_; /* followed by a 32 bit padding on 64-bit arch :( */
   uintptr_t embedded_stack_trace_[1];
 
   // static class members.
@@ -3481,6 +3503,110 @@ struct ThreadSanitizerInvalidLockReport : public ThreadSanitizerReport {
   uintptr_t lock_addr;
 };
 
+// -------- LockHistory ------------- {{{1
+// For each thread we store a limited amount of history of locks and unlocks.
+// If there is a race report (in hybrid mode) we try to guess a lock
+// which might have been used to pass the ownership of the object between
+// threads.
+//
+// Thread1:                    Thread2:
+// obj->UpdateMe();
+// mu.Lock();
+// flag = true;
+// mu.Unlock(); // (*)
+//                             mu.Lock();  // (**)
+//                             bool f = flag;
+//                             mu.Unlock();
+//                             if (f)
+//                                obj->UpdateMeAgain();
+//
+// For this code a hybrid detector may report a false race.
+// LockHistory will find the lock mu and report it.
+
+struct LockHistory {
+ public:
+  // LockHistory which will track no more than `size` recent locks
+  // and the same amount of unlocks.
+  LockHistory(size_t size): size_(size) { }
+
+  // Record a Lock event.
+  void OnLock(LID lid) {
+    g_lock_era++;
+    Push(LockHistoryElement(lid, g_lock_era), &locks_);
+  }
+
+  // Record an Unlock event.
+  void OnUnlock(LID lid) {
+    g_lock_era++;
+    Push(LockHistoryElement(lid, g_lock_era), &unlocks_);
+  }
+
+  // Find locks such that:
+  // - A Lock happend in `l`.
+  // - An Unlock happened in `u`.
+  // - Lock's era is greater than Unlock's era.
+  // - Both eras are greater or equal than min_lock_era.
+  static bool Intersect(const LockHistory &l, const LockHistory &u,
+                        int32_t min_lock_era, set<LID> *locks) {
+    const Queue &lq = l.locks_;
+    const Queue &uq = u.unlocks_;
+    for (size_t i = 0; i < lq.size(); i++) {
+      int32_t l_era = lq[i].lock_era;
+      if (l_era < min_lock_era) continue;
+      LID lid = lq[i].lid;
+      // We don't want to report pure happens-before locks since
+      // they already create h-b arcs.
+      if (Lock::LIDtoLock(lid)->is_pure_happens_before()) continue;
+      for (size_t j = 0; j < uq.size(); j++) {
+        int32_t u_era = uq[i].lock_era;
+        if (lid != uq[j].lid) continue;
+        // Report("LockHistory::Intersect: L%d %d %d %d\n", lid.raw(), min_lock_era, u_era, l_era);
+        if (u_era < min_lock_era)  continue;
+        if (u_era > l_era) continue;
+        locks->insert(lid);
+      }
+    }
+    return !locks->empty();
+  }
+
+  void PrintLocks() const { Print(&locks_); }
+  void PrintUnlocks() const { Print(&unlocks_); }
+
+ private:
+  struct LockHistoryElement {
+    LID lid;
+    uint32_t lock_era;
+    LockHistoryElement(LID l, uint32_t era)
+        : lid(l),
+        lock_era(era) {
+        }
+  };
+
+  typedef deque<LockHistoryElement> Queue;
+
+  void Push(LockHistoryElement e, Queue *q) {
+    CHECK(q->size() <= size_);
+    if (q->size() == size_)
+      q->pop_front();
+    q->push_back(e);
+  }
+
+  void Print(const Queue *q) const {
+    set<LID> printed;
+    for (size_t i = 0; i < q->size(); i++) {
+      const LockHistoryElement &e = (*q)[i];
+      if (printed.count(e.lid)) continue;
+      Report("era %d: \n", e.lock_era);
+      Lock::ReportLockWithOrWithoutContext(e.lid, true);
+      printed.insert(e.lid);
+    }
+  }
+
+  Queue locks_;
+  Queue unlocks_;
+  size_t size_;
+};
+
 // -------- Thread ------------------ {{{1
 struct Thread {
  public:
@@ -3501,7 +3627,8 @@ struct Thread {
       wait_mu_(0),
       wait_cv_and_mu_set_(false),
       bus_lock_is_set_(false),
-      vts_at_exit_(NULL) {
+      vts_at_exit_(NULL),
+      lock_history_(128) {
 
     NewSegmentWithoutUnrefingOld("Thread Creation", vts);
 
@@ -3727,6 +3854,9 @@ struct Thread {
     if (G_flags->pure_happens_before || lock->is_pure_happens_before()) {
       HandleWait(lock->lock_addr(), NULL, false);
     }
+    if (G_flags->suggest_happens_before_arcs) {
+      lock_history_.OnLock(lock->lid());
+    }
 
     NewSegmentForLockingEvent();
 
@@ -3761,12 +3891,8 @@ struct Thread {
       ReportStackTrace(0, 7);
     }
 
-
-
     if (G_flags->pure_happens_before || lock->is_pure_happens_before()) {
       HandleSignal(lock->lock_addr());
-      if (!is_w_lock) {
-      }
     }
 
     if (!lock->wr_held() && !lock->rd_held()) {
@@ -3811,6 +3937,10 @@ struct Thread {
 
     }
 
+    if (G_flags->suggest_happens_before_arcs) {
+      lock_history_.OnUnlock(lock->lid());
+    }
+
     NewSegmentForLockingEvent();
 
   }
@@ -3818,6 +3948,8 @@ struct Thread {
   LSID lsid(bool is_w) {
     return is_w ? wr_lockset_ : rd_lockset_;
   }
+
+  const LockHistory &lock_history() { return lock_history_; }
 
   // CondVar
 
@@ -4154,9 +4286,9 @@ struct Thread {
 
   VTS *vts_at_exit_;
 
-
-
   vector<uintptr_t> call_stack_;
+
+  LockHistory lock_history_;
 
   // All threads. The main thread has tid 0.
   static vector<Thread*> *all_threads_;
@@ -4420,12 +4552,13 @@ class ReportStorage {
                                         const char *descr, set<LID> *locks) {
     if (ssid.IsEmpty()) return;
     bool printed_header = false;
+    Thread *thr1 = Thread::Get(tid);
     for (int s = 0; s < SegmentSet::Size(ssid); s++) {
       SID concurrent_sid = SegmentSet::GetSID(ssid, s, __LINE__);
       Segment *seg = Segment::Get(concurrent_sid);
       if (Segment::HappensBeforeOrSameThread(concurrent_sid, sid)) continue;
       if (!LockSet::IntersectionIsEmpty(lsid, seg->lsid(is_w))) continue;
-      Thread *concurrent_thr = Thread::Get(seg->tid());
+      Thread *thr2 = Thread::Get(seg->tid());
       if (!printed_header) {
         Report("  %sConcurrent %s happened at (OR AFTER) these points:%s\n",
                c_magenta, descr, c_default);
@@ -4433,7 +4566,7 @@ class ReportStorage {
       }
 
       Report("   %s (%s):\n",
-             concurrent_thr->ThreadName().c_str(),
+             thr2->ThreadName().c_str(),
              TwoLockSetsToString(seg->lsid(false),
                                  seg->lsid(true)).c_str());
       if (G_flags->show_states) {
@@ -4443,6 +4576,25 @@ class ReportStorage {
       LockSet::AddLocksToSet(seg->lsid(true), locks);
       Report("%s", StackTrace::EmbeddedStackTraceToString(
           seg->embedded_stack_trace(), kSizeOfHistoryStackTrace).c_str());
+      if (!G_flags->pure_happens_before &&
+          G_flags->suggest_happens_before_arcs) {
+        set<LID> message_locks;
+        // Report("Locks in T%d\n", thr1->tid().raw());
+        // thr1->lock_history().PrintLocks();
+        // Report("Unlocks in T%d\n", thr2->tid().raw());
+        // thr2->lock_history().PrintUnlocks();
+        if (LockHistory::Intersect(thr1->lock_history(), thr2->lock_history(),
+                                   seg->lock_era(), &message_locks)) {
+          Report("   Note: these locks were recently released by T%d"
+                 " and later acquired by T%d: %s\n"
+                 "   See http://code.google.com/p/data-race-test/wiki/"
+                 "PureHappensBeforeVsHybrid\n",
+                 thr2->tid().raw(),
+                 thr1->tid().raw(),
+                 SetOfLocksToString(message_locks).c_str());
+          locks->insert(message_locks.begin(), message_locks.end());
+        }
+      }
     }
   }
 
@@ -4548,19 +4700,10 @@ class ReportStorage {
     set<LID>  locks_reported;
 
     if (!all_locks.empty()) {
-      string all_locks_str;
-      for (set<LID>::iterator it = all_locks.begin();
-           it != all_locks.end(); ++it) {
-        LID lid = *it;
-        char buff[100];
-        snprintf(buff, sizeof(buff), "L%d", lid.raw());
-        if (it != all_locks.begin())
-          all_locks_str += ", ";
-        all_locks_str += buff;
-      }
       Report("  %sLocks involved in this report "
              "(reporting last lock sites):%s {%s}\n",
-             c_green, c_default, all_locks_str.c_str());
+             c_green, c_default,
+             SetOfLocksToString(all_locks).c_str());
 
       for (set<LID>::iterator it = all_locks.begin();
            it != all_locks.end(); ++it) {
@@ -5993,6 +6136,8 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
                &G_flags->show_proc_self_status);
   FindBoolFlag("show_valgrind_context", false, args,
                &G_flags->show_valgrind_context);
+  FindBoolFlag("suggest_happens_before_arcs", false, args,
+               &G_flags->suggest_happens_before_arcs);
   FindBoolFlag("show_pc", false, args, &G_flags->show_pc);
   FindBoolFlag("ignore_in_dtor", true, args, &G_flags->ignore_in_dtor);
   FindBoolFlag("exit_after_main", false, args, &G_flags->exit_after_main);
@@ -6295,5 +6440,6 @@ extern void ThreadSanitizerPrintReport(ThreadSanitizerReport *report) {
 // - Fix --ignore-in-dtor if --demangle=no.
 // - Use cpplint (http://code.google.com/p/google-styleguide)
 // - Get rid of annoying casts in printfs.
+// - Compress stack traces (64-bit only. may save up to 36 bytes per segment).
 // end. {{{1
 // vim:shiftwidth=2:softtabstop=2:expandtab:tw=80

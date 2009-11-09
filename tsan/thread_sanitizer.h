@@ -212,6 +212,7 @@ struct FLAGS {
   bool        show_states;
   bool        show_proc_self_status;
   bool        show_valgrind_context;  // debug-only
+  bool        suggest_happens_before_arcs;
   bool        show_pc;
   bool        color;  // Colorify terminal output.
   bool        html;  // Output in html format.
