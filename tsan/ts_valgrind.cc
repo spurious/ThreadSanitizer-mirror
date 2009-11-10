@@ -184,11 +184,13 @@ struct ValgrindThread {
   int32_t zero_based_uniq_tid;
   vector<CallStackRecord> call_stack;
 
-  int ignore_all;
+  int ignore_accesses;
+  int ignore_sync;
 
   ValgrindThread()
     : zero_based_uniq_tid(-1),
-      ignore_all(0) {
+      ignore_accesses(0),
+      ignore_sync(0) {
   }
 };
 
@@ -288,7 +290,7 @@ void evh__new_frame ( Addr sp_post_call_insn,
 
 static INLINE void evh__new_mem_stack_helper ( Addr a, SizeT len ) {
   ThreadId vg_tid = GetVgTid();
-  if (!g_valgrind_threads[vg_tid].ignore_all) {
+  if (!g_valgrind_threads[vg_tid].ignore_accesses) {
     // avoid stack updates when ignore is on.
     // TODO: is that right?
     int32_t ts_tid = VgTidToTsTid(vg_tid);
@@ -333,7 +335,7 @@ static INLINE void evh__die_mem_stack_helper ( Addr a, SizeT len ) {
   if (G_flags->verbosity >= 2) {
     // Printf("T%d: -sp: %p => %p (%ld)\n", ts_tid, a, a + len, len);
   }
-  if (!g_valgrind_threads[vg_tid].ignore_all) {
+  if (!g_valgrind_threads[vg_tid].ignore_accesses) {
     ThreadSanitizerHandleStackMemChange(ts_tid, a, len, false);
     // Put(STACK_MEM_DIE, ts_tid, 0, a, len);
   }
@@ -372,7 +374,7 @@ void evh__pre_thread_ll_create ( ThreadId parent, ThreadId child ) {
            child);
   }
   g_valgrind_threads[child].zero_based_uniq_tid = g_uniq_thread_id_counter++;
-  g_valgrind_threads[child].ignore_all = 0;
+  g_valgrind_threads[child].ignore_accesses = 0;
   // Printf("VG: T%d: VG_THR_START: parent=%d\n", VgTidToTsTid(child), VgTidToTsTid(parent));
   uintptr_t pc = GetVgPc(parent);
   Put(THR_START, VgTidToTsTid(child), pc, 0,
@@ -397,7 +399,7 @@ void evh__pre_thread_ll_exit ( ThreadId quit_tid ) {
 // Memory operation...
 static INLINE void Mop(Addr a, bool is_w, SizeT size) {
   ThreadId vg_tid = GetVgTid();
-  if (g_valgrind_threads[vg_tid].ignore_all) {
+  if (g_valgrind_threads[vg_tid].ignore_accesses) {
     //static int counter;
     //counter++;
     //if ((counter % 1024) == 0)
@@ -507,11 +509,19 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
     case TSREQ_SET_LOCK_NAME:
       Put(SET_LOCK_NAME, ts_tid, pc, /*lock=*/args[1], /*name=*/args[2]);
       break;
-    case TSREQ_IGNORE_ALL_BEGIN:
-      g_valgrind_threads[vg_tid].ignore_all++;
+    case TSREQ_IGNORE_ALL_ACCESSES_BEGIN:
+      g_valgrind_threads[vg_tid].ignore_accesses++;
       break;
-    case TSREQ_IGNORE_ALL_END:
-      g_valgrind_threads[vg_tid].ignore_all--;
+    case TSREQ_IGNORE_ALL_ACCESSES_END:
+      g_valgrind_threads[vg_tid].ignore_accesses--;
+      CHECK(g_valgrind_threads[vg_tid].ignore_accesses >= 0);
+      break;
+    case TSREQ_IGNORE_ALL_SYNC_BEGIN:
+      g_valgrind_threads[vg_tid].ignore_sync++;
+      break;
+    case TSREQ_IGNORE_ALL_SYNC_END:
+      g_valgrind_threads[vg_tid].ignore_sync--;
+      CHECK(g_valgrind_threads[vg_tid].ignore_sync >= 0);
       break;
     case TSREQ_PUBLISH_MEMORY_RANGE:
       Put(PUBLISH_RANGE, ts_tid, pc, /*mem=*/args[1], /*size=*/args[2]);
@@ -546,10 +556,12 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
     case TSREQ_PTHREAD_RWLOCK_LOCK_PRE:
       break;
     case TSREQ_PTHREAD_RWLOCK_LOCK_POST:
+      if (g_valgrind_threads[vg_tid].ignore_sync) break;
       Put(LOCK_BEFORE, ts_tid, pc, /*lock=*/args[1], 0);
       Put(args[2] ? WRITER_LOCK : READER_LOCK, ts_tid, pc, /*lock=*/args[1], 0);
       break;
     case TSREQ_PTHREAD_RWLOCK_UNLOCK_PRE:
+      if (g_valgrind_threads[vg_tid].ignore_sync) break;
       Put(UNLOCK, ts_tid, pc, /*lock=*/args[1], 0);
       break;
     case TSREQ_PTHREAD_SPIN_LOCK_INIT_OR_UNLOCK:
@@ -589,7 +601,7 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
 VG_REGPARM(0) static void evh__create_new_segment_for_history(void) {
   ThreadId vg_tid = GetVgTid();
   uintptr_t pc = GetVgPc(vg_tid);
-  if (g_valgrind_threads[vg_tid].ignore_all) return;
+  if (g_valgrind_threads[vg_tid].ignore_accesses) return;
   ThreadSanitizerEnterSblock(VgTidToTsTid(vg_tid), pc);
   // Put(SBLOCK_ENTER, VgTidToTsTid(vg_tid), pc, 0, 0);
 }

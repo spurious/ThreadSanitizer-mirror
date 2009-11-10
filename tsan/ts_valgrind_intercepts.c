@@ -176,15 +176,31 @@ static inline int  VALGRIND_TS_SEGMENT_ID(void) {
                     long,_err, char*,_errstr);           \
    } while (0)
 
-static inline void IGNORE_ALL_BEGIN(void) {
-   DO_CREQ_v_W(TSREQ_IGNORE_ALL_BEGIN,  void*, NULL);
+static inline void IGNORE_ALL_ACCESSES_BEGIN(void) {
+   DO_CREQ_v_W(TSREQ_IGNORE_ALL_ACCESSES_BEGIN,  void*, NULL);
 }
 
-static inline void IGNORE_ALL_END(void) {
-   DO_CREQ_v_W(TSREQ_IGNORE_ALL_END,  void*, NULL);
+static inline void IGNORE_ALL_ACCESSES_END(void) {
+   DO_CREQ_v_W(TSREQ_IGNORE_ALL_ACCESSES_END,  void*, NULL);
 }
 
+static inline void IGNORE_ALL_SYNC_BEGIN(void) {
+   DO_CREQ_v_W(TSREQ_IGNORE_ALL_SYNC_BEGIN,  void*, NULL);
+}
 
+static inline void IGNORE_ALL_SYNC_END(void) {
+   DO_CREQ_v_W(TSREQ_IGNORE_ALL_SYNC_END,  void*, NULL);
+}
+
+static inline void IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN(void) {
+  IGNORE_ALL_ACCESSES_BEGIN();
+  IGNORE_ALL_SYNC_BEGIN();
+}
+
+static inline void IGNORE_ALL_ACCESSES_AND_SYNC_END(void) {
+  IGNORE_ALL_ACCESSES_END();
+  IGNORE_ALL_SYNC_END();
+}
 
 //-------------- Wrapper for main() -------- {{{1
 #define MAIN_WRAPPER_DECL \
@@ -203,15 +219,20 @@ MAIN_WRAPPER_DECL {
 
 //-------------- MALLOC -------------------- {{{1
 
+// We ignore memory accesses and sync events inside malloc.
+// Accesses are ignored so that we don't spend time on them.
+// Sync events are ignored so that malloc does not create h-b arcs.
+// Currently, we ignore only Lock/Unlock events, not any other sync events.
+
 #define WRAP_MALLOC(soname, fnname) \
   void* I_WRAP_SONAME_FNNAME_ZU(soname,fnname) (SizeT n); \
   void* I_WRAP_SONAME_FNNAME_ZU(soname,fnname) (SizeT n) { \
     void* ret; \
     OrigFn fn;\
     VALGRIND_GET_ORIG_FN(fn);\
-    IGNORE_ALL_BEGIN(); \
+    IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN(); \
       CALL_FN_W_W(ret, fn, n); \
-    IGNORE_ALL_END(); \
+    IGNORE_ALL_ACCESSES_AND_SYNC_END(); \
     DO_CREQ_v_WW(TSREQ_MALLOC,  void*, ret, long, n); \
     return ret; \
   }
@@ -222,9 +243,9 @@ MAIN_WRAPPER_DECL {
     void* ret; \
     OrigFn fn;\
     VALGRIND_GET_ORIG_FN(fn);\
-    IGNORE_ALL_BEGIN(); \
+    IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN(); \
       CALL_FN_W_WW(ret, fn, n, c); \
-    IGNORE_ALL_END(); \
+    IGNORE_ALL_ACCESSES_AND_SYNC_END(); \
     DO_CREQ_v_WW(TSREQ_MALLOC,  void*, ret, long, n * c); \
     return ret; \
   }
@@ -235,9 +256,9 @@ MAIN_WRAPPER_DECL {
     void* ret; \
     OrigFn fn;\
     VALGRIND_GET_ORIG_FN(fn);\
-    IGNORE_ALL_BEGIN(); \
+    IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN(); \
       CALL_FN_W_WW(ret, fn, ptr, n); \
-    IGNORE_ALL_END(); \
+    IGNORE_ALL_ACCESSES_AND_SYNC_END(); \
     DO_CREQ_v_WW(TSREQ_MALLOC,  void*, ret, long, n); \
     return ret; \
   }
@@ -248,9 +269,9 @@ MAIN_WRAPPER_DECL {
     OrigFn fn;\
     int ret;\
     VALGRIND_GET_ORIG_FN(fn);\
-    IGNORE_ALL_BEGIN(); \
+    IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN(); \
       CALL_FN_W_WWW(ret, fn, ptr, a, size); \
-    IGNORE_ALL_END(); \
+    IGNORE_ALL_ACCESSES_AND_SYNC_END(); \
     if (ret == 0) \
       DO_CREQ_v_WW(TSREQ_MALLOC,  void*, *ptr, long, size); \
     return ret; \
@@ -262,9 +283,9 @@ MAIN_WRAPPER_DECL {
     void* ret;\
     OrigFn fn;\
     VALGRIND_GET_ORIG_FN(fn);\
-    IGNORE_ALL_BEGIN(); \
+    IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN(); \
       CALL_FN_W_6W(ret, fn, ptr, size, a, b, c, d); \
-    IGNORE_ALL_END(); \
+    IGNORE_ALL_ACCESSES_AND_SYNC_END(); \
     if (ret != (void*)-1) { \
       DO_CREQ_v_WW(TSREQ_MALLOC,  void*, ret, long, size); \
     } \
@@ -277,9 +298,9 @@ MAIN_WRAPPER_DECL {
     void* ret; \
     OrigFn fn;\
     VALGRIND_GET_ORIG_FN(fn);\
-    IGNORE_ALL_BEGIN(); \
+    IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN(); \
       CALL_FN_W_WW(ret, fn, zone, n); \
-    IGNORE_ALL_END(); \
+    IGNORE_ALL_ACCESSES_AND_SYNC_END(); \
     DO_CREQ_v_WW(TSREQ_MALLOC,  void*, ret, long, n); \
     return ret; \
   }
@@ -290,9 +311,9 @@ MAIN_WRAPPER_DECL {
     void* ret; \
     OrigFn fn;\
     VALGRIND_GET_ORIG_FN(fn);\
-    IGNORE_ALL_BEGIN(); \
+    IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN(); \
       CALL_FN_W_WWW(ret, fn, zone, n, c); \
-    IGNORE_ALL_END(); \
+    IGNORE_ALL_ACCESSES_AND_SYNC_END(); \
     DO_CREQ_v_WW(TSREQ_MALLOC,  void*, ret, long, n * c); \
     return ret; \
   }
@@ -303,9 +324,9 @@ MAIN_WRAPPER_DECL {
     void* ret; \
     OrigFn fn;\
     VALGRIND_GET_ORIG_FN(fn);\
-    IGNORE_ALL_BEGIN(); \
+    IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN(); \
       CALL_FN_W_WWW(ret, fn, zone, ptr, n); \
-    IGNORE_ALL_END(); \
+    IGNORE_ALL_ACCESSES_AND_SYNC_END(); \
     DO_CREQ_v_WW(TSREQ_MALLOC, void*, ret, long, n); \
     return ret; \
   }
@@ -353,9 +374,9 @@ WRAP_MMAP(NONE, mmap);
     OrigFn fn;\
     VALGRIND_GET_ORIG_FN(fn);\
     DO_CREQ_v_W(TSREQ_FREE,  void*, ptr); \
-    IGNORE_ALL_BEGIN(); \
+    IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN(); \
       CALL_FN_v_W(fn, ptr); \
-    IGNORE_ALL_END(); \
+    IGNORE_ALL_ACCESSES_AND_SYNC_END(); \
   }
 
 #define WRAP_ZONE_FREE(soname, fnname) \
@@ -364,9 +385,9 @@ WRAP_MMAP(NONE, mmap);
     OrigFn fn;\
     VALGRIND_GET_ORIG_FN(fn);\
     DO_CREQ_v_W(TSREQ_FREE, void*, ptr); \
-    IGNORE_ALL_BEGIN(); \
+    IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN(); \
       CALL_FN_v_WW(fn, zone, ptr); \
-    IGNORE_ALL_END(); \
+    IGNORE_ALL_ACCESSES_AND_SYNC_END(); \
   }
 
 WRAP_FREE(VG_Z_LIBC_SONAME, free);
@@ -392,10 +413,10 @@ LD_FUNC(long, doZulookupZux, void * arg1, void * arg2, void * arg3,
    long result;
    OrigFn fn;
    VALGRIND_GET_ORIG_FN(fn);   
-   IGNORE_ALL_BEGIN();
+   IGNORE_ALL_ACCESSES_BEGIN();
    CALL_FN_W_11W(result, fn, arg1, arg2, arg3, arg4, arg5, arg6,
                     arg7, arg8, arg9, arg10, arg11);
-   IGNORE_ALL_END();
+   IGNORE_ALL_ACCESSES_END();
    return result;
 }
 
@@ -406,9 +427,9 @@ LD_FUNC(Word, ZaZudlZustartZa, void * arg)
    VALGRIND_GET_ORIG_FN(fn);
    // why is this not called???
    tl_assert(0);
-   IGNORE_ALL_BEGIN();
+   IGNORE_ALL_ACCESSES_BEGIN();
    CALL_FN_W_W(result, fn, arg);
-   IGNORE_ALL_END();
+   IGNORE_ALL_ACCESSES_END();
    return result;
 }
 
@@ -461,14 +482,14 @@ static int tid_inside_pthread_lib[VG_N_THREADS];
 // iff the return value of pthread_lib_enter() is equal to 1.
 static int pthread_lib_enter(void) {
   int ret = 1, tid;
-  IGNORE_ALL_BEGIN();
+  IGNORE_ALL_ACCESSES_BEGIN();
   tid = VALGRIND_VG_THREAD_ID();
   if (tid_inside_pthread_lib[tid]++) {
     ret = 0;
   } else {
     ret = 1;
   }
-  IGNORE_ALL_END();
+  IGNORE_ALL_ACCESSES_END();
   return ret;
 }
 
@@ -476,10 +497,10 @@ static int pthread_lib_enter(void) {
 // pthread_lib_enter().
 static void pthread_lib_exit(void) {
   int tid;
-  IGNORE_ALL_BEGIN();
+  IGNORE_ALL_ACCESSES_BEGIN();
   tid = VALGRIND_VG_THREAD_ID();
   tid_inside_pthread_lib[tid]--;
-  IGNORE_ALL_END();
+  IGNORE_ALL_ACCESSES_END();
 }
 
 /*----------------------------------------------------------------*/
@@ -519,9 +540,9 @@ static int pthread_create_WRK(pthread_t *thread, const pthread_attr_t *attr,
    xargs[1] = (Word)arg;
    xargs[2] = 1; /* serves as a spinlock -- sigh */
 
-   IGNORE_ALL_BEGIN();
+   IGNORE_ALL_ACCESSES_BEGIN();
      CALL_FN_W_WWWW(ret, fn, thread,attr,ThreadSanitizerStartThread,&xargs[0]);
-   IGNORE_ALL_END();
+   IGNORE_ALL_ACCESSES_END();
 
    if (ret == 0) {
       /* we have to wait for the child to notify the tool of its
@@ -2019,11 +2040,11 @@ PTH_FUNC(int, pthreadZuonce, void *ctl, void *rtn) {
    OrigFn fn;
    int    ret;
    VALGRIND_GET_ORIG_FN(fn);
-   IGNORE_ALL_BEGIN();
+   IGNORE_ALL_ACCESSES_BEGIN();
    // fprintf(stderr, "T%d: ->pthread_once\n", VALGRIND_TS_THREAD_ID);
    CALL_FN_W_WW(ret, fn, ctl, rtn);
    // fprintf(stderr, "T%d: <-pthread_once\n", VALGRIND_TS_THREAD_ID);
-   IGNORE_ALL_END();
+   IGNORE_ALL_ACCESSES_END();
    return ret;
 }
 
@@ -2033,7 +2054,7 @@ LIBSTDCXX_FUNC(long, ZuZucxaZuguardZuacquire, void *p) {
    VALGRIND_GET_ORIG_FN(fn);
    // fprintf(stderr, "T%d: ->__cxa_guard_acquire\n", VALGRIND_TS_THREAD_ID());
    CALL_FN_W_W(ret, fn, p);
-   IGNORE_ALL_BEGIN();
+   IGNORE_ALL_ACCESSES_BEGIN();
    // fprintf(stderr, "T%d: <-__cxa_guard_acquire\n", VALGRIND_TS_THREAD_ID());
    return ret;
 }
@@ -2044,7 +2065,7 @@ LIBSTDCXX_FUNC(long, ZuZucxaZuguardZurelease, void *p) {
    // fprintf(stderr, "T%d: ->__cxa_guard_release\n", VALGRIND_TS_THREAD_ID());
    CALL_FN_W_W(ret, fn, p);
    // fprintf(stderr, "T%d: <-__cxa_guard_release\n", VALGRIND_TS_THREAD_ID());
-   IGNORE_ALL_END();
+   IGNORE_ALL_ACCESSES_END();
    return ret;
 }
 
@@ -2450,9 +2471,9 @@ ANN_FUNC(void, AnnotateTraceMemory, char *file, int line, void *mem)
 ANN_FUNC(void, AnnotateNoOp, char *file, int line, void *mem)
 {
   const char *name = "AnnotateNoOp";
-  IGNORE_ALL_BEGIN();
+  IGNORE_ALL_ACCESSES_BEGIN();
   ANN_TRACE("--#%d/%d %s[%p] %s:%d\n", tid, sid, name, mem, file, line);
-  IGNORE_ALL_END();
+  IGNORE_ALL_ACCESSES_END();
 }
 
 ANN_FUNC(void, AnnotateSetVerbosity, char *file, int line, void *mem)
@@ -2476,9 +2497,9 @@ ANN_FUNC(void, AnnotateSetVerbosity, char *file, int line, void *mem)
     void* ret; \
     OrigFn fn;\
     VALGRIND_GET_ORIG_FN(fn);\
-    IGNORE_ALL_BEGIN(); \
+    IGNORE_ALL_ACCESSES_BEGIN(); \
       CALL_FN_W_WWWW(ret, fn, a1, a2, a3, a4); \
-    IGNORE_ALL_END(); \
+    IGNORE_ALL_ACCESSES_END(); \
     return ret; \
   }
 

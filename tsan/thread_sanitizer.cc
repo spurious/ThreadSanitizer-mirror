@@ -4586,7 +4586,7 @@ class ReportStorage {
         if (LockHistory::Intersect(thr1->lock_history(), thr2->lock_history(),
                                    seg->lock_era(), &message_locks)) {
           Report("   Note: these locks were recently released by T%d"
-                 " and later acquired by T%d: %s\n"
+                 " and later acquired by T%d: {%s}\n"
                  "   See http://code.google.com/p/data-race-test/wiki/"
                  "PureHappensBeforeVsHybrid\n",
                  thr2->tid().raw(),
