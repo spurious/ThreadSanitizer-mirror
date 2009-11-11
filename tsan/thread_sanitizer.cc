@@ -4526,7 +4526,8 @@ class ReportStorage {
       return false;
     }
 #else
-    UNIMPLEMENTED();
+    // UNIMPLEMENTED();
+    PrintRaceReport(race_report);
 #endif
 
     SegmentSet::RefIfNotEmpty(old_sval.rd_ssid(), "AddReport");
@@ -4799,7 +4800,7 @@ class ReportStorage {
       return buff + symbol_descr + "\"" + c_default + "\n";
     }
 #else // no TS_VALGRIND
-    UNIMPLEMENTED();
+    // UNIMPLEMENTED();
 #endif // TS_VALGRIND
 
     if (G_flags->debug_level >= 2) {
@@ -5068,6 +5069,24 @@ class Detector {
     }
 
     switch (type) {
+      case READ:
+        // e_->Print();
+        HandleMemoryAccess(e_->tid(), e_->a(), e_->info(), false);
+        break;
+      case WRITE:
+        // e_->Print();
+        // Thread::Get(TID(e_->tid()))->ReportStackTrace();
+        HandleMemoryAccess(e_->tid(), e_->a(), e_->info(), true);
+        break;
+      case RTN_CALL:
+        // e_->Print();
+        HandleRtnCall(TID(e_->tid()), e_->pc(), e_->a());
+        // cur_thread_->ReportStackTrace();
+        // Thread::Get(TID(e_->tid()))->ReportStackTrace();
+        break;
+      case SBLOCK_ENTER:
+        HandleSblockEnter(TID(e_->tid()), e_->pc());
+        break;
       case THR_CREATE_AFTER   : HandleThreadCreateAfter(); break;
       case THR_START   :
         HandleThreadStart(TID(e_->tid()), TID(e_->info()), e_->pc());
@@ -5841,8 +5860,8 @@ class Detector {
     uintptr_t stack_max  = VG_(thread_get_stack_max)(GetVgTid());
     uintptr_t stack_size = VG_(thread_get_stack_size)(GetVgTid());
 #else
-    uintptr_t stack_max = 0, stack_size = 0;
-    UNIMPLEMENTED();
+    uintptr_t stack_max = 0xffff, stack_size = 1;
+    // UNIMPLEMENTED();
 #endif
     uintptr_t stack_min  = stack_max - stack_size;
 #ifdef HAS_HACK_thread_get_tls_max

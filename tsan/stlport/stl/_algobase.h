@@ -226,7 +226,6 @@ __copy_trivial(const void* __first, const void* __last, void* __result) {
   for ( ; a != b; ++a, ++res)
     *res = *a;
   return res;
-//  return __n ? (void *)((char*)VG_(memmove)(__result, __first, __n) + __n) : __result;
 }
 
 //--------------------------------------------------
@@ -258,8 +257,7 @@ inline _BidirectionalIter __copy_backward(_RandomAccessIter __first,
 inline void*
 __copy_trivial_backward(const void* __first, const void* __last, void* __result) {
   const ptrdiff_t _Num = (const char*)__last - (const char*)__first;
-//  VG_(printf)("XXX\n");
-  return (_Num > 0) ? VG_(memmove)((char*)__result - _Num, __first, _Num) : __result ;
+  return (_Num > 0) ? memmove((char*)__result - _Num, __first, _Num) : __result ;
 }
 
 template <class _InputIter, class _OutputIter>

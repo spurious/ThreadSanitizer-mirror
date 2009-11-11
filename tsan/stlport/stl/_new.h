@@ -113,7 +113,7 @@ _STLP_END_NAMESPACE
 #    ifndef _STLP_INTERNAL_CSTDIO
 #      include <stl/_cstdio.h>
 #    endif
-#    define _STLP_THROW_BAD_ALLOC tl_assert2(false, "out of memory")
+#    define _STLP_THROW_BAD_ALLOC CHECK(0)
 #  else
 #    define _STLP_THROW_BAD_ALLOC _STLP_THROW(_STLP_STD::bad_alloc())
 #  endif

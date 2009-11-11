@@ -10,5 +10,12 @@ all: ts_offline
 ts_offline: ts_offline.o thread_sanitizer.o
 	$(LD) $(LDFLAGS) -o $@ $^
 
-%.o: %.cc
+HEADERS=thread_sanitizer.h
+
+%.o: %.cc $(HEADERS)
 	$(CXX) $(CXXFLAGS) $(CXXOPT) $(INCLUDES) -o $@ -c $<
+
+
+
+clean:
+	rm -v *.o

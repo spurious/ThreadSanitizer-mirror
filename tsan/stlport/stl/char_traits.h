@@ -223,7 +223,7 @@ public:
   { return (unsigned char)__c; }
 
   static int _STLP_CALL compare(const char* __s1, const char* __s2, size_t __n)
-  { return VG_(memcmp)(__s1, __s2, __n); }
+  { return memcmp(__s1, __s2, __n); }
 
   static size_t _STLP_CALL length(const char* __s)
   { return strlen(__s); }

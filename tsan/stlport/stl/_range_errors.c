@@ -46,7 +46,7 @@
 #      include <stl/_cstdio.h>
 #    endif
 #  endif
-#  define _STLP_THROW_MSG(ex,msg)  tl_assert2(false, msg),_STLP_ABORT()
+#  define _STLP_THROW_MSG(ex,msg)  CHECK(0)
 #endif
 
 // For mode without library and throwing range errors, include the

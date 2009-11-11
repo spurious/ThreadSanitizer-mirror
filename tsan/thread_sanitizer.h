@@ -91,7 +91,7 @@ static inline ThreadId GetVgTid() {
 #include <unistd.h>
 
 
-#define UNIMPLEMENTED() CHECK(0)
+#define UNIMPLEMENTED() CHECK(0 == 42)
 
 #define UNLIKELY(x) __builtin_expect((x), 0)
 #define LIKELY(x)   __builtin_expect(!!(x), 1)
@@ -99,16 +99,12 @@ static inline ThreadId GetVgTid() {
 class ScopedMallocCostCenter {
  public:
   ScopedMallocCostCenter(const char *cc) {
-    UNIMPLEMENTED();
+    // UNIMPLEMENTED();
   }
 };
 
 
-inline uintptr_t GetPcOfCurrentThread() {
-  UNIMPLEMENTED();
-  return 0;
-}
-
+extern uintptr_t GetPcOfCurrentThread();
 
 
 #endif // TS_VALGRIND
@@ -287,6 +283,61 @@ enum EventType {
 };
 
 
+static const char *kEventNames[] = {
+  "NOOP",
+  "READ",
+  "WRITE",
+  "LOCK_BEFORE",
+  "READER_LOCK",
+  "WRITER_LOCK",
+  "UNLOCK",
+  "UNLOCK_OR_INIT",
+  "LOCK_CREATE",
+  "LOCK_DESTROY",
+  "BUS_LOCK_ACQUIRE",
+  "BUS_LOCK_RELEASE",
+  "THR_CREATE_AFTER",
+  "THR_START",
+  "THR_FIRST_INSN",
+  "THR_END",
+  "THR_JOIN_BEFORE",
+  "THR_JOIN_AFTER",
+  "RTN_EXIT",
+  "RTN_CALL",
+  "SBLOCK_ENTER",
+  "BBLOCK_ENTER",
+  "SIGNAL",
+  "WAIT_BEFORE",
+  "WAIT_AFTER",
+  "TWAIT_AFTER",
+  "BARRIER_BEFORE",
+  "BARRIER_AFTER",
+  "PCQ_CREATE",
+  "PCQ_DESTROY",
+  "PCQ_PUT",
+  "PCQ_GET",
+  "SP_CHANGE",
+  "STACK_MEM_NEW",
+  "STACK_MEM_DIE",
+  "MALLOC",
+  "FREE",
+  "PUBLISH_RANGE",
+  "UNPUBLISH_RANGE",
+  "HB_LOCK",
+  "IGNORE_READS_BEG",
+  "IGNORE_READS_END",
+  "IGNORE_WRITES_BEG",
+  "IGNORE_WRITES_END",
+  "SET_THREAD_NAME",
+  "SET_LOCK_NAME",
+  "TRACE_MEM",
+  "EXPECT_RACE",
+  "VERBOSITY",
+  "STACK_TRACE",
+  "LAST_EVENT"
+};
+
+
 class Event;
 
 class ThreadSanitizerReport;
@@ -345,64 +396,10 @@ class Event {
 
   }
   static const char *TypeString(EventType type) {
-    static const char *str[] = {
-      "NOOP",
-      "READ",
-      "WRITE",
-      "LOCK_BEFORE",
-      "READER_LOCK",
-      "WRITER_LOCK",
-      "UNLOCK",
-      "UNLOCK_OR_INIT",
-      "LOCK_CREATE",
-      "LOCK_DESTROY",
-      "BUS_LOCK_ACQUIRE", 
-      "BUS_LOCK_RELEASE",
-      "THR_CREATE_AFTER",
-      "THR_START",
-      "THR_FIRST_INSN",
-      "THR_END",
-      "THR_JOIN_BEFORE",
-      "THR_JOIN_AFTER",
-      "RTN_EXIT",
-      "RTN_CALL",
-      "SBLOCK_ENTER",
-      "BBLOCK_ENTER",
-      "SIGNAL",
-      "WAIT_BEFORE",
-      "WAIT_AFTER",
-      "TWAIT_AFTER",
-      "BARRIER_BEFORE",
-      "BARRIER_AFTER",
-      "PCQ_CREATE",
-      "PCQ_DESTROY",
-      "PCQ_PUT",
-      "PCQ_GET",
-      "SP_CHANGE",
-      "STACK_MEM_NEW",
-      "STACK_MEM_DIE",
-      "MALLOC",
-      "FREE",
-      "PUBLISH_RANGE",
-      "UNPUBLISH_RANGE",
-      "HB_LOCK",
-      "IGNORE_READS_BEG",
-      "IGNORE_READS_END",
-      "IGNORE_WRITES_BEG",
-      "IGNORE_WRITES_END",
-      "SET_THREAD_NAME",
-      "SET_LOCK_NAME",
-      "TRACE_MEM",
-      "EXPECT_RACE",
-      "VERBOSITY",
-      "STACK_TRACE",
-      "LAST_EVENT"
-    };
-    return str[type];
-
+    return kEventNames[type];
   }
  private:
-  EventType      type_; 
+  EventType      type_;
   int32_t   tid_;
   uintptr_t pc_;
   uintptr_t a_;
