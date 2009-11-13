@@ -147,6 +147,5 @@ int main(int argc, char *argv[]) {
   ThreadSanitizerFini();
 }
 
-
 // end. {{{1
 // vim:shiftwidth=2:softtabstop=2:expandtab:tw=80

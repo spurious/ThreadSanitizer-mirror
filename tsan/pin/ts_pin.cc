@@ -37,10 +37,67 @@
 #include <map>
 #include <assert.h>
 
+#include <cxxabi.h>  // __cxa_demangle
+
+#include "thread_sanitizer.h"
+
 #ifdef NDEBUG
 # error "Please don't define NDEBUG"
 #endif
 #define CHECK assert
+
+//--------- Simple SpinLock ------------------ {{{1
+// Just a simple lock.
+class TSLock {
+ public:
+  TSLock() : lock_(0) {}
+  void Lock() {
+    for (int i = -5; !TryLock(); i++) {
+      if (i > 0)
+        usleep(i * 10);
+    }
+  }
+  void Unlock() {
+    __sync_bool_compare_and_swap(&lock_, 1, 0);
+  }
+  bool TryLock() {
+    if ( __sync_bool_compare_and_swap(&lock_, 0, 1)) {
+      return true;
+    }
+    return false;
+  }
+ private:
+  int32_t lock_;
+};
+
+
+class ScopedLock {
+ public:
+  ScopedLock(TSLock *lock)
+    : lock_(lock) {
+    lock_->Lock();
+  }
+  ~ScopedLock() { lock_->Unlock(); }
+ private:
+  TSLock *lock_;
+};
+
+//------ Global PIN lock ------- {{{1
+class ScopedReentrantClientLock {
+ public:
+  ScopedReentrantClientLock(int line) 
+    : line_(line) {
+    // if (line && G_flags->debug_level >= 5)  Printf("??Try  at line %d\n", line);
+    PIN_LockClient();
+    if (line && G_flags->debug_level >= 5)  Printf("++Lock at line %d\n", line);
+  }
+  ~ScopedReentrantClientLock() {
+    if (line_ && G_flags->debug_level >= 5) Printf("--Unlock at line %d\n", line_);
+    PIN_UnlockClient();
+  }
+ private:
+  int line_;
+};
 
 //--------------- Aux classes ------------- {{{1
 struct Routine {
@@ -50,8 +107,6 @@ struct Routine {
 //--------------- Globals ----------------- {{{1
 static FILE *G_out = stdout;
 
-// Number of threads created by pthread_create (i.e. not counting main thread).
-static int n_created_threads = 0;
 
 // Maps address of rtn entry/ret to Routine*
 static map<uintptr_t, Routine*> *routine_address_map;
@@ -64,7 +119,31 @@ static bool main_entered, main_exited;
 int kVerbosity = 1;
 bool kIgnoreStack = true;
 
-//--------- Misc functions ----------- {{{1
+// Number of threads created by pthread_create (i.e. not counting main thread).
+static int n_created_threads = 0;
+
+const uint32_t kMaxThreads = 100000;
+
+static TSLock g_main_ts_lock;
+
+static uintptr_t g_current_pc;
+
+//--------------- PinThread ----------------- {{{1
+struct CallStackRecord {
+  uintptr_t pc;
+  uintptr_t sp;
+};
+
+struct PinThread {
+  OS_THREAD_ID os_tid;
+  THREADID  last_child_tid;
+  size_t last_malloc_size;
+};
+
+// Array of pin threads, indexed by pin's THREADID.
+static PinThread *g_pin_threads;
+
+//------------- ThreadSanitizer exports ------------ {{{1
 void Printf(const char *format, ...) {
   va_list args;
   va_start(args, format);
@@ -73,115 +152,237 @@ void Printf(const char *format, ...) {
   va_end(args);
 }
 
+extern "C"
+long my_strtol(const char *str, char **end) {
+  if (str && str[0] == '0' && str[1] == 'x') {
+    return strtoll(str, end, 16);
+  }
+  return strtoll(str, end, 10);
+}
+
+string Demangle(const char *str) {
+  int status;
+  char *demangled = __cxxabiv1::__cxa_demangle(str, 0, 0, &status);
+  if (demangled) {
+    string res = demangled;
+    free(demangled);
+    return res;
+  }
+  return str;
+}
+
+void PcToStrings(uintptr_t pc, bool demangle,
+                string *img_name, string *rtn_name,
+                string *file_name, int *line_no) {
+  if (G_flags->symbolize) {
+    RTN rtn;
+    {
+      // ClientLock must be held.
+      ScopedReentrantClientLock lock(__LINE__);
+      PIN_GetSourceLocation(pc, NULL, line_no, file_name);
+      rtn = RTN_FindByAddress(pc);
+    }
+    string name;
+    if (RTN_Valid(rtn)) {
+      *rtn_name = demangle
+          ? Demangle(RTN_Name(rtn).c_str())
+          : RTN_Name(rtn);
+      *img_name = IMG_Name(SEC_Img(RTN_Sec(rtn)));
+    }
+  }
+}
+
+string PcToRtnName(uintptr_t pc, bool demangle) {
+  string res;
+  if (G_flags->symbolize) {
+    RTN rtn;
+    {
+      ScopedReentrantClientLock lock(__LINE__);
+      rtn = RTN_FindByAddress(pc);
+    }
+    if (RTN_Valid(rtn)) {
+      res = demangle
+          ? Demangle(RTN_Name(rtn).c_str())
+          : RTN_Name(rtn);
+    }
+  }
+  return res;
+}
+
+uintptr_t GetPcOfCurrentThread() {
+  return g_current_pc;
+}
+
+//--------- DumpEvent ----------- {{{1
+static void DumpEvent(EventType type, int32_t tid, uintptr_t pc,
+                      uintptr_t a, uintptr_t info) {
+  if (DEBUG_MODE && G_flags->dump_events) {
+    ScopedLock lock(&g_main_ts_lock);
+    fprintf(G_out, "%s %x %lx %lx %lx\n", kEventNames[type], tid, pc, a, info);
+    return;
+  }
+  Event event(type, tid, pc, a, info);
+  ScopedLock lock(&g_main_ts_lock);
+  g_current_pc = pc;
+  ThreadSanitizerHandleOneEvent(&event);
+}
+
 //--------- Instrumentation callbacks --------------- {{{1
 //--------- Threads --------------------------------- {{{2
-void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt, 
+void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
                             INT32 flags, void *v) {
-  Printf("T%d %s\n", tid, __FUNCTION__);
+  OS_THREAD_ID my_os_tid = PIN_GetTid();
+  OS_THREAD_ID parent_os_tid = PIN_GetParentTid();
+
+  if (parent_os_tid == INVALID_OS_THREAD_ID) {
+    // Main thread.
+    CHECK(tid == 0);
+    g_pin_threads = new PinThread[kMaxThreads];
+  } else {
+    CHECK(tid > 0);
+  }
+
+  CHECK(tid < kMaxThreads);
+  g_pin_threads[tid].os_tid = my_os_tid;
+
+  THREADID parent_tid = 0;
+  if (tid > 0) {
+    // Find out the parent's tid.
+    for (parent_tid = tid - 1; parent_tid > 0; parent_tid--) {
+      if (g_pin_threads[parent_tid].os_tid == parent_os_tid)
+        break;
+    }
+  }
+
+  g_pin_threads[parent_tid].last_child_tid = tid;
+
+  DumpEvent(THR_START, tid, 0, 0, parent_tid);
+  DumpEvent(THR_FIRST_INSN, tid, 0, 0, 0);
+  // Printf("#  tid=%d parent_tid=%d my_os_tid=%d parent_os_tid=%d\n",
+  //       tid, parent_tid, my_os_tid, parent_os_tid);
 }
 
 void CallbacForThreadFini(THREADID tid, const CONTEXT *ctxt,
                           INT32 code, void *v) {
-  Printf("T%d %s\n", tid, __FUNCTION__);
 }
 
-
-static void Before_pthread_join(THREADID tid, ADDRINT pc, 
+static void Before_pthread_join(THREADID tid, ADDRINT pc,
                                 ADDRINT arg1, ADDRINT arg2) {
-  Printf("T%d %s\n", tid, __FUNCTION__);
 }
-static void After_pthread_join(THREADID tid, ADDRINT pc, ADDRINT retval) {
-  Printf("T%d %s\n", tid, __FUNCTION__);
+static void After_pthread_join(THREADID tid, ADDRINT pc, ADDRINT ret) {
+
 }
 static void Before_pthread_create(THREADID tid, ADDRINT pc,
-                                  ADDRINT arg1, ADDRINT arg2, 
+                                  ADDRINT arg1, ADDRINT arg2,
                                   ADDRINT arg3, ADDRINT arg4) {
-  Printf("T%d %s\n", tid, __FUNCTION__);
   n_created_threads++;
 }
-static void After_pthread_create(THREADID tid, ADDRINT pc, ADDRINT retval) {
-  Printf("T%d %s\n", tid, __FUNCTION__);
+
+static void After_pthread_create(THREADID tid, ADDRINT pc, ADDRINT ret) {
+  // Spin, waiting for last_child_tid to appear (i.e. wait for the thread to
+  // actually start) so that we know the child's tid. No locks.
+  while (0 == __sync_add_and_fetch(&g_pin_threads[tid].last_child_tid, 0)) {
+    usleep(0);
+  }
+  THREADID child_tid = g_pin_threads[tid].last_child_tid;
+  g_pin_threads[tid].last_child_tid = 0;
+
+  CHECK(child_tid > 0);
+  DumpEvent(THR_CREATE_AFTER, tid, pc, child_tid, 0);
+  // Printf("THR_CREATE_AFTER %x %lx %lx 0\n", tid, pc, child_tid);
 }
 
 //--------- main() --------------------------------- {{{2
 void Before_main(THREADID tid, ADDRINT pc, ADDRINT argc, ADDRINT argv) {
   CHECK(tid == 0);
-  Printf("T%d %s\n", tid, __FUNCTION__);
   main_entered = true;
 }
 
 void After_main(THREADID tid, ADDRINT pc) {
   CHECK(tid == 0);
-  Printf("T%d %s\n", tid, __FUNCTION__);
   main_exited = true;
 }
 
 //--------- memory allocation ---------------------- {{{2
 void Before_malloc(THREADID tid, ADDRINT pc, ADDRINT size) {
-  if (kVerbosity >= 1 && main_entered && !main_exited && tid == 0)
-    Printf("T%d %s: size=%ld\n", tid, __FUNCTION__, size);
+  g_pin_threads[tid].last_malloc_size = size;
 }
-void After_malloc(THREADID tid, ADDRINT pc, ADDRINT retval) {
-  if (kVerbosity >= 1 && main_entered && !main_exited && tid == 0)
-    Printf("T%d %s: ret=%p\n", tid, __FUNCTION__, retval);
+void After_malloc(THREADID tid, ADDRINT pc, ADDRINT ret) {
+  size_t last_malloc_size = g_pin_threads[tid].last_malloc_size;
+  g_pin_threads[tid].last_malloc_size = 0;
+  DumpEvent(MALLOC, tid, pc, ret, last_malloc_size);
 }
 void Before_free(THREADID tid, ADDRINT pc, ADDRINT ptr) {
-  if (kVerbosity >= 1 && main_entered && !main_exited && tid == 0)
-    Printf("T%d %s; ptr=%p\n", tid, __FUNCTION__, ptr);
+  DumpEvent(FREE, tid, pc, ptr, 0);
 }
 
 //-------- Routines and stack ---------------------- {{{2
+
+
 void InsertBeforeEvent_RoutineEntry(THREADID tid, ADDRINT pc,
                                     ADDRINT sp, Routine *routine) {
-  if (kVerbosity >= 2 && main_entered && !main_exited)
-    Printf("T%d %s: %s\n", tid, __FUNCTION__, routine->rtn_name.c_str());
+  DumpEvent(SBLOCK_ENTER, tid, pc, 0, 0);
 }
 
 static void InsertAfterEvent_RoutineExit(THREADID tid, ADDRINT pc, ADDRINT sp) {
-//  Printf("T%d %s\n", tid, __FUNCTION__);
+  DumpEvent(RTN_EXIT, tid, 0, 0, 0);
 }
-void InsertBeforeEvent_Call(THREADID tid, ADDRINT pc, ADDRINT target) {
-//  Printf("T%d %s\n", tid, __FUNCTION__);
-}
-
-void InsertBeforeEvent_SblockEntry(THREADID tid, ADDRINT pc) {
-//  Printf("T%d %s\n", tid, __FUNCTION__);
+void InsertBeforeEvent_Call(THREADID tid, ADDRINT pc, ADDRINT target, ADDRINT sp) {
+  DumpEvent(RTN_CALL, tid, pc, target, 0);
 }
 
 static void InsertAfterEvent_SpUpdate(THREADID tid, ADDRINT pc, ADDRINT sp) {
 }
 
+void InsertBeforeEvent_SblockEntry(THREADID tid, ADDRINT pc) {
+  DumpEvent(SBLOCK_ENTER, tid, pc, 0, 0);
+}
+
 //---------- Memory accesses -------------------------- {{{2
 static void InsertBeforeEvent_MemoryRead(THREADID tid, ADDRINT pc,
                                          ADDRINT a, ADDRINT size) {
+  //  Printf("READ %x %lx %lx %lx\n", tid, pc, a, size);
+  DumpEvent(READ, tid, pc, a, size);
   dyn_read_count++;
 }
 
 
 static void InsertBeforeEvent_MemoryWrite(THREADID tid, ADDRINT pc,
                                           ADDRINT a, ADDRINT size) {
+  DumpEvent(WRITE, tid, pc, a, size);
   dyn_write_count++;
 }
 
 //---------- Synchronization -------------------------- {{{2
-static void Before_pthread_mutex_unlock(THREADID tid, ADDRINT pc,
-                                        ADDRINT mu) {
-  Printf("T%d %s\n", tid, __FUNCTION__);
+static void Before_pthread_mutex_unlock(THREADID tid, ADDRINT pc, ADDRINT mu) {
+  DumpEvent(UNLOCK, tid, pc, mu, 0);
+  //   Printf("UNLOCK      %x %lx %lx 0\n", tid, pc, mu);
 }
 
-static void Before_pthread_mutex_lock(THREADID tid, ADDRINT pc, 
-                                      ADDRINT mu) {
-  Printf("T%d %s\n", tid, __FUNCTION__);
-}
-static void After_pthread_mutex_lock(THREADID tid, ADDRINT pc, 
-                                     ADDRINT unused) {
-  Printf("T%d %s\n", tid, __FUNCTION__);
-}
-static void After_pthread_mutex_trylock(THREADID tid, ADDRINT pc, 
-                                        ADDRINT retval) {
-  Printf("T%d %s\n", tid, __FUNCTION__);
+static void Before_pthread_mutex_lock(THREADID tid, ADDRINT pc, ADDRINT mu) {
+  DumpEvent(LOCK_BEFORE, tid, pc, mu, 0);
+  //  Printf("LOCK_BEFORE %x %lx %lx 0\n", tid, pc, mu);
 }
 
+static void After_pthread_mutex_lock(THREADID tid, ADDRINT pc, ADDRINT unused) {
+  DumpEvent(WRITER_LOCK, tid, pc, 0, 0);
+  //  Printf("WRITER_LOCK %x %lx 0 0\n", tid, pc);
+}
+
+static void After_pthread_mutex_trylock(THREADID tid, ADDRINT pc, ADDRINT ret) {
+  if (ret == 0)
+    DumpEvent(WRITER_LOCK, tid, pc, 0, 0);
+}
+
+static void Before_pthread_mutex_init(THREADID tid, ADDRINT pc, ADDRINT mu) {
+  DumpEvent(LOCK_CREATE, tid, pc, mu, 0);
+  // Printf("LOCK_CREATE %x %lx %lx 0\n", tid, pc, mu);
+}
+
+static void Before_pthread_mutex_destroy(THREADID tid, ADDRINT pc, ADDRINT mu) {
+  DumpEvent(LOCK_DESTROY, tid, pc, mu, 0);
+  //  Printf("LOCK_DESTROY %x %lx %lx 0\n", tid, pc, mu);
+}
 
 static void Before_pthread_barrier_wait(THREADID tid, ADDRINT pc,
                                         ADDRINT barrier) {
@@ -197,7 +398,7 @@ static void Before_pthread_cond_wait(THREADID tid, ADDRINT pc,
 static void After_pthread_cond_wait(THREADID tid, ADDRINT pc) {
 }
 static void After_pthread_cond_timedwait(THREADID tid, ADDRINT pc, 
-                                         ADDRINT retval) {
+                                         ADDRINT ret) {
 }
 
 static void Before_sem_post(THREADID tid, ADDRINT pc, ADDRINT sem) {
@@ -206,7 +407,7 @@ static void Before_sem_wait(THREADID tid, ADDRINT pc, ADDRINT sem) {
 }
 static void After_sem_wait(THREADID tid, ADDRINT pc) {
 }
-static void After_sem_trywait(THREADID tid, ADDRINT pc, ADDRINT retval) {
+static void After_sem_trywait(THREADID tid, ADDRINT pc, ADDRINT ret) {
 }
 
 
@@ -220,7 +421,9 @@ static bool IgnoreImage(IMG img) {
 
 static bool IgnoreRtn(RTN rtn) {
   CHECK(rtn != RTN_Invalid());
-  // (RTN_Name(rtn));
+  ADDRINT rtn_address = RTN_Address(rtn);
+  if (ThreadSanitizerWantToInstrumentSblock(rtn_address) == false)
+    return true;
   return false;
 }
 
@@ -252,7 +455,7 @@ static void InstrumentBbl(BBL bbl, RTN rtn, bool ignore_memory) {
   INS tail = BBL_InsTail(bbl);
 
   // All memory reads/writes
-  for( INS ins = BBL_InsHead(bbl); 
+  for( INS ins = BBL_InsHead(bbl);
        !ignore_memory && INS_Valid(ins);
        ins = INS_Next(ins) ) {
     if (ins != tail) {
@@ -284,14 +487,15 @@ static void InstrumentBbl(BBL bbl, RTN rtn, bool ignore_memory) {
   if (INS_IsProcedureCall(tail) && !INS_IsSyscall(tail)) {
     INS_InsertCall(tail, IPOINT_BEFORE,
                    (AFUNPTR)InsertBeforeEvent_Call,
-                   IARG_THREAD_ID, IARG_INST_PTR, 
+                   IARG_THREAD_ID, IARG_INST_PTR,
                    IARG_BRANCH_TARGET_ADDR,
+                   IARG_REG_VALUE, REG_STACK_PTR,
                    IARG_END);
   }
 
   if (INS_IsRet(tail)) {
-    INS_InsertCall(tail, IPOINT_BEFORE, 
-                   (AFUNPTR)InsertAfterEvent_RoutineExit, 
+    INS_InsertCall(tail, IPOINT_BEFORE,
+                   (AFUNPTR)InsertAfterEvent_RoutineExit,
                    IARG_THREAD_ID, IARG_INST_PTR,
                    IARG_REG_VALUE, REG_STACK_PTR,
                    IARG_END);
@@ -324,19 +528,19 @@ void CallbackForTRACE(TRACE trace, void *v) {
   if (it != routine_address_map->end()) {
     // If this trace is a routine entrace, place RTN_ENTER
     Routine *routine = it->second;
-    TRACE_InsertCall(trace, IPOINT_BEFORE, 
-                     (AFUNPTR)InsertBeforeEvent_RoutineEntry, 
-                     IARG_THREAD_ID, 
-                     IARG_INST_PTR, 
+    TRACE_InsertCall(trace, IPOINT_BEFORE,
+                     (AFUNPTR)InsertBeforeEvent_RoutineEntry,
+                     IARG_THREAD_ID,
+                     IARG_INST_PTR,
                      IARG_REG_VALUE, REG_STACK_PTR,
                      IARG_PTR, routine,
                      IARG_END);
     // Printf("TRACE: head of rtn %s\n", routine->name());
   } else {
     // Otherwise place SBLOCK_ENTER (only if we are tracking access history)
-    TRACE_InsertCall(trace, IPOINT_BEFORE, 
-                     (AFUNPTR)InsertBeforeEvent_SblockEntry, 
-                     IARG_THREAD_ID, IARG_INST_PTR, 
+    TRACE_InsertCall(trace, IPOINT_BEFORE,
+                     (AFUNPTR)InsertBeforeEvent_SblockEntry,
+                     IARG_THREAD_ID, IARG_INST_PTR,
                      IARG_END);
   }
 
@@ -377,6 +581,7 @@ static bool RtnMatchesName(const string &rtn_name, const string &name) {
     break;\
   }\
 
+
 #define INSERT_BEFORE_FN(name, to_insert, args...) \
     INSERT_FN(IPOINT_BEFORE, name, to_insert, args)
 
@@ -414,6 +619,23 @@ static bool RtnMatchesName(const string &rtn_name, const string &name) {
 #define INSERT_AFTER_1(name, to_insert) \
     INSERT_AFTER_FN(name, to_insert, IARG_FUNCRET_EXITPOINT_VALUE)
 
+
+#define INSERT_FN_SLOW(point, name, to_insert, args...) \
+  while (RTN_Valid((rtn = RTN_FindByName(img, name)))) { \
+    INSERT_FN_HELPER(point, name, rtn, to_insert, args); \
+    break; \
+  }
+
+#define INSERT_BEFORE_SLOW_1(name, to_insert) \
+    INSERT_FN_SLOW(IPOINT_BEFORE, name, to_insert, \
+                   IARG_FUNCARG_ENTRYPOINT_VALUE, 0)
+
+#define INSERT_AFTER_SLOW_0(name, to_insert) \
+    INSERT_FN_SLOW(IPOINT_AFTER, name, to_insert, IARG_END)
+
+#define INSERT_AFTER_SLOW_1(name, to_insert) \
+    INSERT_FN_SLOW(IPOINT_AFTER, name, to_insert, IARG_FUNCRET_EXITPOINT_VALUE)
+
 static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   string rtn_name = RTN_Name(rtn);
   if (kVerbosity >= 2) {
@@ -436,14 +658,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_BEFORE_2("pthread_join", Before_pthread_join);
   INSERT_AFTER_1("pthread_join", After_pthread_join);
   
-  // pthread_mutex_*
-  INSERT_BEFORE_1("pthread_mutex_unlock", Before_pthread_mutex_unlock);
-
-  INSERT_BEFORE_1("pthread_mutex_lock", Before_pthread_mutex_lock);
-  INSERT_AFTER_1("pthread_mutex_lock", After_pthread_mutex_lock);
-
-  INSERT_BEFORE_1("pthread_mutex_trylock", Before_pthread_mutex_lock);
-  INSERT_AFTER_1("pthread_mutex_trylock", After_pthread_mutex_trylock);
+  
 
   // pthread_cond_*
   INSERT_BEFORE_1("pthread_cond_signal", Before_pthread_cond_signal);
@@ -493,48 +708,86 @@ static void CallbackForIMG(IMG img, void *v)
       MaybeInstrumentOneRoutine(img, rtn);
     }
   }
-  // Don't as me why, but malloc on Linux requires special attention.
+  // Don't as me why, but some functions on Linux require special attention.
   RTN malloc_rtn = RTN_FindByName(img, "malloc");
   if (RTN_Valid(malloc_rtn)) {
-    Printf("zzz\n");
+    // Printf("zzz\n");
     INSERT_FN_HELPER(IPOINT_BEFORE, "malloc", malloc_rtn, Before_malloc,
                      IARG_FUNCARG_ENTRYPOINT_VALUE, 0);
     INSERT_FN_HELPER(IPOINT_AFTER, "malloc", malloc_rtn, After_malloc,
                      IARG_FUNCRET_EXITPOINT_VALUE);
   }
 
+  RTN rtn;
+  // pthread_mutex_*
+
+  INSERT_BEFORE_SLOW_1("pthread_mutex_init", Before_pthread_mutex_init);
+  INSERT_BEFORE_SLOW_1("pthread_mutex_destroy", Before_pthread_mutex_destroy);
+  INSERT_BEFORE_SLOW_1("pthread_mutex_unlock", Before_pthread_mutex_unlock);
+
+  INSERT_BEFORE_SLOW_1("pthread_mutex_lock", Before_pthread_mutex_lock);
+  INSERT_BEFORE_SLOW_1("pthread_mutex_trylock", Before_pthread_mutex_lock);
+
+  INSERT_AFTER_SLOW_1("pthread_mutex_lock", After_pthread_mutex_lock);
+  INSERT_AFTER_SLOW_1("pthread_mutex_trylock", After_pthread_mutex_trylock);
+
 
 }
 
-//--------- Init/Fini ---------- {{{1
-static void Init() {
-  Printf("%s\n", __FUNCTION__);
-}
-
+//--------- Fini ---------- {{{1
 static void CallbackForFini(INT32 code, void *v) {
-  Printf("%s\n", __FUNCTION__);
-  Printf("** dyn read/write: %'lld %'lld\n", dyn_read_count, dyn_write_count);
-  Printf("** n_created_threads: %d\n", n_created_threads);
-}
+  Printf("# %s\n", __FUNCTION__);
+  Printf("#** dyn read/write: %'lld %'lld\n", dyn_read_count, dyn_write_count);
+  Printf("#** n_created_threads: %d\n", n_created_threads);
 
+  if (!G_flags->dump_events) {
+    ThreadSanitizerFini();
+  }
+}
 
 //--------- Main -------------------------- {{{1
 int main(INT32 argc, CHAR **argv) {
   PIN_Init(argc, argv);
   PIN_InitSymbols();
 
-  Init();
+  // Init ThreadSanitizer.
+  G_flags = new FLAGS;
+  int first_param = 1;
+  // skip until '-t something.so'.
+  for (; first_param < argc && argv[first_param] != string("-t");
+       first_param++) {
+  }
+  first_param += 2;
+  vector<string> args;
+  for (; first_param < argc; first_param++) {
+    string param = argv[first_param];
+    if (param == "--") break;
+    args.push_back(param);
+  }
+  ThreadSanitizerParseFlags(&args);
+  if (!G_flags->dump_events) {
+    ThreadSanitizerInit();
+  }
 
+  // Set up PIN callbacks.
   PIN_AddThreadStartFunction(CallbackForThreadStart, 0);
   PIN_AddThreadFiniFunction(CallbacForThreadFini, 0);
   PIN_AddFiniFunction(CallbackForFini, 0);
   IMG_AddInstrumentFunction(CallbackForIMG, 0);
   TRACE_AddInstrumentFunction(CallbackForTRACE, 0);
 
+  // Fire!
   PIN_StartProgram();
   return 0;
 }
 
+//--------- Include thread_sanitizer.cc --------- {{{1
+// ... for performance reasons...
+#ifdef INCLUDE_THREAD_SANITIZER_CC
+# include "thread_sanitizer.cc"
+#else
+
+#endif
 
 
 //--------- Questions about PIN -------------------------- {{{1

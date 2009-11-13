@@ -1,9 +1,9 @@
 CXX=g++
-CXXFLAGS=-g -DTS_NO_VALGRIND=1 -fno-exceptions
+CXXFLAGS=-g -DTS_NO_VALGRIND=1 -DTS_USE_STANDARD_STL -fno-exceptions
 CXXOPT=-O2
 LD=g++
 LDFLAGS=
-INCLUDES=-I. -I./stlport
+INCLUDES=-I.
 
 all: ts_offline
 

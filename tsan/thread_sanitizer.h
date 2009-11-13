@@ -47,7 +47,25 @@
 #endif // TS_NO_VALGRIND
 
 
+#ifdef TS_USE_STANDARD_STL
+#include <string.h>
+#include <limits.h>
+#include <set>
+#include <map>
+#include <hash_map>
+#include <vector>
+#include <deque>
+#include <stack>
+#include <algorithm>
+#include <string>
+#include <bitset>
+//#include <algorithm>
+#include "ext/algorithm"
+#include "ext/hash_map"
+using __gnu_cxx::hash_map;
+using __gnu_cxx::lexicographical_compare_3way;
 
+#else  // no TS_USE_STANDARD_STL
 #include "stlport/set"
 #include "stlport/map"
 #include "stlport/hash_map"
@@ -58,6 +76,28 @@
 #include "stlport/string"
 #include "stlport/bitset"
 #include "stlport/algorithm"
+
+using std::hash_map;
+using std::lexicographical_compare_3way;
+#endif  // TS_USE_STANDARD_STL
+
+
+using std::set;
+using std::multiset;
+using std::multimap;
+using std::map;
+using std::deque;
+using std::stack;
+using std::string;
+using std::vector;
+using std::bitset;
+
+using std::min;
+using std::max;
+using std::sort;
+using std::pair;
+using std::make_pair;
+using std::unique_copy;
 
 
 #ifdef TS_VALGRIND
@@ -121,24 +161,6 @@ class CCAlloc : public std::allocator<T> {
 
 
 
-using std::set;
-using std::multiset;
-using std::multimap;
-using std::map;
-using std::hash_map;
-using std::deque;
-using std::stack;
-using std::string;
-using std::vector;
-using std::bitset;
-
-using std::min;
-using std::max;
-using std::sort;
-using std::pair;
-using std::make_pair;
-using std::unique_copy;
-using std::lexicographical_compare_3way;
 
 
 #define CHECK_GT(X, Y) CHECK((X) >  (Y))
@@ -187,11 +209,11 @@ struct FLAGS {
   vector<string>   file_prefix_to_cut;
   vector<string>   ignore;
   vector<string>   cut_stack_below;
-  string           summary_file; 
+  string           summary_file;
   intptr_t         max_n_threads;
   bool             compress_cache_lines;
   bool             unlock_on_mutex_destroy;
-  
+
   intptr_t         sample_events;
   intptr_t         sample_events_depth;
 
@@ -204,7 +226,7 @@ struct FLAGS {
   bool        exit_after_main;
   bool        demangle;
   bool        announce_threads;
-  bool        full_output; 
+  bool        full_output;
   bool        show_states;
   bool        show_proc_self_status;
   bool        show_valgrind_context;  // debug-only
@@ -222,6 +244,8 @@ struct FLAGS {
   intptr_t     num_callers_in_history;
   bool         report_races;
   bool         thread_coverage;
+  bool         dump_events;
+  bool         symbolize;
 };
 
 extern FLAGS *G_flags;

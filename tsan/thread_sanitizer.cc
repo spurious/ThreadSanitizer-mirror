@@ -144,20 +144,22 @@ static void OpenFileWriteStringAndClose(const string &file_name,
 }
 
 inline uintptr_t tsan_bswap(uintptr_t x) {
-#if VEX_HOST_WORDSIZE == 8
+#if __WORDSIZE == 64
 #if defined(HAS_BUILTIN_BSWAP64)
   return __builtin_bswap64(x);
 #else
   __asm__("bswapq %0" : "=r" (x) : "0" (x));
   return x;
 #endif // HAS_BUILTIN_BSWAP64
-#elif VEX_HOST_WORDSIZE == 4
+#elif __WORDSIZE == 32
 #if defined(HAS_BUILTIN_BSWAP32)
   return __builtin_bswap32(x);
 #else
   __asm__("bswapl %0" : "=r" (x) : "0" (x));
   return x;
 #endif // HAS_BUILTIN_BSWAP32
+#else
+# error  "Unknown VEX_HOST_WORDSIZE"
 #endif // VEX_HOST_WORDSIZE
 }
 
@@ -2450,7 +2452,7 @@ class SegmentSet {
    private:
 #if 1
     // TODO(timurrrr): consider making a custom hash_table.
-    typedef hash_map<SegmentSet*, SSID, SSHash, SSEq > MapType__;
+    typedef hash_map<const SegmentSet*, SSID, SSHash, SSEq > MapType__;
 #else
     typedef map<SegmentSet*, SSID, Less > MapType__;
 #endif
@@ -3876,7 +3878,8 @@ struct Thread {
       VG_(maybe_record_error)(GetVgTid(), XS_InvalidLock, 0, NULL,
                               report);
 #else
-      UNIMPLEMENTED();
+      // UNIMPLEMENTED();
+      ThreadSanitizerPrintReport(report);
 #endif
       return;
     }
@@ -3906,7 +3909,8 @@ struct Thread {
       VG_(maybe_record_error)(GetVgTid(), XS_UnlockNonLocked, 0, NULL,
                               report);
 #else
-      UNIMPLEMENTED();
+      // UNIMPLEMENTED();
+      ThreadSanitizerPrintReport(report);
 #endif
       return;
     }
@@ -3932,7 +3936,8 @@ struct Thread {
       VG_(maybe_record_error)(GetVgTid(), XS_UnlockForeign, 0, NULL,
                               report);
 #else
-      UNIMPLEMENTED();
+      ThreadSanitizerPrintReport(report);
+      // UNIMPLEMENTED();
 #endif
 
     }
@@ -5070,19 +5075,16 @@ class Detector {
 
     switch (type) {
       case READ:
-        // e_->Print();
         HandleMemoryAccess(e_->tid(), e_->a(), e_->info(), false);
         break;
       case WRITE:
-        // e_->Print();
-        // Thread::Get(TID(e_->tid()))->ReportStackTrace();
         HandleMemoryAccess(e_->tid(), e_->a(), e_->info(), true);
         break;
       case RTN_CALL:
-        // e_->Print();
         HandleRtnCall(TID(e_->tid()), e_->pc(), e_->a());
-        // cur_thread_->ReportStackTrace();
-        // Thread::Get(TID(e_->tid()))->ReportStackTrace();
+        break;
+      case RTN_EXIT:
+        HandleRtnExit(TID(e_->tid()));
         break;
       case SBLOCK_ENTER:
         HandleSblockEnter(TID(e_->tid()), e_->pc());
@@ -5370,7 +5372,8 @@ class Detector {
         VG_(maybe_record_error)(GetVgTid(), XS_InvalidLock, 0, NULL,
                                 report);
 #else
-        UNIMPLEMENTED();
+        ThreadSanitizerPrintReport(report);
+        // UNIMPLEMENTED();
 #endif
         return;
       }
@@ -6182,8 +6185,9 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   FindStringFlag("file_prefix_to_cut", args, &G_flags->file_prefix_to_cut);
   FindStringFlag("ignore", args, &G_flags->ignore);
 
-  FindBoolFlag("thread_coverage", false, args,
-               &G_flags->thread_coverage);
+  FindBoolFlag("thread_coverage", false, args, &G_flags->thread_coverage);
+  FindBoolFlag("dump_events", false, args, &G_flags->dump_events);
+  FindBoolFlag("symbolize", true, args, &G_flags->symbolize);
 
   FindIntFlag("trace_addr", 0, args,
               reinterpret_cast<intptr_t*>(&G_flags->trace_addr));
@@ -6290,6 +6294,7 @@ static void SetupIgnore() {
   // add some major ignore entries so that tsan remains sane
   // even w/o any ignore file.
   g_ignore_lists->objs.push_back("*/libpthread-*");
+  g_ignore_lists->objs.push_back("*/libpthread.so*");
   g_ignore_lists->objs.push_back("*/ld-2*.so");
 #ifdef VGO_darwin
   g_ignore_lists->objs.push_back("/usr/lib/dyld");
