@@ -14,26 +14,30 @@ LIBS= -lpin  -lxed -ldwarf -lelf -ldl
 
 
 all: ts_pin_deb.so ts_pin_opt.so
-ts_pin_deb.so: ts_pin_deb.o thread_sanitizer_deb.o
-ts_pin_opt.so: ts_pin_opt.o
 
-ts_pin_deb.o: ts_pin.cc ../thread_sanitizer.h
+HEADERS=../thread_sanitizer.h ../ts_util.h
+
+ts_pin_deb.o: ts_pin.cc ${HEADERS}
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ -c $< -DDEBUG=1
-thread_sanitizer_deb.o: ../thread_sanitizer.cc ../thread_sanitizer.h
+thread_sanitizer_deb.o: ../thread_sanitizer.cc ${HEADERS}
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ -c $<
+
+ts_util.o: ../ts_util.cc ${HEADERS}
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ -c $< -DDEBUG=1
 
-ts_pin_deb.so: ts_pin_deb.o thread_sanitizer_deb.o
+ts_pin_deb.so: ts_pin_deb.o thread_sanitizer_deb.o ts_util.o
 	$(CXX) $(LDFLAGS) $(LIBPATHS) -lpthread -o $@ $^  $(LIBS)
+ts_pin_opt.so: ts_pin_opt.o ts_util.o
+	$(CXX) $(LDFLAGS) $(LIBPATHS) -lpthread -o $@ $^  $(LIBS)
+
 # shortcut.
 deb: ts_pin_deb.so
 
-ts_pin_opt.o: ts_pin.cc ../thread_sanitizer.h ../thread_sanitizer.cc
+ts_pin_opt.o: ts_pin.cc  ../thread_sanitizer.cc ${HEADERS}
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ -c $< -DDEBUG=0 -DINCLUDE_THREAD_SANITIZER_CC=1
 
 
 
-%.so: %.o
-	$(CXX) $(LDFLAGS) $(LIBPATHS) -lpthread -o $@ $<  $(LIBS)
 %.o: %.cc
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ -c $<
 

@@ -1,6 +1,5 @@
 /*
-  This file is part of ThreadSanitizer, a dynamic data race detector
-  based on Valgrind.
+  This file is part of ThreadSanitizer, a dynamic data race detector.
 
   Copyright (C) 2008-2009 Google Inc
      opensource@google.com
@@ -3461,18 +3460,6 @@ void INLINE ClearMemoryState(uintptr_t a, uintptr_t b, bool is_new_mem) {
 
 
 // -------- ThreadSanitizerReport -------------- {{{1
-struct ThreadSanitizerReport {
-  // Types of reports.
-  enum ReportType {
-    DATA_RACE,
-    UNLOCK_FOREIGN,
-    UNLOCK_NONLOCKED,
-    INVALID_LOCK
-  };
-
-  ReportType type;
-};
-
 // DATA_RACE.
 struct ThreadSanitizerDataRaceReport : public ThreadSanitizerReport {
   uintptr_t   racey_addr;
@@ -3874,13 +3861,7 @@ struct Thread {
       report->tid = tid();
       report->lock_addr = lock_addr;
       report->stack_trace = CreateStackTrace();
-#ifdef TS_VALGRIND
-      VG_(maybe_record_error)(GetVgTid(), XS_InvalidLock, 0, NULL,
-                              report);
-#else
-      // UNIMPLEMENTED();
-      ThreadSanitizerPrintReport(report);
-#endif
+      RecordErrorIfNotSuppressed(report);
       return;
     }
     bool is_w_lock = lock->wr_held();
@@ -3905,13 +3886,7 @@ struct Thread {
       report->tid = tid();
       report->lid = lock->lid();
       report->stack_trace = CreateStackTrace();
-#ifdef TS_VALGRIND
-      VG_(maybe_record_error)(GetVgTid(), XS_UnlockNonLocked, 0, NULL,
-                              report);
-#else
-      // UNIMPLEMENTED();
-      ThreadSanitizerPrintReport(report);
-#endif
+      RecordErrorIfNotSuppressed(report);
       return;
     }
 
@@ -3932,14 +3907,7 @@ struct Thread {
       report->tid = tid();
       report->lid = lock->lid();
       report->stack_trace = CreateStackTrace();
-#ifdef TS_VALGRIND
-      VG_(maybe_record_error)(GetVgTid(), XS_UnlockForeign, 0, NULL,
-                              report);
-#else
-      ThreadSanitizerPrintReport(report);
-      // UNIMPLEMENTED();
-#endif
-
+      RecordErrorIfNotSuppressed(report);
     }
 
     if (G_flags->suggest_happens_before_arcs) {
@@ -5368,13 +5336,7 @@ class Detector {
         report->tid = cur_tid_;
         report->lock_addr = lock_addr;
         report->stack_trace = cur_thread_->CreateStackTrace();
-#ifdef TS_VALGRIND
-        VG_(maybe_record_error)(GetVgTid(), XS_InvalidLock, 0, NULL,
-                                report);
-#else
-        ThreadSanitizerPrintReport(report);
-        // UNIMPLEMENTED();
-#endif
+        RecordErrorIfNotSuppressed(report);
         return;
       }
       if (lock->wr_held() || lock->rd_held()) {

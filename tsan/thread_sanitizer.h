@@ -1,6 +1,5 @@
 /*
-  This file is part of ThreadSanitizer, a dynamic data race detector 
-  based on Valgrind.
+  This file is part of ThreadSanitizer, a dynamic data race detector.
 
   Copyright (C) 2008-2009 Google Inc
      opensource@google.com 
@@ -187,6 +186,8 @@ class CCAlloc : public std::allocator<T> {
 
 
 //--------- Utils ------------------- {{{1
+#include "ts_util.h"
+
 void Printf(const char *format, ...);
 void Report(const char *format, ...);
 void PcToStrings(uintptr_t pc, bool demangle,
@@ -364,21 +365,31 @@ static const char *kEventNames[] = {
 
 class Event;
 
-class ThreadSanitizerReport;
+struct ThreadSanitizerReport {
+  // Types of reports.
+  enum ReportType {
+    DATA_RACE,
+    UNLOCK_FOREIGN,
+    UNLOCK_NONLOCKED,
+    INVALID_LOCK
+  };
+
+  ReportType type;
+};
 
 extern void ThreadSanitizerInit();
 extern void ThreadSanitizerFini();
 extern void ThreadSanitizerHandleOneEvent(Event *event);
-extern void ThreadSanitizerHandleMemoryAccess(int32_t tid, 
-                                              uintptr_t addr, uintptr_t size, 
+extern void ThreadSanitizerHandleMemoryAccess(int32_t tid,
+                                              uintptr_t addr, uintptr_t size,
                                               bool is_w);
-extern void ThreadSanitizerHandleStackMemChange(int32_t tid, uintptr_t addr, 
+extern void ThreadSanitizerHandleStackMemChange(int32_t tid, uintptr_t addr,
                                                 uintptr_t size, bool is_new);
 extern void ThreadSanitizerParseFlags(vector<string>* args);
 extern bool ThreadSanitizerWantToInstrumentSblock(uintptr_t pc);
 
 extern void ThreadSanitizerEnterSblock(int32_t tid, uintptr_t pc);
-extern void ThreadSanitizerHandleRtnCall(int32_t tid, uintptr_t call_pc, 
+extern void ThreadSanitizerHandleRtnCall(int32_t tid, uintptr_t call_pc,
                                          uintptr_t target_pc);
 extern void ThreadSanitizerHandleRtnExit(int32_t tid);
 extern void ThreadSanitizerPrintReport(ThreadSanitizerReport *report);

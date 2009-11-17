@@ -85,7 +85,7 @@ class ScopedLock {
 //------ Global PIN lock ------- {{{1
 class ScopedReentrantClientLock {
  public:
-  ScopedReentrantClientLock(int line) 
+  ScopedReentrantClientLock(int line)
     : line_(line) {
     // if (line && G_flags->debug_level >= 5)  Printf("??Try  at line %d\n", line);
     PIN_LockClient();

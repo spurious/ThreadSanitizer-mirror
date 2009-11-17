@@ -91,7 +91,7 @@ vgpreload_tsan_x86_darwin_so_LDFLAGS      = \
 					      $(PRELOAD_LDFLAGS_X86_DARWIN)
 
 
-TSAN_SOURCES_COMMON = ts_valgrind.cc thread_sanitizer.cc
+TSAN_SOURCES_COMMON = ts_valgrind.cc thread_sanitizer.cc ts_util.cc
 
 tsan_x86_linux_SOURCES      = $(TSAN_SOURCES_COMMON)
 tsan_x86_linux_CPPFLAGS     = $(AM_CPPFLAGS_X86_LINUX)
