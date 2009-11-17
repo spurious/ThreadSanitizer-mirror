@@ -36,7 +36,7 @@ bool RecordErrorIfNotSuppressed(ThreadSanitizerReport *report) {
   // TODO(kcc): migrate to our own system (when ready).
   CHECK(ThreadSanitizerReport::DATA_RACE == 0);
   return ERROR_IS_RECORDED == VG_(maybe_record_error)(
-      GetVgTid(), areport->type + XS_Race, 0, NULL, report);
+      GetVgTid(), report->type + XS_Race, 0, NULL, report);
 #else 
   // TODO(kcc): implement suppressions.
   ThreadSanitizerPrintReport(report);
