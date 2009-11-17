@@ -188,7 +188,6 @@ class CCAlloc : public std::allocator<T> {
 //--------- Utils ------------------- {{{1
 #include "ts_util.h"
 
-void Printf(const char *format, ...);
 void Report(const char *format, ...);
 void PcToStrings(uintptr_t pc, bool demangle,
                 string *img_name, string *rtn_name,
@@ -197,7 +196,6 @@ string PcToRtnNameAndFilePos(uintptr_t pc);
 string PcToRtnName(uintptr_t pc, bool demangle);
 string Demangle(const char *str);
 
-extern "C" long my_strtol(const char *str, char **end);
 
 //--------- FLAGS ---------------------------------- {{{1
 struct FLAGS {

@@ -37,6 +37,8 @@ class ThreadSanitizerReport;
 // Returns true if the error has been recorded.
 bool RecordErrorIfNotSuppressed(ThreadSanitizerReport *report);
 
+extern "C" long my_strtol(const char *str, char **end);
+extern void Printf(const char *format, ...);
 
 
 

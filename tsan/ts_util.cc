@@ -28,6 +28,7 @@
 // See ts_util.h for mode details.
 
 #include "thread_sanitizer.h"
+#include <stdarg.h>
 
 
 bool RecordErrorIfNotSuppressed(ThreadSanitizerReport *report) {
@@ -41,5 +42,37 @@ bool RecordErrorIfNotSuppressed(ThreadSanitizerReport *report) {
   // TODO(kcc): implement suppressions.
   ThreadSanitizerPrintReport(report);
   return true;
+#endif
+}
+
+#ifndef TS_VALGRIND
+FILE *G_out = stdout;
+#endif
+
+void Printf(const char *format, ...) {
+#ifdef TS_VALGRIND
+  va_list args;
+  va_start(args, format);
+  VG_(vprintf)(format, args);
+  va_end(args);
+#else
+  va_list args;
+  va_start(args, format);
+  vfprintf(G_out, format, args);
+  va_end(args);
+#endif
+}
+
+long my_strtol(const char *str, char **end) {
+#ifdef TS_VALGRIND
+  if (str && str[0] == '0' && str[1] == 'x') {
+    return VG_(strtoll16)((Char*)str, (Char**)end);
+  }
+  return VG_(strtoll10)((Char*)str, (Char**)end);
+#else
+  if (str && str[0] == '0' && str[1] == 'x') {
+    return strtoll(str, end, 16);
+  }
+  return strtoll(str, end, 10);
 #endif
 }

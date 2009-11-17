@@ -105,7 +105,7 @@ struct Routine {
 };
 
 //--------------- Globals ----------------- {{{1
-static FILE *G_out = stdout;
+extern FILE *G_out;
 
 
 // Maps address of rtn entry/ret to Routine*
@@ -144,22 +144,6 @@ struct PinThread {
 static PinThread *g_pin_threads;
 
 //------------- ThreadSanitizer exports ------------ {{{1
-void Printf(const char *format, ...) {
-  va_list args;
-  va_start(args, format);
-  vfprintf(G_out, format, args);
-  fflush(G_out);
-  va_end(args);
-}
-
-extern "C"
-long my_strtol(const char *str, char **end) {
-  if (str && str[0] == '0' && str[1] == 'x') {
-    return strtoll(str, end, 16);
-  }
-  return strtoll(str, end, 10);
-}
-
 string Demangle(const char *str) {
   int status;
   char *demangled = __cxxabiv1::__cxa_demangle(str, 0, 0, &status);

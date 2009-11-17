@@ -159,14 +159,6 @@ size_t strlen(const char *s) {
   return VG_(strlen)((const Char*)s);
 }
 
-extern "C"
-long my_strtol(const char *str, char **end) {
-  if (str && str[0] == '0' && str[1] == 'x') {
-    return VG_(strtoll16)((Char*)str, (Char**)end);
-  }
-  return VG_(strtoll10)((Char*)str, (Char**)end);
-}
-
 static inline uintptr_t GetVgPc(ThreadId vg_tid) {
   return (uintptr_t)VG_(get_IP)(vg_tid);
 }

@@ -117,21 +117,6 @@ string PcToRtnName(uintptr_t pc, bool demangle) {
 uintptr_t GetPcOfCurrentThread() {
   return g_current_pc;
 }
-
-void Printf(const char *format, ...) {
-  va_list args;
-  va_start(args, format);
-  vfprintf(stderr, format, args);
-  va_end(args);
-}
-
-extern "C"
-long my_strtol(const char *str, char **end) {
-  if (str && str[0] == '0' && str[1] == 'x') {
-    return strtoll(str, end, 16);
-  }
-  return strtoll(str, end, 10);
-}
 //------------- main ---------------------------- {{{1
 int main(int argc, char *argv[]) {
   printf("INFO: ThreadSanitizerOffline\n");
