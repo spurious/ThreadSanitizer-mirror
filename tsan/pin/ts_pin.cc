@@ -132,8 +132,11 @@ static uintptr_t g_current_pc;
 struct PinThread {
   OS_THREAD_ID os_tid;
   THREADID  last_child_tid;
+  THREADID  parent_tid;
   size_t last_malloc_size;
   pthread_t *child_ptid_ptr;
+  pthread_t  my_ptid;
+  pthread_t  joined_ptid;
 };
 
 // Array of pin threads, indexed by pin's THREADID.
@@ -225,6 +228,15 @@ static void DumpEvent(EventType type, int32_t tid, uintptr_t pc,
 
 //--------- Instrumentation callbacks --------------- {{{1
 //--------- Threads --------------------------------- {{{2
+static void Before_pthread_create(THREADID tid, ADDRINT pc,
+                                  ADDRINT arg1, ADDRINT arg2,
+                                  ADDRINT arg3, ADDRINT arg4) {
+  n_created_threads++;
+  g_pin_threads[tid].child_ptid_ptr = (pthread_t*)arg1;
+  *(pthread_t*)arg1 = NULL;
+  // Printf("%s: T=%d %lx\n", __FUNCTION__, tid, arg1);
+}
+
 void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
                             INT32 flags, void *v) {
   OS_THREAD_ID my_os_tid = PIN_GetTid();
@@ -239,6 +251,7 @@ void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
   }
 
   CHECK(tid < kMaxThreads);
+  memset(&g_pin_threads[tid], 0, sizeof(PinThread));
   g_pin_threads[tid].os_tid = my_os_tid;
 
   THREADID parent_tid = 0;
@@ -248,12 +261,13 @@ void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
       if (g_pin_threads[parent_tid].os_tid == parent_os_tid)
         break;
     }
+    g_pin_threads[tid].parent_tid = parent_tid;
   }
 
-
+  Printf("++%s\n", __FUNCTION__);
   DumpEvent(THR_START, tid, 0, 0, parent_tid);
   DumpEvent(THR_FIRST_INSN, tid, 0, 0, 0);
-
+  Printf("--%s\n", __FUNCTION__);
 
   // Printf("#  tid=%d parent_tid=%d my_os_tid=%d parent_os_tid=%d\n",
   //       tid, parent_tid, my_os_tid, parent_os_tid);
@@ -262,44 +276,45 @@ void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
   g_pin_threads[tid].child_ptid_ptr = NULL;
 }
 
-void CallbacForThreadFini(THREADID tid, const CONTEXT *ctxt,
-                          INT32 code, void *v) {
-
-  DumpEvent(THR_END, tid, 0, 0, 0);
-}
-
-static void Before_pthread_join(THREADID tid, ADDRINT pc,
-                                ADDRINT arg1, ADDRINT arg2) {
-  DumpEvent(THR_JOIN_BEFORE, tid, 0, arg1, 0);
-}
-static void After_pthread_join(THREADID tid, ADDRINT pc, ADDRINT ret) {
-  DumpEvent(THR_JOIN_AFTER, tid, 0, 0, 0);
-}
-static void Before_pthread_create(THREADID tid, ADDRINT pc,
-                                  ADDRINT arg1, ADDRINT arg2,
-                                  ADDRINT arg3, ADDRINT arg4) {
-  n_created_threads++;
-  g_pin_threads[tid].child_ptid_ptr = (pthread_t*)arg1;
-  *(pthread_t*)arg1 = NULL;
-  // Printf("%s: T=%d %lx\n", __FUNCTION__, tid, arg1);
-}
-
 static void After_pthread_create(THREADID tid, ADDRINT pc, ADDRINT ret) {
   // Spin, waiting for last_child_tid to appear (i.e. wait for the thread to
   // actually start) so that we know the child's tid. No locks.
   while (!__sync_add_and_fetch(&g_pin_threads[tid].last_child_tid, 0)) {
     usleep(0);
   }
-  //Printf("%s: T=%d %lx %d\n", __FUNCTION__, tid,
-  //       g_pin_threads[tid].child_ptid_ptr,
-  //       (int)*g_pin_threads[tid].child_ptid_ptr
-  //       );
 
-  CHECK(g_pin_threads[tid].last_child_tid);
-  DumpEvent(THR_SET_PTID, g_pin_threads[tid].last_child_tid, 0,
-            *(pthread_t*)g_pin_threads[tid].child_ptid_ptr, 0);
+  THREADID last_child_tid = g_pin_threads[tid].last_child_tid;
+  pthread_t child_ptid = *(pthread_t*)g_pin_threads[tid].child_ptid_ptr;
+  CHECK(last_child_tid);
+  DumpEvent(THR_SET_PTID, last_child_tid, 0, child_ptid, 0);
+  g_pin_threads[last_child_tid].my_ptid = child_ptid;
   g_pin_threads[tid].last_child_tid = 0;
 }
+
+static void Before_pthread_join(THREADID tid, ADDRINT pc,
+                                ADDRINT arg1, ADDRINT arg2) {
+  DumpEvent(THR_JOIN_BEFORE, tid, 0, arg1, 0);
+  g_pin_threads[tid].joined_ptid = (pthread_t)arg1;
+}
+
+void CallbackForThreadFini(THREADID tid, const CONTEXT *ctxt,
+                          INT32 code, void *v) {
+  // We can not DumpEvent here,
+  // due to possible deadlock with PIN's internal lock.
+}
+
+static void After_pthread_join(THREADID tid, ADDRINT pc, ADDRINT ret) {
+  THREADID joined_tid = 0;
+  for (joined_tid = 1; joined_tid < kMaxThreads; joined_tid++) {
+    if (g_pin_threads[joined_tid].my_ptid == g_pin_threads[tid].joined_ptid)
+      break;
+  }
+  CHECK(joined_tid < kMaxThreads);
+  g_pin_threads[joined_tid].my_ptid = 0;
+  DumpEvent(THR_END, joined_tid, 0, 0, 0);
+  DumpEvent(THR_JOIN_AFTER, tid, 0, 0, 0);
+}
+
 
 //--------- main() --------------------------------- {{{2
 void Before_main(THREADID tid, ADDRINT pc, ADDRINT argc, ADDRINT argv) {
@@ -778,7 +793,7 @@ int main(INT32 argc, CHAR **argv) {
 
   // Set up PIN callbacks.
   PIN_AddThreadStartFunction(CallbackForThreadStart, 0);
-  PIN_AddThreadFiniFunction(CallbacForThreadFini, 0);
+  PIN_AddThreadFiniFunction(CallbackForThreadFini, 0);
   PIN_AddFiniFunction(CallbackForFini, 0);
   IMG_AddInstrumentFunction(CallbackForIMG, 0);
   TRACE_AddInstrumentFunction(CallbackForTRACE, 0);
