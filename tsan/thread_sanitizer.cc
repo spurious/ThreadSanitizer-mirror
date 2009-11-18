@@ -1597,7 +1597,8 @@ class Mask {
     }
   }
 
-  uintptr_t GetRange(uintptr_t a, uintptr_t b) const {
+  uint64_t GetRange(uintptr_t a, uintptr_t b) const {
+    // a bug was fixed here
     DCHECK(a < b);
     DCHECK(b <= 64);
     uintptr_t n_bits_in_mask = (b - a);
@@ -2785,10 +2786,10 @@ class CacheLine : public CacheLineUncompressed {
   Mask &traced() { return traced_; }
   Mask &published() { return published_; }
   Mask &racey()  { return racey_; }
-  uint64_t tag() { return tag_; }
+  uintptr_t tag() { return tag_; }
 
   // Add a new shadow value to a place where there was no shadow value before.
-  void AddNewSvalAtOffset(uint64_t off) {
+  void AddNewSvalAtOffset(uintptr_t off) {
     CHECK(!has_shadow_value().Get(off));
     DCHECK(this->IsShared());
     has_shadow_value_.Set(off);
@@ -2814,7 +2815,7 @@ class CacheLine : public CacheLineUncompressed {
     return true;
   }
 
-  INLINE Mask ClearRangeAndReturnOldUsed(uint64_t from, uint64_t to) {
+  INLINE Mask ClearRangeAndReturnOldUsed(uintptr_t from, uintptr_t to) {
     traced_.ClearRange(from, to);
     published_.ClearRange(from, to);
     racey_.ClearRange(from, to);
@@ -2870,7 +2871,7 @@ class CacheLine : public CacheLineUncompressed {
   }
 
  private:
-  explicit CacheLine(uint64_t tag) {
+  explicit CacheLine(uintptr_t tag) {
     tag_ = tag;
     is_compressed_ = false;
     Clear();
