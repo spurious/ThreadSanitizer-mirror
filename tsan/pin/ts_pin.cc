@@ -131,12 +131,13 @@ static uintptr_t g_current_pc;
 //--------------- PinThread ----------------- {{{1
 struct PinThread {
   OS_THREAD_ID os_tid;
-  THREADID  last_child_tid;
-  THREADID  parent_tid;
-  size_t last_malloc_size;
-  pthread_t *child_ptid_ptr;
-  pthread_t  my_ptid;
-  pthread_t  joined_ptid;
+  THREADID     last_child_tid;
+  THREADID     parent_tid;
+  size_t       last_malloc_size;
+  pthread_t   *child_ptid_ptr;
+  pthread_t    my_ptid;
+  pthread_t    joined_ptid;
+  bool         started;
 };
 
 // Array of pin threads, indexed by pin's THREADID.
@@ -197,32 +198,54 @@ uintptr_t GetPcOfCurrentThread() {
 }
 
 //--------- DumpEvent ----------- {{{1
+static void DumpEventPlainText(EventType type, int32_t tid, uintptr_t pc,
+                               uintptr_t a, uintptr_t info) {
+  static hash_set<uintptr_t> *pc_set;
+  if (pc_set == NULL) {
+    pc_set = new hash_set<uintptr_t>;
+  }
+  if (G_flags->symbolize && pc_set->insert(pc).second) {
+    string img_name, rtn_name, file_name;
+    int line = 0;
+    PcToStrings(pc, false, &img_name, &rtn_name, &file_name, &line);
+    if (file_name.empty()) file_name = "unknown";
+    if (img_name.empty()) img_name = "unknown";
+    if (rtn_name.empty()) rtn_name = "unknown";
+    if (line == 0) line = 1;
+    fprintf(G_out, "#PC %lx %s %s %s %d\n",
+            pc, img_name.c_str(), rtn_name.c_str(),
+            file_name.c_str(), line);
+  }
+  fprintf(G_out, "%s %x %lx %lx %lx\n", kEventNames[type], tid, pc, a, info);
+}
+
+
+// We have to send THR_START/THR_FIRST_INSN from here
+// because we can't do it from CallbackForThreadStart() due to PIN's deadlock.
+// TODO(kcc): Fix this!
 static void DumpEvent(EventType type, int32_t tid, uintptr_t pc,
                       uintptr_t a, uintptr_t info) {
   if (DEBUG_MODE && G_flags->dump_events) {
     ScopedLock lock(&g_main_ts_lock);
-    static hash_set<uintptr_t> *pc_set;
-    if (pc_set == NULL) {
-      pc_set = new hash_set<uintptr_t>;
+    if (g_pin_threads[tid].started == false) {
+      g_pin_threads[tid].started = true;
+      DumpEventPlainText(THR_START, tid, 0, 0, g_pin_threads[tid].parent_tid);
+      DumpEventPlainText(THR_FIRST_INSN, tid, 0, 0, 0);
     }
-    if (G_flags->symbolize && pc_set->insert(pc).second) {
-      string img_name, rtn_name, file_name;
-      int line = 0;
-      PcToStrings(pc, false, &img_name, &rtn_name, &file_name, &line);
-      if (file_name.empty()) file_name = "unknown";
-      if (img_name.empty()) img_name = "unknown";
-      if (rtn_name.empty()) rtn_name = "unknown";
-      if (line == 0) line = 1;
-      fprintf(G_out, "#PC %lx %s %s %s %d\n",
-              pc, img_name.c_str(), rtn_name.c_str(),
-              file_name.c_str(), line);
-    }
-    fprintf(G_out, "%s %x %lx %lx %lx\n", kEventNames[type], tid, pc, a, info);
+    DumpEventPlainText(type, tid, pc, a, info);
     return;
   }
+
   Event event(type, tid, pc, a, info);
   ScopedLock lock(&g_main_ts_lock);
   g_current_pc = pc;
+  if (g_pin_threads[tid].started == false) {
+    g_pin_threads[tid].started = true;
+    Event e1(THR_START, tid, 0, 0, g_pin_threads[tid].parent_tid);
+    ThreadSanitizerHandleOneEvent(&e1);
+    Event e2(THR_FIRST_INSN, tid, 0, 0, 0);
+    ThreadSanitizerHandleOneEvent(&e2);
+  }
   ThreadSanitizerHandleOneEvent(&event);
 }
 
@@ -264,16 +287,11 @@ void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
     g_pin_threads[tid].parent_tid = parent_tid;
   }
 
-  Printf("++%s\n", __FUNCTION__);
-  DumpEvent(THR_START, tid, 0, 0, parent_tid);
-  DumpEvent(THR_FIRST_INSN, tid, 0, 0, 0);
-  Printf("--%s\n", __FUNCTION__);
-
   // Printf("#  tid=%d parent_tid=%d my_os_tid=%d parent_os_tid=%d\n",
   //       tid, parent_tid, my_os_tid, parent_os_tid);
 
-  g_pin_threads[parent_tid].last_child_tid = tid;
   g_pin_threads[tid].child_ptid_ptr = NULL;
+  g_pin_threads[parent_tid].last_child_tid = tid;
 }
 
 static void After_pthread_create(THREADID tid, ADDRINT pc, ADDRINT ret) {
@@ -286,6 +304,7 @@ static void After_pthread_create(THREADID tid, ADDRINT pc, ADDRINT ret) {
   THREADID last_child_tid = g_pin_threads[tid].last_child_tid;
   pthread_t child_ptid = *(pthread_t*)g_pin_threads[tid].child_ptid_ptr;
   CHECK(last_child_tid);
+
   DumpEvent(THR_SET_PTID, last_child_tid, 0, child_ptid, 0);
   g_pin_threads[last_child_tid].my_ptid = child_ptid;
   g_pin_threads[tid].last_child_tid = 0;

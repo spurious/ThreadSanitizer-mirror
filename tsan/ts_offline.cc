@@ -100,7 +100,7 @@ static void SkipWhiteSpaceAndComments(FILE *file) {
   while (true) {
     c = fgetc(file);
     if (c == EOF) return;
-    if (c == '#') {
+    if (c == '#' || c == '=') {
       SkipCommentText(file);
       continue;
     }
