@@ -116,7 +116,6 @@ static int64_t dyn_write_count;
 
 static bool main_entered, main_exited;
 
-int kVerbosity = 1;
 bool kIgnoreStack = true;
 
 // Number of threads created by pthread_create (i.e. not counting main thread).
@@ -454,6 +453,24 @@ static void After_sem_trywait(THREADID tid, ADDRINT pc, ADDRINT ret) {
 }
 
 
+//---------- Annotations -------------------------- {{{2
+static void On_AnnotateBenignRace(THREADID tid, ADDRINT pc,
+                                  ADDRINT file, ADDRINT line,
+                                  ADDRINT a, ADDRINT descr) {
+  DumpEvent(EXPECT_RACE, tid, descr, a, 1);
+}
+
+static void On_AnnotateExpectRace(THREADID tid, ADDRINT pc,
+                                  ADDRINT file, ADDRINT line,
+                                  ADDRINT a, ADDRINT descr) {
+  DumpEvent(EXPECT_RACE, tid, descr, a, 0);
+}
+
+static void On_AnnotateNoOp(THREADID tid, ADDRINT pc,
+                            ADDRINT file, ADDRINT line) {
+  Printf("%s T%d\n", __FUNCTION__, tid);
+}
+
 //--------- Instrumentation ----------------------- {{{1
 static bool IgnoreImage(IMG img) {
   string name = IMG_Name(img);
@@ -612,7 +629,7 @@ static bool RtnMatchesName(const string &rtn_name, const string &name) {
 
 #define INSERT_FN_HELPER(point, name, rtn, to_insert, args...) \
     RTN_Open(rtn); \
-    if (kVerbosity >= 2) Printf("RTN: Inserting %-50s (%s) %s (%s) img: %s\n", \
+    if (G_flags->verbosity >= 2) Printf("RTN: Inserting %-50s (%s) %s (%s) img: %s\n", \
     #to_insert, #point, RTN_Name(rtn).c_str(), name, IMG_Name(img).c_str());\
     RTN_InsertCall(rtn, point, (AFUNPTR)to_insert, IARG_THREAD_ID, \
                    IARG_INST_PTR, args, IARG_END);\
@@ -681,7 +698,7 @@ static bool RtnMatchesName(const string &rtn_name, const string &name) {
 
 static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   string rtn_name = RTN_Name(rtn);
-  if (kVerbosity >= 2) {
+  if (G_flags->verbosity >= 2) {
     Printf("%s: %s\n", __FUNCTION__, rtn_name.c_str());
   }
 
@@ -721,13 +738,18 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_AFTER_0("sem_wait", After_sem_wait);
   INSERT_BEFORE_1("sem_trywait", Before_sem_wait);
   INSERT_AFTER_1("sem_trywait", After_sem_trywait);
+
+  // Annotations.
+  INSERT_BEFORE_4("AnnotateBenignRace", On_AnnotateBenignRace);
+  INSERT_BEFORE_4("AnnotateExpectRace", On_AnnotateExpectRace);
+  INSERT_BEFORE_2("AnnotateNoOp", On_AnnotateNoOp);
 }
 
 // Pin calls this function every time a new img is loaded.
 static void CallbackForIMG(IMG img, void *v)
 {
 
-  if (kVerbosity >= 2) {
+  if (G_flags->verbosity >= 2) {
     Printf("Started CallbackForIMG %s\n", IMG_Name(img).c_str());
   }
 //  for(SYM sym = IMG_RegsymHead(img); SYM_Valid(sym); sym = SYM_Next(sym)) {
