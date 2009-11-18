@@ -250,21 +250,21 @@ void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
     }
   }
 
-  g_pin_threads[parent_tid].last_child_tid = tid;
 
   DumpEvent(THR_START, tid, 0, 0, parent_tid);
   DumpEvent(THR_FIRST_INSN, tid, 0, 0, 0);
+
+
   // Printf("#  tid=%d parent_tid=%d my_os_tid=%d parent_os_tid=%d\n",
   //       tid, parent_tid, my_os_tid, parent_os_tid);
-  //
-  if (tid > 0) {
-    pthread_t child_ptid = *g_pin_threads[parent_tid].child_ptid_ptr;
-    DumpEvent(THR_SET_PTID, tid, 0, child_ptid, 0);
-  }
+
+  g_pin_threads[parent_tid].last_child_tid = tid;
+  g_pin_threads[tid].child_ptid_ptr = NULL;
 }
 
 void CallbacForThreadFini(THREADID tid, const CONTEXT *ctxt,
                           INT32 code, void *v) {
+
   DumpEvent(THR_END, tid, 0, 0, 0);
 }
 
@@ -280,14 +280,24 @@ static void Before_pthread_create(THREADID tid, ADDRINT pc,
                                   ADDRINT arg3, ADDRINT arg4) {
   n_created_threads++;
   g_pin_threads[tid].child_ptid_ptr = (pthread_t*)arg1;
+  *(pthread_t*)arg1 = NULL;
+  // Printf("%s: T=%d %lx\n", __FUNCTION__, tid, arg1);
 }
 
 static void After_pthread_create(THREADID tid, ADDRINT pc, ADDRINT ret) {
   // Spin, waiting for last_child_tid to appear (i.e. wait for the thread to
   // actually start) so that we know the child's tid. No locks.
-  while (0 == __sync_add_and_fetch(&g_pin_threads[tid].last_child_tid, 0)) {
+  while (!__sync_add_and_fetch(&g_pin_threads[tid].last_child_tid, 0)) {
     usleep(0);
   }
+  //Printf("%s: T=%d %lx %d\n", __FUNCTION__, tid,
+  //       g_pin_threads[tid].child_ptid_ptr,
+  //       (int)*g_pin_threads[tid].child_ptid_ptr
+  //       );
+
+  CHECK(g_pin_threads[tid].last_child_tid);
+  DumpEvent(THR_SET_PTID, g_pin_threads[tid].last_child_tid, 0,
+            *(pthread_t*)g_pin_threads[tid].child_ptid_ptr, 0);
   g_pin_threads[tid].last_child_tid = 0;
 }
 
