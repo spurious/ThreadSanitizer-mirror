@@ -418,7 +418,7 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
   int32_t ts_tid = VgTidToTsTid(vg_tid);
   switch (args[0]) {
     case TSREQ_SET_MY_PTHREAD_T:
-      Put(THR_CREATE_AFTER, ts_tid, pc, args[1], 0);
+      Put(THR_SET_PTID, ts_tid, pc, args[1], 0);
       break;
     case TSREQ_PTHREAD_JOIN_POST:
       // TODO: get rid of THR_JOIN_BEFORE

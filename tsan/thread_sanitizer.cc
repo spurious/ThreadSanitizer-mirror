@@ -4912,7 +4912,7 @@ class Detector {
       case SBLOCK_ENTER:
         HandleSblockEnter(TID(e_->tid()), e_->pc());
         break;
-      case THR_CREATE_AFTER   : HandleThreadCreateAfter(); break;
+      case THR_SET_PTID   : HandleThreadCreateAfter(); break;
       case THR_START   :
         HandleThreadStart(TID(e_->tid()), TID(e_->info()), e_->pc());
         break;

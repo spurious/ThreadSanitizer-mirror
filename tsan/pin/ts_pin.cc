@@ -259,7 +259,7 @@ void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
   //
   if (tid > 0) {
     pthread_t child_ptid = *g_pin_threads[parent_tid].child_ptid_ptr;
-    DumpEvent(THR_CREATE_AFTER, tid, 0, child_ptid, 0);
+    DumpEvent(THR_SET_PTID, tid, 0, child_ptid, 0);
   }
 }
 
