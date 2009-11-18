@@ -91,14 +91,6 @@ extern "C" int memcmp(const void *a, const void *b, size_t c) {
   return VG_(memcmp)(a,b,c);
 }
 
-void Printf(const char *format, ...) {
-  va_list args;
-  va_start(args, format);
-  VG_(vprintf)(format, args);
-  va_end(args);
-}
-
-
 // TODO: make this rtn public
 extern "C" {
   Bool VG_(get_fnname_no_cxx_demangle) ( Addr a, Char* buf, Int nbuf );

@@ -61,13 +61,16 @@
 //#include <algorithm>
 #include "ext/algorithm"
 #include "ext/hash_map"
+#include "ext/hash_set"
 using __gnu_cxx::hash_map;
+using __gnu_cxx::hash_set;
 using __gnu_cxx::lexicographical_compare_3way;
 
 #else  // no TS_USE_STANDARD_STL
 #include "stlport/set"
 #include "stlport/map"
 #include "stlport/hash_map"
+#include "stlport/hash_set"
 #include "stlport/vector"
 #include "stlport/deque"
 #include "stlport/stack"
@@ -77,6 +80,7 @@ using __gnu_cxx::lexicographical_compare_3way;
 #include "stlport/algorithm"
 
 using std::hash_map;
+using std::hash_set;
 using std::lexicographical_compare_3way;
 #endif  // TS_USE_STANDARD_STL
 
@@ -373,6 +377,8 @@ struct ThreadSanitizerReport {
   };
 
   ReportType type;
+
+  virtual ~ThreadSanitizerReport() { }
 };
 
 extern void ThreadSanitizerInit();

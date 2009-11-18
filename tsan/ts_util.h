@@ -41,5 +41,41 @@ extern "C" long my_strtol(const char *str, char **end);
 extern void Printf(const char *format, ...);
 
 
+int OpenFileReadOnly(const string &file_name, bool die_if_failed);
+string ReadFileToString(const string &file_name, bool die_if_failed);
+
+// Get the current memory footprint of myself (parse /proc/self/status).
+size_t GetVmSizeInMb();
+
+// Sets the contents of the file 'file_name' to 'str'.
+void OpenFileWriteStringAndClose(const string &file_name, const string &str);
+
+
+// Match a wild card which may contain '*' and '?'.
+bool StringMatch(const string &pattern, const string &str);
+
+// If addr is inside a global object, returns true and sets 'name' and 'offset'
+bool GetNameAndOffsetOfGlobalObject(uintptr_t addr,
+                                    string *name, uintptr_t *offset);
+
+
+inline uintptr_t tsan_bswap(uintptr_t x) {
+#if __WORDSIZE == 64
+  // return __builtin_bswap64(x);
+  __asm__("bswapq %0" : "=r" (x) : "0" (x));
+  return x;
+#elif __WORDSIZE == 32
+  // return __builtin_bswap32(x);
+  __asm__("bswapl %0" : "=r" (x) : "0" (x));
+  return x;
+#else
+# error  "Unknown __WORDSIZE"
+#endif // __WORDSIZE
+}
+
+
+
 
 #endif  // __TS_UTIL_H__
+// end. {{{1
+// vim:shiftwidth=2:softtabstop=2:expandtab:tw=80

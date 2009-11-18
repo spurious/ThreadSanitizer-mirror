@@ -129,15 +129,11 @@ static TSLock g_main_ts_lock;
 static uintptr_t g_current_pc;
 
 //--------------- PinThread ----------------- {{{1
-struct CallStackRecord {
-  uintptr_t pc;
-  uintptr_t sp;
-};
-
 struct PinThread {
   OS_THREAD_ID os_tid;
   THREADID  last_child_tid;
   size_t last_malloc_size;
+  pthread_t *child_ptid_ptr;
 };
 
 // Array of pin threads, indexed by pin's THREADID.
@@ -202,6 +198,22 @@ static void DumpEvent(EventType type, int32_t tid, uintptr_t pc,
                       uintptr_t a, uintptr_t info) {
   if (DEBUG_MODE && G_flags->dump_events) {
     ScopedLock lock(&g_main_ts_lock);
+    static hash_set<uintptr_t> *pc_set;
+    if (pc_set == NULL) {
+      pc_set = new hash_set<uintptr_t>;
+    }
+    if (G_flags->symbolize && pc_set->insert(pc).second) {
+      string img_name, rtn_name, file_name;
+      int line = 0;
+      PcToStrings(pc, false, &img_name, &rtn_name, &file_name, &line);
+      if (file_name.empty()) file_name = "unknown";
+      if (img_name.empty()) img_name = "unknown";
+      if (rtn_name.empty()) rtn_name = "unknown";
+      if (line == 0) line = 1;
+      fprintf(G_out, "#PC %lx %s %s %s %d\n",
+              pc, img_name.c_str(), rtn_name.c_str(),
+              file_name.c_str(), line);
+    }
     fprintf(G_out, "%s %x %lx %lx %lx\n", kEventNames[type], tid, pc, a, info);
     return;
   }
@@ -244,22 +256,30 @@ void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
   DumpEvent(THR_FIRST_INSN, tid, 0, 0, 0);
   // Printf("#  tid=%d parent_tid=%d my_os_tid=%d parent_os_tid=%d\n",
   //       tid, parent_tid, my_os_tid, parent_os_tid);
+  //
+  if (tid > 0) {
+    pthread_t child_ptid = *g_pin_threads[parent_tid].child_ptid_ptr;
+    DumpEvent(THR_CREATE_AFTER, tid, 0, child_ptid, 0);
+  }
 }
 
 void CallbacForThreadFini(THREADID tid, const CONTEXT *ctxt,
                           INT32 code, void *v) {
+  DumpEvent(THR_END, tid, 0, 0, 0);
 }
 
 static void Before_pthread_join(THREADID tid, ADDRINT pc,
                                 ADDRINT arg1, ADDRINT arg2) {
+  DumpEvent(THR_JOIN_BEFORE, tid, 0, arg1, 0);
 }
 static void After_pthread_join(THREADID tid, ADDRINT pc, ADDRINT ret) {
-
+  DumpEvent(THR_JOIN_AFTER, tid, 0, 0, 0);
 }
 static void Before_pthread_create(THREADID tid, ADDRINT pc,
                                   ADDRINT arg1, ADDRINT arg2,
                                   ADDRINT arg3, ADDRINT arg4) {
   n_created_threads++;
+  g_pin_threads[tid].child_ptid_ptr = (pthread_t*)arg1;
 }
 
 static void After_pthread_create(THREADID tid, ADDRINT pc, ADDRINT ret) {
@@ -268,12 +288,7 @@ static void After_pthread_create(THREADID tid, ADDRINT pc, ADDRINT ret) {
   while (0 == __sync_add_and_fetch(&g_pin_threads[tid].last_child_tid, 0)) {
     usleep(0);
   }
-  THREADID child_tid = g_pin_threads[tid].last_child_tid;
   g_pin_threads[tid].last_child_tid = 0;
-
-  CHECK(child_tid > 0);
-  DumpEvent(THR_CREATE_AFTER, tid, pc, child_tid, 0);
-  // Printf("THR_CREATE_AFTER %x %lx %lx 0\n", tid, pc, child_tid);
 }
 
 //--------- main() --------------------------------- {{{2
@@ -724,15 +739,15 @@ static void CallbackForFini(INT32 code, void *v) {
   Printf("#** dyn read/write: %'lld %'lld\n", dyn_read_count, dyn_write_count);
   Printf("#** n_created_threads: %d\n", n_created_threads);
 
-  if (!G_flags->dump_events) {
-    ThreadSanitizerFini();
-  }
+  ThreadSanitizerFini();
 }
 
 //--------- Main -------------------------- {{{1
 int main(INT32 argc, CHAR **argv) {
   PIN_Init(argc, argv);
   PIN_InitSymbols();
+
+
 
   // Init ThreadSanitizer.
   G_flags = new FLAGS;
@@ -749,9 +764,7 @@ int main(INT32 argc, CHAR **argv) {
     args.push_back(param);
   }
   ThreadSanitizerParseFlags(&args);
-  if (!G_flags->dump_events) {
-    ThreadSanitizerInit();
-  }
+  ThreadSanitizerInit();
 
   // Set up PIN callbacks.
   PIN_AddThreadStartFunction(CallbackForThreadStart, 0);

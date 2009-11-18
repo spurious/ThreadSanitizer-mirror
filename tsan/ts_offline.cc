@@ -40,6 +40,14 @@
 static map<string, int> *g_event_type_map;
 static uintptr_t g_current_pc;
 
+struct PcInfo {
+  string img_name;
+  string file_name;
+  string rtn_name;
+  int line;
+};
+
+static map<uintptr_t, PcInfo> *g_pc_info_map;
 
 //------------- Utils ------------------- {{{1
 static EventType EventNameToEventType(const char *name) {
@@ -55,20 +63,45 @@ static void InitEventTypeMap() {
   }
 }
 
-void SkipWhiteSpaceAndComments(FILE *file) {
-  bool in_comment = false;
+static void SkipCommentText(FILE *file) {
+  const int kBufSize = 1000;
+  char buff[kBufSize];
+  int i = 0;
+  while (true) {
+    int c = fgetc(file);
+    if (c == EOF) break;
+    if (c == '\n')  break;
+    if (i < kBufSize - 1)
+      buff[i++] = c;
+  }
+  buff[i] = 0;
+  if (buff[0] == 'P' && buff[1] == 'C') {
+    char img[kBufSize];
+    char rtn[kBufSize];
+    char file[kBufSize];
+    int line = 0;
+    uintptr_t pc = 0;
+    if (sscanf(buff, "PC %lx %s %s %s %d", &pc, img, rtn, file, &line) == 5 &&
+        line > 0 && pc != 0) {
+      CHECK(g_pc_info_map);
+      PcInfo pc_info;
+      pc_info.img_name = img;
+      pc_info.rtn_name = rtn;
+      pc_info.file_name = file;
+      pc_info.line = line;
+      (*g_pc_info_map)[pc] = pc_info;
+      // Printf("***** PC %lx %s\n", pc, rtn);
+    }
+  }
+}
+
+static void SkipWhiteSpaceAndComments(FILE *file) {
   int c = 0;
   while (true) {
     c = fgetc(file);
     if (c == EOF) return;
-    if (in_comment) {
-      if (c == '\n') {
-        in_comment = false;
-      }
-      continue;
-    }
     if (c == '#') {
-      in_comment = true;
+      SkipCommentText(file);
       continue;
     }
     if (isspace(c)) continue;
@@ -92,11 +125,14 @@ bool ReadOneEventFromFile(FILE *file, Event *event) {
 
 void ReadEventsFromFile(FILE *file) {
   Event event;
+  int n_events = 0;
   while (ReadOneEventFromFile(file, &event)) {
     // event.Print();
     g_current_pc = event.pc();
+    n_events++;
     ThreadSanitizerHandleOneEvent(&event);
   }
+  Printf("INFO: ThreadSanitizerOffline: %d events read\n", n_events);
 }
 
 //------------- ThreadSanitizer exports ------------ {{{1
@@ -104,10 +140,20 @@ void ReadEventsFromFile(FILE *file) {
 void PcToStrings(uintptr_t pc, bool demangle,
                 string *img_name, string *rtn_name,
                 string *file_name, int *line_no) {
-  *img_name = "";
-  *rtn_name = "";
-  *file_name = "";
-  *line_no = 0;
+  if (g_pc_info_map->count(pc) == 0) {
+    *img_name = "";
+    *rtn_name = "";
+    *file_name = "";
+    *line_no = 0;
+    return;
+  }
+  PcInfo &info = (*g_pc_info_map)[pc];
+  *img_name = info.img_name;
+  *rtn_name = info.rtn_name;
+  *file_name = info.file_name;
+  *line_no = info.line;
+  if (*file_name == "unknown")
+    *file_name = "";
 }
 
 string PcToRtnName(uintptr_t pc, bool demangle) {
@@ -122,6 +168,7 @@ int main(int argc, char *argv[]) {
   printf("INFO: ThreadSanitizerOffline\n");
 
   InitEventTypeMap();
+  g_pc_info_map = new map<uintptr_t, PcInfo>;
   G_flags = new FLAGS;
   vector<string> args(argv + 1, argv + argc);
   ThreadSanitizerParseFlags(&args);

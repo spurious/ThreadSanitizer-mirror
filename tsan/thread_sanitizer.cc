@@ -60,149 +60,8 @@ uint32_t g_lock_era = 0;
 
 FLAGS *G_flags = NULL;
 
-// -------- Utils --------------- {{{1
-int OpenFileReadOnly(const string &file_name, bool die_if_failed) {
-#ifdef TS_VALGRIND
-  SysRes sres = VG_(open)((const Char*)file_name.c_str(), VKI_O_RDONLY, 0);
-  if (sr_isError(sres)) {
-    if (die_if_failed) {
-      Report("ERROR: can not open file %s\n", file_name.c_str());
-      exit(1);
-    } else {
-      return -1;
-    }
-  }
-  return sr_Res(sres);
-#else // no TS_VALGRIND
-  UNIMPLEMENTED();
-#endif
-}
-
-// Read the contents of a file to string. Valgrind version.
-string ReadFileToString(const string &file_name, bool die_if_failed) {
-  int fd = OpenFileReadOnly(file_name, die_if_failed);
-  if (fd == -1) {
-    return string();
-  }
-  char buff[257] = {0};
-  int n_read;
-  string res;
-  while ((n_read = read(fd, buff, sizeof(buff) - 1)) > 0) {
-    buff[n_read] = 0;
-    res += buff;
-  }
-  close(fd);
-  return res;
-}
 
 
-// Get the current memory footprint of myself (parse /proc/self/status).
-static size_t GetVmSizeInMb() {
-#ifdef VGO_linux
-  static int fd = -2;
-  if (fd == -2) {  // safe since valgrind is single-threaded.
-    fd = OpenFileReadOnly("/proc/self/status", false);
-  }
-  if (fd < 0) return 0;
-  char buff[10 * 1024];
-  VG_(lseek)(fd, 0, SEEK_SET);
-  int n_read = read(fd, buff, sizeof(buff) - 1);
-  buff[n_read] = 0;
-  const char *vm_size_name = "VmSize:";
-  const int   vm_size_name_len = 7;
-  const char *vm_size_str = (const char *)VG_(strstr)((Char*)buff,
-                                                      (Char*)vm_size_name);
-  if (!vm_size_str) return 0;
-  vm_size_str += vm_size_name_len;
-  while(*vm_size_str == ' ') vm_size_str++;
-  char *end;
-  size_t vm_size_in_kb = my_strtol(vm_size_str, &end);
-  return vm_size_in_kb >> 10;
-#else
-  return 0;
-#endif
-}
-
-// Sets the contents of the file 'file_name' to 'str'.
-static void OpenFileWriteStringAndClose(const string &file_name,
-                                        const string &str) {
-#ifdef TS_VALGRIND
-  SysRes sres = VG_(open)((const Char*)file_name.c_str(),
-                          VKI_O_WRONLY|VKI_O_CREAT|VKI_O_TRUNC,
-                          VKI_S_IRUSR|VKI_S_IWUSR);
-  if (sr_isError(sres)) {
-    Report("WARNING: can not open file %s\n", file_name.c_str());
-    exit(1);
-  }
-  int fd = sr_Res(sres);
-  write(fd, str.c_str(), str.size());
-  close(fd);
-#else
-  UNIMPLEMENTED();
-#endif
-}
-
-inline uintptr_t tsan_bswap(uintptr_t x) {
-#if __WORDSIZE == 64
-#if defined(HAS_BUILTIN_BSWAP64)
-  return __builtin_bswap64(x);
-#else
-  __asm__("bswapq %0" : "=r" (x) : "0" (x));
-  return x;
-#endif // HAS_BUILTIN_BSWAP64
-#elif __WORDSIZE == 32
-#if defined(HAS_BUILTIN_BSWAP32)
-  return __builtin_bswap32(x);
-#else
-  __asm__("bswapl %0" : "=r" (x) : "0" (x));
-  return x;
-#endif // HAS_BUILTIN_BSWAP32
-#else
-# error  "Unknown VEX_HOST_WORDSIZE"
-#endif // VEX_HOST_WORDSIZE
-}
-
-// This function is taken from valgrind's m_libcbase.c (thanks GPL!).
-static bool FastRecursiveStringMatch(const char* pat, const char* str,
-                                     int *depth) {
-  CHECK_LT((*depth), 10000);
-  (*depth)++;
-  for (;;) {
-    switch (*pat) {
-      case '\0':(*depth)--;
-                return (*str == '\0');
-      case '*': do {
-                  if (FastRecursiveStringMatch(pat+1, str, depth)) {
-                    (*depth)--;
-                    return true;
-                  }
-                } while (*str++);
-                  (*depth)--;
-                  return false;
-      case '?': if (*str++ == '\0') {
-                  (*depth)--;
-                  return false;
-                }
-                pat++;
-                break;
-      case '\\':if (*++pat == '\0') {
-                  (*depth)--;
-                  return false; /* spurious trailing \ in pattern */
-                }
-                /* falls through to ... */
-      default : if (*pat++ != *str++) {
-                  (*depth)--;
-                  return false;
-                }
-                break;
-    }
-  }
-}
-
-static bool StringMatch(const string &pattern, const string &str) {
-  int depth = 0;
-  return FastRecursiveStringMatch(pattern.c_str(), str.c_str(), &depth);
-}
 
 // -------- Stats ------------------- {{{1
 // Statistic counters for the entire tool.
@@ -1978,7 +1837,8 @@ class Segment {
     n_segments_    = 1;
     reusable_sids_ = new vector<SID>;
     recycled_sids_ = new vector<SID>;
-
+    // initialization all segments to 0.
+    memset(all_segments_, 0, kMaxSID * actual_size_of_segment_);
     // initialize all_segments_[0] with garbage
     memset(all_segments_, -1, actual_size_of_segment_);
   }
@@ -3476,6 +3336,10 @@ struct ThreadSanitizerDataRaceReport : public ThreadSanitizerReport {
 
   bool        is_expected;
   bool        racey_addr_was_published;
+
+  ~ThreadSanitizerDataRaceReport() {
+    StackTrace::Delete(last_access_stack_trace);
+  }
 };
 
 // Report for bad unlock (UNLOCK_FOREIGN, UNLOCK_NONLOCKED).
@@ -3483,6 +3347,9 @@ struct ThreadSanitizerBadUnlockReport : public ThreadSanitizerReport {
   TID tid;
   StackTrace *stack_trace;
   LID lid;
+  ~ThreadSanitizerBadUnlockReport() {
+    StackTrace::Delete(stack_trace);
+  }
 };
 
 // Report for invalid lock addresses (INVALID_LOCK).
@@ -3490,6 +3357,9 @@ struct ThreadSanitizerInvalidLockReport : public ThreadSanitizerReport {
   TID tid;
   StackTrace *stack_trace;
   uintptr_t lock_addr;
+  ~ThreadSanitizerInvalidLockReport() {
+    StackTrace::Delete(stack_trace);
+  }
 };
 
 // -------- LockHistory ------------- {{{1
@@ -4424,11 +4294,6 @@ class ReportStorage {
                           ShadowValue old_sval, ShadowValue new_sval,
                           bool is_published) {
     Thread *thr = Thread::Get(tid);
-//    if (old_sval.racey()) {
-//      return false;
-//    }
-
-
     bool in_dtor = G_flags->ignore_in_dtor && thr->CallStackContainsDtor();
 
     bool is_expected = false;
@@ -4491,17 +4356,11 @@ class ReportStorage {
       delete race_report;
       return false;
     }
+#endif  // TS_VALGRIND
 
-    if (ERROR_IS_RECORDED != VG_(maybe_record_error)(
-        GetVgTid(), XS_Race, 0, NULL, race_report) ) {
-      StackTrace::Delete(stack_trace);
-      delete race_report;
+    if (!RecordErrorIfNotSuppressed(race_report)) {
       return false;
     }
-#else
-    // UNIMPLEMENTED();
-    PrintRaceReport(race_report);
-#endif
 
     SegmentSet::RefIfNotEmpty(old_sval.rd_ssid(), "AddReport");
     SegmentSet::RefIfNotEmpty(new_sval.rd_ssid(), "AddReport");
@@ -4762,19 +4621,15 @@ class ReportStorage {
     }
 
 
-#ifdef TS_VALGRIND
-    PtrdiffT offset;
-    if (VG_(get_datasym_and_offset)(a, reinterpret_cast<Char*>(buff),
-                                    kBufLen, &offset)) {
-      string symbol_descr = buff;
+    // Is it a global object?
+    uintptr_t offset;
+    string symbol_descr;
+    if (GetNameAndOffsetOfGlobalObject(a, &symbol_descr, &offset)) {
       snprintf(buff, sizeof(buff),
               "  %sAddress %p is %d bytes inside data symbol \"",
               c_blue, reinterpret_cast<void*>(a), static_cast<int>(offset));
       return buff + symbol_descr + "\"" + c_default + "\n";
     }
-#else // no TS_VALGRIND
-    // UNIMPLEMENTED();
-#endif // TS_VALGRIND
 
     if (G_flags->debug_level >= 2) {
       string res;
