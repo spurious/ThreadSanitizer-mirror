@@ -1,6 +1,6 @@
 Index: Makefile.all.am
 ===================================================================
---- Makefile.all.am	(revision 10886)
+--- Makefile.all.am	(revision 10880)
 +++ Makefile.all.am	(working copy)
 @@ -91,6 +91,15 @@
  	@FLAG_W_NO_FORMAT_ZERO_LENGTH@ \
@@ -44,7 +44,7 @@ Index: Makefile.all.am
  if VGCONF_HAVE_PLATFORM_SEC
 Index: include/pub_tool_libcassert.h
 ===================================================================
---- include/pub_tool_libcassert.h	(revision 10886)
+--- include/pub_tool_libcassert.h	(revision 10880)
 +++ include/pub_tool_libcassert.h	(working copy)
 @@ -31,18 +31,20 @@
  #ifndef __PUB_TOOL_LIBCBASSERT_H
@@ -79,7 +79,7 @@ Index: include/pub_tool_libcassert.h
  __attribute__ ((__noreturn__))
 Index: include/pub_tool_errormgr.h
 ===================================================================
---- include/pub_tool_errormgr.h	(revision 10886)
+--- include/pub_tool_errormgr.h	(revision 10880)
 +++ include/pub_tool_errormgr.h	(working copy)
 @@ -62,6 +62,14 @@
  Char*       VG_(get_error_string)  ( Error* err );
@@ -111,7 +111,7 @@ Index: include/pub_tool_errormgr.h
     error -- useful for errors that can only happen once.  The errors can be
 Index: include/vki/vki-x86-linux.h
 ===================================================================
---- include/vki/vki-x86-linux.h	(revision 10886)
+--- include/vki/vki-x86-linux.h	(revision 10880)
 +++ include/vki/vki-x86-linux.h	(working copy)
 @@ -479,12 +479,15 @@
  	 ((nr)   << _VKI_IOC_NRSHIFT) | \
@@ -136,7 +136,7 @@ Index: include/vki/vki-x86-linux.h
  #define _VKI_IO(type,nr)	_VKI_IOC(_VKI_IOC_NONE,(type),(nr),0)
 Index: include/pub_tool_basics.h
 ===================================================================
---- include/pub_tool_basics.h	(revision 10886)
+--- include/pub_tool_basics.h	(revision 10880)
 +++ include/pub_tool_basics.h	(working copy)
 @@ -192,16 +192,19 @@
     }
@@ -166,7 +166,7 @@ Index: include/pub_tool_basics.h
  #else
 Index: configure.in
 ===================================================================
---- configure.in	(revision 10886)
+--- configure.in	(revision 10880)
 +++ configure.in	(working copy)
 @@ -265,6 +265,7 @@
  		  AC_MSG_RESULT([Darwin 9.x (${kernel}) / Mac OS X 10.5 Leopard])
@@ -230,7 +230,7 @@ Index: configure.in
     massif/Makefile
 Index: Makefile.am
 ===================================================================
---- Makefile.am	(revision 10886)
+--- Makefile.am	(revision 10880)
 +++ Makefile.am	(working copy)
 @@ -10,6 +10,7 @@
  		lackey \
@@ -242,7 +242,7 @@ Index: Makefile.am
  EXP_TOOLS = 	exp-ptrcheck \
 Index: coregrind/m_errormgr.c
 ===================================================================
---- coregrind/m_errormgr.c	(revision 10886)
+--- coregrind/m_errormgr.c	(revision 10880)
 +++ coregrind/m_errormgr.c	(working copy)
 @@ -626,7 +626,7 @@
  /* Top-level entry point to the error management subsystem.
