@@ -345,16 +345,33 @@ void After_main(THREADID tid, ADDRINT pc) {
   main_exited = true;
 }
 
+//--------- Ignores -------------------------------- {{{2
+static void IgnoreAllBegin(THREADID tid, ADDRINT pc) {
+  DumpEvent(IGNORE_READS_BEG, tid, pc, 0, 0);
+  DumpEvent(IGNORE_WRITES_BEG, tid, pc, 0, 0);
+}
+static void IgnoreAllEnd(THREADID tid, ADDRINT pc) {
+  DumpEvent(IGNORE_READS_END, tid, pc, 0, 0);
+  DumpEvent(IGNORE_WRITES_END, tid, pc, 0, 0);
+}
+
 //--------- memory allocation ---------------------- {{{2
 void Before_malloc(THREADID tid, ADDRINT pc, ADDRINT size) {
+  IgnoreAllBegin(tid, pc);
   g_pin_threads[tid].last_malloc_size = size;
+}
+void Before_calloc(THREADID tid, ADDRINT pc, ADDRINT n, ADDRINT size) {
+  IgnoreAllBegin(tid, pc);
+  g_pin_threads[tid].last_malloc_size = n * size;
 }
 void After_malloc(THREADID tid, ADDRINT pc, ADDRINT ret) {
   size_t last_malloc_size = g_pin_threads[tid].last_malloc_size;
   g_pin_threads[tid].last_malloc_size = 0;
   DumpEvent(MALLOC, tid, pc, ret, last_malloc_size);
+  IgnoreAllEnd(tid, pc);
 }
 void Before_free(THREADID tid, ADDRINT pc, ADDRINT ptr) {
+  IgnoreAllBegin(tid, pc);
   DumpEvent(FREE, tid, pc, ptr, 0);
 }
 
@@ -393,6 +410,18 @@ static void InsertBeforeEvent_MemoryWrite(THREADID tid, ADDRINT pc,
                                           ADDRINT a, ADDRINT size) {
   DumpEvent(WRITE, tid, pc, a, size);
   dyn_write_count++;
+}
+
+//---------- I/O -------------------------------------- {{{2
+static const uintptr_t kIOMagic = 0x1234c678;
+
+static void Before_SignallingIOCall(THREADID tid, ADDRINT pc) {
+  DumpEvent(SIGNAL, tid, pc, kIOMagic, 0);
+}
+
+static void After_WaitingIOCall(THREADID tid, ADDRINT pc) {
+  DumpEvent(WAIT_BEFORE, tid, pc, kIOMagic, 0);
+  DumpEvent(WAIT_AFTER, tid, pc, 0, 0);
 }
 
 //---------- Synchronization -------------------------- {{{2
@@ -518,15 +547,12 @@ static void On_AnnotateIgnoreWritesEnd(THREADID tid, ADDRINT pc,
   DumpEvent(IGNORE_WRITES_END, tid, pc, 0, 0);
 }
 
+static void On_AnnotatePublishMemoryRange(THREADID tid, ADDRINT pc,
+                                          ADDRINT file, ADDRINT line,
+                                          ADDRINT a, ADDRINT size) {
+  DumpEvent(PUBLISH_RANGE, tid, pc, a, size);
+}
 
-static void IgnoreAllBegin(THREADID tid, ADDRINT pc) {
-  DumpEvent(IGNORE_READS_BEG, tid, pc, 0, 0);
-  DumpEvent(IGNORE_WRITES_BEG, tid, pc, 0, 0);
-}
-static void IgnoreAllEnd(THREADID tid, ADDRINT pc) {
-  DumpEvent(IGNORE_READS_END, tid, pc, 0, 0);
-  DumpEvent(IGNORE_WRITES_END, tid, pc, 0, 0);
-}
 
 //--------- Instrumentation ----------------------- {{{1
 static bool IgnoreImage(IMG img) {
@@ -772,7 +798,12 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_BEFORE_1("malloc", Before_malloc);
   INSERT_AFTER_1("malloc", After_malloc);
 
+  INSERT_BEFORE_2("calloc", Before_calloc);
+  INSERT_AFTER_1("calloc", After_malloc);
+
+
   INSERT_BEFORE_1("free", Before_free);
+  INSERT_AFTER_0("free", IgnoreAllEnd);
 
   // pthread create/join
   INSERT_BEFORE_4("pthread_create", Before_pthread_create);
@@ -787,6 +818,17 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
 
   INSERT_BEFORE_2("pthread_cond_timedwait", Before_pthread_cond_wait);
   INSERT_AFTER_1("pthread_cond_timedwait", After_pthread_cond_timedwait);
+
+  // pthread_mutex_*
+  INSERT_BEFORE_1("pthread_mutex_init", Before_pthread_mutex_init);
+  INSERT_BEFORE_1("pthread_mutex_destroy", Before_pthread_mutex_destroy);
+  INSERT_BEFORE_1("pthread_mutex_unlock", Before_pthread_mutex_unlock);
+
+  INSERT_BEFORE_1("pthread_mutex_lock", Before_pthread_mutex_lock);
+  INSERT_BEFORE_1("pthread_mutex_trylock", Before_pthread_mutex_lock);
+
+  INSERT_AFTER_1("pthread_mutex_lock", After_pthread_mutex_lock);
+  INSERT_AFTER_1("pthread_mutex_trylock", After_pthread_mutex_trylock);
 
 
 
@@ -814,7 +856,14 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_BEFORE_0("AnnotateIgnoreReadsEnd", On_AnnotateIgnoreReadsEnd);
   INSERT_BEFORE_0("AnnotateIgnoreWritesBegin", On_AnnotateIgnoreWritesBegin);
   INSERT_BEFORE_0("AnnotateIgnoreWritesEnd", On_AnnotateIgnoreWritesEnd);
+  INSERT_BEFORE_4("AnnotatePublishMemoryRange", On_AnnotatePublishMemoryRange);
 
+  // I/O
+  // TODO(kcc): add more I/O
+  INSERT_BEFORE_0("write", Before_SignallingIOCall);
+//  INSERT_BEFORE_0("send", Before_SignallingIOCall);
+  INSERT_AFTER_0("__read_nocancel", After_WaitingIOCall);
+//  INSERT_AFTER_0("recv", After_WaitingIOCall);
 
   // strlen and friends.
   // TODO(kcc): do something smarter here.
@@ -822,6 +871,15 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_AFTER_0("strlen", IgnoreAllEnd);
   INSERT_BEFORE_0("index", IgnoreAllBegin);
   INSERT_AFTER_0("index", IgnoreAllEnd);
+
+  // pthread_once
+  INSERT_BEFORE_0("pthread_once", IgnoreAllBegin);
+  INSERT_AFTER_0("pthread_once", IgnoreAllEnd);
+
+  // __cxa_guard_acquire / __cxa_guard_release
+  // TODO(kcc): uncomment this (and make it work on test114).
+  // INSERT_AFTER_0("__cxa_guard_acquire", IgnoreAllBegin);
+  // INSERT_AFTER_0("__cxa_guard_release", IgnoreAllEnd);
 }
 
 // Pin calls this function every time a new img is loaded.
@@ -852,30 +910,6 @@ static void CallbackForIMG(IMG img, void *v)
       MaybeInstrumentOneRoutine(img, rtn);
     }
   }
-  // Don't as me why, but some functions on Linux require special attention.
-  RTN malloc_rtn = RTN_FindByName(img, "malloc");
-  if (RTN_Valid(malloc_rtn)) {
-    // Printf("zzz\n");
-    INSERT_FN_HELPER(IPOINT_BEFORE, "malloc", malloc_rtn, Before_malloc,
-                     IARG_FUNCARG_ENTRYPOINT_VALUE, 0);
-    INSERT_FN_HELPER(IPOINT_AFTER, "malloc", malloc_rtn, After_malloc,
-                     IARG_FUNCRET_EXITPOINT_VALUE);
-  }
-
-  RTN rtn;
-  // pthread_mutex_*
-
-  INSERT_BEFORE_SLOW_1("pthread_mutex_init", Before_pthread_mutex_init);
-  INSERT_BEFORE_SLOW_1("pthread_mutex_destroy", Before_pthread_mutex_destroy);
-  INSERT_BEFORE_SLOW_1("pthread_mutex_unlock", Before_pthread_mutex_unlock);
-
-  INSERT_BEFORE_SLOW_1("pthread_mutex_lock", Before_pthread_mutex_lock);
-  INSERT_BEFORE_SLOW_1("pthread_mutex_trylock", Before_pthread_mutex_lock);
-
-  INSERT_AFTER_SLOW_1("pthread_mutex_lock", After_pthread_mutex_lock);
-  INSERT_AFTER_SLOW_1("pthread_mutex_trylock", After_pthread_mutex_trylock);
-
-
 }
 
 //--------- Fini ---------- {{{1
