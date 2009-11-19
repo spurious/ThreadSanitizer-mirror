@@ -492,6 +492,34 @@ static void On_AnnotateCondVarWait(THREADID tid, ADDRINT pc,
   DumpEvent(WAIT_AFTER, tid, pc, obj, 0);
 }
 
+
+static void On_AnnotateIgnoreReadsBegin(THREADID tid, ADDRINT pc,
+                                        ADDRINT file, ADDRINT line) {
+  DumpEvent(IGNORE_READS_BEG, tid, pc, 0, 0);
+}
+static void On_AnnotateIgnoreReadsEnd(THREADID tid, ADDRINT pc,
+                                      ADDRINT file, ADDRINT line) {
+  DumpEvent(IGNORE_READS_END, tid, pc, 0, 0);
+}
+static void On_AnnotateIgnoreWritesBegin(THREADID tid, ADDRINT pc,
+                                         ADDRINT file, ADDRINT line) {
+  DumpEvent(IGNORE_WRITES_BEG, tid, pc, 0, 0);
+}
+static void On_AnnotateIgnoreWritesEnd(THREADID tid, ADDRINT pc,
+                                       ADDRINT file, ADDRINT line) {
+  DumpEvent(IGNORE_WRITES_END, tid, pc, 0, 0);
+}
+
+
+static void IgnoreAllBegin(THREADID tid, ADDRINT pc) {
+  DumpEvent(IGNORE_READS_BEG, tid, pc, 0, 0);
+  DumpEvent(IGNORE_WRITES_BEG, tid, pc, 0, 0);
+}
+static void IgnoreAllEnd(THREADID tid, ADDRINT pc) {
+  DumpEvent(IGNORE_READS_END, tid, pc, 0, 0);
+  DumpEvent(IGNORE_WRITES_END, tid, pc, 0, 0);
+}
+
 //--------- Instrumentation ----------------------- {{{1
 static bool IgnoreImage(IMG img) {
   string name = IMG_Name(img);
@@ -773,6 +801,19 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_BEFORE_3("AnnotateCondVarWait", On_AnnotateCondVarWait);
   INSERT_BEFORE_3("AnnotateCondVarSignal", On_AnnotateCondVarSignal);
   INSERT_BEFORE_3("AnnotateCondVarSignalAll", On_AnnotateCondVarSignal);
+
+  INSERT_BEFORE_0("AnnotateIgnoreReadsBegin", On_AnnotateIgnoreReadsBegin);
+  INSERT_BEFORE_0("AnnotateIgnoreReadsEnd", On_AnnotateIgnoreReadsEnd);
+  INSERT_BEFORE_0("AnnotateIgnoreWritesBegin", On_AnnotateIgnoreWritesBegin);
+  INSERT_BEFORE_0("AnnotateIgnoreWritesEnd", On_AnnotateIgnoreWritesEnd);
+
+
+  // strlen and friends.
+  // TODO(kcc): do something smarter here.
+  INSERT_BEFORE_0("strlen", IgnoreAllBegin);
+  INSERT_AFTER_0("strlen", IgnoreAllEnd);
+  INSERT_BEFORE_0("index", IgnoreAllBegin);
+  INSERT_AFTER_0("index", IgnoreAllEnd);
 }
 
 // Pin calls this function every time a new img is loaded.
