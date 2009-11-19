@@ -433,14 +433,22 @@ static void After_pthread_barrier_wait(THREADID tid, ADDRINT pc) {
 }
 
 static void Before_pthread_cond_signal(THREADID tid, ADDRINT pc, ADDRINT cv) {
+  DumpEvent(SIGNAL, tid, pc, cv, 0);
 }
 static void Before_pthread_cond_wait(THREADID tid, ADDRINT pc,
                                      ADDRINT cv, ADDRINT mu) {
+  DumpEvent(WAIT_BEFORE, tid, pc, cv, 0);
 }
 static void After_pthread_cond_wait(THREADID tid, ADDRINT pc) {
+  DumpEvent(WAIT_AFTER, tid, pc, 0, 0);
 }
-static void After_pthread_cond_timedwait(THREADID tid, ADDRINT pc, 
+static void After_pthread_cond_timedwait(THREADID tid, ADDRINT pc,
                                          ADDRINT ret) {
+  if (ret == 0) {
+    DumpEvent(WAIT_AFTER, tid, pc, 0, 0);
+  } else {
+    DumpEvent(TWAIT_AFTER, tid, pc, 0, 0);
+  }
 }
 
 static void Before_sem_post(THREADID tid, ADDRINT pc, ADDRINT sem) {
@@ -469,6 +477,17 @@ static void On_AnnotateExpectRace(THREADID tid, ADDRINT pc,
 static void On_AnnotateNoOp(THREADID tid, ADDRINT pc,
                             ADDRINT file, ADDRINT line) {
   Printf("%s T%d\n", __FUNCTION__, tid);
+}
+
+static void On_AnnotateCondVarSignal(THREADID tid, ADDRINT pc,
+                                     ADDRINT file, ADDRINT line, ADDRINT obj) {
+  DumpEvent(SIGNAL, tid, pc, obj, 0);
+}
+
+static void On_AnnotateCondVarWait(THREADID tid, ADDRINT pc,
+                                   ADDRINT file, ADDRINT line, ADDRINT obj) {
+  DumpEvent(WAIT_BEFORE, tid, pc, obj, 0);
+  DumpEvent(WAIT_AFTER, tid, pc, obj, 0);
 }
 
 //--------- Instrumentation ----------------------- {{{1
@@ -690,6 +709,11 @@ static bool RtnMatchesName(const string &rtn_name, const string &name) {
     INSERT_FN_SLOW(IPOINT_BEFORE, name, to_insert, \
                    IARG_FUNCARG_ENTRYPOINT_VALUE, 0)
 
+#define INSERT_BEFORE_SLOW_2(name, to_insert) \
+    INSERT_FN_SLOW(IPOINT_BEFORE, name, to_insert, \
+                   IARG_FUNCARG_ENTRYPOINT_VALUE, 0, \
+                   IARG_FUNCARG_ENTRYPOINT_VALUE, 1)
+
 #define INSERT_AFTER_SLOW_0(name, to_insert) \
     INSERT_FN_SLOW(IPOINT_AFTER, name, to_insert, IARG_END)
 
@@ -717,16 +741,16 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_AFTER_1("pthread_create", After_pthread_create);
   INSERT_BEFORE_2("pthread_join", Before_pthread_join);
   INSERT_AFTER_1("pthread_join", After_pthread_join);
-  
-  
 
-  // pthread_cond_*
+   // pthread_cond_*
   INSERT_BEFORE_1("pthread_cond_signal", Before_pthread_cond_signal);
   INSERT_BEFORE_2("pthread_cond_wait", Before_pthread_cond_wait);
   INSERT_AFTER_0("pthread_cond_wait", After_pthread_cond_wait);
 
   INSERT_BEFORE_2("pthread_cond_timedwait", Before_pthread_cond_wait);
   INSERT_AFTER_1("pthread_cond_timedwait", After_pthread_cond_timedwait);
+
+
 
   // pthread_barrier_*
   INSERT_BEFORE_1("pthread_barrier_wait", Before_pthread_barrier_wait);
@@ -743,6 +767,10 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_BEFORE_4("AnnotateBenignRace", On_AnnotateBenignRace);
   INSERT_BEFORE_4("AnnotateExpectRace", On_AnnotateExpectRace);
   INSERT_BEFORE_2("AnnotateNoOp", On_AnnotateNoOp);
+
+  INSERT_BEFORE_3("AnnotateCondVarWait", On_AnnotateCondVarWait);
+  INSERT_BEFORE_3("AnnotateCondVarSignal", On_AnnotateCondVarSignal);
+  INSERT_BEFORE_3("AnnotateCondVarSignalAll", On_AnnotateCondVarSignal);
 }
 
 // Pin calls this function every time a new img is loaded.
@@ -827,6 +855,8 @@ int main(INT32 argc, CHAR **argv) {
   for (; first_param < argc; first_param++) {
     string param = argv[first_param];
     if (param == "--") break;
+    if (param == "-short_name") continue;
+    if (param == "1") continue;
     args.push_back(param);
   }
   ThreadSanitizerParseFlags(&args);

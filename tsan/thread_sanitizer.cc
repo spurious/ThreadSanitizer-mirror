@@ -5795,7 +5795,7 @@ void ThreadSanitizerPrintUsage() {
 }
 
 static void ReportUnknownFlagAndExit(const string &str) {
-  Printf("Unknwon flag or flag value: %s\n", str.c_str());
+  Printf("Unknown flag or flag value: %s\n", str.c_str());
   ThreadSanitizerPrintUsage();
   exit(1);
 }
