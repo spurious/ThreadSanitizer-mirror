@@ -454,12 +454,20 @@ static void After_pthread_cond_timedwait(THREADID tid, ADDRINT pc,
 }
 
 static void Before_sem_post(THREADID tid, ADDRINT pc, ADDRINT sem) {
+  DumpEvent(SIGNAL, tid, pc, sem, 0);
 }
 static void Before_sem_wait(THREADID tid, ADDRINT pc, ADDRINT sem) {
+  DumpEvent(WAIT_BEFORE, tid, pc, sem, 0);
 }
 static void After_sem_wait(THREADID tid, ADDRINT pc) {
+  DumpEvent(WAIT_AFTER, tid, pc, 0, 0);
 }
 static void After_sem_trywait(THREADID tid, ADDRINT pc, ADDRINT ret) {
+  if (ret == 0) {
+    DumpEvent(WAIT_AFTER, tid, pc, 0, 0);
+  } else {
+    DumpEvent(TWAIT_AFTER, tid, pc, 0, 0);
+  }
 }
 
 
