@@ -6121,6 +6121,8 @@ static void SetupIgnore() {
 #endif
   g_ignore_lists->files.push_back("*ts_valgrind_intercepts.c");
 
+  g_ignore_lists->funcs.push_back("__lll_mutex_unlock_wake");
+
   // Now read the ignore files.
   for (size_t i = 0; i < G_flags->ignore.size(); i++) {
     string file_name = G_flags->ignore[i];

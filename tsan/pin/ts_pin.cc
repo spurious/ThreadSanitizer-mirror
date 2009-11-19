@@ -428,8 +428,10 @@ static void Before_pthread_mutex_destroy(THREADID tid, ADDRINT pc, ADDRINT mu) {
 
 static void Before_pthread_barrier_wait(THREADID tid, ADDRINT pc,
                                         ADDRINT barrier) {
+  DumpEvent(BARRIER_BEFORE, tid, pc, barrier, 0);
 }
 static void After_pthread_barrier_wait(THREADID tid, ADDRINT pc) {
+  DumpEvent(BARRIER_AFTER, tid, pc, 0, 0);
 }
 
 static void Before_pthread_cond_signal(THREADID tid, ADDRINT pc, ADDRINT cv) {
