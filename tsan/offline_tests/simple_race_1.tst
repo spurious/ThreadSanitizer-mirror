@@ -9,7 +9,7 @@ LOCK_CREATE 0 ff1 7778 0
 
 
 # Start thread T1
-THR_CREATE_AFTER 0 ff 1 0
+THR_SET_PTID 0 ff 1 0
 THR_START 1 ff 0 0
 THR_FIRST_INSN 1 ff 0 0
 
