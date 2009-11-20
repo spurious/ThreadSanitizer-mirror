@@ -133,6 +133,7 @@ struct PinThread {
   THREADID     last_child_tid;
   THREADID     parent_tid;
   size_t       last_malloc_size;
+  size_t       last_mmap_size;
   pthread_t   *child_ptid_ptr;
   pthread_t    my_ptid;
   pthread_t    joined_ptid;
@@ -249,6 +250,23 @@ static void DumpEvent(EventType type, int32_t tid, uintptr_t pc,
 }
 
 //--------- Instrumentation callbacks --------------- {{{1
+//--------- Ignores -------------------------------- {{{2
+static void IgnoreAllBegin(THREADID tid, ADDRINT pc) {
+  DumpEvent(IGNORE_READS_BEG, tid, pc, 0, 0);
+  DumpEvent(IGNORE_WRITES_BEG, tid, pc, 0, 0);
+}
+static void IgnoreAllEnd(THREADID tid, ADDRINT pc) {
+  DumpEvent(IGNORE_READS_END, tid, pc, 0, 0);
+  DumpEvent(IGNORE_WRITES_END, tid, pc, 0, 0);
+}
+
+void TmpCallback1(THREADID tid, ADDRINT pc) {
+  Printf("%s T%d %lx\n", __FUNCTION__, tid, pc);
+}
+void TmpCallback2(THREADID tid, ADDRINT pc) {
+  Printf("%s T%d %lx\n", __FUNCTION__, tid, pc);
+}
+
 //--------- Threads --------------------------------- {{{2
 static void Before_pthread_create(THREADID tid, ADDRINT pc,
                                   ADDRINT arg1, ADDRINT arg2,
@@ -256,6 +274,7 @@ static void Before_pthread_create(THREADID tid, ADDRINT pc,
   n_created_threads++;
   g_pin_threads[tid].child_ptid_ptr = (pthread_t*)arg1;
   *(pthread_t*)arg1 = NULL;
+  IgnoreAllBegin(tid, pc);
   // Printf("%s: T=%d %lx\n", __FUNCTION__, tid, arg1);
 }
 
@@ -294,6 +313,7 @@ void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
 }
 
 static void After_pthread_create(THREADID tid, ADDRINT pc, ADDRINT ret) {
+  IgnoreAllEnd(tid, pc);
   // Spin, waiting for last_child_tid to appear (i.e. wait for the thread to
   // actually start) so that we know the child's tid. No locks.
   while (!__sync_add_and_fetch(&g_pin_threads[tid].last_child_tid, 0)) {
@@ -345,41 +365,37 @@ void After_main(THREADID tid, ADDRINT pc) {
   main_exited = true;
 }
 
-//--------- Ignores -------------------------------- {{{2
-static void IgnoreAllBegin(THREADID tid, ADDRINT pc) {
-  DumpEvent(IGNORE_READS_BEG, tid, pc, 0, 0);
-  DumpEvent(IGNORE_WRITES_BEG, tid, pc, 0, 0);
-}
-static void IgnoreAllEnd(THREADID tid, ADDRINT pc) {
-  DumpEvent(IGNORE_READS_END, tid, pc, 0, 0);
-  DumpEvent(IGNORE_WRITES_END, tid, pc, 0, 0);
-}
-
-void TmpCallback1(THREADID tid, ADDRINT pc) {
-  Printf("%s T%d %lx\n", __FUNCTION__, tid, pc);
-}
-void TmpCallback2(THREADID tid, ADDRINT pc) {
-  Printf("%s T%d %lx\n", __FUNCTION__, tid, pc);
-}
-
 //--------- memory allocation ---------------------- {{{2
-void Before_malloc(THREADID tid, ADDRINT pc, ADDRINT size) {
+static void Before_malloc(THREADID tid, ADDRINT pc, ADDRINT size) {
   IgnoreAllBegin(tid, pc);
   g_pin_threads[tid].last_malloc_size = size;
 }
-void Before_calloc(THREADID tid, ADDRINT pc, ADDRINT n, ADDRINT size) {
+static void Before_calloc(THREADID tid, ADDRINT pc, ADDRINT n, ADDRINT size) {
   IgnoreAllBegin(tid, pc);
   g_pin_threads[tid].last_malloc_size = n * size;
 }
-void After_malloc(THREADID tid, ADDRINT pc, ADDRINT ret) {
+
+static void After_malloc(THREADID tid, ADDRINT pc, ADDRINT ret) {
   size_t last_malloc_size = g_pin_threads[tid].last_malloc_size;
   g_pin_threads[tid].last_malloc_size = 0;
   DumpEvent(MALLOC, tid, pc, ret, last_malloc_size);
   IgnoreAllEnd(tid, pc);
 }
-void Before_free(THREADID tid, ADDRINT pc, ADDRINT ptr) {
+static void Before_free(THREADID tid, ADDRINT pc, ADDRINT ptr) {
   IgnoreAllBegin(tid, pc);
   DumpEvent(FREE, tid, pc, ptr, 0);
+}
+
+
+void Before_mmap(THREADID tid, ADDRINT pc, ADDRINT start, ADDRINT len) {
+  g_pin_threads[tid].last_mmap_size = len;
+}
+void After_mmap(THREADID tid, ADDRINT pc, ADDRINT ret) {
+  if (ret != (ADDRINT)-1L) {
+    size_t last_mmap_size = g_pin_threads[tid].last_mmap_size;
+    g_pin_threads[tid].last_mmap_size = 0;
+    DumpEvent(MALLOC, tid, pc, ret, last_mmap_size);
+  }
 }
 
 //-------- Routines and stack ---------------------- {{{2
@@ -572,6 +588,14 @@ static void On_AnnotatePublishMemoryRange(THREADID tid, ADDRINT pc,
                                           ADDRINT a, ADDRINT size) {
   DumpEvent(PUBLISH_RANGE, tid, pc, a, size);
 }
+
+static void On_AnnotateUnpublishMemoryRange(THREADID tid, ADDRINT pc,
+                                          ADDRINT file, ADDRINT line,
+                                          ADDRINT a, ADDRINT size) {
+//  Printf("T%d %s %lx %lx\n", tid, __FUNCTION__, a, size);
+  DumpEvent(UNPUBLISH_RANGE, tid, pc, a, size);
+}
+
 
 static void On_AnnotateMutexIsUsedAsCondVar(THREADID tid, ADDRINT pc,
                                             ADDRINT file, ADDRINT line,
@@ -830,6 +854,10 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_BEFORE_1("free", Before_free);
   INSERT_AFTER_0("free", IgnoreAllEnd);
 
+
+  INSERT_BEFORE_2("mmap", Before_mmap);
+  INSERT_AFTER_1("mmap", After_mmap);
+
   // pthread create/join
   INSERT_BEFORE_4("pthread_create", Before_pthread_create);
   INSERT_AFTER_1("pthread_create", After_pthread_create);
@@ -900,6 +928,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_BEFORE_0("AnnotateIgnoreWritesBegin", On_AnnotateIgnoreWritesBegin);
   INSERT_BEFORE_0("AnnotateIgnoreWritesEnd", On_AnnotateIgnoreWritesEnd);
   INSERT_BEFORE_4("AnnotatePublishMemoryRange", On_AnnotatePublishMemoryRange);
+  INSERT_BEFORE_4("AnnotateUnpublishMemoryRange", On_AnnotateUnpublishMemoryRange);
   INSERT_BEFORE_3("AnnotateMutexIsUsedAsCondVar", On_AnnotateMutexIsUsedAsCondVar);
 
   // I/O
