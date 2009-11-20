@@ -109,7 +109,6 @@ using std::unique_copy;
 #define sprintf(arg1, arg2...) VG_(sprintf)((Char*)arg1, (HChar*)arg2)
 #define vsnprintf(a1, a2, a3, a4) VG_(vsnprintf)((Char*)a1, a2, a3, a4)
 #define getpid VG_(getpid)
-#define rand()    VG_(random)(NULL)
 #define strchr(a,b)    VG_(strchr)((Char*)a,b)
 #define strdup(a) (char*)VG_(strdup)((HChar*)"strdup", (const Char*)a)
 #define snprintf(a,b,c...)     VG_(snprintf)((Char*)a,b,c)

@@ -1510,6 +1510,8 @@ class VTS {
     }
   }
 
+  int32_t uniq_id() const { return uniq_id_; }
+
  private:
   explicit VTS(size_t size)
     : ref_count_(1),
@@ -2543,14 +2545,23 @@ SSID SegmentSet::AddSegmentToTupleSS(SSID ssid, SID new_sid) {
 
   if (new_size > kMaxSegmentSetSize) {
     CHECK(new_size == kMaxSegmentSetSize + 1);
-    // we need to forget one segment. Which? Random, but not the new one.
-    int seg_to_forget = rand() % kMaxSegmentSetSize;
-
-    if (tmp_sids[seg_to_forget] == new_sid) {
-      seg_to_forget++;
-      if (seg_to_forget == kMaxSegmentSetSize)
-        seg_to_forget = 0;
+    // we need to forget one segment. Which? The oldest one.
+    int seg_to_forget = 0;
+    Segment *oldest_segment = NULL;
+    for (int i = 0; i < new_size; i++) {
+      SID sid = tmp_sids[i];
+      if (sid == new_sid) continue;
+      Segment *s = Segment::Get(tmp_sids[i]);
+      if (oldest_segment == NULL ||
+          oldest_segment->vts()->uniq_id() > s->vts()->uniq_id()) {
+        oldest_segment = s;
+        seg_to_forget = i;
+      }
     }
+    DCHECK(oldest_segment);
+
+    // Printf("seg_to_forget: %d T%d\n", tmp_sids[seg_to_forget].raw(),
+    //        oldest_segment->tid().raw());
     for (int i = seg_to_forget; i < new_size - 1; i++) {
       tmp_sids[i] = tmp_sids[i+1];
     }
@@ -6122,6 +6133,8 @@ static void SetupIgnore() {
   g_ignore_lists->files.push_back("*ts_valgrind_intercepts.c");
 
   g_ignore_lists->funcs.push_back("__lll_mutex_unlock_wake");
+  g_ignore_lists->funcs.push_back("__sigsetjmp");
+  g_ignore_lists->funcs.push_back("__sigjmp_save");
 
   // Now read the ignore files.
   for (size_t i = 0; i < G_flags->ignore.size(); i++) {
