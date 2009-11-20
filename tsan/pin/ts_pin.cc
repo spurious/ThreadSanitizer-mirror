@@ -355,6 +355,13 @@ static void IgnoreAllEnd(THREADID tid, ADDRINT pc) {
   DumpEvent(IGNORE_WRITES_END, tid, pc, 0, 0);
 }
 
+void TmpCallback1(THREADID tid, ADDRINT pc) {
+  Printf("%s T%d %lx\n", __FUNCTION__, tid, pc);
+}
+void TmpCallback2(THREADID tid, ADDRINT pc) {
+  Printf("%s T%d %lx\n", __FUNCTION__, tid, pc);
+}
+
 //--------- memory allocation ---------------------- {{{2
 void Before_malloc(THREADID tid, ADDRINT pc, ADDRINT size) {
   IgnoreAllBegin(tid, pc);
@@ -425,36 +432,48 @@ static void After_WaitingIOCall(THREADID tid, ADDRINT pc) {
 }
 
 //---------- Synchronization -------------------------- {{{2
-static void Before_pthread_mutex_unlock(THREADID tid, ADDRINT pc, ADDRINT mu) {
+// locks
+static void Before_pthread_unlock(THREADID tid, ADDRINT pc, ADDRINT mu) {
   DumpEvent(UNLOCK, tid, pc, mu, 0);
-  //   Printf("UNLOCK      %x %lx %lx 0\n", tid, pc, mu);
 }
 
-static void Before_pthread_mutex_lock(THREADID tid, ADDRINT pc, ADDRINT mu) {
+static void Before_pthread_lock(THREADID tid, ADDRINT pc, ADDRINT mu) {
   DumpEvent(LOCK_BEFORE, tid, pc, mu, 0);
-  //  Printf("LOCK_BEFORE %x %lx %lx 0\n", tid, pc, mu);
 }
 
-static void After_pthread_mutex_lock(THREADID tid, ADDRINT pc, ADDRINT unused) {
+static void After_pthread_lock(THREADID tid, ADDRINT pc, ADDRINT unused) {
   DumpEvent(WRITER_LOCK, tid, pc, 0, 0);
-  //  Printf("WRITER_LOCK %x %lx 0 0\n", tid, pc);
 }
 
-static void After_pthread_mutex_trylock(THREADID tid, ADDRINT pc, ADDRINT ret) {
+static void After_pthread_trylock(THREADID tid, ADDRINT pc, ADDRINT ret) {
   if (ret == 0)
     DumpEvent(WRITER_LOCK, tid, pc, 0, 0);
 }
 
+static void After_pthread_rdlock(THREADID tid, ADDRINT pc, ADDRINT unused) {
+  DumpEvent(READER_LOCK, tid, pc, 0, 0);
+}
+
+static void After_pthread_tryrdlock(THREADID tid, ADDRINT pc, ADDRINT ret) {
+  if (ret == 0)
+    DumpEvent(READER_LOCK, tid, pc, 0, 0);
+}
+
 static void Before_pthread_mutex_init(THREADID tid, ADDRINT pc, ADDRINT mu) {
   DumpEvent(LOCK_CREATE, tid, pc, mu, 0);
-  // Printf("LOCK_CREATE %x %lx %lx 0\n", tid, pc, mu);
+}
+static void Before_pthread_rwlock_init(THREADID tid, ADDRINT pc, ADDRINT mu) {
+  DumpEvent(LOCK_CREATE, tid, pc, mu, 0);
 }
 
 static void Before_pthread_mutex_destroy(THREADID tid, ADDRINT pc, ADDRINT mu) {
   DumpEvent(LOCK_DESTROY, tid, pc, mu, 0);
-  //  Printf("LOCK_DESTROY %x %lx %lx 0\n", tid, pc, mu);
+}
+static void Before_pthread_rwlock_destroy(THREADID tid, ADDRINT pc, ADDRINT mu) {
+  DumpEvent(LOCK_DESTROY, tid, pc, mu, 0);
 }
 
+// barrier
 static void Before_pthread_barrier_wait(THREADID tid, ADDRINT pc,
                                         ADDRINT barrier) {
   DumpEvent(BARRIER_BEFORE, tid, pc, barrier, 0);
@@ -463,6 +482,7 @@ static void After_pthread_barrier_wait(THREADID tid, ADDRINT pc) {
   DumpEvent(BARRIER_AFTER, tid, pc, 0, 0);
 }
 
+// condvar
 static void Before_pthread_cond_signal(THREADID tid, ADDRINT pc, ADDRINT cv) {
   DumpEvent(SIGNAL, tid, pc, cv, 0);
 }
@@ -482,6 +502,7 @@ static void After_pthread_cond_timedwait(THREADID tid, ADDRINT pc,
   }
 }
 
+// sem
 static void Before_sem_post(THREADID tid, ADDRINT pc, ADDRINT sem) {
   DumpEvent(SIGNAL, tid, pc, sem, 0);
 }
@@ -498,7 +519,6 @@ static void After_sem_trywait(THREADID tid, ADDRINT pc, ADDRINT ret) {
     DumpEvent(TWAIT_AFTER, tid, pc, 0, 0);
   }
 }
-
 
 //---------- Annotations -------------------------- {{{2
 static void On_AnnotateBenignRace(THREADID tid, ADDRINT pc,
@@ -553,6 +573,11 @@ static void On_AnnotatePublishMemoryRange(THREADID tid, ADDRINT pc,
   DumpEvent(PUBLISH_RANGE, tid, pc, a, size);
 }
 
+static void On_AnnotateMutexIsUsedAsCondVar(THREADID tid, ADDRINT pc,
+                                            ADDRINT file, ADDRINT line,
+                                            ADDRINT mu) {
+  DumpEvent(HB_LOCK, tid, pc, mu, 0);
+}
 
 //--------- Instrumentation ----------------------- {{{1
 static bool IgnoreImage(IMG img) {
@@ -822,14 +847,32 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   // pthread_mutex_*
   INSERT_BEFORE_1("pthread_mutex_init", Before_pthread_mutex_init);
   INSERT_BEFORE_1("pthread_mutex_destroy", Before_pthread_mutex_destroy);
-  INSERT_BEFORE_1("pthread_mutex_unlock", Before_pthread_mutex_unlock);
+  INSERT_BEFORE_1("pthread_mutex_unlock", Before_pthread_unlock);
 
-  INSERT_BEFORE_1("pthread_mutex_lock", Before_pthread_mutex_lock);
-  INSERT_BEFORE_1("pthread_mutex_trylock", Before_pthread_mutex_lock);
+  INSERT_BEFORE_1("pthread_mutex_lock", Before_pthread_lock);
+  INSERT_BEFORE_1("pthread_mutex_trylock", Before_pthread_lock);
 
-  INSERT_AFTER_1("pthread_mutex_lock", After_pthread_mutex_lock);
-  INSERT_AFTER_1("pthread_mutex_trylock", After_pthread_mutex_trylock);
+  INSERT_AFTER_1("pthread_mutex_lock", After_pthread_lock);
+  INSERT_AFTER_1("pthread_mutex_trylock", After_pthread_trylock);
 
+
+  // pthread_rwlock_*
+  INSERT_BEFORE_1("pthread_rwlock_init", Before_pthread_rwlock_init);
+  INSERT_BEFORE_1("pthread_rwlock_destroy", Before_pthread_rwlock_destroy);
+
+  INSERT_BEFORE_1("pthread_rwlock_unlock", Before_pthread_unlock);
+
+  INSERT_BEFORE_1("pthread_rwlock_wrlock", Before_pthread_lock);
+  INSERT_AFTER_1 ("pthread_rwlock_wrlock", After_pthread_lock);
+
+  INSERT_BEFORE_1("pthread_rwlock_rdlock", Before_pthread_lock);
+  INSERT_AFTER_1 ("pthread_rwlock_rdlock", After_pthread_rdlock);
+
+  INSERT_BEFORE_1("pthread_rwlock_trywrlock", Before_pthread_lock);
+  INSERT_AFTER_1 ("pthread_rwlock_trywrlock", After_pthread_trylock);
+
+  INSERT_BEFORE_1("pthread_rwlock_tryrdlock", Before_pthread_lock);
+  INSERT_AFTER_1 ("pthread_rwlock_tryrdlock", After_pthread_tryrdlock);
 
 
   // pthread_barrier_*
@@ -857,6 +900,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_BEFORE_0("AnnotateIgnoreWritesBegin", On_AnnotateIgnoreWritesBegin);
   INSERT_BEFORE_0("AnnotateIgnoreWritesEnd", On_AnnotateIgnoreWritesEnd);
   INSERT_BEFORE_4("AnnotatePublishMemoryRange", On_AnnotatePublishMemoryRange);
+  INSERT_BEFORE_3("AnnotateMutexIsUsedAsCondVar", On_AnnotateMutexIsUsedAsCondVar);
 
   // I/O
   // TODO(kcc): add more I/O
@@ -877,9 +921,9 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_AFTER_0("pthread_once", IgnoreAllEnd);
 
   // __cxa_guard_acquire / __cxa_guard_release
-  // TODO(kcc): uncomment this (and make it work on test114).
-  // INSERT_AFTER_0("__cxa_guard_acquire", IgnoreAllBegin);
-  // INSERT_AFTER_0("__cxa_guard_release", IgnoreAllEnd);
+  // TODO(kcc): uncomment this (and make it work on test108,test114).
+  // INSERT_AFTER_0("__cxa_guard_acquire", TmpCallback1);
+  // INSERT_BEFORE_0("__cxa_guard_release", TmpCallback2);
 }
 
 // Pin calls this function every time a new img is loaded.
@@ -894,7 +938,7 @@ static void CallbackForIMG(IMG img, void *v)
 //    Printf("Sym: %s\n", name.c_str());
 //  }
 
-  // Check if we want to spend time searching this img for 
+  // Check if we want to spend time searching this img for
   // some particular functions.
   string img_name = IMG_Name(img);
   // save the addresses of *all* routines in a map.

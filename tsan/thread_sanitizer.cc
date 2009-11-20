@@ -5738,7 +5738,7 @@ class Detector {
     for (int rd_or_rw = 0; rd_or_rw <= 1; rd_or_rw++) {
       if (thr->ignore(rd_or_rw)) {
         Report("WARNING: T%d ended while the 'ignore %s' bit is set\n",
-               rd_or_rw ? "writes" : "reads", tid.raw());
+              tid.raw(), rd_or_rw ? "writes" : "reads");
         if (G_flags->debug_level >= 1) {
           Report("Last ignore call was here: \n%s\n",
                  thr->GetLastIgnoreContext(rd_or_rw)->ToString().c_str());
