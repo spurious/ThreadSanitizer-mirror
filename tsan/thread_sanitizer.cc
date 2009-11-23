@@ -3504,6 +3504,7 @@ struct Thread {
     NewSegmentWithoutUnrefingOld("Thread Creation", vts);
 
     call_stack_.reserve(100);
+    call_stack_ignore_rec_.reserve(100);
     HandleRtnCall(0, 0);
     ignore_[0] = ignore_[1] = 0;
     ignore_context_[0] = ignore_context_[1] = NULL;
@@ -3576,14 +3577,20 @@ struct Thread {
   bool is_running() const { return is_running_; }
 
   // ignore
-  void set_ignore(bool is_w, bool on) {
+  INLINE void set_ignore(bool is_w, bool on) {
     ignore_[is_w] += on ? 1 : -1;
-    if (on && G_flags->debug_level >= 1) {
+    CHECK(ignore_[is_w] >= 0);
+    if (DEBUG_MODE && on && G_flags->debug_level >= 1) {
       StackTrace::Delete(ignore_context_[is_w]);
       ignore_context_[is_w] = CreateStackTrace(0, 3);
     }
   }
-  bool ignore(bool is_w) { return ignore_[is_w]; }
+  INLINE void set_ignore_all(bool on) {
+    set_ignore(false, on);
+    set_ignore(true, on);
+  }
+  bool ignore(bool is_w) { return ignore_[is_w] > 0; }
+  bool ignore_all() { return (ignore_[0] > 0) && (ignore_[1] > 0); }
 
   StackTrace *GetLastIgnoreContext(bool is_w) {
     return ignore_context_[is_w];
@@ -3978,10 +3985,19 @@ struct Thread {
       call_stack_.back() = call_pc;
     }
     PushCallStack(target_pc);
+    if (ThreadSanitizerIgnoreAccessesBelowFunction(target_pc)) {
+      set_ignore_all(true);
+      call_stack_ignore_rec_.push_back(true);
+    } else {
+      call_stack_ignore_rec_.push_back(false);
+    }
   }
 
   void HandleRtnExit() {
     if (!call_stack_.empty()) {
+      if (call_stack_ignore_rec_.back())
+        set_ignore_all(false);
+      call_stack_ignore_rec_.pop_back();
       call_stack_.pop_back();
     }
   }
@@ -4142,6 +4158,9 @@ struct Thread {
   VTS *vts_at_exit_;
 
   vector<uintptr_t> call_stack_;
+  // Contains "true" for those functions in the stacktrace which inclusively
+  // ignore memory accesses.
+  vector<unsigned char> call_stack_ignore_rec_;
 
   LockHistory lock_history_;
 
@@ -4773,6 +4792,8 @@ class Detector {
 
   void INLINE HandleStackMemChange(int32_t tid, uintptr_t addr,
                                    uintptr_t size, bool is_new) {
+    Thread *thr = Thread::Get(TID(tid));
+    if (thr->ignore_all()) return;
     G_stats->events[is_new ? STACK_MEM_NEW : STACK_MEM_DIE]++;
     HandleStackMem(TID(tid), addr, size, is_new);
   }
@@ -4854,7 +4875,9 @@ class Detector {
   }
 
   void INLINE HandleSblockEnter(TID tid, uintptr_t pc) {
-    Thread::Get(tid)->HandleSblockEnter(pc);
+    Thread *thr = Thread::Get(tid);
+    if (thr->ignore_all()) return;
+    thr->HandleSblockEnter(pc);
     G_stats->events[SBLOCK_ENTER]++;
 
     FlushIfNeeded();
@@ -5512,7 +5535,7 @@ class Detector {
                                          bool is_w) {
     if (UNLIKELY(G_flags->sample_events > 0)) {
       const char *type =
-          (cur_thread_->ignore(true) || cur_thread_->ignore(false))
+          (cur_thread_->ignore(is_w))
           ? "SampleMemoryAccessIgnored"
           : "SampleMemoryAccess";
       static EventSampler sampler;
@@ -6109,13 +6132,14 @@ void SplitStringIntoLinesAndRemoveBlanksAndComments(
 }
 
 struct IgnoreLists {
-  vector<string> funcs;
+  vector<string> funs;
+  vector<string> funs_r;
+  vector<string> funs_hist;
   vector<string> objs;
   vector<string> files;
 };
 
 static IgnoreLists *g_ignore_lists;
-
 
 // Setup the list of functions/images/files to ignore.
 static void SetupIgnore() {
@@ -6132,9 +6156,9 @@ static void SetupIgnore() {
 #endif
   g_ignore_lists->files.push_back("*ts_valgrind_intercepts.c");
 
-  g_ignore_lists->funcs.push_back("__lll_mutex_unlock_wake");
-  g_ignore_lists->funcs.push_back("__sigsetjmp");
-  g_ignore_lists->funcs.push_back("__sigjmp_save");
+  g_ignore_lists->funs.push_back("__lll_mutex_unlock_wake");
+  g_ignore_lists->funs.push_back("__sigsetjmp");
+  g_ignore_lists->funs.push_back("__sigjmp_save");
 
   // Now read the ignore files.
   for (size_t i = 0; i < G_flags->ignore.size(); i++) {
@@ -6151,7 +6175,15 @@ static void SetupIgnore() {
       }
       if (line.find("fun:") == 0) {
         string s = line.substr(4);
-        g_ignore_lists->funcs.push_back(s);
+        g_ignore_lists->funs.push_back(s);
+      }
+      if (line.find("fun_r:") == 0) {
+        string s = line.substr(6);
+        g_ignore_lists->funs_r.push_back(s);
+      }
+      if (line.find("fun_hist:") == 0) {
+        string s = line.substr(8);
+        g_ignore_lists->funs_hist.push_back(s);
       }
       if (line.find("src:") == 0) {
         string s = line.substr(4);
@@ -6161,28 +6193,49 @@ static void SetupIgnore() {
   }
 }
 
+bool StringVectorMatch(const vector<string>& v, const string& s) {
+  for (size_t i = 0; i < v.size(); i++) {
+    if (StringMatch(v[i], s))
+      return true;
+  }
+  return false;
+}
+
 bool ThreadSanitizerWantToInstrumentSblock(uintptr_t pc) {
   string img_name, rtn_name, file_name;
   int line_no;
   G_stats->pc_to_strings++;
   PcToStrings(pc, false, &img_name, &rtn_name, &file_name, &line_no);
 
-  for (size_t i = 0; i < g_ignore_lists->files.size(); i++) {
-    if (StringMatch(g_ignore_lists->files[i], file_name))
-      return false;
-  }
-  for (size_t i = 0; i < g_ignore_lists->objs.size(); i++) {
-    if (StringMatch(g_ignore_lists->objs[i], img_name))
-      return false;
-  }
-  for (size_t i = 0; i < g_ignore_lists->funcs.size(); i++) {
-    if (StringMatch(g_ignore_lists->funcs[i], rtn_name))
-      return false;
-  }
-
-  return true;
+  return !(StringVectorMatch(g_ignore_lists->files, file_name)
+        || StringVectorMatch(g_ignore_lists->objs, img_name)
+        || StringVectorMatch(g_ignore_lists->funs, rtn_name)
+        || StringVectorMatch(g_ignore_lists->funs_r, rtn_name));
 }
 
+bool ThreadSanitizerWantToCreateSegmentsOnSblockEntry(uintptr_t pc) {
+  string rtn_name;
+  rtn_name = PcToRtnNameWithStats(pc, false);
+
+  return !(StringVectorMatch(g_ignore_lists->funs_hist, rtn_name));
+}
+
+// Returns true if function at "pc" is marked as "fun_r" in the ignore file.
+bool ThreadSanitizerIgnoreAccessesBelowFunction(uintptr_t pc) {
+  typedef hash_map<uintptr_t, bool> Cache;
+  static Cache *cache = NULL;
+  if (!cache)
+    cache = new Cache;
+
+  // Fast path - check if we already know the answer.
+  Cache::iterator i = cache->find(pc);
+  if (i != cache->end())
+    return i->second;
+
+  string rtn_name = PcToRtnNameWithStats(pc, false);
+  bool ret = StringVectorMatch(g_ignore_lists->funs_r, rtn_name);
+  return ((*cache)[pc] = ret);
+}
 
 extern void ThreadSanitizerInit() {
   ScopedMallocCostCenter cc("ThreadSanitizerInit");

@@ -839,6 +839,8 @@ static IRSB* ts_instrument ( VgCallbackClosure* closure,
 
   bool instrument_memory =
       ThreadSanitizerWantToInstrumentSblock(closure->nraddr);
+  bool create_segments =
+      ThreadSanitizerWantToCreateSegmentsOnSblockEntry(closure->nraddr);
 
 
   if (gWordTy != hWordTy) {
@@ -865,7 +867,7 @@ static IRSB* ts_instrument ( VgCallbackClosure* closure,
     tl_assert(isFlatIRStmt(st));
 
     if (instrument_memory) {
-      if (i == first && G_flags->keep_history >= 1) {
+      if (i == first && G_flags->keep_history >= 1 && create_segments) {
         ts_instrument_create_new_segment_for_history(bbOut);
       }
       instrument_statement(st, bbIn, bbOut, hWordTy);

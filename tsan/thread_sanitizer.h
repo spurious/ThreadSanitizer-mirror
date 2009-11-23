@@ -390,6 +390,8 @@ extern void ThreadSanitizerHandleStackMemChange(int32_t tid, uintptr_t addr,
                                                 uintptr_t size, bool is_new);
 extern void ThreadSanitizerParseFlags(vector<string>* args);
 extern bool ThreadSanitizerWantToInstrumentSblock(uintptr_t pc);
+extern bool ThreadSanitizerWantToCreateSegmentsOnSblockEntry(uintptr_t pc);
+extern bool ThreadSanitizerIgnoreAccessesBelowFunction(uintptr_t pc);
 
 extern void ThreadSanitizerEnterSblock(int32_t tid, uintptr_t pc);
 extern void ThreadSanitizerHandleRtnCall(int32_t tid, uintptr_t call_pc,
