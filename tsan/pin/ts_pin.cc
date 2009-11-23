@@ -442,7 +442,7 @@ static void InsertBeforeEvent_MemoryWrite(THREADID tid, ADDRINT pc,
   dyn_write_count++;
 }
 
-//---------- I/O -------------------------------------- {{{2
+//---------- I/O; exit------------------------------- {{{2
 static const uintptr_t kIOMagic = 0x1234c678;
 
 static void Before_SignallingIOCall(THREADID tid, ADDRINT pc) {
@@ -454,10 +454,24 @@ static void After_WaitingIOCall(THREADID tid, ADDRINT pc) {
   DumpEvent(WAIT_AFTER, tid, pc, 0, 0);
 }
 
+static const uintptr_t kAtexitMagic = 0x9876f432;
+
+static void On_atexit(THREADID tid, ADDRINT pc) {
+  DumpEvent(SIGNAL, tid, pc, kAtexitMagic, 0);
+}
+
+static void On_exit(THREADID tid, ADDRINT pc) {
+  DumpEvent(WAIT_BEFORE, tid, pc, kAtexitMagic, 0);
+  DumpEvent(WAIT_AFTER, tid, pc, 0, 0);
+}
+
 //---------- Synchronization -------------------------- {{{2
 // locks
 static void Before_pthread_unlock(THREADID tid, ADDRINT pc, ADDRINT mu) {
   DumpEvent(UNLOCK, tid, pc, mu, 0);
+}
+static void Before_pthread_spin_unlock(THREADID tid, ADDRINT pc, ADDRINT mu) {
+  DumpEvent(UNLOCK_OR_INIT, tid, pc, mu, 0);
 }
 
 static void Before_pthread_lock(THREADID tid, ADDRINT pc, ADDRINT mu) {
@@ -488,11 +502,17 @@ static void Before_pthread_mutex_init(THREADID tid, ADDRINT pc, ADDRINT mu) {
 static void Before_pthread_rwlock_init(THREADID tid, ADDRINT pc, ADDRINT mu) {
   DumpEvent(LOCK_CREATE, tid, pc, mu, 0);
 }
+static void Before_pthread_spin_init(THREADID tid, ADDRINT pc, ADDRINT mu) {
+  DumpEvent(UNLOCK_OR_INIT, tid, pc, mu, 0);
+}
 
 static void Before_pthread_mutex_destroy(THREADID tid, ADDRINT pc, ADDRINT mu) {
   DumpEvent(LOCK_DESTROY, tid, pc, mu, 0);
 }
 static void Before_pthread_rwlock_destroy(THREADID tid, ADDRINT pc, ADDRINT mu) {
+  DumpEvent(LOCK_DESTROY, tid, pc, mu, 0);
+}
+static void Before_pthread_spin_destroy(THREADID tid, ADDRINT pc, ADDRINT mu) {
   DumpEvent(LOCK_DESTROY, tid, pc, mu, 0);
 }
 
@@ -614,6 +634,30 @@ static void On_AnnotateMutexIsUsedAsCondVar(THREADID tid, ADDRINT pc,
                                             ADDRINT file, ADDRINT line,
                                             ADDRINT mu) {
   DumpEvent(HB_LOCK, tid, pc, mu, 0);
+}
+
+static void On_AnnotatePCQCreate(THREADID tid, ADDRINT pc,
+                                 ADDRINT file, ADDRINT line,
+                                 ADDRINT pcq) {
+  DumpEvent(PCQ_CREATE, tid, pc, pcq, 0);
+}
+
+static void On_AnnotatePCQDestroy(THREADID tid, ADDRINT pc,
+                                  ADDRINT file, ADDRINT line,
+                                  ADDRINT pcq) {
+  DumpEvent(PCQ_DESTROY, tid, pc, pcq, 0);
+}
+
+static void On_AnnotatePCQPut(THREADID tid, ADDRINT pc,
+                              ADDRINT file, ADDRINT line,
+                              ADDRINT pcq) {
+  DumpEvent(PCQ_PUT, tid, pc, pcq, 0);
+}
+
+static void On_AnnotatePCQGet(THREADID tid, ADDRINT pc,
+                              ADDRINT file, ADDRINT line,
+                              ADDRINT pcq) {
+  DumpEvent(PCQ_GET, tid, pc, pcq, 0);
 }
 
 //--------- Instrumentation ----------------------- {{{1
@@ -918,6 +962,17 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_BEFORE_1("pthread_rwlock_tryrdlock", Before_pthread_lock);
   INSERT_AFTER_1 ("pthread_rwlock_tryrdlock", After_pthread_tryrdlock);
 
+  // pthread_spin_*
+  INSERT_BEFORE_1("pthread_spin_init", Before_pthread_spin_init);
+  INSERT_BEFORE_1("pthread_spin_destroy", Before_pthread_spin_destroy);
+  INSERT_BEFORE_1("pthread_spin_unlock", Before_pthread_spin_unlock);
+
+  INSERT_BEFORE_1("pthread_spin_lock", Before_pthread_lock);
+  INSERT_BEFORE_1("pthread_spin_trylock", Before_pthread_lock);
+
+  INSERT_AFTER_1("pthread_spin_lock", After_pthread_lock);
+  INSERT_AFTER_1("pthread_spin_trylock", After_pthread_trylock);
+
 
   // pthread_barrier_*
   INSERT_BEFORE_1("pthread_barrier_wait", Before_pthread_barrier_wait);
@@ -948,11 +1003,22 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_BEFORE_4("AnnotateUnpublishMemoryRange", On_AnnotateUnpublishMemoryRange);
   INSERT_BEFORE_3("AnnotateMutexIsUsedAsCondVar", On_AnnotateMutexIsUsedAsCondVar);
 
+  INSERT_BEFORE_3("AnnotatePCQCreate", On_AnnotatePCQCreate);
+  INSERT_BEFORE_3("AnnotatePCQDestroy", On_AnnotatePCQDestroy);
+  INSERT_BEFORE_3("AnnotatePCQPut", On_AnnotatePCQPut);
+  INSERT_BEFORE_3("AnnotatePCQGet", On_AnnotatePCQGet);
+
   // I/O
   // TODO(kcc): add more I/O
   INSERT_BEFORE_0("write", Before_SignallingIOCall);
+  INSERT_BEFORE_0("unlink", Before_SignallingIOCall);
+  INSERT_BEFORE_0("rmdir", Before_SignallingIOCall);
 //  INSERT_BEFORE_0("send", Before_SignallingIOCall);
   INSERT_AFTER_0("__read_nocancel", After_WaitingIOCall);
+  INSERT_AFTER_0("fopen", After_WaitingIOCall);
+  INSERT_AFTER_0("__fopen_internal", After_WaitingIOCall);
+  INSERT_AFTER_0("open", After_WaitingIOCall);
+  INSERT_AFTER_0("opendir", After_WaitingIOCall);
 //  INSERT_AFTER_0("recv", After_WaitingIOCall);
 
   // strlen and friends.
@@ -970,6 +1036,10 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   // TODO(kcc): uncomment this (and make it work on test108,test114).
   // INSERT_AFTER_0("__cxa_guard_acquire", TmpCallback1);
   // INSERT_BEFORE_0("__cxa_guard_release", TmpCallback2);
+  //
+
+  INSERT_BEFORE_0("atexit", On_atexit);
+  INSERT_BEFORE_0("exit", On_exit);
 }
 
 // Pin calls this function every time a new img is loaded.
@@ -1017,7 +1087,7 @@ int main(INT32 argc, CHAR **argv) {
   PIN_Init(argc, argv);
   PIN_InitSymbols();
 
-
+  G_out = stderr;
 
   // Init ThreadSanitizer.
   G_flags = new FLAGS;
