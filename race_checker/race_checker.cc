@@ -1,6 +1,6 @@
 /*
   Copyright (C) 2008-2008 Google Inc
-     opensource@google.com 
+     opensource@google.com
 
   This program is free software; you can redistribute it and/or
   modify it under the terms of the GNU General Public License as
@@ -36,11 +36,11 @@
 #include <assert.h>
 #ifdef NDEBUG
 # error "Pleeease, do not define NDEBUG"
-#endif 
+#endif
 #define CHECK assert
 
 class Mutex {
- public: 
+ public:
   Mutex() {
     CHECK(0 == pthread_mutex_init(&mu_, NULL));
   }
@@ -54,9 +54,9 @@ class Mutex {
 };
 
 
-static int race_checker_level = 
+static int race_checker_level =
   getenv("RACECHECKER") ? atoi(getenv("RACECHECKER")) : 0;
-static int race_checker_sleep_ms = 
+static int race_checker_sleep_ms =
   getenv("RACECHECKER_SLEEP_MS") ? atoi(getenv("RACECHECKER_SLEEP_MS")) : 1;
 
 
@@ -104,7 +104,7 @@ void RaceChecker::Start(RaceChecker::Type type, const volatile void *address) {
     this->address_ = reinterpret_cast<uintptr_t>(address);
     this->thread_ = pthread_self();
     CallSite callsite;
-    callsite.nstack = 
+    callsite.nstack =
         backtrace(callsite.stack,
                   sizeof(callsite.stack)/sizeof(callsite.stack[0]));
     callsite.thread = this->thread_;
