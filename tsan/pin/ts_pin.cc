@@ -116,8 +116,6 @@ static int64_t dyn_write_count;
 
 static bool main_entered, main_exited;
 
-bool kIgnoreStack = true;
-
 // Number of threads created by pthread_create (i.e. not counting main thread).
 static int n_created_threads = 0;
 
@@ -546,6 +544,10 @@ static void After_pthread_cond_timedwait(THREADID tid, ADDRINT pc,
 }
 
 // sem
+static void After_sem_open(THREADID tid, ADDRINT pc, ADDRINT ret) {
+  // TODO(kcc): need to handle it more precise?
+  DumpEvent(SIGNAL, tid, pc, ret, 0);
+}
 static void Before_sem_post(THREADID tid, ADDRINT pc, ADDRINT sem) {
   DumpEvent(SIGNAL, tid, pc, sem, 0);
 }
@@ -711,7 +713,7 @@ static void InstrumentBbl(BBL bbl, RTN rtn, bool ignore_memory) {
       CHECK(!INS_IsRet(ins));
       CHECK(!INS_IsProcedureCall(ins));
     }
-    bool is_stack = INS_IsStackRead(ins) || INS_IsStackWrite(ins);
+    // bool is_stack = INS_IsStackRead(ins) || INS_IsStackWrite(ins);
     bool is_atomic = INS_IsAtomicUpdate(ins);
     bool is_read  = INS_IsMemoryRead(ins);
     bool is_read2 = INS_HasMemoryRead2(ins);
@@ -725,7 +727,6 @@ static void InstrumentBbl(BBL bbl, RTN rtn, bool ignore_memory) {
                      IARG_END);
 
     }
-    if (kIgnoreStack && is_stack) continue;
     if (is_atomic) continue;
     if (is_read)  InstrumentRead(ins);
     if (is_read2) InstrumentRead2(ins);
@@ -979,6 +980,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_AFTER_0("pthread_barrier_wait", After_pthread_barrier_wait);
 
   // sem_*
+  INSERT_AFTER_1("sem_open", After_sem_open);
   INSERT_BEFORE_1("sem_post", Before_sem_post);
   INSERT_BEFORE_1("sem_wait", Before_sem_wait);
   INSERT_AFTER_0("sem_wait", After_sem_wait);
@@ -1034,8 +1036,8 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
 
   // __cxa_guard_acquire / __cxa_guard_release
   // TODO(kcc): uncomment this (and make it work on test108,test114).
-  // INSERT_AFTER_0("__cxa_guard_acquire", TmpCallback1);
-  // INSERT_BEFORE_0("__cxa_guard_release", TmpCallback2);
+  // INSERT_BEFORE_0("__cxa_guard_acquire", IgnoreAllBegin);
+  // INSERT_BEFORE_0("__cxa_guard_release", IgnoreAllEnd);
   //
 
   INSERT_BEFORE_0("atexit", On_atexit);
