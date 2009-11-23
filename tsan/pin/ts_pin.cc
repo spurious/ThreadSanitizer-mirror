@@ -252,10 +252,12 @@ static void DumpEvent(EventType type, int32_t tid, uintptr_t pc,
 //--------- Instrumentation callbacks --------------- {{{1
 //--------- Ignores -------------------------------- {{{2
 static void IgnoreAllBegin(THREADID tid, ADDRINT pc) {
+//  if (tid == 0) Printf("Ignore++ %d\n", z++);
   DumpEvent(IGNORE_READS_BEG, tid, pc, 0, 0);
   DumpEvent(IGNORE_WRITES_BEG, tid, pc, 0, 0);
 }
 static void IgnoreAllEnd(THREADID tid, ADDRINT pc) {
+//  if (tid == 0) Printf("Ignore-- %d\n", z--);
   DumpEvent(IGNORE_READS_END, tid, pc, 0, 0);
   DumpEvent(IGNORE_WRITES_END, tid, pc, 0, 0);
 }
@@ -367,11 +369,11 @@ void After_main(THREADID tid, ADDRINT pc) {
 
 //--------- memory allocation ---------------------- {{{2
 static void Before_malloc(THREADID tid, ADDRINT pc, ADDRINT size) {
-  IgnoreAllBegin(tid, pc);
+//  IgnoreAllBegin(tid, pc);
   g_pin_threads[tid].last_malloc_size = size;
 }
 static void Before_calloc(THREADID tid, ADDRINT pc, ADDRINT n, ADDRINT size) {
-  IgnoreAllBegin(tid, pc);
+//  IgnoreAllBegin(tid, pc);
   g_pin_threads[tid].last_malloc_size = n * size;
 }
 
@@ -379,10 +381,10 @@ static void After_malloc(THREADID tid, ADDRINT pc, ADDRINT ret) {
   size_t last_malloc_size = g_pin_threads[tid].last_malloc_size;
   g_pin_threads[tid].last_malloc_size = 0;
   DumpEvent(MALLOC, tid, pc, ret, last_malloc_size);
-  IgnoreAllEnd(tid, pc);
+//  IgnoreAllEnd(tid, pc);
 }
 static void Before_free(THREADID tid, ADDRINT pc, ADDRINT ptr) {
-  IgnoreAllBegin(tid, pc);
+//  IgnoreAllBegin(tid, pc);
   DumpEvent(FREE, tid, pc, ptr, 0);
 }
 
@@ -423,7 +425,9 @@ void InsertBeforeEvent_SblockEntry(THREADID tid, ADDRINT pc) {
 //---------- Memory accesses -------------------------- {{{2
 static void InsertBeforeEvent_MemoryRead(THREADID tid, ADDRINT pc,
                                          ADDRINT a, ADDRINT size) {
-  //  Printf("READ %x %lx %lx %lx\n", tid, pc, a, size);
+  if (DEBUG_MODE && a == G_flags->trace_addr) {
+    Printf("T%d %s %lx\n", tid, __FUNCTION__, a);
+  }
   DumpEvent(READ, tid, pc, a, size);
   dyn_read_count++;
 }
@@ -431,6 +435,9 @@ static void InsertBeforeEvent_MemoryRead(THREADID tid, ADDRINT pc,
 
 static void InsertBeforeEvent_MemoryWrite(THREADID tid, ADDRINT pc,
                                           ADDRINT a, ADDRINT size) {
+  if (DEBUG_MODE && a == G_flags->trace_addr) {
+    Printf("T%d %s %lx\n", tid, __FUNCTION__, a);
+  }
   DumpEvent(WRITE, tid, pc, a, size);
   dyn_write_count++;
 }
@@ -547,6 +554,12 @@ static void On_AnnotateExpectRace(THREADID tid, ADDRINT pc,
                                   ADDRINT file, ADDRINT line,
                                   ADDRINT a, ADDRINT descr) {
   DumpEvent(EXPECT_RACE, tid, descr, a, 0);
+}
+
+static void On_AnnotateTraceMemory(THREADID tid, ADDRINT pc,
+                                   ADDRINT file, ADDRINT line,
+                                   ADDRINT a) {
+  DumpEvent(TRACE_MEM, tid, pc, a, 0);
 }
 
 static void On_AnnotateNoOp(THREADID tid, ADDRINT pc,
@@ -834,6 +847,9 @@ static bool RtnMatchesName(const string &rtn_name, const string &name) {
     INSERT_FN_SLOW(IPOINT_AFTER, name, to_insert, IARG_FUNCRET_EXITPOINT_VALUE)
 
 static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
+  if (IgnoreImage(img)) {
+    return;
+  }
   string rtn_name = RTN_Name(rtn);
   if (G_flags->verbosity >= 2) {
     Printf("%s: %s\n", __FUNCTION__, rtn_name.c_str());
@@ -852,7 +868,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
 
 
   INSERT_BEFORE_1("free", Before_free);
-  INSERT_AFTER_0("free", IgnoreAllEnd);
+//  INSERT_AFTER_0("free", IgnoreAllEnd);
 
 
   INSERT_BEFORE_2("mmap", Before_mmap);
@@ -917,6 +933,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   // Annotations.
   INSERT_BEFORE_4("AnnotateBenignRace", On_AnnotateBenignRace);
   INSERT_BEFORE_4("AnnotateExpectRace", On_AnnotateExpectRace);
+  INSERT_BEFORE_4("AnnotateTraceMemory", On_AnnotateTraceMemory);
   INSERT_BEFORE_2("AnnotateNoOp", On_AnnotateNoOp);
 
   INSERT_BEFORE_3("AnnotateCondVarWait", On_AnnotateCondVarWait);
@@ -991,6 +1008,7 @@ static void CallbackForFini(INT32 code, void *v) {
   Printf("#** dyn read/write: %'lld %'lld\n", dyn_read_count, dyn_write_count);
   Printf("#** n_created_threads: %d\n", n_created_threads);
 
+  DumpEvent(THR_END, 0, 0, 0, 0);
   ThreadSanitizerFini();
 }
 
