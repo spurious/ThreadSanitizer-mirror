@@ -1,6 +1,6 @@
 /*
   Copyright (C) 2008-2008 Google Inc
-     opensource@google.com 
+     opensource@google.com
 
   This program is free software; you can redistribute it and/or
   modify it under the terms of the GNU General Public License as
@@ -43,7 +43,7 @@
 //     ... = racey_object;
 //   }
 //
-// If the race actually happens at run-time  RaceChecker will print 
+// If the race actually happens at run-time  RaceChecker will print
 // something like this to stderr:
 //    Race found between these points
 //    === writer:
@@ -82,15 +82,15 @@
 //   '1': just report races.
 //   '2': report the first race and abort.
 //
-// The environment variable RACECHECKER_SLEEP_MS constrols the number of 
-// milliseconds to sleep in each call to RaceChecker. 
-// The more you sleep -- the better your chances to catch a race. 
+// The environment variable RACECHECKER_SLEEP_MS constrols the number of
+// milliseconds to sleep in each call to RaceChecker.
+// The more you sleep -- the better your chances to catch a race.
 // Default value is 1 (sleep for a smallest positive time).
 //
 // If RaceChecker detected a race it is a 100% proof of a race.
 // If it did not detect a race it proves nothing.
 //
-// Example: try running the unit test. 
+// Example: try running the unit test.
 // % g++ -g race_checker.cc race_checker_unittest.cc -lpthread
 // % ./a.out
 // % RACECHECKER=1 ./a.out 2>&1 | head -19  | ./symbolize.py | c++filt
