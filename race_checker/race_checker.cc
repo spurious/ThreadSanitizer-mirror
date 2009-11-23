@@ -99,9 +99,7 @@ static void DescribeAccesses(TypedCallsites *c) {
 // type is 0 for reads or 1 or for writes.
 // address addresses a variable on which a race is suspected.
 void RaceChecker::Start(RaceChecker::Type type, const volatile void *address) {
-  if (race_checker_level > 0) {
-    this->type_ = type;
-    this->address_ = reinterpret_cast<uintptr_t>(address);
+  if (this->address_ && race_checker_level > 0) {
     this->thread_ = pthread_self();
     CallSite callsite;
     callsite.nstack =
@@ -143,7 +141,7 @@ void RaceChecker::Start(RaceChecker::Type type, const volatile void *address) {
 // Remove the access recorded by this->Start(). Assumes that a single thread
 // call Start/End in a correctly-nested fashion on a single address.
 void RaceChecker::End() {
-  if (race_checker_level > 0) {
+  if (this->address_ && race_checker_level > 0) {
     race_checker_mu.Lock();
     TypedCallsites *c = &(*race_checker_map)[this->address_];
     std::vector<CallSite> &vec = c->type[this->type_];
