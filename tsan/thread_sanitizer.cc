@@ -3523,8 +3523,8 @@ struct Thread {
 
   void SetStack(uintptr_t stack_min, uintptr_t stack_max) {
     CHECK(stack_min < stack_max);
-    // Stay sane. Expect stack less than 32M.
-    CHECK(stack_max - stack_min < 32 * 1024 *1024);
+    // Stay sane. Expect stack less than 64M.
+    CHECK(stack_max - stack_min <= 64 * 1024 * 1024);
     min_sp_ = stack_min;
     max_sp_ = stack_max;
   }
