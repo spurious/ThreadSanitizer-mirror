@@ -6141,6 +6141,15 @@ struct IgnoreLists {
 
 static IgnoreLists *g_ignore_lists;
 
+bool ReadIgnoreLine(string input_line, string prefix,
+                    vector<string> &output_list) {
+  if (input_line.find(prefix) != 0)
+    return false;
+  string s = input_line.substr(prefix.size());
+  output_list.push_back(s);
+  return true;
+}
+
 // Setup the list of functions/images/files to ignore.
 static void SetupIgnore() {
   g_ignore_lists = new IgnoreLists;
@@ -6169,25 +6178,15 @@ static void SetupIgnore() {
     SplitStringIntoLinesAndRemoveBlanksAndComments(str, &lines);
     for (size_t j = 0; j < lines.size(); j++) {
       string &line = lines[j];
-      if (line.find("obj:") == 0) {
-        string s = line.substr(4);
-        g_ignore_lists->objs.push_back(s);
-      }
-      if (line.find("fun:") == 0) {
-        string s = line.substr(4);
-        g_ignore_lists->funs.push_back(s);
-      }
-      if (line.find("fun_r:") == 0) {
-        string s = line.substr(6);
-        g_ignore_lists->funs_r.push_back(s);
-      }
-      if (line.find("fun_hist:") == 0) {
-        string s = line.substr(8);
-        g_ignore_lists->funs_hist.push_back(s);
-      }
-      if (line.find("src:") == 0) {
-        string s = line.substr(4);
-        g_ignore_lists->files.push_back(s);
+      bool line_parsed = 
+          ReadIgnoreLine(line, "obj:", g_ignore_lists->objs) ||
+          ReadIgnoreLine(line, "src:", g_ignore_lists->files) ||
+          ReadIgnoreLine(line, "fun:",      g_ignore_lists->funs) ||
+          ReadIgnoreLine(line, "fun_r:",    g_ignore_lists->funs_r) ||
+          ReadIgnoreLine(line, "fun_hist:", g_ignore_lists->funs_hist);
+      if (!line_parsed) {
+        Printf("Error reading ignore file line:\n%s\n", line.c_str());
+        CHECK(0);
       }
     }
   }
