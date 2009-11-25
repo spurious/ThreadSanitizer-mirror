@@ -6323,7 +6323,7 @@ void Run() {
 REGISTER_TEST(Run, 134)
 }  // namespace test134
 
-// test135 TN. Swap. Variant of test79. {{{1
+// test135 TN. mmap {{{1
 namespace test135 {
 
 void SubWorker() {
@@ -7026,6 +7026,33 @@ REGISTER_TEST(Run, 153)
 #endif // NO_SPINLOCK
 }  // namespace test153
 
+// test154: long test with lots of races. {{{1
+namespace test154 {
+const int kNumIters = 1000000;
+const int kArraySize = 10000;
+int *arr;
+
+void Worker() {
+  for (int i = 0; i < kNumIters; i++) {
+    usleep(1);
+    for (int j = 0; j < kArraySize; j++) {
+      arr[j] = i;
+    }
+  }
+}
+
+void Run() {
+  arr = new int[kArraySize];
+  printf("test154: positive; long test with lots of races\n");
+  MyThreadArray t(Worker, Worker);
+  t.Start();
+  t.Join();
+  delete arr;
+}
+REGISTER_TEST2(Run, 154, EXCLUDE_FROM_ALL)
+}  // namespace test154
+
+
 // test300: {{{1
 namespace test300 {
 int     GLOB = 0;
@@ -7051,6 +7078,7 @@ void Thread2() {  // Runs in thread named 'test-thread-2'.
 }
 
 void Run() {
+  ANNOTATE_TRACE_MEMORY(&var);
   var = 0;
   printf("test301: simple race.\n");
   MyThread t1(Thread1, NULL, "test-thread-1");
