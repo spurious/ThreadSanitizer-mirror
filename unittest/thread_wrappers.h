@@ -86,7 +86,7 @@ class Mutex;
 //}}}
 
 // Include platform-specific header with declaraions.
-#ifndef OS_WIN
+#ifndef WIN32
 // Include pthread primitives (Linux, Mac)
 #include "thread_wrappers_pthread.h"
 #else
