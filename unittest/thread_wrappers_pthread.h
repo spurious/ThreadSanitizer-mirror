@@ -1,6 +1,5 @@
 /*
-  This file is part of Valgrind, a dynamic binary instrumentation
-  framework.
+  This file is part of ThreadSanitizer, a dynamic data race detector.
 
   Copyright (C) 2008-2009 Google Inc
      opensource@google.com
