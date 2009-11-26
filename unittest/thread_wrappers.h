@@ -87,8 +87,13 @@ class Mutex;
 //}}}
 
 // Include platform-specific header with declaraions.
-// Currently, only pthread (Linux, Mac) primitives are supported.
+#ifndef OS_WIN
+// Include pthread primitives (Linux, Mac)
 #include "thread_wrappers_pthread.h"
+#else
+// Include Windows primitives
+#include "thread_wrappers_win.h"
+#endif
 
 // Define cross-platform types synchronization primitives {{{1
 /// Just a message queue.
