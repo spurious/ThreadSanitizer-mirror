@@ -1,7 +1,7 @@
 
 
 POSITIVE_TESTS=go_race_1 go_race_2
-NEGATIVE_TESTS=go_norace_1
+NEGATIVE_TESTS=go_norace_1 go_norace_2
 TESTS=$(POSITIVE_TESTS) $(NEGATIVE_TESTS)
 all: $(TESTS)
 
