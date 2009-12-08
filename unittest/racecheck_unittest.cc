@@ -7052,6 +7052,25 @@ void Run() {
 REGISTER_TEST2(Run, 154, EXCLUDE_FROM_ALL)
 }  // namespace test154
 
+// test155: TP. Data race under memcpy. {{{1
+namespace test155 {
+
+char GLOB[2];
+
+void Worker() {
+  memcpy(GLOB, GLOB + 1, 1);
+}
+
+void Run() {
+  memset(GLOB, 0, sizeof(GLOB));
+  ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "TP. Data race under memcpy");
+  printf("test155: TP. Data race under memcpy\n");
+  MyThreadArray t(Worker, Worker);
+  t.Start();
+  t.Join();
+}
+REGISTER_TEST(Run, 155)
+}  // namespace test155
 
 // test300: {{{1
 namespace test300 {
