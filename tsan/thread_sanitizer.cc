@@ -6163,8 +6163,8 @@ static void SetupIgnore() {
   g_ignore_lists->objs.push_back("/usr/lib/libobjc.A.dylib");
   g_ignore_lists->objs.push_back("*/libSystem.*.dylib");
 #endif
-  g_ignore_lists->files.push_back("*ts_valgrind_intercepts.c");
 
+  g_ignore_lists->funs.push_back("pthread_create*");
   g_ignore_lists->funs.push_back("__lll_mutex_unlock_wake");
   g_ignore_lists->funs.push_back("__sigsetjmp");
   g_ignore_lists->funs.push_back("__sigjmp_save");
@@ -6178,7 +6178,7 @@ static void SetupIgnore() {
     SplitStringIntoLinesAndRemoveBlanksAndComments(str, &lines);
     for (size_t j = 0; j < lines.size(); j++) {
       string &line = lines[j];
-      bool line_parsed = 
+      bool line_parsed =
           ReadIgnoreLine(line, "obj:", g_ignore_lists->objs) ||
           ReadIgnoreLine(line, "src:", g_ignore_lists->files) ||
           ReadIgnoreLine(line, "fun:",      g_ignore_lists->funs) ||
