@@ -81,6 +81,10 @@
 #include <fcntl.h>
 #include <stdlib.h>
 
+#include <signal.h>
+#include <sys/time.h>
+
+
 // The tests are
 // - Stability tests (marked STAB)
 // - Performance tests (marked PERF)
@@ -7028,16 +7032,27 @@ REGISTER_TEST(Run, 153)
 
 // test154: long test with lots of races. {{{1
 namespace test154 {
-const int kNumIters = 1000000;
-const int kArraySize = 10000;
+const int kNumIters = 100000;
+const int kArraySize = 100000;
 int *arr;
+
+void RaceyAccess(int *a) {
+  (*a)++;
+}
+
+void RaceyLoop() {
+  for (int j = 0; j < kArraySize; j++) {
+    RaceyAccess(&arr[j]);
+  }
+}
 
 void Worker() {
   for (int i = 0; i < kNumIters; i++) {
     usleep(1);
-    for (int j = 0; j < kArraySize; j++) {
-      arr[j] = i;
-    }
+    printf(".");
+    if ((i % 40) == 39)
+      printf("\n");
+    RaceyLoop();
   }
 }
 
@@ -7054,7 +7069,6 @@ REGISTER_TEST2(Run, 154, EXCLUDE_FROM_ALL)
 
 // test155: TP. Data race under memcpy. {{{1
 namespace test155 {
-
 char GLOB[2];
 
 void Worker() {
@@ -7071,6 +7085,57 @@ void Run() {
 }
 REGISTER_TEST(Run, 155)
 }  // namespace test155
+
+// test156: Signals and malloc {{{1
+namespace test156 {
+// Regression test for
+// http://code.google.com/p/data-race-test/issues/detail?id=13 .
+// Make sure that locking events are handled in signal handlers.
+int     GLOB = 0;
+Mutex mu;
+
+static void SignalHandler(int, siginfo_t*, void*) {
+  mu.Lock();
+  GLOB++;
+  mu.Unlock();
+}
+
+static void EnableSigprof() {
+  struct sigaction sa;
+  sa.sa_sigaction = SignalHandler;
+  sa.sa_flags = SA_RESTART | SA_SIGINFO;
+  sigemptyset(&sa.sa_mask);
+  if (sigaction(SIGPROF, &sa, NULL) != 0) {
+    perror("sigaction");
+    abort();
+  }
+  struct itimerval timer;
+  timer.it_interval.tv_sec = 0;
+  timer.it_interval.tv_usec = 1000000 / 10000;
+  timer.it_value = timer.it_interval;
+  if (setitimer(ITIMER_PROF, &timer, 0) != 0) {
+    perror("setitimer");
+    abort();
+  }
+}
+
+void Worker() {
+  for (int i = 0; i < 1000000; i++) {
+    void *x = malloc((i % 64) + 1);
+    free (x);
+  }
+}
+
+void Run() {
+  printf("test156: signals and malloc\n");
+  EnableSigprof();
+  MyThreadArray t(Worker, Worker, Worker);
+  t.Start();
+  t.Join();
+  printf("\tGLOB=%d\n", GLOB);
+}
+REGISTER_TEST2(Run, 156, EXCLUDE_FROM_ALL)
+}  // namespace test156
 
 // test300: {{{1
 namespace test300 {
