@@ -125,6 +125,8 @@ static TSLock g_main_ts_lock;
 
 static uintptr_t g_current_pc;
 
+static bool g_attached_to_running_process = false;
+
 //--------------- PinThread ----------------- {{{1
 struct PinThread {
   OS_THREAD_ID os_tid;
@@ -136,6 +138,7 @@ struct PinThread {
   pthread_t    my_ptid;
   pthread_t    joined_ptid;
   bool         started;
+  uintptr_t    cxa_guard;
 };
 
 // Array of pin threads, indexed by pin's THREADID.
@@ -202,6 +205,14 @@ static void DumpEventPlainText(EventType type, int32_t tid, uintptr_t pc,
   if (pc_set == NULL) {
     pc_set = new hash_set<uintptr_t>;
   }
+  static FILE *log_file = NULL;
+  if (log_file == NULL) {
+    if (G_flags->log_file.empty()) {
+      log_file = G_out;
+    } else {
+      log_file = popen(("gzip > " + G_flags->log_file).c_str(), "w");
+    }
+  }
   if (G_flags->symbolize && pc_set->insert(pc).second) {
     string img_name, rtn_name, file_name;
     int line = 0;
@@ -210,41 +221,42 @@ static void DumpEventPlainText(EventType type, int32_t tid, uintptr_t pc,
     if (img_name.empty()) img_name = "unknown";
     if (rtn_name.empty()) rtn_name = "unknown";
     if (line == 0) line = 1;
-    fprintf(G_out, "#PC %lx %s %s %s %d\n",
+    fprintf(log_file, "#PC %lx %s %s %s %d\n",
             pc, img_name.c_str(), rtn_name.c_str(),
             file_name.c_str(), line);
   }
-  fprintf(G_out, "%s %x %lx %lx %lx\n", kEventNames[type], tid, pc, a, info);
+  fprintf(log_file, "%s %x %lx %lx %lx\n", kEventNames[type], tid, pc, a, info);
 }
 
 
 // We have to send THR_START/THR_FIRST_INSN from here
 // because we can't do it from CallbackForThreadStart() due to PIN's deadlock.
 // TODO(kcc): Fix this!
-static void DumpEvent(EventType type, int32_t tid, uintptr_t pc,
-                      uintptr_t a, uintptr_t info) {
+static void DumpEventInternal(EventType type, int32_t tid, uintptr_t pc,
+                              uintptr_t a, uintptr_t info) {
+  Event event(type, tid, pc, a, info);
+
   if (DEBUG_MODE && G_flags->dump_events) {
-    ScopedLock lock(&g_main_ts_lock);
-    if (g_pin_threads[tid].started == false) {
-      g_pin_threads[tid].started = true;
-      DumpEventPlainText(THR_START, tid, 0, 0, g_pin_threads[tid].parent_tid);
-      DumpEventPlainText(THR_FIRST_INSN, tid, 0, 0, 0);
-    }
     DumpEventPlainText(type, tid, pc, a, info);
     return;
   }
+  ThreadSanitizerHandleOneEvent(&event);
+}
 
-  Event event(type, tid, pc, a, info);
+static void DumpEvent(EventType type, int32_t tid, uintptr_t pc,
+                      uintptr_t a, uintptr_t info) {
   ScopedLock lock(&g_main_ts_lock);
   g_current_pc = pc;
   if (g_pin_threads[tid].started == false) {
     g_pin_threads[tid].started = true;
-    Event e1(THR_START, tid, 0, 0, g_pin_threads[tid].parent_tid);
-    ThreadSanitizerHandleOneEvent(&e1);
-    Event e2(THR_FIRST_INSN, tid, 0, 0, 0);
-    ThreadSanitizerHandleOneEvent(&e2);
+    DumpEventInternal(THR_START, tid, 0, 0, g_pin_threads[tid].parent_tid);
+    DumpEventInternal(THR_FIRST_INSN, tid, 0, 0, 0);
+    DumpEventInternal(RTN_CALL, tid, 0x01, 0x02, 0);
+    DumpEventInternal(RTN_CALL, tid, 0x02, 0x03, 0);
+    DumpEventInternal(RTN_CALL, tid, 0x03, 0x04, 0);
+    DumpEventInternal(RTN_CALL, tid, 0x04, 0x05, 0);
   }
-  ThreadSanitizerHandleOneEvent(&event);
+  DumpEventInternal(type, tid, pc, a, info);
 }
 
 //--------- Instrumentation callbacks --------------- {{{1
@@ -258,6 +270,45 @@ static void IgnoreAllEnd(THREADID tid, ADDRINT pc) {
 //  if (tid == 0) Printf("Ignore-- %d\n", z--);
   DumpEvent(IGNORE_READS_END, tid, pc, 0, 0);
   DumpEvent(IGNORE_WRITES_END, tid, pc, 0, 0);
+}
+
+//--------- __cxa_guard_* -------------------------- {{{2
+//
+static void Before_cxa_guard_acquire(THREADID tid, ADDRINT pc, ADDRINT guard) {
+//  Printf("T%d A+ %lx\n", tid, guard);
+//  g_pin_threads[tid].cxa_guard = guard;
+//  IgnoreAllBegin(tid, pc);
+//  cxa_guards.insert(guard);
+}
+
+static void After_cxa_guard_acquire(THREADID tid, ADDRINT pc) {
+//  ADDRINT guard = g_pin_threads[tid].cxa_guard;
+//  Printf("T%d A- %lx\n", tid, guard);
+//  IgnoreAllEnd(tid, pc);
+//  DumpEvent(WAIT_BEFORE, tid, pc, guard, 0);
+//  DumpEvent(WAIT_AFTER, tid, pc, 0, 0);
+}
+
+static void Before_cxa_guard_release(THREADID tid, ADDRINT pc, ADDRINT guard) {
+//  DumpEvent(SIGNAL, tid, pc, guard, 0);
+//  IgnoreAllBegin(tid, pc);
+//  g_pin_threads[tid].cxa_guard = guard;
+//  Printf("T%d R+ %lx\n", tid, guard);
+}
+
+static void After_cxa_guard_release(THREADID tid, ADDRINT pc) {
+//  ADDRINT guard = g_pin_threads[tid].cxa_guard;
+//  Printf("T%d R- %lx\n", tid, guard);
+//  IgnoreAllEnd(tid, pc);
+}
+
+static void Before_pthread_once(THREADID tid, ADDRINT pc, ADDRINT control) {
+//  Printf("T%d once %lx\n", tid, control);
+  IgnoreAllBegin(tid, pc);
+}
+static void After_pthread_once(THREADID tid, ADDRINT pc) {
+//  Printf("T%d once \n", tid);
+  IgnoreAllEnd(tid, pc);
 }
 
 void TmpCallback1(THREADID tid, ADDRINT pc) {
@@ -283,10 +334,14 @@ void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
   OS_THREAD_ID my_os_tid = PIN_GetTid();
   OS_THREAD_ID parent_os_tid = PIN_GetParentTid();
 
-  if (parent_os_tid == INVALID_OS_THREAD_ID) {
-    // Main thread.
-    CHECK(tid == 0);
+  if (g_pin_threads == NULL) {
     g_pin_threads = new PinThread[kMaxThreads];
+  }
+
+  bool has_parent = true;
+  if (parent_os_tid == INVALID_OS_THREAD_ID) {
+    // Main thread or we have attached to a runnign process.
+    has_parent = false;
   } else {
     CHECK(tid > 0);
   }
@@ -295,21 +350,24 @@ void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
   memset(&g_pin_threads[tid], 0, sizeof(PinThread));
   g_pin_threads[tid].os_tid = my_os_tid;
 
-  THREADID parent_tid = 0;
-  if (tid > 0) {
+  THREADID parent_tid = -1;
+  if (has_parent) {
     // Find out the parent's tid.
     for (parent_tid = tid - 1; parent_tid > 0; parent_tid--) {
       if (g_pin_threads[parent_tid].os_tid == parent_os_tid)
         break;
     }
+    CHECK(parent_tid != (THREADID)-1);
     g_pin_threads[tid].parent_tid = parent_tid;
   }
 
-  // Printf("#  tid=%d parent_tid=%d my_os_tid=%d parent_os_tid=%d\n",
-  //       tid, parent_tid, my_os_tid, parent_os_tid);
+//    Printf("#  tid=%d parent_tid=%d my_os_tid=%d parent_os_tid=%d\n",
+//           tid, parent_tid, my_os_tid, parent_os_tid);
 
   g_pin_threads[tid].child_ptid_ptr = NULL;
-  g_pin_threads[parent_tid].last_child_tid = tid;
+  if (has_parent) {
+    g_pin_threads[parent_tid].last_child_tid = tid;
+  }
 }
 
 static void After_pthread_create(THREADID tid, ADDRINT pc, ADDRINT ret) {
@@ -1031,14 +1089,15 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_AFTER_0("index", IgnoreAllEnd);
 
   // pthread_once
-  INSERT_BEFORE_0("pthread_once", IgnoreAllBegin);
-  INSERT_AFTER_0("pthread_once", IgnoreAllEnd);
+  INSERT_BEFORE_1("pthread_once", Before_pthread_once);
+  INSERT_AFTER_0("pthread_once", After_pthread_once);
 
   // __cxa_guard_acquire / __cxa_guard_release
   // TODO(kcc): uncomment this (and make it work on test108,test114).
-  // INSERT_BEFORE_0("__cxa_guard_acquire", IgnoreAllBegin);
-  // INSERT_BEFORE_0("__cxa_guard_release", IgnoreAllEnd);
-  //
+  INSERT_BEFORE_1("__cxa_guard_acquire", Before_cxa_guard_acquire);
+  INSERT_AFTER_0("__cxa_guard_acquire", After_cxa_guard_acquire);
+  INSERT_BEFORE_1("__cxa_guard_release", Before_cxa_guard_release);
+  INSERT_AFTER_0("__cxa_guard_release", After_cxa_guard_release);
 
   INSERT_BEFORE_0("atexit", On_atexit);
   INSERT_BEFORE_0("exit", On_exit);
@@ -1084,6 +1143,11 @@ static void CallbackForFini(INT32 code, void *v) {
   ThreadSanitizerFini();
 }
 
+void CallbackForDetach(VOID *v) {
+  CHECK(g_attached_to_running_process);
+  Printf("ThreadSanitizerPin: detached\n");
+}
+
 //--------- Main -------------------------- {{{1
 int main(INT32 argc, CHAR **argv) {
   PIN_Init(argc, argv);
@@ -1097,6 +1161,10 @@ int main(INT32 argc, CHAR **argv) {
   // skip until '-t something.so'.
   for (; first_param < argc && argv[first_param] != string("-t");
        first_param++) {
+    if (argv[first_param] == string("-pid")) {
+      g_attached_to_running_process = true;
+      Printf("INFO: ThreadSanitizerPin; attached mode\n");
+    }
   }
   first_param += 2;
   vector<string> args;
@@ -1116,6 +1184,7 @@ int main(INT32 argc, CHAR **argv) {
   PIN_AddFiniFunction(CallbackForFini, 0);
   IMG_AddInstrumentFunction(CallbackForIMG, 0);
   TRACE_AddInstrumentFunction(CallbackForTRACE, 0);
+//  PIN_AddDetachFunction(CallbackForDetach, 0);
 
   // Fire!
   PIN_StartProgram();

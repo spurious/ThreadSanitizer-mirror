@@ -20,7 +20,7 @@ HEADERS=../thread_sanitizer.h ../ts_util.h
 ts_pin_deb.o: ts_pin.cc ${HEADERS}
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ -c $< -DDEBUG=1
 thread_sanitizer_deb.o: ../thread_sanitizer.cc ${HEADERS}
-	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ -c $<
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ -c $< -DDEBUG=1
 
 ts_util.o: ../ts_util.cc ${HEADERS}
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ -c $< -DDEBUG=1
@@ -36,12 +36,15 @@ deb: ts_pin_deb.so
 ts_pin_opt.o: ts_pin.cc  ../thread_sanitizer.cc ${HEADERS}
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ -c $< -DDEBUG=0 -DINCLUDE_THREAD_SANITIZER_CC=1
 
+all_tests: simple_pin_test.so detach_example.so
 
+%.so: %.o
+	$(CXX) $(LDFLAGS) $(LIBPATHS) -lpthread -o $@ $<  $(LIBS)
 
 %.o: %.cc
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ -c $<
 
-all_tests: simple_pin_test.so
+
 
 
 clean:
