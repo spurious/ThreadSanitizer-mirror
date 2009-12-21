@@ -6001,7 +6001,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   FindUIntFlag("segment_set_recycle_queue_size", DEBUG_MODE ? 10 : 10000, args,
                &G_flags->segment_set_recycle_queue_size);
   FindBoolFlag("fast_mode", true, args, &G_flags->fast_mode);
-  FindBoolFlag("pure_happens_before", false, args,
+  FindBoolFlag("pure_happens_before", true, args,
                &G_flags->pure_happens_before);
   FindBoolFlag("show_expected_races", false, args,
                &G_flags->show_expected_races);
@@ -6017,7 +6017,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   FindBoolFlag("suggest_happens_before_arcs", false, args,
                &G_flags->suggest_happens_before_arcs);
   FindBoolFlag("show_pc", false, args, &G_flags->show_pc);
-  FindBoolFlag("ignore_in_dtor", true, args, &G_flags->ignore_in_dtor);
+  FindBoolFlag("ignore_in_dtor", false, args, &G_flags->ignore_in_dtor);
   FindBoolFlag("exit_after_main", false, args, &G_flags->exit_after_main);
 
   FindBoolFlag("show_stats", false, args, &G_flags->show_stats);
