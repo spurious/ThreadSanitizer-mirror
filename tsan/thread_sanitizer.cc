@@ -641,6 +641,7 @@ class StackTrace {
                                               size_t capacity = 0) {
     ScopedMallocCostCenter cc("StackTrace::CreateNewEmptyStackTrace()");
     DCHECK(g_stack_trace_free_list);
+    DCHECK(size != 0);
     if (capacity == 0)
       capacity = size;
     uintptr_t *mem = g_stack_trace_free_list->GetNewMemForStackTrace(capacity);
@@ -2749,8 +2750,8 @@ class CacheLineBase {
 
   static const uintptr_t kLineSizeBits = 6;  // Don't change this.
   static const uintptr_t kLineSize = 1 << kLineSizeBits;
-  static const int32_t kFastModeID = -2;
-  static const int32_t kSharedID = -3;
+  static const int32_t kFastModeID;
+  static const int32_t kSharedID;
  protected:
   uintptr_t tag_;
   TID creator_tid_;
@@ -2762,6 +2763,8 @@ class CacheLineBase {
   Mask racey_;
   Mask published_;
 };
+const int32_t CacheLineBase::kFastModeID = -2;
+const int32_t CacheLineBase::kSharedID = -3;
 
 // Uncompressed line. Just a vector of 64 shadow values.
 class CacheLineUncompressed : public CacheLineBase {
@@ -3981,7 +3984,7 @@ struct Thread {
   }
 
   void HandleRtnCall(uintptr_t call_pc, uintptr_t target_pc) {
-    if (!call_stack_.empty()) {
+    if (!call_stack_.empty() && call_pc) {
       call_stack_.back() = call_pc;
     }
     PushCallStack(target_pc);
@@ -4621,7 +4624,7 @@ class ReportStorage {
     // Is this stack?
     for (int i = 0; i < Thread::NumberOfThreads(); i++) {
       Thread *t = Thread::Get(TID(i));
-      if (!t->is_running()) continue;
+      if (!t || !t->is_running()) continue;
       if (t->MemoryIsInStack(a)) {
         snprintf(buff, sizeof(buff),
                  "  %sLocation %p is %ld bytes inside T%d's stack [%p,%p]%s\n",
@@ -5673,8 +5676,8 @@ class Detector {
   }
 
   void HandleThreadStart(TID child_tid, TID parent_tid, uintptr_t pc) {
-    // Printf("HandleThreadStart: tid=%d parent_tid=%d pid=%d\n",
-    //        child_tid.raw(), parent_tid.raw(), getpid());
+    // Printf("HandleThreadStart: tid=%d parent_tid=%d pc=%lx pid=%d\n",
+    //         child_tid.raw(), parent_tid.raw(), pc, getpid());
     VTS *vts = NULL;
     StackTrace *creation_context = NULL;
     if (child_tid == TID(0)) {
@@ -5683,6 +5686,7 @@ class Detector {
     } else {
       g_so_far_only_one_thread = false;
       Thread *parent = Thread::Get(parent_tid);
+      CHECK(parent);
       VTS *parent_vts = parent->vts()->Clone();
       creation_context = parent->CreateStackTrace(pc);
       VTS *singleton = VTS::CreateSingleton(child_tid);
@@ -6045,6 +6049,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
               reinterpret_cast<intptr_t*>(&G_flags->trace_addr));
 
   FindIntFlag("max_mem_in_mb", 0, args, &G_flags->max_mem_in_mb);
+  FindBoolFlag("attach_mode", false, args, &G_flags->attach_mode);
   if (G_flags->max_mem_in_mb == 0) {
     G_flags->max_mem_in_mb = GetMemoryLimitInMb();
   }
@@ -6054,6 +6059,19 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   if (summary_file_tmp.size() > 0) {
     G_flags->summary_file = summary_file_tmp.back();
   }
+
+  vector<string> log_file_tmp;
+  FindStringFlag("log_file", args, &log_file_tmp);
+  if (log_file_tmp.size() > 0) {
+    G_flags->log_file = log_file_tmp.back();
+  }
+
+  vector<string> offline_syntax_temp;
+  FindStringFlag("offline_syntax", args, &offline_syntax_temp);
+  if (offline_syntax_temp.size() > 0) {
+    G_flags->offline_syntax = offline_syntax_temp.back();
+  }
+
 
   FindIntFlag("max_sid", kMaxSID, args, &G_flags->max_sid);
   kMaxSID = G_flags->max_sid;
@@ -6242,6 +6260,12 @@ extern void ThreadSanitizerInit() {
   CHECK_EQ(sizeof(ShadowValue), 8);
   CHECK(G_flags);
   G_stats        = new Stats;
+  SetupIgnore();
+
+  if (G_flags->dump_events) {
+    return;
+  }
+
   G_detector     = new Detector;
   G_cache        = new Cache;
   G_expected_races_map = new ExpectedRacesMap;
@@ -6263,7 +6287,6 @@ extern void ThreadSanitizerInit() {
   g_stack_trace_free_list = new StackTraceFreeList;
   g_pcq_map = new PCQMap;
 
-  SetupIgnore();
 
   if (G_flags->html) {
     c_bold    = "<font ><b>";
@@ -6292,7 +6315,9 @@ extern void ThreadSanitizerInit() {
 }
 
 extern void ThreadSanitizerFini() {
-  G_detector->HandleProgramEnd();
+  if (!G_flags->dump_events) {
+    G_detector->HandleProgramEnd();
+  }
 }
 
 extern void ThreadSanitizerHandleOneEvent(Event *event) {

@@ -212,6 +212,7 @@ struct FLAGS {
   vector<string>   ignore;
   vector<string>   cut_stack_below;
   string           summary_file;
+  string           log_file;
   intptr_t         max_n_threads;
   bool             compress_cache_lines;
   bool             unlock_on_mutex_destroy;
@@ -248,6 +249,9 @@ struct FLAGS {
   bool         thread_coverage;
   bool         dump_events;
   bool         symbolize;
+  bool         attach_mode;
+
+  string       offline_syntax;
 };
 
 extern FLAGS *G_flags;
