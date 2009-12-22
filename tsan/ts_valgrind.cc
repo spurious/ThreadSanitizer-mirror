@@ -170,11 +170,13 @@ struct ValgrindThread {
 
   int ignore_accesses;
   int ignore_sync;
+  int in_signal_handler;
 
   ValgrindThread()
     : zero_based_uniq_tid(-1),
       ignore_accesses(0),
-      ignore_sync(0) {
+      ignore_sync(0),
+      in_signal_handler(0) {
   }
 };
 
@@ -540,12 +542,16 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
     case TSREQ_PTHREAD_RWLOCK_LOCK_PRE:
       break;
     case TSREQ_PTHREAD_RWLOCK_LOCK_POST:
-      if (g_valgrind_threads[vg_tid].ignore_sync) break;
+      // We ignore locking events if ignore_sync != 0 and if we are not
+      // inside a signal handler.
+      if (g_valgrind_threads[vg_tid].ignore_sync
+          && !g_valgrind_threads[vg_tid].in_signal_handler) break;
       Put(LOCK_BEFORE, ts_tid, pc, /*lock=*/args[1], 0);
       Put(args[2] ? WRITER_LOCK : READER_LOCK, ts_tid, pc, /*lock=*/args[1], 0);
       break;
     case TSREQ_PTHREAD_RWLOCK_UNLOCK_PRE:
-      if (g_valgrind_threads[vg_tid].ignore_sync) break;
+      if (g_valgrind_threads[vg_tid].ignore_sync
+          && !g_valgrind_threads[vg_tid].in_signal_handler) break;
       Put(UNLOCK, ts_tid, pc, /*lock=*/args[1], 0);
       break;
     case TSREQ_PTHREAD_SPIN_LOCK_INIT_OR_UNLOCK:
@@ -580,6 +586,20 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
   return True;
 }
 
+static void SignalIn(ThreadId vg_tid, Int sigNo, Bool alt_stack) {
+  g_valgrind_threads[vg_tid].in_signal_handler++;
+  DCHECK(g_valgrind_threads[vg_tid].in_signal_handler == 1);
+//  int32_t ts_tid = VgTidToTsTid(vg_tid);
+//  Printf("T%d %s\n", ts_tid, __FUNCTION__);
+}
+
+static void SignalOut(ThreadId vg_tid, Int sigNo) {
+  g_valgrind_threads[vg_tid].in_signal_handler--;
+  CHECK(g_valgrind_threads[vg_tid].in_signal_handler >= 0);
+  DCHECK(g_valgrind_threads[vg_tid].in_signal_handler == 0);
+//  int32_t ts_tid = VgTidToTsTid(vg_tid);
+//  Printf("T%d %s\n", ts_tid, __FUNCTION__);
+}
 
 
 VG_REGPARM(0) static void evh__create_new_segment_for_history(void) {
@@ -1044,6 +1064,9 @@ void ts_pre_clo_init(void) {
 
    VG_(clo_vex_control).iropt_unroll_thresh = 0;
    VG_(clo_vex_control).guest_chase_thresh = 0;
+
+   VG_(track_pre_deliver_signal) (&SignalIn);
+   VG_(track_post_deliver_signal)(&SignalOut);
 }
 
 
