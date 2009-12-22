@@ -5829,7 +5829,8 @@ const char *usage_str =
 "See %s for details\n";
 
 void ThreadSanitizerPrintUsage() {
-  Printf(usage_str, TSAN_PROGRAM_NAME, TSAN_URL);
+  Printf(usage_str, G_flags->tsan_program_name.c_str(),
+         G_flags->tsan_url.c_str());
 }
 
 static void ReportUnknownFlagAndExit(const string &str) {
@@ -5955,6 +5956,15 @@ void FindStringFlag(const char *name, vector<string> *args,
   } while (cont);
 }
 
+void FindStringFlag(const char *name, vector<string> *args,
+                    string *retval) {
+  vector<string> tmp;
+  FindStringFlag(name, args, &tmp);
+  if (tmp.size() > 0) {
+    *retval = tmp.back();
+  }
+}
+
 static size_t GetMemoryLimitInMbFromProcSelfLimits() {
 #ifdef VGO_linux
   // Parse the memory limit section of /proc/self/limits.
@@ -6072,6 +6082,11 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
     G_flags->offline_syntax = offline_syntax_temp.back();
   }
 
+  G_flags->tsan_program_name = "valgrind --tool=tsan";
+  FindStringFlag("tsan_program_name", args, &G_flags->tsan_program_name);
+
+  G_flags->tsan_url = "http://code.google.com/p/data-race-test";
+  FindStringFlag("tsan_url", args, &G_flags->tsan_url);
 
   FindIntFlag("max_sid", kMaxSID, args, &G_flags->max_sid);
   kMaxSID = G_flags->max_sid;

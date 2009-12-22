@@ -30,8 +30,6 @@
 #include <glob.h>
 #include <stdint.h>
 
-#include "ts_setup.h"
-
 #undef NDEBUG  // Assert is always on.
 
 // Valgrind compilation is the default one.
@@ -252,6 +250,9 @@ struct FLAGS {
   bool         attach_mode;
 
   string       offline_syntax;
+
+  string       tsan_program_name;
+  string       tsan_url;
 };
 
 extern FLAGS *G_flags;
