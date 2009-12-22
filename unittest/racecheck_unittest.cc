@@ -7134,7 +7134,7 @@ void Run() {
   t.Join();
   printf("\tGLOB=%d\n", GLOB);
 }
-REGISTER_TEST2(Run, 156, EXCLUDE_FROM_ALL)
+REGISTER_TEST(Run, 156)
 }  // namespace test156
 
 // test300: {{{1
