@@ -29,10 +29,6 @@
 // Parts of the code in this file are taken from Helgrind,
 // a data race detector written by Julian Seward.
 
-
-
-#ifdef TS_INSTR_VALGRIND_HERE
-
 #include "ts_valgrind.h"
 #include "valgrind.h"
 #include "ts_valgrind_client_requests.h"
@@ -1140,6 +1136,11 @@ void ts_pre_clo_init(void) {
 
 VG_DETERMINE_INTERFACE_VERSION(ts_pre_clo_init)
 
-#endif //  TS_INSTR_VALGRIND_HERE
+// -------- thread_sanitizer.cc -------------------------- {{{1
+// ... for performance reasons...
+#ifdef INCLUDE_THREAD_SANITIZER_CC
+#include "thread_sanitizer.cc"
+#endif
+
 // {{{1 end
 // vim:shiftwidth=2:softtabstop=2:expandtab

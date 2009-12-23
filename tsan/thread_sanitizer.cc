@@ -6367,15 +6367,6 @@ extern void ThreadSanitizerPrintReport(ThreadSanitizerReport *report) {
   ReportStorage::PrintReport(report);
 }
 
-// -------- ts_inst_valgrind.cc -------------------------- {{{1
-// gcc doesnt't have cross-file inlining, so do it ourselves,
-// but only in optimized build.
-#if not defined(DEBUG) && defined(TS_VALGRIND)
-#define TS_INSTR_VALGRIND_HERE
-#include "ts_valgrind.cc"
-#endif
-
-
 // -------- TODO -------------------------- {{{1
 // - Support configurable aliases for function names (is it doable in valgrind)?
 // - Correctly support atomic operations (not just ignore).
