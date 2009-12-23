@@ -169,14 +169,21 @@ struct ValgrindThread {
   vector<CallStackRecord> call_stack;
 
   int ignore_accesses;
+  bool ignore_accesses_in_current_trace;
   int ignore_sync;
   int in_signal_handler;
 
-  ValgrindThread()
-    : zero_based_uniq_tid(-1),
-      ignore_accesses(0),
-      ignore_sync(0),
-      in_signal_handler(0) {
+  ValgrindThread() {
+    Clear();
+  }
+
+  void Clear() {
+    zero_based_uniq_tid = -1;
+    ignore_accesses = 0;
+    ignore_accesses_in_current_trace = false;
+    ignore_sync = 0;
+    in_signal_handler = 0;
+    call_stack.clear();
   }
 };
 
@@ -359,8 +366,8 @@ void evh__pre_thread_ll_create ( ThreadId parent, ThreadId child ) {
     Printf("ThreadSanitizer WARNING: reusing TID %d w/o exiting thread\n",
            child);
   }
+  g_valgrind_threads[child].Clear();
   g_valgrind_threads[child].zero_based_uniq_tid = g_uniq_thread_id_counter++;
-  g_valgrind_threads[child].ignore_accesses = 0;
   // Printf("VG: T%d: VG_THR_START: parent=%d\n", VgTidToTsTid(child), VgTidToTsTid(parent));
   uintptr_t pc = GetVgPc(parent);
   Put(THR_START, VgTidToTsTid(child), pc, 0,
@@ -385,7 +392,8 @@ void evh__pre_thread_ll_exit ( ThreadId quit_tid ) {
 // Memory operation...
 static INLINE void Mop(Addr a, bool is_w, SizeT size) {
   ThreadId vg_tid = GetVgTid();
-  if (g_valgrind_threads[vg_tid].ignore_accesses) {
+  ValgrindThread *thr = &g_valgrind_threads[vg_tid];
+  if (thr->ignore_accesses) {
     //static int counter;
     //counter++;
     //if ((counter % 1024) == 0)
@@ -601,20 +609,77 @@ static void SignalOut(ThreadId vg_tid, Int sigNo) {
 //  Printf("T%d %s\n", ts_tid, __FUNCTION__);
 }
 
+// ---------------- Lite Race ------------------ {{{2
+// Experimental!
+//
+// The idea was first introduced in LiteRace:
+// http://www.cs.ucla.edu/~dlmarino/pubs/pldi09.pdf
+// Instead of analyzing all memory accesses, we do sampling.
+// For each trace (single-enry muliple-exit region) we maintain a counter of
+// executions. If a trace has been executed more than a certain threshold, we
+// start skipping this trace sometimes.
+// The LiteRace paper suggests several strategies for sampling, including
+// thread-local counters. Having thread local counters for all threads is too
+// expensive, so we have 8 arrays of counters and use the array (tid % 8).
+//
+// TODO(kcc): this currently does not work with --keep-history=0
+//
+// Note: ANNOTATE_PUBLISH_MEMORY() does not work with sampling... :(
 
-VG_REGPARM(0) static void evh__create_new_segment_for_history(void) {
-  ThreadId vg_tid = GetVgTid();
-  uintptr_t pc = GetVgPc(vg_tid);
-  if (g_valgrind_threads[vg_tid].ignore_accesses) return;
-  ThreadSanitizerEnterSblock(VgTidToTsTid(vg_tid), pc);
-  // Put(SBLOCK_ENTER, VgTidToTsTid(vg_tid), pc, 0, 0);
+
+static const size_t n_literace_counters = 1024 * 1024;
+static const size_t n_literace_threads = 8;
+static uint32_t literace_counters[n_literace_threads][n_literace_counters];
+
+static bool LiteRaceSkipTrace(ThreadId vg_tid, uint32_t trace_no) {
+  if (G_flags->literace_sampling == 0) return false;
+
+  // The flag literace_sampling indicates the level of sampling.
+  // 0 means no sampling.
+  // 1 means handle *almost* all accesses.
+  // ...
+  // 31 means very aggressive sampling (skip a lot of accesses).
+
+  CHECK(trace_no < n_literace_counters);
+  uint32_t counter = ++literace_counters[vg_tid % n_literace_threads][trace_no];
+  CHECK(G_flags->literace_sampling < 32);
+  int shift = 32 - G_flags->literace_sampling;
+  int high_bits = counter >> shift;
+  if (high_bits) {  // counter is big enough.
+    int n_high_bits = 32 - __builtin_clz(high_bits);
+    int mask = (1 << n_high_bits) - 1;
+    // The higher the value of the counter, the bigger the probability that we
+    // will skip this trace.
+    if ((counter & mask) != 0) {
+      return true;
+    }
+  }
+  return false;
 }
 
+// ---------------- On Trace entry ------------------ {{{2
+VG_REGPARM(1) static void evh__on_trace_entry(uint32_t trace_no) {
+  ThreadId vg_tid = GetVgTid();
+  uintptr_t pc = GetVgPc(vg_tid);
+  ValgrindThread *thr = &g_valgrind_threads[vg_tid];
 
+  if (thr->ignore_accesses_in_current_trace) {
+    CHECK(thr->ignore_accesses > 0);
+    thr->ignore_accesses--;
+    thr->ignore_accesses_in_current_trace = false;
+  }
 
+  if (thr->ignore_accesses) return;
+
+  if (LiteRaceSkipTrace(vg_tid, trace_no)) {
+    thr->ignore_accesses_in_current_trace = true;
+    thr->ignore_accesses++;
+  }
+
+  ThreadSanitizerEnterSblock(VgTidToTsTid(vg_tid), pc);
+}
 
 // ---------------------------- Instrumentation ---------------------------{{{1
-
 static IRTemp gen_Get_SP ( IRSB*           bbOut,
                            VexGuestLayout* layout,
                            Int             hWordTy_szB )
@@ -633,12 +698,15 @@ static IRTemp gen_Get_SP ( IRSB*           bbOut,
 }
 
 
-static void ts_instrument_create_new_segment_for_history(IRSB *bbOut) {
-   HChar*   hName    = (HChar*)"evh__create_new_segment_for_history";
-   IRDirty* di = unsafeIRDirty_0_N( 0,
+static void ts_instrument_trace_entry(IRSB *bbOut) {
+   HChar*   hName    = (HChar*)"evh__on_trace_entry";
+   static uint32_t trace_no;
+   trace_no++;
+   IRExpr **args = mkIRExprVec_1(mkIRExpr_HWord(trace_no % n_literace_counters));
+   IRDirty* di = unsafeIRDirty_0_N( 1,
                            hName,
-                           VG_(fnptr_to_fnentry)((void*)evh__create_new_segment_for_history),
-                           mkIRExprVec_0());
+                           VG_(fnptr_to_fnentry)((void*)evh__on_trace_entry),
+                           args);
    addStmtToIRSB( bbOut, IRStmt_Dirty(di));
 }
 
@@ -888,7 +956,7 @@ static IRSB* ts_instrument ( VgCallbackClosure* closure,
 
     if (instrument_memory) {
       if (i == first && G_flags->keep_history >= 1 && create_segments) {
-        ts_instrument_create_new_segment_for_history(bbOut);
+        ts_instrument_trace_entry(bbOut);
       }
       instrument_statement(st, bbIn, bbOut, hWordTy);
     }

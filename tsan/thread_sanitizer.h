@@ -243,6 +243,9 @@ struct FLAGS {
   intptr_t     max_sid;
   intptr_t     max_mem_in_mb;
   intptr_t     num_callers_in_history;
+
+  intptr_t     literace_sampling;
+
   bool         report_races;
   bool         thread_coverage;
   bool         dump_events;

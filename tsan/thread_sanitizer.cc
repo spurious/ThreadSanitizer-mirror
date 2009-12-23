@@ -6047,6 +6047,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   FindIntFlag("debug_level", 1, args, &G_flags->debug_level);
   FindIntFlag("trace_level", 0, args, &G_flags->trace_level);
 
+  FindIntFlag("literace_sampling", 0, args, &G_flags->literace_sampling);
 
   FindStringFlag("file_prefix_to_cut", args, &G_flags->file_prefix_to_cut);
   FindStringFlag("ignore", args, &G_flags->ignore);
