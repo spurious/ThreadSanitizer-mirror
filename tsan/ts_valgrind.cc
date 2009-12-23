@@ -229,6 +229,10 @@ void ts_post_clo_init(void) {
   G_flags = new FLAGS;
   InitCommandLineOptions();
   ThreadSanitizerParseFlags(g_command_line_options);
+
+  // we get num-callers from valgrind flags.
+  G_flags->num_callers = VG_(clo_backtrace_size);
+
   if (G_flags->html) {
     Report("<pre>\n"
            "<br id=race0>"

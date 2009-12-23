@@ -6111,12 +6111,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   G_flags->cut_stack_below.push_back("start_thread *");
   FindStringFlag("cut_stack_below", args, &G_flags->cut_stack_below);
 
-#ifdef TS_VALGRIND
-  // we get num-callers from valgrind flags.
-  G_flags->num_callers = VG_(clo_backtrace_size);
-#else
   FindIntFlag("num_callers", 12, args, &G_flags->num_callers);
-#endif
 
   G_flags->max_n_threads        = 20000;
 
