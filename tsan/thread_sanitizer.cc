@@ -28,6 +28,8 @@
 // You can find the details on this tool at
 // http://code.google.com/p/data-race-test
 
+#ifndef INCLUDE_THREAD_SANITIZER_CC
+
 #include "thread_sanitizer.h"
 #include <stdarg.h>
 // -------- Constants --------------- {{{1
@@ -6383,4 +6385,5 @@ extern void ThreadSanitizerPrintReport(ThreadSanitizerReport *report) {
 // - Get rid of annoying casts in printfs.
 // - Compress stack traces (64-bit only. may save up to 36 bytes per segment).
 // end. {{{1
+#endif  // INCLUDE_THREAD_SANITIZER_CC
 // vim:shiftwidth=2:softtabstop=2:expandtab:tw=80

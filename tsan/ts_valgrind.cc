@@ -239,6 +239,9 @@ void ts_post_clo_init(void) {
          G_flags->pure_happens_before ? "yes" : "no",
          G_flags->fast_mode ? "yes" : "no",
          G_flags->ignore_in_dtor ? "yes" : "no");
+  if (DEBUG_MODE) {
+    Report("INFO: Debug build\n");
+  }
   if (G_flags->max_mem_in_mb) {
     Report("INFO: ThreadSanitizer memory limit: %dMB\n",
            (int)G_flags->max_mem_in_mb);
@@ -1139,7 +1142,8 @@ VG_DETERMINE_INTERFACE_VERSION(ts_pre_clo_init)
 // -------- thread_sanitizer.cc -------------------------- {{{1
 // ... for performance reasons...
 #ifdef INCLUDE_THREAD_SANITIZER_CC
-#include "thread_sanitizer.cc"
+# undef INCLUDE_THREAD_SANITIZER_CC
+# include "thread_sanitizer.cc"
 #endif
 
 // {{{1 end

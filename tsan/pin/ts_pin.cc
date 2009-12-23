@@ -1194,6 +1194,7 @@ int main(INT32 argc, CHAR **argv) {
 //--------- Include thread_sanitizer.cc --------- {{{1
 // ... for performance reasons...
 #ifdef INCLUDE_THREAD_SANITIZER_CC
+# undef INCLUDE_THREAD_SANITIZER_CC
 # include "thread_sanitizer.cc"
 #else
 
