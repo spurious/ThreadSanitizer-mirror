@@ -243,44 +243,6 @@ struct Stats {
 static Stats *G_stats;
 
 // -------- Util ----------------------------- {{{1
-// Like Print(), but prepend each line with ==XXXXX==,
-// where XXXXX is the pid.
-void Report(const char *format, ...) {
-  int buff_size = 1024*16;
-  char *buff = new char[buff_size];
-  CHECK(buff);
-
-  va_list args;
-
-  while (1) {
-    va_start(args, format);
-    int ret = vsnprintf(buff, buff_size, format, args);
-    va_end(args);
-    if (ret < buff_size) break;
-    delete [] buff;
-    buff_size *= 2;
-    buff = new char[buff_size];
-    CHECK(buff);
-    // Printf("Resized buff: %d\n", buff_size);
-  }
-
-  char pid_buff[100];
-  snprintf(pid_buff, sizeof(pid_buff), "==%d== ", getpid());
-
-  string res;
-  int len = strlen(buff);
-  bool last_was_new_line = true;
-  for (int i = 0; i < len; i++) {
-    if (last_was_new_line)
-      res += pid_buff;
-    last_was_new_line = (buff[i] == '\n');
-    res += buff[i];
-  }
-
-  delete [] buff;
-
-  Printf("%s", res.c_str());
-}
 
 string PcToRtnNameWithStats(uintptr_t pc, bool demangle) {
   G_stats->pc_to_rtn_name++;

@@ -163,7 +163,7 @@ typedef int pthread_t;
 
 #define snprintf _snprintf
 #define strtoll strtol  // TODO(kcc): _MSC_VER hmm...
-static int getpid() { UNIMPLEMENTED(); return 1; }
+static int getpid() { return 12345; }
 #define UNLIKELY(x) (x)  // TODO(kcc): how to say this in MSVC?
 #define LIKELY(x)   (x)
 
