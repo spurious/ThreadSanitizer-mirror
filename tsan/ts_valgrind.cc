@@ -179,6 +179,12 @@ static inline uintptr_t GetVgPc(ThreadId vg_tid) {
   return (uintptr_t)VG_(get_IP)(vg_tid);
 }
 
+static inline ThreadId GetVgTid() {
+  extern ThreadId VG_(running_tid); // HACK: avoid calling get_running_tid()
+  ThreadId res = VG_(running_tid);
+  //DCHECK(res == VG_(get_running_tid)());
+  return res;
+}
 
 uintptr_t GetPcOfCurrentThread() {
   return GetVgPc(GetVgTid());

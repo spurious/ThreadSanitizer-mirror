@@ -61,13 +61,6 @@ enum {
   XS_InvalidLock
 };
 
-static inline ThreadId GetVgTid() {
-  extern ThreadId VG_(running_tid); // HACK: avoid calling get_running_tid()
-  ThreadId res = VG_(running_tid);
-  //DCHECK(res == VG_(get_running_tid)());
-  return res;
-}
-
 #endif //  __TS_VALGRIND_H__
 // {{{1 end
 // vim:shiftwidth=2:softtabstop=2:expandtab
