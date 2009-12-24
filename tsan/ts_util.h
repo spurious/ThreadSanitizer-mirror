@@ -31,6 +31,134 @@
 #ifndef __TS_UTIL_H__
 #define __TS_UTIL_H__
 
+#include <glob.h>
+#include <stdint.h>
+
+
+#ifdef TS_VALGRIND
+# include "ts_valgrind.h"
+# define CHECK tl_assert
+#else
+# undef NDEBUG  // Assert is always on.
+# include <assert.h>
+# define CHECK assert
+#endif // TS_NO_VALGRIND
+
+#ifdef TS_USE_STANDARD_STL
+#include <string.h>
+#include <limits.h>
+#include <set>
+#include <map>
+#include <vector>
+#include <deque>
+#include <stack>
+#include <algorithm>
+#include <string>
+#include <bitset>
+//#include <algorithm>
+#include "ext/algorithm"
+#include "ext/hash_map"
+#include "ext/hash_set"
+using __gnu_cxx::hash_map;
+using __gnu_cxx::hash_set;
+using __gnu_cxx::lexicographical_compare_3way;
+
+#else  // no TS_USE_STANDARD_STL
+#include "stlport/set"
+#include "stlport/map"
+#include "stlport/hash_map"
+#include "stlport/hash_set"
+#include "stlport/vector"
+#include "stlport/deque"
+#include "stlport/stack"
+#include "stlport/algorithm"
+#include "stlport/string"
+#include "stlport/bitset"
+#include "stlport/algorithm"
+
+using std::hash_map;
+using std::hash_set;
+using std::lexicographical_compare_3way;
+#endif  // TS_USE_STANDARD_STL
+
+
+using std::set;
+using std::multiset;
+using std::multimap;
+using std::map;
+using std::deque;
+using std::stack;
+using std::string;
+using std::vector;
+using std::bitset;
+
+using std::min;
+using std::max;
+using std::sort;
+using std::pair;
+using std::make_pair;
+using std::unique_copy;
+
+
+#ifdef TS_VALGRIND
+// TODO(kcc) get rid of these macros.
+#define sprintf(arg1, arg2...) VG_(sprintf)((Char*)arg1, (HChar*)arg2)
+#define vsnprintf(a1, a2, a3, a4) VG_(vsnprintf)((Char*)a1, a2, a3, a4)
+#define getpid VG_(getpid)
+#define strchr(a,b)    VG_(strchr)((Char*)a,b)
+#define strdup(a) (char*)VG_(strdup)((HChar*)"strdup", (const Char*)a)
+#define snprintf(a,b,c...)     VG_(snprintf)((Char*)a,b,c)
+#define exit VG_(exit)
+#define read VG_(read)
+#define getenv(x) VG_(getenv)((Char*)x)
+#define close VG_(close)
+#define write VG_(write)
+#define abort VG_(abort)
+#define usleep(a) /*nothing. TODO.*/
+
+#else // No TS_VALGRIND
+#include <unistd.h>
+
+#define UNIMPLEMENTED() CHECK(0 == 42)
+#define UNLIKELY(x) __builtin_expect((x), 0)
+#define LIKELY(x)   __builtin_expect(!!(x), 1)
+#endif // TS_VALGRIND
+
+#define CHECK_GT(X, Y) CHECK((X) >  (Y))
+#define CHECK_LT(X, Y) CHECK((X) < (Y))
+#define CHECK_GE(X, Y) CHECK((X) >= (Y))
+#define CHECK_LE(X, Y) CHECK((X) <= (Y))
+#define CHECK_NE(X, Y) CHECK((X) != (Y))
+#define CHECK_EQ(X, Y) CHECK((X) == (Y))
+
+#if defined(DEBUG) && DEBUG >= 1
+  #define DCHECK(a) CHECK(a)
+  #define DEBUG_MODE (1)
+  #define INLINE
+#else
+  #define DCHECK(a) do { if (0) { if (a) {} } } while(0)
+  #define DEBUG_MODE (0)
+  #define INLINE  inline  __attribute__ ((always_inline))
+#endif
+
+#define NOINLINE __attribute__ ((noinline))
+
+void PushMallocCostCenter(const char *cc);
+void PopMallocCostCenter();
+
+class ScopedMallocCostCenter {
+ public:
+  ScopedMallocCostCenter(const char *cc) {
+#if defined(DEBUG) && defined(TS_VALGRIND)
+      PushMallocCostCenter(cc);
+#endif
+  }
+  ~ScopedMallocCostCenter() {
+#if defined(DEBUG) && defined(TS_VALGRIND)
+      PopMallocCostCenter();
+#endif
+  }
+};
 
 class ThreadSanitizerReport;
 
@@ -73,6 +201,7 @@ inline uintptr_t tsan_bswap(uintptr_t x) {
 #endif // __WORDSIZE
 }
 
+extern uintptr_t GetPcOfCurrentThread();
 
 
 

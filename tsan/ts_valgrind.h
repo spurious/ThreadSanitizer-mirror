@@ -61,30 +61,12 @@ enum {
   XS_InvalidLock
 };
 
-extern uintptr_t GetPcOfCurrentThread();
-
-
-// This stuff is temporary here.
-// If/when valgrind is C++-ified, this will move to coregrind.
-
-void PushMallocCostCenter(const char *cc);
-void PopMallocCostCenter();
-
-class ScopedMallocCostCenter {
- public:
-  ScopedMallocCostCenter(const char *cc) {
-#ifdef DEBUG
-      PushMallocCostCenter(cc);
-#endif
-  }
-  ~ScopedMallocCostCenter() {
-#ifdef DEBUG
-      PopMallocCostCenter();
-#endif
-  }
-};
-
-
+static inline ThreadId GetVgTid() {
+  extern ThreadId VG_(running_tid); // HACK: avoid calling get_running_tid()
+  ThreadId res = VG_(running_tid);
+  //DCHECK(res == VG_(get_running_tid)());
+  return res;
+}
 
 #endif //  __TS_VALGRIND_H__
 // {{{1 end

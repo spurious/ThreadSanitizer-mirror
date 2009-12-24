@@ -94,10 +94,12 @@ vgpreload_tsan_x86_darwin_so_LDFLAGS      = \
 TSAN_SOURCES_COMMON = ts_valgrind.cc ts_util.cc
 # thread_sanitizer.cc is included into ts_valgrind.cc
 
+TS_CXX_DEFINES=-DINCLUDE_THREAD_SANITIZER_CC=1 -DTS_VALGRIND=1
+
 tsan_x86_linux_SOURCES      = $(TSAN_SOURCES_COMMON)
 tsan_x86_linux_CPPFLAGS     = $(AM_CPPFLAGS_X86_LINUX)
 tsan_x86_linux_CFLAGS       = $(AM_CFLAGS_X86_LINUX)
-tsan_x86_linux_CXXFLAGS       = $(AM_CXXFLAGS_X86_LINUX) -DINCLUDE_THREAD_SANITIZER_CC=1
+tsan_x86_linux_CXXFLAGS       = $(AM_CXXFLAGS_X86_LINUX) ${TS_CXX_DEFINES}
 tsan_x86_linux_DEPENDENCIES = $(COREGRIND_LIBS_X86_LINUX)
 tsan_x86_linux_LDADD        = $(TOOL_LDADD_X86_LINUX)
 tsan_x86_linux_LDFLAGS      = $(TOOL_LDFLAGS_X86_LINUX)
@@ -105,7 +107,7 @@ tsan_x86_linux_LDFLAGS      = $(TOOL_LDFLAGS_X86_LINUX)
 tsan_amd64_linux_SOURCES      = $(TSAN_SOURCES_COMMON)
 tsan_amd64_linux_CPPFLAGS     = $(AM_CPPFLAGS_AMD64_LINUX)
 tsan_amd64_linux_CFLAGS       = $(AM_CFLAGS_AMD64_LINUX)
-tsan_amd64_linux_CXXFLAGS       = $(AM_CXXFLAGS_AMD64_LINUX) -DINCLUDE_THREAD_SANITIZER_CC=1
+tsan_amd64_linux_CXXFLAGS       = $(AM_CXXFLAGS_AMD64_LINUX) ${TS_CXX_DEFINES}
 tsan_amd64_linux_DEPENDENCIES = $(COREGRIND_LIBS_AMD64_LINUX)
 tsan_amd64_linux_LDADD        = $(TOOL_LDADD_AMD64_LINUX)
 tsan_amd64_linux_LDFLAGS      = $(TOOL_LDFLAGS_AMD64_LINUX)
@@ -145,7 +147,7 @@ tsan_ppc64_aix5_LDFLAGS      = $(TOOL_LDFLAGS_PPC64_AIX5)
 tsan_x86_darwin_SOURCES      = $(TSAN_SOURCES_COMMON)
 tsan_x86_darwin_CPPFLAGS     = $(AM_CPPFLAGS_X86_DARWIN)
 tsan_x86_darwin_CFLAGS       = $(AM_CFLAGS_X86_DARWIN) -O2 -fno-weak -bind_at_load -fno-exceptions -fno-rtti
-tsan_x86_darwin_CXXFLAGS     = $(AM_CXXFLAGS_X86_DARWIN) -O2 -fno-weak -bind_at_load -Istlport -fno-exceptions -fno-rtti -DINCLUDE_THREAD_SANITIZER_CC=1
+tsan_x86_darwin_CXXFLAGS     = $(AM_CXXFLAGS_X86_DARWIN) -O2 -fno-weak -bind_at_load -Istlport -fno-exceptions -fno-rtti  ${TS_CXX_DEFINES}
 tsan_x86_darwin_DEPENDENCIES = $(COREGRIND_LIBS_X86_DARWIN)
 tsan_x86_darwin_LDADD        = $(TOOL_LDADD_X86_DARWIN)
 tsan_x86_darwin_LDFLAGS      = $(TOOL_LDFLAGS_X86_DARWIN)

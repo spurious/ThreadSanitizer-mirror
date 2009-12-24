@@ -151,6 +151,7 @@ static inline uintptr_t GetVgPc(ThreadId vg_tid) {
   return (uintptr_t)VG_(get_IP)(vg_tid);
 }
 
+
 uintptr_t GetPcOfCurrentThread() {
   return GetVgPc(GetVgTid());
 }

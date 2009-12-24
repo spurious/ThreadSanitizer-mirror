@@ -1167,6 +1167,7 @@ class LockSet {
   typedef multiset<LID> LSSet;
 
   static LSSet &Get(LSID lsid) {
+    ScopedMallocCostCenter cc(__FUNCTION__);
     int idx = -lsid.raw() - 1;
     DCHECK(idx >= 0);
     DCHECK(idx < static_cast<int>(vec_->size()));
@@ -1186,6 +1187,7 @@ class LockSet {
     DCHECK(vec_);
     // multiple locks.
     int32_t *id = &(*map_)[set];
+    ScopedMallocCostCenter cc(__FUNCTION__);
     if (*id == 0) {
       vec_->push_back(set);
       *id = map_->size();
@@ -1193,12 +1195,11 @@ class LockSet {
     return LSID(-*id);
   }
 
-
   typedef map<LSSet, int32_t> Map;
   static Map *map_;
 
   static const char *kLockSetVecAllocCC;
-  typedef vector<LSSet, CCAlloc<LSSet, &kLockSetVecAllocCC> > Vec;
+  typedef vector<LSSet> Vec;
   static Vec *vec_;
 
 //  static const int kPrimeSizeOfLsCache = 307;

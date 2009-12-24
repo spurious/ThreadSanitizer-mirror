@@ -2,7 +2,7 @@
   This file is part of ThreadSanitizer, a dynamic data race detector.
 
   Copyright (C) 2008-2009 Google Inc
-     opensource@google.com 
+     opensource@google.com
 
   This program is free software; you can redistribute it and/or
   modify it under the terms of the GNU General Public License as
@@ -27,164 +27,7 @@
 #ifndef __THREAD_SANITIZER_H__
 #define __THREAD_SANITIZER_H__
 
-#include <glob.h>
-#include <stdint.h>
-
-#undef NDEBUG  // Assert is always on.
-
-// Valgrind compilation is the default one.
-// Define TS_NO_VALGRIND if you compile w/o valgrind.
-#ifndef TS_NO_VALGRIND
-# include "ts_valgrind.h"
-# define TS_VALGRIND
-# define CHECK tl_assert
-#else
-# include <assert.h>
-# define CHECK assert
-#endif // TS_NO_VALGRIND
-
-
-#ifdef TS_USE_STANDARD_STL
-#include <string.h>
-#include <limits.h>
-#include <set>
-#include <map>
-#include <hash_map>
-#include <vector>
-#include <deque>
-#include <stack>
-#include <algorithm>
-#include <string>
-#include <bitset>
-//#include <algorithm>
-#include "ext/algorithm"
-#include "ext/hash_map"
-#include "ext/hash_set"
-using __gnu_cxx::hash_map;
-using __gnu_cxx::hash_set;
-using __gnu_cxx::lexicographical_compare_3way;
-
-#else  // no TS_USE_STANDARD_STL
-#include "stlport/set"
-#include "stlport/map"
-#include "stlport/hash_map"
-#include "stlport/hash_set"
-#include "stlport/vector"
-#include "stlport/deque"
-#include "stlport/stack"
-#include "stlport/algorithm"
-#include "stlport/string"
-#include "stlport/bitset"
-#include "stlport/algorithm"
-
-using std::hash_map;
-using std::hash_set;
-using std::lexicographical_compare_3way;
-#endif  // TS_USE_STANDARD_STL
-
-
-using std::set;
-using std::multiset;
-using std::multimap;
-using std::map;
-using std::deque;
-using std::stack;
-using std::string;
-using std::vector;
-using std::bitset;
-
-using std::min;
-using std::max;
-using std::sort;
-using std::pair;
-using std::make_pair;
-using std::unique_copy;
-
-
-#ifdef TS_VALGRIND
-
-// TODO(kcc) get rid of these macros.
-#define sprintf(arg1, arg2...) VG_(sprintf)((Char*)arg1, (HChar*)arg2)
-#define vsnprintf(a1, a2, a3, a4) VG_(vsnprintf)((Char*)a1, a2, a3, a4)
-#define getpid VG_(getpid)
-#define strchr(a,b)    VG_(strchr)((Char*)a,b)
-#define strdup(a) (char*)VG_(strdup)((HChar*)"strdup", (const Char*)a)
-#define snprintf(a,b,c...)     VG_(snprintf)((Char*)a,b,c)
-#define exit VG_(exit)
-#define read VG_(read)
-#define getenv(x) VG_(getenv)((Char*)x)
-#define close VG_(close)
-#define write VG_(write)
-#define abort VG_(abort)
-#define usleep(a) /*nothing. TODO.*/
-
-
-
-static inline ThreadId GetVgTid() {
-  extern ThreadId VG_(running_tid); // HACK: avoid calling get_running_tid()
-  ThreadId res = VG_(running_tid);
-  //DCHECK(res == VG_(get_running_tid)());
-  return res;
-}
-
-#else // No TS_VALGRIND
-#include <unistd.h>
-
-
-#define UNIMPLEMENTED() CHECK(0 == 42)
-
-#define UNLIKELY(x) __builtin_expect((x), 0)
-#define LIKELY(x)   __builtin_expect(!!(x), 1)
-
-class ScopedMallocCostCenter {
- public:
-  ScopedMallocCostCenter(const char *cc) {
-    // UNIMPLEMENTED();
-  }
-};
-
-
-extern uintptr_t GetPcOfCurrentThread();
-
-
-#endif // TS_VALGRIND
-
-
-template <class T, const char **cc>
-class CCAlloc : public std::allocator<T> {
- public:
-  T* allocate(long n, const void *hint = 0) {
-    ScopedMallocCostCenter cost_center(*cc);
-    return std::allocator<T>::allocate(n, hint);
-  }
-};
-
-
-
-
-
-#define CHECK_GT(X, Y) CHECK((X) >  (Y))
-#define CHECK_LT(X, Y) CHECK((X) < (Y))
-#define CHECK_GE(X, Y) CHECK((X) >= (Y))
-#define CHECK_LE(X, Y) CHECK((X) <= (Y))
-#define CHECK_NE(X, Y) CHECK((X) != (Y))
-#define CHECK_EQ(X, Y) CHECK((X) == (Y))
-
-
-
-#if defined(DEBUG) && DEBUG >= 1
-  #define DCHECK(a) CHECK(a)
-  #define DEBUG_MODE (1)
-  #define INLINE
-#else
-  #define DCHECK(a) do { if (0) { if (a) {} } } while(0)
-  #define DEBUG_MODE (0)
-  #define INLINE  inline  __attribute__ ((always_inline))
-#endif
-
-#define NOINLINE __attribute__ ((noinline))
-
-
+#include "ts_util.h"
 
 //--------- Utils ------------------- {{{1
 #include "ts_util.h"
@@ -261,7 +104,6 @@ struct FLAGS {
 extern FLAGS *G_flags;
 
 //--------- TS Exports ----------------- {{{1
-
 enum EventType {
   NOOP,
   READ,
@@ -436,10 +278,10 @@ class Event {
   EventType type()  const { return type_; }
   int32_t   tid()   const { return tid_; }
   uintptr_t a()     const { return a_; }
-  uintptr_t pc()    const { return pc_; } 
-  uintptr_t info()  const { return info_; } 
-  void      Print() const { 
-    Printf("T%d: %s [pc=%p; a=%p; i=%p]\n", 
+  uintptr_t pc()    const { return pc_; }
+  uintptr_t info()  const { return info_; }
+  void      Print() const {
+    Printf("T%d: %s [pc=%p; a=%p; i=%p]\n",
            tid(), TypeString(type()), pc(), a(), info());
 
   }
