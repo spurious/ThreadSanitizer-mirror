@@ -4483,17 +4483,7 @@ class ReportStorage {
     Thread *thr = Thread::Get(tid);
     SID     sid = race->last_access_sid;
     LSID    lsid = race->last_acces_lsid[is_w];
-
-
-
     set<LID> all_locks;
-
-#ifdef TS_VALGRIND
-    if (G_flags->show_valgrind_context) {
-      ExeContext *context = VG_(record_ExeContext)(VG_(get_running_tid)(), 0);
-      VG_(pp_ExeContext)(context);
-    }
-#endif // TS_VALGRIND
 
     n_reports++;
     if (G_flags->html) {
@@ -4582,7 +4572,6 @@ class ReportStorage {
     }
 
     Report("}}}\n");
-
   }
 
   static void PrintReport(ThreadSanitizerReport *report) {
