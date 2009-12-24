@@ -112,12 +112,10 @@ using std::unique_copy;
 #define strchr(a,b)    VG_(strchr)((Char*)a,b)
 #define strdup(a) (char*)VG_(strdup)((HChar*)"strdup", (const Char*)a)
 #define snprintf(a,b,c...)     VG_(snprintf)((Char*)a,b,c)
-#define exit VG_(exit)
 #define read VG_(read)
 #define getenv(x) VG_(getenv)((Char*)x)
 #define close VG_(close)
 #define write VG_(write)
-#define abort VG_(abort)
 #define usleep(a) /*nothing. TODO.*/
 
 #else // No TS_VALGRIND

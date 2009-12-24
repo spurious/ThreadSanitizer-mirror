@@ -220,12 +220,8 @@ __copy(_RandomAccessIter __first, _RandomAccessIter __last,
 
 inline void*
 __copy_trivial(const void* __first, const void* __last, void* __result) {
-  const char *a = (const char*)__first;
-  const char *b = (const char*)__last;
-  char *res = (char*)__result;
-  for ( ; a != b; ++a, ++res)
-    *res = *a;
-  return res;
+  size_t __n = (const char*)__last - (const char*)__first;
+  return __n ? (void *)((char*)memmove(__result, __first, __n) + __n) : __result;
 }
 
 //--------------------------------------------------
@@ -729,3 +725,4 @@ _STLP_END_NAMESPACE
 // Local Variables:
 // mode:C++
 // End:
+

@@ -76,16 +76,44 @@ void operator delete [](void *p) {
   VG_(free)(p);
 }
 
+extern "C" void *malloc(size_t size) {
+  return VG_(malloc)((HChar*)g_malloc_stack.Top(), size);
+}
+
+extern "C" void free(void *ptr) {
+  VG_(free)(ptr);
+}
 
 
 //---------------------- Utils ------------------- {{{1
 extern "C" void * memmove(void *a, const void *b, size_t size) {
-  return VG_(memmove)(a,b, size);
+  char *A = (char*)a;
+  const char *B = (const char*)b;
+  if (A < B) {
+    for (size_t i = 0; i < size; i++) {
+      A[i] = B[i];
+    }
+  } else if(A > B) {
+    for (size_t i = 0; i < size; i++) {
+      A[size - i - 1] = B[size - i - 1];
+    }
+  }
+  return a;
 }
 
 extern "C" int memcmp(const void *a, const void *b, size_t c) {
   return VG_(memcmp)(a,b,c);
 }
+
+extern "C" int puts(const char *s) {
+  Printf("%s", s);
+  return 1;
+}
+
+extern "C" void exit(int e) { VG_(exit)(e); }
+
+extern "C" void abort() { CHECK(0); }
+
 
 // TODO: make this rtn public
 extern "C" {
