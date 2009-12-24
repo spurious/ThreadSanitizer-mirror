@@ -32,21 +32,29 @@
 #define __TS_UTIL_H__
 
 //--------- Head ------------------- {{{1
-#include <glob.h>
-#include <stdint.h>
-
-
-#ifdef TS_VALGRIND
+#if defined(TS_VALGRIND)
 # include "ts_valgrind.h"
 # define CHECK tl_assert
-#else
+# define TS_USE_STLPORT
+
+#elif defined(__GNUC__)
 # undef NDEBUG  // Assert is always on.
 # include <assert.h>
 # define CHECK assert
-#endif // TS_NO_VALGRIND
+# define TS_USE_GNUC_STL
+
+#elif defined(_MSC_VER)
+# undef NDEBUG  // Assert is always on.
+# include <assert.h>
+# define CHECK assert
+# define TS_USE_WIN_STL
+
+#else
+# error "Unknown configuration"
+#endif
 
 //--------- STL ------------------- {{{1
-#ifdef TS_USE_STANDARD_STL
+#if defined(TS_USE_GNUC_STL)  // ----------- g++ STL -----------
 #include <string.h>
 #include <limits.h>
 #include <set>
@@ -57,15 +65,13 @@
 #include <algorithm>
 #include <string>
 #include <bitset>
-//#include <algorithm>
 #include "ext/algorithm"
 #include "ext/hash_map"
 #include "ext/hash_set"
 using __gnu_cxx::hash_map;
 using __gnu_cxx::hash_set;
-using __gnu_cxx::lexicographical_compare_3way;
 
-#else  // no TS_USE_STANDARD_STL
+#elif defined(TS_USE_STLPORT)  // ------------- STLport ----------
 
 #include "stlport/set"
 #include "stlport/map"
@@ -78,10 +84,28 @@ using __gnu_cxx::lexicographical_compare_3way;
 #include "stlport/string"
 #include "stlport/bitset"
 #include "stlport/algorithm"
-
 using std::hash_map;
 using std::hash_set;
-using std::lexicographical_compare_3way;
+
+#elif defined(TS_USE_WIN_STL)  // ------------- MSVC STL ---------
+#include <string.h>
+#include <limits.h>
+#include <set>
+#include <map>
+#include <vector>
+#include <deque>
+#include <stack>
+#include <algorithm>
+#include <string>
+#include <bitset>
+#include <hash_map>
+#include <hash_set>
+using stdext::hash_map;
+using stdext::hash_set;
+
+
+#else
+# error "Unknown STL"
 #endif  // TS_USE_STANDARD_STL
 
 
@@ -103,6 +127,7 @@ using std::make_pair;
 using std::unique_copy;
 
 //--------- defines ------------------- {{{1
+#define UNIMPLEMENTED() CHECK(0 == 42)
 
 #ifdef TS_VALGRIND
 // TODO(kcc) get rid of these macros.
@@ -118,12 +143,32 @@ using std::unique_copy;
 #define write VG_(write)
 #define usleep(a) /*nothing. TODO.*/
 
-#else // No TS_VALGRIND
+#elif defined(__GNUC__)
 #include <unistd.h>
 
-#define UNIMPLEMENTED() CHECK(0 == 42)
 #define UNLIKELY(x) __builtin_expect((x), 0)
 #define LIKELY(x)   __builtin_expect(!!(x), 1)
+
+#elif defined(_MSC_VER)
+typedef __int8 int8_t;
+typedef __int16 int16_t;
+typedef __int32 int32_t;
+typedef __int64 int64_t;
+typedef unsigned __int8 uint8_t;
+typedef unsigned __int16 uint16_t;
+typedef unsigned __int32 uint32_t;
+typedef unsigned __int64 uint64_t;
+
+typedef int pthread_t;
+
+#define snprintf _snprintf
+#define strtoll strtol  // TODO(kcc): _MSC_VER hmm...
+static int getpid() { UNIMPLEMENTED(); return 1; }
+#define UNLIKELY(x) (x)  // TODO(kcc): how to say this in MSVC?
+#define LIKELY(x)   (x)
+
+#else
+# error "Unknown configuration"
 #endif // TS_VALGRIND
 
 #define CHECK_GT(X, Y) CHECK((X) >  (Y))
@@ -136,14 +181,23 @@ using std::unique_copy;
 #if defined(DEBUG) && DEBUG >= 1
   #define DCHECK(a) CHECK(a)
   #define DEBUG_MODE (1)
-  #define INLINE
 #else
   #define DCHECK(a) do { if (0) { if (a) {} } } while(0)
   #define DEBUG_MODE (0)
-  #define INLINE  inline  __attribute__ ((always_inline))
 #endif
 
-#define NOINLINE __attribute__ ((noinline))
+#if defined(DEBUG) && DEBUG >= 1
+  #define INLINE
+  #define NOINLINE 
+#elif defined (__GNUC__)
+  #define INLINE  inline  __attribute__ ((always_inline))
+  #define NOINLINE __attribute__ ((noinline))
+#elif defined(_MSC_VER)
+  #define INLINE inline
+  #define NOINLINE 
+#else
+  #error "Unknown Configuration"
+#endif
 
 //--------- Malloc profiling ------------------- {{{1
 void PushMallocCostCenter(const char *cc);
@@ -169,8 +223,6 @@ class ThreadSanitizerReport;
 extern "C" long my_strtol(const char *str, char **end);
 extern void Printf(const char *format, ...);
 
-
-int OpenFileReadOnly(const string &file_name, bool die_if_failed);
 string ReadFileToString(const string &file_name, bool die_if_failed);
 
 // Get the current memory footprint of myself (parse /proc/self/status).
@@ -190,16 +242,19 @@ bool GetNameAndOffsetOfGlobalObject(uintptr_t addr,
 extern uintptr_t GetPcOfCurrentThread();
 
 inline uintptr_t tsan_bswap(uintptr_t x) {
-#if __WORDSIZE == 64
+#if defined(__GNUC__) && __WORDSIZE == 64 
   // return __builtin_bswap64(x);
   __asm__("bswapq %0" : "=r" (x) : "0" (x));
   return x;
-#elif __WORDSIZE == 32
+#elif defined(__GNUC__) && __WORDSIZE == 32 
   // return __builtin_bswap32(x);
   __asm__("bswapl %0" : "=r" (x) : "0" (x));
   return x;
+#elif defined(_WIN32)
+  return x;  // TODO(kcc)
+  // UNIMPLEMENTED();
 #else
-# error  "Unknown __WORDSIZE"
+# error  "Unknown Configuration"
 #endif // __WORDSIZE
 }
 

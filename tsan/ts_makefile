@@ -1,5 +1,5 @@
 CXX=g++
-CXXFLAGS=-g -DTS_NO_VALGRIND=1 -DTS_USE_STANDARD_STL -fno-exceptions -Wall
+CXXFLAGS=-g -fno-exceptions -Wall
 CXXOPT=-O2
 LD=g++
 LDFLAGS=

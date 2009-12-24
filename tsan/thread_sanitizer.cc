@@ -759,8 +759,12 @@ class StackTrace {
 
   struct Less {
     bool operator() (const StackTrace *t1, const StackTrace *t2) const {
-      return lexicographical_compare_3way (t1->arr_, t1->arr_ + t1->size(),
-                                           t2->arr_, t2->arr_ + t2->size()) < 0;
+      size_t size = min(t1->size_, t2->size_);
+      for (size_t i = 0; i < size; i++) {
+        if (t1->arr_[i] != t2->arr_[i])
+          return (t1->arr_[i] < t2->arr_[i]);
+      }
+      return t1->size_ < t2->size_;
     }
   };
 
@@ -2309,7 +2313,7 @@ class SegmentSet {
   };
 
   template <class MapType>
-  static SSID GetIdOrZeroFromMap(MapType *map, const SegmentSet *ss) {
+  static SSID GetIdOrZeroFromMap(MapType *map, SegmentSet *ss) {
     typename MapType::iterator it = map->find(ss);
     if (it == map->end())
       return SSID(0);
@@ -2335,9 +2339,9 @@ class SegmentSet {
     }
 
    private:
-#if 1
+#if 1 && !defined(_MSC_VER)  // TODO(kcc): make this work with _MSC_VER
     // TODO(timurrrr): consider making a custom hash_table.
-    typedef hash_map<const SegmentSet*, SSID, SSHash, SSEq > MapType__;
+    typedef hash_map<SegmentSet*, SSID, SSHash, SSEq > MapType__;
 #else
     typedef map<SegmentSet*, SSID, Less > MapType__;
 #endif
@@ -2360,7 +2364,13 @@ class SegmentSet {
   // Contains zeros at the end if size < kMaxSegmentSetSize.
   SID     sids_[kMaxSegmentSetSize];
   int32_t ref_count_;
-} __attribute__ ((aligned (sizeof(uintptr_t))));
+}
+#if defined(__GNUC__)
+__attribute__ ((aligned (sizeof(uintptr_t))))
+#elif defined(_MSC_VER)
+// TODO(kcc): align 
+#endif
+;
 
 SegmentSet::Map      *SegmentSet::map_;
 vector<SegmentSet *> *SegmentSet::vec_;

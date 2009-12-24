@@ -82,7 +82,20 @@ long my_strtol(const char *str, char **end) {
 #endif
 }
 
-int OpenFileReadOnly(const string &file_name, bool die_if_failed) {
+
+#if defined(__GNUC__)
+  typedef int TS_FILE;
+  #define TS_FILE_INVALID (-1)
+#elif defined(_MSC_VER) 
+  typedef FILE *TS_FILE;
+  #define TS_FILE_INVALID (NULL)
+  #define read(fd, buf, size) fread(buf, size, 1, fd)
+  #define close fclose
+#endif
+
+
+
+TS_FILE OpenFileReadOnly(const string &file_name, bool die_if_failed) {
 #ifdef TS_VALGRIND
   SysRes sres = VG_(open)((const Char*)file_name.c_str(), VKI_O_RDONLY, 0);
   if (sr_isError(sres)) {
@@ -94,6 +107,9 @@ int OpenFileReadOnly(const string &file_name, bool die_if_failed) {
     }
   }
   return sr_Res(sres);
+#elif defined(_MSC_VER)
+  UNIMPLEMENTED();
+  return TS_FILE_INVALID;
 #else // no TS_VALGRIND
   UNIMPLEMENTED();
 #endif
@@ -101,8 +117,8 @@ int OpenFileReadOnly(const string &file_name, bool die_if_failed) {
 
 // Read the contents of a file to string. Valgrind version.
 string ReadFileToString(const string &file_name, bool die_if_failed) {
-  int fd = OpenFileReadOnly(file_name, die_if_failed);
-  if (fd == -1) {
+  TS_FILE fd = OpenFileReadOnly(file_name, die_if_failed);
+  if (fd == TS_FILE_INVALID) {
     return string();
   }
   char buff[257] = {0};
