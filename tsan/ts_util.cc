@@ -49,24 +49,6 @@ bool GetNameAndOffsetOfGlobalObject(uintptr_t addr,
 }
 
 
-bool RecordErrorIfNotSuppressed(ThreadSanitizerReport *report) {
-  bool is_recorded = false;
-#ifdef TS_VALGRIND
-  // Record an error using standard valgrind machinery.
-  // TODO(kcc): migrate to our own system (when ready).
-  CHECK(ThreadSanitizerReport::DATA_RACE == 0);
-  is_recorded = ERROR_IS_RECORDED == VG_(maybe_record_error)(
-      GetVgTid(), report->type + XS_Race, 0, NULL, report);
-#else 
-  // TODO(kcc): implement suppressions.
-  ThreadSanitizerPrintReport(report);
-  is_recorded = true;
-#endif
-  if (!is_recorded) {
-    delete report;
-  }
-  return is_recorded;
-}
 
 #ifndef TS_VALGRIND
 FILE *G_out = stdout;

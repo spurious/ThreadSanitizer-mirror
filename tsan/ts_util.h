@@ -31,6 +31,7 @@
 #ifndef __TS_UTIL_H__
 #define __TS_UTIL_H__
 
+//--------- Head ------------------- {{{1
 #include <glob.h>
 #include <stdint.h>
 
@@ -44,6 +45,7 @@
 # define CHECK assert
 #endif // TS_NO_VALGRIND
 
+//--------- STL ------------------- {{{1
 #ifdef TS_USE_STANDARD_STL
 #include <string.h>
 #include <limits.h>
@@ -64,6 +66,7 @@ using __gnu_cxx::hash_set;
 using __gnu_cxx::lexicographical_compare_3way;
 
 #else  // no TS_USE_STANDARD_STL
+
 #include "stlport/set"
 #include "stlport/map"
 #include "stlport/hash_map"
@@ -99,6 +102,7 @@ using std::pair;
 using std::make_pair;
 using std::unique_copy;
 
+//--------- defines ------------------- {{{1
 
 #ifdef TS_VALGRIND
 // TODO(kcc) get rid of these macros.
@@ -143,6 +147,7 @@ using std::unique_copy;
 
 #define NOINLINE __attribute__ ((noinline))
 
+//--------- Malloc profiling ------------------- {{{1
 void PushMallocCostCenter(const char *cc);
 void PopMallocCostCenter();
 
@@ -160,10 +165,8 @@ class ScopedMallocCostCenter {
   }
 };
 
+//--------- Forward decls ------------------- {{{1
 class ThreadSanitizerReport;
-
-// Returns true if the error has been recorded.
-bool RecordErrorIfNotSuppressed(ThreadSanitizerReport *report);
 
 extern "C" long my_strtol(const char *str, char **end);
 extern void Printf(const char *format, ...);
@@ -186,6 +189,7 @@ bool StringMatch(const string &pattern, const string &str);
 bool GetNameAndOffsetOfGlobalObject(uintptr_t addr,
                                     string *name, uintptr_t *offset);
 
+extern uintptr_t GetPcOfCurrentThread();
 
 inline uintptr_t tsan_bswap(uintptr_t x) {
 #if __WORDSIZE == 64
@@ -200,9 +204,6 @@ inline uintptr_t tsan_bswap(uintptr_t x) {
 # error  "Unknown __WORDSIZE"
 #endif // __WORDSIZE
 }
-
-extern uintptr_t GetPcOfCurrentThread();
-
 
 
 #endif  // __TS_UTIL_H__
