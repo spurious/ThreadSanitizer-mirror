@@ -2945,7 +2945,7 @@ class Cache {
   INLINE CacheLine *GetLine(uintptr_t a, int call_site) {
     uintptr_t tag = CacheLine::ComputeTag(a);
     DCHECK(tag <= a);
-    DCHECK(tag + CacheLine::kLineSize > a);
+    DCHECK((uint64_t)tag + CacheLine::kLineSize > (uint64_t)a);
     uintptr_t cli = ComputeCacheLineIndexInCache(a);
     CacheLine *res = lines_[cli];
     if (LIKELY(res && res->tag() == tag)) {
@@ -5519,6 +5519,7 @@ class Detector {
   INLINE void HandleMemoryAccessInternal(TID tid,
                                          uintptr_t addr, uintptr_t size,
                                          bool is_w) {
+    DCHECK(size > 0);
     if (UNLIKELY(G_flags->sample_events > 0)) {
       const char *type =
           (cur_thread_->ignore(is_w))

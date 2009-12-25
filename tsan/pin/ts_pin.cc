@@ -139,6 +139,7 @@ struct PinThread {
   pthread_t    joined_ptid;
   bool         started;
   uintptr_t    cxa_guard;
+  int          call_stack_depth;
 };
 
 // Array of pin threads, indexed by pin's THREADID.
@@ -255,7 +256,6 @@ static void DumpEvent(EventType type, int32_t tid, uintptr_t pc,
     g_pin_threads[tid].started = true;
     DumpEventInternal(THR_START, tid, 0, 0, g_pin_threads[tid].parent_tid);
     DumpEventInternal(THR_FIRST_INSN, tid, 0, 0, 0);
-    DumpEventInternal(RTN_CALL, tid, 0x01, 0x02, 0);
   }
   DumpEventInternal(type, tid, pc, a, info);
 }
@@ -466,10 +466,16 @@ void InsertBeforeEvent_RoutineEntry(THREADID tid, ADDRINT pc,
 }
 
 static void InsertAfterEvent_RoutineExit(THREADID tid, ADDRINT pc, ADDRINT sp) {
-  DumpEvent(RTN_EXIT, tid, 0, 0, 0);
+  if (g_pin_threads[tid].call_stack_depth > 0) {
+    // TODO(kcc): somehow on l32 we may get more exits than calls...
+    DumpEvent(RTN_EXIT, tid, 0, 0, 0);
+    g_pin_threads[tid].call_stack_depth--;
+  }
 }
 void InsertBeforeEvent_Call(THREADID tid, ADDRINT pc, ADDRINT target, ADDRINT sp) {
   DumpEvent(RTN_CALL, tid, pc, target, 0);
+  g_pin_threads[tid].call_stack_depth++;
+
 }
 
 static void InsertAfterEvent_SpUpdate(THREADID tid, ADDRINT pc, ADDRINT sp) {
@@ -485,7 +491,9 @@ static void InsertBeforeEvent_MemoryRead(THREADID tid, ADDRINT pc,
   if (DEBUG_MODE && a == G_flags->trace_addr) {
     Printf("T%d %s %lx\n", tid, __FUNCTION__, a);
   }
-  DumpEvent(READ, tid, pc, a, size);
+  if (size > 0) {
+    DumpEvent(READ, tid, pc, a, size);
+  }
   dyn_read_count++;
 }
 
@@ -495,7 +503,9 @@ static void InsertBeforeEvent_MemoryWrite(THREADID tid, ADDRINT pc,
   if (DEBUG_MODE && a == G_flags->trace_addr) {
     Printf("T%d %s %lx\n", tid, __FUNCTION__, a);
   }
-  DumpEvent(WRITE, tid, pc, a, size);
+  if (size > 0) {
+    DumpEvent(WRITE, tid, pc, a, size);
+  }
   dyn_write_count++;
 }
 
