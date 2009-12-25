@@ -104,7 +104,11 @@ HEADERS=../thread_sanitizer.h ../ts_util.h
 #all_tests: simple_pin_test.so detach_example.so
 #%.so: %.$(OBJ)
 #	$(CXX) $(LDFLAGS) $(LIBPATHS) -o $@ $<  $(LIBS)
+#
+#
+win_test.exe: win_test.cpp
+	cl /Zi $<
 
 
 clean:
-	rm -fv *.so *.o *.obj *.dll core* pintool.log*
+	rm -fv *.so *.o *.obj *.dll core* pintool.log* pin.log *.exp *.lib *.pdb *.ilk  *.exe
