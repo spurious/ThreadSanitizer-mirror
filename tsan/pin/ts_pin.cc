@@ -37,7 +37,25 @@
 #include <map>
 #include <assert.h>
 
+#if defined(__GNUC__)
 #include <cxxabi.h>  // __cxa_demangle
+#else
+// TODO(kcc): how to demangle on windows?
+#endif
+
+#if defined(_MSC_VER) 
+// TODO(kcc): add actuall implementations
+#define usleep(x)
+#define popen(x,y) (NULL)
+#endif
+
+#if defined(__GNUC__)
+# define CAS(ptr,oldval,newval) __sync_bool_compare_and_swap(ptr,oldval,newval)
+# define ATOMIC_READ(a) __sync_add_and_fetch(a, 0)
+#elif defined(_MSC_VER)
+# define CAS(ptr,oldval,newval) _InterlockedCompareExchange(ptr, newval, oldval)
+# define ATOMIC_READ(a) _InterlockedCompareExchange(a, 0, 0)
+#endif
 
 #include "thread_sanitizer.h"
 
@@ -58,16 +76,16 @@ class TSLock {
     }
   }
   void Unlock() {
-    __sync_bool_compare_and_swap(&lock_, 1, 0);
+    CAS(&lock_, 1, 0);
   }
   bool TryLock() {
-    if ( __sync_bool_compare_and_swap(&lock_, 0, 1)) {
+    if (CAS(&lock_, 0, 1)) {
       return true;
     }
     return false;
   }
  private:
-  int32_t lock_;
+  volatile long lock_;
 };
 
 
@@ -130,7 +148,7 @@ static bool g_attached_to_running_process = false;
 //--------------- PinThread ----------------- {{{1
 struct PinThread {
   OS_THREAD_ID os_tid;
-  THREADID     last_child_tid;
+  volatile long last_child_tid;
   THREADID     parent_tid;
   size_t       last_malloc_size;
   size_t       last_mmap_size;
@@ -147,6 +165,7 @@ static PinThread *g_pin_threads;
 
 //------------- ThreadSanitizer exports ------------ {{{1
 string Demangle(const char *str) {
+#if defined(__GNUC__)
   int status;
   char *demangled = __cxxabiv1::__cxa_demangle(str, 0, 0, &status);
   if (demangled) {
@@ -154,6 +173,7 @@ string Demangle(const char *str) {
     free(demangled);
     return res;
   }
+#endif
   return str;
 }
 
@@ -375,7 +395,7 @@ static void After_pthread_create(THREADID tid, ADDRINT pc, ADDRINT ret) {
   IgnoreAllEnd(tid, pc);
   // Spin, waiting for last_child_tid to appear (i.e. wait for the thread to
   // actually start) so that we know the child's tid. No locks.
-  while (!__sync_add_and_fetch(&g_pin_threads[tid].last_child_tid, 0)) {
+  while (!ATOMIC_READ(&g_pin_threads[tid].last_child_tid)) {
     usleep(0);
   }
 
@@ -886,23 +906,23 @@ static bool RtnMatchesName(const string &rtn_name, const string &name) {
   return false;
 }
 
-#define INSERT_FN_HELPER(point, name, rtn, to_insert, args...) \
+#define INSERT_FN_HELPER(point, name, rtn, to_insert, ...) \
     RTN_Open(rtn); \
     if (G_flags->verbosity >= 2) Printf("RTN: Inserting %-50s (%s) %s (%s) img: %s\n", \
     #to_insert, #point, RTN_Name(rtn).c_str(), name, IMG_Name(img).c_str());\
     RTN_InsertCall(rtn, point, (AFUNPTR)to_insert, IARG_THREAD_ID, \
-                   IARG_INST_PTR, args, IARG_END);\
+                   IARG_INST_PTR, __VA_ARGS__, IARG_END);\
     RTN_Close(rtn); \
 
-#define INSERT_FN(point, name, to_insert, args...) \
+#define INSERT_FN(point, name, to_insert, ...) \
   while (RtnMatchesName(rtn_name, name)) {\
-    INSERT_FN_HELPER(point, name, rtn, to_insert, args); \
+    INSERT_FN_HELPER(point, name, rtn, to_insert, __VA_ARGS__); \
     break;\
   }\
 
 
-#define INSERT_BEFORE_FN(name, to_insert, args...) \
-    INSERT_FN(IPOINT_BEFORE, name, to_insert, args)
+#define INSERT_BEFORE_FN(name, to_insert, ...) \
+    INSERT_FN(IPOINT_BEFORE, name, to_insert, __VA_ARGS__)
 
 #define INSERT_BEFORE_0(name, to_insert) \
     INSERT_BEFORE_FN(name, to_insert, IARG_END);
@@ -929,8 +949,8 @@ static bool RtnMatchesName(const string &rtn_name, const string &name) {
                      IARG_FUNCARG_ENTRYPOINT_VALUE, 2, \
                      IARG_FUNCARG_ENTRYPOINT_VALUE, 3)
 
-#define INSERT_AFTER_FN(name, to_insert, args...) \
-    INSERT_FN(IPOINT_AFTER, name, to_insert, args)
+#define INSERT_AFTER_FN(name, to_insert, ...) \
+    INSERT_FN(IPOINT_AFTER, name, to_insert, __VA_ARGS__)
 
 #define INSERT_AFTER_0(name, to_insert) \
     INSERT_AFTER_FN(name, to_insert, IARG_END)
@@ -939,9 +959,9 @@ static bool RtnMatchesName(const string &rtn_name, const string &name) {
     INSERT_AFTER_FN(name, to_insert, IARG_FUNCRET_EXITPOINT_VALUE)
 
 
-#define INSERT_FN_SLOW(point, name, to_insert, args...) \
+#define INSERT_FN_SLOW(point, name, to_insert, ...) \
   while (RTN_Valid((rtn = RTN_FindByName(img, name)))) { \
-    INSERT_FN_HELPER(point, name, rtn, to_insert, args); \
+    INSERT_FN_HELPER(point, name, rtn, to_insert, __VA_ARGS__); \
     break; \
   }
 

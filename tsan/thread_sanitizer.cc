@@ -6171,6 +6171,9 @@ static void SetupIgnore() {
   g_ignore_lists->objs.push_back("*/libpthread-*");
   g_ignore_lists->objs.push_back("*/libpthread.so*");
   g_ignore_lists->objs.push_back("*/ld-2*.so");
+  g_ignore_lists->objs.push_back("*ntdll.dll");
+  g_ignore_lists->objs.push_back("*kernel32.dll");
+  g_ignore_lists->objs.push_back("*ADVAPI32.DLL");
 #ifdef VGO_darwin
   g_ignore_lists->objs.push_back("/usr/lib/dyld");
   g_ignore_lists->objs.push_back("/usr/lib/libobjc.A.dylib");
