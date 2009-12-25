@@ -222,10 +222,11 @@ static void DumpEventPlainText(EventType type, int32_t tid, uintptr_t pc,
     if (rtn_name.empty()) rtn_name = "unknown";
     if (line == 0) line = 1;
     fprintf(log_file, "#PC %lx %s %s %s %d\n",
-            pc, img_name.c_str(), rtn_name.c_str(),
+            (long)pc, img_name.c_str(), rtn_name.c_str(),
             file_name.c_str(), line);
   }
-  fprintf(log_file, "%s %x %lx %lx %lx\n", kEventNames[type], tid, pc, a, info);
+  fprintf(log_file, "%s %x %lx %lx %lx\n", kEventNames[type], tid,
+          (long)pc, (long)a, (long)info);
 }
 
 
@@ -240,6 +241,9 @@ static void DumpEventInternal(EventType type, int32_t tid, uintptr_t pc,
     DumpEventPlainText(type, tid, pc, a, info);
     return;
   }
+  if (DEBUG_MODE && G_flags->verbosity >= 3) {
+    event.Print();
+  }
   ThreadSanitizerHandleOneEvent(&event);
 }
 
@@ -252,9 +256,6 @@ static void DumpEvent(EventType type, int32_t tid, uintptr_t pc,
     DumpEventInternal(THR_START, tid, 0, 0, g_pin_threads[tid].parent_tid);
     DumpEventInternal(THR_FIRST_INSN, tid, 0, 0, 0);
     DumpEventInternal(RTN_CALL, tid, 0x01, 0x02, 0);
-    DumpEventInternal(RTN_CALL, tid, 0x02, 0x03, 0);
-    DumpEventInternal(RTN_CALL, tid, 0x03, 0x04, 0);
-    DumpEventInternal(RTN_CALL, tid, 0x04, 0x05, 0);
   }
   DumpEventInternal(type, tid, pc, a, info);
 }
@@ -1184,8 +1185,16 @@ int main(INT32 argc, CHAR **argv) {
   PIN_AddFiniFunction(CallbackForFini, 0);
   IMG_AddInstrumentFunction(CallbackForIMG, 0);
   TRACE_AddInstrumentFunction(CallbackForTRACE, 0);
-//  PIN_AddDetachFunction(CallbackForDetach, 0);
+  //  PIN_AddDetachFunction(CallbackForDetach, 0);
 
+  Report("ThreadSanitizerPin: "
+         "pure-happens-before=%s fast-mode=%s ignore-in-dtor=%s\n",
+         G_flags->pure_happens_before ? "yes" : "no",
+         G_flags->fast_mode ? "yes" : "no",
+         G_flags->ignore_in_dtor ? "yes" : "no");
+  if (DEBUG_MODE) {
+    Report("INFO: Debug build\n");
+  }
   // Fire!
   PIN_StartProgram();
   return 0;
