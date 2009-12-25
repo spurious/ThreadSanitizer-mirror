@@ -14,6 +14,10 @@ run: ThreadSanitizerTest.class
 mtrat: ThreadSanitizerTest.class
 	$(MTRAT) -ea -cp . ThreadSanitizerTest ${TESTS}
 
+# Run tests under ThreadSanitizer
+tsan: ThreadSanitizerTest.class
+	 java -Xbootclasspath/p:dist/agent.jar -javaagent:dist/agent.jar ThreadSanitizerTest ${TESTS}
+
 # Clean
 clean:
-	rm -f *.class
+	rm -fr *.class bin dist *log

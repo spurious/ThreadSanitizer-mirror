@@ -1,10 +1,10 @@
 /* Copyright (c) 2009, Google Inc.
  * All rights reserved.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
  * met:
- * 
+ *
  *     * Redistributions of source code must retain the above copyright
  * notice, this list of conditions and the following disclaimer.
  *     * Redistributions in binary form must reproduce the above
@@ -14,7 +14,7 @@
  *     * Neither the name of Google Inc. nor the names of its
  * contributors may be used to endorse or promote products derived from
  * this software without specific prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
  * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
@@ -65,13 +65,13 @@ public class ThreadSanitizerTest {
         // test to exclude.
         if (tests_to_exclude.length() > 0) {
           tests_to_exclude += "|";
-        } 
+        }
         tests_to_exclude += arg.substring(1);
       } else {
         // test to run.
         if (tests_to_run.length() > 0) {
           tests_to_run += "|";
-        } 
+        }
         tests_to_run += arg;
       }
     }
@@ -120,6 +120,11 @@ public class ThreadSanitizerTest {
     public void setUp() { }
     public void tearDown() { }
 
+    public void foo1() { thread1(); }
+    public void foo2() { thread2(); }
+    public void foo3() { thread3(); }
+    public void foo4() { thread4(); }
+
     // Run threadN in separate threads, then join them all.
     public ThreadRunner() {
 //      System.out.printf("Running %d threads\n", nThreads());
@@ -129,10 +134,10 @@ public class ThreadSanitizerTest {
       }
 
       Thread threads[] = new Thread[4];
-      threads[0] = new MyThread(this) { public void run() { runner.thread1(); } };
-      threads[1] = new MyThread(this) { public void run() { runner.thread2(); } };
-      threads[2] = new MyThread(this) { public void run() { runner.thread3(); } };
-      threads[3] = new MyThread(this) { public void run() { runner.thread4(); } };
+      threads[0] = new MyThread(this) { public void run() { runner.foo1(); } };
+      threads[1] = new MyThread(this) { public void run() { runner.foo2(); } };
+      threads[2] = new MyThread(this) { public void run() { runner.foo3(); } };
+      threads[3] = new MyThread(this) { public void run() { runner.foo4(); } };
 
       try {
         setUp();
@@ -196,14 +201,14 @@ public class ThreadSanitizerTest {
   public void testPositive_WW_LockInBetween() {
     describe("Race: two unlocked writes, ciritcal sections between them");
     new ThreadRunner2() {
-      public void thread1() { 
+      public void thread1() {
         shared_var = 1;
         synchronized(this) {}
       }
-      public void thread2() { 
+      public void thread2() {
         longSleep();
         synchronized(this) {}
-        shared_var = 2; 
+        shared_var = 2;
       }
     };
   }
@@ -426,7 +431,7 @@ public class ThreadSanitizerTest {
     new ThreadRunner2() {
       boolean done;
       public void setUp() {
-        done = false; 
+        done = false;
       }
 
       public synchronized void send() {
@@ -440,12 +445,12 @@ public class ThreadSanitizerTest {
         }
       }
 
-      public void thread1() { 
+      public void thread1() {
         shortSleep();
         shared_var = 1;
         send();
       }
-      public void thread2() { 
+      public void thread2() {
         receive();
         shared_var++;
       }
@@ -479,7 +484,7 @@ public class ThreadSanitizerTest {
         }
       }
 
-      public void thread1() { 
+      public void thread1() {
         shortSleep();
         synchronized (lock1) {
           shared_var = 1;
@@ -499,6 +504,7 @@ public class ThreadSanitizerTest {
     };
   }
 
+  /*
   public void testNegative11() {
     describe("Correct code: synchronization via thread create/join");
     class Foo { public int a; }
@@ -509,7 +515,7 @@ public class ThreadSanitizerTest {
     try { t.join(); } catch (Exception e) { assert false; }
     foo.a++;
     assert foo.a == 3;
-  }
+  }*/
 
   public void testNegative_CountDownLatch() {
     describe("Correct code: CountDownLatch");
@@ -538,7 +544,7 @@ public class ThreadSanitizerTest {
       public void thread4() { thread2(); }
     };
   }
-  
+
   public void testNegative_Semaphore() {
     describe("Correct code: Semaphore");
     final Semaphore sem = new Semaphore(0);
@@ -551,7 +557,7 @@ public class ThreadSanitizerTest {
         longSleep();
         shared_var = 1;
         sem.release();
-      } 
+      }
 
       public void thread2() {
         try { sem.acquire(); } catch (Exception e) { assert false : e; }
@@ -559,7 +565,7 @@ public class ThreadSanitizerTest {
       }
     };
   }
-  
+
   public void testNegative_ReadWriteLock() {
     describe("Correct code: ReadWriteLock");
     final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
