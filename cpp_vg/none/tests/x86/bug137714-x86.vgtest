@@ -1,3 +1,0 @@
-prog: bug137714-x86
-prereq: ../../../tests/cputest x86-sse2
-vgopts: -q
