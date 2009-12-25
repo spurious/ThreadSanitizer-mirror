@@ -94,7 +94,7 @@ vgpreload_tsan_x86_darwin_so_LDFLAGS      = \
 TSAN_SOURCES_COMMON = ts_valgrind.cc ts_util.cc
 # thread_sanitizer.cc is included into ts_valgrind.cc
 
-TS_CXX_DEFINES=-DINCLUDE_THREAD_SANITIZER_CC=1 -DTS_VALGRIND=1
+TS_CXX_DEFINES=-DINCLUDE_THREAD_SANITIZER_CC=1 -DTS_VALGRIND=1 -D_STLP_NO_IOSTREAMS=1
 
 tsan_x86_linux_SOURCES      = $(TSAN_SOURCES_COMMON)
 tsan_x86_linux_CPPFLAGS     = $(AM_CPPFLAGS_X86_LINUX)

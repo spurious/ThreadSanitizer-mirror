@@ -72,7 +72,7 @@ using __gnu_cxx::hash_map;
 using __gnu_cxx::hash_set;
 
 #elif defined(TS_USE_STLPORT)  // ------------- STLport ----------
-
+#define _STLP_NO_IOSTREAMS 1
 #include "stlport/set"
 #include "stlport/map"
 #include "stlport/hash_map"
