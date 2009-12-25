@@ -214,46 +214,38 @@ void OpenFileWriteStringAndClose(const string &file_name, const string &str) {
 #endif
 }
 
-// This function is taken from valgrind's m_libcbase.c (thanks GPL!).
-static bool FastRecursiveStringMatch(const char* pat, const char* str,
-                                     int *depth) {
-  CHECK_LT((*depth), 10000);
-  (*depth)++;
-  for (;;) {
-    switch (*pat) {
-      case '\0':(*depth)--;
-                return (*str == '\0');
-      case '*': do {
-                  if (FastRecursiveStringMatch(pat+1, str, depth)) {
-                    (*depth)--;
-                    return true;
-                  }
-                } while (*str++);
-                  (*depth)--;
-                  return false;
-      case '?': if (*str++ == '\0') {
-                  (*depth)--;
-                  return false;
-                }
-                pat++;
-                break;
-      case '\\':if (*++pat == '\0') {
-                  (*depth)--;
-                  return false; /* spurious trailing \ in pattern */
-                }
-                /* falls through to ... */
-      default : if (*pat++ != *str++) {
-                  (*depth)--;
-                  return false;
-                }
-                break;
+bool StringMatch(const string& wildcard, const string& text) {
+  const char* c_text = text.c_str();
+  const char* c_wildcard = wildcard.c_str();
+  // Start of the current look-ahead. Everything before these positions is a
+  // definite, optimal match.
+  const char* c_text_last = NULL;
+  const char* c_wildcard_last = NULL;
+  while (*c_text) {
+    if (*c_wildcard == '*') {
+      while (*++c_wildcard == '*') {
+        // Skip all '*'.
+      }
+      if (!*c_wildcard) {
+        // Ends with a series of '*'.
+        return true;
+      }
+      c_text_last = c_text;
+      c_wildcard_last = c_wildcard;
+    } else if ((*c_text == *c_wildcard) || (*c_wildcard == '?')) {
+      ++c_text;
+      ++c_wildcard;
+    } else if (c_text_last) {
+      // No match. But we have seen at least one '*', so rollback and try at the
+      // next position.
+      c_wildcard = c_wildcard_last;
+      c_text = c_text_last++;
+    } else {
+      return false;
     }
   }
-}
 
-bool StringMatch(const string &pattern, const string &str) {
-  int depth = 0;
-  return FastRecursiveStringMatch(pattern.c_str(), str.c_str(), &depth);
+  return !*c_wildcard;
 }
 
 // end. {{{1

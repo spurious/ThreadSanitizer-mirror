@@ -1,6 +1,7 @@
 CXX=g++
 CXXFLAGS=-g -fno-exceptions -Wall
 CXXOPT=-O2
+CXXDBG=-O0 -ggdb3 -fno-inline -fomit-frame-pointer
 LD=g++
 LDFLAGS=
 INCLUDES=-I.
@@ -10,12 +11,16 @@ all: ts_offline
 ts_offline: ts_offline.o thread_sanitizer.o ts_util.o
 	$(LD) $(LDFLAGS) -o $@ $^
 
-HEADERS=thread_sanitizer.h ts_util.h
+suppressions_test: suppressions_test.o suppressions.o ts_util.o ../googletest/make/gtest_main.a
+	$(LD) $(LDFLAGS) -o $@ $^
+
+HEADERS=thread_sanitizer.h ts_util.h suppressions.h
+
+%_test.o: %_test.cc $(HEADERS)
+	$(CXX) $(CXXFLAGS) $(CXXDBG) $(INCLUDES) -I../googletest/include -o $@ -c $<
 
 %.o: %.cc $(HEADERS)
 	$(CXX) $(CXXFLAGS) $(CXXOPT) $(INCLUDES) -o $@ -c $<
-
-
 
 clean:
 	rm -v *.o

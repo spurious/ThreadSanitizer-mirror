@@ -25,8 +25,8 @@
 
 // Author: Konstantin Serebryany.
 
-#ifndef TS_VALGRIND_CLIENT_REQUESTS_H__
-#define TS_VALGRIND_CLIENT_REQUESTS_H__
+#ifndef TS_VALGRIND_CLIENT_REQUESTS_H_
+#define TS_VALGRIND_CLIENT_REQUESTS_H_
 
 #include "valgrind.h"
 
@@ -85,6 +85,6 @@ enum {
   TSREQ_GET_VG_THREAD_ID,
   TSREQ_GET_SEGMENT_ID
 };
-#endif // TS_VALGRIND_CLIENT_REQUESTS_H__
+#endif // TS_VALGRIND_CLIENT_REQUESTS_H_
 // end. {{{1
 // vim:shiftwidth=2:softtabstop=2:expandtab

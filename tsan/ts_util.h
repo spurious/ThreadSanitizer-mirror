@@ -28,8 +28,8 @@
 // This file contains utility classes and functions used by ThreadSanitizer.
 // TODO(kcc): move more utilities from thread_sanitizer.cc to this file.
 
-#ifndef __TS_UTIL_H__
-#define __TS_UTIL_H__
+#ifndef TS_UTIL_H_
+#define TS_UTIL_H_
 
 //--------- Head ------------------- {{{1
 #if defined(TS_VALGRIND)
@@ -259,6 +259,6 @@ inline uintptr_t tsan_bswap(uintptr_t x) {
 }
 
 
-#endif  // __TS_UTIL_H__
+#endif  // TS_UTIL_H_
 // end. {{{1
 // vim:shiftwidth=2:softtabstop=2:expandtab:tw=80

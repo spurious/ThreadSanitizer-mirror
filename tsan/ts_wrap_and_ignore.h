@@ -25,11 +25,11 @@
 
 // Author: Konstantin Serebryany.
 
-#ifndef __TS_WRAP_AND_IGNORE_H__
-#define __TS_WRAP_AND_IGNORE_H__
+#ifndef TS_WRAP_AND_IGNORE_H_
+#define TS_WRAP_AND_IGNORE_H_
 
 // Included into ts_valgrind_intercepts.c, see comments there.
 
 WRAP_AND_IGNORE(NONE, getenv);
 
-#endif  // __TS_WRAP_AND_IGNORE_H__
+#endif  // TS_WRAP_AND_IGNORE_H_

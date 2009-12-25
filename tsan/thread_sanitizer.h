@@ -24,8 +24,8 @@
 
 // Author: Konstantin Serebryany.
 //--------- Head ------------------- {{{1
-#ifndef __THREAD_SANITIZER_H__
-#define __THREAD_SANITIZER_H__
+#ifndef THREAD_SANITIZER_H_
+#define THREAD_SANITIZER_H_
 
 #include "ts_util.h"
 
@@ -297,5 +297,5 @@ class Event {
 };
 
 // end. {{{1
-#endif  //  __THREAD_SANITIZER_H__
+#endif  //  THREAD_SANITIZER_H_
 // vim:shiftwidth=2:softtabstop=2:expandtab

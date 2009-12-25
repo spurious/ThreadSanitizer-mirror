@@ -25,8 +25,8 @@
 
 // Author: Konstantin Serebryany.
 
-#ifndef __TS_VALGRIND_H__
-#define __TS_VALGRIND_H__
+#ifndef TS_VALGRIND_H_
+#define TS_VALGRIND_H_
 
 #include <stdint.h>
 extern "C" {
@@ -61,6 +61,6 @@ enum {
   XS_InvalidLock
 };
 
-#endif //  __TS_VALGRIND_H__
+#endif //  TS_VALGRIND_H_
 // {{{1 end
 // vim:shiftwidth=2:softtabstop=2:expandtab
