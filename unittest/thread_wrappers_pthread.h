@@ -52,13 +52,16 @@
 
 #define NOINLINE   __attribute__ ((noinline))
 #define ALIGNED(X) __attribute__ ((aligned (X)))
-const bool kMallocUsesMutex = false;
+
+// This constant is true if malloc() uses mutex on your platform as this may
+// introduce a happens-before arc for a pure happens-before race detector.
+static const bool kMallocUsesMutex = false;
 
 #ifndef __APPLE__
   // Linux
   #include <malloc.h> // memalign
 
-  int AtomicIncrement(volatile int *value, int increment) {
+  static int AtomicIncrement(volatile int *value, int increment) {
     return __sync_add_and_fetch(value, increment);
   }
 #else
@@ -69,7 +72,7 @@ const bool kMallocUsesMutex = false;
   #define NO_TLS
   #define NO_SPINLOCK
 
-  int AtomicIncrement(volatile int *value, int increment) {
+  static int AtomicIncrement(volatile int *value, int increment) {
     return OSAtomicAdd32(increment, value);
   }
 
@@ -77,14 +80,14 @@ const bool kMallocUsesMutex = false;
   #define memalign(A,B) malloc(B)
 
   // TODO(timurrrr) this is a hack
-  int posix_memalign(void **out, size_t al, size_t size) {
+  static int posix_memalign(void **out, size_t al, size_t size) {
     *out = memalign(al, size);
     return (*out == 0);
   }
 #endif
 
 
-int GetTimeInMs() {
+static int GetTimeInMs() {
   struct timeval now;
   gettimeofday(&now, NULL);
   return (int)(now.tv_sec * 1000 + now.tv_usec / 1000);

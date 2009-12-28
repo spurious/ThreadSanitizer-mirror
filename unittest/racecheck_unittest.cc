@@ -27,50 +27,20 @@
 
  This file contains a set of unit tests for a data race detection tool.
 
- This test can be compiled with pthreads (default) or
+ These tests can be compiled with pthreads (default) or
  with any other library that supports threads, locks, cond vars, etc.
 
- To compile with pthreads:
-<pre>
-   g++ -g racecheck_unittest.cc \
-   -I../dynamic_annotations ../dynamic_annotations/dynamic_annotations.cc \
-        -lpthread -g -DDYNAMIC_ANNOTATIONS_ENABLED=1
-</pre>
-
- To compile with different library:
-   1. cp thread_wrappers_pthread.h thread_wrappers_yourlib.h
-   2. edit thread_wrappers_yourlib.h
-   3. add '-DTHREAD_WRAPPERS="thread_wrappers_yourlib.h"' to your compilation.
 */
 
-// This test must not include any other file specific to threading library,
-// everything should be inside THREAD_WRAPPERS.
-#ifndef THREAD_WRAPPERS
-# define THREAD_WRAPPERS "thread_wrappers.h"
-#endif
-#include THREAD_WRAPPERS
-
-#ifndef NEEDS_SEPERATE_RW_LOCK
-#define RWLock Mutex // Mutex does work as an rw-lock.
-#define WriterLockScoped MutexLock
-#define ReaderLockScoped ReaderMutexLock
-#endif // !NEEDS_SEPERATE_RW_LOCK
-
-
-#include <vector>
-#include <string>
-#include <map>
-#include <set>
-#include <queue>
-#include <algorithm>
-#include <cstring>      // strlen(), index(), rindex()
-#include <ctime>
 #include <fcntl.h>
-#include <stdlib.h>
-
+#include <queue>
 #include <signal.h>
-#include <sys/time.h>
+#include <stdlib.h>
+#include <string>
+#include <vector>
 
+#include "old_test_suite.h"
+#include "test_utils.h"
 
 // The tests are
 // - Stability tests (marked STAB)
@@ -81,13 +51,13 @@
 //   - FN (false negative): a race exists but not reported.
 //   - FP (false positive): no race exists but the tool reports it.
 //
-// The feature tests are marked according to the behavior of helgrind 3.3.0.
+// The feature tests are marked according to the behavior of ThreadSanitizer.
 //
 // TP and FP tests are annotated with ANNOTATE_EXPECT_RACE,
-// so, no error reports should be seen when running under helgrind.
+// so, no error reports should be seen when running under ThreadSanitizer.
 //
 // When some of the FP cases are fixed in helgrind we'll need
-// to update this test.
+// to update these tests.
 //
 // Each test resides in its own namespace.
 // Namespaces are named test01, test02, ...
@@ -101,243 +71,6 @@
 // Globals and utilities used by several tests. {{{1
 CondVar CV;
 int     COND = 0;
-
-
-typedef void (*void_func_void_t)(void);
-enum TEST_FLAG {
-  FEATURE           = 1 << 0,
-  STABILITY         = 1 << 1,
-  PERFORMANCE       = 1 << 2,
-  EXCLUDE_FROM_ALL  = 1 << 3,
-  NEEDS_ANNOTATIONS = 1 << 4,
-  RACE_DEMO         = 1 << 5,
-  MEMORY_USAGE      = 1 << 6,
-  PRINT_STATS       = 1 << 7
-};
-
-// Put everything into stderr.
-Mutex printf_mu;
-#define printf(args...) \
-    do{ \
-      printf_mu.Lock();\
-      fprintf(stderr, args);\
-      printf_mu.Unlock(); \
-    }while(0)
-
-struct Test{
-  void_func_void_t f_;
-  int flags_;
-  Test(void_func_void_t f, int flags)
-    : f_(f)
-    , flags_(flags)
-  {}
-  Test() : f_(0), flags_(0) {}
-  void Run() {
-     if (flags_ & PERFORMANCE) {
-        long start = GetTimeInMs();
-        f_();
-        long end = GetTimeInMs();
-        printf ("Time: %4ldms\n", end-start);
-     } else
-        f_();
-  }
-};
-std::map<int, Test> TheMapOfTests;
-
-extern "C" void NOINLINE AnnotateSetVerbosity(const char *, int, int) {};
-
-
-struct TestAdder {
-  TestAdder(void_func_void_t f, int id, int flags = FEATURE) {
-    // AnnotateSetVerbosity(__FILE__, __LINE__, 0);
-    CHECK(TheMapOfTests.count(id) == 0);
-    TheMapOfTests[id] = Test(f, flags);
-  }
-};
-
-#define REGISTER_TEST(f, id)         TestAdder add_test_##id (f, id);
-#define REGISTER_TEST2(f, id, flags) TestAdder add_test_##id (f, id, flags);
-
-static bool ArgIsOne(int *arg) { return *arg == 1; };
-static bool ArgIsZero(int *arg) { return *arg == 0; };
-static bool ArgIsTrue(bool *arg) { return *arg == true; };
-
-// Call ANNOTATE_EXPECT_RACE only if 'machine' env variable is defined.
-// Useful to test against several different machines.
-// Supported machines so far:
-//   MSM_HYBRID1             -- aka MSMProp1
-//   MSM_HYBRID1_INIT_STATE  -- aka MSMProp1 with --initialization-state=yes
-//   MSM_THREAD_SANITIZER    -- ThreadSanitizer's state machine
-#define ANNOTATE_EXPECT_RACE_FOR_MACHINE(mem, descr, machine) \
-    while(getenv(machine)) {\
-      ANNOTATE_EXPECT_RACE(mem, descr); \
-      break;\
-    }\
-
-#define ANNOTATE_EXPECT_RACE_FOR_TSAN(mem, descr) \
-    ANNOTATE_EXPECT_RACE_FOR_MACHINE(mem, descr, "MSM_THREAD_SANITIZER")
-
-inline bool Tsan_PureHappensBefore() {
-  return getenv("TSAN_PURE_HAPPENS_BEFORE") != NULL;
-}
-
-inline bool Tsan_FastMode()           {
-  return getenv("TSAN_FAST_MODE") != NULL;
-}
-
-// Initialize *(mem) to 0 if Tsan_FastMode.
-#define FAST_MODE_INIT(mem) do { if (Tsan_FastMode()) { *(mem) = 0; } } while(0)
-
-#ifndef MAIN_INIT_ACTION
-#define MAIN_INIT_ACTION
-#endif
-
-int ParseInt(const char *str) {
-  int ret = 0;
-  const char *cur = str;
-  do {
-    if (!isdigit(*cur)) {
-      printf("\"%s\" is not a valid number\n", str);
-      exit(1);
-    }
-
-    ret = ret*10 + (*cur - '0');
-  } while (*(++cur));
-  return ret;
-}
-
-class RandomGenerator {
- public:
-  RandomGenerator(int seed) { srand(seed); }
-  size_t operator( )(size_t n) const { return rand() % n; }
-};
-
-int main(int argc, char** argv) { // {{{1
-  MAIN_INIT_ACTION;
-  printf("FLAGS [phb=%i, fm=%i]\n", Tsan_PureHappensBefore(), Tsan_FastMode());
-
-  std::vector<int> tests_to_run;
-  std::set<int> tests_to_exclude;
-  int shuffle_seed = 0;  // non-zero to shuffle.
-
-  int id = 1;
-  while (id < argc) {
-    char *cur_arg = argv[id];
-    if (!strcmp(cur_arg, "benchmark")) {
-      for (std::map<int,Test>::iterator it = TheMapOfTests.begin();
-        it != TheMapOfTests.end(); ++it) {
-        if(it->second.flags_ & PERFORMANCE)
-          tests_to_run.push_back(it->first);
-      }
-    } else if (!strcmp(cur_arg, "demo")) {
-      for (std::map<int,Test>::iterator it = TheMapOfTests.begin();
-        it != TheMapOfTests.end();  ++it) {
-        if(it->second.flags_ & RACE_DEMO)
-          tests_to_run.push_back(it->first);
-      }
-    } else if (!strncmp(cur_arg, "shuffle", 7)) {
-      if (strlen(cur_arg) == 7) {
-        shuffle_seed = GetTimeInMs();
-        printf("Shuffling with seed = %i\n", shuffle_seed);
-      } else {
-        CHECK(cur_arg[7] == '=');
-        shuffle_seed = ParseInt(cur_arg + 8);
-      }
-    } else {
-      if (isdigit(cur_arg[0])) {
-        // Enqueue the test specified.
-        int test_id = ParseInt(cur_arg);
-        CHECK(TheMapOfTests.count(test_id));
-        tests_to_run.push_back(test_id);
-      } else if (cur_arg[0] == '-') {
-        // Exclude the test specified.
-        int test_id = ParseInt(cur_arg + 1);
-        CHECK(TheMapOfTests.count(test_id));
-        tests_to_exclude.insert(test_id);
-      } else {
-        printf("Unknown argument: %s\n", cur_arg);
-        exit(1);
-      }
-    }
-
-    id++;
-  }
-
-  if (tests_to_run.size() == 0) {
-    printf("No tests specified.\nRunning default set of tests...\n");
-    bool run_tests_with_annotations = false;
-    if (getenv("DRT_ALLOW_ANNOTATIONS")) {
-      run_tests_with_annotations = true;
-    }
-    for (std::map<int,Test>::iterator it = TheMapOfTests.begin();
-        it != TheMapOfTests.end();
-        ++it) {
-      if(it->second.flags_ & EXCLUDE_FROM_ALL) continue;
-      if(it->second.flags_ & RACE_DEMO) continue;
-      if((it->second.flags_ & NEEDS_ANNOTATIONS)
-         && run_tests_with_annotations == false) continue;
-      tests_to_run.push_back(it->first);
-    }
-  }
-
-  if (shuffle_seed > 0) {
-    RandomGenerator rnd(shuffle_seed);
-    random_shuffle(tests_to_run.begin(), tests_to_run.end(), rnd);
-  }
-
-  for (size_t i = 0; i < tests_to_run.size(); i++) {
-    int test_id = tests_to_run[i];
-    if (tests_to_exclude.count(test_id) > 0) {
-      printf("test%i was excluded\n", test_id);
-    } else {
-      TheMapOfTests[test_id].Run();
-    }
-  }
-}
-
-#ifdef THREAD_WRAPPERS_PTHREAD_H
-#endif
-
-
-// An array of threads. Create/start/join all elements at once. {{{1
-class MyThreadArray {
- public:
-  static const int kSize = 5;
-  typedef void (*F) (void);
-  MyThreadArray(F f1, F f2 = NULL, F f3 = NULL, F f4 = NULL, F f5 = NULL) {
-    ar_[0] = new MyThread(f1);
-    ar_[1] = f2 ? new MyThread(f2) : NULL;
-    ar_[2] = f3 ? new MyThread(f3) : NULL;
-    ar_[3] = f4 ? new MyThread(f4) : NULL;
-    ar_[4] = f5 ? new MyThread(f5) : NULL;
-  }
-  void Start() {
-    for(int i = 0; i < kSize; i++) {
-      if(ar_[i]) {
-        ar_[i]->Start();
-        usleep(10);
-      }
-    }
-  }
-
-  void Join() {
-    for(int i = 0; i < kSize; i++) {
-      if(ar_[i]) {
-        ar_[i]->Join();
-      }
-    }
-  }
-
-  ~MyThreadArray() {
-    for(int i = 0; i < kSize; i++) {
-      delete ar_[i];
-    }
-  }
- private:
-  MyThread *ar_[kSize];
-};
-
-
 
 // test00: {{{1
 namespace test00 {
@@ -5325,11 +5058,6 @@ void write_to_p(char *p, int val) {
     p[i] = val;
 }
 
-static bool ArgIsTrue(bool *arg) {
-//  printf("ArgIsTrue: %d tid=%d\n", *arg, (int)pthread_self());
-  return *arg == true;
-}
-
 void f1() {
   char some_stack[N];
   write_to_p(some_stack, 1);
@@ -5362,10 +5090,8 @@ void Worker2() {
 void Run() {
   printf("test111: regression test\n");
   MyThreadArray t(Worker1, Worker1, Worker2);
-//  AnnotateSetVerbosity(__FILE__, __LINE__, 3);
   t.Start();
   t.Join();
-//  AnnotateSetVerbosity(__FILE__, __LINE__, 1);
 }
 REGISTER_TEST2(Run, 111, FEATURE)
 }  // namespace test111

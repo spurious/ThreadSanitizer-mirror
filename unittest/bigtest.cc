@@ -222,17 +222,6 @@ struct TestAdder {
 ThreadPool * mainThreadPool;
 std::map<int, double> map_of_counts; // test -> average run count
 
-// Print everything under a mutex
-Mutex printf_mu;
-//#define printf(args...) do{}while(0)
-#define printf(args...) \
-    do{ \
-      printf_mu.Lock();\
-      fprintf(stdout, args);\
-      printf_mu.Unlock(); \
-    }while(0)/**/
-
-
 inline double round(double lf) {
    return floor(lf + 0.5);
 }
