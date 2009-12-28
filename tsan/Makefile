@@ -1,5 +1,5 @@
 VALGRIND_SRC_ROOT=../third_party/valgrind
-VALGRIND_INST_ROOT=../vg_inst
+VALGRIND_INST_ROOT=/tmp/tsan_inst
 STLPORT_ROOT=../third_party/stlport
 CC=gcc
 COPT=-O -fno-omit-frame-pointer
@@ -59,7 +59,7 @@ l32d:
 l32o:
 	$(MAKE) tsan OS=linux ARCH=x86  DEBUG=0
 
-install:
+install_l: l
 	cp -v bin/tsan* bin/vgpreload_tsan* ${VALGRIND_INST_ROOT}/lib/valgrind
 
 
