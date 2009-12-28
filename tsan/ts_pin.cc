@@ -1235,10 +1235,7 @@ int main(INT32 argc, CHAR **argv) {
 #ifdef INCLUDE_THREAD_SANITIZER_CC
 # undef INCLUDE_THREAD_SANITIZER_CC
 # include "thread_sanitizer.cc"
-#else
-
 #endif
-
 
 //--------- Questions about PIN -------------------------- {{{1
 /* Questions about PIN:
