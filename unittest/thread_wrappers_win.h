@@ -145,40 +145,48 @@ class Mutex {
 
 class CondVar {
  public:
-  CondVar()   { signaled_ = false; }
-  ~CondVar()  { }
+  CondVar()   {
+    signaled_ = false;
+    hSignal_  =CreateEvent(NULL, false, false, NULL);
+    CHECK(hSignal_ != NULL);
+  }
+  ~CondVar()  {
+    CloseHandle(hSignal_);
+  }
   void Wait(Mutex *mu) {
     while (!signaled_) {
       mu->Unlock();
-      Sleep(10);
+      WaitForSingleObject(hSignal_, INFINITE);
       mu->Lock();
     }
     signaled_ = false;
-    ANNOTATE_HAPPENS_AFTER(&signaled_);
   }
   bool WaitWithTimeout(Mutex *mu, int millis) {
     int start_time = GetTimeInMs();
 
     while (!signaled_ && GetTimeInMs() - start_time < millis) {
+      int curr_time = GetTimeInMs();
+      if (curr_time - start_time >= millis)
+        break;
       mu->Unlock();
-      Sleep(10);
+      WaitForSingleObject(hSignal_, start_time + millis - curr_time);
       mu->Lock();
     }
     if (signaled_) {
       signaled_ = false;
-      ANNOTATE_HAPPENS_AFTER(&signaled_);
       return true;
     }
     return false;
   }
   void Signal() {
     signaled_ = true;
-    ANNOTATE_HAPPENS_BEFORE(&signaled_);
+    SetEvent(hSignal_);
   }
 // TODO(timurrrr): this isn't used anywhere - do we need these?
-//  void SignalAll() { CHECK(0 == pthread_cond_broadcast(&cv_)); }
+//  void SignalAll();
  private:
-  volatile bool signaled_; // TODO(timurrrr): use some real synch primitive instead.
+  bool signaled_;
+  HANDLE hSignal_;
 };
 
 class MyThread {
