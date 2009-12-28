@@ -69,12 +69,13 @@ typedef unsigned int   uint32_t;
 typedef unsigned long long uint64_t;
 typedef long long int64_t;
 
-const bool kMallocUsesMutex = true;
+// This constant is true if malloc() uses mutex on your platform as this may
+// introduce a happens-before arc for a pure happens-before race detector.
+static const bool kMallocUsesMutex = true;
 
 int AtomicIncrement(volatile int *value, int increment) {
-  // TODO(timurrrr)
-  *value += increment;
-  return *value;
+  return InterlockedExchangeAdd(reinterpret_cast<volatile LONG*>(value),
+                                increment) + increment;
 }
 
 class Mutex {

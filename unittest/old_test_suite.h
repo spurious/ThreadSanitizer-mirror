@@ -51,12 +51,14 @@ enum TEST_FLAG {
 
 // Put everything into stderr.
 extern Mutex printf_mu;
+#ifndef WIN32
 #define printf(args...) \
     do{ \
       printf_mu.Lock();\
       fprintf(stderr, args);\
       printf_mu.Unlock(); \
     }while(0)
+#endif
 
 struct Test{
   void_func_void_t f_;
@@ -77,12 +79,14 @@ struct Test{
   }
 };
 
-extern std::map<int, Test> TheMapOfTests;
+extern std::map<int, Test> *TheMapOfTests;
 
 struct TestAdder {
   TestAdder(void_func_void_t f, int id, int flags = FEATURE) {
-    CHECK(TheMapOfTests.count(id) == 0);
-    TheMapOfTests[id] = Test(f, flags);
+    if (TheMapOfTests == NULL)
+      TheMapOfTests = new std::map<int, Test>;
+    CHECK(TheMapOfTests->count(id) == 0);
+    (*TheMapOfTests)[id] = Test(f, flags);
   }
 };
 

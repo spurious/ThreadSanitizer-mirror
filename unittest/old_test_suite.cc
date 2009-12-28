@@ -34,7 +34,7 @@
 #include "old_test_suite.h"
 
 Mutex printf_mu;
-std::map<int, Test> TheMapOfTests;
+std::map<int, Test> *TheMapOfTests = NULL;
 
 #ifndef MAIN_INIT_ACTION
 #define MAIN_INIT_ACTION
@@ -72,14 +72,14 @@ int main(int argc, char** argv) {
   while (id < argc) {
     char *cur_arg = argv[id];
     if (!strcmp(cur_arg, "benchmark")) {
-      for (std::map<int,Test>::iterator it = TheMapOfTests.begin();
-        it != TheMapOfTests.end(); ++it) {
+      for (std::map<int,Test>::iterator it = TheMapOfTests->begin();
+        it != TheMapOfTests->end(); ++it) {
         if(it->second.flags_ & PERFORMANCE)
           tests_to_run.push_back(it->first);
       }
     } else if (!strcmp(cur_arg, "demo")) {
-      for (std::map<int,Test>::iterator it = TheMapOfTests.begin();
-        it != TheMapOfTests.end();  ++it) {
+      for (std::map<int,Test>::iterator it = TheMapOfTests->begin();
+        it != TheMapOfTests->end();  ++it) {
         if(it->second.flags_ & RACE_DEMO)
           tests_to_run.push_back(it->first);
       }
@@ -95,12 +95,12 @@ int main(int argc, char** argv) {
       if (isdigit(cur_arg[0])) {
         // Enqueue the test specified.
         int test_id = ParseInt(cur_arg);
-        CHECK(TheMapOfTests.count(test_id));
+        CHECK(TheMapOfTests->count(test_id));
         tests_to_run.push_back(test_id);
       } else if (cur_arg[0] == '-') {
         // Exclude the test specified.
         int test_id = ParseInt(cur_arg + 1);
-        CHECK(TheMapOfTests.count(test_id));
+        CHECK(TheMapOfTests->count(test_id));
         tests_to_exclude.insert(test_id);
       } else {
         printf("Unknown argument: %s\n", cur_arg);
@@ -117,8 +117,8 @@ int main(int argc, char** argv) {
     if (getenv("DRT_ALLOW_ANNOTATIONS")) {
       run_tests_with_annotations = true;
     }
-    for (std::map<int,Test>::iterator it = TheMapOfTests.begin();
-        it != TheMapOfTests.end();
+    for (std::map<int,Test>::iterator it = TheMapOfTests->begin();
+        it != TheMapOfTests->end();
         ++it) {
       if(it->second.flags_ & EXCLUDE_FROM_ALL) continue;
       if(it->second.flags_ & RACE_DEMO) continue;
@@ -138,7 +138,7 @@ int main(int argc, char** argv) {
     if (tests_to_exclude.count(test_id) > 0) {
       printf("test%i was excluded\n", test_id);
     } else {
-      TheMapOfTests[test_id].Run();
+      (*TheMapOfTests)[test_id].Run();
     }
   }
 }

@@ -20,9 +20,12 @@ bigtest: bigtest.o
 	${CXX} ${CXXFLAGS} $< -Wall -Werror -Wno-sign-compare -Wshadow -Wno-unused-function  \
 		 -I${DYNAMIC_ANNOTATIONS_DIR} -g -DDYNAMIC_ANNOTATIONS_ENABLED=1 -c -o $@
 
-win: racecheck_unittest.cc ${DYNAMIC_ANNOTATIONS} thread_wrappers.h thread_wrappers_win.h
-	cl.exe ${CXXFLAGS} -DDYNAMIC_ANNOTATIONS_ENABLED=1 -DWIN32 \
-		-I${DYNAMIC_ANNOTATIONS_DIR} racecheck_unittest.cc ${DYNAMIC_ANNOTATIONS_CC}
+win: racecheck_unittest.cc old_test_suite.cc ${DYNAMIC_ANNOTATIONS} thread_wrappers.h thread_wrappers_win.h old_test_suite.h test_utils.h
+	cl.exe ${CXXFLAGS} /Od /EHsc /nologo \
+		/D "DYNAMIC_ANNOTATIONS_ENABLED=1" /D "WIN32" \
+		-I${DYNAMIC_ANNOTATIONS_DIR} \
+		racecheck_unittest.cc old_test_suite.cc \
+		${DYNAMIC_ANNOTATIONS_CC}
 
 clean:
-	rm -rf racecheck_unittest bigtest *.o *.O1 *.O2 *.obj *.dSYM
+	rm -rf racecheck_unittest bigtest *.o *.O1 *.O2 *.obj *.dSYM *.exe *.pdb *.ilk *.idb *.manifest
