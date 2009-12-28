@@ -72,17 +72,17 @@ using __gnu_cxx::hash_map;
 using __gnu_cxx::hash_set;
 
 #elif defined(TS_USE_STLPORT)  // ------------- STLport ----------
-#include "stlport/set"
-#include "stlport/map"
-#include "stlport/hash_map"
-#include "stlport/hash_set"
-#include "stlport/vector"
-#include "stlport/deque"
-#include "stlport/stack"
-#include "stlport/algorithm"
-#include "stlport/string"
-#include "stlport/bitset"
-#include "stlport/algorithm"
+#include "set"
+#include "map"
+#include "hash_map"
+#include "hash_set"
+#include "vector"
+#include "deque"
+#include "stack"
+#include "algorithm"
+#include "string"
+#include "bitset"
+#include "algorithm"
 using std::hash_map;
 using std::hash_set;
 
