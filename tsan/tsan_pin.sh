@@ -2,8 +2,8 @@
 
 PIN_ROOT=${PIN_ROOT:-$HOME/pin}
 PIN_BINARY=${PIN_BINARY:-pin}
-TS_ROOT=${TS_ROOT:-`pwd`}
-TS_VARIANT=deb
+TS_ROOT=${TS_ROOT:-`pwd`/bin}
+TS_VARIANT=-debug
 
 export MSM_THREAD_SANITIZER=1
 
@@ -25,8 +25,8 @@ for arg in "$@"; do
   case $arg in
     --trace_children=yes) PIN_FLAGS="$PIN_FLAGS $FOLLOW";;
     --trace-children=yes) PIN_FLAGS="$PIN_FLAGS $FOLLOW";;
-    --opt) TS_VARIANT="opt";;
-    --deb) TS_VARIANT="deb";;
+    --opt) TS_VARIANT="";;
+    --deb) TS_VARIANT="-debug";;
     --v=[1-9]) VERBOZE=1; TS_FLAGS="$TS_FLAGS $arg";;
     --) shift; break;;
     -*) TS_FLAGS="$TS_FLAGS $arg";;
@@ -56,7 +56,7 @@ run() {
 }
 
 run $PIN_ROOT/$PIN_BINARY $PIN_FLAGS \
-  -t64 $TS_ROOT/ts_pin_l64_$TS_VARIANT.so \
-  -t   $TS_ROOT/ts_pin_l32_$TS_VARIANT.so \
+  -t64 $TS_ROOT/amd64-linux${TS_VARIANT}-ts_pin.so \
+  -t   $TS_ROOT/x86-linux${TS_VARIANT}-ts_pin.so \
  $TS_FLAGS -- $TS_PARAMS
 
