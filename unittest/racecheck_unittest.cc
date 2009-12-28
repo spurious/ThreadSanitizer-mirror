@@ -57,19 +57,6 @@
 #endif // !NEEDS_SEPERATE_RW_LOCK
 
 
-// Helgrind memory usage testing stuff
-// If not present in dynamic_annotations.h/.cc - ignore
-#ifndef ANNOTATE_RESET_STATS
-#define ANNOTATE_RESET_STATS() do { } while(0)
-#endif
-#ifndef ANNOTATE_PRINT_STATS
-#define ANNOTATE_PRINT_STATS() do { } while(0)
-#endif
-#ifndef ANNOTATE_PRINT_MEMORY_USAGE
-#define ANNOTATE_PRINT_MEMORY_USAGE(a) do { } while(0)
-#endif
-//
-
 #include <vector>
 #include <string>
 #include <map>
@@ -146,7 +133,6 @@ struct Test{
   {}
   Test() : f_(0), flags_(0) {}
   void Run() {
-     ANNOTATE_RESET_STATS();
      if (flags_ & PERFORMANCE) {
         long start = GetTimeInMs();
         f_();
@@ -154,10 +140,6 @@ struct Test{
         printf ("Time: %4ldms\n", end-start);
      } else
         f_();
-     if (flags_ & PRINT_STATS)
-        ANNOTATE_PRINT_STATS();
-     if (flags_ & MEMORY_USAGE)
-        ANNOTATE_PRINT_MEMORY_USAGE(0);
   }
 };
 std::map<int, Test> TheMapOfTests;
@@ -7838,53 +7820,6 @@ void Run() {
 REGISTER_TEST2(Run, 401, RACE_DEMO)
 }  // namespace test401
 
-// test501: Manually call PRINT_* annotations {{{1
-namespace test501 {
-int  COUNTER = 0;
-int     GLOB = 0;
-Mutex muCounter, muGlob[65];
-
-void Worker() {
-   muCounter.Lock();
-   int myId = ++COUNTER;
-   muCounter.Unlock();
-
-   usleep(100);
-
-   muGlob[myId].Lock();
-   muGlob[0].Lock();
-   GLOB++;
-   muGlob[0].Unlock();
-   muGlob[myId].Unlock();
-}
-
-void Worker_1() {
-   MyThreadArray ta (Worker, Worker, Worker, Worker);
-   ta.Start();
-   usleep(500000);
-   ta.Join ();
-}
-
-void Worker_2() {
-   MyThreadArray ta (Worker_1, Worker_1, Worker_1, Worker_1);
-   ta.Start();
-   usleep(300000);
-   ta.Join ();
-}
-
-void Run() {
-   ANNOTATE_RESET_STATS();
-   printf("test501: Manually call PRINT_* annotations.\n");
-   MyThreadArray ta (Worker_2, Worker_2, Worker_2, Worker_2);
-   ta.Start();
-   usleep(100000);
-   ta.Join ();
-   ANNOTATE_PRINT_MEMORY_USAGE(0);
-   ANNOTATE_PRINT_STATS();
-}
-
-REGISTER_TEST2(Run, 501, FEATURE | EXCLUDE_FROM_ALL)
-}  // namespace test501
 
 // test502: produce lots of segments without cross-thread relations {{{1
 namespace test502 {
@@ -8278,8 +8213,6 @@ void Run () {
       usleep(1000);
       GLOB++;
       ANNOTATE_CONDVAR_WAIT(&GLOB);
-      if (i % 100 == 0)
-         ANNOTATE_PRINT_MEMORY_USAGE(0);
    }
 }
 REGISTER_TEST2(Run, 511, MEMORY_USAGE | PRINT_STATS | EXCLUDE_FROM_ALL);
