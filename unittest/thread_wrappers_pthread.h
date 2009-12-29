@@ -44,6 +44,7 @@
 #include <pthread.h>
 #include <semaphore.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <sys/mman.h>  // mmap
 #include <sys/time.h>
 #include <sys/types.h>
