@@ -34,6 +34,12 @@ D=    # <empty>, -debug
 ARCHOS=$(ARCH)-$(OS)
 ARCH_OS=$(ARCH)_$(OS)
 
+# prefix of binary files
+P=bin/$(ARCHOS)$(D)-
+VGP=$(P)vg-
+PINP=$(P)pin-
+
+
 ifeq ($(DEBUG), 1)
   D=-debug
   DEFINES=-DDEBUG=1
@@ -61,13 +67,22 @@ ifeq ($(OS), linux)
   O=-o
   LINKO=-o
   PIN_CXXFLAGS=$(PIN_CXXFLAGS_L)
-  GTEST_LIB=$(GTEST_ROOT)/make/gtest_main_$(ARCH).a
+  GTEST_LIB=$(GTEST_ROOT)/make/$(ARCHOS)-gtest_main.a
+  VG_LD_FLAGS=-static -Wl,-defsym,valt_load_address=0x38000000 -nodefaultlibs -nostartfiles \
+    -u _start  -Wl,-T,$(VALGRIND_ROOT)/valt_load_address_$(ARCH_OS).lds
+  VG_LD_PRELOAD_FLAGS= -nodefaultlibs -shared -Wl,-z,interpose,-z,initfirst
 else ifeq ($(OS), darwin)
   SO=so
   OBJ=o
   EXE=
   O=-o
   LINKO=-o
+  GTEST_LIB=$(GTEST_ROOT)/make/$(ARCHOS)-gtest_main.a
+  VG_LD_FLAGS=-Wl,-u,__start -Wl,-e,__start -Wl,-bind_at_load /usr/lib/dyld -arch i386 \
+      -Wl,-seg1addr,0xf0080000 -Wl,-stack_addr,0xf0080000 -Wl,-stack_size,0x80000 -Wl,-pagezero_size,0xf0000000 \
+      -nodefaultlibs -nostartfiles
+  VG_LD_PRELOAD_FLAGS=-arch i386 -dynamic -dynamiclib -all_load
+  VG_CXXFLAGS+=-fno-weak -bind_at_load
 else ifeq ($(OS), windows)
   SO=dll
   OBJ=obj
@@ -78,7 +93,7 @@ else ifeq ($(OS), windows)
   ARCHFLAGS=
   CXX=cl
   LD=link
-  CXXFLAGS=/c /MT /EHs- /EHa- /wd4530   /D_CRT_SECURE_NO_DEPRECATE /D_SECURE_SCL=0 /nologo /Gy /O2 
+  CXXFLAGS=/c /MT /EHs- /EHa- /wd4530   /D_CRT_SECURE_NO_DEPRECATE /D_SECURE_SCL=0 /nologo /Gy /O2
   PIN_DEFINES=/DTARGET_WINDOWS /DBIGARRAY_MULTIPLIER=1 /DUSING_XED /DTARGET_IA32 /DHOST_IA32a
   PIN_INCLUDES=/I$(PIN_ROOT)/source/include /I$(PIN_ROOT)/source/include/gen   /I$(PIN_ROOT)/extras/xed2-ia32/include
   PIN_LDFLAGS=/DLL /EXPORT:main /NODEFAULTLIB  /NOLOGO /INCREMENTAL:NO  /OPT:REF  /MACHINE:x86 /ENTRY:Ptrace_DllMainCRTStartup@12 /BASE:0x55000000
@@ -94,10 +109,6 @@ endif
 VALGRIND_LIBS=$(VALGRIND_ROOT)/coregrind/libcoregrind-$(ARCHOS).a \
 		  $(VALGRIND_ROOT)/VEX/libvex-$(ARCHOS).a
 
-# prefix of binary files
-P=bin/$(ARCHOS)$(D)-
-VGP=$(P)vg-
-PINP=$(P)pin-
 
 dummy:
 	@echo "For 64-bit Linux build: make l64"
@@ -134,8 +145,8 @@ w32d:
 m32o:
 	$(MAKE) all OS=darwin ARCH=x86 DEBUG=0
 
-install_l: l
-	cp -v bin/tsan* bin/vgpreload_tsan* $(VALGRIND_INST_ROOT)/lib/valgrind
+install:
+	cp bin/tsan* bin/vgpreload_tsan* $(VALGRIND_INST_ROOT)/lib/valgrind
 
 
 ifeq ($(VALGRIND_ROOT), )
@@ -192,12 +203,10 @@ $(P)preload-%.o: %.c $(TS_HEADERS) $(TS_VG_HEADERS)
 	$(CC) $(CFLAGS) $(ARCHFLAGS) $(VG_INCLUDES) $(VG_DEFINES) -o $@ -c $<
 
 bin/tsan$(D)-$(ARCHOS): $(TS_VG_OBJECTS)
-	$(LD) $(LDFLAGS) $(ARCHFLAGS) -static -Wl,-defsym,valt_load_address=0x38000000 -nodefaultlibs -nostartfiles \
-		-u _start  -Wl,-T,$(VALGRIND_ROOT)/valt_load_address_$(ARCH_OS).lds  -o $@ $^ \
-		$(VALGRIND_LIBS) -lgcc
+	$(LD) $(LDFLAGS) $(ARCHFLAGS) $(VG_LD_FLAGS) -o $@ $^ $(VALGRIND_LIBS) -lgcc
 
 bin/vgpreload_tsan$(D)-$(ARCHOS).so: $(P)preload-ts_valgrind_intercepts.o
-	$(LD) $(LDFLAGS)  $(ARCHFLAGS) -nodefaultlibs -shared -Wl,-z,interpose,-z,initfirst -o $@  $<
+	$(LD) $(LDFLAGS)  $(ARCHFLAGS) $(VG_LD_PRELOAD_FLAGS) -o $@  $<
 
 $(P)ts_offline$(EXE): $(P)ts_offline.$(OBJ) $(P)thread_sanitizer.$(OBJ) $(P)ts_util.$(OBJ)
 	$(LD) $(LDFLAGS) $(ARCHFLAGS) $(LINKO)$@ $^
@@ -205,8 +214,8 @@ $(P)ts_offline$(EXE): $(P)ts_offline.$(OBJ) $(P)thread_sanitizer.$(OBJ) $(P)ts_u
 $(P)suppressions_test$(EXE): $(P)gtest-suppressions_test.$(OBJ) $(P)suppressions.$(OBJ) $(P)ts_util.$(OBJ) $(GTEST_LIB)
 	$(LD) $(LDFLAGS) $(ARCHFLAGS) $(LINKO)$@ $^
 
-$(GTEST_ROOT)/make/gtest_main_$(ARCH).a:
-	cd $(GTEST_ROOT)/make && $(MAKE) clean && $(MAKE) CXXFLAGS=$(ARCHFLAGS) && mv gtest_main.a gtest_main_$(ARCH).a
+$(GTEST_ROOT)/make/$(ARCHOS)-gtest_main.a:
+	cd $(GTEST_ROOT)/make && $(MAKE) clean && $(MAKE) CXXFLAGS=$(ARCHFLAGS) && mv gtest_main.a $(ARCHOS)-gtest_main.a
 
 $(P)ts_pin.so: $(TS_PIN_OBJECTS)
 	$(LD) $(ARCHFLAGS) $(PIN_LDFLAGS) $(PIN_LIBPATHS) -o $@ $^  $(PIN_LIBS)
