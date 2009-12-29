@@ -1,6 +1,6 @@
 #!/bin/bash
 
-TSAN_REV=1376
+TSAN_REV=1377
 
 VALGRIND_INST_ROOT=${VALGRIND_INST_ROOT:-$HOME/tsan_inst}
 
@@ -12,12 +12,12 @@ cd drt_trunk
 (cd third_party && ./build_and_install_valgrind.sh)
 
 # Build ThreadSanitizer.
-(cd tsan && make l -j4 && make install)
+(cd tsan && make l -j4 && make install VALGRIND_INST_ROOT=$VALGRIND_INST_ROOT)
 
 # Build tests.
-(cd unttest && make)
+(cd unittest && make)
 
 # Check if the ThreadSanitizer works:
-$VALGRIND_INST_ROOT/bin/valgrind --tool=tsan --color unttest/racecheck_unittest 301
+$VALGRIND_INST_ROOT/bin/valgrind --tool=tsan --color unittest/racecheck_unittest 301
 # You should now see the ThreadSanitizer's output.
 # Done!
