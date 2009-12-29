@@ -1,11 +1,11 @@
 #!/bin/bash
 
-TSAN_REV=1374
+TSAN_REV=1376
 
 VALGRIND_INST_ROOT=${VALGRIND_INST_ROOT:-$HOME/tsan_inst}
 
 # Get ThreadSanitizer. This will create directory 'tsan' and patch valgrind
-#svn co -r $TSAN_REV     http://data-race-test.googlecode.com/svn/trunk drt_trunk
+svn co -r $TSAN_REV     http://data-race-test.googlecode.com/svn/trunk drt_trunk
 cd drt_trunk
 
 # Build Valgind.
