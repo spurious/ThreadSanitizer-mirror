@@ -10,12 +10,11 @@ DYNAMIC_ANNOTATIONS_H=${DYNAMIC_ANNOTATIONS_DIR}/dynamic_annotations.h
 DYNAMIC_ANNOTATIONS_CC=${DYNAMIC_ANNOTATIONS_DIR}/dynamic_annotations.cc
 DYNAMIC_ANNOTATIONS=${DYNAMIC_ANNOTATIONS_CC} ${DYNAMIC_ANNOTATIONS_H}
 
-racecheck_unittest: racecheck_unittest.o old_test_suite.o posix_tests.o ${DYNAMIC_ANNOTATIONS}
-	g++ -lpthread racecheck_unittest.o old_test_suite.o posix_tests.o \
-		${DYNAMIC_ANNOTATIONS_CC} -o $@
+racecheck_unittest: racecheck_unittest.o old_test_suite.o posix_tests.o ${DYNAMIC_ANNOTATIONS_CC}
+	g++ -lpthread $^ -o $@
 
-bigtest: bigtest.o
-	g++ -lpthread bigtest.o ${DYNAMIC_ANNOTATIONS_CC} -o $@
+bigtest: bigtest.o ${DYNAMIC_ANNOTATIONS_CC}
+	g++ -lpthread $^ -o $@
 
 %.o: %.cc ${DYNAMIC_ANNOTATIONS} thread_wrappers.h thread_wrappers_pthread.h old_test_suite.h test_utils.h
 	${CXX} ${CXXFLAGS} $< -Wall -Werror -Wno-sign-compare -Wshadow -Wno-unused-function  \
