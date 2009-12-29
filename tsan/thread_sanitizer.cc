@@ -283,8 +283,8 @@ static bool RecordErrorIfNotSuppressed(ThreadSanitizerReport *report) {
   // Record an error using standard valgrind machinery.
   // TODO(kcc): migrate to our own system (when ready).
   CHECK(ThreadSanitizerReport::DATA_RACE == 0);
-  is_recorded = ERROR_IS_RECORDED == VG_(maybe_record_error)(
-      GetVgTid(), report->type + XS_Race, 0, NULL, report);
+  is_recorded = true;
+  VG_(maybe_record_error)(GetVgTid(), report->type + XS_Race, 0, NULL, report);
 #else 
   // TODO(kcc): implement suppressions.
   ThreadSanitizerPrintReport(report);
