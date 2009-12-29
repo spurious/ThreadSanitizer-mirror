@@ -76,7 +76,7 @@ else ifeq ($(OS), darwin)
   OBJ=o
   EXE=
   O=-o
-  LINKO=-o
+  LINKO=-Wl,-o,
   GTEST_LIB=$(GTEST_ROOT)/make/$(ARCHOS)-gtest_main.a
   VG_LD_FLAGS=-Wl,-u,__start -Wl,-e,__start -Wl,-bind_at_load /usr/lib/dyld -arch i386 \
       -Wl,-seg1addr,0xf0080000 -Wl,-stack_addr,0xf0080000 -Wl,-stack_size,0x80000 -Wl,-pagezero_size,0xf0000000 \
@@ -136,7 +136,7 @@ l32o:
 w: w32
 w32: w32d
 
-m: m32 
+m: m32
 m32: m32o
 
 w32d:
