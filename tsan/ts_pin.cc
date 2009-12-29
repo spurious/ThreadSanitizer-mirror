@@ -38,23 +38,18 @@
 #include <assert.h>
 
 #if defined(__GNUC__)
-#include <cxxabi.h>  // __cxa_demangle
-#else
-// TODO(kcc): how to demangle on windows?
-#endif
-
-#if defined(_MSC_VER) 
-// TODO(kcc): add actuall implementations
-#define usleep(x)
-#define popen(x,y) (NULL)
-#endif
-
-#if defined(__GNUC__)
+# include <cxxabi.h>  // __cxa_demangle
+# define YIELD() usleep(0)
 # define CAS(ptr,oldval,newval) __sync_bool_compare_and_swap(ptr,oldval,newval)
 # define ATOMIC_READ(a) __sync_add_and_fetch(a, 0)
+
 #elif defined(_MSC_VER)
+# define YIELD() // __yield()
+// TODO(kcc): how to demangle on windows?
+// TODO(kcc): add actuall implementations
+# define popen(x,y) (NULL)
 # define CAS(ptr,oldval,newval) _InterlockedCompareExchange(ptr, newval, oldval)
-# define ATOMIC_READ(a) _InterlockedCompareExchange(a, 0, 0)
+# define ATOMIC_READ(a)         _InterlockedCompareExchange(a, 0, 0)
 #endif
 
 #include "thread_sanitizer.h"
@@ -66,13 +61,15 @@
 
 //--------- Simple SpinLock ------------------ {{{1
 // Just a simple lock.
+#ifdef __GNUC__
 class TSLock {
  public:
   TSLock() : lock_(0) {}
   void Lock() {
-    for (int i = -5; !TryLock(); i++) {
+    int i;
+    for (i = -5; !TryLock(); i++) {
       if (i > 0)
-        usleep(i * 10);
+        YIELD();
     }
   }
   void Unlock() {
@@ -87,6 +84,24 @@ class TSLock {
  private:
   volatile long lock_;
 };
+#elif defined(_MSC_VER)
+class TSLock {
+ public:
+  TSLock() {
+    InitLock(&lock_);
+  }
+  void Lock() {
+    GetLock(&lock_, __LINE__);
+  }
+  void Unlock() {
+    ReleaseLock(&lock_);
+  }
+
+ private:
+  PIN_LOCK lock_;
+};
+
+#endif
 
 
 class ScopedLock {
@@ -396,7 +411,7 @@ static void After_pthread_create(THREADID tid, ADDRINT pc, ADDRINT ret) {
   // Spin, waiting for last_child_tid to appear (i.e. wait for the thread to
   // actually start) so that we know the child's tid. No locks.
   while (!ATOMIC_READ(&g_pin_threads[tid].last_child_tid)) {
-    usleep(0);
+    YIELD();
   }
 
   THREADID last_child_tid = g_pin_threads[tid].last_child_tid;
