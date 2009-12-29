@@ -32,6 +32,7 @@
 
 */
 
+#include <cstring>
 #include <fcntl.h>
 #include <queue>
 #include <signal.h>
