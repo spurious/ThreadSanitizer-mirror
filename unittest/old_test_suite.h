@@ -33,6 +33,7 @@
 
 #include <map>
 #include <set>
+#include <cstring>
 
 #include "test_utils.h"
 
