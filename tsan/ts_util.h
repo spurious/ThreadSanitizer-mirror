@@ -144,6 +144,8 @@ using std::unique_copy;
 
 #elif defined(__GNUC__)
 #include <unistd.h>
+#include <stdint.h>
+#include <stdio.h>
 
 #define UNLIKELY(x) __builtin_expect((x), 0)
 #define LIKELY(x)   __builtin_expect(!!(x), 1)
