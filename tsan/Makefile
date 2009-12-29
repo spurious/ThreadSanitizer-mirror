@@ -13,7 +13,7 @@ CWARN=-Wall -Wmissing-prototypes -Wshadow -Wpointer-arith -Wstrict-prototypes \
 CFLAGS=-g $(COPT) $(CWARN) -fno-strict-aliasing -fno-stack-protector -fpic
 CXX=g++
 CXXOPT=-O2
-CXXFLAGS=$(CXXOPT) -g -Wall -fno-exceptions -Wvla
+CXXFLAGS=$(CXXOPT) -g -Wall -fno-exceptions # -Wvla
 LD=g++
 LDFLAGS=
 
@@ -21,7 +21,7 @@ VG_CXXFLAGS=-fno-rtti -fno-stack-protector
 VG_DEFINES=-DVGA_$(ARCH)=1 -DVGO_$(OS)=1 -DVGP_$(ARCH_OS)=1 -D_STLP_NO_IOSTREAMS=1 -DTS_VALGRIND=1
 VG_INCLUDES=-I$(VALGRIND_ROOT) -I$(VALGRIND_ROOT)/include -I$(VALGRIND_ROOT)/VEX/pub -I$(STLPORT_ROOT)
 
-PIN_CXXFLAGS=-fPIC
+PIN_CXXFLAGS_L=-fPIC
 PIN_DEFINES=-DBIGARRAY_MULTIPLIER=1 -DUSING_XED  -DTARGET_$(PIN_ARCH2)  -DHOST_$(PIN_ARCH2)   -DTARGET_LINUX
 PIN_INCLUDES=-I$(PIN_ROOT)/source/include -I$(PIN_ROOT)/source/include/gen -I$(PIN_ROOT)/extras/xed2-$(PIN_ARCH)/include
 PIN_LIBPATHS=-L$(PIN_ROOT)/extras/xed2-$(PIN_ARCH)/lib -L$(PIN_ROOT)/$(PIN_ARCH)/lib -L$(PIN_ROOT)/$(PIN_ARCH)/lib-ext
@@ -57,12 +57,34 @@ endif
 ifeq ($(OS), linux)
   SO=so
   OBJ=o
+  EXE=
+  O=-o
+  LINKO=-o
+  PIN_CXXFLAGS=$(PIN_CXXFLAGS_L)
+  GTEST_LIB=$(GTEST_ROOT)/make/gtest_main_$(ARCH).a
 else ifeq ($(OS), darwin)
   SO=so
   OBJ=o
+  EXE=
+  O=-o
+  LINKO=-o
 else ifeq ($(OS), windows)
   SO=dll
   OBJ=obj
+  EXE=.exe
+  O=/Fo
+  LINKO=/OUT:
+  VALGRIND_ROOT= # no valgrind on windows :(
+  ARCHFLAGS=
+  CXX=cl
+  LD=link
+  CXXFLAGS=/c /MT /EHs- /EHa- /wd4530   /D_CRT_SECURE_NO_DEPRECATE /D_SECURE_SCL=0 /nologo /Gy /O2 
+  PIN_DEFINES=/DTARGET_WINDOWS /DBIGARRAY_MULTIPLIER=1 /DUSING_XED /DTARGET_IA32 /DHOST_IA32a
+  PIN_INCLUDES=/I$(PIN_ROOT)/source/include /I$(PIN_ROOT)/source/include/gen   /I$(PIN_ROOT)/extras/xed2-ia32/include
+  PIN_LDFLAGS=/DLL /EXPORT:main /NODEFAULTLIB  /NOLOGO /INCREMENTAL:NO  /OPT:REF  /MACHINE:x86 /ENTRY:Ptrace_DllMainCRTStartup@12 /BASE:0x55000000
+  PIN_LIBPATHS= /LIBPATH:$(PIN_ROOT)/ia32/lib /LIBPATH:$(PIN_ROOT)/ia32/lib-ext  /LIBPATH:$(PIN_ROOT)/extras/xed2-ia32/lib
+  PIN_LIBS=pin.lib libxed.lib libcpmt.lib libcmt.lib pinvm.lib kernel32.lib ntdll-32.lib
+  GTEST_LIB=$(GTEST_ROOT)/msvc/gtest/Release/gtest.lib
 else
   OS=UNKNOWN_OS
 endif
@@ -74,8 +96,8 @@ VALGRIND_LIBS=$(VALGRIND_ROOT)/coregrind/libcoregrind-$(ARCHOS).a \
 
 # prefix of binary files
 P=bin/$(ARCHOS)$(D)-
-VGP=$(P)-vg-
-PINP=$(P)-pin-
+VGP=$(P)vg-
+PINP=$(P)pin-
 
 dummy:
 	@echo "For 64-bit Linux build: make l64"
@@ -90,6 +112,7 @@ l32: l32o l32d
 ld: l64d l32d
 lo: l64o l32o
 
+
 l64d:
 	$(MAKE) all OS=linux ARCH=amd64  DEBUG=1
 l64o:
@@ -98,6 +121,18 @@ l32d:
 	$(MAKE) all OS=linux ARCH=x86  DEBUG=1
 l32o:
 	$(MAKE) all OS=linux ARCH=x86  DEBUG=0
+
+w: w32
+w32: w32d
+
+m: m32 
+m32: m32o
+
+w32d:
+	$(MAKE) all OS=windows ARCH=x86 DEBUG=1
+
+m32o:
+	$(MAKE) all OS=darwin ARCH=x86 DEBUG=0
 
 install_l: l
 	cp -v bin/tsan* bin/vgpreload_tsan* $(VALGRIND_INST_ROOT)/lib/valgrind
@@ -118,9 +153,16 @@ TS_pin: bin $(P)ts_pin.$(SO)
 endif
 
 ifeq ($(OFFLINE), 1)
-TS_offline: bin $(P)ts_offline
+TS_offline: bin $(P)ts_offline$(EXE)
 else
 TS_offline:
+endif
+
+ifeq ($(GTEST_ROOT), )
+test:
+	@echo GTEST_ROOT is not set. Not building GTEST-based tests.
+else
+test: bin $(P)suppressions_test$(EXE)
 endif
 
 bin:
@@ -133,17 +175,18 @@ TS_VG_HEADERS=ts_valgrind.h ts_valgrind_client_requests.h ts_wrap_and_ignore.h
 
 TS_PIN_OBJECTS=$(PINP)ts_pin.$(OBJ) $(PINP)ts_util.$(OBJ) $(PINP)thread_sanitizer.$(OBJ)
 
-$(P)%.o: %.cc $(TS_HEADERS)
-	$(CXX) $(CXXFLAGS) $(ARCHFLAGS) -o $@ -c $< $(DEFINES)
+$(P)%.$(OBJ): %.cc $(TS_HEADERS)
+	$(CXX) $(CXXFLAGS) $(ARCHFLAGS) $(O)$@ -c $< $(DEFINES)
+
 
 $(VGP)%.o: %.cc $(TS_HEADERS) $(TS_VG_HEADERS)
 	$(CXX) $(CXXFLAGS) $(VG_CXXFLAGS) $(ARCHFLAGS) $(VG_INCLUDES) $(VG_DEFINES) -o $@ -c $< $(DEFINES)
 
-$(PINP)%.o: %.cc $(TS_HEADERS) $(TS_PIN_HEADERS)
-	$(CXX) $(CXXFLAGS) $(PIN_CXXFLAGS) $(ARCHFLAGS) $(PIN_INCLUDES) $(PIN_DEFINES) -o $@ -c $< $(DEFINES)
+$(PINP)%.$(OBJ): %.cc $(TS_HEADERS) $(TS_PIN_HEADERS)
+	$(CXX) $(CXXFLAGS) $(PIN_CXXFLAGS) $(ARCHFLAGS) $(PIN_INCLUDES) $(PIN_DEFINES) $(O)$@ -c $< $(DEFINES)
 
-$(P)gtest-%.o: %.cc $(TS_HEADERS)
-	$(CXX) $(CXXFLAGS) $(ARCHFLAGS) -I$(GTEST_ROOT)/include -o $@ -c $<
+$(P)gtest-%.$(OBJ): %.cc $(TS_HEADERS)
+	$(CXX) $(CXXFLAGS) $(ARCHFLAGS) -I$(GTEST_ROOT)/include $(O)$@ -c $<
 
 $(P)preload-%.o: %.c $(TS_HEADERS) $(TS_VG_HEADERS)
 	$(CC) $(CFLAGS) $(ARCHFLAGS) $(VG_INCLUDES) $(VG_DEFINES) -o $@ -c $<
@@ -156,19 +199,20 @@ bin/tsan$(D)-$(ARCHOS): $(TS_VG_OBJECTS)
 bin/vgpreload_tsan$(D)-$(ARCHOS).so: $(P)preload-ts_valgrind_intercepts.o
 	$(LD) $(LDFLAGS)  $(ARCHFLAGS) -nodefaultlibs -shared -Wl,-z,interpose,-z,initfirst -o $@  $<
 
-$(P)ts_offline: $(P)ts_offline.o $(P)thread_sanitizer.o $(P)ts_util.o
-	$(LD) $(LDFLAGS) $(ARCHFLAGS) -o $@ $^
+$(P)ts_offline$(EXE): $(P)ts_offline.$(OBJ) $(P)thread_sanitizer.$(OBJ) $(P)ts_util.$(OBJ)
+	$(LD) $(LDFLAGS) $(ARCHFLAGS) $(LINKO)$@ $^
 
-test: bin $(P)suppressions_test
-
-$(P)suppressions_test: $(P)gtest-suppressions_test.o $(P)suppressions.o $(P)ts_util.o $(GTEST_ROOT)/make/gtest_main_${ARCH}.a
-	$(LD) $(LDFLAGS) $(ARCHFLAGS) -o $@ $^
+$(P)suppressions_test$(EXE): $(P)gtest-suppressions_test.$(OBJ) $(P)suppressions.$(OBJ) $(P)ts_util.$(OBJ) $(GTEST_LIB)
+	$(LD) $(LDFLAGS) $(ARCHFLAGS) $(LINKO)$@ $^
 
 $(GTEST_ROOT)/make/gtest_main_$(ARCH).a:
 	cd $(GTEST_ROOT)/make && $(MAKE) clean && $(MAKE) CXXFLAGS=$(ARCHFLAGS) && mv gtest_main.a gtest_main_$(ARCH).a
 
 $(P)ts_pin.so: $(TS_PIN_OBJECTS)
 	$(LD) $(ARCHFLAGS) $(PIN_LDFLAGS) $(PIN_LIBPATHS) -o $@ $^  $(PIN_LIBS)
+
+$(P)ts_pin.dll: $(TS_PIN_OBJECTS)
+	$(LD) $(ARCHFLAGS) $(PIN_LDFLAGS) $(PIN_LIBPATHS)  /IMPLIB:$(PINP)ts_pin.lib /PDB:$(PINP)ts_pin.pdb /OUT:$@  $^  $(PIN_LIBS)
 
 clean:
 	rm -rfv bin core* pintool.log* pin.log
