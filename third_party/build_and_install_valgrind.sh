@@ -2,7 +2,7 @@
 # Valgrind sources reside in third_party/valgrind.
 # To be safe, we sync to a specific version which is known to work.
 
-VALGRIND_REV=10971
+VALGRIND_REV=10974
 VEX_REV=1946
 
 VALGRIND_INST_ROOT=${VALGRIND_INST_ROOT:-$HOME/tsan_inst}
