@@ -6192,6 +6192,42 @@ void Run() {
 REGISTER_TEST(Run, 155)
 }  // namespace test155
 
+// test157: TN. Test for stack traces (using ANNOTATE_NO_OP). {{{1
+namespace test157 {
+
+void func3() {
+  ANNOTATE_NO_OP((void*)__LINE__);
+}
+void func2() {
+  func3();
+}
+void func1() {
+  func2();
+}
+void Worker1() {
+  func1();
+}
+void Worker2() {
+  func2();
+}
+void Worker3() {
+  func3();
+}
+void Run() {
+  ANNOTATE_NO_OP((void*)__LINE__);
+  printf("test157: negative\n");
+  ANNOTATE_NO_OP((void*)__LINE__);
+  MyThreadArray t(Worker1, Worker2, Worker3);
+  ANNOTATE_NO_OP((void*)__LINE__);
+  t.Start();
+  ANNOTATE_NO_OP((void*)__LINE__);
+  t.Join();
+  ANNOTATE_NO_OP((void*)__LINE__);
+}
+REGISTER_TEST(Run, 157);
+}  // namespace test157
+
+
 // test300: {{{1
 namespace test300 {
 int     GLOB = 0;
