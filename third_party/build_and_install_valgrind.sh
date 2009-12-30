@@ -7,7 +7,10 @@ VEX_REV=1946
 
 VALGRIND_INST_ROOT="$1"
 
-mkdir -p $VALGRIND_INST_ROOT || exit 1
+if [ "$VALGRIND_INST_ROOT" == "" ]; then
+  echo "Usage: $0 /tsan/installation/path"
+  exit
+fi
 
 cd valgrind
 svn up -r $VALGRIND_REV
