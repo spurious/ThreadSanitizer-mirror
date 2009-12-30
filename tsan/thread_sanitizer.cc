@@ -1395,7 +1395,7 @@ class VTS {
 
   static void TestHappensBefore() {
     // TODO(kcc): need more tests here...
-    static const char *test_vts[] = {
+    const char *test_vts[] = {
       "[0:1;]",
       "[0:4; 2:1;]",
       "[0:4; 2:2; 4:1;]",
@@ -1700,7 +1700,7 @@ class Segment {
 
   static bool RecycleOneSid(SID sid) {
     ScopedMallocCostCenter malloc_cc("Segment::RecycleOneSid()");
-    static const size_t kRecyclePeriod = 10000;  // TODO(kcc): test it!
+    const size_t kRecyclePeriod = 10000;  // TODO(kcc): test it!
     Segment *seg = GetInternal(sid);
     DCHECK(seg->ref_count_ == 0);
     DCHECK(sid.raw() < n_segments_);
@@ -4301,6 +4301,22 @@ static HeapInfo IsHeapMem(uintptr_t a) {
 
 
 
+// -------- Suppressions ----------------------- {{{1
+static const char default_suppressions[] =
+"# We need to have some default suppressions, but we don't want to    \n"
+"# keep them in a separate text file, so we keep the in the code.     \n"
+
+#ifdef VGO_darwin
+"{                                                                    \n"
+"   dyld tries to unlock an invalid mutex when adding/removing image. \n"
+"   ThreadSanitizer:InvalidLock                                       \n"
+"   fun:pthread_mutex_unlock                                          \n"
+"   fun:_dyld_register_func_for_*_image                               \n"
+"}                                                                    \n"
+#endif
+
+;
+
 // -------- Report Storage --------------------- {{{1
 class ReportStorage {
  public:
@@ -4311,11 +4327,15 @@ class ReportStorage {
     if (G_flags->generate_suppressions) {
       Report("INFO: generate_suppressions = true\n");
     }
+    // Read default suppressions
+    suppressions_.ReadFromString(default_suppressions);
+
+    // Read user-supplied suppressions.
     for (size_t i = 0; i < G_flags->suppressions.size(); i++) {
       const string &supp_path = G_flags->suppressions[i];
       Report("INFO: reading suppressions file %s\n", supp_path.c_str());
       int n = suppressions_.ReadFromString(ReadFileToString(supp_path, true));
-      Report("INFO: %d suppression(s) read from file %s\n",
+      Report("INFO: %6d suppression(s) read from file %s\n",
              n, supp_path.c_str());
     }
   }
