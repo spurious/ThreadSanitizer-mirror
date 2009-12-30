@@ -11,7 +11,7 @@ cd drt_trunk
 (cd third_party && ./build_and_install_valgrind.sh)
 
 # Build ThreadSanitizer.
-(cd tsan && make l -j4 OFFLINE= GTEST_ROOT= PIN_ROOT= && make install VALGRIND_INST_ROOT=$VALGRIND_INST_ROOT)
+(cd tsan && make -s -j4 OFFLINE= GTEST_ROOT= PIN_ROOT= l && make -s install VALGRIND_INST_ROOT=$VALGRIND_INST_ROOT)
 
 # Build tests.
 (cd unittest && make)

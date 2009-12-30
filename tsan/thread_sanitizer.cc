@@ -4606,7 +4606,7 @@ class ReportStorage {
       supp += string("  ThreadSanitizer:") + report->ReportName() + "\n";
       for (size_t i = 0; i < funcs_mangled.size(); i++) {
         const string &func = funcs_demangled[i];
-        if (func.size() == 0 || funs == "???") {
+        if (func.size() == 0 || func == "???") {
           supp += "  obj:" + objects[i] + "\n";
         } else {
           supp += "  fun:" + funcs_demangled[i] + "\n";

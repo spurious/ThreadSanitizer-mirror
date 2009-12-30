@@ -2,7 +2,7 @@ VALGRIND_ROOT=../third_party/valgrind
 VALGRIND_INST_ROOT=$(HOME)/tsan_inst
 STLPORT_ROOT=../third_party/stlport
 GTEST_ROOT=../third_party/googletest
-OFFLINE=1
+OFFLINE=0
 
 CC=gcc
 COPT=-O -fno-omit-frame-pointer
@@ -45,6 +45,7 @@ ifeq ($(DEBUG), 1)
   DEFINES=-DDEBUG=1
 else
   D=
+  # In optimized mode, thread_sanitizer.cc is included into the tool code.
   DEFINES=-DINCLUDE_THREAD_SANITIZER_CC=1
 endif
 
@@ -114,10 +115,13 @@ dummy:
 	@echo "For 64-bit Linux build: make l64"
 	@echo "For 32-bit Linux build: make l32"
 	@echo "For mixed  Linux build: make l"
+	@echo "For 32-bit Mac   build: make m"
 
 all: TS_valgrind TS_pin TS_offline test
 
 l: l32 l64
+lo: l32o l64o
+ld: l32d l64d
 l64: l64o l64d
 l32: l32o l32d
 ld: l64d l32d
