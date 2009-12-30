@@ -262,6 +262,13 @@ void ts_post_clo_init(void) {
   // we get num-callers from valgrind flags.
   G_flags->num_callers = VG_(clo_backtrace_size);
 
+  extern Int   VG_(clo_n_suppressions);
+  extern Char* VG_(clo_suppressions)[];
+  // get the suppressions from Valgrind
+  for (int i = 0; i < VG_(clo_n_suppressions); i++) {
+    G_flags->suppressions.push_back((char*)VG_(clo_suppressions)[i]);
+  }
+
   if (G_flags->html) {
     Report("<pre>\n"
            "<br id=race0>"
@@ -1001,65 +1008,6 @@ static IRSB* ts_instrument ( VgCallbackClosure* closure,
   return bbOut;
 }
 
-static Bool eq_Error ( VgRes not_used, Error* e1, Error* e2 ) {
-  return True;
-}
-
-static void before_pp_Error ( Error* err ) { }
-
-static void pp_Error ( Error* err ) {
-  void *extra = VG_(get_error_extra)(err);
-  ThreadSanitizerPrintReport((ThreadSanitizerReport*)extra);
-}
-
-static UInt update_extra ( Error* err ) { return 0; }
-
-static Bool recognised_suppression ( Char* name, Supp *su )
-{
-#  define TRY(_name,_xskind)                   \
-      if (0 == VG_(strcmp)(name, (Char*)(_name))) {   \
-         VG_(set_supp_kind)(su, (_xskind));    \
-         return True;                          \
-      }
-   TRY("Race",           XS_Race);
-   TRY("UnlockForeign",  XS_UnlockForeign);
-   TRY("UnlockNonLocked",  XS_UnlockNonLocked);
-   TRY("InvalidLock",    XS_InvalidLock);
-   return False;
-#  undef TRY
-}
-
-
-static Bool read_extra_suppression_info(Int fd, Char** buf, SizeT* nBuf, Supp* su) {
-  return True;
-}
-static Bool error_matches_suppression(Error* err, Supp* su) {
-  switch (VG_(get_supp_kind)(su)) {
-    case XS_Race:           return VG_(get_error_kind)(err) == XS_Race;
-    case XS_UnlockForeign:  return VG_(get_error_kind)(err) == XS_UnlockForeign;
-    case XS_UnlockNonLocked:
-                          return VG_(get_error_kind)(err) == XS_UnlockNonLocked;
-    case XS_InvalidLock:    return VG_(get_error_kind)(err) == XS_InvalidLock;
-  }
-  return False;
-}
-static Bool get_extra_suppression_info(Error* err,
-                                       /*OUT*/Char* buf, Int nBuf) {
-  return False;
-}
-static Char* get_error_name ( Error* err )
-{
-   switch (VG_(get_error_kind)(err)) {
-      case XS_Race:            return (Char*)"Race";
-      case XS_UnlockForeign:   return (Char*)"UnlockForeign";
-      case XS_UnlockNonLocked: return (Char*)"UnlockNonLocked";
-      case XS_InvalidLock:     return (Char*)"InvalidLock";
-   }
-   tl_assert(0);
-   return NULL;
-}
-
-
 extern "C"
 void ts_pre_clo_init(void) {
   VG_(details_name)            ((Char*)"ThreadSanitizer");
@@ -1067,7 +1015,7 @@ void ts_pre_clo_init(void) {
   VG_(details_description)     ((Char*)"a data race detector");
   VG_(details_copyright_author)(
       (Char*)"Copyright (C) 2008-2009, and GNU GPL'd, by Google Inc.");
-  VG_(details_bug_reports_to)  ((Char*)"TODO(kcc)");
+  VG_(details_bug_reports_to)  ((Char*)"data-race-test@googlegroups.com");
 
   VG_(basic_tool_funcs)        (ts_post_clo_init,
                                 ts_instrument,
@@ -1080,18 +1028,6 @@ void ts_pre_clo_init(void) {
                                   ts_print_usage,
                                   ts_print_debug_usage);
 
-  VG_(needs_tool_errors)         (eq_Error,
-                                  before_pp_Error,
-                                  pp_Error,
-                                  False, //show TIDs for errors
-                                  update_extra,
-                                  recognised_suppression,
-                                  read_extra_suppression_info,
-                                  error_matches_suppression,
-                                  get_error_name,
-                                  get_extra_suppression_info);
-
-
 //   VG_(needs_var_info)(); // optional
 
 /*
@@ -1101,20 +1037,6 @@ void ts_pre_clo_init(void) {
    // FIXME?
    //VG_(needs_sanity_checks)       (hg_cheap_sanity_check,
    //                                hg_expensive_sanity_check);
-
-   VG_(needs_malloc_replacement)  (hg_cli__malloc,
-                                   hg_cli____builtin_new,
-                                   hg_cli____builtin_vec_new,
-                                   hg_cli__memalign,
-                                   hg_cli__calloc,
-                                   hg_cli__free,
-                                   hg_cli____builtin_delete,
-                                   hg_cli____builtin_vec_delete,
-                                   hg_cli__realloc,
-                                   HG_CLI__MALLOC_REDZONE_SZB );
-
-
-
    // FIXME: surely this isn't thread-aware
    VG_(track_copy_mem_remap)      ( shadow_mem_copy_range );
 

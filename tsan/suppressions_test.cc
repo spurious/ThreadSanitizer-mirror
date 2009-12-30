@@ -292,7 +292,7 @@ TEST_F(BaseSuppressionsTest, DemangledNames) {
       "{\n"
       "  name\n"
       "  test_tool:test_warning_type\n"
-      "  cxx:bb*w?\n"
+      "  fun:bb*w?\n"
       "}";
   supp_.ReadFromString(data);
   string m[] = {"fun1", "bb", "qq", "function2"};
@@ -306,7 +306,7 @@ TEST_F(BaseSuppressionsTest, TrailingWhitespace) {
       "{\n"
       "  name\n"
       "  test_tool:test_warning_type\n"
-      "  cxx:bb*w? \n"
+      "  fun:bb*w? \n"
       "}";
   supp_.ReadFromString(data);
   string m[] = {"fun1", "bb", "qq", "function2"};

@@ -28,11 +28,13 @@
 
 #include "suppressions.h"
 
+// TODO(eugenis): convert checks to warning messages.
+// TODO(eugenis): write tests for incorrect syntax.
+
 enum LocationType {
   LT_STAR, // ...
   LT_OBJ, // obj:
   LT_FUN, // fun:
-  LT_CXX // cxx:
 };
 
 struct Location {
@@ -69,7 +71,7 @@ class Parser {
   void PutBackSkipComments(string line);
   void ParseSuppressionToolsLine(Suppression* supp, string line);
   bool IsExtraLine(string line);
-  void ParseStackTraceLine(StackTraceTemplate* trace, string line);
+  bool ParseStackTraceLine(StackTraceTemplate* trace, string line);
   bool NextStackTraceTemplate(StackTraceTemplate* trace, bool* last);
 
   const string& buffer;
@@ -140,10 +142,11 @@ void Parser::ParseSuppressionToolsLine(Suppression* supp, string line) {
   supp->warning_name = s2;
 }
 
-void Parser::ParseStackTraceLine(StackTraceTemplate* trace, string line) {
+bool Parser::ParseStackTraceLine(StackTraceTemplate* trace, string line) {
   if (line == "...") {
     Location location = {LT_STAR, ""};
     trace->locations.push_back(location);
+    return true;
   } else {
     size_t idx = line.find(':');
     CHECK(idx != string::npos);
@@ -152,14 +155,14 @@ void Parser::ParseStackTraceLine(StackTraceTemplate* trace, string line) {
     if (s1 == "obj") {
       Location location = {LT_OBJ, s2};
       trace->locations.push_back(location);
+      return true;
     } else if (s1 == "fun") {
       Location location = {LT_FUN, s2};
       trace->locations.push_back(location);
-    } else if (s1 == "cxx") {
-      Location location = {LT_CXX, s2};
-      trace->locations.push_back(location);
+      return true;
     }
   }
+  return false;
 }
 
 // Checks if this line can not be parsed by Parser::NextStackTraceTemplate
@@ -170,7 +173,7 @@ bool Parser::IsExtraLine(string line) {
   if (line.size() < 4)
     return true;
   string prefix = line.substr(0, 4);
-  return !(prefix == "obj:" || prefix == "fun:" || prefix == "cxx:");
+  return !(prefix == "obj:" || prefix == "fun:");
 }
 
 bool Parser::NextStackTraceTemplate(StackTraceTemplate* trace, bool* last_stack_trace) {
@@ -187,7 +190,7 @@ bool Parser::NextStackTraceTemplate(StackTraceTemplate* trace, bool* last_stack_
   }
 
   while (true) {
-    ParseStackTraceLine(trace, line);
+    CHECK(ParseStackTraceLine(trace, line));
     line = NextLineSkipComments();
     if (line == "}")
       break;
@@ -210,12 +213,14 @@ bool Parser::NextSuppression(Suppression* supp) {
   line = NextLineSkipComments();
   CHECK(!line.empty());
   ParseSuppressionToolsLine(supp, line);
-  // A possible extra line.
-  line = NextLineSkipComments();
-  if (IsExtraLine(line))
-    supp->extra = line;
-  else
-    PutBackSkipComments(line);
+  if (0) {  // Not used currently. May still be needed later.
+    // A possible extra line.
+    line = NextLineSkipComments();
+    if (IsExtraLine(line))
+      supp->extra = line;
+    else
+      PutBackSkipComments(line);
+  }
   // Everything else.
   bool done = false;
   while (!done) {
@@ -237,12 +242,13 @@ Suppressions::~Suppressions() {
   delete rep_;
 }
 
-void Suppressions::ReadFromString(const string &str) {
+int Suppressions::ReadFromString(const string &str) {
   Parser parser(str);
   Suppression supp;
   while (parser.NextSuppression(&supp)) {
     rep_->suppressions.push_back(supp);
   }
+  return rep_->suppressions.size();
 }
 
 struct MatcherContext {
@@ -268,7 +274,6 @@ static bool MatchStackTraceRecursive(MatcherContext ctx, int trace_index,
   const int tmpl_size = ctx.tmpl->locations.size();
   while (trace_index < trace_size && tmpl_index < tmpl_size) {
     Location& location = ctx.tmpl->locations[tmpl_index];
-    string name;
     if (location.type == LT_STAR) {
       ++tmpl_index;
       while (trace_index < trace_size) {
@@ -277,13 +282,16 @@ static bool MatchStackTraceRecursive(MatcherContext ctx, int trace_index,
       }
       return false;
     } else {
-      switch (location.type) {
-        case LT_OBJ: name = ctx.object_names[trace_index]; break;
-        case LT_FUN: name = ctx.function_names_mangled[trace_index]; break;
-        case LT_CXX: name = ctx.function_names_demangled[trace_index]; break;
-        default: CHECK(0 && "unknown location type");
-      };
-      if (StringMatch(location.name, name)) {
+      bool match = false;
+      if (location.type == LT_OBJ) {
+        match = StringMatch(location.name, ctx.object_names[trace_index]);
+      } else {
+        CHECK(location.type == LT_FUN);
+        match =
+          StringMatch(location.name, ctx.function_names_mangled[trace_index]) ||
+          StringMatch(location.name, ctx.function_names_demangled[trace_index]);
+      }
+      if (match) {
         ++trace_index;
         ++tmpl_index;
       } else {

@@ -99,6 +99,9 @@ struct FLAGS {
 
   string       tsan_program_name;
   string       tsan_url;
+
+  vector<string> suppressions;
+  bool           generate_suppressions;
 };
 
 extern FLAGS *G_flags;
@@ -216,19 +219,6 @@ static const char *kEventNames[] = {
 
 class Event;
 
-struct ThreadSanitizerReport {
-  // Types of reports.
-  enum ReportType {
-    DATA_RACE,
-    UNLOCK_FOREIGN,
-    UNLOCK_NONLOCKED,
-    INVALID_LOCK
-  };
-
-  ReportType type;
-
-  virtual ~ThreadSanitizerReport() { }
-};
 
 extern void ThreadSanitizerInit();
 extern void ThreadSanitizerFini();
@@ -247,7 +237,6 @@ extern void ThreadSanitizerEnterSblock(int32_t tid, uintptr_t pc);
 extern void ThreadSanitizerHandleRtnCall(int32_t tid, uintptr_t call_pc,
                                          uintptr_t target_pc);
 extern void ThreadSanitizerHandleRtnExit(int32_t tid);
-extern void ThreadSanitizerPrintReport(ThreadSanitizerReport *report);
 extern void ThreadSanitizerPrintUsage();
 
 extern bool g_so_far_only_one_thread;

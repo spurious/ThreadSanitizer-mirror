@@ -39,7 +39,8 @@ class Suppressions {
   ~Suppressions();
 
   // Read suppressions file from string. May be called several times.
-  void ReadFromString(const string &str);
+  // Return the number of parsed suppressions or -1 if an error occured.
+  int ReadFromString(const string &str);
 
   // Checks if a given stack trace is suppressed.
   bool StackTraceSuppressed(string tool_name, string warning_name,

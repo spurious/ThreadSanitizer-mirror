@@ -31,6 +31,7 @@
 #ifndef INCLUDE_THREAD_SANITIZER_CC
 
 #include "thread_sanitizer.h"
+#include "suppressions.h"
 #include <stdarg.h>
 // -------- Constants --------------- {{{1
 // Segment ID (SID)      is in range [1, kMaxSID-1]
@@ -274,26 +275,6 @@ string PcToRtnNameAndFilePos(uintptr_t pc) {
   char buff[10];
   snprintf(buff, sizeof(buff), "%d", line_no);
   return rtn_name + " " + file_name + ":" + buff;
-}
-
-// Returns true if the error has been recorded.
-static bool RecordErrorIfNotSuppressed(ThreadSanitizerReport *report) {
-  bool is_recorded = false;
-#ifdef TS_VALGRIND
-  // Record an error using standard valgrind machinery.
-  // TODO(kcc): migrate to our own system (when ready).
-  CHECK(ThreadSanitizerReport::DATA_RACE == 0);
-  is_recorded = true;
-  VG_(maybe_record_error)(GetVgTid(), report->type + XS_Race, 0, NULL, report);
-#else 
-  // TODO(kcc): implement suppressions.
-  ThreadSanitizerPrintReport(report);
-  is_recorded = true;
-#endif
-  if (!is_recorded) {
-    delete report;
-  }
-  return is_recorded;
 }
 
 // -------- ID ---------------------- {{{1
@@ -657,6 +638,14 @@ class StackTrace {
     return arr_[i];
   }
 
+  static bool CutStackBelowFunc(const string func_name) {
+    for (size_t i = 0; i < G_flags->cut_stack_below.size(); i++) {
+      if (StringMatch(G_flags->cut_stack_below[i], func_name)) {
+        return true;
+      }
+    }
+    return false;
+  }
 
   static string EmbeddedStackTraceToString(const uintptr_t *emb_trace, size_t n,
                                            const char *indent = "    ") {
@@ -666,6 +655,7 @@ class StackTrace {
       char buff[kBuffSize];
       if (!emb_trace[i]) break;
       string rtn_and_file = PcToRtnNameAndFilePos(emb_trace[i]);
+      string rtn = PcToRtnName(emb_trace[i], true);
 
       if (i == 0) res += c_bold;
       if (G_flags->show_pc) {
@@ -686,14 +676,7 @@ class StackTrace {
         break;
       // ... and after some default functions (see ThreadSanitizerParseFlags())
       // and some more functions specified via command line flag.
-      bool should_break = false;
-      for (size_t i = 0; i < G_flags->cut_stack_below.size(); i++) {
-        if (StringMatch(G_flags->cut_stack_below[i], rtn_and_file)) {
-          should_break = true;
-          break;
-        }
-      }
-      if (should_break)
+      if (CutStackBelowFunc(rtn))
         break;
     }
     return res;
@@ -711,13 +694,6 @@ class StackTrace {
     }
     Printf("\n");
   }
-
-#ifdef TS_VALGRIND
-  ExeContext *ToValgrindExeContext() {
-    return VG_(make_ExeContext_from_StackTrace)(
-        reinterpret_cast<Addr*>(arr_), size_);
-  }
-#endif // TS_VALGRIND
 
   struct Less {
     bool operator() (const StackTrace *t1, const StackTrace *t2) const {
@@ -1956,11 +1932,6 @@ class SegmentSet {
       DCHECK(sset->ref_count_ >= 0);
       sset->ref_count_++;
     }
-  }
-
-  static void INLINE RefIfNotEmpty(SSID ssid, const char *where) {
-    if (!ssid.IsEmpty())
-      Ref(ssid, where);
   }
 
   static void INLINE Unref(SSID ssid, const char *where) {
@@ -3329,6 +3300,37 @@ void INLINE ClearMemoryState(uintptr_t a, uintptr_t b, bool is_new_mem) {
 
 
 // -------- ThreadSanitizerReport -------------- {{{1
+struct ThreadSanitizerReport {
+  // Types of reports.
+  enum ReportType {
+    DATA_RACE,
+    UNLOCK_FOREIGN,
+    UNLOCK_NONLOCKED,
+    INVALID_LOCK
+  };
+
+  // Common fields.
+  ReportType  type;
+  TID         tid;
+  StackTrace *stack_trace;
+
+  const char *ReportName() const {
+    switch (type) {
+      case DATA_RACE:        return "Race";
+      case UNLOCK_FOREIGN:   return "UnlockForeign";
+      case UNLOCK_NONLOCKED: return "UnlockNonLocked";
+      case INVALID_LOCK:     return "InvalidLock";
+    }
+    CHECK(0);
+  }
+
+  virtual ~ThreadSanitizerReport() {
+    StackTrace::Delete(stack_trace);
+  }
+};
+
+static bool ThreadSanitizerPrintReport(ThreadSanitizerReport *report);
+
 // DATA_RACE.
 struct ThreadSanitizerDataRaceReport : public ThreadSanitizerReport {
   uintptr_t   racey_addr;
@@ -3336,7 +3338,6 @@ struct ThreadSanitizerDataRaceReport : public ThreadSanitizerReport {
   uintptr_t   last_access_size;
   TID         last_access_tid;
   SID         last_access_sid;
-  StackTrace *last_access_stack_trace;
   bool        last_access_is_w;
   LSID        last_acces_lsid[2];
 
@@ -3345,30 +3346,16 @@ struct ThreadSanitizerDataRaceReport : public ThreadSanitizerReport {
 
   bool        is_expected;
   bool        racey_addr_was_published;
-
-  ~ThreadSanitizerDataRaceReport() {
-    StackTrace::Delete(last_access_stack_trace);
-  }
 };
 
 // Report for bad unlock (UNLOCK_FOREIGN, UNLOCK_NONLOCKED).
 struct ThreadSanitizerBadUnlockReport : public ThreadSanitizerReport {
-  TID tid;
-  StackTrace *stack_trace;
   LID lid;
-  ~ThreadSanitizerBadUnlockReport() {
-    StackTrace::Delete(stack_trace);
-  }
 };
 
 // Report for invalid lock addresses (INVALID_LOCK).
 struct ThreadSanitizerInvalidLockReport : public ThreadSanitizerReport {
-  TID tid;
-  StackTrace *stack_trace;
   uintptr_t lock_addr;
-  ~ThreadSanitizerInvalidLockReport() {
-    StackTrace::Delete(stack_trace);
-  }
 };
 
 // -------- LockHistory ------------- {{{1
@@ -3747,7 +3734,7 @@ struct Thread {
       report->tid = tid();
       report->lock_addr = lock_addr;
       report->stack_trace = CreateStackTrace();
-      RecordErrorIfNotSuppressed(report);
+      ThreadSanitizerPrintReport(report);
       return;
     }
     bool is_w_lock = lock->wr_held();
@@ -3772,7 +3759,7 @@ struct Thread {
       report->tid = tid();
       report->lid = lock->lid();
       report->stack_trace = CreateStackTrace();
-      RecordErrorIfNotSuppressed(report);
+      ThreadSanitizerPrintReport(report);
       return;
     }
 
@@ -3793,7 +3780,7 @@ struct Thread {
       report->tid = tid();
       report->lid = lock->lid();
       report->stack_trace = CreateStackTrace();
-      RecordErrorIfNotSuppressed(report);
+      ThreadSanitizerPrintReport(report);
     }
 
     if (G_flags->suggest_happens_before_arcs) {
@@ -4317,6 +4304,22 @@ static HeapInfo IsHeapMem(uintptr_t a) {
 // -------- Report Storage --------------------- {{{1
 class ReportStorage {
  public:
+
+  ReportStorage()
+   : n_reports(0),
+     program_finished_(0) {
+    if (G_flags->generate_suppressions) {
+      Report("INFO: generate_suppressions = true\n");
+    }
+    for (size_t i = 0; i < G_flags->suppressions.size(); i++) {
+      const string &supp_path = G_flags->suppressions[i];
+      Report("INFO: reading suppressions file %s\n", supp_path.c_str());
+      int n = suppressions_.ReadFromString(ReadFileToString(supp_path, true));
+      Report("INFO: %d suppression(s) read from file %s\n",
+             n, supp_path.c_str());
+    }
+  }
+
   bool NOINLINE AddReport(TID tid, uintptr_t pc, bool is_w, uintptr_t addr,
                           int size,
                           ShadowValue old_sval, ShadowValue new_sval,
@@ -4357,7 +4360,7 @@ class ReportStorage {
     race_report->last_access_tid = tid;
     race_report->last_access_sid = thr->sid();
     race_report->last_access_size = size;
-    race_report->last_access_stack_trace = stack_trace;
+    race_report->stack_trace = stack_trace;
     race_report->racey_addr_was_published = is_published;
     race_report->last_acces_lsid[false] = thr->lsid(false);
     race_report->last_acces_lsid[true] = thr->lsid(true);
@@ -4366,39 +4369,10 @@ class ReportStorage {
     CHECK(thr->lsid(false) == seg->lsid(false));
     CHECK(thr->lsid(true) == seg->lsid(true));
 
-#ifdef TS_VALGRIND
-    ExeContext *valgrindish_context = stack_trace->ToValgrindExeContext();
-    if (VG_(unique_error)(GetVgTid(), XS_Race, 0, NULL,
-                          race_report, valgrindish_context,
-                          false, false, false)) {
-      // This is a HACK. Valgrind ExeContext is sometimes broken and hence
-      // suppressions may fail. We create an ExeContext from tsan's stack trace
-      // and check if it should be suppressed (see comments for unique_error).
-      if (G_flags->show_valgrind_context) {
-        Report("------ ThreadSanitizer StackTrace: -------\n");
-        VG_(pp_ExeContext)(valgrindish_context);
-        Report("------ valgrind ExeContext: -------\n");
-        VG_(pp_ExeContext)(VG_(record_ExeContext)(VG_(get_running_tid)(), 0));
-      }
-      // this error was suppressed -- return.
-      delete race_report;
-      return false;
-    }
-#endif  // TS_VALGRIND
-
-    if (!RecordErrorIfNotSuppressed(race_report)) {
-      return false;
-    }
-
-    SegmentSet::RefIfNotEmpty(old_sval.rd_ssid(), "AddReport");
-    SegmentSet::RefIfNotEmpty(new_sval.rd_ssid(), "AddReport");
-    SegmentSet::RefIfNotEmpty(old_sval.wr_ssid(), "AddReport");
-    SegmentSet::RefIfNotEmpty(new_sval.wr_ssid(), "AddReport");
-
-    return true;
+    return ThreadSanitizerPrintReport(race_report);
   }
 
-  static void AnnounceThreadsInSegmentSet(SSID ssid) {
+  void AnnounceThreadsInSegmentSet(SSID ssid) {
     if (ssid.IsEmpty()) return;
     for (int s = 0; s < SegmentSet::Size(ssid); s++) {
       Segment *seg = SegmentSet::GetSegmentForNonSingleton(ssid, s, __LINE__);
@@ -4408,7 +4382,7 @@ class ReportStorage {
 
 
 
-  static void PrintConcurrentSegmentSet(SSID ssid, TID tid, SID sid,
+  void PrintConcurrentSegmentSet(SSID ssid, TID tid, SID sid,
                                         LSID lsid, bool is_w,
                                         const char *descr, set<LID> *locks) {
     if (ssid.IsEmpty()) return;
@@ -4459,12 +4433,12 @@ class ReportStorage {
     }
   }
 
-  static void SetProgramFinished() {
+  void SetProgramFinished() {
     CHECK(!program_finished_);
     program_finished_ = true;
   }
 
-  static void PrintRaceReport(ThreadSanitizerDataRaceReport *race) {
+  void PrintRaceReport(ThreadSanitizerDataRaceReport *race) {
     bool short_report = program_finished_;
     if (!short_report) {
       AnnounceThreadsInSegmentSet(race->new_sval.rd_ssid());
@@ -4512,8 +4486,8 @@ class ReportStorage {
                                  race->last_acces_lsid[true]).c_str());
     }
 
-    CHECK(race->last_access_stack_trace);
-    Report("%s", race->last_access_stack_trace->ToString().c_str());
+    CHECK(race->stack_trace);
+    Report("%s", race->stack_trace->ToString().c_str());
     if (short_report) {
       Report(" See the full version of this report above.\n");
       Report("}%s\n", "}}");
@@ -4566,8 +4540,36 @@ class ReportStorage {
     Report("}}}\n");
   }
 
-  static void PrintReport(ThreadSanitizerReport *report) {
+  bool PrintReport(ThreadSanitizerReport *report) {
     CHECK(report);
+    // Check if we have a suppression.
+    vector<string> funcs_mangled;
+    vector<string> funcs_demangled;
+    vector<string> objects;
+
+    CHECK(report->stack_trace);
+    CHECK(report->stack_trace->size());
+    for (size_t i = 0; i < report->stack_trace->size(); i++) {
+      uintptr_t pc = report->stack_trace->Get(i);
+      string img, rtn, file;
+      int line;
+      PcToStrings(pc, false, &img, &rtn, &file, &line);
+      funcs_mangled.push_back(rtn);
+      funcs_demangled.push_back(PcToRtnName(pc, true));
+      objects.push_back(img);
+    }
+    string suppression_name;
+    if (suppressions_.StackTraceSuppressed("ThreadSanitizer",
+                                           report->ReportName(),
+                                           funcs_mangled,
+                                           funcs_demangled,
+                                           objects,
+                                           &suppression_name)) {
+      used_suppressions_[suppression_name]++;
+      return false;
+    }
+
+    // Actually print it.
     if (report->type == ThreadSanitizerReport::UNLOCK_FOREIGN) {
       ThreadSanitizerBadUnlockReport *bad_unlock =
           reinterpret_cast<ThreadSanitizerBadUnlockReport*>(report);
@@ -4596,11 +4598,41 @@ class ReportStorage {
           reinterpret_cast<ThreadSanitizerDataRaceReport*>(report);
       PrintRaceReport(race);
     }
+
+    // Generate a suppression.
+    if (G_flags->generate_suppressions) {
+      string supp = "{\n";
+      supp += "  <Put your suppression name here>\n";
+      supp += string("  ThreadSanitizer:") + report->ReportName() + "\n";
+      for (size_t i = 0; i < funcs_mangled.size(); i++) {
+        const string &func = funcs_demangled[i];
+        if (func.size() == 0 || funs == "???") {
+          supp += "  obj:" + objects[i] + "\n";
+        } else {
+          supp += "  fun:" + funcs_demangled[i] + "\n";
+        }
+        if (StackTrace::CutStackBelowFunc(funcs_demangled[i])) {
+          break;
+        }
+      }
+      supp += "}";
+      Printf("------- suppression -------\n%s\n------- end suppression -------\n",
+             supp.c_str());
+    }
+
+    return true;
+  }
+
+  void PrintUsedSuppression() {
+    for (map<string, int>::iterator it = used_suppressions_.begin();
+         it != used_suppressions_.end(); ++it) {
+      Report("used_suppression: %d %s\n", it->second, it->first.c_str());
+    }
   }
 
  private:
 
-  static string DescribeMemory(uintptr_t a) {
+  string DescribeMemory(uintptr_t a) {
     const int kBufLen = 1023;
     char buff[kBufLen+1];
 
@@ -4687,13 +4719,11 @@ class ReportStorage {
 
 
   map<StackTrace *, int, StackTrace::Less> reported_stacks_;
-  static int n_reports;
-  static bool program_finished_;
+  int n_reports;
+  bool program_finished_;
+  Suppressions suppressions_;
+  map<string, int> used_suppressions_;
 };
-
-// static
-int ReportStorage::n_reports = 0;
-bool ReportStorage::program_finished_ = false;
 
 // -------- Event Sampling ---------------- {{{1
 // This class samples (profiles) events.
@@ -4812,6 +4842,7 @@ class Detector {
     EventSampler::ShowSamples();
     ShowStats();
     ShowProcSelfStatus();
+    reports_.PrintUsedSuppression();
     // Report("ThreadSanitizerValgrind: exiting\n");
   }
 
@@ -5212,7 +5243,7 @@ class Detector {
         report->tid = cur_tid_;
         report->lock_addr = lock_addr;
         report->stack_trace = cur_thread_->CreateStackTrace();
-        RecordErrorIfNotSuppressed(report);
+        ThreadSanitizerPrintReport(report);
         return;
       }
       if (lock->wr_held() || lock->rd_held()) {
@@ -5752,7 +5783,7 @@ class Detector {
       }
       ClearMemoryState(child->min_sp(), child->max_sp(), /*is_new_mem=*/false);
     } else {
-      ReportStorage::SetProgramFinished();
+      reports_.SetProgramFinished();
     }
 
 
@@ -5801,6 +5832,8 @@ class Detector {
   TID cur_tid_;
   Thread *cur_thread_;
 
+ public:
+  // TODO(kcc): merge this into Detector class. (?)
   ReportStorage reports_;
 };
 
@@ -6073,6 +6106,10 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   G_flags->tsan_url = "http://code.google.com/p/data-race-test";
   FindStringFlag("tsan_url", args, &G_flags->tsan_url);
 
+  FindStringFlag("suppressions", args, &G_flags->suppressions);
+  FindBoolFlag("generate_suppressions", false, args,
+               &G_flags->generate_suppressions);
+
   FindIntFlag("max_sid", kMaxSID, args, &G_flags->max_sid);
   kMaxSID = G_flags->max_sid;
   if (kMaxSID <= 100000) {
@@ -6088,9 +6125,9 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   }
 
   // Cut stack under the following default functions.
-  G_flags->cut_stack_below.push_back("Thread*ThreadBody(*");
-  G_flags->cut_stack_below.push_back("ThreadSanitizerStartThread*");
-  G_flags->cut_stack_below.push_back("start_thread *");
+  G_flags->cut_stack_below.push_back("Thread*ThreadBody*");
+  G_flags->cut_stack_below.push_back("ThreadSanitizerStartThread");
+  G_flags->cut_stack_below.push_back("start_thread");
   FindStringFlag("cut_stack_below", args, &G_flags->cut_stack_below);
 
   FindIntFlag("num_callers", 12, args, &G_flags->num_callers);
@@ -6345,8 +6382,8 @@ void INLINE ThreadSanitizerHandleRtnExit(int32_t tid) {
   G_detector->HandleRtnExit(TID(tid));
 }
 
-extern void ThreadSanitizerPrintReport(ThreadSanitizerReport *report) {
-  ReportStorage::PrintReport(report);
+static bool ThreadSanitizerPrintReport(ThreadSanitizerReport *report) {
+  return G_detector->reports_.PrintReport(report);
 }
 
 // -------- TODO -------------------------- {{{1
