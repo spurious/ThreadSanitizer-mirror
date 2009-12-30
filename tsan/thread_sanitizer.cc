@@ -5750,39 +5750,12 @@ class Detector {
   // Executes before the first instruction of the thread but after the thread
   // has been set up (e.g. the stack is in place).
   void HandleThreadFirstInsn(TID tid) {
-#ifdef TS_VALGRIND
-    uintptr_t stack_max  = VG_(thread_get_stack_max)(GetVgTid());
-    uintptr_t stack_size = VG_(thread_get_stack_size)(GetVgTid());
-#else
-    uintptr_t stack_max = 0xffff, stack_size = 1;
-    // UNIMPLEMENTED();
-#endif
-    uintptr_t stack_min  = stack_max - stack_size;
-#ifdef HAS_HACK_thread_get_tls_max
-    // Sometimes valgrind incorectly computes stack_max.
-    // Before this is fixed, we use thread_get_tls_max (available only on amd64
-    // only with a separate patch for ../coregrind/m_machine.c and
-    // ../include/pub_tool_machine.h) to adjust stack_max.
-    // TODO(kcc): remove this when thread_get_stack_size is fixed.
-    uintptr_t tls = VG_(thread_get_tls_max(GetVgTid()));
-    if (tls != 0 && tls > stack_max && tls - stack_max < 1024 * 1024) {
-      if (G_flags->debug_level >= 2) {
-        Printf("TLS_HACK: adjusting stack_max by %ld bytes: %x -> %x\n",
-               tls - stack_max, stack_max, tls);
-      }
-      stack_max = tls;
-    }
-
-    if (G_flags->debug_level >= 2)
-      Printf("T%d: stack_min=%p stack_max=%p (%ld) tls=%p\n", tid.raw(),
-             stack_min, stack_max, stack_size, tls);
-#endif
-
+    uintptr_t stack_min(0), stack_max(0);
+    GetThreadStack(tid.raw(), &stack_min, &stack_max);
     Thread *thr = Thread::Get(tid);
     thr->SetStack(stack_min, stack_max);
     ClearMemoryState(thr->min_sp(), thr->max_sp(), /*is_new_mem=*/true);
   }
-
 
   void HandleThreadCreateAfter() {
     Thread::SetThreadPthreadT(TID(e_->tid()), (pthread_t)e_->a());

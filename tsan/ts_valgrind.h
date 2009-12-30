@@ -48,27 +48,6 @@ extern "C" {
 #include "pub_tool_options.h"
 } // extern "C"
 
-
-
-enum {
-  // Data race.
-  XS_Race = 1234,
-  // Unlocking a lock that is held by another thread.
-  XS_UnlockForeign,
-  // Unlocking a lock that is not locked.
-  XS_UnlockNonLocked,
-  // Operating a non-existing lock.
-  XS_InvalidLock
-};
-
-static inline ThreadId GetVgTid() {
-  extern ThreadId VG_(running_tid); // HACK: avoid calling get_running_tid()
-  ThreadId res = VG_(running_tid);
-  //DCHECK(res == VG_(get_running_tid)());
-  return res;
-}
-
-
 #endif //  TS_VALGRIND_H_
 // {{{1 end
 // vim:shiftwidth=2:softtabstop=2:expandtab
