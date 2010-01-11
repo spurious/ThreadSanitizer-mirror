@@ -13,13 +13,15 @@ if [ "$VALGRIND_INST_ROOT" == "" ]; then
 fi
 
 cd valgrind
-for p in ../../valgrind_patches/*.patch; do
-  echo applying $p
-  patch -p 0 < $p
-done
 
 svn up -r $VALGRIND_REV
 svn up -r $VEX_REV      VEX/
+
+for p in ../../valgrind_patches/*.patch; do
+  echo ==================== applying $p =================
+  patch -p 0 < $p
+done
+
 make distclean
 ./autogen.sh && \
   ./configure --prefix=$VALGRIND_INST_ROOT && \
