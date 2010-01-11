@@ -6105,7 +6105,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   FindStringFlag("tsan_url", args, &G_flags->tsan_url);
 
   FindStringFlag("suppressions", args, &G_flags->suppressions);
-  FindBoolFlag("generate_suppressions", false, args,
+  FindBoolFlag("gen_suppressions", false, args,
                &G_flags->generate_suppressions);
 
   FindIntFlag("max_sid", kMaxSID, args, &G_flags->max_sid);

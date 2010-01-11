@@ -8,7 +8,7 @@ TSAN=${TSAN:-tsan}
 
 run() {
   env $ENV $TSAN $FLAGS \
-    --error-exitcode=1 --generate-suppressions \
+    --error-exitcode=1 --gen-suppressions \
     --suppressions=racecheck_unittest.supp \
     ./racecheck_unittest $PARAM || exit 1
 }

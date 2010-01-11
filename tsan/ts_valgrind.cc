@@ -300,11 +300,13 @@ void ts_post_clo_init(void) {
   G_flags->num_callers = VG_(clo_backtrace_size);
 
   extern Int   VG_(clo_n_suppressions);
+  extern Int   VG_(clo_gen_suppressions);
   extern Char* VG_(clo_suppressions)[];
   // get the suppressions from Valgrind
   for (int i = 0; i < VG_(clo_n_suppressions); i++) {
     G_flags->suppressions.push_back((char*)VG_(clo_suppressions)[i]);
   }
+  G_flags->generate_suppressions = VG_(clo_gen_suppressions) >= 1;
 
   if (G_flags->html) {
     Report("<pre>\n"
