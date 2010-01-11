@@ -738,7 +738,7 @@ static void EnableSigprof() {
 }
 
 void Worker() {
-  for (int i = 0; i < 10000000; i++) {
+  for (int i = 0; i < 1000000; i++) {
     ANNOTATE_HAPPENS_AFTER((void*)0x1234);
   }
 }
@@ -750,5 +750,5 @@ void Run() {
   t.Start();
   t.Join();
 }
-REGISTER_TEST2(Run, 158, EXCLUDE_FROM_ALL)
+REGISTER_TEST(Run, 158)
 }  // namespace test158
