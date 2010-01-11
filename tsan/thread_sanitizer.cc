@@ -3479,9 +3479,7 @@ struct Thread {
       rd_lockset_(0),
       wr_lockset_(0),
       lock_mu_(0),
-      wait_cv_(0),
-      wait_mu_(0),
-      wait_cv_and_mu_set_(false),
+      wait_cv_and_mu_stack_size_(0),
       bus_lock_is_set_(false),
       vts_at_exit_(NULL),
       lock_history_(128) {
@@ -3799,22 +3797,28 @@ struct Thread {
   const LockHistory &lock_history() { return lock_history_; }
 
   // CondVar
-
+  // Normally, each HandleWaitBefore() should be followed by
+  // HandleWaitAfter(). But if a signal interrupts us, we may have
+  // up to two HandleWaitBefore() calls before a subsequent HandleWaitAfter().
+  // Hence we have to use a stack of size 2 for wait_cv and wait_mu.
   void HandleWaitBefore(uintptr_t cv, uintptr_t mu) {
-    CHECK(wait_cv_and_mu_set_ == false);
-    wait_cv_and_mu_set_ = true;
-    wait_cv_ = cv;
-    wait_mu_ = mu;
+    CHECK(wait_cv_and_mu_stack_size_ <= 1);
+    wait_cv_stack_[wait_cv_and_mu_stack_size_] = cv;
+    wait_mu_stack_[wait_cv_and_mu_stack_size_] = mu;
+    wait_cv_and_mu_stack_size_++;
     if (mu) {
       HandleUnlock(mu);
     }
   }
   void HandleWaitAfter(bool timed_out) {
-    CHECK(wait_cv_and_mu_set_ == true);
-    wait_cv_and_mu_set_ = false;
-    HandleWait(wait_cv_, wait_mu_, timed_out);
-    wait_mu_ = 0;
-    wait_cv_ = 0;
+    CHECK(wait_cv_and_mu_stack_size_ >= 1);
+    CHECK(wait_cv_and_mu_stack_size_ <= 2);
+    wait_cv_and_mu_stack_size_--;
+    HandleWait(wait_cv_stack_[wait_cv_and_mu_stack_size_],
+               wait_mu_stack_[wait_cv_and_mu_stack_size_], timed_out);
+    // Clear these just in case.
+    wait_cv_stack_[wait_cv_and_mu_stack_size_] = NULL;
+    wait_mu_stack_[wait_cv_and_mu_stack_size_] = NULL;
   }
 
   void HandleWait(uintptr_t cv, uintptr_t mu, bool timed_out) {
@@ -4128,9 +4132,9 @@ struct Thread {
   // Handle*{Before,After} calls.
   uintptr_t lock_mu_;
 
-  uintptr_t wait_cv_;
-  uintptr_t wait_mu_;
-  bool      wait_cv_and_mu_set_;
+  uintptr_t wait_cv_stack_[2];
+  uintptr_t wait_mu_stack_[2];
+  size_t wait_cv_and_mu_stack_size_;
 
   bool      bus_lock_is_set_;
 
