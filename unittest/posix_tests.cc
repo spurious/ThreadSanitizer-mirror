@@ -712,7 +712,8 @@ REGISTER_TEST(Run, 156)
 
 // test158: Signals and wait {{{1
 namespace test158 {
-// Regression test for TODO(kcc).
+// Regression test for
+// http://code.google.com/p/data-race-test/issues/detail?id=14.
 static void SignalHandler(int, siginfo_t*, void*) {
   ANNOTATE_HAPPENS_AFTER((void*)0x1234);
 }
