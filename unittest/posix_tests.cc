@@ -709,3 +709,45 @@ void Run() {
 }
 REGISTER_TEST(Run, 156)
 }  // namespace test156
+
+// test158: Signals and wait {{{1
+namespace test158 {
+// Regression test for TODO(kcc).
+static void SignalHandler(int, siginfo_t*, void*) {
+  ANNOTATE_HAPPENS_AFTER((void*)0x1234);
+}
+
+static void EnableSigprof() {
+  struct sigaction sa;
+  sa.sa_sigaction = SignalHandler;
+  sa.sa_flags = SA_RESTART | SA_SIGINFO;
+  sigemptyset(&sa.sa_mask);
+  if (sigaction(SIGPROF, &sa, NULL) != 0) {
+    perror("sigaction");
+    abort();
+  }
+  struct itimerval timer;
+  timer.it_interval.tv_sec = 0;
+  timer.it_interval.tv_usec = 1000000 / 10000;
+  timer.it_value = timer.it_interval;
+  if (setitimer(ITIMER_PROF, &timer, 0) != 0) {
+    perror("setitimer");
+    abort();
+  }
+}
+
+void Worker() {
+  for (int i = 0; i < 10000000; i++) {
+    ANNOTATE_HAPPENS_AFTER((void*)0x1234);
+  }
+}
+
+void Run() {
+  printf("test158: signals and wait\n");
+  EnableSigprof();
+  MyThreadArray t(Worker, Worker, Worker);
+  t.Start();
+  t.Join();
+}
+REGISTER_TEST2(Run, 158, EXCLUDE_FROM_ALL)
+}  // namespace test158

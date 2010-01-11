@@ -6206,12 +6206,15 @@ void func1() {
 }
 void Worker1() {
   func1();
+  ANNOTATE_NO_OP((void*)__LINE__);
 }
 void Worker2() {
   func2();
+  ANNOTATE_NO_OP((void*)__LINE__);
 }
 void Worker3() {
   func3();
+  ANNOTATE_NO_OP((void*)__LINE__);
 }
 void Run() {
   ANNOTATE_NO_OP((void*)__LINE__);

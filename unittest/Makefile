@@ -13,10 +13,10 @@ DYNAMIC_ANNOTATIONS_O=dynamic_annotations.o
 DYNAMIC_ANNOTATIONS=${DYNAMIC_ANNOTATIONS_C} ${DYNAMIC_ANNOTATIONS_H}
 
 racecheck_unittest: racecheck_unittest.o old_test_suite.o posix_tests.o ${DYNAMIC_ANNOTATIONS_O}
-	g++ -lpthread $^ -o $@
+	$(CXX) -lpthread $^ -o $@
 
 bigtest: bigtest.o ${DYNAMIC_ANNOTATIONS_O}
-	g++ -lpthread $^ -o $@
+	$(CXX) -lpthread $^ -o $@
 
 %.o: %.cc ${DYNAMIC_ANNOTATIONS} thread_wrappers.h thread_wrappers_pthread.h old_test_suite.h test_utils.h
 	${CXX} ${CXXFLAGS} $< -Wall -Werror -Wno-sign-compare -Wshadow -Wno-unused-function  \
