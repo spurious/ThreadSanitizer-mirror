@@ -1,0 +1,20 @@
+Index: coregrind/m_main.c
+===================================================================
+--- coregrind/m_main.c	(revision 10977)
++++ coregrind/m_main.c	(working copy)
+@@ -616,15 +616,6 @@
+    if (VG_(clo_verbosity) < 0)
+       VG_(clo_verbosity) = 0;
+ 
+-   if (VG_(clo_gen_suppressions) > 0 && 
+-       !VG_(needs).core_errors && !VG_(needs).tool_errors) {
+-      VG_(message)(Vg_UserMsg, 
+-                   "Can't use --gen-suppressions= with this tool,\n");
+-      VG_(message)(Vg_UserMsg, 
+-                   "as it doesn't generate errors.\n");
+-      VG_(err_bad_option)("--gen-suppressions=");
+-   }
+-
+    /* If XML output is requested, check that the tool actually
+       supports it. */
+    if (VG_(clo_xml) && !VG_(needs).xml_output) {
