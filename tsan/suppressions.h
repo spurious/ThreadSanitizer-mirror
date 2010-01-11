@@ -42,6 +42,13 @@ class Suppressions {
   // Return the number of parsed suppressions or -1 if an error occured.
   int ReadFromString(const string &str);
 
+  // Returns the string describing the last error. Undefined if there was no
+  // error.
+  string GetErrorString();
+
+  // Returns the line number of the last error. Undefined if there was no error.
+  int GetErrorLineNo();
+
   // Checks if a given stack trace is suppressed.
   bool StackTraceSuppressed(string tool_name, string warning_name,
       const vector<string>& function_names_mangled,

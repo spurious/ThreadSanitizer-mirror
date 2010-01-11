@@ -315,6 +315,147 @@ TEST_F(BaseSuppressionsTest, TrailingWhitespace) {
   ASSERT_TRUE(IsSuppressed(VEC(m), VEC(d), VEC(o)));
 }
 
+
+class FailingSuppressionsTest : public ::testing::Test {
+ protected:
+  int ErrorLineNo(string data) {
+    int result = supp_.ReadFromString(data);
+    if (result >= 0)
+      return -1;
+    else
+      return supp_.GetErrorLineNo();
+  }
+
+  Suppressions supp_;
+};
+
+TEST_F(FailingSuppressionsTest, NoOpeningBrace) {
+  const string data =
+      "  name\n"
+      "  test_tool:test_warning_type\n"
+      "  fun:bb*w? \n"
+      "}";
+  ASSERT_EQ(1, ErrorLineNo(data));
+}
+
+TEST_F(FailingSuppressionsTest, Bad1) {
+  const string data =
+      "{\n"
+      "  name\n"
+      "  something_else\n"
+      "  test_tool:test_warning_type\n"
+      "  fun:bb*w? \n"
+      "}";
+  ASSERT_EQ(3, ErrorLineNo(data));
+}
+
+TEST_F(FailingSuppressionsTest, Bad2) {
+  const string data =
+      "{\n"
+      "  name\n"
+      "  test_tool:test_warning_type\n"
+      "  extra\n"
+      "  fun:bb*w? \n"
+      "}";
+  ASSERT_EQ(4, ErrorLineNo(data));
+}
+
+TEST_F(FailingSuppressionsTest, Bad3) {
+  const string data =
+      "{\n"
+      "  name\n"
+      "  test_tool:test_warning_type\n"
+      "  fun:bb*w? \n"
+      "  extra\n"
+      "}";
+  ASSERT_EQ(5, ErrorLineNo(data));
+}
+
+TEST_F(FailingSuppressionsTest, SomeWeirdTextAfterASuppression) {
+  const string data =
+      "{\n"
+      "  name\n"
+      "  test_tool:test_warning_type\n"
+      "  fun:bb*w? \n"
+      "}\n"
+      "some_weird_text\n"
+      "after_a_suppression\n";
+  ASSERT_EQ(6, ErrorLineNo(data));
+}
+
+TEST_F(FailingSuppressionsTest, NoToolsLineInMultitraceSuppression) {
+  const string data =
+      "{\n"
+      "  name\n"
+      "  {\n"
+      "    fun:fun*2\n"
+      "    fun:fun*3\n"
+      "  }\n"
+      "  {\n"
+      "    ...\n"
+      "    fun:fun*4\n"
+      "    obj:obj*5\n"
+      "  }\n"
+      "}";
+  ASSERT_EQ(3, ErrorLineNo(data));
+}
+
+TEST_F(FailingSuppressionsTest, BadStacktrace1) {
+  const string data =
+      "{\n"
+      "  name\n"
+      "  test_tool:test_warning_type\n"
+      "  {\n"
+      "    fun:fun*2\n"
+      "    fun:fun*3\n"
+      "  }\n"
+      "  {\n"
+      "    zzz\n"
+      "    fun:fun*4\n"
+      "    obj:obj*5\n"
+      "  }\n"
+      "}";
+  ASSERT_EQ(9, ErrorLineNo(data));
+}
+
+TEST_F(FailingSuppressionsTest, BadStacktrace2) {
+  const string data =
+      "{\n"
+      "  name\n"
+      "  test_tool:test_warning_type\n"
+      "  {\n"
+      "    fun:fun*2\n"
+      "    fun:fun*3\n"
+      "  }\n"
+      "  {\n"
+      "    {\n"
+      "    fun:fun*4\n"
+      "    obj:obj*5\n"
+      "  }\n"
+      "}";
+  ASSERT_EQ(9, ErrorLineNo(data));
+}
+
+TEST_F(FailingSuppressionsTest, BadStacktrace3) {
+  const string data =
+      "{\n"
+      "  name\n"
+      "  test_tool:test_warning_type\n"
+      "  {\n"
+      "    fun:fun*2\n"
+      "    fun:fun*3\n"
+      "  }\n"
+      "  {\n"
+      "    fun:fun*4\n"
+      "    obj:obj*5\n"
+      "  }\n"
+      "  zzz\n"
+      "}";
+  ASSERT_EQ(12, ErrorLineNo(data));
+}
+
+
+
 TEST(WildcardTest, Simple) {
   ASSERT_TRUE(StringMatch("abc", "abc"));
   ASSERT_FALSE(StringMatch("abcd", "abc"));

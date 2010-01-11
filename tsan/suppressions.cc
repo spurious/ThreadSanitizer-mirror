@@ -60,25 +60,54 @@ class Parser {
  public:
   Parser(const string &str)
       : buffer(str), next(buffer.c_str()),
-        end(buffer.c_str() + buffer.size()) {}
+        end(buffer.c_str() + buffer.size()), lineNo(0), error(false) {}
 
   bool NextSuppression(Suppression*);
+  bool GetError();
+  string GetErrorString();
+  int GetLineNo();
 
  private:
   bool Eof() { return next >= end; }
   string NextLine();
   string NextLineSkipComments();
   void PutBackSkipComments(string line);
-  void ParseSuppressionToolsLine(Suppression* supp, string line);
+  bool ParseSuppressionToolsLine(Suppression* supp, string line);
   bool IsExtraLine(string line);
   bool ParseStackTraceLine(StackTraceTemplate* trace, string line);
   bool NextStackTraceTemplate(StackTraceTemplate* trace, bool* last);
+
+  void SetError(string desc);
 
   const string& buffer;
   const char* next;
   const char* end;
   stack<string> putBackStack;
+
+  int lineNo;
+  bool error;
+  string errorString;
 };
+
+#define PARSER_CHECK(cond, desc) do {\
+    if (!(cond)) {SetError(desc); return false;}} while(0)
+
+void Parser::SetError(string desc) {
+  error = true;
+  errorString = desc;
+}
+
+bool Parser::GetError() {
+  return error;
+}
+
+string Parser::GetErrorString() {
+  return errorString;
+}
+
+int Parser::GetLineNo() {
+  return lineNo;
+}
 
 string Parser::NextLine() {
   const char* first = next;
@@ -89,6 +118,7 @@ string Parser::NextLine() {
   if (*next == '\n') {
     ++next;
   }
+  ++lineNo;
   return line;
 }
 
@@ -126,13 +156,13 @@ void Parser::PutBackSkipComments(string line) {
   putBackStack.push(line);
 }
 
-void Parser::ParseSuppressionToolsLine(Suppression* supp, string line) {
+bool Parser::ParseSuppressionToolsLine(Suppression* supp, string line) {
   size_t idx = line.find(':');
-  CHECK(idx != string::npos);
+  PARSER_CHECK(idx != string::npos, "expected ':' in tools line");
   string s1 = line.substr(0, idx);
   string s2 = line.substr(idx + 1);
-  CHECK(!s1.empty());
-  CHECK(!s2.empty());
+  PARSER_CHECK(!s1.empty(), "expected non-empty tool(s) name");
+  PARSER_CHECK(!s2.empty(), "expected non-empty warning name");
   size_t idx2;
   while ((idx2 = s1.find(',')) != string::npos) {
     supp->tools.insert(s1.substr(0, idx2));
@@ -140,6 +170,7 @@ void Parser::ParseSuppressionToolsLine(Suppression* supp, string line) {
   }
   supp->tools.insert(s1);
   supp->warning_name = s2;
+  return true;
 }
 
 bool Parser::ParseStackTraceLine(StackTraceTemplate* trace, string line) {
@@ -149,7 +180,7 @@ bool Parser::ParseStackTraceLine(StackTraceTemplate* trace, string line) {
     return true;
   } else {
     size_t idx = line.find(':');
-    CHECK(idx != string::npos);
+    PARSER_CHECK(idx != string::npos, "expected ':' in stack trace line");
     string s1 = line.substr(0, idx);
     string s2 = line.substr(idx + 1);
     if (s1 == "obj") {
@@ -160,9 +191,11 @@ bool Parser::ParseStackTraceLine(StackTraceTemplate* trace, string line) {
       Location location = {LT_FUN, s2};
       trace->locations.push_back(location);
       return true;
+    } else {
+      SetError("bad stack trace line");
+      return false;
     }
   }
-  return false;
 }
 
 // Checks if this line can not be parsed by Parser::NextStackTraceTemplate
@@ -190,7 +223,8 @@ bool Parser::NextStackTraceTemplate(StackTraceTemplate* trace, bool* last_stack_
   }
 
   while (true) {
-    CHECK(ParseStackTraceLine(trace, line));
+    if (!ParseStackTraceLine(trace, line))
+      return false;
     line = NextLineSkipComments();
     if (line == "}")
       break;
@@ -204,15 +238,16 @@ bool Parser::NextSuppression(Suppression* supp) {
   if (line.empty())
     return false;
   // Opening {
-  CHECK(line == "{");
+  PARSER_CHECK(line == "{", "expected '{'");
   // Suppression name.
   line = NextLineSkipComments();
-  CHECK(!line.empty());
+  PARSER_CHECK(!line.empty(), "expected suppression name");
   supp->name = line;
   // tool[,tool]:warning_name.
   line = NextLineSkipComments();
-  CHECK(!line.empty());
-  ParseSuppressionToolsLine(supp, line);
+  PARSER_CHECK(!line.empty(), "expected tool[, tool]:warning_name line");
+  if (!ParseSuppressionToolsLine(supp, line))
+    return false;
   if (0) {  // Not used currently. May still be needed later.
     // A possible extra line.
     line = NextLineSkipComments();
@@ -227,6 +262,8 @@ bool Parser::NextSuppression(Suppression* supp) {
     StackTraceTemplate trace;
     if (NextStackTraceTemplate(&trace, &done))
       supp->templates.push_back(trace);
+    if (error)
+      return false;
   }
   // TODO(eugenis): Do we need to check for empty traces?
   return true;
@@ -234,6 +271,8 @@ bool Parser::NextSuppression(Suppression* supp) {
 
 struct Suppressions::SuppressionsRep {
   vector<Suppression> suppressions;
+  string errorString;
+  int errorLineNo;
 };
 
 Suppressions::Suppressions() : rep_(new SuppressionsRep) {}
@@ -248,7 +287,20 @@ int Suppressions::ReadFromString(const string &str) {
   while (parser.NextSuppression(&supp)) {
     rep_->suppressions.push_back(supp);
   }
+  if (parser.GetError()) {
+    rep_->errorString = parser.GetErrorString();
+    rep_->errorLineNo = parser.GetLineNo();
+    return -1;
+  }
   return rep_->suppressions.size();
+}
+
+string Suppressions::GetErrorString() {
+  return rep_->errorString;
+}
+
+int Suppressions::GetErrorLineNo() {
+  return rep_->errorLineNo;
 }
 
 struct MatcherContext {
