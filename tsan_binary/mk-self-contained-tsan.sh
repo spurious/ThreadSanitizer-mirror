@@ -1,11 +1,12 @@
 #!/bin/bash
 # This scripts builds a self-contained executable file for ThreadSanitizer.
 # Usage:
-#   ./mk-self-contained-tsan.sh /path/to/valgrind/installation
+#   ./mk-self-contained-tsan.sh /path/to/valgrind/installation resulting_binary
 
-OUT=tsan-self-contained.sh
 # Take the valgrind installation from here:
 IN_DIR="$1"
+# Put the result here:
+OUT="$2"
 # The files/dirs to take:
 IN_FILES="bin lib"
 
@@ -48,6 +49,7 @@ TAR_EXCLUDE="$TAR_EXCLUDE --exclude=*drd* \
                           --exclude=*callgrind* \
                           --exclude=*cg_* \
                           --exclude=*.a \
+                          --exclude=*tsan-debug* \
                           --exclude=*cachegrind*"
 # Create the running part.
 

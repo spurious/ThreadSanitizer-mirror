@@ -8,9 +8,9 @@ if [ "$VALGRIND_INST_ROOT" == "" ]; then
   exit
 fi
 
-# Get ThreadSanitizer. This will create directory 'drt_trunk'
-svn co http://data-race-test.googlecode.com/svn/trunk drt_trunk || exit 1
-cd drt_trunk || exit 1
+# Get ThreadSanitizer. This will create directory 'drt'
+svn co http://data-race-test.googlecode.com/svn/trunk drt || exit 1
+cd drt || exit 1
 
 TOPDIR=`pwd`
 
@@ -42,6 +42,11 @@ cd $TOPDIR/tsan || exit 1
 make -s -j4 OFFLINE= GTEST_ROOT= PIN_ROOT= $TARGET || exit 1
 make -s install VALGRIND_INST_ROOT=$VALGRIND_INST_ROOT  || exit 1
 
+# Build the self contained binaries.
+cd $TOPDIR || exit 1
+tsan_binary/mk-self-contained-tsan.sh $VALGRIND_INST_ROOT tsan  || exit 1
+
+# Test
 cd $TOPDIR/unittest || exit 1
 make || exit 1
-$VALGRIND_INST_ROOT/bin/valgrind --tool=tsan --color ./racecheck_unittest 301 || exit 1
+$TOPDIR/tsan --color ./racecheck_unittest 301 || exit 1
