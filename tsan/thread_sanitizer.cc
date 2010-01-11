@@ -3322,6 +3322,7 @@ struct ThreadSanitizerReport {
       case INVALID_LOCK:     return "InvalidLock";
     }
     CHECK(0);
+    return NULL;
   }
 
   virtual ~ThreadSanitizerReport() {
@@ -6121,6 +6122,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   G_flags->cut_stack_below.push_back("Thread*ThreadBody*");
   G_flags->cut_stack_below.push_back("ThreadSanitizerStartThread");
   G_flags->cut_stack_below.push_back("start_thread");
+  G_flags->cut_stack_below.push_back("BaseThreadInitThunk");
   FindStringFlag("cut_stack_below", args, &G_flags->cut_stack_below);
 
   FindIntFlag("num_callers", 12, args, &G_flags->num_callers);
@@ -6201,9 +6203,14 @@ static void SetupIgnore() {
   g_ignore_lists->objs.push_back("*/libpthread-*");
   g_ignore_lists->objs.push_back("*/libpthread.so*");
   g_ignore_lists->objs.push_back("*/ld-2*.so");
+
+  g_ignore_lists->objs.push_back("*ole32.dll");
+  g_ignore_lists->objs.push_back("*OLEAUT32.dll");
+  g_ignore_lists->objs.push_back("*MSCTF.dll");
   g_ignore_lists->objs.push_back("*ntdll.dll");
   g_ignore_lists->objs.push_back("*kernel32.dll");
   g_ignore_lists->objs.push_back("*ADVAPI32.DLL");
+
 #ifdef VGO_darwin
   g_ignore_lists->objs.push_back("/usr/lib/dyld");
   g_ignore_lists->objs.push_back("/usr/lib/libobjc.A.dylib");
