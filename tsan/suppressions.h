@@ -28,8 +28,8 @@
 // suppressions. It supports extended suppression syntax, see details at
 // http://code.google.com/p/data-race-test/wiki/ThreadSanitizerSuppressions
 
-#ifndef SUPPRESSIONS_H_
-#define SUPPRESSIONS_H_
+#ifndef TSAN_SUPPRESSIONS_H_
+#define TSAN_SUPPRESSIONS_H_
 
 #include "ts_util.h"
 
@@ -61,4 +61,4 @@ class Suppressions {
   SuppressionsRep* rep_;
 };
 
-#endif // SUPPRESSIONS_H_
+#endif  // TSAN_SUPPRESSIONS_H_

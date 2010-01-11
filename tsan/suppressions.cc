@@ -32,9 +32,9 @@
 // TODO(eugenis): write tests for incorrect syntax.
 
 enum LocationType {
-  LT_STAR, // ...
-  LT_OBJ, // obj:
-  LT_FUN, // fun:
+  LT_STAR,  // ...
+  LT_OBJ,  // obj:
+  LT_FUN,  // fun:
 };
 
 struct Location {
@@ -58,17 +58,17 @@ struct Suppression {
 
 class Parser {
  public:
-  Parser(const string &str)
-      : buffer(str), next(buffer.c_str()),
-        end(buffer.c_str() + buffer.size()), lineNo(0), error(false) {}
+  explicit Parser(const string &str)
+      : buffer_(str), next_(buffer_.c_str()),
+        end_(buffer_.c_str() + buffer_.size()), line_no_(0), error_(false) {}
 
-  bool NextSuppression(Suppression*);
+  bool NextSuppression(Suppression* suppression);
   bool GetError();
   string GetErrorString();
   int GetLineNo();
 
  private:
-  bool Eof() { return next >= end; }
+  bool Eof() { return next_ >= end_; }
   string NextLine();
   string NextLineSkipComments();
   void PutBackSkipComments(string line);
@@ -79,54 +79,57 @@ class Parser {
 
   void SetError(string desc);
 
-  const string& buffer;
-  const char* next;
-  const char* end;
-  stack<string> putBackStack;
+  const string& buffer_;
+  const char* next_;
+  const char* end_;
+  stack<string> put_back_stack_;
 
-  int lineNo;
-  bool error;
-  string errorString;
+  int line_no_;
+  bool error_;
+  string error_string_;
 };
 
 #define PARSER_CHECK(cond, desc) do {\
-    if (!(cond)) {SetError(desc); return false;}} while(0)
+    if (!(cond)) {\
+      SetError(desc);\
+      return false;\
+    }} while (0)
 
 void Parser::SetError(string desc) {
-  error = true;
-  errorString = desc;
+  error_ = true;
+  error_string_ = desc;
 }
 
 bool Parser::GetError() {
-  return error;
+  return error_;
 }
 
 string Parser::GetErrorString() {
-  return errorString;
+  return error_string_;
 }
 
 int Parser::GetLineNo() {
-  return lineNo;
+  return line_no_;
 }
 
 string Parser::NextLine() {
-  const char* first = next;
-  while (!Eof() && *next != '\n') {
-    ++next;
+  const char* first = next_;
+  while (!Eof() && *next_ != '\n') {
+    ++next_;
   }
-  string line(first, next - first);
-  if (*next == '\n') {
-    ++next;
+  string line(first, next_ - first);
+  if (*next_ == '\n') {
+    ++next_;
   }
-  ++lineNo;
+  ++line_no_;
   return line;
 }
 
 string Parser::NextLineSkipComments() {
   string line;
-  if (!putBackStack.empty()) {
-    line = putBackStack.top();
-    putBackStack.pop();
+  if (!put_back_stack_.empty()) {
+    line = put_back_stack_.top();
+    put_back_stack_.pop();
     return line;
   }
   while (!Eof()) {
@@ -153,7 +156,7 @@ string Parser::NextLineSkipComments() {
 }
 
 void Parser::PutBackSkipComments(string line) {
-  putBackStack.push(line);
+  put_back_stack_.push(line);
 }
 
 bool Parser::ParseSuppressionToolsLine(Suppression* supp, string line) {
@@ -209,14 +212,15 @@ bool Parser::IsExtraLine(string line) {
   return !(prefix == "obj:" || prefix == "fun:");
 }
 
-bool Parser::NextStackTraceTemplate(StackTraceTemplate* trace, bool* last_stack_trace) {
+bool Parser::NextStackTraceTemplate(StackTraceTemplate* trace,
+    bool* last_stack_trace) {
   string line = NextLineSkipComments();
-  if (line == "}") { // No more stack traces in multi-trace syntax
+  if (line == "}") {  // No more stack traces in multi-trace syntax
     *last_stack_trace = true;
     return false;
   }
 
-  if (line == "{") { // A multi-trace syntax
+  if (line == "{") {  // A multi-trace syntax
     line = NextLineSkipComments();
   } else {
     *last_stack_trace = true;
@@ -262,7 +266,7 @@ bool Parser::NextSuppression(Suppression* supp) {
     StackTraceTemplate trace;
     if (NextStackTraceTemplate(&trace, &done))
       supp->templates.push_back(trace);
-    if (error)
+    if (error_)
       return false;
   }
   // TODO(eugenis): Do we need to check for empty traces?
@@ -271,8 +275,8 @@ bool Parser::NextSuppression(Suppression* supp) {
 
 struct Suppressions::SuppressionsRep {
   vector<Suppression> suppressions;
-  string errorString;
-  int errorLineNo;
+  string error_string_;
+  int error_line_no_;
 };
 
 Suppressions::Suppressions() : rep_(new SuppressionsRep) {}
@@ -288,19 +292,19 @@ int Suppressions::ReadFromString(const string &str) {
     rep_->suppressions.push_back(supp);
   }
   if (parser.GetError()) {
-    rep_->errorString = parser.GetErrorString();
-    rep_->errorLineNo = parser.GetLineNo();
+    rep_->error_string_ = parser.GetErrorString();
+    rep_->error_line_no_ = parser.GetLineNo();
     return -1;
   }
   return rep_->suppressions.size();
 }
 
 string Suppressions::GetErrorString() {
-  return rep_->errorString;
+  return rep_->error_string_;
 }
 
 int Suppressions::GetErrorLineNo() {
-  return rep_->errorLineNo;
+  return rep_->error_line_no_;
 }
 
 struct MatcherContext {
