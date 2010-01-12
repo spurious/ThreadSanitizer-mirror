@@ -160,6 +160,12 @@ static uintptr_t g_current_pc;
 
 static bool g_attached_to_running_process = false;
 
+//--------------- StackFrame ----------------- {{{1
+struct StackFrame {
+  uintptr_t pc;
+  uintptr_t sp;
+  StackFrame(uintptr_t p, uintptr_t s) : pc(p), sp(s) { }
+};
 //--------------- PinThread ----------------- {{{1
 struct PinThread {
   OS_THREAD_ID os_tid;
@@ -172,7 +178,7 @@ struct PinThread {
   pthread_t    joined_ptid;
   bool         started;
   uintptr_t    cxa_guard;
-  int          call_stack_depth;
+  vector<StackFrame> shadow_stack;
 };
 
 // Array of pin threads, indexed by pin's THREADID.
@@ -197,12 +203,10 @@ void PcToStrings(uintptr_t pc, bool demangle,
                 string *file_name, int *line_no) {
   if (G_flags->symbolize) {
     RTN rtn;
-    {
-      // ClientLock must be held.
-      ScopedReentrantClientLock lock(__LINE__);
-      PIN_GetSourceLocation(pc, NULL, line_no, file_name);
-      rtn = RTN_FindByAddress(pc);
-    }
+    ScopedReentrantClientLock lock(__LINE__);
+    // ClientLock must be held.
+    PIN_GetSourceLocation(pc, NULL, line_no, file_name);
+    rtn = RTN_FindByAddress(pc);
     string name;
     if (RTN_Valid(rtn)) {
       *rtn_name = demangle
@@ -493,32 +497,76 @@ void After_mmap(THREADID tid, ADDRINT pc, ADDRINT ret) {
 }
 
 //-------- Routines and stack ---------------------- {{{2
+#define DEB_PR (0)
 
-
-void InsertBeforeEvent_RoutineEntry(THREADID tid, ADDRINT pc,
-                                    ADDRINT sp, Routine *routine) {
-  DumpEvent(SBLOCK_ENTER, tid, pc, 0, 0);
-}
-
-static void InsertAfterEvent_RoutineExit(THREADID tid, ADDRINT pc, ADDRINT sp) {
-  if (g_pin_threads[tid].call_stack_depth > 0) {
-    // TODO(kcc): somehow on l32 we may get more exits than calls...
-    DumpEvent(RTN_EXIT, tid, 0, 0, 0);
-    g_pin_threads[tid].call_stack_depth--;
+static void PrintShadowStack(THREADID tid) {
+  PinThread &t = g_pin_threads[tid];
+  Printf("T%d Shadow stack (%d)\n", tid, (int)t.shadow_stack.size());
+  for (int i = t.shadow_stack.size() - 1; i >= 0; i--) {
+    uintptr_t pc = t.shadow_stack[i].pc;
+    uintptr_t sp = t.shadow_stack[i].sp;
+    Printf("  sp=%ld pc=%lx %s\n", sp, pc, PcToRtnName(pc, true).c_str());
   }
 }
-void InsertBeforeEvent_Call(THREADID tid, ADDRINT pc, ADDRINT target, ADDRINT sp) {
-  DumpEvent(RTN_CALL, tid, pc, target, 0);
-  g_pin_threads[tid].call_stack_depth++;
 
+static void DebugOnlyShowPcAndSp(const char *where, THREADID tid,
+                                 ADDRINT pc, ADDRINT sp) {
+  if (DEB_PR) {
+    Printf("%s T%d sp=%ld %s\n", where, tid, sp,
+           PcToRtnName(pc, true).c_str());
+  }
+}
+
+static void UpdateCallStack(THREADID tid, ADDRINT sp) {
+  PinThread &t = g_pin_threads[tid];
+  while (t.shadow_stack.size() > 0 && sp >= t.shadow_stack.back().sp) {
+    DumpEvent(RTN_EXIT, tid, 0, 0, 0);
+    t.shadow_stack.pop_back();
+    if (DEB_PR) {
+      Printf("POP SHADOW STACK\n");
+      PrintShadowStack(tid);
+    }
+  }
+}
+
+//static void InsertAfterEvent_RoutineExit(THREADID tid, ADDRINT pc, ADDRINT sp) {
+  // PinThread &t = g_pin_threads[tid];
+  // UpdateCallStack(tid, sp);
+//}
+
+void InsertBeforeEvent_Call(THREADID tid, ADDRINT pc, ADDRINT target, ADDRINT sp) {
+  DebugOnlyShowPcAndSp(__FUNCTION__, tid, pc, sp);
+  UpdateCallStack(tid, sp);
+  DumpEvent(RTN_CALL, tid, pc, target, 0);
+  PinThread &t = g_pin_threads[tid];
+  if (t.shadow_stack.size() > 0) {
+    t.shadow_stack.back().pc = pc;
+  }
+  t.shadow_stack.push_back(StackFrame(target, sp));
+  if (DEB_PR) {
+    PrintShadowStack(tid);
+  }
 }
 
 static void InsertAfterEvent_SpUpdate(THREADID tid, ADDRINT pc, ADDRINT sp) {
+  DebugOnlyShowPcAndSp(__FUNCTION__, tid, pc, sp);
 }
 
-void InsertBeforeEvent_SblockEntry(THREADID tid, ADDRINT pc) {
+static void HandleSblockEntry(THREADID tid, ADDRINT pc, ADDRINT sp) {
+  DebugOnlyShowPcAndSp(__FUNCTION__, tid, pc, sp);
+  UpdateCallStack(tid, sp);
   DumpEvent(SBLOCK_ENTER, tid, pc, 0, 0);
 }
+
+static void InsertBeforeEvent_SblockEntry(THREADID tid, ADDRINT pc, ADDRINT sp) {
+  HandleSblockEntry(tid, pc, sp);
+}
+
+static void InsertBeforeEvent_RoutineEntry(THREADID tid, ADDRINT pc,
+                                    ADDRINT sp, Routine *routine) {
+  HandleSblockEntry(tid, pc, sp);
+}
+
 
 //---------- Memory accesses -------------------------- {{{2
 static void InsertBeforeEvent_MemoryRead(THREADID tid, ADDRINT pc,
@@ -691,6 +739,8 @@ static void On_AnnotateTraceMemory(THREADID tid, ADDRINT pc,
 static void On_AnnotateNoOp(THREADID tid, ADDRINT pc,
                             ADDRINT file, ADDRINT line) {
   Printf("%s T%d\n", __FUNCTION__, tid);
+  DumpEvent(STACK_TRACE, tid, pc, 0, 0);
+  PrintShadowStack(tid);
 }
 
 static void On_AnnotateCondVarSignal(THREADID tid, ADDRINT pc,
@@ -847,13 +897,13 @@ static void InstrumentBbl(BBL bbl, RTN rtn, bool ignore_memory) {
                    IARG_END);
   }
 
-  if (INS_IsRet(tail)) {
-    INS_InsertCall(tail, IPOINT_BEFORE,
-                   (AFUNPTR)InsertAfterEvent_RoutineExit,
-                   IARG_THREAD_ID, IARG_INST_PTR,
-                   IARG_REG_VALUE, REG_STACK_PTR,
-                   IARG_END);
-  }
+//  if (INS_IsRet(tail)) {
+//    INS_InsertCall(tail, IPOINT_BEFORE,
+//                   (AFUNPTR)InsertAfterEvent_RoutineExit,
+//                   IARG_THREAD_ID, IARG_INST_PTR,
+//                   IARG_REG_VALUE, REG_STACK_PTR,
+//                   IARG_END);
+//  }
 }
 
 void CallbackForTRACE(TRACE trace, void *v) {
@@ -895,6 +945,7 @@ void CallbackForTRACE(TRACE trace, void *v) {
     TRACE_InsertCall(trace, IPOINT_BEFORE,
                      (AFUNPTR)InsertBeforeEvent_SblockEntry,
                      IARG_THREAD_ID, IARG_INST_PTR,
+                     IARG_REG_VALUE, REG_STACK_PTR,
                      IARG_END);
   }
 
