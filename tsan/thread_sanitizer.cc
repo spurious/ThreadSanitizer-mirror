@@ -6232,6 +6232,7 @@ static void SetupIgnore() {
 #endif
 
   g_ignore_lists->funs.push_back("pthread_create*");
+  g_ignore_lists->funs.push_back("exit");
   g_ignore_lists->funs.push_back("__lll_mutex_unlock_wake");
   g_ignore_lists->funs.push_back("__sigsetjmp");
   g_ignore_lists->funs.push_back("__sigjmp_save");
