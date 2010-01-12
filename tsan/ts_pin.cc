@@ -184,6 +184,10 @@ struct PinThread {
 // Array of pin threads, indexed by pin's THREADID.
 static PinThread *g_pin_threads;
 
+#ifdef _MSC_VER
+static hash_set<pthread_t> *g_win_handles_which_are_threads;
+#endif
+
 //------------- ThreadSanitizer exports ------------ {{{1
 string Demangle(const char *str) {
 #if defined(__GNUC__)
@@ -300,6 +304,32 @@ static void DumpEvent(EventType type, int32_t tid, uintptr_t pc,
 }
 
 //--------- Instrumentation callbacks --------------- {{{1
+//---------- Debug -----------------------------------{{{2
+#define DEB_PR (0)
+
+static void ShowPcAndSp(const char *where, THREADID tid,
+                        ADDRINT pc, ADDRINT sp) {
+    Printf("%s T%d sp=%ld %s\n", where, tid, sp,
+           PcToRtnName(pc, true).c_str());
+}
+
+static void PrintShadowStack(THREADID tid) {
+  PinThread &t = g_pin_threads[tid];
+  Printf("T%d Shadow stack (%d)\n", tid, (int)t.shadow_stack.size());
+  for (int i = t.shadow_stack.size() - 1; i >= 0; i--) {
+    uintptr_t pc = t.shadow_stack[i].pc;
+    uintptr_t sp = t.shadow_stack[i].sp;
+    Printf("  sp=%ld pc=%lx %s\n", sp, pc, PcToRtnName(pc, true).c_str());
+  }
+}
+
+static void DebugOnlyShowPcAndSp(const char *where, THREADID tid,
+                                 ADDRINT pc, ADDRINT sp) {
+  if (DEB_PR) {
+    ShowPcAndSp(where, tid, pc, sp);
+  }
+}
+
 //--------- Ignores -------------------------------- {{{2
 static void IgnoreAllBegin(THREADID tid, ADDRINT pc) {
 //  if (tid == 0) Printf("Ignore++ %d\n", z++);
@@ -366,8 +396,20 @@ static void Before_pthread_create(THREADID tid, ADDRINT pc,
   g_pin_threads[tid].child_ptid_ptr = (pthread_t*)arg1;
   *(pthread_t*)arg1 = NULL;
   IgnoreAllBegin(tid, pc);
-  // Printf("%s: T=%d %lx\n", __FUNCTION__, tid, arg1);
 }
+
+#ifdef _MSC_VER
+static void Before_CreateThread(THREADID tid, ADDRINT pc,
+                                ADDRINT arg1, ADDRINT arg2,
+                                ADDRINT fn, ADDRINT param,
+                                ADDRINT arg5, ADDRINT arg6) {
+  if (G_flags->verbosity >= 1) {
+    ShowPcAndSp(__FUNCTION__, tid, pc, 0);
+  }
+  n_created_threads++;
+}
+#endif
+
 
 void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
                             INT32 flags, void *v) {
@@ -379,8 +421,9 @@ void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
   }
 
   bool has_parent = true;
-  if (parent_os_tid == INVALID_OS_THREAD_ID) {
-    // Main thread or we have attached to a runnign process.
+// if (parent_os_tid == INVALID_OS_THREAD_ID) { // broken on windows (?)
+  if (tid == 0) {
+    // Main thread or we have attached to a running process.
     has_parent = false;
   } else {
     CHECK(tid > 0);
@@ -401,8 +444,10 @@ void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
     g_pin_threads[tid].parent_tid = parent_tid;
   }
 
-//    Printf("#  tid=%d parent_tid=%d my_os_tid=%d parent_os_tid=%d\n",
-//           tid, parent_tid, my_os_tid, parent_os_tid);
+  if (G_flags->verbosity >= 1) {
+    Printf("#  tid=%d has_parent=%d parent_tid=%d my_os_tid=%d parent_os_tid=%d\n",
+           tid, (int)has_parent, parent_tid, my_os_tid, parent_os_tid);
+  }
 
   g_pin_threads[tid].child_ptid_ptr = NULL;
   if (has_parent) {
@@ -410,8 +455,7 @@ void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
   }
 }
 
-static void After_pthread_create(THREADID tid, ADDRINT pc, ADDRINT ret) {
-  IgnoreAllEnd(tid, pc);
+static THREADID HandleThreadCreateAfter(THREADID tid, pthread_t child_ptid) {
   // Spin, waiting for last_child_tid to appear (i.e. wait for the thread to
   // actually start) so that we know the child's tid. No locks.
   while (!ATOMIC_READ(&g_pin_threads[tid].last_child_tid)) {
@@ -419,13 +463,39 @@ static void After_pthread_create(THREADID tid, ADDRINT pc, ADDRINT ret) {
   }
 
   THREADID last_child_tid = g_pin_threads[tid].last_child_tid;
-  pthread_t child_ptid = *(pthread_t*)g_pin_threads[tid].child_ptid_ptr;
   CHECK(last_child_tid);
 
   DumpEvent(THR_SET_PTID, last_child_tid, 0, child_ptid, 0);
   g_pin_threads[last_child_tid].my_ptid = child_ptid;
   g_pin_threads[tid].last_child_tid = 0;
+  return last_child_tid;
 }
+
+static void After_pthread_create(THREADID tid, ADDRINT pc, ADDRINT ret) {
+  IgnoreAllEnd(tid, pc);
+  pthread_t child_ptid = *(pthread_t*)g_pin_threads[tid].child_ptid_ptr;
+  HandleThreadCreateAfter(tid, child_ptid);
+}
+
+#ifdef _MSC_VER
+static void After_CreateThread(THREADID tid, ADDRINT pc, ADDRINT ret) {
+  pthread_t child_ptid = ret;
+  THREADID child_tid = HandleThreadCreateAfter(tid, child_ptid);
+
+  {
+    ScopedReentrantClientLock lock(__LINE__);
+    if (g_win_handles_which_are_threads == NULL) {
+      g_win_handles_which_are_threads = new hash_set<pthread_t>;
+    }
+    g_win_handles_which_are_threads->insert(child_ptid);
+  }
+
+  if (G_flags->verbosity >= 1) {
+    ShowPcAndSp(__FUNCTION__, tid, pc, 0);
+    Printf("ret: %lx; child_tid=%d\n", ret, child_tid);
+  }
+}
+#endif
 
 static void Before_pthread_join(THREADID tid, ADDRINT pc,
                                 ADDRINT arg1, ADDRINT arg2) {
@@ -439,7 +509,7 @@ void CallbackForThreadFini(THREADID tid, const CONTEXT *ctxt,
   // due to possible deadlock with PIN's internal lock.
 }
 
-static void After_pthread_join(THREADID tid, ADDRINT pc, ADDRINT ret) {
+static THREADID HandleThreadJoinAfter(THREADID tid) {
   THREADID joined_tid = 0;
   for (joined_tid = 1; joined_tid < kMaxThreads; joined_tid++) {
     if (g_pin_threads[joined_tid].my_ptid == g_pin_threads[tid].joined_ptid)
@@ -449,7 +519,49 @@ static void After_pthread_join(THREADID tid, ADDRINT pc, ADDRINT ret) {
   g_pin_threads[joined_tid].my_ptid = 0;
   DumpEvent(THR_END, joined_tid, 0, 0, 0);
   DumpEvent(THR_JOIN_AFTER, tid, 0, 0, 0);
+  return joined_tid;
 }
+
+static void After_pthread_join(THREADID tid, ADDRINT pc, ADDRINT ret) {
+  HandleThreadJoinAfter(tid);
+}
+
+
+#ifdef _MSC_VER
+static void Before_WaitForSingleObject(THREADID tid, ADDRINT pc,
+                                ADDRINT hHandle,
+                                ADDRINT dwMilliseconds) {
+  if (G_flags->verbosity >= 1) {
+    ShowPcAndSp(__FUNCTION__, tid, pc, 0);
+    Printf("hHandle=%lx dwMilliseconds=%lx\n", hHandle, dwMilliseconds);
+  }
+  bool is_thread_handle = false;
+
+  {
+    ScopedReentrantClientLock lock(__LINE__);
+    CHECK(g_win_handles_which_are_threads);
+    is_thread_handle = g_win_handles_which_are_threads->count(hHandle) > 0;
+    g_win_handles_which_are_threads->erase(hHandle);
+  }
+
+  g_pin_threads[tid].joined_ptid = 0;
+  if (is_thread_handle) {
+    DumpEvent(THR_JOIN_BEFORE, tid, 0, hHandle, 0);
+    g_pin_threads[tid].joined_ptid = hHandle;
+  }
+}
+
+static void After_WaitForSingleObject(THREADID tid, ADDRINT pc, ADDRINT ret) {
+  if (g_pin_threads[tid].joined_ptid) {
+    THREADID joined_tid = HandleThreadJoinAfter(tid);
+
+    if (G_flags->verbosity >= 1) {
+      ShowPcAndSp(__FUNCTION__, tid, pc, 0);
+      Printf("Join: ret: %lx; parent=%d child=%d\n", ret, tid, joined_tid);
+    }
+  }
+}
+#endif
 
 
 //--------- main() --------------------------------- {{{2
@@ -497,26 +609,6 @@ void After_mmap(THREADID tid, ADDRINT pc, ADDRINT ret) {
 }
 
 //-------- Routines and stack ---------------------- {{{2
-#define DEB_PR (0)
-
-static void PrintShadowStack(THREADID tid) {
-  PinThread &t = g_pin_threads[tid];
-  Printf("T%d Shadow stack (%d)\n", tid, (int)t.shadow_stack.size());
-  for (int i = t.shadow_stack.size() - 1; i >= 0; i--) {
-    uintptr_t pc = t.shadow_stack[i].pc;
-    uintptr_t sp = t.shadow_stack[i].sp;
-    Printf("  sp=%ld pc=%lx %s\n", sp, pc, PcToRtnName(pc, true).c_str());
-  }
-}
-
-static void DebugOnlyShowPcAndSp(const char *where, THREADID tid,
-                                 ADDRINT pc, ADDRINT sp) {
-  if (DEB_PR) {
-    Printf("%s T%d sp=%ld %s\n", where, tid, sp,
-           PcToRtnName(pc, true).c_str());
-  }
-}
-
 static void UpdateCallStack(THREADID tid, ADDRINT sp) {
   PinThread &t = g_pin_threads[tid];
   while (t.shadow_stack.size() > 0 && sp >= t.shadow_stack.back().sp) {
@@ -545,6 +637,9 @@ void InsertBeforeEvent_Call(THREADID tid, ADDRINT pc, ADDRINT target, ADDRINT sp
   t.shadow_stack.push_back(StackFrame(target, sp));
   if (DEB_PR) {
     PrintShadowStack(tid);
+  }
+  if (DEBUG_MODE && G_flags->verbosity >= 3) {
+    ShowPcAndSp("CALL: ", tid, pc, sp);
   }
 }
 
@@ -1015,6 +1110,15 @@ static bool RtnMatchesName(const string &rtn_name, const string &name) {
                      IARG_FUNCARG_ENTRYPOINT_VALUE, 2, \
                      IARG_FUNCARG_ENTRYPOINT_VALUE, 3)
 
+#define INSERT_BEFORE_6(name, to_insert) \
+    INSERT_BEFORE_FN(name, to_insert, \
+                     IARG_FUNCARG_ENTRYPOINT_VALUE, 0, \
+                     IARG_FUNCARG_ENTRYPOINT_VALUE, 1, \
+                     IARG_FUNCARG_ENTRYPOINT_VALUE, 2, \
+                     IARG_FUNCARG_ENTRYPOINT_VALUE, 3, \
+                     IARG_FUNCARG_ENTRYPOINT_VALUE, 4, \
+                     IARG_FUNCARG_ENTRYPOINT_VALUE, 5)
+
 #define INSERT_AFTER_FN(name, to_insert, ...) \
     INSERT_FN(IPOINT_AFTER, name, to_insert, __VA_ARGS__)
 
@@ -1141,6 +1245,14 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_AFTER_0("sem_wait", After_sem_wait);
   INSERT_BEFORE_1("sem_trywait", Before_sem_wait);
   INSERT_AFTER_1("sem_trywait", After_sem_trywait);
+
+
+#ifdef _MSC_VER
+  INSERT_BEFORE_2("WaitForSingleObject", Before_WaitForSingleObject);
+  INSERT_AFTER_1("WaitForSingleObject", After_WaitForSingleObject);
+  INSERT_BEFORE_6("CreateThread", Before_CreateThread);
+  INSERT_AFTER_1("CreateThread", After_CreateThread);
+#endif
 
   // Annotations.
   INSERT_BEFORE_4("AnnotateBenignRace", On_AnnotateBenignRace);
