@@ -3479,7 +3479,6 @@ struct Thread {
       rd_lockset_(0),
       wr_lockset_(0),
       lock_mu_(0),
-      wait_cv_and_mu_stack_size_(0),
       bus_lock_is_set_(false),
       vts_at_exit_(NULL),
       lock_history_(128) {
@@ -3796,29 +3795,25 @@ struct Thread {
 
   const LockHistory &lock_history() { return lock_history_; }
 
-  // CondVar
+  // SIGNAL/WAIT events.
   // Normally, each HandleWaitBefore() should be followed by
   // HandleWaitAfter(). But if a signal interrupts us, we may have
-  // up to two HandleWaitBefore() calls before a subsequent HandleWaitAfter().
-  // Hence we have to use a stack of size 2 for wait_cv and wait_mu.
+  // two (or more!) HandleWaitBefore() calls before a subsequent
+  // HandleWaitAfter(). Hence we have to use a stack.
   void HandleWaitBefore(uintptr_t cv, uintptr_t mu) {
-    CHECK(wait_cv_and_mu_stack_size_ <= 1);
-    wait_cv_stack_[wait_cv_and_mu_stack_size_] = cv;
-    wait_mu_stack_[wait_cv_and_mu_stack_size_] = mu;
-    wait_cv_and_mu_stack_size_++;
+    CvAndMu cv_and_mu;
+    cv_and_mu.cv = cv;
+    cv_and_mu.mu = mu;
+    wait_cv_and_mu_stack.push(cv_and_mu);
     if (mu) {
       HandleUnlock(mu);
     }
   }
   void HandleWaitAfter(bool timed_out) {
-    CHECK(wait_cv_and_mu_stack_size_ >= 1);
-    CHECK(wait_cv_and_mu_stack_size_ <= 2);
-    wait_cv_and_mu_stack_size_--;
-    HandleWait(wait_cv_stack_[wait_cv_and_mu_stack_size_],
-               wait_mu_stack_[wait_cv_and_mu_stack_size_], timed_out);
-    // Clear these just in case.
-    wait_cv_stack_[wait_cv_and_mu_stack_size_] = NULL;
-    wait_mu_stack_[wait_cv_and_mu_stack_size_] = NULL;
+    CHECK(wait_cv_and_mu_stack.empty() == false);
+    CvAndMu cv_and_mu = wait_cv_and_mu_stack.top();
+    wait_cv_and_mu_stack.pop();
+    HandleWait(cv_and_mu.cv, cv_and_mu.mu, timed_out);
   }
 
   void HandleWait(uintptr_t cv, uintptr_t mu, bool timed_out) {
@@ -4132,9 +4127,12 @@ struct Thread {
   // Handle*{Before,After} calls.
   uintptr_t lock_mu_;
 
-  uintptr_t wait_cv_stack_[2];
-  uintptr_t wait_mu_stack_[2];
-  size_t wait_cv_and_mu_stack_size_;
+  struct CvAndMu {
+    uintptr_t cv;
+    uintptr_t mu;
+  };
+
+  stack<CvAndMu> wait_cv_and_mu_stack;
 
   bool      bus_lock_is_set_;
 
