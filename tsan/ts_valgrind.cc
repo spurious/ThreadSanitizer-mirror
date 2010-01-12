@@ -306,7 +306,7 @@ void ts_post_clo_init(void) {
   for (int i = 0; i < VG_(clo_n_suppressions); i++) {
     G_flags->suppressions.push_back((char*)VG_(clo_suppressions)[i]);
   }
-  G_flags->generate_suppressions = VG_(clo_gen_suppressions) >= 1;
+  G_flags->generate_suppressions |= VG_(clo_gen_suppressions) >= 1;
 
   if (G_flags->html) {
     Report("<pre>\n"

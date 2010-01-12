@@ -244,6 +244,8 @@ extern uintptr_t GetPcOfCurrentThread();
 
 extern void GetThreadStack(int tid, uintptr_t *min_addr, uintptr_t *max_addr);
 
+extern void SetNumberOfFoundErrors(int n_errs);
+
 inline uintptr_t tsan_bswap(uintptr_t x) {
 #if defined(__GNUC__) && __WORDSIZE == 64 
   // return __builtin_bswap64(x);

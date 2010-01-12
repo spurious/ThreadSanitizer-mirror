@@ -4326,6 +4326,7 @@ class ReportStorage {
 
   ReportStorage()
    : n_reports(0),
+     n_race_reports(0),
      program_finished_(0) {
     if (G_flags->generate_suppressions) {
       Report("INFO: generate_suppressions = true\n");
@@ -4474,23 +4475,15 @@ class ReportStorage {
     LSID    lsid = race->last_acces_lsid[is_w];
     set<LID> all_locks;
 
-    n_reports++;
+    n_race_reports++;
     if (G_flags->html) {
       Report("<b id=race%d>Race report #%d; </b>"
              "<a href=\"#race%d\">Next;</a>  "
              "<a href=\"#race%d\">Prev;</a>\n",
-             n_reports, n_reports, n_reports+1, n_reports-1);
+             n_race_reports, n_race_reports,
+             n_race_reports+1, n_race_reports-1);
     }
 
-    if (!G_flags->summary_file.empty()) {
-      char buff[100];
-      snprintf(buff, sizeof(buff),
-               "ThreadSanitizer: %d warning(s) reported\n", n_reports);
-      // We overwrite the contents of this file with the new summary.
-      // We don't do that at the end because even if we crash later
-      // we will already have the summary.
-      OpenFileWriteStringAndClose(G_flags->summary_file, buff);
-    }
 
     // Note the {{{ and }}}. These are for vim folds.
     Report("%sWARNING: %s data race during %s of size %d at %p: {{{%s\n",
@@ -4622,6 +4615,18 @@ class ReportStorage {
       PrintRaceReport(race);
     }
 
+    n_reports++;
+    SetNumberOfFoundErrors(n_reports);
+    if (!G_flags->summary_file.empty()) {
+      char buff[100];
+      snprintf(buff, sizeof(buff),
+               "ThreadSanitizer: %d warning(s) reported\n", n_reports);
+      // We overwrite the contents of this file with the new summary.
+      // We don't do that at the end because even if we crash later
+      // we will already have the summary.
+      OpenFileWriteStringAndClose(G_flags->summary_file, buff);
+    }
+
     // Generate a suppression.
     if (G_flags->generate_suppressions) {
       string supp = "{\n";
@@ -4651,6 +4656,11 @@ class ReportStorage {
          it != used_suppressions_.end(); ++it) {
       Report("used_suppression: %d %s\n", it->second, it->first.c_str());
     }
+  }
+
+  void PrintSummary() {
+    Report("ThreadSanitizer summary: reported %d warning(s) (%d race(s))\n",
+           n_reports, n_race_reports);
   }
 
  private:
@@ -4743,6 +4753,7 @@ class ReportStorage {
 
   map<StackTrace *, int, StackTrace::Less> reported_stacks_;
   int n_reports;
+  int n_race_reports;
   bool program_finished_;
   Suppressions suppressions_;
   map<string, int> used_suppressions_;
@@ -4866,6 +4877,7 @@ class Detector {
     ShowStats();
     ShowProcSelfStatus();
     reports_.PrintUsedSuppression();
+    reports_.PrintSummary();
     // Report("ThreadSanitizerValgrind: exiting\n");
   }
 
