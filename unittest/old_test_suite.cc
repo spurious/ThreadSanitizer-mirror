@@ -30,6 +30,7 @@
 */
 
 #include <algorithm>
+#include <gtest/gtest.h>
 
 #include "old_test_suite.h"
 
@@ -62,6 +63,7 @@ class RandomGenerator {
 
 int main(int argc, char** argv) {
   MAIN_INIT_ACTION;
+  testing::InitGoogleTest(&argc, argv);
   printf("FLAGS [phb=%i, fm=%i]\n", Tsan_PureHappensBefore(), Tsan_FastMode());
 
   std::vector<int> tests_to_run;
@@ -141,6 +143,8 @@ int main(int argc, char** argv) {
       (*TheMapOfTests)[test_id].Run();
     }
   }
+
+  return RUN_ALL_TESTS();
 }
 // End {{{1
  // vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker
