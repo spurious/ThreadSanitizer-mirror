@@ -55,6 +55,7 @@ echo Extracting ThreadSanitizerPin to $EXTRACT_DIR
 sed '1,/^__COMPRESSED_DATA_BELOW__$/d' $0 | tar xz -C $EXTRACT_DIR
 
 export PIN_ROOT=$EXTRACT_DIR
+export TS_ROOT=$EXTRACT_DIR
 $EXTRACT_DIR/tsan_pin.sh "$@"
 EXIT_STATUS=$?
 cleanup # the trap above will handle the cleanup only if we are in bash 3.x
