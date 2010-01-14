@@ -576,27 +576,6 @@ void After_main(THREADID tid, ADDRINT pc) {
 }
 
 //--------- memory allocation ---------------------- {{{2
-static void Before_malloc(THREADID tid, ADDRINT pc, ADDRINT size) {
-//  IgnoreAllBegin(tid, pc);
-  g_pin_threads[tid].last_malloc_size = size;
-}
-static void Before_calloc(THREADID tid, ADDRINT pc, ADDRINT n, ADDRINT size) {
-//  IgnoreAllBegin(tid, pc);
-  g_pin_threads[tid].last_malloc_size = n * size;
-}
-
-static void After_malloc(THREADID tid, ADDRINT pc, ADDRINT ret) {
-  size_t last_malloc_size = g_pin_threads[tid].last_malloc_size;
-  g_pin_threads[tid].last_malloc_size = 0;
-  DumpEvent(MALLOC, tid, pc, ret, last_malloc_size);
-//  IgnoreAllEnd(tid, pc);
-}
-static void Before_free(THREADID tid, ADDRINT pc, ADDRINT ptr) {
-//  IgnoreAllBegin(tid, pc);
-  DumpEvent(FREE, tid, pc, ptr, 0);
-}
-
-
 void Before_mmap(THREADID tid, ADDRINT pc, ADDRINT start, ADDRINT len) {
   g_pin_threads[tid].last_mmap_size = len;
 }
@@ -1150,11 +1129,168 @@ static bool RtnMatchesName(const string &rtn_name, const string &name) {
 #define INSERT_AFTER_SLOW_1(name, to_insert) \
     INSERT_FN_SLOW(IPOINT_AFTER, name, to_insert, IARG_FUNCRET_EXITPOINT_VALUE)
 
+// I wonder if we can do this with templates???
+
+#define DEBUG_REPLACE_RTN (0)
+
+#define DEFINE_REPLACEMENT_RTN_1_1(name, RET_T, ARG1_T, before, after)       \
+RET_T Replace_##name(CONTEXT *context, AFUNPTR orig_func, ARG1_T arg1) {     \
+  if (DEBUG_REPLACE_RTN) {                                             \
+    Printf("->%s: orig=0x%p arg1=%p\n", __FUNCTION__, orig_func,             \
+           (void*)arg1);                                                     \
+  }                                                                          \
+  void *ret;                                                                 \
+  {before;}                                                                  \
+  PIN_CallApplicationFunction(context, PIN_ThreadId(),                       \
+                              CALLINGSTD_DEFAULT, orig_func,                 \
+                              PIN_PARG(RET_T), &ret,                         \
+                              PIN_PARG(ARG1_T), arg1,                        \
+                              PIN_PARG_END());                               \
+  if (DEBUG_REPLACE_RTN) {                                             \
+    Printf("<-%s: ret=0x%p\n", __FUNCTION__, (void*)ret);                    \
+  }                                                                          \
+  {after;}                                                                   \
+  return ret;                                                                \
+}
+
+#define DEFINE_REPLACEMENT_RTN_1_2(name, RET_T, ARG1_T, ARG2_T, before, after) \
+RET_T Replace_##name(CONTEXT *context, AFUNPTR orig_func,                    \
+                     ARG1_T arg1, ARG2_T arg2) {                             \
+  if (DEBUG_REPLACE_RTN) {                                             \
+    Printf("->%s: orig=0x%p arg1=%p\n", __FUNCTION__, orig_func,             \
+           (void*)arg1, (void*)arg2);                                        \
+  }                                                                          \
+  void *ret;                                                                 \
+  {before;}                                                                  \
+  PIN_CallApplicationFunction(context, PIN_ThreadId(),                       \
+                              CALLINGSTD_DEFAULT, orig_func,                 \
+                              PIN_PARG(RET_T), &ret,                         \
+                              PIN_PARG(ARG1_T), arg1,                        \
+                              PIN_PARG(ARG1_T), arg2,                        \
+                              PIN_PARG_END());                               \
+  if (DEBUG_REPLACE_RTN) {                                             \
+    Printf("<-%s: ret=0x%p\n", __FUNCTION__, (void*)ret);                    \
+  }                                                                          \
+  {after;}                                                                   \
+  return ret;                                                                \
+}
+
+
+#define DEFINE_REPLACEMENT_RTN_0_1(name, ARG1_T, do_before, do_after)        \
+void Replace_##name(CONTEXT *context, AFUNPTR orig_func, ARG1_T arg1) {      \
+  if (DEBUG_REPLACE_RTN) {                                             \
+    Printf("->%s: orig=0x%p arg1=%p\n", __FUNCTION__, orig_func,             \
+           (void*)arg1);                                                     \
+  }                                                                          \
+  {do_before;}                                                               \
+  PIN_CallApplicationFunction(context, PIN_ThreadId(),                       \
+                              CALLINGSTD_DEFAULT, orig_func,                 \
+                              PIN_PARG(void),                                \
+                              PIN_PARG(ARG1_T), arg1,                        \
+                              PIN_PARG_END());                               \
+  if (DEBUG_REPLACE_RTN) {                                             \
+    Printf("<-%s\n", __FUNCTION__);                                          \
+  }                                                                          \
+  {do_after;}                                                                \
+}
+
+#define REPLACE_RTN_1(name, RET_T, ARG1_T) do {                              \
+  PROTO proto = PROTO_Allocate(PIN_PARG(RET_T),                              \
+                               CALLINGSTD_DEFAULT,                           \
+                               #name,                                        \
+                               PIN_PARG(ARG1_T),                             \
+                               PIN_PARG_END());                              \
+  RTN_ReplaceSignature(                                                      \
+      rtn, AFUNPTR(Replace_##name),                                          \
+      IARG_PROTOTYPE, proto,                                                 \
+      IARG_CONTEXT,                                                          \
+      IARG_ORIG_FUNCPTR,                                                     \
+      IARG_FUNCARG_ENTRYPOINT_VALUE, 0,                                      \
+      IARG_END);                                                             \
+  PROTO_Free(proto);                                                         \
+  if (G_flags->verbosity >= 1) {                                             \
+    Printf("%s: img=%s rtn=%s\n", __FUNCTION__,                              \
+         img_name.c_str(), rtn_name.c_str());                                \
+  }                                                                          \
+} while(0)
+
+#define REPLACE_RTN_2(name, RET_T, ARG1_T, ARG2_T) do {                      \
+  PROTO proto = PROTO_Allocate(PIN_PARG(RET_T),                              \
+                               CALLINGSTD_DEFAULT,                           \
+                               #name,                                        \
+                               PIN_PARG(ARG1_T),                             \
+                               PIN_PARG(ARG2_T),                             \
+                               PIN_PARG_END());                              \
+  RTN_ReplaceSignature(                                                      \
+      rtn, AFUNPTR(Replace_##name),                                          \
+      IARG_PROTOTYPE, proto,                                                 \
+      IARG_CONTEXT,                                                          \
+      IARG_ORIG_FUNCPTR,                                                     \
+      IARG_FUNCARG_ENTRYPOINT_VALUE, 0,                                      \
+      IARG_FUNCARG_ENTRYPOINT_VALUE, 1,                                      \
+      IARG_END);                                                             \
+  PROTO_Free(proto);                                                         \
+  if (G_flags->verbosity >= 1) {                                             \
+    Printf("%s: img=%s rtn=%s\n", __FUNCTION__,                              \
+         img_name.c_str(), rtn_name.c_str());                                \
+  }                                                                          \
+} while(0)
+
+
+#define MATCH_NAME_AND_REPLACE_RTN_1(name, RET_T, ARG1_T) do {               \
+  if (RtnMatchesName(rtn_name, #name)) {                                     \
+    REPLACE_RTN_1(name, RET_T, ARG1_T);                                      \
+  }                                                                          \
+} while(0)
+
+#define MATCH_NAME_AND_REPLACE_RTN_2(name, RET_T, ARG1_T, ARG2_T) do {       \
+  if (RtnMatchesName(rtn_name, #name)) {                                     \
+    REPLACE_RTN_2(name, RET_T, ARG1_T, ARG2_T);                              \
+  }                                                                          \
+} while(0)
+
+
+
+DEFINE_REPLACEMENT_RTN_1_1(
+  malloc,
+  void *,
+  size_t,
+  {},
+  DumpEvent(MALLOC, PIN_ThreadId(), (uintptr_t)orig_func, (uintptr_t)ret, arg1)
+)
+
+DEFINE_REPLACEMENT_RTN_1_2(
+  calloc,
+  void *,
+  size_t,
+  size_t,
+  {},
+  DumpEvent(MALLOC, PIN_ThreadId(), (uintptr_t)orig_func, (uintptr_t)ret,
+            arg1 * arg2)
+)
+
+DEFINE_REPLACEMENT_RTN_0_1(
+  free,
+  void *,
+  DumpEvent(FREE, PIN_ThreadId(), (uintptr_t)orig_func, (uintptr_t)arg1, 0),
+  {}
+)
+
+#ifdef _MSC_VER
+DEFINE_REPLACEMENT_RTN_0_1(
+  RtlInitializeCriticalSection,
+  void*,
+  {}, //DumpEvent(LOCK_CREATE, PIN_ThreadId(), (uintptr_t)orig_func, (uintptr_t)arg1, 0),
+  {}
+)
+#endif
+
 static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   if (IgnoreImage(img)) {
     return;
   }
   string rtn_name = RTN_Name(rtn);
+  string img_name = IMG_Name(img);
   if (G_flags->verbosity >= 2) {
     Printf("%s: %s\n", __FUNCTION__, rtn_name.c_str());
   }
@@ -1164,16 +1300,9 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_AFTER_0("main", After_main);
 
   // malloc/free
-  INSERT_BEFORE_1("malloc", Before_malloc);
-  INSERT_AFTER_1("malloc", After_malloc);
-
-  INSERT_BEFORE_2("calloc", Before_calloc);
-  INSERT_AFTER_1("calloc", After_malloc);
-
-
-  INSERT_BEFORE_1("free", Before_free);
-//  INSERT_AFTER_0("free", IgnoreAllEnd);
-
+  MATCH_NAME_AND_REPLACE_RTN_1(malloc, void *, size_t);
+  MATCH_NAME_AND_REPLACE_RTN_2(calloc, void *, size_t, size_t);
+  MATCH_NAME_AND_REPLACE_RTN_1(free, void, void *);
 
   INSERT_BEFORE_2("mmap", Before_mmap);
   INSERT_AFTER_1("mmap", After_mmap);
@@ -1252,6 +1381,9 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_AFTER_1("WaitForSingleObject", After_WaitForSingleObject);
   INSERT_BEFORE_6("CreateThread", Before_CreateThread);
   INSERT_AFTER_1("CreateThread", After_CreateThread);
+
+//  MATCH_NAME_AND_REPLACE_RTN_1(RtlInitializeCriticalSection, void, void *);
+
 #endif
 
   // Annotations.
@@ -1313,9 +1445,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
 }
 
 // Pin calls this function every time a new img is loaded.
-static void CallbackForIMG(IMG img, void *v)
-{
-
+static void CallbackForIMG(IMG img, void *v) {
   if (G_flags->verbosity >= 2) {
     Printf("Started CallbackForIMG %s\n", IMG_Name(img).c_str());
   }
