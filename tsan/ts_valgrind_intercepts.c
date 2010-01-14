@@ -2027,12 +2027,29 @@ LIBC_FUNC(long, opendir$Za, void *path) {
 
   Thread safe initialization of function-level static objects is 
   supported in gcc (strarting from 4.something). 
-  The generated code calls __cxa_guard_acquire (which in turn 
-  calls pthread_once) and then calls __cxa_guard_release. 
-  We simply ignore everything between __cxa_guard_acquire 
-  and __cxa_guard_release. pthread_once interceptor does the rest.
+  From gcc/cp/decl.c:
+  --------------------------------------------------------------
+       Emit code to perform this initialization but once.  This code
+       looks like:
 
-  For examples, see test106 and test108 at 
+       static <type> guard;
+       if (!guard.first_byte) {
+         if (__cxa_guard_acquire (&guard)) {
+           bool flag = false;
+           try {
+             // Do initialization.
+             flag = true; __cxa_guard_release (&guard);
+             // Register variable for destruction at end of program.
+            } catch {
+           if (!flag) __cxa_guard_abort (&guard);
+          }
+       }
+  --------------------------------------------------------------
+  So, when __cxa_guard_acquire returns true, we start ignoring all accesses
+  and in __cxa_guard_release we stop ignoring them.
+  We also need to ignore all accesses inside these two functions.
+
+  For examples, see test106 and test108 at
   http://code.google.com/p/data-race-test/source/browse/trunk/unittest/racecheck_unittest.cc
 */
 
@@ -2053,9 +2070,12 @@ LIBSTDCXX_FUNC(long, ZuZucxaZuguardZuacquire, void *p) {
    long    ret;
    VALGRIND_GET_ORIG_FN(fn);
    // fprintf(stderr, "T%d: ->__cxa_guard_acquire\n", VALGRIND_TS_THREAD_ID());
-   CALL_FN_W_W(ret, fn, p);
    IGNORE_ALL_ACCESSES_BEGIN();
+   CALL_FN_W_W(ret, fn, p);
    // fprintf(stderr, "T%d: <-__cxa_guard_acquire\n", VALGRIND_TS_THREAD_ID());
+   if (!ret) {
+     IGNORE_ALL_ACCESSES_END();
+   }
    return ret;
 }
 LIBSTDCXX_FUNC(long, ZuZucxaZuguardZurelease, void *p) {

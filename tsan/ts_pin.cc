@@ -178,6 +178,7 @@ struct PinThread {
   pthread_t    joined_ptid;
   bool         started;
   uintptr_t    cxa_guard;
+  int          in_cxa_guard;
   vector<StackFrame> shadow_stack;
 };
 
@@ -343,41 +344,66 @@ static void IgnoreAllEnd(THREADID tid, ADDRINT pc) {
 }
 
 //--------- __cxa_guard_* -------------------------- {{{2
+// From gcc/cp/decl.c:
+// --------------------------------------------------------------
+//      Emit code to perform this initialization but once.  This code
+//      looks like:
 //
+//      static <type> guard;
+//      if (!guard.first_byte) {
+//        if (__cxa_guard_acquire (&guard)) {
+//          bool flag = false;
+//          try {
+//            // Do initialization.
+//            flag = true; __cxa_guard_release (&guard);
+//            // Register variable for destruction at end of program.
+//           } catch {
+//          if (!flag) __cxa_guard_abort (&guard);
+//         }
+//      }
+// --------------------------------------------------------------
+// So, when __cxa_guard_acquire returns true, we start ignoring all accesses
+// and in __cxa_guard_release we stop ignoring them.
+// We also need to ignore all accesses inside these two functions.
+
 static void Before_cxa_guard_acquire(THREADID tid, ADDRINT pc, ADDRINT guard) {
+//  PinThread &t = g_pin_threads[tid];
 //  Printf("T%d A+ %lx\n", tid, guard);
-//  g_pin_threads[tid].cxa_guard = guard;
-//  IgnoreAllBegin(tid, pc);
-//  cxa_guards.insert(guard);
+//  t.cxa_guard = guard;
+  IgnoreAllBegin(tid, pc);
 }
 
-static void After_cxa_guard_acquire(THREADID tid, ADDRINT pc) {
-//  ADDRINT guard = g_pin_threads[tid].cxa_guard;
-//  Printf("T%d A- %lx\n", tid, guard);
-//  IgnoreAllEnd(tid, pc);
-//  DumpEvent(WAIT_BEFORE, tid, pc, guard, 0);
-//  DumpEvent(WAIT_AFTER, tid, pc, 0, 0);
+static void After_cxa_guard_acquire(THREADID tid, ADDRINT pc, ADDRINT ret) {
+  PinThread &t = g_pin_threads[tid];
+  // Printf("T%d A- %lx ret=%d\n", tid, t.cxa_guard, (int)ret);
+  if (ret) {
+    // Continue ignoring, it will end in __cxa_guard_release.
+    t.in_cxa_guard++;
+  } else {
+    // Stop ignoring, there will be no matching call to __cxa_guard_release.
+    IgnoreAllEnd(tid, pc);
+  }
 }
 
 static void Before_cxa_guard_release(THREADID tid, ADDRINT pc, ADDRINT guard) {
-//  DumpEvent(SIGNAL, tid, pc, guard, 0);
-//  IgnoreAllBegin(tid, pc);
-//  g_pin_threads[tid].cxa_guard = guard;
-//  Printf("T%d R+ %lx\n", tid, guard);
+  PinThread &t = g_pin_threads[tid];
+//  Printf("T%d R+ %lx\n", tid, t.cxa_guard);
+  CHECK(t.in_cxa_guard);
+  t.in_cxa_guard--;
 }
 
 static void After_cxa_guard_release(THREADID tid, ADDRINT pc) {
 //  ADDRINT guard = g_pin_threads[tid].cxa_guard;
 //  Printf("T%d R- %lx\n", tid, guard);
-//  IgnoreAllEnd(tid, pc);
+  IgnoreAllEnd(tid, pc);
 }
 
 static void Before_pthread_once(THREADID tid, ADDRINT pc, ADDRINT control) {
-//  Printf("T%d once %lx\n", tid, control);
   IgnoreAllBegin(tid, pc);
+//  Printf("T%d + once %lx\n", tid, control);
 }
 static void After_pthread_once(THREADID tid, ADDRINT pc) {
-//  Printf("T%d once \n", tid);
+//  Printf("T%d - once \n", tid);
   IgnoreAllEnd(tid, pc);
 }
 
@@ -1140,8 +1166,10 @@ RET_T Replace_##name(CONTEXT *context, AFUNPTR orig_func, ARG1_T arg1) {     \
            (void*)arg1);                                                     \
   }                                                                          \
   void *ret;                                                                 \
+  THREADID tid = PIN_ThreadId();                                             \
+  uintptr_t pc = (uintptr_t)orig_func;                                       \
   {before;}                                                                  \
-  PIN_CallApplicationFunction(context, PIN_ThreadId(),                       \
+  PIN_CallApplicationFunction(context, tid,                                  \
                               CALLINGSTD_DEFAULT, orig_func,                 \
                               PIN_PARG(RET_T), &ret,                         \
                               PIN_PARG(ARG1_T), arg1,                        \
@@ -1161,6 +1189,8 @@ RET_T Replace_##name(CONTEXT *context, AFUNPTR orig_func,                    \
            (void*)arg1, (void*)arg2);                                        \
   }                                                                          \
   void *ret;                                                                 \
+  THREADID tid = PIN_ThreadId();                                             \
+  uintptr_t pc = (uintptr_t)orig_func;                                       \
   {before;}                                                                  \
   PIN_CallApplicationFunction(context, PIN_ThreadId(),                       \
                               CALLINGSTD_DEFAULT, orig_func,                 \
@@ -1182,6 +1212,8 @@ void Replace_##name(CONTEXT *context, AFUNPTR orig_func, ARG1_T arg1) {      \
     Printf("->%s: orig=0x%p arg1=%p\n", __FUNCTION__, orig_func,             \
            (void*)arg1);                                                     \
   }                                                                          \
+  THREADID tid = PIN_ThreadId();                                             \
+  uintptr_t pc = (uintptr_t)orig_func;                                       \
   {do_before;}                                                               \
   PIN_CallApplicationFunction(context, PIN_ThreadId(),                       \
                               CALLINGSTD_DEFAULT, orig_func,                 \
@@ -1255,8 +1287,13 @@ DEFINE_REPLACEMENT_RTN_1_1(
   malloc,
   void *,
   size_t,
-  {},
-  DumpEvent(MALLOC, PIN_ThreadId(), (uintptr_t)orig_func, (uintptr_t)ret, arg1)
+  {
+    IgnoreAllBegin(tid, pc);
+  },
+  {
+    DumpEvent(MALLOC, tid, pc, (uintptr_t)ret, arg1);
+    IgnoreAllEnd(tid, pc);
+  }
 )
 
 DEFINE_REPLACEMENT_RTN_1_2(
@@ -1264,16 +1301,25 @@ DEFINE_REPLACEMENT_RTN_1_2(
   void *,
   size_t,
   size_t,
-  {},
-  DumpEvent(MALLOC, PIN_ThreadId(), (uintptr_t)orig_func, (uintptr_t)ret,
-            arg1 * arg2)
+  {
+    IgnoreAllBegin(tid, pc);
+  },
+  {
+    DumpEvent(MALLOC, tid, pc, (uintptr_t)ret, arg1 * arg2);
+    IgnoreAllEnd(tid, pc);
+  }
 )
 
 DEFINE_REPLACEMENT_RTN_0_1(
   free,
   void *,
-  DumpEvent(FREE, PIN_ThreadId(), (uintptr_t)orig_func, (uintptr_t)arg1, 0),
-  {}
+  {
+    IgnoreAllBegin(tid, pc);
+    DumpEvent(FREE, PIN_ThreadId(), (uintptr_t)orig_func, (uintptr_t)arg1, 0);
+  },
+  {
+    IgnoreAllEnd(tid, pc);
+  }
 )
 
 #ifdef _MSC_VER
@@ -1436,7 +1482,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   // __cxa_guard_acquire / __cxa_guard_release
   // TODO(kcc): uncomment this (and make it work on test108,test114).
   INSERT_BEFORE_1("__cxa_guard_acquire", Before_cxa_guard_acquire);
-  INSERT_AFTER_0("__cxa_guard_acquire", After_cxa_guard_acquire);
+  INSERT_AFTER_1("__cxa_guard_acquire", After_cxa_guard_acquire);
   INSERT_BEFORE_1("__cxa_guard_release", Before_cxa_guard_release);
   INSERT_AFTER_0("__cxa_guard_release", After_cxa_guard_release);
 
@@ -1474,9 +1520,9 @@ static void CallbackForIMG(IMG img, void *v) {
 
 //--------- Fini ---------- {{{1
 static void CallbackForFini(INT32 code, void *v) {
-  Printf("# %s\n", __FUNCTION__);
-  Printf("#** dyn read/write: %'lld %'lld\n", dyn_read_count, dyn_write_count);
-  Printf("#** n_created_threads: %d\n", n_created_threads);
+//  Printf("# %s\n", __FUNCTION__);
+//  Printf("#** dyn read/write: %'lld %'lld\n", dyn_read_count, dyn_write_count);
+//  Printf("#** n_created_threads: %d\n", n_created_threads);
 
   DumpEvent(THR_END, 0, 0, 0, 0);
   ThreadSanitizerFini();
