@@ -418,8 +418,9 @@ void TmpCallback2(THREADID tid, ADDRINT pc) {
 static void Before_pthread_create(THREADID tid, ADDRINT pc,
                                   ADDRINT arg1, ADDRINT arg2,
                                   ADDRINT arg3, ADDRINT arg4) {
+  PinThread &t = g_pin_threads[tid];
   n_created_threads++;
-  g_pin_threads[tid].child_ptid_ptr = (pthread_t*)arg1;
+  t.child_ptid_ptr = (pthread_t*)arg1;
   *(pthread_t*)arg1 = NULL;
   IgnoreAllBegin(tid, pc);
 }
@@ -498,8 +499,9 @@ static THREADID HandleThreadCreateAfter(THREADID tid, pthread_t child_ptid) {
 }
 
 static void After_pthread_create(THREADID tid, ADDRINT pc, ADDRINT ret) {
+  PinThread &t = g_pin_threads[tid];
   IgnoreAllEnd(tid, pc);
-  pthread_t child_ptid = *(pthread_t*)g_pin_threads[tid].child_ptid_ptr;
+  pthread_t child_ptid = *(pthread_t*)t.child_ptid_ptr;
   HandleThreadCreateAfter(tid, child_ptid);
 }
 
@@ -603,14 +605,17 @@ void After_main(THREADID tid, ADDRINT pc) {
 
 //--------- memory allocation ---------------------- {{{2
 void Before_mmap(THREADID tid, ADDRINT pc, ADDRINT start, ADDRINT len) {
-  g_pin_threads[tid].last_mmap_size = len;
+  PinThread &t = g_pin_threads[tid];
+  CHECK(t.last_mmap_size == 0);
+  t.last_mmap_size = len;
 }
 void After_mmap(THREADID tid, ADDRINT pc, ADDRINT ret) {
+  PinThread &t = g_pin_threads[tid];
   if (ret != (ADDRINT)-1L) {
-    size_t last_mmap_size = g_pin_threads[tid].last_mmap_size;
-    g_pin_threads[tid].last_mmap_size = 0;
-    DumpEvent(MALLOC, tid, pc, ret, last_mmap_size);
+    size_t size = t.last_mmap_size;
+    DumpEvent(MALLOC, tid, pc, ret, size);
   }
+  t.last_mmap_size = 0;
 }
 
 //-------- Routines and stack ---------------------- {{{2
@@ -643,8 +648,8 @@ void InsertBeforeEvent_Call(THREADID tid, ADDRINT pc, ADDRINT target, ADDRINT sp
   if (DEB_PR) {
     PrintShadowStack(tid);
   }
-  if (DEBUG_MODE && G_flags->verbosity >= 3) {
-    ShowPcAndSp("CALL: ", tid, pc, sp);
+  if (DEBUG_MODE && (G_flags->verbosity >= 3)) {
+    ShowPcAndSp("CALL: ", tid, target, sp);
   }
 }
 

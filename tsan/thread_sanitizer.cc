@@ -4663,7 +4663,6 @@ class ReportStorage {
            n_reports, n_race_reports);
   }
 
- private:
 
   string DescribeMemory(uintptr_t a) {
     const int kBufLen = 1023;
@@ -4749,6 +4748,7 @@ class ReportStorage {
     return "";
   }
 
+ private:
 
 
   map<StackTrace *, int, StackTrace::Less> reported_stacks_;
@@ -5765,14 +5765,27 @@ class Detector {
   // Executes before the first instruction of the thread but after the thread
   // has been set up (e.g. the stack is in place).
   void HandleThreadFirstInsn(TID tid) {
-    uintptr_t stack_min(0), stack_max(0);
-    GetThreadStack(tid.raw(), &stack_min, &stack_max);
-    Thread *thr = Thread::Get(tid);
-    thr->SetStack(stack_min, stack_max);
-    ClearMemoryState(thr->min_sp(), thr->max_sp(), /*is_new_mem=*/true);
+    // TODO(kcc): get rid of this once we find out how to get the T0's stack.
+    if (tid == TID(0)) {
+      uintptr_t stack_min(0), stack_max(0);
+      GetThreadStack(tid.raw(), &stack_min, &stack_max);
+      Thread *thr = Thread::Get(tid);
+      thr->SetStack(stack_min, stack_max);
+      ClearMemoryState(thr->min_sp(), thr->max_sp(), /*is_new_mem=*/true);
+    }
   }
 
   void HandleThreadCreateAfter() {
+    HeapInfo heap_info = IsHeapMem(e_->a());
+    Thread *thr = Thread::Get(TID(e_->tid()));
+    if (heap_info.ptr) {
+      if (G_flags->verbosity >= 1) {
+        Printf("T%d %s: %p\n%s\n", e_->tid(), __FUNCTION__,  e_->a(),
+             reports_.DescribeMemory(e_->a()).c_str());
+      }
+      ClearMemoryStateOnFree(heap_info.ptr, heap_info.ptr + heap_info.size);
+      thr->SetStack(heap_info.ptr, heap_info.ptr + heap_info.size);
+    }
     Thread::SetThreadPthreadT(TID(e_->tid()), (pthread_t)e_->a());
   }
 
