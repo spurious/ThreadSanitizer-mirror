@@ -192,7 +192,7 @@ namespace test110 {
 int        GLOB = 0;
 static int STATIC;
 
-int       *STACK = 0;
+char       *STACK = 0;
 
 int       *MALLOC;
 int       *CALLOC;
@@ -227,7 +227,7 @@ void Worker() {
 void Run() {
   printf("test110: positive (race on a stack object)\n");
 
-  int x = 0;
+  char x = 0;
   STACK = &x;
 
   MALLOC = (int*)malloc(sizeof(int));
@@ -245,11 +245,7 @@ void Run() {
 
 
   FAST_MODE_INIT(STACK);
-  // An int on the stack may be accessed in pieces, so annotate all bytes of it.
   ANNOTATE_EXPECT_RACE(STACK, "real race on stack object");
-  ANNOTATE_EXPECT_RACE((char*)STACK + 1, "real race on stack object");
-  ANNOTATE_EXPECT_RACE((char*)STACK + 2, "real race on stack object");
-  ANNOTATE_EXPECT_RACE((char*)STACK + 3, "real race on stack object");
   FAST_MODE_INIT(&GLOB);
   ANNOTATE_EXPECT_RACE(&GLOB, "real race on global object");
   FAST_MODE_INIT(&STATIC);
