@@ -44,6 +44,7 @@
 
 #include "old_test_suite.h"
 #include "test_utils.h"
+#include <gtest/gtest.h>
 
 // test75: TN. Test for sem_post, sem_wait, sem_trywait. {{{1
 namespace test75 {
@@ -244,7 +245,11 @@ void Run() {
 
 
   FAST_MODE_INIT(STACK);
+  // An int on the stack may be accessed in pieces, so annotate all bytes of it.
   ANNOTATE_EXPECT_RACE(STACK, "real race on stack object");
+  ANNOTATE_EXPECT_RACE((char*)STACK + 1, "real race on stack object");
+  ANNOTATE_EXPECT_RACE((char*)STACK + 2, "real race on stack object");
+  ANNOTATE_EXPECT_RACE((char*)STACK + 3, "real race on stack object");
   FAST_MODE_INIT(&GLOB);
   ANNOTATE_EXPECT_RACE(&GLOB, "real race on global object");
   FAST_MODE_INIT(&STATIC);
@@ -659,15 +664,14 @@ REGISTER_TEST(Run, 146);
 } // namespace test146
 
 
-// test156: Signals and malloc {{{1
-namespace test156 {
+namespace SignalsAndMallocTest {  // {{{1
 // Regression test for
 // http://code.google.com/p/data-race-test/issues/detail?id=13 .
 // Make sure that locking events are handled in signal handlers.
 int     GLOB = 0;
 Mutex mu;
 
-static void SignalHandler(int, siginfo_t*, void*) {
+void SignalHandler(int, siginfo_t*, void*) {
   mu.Lock();
   GLOB++;
   mu.Unlock();
@@ -693,25 +697,22 @@ static void EnableSigprof() {
 }
 
 void Worker() {
-  for (int i = 0; i < 1000000; i++) {
+  for (int i = 0; i < 100000; i++) {
     void *x = malloc((i % 64) + 1);
     free (x);
   }
 }
 
-void Run() {
-  printf("test156: signals and malloc\n");
+TEST(Signals, SignalsAndMallocTest) {
   EnableSigprof();
   MyThreadArray t(Worker, Worker, Worker);
   t.Start();
   t.Join();
   printf("\tGLOB=%d\n", GLOB);
 }
-REGISTER_TEST(Run, 156)
-}  // namespace test156
+}  // namespace;
 
-// test158: Signals and wait {{{1
-namespace test158 {
+namespace SignalsAndWaitTest {  // {{{1
 // Regression test for
 // http://code.google.com/p/data-race-test/issues/detail?id=14.
 static void SignalHandler(int, siginfo_t*, void*) {
@@ -743,12 +744,10 @@ void Worker() {
   }
 }
 
-void Run() {
-  printf("test158: signals and wait\n");
+TEST(Signals, SignalsAndWaitTest) {
   EnableSigprof();
   MyThreadArray t(Worker, Worker, Worker);
   t.Start();
   t.Join();
 }
-REGISTER_TEST(Run, 158)
-}  // namespace test158
+}  // namespace
