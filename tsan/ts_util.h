@@ -40,6 +40,9 @@
 #elif defined(__GNUC__)
 # undef NDEBUG  // Assert is always on.
 # include <assert.h>
+# include <sys/types.h>
+# include <sys/stat.h>
+# include <fcntl.h>
 # define CHECK assert
 # define TS_USE_GNUC_STL
 
@@ -245,6 +248,7 @@ extern uintptr_t GetPcOfCurrentThread();
 extern void GetThreadStack(int tid, uintptr_t *min_addr, uintptr_t *max_addr);
 
 extern void SetNumberOfFoundErrors(int n_errs);
+extern int GetNumberOfFoundErrors();
 
 inline uintptr_t tsan_bswap(uintptr_t x) {
 #if defined(__GNUC__) && __WORDSIZE == 64 

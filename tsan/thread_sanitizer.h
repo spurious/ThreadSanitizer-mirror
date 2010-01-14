@@ -102,6 +102,8 @@ struct FLAGS {
 
   vector<string> suppressions;
   bool           generate_suppressions;
+
+  intptr_t     error_exitcode;
 };
 
 extern FLAGS *G_flags;

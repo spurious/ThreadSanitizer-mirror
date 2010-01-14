@@ -60,13 +60,17 @@ void GetThreadStack(int tid, uintptr_t *min_addr, uintptr_t *max_addr) {
 #ifdef TS_VALGRIND
 extern "C" void VG_(set_n_errs_found)(unsigned);
 #endif
+static int n_errs_found;
 
 void SetNumberOfFoundErrors(int n_errs) {
+  n_errs_found = n_errs;
 #ifdef TS_VALGRIND
   VG_(set_n_errs_found)(n_errs);
-#else
-  // nothing so far.
 #endif
+}
+
+int GetNumberOfFoundErrors() {
+  return n_errs_found;
 }
 
 
@@ -170,7 +174,7 @@ TS_FILE OpenFileReadOnly(const string &file_name, bool die_if_failed) {
   UNIMPLEMENTED();
   return TS_FILE_INVALID;
 #else // no TS_VALGRIND
-  UNIMPLEMENTED();
+  return open(file_name.c_str(), O_RDONLY);
 #endif
 }
 

@@ -1531,6 +1531,9 @@ static void CallbackForFini(INT32 code, void *v) {
 
   DumpEvent(THR_END, 0, 0, 0, 0);
   ThreadSanitizerFini();
+  if (G_flags->error_exitcode && GetNumberOfFoundErrors() > 0) {
+    exit(G_flags->error_exitcode);
+  }
 }
 
 void CallbackForDetach(VOID *v) {
