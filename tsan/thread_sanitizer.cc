@@ -3883,7 +3883,9 @@ struct Thread {
 
   void SetTopPc(uintptr_t pc) {
     DCHECK(!call_stack_.empty());
-    call_stack_.back() = pc;
+    if (pc) {
+      call_stack_.back() = pc;
+    }
   }
 
   void INLINE HandleSblockEnter(uintptr_t pc) {

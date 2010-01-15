@@ -52,6 +52,9 @@ static map<uintptr_t, PcInfo> *g_pc_info_map;
 //------------- Utils ------------------- {{{1
 static EventType EventNameToEventType(const char *name) {
   map<string, int>::iterator it = g_event_type_map->find(name);
+  if (it == g_event_type_map->end()) {
+    Printf("Unknown event type: %s\n", name);
+  }
   CHECK(it != g_event_type_map->end());
   return (EventType)it->second;
 }
@@ -82,7 +85,7 @@ static void SkipCommentText(FILE *file) {
     int line = 0;
     uintptr_t pc = 0;
     if (sscanf(buff, "PC %lx %s %s %s %d", &pc, img, rtn, file, &line) == 5 &&
-        line > 0 && pc != 0) {
+        pc != 0) {
       CHECK(g_pc_info_map);
       PcInfo pc_info;
       pc_info.img_name = img;
