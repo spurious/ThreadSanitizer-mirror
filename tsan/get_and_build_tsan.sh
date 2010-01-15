@@ -49,12 +49,12 @@ make -s install VALGRIND_INST_ROOT=$VALGRIND_INST_ROOT  || exit 1
 
 # Build the self contained binaries.
 cd $TOPDIR || exit 1
-tsan_binary/mk-self-contained-tsan.sh $VALGRIND_INST_ROOT tsan  || exit 1
+tsan_binary/mk-self-contained-tsan.sh $VALGRIND_INST_ROOT tsan.sh  || exit 1
 
 # Test
 cd $TOPDIR/unittest || exit 1
 make || exit 1
-$TOPDIR/tsan --color ./racecheck_unittest 301 || exit 1
+$TOPDIR/tsan.sh --color ./racecheck_unittest 301 || exit 1
 
 # Done
-echo "ThreadSanitizer is built: $TOPDIR/tsan"
+echo "ThreadSanitizer is built: $TOPDIR/tsan.sh"
