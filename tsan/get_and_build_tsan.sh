@@ -2,15 +2,20 @@
 
 # Where to install Valgrind with ThreadSanitizer.
 VALGRIND_INST_ROOT="$1"
+SVN_ROOT="$2"
 
 if [ "$VALGRIND_INST_ROOT" == "" ]; then
-  echo "Usage: $0 /tsan/installation/path"
+  echo "Usage: $0 /tsan/installation/path [svn/root/dir]"
   exit
 fi
 
+if [ "$SVN_ROOT" == "" ]; then
 # Get ThreadSanitizer. This will create directory 'drt'
-svn co http://data-race-test.googlecode.com/svn/trunk drt || exit 1
-cd drt || exit 1
+  svn co http://data-race-test.googlecode.com/svn/trunk drt || exit 1
+  cd drt || exit 1
+else
+  cd $SVN_ROOT || exit 1
+fi
 
 TOPDIR=`pwd`
 
