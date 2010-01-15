@@ -13,7 +13,7 @@ DYNAMIC_ANNOTATIONS_O=dynamic_annotations.o
 DYNAMIC_ANNOTATIONS=${DYNAMIC_ANNOTATIONS_C} ${DYNAMIC_ANNOTATIONS_H}
 GOOGLETEST_ROOT=../third_party/googletest
 
-racecheck_unittest: racecheck_unittest.o old_test_suite.o posix_tests.o \
+racecheck_unittest: racecheck_unittest.o old_test_suite.o posix_tests.o demo_tests.o \
 		${GOOGLETEST_ROOT}/make/gtest_main.a ${DYNAMIC_ANNOTATIONS_O}
 	${CXX} -lpthread $^ -o $@
 
@@ -34,13 +34,14 @@ ${DYNAMIC_ANNOTATIONS_O}: ${DYNAMIC_ANNOTATIONS_C}
 		-c -o $@
 
 # TODO(timurrrr): do smarter dependency list
-win: racecheck_unittest.cc old_test_suite.cc windows_tests.cc ${DYNAMIC_ANNOTATIONS} thread_wrappers.h thread_wrappers_win.h old_test_suite.h test_utils.h
+win: racecheck_unittest.cc old_test_suite.cc windows_tests.cc demo_tests.cc ${DYNAMIC_ANNOTATIONS} \
+     thread_wrappers.h thread_wrappers_win.h old_test_suite.h test_utils.h
 	cd ${GOOGLETEST_ROOT}/msvc && devenv /build debug /project gtest gtest.sln
 	cl.exe ${CXXFLAGS} /Od /Zi /EHsc /nologo /MTd \
 		/D "DYNAMIC_ANNOTATIONS_ENABLED=1" /D "WIN32" \
 		-I${DYNAMIC_ANNOTATIONS_DIR} -I${GOOGLETEST_ROOT}/include \
-		racecheck_unittest.cc old_test_suite.cc windows_tests.cc ${DYNAMIC_ANNOTATIONS_C} \
-		${GOOGLETEST_ROOT}/msvc/gtest/Debug/gtestd.lib
+		racecheck_unittest.cc old_test_suite.cc windows_tests.cc demo_tests.cc \
+		${DYNAMIC_ANNOTATIONS_C} ${GOOGLETEST_ROOT}/msvc/gtest/Debug/gtestd.lib
 
 
 clean:

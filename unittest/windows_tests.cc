@@ -25,8 +25,8 @@
 
 /* Author: Timur Iskhodzhanov <opensource@google.com>
 
- This file is a part of a patch demonstrating how to use googletest
- in racecheck_unittest.
+ This file contains a set of Windows-specific unit tests for
+ a data race detection tool.
 */
 
 #include <gtest/gtest.h>
