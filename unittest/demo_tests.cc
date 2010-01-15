@@ -23,7 +23,8 @@
   The GNU General Public License is contained in the file COPYING.
 */
 
-/* Author: Timur Iskhodzhanov <opensource@google.com>
+/* Author: Konstantin Serebryany <opensource@google.com>
+   Author: Timur Iskhodzhanov <opensource@google.com>
 
  This file contains a set of demonstration tests for ThreadSanitizer. 
 */
@@ -33,16 +34,7 @@
 #include "old_test_suite.h"
 #include "test_utils.h"
 
-// test300: {{{1
-namespace test300 {
-int     GLOB = 0;
-void Run() {
-}
-REGISTER_TEST2(Run, 300, RACE_DEMO)
-}  // namespace test300
-
-// test301: Simple race.  {{{1
-namespace test301 {
+namespace RaceReportDemoTest {  // {{{1
 Mutex mu1;  // This Mutex guards var.
 Mutex mu2;  // This Mutex is not related to var.
 int   var;  // GUARDED_BY(mu1)
@@ -57,10 +49,9 @@ void Thread2() {  // Runs in thread named 'test-thread-2'.
   var = 2;
 }
 
-void Run() {
+TEST(DemoTests, RaceReportDemoTest) {
   ANNOTATE_TRACE_MEMORY(&var);
   var = 0;
-  printf("test301: simple race.\n");
   MyThread t1(Thread1, NULL, "test-thread-1");
   MyThread t2(Thread2, NULL, "test-thread-2");
   t1.Start();
@@ -68,8 +59,7 @@ void Run() {
   t1.Join();
   t2.Join();
 }
-REGISTER_TEST2(Run, 301, RACE_DEMO)
-}  // namespace test301
+}  // namespace RaceReportDemoTest
 
 // test302: Complex race which happens at least twice.  {{{1
 namespace test302 {

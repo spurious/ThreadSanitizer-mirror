@@ -4,7 +4,7 @@ CC=gcc
 SUFFIX=
 CXXFLAGS=
 
-all: racecheck_unittest bigtest
+all: racecheck_unittest demo_tests bigtest
 
 DYNAMIC_ANNOTATIONS_DIR=../dynamic_annotations
 DYNAMIC_ANNOTATIONS_H=${DYNAMIC_ANNOTATIONS_DIR}/dynamic_annotations.h
@@ -14,6 +14,10 @@ DYNAMIC_ANNOTATIONS=${DYNAMIC_ANNOTATIONS_C} ${DYNAMIC_ANNOTATIONS_H}
 GOOGLETEST_ROOT=../third_party/googletest
 
 racecheck_unittest: racecheck_unittest.o old_test_suite.o posix_tests.o demo_tests.o \
+		${GOOGLETEST_ROOT}/make/gtest_main.a ${DYNAMIC_ANNOTATIONS_O}
+	${CXX} -lpthread $^ -o $@
+
+demo_tests: old_test_suite.o demo_tests.o \
 		${GOOGLETEST_ROOT}/make/gtest_main.a ${DYNAMIC_ANNOTATIONS_O}
 	${CXX} -lpthread $^ -o $@
 
@@ -45,5 +49,5 @@ win: racecheck_unittest.cc old_test_suite.cc windows_tests.cc demo_tests.cc ${DY
 
 
 clean:
-	rm -rf racecheck_unittest bigtest *.o *.O1 *.O2 *.obj *.dSYM *.exe *.pdb *.ilk *.idb *.manifest
+	rm -rf racecheck_unittest demo_tests bigtest *.o *.O1 *.O2 *.obj *.dSYM *.exe *.pdb *.ilk *.idb *.manifest
 	cd ${GOOGLETEST_ROOT}/make && make clean

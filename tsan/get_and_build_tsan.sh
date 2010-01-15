@@ -54,7 +54,7 @@ tsan_binary/mk-self-contained-tsan.sh $VALGRIND_INST_ROOT tsan.sh  || exit 1
 # Test
 cd $TOPDIR/unittest || exit 1
 make || exit 1
-$TOPDIR/tsan.sh --color ./racecheck_unittest 301 || exit 1
+$TOPDIR/tsan.sh --color ./demo_tests --gtest_filter="DemoTests.RaceReportDemoTest" || exit 1
 
 # Done
 echo "ThreadSanitizer is built: $TOPDIR/tsan.sh"
