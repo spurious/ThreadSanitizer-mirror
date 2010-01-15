@@ -187,7 +187,7 @@ bin:
 
 TS_HEADERS=thread_sanitizer.h ts_util.h suppressions.h
 ifeq ($(DEBUG), 0)
-  # in optimized buld, we include thread_sanitizer.cc into other files.
+  # in optimized build, we include thread_sanitizer.cc into other files.
   TS_HEADERS+=thread_sanitizer.cc
 endif
 TS_VG_HEADERS=ts_valgrind.h ts_valgrind_client_requests.h ts_wrap_and_ignore.h
