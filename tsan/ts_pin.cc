@@ -1327,15 +1327,16 @@ DEFINE_REPLACEMENT_RTN_0_1(
   }
 )
 
+#ifdef _MSC_VER
 typedef uintptr_t (__stdcall* CriticalSectionFunc)(uintptr_t cs);
 
-uintptr_t Replace_RtlInitializeCriticalSection(THREADID tid, ADDRINT pc, 
+uintptr_t Replace_RtlInitializeCriticalSection(THREADID tid, ADDRINT pc,
                                            CriticalSectionFunc f, uintptr_t cs) {
 //  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, cs);
   DumpEvent(LOCK_CREATE, tid, pc, cs, 0);
   return f(cs);
 }
-uintptr_t Replace_RtlDeleteCriticalSection(THREADID tid, ADDRINT pc, 
+uintptr_t Replace_RtlDeleteCriticalSection(THREADID tid, ADDRINT pc,
                                        CriticalSectionFunc f, uintptr_t cs) {
 //  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, cs);
   DumpEvent(LOCK_DESTROY, tid, pc, cs, 0);
@@ -1349,7 +1350,7 @@ uintptr_t Replace_RtlEnterCriticalSection(THREADID tid, ADDRINT pc,
   DumpEvent(WRITER_LOCK, tid, pc, 0, 0);
   return ret;
 }
-uintptr_t Replace_RtlTryEnterCriticalSection(THREADID tid, ADDRINT pc, 
+uintptr_t Replace_RtlTryEnterCriticalSection(THREADID tid, ADDRINT pc,
                                          CriticalSectionFunc f, uintptr_t cs) {
 //  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, cs);
   DumpEvent(LOCK_BEFORE, tid, pc, cs, 0);
@@ -1369,12 +1370,12 @@ uintptr_t Replace_RtlLeaveCriticalSection(THREADID tid, ADDRINT pc,
 void ReplaceCriticalSectionFunc(RTN rtn, char *name, AFUNPTR replacement_func) {
   if (RTN_Valid(rtn) && RtnMatchesName(RTN_Name(rtn), name)) {
     Printf("RTN_ReplaceSignature on %s\n", name);
-    PROTO proto = PROTO_Allocate(PIN_PARG(uintptr_t), 
+    PROTO proto = PROTO_Allocate(PIN_PARG(uintptr_t),
                                  CALLINGSTD_STDCALL,
-                                 "proto", 
+                                 "proto",
                                  PIN_PARG(uintptr_t),
                                  PIN_PARG_END());
-    RTN_ReplaceSignature(rtn, 
+    RTN_ReplaceSignature(rtn,
                          AFUNPTR(replacement_func),
                          IARG_PROTOTYPE, proto,
                          IARG_THREAD_ID,
@@ -1385,6 +1386,8 @@ void ReplaceCriticalSectionFunc(RTN rtn, char *name, AFUNPTR replacement_func) {
     PROTO_Free(proto);
   }
 }
+
+#endif
 
 static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   if (IgnoreImage(img)) {
@@ -1493,8 +1496,6 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
                              (AFUNPTR)(Replace_RtlTryEnterCriticalSection));
   ReplaceCriticalSectionFunc(rtn, "RtlLeaveCriticalSection",
                              (AFUNPTR)(Replace_RtlLeaveCriticalSection));
-
-
 #endif
 
   // Annotations.
