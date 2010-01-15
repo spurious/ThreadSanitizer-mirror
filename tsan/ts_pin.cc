@@ -1327,14 +1327,64 @@ DEFINE_REPLACEMENT_RTN_0_1(
   }
 )
 
-#ifdef _MSC_VER
-DEFINE_REPLACEMENT_RTN_0_1(
-  RtlInitializeCriticalSection,
-  void*,
-  {}, //DumpEvent(LOCK_CREATE, PIN_ThreadId(), (uintptr_t)orig_func, (uintptr_t)arg1, 0),
-  {}
-)
-#endif
+typedef uintptr_t (__stdcall* CriticalSectionFunc)(uintptr_t cs);
+
+uintptr_t Replace_RtlInitializeCriticalSection(THREADID tid, ADDRINT pc, 
+                                           CriticalSectionFunc f, uintptr_t cs) {
+//  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, cs);
+  DumpEvent(LOCK_CREATE, tid, pc, cs, 0);
+  return f(cs);
+}
+uintptr_t Replace_RtlDeleteCriticalSection(THREADID tid, ADDRINT pc, 
+                                       CriticalSectionFunc f, uintptr_t cs) {
+//  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, cs);
+  DumpEvent(LOCK_DESTROY, tid, pc, cs, 0);
+  return f(cs);
+}
+uintptr_t Replace_RtlEnterCriticalSection(THREADID tid, ADDRINT pc,
+                                      CriticalSectionFunc f, uintptr_t cs) {
+//  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, cs);
+  DumpEvent(LOCK_BEFORE, tid, pc, cs, 0);
+  uintptr_t ret = f(cs);
+  DumpEvent(WRITER_LOCK, tid, pc, 0, 0);
+  return ret;
+}
+uintptr_t Replace_RtlTryEnterCriticalSection(THREADID tid, ADDRINT pc, 
+                                         CriticalSectionFunc f, uintptr_t cs) {
+//  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, cs);
+  DumpEvent(LOCK_BEFORE, tid, pc, cs, 0);
+  uintptr_t ret = f(cs);
+  if (ret) {
+    DumpEvent(WRITER_LOCK, tid, pc, 0, 0);
+  }
+  return ret;
+}
+uintptr_t Replace_RtlLeaveCriticalSection(THREADID tid, ADDRINT pc,
+                                      CriticalSectionFunc f, uintptr_t cs) {
+//  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, cs);
+  DumpEvent(UNLOCK, tid, pc, cs, 0);
+  return f(cs);
+}
+
+void ReplaceCriticalSectionFunc(RTN rtn, char *name, AFUNPTR replacement_func) {
+  if (RTN_Valid(rtn) && RtnMatchesName(RTN_Name(rtn), name)) {
+    Printf("RTN_ReplaceSignature on %s\n", name);
+    PROTO proto = PROTO_Allocate(PIN_PARG(uintptr_t), 
+                                 CALLINGSTD_STDCALL,
+                                 "proto", 
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG_END());
+    RTN_ReplaceSignature(rtn, 
+                         AFUNPTR(replacement_func),
+                         IARG_PROTOTYPE, proto,
+                         IARG_THREAD_ID,
+                         IARG_INST_PTR,
+                         IARG_ORIG_FUNCPTR,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
+                         IARG_END);
+    PROTO_Free(proto);
+  }
+}
 
 static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   if (IgnoreImage(img)) {
@@ -1433,7 +1483,17 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_BEFORE_6("CreateThread", Before_CreateThread);
   INSERT_AFTER_1("CreateThread", After_CreateThread);
 
-//  MATCH_NAME_AND_REPLACE_RTN_1(RtlInitializeCriticalSection, void, void *);
+  ReplaceCriticalSectionFunc(rtn, "RtlInitializeCriticalSection",
+                             (AFUNPTR)(Replace_RtlInitializeCriticalSection));
+  ReplaceCriticalSectionFunc(rtn, "RtlDeleteCriticalSection",
+                             (AFUNPTR)(Replace_RtlDeleteCriticalSection));
+  ReplaceCriticalSectionFunc(rtn, "RtlEnterCriticalSection",
+                             (AFUNPTR)(Replace_RtlEnterCriticalSection));
+  ReplaceCriticalSectionFunc(rtn, "RtlTryEnterCriticalSection",
+                             (AFUNPTR)(Replace_RtlTryEnterCriticalSection));
+  ReplaceCriticalSectionFunc(rtn, "RtlLeaveCriticalSection",
+                             (AFUNPTR)(Replace_RtlLeaveCriticalSection));
+
 
 #endif
 
@@ -1485,7 +1545,6 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_AFTER_0("pthread_once", After_pthread_once);
 
   // __cxa_guard_acquire / __cxa_guard_release
-  // TODO(kcc): uncomment this (and make it work on test108,test114).
   INSERT_BEFORE_1("__cxa_guard_acquire", Before_cxa_guard_acquire);
   INSERT_AFTER_1("__cxa_guard_acquire", After_cxa_guard_acquire);
   INSERT_BEFORE_1("__cxa_guard_release", Before_cxa_guard_release);
