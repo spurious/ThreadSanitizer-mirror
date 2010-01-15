@@ -2250,6 +2250,22 @@ STRCMP(VG_Z_LD_LINUX_X86_64_SO_2, strcmp)
 STRCMP(VG_Z_LD64_SO_1,            strcmp)
 #endif
 
+#define MEMCHR(soname, fnname) \
+   void* VG_REPLACE_FUNCTION_ZU(soname,fnname) (const void *s, int c, SizeT n); \
+   void* VG_REPLACE_FUNCTION_ZU(soname,fnname) (const void *s, int c, SizeT n) \
+   { \
+      SizeT i; \
+      UChar c0 = (UChar)c; \
+      UChar* p = (UChar*)s; \
+      for (i = 0; i < n; i++) \
+         if (p[i] == c0) return (void*)(&p[i]); \
+      return NULL; \
+   }
+
+MEMCHR(VG_Z_LIBC_SONAME, memchr)
+#if defined(VGO_darwin)
+MEMCHR(VG_Z_DYLD,        memchr)
+#endif
 
 // --- STRLEN -----------------------------------------------------
 //

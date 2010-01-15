@@ -3166,6 +3166,8 @@ void WorkerX() {
   CHECK(strchr(str, 'X') == str);
   CHECK(strchr(str, 'x') == str+1);
   CHECK(strchr(str, 'Y') == NULL);
+  CHECK(memchr(str, 'X', 8) == str);
+  CHECK(memchr(str, 'x', 8) == str+1);
   CHECK(strrchr(str, 'X') == str+2);
   CHECK(strrchr(str, 'x') == str+3);
   CHECK(strrchr(str, 'Y') == NULL);
