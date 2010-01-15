@@ -1,9 +1,19 @@
 #!/bin/bash
 
 PIN_ROOT=${PIN_ROOT:-$HOME/pin}
-PIN_BINARY=${PIN_BINARY:-pin}
-TS_ROOT=${TS_ROOT:-`pwd`}
+TS_ROOT=${TS_ROOT:-.}
 TS_VARIANT=-debug
+
+UNAME_OS=`uname -o`
+if [ "$UNAME_OS" == "GNU/Linux" ]; then
+  PIN_BINARY=${PIN_BINARY:-pin}
+  DLL=so
+  OS=linux
+elif [ "$UNAME_OS" == "Cygwin" ]; then
+  PIN_BINARY=${PIN_BINARY:-pin.bat}
+  DLL=dll
+  OS=windows
+fi
 
 export MSM_THREAD_SANITIZER=1
 
@@ -51,7 +61,7 @@ run() {
 }
 
 run $PIN_ROOT/$PIN_BINARY $PIN_FLAGS \
-  -t64 $TS_ROOT/bin/amd64-linux${TS_VARIANT}-ts_pin.so \
-  -t   $TS_ROOT/bin/x86-linux${TS_VARIANT}-ts_pin.so \
+  -t64 $TS_ROOT/bin/amd64-$OS${TS_VARIANT}-ts_pin.$DLL \
+  -t   $TS_ROOT/bin/x86-$OS${TS_VARIANT}-ts_pin.$DLL \
  $TS_FLAGS -- $TS_PARAMS
 
