@@ -2225,21 +2225,17 @@ class SegmentSet {
   struct SSHash {
     INLINE uintptr_t operator() (const SegmentSet *ss) const {
       uintptr_t res = 0;
-
-      uintptr_t* sids_array = (uintptr_t*)ss->sids_;
-
-      // Check that sids_ are word-aligned and we can optimize the calculation
-      // of the SSHash with machine words.
-      // Requires even number of SIDs in SS on x64.
-      DCHECK((uintptr_t)&ss->sids_[0] % sizeof(*sids_array) == 0);
-      DCHECK(sizeof(ss->sids_) % sizeof(*sids_array) == 0);
+      uint32_t* sids_array = (uint32_t*)ss->sids_;
+      // We must have even number of SIDs.
+      DCHECK((kMaxSegmentSetSize % 2) == 0);
 
       G_stats->sshash_calls++;
-
-      for (size_t i = 0; i < sizeof(ss->sids_) / sizeof(*sids_array); i++) {
-        uintptr_t tmp = sids_array[i];
-        if (i % 2 == 1) tmp = tsan_bswap(tmp);
-        res = res ^ tmp;
+      // xor all SIDs together, half of them bswap-ed.
+      for (int i = 0; i < kMaxSegmentSetSize; i += 2) {
+        uintptr_t t1 = sids_array[i];
+        uintptr_t t2 = sids_array[i+1];
+        if (t2) t2 = tsan_bswap(t2);
+        res = res ^ t1 ^ t2;
       }
       return res;
     }
@@ -2297,13 +2293,7 @@ class SegmentSet {
   // Contains zeros at the end if size < kMaxSegmentSetSize.
   SID     sids_[kMaxSegmentSetSize];
   int32_t ref_count_;
-}
-#if defined(__GNUC__)
-__attribute__ ((aligned (sizeof(uintptr_t))))
-#elif defined(_MSC_VER)
-// TODO(kcc): align 
-#endif
-;
+};
 
 SegmentSet::Map      *SegmentSet::map_;
 vector<SegmentSet *> *SegmentSet::vec_;
