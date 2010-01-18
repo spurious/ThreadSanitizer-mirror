@@ -1328,43 +1328,50 @@ DEFINE_REPLACEMENT_RTN_0_1(
 )
 
 #ifdef _MSC_VER
-typedef uintptr_t (__stdcall* CriticalSectionFunc)(uintptr_t cs);
+uintptr_t CallStdCallFun(CONTEXT *ctx, THREADID tid,
+                         AFUNPTR f, uintptr_t arg1) {
+  uintptr_t ret = 0xdeadbeaf;
+  PIN_CallApplicationFunction(ctx, tid,
+                              CALLINGSTD_STDCALL, (AFUNPTR)(f),
+                              PIN_PARG(uintptr_t), &ret,
+                              PIN_PARG(uintptr_t), arg1,
+                              PIN_PARG_END());
+  return ret;
+}
 
-uintptr_t Replace_RtlInitializeCriticalSection(THREADID tid, ADDRINT pc,
-                                           CriticalSectionFunc f, uintptr_t cs) {
+#define CRITICAL_SECTION_PARAM  THREADID tid, ADDRINT pc, CONTEXT *ctx, \
+                                AFUNPTR f, uintptr_t cs
+
+uintptr_t Replace_RtlInitializeCriticalSection(CRITICAL_SECTION_PARAM) {
 //  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, cs);
   DumpEvent(LOCK_CREATE, tid, pc, cs, 0);
-  return f(cs);
+  return CallStdCallFun(ctx, tid, f, cs);
 }
-uintptr_t Replace_RtlDeleteCriticalSection(THREADID tid, ADDRINT pc,
-                                       CriticalSectionFunc f, uintptr_t cs) {
+uintptr_t Replace_RtlDeleteCriticalSection(CRITICAL_SECTION_PARAM) {
 //  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, cs);
   DumpEvent(LOCK_DESTROY, tid, pc, cs, 0);
-  return f(cs);
+  return CallStdCallFun(ctx, tid, f, cs);
 }
-uintptr_t Replace_RtlEnterCriticalSection(THREADID tid, ADDRINT pc,
-                                      CriticalSectionFunc f, uintptr_t cs) {
+uintptr_t Replace_RtlEnterCriticalSection(CRITICAL_SECTION_PARAM) {
 //  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, cs);
+  uintptr_t ret = CallStdCallFun(ctx, tid, f, cs);
   DumpEvent(LOCK_BEFORE, tid, pc, cs, 0);
-  uintptr_t ret = f(cs);
   DumpEvent(WRITER_LOCK, tid, pc, 0, 0);
   return ret;
 }
-uintptr_t Replace_RtlTryEnterCriticalSection(THREADID tid, ADDRINT pc,
-                                         CriticalSectionFunc f, uintptr_t cs) {
+uintptr_t Replace_RtlTryEnterCriticalSection(CRITICAL_SECTION_PARAM) {
 //  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, cs);
-  DumpEvent(LOCK_BEFORE, tid, pc, cs, 0);
-  uintptr_t ret = f(cs);
+  uintptr_t ret = CallStdCallFun(ctx, tid, f, cs);
   if (ret) {
+    DumpEvent(LOCK_BEFORE, tid, pc, cs, 0);
     DumpEvent(WRITER_LOCK, tid, pc, 0, 0);
   }
   return ret;
 }
-uintptr_t Replace_RtlLeaveCriticalSection(THREADID tid, ADDRINT pc,
-                                      CriticalSectionFunc f, uintptr_t cs) {
+uintptr_t Replace_RtlLeaveCriticalSection(CRITICAL_SECTION_PARAM) {
 //  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, cs);
   DumpEvent(UNLOCK, tid, pc, cs, 0);
-  return f(cs);
+  return CallStdCallFun(ctx, tid, f, cs);
 }
 
 void ReplaceCriticalSectionFunc(RTN rtn, char *name, AFUNPTR replacement_func) {
@@ -1380,6 +1387,7 @@ void ReplaceCriticalSectionFunc(RTN rtn, char *name, AFUNPTR replacement_func) {
                          IARG_PROTOTYPE, proto,
                          IARG_THREAD_ID,
                          IARG_INST_PTR,
+                         IARG_CONTEXT,
                          IARG_ORIG_FUNCPTR,
                          IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
                          IARG_END);
