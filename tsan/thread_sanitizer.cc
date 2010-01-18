@@ -4353,6 +4353,16 @@ class ReportStorage {
     Thread *thr = Thread::Get(tid);
     bool in_dtor = G_flags->ignore_in_dtor && thr->CallStackContainsDtor();
 
+    {
+      // Check this isn't a "_ZNSs4_Rep20_S_empty_rep_storageE" report.
+      uintptr_t offset;
+      string symbol_descr;
+      if (GetNameAndOffsetOfGlobalObject(addr, &symbol_descr, &offset)) {
+        if (StringMatch("*empty_rep_storage*", symbol_descr))
+          return false;
+      }
+    }
+
     bool is_expected = false;
     if (G_expected_races_map->count(addr)) {
       is_expected = true;
