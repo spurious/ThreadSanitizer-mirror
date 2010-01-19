@@ -28,6 +28,11 @@ PIN_LIBPATHS=-L$(PIN_ROOT)/extras/xed2-$(PIN_ARCH)/lib -L$(PIN_ROOT)/$(PIN_ARCH)
 PIN_LDFLAGS=-g -shared -Wl,-Bsymbolic -Wl,--version-script=$(PIN_ROOT)/source/include/pintool.ver
 PIN_LIBS= -lpin  -lxed -ldwarf -lelf -ldl -lpthread
 
+DR_CXXFLAGS=-fPIC
+DR_DEFINES=-D$(DR_OS) -D$(DR_ARCH)
+DR_INCLUDES=-I$(DYNAMORIO_ROOT)/include
+DR_LDFLAGS=-shared -nostartfiles -nodefaultlibs -lgcc
+
 OS=   # linux, darwin
 ARCH= # x86, amd64
 D=    # <empty>, -debug
@@ -38,6 +43,7 @@ ARCH_OS=$(ARCH)_$(OS)
 P=bin/$(ARCHOS)$(D)-
 VGP=$(P)vg-
 PINP=$(P)pin-
+DRP=$(P)dr-
 
 
 ifeq ($(DEBUG), 1)
@@ -53,10 +59,12 @@ ifeq ($(ARCH), x86)
   ARCHFLAGS=-m32
   PIN_ARCH=ia32
   PIN_ARCH2=IA32
+  DR_ARCH=X86_32
 else ifeq ($(ARCH), amd64)
   ARCHFLAGS=-m64
   PIN_ARCH=intel64
   PIN_ARCH2=IA32E
+  DR_ARCH=X86_64
 else
   ARCH=UNKNOWN_ARCH
 endif
@@ -72,6 +80,7 @@ ifeq ($(OS), linux)
   VG_LD_FLAGS=-static -Wl,-defsym,valt_load_address=0x38000000 -nodefaultlibs -nostartfiles \
     -u _start  -Wl,-T,$(VALGRIND_ROOT)/valt_load_address_$(ARCH_OS).lds
   VG_LD_PRELOAD_FLAGS= -nodefaultlibs -shared -Wl,-z,interpose,-z,initfirst
+  DR_OS=LINUX
 else ifeq ($(OS), darwin)
   SO=so
   OBJ=o
@@ -101,6 +110,7 @@ else ifeq ($(OS), windows)
   PIN_LIBPATHS= /LIBPATH:$(PIN_ROOT)/ia32/lib /LIBPATH:$(PIN_ROOT)/ia32/lib-ext  /LIBPATH:$(PIN_ROOT)/extras/xed2-ia32/lib
   PIN_LIBS=pin.lib libxed.lib libcpmt.lib libcmt.lib pinvm.lib kernel32.lib ntdll-32.lib
   GTEST_LIB=$(GTEST_ROOT)/msvc/gtest/Release/gtest.lib
+  DR_OS=WINDOWS
 else
   OS=UNKNOWN_OS
 endif
@@ -169,6 +179,14 @@ else
 TS_pin: bin $(P)ts_pin.$(SO)
 endif
 
+ifeq ($(DYNAMORIO_ROOT), )
+TS_dynamorio:
+	@echo DYNAMORIO_ROOT is not set. Not building the DynamoRio-based variant.
+else
+TS_dynamorio: $(P)ts_dynamorio.$(SO) | bin
+endif
+
+
 ifeq ($(OFFLINE), 1)
 TS_offline: bin $(P)ts_offline$(EXE)
 else
@@ -195,6 +213,7 @@ TS_VG_HEADERS=ts_valgrind.h ts_valgrind_client_requests.h ts_wrap_and_ignore.h
 TS_VG_OBJECTS=$(VGP)thread_sanitizer.o $(VGP)ts_valgrind.o $(VGP)ts_util.o $(VGP)suppressions.o
 TS_PIN_OBJECTS=$(PINP)ts_pin.$(OBJ) $(PINP)ts_util.$(OBJ) $(PINP)thread_sanitizer.$(OBJ) $(PINP)suppressions.$(OBJ)
 TS_OFFLINE_OBJECTS=$(P)ts_offline.$(OBJ) $(P)thread_sanitizer.$(OBJ) $(P)ts_util.$(OBJ) $(P)suppressions.$(OBJ)
+TS_DR_OBJECTS=$(DRP)ts_dynamorio.$(OBJ)
 
 $(P)%.$(OBJ): %.cc $(TS_HEADERS)
 	$(CXX) $(CXXFLAGS) $(ARCHFLAGS) $(O)$@ -c $< $(DEFINES)
@@ -205,6 +224,9 @@ $(VGP)%.o: %.cc $(TS_HEADERS) $(TS_VG_HEADERS)
 
 $(PINP)%.$(OBJ): %.cc $(TS_HEADERS) $(TS_PIN_HEADERS)
 	$(CXX) $(CXXFLAGS) $(PIN_CXXFLAGS) $(ARCHFLAGS) $(PIN_INCLUDES) $(PIN_DEFINES) $(O)$@ -c $< $(DEFINES)
+
+$(DRP)%.$(OBJ): %.cc $(TS_HEADERS) $(TS_DR_HEADERS)
+	$(CXX) $(CXXFLAGS) $(DR_CXXFLAGS) $(ARCHFLAGS) $(DR_INCLUDES) $(DR_DEFINES) $(O)$@ -c $< $(DEFINES)
 
 $(P)gtest-%.$(OBJ): %.cc $(TS_HEADERS)
 	$(CXX) $(CXXFLAGS) $(ARCHFLAGS) -I$(GTEST_ROOT)/include $(O)$@ -c $<
@@ -232,6 +254,9 @@ $(P)ts_pin.so: $(TS_PIN_OBJECTS)
 
 $(P)ts_pin.dll: $(TS_PIN_OBJECTS)
 	$(LD) $(ARCHFLAGS) $(PIN_LDFLAGS) $(PIN_LIBPATHS)  /IMPLIB:$(PINP)ts_pin.lib /PDB:$(PINP)ts_pin.pdb /OUT:$@  $^  $(PIN_LIBS)
+
+$(P)ts_dynamorio.so: $(TS_DR_OBJECTS)
+	$(LD) $(ARCHFLAGS) $(DR_LDFLAGS) $(DR_LIBPATHS) -o $@ $^  $(DR_LIBS)
 
 clean:
 	rm -rfv bin core* pintool.log* pin.log
