@@ -27,6 +27,19 @@ echo Building ThreadSanitizer for $ARCH $OS
 echo ------------------------------------------------
 sleep 1
 
+# Translate ARCH and OS to valgrind-style identifiers
+if [ "$ARCH" == "i386" ]; then
+  VG_ARCH="x86"
+elif [ "$ARCH" == "x86_64" ]; then
+  VG_ARCH="amd64"
+fi
+
+if [ "$OS" == "Linux" ]; then
+  VG_OS="linux"
+elif [ "$OS" == "Darwin" ]; then
+  VG_OS="darwin"
+fi
+
 if [ "$ARCH $OS" == "x86_64 Linux" ]; then
   TARGET=lo  # 32- and 64-bit optimized linux binaries
 elif [ "$ARCH $OS" == "i386 Linux" ]; then
@@ -44,7 +57,7 @@ cd $TOPDIR/third_party || exit 1
 ./build_and_install_valgrind.sh $VALGRIND_INST_ROOT || exit 1
 
 cd $TOPDIR/tsan || exit 1
-make -s -j4 OFFLINE= GTEST_ROOT= PIN_ROOT= $TARGET || exit 1
+make -s -j4 OFFLINE= GTEST_ROOT= PIN_ROOT= ${TARGET} || exit 1
 make -s install VALGRIND_INST_ROOT=$VALGRIND_INST_ROOT  || exit 1
 
 # Build the self contained binaries.
@@ -53,8 +66,8 @@ tsan_binary/mk-self-contained-tsan.sh $VALGRIND_INST_ROOT tsan.sh  || exit 1
 
 # Test
 cd $TOPDIR/unittest || exit 1
-make || exit 1
-$TOPDIR/tsan.sh --color ./demo_tests --gtest_filter="DemoTests.RaceReportDemoTest" || exit 1
+make -s -j4 OS=${VG_OS} ARCH=${VG_ARCH} OPT=1 STATIC=0 || exit 1
+$TOPDIR/tsan.sh --color bin/demo_tests-${VG_OS}-${VG_ARCH}-O1 --gtest_filter="DemoTests.RaceReportDemoTest" || exit 1
 
 # Done
 echo "ThreadSanitizer is built: $TOPDIR/tsan.sh"
