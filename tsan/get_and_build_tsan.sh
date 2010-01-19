@@ -54,6 +54,7 @@ fi
 
 # Build Valgind.
 cd $TOPDIR/third_party || exit 1
+./update_valgrind.sh || exit 1
 ./build_and_install_valgrind.sh $VALGRIND_INST_ROOT || exit 1
 
 cd $TOPDIR/tsan || exit 1
