@@ -4723,10 +4723,10 @@ namespace test108 {
 // Starting from gcc 4 this is therad safe,
 // but is is not thread safe with many other compilers.
 //
-// Helgrind supports this kind of initialization by
+// Helgrind/ThreadSanitizer supports this kind of initialization by
 // intercepting __cxa_guard_acquire/__cxa_guard_release
 // and ignoring all accesses between them.
-// Helgrind also intercepts pthread_once in the same manner.
+// pthread_once is supported in the same manner.
 class Foo {
  public:
   Foo() {
@@ -4759,7 +4759,9 @@ void Run() {
   t.Start();
   t.Join();
 }
+#ifdef __GNUC__
 REGISTER_TEST2(Run, 108, FEATURE)
+#endif
 }  // namespace test108
 
 
@@ -4955,7 +4957,7 @@ REGISTER_TEST(Run, 113)
 }  // namespace test113
 
 
-// test114: STAB. Recursive lock. {{{1
+// test114: STAB. Recursive static initialization. {{{1
 namespace    test114 {
 int Bar() {
   static int bar = 1;
@@ -4975,7 +4977,9 @@ void Run() {
   t.Start();
   t.Join();
 }
+#ifdef __GNUC__
 REGISTER_TEST(Run, 114)
+#endif
 }  // namespace test114
 
 // test116: TN. some operations with string<> objects. {{{1
