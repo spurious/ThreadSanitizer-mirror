@@ -434,6 +434,10 @@ static void evh__die_mem_stack_32 ( Addr a ) {
 
 void ts_fini(Int exitcode) {
   ThreadSanitizerFini();
+  if (G_flags->error_exitcode && GetNumberOfFoundErrors() > 0) {
+    exit(G_flags->error_exitcode);
+  }
+  exit(exitcode);
 }
 
 

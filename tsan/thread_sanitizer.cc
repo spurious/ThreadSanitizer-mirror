@@ -4853,15 +4853,22 @@ class Detector {
   void HandleProgramEnd() {
     // Report("ThreadSanitizerValgrind: done\n");
     // check if we found all expected races (for unit tests only).
+    int missing = 0;
     for (ExpectedRacesMap::iterator it = G_expected_races_map->begin();
          it != G_expected_races_map->end(); ++it) {
       ExpectedRace race = it->second;
       if (race.count == 0 && !race.is_benign) {
+        ++missing;
         Printf("Missing an expected race on %p: %s (annotated at %s)\n",
                it->first,
                race.description,
                PcToRtnNameAndFilePos(race.pc).c_str());
       }
+    }
+
+    if (missing) {
+      int n_errs = GetNumberOfFoundErrors();
+      SetNumberOfFoundErrors(n_errs + missing);
     }
 
     // check if there is not deleted memory
