@@ -89,10 +89,10 @@ $(BIN)racecheck_unittest-$(BUILD): $(BIN)racecheck_unittest-$(BUILD).$(OBJ) $(BI
 
 $(BIN)demo_tests-$(BUILD): $(BIN)old_test_suite-$(BUILD).$(OBJ) $(BIN)demo_tests-$(BUILD).$(OBJ) \
 		$(GTEST_LIB) ${DYNAMIC_ANNOTATIONS_O} | bin
-	${CXX} $^ -lpthread -o $@
+	${CXX} $(LDFLAGS) $^ -lpthread -o $@
 
 $(BIN)bigtest-$(BUILD): $(BIN)bigtest-$(BUILD).$(OBJ) ${DYNAMIC_ANNOTATIONS_O} | bin
-	${CXX} $^ -lpthread -o $@
+	${CXX} $(LDFLAGS) $^ -lpthread -o $@
 
 $(GTEST_LIB):
 	cd $(GTEST_ROOT)/make && $(MAKE) clean && $(MAKE) CXXFLAGS="$(CXXFLAGS)" && mv gtest_main.a $(BUILD)-gtest_main.a
@@ -114,7 +114,7 @@ win: racecheck_unittest.cc old_test_suite.cc windows_tests.cc demo_tests.cc ${DY
 	cl.exe ${CXXFLAGS} /Od /Zi /EHsc /nologo /MTd \
 		/D "DYNAMIC_ANNOTATIONS_ENABLED=1" /D "WIN32" \
 		-I${DYNAMIC_ANNOTATIONS_DIR} -I${GTEST_ROOT}/include \
-		racecheck_unittest.cc old_test_suite.cc windows_tests.cc \
+		racecheck_unittest.cc old_test_suite.cc windows_tests.cc demo_tests.cc \
 		${DYNAMIC_ANNOTATIONS_C} ${GTEST_ROOT}/msvc/gtest/Debug/gtestd.lib
 
 
