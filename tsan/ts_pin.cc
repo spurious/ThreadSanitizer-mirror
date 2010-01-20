@@ -556,31 +556,102 @@ static void After_pthread_join(THREADID tid, ADDRINT pc, ADDRINT ret) {
 
 
 #ifdef _MSC_VER
-static void Before_WaitForSingleObject(THREADID tid, ADDRINT pc,
-                                ADDRINT hHandle,
-                                ADDRINT dwMilliseconds) {
+
+#define RTL_PARAM1  THREADID tid, ADDRINT pc, CONTEXT *ctx, \
+                                AFUNPTR f, uintptr_t arg0
+
+#define RTL_PARAM2  THREADID tid, ADDRINT pc, CONTEXT *ctx, \
+                                AFUNPTR f, uintptr_t arg0, uintptr_t arg1
+
+uintptr_t CallStdCallFun1(CONTEXT *ctx, THREADID tid,
+                         AFUNPTR f, uintptr_t arg0) {
+  uintptr_t ret = 0xdeadbee1;
+  PIN_CallApplicationFunction(ctx, tid,
+                              CALLINGSTD_STDCALL, (AFUNPTR)(f),
+                              PIN_PARG(uintptr_t), &ret,
+                              PIN_PARG(uintptr_t), arg0,
+                              PIN_PARG_END());
+  return ret;
+}
+
+uintptr_t CallStdCallFun2(CONTEXT *ctx, THREADID tid,
+                         AFUNPTR f, uintptr_t arg0, uintptr_t arg1) {
+  uintptr_t ret = 0xdeadbee2;
+  PIN_CallApplicationFunction(ctx, tid,
+                              CALLINGSTD_STDCALL, (AFUNPTR)(f),
+                              PIN_PARG(uintptr_t), &ret,
+                              PIN_PARG(uintptr_t), arg0,
+                              PIN_PARG(uintptr_t), arg1,
+                              PIN_PARG_END());
+  return ret;
+}
+
+
+uintptr_t Replace_RtlInitializeCriticalSection(RTL_PARAM1) {
+//  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
+  DumpEvent(LOCK_CREATE, tid, pc, arg0, 0);
+  return CallStdCallFun1(ctx, tid, f, arg0);
+}
+uintptr_t Replace_RtlDeleteCriticalSection(RTL_PARAM1) {
+//  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
+  DumpEvent(LOCK_DESTROY, tid, pc, arg0, 0);
+  return CallStdCallFun1(ctx, tid, f, arg0);
+}
+uintptr_t Replace_RtlEnterCriticalSection(RTL_PARAM1) {
+//  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
+  uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
+  DumpEvent(LOCK_BEFORE, tid, pc, arg0, 0);
+  DumpEvent(WRITER_LOCK, tid, pc, 0, 0);
+  return ret;
+}
+uintptr_t Replace_RtlTryEnterCriticalSection(RTL_PARAM1) {
+//  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
+  uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
+  if (ret) {
+    DumpEvent(LOCK_BEFORE, tid, pc, arg0, 0);
+    DumpEvent(WRITER_LOCK, tid, pc, 0, 0);
+  }
+  return ret;
+}
+uintptr_t Replace_RtlLeaveCriticalSection(RTL_PARAM1) {
+//  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
+  DumpEvent(UNLOCK, tid, pc, arg0, 0);
+  return CallStdCallFun1(ctx, tid, f, arg0);
+}
+
+uintptr_t Replace_SetEvent(RTL_PARAM1) {
+  // Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
+  uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
+  DumpEvent(SIGNAL, tid, pc, arg0, 0);
+  return ret;
+}
+
+uintptr_t Replace_WaitForSingleObject(RTL_PARAM2) {
+  //  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0, arg1);
   if (G_flags->verbosity >= 1) {
     ShowPcAndSp(__FUNCTION__, tid, pc, 0);
-    Printf("hHandle=%lx dwMilliseconds=%lx\n", hHandle, dwMilliseconds);
+    Printf("arg0=%lx arg1=%lx\n", arg0, arg1);
   }
   bool is_thread_handle = false;
 
   {
     ScopedReentrantClientLock lock(__LINE__);
     CHECK(g_win_handles_which_are_threads);
-    is_thread_handle = g_win_handles_which_are_threads->count(hHandle) > 0;
-    g_win_handles_which_are_threads->erase(hHandle);
+    is_thread_handle = g_win_handles_which_are_threads->count(arg0) > 0;
+    g_win_handles_which_are_threads->erase(arg0);
   }
 
-  g_pin_threads[tid].joined_ptid = 0;
   if (is_thread_handle) {
-    DumpEvent(THR_JOIN_BEFORE, tid, 0, hHandle, 0);
-    g_pin_threads[tid].joined_ptid = hHandle;
+    DumpEvent(THR_JOIN_BEFORE, tid, 0, arg0, 0);
+    g_pin_threads[tid].joined_ptid = arg0;
   }
-}
 
-static void After_WaitForSingleObject(THREADID tid, ADDRINT pc, ADDRINT ret) {
-  if (g_pin_threads[tid].joined_ptid) {
+
+  uintptr_t ret = CallStdCallFun2(ctx, tid, f, arg0, arg1);
+  DumpEvent(WAIT_BEFORE, tid, pc, arg0, 0);
+  DumpEvent(WAIT_AFTER, tid, pc, 0, 0);
+
+  if (is_thread_handle) {
     THREADID joined_tid = HandleThreadJoinAfter(tid);
 
     if (G_flags->verbosity >= 1) {
@@ -588,9 +659,11 @@ static void After_WaitForSingleObject(THREADID tid, ADDRINT pc, ADDRINT ret) {
       Printf("Join: ret: %lx; parent=%d child=%d\n", ret, tid, joined_tid);
     }
   }
-}
-#endif
 
+  return ret;
+}
+
+#endif  // _MSC_VER
 
 //--------- main() --------------------------------- {{{2
 void Before_main(THREADID tid, ADDRINT pc, ADDRINT argc, ADDRINT argv) {
@@ -1328,53 +1401,7 @@ DEFINE_REPLACEMENT_RTN_0_1(
 )
 
 #ifdef _MSC_VER
-uintptr_t CallStdCallFun(CONTEXT *ctx, THREADID tid,
-                         AFUNPTR f, uintptr_t arg1) {
-  uintptr_t ret = 0xdeadbeaf;
-  PIN_CallApplicationFunction(ctx, tid,
-                              CALLINGSTD_STDCALL, (AFUNPTR)(f),
-                              PIN_PARG(uintptr_t), &ret,
-                              PIN_PARG(uintptr_t), arg1,
-                              PIN_PARG_END());
-  return ret;
-}
-
-#define CRITICAL_SECTION_PARAM  THREADID tid, ADDRINT pc, CONTEXT *ctx, \
-                                AFUNPTR f, uintptr_t cs
-
-uintptr_t Replace_RtlInitializeCriticalSection(CRITICAL_SECTION_PARAM) {
-//  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, cs);
-  DumpEvent(LOCK_CREATE, tid, pc, cs, 0);
-  return CallStdCallFun(ctx, tid, f, cs);
-}
-uintptr_t Replace_RtlDeleteCriticalSection(CRITICAL_SECTION_PARAM) {
-//  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, cs);
-  DumpEvent(LOCK_DESTROY, tid, pc, cs, 0);
-  return CallStdCallFun(ctx, tid, f, cs);
-}
-uintptr_t Replace_RtlEnterCriticalSection(CRITICAL_SECTION_PARAM) {
-//  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, cs);
-  uintptr_t ret = CallStdCallFun(ctx, tid, f, cs);
-  DumpEvent(LOCK_BEFORE, tid, pc, cs, 0);
-  DumpEvent(WRITER_LOCK, tid, pc, 0, 0);
-  return ret;
-}
-uintptr_t Replace_RtlTryEnterCriticalSection(CRITICAL_SECTION_PARAM) {
-//  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, cs);
-  uintptr_t ret = CallStdCallFun(ctx, tid, f, cs);
-  if (ret) {
-    DumpEvent(LOCK_BEFORE, tid, pc, cs, 0);
-    DumpEvent(WRITER_LOCK, tid, pc, 0, 0);
-  }
-  return ret;
-}
-uintptr_t Replace_RtlLeaveCriticalSection(CRITICAL_SECTION_PARAM) {
-//  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, cs);
-  DumpEvent(UNLOCK, tid, pc, cs, 0);
-  return CallStdCallFun(ctx, tid, f, cs);
-}
-
-void ReplaceCriticalSectionFunc(RTN rtn, char *name, AFUNPTR replacement_func) {
+void ReplaceStdCallFunc1(RTN rtn, char *name, AFUNPTR replacement_func) {
   if (RTN_Valid(rtn) && RtnMatchesName(RTN_Name(rtn), name)) {
     Printf("RTN_ReplaceSignature on %s\n", name);
     PROTO proto = PROTO_Allocate(PIN_PARG(uintptr_t),
@@ -1395,6 +1422,28 @@ void ReplaceCriticalSectionFunc(RTN rtn, char *name, AFUNPTR replacement_func) {
   }
 }
 
+void ReplaceStdCallFunc2(RTN rtn, char *name, AFUNPTR replacement_func) {
+  if (RTN_Valid(rtn) && RtnMatchesName(RTN_Name(rtn), name)) {
+    Printf("RTN_ReplaceSignature on %s\n", name);
+    PROTO proto = PROTO_Allocate(PIN_PARG(uintptr_t),
+                                 CALLINGSTD_STDCALL,
+                                 "proto",
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG_END());
+    RTN_ReplaceSignature(rtn,
+                         AFUNPTR(replacement_func),
+                         IARG_PROTOTYPE, proto,
+                         IARG_THREAD_ID,
+                         IARG_INST_PTR,
+                         IARG_CONTEXT,
+                         IARG_ORIG_FUNCPTR,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
+                         IARG_END);
+    PROTO_Free(proto);
+  }
+}
 #endif
 
 static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
@@ -1489,21 +1538,21 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
 
 
 #ifdef _MSC_VER
-  INSERT_BEFORE_2("WaitForSingleObject", Before_WaitForSingleObject);
-  INSERT_AFTER_1("WaitForSingleObject", After_WaitForSingleObject);
   INSERT_BEFORE_6("CreateThread", Before_CreateThread);
   INSERT_AFTER_1("CreateThread", After_CreateThread);
 
-  ReplaceCriticalSectionFunc(rtn, "RtlInitializeCriticalSection",
+  ReplaceStdCallFunc1(rtn, "RtlInitializeCriticalSection",
                              (AFUNPTR)(Replace_RtlInitializeCriticalSection));
-  ReplaceCriticalSectionFunc(rtn, "RtlDeleteCriticalSection",
+  ReplaceStdCallFunc1(rtn, "RtlDeleteCriticalSection",
                              (AFUNPTR)(Replace_RtlDeleteCriticalSection));
-  ReplaceCriticalSectionFunc(rtn, "RtlEnterCriticalSection",
+  ReplaceStdCallFunc1(rtn, "RtlEnterCriticalSection",
                              (AFUNPTR)(Replace_RtlEnterCriticalSection));
-  ReplaceCriticalSectionFunc(rtn, "RtlTryEnterCriticalSection",
+  ReplaceStdCallFunc1(rtn, "RtlTryEnterCriticalSection",
                              (AFUNPTR)(Replace_RtlTryEnterCriticalSection));
-  ReplaceCriticalSectionFunc(rtn, "RtlLeaveCriticalSection",
+  ReplaceStdCallFunc1(rtn, "RtlLeaveCriticalSection",
                              (AFUNPTR)(Replace_RtlLeaveCriticalSection));
+  ReplaceStdCallFunc1(rtn, "SetEvent", (AFUNPTR)(Replace_SetEvent));
+  ReplaceStdCallFunc2(rtn, "WaitForSingleObject", (AFUNPTR)(Replace_WaitForSingleObject));
 #endif
 
   // Annotations.
