@@ -554,6 +554,27 @@ static void After_pthread_join(THREADID tid, ADDRINT pc, ADDRINT ret) {
   HandleThreadJoinAfter(tid);
 }
 
+static void *Replace_memchr(const char *s, int c, size_t n) {
+  for (size_t i = 0; i < n; i++)
+    if (s[i] == c) return (void*)(&s[i]);
+  return NULL;
+}
+
+static uintptr_t Replace_strlen(const char *s) {
+  uintptr_t res = 0;
+  while (s[res])
+    res++;
+  return res;
+}
+
+static const void *Replace_strchr(const char *s, int c) {
+  while (*s) {
+    if (*s == c)
+      return s;
+    s++;
+  }
+  return NULL;
+}
 
 #ifdef _MSC_VER
 
@@ -587,24 +608,24 @@ uintptr_t CallStdCallFun2(CONTEXT *ctx, THREADID tid,
 }
 
 
-uintptr_t Replace_RtlInitializeCriticalSection(RTL_PARAM1) {
+uintptr_t Wrap_RtlInitializeCriticalSection(RTL_PARAM1) {
 //  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
   DumpEvent(LOCK_CREATE, tid, pc, arg0, 0);
   return CallStdCallFun1(ctx, tid, f, arg0);
 }
-uintptr_t Replace_RtlDeleteCriticalSection(RTL_PARAM1) {
+uintptr_t Wrap_RtlDeleteCriticalSection(RTL_PARAM1) {
 //  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
   DumpEvent(LOCK_DESTROY, tid, pc, arg0, 0);
   return CallStdCallFun1(ctx, tid, f, arg0);
 }
-uintptr_t Replace_RtlEnterCriticalSection(RTL_PARAM1) {
+uintptr_t Wrap_RtlEnterCriticalSection(RTL_PARAM1) {
 //  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
   uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
   DumpEvent(LOCK_BEFORE, tid, pc, arg0, 0);
   DumpEvent(WRITER_LOCK, tid, pc, 0, 0);
   return ret;
 }
-uintptr_t Replace_RtlTryEnterCriticalSection(RTL_PARAM1) {
+uintptr_t Wrap_RtlTryEnterCriticalSection(RTL_PARAM1) {
 //  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
   uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
   if (ret) {
@@ -613,21 +634,21 @@ uintptr_t Replace_RtlTryEnterCriticalSection(RTL_PARAM1) {
   }
   return ret;
 }
-uintptr_t Replace_RtlLeaveCriticalSection(RTL_PARAM1) {
+uintptr_t Wrap_RtlLeaveCriticalSection(RTL_PARAM1) {
 //  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
   DumpEvent(UNLOCK, tid, pc, arg0, 0);
   return CallStdCallFun1(ctx, tid, f, arg0);
 }
 
-uintptr_t Replace_SetEvent(RTL_PARAM1) {
-  // Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
+uintptr_t Wrap_SetEvent(RTL_PARAM1) {
+  //Printf("T%d before pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
   uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
+  //Printf("T%d after pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
   DumpEvent(SIGNAL, tid, pc, arg0, 0);
   return ret;
 }
 
-uintptr_t Replace_WaitForSingleObject(RTL_PARAM2) {
-  //  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0, arg1);
+uintptr_t Wrap_WaitForSingleObject(RTL_PARAM2) {
   if (G_flags->verbosity >= 1) {
     ShowPcAndSp(__FUNCTION__, tid, pc, 0);
     Printf("arg0=%lx arg1=%lx\n", arg0, arg1);
@@ -647,7 +668,9 @@ uintptr_t Replace_WaitForSingleObject(RTL_PARAM2) {
   }
 
 
+  //Printf("T%d before pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0, arg1);
   uintptr_t ret = CallStdCallFun2(ctx, tid, f, arg0, arg1);
+  //Printf("T%d after pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0, arg1);
   DumpEvent(WAIT_BEFORE, tid, pc, arg0, 0);
   DumpEvent(WAIT_AFTER, tid, pc, 0, 0);
 
@@ -917,8 +940,8 @@ static void On_AnnotateTraceMemory(THREADID tid, ADDRINT pc,
 static void On_AnnotateNoOp(THREADID tid, ADDRINT pc,
                             ADDRINT file, ADDRINT line) {
   Printf("%s T%d\n", __FUNCTION__, tid);
-  DumpEvent(STACK_TRACE, tid, pc, 0, 0);
-  PrintShadowStack(tid);
+//  DumpEvent(STACK_TRACE, tid, pc, 0, 0);
+//  PrintShadowStack(tid);
 }
 
 static void On_AnnotateCondVarSignal(THREADID tid, ADDRINT pc,
@@ -1238,7 +1261,7 @@ static bool RtnMatchesName(const string &rtn_name, const string &name) {
 #define DEBUG_REPLACE_RTN (0)
 
 #define DEFINE_REPLACEMENT_RTN_1_1(name, RET_T, ARG1_T, before, after)       \
-RET_T Replace_##name(CONTEXT *context, AFUNPTR orig_func, ARG1_T arg1) {     \
+RET_T Wrap_##name(CONTEXT *context, AFUNPTR orig_func, ARG1_T arg1) {     \
   if (DEBUG_REPLACE_RTN) {                                             \
     Printf("->%s: orig=0x%p arg1=%p\n", __FUNCTION__, orig_func,             \
            (void*)arg1);                                                     \
@@ -1260,7 +1283,7 @@ RET_T Replace_##name(CONTEXT *context, AFUNPTR orig_func, ARG1_T arg1) {     \
 }
 
 #define DEFINE_REPLACEMENT_RTN_1_2(name, RET_T, ARG1_T, ARG2_T, before, after) \
-RET_T Replace_##name(CONTEXT *context, AFUNPTR orig_func,                    \
+RET_T Wrap_##name(CONTEXT *context, AFUNPTR orig_func,                    \
                      ARG1_T arg1, ARG2_T arg2) {                             \
   if (DEBUG_REPLACE_RTN) {                                             \
     Printf("->%s: orig=0x%p arg1=%p\n", __FUNCTION__, orig_func,             \
@@ -1285,7 +1308,7 @@ RET_T Replace_##name(CONTEXT *context, AFUNPTR orig_func,                    \
 
 
 #define DEFINE_REPLACEMENT_RTN_0_1(name, ARG1_T, do_before, do_after)        \
-void Replace_##name(CONTEXT *context, AFUNPTR orig_func, ARG1_T arg1) {      \
+void Wrap_##name(CONTEXT *context, AFUNPTR orig_func, ARG1_T arg1) {      \
   if (DEBUG_REPLACE_RTN) {                                             \
     Printf("->%s: orig=0x%p arg1=%p\n", __FUNCTION__, orig_func,             \
            (void*)arg1);                                                     \
@@ -1311,7 +1334,7 @@ void Replace_##name(CONTEXT *context, AFUNPTR orig_func, ARG1_T arg1) {      \
                                PIN_PARG(ARG1_T),                             \
                                PIN_PARG_END());                              \
   RTN_ReplaceSignature(                                                      \
-      rtn, AFUNPTR(Replace_##name),                                          \
+      rtn, AFUNPTR(Wrap_##name),                                          \
       IARG_PROTOTYPE, proto,                                                 \
       IARG_CONTEXT,                                                          \
       IARG_ORIG_FUNCPTR,                                                     \
@@ -1332,7 +1355,7 @@ void Replace_##name(CONTEXT *context, AFUNPTR orig_func, ARG1_T arg1) {      \
                                PIN_PARG(ARG2_T),                             \
                                PIN_PARG_END());                              \
   RTN_ReplaceSignature(                                                      \
-      rtn, AFUNPTR(Replace_##name),                                          \
+      rtn, AFUNPTR(Wrap_##name),                                          \
       IARG_PROTOTYPE, proto,                                                 \
       IARG_CONTEXT,                                                          \
       IARG_ORIG_FUNCPTR,                                                     \
@@ -1400,8 +1423,31 @@ DEFINE_REPLACEMENT_RTN_0_1(
   }
 )
 
+// Completely replace (i.e. not wrap) a function with 3 (or less) parameters.
+// The original function will not be called.
+void ReplaceFunc3(IMG img, RTN rtn, const char *name, AFUNPTR replacement_func) {
+  if (RTN_Valid(rtn) && RtnMatchesName(RTN_Name(rtn), name)) {
+    Printf("RTN_ReplaceSignature on %s (%s)\n", name, IMG_Name(img).c_str());
+    PROTO proto = PROTO_Allocate(PIN_PARG(uintptr_t),
+                                 CALLINGSTD_DEFAULT,
+                                 "proto",
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG_END());
+    RTN_ReplaceSignature(rtn,
+                         AFUNPTR(replacement_func),
+                         IARG_PROTOTYPE, proto,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 2,
+                         IARG_END);
+    PROTO_Free(proto);
+  }
+}
+
 #ifdef _MSC_VER
-void ReplaceStdCallFunc1(RTN rtn, char *name, AFUNPTR replacement_func) {
+void WrapStdCallFunc1(RTN rtn, char *name, AFUNPTR replacement_func) {
   if (RTN_Valid(rtn) && RtnMatchesName(RTN_Name(rtn), name)) {
     Printf("RTN_ReplaceSignature on %s\n", name);
     PROTO proto = PROTO_Allocate(PIN_PARG(uintptr_t),
@@ -1422,7 +1468,7 @@ void ReplaceStdCallFunc1(RTN rtn, char *name, AFUNPTR replacement_func) {
   }
 }
 
-void ReplaceStdCallFunc2(RTN rtn, char *name, AFUNPTR replacement_func) {
+void WrapStdCallFunc2(RTN rtn, char *name, AFUNPTR replacement_func) {
   if (RTN_Valid(rtn) && RtnMatchesName(RTN_Name(rtn), name)) {
     Printf("RTN_ReplaceSignature on %s\n", name);
     PROTO proto = PROTO_Allocate(PIN_PARG(uintptr_t),
@@ -1541,18 +1587,18 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_BEFORE_6("CreateThread", Before_CreateThread);
   INSERT_AFTER_1("CreateThread", After_CreateThread);
 
-  ReplaceStdCallFunc1(rtn, "RtlInitializeCriticalSection",
-                             (AFUNPTR)(Replace_RtlInitializeCriticalSection));
-  ReplaceStdCallFunc1(rtn, "RtlDeleteCriticalSection",
-                             (AFUNPTR)(Replace_RtlDeleteCriticalSection));
-  ReplaceStdCallFunc1(rtn, "RtlEnterCriticalSection",
-                             (AFUNPTR)(Replace_RtlEnterCriticalSection));
-  ReplaceStdCallFunc1(rtn, "RtlTryEnterCriticalSection",
-                             (AFUNPTR)(Replace_RtlTryEnterCriticalSection));
-  ReplaceStdCallFunc1(rtn, "RtlLeaveCriticalSection",
-                             (AFUNPTR)(Replace_RtlLeaveCriticalSection));
-  ReplaceStdCallFunc1(rtn, "SetEvent", (AFUNPTR)(Replace_SetEvent));
-  ReplaceStdCallFunc2(rtn, "WaitForSingleObject", (AFUNPTR)(Replace_WaitForSingleObject));
+  WrapStdCallFunc1(rtn, "RtlInitializeCriticalSection",
+                             (AFUNPTR)(Wrap_RtlInitializeCriticalSection));
+  WrapStdCallFunc1(rtn, "RtlDeleteCriticalSection",
+                             (AFUNPTR)(Wrap_RtlDeleteCriticalSection));
+  WrapStdCallFunc1(rtn, "RtlEnterCriticalSection",
+                             (AFUNPTR)(Wrap_RtlEnterCriticalSection));
+  WrapStdCallFunc1(rtn, "RtlTryEnterCriticalSection",
+                             (AFUNPTR)(Wrap_RtlTryEnterCriticalSection));
+  WrapStdCallFunc1(rtn, "RtlLeaveCriticalSection",
+                             (AFUNPTR)(Wrap_RtlLeaveCriticalSection));
+  WrapStdCallFunc1(rtn, "SetEvent", (AFUNPTR)(Wrap_SetEvent));
+  WrapStdCallFunc2(rtn, "WaitForSingleObject", (AFUNPTR)(Wrap_WaitForSingleObject));
 #endif
 
   // Annotations.
@@ -1592,11 +1638,10 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
 //  INSERT_AFTER_0("recv", After_WaitingIOCall);
 
   // strlen and friends.
-  // TODO(kcc): do something smarter here.
-  INSERT_BEFORE_0("strlen", IgnoreAllBegin);
-  INSERT_AFTER_0("strlen", IgnoreAllEnd);
-  INSERT_BEFORE_0("index", IgnoreAllBegin);
-  INSERT_AFTER_0("index", IgnoreAllEnd);
+  ReplaceFunc3(img, rtn, "memchr", (AFUNPTR)Replace_memchr);
+  ReplaceFunc3(img, rtn, "strchr", (AFUNPTR)Replace_strchr);
+  ReplaceFunc3(img, rtn, "index", (AFUNPTR)Replace_strchr);
+  ReplaceFunc3(img, rtn, "strlen", (AFUNPTR)Replace_strlen);
 
   // pthread_once
   INSERT_BEFORE_1("pthread_once", Before_pthread_once);
