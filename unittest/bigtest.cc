@@ -31,7 +31,6 @@
 #include <string>
 #include <map>
 #include <set>
-#include <ext/hash_map>
 #include <algorithm>
 #include <cstring>      // strlen(), index(), rindex()
 #include <ctime>

@@ -1,14 +1,15 @@
 GTEST_ROOT=../third_party/googletest
 CXX=g++
 CC=gcc
+LD=g++
 
 SUFFIX=
 COPT=
 CXXOPT=
 ARCHFLAGS=
 STATICFLAGS=
-CFLAGS=-g $(COPT) $(ARCHFLAGS)
-CXXFLAGS=-g $(CXXOPT) $(ARCHFLAGS)
+CFLAGS=$(COPT) $(ARCHFLAGS) $(EXTRA_CFLAGS)
+CXXFLAGS=$(CXXOPT) $(ARCHFLAGS) $(EXTRA_CXXFLAGS)
 LDFLAGS=$(ARCHFLAGS) $(STATICFLAGS)
 OS=   # linux, darwin
 ARCH= # x86, amd64
@@ -16,16 +17,6 @@ OX=    # O0, O1, ...
 S=    # <empty>, -static
 BUILD=${OS}-${ARCH}-${OX}${S}
 BIN=bin/
-
-ifeq ($(OPT), 1)
-  OX=O1
-  COPT=-O1
-  CXXOPT=-O1
-else
-  OX=O0
-  COPT=-O0
-  CXXOPT=-O0
-endif
 
 ifeq ($(STATIC), 1)
   S=-static
@@ -49,14 +40,18 @@ ifeq ($(OS), linux)
   EXE=
   O=-o
   LINKO=-o
-  GTEST_LIB=$(GTEST_ROOT)/make/$(BUILD)-gtest_main.a
+  EXTRA_CXXFLAGS=-Wall -Werror -Wno-sign-compare -Wshadow -Wno-unused-function 
+  EXTRA_CFLAGS=-Wall -Werror -Wno-sign-compare -Wshadow -Wno-unused-function -std=c89 
+  LIBS=-lpthread
 else ifeq ($(OS), darwin)
   SO=so
   OBJ=o
   EXE=
   O=-o
   LINKO=-Wl,-o,
-  GTEST_LIB=$(GTEST_ROOT)/make/$(BUILD)-gtest_main.a
+  EXTRA_CXXFLAGS=-Wall -Werror -Wno-sign-compare -Wshadow -Wno-unused-function 
+  EXTRA_CFLAGS=-Wall -Werror -Wno-sign-compare -Wshadow -Wno-unused-function -std=c89 
+  LIBS=-lpthread
 else ifeq ($(OS), windows)
   SO=dll
   OBJ=obj
@@ -65,14 +60,43 @@ else ifeq ($(OS), windows)
   LINKO=/OUT:
   ARCHFLAGS=
   CXX=cl
+  CC=cl
   LD=link
-  CXXFLAGS=/c /MT /EHs- /EHa- /wd4530   /D_CRT_SECURE_NO_DEPRECATE /D_SECURE_SCL=0 /nologo /Gy /O2
-  GTEST_LIB=$(GTEST_ROOT)/msvc/gtest/Release/gtest.lib
+  EXTRA_CXXFLAGS=/EHs- /EHa- /wd4530   /D_CRT_SECURE_NO_DEPRECATE /D_SECURE_SCL=0 /nologo /Gy /D "WIN32"
+  EXTRA_CFLAGS=/EHs- /EHa- /wd4530   /D_CRT_SECURE_NO_DEPRECATE /D_SECURE_SCL=0 /nologo /Gy /D "WIN32"
 else
   OS=UNKNOWN_OS
 endif
 
-all: $(BIN)racecheck_unittest-$(BUILD) $(BIN)demo_tests-$(BUILD) $(BIN)bigtest-$(BUILD)
+ifeq ($(OS), windows)
+  ifeq ($(OPT), 1)
+    OX=O1
+    COPT=/MT
+	CXXOPT=/MT
+	GTEST_BUILD=release
+    GTEST_LIB=$(GTEST_ROOT)/msvc/gtest/Release/gtest.lib
+  else
+    OX=O0
+    COPT=/Od /Zi /MTd
+	CXXOPT=/Od /Zi /MTd
+	GTEST_BUILD=debug
+    GTEST_LIB=$(GTEST_ROOT)/msvc/gtest/Debug/gtestd.lib
+  endif
+else
+  ifeq ($(OPT), 1)
+    OX=O1
+    COPT=-g -O1
+	CXXOPT=-g -O1
+  else
+    OX=O0
+    COPT=-g -O0
+	CXXOPT=-g -O0
+  endif
+  GTEST_LIB=$(GTEST_ROOT)/make/$(BUILD)-gtest_main.a
+endif
+
+
+all: $(BIN)racecheck_unittest-$(BUILD)$(EXE) $(BIN)demo_tests-$(BUILD)$(EXE) $(BIN)bigtest-$(BUILD)$(EXE)
 
 bin:
 	mkdir -p bin
@@ -83,41 +107,39 @@ DYNAMIC_ANNOTATIONS_C=${DYNAMIC_ANNOTATIONS_DIR}/dynamic_annotations.c
 DYNAMIC_ANNOTATIONS_O=$(BIN)dynamic_annotations-$(BUILD).$(OBJ)
 DYNAMIC_ANNOTATIONS=${DYNAMIC_ANNOTATIONS_C} ${DYNAMIC_ANNOTATIONS_H}
 
-$(BIN)racecheck_unittest-$(BUILD): $(BIN)racecheck_unittest-$(BUILD).$(OBJ) $(BIN)old_test_suite-$(BUILD).$(OBJ) \
-		$(BIN)posix_tests-$(BUILD).$(OBJ) $(GTEST_LIB)  ${DYNAMIC_ANNOTATIONS_O} | bin
-	${CXX} ${LDFLAGS} $^ -lpthread -o $@
+$(BIN)racecheck_unittest-$(BUILD)$(EXE): $(BIN)racecheck_unittest-$(BUILD).$(OBJ) $(BIN)old_test_suite-$(BUILD).$(OBJ) \
+		$(GTEST_LIB)  ${DYNAMIC_ANNOTATIONS_O} | bin
+	${LD} ${LDFLAGS} $^ $(LIBS) $(LINKO)$@
 
-$(BIN)demo_tests-$(BUILD): $(BIN)old_test_suite-$(BUILD).$(OBJ) $(BIN)demo_tests-$(BUILD).$(OBJ) \
+$(BIN)demo_tests-$(BUILD)$(EXE): $(BIN)old_test_suite-$(BUILD).$(OBJ) $(BIN)demo_tests-$(BUILD).$(OBJ) \
 		$(GTEST_LIB) ${DYNAMIC_ANNOTATIONS_O} | bin
-	${CXX} $(LDFLAGS) $^ -lpthread -o $@
+	${LD} $(LDFLAGS) $^ $(LIBS) $(LINKO)$@
 
-$(BIN)bigtest-$(BUILD): $(BIN)bigtest-$(BUILD).$(OBJ) ${DYNAMIC_ANNOTATIONS_O} | bin
-	${CXX} $(LDFLAGS) $^ -lpthread -o $@
+$(BIN)bigtest-$(BUILD)$(EXE): $(BIN)bigtest-$(BUILD).$(OBJ) ${DYNAMIC_ANNOTATIONS_O} | bin
+	${LD} $(LDFLAGS) $^ $(LIBS) $(LINKO)$@
 
+ifeq ($(OS), windows)
+$(GTEST_LIB):
+	cd $(GTEST_ROOT)/msvc && devenv /build $(GTEST_BUILD) /project gtest gtest.sln
+else
+$(BIN)racecheck_unittest-$(BUILD)$(EXE): $(BIN)posix_tests-$(BUILD).$(OBJ)
 $(GTEST_LIB):
 	cd $(GTEST_ROOT)/make && $(MAKE) clean && $(MAKE) CXXFLAGS="$(CXXFLAGS)" && mv gtest_main.a $(BUILD)-gtest_main.a
+endif
 
 $(BIN)%-$(BUILD).$(OBJ): %.cc ${DYNAMIC_ANNOTATIONS} thread_wrappers.h thread_wrappers_pthread.h old_test_suite.h test_utils.h | bin
-	${CXX} ${CXXFLAGS} $< -Wall -Werror -Wno-sign-compare -Wshadow -Wno-unused-function \
+	${CXX} ${CXXFLAGS} \
 		 -I${DYNAMIC_ANNOTATIONS_DIR} -I${GTEST_ROOT}/include \
-		 -g -DDYNAMIC_ANNOTATIONS_ENABLED=1 -c -o $@
+		 -DDYNAMIC_ANNOTATIONS_ENABLED=1 -c $< $(O)$@
 
 ${DYNAMIC_ANNOTATIONS_O}: ${DYNAMIC_ANNOTATIONS_C}
-	${CC} ${CFLAGS} $< -Wall -Werror -Wno-sign-compare -Wshadow -Wno-unused-function \
-		-std=c89 -I${DYNAMIC_ANNOTATIONS_DIR} -g -DDYNAMIC_ANNOTATIONS_ENABLED=1 \
-		-c -o $@
-
-# TODO(timurrrr): do smarter dependency list
-win: racecheck_unittest.cc old_test_suite.cc windows_tests.cc demo_tests.cc ${DYNAMIC_ANNOTATIONS} \
-     thread_wrappers.h thread_wrappers_win.h old_test_suite.h test_utils.h
-	cd ${GTEST_ROOT}/msvc && devenv /build debug /project gtest gtest.sln
-	cl.exe ${CXXFLAGS} /Od /Zi /EHsc /nologo /MTd \
-		/D "DYNAMIC_ANNOTATIONS_ENABLED=1" /D "WIN32" \
-		-I${DYNAMIC_ANNOTATIONS_DIR} -I${GTEST_ROOT}/include \
-		racecheck_unittest.cc old_test_suite.cc windows_tests.cc demo_tests.cc \
-		${DYNAMIC_ANNOTATIONS_C} ${GTEST_ROOT}/msvc/gtest/Debug/gtestd.lib
-
+	${CC} ${CFLAGS} $< \
+		-I${DYNAMIC_ANNOTATIONS_DIR} -DDYNAMIC_ANNOTATIONS_ENABLED=1 \
+		-c $(O)$@
 
 clean:
 	rm -rf bin racecheck_unittest demo_tests bigtest *.o *.O1 *.O2 *.obj *.dSYM *.exe *.pdb *.ilk *.idb *.manifest
 	cd ${GTEST_ROOT}/make && rm -f *-gtest_main.a && make clean
+	rm -f ${GTEST_ROOT}/msvc/*-gtest_main.lib
+	rm -f ${GTEST_ROOT}/msvc/Debug
+	rm -f ${GTEST_ROOT}/msvc/Release
