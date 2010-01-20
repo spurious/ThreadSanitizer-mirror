@@ -47,7 +47,11 @@ extern "C" {
 #include "pub_tool_tooliface.h"
 #include "pub_tool_options.h"
 } // extern "C"
-
+#if defined(VGP_arm_linux)
+// A hacky trick to disable the inclusion of bits/string3.h on ARM.
+// TODO(glider): this may be specific to Ubuntu 9.10 gcc configuration.
+#define __USE_FORTIFY_LEVEL 0
+#endif
 #endif //  TS_VALGRIND_H_
 // {{{1 end
 // vim:shiftwidth=2:softtabstop=2:expandtab
