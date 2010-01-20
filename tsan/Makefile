@@ -126,6 +126,7 @@ dummy:
 	@echo "For 32-bit Linux build: make l32"
 	@echo "For mixed  Linux build: make l"
 	@echo "For 32-bit Mac   build: make m"
+	@echo "For ARM    Linux build: make la"
 
 all: TS_valgrind TS_pin TS_offline test
 
@@ -146,6 +147,8 @@ l32d:
 	$(MAKE) all OS=linux ARCH=x86  DEBUG=1
 l32o:
 	$(MAKE) all OS=linux ARCH=x86  DEBUG=0
+la:
+	$(MAKE) all OS=linux ARCH=arm DEBUG=0
 
 w: w32
 w32: w32d
