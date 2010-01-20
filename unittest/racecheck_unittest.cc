@@ -42,6 +42,8 @@
 #include "old_test_suite.h"
 #include "test_utils.h"
 
+#include <gtest/gtest.h>
+
 // The tests are
 // - Stability tests (marked STAB)
 // - Performance tests (marked PERF)
@@ -6754,6 +6756,30 @@ void Run() {
 
 REGISTER_TEST2(Run, 513, PERFORMANCE | PRINT_STATS | EXCLUDE_FROM_ALL)
 }  // namespace test513
+
+namespace ThreadChainTest{  // {{{1 Reg test for thread creation
+void Thread1() { }
+void Thread2() {
+  MyThread t(Thread1);
+  t.Start();
+  t.Join();
+}
+void Thread3() {
+  MyThread t(Thread2);
+  t.Start();
+  t.Join();
+}
+void Thread4() {
+  MyThread t(Thread3);
+  t.Start();
+  t.Join();
+}
+
+TEST(RegTests, ThreadChainTest) {
+  Thread4();
+}
+
+}  // namespace
 
 // End {{{1
  // vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker
