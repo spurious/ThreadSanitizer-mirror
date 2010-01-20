@@ -129,7 +129,7 @@ int     GLOB = 0;
 Mutex   MU;
 
 void Waker() {
-  usleep(100000);  // Make sure the waiter blocks.
+  usleep(200000);  // Make sure the waiter blocks.
   GLOB = 1;
 
   MU.Lock();
@@ -5929,6 +5929,7 @@ Mutex mu;
 CondVar cv;
 
 void Signaller() {
+  usleep(1000000);
   GLOB = 1;
   mu.Lock();
   COND = 1;
@@ -5937,7 +5938,6 @@ void Signaller() {
 }
 
 void Waiter() {
-  usleep(100000);
   mu.Lock();
   while (COND == 0)
     cv.Wait(&mu);
@@ -5947,7 +5947,7 @@ void Waiter() {
 }
 
 void Racer() {
-  usleep(500000);
+  usleep(2000000);
   mu.Lock();
   GLOB = 3;
   mu.Unlock();

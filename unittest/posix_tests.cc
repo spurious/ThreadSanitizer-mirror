@@ -65,7 +65,7 @@ namespace test11 {
 int     GLOB = 0;
 Mutex   MU;
 void Worker() {
-  usleep(2000000);
+  usleep(200000);
   CHECK(GLOB != 777);
 
   MU.Lock();
