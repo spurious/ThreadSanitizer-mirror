@@ -36,6 +36,10 @@
 # include "ts_valgrind.h"
 # define CHECK tl_assert
 # define TS_USE_STLPORT
+#if defined(VGP_arm_linux)
+// This macro is explicitly undefined in glibc for ARM.
+#define _GLIBCXX_USE_C99 1
+#endif  // ARM
 
 #elif defined(__GNUC__)
 # undef NDEBUG  // Assert is always on.
@@ -252,13 +256,19 @@ extern int GetNumberOfFoundErrors();
 
 inline uintptr_t tsan_bswap(uintptr_t x) {
 #if defined(__GNUC__) && __WORDSIZE == 64 
-  // return __builtin_bswap64(x);
+#if defined(VGP_arm_linux)
+  return __builtin_bswap64(x);
+#else
   __asm__("bswapq %0" : "=r" (x) : "0" (x));
   return x;
+#endif // ARM
 #elif defined(__GNUC__) && __WORDSIZE == 32 
-  // return __builtin_bswap32(x);
+#if defined(VGP_arm_linux)
+  return __builtin_bswap32(x);
+#else
   __asm__("bswapl %0" : "=r" (x) : "0" (x));
   return x;
+#endif // ARM
 #elif defined(_WIN32)
   return x;  // TODO(kcc)
   // UNIMPLEMENTED();
