@@ -121,7 +121,7 @@ $(BIN)bigtest-$(BUILD)$(EXE): $(BIN)bigtest-$(BUILD).$(OBJ) ${DYNAMIC_ANNOTATION
 
 ifeq ($(OS), windows)
 $(GTEST_LIB):
-	cd $(GTEST_ROOT)/msvc && devenv /build $(GTEST_BUILD) /project gtest gtest.sln
+	cd $(GTEST_ROOT)/msvc && devenv /upgrade gtest.sln && devenv /build $(GTEST_BUILD) /project gtest gtest.sln
 else
 $(BIN)racecheck_unittest-$(BUILD)$(EXE): $(BIN)posix_tests-$(BUILD).$(OBJ)
 $(GTEST_LIB):
