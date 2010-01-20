@@ -72,14 +72,14 @@ endif
 ifeq ($(OS), windows)
   ifeq ($(OPT), 1)
     OX=O1
-    COPT=/MT
-	CXXOPT=/MT
+    COPT=/Zi /MT
+    CXXOPT=/Zi /MT
 	GTEST_BUILD=release
     GTEST_LIB=$(GTEST_ROOT)/msvc/gtest/Release/gtest.lib
   else
     OX=O0
     COPT=/Od /Zi /MTd
-	CXXOPT=/Od /Zi /MTd
+    CXXOPT=/Od /Zi /MTd
 	GTEST_BUILD=debug
     GTEST_LIB=$(GTEST_ROOT)/msvc/gtest/Debug/gtestd.lib
   endif
