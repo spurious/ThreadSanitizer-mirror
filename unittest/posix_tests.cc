@@ -46,6 +46,61 @@
 #include "test_utils.h"
 #include <gtest/gtest.h>
 
+static CondVar CV;
+static int     COND = 0;
+
+// test11: FP. Synchronization via CondVar, 2 workers. {{{1
+// This test is properly synchronized, but currently (Dec 2007)
+// helgrind reports a false positive.
+//
+// Parent:                              Worker1, Worker2:
+// 1. Start(workers)                    a. read(GLOB)
+// 2. MU.Lock()                         b. MU.Lock()
+// 3. while(COND != 2)        /-------- c. CV.Signal()
+//      CV.Wait(&MU) <-------/          d. MU.Unlock()
+// 4. MU.Unlock()
+// 5. write(GLOB)
+//
+namespace test11 {
+int     GLOB = 0;
+Mutex   MU;
+void Worker() {
+  usleep(2000000);
+  CHECK(GLOB != 777);
+
+  MU.Lock();
+  COND++;
+  CV.Signal();
+  MU.Unlock();
+}
+
+void Parent() {
+  COND = 0;
+
+  MyThreadArray t(Worker, Worker);
+  t.Start();
+
+  MU.Lock();
+  while(COND != 2) {
+    CV.Wait(&MU);
+  }
+  MU.Unlock();
+
+  GLOB = 2;
+
+  t.Join();
+}
+
+void Run() {
+//  ANNOTATE_EXPECT_RACE(&GLOB, "test11. FP. Fixed by MSMProp1.");
+  printf("test11: negative\n");
+  Parent();
+  printf("\tGLOB=%d\n", GLOB);
+}
+REGISTER_TEST(Run, 11);
+}  // namespace test11
+
+
 // test75: TN. Test for sem_post, sem_wait, sem_trywait. {{{1
 namespace test75 {
 int     GLOB = 0;
