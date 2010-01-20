@@ -269,6 +269,9 @@ static int32_t VgTidToTsTid(ThreadId vg_tid) {
 
 static vector<string> *g_command_line_options = 0;
 static void InitCommandLineOptions() {
+  if(G_flags == NULL) {
+    G_flags = new FLAGS;
+  }
   if (g_command_line_options == NULL) {
     g_command_line_options = new vector<string>;
   }
@@ -281,6 +284,9 @@ Bool ts_process_cmd_line_option (Char* arg) {
 }
 
 void ts_print_usage (void) {
+  InitCommandLineOptions();
+  ThreadSanitizerParseFlags(g_command_line_options);
+
   ThreadSanitizerPrintUsage();
 }
 
@@ -294,7 +300,6 @@ void evh__die_mem ( Addr a, SizeT len ) {
 
 
 void ts_post_clo_init(void) {
-  G_flags = new FLAGS;
   InitCommandLineOptions();
   ThreadSanitizerParseFlags(g_command_line_options);
 
