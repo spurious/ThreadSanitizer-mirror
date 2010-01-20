@@ -112,7 +112,9 @@ extern "C" int puts(const char *s) {
 
 extern "C" void exit(int e) { VG_(exit)(e); }
 
+#ifndef VGP_arm_linux
 extern "C" void abort() { CHECK(0); }
+#endif
 
 
 // TODO: make this rtn public
@@ -959,6 +961,26 @@ void instrument_statement ( IRStmt* st, IRSB* bbIn, IRSB* bbOut, IRType hWordTy 
             False/*!isStore*/,
             sizeofIRType(hWordTy)
             );
+      }
+      break;
+    }
+
+    case Ist_LLSC: {
+      /* Ignore store-conditionals, treat load-linked's as normal loads. */
+      IRType dataTy;
+      if (st->Ist.LLSC.storedata == NULL) {
+        /* LL */
+        dataTy = typeOfIRTemp(bbIn->tyenv, st->Ist.LLSC.result);
+        instrument_mem_access(
+          bbOut,
+          st->Ist.LLSC.addr,
+          sizeofIRType(dataTy),
+          False/*isStore*/,
+          sizeofIRType(hWordTy)
+        );
+      } else {
+        /* SC */
+        /* ignore */
       }
       break;
     }
