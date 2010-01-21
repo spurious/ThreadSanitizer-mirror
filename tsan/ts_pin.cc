@@ -44,6 +44,12 @@
 # define ATOMIC_READ(a) __sync_add_and_fetch(a, 0)
 
 #elif defined(_MSC_VER)
+namespace WINDOWS
+{
+// This is the way of including winows.h recommended by PIN docs.
+#include<Windows.h>
+}
+
 # define YIELD() // __yield()
 // TODO(kcc): how to demangle on windows?
 // TODO(kcc): add actuall implementations
@@ -155,6 +161,9 @@ static int n_created_threads = 0;
 const uint32_t kMaxThreads = 100000;
 
 static TSLock g_main_ts_lock;
+static TSLock g_thread_create_lock;
+// Under g_thread_create_lock.
+static THREADID g_tid_of_thread_which_called_create_thread = -1;
 
 static uintptr_t g_current_pc;
 
@@ -415,14 +424,21 @@ void TmpCallback2(THREADID tid, ADDRINT pc) {
 }
 
 //--------- Threads --------------------------------- {{{2
+static void HandleThreadCreateBefore(THREADID tid) {
+  g_thread_create_lock.Lock();
+  CHECK(g_tid_of_thread_which_called_create_thread == (THREADID)-1);
+  g_tid_of_thread_which_called_create_thread = tid;
+  n_created_threads++;
+}
+
 static void Before_pthread_create(THREADID tid, ADDRINT pc,
                                   ADDRINT arg1, ADDRINT arg2,
                                   ADDRINT arg3, ADDRINT arg4) {
   PinThread &t = g_pin_threads[tid];
-  n_created_threads++;
   t.child_ptid_ptr = (pthread_t*)arg1;
   *(pthread_t*)arg1 = NULL;
   IgnoreAllBegin(tid, pc);
+  HandleThreadCreateBefore(tid);
 }
 
 #ifdef _MSC_VER
@@ -433,7 +449,7 @@ static void Before_CreateThread(THREADID tid, ADDRINT pc,
   if (G_flags->verbosity >= 1) {
     ShowPcAndSp(__FUNCTION__, tid, pc, 0);
   }
-  n_created_threads++;
+  HandleThreadCreateBefore(tid);
 }
 #endif
 
@@ -463,10 +479,12 @@ void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
   THREADID parent_tid = -1;
   if (has_parent) {
     // Find out the parent's tid.
-    for (parent_tid = tid - 1; parent_tid > 0; parent_tid--) {
-      if (g_pin_threads[parent_tid].os_tid == parent_os_tid)
-        break;
-    }
+    // for (parent_tid = tid - 1; parent_tid > 0; parent_tid--) {
+    //   if (g_pin_threads[parent_tid].os_tid == parent_os_tid)
+    //     break;
+    //}
+    // On Windows, PIN_GetParentTid() is unreliable, so we need to use this:
+    parent_tid = g_tid_of_thread_which_called_create_thread;
     CHECK(parent_tid != (THREADID)-1);
     g_pin_threads[tid].parent_tid = parent_tid;
   }
@@ -488,6 +506,10 @@ static THREADID HandleThreadCreateAfter(THREADID tid, pthread_t child_ptid) {
   while (!ATOMIC_READ(&g_pin_threads[tid].last_child_tid)) {
     YIELD();
   }
+
+  CHECK(g_tid_of_thread_which_called_create_thread != (THREADID)-1);
+  g_tid_of_thread_which_called_create_thread = -1;
+  g_thread_create_lock.Unlock();
 
   THREADID last_child_tid = g_pin_threads[tid].last_child_tid;
   CHECK(last_child_tid);
@@ -642,9 +664,9 @@ uintptr_t Wrap_RtlLeaveCriticalSection(RTL_PARAM1) {
 
 uintptr_t Wrap_SetEvent(RTL_PARAM1) {
   //Printf("T%d before pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
+  DumpEvent(SIGNAL, tid, pc, arg0, 0);
   uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
   //Printf("T%d after pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
-  DumpEvent(SIGNAL, tid, pc, arg0, 0);
   return ret;
 }
 
