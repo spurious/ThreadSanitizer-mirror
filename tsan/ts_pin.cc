@@ -65,32 +65,7 @@ namespace WINDOWS
 #endif
 #define CHECK assert
 
-//--------- Simple SpinLock ------------------ {{{1
-// Just a simple lock.
-#ifdef __GNUC__
-class TSLock {
- public:
-  TSLock() : lock_(0) {}
-  void Lock() {
-    int i;
-    for (i = -5; !TryLock(); i++) {
-      if (i > 0)
-        YIELD();
-    }
-  }
-  void Unlock() {
-    CAS(&lock_, 1, 0);
-  }
-  bool TryLock() {
-    if (CAS(&lock_, 0, 1)) {
-      return true;
-    }
-    return false;
-  }
- private:
-  volatile long lock_;
-};
-#elif defined(_MSC_VER)
+//--------- Simple Lock ------------------ {{{1
 class TSLock {
  public:
   TSLock() {
@@ -106,9 +81,6 @@ class TSLock {
  private:
   PIN_LOCK lock_;
 };
-
-#endif
-
 
 class ScopedLock {
  public:
@@ -182,7 +154,6 @@ struct PinThread {
   size_t       last_malloc_size;
   size_t       last_mmap_size;
   pthread_t    my_ptid;
-  pthread_t    joined_ptid;
   bool         started;
   uintptr_t    cxa_guard;
   int          in_cxa_guard;
@@ -593,8 +564,8 @@ void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
     g_pin_threads[tid].parent_tid = parent_tid;
   }
 
-  if (1 || G_flags->verbosity >= 1) {
-    Printf("ThreadStart child=%d parent=%d\n", tid, parent_tid);
+  if (G_flags->debug_level >= 2) {
+    Printf("T%d ThreadStart parent=%d child=%d\n", tid, parent_tid, tid);
   }
 
   if (has_parent) {
@@ -627,28 +598,32 @@ void CallbackForThreadFini(THREADID tid, const CONTEXT *ctxt,
   // due to possible deadlock with PIN's internal lock.
 }
 
-static THREADID HandleThreadJoinAfter(THREADID tid) {
+static THREADID HandleThreadJoinAfter(THREADID tid, pthread_t joined_ptid) {
   THREADID joined_tid = 0;
   for (joined_tid = 1; joined_tid < kMaxThreads; joined_tid++) {
-    if (g_pin_threads[joined_tid].my_ptid == g_pin_threads[tid].joined_ptid)
+    if (g_pin_threads[joined_tid].my_ptid == joined_ptid)
       break;
-  }
-
-  if (1 || G_flags->verbosity >= 1) {
-    Printf("JoinAfter   child=%d parent=%d\n", joined_tid, tid);
   }
   CHECK(joined_tid < kMaxThreads);
   g_pin_threads[joined_tid].my_ptid = 0;
+
+  if (G_flags->debug_level >= 2) {
+    Printf("T%d JoinAfter   parent=%d child=%d\n", tid, tid, joined_tid);
+  }
   DumpEvent(THR_END, joined_tid, 0, 0, 0);
-  DumpEvent(THR_JOIN_AFTER, tid, 0, 0, 0);
+  DumpEvent(THR_JOIN_AFTER, tid, 0, joined_tid, 0);
   return joined_tid;
 }
 
 static uintptr_t Wrap_pthread_join(WRAP_PARAM4) {
-  DumpEvent(THR_JOIN_BEFORE, tid, 0, arg0, 0);
-  g_pin_threads[tid].joined_ptid = (pthread_t)arg0;
+  if (G_flags->debug_level >= 2)
+    Printf("T%d in  pthread_join %p\n", tid, arg0);
+  //DumpEvent(THR_JOIN_BEFORE, tid, 0, 0, 0);
+  pthread_t joined_ptid = (pthread_t)arg0;
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
-  HandleThreadJoinAfter(tid);
+  HandleThreadJoinAfter(tid, joined_ptid);
+  if (G_flags->debug_level >= 2)
+    Printf("T%d out pthread_join %p\n", tid, arg0);
   return ret;
 }
 
@@ -755,9 +730,10 @@ uintptr_t Wrap_WaitForSingleObject(WRAP_PARAM4) {
     g_win_handles_which_are_threads->erase(arg0);
   }
 
+  pthread_t joined_ptid = 0;
   if (is_thread_handle) {
     DumpEvent(THR_JOIN_BEFORE, tid, 0, arg0, 0);
-    g_pin_threads[tid].joined_ptid = arg0;
+    joined_ptid = arg0;
   }
 
 
@@ -768,7 +744,7 @@ uintptr_t Wrap_WaitForSingleObject(WRAP_PARAM4) {
   DumpEvent(WAIT_AFTER, tid, pc, 0, 0);
 
   if (is_thread_handle) {
-    THREADID joined_tid = HandleThreadJoinAfter(tid);
+    THREADID joined_tid = HandleThreadJoinAfter(tid, joined_ptid);
   }
 
   return ret;

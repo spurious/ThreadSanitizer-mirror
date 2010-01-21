@@ -3465,7 +3465,7 @@ struct Thread {
       min_sp_(0),
       creation_context_(creation_context),
       announced_(false),
-      join_child_ptid_(0),
+      join_child_tid_(0),
       rd_lockset_(0),
       wr_lockset_(0),
       lock_mu_(0),
@@ -3587,7 +3587,7 @@ struct Thread {
     CHECK(ptid);
 
     (*ptid_to_tid_)[ptid] = tid;
-    if (0) {
+    if (G_flags->debug_level >= 2) {
       Printf("T%d: pthread_t=%p\n", tid.raw(), ptid);
     }
   }
@@ -3605,25 +3605,28 @@ struct Thread {
   }
 
   void HandleThreadJoinBefore(pthread_t join_child_ptid) {
-    CHECK_EQ(join_child_ptid_, 0);
-    CHECK_NE(join_child_ptid, 0);
-    join_child_ptid_ = join_child_ptid;
+    if (join_child_ptid) {
+      CHECK_NE(join_child_ptid, 0);
+      CHECK(ptid_to_tid_->count(join_child_ptid));
+      TID child_tid = (*ptid_to_tid_)[join_child_ptid];
+
+      if (G_flags->debug_level >= 2) {
+        Printf("T%d: Joining child T%d: pthread_t=%p size=%ld\n",
+               tid().raw(), child_tid.raw(),
+               join_child_ptid, ptid_to_tid_->size());
+      }
+
+      ptid_to_tid_->erase(join_child_ptid);
+      join_child_tid_ = child_tid;
+    } else {
+      join_child_tid_ = TID(0);
+    }
   }
 
   // Return the TID of the joined child and it's vts
-  TID HandleThreadJoinAfter(VTS **vts_at_exit) {
-    CHECK_NE(join_child_ptid_, 0);
-    CHECK(ptid_to_tid_->count(join_child_ptid_));
-    TID child_tid = (*ptid_to_tid_)[join_child_ptid_];
-
-    if (G_flags->debug_level >= 2) {
-      Printf("T%d: Joined child T%d: pthread_t=%p size=%ld\n",
-             tid().raw(), child_tid.raw(),
-             join_child_ptid_, ptid_to_tid_->size());
-    }
-
-    ptid_to_tid_->erase(join_child_ptid_);
-    join_child_ptid_ = 0;
+  TID HandleThreadJoinAfter(VTS **vts_at_exit, TID joined_tid_if_known) {
+    TID child_tid = joined_tid_if_known != TID(0)
+        ? joined_tid_if_known : join_child_tid_;
     *vts_at_exit = Thread::Get(child_tid)->vts_at_exit_;
     if (*vts_at_exit == NULL) {
       Printf("vts_at_exit==NULL; parent=%d, child=%d\n",
@@ -4120,7 +4123,7 @@ struct Thread {
   bool      announced_;
 
 
-  pthread_t join_child_ptid_;
+  TID join_child_tid_;
 
 
   LSID   rd_lockset_;
@@ -5858,7 +5861,7 @@ class Detector {
     TID tid = cur_tid_;
     Thread *parent_thr = Thread::Get(tid);
     VTS *vts_at_exit = NULL;
-    TID child_tid = parent_thr->HandleThreadJoinAfter(&vts_at_exit);
+    TID child_tid = parent_thr->HandleThreadJoinAfter(&vts_at_exit, TID(e_->a()));
     CHECK(vts_at_exit);
     CHECK(parent_thr->sid().valid());
     Segment::AssertLive(parent_thr->sid(),  __LINE__);
