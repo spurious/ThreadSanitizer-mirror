@@ -112,7 +112,7 @@ $(BIN)racecheck_unittest-$(BUILD)$(EXE): $(BIN)racecheck_unittest-$(BUILD).$(OBJ
 		$(GTEST_LIB)  ${DYNAMIC_ANNOTATIONS_O} | bin
 	${LD} ${LDFLAGS} $^ $(LIBS) $(LINKO)$@
 
-$(BIN)demo_tests-$(BUILD)$(EXE): $(BIN)old_test_suite-$(BUILD).$(OBJ) $(BIN)demo_tests-$(BUILD).$(OBJ) \
+$(BIN)demo_tests-$(BUILD)$(EXE): $(BIN)demo_tests-$(BUILD).$(OBJ) \
 		$(GTEST_LIB) ${DYNAMIC_ANNOTATIONS_O} | bin
 	${LD} $(LDFLAGS) $^ $(LIBS) $(LINKO)$@
 

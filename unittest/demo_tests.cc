@@ -31,8 +31,12 @@
 
 #include <gtest/gtest.h>
 
-#include "old_test_suite.h"
 #include "test_utils.h"
+
+int main(int argc, char** argv) {
+  testing::InitGoogleTest(&argc, argv);
+  return RUN_ALL_TESTS();
+}
 
 namespace RaceReportDemoTest {  // {{{1
 Mutex mu1;  // This Mutex guards var.
@@ -95,14 +99,13 @@ void Worker() {
   }
 }
 
-void Run() {
+TEST(DemoTests, test302) {
   printf("test302: Complex race that happens twice.\n");
   MyThread t1(Worker), t2(Worker);
   t1.Start();
   t2.Start();
   t1.Join();   t2.Join();
 }
-REGISTER_TEST2(Run, 302, RACE_DEMO)
 }  // namespace test302
 
 
@@ -114,14 +117,13 @@ Mutex MU;
 void Worker1() { CHECK(GLOB >= 0); }
 void Worker2() { MU.Lock(); GLOB=1;  MU.Unlock();}
 
-void Run() {
+TEST(DemoTests, test303) {
   printf("test303: a race that needs annotations.\n");
   ANNOTATE_TRACE_MEMORY(&GLOB);
   MyThreadArray t(Worker1, Worker2);
   t.Start();
   t.Join();
 }
-REGISTER_TEST2(Run, 303, RACE_DEMO)
 }  // namespace test303
 
 
@@ -152,7 +154,7 @@ void Worker4() {
   MU.Lock(); *STR += " + a very very long string"; MU.Unlock();
 }
 
-void Run() {
+TEST(DemoTests, test304) {
   STR = new string ("The String");
   printf("test304: a race where memory tracing does not work.\n");
   MyThreadArray t(Worker1, Worker2, Worker3, Worker4);
@@ -162,7 +164,6 @@ void Run() {
   printf("%s\n", STR->c_str());
   delete STR;
 }
-REGISTER_TEST2(Run, 304, RACE_DEMO)
 }  // namespace test304
 
 
@@ -187,7 +188,7 @@ void Worker2() { MU1.Lock();             GLOB=2;               MU1.Unlock(); }
 void Worker3() { MU1.Lock(); MU2.Lock(); GLOB=3; MU2.Unlock(); MU1.Unlock(); }
 void Worker4() {             MU2.Lock(); GLOB=4; MU2.Unlock();               }
 
-void Run() {
+TEST(DemoTests, test305) {
   ANNOTATE_TRACE_MEMORY(&GLOB);
   printf("test305: simple race.\n");
   MyThread t1(Worker1), t2(Worker2), t3(Worker3), t4(Worker4);
@@ -197,7 +198,6 @@ void Run() {
   t4.Start(); usleep(100);
   t1.Join(); t2.Join(); t3.Join(); t4.Join();
 }
-REGISTER_TEST2(Run, 305, RACE_DEMO)
 }  // namespace test305
 
 // test306: Two locks are used to protect a var.  {{{1
@@ -212,7 +212,7 @@ void Worker1() { MU1.Lock(); MU2.Lock(); GLOB=1; MU2.Unlock(); MU1.Unlock(); }
 void Worker2() { MU1.Lock(); MU2.Lock(); GLOB=3; MU2.Unlock(); MU1.Unlock(); }
 void Worker3() {                         GLOB=4;               }
 
-void Run() {
+TEST(DemoTests, test306) {
   ANNOTATE_TRACE_MEMORY(&GLOB);
   printf("test306: simple race.\n");
   MyThread t1(Worker1), t2(Worker2), t3(Worker3);
@@ -221,7 +221,6 @@ void Run() {
   t3.Start(); usleep(100);
   t1.Join(); t2.Join(); t3.Join();
 }
-REGISTER_TEST2(Run, 306, RACE_DEMO)
 }  // namespace test306
 
 // test307: Simple race, code with control flow  {{{1
@@ -252,7 +251,7 @@ void Worker2() { Worker1(); }
 void Worker3() { Worker2(); }
 void Worker4() { Worker3(); }
 
-void Run() {
+TEST(DemoTests, test307) {
   GLOB = new int;
   *GLOB = 1;
   printf("test307: simple race, code with control flow\n");
@@ -260,7 +259,6 @@ void Run() {
   t1.Start();
   t1.Join();
 }
-REGISTER_TEST2(Run, 307, RACE_DEMO)
 }  // namespace test307
 
 // test308: Example of double-checked-locking  {{{1
@@ -295,14 +293,13 @@ void Worker2() { UseMe(); }
 void Worker3() { UseMe(); }
 
 
-void Run() {
+TEST(DemoTests, test308) {
   ANNOTATE_TRACE_MEMORY(&is_inited);
   printf("test308: Example of double-checked-locking\n");
   MyThreadArray t1(Worker1, Worker2, Worker3);
   t1.Start();
   t1.Join();
 }
-REGISTER_TEST2(Run, 308, RACE_DEMO)
 }  // namespace test308
 
 // test309: Simple race on an STL object.  {{{1
@@ -317,14 +314,13 @@ void Worker2() {
   GLOB="Booooooooooo";
 }
 
-void Run() {
+TEST(DemoTests, test309) {
   printf("test309: simple race on an STL object.\n");
   MyThread t1(Worker1), t2(Worker2);
   t1.Start();
   t2.Start();
   t1.Join();   t2.Join();
 }
-REGISTER_TEST2(Run, 309, RACE_DEMO)
 }  // namespace test309
 
 // test310: One more simple race.  {{{1
@@ -366,7 +362,7 @@ void Thread2()  { DoWrite2(); }
 void DoRead()  { Reader();  }
 void Thread3() { DoRead();  }
 
-void Run() {
+TEST(DemoTests, test310) {
   printf("test310: simple race.\n");
   PTR = new int;
   ANNOTATE_TRACE_MEMORY(PTR);
@@ -383,7 +379,6 @@ void Run() {
   t2.Join();
   t3.Join();
 }
-REGISTER_TEST2(Run, 310, RACE_DEMO)
 }  // namespace test310
 
 // test311: Yet another simple race.  {{{1
@@ -429,7 +424,7 @@ void Thread3()     { DoGoodRead();  }
 void DoBadWrite()  { BuggyWriter(); }
 void Thread4()     { DoBadWrite(); }
 
-void Run() {
+TEST(DemoTests, test311) {
   printf("test311: simple race.\n");
   PTR = new int;
   ANNOTATE_TRACE_MEMORY(PTR);
@@ -451,7 +446,6 @@ void Run() {
   t3.Join();
   t4.Join();
 }
-REGISTER_TEST2(Run, 311, RACE_DEMO)
 }  // namespace test311
 
 // test312: A test with a very deep stack. {{{1
@@ -478,13 +472,12 @@ void Func17() { Func16(); }
 void Func18() { Func17(); }
 void Func19() { Func18(); }
 void Worker() { Func19(); }
-void Run() {
+TEST(DemoTests, test312) {
   printf("test312: simple race with deep stack.\n");
   MyThreadArray t(Worker, Worker, Worker);
   t.Start();
   t.Join();
 }
-REGISTER_TEST2(Run, 312, RACE_DEMO)
 }  // namespace test312
 
 // test313 TP: test for thread graph output {{{1
@@ -504,12 +497,11 @@ void Worker(int depth) {
     GLOB++; // Race here
   }
 }
-void Run() {
+TEST(DemoTests, test313) {
   printf("test313: positive\n");
   Worker(4);
   printf("\tGLOB=%d\n", GLOB);
 }
-REGISTER_TEST2(Run, 313, RACE_DEMO)
 }  // namespace test313
 
 #ifndef WIN32
@@ -552,7 +544,7 @@ void Thread1() {
 void Thread2() {
   delete a;
 }
-void Run() {
+TEST(DemoTests, test314) {
   printf("test314: race on vptr; May print A::F() or B::F().\n");
   { // Will print B::F()
     a = new B;
@@ -567,7 +559,6 @@ void Run() {
     t.Join();
   }
 }
-REGISTER_TEST2(Run, 314, RACE_DEMO)
 }  // namespace test314
 #endif
 
@@ -594,12 +585,11 @@ void Thread2() {
   mu.Unlock();
 }
 
-void Run() {
+TEST(DemoTests, test315) {
   GLOB = 0;
   printf("test315: false positive of the hybrid state machine\n");
   MyThreadArray t(Thread1, Thread2);
   t.Start();
   t.Join();
 }
-REGISTER_TEST2(Run, 315, RACE_DEMO)
 }  // namespace test315
