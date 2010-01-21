@@ -181,7 +181,6 @@ struct PinThread {
   THREADID     parent_tid;
   size_t       last_malloc_size;
   size_t       last_mmap_size;
-  pthread_t   *child_ptid_ptr;
   pthread_t    my_ptid;
   pthread_t    joined_ptid;
   bool         started;
@@ -522,14 +521,37 @@ static void HandleThreadCreateBefore(THREADID tid) {
   n_created_threads++;
 }
 
-static void Before_pthread_create(THREADID tid, ADDRINT pc,
-                                  ADDRINT arg1, ADDRINT arg2,
-                                  ADDRINT arg3, ADDRINT arg4) {
-  PinThread &t = g_pin_threads[tid];
-  t.child_ptid_ptr = (pthread_t*)arg1;
-  *(pthread_t*)arg1 = NULL;
-  IgnoreAllBegin(tid, pc);
+static THREADID HandleThreadCreateAfter(THREADID tid, pthread_t child_ptid) {
+  // Spin, waiting for last_child_tid to appear (i.e. wait for the thread to
+  // actually start) so that we know the child's tid. No locks.
+  while (!ATOMIC_READ(&g_pin_threads[tid].last_child_tid)) {
+    YIELD();
+  }
+
+  CHECK(g_tid_of_thread_which_called_create_thread != (THREADID)-1);
+  g_tid_of_thread_which_called_create_thread = -1;
+  g_thread_create_lock.Unlock();
+
+  THREADID last_child_tid = g_pin_threads[tid].last_child_tid;
+  CHECK(last_child_tid);
+
+  DumpEvent(THR_SET_PTID, last_child_tid, 0, child_ptid, 0);
+  g_pin_threads[last_child_tid].my_ptid = child_ptid;
+  g_pin_threads[tid].last_child_tid = 0;
+  return last_child_tid;
+}
+
+static uintptr_t Wrap_pthread_create(WRAP_PARAM4) {
   HandleThreadCreateBefore(tid);
+
+  IgnoreAllBegin(tid, pc);
+  uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
+  IgnoreAllEnd(tid, pc);
+
+  pthread_t child_ptid = *(pthread_t*)arg0;
+  HandleThreadCreateAfter(tid, child_ptid);
+
+  return ret;
 }
 
 #ifdef _MSC_VER
@@ -572,41 +594,12 @@ void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
   }
 
   if (1 || G_flags->verbosity >= 1) {
-    Printf("#  tid=%d has_parent=%d parent_tid=%d\n",
-           tid, (int)has_parent, parent_tid);
+    Printf("ThreadStart child=%d parent=%d\n", tid, parent_tid);
   }
 
-  g_pin_threads[tid].child_ptid_ptr = NULL;
   if (has_parent) {
     g_pin_threads[parent_tid].last_child_tid = tid;
   }
-}
-
-static THREADID HandleThreadCreateAfter(THREADID tid, pthread_t child_ptid) {
-  // Spin, waiting for last_child_tid to appear (i.e. wait for the thread to
-  // actually start) so that we know the child's tid. No locks.
-  while (!ATOMIC_READ(&g_pin_threads[tid].last_child_tid)) {
-    YIELD();
-  }
-
-  CHECK(g_tid_of_thread_which_called_create_thread != (THREADID)-1);
-  g_tid_of_thread_which_called_create_thread = -1;
-  g_thread_create_lock.Unlock();
-
-  THREADID last_child_tid = g_pin_threads[tid].last_child_tid;
-  CHECK(last_child_tid);
-
-  DumpEvent(THR_SET_PTID, last_child_tid, 0, child_ptid, 0);
-  g_pin_threads[last_child_tid].my_ptid = child_ptid;
-  g_pin_threads[tid].last_child_tid = 0;
-  return last_child_tid;
-}
-
-static void After_pthread_create(THREADID tid, ADDRINT pc, ADDRINT ret) {
-  PinThread &t = g_pin_threads[tid];
-  IgnoreAllEnd(tid, pc);
-  pthread_t child_ptid = *(pthread_t*)t.child_ptid_ptr;
-  HandleThreadCreateAfter(tid, child_ptid);
 }
 
 #ifdef _MSC_VER
@@ -642,7 +635,7 @@ static THREADID HandleThreadJoinAfter(THREADID tid) {
   }
 
   if (1 || G_flags->verbosity >= 1) {
-    Printf("JoinAfter: parent=%d child=%d\n", tid, joined_tid);
+    Printf("JoinAfter   child=%d parent=%d\n", joined_tid, tid);
   }
   CHECK(joined_tid < kMaxThreads);
   g_pin_threads[joined_tid].my_ptid = 0;
@@ -1571,8 +1564,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_AFTER_1("mmap", After_mmap);
 
   // pthread create/join
-  INSERT_BEFORE_4("pthread_create", Before_pthread_create);
-  INSERT_AFTER_1("pthread_create", After_pthread_create);
+  WrapFunc4(img, rtn, "pthread_create", (AFUNPTR)Wrap_pthread_create);
   WrapFunc4(img, rtn, "pthread_join", (AFUNPTR)Wrap_pthread_join);
 
    // pthread_cond_*
@@ -1818,14 +1810,11 @@ int main(INT32 argc, CHAR **argv) {
 
 //--------- Questions about PIN -------------------------- {{{1
 /* Questions about PIN:
-  
-  - Am I allowed to call pthread_create() in the pin tool?  -- **NO**
-  - How to Instrument thread create/join events in parent 
-  (other than intercepting pthread_create/join*)
+
   - Names (e.g. pthread_create@... __pthread_mutex_unlock)
   - How to get name of a global var by it's address?
-  - How to get stack pointer at thread creation? 
-  - How to get a stack trace (other than intercepting calls, entries, exits) 
+  - How to get stack pointer at thread creation?
+  - How to get a stack trace (other than intercepting calls, entries, exits)
   - assert with full stack trace?
   */
 // end. {{{1
