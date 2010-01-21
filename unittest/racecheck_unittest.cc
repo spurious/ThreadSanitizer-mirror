@@ -6202,11 +6202,15 @@ void Worker(int depth) {
     GLOB++; // Race here
   }
 }
-TEST(StressTests, DISABLED_ThreadTree) {
+
+TEST(StressTests, ThreadTree3) {
+  ANNOTATE_EXPECT_RACE(&GLOB, "race");
+  Worker(3);
+}
+
+TEST(StressTests, DISABLED_ThreadTree7) {
   ANNOTATE_EXPECT_RACE(&GLOB, "race");
   Worker(7);
-  CHECK(GLOB > 100);
-  printf("GLOB=%d\n", GLOB);
 }
 }  // namespace test313
 
