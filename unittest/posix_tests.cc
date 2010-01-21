@@ -42,7 +42,6 @@
 #include <string>
 #include <vector>
 
-#include "old_test_suite.h"
 #include "test_utils.h"
 #include <gtest/gtest.h>
 
@@ -91,13 +90,12 @@ void Parent() {
   t.Join();
 }
 
-void Run() {
+TEST(NegativeTests, test11) {
 //  ANNOTATE_EXPECT_RACE(&GLOB, "test11. FP. Fixed by MSMProp1.");
   printf("test11: negative\n");
   Parent();
   printf("\tGLOB=%d\n", GLOB);
 }
-REGISTER_TEST(Run, 11);
 }  // namespace test11
 
 
@@ -122,7 +120,7 @@ void TryWaiter() {
   CHECK(GLOB==1);
 }
 
-void Run() {
+TEST(NegativeTests, test75) {
 #ifndef NO_UNNAMED_SEM
   sem_init(&sem[0], 0, 0);
   sem_init(&sem[1], 0, 0);
@@ -145,7 +143,6 @@ void Run() {
   sem_destroy(&sem[1]);
 #endif // NO_UNNAMED_SEM
 }
-REGISTER_TEST(Run, 75)
 }  // namespace test75
 
 
@@ -180,7 +177,10 @@ void Reader() {
   GLOB = 2;
 }
 
-void Run() {
+#ifndef __APPLE__
+// Tsan for Mac OS is missing the unlink() syscall handler.
+// TODO(glider): add the syscall handler to Valgrind.
+TEST(NegativeTests, test98) {
   printf("test98: negative, synchronization via I/O\n");
   char in_name[100];
   char out_name[100];
@@ -203,11 +203,7 @@ void Run() {
   unlink(in_name);
   unlink(out_name);
 }
-#ifndef __APPLE__
-// Tsan for Mac OS is missing the unlink() syscall handler.
-// TODO(glider): add the syscall handler to Valgrind.
-REGISTER_TEST(Run, 98)
-#endif
+#endif  // __APPLE__
 }  // namespace test98
 
 
@@ -231,14 +227,13 @@ void Worker1() {
 }
 
 
-void Run() {
+TEST(NegativeTests, test106) {
   printf("test106: negative\n");
   MyThreadArray t(Worker0, Worker1, Worker1, Worker1);
   t.Start();
   t.Join();
   printf("\tGLOB=%d\n", *GLOB);
 }
-REGISTER_TEST2(Run, 106, FEATURE)
 }  // namespace test106
 
 
@@ -279,7 +274,7 @@ void Worker() {
   (*NEW)++;
   (*NEW_ARR)++;
 }
-void Run() {
+TEST(PositiveTests, test110) {
   printf("test110: positive (race on a stack object)\n");
 
   char x = 0;
@@ -345,7 +340,6 @@ void Run() {
   delete NEW;
   delete [] NEW_ARR;
 }
-REGISTER_TEST(Run, 110)
 }  // namespace test110
 
 
@@ -387,7 +381,11 @@ void Worker() {
   }
 }
 
-void Run() {
+#ifndef __APPLE__
+/* This test is disabled for Darwin because of the tricky implementation of
+ * sem_open on that platform: subsequent attempts to open an existing semafore
+ * create new ones. */
+TEST(NegativeTests, test115) {
   printf("test115: stab (sem_open())\n");
 
   // just check that sem_open is not completely broken
@@ -404,12 +402,7 @@ void Run() {
   // clean up
   sem_unlink(kSemName);
 }
-#ifndef __APPLE__
-/* This test is disabled for Darwin because of the tricky implementation of
- * sem_open on that platform: subsequent attempts to open an existing semafore
- * create new ones. */
-REGISTER_TEST(Run, 115)
-#endif
+#endif  // __APPLE__
 }  // namespace test115
 
 
@@ -436,7 +429,7 @@ void Thread3() { CorrectWrite(&VAR2); }
 void Thread4() { WriteWhileHoldingReaderLock(&VAR2); }
 
 
-void Run() {
+TEST(PositiveTests, test122) {
   printf("test122: positive (rw-lock)\n");
   VAR1 = 0;
   VAR2 = 0;
@@ -450,7 +443,6 @@ void Run() {
   t.Start();
   t.Join();
 }
-REGISTER_TEST(Run, 122)
 }  // namespace test122
 
 
@@ -490,7 +482,7 @@ void Aggregator() {
   printf("sum=%d\n", sum);
 }
 
-void Run() {
+TEST(NegativeTests, test125) {
   printf("test125: negative\n");
 
   ANNOTATE_PURE_HAPPENS_BEFORE_MUTEX(&mu);
@@ -511,7 +503,6 @@ void Run() {
   }
 
 }
-REGISTER_TEST(Run, 125)
 }  // namespace test125
 
 
@@ -534,18 +525,17 @@ void Worker() {
   t.Join();
 }
 
-void Run() {
+TEST(NegativeTests, test135) {
   printf("test135: negative (mmap)\n");
   MyThreadArray t(Worker, Worker, Worker, Worker);
   t.Start();
   t.Join();
 }
-REGISTER_TEST(Run, 135)
 }  // namespace test135
 
 // test136. Unlock twice. {{{1
 namespace test136 {
-void Run() {
+TEST(PositiveTests, test136) {
   printf("test136: unlock twice\n");
   pthread_mutexattr_t attr;
   CHECK(0 == pthread_mutexattr_init(&attr));
@@ -559,10 +549,7 @@ void Run() {
   int ret_destroy = pthread_mutex_destroy(&mu);
   printf("  pthread_mutex_unlock returned %d\n", ret_unlock);
   printf("  pthread_mutex_destroy returned %d\n", ret_destroy);
-
 }
-
-REGISTER_TEST(Run, 136)
 }  // namespace test136
 
 
@@ -611,7 +598,7 @@ void Waiter2() {
   GLOB2 = 2;
 }
 
-void Run() {
+TEST(NegativeTests, test141) {
   FAST_MODE_INIT(&GLOB1);
   FAST_MODE_INIT(&GLOB2);
   printf("test141: FP. unlink/fopen, rmdir/opendir.\n");
@@ -637,7 +624,6 @@ void Run() {
   free(dir_name);
   dir_name = 0;
 }
-REGISTER_TEST(Run, 141)
 }  // namespace test141
 
 
@@ -645,7 +631,7 @@ REGISTER_TEST(Run, 141)
 namespace test146 {
 // Worker1 locks the globals for writing for a long time.
 // Worker2 tries to write to globals twice: without a writer lock and with it.
-// Worker3 tries to read from globals twice: without a reader lock and with it. 
+// Worker3 tries to read from globals twice: without a reader lock and with it.
 int     GLOB1 = 0;
 char    padding1[64];
 int     GLOB2 = 0;
@@ -691,7 +677,7 @@ void Worker3() {
   }
 }
 
-void Run() {
+TEST(PositiveTests, test146) {
   FAST_MODE_INIT(&GLOB1);
   FAST_MODE_INIT(&GLOB2);
   FAST_MODE_INIT(&GLOB3);
@@ -711,9 +697,7 @@ void Run() {
   printf("\tGLOB3=%d\n", GLOB3);
   printf("\tGLOB4=%d\n", GLOB4);
 }
-REGISTER_TEST(Run, 146);
 } // namespace test146
-
 
 namespace SignalsAndMallocTest {  // {{{1
 // Regression test for
