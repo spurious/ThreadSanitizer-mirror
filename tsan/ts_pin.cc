@@ -177,7 +177,6 @@ struct StackFrame {
 };
 //--------------- PinThread ----------------- {{{1
 struct PinThread {
-  OS_THREAD_ID os_tid;
   volatile long last_child_tid;
   THREADID     parent_tid;
   size_t       last_malloc_size;
@@ -456,15 +455,13 @@ static void Before_CreateThread(THREADID tid, ADDRINT pc,
 
 void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
                             INT32 flags, void *v) {
-  OS_THREAD_ID my_os_tid = PIN_GetTid();
-  OS_THREAD_ID parent_os_tid = PIN_GetParentTid();
+  // We can not rely on PIN_GetParentTid() since it is broken on Windows.
 
   if (g_pin_threads == NULL) {
     g_pin_threads = new PinThread[kMaxThreads];
   }
 
   bool has_parent = true;
-// if (parent_os_tid == INVALID_OS_THREAD_ID) { // broken on windows (?)
   if (tid == 0) {
     // Main thread or we have attached to a running process.
     has_parent = false;
@@ -474,24 +471,17 @@ void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
 
   CHECK(tid < kMaxThreads);
   memset(&g_pin_threads[tid], 0, sizeof(PinThread));
-  g_pin_threads[tid].os_tid = my_os_tid;
 
   THREADID parent_tid = -1;
   if (has_parent) {
-    // Find out the parent's tid.
-    // for (parent_tid = tid - 1; parent_tid > 0; parent_tid--) {
-    //   if (g_pin_threads[parent_tid].os_tid == parent_os_tid)
-    //     break;
-    //}
-    // On Windows, PIN_GetParentTid() is unreliable, so we need to use this:
     parent_tid = g_tid_of_thread_which_called_create_thread;
     CHECK(parent_tid != (THREADID)-1);
     g_pin_threads[tid].parent_tid = parent_tid;
   }
 
   if (G_flags->verbosity >= 1) {
-    Printf("#  tid=%d has_parent=%d parent_tid=%d my_os_tid=%d parent_os_tid=%d\n",
-           tid, (int)has_parent, parent_tid, my_os_tid, parent_os_tid);
+    Printf("#  tid=%d has_parent=%d parent_tid=%d\n",
+           tid, (int)has_parent, parent_tid);
   }
 
   g_pin_threads[tid].child_ptid_ptr = NULL;
