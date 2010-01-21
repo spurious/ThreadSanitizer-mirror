@@ -3597,8 +3597,11 @@ struct Thread {
   }
 
   void HandleThreadEnd() {
+    CHECK(is_running_);
     is_running_ = false;
+    CHECK(!vts_at_exit_);
     vts_at_exit_ = vts()->Clone();
+    CHECK(vts_at_exit_);
   }
 
   void HandleThreadJoinBefore(pthread_t join_child_ptid) {
@@ -3609,16 +3612,24 @@ struct Thread {
 
   // Return the TID of the joined child and it's vts
   TID HandleThreadJoinAfter(VTS **vts_at_exit) {
-    if (0) {
-      Printf("T%d: Joined child : pthread_t=%p size=%ld\n",
-             tid().raw(), join_child_ptid_, ptid_to_tid_->size());
-    }
     CHECK_NE(join_child_ptid_, 0);
     CHECK(ptid_to_tid_->count(join_child_ptid_));
     TID child_tid = (*ptid_to_tid_)[join_child_ptid_];
+
+    if (G_flags->debug_level >= 2) {
+      Printf("T%d: Joined child T%d: pthread_t=%p size=%ld\n",
+             tid().raw(), child_tid.raw(),
+             join_child_ptid_, ptid_to_tid_->size());
+    }
+
     ptid_to_tid_->erase(join_child_ptid_);
     join_child_ptid_ = 0;
     *vts_at_exit = Thread::Get(child_tid)->vts_at_exit_;
+    if (*vts_at_exit == NULL) {
+      Printf("vts_at_exit==NULL; parent=%d, child=%d\n",
+             tid().raw(), child_tid.raw());
+    }
+    CHECK(*vts_at_exit);
     if (0)
     Printf("T%d: vts_at_exit_: %s\n", child_tid.raw(),
            (*vts_at_exit)->ToString().c_str());
@@ -5846,7 +5857,7 @@ class Detector {
   void HandleThreadJoinAfter() {
     TID tid = cur_tid_;
     Thread *parent_thr = Thread::Get(tid);
-    VTS *vts_at_exit;
+    VTS *vts_at_exit = NULL;
     TID child_tid = parent_thr->HandleThreadJoinAfter(&vts_at_exit);
     CHECK(vts_at_exit);
     CHECK(parent_thr->sid().valid());
