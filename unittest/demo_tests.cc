@@ -504,9 +504,9 @@ TEST(DemoTests, test313) {
 }
 }  // namespace test313
 
-#ifndef WIN32
 // test314: minimalistic test for race in vptr. {{{1
 namespace test314 {
+#ifndef WIN32
 // Race on vptr. Will run A::F() or B::F() depending on the timing.
 class A {
  public:
@@ -559,8 +559,8 @@ TEST(DemoTests, test314) {
     t.Join();
   }
 }
+#endif  // WIN32
 }  // namespace test314
-#endif
 
 // test315: demo for hybrid's false positive. {{{1
 namespace test315 {

@@ -6187,6 +6187,29 @@ REGISTER_TEST(Run, 157);
 }  // namespace test157
 
 
+namespace  StressTests_ThreadTree {  //{{{1
+int     GLOB = 0;
+
+// Worker(N) will do 2^N increments of GLOB, each increment in a separate thread
+void Worker(int depth) {
+  CHECK(depth >= 0);
+  if (depth > 0) {
+    ThreadPool pool(2);
+    pool.StartWorkers();
+    pool.Add(NewCallback(Worker, depth-1));
+    pool.Add(NewCallback(Worker, depth-1));
+  } else {
+    GLOB++; // Race here
+  }
+}
+TEST(StressTests, DISABLED_ThreadTree) {
+  ANNOTATE_EXPECT_RACE(&GLOB, "race");
+  Worker(7);
+  CHECK(GLOB > 100);
+  printf("GLOB=%d\n", GLOB);
+}
+}  // namespace test313
+
 // test400: Demo of a simple false positive. {{{1
 namespace test400 {
 static Mutex mu;
