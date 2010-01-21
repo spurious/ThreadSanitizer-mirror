@@ -312,6 +312,98 @@ static void DumpEvent(EventType type, int32_t tid, uintptr_t pc,
   DumpEventInternal(type, tid, pc, a, info);
 }
 
+//--------- Wraping and relacing --------------- {{{1
+static bool RtnMatchesName(const string &rtn_name, const string &name) {
+  CHECK(name.size() > 0);
+  size_t pos = rtn_name.find(name);
+  if (pos == string::npos) {
+    return false;
+  }
+  if (pos == 0 && name.size() == rtn_name.size()) {
+  //  Printf("Full match: %s %s\n", rtn_name.c_str(), name.c_str());
+    return true;
+  }
+  if (pos == 0 && name.size() < rtn_name.size()
+      && rtn_name[name.size()] == '@') {
+  //  Printf("Versioned match: %s %s\n", rtn_name.c_str(), name.c_str());
+    return true;
+  }
+  return false;
+}
+
+#define WRAP_PARAM4  THREADID tid, ADDRINT pc, CONTEXT *ctx, \
+                                AFUNPTR f,\
+                                uintptr_t arg0, uintptr_t arg1, \
+                                uintptr_t arg2, uintptr_t arg3
+
+static uintptr_t CallFun4(CONTEXT *ctx, THREADID tid,
+                         AFUNPTR f, uintptr_t arg0, uintptr_t arg1,
+                         uintptr_t arg2, uintptr_t arg3) {
+  uintptr_t ret = 0xdeadbee1;
+  PIN_CallApplicationFunction(ctx, tid,
+                              CALLINGSTD_DEFAULT, (AFUNPTR)(f),
+                              PIN_PARG(uintptr_t), &ret,
+                              PIN_PARG(uintptr_t), arg0,
+                              PIN_PARG(uintptr_t), arg1,
+                              PIN_PARG(uintptr_t), arg2,
+                              PIN_PARG(uintptr_t), arg3,
+                              PIN_PARG_END());
+  return ret;
+}
+
+#define CALL_ME_INSIDE_WRAPPER_4() CallFun4(ctx, tid, f, arg0, arg1, arg2, arg3)
+
+// Completely replace (i.e. not wrap) a function with 3 (or less) parameters.
+// The original function will not be called.
+void ReplaceFunc3(IMG img, RTN rtn, const char *name, AFUNPTR replacement_func) {
+  if (RTN_Valid(rtn) && RtnMatchesName(RTN_Name(rtn), name)) {
+    Printf("RTN_ReplaceSignature on %s (%s)\n", name, IMG_Name(img).c_str());
+    PROTO proto = PROTO_Allocate(PIN_PARG(uintptr_t),
+                                 CALLINGSTD_DEFAULT,
+                                 "proto",
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG_END());
+    RTN_ReplaceSignature(rtn,
+                         AFUNPTR(replacement_func),
+                         IARG_PROTOTYPE, proto,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 2,
+                         IARG_END);
+    PROTO_Free(proto);
+  }
+}
+
+// Wrap a function with up to 4 parameters.
+void WrapFunc4(IMG img, RTN rtn, const char *name, AFUNPTR replacement_func) {
+  if (RTN_Valid(rtn) && RtnMatchesName(RTN_Name(rtn), name)) {
+    Printf("RTN_ReplaceSignature on %s (%s)\n", name, IMG_Name(img).c_str());
+    PROTO proto = PROTO_Allocate(PIN_PARG(uintptr_t),
+                                 CALLINGSTD_DEFAULT,
+                                 "proto",
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG_END());
+    RTN_ReplaceSignature(rtn,
+                         AFUNPTR(replacement_func),
+                         IARG_PROTOTYPE, proto,
+                         IARG_THREAD_ID,
+                         IARG_INST_PTR,
+                         IARG_CONTEXT,
+                         IARG_ORIG_FUNCPTR,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 2,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 3,
+                         IARG_END);
+    PROTO_Free(proto);
+  }
+}
+
 //--------- Instrumentation callbacks --------------- {{{1
 //---------- Debug -----------------------------------{{{2
 #define DEB_PR (0)
@@ -479,7 +571,7 @@ void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
     g_pin_threads[tid].parent_tid = parent_tid;
   }
 
-  if (G_flags->verbosity >= 1) {
+  if (1 || G_flags->verbosity >= 1) {
     Printf("#  tid=%d has_parent=%d parent_tid=%d\n",
            tid, (int)has_parent, parent_tid);
   }
@@ -536,13 +628,6 @@ static void After_CreateThread(THREADID tid, ADDRINT pc, ADDRINT ret) {
   }
 }
 #endif
-
-static void Before_pthread_join(THREADID tid, ADDRINT pc,
-                                ADDRINT arg1, ADDRINT arg2) {
-  DumpEvent(THR_JOIN_BEFORE, tid, 0, arg1, 0);
-  g_pin_threads[tid].joined_ptid = (pthread_t)arg1;
-}
-
 void CallbackForThreadFini(THREADID tid, const CONTEXT *ctxt,
                           INT32 code, void *v) {
   // We can not DumpEvent here,
@@ -555,6 +640,10 @@ static THREADID HandleThreadJoinAfter(THREADID tid) {
     if (g_pin_threads[joined_tid].my_ptid == g_pin_threads[tid].joined_ptid)
       break;
   }
+
+  if (1 || G_flags->verbosity >= 1) {
+    Printf("JoinAfter: parent=%d child=%d\n", tid, joined_tid);
+  }
   CHECK(joined_tid < kMaxThreads);
   g_pin_threads[joined_tid].my_ptid = 0;
   DumpEvent(THR_END, joined_tid, 0, 0, 0);
@@ -562,8 +651,12 @@ static THREADID HandleThreadJoinAfter(THREADID tid) {
   return joined_tid;
 }
 
-static void After_pthread_join(THREADID tid, ADDRINT pc, ADDRINT ret) {
+static uintptr_t Wrap_pthread_join(WRAP_PARAM4) {
+  DumpEvent(THR_JOIN_BEFORE, tid, 0, arg0, 0);
+  g_pin_threads[tid].joined_ptid = (pthread_t)arg0;
+  uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
   HandleThreadJoinAfter(tid);
+  return ret;
 }
 
 static void *Replace_memchr(const char *s, int c, size_t n) {
@@ -590,11 +683,6 @@ static const void *Replace_strchr(const char *s, int c) {
 
 #ifdef _MSC_VER
 
-#define RTL_PARAM1  THREADID tid, ADDRINT pc, CONTEXT *ctx, \
-                                AFUNPTR f, uintptr_t arg0
-
-#define RTL_PARAM2  THREADID tid, ADDRINT pc, CONTEXT *ctx, \
-                                AFUNPTR f, uintptr_t arg0, uintptr_t arg1
 
 uintptr_t CallStdCallFun1(CONTEXT *ctx, THREADID tid,
                          AFUNPTR f, uintptr_t arg0) {
@@ -620,24 +708,24 @@ uintptr_t CallStdCallFun2(CONTEXT *ctx, THREADID tid,
 }
 
 
-uintptr_t Wrap_RtlInitializeCriticalSection(RTL_PARAM1) {
+uintptr_t Wrap_RtlInitializeCriticalSection(WRAP_PARAM4) {
 //  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
   DumpEvent(LOCK_CREATE, tid, pc, arg0, 0);
   return CallStdCallFun1(ctx, tid, f, arg0);
 }
-uintptr_t Wrap_RtlDeleteCriticalSection(RTL_PARAM1) {
+uintptr_t Wrap_RtlDeleteCriticalSection(WRAP_PARAM4) {
 //  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
   DumpEvent(LOCK_DESTROY, tid, pc, arg0, 0);
   return CallStdCallFun1(ctx, tid, f, arg0);
 }
-uintptr_t Wrap_RtlEnterCriticalSection(RTL_PARAM1) {
+uintptr_t Wrap_RtlEnterCriticalSection(WRAP_PARAM4) {
 //  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
   uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
   DumpEvent(LOCK_BEFORE, tid, pc, arg0, 0);
   DumpEvent(WRITER_LOCK, tid, pc, 0, 0);
   return ret;
 }
-uintptr_t Wrap_RtlTryEnterCriticalSection(RTL_PARAM1) {
+uintptr_t Wrap_RtlTryEnterCriticalSection(WRAP_PARAM4) {
 //  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
   uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
   if (ret) {
@@ -646,13 +734,13 @@ uintptr_t Wrap_RtlTryEnterCriticalSection(RTL_PARAM1) {
   }
   return ret;
 }
-uintptr_t Wrap_RtlLeaveCriticalSection(RTL_PARAM1) {
+uintptr_t Wrap_RtlLeaveCriticalSection(WRAP_PARAM4) {
 //  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
   DumpEvent(UNLOCK, tid, pc, arg0, 0);
   return CallStdCallFun1(ctx, tid, f, arg0);
 }
 
-uintptr_t Wrap_SetEvent(RTL_PARAM1) {
+uintptr_t Wrap_SetEvent(WRAP_PARAM4) {
   //Printf("T%d before pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
   DumpEvent(SIGNAL, tid, pc, arg0, 0);
   uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
@@ -660,7 +748,7 @@ uintptr_t Wrap_SetEvent(RTL_PARAM1) {
   return ret;
 }
 
-uintptr_t Wrap_WaitForSingleObject(RTL_PARAM2) {
+uintptr_t Wrap_WaitForSingleObject(WRAP_PARAM4) {
   if (G_flags->verbosity >= 1) {
     ShowPcAndSp(__FUNCTION__, tid, pc, 0);
     Printf("arg0=%lx arg1=%lx\n", arg0, arg1);
@@ -688,11 +776,6 @@ uintptr_t Wrap_WaitForSingleObject(RTL_PARAM2) {
 
   if (is_thread_handle) {
     THREADID joined_tid = HandleThreadJoinAfter(tid);
-
-    if (G_flags->verbosity >= 1) {
-      ShowPcAndSp(__FUNCTION__, tid, pc, 0);
-      Printf("Join: ret: %lx; parent=%d child=%d\n", ret, tid, joined_tid);
-    }
   }
 
   return ret;
@@ -1167,23 +1250,6 @@ void CallbackForTRACE(TRACE trace, void *v) {
   }
 }
 
-static bool RtnMatchesName(const string &rtn_name, const string &name) {
-  CHECK(name.size() > 0);
-  size_t pos = rtn_name.find(name);
-  if (pos == string::npos) {
-    return false;
-  }
-  if (pos == 0 && name.size() == rtn_name.size()) {
-  //  Printf("Full match: %s %s\n", rtn_name.c_str(), name.c_str());
-    return true;
-  }
-  if (pos == 0 && name.size() < rtn_name.size()
-      && rtn_name[name.size()] == '@') {
-  //  Printf("Versioned match: %s %s\n", rtn_name.c_str(), name.c_str());
-    return true;
-  }
-  return false;
-}
 
 #define INSERT_FN_HELPER(point, name, rtn, to_insert, ...) \
     RTN_Open(rtn); \
@@ -1435,28 +1501,6 @@ DEFINE_REPLACEMENT_RTN_0_1(
   }
 )
 
-// Completely replace (i.e. not wrap) a function with 3 (or less) parameters.
-// The original function will not be called.
-void ReplaceFunc3(IMG img, RTN rtn, const char *name, AFUNPTR replacement_func) {
-  if (RTN_Valid(rtn) && RtnMatchesName(RTN_Name(rtn), name)) {
-    Printf("RTN_ReplaceSignature on %s (%s)\n", name, IMG_Name(img).c_str());
-    PROTO proto = PROTO_Allocate(PIN_PARG(uintptr_t),
-                                 CALLINGSTD_DEFAULT,
-                                 "proto",
-                                 PIN_PARG(uintptr_t),
-                                 PIN_PARG(uintptr_t),
-                                 PIN_PARG(uintptr_t),
-                                 PIN_PARG_END());
-    RTN_ReplaceSignature(rtn,
-                         AFUNPTR(replacement_func),
-                         IARG_PROTOTYPE, proto,
-                         IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
-                         IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
-                         IARG_FUNCARG_ENTRYPOINT_VALUE, 2,
-                         IARG_END);
-    PROTO_Free(proto);
-  }
-}
 
 #ifdef _MSC_VER
 void WrapStdCallFunc1(RTN rtn, char *name, AFUNPTR replacement_func) {
@@ -1529,8 +1573,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   // pthread create/join
   INSERT_BEFORE_4("pthread_create", Before_pthread_create);
   INSERT_AFTER_1("pthread_create", After_pthread_create);
-  INSERT_BEFORE_2("pthread_join", Before_pthread_join);
-  INSERT_AFTER_1("pthread_join", After_pthread_join);
+  WrapFunc4(img, rtn, "pthread_join", (AFUNPTR)Wrap_pthread_join);
 
    // pthread_cond_*
   INSERT_BEFORE_1("pthread_cond_signal", Before_pthread_cond_signal);
@@ -1747,7 +1790,7 @@ int main(INT32 argc, CHAR **argv) {
 
   // Set up PIN callbacks.
   PIN_AddThreadStartFunction(CallbackForThreadStart, 0);
-  PIN_AddThreadFiniFunction(CallbackForThreadFini, 0);
+  //PIN_AddThreadFiniFunction(CallbackForThreadFini, 0);
   PIN_AddFiniFunction(CallbackForFini, 0);
   IMG_AddInstrumentFunction(CallbackForIMG, 0);
   TRACE_AddInstrumentFunction(CallbackForTRACE, 0);
