@@ -28,10 +28,11 @@ PIN_LIBPATHS=-L$(PIN_ROOT)/extras/xed2-$(PIN_ARCH)/lib -L$(PIN_ROOT)/$(PIN_ARCH)
 PIN_LDFLAGS=-g -shared -Wl,-Bsymbolic -Wl,--version-script=$(PIN_ROOT)/source/include/pintool.ver
 PIN_LIBS= -lpin  -lxed -ldwarf -lelf -ldl -lpthread
 
-DR_CXXFLAGS=-fPIC
+DR_CXXFLAGS=-fPIC -fno-rtti -fno-stack-protector
 DR_DEFINES=-D$(DR_OS) -D$(DR_ARCH)
 DR_INCLUDES=-I$(DYNAMORIO_ROOT)/include
 DR_LDFLAGS=-shared -nostartfiles -nodefaultlibs -lgcc
+DR_LIBS=
 
 OS=   # linux, darwin
 ARCH= # x86, amd64
