@@ -66,6 +66,7 @@ else ifeq ($(ARCH), amd64)
   PIN_ARCH=intel64
   PIN_ARCH2=IA32E
   DR_ARCH=X86_64
+  DR_LD_SCRIPT=-Xlinker -T -Xlinker ./dr64_ldscript # TODO(kcc) this is too hackish...
 else
   ARCH=UNKNOWN_ARCH
 endif
@@ -129,7 +130,7 @@ dummy:
 	@echo "For 32-bit Mac   build: make m"
 	@echo "For ARM    Linux build: make la"
 
-all: TS_valgrind TS_pin TS_offline test
+all: TS_valgrind TS_pin TS_offline TS_dynamorio test
 
 # These rules could be writted in the form of "l: l64 l32", but gtest does not
 # support concurrent builds. We force sequential build of l64 and l32 here.
@@ -275,7 +276,7 @@ $(P)ts_pin.dll: $(TS_PIN_OBJECTS)
 	$(LD) $(ARCHFLAGS) $(PIN_LDFLAGS) $(PIN_LIBPATHS)  /IMPLIB:$(PINP)ts_pin.lib /PDB:$(PINP)ts_pin.pdb /OUT:$@  $^  $(PIN_LIBS)
 
 $(P)ts_dynamorio.so: $(TS_DR_OBJECTS)
-	$(LD) $(ARCHFLAGS) $(DR_LDFLAGS) $(DR_LIBPATHS) -o $@ $^  $(DR_LIBS)
+	$(LD) $(ARCHFLAGS) $(DR_LDFLAGS) $(DR_LIBPATHS) -o $@ $^  $(DR_LIBS) $(DR_LD_SCRIPT)
 
 clean:
 	rm -rfv bin core* pintool.log* pin.log

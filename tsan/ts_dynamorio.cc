@@ -145,12 +145,12 @@ static void OnEvent_ThreadInit(void *drcontext) {
 
   dr_set_tls_field(drcontext, t_ptr);
 
-  dr_printf("T%d %s\n", t.tid, (int)__FUNCTION__+8);
+  dr_printf("T%d %s\n", t.tid, (char*)__FUNCTION__+8);
 }
 
 static void OnEvent_ThreadExit(void *drcontext) {
   DrThread &t = GetCurrentThread(drcontext);
-  dr_printf("T%d %s\n", t.tid, (int)__FUNCTION__+8);
+  dr_printf("T%d %s\n", t.tid, (char*)__FUNCTION__+8);
 }
 
 void OnEvent_ModuleLoaded(void *drcontext, const module_data_t *info,
