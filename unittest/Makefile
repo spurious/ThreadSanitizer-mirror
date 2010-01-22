@@ -120,6 +120,7 @@ $(BIN)bigtest-$(BUILD)$(EXE): $(BIN)bigtest-$(BUILD).$(OBJ) ${DYNAMIC_ANNOTATION
 	${LD} $(LDFLAGS) $^ $(LIBS) $(LINKO)$@
 
 ifeq ($(OS), windows)
+$(BIN)racecheck_unittest-$(BUILD)$(EXE): $(BIN)windows_tests-$(BUILD).$(OBJ)
 $(GTEST_LIB):
 	cd $(GTEST_ROOT)/msvc && devenv /upgrade gtest.sln && devenv /build $(GTEST_BUILD) /project gtest gtest.sln
 else
