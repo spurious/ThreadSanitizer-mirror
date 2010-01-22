@@ -97,7 +97,8 @@ else
 endif
 
 
-all: $(BIN)racecheck_unittest-$(BUILD)$(EXE) $(BIN)demo_tests-$(BUILD)$(EXE) $(BIN)bigtest-$(BUILD)$(EXE)
+all: $(BIN)racecheck_unittest-$(BUILD)$(EXE) $(BIN)demo_tests-$(BUILD)$(EXE) \
+     $(BIN)bigtest-$(BUILD)$(EXE) $(BIN)output_test1-$(BUILD)$(EXE)
 
 bin:
 	mkdir -p bin
@@ -113,6 +114,10 @@ $(BIN)racecheck_unittest-$(BUILD)$(EXE): $(BIN)racecheck_unittest-$(BUILD).$(OBJ
 	${LD} ${LDFLAGS} $^ $(LIBS) $(LINKO)$@
 
 $(BIN)demo_tests-$(BUILD)$(EXE): $(BIN)demo_tests-$(BUILD).$(OBJ) \
+		$(GTEST_LIB) ${DYNAMIC_ANNOTATIONS_O} | bin
+	${LD} $(LDFLAGS) $^ $(LIBS) $(LINKO)$@
+
+$(BIN)output_test1-$(BUILD)$(EXE): $(BIN)output_test1-$(BUILD).$(OBJ) \
 		$(GTEST_LIB) ${DYNAMIC_ANNOTATIONS_O} | bin
 	${LD} $(LDFLAGS) $^ $(LIBS) $(LINKO)$@
 
