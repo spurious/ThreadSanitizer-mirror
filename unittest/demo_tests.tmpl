@@ -1,0 +1,17 @@
+FLAGS \[phb=0, fm=0\]
+
+WARNING: Possible data race during write of size 4 at [x01-9A-Z]+: {{{
+   T2 .test-thread-2. .locks held: .L\d+..:
+    #0  RaceReportDemoTest::Thread2.. .*demo_tests.cc:49
+  Concurrent write.s. happened at .OR AFTER. these points:
+   T1 .test-thread-1. .locks held: .L\d+..:
+    #0  RaceReportDemoTest::Thread1.. .*demo_tests.cc:44
+  Address [x01-9A-Z]+ is 0 bytes inside data symbol ".+"
+  Locks involved in this report .reporting last lock sites.: .L\d+, L\d+.
+   L\d+
+    #0  .+
+   L\d+
+    #0  .+
+}}}
+
+ThreadSanitizer summary: reported 1 warning.s. .1 race.s..
