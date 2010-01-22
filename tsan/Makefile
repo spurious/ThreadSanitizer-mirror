@@ -130,13 +130,23 @@ dummy:
 
 all: TS_valgrind TS_pin TS_offline test
 
-l: l32 l64
-lo: l32o l64o
-ld: l32d l64d
-l64: l64o l64d
-l32: l32o l32d
-ld: l64d l32d
-lo: l64o l32o
+# These rules could be writted in the form of "l: l64 l32", but gtest does not
+# support concurrent builds. We force sequential build of l64 and l32 here.
+l:
+	$(MAKE) l64
+	$(MAKE) l32
+lo: 
+	$(MAKE) l64o
+	$(MAKE) l32o
+ld:
+	$(MAKE) l64d
+	$(MAKE) l32d
+l64:
+	$(MAKE) l64o
+	$(MAKE) l64d
+l32:
+	$(MAKE) l32o
+	$(MAKE) l32d
 
 
 l64d:
