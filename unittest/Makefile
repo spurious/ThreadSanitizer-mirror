@@ -143,5 +143,5 @@ clean:
 	rm -rf bin racecheck_unittest demo_tests bigtest *.o *.O1 *.O2 *.obj *.dSYM *.exe *.pdb *.ilk *.idb *.manifest
 	cd ${GTEST_ROOT}/make && rm -f *-gtest_main.a && make clean
 	rm -f ${GTEST_ROOT}/msvc/*-gtest_main.lib
-	rm -f ${GTEST_ROOT}/msvc/Debug
-	rm -f ${GTEST_ROOT}/msvc/Release
+	rm -rf ${GTEST_ROOT}/msvc/Debug
+	rm -rf ${GTEST_ROOT}/msvc/Release

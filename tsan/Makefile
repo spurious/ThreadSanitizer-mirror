@@ -249,8 +249,13 @@ $(P)ts_offline$(EXE): $(TS_OFFLINE_OBJECTS)
 $(P)suppressions_test$(EXE): $(P)gtest-suppressions_test.$(OBJ) $(P)suppressions.$(OBJ) $(P)ts_util.$(OBJ) $(GTEST_LIB)
 	$(LD) $(LDFLAGS) $(ARCHFLAGS) $(LINKO)$@ $^
 
-$(GTEST_ROOT)/make/$(ARCHOS)-gtest_main.a:
+ifeq ($(OS), windows)
+$(GTEST_LIB):
+	cd $(GTEST_ROOT)/msvc && devenv /upgrade gtest.sln && devenv /build Release /project gtest gtest.sln
+else
+$(GTEST_LIB):
 	cd $(GTEST_ROOT)/make && $(MAKE) clean && $(MAKE) CXXFLAGS=$(ARCHFLAGS) && mv gtest_main.a $(ARCHOS)-gtest_main.a
+endif
 
 $(P)ts_pin.so: $(TS_PIN_OBJECTS)
 	$(LD) $(ARCHFLAGS) $(PIN_LDFLAGS) $(PIN_LIBPATHS) -o $@ $^  $(PIN_LIBS)
