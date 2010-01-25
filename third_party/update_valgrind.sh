@@ -3,7 +3,13 @@
 VALGRIND_REV=10974
 VEX_REV=1946
 
-cd valgrind
+do_checkout_and_cd() {
+  echo "No directory 'valgrind'; doing svn checkout"
+  svn co -r $VALGRIND_REV svn://svn.valgrind.org/valgrind/trunk valgrind
+  cd valgrind || exit 1
+}
+
+cd valgrind || do_checkout_and_cd
 
 svn up -r $VALGRIND_REV
 svn up -r $VEX_REV VEX/
