@@ -6187,6 +6187,41 @@ REGISTER_TEST(Run, 157);
 }  // namespace test157
 
 
+namespace MemoryTypes {  // {{{1
+  void WriteChar(void *param) {
+    *(char*)param = 1;
+    usleep(500000);  // let other threads hit this before exiting.
+  }
+
+  void RaceOnLocalStack(void (*callback)(void *)) {
+    char object_on_stack = 0;
+    ANNOTATE_EXPECT_RACE(&object_on_stack, "race");
+    MyThread t1(callback, &object_on_stack),
+             t2(callback, &object_on_stack);
+    t1.Start();
+    t2.Start();
+    t1.Join();
+    t2.Join();
+    CHECK(object_on_stack == 1);
+  }
+
+  // create a new function to make reports different.
+  void WriteChar1(void *param) { WriteChar(param); }
+
+  TEST(MemoryTypes, RaceOnMainThreadStack) {
+    RaceOnLocalStack(WriteChar1);
+  }
+
+  void WriteChar2(void *param) { WriteChar(param); }
+
+  TEST(MemoryTypes, RaceOnNonMainThreadStack) {
+    MyThread t((void (*)(void*))(RaceOnLocalStack), (void*)WriteChar2);
+    t.Start();
+    t.Join();
+  }
+}  // namespace
+
+
 namespace  StressTests_ThreadTree {  //{{{1
 int     GLOB = 0;
 
