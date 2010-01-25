@@ -118,7 +118,7 @@ $(BIN)demo_tests-$(BUILD)$(EXE): $(BIN)demo_tests-$(BUILD).$(OBJ) \
 	${LD} $(LDFLAGS) $^ $(LIBS) $(LINKO)$@
 
 $(BIN)output_test1-$(BUILD)$(EXE): $(BIN)output_test1-$(BUILD).$(OBJ) \
-		$(GTEST_LIB) ${DYNAMIC_ANNOTATIONS_O} | bin
+		${DYNAMIC_ANNOTATIONS_O} | bin
 	${LD} $(LDFLAGS) $^ $(LIBS) $(LINKO)$@
 
 $(BIN)bigtest-$(BUILD)$(EXE): $(BIN)bigtest-$(BUILD).$(OBJ) ${DYNAMIC_ANNOTATIONS_O} | bin

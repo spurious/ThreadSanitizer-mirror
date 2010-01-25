@@ -1,13 +1,4 @@
-#include <gtest/gtest.h>
-
 #include "test_utils.h"
-
-int main(int argc, char** argv) {
-  testing::InitGoogleTest(&argc, argv);
-  return RUN_ALL_TESTS();
-}
-
-namespace RaceReportDemoTest {  // {{{1
 Mutex mu1;  // This Mutex guards var.
 Mutex mu2;  // This Mutex is not related to var.
 int   var;  // GUARDED_BY(mu1)
@@ -22,7 +13,7 @@ void Thread2() {  // Runs in thread named 'test-thread-2'.
   var = 2;
 }
 
-TEST(DemoTests, RaceReportDemoTest) {
+int main() {
   ANNOTATE_TRACE_MEMORY(&var);
   var = 0;
   MyThread t1(Thread1, NULL, "test-thread-1");
@@ -32,4 +23,3 @@ TEST(DemoTests, RaceReportDemoTest) {
   t1.Join();
   t2.Join();
 }
-}  // namespace RaceReportDemoTest
