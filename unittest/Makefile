@@ -104,7 +104,7 @@ w:
 l: l32 l64
 l32:
 	$(MAKE) OS=linux ARCH=x86
-l32:
+l64:
 	$(MAKE) OS=linux ARCH=amd64
 
 bin:
