@@ -4,10 +4,11 @@ include ../common.mk
 CFLAGS=$(OPTFLAGS) $(ARCHFLAGS) $(EXTRA_CFLAGS)
 CXXFLAGS=$(OPTFLAGS) $(ARCHFLAGS) $(EXTRA_CXXFLAGS)
 LDFLAGS=$(LDOPT) $(ARCHFLAGS) $(STATICFLAGS)
-OS=   # linux, darwin
-ARCH= # x86, amd64
-OX=    # O0, O1, ...
-S=    # <empty>, -static
+
+# OS = linux, darwin, windows
+# ARCH= x86, amd64
+# OX = O0, O1, ...
+# S= <empty>, -static
 BUILD=${OS}-${ARCH}-${OX}${S}
 BIN=bin/
 
