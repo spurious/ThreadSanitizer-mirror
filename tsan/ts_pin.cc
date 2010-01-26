@@ -663,6 +663,19 @@ uintptr_t CallStdCallFun1(CONTEXT *ctx, THREADID tid,
   return ret;
 }
 
+uintptr_t CallStdCallFun2(CONTEXT *ctx, THREADID tid,
+                         AFUNPTR f, uintptr_t arg0, uintptr_t arg1) {
+  uintptr_t ret = 0xdeadbee2;
+  PIN_CallApplicationFunction(ctx, tid,
+                              CALLINGSTD_STDCALL, (AFUNPTR)(f),
+                              PIN_PARG(uintptr_t), &ret,
+                              PIN_PARG(uintptr_t), arg0,
+                              PIN_PARG(uintptr_t), arg1,
+                              PIN_PARG_END());
+  return ret;
+}
+
+
 uintptr_t CallStdCallFun4(CONTEXT *ctx, THREADID tid,
                          AFUNPTR f, uintptr_t arg0, uintptr_t arg1,
                          uintptr_t arg2, uintptr_t arg3) {
@@ -747,7 +760,7 @@ uintptr_t Wrap_WaitForSingleObject(WRAP_PARAM4) {
 
 
   //Printf("T%d before pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0, arg1);
-  uintptr_t ret = CallStdCallFun4(ctx, tid, f, arg0, arg1, arg2, arg3);
+  uintptr_t ret = CallStdCallFun2(ctx, tid, f, arg0, arg1);
   //Printf("T%d after pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0, arg1);
   DumpEvent(WAIT_BEFORE, tid, pc, arg0, 0);
   DumpEvent(WAIT_AFTER, tid, pc, 0, 0);
@@ -1502,6 +1515,29 @@ void WrapStdCallFunc1(RTN rtn, char *name, AFUNPTR replacement_func) {
   }
 }
 
+void WrapStdCallFunc2(RTN rtn, char *name, AFUNPTR replacement_func) {
+  if (RTN_Valid(rtn) && RtnMatchesName(RTN_Name(rtn), name)) {
+    Printf("RTN_ReplaceSignature on %s\n", name);
+    PROTO proto = PROTO_Allocate(PIN_PARG(uintptr_t),
+                                 CALLINGSTD_STDCALL,
+                                 "proto",
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG_END());
+    RTN_ReplaceSignature(rtn,
+                         AFUNPTR(replacement_func),
+                         IARG_PROTOTYPE, proto,
+                         IARG_THREAD_ID,
+                         IARG_INST_PTR,
+                         IARG_CONTEXT,
+                         IARG_ORIG_FUNCPTR,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
+                         IARG_END);
+    PROTO_Free(proto);
+  }
+}
+
 void WrapStdCallFunc4(RTN rtn, char *name, AFUNPTR replacement_func) {
   if (RTN_Valid(rtn) && RtnMatchesName(RTN_Name(rtn), name)) {
     Printf("RTN_ReplaceSignature on %s\n", name);
@@ -1634,7 +1670,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   WrapStdCallFunc1(rtn, "RtlLeaveCriticalSection",
                              (AFUNPTR)(Wrap_RtlLeaveCriticalSection));
   WrapStdCallFunc1(rtn, "SetEvent", (AFUNPTR)(Wrap_SetEvent));
-  WrapStdCallFunc4(rtn, "WaitForSingleObject", (AFUNPTR)(Wrap_WaitForSingleObject));
+  WrapStdCallFunc2(rtn, "WaitForSingleObject", (AFUNPTR)(Wrap_WaitForSingleObject));
   WrapStdCallFunc4(rtn, "VirtualAlloc", (AFUNPTR)(Wrap_VirtualAlloc));
 #endif
 
