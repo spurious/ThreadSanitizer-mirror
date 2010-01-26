@@ -306,6 +306,8 @@ static bool RtnMatchesName(const string &rtn_name, const string &name) {
                                 uintptr_t arg0, uintptr_t arg1, \
                                 uintptr_t arg2, uintptr_t arg3
 
+#define WRAP_PARAM6 WRAP_PARAM4, uintptr_t arg4, uintptr_t arg5
+
 static uintptr_t CallFun4(CONTEXT *ctx, THREADID tid,
                          AFUNPTR f, uintptr_t arg0, uintptr_t arg1,
                          uintptr_t arg2, uintptr_t arg3) {
@@ -675,11 +677,24 @@ uintptr_t CallStdCallFun2(CONTEXT *ctx, THREADID tid,
   return ret;
 }
 
+uintptr_t CallStdCallFun3(CONTEXT *ctx, THREADID tid,
+                         AFUNPTR f, uintptr_t arg0, uintptr_t arg1, 
+                         uintptr_t arg2) {
+  uintptr_t ret = 0xdeadbee3;
+  PIN_CallApplicationFunction(ctx, tid,
+                              CALLINGSTD_STDCALL, (AFUNPTR)(f),
+                              PIN_PARG(uintptr_t), &ret,
+                              PIN_PARG(uintptr_t), arg0,
+                              PIN_PARG(uintptr_t), arg1,
+                              PIN_PARG(uintptr_t), arg2,
+                              PIN_PARG_END());
+  return ret;
+}
 
 uintptr_t CallStdCallFun4(CONTEXT *ctx, THREADID tid,
                          AFUNPTR f, uintptr_t arg0, uintptr_t arg1,
                          uintptr_t arg2, uintptr_t arg3) {
-  uintptr_t ret = 0xdeadbee2;
+  uintptr_t ret = 0xdeadbee4;
   PIN_CallApplicationFunction(ctx, tid,
                               CALLINGSTD_STDCALL, (AFUNPTR)(f),
                               PIN_PARG(uintptr_t), &ret,
@@ -690,6 +705,25 @@ uintptr_t CallStdCallFun4(CONTEXT *ctx, THREADID tid,
                               PIN_PARG_END());
   return ret;
 }
+
+uintptr_t CallStdCallFun6(CONTEXT *ctx, THREADID tid,
+                         AFUNPTR f, uintptr_t arg0, uintptr_t arg1,
+                         uintptr_t arg2, uintptr_t arg3,
+                         uintptr_t arg4, uintptr_t arg5) {
+  uintptr_t ret = 0xdeadbee6;
+  PIN_CallApplicationFunction(ctx, tid,
+                              CALLINGSTD_STDCALL, (AFUNPTR)(f),
+                              PIN_PARG(uintptr_t), &ret,
+                              PIN_PARG(uintptr_t), arg0,
+                              PIN_PARG(uintptr_t), arg1,
+                              PIN_PARG(uintptr_t), arg2,
+                              PIN_PARG(uintptr_t), arg3,
+                              PIN_PARG(uintptr_t), arg4,
+                              PIN_PARG(uintptr_t), arg5,
+                              PIN_PARG_END());
+  return ret;
+}
+
 
 
 uintptr_t Wrap_RtlInitializeCriticalSection(WRAP_PARAM4) {
@@ -733,8 +767,22 @@ uintptr_t Wrap_SetEvent(WRAP_PARAM4) {
 }
 
 uintptr_t Wrap_VirtualAlloc(WRAP_PARAM4) {
+  CHECK(0);
   Printf("T%d VirtualAlloc: %p %p %p %p\n", tid, arg0, arg1, arg2, arg3);
   uintptr_t ret = CallStdCallFun4(ctx, tid, f, arg0, arg1, arg2, arg3);
+  return ret;
+}
+
+uintptr_t Wrap_ZwAllocateVirtualMemory(WRAP_PARAM6) {
+  // Printf("T%d >>%s(%p %p %p %p %p %p)\n", tid, __FUNCTION__, arg0, arg1, arg2, arg3, arg4, arg5);
+  uintptr_t ret = CallStdCallFun6(ctx, tid, f, arg0, arg1, arg2, arg3, arg4, arg5);
+  // Printf("T%d <<%s(%p %p) = %p\n", tid, __FUNCTION__, *(void**)arg1, *(void**)arg3, ret);
+  return ret;
+}
+
+uintptr_t Wrap_AllocateHeap(WRAP_PARAM4) {
+  uintptr_t ret = CallStdCallFun3(ctx, tid, f, arg0, arg1, arg2);
+  // Printf("T%d RtlAllocateHeap(%p %p %p)=%p\n", tid, arg0, arg1, arg2, ret);
   return ret;
 }
 
@@ -830,7 +878,7 @@ void InsertBeforeEvent_Call(THREADID tid, ADDRINT pc, ADDRINT target, ADDRINT sp
   if (DEB_PR) {
     PrintShadowStack(tid);
   }
-  if (DEBUG_MODE && (G_flags->verbosity >= 3)) {
+  if (DEBUG_MODE && (G_flags->verbosity >= 2)) {
     ShowPcAndSp("CALL: ", tid, target, sp);
   }
 }
@@ -1538,6 +1586,31 @@ void WrapStdCallFunc2(RTN rtn, char *name, AFUNPTR replacement_func) {
   }
 }
 
+void WrapStdCallFunc3(RTN rtn, char *name, AFUNPTR replacement_func) {
+  if (RTN_Valid(rtn) && RtnMatchesName(RTN_Name(rtn), name)) {
+    Printf("RTN_ReplaceSignature on %s\n", name);
+    PROTO proto = PROTO_Allocate(PIN_PARG(uintptr_t),
+                                 CALLINGSTD_STDCALL,
+                                 "proto",
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG_END());
+    RTN_ReplaceSignature(rtn,
+                         AFUNPTR(replacement_func),
+                         IARG_PROTOTYPE, proto,
+                         IARG_THREAD_ID,
+                         IARG_INST_PTR,
+                         IARG_CONTEXT,
+                         IARG_ORIG_FUNCPTR,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 2,
+                         IARG_END);
+    PROTO_Free(proto);
+  }
+}
+
 void WrapStdCallFunc4(RTN rtn, char *name, AFUNPTR replacement_func) {
   if (RTN_Valid(rtn) && RtnMatchesName(RTN_Name(rtn), name)) {
     Printf("RTN_ReplaceSignature on %s\n", name);
@@ -1564,6 +1637,39 @@ void WrapStdCallFunc4(RTN rtn, char *name, AFUNPTR replacement_func) {
     PROTO_Free(proto);
   }
 }
+
+void WrapStdCallFunc6(RTN rtn, char *name, AFUNPTR replacement_func) {
+  if (RTN_Valid(rtn) && RtnMatchesName(RTN_Name(rtn), name)) {
+    Printf("RTN_ReplaceSignature on %s\n", name);
+    PROTO proto = PROTO_Allocate(PIN_PARG(uintptr_t),
+                                 CALLINGSTD_STDCALL,
+                                 "proto",
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG_END());
+    RTN_ReplaceSignature(rtn,
+                         AFUNPTR(replacement_func),
+                         IARG_PROTOTYPE, proto,
+                         IARG_THREAD_ID,
+                         IARG_INST_PTR,
+                         IARG_CONTEXT,
+                         IARG_ORIG_FUNCPTR,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 2,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 3,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 4,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 5,
+                         IARG_END);
+    PROTO_Free(proto);
+  }
+}
+
+
 #endif
 
 static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
@@ -1672,6 +1778,8 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   WrapStdCallFunc1(rtn, "SetEvent", (AFUNPTR)(Wrap_SetEvent));
   WrapStdCallFunc2(rtn, "WaitForSingleObject", (AFUNPTR)(Wrap_WaitForSingleObject));
   WrapStdCallFunc4(rtn, "VirtualAlloc", (AFUNPTR)(Wrap_VirtualAlloc));
+  WrapStdCallFunc6(rtn, "ZwAllocateVirtualMemory", (AFUNPTR)(Wrap_ZwAllocateVirtualMemory));
+  WrapStdCallFunc3(rtn, "RtlAllocateHeap", (AFUNPTR) Wrap_AllocateHeap);
 #endif
 
   // Annotations.
