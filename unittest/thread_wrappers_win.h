@@ -134,9 +134,9 @@ class Mutex {
 
     if (cond.Eval() == 0) {
       ANNOTATE_HAPPENS_AFTER(this);
-      return true;
-    } else {
       return false;
+    } else {
+      return true;
     }
   }
 
