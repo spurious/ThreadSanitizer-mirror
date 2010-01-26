@@ -1,4 +1,5 @@
 SVN_ROOT=..
+OPT=1
 include ../common.mk
 
 VALGRIND_ROOT=../third_party/valgrind

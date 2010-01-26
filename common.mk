@@ -1,10 +1,3 @@
-# DEBUG overrides OPT, if set
-ifeq ($(DEBUG), 1)
-  OPT=0
-else ifeq ($(DEBUG), 0)
-  OPT=1
-endif
-
 # OS-specific file name suffixes and command line flags
 ifeq ($(OS), linux)
   CXX=g++
