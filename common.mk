@@ -78,10 +78,11 @@ GTEST_ROOT=$(SVN_ROOT)/third_party/googletest
 ifeq ($(OS), windows)
   ifeq ($(OPT), 1)
     GTEST_BUILD=Release
+    GTEST_LIB=$(GTEST_ROOT)/msvc/gtest/$(GTEST_BUILD)/gtest.lib
   else
     GTEST_BUILD=Debug
+    GTEST_LIB=$(GTEST_ROOT)/msvc/gtest/$(GTEST_BUILD)/gtestd.lib
   endif
-  GTEST_LIB=$(GTEST_ROOT)/msvc/gtest/$(GTEST_BUILD)/gtest.lib
 else
   GTEST_MAKE_DIR=$(GTEST_ROOT)/make-$(OS)-$(ARCH)
   GTEST_LIB=$(GTEST_MAKE_DIR)/gtest_main.a
