@@ -1,20 +1,20 @@
+SVN_ROOT=..
+include ../common.mk
+
 VALGRIND_ROOT=../third_party/valgrind
 VALGRIND_INST_ROOT=../tsan_inst
 STLPORT_ROOT=../third_party/stlport
 GTEST_ROOT=../third_party/googletest
 OFFLINE=0
 
-CC=gcc
 COPT=-O -fno-omit-frame-pointer
 CWARN=-Wall -Wmissing-prototypes -Wshadow -Wpointer-arith -Wstrict-prototypes \
       -Wmissing-declarations -Wno-format-zero-length  \
       -fno-strict-aliasing -Wno-long-long -Wno-pointer-sign \
       -Wdeclaration-after-statement
 CFLAGS=-g $(COPT) $(CWARN) -fno-strict-aliasing -fno-stack-protector -fpic
-CXX=g++
 CXXOPT=-O2
 CXXFLAGS=$(CXXOPT) -g -Wall -fno-exceptions # -Wvla
-LD=g++
 LDFLAGS=
 
 VG_CXXFLAGS=-fno-rtti -fno-stack-protector
@@ -57,61 +57,36 @@ else
 endif
 
 ifeq ($(ARCH), x86)
-  ARCHFLAGS=-m32
   PIN_ARCH=ia32
   PIN_ARCH2=IA32
   DR_ARCH=X86_32
 else ifeq ($(ARCH), amd64)
-  ARCHFLAGS=-m64
   PIN_ARCH=intel64
   PIN_ARCH2=IA32E
   DR_ARCH=X86_64
   DR_LD_SCRIPT=-Xlinker -T -Xlinker ./dr64_ldscript # TODO(kcc) this is too hackish...
-else
-  ARCH=UNKNOWN_ARCH
 endif
 
 ifeq ($(OS), linux)
-  SO=so
-  OBJ=o
-  EXE=
-  O=-o
-  LINKO=-o
   PIN_CXXFLAGS=$(PIN_CXXFLAGS_L)
-  GTEST_LIB=$(GTEST_ROOT)/make/$(ARCHOS)-gtest_main.a
   VG_LD_FLAGS=-static -Wl,-defsym,valt_load_address=0x38000000 -nodefaultlibs -nostartfiles \
     -u _start  -Wl,-T,$(VALGRIND_ROOT)/valt_load_address_$(ARCH_OS).lds
   VG_LD_PRELOAD_FLAGS= -nodefaultlibs -shared -Wl,-z,interpose,-z,initfirst
   DR_OS=LINUX
 else ifeq ($(OS), darwin)
-  SO=so
-  OBJ=o
-  EXE=
-  O=-o
-  LINKO=-Wl,-o,
-  GTEST_LIB=$(GTEST_ROOT)/make/$(ARCHOS)-gtest_main.a
   VG_LD_FLAGS=-Wl,-u,__start -Wl,-e,__start -Wl,-bind_at_load /usr/lib/dyld -arch i386 \
       -Wl,-seg1addr,0xf0080000 -Wl,-stack_addr,0xf0080000 -Wl,-stack_size,0x80000 -Wl,-pagezero_size,0xf0000000 \
       -nodefaultlibs -nostartfiles
   VG_LD_PRELOAD_FLAGS=-arch i386 -dynamic -dynamiclib -all_load
   VG_CXXFLAGS+=-fno-weak -bind_at_load
 else ifeq ($(OS), windows)
-  SO=dll
-  OBJ=obj
-  EXE=.exe
-  O=/Fo
-  LINKO=/OUT:
   VALGRIND_ROOT= # no valgrind on windows :(
-  ARCHFLAGS=
-  CXX=cl
-  LD=link
   CXXFLAGS=/c /MT /EHs- /EHa- /wd4530   /D_CRT_SECURE_NO_DEPRECATE /D_SECURE_SCL=0 /nologo /Gy /O2
   PIN_DEFINES=/DTARGET_WINDOWS /DBIGARRAY_MULTIPLIER=1 /DUSING_XED /DTARGET_IA32 /DHOST_IA32a
   PIN_INCLUDES=/I$(PIN_ROOT)/source/include /I$(PIN_ROOT)/source/include/gen   /I$(PIN_ROOT)/extras/xed2-ia32/include
   PIN_LDFLAGS=/DLL /EXPORT:main /NODEFAULTLIB  /NOLOGO /INCREMENTAL:NO  /OPT:REF  /MACHINE:x86 /ENTRY:Ptrace_DllMainCRTStartup@12 /BASE:0x55000000
   PIN_LIBPATHS= /LIBPATH:$(PIN_ROOT)/ia32/lib /LIBPATH:$(PIN_ROOT)/ia32/lib-ext  /LIBPATH:$(PIN_ROOT)/extras/xed2-ia32/lib
   PIN_LIBS=pin.lib libxed.lib libcpmt.lib libcmt.lib pinvm.lib kernel32.lib ntdll-32.lib
-  GTEST_LIB=$(GTEST_ROOT)/msvc/gtest/Release/gtest.lib
   DR_OS=WINDOWS
 else
   OS=UNKNOWN_OS
@@ -134,21 +109,11 @@ all: TS_valgrind TS_pin TS_offline TS_dynamorio test
 
 # These rules could be writted in the form of "l: l64 l32", but gtest does not
 # support concurrent builds. We force sequential build of l64 and l32 here.
-l:
-	$(MAKE) l64
-	$(MAKE) l32
-lo: 
-	$(MAKE) l64o
-	$(MAKE) l32o
-ld:
-	$(MAKE) l64d
-	$(MAKE) l32d
-l64:
-	$(MAKE) l64o
-	$(MAKE) l64d
-l32:
-	$(MAKE) l32o
-	$(MAKE) l32d
+l: l32 l64
+lo: l32o l64o
+ld: l32d l64d
+l32: l32d l32o
+l64: l64d l64o
 
 
 l64d:
@@ -261,14 +226,6 @@ $(P)ts_offline$(EXE): $(TS_OFFLINE_OBJECTS)
 $(P)suppressions_test$(EXE): $(P)gtest-suppressions_test.$(OBJ) $(P)suppressions.$(OBJ) $(P)ts_util.$(OBJ) $(GTEST_LIB)
 	$(LD) $(LDFLAGS) $(ARCHFLAGS) $(LINKO)$@ $^
 
-ifeq ($(OS), windows)
-$(GTEST_LIB):
-	cd $(GTEST_ROOT)/msvc && devenv /upgrade gtest.sln && devenv /build Release /project gtest gtest.sln
-else
-$(GTEST_LIB):
-	cd $(GTEST_ROOT)/make && $(MAKE) clean && $(MAKE) CXXFLAGS=$(ARCHFLAGS) && mv gtest_main.a $(ARCHOS)-gtest_main.a
-endif
-
 $(P)ts_pin.so: $(TS_PIN_OBJECTS)
 	$(LD) $(ARCHFLAGS) $(PIN_LDFLAGS) $(PIN_LIBPATHS) -o $@ $^  $(PIN_LIBS)
 
@@ -278,5 +235,5 @@ $(P)ts_pin.dll: $(TS_PIN_OBJECTS)
 $(P)ts_dynamorio.so: $(TS_DR_OBJECTS)
 	$(LD) $(ARCHFLAGS) $(DR_LDFLAGS) $(DR_LIBPATHS) -o $@ $^  $(DR_LIBS) $(DR_LD_SCRIPT)
 
-clean:
+clean: GTEST_CLEAN
 	rm -rfv bin core* pintool.log* pin.log
