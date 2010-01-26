@@ -31,12 +31,12 @@ all: $(BIN)racecheck_unittest-$(BUILD)$(EXE) $(BIN)demo_tests-$(BUILD)$(EXE) \
      $(BIN)bigtest-$(BUILD)$(EXE) $(BIN)output_test1-$(BUILD)$(EXE)
 
 w:
-	$(MAKE) OS=windows ARCH=x86
+	$(MAKE) all OS=windows ARCH=x86
 l: l32 l64
 l32:
-	$(MAKE) OS=linux ARCH=x86
+	$(MAKE) all OS=linux ARCH=x86
 l64:
-	$(MAKE) OS=linux ARCH=amd64
+	$(MAKE) all OS=linux ARCH=amd64
 
 bin:
 	mkdir -p bin
