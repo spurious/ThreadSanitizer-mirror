@@ -53,12 +53,7 @@ static bool ArgIsTrue(bool *arg) { return *arg == true; };
 
 // If run under ThreadSanitizerQuery, this function is replaced by the tool
 // and a non-NULL string is returned. See the usage below.
-extern "C" {
-static char *ThreadSanitizerQuery(const char *query) {
-  printf("Not running under ThreadSanitizer\n");
-  return NULL;
-}
-}
+extern "C" const char *ThreadSanitizerQuery(const char *query);
 
 // Apply ANNOTATE_EXPECT_RACE only if running under ThreadSanitizer.
 #define ANNOTATE_EXPECT_RACE_FOR_TSAN(mem, descr) \

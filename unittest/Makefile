@@ -47,8 +47,10 @@ DYNAMIC_ANNOTATIONS_C=${DYNAMIC_ANNOTATIONS_DIR}/dynamic_annotations.c
 DYNAMIC_ANNOTATIONS_O=$(BIN)dynamic_annotations-$(BUILD).$(OBJ)
 DYNAMIC_ANNOTATIONS=${DYNAMIC_ANNOTATIONS_C} ${DYNAMIC_ANNOTATIONS_H}
 
+TEST_UTILS_O=$(BIN)test_utils-$(BUILD).$(OBJ)
+
 $(BIN)racecheck_unittest-$(BUILD)$(EXE): $(BIN)racecheck_unittest-$(BUILD).$(OBJ) $(BIN)old_test_suite-$(BUILD).$(OBJ) \
-		$(GTEST_LIB)  ${DYNAMIC_ANNOTATIONS_O} | bin
+		$(TEST_UTILS_O) $(GTEST_LIB)  ${DYNAMIC_ANNOTATIONS_O} | bin
 	${LD} ${LDFLAGS} $^ $(LIBS) $(LINKO)$@
 
 ifeq ($(OS), windows)
@@ -58,7 +60,7 @@ $(BIN)racecheck_unittest-$(BUILD)$(EXE): $(BIN)posix_tests-$(BUILD).$(OBJ)
 endif
 
 $(BIN)demo_tests-$(BUILD)$(EXE): $(BIN)demo_tests-$(BUILD).$(OBJ) \
-		$(GTEST_LIB) ${DYNAMIC_ANNOTATIONS_O} | bin
+		$(TEST_UTILS_O) $(GTEST_LIB) ${DYNAMIC_ANNOTATIONS_O} | bin
 	${LD} $(LDFLAGS) $^ $(LIBS) $(LINKO)$@
 
 $(BIN)output_test1-$(BUILD)$(EXE): $(BIN)output_test1-$(BUILD).$(OBJ) \
@@ -68,7 +70,7 @@ $(BIN)output_test1-$(BUILD)$(EXE): $(BIN)output_test1-$(BUILD).$(OBJ) \
 $(BIN)bigtest-$(BUILD)$(EXE): $(BIN)bigtest-$(BUILD).$(OBJ) ${DYNAMIC_ANNOTATIONS_O} | bin
 	${LD} $(LDFLAGS) $^ $(LIBS) $(LINKO)$@
 
-$(BIN)%-$(BUILD).$(OBJ): %.cc ${DYNAMIC_ANNOTATIONS} thread_wrappers.h thread_wrappers_pthread.h old_test_suite.h test_utils.h | bin
+$(BIN)%-$(BUILD).$(OBJ): %.cc ${DYNAMIC_ANNOTATIONS} thread_wrappers.h thread_wrappers_win.h thread_wrappers_pthread.h old_test_suite.h test_utils.h | bin
 	${CXX} ${CXXFLAGS} \
 		 -I${DYNAMIC_ANNOTATIONS_DIR} -I${GTEST_ROOT}/include \
 		 -DDYNAMIC_ANNOTATIONS_ENABLED=1 -c $< $(O)$@
