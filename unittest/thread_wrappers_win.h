@@ -214,6 +214,9 @@ class MyThread {
       ANNOTATE_THREAD_NAME(my_thread->name_);
     }
     my_thread->w_(my_thread->arg_);
+    // Wait before exiting. Otherwise the locks inside windows thread internals
+    // will case unneeded h-b arcs.
+    usleep(500000);
     return 0;
   }
   HANDLE t_;
