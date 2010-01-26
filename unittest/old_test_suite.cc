@@ -115,17 +115,11 @@ int main(int argc, char** argv) {
 
   if (tests_to_run.size() == 0) {
     printf("No tests specified.\nRunning default set of tests...\n");
-    bool run_tests_with_annotations = false;
-    if (getenv("DRT_ALLOW_ANNOTATIONS")) {
-      run_tests_with_annotations = true;
-    }
     for (std::map<int,Test>::iterator it = TheMapOfTests->begin();
         it != TheMapOfTests->end();
         ++it) {
       if(it->second.flags_ & EXCLUDE_FROM_ALL) continue;
       if(it->second.flags_ & RACE_DEMO) continue;
-      if((it->second.flags_ & NEEDS_ANNOTATIONS)
-         && run_tests_with_annotations == false) continue;
       tests_to_run.push_back(it->first);
     }
   }

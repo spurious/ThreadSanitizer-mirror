@@ -6344,6 +6344,28 @@ bool ThreadSanitizerIgnoreAccessesBelowFunction(uintptr_t pc) {
   return ((*cache)[pc] = ret);
 }
 
+// We intercept a user function with this name
+// and answer the user query with a non-NULL string.
+const char *ThreadSanitizerQuery(const char *query) {
+  const char *ret = "0";
+  string str(query);
+  if (str == "pure_happens_before" && G_flags->pure_happens_before == true) {
+    ret = "1";
+  }
+  if (str == "hybrid_fast" &&
+      G_flags->pure_happens_before == false &&
+      G_flags->fast_mode == true) {
+    ret = "1";
+  }
+  if (str == "hybrid_full" &&
+      G_flags->pure_happens_before == false &&
+      G_flags->fast_mode == false) {
+    ret = "1";
+  }
+  Printf("ThreadSanitizerQuery(\"%s\") = \"%s\"\n", query, ret);
+  return ret;
+}
+
 extern void ThreadSanitizerInit() {
   ScopedMallocCostCenter cc("ThreadSanitizerInit");
   g_so_far_only_one_thread = true;

@@ -2329,6 +2329,12 @@ ANN_FUNC(int, RunningOnValgrind, void) {
   return 1;
 }
 
+ANN_FUNC(const char *, ThreadSanitizerQuery, const char *query) {
+  Word res;
+  DO_CREQ_W_WW(res, TSREQ_THREAD_SANITIZER_QUERY, const char*, query, long, 0);
+  return (const char *)res;
+}
+
 ANN_FUNC(void, AnnotateRWLockCreate, const char *file, int line, void *lock)
 {
   const char *name = "AnnotateRWLockCreate";

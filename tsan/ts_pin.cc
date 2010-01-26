@@ -403,6 +403,11 @@ static void DebugOnlyShowPcAndSp(const char *where, THREADID tid,
   }
 }
 
+static uintptr_t Wrap_ThreadSanitizerQuery(WRAP_PARAM4) {
+  const char *query = (const char*)arg0;
+  return (uintptr_t)ThreadSanitizerQuery(query);
+}
+
 //--------- Ignores -------------------------------- {{{2
 static void IgnoreAllBegin(THREADID tid, ADDRINT pc) {
 //  if (tid == 0) Printf("Ignore++ %d\n", z++);
@@ -1696,6 +1701,10 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
 
   INSERT_BEFORE_2("mmap", Before_mmap);
   INSERT_AFTER_1("mmap", After_mmap);
+
+  // ThreadSanitizerQuery
+  WrapFunc4(img, rtn, "ThreadSanitizerQuery",
+            (AFUNPTR)Wrap_ThreadSanitizerQuery);
 
   // pthread create/join
   WrapFunc4(img, rtn, "pthread_create", (AFUNPTR)Wrap_pthread_create);

@@ -5104,8 +5104,13 @@ void InitMe() {
     if (!foo) {
       ANNOTATE_EXPECT_RACE_FOR_TSAN(&foo, "test121. Double-checked locking (ptr)");
       foo = new Foo;
-      if (!Tsan_FastMode())
+      if (Tsan_PureHappensBefore()) {
+        // A pure h-b detector may or may not detect this.
+        ANNOTATE_BENIGN_RACE(&foo->a, "real race");
+      } else if (!Tsan_FastMode()) {
+        // ThreadSanitizer in full hybrid mode must detect it.
         ANNOTATE_EXPECT_RACE_FOR_TSAN(&foo->a, "test121. Double-checked locking (obj)");
+      }
       foo->a = 42;
     }
   }
@@ -5113,7 +5118,8 @@ void InitMe() {
 
 void UseMe() {
   InitMe();
-  CHECK(foo && foo->a == 42);
+  CHECK(foo);
+  printf("foo->a = %d (should be 42)\n", (int)foo->a);
 }
 
 void Worker1() { UseMe(); }

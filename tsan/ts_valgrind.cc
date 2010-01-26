@@ -678,6 +678,9 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
       break;
     case TSREQ_GET_SEGMENT_ID:
       break;
+    case TSREQ_THREAD_SANITIZER_QUERY:
+      *ret = (UWord)ThreadSanitizerQuery((const char *)args[1]);
+      break;
     default: CHECK(0);
   }
   return True;

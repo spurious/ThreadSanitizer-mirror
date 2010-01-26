@@ -50,27 +50,41 @@ static bool ArgIsOne(int *arg) { return *arg == 1; };
 static bool ArgIsZero(int *arg) { return *arg == 0; };
 static bool ArgIsTrue(bool *arg) { return *arg == true; };
 
-// Call ANNOTATE_EXPECT_RACE only if 'machine' env variable is defined.
-// Useful to test against several different machines.
-// Supported machines so far:
-//   MSM_HYBRID1             -- aka MSMProp1
-//   MSM_HYBRID1_INIT_STATE  -- aka MSMProp1 with --initialization-state=yes
-//   MSM_THREAD_SANITIZER    -- ThreadSanitizer's state machine
-#define ANNOTATE_EXPECT_RACE_FOR_MACHINE(mem, descr, machine) \
-    while(getenv(machine)) {\
-      ANNOTATE_EXPECT_RACE(mem, descr); \
-      break;\
-    }\
 
+// If run under ThreadSanitizerQuery, this function is replaced by the tool
+// and a non-NULL string is returned. See the usage below.
+extern "C" {
+static char *ThreadSanitizerQuery(const char *query) {
+  printf("Not running under ThreadSanitizer\n");
+  return NULL;
+}
+}
+
+// Apply ANNOTATE_EXPECT_RACE only if running under ThreadSanitizer.
 #define ANNOTATE_EXPECT_RACE_FOR_TSAN(mem, descr) \
-    ANNOTATE_EXPECT_RACE_FOR_MACHINE(mem, descr, "MSM_THREAD_SANITIZER")
+    do {\
+      if (ThreadSanitizerQuery("") != NULL) {\
+        ANNOTATE_EXPECT_RACE(mem, descr); \
+      } \
+    } while(0)\
+
+inline bool ThreadSanitizerQueryMatch(const char *query, const char *expected_answer) {
+  const char *answer = ThreadSanitizerQuery(query);
+  if (answer == NULL) {
+    // Not running under ThreadSanitizer at all.
+    return false;
+  }
+  return string(answer) == expected_answer;
+}
 
 inline bool Tsan_PureHappensBefore() {
-  return getenv("TSAN_PURE_HAPPENS_BEFORE") != NULL;
+  static bool ret = ThreadSanitizerQueryMatch("pure_happens_before", "1");
+  return ret;
 }
 
 inline bool Tsan_FastMode()           {
-  return getenv("TSAN_FAST_MODE") != NULL;
+  static bool ret = ThreadSanitizerQueryMatch("hybrid_fast", "1");
+  return ret;
 }
 
 // Initialize *(mem) to 0 if Tsan_FastMode.
