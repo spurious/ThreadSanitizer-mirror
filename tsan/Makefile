@@ -142,9 +142,10 @@ m32o:
 m32d:
 	$(MAKE) all OS=darwin ARCH=x86 DEBUG=1
 
-install:
+install: bin
 	rm -fv $(VALGRIND_INST_ROOT)/lib/valgrind/*tsan*
 	cp bin/tsan* bin/vgpreload_tsan* $(VALGRIND_INST_ROOT)/lib/valgrind
+	../tsan_binary/mk-self-contained-tsan.sh  $(VALGRIND_INST_ROOT) bin/tsan-$(OS)-self-contained.sh
 
 
 ifeq ($(VALGRIND_ROOT), )
