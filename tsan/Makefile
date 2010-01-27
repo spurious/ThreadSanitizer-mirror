@@ -143,6 +143,7 @@ m32d:
 	$(MAKE) all OS=darwin ARCH=x86 DEBUG=1
 
 install:
+	rm -fv $(VALGRIND_INST_ROOT)/lib/valgrind/*tsan*
 	cp bin/tsan* bin/vgpreload_tsan* $(VALGRIND_INST_ROOT)/lib/valgrind
 
 
