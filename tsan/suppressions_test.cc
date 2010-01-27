@@ -457,71 +457,75 @@ TEST_F(FailingSuppressionsTest, BadStacktrace3) {
 
 
 TEST(WildcardTest, Simple) {
-  ASSERT_TRUE(StringMatch("abc", "abc"));
-  ASSERT_FALSE(StringMatch("abcd", "abc"));
-  ASSERT_FALSE(StringMatch("dabc", "abc"));
-  ASSERT_FALSE(StringMatch("ab", "abc"));
-  ASSERT_FALSE(StringMatch("", "abc"));
-  ASSERT_FALSE(StringMatch("abc", ""));
-  ASSERT_TRUE(StringMatch("", ""));
+  EXPECT_TRUE(StringMatch("abc", "abc"));
+  EXPECT_FALSE(StringMatch("abcd", "abc"));
+  EXPECT_FALSE(StringMatch("dabc", "abc"));
+  EXPECT_FALSE(StringMatch("ab", "abc"));
+  EXPECT_FALSE(StringMatch("", "abc"));
+  EXPECT_FALSE(StringMatch("abc", ""));
+  EXPECT_TRUE(StringMatch("", ""));
 }
 
 TEST(WildcardTest, SingleCharacterWildcard) {
-  ASSERT_TRUE(StringMatch("a?c", "abc"));
-  ASSERT_TRUE(StringMatch("?bc", "abc"));
-  ASSERT_TRUE(StringMatch("ab?", "abc"));
-  ASSERT_TRUE(StringMatch("a??", "abc"));
-  ASSERT_TRUE(StringMatch("???", "abc"));
-  ASSERT_TRUE(StringMatch("?", "a"));
-  ASSERT_FALSE(StringMatch("?zc", "abc"));
-  ASSERT_FALSE(StringMatch("?bz", "abc"));
-  ASSERT_FALSE(StringMatch("b?c", "abc"));
-  ASSERT_FALSE(StringMatch("az?", "abc"));
-  ASSERT_FALSE(StringMatch("abc?", "abc"));
-  ASSERT_FALSE(StringMatch("?abc", "abc"));
-  ASSERT_FALSE(StringMatch("?", ""));
-  ASSERT_FALSE(StringMatch("??", ""));
+  EXPECT_TRUE(StringMatch("a?c", "abc"));
+  EXPECT_TRUE(StringMatch("?bc", "abc"));
+  EXPECT_TRUE(StringMatch("ab?", "abc"));
+  EXPECT_TRUE(StringMatch("a??", "abc"));
+  EXPECT_TRUE(StringMatch("???", "abc"));
+  EXPECT_TRUE(StringMatch("?", "a"));
+  EXPECT_FALSE(StringMatch("?zc", "abc"));
+  EXPECT_FALSE(StringMatch("?bz", "abc"));
+  EXPECT_FALSE(StringMatch("b?c", "abc"));
+  EXPECT_FALSE(StringMatch("az?", "abc"));
+  EXPECT_FALSE(StringMatch("abc?", "abc"));
+  EXPECT_FALSE(StringMatch("?abc", "abc"));
+  EXPECT_FALSE(StringMatch("?", ""));
+  EXPECT_FALSE(StringMatch("??", ""));
 }
 
 TEST(WildcardTest, MultiCharacterWildcard) {
-  ASSERT_TRUE(StringMatch("a*d", "abcd"));
-  ASSERT_TRUE(StringMatch("ab*d", "abcd"));
-  ASSERT_TRUE(StringMatch("*cd", "abcd"));
-  ASSERT_TRUE(StringMatch("*d", "abcd"));
-  ASSERT_TRUE(StringMatch("ab*", "abcd"));
-  ASSERT_TRUE(StringMatch("a*", "abcd"));
-  ASSERT_TRUE(StringMatch("*", "abcd"));
-  ASSERT_TRUE(StringMatch("ab*cd", "abcd"));
+  EXPECT_TRUE(StringMatch("*x", "x"));
+  EXPECT_TRUE(StringMatch("x*", "x"));
+  EXPECT_TRUE(StringMatch("*x*", "x"));
 
-  ASSERT_TRUE(StringMatch("ab**", "abcd"));
-  ASSERT_TRUE(StringMatch("**", "abcd"));
-  ASSERT_TRUE(StringMatch("***", "abcd"));
-  ASSERT_TRUE(StringMatch("**d", "abcd"));
-  ASSERT_TRUE(StringMatch("*c*", "abcd"));
-  ASSERT_TRUE(StringMatch("a*c*d*f", "abcdef"));
-  ASSERT_TRUE(StringMatch("a*c*e*", "abcdef"));
-  ASSERT_TRUE(StringMatch("*a*b*f", "abcdef"));
-  ASSERT_TRUE(StringMatch("*b*d*", "abcdef"));
+  EXPECT_TRUE(StringMatch("a*d", "abcd"));
+  EXPECT_TRUE(StringMatch("ab*d", "abcd"));
+  EXPECT_TRUE(StringMatch("*cd", "abcd"));
+  EXPECT_TRUE(StringMatch("*d", "abcd"));
+  EXPECT_TRUE(StringMatch("ab*", "abcd"));
+  EXPECT_TRUE(StringMatch("a*", "abcd"));
+  EXPECT_TRUE(StringMatch("*", "abcd"));
+  EXPECT_TRUE(StringMatch("ab*cd", "abcd"));
 
-  ASSERT_FALSE(StringMatch("b*", "abcd"));
-  ASSERT_FALSE(StringMatch("*c", "abcd"));
-  ASSERT_FALSE(StringMatch("*a", "abcd"));
+  EXPECT_TRUE(StringMatch("ab**", "abcd"));
+  EXPECT_TRUE(StringMatch("**", "abcd"));
+  EXPECT_TRUE(StringMatch("***", "abcd"));
+  EXPECT_TRUE(StringMatch("**d", "abcd"));
+  EXPECT_TRUE(StringMatch("*c*", "abcd"));
+  EXPECT_TRUE(StringMatch("a*c*d*f", "abcdef"));
+  EXPECT_TRUE(StringMatch("a*c*e*", "abcdef"));
+  EXPECT_TRUE(StringMatch("*a*b*f", "abcdef"));
+  EXPECT_TRUE(StringMatch("*b*d*", "abcdef"));
+
+  EXPECT_FALSE(StringMatch("b*", "abcd"));
+  EXPECT_FALSE(StringMatch("*c", "abcd"));
+  EXPECT_FALSE(StringMatch("*a", "abcd"));
 }
 
 TEST(WildcardTest, WildcardCharactersInText) {
-  ASSERT_TRUE(StringMatch("?", "?"));
-  ASSERT_FALSE(StringMatch("a", "?"));
-  ASSERT_FALSE(StringMatch("ab", "a?"));
-  ASSERT_FALSE(StringMatch("ab", "?b"));
-  ASSERT_TRUE(StringMatch("a?", "a?"));
-  ASSERT_TRUE(StringMatch("?b", "?b"));
+  EXPECT_TRUE(StringMatch("?", "?"));
+  EXPECT_FALSE(StringMatch("a", "?"));
+  EXPECT_FALSE(StringMatch("ab", "a?"));
+  EXPECT_FALSE(StringMatch("ab", "?b"));
+  EXPECT_TRUE(StringMatch("a?", "a?"));
+  EXPECT_TRUE(StringMatch("?b", "?b"));
 
-  ASSERT_TRUE(StringMatch("*", "*"));
-  ASSERT_FALSE(StringMatch("a", "*"));
-  ASSERT_FALSE(StringMatch("ab", "a*"));
-  ASSERT_FALSE(StringMatch("ab", "*b"));
-  ASSERT_TRUE(StringMatch("a*", "a*"));
-  ASSERT_TRUE(StringMatch("*b", "*b"));
+  EXPECT_TRUE(StringMatch("*", "*"));
+  EXPECT_FALSE(StringMatch("a", "*"));
+  EXPECT_FALSE(StringMatch("ab", "a*"));
+  EXPECT_FALSE(StringMatch("ab", "*b"));
+  EXPECT_TRUE(StringMatch("a*", "a*"));
+  EXPECT_TRUE(StringMatch("*b", "*b"));
 }
 
 int main(int argc, char **argv) {

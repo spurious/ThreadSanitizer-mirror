@@ -263,6 +263,11 @@ bool StringMatch(const string& wildcard, const string& text) {
     }
   }
 
+  // Skip all '*' at the end of the wildcard.
+  while (*c_wildcard == '*') {
+    ++c_wildcard;
+  }
+
   return !*c_wildcard;
 }
 
