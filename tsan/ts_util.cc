@@ -57,16 +57,10 @@ void GetThreadStack(int tid, uintptr_t *min_addr, uintptr_t *max_addr) {
 }
 #endif
 
-#ifdef TS_VALGRIND
-extern "C" void VG_(set_n_errs_found)(unsigned);
-#endif
 static int n_errs_found;
 
 void SetNumberOfFoundErrors(int n_errs) {
   n_errs_found = n_errs;
-#ifdef TS_VALGRIND
-  VG_(set_n_errs_found)(n_errs);
-#endif
 }
 
 int GetNumberOfFoundErrors() {

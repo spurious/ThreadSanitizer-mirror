@@ -299,12 +299,15 @@ void evh__die_mem ( Addr a, SizeT len ) {
 }
 
 
+extern int VG_(clo_error_exitcode);
+
 void ts_post_clo_init(void) {
   InitCommandLineOptions();
   ThreadSanitizerParseFlags(g_command_line_options);
 
   // we get num-callers from valgrind flags.
   G_flags->num_callers = VG_(clo_backtrace_size);
+  G_flags->error_exitcode = VG_(clo_error_exitcode);
 
   extern Int   VG_(clo_n_suppressions);
   extern Int   VG_(clo_gen_suppressions);
