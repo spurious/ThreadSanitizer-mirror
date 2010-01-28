@@ -47,6 +47,13 @@
 #define NOINLINE __attribute__ ((noinline))
 
 #include "ts_valgrind_client_requests.h"
+
+// When replacing a function in valgrind, the replacement code
+// is instrumented, so we just don't touch reads/writes in replacement
+// functions.
+#define EXTRA_REPLACE_PARAMS
+#define REPORT_READ_RANGE(x, size)
+#define REPORT_WRITE_RANGE(x, size)
 #include "ts_replace.h"
 
 #define TRACE_PTH_FNS 0

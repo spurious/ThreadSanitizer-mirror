@@ -61,6 +61,16 @@ namespace WINDOWS
 #endif
 
 #include "thread_sanitizer.h"
+
+static void DumpEvent(EventType type, int32_t tid, uintptr_t pc,
+                      uintptr_t a, uintptr_t info);
+#define REPORT_READ_RANGE(x, size) do { \
+  if (size) DumpEvent(READ, tid, pc, (uintptr_t)(x), (size)); } while(0)
+
+#define REPORT_WRITE_RANGE(x, size) do { \
+  if (size) DumpEvent(WRITE, tid, pc, (uintptr_t)(x), (size)); } while(0)
+
+#define EXTRA_REPLACE_PARAMS THREADID tid, uintptr_t pc,
 #include "ts_replace.h"
 
 #ifdef NDEBUG
@@ -342,6 +352,8 @@ void ReplaceFunc3(IMG img, RTN rtn, const char *name, AFUNPTR replacement_func) 
     RTN_ReplaceSignature(rtn,
                          AFUNPTR(replacement_func),
                          IARG_PROTOTYPE, proto,
+                         IARG_THREAD_ID,
+                         IARG_INST_PTR,
                          IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
                          IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
                          IARG_FUNCARG_ENTRYPOINT_VALUE, 2,

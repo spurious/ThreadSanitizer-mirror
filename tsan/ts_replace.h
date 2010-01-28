@@ -30,73 +30,98 @@
 // To avoid false positives in these functions, the tool needs to replace these
 // funcions with simpler implementation.
 //
+// The includer must define these macros:
+// REPORT_WRITE_RANGE, REPORT_READ_RANGE, EXTRA_REPLACE_PARAMS, NOINLINE
+// See ts_valgrind_intercepts.c and ts_pin.cc.
 
 #ifndef TS_REPLACE_H_
 #define TS_REPLACE_H_
 
-
-static NOINLINE void *Replace_memchr(const char *s, int c, size_t n) {
+static NOINLINE char *Replace_memchr(EXTRA_REPLACE_PARAMS const char *s,
+                                     int c, size_t n) {
   size_t i;
-  for (i = 0; i < n; i++)
-    if (s[i] == c) return (void*)(&s[i]);
-  return 0;
-}
-
-static NOINLINE size_t Replace_strlen(const char *s) {
-  size_t res = 0;
-  while (s[res])
-    res++;
-  return res;
-}
-
-static NOINLINE void *Replace_strchr(const char *s, int c) {
-  while (*s) {
-    if (*s == c)
-      return (char*)s;
-    s++;
+  char *ret = 0;
+  for (i = 0; i < n; i++) {
+    if (s[i] == c) {
+      ret = (char*)(&s[i]);
+      break;
+    }
   }
-  return 0;
-}
-
-static NOINLINE char *Replace_strrchr(const char *s, int c) {
-  char* ret = 0;
-  size_t i = 0;
-  while (s[i] != 0) {
-    if (s[i] == c)
-      ret = (char*)&s[i];
-    i++;
-  }
+  REPORT_READ_RANGE(s, ret ? i + 1 : n);
   return ret;
 }
 
-static NOINLINE char *Replace_memcpy(char *dst, const char *src, size_t len) {
+static NOINLINE char *Replace_strchr(EXTRA_REPLACE_PARAMS const char *s,
+                                     int c) {
+  size_t i;
+  char *ret = 0;
+  for (i = 0; s[i]; i++) {
+    if (s[i] == c) {
+      ret = (char*)(&s[i]);
+      break;
+    }
+  }
+  REPORT_READ_RANGE(s, ret ? i + 1 : i);
+  return ret;
+}
+
+static NOINLINE char *Replace_strrchr(EXTRA_REPLACE_PARAMS const char *s,
+                                      int c) {
+  char* ret = 0;
+  size_t i;
+  for (i = 0; s[i]; i++) {
+    if (s[i] == c) {
+      ret = (char*)&s[i];
+    }
+  }
+  REPORT_READ_RANGE(s, i);
+  return ret;
+}
+
+static NOINLINE size_t Replace_strlen(EXTRA_REPLACE_PARAMS const char *s) {
+  size_t i = 0;
+  for (i = 0; s[i]; i++) {
+  }
+  REPORT_READ_RANGE(s, i);
+  return i;
+}
+
+static NOINLINE char *Replace_memcpy(EXTRA_REPLACE_PARAMS char *dst,
+                                     const char *src, size_t len) {
   size_t i;
   for (i = 0; i < len; i++) {
     dst[i] = src[i];
   }
+  REPORT_READ_RANGE(src, i);
+  REPORT_WRITE_RANGE(dst, i);
   return dst;
 }
 
-static NOINLINE char *Replace_strcpy(char *dst, const char *src) {
+static NOINLINE char *Replace_strcpy(EXTRA_REPLACE_PARAMS char *dst,
+                                     const char *src) {
   size_t i;
   for (i = 0; src[i]; i++) {
     dst[i] = src[i];
   }
   dst[i] = 0;
+  REPORT_READ_RANGE(src, i + 1);
+  REPORT_WRITE_RANGE(dst, i + 1);
   return dst;
 }
 
-static NOINLINE int Replace_strcmp(const char *s1, const char *s2) {
-  // TODO(kcc): do we need to handle locales, etc?
+static NOINLINE int Replace_strcmp(EXTRA_REPLACE_PARAMS const char *s1,
+                                   const char *s2) {
   unsigned char c1;
   unsigned char c2;
-  while (1) {
-    c1 = *(unsigned char *)s1;
-    c2 = *(unsigned char *)s2;
+  size_t i;
+  for (i = 0; ; i++) {
+    c1 = (unsigned char)s1[i];
+    c2 = (unsigned char)s2[i];
     if (c1 != c2) break;
     if (c1 == 0) break;
-    s1++; s2++;
   }
+  REPORT_READ_RANGE(s1, i+1);
+  REPORT_READ_RANGE(s2, i+1);
   if (c1 < c2) return -1;
   if (c1 > c2) return 1;
   return 0;
