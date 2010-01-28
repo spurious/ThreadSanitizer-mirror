@@ -37,6 +37,8 @@
 #include <map>
 #include <assert.h>
 
+#include "ts_util.h"
+
 #if defined(__GNUC__)
 # include <cxxabi.h>  // __cxa_demangle
 # define YIELD() usleep(0)
@@ -63,7 +65,6 @@ namespace WINDOWS
 #ifdef NDEBUG
 # error "Please don't define NDEBUG"
 #endif
-#define CHECK assert
 
 //--------- Simple Lock ------------------ {{{1
 class TSLock {

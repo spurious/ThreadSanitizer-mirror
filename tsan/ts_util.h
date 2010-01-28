@@ -53,7 +53,8 @@
 #elif defined(_MSC_VER)
 # undef NDEBUG  // Assert is always on.
 # include <assert.h>
-# define CHECK assert
+# include <stdio.h>
+# define CHECK(x) do { if (!(x)) { printf("Assertion failed: " #x "\n"); exit(1); }} while (0)
 # define TS_USE_WIN_STL
 
 #else
