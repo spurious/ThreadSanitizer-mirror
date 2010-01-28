@@ -191,7 +191,7 @@ ifeq ($(DEBUG), 0)
   # in optimized build, we include thread_sanitizer.cc into other files.
   TS_HEADERS+=thread_sanitizer.cc
 endif
-TS_VG_HEADERS=ts_valgrind.h ts_valgrind_client_requests.h ts_wrap_and_ignore.h
+TS_VG_HEADERS=ts_valgrind.h ts_valgrind_client_requests.h ts_wrap_and_ignore.h ts_replace.h
 
 TS_VG_OBJECTS=$(VGP)thread_sanitizer.o $(VGP)ts_valgrind.o $(VGP)ts_util.o $(VGP)suppressions.o
 TS_PIN_OBJECTS=$(PINP)ts_pin.$(OBJ) $(PINP)ts_util.$(OBJ) $(PINP)thread_sanitizer.$(OBJ) $(PINP)suppressions.$(OBJ)

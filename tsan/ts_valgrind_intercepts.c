@@ -40,11 +40,14 @@
 #include "valgrind.h"
 #include "pub_tool_basics.h"
 #include "pub_tool_libcassert.h"
-#include "pub_tool_redir.h"   
+#include "pub_tool_redir.h"
 #include "pub_tool_threadstate.h"
 #include "pub_tool_tooliface.h"
 
+#define NOINLINE __attribute__ ((noinline))
+
 #include "ts_valgrind_client_requests.h"
+#include "ts_replace.h"
 
 #define TRACE_PTH_FNS 0
 #define TRACE_ANN_FNS 0
@@ -2095,8 +2098,6 @@ LIBSTDCXX_FUNC(long, ZuZucxaZuguardZurelease, void *p) {
 /*----------------------------------------------------------------*/
 /*--- Replace glibc's wretched optimised string fns (again!)   ---*/
 /*----------------------------------------------------------------*/
-
-
 /* Why we have to do all this nonsense:
 
    Some implementations of strlen may read up to 7 bytes past the end
@@ -2106,9 +2107,6 @@ LIBSTDCXX_FUNC(long, ZuZucxaZuguardZurelease, void *p) {
    Such race is benign because the data read past the end of the
    string is not used.
 */
-
-
-
 // --- MEMCPY -----------------------------------------------------
 //
 #define MEMCPY(soname, fnname) \
@@ -2116,42 +2114,7 @@ LIBSTDCXX_FUNC(long, ZuZucxaZuguardZurelease, void *p) {
             ( void *dst, const void *src, SizeT len ); \
    void* VG_REPLACE_FUNCTION_ZU(soname,fnname) \
             ( void *dst, const void *src, SizeT len ) \
-   { \
-      register char *d; \
-      register char *s; \
-      \
-      if (len == 0) \
-         return dst; \
-      \
-      if ( dst > src ) { \
-         d = (char *)dst + len - 1; \
-         s = (char *)src + len - 1; \
-         while ( len >= 4 ) { \
-            *d-- = *s--; \
-            *d-- = *s--; \
-            *d-- = *s--; \
-            *d-- = *s--; \
-            len -= 4; \
-         } \
-         while ( len-- ) { \
-            *d-- = *s--; \
-         } \
-      } else if ( dst < src ) { \
-         d = (char *)dst; \
-         s = (char *)src; \
-         while ( len >= 4 ) { \
-            *d++ = *s++; \
-            *d++ = *s++; \
-            *d++ = *s++; \
-            *d++ = *s++; \
-            len -= 4; \
-         } \
-         while ( len-- ) { \
-            *d++ = *s++; \
-         } \
-      } \
-      return dst; \
-   }
+   { return Replace_memcpy(dst, src, len); }
 
 MEMCPY(VG_Z_LIBC_SONAME, memcpy)
 #if defined(VGO_linux)
@@ -2168,21 +2131,12 @@ MEMCPY(VG_Z_LD64_SO_1,   memcpy) /* ld64.so.1 */
  */
 MEMCPY(NONE, _intel_fast_memcpy)
 
-
 // --- STRCHR and INDEX -------------------------------------------
 //
 #define STRCHR(soname, fnname) \
    char* VG_REPLACE_FUNCTION_ZU(soname,fnname) ( const char* s, int c ); \
    char* VG_REPLACE_FUNCTION_ZU(soname,fnname) ( const char* s, int c ) \
-   { \
-      UChar  ch = (UChar)((UInt)c); \
-      UChar* p  = (UChar*)s; \
-      while (True) { \
-         if (*p == ch) return p; \
-         if (*p == 0) return NULL; \
-         p++; \
-      } \
-   }
+   { return Replace_strchr(s, c); }
 
 // Apparently index() is the same thing as strchr()
 STRCHR(VG_Z_LIBC_SONAME,          strchr)
@@ -2194,23 +2148,12 @@ STRCHR(VG_Z_LD_LINUX_SO_2,        index)
 STRCHR(VG_Z_LD_LINUX_X86_64_SO_2, index)
 #endif
 
-
-
 // --- STRRCHR RINDEX -----------------------------------------------------
 //
 #define STRRCHR(soname, fnname) \
    char* VG_REPLACE_FUNCTION_ZU(soname,fnname)( const char* str, int c ); \
    char* VG_REPLACE_FUNCTION_ZU(soname,fnname)( const char* str, int c ) \
-   { \
-      Char* ret = NULL; \
-      SizeT i = 0; \
-      while (str[i] != 0) { \
-        if (str[i] == c) \
-          ret = (Char*)&str[i]; \
-        i++; \
-      } \
-      return ret; \
-   }
+   { return Replace_strrchr(str, c); }
 
 STRRCHR(VG_Z_LIBC_SONAME,          strrchr)
 STRRCHR(VG_Z_LIBC_SONAME,          rindex)
@@ -2221,7 +2164,6 @@ STRRCHR(VG_Z_LD_LINUX_SO_2,        rindex)
 STRRCHR(VG_Z_LD_LINUX_X86_64_SO_2, rindex)
 #endif
 
-
 // --- STRCMP -----------------------------------------------------
 //
 #define STRCMP(soname, fnname) \
@@ -2229,20 +2171,7 @@ STRRCHR(VG_Z_LD_LINUX_X86_64_SO_2, rindex)
           ( const char* s1, const char* s2 ); \
    int VG_REPLACE_FUNCTION_ZU(soname,fnname) \
           ( const char* s1, const char* s2 ) \
-   { \
-      register unsigned char c1; \
-      register unsigned char c2; \
-      while (True) { \
-         c1 = *(unsigned char *)s1; \
-         c2 = *(unsigned char *)s2; \
-         if (c1 != c2) break; \
-         if (c1 == 0) break; \
-         s1++; s2++; \
-      } \
-      if ((unsigned char)c1 < (unsigned char)c2) return -1; \
-      if ((unsigned char)c1 > (unsigned char)c2) return 1; \
-      return 0; \
-   }
+   { return Replace_strcmp(s1, s2); }
 
 STRCMP(VG_Z_LIBC_SONAME,          strcmp)
 #if defined(VGO_linux)
@@ -2253,14 +2182,7 @@ STRCMP(VG_Z_LD64_SO_1,            strcmp)
 #define MEMCHR(soname, fnname) \
    void* VG_REPLACE_FUNCTION_ZU(soname,fnname) (const void *s, int c, SizeT n); \
    void* VG_REPLACE_FUNCTION_ZU(soname,fnname) (const void *s, int c, SizeT n) \
-   { \
-      SizeT i; \
-      UChar c0 = (UChar)c; \
-      UChar* p = (UChar*)s; \
-      for (i = 0; i < n; i++) \
-         if (p[i] == c0) return (void*)(&p[i]); \
-      return NULL; \
-   }
+   { return Replace_memchr(s, c, n); }
 
 MEMCHR(VG_Z_LIBC_SONAME, memchr)
 #if defined(VGO_darwin)
@@ -2276,11 +2198,7 @@ MEMCHR(VG_Z_DYLD,        memchr)
 #define STRLEN(soname, fnname) \
    SizeT VG_REPLACE_FUNCTION_ZU(soname,fnname)( const char* str ); \
    SizeT VG_REPLACE_FUNCTION_ZU(soname,fnname)( const char* str ) \
-   { \
-      SizeT i = 0; \
-      while (str[i] != 0) i++; \
-      return i; \
-   }
+   { return Replace_strlen(str); }
 
 STRLEN(VG_Z_LIBC_SONAME,          strlen)
 #if defined(VGO_linux)
@@ -2288,23 +2206,14 @@ STRLEN(VG_Z_LD_LINUX_SO_2,        strlen)
 STRLEN(VG_Z_LD_LINUX_X86_64_SO_2, strlen)
 #endif
 
-
 // --- STRCPY -----------------------------------------------------
 //
 #define STRCPY(soname, fnname) \
    char* VG_REPLACE_FUNCTION_ZU(soname, fnname) ( char* dst, const char* src ); \
    char* VG_REPLACE_FUNCTION_ZU(soname, fnname) ( char* dst, const char* src ) \
-   { \
-      Char* dst_orig = dst; \
-      \
-      while (*src) *dst++ = *src++; \
-      *dst = 0; \
-      \
-      return dst_orig; \
-   }
+   { return Replace_strcpy(dst, src); }
 
 STRCPY(VG_Z_LIBC_SONAME, strcpy)
-
 
 //------------------------ Annotations ---------------- {{{1
 

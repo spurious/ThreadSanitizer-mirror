@@ -6277,6 +6277,9 @@ static void SetupIgnore() {
   g_ignore_lists->funs.push_back("__sigsetjmp");
   g_ignore_lists->funs.push_back("__sigjmp_save");
 
+  // Ignore everything in our own file.
+  g_ignore_lists->files.push_back("*ts_valgrind_intercepts.c");
+
   // Now read the ignore files.
   for (size_t i = 0; i < G_flags->ignore.size(); i++) {
     string file_name = G_flags->ignore[i];
@@ -6314,10 +6317,16 @@ bool ThreadSanitizerWantToInstrumentSblock(uintptr_t pc) {
   G_stats->pc_to_strings++;
   PcToStrings(pc, false, &img_name, &rtn_name, &file_name, &line_no);
 
-  return !(StringVectorMatch(g_ignore_lists->files, file_name)
+  bool ret = !(StringVectorMatch(g_ignore_lists->files, file_name)
         || StringVectorMatch(g_ignore_lists->objs, img_name)
         || StringVectorMatch(g_ignore_lists->funs, rtn_name)
         || StringVectorMatch(g_ignore_lists->funs_r, rtn_name));
+  if (0) {
+    Printf("%s: pc=%p file_name=%s img_name=%s rtn_name=%s ret=%d\n",
+           __FUNCTION__, pc, file_name.c_str(), img_name.c_str(),
+           rtn_name.c_str(), ret);
+  }
+  return ret;
 }
 
 bool ThreadSanitizerWantToCreateSegmentsOnSblockEntry(uintptr_t pc) {
@@ -6362,7 +6371,9 @@ const char *ThreadSanitizerQuery(const char *query) {
       G_flags->fast_mode == false) {
     ret = "1";
   }
-  Printf("ThreadSanitizerQuery(\"%s\") = \"%s\"\n", query, ret);
+  if (DEBUG_MODE && G_flags->debug_level >= 2) {
+    Printf("ThreadSanitizerQuery(\"%s\") = \"%s\"\n", query, ret);
+  }
   return ret;
 }
 

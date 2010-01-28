@@ -61,6 +61,7 @@ namespace WINDOWS
 #endif
 
 #include "thread_sanitizer.h"
+#include "ts_replace.h"
 
 #ifdef NDEBUG
 # error "Please don't define NDEBUG"
@@ -633,28 +634,6 @@ static uintptr_t Wrap_pthread_join(WRAP_PARAM4) {
   if (G_flags->debug_level >= 2)
     Printf("T%d out pthread_join %p\n", tid, arg0);
   return ret;
-}
-
-static void *Replace_memchr(const char *s, int c, size_t n) {
-  for (size_t i = 0; i < n; i++)
-    if (s[i] == c) return (void*)(&s[i]);
-  return NULL;
-}
-
-static uintptr_t Replace_strlen(const char *s) {
-  uintptr_t res = 0;
-  while (s[res])
-    res++;
-  return res;
-}
-
-static const void *Replace_strchr(const char *s, int c) {
-  while (*s) {
-    if (*s == c)
-      return s;
-    s++;
-  }
-  return NULL;
 }
 
 #ifdef _MSC_VER
@@ -1835,7 +1814,12 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   ReplaceFunc3(img, rtn, "memchr", (AFUNPTR)Replace_memchr);
   ReplaceFunc3(img, rtn, "strchr", (AFUNPTR)Replace_strchr);
   ReplaceFunc3(img, rtn, "index", (AFUNPTR)Replace_strchr);
+  ReplaceFunc3(img, rtn, "strrchr", (AFUNPTR)Replace_strrchr);
+  ReplaceFunc3(img, rtn, "rindex", (AFUNPTR)Replace_strrchr);
   ReplaceFunc3(img, rtn, "strlen", (AFUNPTR)Replace_strlen);
+  ReplaceFunc3(img, rtn, "strcmp", (AFUNPTR)Replace_strcmp);
+  ReplaceFunc3(img, rtn, "memcpy", (AFUNPTR)Replace_memcpy);
+  ReplaceFunc3(img, rtn, "strcpy", (AFUNPTR)Replace_strcpy);
 
   // pthread_once
   INSERT_BEFORE_1("pthread_once", Before_pthread_once);
