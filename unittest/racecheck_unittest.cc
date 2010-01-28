@@ -5414,8 +5414,7 @@ void Run() {
 REGISTER_TEST2(Run, 129, FEATURE);
 }  // namespace test129
 
-// test130: TN. Per-thread. {{{1
-namespace test130 {
+namespace NegativeTests_PerThreadTest {  // {{{1
 #ifndef NO_TLS
 // This test verifies that the race detector handles
 // thread-local storage (TLS) correctly.
@@ -5436,6 +5435,7 @@ static __thread int per_thread_global[10] = {0};
 
 void RealWorker() {  // Touch per_thread_global.
   per_thread_global[1]++;
+  per_thread_global[9]++;
   errno++;
 }
 
@@ -5449,21 +5449,17 @@ void Worker1() { sleep(1); Worker(); }
 void Worker2() { sleep(2); Worker(); }
 void Worker3() { sleep(3); Worker(); }
 
-void Run() {
-  printf("test130: Per-thread\n");
+TEST(NegativeTests, PerThreadTest) {
   MyThreadArray t1(Worker0, Worker1, Worker2, Worker3);
   t1.Start();
   t1.Join();
-  printf("\tper_thread_global=%d\n", per_thread_global[1]);
 }
-REGISTER_TEST(Run, 130)
 #endif // NO_TLS
 }  // namespace test130
 
 
-// test131: TN. Stack. {{{1
-namespace test131 {
-// Same as test130, but for stack.
+namespace NegativeTests_StackReuseTest {  // {{{1
+// Same as PerThreadTest, but for stack.
 
 void RealWorker() {  // Touch stack.
   int stack_var = 0;
@@ -5480,13 +5476,11 @@ void Worker1() { sleep(1); Worker(); }
 void Worker2() { sleep(2); Worker(); }
 void Worker3() { sleep(3); Worker(); }
 
-void Run() {
-  printf("test131: stack\n");
+TEST(NegativeTests, StackReuseTest) {
   MyThreadArray t(Worker0, Worker1, Worker2, Worker3);
   t.Start();
   t.Join();
 }
-REGISTER_TEST(Run, 131)
 }  // namespace test131
 
 
