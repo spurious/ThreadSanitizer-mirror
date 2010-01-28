@@ -324,7 +324,7 @@ void Waiter() {
   pool.StartWorkers();
   COND = 0;
   pool.Add(NewCallback(Waker));
-  usleep(100000);  // Make sure the signaller gets first.
+  usleep(500000);  // Make sure the signaller gets first.
   MU.Lock();
   while(COND != 1)
     CV.Wait(&MU);

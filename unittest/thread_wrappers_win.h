@@ -160,6 +160,7 @@ class CondVar {
       mu->Lock();
     }
     signaled_ = false;
+    ANNOTATE_HAPPENS_AFTER(this);
   }
   bool WaitWithTimeout(Mutex *mu, int millis) {
     int start_time = GetTimeInMs();
@@ -173,6 +174,7 @@ class CondVar {
       mu->Lock();
     }
     if (signaled_) {
+      ANNOTATE_HAPPENS_AFTER(this);
       signaled_ = false;
       return true;
     }
@@ -180,13 +182,14 @@ class CondVar {
   }
   void Signal() {
     signaled_ = true;
+    ANNOTATE_HAPPENS_BEFORE(this);
     SetEvent(hSignal_);
   }
 // TODO(timurrrr): this isn't used anywhere - do we need these?
 //  void SignalAll();
  private:
-  bool signaled_;
   HANDLE hSignal_;
+  bool signaled_;
 };
 
 class MyThread {
