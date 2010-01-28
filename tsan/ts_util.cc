@@ -165,7 +165,6 @@ TS_FILE OpenFileReadOnly(const string &file_name, bool die_if_failed) {
   }
   return sr_Res(sres);
 #elif defined(_MSC_VER)
-  UNIMPLEMENTED();
   return fopen(file_name.c_str(), "r");
 #else // no TS_VALGRIND
   return open(file_name.c_str(), O_RDONLY);
