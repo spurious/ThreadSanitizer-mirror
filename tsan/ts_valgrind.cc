@@ -188,6 +188,11 @@ static inline uintptr_t GetVgPc(ThreadId vg_tid) {
   return (uintptr_t)VG_(get_IP)(vg_tid);
 }
 
+#ifdef VGP_arm_linux
+static inline uintptr_t GetVgLr(ThreadId vg_tid) {
+  return (uintptr_t) VG_(get_LR)(vg_tid);
+}
+#endif
 
 uintptr_t GetPcOfCurrentThread() {
   return GetVgPc(GetVgTid());
@@ -226,6 +231,10 @@ void GetThreadStack(int tid, uintptr_t *min_addr, uintptr_t *max_addr) {
 struct CallStackRecord {
   Addr pc;
   Addr sp;
+#ifdef VGP_arm_linux
+  // We need to store LR in order to keep the shadow stack consistent.
+  Addr lr;
+#endif
 };
 
 struct ValgrindThread {
@@ -357,7 +366,13 @@ void evh__new_frame ( Addr sp_post_call_insn,
   CallStackRecord record;
   record.pc = pc_post_call_insn;
   record.sp = sp_post_call_insn;
+#ifdef VGP_arm_linux
+  record.lr = GetVgLr(vg_tid);
+#endif
   g_valgrind_threads[vg_tid].call_stack.push_back(record);
+  // If the shadow stack grows too high this usually means it is not cleaned
+  // properly. Or this may be a very deep recursion.
+  DCHECK(g_valgrind_threads[vg_tid].call_stack.size() < 10000);
   uintptr_t call_pc = GetVgPc(vg_tid);
 
   ThreadSanitizerHandleRtnCall(VgTidToTsTid(vg_tid), call_pc, record.pc);
@@ -368,6 +383,29 @@ void evh__new_frame ( Addr sp_post_call_insn,
            PcToRtnNameAndFilePos(record.pc).c_str());
   }
 }
+
+#ifdef VGP_arm_linux
+// Handle shadow stack frame deletion on ARM.
+// Instrumented code calls this function for each non-call jump out of
+// a superblock. If the |sp_post_call_insn| (the jump target address) is equal
+// to a link register value of one or more frames on top of the shadow stack,
+// those frames are popped out.
+// TODO(glider): there may be problems with optimized recursive functions that
+// don't change PC, SP and LR.
+VG_REGPARM(2)
+void evh__delete_frame ( Addr sp_post_call_insn,
+                         Addr pc_post_call_insn) {
+  ThreadId vg_tid = GetVgTid();
+  vector<CallStackRecord> &call_stack = g_valgrind_threads[vg_tid].call_stack;
+  int32_t ts_tid = VgTidToTsTid(vg_tid);
+  while (!call_stack.empty()) {
+    CallStackRecord &record = call_stack.back();
+    if (record.lr != pc_post_call_insn) break;
+    call_stack.pop_back();
+    ThreadSanitizerHandleRtnExit(ts_tid);
+  }
+}
+#endif
 
 static INLINE void evh__new_mem_stack_helper ( Addr a, SizeT len ) {
   ThreadId vg_tid = GetVgTid();
@@ -814,9 +852,29 @@ static void ts_instrument_final_jump (
                                 VexGuestLayout* layout,
                                 IRType gWordTy, IRType hWordTy ) {
 
-  if (jumpkind != Ijk_Call)  return;
+#ifndef VGP_arm_linux
+  // On non-ARM systems we instrument only function calls.
+  if (jumpkind != Ijk_Call) return;
+#else
+  if (jumpkind != Ijk_Call) {
+    // On an ARM system a non-call jump may possibly exit a function.
+    IRTemp sp_post_call_insn
+        = gen_Get_SP( sbOut, layout, sizeofIRType(hWordTy) );
+    IRExpr **args = mkIRExprVec_2(
+        IRExpr_RdTmp(sp_post_call_insn),
+        next
+        );
+    IRDirty* di = unsafeIRDirty_0_N(
+        2/*regparms*/,
+        (char*)"evh__delete_frame",
+        VG_(fnptr_to_fnentry)((void*) &evh__delete_frame ),
+        args );
+    addStmtToIRSB( sbOut, IRStmt_Dirty(di) );
+    return;  // do not fall through
+  }
+#endif
   {
-    // Assumes x86 or amd64
+    // Instrument the call instruction to keep the shadow stack consistent.
     IRTemp sp_post_call_insn
         = gen_Get_SP( sbOut, layout, sizeofIRType(hWordTy) );
     IRExpr **args = mkIRExprVec_2(
