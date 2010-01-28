@@ -3087,8 +3087,7 @@ REGISTER_TEST(Run, 70)
 
 
 
-// test71: TN. strlen, index. {{{1
-namespace test71 {
+namespace NeagativeTests_Strlen {  // {{{1
 // This test is a reproducer for a benign race in strlen (as well as index, etc).
 // Some implementations of strlen may read up to 7 bytes past the end of the string
 // thus touching memory which may not belong to this string.
@@ -3128,15 +3127,13 @@ void WorkerY() {
   str[7] = '\0';
 }
 
-void Run() {
+TEST(NegativeTests, StrlenAndFriends) {
   str = new char[8];
   str[0] = 'X';
   str[1] = 'x';
   str[2] = 'X';
   str[3] = 'x';
   str[4] = '\0';
-
-  printf("test71: negative (strlen & index)\n");
   MyThread t1(WorkerY);
   MyThread t2(WorkerX);
   t1.Start();
@@ -3145,7 +3142,6 @@ void Run() {
   t2.Join();
   printf("\tstrX=%s; strY=%s\n", str, str+5);
 }
-REGISTER_TEST(Run, 71)
 }  // namespace test71
 
 
@@ -6135,24 +6131,90 @@ void Run() {
 REGISTER_TEST2(Run, 154, EXCLUDE_FROM_ALL)
 }  // namespace test154
 
-// test155: TP. Data race under memcpy. {{{1
-namespace test155 {
-char GLOB[2];
+namespace PositiveTests_RaceInMemcpy {  // {{{1
+char *GLOB;
 
-void Worker() {
+void DoMemcpy() {
   memcpy(GLOB, GLOB + 1, 1);
 }
 
-void Run() {
-  memset(GLOB, 0, sizeof(GLOB));
-  ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "TP. Data race under memcpy");
-  printf("test155: TP. Data race under memcpy\n");
-  MyThreadArray t(Worker, Worker);
+void Write0() {
+  GLOB[0] = 'z';
+}
+
+void DoStrlen() {
+  CHECK(strlen(GLOB) == 3);
+}
+
+void DoStrcpy() {
+  CHECK(strcpy(GLOB, "zzz") == GLOB);
+}
+
+void DoStrchr() {
+  CHECK(strchr(GLOB, 'o') == (GLOB + 1));
+}
+
+void DoMemchr() {
+  CHECK(memchr(GLOB, 'o', 4) == (GLOB + 1));
+}
+
+void DoStrrchr() {
+  CHECK(strrchr(GLOB, '!') == NULL);
+}
+
+void DoStrcmp() {
+  CHECK(strcmp(GLOB, "xxx") != 0);
+}
+
+void RunThreads(void (*f1)(void), void (*f2)(void), char *mem) {
+  GLOB = mem;
+  strcpy(GLOB, "foo");
+  ANNOTATE_EXPECT_RACE_FOR_TSAN(GLOB, "expected race");
+  MyThreadArray t(f1, f2);
   t.Start();
   t.Join();
 }
-REGISTER_TEST(Run, 155)
-}  // namespace test155
+
+TEST(PositiveTests, RaceInMemcpy) {
+  static char mem[4];
+  RunThreads(DoMemcpy, DoMemcpy, mem);
+}
+
+TEST(PositiveTests, RaceInStrlen1) {
+  static char mem[4];
+  RunThreads(DoStrlen, Write0, mem);
+}
+
+TEST(PositiveTests, RaceInStrlen2) {
+  static char mem[4];
+  RunThreads(Write0, DoStrlen, mem);
+}
+
+TEST(PositiveTests, RaceInStrcpy) {
+  static char mem[4];
+  RunThreads(Write0, DoStrcpy, mem);
+}
+
+TEST(PositiveTests, RaceInStrchr) {
+  static char mem[4];
+  RunThreads(Write0, DoStrchr, mem);
+}
+
+TEST(PositiveTests, RaceInMemchr) {
+  static char mem[4];
+  RunThreads(Write0, DoMemchr, mem);
+}
+
+TEST(PositiveTests, RaceInStrrchr) {
+  static char mem[4];
+  RunThreads(Write0, DoStrrchr, mem);
+}
+
+TEST(PositiveTests, RaceInStrcmp) {
+  static char mem[4];
+  RunThreads(Write0, DoStrcmp, mem);
+}
+}  // namespace
 
 // test157: TN. Test for stack traces (using ANNOTATE_NO_OP). {{{1
 namespace test157 {
