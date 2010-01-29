@@ -124,6 +124,32 @@ class MyThreadArray {
   MyThread *ar_[kSize];
 };
 
+
+// This class does not implement a signal-wait synchronization
+// primitive, even if it looks like one. Its purpose is to enforce an
+// order of execution of threads in unit tests in a way that is
+// invisible to ThreadSanitizer and similar tools. It lacks memory
+// barriers, therefore it only works reliably if there is a real
+// synchronization primitive before signal() or after wait().
+class StealthNotification {
+ public:
+  StealthNotification() : flag_(0) {}
+
+  void signal() {
+    CHECK(!flag_);
+    flag_ = 1;
+  }
+
+  void wait() {
+    while (!flag_) {
+      sched_yield();
+    }
+  }
+
+ private:
+  volatile int flag_;
+};
+
 #endif  // TEST_UTILS_H__
 // End {{{1
  // vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker

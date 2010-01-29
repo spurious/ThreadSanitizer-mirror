@@ -640,22 +640,28 @@ int     GLOB3 = 0;
 char    padding3[64];
 int     GLOB4 = 0;
 RWLock  MU;
+StealthNotification n1, n2, n3, n4, n5;
 
 void Worker1() {
   MU.Lock();
-  usleep(500000);
   GLOB1 = 1;
   GLOB2 = 1;
   GLOB3 = 1;
   GLOB4 = 1;
+  n1.signal();
+  n2.wait();
+  n3.wait();
   MU.Unlock();
+  n4.signal();
 }
 
 void Worker2() {
+  n1.wait();
   if (MU.TryLock()) CHECK(0);
   else
     GLOB1 = 2;
-  usleep(1000000);
+  n2.signal();
+  n5.wait();
   if (MU.TryLock()) {
     GLOB2 = 2;
     MU.Unlock();
@@ -665,16 +671,19 @@ void Worker2() {
 }
 
 void Worker3() {
+  n1.wait();
   if (MU.ReaderTryLock()) CHECK(0);
   else
     printf("\treading GLOB3: %d\n", GLOB3);
-  usleep(1000000);
+  n3.signal();
+  n4.wait();
   if (MU.ReaderTryLock()) {
     printf("\treading GLOB4: %d\n", GLOB4);
     MU.ReaderUnlock();
   } else {
     CHECK(0);
   }
+  n5.signal();
 }
 
 TEST(PositiveTests, test146) {
