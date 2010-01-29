@@ -127,78 +127,18 @@
   /* Report that the bytes in the range [pointer, pointer+size) are about
      to be published safely. The race checker will create a happens-before
      arc from the call ANNOTATE_PUBLISH_MEMORY_RANGE(pointer, size) to
-     subsequent accesses to this memory. */
+     subsequent accesses to this memory.
+     Note: this annotation may not work properly if the race detector uses
+     sampling, i.e. does not observe all memory accesses.
+     */
   #define ANNOTATE_PUBLISH_MEMORY_RANGE(pointer, size) \
     AnnotatePublishMemoryRange(__FILE__, __LINE__, pointer, size)
 
-  /* Report that the bytes in the range [pointer, pointer+size) are not shared
-     between threads any more and can be safely used by the current thread w/o
-     synchronization. The race checker will create a happens-before arc from
-     all previous accesses to this memory to this call.
-
-     This annotation could be applied to complex objects, such as STL
-     containers, with one condition: the accesses to the object itself
-     and its internal data should not be separated with any synchronization.
-
-     Example that works:
-
-     map<int, int> the_map;
-     void Thread1() {
-       MutexLock lock(&mu);
-       // Ok: accesses to the_map and its internal data is not separated by
-       // synchronization.
-       the_map[1]++;
-     }
-     void Thread2() {
-       {
-         MutexLock lock(&mu);
-         ...
-         // because of some reason we know that the_map will not be used by
-         // other threads any more
-         ANNOTATE_UNPUBLISH_MEMORY_RANGE(&the_map, sizeof(the_map));
-       }
-       the_map->DoSomething();
-     }
-
-     Example that does not work (due to the way happens-before arcs are
-     represented in some race detectors):
-
-     void Thread1() {
-       MutexLock lock(&mu);
-       int *guts_of_the_map = &(*the_map)[1];
-       // we have some synchronization between access to 'c' and its guts.
-       // This will make ANNOTATE_UNPUBLISH_MEMORY_RANGE in Thread2  useless.
-       some_other_lock_or_other_synchronization_utility.Lock();
-       (*guts_of_the_map)++;
-        ...
-     }
-
-     void Thread1() { // same as above... */
+  /* DEPRECATED. Don't use it. */
   #define ANNOTATE_UNPUBLISH_MEMORY_RANGE(pointer, size) \
     AnnotateUnpublishMemoryRange(__FILE__, __LINE__, pointer, size)
 
-  /* This annotation should be used to annotate thread-safe swapping of
-     containers. Required only when using hybrid (i.e. not pure happens-before)
-     detectors.
-
-     This annotation has the same limitation as ANNOTATE_UNPUBLISH_MEMORY_RANGE
-     (see above).
-
-     Example:
-     map<int, int> the_map;
-     void Thread1() {
-       MutexLock lock(&mu);
-       the_map[1]++;
-     }
-     void Thread2() {
-       map<int,int> tmp;
-       {
-         MutexLock lock(&mu);
-         the_map.swap(tmp);
-         ANNOTATE_SWAP_MEMORY_RANGE(&the_map, sizeof(the_map));
-       }
-       tmp->DoSomething();
-     } */
+  /* DEPRECATED. Don't use it. */
   #define ANNOTATE_SWAP_MEMORY_RANGE(pointer, size)   \
     do {                                              \
       ANNOTATE_UNPUBLISH_MEMORY_RANGE(pointer, size); \
