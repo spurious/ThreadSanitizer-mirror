@@ -3768,8 +3768,8 @@ REGISTER_TEST(Run, 85)
 }  // namespace test85
 
 
-// test86: Test for race inside DTOR: racey write to vptr. Benign. {{{1
-namespace test86 {
+namespace PositiveTests_BenignRaceInDtor {  // {{{
+// test86: Test for race inside DTOR: racey write to vptr. Benign.
 // This test shows a racey access to vptr (the pointer to vtbl).
 // We have class A and class B derived from A.
 // Both classes have a virtual function f() and a virtual DTOR.
@@ -3824,8 +3824,7 @@ struct B: A {
 
 void Waiter() {
   A *a = new B;
-  if (!Tsan_FastMode())
-    ANNOTATE_EXPECT_RACE(a, "test86: expected race on a->vptr");
+  ANNOTATE_EXPECT_RACE(a, "test86: expected race on a->vptr");
   printf("Waiter: B created\n");
   Q.Put(a);
   usleep(100000); // so that Worker calls a->f() first.
@@ -3848,14 +3847,12 @@ void Worker() {
   printf("Worker: done\n");
 }
 
-void Run() {
-  printf("test86: positive, race inside DTOR\n");
+TEST(PositiveTests, BenignRaceInDtor) {
   MyThreadArray t(Waiter, Worker);
   t.Start();
   t.Join();
 }
-REGISTER_TEST(Run, 86)
-}  // namespace test86
+}  // namespace
 
 
 // test87: Test for race inside DTOR: racey write to vptr. Harmful.{{{1
