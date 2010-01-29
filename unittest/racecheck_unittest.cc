@@ -743,7 +743,6 @@ void Worker() {
 }
 
 void Run() {
-//  ANNOTATE_EXPECT_RACE(&GLOB, "test17. FP. Fixed by MSMProp1 + Barrier support.");
   COND = 3;
   printf("test17: negative\n");
   MyThreadArray t(Worker, Worker, Worker);
@@ -1671,8 +1670,7 @@ void Run() {
 REGISTER_TEST(Run, 38);
 }  // namespace test38
 
-// test39: FP. Barrier. {{{1
-namespace test39 {
+namespace NegativeTests_Barrier {  // {{{1
 #ifndef NO_BARRIER
 // Same as test17 but uses Barrier class (pthread_barrier_t).
 int     GLOB = 0;
@@ -1687,10 +1685,9 @@ void Worker() {
   barrier.Block();
   CHECK(GLOB == N_threads);
 }
-void Run() {
+
+TEST(NegativeTests, Barrier) {
   ANNOTATE_TRACE_MEMORY(&GLOB);
-//  ANNOTATE_EXPECT_RACE(&GLOB, "test39. FP. Fixed by MSMProp1. Barrier.");
-  printf("test39: negative\n");
   {
     ThreadPool pool(N_threads);
     pool.StartWorkers();
@@ -1698,9 +1695,8 @@ void Run() {
       pool.Add(NewCallback(Worker));
     }
   } // all folks are joined here.
-  printf("\tGLOB=%d\n", GLOB);
+  CHECK(GLOB == 3);
 }
-REGISTER_TEST(Run, 39);
 #endif // NO_BARRIER
 }  // namespace test39
 

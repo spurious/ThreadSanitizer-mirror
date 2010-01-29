@@ -699,6 +699,52 @@ TEST(PositiveTests, test146) {
 }
 } // namespace test146
 
+namespace PositiveTests_CyclicBarrierTest {  // {{{1
+#ifndef NO_BARRIER
+// regression test for correct support of cyclic barrier.
+// This test was suggested by Julian Seward.
+// There is a race on L here between a1 and b1,
+// but a naive support of barrier makes us miss this race.
+pthread_barrier_t B;
+int L;
+
+// A1/A2: write L, then wait for barrier, then sleep
+void a1() {
+  L = 1;
+  pthread_barrier_wait(&B);
+  sleep(1);
+}
+void a2() {
+  pthread_barrier_wait(&B);
+  sleep(1);
+}
+
+// B1/B2: sleep, wait for barrier, then write L
+void b1() {
+  sleep(1);
+  pthread_barrier_wait(&B);
+  L = 1;
+}
+void b2() {
+  sleep(1);
+  pthread_barrier_wait(&B);
+}
+
+TEST(PositiveTests, CyclicBarrierTest) {
+  ANNOTATE_EXPECT_RACE_FOR_TSAN(&L, "real race, may be hidden"
+                                " by incorrect implementation of barrier");
+  pthread_barrier_init(&B, NULL, 3);
+  MyThreadArray t1(a1, a2, a2),
+                t2(b1, b2, b2);
+  t1.Start();
+  t2.Start();
+  t1.Join();
+  t2.Join();
+}
+
+#endif  // NO_BARRIER
+}  // namespace
+
 namespace SignalsAndMallocTest {  // {{{1
 // Regression test for
 // http://code.google.com/p/data-race-test/issues/detail?id=13 .
