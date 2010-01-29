@@ -142,7 +142,7 @@ class StealthNotification {
 
   void wait() {
     while (!flag_) {
-      sched_yield();
+      sleep(0);
     }
   }
 
