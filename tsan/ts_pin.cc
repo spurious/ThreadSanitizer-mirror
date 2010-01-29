@@ -1002,13 +1002,18 @@ static void Before_pthread_spin_destroy(THREADID tid, ADDRINT pc, ADDRINT mu) {
 }
 
 // barrier
-static void Before_pthread_barrier_wait(THREADID tid, ADDRINT pc,
-                                        ADDRINT barrier) {
-  DumpEvent(BARRIER_BEFORE, tid, pc, barrier, 0);
+static uintptr_t Wrap_pthread_barrier_init(WRAP_PARAM4) {
+  DumpEvent(CYCLIC_BARRIER_INIT, tid, pc, arg0, arg2);
+  uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
+  return ret;
 }
-static void After_pthread_barrier_wait(THREADID tid, ADDRINT pc) {
-  DumpEvent(BARRIER_AFTER, tid, pc, 0, 0);
+static uintptr_t Wrap_pthread_barrier_wait(WRAP_PARAM4) {
+  DumpEvent(CYCLIC_BARRIER_WAIT_BEFORE, tid, pc, arg0, 0);
+  uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
+  DumpEvent(CYCLIC_BARRIER_WAIT_AFTER, tid, pc, arg0, 0);
+  return ret;
 }
+
 
 // condvar
 static void Before_pthread_cond_signal(THREADID tid, ADDRINT pc, ADDRINT cv) {
@@ -1753,8 +1758,10 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
 
 
   // pthread_barrier_*
-  INSERT_BEFORE_1("pthread_barrier_wait", Before_pthread_barrier_wait);
-  INSERT_AFTER_0("pthread_barrier_wait", After_pthread_barrier_wait);
+  WrapFunc4(img, rtn, "pthread_barrier_init",
+            (AFUNPTR)Wrap_pthread_barrier_init);
+  WrapFunc4(img, rtn, "pthread_barrier_wait",
+            (AFUNPTR)Wrap_pthread_barrier_wait);
 
   // sem_*
   INSERT_AFTER_1("sem_open", After_sem_open);

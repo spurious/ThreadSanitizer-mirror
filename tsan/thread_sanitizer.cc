@@ -3948,15 +3948,50 @@ struct Thread {
     NewSegment("NewSegmentForSignal", new_vts);
   }
 
+  // Support for Cyclic Barrier, e.g. pthread_barrier_t.
+  // We need to create (barrier_count-1)^2 h-b arcs between
+  // threads blocking on a barrier. We should not create any h-b arcs
+  // for two calls to barrier_wait if the barrier was reset between then.
+  struct CyclicBarrierInfo {
+    // The value given to barrier_init.
+    uint32_t barrier_count;
+    // How many times we may block on this barrier before resetting.
+    int32_t calls_before_reset;
+  };
+  // Maps the barrier pointer to CyclicBarrierInfo.
+  typedef hash_map<uintptr_t, CyclicBarrierInfo> CyclicBarrierMap;
 
-  // Barrier
-  void HandleBarrierBefore(uintptr_t barrier) {
-    barrier_addr_ = barrier;
-    HandleSignal(barrier_addr_);
+  CyclicBarrierInfo &GetCyclicBarrierInfo(uintptr_t barrier) {
+    if (cyclic_barrier_map_ == NULL) {
+      cyclic_barrier_map_ = new CyclicBarrierMap;
+    }
+    return (*cyclic_barrier_map_)[barrier];
   }
 
-  void HandleBarrierAfter() {
-    HandleWait(barrier_addr_, 0, false);
+  void HandleBarrierInit(uintptr_t barrier, uint32_t n) {
+    CyclicBarrierInfo &info = GetCyclicBarrierInfo(barrier);
+    info.barrier_count = n;
+    info.calls_before_reset = 0;
+  }
+
+  void HandleBarrierWaitBefore(uintptr_t barrier) {
+    CyclicBarrierInfo &info = GetCyclicBarrierInfo(barrier);
+
+    CHECK(info.calls_before_reset >= 0);
+    if (info.calls_before_reset == 0) {
+      // We are blocking the first time after reset. Clear the VTS.
+      info.calls_before_reset = info.barrier_count;
+      Signaller &signaller = (*signaller_map_)[barrier];
+      VTS::Delete(signaller.vts);
+      signaller.vts = NULL;
+    }
+    info.calls_before_reset--;
+    // Signal to all threads that blocked on this barrier.
+    HandleSignal(barrier);
+  }
+
+  void HandleBarrierWaitAfter(uintptr_t barrier) {
+    HandleWait(barrier, 0, false);
   }
 
   // Call stack  -------------
@@ -4142,8 +4177,6 @@ struct Thread {
 
   bool      bus_lock_is_set_;
 
-  uintptr_t barrier_addr_;
-
   int ignore_[2];  // 0 for reads, 1 for writes.
   StackTrace *ignore_context_[2];
 
@@ -4173,8 +4206,11 @@ struct Thread {
        clear();
      }
   };
+
+
   // signaller address -> VTS
   static SignallerMap *signaller_map_;
+  static CyclicBarrierMap *cyclic_barrier_map_;
 
 
   static map<pthread_t, TID> *ptid_to_tid_;
@@ -4183,6 +4219,7 @@ struct Thread {
 // Thread:: static members
 vector<Thread*>            *Thread::all_threads_;
 Thread::SignallerMap       *Thread::signaller_map_;
+Thread::CyclicBarrierMap   *Thread::cyclic_barrier_map_;
 map<pthread_t, TID>        *Thread::ptid_to_tid_;
 
 
@@ -5055,8 +5092,15 @@ class Detector {
       case WAIT_AFTER  : HandleWaitAfter(false);    break;
       case TWAIT_AFTER : HandleWaitAfter(true);   break;
 
-      case BARRIER_BEFORE : HandleBarrierBefore(); break;
-      case BARRIER_AFTER  : HandleBarrierAfter();  break;
+      case CYCLIC_BARRIER_INIT:
+        cur_thread_->HandleBarrierInit(e_->a(), e_->info());
+        break;
+      case CYCLIC_BARRIER_WAIT_BEFORE  :
+        cur_thread_->HandleBarrierWaitBefore(e_->a());
+        break;
+      case CYCLIC_BARRIER_WAIT_AFTER  :
+        cur_thread_->HandleBarrierWaitAfter(e_->a());
+        break;
 
       case PCQ_CREATE   : HandlePcqCreate();   break;
       case PCQ_DESTROY  : HandlePcqDestroy();  break;
@@ -5352,16 +5396,6 @@ class Detector {
     }
     // e_->Print();
     cur_thread_->HandleWaitAfter(timed_out);
-  }
-
-  // BARRIER_BEFORE
-  void HandleBarrierBefore() {
-    cur_thread_->HandleBarrierBefore(e_->a());
-  }
-
-  // BARRIER_AFTER
-  void HandleBarrierAfter() {
-    cur_thread_->HandleBarrierAfter();
   }
 
   void HandleTraceMem() {

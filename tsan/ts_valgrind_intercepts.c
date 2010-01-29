@@ -1241,16 +1241,11 @@ static int pthread_barrier_wait_WRK(pthread_barrier_t* b)
       fflush(stderr);
    }
 
-   // We blocked, signal. 
-   DO_CREQ_v_W(TSREQ_PTHREAD_COND_BROADCAST_PRE,
-               void*,b);
+   DO_CREQ_v_W(TSREQ_CYCLIC_BARRIER_WAIT_BEFORE, void*,b);
    CALL_FN_W_W(ret, fn, b);
+   DO_CREQ_v_W(TSREQ_CYCLIC_BARRIER_WAIT_AFTER, void*,b);
 
    // FIXME: handle ret 
-
-   // We unblocked, finish wait. 
-   do_wait_pre_and_post(b, 0);
-
    if (TRACE_PTH_FNS) {
       fprintf(stderr, "  pthread_barrier_wait -> %d >>\n", ret);
    }
@@ -1264,6 +1259,15 @@ PTH_FUNC(int, pthreadZubarrierZuwait, // pthread_barrier_wait
   return pthread_barrier_wait_WRK(b);
 }
 
+// pthread_barrier_init
+PTH_FUNC(int, pthreadZubarrierZuinit, void *b, void *a, unsigned n) {
+   int ret;
+   OrigFn fn;
+   VALGRIND_GET_ORIG_FN(fn);
+   DO_CREQ_v_WW(TSREQ_CYCLIC_BARRIER_INIT, void*,b, unsigned long, n);
+   CALL_FN_W_WWW(ret, fn, b, a, n);
+   return ret;
+}
 /*----------------------------------------------------------------*/
 /*--- pthread_rwlock_t functions                               ---*/
 /*----------------------------------------------------------------*/

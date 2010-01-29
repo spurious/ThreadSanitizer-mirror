@@ -708,7 +708,15 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
       Put(WAIT_BEFORE, ts_tid, pc, /*sem=*/args[1], 0);
       Put(WAIT_AFTER, ts_tid, pc, 0, 0);
       break;
-
+    case TSREQ_CYCLIC_BARRIER_INIT:
+      Put(CYCLIC_BARRIER_INIT, ts_tid, pc, args[1], args[2]);
+      break;
+    case TSREQ_CYCLIC_BARRIER_WAIT_BEFORE:
+      Put(CYCLIC_BARRIER_WAIT_BEFORE, ts_tid, pc, args[1], 0);
+      break;
+    case TSREQ_CYCLIC_BARRIER_WAIT_AFTER:
+      Put(CYCLIC_BARRIER_WAIT_AFTER, ts_tid, pc, args[1], 0);
+      break;
     case TSREQ_GET_MY_SEGMENT:
       break;
     case TSREQ_GET_THREAD_ID:
