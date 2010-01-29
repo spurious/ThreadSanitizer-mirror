@@ -4031,10 +4031,10 @@ Mutex   MU;
 
 void Publisher() {
   MU.Lock();
-  GLOB = (int*)memalign(64, sizeof(int));
-  *GLOB = 777;
+  GLOB = (int*)malloc(128 * sizeof(int));
+  GLOB[42] = 777;
   if (!Tsan_PureHappensBefore() && !Tsan_FastMode())
-    ANNOTATE_EXPECT_RACE_FOR_TSAN(GLOB, "test90. FP. This is a false positve");
+    ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB[42], "test90. FP. This is a false positve");
   MU.Unlock();
   usleep(200000);
 }
@@ -4043,7 +4043,7 @@ void Reader() {
   usleep(10000);
   while (true) {
     MU.Lock();
-    int *p = GLOB;
+    int *p = &GLOB[42];
     MU.Unlock();
     if (p) {
       CHECK(*p == 777);  // Race is reported here.
@@ -4077,10 +4077,10 @@ Mutex   MU, MU1, MU2;
 
 void Publisher() {
   MU1.Lock();
-  GLOB = (int*)memalign(64, sizeof(int));
-  *GLOB = 777;
+  GLOB = (int*)malloc(128 * sizeof(int));
+  GLOB[42] = 777;
   if (!Tsan_PureHappensBefore() && !Tsan_FastMode())
-    ANNOTATE_EXPECT_RACE_FOR_TSAN(GLOB, "test91. FP. This is a false positve");
+    ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB[42], "test91. FP. This is a false positve");
   MU1.Unlock();
 }
 
@@ -4088,7 +4088,7 @@ void Accessor() {
   usleep(10000);
   while (true) {
     MU1.Lock();
-    int *p = GLOB;
+    int *p = &GLOB[42];
     MU1.Unlock();
     if (p) {
       MU2.Lock();
@@ -4590,24 +4590,24 @@ REGISTER_TEST2(Run, 103, FEATURE)
 namespace test104 {
 int     *GLOB = NULL;
 void Worker() {
-  *GLOB = 1;
+  GLOB[42] = 1;
 }
 
 void Parent() {
   MyThread t(Worker);
   t.Start();
   usleep(100000);
-  *GLOB = 2;
+  GLOB[42] = 2;
   t.Join();
 }
 void Run() {
-  GLOB = (int*)memalign(64, sizeof(int));
-  *GLOB = 0;
-  ANNOTATE_EXPECT_RACE(GLOB, "test104. TP.");
-  ANNOTATE_TRACE_MEMORY(GLOB);
+  GLOB = (int*)malloc(128 * sizeof(int));
+  GLOB[42] = 0;
+  ANNOTATE_EXPECT_RACE(&GLOB[42], "test104. TP.");
+  ANNOTATE_TRACE_MEMORY(&GLOB[42]);
   printf("test104: positive\n");
   Parent();
-  printf("\tGLOB=%d\n", *GLOB);
+  printf("\tGLOB=%d\n", GLOB[42]);
   free(GLOB);
 }
 REGISTER_TEST(Run, 104);

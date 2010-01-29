@@ -56,9 +56,6 @@
 #define NOINLINE __declspec(noinline)
 #define ALIGNED(x) __declspec (align(x))
 
-// TODO(timurrrr) this is a hack
-#define memalign(A,B) malloc(B)
-
 int GetTimeInMs() {
   return (int)timeGetTime();
 }
@@ -133,9 +130,9 @@ class Mutex {
     }
 
     if (cond.Eval() == 0) {
-      ANNOTATE_HAPPENS_AFTER(this);
       return false;
     } else {
+      ANNOTATE_HAPPENS_AFTER(this);
       return true;
     }
   }
