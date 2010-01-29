@@ -6251,16 +6251,20 @@ namespace MemoryTypes {  // {{{1
     usleep(500000);  // let other threads hit this before exiting.
   }
 
-  void RaceOnLocalStack(void (*callback)(void *)) {
-    char object_on_stack = 0;
-    ANNOTATE_EXPECT_RACE(&object_on_stack, "race");
-    MyThread t1(callback, &object_on_stack),
-             t2(callback, &object_on_stack);
+  void RaceOnMemory(void (*callback)(void *), char *mem) {
+    ANNOTATE_EXPECT_RACE(mem, "race");
+    MyThread t1(callback, mem),
+             t2(callback, mem);
     t1.Start();
     t2.Start();
     t1.Join();
     t2.Join();
-    CHECK(object_on_stack == 1);
+    CHECK(*mem == 1);
+  }
+
+  void RaceOnLocalStack(void (*callback)(void *)) {
+    char object_on_stack = 0;
+    RaceOnMemory(callback, &object_on_stack);
   }
 
   // create a new function to make reports different.
@@ -6276,6 +6280,38 @@ namespace MemoryTypes {  // {{{1
     MyThread t((void (*)(void*))(RaceOnLocalStack), (void*)WriteChar2);
     t.Start();
     t.Join();
+  }
+
+  void WriteChar3(void *param) { WriteChar(param); }
+
+  TEST(MemoryTypes, RaceOnMallocedMemory) {
+    char *mem = (char*)malloc(100);
+    RaceOnMemory(WriteChar3, mem+42);
+    free(mem);
+  }
+
+  void WriteChar4(void *param) { WriteChar(param); }
+
+  TEST(MemoryTypes, RaceOnCallocedMemory) {
+    char *mem = (char*)calloc(30, 4);
+    RaceOnMemory(WriteChar4, mem+42);
+    free(mem);
+  }
+
+  void WriteChar5(void *param) { WriteChar(param); }
+
+  TEST(MemoryTypes, RaceOnMemoryFromNew) {
+    char *mem = new char;
+    RaceOnMemory(WriteChar5, mem);
+    delete mem;
+  }
+
+  void WriteChar6(void *param) { WriteChar(param); }
+
+  TEST(MemoryTypes, RaceOnMemoryFromNewA) {
+    char *mem = new char [100];
+    RaceOnMemory(WriteChar6, mem+42);
+    delete [] mem;
   }
 }  // namespace
 
