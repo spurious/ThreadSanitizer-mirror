@@ -602,4 +602,17 @@ public class ThreadSanitizerTest {
       public void thread4() { i.incrementAndGet(); }
     };
   }
+
+  public void testNegative_NoReportOnLocks() {
+    describe("Correct code: reg test for a bug (???)");
+    new ThreadRunner2() {
+      public void thread1() {
+        shared_var = 1;
+      }
+      public void thread2() {
+        longSleep();
+      }
+    };
+  }
+
 }
