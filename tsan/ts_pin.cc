@@ -783,8 +783,27 @@ uintptr_t Wrap_ZwAllocateVirtualMemory(WRAP_PARAM6) {
 uintptr_t Wrap_AllocateHeap(WRAP_PARAM4) {
   uintptr_t ret = CallStdCallFun3(ctx, tid, f, arg0, arg1, arg2);
   // Printf("T%d RtlAllocateHeap(%p %p %p)=%p\n", tid, arg0, arg1, arg2, ret);
+  if (ret != 0) {
+    DumpEvent(MALLOC, tid, pc, ret, arg3);
+  }
   return ret;
 }
+
+uintptr_t Wrap_RtlAllocateActivationContextStack(WRAP_PARAM4) {
+  uintptr_t ret = CallStdCallFun3(ctx, tid, f, arg0, arg1, arg2);
+  // Printf("T%d %s(%p %p %p)=%p\n", tid, __FUNCTION__, arg0, arg1, arg2, ret);
+  // TODO(kcc): this looks like a stack. But what is its size?
+  // Is there any better way to get the stack and its size?
+  DumpEvent(MALLOC, tid, pc, arg0, 1024 * 1024);
+  return ret;
+}
+
+uintptr_t Wrap_HeapCreate(WRAP_PARAM4) {
+  uintptr_t ret = CallStdCallFun3(ctx, tid, f, arg0, arg1, arg2);
+  Printf("T%d %s(%p %p %p)=%p\n", tid, __FUNCTION__, arg0, arg1, arg2, ret);
+  return ret;
+}
+
 
 uintptr_t Wrap_WaitForSingleObject(WRAP_PARAM4) {
   if (G_flags->verbosity >= 1) {
@@ -1379,20 +1398,29 @@ void CallbackForTRACE(TRACE trace, void *v) {
     INSERT_FN_SLOW(IPOINT_AFTER, name, to_insert, IARG_FUNCRET_EXITPOINT_VALUE)
 
 uintptr_t Wrap_malloc(WRAP_PARAM4) {
+  IgnoreAllBegin(tid, pc);
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
+  IgnoreAllEnd(tid, pc);
+
   DumpEvent(MALLOC, tid, pc, ret, arg0);
   return ret;
 }
 
 uintptr_t Wrap_calloc(WRAP_PARAM4) {
+  IgnoreAllBegin(tid, pc);
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
+  IgnoreAllEnd(tid, pc);
+
   DumpEvent(MALLOC, tid, pc, ret, arg0*arg1);
   return ret;
 }
 
 uintptr_t Wrap_free(WRAP_PARAM4) {
   DumpEvent(FREE, tid, pc, arg0, 0);
+
+  IgnoreAllBegin(tid, pc);
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
+  IgnoreAllEnd(tid, pc);
   return ret;
 }
 
@@ -1652,9 +1680,13 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
                              (AFUNPTR)(Wrap_RtlLeaveCriticalSection));
   WrapStdCallFunc1(rtn, "SetEvent", (AFUNPTR)(Wrap_SetEvent));
   WrapStdCallFunc2(rtn, "WaitForSingleObject", (AFUNPTR)(Wrap_WaitForSingleObject));
-  WrapStdCallFunc4(rtn, "VirtualAlloc", (AFUNPTR)(Wrap_VirtualAlloc));
+
+//  WrapStdCallFunc4(rtn, "VirtualAlloc", (AFUNPTR)(Wrap_VirtualAlloc));
   WrapStdCallFunc6(rtn, "ZwAllocateVirtualMemory", (AFUNPTR)(Wrap_ZwAllocateVirtualMemory));
-  WrapStdCallFunc3(rtn, "RtlAllocateHeap", (AFUNPTR) Wrap_AllocateHeap);
+//  WrapStdCallFunc3(rtn, "RtlAllocateHeap", (AFUNPTR) Wrap_AllocateHeap);
+//  WrapStdCallFunc3(rtn, "HeapCreate", (AFUNPTR) Wrap_HeapCreate);
+  WrapStdCallFunc1(rtn, "RtlAllocateActivationContextStack",
+                   (AFUNPTR) Wrap_RtlAllocateActivationContextStack);
 #endif
 
   // Annotations.
