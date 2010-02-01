@@ -4307,45 +4307,18 @@ static ExpectedRacesMap *G_expected_races_map;
 
 
 // -------- Heap info ---------------------- {{{1
+#include "ts_heap_info.h"
 // Information about heap memory.
+
 struct HeapInfo {
   uintptr_t   ptr;
   uintptr_t   size;
   TID         tid;
   StackTrace *stack_trace;
+  HeapInfo() :ptr(0), size(0), tid(0), stack_trace(0) { }
 };
 
-
-typedef map<uintptr_t, HeapInfo> HeapMap;
-static HeapMap *G_heap_map;
-
-
-static HeapInfo IsHeapMem(uintptr_t a) {
-  HeapInfo null_info;
-  CHECK(G_heap_map);
-  null_info.ptr = 0;
-  null_info.size = 0;
-  null_info.stack_trace = 0;
-  HeapMap::iterator it = G_heap_map->lower_bound(a);
-  if (it == G_heap_map->end())
-    return null_info;
-  CHECK(it->second.ptr >= a);
-  if (it->second.ptr == a)
-    return it->second;
-  if (it != G_heap_map->begin()) {
-    // try prev
-    --it;
-    HeapInfo &info = it->second;
-    CHECK(info.ptr < a);
-    if (info.ptr + info.size > a)
-      return info;
-  }
-  return null_info;
-}
-
-
-
-
+static HeapMap<HeapInfo> *G_heap_map;
 
 // -------- Suppressions ----------------------- {{{1
 static const char default_suppressions[] =
@@ -4740,8 +4713,8 @@ class ReportStorage {
       }
     }
 
-    HeapInfo heap_info = IsHeapMem(a);
-    if (heap_info.ptr) {
+    HeapInfo heap_info;
+    if(G_heap_map->IsHeapMem(a, &heap_info)) {
       snprintf(buff, sizeof(buff),
              "  %sLocation %p is %ld bytes inside a block starting at %p"
              " of size %ld allocated by T%d from heap:%s\n",
@@ -4920,17 +4893,6 @@ class Detector {
     if (missing) {
       int n_errs = GetNumberOfFoundErrors();
       SetNumberOfFoundErrors(n_errs + missing);
-    }
-
-    // check if there is not deleted memory
-    // (for debugging free() interceptors, not for leak detection)
-    if (0) {
-      for (HeapMap::iterator it = G_heap_map->begin();
-           it != G_heap_map->end(); ++it) {
-        HeapInfo &info = it->second;
-        Printf("Not free()-ed memory: \n%s\n",
-               info.stack_trace->ToString().c_str());
-      }
     }
 
     EventSampler::ShowSamples();
@@ -5733,8 +5695,8 @@ class Detector {
     uintptr_t size = e_->info();
 
     if (G_flags->verbosity >= 2) {
-      Printf("T%d MALLOC: %p %p %s %s\n",
-             tid.raw(), size, a,
+      Printf("T%d MALLOC: %p [%p %p) %s %s\n",
+             tid.raw(), size, a, a+size,
              Segment::ToString(cur_thread_->sid()).c_str(),
              cur_thread_->segment()->vts()->ToString().c_str());
       // cur_thread_->ReportStackTrace(e_->pc());
@@ -5759,7 +5721,7 @@ class Detector {
 
     // CHECK(!G_heap_map->count(a));  // we may have two calls
                                       //  to AnnotateNewMemory.
-    (*G_heap_map)[a] = info;
+    G_heap_map->InsertInfo(a, info);
   }
 
   // FREE
@@ -5769,14 +5731,15 @@ class Detector {
       e_->Print();
     //  cur_thread_->ReportStackTrace(e_->pc());
     }
-    if (!G_heap_map->count(a))
+    HeapInfo info;
+    if (a == 0)
+      return;
+    if (!G_heap_map->GetInfo(a, &info))
       return;
     // update G_heap_map
-    // CHECK(G_heap_map->count(a));
-    HeapInfo info = (*G_heap_map)[a];
     CHECK(info.ptr == a);
     StackTrace::Delete(info.stack_trace);
-    G_heap_map->erase(a);
+    G_heap_map->EraseInfo(a);
 
     uintptr_t size = info.size;
     ClearMemoryStateOnFree(a, a + size);
@@ -5833,9 +5796,9 @@ class Detector {
   }
 
   void HandleThreadCreateAfter() {
-    HeapInfo heap_info = IsHeapMem(e_->a());
     Thread *thr = Thread::Get(TID(e_->tid()));
-    if (heap_info.ptr) {
+    HeapInfo heap_info;
+    if (G_heap_map->IsHeapMem(e_->a(), &heap_info)){
       if (G_flags->verbosity >= 1) {
         Printf("T%d %s: %p\n%s\n", e_->tid(), __FUNCTION__,  e_->a(),
              reports_.DescribeMemory(e_->a()).c_str());
@@ -6426,7 +6389,7 @@ extern void ThreadSanitizerInit() {
   G_detector     = new Detector;
   G_cache        = new Cache;
   G_expected_races_map = new ExpectedRacesMap;
-  G_heap_map           = new HeapMap;
+  G_heap_map           = new HeapMap<HeapInfo>;
   {
     ScopedMallocCostCenter cc1("Segment::InitClassMembers");
     Segment::InitClassMembers();

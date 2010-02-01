@@ -145,6 +145,8 @@ m32d:
 install: bin
 	rm -fv $(VALGRIND_INST_ROOT)/lib/valgrind/*tsan*
 	cp bin/tsan* bin/vgpreload_tsan* $(VALGRIND_INST_ROOT)/lib/valgrind
+
+self-contained:
 	../tsan_binary/mk-self-contained-tsan.sh  $(VALGRIND_INST_ROOT) bin/tsan-$(OS)-self-contained.sh
 
 
@@ -180,13 +182,13 @@ ifeq ($(GTEST_ROOT), )
 test:
 	@echo GTEST_ROOT is not set. Not building GTEST-based tests.
 else
-test: bin $(P)suppressions_test$(EXE)
+test: bin $(P)suppressions_test$(EXE) $(P)thread_sanitizer_test$(EXE)
 endif
 
 bin:
 	mkdir -p bin
 
-TS_HEADERS=thread_sanitizer.h ts_util.h suppressions.h ts_replace.h
+TS_HEADERS=thread_sanitizer.h ts_util.h suppressions.h ts_replace.h ts_heap_info.h
 ifeq ($(DEBUG), 0)
   # in optimized build, we include thread_sanitizer.cc into other files.
   TS_HEADERS+=thread_sanitizer.cc
@@ -227,6 +229,9 @@ $(P)ts_offline$(EXE): $(TS_OFFLINE_OBJECTS)
 	$(LD) $(LDFLAGS) $(ARCHFLAGS) $(LINKO)$@ $^
 
 $(P)suppressions_test$(EXE): $(P)gtest-suppressions_test.$(OBJ) $(P)suppressions.$(OBJ) $(P)ts_util.$(OBJ) $(GTEST_LIB)
+	$(LD) $(LDFLAGS) $(ARCHFLAGS) $(LINKO)$@ $^
+
+$(P)thread_sanitizer_test$(EXE): $(P)gtest-thread_sanitizer_test.$(OBJ) $(P)ts_util.$(OBJ) $(GTEST_LIB)
 	$(LD) $(LDFLAGS) $(ARCHFLAGS) $(LINKO)$@ $^
 
 $(P)ts_pin.so: $(TS_PIN_OBJECTS)
