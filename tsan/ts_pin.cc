@@ -612,6 +612,13 @@ static void After_CreateThread(THREADID tid, ADDRINT pc, ADDRINT ret) {
     Printf("ret: %lx; child_tid=%d\n", ret, child_tid);
   }
 }
+
+static void Before_BaseThreadInitThunk(THREADID tid, ADDRINT pc, ADDRINT sp) {
+  size_t stack_size = 1024 * 1024; // TDO(kcc): how to compute the stack size?
+  Printf("T%d %s %p\n", tid, __FUNCTION__, sp);
+  DumpEvent(MALLOC, tid, pc, sp - stack_size, stack_size);
+}
+
 #endif
 void CallbackForThreadFini(THREADID tid, const CONTEXT *ctxt,
                           INT32 code, void *v) {
@@ -770,6 +777,15 @@ uintptr_t Wrap_VirtualAlloc(WRAP_PARAM4) {
   return ret;
 }
 
+uintptr_t Wrap_GlobalAlloc(WRAP_PARAM4) {
+  uintptr_t ret = CallStdCallFun2(ctx, tid, f, arg0, arg1);
+  Printf("T%d %s(%p %p)=%p\n", tid, __FUNCTION__, arg0, arg1, ret);
+  if (ret != 0) {
+    DumpEvent(MALLOC, tid, pc, ret, arg1);
+  }
+  return ret;
+}
+
 uintptr_t Wrap_ZwAllocateVirtualMemory(WRAP_PARAM6) {
   // Printf("T%d >>%s(%p %p %p %p %p %p)\n", tid, __FUNCTION__, arg0, arg1, arg2, arg3, arg4, arg5);
   uintptr_t ret = CallStdCallFun6(ctx, tid, f, arg0, arg1, arg2, arg3, arg4, arg5);
@@ -786,15 +802,6 @@ uintptr_t Wrap_AllocateHeap(WRAP_PARAM4) {
   if (ret != 0) {
     DumpEvent(MALLOC, tid, pc, ret, arg3);
   }
-  return ret;
-}
-
-uintptr_t Wrap_RtlAllocateActivationContextStack(WRAP_PARAM4) {
-  uintptr_t ret = CallStdCallFun3(ctx, tid, f, arg0, arg1, arg2);
-  // Printf("T%d %s(%p %p %p)=%p\n", tid, __FUNCTION__, arg0, arg1, arg2, ret);
-  // TODO(kcc): this looks like a stack. But what is its size?
-  // Is there any better way to get the stack and its size?
-  DumpEvent(MALLOC, tid, pc, arg0, 1024 * 1024);
   return ret;
 }
 
@@ -1098,7 +1105,7 @@ static void On_AnnotateTraceMemory(THREADID tid, ADDRINT pc,
 static void On_AnnotateNoOp(THREADID tid, ADDRINT pc,
                             ADDRINT file, ADDRINT line, ADDRINT a) {
   Printf("%s T%d: %p\n", __FUNCTION__, tid, a);
-  DumpEvent(STACK_TRACE, tid, pc, 0, 0);
+  //DumpEvent(STACK_TRACE, tid, pc, 0, 0);
 //  PrintShadowStack(tid);
 }
 
@@ -1668,6 +1675,12 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_BEFORE_6("CreateThread", Before_CreateThread);
   INSERT_AFTER_1("CreateThread", After_CreateThread);
 
+
+  INSERT_FN(IPOINT_BEFORE, "BaseThreadInitThunk",
+            Before_BaseThreadInitThunk,
+            IARG_REG_VALUE, REG_STACK_PTR, IARG_END);
+
+
   WrapStdCallFunc1(rtn, "RtlInitializeCriticalSection",
                              (AFUNPTR)(Wrap_RtlInitializeCriticalSection));
   WrapStdCallFunc1(rtn, "RtlDeleteCriticalSection",
@@ -1681,12 +1694,11 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   WrapStdCallFunc1(rtn, "SetEvent", (AFUNPTR)(Wrap_SetEvent));
   WrapStdCallFunc2(rtn, "WaitForSingleObject", (AFUNPTR)(Wrap_WaitForSingleObject));
 
-//  WrapStdCallFunc4(rtn, "VirtualAlloc", (AFUNPTR)(Wrap_VirtualAlloc));
+  WrapStdCallFunc4(rtn, "VirtualAlloc", (AFUNPTR)(Wrap_VirtualAlloc));
   WrapStdCallFunc6(rtn, "ZwAllocateVirtualMemory", (AFUNPTR)(Wrap_ZwAllocateVirtualMemory));
+  WrapStdCallFunc2(rtn, "GlobalAlloc", (AFUNPTR)Wrap_GlobalAlloc);
 //  WrapStdCallFunc3(rtn, "RtlAllocateHeap", (AFUNPTR) Wrap_AllocateHeap);
 //  WrapStdCallFunc3(rtn, "HeapCreate", (AFUNPTR) Wrap_HeapCreate);
-  WrapStdCallFunc1(rtn, "RtlAllocateActivationContextStack",
-                   (AFUNPTR) Wrap_RtlAllocateActivationContextStack);
 #endif
 
   // Annotations.
