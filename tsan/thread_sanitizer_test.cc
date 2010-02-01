@@ -128,3 +128,9 @@ TEST(ThreadSanitizer, HeapInfoTest) {
   EXPECT_EQ(3, info.val);
 
 }
+
+int main(int argc, char **argv) {
+  testing::InitGoogleTest(&argc, argv);
+
+  return RUN_ALL_TESTS();
+}
