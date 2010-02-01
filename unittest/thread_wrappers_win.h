@@ -49,7 +49,7 @@
 
 #define NO_BARRIER
 #define NO_UNNAMED_SEM
-#define NO_TLS
+#define TLS __declspec(thread)
 #define NO_SPINLOCK // TODO(timurrrr): implement SpinLock
 #define usleep(x) Sleep((x)/1000)
 #define sleep(x) Sleep((x)*1000)

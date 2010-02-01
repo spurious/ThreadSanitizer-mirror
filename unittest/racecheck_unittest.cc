@@ -4030,9 +4030,7 @@ StealthNotification n1;
 
 void Publisher() {
   MU.Lock();
-  ANNOTATE_NO_OP((void*)0xdeadbee1);
   GLOB = (int*)malloc(128 * sizeof(int));
-  ANNOTATE_NO_OP((void*)0xdeadbee2);
   ANNOTATE_TRACE_MEMORY(&GLOB[42]);
   GLOB[42] = 777;
   if (!Tsan_PureHappensBefore() && !Tsan_FastMode())
@@ -5414,7 +5412,7 @@ REGISTER_TEST2(Run, 129, FEATURE);
 }  // namespace test129
 
 namespace NegativeTests_PerThreadTest {  // {{{1
-#ifndef NO_TLS
+#ifdef TLS
 // This test verifies that the race detector handles
 // thread-local storage (TLS) correctly.
 // As of 09-03-30 ThreadSanitizer has a bug:
@@ -5430,7 +5428,7 @@ namespace NegativeTests_PerThreadTest {  // {{{1
 //
 // test131 does the same for stack.
 
-static __thread int per_thread_global[10] = {0};
+static TLS int per_thread_global[10] = {0};
 
 void RealWorker() {  // Touch per_thread_global.
   per_thread_global[1]++;
@@ -5453,7 +5451,7 @@ TEST(NegativeTests, PerThreadTest) {
   t1.Start();
   t1.Join();
 }
-#endif // NO_TLS
+#endif // TLS
 }  // namespace test130
 
 
