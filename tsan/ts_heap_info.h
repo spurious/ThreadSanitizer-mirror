@@ -36,8 +36,10 @@
 
 template<class HeapInfo>
 class HeapMap {
-  typedef map<uintptr_t, HeapInfo> map_t;
  public:
+  typedef map<uintptr_t, HeapInfo> map_t;
+  typedef typename map_t::iterator iterator;
+
   HeapMap() {
     // Insert a maximal and minimal possible values to make IsHeapMem simpler.
     HeapInfo max_info;
@@ -50,6 +52,9 @@ class HeapMap {
     min_info.size = 0;
     map_[min_info.ptr] = min_info;
   }
+
+  iterator begin() { return map_.begin(); }
+  iterator end() { return map_.end(); }
 
   size_t size() { return map_.size() - 2; }
 

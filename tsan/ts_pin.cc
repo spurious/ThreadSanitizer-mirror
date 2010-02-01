@@ -1096,9 +1096,9 @@ static void On_AnnotateTraceMemory(THREADID tid, ADDRINT pc,
 }
 
 static void On_AnnotateNoOp(THREADID tid, ADDRINT pc,
-                            ADDRINT file, ADDRINT line) {
-  Printf("%s T%d\n", __FUNCTION__, tid);
-//  DumpEvent(STACK_TRACE, tid, pc, 0, 0);
+                            ADDRINT file, ADDRINT line, ADDRINT a) {
+  Printf("%s T%d: %p\n", __FUNCTION__, tid, a);
+  DumpEvent(STACK_TRACE, tid, pc, 0, 0);
 //  PrintShadowStack(tid);
 }
 
@@ -1693,7 +1693,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_BEFORE_4("AnnotateBenignRace", On_AnnotateBenignRace);
   INSERT_BEFORE_4("AnnotateExpectRace", On_AnnotateExpectRace);
   INSERT_BEFORE_4("AnnotateTraceMemory", On_AnnotateTraceMemory);
-  INSERT_BEFORE_2("AnnotateNoOp", On_AnnotateNoOp);
+  INSERT_BEFORE_3("AnnotateNoOp", On_AnnotateNoOp);
 
   INSERT_BEFORE_3("AnnotateCondVarWait", On_AnnotateCondVarWait);
   INSERT_BEFORE_3("AnnotateCondVarSignal", On_AnnotateCondVarSignal);

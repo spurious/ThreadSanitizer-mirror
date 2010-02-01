@@ -3230,6 +3230,8 @@ void INLINE ClearMemoryStateInOneLine(uintptr_t addr,
     CHECK(line->has_shadow_value().Empty());
   }
 
+  line->fast_mode_used().ClearRange(beg, end);
+
   if (line->fast_mode_used().Empty() && line->has_shadow_value().Empty()) {
     if (UNLIKELY(G_flags->trace_level > 0 &&
                  line->creator_tid().raw() != CacheLine::kFastModeID)) {
@@ -3245,8 +3247,6 @@ void INLINE ClearMemoryStateInOneLine(uintptr_t addr,
   // This is used only by fast mode.
   if (is_new_mem) {
     line->fast_mode_used().SetRange(beg, end);
-  } else {
-    line->fast_mode_used().ClearRange(beg, end);
   }
 }
 
@@ -4874,6 +4874,20 @@ class Detector {
     HandleStackMem(TID(tid), addr, size, is_new);
   }
 
+  void ShowUnfreedHeap() {
+    // check if there is not deleted memory
+    // (for debugging free() interceptors, not for leak detection)
+    if (DEBUG_MODE && G_flags->debug_level >= 1) {
+      for (HeapMap<HeapInfo>::iterator it = G_heap_map->begin();
+           it != G_heap_map->end(); ++it) {
+        HeapInfo &info = it->second;
+        Printf("Not free()-ed memory: %p [%p, %p)\n%s\n",
+               info.size, info.ptr, info.ptr + info.size,
+               info.stack_trace->ToString().c_str());
+      }
+    }
+  }
+
   void HandleProgramEnd() {
     // Report("ThreadSanitizerValgrind: done\n");
     // check if we found all expected races (for unit tests only).
@@ -4895,6 +4909,7 @@ class Detector {
       SetNumberOfFoundErrors(n_errs + missing);
     }
 
+    // ShowUnfreedHeap();
     EventSampler::ShowSamples();
     ShowStats();
     ShowProcSelfStatus();
