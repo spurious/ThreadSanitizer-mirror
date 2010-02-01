@@ -49,6 +49,16 @@ void AnnotateRWLockAcquired(const char *file, int line,
                             const volatile void *lock, long is_w){}
 void AnnotateRWLockReleased(const char *file, int line,
                             const volatile void *lock, long is_w){}
+void AnnotateBarrierInit(const char *file, int line,
+                         const volatile void *barrier, long count,
+                         long reinitialization_allowed) {}
+void AnnotateBarrierWaitBefore(const char *file, int line,
+                               const volatile void *barrier) {}
+void AnnotateBarrierWaitAfter(const char *file, int line,
+                              const volatile void *barrier) {}
+void AnnotateBarrierDestroy(const char *file, int line,
+                            const volatile void *barrier) {}
+
 void AnnotateCondVarWait(const char *file, int line,
                          const volatile void *cv,
                          const volatile void *lock){}

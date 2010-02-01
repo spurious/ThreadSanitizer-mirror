@@ -274,6 +274,30 @@
     AnnotateRWLockReleased(__FILE__, __LINE__, lock, is_w)
 
   /* -------------------------------------------------------------
+     Annotations useful when implementing barriers.  They are not
+     normally needed by modules that merely use barriers.
+     The "barrier" argument is a pointer to the barrier object. */
+
+  /* Report that the "barrier" has been initialized with initial "count".
+   If 'reinitialization_allowed' is true, initialization is allowed to happen
+   multiple times w/o calling barrier_destroy() */
+  #define ANNOTATE_BARRIER_INIT(barrier, count, reinitialization_allowed) \
+    AnnotateBarrierInit(__FILE__, __LINE__, barrier, count, \
+                        reinitialization_allowed)
+
+  /* Report that we are about to enter barrier_wait("barrier"). */
+  #define ANNOTATE_BARRIER_WAIT_BEFORE(barrier) \
+    AnnotateBarrierWaitBefore(__FILE__, __LINE__, barrier)
+
+  /* Report that we just exited barrier_wait("barrier"). */
+  #define ANNOTATE_BARRIER_WAIT_AFTER(barrier) \
+    AnnotateBarrierWaitAfter(__FILE__, __LINE__, barrier)
+
+  /* Report that the "barrier" has been destroyed. */
+  #define ANNOTATE_BARRIER_DESTROY(barrier) \
+    AnnotateBarrierDestroy(__FILE__, __LINE__, barrier)
+
+  /* -------------------------------------------------------------
      Annotations useful for testing race detectors. */
 
   /* Report that we expect a race on the variable at "address".
@@ -291,6 +315,10 @@
   #define ANNOTATE_RWLOCK_DESTROY(lock) /* empty */
   #define ANNOTATE_RWLOCK_ACQUIRED(lock, is_w) /* empty */
   #define ANNOTATE_RWLOCK_RELEASED(lock, is_w) /* empty */
+  #define ANNOTATE_BARRIER_INIT(barrier, count, reinitialization_allowed) /* */
+  #define ANNOTATE_BARRIER_WAIT_BEFORE(barrier) /* empty */
+  #define ANNOTATE_BARRIER_WAIT_AFTER(barrier) /* empty */
+  #define ANNOTATE_BARRIER_DESTROY(barrier) /* empty */
   #define ANNOTATE_CONDVAR_LOCK_WAIT(cv, lock) /* empty */
   #define ANNOTATE_CONDVAR_WAIT(cv) /* empty */
   #define ANNOTATE_CONDVAR_SIGNAL(cv) /* empty */
@@ -333,6 +361,15 @@ void AnnotateRWLockAcquired(const char *file, int line,
                             const volatile void *lock, long is_w);
 void AnnotateRWLockReleased(const char *file, int line,
                             const volatile void *lock, long is_w);
+void AnnotateBarrierInit(const char *file, int line,
+                         const volatile void *barrier, long count,
+                         long reinitialization_allowed);
+void AnnotateBarrierWaitBefore(const char *file, int line,
+                               const volatile void *barrier);
+void AnnotateBarrierWaitAfter(const char *file, int line,
+                              const volatile void *barrier);
+void AnnotateBarrierDestroy(const char *file, int line,
+                            const volatile void *barrier);
 void AnnotateCondVarWait(const char *file, int line,
                          const volatile void *cv,
                          const volatile void *lock);
