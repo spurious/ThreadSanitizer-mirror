@@ -136,8 +136,10 @@ class StealthNotification {
   StealthNotification() : flag_(0) {}
 
   void signal() {
+    ANNOTATE_IGNORE_READS_AND_WRITES_BEGIN();
     CHECK(!flag_);
     flag_ = 1;
+    ANNOTATE_IGNORE_READS_AND_WRITES_END();
   }
 
   void wait() {

@@ -4026,18 +4026,24 @@ namespace test90 {
 int     *GLOB = 0;
 Mutex   MU;
 
+StealthNotification n1;
+
 void Publisher() {
   MU.Lock();
+  ANNOTATE_NO_OP((void*)0xdeadbee1);
   GLOB = (int*)malloc(128 * sizeof(int));
+  ANNOTATE_NO_OP((void*)0xdeadbee2);
+  ANNOTATE_TRACE_MEMORY(&GLOB[42]);
   GLOB[42] = 777;
   if (!Tsan_PureHappensBefore() && !Tsan_FastMode())
     ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB[42], "test90. FP. This is a false positve");
   MU.Unlock();
+  n1.signal();
   usleep(200000);
 }
 
 void Reader() {
-  usleep(10000);
+  n1.wait();
   while (true) {
     MU.Lock();
     int *p = &GLOB[42];
