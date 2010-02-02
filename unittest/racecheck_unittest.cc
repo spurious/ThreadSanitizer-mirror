@@ -6344,6 +6344,24 @@ TEST(StressTests, DISABLED_ThreadTree7) {
 }
 }  // namespace test313
 
+namespace  StressTests_StartAndJoinManyThreads {  //{{{1
+
+void Worker() {
+}
+
+// Too slow. Need to run it separately.
+TEST(StressTests, DISABLED_StartAndJoinManyThreads) {
+  for (int i = 0; i < 5000; i++) {
+    MyThread t1(Worker);
+    MyThread t2(Worker);
+    t1.Start();
+    t2.Start();
+    t1.Join();
+    t2.Join();
+  }
+}
+}  // namespace
+
 // test400: Demo of a simple false positive. {{{1
 namespace test400 {
 static Mutex mu;
