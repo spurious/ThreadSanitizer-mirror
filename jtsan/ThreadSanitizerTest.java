@@ -107,6 +107,8 @@ public class ThreadSanitizerTest {
     }
   }
 
+  protected static volatile boolean static_volatile_bool_var;
+
   class ThreadRunner {
     protected int shared_var = 0;
     protected Integer shared_obj;
@@ -251,7 +253,7 @@ public class ThreadSanitizerTest {
     };
   }
 
-  public void testNegative2() {
+  public void testNegative_LocalVolatile() {
     describe("Correct code: two accesses to a volatile boolean");
     new ThreadRunner2() {
       volatile boolean volatile_bool = false;
@@ -259,6 +261,40 @@ public class ThreadSanitizerTest {
       public void thread2() { while(!volatile_bool); }
     };
   }
+
+  public void testNegative_SyncWithLocalVolatile() {
+    describe("Correct code: volatile boolean is used as a synchronization");
+    new ThreadRunner2() {
+      volatile boolean volatile_bool = false;
+      public void thread1() {
+        shared_var = 1;
+        volatile_bool = true;
+      }
+      public void thread2() {
+        while(!volatile_bool);
+        shared_var = 2;
+      }
+    };
+  }
+
+  public void testNegative_SyncWithStaticVolatile() {
+    describe("Correct code: static volatile boolean is used as a synchronization");
+    new ThreadRunner2() {
+      public void setUp() {
+        static_volatile_bool_var = false;
+      }
+      public void thread1() {
+        shared_var = 1;
+        static_volatile_bool_var = true;
+      }
+      public void thread2() {
+        while(!static_volatile_bool_var);
+        shared_var = 2;
+      }
+    };
+  }
+
+
 
   public void testNegative3() {
     describe("Correct code: sending a message via a locked object");
