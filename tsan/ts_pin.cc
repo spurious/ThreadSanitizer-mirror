@@ -37,7 +37,7 @@
 #include <map>
 #include <assert.h>
 
-#include "ts_util.h"
+#include "thread_sanitizer.h"
 
 #if defined(__GNUC__)
 # include <cxxabi.h>  // __cxa_demangle
@@ -60,7 +60,6 @@ namespace WINDOWS
 # define ATOMIC_READ(a)         _InterlockedCompareExchange(a, 0, 0)
 #endif
 
-#include "thread_sanitizer.h"
 
 static void DumpEvent(EventType type, int32_t tid, uintptr_t pc,
                       uintptr_t a, uintptr_t info);
@@ -141,6 +140,8 @@ static bool main_entered, main_exited;
 
 // Number of threads created by pthread_create (i.e. not counting main thread).
 static int n_created_threads = 0;
+// Number of started threads, i.e. the number of CallbackForThreadStart calls.
+static int n_started_threads = 0;
 
 const uint32_t kMaxThreads = 100000;
 
@@ -161,6 +162,7 @@ struct StackFrame {
 };
 //--------------- PinThread ----------------- {{{1
 struct PinThread {
+  int          uniq_tid;
   volatile long last_child_tid;
   THREADID     parent_tid;
   size_t       last_malloc_size;
@@ -270,10 +272,13 @@ static void DumpEventPlainText(EventType type, int32_t tid, uintptr_t pc,
 // TODO(kcc): Fix this!
 static void DumpEventInternal(EventType type, int32_t tid, uintptr_t pc,
                               uintptr_t a, uintptr_t info) {
-  Event event(type, tid, pc, a, info);
+  PinThread &t = g_pin_threads[tid];
+  // PIN wraps the tid (after 2048), but we need a uniq tid.
+  int uniq_tid = t.uniq_tid;
+  Event event(type, uniq_tid, pc, a, info);
 
   if (DEBUG_MODE && G_flags->dump_events) {
-    DumpEventPlainText(type, tid, pc, a, info);
+    DumpEventPlainText(type, uniq_tid, pc, a, info);
     return;
   }
   if (DEBUG_MODE && G_flags->verbosity >= 3) {
@@ -566,6 +571,7 @@ void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
   if (g_pin_threads == NULL) {
     g_pin_threads = new PinThread[kMaxThreads];
   }
+  PinThread &t = g_pin_threads[tid];
 
   bool has_parent = true;
   if (tid == 0) {
@@ -576,20 +582,23 @@ void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
   }
 
   CHECK(tid < kMaxThreads);
-  memset(&g_pin_threads[tid], 0, sizeof(PinThread));
+  memset(&t, 0, sizeof(PinThread));
+  t.uniq_tid = n_started_threads++;;
 
   THREADID parent_tid = -1;
   if (has_parent) {
     parent_tid = g_tid_of_thread_which_called_create_thread;
+#if !defined(_MSC_VER)  // On Windows, threads may appear out of thin air.
     CHECK(parent_tid != (THREADID)-1);
-    g_pin_threads[tid].parent_tid = parent_tid;
+#endif  // _MSC_VER
+    t.parent_tid = parent_tid;
   }
 
   if (G_flags->debug_level >= 2) {
     Printf("T%d ThreadStart parent=%d child=%d\n", tid, parent_tid, tid);
   }
 
-  if (has_parent) {
+  if (has_parent && parent_tid != (THREADID)-1) {
     g_pin_threads[parent_tid].last_child_tid = tid;
   }
 }
@@ -771,7 +780,6 @@ uintptr_t Wrap_SetEvent(WRAP_PARAM4) {
 }
 
 uintptr_t Wrap_VirtualAlloc(WRAP_PARAM4) {
-  CHECK(0);
   Printf("T%d VirtualAlloc: %p %p %p %p\n", tid, arg0, arg1, arg2, arg3);
   uintptr_t ret = CallStdCallFun4(ctx, tid, f, arg0, arg1, arg2, arg3);
   return ret;
@@ -821,9 +829,10 @@ uintptr_t Wrap_WaitForSingleObject(WRAP_PARAM4) {
 
   {
     ScopedReentrantClientLock lock(__LINE__);
-    CHECK(g_win_handles_which_are_threads);
-    is_thread_handle = g_win_handles_which_are_threads->count(arg0) > 0;
-    g_win_handles_which_are_threads->erase(arg0);
+    if (g_win_handles_which_are_threads) {
+      is_thread_handle = g_win_handles_which_are_threads->count(arg0) > 0;
+      g_win_handles_which_are_threads->erase(arg0);
+    }
   }
 
   pthread_t joined_ptid = 0;

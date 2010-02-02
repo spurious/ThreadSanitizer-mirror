@@ -33,8 +33,21 @@
 
 //--------- Head ------------------- {{{1
 #if defined(TS_VALGRIND)
-# include "ts_valgrind.h"
 # define CHECK tl_assert
+#elif defined(TS_PIN)
+extern void ThreadSanitizerDumpAllStacks();
+# define CHECK(x) do { if (!(x)) { \
+   printf("Assertion failed: %s (%s:%d) %s\n", \
+          __FUNCTION__, __FILE__, __LINE__, #x); \
+   ThreadSanitizerDumpAllStacks(); \
+   exit(1); }} while (0)
+#else
+# define CHECK assert
+#endif
+
+
+#if defined(TS_VALGRIND)
+# include "ts_valgrind.h"
 # define TS_USE_STLPORT
 #if defined(VGP_arm_linux)
 // This macro is explicitly undefined in glibc for ARM.
@@ -47,14 +60,12 @@
 # include <sys/types.h>
 # include <sys/stat.h>
 # include <fcntl.h>
-# define CHECK assert
 # define TS_USE_GNUC_STL
 
 #elif defined(_MSC_VER)
 # undef NDEBUG  // Assert is always on.
 # include <assert.h>
 # include <stdio.h>
-# define CHECK(x) do { if (!(x)) { printf("Assertion failed: " #x "\n"); exit(1); }} while (0)
 # define TS_USE_WIN_STL
 
 #else

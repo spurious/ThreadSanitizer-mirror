@@ -3480,7 +3480,7 @@ struct Thread {
     HandleRtnCall(0, 0);
     ignore_[0] = ignore_[1] = 0;
     ignore_context_[0] = ignore_context_[1] = NULL;
-    if (tid != TID(0)) {
+    if (tid != TID(0) && parent_tid.valid()) {
       CHECK(creation_context_);
     }
     Add(this);
@@ -5768,6 +5768,9 @@ class Detector {
     if (child_tid == TID(0)) {
       // main thread, we are done.
       vts = VTS::CreateSingleton(child_tid);
+    } else if (!parent_tid.valid()) {
+      Report("INFO: creating thread T%d w/o a parent\n", child_tid.raw());
+      vts = VTS::CreateSingleton(child_tid);
     } else {
       g_so_far_only_one_thread = false;
       Thread *parent = Thread::Get(parent_tid);
@@ -6452,6 +6455,15 @@ extern void ThreadSanitizerInit() {
 extern void ThreadSanitizerFini() {
   if (!G_flags->dump_events) {
     G_detector->HandleProgramEnd();
+  }
+}
+
+extern void ThreadSanitizerDumpAllStacks() {
+  for (int i = 0; i < Thread::NumberOfThreads(); i++) {
+    Thread *t = Thread::Get(TID(i));
+    if (!t || !t->is_running()) continue;
+    Report("T%d\n", i);
+    t->ReportStackTrace();
   }
 }
 
