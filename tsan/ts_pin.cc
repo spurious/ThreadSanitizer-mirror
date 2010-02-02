@@ -121,17 +121,8 @@ class ScopedReentrantClientLock {
   int line_;
 };
 
-//--------------- Aux classes ------------- {{{1
-struct Routine {
-  string rtn_name;
-};
-
 //--------------- Globals ----------------- {{{1
 extern FILE *G_out;
-
-
-// Maps address of rtn entry/ret to Routine*
-static map<uintptr_t, Routine*> *routine_address_map;
 
 static int64_t dyn_read_count;
 static int64_t dyn_write_count;
@@ -160,6 +151,46 @@ struct StackFrame {
   uintptr_t sp;
   StackFrame(uintptr_t p, uintptr_t s) : pc(p), sp(s) { }
 };
+//--------------- TraceInfo ----------------- {{{1
+// Information about one Memory Operation.
+struct MopInfo {
+  uintptr_t pc;
+  uintptr_t size;
+  bool      is_write;
+};
+
+// An instance of this class is created for each TRACE (SEME region)
+// during instrumentation.
+class TraceInfo {
+ public:
+  static TraceInfo *NewTraceInfo(size_t n_mops, uintptr_t pc) {
+    size_t mem_size = 2 + n_mops * sizeof(MopInfo) / sizeof(uintptr_t);
+    uintptr_t *mem = new uintptr_t[mem_size];
+    TraceInfo *res = new (mem) TraceInfo;
+    res->n_mops_ = n_mops;
+    res->pc_ = pc;
+    return res;
+  }
+  void DeleteTraceInfo(TraceInfo *trace_info) {
+    delete [] (uintptr_t*)trace_info;
+  }
+  MopInfo *GetMop(size_t i) {
+    DCHECK(i < n_mops_);
+    return &mops_[i];
+  }
+
+  size_t n_mops() const { return n_mops_; }
+  size_t pc()     const { return pc_; }
+
+ private:
+  TraceInfo() { }
+
+  size_t n_mops_;
+  size_t pc_;
+  MopInfo mops_[1];
+};
+
+
 //--------------- PinThread ----------------- {{{1
 struct PinThread {
   int          uniq_tid;
@@ -912,21 +943,15 @@ void InsertBeforeEvent_Call(THREADID tid, ADDRINT pc, ADDRINT target, ADDRINT sp
   }
 }
 
-static void HandleSblockEntry(THREADID tid, ADDRINT pc, ADDRINT sp) {
+static void InsertBeforeEvent_SblockEntry(THREADID tid, ADDRINT sp,
+                                          TraceInfo *trace_info) {
+  uintptr_t pc = trace_info->pc();
   DebugOnlyShowPcAndSp(__FUNCTION__, tid, pc, sp);
   UpdateCallStack(tid, sp);
-  DumpEvent(SBLOCK_ENTER, tid, pc, 0, 0);
+  if (trace_info->n_mops()) {
+    DumpEvent(SBLOCK_ENTER, tid, pc, 0, 0);
+  }
 }
-
-static void InsertBeforeEvent_SblockEntry(THREADID tid, ADDRINT pc, ADDRINT sp) {
-  HandleSblockEntry(tid, pc, sp);
-}
-
-static void InsertBeforeEvent_RoutineEntry(THREADID tid, ADDRINT pc,
-                                    ADDRINT sp, Routine *routine) {
-  HandleSblockEntry(tid, pc, sp);
-}
-
 
 //---------- Memory accesses -------------------------- {{{2
 static void InsertBeforeEvent_MemoryRead(THREADID tid, ADDRINT pc,
@@ -1197,7 +1222,7 @@ static bool IgnoreRtn(RTN rtn) {
   return false;
 }
 
-static void InstrumentRead(INS ins) {
+static void InstrumentRead(INS ins, MopInfo *mop_info) {
   INS_InsertCall(ins, IPOINT_BEFORE,
                  (AFUNPTR)InsertBeforeEvent_MemoryRead,
                  IARG_THREAD_ID, IARG_INST_PTR,
@@ -1205,7 +1230,7 @@ static void InstrumentRead(INS ins) {
                  IARG_END);
 }
 
-static void InstrumentWrite(INS ins) {
+static void InstrumentWrite(INS ins, MopInfo *mop_info) {
   INS_InsertCall(ins, IPOINT_BEFORE,
                  (AFUNPTR)InsertBeforeEvent_MemoryWrite,
                  IARG_THREAD_ID, IARG_INST_PTR,
@@ -1213,7 +1238,7 @@ static void InstrumentWrite(INS ins) {
                  IARG_END);
 }
 
-static void InstrumentRead2(INS ins) {
+static void InstrumentRead2(INS ins, MopInfo *mop_info) {
   INS_InsertCall(ins, IPOINT_BEFORE,
                  (AFUNPTR)InsertBeforeEvent_MemoryRead,
                  IARG_THREAD_ID, IARG_INST_PTR,
@@ -1221,12 +1246,28 @@ static void InstrumentRead2(INS ins) {
                  IARG_END);
 }
 
-static void InstrumentBbl(BBL bbl, RTN rtn, bool ignore_memory) {
-  INS tail = BBL_InsTail(bbl);
 
+static bool InstrumentCall(INS ins) {
+  // Call.
+  if (INS_IsProcedureCall(ins) && !INS_IsSyscall(ins)) {
+    INS_InsertCall(ins, IPOINT_BEFORE,
+                   (AFUNPTR)InsertBeforeEvent_Call,
+                   IARG_THREAD_ID, IARG_INST_PTR,
+                   IARG_BRANCH_TARGET_ADDR,
+                   IARG_REG_VALUE, REG_STACK_PTR,
+                   IARG_END);
+    return true;
+  }
+  return false;
+}
+
+// return the number of inserted instrumentations.
+static size_t InstrumentMopsInBBl(BBL bbl, RTN rtn, TraceInfo *trace_info, size_t *mop_idx) {
+  size_t res = 0;
+  INS tail = BBL_InsTail(bbl);
   // All memory reads/writes
   for( INS ins = BBL_InsHead(bbl);
-       !ignore_memory && INS_Valid(ins);
+       INS_Valid(ins);
        ins = INS_Next(ins) ) {
     if (ins != tail) {
       CHECK(!INS_IsRet(ins));
@@ -1239,21 +1280,32 @@ static void InstrumentBbl(BBL bbl, RTN rtn, bool ignore_memory) {
     bool is_write = INS_IsMemoryWrite(ins);
 
     if (is_atomic) continue;
-    if (is_read)  InstrumentRead(ins);
-    if (is_read2) InstrumentRead2(ins);
-    if (is_write) InstrumentWrite(ins);
-  }
 
-  // Call.
-  if (INS_IsProcedureCall(tail) && !INS_IsSyscall(tail)) {
-    INS_InsertCall(tail, IPOINT_BEFORE,
-                   (AFUNPTR)InsertBeforeEvent_Call,
-                   IARG_THREAD_ID, IARG_INST_PTR,
-                   IARG_BRANCH_TARGET_ADDR,
-                   IARG_REG_VALUE, REG_STACK_PTR,
-                   IARG_END);
+    if (is_read) {
+      res++;
+      if (trace_info) {
+        InstrumentRead(ins, trace_info->GetMop((*mop_idx)++));
+      }
+    }
+    if (is_read2) {
+      res++;
+      if (trace_info) {
+        InstrumentRead2(ins, trace_info->GetMop((*mop_idx)++));
+      }
+    }
+    if (is_write) {
+      res++;
+      if (trace_info) {
+        InstrumentWrite(ins, trace_info->GetMop((*mop_idx)++));
+      }
+    }
   }
+  return res;
 }
+
+void Before_foo1(uintptr_t pc) {   Printf("%s %p\n", __FUNCTION__, pc); }
+void Before_foo2(uintptr_t pc) {   Printf("%s %p\n", __FUNCTION__, pc); }
+void Before_foo3(uintptr_t pc) {   Printf("%s %p\n", __FUNCTION__, pc); }
 
 void CallbackForTRACE(TRACE trace, void *v) {
   RTN rtn = TRACE_Rtn(trace);
@@ -1274,33 +1326,36 @@ void CallbackForTRACE(TRACE trace, void *v) {
     }
   }
 
-  // Handle the head of the trace
-  uintptr_t address = TRACE_Address(trace);
-  map<uintptr_t, Routine*>::iterator it =
-      routine_address_map->find(address);
-  if (it != routine_address_map->end()) {
-    // If this trace is a routine entrace, place RTN_ENTER
-    Routine *routine = it->second;
-    TRACE_InsertCall(trace, IPOINT_BEFORE,
-                     (AFUNPTR)InsertBeforeEvent_RoutineEntry,
-                     IARG_THREAD_ID,
-                     IARG_INST_PTR,
-                     IARG_REG_VALUE, REG_STACK_PTR,
-                     IARG_PTR, routine,
-                     IARG_END);
-    // Printf("TRACE: head of rtn %s\n", routine->name());
-  } else {
-    // Otherwise place SBLOCK_ENTER
-    TRACE_InsertCall(trace, IPOINT_BEFORE,
-                     (AFUNPTR)InsertBeforeEvent_SblockEntry,
-                     IARG_THREAD_ID, IARG_INST_PTR,
-                     IARG_REG_VALUE, REG_STACK_PTR,
-                     IARG_END);
+  size_t n_mops = 0;
+  // Instrument the calls, count the mops.
+  for(BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
+    if (!ignore_memory) {
+      n_mops += InstrumentMopsInBBl(bbl, rtn, NULL, NULL);
+    }
+    InstrumentCall(BBL_InsTail(bbl));
   }
 
+  // Handle the head of the trace
+  INS head = BBL_InsHead(TRACE_BblHead(trace));
+  TraceInfo *trace_info = TraceInfo::NewTraceInfo(n_mops, INS_Address(head));
+
+  INS_InsertCall(head, IPOINT_BEFORE,
+                 (AFUNPTR)InsertBeforeEvent_SblockEntry,
+                 IARG_THREAD_ID,
+                 IARG_REG_VALUE, REG_STACK_PTR,
+                 IARG_PTR, trace_info,
+                 IARG_END);
+
+  // instrument the mops. We want to do it after we instrumented the head
+  // to maintain the right order of instrumentation callbacks (head first, then
+  // mops).
+  size_t i = 0;
   for(BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
-    InstrumentBbl(bbl, rtn, ignore_memory);
+    if (!ignore_memory) {
+      InstrumentMopsInBBl(bbl, rtn, trace_info, &i);
+    }
   }
+  CHECK(n_mops == i);
 }
 
 
@@ -1733,19 +1788,9 @@ static void CallbackForIMG(IMG img, void *v) {
 //    Printf("Sym: %s\n", name.c_str());
 //  }
 
-  // Check if we want to spend time searching this img for
-  // some particular functions.
   string img_name = IMG_Name(img);
-  // save the addresses of *all* routines in a map.
-  if (!routine_address_map) {
-    routine_address_map  = new map<uintptr_t, Routine*>;
-  }
   for (SEC sec = IMG_SecHead(img); SEC_Valid(sec); sec = SEC_Next(sec)) {
     for (RTN rtn = SEC_RtnHead(sec); RTN_Valid(rtn); rtn = RTN_Next(rtn)) {
-      string rtn_name = RTN_Name(rtn);
-      Routine *routine = new Routine;
-      routine->rtn_name = rtn_name;
-      (*routine_address_map)[RTN_Address(rtn)] = routine;
       MaybeInstrumentOneRoutine(img, rtn);
     }
   }
