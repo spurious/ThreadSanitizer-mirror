@@ -267,7 +267,7 @@ static void DumpEventPlainText(EventType type, int32_t tid, uintptr_t pc,
 }
 
 
-// We have to send THR_START/THR_FIRST_INSN from here
+// We have to send THR_START from here
 // because we can't do it from CallbackForThreadStart() due to PIN's deadlock.
 // TODO(kcc): Fix this!
 static void DumpEventInternal(EventType type, int32_t tid, uintptr_t pc,
@@ -294,7 +294,6 @@ static void DumpEvent(EventType type, int32_t tid, uintptr_t pc,
   if (g_pin_threads[tid].started == false) {
     g_pin_threads[tid].started = true;
     DumpEventInternal(THR_START, tid, 0, 0, g_pin_threads[tid].parent_tid);
-    DumpEventInternal(THR_FIRST_INSN, tid, 0, 0, 0);
   }
   DumpEventInternal(type, tid, pc, a, info);
 }
