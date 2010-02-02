@@ -895,11 +895,6 @@ static void UpdateCallStack(THREADID tid, ADDRINT sp) {
   }
 }
 
-//static void InsertAfterEvent_RoutineExit(THREADID tid, ADDRINT pc, ADDRINT sp) {
-  // PinThread &t = g_pin_threads[tid];
-  // UpdateCallStack(tid, sp);
-//}
-
 void InsertBeforeEvent_Call(THREADID tid, ADDRINT pc, ADDRINT target, ADDRINT sp) {
   DebugOnlyShowPcAndSp(__FUNCTION__, tid, pc, sp);
   UpdateCallStack(tid, sp);
@@ -915,10 +910,6 @@ void InsertBeforeEvent_Call(THREADID tid, ADDRINT pc, ADDRINT target, ADDRINT sp
   if (DEBUG_MODE && (G_flags->verbosity >= 2)) {
     ShowPcAndSp("CALL: ", tid, target, sp);
   }
-}
-
-static void InsertAfterEvent_SpUpdate(THREADID tid, ADDRINT pc, ADDRINT sp) {
-  DebugOnlyShowPcAndSp(__FUNCTION__, tid, pc, sp);
 }
 
 static void HandleSblockEntry(THREADID tid, ADDRINT pc, ADDRINT sp) {
@@ -1247,14 +1238,6 @@ static void InstrumentBbl(BBL bbl, RTN rtn, bool ignore_memory) {
     bool is_read2 = INS_HasMemoryRead2(ins);
     bool is_write = INS_IsMemoryWrite(ins);
 
-    // SP update.
-    if (INS_RegWContain(ins, REG_STACK_PTR)) {
-      INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)InsertAfterEvent_SpUpdate,
-                     IARG_THREAD_ID, IARG_INST_PTR,
-                     IARG_REG_VALUE, REG_STACK_PTR,
-                     IARG_END);
-
-    }
     if (is_atomic) continue;
     if (is_read)  InstrumentRead(ins);
     if (is_read2) InstrumentRead2(ins);
@@ -1270,14 +1253,6 @@ static void InstrumentBbl(BBL bbl, RTN rtn, bool ignore_memory) {
                    IARG_REG_VALUE, REG_STACK_PTR,
                    IARG_END);
   }
-
-//  if (INS_IsRet(tail)) {
-//    INS_InsertCall(tail, IPOINT_BEFORE,
-//                   (AFUNPTR)InsertAfterEvent_RoutineExit,
-//                   IARG_THREAD_ID, IARG_INST_PTR,
-//                   IARG_REG_VALUE, REG_STACK_PTR,
-//                   IARG_END);
-//  }
 }
 
 void CallbackForTRACE(TRACE trace, void *v) {
@@ -1315,7 +1290,7 @@ void CallbackForTRACE(TRACE trace, void *v) {
                      IARG_END);
     // Printf("TRACE: head of rtn %s\n", routine->name());
   } else {
-    // Otherwise place SBLOCK_ENTER (only if we are tracking access history)
+    // Otherwise place SBLOCK_ENTER
     TRACE_InsertCall(trace, IPOINT_BEFORE,
                      (AFUNPTR)InsertBeforeEvent_SblockEntry,
                      IARG_THREAD_ID, IARG_INST_PTR,
@@ -1389,28 +1364,6 @@ void CallbackForTRACE(TRACE trace, void *v) {
 
 #define INSERT_AFTER_1(name, to_insert) \
     INSERT_AFTER_FN(name, to_insert, IARG_FUNCRET_EXITPOINT_VALUE)
-
-
-#define INSERT_FN_SLOW(point, name, to_insert, ...) \
-  while (RTN_Valid((rtn = RTN_FindByName(img, name)))) { \
-    INSERT_FN_HELPER(point, name, rtn, to_insert, __VA_ARGS__); \
-    break; \
-  }
-
-#define INSERT_BEFORE_SLOW_1(name, to_insert) \
-    INSERT_FN_SLOW(IPOINT_BEFORE, name, to_insert, \
-                   IARG_FUNCARG_ENTRYPOINT_VALUE, 0)
-
-#define INSERT_BEFORE_SLOW_2(name, to_insert) \
-    INSERT_FN_SLOW(IPOINT_BEFORE, name, to_insert, \
-                   IARG_FUNCARG_ENTRYPOINT_VALUE, 0, \
-                   IARG_FUNCARG_ENTRYPOINT_VALUE, 1)
-
-#define INSERT_AFTER_SLOW_0(name, to_insert) \
-    INSERT_FN_SLOW(IPOINT_AFTER, name, to_insert, IARG_END)
-
-#define INSERT_AFTER_SLOW_1(name, to_insert) \
-    INSERT_FN_SLOW(IPOINT_AFTER, name, to_insert, IARG_FUNCRET_EXITPOINT_VALUE)
 
 uintptr_t Wrap_malloc(WRAP_PARAM4) {
   IgnoreAllBegin(tid, pc);
