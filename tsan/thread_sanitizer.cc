@@ -3641,7 +3641,7 @@ struct Thread {
 
 
 
-  static int NumberOfThreads() { return all_threads_->size(); }
+  static int NumberOfThreads() { return n_threads_; }
 
   static Thread *GetIfExists(TID tid) {
     if (tid.raw() < NumberOfThreads())
@@ -3651,22 +3651,24 @@ struct Thread {
 
   static Thread *Get(TID tid) {
     CHECK(tid.raw() < NumberOfThreads());
-    return (*all_threads_)[tid.raw()];
+    return all_threads_[tid.raw()];
   }
 
   static TID Add(Thread *thr) {
     // Printf("Thread::Add %d %d\n", thr->tid().raw(),
     //        (int)all_threads_->size());
     TID tid = thr->tid();
-    while (tid.raw() > static_cast<int32_t>(all_threads_->size())) {
-      all_threads_->push_back(NULL);
+    while (tid.raw() > n_threads_) {
+      CHECK(n_threads_ < G_flags->max_n_threads);
+      all_threads_[n_threads_++] = NULL;
     }
-    if (tid.raw() == static_cast<int32_t>(all_threads_->size())) {
-      all_threads_->push_back(thr);
+    if (tid.raw() == n_threads_) {
+      CHECK(n_threads_ < G_flags->max_n_threads);
+      all_threads_[n_threads_++] = thr;
     } else {
-      CHECK(tid.raw() < (int32_t)all_threads_->size());
-      CHECK((*all_threads_)[tid.raw()] == NULL);
-      (*all_threads_)[tid.raw()] = thr;
+      CHECK(tid.raw() < n_threads_);
+      CHECK(all_threads_[tid.raw()] == NULL);
+      all_threads_[tid.raw()] = thr;
     }
     return thr->tid();
   }
@@ -4135,7 +4137,9 @@ struct Thread {
   }
 
   static void InitClassMembers() {
-    all_threads_        = new vector<Thread*>;
+    ScopedMallocCostCenter malloc_cc("InitClassMembers");
+    all_threads_        = new Thread*[G_flags->max_n_threads];
+    n_threads_          = 0;
     signaller_map_      = new SignallerMap;
     ptid_to_tid_        = new map<pthread_t, TID>;
   }
@@ -4191,7 +4195,8 @@ struct Thread {
   LockHistory lock_history_;
 
   // All threads. The main thread has tid 0.
-  static vector<Thread*> *all_threads_;
+  static Thread **all_threads_;
+  static int      n_threads_;
 
   struct Signaller {
     VTS *vts;
@@ -4217,7 +4222,8 @@ struct Thread {
 };
 
 // Thread:: static members
-vector<Thread*>            *Thread::all_threads_;
+Thread                    **Thread::all_threads_;
+int                         Thread::n_threads_;
 Thread::SignallerMap       *Thread::signaller_map_;
 Thread::CyclicBarrierMap   *Thread::cyclic_barrier_map_;
 map<pthread_t, TID>        *Thread::ptid_to_tid_;
@@ -6194,7 +6200,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
 
   FindIntFlag("num_callers", 12, args, &G_flags->num_callers);
 
-  G_flags->max_n_threads        = 20000;
+  G_flags->max_n_threads        = 100000;
 
   if (G_flags->pure_happens_before) {
     // disable fast mode in pure happens-before mode.
