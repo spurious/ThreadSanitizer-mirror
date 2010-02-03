@@ -466,7 +466,6 @@ void ts_fini(Int exitcode) {
   if (G_flags->error_exitcode && GetNumberOfFoundErrors() > 0) {
     exit(G_flags->error_exitcode);
   }
-  exit(exitcode);
 }
 
 
