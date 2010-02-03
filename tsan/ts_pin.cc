@@ -898,6 +898,9 @@ void After_mmap(THREADID tid, ADDRINT pc, ADDRINT ret) {
 static void UpdateCallStack(THREADID tid, ADDRINT sp) {
   PinThread &t = g_pin_threads[tid];
   while (t.shadow_stack.size() > 0 && sp >= t.shadow_stack.back().sp) {
+    // TODO(kcc): due to subtle bug somewhere, w/o the line below
+    // everything fails on linux 64.
+    CHECK(tid != (THREADID)-1);
     ThreadSanitizerHandleRtnExit(tid);
     t.shadow_stack.pop_back();
     if (DEB_PR) {
