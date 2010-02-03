@@ -957,15 +957,18 @@ static void DumpCurrentTraceInfo(PinThread &t) {
   size_t n = t.trace_info->n_mops();
   THREADID tid = t.tid;
   DCHECK(n <= kMaxMopsPerTrace);
-  for (size_t i = 0; i < n; i++) {
-    MopInfo *mop = t.trace_info->GetMop(i);
-    uintptr_t address = mop_addresses[tid][i];
-    mop_addresses[tid][i] = 0;
-    DCHECK(address != impossible_address);
-    if (address) {
-      DumpEvent(mop->is_write ? WRITE : READ,
-          tid, mop->pc,
-          address, mop->size);
+  if (n) {
+    ScopedLock lock(&g_main_ts_lock);
+    for (size_t i = 0; i < n; i++) {
+      MopInfo *mop = t.trace_info->GetMop(i);
+      uintptr_t addr = mop_addresses[tid][i];
+      mop_addresses[tid][i] = 0;
+      DCHECK(addr != impossible_address);
+      if (addr) {
+        g_current_pc = mop->pc;
+        ThreadSanitizerHandleMemoryAccess(tid, addr, mop->size, mop->is_write);
+        // TODO(kcc): implement --dump-events here.
+      }
     }
   }
   if (DEBUG_MODE) {
