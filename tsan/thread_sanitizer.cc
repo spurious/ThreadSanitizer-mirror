@@ -4007,7 +4007,7 @@ struct Thread {
     if (!call_stack_.empty() && call_pc) {
       call_stack_.back() = call_pc;
     }
-    call_stack_.push_back(pc);
+    call_stack_.push_back(target_pc);
     if (ThreadSanitizerIgnoreAccessesBelowFunction(target_pc)) {
       set_ignore_all(true);
       call_stack_ignore_rec_.push_back(true);
