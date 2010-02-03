@@ -1890,6 +1890,7 @@ void CallbackForDetach(VOID *v) {
 int main(INT32 argc, CHAR **argv) {
   PIN_Init(argc, argv);
   PIN_InitSymbols();
+  TLSInit();
 
   G_out = stderr;
 
