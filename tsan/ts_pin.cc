@@ -1334,24 +1334,24 @@ static void InstrumentMopsInBBl(BBL bbl, RTN rtn, TraceInfo *trace_info, size_t 
       if (is_rep) {
         // TODO(kcc): write unittests for REP-prefixed insns.
         switch (size) {
-          case 1: callback = On_PredicatedMop1; break;
-          case 2: callback = On_PredicatedMop2; break;
-          case 4: callback = On_PredicatedMop4; break;
-          case 8: callback = On_PredicatedMop8; break;
-          case 16: callback = On_PredicatedMop16; break;
+          case 1: callback = (void*)On_PredicatedMop1; break;
+          case 2: callback = (void*)On_PredicatedMop2; break;
+          case 4: callback = (void*)On_PredicatedMop4; break;
+          case 8: callback = (void*)On_PredicatedMop8; break;
+          case 16: callback = (void*)On_PredicatedMop16; break;
         }
       } else {
         switch (size) {
-          case 1: callback = On_Mop1; break;
-          case 2: callback = On_Mop2; break;
-          case 4: callback = On_Mop4; break;
-          case 8: callback = On_Mop8; break;
-          case 16: callback = On_Mop16; break;
+          case 1: callback = (void*)On_Mop1; break;
+          case 2: callback = (void*)On_Mop2; break;
+          case 4: callback = (void*)On_Mop4; break;
+          case 8: callback = (void*)On_Mop8; break;
+          case 16: callback = (void*)On_Mop16; break;
         }
       }
       if (!callback) {
         Printf("WTF???: is_write=%d; size=%d; %s\n", 
-            (int)is_write, (int)size, INS_Disassemble(ins));
+            (int)is_write, (int)size, INS_Disassemble(ins).c_str());
         CHECK(callback != NULL);
       }
       if (trace_info) {
