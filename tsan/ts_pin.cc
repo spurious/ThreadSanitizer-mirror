@@ -1379,12 +1379,11 @@ void CallbackForTRACE(TRACE trace, void *v) {
   }
 
   size_t n_mops = 0;
-  // Instrument the calls, count the mops.
+  // count the mops.
   for(BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
     if (!ignore_memory) {
       InstrumentMopsInBBl(bbl, rtn, NULL, &n_mops);
     }
-    InstrumentCall(BBL_InsTail(bbl));
   }
 
   // Handle the head of the trace
@@ -1407,6 +1406,11 @@ void CallbackForTRACE(TRACE trace, void *v) {
     if (!ignore_memory) {
       InstrumentMopsInBBl(bbl, rtn, trace_info, &i);
     }
+  }
+
+  // instrument the calls, do it after all other instrumentation.
+  for(BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
+   InstrumentCall(BBL_InsTail(bbl));
   }
   CHECK(n_mops == i);
 }
