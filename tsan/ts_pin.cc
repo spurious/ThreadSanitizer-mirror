@@ -124,8 +124,6 @@ class ScopedReentrantClientLock {
 //--------------- Globals ----------------- {{{1
 extern FILE *G_out;
 
-static int64_t dyn_read_count;
-static int64_t dyn_write_count;
 
 static bool main_entered, main_exited;
 
@@ -954,28 +952,25 @@ static void InsertBeforeEvent_SblockEntry(THREADID tid, ADDRINT sp,
 }
 
 //---------- Memory accesses -------------------------- {{{2
-static void InsertBeforeEvent_MemoryRead(THREADID tid, ADDRINT pc,
-                                         ADDRINT a, ADDRINT size) {
+#define MOP_ARG THREADID tid, ADDRINT pc, ADDRINT a
+static void INLINE On_Mop(MOP_ARG, size_t size, bool is_write) {
+  DCHECK(size == 1 || size == 2 || size == 4 || size == 8 || size == 16);
   if (DEBUG_MODE && a == G_flags->trace_addr) {
     Printf("T%d %s %lx\n", tid, __FUNCTION__, a);
   }
-  if (size > 0) {
-    DumpEvent(READ, tid, pc, a, size);
-  }
-  dyn_read_count++;
+  DumpEvent(is_write ? WRITE : READ, tid, pc, a, size);
 }
 
-
-static void InsertBeforeEvent_MemoryWrite(THREADID tid, ADDRINT pc,
-                                          ADDRINT a, ADDRINT size) {
-  if (DEBUG_MODE && a == G_flags->trace_addr) {
-    Printf("T%d %s %lx\n", tid, __FUNCTION__, a);
-  }
-  if (size > 0) {
-    DumpEvent(WRITE, tid, pc, a, size);
-  }
-  dyn_write_count++;
-}
+static void On_Read1(MOP_ARG) { On_Mop(tid, pc, a, 1, false); }
+static void On_Read2(MOP_ARG) { On_Mop(tid, pc, a, 2, false); }
+static void On_Read4(MOP_ARG) { On_Mop(tid, pc, a, 4, false); }
+static void On_Read8(MOP_ARG) { On_Mop(tid, pc, a, 8, false); }
+static void On_Read16(MOP_ARG) { On_Mop(tid, pc, a, 16, false); }
+static void On_Write1(MOP_ARG) { On_Mop(tid, pc, a, 1, true); }
+static void On_Write2(MOP_ARG) { On_Mop(tid, pc, a, 2, true); }
+static void On_Write4(MOP_ARG) { On_Mop(tid, pc, a, 4, true); }
+static void On_Write8(MOP_ARG) { On_Mop(tid, pc, a, 8, true); }
+static void On_Write16(MOP_ARG) { On_Mop(tid, pc, a, 16, true); }
 
 //---------- I/O; exit------------------------------- {{{2
 static const uintptr_t kIOMagic = 0x1234c678;
@@ -1222,31 +1217,6 @@ static bool IgnoreRtn(RTN rtn) {
   return false;
 }
 
-static void InstrumentRead(INS ins, MopInfo *mop_info) {
-  INS_InsertCall(ins, IPOINT_BEFORE,
-                 (AFUNPTR)InsertBeforeEvent_MemoryRead,
-                 IARG_THREAD_ID, IARG_INST_PTR,
-                 IARG_MEMORYREAD_EA, IARG_MEMORYREAD_SIZE,
-                 IARG_END);
-}
-
-static void InstrumentWrite(INS ins, MopInfo *mop_info) {
-  INS_InsertCall(ins, IPOINT_BEFORE,
-                 (AFUNPTR)InsertBeforeEvent_MemoryWrite,
-                 IARG_THREAD_ID, IARG_INST_PTR,
-                 IARG_MEMORYWRITE_EA, IARG_MEMORYWRITE_SIZE,
-                 IARG_END);
-}
-
-static void InstrumentRead2(INS ins, MopInfo *mop_info) {
-  INS_InsertCall(ins, IPOINT_BEFORE,
-                 (AFUNPTR)InsertBeforeEvent_MemoryRead,
-                 IARG_THREAD_ID, IARG_INST_PTR,
-                 IARG_MEMORYREAD2_EA, IARG_MEMORYREAD_SIZE,
-                 IARG_END);
-}
-
-
 static bool InstrumentCall(INS ins) {
   // Call.
   if (INS_IsProcedureCall(ins) && !INS_IsSyscall(ins)) {
@@ -1261,6 +1231,7 @@ static bool InstrumentCall(INS ins) {
   return false;
 }
 
+
 // return the number of inserted instrumentations.
 static size_t InstrumentMopsInBBl(BBL bbl, RTN rtn, TraceInfo *trace_info, size_t *mop_idx) {
   size_t res = 0;
@@ -1274,38 +1245,51 @@ static size_t InstrumentMopsInBBl(BBL bbl, RTN rtn, TraceInfo *trace_info, size_
       CHECK(!INS_IsProcedureCall(ins));
     }
     // bool is_stack = INS_IsStackRead(ins) || INS_IsStackWrite(ins);
-    bool is_atomic = INS_IsAtomicUpdate(ins);
-    bool is_read  = INS_IsMemoryRead(ins);
-    bool is_read2 = INS_HasMemoryRead2(ins);
-    bool is_write = INS_IsMemoryWrite(ins);
+    if (INS_IsAtomicUpdate(ins)) continue;
 
-    if (is_atomic) continue;
+    int n_mops = INS_MemoryOperandCount(ins);
+    if (n_mops == 0) continue;
+    bool is_rep = INS_RepPrefix(ins);
+    // Printf("disasm: %s\n", INS_Disassemble(ins).c_str());
+    if (is_rep) {
+      // TODO(kcc): do something with REP.
+      // Printf("rep: %s\n", INS_Disassemble(ins).c_str());
+    }
 
-    if (is_read) {
-      res++;
-      if (trace_info) {
-        InstrumentRead(ins, trace_info->GetMop((*mop_idx)++));
+    for (int i = 0; i < n_mops; i++) {
+      size_t size = INS_MemoryOperandSize(ins, i);
+      bool is_write = INS_MemoryOperandIsWritten(ins, i);
+      void *callback = NULL;
+      if (is_write) switch (size) {
+        case 1: callback = On_Write1; break;
+        case 2: callback = On_Write2; break;
+        case 4: callback = On_Write4; break;
+        case 8: callback = On_Write8; break;
+        case 16: callback = On_Write16; break;
+      } else switch (size) {
+        case 1: callback = On_Read1; break;
+        case 2: callback = On_Read2; break;
+        case 4: callback = On_Read4; break;
+        case 8: callback = On_Read8; break;
+        case 16: callback = On_Read16; break;
       }
-    }
-    if (is_read2) {
-      res++;
-      if (trace_info) {
-        InstrumentRead2(ins, trace_info->GetMop((*mop_idx)++));
+      if (!callback) {
+        Printf("WTF???: is_write=%d; size=%d; %s\n", (int)is_write, (int)size, INS_Disassemble(ins));
+        CHECK(callback != NULL);
       }
-    }
-    if (is_write) {
       res++;
       if (trace_info) {
-        InstrumentWrite(ins, trace_info->GetMop((*mop_idx)++));
+        INS_InsertCall(ins, IPOINT_BEFORE,
+            (AFUNPTR)callback,
+            IARG_THREAD_ID, IARG_INST_PTR,
+            IARG_MEMORYOP_EA, i,
+            IARG_END);
+        (*mop_idx)++;
       }
     }
   }
   return res;
 }
-
-void Before_foo1(uintptr_t pc) {   Printf("%s %p\n", __FUNCTION__, pc); }
-void Before_foo2(uintptr_t pc) {   Printf("%s %p\n", __FUNCTION__, pc); }
-void Before_foo3(uintptr_t pc) {   Printf("%s %p\n", __FUNCTION__, pc); }
 
 void CallbackForTRACE(TRACE trace, void *v) {
   RTN rtn = TRACE_Rtn(trace);
@@ -1798,10 +1782,6 @@ static void CallbackForIMG(IMG img, void *v) {
 
 //--------- Fini ---------- {{{1
 static void CallbackForFini(INT32 code, void *v) {
-//  Printf("# %s\n", __FUNCTION__);
-//  Printf("#** dyn read/write: %'lld %'lld\n", dyn_read_count, dyn_write_count);
-//  Printf("#** n_created_threads: %d\n", n_created_threads);
-
   DumpEvent(THR_END, 0, 0, 0, 0);
   ThreadSanitizerFini();
   if (G_flags->error_exitcode && GetNumberOfFoundErrors() > 0) {
