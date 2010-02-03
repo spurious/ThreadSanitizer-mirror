@@ -972,6 +972,18 @@ static void On_Write4(MOP_ARG) { On_Mop(tid, pc, a, 4, true); }
 static void On_Write8(MOP_ARG) { On_Mop(tid, pc, a, 8, true); }
 static void On_Write16(MOP_ARG) { On_Mop(tid, pc, a, 16, true); }
 
+#define P_MOP_ARG BOOL is_running, MOP_ARG 
+static void On_PredicatedRead1(P_MOP_ARG) { if (is_running) On_Mop(tid, pc, a, 1, false); }
+static void On_PredicatedRead2(P_MOP_ARG) { if (is_running) On_Mop(tid, pc, a, 2, false); }
+static void On_PredicatedRead4(P_MOP_ARG) { if (is_running) On_Mop(tid, pc, a, 4, false); }
+static void On_PredicatedRead8(P_MOP_ARG) { if (is_running) On_Mop(tid, pc, a, 8, false); }
+static void On_PredicatedRead16(P_MOP_ARG) { if (is_running) On_Mop(tid, pc, a, 16, false); }
+static void On_PredicatedWrite1(P_MOP_ARG) { if (is_running) On_Mop(tid, pc, a, 1, true); }
+static void On_PredicatedWrite2(P_MOP_ARG) { if (is_running) On_Mop(tid, pc, a, 2, true); }
+static void On_PredicatedWrite4(P_MOP_ARG) { if (is_running) On_Mop(tid, pc, a, 4, true); }
+static void On_PredicatedWrite8(P_MOP_ARG) { if (is_running) On_Mop(tid, pc, a, 8, true); }
+static void On_PredicatedWrite16(P_MOP_ARG) { if (is_running) On_Mop(tid, pc, a, 16, true); }
+
 //---------- I/O; exit------------------------------- {{{2
 static const uintptr_t kIOMagic = 0x1234c678;
 
@@ -1260,18 +1272,34 @@ static size_t InstrumentMopsInBBl(BBL bbl, RTN rtn, TraceInfo *trace_info, size_
       size_t size = INS_MemoryOperandSize(ins, i);
       bool is_write = INS_MemoryOperandIsWritten(ins, i);
       void *callback = NULL;
-      if (is_write) switch (size) {
-        case 1: callback = On_Write1; break;
-        case 2: callback = On_Write2; break;
-        case 4: callback = On_Write4; break;
-        case 8: callback = On_Write8; break;
-        case 16: callback = On_Write16; break;
-      } else switch (size) {
-        case 1: callback = On_Read1; break;
-        case 2: callback = On_Read2; break;
-        case 4: callback = On_Read4; break;
-        case 8: callback = On_Read8; break;
-        case 16: callback = On_Read16; break;
+      if (is_rep) {
+        if (is_write) switch (size) {
+          case 1: callback = On_PredicatedWrite1; break;
+          case 2: callback = On_PredicatedWrite2; break;
+          case 4: callback = On_PredicatedWrite4; break;
+          case 8: callback = On_PredicatedWrite8; break;
+          case 16: callback = On_PredicatedWrite16; break;
+        } else switch (size) {
+          case 1: callback = On_PredicatedRead1; break;
+          case 2: callback = On_PredicatedRead2; break;
+          case 4: callback = On_PredicatedRead4; break;
+          case 8: callback = On_PredicatedRead8; break;
+          case 16: callback = On_PredicatedRead16; break;
+        }
+      } else {
+        if (is_write) switch (size) {
+          case 1: callback = On_Write1; break;
+          case 2: callback = On_Write2; break;
+          case 4: callback = On_Write4; break;
+          case 8: callback = On_Write8; break;
+          case 16: callback = On_Write16; break;
+        } else switch (size) {
+          case 1: callback = On_Read1; break;
+          case 2: callback = On_Read2; break;
+          case 4: callback = On_Read4; break;
+          case 8: callback = On_Read8; break;
+          case 16: callback = On_Read16; break;
+        }
       }
       if (!callback) {
         Printf("WTF???: is_write=%d; size=%d; %s\n", (int)is_write, (int)size, INS_Disassemble(ins));
@@ -1279,11 +1307,21 @@ static size_t InstrumentMopsInBBl(BBL bbl, RTN rtn, TraceInfo *trace_info, size_
       }
       res++;
       if (trace_info) {
-        INS_InsertCall(ins, IPOINT_BEFORE,
+        if (is_rep) {
+          // See documentation of INS_InsertPredicatedCall for explanation.
+          INS_InsertPredicatedCall(ins, IPOINT_BEFORE, 
+            (AFUNPTR)callback,
+            IARG_EXECUTING,
+            IARG_THREAD_ID, IARG_INST_PTR,
+            IARG_MEMORYOP_EA, i,
+            IARG_END);
+        } else {
+          INS_InsertCall(ins, IPOINT_BEFORE,
             (AFUNPTR)callback,
             IARG_THREAD_ID, IARG_INST_PTR,
             IARG_MEMORYOP_EA, i,
             IARG_END);
+        }
         (*mop_idx)++;
       }
     }
