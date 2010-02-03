@@ -3997,21 +3997,17 @@ struct Thread {
   }
 
   // Call stack  -------------
-
-  void PushCallStack(uintptr_t pc) {
-    call_stack_.push_back(pc);
-  }
-
   void PopCallStack() {
     CHECK(!call_stack_.empty());
     call_stack_.pop_back();
   }
 
   void HandleRtnCall(uintptr_t call_pc, uintptr_t target_pc) {
+    G_stats->events[RTN_CALL]++;
     if (!call_stack_.empty() && call_pc) {
       call_stack_.back() = call_pc;
     }
-    PushCallStack(target_pc);
+    call_stack_.push_back(pc);
     if (ThreadSanitizerIgnoreAccessesBelowFunction(target_pc)) {
       set_ignore_all(true);
       call_stack_ignore_rec_.push_back(true);
@@ -4021,6 +4017,7 @@ struct Thread {
   }
 
   void HandleRtnExit() {
+    G_stats->events[RTN_EXIT]++;
     if (!call_stack_.empty()) {
       if (call_stack_ignore_rec_.back())
         set_ignore_all(false);
@@ -4029,13 +4026,10 @@ struct Thread {
     }
   }
 
-
-
   uintptr_t GetCallstackEntry(size_t offset_from_top) {
     if (offset_from_top >= call_stack_.size()) return 0;
     return call_stack_[call_stack_.size() - offset_from_top - 1];
   }
-
 
   string CallStackRtnName(size_t offset_from_top = 0) const {
     if (call_stack_.size() <= offset_from_top)
@@ -4043,8 +4037,6 @@ struct Thread {
     uintptr_t pc = call_stack_[call_stack_.size() - offset_from_top - 1];
     return PcToRtnNameWithStats(pc, false);
   }
-
-
 
   string CallStackToStringRtnOnly(int len) {
     string res;
@@ -4984,17 +4976,10 @@ class Detector {
   }
 
   void HandleRtnCall(TID tid, uintptr_t call_pc, uintptr_t target_pc) {
-    G_stats->events[RTN_CALL]++;
     Thread::Get(tid)->HandleRtnCall(call_pc, target_pc);
 
     FlushIfNeeded();
   }
-
-  void HandleRtnExit(TID tid) {
-    G_stats->events[RTN_EXIT]++;
-    Thread::Get(tid)->HandleRtnExit();
-  }
-
 
  private:
 
@@ -5037,7 +5022,7 @@ class Detector {
         HandleRtnCall(TID(e_->tid()), e_->pc(), e_->a());
         break;
       case RTN_EXIT:
-        HandleRtnExit(TID(e_->tid()));
+        Thread::Get(TID(e_->tid()))->HandleRtnExit();
         break;
       case SBLOCK_ENTER:
         HandleSblockEnter(TID(e_->tid()), e_->pc());
@@ -6497,7 +6482,7 @@ void INLINE ThreadSanitizerHandleRtnCall(int32_t tid, uintptr_t call_pc,
   G_detector->HandleRtnCall(TID(tid), call_pc, target_pc);
 }
 void INLINE ThreadSanitizerHandleRtnExit(int32_t tid) {
-  G_detector->HandleRtnExit(TID(tid));
+  Thread::Get(TID(tid))->HandleRtnExit();
 }
 
 static bool ThreadSanitizerPrintReport(ThreadSanitizerReport *report) {
