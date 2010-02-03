@@ -191,6 +191,9 @@ class TraceInfo {
 
 //--------------- PinThread ----------------- {{{1
 const size_t kMaxMopsPerTrace = 32;
+
+TLS_KEY tls_key;
+
 struct PinThread {
   uintptr_t    mop_addresses[kMaxMopsPerTrace];
   int          uniq_tid;
@@ -209,6 +212,22 @@ struct PinThread {
 
 // Array of pin threads, indexed by pin's THREADID.
 static PinThread *g_pin_threads;
+
+static void TLSInit() {
+  tls_key = PIN_CreateThreadDataKey(0);
+}
+
+static PinThread *TLSGet() {
+  return (PinThread*)PIN_GetThreadData(tls_key);
+}
+
+static PinThread *TLSGet(THREADID tid) {
+  return (PinThread*)PIN_GetThreadData(tls_key, tid);
+}
+
+static void TLSSet(PinThread *pin_thread) {
+  PIN_SetThreadData(tls_key, pin_thread);
+}
 
 #ifdef _MSC_VER
 static hash_set<pthread_t> *g_win_handles_which_are_threads;
@@ -604,6 +623,7 @@ void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
     g_pin_threads = new PinThread[kMaxThreads];
   }
   PinThread &t = g_pin_threads[tid];
+  TLSSet(&t);
 
   bool has_parent = true;
   if (tid == 0) {
@@ -935,7 +955,7 @@ static void DumpCurrentTraceInfo(PinThread &t) {
   DCHECK(t.trace_info);
   size_t n = t.trace_info->n_mops();
   THREADID tid = t.tid;
-  DCHECK(n < kMaxMopsPerTrace);
+  DCHECK(n <= kMaxMopsPerTrace);
   for (size_t i = 0; i < n; i++) {
     MopInfo *mop = t.trace_info->GetMop(i);
     uintptr_t address = t.mop_addresses[i];
@@ -993,10 +1013,13 @@ static void InsertBeforeEvent_SblockEntry(THREADID tid, ADDRINT sp,
 #define MOP_PARAM tid, idx, a
 static void INLINE On_Mop(MOP_ARG, size_t size) {
   PinThread &t = g_pin_threads[tid];
+  DCHECK(TLSGet() == &g_pin_threads[tid]);
+  DCHECK(TLSGet(tid) == &g_pin_threads[tid]);
 
   if (DEBUG_MODE) {
     DCHECK(size == 1 || size == 2 || size == 4 || size == 8 || size == 16);
     DCHECK(idx < kMaxMopsPerTrace);
+    DCHECK(idx < t.trace_info->n_mops());
     if (a == G_flags->trace_addr) {
       Printf("T%d %s %lx\n", tid, __FUNCTION__, a);
     }
@@ -1389,6 +1412,7 @@ void CallbackForTRACE(TRACE trace, void *v) {
 
   // Handle the head of the trace
   INS head = BBL_InsHead(TRACE_BblHead(trace));
+  CHECK(n_mops <= kMaxMopsPerTrace);
   TraceInfo *trace_info = TraceInfo::NewTraceInfo(n_mops, INS_Address(head));
 
   INS_InsertCall(head, IPOINT_BEFORE,
