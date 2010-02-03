@@ -132,7 +132,7 @@ static int n_created_threads = 0;
 // Number of started threads, i.e. the number of CallbackForThreadStart calls.
 static int n_started_threads = 0;
 
-const uint32_t kMaxThreads = 100000;
+const uint32_t kMaxThreads = PIN_MAX_THREADS;
 
 static TSLock g_main_ts_lock;
 static TSLock g_thread_create_lock;
@@ -195,7 +195,6 @@ const size_t kMaxMopsPerTrace = 32;
 TLS_KEY tls_key;
 
 struct PinThread {
-  uintptr_t    mop_addresses[kMaxMopsPerTrace];
   int          uniq_tid;
   volatile long last_child_tid;
   THREADID     tid;
@@ -210,6 +209,8 @@ struct PinThread {
   TraceInfo    *trace_info;
 };
 
+uintptr_t mop_addresses[kMaxThreads][kMaxMopsPerTrace];
+
 // Array of pin threads, indexed by pin's THREADID.
 static PinThread *g_pin_threads;
 
@@ -217,11 +218,11 @@ static void TLSInit() {
   tls_key = PIN_CreateThreadDataKey(0);
 }
 
-static PinThread *TLSGet() {
+static INLINE PinThread *TLSGet() {
   return (PinThread*)PIN_GetThreadData(tls_key);
 }
 
-static PinThread *TLSGet(THREADID tid) {
+static INLINE PinThread *TLSGet(THREADID tid) {
   return (PinThread*)PIN_GetThreadData(tls_key, tid);
 }
 
@@ -958,19 +959,19 @@ static void DumpCurrentTraceInfo(PinThread &t) {
   DCHECK(n <= kMaxMopsPerTrace);
   for (size_t i = 0; i < n; i++) {
     MopInfo *mop = t.trace_info->GetMop(i);
-    uintptr_t address = t.mop_addresses[i];
-    t.mop_addresses[i] = 0;
+    uintptr_t address = mop_addresses[tid][i];
+    mop_addresses[tid][i] = 0;
     DCHECK(address != impossible_address);
     if (address) {
-      DumpEvent(mop->is_write ? WRITE : READ, 
-          tid, mop->pc, 
+      DumpEvent(mop->is_write ? WRITE : READ,
+          tid, mop->pc,
           address, mop->size);
     }
   }
   if (DEBUG_MODE) {
     for (size_t i  = n; i < kMaxMopsPerTrace; i++) {
-      t.mop_addresses[i] = impossible_address;
-    } 
+      mop_addresses[tid][i] = impossible_address;
+    }
   }
 }
 
@@ -1001,7 +1002,7 @@ static void InsertBeforeEvent_SblockEntry(THREADID tid, ADDRINT sp,
   DCHECK(trace_info);
   DCHECK(t.tid == tid);
   t.trace_info = trace_info;
-  memset(t.mop_addresses, 0, sizeof(uintptr_t) * trace_info->n_mops());
+  memset(&mop_addresses[tid][0], 0, sizeof(uintptr_t) * trace_info->n_mops());
   uintptr_t pc = trace_info->pc();
   DebugOnlyShowPcAndSp(__FUNCTION__, tid, pc, sp);
   UpdateCallStack(tid, sp);
@@ -1012,11 +1013,10 @@ static void InsertBeforeEvent_SblockEntry(THREADID tid, ADDRINT sp,
 #define MOP_ARG THREADID tid, ADDRINT idx, ADDRINT a
 #define MOP_PARAM tid, idx, a
 static void INLINE On_Mop(MOP_ARG, size_t size) {
-  PinThread &t = g_pin_threads[tid];
-  DCHECK(TLSGet() == &g_pin_threads[tid]);
-  DCHECK(TLSGet(tid) == &g_pin_threads[tid]);
-
   if (DEBUG_MODE) {
+    PinThread &t = g_pin_threads[tid];
+    DCHECK(TLSGet() == &g_pin_threads[tid]);
+    DCHECK(TLSGet(tid) == &g_pin_threads[tid]);
     DCHECK(size == 1 || size == 2 || size == 4 || size == 8 || size == 16);
     DCHECK(idx < kMaxMopsPerTrace);
     DCHECK(idx < t.trace_info->n_mops());
@@ -1026,8 +1026,7 @@ static void INLINE On_Mop(MOP_ARG, size_t size) {
     MopInfo *mop = t.trace_info->GetMop(idx);
     CHECK(mop->size == size);
   }
-
-  t.mop_addresses[idx] = a;
+  mop_addresses[tid][idx] = a;
 }
 
 static void On_Mop1(MOP_ARG) { On_Mop(MOP_PARAM, 1); }
