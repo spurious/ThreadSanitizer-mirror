@@ -190,9 +190,12 @@ class TraceInfo {
 
 
 //--------------- PinThread ----------------- {{{1
+const size_t kMaxMopsPerTrace = 32;
 struct PinThread {
+  uintptr_t    mop_addresses[kMaxMopsPerTrace];
   int          uniq_tid;
   volatile long last_child_tid;
+  THREADID     tid;
   THREADID     parent_tid;
   size_t       last_malloc_size;
   size_t       last_mmap_size;
@@ -201,6 +204,7 @@ struct PinThread {
   uintptr_t    cxa_guard;
   int          in_cxa_guard;
   vector<StackFrame> shadow_stack;
+  TraceInfo    *trace_info;
 };
 
 // Array of pin threads, indexed by pin's THREADID.
@@ -611,7 +615,9 @@ void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
 
   CHECK(tid < kMaxThreads);
   memset(&t, 0, sizeof(PinThread));
-  t.uniq_tid = n_started_threads++;;
+  t.uniq_tid = n_started_threads++;
+  t.tid = tid;
+  t.trace_info = TraceInfo::NewTraceInfo(0, 0);
 
   THREADID parent_tid = -1;
   if (has_parent) {
@@ -924,11 +930,36 @@ static void UpdateCallStack(THREADID tid, ADDRINT sp) {
   }
 }
 
+static void DumpCurrentTraceInfo(PinThread &t) {
+  const uintptr_t impossible_address = (uintptr_t)-0xDEADBEE;
+  DCHECK(t.trace_info);
+  size_t n = t.trace_info->n_mops();
+  THREADID tid = t.tid;
+  DCHECK(n < kMaxMopsPerTrace);
+  for (size_t i = 0; i < n; i++) {
+    MopInfo *mop = t.trace_info->GetMop(i);
+    uintptr_t address = t.mop_addresses[i];
+    t.mop_addresses[i] = 0;
+    DCHECK(address != impossible_address);
+    if (address) {
+      DumpEvent(mop->is_write ? WRITE : READ, 
+          tid, mop->pc, 
+          address, mop->size);
+    }
+  }
+  if (DEBUG_MODE) {
+    for (size_t i  = n; i < kMaxMopsPerTrace; i++) {
+      t.mop_addresses[i] = impossible_address;
+    } 
+  }
+}
+
 void InsertBeforeEvent_Call(THREADID tid, ADDRINT pc, ADDRINT target, ADDRINT sp) {
   DebugOnlyShowPcAndSp(__FUNCTION__, tid, pc, sp);
+  PinThread &t = g_pin_threads[tid];
+  DumpCurrentTraceInfo(t);
   UpdateCallStack(tid, sp);
   DumpEvent(RTN_CALL, tid, pc, target, 0);
-  PinThread &t = g_pin_threads[tid];
   if (t.shadow_stack.size() > 0) {
     t.shadow_stack.back().pc = pc;
   }
@@ -943,46 +974,51 @@ void InsertBeforeEvent_Call(THREADID tid, ADDRINT pc, ADDRINT target, ADDRINT sp
 
 static void InsertBeforeEvent_SblockEntry(THREADID tid, ADDRINT sp,
                                           TraceInfo *trace_info) {
+  PinThread &t = g_pin_threads[tid];
+  DumpCurrentTraceInfo(t);
+ 
+  DCHECK(t.trace_info);
+  DCHECK(trace_info);
+  DCHECK(t.tid == tid);
+  t.trace_info = trace_info;
+  memset(t.mop_addresses, 0, sizeof(uintptr_t) * trace_info->n_mops());
   uintptr_t pc = trace_info->pc();
   DebugOnlyShowPcAndSp(__FUNCTION__, tid, pc, sp);
   UpdateCallStack(tid, sp);
-  if (trace_info->n_mops()) {
-    DumpEvent(SBLOCK_ENTER, tid, pc, 0, 0);
-  }
+  DumpEvent(SBLOCK_ENTER, tid, pc, 0, 0);
 }
 
 //---------- Memory accesses -------------------------- {{{2
-#define MOP_ARG THREADID tid, ADDRINT pc, ADDRINT a
-static void INLINE On_Mop(MOP_ARG, size_t size, bool is_write) {
-  DCHECK(size == 1 || size == 2 || size == 4 || size == 8 || size == 16);
-  if (DEBUG_MODE && a == G_flags->trace_addr) {
-    Printf("T%d %s %lx\n", tid, __FUNCTION__, a);
+#define MOP_ARG THREADID tid, ADDRINT idx, ADDRINT a
+#define MOP_PARAM tid, idx, a
+static void INLINE On_Mop(MOP_ARG, size_t size) {
+  PinThread &t = g_pin_threads[tid];
+
+  if (DEBUG_MODE) {
+    DCHECK(size == 1 || size == 2 || size == 4 || size == 8 || size == 16);
+    DCHECK(idx < kMaxMopsPerTrace);
+    if (a == G_flags->trace_addr) {
+      Printf("T%d %s %lx\n", tid, __FUNCTION__, a);
+    }
+    MopInfo *mop = t.trace_info->GetMop(idx);
+    CHECK(mop->size == size);
   }
-  DumpEvent(is_write ? WRITE : READ, tid, pc, a, size);
+
+  t.mop_addresses[idx] = a;
 }
 
-static void On_Read1(MOP_ARG) { On_Mop(tid, pc, a, 1, false); }
-static void On_Read2(MOP_ARG) { On_Mop(tid, pc, a, 2, false); }
-static void On_Read4(MOP_ARG) { On_Mop(tid, pc, a, 4, false); }
-static void On_Read8(MOP_ARG) { On_Mop(tid, pc, a, 8, false); }
-static void On_Read16(MOP_ARG) { On_Mop(tid, pc, a, 16, false); }
-static void On_Write1(MOP_ARG) { On_Mop(tid, pc, a, 1, true); }
-static void On_Write2(MOP_ARG) { On_Mop(tid, pc, a, 2, true); }
-static void On_Write4(MOP_ARG) { On_Mop(tid, pc, a, 4, true); }
-static void On_Write8(MOP_ARG) { On_Mop(tid, pc, a, 8, true); }
-static void On_Write16(MOP_ARG) { On_Mop(tid, pc, a, 16, true); }
+static void On_Mop1(MOP_ARG) { On_Mop(MOP_PARAM, 1); }
+static void On_Mop2(MOP_ARG) { On_Mop(MOP_PARAM, 2); }
+static void On_Mop4(MOP_ARG) { On_Mop(MOP_PARAM, 4); }
+static void On_Mop8(MOP_ARG) { On_Mop(MOP_PARAM, 8); }
+static void On_Mop16(MOP_ARG) { On_Mop(MOP_PARAM, 16); }
 
 #define P_MOP_ARG BOOL is_running, MOP_ARG 
-static void On_PredicatedRead1(P_MOP_ARG) { if (is_running) On_Mop(tid, pc, a, 1, false); }
-static void On_PredicatedRead2(P_MOP_ARG) { if (is_running) On_Mop(tid, pc, a, 2, false); }
-static void On_PredicatedRead4(P_MOP_ARG) { if (is_running) On_Mop(tid, pc, a, 4, false); }
-static void On_PredicatedRead8(P_MOP_ARG) { if (is_running) On_Mop(tid, pc, a, 8, false); }
-static void On_PredicatedRead16(P_MOP_ARG) { if (is_running) On_Mop(tid, pc, a, 16, false); }
-static void On_PredicatedWrite1(P_MOP_ARG) { if (is_running) On_Mop(tid, pc, a, 1, true); }
-static void On_PredicatedWrite2(P_MOP_ARG) { if (is_running) On_Mop(tid, pc, a, 2, true); }
-static void On_PredicatedWrite4(P_MOP_ARG) { if (is_running) On_Mop(tid, pc, a, 4, true); }
-static void On_PredicatedWrite8(P_MOP_ARG) { if (is_running) On_Mop(tid, pc, a, 8, true); }
-static void On_PredicatedWrite16(P_MOP_ARG) { if (is_running) On_Mop(tid, pc, a, 16, true); }
+static void On_PredicatedMop1(P_MOP_ARG) { if (is_running) On_Mop(MOP_PARAM, 1); }
+static void On_PredicatedMop2(P_MOP_ARG) { if (is_running) On_Mop(MOP_PARAM, 2); }
+static void On_PredicatedMop4(P_MOP_ARG) { if (is_running) On_Mop(MOP_PARAM, 4); }
+static void On_PredicatedMop8(P_MOP_ARG) { if (is_running) On_Mop(MOP_PARAM, 8); }
+static void On_PredicatedMop16(P_MOP_ARG) { if (is_running) On_Mop(MOP_PARAM, 16); }
 
 //---------- I/O; exit------------------------------- {{{2
 static const uintptr_t kIOMagic = 0x1234c678;
@@ -1245,8 +1281,7 @@ static bool InstrumentCall(INS ins) {
 
 
 // return the number of inserted instrumentations.
-static size_t InstrumentMopsInBBl(BBL bbl, RTN rtn, TraceInfo *trace_info, size_t *mop_idx) {
-  size_t res = 0;
+static void InstrumentMopsInBBl(BBL bbl, RTN rtn, TraceInfo *trace_info, size_t *mop_idx) {
   INS tail = BBL_InsTail(bbl);
   // All memory reads/writes
   for( INS ins = BBL_InsHead(bbl);
@@ -1263,70 +1298,65 @@ static size_t InstrumentMopsInBBl(BBL bbl, RTN rtn, TraceInfo *trace_info, size_
     if (n_mops == 0) continue;
     bool is_rep = INS_RepPrefix(ins);
     // Printf("disasm: %s\n", INS_Disassemble(ins).c_str());
-    if (is_rep) {
-      // TODO(kcc): do something with REP.
-      // Printf("rep: %s\n", INS_Disassemble(ins).c_str());
-    }
 
     for (int i = 0; i < n_mops; i++) {
+      if (*mop_idx >= kMaxMopsPerTrace) {
+        Report("INFO: too many mops in trace: %d %s\n", 
+            INS_Address(ins), PcToRtnName(INS_Address(ins), true).c_str());
+        return;
+      }
       size_t size = INS_MemoryOperandSize(ins, i);
       bool is_write = INS_MemoryOperandIsWritten(ins, i);
       void *callback = NULL;
       if (is_rep) {
-        if (is_write) switch (size) {
-          case 1: callback = On_PredicatedWrite1; break;
-          case 2: callback = On_PredicatedWrite2; break;
-          case 4: callback = On_PredicatedWrite4; break;
-          case 8: callback = On_PredicatedWrite8; break;
-          case 16: callback = On_PredicatedWrite16; break;
-        } else switch (size) {
-          case 1: callback = On_PredicatedRead1; break;
-          case 2: callback = On_PredicatedRead2; break;
-          case 4: callback = On_PredicatedRead4; break;
-          case 8: callback = On_PredicatedRead8; break;
-          case 16: callback = On_PredicatedRead16; break;
+        // TODO(kcc): write unittests for REP-prefixed insns.
+        switch (size) {
+          case 1: callback = On_PredicatedMop1; break;
+          case 2: callback = On_PredicatedMop2; break;
+          case 4: callback = On_PredicatedMop4; break;
+          case 8: callback = On_PredicatedMop8; break;
+          case 16: callback = On_PredicatedMop16; break;
         }
       } else {
-        if (is_write) switch (size) {
-          case 1: callback = On_Write1; break;
-          case 2: callback = On_Write2; break;
-          case 4: callback = On_Write4; break;
-          case 8: callback = On_Write8; break;
-          case 16: callback = On_Write16; break;
-        } else switch (size) {
-          case 1: callback = On_Read1; break;
-          case 2: callback = On_Read2; break;
-          case 4: callback = On_Read4; break;
-          case 8: callback = On_Read8; break;
-          case 16: callback = On_Read16; break;
+        switch (size) {
+          case 1: callback = On_Mop1; break;
+          case 2: callback = On_Mop2; break;
+          case 4: callback = On_Mop4; break;
+          case 8: callback = On_Mop8; break;
+          case 16: callback = On_Mop16; break;
         }
       }
       if (!callback) {
-        Printf("WTF???: is_write=%d; size=%d; %s\n", (int)is_write, (int)size, INS_Disassemble(ins));
+        Printf("WTF???: is_write=%d; size=%d; %s\n", 
+            (int)is_write, (int)size, INS_Disassemble(ins));
         CHECK(callback != NULL);
       }
-      res++;
       if (trace_info) {
+        MopInfo *mop = trace_info->GetMop(*mop_idx);
+        mop->pc = INS_Address(ins);
+        mop->size = size;
+        mop->is_write = is_write;
         if (is_rep) {
           // See documentation of INS_InsertPredicatedCall for explanation.
           INS_InsertPredicatedCall(ins, IPOINT_BEFORE, 
             (AFUNPTR)callback,
             IARG_EXECUTING,
-            IARG_THREAD_ID, IARG_INST_PTR,
+            IARG_THREAD_ID, 
+            IARG_ADDRINT, *mop_idx,
             IARG_MEMORYOP_EA, i,
             IARG_END);
         } else {
           INS_InsertCall(ins, IPOINT_BEFORE,
             (AFUNPTR)callback,
-            IARG_THREAD_ID, IARG_INST_PTR,
+            IARG_THREAD_ID, 
+            IARG_ADDRINT, *mop_idx,
             IARG_MEMORYOP_EA, i,
             IARG_END);
         }
-        (*mop_idx)++;
       }
+      (*mop_idx)++;
     }
   }
-  return res;
 }
 
 void CallbackForTRACE(TRACE trace, void *v) {
@@ -1352,7 +1382,7 @@ void CallbackForTRACE(TRACE trace, void *v) {
   // Instrument the calls, count the mops.
   for(BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
     if (!ignore_memory) {
-      n_mops += InstrumentMopsInBBl(bbl, rtn, NULL, NULL);
+      InstrumentMopsInBBl(bbl, rtn, NULL, &n_mops);
     }
     InstrumentCall(BBL_InsTail(bbl));
   }
