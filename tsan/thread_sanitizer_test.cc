@@ -29,6 +29,7 @@
 #include <gtest/gtest.h>
 
 #include "ts_heap_info.h"
+#include "ts_simple_cache.h"
 
 // Testing the HeapMap.
 struct TestHeapInfo {
@@ -129,8 +130,57 @@ TEST(ThreadSanitizer, HeapInfoTest) {
 
 }
 
+TEST(ThreadSanitizer, PtrToBoolCacheTest) {
+  PtrToBoolCache<256> c;
+  bool val;
+  EXPECT_FALSE(c.Lookup(123, &val));
+
+  c.Insert(0, false);
+  c.Insert(1, true);
+  c.Insert(2, false);
+  c.Insert(3, true);
+
+  EXPECT_TRUE(c.Lookup(0, &val));
+  EXPECT_EQ(false, val);
+  EXPECT_TRUE(c.Lookup(1, &val));
+  EXPECT_EQ(true, val);
+  EXPECT_TRUE(c.Lookup(2, &val));
+  EXPECT_EQ(false, val);
+  EXPECT_TRUE(c.Lookup(3, &val));
+  EXPECT_EQ(true, val);
+
+  EXPECT_FALSE(c.Lookup(256, &val));
+  EXPECT_FALSE(c.Lookup(257, &val));
+  EXPECT_FALSE(c.Lookup(258, &val));
+  EXPECT_FALSE(c.Lookup(259, &val));
+
+  c.Insert(0, true);
+  c.Insert(1, false);
+
+  EXPECT_TRUE(c.Lookup(0, &val));
+  EXPECT_EQ(true, val);
+  EXPECT_TRUE(c.Lookup(1, &val));
+  EXPECT_EQ(false, val);
+  EXPECT_TRUE(c.Lookup(2, &val));
+  EXPECT_EQ(false, val);
+  EXPECT_TRUE(c.Lookup(3, &val));
+  EXPECT_EQ(true, val);
+
+  c.Insert(256, false);
+  c.Insert(257, false);
+  EXPECT_FALSE(c.Lookup(0, &val));
+  EXPECT_FALSE(c.Lookup(1, &val));
+  EXPECT_TRUE(c.Lookup(2, &val));
+  EXPECT_EQ(false, val);
+  EXPECT_TRUE(c.Lookup(3, &val));
+  EXPECT_EQ(true, val);
+  EXPECT_TRUE(c.Lookup(256, &val));
+  EXPECT_EQ(false, val);
+  EXPECT_TRUE(c.Lookup(257, &val));
+  EXPECT_EQ(false, val);
+}
+
 int main(int argc, char **argv) {
   testing::InitGoogleTest(&argc, argv);
-
   return RUN_ALL_TESTS();
 }

@@ -389,6 +389,103 @@ const char *c_default = "";
 
 // -------- Simple Cache ------ {{{1
 #include "ts_simple_cache.h"
+// -------- PairCache & IntPairToIntCache ------ {{{1
+template <typename A, typename B, typename Ret,
+         int kHtableSize, int kArraySize = 8>
+class PairCache {
+ public:
+  PairCache() {
+    CHECK(sizeof(Entry) == sizeof(A) + sizeof(B) + sizeof(Ret));
+    Flush();
+  }
+  void Flush() {
+    memset(this, 0, sizeof(*this));
+  }
+  void Insert(A a, B b, Ret v) {
+    // fill the hash table
+    if (kHtableSize != 0) {
+      uint32_t idx  = compute_idx(a, b);
+      htable_[idx].Fill(a, b, v);
+    }
+
+    // fill the array
+    Ret dummy;
+    if (kArraySize != 0 && !ArrayLookup(a, b, &dummy)) {
+      int pos = array_pos_;
+      array_[pos].Fill(a, b, v);
+      array_pos_ = (array_pos_ + 1) % (kArraySize);
+    }
+  }
+  bool Lookup(A a, B b, Ret *v) {
+    // check the array
+    if (kArraySize != 0 && ArrayLookup(a, b, v)) {
+      G_stats->ls_cache_fast++;
+      return true;
+    }
+    // check the hash table.
+    if (kHtableSize != 0) {
+      uint32_t idx  = compute_idx(a, b);
+      Entry & prev_e = htable_[idx];
+      if (prev_e.Match(a, b)) {
+        *v = prev_e.v;
+        return true;
+      }
+    }
+    return false;
+  }
+ private:
+  struct Entry {
+    A a;
+    B b;
+    Ret v;
+    void Fill(A a, B b, Ret v) {
+      this->a = a;
+      this->b = b;
+      this->v = v;
+    }
+    bool Match(A a, B b) const {
+      return this->a == a && this->b == b;
+    }
+  };
+
+  bool ArrayLookup(A a, B b, Ret *v) {
+    for (int i = 0; i < kArraySize; i++) {
+      Entry & entry = array_[i];
+      if (entry.Match(a, b)) {
+        *v = entry.v;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  uint32_t compute_idx(A a, B b) {
+    if (kHtableSize == 0)
+      return 0;
+    else
+      return (combine2(a, b) % max(kHtableSize, 1));
+  }
+
+  static uint32_t combine2(int a, int b) {
+    return (a << 16) ^ b;
+  }
+
+  static uint32_t combine2(SSID a, SID b) {
+    return combine2(a.raw(), b.raw());
+  }
+
+  Entry htable_[kHtableSize];
+
+  Entry array_[kArraySize];
+  int array_pos_;
+};
+
+template<int kHtableSize, int kArraySize = 8>
+class IntPairToIntCache
+  : public PairCache<int, int, int, kHtableSize, kArraySize> {};
+
+
+
 // -------- FreeList --------------- {{{1
 class FreeList {
  public:
