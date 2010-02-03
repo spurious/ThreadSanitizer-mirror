@@ -237,6 +237,49 @@ class ScopedMallocCostCenter {
   }
 };
 
+//--------- Simple Lock ------------------ {{{1
+#ifdef TS_PIN
+#include "pin.H"
+class TSLock {
+ public:
+  TSLock() {
+    InitLock(&lock_);
+  }
+  void Lock() {
+    GetLock(&lock_, __LINE__);
+  }
+  void Unlock() {
+    ReleaseLock(&lock_);
+  }
+
+ private:
+  PIN_LOCK lock_;
+};
+#else
+class TSLock {
+ public:
+  TSLock() {
+  }
+  void Lock() {
+  }
+  void Unlock() {
+  }
+ private:
+};
+
+#endif
+
+class ScopedLock {
+ public:
+  ScopedLock(TSLock *lock)
+    : lock_(lock) {
+    lock_->Lock();
+  }
+  ~ScopedLock() { lock_->Unlock(); }
+ private:
+  TSLock *lock_;
+};
+
 //--------- Forward decls ------------------- {{{1
 class ThreadSanitizerReport;
 

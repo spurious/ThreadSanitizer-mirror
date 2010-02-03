@@ -76,59 +76,6 @@ static void DumpEvent(EventType type, int32_t tid, uintptr_t pc,
 # error "Please don't define NDEBUG"
 #endif
 
-//--------- Simple Lock ------------------ {{{1
-#ifdef __GNUC__
-class TSLock {
- public:
-  TSLock() : lock_(0) {}
-  void Lock() {
-    int i;
-    for (i = -5; !TryLock(); i++) {
-      if (i > 0)
-        YIELD();
-    }
-  }
-  void Unlock() {
-    CAS(&lock_, 1, 0);
-  }
- private:
-  bool TryLock() {
-    if (CAS(&lock_, 0, 1)) {
-      return true;
-    }
-    return false;
-  }
-  volatile long lock_;
-};
-#elif defined(_MSC_VER)
-class TSLock {
- public:
-  TSLock() {
-    InitLock(&lock_);
-  }
-  void Lock() {
-    GetLock(&lock_, __LINE__);
-  }
-  void Unlock() {
-    ReleaseLock(&lock_);
-  }
-
- private:
-  PIN_LOCK lock_;
-};
-#endif
-
-class ScopedLock {
- public:
-  ScopedLock(TSLock *lock)
-    : lock_(lock) {
-    lock_->Lock();
-  }
-  ~ScopedLock() { lock_->Unlock(); }
- private:
-  TSLock *lock_;
-};
-
 //------ Global PIN lock ------- {{{1
 class ScopedReentrantClientLock {
  public:
@@ -215,7 +162,7 @@ class TraceInfo {
 
 
 //--------------- PinThread ----------------- {{{1
-const size_t kMaxMopsPerTrace = 32;
+const size_t kMaxMopsPerTrace = 64;
 
 TLS_KEY tls_key;
 
@@ -1024,17 +971,18 @@ void InsertBeforeEvent_Call(THREADID tid, ADDRINT pc, ADDRINT target, ADDRINT sp
 static void InsertBeforeEvent_SblockEntry(THREADID tid, ADDRINT sp,
                                           TraceInfo *trace_info) {
   PinThread &t = g_pin_threads[tid];
-  DumpCurrentTraceInfo(t);
-
   DCHECK(t.trace_info);
   DCHECK(trace_info);
   DCHECK(t.tid == tid);
-  t.trace_info = trace_info;
-  memset(&mop_addresses[tid][0], 0, sizeof(uintptr_t) * trace_info->n_mops());
   uintptr_t pc = trace_info->pc();
   DebugOnlyShowPcAndSp(__FUNCTION__, tid, pc, sp);
+
+  DumpCurrentTraceInfo(t);
   UpdateCallStack(tid, sp);
   DumpEvent(SBLOCK_ENTER, tid, pc, 0, 0);
+
+  t.trace_info = trace_info;
+  memset(&mop_addresses[tid][0], 0, sizeof(uintptr_t) * trace_info->n_mops());
 }
 
 //---------- Memory accesses -------------------------- {{{2
@@ -1043,6 +991,7 @@ static void InsertBeforeEvent_SblockEntry(THREADID tid, ADDRINT sp,
 static void INLINE On_Mop(MOP_ARG) {
   if (DEBUG_MODE) {
     PinThread &t = g_pin_threads[tid];
+    DCHECK(t.started);
     DCHECK(TLSGet() == &g_pin_threads[tid]);
     DCHECK(TLSGet(tid) == &g_pin_threads[tid]);
     DCHECK(idx < kMaxMopsPerTrace);
