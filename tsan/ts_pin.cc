@@ -164,9 +164,10 @@ class TraceInfo {
 //--------------- PinThread ----------------- {{{1
 const size_t kMaxMopsPerTrace = 64;
 
-TLS_KEY tls_key;
+REG tls_reg;
 
 struct PinThread {
+  uintptr_t mop_addresses[kMaxMopsPerTrace]; // must be the first element.
   int          uniq_tid;
   volatile long last_child_tid;
   THREADID     tid;
@@ -181,26 +182,9 @@ struct PinThread {
   TraceInfo    *trace_info;
 };
 
-uintptr_t mop_addresses[kMaxThreads][kMaxMopsPerTrace];
 
 // Array of pin threads, indexed by pin's THREADID.
 static PinThread *g_pin_threads;
-
-static void TLSInit() {
-  tls_key = PIN_CreateThreadDataKey(0);
-}
-
-static INLINE PinThread *TLSGet() {
-  return (PinThread*)PIN_GetThreadData(tls_key);
-}
-
-static INLINE PinThread *TLSGet(THREADID tid) {
-  return (PinThread*)PIN_GetThreadData(tls_key, tid);
-}
-
-static void TLSSet(PinThread *pin_thread) {
-  PIN_SetThreadData(tls_key, pin_thread);
-}
 
 #ifdef _MSC_VER
 static hash_set<pthread_t> *g_win_handles_which_are_threads;
@@ -596,7 +580,7 @@ void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
     g_pin_threads = new PinThread[kMaxThreads];
   }
   PinThread &t = g_pin_threads[tid];
-  TLSSet(&t);
+  PIN_SetContextReg(ctxt, tls_reg, (ADDRINT)&t);
 
   bool has_parent = true;
   if (tid == 0) {
@@ -933,8 +917,8 @@ static void DumpCurrentTraceInfo(PinThread &t) {
     ScopedLock lock(&g_main_ts_lock);
     for (size_t i = 0; i < n; i++) {
       MopInfo *mop = t.trace_info->GetMop(i);
-      uintptr_t addr = mop_addresses[tid][i];
-      mop_addresses[tid][i] = 0;
+      uintptr_t addr = t.mop_addresses[i];
+      t.mop_addresses[i] = 0;
       DCHECK(addr != impossible_address);
       if (addr) {
         g_current_pc = mop->pc;
@@ -945,7 +929,7 @@ static void DumpCurrentTraceInfo(PinThread &t) {
   }
   if (DEBUG_MODE) {
     for (size_t i  = n; i < kMaxMopsPerTrace; i++) {
-      mop_addresses[tid][i] = impossible_address;
+      t.mop_addresses[i] = impossible_address;
     }
   }
 }
@@ -982,29 +966,30 @@ static void InsertBeforeEvent_SblockEntry(THREADID tid, ADDRINT sp,
   DumpEvent(SBLOCK_ENTER, tid, pc, 0, 0);
 
   t.trace_info = trace_info;
-  memset(&mop_addresses[tid][0], 0, sizeof(uintptr_t) * trace_info->n_mops());
+  memset(&t.mop_addresses[0], 0, sizeof(uintptr_t) * trace_info->n_mops());
 }
 
 //---------- Memory accesses -------------------------- {{{2
-#define MOP_ARG THREADID tid, ADDRINT idx, ADDRINT a
-#define MOP_PARAM tid, idx, a
-static void INLINE On_Mop(MOP_ARG) {
+#define MOP_ARG ADDRINT tls, ADDRINT idx, ADDRINT a
+#define MOP_PARAM tls, idx, a
+static void PIN_FAST_ANALYSIS_CALL  On_Mop(MOP_ARG) {
+  PinThread &t = *(PinThread*)tls;
   if (DEBUG_MODE) {
-    PinThread &t = g_pin_threads[tid];
     DCHECK(t.started);
-    DCHECK(TLSGet() == &g_pin_threads[tid]);
-    DCHECK(TLSGet(tid) == &g_pin_threads[tid]);
     DCHECK(idx < kMaxMopsPerTrace);
     DCHECK(idx < t.trace_info->n_mops());
     if (a == G_flags->trace_addr) {
-      Printf("T%d %s %lx\n", tid, __FUNCTION__, a);
+      Printf("T%d %s %lx\n", t.tid, __FUNCTION__, a);
     }
   }
-  mop_addresses[tid][idx] = a;
+
+  t.mop_addresses[idx] = a;
 }
 
 #define P_MOP_ARG BOOL is_running, MOP_ARG
-static void On_PredicatedMop(P_MOP_ARG) { if (is_running) On_Mop(MOP_PARAM); }
+static void On_PredicatedMop(P_MOP_ARG) {
+  if (is_running) On_Mop(MOP_PARAM);
+}
 
 //---------- I/O; exit------------------------------- {{{2
 static const uintptr_t kIOMagic = 0x1234c678;
@@ -1315,14 +1300,15 @@ static void InstrumentMopsInBBl(BBL bbl, RTN rtn, TraceInfo *trace_info, size_t 
           INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
             (AFUNPTR)callback,
             IARG_EXECUTING,
-            IARG_THREAD_ID,
+            IARG_REG_VALUE, tls_reg,
             IARG_ADDRINT, *mop_idx,
             IARG_MEMORYOP_EA, i,
             IARG_END);
         } else {
           INS_InsertCall(ins, IPOINT_BEFORE,
             (AFUNPTR)callback,
-            IARG_THREAD_ID,
+            IARG_FAST_ANALYSIS_CALL,
+            IARG_REG_VALUE, tls_reg,
             IARG_ADDRINT, *mop_idx,
             IARG_MEMORYOP_EA, i,
             IARG_END);
@@ -1845,7 +1831,8 @@ void CallbackForDetach(VOID *v) {
 int main(INT32 argc, CHAR **argv) {
   PIN_Init(argc, argv);
   PIN_InitSymbols();
-  TLSInit();
+  tls_reg = PIN_ClaimToolRegister();
+  CHECK(REG_valid(tls_reg));
 
   G_out = stderr;
 
