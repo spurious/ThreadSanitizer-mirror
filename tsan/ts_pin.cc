@@ -746,7 +746,7 @@ uintptr_t CallStdCallFun2(CONTEXT *ctx, THREADID tid,
 }
 
 uintptr_t CallStdCallFun3(CONTEXT *ctx, THREADID tid,
-                         AFUNPTR f, uintptr_t arg0, uintptr_t arg1, 
+                         AFUNPTR f, uintptr_t arg0, uintptr_t arg1,
                          uintptr_t arg2) {
   uintptr_t ret = 0xdeadbee3;
   PIN_CallApplicationFunction(ctx, tid,
@@ -997,7 +997,7 @@ static void InsertBeforeEvent_SblockEntry(THREADID tid, ADDRINT sp,
                                           TraceInfo *trace_info) {
   PinThread &t = g_pin_threads[tid];
   DumpCurrentTraceInfo(t);
- 
+
   DCHECK(t.trace_info);
   DCHECK(trace_info);
   DCHECK(t.tid == tid);
@@ -1012,35 +1012,22 @@ static void InsertBeforeEvent_SblockEntry(THREADID tid, ADDRINT sp,
 //---------- Memory accesses -------------------------- {{{2
 #define MOP_ARG THREADID tid, ADDRINT idx, ADDRINT a
 #define MOP_PARAM tid, idx, a
-static void INLINE On_Mop(MOP_ARG, size_t size) {
+static void INLINE On_Mop(MOP_ARG) {
   if (DEBUG_MODE) {
     PinThread &t = g_pin_threads[tid];
     DCHECK(TLSGet() == &g_pin_threads[tid]);
     DCHECK(TLSGet(tid) == &g_pin_threads[tid]);
-    DCHECK(size == 1 || size == 2 || size == 4 || size == 8 || size == 16);
     DCHECK(idx < kMaxMopsPerTrace);
     DCHECK(idx < t.trace_info->n_mops());
     if (a == G_flags->trace_addr) {
       Printf("T%d %s %lx\n", tid, __FUNCTION__, a);
     }
-    MopInfo *mop = t.trace_info->GetMop(idx);
-    CHECK(mop->size == size);
   }
   mop_addresses[tid][idx] = a;
 }
 
-static void On_Mop1(MOP_ARG) { On_Mop(MOP_PARAM, 1); }
-static void On_Mop2(MOP_ARG) { On_Mop(MOP_PARAM, 2); }
-static void On_Mop4(MOP_ARG) { On_Mop(MOP_PARAM, 4); }
-static void On_Mop8(MOP_ARG) { On_Mop(MOP_PARAM, 8); }
-static void On_Mop16(MOP_ARG) { On_Mop(MOP_PARAM, 16); }
-
-#define P_MOP_ARG BOOL is_running, MOP_ARG 
-static void On_PredicatedMop1(P_MOP_ARG) { if (is_running) On_Mop(MOP_PARAM, 1); }
-static void On_PredicatedMop2(P_MOP_ARG) { if (is_running) On_Mop(MOP_PARAM, 2); }
-static void On_PredicatedMop4(P_MOP_ARG) { if (is_running) On_Mop(MOP_PARAM, 4); }
-static void On_PredicatedMop8(P_MOP_ARG) { if (is_running) On_Mop(MOP_PARAM, 8); }
-static void On_PredicatedMop16(P_MOP_ARG) { if (is_running) On_Mop(MOP_PARAM, 16); }
+#define P_MOP_ARG BOOL is_running, MOP_ARG
+static void On_PredicatedMop(P_MOP_ARG) { if (is_running) On_Mop(MOP_PARAM); }
 
 //---------- I/O; exit------------------------------- {{{2
 static const uintptr_t kIOMagic = 0x1234c678;
@@ -1323,7 +1310,7 @@ static void InstrumentMopsInBBl(BBL bbl, RTN rtn, TraceInfo *trace_info, size_t 
 
     for (int i = 0; i < n_mops; i++) {
       if (*mop_idx >= kMaxMopsPerTrace) {
-        Report("INFO: too many mops in trace: %d %s\n", 
+        Report("INFO: too many mops in trace: %d %s\n",
             INS_Address(ins), PcToRtnName(INS_Address(ins), true).c_str());
         return;
       }
@@ -1332,24 +1319,12 @@ static void InstrumentMopsInBBl(BBL bbl, RTN rtn, TraceInfo *trace_info, size_t 
       void *callback = NULL;
       if (is_rep) {
         // TODO(kcc): write unittests for REP-prefixed insns.
-        switch (size) {
-          case 1: callback = (void*)On_PredicatedMop1; break;
-          case 2: callback = (void*)On_PredicatedMop2; break;
-          case 4: callback = (void*)On_PredicatedMop4; break;
-          case 8: callback = (void*)On_PredicatedMop8; break;
-          case 16: callback = (void*)On_PredicatedMop16; break;
-        }
+        callback = (void*)On_PredicatedMop;
       } else {
-        switch (size) {
-          case 1: callback = (void*)On_Mop1; break;
-          case 2: callback = (void*)On_Mop2; break;
-          case 4: callback = (void*)On_Mop4; break;
-          case 8: callback = (void*)On_Mop8; break;
-          case 16: callback = (void*)On_Mop16; break;
-        }
+        callback = (void*)On_Mop;
       }
       if (!callback) {
-        Printf("WTF???: is_write=%d; size=%d; %s\n", 
+        Printf("WTF???: is_write=%d; size=%d; %s\n",
             (int)is_write, (int)size, INS_Disassemble(ins).c_str());
         CHECK(callback != NULL);
       }
@@ -1360,17 +1335,17 @@ static void InstrumentMopsInBBl(BBL bbl, RTN rtn, TraceInfo *trace_info, size_t 
         mop->is_write = is_write;
         if (is_rep) {
           // See documentation of INS_InsertPredicatedCall for explanation.
-          INS_InsertPredicatedCall(ins, IPOINT_BEFORE, 
+          INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
             (AFUNPTR)callback,
             IARG_EXECUTING,
-            IARG_THREAD_ID, 
+            IARG_THREAD_ID,
             IARG_ADDRINT, *mop_idx,
             IARG_MEMORYOP_EA, i,
             IARG_END);
         } else {
           INS_InsertCall(ins, IPOINT_BEFORE,
             (AFUNPTR)callback,
-            IARG_THREAD_ID, 
+            IARG_THREAD_ID,
             IARG_ADDRINT, *mop_idx,
             IARG_MEMORYOP_EA, i,
             IARG_END);
