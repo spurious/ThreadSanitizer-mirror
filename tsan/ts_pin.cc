@@ -77,6 +77,30 @@ static void DumpEvent(EventType type, int32_t tid, uintptr_t pc,
 #endif
 
 //--------- Simple Lock ------------------ {{{1
+#ifdef __GNUC__
+class TSLock {
+ public:
+  TSLock() : lock_(0) {}
+  void Lock() {
+    int i;
+    for (i = -5; !TryLock(); i++) {
+      if (i > 0)
+        YIELD();
+    }
+  }
+  void Unlock() {
+    CAS(&lock_, 1, 0);
+  }
+ private:
+  bool TryLock() {
+    if (CAS(&lock_, 0, 1)) {
+      return true;
+    }
+    return false;
+  }
+  volatile long lock_;
+};
+#elif defined(_MSC_VER)
 class TSLock {
  public:
   TSLock() {
@@ -92,6 +116,7 @@ class TSLock {
  private:
   PIN_LOCK lock_;
 };
+#endif
 
 class ScopedLock {
  public:
