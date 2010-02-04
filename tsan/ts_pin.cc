@@ -594,7 +594,6 @@ void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
   memset(&t, 0, sizeof(PinThread));
   t.uniq_tid = n_started_threads++;
   t.tid = tid;
-  t.trace_info = TraceInfo::NewTraceInfo(0, 0);
 
   THREADID parent_tid = -1;
   if (has_parent) {
@@ -912,14 +911,21 @@ static void UpdateCallStack(THREADID tid, ADDRINT sp) {
 }
 
 static void DumpCurrentTraceInfo(PinThread &t) {
+  if (t.trace_info == NULL) return;
+
   const uintptr_t impossible_address = (uintptr_t)-0xDEADBEE;
-  DCHECK(t.trace_info);
   size_t n = t.trace_info->n_mops();
   THREADID tid = t.tid;
   DCHECK(n <= kMaxMopsPerTrace);
 
+  if (!t.started) {
+    DumpEvent(SBLOCK_ENTER, tid, t.trace_info->pc(), 0, 0);
+    DCHECK(t.started);
+  }
+
   if (n) {
     ScopedLock lock(&g_main_ts_lock);
+    ThreadSanitizerEnterSblock(tid, t.trace_info->pc());
     for (size_t i = 0; i < n; i++) {
       MopInfo *mop = t.trace_info->GetMop(i);
       uintptr_t addr = t.mop_addresses[i];
@@ -932,10 +938,10 @@ static void DumpCurrentTraceInfo(PinThread &t) {
       }
     }
   }
-  if (DEBUG_MODE) {
-    size_t mop_stat_size = sizeof(G_stats->mops_per_trace) / sizeof(uintptr_t);
-    G_stats->mops_per_trace[n < mop_stat_size ? n : mop_stat_size - 1]++;
 
+  t.trace_info = NULL;
+
+  if (DEBUG_MODE) {
     for (size_t i  = n; i < kMaxMopsPerTrace; i++) {
       t.mop_addresses[i] = impossible_address;
     }
@@ -963,7 +969,6 @@ void InsertBeforeEvent_Call(THREADID tid, ADDRINT pc, ADDRINT target, ADDRINT sp
 static void InsertBeforeEvent_SblockEntry(THREADID tid, ADDRINT sp,
                                           TraceInfo *trace_info) {
   PinThread &t = g_pin_threads[tid];
-  DCHECK(t.trace_info);
   DCHECK(trace_info);
   DCHECK(t.tid == tid);
   uintptr_t pc = trace_info->pc();
@@ -971,10 +976,15 @@ static void InsertBeforeEvent_SblockEntry(THREADID tid, ADDRINT sp,
 
   DumpCurrentTraceInfo(t);
   UpdateCallStack(tid, sp);
-  DumpEvent(SBLOCK_ENTER, tid, pc, 0, 0);
+
+  size_t n = trace_info->n_mops();
 
   t.trace_info = trace_info;
-  memset(&t.mop_addresses[0], 0, sizeof(uintptr_t) * trace_info->n_mops());
+  memset(&t.mop_addresses[0], 0, sizeof(uintptr_t) * n);
+
+  // stats
+  const size_t mop_stat_size = sizeof(G_stats->mops_per_trace) / sizeof(uintptr_t);
+  G_stats->mops_per_trace[n < mop_stat_size ? n : mop_stat_size - 1]++;
 }
 
 //---------- Memory accesses -------------------------- {{{2

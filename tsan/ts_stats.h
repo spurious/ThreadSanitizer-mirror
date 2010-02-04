@@ -181,7 +181,7 @@ struct Stats {
 
   uintptr_t mops_total;
   uintptr_t mops_uniq;
-  uintptr_t mops_per_trace[10];
+  uintptr_t mops_per_trace[16];
 
   uintptr_t vts_create_big, vts_create_small,
             vts_clone, vts_delete, vts_total_size;
