@@ -64,6 +64,9 @@ uint32_t g_lock_era = 0;
 FLAGS *G_flags = NULL;
 
 
+// our own locks.
+TSLock g_main_ts_lock;
+TSLock g_ignore_accesses_lock;
 
 
 // -------- Stats ------------------- {{{1
@@ -3973,12 +3976,18 @@ struct Thread {
       call_stack_.back() = call_pc;
     }
     call_stack_.push_back(target_pc);
-    if (ThreadSanitizerIgnoreAccessesBelowFunction(target_pc)) {
-      set_ignore_all(true);
-      call_stack_ignore_rec_.push_back(true);
-    } else {
-      call_stack_ignore_rec_.push_back(false);
+
+    bool ignore_below = false;
+    if (!ignore_accesses_below_cache_.Lookup(target_pc, &ignore_below)) {
+      // not found in thread-local cache.
+      ignore_below = ThreadSanitizerIgnoreAccessesBelowFunction(target_pc);
+      ignore_accesses_below_cache_.Insert(target_pc, ignore_below);
     }
+
+    if (ignore_below) {
+      set_ignore_all(true);
+    }
+    call_stack_ignore_rec_.push_back(ignore_below);
   }
 
   void HandleRtnExit() {
@@ -4140,6 +4149,7 @@ struct Thread {
 
   int ignore_[2];  // 0 for reads, 1 for writes.
   StackTrace *ignore_context_[2];
+  PtrToBoolCache<1024> ignore_accesses_below_cache_;
 
 
   VTS *vts_at_exit_;
@@ -4226,7 +4236,11 @@ static PCQMap *g_pcq_map;
 // We need to forget all state and start over because we've
 // run out of some resources (most likely, segment IDs).
 static void ForgetAllStateAndStartOver(const char *reason) {
+
   Report("INFO: %s. Flushing state.\n", reason);
+
+  ScopedLock lock(&g_main_ts_lock);
+
   if (0) {
     Report("INFO: Thread Sanitizer will now forget all history.\n");
     Report("INFO: This is experimental, and may fail!\n");
@@ -4760,6 +4774,9 @@ class EventSampler {
     (counter_)++;
     if ((counter_ & ((1 << G_flags->sample_events) - 1)) != 0)
       return;
+
+    ScopedLock lock(event_sampler_lock_);
+
     string pos =  Thread::Get(tid)->
         CallStackToStringRtnOnly(G_flags->sample_events_depth);
     (*samples_)[event_name][pos]++;
@@ -4798,17 +4815,21 @@ class EventSampler {
 
   static void InitClassMembers() {
     samples_ = new SampleMapMap;
+    event_sampler_lock_ = new TSLock;
   }
  private:
 
   int counter_;
 
+
   typedef map<string, int> SampleMap;
   typedef map<string, SampleMap> SampleMapMap;
   static SampleMapMap *samples_;
+  static TSLock *event_sampler_lock_;
 };
 
 EventSampler::SampleMapMap *EventSampler::samples_;
+TSLock                     *EventSampler::event_sampler_lock_;
 
 
 
@@ -4932,7 +4953,7 @@ class Detector {
     thr->HandleSblockEnter(pc);
     G_stats->events[SBLOCK_ENTER]++;
 
-    FlushIfNeeded();
+    // FlushIfNeeded();
 
     if (UNLIKELY(G_flags->sample_events)) {
       static EventSampler sampler;
@@ -6309,6 +6330,9 @@ bool ThreadSanitizerWantToCreateSegmentsOnSblockEntry(uintptr_t pc) {
 
 // Returns true if function at "pc" is marked as "fun_r" in the ignore file.
 bool ThreadSanitizerIgnoreAccessesBelowFunction(uintptr_t pc) {
+
+  ScopedLock lock(&g_ignore_accesses_lock);
+
   typedef hash_map<uintptr_t, bool> Cache;
   static Cache *cache = NULL;
   if (!cache)

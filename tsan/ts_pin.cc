@@ -106,7 +106,7 @@ static int n_started_threads = 0;
 
 const uint32_t kMaxThreads = PIN_MAX_THREADS;
 
-static TSLock g_main_ts_lock;
+extern TSLock g_main_ts_lock;
 static TSLock g_thread_create_lock;
 // Under g_thread_create_lock.
 static THREADID g_tid_of_thread_which_called_create_thread = -1;
@@ -897,12 +897,13 @@ void After_mmap(THREADID tid, ADDRINT pc, ADDRINT ret) {
 //-------- Routines and stack ---------------------- {{{2
 static void UpdateCallStack(THREADID tid, ADDRINT sp) {
   PinThread &t = g_pin_threads[tid];
+  CHECK(t.tid == tid);
   while (t.shadow_stack.size() > 0 && sp >= t.shadow_stack.back().sp) {
-    // TODO(kcc): due to subtle bug somewhere, w/o the line below
-    // everything fails on linux 64.
-    CHECK(tid != (THREADID)-1);
     ThreadSanitizerHandleRtnExit(tid);
+    size_t size = t.shadow_stack.size();
+    CHECK(size < 1000000);  // stay sane.
     t.shadow_stack.pop_back();
+    CHECK(size - 1 == t.shadow_stack.size());
     if (DEB_PR) {
       Printf("POP SHADOW STACK\n");
       PrintShadowStack(tid);
@@ -942,7 +943,7 @@ void InsertBeforeEvent_Call(THREADID tid, ADDRINT pc, ADDRINT target, ADDRINT sp
   PinThread &t = g_pin_threads[tid];
   DumpCurrentTraceInfo(t);
   UpdateCallStack(tid, sp);
-  DumpEvent(RTN_CALL, tid, pc, target, 0);
+  ThreadSanitizerHandleRtnCall(tid, pc, target);
   if (t.shadow_stack.size() > 0) {
     t.shadow_stack.back().pc = pc;
   }
