@@ -331,7 +331,7 @@ bool LiteRaceSkipTrace(int tid, uint32_t trace_no, uint32_t sampling_rate) {
   uint32_t counter = ++literace_counters[tid % n_literace_threads][trace_no];
   CHECK(sampling_rate < 32);
   int shift = 32 - sampling_rate;
-  DCHECK(shift > 1);
+  DCHECK(shift >= 1);
   int high_bits = counter >> shift;
   if (high_bits) {  // counter is big enough.
     int n_high_bits = u32_log2(high_bits);

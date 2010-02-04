@@ -134,11 +134,12 @@ struct MopInfo {
 class TraceInfo {
  public:
   static TraceInfo *NewTraceInfo(size_t n_mops, uintptr_t pc) {
-    size_t mem_size = 2 + n_mops * sizeof(MopInfo) / sizeof(uintptr_t);
+    size_t mem_size = 3 + n_mops * sizeof(MopInfo) / sizeof(uintptr_t);
     uintptr_t *mem = new uintptr_t[mem_size];
     TraceInfo *res = new (mem) TraceInfo;
     res->n_mops_ = n_mops;
     res->pc_ = pc;
+    res->id_ = id_counter_++;
     return res;
   }
   void DeleteTraceInfo(TraceInfo *trace_info) {
@@ -151,15 +152,19 @@ class TraceInfo {
 
   size_t n_mops() const { return n_mops_; }
   size_t pc()     const { return pc_; }
+  size_t id()     const { return id_; }
 
  private:
   TraceInfo() { }
 
   size_t n_mops_;
   size_t pc_;
+  size_t id_;
   MopInfo mops_[1];
+  static size_t id_counter_;
 };
 
+size_t TraceInfo::id_counter_;
 
 //--------------- PinThread ----------------- {{{1
 const size_t kMaxMopsPerTrace = 64;
@@ -923,7 +928,8 @@ static void DumpCurrentTraceInfo(PinThread &t) {
     DCHECK(t.started);
   }
 
-  if (n) {
+  if (n && 
+      !LiteRaceSkipTrace(tid, t.trace_info->id(), G_flags->literace_sampling)) {
     ScopedLock lock(&g_main_ts_lock);
     ThreadSanitizerEnterSblock(tid, t.trace_info->pc());
     for (size_t i = 0; i < n; i++) {
