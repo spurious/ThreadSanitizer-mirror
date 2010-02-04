@@ -917,6 +917,7 @@ static void DumpCurrentTraceInfo(PinThread &t) {
   size_t n = t.trace_info->n_mops();
   THREADID tid = t.tid;
   DCHECK(n <= kMaxMopsPerTrace);
+
   if (n) {
     ScopedLock lock(&g_main_ts_lock);
     for (size_t i = 0; i < n; i++) {
@@ -932,6 +933,9 @@ static void DumpCurrentTraceInfo(PinThread &t) {
     }
   }
   if (DEBUG_MODE) {
+    size_t mop_stat_size = sizeof(G_stats->mops_per_trace) / sizeof(uintptr_t);
+    G_stats->mops_per_trace[n < mop_stat_size ? n : mop_stat_size - 1]++;
+
     for (size_t i  = n; i < kMaxMopsPerTrace; i++) {
       t.mop_addresses[i] = impossible_address;
     }

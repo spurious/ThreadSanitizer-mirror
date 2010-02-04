@@ -188,7 +188,7 @@ endif
 bin:
 	mkdir -p bin
 
-TS_HEADERS=thread_sanitizer.h ts_util.h suppressions.h ts_replace.h ts_heap_info.h ts_simple_cache.h
+TS_HEADERS=thread_sanitizer.h ts_util.h suppressions.h ts_replace.h ts_heap_info.h ts_simple_cache.h ts_stats.h
 ifeq ($(DEBUG), 0)
   # in optimized build, we include thread_sanitizer.cc into other files.
   TS_HEADERS+=thread_sanitizer.cc

@@ -28,7 +28,10 @@
 // See ts_util.h for mode details.
 
 #include "thread_sanitizer.h"
+#include "ts_stats.h"
 #include <stdarg.h>
+
+Stats *G_stats;
 
 bool GetNameAndOffsetOfGlobalObject(uintptr_t addr,
                                     string *name, uintptr_t *offset) {

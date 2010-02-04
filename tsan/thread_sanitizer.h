@@ -290,6 +290,10 @@ class Event {
   uintptr_t info_;
 };
 
+// -------- Stats ------------------- {{{1
+#include "ts_stats.h"
+extern Stats *G_stats;
+
 // end. {{{1
 #endif  //  THREAD_SANITIZER_H_
 // vim:shiftwidth=2:softtabstop=2:expandtab
