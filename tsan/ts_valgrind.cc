@@ -730,54 +730,6 @@ static void SignalOut(ThreadId vg_tid, Int sigNo) {
 //  Printf("T%d %s\n", ts_tid, __FUNCTION__);
 }
 
-// ---------------- Lite Race ------------------ {{{2
-// Experimental!
-//
-// The idea was first introduced in LiteRace:
-// http://www.cs.ucla.edu/~dlmarino/pubs/pldi09.pdf
-// Instead of analyzing all memory accesses, we do sampling.
-// For each trace (single-enry muliple-exit region) we maintain a counter of
-// executions. If a trace has been executed more than a certain threshold, we
-// start skipping this trace sometimes.
-// The LiteRace paper suggests several strategies for sampling, including
-// thread-local counters. Having thread local counters for all threads is too
-// expensive, so we have 8 arrays of counters and use the array (tid % 8).
-//
-// TODO(kcc): this currently does not work with --keep-history=0
-//
-// Note: ANNOTATE_PUBLISH_MEMORY() does not work with sampling... :(
-
-
-static const size_t n_literace_counters = 1024 * 1024;
-static const size_t n_literace_threads = 8;
-static uint32_t literace_counters[n_literace_threads][n_literace_counters];
-
-static bool LiteRaceSkipTrace(ThreadId vg_tid, uint32_t trace_no) {
-  if (G_flags->literace_sampling == 0) return false;
-
-  // The flag literace_sampling indicates the level of sampling.
-  // 0 means no sampling.
-  // 1 means handle *almost* all accesses.
-  // ...
-  // 31 means very aggressive sampling (skip a lot of accesses).
-
-  CHECK(trace_no < n_literace_counters);
-  uint32_t counter = ++literace_counters[vg_tid % n_literace_threads][trace_no];
-  CHECK(G_flags->literace_sampling < 32);
-  int shift = 32 - G_flags->literace_sampling;
-  int high_bits = counter >> shift;
-  if (high_bits) {  // counter is big enough.
-    int n_high_bits = 32 - __builtin_clz(high_bits);
-    int mask = (1 << n_high_bits) - 1;
-    // The higher the value of the counter, the bigger the probability that we
-    // will skip this trace.
-    if ((counter & mask) != 0) {
-      return true;
-    }
-  }
-  return false;
-}
-
 // ---------------- On Trace entry ------------------ {{{2
 VG_REGPARM(1) static void evh__on_trace_entry(uint32_t trace_no) {
   ThreadId vg_tid = GetVgTid();
@@ -792,7 +744,7 @@ VG_REGPARM(1) static void evh__on_trace_entry(uint32_t trace_no) {
 
   if (thr->ignore_accesses) return;
 
-  if (LiteRaceSkipTrace(vg_tid, trace_no)) {
+  if (LiteRaceSkipTrace(vg_tid, trace_no, G_flags->literace_sampling)) {
     thr->ignore_accesses_in_current_trace = true;
     thr->ignore_accesses++;
   }
@@ -823,7 +775,7 @@ static void ts_instrument_trace_entry(IRSB *bbOut) {
    HChar*   hName    = (HChar*)"evh__on_trace_entry";
    static uint32_t trace_no;
    trace_no++;
-   IRExpr **args = mkIRExprVec_1(mkIRExpr_HWord(trace_no % n_literace_counters));
+   IRExpr **args = mkIRExprVec_1(mkIRExpr_HWord(trace_no));
    IRDirty* di = unsafeIRDirty_0_N( 1,
                            hName,
                            VG_(fnptr_to_fnentry)((void*)evh__on_trace_entry),

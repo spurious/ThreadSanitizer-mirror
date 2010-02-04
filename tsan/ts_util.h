@@ -309,6 +309,9 @@ extern void GetThreadStack(int tid, uintptr_t *min_addr, uintptr_t *max_addr);
 extern void SetNumberOfFoundErrors(int n_errs);
 extern int GetNumberOfFoundErrors();
 
+bool LiteRaceSkipTrace(int tid, uint32_t trace_no, uint32_t sampling_rate);
+
+
 inline uintptr_t tsan_bswap(uintptr_t x) {
 #if defined(__GNUC__) && __WORDSIZE == 64 
 #if defined(VGP_arm_linux)
