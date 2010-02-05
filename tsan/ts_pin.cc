@@ -932,8 +932,8 @@ static void DumpCurrentTraceInfo(PinThread &t) {
   DCHECK(n <= kMaxMopsPerTrace);
   DCHECK(t.started);
 
-  if (n && G_flags->literace_sampling > 0 &&
-      !LiteRaceSkipTrace(tid, t.trace_info->id(), G_flags->literace_sampling)) {
+  if (n && (G_flags->literace_sampling == 0 ||
+      !LiteRaceSkipTrace(tid, t.trace_info->id(), G_flags->literace_sampling))) {
     G_stats->lock_sites[1]++;
     int uniq_tid = t.uniq_tid;
     ScopedLock lock(&g_main_ts_lock);
@@ -1012,7 +1012,9 @@ static void On_Mop(PinThread &t, ADDRINT idx, ADDRINT a) {
 }
 
 static void On_PredicatedMop(BOOL is_running, PinThread &t, ADDRINT idx, ADDRINT a) {
-  if (is_running) On_Mop(t, idx, a);
+  if (is_running) {
+    On_Mop(t, idx, a);
+  }
 }
 
 //---------- I/O; exit------------------------------- {{{2
@@ -1164,6 +1166,12 @@ static void On_AnnotateTraceMemory(THREADID tid, ADDRINT pc,
   DumpEvent(TRACE_MEM, tid, pc, a, 0);
 }
 
+static void On_AnnotateNewMemory(THREADID tid, ADDRINT pc,
+                                   ADDRINT file, ADDRINT line,
+                                   ADDRINT a, ADDRINT size) {
+  DumpEvent(MALLOC, tid, pc, a, size);
+}
+
 static void On_AnnotateNoOp(THREADID tid, ADDRINT pc,
                             ADDRINT file, ADDRINT line, ADDRINT a) {
   Printf("%s T%d: %p\n", __FUNCTION__, tid, a);
@@ -1292,9 +1300,7 @@ static void InstrumentMopsInBBl(BBL bbl, RTN rtn, TraceInfo *trace_info, size_t 
 
     int n_mops = INS_MemoryOperandCount(ins);
     if (n_mops == 0) continue;
-    bool is_rep = INS_RepPrefix(ins);
-    // Printf("disasm: %s\n", INS_Disassemble(ins).c_str());
-
+    bool is_predicated = INS_IsPredicated(ins);
     for (int i = 0; i < n_mops; i++) {
       if (*mop_idx >= kMaxMopsPerTrace) {
         Report("INFO: too many mops in trace: %d %s\n",
@@ -1308,9 +1314,7 @@ static void InstrumentMopsInBBl(BBL bbl, RTN rtn, TraceInfo *trace_info, size_t 
         mop->pc = INS_Address(ins);
         mop->size = size;
         mop->is_write = is_write;
-        if (is_rep) {
-          // See documentation of INS_InsertPredicatedCall for explanation.
-          // TODO(kcc): write unittests for REP-prefixed insns.
+        if (is_predicated) {
           INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
             (AFUNPTR)On_PredicatedMop,
             IARG_EXECUTING,
@@ -1750,7 +1754,8 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   // Annotations.
   INSERT_BEFORE_4("AnnotateBenignRace", On_AnnotateBenignRace);
   INSERT_BEFORE_4("AnnotateExpectRace", On_AnnotateExpectRace);
-  INSERT_BEFORE_4("AnnotateTraceMemory", On_AnnotateTraceMemory);
+  INSERT_BEFORE_3("AnnotateTraceMemory", On_AnnotateTraceMemory);
+  INSERT_BEFORE_4("AnnotateNewMemory", On_AnnotateNewMemory);
   INSERT_BEFORE_3("AnnotateNoOp", On_AnnotateNoOp);
 
   INSERT_BEFORE_3("AnnotateCondVarWait", On_AnnotateCondVarWait);
