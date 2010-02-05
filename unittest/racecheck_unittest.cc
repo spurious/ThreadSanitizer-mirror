@@ -6419,6 +6419,7 @@ TEST(NegativeTests, RepNegativeTest) {
 TEST(PositiveTests, RepPositive1Test) {
   memset(mem1, 0xff, sizeof(mem1));
   ANNOTATE_EXPECT_RACE(mem1+10, "real race");
+  for (int i = 11; i < 20; i++) ANNOTATE_BENIGN_RACE(mem1 + i, "");
   RunThreads(Clr1_10_10, Clr1_10_10);
 }
 TEST(PositiveTests, RepPositive2Test) {
@@ -6436,6 +6437,7 @@ TEST(PositiveTests, RepPositive3Test) {
 TEST(PositiveTests, RepPositive4Test) {
   memset(mem1, 0xff, sizeof(mem1));
   ANNOTATE_EXPECT_RACE(mem1+70, "real race");
+  for (int i = 71; i < 80; i++) ANNOTATE_BENIGN_RACE(mem1 + i, "");
   RunThreads(Clr1_50_30, Clr1_70_10);
 }
 #endif  // __GNUC__ ...
