@@ -145,21 +145,23 @@ struct Stats {
       total += events[i];
     }
     Printf("  %25s: %'ld\n", "Total", total);
-    const int n_sizes = sizeof(memory_access_sizes_) /
-                        sizeof(memory_access_sizes_[0]);
-    for (int i = 0; i < n_sizes; i++) {
-      if (memory_access_sizes_[i]) {
-        Printf("  mop[%d]: %'ld\n", i, memory_access_sizes_[i]);
+    for (size_t i = 0; i < ARRAYSIZE(memory_access_sizes); i++) {
+      if (memory_access_sizes[i]) {
+        Printf("  mop[%d]: %'ld\n", i, memory_access_sizes[i]);
       }
     }
-    for (size_t i = 0;
-         i < sizeof(mops_per_trace) / sizeof(mops_per_trace[0]); i++) {
+    for (size_t i = 0; i < ARRAYSIZE(mops_per_trace); i++) {
       Printf("  mop_per_trace[%d] = %'ld\n", i, mops_per_trace[i]);
+    }
+
+    for (size_t i = 0; i < ARRAYSIZE(lock_sites); i++) {
+      if(lock_sites[i] == 0) continue;
+      Printf("lock[%ld]=%ld\n", i, lock_sites[i]);
     }
   }
 
 
-  uintptr_t memory_access_sizes_[18];
+  uintptr_t memory_access_sizes[18];
   uintptr_t events[LAST_EVENT];
 
   uintptr_t n_vts_hb;
@@ -206,6 +208,8 @@ struct Stats {
             history_reuses_segment;
 
   uintptr_t n_forgets;
+
+  uintptr_t lock_sites[10];
 };
 
 

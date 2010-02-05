@@ -5407,7 +5407,7 @@ class Detector {
     DCHECK(thr->lsid(false) == thr->segment()->lsid(false));
     DCHECK(thr->lsid(true) == thr->segment()->lsid(true));
 
-    G_stats->memory_access_sizes_[size <= 16 ? size : 17 ]++;
+    G_stats->memory_access_sizes[size <= 16 ? size : 17 ]++;
 
     uintptr_t a = addr,
               b = a + size,

@@ -280,10 +280,6 @@ static void DumpEventPlainText(EventType type, int32_t tid, uintptr_t pc,
           (long)pc, (long)a, (long)info);
 }
 
-
-// We have to send THR_START from here
-// because we can't do it from CallbackForThreadStart() due to PIN's deadlock.
-// TODO(kcc): Fix this!
 static void DumpEventInternal(EventType type, int32_t tid, uintptr_t pc,
                               uintptr_t a, uintptr_t info) {
   PinThread &t = g_pin_threads[tid];
@@ -301,14 +297,28 @@ static void DumpEventInternal(EventType type, int32_t tid, uintptr_t pc,
   ThreadSanitizerHandleOneEvent(&event);
 }
 
+// We have to send THR_START from here
+// because we can't do it from CallbackForThreadStart() due to PIN's deadlock.
+// TODO(kcc): Fix this!
+static void EnsureThreadStarted(PinThread &t) {
+  if (t.started == false) {
+    // Double-checked locking? Oh, well...
+    G_stats->lock_sites[2]++;
+    ScopedLock lock(&g_main_ts_lock);
+    if (t.started == false) {
+      DumpEventInternal(THR_START, t.tid, 0, 0, t.parent_tid);
+      t.started = true;
+    }
+  }
+}
+
 static void DumpEvent(EventType type, int32_t tid, uintptr_t pc,
                       uintptr_t a, uintptr_t info) {
+  EnsureThreadStarted(g_pin_threads[tid]);
+
+  G_stats->lock_sites[0]++;
   ScopedLock lock(&g_main_ts_lock);
   g_current_pc = pc;
-  if (g_pin_threads[tid].started == false) {
-    g_pin_threads[tid].started = true;
-    DumpEventInternal(THR_START, tid, 0, 0, g_pin_threads[tid].parent_tid);
-  }
   DumpEventInternal(type, tid, pc, a, info);
 }
 
@@ -903,7 +913,8 @@ static void UpdateCallStack(THREADID tid, ADDRINT sp) {
   PinThread &t = g_pin_threads[tid];
   CHECK(t.tid == tid);
   while (t.shadow_stack.size() > 0 && sp >= t.shadow_stack.back().sp) {
-    ThreadSanitizerHandleRtnExit(tid);
+    EnsureThreadStarted(t);
+    ThreadSanitizerHandleRtnExit(t.uniq_tid);
     size_t size = t.shadow_stack.size();
     CHECK(size < 1000000);  // stay sane.
     t.shadow_stack.pop_back();
@@ -923,15 +934,14 @@ static void DumpCurrentTraceInfo(PinThread &t) {
   THREADID tid = t.tid;
   DCHECK(n <= kMaxMopsPerTrace);
 
-  if (!t.started) {
-    DumpEvent(SBLOCK_ENTER, tid, t.trace_info->pc(), 0, 0);
-    DCHECK(t.started);
-  }
+  EnsureThreadStarted(t);
 
-  if (n && 
+  if (n && G_flags->literace_sampling > 0 &&
       !LiteRaceSkipTrace(tid, t.trace_info->id(), G_flags->literace_sampling)) {
+    G_stats->lock_sites[1]++;
+    int uniq_tid = t.uniq_tid;
     ScopedLock lock(&g_main_ts_lock);
-    ThreadSanitizerEnterSblock(tid, t.trace_info->pc());
+    ThreadSanitizerEnterSblock(uniq_tid, t.trace_info->pc());
     for (size_t i = 0; i < n; i++) {
       MopInfo *mop = t.trace_info->GetMop(i);
       uintptr_t addr = t.mop_addresses[i];
@@ -939,7 +949,7 @@ static void DumpCurrentTraceInfo(PinThread &t) {
       DCHECK(addr != impossible_address);
       if (addr) {
         g_current_pc = mop->pc;
-        ThreadSanitizerHandleMemoryAccess(tid, addr, mop->size, mop->is_write);
+        ThreadSanitizerHandleMemoryAccess(uniq_tid, addr, mop->size, mop->is_write);
         // TODO(kcc): implement --dump-events here.
       }
     }
@@ -959,7 +969,8 @@ void InsertBeforeEvent_Call(THREADID tid, ADDRINT pc, ADDRINT target, ADDRINT sp
   PinThread &t = g_pin_threads[tid];
   DumpCurrentTraceInfo(t);
   UpdateCallStack(tid, sp);
-  ThreadSanitizerHandleRtnCall(tid, pc, target);
+  EnsureThreadStarted(t);
+  ThreadSanitizerHandleRtnCall(t.uniq_tid, pc, target);
   if (t.shadow_stack.size() > 0) {
     t.shadow_stack.back().pc = pc;
   }
@@ -989,17 +1000,13 @@ static void InsertBeforeEvent_SblockEntry(THREADID tid, ADDRINT sp,
   memset(&t.mop_addresses[0], 0, sizeof(uintptr_t) * n);
 
   // stats
-  const size_t mop_stat_size = sizeof(G_stats->mops_per_trace) / sizeof(uintptr_t);
+  const size_t mop_stat_size = ARRAYSIZE(G_stats->mops_per_trace);
   G_stats->mops_per_trace[n < mop_stat_size ? n : mop_stat_size - 1]++;
 }
 
 //---------- Memory accesses -------------------------- {{{2
-#define MOP_ARG ADDRINT tls, ADDRINT idx, ADDRINT a
-#define MOP_PARAM tls, idx, a
-static void PIN_FAST_ANALYSIS_CALL  On_Mop(MOP_ARG) {
-  PinThread &t = *(PinThread*)tls;
+static void On_Mop(PinThread &t, ADDRINT idx, ADDRINT a) {
   if (DEBUG_MODE) {
-    DCHECK(t.started);
     DCHECK(idx < kMaxMopsPerTrace);
     DCHECK(idx < t.trace_info->n_mops());
     if (a == G_flags->trace_addr) {
@@ -1010,9 +1017,8 @@ static void PIN_FAST_ANALYSIS_CALL  On_Mop(MOP_ARG) {
   t.mop_addresses[idx] = a;
 }
 
-#define P_MOP_ARG BOOL is_running, MOP_ARG
-static void On_PredicatedMop(P_MOP_ARG) {
-  if (is_running) On_Mop(MOP_PARAM);
+static void On_PredicatedMop(BOOL is_running, PinThread &t, ADDRINT idx, ADDRINT a) {
+  if (is_running) On_Mop(t, idx, a);
 }
 
 //---------- I/O; exit------------------------------- {{{2
@@ -1302,18 +1308,6 @@ static void InstrumentMopsInBBl(BBL bbl, RTN rtn, TraceInfo *trace_info, size_t 
       }
       size_t size = INS_MemoryOperandSize(ins, i);
       bool is_write = INS_MemoryOperandIsWritten(ins, i);
-      void *callback = NULL;
-      if (is_rep) {
-        // TODO(kcc): write unittests for REP-prefixed insns.
-        callback = (void*)On_PredicatedMop;
-      } else {
-        callback = (void*)On_Mop;
-      }
-      if (!callback) {
-        Printf("WTF???: is_write=%d; size=%d; %s\n",
-            (int)is_write, (int)size, INS_Disassemble(ins).c_str());
-        CHECK(callback != NULL);
-      }
       if (trace_info) {
         MopInfo *mop = trace_info->GetMop(*mop_idx);
         mop->pc = INS_Address(ins);
@@ -1321,8 +1315,9 @@ static void InstrumentMopsInBBl(BBL bbl, RTN rtn, TraceInfo *trace_info, size_t 
         mop->is_write = is_write;
         if (is_rep) {
           // See documentation of INS_InsertPredicatedCall for explanation.
+          // TODO(kcc): write unittests for REP-prefixed insns.
           INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-            (AFUNPTR)callback,
+            (AFUNPTR)On_PredicatedMop,
             IARG_EXECUTING,
             IARG_REG_VALUE, tls_reg,
             IARG_ADDRINT, *mop_idx,
@@ -1330,8 +1325,7 @@ static void InstrumentMopsInBBl(BBL bbl, RTN rtn, TraceInfo *trace_info, size_t 
             IARG_END);
         } else {
           INS_InsertCall(ins, IPOINT_BEFORE,
-            (AFUNPTR)callback,
-            IARG_FAST_ANALYSIS_CALL,
+            (AFUNPTR)On_Mop,
             IARG_REG_VALUE, tls_reg,
             IARG_ADDRINT, *mop_idx,
             IARG_MEMORYOP_EA, i,
