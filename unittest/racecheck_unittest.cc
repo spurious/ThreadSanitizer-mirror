@@ -6362,6 +6362,85 @@ TEST(StressTests, DISABLED_StartAndJoinManyThreads) {
 }
 }  // namespace
 
+namespace  RepPrefixedInstructionsTest {  //{{{1
+
+#if defined (__GNUC__) && (defined(ARCH_x86) || defined(ARCH_amd64))
+void rep_clr_1(uint8_t *s, long n)
+{
+  int d0, d1;
+      __asm__ __volatile__ (
+      "rep ; stosb"
+      : "=&c" (d0), "=&D" (d1)
+      : "a" (0), "1" (s), "0" (n)
+      : "memory");
+}
+
+uint8_t mem1[1000];
+
+void Clr1_0_10()  { rep_clr_1(mem1+ 0, 10); }
+void Clr1_10_10() { rep_clr_1(mem1+10, 10); }
+void Clr1_10_0() { rep_clr_1(mem1+10, 0); }
+
+void Clr1_25_1() { rep_clr_1(mem1+25, 1); }
+void Clr1_25_0() { rep_clr_1(mem1+25, 0); }
+
+void Clr1_50_30() { rep_clr_1(mem1+50, 30); }
+void Clr1_60_0() { rep_clr_1(mem1+60, 0); }
+void Clr1_60_1() { rep_clr_1(mem1+60, 1); }
+void Clr1_70_10() { rep_clr_1(mem1+70, 10); }
+
+
+void RunThreads(void (*f1)(void), void (*f2)(void)) {
+  MyThreadArray t(f1, f2);
+  t.Start();
+  t.Join();
+}
+
+TEST(NegativeTests, RepSanityTest) {
+  memset(mem1, 0xff, sizeof(mem1));
+  rep_clr_1(mem1, 0);
+  CHECK(mem1[0] != 0);
+  rep_clr_1(mem1, 1);
+  CHECK(mem1[0] == 0);
+  CHECK(mem1[1] != 0);
+  rep_clr_1(mem1, 5);
+  CHECK(mem1[4] == 0);
+  CHECK(mem1[5] != 0);
+}
+
+TEST(NegativeTests, RepNegativeTest) {
+  memset(mem1, 0xff, sizeof(mem1));
+  RunThreads(Clr1_0_10, Clr1_10_10);
+  RunThreads(Clr1_10_0, Clr1_10_10);
+  RunThreads(Clr1_25_0, Clr1_25_1);
+  RunThreads(Clr1_50_30, Clr1_60_0);
+}
+
+TEST(PositiveTests, RepPositive1Test) {
+  memset(mem1, 0xff, sizeof(mem1));
+  ANNOTATE_EXPECT_RACE(mem1+10, "real race");
+  RunThreads(Clr1_10_10, Clr1_10_10);
+}
+TEST(PositiveTests, RepPositive2Test) {
+  memset(mem1, 0xff, sizeof(mem1));
+  ANNOTATE_EXPECT_RACE(mem1+25, "real race");
+  RunThreads(Clr1_25_1, Clr1_25_1);
+}
+
+TEST(PositiveTests, RepPositive3Test) {
+  memset(mem1, 0xff, sizeof(mem1));
+  ANNOTATE_EXPECT_RACE(mem1+60, "real race");
+  RunThreads(Clr1_50_30, Clr1_60_1);
+}
+
+TEST(PositiveTests, RepPositive4Test) {
+  memset(mem1, 0xff, sizeof(mem1));
+  ANNOTATE_EXPECT_RACE(mem1+70, "real race");
+  RunThreads(Clr1_50_30, Clr1_70_10);
+}
+#endif  // __GNUC__ ...
+}  // namespace
+
 // test400: Demo of a simple false positive. {{{1
 namespace test400 {
 static Mutex mu;
