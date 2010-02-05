@@ -3275,7 +3275,12 @@ struct Thread {
     if (tid != TID(0) && parent_tid.valid()) {
       CHECK(creation_context_);
     }
-    Add(this);
+
+    // Add myself to the array of threads.
+    CHECK(tid.raw() < G_flags->max_n_threads);
+    CHECK(all_threads_[tid.raw()] == NULL);
+    n_threads_ = max(n_threads_, tid.raw() + 1);
+    all_threads_[tid.raw()] = this;
   }
 
   TID tid() const { return tid_; }
@@ -3330,12 +3335,6 @@ struct Thread {
       res += ")";
     }
     return res;
-  }
-
-
-  // TODO(kcc): how to compute this??
-  static uintptr_t ThreadStackSize() {
-    return 8 * 1024 * 1024;
   }
 
   bool is_running() const { return is_running_; }
@@ -3431,8 +3430,6 @@ struct Thread {
     return child_tid;
   }
 
-
-
   static int NumberOfThreads() { return n_threads_; }
 
   static Thread *GetIfExists(TID tid) {
@@ -3446,29 +3443,7 @@ struct Thread {
     return all_threads_[tid.raw()];
   }
 
-  static TID Add(Thread *thr) {
-    // Printf("Thread::Add %d %d\n", thr->tid().raw(),
-    //        (int)all_threads_->size());
-    TID tid = thr->tid();
-    while (tid.raw() > n_threads_) {
-      CHECK(n_threads_ < G_flags->max_n_threads);
-      all_threads_[n_threads_++] = NULL;
-    }
-    if (tid.raw() == n_threads_) {
-      CHECK(n_threads_ < G_flags->max_n_threads);
-      all_threads_[n_threads_++] = thr;
-    } else {
-      CHECK(tid.raw() < n_threads_);
-      CHECK(all_threads_[tid.raw()] == NULL);
-      all_threads_[tid.raw()] = thr;
-    }
-    return thr->tid();
-  }
-
-
-
   // Locks
-
   void set_bus_lock_is_set(bool is_set) { bus_lock_is_set_ = is_set; }
   bool bus_lock_is_set() const { return bus_lock_is_set_; }
 
@@ -3894,7 +3869,6 @@ struct Thread {
     StackTrace::Delete(trace);
   }
 
-
   bool NOINLINE CallStackContainsDtor() {
     // TODO(kcc): can check this w/o demangling?
     for (int i = call_stack_.size() - 1; i >= 0; i--) {
@@ -3910,7 +3884,6 @@ struct Thread {
     }
     return false;
   }
-
 
   static void ForgetAllState() {
     // G_flags->debug_level = 2;
@@ -3933,8 +3906,6 @@ struct Thread {
     signaller_map_      = new SignallerMap;
     ptid_to_tid_        = new map<pthread_t, TID>;
   }
-
-
 
  private:
 
@@ -5028,7 +4999,6 @@ class Detector {
     lock->set_is_pure_happens_before(true);
   }
 
-
   void INLINE ClearMemoryStateOnStackNewMem(uintptr_t a, uintptr_t b) {
     ClearMemoryState(a, b, true);
   }
@@ -5040,7 +5010,7 @@ class Detector {
                              uintptr_t size, bool is_new_mem) {
     uintptr_t a = addr;
     DCHECK(size > 0);
-    DCHECK(size < Thread::ThreadStackSize());
+    DCHECK(size < 128 * 1024 * 1024);  // stay sane.
     uintptr_t b = a + size;
     if (is_new_mem)
       ClearMemoryStateOnStackNewMem(a, b);
