@@ -428,9 +428,8 @@ static void ShowPcAndSp(const char *where, THREADID tid,
            PcToRtnName(pc, true).c_str());
 }
 
-static void PrintShadowStack(THREADID tid) {
-  PinThread &t = g_pin_threads[tid];
-  Printf("T%d Shadow stack (%d)\n", tid, (int)t.shadow_stack.size());
+static void PrintShadowStack(PinThread &t) {
+  Printf("T%d Shadow stack (%d)\n", t.tid, (int)t.shadow_stack.size());
   for (int i = t.shadow_stack.size() - 1; i >= 0; i--) {
     uintptr_t pc = t.shadow_stack[i].pc;
     uintptr_t sp = t.shadow_stack[i].sp;
@@ -909,11 +908,9 @@ void After_mmap(THREADID tid, ADDRINT pc, ADDRINT ret) {
 }
 
 //-------- Routines and stack ---------------------- {{{2
-static void UpdateCallStack(THREADID tid, ADDRINT sp) {
-  PinThread &t = g_pin_threads[tid];
-  CHECK(t.tid == tid);
+static void UpdateCallStack(PinThread &t, ADDRINT sp) {
+  DCHECK(t.started);
   while (t.shadow_stack.size() > 0 && sp >= t.shadow_stack.back().sp) {
-    EnsureThreadStarted(t);
     ThreadSanitizerHandleRtnExit(t.uniq_tid);
     size_t size = t.shadow_stack.size();
     CHECK(size < 1000000);  // stay sane.
@@ -921,7 +918,7 @@ static void UpdateCallStack(THREADID tid, ADDRINT sp) {
     CHECK(size - 1 == t.shadow_stack.size());
     if (DEB_PR) {
       Printf("POP SHADOW STACK\n");
-      PrintShadowStack(tid);
+      PrintShadowStack(t);
     }
   }
 }
@@ -933,8 +930,7 @@ static void DumpCurrentTraceInfo(PinThread &t) {
   size_t n = t.trace_info->n_mops();
   THREADID tid = t.tid;
   DCHECK(n <= kMaxMopsPerTrace);
-
-  EnsureThreadStarted(t);
+  DCHECK(t.started);
 
   if (n && G_flags->literace_sampling > 0 &&
       !LiteRaceSkipTrace(tid, t.trace_info->id(), G_flags->literace_sampling)) {
@@ -964,35 +960,33 @@ static void DumpCurrentTraceInfo(PinThread &t) {
   }
 }
 
-void InsertBeforeEvent_Call(THREADID tid, ADDRINT pc, ADDRINT target, ADDRINT sp) {
-  DebugOnlyShowPcAndSp(__FUNCTION__, tid, pc, sp);
-  PinThread &t = g_pin_threads[tid];
-  DumpCurrentTraceInfo(t);
-  UpdateCallStack(tid, sp);
+void InsertBeforeEvent_Call(PinThread &t, ADDRINT pc, ADDRINT target, ADDRINT sp) {
+  DebugOnlyShowPcAndSp(__FUNCTION__, t.tid, pc, sp);
   EnsureThreadStarted(t);
+  DumpCurrentTraceInfo(t);
+  UpdateCallStack(t, sp);
   ThreadSanitizerHandleRtnCall(t.uniq_tid, pc, target);
   if (t.shadow_stack.size() > 0) {
     t.shadow_stack.back().pc = pc;
   }
   t.shadow_stack.push_back(StackFrame(target, sp));
   if (DEB_PR) {
-    PrintShadowStack(tid);
+    PrintShadowStack(t);
   }
   if (DEBUG_MODE && (G_flags->verbosity >= 2)) {
-    ShowPcAndSp("CALL: ", tid, target, sp);
+    ShowPcAndSp("CALL: ", t.tid, target, sp);
   }
 }
 
-static void InsertBeforeEvent_SblockEntry(THREADID tid, ADDRINT sp,
+static void InsertBeforeEvent_SblockEntry(PinThread &t, ADDRINT sp,
                                           TraceInfo *trace_info) {
-  PinThread &t = g_pin_threads[tid];
+  EnsureThreadStarted(t);
   DCHECK(trace_info);
-  DCHECK(t.tid == tid);
   uintptr_t pc = trace_info->pc();
-  DebugOnlyShowPcAndSp(__FUNCTION__, tid, pc, sp);
+  DebugOnlyShowPcAndSp(__FUNCTION__, t.tid, pc, sp);
 
   DumpCurrentTraceInfo(t);
-  UpdateCallStack(tid, sp);
+  UpdateCallStack(t, sp);
 
   size_t n = trace_info->n_mops();
 
@@ -1271,7 +1265,8 @@ static bool InstrumentCall(INS ins) {
   if (INS_IsProcedureCall(ins) && !INS_IsSyscall(ins)) {
     INS_InsertCall(ins, IPOINT_BEFORE,
                    (AFUNPTR)InsertBeforeEvent_Call,
-                   IARG_THREAD_ID, IARG_INST_PTR,
+                   IARG_REG_VALUE, tls_reg,
+                   IARG_INST_PTR,
                    IARG_BRANCH_TARGET_ADDR,
                    IARG_REG_VALUE, REG_STACK_PTR,
                    IARG_END);
@@ -1371,7 +1366,7 @@ void CallbackForTRACE(TRACE trace, void *v) {
 
   INS_InsertCall(head, IPOINT_BEFORE,
                  (AFUNPTR)InsertBeforeEvent_SblockEntry,
-                 IARG_THREAD_ID,
+                 IARG_REG_VALUE, tls_reg,
                  IARG_REG_VALUE, REG_STACK_PTR,
                  IARG_PTR, trace_info,
                  IARG_END);
