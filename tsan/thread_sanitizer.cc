@@ -3250,7 +3250,6 @@ struct Thread {
       min_sp_(0),
       creation_context_(creation_context),
       announced_(false),
-      join_child_tid_(0),
       rd_lockset_(0),
       wr_lockset_(0),
       lock_mu_(0),
@@ -3366,16 +3365,6 @@ struct Thread {
     return segment()->vts();
   }
 
-  static void SetThreadPthreadT(TID tid, pthread_t ptid) {
-    CHECK(tid.IsValid());
-    CHECK(ptid);
-
-    (*ptid_to_tid_)[ptid] = tid;
-    if (G_flags->debug_level >= 2) {
-      Printf("T%d: pthread_t=%p\n", tid.raw(), ptid);
-    }
-  }
-
   void set_thread_name(const char *name) {
     thread_name_ = string(name);
   }
@@ -3388,39 +3377,19 @@ struct Thread {
     CHECK(vts_at_exit_);
   }
 
-  void HandleThreadJoinBefore(pthread_t join_child_ptid) {
-    if (join_child_ptid) {
-      CHECK_NE(join_child_ptid, 0);
-      CHECK(ptid_to_tid_->count(join_child_ptid));
-      TID child_tid = (*ptid_to_tid_)[join_child_ptid];
-
-      if (G_flags->debug_level >= 2) {
-        Printf("T%d: Joining child T%d: pthread_t=%p size=%ld\n",
-               tid().raw(), child_tid.raw(),
-               join_child_ptid, ptid_to_tid_->size());
-      }
-
-      ptid_to_tid_->erase(join_child_ptid);
-      join_child_tid_ = child_tid;
-    } else {
-      join_child_tid_ = TID(0);
-    }
-  }
-
   // Return the TID of the joined child and it's vts
-  TID HandleThreadJoinAfter(VTS **vts_at_exit, TID joined_tid_if_known) {
-    TID child_tid = joined_tid_if_known != TID(0)
-        ? joined_tid_if_known : join_child_tid_;
-    *vts_at_exit = Thread::Get(child_tid)->vts_at_exit_;
+  TID HandleThreadJoinAfter(VTS **vts_at_exit, TID joined_tid) {
+    CHECK(joined_tid.raw() > 0);
+    *vts_at_exit = Thread::Get(joined_tid)->vts_at_exit_;
     if (*vts_at_exit == NULL) {
       Printf("vts_at_exit==NULL; parent=%d, child=%d\n",
-             tid().raw(), child_tid.raw());
+             tid().raw(), joined_tid.raw());
     }
     CHECK(*vts_at_exit);
     if (0)
-    Printf("T%d: vts_at_exit_: %s\n", child_tid.raw(),
+    Printf("T%d: vts_at_exit_: %s\n", joined_tid.raw(),
            (*vts_at_exit)->ToString().c_str());
-    return child_tid;
+    return joined_tid;
   }
 
   static int NumberOfThreads() { return n_threads_; }
@@ -3897,7 +3866,6 @@ struct Thread {
     all_threads_        = new Thread*[G_flags->max_n_threads];
     n_threads_          = 0;
     signaller_map_      = new SignallerMap;
-    ptid_to_tid_        = new map<pthread_t, TID>;
   }
 
  private:
@@ -3914,10 +3882,6 @@ struct Thread {
   uintptr_t  min_sp_;
   StackTrace *creation_context_;
   bool      announced_;
-
-
-  TID join_child_tid_;
-
 
   LSID   rd_lockset_;
   LSID   wr_lockset_;
@@ -3973,7 +3937,6 @@ struct Thread {
   static CyclicBarrierMap *cyclic_barrier_map_;
 
 
-  static map<pthread_t, TID> *ptid_to_tid_;
 };
 
 // Thread:: static members
@@ -3981,7 +3944,6 @@ Thread                    **Thread::all_threads_;
 int                         Thread::n_threads_;
 Thread::SignallerMap       *Thread::signaller_map_;
 Thread::CyclicBarrierMap   *Thread::cyclic_barrier_map_;
-map<pthread_t, TID>        *Thread::ptid_to_tid_;
 
 
 // -------- Unpublish memory range [a,b) {{{1
@@ -4792,15 +4754,12 @@ class Detector {
       case SBLOCK_ENTER:
         HandleSblockEnter(TID(e_->tid()), e_->pc());
         break;
-      case THR_SET_PTID   : HandleThreadCreateAfter(); break;
       case THR_START   :
         HandleThreadStart(TID(e_->tid()), TID(e_->info()), e_->pc());
         break;
       case THR_FIRST_INSN:
         HandleThreadFirstInsn(TID(e_->tid()));
         break;
-
-      case THR_JOIN_BEFORE    : HandleThreadJoinBefore();   break;
       case THR_JOIN_AFTER     : HandleThreadJoinAfter();   break;
       case THR_STACK_TOP      : HandleThreadStackTop(); break;
 
@@ -5569,10 +5528,6 @@ class Detector {
     }
   }
 
-  void HandleThreadCreateAfter() {
-    Thread::SetThreadPthreadT(TID(e_->tid()), (pthread_t)e_->a());
-  }
-
   // THR_STACK_TOP
   void HandleThreadStackTop() {
     Thread *thr = Thread::Get(TID(e_->tid()));
@@ -5621,17 +5576,6 @@ class Detector {
       }
     }
     ShowProcSelfStatus();
-  }
-
-  // THR_JOIN_BEFORE
-  void HandleThreadJoinBefore() {
-    TID parent_tid = cur_tid_;;
-    Thread *parent_thr = Thread::Get(parent_tid);
-    parent_thr->HandleThreadJoinBefore((pthread_t)e_->a());
-    if (G_flags->verbosity >= 2) {
-      Printf("T%d:  THR_JOIN_BEFORE\n",
-             parent_tid.raw());
-    }
   }
 
   // THR_JOIN_AFTER

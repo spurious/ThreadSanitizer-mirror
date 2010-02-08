@@ -244,6 +244,7 @@ struct ValgrindThread {
 
 // Array of VG_N_THREADS
 static ValgrindThread *g_valgrind_threads = 0;
+static map<pthread_t, int> *g_ptid_to_ts_tid;
 
 // maintains a uniq thread id (first thread will have id=0)
 static int32_t g_uniq_thread_id_counter = 0;
@@ -328,6 +329,7 @@ void ts_post_clo_init(void) {
   ThreadSanitizerInit();
 
   g_valgrind_threads = new ValgrindThread[VG_N_THREADS];
+  g_ptid_to_ts_tid = new map<pthread_t, int>;
 }
 
 static inline void Put(EventType type, int32_t tid, uintptr_t pc,
@@ -538,15 +540,13 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
   int32_t ts_tid = VgTidToTsTid(vg_tid);
   switch (args[0]) {
     case TSREQ_SET_MY_PTHREAD_T:
-      Put(THR_SET_PTID, ts_tid, pc, args[1], 0);
+      (*g_ptid_to_ts_tid)[args[1]] = ts_tid;
       break;
     case TSREQ_THR_STACK_TOP:
       Put(THR_STACK_TOP, ts_tid, pc, args[1], 0);
       break;
     case TSREQ_PTHREAD_JOIN_POST:
-      // TODO: get rid of THR_JOIN_BEFORE
-      Put(THR_JOIN_BEFORE, ts_tid, pc, args[1], 0);
-      Put(THR_JOIN_AFTER, ts_tid, pc, 0, 0);
+      Put(THR_JOIN_AFTER, ts_tid, pc, (*g_ptid_to_ts_tid)[args[1]], 0);
       break;
     case TSREQ_CLEAN_MEMORY:
       Put(MALLOC, ts_tid, pc, /*ptr=*/args[1], /*size=*/args[2]);
