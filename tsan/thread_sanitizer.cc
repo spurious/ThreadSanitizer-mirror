@@ -4802,6 +4802,7 @@ class Detector {
 
       case THR_JOIN_BEFORE    : HandleThreadJoinBefore();   break;
       case THR_JOIN_AFTER     : HandleThreadJoinAfter();   break;
+      case THR_STACK_TOP      : HandleThreadStackTop(); break;
 
       case THR_END     : HandleThreadEnd(TID(e_->tid()));     break;
       case MALLOC      : HandleMalloc();     break;
@@ -5569,17 +5570,24 @@ class Detector {
   }
 
   void HandleThreadCreateAfter() {
+    Thread::SetThreadPthreadT(TID(e_->tid()), (pthread_t)e_->a());
+  }
+
+  // THR_STACK_TOP
+  void HandleThreadStackTop() {
     Thread *thr = Thread::Get(TID(e_->tid()));
+    uintptr_t stack_top = e_->a();
+    uintptr_t stack_size_if_known = e_->info();
+    CHECK(stack_size_if_known == 0);  // currently unused.
     HeapInfo heap_info;
-    if (G_heap_map->IsHeapMem(e_->a(), &heap_info)){
-      if (G_flags->verbosity >= 1) {
-        Printf("T%d %s: %p\n%s\n", e_->tid(), __FUNCTION__,  e_->a(),
-             reports_.DescribeMemory(e_->a()).c_str());
+    if (G_heap_map->IsHeapMem(stack_top, &heap_info)){
+      if (G_flags->verbosity >= 2) {
+        Printf("T%d %s: %p\n%s\n", e_->tid(), __FUNCTION__,  stack_top,
+             reports_.DescribeMemory(stack_top).c_str());
       }
       ClearMemoryStateOnFree(heap_info.ptr, heap_info.ptr + heap_info.size);
       thr->SetStack(heap_info.ptr, heap_info.ptr + heap_info.size);
     }
-    Thread::SetThreadPthreadT(TID(e_->tid()), (pthread_t)e_->a());
   }
 
   // THR_END

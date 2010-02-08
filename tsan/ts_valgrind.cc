@@ -540,6 +540,9 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
     case TSREQ_SET_MY_PTHREAD_T:
       Put(THR_SET_PTID, ts_tid, pc, args[1], 0);
       break;
+    case TSREQ_THR_STACK_TOP:
+      Put(THR_STACK_TOP, ts_tid, pc, args[1], 0);
+      break;
     case TSREQ_PTHREAD_JOIN_POST:
       // TODO: get rid of THR_JOIN_BEFORE
       Put(THR_JOIN_BEFORE, ts_tid, pc, args[1], 0);

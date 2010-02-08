@@ -523,8 +523,11 @@ static void* ThreadSanitizerStartThread ( void* xargsV )
    void*(*fn)(void*) = (void*(*)(void*))xargs[0];
    void* arg         = (void*)xargs[1];
    pthread_t me = pthread_self();
+   int local_stack_var = 0;
    /* Tell the tool what my pthread_t is. */
    DO_CREQ_v_W(TSREQ_SET_MY_PTHREAD_T, pthread_t,me);
+   /* also, tell where the stack is */
+   DO_CREQ_v_W(TSREQ_THR_STACK_TOP, void*, &local_stack_var);
    /* allow the parent to proceed.  We can't let it proceed until
       we're ready because (1) we need to make sure it doesn't exit and
       hence deallocate xargs[] while we still need it, and (2) we

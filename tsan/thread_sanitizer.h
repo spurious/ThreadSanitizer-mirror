@@ -128,6 +128,7 @@ enum EventType {
   THR_END,
   THR_JOIN_BEFORE,
   THR_JOIN_AFTER,
+  THR_STACK_TOP,  // {tid, pc, stack_top, stack_size_if_known}
   RTN_EXIT,
   RTN_CALL,
   SBLOCK_ENTER,
@@ -184,6 +185,7 @@ static const char *kEventNames[] = {
   "THR_END",
   "THR_JOIN_BEFORE",
   "THR_JOIN_AFTER",
+  "THR_STACK_TOP",
   "RTN_EXIT",
   "RTN_CALL",
   "SBLOCK_ENTER",

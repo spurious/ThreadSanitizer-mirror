@@ -794,6 +794,10 @@ void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
   TLEBStartThread(t);
 }
 
+static void Before_start_thread(THREADID tid, ADDRINT pc, ADDRINT sp) {
+  DumpEvent(THR_STACK_TOP, tid, pc, sp, 0);
+}
+
 #ifdef _MSC_VER
 static void After_CreateThread(THREADID tid, ADDRINT pc, ADDRINT ret) {
   pthread_t child_ptid = ret;
@@ -1824,6 +1828,10 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   // pthread create/join
   WrapFunc4(img, rtn, "pthread_create", (AFUNPTR)Wrap_pthread_create);
   WrapFunc4(img, rtn, "pthread_join", (AFUNPTR)Wrap_pthread_join);
+ 
+  INSERT_FN(IPOINT_BEFORE, "start_thread",
+            Before_start_thread,
+            IARG_REG_VALUE, REG_STACK_PTR, IARG_END);
 
    // pthread_cond_*
   INSERT_BEFORE_1("pthread_cond_signal", Before_pthread_cond_signal);
