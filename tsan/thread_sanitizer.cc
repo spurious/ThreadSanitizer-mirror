@@ -3729,12 +3729,7 @@ struct Thread {
     }
     call_stack_.push_back(target_pc);
 
-    bool ignore_below = false;
-    if (!ignore_accesses_below_cache_.Lookup(target_pc, &ignore_below)) {
-      // not found in thread-local cache.
-      ignore_below = ThreadSanitizerIgnoreAccessesBelowFunction(target_pc);
-      ignore_accesses_below_cache_.Insert(target_pc, ignore_below);
-    }
+    bool ignore_below = ThreadSanitizerIgnoreAccessesBelowFunction(target_pc);
 
     if (ignore_below) {
       set_ignore_all(true);
@@ -3815,7 +3810,6 @@ struct Thread {
     return res;
   }
 
-
   void ReportStackTrace(uintptr_t pc = 0, int max_len = -1) {
     StackTrace *trace = CreateStackTrace(pc, max_len);
     Report("%s", trace->ToString().c_str());
@@ -3860,11 +3854,8 @@ struct Thread {
   }
 
  private:
-
   bool is_running_;
   string thread_name_;
-
-
 
   TID    tid_;         // This thread's tid.
   SID    sid_;         // Current segment ID.
@@ -3888,8 +3879,6 @@ struct Thread {
 
   int ignore_[2];  // 0 for reads, 1 for writes.
   StackTrace *ignore_context_[2];
-  PtrToBoolCache<1024> ignore_accesses_below_cache_;
-
 
   VTS *vts_at_exit_;
 
@@ -3900,9 +3889,6 @@ struct Thread {
 
   LockHistory lock_history_;
 
-  // All threads. The main thread has tid 0.
-  static Thread **all_threads_;
-  static int      n_threads_;
 
   struct Signaller {
     VTS *vts;
@@ -3918,12 +3904,13 @@ struct Thread {
      }
   };
 
+  // All threads. The main thread has tid 0.
+  static Thread **all_threads_;
+  static int      n_threads_;
 
   // signaller address -> VTS
   static SignallerMap *signaller_map_;
   static CyclicBarrierMap *cyclic_barrier_map_;
-
-
 };
 
 // Thread:: static members
