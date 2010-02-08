@@ -145,20 +145,20 @@ struct Stats {
       total += events[i];
     }
     Printf("  %25s: %'ld\n", "Total", total);
-    for (size_t i = 0; i < ARRAYSIZE(memory_access_sizes); i++) {
+    for (size_t i = 0; i < TS_ARRAY_SIZE(memory_access_sizes); i++) {
       if (memory_access_sizes[i]) {
         Printf("  mop[%d]: %'ld\n", i, memory_access_sizes[i]);
       }
     }
-    for (size_t i = 0; i < ARRAYSIZE(mops_per_trace); i++) {
+    for (size_t i = 0; i < TS_ARRAY_SIZE(mops_per_trace); i++) {
       Printf("  mop_per_trace[%d] = %'ld\n", i, mops_per_trace[i]);
     }
 
-    for (size_t i = 0; i < ARRAYSIZE(lock_sites); i++) {
+    for (size_t i = 0; i < TS_ARRAY_SIZE(lock_sites); i++) {
       if(lock_sites[i] == 0) continue;
       Printf("lock_sites[%ld]=%ld\n", i, lock_sites[i]);
     }
-    for (size_t i = 0; i < ARRAYSIZE(tleb_flush); i++) {
+    for (size_t i = 0; i < TS_ARRAY_SIZE(tleb_flush); i++) {
       if(tleb_flush[i] == 0) continue;
       Printf("tleb_flush[%ld]=%ld\n", i, tleb_flush[i]);
     }

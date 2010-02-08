@@ -185,7 +185,6 @@ struct PinThread {
   THREADID     parent_tid;
   size_t       last_malloc_size;
   pthread_t    my_ptid;
-  bool         my_ptid_reported;
   uintptr_t    cxa_guard;
   int          in_cxa_guard;
   vector<StackFrame> shadow_stack;
@@ -315,7 +314,7 @@ static void TLEBFlushUnlocked(PinThread &t) {
   if (t.tleb_size == 0) return;
 
   if (1 || DEBUG_MODE) {
-    size_t max_idx = ARRAYSIZE(G_stats->tleb_flush);
+    size_t max_idx = TS_ARRAY_SIZE(G_stats->tleb_flush);
     size_t idx = (t.tleb_size * max_idx - 1) / kThreadLocksEventBufferSize;
     CHECK(idx < max_idx);
     G_stats->tleb_flush[idx]++;
@@ -332,14 +331,6 @@ static void TLEBFlushUnlocked(PinThread &t) {
       uintptr_t target_pc = t.tleb[i++];
       ThreadSanitizerHandleRtnCall(t.uniq_tid, call_pc, target_pc);
     } else if (event == SBLOCK_ENTER){
-
-      // my_ptid is set by the parent thread, but we need to dump if from this
-      // thread. Do it once my_ptid is ready.
-      if (t.my_ptid_reported == false && t.my_ptid) {
-        DumpEventInternal(THR_SET_PTID, t.tid, 0, t.my_ptid, 0);
-        t.my_ptid_reported = true;
-      }
-
       bool do_this_trace = ((G_flags->literace_sampling == 0 ||
                              !LiteRaceSkipTrace(t.tid, t.trace_info->id(),
                                                 G_flags->literace_sampling)));
@@ -837,6 +828,7 @@ static THREADID HandleThreadJoinAfter(THREADID tid, pthread_t joined_ptid) {
       break;
   }
   CHECK(joined_tid < kMaxThreads);
+  CHECK(joined_tid > 0);
   g_pin_threads[joined_tid].my_ptid = 0;
 
   if (G_flags->debug_level >= 2) {
@@ -850,7 +842,6 @@ static THREADID HandleThreadJoinAfter(THREADID tid, pthread_t joined_ptid) {
 static uintptr_t Wrap_pthread_join(WRAP_PARAM4) {
   if (G_flags->debug_level >= 2)
     Printf("T%d in  pthread_join %p\n", tid, arg0);
-  //DumpEvent(THR_JOIN_BEFORE, tid, 0, 0, 0);
   pthread_t joined_ptid = (pthread_t)arg0;
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
   HandleThreadJoinAfter(tid, joined_ptid);
@@ -1030,21 +1021,15 @@ uintptr_t Wrap_WaitForSingleObject(WRAP_PARAM4) {
     }
   }
 
-  pthread_t joined_ptid = 0;
-  if (is_thread_handle) {
-    DumpEvent(THR_JOIN_BEFORE, tid, 0, arg0, 0);
-    joined_ptid = arg0;
-  }
-
-
   //Printf("T%d before pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0, arg1);
   uintptr_t ret = CallStdCallFun2(ctx, tid, f, arg0, arg1);
   //Printf("T%d after pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0, arg1);
-  DumpEvent(WAIT_BEFORE, tid, pc, arg0, 0);
-  DumpEvent(WAIT_AFTER, tid, pc, 0, 0);
 
   if (is_thread_handle) {
-    THREADID joined_tid = HandleThreadJoinAfter(tid, joined_ptid);
+    HandleThreadJoinAfter(tid, arg0);
+  } else {
+    DumpEvent(WAIT_BEFORE, tid, pc, arg0, 0);
+    DumpEvent(WAIT_AFTER, tid, pc, 0, 0);
   }
 
   return ret;
@@ -1164,7 +1149,7 @@ static void InsertBeforeEvent_SblockEntry(THREADID tid, ADDRINT sp,
   TLEBAddTrace(t);
 
   // stats
-  const size_t mop_stat_size = ARRAYSIZE(G_stats->mops_per_trace);
+  const size_t mop_stat_size = TS_ARRAY_SIZE(G_stats->mops_per_trace);
   G_stats->mops_per_trace[n < mop_stat_size ? n : mop_stat_size - 1]++;
 }
 

@@ -219,7 +219,7 @@ static int getpid() { return 12345; }
   #error "Unknown Configuration"
 #endif
 
-#define ARRAYSIZE(x) (sizeof(x) / sizeof((x)[0]))
+#define TS_ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
 
 //--------- Malloc profiling ------------------- {{{1
 void PushMallocCostCenter(const char *cc);
