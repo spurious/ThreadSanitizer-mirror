@@ -156,7 +156,11 @@ struct Stats {
 
     for (size_t i = 0; i < ARRAYSIZE(lock_sites); i++) {
       if(lock_sites[i] == 0) continue;
-      Printf("lock[%ld]=%ld\n", i, lock_sites[i]);
+      Printf("lock_sites[%ld]=%ld\n", i, lock_sites[i]);
+    }
+    for (size_t i = 0; i < ARRAYSIZE(tleb_flush); i++) {
+      if(tleb_flush[i] == 0) continue;
+      Printf("tleb_flush[%ld]=%ld\n", i, tleb_flush[i]);
     }
   }
 
@@ -210,6 +214,8 @@ struct Stats {
   uintptr_t n_forgets;
 
   uintptr_t lock_sites[10];
+
+  uintptr_t tleb_flush[10];
 };
 
 

@@ -38,6 +38,7 @@
 #include <assert.h>
 
 #include "thread_sanitizer.h"
+#include "ts_lock.h"
 
 #if defined(__GNUC__)
 # include <cxxabi.h>  // __cxa_demangle
@@ -106,7 +107,7 @@ static int n_started_threads = 0;
 
 const uint32_t kMaxThreads = PIN_MAX_THREADS;
 
-extern TSLock g_main_ts_lock;
+static TSLock g_main_ts_lock;
 static TSLock g_thread_create_lock;
 // Under g_thread_create_lock.
 static THREADID g_tid_of_thread_which_called_create_thread = -1;
@@ -161,6 +162,7 @@ class TraceInfo {
   size_t pc_;
   size_t id_;
   MopInfo mops_[1];
+
   static size_t id_counter_;
 };
 
@@ -168,19 +170,22 @@ size_t TraceInfo::id_counter_;
 
 //--------------- PinThread ----------------- {{{1
 const size_t kMaxMopsPerTrace = 64;
+const size_t kThreadLocksEventBufferSize = 2048;
+
 
 REG tls_reg;
 
 struct PinThread {
-  uintptr_t mop_addresses[kMaxMopsPerTrace]; // must be the first element.
+  uintptr_t    *mop_addresses; // must be the first element.
+  size_t       tleb_size;
+  uintptr_t    tleb[kThreadLocksEventBufferSize];
   int          uniq_tid;
   volatile long last_child_tid;
   THREADID     tid;
   THREADID     parent_tid;
   size_t       last_malloc_size;
-  size_t       last_mmap_size;
   pthread_t    my_ptid;
-  bool         started;
+  bool         my_ptid_reported;
   uintptr_t    cxa_guard;
   int          in_cxa_guard;
   vector<StackFrame> shadow_stack;
@@ -249,7 +254,13 @@ uintptr_t GetPcOfCurrentThread() {
   return g_current_pc;
 }
 
-//--------- DumpEvent ----------- {{{1
+//--------------- ThreadLocalEventBuffer ----------------- {{{1
+// thread local event buffer is an array of uintptr_t.
+// The events are encoded like this:
+// { RTN_CALL, call_pc, target_pc }
+// { RTN_EXIT }
+// { SBLOCK_ENTER, trace_info_of_size_n, addr1, addr2, ... addr_n}
+
 static void DumpEventPlainText(EventType type, int32_t tid, uintptr_t pc,
                                uintptr_t a, uintptr_t info) {
   static hash_set<uintptr_t> *pc_set;
@@ -297,28 +308,127 @@ static void DumpEventInternal(EventType type, int32_t tid, uintptr_t pc,
   ThreadSanitizerHandleOneEvent(&event);
 }
 
-// We have to send THR_START from here
-// because we can't do it from CallbackForThreadStart() due to PIN's deadlock.
-// TODO(kcc): Fix this!
-static void EnsureThreadStarted(PinThread &t) {
-  if (t.started == false) {
-    // Double-checked locking? Oh, well...
-    G_stats->lock_sites[2]++;
-    ScopedLock lock(&g_main_ts_lock);
-    if (t.started == false) {
+
+
+static void TLEBFlushUnlocked(PinThread &t) {
+  DCHECK(t.tleb_size <= kThreadLocksEventBufferSize);
+  if (t.tleb_size == 0) return;
+
+  if (1 || DEBUG_MODE) {
+    size_t max_idx = ARRAYSIZE(G_stats->tleb_flush);
+    size_t idx = (t.tleb_size * max_idx - 1) / kThreadLocksEventBufferSize;
+    CHECK(idx < max_idx);
+    G_stats->tleb_flush[idx]++;
+  }
+
+  // TODO(kcc): implement --dump-events here.
+  size_t i;
+  for (i = 0; i < t.tleb_size; ) {
+    uintptr_t event = t.tleb[i++];
+    if (event == RTN_EXIT) {
+      ThreadSanitizerHandleRtnExit(t.uniq_tid);
+    } else if (event == RTN_CALL) {
+      uintptr_t call_pc = t.tleb[i++];
+      uintptr_t target_pc = t.tleb[i++];
+      ThreadSanitizerHandleRtnCall(t.uniq_tid, call_pc, target_pc);
+    } else if (event == SBLOCK_ENTER){
+
+      // my_ptid is set by the parent thread, but we need to dump if from this
+      // thread. Do it once my_ptid is ready.
+      if (t.my_ptid_reported == false && t.my_ptid) {
+        DumpEventInternal(THR_SET_PTID, t.tid, 0, t.my_ptid, 0);
+        t.my_ptid_reported = true;
+      }
+
+      bool do_this_trace = ((G_flags->literace_sampling == 0 ||
+                             !LiteRaceSkipTrace(t.tid, t.trace_info->id(),
+                                                G_flags->literace_sampling)));
+
+      TraceInfo *trace_info = (TraceInfo*) t.tleb[i++];
+      DCHECK(trace_info);
+      size_t n = trace_info->n_mops();
+      if (do_this_trace) {
+        ThreadSanitizerEnterSblock(t.uniq_tid, trace_info->pc());
+        for (size_t j = 0; j < n; j++) {
+          MopInfo *mop = trace_info->GetMop(j);
+          DCHECK(mop->size);
+          DCHECK(mop);
+          uintptr_t addr = t.tleb[i + j];
+          if (addr) {
+            g_current_pc = mop->pc;
+            ThreadSanitizerHandleMemoryAccess(t.uniq_tid, addr,
+                                              mop->size, mop->is_write);
+          }
+        }
+      }
+
+      i += n;
+    } else if (event == THR_START) {
       DumpEventInternal(THR_START, t.tid, 0, 0, t.parent_tid);
-      t.started = true;
+    } else {
+      // no other events in TLEB.
+      CHECK(0);
     }
+    DCHECK(i <= t.tleb_size);
+  }
+  DCHECK(i == t.tleb_size);
+  t.tleb_size = 0;
+  if (DEBUG_MODE) { // for sanity checking.
+    memset(t.tleb, 0xf0, sizeof(t.tleb));
   }
 }
 
+static void TLEBFlushLocked(PinThread &t) {
+  G_stats->lock_sites[1]++;
+  ScopedLock lock(&g_main_ts_lock);
+  TLEBFlushUnlocked(t);
+}
+
+static void TLEBAddRtnCall(PinThread &t, uintptr_t call_pc, uintptr_t target_pc) {
+  if (t.tleb_size + 3 > kThreadLocksEventBufferSize) {
+    TLEBFlushLocked(t);
+  }
+  t.tleb[t.tleb_size++] = RTN_CALL;
+  t.tleb[t.tleb_size++] = call_pc;
+  t.tleb[t.tleb_size++] = target_pc;
+}
+
+static void TLEBAddRtnExit(PinThread &t) {
+  if (t.tleb_size + 1 > kThreadLocksEventBufferSize) {
+    TLEBFlushLocked(t);
+  }
+  t.tleb[t.tleb_size++] = RTN_EXIT;
+}
+
+static void TLEBAddTrace(PinThread &t) {
+  size_t n = t.trace_info->n_mops();
+  DCHECK(n > 0);
+  if (t.tleb_size + 2 + n > kThreadLocksEventBufferSize) {
+    TLEBFlushLocked(t);
+  }
+  t.tleb[t.tleb_size++] = SBLOCK_ENTER;
+  t.tleb[t.tleb_size++] = (uintptr_t)t.trace_info;
+  // not every address will be written to. so they will stay 0.
+  for (size_t i = 0; i < n; i++) {
+    t.tleb[t.tleb_size + i] = 0;
+  }
+  t.mop_addresses = &t.tleb[t.tleb_size];
+  t.tleb_size += n;
+  DCHECK(t.tleb_size <= kThreadLocksEventBufferSize);
+}
+
+static void TLEBStartThread(PinThread &t) {
+  CHECK(t.tleb_size == 0);
+  t.tleb[t.tleb_size++] = THR_START;
+}
+
+// Must be called from its thread (except for THR_END case)!
 static void DumpEvent(EventType type, int32_t tid, uintptr_t pc,
                       uintptr_t a, uintptr_t info) {
-  EnsureThreadStarted(g_pin_threads[tid]);
-
+  PinThread &t = g_pin_threads[tid];
   G_stats->lock_sites[0]++;
   ScopedLock lock(&g_main_ts_lock);
-  g_current_pc = pc;
+  TLEBFlushUnlocked(t);
   DumpEventInternal(type, tid, pc, a, info);
 }
 
@@ -363,7 +473,27 @@ static uintptr_t CallFun4(CONTEXT *ctx, THREADID tid,
   return ret;
 }
 
+static uintptr_t CallFun6(CONTEXT *ctx, THREADID tid,
+                         AFUNPTR f, uintptr_t arg0, uintptr_t arg1,
+                         uintptr_t arg2, uintptr_t arg3,
+                         uintptr_t arg4, uintptr_t arg5) {
+  uintptr_t ret = 0xdeadbee1;
+  PIN_CallApplicationFunction(ctx, tid,
+                              CALLINGSTD_DEFAULT, (AFUNPTR)(f),
+                              PIN_PARG(uintptr_t), &ret,
+                              PIN_PARG(uintptr_t), arg0,
+                              PIN_PARG(uintptr_t), arg1,
+                              PIN_PARG(uintptr_t), arg2,
+                              PIN_PARG(uintptr_t), arg3,
+                              PIN_PARG(uintptr_t), arg4,
+                              PIN_PARG(uintptr_t), arg5,
+                              PIN_PARG_END());
+  return ret;
+}
+
+
 #define CALL_ME_INSIDE_WRAPPER_4() CallFun4(ctx, tid, f, arg0, arg1, arg2, arg3)
+#define CALL_ME_INSIDE_WRAPPER_6() CallFun6(ctx, tid, f, arg0, arg1, arg2, arg3, arg4, arg5)
 
 // Completely replace (i.e. not wrap) a function with 3 (or less) parameters.
 // The original function will not be called.
@@ -417,6 +547,39 @@ void WrapFunc4(IMG img, RTN rtn, const char *name, AFUNPTR replacement_func) {
     PROTO_Free(proto);
   }
 }
+
+// Wrap a function with up to 6 parameters.
+void WrapFunc6(IMG img, RTN rtn, const char *name, AFUNPTR replacement_func) {
+  if (RTN_Valid(rtn) && RtnMatchesName(RTN_Name(rtn), name)) {
+    Printf("RTN_ReplaceSignature on %s (%s)\n", name, IMG_Name(img).c_str());
+    PROTO proto = PROTO_Allocate(PIN_PARG(uintptr_t),
+                                 CALLINGSTD_DEFAULT,
+                                 "proto",
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG_END());
+    RTN_ReplaceSignature(rtn,
+                         AFUNPTR(replacement_func),
+                         IARG_PROTOTYPE, proto,
+                         IARG_THREAD_ID,
+                         IARG_INST_PTR,
+                         IARG_CONTEXT,
+                         IARG_ORIG_FUNCPTR,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 2,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 3,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 4,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 5,
+                         IARG_END);
+    PROTO_Free(proto);
+  }
+}
+
 
 //--------- Instrumentation callbacks --------------- {{{1
 //---------- Debug -----------------------------------{{{2
@@ -516,14 +679,15 @@ static void After_cxa_guard_release(THREADID tid, ADDRINT pc) {
   IgnoreAllEnd(tid, pc);
 }
 
-static void Before_pthread_once(THREADID tid, ADDRINT pc, ADDRINT control) {
+static uintptr_t Wrap_pthread_once(WRAP_PARAM4) {
+  uintptr_t ret;
   IgnoreAllBegin(tid, pc);
-//  Printf("T%d + once %lx\n", tid, control);
-}
-static void After_pthread_once(THREADID tid, ADDRINT pc) {
-//  Printf("T%d - once \n", tid);
+  ret = CALL_ME_INSIDE_WRAPPER_4();
   IgnoreAllEnd(tid, pc);
+  return ret;
 }
+
+
 
 void TmpCallback1(THREADID tid, ADDRINT pc) {
   Printf("%s T%d %lx\n", __FUNCTION__, tid, pc);
@@ -549,14 +713,14 @@ static THREADID HandleThreadCreateAfter(THREADID tid, pthread_t child_ptid) {
 
   CHECK(g_tid_of_thread_which_called_create_thread != (THREADID)-1);
   g_tid_of_thread_which_called_create_thread = -1;
-  g_thread_create_lock.Unlock();
 
   THREADID last_child_tid = g_pin_threads[tid].last_child_tid;
   CHECK(last_child_tid);
 
-  DumpEvent(THR_SET_PTID, last_child_tid, 0, child_ptid, 0);
   g_pin_threads[last_child_tid].my_ptid = child_ptid;
   g_pin_threads[tid].last_child_tid = 0;
+
+  g_thread_create_lock.Unlock();
   return last_child_tid;
 }
 
@@ -625,6 +789,9 @@ void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
   if (has_parent && parent_tid != (THREADID)-1) {
     g_pin_threads[parent_tid].last_child_tid = tid;
   }
+
+  // This is a lock-free (thread local) operation.
+  TLEBStartThread(t);
 }
 
 #ifdef _MSC_VER
@@ -893,25 +1060,49 @@ void After_main(THREADID tid, ADDRINT pc) {
 }
 
 //--------- memory allocation ---------------------- {{{2
-void Before_mmap(THREADID tid, ADDRINT pc, ADDRINT start, ADDRINT len) {
-  PinThread &t = g_pin_threads[tid];
-  CHECK(t.last_mmap_size == 0);
-  t.last_mmap_size = len;
-}
-void After_mmap(THREADID tid, ADDRINT pc, ADDRINT ret) {
-  PinThread &t = g_pin_threads[tid];
+uintptr_t Wrap_mmap(WRAP_PARAM6) {
+  uintptr_t ret = CALL_ME_INSIDE_WRAPPER_6();
+
   if (ret != (ADDRINT)-1L) {
-    size_t size = t.last_mmap_size;
-    DumpEvent(MALLOC, tid, pc, ret, size);
+    DumpEvent(MALLOC, tid, pc, ret, arg1);
   }
-  t.last_mmap_size = 0;
+
+  return ret;
 }
+
+uintptr_t Wrap_malloc(WRAP_PARAM4) {
+  IgnoreAllBegin(tid, pc);
+  uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
+  IgnoreAllEnd(tid, pc);
+
+  DumpEvent(MALLOC, tid, pc, ret, arg0);
+  return ret;
+}
+
+uintptr_t Wrap_calloc(WRAP_PARAM4) {
+  IgnoreAllBegin(tid, pc);
+  uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
+  IgnoreAllEnd(tid, pc);
+
+  DumpEvent(MALLOC, tid, pc, ret, arg0*arg1);
+  return ret;
+}
+
+uintptr_t Wrap_free(WRAP_PARAM4) {
+  DumpEvent(FREE, tid, pc, arg0, 0);
+
+  IgnoreAllBegin(tid, pc);
+  uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
+  IgnoreAllEnd(tid, pc);
+  return ret;
+}
+
 
 //-------- Routines and stack ---------------------- {{{2
 static void UpdateCallStack(PinThread &t, ADDRINT sp) {
-  DCHECK(t.started);
   while (t.shadow_stack.size() > 0 && sp >= t.shadow_stack.back().sp) {
-    ThreadSanitizerHandleRtnExit(t.uniq_tid);
+    //ThreadSanitizerHandleRtnExit(t.uniq_tid);
+    TLEBAddRtnExit(t);
     size_t size = t.shadow_stack.size();
     CHECK(size < 1000000);  // stay sane.
     t.shadow_stack.pop_back();
@@ -923,49 +1114,18 @@ static void UpdateCallStack(PinThread &t, ADDRINT sp) {
   }
 }
 
-static void DumpCurrentTraceInfo(PinThread &t) {
-  if (t.trace_info == NULL) return;
-
-  const uintptr_t impossible_address = (uintptr_t)-0xDEADBEE;
-  size_t n = t.trace_info->n_mops();
-  THREADID tid = t.tid;
-  DCHECK(n <= kMaxMopsPerTrace);
-  DCHECK(t.started);
-
-  if (n && (G_flags->literace_sampling == 0 ||
-      !LiteRaceSkipTrace(tid, t.trace_info->id(), G_flags->literace_sampling))) {
-    G_stats->lock_sites[1]++;
-    int uniq_tid = t.uniq_tid;
-    ScopedLock lock(&g_main_ts_lock);
-    ThreadSanitizerEnterSblock(uniq_tid, t.trace_info->pc());
-    for (size_t i = 0; i < n; i++) {
-      MopInfo *mop = t.trace_info->GetMop(i);
-      uintptr_t addr = t.mop_addresses[i];
-      t.mop_addresses[i] = 0;
-      DCHECK(addr != impossible_address);
-      if (addr) {
-        g_current_pc = mop->pc;
-        ThreadSanitizerHandleMemoryAccess(uniq_tid, addr, mop->size, mop->is_write);
-        // TODO(kcc): implement --dump-events here.
-      }
-    }
-  }
-
-  t.trace_info = NULL;
-
-  if (DEBUG_MODE) {
-    for (size_t i  = n; i < kMaxMopsPerTrace; i++) {
-      t.mop_addresses[i] = impossible_address;
-    }
-  }
+void InsertBeforeEvent_SysCall(THREADID tid, ADDRINT sp) {
+  PinThread &t = g_pin_threads[tid];
+  UpdateCallStack(t, sp);
+  TLEBFlushLocked(t);
 }
 
-void InsertBeforeEvent_Call(PinThread &t, ADDRINT pc, ADDRINT target, ADDRINT sp) {
+void InsertBeforeEvent_Call(THREADID tid, ADDRINT pc, ADDRINT target, ADDRINT sp) {
+  PinThread &t = g_pin_threads[tid];
   DebugOnlyShowPcAndSp(__FUNCTION__, t.tid, pc, sp);
-  EnsureThreadStarted(t);
-  DumpCurrentTraceInfo(t);
   UpdateCallStack(t, sp);
-  ThreadSanitizerHandleRtnCall(t.uniq_tid, pc, target);
+  // ThreadSanitizerHandleRtnCall(t.uniq_tid, pc, target);
+  TLEBAddRtnCall(t, pc, target);
   if (t.shadow_stack.size() > 0) {
     t.shadow_stack.back().pc = pc;
   }
@@ -978,20 +1138,26 @@ void InsertBeforeEvent_Call(PinThread &t, ADDRINT pc, ADDRINT target, ADDRINT sp
   }
 }
 
-static void InsertBeforeEvent_SblockEntry(PinThread &t, ADDRINT sp,
+static void InsertBeforeEvent_SblockEntryNoMops(THREADID tid, ADDRINT sp) {
+  PinThread &t = g_pin_threads[tid];
+  UpdateCallStack(t, sp);
+  G_stats->mops_per_trace[0]++;
+}
+
+static void InsertBeforeEvent_SblockEntry(THREADID tid, ADDRINT sp,
                                           TraceInfo *trace_info) {
-  EnsureThreadStarted(t);
+  PinThread &t = g_pin_threads[tid];
   DCHECK(trace_info);
   uintptr_t pc = trace_info->pc();
   DebugOnlyShowPcAndSp(__FUNCTION__, t.tid, pc, sp);
 
-  DumpCurrentTraceInfo(t);
   UpdateCallStack(t, sp);
 
   size_t n = trace_info->n_mops();
+  DCHECK(n > 0);
 
   t.trace_info = trace_info;
-  memset(&t.mop_addresses[0], 0, sizeof(uintptr_t) * n);
+  TLEBAddTrace(t);
 
   // stats
   const size_t mop_stat_size = ARRAYSIZE(G_stats->mops_per_trace);
@@ -1001,13 +1167,26 @@ static void InsertBeforeEvent_SblockEntry(PinThread &t, ADDRINT sp,
 //---------- Memory accesses -------------------------- {{{2
 static void On_Mop(PinThread &t, ADDRINT idx, ADDRINT a) {
   if (DEBUG_MODE) {
-    DCHECK(idx < kMaxMopsPerTrace);
-    DCHECK(idx < t.trace_info->n_mops());
+    CHECK(t.mop_addresses);
+    CHECK(idx < kMaxMopsPerTrace);
+    CHECK(idx < t.trace_info->n_mops());
+    uintptr_t *addrs = t.mop_addresses;
+    CHECK(addrs >= t.tleb);
+    CHECK(addrs < t.tleb + kThreadLocksEventBufferSize);
+    if (t.tleb_size > 0) {
+      CHECK(addrs + idx < t.tleb + t.tleb_size);
+    } else {
+      // t.tleb_size is zero. We just flushed but we are still 
+      // getting mop events from the old trace.
+      // This way we may loose some races, but probably we won't 
+      // because such situation happens only (?) inside our interceptors.
+    }
     if (a == G_flags->trace_addr) {
       Printf("T%d %s %lx\n", t.tid, __FUNCTION__, a);
     }
   }
 
+  // TODO(kcc): this is currently 2 instructions. Make it one.
   t.mop_addresses[idx] = a;
 }
 
@@ -1147,7 +1326,7 @@ static void After_sem_trywait(THREADID tid, ADDRINT pc, ADDRINT ret) {
   }
 }
 
-//---------- Annotations -------------------------- {{{2
+//--------- Annotations -------------------------- {{{2
 static void On_AnnotateBenignRace(THREADID tid, ADDRINT pc,
                                   ADDRINT file, ADDRINT line,
                                   ADDRINT a, ADDRINT descr) {
@@ -1273,12 +1452,19 @@ static bool InstrumentCall(INS ins) {
   if (INS_IsProcedureCall(ins) && !INS_IsSyscall(ins)) {
     INS_InsertCall(ins, IPOINT_BEFORE,
                    (AFUNPTR)InsertBeforeEvent_Call,
-                   IARG_REG_VALUE, tls_reg,
+                   IARG_THREAD_ID,
                    IARG_INST_PTR,
                    IARG_BRANCH_TARGET_ADDR,
                    IARG_REG_VALUE, REG_STACK_PTR,
                    IARG_END);
     return true;
+  }
+  if (INS_IsSyscall(ins)) {
+    INS_InsertCall(ins, IPOINT_BEFORE,
+                   (AFUNPTR)InsertBeforeEvent_SysCall,
+                   IARG_THREAD_ID,
+                   IARG_REG_VALUE, REG_STACK_PTR,
+                   IARG_END);
   }
   return false;
 }
@@ -1308,6 +1494,7 @@ static void InstrumentMopsInBBl(BBL bbl, RTN rtn, TraceInfo *trace_info, size_t 
         return;
       }
       size_t size = INS_MemoryOperandSize(ins, i);
+      CHECK(size);
       bool is_write = INS_MemoryOperandIsWritten(ins, i);
       if (trace_info) {
         MopInfo *mop = trace_info->GetMop(*mop_idx);
@@ -1366,21 +1553,30 @@ void CallbackForTRACE(TRACE trace, void *v) {
   // Handle the head of the trace
   INS head = BBL_InsHead(TRACE_BblHead(trace));
   CHECK(n_mops <= kMaxMopsPerTrace);
-  TraceInfo *trace_info = TraceInfo::NewTraceInfo(n_mops, INS_Address(head));
 
-  INS_InsertCall(head, IPOINT_BEFORE,
-                 (AFUNPTR)InsertBeforeEvent_SblockEntry,
-                 IARG_REG_VALUE, tls_reg,
-                 IARG_REG_VALUE, REG_STACK_PTR,
-                 IARG_PTR, trace_info,
-                 IARG_END);
+  TraceInfo *trace_info = NULL;
+  if (n_mops) {
+    trace_info = TraceInfo::NewTraceInfo(n_mops, INS_Address(head));
+    INS_InsertCall(head, IPOINT_BEFORE,
+                   (AFUNPTR)InsertBeforeEvent_SblockEntry,
+                   IARG_THREAD_ID,
+                   IARG_REG_VALUE, REG_STACK_PTR,
+                   IARG_PTR, trace_info,
+                   IARG_END);
+  } else {
+    INS_InsertCall(head, IPOINT_BEFORE,
+                   (AFUNPTR)InsertBeforeEvent_SblockEntryNoMops,
+                   IARG_THREAD_ID,
+                   IARG_REG_VALUE, REG_STACK_PTR,
+                   IARG_END);
+  }
 
   // instrument the mops. We want to do it after we instrumented the head
   // to maintain the right order of instrumentation callbacks (head first, then
   // mops).
   size_t i = 0;
-  for(BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
-    if (!ignore_memory) {
+  if (n_mops) {
+    for(BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
       InstrumentMopsInBBl(bbl, rtn, trace_info, &i);
     }
   }
@@ -1454,32 +1650,6 @@ void CallbackForTRACE(TRACE trace, void *v) {
 #define INSERT_AFTER_1(name, to_insert) \
     INSERT_AFTER_FN(name, to_insert, IARG_FUNCRET_EXITPOINT_VALUE)
 
-uintptr_t Wrap_malloc(WRAP_PARAM4) {
-  IgnoreAllBegin(tid, pc);
-  uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
-  IgnoreAllEnd(tid, pc);
-
-  DumpEvent(MALLOC, tid, pc, ret, arg0);
-  return ret;
-}
-
-uintptr_t Wrap_calloc(WRAP_PARAM4) {
-  IgnoreAllBegin(tid, pc);
-  uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
-  IgnoreAllEnd(tid, pc);
-
-  DumpEvent(MALLOC, tid, pc, ret, arg0*arg1);
-  return ret;
-}
-
-uintptr_t Wrap_free(WRAP_PARAM4) {
-  DumpEvent(FREE, tid, pc, arg0, 0);
-
-  IgnoreAllBegin(tid, pc);
-  uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
-  IgnoreAllEnd(tid, pc);
-  return ret;
-}
 
 #ifdef _MSC_VER
 void WrapStdCallFunc1(RTN rtn, char *name, AFUNPTR replacement_func) {
@@ -1645,8 +1815,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   WrapFunc4(img, rtn, "operator delete", (AFUNPTR)Wrap_free);
   WrapFunc4(img, rtn, "operator delete[]", (AFUNPTR)Wrap_free);
 
-  INSERT_BEFORE_2("mmap", Before_mmap);
-  INSERT_AFTER_1("mmap", After_mmap);
+  WrapFunc6(img, rtn, "mmap", (AFUNPTR)Wrap_mmap);
 
   // ThreadSanitizerQuery
   WrapFunc4(img, rtn, "ThreadSanitizerQuery",
@@ -1800,8 +1969,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   ReplaceFunc3(img, rtn, "strcpy", (AFUNPTR)Replace_strcpy);
 
   // pthread_once
-  INSERT_BEFORE_1("pthread_once", Before_pthread_once);
-  INSERT_AFTER_0("pthread_once", After_pthread_once);
+  WrapFunc4(img, rtn, "pthread_once", (AFUNPTR)Wrap_pthread_once);
 
   // __cxa_guard_acquire / __cxa_guard_release
   INSERT_BEFORE_1("__cxa_guard_acquire", Before_cxa_guard_acquire);
