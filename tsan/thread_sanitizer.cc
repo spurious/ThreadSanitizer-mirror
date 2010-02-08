@@ -3252,7 +3252,6 @@ struct Thread {
       announced_(false),
       rd_lockset_(0),
       wr_lockset_(0),
-      lock_mu_(0),
       bus_lock_is_set_(false),
       vts_at_exit_(NULL),
       lock_history_(128) {
@@ -3409,14 +3408,6 @@ struct Thread {
   void set_bus_lock_is_set(bool is_set) { bus_lock_is_set_ = is_set; }
   bool bus_lock_is_set() const { return bus_lock_is_set_; }
 
-  void HandleLockBefore(uintptr_t mu) {
-    lock_mu_ = mu;
-  }
-  void HandleLock(bool is_w_lock) {
-    CHECK(lock_mu_);
-    HandleLock(lock_mu_, is_w_lock);
-    lock_mu_ = 0;
-  }
   void HandleLock(uintptr_t lock_addr, bool is_w_lock) {
 
     if (G_flags->verbosity >= 1) {
@@ -3885,10 +3876,6 @@ struct Thread {
 
   LSID   rd_lockset_;
   LSID   wr_lockset_;
-
-  // The following lock_mu_ and wait_* fields are to simplify
-  // Handle*{Before,After} calls.
-  uintptr_t lock_mu_;
 
   struct CvAndMu {
     uintptr_t cv;
@@ -4768,7 +4755,6 @@ class Detector {
       case FREE        : HandleFree();         break;
 
 
-      case LOCK_BEFORE : HandleLockBefore();   break;
       case WRITER_LOCK : HandleLock(true);     break;
       case READER_LOCK : HandleLock(false);    break;
       case UNLOCK      : HandleUnlock();       break;
@@ -4966,21 +4952,12 @@ class Detector {
     }
   }
 
-  // LOCK_BEFORE
-  void HandleLockBefore() {
-    if (G_flags->verbosity >= 2) {
-      e_->Print();
-    //  thr->ReportStackTrace();
-    }
-    cur_thread_->HandleLockBefore(e_->a());
-  }
-
   void HandleLock(bool is_w_lock) {
     if (G_flags->verbosity >= 2) {
       e_->Print();
       cur_thread_->ReportStackTrace();
     }
-    cur_thread_->HandleLock(is_w_lock);
+    cur_thread_->HandleLock(e_->a(), is_w_lock);
   }
 
   // UNLOCK

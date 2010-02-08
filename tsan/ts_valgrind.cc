@@ -667,7 +667,6 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
       // inside a signal handler.
       if (g_valgrind_threads[vg_tid].ignore_sync
           && !g_valgrind_threads[vg_tid].in_signal_handler) break;
-      Put(LOCK_BEFORE, ts_tid, pc, /*lock=*/args[1], 0);
       Put(args[2] ? WRITER_LOCK : READER_LOCK, ts_tid, pc, /*lock=*/args[1], 0);
       break;
     case TSREQ_PTHREAD_RWLOCK_UNLOCK_PRE:

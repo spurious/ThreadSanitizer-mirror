@@ -442,6 +442,8 @@ static bool RtnMatchesName(const string &rtn_name, const string &name) {
   return false;
 }
 
+#define WRAP_NAME(name) Wrap_##name
+#define WRAP4(name) WrapFunc4(img, rtn, #name, (AFUNPTR)Wrap_##name)
 #define WRAP_PARAM4  THREADID tid, ADDRINT pc, CONTEXT *ctx, \
                                 AFUNPTR f,\
                                 uintptr_t arg0, uintptr_t arg1, \
@@ -938,16 +940,14 @@ uintptr_t Wrap_RtlDeleteCriticalSection(WRAP_PARAM4) {
 uintptr_t Wrap_RtlEnterCriticalSection(WRAP_PARAM4) {
 //  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
   uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
-  DumpEvent(LOCK_BEFORE, tid, pc, arg0, 0);
-  DumpEvent(WRITER_LOCK, tid, pc, 0, 0);
+  DumpEvent(WRITER_LOCK, tid, pc, arg0, 0);
   return ret;
 }
 uintptr_t Wrap_RtlTryEnterCriticalSection(WRAP_PARAM4) {
 //  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
   uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
   if (ret) {
-    DumpEvent(LOCK_BEFORE, tid, pc, arg0, 0);
-    DumpEvent(WRITER_LOCK, tid, pc, 0, 0);
+    DumpEvent(WRITER_LOCK, tid, pc, arg0, 0);
   }
   return ret;
 }
@@ -1217,27 +1217,58 @@ static void Before_pthread_spin_unlock(THREADID tid, ADDRINT pc, ADDRINT mu) {
   DumpEvent(UNLOCK_OR_INIT, tid, pc, mu, 0);
 }
 
-static void Before_pthread_lock(THREADID tid, ADDRINT pc, ADDRINT mu) {
-  DumpEvent(LOCK_BEFORE, tid, pc, mu, 0);
+static uintptr_t WRAP_NAME(pthread_mutex_lock)(WRAP_PARAM4) {
+  uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
+  DumpEvent(WRITER_LOCK, tid, pc, arg0, 0);
+  return ret;
 }
 
-static void After_pthread_lock(THREADID tid, ADDRINT pc, ADDRINT unused) {
-  DumpEvent(WRITER_LOCK, tid, pc, 0, 0);
+static uintptr_t WRAP_NAME(pthread_spin_lock)(WRAP_PARAM4) {
+  uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
+  DumpEvent(WRITER_LOCK, tid, pc, arg0, 0);
+  return ret;
 }
 
-static void After_pthread_trylock(THREADID tid, ADDRINT pc, ADDRINT ret) {
+static uintptr_t WRAP_NAME(pthread_rwlock_wrlock)(WRAP_PARAM4) {
+  uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
+  DumpEvent(WRITER_LOCK, tid, pc, arg0, 0);
+  return ret;
+}
+
+static uintptr_t WRAP_NAME(pthread_rwlock_rdlock)(WRAP_PARAM4) {
+  uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
+  DumpEvent(READER_LOCK, tid, pc, arg0, 0);
+  return ret;
+}
+
+static uintptr_t WRAP_NAME(pthread_mutex_trylock)(WRAP_PARAM4) {
+  uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
   if (ret == 0)
-    DumpEvent(WRITER_LOCK, tid, pc, 0, 0);
+    DumpEvent(WRITER_LOCK, tid, pc, arg0, 0);
+  return ret;
 }
 
-static void After_pthread_rdlock(THREADID tid, ADDRINT pc, ADDRINT unused) {
-  DumpEvent(READER_LOCK, tid, pc, 0, 0);
-}
-
-static void After_pthread_tryrdlock(THREADID tid, ADDRINT pc, ADDRINT ret) {
+static uintptr_t WRAP_NAME(pthread_spin_trylock)(WRAP_PARAM4) {
+  uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
   if (ret == 0)
-    DumpEvent(READER_LOCK, tid, pc, 0, 0);
+    DumpEvent(WRITER_LOCK, tid, pc, arg0, 0);
+  return ret;
 }
+
+static uintptr_t WRAP_NAME(pthread_rwlock_trywrlock)(WRAP_PARAM4) {
+  uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
+  if (ret == 0)
+    DumpEvent(WRITER_LOCK, tid, pc, arg0, 0);
+  return ret;
+}
+
+static uintptr_t WRAP_NAME(pthread_rwlock_tryrdlock)(WRAP_PARAM4) {
+  uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
+  if (ret == 0)
+    DumpEvent(READER_LOCK, tid, pc, arg0, 0);
+  return ret;
+}
+
 
 static void Before_pthread_mutex_init(THREADID tid, ADDRINT pc, ADDRINT mu) {
   DumpEvent(LOCK_CREATE, tid, pc, mu, 0);
@@ -1831,42 +1862,25 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_BEFORE_1("pthread_mutex_destroy", Before_pthread_mutex_destroy);
   INSERT_BEFORE_1("pthread_mutex_unlock", Before_pthread_unlock);
 
-  INSERT_BEFORE_1("pthread_mutex_lock", Before_pthread_lock);
-  INSERT_BEFORE_1("pthread_mutex_trylock", Before_pthread_lock);
 
-  INSERT_AFTER_1("pthread_mutex_lock", After_pthread_lock);
-  INSERT_AFTER_1("pthread_mutex_trylock", After_pthread_trylock);
-
+  WRAP4(pthread_mutex_lock);
+  WRAP4(pthread_mutex_trylock);
+  WRAP4(pthread_spin_lock);
+  WRAP4(pthread_spin_trylock);
+  WRAP4(pthread_rwlock_wrlock);
+  WRAP4(pthread_rwlock_rdlock);
+  WRAP4(pthread_rwlock_trywrlock);
+  WRAP4(pthread_rwlock_tryrdlock);
 
   // pthread_rwlock_*
   INSERT_BEFORE_1("pthread_rwlock_init", Before_pthread_rwlock_init);
   INSERT_BEFORE_1("pthread_rwlock_destroy", Before_pthread_rwlock_destroy);
-
   INSERT_BEFORE_1("pthread_rwlock_unlock", Before_pthread_unlock);
-
-  INSERT_BEFORE_1("pthread_rwlock_wrlock", Before_pthread_lock);
-  INSERT_AFTER_1 ("pthread_rwlock_wrlock", After_pthread_lock);
-
-  INSERT_BEFORE_1("pthread_rwlock_rdlock", Before_pthread_lock);
-  INSERT_AFTER_1 ("pthread_rwlock_rdlock", After_pthread_rdlock);
-
-  INSERT_BEFORE_1("pthread_rwlock_trywrlock", Before_pthread_lock);
-  INSERT_AFTER_1 ("pthread_rwlock_trywrlock", After_pthread_trylock);
-
-  INSERT_BEFORE_1("pthread_rwlock_tryrdlock", Before_pthread_lock);
-  INSERT_AFTER_1 ("pthread_rwlock_tryrdlock", After_pthread_tryrdlock);
 
   // pthread_spin_*
   INSERT_BEFORE_1("pthread_spin_init", Before_pthread_spin_init);
   INSERT_BEFORE_1("pthread_spin_destroy", Before_pthread_spin_destroy);
   INSERT_BEFORE_1("pthread_spin_unlock", Before_pthread_spin_unlock);
-
-  INSERT_BEFORE_1("pthread_spin_lock", Before_pthread_lock);
-  INSERT_BEFORE_1("pthread_spin_trylock", Before_pthread_lock);
-
-  INSERT_AFTER_1("pthread_spin_lock", After_pthread_lock);
-  INSERT_AFTER_1("pthread_spin_trylock", After_pthread_trylock);
-
 
   // pthread_barrier_*
   WrapFunc4(img, rtn, "pthread_barrier_init",
