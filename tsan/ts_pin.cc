@@ -304,6 +304,9 @@ static void DumpEventInternal(EventType type, int32_t tid, uintptr_t pc,
   if (DEBUG_MODE && G_flags->verbosity >= 3) {
     event.Print();
   }
+  if (G_flags->dry_run) {
+    return;
+  }
   ThreadSanitizerHandleOneEvent(&event);
 }
 
@@ -312,6 +315,11 @@ static void DumpEventInternal(EventType type, int32_t tid, uintptr_t pc,
 static void TLEBFlushUnlocked(PinThread &t) {
   DCHECK(t.tleb_size <= kThreadLocksEventBufferSize);
   if (t.tleb_size == 0) return;
+
+  if (G_flags->dry_run) {
+    t.tleb_size = 0;
+    return;
+  }
 
   if (1 || DEBUG_MODE) {
     size_t max_idx = TS_ARRAY_SIZE(G_stats->tleb_flush);
