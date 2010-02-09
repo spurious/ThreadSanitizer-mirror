@@ -170,7 +170,7 @@ size_t TraceInfo::id_counter_;
 
 //--------------- PinThread ----------------- {{{1
 const size_t kMaxMopsPerTrace = 64;
-const size_t kThreadLocksEventBufferSize = 2048 * 2;
+const size_t kThreadLocksEventBufferSize = 256;
 
 REG tls_reg;
 
@@ -185,6 +185,7 @@ struct PinThread {
   pthread_t    my_ptid;
   vector<StackFrame> shadow_stack;
   TraceInfo    *trace_info;
+  int ignore_all_mops;  // if >0, ignore all mops.
 };
 
 // Array of pin threads, indexed by pin's THREADID.
@@ -256,6 +257,11 @@ uintptr_t GetPcOfCurrentThread() {
 // { RTN_EXIT }
 // { SBLOCK_ENTER, trace_info_of_size_n, addr1, addr2, ... addr_n}
 
+enum TLEBSpecificEvents {
+  TLEB_IGNORE_ALL_BEGIN = LAST_EVENT + 1,
+  TLEB_IGNORE_ALL_END,
+};
+
 static void DumpEventPlainText(EventType type, int32_t tid, uintptr_t pc,
                                uintptr_t a, uintptr_t info) {
   static hash_set<uintptr_t> *pc_set;
@@ -306,8 +312,6 @@ static void DumpEventInternal(EventType type, int32_t tid, uintptr_t pc,
   ThreadSanitizerHandleOneEvent(&event);
 }
 
-
-
 static void TLEBFlushUnlocked(PinThread &t) {
   DCHECK(t.tleb_size <= kThreadLocksEventBufferSize);
   if (t.tleb_size == 0) return;
@@ -338,6 +342,8 @@ static void TLEBFlushUnlocked(PinThread &t) {
       bool do_this_trace = ((G_flags->literace_sampling == 0 ||
                              !LiteRaceSkipTrace(t.tid, t.trace_info->id(),
                                                 G_flags->literace_sampling)));
+      if (t.ignore_all_mops)
+        do_this_trace = false;
 
       TraceInfo *trace_info = (TraceInfo*) t.tleb[i++];
       DCHECK(trace_info);
@@ -356,10 +362,14 @@ static void TLEBFlushUnlocked(PinThread &t) {
           }
         }
       }
-
       i += n;
     } else if (event == THR_START) {
       DumpEventInternal(THR_START, t.tid, 0, 0, t.parent_tid);
+    } else if (event == TLEB_IGNORE_ALL_BEGIN){
+      t.ignore_all_mops++;
+    } else if (event == TLEB_IGNORE_ALL_END){
+      t.ignore_all_mops--;
+      CHECK(t.ignore_all_mops >= 0);
     } else {
       // no other events in TLEB.
       CHECK(0);
@@ -416,6 +426,21 @@ static void TLEBStartThread(PinThread &t) {
   CHECK(t.tleb_size == 0);
   t.tleb[t.tleb_size++] = THR_START;
 }
+
+static void TLEBIgnoreBegin(PinThread &t) {
+  if (t.tleb_size + 1 > kThreadLocksEventBufferSize) {
+    TLEBFlushLocked(t);
+  }
+  t.tleb[t.tleb_size++] = TLEB_IGNORE_ALL_BEGIN;
+}
+
+static void TLEBIgnoreEnd(PinThread &t) {
+  if (t.tleb_size + 1 > kThreadLocksEventBufferSize) {
+    TLEBFlushLocked(t);
+  }
+  t.tleb[t.tleb_size++] = TLEB_IGNORE_ALL_END;
+}
+
 
 // Must be called from its thread (except for THR_END case)!
 static void DumpEvent(EventType type, int32_t tid, uintptr_t pc,
@@ -611,14 +636,12 @@ static uintptr_t Wrap_ThreadSanitizerQuery(WRAP_PARAM4) {
 
 //--------- Ignores -------------------------------- {{{2
 static void IgnoreAllBegin(THREADID tid, ADDRINT pc) {
-//  if (tid == 0) Printf("Ignore++ %d\n", z++);
-  DumpEvent(IGNORE_READS_BEG, tid, pc, 0, 0);
-  DumpEvent(IGNORE_WRITES_BEG, tid, pc, 0, 0);
+//  if (tid == 0) Printf("Ignore++ %d\n", z++); 
+  TLEBIgnoreBegin(g_pin_threads[tid]);
 }
 static void IgnoreAllEnd(THREADID tid, ADDRINT pc) {
 //  if (tid == 0) Printf("Ignore-- %d\n", z--);
-  DumpEvent(IGNORE_READS_END, tid, pc, 0, 0);
-  DumpEvent(IGNORE_WRITES_END, tid, pc, 0, 0);
+  TLEBIgnoreEnd(g_pin_threads[tid]);
 }
 
 //--------- __cxa_guard_* -------------------------- {{{2
@@ -649,7 +672,6 @@ static void Before_cxa_guard_acquire(THREADID tid, ADDRINT pc, ADDRINT guard) {
 }
 
 static void After_cxa_guard_acquire(THREADID tid, ADDRINT pc, ADDRINT ret) {
-  PinThread &t = g_pin_threads[tid];
   if (ret) {
     // Continue ignoring, it will end in __cxa_guard_release.
   } else {
