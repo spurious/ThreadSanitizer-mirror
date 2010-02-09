@@ -29,6 +29,7 @@
 
 #include "thread_sanitizer.h"
 #include "ts_stats.h"
+#include "ts_lock.h"
 #include <stdarg.h>
 
 Stats *G_stats;
@@ -272,8 +273,83 @@ bool StringMatch(const string& wildcard, const string& text) {
 
   return !*c_wildcard;
 }
+//--------- TSLock ------------------ {{{1
+// #define TS_LOCK_PIPE
+#define TS_LOCK_PIN
 
-// ---------------- Lite Race ------------------ {{{2
+#if defined(TS_LOCK_PIPE) && defined(TS_PIN) && defined(__GNUC__)
+#include <unistd.h>
+// Lock based on pipe's send/receive. The idea is shamelessly stolen from
+// valgrind's /coregrind/m_scheduler/sema.c
+struct TSLock::Rep {
+  char pipe_char;
+  int pipe_fd[2];
+  void Write() {
+    char buf[2];
+    buf[0] = pipe_char;
+    buf[1] = 0;
+    int res = write(pipe_fd[1], buf, 1);
+    CHECK(res == 1);
+  }
+  bool Read() {
+    char buf[2];
+    buf[0] = 0;
+    buf[1] = 0;
+    int res = read(pipe_fd[0], buf, 1);
+    if (res != 1)
+      return false;
+    //Printf("rep::Read: %c\n", buf[0]);
+
+    pipe_char++;
+    if (pipe_char == 'Z' + 1) pipe_char = 'A';
+    return true;
+  }
+};
+
+TSLock::TSLock() {
+  rep_ = new Rep;
+  int r = pipe(rep_->pipe_fd);
+  CHECK(r == 0);
+  CHECK(rep_->pipe_fd[0] != rep_->pipe_fd[1]);
+  rep_->pipe_char = 'A';
+  rep_->Write();
+}
+TSLock::~TSLock() {
+  close(rep_->pipe_fd[0]);
+  close(rep_->pipe_fd[1]);
+}
+void TSLock::Lock() {
+  while(rep_->Read() == false)
+    ;
+}
+void TSLock::Unlock() {
+  rep_->Write();
+}
+#endif  // TS_LOCK_PIPE
+
+
+#if defined(TS_LOCK_PIN) && defined(TS_PIN)
+#include "pin.H"
+struct TSLock::Rep {
+  PIN_LOCK lock;
+};
+
+TSLock::TSLock() {
+  rep_ = new Rep();
+  InitLock(&rep_->lock);
+}
+TSLock::~TSLock() {
+  delete rep_;
+}
+void TSLock::Lock() {
+  GetLock(&rep_->lock, __LINE__);
+}
+void TSLock::Unlock() {
+  ReleaseLock(&rep_->lock);
+}
+#endif  // TS_LOCK_PIN
+
+// ---------------- Lite Race ------------------ {{{1
 // Experimental!
 //
 // The idea was first introduced in LiteRace:

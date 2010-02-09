@@ -28,26 +28,16 @@
 #define TS_LOCK_H_
 
 //--------- Simple Lock ------------------ {{{1
-#ifdef TS_PIN
-#include "pin.H"
 class TSLock {
  public:
-  TSLock() {
-    InitLock(&lock_);
-  }
-  void Lock() {
-    GetLock(&lock_, __LINE__);
-  }
-  void Unlock() {
-    ReleaseLock(&lock_);
-  }
-
+  TSLock();
+  ~TSLock();
+  void Lock();
+  void Unlock();
  private:
-  PIN_LOCK lock_;
+  struct Rep;
+  Rep *rep_;
 };
-#else
-# error "Not supported locking"
-#endif
 
 class ScopedLock {
  public:

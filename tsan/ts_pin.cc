@@ -170,7 +170,7 @@ size_t TraceInfo::id_counter_;
 
 //--------------- PinThread ----------------- {{{1
 const size_t kMaxMopsPerTrace = 64;
-const size_t kThreadLocksEventBufferSize = 2048;
+const size_t kThreadLocksEventBufferSize = 2048 * 2;
 
 
 REG tls_reg;
@@ -218,6 +218,7 @@ void PcToStrings(uintptr_t pc, bool demangle,
                 string *file_name, int *line_no) {
   if (G_flags->symbolize) {
     RTN rtn;
+    G_stats->lock_sites[5]++;
     ScopedReentrantClientLock lock(__LINE__);
     // ClientLock must be held.
     PIN_GetSourceLocation(pc, NULL, line_no, file_name);
@@ -235,15 +236,15 @@ void PcToStrings(uintptr_t pc, bool demangle,
 string PcToRtnName(uintptr_t pc, bool demangle) {
   string res;
   if (G_flags->symbolize) {
-    RTN rtn;
     {
+      G_stats->lock_sites[6]++;
       ScopedReentrantClientLock lock(__LINE__);
-      rtn = RTN_FindByAddress(pc);
-    }
-    if (RTN_Valid(rtn)) {
-      res = demangle
-          ? Demangle(RTN_Name(rtn).c_str())
-          : RTN_Name(rtn);
+      RTN rtn = RTN_FindByAddress(pc);
+      if (RTN_Valid(rtn)) {
+        res = demangle
+            ? Demangle(RTN_Name(rtn).c_str())
+            : RTN_Name(rtn);
+      }
     }
   }
   return res;
@@ -699,6 +700,7 @@ void TmpCallback2(THREADID tid, ADDRINT pc) {
 
 //--------- Threads --------------------------------- {{{2
 static void HandleThreadCreateBefore(THREADID tid) {
+  G_stats->lock_sites[8]++;
   g_thread_create_lock.Lock();
   CHECK(g_tid_of_thread_which_called_create_thread == (THREADID)-1);
   g_tid_of_thread_which_called_create_thread = tid;
