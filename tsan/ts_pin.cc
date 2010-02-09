@@ -175,7 +175,6 @@ const size_t kThreadLocksEventBufferSize = 256;
 REG tls_reg;
 
 struct PinThread {
-  uintptr_t    *mop_addresses; // must be the first element.
   size_t       tleb_size;
   uintptr_t    tleb[kThreadLocksEventBufferSize];
   int          uniq_tid;
@@ -401,7 +400,7 @@ static void TLEBAddRtnExit(PinThread &t) {
   t.tleb[t.tleb_size++] = RTN_EXIT;
 }
 
-static void TLEBAddTrace(PinThread &t) {
+static uintptr_t *TLEBAddTrace(PinThread &t) {
   size_t n = t.trace_info->n_mops();
   DCHECK(n > 0);
   if (t.tleb_size + 2 + n > kThreadLocksEventBufferSize) {
@@ -413,9 +412,10 @@ static void TLEBAddTrace(PinThread &t) {
   for (size_t i = 0; i < n; i++) {
     t.tleb[t.tleb_size + i] = 0;
   }
-  t.mop_addresses = &t.tleb[t.tleb_size];
+  uintptr_t *mop_addresses = &t.tleb[t.tleb_size];
   t.tleb_size += n;
   DCHECK(t.tleb_size <= kThreadLocksEventBufferSize);
+  return mop_addresses;
 }
 
 static void TLEBStartThread(PinThread &t) {
@@ -762,7 +762,7 @@ void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
     g_pin_threads = new PinThread[kMaxThreads];
   }
   PinThread &t = g_pin_threads[tid];
-  PIN_SetContextReg(ctxt, tls_reg, (ADDRINT)&t);
+  PIN_SetContextReg(ctxt, tls_reg, (ADDRINT)0xfafafa);
 
   bool has_parent = true;
   if (tid == 0) {
@@ -1138,14 +1138,15 @@ void InsertBeforeEvent_Call(THREADID tid, ADDRINT pc, ADDRINT target, ADDRINT sp
   }
 }
 
-static void InsertBeforeEvent_SblockEntryNoMops(THREADID tid, ADDRINT sp) {
+static void OnTraceNoMops(THREADID tid, ADDRINT sp) {
   PinThread &t = g_pin_threads[tid];
   UpdateCallStack(t, sp);
   G_stats->mops_per_trace[0]++;
 }
 
-static void InsertBeforeEvent_SblockEntry(THREADID tid, ADDRINT sp,
-                                          TraceInfo *trace_info) {
+static void OnTrace(THREADID tid, ADDRINT sp,
+                                          TraceInfo *trace_info,
+                                          uintptr_t **tls_reg_p) {
   PinThread &t = g_pin_threads[tid];
   DCHECK(trace_info);
   uintptr_t pc = trace_info->pc();
@@ -1157,7 +1158,7 @@ static void InsertBeforeEvent_SblockEntry(THREADID tid, ADDRINT sp,
   DCHECK(n > 0);
 
   t.trace_info = trace_info;
-  TLEBAddTrace(t);
+  *tls_reg_p = TLEBAddTrace(t);
 
   // stats
   const size_t mop_stat_size = TS_ARRAY_SIZE(G_stats->mops_per_trace);
@@ -1165,34 +1166,39 @@ static void InsertBeforeEvent_SblockEntry(THREADID tid, ADDRINT sp,
 }
 
 //---------- Memory accesses -------------------------- {{{2
-static void On_Mop(PinThread &t, ADDRINT idx, ADDRINT a) {
+// 'addr' is the section of t.tleb which is set in OnTrace.
+// 'idx' is the number of this mop in its trace.
+// 'a' is the actuall address.
+// 'tid' is thread ID, used only in debug mode.
+//
+// In opt mode this is just one instruction! Something like this:
+// mov %rcx,(%rdi,%rdx,8)
+static void OnMop(uintptr_t *addr, THREADID tid, ADDRINT idx, ADDRINT a) {
   if (DEBUG_MODE) {
-    CHECK(t.mop_addresses);
+    PinThread &t= g_pin_threads[tid];
     CHECK(idx < kMaxMopsPerTrace);
     CHECK(idx < t.trace_info->n_mops());
-    uintptr_t *addrs = t.mop_addresses;
-    CHECK(addrs >= t.tleb);
-    CHECK(addrs < t.tleb + kThreadLocksEventBufferSize);
+    CHECK(addr >= t.tleb);
+    CHECK(addr < t.tleb + kThreadLocksEventBufferSize);
     if (t.tleb_size > 0) {
-      CHECK(addrs + idx < t.tleb + t.tleb_size);
+      CHECK(addr + idx < t.tleb + t.tleb_size);
     } else {
-      // t.tleb_size is zero. We just flushed but we are still 
+      // t.tleb_size is zero. We just flushed but we are still
       // getting mop events from the old trace.
-      // This way we may loose some races, but probably we won't 
+      // This way we may loose some races, but probably we won't
       // because such situation happens only (?) inside our interceptors.
     }
     if (a == G_flags->trace_addr) {
       Printf("T%d %s %lx\n", t.tid, __FUNCTION__, a);
     }
   }
-
-  // TODO(kcc): this is currently 2 instructions. Make it one.
-  t.mop_addresses[idx] = a;
+  addr[idx] = a;
 }
 
-static void On_PredicatedMop(BOOL is_running, PinThread &t, ADDRINT idx, ADDRINT a) {
+static void On_PredicatedMop(BOOL is_running, uintptr_t *addr,
+                             THREADID tid, ADDRINT idx, ADDRINT a) {
   if (is_running) {
-    On_Mop(t, idx, a);
+    OnMop(addr, tid, idx, a);
   }
 }
 
@@ -1537,13 +1543,15 @@ static void InstrumentMopsInBBl(BBL bbl, RTN rtn, TraceInfo *trace_info, size_t 
             (AFUNPTR)On_PredicatedMop,
             IARG_EXECUTING,
             IARG_REG_VALUE, tls_reg,
+            IARG_THREAD_ID,
             IARG_ADDRINT, *mop_idx,
             IARG_MEMORYOP_EA, i,
             IARG_END);
         } else {
           INS_InsertCall(ins, IPOINT_BEFORE,
-            (AFUNPTR)On_Mop,
+            (AFUNPTR)OnMop,
             IARG_REG_VALUE, tls_reg,
+            IARG_THREAD_ID,
             IARG_ADDRINT, *mop_idx,
             IARG_MEMORYOP_EA, i,
             IARG_END);
@@ -1589,14 +1597,15 @@ void CallbackForTRACE(TRACE trace, void *v) {
   if (n_mops) {
     trace_info = TraceInfo::NewTraceInfo(n_mops, INS_Address(head));
     INS_InsertCall(head, IPOINT_BEFORE,
-                   (AFUNPTR)InsertBeforeEvent_SblockEntry,
+                   (AFUNPTR)OnTrace,
                    IARG_THREAD_ID,
                    IARG_REG_VALUE, REG_STACK_PTR,
                    IARG_PTR, trace_info,
+                   IARG_REG_REFERENCE, tls_reg,
                    IARG_END);
   } else {
     INS_InsertCall(head, IPOINT_BEFORE,
-                   (AFUNPTR)InsertBeforeEvent_SblockEntryNoMops,
+                   (AFUNPTR)OnTraceNoMops,
                    IARG_THREAD_ID,
                    IARG_REG_VALUE, REG_STACK_PTR,
                    IARG_END);
