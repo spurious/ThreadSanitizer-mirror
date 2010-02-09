@@ -306,20 +306,12 @@ static void DumpEventInternal(EventType type, int32_t tid, uintptr_t pc,
   if (DEBUG_MODE && G_flags->verbosity >= 3) {
     event.Print();
   }
-  if (G_flags->dry_run) {
-    return;
-  }
   ThreadSanitizerHandleOneEvent(&event);
 }
 
 static void TLEBFlushUnlocked(PinThread &t) {
   DCHECK(t.tleb_size <= kThreadLocksEventBufferSize);
   if (t.tleb_size == 0) return;
-
-  if (G_flags->dry_run) {
-    t.tleb_size = 0;
-    return;
-  }
 
   if (1 || DEBUG_MODE) {
     size_t max_idx = TS_ARRAY_SIZE(G_stats->tleb_flush);
@@ -384,6 +376,9 @@ static void TLEBFlushUnlocked(PinThread &t) {
 }
 
 static void TLEBFlushLocked(PinThread &t) {
+  if (G_flags->dry_run) {
+    return;
+  }
   G_stats->lock_sites[1]++;
   ScopedLock lock(&g_main_ts_lock);
   TLEBFlushUnlocked(t);
@@ -445,6 +440,9 @@ static void TLEBIgnoreEnd(PinThread &t) {
 // Must be called from its thread (except for THR_END case)!
 static void DumpEvent(EventType type, int32_t tid, uintptr_t pc,
                       uintptr_t a, uintptr_t info) {
+  if (G_flags->dry_run) {
+    return;
+  }
   PinThread &t = g_pin_threads[tid];
   G_stats->lock_sites[0]++;
   ScopedLock lock(&g_main_ts_lock);
