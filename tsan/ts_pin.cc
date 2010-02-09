@@ -114,8 +114,6 @@ static THREADID g_tid_of_thread_which_called_create_thread = -1;
 
 static uintptr_t g_current_pc;
 
-static bool g_attached_to_running_process = false;
-
 //--------------- StackFrame ----------------- {{{1
 struct StackFrame {
   uintptr_t pc;
@@ -170,13 +168,20 @@ size_t TraceInfo::id_counter_;
 
 //--------------- PinThread ----------------- {{{1
 const size_t kMaxMopsPerTrace = 64;
-const size_t kThreadLocksEventBufferSize = 2048;
+const size_t kThreadLocksEventBufferSize = 2048 - 2;
 
 REG tls_reg;
 
+struct PinThread;
+
+struct ThreadLocalEventBuffer {
+  PinThread *t;
+  size_t size;
+  uintptr_t events[kThreadLocksEventBufferSize];
+};
+
 struct PinThread {
-  size_t       tleb_size;
-  uintptr_t    tleb[kThreadLocksEventBufferSize];
+  ThreadLocalEventBuffer tleb;
   int          uniq_tid;
   volatile long last_child_tid;
   THREADID     tid;
@@ -189,6 +194,9 @@ struct PinThread {
 
 // Array of pin threads, indexed by pin's THREADID.
 static PinThread *g_pin_threads;
+
+// Used only if separate_analysis_thread==true.
+static vector<ThreadLocalEventBuffer *> *g_tleb_queue;
 
 #ifdef _MSC_VER
 static hash_set<pthread_t> *g_win_handles_which_are_threads;
@@ -291,11 +299,9 @@ static void DumpEventPlainText(EventType type, int32_t tid, uintptr_t pc,
           (long)pc, (long)a, (long)info);
 }
 
-static void DumpEventInternal(EventType type, int32_t tid, uintptr_t pc,
+static void DumpEventInternal(EventType type, int32_t uniq_tid, uintptr_t pc,
                               uintptr_t a, uintptr_t info) {
-  PinThread &t = g_pin_threads[tid];
   // PIN wraps the tid (after 2048), but we need a uniq tid.
-  int uniq_tid = t.uniq_tid;
   Event event(type, uniq_tid, pc, a, info);
 
   if (DEBUG_MODE && G_flags->dump_events) {
@@ -308,26 +314,26 @@ static void DumpEventInternal(EventType type, int32_t tid, uintptr_t pc,
   ThreadSanitizerHandleOneEvent(&event);
 }
 
-static void TLEBFlushUnlocked(PinThread &t) {
-  DCHECK(t.tleb_size <= kThreadLocksEventBufferSize);
-  if (t.tleb_size == 0) return;
+static void TLEBFlushUnlocked(PinThread &t, ThreadLocalEventBuffer &tleb) {
+  DCHECK(tleb.size <= kThreadLocksEventBufferSize);
+  if (tleb.size == 0) return;
 
   if (1 || DEBUG_MODE) {
     size_t max_idx = TS_ARRAY_SIZE(G_stats->tleb_flush);
-    size_t idx = (t.tleb_size * max_idx - 1) / kThreadLocksEventBufferSize;
+    size_t idx = (tleb.size * max_idx - 1) / kThreadLocksEventBufferSize;
     CHECK(idx < max_idx);
     G_stats->tleb_flush[idx]++;
   }
 
   // TODO(kcc): implement --dump-events here.
   size_t i;
-  for (i = 0; i < t.tleb_size; ) {
-    uintptr_t event = t.tleb[i++];
+  for (i = 0; i < tleb.size; ) {
+    uintptr_t event = tleb.events[i++];
     if (event == RTN_EXIT) {
       ThreadSanitizerHandleRtnExit(t.uniq_tid);
     } else if (event == RTN_CALL) {
-      uintptr_t call_pc = t.tleb[i++];
-      uintptr_t target_pc = t.tleb[i++];
+      uintptr_t call_pc = tleb.events[i++];
+      uintptr_t target_pc = tleb.events[i++];
       ThreadSanitizerHandleRtnCall(t.uniq_tid, call_pc, target_pc);
     } else if (event == SBLOCK_ENTER){
       bool do_this_trace = ((G_flags->literace_sampling == 0 ||
@@ -336,7 +342,7 @@ static void TLEBFlushUnlocked(PinThread &t) {
       if (t.ignore_all_mops)
         do_this_trace = false;
 
-      TraceInfo *trace_info = (TraceInfo*) t.tleb[i++];
+      TraceInfo *trace_info = (TraceInfo*) tleb.events[i++];
       DCHECK(trace_info);
       size_t n = trace_info->n_mops();
       if (do_this_trace) {
@@ -345,7 +351,7 @@ static void TLEBFlushUnlocked(PinThread &t) {
           MopInfo *mop = trace_info->GetMop(j);
           DCHECK(mop->size);
           DCHECK(mop);
-          uintptr_t addr = t.tleb[i + j];
+          uintptr_t addr = tleb.events[i + j];
           if (addr) {
             g_current_pc = mop->pc;
             ThreadSanitizerHandleMemoryAccess(t.uniq_tid, addr,
@@ -364,95 +370,117 @@ static void TLEBFlushUnlocked(PinThread &t) {
     } else {
       // all other events.
       CHECK(event > NOOP && event < LAST_EVENT);
-      uintptr_t pc    = t.tleb[i++];
-      uintptr_t a     = t.tleb[i++];
-      uintptr_t info  = t.tleb[i++];
+      uintptr_t pc    = tleb.events[i++];
+      uintptr_t a     = tleb.events[i++];
+      uintptr_t info  = tleb.events[i++];
       DumpEventInternal((EventType)event, t.uniq_tid, pc, a, info);
     }
-    DCHECK(i <= t.tleb_size);
+    DCHECK(i <= tleb.size);
   }
-  DCHECK(i == t.tleb_size);
-  t.tleb_size = 0;
+  DCHECK(i == tleb.size);
+  tleb.size = 0;
   if (DEBUG_MODE) { // for sanity checking.
-    memset(t.tleb, 0xf0, sizeof(t.tleb));
+    memset(tleb.events, 0xf0, sizeof(tleb.events));
   }
 }
 
 static void TLEBFlushLocked(PinThread &t) {
   if (G_flags->dry_run) {
-    t.tleb_size = 0;
+    t.tleb.size = 0;
     return;
   }
+  CHECK(t.tleb.size <= kThreadLocksEventBufferSize);
   G_stats->lock_sites[1]++;
-  ScopedLock lock(&g_main_ts_lock);
-  TLEBFlushUnlocked(t);
+  if (G_flags->separate_analysis_thread) {
+    ThreadLocalEventBuffer *tleb_copy = new ThreadLocalEventBuffer;
+    memcpy(tleb_copy, &t.tleb, sizeof(uintptr_t) * (t.tleb.size + 2));
+    tleb_copy->t = &t;
+    CHECK(g_tleb_queue);
+    {
+      ScopedLock lock(&g_main_ts_lock);
+      g_tleb_queue->push_back(tleb_copy);
+      // Printf("Sent     %p t=%d size=%ld\n", tleb_copy,
+      // (int)tleb_copy->t->tid, tleb_copy->size);
+    }
+    t.tleb.size = 0;
+  } else {
+    ScopedLock lock(&g_main_ts_lock);
+    TLEBFlushUnlocked(t, t.tleb);
+  }
 }
 
 static void TLEBAddRtnCall(PinThread &t, uintptr_t call_pc, uintptr_t target_pc) {
-  if (t.tleb_size + 3 > kThreadLocksEventBufferSize) {
+  DCHECK(t.tleb.size <= kThreadLocksEventBufferSize);
+  if (t.tleb.size + 3 > kThreadLocksEventBufferSize) {
     TLEBFlushLocked(t);
+    DCHECK(t.tleb.size == 0);
   }
-  t.tleb[t.tleb_size++] = RTN_CALL;
-  t.tleb[t.tleb_size++] = call_pc;
-  t.tleb[t.tleb_size++] = target_pc;
+  t.tleb.events[t.tleb.size++] = RTN_CALL;
+  t.tleb.events[t.tleb.size++] = call_pc;
+  t.tleb.events[t.tleb.size++] = target_pc;
+  DCHECK(t.tleb.size <= kThreadLocksEventBufferSize);
 }
 
 static void TLEBAddRtnExit(PinThread &t) {
-  if (t.tleb_size + 1 > kThreadLocksEventBufferSize) {
+  if (t.tleb.size + 1 > kThreadLocksEventBufferSize) {
     TLEBFlushLocked(t);
   }
-  t.tleb[t.tleb_size++] = RTN_EXIT;
+  t.tleb.events[t.tleb.size++] = RTN_EXIT;
+  DCHECK(t.tleb.size <= kThreadLocksEventBufferSize);
 }
 
 static uintptr_t *TLEBAddTrace(PinThread &t) {
   size_t n = t.trace_info->n_mops();
   DCHECK(n > 0);
-  if (t.tleb_size + 2 + n > kThreadLocksEventBufferSize) {
+  if (t.tleb.size + 2 + n > kThreadLocksEventBufferSize) {
     TLEBFlushLocked(t);
   }
-  t.tleb[t.tleb_size++] = SBLOCK_ENTER;
-  t.tleb[t.tleb_size++] = (uintptr_t)t.trace_info;
+  t.tleb.events[t.tleb.size++] = SBLOCK_ENTER;
+  t.tleb.events[t.tleb.size++] = (uintptr_t)t.trace_info;
   // not every address will be written to. so they will stay 0.
   for (size_t i = 0; i < n; i++) {
-    t.tleb[t.tleb_size + i] = 0;
+    t.tleb.events[t.tleb.size + i] = 0;
   }
-  uintptr_t *mop_addresses = &t.tleb[t.tleb_size];
-  t.tleb_size += n;
-  DCHECK(t.tleb_size <= kThreadLocksEventBufferSize);
+  uintptr_t *mop_addresses = &t.tleb.events[t.tleb.size];
+  t.tleb.size += n;
+  DCHECK(t.tleb.size <= kThreadLocksEventBufferSize);
   return mop_addresses;
 }
 
 static void TLEBStartThread(PinThread &t) {
-  CHECK(t.tleb_size == 0);
-  t.tleb[t.tleb_size++] = THR_START;
+  CHECK(t.tleb.size == 0);
+  t.tleb.events[t.tleb.size++] = THR_START;
 }
 
 static void TLEBIgnoreBegin(PinThread &t) {
-  if (t.tleb_size + 1 > kThreadLocksEventBufferSize) {
+  if (t.tleb.size + 1 > kThreadLocksEventBufferSize) {
     TLEBFlushLocked(t);
   }
-  t.tleb[t.tleb_size++] = TLEB_IGNORE_ALL_BEGIN;
+  t.tleb.events[t.tleb.size++] = TLEB_IGNORE_ALL_BEGIN;
+  DCHECK(t.tleb.size <= kThreadLocksEventBufferSize);
 }
 
 static void TLEBIgnoreEnd(PinThread &t) {
-  if (t.tleb_size + 1 > kThreadLocksEventBufferSize) {
+  if (t.tleb.size + 1 > kThreadLocksEventBufferSize) {
     TLEBFlushLocked(t);
   }
-  t.tleb[t.tleb_size++] = TLEB_IGNORE_ALL_END;
+  t.tleb.events[t.tleb.size++] = TLEB_IGNORE_ALL_END;
+  DCHECK(t.tleb.size <= kThreadLocksEventBufferSize);
 }
 
 static void TLEBAddGenericEventAndFlush(PinThread &t,
                                         EventType type, uintptr_t pc,
                                         uintptr_t a, uintptr_t info) {
-  if (t.tleb_size + 4 > kThreadLocksEventBufferSize) {
+  if (t.tleb.size + 4 > kThreadLocksEventBufferSize) {
     TLEBFlushLocked(t);
   }
   DCHECK(type > NOOP && type < LAST_EVENT);
-  t.tleb[t.tleb_size++] = type;
-  t.tleb[t.tleb_size++] = pc;
-  t.tleb[t.tleb_size++] = a;
-  t.tleb[t.tleb_size++] = info;
+  t.tleb.events[t.tleb.size++] = type;
+  t.tleb.events[t.tleb.size++] = pc;
+  t.tleb.events[t.tleb.size++] = a;
+  t.tleb.events[t.tleb.size++] = info;
   TLEBFlushLocked(t);
+  DCHECK(t.tleb.size <= kThreadLocksEventBufferSize);
 }
 
 // Must be called from its thread (except for THR_END case)!
@@ -1176,7 +1204,7 @@ static void OnTrace(THREADID tid, ADDRINT sp,
 }
 
 //---------- Memory accesses -------------------------- {{{2
-// 'addr' is the section of t.tleb which is set in OnTrace.
+// 'addr' is the section of t.tleb.events which is set in OnTrace.
 // 'idx' is the number of this mop in its trace.
 // 'a' is the actuall address.
 // 'tid' is thread ID, used only in debug mode.
@@ -1188,12 +1216,12 @@ static void OnMop(uintptr_t *addr, THREADID tid, ADDRINT idx, ADDRINT a) {
     PinThread &t= g_pin_threads[tid];
     CHECK(idx < kMaxMopsPerTrace);
     CHECK(idx < t.trace_info->n_mops());
-    CHECK(addr >= t.tleb);
-    CHECK(addr < t.tleb + kThreadLocksEventBufferSize);
-    if (t.tleb_size > 0) {
-      CHECK(addr + idx < t.tleb + t.tleb_size);
+    CHECK(addr >= t.tleb.events);
+    CHECK(addr < t.tleb.events + kThreadLocksEventBufferSize);
+    if (t.tleb.size > 0) {
+      CHECK(addr + idx < t.tleb.events + t.tleb.size);
     } else {
-      // t.tleb_size is zero. We just flushed but we are still
+      // t.tleb.size is zero. We just flushed but we are still
       // getting mop events from the old trace.
       // This way we may loose some races, but probably we won't
       // because such situation happens only (?) inside our interceptors.
@@ -2035,30 +2063,25 @@ static void CallbackForIMG(IMG img, void *v) {
   }
 }
 
-//--------- Fini ---------- {{{1
-static void CallbackForFini(INT32 code, void *v) {
-  DumpEvent(THR_END, 0, 0, 0, 0);
-  ThreadSanitizerFini();
-  if (G_flags->error_exitcode && GetNumberOfFoundErrors() > 0) {
-    exit(G_flags->error_exitcode);
-  }
-}
-
-void CallbackForDetach(VOID *v) {
-  CHECK(g_attached_to_running_process);
-  Printf("ThreadSanitizerPin: detached\n");
-}
-
 //--------- ThreadSanitizerThread --------- {{{1
 static void *ThreadSanitizerThread(void *) {
-  while(true) {
-    sleep(1);
-    Printf("ThreadSanitizerThread\n");
+  while(1) {
+    vector<ThreadLocalEventBuffer *> vec;
+    {
+      G_stats->lock_sites[1]++;
+      ScopedLock lock(&g_main_ts_lock);
+      vec.swap(*g_tleb_queue);
+    }
+    for (size_t i = 0; i < vec.size(); i++) {
+      ThreadLocalEventBuffer *tleb = vec[i];
+      delete tleb;
+    }
   }
   return NULL;
 }
 static void StartThreadSanitizerThread() {
   if (G_flags->separate_analysis_thread == false) return;
+  g_tleb_queue = new vector<ThreadLocalEventBuffer*>;
 #ifdef __GNUC__
   // PIN docs say this is illegal, but this is an experiment anyway.
   pthread_t t;
@@ -2067,6 +2090,18 @@ static void StartThreadSanitizerThread() {
   // not implemented.
 #endif
 }
+
+//--------- Fini ---------- {{{1
+static void CallbackForFini(INT32 code, void *v) {
+  if (!G_flags->separate_analysis_thread) {
+    DumpEvent(THR_END, 0, 0, 0, 0);
+  }
+  ThreadSanitizerFini();
+  if (G_flags->error_exitcode && GetNumberOfFoundErrors() > 0) {
+    exit(G_flags->error_exitcode);
+  }
+}
+
 //--------- Main -------------------------- {{{1
 int main(INT32 argc, CHAR **argv) {
   PIN_Init(argc, argv);
@@ -2082,10 +2117,6 @@ int main(INT32 argc, CHAR **argv) {
   // skip until '-t something.so'.
   for (; first_param < argc && argv[first_param] != string("-t");
        first_param++) {
-    if (argv[first_param] == string("-pid")) {
-      g_attached_to_running_process = true;
-      Printf("INFO: ThreadSanitizerPin; attached mode\n");
-    }
   }
   first_param += 2;
   vector<string> args;
@@ -2107,7 +2138,6 @@ int main(INT32 argc, CHAR **argv) {
     IMG_AddInstrumentFunction(CallbackForIMG, 0);
     TRACE_AddInstrumentFunction(CallbackForTRACE, 0);
   }
-  //  PIN_AddDetachFunction(CallbackForDetach, 0);
 
   Report("ThreadSanitizerPin: "
          "pure-happens-before=%s fast-mode=%s ignore-in-dtor=%s\n",
