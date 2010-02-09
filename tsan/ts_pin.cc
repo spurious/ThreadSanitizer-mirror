@@ -377,6 +377,7 @@ static void TLEBFlushUnlocked(PinThread &t) {
 
 static void TLEBFlushLocked(PinThread &t) {
   if (G_flags->dry_run) {
+    t.tleb_size = 0;
     return;
   }
   G_stats->lock_sites[1]++;
@@ -440,10 +441,11 @@ static void TLEBIgnoreEnd(PinThread &t) {
 // Must be called from its thread (except for THR_END case)!
 static void DumpEvent(EventType type, int32_t tid, uintptr_t pc,
                       uintptr_t a, uintptr_t info) {
+  PinThread &t = g_pin_threads[tid];
   if (G_flags->dry_run) {
+    t.tleb_size = 0;
     return;
   }
-  PinThread &t = g_pin_threads[tid];
   G_stats->lock_sites[0]++;
   ScopedLock lock(&g_main_ts_lock);
   TLEBFlushUnlocked(t);
