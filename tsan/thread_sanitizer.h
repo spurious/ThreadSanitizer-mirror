@@ -89,6 +89,8 @@ struct FLAGS {
 
   intptr_t     literace_sampling;
 
+  bool         separate_analysis_thread;
+
   bool         report_races;
   bool         thread_coverage;
   bool         dump_events;

@@ -5783,6 +5783,8 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
 
   FindIntFlag("dry_run", 0, args, &G_flags->dry_run);
   FindBoolFlag("report_races", true, args, &G_flags->report_races);
+  FindBoolFlag("separate_analysis_thread", false, args,
+               &G_flags->separate_analysis_thread);
   FindBoolFlag("compress_cache_lines", false, args,
                &G_flags->compress_cache_lines);
   FindBoolFlag("unlock_on_mutex_destroy", true, args,

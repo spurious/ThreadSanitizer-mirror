@@ -170,7 +170,7 @@ size_t TraceInfo::id_counter_;
 
 //--------------- PinThread ----------------- {{{1
 const size_t kMaxMopsPerTrace = 64;
-const size_t kThreadLocksEventBufferSize = 256;
+const size_t kThreadLocksEventBufferSize = 2048;
 
 REG tls_reg;
 
@@ -355,15 +355,19 @@ static void TLEBFlushUnlocked(PinThread &t) {
       }
       i += n;
     } else if (event == THR_START) {
-      DumpEventInternal(THR_START, t.tid, 0, 0, t.parent_tid);
+      DumpEventInternal(THR_START, t.uniq_tid, 0, 0, t.parent_tid);
     } else if (event == TLEB_IGNORE_ALL_BEGIN){
       t.ignore_all_mops++;
     } else if (event == TLEB_IGNORE_ALL_END){
       t.ignore_all_mops--;
       CHECK(t.ignore_all_mops >= 0);
     } else {
-      // no other events in TLEB.
-      CHECK(0);
+      // all other events.
+      CHECK(event > NOOP && event < LAST_EVENT);
+      uintptr_t pc    = t.tleb[i++];
+      uintptr_t a     = t.tleb[i++];
+      uintptr_t info  = t.tleb[i++];
+      DumpEventInternal((EventType)event, t.uniq_tid, pc, a, info);
     }
     DCHECK(i <= t.tleb_size);
   }
@@ -437,19 +441,25 @@ static void TLEBIgnoreEnd(PinThread &t) {
   t.tleb[t.tleb_size++] = TLEB_IGNORE_ALL_END;
 }
 
+static void TLEBAddGenericEventAndFlush(PinThread &t,
+                                        EventType type, uintptr_t pc,
+                                        uintptr_t a, uintptr_t info) {
+  if (t.tleb_size + 4 > kThreadLocksEventBufferSize) {
+    TLEBFlushLocked(t);
+  }
+  DCHECK(type > NOOP && type < LAST_EVENT);
+  t.tleb[t.tleb_size++] = type;
+  t.tleb[t.tleb_size++] = pc;
+  t.tleb[t.tleb_size++] = a;
+  t.tleb[t.tleb_size++] = info;
+  TLEBFlushLocked(t);
+}
 
 // Must be called from its thread (except for THR_END case)!
 static void DumpEvent(EventType type, int32_t tid, uintptr_t pc,
                       uintptr_t a, uintptr_t info) {
   PinThread &t = g_pin_threads[tid];
-  if (G_flags->dry_run) {
-    t.tleb_size = 0;
-    return;
-  }
-  G_stats->lock_sites[0]++;
-  ScopedLock lock(&g_main_ts_lock);
-  TLEBFlushUnlocked(t);
-  DumpEventInternal(type, tid, pc, a, info);
+  TLEBAddGenericEventAndFlush(t, type, pc, a, info);
 }
 
 //--------- Wraping and relacing --------------- {{{1
@@ -2039,6 +2049,24 @@ void CallbackForDetach(VOID *v) {
   Printf("ThreadSanitizerPin: detached\n");
 }
 
+//--------- ThreadSanitizerThread --------- {{{1
+static void *ThreadSanitizerThread(void *) {
+  while(true) {
+    sleep(1);
+    Printf("ThreadSanitizerThread\n");
+  }
+  return NULL;
+}
+static void StartThreadSanitizerThread() {
+  if (G_flags->separate_analysis_thread == false) return;
+#ifdef __GNUC__
+  // PIN docs say this is illegal, but this is an experiment anyway.
+  pthread_t t;
+  pthread_create(&t, NULL, ThreadSanitizerThread, NULL);
+#else
+  // not implemented.
+#endif
+}
 //--------- Main -------------------------- {{{1
 int main(INT32 argc, CHAR **argv) {
   PIN_Init(argc, argv);
@@ -2071,12 +2099,14 @@ int main(INT32 argc, CHAR **argv) {
   ThreadSanitizerParseFlags(&args);
   ThreadSanitizerInit();
 
-  // Set up PIN callbacks.
-  PIN_AddThreadStartFunction(CallbackForThreadStart, 0);
-  //PIN_AddThreadFiniFunction(CallbackForThreadFini, 0);
-  PIN_AddFiniFunction(CallbackForFini, 0);
-  IMG_AddInstrumentFunction(CallbackForIMG, 0);
-  TRACE_AddInstrumentFunction(CallbackForTRACE, 0);
+  if (G_flags->dry_run < 2) {
+    // Set up PIN callbacks.
+    PIN_AddThreadStartFunction(CallbackForThreadStart, 0);
+    //PIN_AddThreadFiniFunction(CallbackForThreadFini, 0);
+    PIN_AddFiniFunction(CallbackForFini, 0);
+    IMG_AddInstrumentFunction(CallbackForIMG, 0);
+    TRACE_AddInstrumentFunction(CallbackForTRACE, 0);
+  }
   //  PIN_AddDetachFunction(CallbackForDetach, 0);
 
   Report("ThreadSanitizerPin: "
@@ -2087,6 +2117,7 @@ int main(INT32 argc, CHAR **argv) {
   if (DEBUG_MODE) {
     Report("INFO: Debug build\n");
   }
+  StartThreadSanitizerThread();
   // Fire!
   PIN_StartProgram();
   return 0;
