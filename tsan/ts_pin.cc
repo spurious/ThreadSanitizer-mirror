@@ -172,7 +172,6 @@ size_t TraceInfo::id_counter_;
 const size_t kMaxMopsPerTrace = 64;
 const size_t kThreadLocksEventBufferSize = 2048 * 2;
 
-
 REG tls_reg;
 
 struct PinThread {
@@ -183,14 +182,10 @@ struct PinThread {
   volatile long last_child_tid;
   THREADID     tid;
   THREADID     parent_tid;
-  size_t       last_malloc_size;
   pthread_t    my_ptid;
-  uintptr_t    cxa_guard;
-  int          in_cxa_guard;
   vector<StackFrame> shadow_stack;
   TraceInfo    *trace_info;
 };
-
 
 // Array of pin threads, indexed by pin's THREADID.
 static PinThread *g_pin_threads;
@@ -650,34 +645,20 @@ static void IgnoreAllEnd(THREADID tid, ADDRINT pc) {
 // We also need to ignore all accesses inside these two functions.
 
 static void Before_cxa_guard_acquire(THREADID tid, ADDRINT pc, ADDRINT guard) {
-//  PinThread &t = g_pin_threads[tid];
-//  Printf("T%d A+ %lx\n", tid, guard);
-//  t.cxa_guard = guard;
   IgnoreAllBegin(tid, pc);
 }
 
 static void After_cxa_guard_acquire(THREADID tid, ADDRINT pc, ADDRINT ret) {
   PinThread &t = g_pin_threads[tid];
-  // Printf("T%d A- %lx ret=%d\n", tid, t.cxa_guard, (int)ret);
   if (ret) {
     // Continue ignoring, it will end in __cxa_guard_release.
-    t.in_cxa_guard++;
   } else {
     // Stop ignoring, there will be no matching call to __cxa_guard_release.
     IgnoreAllEnd(tid, pc);
   }
 }
 
-static void Before_cxa_guard_release(THREADID tid, ADDRINT pc, ADDRINT guard) {
-  PinThread &t = g_pin_threads[tid];
-//  Printf("T%d R+ %lx\n", tid, t.cxa_guard);
-  CHECK(t.in_cxa_guard);
-  t.in_cxa_guard--;
-}
-
 static void After_cxa_guard_release(THREADID tid, ADDRINT pc) {
-//  ADDRINT guard = g_pin_threads[tid].cxa_guard;
-//  Printf("T%d R- %lx\n", tid, guard);
   IgnoreAllEnd(tid, pc);
 }
 
@@ -688,8 +669,6 @@ static uintptr_t Wrap_pthread_once(WRAP_PARAM4) {
   IgnoreAllEnd(tid, pc);
   return ret;
 }
-
-
 
 void TmpCallback1(THREADID tid, ADDRINT pc) {
   Printf("%s T%d %lx\n", __FUNCTION__, tid, pc);
@@ -1991,7 +1970,6 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   // __cxa_guard_acquire / __cxa_guard_release
   INSERT_BEFORE_1("__cxa_guard_acquire", Before_cxa_guard_acquire);
   INSERT_AFTER_1("__cxa_guard_acquire", After_cxa_guard_acquire);
-  INSERT_BEFORE_1("__cxa_guard_release", Before_cxa_guard_release);
   INSERT_AFTER_0("__cxa_guard_release", After_cxa_guard_release);
 
   INSERT_BEFORE_0("atexit", On_atexit);
