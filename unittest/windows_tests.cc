@@ -30,8 +30,18 @@
 */
 
 #include <gtest/gtest.h>
+#include "test_utils.h"
 
-// Just testing the google test integration.
-TEST(Test, TestName) {
-  printf("BOO\n");
+void DummyWorker() {
+}
+
+// Just spawn few threads with different stack sizes.
+TEST(NegativeTests, WindowsThreadStackSizeTest) {
+  int sizes[3] = {1 << 19, 1 << 21, 1 << 22};
+  for (int i = 0; i < 3; i++) {
+    HANDLE t = ::CreateThread(0, sizes[i],
+                             (LPTHREAD_START_ROUTINE)DummyWorker, 0, 0, 0);
+    CHECK(t > 0);
+    ::WaitForSingleObject(t, INFINITE);
+  }
 }
