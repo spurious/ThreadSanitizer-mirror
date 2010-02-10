@@ -244,7 +244,7 @@ struct ValgrindThread {
 
 // Array of VG_N_THREADS
 static ValgrindThread *g_valgrind_threads = 0;
-static map<pthread_t, int> *g_ptid_to_ts_tid;
+static map<uintptr_t, int> *g_ptid_to_ts_tid;
 
 // maintains a uniq thread id (first thread will have id=0)
 static int32_t g_uniq_thread_id_counter = 0;
@@ -329,7 +329,7 @@ void ts_post_clo_init(void) {
   ThreadSanitizerInit();
 
   g_valgrind_threads = new ValgrindThread[VG_N_THREADS];
-  g_ptid_to_ts_tid = new map<pthread_t, int>;
+  g_ptid_to_ts_tid = new map<uintptr_t, int>;
 }
 
 static inline void Put(EventType type, int32_t tid, uintptr_t pc,
