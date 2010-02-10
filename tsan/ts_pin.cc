@@ -2106,13 +2106,9 @@ static void CallbackForFini(INT32 code, void *v) {
 int main(INT32 argc, CHAR **argv) {
   PIN_Init(argc, argv);
   PIN_InitSymbols();
-  tls_reg = PIN_ClaimToolRegister();
-  CHECK(REG_valid(tls_reg));
-
   G_out = stderr;
 
   // Init ThreadSanitizer.
-  G_flags = new FLAGS;
   int first_param = 1;
   // skip until '-t something.so'.
   for (; first_param < argc && argv[first_param] != string("-t");
@@ -2127,17 +2123,26 @@ int main(INT32 argc, CHAR **argv) {
     if (param == "1") continue;
     args.push_back(param);
   }
+
+  G_flags = new FLAGS;
   ThreadSanitizerParseFlags(&args);
+
+  if (G_flags->dry_run >= 2) {
+    PIN_StartProgram();
+    return 0;
+  }
+
   ThreadSanitizerInit();
 
-  if (G_flags->dry_run < 2) {
-    // Set up PIN callbacks.
-    PIN_AddThreadStartFunction(CallbackForThreadStart, 0);
-    //PIN_AddThreadFiniFunction(CallbackForThreadFini, 0);
-    PIN_AddFiniFunction(CallbackForFini, 0);
-    IMG_AddInstrumentFunction(CallbackForIMG, 0);
-    TRACE_AddInstrumentFunction(CallbackForTRACE, 0);
-  }
+  tls_reg = PIN_ClaimToolRegister();
+  CHECK(REG_valid(tls_reg));
+
+  // Set up PIN callbacks.
+  PIN_AddThreadStartFunction(CallbackForThreadStart, 0);
+  //PIN_AddThreadFiniFunction(CallbackForThreadFini, 0);
+  PIN_AddFiniFunction(CallbackForFini, 0);
+  IMG_AddInstrumentFunction(CallbackForIMG, 0);
+  TRACE_AddInstrumentFunction(CallbackForTRACE, 0);
 
   Report("ThreadSanitizerPin: "
          "pure-happens-before=%s fast-mode=%s ignore-in-dtor=%s\n",
