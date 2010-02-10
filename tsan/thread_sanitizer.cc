@@ -5495,17 +5495,27 @@ class Detector {
   // THR_STACK_TOP
   void HandleThreadStackTop() {
     Thread *thr = Thread::Get(TID(e_->tid()));
-    uintptr_t stack_top = e_->a();
+    // Stack grows from bottom up.
+    uintptr_t sp = e_->a();
+    uintptr_t sp_min = 0, sp_max = 0;
     uintptr_t stack_size_if_known = e_->info();
-    CHECK(stack_size_if_known == 0);  // currently unused.
     HeapInfo heap_info;
-    if (G_heap_map->IsHeapMem(stack_top, &heap_info)){
+    if (stack_size_if_known) {
+      sp_min = sp - stack_size_if_known;
+      sp_max = sp;
+    } else if (G_heap_map->IsHeapMem(sp, &heap_info)){
       if (G_flags->verbosity >= 2) {
-        Printf("T%d %s: %p\n%s\n", e_->tid(), __FUNCTION__,  stack_top,
-             reports_.DescribeMemory(stack_top).c_str());
+        Printf("T%d %s: %p\n%s\n", e_->tid(), __FUNCTION__,  sp,
+             reports_.DescribeMemory(sp).c_str());
       }
-      ClearMemoryStateOnFree(heap_info.ptr, heap_info.ptr + heap_info.size);
-      thr->SetStack(heap_info.ptr, heap_info.ptr + heap_info.size);
+      sp_min = heap_info.ptr;
+      sp_max = heap_info.ptr + heap_info.size;
+    }
+    // Printf("T%d SP: %p [%p %p)\n", e_->tid(), sp, sp_min, sp_max);
+    if (sp_min < sp_max) {
+      CHECK((sp_max - sp_min) < 128 * 1024 * 1024); // stay sane.
+      ClearMemoryStateOnFree(sp_min, sp_max);
+      thr->SetStack(sp_min, sp_max);
     }
   }
 

@@ -187,6 +187,8 @@ struct PinThread {
   THREADID     tid;
   THREADID     parent_tid;
   pthread_t    my_ptid;
+  size_t       thread_stack_size_if_known;
+  size_t       last_child_stack_size_if_known;
   vector<StackFrame> shadow_stack;
   TraceInfo    *trace_info;
   int ignore_all_mops;  // if >0, ignore all mops.
@@ -779,19 +781,6 @@ static uintptr_t Wrap_pthread_create(WRAP_PARAM4) {
   return ret;
 }
 
-#ifdef _MSC_VER
-static void Before_CreateThread(THREADID tid, ADDRINT pc,
-                                ADDRINT arg1, ADDRINT arg2,
-                                ADDRINT fn, ADDRINT param,
-                                ADDRINT arg5, ADDRINT arg6) {
-  if (G_flags->verbosity >= 1) {
-    ShowPcAndSp(__FUNCTION__, tid, pc, 0);
-  }
-  HandleThreadCreateBefore(tid);
-}
-#endif
-
-
 void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
                             INT32 flags, void *v) {
   // We can not rely on PIN_GetParentTid() since it is broken on Windows.
@@ -830,6 +819,8 @@ void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
 
   if (has_parent && parent_tid != (THREADID)-1) {
     g_pin_threads[parent_tid].last_child_tid = tid;
+    t.thread_stack_size_if_known = 
+        g_pin_threads[parent_tid].last_child_stack_size_if_known;
   }
 
   // This is a lock-free (thread local) operation.
@@ -837,14 +828,19 @@ void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
 }
 
 static void Before_start_thread(THREADID tid, ADDRINT pc, ADDRINT sp) {
-  DumpEvent(THR_STACK_TOP, tid, pc, sp, 0);
+  PinThread &t = g_pin_threads[tid];
+  DumpEvent(THR_STACK_TOP, tid, pc, sp, t.thread_stack_size_if_known);
 }
 
 #ifdef _MSC_VER
-static void After_CreateThread(THREADID tid, ADDRINT pc, ADDRINT ret) {
+static uintptr_t Wrap_CreateThread(WRAP_PARAM6) {
+  PinThread &t = g_pin_threads[tid];
+  t.last_child_stack_size_if_known = arg1 ? arg1 : 1024 * 1024;
+
+  HandleThreadCreateBefore(tid);
+  uintptr_t ret = CALL_ME_INSIDE_WRAPPER_6();
   pthread_t child_ptid = ret;
   THREADID child_tid = HandleThreadCreateAfter(tid, child_ptid);
-
   {
     ScopedReentrantClientLock lock(__LINE__);
     if (g_win_handles_which_are_threads == NULL) {
@@ -852,20 +848,17 @@ static void After_CreateThread(THREADID tid, ADDRINT pc, ADDRINT ret) {
     }
     g_win_handles_which_are_threads->insert(child_ptid);
   }
-
-  if (G_flags->verbosity >= 1) {
-    ShowPcAndSp(__FUNCTION__, tid, pc, 0);
-    Printf("ret: %lx; child_tid=%d\n", ret, child_tid);
-  }
+  return ret;
 }
 
 static void Before_BaseThreadInitThunk(THREADID tid, ADDRINT pc, ADDRINT sp) {
-  size_t stack_size = 1024 * 1024; // TDO(kcc): how to compute the stack size?
-  Printf("T%d %s %p\n", tid, __FUNCTION__, sp);
-  DumpEvent(MALLOC, tid, pc, sp - stack_size, stack_size);
+  PinThread &t = g_pin_threads[tid];
+  size_t stack_size = t.thread_stack_size_if_known;
+  Printf("T%d %s %p %p\n", tid, __FUNCTION__, sp, stack_size);
+  DumpEvent(THR_STACK_TOP, tid, pc, sp, stack_size);
 }
+#endif  // _MSC_VER
 
-#endif
 void CallbackForThreadFini(THREADID tid, const CONTEXT *ctxt,
                           INT32 code, void *v) {
   // We can not DumpEvent here,
@@ -1956,14 +1949,11 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
 
 
 #ifdef _MSC_VER
-  INSERT_BEFORE_6("CreateThread", Before_CreateThread);
-  INSERT_AFTER_1("CreateThread", After_CreateThread);
-
+  WrapStdCallFunc6(rtn, "CreateThread", (AFUNPTR)Wrap_CreateThread);
 
   INSERT_FN(IPOINT_BEFORE, "BaseThreadInitThunk",
             Before_BaseThreadInitThunk,
             IARG_REG_VALUE, REG_STACK_PTR, IARG_END);
-
 
   WrapStdCallFunc1(rtn, "RtlInitializeCriticalSection",
                              (AFUNPTR)(Wrap_RtlInitializeCriticalSection));
