@@ -2132,6 +2132,11 @@ int main(INT32 argc, CHAR **argv) {
     return 0;
   }
 
+  if (!G_flags->log_file.empty()) {
+    G_out = fopen(G_flags->log_file.c_str(), "w");
+    CHECK(G_out);
+  }
+
   ThreadSanitizerInit();
 
   tls_reg = PIN_ClaimToolRegister();
