@@ -1396,6 +1396,11 @@ class Mask {
 // -------- Segment -------------------{{{1
 class Segment {
  public:
+  // for debugging...
+  static bool ProfileSeg(SID sid) {
+    // return (sid.raw() % (1 << 14)) == 0;
+    return false;
+  }
 
   // non-static methods
 
@@ -1422,10 +1427,10 @@ class Segment {
       // This VTS may not be empty due to ForgetAllState().
       VTS::Delete(seg->vts_);
 
-      if (DEBUG_MODE && G_flags->debug_level >= 3 &&
-          (n_segments_ % (1024 * 128)) == 0) {
+      if (ProfileSeg(SID(n_segments_))) {
        Printf("Segment: allocated SID %d\n", n_segments_);
       }
+
       sid = SID(n_segments_);
       n_segments_++;
     } else {
@@ -1437,6 +1442,9 @@ class Segment {
       DCHECK(!seg->vts());
       DCHECK(!seg->tid().valid());
       CHECK(sid.valid());
+      if (ProfileSeg(sid)) {
+       Printf("Segment: reused SID %d\n", sid.raw());
+      }
     }
     DCHECK(seg);
     seg->ref_count_ = 0;
@@ -1498,6 +1506,9 @@ class Segment {
         && reusable_sids_->empty()) {
       recycled_sids_->swap(*reusable_sids_);
     }
+    if (ProfileSeg(sid)) {
+      Printf("Segment: recycled SID %d\n", sid.raw());
+    }
     return true;
   }
 
@@ -1505,15 +1516,17 @@ class Segment {
 
   static void INLINE Ref(SID sid, const char *where) {
     Segment *seg = GetInternal(sid);
-    if (DEBUG_MODE && G_flags->debug_level >= 3)
+    if (ProfileSeg(sid)) {
       Printf("SegRef   : %d ref=%d %s\n", sid.raw(), seg->ref_count_, where);
+    }
     DCHECK(seg->ref_count_ >= 0);
     seg->ref_count_++;
   }
   static void INLINE Unref(SID sid, const char *where) {
     Segment *seg = GetInternal(sid);
-    if (DEBUG_MODE && G_flags->debug_level >= 3)
+    if (ProfileSeg(sid)) {
       Printf("SegUnref : %d ref=%d %s\n", sid.raw(), seg->ref_count_, where);
+    }
     DCHECK(seg->ref_count_ > 0);
     seg->ref_count_--;
     if (seg->ref_count_ == 0) {
@@ -1573,6 +1586,24 @@ class Segment {
   }
 
   static int32_t NumberOfSegments() { return n_segments_; }
+
+  static void ShowSegmentStats() {
+    Printf("Segment::ShowSegmentStats:\n");
+    Printf("n_segments_: %d\n", n_segments_);
+    Printf("reusable_sids_: %ld\n", reusable_sids_->size());
+    Printf("recycled_sids_: %ld\n", recycled_sids_->size());
+    map<int, int> ref_to_freq_map;
+    for (int i = 1; i < n_segments_; i++) {
+      Segment *seg = GetInternal(SID(i));
+      int refcount = seg->ref_count_;
+      if (refcount > 10) refcount = 10;
+      ref_to_freq_map[refcount]++;
+    }
+    for (map<int, int>::iterator it = ref_to_freq_map.begin(); 
+         it != ref_to_freq_map.end(); ++it) {
+      Printf("ref %d => freq %d\n", it->first, it->second);
+    }
+  }
 
   static void InitClassMembers() {
     CHECK(sizeof(Segment) ==
@@ -2457,6 +2488,11 @@ class ShadowValue {
   bool operator != (const ShadowValue &sval) const {
     return !(*this == sval);
   }
+  bool operator <  (const ShadowValue &sval) const {
+    if (rd_ssid_ < sval.rd_ssid_) return true;
+    if (rd_ssid_ == sval.rd_ssid_ && wr_ssid_ < sval.wr_ssid_) return true;
+    return false;
+  }
 
   string ToString() const {
     char buff[1000];
@@ -2715,27 +2751,56 @@ class Cache {
 
   void PrintStorageStats() {
     if (!G_flags->show_stats) return;
+    set<ShadowValue> all_svals;
     map<size_t, int> sizes;
     for (Map::iterator it = storage_.begin(); it != storage_.end(); ++it) {
       CacheLine *line = it->second;
-      uintptr_t cli = ComputeCacheLineIndexInCache(line->tag());
-      if (lines_[cli] == line) {
+      // uintptr_t cli = ComputeCacheLineIndexInCache(line->tag());
+      //if (lines_[cli] == line) {
         // this line is in cache -- ignore it.
-        continue;
-      }
-      set<int64_t> s;
+      //  continue;
+      //}
+      set<ShadowValue> s;
       for (int i = 0; i < 64; i++) {
         if (line->has_shadow_value().Get(i)) {
-          int64_t sval = *reinterpret_cast<int64_t*>(line->GetValuePointer(i));
+          ShadowValue sval = *(line->GetValuePointer(i));
           s.insert(sval);
+          all_svals.insert(sval);
         }
       }
-      sizes[s.size()]++;
+      size_t size = s.size();
+      if (size > 10) size = 10;
+      sizes[size]++;
     }
     Printf("Storage sizes: %ld\n", storage_.size());
     for (size_t size = 0; size <= 64; size++) {
       if (sizes[size]) {
         Printf("  %ld => %d\n", size, sizes[size]);
+      }
+    }
+    Printf("Different svals: %ld\n", all_svals.size());
+    set <SSID> all_ssids;
+    for (set<ShadowValue>::iterator it = all_svals.begin(); it != all_svals.end(); ++it) {
+      ShadowValue sval = *it;
+      for (int i = 0; i < 2; i++) {
+        SSID ssid = i ? sval.rd_ssid() : sval.wr_ssid();
+        all_ssids.insert(ssid);
+      }
+    }
+    Printf("Different ssids: %ld\n", all_ssids.size());
+    set <SID> all_sids;
+    for (set<SSID>::iterator it = all_ssids.begin(); it != all_ssids.end(); ++it) {
+      int size = SegmentSet::Size(*it);
+      for (int i = 0; i < size; i++) {
+        SID sid = SegmentSet::GetSID(*it, i, __LINE__);
+        all_sids.insert(sid);
+      }
+    }
+    Printf("Different sids: %ld\n", all_sids.size());
+    for (int i = 1; i < Segment::NumberOfSegments(); i++) {
+      if (Segment::ProfileSeg(SID(i)) && all_sids.count(SID(i)) == 0) {
+        // Printf("Segment SID %d: missing in storage; ref=%d\n", i,
+        // Segment::Get(SID(i))->ref_count());
       }
     }
   }
@@ -4648,6 +4713,10 @@ class Detector {
   void FlushIfNeeded() {
     // Are we out of segment IDs?
     if (Segment::NumberOfSegments() > ((kMaxSID * 15) / 16)) {
+      if (DEBUG_MODE) {
+        G_cache->PrintStorageStats();
+        Segment::ShowSegmentStats();
+      }
       ForgetAllStateAndStartOver("ThreadSanitizer has run out of segment IDs");
     }
     // Are we out of memory?
@@ -5231,7 +5300,6 @@ class Detector {
       // new_sval.set_racey(true);
       cache_line->racey().Set(offset);
     }
-
 
     // Ref/Unref segments
     RefAndUnrefTwoSegSetPairsIfDifferent(new_sval.rd_ssid(),
