@@ -1680,6 +1680,7 @@ class SegmentSet {
     return res;
   }
 
+  int ref_count() const { return ref_count_; }
 
   static void AssertLive(SSID ssid, int line) {
     DCHECK(ssid.valid());
@@ -5204,7 +5205,6 @@ class Detector {
     if (UNLIKELY(old_sval.IsNew())) {
       // We see this memory for the first time.
       DCHECK(cur_sid.valid());
-      Segment::Ref(cur_sid, "MSM (new mem)");
       if (is_w) {
         new_sval.set(SSID(0), SSID(cur_sid));
       } else {
@@ -5307,9 +5307,29 @@ class Detector {
                                      new_sval.wr_ssid(),
                                      old_sval.wr_ssid());
 
+    if (DEBUG_MODE) {
+      // check that the SSIDs/SIDs in the new sval have sane ref counters.
+      CHECK(!new_sval.wr_ssid().IsEmpty() || !new_sval.rd_ssid().IsEmpty());
+      for (int i = 0; i < 2; i++) {
+        SSID ssid = i ? new_sval.rd_ssid() : new_sval.wr_ssid();
+        if (ssid.IsEmpty()) continue;
+        if (ssid.IsSingleton()) {
+          // singleton segment should have ref count > 0.
+          SID sid = ssid.Singleton();
+          Segment *seg = Segment::Get(sid);
+          CHECK(seg->ref_count() > 0);
+          if (sid == thr->sid()) {
+            // if this is the current seg, ref count should be > 1.
+            CHECK(seg->ref_count() > 1);
+          }
+        } else {
+          SegmentSet *sset = SegmentSet::Get(ssid);
+          CHECK(sset->ref_count() > 0);
+        }
+      }
+    }
+
     *sval_p = new_sval;
-
-
     return new_sval;
   }
 
