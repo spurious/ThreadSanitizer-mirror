@@ -3038,7 +3038,7 @@ static void PublishRange(uintptr_t a, uintptr_t b, VTS *vts) {
 
 // -------- Clear Memory State ------------------ {{{1
 
-static void INLINE UnrefSegmentsInMemoryRange(uintptr_t a, uintptr_t b,
+static void NOINLINE UnrefSegmentsInMemoryRange(uintptr_t a, uintptr_t b,
                                                 Mask mask, CacheLine *line) {
   DCHECK(!mask.Empty());
   for (uintptr_t x = a; x < b; x++) {  // slow?
@@ -3073,7 +3073,7 @@ void INLINE ClearMemoryStateInOneLine(uintptr_t addr,
   }
   Mask old_used = line->ClearRangeAndReturnOldUsed(beg, end);
   if (line->IsShared()) {
-    if (UNLIKELY(!is_new_mem && !old_used.Empty())) {
+    if (UNLIKELY(!old_used.Empty())) {
       UnrefSegmentsInMemoryRange(beg, end, old_used, line);
     }
   } else {
