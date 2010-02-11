@@ -7013,7 +7013,7 @@ void Run() {
 REGISTER_TEST2(Run, 513, PERFORMANCE | PRINT_STATS | EXCLUDE_FROM_ALL)
 }  // namespace test513
 
-namespace ThreadChainTest{  // {{{1 Reg test for thread creation
+namespace ThreadChainTest {  // {{{1 Reg test for thread creation
 void Thread1() { }
 void Thread2() {
   MyThread t(Thread1);
@@ -7035,6 +7035,12 @@ TEST(RegTests, ThreadChainTest) {
   Thread4();
 }
 
+}  // namespace
+
+namespace SimpleDeathTest {  // {{{1 Make sure that the tool handles death tests correctly
+TEST(DeathTests, SimpleDeathTest) {
+  ASSERT_DEBUG_DEATH(CHECK(false), "");
+}
 }  // namespace
 
 // End {{{1
