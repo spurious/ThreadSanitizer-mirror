@@ -111,6 +111,7 @@ public class ThreadSanitizerTest {
 
   class ThreadRunner {
     protected int shared_var = 0;
+    protected int shared_var2 = 0;
     protected Integer shared_obj;
 
     // Virtual functions. Overrride some of them in your test.
@@ -250,6 +251,14 @@ public class ThreadSanitizerTest {
     new ThreadRunner2() {
       public void thread1() { synchronized(this) { shared_var++; } }
       public void thread2() { synchronized(this) { shared_var++; } }
+    };
+  }
+
+  public void testNegative2() {
+    describe("Correct code: distinct fields of the same object are written");
+    new ThreadRunner2() {
+      public void thread1() { shared_var = 1; }
+      public void thread2() { shared_var2 = 2; }
     };
   }
 
