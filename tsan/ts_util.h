@@ -180,10 +180,9 @@ typedef unsigned __int32 uint32_t;
 typedef unsigned __int64 uint64_t;
 
 typedef int pthread_t;
-
+int getpid();
 #define snprintf _snprintf
 #define strtoll strtol  // TODO(kcc): _MSC_VER hmm...
-static int getpid() { return 12345; }
 #define UNLIKELY(x) (x)  // TODO(kcc): how to say this in MSVC?
 #define LIKELY(x)   (x)
 

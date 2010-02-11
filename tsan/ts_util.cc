@@ -32,6 +32,20 @@
 #include "ts_lock.h"
 #include <stdarg.h>
 
+
+#if defined(_MSC_VER)
+# ifdef TS_PIN
+#  include "pin.H"
+# endif
+namespace WINDOWS
+{
+// This is the way of including winows.h recommended by PIN docs.
+#include<Windows.h>
+}
+int getpid() { return WINDOWS::GetCurrentProcessId(); }
+#endif
+
+
 Stats *G_stats;
 
 bool GetNameAndOffsetOfGlobalObject(uintptr_t addr,
