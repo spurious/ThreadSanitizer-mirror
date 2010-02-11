@@ -754,13 +754,12 @@ TEST(PositiveTests, CyclicBarrierTest) {
 #endif  // NO_BARRIER
 }  // namespace
 
-namespace SignalsAndMallocTest {  // {{{1
+namespace SignalsAndMallocTestWithMutex {  // {{{1
 // Regression test for
 // http://code.google.com/p/data-race-test/issues/detail?id=13 .
 // Make sure that locking events are handled in signal handlers.
 //
-// For some reason, invoking the signal handlers cause deadlocks on Mac OS.
-// TODO(glider): fix or make an appropriate test for OS X.
+// For some reason, invoking the signal handlers causes deadlocks on Mac OS.
 #ifndef __APPLE__
 int     GLOB = 0;
 Mutex mu;
@@ -797,7 +796,7 @@ void Worker() {
   }
 }
 
-TEST(Signals, SignalsAndMallocTest) {
+TEST(Signals, SignalsAndMallocTestWithMutex) {
   EnableSigprof();
   MyThreadArray t(Worker, Worker, Worker);
   t.Start();
@@ -810,10 +809,6 @@ TEST(Signals, SignalsAndMallocTest) {
 namespace SignalsAndWaitTest {  // {{{1
 // Regression test for
 // http://code.google.com/p/data-race-test/issues/detail?id=14.
-//
-// For some reason, invoking the signal handlers cause deadlocks on Mac OS.
-// TODO(glider): fix or make an appropriate test for OS X.
-#ifndef __APPLE__
 static void SignalHandler(int, siginfo_t*, void*) {
   ANNOTATE_HAPPENS_AFTER((void*)0x1234);
 }
@@ -849,5 +844,52 @@ TEST(Signals, SignalsAndWaitTest) {
   t.Start();
   t.Join();
 }
-#endif
 }  // namespace
+
+namespace SignalsAndMallocTestWithSpinlock {  // {{{1
+// Regression test for
+// http://code.google.com/p/data-race-test/issues/detail?id=13 .
+// Make sure that locking events are handled in signal handlers.
+int     GLOB = 0;
+SpinLock sl;
+
+void SignalHandler(int, siginfo_t*, void*) {
+  sl.Lock();
+  GLOB++;
+  sl.Unlock();
+}
+
+static void EnableSigprof() {
+  struct sigaction sa;
+  sa.sa_sigaction = SignalHandler;
+  sa.sa_flags = SA_RESTART | SA_SIGINFO;
+  sigemptyset(&sa.sa_mask);
+  if (sigaction(SIGPROF, &sa, NULL) != 0) {
+    perror("sigaction");
+    abort();
+  }
+  struct itimerval timer;
+  timer.it_interval.tv_sec = 0;
+  timer.it_interval.tv_usec = 1000000 / 10000;
+  timer.it_value = timer.it_interval;
+  if (setitimer(ITIMER_PROF, &timer, 0) != 0) {
+    perror("setitimer");
+    abort();
+  }
+}
+
+void Worker() {
+  for (int i = 0; i < 100000; i++) {
+    void *x = malloc((i % 64) + 1);
+    free (x);
+  }
+}
+
+TEST(Signals, SignalsAndMallocTestWithSpinlock) {
+  EnableSigprof();
+  MyThreadArray t(Worker, Worker, Worker);
+  t.Start();
+  t.Join();
+  printf("\tGLOB=%d\n", GLOB);
+}
+}  // namespace;
