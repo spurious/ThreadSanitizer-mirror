@@ -372,11 +372,8 @@ WRAP_POSIX_MEMALIGN(NONE, posix_memalign);
 // Looks like munmap may be used to free page-sized subregions of memory
 // returned my mmap. This could be nasty. Need investigation.
 
-#ifndef VGO_darwin
-// TODO(glider): we should handle mmap on Darwin correctly.
 WRAP_MMAP(VG_Z_LIBC_SONAME, mmap);
 WRAP_MMAP(NONE, mmap);
-#endif
 
 #define WRAP_FREE(soname, fnname) \
   void I_WRAP_SONAME_FNNAME_ZU(soname,fnname) (void *ptr); \
