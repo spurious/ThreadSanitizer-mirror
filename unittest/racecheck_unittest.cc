@@ -3086,7 +3086,7 @@ REGISTER_TEST(Run, 70)
 
 
 
-namespace NeagativeTests_Strlen {  // {{{1
+namespace NegativeTests_Strlen {  // {{{1
 // This test is a reproducer for a benign race in strlen (as well as index, etc).
 // Some implementations of strlen may read up to 7 bytes past the end of the string
 // thus touching memory which may not belong to this string.
