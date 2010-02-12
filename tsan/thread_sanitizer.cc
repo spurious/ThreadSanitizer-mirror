@@ -2725,7 +2725,7 @@ class Cache {
   }
 
   // HOT
-  INLINE CacheLine *GetLine(uintptr_t a, int call_site) {
+  INLINE CacheLine *GetLine(uintptr_t a, bool create_new_if_need, int call_site) {
     uintptr_t tag = CacheLine::ComputeTag(a);
     DCHECK(tag <= a);
     DCHECK((uint64_t)tag + CacheLine::kLineSize > (uint64_t)a);
@@ -2734,9 +2734,16 @@ class Cache {
     if (LIKELY(res && res->tag() == tag)) {
       G_stats->cache_fast_get++;
     } else {
-      res = WriteBackAndFetch(tag, cli);
+      res = WriteBackAndFetch(tag, cli, create_new_if_need);
     }
     return res;
+  }
+
+  INLINE CacheLine *GetLineOrCreateNew(uintptr_t a, int call_site) {
+    return GetLine(a, true, call_site);
+  }
+  INLINE CacheLine *GetLineIfExists(uintptr_t a, int call_site) {
+    return GetLine(a, false, call_site);
   }
 
   void ForgetAllState() {
@@ -2811,11 +2818,22 @@ class Cache {
     return (addr >> CacheLine::kLineSizeBits) & (kNumLines - 1);
   }
 
-  NOINLINE CacheLine *WriteBackAndFetch(uintptr_t tag, uintptr_t cli) {
+  NOINLINE CacheLine *WriteBackAndFetch(uintptr_t tag, uintptr_t cli,
+                                        bool create_new_if_need) {
     ScopedMallocCostCenter cc("Cache::WriteBackAndFetch");
     CacheLine *res;
     size_t old_storage_size = storage_.size();
-    CacheLine **line_for_this_tag = &storage_[tag];
+    CacheLine **line_for_this_tag = NULL;
+    if (create_new_if_need) {
+      line_for_this_tag = &storage_[tag];
+    } else {
+      Map::iterator it = storage_.find(tag);
+      if (it == storage_.end()) {
+        return NULL;
+      }
+      line_for_this_tag = &(it->second);
+    }
+    CHECK(line_for_this_tag);
     CacheLine *old_line = lines_[cli];
     if (*line_for_this_tag == NULL) {
       // creating a new cache line
@@ -2990,7 +3008,7 @@ static void PublishRangeInOneLine(uintptr_t addr, uintptr_t a,
   DCHECK(a < b);
   uintptr_t tag = CacheLine::ComputeTag(addr);
   CHECK(CheckSanityOfPublishedMemory(tag, __LINE__));
-  CacheLine *line = G_cache->GetLine(tag, __LINE__);
+  CacheLine *line = G_cache->GetLineOrCreateNew(tag, __LINE__);
 
   if (1 || line->published().GetRange(a, b)) {
     Mask mask(0);
@@ -3061,8 +3079,9 @@ static void NOINLINE UnrefSegmentsInMemoryRange(uintptr_t a, uintptr_t b,
 void INLINE ClearMemoryStateInOneLine(uintptr_t addr,
                                       uintptr_t beg, uintptr_t end,
                                       bool is_new_mem) {
-  CacheLine *line = G_cache->GetLine(addr, __LINE__);
-  DCHECK(line);
+  CacheLine *line = G_cache->GetLineIfExists(addr, __LINE__);
+  // CacheLine *line = G_cache->GetLineOrCreateNew(addr, __LINE__);
+  if (!line) return;
   DCHECK(beg < CacheLine::kLineSize);
   DCHECK(end <= CacheLine::kLineSize);
   DCHECK(beg < end);
@@ -3132,7 +3151,7 @@ void INLINE ClearMemoryState(uintptr_t a, uintptr_t b, bool is_new_mem) {
     // Check that we've cleared it. Slow!
     for (uintptr_t x = a; x < b; x++) {
       uintptr_t off = CacheLine::ComputeOffset(x);
-      CacheLine *line = G_cache->GetLine(x, __LINE__);
+      CacheLine *line = G_cache->GetLineOrCreateNew(x, __LINE__);
       CHECK(!line->has_shadow_value().Get(off));
     }
   }
@@ -3992,7 +4011,7 @@ Thread::CyclicBarrierMap   *Thread::cyclic_barrier_map_;
 static void UnpublishRange(uintptr_t a, uintptr_t b, Thread *thread) {
   CHECK(a < b);
   for (uintptr_t x = a; x < b; x++) {
-    CacheLine *line = G_cache->GetLine(x, __LINE__);
+    CacheLine *line = G_cache->GetLineOrCreateNew(x, __LINE__);
     CHECK(line);
     uintptr_t off = CacheLine::ComputeOffset(x);
     if (!line->has_shadow_value().Get(off)) continue;
@@ -5127,7 +5146,7 @@ class Detector {
   void HandleTraceMem() {
     TID tid = cur_tid_;
     uintptr_t a = e_->a();
-    CacheLine *cache_line = G_cache->GetLine(a, __LINE__);
+    CacheLine *cache_line = G_cache->GetLineOrCreateNew(a, __LINE__);
     uintptr_t offset = CacheLine::ComputeOffset(a);
     cache_line->traced().Set(offset);
     if (G_flags->verbosity >= 2) e_->Print();
@@ -5409,7 +5428,7 @@ class Detector {
               b = a + size,
               offset = CacheLine::ComputeOffset(a);
 
-    CacheLine *cache_line = G_cache->GetLine(addr, __LINE__);
+    CacheLine *cache_line = G_cache->GetLineOrCreateNew(addr, __LINE__);
 
     bool tracing = false;
     if (UNLIKELY(G_flags->trace_level >= 1)) {
@@ -5451,7 +5470,7 @@ class Detector {
       // slow case
       for (uintptr_t x = a; x < b; x++) {
         offset = CacheLine::ComputeOffset(x);
-        cache_line = G_cache->GetLine(x, __LINE__);
+        cache_line = G_cache->GetLineOrCreateNew(x, __LINE__);
         if (FastModeCheckAndUpdateCreatorTid(cache_line, tid, tracing)) {
           cache_line->fast_mode_used().Set(offset);
           continue;

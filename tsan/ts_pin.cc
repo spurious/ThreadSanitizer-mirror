@@ -339,7 +339,7 @@ static void TLEBFlushUnlocked(PinThread &t, ThreadLocalEventBuffer &tleb) {
       ThreadSanitizerHandleRtnCall(t.uniq_tid, call_pc, target_pc);
     } else if (event == SBLOCK_ENTER){
       bool do_this_trace = ((G_flags->literace_sampling == 0 ||
-                             !LiteRaceSkipTrace(t.tid, t.trace_info->id(),
+                             !LiteRaceSkipTrace(t.uniq_tid, t.trace_info->id(),
                                                 G_flags->literace_sampling)));
       if (t.ignore_all_mops)
         do_this_trace = false;
@@ -363,7 +363,8 @@ static void TLEBFlushUnlocked(PinThread &t, ThreadLocalEventBuffer &tleb) {
       }
       i += n;
     } else if (event == THR_START) {
-      DumpEventInternal(THR_START, t.uniq_tid, 0, 0, t.parent_tid);
+      DumpEventInternal(THR_START, t.uniq_tid, 0, 0,
+                        g_pin_threads[t.parent_tid].uniq_tid);
     } else if (event == TLEB_IGNORE_ALL_BEGIN){
       t.ignore_all_mops++;
     } else if (event == TLEB_IGNORE_ALL_END){
@@ -819,7 +820,7 @@ void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
 
   if (has_parent && parent_tid != (THREADID)-1) {
     g_pin_threads[parent_tid].last_child_tid = tid;
-    t.thread_stack_size_if_known = 
+    t.thread_stack_size_if_known =
         g_pin_threads[parent_tid].last_child_stack_size_if_known;
   }
 
@@ -854,7 +855,7 @@ static uintptr_t Wrap_CreateThread(WRAP_PARAM6) {
 static void Before_BaseThreadInitThunk(THREADID tid, ADDRINT pc, ADDRINT sp) {
   PinThread &t = g_pin_threads[tid];
   size_t stack_size = t.thread_stack_size_if_known;
-  Printf("T%d %s %p %p\n", tid, __FUNCTION__, sp, stack_size);
+  // Printf("T%d %s %p %p\n", tid, __FUNCTION__, sp, stack_size);
   DumpEvent(THR_STACK_TOP, tid, pc, sp, stack_size);
 }
 #endif  // _MSC_VER
@@ -865,7 +866,7 @@ void CallbackForThreadFini(THREADID tid, const CONTEXT *ctxt,
   // due to possible deadlock with PIN's internal lock.
 }
 
-static THREADID HandleThreadJoinAfter(THREADID tid, pthread_t joined_ptid) {
+static void HandleThreadJoinAfter(THREADID tid, pthread_t joined_ptid) {
   THREADID joined_tid = 0;
   for (joined_tid = 1; joined_tid < kMaxThreads; joined_tid++) {
     if (g_pin_threads[joined_tid].my_ptid == joined_ptid)
@@ -874,13 +875,14 @@ static THREADID HandleThreadJoinAfter(THREADID tid, pthread_t joined_ptid) {
   CHECK(joined_tid < kMaxThreads);
   CHECK(joined_tid > 0);
   g_pin_threads[joined_tid].my_ptid = 0;
+  int joined_uniq_tid = g_pin_threads[joined_tid].uniq_tid;
 
   if (G_flags->debug_level >= 2) {
-    Printf("T%d JoinAfter   parent=%d child=%d\n", tid, tid, joined_tid);
+    Printf("T%d JoinAfter   parent=%d child=%d (uniq=%d)\n", tid, tid,
+           joined_tid, joined_uniq_tid);
   }
   DumpEvent(THR_END, joined_tid, 0, 0, 0);
-  DumpEvent(THR_JOIN_AFTER, tid, 0, joined_tid, 0);
-  return joined_tid;
+  DumpEvent(THR_JOIN_AFTER, tid, 0, joined_uniq_tid, 0);
 }
 
 static uintptr_t Wrap_pthread_join(WRAP_PARAM4) {
@@ -1132,7 +1134,6 @@ uintptr_t Wrap_free(WRAP_PARAM4) {
 //-------- Routines and stack ---------------------- {{{2
 static void UpdateCallStack(PinThread &t, ADDRINT sp) {
   while (t.shadow_stack.size() > 0 && sp >= t.shadow_stack.back().sp) {
-    //ThreadSanitizerHandleRtnExit(t.uniq_tid);
     TLEBAddRtnExit(t);
     size_t size = t.shadow_stack.size();
     CHECK(size < 1000000);  // stay sane.
@@ -1155,7 +1156,6 @@ void InsertBeforeEvent_Call(THREADID tid, ADDRINT pc, ADDRINT target, ADDRINT sp
   PinThread &t = g_pin_threads[tid];
   DebugOnlyShowPcAndSp(__FUNCTION__, t.tid, pc, sp);
   UpdateCallStack(t, sp);
-  // ThreadSanitizerHandleRtnCall(t.uniq_tid, pc, target);
   TLEBAddRtnCall(t, pc, target);
   if (t.shadow_stack.size() > 0) {
     t.shadow_stack.back().pc = pc;
