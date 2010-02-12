@@ -7041,7 +7041,11 @@ TEST(RegTests, ThreadChainTest) {
 }  // namespace
 
 namespace SimpleDeathTest {  // {{{1 Make sure that the tool handles death tests correctly
+#ifdef WIN32
+TEST(DeathTests, DISABLED_SimpleDeathTest) {
+#else
 TEST(DeathTests, SimpleDeathTest) {
+#endif
   ASSERT_DEBUG_DEATH(CHECK(false), "");
 }
 }  // namespace
