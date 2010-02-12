@@ -756,7 +756,8 @@ TEST(PositiveTests, CyclicBarrierTest) {
 
 namespace Signals {  // {{{1
 
-typedef void (*Sigaction)(int, struct __siginfo *, void *);
+typedef void (*Sigaction)(int, siginfo_t *, void *);
+
 int     GLOB = 0;
 
 static void EnableSigprof(Sigaction SignalHandler) {
