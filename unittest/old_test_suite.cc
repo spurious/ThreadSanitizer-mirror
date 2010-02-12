@@ -36,6 +36,8 @@
 
 Mutex printf_mu;
 std::map<int, Test> *TheMapOfTests = NULL;
+std::vector<int> tests_to_run;
+std::set<int> tests_to_exclude;
 
 #ifndef MAIN_INIT_ACTION
 #define MAIN_INIT_ACTION
@@ -61,13 +63,22 @@ class RandomGenerator {
   size_t operator( )(size_t n) const { return rand() % n; }
 };
 
+TEST(NonGtestTests, All) {
+  for (size_t i = 0; i < tests_to_run.size(); i++) {
+    int test_id = tests_to_run[i];
+    if (tests_to_exclude.count(test_id) > 0) {
+      printf("test%i was excluded\n", test_id);
+    } else {
+      (*TheMapOfTests)[test_id].Run();
+    }
+  }
+}
+
 int main(int argc, char** argv) {
   MAIN_INIT_ACTION;
   testing::InitGoogleTest(&argc, argv);
   printf("FLAGS [phb=%i, fm=%i]\n", Tsan_PureHappensBefore(), Tsan_FastMode());
 
-  std::vector<int> tests_to_run;
-  std::set<int> tests_to_exclude;
   int shuffle_seed = 0;  // non-zero to shuffle.
 
   int id = 1;
@@ -129,14 +140,6 @@ int main(int argc, char** argv) {
     random_shuffle(tests_to_run.begin(), tests_to_run.end(), rnd);
   }
 
-  for (size_t i = 0; i < tests_to_run.size(); i++) {
-    int test_id = tests_to_run[i];
-    if (tests_to_exclude.count(test_id) > 0) {
-      printf("test%i was excluded\n", test_id);
-    } else {
-      (*TheMapOfTests)[test_id].Run();
-    }
-  }
 
   return RUN_ALL_TESTS();
 }
