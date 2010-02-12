@@ -3137,6 +3137,14 @@ TEST(NegativeTests, StrlenAndFriends) {
   t1.Join();
   t2.Join();
   printf("\tstrX=%s; strY=%s\n", str, str+5);
+
+  char foo[8] = {10, 20, 127, 128, 250, -50, 0};
+  CHECK(strchr(foo, 10) != 0);
+  CHECK(strchr(foo, 250) != 0);
+  CHECK(index(foo, 250) != 0);
+  CHECK(index(foo, -50) != 0);
+  CHECK(index(foo, -60) == 0);
+  // TODO(kcc): add more tests to check that interceptors are correct.
 }
 }  // namespace test71
 
