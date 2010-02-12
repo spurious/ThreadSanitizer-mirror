@@ -192,6 +192,7 @@ struct PinThread {
   vector<StackFrame> shadow_stack;
   TraceInfo    *trace_info;
   int ignore_all_mops;  // if >0, ignore all mops.
+  int ignore_lock_events;  // if > 0, ignore all lock/unlock events.
 };
 
 // Array of pin threads, indexed by pin's THREADID.
@@ -376,7 +377,12 @@ static void TLEBFlushUnlocked(PinThread &t, ThreadLocalEventBuffer &tleb) {
       uintptr_t pc    = tleb.events[i++];
       uintptr_t a     = tleb.events[i++];
       uintptr_t info  = tleb.events[i++];
-      DumpEventInternal((EventType)event, t.uniq_tid, pc, a, info);
+      if (t.ignore_lock_events &&
+          (event == WRITER_LOCK || event == READER_LOCK || event == UNLOCK)) {
+        // do nothing, we are ignoring locks.
+      } else {
+        DumpEventInternal((EventType)event, t.uniq_tid, pc, a, info);
+      }
     }
     DCHECK(i <= tleb.size);
   }
@@ -857,6 +863,22 @@ static void Before_BaseThreadInitThunk(THREADID tid, ADDRINT pc, ADDRINT sp) {
   size_t stack_size = t.thread_stack_size_if_known;
   // Printf("T%d %s %p %p\n", tid, __FUNCTION__, sp, stack_size);
   DumpEvent(THR_STACK_TOP, tid, pc, sp, stack_size);
+}
+
+static void Before_RtlExitUserThread(THREADID tid, ADDRINT pc) {
+  PinThread &t = g_pin_threads[tid];
+  if (t.tid != 0) {
+    TLEBFlushLocked(t);
+    // Printf("T%d %s\n", tid, __FUNCTION__);
+    // Once we started exiting the thread, ignore the locking events.
+    // This way we will avoid h-b arcs between unrelated threads.
+    CHECK(t.ignore_lock_events == 0);
+    t.ignore_lock_events = 1;
+    // We also start ignoring all mops, otherwise we will get tons of race
+    // reports from the windows guts.
+    CHECK(t.ignore_all_mops == 0);
+    t.ignore_all_mops = 1;
+  }
 }
 #endif  // _MSC_VER
 
@@ -1954,6 +1976,8 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_FN(IPOINT_BEFORE, "BaseThreadInitThunk",
             Before_BaseThreadInitThunk,
             IARG_REG_VALUE, REG_STACK_PTR, IARG_END);
+
+  INSERT_BEFORE_0("RtlExitUserThread", Before_RtlExitUserThread);
 
   WrapStdCallFunc1(rtn, "RtlInitializeCriticalSection",
                              (AFUNPTR)(Wrap_RtlInitializeCriticalSection));
