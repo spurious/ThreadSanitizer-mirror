@@ -392,6 +392,7 @@ void evh__delete_frame ( Addr sp_post_call_insn,
 
 // TODO(kcc): remove this crap completely as soon as we are sure
 // it is indeed crap.
+#if 0
 static INLINE void evh__new_mem_stack_helper ( Addr a, SizeT len ) {
   CHECK(0);
   ThreadId vg_tid = GetVgTid();
@@ -418,7 +419,7 @@ VG_REGPARM(1)
 static void evh__new_mem_stack_32 ( Addr a) {
   evh__new_mem_stack_helper(a, 32);
 }
-
+#endif
 
 
 static INLINE void evh__die_mem_stack_helper ( Addr a, SizeT len ) {
