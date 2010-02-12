@@ -1,7 +1,7 @@
 #!/bin/bash
 
 PIN_ROOT=${PIN_ROOT:-$HOME/pin}
-TS_ROOT=${TS_ROOT:-.}
+TS_ROOT=${TS_ROOT:-`dirname $0`}
 TS_VARIANT=-debug
 
 UNAME_OS=`uname -o`
