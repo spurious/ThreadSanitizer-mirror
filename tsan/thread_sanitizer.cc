@@ -3033,6 +3033,7 @@ static void PublishRangeInOneLine(uintptr_t addr, uintptr_t a,
 
 // Publish memory range [a, b).
 static void PublishRange(uintptr_t a, uintptr_t b, VTS *vts) {
+  CHECK(a);
   CHECK(a < b);
   if (kDebugPublish)
     Printf("PublishRange   : [%p,%p), size=%d, tag=%p\n",
