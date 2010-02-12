@@ -390,7 +390,10 @@ void evh__delete_frame ( Addr sp_post_call_insn,
 }
 #endif
 
+// TODO(kcc): remove this crap completely as soon as we are sure
+// it is indeed crap.
 static INLINE void evh__new_mem_stack_helper ( Addr a, SizeT len ) {
+  CHECK(0);
   ThreadId vg_tid = GetVgTid();
   if (!g_valgrind_threads[vg_tid].ignore_accesses) {
     // avoid stack updates when ignore is on.
@@ -438,7 +441,7 @@ static INLINE void evh__die_mem_stack_helper ( Addr a, SizeT len ) {
     // Printf("T%d: -sp: %p => %p (%ld)\n", ts_tid, a, a + len, len);
   }
   if (!g_valgrind_threads[vg_tid].ignore_accesses) {
-    ThreadSanitizerHandleStackMemChange(ts_tid, a, len, false);
+    // ThreadSanitizerHandleStackMemChange(ts_tid, a, len, false);
     // Put(STACK_MEM_DIE, ts_tid, 0, a, len);
   }
 }
@@ -1125,10 +1128,10 @@ void ts_pre_clo_init(void) {
 //   VG_(track_new_mem_brk)         ( evh__new_mem_w_tid );
 //   VG_(track_new_mem_mmap)        ( evh__new_mem_w_perms );
 
-   VG_(track_new_mem_stack)       ( evh__new_mem_stack);
-   VG_(track_new_mem_stack_8)       ( evh__new_mem_stack_8);
-   VG_(track_new_mem_stack_16)       ( evh__new_mem_stack_16);
-   VG_(track_new_mem_stack_32)       ( evh__new_mem_stack_32);
+//   VG_(track_new_mem_stack)       ( evh__new_mem_stack);
+//   VG_(track_new_mem_stack_8)       ( evh__new_mem_stack_8);
+//   VG_(track_new_mem_stack_16)       ( evh__new_mem_stack_16);
+//   VG_(track_new_mem_stack_32)       ( evh__new_mem_stack_32);
 
 
    VG_(track_die_mem_stack)       ( evh__die_mem_stack );
