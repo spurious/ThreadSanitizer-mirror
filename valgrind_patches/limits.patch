@@ -20,11 +20,11 @@ Index: coregrind/m_aspacemgr/aspacemgr-linux.c
  
  /* Max number of segments we can track. */
 -#define VG_N_SEGMENTS 5000
-+#define VG_N_SEGMENTS 50000
++#define VG_N_SEGMENTS 100000
  
  /* Max number of segment file names we can track. */
 -#define VG_N_SEGNAMES 1000
-+#define VG_N_SEGNAMES 5000
++#define VG_N_SEGNAMES 100000
  
  /* Max length of a segment file name. */
  #define VG_MAX_SEGNAMELEN 1000
