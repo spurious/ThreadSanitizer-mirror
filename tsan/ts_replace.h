@@ -42,7 +42,7 @@ static NOINLINE char *Replace_memchr(EXTRA_REPLACE_PARAMS const char *s,
   size_t i;
   char *ret = 0;
   for (i = 0; i < n; i++) {
-    if (s[i] == c) {
+    if (s[i] == (char)c) {
       ret = (char*)(&s[i]);
       break;
     }
@@ -56,7 +56,7 @@ static NOINLINE char *Replace_strchr(EXTRA_REPLACE_PARAMS const char *s,
   size_t i;
   char *ret = 0;
   for (i = 0; s[i]; i++) {
-    if (s[i] == c) {
+    if (s[i] == (char)c) {
       ret = (char*)(&s[i]);
       break;
     }
@@ -70,7 +70,7 @@ static NOINLINE char *Replace_strrchr(EXTRA_REPLACE_PARAMS const char *s,
   char* ret = 0;
   size_t i;
   for (i = 0; s[i]; i++) {
-    if (s[i] == c) {
+    if (s[i] == (char)c) {
       ret = (char*)&s[i];
     }
   }
