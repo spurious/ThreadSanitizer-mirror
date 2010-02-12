@@ -2255,6 +2255,7 @@ namespace test52 {
 int     GLOB = 0;
 int     COND = 0;
 Mutex   MU;
+StealthNotification n1, n2;
 
 // same as test51 but the first signal will be lost
 // scheduler dependent results because of several signals
@@ -2286,7 +2287,8 @@ void Waker() {
   CV.Signal();    //lost signal
   MU.Unlock();
 
-  usleep(200000);  // Make sure the waiter blocks
+  n1.signal();  // Ok, now we may block.
+  n2.wait();    // We blocked.
 
   GLOB = 2;
 
@@ -2297,9 +2299,10 @@ void Waker() {
 }
 
 void Waiter() {
-  usleep(50000);  // Make sure the first signal will be lost
+  n1.wait();  // The first signal is lost.
 
   MU.Lock();
+  n2.signal(); // The 2-nd signal may go.
   while(COND != 1)
     CV.Wait(&MU);
   MU.Unlock();
