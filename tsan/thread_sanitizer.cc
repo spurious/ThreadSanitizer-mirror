@@ -4758,7 +4758,7 @@ class Detector {
     thr->HandleSblockEnter(pc);
     G_stats->events[SBLOCK_ENTER]++;
 
-    // FlushIfNeeded();
+    FlushIfNeeded();
 
     if (UNLIKELY(G_flags->sample_events)) {
       static EventSampler sampler;
