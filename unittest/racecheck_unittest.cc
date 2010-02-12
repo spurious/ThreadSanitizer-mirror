@@ -6350,8 +6350,10 @@ void Worker() {
 }
 
 // Too slow. Need to run it separately.
-TEST(StressTests, DISABLED_StartAndJoinManyThreads) {
-  for (int i = 0; i < 5000; i++) {
+TEST(StressTests, StartAndJoinManyThreads) {
+  for (int i = 0; i < 2000; i++) {
+    if ((i % 100) == 0)
+      printf(".");
     MyThread t1(Worker);
     MyThread t2(Worker);
     t1.Start();
@@ -6359,6 +6361,7 @@ TEST(StressTests, DISABLED_StartAndJoinManyThreads) {
     t1.Join();
     t2.Join();
   }
+  printf("\n");
 }
 }  // namespace
 
