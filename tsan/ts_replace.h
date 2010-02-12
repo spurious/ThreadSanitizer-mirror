@@ -55,11 +55,12 @@ static NOINLINE char *Replace_strchr(EXTRA_REPLACE_PARAMS const char *s,
                                      int c) {
   size_t i;
   char *ret = 0;
-  for (i = 0; s[i]; i++) {
+  for (i = 0; ; i++) {
     if (s[i] == (char)c) {
       ret = (char*)(&s[i]);
       break;
     }
+    if (s[i] == 0) break;
   }
   REPORT_READ_RANGE(s, ret ? i + 1 : i);
   return ret;
@@ -69,10 +70,11 @@ static NOINLINE char *Replace_strrchr(EXTRA_REPLACE_PARAMS const char *s,
                                       int c) {
   char* ret = 0;
   size_t i;
-  for (i = 0; s[i]; i++) {
+  for (i = 0; ; i++) {
     if (s[i] == (char)c) {
       ret = (char*)&s[i];
     }
+    if (s[i] == 0) break;
   }
   REPORT_READ_RANGE(s, i);
   return ret;
