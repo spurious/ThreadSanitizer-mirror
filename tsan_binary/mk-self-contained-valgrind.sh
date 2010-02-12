@@ -20,7 +20,7 @@ fi
 OLD_PWD=`pwd`
 cd $IN_DIR
 # The files/dirs to take:
-IN_FILES=`ls bin/valgrind lib/valgrind/vgpreload_core* lib/valgrind/*$TOOL* lib/valgrind/default.supp`
+IN_FILES=`\ls bin/valgrind lib/valgrind/vgpreload_core* lib/valgrind/*$TOOL* lib/valgrind/default.supp`
 cd $OLD_PWD
 echo $IN_FILES
 

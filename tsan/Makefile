@@ -147,7 +147,7 @@ install: bin
 	cp bin/tsan* bin/vgpreload_tsan* $(VALGRIND_INST_ROOT)/lib/valgrind
 
 self-contained:
-	../tsan_binary/mk-self-contained-tsan.sh  $(VALGRIND_INST_ROOT) bin/tsan-$(OS)-self-contained.sh
+	../tsan_binary/mk-self-contained-valgrind.sh $(VALGRIND_INST_ROOT)  tsan bin/tsan-$(OS)-self-contained.sh
 
 
 ifeq ($(VALGRIND_ROOT), )
