@@ -5888,7 +5888,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
                &G_flags->show_proc_self_status);
   FindBoolFlag("show_valgrind_context", false, args,
                &G_flags->show_valgrind_context);
-  FindBoolFlag("suggest_happens_before_arcs", false, args,
+  FindBoolFlag("suggest_happens_before_arcs", true, args,
                &G_flags->suggest_happens_before_arcs);
   FindBoolFlag("show_pc", false, args, &G_flags->show_pc);
   FindBoolFlag("ignore_in_dtor", false, args, &G_flags->ignore_in_dtor);
