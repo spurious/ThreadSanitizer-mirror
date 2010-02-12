@@ -3140,9 +3140,14 @@ TEST(NegativeTests, StrlenAndFriends) {
 
   char foo[8] = {10, 20, 127, 128, 250, -50, 0};
   CHECK(strchr(foo, 10) != 0);
+  CHECK(strchr(foo, 127) != 0);
+  CHECK(strchr(foo, 128) != 0);
   CHECK(strchr(foo, 250) != 0);
+  CHECK(strchr(foo, -50) != 0);
   CHECK(strchr(foo, -60) == 0);
+  CHECK(strchr(foo, 0) != 0);
   CHECK(strrchr(foo, 10) != 0);
+  CHECK(strrchr(foo, 0) != 0);
   CHECK(strrchr(foo, 250) != 0);
   CHECK(strrchr(foo, -60) == 0);
   // TODO(kcc): add more tests to check that interceptors are correct.
