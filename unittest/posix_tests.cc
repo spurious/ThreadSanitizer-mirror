@@ -535,8 +535,7 @@ TEST(NegativeTests, test135) {
 
 // test136. Unlock twice. {{{1
 namespace test136 {
-TEST(PositiveTests, test136) {
-  printf("test136: unlock twice\n");
+TEST(LockTests, UnlockTwice) {
   pthread_mutexattr_t attr;
   CHECK(0 == pthread_mutexattr_init(&attr));
   CHECK(0 == pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_ERRORCHECK));

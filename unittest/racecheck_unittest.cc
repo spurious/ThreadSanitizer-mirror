@@ -3307,14 +3307,12 @@ REGISTER_TEST2(Run, 73, STABILITY|PERFORMANCE|EXCLUDE_FROM_ALL);
 namespace    test74 {
 const int N = 100000;
 Mutex   MU;
-void Run() {
-  printf("test74: perf\n");
+TEST(StressTests, ManyLocksUnlocks) {
   for (int i = 0; i < N; i++ ) {
     MU.Lock();
     MU.Unlock();
   }
 }
-REGISTER_TEST(Run, 74)
 }  // namespace test74
 
 // RefCountedClass {{{1
@@ -4885,7 +4883,7 @@ namespace    test113 {
 const int kNumIter = 100000;
 const int kNumLocks = 7;
 Mutex   MU[kNumLocks];
-void Run() {
+TEST (StressTests, ManyLocksUnlocks2) {
   printf("test113: perf\n");
   for (int i = 0; i < kNumIter; i++ ) {
     for (int j = 0; j < kNumLocks; j++) {
@@ -4896,7 +4894,6 @@ void Run() {
     }
   }
 }
-REGISTER_TEST(Run, 113)
 }  // namespace test113
 
 
@@ -5015,14 +5012,13 @@ void Waiter() {
       usleep(100000);
   }
 }
-void Run() {
+TEST(StressTests, OneSignalManyWaits) {
   printf("test118: perf\n");
   MyThreadArray t(Signaller, Waiter, Signaller, Waiter);
   t.Start();
   t.Join();
   printf("\tGLOB=%d\n", GLOB);
 }
-REGISTER_TEST(Run, 118)
 }  // namespace test118
 
 
@@ -5347,13 +5343,11 @@ void Thread2() {
   usleep(100000);
   mu.Unlock();
 }
-void Run() {
-  printf("test127: unlocking a mutex locked by another thread.\n");
+TEST(LockTests, UnlockingALockHeldByAnotherThread) {
   MyThreadArray t(Thread1, Thread2);
   t.Start();
   t.Join();
 }
-REGISTER_TEST(Run, 127)
 }  // namespace test127
 
 // test128. Suppressed code in concurrent accesses {{{1
