@@ -5727,8 +5727,9 @@ static bool FlagNameMatch(const string &arg, const string &flag, string *val) {
   return true;
 }
 
-static void FindBoolFlag(const char *name, bool default_val,
+static int FindBoolFlag(const char *name, bool default_val,
                   vector<string> *args, bool *retval) {
+  int res = 0;
   *retval = default_val;
   bool cont = false;
   do {
@@ -5748,7 +5749,7 @@ static void FindBoolFlag(const char *name, bool default_val,
       else if (flag_value == "no")    *retval = false;
       else
         ReportUnknownFlagAndExit(str);
-
+      res++;
       if (G_flags->verbosity >= 1) {
         Printf("%40s => %s\n", name, *retval ? "true" : "false");
       }
@@ -5759,6 +5760,7 @@ static void FindBoolFlag(const char *name, bool default_val,
       args->erase(it);
     }
   } while (cont);
+  return res;
 }
 
 static void FindIntFlag(const char *name, intptr_t default_val,
@@ -5876,8 +5878,18 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   FindUIntFlag("segment_set_recycle_queue_size", DEBUG_MODE ? 10 : 10000, args,
                &G_flags->segment_set_recycle_queue_size);
   FindBoolFlag("fast_mode", false, args, &G_flags->fast_mode);
-  FindBoolFlag("pure_happens_before", true, args,
-               &G_flags->pure_happens_before);
+
+  int has_phb = FindBoolFlag("pure_happens_before", true, args,
+                              &G_flags->pure_happens_before);
+  bool hybrid = false;
+  int has_hyb = FindBoolFlag("hybrid", false, args, &hybrid);
+  if (has_hyb && has_phb) {
+    Printf("INFO: --hybrid and --pure-happens-before"
+           " is mutually exclusive; ignoring the --hybrid switch\n");
+  } else if (has_hyb && !has_phb) {
+    G_flags->pure_happens_before = !hybrid;
+  }
+
   FindBoolFlag("show_expected_races", false, args,
                &G_flags->show_expected_races);
   FindBoolFlag("demangle", true, args, &G_flags->demangle);
