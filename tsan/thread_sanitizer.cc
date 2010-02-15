@@ -4742,11 +4742,12 @@ class Detector {
       }
       ForgetAllStateAndStartOver("ThreadSanitizer has run out of segment IDs");
     }
+    static int counter;
+    counter++;
+
     // Are we out of memory?
     if (G_flags->max_mem_in_mb > 0) {
-      static int counter;
       const int kFreq = 1014 * 16;
-      counter++;
       if ((counter % kFreq) == 0) {  // Don't do it too often.
         // TODO(kcc): find a way to check memory limit more frequently.
         FlushIfOutOfMem();
@@ -4754,7 +4755,7 @@ class Detector {
     }
 
     size_t flush_period = G_flags->flush_period * 1000;  // milliseconds.
-    if (flush_period) {
+    if (flush_period && (counter % (1024 * 4)) == 0) {
       size_t cur_time = TimeInMilliSeconds();
       if (cur_time - g_last_flush_time  > flush_period) {
         ForgetAllStateAndStartOver(
