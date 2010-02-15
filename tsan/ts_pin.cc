@@ -167,8 +167,10 @@ class TraceInfo {
 size_t TraceInfo::id_counter_;
 
 //--------------- PinThread ----------------- {{{1
-const size_t kMaxMopsPerTrace = 64;
 const size_t kThreadLocksEventBufferSize = 2048 - 2;
+// The number of mops should be at least 2 less than the size of TLEB
+// so that we have space to put SBLOCK_ENTER token and the trace_info ptr.
+const size_t kMaxMopsPerTrace = kThreadLocksEventBufferSize - 2;
 
 REG tls_reg;
 
