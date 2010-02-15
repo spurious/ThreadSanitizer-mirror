@@ -199,12 +199,17 @@
      program's synchronization using the other annotations, but these can
      be used when all else fails. */
 
-  /* Report that we may have a benign race on at "address".
+  /* Report that we may have a benign race at "address".
      Insert at the point where "address" has been allocated, preferably close
      to the point where the race happens.
      See also ANNOTATE_BENIGN_RACE_STATIC. */
   #define ANNOTATE_BENIGN_RACE(address, description) \
     AnnotateBenignRace(__FILE__, __LINE__, address, description)
+
+  /* Same as ANNOTATE_BENIGN_RACE(address, description), but applies to
+     the memory range [address, address+size). */
+  #define ANNOTATE_BENIGN_RACE_SIZED(address, size, description) \
+    AnnotateBenignRaceSized(__FILE__, __LINE__, address, size, description)
 
   /* Request the analysis tool to ignore all reads in the current thread
      until ANNOTATE_IGNORE_READS_END is called.
@@ -335,6 +340,7 @@
   #define ANNOTATE_NEW_MEMORY(address, size) /* empty */
   #define ANNOTATE_EXPECT_RACE(address, description) /* empty */
   #define ANNOTATE_BENIGN_RACE(address, description) /* empty */
+  #define ANNOTATE_BENIGN_RACE_SIZED(address, size, description) /* empty */
   #define ANNOTATE_PURE_HAPPENS_BEFORE_MUTEX(mu) /* empty */
   #define ANNOTATE_MUTEX_IS_USED_AS_CONDVAR(mu) /* empty */
   #define ANNOTATE_TRACE_MEMORY(arg) /* empty */
@@ -400,6 +406,10 @@ void AnnotateExpectRace(const char *file, int line,
 void AnnotateBenignRace(const char *file, int line,
                         const volatile void *address,
                         const char *description);
+void AnnotateBenignRaceSized(const char *file, int line,
+                        const volatile void *address,
+                        long size,
+                        const char *description);
 void AnnotateMutexIsUsedAsCondVar(const char *file, int line,
                                   const volatile void *mu);
 void AnnotateTraceMemory(const char *file, int line,
@@ -438,13 +448,14 @@ int RunningOnValgrind(void);
     return res;
   }
 
-  /* Apply ANNOTATE_BENIGN_RACE to a static variable. */
+  /* Apply ANNOTATE_BENIGN_RACE_SIZED to a static variable. */
   #define ANNOTATE_BENIGN_RACE_STATIC(static_var, description)        \
     namespace {                                                       \
       class static_var ## _annotator {                                \
        public:                                                        \
         static_var ## _annotator() {                                  \
-          ANNOTATE_BENIGN_RACE(&static_var,                           \
+          ANNOTATE_BENIGN_RACE_STATIC(&static_var,                    \
+                                      sizeof(static_var),             \
             # static_var ": " description);                           \
         }                                                             \
       };                                                              \
