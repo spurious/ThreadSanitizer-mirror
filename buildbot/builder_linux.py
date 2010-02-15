@@ -5,7 +5,6 @@ from buildbot.steps.shell import Test
 from buildbot.steps.shell import ShellCommand
 from common import *
 
-
 def generate(settings):
   f1 = factory.BuildFactory()
 
@@ -46,6 +45,13 @@ def generate(settings):
                                    'VALGRIND_INST_ROOT=../out32'],
                           description='installing 32-bit tsan',
                           descriptionDone='install 32-bit tsan'))
+
+  # Run output tests.
+  addTestStep(f1, False, 'fast', unitTestBinary('linux', 64, 1, False),
+              ', output template',
+              extra_args=["--error_exitcode=1"],
+              append_command = ' 2>&1 | unittest/match_output.py unittest/output_test1.tmpl')
+
 
   # Run unit tests.
   test_binaries = {} # (bits, opt, static) -> (binary, desc)

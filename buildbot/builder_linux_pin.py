@@ -18,7 +18,7 @@ def runAllTests(factory, variants, os):
       test_variants[test_variant] = test_desc
     test_binary = unitTestBinary(os, bits, opt, static, test_base_name=base_name)
     addTestStep(factory, tsan_debug, mode, test_binary, test_desc, frontend='pin',
-                pin_root='/usr/local/google/pin')
+                pin_root='/usr/local/google/pin', extra_args=["--error_exitcode=1"])
 
 
 def generate(settings):

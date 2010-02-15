@@ -50,7 +50,8 @@ def generate(settings):
       test_desc = addBuildTestStep(f1, os, bits, opt, static)
       test_binaries[test_variant] = test_desc
     test_binary = unitTestBinary(os, bits, opt, static)
-    addTestStep(f1, tsan_debug, mode, test_binary, test_desc)
+    addTestStep(f1, tsan_debug, mode, test_binary, test_desc,
+                extra_args=["--error_exitcode=1"])
 
 
   b1 = {'name': 'buildbot-mac',

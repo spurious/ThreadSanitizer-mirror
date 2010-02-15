@@ -4,8 +4,6 @@ from buildbot.steps.shell import Compile
 from buildbot.steps.shell import Test
 from buildbot.steps.shell import ShellCommand
 
-__all__ = [unitTestBinary, addBuildTestStep, addTestStep]
-
 def unitTestBinary(os, bits, opt, static, test_base_name='racecheck_unittest'):
   if bits == 64:
     arch = 'amd64'
@@ -48,7 +46,8 @@ def addBuildTestStep(factory, os, bits, opt, static):
 
 def addTestStep(factory, debug, mode, test_binary, test_desc,
                 frontend_binary=None, extra_args=[], frontend='valgrind',
-                pin_root=None, timeout=1800, test_base_name='racecheck_unittest'):
+                pin_root=None, timeout=1800, test_base_name='racecheck_unittest',
+                append_command=None):
   """Adds a step for running unit tests with tsan."""
   args = []
   env = {}
@@ -89,8 +88,12 @@ def addTestStep(factory, debug, mode, test_binary, test_desc,
   if timeout:
     command += ['alarm', '-l', str(timeout)]
   command += [frontend_binary] + extra_args + args + [test_binary]
+  if append_command:
+    command = ' '.join(command + [append_command])
   print command
 
   factory.addStep(Test(command = command, env = env,
                        description = 'testing ' + desc_common + ' on ' + test_base_name + test_desc,
                        descriptionDone = 'test ' + desc_common + ' on ' + test_base_name + test_desc))
+
+__all__ = ['unitTestBinary', 'addBuildTestStep', 'addTestStep']

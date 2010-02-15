@@ -42,7 +42,7 @@ def generate(settings):
       test_binaries[test_variant] = test_desc
     test_binary = unitTestBinary(os, bits, opt, static)
     addTestStep(f1, tsan_debug, mode, test_binary, test_desc, frontend='pin',
-                pin_root='c:/pin', timeout=None)
+                pin_root='c:/pin', timeout=None, extra_args=["--error_exitcode=1"])
 
 
 
