@@ -5974,6 +5974,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
                &G_flags->generate_suppressions);
 
   FindIntFlag("error_exitcode", 0, args, &G_flags->error_exitcode);
+  FindBoolFlag("trace_children", false, args, &G_flags->trace_children);
 
   FindIntFlag("max_sid", kMaxSID, args, &G_flags->max_sid);
   kMaxSID = G_flags->max_sid;

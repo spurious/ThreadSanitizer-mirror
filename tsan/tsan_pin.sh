@@ -28,8 +28,6 @@ VERBOZE=0
 
 for arg in "$@"; do
   case $arg in
-    --trace_children=yes) PIN_FLAGS="$PIN_FLAGS $FOLLOW";;
-    --trace-children=yes) PIN_FLAGS="$PIN_FLAGS $FOLLOW";;
     --opt) TS_VARIANT="";;
     --dbg) TS_VARIANT="-debug";;
     --v=[1-9]) VERBOZE=1; TS_FLAGS="$TS_FLAGS $arg";;
@@ -60,7 +58,7 @@ run() {
   $@
 }
 
-run $PIN_ROOT/$PIN_BINARY $PIN_FLAGS \
+run $PIN_ROOT/$PIN_BINARY $PIN_FLAGS $FOLLOW \
   -t64 $TS_ROOT/bin/amd64-$OS${TS_VARIANT}-ts_pin.$DLL \
   -t   $TS_ROOT/bin/x86-$OS${TS_VARIANT}-ts_pin.$DLL \
  $TS_FLAGS -- $TS_PARAMS

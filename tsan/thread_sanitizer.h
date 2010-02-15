@@ -106,6 +106,7 @@ struct FLAGS {
   bool           generate_suppressions;
 
   intptr_t     error_exitcode;
+  bool         trace_children;
 };
 
 extern FLAGS *G_flags;

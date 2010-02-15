@@ -2077,6 +2077,28 @@ static void CallbackForIMG(IMG img, void *v) {
   }
 }
 
+// Returns:
+// TRUE
+// If user is interested to inject Pin (and tool) into child/exec-ed process
+// FALSE
+// If user is not interested to inject Pin (and tool) into child/exec-ed process
+static BOOL CallbackForExec(CHILD_PROCESS childProcess, VOID *val) {
+  int argc = 0;
+  const CHAR *const * argv = NULL;
+  CHILD_PROCESS_GetCommandLine(childProcess, &argc, &argv);
+  CHECK(argc > 0);
+  CHECK(argv);
+  bool follow = G_flags->trace_children;
+  if (DEBUG_MODE) {
+    Printf("CallbackForExec: follow=%d: ", follow);
+    for (int i = 0; i < argc; i++) {
+      Printf("%s ", argv[i]);
+    }
+  }
+  Printf("\n");
+  return follow;
+}
+
 //--------- ThreadSanitizerThread --------- {{{1
 static void *ThreadSanitizerThread(void *) {
   while(1) {
@@ -2162,6 +2184,7 @@ int main(INT32 argc, CHAR **argv) {
   PIN_AddFiniFunction(CallbackForFini, 0);
   IMG_AddInstrumentFunction(CallbackForIMG, 0);
   TRACE_AddInstrumentFunction(CallbackForTRACE, 0);
+  PIN_AddFollowChildProcessFunction(CallbackForExec, NULL);
 
   Report("ThreadSanitizerPin: "
          "pure-happens-before=%s fast-mode=%s ignore-in-dtor=%s\n",
