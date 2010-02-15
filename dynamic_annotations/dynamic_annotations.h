@@ -454,7 +454,7 @@ int RunningOnValgrind(void);
       class static_var ## _annotator {                                \
        public:                                                        \
         static_var ## _annotator() {                                  \
-          ANNOTATE_BENIGN_RACE_STATIC(&static_var,                    \
+          ANNOTATE_BENIGN_RACE_SIZED(&static_var,                     \
                                       sizeof(static_var),             \
             # static_var ": " description);                           \
         }                                                             \
