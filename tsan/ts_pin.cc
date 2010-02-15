@@ -2171,7 +2171,14 @@ int main(INT32 argc, CHAR **argv) {
   }
 
   if (!G_flags->log_file.empty()) {
-    G_out = fopen(G_flags->log_file.c_str(), "w");
+    // Replace %p with tool PID
+    string fname = G_flags->log_file;
+    char pid_str[100] = "";
+    sprintf(pid_str, "%u", getpid());
+    while (fname.find("%p") != fname.npos)
+      fname.replace(fname.find("%p"), 2, pid_str);
+
+    G_out = fopen(fname.c_str(), "w");
     CHECK(G_out);
   }
 
