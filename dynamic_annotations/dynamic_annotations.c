@@ -97,7 +97,7 @@ void AnnotateBenignRaceSized(const char *file, int line,
                              const char *description) {
   long i;
   for (i = 0; i < size; i++) {
-    AnnotateBenignRace(file, line, mem + i, description);
+    AnnotateBenignRace(file, line, (char*)(mem) + i, description);
   }
 }
 void AnnotateMutexIsUsedAsCondVar(const char *file, int line,
