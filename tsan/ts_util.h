@@ -241,6 +241,9 @@ class ScopedMallocCostCenter {
 //--------- Forward decls ------------------- {{{1
 class ThreadSanitizerReport;
 
+// Time since some moment before the program start.
+extern size_t TimeInMilliSeconds();
+
 extern "C" long my_strtol(const char *str, char **end);
 extern void Printf(const char *format, ...);
 

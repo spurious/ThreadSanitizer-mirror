@@ -34,6 +34,9 @@
 
 
 #if defined(_MSC_VER)
+
+#pragma comment(lib, "winmm.lib")
+
 # ifdef TS_PIN
 #  include "pin.H"
 # endif
@@ -45,6 +48,20 @@ namespace WINDOWS
 int getpid() { return WINDOWS::GetCurrentProcessId(); }
 #endif
 
+#if defined(TS_VALGRIND)
+size_t TimeInMilliSeconds() {
+  return VG_(read_millisecond_timer)();
+}
+#else
+// TODO(kcc): implement this.
+size_t TimeInMilliSeconds() {
+#ifdef __GNUC__
+  return time(0) * 1000;
+#else
+  return WINDOWS::timeGetTime();
+#endif
+}
+#endif
 
 Stats *G_stats;
 

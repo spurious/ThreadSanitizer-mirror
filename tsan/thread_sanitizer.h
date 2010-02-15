@@ -86,6 +86,7 @@ struct FLAGS {
   intptr_t     max_sid;
   intptr_t     max_mem_in_mb;
   intptr_t     num_callers_in_history;
+  intptr_t     flush_period;
 
   intptr_t     literace_sampling;
 

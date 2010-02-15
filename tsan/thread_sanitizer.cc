@@ -58,6 +58,8 @@ bool g_so_far_only_one_thread = false;
 bool g_has_entered_main = false;
 bool g_has_exited_main = false;
 
+size_t g_last_flush_time;
+
 // Incremented on each Lock and Unlock. Used by LockHistory.
 uint32_t g_lock_era = 0;
 
@@ -4046,7 +4048,7 @@ static PCQMap *g_pcq_map;
 // We need to forget all state and start over because we've
 // run out of some resources (most likely, segment IDs).
 static void ForgetAllStateAndStartOver(const char *reason) {
-
+  g_last_flush_time = TimeInMilliSeconds();
   Report("INFO: %s. Flushing state.\n", reason);
 
   if (0) {
@@ -4748,6 +4750,15 @@ class Detector {
       if ((counter % kFreq) == 0) {  // Don't do it too often.
         // TODO(kcc): find a way to check memory limit more frequently.
         FlushIfOutOfMem();
+      }
+    }
+
+    size_t flush_period = G_flags->flush_period * 1000;  // milliseconds.
+    if (flush_period) {
+      size_t cur_time = TimeInMilliSeconds();
+      if (cur_time - g_last_flush_time  > flush_period) {
+        ForgetAllStateAndStartOver(
+          "Doing periodic flush (period is set by --flush_period=n_seconds)");
       }
     }
   }
@@ -5974,6 +5985,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
                &G_flags->generate_suppressions);
 
   FindIntFlag("error_exitcode", 0, args, &G_flags->error_exitcode);
+  FindIntFlag("flush_period", 0, args, &G_flags->flush_period);
   FindBoolFlag("trace_children", false, args, &G_flags->trace_children);
 
   FindIntFlag("max_sid", kMaxSID, args, &G_flags->max_sid);
