@@ -1901,8 +1901,14 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   WrapFunc4(img, rtn, "_Znam", (AFUNPTR)Wrap_malloc);
   WrapFunc4(img, rtn, "_Znwj", (AFUNPTR)Wrap_malloc);
   WrapFunc4(img, rtn, "_Znaj", (AFUNPTR)Wrap_malloc);
+  WrapFunc4(img, rtn, "_ZnwmRKSt9nothrow_t", (AFUNPTR)Wrap_malloc);
+  WrapFunc4(img, rtn, "_ZnamRKSt9nothrow_t", (AFUNPTR)Wrap_malloc);
+  WrapFunc4(img, rtn, "_ZnwjRKSt9nothrow_t", (AFUNPTR)Wrap_malloc);
+  WrapFunc4(img, rtn, "_ZnajRKSt9nothrow_t", (AFUNPTR)Wrap_malloc);
   WrapFunc4(img, rtn, "_ZdaPv", (AFUNPTR)Wrap_free);
   WrapFunc4(img, rtn, "_ZdlPv", (AFUNPTR)Wrap_free);
+  WrapFunc4(img, rtn, "_ZdlPvRKSt9nothrow_t", (AFUNPTR)Wrap_free);
+  WrapFunc4(img, rtn, "_ZdaPvRKSt9nothrow_t", (AFUNPTR)Wrap_free);
 
   // Windows: operator new/delete
   WrapFunc4(img, rtn, "operator new", (AFUNPTR)Wrap_malloc);
