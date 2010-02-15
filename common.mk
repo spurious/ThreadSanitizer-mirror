@@ -94,7 +94,6 @@ else
 $(GTEST_LIB):
 	mkdir -p $(GTEST_MAKE_DIR) && \
 	cd $(GTEST_MAKE_DIR) && \
-	make -f ../make/Makefile clean && \
 	$(MAKE) -f ../make/Makefile CXXFLAGS="$(ARCHFLAGS)"
 endif
 
