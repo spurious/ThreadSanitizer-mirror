@@ -1,0 +1,112 @@
+{
+   ap_queue_info_set_idle
+   ThreadSanitizer:Race
+   fun:ap_queue_info_set_idle
+   fun:worker_thread
+}
+{
+   ap_update_child_status_from_indexes
+   ThreadSanitizer:Race
+   fun:ap_update_child_status_from_indexes
+   fun:worker_thread
+}
+
+{
+   worker_thread
+   ThreadSanitizer:Race
+   fun:worker_thread
+}
+
+{
+   apr_atomic_casptr
+   ThreadSanitizer:Race
+   fun:apr_atomic_casptr
+   fun:ap_queue_info_set_idle
+}
+
+{
+   ap_regexec
+   ThreadSanitizer:Race
+   fun:ap_regexec
+   fun:ap_file_walk
+}
+
+{
+   cached_explode
+   ThreadSanitizer:Race
+   ...
+   fun:cached_explode
+   fun:ap_explode_recent_gmt
+}
+{
+   log_request_time
+   ThreadSanitizer:Race
+   fun:log_request_time
+   fun:process_item
+}
+{
+   join_start_thread
+   ThreadSanitizer:Race
+   fun:join_start_thread
+}
+{
+   wakeup_listener
+   ThreadSanitizer:Race
+   fun:wakeup_listener
+   fun:signal_threads
+}
+
+{
+   ap_queue_info_term
+   ThreadSanitizer:Race
+   fun:ap_queue_info_term
+   fun:signal_threads
+}
+{
+   signal_threads
+   ThreadSanitizer:Race
+   fun:signal_threads
+   fun:child_main
+}
+{
+   ap_queue_term
+   ThreadSanitizer:Race
+   fun:ap_queue_term
+   fun:listener_thread
+}
+{
+   ap_queue_pop
+   ThreadSanitizer:Race
+   fun:ap_queue_pop
+   fun:worker_thread
+}
+{
+   listener_thread
+   ThreadSanitizer:Race
+   fun:listener_thread
+   fun:dummy_worker
+}
+{
+   ap_queue_info_wait_for_idler
+   ThreadSanitizer:Race
+   fun:ap_queue_info_wait_for_idler
+   fun:listener_thread
+}
+{
+   apr_palloc
+   ThreadSanitizer:Race
+   fun:apr_palloc
+   fun:alloc_socket
+}
+{
+   apr_pool_clear
+   ThreadSanitizer:Race
+   fun:apr_pool_clear
+   fun:worker_thread
+}
+{
+   apr_pool_cleanup_register
+   ThreadSanitizer:Race
+   fun:apr_pool_cleanup_register
+   fun:apr_socket_accept
+}
