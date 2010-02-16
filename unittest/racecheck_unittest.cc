@@ -6325,6 +6325,55 @@ namespace MemoryTypes {  // {{{1
     RaceOnMemory(WriteChar6, mem+42);
     delete [] mem;
   }
+
+  void WriteChar7(void *param) { WriteChar(param); }
+
+  TEST(MemoryTypes, RaceOnMemoryFromNewNoThrow) {
+    char *mem = new (std::nothrow) char;
+    RaceOnMemory(WriteChar7, mem);
+    operator delete (mem, std::nothrow);
+  }
+  void WriteChar8(void *param) { WriteChar(param); }
+
+  TEST(MemoryTypes, RaceOnMemoryFromNewNoThrowA) {
+    char *mem = new (std::nothrow) char [100];
+    RaceOnMemory(WriteChar8, mem+42);
+    operator delete [] (mem, std::nothrow);
+  }
+
+  void AllocateAndDeallocateUsingVariousAllocs() {
+    for (int i = 0; i < 10000; i++) {
+      char *p;
+      switch (i % 5) {
+        case 0:
+          p = (char*)malloc(10);
+          free(p);
+          break;
+        case 1:
+          p = new char;
+          delete p;
+          break;
+        case 2:
+          p = new char [10];
+          delete [] p;
+        case 3:
+          p = new (std::nothrow) char;
+          operator delete (p, std::nothrow);
+          break;
+        case 4:
+          p = new (std::nothrow) char[10];
+          operator delete [](p, std::nothrow);
+          break;
+      }
+    }
+  }
+  TEST(MemoryTypes, VariousAllocs) {
+    void (*f)(void) = AllocateAndDeallocateUsingVariousAllocs;
+    MyThreadArray t(f, f, f, f);
+    t.Start();
+    t.Join();
+  }
+
 }  // namespace
 
 
