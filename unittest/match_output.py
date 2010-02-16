@@ -13,6 +13,7 @@ def matchFile(f, f_re):
     match = False
     for line in f:
       line = line.rstrip()
+      print line
       if re.search(line_re, line):
         match = True
 #         print 'match: %s =~ %s' % (line, line_re)
@@ -30,5 +31,5 @@ f = sys.stdin
 f_re = open(sys.argv[1])
 
 if not matchFile(f, f_re):
-  print >>sys.stderr, 'File does not match'
+  print >>sys.stderr, 'File does not match the template'
   sys.exit(1)
