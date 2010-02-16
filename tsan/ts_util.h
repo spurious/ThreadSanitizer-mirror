@@ -35,9 +35,10 @@
 #if defined(TS_VALGRIND)
 # define CHECK tl_assert
 #elif defined(TS_PIN)
+extern void Printf(const char *format, ...);
 extern void ThreadSanitizerDumpAllStacks();
 # define CHECK(x) do { if (!(x)) { \
-   printf("Assertion failed: %s (%s:%d) %s\n", \
+   Printf("Assertion failed: %s (%s:%d) %s\n", \
           __FUNCTION__, __FILE__, __LINE__, #x); \
    ThreadSanitizerDumpAllStacks(); \
    exit(1); }} while (0)
