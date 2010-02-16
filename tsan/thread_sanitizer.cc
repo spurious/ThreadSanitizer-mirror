@@ -3937,6 +3937,7 @@ struct Thread {
   static void InitClassMembers() {
     ScopedMallocCostCenter malloc_cc("InitClassMembers");
     all_threads_        = new Thread*[G_flags->max_n_threads];
+    memset(all_threads_, 0, sizeof(Thread*) * G_flags->max_n_threads);
     n_threads_          = 0;
     signaller_map_      = new SignallerMap;
   }

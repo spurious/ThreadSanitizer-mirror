@@ -1445,7 +1445,7 @@ static void On_AnnotateNewMemory(THREADID tid, ADDRINT pc,
 
 static void On_AnnotateNoOp(THREADID tid, ADDRINT pc,
                             ADDRINT file, ADDRINT line, ADDRINT a) {
-  Printf("%s T%d: %p\n", __FUNCTION__, tid, a);
+  Printf("%s T%d: %s:%d %p\n", __FUNCTION__, tid, (char*)file, (int)line, a);
   //DumpEvent(STACK_TRACE, tid, pc, 0, 0);
 //  PrintShadowStack(tid);
 }
