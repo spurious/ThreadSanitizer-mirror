@@ -36,7 +36,7 @@
    ThreadSanitizer:Race
    ...
    fun:cached_explode
-   fun:ap_explode_recent_gmt
+   fun:ap_explode_recent*
 }
 {
    log_request_time
