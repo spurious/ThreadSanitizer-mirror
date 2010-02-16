@@ -442,7 +442,7 @@ static INLINE void evh__die_mem_stack_helper ( Addr a, SizeT len ) {
     // Printf("T%d: -sp: %p => %p (%ld)\n", ts_tid, a, a + len, len);
   }
   if (!g_valgrind_threads[vg_tid].ignore_accesses) {
-    // ThreadSanitizerHandleStackMemChange(ts_tid, a, len, false);
+    ThreadSanitizerHandleStackMemChange(ts_tid, a, len, false);
     // Put(STACK_MEM_DIE, ts_tid, 0, a, len);
   }
 }
