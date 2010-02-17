@@ -502,6 +502,13 @@ static void DumpEvent(EventType type, int32_t tid, uintptr_t pc,
 }
 
 //--------- Wraping and relacing --------------- {{{1
+static void InformAboutFunctionWrap(RTN rtn) {
+  static bool wrap_debug = PhaseDebugIsOn("wrap");
+  if (!wrap_debug) return;
+  Printf("Function wrapped: %s (%s)\n",
+         RTN_Name(rtn).c_str(), IMG_Name(SEC_Img(RTN_Sec(rtn))).c_str());
+}
+
 static bool RtnMatchesName(const string &rtn_name, const string &name) {
   CHECK(name.size() > 0);
   size_t pos = rtn_name.find(name);
@@ -570,7 +577,7 @@ static uintptr_t CallFun6(CONTEXT *ctx, THREADID tid,
 // The original function will not be called.
 void ReplaceFunc3(IMG img, RTN rtn, const char *name, AFUNPTR replacement_func) {
   if (RTN_Valid(rtn) && RtnMatchesName(RTN_Name(rtn), name)) {
-    Printf("RTN_ReplaceSignature on %s (%s)\n", name, IMG_Name(img).c_str());
+    InformAboutFunctionWrap(rtn);
     PROTO proto = PROTO_Allocate(PIN_PARG(uintptr_t),
                                  CALLINGSTD_DEFAULT,
                                  "proto",
@@ -594,7 +601,7 @@ void ReplaceFunc3(IMG img, RTN rtn, const char *name, AFUNPTR replacement_func) 
 // Wrap a function with up to 4 parameters.
 void WrapFunc4(IMG img, RTN rtn, const char *name, AFUNPTR replacement_func) {
   if (RTN_Valid(rtn) && RtnMatchesName(RTN_Name(rtn), name)) {
-    Printf("RTN_ReplaceSignature on %s (%s)\n", name, IMG_Name(img).c_str());
+    InformAboutFunctionWrap(rtn);
     PROTO proto = PROTO_Allocate(PIN_PARG(uintptr_t),
                                  CALLINGSTD_DEFAULT,
                                  "proto",
@@ -622,7 +629,7 @@ void WrapFunc4(IMG img, RTN rtn, const char *name, AFUNPTR replacement_func) {
 // Wrap a function with up to 6 parameters.
 void WrapFunc6(IMG img, RTN rtn, const char *name, AFUNPTR replacement_func) {
   if (RTN_Valid(rtn) && RtnMatchesName(RTN_Name(rtn), name)) {
-    Printf("RTN_ReplaceSignature on %s (%s)\n", name, IMG_Name(img).c_str());
+    InformAboutFunctionWrap(rtn);
     PROTO proto = PROTO_Allocate(PIN_PARG(uintptr_t),
                                  CALLINGSTD_DEFAULT,
                                  "proto",
@@ -1754,7 +1761,7 @@ void CallbackForTRACE(TRACE trace, void *v) {
 #ifdef _MSC_VER
 void WrapStdCallFunc1(RTN rtn, char *name, AFUNPTR replacement_func) {
   if (RTN_Valid(rtn) && RtnMatchesName(RTN_Name(rtn), name)) {
-    Printf("RTN_ReplaceSignature on %s\n", name);
+    InformAboutFunctionWrap(rtn);
     PROTO proto = PROTO_Allocate(PIN_PARG(uintptr_t),
                                  CALLINGSTD_STDCALL,
                                  "proto",
@@ -1775,7 +1782,7 @@ void WrapStdCallFunc1(RTN rtn, char *name, AFUNPTR replacement_func) {
 
 void WrapStdCallFunc2(RTN rtn, char *name, AFUNPTR replacement_func) {
   if (RTN_Valid(rtn) && RtnMatchesName(RTN_Name(rtn), name)) {
-    Printf("RTN_ReplaceSignature on %s\n", name);
+    InformAboutFunctionWrap(rtn);
     PROTO proto = PROTO_Allocate(PIN_PARG(uintptr_t),
                                  CALLINGSTD_STDCALL,
                                  "proto",
@@ -1798,7 +1805,7 @@ void WrapStdCallFunc2(RTN rtn, char *name, AFUNPTR replacement_func) {
 
 void WrapStdCallFunc3(RTN rtn, char *name, AFUNPTR replacement_func) {
   if (RTN_Valid(rtn) && RtnMatchesName(RTN_Name(rtn), name)) {
-    Printf("RTN_ReplaceSignature on %s\n", name);
+    InformAboutFunctionWrap(rtn);
     PROTO proto = PROTO_Allocate(PIN_PARG(uintptr_t),
                                  CALLINGSTD_STDCALL,
                                  "proto",
@@ -1823,7 +1830,7 @@ void WrapStdCallFunc3(RTN rtn, char *name, AFUNPTR replacement_func) {
 
 void WrapStdCallFunc4(RTN rtn, char *name, AFUNPTR replacement_func) {
   if (RTN_Valid(rtn) && RtnMatchesName(RTN_Name(rtn), name)) {
-    Printf("RTN_ReplaceSignature on %s\n", name);
+    InformAboutFunctionWrap(rtn);
     PROTO proto = PROTO_Allocate(PIN_PARG(uintptr_t),
                                  CALLINGSTD_STDCALL,
                                  "proto",
@@ -1850,7 +1857,7 @@ void WrapStdCallFunc4(RTN rtn, char *name, AFUNPTR replacement_func) {
 
 void WrapStdCallFunc6(RTN rtn, char *name, AFUNPTR replacement_func) {
   if (RTN_Valid(rtn) && RtnMatchesName(RTN_Name(rtn), name)) {
-    Printf("RTN_ReplaceSignature on %s\n", name);
+    InformAboutFunctionWrap(rtn);
     PROTO proto = PROTO_Allocate(PIN_PARG(uintptr_t),
                                  CALLINGSTD_STDCALL,
                                  "proto",

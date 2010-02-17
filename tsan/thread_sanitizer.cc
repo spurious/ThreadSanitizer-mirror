@@ -5887,6 +5887,14 @@ static size_t GetMemoryLimitInMb() {
   return 0;
 }
 
+bool PhaseDebugIsOn(const char *phase_name) {
+  CHECK(G_flags);
+  for (size_t i = 0; i < G_flags->debug_phase.size(); i++) {
+    if (G_flags->debug_phase[i] == phase_name)
+      return true;
+  }
+  return false;
+}
 
 void ThreadSanitizerParseFlags(vector<string> *args) {
   // Check this first.
@@ -5943,6 +5951,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   FindIntFlag("sample_events_depth", 2, args, &G_flags->sample_events_depth);
 
   FindIntFlag("debug_level", 1, args, &G_flags->debug_level);
+  FindStringFlag("debug_phase", args, &G_flags->debug_phase);
   FindIntFlag("trace_level", 0, args, &G_flags->trace_level);
 
   FindIntFlag("literace_sampling", 0, args, &G_flags->literace_sampling);
