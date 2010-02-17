@@ -5457,7 +5457,11 @@ void Worker1() { sleep(1); Worker(); }
 void Worker2() { sleep(2); Worker(); }
 void Worker3() { sleep(3); Worker(); }
 
+#ifdef WIN32
+TEST(NegativeTests, DISABLED_PerThreadTest) {  // issue #23
+#else
 TEST(NegativeTests, PerThreadTest) {
+#endif
   MyThreadArray t1(Worker0, Worker1, Worker2, Worker3);
   t1.Start();
   t1.Join();
