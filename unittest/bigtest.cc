@@ -775,6 +775,6 @@ int main(int argc, const char **argv) {
    delete mainThreadPool;
    long end = GetTimeInMs();
    printf("...done in %dms\n", (int)(end - start));
-   
+   printf("RESULT bigtest: time= %d ms\n", (int)(end - start));
    return 0;
 }
