@@ -1432,6 +1432,14 @@ static void On_AnnotateBenignRace(THREADID tid, ADDRINT pc,
   DumpEvent(EXPECT_RACE, tid, descr, a, 1);
 }
 
+static void On_AnnotateBenignRaceSized(THREADID tid, ADDRINT pc,
+                                       ADDRINT file, ADDRINT line,
+                                       ADDRINT a, ADDRINT size, ADDRINT descr) {
+  for (size_t i = 0; i < (size_t)size; i++) {
+    DumpEvent(EXPECT_RACE, tid, descr, a + i, 1);
+  }
+}
+
 static void On_AnnotateExpectRace(THREADID tid, ADDRINT pc,
                                   ADDRINT file, ADDRINT line,
                                   ADDRINT a, ADDRINT descr) {
@@ -1739,6 +1747,14 @@ void CallbackForTRACE(TRACE trace, void *v) {
                      IARG_FUNCARG_ENTRYPOINT_VALUE, 2, \
                      IARG_FUNCARG_ENTRYPOINT_VALUE, 3)
 
+#define INSERT_BEFORE_5(name, to_insert) \
+    INSERT_BEFORE_FN(name, to_insert, \
+                     IARG_FUNCARG_ENTRYPOINT_VALUE, 0, \
+                     IARG_FUNCARG_ENTRYPOINT_VALUE, 1, \
+                     IARG_FUNCARG_ENTRYPOINT_VALUE, 2, \
+                     IARG_FUNCARG_ENTRYPOINT_VALUE, 3, \
+                     IARG_FUNCARG_ENTRYPOINT_VALUE, 4)
+
 #define INSERT_BEFORE_6(name, to_insert) \
     INSERT_BEFORE_FN(name, to_insert, \
                      IARG_FUNCARG_ENTRYPOINT_VALUE, 0, \
@@ -2021,6 +2037,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
 
   // Annotations.
   INSERT_BEFORE_4("AnnotateBenignRace", On_AnnotateBenignRace);
+  INSERT_BEFORE_5("AnnotateBenignRaceSized", On_AnnotateBenignRaceSized);
   INSERT_BEFORE_4("AnnotateExpectRace", On_AnnotateExpectRace);
   INSERT_BEFORE_3("AnnotateTraceMemory", On_AnnotateTraceMemory);
   INSERT_BEFORE_4("AnnotateNewMemory", On_AnnotateNewMemory);

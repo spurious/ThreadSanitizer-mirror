@@ -2382,6 +2382,17 @@ ANN_FUNC(void, AnnotateBenignRace, const char *file, int line, void *mem, char *
   DO_CREQ_v_WWWW(TSREQ_BENIGN_RACE, void*,mem, char*,description, char*, file, long, (long)line);
 }
 
+ANN_FUNC(void, AnnotateBenignRaceSized, const char *file, int line, void *mem, long size, char *description)
+{
+  const char *name = "AnnotateBenignRace";
+  long i;
+  ANN_TRACE("--#%d %s[%p] %s:%d\n", tid, name, mem, file, line);
+  for (i = 0; i < size; i++) {
+    DO_CREQ_v_WWWW(TSREQ_BENIGN_RACE, char*,(char*)mem+i, char*,description, char*, file, long, (long)line);
+  }
+}
+
+
 ANN_FUNC(void, AnnotateNewMemory, char *file, int line, void *mem, long size)
 {
   const char *name = "AnnotateNewMemory";

@@ -65,6 +65,8 @@ uint32_t g_lock_era = 0;
 
 FLAGS *G_flags = NULL;
 
+bool debug_expected_races = false;
+
 // -------- Util ----------------------------- {{{1
 
 string PcToRtnNameWithStats(uintptr_t pc, bool demangle) {
@@ -5000,10 +5002,10 @@ class Detector {
     expected_race.description = (const char*)e_->pc();
     expected_race.pc = cur_thread_->GetCallstackEntry(1);
     (*G_expected_races_map)[e_->a()] = expected_race;
-    if (G_flags->verbosity >= 2) {
-      Printf("T%d: EXPECT_RACE: %p '%s'\n", e_->tid(),
+    if (debug_expected_races) {
+      Printf("T%d: EXPECT_RACE: ptr=%p descr='%s' is_benign=%d\n", e_->tid(),
              e_->a(),
-             expected_race.description);
+             expected_race.description, e_->info());
       cur_thread_->ReportStackTrace(e_->pc());
     }
   }
@@ -6047,6 +6049,8 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   if (!args->empty()) {
     ReportUnknownFlagAndExit(args->front());
   }
+
+  debug_expected_races = PhaseDebugIsOn("expected_races");
 }
 
 // -------- ThreadSanitizer ------------------ {{{1
