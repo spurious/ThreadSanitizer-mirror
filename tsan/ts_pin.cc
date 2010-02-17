@@ -1450,6 +1450,11 @@ static void On_AnnotateNoOp(THREADID tid, ADDRINT pc,
 //  PrintShadowStack(tid);
 }
 
+static void On_AnnotateFlushState(THREADID tid, ADDRINT pc,
+                                  ADDRINT file, ADDRINT line) {
+  DumpEvent(FLUSH_STATE, tid, pc, 0, 0);
+}
+
 static void On_AnnotateCondVarSignal(THREADID tid, ADDRINT pc,
                                      ADDRINT file, ADDRINT line, ADDRINT obj) {
   DumpEvent(SIGNAL, tid, pc, obj, 0);
@@ -2013,6 +2018,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_BEFORE_3("AnnotateTraceMemory", On_AnnotateTraceMemory);
   INSERT_BEFORE_4("AnnotateNewMemory", On_AnnotateNewMemory);
   INSERT_BEFORE_3("AnnotateNoOp", On_AnnotateNoOp);
+  INSERT_BEFORE_2("AnnotateFlushState", On_AnnotateFlushState);
 
   INSERT_BEFORE_3("AnnotateCondVarWait", On_AnnotateCondVarWait);
   INSERT_BEFORE_3("AnnotateCondVarSignal", On_AnnotateCondVarSignal);
