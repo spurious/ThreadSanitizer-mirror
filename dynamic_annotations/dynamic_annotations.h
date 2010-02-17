@@ -315,6 +315,12 @@
   #define ANNOTATE_NO_OP(arg) \
     AnnotateNoOp(__FILE__, __LINE__, arg)
 
+  /* Force the race detector to flush its state. The actual effect depends on
+   * the implementation of the detector. */
+  #define ANNOTATE_FLUSH_STATE() \
+    AnnotateFlushState(__FILE__, __LINE__)
+
+
 #else  /* DYNAMIC_ANNOTATIONS_ENABLED == 0 */
 
   #define ANNOTATE_RWLOCK_CREATE(lock) /* empty */
@@ -423,6 +429,7 @@ void AnnotateIgnoreWritesBegin(const char *file, int line);
 void AnnotateIgnoreWritesEnd(const char *file, int line);
 void AnnotateNoOp(const char *file, int line,
                   const volatile void *arg);
+void AnnotateFlushState(const char *file, int line);
 
 /* Return non-zero value if running under valgrind. */
 int RunningOnValgrind(void);

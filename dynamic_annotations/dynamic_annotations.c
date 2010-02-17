@@ -112,6 +112,7 @@ void AnnotateIgnoreWritesBegin(const char *file, int line){}
 void AnnotateIgnoreWritesEnd(const char *file, int line){}
 void AnnotateNoOp(const char *file, int line,
                   const volatile void *arg){}
+void AnnotateFlushState(const char *file, int line){}
 
 static int GetRunningOnValgrind(void) {
   char *running_on_valgrind_str = getenv("RUNNING_ON_VALGRIND");
