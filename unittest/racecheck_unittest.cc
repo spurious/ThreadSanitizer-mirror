@@ -6415,6 +6415,7 @@ void Worker() {
 
 // Too slow. Need to run it separately.
 TEST(StressTests, StartAndJoinManyThreads) {
+  ANNOTATE_FLUSH_STATE();
   for (int i = 0; i < 2000; i++) {
     if ((i % 100) == 0)
       printf(".");
