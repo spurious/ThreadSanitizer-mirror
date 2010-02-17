@@ -359,6 +359,7 @@
   #define ANNOTATE_IGNORE_READS_AND_WRITES_BEGIN() /* empty */
   #define ANNOTATE_IGNORE_READS_AND_WRITES_END() /* empty */
   #define ANNOTATE_NO_OP(arg) /* empty */
+  #define ANNOTATE_FLUSH_STATE() /* empty */
 
 #endif  /* DYNAMIC_ANNOTATIONS_ENABLED */
 
