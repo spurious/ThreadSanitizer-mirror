@@ -1,10 +1,10 @@
 /* Copyright (c) 2008-2009, Google Inc.
  * All rights reserved.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
  * met:
- * 
+ *
  *     * Redistributions of source code must retain the above copyright
  * notice, this list of conditions and the following disclaimer.
  *     * Redistributions in binary form must reproduce the above
@@ -14,7 +14,7 @@
  *     * Neither the name of Google Inc. nor the names of its
  * contributors may be used to endorse or promote products derived from
  * this software without specific prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
  * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
@@ -58,7 +58,7 @@
 #define __DYNAMIC_ANNOTATIONS_H__
 
 #ifndef DYNAMIC_ANNOTATIONS_ENABLED
-# define DYNAMIC_ANNOTATIONS_ENABLED 0 
+# define DYNAMIC_ANNOTATIONS_ENABLED 0
 #endif
 
 #if DYNAMIC_ANNOTATIONS_ENABLED != 0
@@ -199,12 +199,13 @@
      program's synchronization using the other annotations, but these can
      be used when all else fails. */
 
-  /* Report that we may have a benign race at "address".
-     Insert at the point where "address" has been allocated, preferably close
-     to the point where the race happens.
-     See also ANNOTATE_BENIGN_RACE_STATIC. */
-  #define ANNOTATE_BENIGN_RACE(address, description) \
-    AnnotateBenignRace(__FILE__, __LINE__, address, description)
+  /* Report that we may have a benign race at "pointer", with size
+     "sizeof(*(pointer))". "pointer" must be a non-void* pointer.  Insert at the
+     point where "pointer" has been allocated, preferably close to the point
+     where the race happens.  See also ANNOTATE_BENIGN_RACE_STATIC. */
+  #define ANNOTATE_BENIGN_RACE(pointer, description) \
+    AnnotateBenignRaceSized(__FILE__, __LINE__, pointer, \
+                            sizeof(*(pointer)), description)
 
   /* Same as ANNOTATE_BENIGN_RACE(address, description), but applies to
      the memory range [address, address+size). */
@@ -447,7 +448,6 @@ int RunningOnValgrind(void);
     ANNOTATE_IGNORE_READS_END();
     return res;
   }
-
   /* Apply ANNOTATE_BENIGN_RACE_SIZED to a static variable. */
   #define ANNOTATE_BENIGN_RACE_STATIC(static_var, description)        \
     namespace {                                                       \
