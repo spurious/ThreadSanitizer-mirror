@@ -73,6 +73,9 @@
 static void *g_lock;
 static int   g_n_created_threads;
 
+typedef hash_map<intptr_t, string> SymbolsTable;
+static SymbolsTable *sym_tab;
+
 string *g_main_module_path;
 
 //--------------- StackFrame ----------------- {{{1
@@ -155,7 +158,9 @@ static void OnEvent_ThreadExit(void *drcontext) {
 
 void OnEvent_ModuleLoaded(void *drcontext, const module_data_t *info,
                           bool loaded) {
+  // if this assertion fails, your DynamoRIO is too old. You need rev261 with some patches...
   CHECK(info->full_path);
+
   dr_printf("%s: %s (%s)\n", __FUNCTION__,
             dr_module_preferred_name(info), info->full_path);
   if (g_main_module_path == NULL) {
@@ -318,25 +323,138 @@ static dr_emit_flags_t OnEvent_Trace(void *drcontext, void *tag,
   return DR_EMIT_DEFAULT;
 }
 
+int replace_foo(int i, int j, int k) {
+  dr_printf(" dy 'foo_replace'(%i, %i, %i)\n", i, j, k);
+  return 1;
+}
+
+static void prefix_foo(int i, int j, int k) {
+  dr_printf(" dy 'foo_prefix'(%i, %i, %i)\n", i, j, k);
+}
+
+static int wrap_foo(int i, int j, int k, int (*orig_wrap_foo)(int,int,int)) {
+  dr_printf(" dy 'foo_wrap'(%i, %i, %i)\n", i, j, k);
+  dr_printf("orig_wrap_foo = %p\n", orig_wrap_foo);
+  int ret = 13;
+  if (orig_wrap_foo != NULL)
+    ret = orig_wrap_foo(i, j, k);
+  else
+    dr_printf("ERROR! orig_wrap_foo is not set!\n");/**/
+  return ret;
+}
+
+void print_bb(void* drcontext, instrlist_t *bb, const char * desc) {
+  dr_printf("==================\n");
+  dr_printf("%s:\n", desc);
+  for (instr_t *i = instrlist_first(bb); i != NULL; i = instr_get_next(i)) {
+    instr_disassemble(drcontext, i, 1);
+    dr_printf("\n");
+  }
+  dr_printf("==================\n");
+}
+
 static dr_emit_flags_t OnEvent_BB(void* drcontext, void *tag, instrlist_t *bb,
                                   bool for_trace, bool translating) {
   instr_t *instr, *next_instr;
 
-
-  for (instr = instrlist_first(bb); instr != NULL; instr = next_instr) {
-    next_instr = instr_get_next(instr);
-    InstrumentInstruction(drcontext, bb, instr);
+  // Try to replace foo with replace_foo
+  instr_t *first_instr = instrlist_first(bb);
+  app_pc pc = instr_get_app_pc(first_instr);
+  string symbol_name = "UNKNOWN";
+  if (sym_tab->find((intptr_t)pc) != sym_tab->end()) {
+    symbol_name = (*sym_tab)[(intptr_t)pc];
+    //dr_printf("Symbol = %s\n", symbol_name.c_str());
   }
 
+  if (StringMatch("*foo_to_replace*", symbol_name)) {
+    const module_data_t *info = dr_lookup_module(pc);
+    dr_printf(" 'foo_to_replace' entry point: bb %p, %s / %s\n", pc, dr_module_preferred_name(info), info->full_path);
+    instrlist_clear(drcontext, bb);
+    instrlist_append(bb, INSTR_XL8(INSTR_CREATE_jmp(drcontext, opnd_create_pc((app_pc)replace_foo)), pc));
+    // analog to drmemory/replace.c logic
+  } else {
+    if (StringMatch("*foo_to_prefix*", symbol_name)) {
+      const module_data_t *info = dr_lookup_module(pc);
+      dr_printf(" 'foo_to_prefix' entry point: bb %p, %s / %s\n", pc, dr_module_preferred_name(info), info->full_path);
+      // print_bb(drcontext, bb, "BEFORE");
+      dr_printf(" prefix_foo = %p\n", prefix_foo);
+      dr_insert_clean_call(drcontext, bb, first_instr, (void*)prefix_foo, false, 0);
+      // print_bb(drcontext, bb, "AFTER");
+    } else if (StringMatch("*foo_to_wrap*", symbol_name)) {
+      const module_data_t *info = dr_lookup_module(pc);
+      dr_printf(" 'foo_to_wrap' entry point: bb %p, %s / %s\n", pc, dr_module_preferred_name(info), info->full_path);
+      print_bb(drcontext, bb, "BEFORE");
+      dr_printf(" wrap_foo = %p\n", wrap_foo);
+      instr_t *jmp_instr = INSTR_XL8(INSTR_CREATE_jmp(drcontext,
+                                  opnd_create_pc((app_pc)wrap_foo)), pc);
+      instrlist_prepend(bb, jmp_instr); 
+      instr_t *mov_instr = INSTR_CREATE_mov_imm(drcontext,
+                           opnd_create_reg(REG_XCX), opnd_create_reg(REG_XSI));
+      instr_t *add_instr = INSTR_CREATE_add(drcontext,
+                           opnd_create_reg(REG_XCX), OPND_CREATE_INTPTR(0));
+      int old_add_size = instr_length(drcontext, add_instr);
+      int delta_pc = instr_length(drcontext, jmp_instr) + old_add_size;
+      dr_printf(" jmp = %ib, add = %ib\n", instr_length(drcontext, jmp_instr), old_add_size);
 
-  OnEvent_Trace(drcontext, tag, bb, translating);
+      /*HACK!*/add_instr = INSTR_CREATE_add(drcontext,
+                           opnd_create_reg(REG_XCX),
+                           OPND_CREATE_INTPTR(delta_pc));
+      instrlist_prepend(bb, add_instr);
+      instrlist_prepend(bb, mov_instr);
+      CHECK(instr_length(drcontext, add_instr) == old_add_size);
+      print_bb(drcontext, bb, "AFTER");
+    }
+
+    for (instr = instrlist_first(bb); instr != NULL; instr = next_instr) {
+      next_instr = instr_get_next(instr);
+      if (instr_get_app_pc(instr))  // don't instrument non-app code
+        InstrumentInstruction(drcontext, bb, instr);
+    }
+
+
+    OnEvent_Trace(drcontext, tag, bb, translating);
+  }
 
   return DR_EMIT_DEFAULT;
 }
 
+void ReadSymbolsTableFromFile(const char *filename) {
+  file_t f = dr_open_file(filename, DR_FILE_READ);
+  CHECK(f != INVALID_FILE);
+
+  const int BUFF_SIZE = 1 << 16;  // should be enough for testing
+  char buff[BUFF_SIZE];
+  dr_read_file(f, buff, BUFF_SIZE);
+  char *cur_line = buff;
+  while (*cur_line) {
+    char *next_line = strstr(cur_line, "\n");
+    if (next_line != NULL)
+      *next_line = 0;
+    char fun_name[1024];
+    char dummy;
+    void* pc;
+    sscanf(cur_line, "%p %c %s", &pc, &dummy, fun_name);
+    //dr_printf("%s => %p\n", fun_name, pc);
+    (*sym_tab)[(intptr_t)pc] = fun_name;
+    
+    if (next_line == NULL) break;
+    cur_line = next_line + 1;
+  }
+
+}
 
 //--------------- dr_init ----------------- {{{1
 DR_EXPORT void dr_init(client_id_t id) {
+  sym_tab = new SymbolsTable;
+
+  // HACK doesn't work if multiple options are passed.
+  const char *opstr = dr_get_options(id);
+  dr_printf("Options: %s\n", opstr);
+  const char *fname = strstr(opstr, "--symbols=");
+  if (fname) {
+    ReadSymbolsTableFromFile(fname + 10);
+  }
+
   // Register events.
   dr_register_exit_event(OnEvent_Exit);
   dr_register_bb_event(OnEvent_BB);

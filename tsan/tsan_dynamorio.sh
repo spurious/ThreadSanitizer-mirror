@@ -30,12 +30,15 @@ if [ "$BITNESS" == "" ]; then
   if [ "$file_format" == "file format elf64-x86-64" ]; then
     BITNESS=64
     ARCH=amd64
-  else 
+  else
     BITNESS=32
     ARCH=x86
   fi
 fi
 
+SYMBOLS_FILE="$(mktemp symbols.XXXXXX)"
+nm $PROGRAM > $SYMBOLS_FILE
+TS_FLAGS="$TS_FLAGS --symbols=$SYMBOLS_FILE"
 
 $DYNAMORIO_ROOT/bin$BITNESS/drdeploy \
    -client $TS_ROOT/bin/$ARCH-linux-debug-ts_dynamorio.so 0 "$TS_FLAGS" \
