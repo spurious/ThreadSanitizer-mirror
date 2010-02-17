@@ -716,6 +716,9 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
     case TSREQ_THREAD_SANITIZER_QUERY:
       *ret = (UWord)ThreadSanitizerQuery((const char *)args[1]);
       break;
+    case TSREQ_FLUSH_STATE:
+      Put(FLUSH_STATE, ts_tid, pc, 0, 0);
+      break;
     default: CHECK(0);
   }
   return True;

@@ -78,6 +78,7 @@ enum EventType {
   EXPECT_RACE,
   VERBOSITY,
   STACK_TRACE,
+  FLUSH_STATE,
   LAST_EVENT
 };
 
@@ -132,6 +133,7 @@ static const char *kEventNames[] = {
   "EXPECT_RACE",
   "VERBOSITY",
   "STACK_TRACE",
+  "FLUSH_STATE",
   "LAST_EVENT"
 };
 

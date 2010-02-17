@@ -4734,6 +4734,11 @@ class Detector {
     }
   }
 
+  // Force state flushing.
+  void FlushState() {
+    ForgetAllStateAndStartOver("State flushing requested by client");
+  }
+
   void FlushIfNeeded() {
     // Are we out of segment IDs?
     if (Segment::NumberOfSegments() > ((kMaxSID * 15) / 16)) {
@@ -4904,6 +4909,7 @@ class Detector {
       case STACK_TRACE : HandleStackTrace(); break;
       case NOOP        : CHECK(0);           break;  // can't happen.
       case VERBOSITY   : e_->Print(); G_flags->verbosity = e_->info(); break;
+      case FLUSH_STATE : FlushState();       break;
       default                 : break;
     }
 

@@ -107,6 +107,14 @@ static inline int  VALGRIND_TS_SEGMENT_ID(void) {
 // Do a client request.  This is a macro rather than a function 
 // so as to avoid having an extra function in the stack trace.
 
+#define DO_CREQ_v_v(_creqF)                              \
+   do {                                                  \
+      Word _unused_res;                                  \
+      VALGRIND_DO_CLIENT_REQUEST(_unused_res, 0,         \
+                                 (_creqF),               \
+                                 0,0,0,0,0);             \
+   } while (0)
+
 #define DO_CREQ_v_W(_creqF, _ty1F,_arg1F)                \
    do {                                                  \
       Word _unused_res, _arg1;                           \
@@ -2276,6 +2284,10 @@ ANN_FUNC(const char *, ThreadSanitizerQuery, const char *query) {
   Word res;
   DO_CREQ_W_WW(res, TSREQ_THREAD_SANITIZER_QUERY, const char*, query, long, 0);
   return (const char *)res;
+}
+
+ANN_FUNC(void, AnnotateFlushState, const char *unused_file, int unused_line) {
+  DO_CREQ_v_v(TSREQ_FLUSH_STATE);
 }
 
 ANN_FUNC(void, AnnotateRWLockCreate, const char *file, int line, void *lock)
