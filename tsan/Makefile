@@ -129,13 +129,16 @@ la:
 	$(MAKE) all OS=linux ARCH=arm DEBUG=0
 
 w: w32
-w32: w32d
+w32: w32d w32o
 
 m: m32
 m32: m32o m32d
 
 w32d:
 	$(MAKE) all OS=windows ARCH=x86 DEBUG=1
+
+w32o:
+	$(MAKE) all OS=windows ARCH=x86 DEBUG=0
 
 m32o:
 	$(MAKE) all OS=darwin ARCH=x86 DEBUG=0
