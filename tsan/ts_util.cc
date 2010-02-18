@@ -181,7 +181,7 @@ long my_strtol(const char *str, char **end) {
 #elif defined(_MSC_VER) 
   typedef FILE *TS_FILE;
   #define TS_FILE_INVALID (NULL)
-  #define read(fd, buf, size) fread(buf, size, 1, fd)
+  #define read(fd, buf, size) fread(buf, 1, size, fd)
   #define close fclose
 #endif
 
