@@ -111,6 +111,9 @@ public class ThreadSanitizerTest {
 
   class ThreadRunner {
     protected int shared_var = 0;
+    protected short shared_short_var = 0;
+    protected char shared_char_var = 0;
+    protected long shared_long_var = 0;
     protected int shared_var2 = 0;
     protected Integer shared_obj;
 
@@ -181,6 +184,30 @@ public class ThreadSanitizerTest {
     new ThreadRunner2() {
       public void thread1() { shared_var = 1; }
       public void thread2() { shared_var = 2; }
+    };
+  }
+
+  public void testPositive_WW_NoLocksShort() {
+    describe("Race: two unlocked writesl; short");
+    new ThreadRunner2() {
+      public void thread1() { shared_short_var = 1; }
+      public void thread2() { shared_short_var = 2; }
+    };
+  }
+
+  public void testPositive_WW_NoLocksChar() {
+    describe("Race: two unlocked writesl; char");
+    new ThreadRunner2() {
+      public void thread1() { shared_char_var = 1; }
+      public void thread2() { shared_char_var = 2; }
+    };
+  }
+
+  public void testPositive_WW_NoLocksLong() {
+    describe("Race: two unlocked writesl; long");
+    new ThreadRunner2() {
+      public void thread1() { shared_long_var = 1; }
+      public void thread2() { shared_long_var = 2; }
     };
   }
 
