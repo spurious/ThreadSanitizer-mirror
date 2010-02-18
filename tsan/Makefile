@@ -6,7 +6,7 @@ VALGRIND_ROOT=../third_party/valgrind
 VALGRIND_INST_ROOT=../tsan_inst
 STLPORT_ROOT=../third_party/stlport
 GTEST_ROOT=../third_party/googletest
-OFFLINE=0
+OFFLINE=1
 
 COPT=-O -fno-omit-frame-pointer
 CWARN=-Wall -Wmissing-prototypes -Wshadow -Wpointer-arith -Wstrict-prototypes \
