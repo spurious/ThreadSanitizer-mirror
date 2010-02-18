@@ -84,7 +84,8 @@ static void SkipCommentText(FILE *file) {
     char file[kBufSize];
     int line = 0;
     uintptr_t pc = 0;
-    if (sscanf(buff, "PC %lx %s %s %s %d", &pc, img, rtn, file, &line) == 5 &&
+    if (sscanf(buff, "PC %lx %s %s %s %d", (unsigned long*)&pc,
+               img, rtn, file, &line) == 5 &&
         pc != 0) {
       CHECK(g_pc_info_map);
       PcInfo pc_info;
@@ -119,7 +120,9 @@ bool ReadOneEventFromFile(FILE *file, Event *event) {
   uint32_t tid;
   uintptr_t pc, a, info;
   SkipWhiteSpaceAndComments(file);
-  if (5 == fscanf(file, "%s%x%lx%lx%lx", name, &tid, &pc, &a, &info)) {
+  if (5 == fscanf(file, "%s%x%lx%lx%lx", name, &tid,
+                  (unsigned long*)&pc, (unsigned long*)&a,
+                  (unsigned long*)&info)) {
     event->Init(EventNameToEventType(name), tid, pc, a, info);
     return true;
   }
