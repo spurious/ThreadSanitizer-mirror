@@ -437,42 +437,6 @@ WRAP_FREE(VG_Z_LIBSTDCXX_SONAME, _ZdaPvRKSt9nothrow_t);
 
 
 //-------------- PTHREADS -------------------- {{{1
-
-#if 0
-#define LD_FUNC(ret_ty, f, args...) \
-   ret_ty I_WRAP_SONAME_FNNAME_ZZ(ldZhZa,f)(args); \
-   ret_ty I_WRAP_SONAME_FNNAME_ZZ(ldZhZa,f)(args)
-
-
-LD_FUNC(long, doZulookupZux, void * arg1, void * arg2, void * arg3,
-        void * arg4, void * arg5, void * arg6, void * arg7, void * arg8,
-        void * arg9, void * arg10, void * arg11)
-{
-   long result;
-   OrigFn fn;
-   VALGRIND_GET_ORIG_FN(fn);   
-   IGNORE_ALL_ACCESSES_BEGIN();
-   CALL_FN_W_11W(result, fn, arg1, arg2, arg3, arg4, arg5, arg6,
-                    arg7, arg8, arg9, arg10, arg11);
-   IGNORE_ALL_ACCESSES_END();
-   return result;
-}
-
-LD_FUNC(Word, ZaZudlZustartZa, void * arg)
-{
-   Word result;
-   OrigFn fn;
-   VALGRIND_GET_ORIG_FN(fn);
-   // why is this not called???
-   tl_assert(0);
-   IGNORE_ALL_ACCESSES_BEGIN();
-   CALL_FN_W_W(result, fn, arg);
-   IGNORE_ALL_ACCESSES_END();
-   return result;
-}
-
-#endif 
-
 /* A lame version of strerror which doesn't use the real libc
    strerror_r, since using the latter just generates endless more
    threading errors (glibc goes off and does tons of crap w.r.t.
@@ -2159,10 +2123,6 @@ LIBSTDCXX_FUNC(long, ZuZucxaZuguardZurelease, void *p) {
    { return Replace_memcpy(dst, src, len); }
 
 MEMCPY(VG_Z_LIBC_SONAME, memcpy)
-#if defined(VGO_linux)
-MEMCPY(VG_Z_LD_SO_1,     memcpy) /* ld.so.1 */
-MEMCPY(VG_Z_LD64_SO_1,   memcpy) /* ld64.so.1 */
-#endif
 /* icc9 blats these around all over the place.  Not only in the main
    executable but various .so's.  They are highly tuned and read
    memory beyond the source boundary (although work correctly and
@@ -2183,12 +2143,6 @@ MEMCPY(NONE, _intel_fast_memcpy)
 // Apparently index() is the same thing as strchr()
 STRCHR(VG_Z_LIBC_SONAME,          strchr)
 STRCHR(VG_Z_LIBC_SONAME,          index)
-#if defined(VGO_linux)
-STRCHR(VG_Z_LD_LINUX_SO_2,        strchr)
-STRCHR(VG_Z_LD_LINUX_X86_64_SO_2, strchr)
-STRCHR(VG_Z_LD_LINUX_SO_2,        index)
-STRCHR(VG_Z_LD_LINUX_X86_64_SO_2, index)
-#endif
 
 // --- STRRCHR RINDEX -----------------------------------------------------
 //
@@ -2199,12 +2153,6 @@ STRCHR(VG_Z_LD_LINUX_X86_64_SO_2, index)
 
 STRRCHR(VG_Z_LIBC_SONAME,          strrchr)
 STRRCHR(VG_Z_LIBC_SONAME,          rindex)
-#if defined(VGO_linux)
-STRRCHR(VG_Z_LD_LINUX_SO_2,        strrchr)
-STRRCHR(VG_Z_LD_LINUX_X86_64_SO_2, strrchr)
-STRRCHR(VG_Z_LD_LINUX_SO_2,        rindex)
-STRRCHR(VG_Z_LD_LINUX_X86_64_SO_2, rindex)
-#endif
 
 // --- STRCMP -----------------------------------------------------
 //
@@ -2216,10 +2164,6 @@ STRRCHR(VG_Z_LD_LINUX_X86_64_SO_2, rindex)
    { return Replace_strcmp(s1, s2); }
 
 STRCMP(VG_Z_LIBC_SONAME,          strcmp)
-#if defined(VGO_linux)
-STRCMP(VG_Z_LD_LINUX_X86_64_SO_2, strcmp)
-STRCMP(VG_Z_LD64_SO_1,            strcmp)
-#endif
 
 #define MEMCHR(soname, fnname) \
    void* VG_REPLACE_FUNCTION_ZU(soname,fnname) (const void *s, int c, SizeT n); \
@@ -2227,9 +2171,6 @@ STRCMP(VG_Z_LD64_SO_1,            strcmp)
    { return Replace_memchr(s, c, n); }
 
 MEMCHR(VG_Z_LIBC_SONAME, memchr)
-#if defined(VGO_darwin)
-MEMCHR(VG_Z_DYLD,        memchr)
-#endif
 
 // --- STRLEN -----------------------------------------------------
 //
@@ -2243,10 +2184,6 @@ MEMCHR(VG_Z_DYLD,        memchr)
    { return Replace_strlen(str); }
 
 STRLEN(VG_Z_LIBC_SONAME,          strlen)
-#if defined(VGO_linux)
-STRLEN(VG_Z_LD_LINUX_SO_2,        strlen)
-STRLEN(VG_Z_LD_LINUX_X86_64_SO_2, strlen)
-#endif
 
 // --- STRCPY -----------------------------------------------------
 //
