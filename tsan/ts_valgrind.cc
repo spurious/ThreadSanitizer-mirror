@@ -933,8 +933,9 @@ static void instrument_mem_access ( IRSB*   bbOut,
    addStmtToIRSB( bbOut, IRStmt_Dirty(di) );
 }
 
-
-void instrument_statement ( IRStmt* st, IRSB* bbIn, IRSB* bbOut, IRType hWordTy ) {
+int instrument_statement ( IRStmt* st, IRSB* bbIn, IRSB* bbOut, IRType hWordTy,
+                           bool do_instrument ) {
+  int res = 0;
   switch (st->tag) {
     case Ist_NoOp:
     case Ist_AbiHint:
@@ -960,25 +961,27 @@ void instrument_statement ( IRStmt* st, IRSB* bbIn, IRSB* bbOut, IRType hWordTy 
       break;
 
     case Ist_Store:
-      instrument_mem_access(
+      if (do_instrument) instrument_mem_access(
         bbOut,
         st->Ist.Store.addr,
         sizeofIRType(typeOfIRExpr(bbIn->tyenv, st->Ist.Store.data)),
         True/*isStore*/,
         sizeofIRType(hWordTy)
       );
+      res++;
       break;
 
     case Ist_WrTmp: {
       IRExpr* data = st->Ist.WrTmp.data;
       if (data->tag == Iex_Load) {
-        instrument_mem_access(
+        if (do_instrument) instrument_mem_access(
             bbOut,
             data->Iex.Load.addr,
             sizeofIRType(data->Iex.Load.ty),
             False/*!isStore*/,
             sizeofIRType(hWordTy)
             );
+        res++;
       }
       break;
     }
@@ -989,13 +992,14 @@ void instrument_statement ( IRStmt* st, IRSB* bbIn, IRSB* bbOut, IRType hWordTy 
       if (st->Ist.LLSC.storedata == NULL) {
         /* LL */
         dataTy = typeOfIRTemp(bbIn->tyenv, st->Ist.LLSC.result);
-        instrument_mem_access(
+        if (do_instrument) instrument_mem_access(
           bbOut,
           st->Ist.LLSC.addr,
           sizeofIRType(dataTy),
           False/*isStore*/,
           sizeofIRType(hWordTy)
         );
+        res++;
       } else {
         /* SC */
         /* ignore */
@@ -1013,16 +1017,18 @@ void instrument_statement ( IRStmt* st, IRSB* bbIn, IRSB* bbOut, IRType hWordTy 
         tl_assert(d->mSize != 0);
         dataSize = d->mSize;
         if (d->mFx == Ifx_Read || d->mFx == Ifx_Modify) {
-          instrument_mem_access(
+          if (do_instrument) instrument_mem_access(
             bbOut, d->mAddr, dataSize, False/*!isStore*/,
             sizeofIRType(hWordTy)
           );
+          res++;
         }
         if (d->mFx == Ifx_Write || d->mFx == Ifx_Modify) {
-          instrument_mem_access(
+          if (do_instrument) instrument_mem_access(
             bbOut, d->mAddr, dataSize, True/*isStore*/,
             sizeofIRType(hWordTy)
           );
+          res++;
         }
       } else {
         tl_assert(d->mAddr == NULL);
@@ -1035,6 +1041,7 @@ void instrument_statement ( IRStmt* st, IRSB* bbIn, IRSB* bbOut, IRType hWordTy 
       ppIRStmt(st);
       tl_assert(0);
   } /* switch (st->tag) */
+  return res;
 }
 
 
@@ -1071,20 +1078,31 @@ static IRSB* ts_instrument ( VgCallbackClosure* closure,
     i++;
   }
   int first = i;
-  for (/*use current i*/; i < bbIn->stmts_used; i++) {
+  int n_mops = 0;
+  // count mops
+  if (instrument_memory) {
+    for (i = first; i < bbIn->stmts_used; i++) {
+      IRStmt* st = bbIn->stmts[i];
+      tl_assert(st);
+      tl_assert(isFlatIRStmt(st));
+      n_mops += instrument_statement(st, bbIn, bbOut, hWordTy, false);
+    } /* iterate over bbIn->stmts */
+  }
+  int n_mops_done = 0;
+  // instrument mops and copy the rest of BB to the new one.
+  for (i = first; i < bbIn->stmts_used; i++) {
     IRStmt* st = bbIn->stmts[i];
     tl_assert(st);
     tl_assert(isFlatIRStmt(st));
-
-    if (instrument_memory) {
-      if (i == first && G_flags->keep_history >= 1 && create_segments) {
-        ts_instrument_trace_entry(bbOut);
-      }
-      instrument_statement(st, bbIn, bbOut, hWordTy);
+    if (i == first && n_mops && G_flags->keep_history >= 1 && create_segments) {
+      ts_instrument_trace_entry(bbOut);
     }
-
+    if (instrument_memory) {
+      n_mops_done += instrument_statement(st, bbIn, bbOut, hWordTy, true);
+    }
     addStmtToIRSB( bbOut, st );
   } /* iterate over bbIn->stmts */
+  CHECK(n_mops == n_mops_done);
 
   ts_instrument_final_jump(bbOut, bbIn->next, bbIn->jumpkind, layout, gWordTy, hWordTy);
 
