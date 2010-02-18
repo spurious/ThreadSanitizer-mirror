@@ -129,7 +129,7 @@ la:
 	$(MAKE) all OS=linux ARCH=arm DEBUG=0
 
 w: w32
-w32: w32d w32o
+w32: w32d
 
 m: m32
 m32: m32o m32d
