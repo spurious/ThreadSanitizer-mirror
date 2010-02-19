@@ -35,6 +35,12 @@
 void DummyWorker() {
 }
 
+void LongWorker() {
+  Sleep(1);
+  volatile int i = 1 << 20;
+  while(i--);
+}
+
 // Just spawn few threads with different stack sizes.
 TEST(NegativeTests, WindowsThreadStackSizeTest) {
   int sizes[3] = {1 << 19, 1 << 21, 1 << 22};
@@ -44,4 +50,13 @@ TEST(NegativeTests, WindowsThreadStackSizeTest) {
     CHECK(t > 0);
     ::WaitForSingleObject(t, INFINITE);
   }
+}
+
+// Just spawn few threads with different stack sizes.
+TEST(NegativeTests, WindowsJoinWithTimeout) {
+  HANDLE t = ::CreateThread(0, 0,
+                            (LPTHREAD_START_ROUTINE)DummyWorker, 0, 0, 0);
+  CHECK(t > 0);
+  CHECK(WAIT_TIMEOUT == ::WaitForSingleObject(t, 1));
+  CHECK(WAIT_OBJECT_0 == ::WaitForSingleObject(t, INFINITE));
 }
