@@ -113,6 +113,13 @@ struct FLAGS {
 
 extern FLAGS *G_flags;
 
+
+extern bool debug_expected_races;
+extern bool debug_malloc;
+extern bool debug_free;
+extern bool debug_thread;
+
+
 //--------- TS Exports ----------------- {{{1
 #include "ts_events.h"
 class Event;

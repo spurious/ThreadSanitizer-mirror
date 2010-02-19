@@ -903,6 +903,9 @@ void CallbackForThreadFini(THREADID tid, const CONTEXT *ctxt,
                           INT32 code, void *v) {
   // We can not DumpEvent here,
   // due to possible deadlock with PIN's internal lock.
+  if (debug_thread) {
+    Printf("T%d Thread ended\n", tid);
+  }
 }
 
 static void HandleThreadJoinAfter(THREADID tid, pthread_t joined_ptid) {
@@ -2233,7 +2236,7 @@ int main(INT32 argc, CHAR **argv) {
 
   // Set up PIN callbacks.
   PIN_AddThreadStartFunction(CallbackForThreadStart, 0);
-  //PIN_AddThreadFiniFunction(CallbackForThreadFini, 0);
+  PIN_AddThreadFiniFunction(CallbackForThreadFini, 0);
   PIN_AddFiniFunction(CallbackForFini, 0);
   IMG_AddInstrumentFunction(CallbackForIMG, 0);
   TRACE_AddInstrumentFunction(CallbackForTRACE, 0);
