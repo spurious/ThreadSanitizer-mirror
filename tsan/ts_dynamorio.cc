@@ -67,6 +67,10 @@
 
 #include "ts_util.h"
 
+#define EXTRA_REPLACE_PARAMS
+#define REPORT_READ_RANGE(a,b)
+#define REPORT_WRITE_RANGE(a,b)
+#include "ts_replace.h"
 
 #define Printf dr_printf
 
@@ -328,6 +332,9 @@ int replace_foo(int i, int j, int k) {
   return 1;
 }
 
+typedef hash_map<intptr_t, void*> FunctionsReplaceMap;
+static FunctionsReplaceMap *fun_replace_map;
+
 namespace wrap {
 
 int (*orig_foo)(int,int,int) = NULL;
@@ -374,13 +381,16 @@ static dr_emit_flags_t OnEvent_BB(void* drcontext, void *tag, instrlist_t *bb,
     //dr_printf("Symbol = %s\n", symbol_name.c_str());
   }
 
-  if (StringMatch("*foo_to_replace*", symbol_name)) {
-    // Replace foo_to_replace with replace_foo
+  if (fun_replace_map->count((intptr_t)pc) > 0) {
+    // Replace client function with the function supplied by the tool.
     // The logic is inspired by drmemory/replace.c
+    app_pc target_fun = (app_pc)(*fun_replace_map)[(intptr_t)pc];
     const module_data_t *info = dr_lookup_module(pc);
-    dr_printf(" 'foo_to_replace' entry point: bb %p, %s / %s\n", pc, dr_module_preferred_name(info), info->full_path);
+    dr_printf("REDIR: %s (from %s) redirected to %p\n",
+              symbol_name.c_str(), info->full_path, target_fun);
+
     instrlist_clear(drcontext, bb);
-    instrlist_append(bb, INSTR_XL8(INSTR_CREATE_jmp(drcontext, opnd_create_pc((app_pc)replace_foo)), pc));
+    instrlist_append(bb, INSTR_XL8(INSTR_CREATE_jmp(drcontext, opnd_create_pc(target_fun)), pc));
   } else {
     if (StringMatch("*foo_to_wrap*", symbol_name)) {
       const module_data_t *info = dr_lookup_module(pc);
@@ -433,11 +443,18 @@ void ReadSymbolsTableFromFile(const char *filename) {
     sscanf(cur_line, "%p %c %s", &pc, &dummy, fun_name);
     //dr_printf("%s => %p\n", fun_name, pc);
     (*sym_tab)[(intptr_t)pc] = fun_name;
-    
+
     if (next_line == NULL) break;
     cur_line = next_line + 1;
   }
 
+}
+
+void ReplaceFunc3(void *img, void *rtn, string filter, void *fun_ptr) {
+  for (SymbolsTable::iterator i = sym_tab->begin(); i != sym_tab->end(); i++) {
+    if (StringMatch(filter, i->second))
+      (*fun_replace_map)[(intptr_t)i->first] = fun_ptr;
+  }
 }
 
 //--------------- dr_init ----------------- {{{1
@@ -460,6 +477,20 @@ DR_EXPORT void dr_init(client_id_t id) {
   dr_register_thread_exit_event(OnEvent_ThreadExit);
   dr_register_module_load_event(OnEvent_ModuleLoaded);
   g_lock = dr_mutex_create();
+
+  fun_replace_map = new FunctionsReplaceMap();
+  void *img = NULL, *rtn = NULL;
+  #define AFUNPTR void*
+  ReplaceFunc3(img, rtn, "memchr", (AFUNPTR)Replace_memchr);
+  ReplaceFunc3(img, rtn, "strchr", (AFUNPTR)Replace_strchr);
+  ReplaceFunc3(img, rtn, "index", (AFUNPTR)Replace_strchr);
+  ReplaceFunc3(img, rtn, "strrchr", (AFUNPTR)Replace_strrchr);
+  ReplaceFunc3(img, rtn, "rindex", (AFUNPTR)Replace_strrchr);
+  ReplaceFunc3(img, rtn, "strlen", (AFUNPTR)Replace_strlen);
+  ReplaceFunc3(img, rtn, "strcmp", (AFUNPTR)Replace_strcmp);
+  ReplaceFunc3(img, rtn, "memcpy", (AFUNPTR)Replace_memcpy);
+  ReplaceFunc3(img, rtn, "strcpy", (AFUNPTR)Replace_strcpy);
+  ReplaceFunc3(img, rtn, "*foo_to_replace*", (AFUNPTR)replace_foo);
 }
 // end. {{{1
 // vim:shiftwidth=2:softtabstop=2:expandtab
