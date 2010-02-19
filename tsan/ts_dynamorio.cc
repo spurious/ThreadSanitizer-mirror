@@ -317,7 +317,7 @@ static dr_emit_flags_t OnEvent_Trace(void *drcontext, void *tag,
                          (void*)On_TraceEnter, false,
                          2,
                          OPND_CREATE_INTPTR(instr_get_app_pc(first_instr)),
-                         opnd_create_reg(REG_ESP)
+                         opnd_create_reg(REG_XSP)
                          );
   }
   return DR_EMIT_DEFAULT;
@@ -328,19 +328,28 @@ int replace_foo(int i, int j, int k) {
   return 1;
 }
 
-static void prefix_foo(int i, int j, int k) {
-  dr_printf(" dy 'foo_prefix'(%i, %i, %i)\n", i, j, k);
+namespace wrap {
+
+int (*orig_foo)(int,int,int) = NULL;
+int in_wrapper = 0;
+static int wrapped_foo(int i, int j, int k) {
+  in_wrapper = 1;
+
+  dr_printf(" dy 'foo_wrap'(%i, %i, %i)\n", i, j, k);
+  dr_printf("orig_foo = %p\n", orig_foo);
+  int ret = 13;
+  if (orig_foo != NULL)
+    ret = orig_foo(i, j, k) + 4200;
+  else
+    dr_printf("ERROR! orig_foo is not set!\n");/**/
+
+  in_wrapper = 0;
+  return ret;
 }
 
-static int wrap_foo(int i, int j, int k, int (*orig_wrap_foo)(int,int,int)) {
-  dr_printf(" dy 'foo_wrap'(%i, %i, %i)\n", i, j, k);
-  dr_printf("orig_wrap_foo = %p\n", orig_wrap_foo);
-  int ret = 13;
-  if (orig_wrap_foo != NULL)
-    ret = orig_wrap_foo(i, j, k);
-  else
-    dr_printf("ERROR! orig_wrap_foo is not set!\n");/**/
-  return ret;
+int is_in_wrapper(int arg) {
+  return in_wrapper;
+}
 }
 
 void print_bb(void* drcontext, instrlist_t *bb, const char * desc) {
@@ -355,9 +364,6 @@ void print_bb(void* drcontext, instrlist_t *bb, const char * desc) {
 
 static dr_emit_flags_t OnEvent_BB(void* drcontext, void *tag, instrlist_t *bb,
                                   bool for_trace, bool translating) {
-  instr_t *instr, *next_instr;
-
-  // Try to replace foo with replace_foo
   instr_t *first_instr = instrlist_first(bb);
   app_pc pc = instr_get_app_pc(first_instr);
   string symbol_name = "UNKNOWN";
@@ -367,44 +373,30 @@ static dr_emit_flags_t OnEvent_BB(void* drcontext, void *tag, instrlist_t *bb,
   }
 
   if (StringMatch("*foo_to_replace*", symbol_name)) {
+    // Replace foo_to_replace with replace_foo
+    // The logic is inspired by drmemory/replace.c
     const module_data_t *info = dr_lookup_module(pc);
     dr_printf(" 'foo_to_replace' entry point: bb %p, %s / %s\n", pc, dr_module_preferred_name(info), info->full_path);
     instrlist_clear(drcontext, bb);
     instrlist_append(bb, INSTR_XL8(INSTR_CREATE_jmp(drcontext, opnd_create_pc((app_pc)replace_foo)), pc));
-    // analog to drmemory/replace.c logic
   } else {
-    if (StringMatch("*foo_to_prefix*", symbol_name)) {
-      const module_data_t *info = dr_lookup_module(pc);
-      dr_printf(" 'foo_to_prefix' entry point: bb %p, %s / %s\n", pc, dr_module_preferred_name(info), info->full_path);
-      // print_bb(drcontext, bb, "BEFORE");
-      dr_printf(" prefix_foo = %p\n", prefix_foo);
-      dr_insert_clean_call(drcontext, bb, first_instr, (void*)prefix_foo, false, 0);
-      // print_bb(drcontext, bb, "AFTER");
-    } else if (StringMatch("*foo_to_wrap*", symbol_name)) {
+    if (StringMatch("*foo_to_wrap*", symbol_name)) {
       const module_data_t *info = dr_lookup_module(pc);
       dr_printf(" 'foo_to_wrap' entry point: bb %p, %s / %s\n", pc, dr_module_preferred_name(info), info->full_path);
-      print_bb(drcontext, bb, "BEFORE");
-      dr_printf(" wrap_foo = %p\n", wrap_foo);
-      instr_t *jmp_instr = INSTR_XL8(INSTR_CREATE_jmp(drcontext,
-                                  opnd_create_pc((app_pc)wrap_foo)), pc);
-      instrlist_prepend(bb, jmp_instr); 
-      instr_t *mov_instr = INSTR_CREATE_mov_imm(drcontext,
-                           opnd_create_reg(REG_XCX), opnd_create_reg(REG_XSI));
-      instr_t *add_instr = INSTR_CREATE_add(drcontext,
-                           opnd_create_reg(REG_XCX), OPND_CREATE_INTPTR(0));
-      int old_add_size = instr_length(drcontext, add_instr);
-      int delta_pc = instr_length(drcontext, jmp_instr) + old_add_size;
-      dr_printf(" jmp = %ib, add = %ib\n", instr_length(drcontext, jmp_instr), old_add_size);
+      wrap::orig_foo = (int (*)(int,int,int))(void*)pc;
 
-      /*HACK!*/add_instr = INSTR_CREATE_add(drcontext,
-                           opnd_create_reg(REG_XCX),
-                           OPND_CREATE_INTPTR(delta_pc));
-      instrlist_prepend(bb, add_instr);
-      instrlist_prepend(bb, mov_instr);
-      CHECK(instr_length(drcontext, add_instr) == old_add_size);
-      print_bb(drcontext, bb, "AFTER");
+      //print_bb(drcontext, bb, "BEFORE");
+      // TODO: Use something more optimized than clean_call
+      dr_insert_clean_call(drcontext, bb, first_instr, (void*)wrap::is_in_wrapper, false, 1, OPND_CREATE_INTPTR(pc));
+      instr_t *opr_instr = INSTR_CREATE_test(drcontext, opnd_create_reg(REG_XAX), opnd_create_reg(REG_XAX));
+      instr_t *jne_instr = INSTR_CREATE_jcc(drcontext, OP_jz, opnd_create_pc((app_pc)wrap::wrapped_foo));
+      instrlist_meta_preinsert(bb, first_instr, opr_instr);
+      instrlist_meta_preinsert(bb, first_instr, jne_instr);
+
+      //print_bb(drcontext, bb, "AFTER");
     }
 
+    instr_t *instr, *next_instr;
     for (instr = instrlist_first(bb); instr != NULL; instr = next_instr) {
       next_instr = instr_get_next(instr);
       if (instr_get_app_pc(instr))  // don't instrument non-app code
