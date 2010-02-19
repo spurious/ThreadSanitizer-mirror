@@ -68,6 +68,7 @@ FLAGS *G_flags = NULL;
 bool debug_expected_races = false;
 bool debug_malloc = false;
 bool debug_free = false;
+bool debug_thread = false;
 
 // -------- Util ----------------------------- {{{1
 
@@ -5599,7 +5600,7 @@ class Detector {
 
       parent->NewSegmentForSignal();
 
-      if (G_flags->verbosity >= 2) {
+      if (debug_thread) {
         Printf("T%d:  THR_START   : %s %s\n", child_tid.raw(),
                // Segment::ToString(sid).c_str(),
                parent->vts()->ToString().c_str(),
@@ -5663,7 +5664,7 @@ class Detector {
       child->HandleThreadEnd();
 
 
-      if (G_flags->verbosity >= 2) {
+      if (debug_thread) {
         Printf("T%d:  THR_END     : %s %s\n", tid.raw(),
                Segment::ToString(child->sid()).c_str(),
                child->vts()->ToString().c_str());
@@ -5698,7 +5699,7 @@ class Detector {
     CHECK(parent_thr->sid().valid());
     Segment::AssertLive(parent_thr->sid(),  __LINE__);
     parent_thr->NewSegmentForWait(vts_at_exit);
-    if (G_flags->verbosity >= 2) {
+    if (debug_thread) {
       Printf("T%d:  THR_JOIN_AFTER T%d  : %s\n", tid.raw(),
              child_tid.raw(), parent_thr->vts()->ToString().c_str());
     }
@@ -6060,6 +6061,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   debug_expected_races = PhaseDebugIsOn("expected_races");
   debug_malloc = PhaseDebugIsOn("malloc");
   debug_free = PhaseDebugIsOn("free");
+  debug_thread = PhaseDebugIsOn("thread");
 }
 
 // -------- ThreadSanitizer ------------------ {{{1
