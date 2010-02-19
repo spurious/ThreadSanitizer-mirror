@@ -331,7 +331,8 @@ int replace_foo(int i, int j, int k) {
 namespace wrap {
 
 int (*orig_foo)(int,int,int) = NULL;
-int in_wrapper = 0;
+int in_wrapper = 0;  // TODO: Make it thread-local
+
 static int wrapped_foo(int i, int j, int k) {
   in_wrapper = 1;
 
@@ -348,6 +349,7 @@ static int wrapped_foo(int i, int j, int k) {
 }
 
 int is_in_wrapper(int arg) {
+  // TODO: this may not work well with recursive functions
   return in_wrapper;
 }
 }
@@ -387,9 +389,12 @@ static dr_emit_flags_t OnEvent_BB(void* drcontext, void *tag, instrlist_t *bb,
 
       //print_bb(drcontext, bb, "BEFORE");
       // TODO: Use something more optimized than clean_call
-      dr_insert_clean_call(drcontext, bb, first_instr, (void*)wrap::is_in_wrapper, false, 1, OPND_CREATE_INTPTR(pc));
-      instr_t *opr_instr = INSTR_CREATE_test(drcontext, opnd_create_reg(REG_XAX), opnd_create_reg(REG_XAX));
-      instr_t *jne_instr = INSTR_CREATE_jcc(drcontext, OP_jz, opnd_create_pc((app_pc)wrap::wrapped_foo));
+      dr_insert_clean_call(drcontext, bb, first_instr, (void*)wrap::is_in_wrapper,
+                           false, 1, OPND_CREATE_INTPTR(pc));
+      instr_t *opr_instr = INSTR_CREATE_test(drcontext, opnd_create_reg(REG_XAX),
+                                                        opnd_create_reg(REG_XAX));
+      instr_t *jne_instr = INSTR_CREATE_jcc(drcontext, OP_jz,
+                                            opnd_create_pc((app_pc)wrap::wrapped_foo));
       instrlist_meta_preinsert(bb, first_instr, opr_instr);
       instrlist_meta_preinsert(bb, first_instr, jne_instr);
 
