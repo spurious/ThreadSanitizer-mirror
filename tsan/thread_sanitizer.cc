@@ -2192,6 +2192,7 @@ SSID SegmentSet::AddSegmentToSS(SSID old_ssid, SID new_sid) {
       return SSID(new_sid);
     }
 
+    DCHECK(!Segment::HappensBefore(new_sid, old_sid));
     // The only other case is Signleton->Doubleton transition, see below.
   } else if (LIKELY(old_ssid.IsEmpty())) {
     return SSID(new_sid);
@@ -2212,13 +2213,16 @@ SSID SegmentSet::AddSegmentToSS(SSID old_ssid, SID new_sid) {
     SID old_sid(old_ssid.raw());
     DCHECK(old_sid.valid());
 
+    DCHECK(!Segment::HappensBefore(new_sid, old_sid));
+    DCHECK(!Segment::HappensBefore(old_sid, new_sid));
     res = (old_tid < new_tid
       ? DoubletonSSID(old_sid, new_sid)
       : DoubletonSSID(new_sid, old_sid));
+    SegmentSet::AssertLive(res, __LINE__);
   } else {
     res = AddSegmentToTupleSS(old_ssid, new_sid);
+    SegmentSet::AssertLive(res, __LINE__);
   }
-  SegmentSet::AssertLive(res, __LINE__);
 
   // Put the result into cache.
   add_segment_cache_->Insert(old_ssid, new_sid, res);
