@@ -1054,11 +1054,18 @@ static IRSB* ts_instrument ( VgCallbackClosure* closure,
   Int   i;
   IRSB* bbOut;
 
+  char objname[kBuffSize];
+  if (VG_(get_objname)(closure->nraddr, (Char*)objname, kBuffSize)) {
+    if (StringMatch("*/ld-2*", objname)) {
+      // we want to completely ignore ld-so.
+      return bbIn;
+    }
+  }
+
   bool instrument_memory =
       ThreadSanitizerWantToInstrumentSblock(closure->nraddr);
   bool create_segments =
       ThreadSanitizerWantToCreateSegmentsOnSblockEntry(closure->nraddr);
-
 
   if (gWordTy != hWordTy) {
     /* We don't currently support this case. */
