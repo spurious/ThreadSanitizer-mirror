@@ -322,6 +322,9 @@ static void DumpEventInternal(EventType type, int32_t uniq_tid, uintptr_t pc,
 
 static void TLEBFlushUnlocked(PinThread &t, ThreadLocalEventBuffer &tleb) {
   DCHECK(tleb.size <= kThreadLocksEventBufferSize);
+  if (DEBUG_MODE && t.thread_finished) {
+    Printf("ACHTUNG!!! an event from a dead thread T%d\n", t.tid);
+  }
   DCHECK(!t.thread_finished);
   if (tleb.size == 0) return;
 
