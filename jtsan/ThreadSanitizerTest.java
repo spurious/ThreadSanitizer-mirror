@@ -211,6 +211,14 @@ public class ThreadSanitizerTest {
     };
   }
 
+  public void testPositive_WW_NoLocksObj() {
+    describe("Race: two unlocked writesl; long");
+    new ThreadRunner2() {
+      public void thread1() { shared_obj = new Integer(0); }
+      public void thread2() { shared_obj = new Integer(1); }
+    };
+  }
+
   public void testPositive_WW_LockedVsUnlocked() {
     describe("Race: one locked and one unlocked write");
     new ThreadRunner2() {
