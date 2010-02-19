@@ -6204,6 +6204,7 @@ namespace MemoryTypes {  // {{{1
 
   void RaceOnMemory(void (*callback)(void *), char *mem) {
     ANNOTATE_EXPECT_RACE(mem, "race");
+    FAST_MODE_INIT(mem);
     MyThread t1(callback, mem),
              t2(callback, mem);
     t1.Start();
