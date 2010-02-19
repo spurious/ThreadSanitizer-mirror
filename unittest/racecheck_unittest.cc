@@ -4540,10 +4540,13 @@ int * GLOB = &array[ARRAY_SIZE/2];
   to a memory inside a CacheLineZ which is inside array's memory range
 */
 
+StealthNotification n1, n2, n3;
+
 void Reader() {
-  usleep(200000);
+  n1.wait();
   CHECK(777 == GLOB[0]);
-  usleep(400000);
+  n2.signal();
+  n3.wait();
   CHECK(777 == GLOB[1]);
 }
 
@@ -4556,8 +4559,10 @@ void Run() {
 
   t.Start();
   GLOB[0] = 777;
-  usleep(400000);
+  n1.signal();
+  n2.wait();
   GLOB[1] = 777;
+  n3.signal();
   t.Join();
 }
 
