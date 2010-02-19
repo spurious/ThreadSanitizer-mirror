@@ -1111,12 +1111,13 @@ uintptr_t Wrap_WaitForSingleObject(WRAP_PARAM4) {
   uintptr_t ret = CallStdCallFun2(ctx, tid, f, arg0, arg1);
   //Printf("T%d after pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0, arg1);
 
-  if (is_thread_handle) {
-    CHECK(ret);
-    HandleThreadJoinAfter(tid, arg0);
-  } else {
-    DumpEvent(WAIT_BEFORE, tid, pc, arg0, 0);
-    DumpEvent(WAIT_AFTER, tid, pc, 0, 0);
+  if (ret == 0) {
+    if (is_thread_handle) {
+      HandleThreadJoinAfter(tid, arg0);
+    } else {
+      DumpEvent(WAIT_BEFORE, tid, pc, arg0, 0);
+      DumpEvent(WAIT_AFTER, tid, pc, 0, 0);
+    }
   }
 
   return ret;
