@@ -5444,6 +5444,7 @@ class Detector {
     }
 
     Thread *thr = Thread::Get(tid);
+    DCHECK(thr->is_running());
     if (thr->ignore(is_w)) return;
     if (thr->bus_lock_is_set()) return;
 
