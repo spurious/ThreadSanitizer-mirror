@@ -66,6 +66,8 @@ uint32_t g_lock_era = 0;
 FLAGS *G_flags = NULL;
 
 bool debug_expected_races = false;
+bool debug_malloc = false;
+bool debug_free = false;
 
 // -------- Util ----------------------------- {{{1
 
@@ -5517,7 +5519,7 @@ class Detector {
     uintptr_t a = e_->a();
     uintptr_t size = e_->info();
 
-    if (G_flags->verbosity >= 2) {
+    if (debug_malloc) {
       Printf("T%d MALLOC: %p [%p %p) %s %s\n",
              tid.raw(), size, a, a+size,
              Segment::ToString(cur_thread_->sid()).c_str(),
@@ -5550,7 +5552,7 @@ class Detector {
   // FREE
   void HandleFree() {
     uintptr_t a = e_->a();
-    if (G_flags->verbosity >= 2) {
+    if (debug_free) {
       e_->Print();
     //  cur_thread_->ReportStackTrace(e_->pc());
     }
@@ -6051,6 +6053,8 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   }
 
   debug_expected_races = PhaseDebugIsOn("expected_races");
+  debug_malloc = PhaseDebugIsOn("malloc");
+  debug_free = PhaseDebugIsOn("free");
 }
 
 // -------- ThreadSanitizer ------------------ {{{1
