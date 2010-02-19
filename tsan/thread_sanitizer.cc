@@ -6130,6 +6130,15 @@ static void SetupIgnore() {
   g_ignore_lists->funs.push_back("__sigsetjmp");
   g_ignore_lists->funs.push_back("__sigjmp_save");
 
+  // do not create segments in our Replace_* functions
+  g_ignore_lists->funs_hist.push_back("Replace_memcpy");
+  g_ignore_lists->funs_hist.push_back("Replace_memchr");
+  g_ignore_lists->funs_hist.push_back("Replace_strcpy");
+  g_ignore_lists->funs_hist.push_back("Replace_strchr");
+  g_ignore_lists->funs_hist.push_back("Replace_strrchr");
+  g_ignore_lists->funs_hist.push_back("Replace_strlen");
+  g_ignore_lists->funs_hist.push_back("Replace_strcmp");
+
   // Ignore everything in our own file.
   g_ignore_lists->files.push_back("*ts_valgrind_intercepts.c");
 
