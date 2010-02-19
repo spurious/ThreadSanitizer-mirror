@@ -1112,6 +1112,7 @@ uintptr_t Wrap_WaitForSingleObject(WRAP_PARAM4) {
   //Printf("T%d after pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0, arg1);
 
   if (is_thread_handle) {
+    CHECK(ret);
     HandleThreadJoinAfter(tid, arg0);
   } else {
     DumpEvent(WAIT_BEFORE, tid, pc, arg0, 0);
