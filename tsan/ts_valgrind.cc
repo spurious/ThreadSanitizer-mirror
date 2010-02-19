@@ -138,7 +138,11 @@ string PcToRtnName(uintptr_t pc, bool demangle) {
       return g_buff1;
     }
   }
-  return "???";
+  string res = "???";
+  if (VG_(get_objname)(pc, (Char*)g_buff1, kBuffSize)) {
+    res += string("/") + g_buff1;
+  }
+  return res;
 }
 
 void PcToStrings(uintptr_t pc, bool demangle,
