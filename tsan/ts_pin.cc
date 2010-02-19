@@ -195,6 +195,7 @@ struct PinThread {
   TraceInfo    *trace_info;
   int ignore_all_mops;  // if >0, ignore all mops.
   int ignore_lock_events;  // if > 0, ignore all lock/unlock events.
+  bool         thread_finished;
 };
 
 // Array of pin threads, indexed by pin's THREADID.
@@ -321,6 +322,7 @@ static void DumpEventInternal(EventType type, int32_t uniq_tid, uintptr_t pc,
 
 static void TLEBFlushUnlocked(PinThread &t, ThreadLocalEventBuffer &tleb) {
   DCHECK(tleb.size <= kThreadLocksEventBufferSize);
+  DCHECK(!t.thread_finished);
   if (tleb.size == 0) return;
 
   if (1 || DEBUG_MODE) {
@@ -368,6 +370,12 @@ static void TLEBFlushUnlocked(PinThread &t, ThreadLocalEventBuffer &tleb) {
     } else if (event == THR_START) {
       DumpEventInternal(THR_START, t.uniq_tid, 0, 0,
                         g_pin_threads[t.parent_tid].uniq_tid);
+    } else if (event == THR_END) {
+      DumpEventInternal(THR_END, t.uniq_tid, 0, 0, 0);
+      DCHECK(t.thread_finished == false);
+      t.thread_finished = true;
+      i += 3;  // consume the unneeded data.
+      DCHECK(i == tleb.size);  // should be last event in this tleb.
     } else if (event == TLEB_IGNORE_ALL_BEGIN){
       t.ignore_all_mops++;
     } else if (event == TLEB_IGNORE_ALL_END){

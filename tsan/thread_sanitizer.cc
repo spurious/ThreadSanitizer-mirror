@@ -5601,7 +5601,8 @@ class Detector {
       parent->NewSegmentForSignal();
 
       if (debug_thread) {
-        Printf("T%d:  THR_START   : %s %s\n", child_tid.raw(),
+        Printf("T%d:  THR_START parent: T%d : %s %s\n", child_tid.raw(),
+               parent->tid().raw(),
                // Segment::ToString(sid).c_str(),
                parent->vts()->ToString().c_str(),
                vts->ToString().c_str());
@@ -6317,10 +6318,18 @@ extern void ThreadSanitizerFini() {
 }
 
 extern void ThreadSanitizerDumpAllStacks() {
+  // first, print running threads.
   for (int i = 0; i < Thread::NumberOfThreads(); i++) {
     Thread *t = Thread::Get(TID(i));
     if (!t || !t->is_running()) continue;
     Report("T%d\n", i);
+    t->ReportStackTrace();
+  }
+  // now print all dead threds.
+  for (int i = 0; i < Thread::NumberOfThreads(); i++) {
+    Thread *t = Thread::Get(TID(i));
+    if (!t || t->is_running()) continue;
+    Report("T%d (not running)\n", i);
     t->ReportStackTrace();
   }
 }
