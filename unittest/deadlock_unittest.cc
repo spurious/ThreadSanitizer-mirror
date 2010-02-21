@@ -3,7 +3,7 @@
   framework.
 
   Copyright (C) 2008-2008 Google Inc
-     opensource@google.com 
+     opensource@google.com
 
   This program is free software; you can redistribute it and/or
   modify it under the terms of the GNU General Public License as
@@ -23,19 +23,19 @@
   The GNU General Public License is contained in the file COPYING.
 */
 
-// Author: Konstantin Serebryany <opensource@google.com> 
+// Author: Konstantin Serebryany <opensource@google.com>
 //
-// This file contains a set of unit tests for a deadlock detection tool. 
+// This file contains a set of unit tests for a deadlock detection tool.
 //
 //
 //
 // This test can be compiled with pthreads (default) or
-// with any other library that supports threads, locks, cond vars, etc. 
-// 
-// To compile with pthreads: 
+// with any other library that supports threads, locks, cond vars, etc.
+//
+// To compile with pthreads:
 //   g++  deadlock_unittest.cc -lpthread -g
-// 
-// To compile with different library: 
+//
+// To compile with different library:
 //   1. cp thread_wrappers_pthread.h thread_wrappers_yourlib.h
 //   2. edit thread_wrappers_yourlib.h
 //   3. add '-DTHREAD_WRAPPERS="thread_wrappers_yourlib.h"' to your compilation.
@@ -43,10 +43,10 @@
 //
 
 // This test must not include any other file specific to threading library,
-// everything should be inside THREAD_WRAPPERS. 
-#ifndef THREAD_WRAPPERS 
+// everything should be inside THREAD_WRAPPERS.
+#ifndef THREAD_WRAPPERS
 # define THREAD_WRAPPERS "thread_wrappers_pthread.h"
-#endif 
+#endif
 #include THREAD_WRAPPERS
 
 #include <vector>
@@ -57,13 +57,13 @@
 #include <cstring>      // strlen(), index(), rindex()
 
 //
-// Each test resides in its own namespace. 
-// Namespaces are named test01, test02, ... 
-// Please, *DO NOT* change the logic of existing tests nor rename them. 
-// Create a new test instead. 
+// Each test resides in its own namespace.
+// Namespaces are named test01, test02, ...
+// Please, *DO NOT* change the logic of existing tests nor rename them.
+// Create a new test instead.
 //
-// Some tests use sleep()/usleep(). 
-// This is not a synchronization, but a simple way to trigger 
+// Some tests use sleep()/usleep().
+// This is not a synchronization, but a simple way to trigger
 // some specific behaviour of the scheduler.
 
 // Globals and utilities used by several tests. {{{1
@@ -73,7 +73,7 @@ typedef void (*void_func_void_t)(void);
 struct Test{
   void_func_void_t f_;
   int flags_;
-  Test(void_func_void_t f, int flags) 
+  Test(void_func_void_t f, int flags)
     : f_(f)
     , flags_(flags)
   {}
@@ -96,7 +96,7 @@ struct TestAdder {
 
 #ifndef MAIN_INIT_ACTION
 #define MAIN_INIT_ACTION
-#endif 
+#endif
 
 
 static bool ArgIsOne(int *arg) { return *arg == 1; };
@@ -150,19 +150,19 @@ int main(int argc, char** argv) { // {{{1
   MAIN_INIT_ACTION;
   srand(time(0));
   if (argc > 1) {
-    // the tests are listed in command line flags 
+    // the tests are listed in command line flags
     for (int i = 1; i < argc; i++) {
       int f_num = atoi(argv[i]);
       CHECK(TheMapOfTests.count(f_num));
       TheMapOfTests[f_num].f_();
     }
   } else {
-    // all tests 
-    for (std::map<int,Test>::iterator it = TheMapOfTests.begin(); 
+    // all tests
+    for (std::map<int,Test>::iterator it = TheMapOfTests.begin();
         it != TheMapOfTests.end();
         ++it) {
       it->second.f_();
-    } 
+    }
   }
 }
 
@@ -210,7 +210,7 @@ class MyThreadArray {
 class MyThreadSet {
  public:
   typedef void (*F) (void);
-  MyThreadSet(F f, int count) 
+  MyThreadSet(F f, int count)
     : count_(count) {
     CHECK(count_ >= 1 && count_ <= 1000);
     ar_ = new MyThread* [count_];
@@ -235,7 +235,7 @@ class MyThreadSet {
     delete ar_;
   }
 
- private: 
+ private:
   MyThread **ar_;
   int count_;
 };
@@ -417,7 +417,7 @@ namespace  test06 {
 
 int item_number[3] = {0, 0, 0};  // Just for debug prints.
 
-// This function randomly enqueues work to queue 'put_queue' and waits on it 
+// This function randomly enqueues work to queue 'put_queue' and waits on it
 // or serves a piece of work from queue 'get_queue'.
 void Worker(int put_queue, int get_queue) {
   while(true) {

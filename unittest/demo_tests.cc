@@ -26,7 +26,7 @@
 /* Author: Konstantin Serebryany <opensource@google.com>
    Author: Timur Iskhodzhanov <opensource@google.com>
 
- This file contains a set of demonstration tests for ThreadSanitizer. 
+ This file contains a set of demonstration tests for ThreadSanitizer.
 */
 
 #include <gtest/gtest.h>

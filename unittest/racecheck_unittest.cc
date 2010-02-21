@@ -5965,7 +5965,7 @@ void Run() {
   printf("test151: stress\n");
   printf("Creating %d threads\n", kNumThreads);
   for (int i = 0; i < kNumThreads; i++) {
-    MyThread t(Void);  
+    MyThread t(Void); 
     t.Start();
     t.Join();
   }
