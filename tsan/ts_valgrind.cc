@@ -86,24 +86,6 @@ extern "C" void free(void *ptr) {
 
 
 //---------------------- Utils ------------------- {{{1
-extern "C" void * memmove(void *a, const void *b, size_t size) {
-  char *A = (char*)a;
-  const char *B = (const char*)b;
-  if (A < B) {
-    for (size_t i = 0; i < size; i++) {
-      A[i] = B[i];
-    }
-  } else if(A > B) {
-    for (size_t i = 0; i < size; i++) {
-      A[size - i - 1] = B[size - i - 1];
-    }
-  }
-  return a;
-}
-
-extern "C" int memcmp(const void *a, const void *b, size_t c) {
-  return VG_(memcmp)(a,b,c);
-}
 
 extern "C" int puts(const char *s) {
   Printf("%s", s);
