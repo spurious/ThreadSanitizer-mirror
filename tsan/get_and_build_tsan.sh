@@ -67,7 +67,7 @@ tsan_binary/mk-self-contained-tsan.sh $VALGRIND_INST_ROOT tsan.sh  || exit 1
 
 # Test
 cd $TOPDIR/unittest || exit 1
-make -s -j4 OS=${VG_OS} ARCH=${VG_ARCH} OPT=1 STATIC=0 || exit 1
+make all -s -j4 OS=${VG_OS} ARCH=${VG_ARCH} OPT=1 STATIC=0 || exit 1
 $TOPDIR/tsan.sh --color bin/demo_tests-${VG_OS}-${VG_ARCH}-O1 --gtest_filter="DemoTests.RaceReportDemoTest" || exit 1
 
 # Done
