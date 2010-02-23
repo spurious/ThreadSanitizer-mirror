@@ -196,6 +196,7 @@ struct PinThread {
   int ignore_all_mops;  // if >0, ignore all mops.
   int ignore_lock_events;  // if > 0, ignore all lock/unlock events.
   bool         thread_finished;
+  bool         thread_done;
 };
 
 // Array of pin threads, indexed by pin's THREADID.
@@ -322,10 +323,10 @@ static void DumpEventInternal(EventType type, int32_t uniq_tid, uintptr_t pc,
 
 static void TLEBFlushUnlocked(PinThread &t, ThreadLocalEventBuffer &tleb) {
   DCHECK(tleb.size <= kThreadLocksEventBufferSize);
-  if (DEBUG_MODE && t.thread_finished) {
+  if (DEBUG_MODE && t.thread_done) {
     Printf("ACHTUNG!!! an event from a dead thread T%d\n", t.tid);
   }
-  DCHECK(!t.thread_finished);
+  DCHECK(!t.thread_done);
   if (tleb.size == 0) return;
 
   if (1 || DEBUG_MODE) {
@@ -375,8 +376,9 @@ static void TLEBFlushUnlocked(PinThread &t, ThreadLocalEventBuffer &tleb) {
                         g_pin_threads[t.parent_tid].uniq_tid);
     } else if (event == THR_END) {
       DumpEventInternal(THR_END, t.uniq_tid, 0, 0, 0);
-      DCHECK(t.thread_finished == false);
-      t.thread_finished = true;
+      DCHECK(t.thread_finished == true);
+      DCHECK(t.thread_done == false);
+      t.thread_done = true;
       i += 3;  // consume the unneeded data.
       DCHECK(i == tleb.size);  // should be last event in this tleb.
     } else if (event == TLEB_IGNORE_ALL_BEGIN){
@@ -904,18 +906,29 @@ static void Before_RtlExitUserThread(THREADID tid, ADDRINT pc) {
 
 void CallbackForThreadFini(THREADID tid, const CONTEXT *ctxt,
                           INT32 code, void *v) {
+  PinThread &t = g_pin_threads[tid];
+  t.thread_finished = true;
   // We can not DumpEvent here,
   // due to possible deadlock with PIN's internal lock.
   if (debug_thread) {
-    Printf("T%d Thread ended\n", tid);
+    Printf("T%d Thread finished\n", tid);
   }
 }
 
 static void HandleThreadJoinAfter(THREADID tid, pthread_t joined_ptid) {
   THREADID joined_tid = 0;
   for (joined_tid = 1; joined_tid < kMaxThreads; joined_tid++) {
+    if (g_pin_threads[joined_tid].thread_finished == false) continue;
     if (g_pin_threads[joined_tid].my_ptid == joined_ptid)
       break;
+  }
+  if (joined_tid == kMaxThreads) {
+    if (DEBUG_MODE) {
+      Printf("WARNING: Can not join thread, can't find the child's tid. "
+             "T=%d ptid=%d\n", tid, (int)joined_ptid);
+      ThreadSanitizerDumpAllStacks();
+    }
+    return;
   }
   CHECK(joined_tid < kMaxThreads);
   CHECK(joined_tid > 0);
