@@ -34,6 +34,8 @@ all: $(BIN)racecheck_unittest-$(BUILD)$(EXE) $(BIN)demo_tests-$(BUILD)$(EXE) \
 
 w:
 	$(MAKE) all OS=windows ARCH=x86
+m:
+	$(MAKE) all OS=darwin ARCH=x86
 l: l32 l64
 l32:
 	$(MAKE) all OS=linux ARCH=x86
