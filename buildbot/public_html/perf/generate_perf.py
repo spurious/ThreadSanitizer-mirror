@@ -87,7 +87,7 @@ class Subdir:
 
 
 default_subdir_list = [
-    Subdir('random', 'Random performance data'),
+    Subdir('bigtest', 'Bigtest performance'),
 ]
 
 
