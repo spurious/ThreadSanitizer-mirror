@@ -2,7 +2,10 @@
 
 source valgrind_rev.sh
 
-VALGRIND_PACK=valgrind-r${VALGRIND_REV}-vex-r${VEX_REV}.tar.bz2
+VALGRIND_PACK="$1"
+if [ "$VALGRIND_PACK" == "" ]; then
+  VALGRIND_PACK=valgrind-r${VALGRIND_REV}-vex-r${VEX_REV}.tar.bz2
+fi
 
 update_subversion() {
   svn up -r $VALGRIND_REV
