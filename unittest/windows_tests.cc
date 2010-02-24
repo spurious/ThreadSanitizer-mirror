@@ -60,3 +60,54 @@ TEST(NegativeTests, WindowsJoinWithTimeout) {
   CHECK(WAIT_TIMEOUT == ::WaitForSingleObject(t, 1));
   CHECK(WAIT_OBJECT_0 == ::WaitForSingleObject(t, INFINITE));
 }
+
+namespace RegisterWaitForSingleObjectTest {
+StealthNotification *n = NULL;
+HANDLE monitored_object = NULL;
+
+void SignalStealthNotification() {
+  n->wait();
+  SetEvent(monitored_object);
+}
+
+void CALLBACK DoneWaiting(void *param, BOOLEAN timed_out) {
+  int *i = (int*)param;
+  (*i)++;
+}
+
+TEST(NegativeTests, DISABLED_RegisterWaitForSingleObjectTest) {
+  // These are very tricky false positive found while testing Chromium.
+  //
+  // Report #1:
+  //   Everything after UnregisterWaitEx(*, INVALID_HANDLE_VALUE) happens-after
+  //   execution of DoneWaiting callback. Currently, we don't catch this h-b.
+  //
+  // Report #2:
+  //   The callback thread is re-used between Registet/Unregister/Register calls
+  //   so we miss h-b between "int *INT = ..." and DoneWaiting on the second
+  //   iteration.
+  for (int i = 0; i < 2; i++) {
+    n = new StealthNotification();
+    int *INT = new int(0);
+    HANDLE wait_object = NULL;
+
+    monitored_object = ::CreateEvent(NULL, false, false, NULL);
+    printf("monitored_object = %p\n", monitored_object);
+    MyThread mt(SignalStealthNotification);
+    mt.Start();
+    CHECK(0 != ::RegisterWaitForSingleObject(&wait_object, monitored_object,
+                                             DoneWaiting, INT, INFINITE,
+                                             WT_EXECUTEINWAITTHREAD | WT_EXECUTEONLYONCE));
+    printf("wait_object      = %p\n", wait_object);
+    n->signal();
+    mt.Join();
+    Sleep(1000);
+    CHECK(0 != ::UnregisterWaitEx(wait_object, INVALID_HANDLE_VALUE));
+    (*INT)++;
+    CHECK(*INT == 2);
+    CloseHandle(monitored_object);
+    delete n;
+    delete INT;
+  }
+}
+}
