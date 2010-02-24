@@ -5,7 +5,11 @@ DEFINES=-DOS_$(OS) -DARCH_$(ARCH)
 
 CFLAGS=$(OPTFLAGS) $(ARCHFLAGS) $(EXTRA_CFLAGS) $(DEFINES)
 CXXFLAGS=$(OPTFLAGS) $(ARCHFLAGS) $(EXTRA_CXXFLAGS) $(DEFINES)
+ifeq ($(OS), darwin)
+LDFLAGS=$(LDOPT) $(ARCHFLAGS) $(STATICFLAGS) -framework Foundation
+else
 LDFLAGS=$(LDOPT) $(ARCHFLAGS) $(STATICFLAGS)
+endif
 
 # OS = linux, darwin, windows
 # ARCH= x86, amd64
@@ -15,12 +19,12 @@ BUILD=${OS}-${ARCH}-${OX}${S}
 BIN=bin/
 
 ifeq ($(OS), linux)
-  EXTRA_CXXFLAGS=-Wall -Werror -Wno-sign-compare -Wshadow -Wno-unused-function 
-  EXTRA_CFLAGS=-Wall -Werror -Wno-sign-compare -Wshadow -Wno-unused-function -std=c89 
+  EXTRA_CXXFLAGS=-Wall -Werror -Wno-sign-compare -Wshadow -Wno-unused-function
+  EXTRA_CFLAGS=-Wall -Werror -Wno-sign-compare -Wshadow -Wno-unused-function -std=c89
   LIBS=-lpthread
 else ifeq ($(OS), darwin)
-  EXTRA_CXXFLAGS=-Wall -Werror -Wno-sign-compare -Wshadow -Wno-unused-function 
-  EXTRA_CFLAGS=-Wall -Werror -Wno-sign-compare -Wshadow -Wno-unused-function -std=c89 
+  EXTRA_CXXFLAGS=-Wall -Werror -Wno-sign-compare -Wshadow -Wno-unused-function
+  EXTRA_CFLAGS=-Wall -Werror -Wno-sign-compare -Wshadow -Wno-unused-function -std=c89
   LIBS=-lpthread
 else ifeq ($(OS), windows)
   EXTRA_CXXFLAGS=/EHs- /EHa- /wd4530   /D_CRT_SECURE_NO_DEPRECATE /D_SECURE_SCL=0 /nologo /Gy /D "WIN32"
@@ -63,6 +67,10 @@ else
 $(BIN)racecheck_unittest-$(BUILD)$(EXE): $(BIN)posix_tests-$(BUILD).$(OBJ)
 endif
 
+ifeq ($(OS), darwin)
+$(BIN)racecheck_unittest-$(BUILD)$(EXE): $(BIN)mac_tests-$(BUILD).$(OBJ)
+endif
+
 $(BIN)demo_tests-$(BUILD)$(EXE): $(BIN)demo_tests-$(BUILD).$(OBJ) \
 		$(TEST_UTILS_O) $(GTEST_LIB) ${DYNAMIC_ANNOTATIONS_O} | bin
 	${LD} $(LDFLAGS) $^ $(LIBS) $(LINKO)$@
@@ -78,6 +86,12 @@ $(BIN)%-$(BUILD).$(OBJ): %.cc ${DYNAMIC_ANNOTATIONS} thread_wrappers.h thread_wr
 	${CXX} ${CXXFLAGS} \
 		 -I${DYNAMIC_ANNOTATIONS_DIR} -I${GTEST_ROOT}/include \
 		 -DDYNAMIC_ANNOTATIONS_ENABLED=1 -c $< $(O)$@
+
+$(BIN)%-$(BUILD).$(OBJ): %.mm ${DYNAMIC_ANNOTATIONS} thread_wrappers.h thread_wrappers_win.h thread_wrappers_pthread.h old_test_suite.h test_utils.h | bin
+	${CXX} ${CXXFLAGS} \
+		 -I${DYNAMIC_ANNOTATIONS_DIR} -I${GTEST_ROOT}/include \
+		 -DDYNAMIC_ANNOTATIONS_ENABLED=1 -c $< $(O)$@
+
 
 ${DYNAMIC_ANNOTATIONS_O}: ${DYNAMIC_ANNOTATIONS_C}
 	${CC} ${CFLAGS} $< \

@@ -91,10 +91,12 @@ void Parent() {
 }
 
 TEST(NegativeTests, test11) {
+  ANNOTATE_PRINT_MEMORY();
 //  ANNOTATE_EXPECT_RACE(&GLOB, "test11. FP. Fixed by MSMProp1.");
   printf("test11: negative\n");
   Parent();
   printf("\tGLOB=%d\n", GLOB);
+  ANNOTATE_PRINT_MEMORY();
 }
 }  // namespace test11
 
@@ -142,6 +144,7 @@ TEST(NegativeTests, test75) {
   sem_destroy(&sem[0]);
   sem_destroy(&sem[1]);
 #endif // NO_UNNAMED_SEM
+  ANNOTATE_PRINT_MEMORY();
 }
 }  // namespace test75
 
@@ -202,6 +205,7 @@ TEST(NegativeTests, test98) {
   close(fd_out);
   unlink(in_name);
   unlink(out_name);
+  ANNOTATE_PRINT_MEMORY();
 }
 #endif  // __APPLE__
 }  // namespace test98
@@ -233,6 +237,7 @@ TEST(NegativeTests, test106) {
   t.Start();
   t.Join();
   printf("\tGLOB=%d\n", *GLOB);
+  ANNOTATE_PRINT_MEMORY();
 }
 }  // namespace test106
 
@@ -275,6 +280,7 @@ void Worker() {
   (*NEW_ARR)++;
 }
 TEST(PositiveTests, test110) {
+  ANNOTATE_PRINT_MEMORY();
   printf("test110: positive (race on a stack object)\n");
 
   char x = 0;
@@ -339,6 +345,7 @@ TEST(PositiveTests, test110) {
   munmap(MMAP, sizeof(int));
   delete NEW;
   delete [] NEW_ARR;
+  ANNOTATE_PRINT_MEMORY();
 }
 }  // namespace test110
 
@@ -386,6 +393,7 @@ void Worker() {
  * sem_open on that platform: subsequent attempts to open an existing semafore
  * create new ones. */
 TEST(NegativeTests, test115) {
+  ANNOTATE_PRINT_MEMORY();
   printf("test115: stab (sem_open())\n");
 
   // just check that sem_open is not completely broken
@@ -401,6 +409,7 @@ TEST(NegativeTests, test115) {
   t.Join();
   // clean up
   sem_unlink(kSemName);
+  ANNOTATE_PRINT_MEMORY();
 }
 #endif  // __APPLE__
 }  // namespace test115
@@ -430,6 +439,7 @@ void Thread4() { WriteWhileHoldingReaderLock(&VAR2); }
 
 
 TEST(PositiveTests, test122) {
+  ANNOTATE_PRINT_MEMORY();
   printf("test122: positive (rw-lock)\n");
   VAR1 = 0;
   VAR2 = 0;
@@ -442,6 +452,7 @@ TEST(PositiveTests, test122) {
   MyThreadArray t(Thread1, Thread2, Thread3, Thread4);
   t.Start();
   t.Join();
+  ANNOTATE_PRINT_MEMORY();
 }
 }  // namespace test122
 
@@ -483,6 +494,7 @@ void Aggregator() {
 }
 
 TEST(NegativeTests, test125) {
+  ANNOTATE_PRINT_MEMORY();
   printf("test125: negative\n");
 
   ANNOTATE_PURE_HAPPENS_BEFORE_MUTEX(&mu);
@@ -502,6 +514,7 @@ TEST(NegativeTests, test125) {
     t.Join();
   }
 
+  ANNOTATE_PRINT_MEMORY();
 }
 }  // namespace test125
 
@@ -526,16 +539,19 @@ void Worker() {
 }
 
 TEST(NegativeTests, test135) {
+  ANNOTATE_PRINT_MEMORY();
   printf("test135: negative (mmap)\n");
   MyThreadArray t(Worker, Worker, Worker, Worker);
   t.Start();
   t.Join();
+  ANNOTATE_PRINT_MEMORY();
 }
 }  // namespace test135
 
 // test136. Unlock twice. {{{1
 namespace test136 {
 TEST(LockTests, UnlockTwice) {
+  ANNOTATE_PRINT_MEMORY();
   pthread_mutexattr_t attr;
   CHECK(0 == pthread_mutexattr_init(&attr));
   CHECK(0 == pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_ERRORCHECK));
@@ -548,6 +564,7 @@ TEST(LockTests, UnlockTwice) {
   int ret_destroy = pthread_mutex_destroy(&mu);
   printf("  pthread_mutex_unlock returned %d\n", ret_unlock);
   printf("  pthread_mutex_destroy returned %d\n", ret_destroy);
+  ANNOTATE_PRINT_MEMORY();
 }
 }  // namespace test136
 
@@ -686,6 +703,7 @@ void Worker3() {
 }
 
 TEST(PositiveTests, test146) {
+  ANNOTATE_PRINT_MEMORY();
   FAST_MODE_INIT(&GLOB1);
   FAST_MODE_INIT(&GLOB2);
   FAST_MODE_INIT(&GLOB3);
@@ -704,6 +722,7 @@ TEST(PositiveTests, test146) {
   printf("\tGLOB2=%d\n", GLOB2);
   printf("\tGLOB3=%d\n", GLOB3);
   printf("\tGLOB4=%d\n", GLOB4);
+  ANNOTATE_PRINT_MEMORY();
 }
 } // namespace test146
 
@@ -739,6 +758,7 @@ void b2() {
 }
 
 TEST(PositiveTests, CyclicBarrierTest) {
+  ANNOTATE_PRINT_MEMORY();
   ANNOTATE_EXPECT_RACE_FOR_TSAN(&L, "real race, may be hidden"
                                 " by incorrect implementation of barrier");
   pthread_barrier_init(&B, NULL, 3);
@@ -748,6 +768,7 @@ TEST(PositiveTests, CyclicBarrierTest) {
   t2.Start();
   t1.Join();
   t2.Join();
+  ANNOTATE_PRINT_MEMORY();
 }
 
 #endif  // NO_BARRIER
@@ -779,9 +800,10 @@ static void EnableSigprof(Sigaction SignalHandler) {
 }
 
 void MallocTestWorker() {
-  for (int i = 0; i < 100000; i++) {
+  for (long int i = 0; i < 100000000; i++) {
     void *x = malloc((i % 64) + 1);
     free (x);
+  //ANNOTATE_PRINT_MEMORY();
   }
 }
 
@@ -800,11 +822,13 @@ void SignalHandlerWithMutex(int, siginfo_t*, void*) {
 }
 
 TEST(Signals, SignalsAndMallocTestWithMutex) {
+  ANNOTATE_PRINT_MEMORY();
   EnableSigprof(SignalHandlerWithMutex);
   MyThreadArray t(MallocTestWorker, MallocTestWorker, MallocTestWorker);
   t.Start();
   t.Join();
   printf("\tGLOB=%d\n", GLOB);
+  ANNOTATE_PRINT_MEMORY();
 }
 #endif
 
@@ -816,15 +840,18 @@ SpinLock sl;
 void SignalHandlerWithSpinlock(int, siginfo_t*, void*) {
   sl.Lock();
   GLOB++;
+//  if (GLOB%100==0) ANNOTATE_PRINT_MEMORY();
   sl.Unlock();
 }
 
 TEST(Signals, SignalsAndMallocTestWithSpinlock) {
+  ANNOTATE_PRINT_MEMORY();
   EnableSigprof(SignalHandlerWithSpinlock);
   MyThreadArray t(MallocTestWorker, MallocTestWorker, MallocTestWorker);
   t.Start();
   t.Join();
   printf("\tGLOB=%d\n", GLOB);
+  ANNOTATE_PRINT_MEMORY();
 }
 
 // Regression test for
@@ -840,10 +867,12 @@ void WaitTestWorker() {
 }
 
 TEST(Signals, SignalsAndWaitTest) {
+  ANNOTATE_PRINT_MEMORY();
   EnableSigprof(WaitTestSignalHandler);
   MyThreadArray t(WaitTestWorker, WaitTestWorker, WaitTestWorker);
   t.Start();
   t.Join();
+  ANNOTATE_PRINT_MEMORY();
 }
 
 }  // namespace;
