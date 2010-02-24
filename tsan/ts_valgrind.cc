@@ -300,8 +300,9 @@ void ts_post_clo_init(void) {
            "<br id=race0>"
            "<a href=\"#race1\">Go to first race report</a>\n");
   }
-  Report("ThreadSanitizerValgrind: "
+  Report("ThreadSanitizerValgrind r%s: "
          "pure-happens-before=%s fast-mode=%s ignore-in-dtor=%s\n",
+         TS_VERSION,
          G_flags->pure_happens_before ? "yes" : "no",
          G_flags->fast_mode ? "yes" : "no",
          G_flags->ignore_in_dtor ? "yes" : "no");

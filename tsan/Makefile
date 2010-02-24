@@ -8,6 +8,8 @@ STLPORT_ROOT=../third_party/stlport
 GTEST_ROOT=../third_party/googletest
 OFFLINE=1
 
+TS_VERSION=$(shell svnversion)
+
 COPT=-O -fno-omit-frame-pointer
 CWARN=-Wall -Wmissing-prototypes -Wshadow -Wpointer-arith -Wstrict-prototypes \
       -Wmissing-declarations -Wno-format-zero-length  \
@@ -47,14 +49,15 @@ VGP=$(P)vg-
 PINP=$(P)pin-
 DRP=$(P)dr-
 
+DEFINES=-DTS_VERSION=\"$(TS_VERSION)\"
 
 ifeq ($(DEBUG), 1)
   D=-debug
-  DEFINES=-DDEBUG=1
+  DEFINES+=-DDEBUG=1
 else
   D=
   # In optimized mode, thread_sanitizer.cc is included into the tool code.
-  DEFINES=-DINCLUDE_THREAD_SANITIZER_CC=1
+  DEFINES+=-DINCLUDE_THREAD_SANITIZER_CC=1
 endif
 
 ifeq ($(ARCH), x86)

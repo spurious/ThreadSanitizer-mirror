@@ -168,7 +168,7 @@ uintptr_t GetPcOfCurrentThread() {
 }
 //------------- main ---------------------------- {{{1
 int main(int argc, char *argv[]) {
-  printf("INFO: ThreadSanitizerOffline\n");
+  printf("INFO: ThreadSanitizerOffline r%s\n", TS_VERSION);
 
   InitEventTypeMap();
   g_pc_info_map = new map<uintptr_t, PcInfo>;
