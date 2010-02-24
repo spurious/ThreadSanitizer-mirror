@@ -111,3 +111,22 @@ TEST(NegativeTests, DISABLED_RegisterWaitForSingleObjectTest) {
   }
 }
 }
+
+namespace QueueUserWorkItemTest {
+DWORD CALLBACK Callback(void *param) {
+  int *ptr = (int*)param;
+  (*ptr)++;
+  delete ptr;
+  return 0;
+}
+
+TEST(NegativeTests, DISABLED_QueueUserWorkItemTest) {
+  // False positive:
+  //   The callback thread is allocated from a thread pool and can be re-used.
+  //   As a result, we may miss h-b between "int *INT = ..." and Callback execution.
+  for (int i = 0; i < 1024; i++) {
+    int *INT = new int(0);
+    CHECK(QueueUserWorkItem(Callback, INT, i % 2 ? WT_EXECUTELONGFUNCTION : 0));
+  }
+}
+}
