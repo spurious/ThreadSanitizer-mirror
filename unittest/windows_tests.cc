@@ -55,7 +55,7 @@ TEST(NegativeTests, WindowsThreadStackSizeTest) {
 // Just spawn few threads with different stack sizes.
 TEST(NegativeTests, WindowsJoinWithTimeout) {
   HANDLE t = ::CreateThread(0, 0,
-                            (LPTHREAD_START_ROUTINE)DummyWorker, 0, 0, 0);
+                            (LPTHREAD_START_ROUTINE)LongWorker, 0, 0, 0);
   CHECK(t > 0);
   CHECK(WAIT_TIMEOUT == ::WaitForSingleObject(t, 1));
   CHECK(WAIT_OBJECT_0 == ::WaitForSingleObject(t, INFINITE));
