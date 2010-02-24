@@ -43,6 +43,8 @@
 /* Each function is empty and called (via a macro) only in debug mode.
    The arguments are captured by dynamic tools at runtime. */
 
+#if DYNAMIC_ANNOTATIONS_ENABLED == 1
+
 void AnnotateRWLockCreate(const char *file, int line,
                           const volatile void *lock){}
 void AnnotateRWLockDestroy(const char *file, int line,
@@ -113,6 +115,8 @@ void AnnotateIgnoreWritesEnd(const char *file, int line){}
 void AnnotateNoOp(const char *file, int line,
                   const volatile void *arg){}
 void AnnotateFlushState(const char *file, int line){}
+
+#endif  /* DYNAMIC_ANNOTATIONS_ENABLED == 1 */
 
 static int GetRunningOnValgrind(void) {
   char *running_on_valgrind_str = getenv("RUNNING_ON_VALGRIND");
