@@ -47,7 +47,7 @@ def addBuildTestStep(factory, os, bits, opt, static):
 def addTestStep(factory, debug, mode, test_binary, test_desc,
                 frontend_binary=None, extra_args=[], frontend='valgrind',
                 pin_root=None, timeout=1800, test_base_name='racecheck_unittest',
-                append_command=None):
+                append_command=None, step_generator=Test):
   """Adds a step for running unit tests with tsan."""
   args = []
   env = {}
@@ -92,7 +92,7 @@ def addTestStep(factory, debug, mode, test_binary, test_desc,
     command = ' '.join(command + [append_command])
   print command
 
-  factory.addStep(Test(command = command, env = env,
+  factory.addStep(step_generator(command = command, env = env,
                        description = 'testing ' + desc_common + ' on ' + test_base_name + test_desc,
                        descriptionDone = 'test ' + desc_common + ' on ' + test_base_name + test_desc))
 

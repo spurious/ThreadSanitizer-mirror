@@ -9,6 +9,31 @@ from buildbot.status import builder
 import process_log
 import chromium_utils
 
+import os.path
+
+
+def addClobberStep(factory):
+  factory.addStep(ShellCommand(command='rm -rf -- *',
+                               description='clobbering build dir',
+                               descriptionDone='clobber build dir'))
+
+def addExtractStep(factory, archive_dir):
+  factory.addStep(ShellCommand(
+      command=['tar', 'xzvf', os.path.join(archive_dir, 'build.tar.gz')],
+      description='extract build tree',
+      descriptionDone='extract build tree'))
+
+class GetRevisionStep(ShellCommand):
+
+  def __init__(self, *args, **kwargs):
+    kwargs['command'] = 'svnversion .'
+    ShellCommand.__init__(self, *args, **kwargs)
+
+  def commandComplete(self, cmd):
+    revision = self.getLog('stdio').getText().rstrip();
+    self.build.setProperty('got_revision', revision, 'Build');
+
+
 class ProcessLogShellStep(ShellCommand):
 
   def __init__(self, log_processor_class, *args, **kwargs):
@@ -64,7 +89,7 @@ class ProcessLogShellStep(ShellCommand):
       self.addURL('results', "%s" % self._log_processor.ReportLink())
 
 
-def addBenchmarkStep(factory, platform, benchmark, *args, **kwargs):
+def genBenchmarkStep(factory, platform, benchmark, *args, **kwargs):
   base_dir = 'perf/%s/%s' % (platform, benchmark)
   report_link = '%s/report.html' % (base_dir,)
   output_dir = 'public_html/%s' % (base_dir,)
@@ -78,6 +103,10 @@ def addBenchmarkStep(factory, platform, benchmark, *args, **kwargs):
       ProcessLogShellStep, log_processor_class,
       *args, **kwargs)
 
+  return step
+
+def addBenchmarkStep(factory, platform, benchmark, *args, **kwargs):
+  step = genBenchmarkStep(factory, platform, benchmark, *args, **kwargs)
   factory.addStep(step)
 
 
@@ -85,10 +114,10 @@ def generate(settings):
   f1 = factory.BuildFactory()
 
   # Checkout sources.
-  f1.addStep(SVN(svnurl=settings['svnurl'], mode='copy'))
+#   f1.addStep(SVN(svnurl=settings['svnurl'], mode='copy'))
 
   platform = 'linux-experimental'
-  benchmark = 'random'
+  benchmark = 'bigtest'
 
 #   log_processor_class = chromium_utils.InitializePartiallyWithArguments(
 #       process_log.GraphingLogProcessor,
@@ -98,22 +127,42 @@ def generate(settings):
 #   step = chromium_utils.InitializePartiallyWithArguments(
 #       ProcessLogShellStep, log_processor_class,
 
-  addBenchmarkStep(f1, platform, benchmark,
-      command='echo "*RESULT graph1: trace1= $RANDOM"',
-      description='testing random number generator',
-      descriptionDone='test random number generator')
-
-#   log_processor = process_log.GraphingLogProcessor
-#   step = ProcessLogShellStep(command='echo "*RESULT graph1: trace1= $RANDOM"',
-#                           description='testing random number generator',
-#                           descriptionDone='test random number generator');
 
 
-#   f1.addStep(step)
+  # Build valgrind+tsan and install them to out/.
+#   f1.addStep(ShellCommand(command='cd third_party && ./update_valgrind.sh && ' +
+#                           './build_and_install_valgrind.sh `pwd`/../out',
+#                           description='building valgrind',
+#                           descriptionDone='build valgrind'))
+#   f1.addStep(Compile(command=['make', '-C', 'tsan', '-j4', 'OFFLINE=',
+#                               'PIN_ROOT=',
+#                               'lo', 'ld'],
+#                      description='building tsan',
+#                      descriptionDone='build tsan'))
+#   f1.addStep(ShellCommand(command=['make', '-C', 'tsan', 'install',
+#                                    'VALGRIND_INST_ROOT=../out'],
+#                           description='installing tsan',
+#                           descriptionDone='install tsan'))
 
-#   f1.addStep(ShellCommand(command='echo "*RESULT graph1: trace1= $RANDOM"',
-#                           description='testing random number generator',
-#                           descriptionDone='test random number generator'))
+
+  addClobberStep(f1)
+  addExtractStep(f1, '/usr/local/google/Buildbot/archive')
+
+  f1.addStep(GetRevisionStep());
+
+  # Run benchmarks.
+  bigtest_binary = unitTestBinary('linux', 64, 0, False, test_base_name='bigtest')
+  bigtest_desc = 'some test' # FIXME
+#   bigtest_desc = addBuildTestStep(f1, 'linux', 64, 0, False);
+
+  step_generator = chromium_utils.InitializePartiallyWithArguments(
+      genBenchmarkStep, factory, platform, benchmark)
+  addTestStep(f1, False, 'phb', bigtest_binary,
+              bigtest_desc,
+              extra_args=["--error_exitcode=1"],
+              test_base_name='bigtest',
+              step_generator=step_generator)
+
 
   b1 = {'name': 'buildbot-experimental',
         'slavename': 'bot6name',

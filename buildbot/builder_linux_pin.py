@@ -48,11 +48,15 @@ def generate(settings):
                   descriptionDone='run x86 suppresions tests'))
 
   # Run unit tests.
-  variants = [((  64,   1, False),(        True, 'fast', 'racecheck_unittest')),
-              ((  64,   1, False),(        True, 'slow', 'racecheck_unittest')),
-              ((  64,   1, False),(        True,  'phb', 'racecheck_unittest')),
-              ((  32,   1, False),(        True, 'slow', 'racecheck_unittest')),
-              ((  64,   0, False),(        True, 'slow', 'racecheck_unittest')),
+  #                  test binary | tsan + run parameters
+  #             bits, opt, static,   tsan-debug,   mode
+#   variants = [((  64,   1, False),(        True, 'fast', 'racecheck_unittest')),
+#               ((  64,   1, False),(        True, 'slow', 'racecheck_unittest')),
+#               ((  64,   1, False),(        True,  'phb', 'racecheck_unittest')),
+#               ((  32,   1, False),(        True, 'slow', 'racecheck_unittest')),
+#               ((  64,   0, False),(        True, 'slow', 'racecheck_unittest')),
+#               ((  64,   1, False),(        True, 'slow',         'demo_tests'))]
+  variants = [((  64,   0, False),(        True, 'phb', 'racecheck_unittest')),
               ((  64,   1, False),(        True, 'slow',         'demo_tests'))]
   runAllTests(f1, variants, 'linux')
 
