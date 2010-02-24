@@ -58,8 +58,7 @@ cd $TOPDIR/third_party || exit 1
 ./build_and_install_valgrind.sh $VALGRIND_INST_ROOT || exit 1
 
 cd $TOPDIR/tsan || exit 1
-make -s -j4 OFFLINE= GTEST_ROOT= PIN_ROOT= ${TARGET} || exit 1
-make -s install VALGRIND_INST_ROOT=$VALGRIND_INST_ROOT  || exit 1
+make -s -j4 OFFLINE= GTEST_ROOT= PIN_ROOT= ${TARGET} VALGRIND_INST_ROOT=$VALGRIND_INST_ROOT|| exit 1
 
 # Build the self contained binaries.
 cd $TOPDIR || exit 1
