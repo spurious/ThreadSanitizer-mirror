@@ -1,18 +1,32 @@
 #!/bin/bash
 
-VALGRIND_REV=11055
-VEX_REV=1961
+source valgrind_rev.sh
 
-do_checkout_and_cd() {
-  echo "No directory 'valgrind'; doing svn checkout"
-  svn co -r $VALGRIND_REV svn://svn.valgrind.org/valgrind/trunk valgrind
-  cd valgrind || exit 1
+VALGRIND_PACK=valgrind-r${VALGRIND_REV}-vex-r${VEX_REV}.tar.bz2
+
+update_subversion() {
+  svn up -r $VALGRIND_REV
+  svn up -r $VEX_REV VEX/
 }
 
-cd valgrind || do_checkout_and_cd
+unpack() {
+  rm -rf valgrind
+  tar xjvf ${VALGRIND_PACK}
+}
 
-svn up -r $VALGRIND_REV
-svn up -r $VEX_REV VEX/
+checkout() {
+  echo "No directory 'valgrind'; doing svn checkout"
+  svn co -r $VALGRIND_REV svn://svn.valgrind.org/valgrind/trunk valgrind
+}
+
+if [[ -e $VALGRIND_PACK ]]; then
+  unpack
+  cd valgrind || exit 1
+elif [[ -d valgrind ]]; then
+  cd valgrind && update_subversion
+else
+  checkout && cd valgrind && update_subversion
+fi
 
 for p in ../../valgrind_patches/*.patch; do
   echo ==================== applying $p =================
