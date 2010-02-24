@@ -148,12 +148,14 @@ m32o:
 m32d:
 	$(MAKE) all OS=darwin ARCH=x86 DEBUG=1
 
-install: bin
-	rm -fv $(VALGRIND_INST_ROOT)/lib/valgrind/*tsan*
-	cp bin/tsan* bin/vgpreload_tsan* $(VALGRIND_INST_ROOT)/lib/valgrind
+install:
+	@echo The 'install' target is deprecated. 
 
 self-contained:
 	../tsan_binary/mk-self-contained-valgrind.sh $(VALGRIND_INST_ROOT)  tsan bin/tsan-$(OS)-self-contained.sh
+self-contained-stripped:
+	strip bin/tsan-*$(OS)
+	$(MAKE) self-contained
 
 
 ifeq ($(VALGRIND_ROOT), )
@@ -228,9 +230,11 @@ $(P)preload-%.o: %.c $(TS_HEADERS) $(TS_VG_HEADERS)
 
 bin/tsan$(D)-$(ARCHOS): $(TS_VG_OBJECTS)
 	$(LD) $(LDFLAGS) $(ARCHFLAGS) $(VG_LD_FLAGS) -o $@ $^ $(VALGRIND_LIBS) -lgcc
+	ln -sf `pwd`/$@ $(VALGRIND_INST_ROOT)/lib/valgrind/  # install the symlink into the valgrind inst dir.
 
 bin/vgpreload_tsan$(D)-$(ARCHOS).so: $(P)preload-ts_valgrind_intercepts.o
 	$(LD) $(LDFLAGS)  $(ARCHFLAGS) $(VG_LD_PRELOAD_FLAGS) -o $@  $<
+	ln -sf `pwd`/$@  $(VALGRIND_INST_ROOT)/lib/valgrind/  # install the symlink into the valgrind inst dir.
 
 $(P)ts_offline$(EXE): $(TS_OFFLINE_OBJECTS)
 	$(LD) $(LDFLAGS) $(ARCHFLAGS) $(LINKO)$@ $^
@@ -251,4 +255,4 @@ $(P)ts_dynamorio.so: $(TS_DR_OBJECTS)
 	$(LD) $(ARCHFLAGS) $(DR_LDFLAGS) $(DR_LIBPATHS) -o $@ $^  $(DR_LIBS) $(DR_LD_SCRIPT)
 
 clean: GTEST_CLEAN
-	rm -rfv bin core* pintool.log* pin.log
+	rm -rfv bin core* pintool.log* pin.log $(VALGRIND_INST_ROOT)/lib/valgrind/*tsan*
