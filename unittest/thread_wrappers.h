@@ -52,7 +52,15 @@ using namespace std;
 #ifdef NDEBUG
 # error "Pleeease, do not define NDEBUG"
 #endif
-#define CHECK assert
+
+#ifdef WIN32
+# define CHECK(x) do { if (!(x)) { \
+   fprintf(stderr, "Assertion failed: %s (%s:%d) %s\n", \
+          __FUNCTION__, __FILE__, __LINE__, #x); \
+   exit(1); }} while (0)
+#else
+# define CHECK assert
+#endif
 
 /// Just a boolean condition. Used by Mutex::LockWhen and similar.
 class Condition {
