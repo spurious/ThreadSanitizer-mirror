@@ -1,7 +1,7 @@
 #!/bin/bash
 
-VALGRIND_REV=10974
-VEX_REV=1946
+VALGRIND_REV=11055
+VEX_REV=1961
 
 do_checkout_and_cd() {
   echo "No directory 'valgrind'; doing svn checkout"
