@@ -69,6 +69,7 @@ bool debug_expected_races = false;
 bool debug_malloc = false;
 bool debug_free = false;
 bool debug_thread = false;
+bool debug_lock = false;
 
 // -------- Util ----------------------------- {{{1
 
@@ -4119,6 +4120,7 @@ static HeapMap<HeapInfo> *G_heap_map;
 
 // -------- Suppressions ----------------------- {{{1
 static const char default_suppressions[] =
+// TODO(kcc): as it gets bigger, move it into a separate object file.
 "# We need to have some default suppressions, but we don't want to    \n"
 "# keep them in a separate text file, so we keep the in the code.     \n"
 
@@ -4129,6 +4131,28 @@ static const char default_suppressions[] =
 "   fun:pthread_mutex_unlock                                          \n"
 "   fun:_dyld_register_func_for_*_image                               \n"
 "}                                                                    \n"
+#endif
+
+#ifdef _MSC_VER
+"{                                                                   \n"
+"  weird lock report on Windows (CreateProcessInternal)              \n"
+"  ThreadSanitizer:InvalidLock                                       \n"
+"  ...                                                               \n"
+"  fun:CreateProcessInternal*                                        \n"
+"}                                                                   \n"
+"{                                                                   \n"
+"  weird lock report on Windows (CreateProcessInternal)              \n"
+"  ThreadSanitizer:UnlockForeign                                     \n"
+"  ...                                                               \n"
+"  fun:CreateProcessInternal*                                        \n"
+"}                                                                   \n"
+"{                                                                   \n"
+"  weird lock report on Windows (_mtinit)                            \n"
+"  ThreadSanitizer:InvalidLock                                       \n"
+"  ...                                                               \n"
+"  fun:_mtinit*                                                      \n"
+"}                                                                   \n"
+
 #endif
 
 ;
@@ -5058,7 +5082,7 @@ class Detector {
   }
 
   void HandleLock(bool is_w_lock) {
-    if (G_flags->verbosity >= 2) {
+    if (debug_lock) {
       e_->Print();
       cur_thread_->ReportStackTrace();
     }
@@ -5067,7 +5091,7 @@ class Detector {
 
   // UNLOCK
   void HandleUnlock() {
-    if (G_flags->verbosity >= 2) {
+    if (debug_lock) {
       e_->Print();
       cur_thread_->ReportStackTrace();
     }
@@ -5098,6 +5122,9 @@ class Detector {
 
   void HandleLockCreateOrDestroy() {
     uintptr_t lock_addr = e_->a();
+    if (debug_lock) {
+      e_->Print();
+    }
     if (e_->type() == LOCK_CREATE) {
       Lock::Create(lock_addr);
     } else {
@@ -6063,6 +6090,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   debug_malloc = PhaseDebugIsOn("malloc");
   debug_free = PhaseDebugIsOn("free");
   debug_thread = PhaseDebugIsOn("thread");
+  debug_lock = PhaseDebugIsOn("lock");
 }
 
 // -------- ThreadSanitizer ------------------ {{{1

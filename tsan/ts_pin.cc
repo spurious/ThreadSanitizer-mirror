@@ -542,6 +542,9 @@ static bool RtnMatchesName(const string &rtn_name, const string &name) {
 
 #define WRAP_NAME(name) Wrap_##name
 #define WRAP4(name) WrapFunc4(img, rtn, #name, (AFUNPTR)Wrap_##name)
+#define WRAPSTD1(name) WrapStdCallFunc1(rtn, #name, (AFUNPTR)Wrap_##name)
+#define WRAPSTD3(name) WrapStdCallFunc3(rtn, #name, (AFUNPTR)Wrap_##name)
+#define WRAPSTD4(name) WrapStdCallFunc4(rtn, #name, (AFUNPTR)Wrap_##name)
 #define WRAP_PARAM4  THREADID tid, ADDRINT pc, CONTEXT *ctx, \
                                 AFUNPTR f,\
                                 uintptr_t arg0, uintptr_t arg1, \
@@ -698,7 +701,7 @@ static void DebugOnlyShowPcAndSp(const char *where, THREADID tid,
   }
 }
 
-static uintptr_t Wrap_ThreadSanitizerQuery(WRAP_PARAM4) {
+static uintptr_t WRAP_NAME(ThreadSanitizerQuery)(WRAP_PARAM4) {
   const char *query = (const char*)arg0;
   return (uintptr_t)ThreadSanitizerQuery(query);
 }
@@ -753,7 +756,7 @@ static void After_cxa_guard_release(THREADID tid, ADDRINT pc) {
   IgnoreAllEnd(tid, pc);
 }
 
-static uintptr_t Wrap_pthread_once(WRAP_PARAM4) {
+static uintptr_t WRAP_NAME(pthread_once)(WRAP_PARAM4) {
   uintptr_t ret;
   IgnoreAllBegin(tid, pc);
   ret = CALL_ME_INSIDE_WRAPPER_4();
@@ -797,7 +800,7 @@ static THREADID HandleThreadCreateAfter(THREADID tid, pthread_t child_ptid) {
   return last_child_tid;
 }
 
-static uintptr_t Wrap_pthread_create(WRAP_PARAM4) {
+static uintptr_t WRAP_NAME(pthread_create)(WRAP_PARAM4) {
   HandleThreadCreateBefore(tid);
 
   IgnoreAllBegin(tid, pc);
@@ -862,7 +865,7 @@ static void Before_start_thread(THREADID tid, ADDRINT pc, ADDRINT sp) {
 }
 
 #ifdef _MSC_VER
-static uintptr_t Wrap_CreateThread(WRAP_PARAM6) {
+static uintptr_t WRAP_NAME(CreateThread)(WRAP_PARAM6) {
   PinThread &t = g_pin_threads[tid];
   t.last_child_stack_size_if_known = arg1 ? arg1 : 1024 * 1024;
 
@@ -943,7 +946,7 @@ static void HandleThreadJoinAfter(THREADID tid, pthread_t joined_ptid) {
   DumpEvent(THR_JOIN_AFTER, tid, 0, joined_uniq_tid, 0);
 }
 
-static uintptr_t Wrap_pthread_join(WRAP_PARAM4) {
+static uintptr_t WRAP_NAME(pthread_join)(WRAP_PARAM4) {
   if (G_flags->debug_level >= 2)
     Printf("T%d in  pthread_join %p\n", tid, arg0);
   pthread_t joined_ptid = (pthread_t)arg0;
@@ -1029,23 +1032,23 @@ uintptr_t CallStdCallFun6(CONTEXT *ctx, THREADID tid,
 
 
 
-uintptr_t Wrap_RtlInitializeCriticalSection(WRAP_PARAM4) {
+uintptr_t WRAP_NAME(RtlInitializeCriticalSection)(WRAP_PARAM4) {
 //  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
   DumpEvent(LOCK_CREATE, tid, pc, arg0, 0);
   return CallStdCallFun1(ctx, tid, f, arg0);
 }
-uintptr_t Wrap_RtlDeleteCriticalSection(WRAP_PARAM4) {
+uintptr_t WRAP_NAME(RtlDeleteCriticalSection)(WRAP_PARAM4) {
 //  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
   DumpEvent(LOCK_DESTROY, tid, pc, arg0, 0);
   return CallStdCallFun1(ctx, tid, f, arg0);
 }
-uintptr_t Wrap_RtlEnterCriticalSection(WRAP_PARAM4) {
+uintptr_t WRAP_NAME(RtlEnterCriticalSection)(WRAP_PARAM4) {
 //  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
   uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
   DumpEvent(WRITER_LOCK, tid, pc, arg0, 0);
   return ret;
 }
-uintptr_t Wrap_RtlTryEnterCriticalSection(WRAP_PARAM4) {
+uintptr_t WRAP_NAME(RtlTryEnterCriticalSection)(WRAP_PARAM4) {
 //  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
   uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
   if (ret) {
@@ -1053,13 +1056,13 @@ uintptr_t Wrap_RtlTryEnterCriticalSection(WRAP_PARAM4) {
   }
   return ret;
 }
-uintptr_t Wrap_RtlLeaveCriticalSection(WRAP_PARAM4) {
+uintptr_t WRAP_NAME(RtlLeaveCriticalSection)(WRAP_PARAM4) {
 //  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
   DumpEvent(UNLOCK, tid, pc, arg0, 0);
   return CallStdCallFun1(ctx, tid, f, arg0);
 }
 
-uintptr_t Wrap_SetEvent(WRAP_PARAM4) {
+uintptr_t WRAP_NAME(SetEvent)(WRAP_PARAM4) {
   //Printf("T%d before pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
   DumpEvent(SIGNAL, tid, pc, arg0, 0);
   uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
@@ -1067,13 +1070,82 @@ uintptr_t Wrap_SetEvent(WRAP_PARAM4) {
   return ret;
 }
 
-uintptr_t Wrap_VirtualAlloc(WRAP_PARAM4) {
+uintptr_t WRAP_NAME(RtlAcquireSRWLockExclusive)(WRAP_PARAM4) {
+  uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
+  DumpEvent(WRITER_LOCK, tid, pc, arg0, 0);
+  return ret;
+}
+uintptr_t WRAP_NAME(RtlAcquireSRWLockShared)(WRAP_PARAM4) {
+  uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
+  DumpEvent(READER_LOCK, tid, pc, arg0, 0);
+  return ret;
+}
+uintptr_t WRAP_NAME(RtlTryAcquireSRWLockExclusive)(WRAP_PARAM4) {
+  uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
+  if (ret) {
+    DumpEvent(WRITER_LOCK, tid, pc, arg0, 0);
+  }
+  return ret;
+}
+uintptr_t WRAP_NAME(RtlTryAcquireSRWLockShared)(WRAP_PARAM4) {
+  uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
+  if (ret) {
+    DumpEvent(READER_LOCK, tid, pc, arg0, 0);
+  }
+  return ret;
+}
+uintptr_t WRAP_NAME(RtlReleaseSRWLockExclusive)(WRAP_PARAM4) {
+  DumpEvent(UNLOCK, tid, pc, arg0, 0);
+  uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
+  return ret;
+}
+uintptr_t WRAP_NAME(RtlReleaseSRWLockShared)(WRAP_PARAM4) {
+  DumpEvent(UNLOCK, tid, pc, arg0, 0);
+  uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
+  return ret;
+}
+uintptr_t WRAP_NAME(RtlInitializeSRWLock)(WRAP_PARAM4) {
+  DumpEvent(LOCK_CREATE, tid, pc, arg0, 0);
+  uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
+  return ret;
+}
+
+uintptr_t WRAP_NAME(RtlWakeConditionVariable)(WRAP_PARAM4) {
+  Printf("T%d %s arg0=%p\n", tid, __FUNCTION__, arg0);
+  DumpEvent(SIGNAL, tid, pc, arg0, 0);
+  uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
+  return ret;
+}
+uintptr_t WRAP_NAME(RtlAllWakeConditionVariable)(WRAP_PARAM4) {
+  Printf("T%d %s arg0=%p\n", tid, __FUNCTION__, arg0);
+  DumpEvent(SIGNAL, tid, pc, arg0, 0);
+  uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
+  return ret;
+}
+uintptr_t WRAP_NAME(RtlSleepConditionVariableSRW)(WRAP_PARAM4) {
+  uintptr_t ret = CallStdCallFun4(ctx, tid, f, arg0, arg1, arg2, arg3);
+  // TODO(kcc): do we need to lock/unlock here? Do we need to check ret?
+  DumpEvent(WAIT_BEFORE, tid, pc, arg0, 0);
+  DumpEvent(WAIT_AFTER, tid, pc, 0, 0);
+  Printf("T%d %s arg0=%p arg1=%p; ret=%d\n", tid, __FUNCTION__, arg0, arg1, ret);
+  return ret;
+}
+uintptr_t WRAP_NAME(RtlSleepConditionVariableCS)(WRAP_PARAM4) {
+  uintptr_t ret = CallStdCallFun3(ctx, tid, f, arg0, arg1, arg2);
+  // TODO(kcc): do we need to lock/unlock here? Do we need to check ret?
+  DumpEvent(WAIT_BEFORE, tid, pc, arg0, 0);
+  DumpEvent(WAIT_AFTER, tid, pc, 0, 0);
+  Printf("T%d %s arg0=%p arg1=%p; ret=%d\n", tid, __FUNCTION__, arg0, arg1, ret);
+  return ret;
+}
+
+uintptr_t WRAP_NAME(VirtualAlloc)(WRAP_PARAM4) {
   Printf("T%d VirtualAlloc: %p %p %p %p\n", tid, arg0, arg1, arg2, arg3);
   uintptr_t ret = CallStdCallFun4(ctx, tid, f, arg0, arg1, arg2, arg3);
   return ret;
 }
 
-uintptr_t Wrap_GlobalAlloc(WRAP_PARAM4) {
+uintptr_t WRAP_NAME(GlobalAlloc)(WRAP_PARAM4) {
   uintptr_t ret = CallStdCallFun2(ctx, tid, f, arg0, arg1);
   Printf("T%d %s(%p %p)=%p\n", tid, __FUNCTION__, arg0, arg1, ret);
   if (ret != 0) {
@@ -1082,7 +1154,7 @@ uintptr_t Wrap_GlobalAlloc(WRAP_PARAM4) {
   return ret;
 }
 
-uintptr_t Wrap_ZwAllocateVirtualMemory(WRAP_PARAM6) {
+uintptr_t WRAP_NAME(ZwAllocateVirtualMemory)(WRAP_PARAM6) {
   // Printf("T%d >>%s(%p %p %p %p %p %p)\n", tid, __FUNCTION__, arg0, arg1, arg2, arg3, arg4, arg5);
   uintptr_t ret = CallStdCallFun6(ctx, tid, f, arg0, arg1, arg2, arg3, arg4, arg5);
   // Printf("T%d <<%s(%p %p) = %p\n", tid, __FUNCTION__, *(void**)arg1, *(void**)arg3, ret);
@@ -1092,7 +1164,7 @@ uintptr_t Wrap_ZwAllocateVirtualMemory(WRAP_PARAM6) {
   return ret;
 }
 
-uintptr_t Wrap_AllocateHeap(WRAP_PARAM4) {
+uintptr_t WRAP_NAME(AllocateHeap)(WRAP_PARAM4) {
   uintptr_t ret = CallStdCallFun3(ctx, tid, f, arg0, arg1, arg2);
   // Printf("T%d RtlAllocateHeap(%p %p %p)=%p\n", tid, arg0, arg1, arg2, ret);
   if (ret != 0) {
@@ -1101,14 +1173,14 @@ uintptr_t Wrap_AllocateHeap(WRAP_PARAM4) {
   return ret;
 }
 
-uintptr_t Wrap_HeapCreate(WRAP_PARAM4) {
+uintptr_t WRAP_NAME(HeapCreate)(WRAP_PARAM4) {
   uintptr_t ret = CallStdCallFun3(ctx, tid, f, arg0, arg1, arg2);
   Printf("T%d %s(%p %p %p)=%p\n", tid, __FUNCTION__, arg0, arg1, arg2, ret);
   return ret;
 }
 
 
-uintptr_t Wrap_WaitForSingleObject(WRAP_PARAM4) {
+uintptr_t WRAP_NAME(WaitForSingleObject)(WRAP_PARAM4) {
   if (G_flags->verbosity >= 1) {
     ShowPcAndSp(__FUNCTION__, tid, pc, 0);
     Printf("arg0=%lx arg1=%lx\n", arg0, arg1);
@@ -1153,7 +1225,7 @@ void After_main(THREADID tid, ADDRINT pc) {
 }
 
 //--------- memory allocation ---------------------- {{{2
-uintptr_t Wrap_mmap(WRAP_PARAM6) {
+uintptr_t WRAP_NAME(mmap)(WRAP_PARAM6) {
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_6();
 
   if (ret != (ADDRINT)-1L) {
@@ -1163,7 +1235,7 @@ uintptr_t Wrap_mmap(WRAP_PARAM6) {
   return ret;
 }
 
-uintptr_t Wrap_malloc(WRAP_PARAM4) {
+uintptr_t WRAP_NAME(malloc)(WRAP_PARAM4) {
   IgnoreAllBegin(tid, pc);
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
   IgnoreAllEnd(tid, pc);
@@ -1172,7 +1244,7 @@ uintptr_t Wrap_malloc(WRAP_PARAM4) {
   return ret;
 }
 
-uintptr_t Wrap_calloc(WRAP_PARAM4) {
+uintptr_t WRAP_NAME(calloc)(WRAP_PARAM4) {
   IgnoreAllBegin(tid, pc);
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
   IgnoreAllEnd(tid, pc);
@@ -1181,7 +1253,7 @@ uintptr_t Wrap_calloc(WRAP_PARAM4) {
   return ret;
 }
 
-uintptr_t Wrap_free(WRAP_PARAM4) {
+uintptr_t WRAP_NAME(free)(WRAP_PARAM4) {
   DumpEvent(FREE, tid, pc, arg0, 0);
 
   IgnoreAllBegin(tid, pc);
@@ -1399,12 +1471,12 @@ static void Before_pthread_spin_destroy(THREADID tid, ADDRINT pc, ADDRINT mu) {
 }
 
 // barrier
-static uintptr_t Wrap_pthread_barrier_init(WRAP_PARAM4) {
+static uintptr_t WRAP_NAME(pthread_barrier_init)(WRAP_PARAM4) {
   DumpEvent(CYCLIC_BARRIER_INIT, tid, pc, arg0, arg2);
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
   return ret;
 }
-static uintptr_t Wrap_pthread_barrier_wait(WRAP_PARAM4) {
+static uintptr_t WRAP_NAME(pthread_barrier_wait)(WRAP_PARAM4) {
   DumpEvent(CYCLIC_BARRIER_WAIT_BEFORE, tid, pc, arg0, 0);
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
   DumpEvent(CYCLIC_BARRIER_WAIT_AFTER, tid, pc, arg0, 0);
@@ -1418,7 +1490,7 @@ static void Before_pthread_cond_signal(THREADID tid, ADDRINT pc, ADDRINT cv) {
 }
 static void Before_pthread_cond_wait(THREADID tid, ADDRINT pc,
                                      ADDRINT cv, ADDRINT mu) {
-  DumpEvent(WAIT_BEFORE, tid, pc, cv, 0);
+  DumpEvent(WAIT_BEFORE, tid, pc, cv, mu);
 }
 static void After_pthread_cond_wait(THREADID tid, ADDRINT pc) {
   DumpEvent(WAIT_AFTER, tid, pc, 0, 0);
@@ -1949,39 +2021,39 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_AFTER_0("main", After_main);
 
   // malloc/free/etc
-  WrapFunc4(img, rtn, "malloc", (AFUNPTR)Wrap_malloc);
-  WrapFunc4(img, rtn, "calloc", (AFUNPTR)Wrap_calloc);
-  WrapFunc4(img, rtn, "free", (AFUNPTR)Wrap_free);
+  WrapFunc4(img, rtn, "malloc", (AFUNPTR)WRAP_NAME(malloc));
+  WrapFunc4(img, rtn, "calloc", (AFUNPTR)WRAP_NAME(calloc));
+  WrapFunc4(img, rtn, "free", (AFUNPTR)WRAP_NAME(free));
 
   // Linux: operator new/delete
-  WrapFunc4(img, rtn, "_Znwm", (AFUNPTR)Wrap_malloc);
-  WrapFunc4(img, rtn, "_Znam", (AFUNPTR)Wrap_malloc);
-  WrapFunc4(img, rtn, "_Znwj", (AFUNPTR)Wrap_malloc);
-  WrapFunc4(img, rtn, "_Znaj", (AFUNPTR)Wrap_malloc);
-  WrapFunc4(img, rtn, "_ZnwmRKSt9nothrow_t", (AFUNPTR)Wrap_malloc);
-  WrapFunc4(img, rtn, "_ZnamRKSt9nothrow_t", (AFUNPTR)Wrap_malloc);
-  WrapFunc4(img, rtn, "_ZnwjRKSt9nothrow_t", (AFUNPTR)Wrap_malloc);
-  WrapFunc4(img, rtn, "_ZnajRKSt9nothrow_t", (AFUNPTR)Wrap_malloc);
-  WrapFunc4(img, rtn, "_ZdaPv", (AFUNPTR)Wrap_free);
-  WrapFunc4(img, rtn, "_ZdlPv", (AFUNPTR)Wrap_free);
-  WrapFunc4(img, rtn, "_ZdlPvRKSt9nothrow_t", (AFUNPTR)Wrap_free);
-  WrapFunc4(img, rtn, "_ZdaPvRKSt9nothrow_t", (AFUNPTR)Wrap_free);
+  WrapFunc4(img, rtn, "_Znwm", (AFUNPTR)WRAP_NAME(malloc));
+  WrapFunc4(img, rtn, "_Znam", (AFUNPTR)WRAP_NAME(malloc));
+  WrapFunc4(img, rtn, "_Znwj", (AFUNPTR)WRAP_NAME(malloc));
+  WrapFunc4(img, rtn, "_Znaj", (AFUNPTR)WRAP_NAME(malloc));
+  WrapFunc4(img, rtn, "_ZnwmRKSt9nothrow_t", (AFUNPTR)WRAP_NAME(malloc));
+  WrapFunc4(img, rtn, "_ZnamRKSt9nothrow_t", (AFUNPTR)WRAP_NAME(malloc));
+  WrapFunc4(img, rtn, "_ZnwjRKSt9nothrow_t", (AFUNPTR)WRAP_NAME(malloc));
+  WrapFunc4(img, rtn, "_ZnajRKSt9nothrow_t", (AFUNPTR)WRAP_NAME(malloc));
+  WrapFunc4(img, rtn, "_ZdaPv", (AFUNPTR)WRAP_NAME(free));
+  WrapFunc4(img, rtn, "_ZdlPv", (AFUNPTR)WRAP_NAME(free));
+  WrapFunc4(img, rtn, "_ZdlPvRKSt9nothrow_t", (AFUNPTR)WRAP_NAME(free));
+  WrapFunc4(img, rtn, "_ZdaPvRKSt9nothrow_t", (AFUNPTR)WRAP_NAME(free));
 
   // Windows: operator new/delete
-  WrapFunc4(img, rtn, "operator new", (AFUNPTR)Wrap_malloc);
-  WrapFunc4(img, rtn, "operator new[]", (AFUNPTR)Wrap_malloc);
-  WrapFunc4(img, rtn, "operator delete", (AFUNPTR)Wrap_free);
-  WrapFunc4(img, rtn, "operator delete[]", (AFUNPTR)Wrap_free);
+  WrapFunc4(img, rtn, "operator new", (AFUNPTR)WRAP_NAME(malloc));
+  WrapFunc4(img, rtn, "operator new[]", (AFUNPTR)WRAP_NAME(malloc));
+  WrapFunc4(img, rtn, "operator delete", (AFUNPTR)WRAP_NAME(free));
+  WrapFunc4(img, rtn, "operator delete[]", (AFUNPTR)WRAP_NAME(free));
 
-  WrapFunc6(img, rtn, "mmap", (AFUNPTR)Wrap_mmap);
+  WrapFunc6(img, rtn, "mmap", (AFUNPTR)WRAP_NAME(mmap));
 
   // ThreadSanitizerQuery
   WrapFunc4(img, rtn, "ThreadSanitizerQuery",
-            (AFUNPTR)Wrap_ThreadSanitizerQuery);
+            (AFUNPTR)WRAP_NAME(ThreadSanitizerQuery));
 
   // pthread create/join
-  WrapFunc4(img, rtn, "pthread_create", (AFUNPTR)Wrap_pthread_create);
-  WrapFunc4(img, rtn, "pthread_join", (AFUNPTR)Wrap_pthread_join);
+  WrapFunc4(img, rtn, "pthread_create", (AFUNPTR)WRAP_NAME(pthread_create));
+  WrapFunc4(img, rtn, "pthread_join", (AFUNPTR)WRAP_NAME(pthread_join));
  
   INSERT_FN(IPOINT_BEFORE, "start_thread",
             Before_start_thread,
@@ -2022,9 +2094,9 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
 
   // pthread_barrier_*
   WrapFunc4(img, rtn, "pthread_barrier_init",
-            (AFUNPTR)Wrap_pthread_barrier_init);
+            (AFUNPTR)WRAP_NAME(pthread_barrier_init));
   WrapFunc4(img, rtn, "pthread_barrier_wait",
-            (AFUNPTR)Wrap_pthread_barrier_wait);
+            (AFUNPTR)WRAP_NAME(pthread_barrier_wait));
 
   // sem_*
   INSERT_AFTER_1("sem_open", After_sem_open);
@@ -2036,7 +2108,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
 
 
 #ifdef _MSC_VER
-  WrapStdCallFunc6(rtn, "CreateThread", (AFUNPTR)Wrap_CreateThread);
+  WrapStdCallFunc6(rtn, "CreateThread", (AFUNPTR)WRAP_NAME(CreateThread));
 
   INSERT_FN(IPOINT_BEFORE, "BaseThreadInitThunk",
             Before_BaseThreadInitThunk,
@@ -2044,24 +2116,33 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
 
   INSERT_BEFORE_0("RtlExitUserThread", Before_RtlExitUserThread);
 
-  WrapStdCallFunc1(rtn, "RtlInitializeCriticalSection",
-                             (AFUNPTR)(Wrap_RtlInitializeCriticalSection));
-  WrapStdCallFunc1(rtn, "RtlDeleteCriticalSection",
-                             (AFUNPTR)(Wrap_RtlDeleteCriticalSection));
-  WrapStdCallFunc1(rtn, "RtlEnterCriticalSection",
-                             (AFUNPTR)(Wrap_RtlEnterCriticalSection));
-  WrapStdCallFunc1(rtn, "RtlTryEnterCriticalSection",
-                             (AFUNPTR)(Wrap_RtlTryEnterCriticalSection));
-  WrapStdCallFunc1(rtn, "RtlLeaveCriticalSection",
-                             (AFUNPTR)(Wrap_RtlLeaveCriticalSection));
-  WrapStdCallFunc1(rtn, "SetEvent", (AFUNPTR)(Wrap_SetEvent));
-  WrapStdCallFunc2(rtn, "WaitForSingleObject", (AFUNPTR)(Wrap_WaitForSingleObject));
+  WRAPSTD1(RtlInitializeCriticalSection);
+  WRAPSTD1(RtlDeleteCriticalSection);
+  WRAPSTD1(RtlEnterCriticalSection);
+  WRAPSTD1(RtlTryEnterCriticalSection);
+  WRAPSTD1(RtlLeaveCriticalSection);
+  WRAPSTD1(SetEvent);
 
-  WrapStdCallFunc4(rtn, "VirtualAlloc", (AFUNPTR)(Wrap_VirtualAlloc));
-  WrapStdCallFunc6(rtn, "ZwAllocateVirtualMemory", (AFUNPTR)(Wrap_ZwAllocateVirtualMemory));
-  WrapStdCallFunc2(rtn, "GlobalAlloc", (AFUNPTR)Wrap_GlobalAlloc);
-//  WrapStdCallFunc3(rtn, "RtlAllocateHeap", (AFUNPTR) Wrap_AllocateHeap);
-//  WrapStdCallFunc3(rtn, "HeapCreate", (AFUNPTR) Wrap_HeapCreate);
+  WRAPSTD1(RtlAcquireSRWLockExclusive);
+  WRAPSTD1(RtlAcquireSRWLockShared);
+  WRAPSTD1(RtlTryAcquireSRWLockExclusive);
+  WRAPSTD1(RtlTryAcquireSRWLockShared);
+  WRAPSTD1(RtlReleaseSRWLockExclusive);
+  WRAPSTD1(RtlReleaseSRWLockShared);
+  WRAPSTD1(RtlInitializeSRWLock);
+
+  WRAPSTD1(RtlWakeConditionVariable);
+  WRAPSTD1(RtlAllWakeConditionVariable);
+  WRAPSTD4(RtlSleepConditionVariableSRW);
+  WRAPSTD3(RtlSleepConditionVariableCS);
+
+  WrapStdCallFunc2(rtn, "WaitForSingleObject", (AFUNPTR)(WRAP_NAME(WaitForSingleObject)));
+
+  WrapStdCallFunc4(rtn, "VirtualAlloc", (AFUNPTR)(WRAP_NAME(VirtualAlloc)));
+  WrapStdCallFunc6(rtn, "ZwAllocateVirtualMemory", (AFUNPTR)(WRAP_NAME(ZwAllocateVirtualMemory)));
+  WrapStdCallFunc2(rtn, "GlobalAlloc", (AFUNPTR)WRAP_NAME(GlobalAlloc));
+//  WrapStdCallFunc3(rtn, "RtlAllocateHeap", (AFUNPTR) WRAP_NAME(AllocateHeap));
+//  WrapStdCallFunc3(rtn, "HeapCreate", (AFUNPTR) WRAP_NAME(HeapCreate));
 #endif
 
   // Annotations.
@@ -2115,7 +2196,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   ReplaceFunc3(img, rtn, "strcpy", (AFUNPTR)Replace_strcpy);
 
   // pthread_once
-  WrapFunc4(img, rtn, "pthread_once", (AFUNPTR)Wrap_pthread_once);
+  WrapFunc4(img, rtn, "pthread_once", (AFUNPTR)WRAP_NAME(pthread_once));
 
   // __cxa_guard_acquire / __cxa_guard_release
   INSERT_BEFORE_1("__cxa_guard_acquire", Before_cxa_guard_acquire);
