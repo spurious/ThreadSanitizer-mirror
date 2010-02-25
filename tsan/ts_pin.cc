@@ -1296,7 +1296,7 @@ void InsertBeforeEvent_Call(THREADID tid, ADDRINT pc, ADDRINT target, ADDRINT sp
   if (DEB_PR) {
     PrintShadowStack(t);
   }
-  if (DEBUG_MODE && (G_flags->verbosity >= 2)) {
+  if (DEBUG_MODE && debug_rtn) {
     ShowPcAndSp("CALL: ", t.tid, target, sp);
   }
 }
@@ -2123,6 +2123,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   WRAPSTD1(RtlLeaveCriticalSection);
   WRAPSTD1(SetEvent);
 
+#if 0
   WRAPSTD1(RtlAcquireSRWLockExclusive);
   WRAPSTD1(RtlAcquireSRWLockShared);
   WRAPSTD1(RtlTryAcquireSRWLockExclusive);
@@ -2135,6 +2136,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   WRAPSTD1(RtlAllWakeConditionVariable);
   WRAPSTD4(RtlSleepConditionVariableSRW);
   WRAPSTD3(RtlSleepConditionVariableCS);
+#endif
 
   WrapStdCallFunc2(rtn, "WaitForSingleObject", (AFUNPTR)(WRAP_NAME(WaitForSingleObject)));
 

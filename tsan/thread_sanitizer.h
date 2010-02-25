@@ -118,6 +118,7 @@ extern bool debug_expected_races;
 extern bool debug_malloc;
 extern bool debug_free;
 extern bool debug_thread;
+extern bool debug_rtn;
 
 
 //--------- TS Exports ----------------- {{{1

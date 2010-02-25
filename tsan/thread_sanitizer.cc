@@ -69,6 +69,7 @@ bool debug_expected_races = false;
 bool debug_malloc = false;
 bool debug_free = false;
 bool debug_thread = false;
+bool debug_rtn = false;
 bool debug_lock = false;
 
 // -------- Util ----------------------------- {{{1
@@ -6090,6 +6091,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   debug_malloc = PhaseDebugIsOn("malloc");
   debug_free = PhaseDebugIsOn("free");
   debug_thread = PhaseDebugIsOn("thread");
+  debug_rtn = PhaseDebugIsOn("rtn");
   debug_lock = PhaseDebugIsOn("lock");
 }
 
