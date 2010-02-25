@@ -219,7 +219,39 @@ TEST(NegativeTests, DISABLED_WindowsConditionVariableSRWTest) {
   CHECK(*obj == 2);
   delete obj;
 }
+}  // namespace
+
+namespace WindowsInterlockedListTest {  // {{{1
+SLIST_HEADER list;
+
+struct Item {
+  SLIST_ENTRY entry;
+  int foo;
+};
+
+void Push() {
+  Item *item = new Item;
+  item->foo = 42;
+  InterlockedPushEntrySList(&list, (PSINGLE_LIST_ENTRY)item);
+}
+
+void Pop() {
+  Item *item;
+  while (0 == (item = (Item*)InterlockedPopEntrySList(&list))) {
+    Sleep(1);
+  }
+  CHECK(item->foo == 42);
+  delete item;
+}
+
+TEST(NegativeTests, WindowsInterlockedListTest) {
+  InitializeSListHead(&list);
+  MyThreadArray t(Push, Pop);
+  t.Start();
+  t.Join();
+}
 
 }  // namespace
+
 // End {{{1
  // vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker
