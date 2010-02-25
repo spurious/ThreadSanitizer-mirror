@@ -543,6 +543,7 @@ static bool RtnMatchesName(const string &rtn_name, const string &name) {
 #define WRAP_NAME(name) Wrap_##name
 #define WRAP4(name) WrapFunc4(img, rtn, #name, (AFUNPTR)Wrap_##name)
 #define WRAPSTD1(name) WrapStdCallFunc1(rtn, #name, (AFUNPTR)Wrap_##name)
+#define WRAPSTD2(name) WrapStdCallFunc2(rtn, #name, (AFUNPTR)Wrap_##name)
 #define WRAPSTD3(name) WrapStdCallFunc3(rtn, #name, (AFUNPTR)Wrap_##name)
 #define WRAPSTD4(name) WrapStdCallFunc4(rtn, #name, (AFUNPTR)Wrap_##name)
 #define WRAP_PARAM4  THREADID tid, ADDRINT pc, CONTEXT *ctx, \
@@ -1067,6 +1068,23 @@ uintptr_t WRAP_NAME(SetEvent)(WRAP_PARAM4) {
   DumpEvent(SIGNAL, tid, pc, arg0, 0);
   uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
   //Printf("T%d after pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
+  return ret;
+}
+
+uintptr_t WRAP_NAME(RtlInterlockedPushEntrySList)(WRAP_PARAM4) {
+  DumpEvent(SIGNAL, tid, pc, arg1, 0);
+  uintptr_t ret = CallStdCallFun2(ctx, tid, f, arg0, arg1);
+  // Printf("T%d %s list=%p item=%p\n", tid, __FUNCTION__, arg0, arg1);
+  return ret;
+}
+
+uintptr_t WRAP_NAME(RtlInterlockedPopEntrySList)(WRAP_PARAM4) {
+  uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
+  // Printf("T%d %s list=%p item=%p\n", tid, __FUNCTION__, arg0, ret);
+  if (ret) {
+    DumpEvent(WAIT_BEFORE, tid, pc, ret, 0);
+    DumpEvent(WAIT_AFTER, tid, pc, 0, 0);
+  }
   return ret;
 }
 
@@ -2122,6 +2140,9 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   WRAPSTD1(RtlTryEnterCriticalSection);
   WRAPSTD1(RtlLeaveCriticalSection);
   WRAPSTD1(SetEvent);
+
+  WRAPSTD1(RtlInterlockedPopEntrySList);
+  WRAPSTD2(RtlInterlockedPushEntrySList);
 
 #if 0
   WRAPSTD1(RtlAcquireSRWLockExclusive);
