@@ -61,7 +61,7 @@ TEST(NegativeTests, WindowsJoinWithTimeout) {
   CHECK(WAIT_OBJECT_0 == ::WaitForSingleObject(t, INFINITE));
 }
 
-namespace RegisterWaitForSingleObjectTest {
+namespace RegisterWaitForSingleObjectTest {  // {{{1
 StealthNotification *n = NULL;
 HANDLE monitored_object = NULL;
 
@@ -75,7 +75,7 @@ void CALLBACK DoneWaiting(void *param, BOOLEAN timed_out) {
   (*i)++;
 }
 
-TEST(NegativeTests, DISABLED_WindowsRegisterWaitForSingleObjectTest) {
+TEST(NegativeTests, DISABLED_WindowsRegisterWaitForSingleObjectTest) {  // {{{1
   // These are very tricky false positive found while testing Chromium.
   //
   // Report #1:
@@ -84,30 +84,31 @@ TEST(NegativeTests, DISABLED_WindowsRegisterWaitForSingleObjectTest) {
   //
   // Report #2:
   //   The callback thread is re-used between Registet/Unregister/Register calls
-  //   so we miss h-b between "int *INT = ..." and DoneWaiting on the second
+  //   so we miss h-b between "int *obj = ..." and DoneWaiting on the second
   //   iteration.
   for (int i = 0; i < 2; i++) {
     n = new StealthNotification();
-    int *INT = new int(0);
+    int *obj = new int(0);
     HANDLE wait_object = NULL;
 
     monitored_object = ::CreateEvent(NULL, false, false, NULL);
     printf("monitored_object = %p\n", monitored_object);
     MyThread mt(SignalStealthNotification);
     mt.Start();
+    ANNOTATE_TRACE_MEMORY(obj);
     CHECK(0 != ::RegisterWaitForSingleObject(&wait_object, monitored_object,
-                                             DoneWaiting, INT, INFINITE,
+                                             DoneWaiting, obj, INFINITE,
                                              WT_EXECUTEINWAITTHREAD | WT_EXECUTEONLYONCE));
     printf("wait_object      = %p\n", wait_object);
     n->signal();
     mt.Join();
     Sleep(1000);
     CHECK(0 != ::UnregisterWaitEx(wait_object, INVALID_HANDLE_VALUE));
-    (*INT)++;
-    CHECK(*INT == 2);
+    (*obj)++;
+    CHECK(*obj == 2);
     CloseHandle(monitored_object);
     delete n;
-    delete INT;
+    delete obj;
   }
 }
 }
@@ -123,7 +124,7 @@ DWORD CALLBACK Callback(void *param) {
 TEST(NegativeTests, DISABLED_WindowsQueueUserWorkItemTest) {
   // False positive:
   //   The callback thread is allocated from a thread pool and can be re-used.
-  //   As a result, we may miss h-b between "int *INT = ..." and Callback execution.
+  //   As a result, we may miss h-b between "int *obj = ..." and Callback execution.
   for (int i = 0; i < 1024; i++) {
     int *obj = new int(0);
     ANNOTATE_TRACE_MEMORY(obj);
@@ -164,7 +165,7 @@ void TryWriter() {
 }
 #endif
 
-TEST(NegativeTests, WindowsSRWLockTest) {
+TEST(NegativeTests, DISABLED_WindowsSRWLockTest) {
   InitializeSRWLock(&SRWLock);
   obj = new int(0);
   ANNOTATE_TRACE_MEMORY(obj);
@@ -206,7 +207,7 @@ void WakerSRW() {
   *obj = 2;
 }
 
-TEST(NegativeTests, WindowsConditionVariableSRWTest) {
+TEST(NegativeTests, DISABLED_WindowsConditionVariableSRWTest) {
   InitializeSRWLock(&SRWLock);
   InitializeConditionVariable(&cv);
   obj = new int(0);
