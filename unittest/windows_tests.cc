@@ -75,7 +75,7 @@ void CALLBACK DoneWaiting(void *param, BOOLEAN timed_out) {
   (*i)++;
 }
 
-TEST(NegativeTests, DISABLED_RegisterWaitForSingleObjectTest) {
+TEST(NegativeTests, DISABLED_WindowsRegisterWaitForSingleObjectTest) {
   // These are very tricky false positive found while testing Chromium.
   //
   // Report #1:
@@ -120,13 +120,105 @@ DWORD CALLBACK Callback(void *param) {
   return 0;
 }
 
-TEST(NegativeTests, DISABLED_QueueUserWorkItemTest) {
+TEST(NegativeTests, DISABLED_WindowsQueueUserWorkItemTest) {
   // False positive:
   //   The callback thread is allocated from a thread pool and can be re-used.
   //   As a result, we may miss h-b between "int *INT = ..." and Callback execution.
   for (int i = 0; i < 1024; i++) {
-    int *INT = new int(0);
-    CHECK(QueueUserWorkItem(Callback, INT, i % 2 ? WT_EXECUTELONGFUNCTION : 0));
+    int *obj = new int(0);
+    ANNOTATE_TRACE_MEMORY(obj);
+    CHECK(QueueUserWorkItem(Callback, obj, i % 2 ? WT_EXECUTELONGFUNCTION : 0));
   }
 }
 }
+
+namespace WindowsSRWLockTest {  // {{{1
+SRWLOCK SRWLock;
+int *obj;
+
+void Reader() {
+  AcquireSRWLockShared(&SRWLock);
+  CHECK(*obj <= 2 && *obj >= 0);
+  ReleaseSRWLockShared(&SRWLock);
+}
+
+void Writer() {
+  AcquireSRWLockExclusive(&SRWLock);
+  (*obj)++;
+  ReleaseSRWLockExclusive(&SRWLock);
+}
+
+#if 0  // TODO(kcc): this doesn't seem to work.
+void TryReader() {
+  if (TryAcquireSRWLockShared(&SRWLock)) {
+    CHECK(*obj <= 2 && *obj >= 0);
+    ReleaseSRWLockShared(&SRWLock);
+  }
+}
+
+void TryWriter() {
+  if (TryAcquireSRWLockExclusive(&SRWLock)) {
+    (*obj)++;
+    ReleaseSRWLockExclusive(&SRWLock);
+  }
+}
+#endif
+
+TEST(NegativeTests, WindowsSRWLockTest) {
+  InitializeSRWLock(&SRWLock);
+  obj = new int(0);
+  ANNOTATE_TRACE_MEMORY(obj);
+  MyThreadArray t(Reader, Writer, Reader, Writer);
+  t.Start();
+  t.Join();
+  AcquireSRWLockShared(&SRWLock);
+  ReleaseSRWLockShared(&SRWLock);
+  CHECK(*obj == 2);
+  delete obj;
+}
+}  // namespace
+
+namespace WindowsConditionVariableSRWTest {  // {{{1
+SRWLOCK SRWLock;
+CONDITION_VARIABLE cv;
+bool cond;
+int *obj;
+
+StealthNotification n;
+
+void WaiterSRW() {
+  *obj = 1;
+  n.wait();
+  AcquireSRWLockExclusive(&SRWLock);
+  cond = true;
+  WakeConditionVariable(&cv);
+  ReleaseSRWLockExclusive(&SRWLock);
+}
+
+void WakerSRW() {
+  AcquireSRWLockExclusive(&SRWLock);
+  n.signal();
+  while (!cond) {
+    SleepConditionVariableSRW(&cv, &SRWLock, 10, 0);
+  }
+  ReleaseSRWLockExclusive(&SRWLock);
+  CHECK(*obj == 1);
+  *obj = 2;
+}
+
+TEST(NegativeTests, WindowsConditionVariableSRWTest) {
+  InitializeSRWLock(&SRWLock);
+  InitializeConditionVariable(&cv);
+  obj = new int(0);
+  cond = false;
+  ANNOTATE_TRACE_MEMORY(obj);
+  MyThreadArray t(WaiterSRW, WakerSRW);
+  t.Start();
+  t.Join();
+  CHECK(*obj == 2);
+  delete obj;
+}
+
+}  // namespace
+// End {{{1
+ // vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker
