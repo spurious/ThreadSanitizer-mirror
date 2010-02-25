@@ -1198,7 +1198,7 @@ uintptr_t WRAP_NAME(HeapCreate)(WRAP_PARAM4) {
 }
 
 
-uintptr_t WRAP_NAME(WaitForSingleObject)(WRAP_PARAM4) {
+uintptr_t WRAP_NAME(WaitForSingleObjectEx)(WRAP_PARAM4) {
   if (G_flags->verbosity >= 1) {
     ShowPcAndSp(__FUNCTION__, tid, pc, 0);
     Printf("arg0=%lx arg1=%lx\n", arg0, arg1);
@@ -1214,7 +1214,7 @@ uintptr_t WRAP_NAME(WaitForSingleObject)(WRAP_PARAM4) {
   }
 
   //Printf("T%d before pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0, arg1);
-  uintptr_t ret = CallStdCallFun2(ctx, tid, f, arg0, arg1);
+  uintptr_t ret = CallStdCallFun3(ctx, tid, f, arg0, arg1, arg2);
   //Printf("T%d after pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0, arg1);
 
   if (ret == 0) {
@@ -2159,7 +2159,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   WRAPSTD3(RtlSleepConditionVariableCS);
 #endif
 
-  WrapStdCallFunc2(rtn, "WaitForSingleObject", (AFUNPTR)(WRAP_NAME(WaitForSingleObject)));
+  WRAPSTD3(WaitForSingleObjectEx);
 
   WrapStdCallFunc4(rtn, "VirtualAlloc", (AFUNPTR)(WRAP_NAME(VirtualAlloc)));
   WrapStdCallFunc6(rtn, "ZwAllocateVirtualMemory", (AFUNPTR)(WRAP_NAME(ZwAllocateVirtualMemory)));
