@@ -162,26 +162,26 @@ ifeq ($(VALGRIND_ROOT), )
 TS_valgrind:
 	@echo VALGRIND_ROOT is not set. Not building the Valgrind-based variant.
 else
-TS_valgrind:  bin bin/tsan$D-$(ARCHOS) bin/vgpreload_tsan$D-$(ARCHOS).so
+TS_valgrind:  bin/tsan$D-$(ARCHOS) bin/vgpreload_tsan$D-$(ARCHOS).so
 endif
 
 ifeq ($(PIN_ROOT), )
 TS_pin:
 	@echo PIN_ROOT is not set. Not building the PIN-based variant.
 else
-TS_pin: bin $(P)ts_pin.$(SO)
+TS_pin: $(P)ts_pin.$(SO)
 endif
 
 ifeq ($(DYNAMORIO_ROOT), )
 TS_dynamorio:
 	@echo DYNAMORIO_ROOT is not set. Not building the DynamoRio-based variant.
 else
-TS_dynamorio: $(P)ts_dynamorio.$(SO) | bin
+TS_dynamorio: $(P)ts_dynamorio.$(SO)
 endif
 
 
 ifeq ($(OFFLINE), 1)
-TS_offline: bin $(P)ts_offline$(EXE)
+TS_offline: $(P)ts_offline$(EXE)
 else
 TS_offline:
 endif
@@ -190,7 +190,7 @@ ifeq ($(GTEST_ROOT), )
 test:
 	@echo GTEST_ROOT is not set. Not building GTEST-based tests.
 else
-test: bin $(P)suppressions_test$(EXE) $(P)thread_sanitizer_test$(EXE)
+test: $(P)suppressions_test$(EXE) $(P)thread_sanitizer_test$(EXE)
 endif
 
 bin:
@@ -209,23 +209,23 @@ TS_PIN_OBJECTS=$(PINP)ts_pin.$(OBJ) $(PINP)ts_util.$(OBJ) $(PINP)thread_sanitize
 TS_OFFLINE_OBJECTS=$(P)ts_offline.$(OBJ) $(P)thread_sanitizer.$(OBJ) $(P)ts_util.$(OBJ) $(P)suppressions.$(OBJ)
 TS_DR_OBJECTS=$(DRP)ts_dynamorio.$(OBJ) $(DRP)ts_util.$(OBJ)
 
-$(P)%.$(OBJ): %.cc $(TS_HEADERS)
+$(P)%.$(OBJ): %.cc $(TS_HEADERS) | bin
 	$(CXX) $(CXXFLAGS) $(ARCHFLAGS) $(O)$@ -c $< $(DEFINES)
 
 
-$(VGP)%.o: %.cc $(TS_HEADERS) $(TS_VG_HEADERS)
+$(VGP)%.o: %.cc $(TS_HEADERS) $(TS_VG_HEADERS) | bin
 	$(CXX) $(CXXFLAGS) $(VG_CXXFLAGS) $(ARCHFLAGS) $(VG_INCLUDES) $(VG_DEFINES) -o $@ -c $< $(DEFINES)
 
-$(PINP)%.$(OBJ): %.cc $(TS_HEADERS) $(TS_PIN_HEADERS)
+$(PINP)%.$(OBJ): %.cc $(TS_HEADERS) $(TS_PIN_HEADERS) | bin
 	$(CXX) $(CXXFLAGS) $(PIN_CXXFLAGS) $(ARCHFLAGS) $(PIN_INCLUDES) $(PIN_DEFINES) $(O)$@ -c $< $(DEFINES)
 
-$(DRP)%.$(OBJ): %.cc $(TS_HEADERS) $(TS_DR_HEADERS)
+$(DRP)%.$(OBJ): %.cc $(TS_HEADERS) $(TS_DR_HEADERS) | bin
 	$(CXX) $(CXXFLAGS) $(DR_CXXFLAGS) $(ARCHFLAGS) $(DR_INCLUDES) $(DR_DEFINES) $(O)$@ -c $< $(DEFINES)
 
-$(P)gtest-%.$(OBJ): %.cc $(TS_HEADERS)
+$(P)gtest-%.$(OBJ): %.cc $(TS_HEADERS) | bin
 	$(CXX) $(CXXFLAGS) $(ARCHFLAGS) -I$(GTEST_ROOT)/include $(O)$@ -c $<
 
-$(P)preload-%.o: %.c $(TS_HEADERS) $(TS_VG_HEADERS)
+$(P)preload-%.o: %.c $(TS_HEADERS) $(TS_VG_HEADERS) | bin
 	$(CC) $(CFLAGS) $(ARCHFLAGS) $(VG_INCLUDES) $(VG_DEFINES) -o $@ -c $<
 
 bin/tsan$(D)-$(ARCHOS): $(TS_VG_OBJECTS)
