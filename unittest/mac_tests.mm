@@ -1,4 +1,6 @@
 #include <gtest/gtest.h>
+#include <sys/types.h>
+#include <sys/mman.h>
 #import <Foundation/Foundation.h>
 
 #ifndef OS_darwin
@@ -70,4 +72,14 @@ TEST(MacTests, DISABLED_WqthreadRegressionTest) {
   [pool release];
 }
 
-}  // namespace
+// Regression test for a bug with passing a 32-bit value instead of a 64-bit
+// as the last parameter to mmap().
+TEST(MacTests, ShmMmapRegressionTest) {
+  int md;
+  void *virt_addr;
+  md = shm_open("apple.shm.notification_center", 0, 0);
+  virt_addr = mmap(0, 4096, 1, 1, md, 0);
+  if (virt_addr == (void*)-1) FAIL() << "mmap returned -1";
+}
+
+}  // namespace MacTests
