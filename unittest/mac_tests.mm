@@ -79,7 +79,12 @@ TEST(MacTests, ShmMmapRegressionTest) {
   void *virt_addr;
   md = shm_open("apple.shm.notification_center", 0, 0);
   virt_addr = mmap(0, 4096, 1, 1, md, 0);
-  if (virt_addr == (void*)-1) FAIL() << "mmap returned -1";
+  if (virt_addr == (void*)-1) {
+    FAIL() << "mmap returned -1";
+  } else {
+    munmap(virt_addr, 4096);
+    shm_unlink("apple.shm.notification_center");
+  }
 }
 
 }  // namespace MacTests
