@@ -296,13 +296,17 @@ MAIN_WRAPPER_DECL {
   }
 
 #define WRAP_MMAP(soname, fnname) \
-  void* I_WRAP_SONAME_FNNAME_ZU(soname,fnname) (void *ptr, long size, long a, long b, long c, long d);\
-  void* I_WRAP_SONAME_FNNAME_ZU(soname,fnname) (void *ptr, long size, long a, long b, long c, long d){\
+  void* I_WRAP_SONAME_FNNAME_ZU(soname,fnname) (void *ptr, long size, long a, \
+                                                long b, long c, unsigned long long d); \
+  void* I_WRAP_SONAME_FNNAME_ZU(soname,fnname) (void *ptr, long size, long a, \
+                                                long b, long c, unsigned long long d){ \
     void* ret;\
     OrigFn fn;\
+    unsigned long d_hi = d >> 32; \
+    unsigned long d_lo = d & 0xffffffff; \
     VALGRIND_GET_ORIG_FN(fn);\
     IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN(); \
-      CALL_FN_W_6W(ret, fn, ptr, size, a, b, c, d); \
+      CALL_FN_W_7W(ret, fn, ptr, size, a, b, c, d_lo, d_hi); \
     IGNORE_ALL_ACCESSES_AND_SYNC_END(); \
     if (ret != (void*)-1) { \
       DO_CREQ_v_WW(TSREQ_MALLOC,  void*, ret, long, size); \
