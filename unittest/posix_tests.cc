@@ -166,7 +166,8 @@ void Writer() {
   usleep(1000);
   GLOB = 1;
   const char *str = "Hey there!\n";
-  write(fd_out, str, strlen(str) + 1);
+  const int size = strlen(str) + 1;
+  CHECK(size == write(fd_out, str, size));
 }
 
 void Reader() {
@@ -189,7 +190,7 @@ TEST(NegativeTests, test98) {
   sprintf(in_name,  "/tmp/racecheck_unittest_in.%d", getpid());
   sprintf(out_name, "/tmp/racecheck_unittest_out.%d", getpid());
   fd_out = creat(out_name, O_WRONLY | S_IRWXU);
-  symlink(out_name, in_name);
+  CHECK(0 == symlink(out_name, in_name));
   fd_in  = open(in_name, 0, O_RDONLY);
   CHECK(fd_out >= 0);
   CHECK(fd_in  >= 0);
