@@ -295,6 +295,7 @@ MAIN_WRAPPER_DECL {
     return ret; \
   }
 
+#if VG_WORDSIZE == 4
 #define WRAP_MMAP(soname, fnname) \
   void* I_WRAP_SONAME_FNNAME_ZU(soname,fnname) (void *ptr, long size, long a, \
                                                 long b, long c, unsigned long long d); \
@@ -313,6 +314,24 @@ MAIN_WRAPPER_DECL {
     } \
     return ret; \
   }
+#else
+#define WRAP_MMAP(soname, fnname) \
+  void* I_WRAP_SONAME_FNNAME_ZU(soname,fnname) (void *ptr, long size, long a, \
+                                                long b, long c, long d); \
+  void* I_WRAP_SONAME_FNNAME_ZU(soname,fnname) (void *ptr, long size, long a, \
+                                                long b, long c, long d){ \
+    void* ret;\
+    OrigFn fn;\
+    VALGRIND_GET_ORIG_FN(fn);\
+    IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN(); \
+      CALL_FN_W_6W(ret, fn, ptr, size, a, b, c, d); \
+    IGNORE_ALL_ACCESSES_AND_SYNC_END(); \
+    if (ret != (void*)-1) { \
+      DO_CREQ_v_WW(TSREQ_MALLOC,  void*, ret, long, size); \
+    } \
+    return ret; \
+  }
+#endif  // VG_WORDSIZE == 4
 
 #define WRAP_ZONE_MALLOC(soname, fnname) \
   void* I_WRAP_SONAME_FNNAME_ZU(soname,fnname) (void* zone, SizeT n); \
