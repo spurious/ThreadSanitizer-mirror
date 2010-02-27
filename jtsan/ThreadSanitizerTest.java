@@ -176,6 +176,7 @@ public class ThreadSanitizerTest {
 
   private void describe(String str) {
     System.out.println(str);
+    RaceDetectorApi.PrintStackTrace();
   }
 
   private void shortSleep() {
