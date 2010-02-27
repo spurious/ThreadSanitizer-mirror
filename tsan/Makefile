@@ -112,8 +112,6 @@ dummy:
 
 all: TS_valgrind TS_pin TS_offline TS_dynamorio test
 
-# These rules could be writted in the form of "l: l64 l32", but gtest does not
-# support concurrent builds. We force sequential build of l64 and l32 here.
 l: l32 l64
 lo: l32o l64o
 ld: l32d l64d
