@@ -17,12 +17,8 @@ else
   TOOLFLAG="$4"
 fi
 
-OLD_PWD=`pwd`
-cd $IN_DIR
 # The files/dirs to take:
-IN_FILES=`\ls bin/valgrind lib/valgrind/vgpreload_core* lib/valgrind/*$TOOL* lib/valgrind/default.supp`
-cd $OLD_PWD
-echo $IN_FILES
+IN_FILES="bin/valgrind lib/valgrind/vgpreload_core* lib/valgrind/*$TOOL* lib/valgrind/default.supp"
 
 rm -rf $OUT && touch $OUT && chmod +x $OUT || exit 1
 
@@ -71,6 +67,6 @@ __COMPRESSED_DATA_BELOW__
 EOF
 
 # Dump the compressed binary at the very end of the file.
-tar zcvh -C $IN_DIR $IN_FILES  >> $OUT || exit 1
+(cd $IN_DIR && tar zcvh $IN_FILES || exit 1) | cat >> $OUT
 
 echo "File $OUT successfully created"
