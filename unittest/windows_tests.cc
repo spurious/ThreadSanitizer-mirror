@@ -75,7 +75,7 @@ void CALLBACK DoneWaiting(void *param, BOOLEAN timed_out) {
   (*i)++;
 }
 
-TEST(NegativeTests, DISABLED_WindowsRegisterWaitForSingleObjectTest) {  // {{{1
+TEST(NegativeTests, WindowsRegisterWaitForSingleObjectTest) {  // {{{1
   // These are very tricky false positive found while testing Chromium.
   //
   // Report #1:
@@ -121,14 +121,15 @@ DWORD CALLBACK Callback(void *param) {
   return 0;
 }
 
-TEST(NegativeTests, DISABLED_WindowsQueueUserWorkItemTest) {
+TEST(NegativeTests, WindowsQueueUserWorkItemTest) {
   // False positive:
   //   The callback thread is allocated from a thread pool and can be re-used.
   //   As a result, we may miss h-b between "int *obj = ..." and Callback execution.
-  for (int i = 0; i < 1024; i++) {
+  for (int i = 0; i < 5; i++) {
     int *obj = new int(0);
     ANNOTATE_TRACE_MEMORY(obj);
     CHECK(QueueUserWorkItem(Callback, obj, i % 2 ? WT_EXECUTELONGFUNCTION : 0));
+    Sleep(500);
   }
 }
 }
@@ -149,7 +150,7 @@ void Writer() {
   ReleaseSRWLockExclusive(&SRWLock);
 }
 
-#if 0  // TODO(kcc): this doesn't seem to work.
+#if 0  // This doesn't work in older versions of Windows.
 void TryReader() {
   if (TryAcquireSRWLockShared(&SRWLock)) {
     CHECK(*obj <= 2 && *obj >= 0);
@@ -165,7 +166,7 @@ void TryWriter() {
 }
 #endif
 
-TEST(NegativeTests, DISABLED_WindowsSRWLockTest) {
+TEST(NegativeTests, WindowsSRWLockTest) {
   InitializeSRWLock(&SRWLock);
   obj = new int(0);
   ANNOTATE_TRACE_MEMORY(obj);
@@ -176,6 +177,18 @@ TEST(NegativeTests, DISABLED_WindowsSRWLockTest) {
   ReleaseSRWLockShared(&SRWLock);
   CHECK(*obj == 2);
   delete obj;
+}
+}  // namespace
+
+namespace WindowsCriticalSectionTest {  // {{{1
+CRITICAL_SECTION cs;
+
+TEST(NegativeTests, WindowsCriticalSectionTest) {
+  InitializeCriticalSection(&cs);
+  EnterCriticalSection(&cs);
+  TryEnterCriticalSection(&cs);
+  LeaveCriticalSection(&cs);
+  DeleteCriticalSection(&cs);
 }
 }  // namespace
 
@@ -207,7 +220,7 @@ void WakerSRW() {
   *obj = 2;
 }
 
-TEST(NegativeTests, DISABLED_WindowsConditionVariableSRWTest) {
+TEST(NegativeTests, WindowsConditionVariableSRWTest) {
   InitializeSRWLock(&SRWLock);
   InitializeConditionVariable(&cv);
   obj = new int(0);
