@@ -3,8 +3,8 @@ MTRAT=mtrat
 TESTS=
 
 # Build the unittests.
-ThreadSanitizerTest.class: ThreadSanitizerTest.java
-	javac ThreadSanitizerTest.java
+ThreadSanitizerTest.class: ThreadSanitizerTest.java RaceDetectorApi.java
+	javac $^
 
 # Run the unittests natively.
 run: ThreadSanitizerTest.class

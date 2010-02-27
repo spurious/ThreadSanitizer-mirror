@@ -89,19 +89,27 @@ public class ThreadSanitizerTest {
     // invoke all methods that start with 'test'
     Class test_class = ThreadSanitizerTest.class;
     Method[] methods = test_class.getDeclaredMethods();
-    Pattern positive_pattern = Pattern.compile(tests_to_run);
-    Pattern negative_pattern = Pattern.compile(tests_to_exclude);
+    Pattern include_pattern = Pattern.compile(tests_to_run);
+    Pattern exclude_pattern = Pattern.compile(tests_to_exclude);
+    Pattern positive_test_pattern = Pattern.compile("testPositive_.*");
     for (Method method : methods) {
       String method_name = method.getName();
       if (method_name.startsWith("test") &&
-          positive_pattern.matcher(method_name).matches() &&
-          !negative_pattern.matcher(method_name).matches() ) {
+          include_pattern.matcher(method_name).matches() &&
+          !exclude_pattern.matcher(method_name).matches() ) {
         System.out.println("======================= " + method_name +
                            " =======================");
+        boolean is_positive_test = positive_test_pattern.matcher(method_name).matches();
+        if (is_positive_test) {
+          RaceDetectorApi.ExpectRaceBegin();
+        }
         try {
           method.invoke(t);
         } catch (Exception e) {
           assert false : e;
+        }
+        if (is_positive_test) {
+          RaceDetectorApi.ExpectRaceEnd();
         }
       }
     }
@@ -281,6 +289,10 @@ public class ThreadSanitizerTest {
 
 
   //------------------ Negative tests ---------------------
+  public void testNegative_NoOp() {
+    Object obj = new Integer(0);
+    RaceDetectorApi.NoOp(obj);
+  }
   public void testNegative1() {
     describe("Correct code: two locked updates");
     new ThreadRunner2() {
