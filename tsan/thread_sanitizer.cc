@@ -71,6 +71,7 @@ bool debug_free = false;
 bool debug_thread = false;
 bool debug_rtn = false;
 bool debug_lock = false;
+bool debug_wrap = false;
 
 // -------- Util ----------------------------- {{{1
 
@@ -4134,7 +4135,7 @@ static const char default_suppressions[] =
 "}                                                                    \n"
 #endif
 
-#ifdef _MSC_VER
+#if  0 //  _MSC_VER && 0
 "{                                                                   \n"
 "  weird lock report on Windows (CreateProcessInternal)              \n"
 "  ThreadSanitizer:InvalidLock                                       \n"
@@ -6093,6 +6094,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   debug_thread = PhaseDebugIsOn("thread");
   debug_rtn = PhaseDebugIsOn("rtn");
   debug_lock = PhaseDebugIsOn("lock");
+  debug_wrap = PhaseDebugIsOn("wrap");
 }
 
 // -------- ThreadSanitizer ------------------ {{{1
@@ -6241,7 +6243,7 @@ bool ThreadSanitizerWantToCreateSegmentsOnSblockEntry(uintptr_t pc) {
 }
 
 // Returns true if function at "pc" is marked as "fun_r" in the ignore file.
-bool ThreadSanitizerIgnoreAccessesBelowFunction(uintptr_t pc) {
+bool INLINE ThreadSanitizerIgnoreAccessesBelowFunction(uintptr_t pc) {
   typedef hash_map<uintptr_t, bool> Cache;
   static Cache *cache = NULL;
   if (!cache)

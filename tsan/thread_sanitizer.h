@@ -119,6 +119,7 @@ extern bool debug_malloc;
 extern bool debug_free;
 extern bool debug_thread;
 extern bool debug_rtn;
+extern bool debug_wrap;
 
 
 //--------- TS Exports ----------------- {{{1

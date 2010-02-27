@@ -114,6 +114,10 @@ static THREADID g_tid_of_thread_which_called_create_thread = -1;
 
 static uintptr_t g_current_pc;
 
+// On Windows, we need to create a h-b arc between
+// RtlQueueWorkItem(callback, x, y) and the call to callback.
+static hash_set<uintptr_t> *g_windows_thread_pool_calback_set;
+
 //--------------- StackFrame ----------------- {{{1
 struct StackFrame {
   uintptr_t pc;
@@ -515,10 +519,11 @@ static void DumpEvent(EventType type, int32_t tid, uintptr_t pc,
 }
 
 //--------- Wraping and relacing --------------- {{{1
-static void InformAboutFunctionWrap(RTN rtn) {
-  static bool wrap_debug = PhaseDebugIsOn("wrap");
-  if (!wrap_debug) return;
-  Printf("Function wrapped: %s (%s)\n",
+static set<string> g_wrapped_functions;
+static void InformAboutFunctionWrap(RTN rtn, string name) {
+  g_wrapped_functions.insert(name);
+  if (!debug_wrap) return;
+  Printf("Function wrapped: %s (%s %s)\n", name.c_str(),
          RTN_Name(rtn).c_str(), IMG_Name(SEC_Img(RTN_Sec(rtn))).c_str());
 }
 
@@ -532,11 +537,19 @@ static bool RtnMatchesName(const string &rtn_name, const string &name) {
   //  Printf("Full match: %s %s\n", rtn_name.c_str(), name.c_str());
     return true;
   }
+  // match MyFuncName@123
   if (pos == 0 && name.size() < rtn_name.size()
       && rtn_name[name.size()] == '@') {
   //  Printf("Versioned match: %s %s\n", rtn_name.c_str(), name.c_str());
     return true;
   }
+  // match _MyFuncName@123
+  if (pos == 1 && rtn_name[0] == '_' && name.size() < rtn_name.size()
+      && rtn_name[name.size() + 1] == '@') {
+    // Printf("Versioned match: %s %s\n", rtn_name.c_str(), name.c_str());
+    return true;
+  }
+
   return false;
 }
 
@@ -594,7 +607,7 @@ static uintptr_t CallFun6(CONTEXT *ctx, THREADID tid,
 // The original function will not be called.
 void ReplaceFunc3(IMG img, RTN rtn, const char *name, AFUNPTR replacement_func) {
   if (RTN_Valid(rtn) && RtnMatchesName(RTN_Name(rtn), name)) {
-    InformAboutFunctionWrap(rtn);
+    InformAboutFunctionWrap(rtn, name);
     PROTO proto = PROTO_Allocate(PIN_PARG(uintptr_t),
                                  CALLINGSTD_DEFAULT,
                                  "proto",
@@ -618,7 +631,7 @@ void ReplaceFunc3(IMG img, RTN rtn, const char *name, AFUNPTR replacement_func) 
 // Wrap a function with up to 4 parameters.
 void WrapFunc4(IMG img, RTN rtn, const char *name, AFUNPTR replacement_func) {
   if (RTN_Valid(rtn) && RtnMatchesName(RTN_Name(rtn), name)) {
-    InformAboutFunctionWrap(rtn);
+    InformAboutFunctionWrap(rtn, name);
     PROTO proto = PROTO_Allocate(PIN_PARG(uintptr_t),
                                  CALLINGSTD_DEFAULT,
                                  "proto",
@@ -646,7 +659,7 @@ void WrapFunc4(IMG img, RTN rtn, const char *name, AFUNPTR replacement_func) {
 // Wrap a function with up to 6 parameters.
 void WrapFunc6(IMG img, RTN rtn, const char *name, AFUNPTR replacement_func) {
   if (RTN_Valid(rtn) && RtnMatchesName(RTN_Name(rtn), name)) {
-    InformAboutFunctionWrap(rtn);
+    InformAboutFunctionWrap(rtn, name);
     PROTO proto = PROTO_Allocate(PIN_PARG(uintptr_t),
                                  CALLINGSTD_DEFAULT,
                                  "proto",
@@ -682,7 +695,7 @@ void WrapFunc6(IMG img, RTN rtn, const char *name, AFUNPTR replacement_func) {
 
 static void ShowPcAndSp(const char *where, THREADID tid,
                         ADDRINT pc, ADDRINT sp) {
-    Printf("%s T%d sp=%ld %s\n", where, tid, sp,
+    Printf("%s T%d sp=%ld pc=%p %s\n", where, tid, sp, pc,
            PcToRtnName(pc, true).c_str());
 }
 
@@ -1031,8 +1044,6 @@ uintptr_t CallStdCallFun6(CONTEXT *ctx, THREADID tid,
   return ret;
 }
 
-
-
 uintptr_t WRAP_NAME(RtlInitializeCriticalSection)(WRAP_PARAM4) {
 //  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
   DumpEvent(LOCK_CREATE, tid, pc, arg0, 0);
@@ -1050,7 +1061,7 @@ uintptr_t WRAP_NAME(RtlEnterCriticalSection)(WRAP_PARAM4) {
   return ret;
 }
 uintptr_t WRAP_NAME(RtlTryEnterCriticalSection)(WRAP_PARAM4) {
-//  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
+  // Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+5, arg0);
   uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
   if (ret) {
     DumpEvent(WRITER_LOCK, tid, pc, arg0, 0);
@@ -1099,6 +1110,7 @@ uintptr_t WRAP_NAME(RtlAcquireSRWLockShared)(WRAP_PARAM4) {
   return ret;
 }
 uintptr_t WRAP_NAME(RtlTryAcquireSRWLockExclusive)(WRAP_PARAM4) {
+  // Printf("T%d %s %p\n", tid, __FUNCTION__, arg0);
   uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
   if (ret) {
     DumpEvent(WRITER_LOCK, tid, pc, arg0, 0);
@@ -1106,6 +1118,7 @@ uintptr_t WRAP_NAME(RtlTryAcquireSRWLockExclusive)(WRAP_PARAM4) {
   return ret;
 }
 uintptr_t WRAP_NAME(RtlTryAcquireSRWLockShared)(WRAP_PARAM4) {
+  // Printf("T%d %s %p\n", tid, __FUNCTION__, arg0);
   uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
   if (ret) {
     DumpEvent(READER_LOCK, tid, pc, arg0, 0);
@@ -1113,11 +1126,13 @@ uintptr_t WRAP_NAME(RtlTryAcquireSRWLockShared)(WRAP_PARAM4) {
   return ret;
 }
 uintptr_t WRAP_NAME(RtlReleaseSRWLockExclusive)(WRAP_PARAM4) {
+  // Printf("T%d %s %p\n", tid, __FUNCTION__, arg0);
   DumpEvent(UNLOCK, tid, pc, arg0, 0);
   uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
   return ret;
 }
 uintptr_t WRAP_NAME(RtlReleaseSRWLockShared)(WRAP_PARAM4) {
+  // Printf("T%d %s %p\n", tid, __FUNCTION__, arg0);
   DumpEvent(UNLOCK, tid, pc, arg0, 0);
   uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
   return ret;
@@ -1129,13 +1144,13 @@ uintptr_t WRAP_NAME(RtlInitializeSRWLock)(WRAP_PARAM4) {
 }
 
 uintptr_t WRAP_NAME(RtlWakeConditionVariable)(WRAP_PARAM4) {
-  Printf("T%d %s arg0=%p\n", tid, __FUNCTION__, arg0);
+  // Printf("T%d %s arg0=%p\n", tid, __FUNCTION__, arg0);
   DumpEvent(SIGNAL, tid, pc, arg0, 0);
   uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
   return ret;
 }
 uintptr_t WRAP_NAME(RtlAllWakeConditionVariable)(WRAP_PARAM4) {
-  Printf("T%d %s arg0=%p\n", tid, __FUNCTION__, arg0);
+  // Printf("T%d %s arg0=%p\n", tid, __FUNCTION__, arg0);
   DumpEvent(SIGNAL, tid, pc, arg0, 0);
   uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
   return ret;
@@ -1154,6 +1169,14 @@ uintptr_t WRAP_NAME(RtlSleepConditionVariableCS)(WRAP_PARAM4) {
   DumpEvent(WAIT_BEFORE, tid, pc, arg0, 0);
   DumpEvent(WAIT_AFTER, tid, pc, 0, 0);
   Printf("T%d %s arg0=%p arg1=%p; ret=%d\n", tid, __FUNCTION__, arg0, arg1, ret);
+  return ret;
+}
+
+uintptr_t WRAP_NAME(RtlQueueWorkItem)(WRAP_PARAM4) {
+  // Printf("T%d %s arg0=%p arg1=%p; arg2=%d\n", tid, __FUNCTION__, arg0, arg1, arg2);
+  g_windows_thread_pool_calback_set->insert(arg0);
+  DumpEvent(SIGNAL, tid, pc, arg0, 0);
+  uintptr_t ret = CallStdCallFun3(ctx, tid, f, arg0, arg1, arg2);
   return ret;
 }
 
@@ -1287,6 +1310,10 @@ static void UpdateCallStack(PinThread &t, ADDRINT sp) {
     TLEBAddRtnExit(t);
     size_t size = t.shadow_stack.size();
     CHECK(size < 1000000);  // stay sane.
+    if (debug_rtn) {
+      uintptr_t popped_pc = t.shadow_stack.back().pc;
+      ShowPcAndSp("RET : ", t.tid, popped_pc, sp);
+    }
     t.shadow_stack.pop_back();
     CHECK(size - 1 == t.shadow_stack.size());
     if (DEB_PR) {
@@ -1317,6 +1344,15 @@ void InsertBeforeEvent_Call(THREADID tid, ADDRINT pc, ADDRINT target, ADDRINT sp
   if (DEBUG_MODE && debug_rtn) {
     ShowPcAndSp("CALL: ", t.tid, target, sp);
   }
+
+#ifdef _MSC_VER
+  // h-b edge from RtlQueueWorkItem to here.
+  CHECK(g_windows_thread_pool_calback_set);
+  if (g_windows_thread_pool_calback_set->count(target)) {
+    DumpEvent(WAIT_BEFORE, tid, pc, target, 0);
+    DumpEvent(WAIT_AFTER, tid, pc, 0, 0);
+  }
+#endif
 }
 
 static void OnTraceNoMops(THREADID tid, ADDRINT sp) {
@@ -1326,8 +1362,8 @@ static void OnTraceNoMops(THREADID tid, ADDRINT sp) {
 }
 
 static void OnTrace(THREADID tid, ADDRINT sp,
-                                          TraceInfo *trace_info,
-                                          uintptr_t **tls_reg_p) {
+                    TraceInfo *trace_info,
+                    uintptr_t **tls_reg_p) {
   PinThread &t = g_pin_threads[tid];
   DCHECK(trace_info);
   uintptr_t pc = trace_info->pc();
@@ -1896,7 +1932,7 @@ void CallbackForTRACE(TRACE trace, void *v) {
 #ifdef _MSC_VER
 void WrapStdCallFunc1(RTN rtn, char *name, AFUNPTR replacement_func) {
   if (RTN_Valid(rtn) && RtnMatchesName(RTN_Name(rtn), name)) {
-    InformAboutFunctionWrap(rtn);
+    InformAboutFunctionWrap(rtn, name);
     PROTO proto = PROTO_Allocate(PIN_PARG(uintptr_t),
                                  CALLINGSTD_STDCALL,
                                  "proto",
@@ -1917,7 +1953,7 @@ void WrapStdCallFunc1(RTN rtn, char *name, AFUNPTR replacement_func) {
 
 void WrapStdCallFunc2(RTN rtn, char *name, AFUNPTR replacement_func) {
   if (RTN_Valid(rtn) && RtnMatchesName(RTN_Name(rtn), name)) {
-    InformAboutFunctionWrap(rtn);
+    InformAboutFunctionWrap(rtn, name);
     PROTO proto = PROTO_Allocate(PIN_PARG(uintptr_t),
                                  CALLINGSTD_STDCALL,
                                  "proto",
@@ -1940,7 +1976,7 @@ void WrapStdCallFunc2(RTN rtn, char *name, AFUNPTR replacement_func) {
 
 void WrapStdCallFunc3(RTN rtn, char *name, AFUNPTR replacement_func) {
   if (RTN_Valid(rtn) && RtnMatchesName(RTN_Name(rtn), name)) {
-    InformAboutFunctionWrap(rtn);
+    InformAboutFunctionWrap(rtn, name);
     PROTO proto = PROTO_Allocate(PIN_PARG(uintptr_t),
                                  CALLINGSTD_STDCALL,
                                  "proto",
@@ -1965,7 +2001,7 @@ void WrapStdCallFunc3(RTN rtn, char *name, AFUNPTR replacement_func) {
 
 void WrapStdCallFunc4(RTN rtn, char *name, AFUNPTR replacement_func) {
   if (RTN_Valid(rtn) && RtnMatchesName(RTN_Name(rtn), name)) {
-    InformAboutFunctionWrap(rtn);
+    InformAboutFunctionWrap(rtn, name);
     PROTO proto = PROTO_Allocate(PIN_PARG(uintptr_t),
                                  CALLINGSTD_STDCALL,
                                  "proto",
@@ -1992,7 +2028,7 @@ void WrapStdCallFunc4(RTN rtn, char *name, AFUNPTR replacement_func) {
 
 void WrapStdCallFunc6(RTN rtn, char *name, AFUNPTR replacement_func) {
   if (RTN_Valid(rtn) && RtnMatchesName(RTN_Name(rtn), name)) {
-    InformAboutFunctionWrap(rtn);
+    InformAboutFunctionWrap(rtn, name);
     PROTO proto = PROTO_Allocate(PIN_PARG(uintptr_t),
                                  CALLINGSTD_STDCALL,
                                  "proto",
@@ -2030,8 +2066,9 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   }
   string rtn_name = RTN_Name(rtn);
   string img_name = IMG_Name(img);
-  if (G_flags->verbosity >= 2) {
-    Printf("%s: %s %s\n", __FUNCTION__, rtn_name.c_str(), img_name.c_str());
+  if (debug_wrap) {
+    Printf("%s: %s %s pc=%p\n", __FUNCTION__, rtn_name.c_str(),
+           img_name.c_str(), RTN_Address(rtn));
   }
 
   // main()
@@ -2144,7 +2181,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   WRAPSTD1(RtlInterlockedPopEntrySList);
   WRAPSTD2(RtlInterlockedPushEntrySList);
 
-#if 0
+#if 1
   WRAPSTD1(RtlAcquireSRWLockExclusive);
   WRAPSTD1(RtlAcquireSRWLockShared);
   WRAPSTD1(RtlTryAcquireSRWLockExclusive);
@@ -2158,6 +2195,8 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   WRAPSTD4(RtlSleepConditionVariableSRW);
   WRAPSTD3(RtlSleepConditionVariableCS);
 #endif
+
+  WRAPSTD3(RtlQueueWorkItem);
 
   WRAPSTD3(WaitForSingleObjectEx);
 
@@ -2232,18 +2271,21 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
 
 // Pin calls this function every time a new img is loaded.
 static void CallbackForIMG(IMG img, void *v) {
-  if (G_flags->verbosity >= 2) {
+  if (debug_wrap) {
     Printf("Started CallbackForIMG %s\n", IMG_Name(img).c_str());
   }
-//  for(SYM sym = IMG_RegsymHead(img); SYM_Valid(sym); sym = SYM_Next(sym)) {
-//    string name = SYM_Name(sym);
-//    Printf("Sym: %s\n", name.c_str());
-//  }
 
   string img_name = IMG_Name(img);
   for (SEC sec = IMG_SecHead(img); SEC_Valid(sec); sec = SEC_Next(sec)) {
     for (RTN rtn = SEC_RtnHead(sec); RTN_Valid(rtn); rtn = RTN_Next(rtn)) {
       MaybeInstrumentOneRoutine(img, rtn);
+    }
+  }
+  // check that we have the required debug symbols.
+  if (img_name.find("ntdll.dll") != string::npos) {
+    if (g_wrapped_functions.count("RtlTryAcquireSRWLockExclusive") == 0) {
+      Printf("Debug symbols for ntdll.dll not found. Exiting. TODO(kcc)\n");
+      CHECK(0);
     }
   }
 }
@@ -2355,6 +2397,9 @@ int main(INT32 argc, CHAR **argv) {
 
   tls_reg = PIN_ClaimToolRegister();
   CHECK(REG_valid(tls_reg));
+#if _MSC_VER
+  g_windows_thread_pool_calback_set = new hash_set<uintptr_t>;
+#endif
 
   // Set up PIN callbacks.
   PIN_AddThreadStartFunction(CallbackForThreadStart, 0);
