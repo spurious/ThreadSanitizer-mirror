@@ -4135,24 +4135,16 @@ static const char default_suppressions[] =
 "}                                                                    \n"
 #endif
 
-#if  0 //  _MSC_VER && 0
+#ifdef _MSC_VER
 "{                                                                   \n"
-"  weird lock report on Windows (CreateProcessInternal)              \n"
+"  False report due to lack if debug symbols in ntdll.dll  (a)       \n"
 "  ThreadSanitizer:InvalidLock                                       \n"
-"  ...                                                               \n"
-"  fun:CreateProcessInternal*                                        \n"
+"  fun:*SRWLock*                                                     \n"
 "}                                                                   \n"
 "{                                                                   \n"
-"  weird lock report on Windows (CreateProcessInternal)              \n"
+"  False report due to lack if debug symbols in ntdll.dll  (b)       \n"
 "  ThreadSanitizer:UnlockForeign                                     \n"
-"  ...                                                               \n"
-"  fun:CreateProcessInternal*                                        \n"
-"}                                                                   \n"
-"{                                                                   \n"
-"  weird lock report on Windows (_mtinit)                            \n"
-"  ThreadSanitizer:InvalidLock                                       \n"
-"  ...                                                               \n"
-"  fun:_mtinit*                                                      \n"
+"  fun:*SRWLock*                                                     \n"
 "}                                                                   \n"
 
 #endif

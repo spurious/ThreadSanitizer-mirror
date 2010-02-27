@@ -559,6 +559,7 @@ static bool RtnMatchesName(const string &rtn_name, const string &name) {
 #define WRAPSTD2(name) WrapStdCallFunc2(rtn, #name, (AFUNPTR)Wrap_##name)
 #define WRAPSTD3(name) WrapStdCallFunc3(rtn, #name, (AFUNPTR)Wrap_##name)
 #define WRAPSTD4(name) WrapStdCallFunc4(rtn, #name, (AFUNPTR)Wrap_##name)
+#define WRAPSTD6(name) WrapStdCallFunc6(rtn, #name, (AFUNPTR)Wrap_##name)
 #define WRAP_PARAM4  THREADID tid, ADDRINT pc, CONTEXT *ctx, \
                                 AFUNPTR f,\
                                 uintptr_t arg0, uintptr_t arg1, \
@@ -1177,6 +1178,13 @@ uintptr_t WRAP_NAME(RtlQueueWorkItem)(WRAP_PARAM4) {
   g_windows_thread_pool_calback_set->insert(arg0);
   DumpEvent(SIGNAL, tid, pc, arg0, 0);
   uintptr_t ret = CallStdCallFun3(ctx, tid, f, arg0, arg1, arg2);
+  return ret;
+}
+
+uintptr_t WRAP_NAME(RegisterWaitForSingleObject)(WRAP_PARAM6) {
+  g_windows_thread_pool_calback_set->insert(arg2);
+  DumpEvent(SIGNAL, tid, pc, arg2, 0);
+  uintptr_t ret = CallStdCallFun6(ctx, tid, f, arg0, arg1, arg2, arg3, arg4, arg5);
   return ret;
 }
 
@@ -2197,6 +2205,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
 #endif
 
   WRAPSTD3(RtlQueueWorkItem);
+  WRAPSTD6(RegisterWaitForSingleObject);
 
   WRAPSTD3(WaitForSingleObjectEx);
 
@@ -2284,8 +2293,8 @@ static void CallbackForIMG(IMG img, void *v) {
   // check that we have the required debug symbols.
   if (img_name.find("ntdll.dll") != string::npos) {
     if (g_wrapped_functions.count("RtlTryAcquireSRWLockExclusive") == 0) {
-      Printf("Debug symbols for ntdll.dll not found. Exiting. TODO(kcc)\n");
-      CHECK(0);
+      Printf("WARNING: Debug symbols for ntdll.dll not found. TODO(kcc)\n");
+      // CHECK(0);
     }
   }
 }
