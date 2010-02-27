@@ -75,7 +75,9 @@ enum EventType {
   SET_THREAD_NAME,
   SET_LOCK_NAME,
   TRACE_MEM,
-  EXPECT_RACE,
+  EXPECT_RACE,  // {tid, descr, ptr, 0}
+  EXPECT_RACE_BEGIN,  // {tid, pc, 0, 0}
+  EXPECT_RACE_END,  // {tid, pc, 0, 0}
   VERBOSITY,
   STACK_TRACE,
   FLUSH_STATE,
@@ -131,6 +133,8 @@ static const char *kEventNames[] = {
   "SET_LOCK_NAME",
   "TRACE_MEM",
   "EXPECT_RACE",
+  "EXPECT_RACE_BEGIN",
+  "EXPECT_RACE_END",
   "VERBOSITY",
   "STACK_TRACE",
   "FLUSH_STATE",

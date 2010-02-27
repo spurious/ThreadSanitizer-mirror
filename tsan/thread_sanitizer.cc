@@ -4104,6 +4104,8 @@ struct ExpectedRace {
 
 typedef  map<uintptr_t, ExpectedRace> ExpectedRacesMap;
 static ExpectedRacesMap *G_expected_races_map;
+static bool g_expecting_races;
+static int g_found_races_since_EXPECT_RACE_BEGIN;
 
 
 // -------- Heap info ---------------------- {{{1
@@ -4201,6 +4203,11 @@ class ReportStorage {
     if (G_expected_races_map->count(addr)) {
       is_expected = true;
       (*G_expected_races_map)[addr].count++;
+    }
+
+    if (g_expecting_races) {
+      is_expected = true;
+      g_found_races_since_EXPECT_RACE_BEGIN++;
     }
 
     if (!is_expected && in_dtor) return false;
@@ -4915,6 +4922,18 @@ class Detector {
 
 
       case EXPECT_RACE : HandleExpectRace();   break;
+      case EXPECT_RACE_BEGIN:
+        CHECK(g_expecting_races == false);
+        g_expecting_races = true;
+        g_found_races_since_EXPECT_RACE_BEGIN = 0;
+        break;
+      case EXPECT_RACE_END:
+        CHECK(g_expecting_races == true);
+        g_expecting_races = false;
+        if (g_found_races_since_EXPECT_RACE_BEGIN == 0) {
+          Printf("WARNING: expected race not found.\n");
+        }
+        break;
 
       case HB_LOCK     : HandleHBLock();       break;
 
