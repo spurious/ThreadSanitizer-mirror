@@ -4146,6 +4146,11 @@ static const char default_suppressions[] =
 "  ThreadSanitizer:UnlockForeign                                     \n"
 "  fun:*SRWLock*                                                     \n"
 "}                                                                   \n"
+"{                                                                   \n"
+"  False report due to lack if debug symbols in ntdll.dll  (c)       \n"
+"  ThreadSanitizer:UnlockNonLocked                                   \n"
+"  fun:*SRWLock*                                                     \n"
+"}                                                                   \n"
 
 #endif
 
