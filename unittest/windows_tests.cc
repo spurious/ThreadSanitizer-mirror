@@ -113,7 +113,7 @@ TEST(NegativeTests, WindowsRegisterWaitForSingleObjectTest) {  // {{{1
 }
 }
 
-namespace QueueUserWorkItemTest {
+namespace QueueUserWorkItemTests {
 DWORD CALLBACK Callback(void *param) {
   int *ptr = (int*)param;
   (*ptr)++;
@@ -131,6 +131,29 @@ TEST(NegativeTests, WindowsQueueUserWorkItemTest) {
     CHECK(QueueUserWorkItem(Callback, obj, i % 2 ? WT_EXECUTELONGFUNCTION : 0));
     Sleep(500);
   }
+}
+
+int GLOB = 42;
+
+DWORD CALLBACK Callback2(void *param) {
+  StealthNotification *ptr = (StealthNotification*)param;
+  GLOB++;
+  Sleep(100);
+  ptr->signal();
+  return 0;
+}
+
+TEST(PositiveTests, WindowsQueueUserWorkItemTest) {
+  ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "PositiveTests.WindowsQueueUserWorkItemTest");
+
+  const int N_THREAD = 5;
+  StealthNotification n[N_THREAD];
+
+  for (int i = 0; i < N_THREAD; i++)
+    CHECK(QueueUserWorkItem(Callback2, &n[i], i % 2 ? WT_EXECUTELONGFUNCTION : 0));
+
+  for (int i = 0; i < N_THREAD; i++)
+    n[i].wait();
 }
 }
 
