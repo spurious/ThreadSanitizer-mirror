@@ -2,6 +2,7 @@ SVN_ROOT=..
 OPT=1
 include ../common.mk
 
+OUTDIR=bin
 VALGRIND_ROOT=../third_party/valgrind
 VALGRIND_INST_ROOT=../tsan_inst
 STLPORT_ROOT=../third_party/stlport
@@ -44,7 +45,7 @@ ARCHOS=$(ARCH)-$(OS)
 ARCH_OS=$(ARCH)_$(OS)
 
 # prefix of binary files
-P=bin/$(ARCHOS)$(D)-
+P=$(OUTDIR)/$(ARCHOS)$(D)-
 VGP=$(P)vg-
 PINP=$(P)pin-
 DRP=$(P)dr-
@@ -152,9 +153,9 @@ install:
 	@echo The 'install' target is deprecated. 
 
 self-contained:
-	../tsan_binary/mk-self-contained-valgrind.sh $(VALGRIND_INST_ROOT)  tsan bin/tsan-$(OS)-self-contained.sh
+	../tsan_binary/mk-self-contained-valgrind.sh $(VALGRIND_INST_ROOT)  tsan $(OUTDIR)/tsan-$(OS)-self-contained.sh
 self-contained-stripped:
-	strip bin/tsan-*$(OS)
+	strip $(OUTDIR)/tsan-*$(OS)
 	$(MAKE) self-contained
 
 
@@ -162,7 +163,7 @@ ifeq ($(VALGRIND_ROOT), )
 TS_valgrind:
 	@echo VALGRIND_ROOT is not set. Not building the Valgrind-based variant.
 else
-TS_valgrind:  bin/tsan$D-$(ARCHOS) bin/vgpreload_tsan$D-$(ARCHOS).so
+TS_valgrind:  $(OUTDIR)/tsan$D-$(ARCHOS) $(OUTDIR)/vgpreload_tsan$D-$(ARCHOS).so
 endif
 
 ifeq ($(PIN_ROOT), )
@@ -193,8 +194,8 @@ else
 test: $(P)suppressions_test$(EXE) $(P)thread_sanitizer_test$(EXE)
 endif
 
-bin:
-	mkdir -p bin
+$(OUTDIR):
+	mkdir -p $(OUTDIR)
 
 TS_HEADERS=thread_sanitizer.h ts_util.h suppressions.h ts_replace.h ts_heap_info.h \
 	   ts_simple_cache.h ts_stats.h ts_lock.h ts_events.h
@@ -209,30 +210,30 @@ TS_PIN_OBJECTS=$(PINP)ts_pin.$(OBJ) $(PINP)ts_util.$(OBJ) $(PINP)thread_sanitize
 TS_OFFLINE_OBJECTS=$(P)ts_offline.$(OBJ) $(P)thread_sanitizer.$(OBJ) $(P)ts_util.$(OBJ) $(P)suppressions.$(OBJ)
 TS_DR_OBJECTS=$(DRP)ts_dynamorio.$(OBJ) $(DRP)ts_util.$(OBJ)
 
-$(P)%.$(OBJ): %.cc $(TS_HEADERS) | bin
+$(P)%.$(OBJ): %.cc $(TS_HEADERS) | $(OUTDIR)
 	$(CXX) $(CXXFLAGS) $(ARCHFLAGS) $(O)$@ -c $< $(DEFINES)
 
 
-$(VGP)%.o: %.cc $(TS_HEADERS) $(TS_VG_HEADERS) | bin
+$(VGP)%.o: %.cc $(TS_HEADERS) $(TS_VG_HEADERS) | $(OUTDIR)
 	$(CXX) $(CXXFLAGS) $(VG_CXXFLAGS) $(ARCHFLAGS) $(VG_INCLUDES) $(VG_DEFINES) -o $@ -c $< $(DEFINES)
 
-$(PINP)%.$(OBJ): %.cc $(TS_HEADERS) $(TS_PIN_HEADERS) | bin
+$(PINP)%.$(OBJ): %.cc $(TS_HEADERS) $(TS_PIN_HEADERS) | $(OUTDIR)
 	$(CXX) $(CXXFLAGS) $(PIN_CXXFLAGS) $(ARCHFLAGS) $(PIN_INCLUDES) $(PIN_DEFINES) $(O)$@ -c $< $(DEFINES)
 
-$(DRP)%.$(OBJ): %.cc $(TS_HEADERS) $(TS_DR_HEADERS) | bin
+$(DRP)%.$(OBJ): %.cc $(TS_HEADERS) $(TS_DR_HEADERS) | $(OUTDIR)
 	$(CXX) $(CXXFLAGS) $(DR_CXXFLAGS) $(ARCHFLAGS) $(DR_INCLUDES) $(DR_DEFINES) $(O)$@ -c $< $(DEFINES)
 
-$(P)gtest-%.$(OBJ): %.cc $(TS_HEADERS) | bin
+$(P)gtest-%.$(OBJ): %.cc $(TS_HEADERS) | $(OUTDIR)
 	$(CXX) $(CXXFLAGS) $(ARCHFLAGS) -I$(GTEST_ROOT)/include $(O)$@ -c $<
 
-$(P)preload-%.o: %.c $(TS_HEADERS) $(TS_VG_HEADERS) | bin
+$(P)preload-%.o: %.c $(TS_HEADERS) $(TS_VG_HEADERS) | $(OUTDIR)
 	$(CC) $(CFLAGS) $(ARCHFLAGS) $(VG_INCLUDES) $(VG_DEFINES) -o $@ -c $<
 
-bin/tsan$(D)-$(ARCHOS): $(TS_VG_OBJECTS)
+$(OUTDIR)/tsan$(D)-$(ARCHOS): $(TS_VG_OBJECTS)
 	$(LD) $(LDFLAGS) $(ARCHFLAGS) $(VG_LD_FLAGS) -o $@ $^ $(VALGRIND_LIBS) -lgcc
 	ln -sf `pwd`/$@ $(VALGRIND_INST_ROOT)/lib/valgrind/  # install the symlink into the valgrind inst dir.
 
-bin/vgpreload_tsan$(D)-$(ARCHOS).so: $(P)preload-ts_valgrind_intercepts.o
+$(OUTDIR)/vgpreload_tsan$(D)-$(ARCHOS).so: $(P)preload-ts_valgrind_intercepts.o
 	$(LD) $(LDFLAGS)  $(ARCHFLAGS) $(VG_LD_PRELOAD_FLAGS) -o $@  $<
 	ln -sf `pwd`/$@  $(VALGRIND_INST_ROOT)/lib/valgrind/  # install the symlink into the valgrind inst dir.
 
@@ -255,4 +256,4 @@ $(P)ts_dynamorio.so: $(TS_DR_OBJECTS)
 	$(LD) $(ARCHFLAGS) $(DR_LDFLAGS) $(DR_LIBPATHS) -o $@ $^  $(DR_LIBS) $(DR_LD_SCRIPT)
 
 clean: GTEST_CLEAN
-	rm -rfv bin core* pintool.log* pin.log $(VALGRIND_INST_ROOT)/lib/valgrind/*tsan*
+	rm -rfv $(OUTDIR) core* pintool.log* pin.log $(VALGRIND_INST_ROOT)/lib/valgrind/*tsan*
