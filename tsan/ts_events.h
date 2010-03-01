@@ -50,6 +50,7 @@ enum EventType {
   SBLOCK_ENTER,
   BBLOCK_ENTER,
   SIGNAL,
+  WAIT,  // {tid, pc, obj, 0}
   WAIT_BEFORE,
   WAIT_AFTER,
   TWAIT_AFTER,
@@ -107,6 +108,7 @@ static const char *kEventNames[] = {
   "SBLOCK_ENTER",
   "BBLOCK_ENTER",
   "SIGNAL",
+  "WAIT",
   "WAIT_BEFORE",
   "WAIT_AFTER",
   "TWAIT_AFTER",

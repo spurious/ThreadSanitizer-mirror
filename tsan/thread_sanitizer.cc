@@ -4901,6 +4901,7 @@ class Detector {
       case BUS_LOCK_RELEASE   : HandleBusLock(false); break;
 
       case SIGNAL      : HandleSignal();       break;
+      case WAIT        : HandleWait();   break;
       case WAIT_BEFORE : HandleWaitBefore();   break;
       case WAIT_AFTER  : HandleWaitAfter(false);    break;
       case TWAIT_AFTER : HandleWaitAfter(true);   break;
@@ -5198,6 +5199,14 @@ class Detector {
       e_->Print();
     }
     cur_thread_->HandleSignal(e_->a());
+  }
+  // WAIT
+  void HandleWait() {
+    if (G_flags->verbosity >= 2) {
+      e_->Print();
+      cur_thread_->ReportStackTrace();
+    }
+    cur_thread_->HandleWait(e_->a(), NULL, false);
   }
   // WAIT_BEFORE
   void HandleWaitBefore() {
