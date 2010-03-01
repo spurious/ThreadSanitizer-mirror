@@ -43,6 +43,7 @@ import java.util.regex.Matcher;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.TimeUnit;
 
@@ -261,11 +262,24 @@ public class ThreadSanitizerTest {
     };
   }
 
-  public void testPositive_WW_DifferentLocks() {
+  public void testPositive_WW_DifferentLocks1() {
     describe("Race: two writes locked with different locks");
     final Object lock = new Object();
     new ThreadRunner2() {
       public void thread1() { synchronized(lock) { shared_var++; } }
+      public void thread2() { synchronized(this) { shared_var++; } }
+    };
+  }
+
+  public void testPositive_WW_DifferentLocks2() {
+    describe("Race: two writes locked with different locks");
+    final ReentrantLock lock = new ReentrantLock();
+    new ThreadRunner2() {
+      public void thread1() {
+        lock.lock();
+        shared_var++;
+        lock.unlock();
+      }
       public void thread2() { synchronized(this) { shared_var++; } }
     };
   }
@@ -792,6 +806,43 @@ public class ThreadSanitizerTest {
           shared_var++;
           lock.writeLock().unlock();
         } catch (Exception e) { assert false : e; }
+      }
+    };
+  }
+
+  public void testNegative_ReentrantLock_Simple() {
+    describe("Correct code: ReadWriteLock");
+    final ReentrantLock lock = new ReentrantLock();
+    new ThreadRunner2() {
+      public void thread1() {
+        lock.lock();
+        shared_var++;
+        lock.unlock();
+      }
+      public void thread2(){ thread1(); }
+    };
+  }
+
+  public void testNegative_ReentrantLock_TryLock() {
+    describe("Correct code: ReadWriteLock, tryLocks");
+    final ReentrantLock lock = new ReentrantLock();
+    new ThreadRunner3() {
+      public void thread1() {
+        while (lock.tryLock() == false){}
+        shared_var++;
+        lock.unlock();
+      }
+      public void thread2() {
+        try {
+          while (lock.tryLock(1, TimeUnit.MILLISECONDS) == false){}
+          shared_var++;
+          lock.unlock();
+        } catch (Exception e) { assert false : e; }
+      }
+      public void thread3() {
+        lock.lock();
+        shared_var++;
+        lock.unlock();
       }
     };
   }
