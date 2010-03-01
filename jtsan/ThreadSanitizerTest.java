@@ -660,7 +660,26 @@ public class ThreadSanitizerTest {
     };
   }
 
-  public void testNegative_ReadWriteLock() {
+  public void testNegative_ReadWriteLock_WriteLocksOnly() {
+    describe("Correct code: ReadWriteLock (write locks only)");
+    final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
+    new ThreadRunner2() {
+      public void thread1() {
+        // reading with a writer lock held
+        lock.writeLock().lock();
+        int v = shared_var;
+        lock.writeLock().unlock();
+      }
+      public void thread2() {
+        // writing with a writer lock held
+        lock.writeLock().lock();
+        shared_var++;
+        lock.writeLock().unlock();
+      }
+    };
+  }
+
+  public void testNegative_ReadWriteLock_ReadAndWriteLocks() {
     describe("Correct code: ReadWriteLock");
     final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
     new ThreadRunner3() {
