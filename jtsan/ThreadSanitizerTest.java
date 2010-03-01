@@ -36,6 +36,7 @@
 import java.lang.reflect.Method;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.HashSet;
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
 
@@ -43,6 +44,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.concurrent.atomic.AtomicInteger;
+
 
 // All tests for a Java race detector.
 public class ThreadSanitizerTest {
@@ -125,6 +127,8 @@ public class ThreadSanitizerTest {
     protected long shared_long_var = 0;
     protected int shared_var2 = 0;
     protected Integer shared_obj;
+    protected HashSet shared_hash_set;
+    protected TreeMap shared_map;
 
     // Virtual functions. Overrride some of them in your test.
     public void thread1() { System.out.println("thread1"); }
@@ -243,6 +247,28 @@ public class ThreadSanitizerTest {
     new ThreadRunner2() {
       public void thread1() { synchronized(lock) { shared_var++; } }
       public void thread2() { synchronized(this) { shared_var++; } }
+    };
+  }
+
+  public void testPositive_WW_HashSetAccessNoLocks() {
+    describe("Race: two writes to a HashSet object");
+    new ThreadRunner2() {
+      public void setUp() {
+        shared_hash_set = new HashSet();
+      }
+      public void thread1() { shared_hash_set.add(new Integer(1)); }
+      public void thread2() { shared_hash_set.add(new Integer(2)); }
+    };
+  }
+
+  public void testPositive_WW_TreeMapAccessNoLocks() {
+    describe("Race: two writes to a TreeMap object");
+    new ThreadRunner2() {
+      public void setUp() {
+        shared_map = new TreeMap();
+      }
+      public void thread1() { shared_map.put(new Integer(1), new Integer(10)); }
+      public void thread2() { shared_map.put(new Integer(2), new Integer(20)); }
     };
   }
 
