@@ -97,6 +97,10 @@ static void SkipCommentText(FILE *file) {
       // Printf("***** PC %lx %s\n", pc, rtn);
     }
   }
+  if (buff[0] == '>') {
+    // Just print the rest of comment.
+    Printf("%s\n", buff + 1);
+  }
 }
 
 static void SkipWhiteSpaceAndComments(FILE *file) {

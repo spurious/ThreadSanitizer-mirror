@@ -39,4 +39,5 @@ public class RaceDetectorApi {
   public static void ExpectRaceBegin() { }
   public static void ExpectRaceEnd() { }
   public static void PrintStackTrace() { }
+  public static void Print(String str) { }
 }

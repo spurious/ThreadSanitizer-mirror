@@ -99,6 +99,7 @@ public class ThreadSanitizerTest {
           !exclude_pattern.matcher(method_name).matches() ) {
         System.out.println("======================= " + method_name +
                            " =======================");
+        RaceDetectorApi.Print("======== " + method_name + " ========");
         boolean is_positive_test = positive_test_pattern.matcher(method_name).matches();
         if (is_positive_test) {
           RaceDetectorApi.ExpectRaceBegin();
@@ -176,7 +177,7 @@ public class ThreadSanitizerTest {
 
   private void describe(String str) {
     System.out.println(str);
-    RaceDetectorApi.PrintStackTrace();
+    RaceDetectorApi.Print(str);
   }
 
   private void shortSleep() {
