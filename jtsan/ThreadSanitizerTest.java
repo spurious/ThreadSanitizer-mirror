@@ -41,6 +41,7 @@ import java.util.regex.Pattern;
 import java.util.regex.Matcher;
 
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -707,6 +708,31 @@ public class ThreadSanitizerTest {
       }
       public void thread3() { thread2(); }
       public void thread4() { thread2(); }
+    };
+  }
+
+  public void testNegative_CyclicBarrier() {
+    describe("Correct code: CyclicBarrier");
+    new ThreadRunner4() {
+      CyclicBarrier barrier;
+      public void setUp() {
+        barrier = new CyclicBarrier(4);
+        shared_var = 0;
+      }
+
+      public void thread1() {
+        synchronized(this) {
+          shared_var++;
+        }
+        try {
+          barrier.await();
+        } catch (Exception e) { assert false : e; }
+        assert shared_var == 4;
+        shared_var = 5;
+      }
+      public void thread2() { thread1(); }
+      public void thread3() { thread1(); }
+      public void thread4() { thread1(); }
     };
   }
 
