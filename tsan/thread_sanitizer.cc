@@ -4208,6 +4208,13 @@ class ReportStorage {
     if (g_expecting_races) {
       is_expected = true;
       g_found_races_since_EXPECT_RACE_BEGIN++;
+      ExpectedRace &race = (*G_expected_races_map)[addr];
+      if (race.count == 0){
+        race.is_benign = false;
+        race.description = "expected race";
+        race.pc = pc;
+      }
+      race.count++;
     }
 
     if (!is_expected && in_dtor) return false;
