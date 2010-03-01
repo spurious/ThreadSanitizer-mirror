@@ -125,6 +125,8 @@ public class ThreadSanitizerTest {
     protected short shared_short_var = 0;
     protected char shared_char_var = 0;
     protected long shared_long_var = 0;
+    protected float shared_float_var;
+    protected double shared_double_var;
     protected int shared_var2 = 0;
     protected int shared_array [];
     protected Integer shared_obj;
@@ -223,6 +225,22 @@ public class ThreadSanitizerTest {
     new ThreadRunner2() {
       public void thread1() { shared_long_var = 1; }
       public void thread2() { shared_long_var = 2; }
+    };
+  }
+
+  public void testPositive_WW_NoLocksFloat() {
+    describe("Race: two unlocked writesl; float");
+    new ThreadRunner2() {
+      public void thread1() { shared_float_var = 1; }
+      public void thread2() { shared_float_var = 2; }
+    };
+  }
+
+  public void testPositive_WW_NoLocksDouble() {
+    describe("Race: two unlocked writesl; double");
+    new ThreadRunner2() {
+      public void thread1() { shared_double_var = 1; }
+      public void thread2() { shared_double_var = 2; }
     };
   }
 
