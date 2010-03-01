@@ -126,6 +126,7 @@ public class ThreadSanitizerTest {
     protected char shared_char_var = 0;
     protected long shared_long_var = 0;
     protected int shared_var2 = 0;
+    protected int shared_array [];
     protected Integer shared_obj;
     protected HashSet shared_hash_set;
     protected TreeMap shared_map;
@@ -269,6 +270,17 @@ public class ThreadSanitizerTest {
       }
       public void thread1() { shared_map.put(new Integer(1), new Integer(10)); }
       public void thread2() { shared_map.put(new Integer(2), new Integer(20)); }
+    };
+  }
+
+  public void testPositive_WW_ArrayAccessNoLocks() {
+    describe("Race: two writes to an array");
+    new ThreadRunner2() {
+      public void setUp() {
+        shared_array = new int[100];
+      }
+      public void thread1() { shared_array[42] = 1; }
+      public void thread2() { shared_array[42] = 2; }
     };
   }
 
@@ -751,6 +763,17 @@ public class ThreadSanitizerTest {
       public void thread2() {
         longSleep();
       }
+    };
+  }
+
+  public void testNegative_WW_ArrayAccessNoLocks() {
+    describe("Race: two writes to an array at differen offsets");
+    new ThreadRunner2() {
+      public void setUp() {
+        shared_array = new int[100];
+      }
+      public void thread1() { shared_array[42] = 1; }
+      public void thread2() { shared_array[43] = 2; }
     };
   }
 
