@@ -767,7 +767,7 @@ public class ThreadSanitizerTest {
   }
 
   public void testNegative_WW_ArrayAccessNoLocks() {
-    describe("Race: two writes to an array at differen offsets");
+    describe("Correct code: two writes to an array at differen offsets");
     new ThreadRunner2() {
       public void setUp() {
         shared_array = new int[100];
