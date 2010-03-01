@@ -44,6 +44,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.TimeUnit;
 
 
 // All tests for a Java race detector.
@@ -756,6 +757,41 @@ public class ThreadSanitizerTest {
         lock.writeLock().lock();
         shared_var++;
         lock.writeLock().unlock();
+      }
+    };
+  }
+
+  public void testNegative_ReadWriteLock_TryLock() {
+    describe("Correct code: ReadWriteLock");
+    final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
+    new ThreadRunner4() {
+      public void thread1() {
+        // reading with a reader lock held, tryLock()
+        while (lock.readLock().tryLock() == false){}
+        int v = shared_var;
+        lock.readLock().unlock();
+      }
+      public void thread2() {
+        // reading with a reader lock held, tryLock(timeout, unit)
+        try {
+          while (lock.readLock().tryLock(1, TimeUnit.MILLISECONDS) == false){}
+          int v = shared_var;
+          lock.readLock().unlock();
+        } catch (Exception e) { assert false : e; }
+      }
+      public void thread3() {
+        // writing with a writer lock held, tryLock();
+        while (lock.writeLock().tryLock() == false){}
+        shared_var++;
+        lock.writeLock().unlock();
+      }
+      public void thread4() {
+        // writing with a writer lock held, tryLock(timeout, unit);
+        try {
+          while (lock.writeLock().tryLock(1, TimeUnit.MILLISECONDS) == false){}
+          shared_var++;
+          lock.writeLock().unlock();
+        } catch (Exception e) { assert false : e; }
       }
     };
   }
