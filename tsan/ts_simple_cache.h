@@ -35,14 +35,13 @@ template <int kSize>
 class PtrToBoolCache {
  public:
   PtrToBoolCache() {
-    CHECK((kSize % sizeof(uintptr_t)) == 0);
     Flush();
   }
   void Flush() {
     memset(this, 0, sizeof(*this));
   }
   void Insert(uintptr_t ptr, bool val) {
-    size_t idx  = ptr % 32;
+    size_t idx  = ptr % kSize;
     arr_[idx] = ptr;
     if (val) {
       bits_[idx / 32] |= 1U << (idx % 32);
@@ -51,7 +50,7 @@ class PtrToBoolCache {
     }
   }
   bool Lookup(uintptr_t ptr, bool *val) {
-    size_t idx  = ptr % 32;
+    size_t idx  = ptr % kSize;
     if (arr_[idx] == ptr) {
       *val = (bits_[idx / 32] >> (idx % 32)) & 1;
       return true;
@@ -60,7 +59,7 @@ class PtrToBoolCache {
   }
  private:
   uint64_t arr_[kSize];
-  uint32_t bits_[kSize / 32];
+  uint32_t bits_[(kSize + 31) / 32];
 };
 
 // -------- IntPairToBoolCache ------ {{{1

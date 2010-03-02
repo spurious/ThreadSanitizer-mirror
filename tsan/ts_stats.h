@@ -162,6 +162,7 @@ struct Stats {
       if(tleb_flush[i] == 0) continue;
       Printf("tleb_flush[%ld]=%ld\n", i, tleb_flush[i]);
     }
+    Printf("IgnoreBelowCache miss=%ld\n", ignore_below_cache_miss);
   }
 
 
@@ -216,6 +217,8 @@ struct Stats {
   uintptr_t lock_sites[10];
 
   uintptr_t tleb_flush[10];
+
+  uintptr_t ignore_below_cache_miss;
 };
 
 

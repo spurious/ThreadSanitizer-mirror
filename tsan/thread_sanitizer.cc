@@ -3829,7 +3829,16 @@ struct Thread {
     }
     call_stack_.push_back(target_pc);
 
-    bool ignore_below = ThreadSanitizerIgnoreAccessesBelowFunction(target_pc);
+    bool ignore_below = false;
+    if (ignore_below_cache_.Lookup(target_pc, &ignore_below) == false) {
+      ignore_below = ThreadSanitizerIgnoreAccessesBelowFunction(target_pc);
+      ignore_below_cache_.Insert(target_pc, ignore_below);
+      G_stats->ignore_below_cache_miss++;
+    } else {
+      // Just in case, check the result of caching.
+      DCHECK(ignore_below == 
+             ThreadSanitizerIgnoreAccessesBelowFunction(target_pc));
+    }
 
     if (ignore_below) {
       set_ignore_all(true);
@@ -3987,6 +3996,8 @@ struct Thread {
   // Contains "true" for those functions in the stacktrace which inclusively
   // ignore memory accesses.
   vector<unsigned char> call_stack_ignore_rec_;
+
+  PtrToBoolCache<251> ignore_below_cache_;
 
   LockHistory lock_history_;
 
