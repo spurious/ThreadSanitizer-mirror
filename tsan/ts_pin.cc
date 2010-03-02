@@ -53,6 +53,7 @@ namespace WINDOWS
 #include<Windows.h>
 }
 
+#include <intrin.h>
 # define YIELD() // __yield()
 // TODO(kcc): how to demangle on windows?
 // TODO(kcc): add actuall implementations
