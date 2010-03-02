@@ -42,6 +42,7 @@
 #ifndef THREAD_WRAPPERS_WIN_H
 #define THREAD_WRAPPERS_WIN_H
 
+#define _WIN32_WINNT 0x0500 // Require Windows 2000.
 #include <windows.h>
 #include <mmsystem.h>
 

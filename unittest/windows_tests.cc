@@ -157,6 +157,20 @@ TEST(PositiveTests, WindowsQueueUserWorkItemTest) {
 }
 }
 
+namespace WindowsCriticalSectionTest {  // {{{1
+CRITICAL_SECTION cs;
+
+TEST(NegativeTests, WindowsCriticalSectionTest) {
+  InitializeCriticalSection(&cs);
+  EnterCriticalSection(&cs);
+  TryEnterCriticalSection(&cs);
+  LeaveCriticalSection(&cs);
+  DeleteCriticalSection(&cs);
+}
+}  // namespace
+
+#if WINVER >= 0x0600 // Vista or Windows Server 2000
+
 namespace WindowsSRWLockTest {  // {{{1
 SRWLOCK SRWLock;
 int *obj;
@@ -203,18 +217,6 @@ TEST(NegativeTests, WindowsSRWLockTest) {
 }
 }  // namespace
 
-namespace WindowsCriticalSectionTest {  // {{{1
-CRITICAL_SECTION cs;
-
-TEST(NegativeTests, WindowsCriticalSectionTest) {
-  InitializeCriticalSection(&cs);
-  EnterCriticalSection(&cs);
-  TryEnterCriticalSection(&cs);
-  LeaveCriticalSection(&cs);
-  DeleteCriticalSection(&cs);
-}
-}  // namespace
-
 namespace WindowsConditionVariableSRWTest {  // {{{1
 SRWLOCK SRWLock;
 CONDITION_VARIABLE cv;
@@ -256,6 +258,8 @@ TEST(NegativeTests, WindowsConditionVariableSRWTest) {
   delete obj;
 }
 }  // namespace
+
+#endif // WINVER >= 0x0600
 
 namespace WindowsInterlockedListTest {  // {{{1
 SLIST_HEADER list;
