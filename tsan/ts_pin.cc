@@ -2380,6 +2380,7 @@ int main(INT32 argc, CHAR **argv) {
     string param = argv[first_param];
     if (param == "--") break;
     if (param == "-short_name") continue;
+    if (param == "-slow_asserts") continue;
     if (param == "1") continue;
     args.push_back(param);
   }
