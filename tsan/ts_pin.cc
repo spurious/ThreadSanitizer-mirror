@@ -114,9 +114,11 @@ static THREADID g_tid_of_thread_which_called_create_thread = -1;
 
 static uintptr_t g_current_pc;
 
+#ifdef _MSC_VER
 // On Windows, we need to create a h-b arc between
 // RtlQueueWorkItem(callback, x, y) and the call to callback.
 static hash_set<uintptr_t> *g_windows_thread_pool_calback_set;
+#endif
 
 //--------------- StackFrame ----------------- {{{1
 struct StackFrame {
