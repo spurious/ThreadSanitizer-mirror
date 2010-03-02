@@ -198,8 +198,10 @@ $(OUTDIR):
 TS_HEADERS=thread_sanitizer.h ts_util.h suppressions.h ts_replace.h ts_heap_info.h \
 	   ts_simple_cache.h ts_stats.h ts_lock.h ts_events.h
 ifeq ($(DEBUG), 0)
-  # in optimized build, we include thread_sanitizer.cc into other files.
-  TS_HEADERS+=thread_sanitizer.cc
+# in optimized build, we include thread_sanitizer.cc into other files.
+$(VGP)ts_valgrind.o: thread_sanitizer.cc
+$(PINP)ts_pin.$(OBJ):  thread_sanitizer.cc
+$(P)ts_offline.$(OBJ): thread_sanitizer.cc
 endif
 TS_VG_HEADERS=ts_valgrind.h ts_valgrind_client_requests.h ts_wrap_and_ignore.h
 
