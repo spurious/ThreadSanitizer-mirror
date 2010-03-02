@@ -208,13 +208,13 @@ int getpid();
 
 #if defined(DEBUG) && DEBUG >= 1
   #define INLINE
-  #define NOINLINE 
+  #define NOINLINE
 #elif defined (__GNUC__)
   #define INLINE  inline  __attribute__ ((always_inline))
   #define NOINLINE __attribute__ ((noinline))
 #elif defined(_MSC_VER)
-  #define INLINE inline
-  #define NOINLINE 
+  #define INLINE __forceinline
+  #define NOINLINE __declspec(noinline)
 #else
   #error "Unknown Configuration"
 #endif
