@@ -51,7 +51,7 @@ if [ $VERBOZE == "1" ] ; then
   printf "PARAMS     : %s\n" "$*"
 fi
 
-if [ $TS_VARIANT == "-debug" ] ; then
+if [ "$TS_VARIANT" == "-debug" ] ; then
   TS_FLAGS="$TS_FLAGS -slow_asserts"
 fi
 
