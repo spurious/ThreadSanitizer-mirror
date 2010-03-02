@@ -107,6 +107,26 @@ int GetNumberOfFoundErrors() {
 FILE *G_out = stdout;
 #endif
 
+static string RemoveUnsupportedFormat(const char *str) {
+#ifdef _MSC_VER
+  // replace "%'" with "%"
+  string res;
+  size_t n = strlen(str);
+  if (n == 0) {
+    return "";
+  }
+  res.reserve(n);
+  res.push_back(str[0]);
+  for (size_t i = 1; i < n; i++) {
+    if (str[i] == '\'' && *res.rbegin() == '%') continue;
+    res.push_back(str[i]);
+  }
+  return res;
+#else
+  return str;
+#endif
+}
+
 void Printf(const char *format, ...) {
 #ifdef TS_VALGRIND
   va_list args;
@@ -116,7 +136,7 @@ void Printf(const char *format, ...) {
 #else
   va_list args;
   va_start(args, format);
-  vfprintf(G_out, format, args);
+  vfprintf(G_out, RemoveUnsupportedFormat(format).c_str(), args);
   va_end(args);
 #endif
 }

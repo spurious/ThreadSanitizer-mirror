@@ -6286,7 +6286,7 @@ bool ThreadSanitizerWantToCreateSegmentsOnSblockEntry(uintptr_t pc) {
 }
 
 // Returns true if function at "pc" is marked as "fun_r" in the ignore file.
-bool INLINE ThreadSanitizerIgnoreAccessesBelowFunction(uintptr_t pc) {
+bool NOINLINE ThreadSanitizerIgnoreAccessesBelowFunction(uintptr_t pc) {
   typedef hash_map<uintptr_t, bool> Cache;
   static Cache *cache = NULL;
   if (!cache)
