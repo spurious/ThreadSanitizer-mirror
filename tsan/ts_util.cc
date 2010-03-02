@@ -152,7 +152,8 @@ void Report(const char *format, ...) {
 
   while (1) {
     va_start(args, format);
-    int ret = vsnprintf(buff, buff_size, format, args);
+    int ret = vsnprintf(buff, buff_size,
+                        RemoveUnsupportedFormat(format).c_str(), args);
     va_end(args);
     if (ret < buff_size) break;
     delete [] buff;
