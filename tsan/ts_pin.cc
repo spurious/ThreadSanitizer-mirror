@@ -1802,19 +1802,39 @@ static void InstrumentMopsInBBl(BBL bbl, RTN rtn, TraceInfo *trace_info, size_t 
     int n_mops = INS_MemoryOperandCount(ins);
     if (n_mops == 0) continue;
 
+    string opcode_str = OPCODE_StringShort(INS_Opcode(ins));
     if (trace_info && debug_ins) {
       Printf("  INS: opcode=%s n_mops=%d dis=\"%s\"\n",
-             OPCODE_StringShort(INS_Opcode(ins)).c_str(),
-             n_mops,
+             opcode_str.c_str(),  n_mops,
              INS_Disassemble(ins).c_str());
     }
 
-    // CALL writes to stack and (if the call is indirect) reads to target
+    bool ins_ignore_writes = false;
+
+    // CALL writes to stack and (if the call is indirect) reads the target
     // address. We don't want to handle the stack write.
-    bool is_call = INS_IsCall(ins);
-    if (is_call) {
+    if (INS_IsCall(ins)) {
       CHECK(n_mops == 1 || n_mops == 2);
-      if (n_mops == 1) continue;
+      ins_ignore_writes = true;
+    }
+
+    // PUSH: we ignore the write to stack but we don't ignore the read (if any).
+    if (opcode_str == "PUSH") {
+      CHECK(n_mops == 1 || n_mops == 2);
+      ins_ignore_writes = true;
+      continue;
+    }
+
+    // POP: we are reading from stack, Ignore it.
+    if (opcode_str == "POP") {
+      CHECK(n_mops == 1);
+      continue;
+    }
+
+    // RET/LEAVE -- ignore it, it just reads the return address and stack.
+    if (INS_IsRet(ins) || opcode_str == "LEAVE") {
+      CHECK(n_mops == 1);
+      continue;
     }
 
     bool is_predicated = INS_IsPredicated(ins);
@@ -1828,7 +1848,7 @@ static void InstrumentMopsInBBl(BBL bbl, RTN rtn, TraceInfo *trace_info, size_t 
       CHECK(size);
       bool is_write = INS_MemoryOperandIsWritten(ins, i);
 
-      if (is_call && is_write) continue;  // CALL writes to stack; ignore it.
+      if (ins_ignore_writes && is_write) continue;
 
       if (trace_info) {
         if (debug_ins) {
