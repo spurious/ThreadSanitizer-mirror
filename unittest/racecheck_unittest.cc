@@ -5360,12 +5360,12 @@ namespace test127 {
 Mutex mu;
 void Thread1() {
   mu.Lock();
-  printf(""); // avoid tail call elimination
+  usleep(1); // avoid tail call elimination
 }
 void Thread2() {
   usleep(100000);
   mu.Unlock();
-  printf(""); // avoid tail call elimination
+  usleep(1); // avoid tail call elimination
 }
 TEST(LockTests, UnlockingALockHeldByAnotherThread) {
   MyThreadArray t(Thread1, Thread2);
