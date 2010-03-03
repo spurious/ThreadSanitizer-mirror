@@ -29,11 +29,13 @@ def generate(settings):
   os = 'windows'
   #                  test binary | tsan + run parameters
   #             bits, opt, static,   tsan-debug,   mode
-  variants = [((  32,   1, False),(        True, 'fast')),
-              ((  32,   1, False),(        True, 'slow')),
-              ((  32,   1, False),(        True,  'phb')),
-              ((  32,   0, False),(        True, 'slow')),
-              ((  32,   1, False),(       False,  'phb'))]
+  variants = [
+    # ((  32,   1, False),(        True, 'fast')),
+    # ((  32,   1, False),(        True, 'slow')),
+    ((  32,   1, False),(        True,  'phb')),
+    # ((  32,   0, False),(        True, 'slow')),
+    ((  32,   1, False),(       False,  'phb'))
+    ]
   for (test_variant, run_variant) in variants:
     (tsan_debug, mode) = run_variant
     if not test_binaries.has_key(test_variant):
@@ -46,10 +48,16 @@ def generate(settings):
 
 
 
-  b1 = {'name': 'buildbot-windows',
+  b1 = {'name': 'buildbot-winxp',
         'slavename': 'bot2name',
-        'builddir': 'full_win',
+        'builddir': 'full_winxp',
         'factory': f1,
         }
 
-  return b1
+  b2 = {'name': 'buildbot-vista',
+        'slavename': 'bot3name',
+        'builddir': 'full_vista',
+        'factory': f1,
+        }
+
+  return [b1, b2]

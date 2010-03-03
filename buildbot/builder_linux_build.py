@@ -7,32 +7,54 @@ from common import *
 
 import os.path
 
-def addArchiveStep(factory, archive_dir):
-  factory.addStep(ShellCommand(
-      command=['tar', 'czvf', os.path.join(archive_dir, 'build.tar.gz'), '.'],
-      description='archiving build tree',
-      descriptionDone='archive build tree'))
-
 def generate(settings):
   f1 = factory.BuildFactory()
 
   # Checkout sources.
   f1.addStep(SVN(svnurl=settings['svnurl'], mode='copy'))
 
-  # Build valgrind+tsan and install them to out/.
-  f1.addStep(ShellCommand(command='cd third_party && ./update_valgrind.sh && ' +
-                          './build_and_install_valgrind.sh `pwd`/../out',
-                          description='building valgrind',
-                          descriptionDone='build valgrind'))
+  # Get valgrind build.
+  f1.addStep(ShellCommand(command=['wget', 'http://codf220/full_valgrind/valgrind_build.tar.gz'],
+                          description='getting valgrind build',
+                          descriptionDone='get valgrind build'))
+
+  addExtractStep(f1, 'valgrind_build.tar.gz')
+
+  # Build tsan and install it to out/.
   f1.addStep(Compile(command=['make', '-C', 'tsan', '-j4', 'OFFLINE=',
-                              'PIN_ROOT=/usr/local/google/pin',
+                              'VALGRIND_INST_ROOT=../out',
+                              'VALGRIND_ROOT=../third_party/valgrind',
+                              'PIN_ROOT=../../../../third_party/pin',
                               'lo', 'ld'],
                      description='building tsan',
                      descriptionDone='build tsan'))
-  f1.addStep(ShellCommand(command=['make', '-C', 'tsan', 'install',
-                                   'VALGRIND_INST_ROOT=../out'],
-                          description='installing tsan',
-                          descriptionDone='install tsan'))
+
+  # Build self-contained tsan binaries.
+  f1.addStep(ShellCommand(command=['tsan_binary/mk-self-contained-valgrind.sh',
+                                   'out', 'tsan', 'tsan.sh'],
+                          description='packing self-contained tsan',
+                          descriptionDone='pack self-contained tsan'))
+
+  f1.addStep(ShellCommand(command=['tsan_binary/mk-self-contained-valgrind.sh',
+                                   'out', 'tsan-debug', 'tsan-debug.sh'],
+                          description='packing self-contained tsan (debug)',
+                          descriptionDone='pack self-contained tsan (debug)'))
+
+  # Build 32-bit tsan and install it to out32/.
+  f1.addStep(Compile(command=['make', '-C', 'tsan', '-j4', 'OFFLINE=',
+                              'OUTDIR=bin32',
+                              'VALGRIND_INST_ROOT=../out32',
+                              'VALGRIND_ROOT=../third_party/valgrind32',
+                              'PIN_ROOT=',
+                              'l32o', 'l32d'],
+                     description='building 32-bit tsan',
+                     descriptionDone='build 32-bit tsan'))
+
+  f1.addStep(ShellCommand(command=['tsan_binary/mk-self-contained-valgrind.sh',
+                                   'out32', 'tsan', 'tsan32.sh'],
+                          description='packing self-contained tsan (32-bit)',
+                          descriptionDone='pack self-contained tsan (32-bit)'))
+
 
   os = 'linux'
   for bits in [32, 64]:
@@ -41,12 +63,12 @@ def generate(settings):
         addBuildTestStep(f1, os, bits, opt, static)
 
 
-  addArchiveStep(f1, '/usr/local/google/Buildbot/archive')
+  addArchiveStep(f1, '../full_build.tar.gz')
 
   b1 = {'name': 'buildbot-linux-build',
-        'slavename': 'bot7name',
+        'slavename': 'bot5name',
         'builddir': 'full_linux_build',
         'factory': f1,
         }
 
-  return b1
+  return [b1]

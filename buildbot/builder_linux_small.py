@@ -8,23 +8,7 @@ from common import *
 def generate(settings):
   f1 = factory.BuildFactory()
 
-  # Checkout sources.
-  f1.addStep(SVN(svnurl=settings['svnurl'], mode='copy'))
-
-  # Build valgrind+tsan and install them to out/.
-  f1.addStep(ShellCommand(command='cd third_party && ./update_valgrind.sh && ' +
-                          './build_and_install_valgrind.sh `pwd`/../out',
-                          description='building valgrind',
-                          descriptionDone='build valgrind'))
-  f1.addStep(Compile(command=['make', '-C', 'tsan', '-j4', 'OFFLINE=',
-                              'PIN_ROOT=',
-                              'lo', 'ld'],
-                     description='building tsan',
-                     descriptionDone='build tsan'))
-  f1.addStep(ShellCommand(command=['make', '-C', 'tsan', 'install',
-                                   'VALGRIND_INST_ROOT=../out'],
-                          description='installing tsan',
-                          descriptionDone='install tsan'))
+  addSetupTreeForTestsStep(f1)
 
   # Run output tests.
   output_test_binary = unitTestBinary('linux', 64, 0, False, test_base_name='output_test1')
@@ -46,16 +30,16 @@ def generate(settings):
     (tsan_debug, mode) = run_variant
     if not test_binaries.has_key(test_variant):
       (bits, opt, static) = test_variant
-      test_desc = addBuildTestStep(f1, os, bits, opt, static)
+      test_desc = getTestDesc(os, bits, opt, static)
       test_binaries[test_variant] = test_desc
     test_binary = unitTestBinary(os, bits, opt, static)
     addTestStep(f1, tsan_debug, mode, test_binary, test_desc, extra_args=["--error_exitcode=1"])
 
 
   b1 = {'name': 'buildbot-linux-small',
-        'slavename': 'bot5name',
+        'slavename': 'bot6name',
         'builddir': 'full_linux_small',
         'factory': f1,
         }
 
-  return b1
+  return [b1]

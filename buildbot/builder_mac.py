@@ -3,6 +3,7 @@ from buildbot.steps.source import SVN
 from buildbot.steps.shell import Compile
 from buildbot.steps.shell import Test
 from buildbot.steps.shell import ShellCommand
+from buildbot.steps.transfer import FileDownload
 from common import *
 
 
@@ -12,27 +13,35 @@ def generate(settings):
   # Checkout sources.
   f1.addStep(SVN(svnurl=settings['svnurl'], mode='copy'))
 
+  f1.addStep(FileDownload(mastersrc='~/valgrind_source.tar.bz2',
+                          slavedest='third_party/valgrind_source.tar.bz2'))
+
+  f1.addStep(ShellCommand(command='cd third_party && ./update_valgrind.sh valgrind_source.tar.bz2',
+                          description='unpacking valgrind',
+                          descriptionDone='unpack valgrind'))
+
   # Build valgrind+tsan and install them to out/.
-  f1.addStep(ShellCommand(command='cd third_party && ./update_valgrind.sh && ' +
-                          './build_and_install_valgrind.sh `pwd`/../out',
+  f1.addStep(ShellCommand(command='cd third_party && ./build_and_install_valgrind.sh `pwd`/../out',
                           description='building valgrind',
                           descriptionDone='build valgrind'))
+
   f1.addStep(Compile(command=['make', '-C', 'tsan', '-j4', 'OFFLINE=',
+                              'VALGRIND_INST_ROOT=../out',
                               'PIN_ROOT=',
                               'm'],
                      description='building tsan',
                      descriptionDone='build tsan'))
-  f1.addStep(ShellCommand(command=['make', '-C', 'tsan', 'install',
-                                   'VALGRIND_INST_ROOT=../out'],
-                          description='installing tsan',
-                          descriptionDone='install tsan'))
 
-  # Test that mk-self-contained-tsan works. Output is unused.
-  f1.addStep(ShellCommand(command=['tsan_binary/mk-self-contained-tsan.sh',
-                                   'out', 'tsan.sh'],
+  # Build self-contained tsan binaries.
+  f1.addStep(ShellCommand(command=['tsan_binary/mk-self-contained-valgrind.sh',
+                                   'out', 'tsan', 'tsan.sh'],
                           description='packing self-contained tsan',
                           descriptionDone='pack self-contained tsan'))
 
+  f1.addStep(ShellCommand(command=['tsan_binary/mk-self-contained-valgrind.sh',
+                                   'out', 'tsan-debug', 'tsan-debug.sh'],
+                          description='packing self-contained tsan (debug)',
+                          descriptionDone='pack self-contained tsan (debug)'))
   # Run unit tests.
   test_binaries = {} # (bits, opt, static) -> (binary, desc)
   os = 'darwin'
@@ -55,9 +64,9 @@ def generate(settings):
 
 
   b1 = {'name': 'buildbot-mac',
-        'slavename': 'bot4name',
+        'slavename': 'bot7name',
         'builddir': 'full_mac',
         'factory': f1,
         }
 
-  return b1
+  return [b1]

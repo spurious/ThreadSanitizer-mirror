@@ -14,7 +14,7 @@ def runAllTests(factory, variants, os):
       test_desc = test_variants[test_variant]
     else:
       (bits, opt, static) = test_variant
-      test_desc = addBuildTestStep(factory, os, bits, opt, static)
+      test_desc = getTestDesc(os, bits, opt, static)
       test_variants[test_variant] = test_desc
     test_binary = unitTestBinary(os, bits, opt, static, test_base_name=base_name)
     if base_name == 'demo_tests':
@@ -22,22 +22,13 @@ def runAllTests(factory, variants, os):
     else:
       extra_args=["--error_exitcode=1"]
     addTestStep(factory, tsan_debug, mode, test_binary, test_desc, frontend='pin',
-                pin_root='/usr/local/google/pin', extra_args = extra_args)
+                pin_root='../../../third_party/pin', extra_args = extra_args)
 
 
 def generate(settings):
   f1 = factory.BuildFactory()
 
-  # Checkout sources.
-  f1.addStep(SVN(svnurl=settings['svnurl'], mode='copy'))
-
-  # Build tsan + pin.
-  f1.addStep(Compile(command=['make', '-C', 'tsan', '-j4',
-                              'VALGRIND_ROOT=',
-                              'PIN_ROOT=/usr/local/google/pin',
-                              'ld'],
-                     description='building tsan with pin',
-                     descriptionDone='build tsan with pin'))
+  addSetupTreeForTestsStep(f1)
 
   # Run suppressions tests.
   f1.addStep(Test(command='tsan/bin/amd64-linux-debug-suppressions_test',
@@ -62,9 +53,9 @@ def generate(settings):
 
 
   b1 = {'name': 'buildbot-linux-pin',
-        'slavename': 'bot3name',
+        'slavename': 'bot6name',
         'builddir': 'full_linux_pin',
         'factory': f1,
         }
 
-  return b1
+  return [b1]
