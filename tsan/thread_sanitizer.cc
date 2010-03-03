@@ -72,6 +72,7 @@ bool debug_thread = false;
 bool debug_rtn = false;
 bool debug_lock = false;
 bool debug_wrap = false;
+bool debug_ins = false;
 
 // -------- Util ----------------------------- {{{1
 
@@ -6138,6 +6139,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   debug_rtn = PhaseDebugIsOn("rtn");
   debug_lock = PhaseDebugIsOn("lock");
   debug_wrap = PhaseDebugIsOn("wrap");
+  debug_ins = PhaseDebugIsOn("ins");
 }
 
 // -------- ThreadSanitizer ------------------ {{{1
