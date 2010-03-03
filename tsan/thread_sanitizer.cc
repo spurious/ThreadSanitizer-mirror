@@ -3290,7 +3290,7 @@ struct LockHistory {
       // they already create h-b arcs.
       if (Lock::LIDtoLock(lid)->is_pure_happens_before()) continue;
       for (size_t j = 0; j < uq.size(); j++) {
-        int32_t u_era = uq[i].lock_era;
+        int32_t u_era = uq[j].lock_era;
         if (lid != uq[j].lid) continue;
         // Report("LockHistory::Intersect: L%d %d %d %d\n", lid.raw(), min_lock_era, u_era, l_era);
         if (u_era < min_lock_era)  continue;
