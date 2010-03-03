@@ -1822,7 +1822,6 @@ static void InstrumentMopsInBBl(BBL bbl, RTN rtn, TraceInfo *trace_info, size_t 
     if (opcode_str == "PUSH") {
       CHECK(n_mops == 1 || n_mops == 2);
       ins_ignore_writes = true;
-      continue;
     }
 
     // POP: we are reading from stack, Ignore it.
