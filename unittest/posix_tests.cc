@@ -820,7 +820,7 @@ void SignalHandlerWithSpinlock(int, siginfo_t*, void*) {
   sl.Unlock();
 }
 
-TEST(Signals, SignalsAndMallocTestWithSpinlock) {
+TEST(Signals, DISABLED_SignalsAndMallocTestWithSpinlock) {
   EnableSigprof(SignalHandlerWithSpinlock);
   MyThreadArray t(MallocTestWorker, MallocTestWorker, MallocTestWorker);
   t.Start();
