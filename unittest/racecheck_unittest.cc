@@ -5358,12 +5358,14 @@ REGISTER_TEST(Run, 126)
 // test127. Bad code: unlocking a mutex locked by another thread. {{{1
 namespace test127 {
 Mutex mu;
+void DoLock() { mu.Lock(); }
+void DoUnlock () { mu.Unlock(); }
 void Thread1() {
-  mu.Lock();
+  DoLock();
 }
 void Thread2() {
   usleep(100000);
-  mu.Unlock();
+  DoUnlock();
 }
 TEST(LockTests, UnlockingALockHeldByAnotherThread) {
   MyThreadArray t(Thread1, Thread2);
