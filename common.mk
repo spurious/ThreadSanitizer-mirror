@@ -57,7 +57,7 @@ endif
 ifeq ($(OS), windows)
   ifeq ($(OPT), 1)
     OX=O1
-    OPTFLAGS=/Zi /MT
+    OPTFLAGS=/Zi /MT /O1
   else
     OX=O0
     OPTFLAGS=/Od /Zi /MTd
