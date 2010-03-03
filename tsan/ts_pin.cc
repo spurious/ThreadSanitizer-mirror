@@ -1809,6 +1809,14 @@ static void InstrumentMopsInBBl(BBL bbl, RTN rtn, TraceInfo *trace_info, size_t 
              INS_Disassemble(ins).c_str());
     }
 
+    // CALL writes to stack and (if the call is indirect) reads to target
+    // address. We don't want to handle the stack write.
+    bool is_call = INS_IsCall(ins);
+    if (is_call) {
+      CHECK(n_mops == 1 || n_mops == 2);
+      if (n_mops == 1) continue;
+    }
+
     bool is_predicated = INS_IsPredicated(ins);
     for (int i = 0; i < n_mops; i++) {
       if (*mop_idx >= kMaxMopsPerTrace) {
@@ -1819,6 +1827,8 @@ static void InstrumentMopsInBBl(BBL bbl, RTN rtn, TraceInfo *trace_info, size_t 
       size_t size = INS_MemoryOperandSize(ins, i);
       CHECK(size);
       bool is_write = INS_MemoryOperandIsWritten(ins, i);
+
+      if (is_call && is_write) continue;  // CALL writes to stack; ignore it.
 
       if (trace_info) {
         if (debug_ins) {
