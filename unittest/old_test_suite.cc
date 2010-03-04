@@ -31,6 +31,8 @@
 
 #include <algorithm>
 #include <gtest/gtest.h>
+#include <string>
+#include <ostream>
 
 #include "old_test_suite.h"
 
@@ -73,6 +75,49 @@ TEST(NonGtestTests, All) {
     }
   }
 }
+
+class PerformanceTestEventListener: public ::testing::EmptyTestEventListener {
+ public:
+  virtual void OnTestEnd(const ::testing::TestInfo& test_info) {
+    if (strcmp(test_info.test_case_name(), "StressTests") == 0 ||
+        strcmp(test_info.test_case_name(), "PerformanceTests") == 0) {
+      const ::testing::TestResult* result = test_info.result();
+      times_[test_info.name()].push_back(result->elapsed_time());
+    }
+  }
+
+  virtual void OnTestProgramEnd(const ::testing::UnitTest& unit_test) {
+    for (std::map<string, std::vector<long long int> >::iterator it = times_.begin();
+         it != times_.end(); ++it) {
+      printf("*RESULT %s: time= %s ms\n", it->first.c_str(), join_str(it->second).c_str());
+    }
+  }
+
+ private:
+  std::map<string, std::vector<long long int> > times_;
+
+  string join_str(std::vector<long long int> values) {
+    bool first = true;
+    bool single = (values.size() == 1);
+    std::ostringstream st;
+    if (!single) {
+      st << "[";
+    }
+    for (std::vector<long long int>::iterator it = values.begin();
+         it != values.end(); ++it) {
+      if (first) {
+        first = false;
+      } else {
+        st << " ";
+      }
+      st << *it;
+    }
+    if (!single) {
+      st << "]";
+    }
+    return st.str();
+  }
+};
 
 int main(int argc, char** argv) {
   MAIN_INIT_ACTION;
@@ -140,6 +185,10 @@ int main(int argc, char** argv) {
     random_shuffle(tests_to_run.begin(), tests_to_run.end(), rnd);
   }
 
+  ::testing::TestEventListeners& listeners =
+        ::testing::UnitTest::GetInstance()->listeners();
+  // Adds a listener to the end.  Google Test takes the ownership.
+  listeners.Append(new PerformanceTestEventListener());
 
   return RUN_ALL_TESTS();
 }

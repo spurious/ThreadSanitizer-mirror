@@ -63,9 +63,11 @@ extern Mutex printf_mu;
 
 struct Test{
   void_func_void_t f_;
+  int id_;
   int flags_;
-  Test(void_func_void_t f, int flags)
+  Test(void_func_void_t f, int id, int flags)
     : f_(f)
+    , id_(id)
     , flags_(flags)
   {}
   Test() : f_(0), flags_(0) {}
@@ -74,7 +76,8 @@ struct Test{
         long start = GetTimeInMs();
         f_();
         long end = GetTimeInMs();
-        printf ("Time: %4ldms\n", end-start);
+        printf("*RESULT test%d: time= %4ld ms\n", id_, end - start);
+//         printf ("Time: %4ldms\n", end-start);
      } else
         f_();
   }
@@ -87,7 +90,7 @@ struct TestAdder {
     if (TheMapOfTests == NULL)
       TheMapOfTests = new std::map<int, Test>;
     CHECK(TheMapOfTests->count(id) == 0);
-    (*TheMapOfTests)[id] = Test(f, flags);
+    (*TheMapOfTests)[id] = Test(f, id, flags);
   }
 };
 
