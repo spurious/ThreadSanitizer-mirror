@@ -40,6 +40,10 @@
 
 #include "dynamic_annotations.h"
 
+#ifdef HAVE_VALGRIND_H
+# include "valgrind.h"
+#endif
+
 /* Each function is empty and called (via a macro) only in debug mode.
    The arguments are captured by dynamic tools at runtime. */
 
@@ -119,6 +123,9 @@ void AnnotateFlushState(const char *file, int line){}
 #endif  /* DYNAMIC_ANNOTATIONS_ENABLED == 1 */
 
 static int GetRunningOnValgrind(void) {
+#ifdef RUNNING_ON_VALGRIND
+  if (RUNNING_ON_VALGRIND) return 1;
+#endif
   char *running_on_valgrind_str = getenv("RUNNING_ON_VALGRIND");
   if (running_on_valgrind_str) {
     return strcmp(running_on_valgrind_str, "0") != 0;
@@ -128,8 +135,12 @@ static int GetRunningOnValgrind(void) {
 
 /* When running under valgrind, this function will be intercepted
    and a non-zero value will be returned.
-   Some valgrind-based tools (e.g. callgrind) do not intercept functions,
-   so we also read environment variable. */
+   - If "valgrind.h" is included and RUNNING_ON_VALGRIND client request
+   is present, valgrind itself intercepts this and returns non-zero.
+   See http://valgrind.org/docs/manual/manual-core-adv.html
+   - If for some reason you can't use valgrind.h or you want to fake valgrind,
+   you can either export an environment variable "RUNNING_ON_VALGRIND"
+   or make your tool intercept the function RunningOnValgrind(). */
 int RunningOnValgrind(void) {
   static volatile int running_on_valgrind = -1;
   /* C doesn't have thread-safe initialization of statics, and we
