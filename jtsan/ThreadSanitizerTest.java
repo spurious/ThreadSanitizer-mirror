@@ -133,8 +133,8 @@ public class ThreadSanitizerTest {
     protected int shared_var2 = 0;
     protected int shared_array [];
     protected Integer shared_obj;
-    protected HashSet shared_hash_set;
-    protected TreeMap shared_map;
+    protected HashSet<Integer> shared_hash_set;
+    protected TreeMap<Integer, Integer> shared_map;
 
     // Virtual functions. Overrride some of them in your test.
     public void thread1() { System.out.println("thread1"); }
@@ -289,7 +289,7 @@ public class ThreadSanitizerTest {
     describe("Race: two writes to a HashSet object");
     new ThreadRunner2() {
       public void setUp() {
-        shared_hash_set = new HashSet();
+        shared_hash_set = new HashSet<Integer>();
       }
       public void thread1() { shared_hash_set.add(new Integer(1)); }
       public void thread2() { shared_hash_set.add(new Integer(2)); }
@@ -300,7 +300,7 @@ public class ThreadSanitizerTest {
     describe("Race: two writes to a TreeMap object");
     new ThreadRunner2() {
       public void setUp() {
-        shared_map = new TreeMap();
+        shared_map = new TreeMap<Integer, Integer>();
       }
       public void thread1() { shared_map.put(new Integer(1), new Integer(10)); }
       public void thread2() { shared_map.put(new Integer(2), new Integer(20)); }
