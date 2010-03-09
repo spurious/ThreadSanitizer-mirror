@@ -169,9 +169,9 @@ TEST(NegativeTests, WindowsCriticalSectionTest) {
 }
 }  // namespace
 
-#if WINVER >= 0x0600 // Vista or Windows Server 2000
 
 namespace WindowsSRWLockTest {  // {{{1
+#if WINVER >= 0x0600 // Vista or Windows Server 2000
 SRWLOCK SRWLock;
 int *obj;
 
@@ -215,9 +215,11 @@ TEST(NegativeTests, WindowsSRWLockTest) {
   CHECK(*obj == 2);
   delete obj;
 }
+#endif // WINVER >= 0x0600
 }  // namespace
 
 namespace WindowsConditionVariableSRWTest {  // {{{1
+#if WINVER >= 0x0600 // Vista or Windows Server 2000
 SRWLOCK SRWLock;
 CONDITION_VARIABLE cv;
 bool cond;
@@ -257,9 +259,9 @@ TEST(NegativeTests, WindowsConditionVariableSRWTest) {
   CHECK(*obj == 2);
   delete obj;
 }
+#endif // WINVER >= 0x0600
 }  // namespace
 
-#endif // WINVER >= 0x0600
 
 namespace WindowsInterlockedListTest {  // {{{1
 SLIST_HEADER list;
