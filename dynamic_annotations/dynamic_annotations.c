@@ -41,6 +41,8 @@
 #include "dynamic_annotations.h"
 
 #ifdef HAVE_VALGRIND_H
+// You can get this file by doing
+// svn co svn://svn.valgrind.org/valgrind/trunk/include
 # include "valgrind.h"
 #endif
 
@@ -135,12 +137,13 @@ static int GetRunningOnValgrind(void) {
 
 /* When running under valgrind, this function will be intercepted
    and a non-zero value will be returned.
-   - If "valgrind.h" is included and RUNNING_ON_VALGRIND client request
-   is present, valgrind itself intercepts this and returns non-zero.
-   See http://valgrind.org/docs/manual/manual-core-adv.html
+   - If "valgrind.h" is included and RUNNING_ON_VALGRIND macro
+     is present, valgrind itself intercepts it and returns non-zero.
+     See http://valgrind.org/docs/manual/manual-core-adv.html about
+     RUNNING_ON_VALGRIND and other Valgrind "client requests".
    - If for some reason you can't use valgrind.h or you want to fake valgrind,
-   you can either export an environment variable "RUNNING_ON_VALGRIND"
-   or make your tool intercept the function RunningOnValgrind(). */
+     you can either export an environment variable "RUNNING_ON_VALGRIND"
+     or make your tool intercept the function RunningOnValgrind(). */
 int RunningOnValgrind(void) {
   static volatile int running_on_valgrind = -1;
   /* C doesn't have thread-safe initialization of statics, and we
