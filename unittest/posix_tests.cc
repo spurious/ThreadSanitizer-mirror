@@ -751,6 +751,30 @@ TEST(PositiveTests, CyclicBarrierTest) {
   t2.Join();
 }
 
+
+int *G = NULL;
+
+void Worker() {
+  pthread_barrier_wait(&B);
+  (*G) = 1;
+  pthread_barrier_wait(&B);
+}
+
+TEST(PositiveTests, CyclicBarrierTwoCallsTest) {
+  pthread_barrier_init(&B, NULL, 2);
+  G = new int(0);
+  ANNOTATE_TRACE_MEMORY(G);
+  ANNOTATE_EXPECT_RACE_FOR_TSAN(G, "real race, may be hidden"
+                                " by incorrect implementation of barrier");
+  MyThreadArray t1(Worker, Worker);
+  t1.Start();
+  t1.Join();
+  CHECK(*G == 1);
+  delete G;
+}
+
+
+
 #endif  // NO_BARRIER
 }  // namespace
 
