@@ -73,6 +73,7 @@ bool debug_rtn = false;
 bool debug_lock = false;
 bool debug_wrap = false;
 bool debug_ins = false;
+bool debug_happens_before = false;
 
 // -------- Util ----------------------------- {{{1
 
@@ -3655,7 +3656,7 @@ struct Thread {
       NewSegmentForWait(signaller_vts);
     }
 
-    if (G_flags->verbosity >= 2) {
+    if (debug_happens_before) {
       Printf("T%d: %s: %p (%p):\n    %s %s\n", tid_.raw(),
              timed_out ? "TimedOutWait" : "Wait",
              cv, mu,
@@ -3675,7 +3676,7 @@ struct Thread {
       signaller->vts = new_vts;
     }
     NewSegmentForSignal();
-    if (G_flags->verbosity >= 2)
+    if (debug_happens_before)
       Printf("T%d: Signal: %p:\n    %s %s\n    %s\n", tid_.raw(), cv,
              vts()->ToString().c_str(), Segment::ToString(sid()).c_str(),
              (signaller->vts)->ToString().c_str());
@@ -3780,7 +3781,21 @@ struct Thread {
     uint32_t barrier_count;
     // How many times we may block on this barrier before resetting.
     int32_t calls_before_reset;
+    // How many times we entered the 'wait-before' and 'wait-after' handlers.
+    int32_t n_wait_before, n_wait_after;
   };
+  // The following situation is possible:
+  // - N threads blocked on a barrier.
+  // - All N threads reached the barrier and we started getting 'wait-after' 
+  //   events, but did not yet get all of them.
+  // - N threads blocked on the barrier again and we started getting
+  //   'wait-before' events from the next barrier epoch.
+  // - We continue getting 'wait-after' events from the previous epoch.
+  //
+  // We don't want to create h-b arcs between barrier events of different 
+  // epochs, so we use 'barrier + (epoch % 4)' as an object on which we
+  // signal and wait (it is unlikely that more than 4 epochs are live at once.
+  enum { kNumberOfPossibleBarrierEpochsLiveAtOnce = 4 };
   // Maps the barrier pointer to CyclicBarrierInfo.
   typedef hash_map<uintptr_t, CyclicBarrierInfo> CyclicBarrierMap;
 
@@ -3793,28 +3808,48 @@ struct Thread {
 
   void HandleBarrierInit(uintptr_t barrier, uint32_t n) {
     CyclicBarrierInfo &info = GetCyclicBarrierInfo(barrier);
+    CHECK(n > 0);
+    memset(&info, 0, sizeof(CyclicBarrierInfo));
     info.barrier_count = n;
-    info.calls_before_reset = 0;
   }
 
   void HandleBarrierWaitBefore(uintptr_t barrier) {
     CyclicBarrierInfo &info = GetCyclicBarrierInfo(barrier);
 
     CHECK(info.calls_before_reset >= 0);
+    int32_t epoch = info.n_wait_before / info.barrier_count;
+    epoch %= kNumberOfPossibleBarrierEpochsLiveAtOnce;
+    info.n_wait_before++;
     if (info.calls_before_reset == 0) {
       // We are blocking the first time after reset. Clear the VTS.
       info.calls_before_reset = info.barrier_count;
-      Signaller &signaller = (*signaller_map_)[barrier];
+      Signaller &signaller = (*signaller_map_)[barrier + epoch];
       VTS::Delete(signaller.vts);
       signaller.vts = NULL;
+      if (debug_happens_before) {
+        Printf("T%d barrier %p (epoch %d) reset\n", tid().raw(),
+               barrier, epoch);
+      }
     }
     info.calls_before_reset--;
     // Signal to all threads that blocked on this barrier.
-    HandleSignal(barrier);
+    if (debug_happens_before) {
+      Printf("T%d barrier %p (epoch %d) wait before\n", tid().raw(),
+             barrier, epoch);
+    }
+    HandleSignal(barrier + epoch);
   }
 
   void HandleBarrierWaitAfter(uintptr_t barrier) {
-    HandleWait(barrier, 0, false);
+    CyclicBarrierInfo &info = GetCyclicBarrierInfo(barrier);
+    int32_t epoch = info.n_wait_after / info.barrier_count;
+    epoch %= kNumberOfPossibleBarrierEpochsLiveAtOnce;
+    info.n_wait_after++;
+    if (debug_happens_before) {
+      Printf("T%d barrier %p (epoch %d) wait after\n", tid().raw(),
+             barrier, epoch);
+    }
+    HandleWait(barrier + epoch, 0, false);
   }
 
   // Call stack  -------------
@@ -6140,6 +6175,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   debug_lock = PhaseDebugIsOn("lock");
   debug_wrap = PhaseDebugIsOn("wrap");
   debug_ins = PhaseDebugIsOn("ins");
+  debug_happens_before = PhaseDebugIsOn("happens_before");
 }
 
 // -------- ThreadSanitizer ------------------ {{{1
