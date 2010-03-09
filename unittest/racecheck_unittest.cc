@@ -3773,15 +3773,10 @@ REGISTER_TEST(Run, 84)
 }  // namespace test84
 
 
-// test85: Test for RunningOnValgrind(). {{{1
-namespace  test85 {
-int     GLOB = 0;
-void Run() {
-  printf("test85: RunningOnValgrind() = %d\n", RunningOnValgrind());
+// Test for RunningOnValgrind(). {{{1
+TEST(NegativeTests, RunningOnValgrindTest) {
+  printf("RunningOnValgrind() = %d\n", RunningOnValgrind());
 }
-REGISTER_TEST(Run, 85)
-}  // namespace test85
-
 
 namespace PositiveTests_BenignRaceInDtor {  // {{{
 // test86: Test for race inside DTOR: racey write to vptr. Benign.
