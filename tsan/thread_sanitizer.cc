@@ -5644,6 +5644,12 @@ class Detector {
     if (a == 0)
       return;
 
+    // If we are allocating a huge piece of memory,
+    // don't handle it because it is too slow.
+    // TODO(kcc): this is a workaround for NaCl. May need to fix it cleaner.
+    const uint64_t G84 = (1ULL << 32) * 21; // 84G.
+    if (size >= G84) return;
+
     uintptr_t b = a + size;
     CHECK(a <= b);
     ClearMemoryStateOnMalloc(a, b);
