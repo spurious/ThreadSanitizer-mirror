@@ -18,7 +18,7 @@ CWARN=-Wall -Wmissing-prototypes -Wshadow -Wpointer-arith -Wstrict-prototypes \
       -Wdeclaration-after-statement
 CFLAGS=-g $(COPT) $(CWARN) -fno-strict-aliasing -fno-stack-protector -fpic
 CXXOPT=-O2
-CXXFLAGS=$(CXXOPT) -g -Wall -fno-exceptions # -Wvla
+CXXFLAGS=$(CXXOPT) -g -Wall  -Wno-deprecated -fno-exceptions # -Wvla
 LDFLAGS=
 
 VG_CXXFLAGS=-fno-rtti -fno-stack-protector
