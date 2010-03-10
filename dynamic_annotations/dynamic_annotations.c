@@ -40,8 +40,9 @@
 
 #include "dynamic_annotations.h"
 
-#ifdef HAVE_VALGRIND_H
-# include "valgrind.h"
+#ifdef __GNUC__
+/* valgrind.h uses gcc extensions so it won't build with other compilers */
+# include "third_party/valgrind/valgrind.h"
 #endif
 
 /* Each function is empty and called (via a macro) only in debug mode.

@@ -442,7 +442,7 @@ void AnnotateFlushState(const char *file, int line);
      svn co svn://svn.valgrind.org/valgrind/trunk/include
 
   If for some reason you can't use "valgrind.h" or want to fake valgrind,
-  there are too ways to make this function return non-zero:
+  there are two ways to make this function return non-zero:
     - Use environment variable: export RUNNING_ON_VALGRIND=1
     - Make your tool intercept the function RunningOnValgrind() and
       change its return value.
