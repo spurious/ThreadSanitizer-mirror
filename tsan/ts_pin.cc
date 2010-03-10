@@ -118,7 +118,11 @@ static uintptr_t g_current_pc;
 #ifdef _MSC_VER
 // On Windows, we need to create a h-b arc between
 // RtlQueueWorkItem(callback, x, y) and the call to callback.
+// Same for RegisterWaitForSingleObject.
 static hash_set<uintptr_t> *g_windows_thread_pool_calback_set;
+// Similarly, we need h-b arcs between the returns from callbacks and
+// thre related UnregisterWaitEx. Damn, what a stupid interface!
+static hash_map<uintptr_t, uintptr_t> *g_windows_thread_pool_wait_object_map;
 #endif
 
 //--------------- StackFrame ----------------- {{{1
@@ -1221,9 +1225,26 @@ uintptr_t WRAP_NAME(RtlQueueWorkItem)(WRAP_PARAM4) {
 }
 
 uintptr_t WRAP_NAME(RegisterWaitForSingleObject)(WRAP_PARAM6) {
+  // Printf("T%d %s arg0=%p arg2=%p\n", tid, __FUNCTION__, arg0, arg2);
   g_windows_thread_pool_calback_set->insert(arg2);
   DumpEvent(SIGNAL, tid, pc, arg2, 0);
   uintptr_t ret = CallStdCallFun6(ctx, tid, f, arg0, arg1, arg2, arg3, arg4, arg5);
+  if (ret) {
+    uintptr_t wait_object = *(uintptr_t*)arg0;
+    (*g_windows_thread_pool_wait_object_map)[wait_object] = arg2;
+    // Printf("T%d %s *arg0=%p\n", tid, __FUNCTION__, wait_object);
+  }
+  return ret;
+}
+
+uintptr_t WRAP_NAME(UnregisterWaitEx)(WRAP_PARAM4) {
+  CHECK(g_windows_thread_pool_wait_object_map);
+  uintptr_t obj = (*g_windows_thread_pool_wait_object_map)[arg0];
+  // Printf("T%d %s arg0=%p obj=%p\n", tid, __FUNCTION__, arg0, obj);
+  uintptr_t ret = CallStdCallFun2(ctx, tid, f, arg0, arg1);
+  if (ret) {
+    DumpEvent(WAIT, tid, pc, obj, 0);
+  }
   return ret;
 }
 
@@ -1357,8 +1378,17 @@ static void UpdateCallStack(PinThread &t, ADDRINT sp) {
     TLEBAddRtnExit(t);
     size_t size = t.shadow_stack.size();
     CHECK(size < 1000000);  // stay sane.
+    uintptr_t popped_pc = t.shadow_stack.back().pc;
+#ifdef _MSC_VER
+    // h-b edge from here to UnregisterWaitEx.
+    CHECK(g_windows_thread_pool_calback_set);
+    if (g_windows_thread_pool_calback_set->count(popped_pc)) {
+      DumpEvent(SIGNAL, t.tid, 0, popped_pc, 0);
+      // Printf("T%d ret %p\n", t.tid, popped_pc);
+    }
+#endif
+
     if (debug_rtn) {
-      uintptr_t popped_pc = t.shadow_stack.back().pc;
       ShowPcAndSp("RET : ", t.tid, popped_pc, sp);
     }
     t.shadow_stack.pop_back();
@@ -1810,6 +1840,7 @@ static void InstrumentMopsInBBl(BBL bbl, RTN rtn, TraceInfo *trace_info, size_t 
     }
 
     bool ins_ignore_writes = false;
+    bool ins_ignore_reads = false;
 
     // CALL writes to stack and (if the call is indirect) reads the target
     // address. We don't want to handle the stack write.
@@ -1826,7 +1857,8 @@ static void InstrumentMopsInBBl(BBL bbl, RTN rtn, TraceInfo *trace_info, size_t 
 
     // POP: we are reading from stack, Ignore it.
     if (opcode_str == "POP") {
-      CHECK(n_mops == 1);
+      CHECK(n_mops == 1 || n_mops == 2);
+      ins_ignore_reads = true;
       continue;
     }
 
@@ -1848,6 +1880,7 @@ static void InstrumentMopsInBBl(BBL bbl, RTN rtn, TraceInfo *trace_info, size_t 
       bool is_write = INS_MemoryOperandIsWritten(ins, i);
 
       if (ins_ignore_writes && is_write) continue;
+      if (ins_ignore_reads && !is_write) continue;
 
       if (trace_info) {
         if (debug_ins) {
@@ -1936,7 +1969,9 @@ void CallbackForTRACE(TRACE trace, void *v) {
   size_t i = 0;
   if (n_mops) {
     if (debug_ins) {
-      Printf("TRACE %ld; n_mops=%ld %s\n", trace_info->id(), trace_info->n_mops(),
+      Printf("TRACE %ld (%p); n_mops=%ld %s\n", trace_info->id(),
+             TRACE_Address(trace),
+             trace_info->n_mops(),
              PcToRtnName(trace_info->pc(), false).c_str());
     }
     for(BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
@@ -2291,6 +2326,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
 
   WRAPSTD3(RtlQueueWorkItem);
   WRAPSTD6(RegisterWaitForSingleObject);
+  WRAPSTD2(UnregisterWaitEx);
 
   WRAPSTD3(WaitForSingleObjectEx);
 
@@ -2497,6 +2533,7 @@ int main(INT32 argc, CHAR **argv) {
   CHECK(REG_valid(tls_reg));
 #if _MSC_VER
   g_windows_thread_pool_calback_set = new hash_set<uintptr_t>;
+  g_windows_thread_pool_wait_object_map = new hash_map<uintptr_t, uintptr_t>;
 #endif
 
   // Set up PIN callbacks.
