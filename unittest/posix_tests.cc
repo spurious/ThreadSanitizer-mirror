@@ -778,6 +778,20 @@ TEST(PositiveTests, CyclicBarrierTwoCallsTest) {
 #endif  // NO_BARRIER
 }  // namespace
 
+TEST(NegativeTests, Mmap84GTest) {  // {{{1
+#ifdef ARCH_amd64
+  // test that we can mmap 84G and can do it fast.
+  size_t size = (1ULL << 32) * 21;  // 21 * 4G
+  void *mem_ptr = mmap((void *) 0,
+                       size,
+                       PROT_EXEC | PROT_READ | PROT_WRITE,
+                       MAP_ANONYMOUS | MAP_PRIVATE | MAP_NORESERVE,
+                       -1,
+                       (off_t) 0);
+  printf("res=%p\n", mem_ptr);
+#endif
+}
+
 namespace Signals {  // {{{1
 
 typedef void (*Sigaction)(int, siginfo_t *, void *);
