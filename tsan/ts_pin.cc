@@ -242,6 +242,7 @@ struct PinThread {
   TraceInfo    *trace_info;
   int ignore_all_mops;  // if >0, ignore all mops.
   int ignore_lock_events;  // if > 0, ignore all lock/unlock events.
+  int spin_lock_recursion_depth;
   bool         thread_finished;
   bool         thread_done;
 };
@@ -1525,9 +1526,6 @@ static void On_exit(THREADID tid, ADDRINT pc) {
 static void Before_pthread_unlock(THREADID tid, ADDRINT pc, ADDRINT mu) {
   DumpEvent(UNLOCK, tid, pc, mu, 0);
 }
-static void Before_pthread_spin_unlock(THREADID tid, ADDRINT pc, ADDRINT mu) {
-  DumpEvent(UNLOCK_OR_INIT, tid, pc, mu, 0);
-}
 
 static uintptr_t WRAP_NAME(pthread_mutex_lock)(WRAP_PARAM4) {
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
@@ -1535,9 +1533,28 @@ static uintptr_t WRAP_NAME(pthread_mutex_lock)(WRAP_PARAM4) {
   return ret;
 }
 
+// In some versions of libpthread, pthread_spin_lock is effectively
+// a recursive function. It jumps to its first insn:
+//    beb0:       f0 ff 0f                lock decl (%rdi)
+//    beb3:       75 0b                   jne    bec0 <pthread_spin_lock+0x10>
+//    beb5:       31 c0                   xor    %eax,%eax
+//    beb7:       c3                      retq
+//    beb8:       0f 1f 84 00 00 00 00    nopl   0x0(%rax,%rax,1)
+//    bebf:       00
+//    bec0:       f3 90                   pause
+//    bec2:       83 3f 00                cmpl   $0x0,(%rdi)
+//    bec5:       7f e9  >>>>>>>>>>>>>    jg     beb0 <pthread_spin_lock> 
+//    bec7:       eb f7                   jmp    bec0 <pthread_spin_lock+0x10>
+//
+// So, we need to act only when we return from the last (depth=0) invocation.
 static uintptr_t WRAP_NAME(pthread_spin_lock)(WRAP_PARAM4) {
+  PinThread &t= g_pin_threads[tid];
+  t.spin_lock_recursion_depth++;
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
-  DumpEvent(WRITER_LOCK, tid, pc, arg0, 0);
+  t.spin_lock_recursion_depth--;
+  if (t.spin_lock_recursion_depth == 0) {
+    DumpEvent(WRITER_LOCK, tid, pc, arg0, 0);
+  }
   return ret;
 }
 
@@ -1567,6 +1584,22 @@ static uintptr_t WRAP_NAME(pthread_spin_trylock)(WRAP_PARAM4) {
   return ret;
 }
 
+static uintptr_t WRAP_NAME(pthread_spin_init)(WRAP_PARAM4) {
+  DumpEvent(UNLOCK_OR_INIT, tid, pc, arg0, 0);
+  uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
+  return ret;
+}
+static uintptr_t WRAP_NAME(pthread_spin_destroy)(WRAP_PARAM4) {
+  DumpEvent(LOCK_DESTROY, tid, pc, arg0, 0);
+  uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
+  return ret;
+}
+static uintptr_t WRAP_NAME(pthread_spin_unlock)(WRAP_PARAM4) {
+  DumpEvent(UNLOCK_OR_INIT, tid, pc, arg0, 0);
+  uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
+  return ret;
+}
+
 static uintptr_t WRAP_NAME(pthread_rwlock_trywrlock)(WRAP_PARAM4) {
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
   if (ret == 0)
@@ -1588,17 +1621,11 @@ static void Before_pthread_mutex_init(THREADID tid, ADDRINT pc, ADDRINT mu) {
 static void Before_pthread_rwlock_init(THREADID tid, ADDRINT pc, ADDRINT mu) {
   DumpEvent(LOCK_CREATE, tid, pc, mu, 0);
 }
-static void Before_pthread_spin_init(THREADID tid, ADDRINT pc, ADDRINT mu) {
-  DumpEvent(UNLOCK_OR_INIT, tid, pc, mu, 0);
-}
 
 static void Before_pthread_mutex_destroy(THREADID tid, ADDRINT pc, ADDRINT mu) {
   DumpEvent(LOCK_DESTROY, tid, pc, mu, 0);
 }
 static void Before_pthread_rwlock_destroy(THREADID tid, ADDRINT pc, ADDRINT mu) {
-  DumpEvent(LOCK_DESTROY, tid, pc, mu, 0);
-}
-static void Before_pthread_spin_destroy(THREADID tid, ADDRINT pc, ADDRINT mu) {
   DumpEvent(LOCK_DESTROY, tid, pc, mu, 0);
 }
 
@@ -2260,6 +2287,9 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   WRAP4(pthread_mutex_trylock);
   WRAP4(pthread_spin_lock);
   WRAP4(pthread_spin_trylock);
+  WRAP4(pthread_spin_init);
+  WRAP4(pthread_spin_destroy);
+  WRAP4(pthread_spin_unlock);
   WRAP4(pthread_rwlock_wrlock);
   WRAP4(pthread_rwlock_rdlock);
   WRAP4(pthread_rwlock_trywrlock);
@@ -2269,11 +2299,6 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_BEFORE_1("pthread_rwlock_init", Before_pthread_rwlock_init);
   INSERT_BEFORE_1("pthread_rwlock_destroy", Before_pthread_rwlock_destroy);
   INSERT_BEFORE_1("pthread_rwlock_unlock", Before_pthread_unlock);
-
-  // pthread_spin_*
-  INSERT_BEFORE_1("pthread_spin_init", Before_pthread_spin_init);
-  INSERT_BEFORE_1("pthread_spin_destroy", Before_pthread_spin_destroy);
-  INSERT_BEFORE_1("pthread_spin_unlock", Before_pthread_spin_unlock);
 
   // pthread_barrier_*
   WrapFunc4(img, rtn, "pthread_barrier_init",
