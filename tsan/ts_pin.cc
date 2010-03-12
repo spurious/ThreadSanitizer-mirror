@@ -2323,6 +2323,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
             IARG_REG_VALUE, REG_STACK_PTR, IARG_END);
 
   INSERT_BEFORE_0("RtlExitUserThread", Before_RtlExitUserThread);
+  INSERT_BEFORE_0("ExitThread", Before_RtlExitUserThread);
 
   WRAPSTD1(RtlInitializeCriticalSection);
   WRAPSTD1(RtlDeleteCriticalSection);
