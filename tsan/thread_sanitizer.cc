@@ -74,6 +74,7 @@ bool debug_lock = false;
 bool debug_wrap = false;
 bool debug_ins = false;
 bool debug_happens_before = false;
+bool debug_cache = false;
 
 // -------- Util ----------------------------- {{{1
 
@@ -2873,7 +2874,7 @@ class Cache {
         CacheLine::Delete(old_line);
         G_stats->cache_delete_empty_line++;
       } else {
-        if (DEBUG_MODE && 0) {
+        if (debug_cache) {
           DebugOnlyCheckCacheLineWhichWeReplace(old_line);
         }
       }
@@ -4185,6 +4186,12 @@ static const char default_suppressions[] =
 #endif
 
 #ifdef _MSC_VER
+"{                                                                   \n"
+"  False lock report inside ntdll.dll                                \n"
+"  ThreadSanitizer:InvalidLock                                       \n"
+"  fun:*                                                             \n"
+"  obj:*ntdll.dll                                                    \n"
+"}                                                                   \n"
 "{                                                                   \n"
 "  False report due to lack if debug symbols in ntdll.dll  (a)       \n"
 "  ThreadSanitizer:InvalidLock                                       \n"
@@ -6182,6 +6189,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   debug_wrap = PhaseDebugIsOn("wrap");
   debug_ins = PhaseDebugIsOn("ins");
   debug_happens_before = PhaseDebugIsOn("happens_before");
+  debug_cache = PhaseDebugIsOn("cache");
 }
 
 // -------- ThreadSanitizer ------------------ {{{1
