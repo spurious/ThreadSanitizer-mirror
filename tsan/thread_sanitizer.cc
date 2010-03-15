@@ -1419,9 +1419,14 @@ class Segment {
 
   VTS *vts() const { return vts_; }
   TID tid() const { return TID(tid_); }
-  uintptr_t *embedded_stack_trace() {return embedded_stack_trace_; }
+  uintptr_t *embedded_stack_trace() { return embedded_stack_trace_; }
   LSID  lsid(bool is_w) const { return lsid_[is_w]; }
   uint32_t lock_era() const { return lock_era_; }
+
+  string StackTraceString() {
+    return StackTrace::EmbeddedStackTraceToString(
+        this->embedded_stack_trace(), kSizeOfHistoryStackTrace);
+  }
 
   // static methods
 
@@ -4107,6 +4112,23 @@ struct PCQ {
 typedef map<uintptr_t, PCQ> PCQMap;
 static PCQMap *g_pcq_map;
 
+// -------- Heap info ---------------------- {{{1
+#include "ts_heap_info.h"
+// Information about heap memory.
+
+struct HeapInfo {
+  uintptr_t   ptr;
+  uintptr_t   size;
+  SID         sid;
+  HeapInfo() :ptr(0), size(0), sid(0) { }
+
+  Segment *seg() { return Segment::Get(sid); }
+  TID tid() { return seg()->tid(); }
+  string StackTraceString() { return seg()->StackTraceString(); }
+};
+
+static HeapMap<HeapInfo> *G_heap_map;
+
 // -------- Forget all state -------- {{{1
 // We need to forget all state and start over because we've
 // run out of some resources (most likely, segment IDs).
@@ -4131,6 +4153,8 @@ static void ForgetAllStateAndStartOver(const char *reason) {
   SegmentSet::ForgetAllState();
   G_cache->ForgetAllState();
   Thread::ForgetAllState();
+
+  G_heap_map->Clear();
 
   g_publish_info_map->clear();
 
@@ -4157,20 +4181,6 @@ static ExpectedRacesMap *G_expected_races_map;
 static bool g_expecting_races;
 static int g_found_races_since_EXPECT_RACE_BEGIN;
 
-
-// -------- Heap info ---------------------- {{{1
-#include "ts_heap_info.h"
-// Information about heap memory.
-
-struct HeapInfo {
-  uintptr_t   ptr;
-  uintptr_t   size;
-  TID         tid;
-  StackTrace *stack_trace;
-  HeapInfo() :ptr(0), size(0), tid(0), stack_trace(0) { }
-};
-
-static HeapMap<HeapInfo> *G_heap_map;
 
 // -------- Suppressions ----------------------- {{{1
 static const char default_suppressions[] =
@@ -4349,8 +4359,7 @@ class ReportStorage {
       }
       LockSet::AddLocksToSet(seg->lsid(false), locks);
       LockSet::AddLocksToSet(seg->lsid(true), locks);
-      Report("%s", StackTrace::EmbeddedStackTraceToString(
-          seg->embedded_stack_trace(), kSizeOfHistoryStackTrace).c_str());
+      Report("%s", seg->StackTraceString().c_str());
       if (!G_flags->pure_happens_before &&
           G_flags->suggest_happens_before_arcs) {
         set<LID> message_locks;
@@ -4613,8 +4622,8 @@ class ReportStorage {
              static_cast<long>(a - heap_info.ptr),
              reinterpret_cast<void*>(heap_info.ptr),
              static_cast<long>(heap_info.size),
-             heap_info.tid.raw(), c_default);
-      return string(buff) + heap_info.stack_trace->ToString().c_str();
+             heap_info.tid().raw(), c_default);
+      return string(buff) + heap_info.StackTraceString().c_str();
     }
 
 
@@ -4773,7 +4782,7 @@ class Detector {
         HeapInfo &info = it->second;
         Printf("Not free()-ed memory: %p [%p, %p)\n%s\n",
                info.size, info.ptr, info.ptr + info.size,
-               info.stack_trace->ToString().c_str());
+               info.StackTraceString().c_str());
       }
     }
   }
@@ -5667,12 +5676,8 @@ class Detector {
     HeapInfo info;
     info.ptr  = a;
     info.size = size;
-    info.tid  = tid;
-    // The current stack points to the function that called malloc().
-    // We want to see the malloc() function itself at the top.
-    // cur_thread_->PushCallStack(e_->pc());
-    info.stack_trace = cur_thread_->CreateStackTrace();
-    // cur_thread_->PopCallStack();
+    info.sid  = cur_thread_->sid();
+    Segment::Ref(info.sid, __FUNCTION__);
 
     // CHECK(!G_heap_map->count(a));  // we may have two calls
                                       //  to AnnotateNewMemory.
@@ -5693,7 +5698,7 @@ class Detector {
       return;
     // update G_heap_map
     CHECK(info.ptr == a);
-    StackTrace::Delete(info.stack_trace);
+    Segment::Unref(info.sid, __FUNCTION__);
     G_heap_map->EraseInfo(a);
 
     uintptr_t size = info.size;

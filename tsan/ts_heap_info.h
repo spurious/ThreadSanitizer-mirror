@@ -103,6 +103,8 @@ class HeapMap {
     return false;
   }
 
+  void Clear() { map_.clear(); }
+
  private:
   bool IsValidPtr(uintptr_t a) {
     return a != 0 && a != (uintptr_t) -1;
