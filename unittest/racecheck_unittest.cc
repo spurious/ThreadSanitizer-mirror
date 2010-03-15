@@ -6368,16 +6368,22 @@ TEST(StressTests, StartAndJoinManyThreads) {
 }
 }  // namespace
 
-TEST(StressTests, ManySmallObjectsTest) {  // {{{1
+TEST(StressTests, DISABLED_ManySmallObjectsTest) {  // {{{1
   const int N = 1 << 20;
   typedef vector<int> T;
   T **a = new T*[N];
   for (int i = 0; i < N; i++) {
+    if ((i % (N / 16)) == 0)
+      printf(".");
     a[i] = new T;
   }
+  printf("\n");
   for (int i = 0; i < N; i++) {
+    if ((i % (N / 16)) == 0)
+      printf(".");
     delete a[i];
   }
+  printf("\n");
   delete [] a;
 }
 
