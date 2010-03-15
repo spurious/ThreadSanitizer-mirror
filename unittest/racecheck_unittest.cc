@@ -6368,6 +6368,19 @@ TEST(StressTests, StartAndJoinManyThreads) {
 }
 }  // namespace
 
+TEST(StressTests, ManySmallObjectsTest) {  // {{{1
+  const int N = 1 << 20;
+  typedef vector<int> T;
+  T **a = new T*[N];
+  for (int i = 0; i < N; i++) {
+    a[i] = new T;
+  }
+  for (int i = 0; i < N; i++) {
+    delete a[i];
+  }
+  delete [] a;
+}
+
 namespace  RepPrefixedInstructionsTest {  //{{{1
 
 #if defined (__GNUC__) && (defined(ARCH_x86) || defined(ARCH_amd64))
