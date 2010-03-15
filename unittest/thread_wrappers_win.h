@@ -69,7 +69,7 @@ typedef long long int64_t;
 
 // This constant is true if malloc() uses mutex on your platform as this may
 // introduce a happens-before arc for a pure happens-before race detector.
-static const bool kMallocUsesMutex = true;
+static const bool kMallocUsesMutex = false;
 
 int AtomicIncrement(volatile int *value, int increment) {
   return InterlockedExchangeAdd(reinterpret_cast<volatile LONG*>(value),
