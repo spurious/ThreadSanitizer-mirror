@@ -2875,7 +2875,7 @@ class Cache {
         G_stats->cache_delete_empty_line++;
       } else {
         if (debug_cache) {
-          DebugOnlyCheckCacheLineWhichWeReplace(old_line);
+          DebugOnlyCheckCacheLineWhichWeReplace(old_line, res);
         }
       }
     }
@@ -2891,7 +2891,8 @@ class Cache {
     return res;
   }
 
-  void DebugOnlyCheckCacheLineWhichWeReplace(CacheLine *old_line) {
+  void DebugOnlyCheckCacheLineWhichWeReplace(CacheLine *old_line,
+                                             CacheLine *new_line) {
     static int c = 0;
     c++;
     if ((c % 1024) == 1) {
@@ -2907,6 +2908,8 @@ class Cache {
       Printf("\n[%d] Cache Size=%ld %s different values: %ld\n", c,
              storage_.size(), old_line->has_shadow_value().ToString().c_str(),
              s.size());
+
+      Printf("new line: %p %p\n", new_line->tag(), new_line->tag() + 64);
       G_stats->PrintStatsForCache();
     }
   }
@@ -3020,7 +3023,6 @@ static void ClearPublishedAttribute(CacheLine *line, Mask mask) {
 static void PublishRangeInOneLine(uintptr_t addr, uintptr_t a,
                                   uintptr_t b, VTS *vts) {
   ScopedMallocCostCenter cc("PublishRangeInOneLine");
-  DCHECK(addr);
   DCHECK(b <= CacheLine::kLineSize);
   DCHECK(a < b);
   uintptr_t tag = CacheLine::ComputeTag(addr);
@@ -5636,6 +5638,7 @@ class Detector {
 
   // MALLOC
   void HandleMalloc() {
+    ScopedMallocCostCenter cc("HandleMalloc");
     TID tid = cur_tid_;
     uintptr_t a = e_->a();
     uintptr_t size = e_->info();
@@ -5645,7 +5648,7 @@ class Detector {
              tid.raw(), size, a, a+size,
              Segment::ToString(cur_thread_->sid()).c_str(),
              cur_thread_->segment()->vts()->ToString().c_str());
-      // cur_thread_->ReportStackTrace(e_->pc());
+      cur_thread_->ReportStackTrace(e_->pc());
     }
 
     if (a == 0)
@@ -5681,7 +5684,7 @@ class Detector {
     uintptr_t a = e_->a();
     if (debug_free) {
       e_->Print();
-    //  cur_thread_->ReportStackTrace(e_->pc());
+      cur_thread_->ReportStackTrace(e_->pc());
     }
     HeapInfo info;
     if (a == 0)
@@ -5770,7 +5773,9 @@ class Detector {
       sp_min = heap_info.ptr;
       sp_max = heap_info.ptr + heap_info.size;
     }
-    // Printf("T%d SP: %p [%p %p)\n", e_->tid(), sp, sp_min, sp_max);
+    if (debug_thread) {
+      Printf("T%d SP: %p [%p %p)\n", e_->tid(), sp, sp_min, sp_max);
+    }
     if (sp_min < sp_max) {
       CHECK((sp_max - sp_min) < 128 * 1024 * 1024); // stay sane.
       ClearMemoryStateOnFree(sp_min, sp_max);
