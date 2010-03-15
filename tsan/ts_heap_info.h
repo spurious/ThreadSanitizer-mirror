@@ -40,18 +40,7 @@ class HeapMap {
   typedef map<uintptr_t, HeapInfo> map_t;
   typedef typename map_t::iterator iterator;
 
-  HeapMap() {
-    // Insert a maximal and minimal possible values to make IsHeapMem simpler.
-    HeapInfo max_info;
-    max_info.ptr = (uintptr_t)-1;
-    max_info.size = 0;
-    map_[max_info.ptr] = max_info;
-
-    HeapInfo min_info;
-    min_info.ptr = 0;
-    min_info.size = 0;
-    map_[min_info.ptr] = min_info;
-  }
+  HeapMap() { Reset(); }
 
   iterator begin() { return map_.begin(); }
   iterator end() { return map_.end(); }
@@ -103,11 +92,26 @@ class HeapMap {
     return false;
   }
 
-  void Clear() { map_.clear(); }
+  void Clear() {
+    map_.clear();
+    Reset();
+  }
 
  private:
   bool IsValidPtr(uintptr_t a) {
     return a != 0 && a != (uintptr_t) -1;
+  }
+  void Reset() {
+    // Insert a maximal and minimal possible values to make IsHeapMem simpler.
+    HeapInfo max_info;
+    max_info.ptr = (uintptr_t)-1;
+    max_info.size = 0;
+    map_[max_info.ptr] = max_info;
+
+    HeapInfo min_info;
+    min_info.ptr = 0;
+    min_info.size = 0;
+    map_[min_info.ptr] = min_info;
   }
   map_t map_;
 };
