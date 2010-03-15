@@ -60,7 +60,7 @@ class Task {
 
 namespace MacTests {
 // Regression test for https://bugs.kde.org/show_bug.cgi?id=216837.
-TEST(MacTests, DISABLED_WqthreadRegressionTest) {
+TEST(MacTests, WqthreadRegressionTest) {
   NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
   Task *task = new Task();
   NSOperationQueue *queue = [[NSOperationQueue alloc] init];
