@@ -322,6 +322,8 @@ uintptr_t GetPcOfCurrentThread() {
 enum TLEBSpecificEvents {
   TLEB_IGNORE_ALL_BEGIN = LAST_EVENT + 1,
   TLEB_IGNORE_ALL_END,
+  TLEB_IGNORE_SYNC_BEGIN,
+  TLEB_IGNORE_SYNC_END,
 };
 
 static void DumpEventPlainText(EventType type, int32_t tid, uintptr_t pc,
@@ -434,6 +436,11 @@ static void TLEBFlushUnlocked(PinThread &t, ThreadLocalEventBuffer &tleb) {
     } else if (event == TLEB_IGNORE_ALL_END){
       t.ignore_all_mops--;
       CHECK(t.ignore_all_mops >= 0);
+    } else if (event == TLEB_IGNORE_SYNC_BEGIN){
+      t.ignore_lock_events++;
+    } else if (event == TLEB_IGNORE_SYNC_END){
+      t.ignore_lock_events--;
+      CHECK(t.ignore_lock_events >= 0);
     } else {
       // all other events.
       CHECK(event > NOOP && event < LAST_EVENT);
@@ -524,19 +531,11 @@ static void TLEBStartThread(PinThread &t) {
   t.tleb.events[t.tleb.size++] = THR_START;
 }
 
-static void TLEBIgnoreBegin(PinThread &t) {
+static void TLEBSimpleEvent(PinThread &t, uintptr_t event) {
   if (t.tleb.size + 1 > kThreadLocksEventBufferSize) {
     TLEBFlushLocked(t);
   }
-  t.tleb.events[t.tleb.size++] = TLEB_IGNORE_ALL_BEGIN;
-  DCHECK(t.tleb.size <= kThreadLocksEventBufferSize);
-}
-
-static void TLEBIgnoreEnd(PinThread &t) {
-  if (t.tleb.size + 1 > kThreadLocksEventBufferSize) {
-    TLEBFlushLocked(t);
-  }
-  t.tleb.events[t.tleb.size++] = TLEB_IGNORE_ALL_END;
+  t.tleb.events[t.tleb.size++] = event;
   DCHECK(t.tleb.size <= kThreadLocksEventBufferSize);
 }
 
@@ -766,13 +765,22 @@ static uintptr_t WRAP_NAME(ThreadSanitizerQuery)(WRAP_PARAM4) {
 }
 
 //--------- Ignores -------------------------------- {{{2
-static void IgnoreAllBegin(THREADID tid, ADDRINT pc) {
+static void IgnoreMopsBegin(THREADID tid, ADDRINT pc) {
 //  if (tid == 0) Printf("Ignore++ %d\n", z++); 
-  TLEBIgnoreBegin(g_pin_threads[tid]);
+  TLEBSimpleEvent(g_pin_threads[tid], TLEB_IGNORE_ALL_BEGIN);
 }
-static void IgnoreAllEnd(THREADID tid, ADDRINT pc) {
+static void IgnoreMopsEnd(THREADID tid, ADDRINT pc) {
 //  if (tid == 0) Printf("Ignore-- %d\n", z--);
-  TLEBIgnoreEnd(g_pin_threads[tid]);
+  TLEBSimpleEvent(g_pin_threads[tid], TLEB_IGNORE_ALL_END);
+}
+
+static void IgnoreSyncAndMopsBegin(THREADID tid, ADDRINT pc) {
+  IgnoreMopsBegin(tid, pc);
+  TLEBSimpleEvent(g_pin_threads[tid], TLEB_IGNORE_SYNC_BEGIN);
+}
+static void IgnoreSyncAndMopsEnd(THREADID tid, ADDRINT pc) {
+  IgnoreMopsEnd(tid, pc);
+  TLEBSimpleEvent(g_pin_threads[tid], TLEB_IGNORE_SYNC_END);
 }
 
 //--------- __cxa_guard_* -------------------------- {{{2
@@ -799,7 +807,7 @@ static void IgnoreAllEnd(THREADID tid, ADDRINT pc) {
 // We also need to ignore all accesses inside these two functions.
 
 static void Before_cxa_guard_acquire(THREADID tid, ADDRINT pc, ADDRINT guard) {
-  IgnoreAllBegin(tid, pc);
+  IgnoreMopsBegin(tid, pc);
 }
 
 static void After_cxa_guard_acquire(THREADID tid, ADDRINT pc, ADDRINT ret) {
@@ -807,19 +815,19 @@ static void After_cxa_guard_acquire(THREADID tid, ADDRINT pc, ADDRINT ret) {
     // Continue ignoring, it will end in __cxa_guard_release.
   } else {
     // Stop ignoring, there will be no matching call to __cxa_guard_release.
-    IgnoreAllEnd(tid, pc);
+    IgnoreMopsEnd(tid, pc);
   }
 }
 
 static void After_cxa_guard_release(THREADID tid, ADDRINT pc) {
-  IgnoreAllEnd(tid, pc);
+  IgnoreMopsEnd(tid, pc);
 }
 
 static uintptr_t WRAP_NAME(pthread_once)(WRAP_PARAM4) {
   uintptr_t ret;
-  IgnoreAllBegin(tid, pc);
+  IgnoreMopsBegin(tid, pc);
   ret = CALL_ME_INSIDE_WRAPPER_4();
-  IgnoreAllEnd(tid, pc);
+  IgnoreMopsEnd(tid, pc);
   return ret;
 }
 
@@ -862,9 +870,9 @@ static THREADID HandleThreadCreateAfter(THREADID tid, pthread_t child_ptid) {
 static uintptr_t WRAP_NAME(pthread_create)(WRAP_PARAM4) {
   HandleThreadCreateBefore(tid);
 
-  IgnoreAllBegin(tid, pc);
+  IgnoreMopsBegin(tid, pc);
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
-  IgnoreAllEnd(tid, pc);
+  IgnoreMopsEnd(tid, pc);
 
   pthread_t child_ptid = *(pthread_t*)arg0;
   HandleThreadCreateAfter(tid, child_ptid);
@@ -1346,18 +1354,18 @@ uintptr_t WRAP_NAME(mmap)(WRAP_PARAM6) {
 }
 
 uintptr_t WRAP_NAME(malloc)(WRAP_PARAM4) {
-  IgnoreAllBegin(tid, pc);
+  IgnoreSyncAndMopsBegin(tid, pc);
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
-  IgnoreAllEnd(tid, pc);
+  IgnoreSyncAndMopsEnd(tid, pc);
 
   DumpEvent(MALLOC, tid, pc, ret, arg0);
   return ret;
 }
 
 uintptr_t WRAP_NAME(calloc)(WRAP_PARAM4) {
-  IgnoreAllBegin(tid, pc);
+  IgnoreSyncAndMopsBegin(tid, pc);
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
-  IgnoreAllEnd(tid, pc);
+  IgnoreSyncAndMopsEnd(tid, pc);
 
   DumpEvent(MALLOC, tid, pc, ret, arg0*arg1);
   return ret;
@@ -1366,9 +1374,9 @@ uintptr_t WRAP_NAME(calloc)(WRAP_PARAM4) {
 uintptr_t WRAP_NAME(free)(WRAP_PARAM4) {
   DumpEvent(FREE, tid, pc, arg0, 0);
 
-  IgnoreAllBegin(tid, pc);
+  IgnoreSyncAndMopsBegin(tid, pc);
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
-  IgnoreAllEnd(tid, pc);
+  IgnoreSyncAndMopsEnd(tid, pc);
   return ret;
 }
 
