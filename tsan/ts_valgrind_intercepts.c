@@ -295,6 +295,24 @@ MAIN_WRAPPER_DECL {
     return ret; \
   }
 
+#define WRAP_WORKQ_OPS(soname, fnname) \
+  int I_WRAP_SONAME_FNNAME_ZU(soname,fnname) (int options, void* item, \
+                                              int priority);\
+  int I_WRAP_SONAME_FNNAME_ZU(soname,fnname) (int options, void* item, \
+                                              int priority){\
+    OrigFn fn;\
+    int ret;\
+    VALGRIND_GET_ORIG_FN(fn);\
+    CALL_FN_W_WWW(ret, fn, options, item, priority); \
+    /* Trigger only on workq_ops(QUEUE_ADD) */ \
+    if (options == 1) { \
+      DO_CREQ_v_W(TSREQ_PTHREAD_COND_SIGNAL_PRE, void*,item); \
+    } \
+    return ret; \
+  }
+
+WRAP_WORKQ_OPS(VG_Z_LIBC_SONAME, __workq_ops);
+
 #if VG_WORDSIZE == 4
 #define WRAP_MMAP(soname, fnname) \
   void* I_WRAP_SONAME_FNNAME_ZU(soname,fnname) (void *ptr, long size, long a, \

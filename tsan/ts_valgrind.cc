@@ -477,6 +477,13 @@ void evh__pre_thread_ll_create ( ThreadId parent, ThreadId child ) {
       parent > 0 ? VgTidToTsTid(parent) : 0);
 }
 
+void evh__pre_workq_task_start(ThreadId vg_tid, Addr workitem) {
+  uintptr_t pc = GetVgPc(vg_tid);
+  int32_t ts_tid = VgTidToTsTid(vg_tid);
+  Put(WAIT_BEFORE, ts_tid, pc, workitem, 0);
+  Put(WAIT_AFTER, ts_tid, pc, 0, 0);
+}
+
 void evh__pre_thread_first_insn(const ThreadId tid) {
   Put(THR_FIRST_INSN, VgTidToTsTid(tid), GetVgPc(tid), 0, 0);
 }
@@ -1172,6 +1179,7 @@ void ts_pre_clo_init(void) {
 
    */
    VG_(track_pre_thread_ll_create)( evh__pre_thread_ll_create );
+   VG_(track_workq_task_start)( evh__pre_workq_task_start );
    VG_(track_pre_thread_first_insn)( evh__pre_thread_first_insn );
    VG_(track_pre_thread_ll_exit)  ( evh__pre_thread_ll_exit );
 
