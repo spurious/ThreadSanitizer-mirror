@@ -3370,7 +3370,7 @@ struct Thread {
 
     call_stack_.reserve(100);
     call_stack_ignore_rec_.reserve(100);
-    HandleRtnCall(0, 0);
+    HandleRtnCall(0, 0, IGNORE_BELOW_RTN_UNKNOWN);
     ignore_[0] = ignore_[1] = 0;
     ignore_context_[0] = ignore_context_[1] = NULL;
     if (tid != TID(0) && parent_tid.valid()) {
@@ -3866,28 +3866,33 @@ struct Thread {
     call_stack_.pop_back();
   }
 
-  void HandleRtnCall(uintptr_t call_pc, uintptr_t target_pc) {
+  void HandleRtnCall(uintptr_t call_pc, uintptr_t target_pc, 
+                     IGNORE_BELOW_RTN ignore_below) {
     G_stats->events[RTN_CALL]++;
     if (!call_stack_.empty() && call_pc) {
       call_stack_.back() = call_pc;
     }
     call_stack_.push_back(target_pc);
 
-    bool ignore_below = false;
-    if (ignore_below_cache_.Lookup(target_pc, &ignore_below) == false) {
-      ignore_below = ThreadSanitizerIgnoreAccessesBelowFunction(target_pc);
-      ignore_below_cache_.Insert(target_pc, ignore_below);
-      G_stats->ignore_below_cache_miss++;
+    bool ignore = false;
+    if (ignore_below == IGNORE_BELOW_RTN_UNKNOWN) {
+      if (ignore_below_cache_.Lookup(target_pc, &ignore) == false) {
+        bool ignore = ThreadSanitizerIgnoreAccessesBelowFunction(target_pc);
+        ignore_below_cache_.Insert(target_pc, ignore);
+        G_stats->ignore_below_cache_miss++;
+      } else {
+        // Just in case, check the result of caching.
+        DCHECK(ignore ==
+               ThreadSanitizerIgnoreAccessesBelowFunction(target_pc));
+      }
     } else {
-      // Just in case, check the result of caching.
-      DCHECK(ignore_below == 
-             ThreadSanitizerIgnoreAccessesBelowFunction(target_pc));
+      ignore = ignore_below == IGNORE_BELOW_RTN_YES;
     }
 
-    if (ignore_below) {
+    if (ignore) {
       set_ignore_all(true);
     }
-    call_stack_ignore_rec_.push_back(ignore_below);
+    call_stack_ignore_rec_.push_back(ignore);
   }
 
   void HandleRtnExit() {
@@ -4895,8 +4900,9 @@ class Detector {
     }
   }
 
-  void HandleRtnCall(TID tid, uintptr_t call_pc, uintptr_t target_pc) {
-    Thread::Get(tid)->HandleRtnCall(call_pc, target_pc);
+  void HandleRtnCall(TID tid, uintptr_t call_pc, uintptr_t target_pc,
+                     IGNORE_BELOW_RTN ignore_below) {
+    Thread::Get(tid)->HandleRtnCall(call_pc, target_pc, ignore_below);
 
     FlushIfNeeded();
   }
@@ -4939,7 +4945,8 @@ class Detector {
         HandleMemoryAccess(e_->tid(), e_->a(), e_->info(), true);
         break;
       case RTN_CALL:
-        HandleRtnCall(TID(e_->tid()), e_->pc(), e_->a());
+        HandleRtnCall(TID(e_->tid()), e_->pc(), e_->a(), 
+                      IGNORE_BELOW_RTN_UNKNOWN);
         break;
       case RTN_EXIT:
         Thread::Get(TID(e_->tid()))->HandleRtnExit();
@@ -6363,6 +6370,10 @@ bool NOINLINE ThreadSanitizerIgnoreAccessesBelowFunction(uintptr_t pc) {
 
   string rtn_name = PcToRtnNameWithStats(pc, false);
   bool ret = StringVectorMatch(g_ignore_lists->funs_r, rtn_name);
+  if (ret) {
+    Report("INFO: ignoring all accesses below the function '%s' (%p)\n",
+           PcToRtnName(pc, true).c_str(), pc);
+  }
   return ((*cache)[pc] = ret);
 }
 
@@ -6493,8 +6504,9 @@ void INLINE ThreadSanitizerEnterSblock(int32_t tid, uintptr_t pc) {
 }
 
 void INLINE ThreadSanitizerHandleRtnCall(int32_t tid, uintptr_t call_pc,
-                                         uintptr_t target_pc) {
-  G_detector->HandleRtnCall(TID(tid), call_pc, target_pc);
+                                         uintptr_t target_pc,
+                                         IGNORE_BELOW_RTN ignore_below) {
+  G_detector->HandleRtnCall(TID(tid), call_pc, target_pc, ignore_below);
 }
 void INLINE ThreadSanitizerHandleRtnExit(int32_t tid) {
   Thread::Get(TID(tid))->HandleRtnExit();

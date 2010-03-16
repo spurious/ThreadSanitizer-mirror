@@ -141,8 +141,17 @@ extern bool ThreadSanitizerWantToCreateSegmentsOnSblockEntry(uintptr_t pc);
 extern bool ThreadSanitizerIgnoreAccessesBelowFunction(uintptr_t pc);
 
 extern void ThreadSanitizerEnterSblock(int32_t tid, uintptr_t pc);
+
+enum IGNORE_BELOW_RTN {
+  IGNORE_BELOW_RTN_UNKNOWN,
+  IGNORE_BELOW_RTN_NO,
+  IGNORE_BELOW_RTN_YES
+};
+
 extern void ThreadSanitizerHandleRtnCall(int32_t tid, uintptr_t call_pc,
-                                         uintptr_t target_pc);
+                                         uintptr_t target_pc,
+                                         IGNORE_BELOW_RTN ignore_below);
+
 extern void ThreadSanitizerHandleRtnExit(int32_t tid);
 extern void ThreadSanitizerPrintUsage();
 extern const char *ThreadSanitizerQuery(const char *query);

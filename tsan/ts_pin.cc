@@ -395,7 +395,8 @@ static void TLEBFlushUnlocked(PinThread &t, ThreadLocalEventBuffer &tleb) {
     } else if (event == RTN_CALL) {
       uintptr_t call_pc = tleb.events[i++];
       uintptr_t target_pc = tleb.events[i++];
-      ThreadSanitizerHandleRtnCall(t.uniq_tid, call_pc, target_pc);
+      ThreadSanitizerHandleRtnCall(t.uniq_tid, call_pc, target_pc,
+                                   IGNORE_BELOW_RTN_UNKNOWN);
     } else if (event == SBLOCK_ENTER){
       bool do_this_trace = ((G_flags->literace_sampling == 0 ||
                              !LiteRaceSkipTrace(t.uniq_tid, t.trace_info->id(),

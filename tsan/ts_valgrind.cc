@@ -326,12 +326,8 @@ static inline void Put(EventType type, int32_t tid, uintptr_t pc,
   ThreadSanitizerHandleOneEvent(&event);
 }
 
-
-
-/* CALLED FROM GENERATED CODE */
-VG_REGPARM(2)
-void evh__new_frame ( Addr sp_post_call_insn,
-                      Addr pc_post_call_insn) {
+static void rtn_call(Addr sp_post_call_insn, Addr pc_post_call_insn,
+                     IGNORE_BELOW_RTN ignore_below) {
   ThreadId vg_tid = GetVgTid();
   CallStackRecord record;
   record.pc = pc_post_call_insn;
@@ -345,13 +341,24 @@ void evh__new_frame ( Addr sp_post_call_insn,
   DCHECK(g_valgrind_threads[vg_tid].call_stack.size() < 10000);
   uintptr_t call_pc = GetVgPc(vg_tid);
 
-  ThreadSanitizerHandleRtnCall(VgTidToTsTid(vg_tid), call_pc, record.pc);
+  ThreadSanitizerHandleRtnCall(VgTidToTsTid(vg_tid), call_pc, record.pc,
+                               ignore_below);
 
 
   if (G_flags->verbosity >= 2) {
     Printf("T%d: >>: %s\n", VgTidToTsTid(vg_tid),
            PcToRtnNameAndFilePos(record.pc).c_str());
   }
+}
+
+VG_REGPARM(2) void evh__rtn_call_ignore_unknown ( Addr sp, Addr pc) {
+  rtn_call(sp, pc, IGNORE_BELOW_RTN_UNKNOWN);
+}
+VG_REGPARM(2) void evh__rtn_call_ignore_yes ( Addr sp, Addr pc) {
+  rtn_call(sp, pc, IGNORE_BELOW_RTN_YES);
+}
+VG_REGPARM(2) void evh__rtn_call_ignore_no ( Addr sp, Addr pc) {
+  rtn_call(sp, pc, IGNORE_BELOW_RTN_NO);
 }
 
 #ifdef VGP_arm_linux
@@ -817,6 +824,8 @@ static void ts_instrument_final_jump (
   }
 #endif
   {
+    const char *fn_name = "evh__rtn_call_ignore_unknown";
+    void *fn = (void*)&evh__rtn_call_ignore_unknown;
     // Instrument the call instruction to keep the shadow stack consistent.
     IRTemp sp_post_call_insn
         = gen_Get_SP( sbOut, layout, sizeofIRType(hWordTy) );
@@ -824,10 +833,25 @@ static void ts_instrument_final_jump (
         IRExpr_RdTmp(sp_post_call_insn),
         next
         );
+    if (next->tag == Iex_Const) {
+      IRConst *con = next->Iex.Const.con;
+      uintptr_t target = 0;
+      if (con->tag == Ico_U32 || con->tag == Ico_U64) {
+        target = con->tag == Ico_U32 ? con->Ico.U32 : con->Ico.U64;
+        bool ignore = ThreadSanitizerIgnoreAccessesBelowFunction(target);
+        if (ignore) {
+          fn_name = "evh__rtn_call_ignore_yes";
+          fn = (void*)&evh__rtn_call_ignore_yes;
+        } else {
+          fn_name = "evh__rtn_call_ignore_no";
+          fn = (void*)&evh__rtn_call_ignore_no;
+        }
+      }
+    }
     IRDirty* di = unsafeIRDirty_0_N(
         2/*regparms*/,
-        (char*)"evh__new_frame",
-        VG_(fnptr_to_fnentry)((void*) &evh__new_frame ),
+        (char*)fn_name,
+        VG_(fnptr_to_fnentry)(fn),
         args );
     addStmtToIRSB( sbOut, IRStmt_Dirty(di) );
   }
