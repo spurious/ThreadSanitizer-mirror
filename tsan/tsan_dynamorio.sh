@@ -43,3 +43,4 @@ TS_FLAGS="$TS_FLAGS --symbols=$SYMBOLS_FILE"
 $DYNAMORIO_ROOT/bin$BITNESS/drdeploy \
    -client $TS_ROOT/bin/$ARCH-linux-debug-ts_dynamorio.so 0 "$TS_FLAGS" \
    $PROGRAM $PARAMS
+rm $SYMBOLS_FILE
