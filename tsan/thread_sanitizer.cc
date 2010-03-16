@@ -3886,6 +3886,8 @@ struct Thread {
                ThreadSanitizerIgnoreAccessesBelowFunction(target_pc));
       }
     } else {
+      DCHECK(ignore_below == IGNORE_BELOW_RTN_YES ||
+             ignore_below == IGNORE_BELOW_RTN_NO);
       ignore = ignore_below == IGNORE_BELOW_RTN_YES;
     }
 

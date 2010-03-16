@@ -395,8 +395,9 @@ static void TLEBFlushUnlocked(PinThread &t, ThreadLocalEventBuffer &tleb) {
     } else if (event == RTN_CALL) {
       uintptr_t call_pc = tleb.events[i++];
       uintptr_t target_pc = tleb.events[i++];
+      IGNORE_BELOW_RTN ignore_below = (IGNORE_BELOW_RTN)tleb.events[i++];
       ThreadSanitizerHandleRtnCall(t.uniq_tid, call_pc, target_pc,
-                                   IGNORE_BELOW_RTN_UNKNOWN);
+                                   ignore_below);
     } else if (event == SBLOCK_ENTER){
       bool do_this_trace = ((G_flags->literace_sampling == 0 ||
                              !LiteRaceSkipTrace(t.uniq_tid, t.trace_info->id(),
@@ -489,15 +490,17 @@ static void TLEBFlushLocked(PinThread &t) {
   }
 }
 
-static void TLEBAddRtnCall(PinThread &t, uintptr_t call_pc, uintptr_t target_pc) {
+static void TLEBAddRtnCall(PinThread &t, uintptr_t call_pc,
+                           uintptr_t target_pc, IGNORE_BELOW_RTN ignore_below) {
   DCHECK(t.tleb.size <= kThreadLocksEventBufferSize);
-  if (t.tleb.size + 3 > kThreadLocksEventBufferSize) {
+  if (t.tleb.size + 4 > kThreadLocksEventBufferSize) {
     TLEBFlushLocked(t);
     DCHECK(t.tleb.size == 0);
   }
   t.tleb.events[t.tleb.size++] = RTN_CALL;
   t.tleb.events[t.tleb.size++] = call_pc;
   t.tleb.events[t.tleb.size++] = target_pc;
+  t.tleb.events[t.tleb.size++] = ignore_below;
   DCHECK(t.tleb.size <= kThreadLocksEventBufferSize);
 }
 
@@ -1416,11 +1419,12 @@ void InsertBeforeEvent_SysCall(THREADID tid, ADDRINT sp) {
   TLEBFlushLocked(t);
 }
 
-void InsertBeforeEvent_Call(THREADID tid, ADDRINT pc, ADDRINT target, ADDRINT sp) {
+void InsertBeforeEvent_Call(THREADID tid, ADDRINT pc, ADDRINT target,
+                            ADDRINT sp, IGNORE_BELOW_RTN ignore_below) {
   PinThread &t = g_pin_threads[tid];
   DebugOnlyShowPcAndSp(__FUNCTION__, t.tid, pc, sp);
   UpdateCallStack(t, sp);
-  TLEBAddRtnCall(t, pc, target);
+  TLEBAddRtnCall(t, pc, target, ignore_below);
   if (t.shadow_stack.size() > 0) {
     t.shadow_stack.back().pc = pc;
   }
@@ -1831,12 +1835,19 @@ static bool IgnoreRtn(RTN rtn) {
 static bool InstrumentCall(INS ins) {
   // Call.
   if (INS_IsProcedureCall(ins) && !INS_IsSyscall(ins)) {
+    IGNORE_BELOW_RTN ignore_below = IGNORE_BELOW_RTN_UNKNOWN;
+    if (INS_IsDirectBranchOrCall(ins)) {
+      ADDRINT target = INS_DirectBranchOrCallTargetAddress(ins);
+      bool ignore = ThreadSanitizerIgnoreAccessesBelowFunction(target);
+      ignore_below = ignore ? IGNORE_BELOW_RTN_YES : IGNORE_BELOW_RTN_NO;
+    }
     INS_InsertCall(ins, IPOINT_BEFORE,
                    (AFUNPTR)InsertBeforeEvent_Call,
                    IARG_THREAD_ID,
                    IARG_INST_PTR,
                    IARG_BRANCH_TARGET_ADDR,
                    IARG_REG_VALUE, REG_STACK_PTR,
+                   IARG_ADDRINT, ignore_below,
                    IARG_END);
     return true;
   }
