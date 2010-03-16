@@ -137,6 +137,7 @@ void Printf(const char *format, ...) {
   va_list args;
   va_start(args, format);
   vfprintf(G_out, RemoveUnsupportedFormat(format).c_str(), args);
+  fflush(G_out);
   va_end(args);
 #endif
 }
