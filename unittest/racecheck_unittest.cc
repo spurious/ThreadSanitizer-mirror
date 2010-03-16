@@ -6368,24 +6368,40 @@ TEST(StressTests, StartAndJoinManyThreads) {
 }
 }  // namespace
 
-TEST(StressTests, DISABLED_ManySmallObjectsTest) {  // {{{1
-  const int N = 1 << 20;
-  typedef vector<int> T;
+namespace ManySmallObjectsTest {  // {{{1
+void Worker() {
+  const int N = 1 << 21;
+  struct T {
+    int a, b, c, d;
+    T() : a(1), b(2), c(3), d(4) { }
+  };
   T **a = new T*[N];
   for (int i = 0; i < N; i++) {
     if ((i % (N / 16)) == 0)
-      printf(".");
+      printf("+");
     a[i] = new T;
+    CHECK(a[i]->a == 1);
   }
   printf("\n");
   for (int i = 0; i < N; i++) {
     if ((i % (N / 16)) == 0)
-      printf(".");
+      printf("-");
     delete a[i];
   }
   printf("\n");
   delete [] a;
 }
+
+TEST(StressTests, DISABLED_ManySmallObjectsOneThreadTest) {
+  Worker();
+}
+
+TEST(StressTests, DISABLED_ManySmallObjectsTwoThreadsTest) {
+  MyThreadArray t(Worker, Worker);
+  t.Start();
+  t.Join();
+}
+}  // namespace
 
 namespace  RepPrefixedInstructionsTest {  //{{{1
 
