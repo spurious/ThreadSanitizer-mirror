@@ -49,6 +49,7 @@ struct FLAGS {
   bool             show_expected_races;
   uintptr_t        trace_addr;
   uintptr_t        segment_set_recycle_queue_size;
+  uintptr_t        recent_segments_cache_size;
   vector<string>   file_prefix_to_cut;
   vector<string>   ignore;
   vector<string>   cut_stack_below;

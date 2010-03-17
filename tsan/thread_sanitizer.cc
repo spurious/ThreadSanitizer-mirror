@@ -3348,6 +3348,89 @@ struct LockHistory {
   size_t size_;
 };
 
+// -------- RecentSegmentsCache ------------- {{{1
+// For each thread we store a limited amount of recent segments with
+// the same VTS and LS as the current segment.
+// When a thread enters a new basic block, we can sometimes reuse a
+// recent segment if it is the same or not used anymore (see Search()).
+//
+// We need to flush the cache when current lockset changes or the current
+// VTS changes or we do ForgetAllState.
+// TODO(timurrrr): probably we can cache segments with different LSes and
+// compare their LS with the current LS.
+struct RecentSegmentsCache {
+ public:
+  RecentSegmentsCache(int cache_size) : cache_size_(cache_size) {}
+  ~RecentSegmentsCache() { Clear(); }
+
+  void Clear() {
+    ShortenQueue(0);
+  }
+
+  void Push(SID sid) {
+    queue_.push_front(sid);
+    Segment::Ref(sid, "RecentSegmentsCache::ShortenQueue");
+    ShortenQueue(cache_size_);
+  }
+
+  void ForgetAllState() {
+    queue_.clear();  // Don't unref - the segments are already dead.
+  }
+
+  INLINE SID Search(const vector<uintptr_t> &curr_stack,
+                    SID curr_sid, /*OUT*/ bool *needs_refill) {
+    // TODO(timurrrr): we can probably move the matched segment to the head
+    // of the queue.
+
+    deque<SID>::iterator it = queue_.begin();
+    for (; it != queue_.end(); it++) {
+      SID sid = *it;
+      Segment *seg = Segment::Get(sid);
+
+      if (seg->ref_count() == 1 + (sid == curr_sid)) {
+        // The current segment is not used anywhere else,
+        // so just replace the stack trace in it.
+        // The refcount of an unused segment is equal to
+        // *) 1 if it is stored only in the cache,
+        // *) 2 if it is the current segment of the Thread.
+        G_stats->history_reuses_segment++;
+        *needs_refill = true;
+        return sid;
+      }
+
+      // Check three top entries of the call stack of the recent segment.
+      // If they match the current segment stack, don't create a new segment.
+      // This can probably lead to a little bit wrong stack traces in rare
+      // occasions but we don't really care that much.
+      uintptr_t *emb_trace = seg->embedded_stack_trace();
+      size_t n = curr_stack.size();
+      if (*emb_trace &&  // This stack trace was filled
+          curr_stack.size() >= 3 &&
+          emb_trace[0] == curr_stack[n-1] &&
+          emb_trace[1] == curr_stack[n-2] &&
+          emb_trace[2] == curr_stack[n-3]) {
+        G_stats->history_uses_same_segment++;
+        *needs_refill = false;
+        return sid;
+      }
+    }
+
+    return SID();
+  }
+
+ private:
+  void ShortenQueue(size_t flush_to_length) {
+    while(queue_.size() > flush_to_length) {
+      SID sid = queue_.back();
+      Segment::Unref(sid, "RecentSegmentsCache::ShortenQueue");
+      queue_.pop_back();
+    }
+  }
+
+  deque<SID> queue_;
+  size_t cache_size_;
+};
+
 // -------- Thread ------------------ {{{1
 struct Thread {
  public:
@@ -3364,7 +3447,8 @@ struct Thread {
       wr_lockset_(0),
       bus_lock_is_set_(false),
       vts_at_exit_(NULL),
-      lock_history_(128) {
+      lock_history_(128),
+      recent_segments_cache_(G_flags->recent_segments_cache_size) {
 
     NewSegmentWithoutUnrefingOld("Thread Creation", vts);
 
@@ -3696,6 +3780,10 @@ struct Thread {
     SID new_sid = Segment::AddNewSegment(tid(), new_vts,
                                          rd_lockset_, wr_lockset_);
     SID old_sid = sid();
+    if (old_sid.raw() != 0 && new_vts != vts()) {
+      // Flush the cache if VTS changed - the VTS won't repeat.
+      recent_segments_cache_.Clear();
+    }
     sid_ = new_sid;
     Segment::Ref(new_sid, "Thread::NewSegmentWithoutUnrefingOld");
 
@@ -3713,6 +3801,8 @@ struct Thread {
   }
 
   void NewSegmentForLockingEvent() {
+    // Flush the cache since we can't reuse segments with different lockset.
+    recent_segments_cache_.Clear();
     NewSegment("NewSegmentForLockingEvent", vts()->Clone());
   }
 
@@ -3730,33 +3820,23 @@ struct Thread {
 
     SetTopPc(pc);
 
-    Segment *seg = segment();
-    uintptr_t *emb_trace = seg->embedded_stack_trace();
-
-    size_t n = call_stack_.size();
-    // check at most 3 top entries of the call stack.
-    // If they match the current segment, don't create a new segment.
-    if (*emb_trace &&  // This stack trace was filled
-        call_stack_.size() >= 3 &&
-        emb_trace[0] == call_stack_[n-1] &&
-        emb_trace[1] == call_stack_[n-2] &&
-        emb_trace[2] == call_stack_[n-3]) {
-      G_stats->history_uses_same_segment++;
-      return;
+    bool refill_stack = false;
+    SID match = recent_segments_cache_.Search(call_stack_, sid(),
+                                              /*OUT*/&refill_stack);
+    if (match.valid()) {
+      if (sid_ != match) {
+        Segment::Ref(match, "Thread::HandleSblockEnter");
+        Segment::Unref(sid_, "Thread::HandleSblockEnter");
+        sid_ = match;
+      }
+      if (refill_stack)
+        FillEmbeddedStackTrace(segment()->embedded_stack_trace());
+    } else {
+      G_stats->history_creates_new_segment++;
+      VTS *new_vts = vts()->Clone();
+      NewSegment("HandleSblockEnter", new_vts);
+      recent_segments_cache_.Push(sid());
     }
-
-
-    if (seg->ref_count() == 1) {
-      // The current segment is not used anywhere,
-      // so just replace the stack trace in it.
-      FillEmbeddedStackTrace(emb_trace);
-      G_stats->history_reuses_segment++;
-      return;
-    }
-
-    G_stats->history_creates_new_segment++;
-    VTS *new_vts = vts()->Clone();
-    NewSegment("HandleSblockEnter", new_vts);
   }
 
   void NewSegmentForWait(const VTS *signaller_vts) {
@@ -3996,6 +4076,8 @@ struct Thread {
     // G_flags->debug_level = 2;
     for (int i = 0; i < Thread::NumberOfThreads(); i++) {
       Thread *thr = Get(TID(i));
+      thr->recent_segments_cache_.ForgetAllState();
+      thr->sid_ = SID();  // Reset the old SID so we don't try to read its VTS.
       VTS *singleton_vts = VTS::CreateSingleton(TID(i), 2);
       thr->NewSegmentWithoutUnrefingOld("ForgetAllState", singleton_vts);
       if (thr->vts_at_exit_) {
@@ -4051,7 +4133,7 @@ struct Thread {
   PtrToBoolCache<251> ignore_below_cache_;
 
   LockHistory lock_history_;
-
+  RecentSegmentsCache recent_segments_cache_;
 
   struct Signaller {
     VTS *vts;
@@ -6057,6 +6139,8 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   FindIntFlag("keep_history", 1, args, &G_flags->keep_history);
   FindUIntFlag("segment_set_recycle_queue_size", DEBUG_MODE ? 10 : 10000, args,
                &G_flags->segment_set_recycle_queue_size);
+  FindUIntFlag("recent_segments_cache_size", 10, args,
+               &G_flags->recent_segments_cache_size);
   FindBoolFlag("fast_mode", false, args, &G_flags->fast_mode);
 
   int has_phb = FindBoolFlag("pure_happens_before", true, args,
