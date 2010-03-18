@@ -6458,7 +6458,7 @@ bool NOINLINE ThreadSanitizerIgnoreAccessesBelowFunction(uintptr_t pc) {
   bool ret = StringVectorMatch(g_ignore_lists->funs_r, rtn_name);
   if (ret) {
     Report("INFO: ignoring all accesses below the function '%s' (%p)\n",
-           PcToRtnName(pc, true).c_str(), pc);
+           PcToRtnNameAndFilePos(pc).c_str(), pc);
   }
   return ((*cache)[pc] = ret);
 }
