@@ -70,8 +70,11 @@ void SignalStealthNotification() {
   SetEvent(monitored_object);
 }
 
+void foo() { }
+
 void CALLBACK DoneWaiting(void *param, BOOLEAN timed_out) {
   int *i = (int*)param;
+  foo();  // make sure this function has a call. See issue 24.
   (*i)++;
 }
 
