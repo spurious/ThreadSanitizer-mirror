@@ -1425,9 +1425,6 @@ void InsertBeforeEvent_Call(THREADID tid, ADDRINT pc, ADDRINT target,
   DebugOnlyShowPcAndSp(__FUNCTION__, t.tid, pc, sp);
   UpdateCallStack(t, sp);
   TLEBAddRtnCall(t, pc, target, ignore_below);
-  if (t.shadow_stack.size() > 0) {
-    t.shadow_stack.back().pc = pc;
-  }
   t.shadow_stack.push_back(StackFrame(target, sp));
   if (DEB_PR) {
     PrintShadowStack(t);
