@@ -7088,5 +7088,29 @@ TEST(DeathTests, SimpleDeathTest) {
 }
 }  // namespace
 
+namespace IgnoreTests {  // {{{1 Test how the tool works with indirect calls to fun_r functions
+int GLOB = 0;
+void (*f)() = NULL;
+
+void NotIgnoredRacey() {
+  GLOB++;
+}
+
+void FunRFunction() {
+  NotIgnoredRacey();
+}
+
+void Foo() {
+  FunRFunction();
+}
+
+TEST(IgnoreTests, DISABLED_IndirectCallToFunR) {
+  f = FunRFunction;
+  MyThreadArray mta(Foo, Foo);
+  mta.Start();
+  mta.Join();
+}
+}  // namespace
+
 // End {{{1
  // vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker
