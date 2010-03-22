@@ -3,6 +3,7 @@ from buildbot.steps.source import SVN
 from buildbot.steps.shell import Compile
 from buildbot.steps.shell import Test
 from buildbot.steps.shell import ShellCommand
+
 from common import *
 
 import os.path
@@ -55,6 +56,12 @@ def generate(settings):
                           description='packing self-contained tsan (32-bit)',
                           descriptionDone='pack self-contained tsan (32-bit)'))
 
+
+  binaries = {
+    'tsan.sh' : 'tsan-r%s-linux-amd64.sh',
+    'tsan-debug.sh' : 'tsan-r%s-linux-amd64-debug.sh',
+    'tsan32.sh' : 'tsan-r%s-linux-x86.sh'};
+  addUploadBinariesStep(f1, binaries)
 
   os = 'linux'
   for bits in [32, 64]:

@@ -8,7 +8,7 @@
 import os
 import sys
 
-base_url = 'http://kcc-box.eem:8010/waterfall'
+base_url = 'http://build.chromium.org/buildbot/tsan/waterfall'
 
 # Template contents of a config.js file.  One of these gets created in
 # each subdirectory for a given perf test, identified with the slave
@@ -88,6 +88,7 @@ class Subdir:
 
 default_subdir_list = [
     Subdir('bigtest', 'Bigtest performance'),
+    Subdir('racecheck_unittest', 'Performance tests from racecheck_unittests'),
 ]
 
 

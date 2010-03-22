@@ -42,6 +42,14 @@ def generate(settings):
                                    'out', 'tsan-debug', 'tsan-debug.sh'],
                           description='packing self-contained tsan (debug)',
                           descriptionDone='pack self-contained tsan (debug)'))
+
+  binaries = {
+    'tsan.sh' : 'tsan-r%s-macos10.5.sh',
+    'tsan-debug.sh' : 'tsan-r%s-macos10.5-debug.sh'};
+  addUploadBinariesStep(f1, binaries)
+
+
+
   # Run unit tests.
   test_binaries = {} # (bits, opt, static) -> (binary, desc)
   os = 'darwin'

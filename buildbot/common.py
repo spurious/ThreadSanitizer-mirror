@@ -3,6 +3,8 @@ from buildbot.steps.source import SVN
 from buildbot.steps.shell import Compile
 from buildbot.steps.shell import Test
 from buildbot.steps.shell import ShellCommand
+from buildbot.steps.transfer import FileUpload
+from buildbot.process.properties import WithProperties
 
 import os.path
 
@@ -55,7 +57,7 @@ def addBuildTestStep(factory, os, bits, opt, static):
 def addTestStep(factory, debug, mode, test_binary, test_desc,
                 frontend_binary=None, extra_args=[], frontend='valgrind',
                 pin_root=None, timeout=1800, test_base_name='racecheck_unittest',
-                append_command=None, step_generator=Test):
+                append_command=None, step_generator=Test, extra_test_args=[]):
   """Adds a step for running unit tests with tsan."""
   args = []
   env = {}
@@ -101,7 +103,7 @@ def addTestStep(factory, debug, mode, test_binary, test_desc,
   command = []
   # if timeout:
   #   command += ['alarm', '-l', str(timeout)]
-  command += [frontend_binary] + extra_args + args + [test_binary]
+  command += [frontend_binary] + extra_args + args + [test_binary] + extra_test_args
   if append_command:
     command = ' '.join(command + [append_command])
   print command
@@ -156,7 +158,21 @@ def addSetupTreeForTestsStep(factory):
   factory.addStep(GetRevisionStep());
 
 
+def addUploadBinariesStep(factory, binaries):
+  bzip_cmds = []
+  for local_name in binaries.keys():
+    bzip_cmds.append('bzip2 -k ' + local_name)
+  factory.addStep(ShellCommand(command='; '.join(bzip_cmds),
+                               description='compressing self-contained binaries',
+                               descriptionDon='compress self-contained binaries'))
+
+  for (local_name, remote_name) in binaries.items():
+    src = local_name + '.bz2'
+    dst = WithProperties('public_html/binaries/' + remote_name + '.bz2', 'got_revision')
+    factory.addStep(FileUpload(slavesrc=src, masterdest=dst, mode=0755))
+
+
 
 __all__ = ['unitTestBinary', 'addBuildTestStep', 'addTestStep',
            'addClobberStep', 'addArchiveStep', 'addExtractStep',
-           'addSetupTreeForTestsStep', 'getTestDesc']
+           'addSetupTreeForTestsStep', 'getTestDesc', 'addUploadBinariesStep']

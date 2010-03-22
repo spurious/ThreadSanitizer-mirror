@@ -82,10 +82,6 @@ def genBenchmarkStep(factory, platform, benchmark, *args, **kwargs):
 
   return step
 
-def addBenchmarkStep(factory, platform, benchmark, *args, **kwargs):
-  step = genBenchmarkStep(factory, platform, benchmark, *args, **kwargs)
-  factory.addStep(step)
-
 
 def generate(settings):
   f1 = factory.BuildFactory()
@@ -94,17 +90,30 @@ def generate(settings):
 
   # Run benchmarks.
   platform = 'linux-experimental'
-  benchmark = 'bigtest'
   bigtest_binary = unitTestBinary('linux', 64, 0, False, test_base_name='bigtest')
-  bigtest_desc = 'some test' # FIXME
+  bigtest_desc = getTestDesc('linux', 64, 0, False)
 
   step_generator = chromium_utils.InitializePartiallyWithArguments(
-      genBenchmarkStep, factory, platform, benchmark)
+      genBenchmarkStep, factory, platform, 'bigtest')
   addTestStep(f1, False, 'phb', bigtest_binary,
               bigtest_desc,
               extra_args=["--error_exitcode=1"],
               test_base_name='bigtest',
               step_generator=step_generator)
+
+  racecheck_binary = unitTestBinary('linux', 64, 0, False, test_base_name='racecheck_unittest')
+  racecheck_desc = getTestDesc('linux', 64, 0, False)
+  step_generator = chromium_utils.InitializePartiallyWithArguments(
+      genBenchmarkStep, factory, platform, 'racecheck_unittest')
+  for test_id in [35, 72, 73, 151, 502, 503]:
+    addTestStep(f1, False, 'phb', racecheck_binary,
+                racecheck_desc + ', test ' + str(test_id),
+                extra_args=["--error_exitcode=1"],
+                extra_test_args=["--gtest_filter=NonGtestTests*", str(test_id)],
+                test_base_name='racecheck_unittest',
+                step_generator=step_generator)
+
+
 
 
   b1 = {'name': 'buildbot-experimental',
