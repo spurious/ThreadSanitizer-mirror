@@ -3604,7 +3604,7 @@ struct Thread {
 
   void HandleLock(uintptr_t lock_addr, bool is_w_lock) {
 
-    if (G_flags->verbosity >= 1) {
+    if (debug_lock) {
       Printf("T%d %sLock   %p; %s\n",
            tid_.raw(),
            is_w_lock ? "Wr" : "Rd",
@@ -3657,7 +3657,7 @@ struct Thread {
     }
     bool is_w_lock = lock->wr_held();
 
-    if (G_flags->verbosity >= 1) {
+    if (debug_lock) {
       Printf("T%d %sUnlock %p; %s\n",
              tid_.raw(),
              is_w_lock ? "Wr" : "Rd",
