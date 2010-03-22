@@ -62,12 +62,12 @@ TEST(NegativeTests, WindowsJoinWithTimeout) {
 }
 
 namespace RegisterWaitForSingleObjectTest {  // {{{1
-StealthNotification *n = NULL;
-HANDLE monitored_object = NULL;
+StealthNotification *n[4] = {NULL, NULL, NULL, NULL};
+HANDLE monitored_object[4] = {NULL, NULL, NULL, NULL};
 
-void SignalStealthNotification() {
-  n->wait();
-  SetEvent(monitored_object);
+template<int id> void SignalStealthNotification() {
+  n[id]->wait();
+  SetEvent(monitored_object[id]);
 }
 
 void foo() { }
@@ -78,7 +78,7 @@ void CALLBACK DoneWaiting(void *param, BOOLEAN timed_out) {
   (*i)++;
 }
 
-TEST(NegativeTests, WindowsRegisterWaitForSingleObjectTest) {  // {{{1
+template<int id> void FOO() {
   // These are very tricky false positive found while testing Chromium.
   //
   // Report #1:
@@ -90,29 +90,35 @@ TEST(NegativeTests, WindowsRegisterWaitForSingleObjectTest) {  // {{{1
   //   so we miss h-b between "int *obj = ..." and DoneWaiting on the second
   //   iteration.
   for (int i = 0; i < 2; i++) {
-    n = new StealthNotification();
+    n[id] = new StealthNotification();
     int *obj = new int(0);
     HANDLE wait_object = NULL;
 
-    monitored_object = ::CreateEvent(NULL, false, false, NULL);
-    printf("monitored_object = %p\n", monitored_object);
-    MyThread mt(SignalStealthNotification);
+    monitored_object[id] = ::CreateEvent(NULL, false, false, NULL);
+    printf("monitored_object = %p\n", monitored_object[id]);
+    MyThread mt(SignalStealthNotification<id>);
     mt.Start();
     ANNOTATE_TRACE_MEMORY(obj);
-    CHECK(0 != ::RegisterWaitForSingleObject(&wait_object, monitored_object,
+    CHECK(0 != ::RegisterWaitForSingleObject(&wait_object, monitored_object[id],
                                              DoneWaiting, obj, INFINITE,
                                              WT_EXECUTEINWAITTHREAD | WT_EXECUTEONLYONCE));
     printf("wait_object      = %p\n", wait_object);
-    n->signal();
+    n[id]->signal();
     mt.Join();
     Sleep(1000);
     CHECK(0 != ::UnregisterWaitEx(wait_object, INVALID_HANDLE_VALUE));
     (*obj)++;
     CHECK(*obj == 2);
-    CloseHandle(monitored_object);
-    delete n;
+    CloseHandle(monitored_object[id]);
+    delete n[id];
     delete obj;
   }
+}
+
+TEST(NegativeTests, WindowsRegisterWaitForSingleObjectTest) {  // {{{1
+  MyThreadArray mta(FOO<0>, FOO<1>, FOO<2>, FOO<3>);
+  mta.Start();
+  mta.Join();
 }
 }
 

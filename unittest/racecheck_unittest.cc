@@ -3165,7 +3165,7 @@ namespace test72 {
 // Instead of creating Nlog*N_iter threads,
 // we create Nlog threads and do N_iter barriers.
 int     GLOB = 0;
-const int N_iter = 30;
+const int N_iter = 3;
 const int Nlog  = 16;
 const int N     = 1 << Nlog;
 static int64_t ARR1[N];
@@ -3246,7 +3246,7 @@ namespace test73 {
 // We perform accesses of different sizes to the same location.
 int     GLOB = 0;
 const int N_iter = 2;
-const int Nlog  = 16;
+const int Nlog  = 13;
 const int N     = 1 << Nlog;
 static int64_t ARR1[N];
 static int ARR2[N];
@@ -4942,9 +4942,12 @@ REGISTER_TEST(Run, 114)
 // test116: TN. some operations with string<> objects. {{{1
 namespace test116 {
 
+string shared_string;
+
 void Worker() {
+  printf("%s\n", shared_string.c_str());
   string A[10], B[10], C[10];
-  for (int i = 0; i < 1000; i++) {
+  for (int i = 0; i < 10; i++) {
     for (int j = 0; j < 10; j++) {
       string &a = A[j];
       string &b = B[j];
@@ -4971,6 +4974,7 @@ void Worker() {
 
 void Run() {
   printf("test116: negative (strings)\n");
+  shared_string = "ZAADSSDFSDADS";
   MyThreadArray t(Worker, Worker, Worker);
   t.Start();
   t.Join();
