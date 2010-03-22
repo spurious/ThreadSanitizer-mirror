@@ -26,7 +26,7 @@ else ifeq ($(OS), windows)
   EXE=.exe
   O=/Fo
   LINKO=/OUT:
-  LDOPT=/DEBUG
+  LDOPT=/DEBUG /INCREMENTAL:NO
 else
   OS=UNKNOWN_OS
 endif
