@@ -200,7 +200,7 @@ long my_strtol(const char *str, char **end) {
 #if defined(__GNUC__)
   typedef int TS_FILE;
   #define TS_FILE_INVALID (-1)
-#elif defined(_MSC_VER) 
+#elif defined(_MSC_VER)
   typedef FILE *TS_FILE;
   #define TS_FILE_INVALID (NULL)
   #define read(fd, buf, size) fread(buf, 1, size, fd)
@@ -210,22 +210,21 @@ long my_strtol(const char *str, char **end) {
 
 
 TS_FILE OpenFileReadOnly(const string &file_name, bool die_if_failed) {
+  TS_FILE ret = TS_FILE_INVALID;
 #ifdef TS_VALGRIND
   SysRes sres = VG_(open)((const Char*)file_name.c_str(), VKI_O_RDONLY, 0);
-  if (sr_isError(sres)) {
-    if (die_if_failed) {
-      Report("ERROR: can not open file %s\n", file_name.c_str());
-      exit(1);
-    } else {
-      return -1;
-    }
-  }
-  return sr_Res(sres);
+  if (!sr_isError(sres))
+    ret = sr_Res(sres);
 #elif defined(_MSC_VER)
-  return fopen(file_name.c_str(), "r");
+  ret = fopen(file_name.c_str(), "r");
 #else // no TS_VALGRIND
-  return open(file_name.c_str(), O_RDONLY);
+  ret = open(file_name.c_str(), O_RDONLY);
 #endif
+  if (ret == TS_FILE_INVALID && die_if_failed) {
+    Report("ERROR: can not open file %s\n", file_name.c_str());
+    exit(1);
+  }
+  return ret;
 }
 
 // Read the contents of a file to string. Valgrind version.
