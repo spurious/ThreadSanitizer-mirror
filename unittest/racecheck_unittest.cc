@@ -7098,10 +7098,12 @@ void NotIgnoredRacey() {
 
 void FunRFunction() {
   NotIgnoredRacey();
+  usleep(1); // avoid tail call elimination
 }
 
 void Foo() {
   FunRFunction();
+  usleep(1); // avoid tail call elimination
 }
 
 TEST(IgnoreTests, IndirectCallToFunR) {
