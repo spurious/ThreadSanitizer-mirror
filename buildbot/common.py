@@ -96,6 +96,7 @@ def addTestStep(factory, debug, mode, test_binary, test_desc,
     args.extend(['--fast-mode=no', '--pure-happens-before=no', '--ignore-in-dtor=no'])
 
   args.append('--suppressions=unittest/racecheck_unittest.supp')
+  args.append('--ignore=unittest/racecheck_unittest.ignore')
 
   desc.append(mode)
   desc_common = 'tsan-' + frontend + '(' + ','.join(desc) + ')'
