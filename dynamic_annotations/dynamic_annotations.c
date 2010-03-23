@@ -101,12 +101,7 @@ void AnnotateBenignRace(const char *file, int line,
 void AnnotateBenignRaceSized(const char *file, int line,
                              const volatile void *mem,
                              long size,
-                             const char *description) {
-  long i;
-  for (i = 0; i < size; i++) {
-    AnnotateBenignRace(file, line, (char*)(mem) + i, description);
-  }
-}
+                             const char *description) {}
 void AnnotateMutexIsUsedAsCondVar(const char *file, int line,
                                   const volatile void *mu){}
 void AnnotateTraceMemory(const char *file, int line,
