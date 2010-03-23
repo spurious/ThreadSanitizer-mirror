@@ -174,7 +174,7 @@ install:
 	@echo The 'install' target is deprecated. 
 
 self-contained:
-	../tsan_binary/mk-self-contained-valgrind.sh $(VALGRIND_INST_ROOT)  tsan $(OUTDIR)/tsan-$(OS)-self-contained.sh
+	./mk-self-contained-valgrind.sh $(VALGRIND_INST_ROOT)  tsan $(OUTDIR)/tsan-$(OS)-self-contained.sh
 self-contained-stripped:
 	strip $(OUTDIR)/tsan-*$(OS)
 	$(MAKE) self-contained
