@@ -7,7 +7,7 @@ Index: include/pub_tool_threadstate.h
     that's simple, at least.  And (in practice) we hope that most
     programs do not need many threads. */
 -#define VG_N_THREADS 500
-+#define VG_N_THREADS 5000
++#define VG_N_THREADS 10000
  
  /* Special magic value for an invalid ThreadId.  It corresponds to
     LinuxThreads using zero as the initial value for
@@ -28,3 +28,12 @@ Index: coregrind/m_aspacemgr/aspacemgr-linux.c
  
  /* Max length of a segment file name. */
  #define VG_MAX_SEGNAMELEN 1000
+@@ -1642,7 +1642,7 @@
+    aspacem_minAddr = (Addr) 0x04000000; // 64M
+ 
+ #  if VG_WORDSIZE == 8
+-     aspacem_maxAddr = (Addr)0x800000000 - 1; // 32G
++     aspacem_maxAddr = (Addr)0x8000000000 - 1; // 512G
+ #    ifdef ENABLE_INNER
+      { Addr cse = VG_PGROUNDDN( sp_at_startup ) - 1;
+        if (aspacem_maxAddr > cse)
