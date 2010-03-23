@@ -51,7 +51,7 @@ cat << 'EOF' >> $OUT || exit 1
 sed '1,/^__COMPRESSED_DATA_BELOW__$/d' $0 | tar xz -C $EXTRACT_DIR
 
 # Run
-echo Extracting Valgrind to $EXTRACT_DIR
+# echo Extracting Valgrind to $EXTRACT_DIR
 export VALGRIND_LIB="$EXTRACT_DIR/lib/valgrind"
 export VALGRIND_LIB_INNER="$EXTRACT_DIR/lib/valgrind"
 EOF
