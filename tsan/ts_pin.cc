@@ -65,6 +65,7 @@ namespace WINDOWS
 
 static void DumpEvent(EventType type, int32_t tid, uintptr_t pc,
                       uintptr_t a, uintptr_t info);
+// TODO(kcc): do we need to handle these as a part of some TRACE?
 #define REPORT_READ_RANGE(x, size) do { \
   if (size) DumpEvent(READ, tid, pc, (uintptr_t)(x), (size)); } while(0)
 
@@ -452,6 +453,8 @@ static void TLEBFlushUnlocked(PinThread &t, ThreadLocalEventBuffer &tleb) {
       if (t.ignore_lock_events &&
           (event == WRITER_LOCK || event == READER_LOCK || event == UNLOCK)) {
         // do nothing, we are ignoring locks.
+      } else if (t.ignore_all_mops && (event == READ || event == WRITE)) {
+        // do nothing, we are ignoring mops.
       } else {
         DumpEventInternal((EventType)event, t.uniq_tid, pc, a, info);
       }
