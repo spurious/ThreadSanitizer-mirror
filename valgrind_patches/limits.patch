@@ -1,34 +1,43 @@
 Index: include/pub_tool_threadstate.h
 ===================================================================
---- include/pub_tool_threadstate.h	(revision 10974)
+--- include/pub_tool_threadstate.h	(revision 11055)
 +++ include/pub_tool_threadstate.h	(working copy)
-@@ -36,7 +36,7 @@
+@@ -36,7 +36,11 @@
     scheduler algorithms is surely O(N) in the number of threads, since
     that's simple, at least.  And (in practice) we hope that most
     programs do not need many threads. */
--#define VG_N_THREADS 500
++#if defined(VGO_darwin)
+ #define VG_N_THREADS 500
++#else
 +#define VG_N_THREADS 10000
++#endif
  
  /* Special magic value for an invalid ThreadId.  It corresponds to
     LinuxThreads using zero as the initial value for
 Index: coregrind/m_aspacemgr/aspacemgr-linux.c
 ===================================================================
---- coregrind/m_aspacemgr/aspacemgr-linux.c	(revision 10974)
+--- coregrind/m_aspacemgr/aspacemgr-linux.c	(revision 11055)
 +++ coregrind/m_aspacemgr/aspacemgr-linux.c	(working copy)
-@@ -265,10 +265,10 @@
+@@ -265,10 +265,18 @@
  /* ------ start of STATE for the address-space manager ------ */
  
  /* Max number of segments we can track. */
--#define VG_N_SEGMENTS 5000
++#if defined(VGO_darwin)
+ #define VG_N_SEGMENTS 5000
++#else
 +#define VG_N_SEGMENTS 100000
++#endif
  
  /* Max number of segment file names we can track. */
--#define VG_N_SEGNAMES 1000
++#if defined(VGO_darwin)
+ #define VG_N_SEGNAMES 1000
++#else
 +#define VG_N_SEGNAMES 100000
++#endif
  
  /* Max length of a segment file name. */
  #define VG_MAX_SEGNAMELEN 1000
-@@ -1642,7 +1642,7 @@
+@@ -1642,7 +1650,7 @@
     aspacem_minAddr = (Addr) 0x04000000; // 64M
  
  #  if VG_WORDSIZE == 8
