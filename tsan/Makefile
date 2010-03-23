@@ -173,11 +173,11 @@ m32d:
 install:
 	@echo The 'install' target is deprecated. 
 
-self-contained:
-	./mk-self-contained-valgrind.sh $(VALGRIND_INST_ROOT)  tsan $(OUTDIR)/tsan-$(OS)-self-contained.sh
-self-contained-stripped:
+self-contained: TS_valgrind
+	./mk-self-contained-valgrind.sh $(VALGRIND_INST_ROOT) tsan$(D) $(OUTDIR)/tsan-$(ARCHOS)$(D)-self-contained.sh
+self-contained-stripped: TS_valgrind
 	strip $(OUTDIR)/tsan-*$(OS)
-	$(MAKE) self-contained
+	./mk-self-contained-valgrind.sh $(VALGRIND_INST_ROOT) tsan$(D) $(OUTDIR)/tsan-$(ARCHOS)$(D)-self-contained.sh
 
 
 ifeq ($(VALGRIND_ROOT), )

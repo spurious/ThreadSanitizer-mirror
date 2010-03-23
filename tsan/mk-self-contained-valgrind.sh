@@ -19,6 +19,7 @@ fi
 
 # The files/dirs to take:
 IN_FILES="bin/valgrind lib/valgrind/vgpreload_core* lib/valgrind/*$TOOL* lib/valgrind/default.supp"
+EXCLUDE_FILES="lib/valgrind/*$TOOL-debug*"
 
 rm -rf $OUT && touch $OUT && chmod +x $OUT || exit 1
 
@@ -67,6 +68,6 @@ __COMPRESSED_DATA_BELOW__
 EOF
 
 # Dump the compressed binary at the very end of the file.
-(cd $IN_DIR && tar zcvh $IN_FILES) >> $OUT || exit 1
+(cd $IN_DIR && tar zcvh $IN_FILES --exclude=$EXCLUDE_FILES) >> $OUT || exit 1
 
 echo "File $OUT successfully created"
