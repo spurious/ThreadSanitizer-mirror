@@ -1699,21 +1699,19 @@ static void After_sem_trywait(THREADID tid, ADDRINT pc, ADDRINT ret) {
 static void On_AnnotateBenignRace(THREADID tid, ADDRINT pc,
                                   ADDRINT file, ADDRINT line,
                                   ADDRINT a, ADDRINT descr) {
-  DumpEvent(EXPECT_RACE, tid, descr, a, 1);
+  DumpEvent(BENIGN_RACE, tid, descr, a, 1);
 }
 
 static void On_AnnotateBenignRaceSized(THREADID tid, ADDRINT pc,
                                        ADDRINT file, ADDRINT line,
                                        ADDRINT a, ADDRINT size, ADDRINT descr) {
-  for (size_t i = 0; i < (size_t)size; i++) {
-    DumpEvent(EXPECT_RACE, tid, descr, a + i, 1);
-  }
+  DumpEvent(BENIGN_RACE, tid, descr, a, size);
 }
 
 static void On_AnnotateExpectRace(THREADID tid, ADDRINT pc,
                                   ADDRINT file, ADDRINT line,
                                   ADDRINT a, ADDRINT descr) {
-  DumpEvent(EXPECT_RACE, tid, descr, a, 0);
+  DumpEvent(EXPECT_RACE, tid, descr, a, 1);
 }
 
 static void On_AnnotateTraceMemory(THREADID tid, ADDRINT pc,

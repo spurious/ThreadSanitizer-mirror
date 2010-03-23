@@ -2350,24 +2350,22 @@ ANN_FUNC(void, AnnotateExpectRace, const char *file, int line, void *mem, char *
 {
   const char *name = "AnnotateExpectRace";
   ANN_TRACE("--#%d %s[%p] %s:%d\n", tid, name, mem, file, line);
-  DO_CREQ_v_WWWW(TSREQ_EXPECT_RACE, void*,mem, char*,description, char*, file, long, (long)line);
+  DO_CREQ_v_WWW(TSREQ_EXPECT_RACE, void*,mem, long, 1, char*,description);
 }
 
 ANN_FUNC(void, AnnotateBenignRace, const char *file, int line, void *mem, char *description)
 {
   const char *name = "AnnotateBenignRace";
   ANN_TRACE("--#%d %s[%p] %s:%d\n", tid, name, mem, file, line);
-  DO_CREQ_v_WWWW(TSREQ_BENIGN_RACE, void*,mem, char*,description, char*, file, long, (long)line);
+  DO_CREQ_v_WWW(TSREQ_BENIGN_RACE, void*,mem, long, 1, char*,description);
 }
 
 ANN_FUNC(void, AnnotateBenignRaceSized, const char *file, int line, void *mem, long size, char *description)
 {
   const char *name = "AnnotateBenignRace";
-  long i;
   ANN_TRACE("--#%d %s[%p] %s:%d\n", tid, name, mem, file, line);
-  for (i = 0; i < size; i++) {
-    DO_CREQ_v_WWWW(TSREQ_BENIGN_RACE, char*,(char*)mem+i, char*,description, char*, file, long, (long)line);
-  }
+  DO_CREQ_v_WWW(TSREQ_BENIGN_RACE, char*,(char*)mem, long, size,
+                char*,description);
 }
 
 

@@ -43,90 +43,93 @@ struct TestHeapInfo {
 
 TEST(ThreadSanitizer, HeapInfoTest) {
   HeapMap<TestHeapInfo> map;
-  TestHeapInfo info;
+  TestHeapInfo *info;
   EXPECT_EQ(0U, map.size());
-  EXPECT_FALSE(map.GetInfo(12345, &info));
-  EXPECT_FALSE(map.IsHeapMem(12345, &info));
+  EXPECT_EQ(NULL, map.GetInfo(12345));
 
   // Insert range [1000, 1000+100) with value 1.
   map.InsertInfo(1000, TestHeapInfo(1000, 100, 1));
   EXPECT_EQ(1U, map.size());
-  EXPECT_TRUE(map.GetInfo(1000, &info));
-  EXPECT_EQ(1000U, info.ptr);
-  EXPECT_EQ(100U, info.size);
-  EXPECT_EQ(1, info.val);
+  info = map.GetInfo(1000);
+  EXPECT_TRUE(info);
+  EXPECT_EQ(1000U, info->ptr);
+  EXPECT_EQ(100U, info->size);
+  EXPECT_EQ(1, info->val);
 
-  EXPECT_TRUE(map.IsHeapMem(1000, &info));
-  EXPECT_EQ(1, info.val);
-  EXPECT_TRUE(map.IsHeapMem(1050, &info));
-  EXPECT_EQ(1, info.val);
-  EXPECT_TRUE(map.IsHeapMem(1099, &info));
-  EXPECT_EQ(1, info.val);
-  EXPECT_FALSE(map.IsHeapMem(1100, &info));
-  EXPECT_FALSE(map.IsHeapMem(2000, &info));
+  EXPECT_TRUE(map.GetInfo(1000));
+  EXPECT_EQ(1, info->val);
+  EXPECT_TRUE(map.GetInfo(1050));
+  EXPECT_EQ(1, info->val);
+  EXPECT_TRUE(map.GetInfo(1099));
+  EXPECT_EQ(1, info->val);
+  EXPECT_FALSE(map.GetInfo(1100));
+  EXPECT_FALSE(map.GetInfo(2000));
 
-  EXPECT_FALSE(map.GetInfo(2000, &info));
-  EXPECT_FALSE(map.GetInfo(3000, &info));
+  EXPECT_EQ(NULL, map.GetInfo(2000));
+  EXPECT_EQ(NULL, map.GetInfo(3000));
 
   // Insert range [2000, 2000+200) with value 2.
   map.InsertInfo(2000, TestHeapInfo(2000, 200, 2));
   EXPECT_EQ(2U, map.size());
 
-  EXPECT_TRUE(map.GetInfo(1000, &info));
-  EXPECT_EQ(1, info.val);
+  info = map.GetInfo(1000);
+  EXPECT_TRUE(info);
+  EXPECT_EQ(1, info->val);
 
-  EXPECT_TRUE(map.GetInfo(2000, &info));
-  EXPECT_EQ(2, info.val);
+  info = map.GetInfo(2000);
+  EXPECT_TRUE(info);
+  EXPECT_EQ(2, info->val);
 
-  EXPECT_TRUE(map.IsHeapMem(1000, &info));
-  EXPECT_EQ(1, info.val);
-  EXPECT_TRUE(map.IsHeapMem(1050, &info));
-  EXPECT_EQ(1, info.val);
-  EXPECT_TRUE(map.IsHeapMem(1099, &info));
-  EXPECT_EQ(1, info.val);
-  EXPECT_FALSE(map.IsHeapMem(1100, &info));
+  info = map.GetInfo(1000);
+  EXPECT_TRUE(info);
+  EXPECT_EQ(1, info->val);
+  EXPECT_TRUE((info = map.GetInfo(1050)));
+  EXPECT_EQ(1, info->val);
+  EXPECT_TRUE((info = map.GetInfo(1099)));
+  EXPECT_EQ(1, info->val);
+  EXPECT_FALSE(map.GetInfo(1100));
 
-  EXPECT_TRUE(map.IsHeapMem(2000, &info));
-  EXPECT_EQ(2, info.val);
-  EXPECT_TRUE(map.IsHeapMem(2199, &info));
-  EXPECT_EQ(2, info.val);
+  EXPECT_TRUE((info = map.GetInfo(2000)));
+  EXPECT_EQ(2, info->val);
+  EXPECT_TRUE((info = map.GetInfo(2199)));
+  EXPECT_EQ(2, info->val);
 
-  EXPECT_FALSE(map.GetInfo(2200, &info));
-  EXPECT_FALSE(map.GetInfo(3000, &info));
+  EXPECT_FALSE(map.GetInfo(2200));
+  EXPECT_FALSE(map.GetInfo(3000));
 
   // Insert range [3000, 3000+300) with value 3.
   map.InsertInfo(3000, TestHeapInfo(3000, 300, 3));
   EXPECT_EQ(3U, map.size());
 
-  EXPECT_TRUE(map.GetInfo(1000, &info));
-  EXPECT_EQ(1, info.val);
+  EXPECT_TRUE((info = map.GetInfo(1000)));
+  EXPECT_EQ(1, info->val);
 
-  EXPECT_TRUE(map.GetInfo(2000, &info));
-  EXPECT_EQ(2, info.val);
+  EXPECT_TRUE((info = map.GetInfo(2000)));
+  EXPECT_EQ(2, info->val);
 
-  EXPECT_TRUE(map.GetInfo(3000, &info));
-  EXPECT_EQ(3, info.val);
+  EXPECT_TRUE((info = map.GetInfo(3000)));
+  EXPECT_EQ(3, info->val);
 
-  EXPECT_TRUE(map.IsHeapMem(1050, &info));
-  EXPECT_EQ(1, info.val);
+  EXPECT_TRUE((info = map.GetInfo(1050)));
+  EXPECT_EQ(1, info->val);
 
-  EXPECT_TRUE(map.IsHeapMem(2100, &info));
-  EXPECT_EQ(2, info.val);
+  EXPECT_TRUE((info = map.GetInfo(2100)));
+  EXPECT_EQ(2, info->val);
 
-  EXPECT_TRUE(map.IsHeapMem(3200, &info));
-  EXPECT_EQ(3, info.val);
+  EXPECT_TRUE((info = map.GetInfo(3200)));
+  EXPECT_EQ(3, info->val);
 
   // Remove range [2000,2000+200)
   map.EraseInfo(2000);
   EXPECT_EQ(2U, map.size());
 
-  EXPECT_TRUE(map.IsHeapMem(1050, &info));
-  EXPECT_EQ(1, info.val);
+  EXPECT_TRUE((info = map.GetInfo(1050)));
+  EXPECT_EQ(1, info->val);
 
-  EXPECT_FALSE(map.IsHeapMem(2100, &info));
+  EXPECT_FALSE(map.GetInfo(2100));
 
-  EXPECT_TRUE(map.IsHeapMem(3200, &info));
-  EXPECT_EQ(3, info.val);
+  EXPECT_TRUE((info = map.GetInfo(3200)));
+  EXPECT_EQ(3, info->val);
 
 }
 

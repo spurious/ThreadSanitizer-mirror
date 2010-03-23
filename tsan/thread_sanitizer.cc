@@ -3803,7 +3803,13 @@ struct Thread {
   void NewSegmentForLockingEvent() {
     // Flush the cache since we can't reuse segments with different lockset.
     recent_segments_cache_.Clear();
-    NewSegment("NewSegmentForLockingEvent", vts()->Clone());
+    NewSegment(__FUNCTION__, vts()->Clone());
+  }
+
+  void NewSegmentForMallocEvent() {
+    // Flush the cache since we can't reuse segments with different lockset.
+    recent_segments_cache_.Clear();
+    NewSegment(__FUNCTION__, vts()->Clone());
   }
 
 
@@ -4259,13 +4265,15 @@ static void ForgetAllStateAndStartOver(const char *reason) {
 // -------- Expected Race ---------------------- {{{1
 // Information about expected races.
 struct ExpectedRace {
+  uintptr_t   ptr;
+  uintptr_t   size;
   bool        is_benign;
   int         count;
   const char *description;
   uintptr_t   pc;
 };
 
-typedef  map<uintptr_t, ExpectedRace> ExpectedRacesMap;
+typedef  HeapMap<ExpectedRace> ExpectedRacesMap;
 static ExpectedRacesMap *G_expected_races_map;
 static bool g_expecting_races;
 static int g_found_races_since_EXPECT_RACE_BEGIN;
@@ -4355,21 +4363,15 @@ class ReportStorage {
     }
 
     bool is_expected = false;
-    if (G_expected_races_map->count(addr)) {
+    ExpectedRace *expected_race = G_expected_races_map->GetInfo(addr);
+    if (expected_race) {
       is_expected = true;
-      (*G_expected_races_map)[addr].count++;
+      expected_race->count++;
     }
 
     if (g_expecting_races) {
       is_expected = true;
       g_found_races_since_EXPECT_RACE_BEGIN++;
-      ExpectedRace &race = (*G_expected_races_map)[addr];
-      if (race.count == 0){
-        race.is_benign = false;
-        race.description = "expected race";
-        race.pc = pc;
-      }
-      race.count++;
     }
 
     if (!is_expected && in_dtor) return false;
@@ -4549,8 +4551,12 @@ class ReportStorage {
       Report("%s", race->racey_addr_description.c_str());
     }
     if (race->is_expected) {
-      Report(" Description: \"%s\"\n",
-             (*G_expected_races_map)[race->racey_addr].description);
+      ExpectedRace *expected_race = 
+          G_expected_races_map->GetInfo(race->racey_addr);
+      if (expected_race) {
+        CHECK(expected_race->description);
+        Report(" Description: \"%s\"\n", expected_race->description);
+      }
     }
     set<LID>  locks_reported;
 
@@ -4701,18 +4707,18 @@ class ReportStorage {
       }
     }
 
-    HeapInfo heap_info;
-    if(G_heap_map->IsHeapMem(a, &heap_info)) {
+    HeapInfo *heap_info = G_heap_map->GetInfo(a);
+    if (heap_info) {
       snprintf(buff, sizeof(buff),
              "  %sLocation %p is %ld bytes inside a block starting at %p"
              " of size %ld allocated by T%d from heap:%s\n",
              c_blue,
              reinterpret_cast<void*>(a),
-             static_cast<long>(a - heap_info.ptr),
-             reinterpret_cast<void*>(heap_info.ptr),
-             static_cast<long>(heap_info.size),
-             heap_info.tid().raw(), c_default);
-      return string(buff) + heap_info.StackTraceString().c_str();
+             static_cast<long>(a - heap_info->ptr),
+             reinterpret_cast<void*>(heap_info->ptr),
+             static_cast<long>(heap_info->size),
+             heap_info->tid().raw(), c_default);
+      return string(buff) + heap_info->StackTraceString().c_str();
     }
 
 
@@ -5085,7 +5091,14 @@ class Detector {
       case PCQ_GET      : HandlePcqGet();      break;
 
 
-      case EXPECT_RACE : HandleExpectRace();   break;
+      case EXPECT_RACE :
+        HandleExpectRace(false, e_->a(), e_->info(),
+                         (const char*)e_->pc(), cur_tid_);
+        break;
+      case BENIGN_RACE :
+        HandleExpectRace(true, e_->a(), e_->info(),
+                         (const char*)e_->pc(), cur_tid_);
+        break;
       case EXPECT_RACE_BEGIN:
         CHECK(g_expecting_races == false);
         g_expecting_races = true;
@@ -5207,19 +5220,21 @@ class Detector {
     cur_thread_->set_ignore(is_w, on);
   }
 
-  // EXPECT_RACE
-  void HandleExpectRace() {
+  // EXPECT_RACE, BENIGN_RACE
+  void HandleExpectRace(bool is_benign, uintptr_t ptr, uintptr_t size,
+                        const char *descr, TID tid) {
     ExpectedRace expected_race;
+    expected_race.ptr = ptr;
+    expected_race.size = size;
     expected_race.count = 0;
-    expected_race.is_benign = static_cast<bool>(e_->info());
-    expected_race.description = (const char*)e_->pc();
+    expected_race.is_benign = is_benign;
+    expected_race.description = descr;
     expected_race.pc = cur_thread_->GetCallstackEntry(1);
-    (*G_expected_races_map)[e_->a()] = expected_race;
+    G_expected_races_map->InsertInfo(ptr, expected_race);
     if (debug_expected_races) {
-      Printf("T%d: EXPECT_RACE: ptr=%p descr='%s' is_benign=%d\n", e_->tid(),
-             e_->a(),
-             expected_race.description, e_->info());
-      cur_thread_->ReportStackTrace(e_->pc());
+      Printf("T%d: EXPECT_RACE: ptr=%p size=%ld descr='%s' is_benign=%d\n",
+             tid.raw(), ptr, size, descr, is_benign);
+      cur_thread_->ReportStackTrace(ptr);
     }
   }
 
@@ -5743,13 +5758,6 @@ class Detector {
     uintptr_t a = e_->a();
     uintptr_t size = e_->info();
 
-    if (debug_malloc) {
-      Printf("T%d MALLOC: %p [%p %p) %s %s\n",
-             tid.raw(), size, a, a+size,
-             Segment::ToString(cur_thread_->sid()).c_str(),
-             cur_thread_->segment()->vts()->ToString().c_str());
-      cur_thread_->ReportStackTrace(e_->pc());
-    }
 
     if (a == 0)
       return;
@@ -5759,9 +5767,13 @@ class Detector {
     // don't handle it because it is too slow.
     // TODO(kcc): this is a workaround for NaCl. May need to fix it cleaner.
     const uint64_t G84 = (1ULL << 32) * 21; // 84G.
-    if (size >= G84) return;
+    if (size >= G84) {
+      HandleExpectRace(true, a, size, "NaCl memory range", tid);
+      return;
+    }
     #endif
 
+    cur_thread_->NewSegmentForMallocEvent();
     uintptr_t b = a + size;
     CHECK(a <= b);
     ClearMemoryStateOnMalloc(a, b);
@@ -5771,6 +5783,13 @@ class Detector {
     info.size = size;
     info.sid  = cur_thread_->sid();
     Segment::Ref(info.sid, __FUNCTION__);
+    if (debug_malloc) {
+      Printf("T%d MALLOC: %p [%p %p) %s %s\n%s\n",
+             tid.raw(), size, a, a+size,
+             Segment::ToString(cur_thread_->sid()).c_str(),
+             cur_thread_->segment()->vts()->ToString().c_str(),
+             info.StackTraceString().c_str());
+    }
 
     // CHECK(!G_heap_map->count(a));  // we may have two calls
                                       //  to AnnotateNewMemory.
@@ -5784,18 +5803,18 @@ class Detector {
       e_->Print();
       cur_thread_->ReportStackTrace(e_->pc());
     }
-    HeapInfo info;
     if (a == 0)
       return;
-    if (!G_heap_map->GetInfo(a, &info))
+    HeapInfo *info = G_heap_map->GetInfo(a);
+    if (!info || info->ptr != a)
       return;
     // update G_heap_map
-    CHECK(info.ptr == a);
-    Segment::Unref(info.sid, __FUNCTION__);
-    G_heap_map->EraseInfo(a);
+    CHECK(info->ptr == a);
+    Segment::Unref(info->sid, __FUNCTION__);
 
-    uintptr_t size = info.size;
+    uintptr_t size = info->size;
     ClearMemoryStateOnFree(a, a + size);
+    G_heap_map->EraseInfo(a);
   }
 
   void HandleThreadStart(TID child_tid, TID parent_tid, uintptr_t pc) {
@@ -5859,17 +5878,17 @@ class Detector {
     uintptr_t sp = e_->a();
     uintptr_t sp_min = 0, sp_max = 0;
     uintptr_t stack_size_if_known = e_->info();
-    HeapInfo heap_info;
+    HeapInfo *heap_info;
     if (stack_size_if_known) {
       sp_min = sp - stack_size_if_known;
       sp_max = sp;
-    } else if (G_heap_map->IsHeapMem(sp, &heap_info)){
+    } else if (NULL != (heap_info = G_heap_map->GetInfo(sp))){
       if (G_flags->verbosity >= 2) {
         Printf("T%d %s: %p\n%s\n", e_->tid(), __FUNCTION__,  sp,
              reports_.DescribeMemory(sp).c_str());
       }
-      sp_min = heap_info.ptr;
-      sp_max = heap_info.ptr + heap_info.size;
+      sp_min = heap_info->ptr;
+      sp_max = heap_info->ptr + heap_info->size;
     }
     if (debug_thread) {
       Printf("T%d SP: %p [%p %p)\n", e_->tid(), sp, sp_min, sp_max);

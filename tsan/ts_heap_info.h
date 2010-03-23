@@ -42,8 +42,8 @@ class HeapMap {
 
   HeapMap() { Reset(); }
 
-  iterator begin() { return map_.begin(); }
-  iterator end() { return map_.end(); }
+  iterator begin() { return ++map_.begin(); }
+  iterator end() { return --map_.end(); }
 
   size_t size() { return map_.size() - 2; }
 
@@ -53,43 +53,31 @@ class HeapMap {
     map_[a] = info;
   }
 
-  bool GetInfo(uintptr_t a, HeapInfo *res) {
-    CHECK(IsValidPtr(a));
-    typename map_t::iterator it = map_.find(a);
-    if (it == map_.end()) {
-      return false;
-    }
-    *res = it->second;
-    return true;
-  }
-
   void EraseInfo(uintptr_t a) {
     CHECK(IsValidPtr(a));
     map_.erase(a);
   }
 
-  bool IsHeapMem(uintptr_t a, HeapInfo *res) {
+  HeapInfo *GetInfo(uintptr_t a) {
     CHECK(this);
     CHECK(IsValidPtr(a));
     typename map_t::iterator it = map_.lower_bound(a);
     CHECK(it != map_.end());
     if (it->second.ptr == a) {
       // Exact match. 'a' is the beginning of a heap-allocated address.
-      *res = it->second;
-      return true;
+      return &it->second;
     }
     CHECK(a < it->second.ptr);
     CHECK(it != map_.begin());
     // not an exact match, try the previous iterator.
     --it;
-    HeapInfo &info = it->second;
-    CHECK(info.ptr < a);
-    if (info.ptr + info.size > a) {
+    HeapInfo *info = &it->second;
+    CHECK(info->ptr < a);
+    if (info->ptr + info->size > a) {
       // within the range.
-      *res = info;
-      return true;
+      return info;
     }
-    return false;
+    return NULL;
   }
 
   void Clear() {
@@ -102,15 +90,14 @@ class HeapMap {
     return a != 0 && a != (uintptr_t) -1;
   }
   void Reset() {
-    // Insert a maximal and minimal possible values to make IsHeapMem simpler.
+    // Insert a maximal and minimal possible values to make GetInfo simpler.
     HeapInfo max_info;
+    memset(&max_info, 0, sizeof(HeapInfo));
     max_info.ptr = (uintptr_t)-1;
-    max_info.size = 0;
     map_[max_info.ptr] = max_info;
 
     HeapInfo min_info;
-    min_info.ptr = 0;
-    min_info.size = 0;
+    memset(&min_info, 0, sizeof(HeapInfo));
     map_[min_info.ptr] = min_info;
   }
   map_t map_;

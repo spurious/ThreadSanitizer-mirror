@@ -578,12 +578,12 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
       Put(FREE, ts_tid, pc, /*ptr=*/args[1], 0);
       break;
     case TSREQ_BENIGN_RACE:
-      Put(EXPECT_RACE, ts_tid, /*descr=*/args[2],
-          /*p=*/args[1], /*is_benign=*/1);
+      Put(BENIGN_RACE, ts_tid, /*descr=*/args[3],
+          /*p=*/args[1], /*size=*/args[2]);
       break;
     case TSREQ_EXPECT_RACE:
-      Put(EXPECT_RACE, ts_tid, /*descr=*/args[2],
-          /*p=*/args[1], /*is_benign*/0);
+      Put(EXPECT_RACE, ts_tid, /*descr=*/args[3],
+          /*p=*/args[1], /*size*/args[2]);
       break;
     case TSREQ_PCQ_CREATE:
       Put(PCQ_CREATE, ts_tid, pc, /*pcq=*/args[1], 0);
