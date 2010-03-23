@@ -68,6 +68,6 @@ __COMPRESSED_DATA_BELOW__
 EOF
 
 # Dump the compressed binary at the very end of the file.
-(cd $IN_DIR && tar zcvh $IN_FILES --exclude=$EXCLUDE_FILES) >> $OUT || exit 1
+(cd $IN_DIR && tar zcvh --exclude=$EXCLUDE_FILES $IN_FILES) >> $OUT || exit 1
 
 echo "File $OUT successfully created"
