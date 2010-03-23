@@ -1366,6 +1366,16 @@ uintptr_t WRAP_NAME(malloc)(WRAP_PARAM4) {
   return ret;
 }
 
+uintptr_t WRAP_NAME(realloc)(WRAP_PARAM4) {
+  IgnoreSyncAndMopsBegin(tid, pc);
+  uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
+  IgnoreSyncAndMopsEnd(tid, pc);
+
+  // TODO: handle FREE? We don't do it in Valgrind right now.
+  DumpEvent(MALLOC, tid, pc, ret, arg1);
+  return ret;
+}
+
 uintptr_t WRAP_NAME(calloc)(WRAP_PARAM4) {
   IgnoreSyncAndMopsBegin(tid, pc);
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
@@ -2247,6 +2257,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
 
   // malloc/free/etc
   WrapFunc4(img, rtn, "malloc", (AFUNPTR)WRAP_NAME(malloc));
+  WrapFunc4(img, rtn, "realloc", (AFUNPTR)WRAP_NAME(realloc));
   WrapFunc4(img, rtn, "calloc", (AFUNPTR)WRAP_NAME(calloc));
   WrapFunc4(img, rtn, "free", (AFUNPTR)WRAP_NAME(free));
 
