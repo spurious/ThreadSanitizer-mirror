@@ -6316,6 +6316,20 @@ namespace MemoryTypes {  // {{{1
     t.Join();
   }
 
+  void ReallocThread() {
+    void *ptr = NULL;
+    for (int i = 1; i < 16; i++) {
+      int size = (1 << i) - 1;
+      ptr = realloc(ptr, size);
+      memset(ptr, 42, size);
+    }
+    free(ptr);
+  }
+  TEST(MemoryTypes, Reallocs) {
+    MyThreadArray t(ReallocThread, ReallocThread, ReallocThread, ReallocThread);
+    t.Start();
+    t.Join();
+  }
 }  // namespace
 
 
