@@ -120,24 +120,42 @@
 #define RACE_CHECKER_H_
 
 #include <stdint.h>
+#include <string>
 #include <pthread.h>
 
 class RaceChecker {
  public:
   enum Type { READ = 0, WRITE = 1 };
   RaceChecker(Type type, const volatile void *address)
-    : type_(type), address_(reinterpret_cast<uintptr_t>(address)) {
+    : type_(type), id_(AddressToString(address)) {
+    this->Start();
+  }
+  RaceChecker(Type type, const char *id)
+    : type_(type), id_(id) {
+    this->Start();
+  }
+  RaceChecker(Type type, const std::string &id)
+    : type_(type), id_(id) {
     this->Start();
   }
   ~RaceChecker() {
     this->End();
   }
  private:
+  std::string AddressToString(const volatile void *ptr) {
+    char tmp[100] = "";
+    sprintf(tmp, "%p", ptr);
+    return tmp;
+  }
+  bool IdIsEmpty() {
+    return id_ == "" || id_ == AddressToString(NULL);
+  }
+
   void Start();
   void End();
   int type_;
-  uintptr_t address_;
   pthread_t thread_;
+  std::string id_;
 };
 
 #endif  // RACE_CHECKER_H_

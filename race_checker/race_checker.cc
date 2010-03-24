@@ -32,7 +32,6 @@
 #include <stdlib.h>
 #include <pthread.h>
 
-
 #include <assert.h>
 #ifdef NDEBUG
 # error "Pleeease, do not define NDEBUG"
@@ -48,7 +47,6 @@ class Mutex {
  private:
   pthread_mutex_t mu_;
 };
-
 
 static int race_checker_level =
   getenv("RACECHECKER") ? atoi(getenv("RACECHECKER")) : 0;
@@ -68,15 +66,15 @@ struct TypedCallsites {
   std::vector<CallSite> type[2];    // Index 0 is for reads, index 1 is for writes.
 };
 
-typedef std::map<uintptr_t, TypedCallsites> AddressMap;
+typedef std::map<std::string, TypedCallsites> AddressMap;
 
 static Mutex race_checker_mu;
-static AddressMap *race_checker_map;               // Under race_checker_mu.
+static AddressMap *race_checker_map;  // Under race_checker_mu.
 
 // Return a string decribing the callsites of the threads
 // accessing a location.
-static void DescribeAccesses(uintptr_t address, TypedCallsites *c) {
-  fprintf(stderr, "Race on %p found between these points\n", address);
+static void DescribeAccesses(std::string id, TypedCallsites *c) {
+  fprintf(stderr, "Race on '%s' found between these points\n", id.c_str());
   std::set<pthread_t> reported_accessors;
   for (int t = 1; t >= 0; t--) {  // Iterate starting from writers.
     for (size_t i = 0; i != c->type[t].size(); i++) {
@@ -96,67 +94,70 @@ static void DescribeAccesses(uintptr_t address, TypedCallsites *c) {
 // type_ is 0 for reads or 1 or for writes.
 // address_ addresses a variable on which a race is suspected.
 void RaceChecker::Start() {
-  if (this->address_ && race_checker_level > 0) {
-    this->thread_ = pthread_self();
-    if (race_checker_verbosity > 0) {
-      fprintf(stderr, "RaceChecker::%s instance created for %p on thread 0x%X\n",
-              this->type_ == WRITE ? "WRITE" : "READ ", this->address_, this->thread_);
-    }
-    CallSite callsite;
-    callsite.nstack =
-        backtrace(callsite.stack,
-                  sizeof(callsite.stack)/sizeof(callsite.stack[0]));
-    callsite.thread = this->thread_;
-    race_checker_mu.Lock();
-    if (race_checker_map == 0) {
-      race_checker_map = new AddressMap;
-    }
-    TypedCallsites *c = &(*race_checker_map)[this->address_];
-    c->type[this->type_].push_back(callsite);
-    // A race requires at least one writer and at least two accessors.
-    if (c->type[WRITE].size() != 0 &&
-        c->type[READ].size() + c->type[WRITE].size() > 1) {
-      // Race only if a writer is a different thread from another accessor.
-      bool is_race = false;
-      for (size_t w = 0; !is_race && w != c->type[WRITE].size(); w++) {
-        for (int t = 0; !is_race && t != 2; t++) {
-          for (size_t i = 0; !is_race && i != c->type[t].size(); i++) {
-            is_race = (c->type[WRITE][w].thread != c->type[t][i].thread);
-          }
-        }
-      }
-      if (is_race) {
-        DescribeAccesses(this->address_, c);
-        if (race_checker_level >= 2) {
-          exit(1);
+  if (race_checker_level <= 0 || IdIsEmpty())
+    return;
+
+  this->thread_ = pthread_self();
+  if (race_checker_verbosity > 0) {
+    fprintf(stderr, "RaceChecker::%s instance created for '%s' on thread 0x%X\n",
+            this->type_ == WRITE ? "WRITE" : "READ ",
+            this->id_.c_str(), this->thread_);
+  }
+  CallSite callsite;
+  callsite.nstack =
+      backtrace(callsite.stack,
+                sizeof(callsite.stack)/sizeof(callsite.stack[0]));
+  callsite.thread = this->thread_;
+  race_checker_mu.Lock();
+  if (race_checker_map == 0) {
+    race_checker_map = new AddressMap;
+  }
+  TypedCallsites *c = &(*race_checker_map)[this->id_];
+  c->type[this->type_].push_back(callsite);
+  // A race requires at least one writer and at least two accessors.
+  if (c->type[WRITE].size() != 0 &&
+      c->type[READ].size() + c->type[WRITE].size() > 1) {
+    // Race only if a writer is a different thread from another accessor.
+    bool is_race = false;
+    for (size_t w = 0; !is_race && w != c->type[WRITE].size(); w++) {
+      for (int t = 0; !is_race && t != 2; t++) {
+        for (size_t i = 0; !is_race && i != c->type[t].size(); i++) {
+          is_race = (c->type[WRITE][w].thread != c->type[t][i].thread);
         }
       }
     }
-    race_checker_mu.Unlock();
-    if (race_checker_sleep_ms != 0) {
-      usleep(race_checker_sleep_ms * 1000);
+    if (is_race) {
+      DescribeAccesses(this->id_, c);
+      if (race_checker_level >= 2) {
+        exit(1);
+      }
     }
+  }
+  race_checker_mu.Unlock();
+  if (race_checker_sleep_ms != 0) {
+    usleep(race_checker_sleep_ms * 1000);
   }
 }
 
 // Remove the access recorded by this->Start(). Assumes that a single thread
 // call Start/End in a correctly-nested fashion on a single address.
 void RaceChecker::End() {
-  if (this->address_ && race_checker_level > 0) {
-    race_checker_mu.Lock();
-    TypedCallsites *c = &(*race_checker_map)[this->address_];
-    std::vector<CallSite> &vec = c->type[this->type_];
-    int i;
-    for (i = vec.size() - 1; i >= 0; --i) {
-      if (vec[i].thread == this->thread_) {
-        vec.erase(vec.begin() + i);
-        break;
-      }
+  if (race_checker_level <= 0 || IdIsEmpty())
+    return;
+
+  race_checker_mu.Lock();
+  TypedCallsites *c = &(*race_checker_map)[this->id_];
+  std::vector<CallSite> &vec = c->type[this->type_];
+  int i;
+  for (i = vec.size() - 1; i >= 0; --i) {
+    if (vec[i].thread == this->thread_) {
+      vec.erase(vec.begin() + i);
+      break;
     }
-    CHECK(i >= 0);
-    if (c->type[READ].size() + c->type[WRITE].size() == 0) {
-      race_checker_map->erase(this->address_);
-    }
-    race_checker_mu.Unlock();
   }
+  CHECK(i >= 0);
+  if (c->type[READ].size() + c->type[WRITE].size() == 0) {
+    race_checker_map->erase(this->id_);
+  }
+  race_checker_mu.Unlock();
 }
