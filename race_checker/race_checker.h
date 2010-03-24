@@ -127,13 +127,13 @@ class RaceChecker {
   enum Type { READ = 0, WRITE = 1 };
   RaceChecker(Type type, const volatile void *address)
     : type_(type), address_(reinterpret_cast<uintptr_t>(address)) {
-    this->Start(type, address);
+    this->Start();
   }
   ~RaceChecker() {
     this->End();
   }
  private:
-  void Start(Type type, const volatile void *address);
+  void Start();
   void End();
   int type_;
   uintptr_t address_;

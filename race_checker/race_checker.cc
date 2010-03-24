@@ -25,7 +25,7 @@
 
 #include "race_checker.h"
 
-#include <ext/hash_map>
+#include <map>
 #include <set>
 #include <vector>
 #include <execinfo.h>
@@ -41,14 +41,10 @@
 
 class Mutex {
  public:
-  Mutex() {
-    CHECK(0 == pthread_mutex_init(&mu_, NULL));
-  }
-  ~Mutex() {
-    CHECK(0 == pthread_mutex_destroy(&mu_));
-  }
-  void Lock()    { CHECK(0 == pthread_mutex_lock(&mu_));}
-  void Unlock()  { CHECK(0 == pthread_mutex_unlock(&mu_)); }
+  Mutex()        { pthread_mutex_init(&mu_, NULL); }
+  ~Mutex()       { pthread_mutex_destroy(&mu_); }
+  void Lock()    { pthread_mutex_lock(&mu_); }
+  void Unlock()  { pthread_mutex_unlock(&mu_); }
  private:
   pthread_mutex_t mu_;
 };
@@ -58,6 +54,8 @@ static int race_checker_level =
   getenv("RACECHECKER") ? atoi(getenv("RACECHECKER")) : 0;
 static int race_checker_sleep_ms =
   getenv("RACECHECKER_SLEEP_MS") ? atoi(getenv("RACECHECKER_SLEEP_MS")) : 1;
+static int race_checker_verbosity =
+  getenv("RACECHECKER_VERBOSITY") ? atoi(getenv("RACECHECKER_VERBOSITY")) : 0;
 
 
 struct CallSite {         // Data about a call site.
@@ -70,16 +68,15 @@ struct TypedCallsites {
   std::vector<CallSite> type[2];    // Index 0 is for reads, index 1 is for writes.
 };
 
-typedef __gnu_cxx::hash_map<uintptr_t, TypedCallsites> AddressMap;
+typedef std::map<uintptr_t, TypedCallsites> AddressMap;
 
 static Mutex race_checker_mu;
 static AddressMap *race_checker_map;               // Under race_checker_mu.
 
-
 // Return a string decribing the callsites of the threads
 // accessing a location.
-static void DescribeAccesses(TypedCallsites *c) {
-  fprintf(stderr, "Race found between these points\n");
+static void DescribeAccesses(uintptr_t address, TypedCallsites *c) {
+  fprintf(stderr, "Race on %p found between these points\n", address);
   std::set<pthread_t> reported_accessors;
   for (int t = 1; t >= 0; t--) {  // Iterate starting from writers.
     for (size_t i = 0; i != c->type[t].size(); i++) {
@@ -95,12 +92,16 @@ static void DescribeAccesses(TypedCallsites *c) {
   }
 }
 
-// Record an access of type "type" by the calling thread to "address".
-// type is 0 for reads or 1 or for writes.
-// address addresses a variable on which a race is suspected.
-void RaceChecker::Start(RaceChecker::Type type, const volatile void *address) {
+// Record an access of type "type_" by the calling thread to "address_".
+// type_ is 0 for reads or 1 or for writes.
+// address_ addresses a variable on which a race is suspected.
+void RaceChecker::Start() {
   if (this->address_ && race_checker_level > 0) {
     this->thread_ = pthread_self();
+    if (race_checker_verbosity > 0) {
+      fprintf(stderr, "RaceChecker::%s instance created for %p on thread 0x%X\n",
+              this->type_ == WRITE ? "WRITE" : "READ ", this->address_, this->thread_);
+    }
     CallSite callsite;
     callsite.nstack =
         backtrace(callsite.stack,
@@ -125,7 +126,7 @@ void RaceChecker::Start(RaceChecker::Type type, const volatile void *address) {
         }
       }
       if (is_race) {
-        DescribeAccesses(c);
+        DescribeAccesses(this->address_, c);
         if (race_checker_level >= 2) {
           exit(1);
         }
