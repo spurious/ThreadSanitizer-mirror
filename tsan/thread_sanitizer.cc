@@ -1419,16 +1419,20 @@ class Segment {
 
   VTS *vts() const { return vts_; }
   TID tid() const { return TID(tid_); }
-  uintptr_t *embedded_stack_trace() { return embedded_stack_trace_; }
   LSID  lsid(bool is_w) const { return lsid_[is_w]; }
   uint32_t lock_era() const { return lock_era_; }
 
-  string StackTraceString() {
-    return StackTrace::EmbeddedStackTraceToString(
-        this->embedded_stack_trace(), kSizeOfHistoryStackTrace);
+  // static methods
+
+  static uintptr_t *embedded_stack_trace(SID sid) { 
+    DCHECK(sid.valid());
+    return &all_stacks_[sid.raw() * kSizeOfHistoryStackTrace];
   }
 
-  // static methods
+  static string StackTraceString(SID sid) {
+    return StackTrace::EmbeddedStackTraceToString(
+        embedded_stack_trace(sid), kSizeOfHistoryStackTrace);
+  }
 
   static SID AddNewSegment(TID tid, VTS *vts,
                            LSID rd_lockset, LSID wr_lockset) {
@@ -1471,7 +1475,7 @@ class Segment {
     seg->lsid_[1] = wr_lockset;
     seg->vts_ = vts;
     seg->lock_era_ = g_lock_era;
-    seg->embedded_stack_trace_[0] = 0;
+    embedded_stack_trace(sid)[0] = 0;
     DCHECK(seg->vts_);
     return sid;
   }
@@ -1624,30 +1628,31 @@ class Segment {
   }
 
   static void InitClassMembers() {
-    CHECK(sizeof(Segment) ==
-          4 * sizeof(int32_t)  // ref_count_, tid_, lsid_[2]
-          + 1 * sizeof(uintptr_t) // lock_era_ + alignment.
-          + 1 * sizeof(void*)  // vts_
-          + 1 * sizeof(uintptr_t)  // embedded_stack_trace_[1]
-          );
-    actual_size_of_segment_ = sizeof(Segment) +
-        (kSizeOfHistoryStackTrace - 1) * sizeof(uintptr_t);
+    uintptr_t actual_size_of_segment = sizeof(Segment) +
+        kSizeOfHistoryStackTrace * sizeof(uintptr_t);
     Report("INFO: Allocating %'ld (%'ld * %'ld) bytes for Segments.\n",
-           actual_size_of_segment_ * kMaxSID, actual_size_of_segment_, kMaxSID);
+           actual_size_of_segment * kMaxSID, actual_size_of_segment, kMaxSID);
 
-    all_segments_  = new uint8_t[kMaxSID * actual_size_of_segment_];
+    all_segments_  = new Segment[kMaxSID];
+    // initialization all segments to 0.
+    memset(all_segments_, 0, kMaxSID * sizeof(Segment));
+    // initialize all_segments_[0] with garbage
+    memset(all_segments_, -1, sizeof(Segment));
+
+    if (kSizeOfHistoryStackTrace) {
+      all_stacks_  = new uintptr_t[kMaxSID * kSizeOfHistoryStackTrace];
+      memset(all_stacks_, 0, sizeof(uintptr_t) * 
+             kMaxSID * kSizeOfHistoryStackTrace);
+    } else {
+      all_stacks_ = NULL;
+    }
     n_segments_    = 1;
     reusable_sids_ = new vector<SID>;
     recycled_sids_ = new vector<SID>;
-    // initialization all segments to 0.
-    memset(all_segments_, 0, kMaxSID * actual_size_of_segment_);
-    // initialize all_segments_[0] with garbage
-    memset(all_segments_, -1, actual_size_of_segment_);
   }
  private:
   static Segment *GetSegmentByIndex(int32_t index) {
-    return reinterpret_cast<Segment*>(
-        &all_segments_[index * actual_size_of_segment_]);
+    return &all_segments_[index];
   }
   static Segment *GetInternal(SID sid) {
     DCHECK(sid.valid());
@@ -1662,23 +1667,21 @@ class Segment {
   LSID     lsid_[2];
   VTS *vts_;
   uint32_t lock_era_; /* followed by a 32 bit padding on 64-bit arch :( */
-  uintptr_t embedded_stack_trace_[1];
 
   // static class members.
 
-  // Array of kMaxSID Segments. The size of the Segment is not known at compile
-  // time, but is constant after reading command line flags. So we use an array
-  // of kMaxSID*actual_sizeof(Segment) to store segments.
-  static uint8_t *all_segments_;
+  static Segment *all_segments_;
+  // We store stack traces separately because their size is unknown 
+  // at compile time and and because they are needed rarely.
+  static uintptr_t *all_stacks_;
 
-  static size_t actual_size_of_segment_;
   static int32_t n_segments_;
   static vector<SID> *reusable_sids_;
   static vector<SID> *recycled_sids_;
 };
 
-uint8_t          *Segment::all_segments_;
-size_t            Segment::actual_size_of_segment_;
+Segment          *Segment::all_segments_;
+uintptr_t        *Segment::all_stacks_;
 int32_t           Segment::n_segments_;
 vector<SID>      *Segment::reusable_sids_;
 vector<SID>      *Segment::recycled_sids_;
@@ -3402,7 +3405,7 @@ struct RecentSegmentsCache {
       // If they match the current segment stack, don't create a new segment.
       // This can probably lead to a little bit wrong stack traces in rare
       // occasions but we don't really care that much.
-      uintptr_t *emb_trace = seg->embedded_stack_trace();
+      uintptr_t *emb_trace = Segment::embedded_stack_trace(sid);
       size_t n = curr_stack.size();
       if (*emb_trace &&  // This stack trace was filled
           curr_stack.size() >= 3 &&
@@ -3787,7 +3790,7 @@ struct Thread {
     sid_ = new_sid;
     Segment::Ref(new_sid, "Thread::NewSegmentWithoutUnrefingOld");
 
-    FillEmbeddedStackTrace(segment()->embedded_stack_trace());
+    FillEmbeddedStackTrace(Segment::embedded_stack_trace(sid()));
     if (0)
     Printf("2: %s T%d/S%d old_sid=%d NewSegment: %s\n", call_site,
            tid().raw(), sid().raw(), old_sid.raw(),
@@ -3836,7 +3839,7 @@ struct Thread {
         sid_ = match;
       }
       if (refill_stack)
-        FillEmbeddedStackTrace(segment()->embedded_stack_trace());
+        FillEmbeddedStackTrace(Segment::embedded_stack_trace(sid()));
     } else {
       G_stats->history_creates_new_segment++;
       VTS *new_vts = vts()->Clone();
@@ -4219,7 +4222,7 @@ struct HeapInfo {
 
   Segment *seg() { return Segment::Get(sid); }
   TID tid() { return seg()->tid(); }
-  string StackTraceString() { return seg()->StackTraceString(); }
+  string StackTraceString() { return Segment::StackTraceString(sid); }
 };
 
 static HeapMap<HeapInfo> *G_heap_map;
@@ -4450,7 +4453,7 @@ class ReportStorage {
       }
       LockSet::AddLocksToSet(seg->lsid(false), locks);
       LockSet::AddLocksToSet(seg->lsid(true), locks);
-      Report("%s", seg->StackTraceString().c_str());
+      Report("%s", Segment::StackTraceString(concurrent_sid).c_str());
       if (!G_flags->pure_happens_before &&
           G_flags->suggest_happens_before_arcs) {
         set<LID> message_locks;
@@ -6271,9 +6274,6 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   FindIntFlag("num_callers_in_history", kSizeOfHistoryStackTrace, args,
               &G_flags->num_callers_in_history);
   kSizeOfHistoryStackTrace = G_flags->num_callers_in_history;
-  if (G_flags->keep_history == 0) {
-    kSizeOfHistoryStackTrace = 1;
-  }
 
   // Cut stack under the following default functions.
   G_flags->cut_stack_below.push_back("Thread*ThreadBody*");
