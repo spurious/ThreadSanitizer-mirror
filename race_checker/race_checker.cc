@@ -101,7 +101,7 @@ void RaceChecker::Start() {
   if (race_checker_verbosity > 0) {
     fprintf(stderr, "RaceChecker::%s instance created for '%s' on thread 0x%X\n",
             this->type_ == WRITE ? "WRITE" : "READ ",
-            this->id_.c_str(), this->thread_);
+            this->id_.c_str(), (unsigned int)this->thread_);
   }
   CallSite callsite;
   callsite.nstack =
