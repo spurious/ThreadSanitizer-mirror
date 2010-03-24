@@ -3594,7 +3594,7 @@ struct Thread {
   }
 
   static Thread *Get(TID tid) {
-    CHECK(tid.raw() < NumberOfThreads());
+    DCHECK(tid.raw() < NumberOfThreads());
     return all_threads_[tid.raw()];
   }
 
@@ -5711,23 +5711,23 @@ class Detector {
 
     if (UNLIKELY(g_so_far_only_one_thread)) return;
 
-    if (UNLIKELY(G_flags->keep_history >= 2)) {
+    if (DEBUG_MODE && UNLIKELY(G_flags->keep_history >= 2)) {
       // Keep the precise history. Very SLOW!
       HandleSblockEnter(tid, GetPcOfCurrentThread());
     }
 
     if        (size == 8 && cache_line->SameValueStored(addr, 8)) {
       HandleMemoryAccessHelper(is_w, cache_line, addr, size, tid, thr, tracing);
-      G_stats->n_access8++;
+      if (DEBUG_MODE) G_stats->n_access8++;
     } else if (size == 4 && cache_line->SameValueStored(addr, 4)) {
       HandleMemoryAccessHelper(is_w, cache_line, addr, size, tid, thr, tracing);
-      G_stats->n_access4++;
+      if (DEBUG_MODE) G_stats->n_access4++;
     } else if (size == 2 && cache_line->SameValueStored(addr, 2)) {
       HandleMemoryAccessHelper(is_w, cache_line, addr, size, tid, thr, tracing);
-      G_stats->n_access2++;
+      if (DEBUG_MODE) G_stats->n_access2++;
     } else if (size == 1) {
       HandleMemoryAccessHelper(is_w, cache_line, addr, size, tid, thr, tracing);
-      G_stats->n_access1++;
+      if (DEBUG_MODE) G_stats->n_access1++;
     } else {
       // slow case
       for (uintptr_t x = a; x < b; x++) {
