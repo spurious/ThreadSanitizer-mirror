@@ -83,6 +83,19 @@ string PcToRtnNameWithStats(uintptr_t pc, bool demangle) {
   return PcToRtnName(pc, demangle);
 }
 
+static string RemovePrefixFromString(string str) {
+  for (size_t i = 0; i < G_flags->file_prefix_to_cut.size(); i++) {
+    string prefix_to_cut = G_flags->file_prefix_to_cut[i];
+    size_t pos = str.find(prefix_to_cut);
+    if (pos != string::npos) {
+      str = str.substr(pos + prefix_to_cut.size());
+    }
+  }
+  if (str.find("./") == 0) {  // remove leading ./
+    str = str.substr(2);
+  }
+  return str;
+}
 
 string PcToRtnNameAndFilePos(uintptr_t pc) {
   G_stats->pc_to_strings++;
@@ -92,18 +105,9 @@ string PcToRtnNameAndFilePos(uintptr_t pc) {
   int line_no = -1;
   PcToStrings(pc, G_flags->demangle, &img_name, &rtn_name,
               &file_name, &line_no);
-  for (size_t i = 0; i < G_flags->file_prefix_to_cut.size(); i++) {
-    string prefix_to_cut = G_flags->file_prefix_to_cut[i];
-    size_t pos = file_name.find(prefix_to_cut);
-    if (pos != string::npos) {
-      file_name = file_name.substr(pos + prefix_to_cut.size());
-    }
-    if (file_name.find("./") == 0) {  // remove leading ./
-      file_name = file_name.substr(2);
-    }
-  }
+  file_name = RemovePrefixFromString(file_name);
   if (file_name == "") {
-    return rtn_name + " " + img_name;
+    return rtn_name + " " + RemovePrefixFromString(img_name);
   }
   char buff[10];
   snprintf(buff, sizeof(buff), "%d", line_no);
