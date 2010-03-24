@@ -2240,8 +2240,8 @@ STRCPY(VG_Z_LIBC_SONAME, strcpy)
 
 
 #define ANN_FUNC(ret_ty, f, args...) \
-    ret_ty I_WRAP_SONAME_FNNAME_ZZ(NONE,f)(args); \
-    ret_ty I_WRAP_SONAME_FNNAME_ZZ(NONE,f)(args)
+    ret_ty I_WRAP_SONAME_FNNAME_ZZ(Za,f)(args); \
+    ret_ty I_WRAP_SONAME_FNNAME_ZZ(Za,f)(args)
 
 
 #define ANN_TRACE(args...) \
