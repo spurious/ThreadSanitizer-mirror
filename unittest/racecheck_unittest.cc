@@ -4363,7 +4363,7 @@ REGISTER_TEST(Run, 96);
 namespace test97 {
 const int HG_CACHELINE_SIZE = 64;
 
-Mutex MU;
+StealthNotification n1, n2;
 
 const int ARRAY_SIZE = HG_CACHELINE_SIZE * 4 / sizeof(int);
 int array[ARRAY_SIZE];
@@ -4374,8 +4374,9 @@ int * GLOB = &array[ARRAY_SIZE/2];
  */
 
 void Reader() {
-  usleep(500000);
+  n1.wait();
   CHECK(777 == *GLOB);
+  n2.signal();
 }
 
 void Run() {
@@ -4386,12 +4387,13 @@ void Run() {
 
   t.Start();
   *GLOB = 777;
+  n1.signal();
+  n2.wait();
   t.Join();
 }
 
 REGISTER_TEST2(Run, 97, FEATURE)
 }  // namespace test97
-
 
 // test99: TP. Unit test for a bug in LockWhen*. {{{1
 namespace test99 {
