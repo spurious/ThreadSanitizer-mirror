@@ -910,11 +910,13 @@ void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
   t.uniq_tid = n_started_threads++;
   t.tid = tid;
 
+#ifndef _MSC_VER
   if (n_started_threads == 2) {
     // we are creating the first non-main thread. Flush the code cache and start
     // doing real work.
     CODECACHE_FlushCache();
   }
+#endif  // _MSC_VER
 
   THREADID parent_tid = -1;
   if (has_parent) {
@@ -1977,12 +1979,14 @@ static void InstrumentMopsInBBl(BBL bbl, RTN rtn, TraceInfo *trace_info, size_t 
 
 void CallbackForTRACE(TRACE trace, void *v) {
   CHECK(n_started_threads > 0);
+#ifndef _MSC_VER
   if (n_started_threads == 1) {
     // There are no threads running other than the main thread.
     // Do not instrument anything. When another thread starts,
     // we will flush the code cache.
     return;
   }
+#endif  // _MSC_VER
 
   RTN rtn = TRACE_Rtn(trace);
   bool ignore_memory = false;
