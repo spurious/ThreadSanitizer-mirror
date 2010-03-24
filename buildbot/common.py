@@ -160,17 +160,9 @@ def addSetupTreeForTestsStep(factory):
 
 
 def addUploadBinariesStep(factory, binaries):
-  bzip_cmds = []
-  for local_name in binaries.keys():
-    bzip_cmds.append('bzip2 -k ' + local_name)
-  factory.addStep(ShellCommand(command='; '.join(bzip_cmds),
-                               description='compressing self-contained binaries',
-                               descriptionDon='compress self-contained binaries'))
-
   for (local_name, remote_name) in binaries.items():
-    src = local_name + '.bz2'
     dst = WithProperties('public_html/binaries/' + remote_name + '.bz2', 'got_revision')
-    factory.addStep(FileUpload(slavesrc=src, masterdest=dst, mode=0755))
+    factory.addStep(FileUpload(slavesrc=local_name, masterdest=dst, mode=0755))
 
 
 

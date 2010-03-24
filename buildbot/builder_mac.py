@@ -25,27 +25,32 @@ def generate(settings):
                           description='building valgrind',
                           descriptionDone='build valgrind'))
 
-  f1.addStep(Compile(command=['make', '-C', 'tsan', '-j4', 'OFFLINE=',
-                              'VALGRIND_INST_ROOT=../out',
-                              'PIN_ROOT=',
-                              'm'],
+  path_flags = ['OFFLINE=',
+                'VALGRIND_INST_ROOT=../out',
+                'PIN_ROOT=']
+  f1.addStep(Compile(command=['make', '-C', 'tsan', '-j4'] + path_flags + ['m'],
                      description='building tsan',
                      descriptionDone='build tsan'))
 
   # Build self-contained tsan binaries.
-  f1.addStep(ShellCommand(command=['tsan_binary/mk-self-contained-valgrind.sh',
-                                   'out', 'tsan', 'tsan.sh'],
+  f1.addStep(ShellCommand(command=['make', '-C', 'tsan'] + path_flags +
+                          ['OS=darwin', 'ARCH=x86', 'DEBUG=0', 'self-contained-stripped'],
                           description='packing self-contained tsan',
                           descriptionDone='pack self-contained tsan'))
 
-  f1.addStep(ShellCommand(command=['tsan_binary/mk-self-contained-valgrind.sh',
-                                   'out', 'tsan-debug', 'tsan-debug.sh'],
+  f1.addStep(ShellCommand(command=['make', '-C', 'tsan'] + path_flags +
+                          ['OS=darwin', 'ARCH=x86', 'DEBUG=1', 'self-contained'],
                           description='packing self-contained tsan (debug)',
                           descriptionDone='pack self-contained tsan (debug)'))
 
+  f1.addStep(ShellCommand(command='ln -s tsan/bin/tsan-x86-darwin-self-contained.sh tsan.sh; ' +
+                          'ln -s tsan/bin/tsan-x86-darwin-debug-self-contained.sh tsan-debug.sh',
+                          description='symlinking tsan',
+                          descriptionDone='symlink tsan'))
+
   binaries = {
-    'tsan.sh' : 'tsan-r%s-macos10.5.sh',
-    'tsan-debug.sh' : 'tsan-r%s-macos10.5-debug.sh'};
+    'tsan/bin/tsan-x86-darwin-debug-self-contained.sh' : 'tsan-r%s-macosx10.5-debug-self-contained.sh',
+    'tsan/bin/tsan-x86-darwin-self-contained.sh' : 'tsan-r%s-macosx10.5-darwin-self-contained.sh'}
   addUploadBinariesStep(f1, binaries)
 
 
