@@ -1321,28 +1321,33 @@ FreeList **VTS::free_lists_;
 
 
 // -------- Mask -------------------- {{{1
+// A bit mask (32-bits on 32-bit arch and 64-bits on 64-bit arch).
 class Mask {
  public:
+  static const uintptr_t kOne = 1;
+  static const uintptr_t kNBits = sizeof(uintptr_t) * 8;
+  static const uintptr_t kNBitsLog = kNBits == 32 ? 5 : 6;
+
   Mask() : m_(0) {}
   Mask(const Mask &m) : m_(m.m_) { }
   explicit Mask(uintptr_t m) : m_(m) { }
-  bool Get(uintptr_t idx) const   { return m_ & (1ULL << idx); }
-  void Set(uintptr_t idx)   { m_ |= 1ULL << idx; }
-  void Clear(uintptr_t idx) { m_ &= ~(1ULL << idx); }
+  bool Get(uintptr_t idx) const   { return m_ & (kOne << idx); }
+  void Set(uintptr_t idx)   { m_ |= kOne << idx; }
+  void Clear(uintptr_t idx) { m_ &= ~(kOne << idx); }
   bool Empty() const {return m_ == 0; }
 
   // Clear bits in range [a,b) and return old [a,b) range.
   Mask ClearRangeAndReturnOld(uintptr_t a, uintptr_t b) {
     DCHECK(a < b);
-    DCHECK(b <= 64);
+    DCHECK(b <= kNBits);
     uintptr_t res;
     uintptr_t n_bits_in_mask = (b - a);
-    if (n_bits_in_mask == 64) {
+    if (n_bits_in_mask == kNBits) {
       res = m_;
       m_ = 0;
     } else {
-      uint64_t t = (1ULL << n_bits_in_mask);
-      uint64_t mask = (t - 1) << a;
+      uintptr_t t = (kOne << n_bits_in_mask);
+      uintptr_t mask = (t - 1) << a;
       res = m_ & mask;
       m_ &= ~mask;
     }
@@ -1355,27 +1360,27 @@ class Mask {
 
   void SetRange(uintptr_t a, uintptr_t b) {
     DCHECK(a < b);
-    DCHECK(b <= 64);
+    DCHECK(b <= kNBits);
     uintptr_t n_bits_in_mask = (b - a);
-    if (n_bits_in_mask == 64) {
+    if (n_bits_in_mask == kNBits) {
       m_ = ~0;
     } else {
-      uint64_t t = (1ULL << n_bits_in_mask);
-      uint64_t mask = (t - 1) << a;
+      uintptr_t t = (kOne << n_bits_in_mask);
+      uintptr_t mask = (t - 1) << a;
       m_ |= mask;
     }
   }
 
-  uint64_t GetRange(uintptr_t a, uintptr_t b) const {
+  uintptr_t GetRange(uintptr_t a, uintptr_t b) const {
     // a bug was fixed here
     DCHECK(a < b);
-    DCHECK(b <= 64);
+    DCHECK(b <= kNBits);
     uintptr_t n_bits_in_mask = (b - a);
-    if (n_bits_in_mask == 64) {
+    if (n_bits_in_mask == kNBits) {
       return m_;
     } else {
-      uint64_t t = (1ULL << n_bits_in_mask);
-      uint64_t mask = (t - 1) << a;
+      uintptr_t t = (kOne << n_bits_in_mask);
+      uintptr_t mask = (t - 1) << a;
       return m_ & mask;
     }
   }
@@ -1390,11 +1395,11 @@ class Mask {
 
 
   string ToString() const {
-    char buff[65];
-    for (int i = 0; i < 64; i++) {
+    char buff[kNBits+1];
+    for (uintptr_t i = 0; i < kNBits; i++) {
       buff[i] = Get(i) ? '1' : '0';
     }
-    buff[64] = 0;
+    buff[kNBits] = 0;
     return buff;
   }
 
@@ -1402,12 +1407,12 @@ class Mask {
     Mask m;
     m.Set(2);
     Printf("%s\n", m.ToString().c_str());
-    m.ClearRange(0, 64);
+    m.ClearRange(0, kNBits);
     Printf("%s\n", m.ToString().c_str());
   }
 
  private:
-  uint64_t m_;
+  uintptr_t m_;
 };
 
 // -------- Segment -------------------{{{1
@@ -2554,8 +2559,8 @@ class CacheLineBase {
     return true;
   }
 
-  static const uintptr_t kLineSizeBits = 6;  // Don't change this.
-  static const uintptr_t kLineSize = 1 << kLineSizeBits;
+  static const uintptr_t kLineSizeBits = Mask::kNBitsLog;  // Don't change this.
+  static const uintptr_t kLineSize = Mask::kNBits;
   static const int32_t kFastModeID;
   static const int32_t kSharedID;
  protected:
@@ -2572,7 +2577,7 @@ class CacheLineBase {
 const int32_t CacheLineBase::kFastModeID = -2;
 const int32_t CacheLineBase::kSharedID = -3;
 
-// Uncompressed line. Just a vector of 64 shadow values.
+// Uncompressed line. Just a vector of kLineSize shadow values.
 class CacheLineUncompressed : public CacheLineBase {
  protected:
   ShadowValue vals_[kLineSize];
@@ -2757,7 +2762,7 @@ class Cache {
   INLINE CacheLine *GetLine(uintptr_t a, bool create_new_if_need, int call_site) {
     uintptr_t tag = CacheLine::ComputeTag(a);
     DCHECK(tag <= a);
-    DCHECK((uint64_t)tag + CacheLine::kLineSize > (uint64_t)a);
+    DCHECK(tag + CacheLine::kLineSize > a);
     uintptr_t cli = ComputeCacheLineIndexInCache(a);
     CacheLine *res = lines_[cli];
     if (LIKELY(res && res->tag() == tag)) {
@@ -2798,7 +2803,7 @@ class Cache {
       //  continue;
       //}
       set<ShadowValue> s;
-      for (int i = 0; i < 64; i++) {
+      for (uintptr_t i = 0; i < CacheLine::kLineSize; i++) {
         if (line->has_shadow_value().Get(i)) {
           ShadowValue sval = *(line->GetValuePointer(i));
           s.insert(sval);
@@ -2810,7 +2815,7 @@ class Cache {
       sizes[size]++;
     }
     Printf("Storage sizes: %ld\n", storage_.size());
-    for (size_t size = 0; size <= 64; size++) {
+    for (size_t size = 0; size <= CacheLine::kLineSize; size++) {
       if (sizes[size]) {
         Printf("  %ld => %d\n", size, sizes[size]);
       }
@@ -2909,7 +2914,7 @@ class Cache {
     c++;
     if ((c % 1024) == 1) {
       set<int64_t> s;
-      for (int i = 0; i < 64; i++) {
+      for (uintptr_t i = 0; i < CacheLine::kLineSize; i++) {
         if (old_line->has_shadow_value().Get(i)) {
           int64_t sval = *reinterpret_cast<int64_t*>(
                             old_line->GetValuePointer(i));
@@ -2921,7 +2926,8 @@ class Cache {
              storage_.size(), old_line->has_shadow_value().ToString().c_str(),
              s.size());
 
-      Printf("new line: %p %p\n", new_line->tag(), new_line->tag() + 64);
+      Printf("new line: %p %p\n", new_line->tag(), new_line->tag()
+             + CacheLine::kLineSize);
       G_stats->PrintStatsForCache();
     }
   }
