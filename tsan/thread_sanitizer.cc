@@ -5418,6 +5418,7 @@ class Detector {
   }
 
   void HandleTraceMem() {
+    if (G_flags->trace_level == 0) return;
     TID tid = cur_tid_;
     uintptr_t a = e_->a();
     CacheLine *cache_line = G_cache->GetLineOrCreateNew(a, __LINE__);
