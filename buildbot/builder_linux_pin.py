@@ -30,13 +30,8 @@ def generate(settings):
 
   addSetupTreeForTestsStep(f1)
 
-  # Run suppressions tests.
-  f1.addStep(Test(command='tsan/bin/amd64-linux-debug-suppressions_test',
-                  description='running amd64 suppresions tests',
-                  descriptionDone='run amd64 suppresions tests'))
-  f1.addStep(Test(command='tsan/bin/x86-linux-debug-suppressions_test',
-                  description='running x86 suppresions tests',
-                  descriptionDone='run x86 suppresions tests'))
+  # Run thread_sanitizer and suppressions tests.
+  addTsanTestsStep(f1, ['amd64-linux-debug', 'x86-linux-debug'])
 
   # Run unit tests.
   #                  test binary | tsan + run parameters

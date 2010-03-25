@@ -54,6 +54,8 @@ def generate(settings):
   addUploadBinariesStep(f1, binaries)
 
 
+  # Run thread_sanitizer and suppressions tests.
+  addTsanTestsStep(f1, ['x86-darwin-debug'])
 
   # Run unit tests.
   test_binaries = {} # (bits, opt, static) -> (binary, desc)

@@ -165,7 +165,19 @@ def addUploadBinariesStep(factory, binaries):
     factory.addStep(FileUpload(slavesrc=local_name, masterdest=dst, mode=0755))
 
 
+# Run GTest-based tests from tsan/ directory.
+def addTsanTestsStep(factory, archosd_list):
+  for archosd in archosd_list:
+    factory.addStep(Test(command='tsan/bin/%s-suppressions_test' % archosd,
+                         description='testing suppressions (%s)' % archosd,
+                         descriptionDone='test suppressions (%s)' % archosd))
+  for archosd in archosd_list:
+    factory.addStep(Test(command='tsan/bin/%s-thread_sanitizer_test' % archosd,
+                    description='testing thread_sanitizer (%s)' % archosd,
+                    descriptionDone='test thread_sanitizer (%s)' % archosd))
+
 
 __all__ = ['unitTestBinary', 'addBuildTestStep', 'addTestStep',
            'addClobberStep', 'addArchiveStep', 'addExtractStep',
-           'addSetupTreeForTestsStep', 'getTestDesc', 'addUploadBinariesStep']
+           'addSetupTreeForTestsStep', 'getTestDesc', 'addUploadBinariesStep',
+           'addTsanTestsStep']

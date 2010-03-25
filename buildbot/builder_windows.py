@@ -19,10 +19,8 @@ def generate(settings):
                      description='building tsan with pin',
                      descriptionDone='build tsan with pin'))
 
-  # Run suppressions tests.
-  f1.addStep(Test(command='tsan/bin/x86-windows-debug-suppressions_test.exe',
-                  description='running suppresions tests',
-                  descriptionDone='run suppresions tests'))
+  # Run thread_sanitizer and suppressions tests.
+  addTsanTestsStep(f1, ['x86-windows-debug'])
 
   # Run tests.
   test_binaries = {} # (os, bits, opt, static, name) -> (binary, desc)

@@ -10,8 +10,10 @@ def generate(settings):
 
   addSetupTreeForTestsStep(f1)
 
-  # Run output tests.
+  # Run thread_sanitizer and suppressions tests.
+  addTsanTestsStep(f1, ['amd64-linux-debug', 'x86-linux-debug'])
 
+  # Run output tests.
   output_test_binary = unitTestBinary('linux', 64, 0, False, test_base_name='output_test1')
   output_test_desc = getTestDesc('linux', 64, 0, False);
   addTestStep(f1, False, 'phb', output_test_binary,
