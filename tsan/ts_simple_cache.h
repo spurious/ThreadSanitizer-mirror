@@ -31,6 +31,7 @@
 
 // Few simple 'cache' classes.
 // -------- PtrToBoolCache ------ {{{1
+// Maps a pointer to a boolean.
 template <int kSize>
 class PtrToBoolCache {
  public:
@@ -58,12 +59,14 @@ class PtrToBoolCache {
     return false;
   }
  private:
-  uint64_t arr_[kSize];
+  uintptr_t arr_[kSize];
   uint32_t bits_[(kSize + 31) / 32];
 };
 
 // -------- IntPairToBoolCache ------ {{{1
-template <int kSize>
+// Maps two integers to a boolean.
+// The second integer should be less than 1^31.
+template <int32_t kSize>
 class IntPairToBoolCache {
  public:
   IntPairToBoolCache() {
@@ -72,33 +75,31 @@ class IntPairToBoolCache {
   void Flush() {
     memset(arr_, 0, sizeof(arr_));
   }
-  void Insert(int a, int b, bool val) {
-    uint64_t comb = combine2(a, b);
-    uint64_t idx  = comb % kSize;
+  void Insert(uint32_t a, uint32_t b, bool val) {
+    DCHECK((int32_t)b >= 0);
+    uint32_t i = idx(a, b);
     if (val) {
-      comb |= 1ULL << 63;
+      b |= 1U << 31;
     }
-    arr_[idx] = comb;
+    arr_[i * 2 + 0] = a;
+    arr_[i * 2 + 1] = b;
   }
-  bool Lookup(int a, int b, bool *val) {
-    uint64_t comb = combine2(a, b);
-    uint64_t idx  = comb % kSize;
-    uint64_t prev = arr_[idx];
-    uint64_t valbit = prev & (1ULL << 63);
-    if ((prev & ~(1ULL << 63)) == comb) {
-      *val = valbit != 0;
+  bool Lookup(uint32_t a, uint32_t b, bool *val) {
+    DCHECK((int32_t)b >= 0);
+    uint32_t i = idx(a, b);
+    if (arr_[i * 2] != a) return false;
+    uint32_t maybe_b = arr_[i * 2 + 1];
+    if (b == (maybe_b & (~(1U << 31)))) {
+      *val = (maybe_b & (1U << 31)) != 0;
       return true;
     }
     return false;
   }
  private:
-  uint64_t combine2(int a, int b) {
-    CHECK_GT(a, 0);
-    CHECK_GT(b, 0);
-    int64_t x = a;
-    return (x << 32) | b;
+  uint32_t idx(uint32_t a, uint32_t b) {
+    return (a ^ ((b >> 16) | (b << 16))) % kSize;
   }
-  uint64_t arr_[kSize];
+  uint32_t arr_[kSize * 2];
 };
 
 // end. {{{1
