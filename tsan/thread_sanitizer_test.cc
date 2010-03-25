@@ -135,7 +135,7 @@ TEST(ThreadSanitizer, HeapInfoTest) {
 
 TEST(ThreadSanitizer, PtrToBoolCacheTest) {
   PtrToBoolCache<256> c;
-  bool val;
+  bool val = false;
   EXPECT_FALSE(c.Lookup(123, &val));
 
   c.Insert(0, false);
@@ -181,6 +181,26 @@ TEST(ThreadSanitizer, PtrToBoolCacheTest) {
   EXPECT_EQ(false, val);
   EXPECT_TRUE(c.Lookup(257, &val));
   EXPECT_EQ(false, val);
+}
+
+TEST(ThreadSanitizer, IntPairToBoolCacheTest) {
+  IntPairToBoolCache<257> c;
+  bool val = false;
+  map<pair<int,int>, bool> m;
+
+  for (int i = 0; i < 1000000; i++) {
+    int a = (rand() % 1024) + 1;
+    int b = (rand() % 1024) + 1;
+
+    if (c.Lookup(a, b, &val)) {
+      EXPECT_EQ(1U, m.count(make_pair(a,b)));
+      EXPECT_EQ(val, m[make_pair(a,b)]);
+    }
+
+    val = (rand() % 2) == 1;
+    c.Insert(a, b, val);
+    m[make_pair(a,b)] = val;
+  }
 }
 
 int main(int argc, char **argv) {
