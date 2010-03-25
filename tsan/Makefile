@@ -171,7 +171,7 @@ m32d:
 	$(MAKE) all OS=darwin ARCH=x86 DEBUG=1
 
 install:
-	@echo The 'install' target is deprecated. 
+	@echo The 'install' target is deprecated.
 
 self-contained: TS_valgrind
 	./mk-self-contained-valgrind.sh $(VALGRIND_INST_ROOT) tsan$(D) $(OUTDIR)/tsan-$(ARCHOS)$(D)-self-contained.sh
@@ -179,6 +179,12 @@ self-contained-stripped: TS_valgrind
 	strip $(OUTDIR)/tsan-*$(OS)
 	./mk-self-contained-valgrind.sh $(VALGRIND_INST_ROOT) tsan$(D) $(OUTDIR)/tsan-$(ARCHOS)$(D)-self-contained.sh
 
+tsan-win-sfx: w32o
+	rm -rf tsan_win
+	mkdir -p tsan_win
+	cp -r $(PIN_ROOT)/ia32 bin/x86-windows-ts_pin.dll tsan.bat tsan_win
+	7z a -sfx tsan-win-sfx.exe tsan_win
+	rm -rf tsan_win
 
 ifeq ($(VALGRIND_ROOT), )
 TS_valgrind:
