@@ -161,7 +161,7 @@ def addSetupTreeForTestsStep(factory):
 
 def addUploadBinariesStep(factory, binaries):
   for (local_name, remote_name) in binaries.items():
-    dst = WithProperties('public_html/binaries/' + remote_name + '.bz2', 'got_revision')
+    dst = WithProperties('public_html/binaries/' + remote_name, 'got_revision')
     factory.addStep(FileUpload(slavesrc=local_name, masterdest=dst, mode=0755))
 
 
