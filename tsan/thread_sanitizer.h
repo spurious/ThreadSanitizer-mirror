@@ -122,6 +122,7 @@ extern bool debug_thread;
 extern bool debug_rtn;
 extern bool debug_wrap;
 extern bool debug_ins;
+extern bool debug_shadow_stack;
 
 
 //--------- TS Exports ----------------- {{{1

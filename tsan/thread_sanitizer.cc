@@ -73,6 +73,7 @@ bool debug_rtn = false;
 bool debug_lock = false;
 bool debug_wrap = false;
 bool debug_ins = false;
+bool debug_shadow_stack = false;
 bool debug_happens_before = false;
 bool debug_cache = false;
 
@@ -5782,7 +5783,6 @@ class Detector {
     // TODO(kcc): this is a workaround for NaCl. May need to fix it cleaner.
     const uint64_t G84 = (1ULL << 32) * 21; // 84G.
     if (size >= G84) {
-      HandleExpectRace(true, a, size, "NaCl memory range", tid);
       return;
     }
     #endif
@@ -6323,6 +6323,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   debug_lock = PhaseDebugIsOn("lock");
   debug_wrap = PhaseDebugIsOn("wrap");
   debug_ins = PhaseDebugIsOn("ins");
+  debug_shadow_stack = PhaseDebugIsOn("shadow_stack");
   debug_happens_before = PhaseDebugIsOn("happens_before");
   debug_cache = PhaseDebugIsOn("cache");
 }
