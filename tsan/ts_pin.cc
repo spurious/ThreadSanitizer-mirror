@@ -2535,7 +2535,6 @@ static void ThreadSanitizerThread(void *) {
       }
     } else {
       if (PIN_IsProcessExiting()) return;
-      sleep(0);
     }
   }
 }
