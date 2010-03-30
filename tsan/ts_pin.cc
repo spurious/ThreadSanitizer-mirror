@@ -372,7 +372,8 @@ static void DumpEventInternal(EventType type, int32_t uniq_tid, uintptr_t pc,
   ThreadSanitizerHandleOneEvent(&event);
 }
 
-static void TLEBFlushUnlocked(PinThread &t, ThreadLocalEventBuffer &tleb) {
+static void TLEBFlushUnlocked(ThreadLocalEventBuffer &tleb) {
+  PinThread &t = *tleb.t;
   DCHECK(tleb.size <= kThreadLocksEventBufferSize);
   if (DEBUG_MODE && t.thread_done) {
     Printf("ACHTUNG!!! an event from a dead thread T%d\n", t.tid);
@@ -489,7 +490,7 @@ static void TLEBFlushLocked(PinThread &t) {
     t.tleb.size = 0;
   } else {
     ScopedLock lock(&g_main_ts_lock);
-    TLEBFlushUnlocked(t, t.tleb);
+    TLEBFlushUnlocked(t.tleb);
   }
 }
 
@@ -909,8 +910,9 @@ void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
   memset(&t, 0, sizeof(PinThread));
   t.uniq_tid = n_started_threads++;
   t.tid = tid;
+  t.tleb.t = &t;
 
-#ifndef _MSC_VER
+#if 0
   if (n_started_threads == 2) {
     // we are creating the first non-main thread. Flush the code cache and start
     // doing real work.
@@ -927,7 +929,7 @@ void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
     t.parent_tid = parent_tid;
   }
 
-  if (G_flags->debug_level >= 2) {
+  if (debug_thread) {
     Printf("T%d ThreadStart parent=%d child=%d\n", tid, parent_tid, tid);
   }
 
@@ -1979,7 +1981,7 @@ static void InstrumentMopsInBBl(BBL bbl, RTN rtn, TraceInfo *trace_info, size_t 
 
 void CallbackForTRACE(TRACE trace, void *v) {
   CHECK(n_started_threads > 0);
-#ifndef _MSC_VER
+#if 0
   if (n_started_threads == 1) {
     // There are no threads running other than the main thread.
     // Do not instrument anything. When another thread starts,
@@ -2516,31 +2518,32 @@ static BOOL CallbackForExec(CHILD_PROCESS childProcess, VOID *val) {
 }
 
 //--------- ThreadSanitizerThread --------- {{{1
-static void *ThreadSanitizerThread(void *) {
-  while(1) {
+static void ThreadSanitizerThread(void *) {
+  while(true) {
     vector<ThreadLocalEventBuffer *> vec;
     {
       G_stats->lock_sites[1]++;
       ScopedLock lock(&g_main_ts_lock);
       vec.swap(*g_tleb_queue);
     }
-    for (size_t i = 0; i < vec.size(); i++) {
-      ThreadLocalEventBuffer *tleb = vec[i];
-      delete tleb;
+    size_t n = vec.size();
+    if (n) {
+      for (size_t i = 0; i < n; i++) {
+        ThreadLocalEventBuffer *tleb = vec[i];
+        TLEBFlushUnlocked(*tleb);
+        delete tleb;
+      }
+    } else {
+      if (PIN_IsProcessExiting()) return;
+      sleep(0);
     }
   }
-  return NULL;
 }
 static void StartThreadSanitizerThread() {
   if (G_flags->separate_analysis_thread == false) return;
   g_tleb_queue = new vector<ThreadLocalEventBuffer*>;
-#ifdef __GNUC__
-  // PIN docs say this is illegal, but this is an experiment anyway.
-  pthread_t t;
-  pthread_create(&t, NULL, ThreadSanitizerThread, NULL);
-#else
-  // not implemented.
-#endif
+  PIN_THREAD_UID uid;
+  PIN_SpawnInternalThread(&ThreadSanitizerThread, NULL, 0, &uid);
 }
 
 //--------- Fini ---------- {{{1
