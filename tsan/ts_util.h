@@ -248,6 +248,8 @@ extern size_t TimeInMilliSeconds();
 extern "C" long my_strtol(const char *str, char **end);
 extern void Printf(const char *format, ...);
 
+string ConvertToPlatformIndependentPath(const string &s);
+
 string ReadFileToString(const string &file_name, bool die_if_failed);
 
 // Get the current memory footprint of myself (parse /proc/self/status).

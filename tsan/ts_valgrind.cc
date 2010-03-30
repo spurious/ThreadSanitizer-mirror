@@ -144,6 +144,7 @@ void PcToStrings(uintptr_t pc, bool demangle,
       *file_name = g_buff1;
     }
   }
+  *file_name = ConvertToPlatformIndependentPath(*file_name);
 
   *rtn_name = PcToRtnName(pc, demangle);
 

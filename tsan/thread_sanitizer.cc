@@ -6228,6 +6228,11 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   CHECK(G_flags->literace_sampling < 32);
 
   FindStringFlag("file_prefix_to_cut", args, &G_flags->file_prefix_to_cut);
+  for (size_t i = 0; i < G_flags->file_prefix_to_cut.size(); i++) {
+    G_flags->file_prefix_to_cut[i] =
+        ConvertToPlatformIndependentPath(G_flags->file_prefix_to_cut[i]);
+  }
+
   FindStringFlag("ignore", args, &G_flags->ignore);
 
   FindBoolFlag("thread_coverage", false, args, &G_flags->thread_coverage);
@@ -6437,6 +6442,11 @@ static void SetupIgnore() {
         CHECK(0);
       }
     }
+  }
+
+  for (size_t i = 0; i < g_ignore_lists->files.size(); i++) {
+    string &cur = g_ignore_lists->files[i];
+    cur = ConvertToPlatformIndependentPath(cur);
   }
 }
 
