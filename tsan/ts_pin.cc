@@ -978,16 +978,11 @@ static void Before_BaseThreadInitThunk(THREADID tid, ADDRINT pc, ADDRINT sp) {
 static void Before_RtlExitUserThread(THREADID tid, ADDRINT pc) {
   PinThread &t = g_pin_threads[tid];
   if (t.tid != 0) {
-    TLEBFlushLocked(t);
-    // Printf("T%d %s\n", tid, __FUNCTION__);
     // Once we started exiting the thread, ignore the locking events.
     // This way we will avoid h-b arcs between unrelated threads.
-    CHECK(t.ignore_lock_events == 0);
-    t.ignore_lock_events = 1;
     // We also start ignoring all mops, otherwise we will get tons of race
     // reports from the windows guts.
-    CHECK(t.ignore_all_mops == 0);
-    t.ignore_all_mops = 1;
+    IgnoreSyncAndMopsBegin(tid, pc);
   }
 }
 #endif  // _MSC_VER
@@ -2519,23 +2514,38 @@ static BOOL CallbackForExec(CHILD_PROCESS childProcess, VOID *val) {
 }
 
 //--------- ThreadSanitizerThread --------- {{{1
+static void ConsumeTLEBQueue(const vector<ThreadLocalEventBuffer *> &vec) {
+  size_t n = vec.size();
+  for (size_t i = 0; i < n; i++) {
+    ThreadLocalEventBuffer *tleb = vec[i];
+    TLEBFlushUnlocked(*tleb);
+    delete tleb;
+  }
+}
+
 static void ThreadSanitizerThread(void *) {
   while(true) {
+    size_t n;
     vector<ThreadLocalEventBuffer *> vec;
     {
       G_stats->lock_sites[1]++;
       ScopedLock lock(&g_main_ts_lock);
-      vec.swap(*g_tleb_queue);
-    }
-    size_t n = vec.size();
-    if (n) {
-      for (size_t i = 0; i < n; i++) {
-        ThreadLocalEventBuffer *tleb = vec[i];
-        TLEBFlushUnlocked(*tleb);
-        delete tleb;
+      n = g_tleb_queue->size();
+      if (n < 100) {
+        // We have just few TLEBs. Take them and release the lock.
+        vec.swap(*g_tleb_queue);
+      } else {
+        // We have too many TLEBs.
+        // Consume them while holding the lock to avoid overflow in the queue.
+        ConsumeTLEBQueue(*g_tleb_queue);
+        g_tleb_queue->resize(0);
+        continue;
       }
-    } else {
-      if (PIN_IsProcessExiting()) return;
+    }
+    if (n) {
+      ConsumeTLEBQueue(vec);
+    } else if (PIN_IsProcessExiting()) {
+      return;
     }
   }
 }
