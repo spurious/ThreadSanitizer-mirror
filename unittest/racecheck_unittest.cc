@@ -4361,8 +4361,8 @@ void Run() {
 REGISTER_TEST(Run, 96);
 }  // namespace test96
 
-// test97: This test shows false negative with --fast-mode=yes {{{1
-namespace test97 {
+namespace FLAKY_FalseNegativeOfFastModeTest {  // {{{1
+// This test shows false negative with --fast-mode=yes.
 const int HG_CACHELINE_SIZE = 64;
 
 StealthNotification n1, n2;
@@ -4377,25 +4377,24 @@ int * GLOB = &array[ARRAY_SIZE/2];
 
 void Reader() {
   n1.wait();
-  CHECK(777 == *GLOB);
+  CHECK(0 != *GLOB);
   n2.signal();
 }
 
-void Run() {
+TEST(PositiveTests, FLAKY_FalseNegativeOfFastModeTest) {
   MyThreadArray t(Reader);
-  if (!Tsan_FastMode())
-    ANNOTATE_EXPECT_RACE_FOR_TSAN(GLOB, "test97: TP. FN with --fast-mode=yes");
-  printf("test97: This test shows false negative with --fast-mode=yes\n");
+  ANNOTATE_TRACE_MEMORY(GLOB);
+  if (!Tsan_FastMode()) {
+    ANNOTATE_EXPECT_RACE_FOR_TSAN(GLOB, __FUNCTION__);
+  }
 
   t.Start();
-  *GLOB = 777;
+  *GLOB = 0x12345;
   n1.signal();
   n2.wait();
   t.Join();
 }
-
-REGISTER_TEST2(Run, 97, FEATURE)
-}  // namespace test97
+}  // namespace
 
 // test99: TP. Unit test for a bug in LockWhen*. {{{1
 namespace test99 {
