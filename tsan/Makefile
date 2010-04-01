@@ -179,12 +179,18 @@ self-contained-stripped: TS_valgrind
 	strip $(OUTDIR)/tsan-*$(OS)
 	./mk-self-contained-valgrind.sh $(VALGRIND_INST_ROOT) tsan$(D) $(OUTDIR)/tsan-$(ARCHOS)$(D)-self-contained.sh
 
-tsan-win-sfx: w32o
-	rm -rf tsan_win
-	mkdir -p tsan_win
-	cp -r $(PIN_ROOT)/ia32 bin/x86-windows-ts_pin.dll tsan.bat tsan_win
-	7z a -sfx tsan-win-sfx.exe tsan_win
-	rm -rf tsan_win
+win-sfx: all
+	rm -rf tsan_$(ARCHOS)$(D)
+	mkdir -p tsan_$(ARCHOS)$(D)
+	cp -r $(PIN_ROOT)/ia32 bin/$(ARCHOS)-ts_pin.dll tsan.bat tsan_$(ARCHOS)$(D)
+	7z a -sfx tsan-$(ARCHOS)$(D)-sfx.exe tsan_$(ARCHOS)$(D)
+	rm -rf tsan_$(ARCHOS)$(D)
+
+win-sfx-32o:
+	$(MAKE) win-sfx OS=windows ARCH=x86 DEBUG=0
+
+win-sfx-32d:
+	$(MAKE) win-sfx OS=windows ARCH=x86 DEBUG=1
 
 ifeq ($(VALGRIND_ROOT), )
 TS_valgrind:
