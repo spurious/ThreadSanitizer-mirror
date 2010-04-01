@@ -4361,7 +4361,7 @@ void Run() {
 REGISTER_TEST(Run, 96);
 }  // namespace test96
 
-namespace FLAKY_FalseNegativeOfFastModeTest {  // {{{1
+namespace FalseNegativeOfFastModeTest {  // {{{1
 // This test shows false negative with --fast-mode=yes.
 const int HG_CACHELINE_SIZE = 64;
 
@@ -4381,7 +4381,7 @@ void Reader() {
   n2.signal();
 }
 
-TEST(PositiveTests, FLAKY_FalseNegativeOfFastModeTest) {
+TEST(PositiveTests, FalseNegativeOfFastModeTest) {
   MyThreadArray t(Reader);
   ANNOTATE_TRACE_MEMORY(GLOB);
   if (!Tsan_FastMode()) {
