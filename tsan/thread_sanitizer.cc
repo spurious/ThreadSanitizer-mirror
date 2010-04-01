@@ -3897,6 +3897,7 @@ struct Thread {
     ThreadCreateInfo info;
     info.ctx = CreateStackTrace(pc);
     info.vts = vts()->Clone();
+    CHECK(info.ctx && info.vts);
     child_tid_to_create_info_[TID(0)] = info;
     // Tick vts.
     this->NewSegmentForSignal();
@@ -3910,8 +3911,11 @@ struct Thread {
   // It may appear before *or* after THR_START event, at least with PIN.
   void HandleThreadCreateAfter(TID parent_tid, TID child_tid) {
     CHECK(parent_tid == tid());
-    // Place the info under child_tid.
-    child_tid_to_create_info_[child_tid] = child_tid_to_create_info_[TID(0)];
+    // Place the info under child_tid if we did not use it yet.
+    if (child_tid_to_create_info_.count(TID(0))){
+      child_tid_to_create_info_[child_tid] = child_tid_to_create_info_[TID(0)];
+      child_tid_to_create_info_.erase(TID(0));
+    }
 
     if (debug_thread) {
       Printf("T%d: THR_CREATE_AFTER %d\n", parent_tid.raw(), child_tid.raw());
@@ -3924,10 +3928,12 @@ struct Thread {
     if (child_tid_to_create_info_.count(child_tid)) {
       // We already seen THR_CREATE_AFTER, so the info is under child_tid.
       info = child_tid_to_create_info_[child_tid];
+      child_tid_to_create_info_.erase(child_tid);
       CHECK(info.ctx && info.vts);
     } else if (child_tid_to_create_info_.count(TID(0))){
       // We have not seen THR_CREATE_AFTER, but already seen THR_CREATE_BEFORE.
       info = child_tid_to_create_info_[TID(0)];
+      child_tid_to_create_info_.erase(TID(0));
       CHECK(info.ctx && info.vts);
     } else {
       // We have not seen THR_CREATE_BEFORE/THR_CREATE_AFTER.

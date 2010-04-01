@@ -427,8 +427,12 @@ static void TLEBFlushUnlocked(ThreadLocalEventBuffer &tleb) {
       }
       i += n;
     } else if (event == THR_START) {
-      DumpEventInternal(THR_START, t.uniq_tid, 0, 0,
+      if (t.parent_tid != (THREADID)-1) {
+        DumpEventInternal(THR_START, t.uniq_tid, 0, 0,
                         g_pin_threads[t.parent_tid].uniq_tid);
+      } else {
+        DumpEventInternal(THR_START, t.uniq_tid, 0, 0, -1);
+      }
     } else if (event == THR_END) {
       DumpEventInternal(THR_END, t.uniq_tid, 0, 0, 0);
       DCHECK(t.thread_finished == true);
@@ -925,23 +929,22 @@ void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
   }
 #endif  // _MSC_VER
 
-  THREADID parent_tid = -1;
+  t.parent_tid = -1;
   if (has_parent) {
-    parent_tid = g_tid_of_thread_which_called_create_thread;
+    t.parent_tid = g_tid_of_thread_which_called_create_thread;
 #if !defined(_MSC_VER)  // On Windows, threads may appear out of thin air.
-    CHECK(parent_tid != (THREADID)-1);
+    CHECK(t.parent_tid != (THREADID)-1);
 #endif  // _MSC_VER
-    t.parent_tid = parent_tid;
   }
 
   if (debug_thread) {
-    Printf("T%d ThreadStart parent=%d child=%d\n", tid, parent_tid, tid);
+    Printf("T%d ThreadStart parent=%d child=%d\n", tid, t.parent_tid, tid);
   }
 
-  if (has_parent && parent_tid != (THREADID)-1) {
-    g_pin_threads[parent_tid].last_child_tid = tid;
+  if (has_parent && t.parent_tid != (THREADID)-1) {
+    g_pin_threads[t.parent_tid].last_child_tid = tid;
     t.thread_stack_size_if_known =
-        g_pin_threads[parent_tid].last_child_stack_size_if_known;
+        g_pin_threads[t.parent_tid].last_child_stack_size_if_known;
   }
 
   // This is a lock-free (thread local) operation.
