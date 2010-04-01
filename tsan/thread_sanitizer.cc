@@ -3873,11 +3873,85 @@ struct Thread {
     DCHECK(VTS::HappensBeforeCached(signaller_vts, vts()));
   }
 
-
   void NewSegmentForSignal() {
     VTS *cur_vts = vts();
     VTS *new_vts = VTS::CopyAndTick(cur_vts, tid());
     NewSegment("NewSegmentForSignal", new_vts);
+  }
+
+  // When creating a child thread, we need to know
+  // 1. where the thread was created (ctx)
+  // 2. What was the vector clock of the parent thread (vts).
+
+  struct ThreadCreateInfo {
+    StackTrace *ctx;
+    VTS        *vts;
+  };
+
+  // This event comes before the child is created (e.g. just
+  // as we entered pthread_create).
+  void HandleThreadCreateBefore(TID parent_tid, uintptr_t pc) {
+    CHECK(parent_tid == tid());
+    g_so_far_only_one_thread = false;
+    // Store ctx and vts under TID(0).
+    ThreadCreateInfo info;
+    info.ctx = CreateStackTrace(pc);
+    info.vts = vts()->Clone();
+    child_tid_to_create_info_[TID(0)] = info;
+    // Tick vts.
+    this->NewSegmentForSignal();
+
+    if (debug_thread) {
+      Printf("T%d: THR_CREATE_BEFORE\n", parent_tid.raw());
+    }
+  }
+
+  // This event comes when we are exiting the thread creation routine.
+  // It may appear before *or* after THR_START event, at least with PIN.
+  void HandleThreadCreateAfter(TID parent_tid, TID child_tid) {
+    CHECK(parent_tid == tid());
+    // Place the info under child_tid.
+    child_tid_to_create_info_[child_tid] = child_tid_to_create_info_[TID(0)];
+
+    if (debug_thread) {
+      Printf("T%d: THR_CREATE_AFTER %d\n", parent_tid.raw(), child_tid.raw());
+    }
+  }
+
+  void HandleChildThreadStart(TID child_tid, VTS **vts, StackTrace **ctx) {
+    Thread *parent = this;
+    ThreadCreateInfo info;
+    if (child_tid_to_create_info_.count(child_tid)) {
+      // We already seen THR_CREATE_AFTER, so the info is under child_tid.
+      info = child_tid_to_create_info_[child_tid];
+      CHECK(info.ctx && info.vts);
+    } else if (child_tid_to_create_info_.count(TID(0))){
+      // We have not seen THR_CREATE_AFTER, but already seen THR_CREATE_BEFORE.
+      info = child_tid_to_create_info_[TID(0)];
+      CHECK(info.ctx && info.vts);
+    } else {
+      // We have not seen THR_CREATE_BEFORE/THR_CREATE_AFTER.
+      // If the tool is single-threaded (valgrind) these events are redundant.
+      info.ctx = parent->CreateStackTrace();
+      info.vts = parent->vts()->Clone();
+      parent->NewSegmentForSignal();
+    }
+    *ctx = info.ctx;
+    VTS *singleton = VTS::CreateSingleton(child_tid);
+    *vts = VTS::Join(singleton, info.vts);
+    VTS::Delete(singleton);
+    VTS::Delete(info.vts);
+
+
+    if (debug_thread) {
+      Printf("T%d: THR_START parent: T%d : %s %s\n", child_tid.raw(),
+             parent->tid().raw(),
+             parent->vts()->ToString().c_str(),
+             (*vts)->ToString().c_str());
+      if (G_flags->announce_threads) {
+        Printf("%s\n", (*ctx)->ToString().c_str());
+      }
+    }
   }
 
   // Support for Cyclic Barrier, e.g. pthread_barrier_t.
@@ -3894,13 +3968,13 @@ struct Thread {
   };
   // The following situation is possible:
   // - N threads blocked on a barrier.
-  // - All N threads reached the barrier and we started getting 'wait-after' 
+  // - All N threads reached the barrier and we started getting 'wait-after'
   //   events, but did not yet get all of them.
   // - N threads blocked on the barrier again and we started getting
   //   'wait-before' events from the next barrier epoch.
   // - We continue getting 'wait-after' events from the previous epoch.
   //
-  // We don't want to create h-b arcs between barrier events of different 
+  // We don't want to create h-b arcs between barrier events of different
   // epochs, so we use 'barrier + (epoch % 4)' as an object on which we
   // signal and wait (it is unlikely that more than 4 epochs are live at once.
   enum { kNumberOfPossibleBarrierEpochsLiveAtOnce = 4 };
@@ -4154,6 +4228,8 @@ struct Thread {
 
   LockHistory lock_history_;
   RecentSegmentsCache recent_segments_cache_;
+
+  map<TID, ThreadCreateInfo> child_tid_to_create_info_;
 
   struct Signaller {
     VTS *vts;
@@ -5049,7 +5125,7 @@ class Detector {
         HandleMemoryAccess(e_->tid(), e_->a(), e_->info(), true);
         break;
       case RTN_CALL:
-        HandleRtnCall(TID(e_->tid()), e_->pc(), e_->a(), 
+        HandleRtnCall(TID(e_->tid()), e_->pc(), e_->a(),
                       IGNORE_BELOW_RTN_UNKNOWN);
         break;
       case RTN_EXIT:
@@ -5060,6 +5136,12 @@ class Detector {
         break;
       case THR_START   :
         HandleThreadStart(TID(e_->tid()), TID(e_->info()), e_->pc());
+        break;
+      case THR_CREATE_BEFORE:
+        cur_thread_->HandleThreadCreateBefore(TID(e_->tid()), e_->pc());
+        break;
+      case THR_CREATE_AFTER:
+        cur_thread_->HandleThreadCreateAfter(TID(e_->tid()), TID(e_->info()));
         break;
       case THR_FIRST_INSN:
         HandleThreadFirstInsn(TID(e_->tid()));
@@ -5840,30 +5922,14 @@ class Detector {
       // main thread, we are done.
       vts = VTS::CreateSingleton(child_tid);
     } else if (!parent_tid.valid()) {
+      g_so_far_only_one_thread = false;
       Report("INFO: creating thread T%d w/o a parent\n", child_tid.raw());
       vts = VTS::CreateSingleton(child_tid);
     } else {
       g_so_far_only_one_thread = false;
       Thread *parent = Thread::Get(parent_tid);
       CHECK(parent);
-      VTS *parent_vts = parent->vts()->Clone();
-      creation_context = parent->CreateStackTrace(pc);
-      VTS *singleton = VTS::CreateSingleton(child_tid);
-      vts = VTS::Join(singleton, parent_vts);
-      VTS::Delete(singleton);
-      VTS::Delete(parent_vts);
-
-      parent->NewSegmentForSignal();
-
-      if (debug_thread) {
-        Printf("T%d:  THR_START parent: T%d : %s %s\n", child_tid.raw(),
-               parent->tid().raw(),
-               // Segment::ToString(sid).c_str(),
-               parent->vts()->ToString().c_str(),
-               vts->ToString().c_str());
-        if (G_flags->verbosity >= 2 && creation_context)
-          Printf("%s", creation_context->ToString().c_str());
-      }
+      parent->HandleChildThreadStart(child_tid, &vts, &creation_context);
     }
 
     Thread *new_thread = new Thread(child_tid, parent_tid,

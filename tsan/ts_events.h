@@ -40,7 +40,9 @@ enum EventType {
   LOCK_DESTROY,
   BUS_LOCK_ACQUIRE,
   BUS_LOCK_RELEASE,
-  THR_START,
+  THR_CREATE_BEFORE,  // Parent thread's event. {tid, pc, 0, 0}
+  THR_CREATE_AFTER,  // Parent thread's event. {tid, 0, 0, child_tid}
+  THR_START,   // Child thread's event {tid, 0, 0, parent_tid}
   THR_FIRST_INSN,
   THR_END,
   THR_JOIN_AFTER,  // {tid, pc, joined_tid}
@@ -99,6 +101,8 @@ static const char *kEventNames[] = {
   "LOCK_DESTROY",
   "BUS_LOCK_ACQUIRE",
   "BUS_LOCK_RELEASE",
+  "THR_CREATE_BEFORE",
+  "THR_CREATE_AFTER",
   "THR_START",
   "THR_FIRST_INSN",
   "THR_END",

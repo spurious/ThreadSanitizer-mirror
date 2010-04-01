@@ -848,8 +848,9 @@ void TmpCallback2(THREADID tid, ADDRINT pc) {
 }
 
 //--------- Threads --------------------------------- {{{2
-static void HandleThreadCreateBefore(THREADID tid) {
+static void HandleThreadCreateBefore(THREADID tid, ADDRINT pc) {
   G_stats->lock_sites[8]++;
+  DumpEvent(THR_CREATE_BEFORE, tid, pc, 0, 0);
   g_thread_create_lock.Lock();
   CHECK(g_tid_of_thread_which_called_create_thread == (THREADID)-1);
   g_tid_of_thread_which_called_create_thread = tid;
@@ -873,11 +874,14 @@ static THREADID HandleThreadCreateAfter(THREADID tid, pthread_t child_ptid) {
   g_pin_threads[tid].last_child_tid = 0;
 
   g_thread_create_lock.Unlock();
+
+  DumpEvent(THR_CREATE_AFTER, tid, 0, 0, last_child_tid);
+
   return last_child_tid;
 }
 
 static uintptr_t WRAP_NAME(pthread_create)(WRAP_PARAM4) {
-  HandleThreadCreateBefore(tid);
+  HandleThreadCreateBefore(tid, pc);
 
   IgnoreMopsBegin(tid, pc);
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
@@ -954,7 +958,7 @@ static uintptr_t WRAP_NAME(CreateThread)(WRAP_PARAM6) {
   PinThread &t = g_pin_threads[tid];
   t.last_child_stack_size_if_known = arg1 ? arg1 : 1024 * 1024;
 
-  HandleThreadCreateBefore(tid);
+  HandleThreadCreateBefore(tid, pc);
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_6();
   pthread_t child_ptid = ret;
   THREADID child_tid = HandleThreadCreateAfter(tid, child_ptid);
