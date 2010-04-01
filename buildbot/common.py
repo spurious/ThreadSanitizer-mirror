@@ -70,7 +70,12 @@ def addTestStep(factory, debug, mode, test_binary, test_desc,
       frontend_binary = frontend_binary or './tsan.sh'
     # frontend_binary = frontend_binary or 'out/bin/valgrind'
   elif frontend == 'pin':
-    frontend_binary = frontend_binary or 'tsan/tsan_pin.sh'
+    if not frontend_binary:
+      frontend_binary = 'tsan/tsan_pin.sh'
+    if debug:
+      args.extend(['--dbg'])
+    else:
+      args.extend(['--opt'])
 
   if debug:
     desc.append('debug')
@@ -110,8 +115,8 @@ def addTestStep(factory, debug, mode, test_binary, test_desc,
   print command
 
   factory.addStep(step_generator(command = command, env = env,
-                       description = 'testing ' + desc_common + ' on ' + test_base_name + test_desc,
-                       descriptionDone = 'test ' + desc_common + ' on ' + test_base_name + test_desc))
+                       description = 'testing ' + desc_common + ' on ' + test_base_name + ' ' + test_desc,
+                       descriptionDone = 'test ' + desc_common + ' on ' + test_base_name + ' ' + test_desc))
 
 
 def addClobberStep(factory):

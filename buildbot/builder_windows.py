@@ -15,9 +15,15 @@ def generate(settings):
   # Build tsan + pin.
   f1.addStep(Compile(command=['make', '-C', 'tsan', '-j4',
                               'VALGRIND_ROOT=', 'PIN_ROOT=c:/pin',
-                              'w'],
+                              'w32o'],
                      description='building tsan with pin',
                      descriptionDone='build tsan with pin'))
+
+  f1.addStep(Compile(command=['make', '-C', 'tsan', '-j4',
+                              'VALGRIND_ROOT=', 'PIN_ROOT=c:/pin',
+                              'w32d'],
+                     description='building tsan-debug with pin',
+                     descriptionDone='build tsan-debug with pin'))
 
   # Run thread_sanitizer and suppressions tests.
   addTsanTestsStep(f1, ['x86-windows-debug'])
@@ -45,6 +51,10 @@ def generate(settings):
                 pin_root='c:/pin', timeout=None, extra_args=["--error_exitcode=1"])
 
 
+  binaries = {
+    'tsan/bin/x86-windows-debug-ts_pin.dll' : 'tsan-r%s-x86-windows-debug-ts_pin.dll',
+    'tsan/bin/x86-windows-ts_pin.dll' : 'tsan-r%s-x86-windows-ts_pin.dll'}
+  addUploadBinariesStep(f1, binaries)
 
   b1 = {'name': 'buildbot-winxp',
         'slavename': 'bot2name',

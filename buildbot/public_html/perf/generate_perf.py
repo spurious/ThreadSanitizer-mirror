@@ -89,6 +89,8 @@ class Subdir:
 default_subdir_list = [
     Subdir('bigtest', 'Bigtest performance'),
     Subdir('racecheck_unittest', 'Performance tests from racecheck_unittests'),
+    Subdir('bigtest32', 'Bigtest 32-bit performance'),
+    Subdir('racecheck_unittest32', 'Performance tests (32-bit) from racecheck_unittests'),
 ]
 
 

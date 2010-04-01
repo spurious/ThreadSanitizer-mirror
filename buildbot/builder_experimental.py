@@ -90,9 +90,9 @@ def generate(settings):
 
   # Run benchmarks.
   platform = 'linux-experimental'
+
   bigtest_binary = unitTestBinary('linux', 64, 0, False, test_base_name='bigtest')
   bigtest_desc = getTestDesc('linux', 64, 0, False)
-
   step_generator = chromium_utils.InitializePartiallyWithArguments(
       genBenchmarkStep, factory, platform, 'bigtest')
   addTestStep(f1, False, 'phb', bigtest_binary,
@@ -111,6 +111,31 @@ def generate(settings):
                 extra_args=["--error_exitcode=1"],
                 extra_test_args=["--gtest_filter=NonGtestTests*", str(test_id)],
                 test_base_name='racecheck_unittest',
+                step_generator=step_generator)
+
+  # 32-bit benchmarks
+  bigtest32_binary = unitTestBinary('linux', 32, 0, False, test_base_name='bigtest')
+  bigtest32_desc = getTestDesc('linux', 32, 0, False)
+  step_generator = chromium_utils.InitializePartiallyWithArguments(
+      genBenchmarkStep, factory, platform, 'bigtest32')
+  addTestStep(f1, False, 'phb', bigtest32_binary,
+              bigtest32_desc,
+              extra_args=["--error_exitcode=1"],
+              test_base_name='bigtest',
+              frontend_binary='./tsan32.sh',
+              step_generator=step_generator)
+
+  racecheck32_binary = unitTestBinary('linux', 32, 0, False, test_base_name='racecheck_unittest')
+  racecheck32_desc = getTestDesc('linux', 32, 0, False)
+  step_generator = chromium_utils.InitializePartiallyWithArguments(
+      genBenchmarkStep, factory, platform, 'racecheck_unittest32')
+  for test_id in [35, 72, 73, 151, 502, 503]:
+    addTestStep(f1, False, 'phb', racecheck32_binary,
+                racecheck32_desc + ', test ' + str(test_id),
+                extra_args=["--error_exitcode=1"],
+                extra_test_args=["--gtest_filter=NonGtestTests*", str(test_id)],
+                test_base_name='racecheck_unittest',
+                frontend_binary='./tsan32.sh',
                 step_generator=step_generator)
 
 
