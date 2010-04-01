@@ -179,18 +179,18 @@ self-contained-stripped: TS_valgrind
 	strip $(OUTDIR)/tsan-*$(OS)
 	./mk-self-contained-valgrind.sh $(VALGRIND_INST_ROOT) tsan$(D) $(OUTDIR)/tsan-$(ARCHOS)$(D)-self-contained.sh
 
-win-sfx: all
-	rm -rf tsan_$(ARCHOS)$(D)
-	mkdir -p tsan_$(ARCHOS)$(D)
-	cp -r $(PIN_ROOT)/ia32 bin/$(ARCHOS)-ts_pin.dll tsan.bat tsan_$(ARCHOS)$(D)
-	7z a -sfx tsan-$(ARCHOS)$(D)-sfx.exe tsan_$(ARCHOS)$(D)
-	rm -rf tsan_$(ARCHOS)$(D)
+TSAN_SFX_DIR=tsan-$(ARCHOS)
+sfx:
+	rm -rf $(TSAN_SFX_DIR)
+	mkdir -p $(TSAN_SFX_DIR)
+	cp -r $(PIN_ROOT)/ia32 bin/$(ARCHOS)-debug-ts_pin.dll \
+		bin/$(ARCHOS)-ts_pin.dll tsan.bat tsan-debug.bat  $(TSAN_SFX_DIR)
+	cp license_for_windows.txt $(TSAN_SFX_DIR)/LICENSE
+	7z a -sfx tsan-$(ARCHOS)-sfx.exe $(TSAN_SFX_DIR)
+	rm -rf $(TSAN_SFX_DIR)
 
-win-sfx-32o:
-	$(MAKE) win-sfx OS=windows ARCH=x86 DEBUG=0
-
-win-sfx-32d:
-	$(MAKE) win-sfx OS=windows ARCH=x86 DEBUG=1
+w32-sfx: w32o w32d
+	$(MAKE) sfx OS=windows ARCH=x86
 
 ifeq ($(VALGRIND_ROOT), )
 TS_valgrind:
