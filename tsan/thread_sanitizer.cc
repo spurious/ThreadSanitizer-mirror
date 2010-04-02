@@ -4046,7 +4046,7 @@ struct Thread {
     call_stack_.pop_back();
   }
 
-  void HandleRtnCall(uintptr_t call_pc, uintptr_t target_pc, 
+  void HandleRtnCall(uintptr_t call_pc, uintptr_t target_pc,
                      IGNORE_BELOW_RTN ignore_below) {
     G_stats->events[RTN_CALL]++;
     if (!call_stack_.empty() && call_pc) {
@@ -4057,7 +4057,7 @@ struct Thread {
     bool ignore = false;
     if (ignore_below == IGNORE_BELOW_RTN_UNKNOWN) {
       if (ignore_below_cache_.Lookup(target_pc, &ignore) == false) {
-        bool ignore = ThreadSanitizerIgnoreAccessesBelowFunction(target_pc);
+        ignore = ThreadSanitizerIgnoreAccessesBelowFunction(target_pc);
         ignore_below_cache_.Insert(target_pc, ignore);
         G_stats->ignore_below_cache_miss++;
       } else {
