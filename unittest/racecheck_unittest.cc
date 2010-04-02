@@ -7135,7 +7135,7 @@ TEST(IgnoreTests, DirectCallToFunR) {
   mta.Join();
 }
 
-TEST(IgnoreTests, DISABLED_IndirectCallToFunR) {
+TEST(IgnoreTests, IndirectCallToFunR) {
   f = FunRFunction;
   MyThreadArray mta(DoIndirectCall, DoIndirectCall);
   mta.Start();
