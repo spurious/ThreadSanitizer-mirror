@@ -507,12 +507,11 @@ TEST(NegativeTests, test125) {
 }  // namespace test125
 
 
-// test135 TN. mmap {{{1
-namespace test135 {
+namespace MmapTest {  // {{{1
 
 void SubWorker() {
   const long SIZE = 65536;
-  for (int i = 0; i < 32; i++) {
+  for (int i = 0; i < 500; i++) {
     int *ptr = (int*)mmap(NULL, SIZE, PROT_READ | PROT_WRITE,
                           MAP_PRIVATE | MAP_ANON, -1, 0);
     *ptr = 42;
@@ -526,13 +525,12 @@ void Worker() {
   t.Join();
 }
 
-TEST(NegativeTests, test135) {
-  printf("test135: negative (mmap)\n");
+TEST(NegativeTests, MmapTest) {
   MyThreadArray t(Worker, Worker, Worker, Worker);
   t.Start();
   t.Join();
 }
-}  // namespace test135
+}  // namespace
 
 // test136. Unlock twice. {{{1
 namespace test136 {
