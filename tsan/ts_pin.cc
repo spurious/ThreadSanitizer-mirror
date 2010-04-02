@@ -1373,6 +1373,14 @@ uintptr_t WRAP_NAME(mmap)(WRAP_PARAM6) {
   return ret;
 }
 
+uintptr_t WRAP_NAME(munmap)(WRAP_PARAM6) {
+  PinThread &t = g_pin_threads[tid];
+  TLEBFlushLocked(t);
+  uintptr_t ret = CALL_ME_INSIDE_WRAPPER_6();
+  // We don't actually send eny event here, no need.
+  return ret;
+}
+
 uintptr_t WRAP_NAME(malloc)(WRAP_PARAM4) {
   IgnoreSyncAndMopsBegin(tid, pc);
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
@@ -2310,6 +2318,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   WrapFunc4(img, rtn, "operator delete[]", (AFUNPTR)WRAP_NAME(free));
 
   WrapFunc6(img, rtn, "mmap", (AFUNPTR)WRAP_NAME(mmap));
+  WrapFunc6(img, rtn, "munmap", (AFUNPTR)WRAP_NAME(munmap));
 
   // ThreadSanitizerQuery
   WrapFunc4(img, rtn, "ThreadSanitizerQuery",
@@ -2318,7 +2327,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   // pthread create/join
   WrapFunc4(img, rtn, "pthread_create", (AFUNPTR)WRAP_NAME(pthread_create));
   WrapFunc4(img, rtn, "pthread_join", (AFUNPTR)WRAP_NAME(pthread_join));
- 
+
   INSERT_FN(IPOINT_BEFORE, "start_thread",
             Before_start_thread,
             IARG_REG_VALUE, REG_STACK_PTR, IARG_END);
