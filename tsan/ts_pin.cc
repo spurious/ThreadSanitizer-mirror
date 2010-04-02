@@ -1383,6 +1383,8 @@ uintptr_t WRAP_NAME(malloc)(WRAP_PARAM4) {
 }
 
 uintptr_t WRAP_NAME(realloc)(WRAP_PARAM4) {
+  PinThread &t = g_pin_threads[tid];
+  TLEBFlushLocked(t);
   IgnoreSyncAndMopsBegin(tid, pc);
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
   IgnoreSyncAndMopsEnd(tid, pc);
