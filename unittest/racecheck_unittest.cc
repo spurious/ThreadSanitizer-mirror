@@ -7118,14 +7118,25 @@ void FunRFunction() {
   usleep(1); // avoid tail call elimination
 }
 
-void Foo() {
+void DoDirectCall() {
   FunRFunction();
   usleep(1); // avoid tail call elimination
 }
 
-TEST(IgnoreTests, IndirectCallToFunR) {
+void DoIndirectCall() {
+  (*f)();
+  usleep(1); // avoid tail call elimination
+}
+
+TEST(IgnoreTests, DirectCallToFunR) {
+  MyThreadArray mta(DoDirectCall, DoDirectCall);
+  mta.Start();
+  mta.Join();
+}
+
+TEST(IgnoreTests, DISABLED_IndirectCallToFunR) {
   f = FunRFunction;
-  MyThreadArray mta(Foo, Foo);
+  MyThreadArray mta(DoIndirectCall, DoIndirectCall);
   mta.Start();
   mta.Join();
 }
