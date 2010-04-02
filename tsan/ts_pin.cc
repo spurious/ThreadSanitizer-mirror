@@ -2500,11 +2500,11 @@ static void CallbackForIMG(IMG img, void *v) {
       MaybeInstrumentOneRoutine(img, rtn);
     }
   }
-  // check that we have the required debug symbols.
-  if (img_name.find("ntdll.dll") != string::npos) {
+  // In DEBUG_MODE check that we have the debug symbols in the Windows guts.
+  // We should work w/o them too.
+  if (DEBUG_MODE && img_name.find("ntdll.dll") != string::npos) {
     if (g_wrapped_functions.count("RtlTryAcquireSRWLockExclusive") == 0) {
-      Printf("WARNING: Debug symbols for ntdll.dll not found. TODO(kcc)\n");
-      // CHECK(0);
+      Printf("WARNING: Debug symbols for ntdll.dll not found.\n");
     }
   }
 }
