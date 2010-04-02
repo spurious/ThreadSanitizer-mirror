@@ -6321,9 +6321,10 @@ namespace MemoryTypes {  // {{{1
 
   void ReallocThread() {
     void *ptr = NULL;
-    for (int i = 1; i < 16; i++) {
-      int size = (1 << i) - 1;
+    for (int i = 8; i < 128; i++) {
+      int size = (1 << (i / 8)) - 1;
       ptr = realloc(ptr, size);
+      ANNOTATE_TRACE_MEMORY(ptr);
       memset(ptr, 42, size);
     }
     free(ptr);
