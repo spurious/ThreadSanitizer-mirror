@@ -28,9 +28,13 @@ def generate(settings):
   path_flags = ['OFFLINE=',
                 'VALGRIND_INST_ROOT=../out',
                 'PIN_ROOT=']
-  f1.addStep(Compile(command=['make', '-C', 'tsan', '-j4'] + path_flags + ['m'],
-                     description='building tsan',
-                     descriptionDone='build tsan'))
+  f1.addStep(Compile(command=['make', '-C', 'tsan', '-j4'] + path_flags + ['m32o'],
+                     description='building tsan (m32o)',
+                     descriptionDone='build tsan (m32o)'))
+
+  f1.addStep(Compile(command=['make', '-C', 'tsan', '-j4'] + path_flags + ['m32d'],
+                     description='building tsan (m32d)',
+                     descriptionDone='build tsan (m32d)'))
 
   # Build self-contained tsan binaries.
   f1.addStep(ShellCommand(command=['make', '-C', 'tsan'] + path_flags +
