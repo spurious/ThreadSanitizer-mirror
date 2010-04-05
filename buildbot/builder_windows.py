@@ -25,6 +25,16 @@ def generate(settings):
                      description='building tsan-debug with pin',
                      descriptionDone='build tsan-debug with pin'))
 
+  f1.addStep(Compile(command=['make', '-C', 'tsan',
+                              'VALGRIND_ROOT=', 'PIN_ROOT=c:/pin',
+                              'w32-sfx'],
+                     description='packing sfx binary',
+                     descriptionDone='pack sfx binary'))
+
+  f1.addStep(ShellCommand(command='mkdir -p out; cd out; ../tsan/tsan-x86-windows-sfx.exe',
+                     description='extracting sfx',
+                     descriptionDone='extract sfx'))
+
   # Run thread_sanitizer and suppressions tests.
   addTsanTestsStep(f1, ['x86-windows-debug'])
 
@@ -47,13 +57,12 @@ def generate(settings):
       test_desc = addBuildTestStep(f1, os, bits, opt, static)
       test_binaries[test_variant] = test_desc
     test_binary = unitTestBinary(os, bits, opt, static)
-    addTestStep(f1, tsan_debug, mode, test_binary, test_desc, frontend='pin',
+    addTestStep(f1, tsan_debug, mode, test_binary, test_desc, frontend='pin-win',
                 pin_root='c:/pin', timeout=None, extra_args=["--error_exitcode=1"])
 
 
   binaries = {
-    'tsan/bin/x86-windows-debug-ts_pin.dll' : 'tsan-r%s-x86-windows-debug-ts_pin.dll',
-    'tsan/bin/x86-windows-ts_pin.dll' : 'tsan-r%s-x86-windows-ts_pin.dll'}
+    'tsan/tsan-x86-windows-sfx.exe' : 'tsan-r%s-x86-windows-sfx.exe'}
   addUploadBinariesStep(f1, binaries)
 
   b1 = {'name': 'buildbot-winxp',

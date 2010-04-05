@@ -76,6 +76,13 @@ def addTestStep(factory, debug, mode, test_binary, test_desc,
       args.extend(['--dbg'])
     else:
       args.extend(['--opt'])
+  elif frontend == 'pin-win':
+    if not frontend_binary:
+      if debug:
+        frontend_binary = 'out/tsan-x86-windows/tsan-debug.bat'
+      else:
+        frontend_binary = 'out/tsan-x86-windows/tsan.bat'
+
 
   if debug:
     desc.append('debug')
@@ -105,6 +112,9 @@ def addTestStep(factory, debug, mode, test_binary, test_desc,
 
   desc.append(mode)
   desc_common = 'tsan-' + frontend + '(' + ','.join(desc) + ')'
+
+  if frontend == 'pin-win':
+    args.append('--')
 
   command = []
   # if timeout:
