@@ -6308,7 +6308,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   FindStringFlag("ignore", args, &G_flags->ignore);
 
   FindBoolFlag("thread_coverage", false, args, &G_flags->thread_coverage);
-  FindBoolFlag("dump_events", false, args, &G_flags->dump_events);
+  FindStringFlag("dump_events", args, &G_flags->dump_events);
   FindBoolFlag("symbolize", true, args, &G_flags->symbolize);
 
   FindIntFlag("trace_addr", 0, args,
@@ -6608,10 +6608,6 @@ extern void ThreadSanitizerInit() {
   G_stats        = new Stats;
   SetupIgnore();
 
-  if (G_flags->dump_events) {
-    return;
-  }
-
   G_detector     = new Detector;
   G_cache        = new Cache;
   G_expected_races_map = new ExpectedRacesMap;
@@ -6661,9 +6657,7 @@ extern void ThreadSanitizerInit() {
 }
 
 extern void ThreadSanitizerFini() {
-  if (!G_flags->dump_events) {
-    G_detector->HandleProgramEnd();
-  }
+  G_detector->HandleProgramEnd();
 }
 
 extern void ThreadSanitizerDumpAllStacks() {
@@ -6683,8 +6677,9 @@ extern void ThreadSanitizerDumpAllStacks() {
   }
 }
 
-extern void ThreadSanitizerHandleOneEvent(Event *event) {
-  G_detector->HandleOneEvent(event);
+
+extern void ThreadSanitizerHandleOneEvent(Event *e) {
+  G_detector->HandleOneEvent(e);
 }
 
 void INLINE ThreadSanitizerHandleMemoryAccess(int32_t tid,

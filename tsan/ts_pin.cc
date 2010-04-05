@@ -324,19 +324,20 @@ enum TLEBSpecificEvents {
   TLEB_IGNORE_SYNC_END,
 };
 
-static void DumpEventPlainText(EventType type, int32_t tid, uintptr_t pc,
-                               uintptr_t a, uintptr_t info) {
+static bool DumpEventPlainText(EventType type, int32_t tid, uintptr_t pc,
+                        uintptr_t a, uintptr_t info) {
+#if DEBUG == 0 || defined(_MSC_VER)
+  return false;
+#else 
+  if (G_flags->dump_events.empty()) return false;
+
   static hash_set<uintptr_t> *pc_set;
   if (pc_set == NULL) {
     pc_set = new hash_set<uintptr_t>;
   }
   static FILE *log_file = NULL;
   if (log_file == NULL) {
-    if (G_flags->log_file.empty()) {
-      log_file = G_out;
-    } else {
-      log_file = popen(("gzip > " + G_flags->log_file).c_str(), "w");
-    }
+    log_file = popen(("gzip > " + G_flags->dump_events).c_str(), "w");
   }
   if (G_flags->symbolize && pc_set->insert(pc).second) {
     string img_name, rtn_name, file_name;
@@ -352,20 +353,15 @@ static void DumpEventPlainText(EventType type, int32_t tid, uintptr_t pc,
   }
   fprintf(log_file, "%s %x %lx %lx %lx\n", kEventNames[type], tid,
           (long)pc, (long)a, (long)info);
+  return true;
+#endif
 }
 
 static void DumpEventInternal(EventType type, int32_t uniq_tid, uintptr_t pc,
                               uintptr_t a, uintptr_t info) {
+  if (DumpEventPlainText(type, uniq_tid, pc, a, info)) return;
   // PIN wraps the tid (after 2048), but we need a uniq tid.
   Event event(type, uniq_tid, pc, a, info);
-
-  if (DEBUG_MODE && G_flags->dump_events) {
-    DumpEventPlainText(type, uniq_tid, pc, a, info);
-    return;
-  }
-  if (DEBUG_MODE && G_flags->verbosity >= 3) {
-    event.Print();
-  }
   ThreadSanitizerHandleOneEvent(&event);
 }
 
@@ -389,11 +385,14 @@ static void TLEBFlushUnlocked(ThreadLocalEventBuffer &tleb) {
   for (i = 0; i < tleb.size; ) {
     uintptr_t event = tleb.events[i++];
     if (event == RTN_EXIT) {
+      if (DumpEventPlainText(RTN_EXIT, t.uniq_tid, 0, 0, 0)) continue;
       ThreadSanitizerHandleRtnExit(t.uniq_tid);
     } else if (event == RTN_CALL) {
       uintptr_t call_pc = tleb.events[i++];
       uintptr_t target_pc = tleb.events[i++];
       IGNORE_BELOW_RTN ignore_below = (IGNORE_BELOW_RTN)tleb.events[i++];
+      if (DumpEventPlainText(RTN_CALL, t.uniq_tid, call_pc,
+                             target_pc, ignore_below)) continue;
       ThreadSanitizerHandleRtnCall(t.uniq_tid, call_pc, target_pc,
                                    ignore_below);
     } else if (event == SBLOCK_ENTER){
@@ -407,7 +406,10 @@ static void TLEBFlushUnlocked(ThreadLocalEventBuffer &tleb) {
       DCHECK(trace_info);
       size_t n = trace_info->n_mops();
       if (do_this_trace) {
-        ThreadSanitizerEnterSblock(t.uniq_tid, trace_info->pc());
+        if (DumpEventPlainText(SBLOCK_ENTER, t.uniq_tid, 
+                               trace_info->pc(), 0, 0) == false) {;
+          ThreadSanitizerEnterSblock(t.uniq_tid, trace_info->pc());
+        }
         for (size_t j = 0; j < n; j++) {
           MopInfo *mop = trace_info->GetMop(j);
           DCHECK(mop->size);
@@ -415,6 +417,8 @@ static void TLEBFlushUnlocked(ThreadLocalEventBuffer &tleb) {
           uintptr_t addr = tleb.events[i + j];
           if (addr) {
             g_current_pc = mop->pc;
+            if (DumpEventPlainText(mop->is_write ? WRITE : READ, t.uniq_tid,
+                                   mop->pc, addr, mop->size)) continue;
             ThreadSanitizerHandleMemoryAccess(t.uniq_tid, addr,
                                               mop->size, mop->is_write);
           }
@@ -422,12 +426,11 @@ static void TLEBFlushUnlocked(ThreadLocalEventBuffer &tleb) {
       }
       i += n;
     } else if (event == THR_START) {
+      uintptr_t parent = -1;
       if (t.parent_tid != (THREADID)-1) {
-        DumpEventInternal(THR_START, t.uniq_tid, 0, 0,
-                        g_pin_threads[t.parent_tid].uniq_tid);
-      } else {
-        DumpEventInternal(THR_START, t.uniq_tid, 0, 0, -1);
+        parent = g_pin_threads[t.parent_tid].uniq_tid;
       }
+      DumpEventInternal(THR_START, t.uniq_tid, 0, 0, parent);
     } else if (event == THR_END) {
       DumpEventInternal(THR_END, t.uniq_tid, 0, 0, 0);
       DCHECK(t.thread_finished == true);
@@ -460,7 +463,6 @@ static void TLEBFlushUnlocked(ThreadLocalEventBuffer &tleb) {
         DumpEventInternal((EventType)event, t.uniq_tid, pc, a, info);
       }
     }
-    DCHECK(i <= tleb.size);
   }
   DCHECK(i == tleb.size);
   tleb.size = 0;
@@ -561,6 +563,7 @@ static void TLEBAddGenericEventAndFlush(PinThread &t,
   TLEBFlushLocked(t);
   DCHECK(t.tleb.size <= kThreadLocksEventBufferSize);
 }
+
 
 // Must be called from its thread (except for THR_END case)!
 static void DumpEvent(EventType type, int32_t tid, uintptr_t pc,
