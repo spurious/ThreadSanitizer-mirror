@@ -43,7 +43,6 @@
 #if defined(__GNUC__)
 # include <cxxabi.h>  // __cxa_demangle
 # define YIELD() usleep(0)
-# define CAS(ptr,oldval,newval) __sync_bool_compare_and_swap(ptr,oldval,newval)
 # define ATOMIC_READ(a) __sync_add_and_fetch(a, 0)
 
 #elif defined(_MSC_VER)
@@ -55,10 +54,7 @@ namespace WINDOWS
 
 #include <intrin.h>
 # define YIELD() // __yield()
-// TODO(kcc): how to demangle on windows?
-// TODO(kcc): add actuall implementations
 # define popen(x,y) (NULL)
-# define CAS(ptr,oldval,newval) _InterlockedCompareExchange(ptr, newval, oldval)
 # define ATOMIC_READ(a)         _InterlockedCompareExchange(a, 0, 0)
 #endif
 
@@ -389,7 +385,6 @@ static void TLEBFlushUnlocked(ThreadLocalEventBuffer &tleb) {
     G_stats->tleb_flush[idx]++;
   }
 
-  // TODO(kcc): implement --dump-events here.
   size_t i;
   for (i = 0; i < tleb.size; ) {
     uintptr_t event = tleb.events[i++];
@@ -1230,18 +1225,14 @@ uintptr_t WRAP_NAME(RtlAllWakeConditionVariable)(WRAP_PARAM4) {
 }
 uintptr_t WRAP_NAME(RtlSleepConditionVariableSRW)(WRAP_PARAM4) {
   uintptr_t ret = CallStdCallFun4(ctx, tid, f, arg0, arg1, arg2, arg3);
-  // TODO(kcc): do we need to lock/unlock here? Do we need to check ret?
-  DumpEvent(WAIT_BEFORE, tid, pc, arg0, 0);
-  DumpEvent(WAIT_AFTER, tid, pc, 0, 0);
-  Printf("T%d %s arg0=%p arg1=%p; ret=%d\n", tid, __FUNCTION__, arg0, arg1, ret);
+  DumpEvent(WAIT, tid, pc, arg0, 0);
+  // Printf("T%d %s arg0=%p arg1=%p; ret=%d\n", tid, __FUNCTION__, arg0, arg1, ret);
   return ret;
 }
 uintptr_t WRAP_NAME(RtlSleepConditionVariableCS)(WRAP_PARAM4) {
   uintptr_t ret = CallStdCallFun3(ctx, tid, f, arg0, arg1, arg2);
-  // TODO(kcc): do we need to lock/unlock here? Do we need to check ret?
-  DumpEvent(WAIT_BEFORE, tid, pc, arg0, 0);
-  DumpEvent(WAIT_AFTER, tid, pc, 0, 0);
-  Printf("T%d %s arg0=%p arg1=%p; ret=%d\n", tid, __FUNCTION__, arg0, arg1, ret);
+  DumpEvent(WAIT, tid, pc, arg0, 0);
+  // Printf("T%d %s arg0=%p arg1=%p; ret=%d\n", tid, __FUNCTION__, arg0, arg1, ret);
   return ret;
 }
 
@@ -2453,7 +2444,6 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_BEFORE_3("AnnotatePCQGet", On_AnnotatePCQGet);
 
   // I/O
-  // TODO(kcc): add more I/O
   INSERT_BEFORE_0("write", Before_SignallingIOCall);
   INSERT_BEFORE_0("unlink", Before_SignallingIOCall);
   INSERT_BEFORE_0("rmdir", Before_SignallingIOCall);
