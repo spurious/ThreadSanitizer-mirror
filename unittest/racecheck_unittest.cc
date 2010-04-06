@@ -5128,7 +5128,9 @@ void InitMe() {
 void UseMe() {
   InitMe();
   CHECK(foo);
-  printf("foo->a = %d (should be 42)\n", (int)foo->a);
+  if (foo->a != 42) {
+    printf("foo->a = %d (should be 42)\n", (int)foo->a);
+  }
 }
 
 void Worker1() { UseMe(); }
@@ -5769,16 +5771,18 @@ namespace test143 {
 // be missed too.
 // PCQ_* annotations do not hide this race.
 int     GLOB = 0;
+StealthNotification n;
 
 FifoMessageQueue q;
 
 void Putter() {
   GLOB = 1;
   q.Put(1);
+  n.signal();
 }
 
 void Getter() {
-  usleep(10000);
+  n.wait();
   q.Get();
   CHECK(GLOB == 1);  // Race here
 }
