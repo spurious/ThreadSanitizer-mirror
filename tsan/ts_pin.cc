@@ -1003,7 +1003,7 @@ void CallbackForThreadFini(THREADID tid, const CONTEXT *ctxt,
   }
 }
 
-static void HandleThreadJoinAfter(THREADID tid, pthread_t joined_ptid) {
+static bool HandleThreadJoinAfter(THREADID tid, pthread_t joined_ptid) {
   THREADID joined_tid = 0;
   for (joined_tid = 1; joined_tid < kMaxThreads; joined_tid++) {
     if (g_pin_threads[joined_tid].thread_finished == false) continue;
@@ -1011,24 +1011,27 @@ static void HandleThreadJoinAfter(THREADID tid, pthread_t joined_ptid) {
       break;
   }
   if (joined_tid == kMaxThreads) {
-    if (DEBUG_MODE) {
-      Printf("WARNING: Can not join thread, can't find the child's tid. "
-             "T=%d ptid=%d\n", tid, (int)joined_ptid);
-      ThreadSanitizerDumpAllStacks();
-    }
-    return;
+    // This may happen in the following case:
+    //  - A non-joinable thread is created and a handle is assigned to it.
+    //  - Since the thread is non-joinable, the handle is then reused
+    //  for some other purpose, e.g. for a WaitableEvent.
+    //  - We did not yet register the thread fini event.
+    //  - We observe WaitForSingleObjectEx(ptid) and think that this is thread
+    //  join event, while it is not.
+    return false;
   }
   CHECK(joined_tid < kMaxThreads);
   CHECK(joined_tid > 0);
   g_pin_threads[joined_tid].my_ptid = 0;
   int joined_uniq_tid = g_pin_threads[joined_tid].uniq_tid;
 
-  if (G_flags->debug_level >= 2) {
+  if (debug_thread) {
     Printf("T%d JoinAfter   parent=%d child=%d (uniq=%d)\n", tid, tid,
            joined_tid, joined_uniq_tid);
   }
   DumpEvent(THR_END, joined_tid, 0, 0, 0);
   DumpEvent(THR_JOIN_AFTER, tid, 0, joined_uniq_tid, 0);
+  return true;
 }
 
 static uintptr_t WRAP_NAME(pthread_join)(WRAP_PARAM4) {
@@ -1334,10 +1337,8 @@ uintptr_t WRAP_NAME(WaitForSingleObjectEx)(WRAP_PARAM4) {
   if (ret == 0) {
     if (is_thread_handle) {
       HandleThreadJoinAfter(tid, arg0);
-    } else {
-      DumpEvent(WAIT_BEFORE, tid, pc, arg0, 0);
-      DumpEvent(WAIT_AFTER, tid, pc, 0, 0);
     }
+    DumpEvent(WAIT, tid, pc, arg0, 0);
   }
 
   return ret;
