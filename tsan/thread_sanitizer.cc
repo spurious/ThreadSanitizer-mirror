@@ -6482,6 +6482,8 @@ static void SetupIgnore() {
   g_ignore_lists->funs.push_back("__lll_mutex_unlock_wake");
   g_ignore_lists->funs.push_back("__sigsetjmp");
   g_ignore_lists->funs.push_back("__sigjmp_save");
+  g_ignore_lists->funs.push_back("_EH_epilog3");
+  g_ignore_lists->funs.push_back("_EH_prolog3_catch");
 
   // do not create segments in our Replace_* functions
   g_ignore_lists->funs_hist.push_back("Replace_memcpy");
