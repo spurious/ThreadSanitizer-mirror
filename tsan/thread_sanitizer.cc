@@ -6200,7 +6200,7 @@ static size_t GetMemoryLimitInMbFromProcSelfLimits() {
   if (pos == string::npos) return 0;
   pos += strlen(max_addr_space);
   while(proc_self_limits[pos] == ' ') pos++;
-  if (proc_self_limits[pos] == 'u') 
+  if (proc_self_limits[pos] == 'u')
     return 0;  // 'unlimited'.
   char *end;
   size_t result = my_strtol(proc_self_limits.c_str() + pos, &end);
@@ -6212,19 +6212,29 @@ static size_t GetMemoryLimitInMbFromProcSelfLimits() {
 }
 
 static size_t GetMemoryLimitInMb() {
+  size_t ret = -1;  // Maximum possible value.
+#if defined(VGO_linux) && __WORDSIZE == 32
+  // Valgrind doesn't support more than 3G per process on 32-bit Linux.
+  ret = 3 * 1024;
+#endif
+
   // Try /proc/self/limits.
   size_t from_proc_self = GetMemoryLimitInMbFromProcSelfLimits();
-  if (from_proc_self) {
-    return from_proc_self;
+  if (from_proc_self && ret > from_proc_self) {
+    ret = from_proc_self;
   }
   // Try env.
   const char *from_env_str =
     (const char*)getenv("VALGRIND_MEMORY_LIMIT_IN_MB");
   if (from_env_str) {
     char *end;
-    return my_strtol(from_env_str, &end);
+    size_t from_env_value = (size_t)my_strtol(from_env_str, &end);
+    if (ret > from_env_value)
+      ret = from_env_value;
   }
-  return 0;
+  if (ret == (size_t)-1)
+    return 0;
+  return ret;
 }
 
 bool PhaseDebugIsOn(const char *phase_name) {
