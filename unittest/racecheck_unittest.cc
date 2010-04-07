@@ -5939,9 +5939,10 @@ REGISTER_TEST2(Run, 149, EXCLUDE_FROM_ALL)  // TODO(kcc): enable it back
 // test150: race which is detected after one of the thread has joined. {{{1
 namespace test150 {
 int     GLOB = 0;
+StealthNotification n;
 void Writer1() { GLOB++; }
 void Writer2() {
-  usleep(500000);
+  n.wait();
   GLOB++;
 }
 void Run() {
@@ -5953,6 +5954,7 @@ void Run() {
   t1.Start();
   t2.Start();
   t1.Join();
+  n.signal();
   t2.Join();
   printf("\tGLOB=%d\n", GLOB);
 }
