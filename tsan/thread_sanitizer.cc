@@ -6466,6 +6466,7 @@ static void SetupIgnore() {
   g_ignore_lists->objs.push_back("*MSCTF.dll");
   g_ignore_lists->objs.push_back("*ntdll.dll");
   g_ignore_lists->objs.push_back("*mswsock.dll");
+  g_ignore_lists->objs.push_back("*WS2_32.dll");
   g_ignore_lists->objs.push_back("*msvcrt.dll");
   g_ignore_lists->objs.push_back("*kernel32.dll");
   g_ignore_lists->objs.push_back("*ADVAPI32.DLL");
