@@ -68,7 +68,7 @@ class ProcessLogShellStep(ShellCommand):
 
 def genBenchmarkStep(factory, platform, benchmark, *args, **kwargs):
   base_dir = 'perf/%s/%s' % (platform, benchmark)
-  report_link = '%s/report.html' % (base_dir,)
+  report_link = '%s/report.html?history=1000' % (base_dir,)
   output_dir = 'public_html/%s' % (base_dir,)
 
   log_processor_class = chromium_utils.InitializePartiallyWithArguments(
