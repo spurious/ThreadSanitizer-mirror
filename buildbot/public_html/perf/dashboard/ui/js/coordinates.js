@@ -21,6 +21,7 @@ function Coordinates(plotData) {
 
   this.xMinValue = -0.5;
   this.xMaxValue = (this.plotData[0].length - 1)+ 0.5;
+  this.yAverage = 0;
   this.processYValues_();
 }
 
@@ -41,11 +42,22 @@ Coordinates.prototype.processYValues_ = function () {
         max = merged[i];
     }
   }
-  var yd = (max - min) / 10.0;
-  if (yd == 0)
-    yd = max / 10;
-  this.yMinValue = min - yd;
-  this.yMaxValue = max + yd;
+  if (min > 0) {
+      this.yMinValue = 0;
+      this.yMaxValue = max * 1.1;
+  } else {
+      var yd = (max - min) / 10.0;
+      if (yd == 0)
+	  yd = max / 10;
+      this.yMinValue = min - yd;
+      this.yMaxValue = max + yd;
+  }
+  
+  var sum = 0;
+  for (var i = 0; i < merged.length; ++i) {
+      sum += merged[i];
+  }
+  this.yAverage = sum / merged.length;
 };
 
 /**

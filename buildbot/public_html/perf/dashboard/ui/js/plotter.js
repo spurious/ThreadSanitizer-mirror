@@ -112,7 +112,18 @@ Plotter.prototype.plot = function() {
   this.cursor_div_ = new Marker("rgb(100,80,240)");
   // marker for the result-point for which details are shown
   this.marker_div_ = new Marker("rgb(100,100,100)");
+
   var ctx = canvas.getContext("2d");
+  var yAvg = this.coordinates.yAverage;
+  var x0 = this.coordinates.xPoints(this.coordinates.xMinValue);
+  var x1 = this.coordinates.xPoints(this.coordinates.xMaxValue);
+  this.drawHorizontalLine_(ctx, x0, x1,
+	  this.coordinates.yPoints(yAvg));
+  this.drawHorizontalLine_(ctx, x0, x1,
+	  this.coordinates.yPoints(yAvg * 0.9));
+  this.drawHorizontalLine_(ctx, x0, x1,
+	  this.coordinates.yPoints(yAvg * 1.1));
+
   for (var i = 0; i < this.plotData_.length; i++)
     this.plotLine_(ctx, this.nextColor(i), this.plotData_[i]);
 
@@ -129,6 +140,16 @@ Plotter.prototype.plot = function() {
     "width":      canvas.offsetWidth,
     "height":     canvas.offsetHeight
   };
+};
+
+Plotter.prototype.drawHorizontalLine_ = function(context, x0, x1, y) {
+  context.strokeStyle = 'rgb(200, 200, 200)';
+  context.lineWidth = 0.5;
+  context.beginPath();
+  context.moveTo(x0, y);
+  context.lineTo(x1, y);
+  context.closePath();
+  context.stroke();
 };
 
 Plotter.prototype.drawDeviationBar_ = function(context, strokeStyles, x, y,
