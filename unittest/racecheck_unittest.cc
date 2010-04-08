@@ -5629,33 +5629,52 @@ void Run() {
 REGISTER_TEST2(Run, 137, FEATURE | EXCLUDE_FROM_ALL)
 }  // namespace test137
 
-// test138 FN. Two closures hit the same thread in ThreadPool. {{{1
-namespace test138 {
-int GLOB = 0;
+namespace ThreadPoolFNTests {  // {{{1
 
-void Worker() {
+// When using thread pools, two concurrent callbacks might be scheduled
+// onto the same executor thread. As a result, unnecessary happens-before
+// relation may be introduced between callbacks.
+// If we set the number of executor threads to 1, any known data
+// race detector will be silent.
+// However, the a similar situation may happen with any number of
+// executor threads (with some probability).
+
+void Worker(int *var) {
   usleep(100000);
-  GLOB++;
+  *var = 42;
 }
 
-void Run() {
-  FAST_MODE_INIT(&GLOB);
-  printf("test138: FN. Two closures hit the same thread in ThreadPool.\n");
+TEST(ThreadPoolFNTests, OneProducerOneConsumer) {
+  int RACEY = 0;
+  FAST_MODE_INIT(&RACEY);
+  printf("FN. Two closures hit the same thread in ThreadPool.\n");
 
-  // When using thread pools, two concurrent callbacks might be scheduled
-  // onto the same executor thread. As a result, unnecessary happens-before
-  // relation may be introduced between callbacks.
-  // If we set the number of executor threads to 1, any known data
-  // race detector will be silent. However, the same situation may happen
-  // with any number of executor threads (with some probability).
   ThreadPool tp(1);
   tp.StartWorkers();
-  tp.Add(NewCallback(Worker));
-  tp.Add(NewCallback(Worker));
+  tp.Add(NewCallback(Worker, &RACEY));
+  tp.Add(NewCallback(Worker, &RACEY));
 }
 
-REGISTER_TEST2(Run, 138, FEATURE)
-}  // namespace test138
+void PutWorkerOn(ThreadPool *tp, int *var) {
+  usleep(100000);
+  tp->Add(NewCallback(Worker, var));
+  usleep(100000);
+}
+
+TEST(ThreadPoolFNTests, TwoProducersOneConsumer) {
+  int RACEY = 0;
+  FAST_MODE_INIT(&RACEY);
+  printf("FN. Two closures hit the same thread in ThreadPool.\n");
+
+  ThreadPool consumers_tp(1);
+  consumers_tp.StartWorkers();
+
+  ThreadPool producers_tp(2);
+  producers_tp.StartWorkers();
+  producers_tp.Add(NewCallback(PutWorkerOn, &consumers_tp, &RACEY));
+  producers_tp.Add(NewCallback(PutWorkerOn, &consumers_tp, &RACEY));
+}
+}  // namespace ThreadPoolFNTests
 
 // test139: FN. A true race hidden by reference counting annotation. {{{1
 namespace test139 {
