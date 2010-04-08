@@ -202,9 +202,10 @@ Closure *NewCallback(void (*f)(P1), P1 p1) {
   return res;
 }
 
-template <class T, class P1, class P2>
+template <class P1, class P2>
 Closure *NewCallback(void (*f)(P1, P2), P1 p1, P2 p2) {
   CHECK(sizeof(P1) <= sizeof(void*));
+  CHECK(sizeof(P2) <= sizeof(void*));
   Closure *res = new Closure;
   res->n_params = 2;
   res->f = (void*)(f);

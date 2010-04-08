@@ -5629,36 +5629,57 @@ void Run() {
 REGISTER_TEST2(Run, 137, FEATURE | EXCLUDE_FROM_ALL)
 }  // namespace test137
 
-// test138 FN. Two closures hit the same thread in ThreadPool. {{{1
-namespace test138 {
-int GLOB = 0;
+namespace ThreadPoolFNTests {  // {{{1
 
-void Worker() {
+// When using thread pools, two concurrent callbacks might be scheduled
+// onto the same executor thread. As a result, unnecessary happens-before
+// relation may be introduced between callbacks.
+// If we set the number of executor threads to 1, other data
+// race detectors will be silent. However, the same situation may happen
+// with any number of executor threads (with some probability).
+
+void Worker(int *var) {
   usleep(100000);
-  GLOB++;
+  *var = 42;
 }
 
-void Run() {
+TEST(ThreadPoolFNTests, OneProducerOneConsumer) {
+  int GLOB = 0;
   FAST_MODE_INIT(&GLOB);
-  printf("test138: FN. Two closures hit the same thread in ThreadPool.\n");
+  ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB,
+                                "ThreadPoolFNTests.OneProducerOneConsumer");
+  ANNOTATE_TRACE_MEMORY(&GLOB);
+  printf("FN. Two closures hit the same thread in ThreadPool.\n");
 
-  // When using thread pools, two concurrent callbacks might be scheduled
-  // onto the same executor thread. As a result, unnecessary happens-before
-  // relation may be introduced between callbacks.
-  // If we set the number of executor threads to 1, any known data
-  // race detector will be silent. However, the same situation may happen
-  // with any number of executor threads (with some probability).
   ThreadPool tp(1);
   tp.StartWorkers();
-  tp.Add(NewCallback(Worker));
-  tp.Add(NewCallback(Worker));
+  tp.Add(NewCallback(Worker, &GLOB));
+  tp.Add(NewCallback(Worker, &GLOB));
 }
 
-REGISTER_TEST2(Run, 138, FEATURE)
+void PutWorkerOn(ThreadPool *tp, int *var) {
+  tp->Add(NewCallback(Worker, var));
+}
+
+TEST(ThreadPoolFNTests, TwoProducersOneConsumer) {
+  int GLOB = 0;
+  FAST_MODE_INIT(&GLOB);
+  ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB,
+                                "ThreadPoolFNTests.TwoProducersOneConsumer");
+  ANNOTATE_TRACE_MEMORY(&GLOB);
+  printf("FN. Two closures hit the same thread in ThreadPool.\n");
+
+  ThreadPool consumers_tp(1);
+  ThreadPool producers_tp(2);
+  consumers_tp.StartWorkers();
+  producers_tp.StartWorkers();
+  producers_tp.Add(NewCallback(&PutWorkerOn, &consumers_tp, &GLOB));
+  producers_tp.Add(NewCallback(&PutWorkerOn, &consumers_tp, &GLOB));
+}
 }  // namespace test138
 
-// test139: FN. A true race hidden by reference counting annotation. {{{1
-namespace test139 {
+// test140: FN. A true race hidden by reference counting annotation. {{{1
+namespace test140 {
 int GLOB = 0;
 RefCountedClass *obj;
 
@@ -5675,7 +5696,7 @@ void Worker2() {
 
 void Run() {
   FAST_MODE_INIT(&GLOB);
-  printf("test139: FN. A true race hidden by reference counting annotation.\n");
+  printf("test140: FN. A true race hidden by reference counting annotation.\n");
 
   obj = new RefCountedClass;
   obj->AnnotateUnref();
@@ -5686,8 +5707,8 @@ void Run() {
   mt.Join();
 }
 
-REGISTER_TEST2(Run, 139, FEATURE)
-}  // namespace test139
+REGISTER_TEST2(Run, 140, FEATURE)
+}  // namespace test140
 
 // Simple FIFO queue annotated with PCQ annotations. {{{1
 class FifoMessageQueue {
