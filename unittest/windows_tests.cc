@@ -41,6 +41,10 @@ void LongWorker() {
   while(i--);
 }
 
+void WriteWorker(int *var) {
+  *var = 42;
+}
+
 // Just spawn few threads with different stack sizes.
 TEST(NegativeTests, WindowsThreadStackSizeTest) {
   int sizes[3] = {1 << 19, 1 << 21, 1 << 22};
@@ -59,6 +63,16 @@ TEST(NegativeTests, WindowsJoinWithTimeout) {
   CHECK(t > 0);
   CHECK(WAIT_TIMEOUT == ::WaitForSingleObject(t, 1));
   CHECK(WAIT_OBJECT_0 == ::WaitForSingleObject(t, INFINITE));
+}
+
+TEST(NegativeTests, HappensBeforeOnThreadJoin) {
+  int *var = new int;
+  HANDLE t = ::CreateThread(0, 0,
+                            (LPTHREAD_START_ROUTINE)WriteWorker, var, 0, 0);
+  CHECK(t > 0);
+  CHECK(WAIT_OBJECT_0 == ::WaitForSingleObject(t, INFINITE));
+  CHECK(*var == 42);
+  delete var;
 }
 
 namespace RegisterWaitForSingleObjectTest {  // {{{1
