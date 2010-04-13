@@ -75,7 +75,7 @@ TEST(NegativeTests, HappensBeforeOnThreadJoin) {
   delete var;
 }
 
-TEST(NegativeTests, DISABLED_HappensBeforeOnThreadJoinTidReuse) {
+TEST(NegativeTests, HappensBeforeOnThreadJoinTidReuse) {
   HANDLE t1 = ::CreateThread(0, 0, (LPTHREAD_START_ROUTINE)DummyWorker, 0, 0, 0);
   CloseHandle(t1);
   Sleep(1000);
