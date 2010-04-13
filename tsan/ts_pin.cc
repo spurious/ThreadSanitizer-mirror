@@ -999,16 +999,24 @@ void CallbackForThreadFini(THREADID tid, const CONTEXT *ctxt,
   // We can not DumpEvent here,
   // due to possible deadlock with PIN's internal lock.
   if (debug_thread) {
-    Printf("T%d Thread finished\n", tid);
+    Printf("T%d Thread finished (ptid=%d)\n", tid, t.my_ptid);
   }
 }
 
 static bool HandleThreadJoinAfter(THREADID tid, pthread_t joined_ptid) {
-  THREADID joined_tid = 0;
-  for (joined_tid = 1; joined_tid < kMaxThreads; joined_tid++) {
-    if (g_pin_threads[joined_tid].thread_finished == false) continue;
-    if (g_pin_threads[joined_tid].my_ptid == joined_ptid)
-      break;
+  THREADID joined_tid = kMaxThreads;
+  int max_uniq_tid_found = -1;
+  for (THREADID j = 1; j < n_started_threads; j++) {
+    if (g_pin_threads[j].thread_finished == false)
+      continue;
+    if (g_pin_threads[j].my_ptid == joined_ptid) {
+      // We search for the thread with the maximum uniq_tid to work around
+      // thread HANDLE reuse issues.
+      if (max_uniq_tid_found < g_pin_threads[j].uniq_tid) {
+        max_uniq_tid_found = g_pin_threads[j].uniq_tid;
+        joined_tid = j;
+      }
+    }
   }
   if (joined_tid == kMaxThreads) {
     // This may happen in the following case:
@@ -1018,6 +1026,8 @@ static bool HandleThreadJoinAfter(THREADID tid, pthread_t joined_ptid) {
     //  - We did not yet register the thread fini event.
     //  - We observe WaitForSingleObjectEx(ptid) and think that this is thread
     //  join event, while it is not.
+    if (debug_thread)
+      Printf("T%d JoinAfter returns false! ptid=%d\n", tid, joined_ptid);
     return false;
   }
   CHECK(joined_tid < kMaxThreads);
