@@ -75,6 +75,21 @@ TEST(NegativeTests, HappensBeforeOnThreadJoin) {
   delete var;
 }
 
+TEST(NegativeTests, DISABLED_HappensBeforeOnThreadJoinTidReuse) {
+  HANDLE t1 = ::CreateThread(0, 0, (LPTHREAD_START_ROUTINE)DummyWorker, 0, 0, 0);
+  CloseHandle(t1);
+  Sleep(1000);
+
+  int *var = new int;
+  HANDLE t2 = ::CreateThread(0, 0,
+                             (LPTHREAD_START_ROUTINE)WriteWorker, var, 0, 0);
+  printf("t1 = %d, t2 = %d\n");
+  CHECK(t2 > 0);
+  CHECK(WAIT_OBJECT_0 == ::WaitForSingleObject(t2, INFINITE));
+  CHECK(*var == 42);
+  delete var;
+}
+
 namespace RegisterWaitForSingleObjectTest {  // {{{1
 StealthNotification *n = NULL;
 HANDLE monitored_object = NULL;
