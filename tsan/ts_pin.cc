@@ -1004,19 +1004,11 @@ void CallbackForThreadFini(THREADID tid, const CONTEXT *ctxt,
 }
 
 static bool HandleThreadJoinAfter(THREADID tid, pthread_t joined_ptid) {
-  THREADID joined_tid = kMaxThreads;
-  int max_uniq_tid_found = -1;
-  for (THREADID j = 1; j < n_started_threads; j++) {
-    if (g_pin_threads[j].thread_finished == false)
-      continue;
-    if (g_pin_threads[j].my_ptid == joined_ptid) {
-      // We search for the thread with the maximum uniq_tid to work around
-      // thread HANDLE reuse issues.
-      if (max_uniq_tid_found < g_pin_threads[j].uniq_tid) {
-        max_uniq_tid_found = g_pin_threads[j].uniq_tid;
-        joined_tid = j;
-      }
-    }
+  THREADID joined_tid = 0;
+  for (joined_tid = 1; joined_tid < kMaxThreads; joined_tid++) {
+    if (g_pin_threads[joined_tid].thread_finished == false) continue;
+    if (g_pin_threads[joined_tid].my_ptid == joined_ptid)
+      break;
   }
   if (joined_tid == kMaxThreads) {
     // This may happen in the following case:
