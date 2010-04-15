@@ -45,8 +45,8 @@ void WriteWorker(int *var) {
   *var = 42;
 }
 
+TEST(NegativeTests, WindowsThreadStackSizeTest) {  // {{{1
 // Just spawn few threads with different stack sizes.
-TEST(NegativeTests, WindowsThreadStackSizeTest) {
   int sizes[3] = {1 << 19, 1 << 21, 1 << 22};
   for (int i = 0; i < 3; i++) {
     HANDLE t = ::CreateThread(0, sizes[i],
@@ -56,8 +56,8 @@ TEST(NegativeTests, WindowsThreadStackSizeTest) {
   }
 }
 
+TEST(NegativeTests, WindowsJoinWithTimeout) {  // {{{1
 // Just spawn few threads with different stack sizes.
-TEST(NegativeTests, WindowsJoinWithTimeout) {
   HANDLE t = ::CreateThread(0, 0,
                             (LPTHREAD_START_ROUTINE)LongWorker, 0, 0, 0);
   CHECK(t > 0);
@@ -65,7 +65,7 @@ TEST(NegativeTests, WindowsJoinWithTimeout) {
   CHECK(WAIT_OBJECT_0 == ::WaitForSingleObject(t, INFINITE));
 }
 
-TEST(NegativeTests, HappensBeforeOnThreadJoin) {
+TEST(NegativeTests, HappensBeforeOnThreadJoin) {  // {{{1
   int *var = new int;
   HANDLE t = ::CreateThread(0, 0,
                             (LPTHREAD_START_ROUTINE)WriteWorker, var, 0, 0);
@@ -75,7 +75,7 @@ TEST(NegativeTests, HappensBeforeOnThreadJoin) {
   delete var;
 }
 
-TEST(NegativeTests, HappensBeforeOnThreadJoinTidReuse) {
+TEST(NegativeTests, HappensBeforeOnThreadJoinTidReuse) {  // {{{1
   HANDLE t1 = ::CreateThread(0, 0, (LPTHREAD_START_ROUTINE)DummyWorker, 0, 0, 0);
   CloseHandle(t1);
   Sleep(1000);

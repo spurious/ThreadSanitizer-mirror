@@ -519,8 +519,13 @@ void SubWorker() {
   }
 }
 
-void Worker() {
+void Worker1() {
   MyThreadArray t(SubWorker, SubWorker, SubWorker, SubWorker);
+  t.Start();
+  t.Join();
+}
+void Worker() {
+  MyThreadArray t(Worker1, Worker1, Worker1, Worker1);
   t.Start();
   t.Join();
 }
