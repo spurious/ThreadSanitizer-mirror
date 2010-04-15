@@ -2595,6 +2595,89 @@ static void CallbackForFini(INT32 code, void *v) {
   }
 }
 
+//--------- Call Coverage ----------------- {{{1
+// A simplistic call coverage tool.
+// Outputs all pairs <call_site,call_target>.
+
+typedef set<pair<uintptr_t, uintptr_t> > CallCoverageSet;
+static CallCoverageSet *call_coverage_set;
+
+static map<uintptr_t, string> *function_names_map;
+static uintptr_t symbolized_functions_cache[1023];
+static pair<uintptr_t, uintptr_t> registered_pairs_cache[1023];
+
+static void symbolize_pc(uintptr_t pc) {
+  // Check a simple cache if we already symbolized this pc (racey).
+  size_t idx = pc % TS_ARRAY_SIZE(symbolized_functions_cache);
+  if (symbolized_functions_cache[idx] == pc) return;
+
+  ScopedReentrantClientLock lock(__LINE__);
+  CHECK(function_names_map);
+  if (function_names_map->count(pc) == 0) {
+    (*function_names_map)[pc] = PcToRtnName(pc, false);
+  }
+  symbolized_functions_cache[idx] = pc;
+}
+
+static void CallCoverageRegisterCall(uintptr_t from, uintptr_t to) {
+  symbolize_pc(from);
+  symbolize_pc(to);
+
+  // Check if we already registered this pair (racey).
+  size_t idx = (from ^ to) % TS_ARRAY_SIZE(registered_pairs_cache);
+  if (registered_pairs_cache[idx] == make_pair(from,to)) return;
+
+  ScopedReentrantClientLock lock(__LINE__);
+  call_coverage_set->insert(make_pair(from, to));
+  registered_pairs_cache[idx] = make_pair(from,to);
+}
+
+static void CallCoverageCallbackForTRACE(TRACE trace, void *v) {
+  RTN rtn = TRACE_Rtn(trace);
+  if (RTN_Valid(rtn)) {
+    SEC sec = RTN_Sec(rtn);
+    IMG img = SEC_Img(sec);
+    string img_name = IMG_Name(img);
+    // Don't instrument system libraries.
+    if (img_name.find("/usr/") == 0) return;
+  }
+
+  if (call_coverage_set == NULL) {
+    call_coverage_set = new CallCoverageSet;
+    function_names_map = new map<uintptr_t, string>;
+  }
+  for(BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
+    INS ins = BBL_InsTail(bbl);
+    if (!INS_IsProcedureCall(ins) || INS_IsSyscall(ins)) continue;
+    if (INS_IsDirectBranchOrCall(ins)) {
+      // If <from, to> is know at instrumentation time, don't instrument.
+      ADDRINT to = INS_DirectBranchOrCallTargetAddress(ins);
+      ADDRINT from = INS_Address(ins);
+      CallCoverageRegisterCall(from, to);
+    } else {
+      // target is dynamic. Need to instrument.
+      INS_InsertCall(ins, IPOINT_BEFORE,
+                     (AFUNPTR)CallCoverageRegisterCall,
+                     IARG_INST_PTR,
+                     IARG_BRANCH_TARGET_ADDR,
+                     IARG_END);
+    }
+  }
+}
+
+// Output all <from,to> pairs.
+static void CallCoverageCallbackForFini(INT32 code, void *v) {
+  CHECK(call_coverage_set);
+  CHECK(function_names_map);
+  for (CallCoverageSet::iterator it = call_coverage_set->begin();
+       it != call_coverage_set->end(); ++it) {
+    string from_name = (*function_names_map)[it->first];
+    string to_name   = (*function_names_map)[it->second];
+    if (to_name == ".plt" || to_name == "") continue;
+    Printf("CallCoverage: %s => %s\n", from_name.c_str(), to_name.c_str());
+  }
+}
+
 //--------- Main -------------------------- {{{1
 int main(INT32 argc, CHAR **argv) {
   PIN_Init(argc, argv);
@@ -2639,6 +2722,13 @@ int main(INT32 argc, CHAR **argv) {
   }
 
   ThreadSanitizerInit();
+
+  if (G_flags->call_coverage) {
+    PIN_AddFiniFunction(CallCoverageCallbackForFini, 0);
+    TRACE_AddInstrumentFunction(CallCoverageCallbackForTRACE, 0);
+    PIN_StartProgram();
+    return 0;
+  }
 
   tls_reg = PIN_ClaimToolRegister();
   CHECK(REG_valid(tls_reg));

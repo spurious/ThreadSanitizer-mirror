@@ -6318,6 +6318,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   FindStringFlag("ignore", args, &G_flags->ignore);
 
   FindBoolFlag("thread_coverage", false, args, &G_flags->thread_coverage);
+  FindBoolFlag("call_coverage", false, args, &G_flags->call_coverage);
   FindStringFlag("dump_events", args, &G_flags->dump_events);
   FindBoolFlag("symbolize", true, args, &G_flags->symbolize);
 
