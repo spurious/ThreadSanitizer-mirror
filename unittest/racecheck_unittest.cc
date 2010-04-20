@@ -6411,6 +6411,28 @@ TEST(StressTests, StartAndJoinManyThreads) {
 }
 }  // namespace
 
+namespace NegativeTests_EnableRaceDetectionTest {  // {{{1
+const size_t size = 10000;
+const size_t n_iter = 1000;
+int GLOB[size];
+
+void Worker() {
+  for (size_t i = 0; i < n_iter; i++) {
+    for (size_t j = 0; j < size; j++) {
+      GLOB[j]++;
+    }
+  }
+}
+
+TEST(NegativeTests, DISABLED_EnableRaceDetectionTest) {
+  ANNOTATE_ENABLE_RACE_DETECTION(0);
+  MyThreadArray t(Worker, Worker, Worker, Worker);
+  t.Start();
+  t.Join();
+  ANNOTATE_ENABLE_RACE_DETECTION(1);
+}
+}
+
 namespace ManySmallObjectsTest {  // {{{1
 void Worker() {
   const int N = 1 << 21;
