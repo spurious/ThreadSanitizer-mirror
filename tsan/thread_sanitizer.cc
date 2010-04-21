@@ -138,6 +138,7 @@ class ID {
     return *this;
   }
   T raw() const { return id_; }
+
  private:
   T id_;
 };
@@ -233,12 +234,25 @@ template <typename A, typename B, typename Ret,
 class PairCache {
  public:
   PairCache() {
+    CHECK(kHtableSize >= 0);
     CHECK(sizeof(Entry) == sizeof(A) + sizeof(B) + sizeof(Ret));
     Flush();
   }
+
   void Flush() {
     memset(this, 0, sizeof(*this));
+
+    // Change the first hashtable entry so it doesn't match (0,0) on Lookup.
+    if (kHtableSize != 0)
+      memset(&htable_[0], 1, sizeof(Entry));
+
+    // Any Lookup should fail now.
+    for (int i = 0; i < kHtableSize; i++) {
+      Ret tmp;
+      DCHECK(!Lookup(htable_[i].a, htable_[i].b, &tmp));
+    }
   }
+
   void Insert(A a, B b, Ret v) {
     // fill the hash table
     if (kHtableSize != 0) {
@@ -249,11 +263,11 @@ class PairCache {
     // fill the array
     Ret dummy;
     if (kArraySize != 0 && !ArrayLookup(a, b, &dummy)) {
-      int pos = array_pos_;
+      int pos = (array_pos_++) % kArraySize;
       array_[pos].Fill(a, b, v);
-      array_pos_ = (array_pos_ + 1) % (kArraySize);
     }
   }
+
   bool Lookup(A a, B b, Ret *v) {
     // check the array
     if (kArraySize != 0 && ArrayLookup(a, b, v)) {
@@ -271,6 +285,7 @@ class PairCache {
     }
     return false;
   }
+
  private:
   struct Entry {
     A a;
@@ -287,7 +302,7 @@ class PairCache {
   };
 
   bool ArrayLookup(A a, B b, Ret *v) {
-    for (int i = 0; i < kArraySize; i++) {
+    for (int i = 0; i < min(array_pos_, kArraySize); i++) {
       Entry & entry = array_[i];
       if (entry.Match(a, b)) {
         *v = entry.v;
@@ -301,7 +316,7 @@ class PairCache {
     if (kHtableSize == 0)
       return 0;
     else
-      return (combine2(a, b) % max(kHtableSize, 1));
+      return combine2(a, b) % kHtableSize;
   }
 
   static uint32_t combine2(int a, int b) {
@@ -353,6 +368,7 @@ class FreeList {
     new_head->next = list_;
     list_ = new_head;
   }
+
  private:
   void AllocateNewChunk() {
     CHECK(list_ == NULL);
@@ -395,8 +411,8 @@ class StackTraceFreeList {
       free_lists_[i] = new FreeList((i+2) * sizeof(uintptr_t), 1024);
     }
   }
- private:
 
+ private:
   FreeList **free_lists_;  // Array of G_flags->num_callers lists.
 };
 
@@ -1660,6 +1676,7 @@ class Segment {
     reusable_sids_ = new vector<SID>;
     recycled_sids_ = new vector<SID>;
   }
+
  private:
   static Segment *GetSegmentByIndex(int32_t index) {
     return &all_segments_[index];
@@ -4872,8 +4889,6 @@ class ReportStorage {
   }
 
  private:
-
-
   map<StackTrace *, int, StackTrace::Less> reported_stacks_;
   int n_reports;
   int n_race_reports;
@@ -4934,10 +4949,9 @@ class EventSampler {
   static void InitClassMembers() {
     samples_ = new SampleMapMap;
   }
+
  private:
-
   int counter_;
-
 
   typedef map<string, int> SampleMap;
   typedef map<string, SampleMap> SampleMapMap;
@@ -5101,7 +5115,6 @@ class Detector {
   }
 
  private:
-
   void ShowProcSelfStatus() {
     if (G_flags->show_proc_self_status) {
       string str = ReadFileToString("/proc/self/status", false);
