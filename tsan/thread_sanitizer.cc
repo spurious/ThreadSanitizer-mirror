@@ -3768,6 +3768,9 @@ struct Thread {
              cv, mu,
              vts()->ToString().c_str(),
              Segment::ToString(sid()).c_str());
+      if (G_flags->debug_level >= 1) {
+        ReportStackTrace(GetPcOfCurrentThread());
+      }
     }
   }
 
@@ -3782,10 +3785,14 @@ struct Thread {
       signaller->vts = new_vts;
     }
     NewSegmentForSignal();
-    if (debug_happens_before)
+    if (debug_happens_before) {
       Printf("T%d: Signal: %p:\n    %s %s\n    %s\n", tid_.raw(), cv,
              vts()->ToString().c_str(), Segment::ToString(sid()).c_str(),
              (signaller->vts)->ToString().c_str());
+      if (G_flags->debug_level >= 1) {
+        ReportStackTrace(GetPcOfCurrentThread());
+      }
+    }
   }
 
   void INLINE NewSegmentWithoutUnrefingOld(const char *call_site,
@@ -6476,6 +6483,7 @@ static void SetupIgnore() {
   g_ignore_lists->objs.push_back("*OLEAUT32.dll");
   g_ignore_lists->objs.push_back("*MSCTF.dll");
   g_ignore_lists->objs.push_back("*ntdll.dll");
+  g_ignore_lists->objs.push_back("*ntdll.dll.so");
   g_ignore_lists->objs.push_back("*mswsock.dll");
   g_ignore_lists->objs.push_back("*WS2_32.dll");
   g_ignore_lists->objs.push_back("*msvcrt.dll");
@@ -6494,6 +6502,9 @@ static void SetupIgnore() {
   g_ignore_lists->funs.push_back("__lll_mutex_unlock_wake");
   g_ignore_lists->funs.push_back("__sigsetjmp");
   g_ignore_lists->funs.push_back("__sigjmp_save");
+  g_ignore_lists->funs.push_back("_setjmp");
+  g_ignore_lists->funs.push_back("_longjmp_unwind");
+  g_ignore_lists->funs.push_back("longjmp");
   g_ignore_lists->funs.push_back("_EH_epilog3");
   g_ignore_lists->funs.push_back("_EH_prolog3_catch");
 
