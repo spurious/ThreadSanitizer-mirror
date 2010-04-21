@@ -398,6 +398,7 @@ class StackTraceFreeList {
     DCHECK(capacity <= (size_t)G_flags->num_callers);
     return reinterpret_cast<uintptr_t*>(free_lists_[capacity]->Allocate());
   }
+
   void TakeStackTraceBack(uintptr_t *mem, size_t capacity) {
     DCHECK(capacity <= (size_t)G_flags->num_callers);
     free_lists_[capacity]->Deallocate(mem);
