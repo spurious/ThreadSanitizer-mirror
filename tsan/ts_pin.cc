@@ -39,6 +39,8 @@
 
 #include "thread_sanitizer.h"
 #include "ts_lock.h"
+#include "ts_trace_info.h"
+
 
 #if defined(__GNUC__)
 # include <cxxabi.h>  // __cxa_demangle
@@ -128,88 +130,6 @@ struct StackFrame {
   uintptr_t sp;
   StackFrame(uintptr_t p, uintptr_t s) : pc(p), sp(s) { }
 };
-//--------------- TraceInfo ----------------- {{{1
-// Information about one Memory Operation.
-struct MopInfo {
-  uintptr_t pc;
-  uintptr_t size;
-  bool      is_write;
-};
-
-// An instance of this class is created for each TRACE (SEME region)
-// during instrumentation.
-class TraceInfo {
- public:
-  static TraceInfo *NewTraceInfo(size_t n_mops, uintptr_t pc);
-  void DeleteTraceInfo(TraceInfo *trace_info) {
-    delete [] (uintptr_t*)trace_info;
-  }
-  MopInfo *GetMop(size_t i) {
-    DCHECK(i < n_mops_);
-    return &mops_[i];
-  }
-
-  size_t n_mops() const { return n_mops_; }
-  size_t pc()     const { return pc_; }
-  size_t id()     const { return id_; }
-  size_t &counter()     { return counter_; }
-
-  static void PrintTraceProfile();
-
- private:
-  TraceInfo() { }
-
-  size_t n_mops_;
-  size_t pc_;
-  size_t id_;
-  size_t counter_;
-  MopInfo mops_[1];
-
-  static size_t id_counter_;
-  static vector<TraceInfo*> *g_all_traces;
-};
-
-size_t TraceInfo::id_counter_;
-vector<TraceInfo*> *TraceInfo::g_all_traces;
-
-TraceInfo *TraceInfo::NewTraceInfo(size_t n_mops, uintptr_t pc) {
-  size_t mem_size = (sizeof(TraceInfo) + (n_mops - 1) * sizeof(MopInfo));
-  uint8_t *mem = new uint8_t[mem_size];
-  TraceInfo *res = new (mem) TraceInfo;
-  res->n_mops_ = n_mops;
-  res->pc_ = pc;
-  res->id_ = id_counter_++;
-  res->counter_ = 0;
-  if (g_all_traces == NULL) {
-    g_all_traces = new vector<TraceInfo*>;
-    CHECK(id_counter_ == 1);
-  }
-  g_all_traces->push_back(res);
-  return res;
-}
-
-void TraceInfo::PrintTraceProfile() {
-  int64_t total_counter = 0;
-  multimap<size_t, TraceInfo*> traces;
-  for (size_t i = 0; i < g_all_traces->size(); i++) {
-    TraceInfo *trace = (*g_all_traces)[i];
-    traces.insert(make_pair(trace->counter(), trace));
-    total_counter += trace->counter();
-  }
-  Printf("TraceProfile: %ld traces, %lld hits\n",
-         g_all_traces->size(), total_counter);
-  int i = 0;
-  for (multimap<size_t, TraceInfo*>::reverse_iterator it = traces.rbegin();
-       it != traces.rend(); ++it, i++) {
-    TraceInfo *trace = it->second;
-    int64_t c = it->first;
-    int64_t permile = (c * 1000) / total_counter;
-    if (permile == 0 || i >= 20) break;
-    Printf("TR%ld c=%lld (%lld/1000) n_mops=%ld\n", trace->id(), c,
-           permile, trace->n_mops());
-  }
-}
-
 //--------------- PinThread ----------------- {{{1
 const size_t kThreadLocksEventBufferSize = 2048 - 2;
 // The number of mops should be at least 2 less than the size of TLEB
