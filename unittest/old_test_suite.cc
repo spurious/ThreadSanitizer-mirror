@@ -153,12 +153,18 @@ int main(int argc, char** argv) {
       if (isdigit(cur_arg[0])) {
         // Enqueue the test specified.
         int test_id = ParseInt(cur_arg);
-        CHECK(TheMapOfTests->count(test_id));
+        if (!TheMapOfTests->count(test_id)) {
+          printf("Unknown test id: %d\n", test_id);
+          exit(1);
+        }
         tests_to_run.push_back(test_id);
       } else if (cur_arg[0] == '-') {
         // Exclude the test specified.
         int test_id = ParseInt(cur_arg + 1);
-        CHECK(TheMapOfTests->count(test_id));
+        if (!TheMapOfTests->count(test_id)) {
+          printf("Unknown test id: %d\n", test_id);
+          exit(1);
+        }
         tests_to_exclude.insert(test_id);
       } else {
         printf("Unknown argument: %s\n", cur_arg);
