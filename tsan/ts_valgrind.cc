@@ -604,6 +604,12 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
     case TSREQ_MUTEX_IS_USED_AS_CONDVAR:
       Put(HB_LOCK, ts_tid, pc, /*lock=*/args[1], 0);
       break;
+    case TSREQ_GLOBAL_IGNORE_ON:
+      Report("INFO: GLOBAL IGNORE ON  (TODO(kcc): not implemented yet)\n");
+      break;
+    case TSREQ_GLOBAL_IGNORE_OFF:
+      Report("INFO: GLOBAL IGNORE OFF (TODO(kcc): not implemented yet)\n");
+      break;
     case TSREQ_IGNORE_READS_BEGIN:
       Put(IGNORE_READS_BEG, ts_tid, pc, 0, 0);
       break;

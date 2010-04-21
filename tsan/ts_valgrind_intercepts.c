@@ -2418,6 +2418,14 @@ ANN_FUNC(void, AnnotateIgnoreWritesEnd, char *file, int line, void *mu)
   DO_CREQ_v_W(TSREQ_IGNORE_WRITES_END,   void*, mu);
 }
 
+ANN_FUNC(void, AnnotateEnableRaceDetection, char *file, int line, int enable)
+{
+  const char *name = "AnnotateEnableRaceDetection";
+  ANN_TRACE("--#%d %s[%d] %s:%d\n", tid, name, enable, file, line);
+  DO_CREQ_v_W(enable == 0 ? TSREQ_GLOBAL_IGNORE_ON : TSREQ_GLOBAL_IGNORE_OFF,
+              long, 0);
+}
+
 ANN_FUNC(void, AnnotateThreadName, char *file, int line, const char *thread_name)
 {
   const char *name = "AnnotateThreadName";

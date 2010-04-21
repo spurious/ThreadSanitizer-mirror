@@ -247,6 +247,9 @@ struct PinThread {
 // Array of pin threads, indexed by pin's THREADID.
 static PinThread *g_pin_threads;
 
+// If true, ignore all accesses in all threads.
+static bool global_ignore;
+
 // Used only if separate_analysis_thread==true.
 static vector<ThreadLocalEventBuffer *> *g_tleb_queue;
 
@@ -322,13 +325,15 @@ enum TLEBSpecificEvents {
   TLEB_IGNORE_ALL_END,
   TLEB_IGNORE_SYNC_BEGIN,
   TLEB_IGNORE_SYNC_END,
+  TLEB_GLOBAL_IGNORE_ON,
+  TLEB_GLOBAL_IGNORE_OFF,
 };
 
 static bool DumpEventPlainText(EventType type, int32_t tid, uintptr_t pc,
                         uintptr_t a, uintptr_t info) {
 #if DEBUG == 0 || defined(_MSC_VER)
   return false;
-#else 
+#else
   if (G_flags->dump_events.empty()) return false;
 
   static hash_set<uintptr_t> *pc_set;
@@ -399,7 +404,7 @@ static void TLEBFlushUnlocked(ThreadLocalEventBuffer &tleb) {
       bool do_this_trace = ((G_flags->literace_sampling == 0 ||
                              !LiteRaceSkipTrace(t.uniq_tid, t.trace_info->id(),
                                                 G_flags->literace_sampling)));
-      if (t.ignore_all_mops)
+      if (t.ignore_all_mops || global_ignore)
         do_this_trace = false;
 
       TraceInfo *trace_info = (TraceInfo*) tleb.events[i++];
@@ -448,6 +453,12 @@ static void TLEBFlushUnlocked(ThreadLocalEventBuffer &tleb) {
     } else if (event == TLEB_IGNORE_SYNC_END){
       t.ignore_lock_events--;
       CHECK(t.ignore_lock_events >= 0);
+    } else if (event == TLEB_GLOBAL_IGNORE_ON){
+      Report("INFO: GLOBAL IGNORE ON\n");
+      global_ignore = true;
+    } else if (event == TLEB_GLOBAL_IGNORE_OFF){
+      Report("INFO: GLOBAL IGNORE OFF\n");
+      global_ignore = false;
     } else {
       // all other events.
       CHECK(event > NOOP && event < LAST_EVENT);
@@ -457,7 +468,7 @@ static void TLEBFlushUnlocked(ThreadLocalEventBuffer &tleb) {
       if (t.ignore_lock_events &&
           (event == WRITER_LOCK || event == READER_LOCK || event == UNLOCK)) {
         // do nothing, we are ignoring locks.
-      } else if (t.ignore_all_mops && (event == READ || event == WRITE)) {
+      } else if ((t.ignore_all_mops || global_ignore) && (event == READ || event == WRITE)) {
         // do nothing, we are ignoring mops.
       } else {
         DumpEventInternal((EventType)event, t.uniq_tid, pc, a, info);
@@ -1794,6 +1805,13 @@ static void On_AnnotateCondVarWait(THREADID tid, ADDRINT pc,
 }
 
 
+static void On_AnnotateEnableRaceDetection(THREADID tid, ADDRINT pc,
+                                        ADDRINT file, ADDRINT line,
+                                        ADDRINT enable) {
+  TLEBSimpleEvent(g_pin_threads[tid],
+                  enable ? TLEB_GLOBAL_IGNORE_OFF : TLEB_GLOBAL_IGNORE_ON);
+}
+
 static void On_AnnotateIgnoreReadsBegin(THREADID tid, ADDRINT pc,
                                         ADDRINT file, ADDRINT line) {
   DumpEvent(IGNORE_READS_BEG, tid, pc, 0, 0);
@@ -2447,6 +2465,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_BEFORE_3("AnnotateCondVarSignal", On_AnnotateCondVarSignal);
   INSERT_BEFORE_3("AnnotateCondVarSignalAll", On_AnnotateCondVarSignal);
 
+  INSERT_BEFORE_3("AnnotateEnableRaceDetection", On_AnnotateEnableRaceDetection);
   INSERT_BEFORE_0("AnnotateIgnoreReadsBegin", On_AnnotateIgnoreReadsBegin);
   INSERT_BEFORE_0("AnnotateIgnoreReadsEnd", On_AnnotateIgnoreReadsEnd);
   INSERT_BEFORE_0("AnnotateIgnoreWritesBegin", On_AnnotateIgnoreWritesBegin);
