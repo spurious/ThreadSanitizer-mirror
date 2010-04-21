@@ -12,3 +12,12 @@
    fun:*test136*
 }
 
+{
+  wine_destroy_static_lock
+  ThreadSanitizer:InvalidLock
+  fun:AnnotateRWLockDestroy
+  fun:RtlDeleteCriticalSection
+  fun:WINMM_DeleteIData
+  fun:DllMain
+  fun:__wine_spec_dll_entry
+}
