@@ -76,6 +76,7 @@ vector<TraceInfo*> *TraceInfo::g_all_traces;
 TraceInfo *TraceInfo::NewTraceInfo(size_t n_mops, uintptr_t pc) {
   size_t mem_size = (sizeof(TraceInfo) + (n_mops - 1) * sizeof(MopInfo));
   uint8_t *mem = new uint8_t[mem_size];
+  memset(mem, 0xab, mem_size);
   TraceInfo *res = new (mem) TraceInfo;
   res->n_mops_ = n_mops;
   res->pc_ = pc;
