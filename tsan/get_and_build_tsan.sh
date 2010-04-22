@@ -62,7 +62,7 @@ make -s -j4 OFFLINE= GTEST_ROOT= PIN_ROOT= ${TARGET} VALGRIND_INST_ROOT=$VALGRIN
 
 # Build the self contained binaries.
 cd $TOPDIR || exit 1
-tsan_binary/mk-self-contained-tsan.sh $VALGRIND_INST_ROOT tsan.sh  || exit 1
+tsan/mk-self-contained-tsan.sh $VALGRIND_INST_ROOT tsan.sh  || exit 1
 
 # Test
 cd $TOPDIR/unittest || exit 1
