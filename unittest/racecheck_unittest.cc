@@ -6424,7 +6424,7 @@ void Worker() {
   }
 }
 
-TEST(NegativeTests, DISABLED_EnableRaceDetectionTest) {
+TEST(NegativeTests, EnableRaceDetectionTest) {
   ANNOTATE_ENABLE_RACE_DETECTION(0);
   MyThreadArray t(Worker, Worker, Worker, Worker);
   t.Start();
