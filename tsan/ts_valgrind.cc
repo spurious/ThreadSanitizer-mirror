@@ -228,6 +228,8 @@ struct ValgrindThread {
   }
 };
 
+// If true, ignore all accesses in all threads.
+static bool global_ignore;
 
 // Array of VG_N_THREADS
 static ValgrindThread *g_valgrind_threads = 0;
@@ -605,10 +607,12 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
       Put(HB_LOCK, ts_tid, pc, /*lock=*/args[1], 0);
       break;
     case TSREQ_GLOBAL_IGNORE_ON:
-      Report("INFO: GLOBAL IGNORE ON  (TODO(kcc): not implemented yet)\n");
+      Report("INFO: GLOBAL IGNORE ON\n");
+      global_ignore = true;
       break;
     case TSREQ_GLOBAL_IGNORE_OFF:
-      Report("INFO: GLOBAL IGNORE OFF (TODO(kcc): not implemented yet)\n");
+      Report("INFO: GLOBAL IGNORE OFF\n");
+      global_ignore = false;
       break;
     case TSREQ_IGNORE_READS_BEGIN:
       Put(IGNORE_READS_BEG, ts_tid, pc, 0, 0);
@@ -761,7 +765,8 @@ VG_REGPARM(1) static void evh__on_trace_entry(uint32_t trace_no) {
 
   if (thr->ignore_accesses) return;
 
-  if (LiteRaceSkipTrace(vg_tid, trace_no, G_flags->literace_sampling)) {
+  if (global_ignore ||
+      LiteRaceSkipTrace(vg_tid, trace_no, G_flags->literace_sampling)) {
     thr->ignore_accesses_in_current_trace = true;
     thr->ignore_accesses++;
   }
