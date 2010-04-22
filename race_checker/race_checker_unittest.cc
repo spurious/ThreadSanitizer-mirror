@@ -20,7 +20,6 @@
   The GNU General Public License is contained in the file COPYING.
 */
 
-#include <pthread.h>
 #include <assert.h>
 #include "race_checker.h"
 
@@ -44,13 +43,32 @@ static void *Dummy3(void *x) { ReaderAndWriter(); return NULL; }
 static void *Dummy2(void *x) { return Dummy3(x); }
 static void *Dummy1(void *x) { return Dummy2(x); }
 
-int main() {
-  pthread_t threads[3];
-  pthread_create(&threads[0], NULL, &Dummy1, NULL);
-  pthread_create(&threads[1], NULL, &Dummy2, NULL);
-  pthread_create(&threads[2], NULL, &Dummy3, NULL);
+RaceChecker::Thread StartThread(void* (*f)(void*)) {
+  #ifdef _MSC_VER
+  DWORD tmp;
+  return ::CreateThread(0, NULL, (LPTHREAD_START_ROUTINE)f, 0, 0, 0);
+  #else
+  pthread_t ret;
+  pthread_create(&ret, NULL, f, NULL);
+  return ret;
+  #endif
+}
 
-  pthread_join(threads[0], NULL);
-  pthread_join(threads[1], NULL);
-  pthread_join(threads[2], NULL);
+void JoinThread(RaceChecker::Thread t) {
+  #ifdef _MSC_VER
+  WaitForSingleObject(t, INFINITE);
+  CloseHandle(t);
+  #else
+  pthread_join(t, NULL);
+  #endif
+}
+
+int main() {
+  RaceChecker::Thread threads[3];
+  threads[0] = StartThread(Dummy1);
+  threads[1] = StartThread(Dummy2);
+  threads[2] = StartThread(Dummy3);
+
+  for (int i = 0; i < 3; i++)
+    JoinThread(threads[i]);
 }

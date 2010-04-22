@@ -28,9 +28,16 @@
 #include <map>
 #include <set>
 #include <vector>
-#include <execinfo.h>
+
 #include <stdlib.h>
+
+#ifdef _MSC_VER
+#include <dbghelp.h>
+#pragma comment(lib, "dbghelp.lib")
+#else
+#include <execinfo.h>
 #include <pthread.h>
+#endif
 
 #include <assert.h>
 #ifdef NDEBUG
@@ -38,6 +45,20 @@
 #endif
 #define CHECK assert
 
+#ifdef _MSC_VER
+class Mutex {
+ public:
+  Mutex()       { ::InitializeCriticalSection(&cs_); }
+  ~Mutex()      { ::DeleteCriticalSection(&cs_); }
+  void Lock()   { ::EnterCriticalSection(&cs_); }
+  void Unlock() { ::LeaveCriticalSection(&cs_); }
+ private:
+  CRITICAL_SECTION cs_;
+};
+
+bool symtable_initialized = SymInitialize(GetCurrentProcess(), NULL, TRUE);
+
+#else
 class Mutex {
  public:
   Mutex()        { pthread_mutex_init(&mu_, NULL); }
@@ -47,6 +68,7 @@ class Mutex {
  private:
   pthread_mutex_t mu_;
 };
+#endif
 
 static int race_checker_level =
   getenv("RACECHECKER") ? atoi(getenv("RACECHECKER")) : 0;
@@ -55,9 +77,8 @@ static int race_checker_sleep_ms =
 static int race_checker_verbosity =
   getenv("RACECHECKER_VERBOSITY") ? atoi(getenv("RACECHECKER_VERBOSITY")) : 0;
 
-
 struct CallSite {         // Data about a call site.
-  pthread_t thread;
+  RaceChecker::ThreadId thread;
   int nstack;
   void *stack[20];
 };
@@ -75,16 +96,45 @@ static AddressMap *race_checker_map;  // Under race_checker_mu.
 // accessing a location.
 static void DescribeAccesses(std::string id, TypedCallsites *c) {
   fprintf(stderr, "Race on '%s' found between these points\n", id.c_str());
-  std::set<pthread_t> reported_accessors;
+  std::set<RaceChecker::ThreadId> reported_accessors;
   for (int t = 1; t >= 0; t--) {  // Iterate starting from writers.
     for (size_t i = 0; i != c->type[t].size(); i++) {
       CallSite *s = &c->type[t][i];
       if (reported_accessors.insert(s->thread).second) {
         // Report each accessor just once.
         fprintf(stderr, "%s\n", (t == 0? "=== reader: " : "=== writer: "));
-        // msg += (s->thread);
+      #ifdef _MSC_VER
+        // From http://msdn.microsoft.com/en-us/library/ms680578(VS.85).aspx
+        for (int i = 2; i < s->nstack; i++) {
+          DWORD frame = (DWORD)s->stack[i];
+          ULONG64 buffer[(sizeof(SYMBOL_INFO) +
+                         MAX_SYM_NAME * sizeof(TCHAR) +
+                         sizeof(ULONG64) - 1) /
+                         sizeof(ULONG64)];
+          PSYMBOL_INFO pSymbol = (PSYMBOL_INFO) buffer;
+
+          pSymbol->SizeOfStruct = sizeof(SYMBOL_INFO);
+          pSymbol->MaxNameLen = MAX_SYM_NAME - 1;
+
+          if (!SymFromAddr(GetCurrentProcess(), frame,
+                           NULL, pSymbol)) {
+            fprintf(stderr, "[0x%X]\n", frame);
+            continue;
+          }
+
+          IMAGEHLP_LINE64 line;
+          SymSetOptions(SYMOPT_LOAD_LINES);
+          line.SizeOfStruct = sizeof(IMAGEHLP_LINE64);
+          DWORD line_disp = 0;
+
+          if (SymGetLineFromAddr64(GetCurrentProcess(), frame, &line_disp, &line))
+            fprintf(stderr, "[0x%X] <%s:%i>\n", frame, pSymbol->Name, line.LineNumber);
+          else
+            fprintf(stderr, "[0x%X] <%s>\n", frame, pSymbol->Name);
+        }
+      #else
         backtrace_symbols_fd(s->stack+2, s->nstack-2, 2/*stderr*/);
-        // msg += util::SymbolizeStackTraceAsString(s->stack, s->nstack);
+      #endif
       }
     }
   }
@@ -97,7 +147,11 @@ void RaceChecker::Start() {
   if (race_checker_level <= 0 || IdIsEmpty())
     return;
 
+#ifdef _MSC_VER
+  this->thread_ = GetCurrentThreadId();
+#else
   this->thread_ = pthread_self();
+#endif
   if (race_checker_verbosity > 0) {
     fprintf(stderr, "RaceChecker::%s instance created for '%s' on thread 0x%X\n",
             this->type_ == WRITE ? "WRITE" : "READ ",
@@ -105,8 +159,14 @@ void RaceChecker::Start() {
   }
   CallSite callsite;
   callsite.nstack =
+#ifdef _MSC_VER
+      CaptureStackBackTrace(0,
+                sizeof(callsite.stack)/sizeof(callsite.stack[0]),
+                callsite.stack, NULL);
+#else
       backtrace(callsite.stack,
                 sizeof(callsite.stack)/sizeof(callsite.stack[0]));
+#endif
   callsite.thread = this->thread_;
   race_checker_mu.Lock();
   if (race_checker_map == 0) {
@@ -135,7 +195,11 @@ void RaceChecker::Start() {
   }
   race_checker_mu.Unlock();
   if (race_checker_sleep_ms != 0) {
+    #ifdef _MSC_VER
+    Sleep(race_checker_sleep_ms);
+    #else
     usleep(race_checker_sleep_ms * 1000);
+    #endif
   }
 }
 

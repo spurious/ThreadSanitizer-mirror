@@ -119,9 +119,14 @@
 #ifndef RACE_CHECKER_H_
 #define RACE_CHECKER_H_
 
-#include <stdint.h>
 #include <string>
+
+#ifdef _MSC_VER
+#include <windows.h>
+#else
+#include <stdint.h>
 #include <pthread.h>
+#endif
 
 class RaceChecker {
  public:
@@ -141,10 +146,17 @@ class RaceChecker {
   ~RaceChecker() {
     this->End();
   }
+#ifdef _MSC_VER
+  typedef HANDLE Thread;
+  typedef DWORD  ThreadId;
+#else
+  typedef pthread_t Thread;
+  typedef pthread_t ThreadId;
+#endif
  private:
   std::string AddressToString(const volatile void *ptr) {
     char tmp[100] = "";
-    sprintf(tmp, "%p", ptr);
+    sprintf(tmp, "0x%X", ptr);
     return tmp;
   }
   bool IdIsEmpty() {
@@ -154,7 +166,7 @@ class RaceChecker {
   void Start();
   void End();
   int type_;
-  pthread_t thread_;
+  ThreadId thread_;
   std::string id_;
 };
 
