@@ -156,7 +156,11 @@ class RaceChecker {
  private:
   std::string AddressToString(const volatile void *ptr) {
     char tmp[100] = "";
-    sprintf(tmp, "0x%X", ptr);
+  #ifdef _MSC_VER
+    _snprintf_s(tmp, sizeof(tmp), _TRUNCATE, "0x%X", ptr);
+  #else
+    snprintf(tmp, sizeof(tmp), "0x%X", ptr);
+  #endif
     return tmp;
   }
   bool IdIsEmpty() {

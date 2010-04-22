@@ -56,7 +56,14 @@ class Mutex {
   CRITICAL_SECTION cs_;
 };
 
-bool symtable_initialized = SymInitialize(GetCurrentProcess(), NULL, TRUE);
+BOOL symtable_initialized = SymInitialize(GetCurrentProcess(), NULL, TRUE);
+
+int ReadIntFromEnv(const char* s, int default_value) {
+  char tmp[1024] = "?";
+  if (!::GetEnvironmentVariableA(s, tmp, sizeof(tmp)))
+    return default_value;
+  return atoi(tmp);
+}
 
 #else
 class Mutex {
@@ -68,14 +75,15 @@ class Mutex {
  private:
   pthread_mutex_t mu_;
 };
+
+int ReadIntFromEnv(const char* s, int default_value) {
+  return getenv(s) ? atoi(getenv(s)) : default_value;
+}
 #endif
 
-static int race_checker_level =
-  getenv("RACECHECKER") ? atoi(getenv("RACECHECKER")) : 0;
-static int race_checker_sleep_ms =
-  getenv("RACECHECKER_SLEEP_MS") ? atoi(getenv("RACECHECKER_SLEEP_MS")) : 1;
-static int race_checker_verbosity =
-  getenv("RACECHECKER_VERBOSITY") ? atoi(getenv("RACECHECKER_VERBOSITY")) : 0;
+static int race_checker_level     = ReadIntFromEnv("RACECHECKER", 0);
+static int race_checker_sleep_ms  = ReadIntFromEnv("RACECHECKER_SLEEP_MS", 1);
+static int race_checker_verbosity = ReadIntFromEnv("RACECHECKER_VERBOSITY", 0);
 
 struct CallSite {         // Data about a call site.
   RaceChecker::ThreadId thread;
