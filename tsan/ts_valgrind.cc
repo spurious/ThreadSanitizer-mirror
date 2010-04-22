@@ -540,6 +540,14 @@ VG_REGPARM(2)
 
   extern "C" void VG_(show_all_errors)();
 
+// Whether we are currently ignoring sync events for the given thread.
+static inline Bool ignoring_sync(ThreadId vg_tid) {
+  // We ignore locking events if ignore_sync != 0 and if we are not
+  // inside a signal handler.
+  return g_valgrind_threads[vg_tid].ignore_sync &&
+      !g_valgrind_threads[vg_tid].in_signal_handler;
+}
+
 Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
   if (!VG_IS_TOOL_USERREQ('T', 'S', args[0]))
     return False;
@@ -659,15 +667,23 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
       break;
     case TSREQ_PTHREAD_COND_SIGNAL_PRE:
     case TSREQ_PTHREAD_COND_BROADCAST_PRE:
+      if (ignoring_sync(vg_tid))
+        break;
       Put(SIGNAL, ts_tid, pc, /*cv=*/args[1], 0);
       break;
     case TSREQ_PTHREAD_COND_WAIT_PRE:
+      if (ignoring_sync(vg_tid))
+        break;
       Put(WAIT_BEFORE, ts_tid, pc, /*cv=*/args[1], /*lock=*/args[2]);
       break;
     case TSREQ_PTHREAD_COND_WAIT_POST:
+      if (ignoring_sync(vg_tid))
+        break;
       Put(WAIT_AFTER, ts_tid, pc, 0, 0);
       break;
     case TSREQ_PTHREAD_COND_TWAIT_POST:
+      if (ignoring_sync(vg_tid))
+        break;
       Put(TWAIT_AFTER, ts_tid, pc, 0, 0);
       break;
     case TSREQ_PTHREAD_RWLOCK_CREATE_POST:
@@ -679,15 +695,13 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
     case TSREQ_PTHREAD_RWLOCK_LOCK_PRE:
       break;
     case TSREQ_PTHREAD_RWLOCK_LOCK_POST:
-      // We ignore locking events if ignore_sync != 0 and if we are not
-      // inside a signal handler.
-      if (g_valgrind_threads[vg_tid].ignore_sync
-          && !g_valgrind_threads[vg_tid].in_signal_handler) break;
+      if (ignoring_sync(vg_tid))
+        break;
       Put(args[2] ? WRITER_LOCK : READER_LOCK, ts_tid, pc, /*lock=*/args[1], 0);
       break;
     case TSREQ_PTHREAD_RWLOCK_UNLOCK_PRE:
-      if (g_valgrind_threads[vg_tid].ignore_sync
-          && !g_valgrind_threads[vg_tid].in_signal_handler) break;
+      if (ignoring_sync(vg_tid))
+        break;
       Put(UNLOCK, ts_tid, pc, /*lock=*/args[1], 0);
       break;
     case TSREQ_PTHREAD_SPIN_LOCK_INIT_OR_UNLOCK:

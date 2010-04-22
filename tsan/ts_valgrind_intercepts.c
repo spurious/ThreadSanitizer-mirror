@@ -450,6 +450,19 @@ WRAP_MMAP(NONE, mmap);
     IGNORE_ALL_ACCESSES_AND_SYNC_END(); \
   }
 
+
+#define WRAP_FREE_ZZ(soname, fnname) \
+  void I_WRAP_SONAME_FNNAME_ZZ(soname,fnname) (void *ptr); \
+  void I_WRAP_SONAME_FNNAME_ZZ(soname,fnname) (void *ptr) { \
+    OrigFn fn;\
+    VALGRIND_GET_ORIG_FN(fn);\
+    DO_CREQ_v_W(TSREQ_FREE,  void*, ptr); \
+    IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN(); \
+      CALL_FN_v_W(fn, ptr); \
+    IGNORE_ALL_ACCESSES_AND_SYNC_END(); \
+  }
+
+
 #define WRAP_ZONE_FREE(soname, fnname) \
   void I_WRAP_SONAME_FNNAME_ZU(soname,fnname) (void *zone, void *ptr); \
   void I_WRAP_SONAME_FNNAME_ZU(soname,fnname) (void *zone, void *ptr) { \
@@ -476,6 +489,8 @@ WRAP_FREE(VG_Z_LIBSTDCXX_SONAME, _ZdaPv);
 WRAP_FREE(VG_Z_LIBSTDCXX_SONAME, _ZdlPvRKSt9nothrow_t);
 WRAP_FREE(VG_Z_LIBSTDCXX_SONAME, _ZdaPvRKSt9nothrow_t);
 
+// operator delete
+WRAP_FREE_ZZ(NONE, operatorZsdeleteZa);
 
 //-------------- PTHREADS -------------------- {{{1
 /* A lame version of strerror which doesn't use the real libc
@@ -1890,7 +1905,7 @@ NONE_FUNC(int, epoll_wait, int epfd, void * events, int maxevents, int timeout) 
    long    ret;
    void *o;
    VALGRIND_GET_ORIG_FN(fn);
-//   fprintf(stderr, "T%d socket epoll_wait: %d\n", VALGRIND_TS_THREAD_ID, epfd);
+//   fprintf(stderr, "T%d socket epoll_wait: %d\n", VALGRIND_TS_THREAD_ID(), epfd);
    o = SocketMagic(epfd);
    do_wait_pre_and_post(o, 0);
    CALL_FN_W_WWWW(ret, fn, epfd, events, maxevents, timeout);
@@ -1902,7 +1917,7 @@ NONE_FUNC(int, epoll_ctl, int epfd, int op, int fd, void *event) {
    long    ret;
    void *o;
    VALGRIND_GET_ORIG_FN(fn);
-//   fprintf(stderr, "T%d socket epoll_ctl: %d\n", VALGRIND_TS_THREAD_ID, epfd);
+//   fprintf(stderr, "T%d socket epoll_ctl: %d\n", VALGRIND_TS_THREAD_ID(), epfd);
    o = SocketMagic(epfd);
    DO_CREQ_v_W(TSREQ_PTHREAD_COND_SIGNAL_PRE, void*, o);
    CALL_FN_W_WWWW(ret, fn, epfd, op, fd, event);
@@ -1916,7 +1931,7 @@ PTH_FUNC(long, send, int s, void *buf, long len, int flags) {
    long    ret;
    void *o;
    VALGRIND_GET_ORIG_FN(fn);
-//   fprintf(stderr, "T%d socket send: %d %ld\n", VALGRIND_TS_THREAD_ID, s, len);
+//   fprintf(stderr, "T%d socket send: %d %ld\n", VALGRIND_TS_THREAD_ID(), s, len);
    o = SocketMagic(s);
    DO_CREQ_v_W(TSREQ_PTHREAD_COND_SIGNAL_PRE, void*, o);
    CALL_FN_W_WWWW(ret, fn, s, buf, len, flags);
@@ -1942,7 +1957,7 @@ PTH_FUNC(long, recv, int s, void *buf, long len, int flags) {
    void *o;
    VALGRIND_GET_ORIG_FN(fn);
    CALL_FN_W_WWWW(ret, fn, s, buf, len, flags);
-//   fprintf(stderr, "T%d socket recv: %d %ld %ld\n", VALGRIND_TS_THREAD_ID, s, len, ret);
+//   fprintf(stderr, "T%d socket recv: %d %ld %ld\n", VALGRIND_TS_THREAD_ID(), s, len, ret);
    o = SocketMagic(s);
    if (ret >= 0) {
       // Do client request only if we received something
@@ -1975,7 +1990,7 @@ PTH_FUNC(long, read, int s, void *a2, long count) {
    void *o;
    VALGRIND_GET_ORIG_FN(fn);
    CALL_FN_W_WWW(ret, fn, s, a2, count);
-//   fprintf(stderr, "T%d socket read: %d %ld %ld\n", VALGRIND_TS_THREAD_ID, s, count, ret);
+//   fprintf(stderr, "T%d socket read: %d %ld %ld\n", VALGRIND_TS_THREAD_ID(), s, count, ret);
    o = SocketMagic(s);
    if (ret >= 0) {
       // Do client request only if we read something or the EOF was reached.
@@ -1989,7 +2004,7 @@ PTH_FUNC(long, write, int s, void *a2, long a3) {
    long    ret;
    void *o;
    VALGRIND_GET_ORIG_FN(fn);
-//   fprintf(stderr, "T%d socket write: %d\n", VALGRIND_TS_THREAD_ID, s);
+//   fprintf(stderr, "T%d socket write: %d\n", VALGRIND_TS_THREAD_ID(), s);
    o = SocketMagic(s);
    DO_CREQ_v_W(TSREQ_PTHREAD_COND_SIGNAL_PRE, void*, o);
    CALL_FN_W_WWW(ret, fn, s, a2, a3);
@@ -2164,6 +2179,7 @@ LIBSTDCXX_FUNC(long, ZuZucxaZuguardZurelease, void *p) {
    { return Replace_memcpy(dst, src, len); }
 
 MEMCPY(VG_Z_LIBC_SONAME, memcpy)
+MEMCPY(NONE, memcpy)
 /* icc9 blats these around all over the place.  Not only in the main
    executable but various .so's.  They are highly tuned and read
    memory beyond the source boundary (although work correctly and
@@ -2184,6 +2200,8 @@ MEMCPY(NONE, _intel_fast_memcpy)
 // Apparently index() is the same thing as strchr()
 STRCHR(VG_Z_LIBC_SONAME,          strchr)
 STRCHR(VG_Z_LIBC_SONAME,          index)
+STRCHR(NONE,                      strchr)
+STRCHR(NONE,                      index)
 
 // --- STRRCHR RINDEX -----------------------------------------------------
 //
@@ -2194,6 +2212,8 @@ STRCHR(VG_Z_LIBC_SONAME,          index)
 
 STRRCHR(VG_Z_LIBC_SONAME,          strrchr)
 STRRCHR(VG_Z_LIBC_SONAME,          rindex)
+STRRCHR(NONE,                      strrchr)
+STRRCHR(NONE,                      rindex)
 
 // --- STRCMP -----------------------------------------------------
 //
@@ -2205,6 +2225,7 @@ STRRCHR(VG_Z_LIBC_SONAME,          rindex)
    { return Replace_strcmp(s1, s2); }
 
 STRCMP(VG_Z_LIBC_SONAME,          strcmp)
+STRCMP(NONE,                      strcmp)
 
 #define MEMCHR(soname, fnname) \
    void* VG_REPLACE_FUNCTION_ZU(soname,fnname) (const void *s, int c, SizeT n); \
@@ -2212,6 +2233,7 @@ STRCMP(VG_Z_LIBC_SONAME,          strcmp)
    { return Replace_memchr(s, c, n); }
 
 MEMCHR(VG_Z_LIBC_SONAME, memchr)
+MEMCHR(NONE, memchr)
 
 // --- STRLEN -----------------------------------------------------
 //
@@ -2225,6 +2247,7 @@ MEMCHR(VG_Z_LIBC_SONAME, memchr)
    { return Replace_strlen(str); }
 
 STRLEN(VG_Z_LIBC_SONAME,          strlen)
+STRLEN(NONE,                      strlen)
 
 // --- STRCPY -----------------------------------------------------
 //
@@ -2234,6 +2257,7 @@ STRLEN(VG_Z_LIBC_SONAME,          strlen)
    { return Replace_strcpy(dst, src); }
 
 STRCPY(VG_Z_LIBC_SONAME, strcpy)
+STRCPY(NONE,             strcpy)
 
 //------------------------ Annotations ---------------- {{{1
 
@@ -2416,6 +2440,20 @@ ANN_FUNC(void, AnnotateIgnoreWritesEnd, char *file, int line, void *mu)
   const char *name = "AnnotateIgnoreWritesEnd";
   ANN_TRACE("--#%d %s[%p] %s:%d\n", tid, name, mu, file, line);
   DO_CREQ_v_W(TSREQ_IGNORE_WRITES_END,   void*, mu);
+}
+
+ANN_FUNC(void, AnnotateIgnoreSyncBegin, char* file, int line, void *mu)
+{
+  const char *name = "AnnotateIgnoreSyncBegin";
+  ANN_TRACE("--#%d %s[%p] %s:%d\n", tid, name, mu, file, line);
+  DO_CREQ_v_W(TSREQ_IGNORE_ALL_SYNC_BEGIN,  void*, mu);
+}
+
+ANN_FUNC(void, AnnotateIgnoreSyncEnd, char* file, int line, void *mu)
+{
+  const char *name = "AnnotateIgnoreSyncEnd";
+  ANN_TRACE("--#%d %s[%p] %s:%d\n", tid, name, mu, file, line);
+  DO_CREQ_v_W(TSREQ_IGNORE_ALL_SYNC_END,  void*, mu);
 }
 
 ANN_FUNC(void, AnnotateEnableRaceDetection, char *file, int line, int enable)
