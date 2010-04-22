@@ -139,8 +139,21 @@ class RaceChecker {
     : type_(type), id_(id) {
     this->Start();
   }
+  RaceChecker(Type type, const wchar_t *id)
+    : type_(type) {
+    // HACK
+    std::wstring w(id);
+    id_ = std::string(w.begin(), w.end());
+    this->Start();
+  }
   RaceChecker(Type type, const std::string &id)
     : type_(type), id_(id) {
+    this->Start();
+  }
+  RaceChecker(Type type, const std::wstring &id)
+    : type_(type) {
+    // HACK
+    id_ = std::string(id.begin(), id.end());
     this->Start();
   }
   ~RaceChecker() {
