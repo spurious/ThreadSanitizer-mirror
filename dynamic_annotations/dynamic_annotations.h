@@ -242,6 +242,16 @@
       ANNOTATE_IGNORE_READS_END();\
     }while(0)\
 
+  /* Similar to ANNOTATE_IGNORE_READS_BEGIN, but ignore synchronization events:
+     RWLOCK* and CONDVAR*. */
+  #define ANNOTATE_IGNORE_SYNC_BEGIN() \
+    AnnotateIgnoreSyncBegin(__FILE__, __LINE__)
+
+  /* Resume ignoring sync events. */
+  #define ANNOTATE_IGNORE_SYNC_END() \
+    AnnotateIgnoreSyncEnd(__FILE__, __LINE__)
+
+
   /* Enable (enable!=0) or disable (enable==0) race detection for all threads.
      This annotation could be useful if you want to skip expensive race analysis
      during some period of program execution, e.g. during initialization. */
@@ -360,6 +370,8 @@
   #define ANNOTATE_IGNORE_WRITES_END() /* empty */
   #define ANNOTATE_IGNORE_READS_AND_WRITES_BEGIN() /* empty */
   #define ANNOTATE_IGNORE_READS_AND_WRITES_END() /* empty */
+  #define ANNOTATE_IGNORE_SYNC_BEGIN() /* empty */
+  #define ANNOTATE_IGNORE_SYNC_END() /* empty */
   #define ANNOTATE_ENABLE_RACE_DETECTION(enable) /* empty */
   #define ANNOTATE_NO_OP(arg) /* empty */
   #define ANNOTATE_FLUSH_STATE() /* empty */

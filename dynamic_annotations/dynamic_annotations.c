@@ -108,6 +108,8 @@ void AnnotateIgnoreReadsBegin(const char *file, int line){}
 void AnnotateIgnoreReadsEnd(const char *file, int line){}
 void AnnotateIgnoreWritesBegin(const char *file, int line){}
 void AnnotateIgnoreWritesEnd(const char *file, int line){}
+void AnnotateIgnoreSyncBegin(const char *file, int line){}
+void AnnotateIgnoreSyncEnd(const char *file, int line){}
 void AnnotateEnableRaceDetection(const char *file, int line, int enable){}
 void AnnotateNoOp(const char *file, int line,
                   const volatile void *arg){}
