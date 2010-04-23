@@ -247,7 +247,7 @@
   #define ANNOTATE_IGNORE_SYNC_BEGIN() \
     AnnotateIgnoreSyncBegin(__FILE__, __LINE__)
 
-  /* Resume ignoring sync events. */
+  /* Stop ignoring sync events. */
   #define ANNOTATE_IGNORE_SYNC_END() \
     AnnotateIgnoreSyncEnd(__FILE__, __LINE__)
 
