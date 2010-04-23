@@ -1,3 +1,6 @@
+.PHONY: all
+all:
+
 # OS-specific file name suffixes and command line flags
 ifeq ($(OS), linux)
   CXX=g++
