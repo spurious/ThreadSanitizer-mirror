@@ -251,6 +251,8 @@ class PairCache {
       Ret tmp;
       DCHECK(!Lookup(htable_[i].a, htable_[i].b, &tmp));
     }
+    CHECK(array_pos_    == 0);
+    CHECK(array_filled_ == false);
   }
 
   void Insert(A a, B b, Ret v) {
@@ -263,8 +265,10 @@ class PairCache {
     // fill the array
     Ret dummy;
     if (kArraySize != 0 && !ArrayLookup(a, b, &dummy)) {
-      int pos = (array_pos_++) % kArraySize;
-      array_[pos].Fill(a, b, v);
+      array_[array_pos_ % kArraySize].Fill(a, b, v);
+      array_pos_ = (array_pos_ + 1) % kArraySize;
+      if (array_pos_ > kArraySize)
+        array_filled_ = true;
     }
   }
 
@@ -302,7 +306,7 @@ class PairCache {
   };
 
   bool ArrayLookup(A a, B b, Ret *v) {
-    for (int i = 0; i < min(array_pos_, kArraySize); i++) {
+    for (int i = 0; i < (array_filled_ ? kArraySize : array_pos_); i++) {
       Entry & entry = array_[i];
       if (entry.Match(a, b)) {
         *v = entry.v;
@@ -330,7 +334,11 @@ class PairCache {
   Entry htable_[kHtableSize];
 
   Entry array_[kArraySize];
+
+  // array_pos_    - next element to write to the array_ (mod kArraySize)
+  // array_filled_ - set to true once we write the last element of the array
   int array_pos_;
+  bool array_filled_;
 };
 
 template<int kHtableSize, int kArraySize = 8>
