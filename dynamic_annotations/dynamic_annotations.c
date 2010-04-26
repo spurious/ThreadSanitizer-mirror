@@ -132,13 +132,15 @@ static int GetRunningOnValgrind(void) {
     return strcmp(running_on_valgrind_str, "0") != 0;
   }
 #else
-  // Visual Studio issues warnings if we use getenv,
-  // so we use GetEnvironmentVariableA instead.
+  /* Visual Studio issues warnings if we use getenv,
+   * so we use GetEnvironmentVariableA instead.
+   */
   char value[100] = "1";
   int res = GetEnvironmentVariableA("RUNNING_ON_VALGRIND",
                                     value, sizeof(value));
-  // value will remain "1" if res == 0 or res >= sizeof(value). The latter
-  // can happen only if the given value is long, in this case it can't be "0".
+  /* value will remain "1" if res == 0 or res >= sizeof(value). The latter
+   * can happen only if the given value is long, in this case it can't be "0".
+   */
   if (res > 0 && !strcmp(value, "0"))
     return 1;
 #endif
