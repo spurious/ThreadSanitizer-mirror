@@ -27,6 +27,10 @@
  * Author: Kostya Serebryany
  */
 
+#ifdef _MSC_VER
+# include <windows.h>
+#endif
+
 #ifdef __cplusplus
 # error "This file should be built as pure C to avoid name mangling"
 #endif
@@ -121,10 +125,23 @@ static int GetRunningOnValgrind(void) {
 #ifdef RUNNING_ON_VALGRIND
   if (RUNNING_ON_VALGRIND) return 1;
 #endif
+
+#ifndef _MSC_VER
   char *running_on_valgrind_str = getenv("RUNNING_ON_VALGRIND");
   if (running_on_valgrind_str) {
     return strcmp(running_on_valgrind_str, "0") != 0;
   }
+#else
+  // Visual Studio issues warnings if we use getenv,
+  // so we use GetEnvironmentVariableA instead.
+  char value[100] = "1";
+  int res = GetEnvironmentVariableA("RUNNING_ON_VALGRIND",
+                                    value, sizeof(value));
+  // value will remain "1" if res == 0 or res >= sizeof(value). The latter
+  // can happen only if the given value is long, in this case it can't be "0".
+  if (res > 0 && !strcmp(value, "0"))
+    return 1;
+#endif
   return 0;
 }
 
