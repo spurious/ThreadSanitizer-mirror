@@ -509,13 +509,14 @@ TEST(NegativeTests, test125) {
 
 namespace MmapTest {  // {{{1
 
+const int kMmapSize =  65536;
+
 void SubWorker() {
-  const long SIZE = 65536;
   for (int i = 0; i < 500; i++) {
-    int *ptr = (int*)mmap(NULL, SIZE, PROT_READ | PROT_WRITE,
+    int *ptr = (int*)mmap(NULL, kMmapSize, PROT_READ | PROT_WRITE,
                           MAP_PRIVATE | MAP_ANON, -1, 0);
     *ptr = 42;
-    munmap(ptr, SIZE);
+    munmap(ptr, kMmapSize);
   }
 }
 
@@ -535,6 +536,32 @@ TEST(NegativeTests, MmapTest) {
   t.Start();
   t.Join();
 }
+}  // namespace
+
+
+// A regression test for mmap/munmap handling in Pin.
+// If the tool misses munmap() calls it may report a false positive if two
+// threads map the same memory region.
+namespace MmapRegressionTest {  // {{{1
+
+const int kMmapSize =  65536;
+const void *kStartAddress = 0x10000;
+
+StealthNotification n1;
+
+void Worker() {
+    int *ptr = (int*)mmap(kStartAddress, kMmapSize, PROT_READ | PROT_WRITE,
+                          MAP_PRIVATE | MAP_ANON, -1, 0);
+    *ptr = 42;
+    munmap(ptr, kMmapSize);
+}
+
+TEST(NegativeTests, MmapRegressionTest) {
+  MyThreadArray t(Worker, Worker);
+  t.Start();
+  t.Join();
+}
+
 }  // namespace
 
 // test136. Unlock twice. {{{1
