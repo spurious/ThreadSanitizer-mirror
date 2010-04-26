@@ -2097,7 +2097,7 @@ class SegmentSet {
   };
 
   struct SSHash {
-    INLINE uintptr_t operator() (const SegmentSet *ss) const {
+    INLINE size_t operator() (const SegmentSet *ss) const {
       uintptr_t res = 0;
       uint32_t* sids_array = (uint32_t*)ss->sids_;
       // We must have even number of SIDs.
@@ -2112,6 +2112,24 @@ class SegmentSet {
         res = res ^ t1 ^ t2;
       }
       return res;
+    }
+  };
+
+  struct SSTraits {
+    enum {
+      // These values are taken from the hash_compare defaults.
+      bucket_size = 4,  // Must be greater than zero.
+      min_buckets = 8,  // Must be power of 2.
+    };
+
+    INLINE size_t operator()(const SegmentSet *ss) const {
+      SSHash sshash;
+      return sshash(ss);
+    }
+
+    INLINE bool operator()(const SegmentSet *ss1, const SegmentSet *ss2) const {
+      Less less;
+      return less(ss1, ss2);
     }
   };
 
@@ -2142,10 +2160,13 @@ class SegmentSet {
     }
 
    private:
-#if 1 && !defined(_MSC_VER)  // TODO(kcc): make this work with _MSC_VER
     // TODO(timurrrr): consider making a custom hash_table.
+#if defined(_MSC_VER)
+    typedef hash_map<SegmentSet*, SSID, SSTraits > MapType__;
+#elif 1
     typedef hash_map<SegmentSet*, SSID, SSHash, SSEq > MapType__;
 #else
+    // Old code, may be useful for debugging.
     typedef map<SegmentSet*, SSID, Less > MapType__;
 #endif
     MapType__ map_;
