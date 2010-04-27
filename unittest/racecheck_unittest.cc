@@ -6433,6 +6433,23 @@ TEST(NegativeTests, EnableRaceDetectionTest) {
 }
 }
 
+namespace PositiveTests_MopVsFree {  // {{{1
+int *p;
+
+void Read() { CHECK(p[1] == 777); }
+void Free() { free(p);}
+
+TEST(PositiveTests, ReadVsFree) {
+  p = (int*)malloc(2 * sizeof(int));
+  p[1] = 777;
+  ANNOTATE_EXPECT_RACE(&p[1], "race: read vs free");
+  MyThreadArray t(Read, Free);
+  t.Start();
+  t.Join();
+}
+
+}  // namespace
+
 namespace ManySmallObjectsTest {  // {{{1
 void Worker() {
   const int N = 1 << 21;
