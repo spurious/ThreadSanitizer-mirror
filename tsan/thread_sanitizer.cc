@@ -5960,11 +5960,14 @@ class Detector {
     HeapInfo *info = G_heap_map->GetInfo(a);
     if (!info || info->ptr != a)
       return;
+    uintptr_t size = info->size;
+    // Handle the memory deletion as a write, but don't touch all
+    // the memory if there is too much of it, limit with the first 1K.
+    HandleMemoryAccess(e_->tid(), a, min(1024UL, size), true /*is_w*/);
     // update G_heap_map
     CHECK(info->ptr == a);
     Segment::Unref(info->sid, __FUNCTION__);
 
-    uintptr_t size = info->size;
     ClearMemoryStateOnFree(a, a + size);
     G_heap_map->EraseInfo(a);
   }

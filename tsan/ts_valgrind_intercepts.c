@@ -1877,8 +1877,8 @@ static void *AtExitMagic(void) {
    OrigFn fn;\
    long    ret;\
    VALGRIND_GET_ORIG_FN(fn);\
-   DO_CREQ_v_W(TSREQ_PTHREAD_COND_SIGNAL_PRE, void*, AtExitMagic());\
    CALL_FN_W_W(ret, fn, callback);\
+   DO_CREQ_v_W(TSREQ_PTHREAD_COND_SIGNAL_PRE, void*, AtExitMagic());\
    return ret;\
 }\
 
