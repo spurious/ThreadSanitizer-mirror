@@ -5964,7 +5964,10 @@ class Detector {
     uintptr_t max_write_size = 1024;
     // Handle the memory deletion as a write, but don't touch all
     // the memory if there is too much of it, limit with the first 1K.
-    HandleMemoryAccess(e_->tid(), a, min(max_write_size, size), true /*is_w*/);
+    if (size) {
+      HandleMemoryAccess(e_->tid(), a,
+                         min(max_write_size, size), true /*is_w*/);
+    }
     // update G_heap_map
     CHECK(info->ptr == a);
     Segment::Unref(info->sid, __FUNCTION__);
