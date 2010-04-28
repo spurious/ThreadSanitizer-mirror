@@ -208,8 +208,7 @@ TEST(NegativeTests, test98) {
 }  // namespace test98
 
 
-// test106: TN. pthread_once. {{{1
-namespace test106 {
+namespace NegativeTests_PthreadOnce {  // {{{1
 int     *GLOB = NULL;
 static pthread_once_t once = PTHREAD_ONCE_INIT;
 void Init() {
@@ -228,14 +227,13 @@ void Worker1() {
 }
 
 
-TEST(NegativeTests, test106) {
-  printf("test106: negative\n");
+TEST(NegativeTests, PthreadOnceTest) {
   MyThreadArray t(Worker0, Worker1, Worker1, Worker1);
   t.Start();
   t.Join();
   printf("\tGLOB=%d\n", *GLOB);
 }
-}  // namespace test106
+}  // namespace
 
 
 // test110: TP. Simple races with stack, global and heap objects. {{{1
