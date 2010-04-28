@@ -327,5 +327,55 @@ TEST(NegativeTests, WindowsInterlockedListTest) {
 
 }  // namespace
 
+namespace FileSystemReports {  // {{{1
+
+// This is a test for the flaky report found in
+// Chromium net_unittests.
+//
+// Looks like the test is sensitive to memory allocations / scheduling order,
+// so you shouldn't run other tests while investigating the issue.
+// The report is ~50% flaky.
+
+HANDLE hDone = NULL;
+
+void CreateFileJob() {
+  HANDLE hFile = CreateFileA("bin\\tmpfile", GENERIC_READ | GENERIC_WRITE,
+                      FILE_SHARE_READ, NULL, CREATE_ALWAYS,
+                      FILE_ATTRIBUTE_NORMAL, NULL);
+  CloseHandle(hFile);
+  DWORD attr1 = GetFileAttributes("bin");  // "Concurrent write" is here.
+}
+
+DWORD CALLBACK PrintDirectoryListingJob(void *param) {
+  Sleep(500);
+  WIN32_FIND_DATAA data;
+
+  // "Current write" is here.
+  HANDLE hFind = FindFirstFileA("bin/*", &data);
+  CHECK(hFind != INVALID_HANDLE_VALUE);
+
+  CloseHandle(hFind);
+  SetEvent(hDone);
+  return 0;
+}
+
+TEST(NegativeTests, DISABLED_CreateFileVsFindFirstFileTest) {
+  hDone = ::CreateEvent(NULL, false, false, NULL);
+
+  // It seems like this test DOESN'T work if the CreateDirectory succeeds :-)
+  CHECK(!::CreateDirectory("bin", NULL));
+
+  // Run PrintDirectoryListingJob in a concurrent thread.
+  CHECK(::QueueUserWorkItem(PrintDirectoryListingJob, NULL,
+                          WT_EXECUTELONGFUNCTION));
+  CreateFileJob();
+
+  ::WaitForSingleObject(hDone, INFINITE);
+  ::CloseHandle(hDone);
+  CHECK(::DeleteFile("bin\\tmpfile"));
+}
+
+}  //namespace
+
 // End {{{1
  // vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker
