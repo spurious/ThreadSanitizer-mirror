@@ -131,10 +131,10 @@ struct StackFrame {
   StackFrame(uintptr_t p, uintptr_t s) : pc(p), sp(s) { }
 };
 //--------------- PinThread ----------------- {{{1
-const size_t kThreadLocksEventBufferSize = 2048 - 2;
+const size_t kThreadLocalEventBufferSize = 2048 - 2;
 // The number of mops should be at least 2 less than the size of TLEB
 // so that we have space to put SBLOCK_ENTER token and the trace_info ptr.
-const size_t kMaxMopsPerTrace = kThreadLocksEventBufferSize - 2;
+const size_t kMaxMopsPerTrace = kThreadLocalEventBufferSize - 2;
 
 REG tls_reg;
 
@@ -143,7 +143,7 @@ struct PinThread;
 struct ThreadLocalEventBuffer {
   PinThread *t;
   size_t size;
-  uintptr_t events[kThreadLocksEventBufferSize];
+  uintptr_t events[kThreadLocalEventBufferSize];
 };
 
 struct PinThread {
@@ -292,7 +292,7 @@ static void DumpEventInternal(EventType type, int32_t uniq_tid, uintptr_t pc,
 
 static void TLEBFlushUnlocked(ThreadLocalEventBuffer &tleb) {
   PinThread &t = *tleb.t;
-  DCHECK(tleb.size <= kThreadLocksEventBufferSize);
+  DCHECK(tleb.size <= kThreadLocalEventBufferSize);
   if (DEBUG_MODE && t.thread_done) {
     Printf("ACHTUNG!!! an event from a dead thread T%d\n", t.tid);
   }
@@ -301,7 +301,7 @@ static void TLEBFlushUnlocked(ThreadLocalEventBuffer &tleb) {
 
   if (1 || DEBUG_MODE) {
     size_t max_idx = TS_ARRAY_SIZE(G_stats->tleb_flush);
-    size_t idx = (tleb.size * max_idx - 1) / kThreadLocksEventBufferSize;
+    size_t idx = (tleb.size * max_idx - 1) / kThreadLocalEventBufferSize;
     CHECK(idx < max_idx);
     G_stats->tleb_flush[idx]++;
   }
@@ -407,7 +407,7 @@ static void TLEBFlushLocked(PinThread &t) {
     t.tleb.size = 0;
     return;
   }
-  CHECK(t.tleb.size <= kThreadLocksEventBufferSize);
+  CHECK(t.tleb.size <= kThreadLocalEventBufferSize);
   G_stats->lock_sites[1]++;
   if (G_flags->separate_analysis_thread) {
     ThreadLocalEventBuffer *tleb_copy = new ThreadLocalEventBuffer;
@@ -429,8 +429,8 @@ static void TLEBFlushLocked(PinThread &t) {
 
 static void TLEBAddRtnCall(PinThread &t, uintptr_t call_pc,
                            uintptr_t target_pc, IGNORE_BELOW_RTN ignore_below) {
-  DCHECK(t.tleb.size <= kThreadLocksEventBufferSize);
-  if (t.tleb.size + 4 > kThreadLocksEventBufferSize) {
+  DCHECK(t.tleb.size <= kThreadLocalEventBufferSize);
+  if (t.tleb.size + 4 > kThreadLocalEventBufferSize) {
     TLEBFlushLocked(t);
     DCHECK(t.tleb.size == 0);
   }
@@ -438,21 +438,21 @@ static void TLEBAddRtnCall(PinThread &t, uintptr_t call_pc,
   t.tleb.events[t.tleb.size++] = call_pc;
   t.tleb.events[t.tleb.size++] = target_pc;
   t.tleb.events[t.tleb.size++] = ignore_below;
-  DCHECK(t.tleb.size <= kThreadLocksEventBufferSize);
+  DCHECK(t.tleb.size <= kThreadLocalEventBufferSize);
 }
 
 static void TLEBAddRtnExit(PinThread &t) {
-  if (t.tleb.size + 1 > kThreadLocksEventBufferSize) {
+  if (t.tleb.size + 1 > kThreadLocalEventBufferSize) {
     TLEBFlushLocked(t);
   }
   t.tleb.events[t.tleb.size++] = RTN_EXIT;
-  DCHECK(t.tleb.size <= kThreadLocksEventBufferSize);
+  DCHECK(t.tleb.size <= kThreadLocalEventBufferSize);
 }
 
 static uintptr_t *TLEBAddTrace(PinThread &t) {
   size_t n = t.trace_info->n_mops();
   DCHECK(n > 0);
-  if (t.tleb.size + 2 + n > kThreadLocksEventBufferSize) {
+  if (t.tleb.size + 2 + n > kThreadLocalEventBufferSize) {
     TLEBFlushLocked(t);
   }
   t.tleb.events[t.tleb.size++] = SBLOCK_ENTER;
@@ -463,7 +463,7 @@ static uintptr_t *TLEBAddTrace(PinThread &t) {
   }
   uintptr_t *mop_addresses = &t.tleb.events[t.tleb.size];
   t.tleb.size += n;
-  DCHECK(t.tleb.size <= kThreadLocksEventBufferSize);
+  DCHECK(t.tleb.size <= kThreadLocalEventBufferSize);
   return mop_addresses;
 }
 
@@ -473,17 +473,17 @@ static void TLEBStartThread(PinThread &t) {
 }
 
 static void TLEBSimpleEvent(PinThread &t, uintptr_t event) {
-  if (t.tleb.size + 1 > kThreadLocksEventBufferSize) {
+  if (t.tleb.size + 1 > kThreadLocalEventBufferSize) {
     TLEBFlushLocked(t);
   }
   t.tleb.events[t.tleb.size++] = event;
-  DCHECK(t.tleb.size <= kThreadLocksEventBufferSize);
+  DCHECK(t.tleb.size <= kThreadLocalEventBufferSize);
 }
 
 static void TLEBAddGenericEventAndFlush(PinThread &t,
                                         EventType type, uintptr_t pc,
                                         uintptr_t a, uintptr_t info) {
-  if (t.tleb.size + 4 > kThreadLocksEventBufferSize) {
+  if (t.tleb.size + 4 > kThreadLocalEventBufferSize) {
     TLEBFlushLocked(t);
   }
   DCHECK(type > NOOP && type < LAST_EVENT);
@@ -492,7 +492,7 @@ static void TLEBAddGenericEventAndFlush(PinThread &t,
   t.tleb.events[t.tleb.size++] = a;
   t.tleb.events[t.tleb.size++] = info;
   TLEBFlushLocked(t);
-  DCHECK(t.tleb.size <= kThreadLocksEventBufferSize);
+  DCHECK(t.tleb.size <= kThreadLocalEventBufferSize);
 }
 
 
@@ -1460,7 +1460,7 @@ static void OnMop(uintptr_t *addr, THREADID tid, ADDRINT idx, ADDRINT a) {
     CHECK(idx < kMaxMopsPerTrace);
     CHECK(idx < t.trace_info->n_mops());
     CHECK(addr >= t.tleb.events);
-    CHECK(addr < t.tleb.events + kThreadLocksEventBufferSize);
+    CHECK(addr < t.tleb.events + kThreadLocalEventBufferSize);
     if (t.tleb.size > 0) {
       CHECK(addr + idx < t.tleb.events + t.tleb.size);
     } else {
