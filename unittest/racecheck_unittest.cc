@@ -3111,7 +3111,8 @@ void WorkerX() {
   CHECK(rindex(str, 'x') == str+3);
   CHECK(rindex(str, 'Y') == NULL);
 #else
-  CHECK(lstrlen(NULL) == 0); 
+  CHECK(lstrlenA(NULL) == 0); 
+  CHECK(lstrlenW(NULL) == 0); 
 #endif
   CHECK(strchr(str, 'X') == str);
   CHECK(strchr(str, 'x') == str+1);
