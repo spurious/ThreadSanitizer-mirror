@@ -1,0 +1,113 @@
+Index: coregrind/m_syswrap/syswrap-generic.c
+===================================================================
+--- coregrind/m_syswrap/syswrap-generic.c	(revision 11026)
++++ coregrind/m_syswrap/syswrap-generic.c	(working copy)
+@@ -2525,7 +2525,7 @@
+    }
+ 
+    // Decide whether or not we want to follow along
+-   trace_this_child = VG_(should_we_trace_this_child)( (HChar*)ARG1 );
++   trace_this_child = VG_(should_we_trace_this_child)( (HChar**)ARG2 );
+ 
+    // Do the important checks:  it is a file, is executable, permissions are
+    // ok, etc.  We allow setuid executables to run only in the case when
+@@ -4115,4 +4115,3 @@
+ /*--------------------------------------------------------------------*/
+ /*--- end                                                          ---*/
+ /*--------------------------------------------------------------------*/
+-
+Index: coregrind/m_syswrap/syswrap-aix5.c
+===================================================================
+--- coregrind/m_syswrap/syswrap-aix5.c	(revision 11026)
++++ coregrind/m_syswrap/syswrap-aix5.c	(working copy)
+@@ -869,7 +869,7 @@
+    }
+ 
+    // Decide whether or not we want to follow along
+-   trace_this_child = VG_(should_we_trace_this_child)( (HChar*)ARG1 );
++   trace_this_child = VG_(should_we_trace_this_child)( (HChar**)ARG2 );
+ 
+    // Do the important checks:  it is a file, is executable, permissions are
+    // ok, etc.
+Index: coregrind/m_syswrap/syswrap-darwin.c
+===================================================================
+--- coregrind/m_syswrap/syswrap-darwin.c	(revision 11026)
++++ coregrind/m_syswrap/syswrap-darwin.c	(working copy)
+@@ -2631,7 +2631,7 @@
+    }
+ 
+    // Decide whether or not we want to follow along
+-   trace_this_child = VG_(should_we_trace_this_child)( (HChar*)ARG2 );
++   trace_this_child = VG_(should_we_trace_this_child)( (HChar**)ARG2 );
+ 
+    // Do the important checks:  it is a file, is executable, permissions are
+    // ok, etc.  We allow setuid executables to run only in the case when
+Index: coregrind/m_options.c
+===================================================================
+--- coregrind/m_options.c	(revision 11026)
++++ coregrind/m_options.c	(working copy)
+@@ -287,12 +287,12 @@
+ /* Should we trace into this child executable (across execve etc) ?
+    This involves considering --trace-children=, --trace-children-skip=
+    and the name of the executable. */
+-Bool VG_(should_we_trace_this_child) ( HChar* child_exe_name )
++Bool VG_(should_we_trace_this_child) ( HChar** args)
+ {
+-   // child_exe_name is pulled out of the guest's space.  We
++   // args is pulled out of the guest's space.  We
+    // should be at least marginally cautious with it, lest it
+    // explode or burst into flames unexpectedly.
+-   if (child_exe_name == NULL || VG_(strlen)(child_exe_name) == 0)
++   if (args == NULL)
+       return VG_(clo_trace_children);  // we know narfink
+ 
+    // the main logic
+@@ -300,15 +300,15 @@
+    if (! VG_(clo_trace_children))
+       return False;
+ 
+-   // otherwise, return True, unless the exe name matches any of the
++   // otherwise, return True, unless an argument matches any of the
+    // patterns specified by --trace-children-skip=.
+    if (VG_(clo_trace_children_skip)) {
+       HChar const* last = VG_(clo_trace_children_skip);
+-      HChar const* name = (HChar const*)child_exe_name;
+       while (*last) {
+          Bool   matches;
+          HChar* patt;
+          HChar const* first = consume_commas(last);
++         Int i;
+          last = consume_field(first);
+          if (first == last)
+             break;
+@@ -318,10 +318,14 @@
+          patt = VG_(calloc)("m_options.swttc.1", last - first + 1, 1);
+          VG_(memcpy)(patt, first, last - first);
+          vg_assert(patt[last-first] == 0);
+-         matches = VG_(string_match)(patt, name);
++         for (i = 0; args[i]; i++) {
++            matches = VG_(string_match)(patt, (HChar const*) args[i]);
++            if (matches) {
++               VG_(free)(patt);
++               return False;
++            }
++         }
+          VG_(free)(patt);
+-         if (matches)
+-            return False;
+       }
+    }
+  
+Index: coregrind/pub_core_options.h
+===================================================================
+--- coregrind/pub_core_options.h	(revision 11026)
++++ coregrind/pub_core_options.h	(working copy)
+@@ -188,7 +188,7 @@
+ /* Should we trace into this child executable (across execve etc) ?
+    This involves considering --trace-children=, --trace-children-skip=
+    and the name of the executable. */
+-extern Bool VG_(should_we_trace_this_child) ( HChar* child_exe_name );
++extern Bool VG_(should_we_trace_this_child) ( HChar** args);
+ 
+ #endif   // __PUB_CORE_OPTIONS_H
+ 

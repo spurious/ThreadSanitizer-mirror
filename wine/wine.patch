@@ -1,0 +1,1201 @@
+diff --git a/dlls/kernel32/process.c b/dlls/kernel32/process.c
+index d9d4520..374d95c 100644
+--- a/dlls/kernel32/process.c
++++ b/dlls/kernel32/process.c
+@@ -315,6 +315,7 @@ static BOOL build_initial_environment(void)
+     for (e = env; *e; e++)
+     {
+         if (is_special_env_var( *e )) continue;
++        if (!**e) continue;  /* valgrind sometimes inserts empty vars */
+         size += MultiByteToWideChar( CP_UNIXCP, 0, *e, -1, NULL, 0 );
+     }
+     size *= sizeof(WCHAR);
+@@ -333,6 +334,8 @@ static BOOL build_initial_environment(void)
+     {
+         char *str = *e;
+ 
++        if (!**e) continue;  /* valgrind sometimes inserts empty vars */
++
+         /* skip Unix special variables and use the Wine variants instead */
+         if (!strncmp( str, "WINE", 4 ))
+         {
+diff --git a/dlls/kernel32/virtual.c b/dlls/kernel32/virtual.c
+index dcd5b85..9944d5a 100644
+--- a/dlls/kernel32/virtual.c
++++ b/dlls/kernel32/virtual.c
+@@ -93,6 +93,7 @@ LPVOID WINAPI VirtualAllocEx( HANDLE hProcess, LPVOID addr, SIZE_T size,
+     LPVOID ret = addr;
+     NTSTATUS status;
+ 
++    //    DPRINTF("T%d VirtualAllocEx: %p %u %d %d\n", hProcess, addr, size, type, protect);
+     if ((status = NtAllocateVirtualMemory( hProcess, &ret, 0, &size, type, protect )))
+     {
+         SetLastError( RtlNtStatusToDosError(status) );
+@@ -139,6 +140,7 @@ BOOL WINAPI VirtualFree( LPVOID addr, SIZE_T size, DWORD type )
+  */
+ BOOL WINAPI VirtualFreeEx( HANDLE process, LPVOID addr, SIZE_T size, DWORD type )
+ {
++  //  DPRINTF("T%d VirtualFreeEx: %p %u %d\n", process, addr, size, type);
+     NTSTATUS status = NtFreeVirtualMemory( process, &addr, &size, type );
+     if (status) SetLastError( RtlNtStatusToDosError(status) );
+     return !status;
+diff --git a/dlls/ntdll/Makefile.in b/dlls/ntdll/Makefile.in
+index 41bc5d3..22734e1 100644
+--- a/dlls/ntdll/Makefile.in
++++ b/dlls/ntdll/Makefile.in
+@@ -1,4 +1,4 @@
+-EXTRADEFS = -D_NTSYSTEM_
++EXTRADEFS = -D_NTSYSTEM_ -DDYNAMIC_ANNOTATIONS_ENABLED=1
+ TOPSRCDIR = @top_srcdir@
+ TOPOBJDIR = ../..
+ SRCDIR    = @srcdir@
+@@ -52,7 +52,8 @@ C_SRCS = \
+ 	time.c \
+ 	version.c \
+ 	virtual.c \
+-	wcstring.c
++	wcstring.c \
++	dynamic_annotations.c
+ 
+ RC_SRCS = version.rc
+ 
+diff --git a/dlls/ntdll/critsection.c b/dlls/ntdll/critsection.c
+index 2846343..ed4e6ed 100644
+--- a/dlls/ntdll/critsection.c
++++ b/dlls/ntdll/critsection.c
+@@ -33,6 +33,7 @@
+ #include "winternl.h"
+ #include "wine/debug.h"
+ #include "ntdll_misc.h"
++#include "dynamic_annotations.h"
+ 
+ WINE_DEFAULT_DEBUG_CHANNEL(ntdll);
+ WINE_DECLARE_DEBUG_CHANNEL(relay);
+@@ -337,6 +338,7 @@ NTSTATUS WINAPI RtlInitializeCriticalSectionEx( RTL_CRITICAL_SECTION *crit, ULON
+     crit->LockSemaphore  = 0;
+     if (NtCurrentTeb()->Peb->NumberOfProcessors <= 1) spincount = 0;
+     crit->SpinCount = spincount & ~0x80000000;
++    ANNOTATE_RWLOCK_CREATE(crit);
+     return STATUS_SUCCESS;
+ }
+ 
+@@ -388,6 +390,7 @@ ULONG WINAPI RtlSetCriticalSectionSpinCount( RTL_CRITICAL_SECTION *crit, ULONG s
+  */
+ NTSTATUS WINAPI RtlDeleteCriticalSection( RTL_CRITICAL_SECTION *crit )
+ {
++  ANNOTATE_RWLOCK_DESTROY(crit);
+     crit->LockCount      = -1;
+     crit->RecursionCount = 0;
+     crit->OwningThread   = 0;
+@@ -555,6 +558,7 @@ NTSTATUS WINAPI RtlEnterCriticalSection( RTL_CRITICAL_SECTION *crit )
+ done:
+     crit->OwningThread   = ULongToHandle(GetCurrentThreadId());
+     crit->RecursionCount = 1;
++    ANNOTATE_RWLOCK_ACQUIRED(crit, 1 /* is_w */);
+     return STATUS_SUCCESS;
+ }
+ 
+@@ -585,6 +589,7 @@ BOOL WINAPI RtlTryEnterCriticalSection( RTL_CRITICAL_SECTION *crit )
+         crit->OwningThread   = ULongToHandle(GetCurrentThreadId());
+         crit->RecursionCount = 1;
+         ret = TRUE;
++        ANNOTATE_RWLOCK_ACQUIRED(crit, 1);
+     }
+     else if (crit->OwningThread == ULongToHandle(GetCurrentThreadId()))
+     {
+@@ -618,6 +623,7 @@ NTSTATUS WINAPI RtlLeaveCriticalSection( RTL_CRITICAL_SECTION *crit )
+     if (--crit->RecursionCount) interlocked_dec( &crit->LockCount );
+     else
+     {
++      ANNOTATE_RWLOCK_RELEASED(crit, 1);
+         crit->OwningThread = 0;
+         if (interlocked_dec( &crit->LockCount ) >= 0)
+         {
+diff --git a/dlls/ntdll/dynamic_annotations.c b/dlls/ntdll/dynamic_annotations.c
+new file mode 100644
+index 0000000..1ba4aea
+--- /dev/null
++++ b/dlls/ntdll/dynamic_annotations.c
+@@ -0,0 +1,145 @@
++/* Copyright (c) 2008-2009, Google Inc.
++ * All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions are
++ * met:
++ *
++ *     * Redistributions of source code must retain the above copyright
++ * notice, this list of conditions and the following disclaimer.
++ *     * Redistributions in binary form must reproduce the above
++ * copyright notice, this list of conditions and the following disclaimer
++ * in the documentation and/or other materials provided with the
++ * distribution.
++ *     * Neither the name of Google Inc. nor the names of its
++ * contributors may be used to endorse or promote products derived from
++ * this software without specific prior written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++ * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ *
++ * ---
++ * Author: Kostya Serebryany
++ */
++
++#ifdef __cplusplus
++# error "This file should be built as pure C to avoid name mangling"
++#endif
++
++#include <stdlib.h>
++#include <string.h>
++
++#include "dynamic_annotations.h"
++
++#ifdef __GNUC__
++/* valgrind.h uses gcc extensions so it won't build with other compilers */
++#if HAVE_VALGRIND_VALGRIND_H
++# include <valgrind/valgrind.h>
++#endif
++#endif
++
++/* Each function is empty and called (via a macro) only in debug mode.
++   The arguments are captured by dynamic tools at runtime. */
++
++#if DYNAMIC_ANNOTATIONS_ENABLED == 1
++
++void AnnotateRWLockCreate(const char *file, int line,
++                          const volatile void *lock){}
++void AnnotateRWLockDestroy(const char *file, int line,
++                           const volatile void *lock){}
++void AnnotateRWLockAcquired(const char *file, int line,
++                            const volatile void *lock, long is_w){}
++void AnnotateRWLockReleased(const char *file, int line,
++                            const volatile void *lock, long is_w){}
++void AnnotateBarrierInit(const char *file, int line,
++                         const volatile void *barrier, long count,
++                         long reinitialization_allowed) {}
++void AnnotateBarrierWaitBefore(const char *file, int line,
++                               const volatile void *barrier) {}
++void AnnotateBarrierWaitAfter(const char *file, int line,
++                              const volatile void *barrier) {}
++void AnnotateBarrierDestroy(const char *file, int line,
++                            const volatile void *barrier) {}
++
++void AnnotateCondVarWait(const char *file, int line,
++                         const volatile void *cv,
++                         const volatile void *lock){}
++void AnnotateCondVarSignal(const char *file, int line,
++                           const volatile void *cv){}
++void AnnotateCondVarSignalAll(const char *file, int line,
++                              const volatile void *cv){}
++void AnnotatePublishMemoryRange(const char *file, int line,
++                                const volatile void *address,
++                                long size){}
++void AnnotateUnpublishMemoryRange(const char *file, int line,
++                                  const volatile void *address,
++                                  long size){}
++void AnnotatePCQCreate(const char *file, int line,
++                       const volatile void *pcq){}
++void AnnotatePCQDestroy(const char *file, int line,
++                        const volatile void *pcq){}
++void AnnotatePCQPut(const char *file, int line,
++                    const volatile void *pcq){}
++void AnnotatePCQGet(const char *file, int line,
++                    const volatile void *pcq){}
++void AnnotateNewMemory(const char *file, int line,
++                       const volatile void *mem,
++                       long size){}
++void AnnotateExpectRace(const char *file, int line,
++                        const volatile void *mem,
++                        const char *description){}
++void AnnotateBenignRace(const char *file, int line,
++                        const volatile void *mem,
++                        const char *description){}
++void AnnotateBenignRaceSized(const char *file, int line,
++                             const volatile void *mem,
++                             long size,
++                             const char *description) {}
++void AnnotateMutexIsUsedAsCondVar(const char *file, int line,
++                                  const volatile void *mu){}
++void AnnotateTraceMemory(const char *file, int line,
++                         const volatile void *arg){}
++void AnnotateThreadName(const char *file, int line,
++                        const char *name){}
++void AnnotateIgnoreReadsBegin(const char *file, int line){}
++void AnnotateIgnoreReadsEnd(const char *file, int line){}
++void AnnotateIgnoreWritesBegin(const char *file, int line){}
++void AnnotateIgnoreWritesEnd(const char *file, int line){}
++void AnnotateIgnoreSyncBegin(const char *file, int line){}
++void AnnotateIgnoreSyncEnd(const char *file, int line){}
++void AnnotateNoOp(const char *file, int line,
++                  const volatile void *arg){}
++void AnnotateFlushState(const char *file, int line){}
++
++#endif  /* DYNAMIC_ANNOTATIONS_ENABLED == 1 */
++
++static int GetRunningOnValgrind(void) {
++#ifdef RUNNING_ON_VALGRIND
++  if (RUNNING_ON_VALGRIND) return 1;
++#endif
++  char *running_on_valgrind_str = getenv("RUNNING_ON_VALGRIND");
++  if (running_on_valgrind_str) {
++    return strcmp(running_on_valgrind_str, "0") != 0;
++  }
++  return 0;
++}
++
++/* See the comments in dynamic_annotations.h */
++int RunningOnValgrind(void) {
++  static volatile int running_on_valgrind = -1;
++  /* C doesn't have thread-safe initialization of statics, and we
++     don't want to depend on pthread_once here, so hack it. */
++  int local_running_on_valgrind = running_on_valgrind;
++  if (local_running_on_valgrind == -1)
++    running_on_valgrind = local_running_on_valgrind = GetRunningOnValgrind();
++  return local_running_on_valgrind;
++}
+diff --git a/dlls/ntdll/dynamic_annotations.h b/dlls/ntdll/dynamic_annotations.h
+new file mode 100644
+index 0000000..96964da
+--- /dev/null
++++ b/dlls/ntdll/dynamic_annotations.h
+@@ -0,0 +1,507 @@
++/* Copyright (c) 2008-2009, Google Inc.
++ * All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions are
++ * met:
++ *
++ *     * Redistributions of source code must retain the above copyright
++ * notice, this list of conditions and the following disclaimer.
++ *     * Redistributions in binary form must reproduce the above
++ * copyright notice, this list of conditions and the following disclaimer
++ * in the documentation and/or other materials provided with the
++ * distribution.
++ *     * Neither the name of Google Inc. nor the names of its
++ * contributors may be used to endorse or promote products derived from
++ * this software without specific prior written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++ * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ *
++ * ---
++ * Author: Kostya Serebryany
++ */
++
++/* This file defines dynamic annotations for use with dynamic analysis
++   tool such as valgrind, PIN, etc.
++
++   Dynamic annotation is a source code annotation that affects
++   the generated code (that is, the annotation is not a comment).
++   Each such annotation is attached to a particular
++   instruction and/or to a particular object (address) in the program.
++
++   The annotations that should be used by users are macros in all upper-case
++   (e.g., ANNOTATE_NEW_MEMORY).
++
++   Actual implementation of these macros may differ depending on the
++   dynamic analysis tool being used.
++
++   See http://code.google.com/p/data-race-test/  for more information.
++
++   This file supports the following dynamic analysis tools:
++   - None (DYNAMIC_ANNOTATIONS_ENABLED is not defined or zero).
++      Macros are defined empty.
++   - ThreadSanitizer, Helgrind, DRD (DYNAMIC_ANNOTATIONS_ENABLED is 1).
++      Macros are defined as calls to non-inlinable empty functions
++      that are intercepted by Valgrind. */
++
++#ifndef __DYNAMIC_ANNOTATIONS_H__
++#define __DYNAMIC_ANNOTATIONS_H__
++
++#ifndef DYNAMIC_ANNOTATIONS_ENABLED
++# define DYNAMIC_ANNOTATIONS_ENABLED 0
++#endif
++
++#if DYNAMIC_ANNOTATIONS_ENABLED != 0
++
++  /* -------------------------------------------------------------
++     Annotations useful when implementing condition variables such as CondVar,
++     using conditional critical sections (Await/LockWhen) and when constructing
++     user-defined synchronization mechanisms.
++
++     The annotations ANNOTATE_HAPPENS_BEFORE() and ANNOTATE_HAPPENS_AFTER() can
++     be used to define happens-before arcs in user-defined synchronization
++     mechanisms:  the race detector will infer an arc from the former to the
++     latter when they share the same argument pointer.
++
++     Example 1 (reference counting):
++
++     void Unref() {
++       ANNOTATE_HAPPENS_BEFORE(&refcount_);
++       if (AtomicDecrementByOne(&refcount_) == 0) {
++         ANNOTATE_HAPPENS_AFTER(&refcount_);
++         delete this;
++       }
++     }
++
++     Example 2 (message queue):
++
++     void MyQueue::Put(Type *e) {
++       MutexLock lock(&mu_);
++       ANNOTATE_HAPPENS_BEFORE(e);
++       PutElementIntoMyQueue(e);
++     }
++
++     Type *MyQueue::Get() {
++       MutexLock lock(&mu_);
++       Type *e = GetElementFromMyQueue();
++       ANNOTATE_HAPPENS_AFTER(e);
++       return e;
++     }
++
++     Note: when possible, please use the existing reference counting and message
++     queue implementations instead of inventing new ones. */
++
++  /* Report that wait on the condition variable at address "cv" has succeeded
++     and the lock at address "lock" is held. */
++  #define ANNOTATE_CONDVAR_LOCK_WAIT(cv, lock) \
++    AnnotateCondVarWait(__FILE__, __LINE__, cv, lock)
++
++  /* Report that wait on the condition variable at "cv" has succeeded.  Variant
++     w/o lock. */
++  #define ANNOTATE_CONDVAR_WAIT(cv) \
++    AnnotateCondVarWait(__FILE__, __LINE__, cv, NULL)
++
++  /* Report that we are about to signal on the condition variable at address
++     "cv". */
++  #define ANNOTATE_CONDVAR_SIGNAL(cv) \
++    AnnotateCondVarSignal(__FILE__, __LINE__, cv)
++
++  /* Report that we are about to signal_all on the condition variable at "cv". */
++  #define ANNOTATE_CONDVAR_SIGNAL_ALL(cv) \
++    AnnotateCondVarSignalAll(__FILE__, __LINE__, cv)
++
++  /* Annotations for user-defined synchronization mechanisms. */
++  #define ANNOTATE_HAPPENS_BEFORE(obj) ANNOTATE_CONDVAR_SIGNAL(obj)
++  #define ANNOTATE_HAPPENS_AFTER(obj)  ANNOTATE_CONDVAR_WAIT(obj)
++
++  /* Report that the bytes in the range [pointer, pointer+size) are about
++     to be published safely. The race checker will create a happens-before
++     arc from the call ANNOTATE_PUBLISH_MEMORY_RANGE(pointer, size) to
++     subsequent accesses to this memory.
++     Note: this annotation may not work properly if the race detector uses
++     sampling, i.e. does not observe all memory accesses.
++     */
++  #define ANNOTATE_PUBLISH_MEMORY_RANGE(pointer, size) \
++    AnnotatePublishMemoryRange(__FILE__, __LINE__, pointer, size)
++
++  /* DEPRECATED. Don't use it. */
++  #define ANNOTATE_UNPUBLISH_MEMORY_RANGE(pointer, size) \
++    AnnotateUnpublishMemoryRange(__FILE__, __LINE__, pointer, size)
++
++  /* DEPRECATED. Don't use it. */
++  #define ANNOTATE_SWAP_MEMORY_RANGE(pointer, size)   \
++    do {                                              \
++      ANNOTATE_UNPUBLISH_MEMORY_RANGE(pointer, size); \
++      ANNOTATE_PUBLISH_MEMORY_RANGE(pointer, size);   \
++    } while (0)
++
++  /* Instruct the tool to create a happens-before arc between mu->Unlock() and
++     mu->Lock(). This annotation may slow down the race detector and hide real
++     races. Normally it is used only when it would be difficult to annotate each
++     of the mutex's critical sections individually using the annotations above.
++     This annotation makes sense only for hybrid race detectors. For pure
++     happens-before detectors this is a no-op. For more details see
++     http://code.google.com/p/data-race-test/wiki/PureHappensBeforeVsHybrid . */
++  #define ANNOTATE_PURE_HAPPENS_BEFORE_MUTEX(mu) \
++    AnnotateMutexIsUsedAsCondVar(__FILE__, __LINE__, mu)
++
++  /* Deprecated. Use ANNOTATE_PURE_HAPPENS_BEFORE_MUTEX. */
++  #define ANNOTATE_MUTEX_IS_USED_AS_CONDVAR(mu) \
++    AnnotateMutexIsUsedAsCondVar(__FILE__, __LINE__, mu)
++
++  /* -------------------------------------------------------------
++     Annotations useful when defining memory allocators, or when memory that
++     was protected in one way starts to be protected in another. */
++
++  /* Report that a new memory at "address" of size "size" has been allocated.
++     This might be used when the memory has been retrieved from a free list and
++     is about to be reused, or when a the locking discipline for a variable
++     changes. */
++  #define ANNOTATE_NEW_MEMORY(address, size) \
++    AnnotateNewMemory(__FILE__, __LINE__, address, size)
++
++  /* -------------------------------------------------------------
++     Annotations useful when defining FIFO queues that transfer data between
++     threads. */
++
++  /* Report that the producer-consumer queue (such as ProducerConsumerQueue) at
++     address "pcq" has been created.  The ANNOTATE_PCQ_* annotations
++     should be used only for FIFO queues.  For non-FIFO queues use
++     ANNOTATE_HAPPENS_BEFORE (for put) and ANNOTATE_HAPPENS_AFTER (for get). */
++  #define ANNOTATE_PCQ_CREATE(pcq) \
++    AnnotatePCQCreate(__FILE__, __LINE__, pcq)
++
++  /* Report that the queue at address "pcq" is about to be destroyed. */
++  #define ANNOTATE_PCQ_DESTROY(pcq) \
++    AnnotatePCQDestroy(__FILE__, __LINE__, pcq)
++
++  /* Report that we are about to put an element into a FIFO queue at address
++     "pcq". */
++  #define ANNOTATE_PCQ_PUT(pcq) \
++    AnnotatePCQPut(__FILE__, __LINE__, pcq)
++
++  /* Report that we've just got an element from a FIFO queue at address "pcq". */
++  #define ANNOTATE_PCQ_GET(pcq) \
++    AnnotatePCQGet(__FILE__, __LINE__, pcq)
++
++  /* -------------------------------------------------------------
++     Annotations that suppress errors.  It is usually better to express the
++     program's synchronization using the other annotations, but these can
++     be used when all else fails. */
++
++  /* Report that we may have a benign race at "pointer", with size
++     "sizeof(*(pointer))". "pointer" must be a non-void* pointer.  Insert at the
++     point where "pointer" has been allocated, preferably close to the point
++     where the race happens.  See also ANNOTATE_BENIGN_RACE_STATIC. */
++  #define ANNOTATE_BENIGN_RACE(pointer, description) \
++    AnnotateBenignRaceSized(__FILE__, __LINE__, pointer, \
++                            sizeof(*(pointer)), description)
++
++  /* Same as ANNOTATE_BENIGN_RACE(address, description), but applies to
++     the memory range [address, address+size). */
++  #define ANNOTATE_BENIGN_RACE_SIZED(address, size, description) \
++    AnnotateBenignRaceSized(__FILE__, __LINE__, address, size, description)
++
++  /* Request the analysis tool to ignore all reads in the current thread
++     until ANNOTATE_IGNORE_READS_END is called.
++     Useful to ignore intentional racey reads, while still checking
++     other reads and all writes.
++     See also ANNOTATE_UNPROTECTED_READ. */
++  #define ANNOTATE_IGNORE_READS_BEGIN() \
++    AnnotateIgnoreReadsBegin(__FILE__, __LINE__)
++
++  /* Stop ignoring reads. */
++  #define ANNOTATE_IGNORE_READS_END() \
++    AnnotateIgnoreReadsEnd(__FILE__, __LINE__)
++
++  /* Similar to ANNOTATE_IGNORE_READS_BEGIN, but ignore writes. */
++  #define ANNOTATE_IGNORE_WRITES_BEGIN() \
++    AnnotateIgnoreWritesBegin(__FILE__, __LINE__)
++
++  /* Stop ignoring writes. */
++  #define ANNOTATE_IGNORE_WRITES_END() \
++    AnnotateIgnoreWritesEnd(__FILE__, __LINE__)
++
++  /* Start ignoring all memory accesses (reads and writes). */
++  #define ANNOTATE_IGNORE_READS_AND_WRITES_BEGIN() \
++    do {\
++      ANNOTATE_IGNORE_READS_BEGIN();\
++      ANNOTATE_IGNORE_WRITES_BEGIN();\
++    }while(0)\
++
++  /* Stop ignoring all memory accesses. */
++  #define ANNOTATE_IGNORE_READS_AND_WRITES_END() \
++    do {\
++      ANNOTATE_IGNORE_WRITES_END();\
++      ANNOTATE_IGNORE_READS_END();\
++    }while(0)\
++
++  /* Similar to ANNOTATE_IGNORE_READS_BEGIN, but ignore synchronization events:
++     RWLOCK* and CONDVAR*. */
++  #define ANNOTATE_IGNORE_SYNC_BEGIN() \
++    AnnotateIgnoreSyncBegin(__FILE__, __LINE__)
++
++  /* Stop ignoring writes. */
++  #define ANNOTATE_IGNORE_SYNC_END() \
++    AnnotateIgnoreSyncEnd(__FILE__, __LINE__)
++
++  /* -------------------------------------------------------------
++     Annotations useful for debugging. */
++
++  /* Request to trace every access to "address". */
++  #define ANNOTATE_TRACE_MEMORY(address) \
++    AnnotateTraceMemory(__FILE__, __LINE__, address)
++
++  /* Report the current thread name to a race detector. */
++  #define ANNOTATE_THREAD_NAME(name) \
++    AnnotateThreadName(__FILE__, __LINE__, name)
++
++  /* -------------------------------------------------------------
++     Annotations useful when implementing locks.  They are not
++     normally needed by modules that merely use locks.
++     The "lock" argument is a pointer to the lock object. */
++
++  /* Report that a lock has been created at address "lock". */
++  #define ANNOTATE_RWLOCK_CREATE(lock) \
++    AnnotateRWLockCreate(__FILE__, __LINE__, lock)
++
++  /* Report that the lock at address "lock" is about to be destroyed. */
++  #define ANNOTATE_RWLOCK_DESTROY(lock) \
++    AnnotateRWLockDestroy(__FILE__, __LINE__, lock)
++
++  /* Report that the lock at address "lock" has been acquired.
++     is_w=1 for writer lock, is_w=0 for reader lock. */
++  #define ANNOTATE_RWLOCK_ACQUIRED(lock, is_w) \
++    AnnotateRWLockAcquired(__FILE__, __LINE__, lock, is_w)
++
++  /* Report that the lock at address "lock" is about to be released. */
++  #define ANNOTATE_RWLOCK_RELEASED(lock, is_w) \
++    AnnotateRWLockReleased(__FILE__, __LINE__, lock, is_w)
++
++  /* -------------------------------------------------------------
++     Annotations useful when implementing barriers.  They are not
++     normally needed by modules that merely use barriers.
++     The "barrier" argument is a pointer to the barrier object. */
++
++  /* Report that the "barrier" has been initialized with initial "count".
++   If 'reinitialization_allowed' is true, initialization is allowed to happen
++   multiple times w/o calling barrier_destroy() */
++  #define ANNOTATE_BARRIER_INIT(barrier, count, reinitialization_allowed) \
++    AnnotateBarrierInit(__FILE__, __LINE__, barrier, count, \
++                        reinitialization_allowed)
++
++  /* Report that we are about to enter barrier_wait("barrier"). */
++  #define ANNOTATE_BARRIER_WAIT_BEFORE(barrier) \
++    AnnotateBarrierWaitBefore(__FILE__, __LINE__, barrier)
++
++  /* Report that we just exited barrier_wait("barrier"). */
++  #define ANNOTATE_BARRIER_WAIT_AFTER(barrier) \
++    AnnotateBarrierWaitAfter(__FILE__, __LINE__, barrier)
++
++  /* Report that the "barrier" has been destroyed. */
++  #define ANNOTATE_BARRIER_DESTROY(barrier) \
++    AnnotateBarrierDestroy(__FILE__, __LINE__, barrier)
++
++  /* -------------------------------------------------------------
++     Annotations useful for testing race detectors. */
++
++  /* Report that we expect a race on the variable at "address".
++     Use only in unit tests for a race detector. */
++  #define ANNOTATE_EXPECT_RACE(address, description) \
++    AnnotateExpectRace(__FILE__, __LINE__, address, description)
++
++  /* A no-op. Insert where you like to test the interceptors. */
++  #define ANNOTATE_NO_OP(arg) \
++    AnnotateNoOp(__FILE__, __LINE__, arg)
++
++  /* Force the race detector to flush its state. The actual effect depends on
++   * the implementation of the detector. */
++  #define ANNOTATE_FLUSH_STATE() \
++    AnnotateFlushState(__FILE__, __LINE__)
++
++
++
++#else  /* DYNAMIC_ANNOTATIONS_ENABLED == 0 */
++
++  #define ANNOTATE_RWLOCK_CREATE(lock) /* empty */
++  #define ANNOTATE_RWLOCK_DESTROY(lock) /* empty */
++  #define ANNOTATE_RWLOCK_ACQUIRED(lock, is_w) /* empty */
++  #define ANNOTATE_RWLOCK_RELEASED(lock, is_w) /* empty */
++  #define ANNOTATE_BARRIER_INIT(barrier, count, reinitialization_allowed) /* */
++  #define ANNOTATE_BARRIER_WAIT_BEFORE(barrier) /* empty */
++  #define ANNOTATE_BARRIER_WAIT_AFTER(barrier) /* empty */
++  #define ANNOTATE_BARRIER_DESTROY(barrier) /* empty */
++  #define ANNOTATE_CONDVAR_LOCK_WAIT(cv, lock) /* empty */
++  #define ANNOTATE_CONDVAR_WAIT(cv) /* empty */
++  #define ANNOTATE_CONDVAR_SIGNAL(cv) /* empty */
++  #define ANNOTATE_CONDVAR_SIGNAL_ALL(cv) /* empty */
++  #define ANNOTATE_HAPPENS_BEFORE(obj) /* empty */
++  #define ANNOTATE_HAPPENS_AFTER(obj) /* empty */
++  #define ANNOTATE_PUBLISH_MEMORY_RANGE(address, size) /* empty */
++  #define ANNOTATE_UNPUBLISH_MEMORY_RANGE(address, size)  /* empty */
++  #define ANNOTATE_SWAP_MEMORY_RANGE(address, size)  /* empty */
++  #define ANNOTATE_PCQ_CREATE(pcq) /* empty */
++  #define ANNOTATE_PCQ_DESTROY(pcq) /* empty */
++  #define ANNOTATE_PCQ_PUT(pcq) /* empty */
++  #define ANNOTATE_PCQ_GET(pcq) /* empty */
++  #define ANNOTATE_NEW_MEMORY(address, size) /* empty */
++  #define ANNOTATE_EXPECT_RACE(address, description) /* empty */
++  #define ANNOTATE_BENIGN_RACE(address, description) /* empty */
++  #define ANNOTATE_BENIGN_RACE_SIZED(address, size, description) /* empty */
++  #define ANNOTATE_PURE_HAPPENS_BEFORE_MUTEX(mu) /* empty */
++  #define ANNOTATE_MUTEX_IS_USED_AS_CONDVAR(mu) /* empty */
++  #define ANNOTATE_TRACE_MEMORY(arg) /* empty */
++  #define ANNOTATE_THREAD_NAME(name) /* empty */
++  #define ANNOTATE_IGNORE_READS_BEGIN() /* empty */
++  #define ANNOTATE_IGNORE_READS_END() /* empty */
++  #define ANNOTATE_IGNORE_WRITES_BEGIN() /* empty */
++  #define ANNOTATE_IGNORE_WRITES_END() /* empty */
++  #define ANNOTATE_IGNORE_READS_AND_WRITES_BEGIN() /* empty */
++  #define ANNOTATE_IGNORE_READS_AND_WRITES_END() /* empty */
++  #define ANNOTATE_IGNORE_SYNC_BEGIN() /* empty */
++  #define ANNOTATE_IGNORE_SYNC_END() /* empty */
++  #define ANNOTATE_NO_OP(arg) /* empty */
++  #define ANNOTATE_FLUSH_STATE() /* empty */
++
++#endif  /* DYNAMIC_ANNOTATIONS_ENABLED */
++
++/* Use the macros above rather than using these functions directly. */
++#ifdef __cplusplus
++extern "C" {
++#endif
++void AnnotateRWLockCreate(const char *file, int line,
++                          const volatile void *lock);
++void AnnotateRWLockDestroy(const char *file, int line,
++                           const volatile void *lock);
++void AnnotateRWLockAcquired(const char *file, int line,
++                            const volatile void *lock, long is_w);
++void AnnotateRWLockReleased(const char *file, int line,
++                            const volatile void *lock, long is_w);
++void AnnotateBarrierInit(const char *file, int line,
++                         const volatile void *barrier, long count,
++                         long reinitialization_allowed);
++void AnnotateBarrierWaitBefore(const char *file, int line,
++                               const volatile void *barrier);
++void AnnotateBarrierWaitAfter(const char *file, int line,
++                              const volatile void *barrier);
++void AnnotateBarrierDestroy(const char *file, int line,
++                            const volatile void *barrier);
++void AnnotateCondVarWait(const char *file, int line,
++                         const volatile void *cv,
++                         const volatile void *lock);
++void AnnotateCondVarSignal(const char *file, int line,
++                           const volatile void *cv);
++void AnnotateCondVarSignalAll(const char *file, int line,
++                              const volatile void *cv);
++void AnnotatePublishMemoryRange(const char *file, int line,
++                                const volatile void *address,
++                                long size);
++void AnnotateUnpublishMemoryRange(const char *file, int line,
++                                  const volatile void *address,
++                                  long size);
++void AnnotatePCQCreate(const char *file, int line,
++                       const volatile void *pcq);
++void AnnotatePCQDestroy(const char *file, int line,
++                        const volatile void *pcq);
++void AnnotatePCQPut(const char *file, int line,
++                    const volatile void *pcq);
++void AnnotatePCQGet(const char *file, int line,
++                    const volatile void *pcq);
++void AnnotateNewMemory(const char *file, int line,
++                       const volatile void *address,
++                       long size);
++void AnnotateExpectRace(const char *file, int line,
++                        const volatile void *address,
++                        const char *description);
++void AnnotateBenignRace(const char *file, int line,
++                        const volatile void *address,
++                        const char *description);
++void AnnotateBenignRaceSized(const char *file, int line,
++                        const volatile void *address,
++                        long size,
++                        const char *description);
++void AnnotateMutexIsUsedAsCondVar(const char *file, int line,
++                                  const volatile void *mu);
++void AnnotateTraceMemory(const char *file, int line,
++                         const volatile void *arg);
++void AnnotateThreadName(const char *file, int line,
++                        const char *name);
++void AnnotateIgnoreReadsBegin(const char *file, int line);
++void AnnotateIgnoreReadsEnd(const char *file, int line);
++void AnnotateIgnoreWritesBegin(const char *file, int line);
++void AnnotateIgnoreWritesEnd(const char *file, int line);
++void AnnotateIgnoreSyncBegin(const char *file, int line);
++void AnnotateIgnoreSyncEnd(const char *file, int line);
++void AnnotateNoOp(const char *file, int line,
++                  const volatile void *arg);
++void AnnotateFlushState(const char *file, int line);
++
++/* Return non-zero value if running under valgrind.
++
++  If "valgrind.h" is included into dynamic_annotations.c,
++  the regular valgrind mechanism will be used.
++  See http://valgrind.org/docs/manual/manual-core-adv.html about
++  RUNNING_ON_VALGRIND and other valgrind "client requests".
++  The file "valgrind.h" may be obtained by doing
++     svn co svn://svn.valgrind.org/valgrind/trunk/include
++
++  If for some reason you can't use "valgrind.h" or want to fake valgrind,
++  there are two ways to make this function return non-zero:
++    - Use environment variable: export RUNNING_ON_VALGRIND=1
++    - Make your tool intercept the function RunningOnValgrind() and
++      change its return value.
++ */
++int RunningOnValgrind(void);
++
++#ifdef __cplusplus
++}
++#endif
++
++#if DYNAMIC_ANNOTATIONS_ENABLED != 0 && defined(__cplusplus)
++
++  /* ANNOTATE_UNPROTECTED_READ is the preferred way to annotate racey reads.
++
++     Instead of doing
++        ANNOTATE_IGNORE_READS_BEGIN();
++        ... = x;
++        ANNOTATE_IGNORE_READS_END();
++     one can use
++        ... = ANNOTATE_UNPROTECTED_READ(x); */
++  template <class T>
++  inline T ANNOTATE_UNPROTECTED_READ(const volatile T &x) {
++    ANNOTATE_IGNORE_READS_BEGIN();
++    T res = x;
++    ANNOTATE_IGNORE_READS_END();
++    return res;
++  }
++  /* Apply ANNOTATE_BENIGN_RACE_SIZED to a static variable. */
++  #define ANNOTATE_BENIGN_RACE_STATIC(static_var, description)        \
++    namespace {                                                       \
++      class static_var ## _annotator {                                \
++       public:                                                        \
++        static_var ## _annotator() {                                  \
++          ANNOTATE_BENIGN_RACE_SIZED(&static_var,                     \
++                                      sizeof(static_var),             \
++            # static_var ": " description);                           \
++        }                                                             \
++      };                                                              \
++      static static_var ## _annotator the ## static_var ## _annotator;\
++    }
++#else /* DYNAMIC_ANNOTATIONS_ENABLED == 0 */
++
++  #define ANNOTATE_UNPROTECTED_READ(x) (x)
++  #define ANNOTATE_BENIGN_RACE_STATIC(static_var, description)  /* empty */
++
++#endif /* DYNAMIC_ANNOTATIONS_ENABLED */
++
++#endif  /* __DYNAMIC_ANNOTATIONS_H__ */
+diff --git a/dlls/ntdll/heap.c b/dlls/ntdll/heap.c
+index e49e77a..5ff7f7d 100644
+--- a/dlls/ntdll/heap.c
++++ b/dlls/ntdll/heap.c
+@@ -44,6 +44,8 @@
+ #include "wine/debug.h"
+ #include "wine/server.h"
+ 
++#include "dynamic_annotations.h"
++
+ WINE_DEFAULT_DEBUG_CHANNEL(heap);
+ 
+ /* Note: the heap data structures are loosely based on what Pietrek describes in his
+@@ -253,6 +255,7 @@ static inline void notify_alloc( void *ptr, SIZE_T size, BOOL init )
+ #ifdef VALGRIND_MALLOCLIKE_BLOCK
+     VALGRIND_MALLOCLIKE_BLOCK( ptr, size, 0, init );
+ #endif
++//     ANNOTATE_NEW_MEMORY(ptr, size);
+ }
+ 
+ /* notify that a block of memory has been freed for debugging purposes */
+diff --git a/dlls/ntdll/rtl.c b/dlls/ntdll/rtl.c
+index d4a7045..7bc1165 100644
+--- a/dlls/ntdll/rtl.c
++++ b/dlls/ntdll/rtl.c
+@@ -39,6 +39,8 @@
+ #include "wine/exception.h"
+ #include "ntdll_misc.h"
+ 
++#include "dynamic_annotations.h"
++
+ WINE_DEFAULT_DEBUG_CHANNEL(ntdll);
+ 
+ static RTL_CRITICAL_SECTION peb_lock;
+@@ -1022,6 +1024,8 @@ PSLIST_ENTRY WINAPI RtlInterlockedPushEntrySList(PSLIST_HEADER list, PSLIST_ENTR
+ {
+     SLIST_HEADER old, new;
+ 
++    ANNOTATE_HAPPENS_BEFORE(entry);
++
+ #ifdef _WIN64
+     new.Header16.NextEntry = (ULONG_PTR)entry >> 4;
+     do
+@@ -1090,6 +1094,10 @@ PSLIST_ENTRY WINAPI RtlInterlockedPopEntrySList(PSLIST_HEADER list)
+     } while (interlocked_cmpxchg64((__int64 *)&list->Alignment, new.Alignment,
+                                    old.Alignment) != old.Alignment);
+ #endif
++
++    if (entry) {
++      ANNOTATE_HAPPENS_AFTER(entry);
++    }
+     return entry;
+ }
+ 
+diff --git a/dlls/ntdll/server.c b/dlls/ntdll/server.c
+index 568f0c5..f4a7aea 100644
+--- a/dlls/ntdll/server.c
++++ b/dlls/ntdll/server.c
+@@ -66,6 +66,9 @@
+ #include "wine/debug.h"
+ #include "ntdll_misc.h"
+ 
++#include "dynamic_annotations.h"
++// TODO(eugenis): ANNOTATE wineserver pipe creation/destruction
++
+ WINE_DEFAULT_DEBUG_CHANNEL(server);
+ 
+ /* Some versions of glibc don't define this */
+@@ -196,8 +199,11 @@ static unsigned int send_request( const struct __server_request_info *req )
+ 
+     if (!req->u.req.request_header.request_size)
+     {
+-        if ((ret = write( ntdll_get_thread_data()->request_fd, &req->u.req,
+-                          sizeof(req->u.req) )) == sizeof(req->u.req)) return STATUS_SUCCESS;
++        ANNOTATE_IGNORE_SYNC_BEGIN();
++        ret = write( ntdll_get_thread_data()->request_fd, &req->u.req,
++                     sizeof(req->u.req) );
++        ANNOTATE_IGNORE_SYNC_END();
++        if (ret == sizeof(req->u.req)) return STATUS_SUCCESS;
+ 
+     }
+     else
+@@ -211,8 +217,10 @@ static unsigned int send_request( const struct __server_request_info *req )
+             vec[i+1].iov_base = (void *)req->data[i].ptr;
+             vec[i+1].iov_len = req->data[i].size;
+         }
+-        if ((ret = writev( ntdll_get_thread_data()->request_fd, vec, i+1 )) ==
+-            req->u.req.request_header.request_size + sizeof(req->u.req)) return STATUS_SUCCESS;
++        ANNOTATE_IGNORE_SYNC_BEGIN();
++        ret = writev( ntdll_get_thread_data()->request_fd, vec, i+1 );
++        ANNOTATE_IGNORE_SYNC_END();
++        if (ret == req->u.req.request_header.request_size + sizeof(req->u.req)) return STATUS_SUCCESS;
+     }
+ 
+     if (ret >= 0) server_protocol_error( "partial write %d\n", ret );
+@@ -233,7 +241,10 @@ static void read_reply_data( void *buffer, size_t size )
+ 
+     for (;;)
+     {
+-        if ((ret = read( ntdll_get_thread_data()->reply_fd, buffer, size )) > 0)
++        ANNOTATE_IGNORE_SYNC_BEGIN();
++        ret = read( ntdll_get_thread_data()->reply_fd, buffer, size );
++        ANNOTATE_IGNORE_SYNC_END();
++        if (ret > 0)
+         {
+             if (!(size -= ret)) return;
+             buffer = (char *)buffer + ret;
+@@ -366,7 +377,10 @@ void CDECL wine_server_send_fd( int fd )
+ 
+     for (;;)
+     {
+-        if ((ret = sendmsg( fd_socket, &msghdr, 0 )) == sizeof(data)) return;
++        ANNOTATE_IGNORE_SYNC_BEGIN();
++        ret = sendmsg( fd_socket, &msghdr, 0 );
++        ANNOTATE_IGNORE_SYNC_END();
++        if (ret == sizeof(data)) return;
+         if (ret >= 0) server_protocol_error( "partial write %d\n", ret );
+         if (errno == EINTR) continue;
+         if (errno == EPIPE) abort_thread(0);
+@@ -413,7 +427,10 @@ static int receive_fd( obj_handle_t *handle )
+ 
+     for (;;)
+     {
+-        if ((ret = recvmsg( fd_socket, &msghdr, MSG_CMSG_CLOEXEC )) > 0)
++        ANNOTATE_IGNORE_SYNC_BEGIN();
++        ret = recvmsg( fd_socket, &msghdr, MSG_CMSG_CLOEXEC );
++        ANNOTATE_IGNORE_SYNC_END();
++        if (ret > 0)
+         {
+ #ifndef HAVE_STRUCT_MSGHDR_MSG_ACCRIGHTS
+             fd = cmsg.fd;
+diff --git a/dlls/ntdll/signal_i386.c b/dlls/ntdll/signal_i386.c
+index 4998820..faca6a1 100644
+--- a/dlls/ntdll/signal_i386.c
++++ b/dlls/ntdll/signal_i386.c
+@@ -67,6 +67,8 @@
+ #include <valgrind/memcheck.h>
+ #endif
+ 
++#include "dynamic_annotations.h"
++
+ #undef ERR  /* Solaris needs to define this */
+ 
+ /* not defined for x86, so copy the x86_64 definition */
+@@ -2015,9 +2017,16 @@ static void usr1_handler( int signal, siginfo_t *siginfo, void *sigcontext )
+     WORD fs, gs;
+ 
+     init_handler( sigcontext, &fs, &gs );
++
++    ANNOTATE_IGNORE_READS_AND_WRITES_BEGIN();
+     save_context( &context, sigcontext, fs, gs );
++    ANNOTATE_IGNORE_READS_AND_WRITES_END();
++
+     wait_suspend( &context );
++
++    ANNOTATE_IGNORE_READS_AND_WRITES_BEGIN();
+     restore_context( &context, sigcontext );
++    ANNOTATE_IGNORE_READS_AND_WRITES_END();
+ }
+ 
+ 
+diff --git a/dlls/ntdll/signal_x86_64.c b/dlls/ntdll/signal_x86_64.c
+index 45cdb32..89d9ab3 100644
+--- a/dlls/ntdll/signal_x86_64.c
++++ b/dlls/ntdll/signal_x86_64.c
+@@ -2954,6 +2954,7 @@ USHORT WINAPI RtlCaptureStackBackTrace( ULONG skip, ULONG count, PVOID *buffer,
+  */
+ void call_thread_func( LPTHREAD_START_ROUTINE entry, void *arg, void *frame )
+ {
++  DPRINTF( "%04x:call_thread_func\n", GetCurrentThreadId() );
+     ntdll_get_thread_data()->exit_frame = frame;
+     __TRY
+     {
+@@ -2986,6 +2987,7 @@ __ASM_GLOBAL_FUNC( call_thread_exit_func,
+  */
+ void WINAPI RtlExitUserThread( ULONG status )
+ {
++  DPRINTF( "%04x:RtlExitUserThread)\n", GetCurrentThreadId() );
+     if (!ntdll_get_thread_data()->exit_frame) exit_thread( status );
+     call_thread_exit_func( status, exit_thread, ntdll_get_thread_data()->exit_frame );
+ }
+diff --git a/dlls/ntdll/sync.c b/dlls/ntdll/sync.c
+index 3e27d09..dbb306b 100644
+--- a/dlls/ntdll/sync.c
++++ b/dlls/ntdll/sync.c
+@@ -58,6 +58,8 @@
+ #include "wine/debug.h"
+ #include "ntdll_misc.h"
+ 
++#include "dynamic_annotations.h"
++
+ WINE_DEFAULT_DEBUG_CHANNEL(ntdll);
+ 
+ /* creates a struct security_descriptor and contained information in one contiguous piece of memory */
+@@ -804,7 +806,9 @@ static int wait_reply( void *cookie )
+     for (;;)
+     {
+         int ret;
++        ANNOTATE_IGNORE_SYNC_BEGIN();
+         ret = read( ntdll_get_thread_data()->wait_fd[0], &reply, sizeof(reply) );
++        ANNOTATE_IGNORE_SYNC_END();
+         if (ret == sizeof(reply))
+         {
+             if (!reply.cookie) break;  /* thread got killed */
+@@ -814,7 +818,9 @@ static int wait_reply( void *cookie )
+             /* and now put the wrong one back in the pipe */
+             for (;;)
+             {
++                ANNOTATE_IGNORE_SYNC_BEGIN();
+                 ret = write( ntdll_get_thread_data()->wait_fd[1], &reply, sizeof(reply) );
++                ANNOTATE_IGNORE_SYNC_END();
+                 if (ret == sizeof(reply)) break;
+                 if (ret >= 0) server_protocol_error( "partial wakeup write %d\n", ret );
+                 if (errno == EINTR) continue;
+@@ -1084,6 +1090,19 @@ NTSTATUS NTDLL_queue_process_apc( HANDLE process, const apc_call_t *call, apc_re
+ }
+ 
+ 
++static void HappensAfterIfThread(const HANDLE handle) {
++  THREAD_BASIC_INFORMATION tbi;
++  NTSTATUS status;
++
++  status = NtQueryInformationThread(handle, ThreadBasicInformation, &tbi,
++      sizeof(tbi), NULL);
++  if (!status) {
++    DWORD threadId = HandleToULong(tbi.ClientId.UniqueThread);
++    ANNOTATE_HAPPENS_AFTER(threadId);
++  }
++}
++
++
+ /***********************************************************************
+  *              NTDLL_wait_for_multiple_objects
+  *
+@@ -1140,6 +1159,15 @@ NTSTATUS NTDLL_wait_for_multiple_objects( UINT count, const HANDLE *handles, UIN
+        boost as well.  This seems to model that behavior the closest.  */
+     if (ret == STATUS_TIMEOUT) NtYieldExecution();
+ 
++    if (flags & SELECT_ALL) {
++      int i;
++      for (i = 0; i < count; ++i) {
++        HappensAfterIfThread(handles[i]);
++      }
++    } else if (ret >= WAIT_OBJECT_0 && ret < WAIT_OBJECT_0 + count) {
++      HappensAfterIfThread(handles[ret - WAIT_OBJECT_0]);
++    }
++
+     return ret;
+ }
+ 
+@@ -1168,7 +1196,7 @@ NTSTATUS WINAPI NtWaitForMultipleObjects( DWORD count, const HANDLE *handles,
+  */
+ NTSTATUS WINAPI NtWaitForSingleObject(HANDLE handle, BOOLEAN alertable, const LARGE_INTEGER *timeout )
+ {
+-    return NtWaitForMultipleObjects( 1, &handle, FALSE, alertable, timeout );
++  return NtWaitForMultipleObjects( 1, &handle, FALSE, alertable, timeout );
+ }
+ 
+ 
+diff --git a/dlls/ntdll/thread.c b/dlls/ntdll/thread.c
+index d632f39..e2178ab 100644
+--- a/dlls/ntdll/thread.c
++++ b/dlls/ntdll/thread.c
+@@ -42,6 +42,8 @@
+ #include "ddk/wdm.h"
+ #include "wine/exception.h"
+ 
++#include "dynamic_annotations.h"
++
+ WINE_DEFAULT_DEBUG_CHANNEL(thread);
+ WINE_DECLARE_DEBUG_CHANNEL(relay);
+ 
+@@ -311,6 +313,11 @@ void terminate_thread( int status )
+     close( ntdll_get_thread_data()->wait_fd[1] );
+     close( ntdll_get_thread_data()->reply_fd );
+     close( ntdll_get_thread_data()->request_fd );
++
++    ANNOTATE_HAPPENS_BEFORE(GetCurrentThreadId());
++    ANNOTATE_HAPPENS_BEFORE(NtCurrentTeb());
++
++    ANNOTATE_IGNORE_READS_AND_WRITES_BEGIN();
+     pthread_exit( UIntToPtr(status) );
+ }
+ 
+@@ -351,16 +358,27 @@ void exit_thread( int status )
+ 
+     if ((teb = interlocked_xchg_ptr( &prev_teb, NtCurrentTeb() )))
+     {
++      ANNOTATE_IGNORE_READS_AND_WRITES_BEGIN();
+         struct ntdll_thread_data *thread_data = (struct ntdll_thread_data *)teb->SpareBytes1;
+ 
+         pthread_join( thread_data->pthread_id, NULL );
+         signal_free_thread( teb );
++        ANNOTATE_IGNORE_READS_AND_WRITES_END();
+     }
+ 
+     close( ntdll_get_thread_data()->wait_fd[0] );
+     close( ntdll_get_thread_data()->wait_fd[1] );
+     close( ntdll_get_thread_data()->reply_fd );
+     close( ntdll_get_thread_data()->request_fd );
++
++    ANNOTATE_HAPPENS_BEFORE(GetCurrentThreadId());
++
++    // This is a hack to avoid false race reports when a TEB is reused by another thread.
++    // It adds fake H-B arcs between two threads with the same TEB address and may hide real races.
++    // TODO(eugenis): Properly clean up thread state and remove all TEB-related annotations (there are 2 other places in this file).
++    ANNOTATE_HAPPENS_BEFORE(NtCurrentTeb());
++
++    ANNOTATE_IGNORE_READS_AND_WRITES_BEGIN();
+     pthread_exit( UIntToPtr(status) );
+ }
+ 
+@@ -378,6 +396,10 @@ static void start_thread( struct startup_info *info )
+     void *arg = info->entry_arg;
+     struct debug_info debug_info;
+ 
++//     ANNOTATE_HAPPENS_AFTER(HandleToULong(teb->ClientId.UniqueThread));
++    ANNOTATE_HAPPENS_AFTER(teb);
++//     DPRINTF("new thread, teb %p\n", teb);
++
+     debug_info.str_pos = debug_info.strings;
+     debug_info.out_pos = debug_info.output;
+     thread_data->debug_info = &debug_info;
+@@ -393,8 +415,8 @@ static void start_thread( struct startup_info *info )
+ 
+     MODULE_DllThreadAttach( NULL );
+ 
+-    if (TRACE_ON(relay))
+-        DPRINTF( "%04x:Starting thread proc %p (arg=%p)\n", GetCurrentThreadId(), func, arg );
++//     if (TRACE_ON(relay))
++    //        DPRINTF( "%04x:Starting thread proc %p (arg=%p)\n", GetCurrentThreadId(), func, arg );
+ 
+     call_thread_entry_point( (LPTHREAD_START_ROUTINE)func, arg );
+ }
+@@ -420,6 +442,7 @@ NTSTATUS WINAPI RtlCreateUserThread( HANDLE process, const SECURITY_DESCRIPTOR *
+     int request_pipe[2];
+     NTSTATUS status;
+ 
++//     DPRINTF( "%04x:RtlCreateUserThread\n", GetCurrentThreadId());
+     if (process != NtCurrentProcess())
+     {
+         apc_call_t call;
+@@ -457,6 +480,7 @@ NTSTATUS WINAPI RtlCreateUserThread( HANDLE process, const SECURITY_DESCRIPTOR *
+         if (!(status = wine_server_call( req )))
+         {
+             handle = wine_server_ptr_handle( reply->handle );
++            //            DPRINTF( "%04x: RtlCreateUserThread handle: %d\n", GetCurrentThreadId(), handle );
+             tid = reply->tid;
+         }
+         close( request_pipe[0] );
+@@ -497,8 +521,13 @@ NTSTATUS WINAPI RtlCreateUserThread( HANDLE process, const SECURITY_DESCRIPTOR *
+                            (char *)teb->Tib.StackBase - (char *)teb->DeallocationStack );
+     pthread_attr_setscope( &attr, PTHREAD_SCOPE_SYSTEM ); /* force creating a kernel thread */
+     interlocked_xchg_add( &nb_threads, 1 );
+-    if (pthread_create( &pthread_id, &attr, (void * (*)(void *))start_thread, info ))
+-    {
++//     DPRINTF( "%04x:Creating new pthread\n", GetCurrentThreadId());
++//     ANNOTATE_HAPPENS_BEFORE(tid);
++//     ANNOTATE_IGNORE_READS_AND_WRITES_BEGIN();
++//     DPRINTF( "%04x:pthread_create\n", GetCurrentThreadId());
++    int result = pthread_create( &pthread_id, &attr, (void * (*)(void *))start_thread, info );
++//     ANNOTATE_IGNORE_READS_AND_WRITES_END();
++    if (result) {
+         interlocked_xchg_add( &nb_threads, -1 );
+         pthread_attr_destroy( &attr );
+         status = STATUS_NO_MEMORY;
+diff --git a/dlls/ntdll/threadpool.c b/dlls/ntdll/threadpool.c
+index 44afb01..dd32cdb 100644
+--- a/dlls/ntdll/threadpool.c
++++ b/dlls/ntdll/threadpool.c
+@@ -35,6 +35,8 @@
+ 
+ #include "ntdll_misc.h"
+ 
++#include "dynamic_annotations.h"
++
+ WINE_DEFAULT_DEBUG_CHANNEL(threadpool);
+ 
+ #define WORKER_TIMEOUT 30000 /* 30 seconds */
+@@ -98,6 +100,7 @@ static void WINAPI worker_thread_proc(void * param)
+             {
+                 struct work_item *work_item_ptr = LIST_ENTRY(item, struct work_item, entry);
+                 struct work_item work_item;
++                ANNOTATE_HAPPENS_AFTER(work_item_ptr);
+                 list_remove(&work_item_ptr->entry);
+                 interlocked_dec(&num_work_items);
+ 
+@@ -195,6 +198,8 @@ NTSTATUS WINAPI RtlQueueWorkItem(PRTL_WORK_ITEM_ROUTINE Function, PVOID Context,
+     if (Flags & ~WT_EXECUTELONGFUNCTION)
+         FIXME("Flags 0x%x not supported\n", Flags);
+ 
++    ANNOTATE_HAPPENS_BEFORE(work_item);
++
+     status = add_work_item_to_queue(work_item);
+ 
+     /* FIXME: tune this algorithm to not be as aggressive with creating threads
+@@ -374,7 +379,9 @@ static DWORD CALLBACK wait_thread_proc(LPVOID Arg)
+                 TimerOrWaitFired = TRUE;
+             }
+             wait_work_item->CallbackInProgress = TRUE;
++            ANNOTATE_HAPPENS_AFTER(wait_work_item);
+             wait_work_item->Callback( wait_work_item->Context, TimerOrWaitFired );
++            ANNOTATE_HAPPENS_BEFORE(wait_work_item);
+             wait_work_item->CallbackInProgress = FALSE;
+ 
+             if (wait_work_item->Flags & WT_EXECUTEONLYONCE)
+@@ -447,6 +454,8 @@ NTSTATUS WINAPI RtlRegisterWait(PHANDLE NewWaitObject, HANDLE Object,
+         return status;
+     }
+ 
++    ANNOTATE_HAPPENS_BEFORE(wait_work_item);
++
+     status = RtlQueueWorkItem( wait_thread_proc, wait_work_item, Flags & ~WT_EXECUTEONLYONCE );
+     if (status != STATUS_SUCCESS)
+     {
+@@ -504,6 +513,8 @@ NTSTATUS WINAPI RtlDeregisterWaitEx(HANDLE WaitHandle, HANDLE CompletionEvent)
+             status = STATUS_PENDING;
+     }
+ 
++    ANNOTATE_HAPPENS_AFTER(wait_work_item);
++
+     if (interlocked_inc( &wait_work_item->DeleteCount ) == 2 )
+     {
+         status = STATUS_SUCCESS;

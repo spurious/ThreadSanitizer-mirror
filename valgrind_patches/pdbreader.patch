@@ -1,0 +1,69 @@
+Index: configure.in
+===================================================================
+--- configure.in	(revision 11094)
++++ configure.in	(working copy)
+@@ -104,6 +104,15 @@
+ 	;;
+ esac
+ 
++AC_PROG_EGREP
++AC_DEFINE_UNQUOTED(EGREP_PATH, "$EGREP", [path to egrep])
++
++AC_PATH_PROG(STRINGS, strings)
++AC_DEFINE_UNQUOTED(STRINGS_PATH, "$STRINGS", [path to strings])
++
++AC_PATH_PROG(SH, sh)
++AC_DEFINE_UNQUOTED(SH_PATH, "$SH", [path to sh])
++
+ #----------------------------------------------------------------------------
+ # Arch/OS/platform tests.
+ #----------------------------------------------------------------------------
+Index: coregrind/m_debuginfo/readpdb.c
+===================================================================
+--- coregrind/m_debuginfo/readpdb.c	(revision 11094)
++++ coregrind/m_debuginfo/readpdb.c	(working copy)
+@@ -2238,7 +2238,8 @@
+         );
+ 
+    /* JRS: this seems like something of a hack. */
+-   di->soname = ML_(dinfo_strdup)("di.readpdb.rpdi.1", pdbname);
++//    di->soname = ML_(dinfo_strdup)("di.readpdb.rpdi.1", pdbname);
++   di->soname = "NONE";
+ 
+    /* someone (ie WINE) is loading a Windows PE format object.  we
+       need to use its details to determine which area of memory is
+@@ -2459,9 +2460,9 @@
+    /* Make up the command to run, essentially:
+       sh -c "strings (pename) | egrep '\.pdb|\.PDB' > (tmpname)"
+    */
+-   HChar* sh      = "/bin/sh";
+-   HChar* strings = "/usr/bin/strings";
+-   HChar* egrep   = "/usr/bin/egrep";
++   HChar* sh      = SH_PATH;
++   HChar* strings = STRINGS_PATH;
++   HChar* egrep   = EGREP_PATH;
+ 
+    /* (sh) -c "(strings) (pename) | (egrep) 'pdb' > (tmpname) */
+    Int cmdlen = VG_(strlen)(strings) + VG_(strlen)(pename)
+Index: coregrind/m_debuginfo/debuginfo.c
+===================================================================
+--- coregrind/m_debuginfo/debuginfo.c	(revision 11094)
++++ coregrind/m_debuginfo/debuginfo.c	(working copy)
+@@ -972,7 +972,7 @@
+          Int mashedSzB = VG_(strlen)(pdbname) + VG_(strlen)(wpfx) + 50/*misc*/;
+          HChar* mashed = ML_(dinfo_zalloc)("di.debuginfo.dnpdi.1", mashedSzB);
+          VG_(sprintf)(mashed, "%s/drive_%c%s",
+-                      wpfx, pdbname[0], &pdbname[2]);
++                      wpfx, VG_(tolower)(pdbname[0]), &pdbname[2]);
+          vg_assert(mashed[mashedSzB-1] == 0);
+          ML_(dinfo_free)(pdbname);
+          pdbname = mashed;
+@@ -984,7 +984,7 @@
+          Int mashedSzB = VG_(strlen)(pdbname) + VG_(strlen)(home) + 50/*misc*/;
+          HChar* mashed = ML_(dinfo_zalloc)("di.debuginfo.dnpdi.2", mashedSzB);
+          VG_(sprintf)(mashed, "%s/.wine/drive_%c%s",
+-                      home, pdbname[0], &pdbname[2]);
++                      home, VG_(tolower)(pdbname[0]), &pdbname[2]);
+          vg_assert(mashed[mashedSzB-1] == 0);
+          ML_(dinfo_free)(pdbname);
+          pdbname = mashed;
