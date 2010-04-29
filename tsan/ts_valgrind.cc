@@ -34,6 +34,7 @@
 #include "ts_valgrind_client_requests.h"
 #include "thread_sanitizer.h"
 #include "ts_trace_info.h"
+#include "ts_literace.h"
 
 
 //---------------------- C++ malloc support -------------- {{{1

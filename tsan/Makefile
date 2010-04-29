@@ -231,7 +231,8 @@ $(OUTDIR):
 	mkdir -p $(OUTDIR)
 
 TS_HEADERS=thread_sanitizer.h ts_util.h suppressions.h ts_replace.h ts_heap_info.h \
-	   ts_simple_cache.h ts_stats.h ts_lock.h ts_events.h ts_trace_info.h
+	   ts_simple_cache.h ts_stats.h ts_lock.h ts_events.h ts_trace_info.h \
+	   ts_literace.h
 ifeq ($(DEBUG), 0)
 # in optimized build, we include thread_sanitizer.cc into other files.
 $(VGP)ts_valgrind.o: thread_sanitizer.cc
