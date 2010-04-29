@@ -10,7 +10,7 @@ TSAN_OUT="$TMPDIR/tsan.out"
 
 set -x
 mkdir $TMPDIR
-java \
+java -ea \
   -Xbootclasspath/p:$JTSAN_ROOT/agent.jar \
   -javaagent:$JTSAN_ROOT/agent.jar=logfile=${JTSAN_EVENTS} \
   ThreadSanitizerTest >"$JAVALOG" 2>&1
