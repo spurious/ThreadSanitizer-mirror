@@ -42,74 +42,27 @@
 //
 //
 
-// This test must not include any other file specific to threading library,
-// everything should be inside THREAD_WRAPPERS.
-#ifndef THREAD_WRAPPERS
-# define THREAD_WRAPPERS "thread_wrappers_pthread.h"
-#endif
-#include THREAD_WRAPPERS
-
-#include <vector>
+#include <fcntl.h>
+#include <queue>
+#include <signal.h>
+#include <stdlib.h>
 #include <string>
-#include <map>
-#include <ext/hash_map>
-#include <algorithm>
-#include <cstring>      // strlen(), index(), rindex()
+#include <vector>
 
-//
-// Each test resides in its own namespace.
-// Namespaces are named test01, test02, ...
-// Please, *DO NOT* change the logic of existing tests nor rename them.
-// Create a new test instead.
-//
-// Some tests use sleep()/usleep().
-// This is not a synchronization, but a simple way to trigger
-// some specific behaviour of the scheduler.
+#include "old_test_suite.h"
+#include "test_utils.h"
 
-// Globals and utilities used by several tests. {{{1
+#include <gtest/gtest.h>
 
-typedef void (*void_func_void_t)(void);
-
-struct Test{
-  void_func_void_t f_;
-  int flags_;
-  Test(void_func_void_t f, int flags)
-    : f_(f)
-    , flags_(flags)
-  {}
-  Test() : f_(0), flags_(0) {}
-};
-std::map<int, Test> TheMapOfTests;
-
-
-struct TestAdder {
-  TestAdder(void_func_void_t f, int id, int flags = 0) {
-    CHECK(TheMapOfTests.count(id) == 0);
-    TheMapOfTests[id] = Test(f, flags);
-  }
-};
-
-#define REGISTER_TEST(f, id)         TestAdder add_test_##id (f, id);
-
-// Put everything into stderr.
-#define printf(args...) fprintf(stderr, args)
-
-#ifndef MAIN_INIT_ACTION
-#define MAIN_INIT_ACTION
-#endif
-
-
-static bool ArgIsOne(int *arg) { return *arg == 1; };
-
-
-ProducerConsumerQueue *Q[4] = {
+/*ProducerConsumerQueue *Q[4] = {
   new ProducerConsumerQueue(INT_MAX),
   new ProducerConsumerQueue(INT_MAX),
   new ProducerConsumerQueue(INT_MAX),
   new ProducerConsumerQueue(INT_MAX)
 };
-Mutex mu[4];
+Mutex mu[4];*/
 
+/*
 void PutAndWait(int *work_item, int idx) {
   // Put work_item1.
   Q[idx]->Put(work_item);
@@ -142,69 +95,7 @@ bool TryGetAndServe(int idx) {
   } else {
     return false;
   }
-}
-
-
-
-int main(int argc, char** argv) { // {{{1
-  MAIN_INIT_ACTION;
-  srand(time(0));
-  if (argc > 1) {
-    // the tests are listed in command line flags
-    for (int i = 1; i < argc; i++) {
-      int f_num = atoi(argv[i]);
-      CHECK(TheMapOfTests.count(f_num));
-      TheMapOfTests[f_num].f_();
-    }
-  } else {
-    // all tests
-    for (std::map<int,Test>::iterator it = TheMapOfTests.begin();
-        it != TheMapOfTests.end();
-        ++it) {
-      it->second.f_();
-    }
-  }
-}
-
-
-
-
-// An array of threads. Create/start/join all elements at once. {{{1
-class MyThreadArray {
- public:
-  typedef void (*F) (void);
-  MyThreadArray(F f1, F f2 = NULL, F f3 = NULL, F f4 = NULL) {
-    ar_[0] = new MyThread(f1);
-    ar_[1] = f2 ? new MyThread(f2) : NULL;
-    ar_[2] = f3 ? new MyThread(f3) : NULL;
-    ar_[3] = f4 ? new MyThread(f4) : NULL;
-  }
-  void Start() {
-    for(int i = 0; i < 4; i++) {
-      if(ar_[i]) {
-        ar_[i]->Start();
-        usleep(10);
-      }
-    }
-  }
-
-  void Join() {
-    for(int i = 0; i < 4; i++) {
-      if(ar_[i]) {
-        ar_[i]->Join();
-      }
-    }
-  }
-
-  ~MyThreadArray() {
-    for(int i = 0; i < 4; i++) {
-      delete ar_[i];
-    }
-  }
- private:
-  MyThread *ar_[4];
-};
-
+}*/
 
 // Set of threads that execute the same function.
 class MyThreadSet {
@@ -322,7 +213,7 @@ void Run() {
 }
 REGISTER_TEST(Run, 02)
 }  // namespace test02
-
+/*
 // test03: Queue deadlock test, 2 workers. {{{1
 // This test will deadlock for sure.
 namespace  test03 {
@@ -481,3 +372,5 @@ void Run() {
 }
 REGISTER_TEST(Run, 07)
 }  // namespace test07
+
+*/

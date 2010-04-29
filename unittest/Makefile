@@ -35,6 +35,9 @@ endif
 
 all: $(BIN)racecheck_unittest-$(BUILD)$(EXE) $(BIN)demo_tests-$(BUILD)$(EXE) \
      $(BIN)bigtest-$(BUILD)$(EXE) $(BIN)output_test1-$(BUILD)$(EXE)
+ifeq ($(OS), linux)
+all: $(BIN)deadlock_unittest-$(BUILD)$(EXE)
+endif
 
 w:
 	$(MAKE) all OS=windows ARCH=x86
@@ -70,6 +73,10 @@ endif
 ifeq ($(OS), darwin)
 $(BIN)racecheck_unittest-$(BUILD)$(EXE): $(BIN)mac_tests-$(BUILD).$(OBJ)
 endif
+
+$(BIN)deadlock_unittest-$(BUILD)$(EXE): $(BIN)deadlock_unittest-$(BUILD).$(OBJ) $(BIN)old_test_suite-$(BUILD).$(OBJ) \
+		$(TEST_UTILS_O) $(GTEST_LIB)  ${DYNAMIC_ANNOTATIONS_O} | bin
+	${LD} ${LDFLAGS} $^ $(LIBS) $(LINKO)$@
 
 $(BIN)demo_tests-$(BUILD)$(EXE): $(BIN)demo_tests-$(BUILD).$(OBJ) \
 		$(TEST_UTILS_O) $(GTEST_LIB) ${DYNAMIC_ANNOTATIONS_O} | bin
