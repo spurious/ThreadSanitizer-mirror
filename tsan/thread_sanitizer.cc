@@ -32,7 +32,6 @@
 
 #include "thread_sanitizer.h"
 #include "suppressions.h"
-#include "ts_literace.h"
 #include <stdarg.h>
 // -------- Constants --------------- {{{1
 // Segment ID (SID)      is in range [1, kMaxSID-1]

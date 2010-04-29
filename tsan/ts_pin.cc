@@ -40,6 +40,7 @@
 #include "thread_sanitizer.h"
 #include "ts_lock.h"
 #include "ts_trace_info.h"
+#include "ts_literace.h"
 
 
 #if defined(__GNUC__)
