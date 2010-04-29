@@ -2,7 +2,7 @@
   This file is part of ThreadSanitizer, a dynamic data race detector
   based on Valgrind.
 
-  Copyright (C) 2008-2009 Google Inc
+  Copyright (C) 2008-2010 Google Inc
      opensource@google.com
   Copyright (C) 2007-2008 OpenWorks LLP
       info@open-works.co.uk
@@ -33,6 +33,7 @@
 #include "valgrind.h"
 #include "ts_valgrind_client_requests.h"
 #include "thread_sanitizer.h"
+#include "ts_trace_info.h"
 
 
 //---------------------- C++ malloc support -------------- {{{1
@@ -181,8 +182,10 @@ static inline uintptr_t GetVgLr(ThreadId vg_tid) {
 }
 #endif
 
+static uintptr_t g_current_pc;
+
 uintptr_t GetPcOfCurrentThread() {
-  return GetVgPc(GetVgTid());
+  return g_current_pc;
 }
 
 void GetThreadStack(int tid, uintptr_t *min_addr, uintptr_t *max_addr) {
@@ -194,8 +197,6 @@ void GetThreadStack(int tid, uintptr_t *min_addr, uintptr_t *max_addr) {
   *max_addr = stack_max;
 }
 
-
-
 struct CallStackRecord {
   Addr pc;
   Addr sp;
@@ -205,14 +206,20 @@ struct CallStackRecord {
 #endif
 };
 
+const size_t kMaxMopsPerTrace = 2048;
+
 struct ValgrindThread {
   int32_t zero_based_uniq_tid;
   vector<CallStackRecord> call_stack;
 
   int ignore_accesses;
-  bool ignore_accesses_in_current_trace;
   int ignore_sync;
   int in_signal_handler;
+
+  // thread-local event buffer (tleb).
+  uintptr_t tleb[kMaxMopsPerTrace];
+  TraceInfo *trace_info;
+  bool       create_segments;
 
   ValgrindThread() {
     Clear();
@@ -221,10 +228,10 @@ struct ValgrindThread {
   void Clear() {
     zero_based_uniq_tid = -1;
     ignore_accesses = 0;
-    ignore_accesses_in_current_trace = false;
     ignore_sync = 0;
     in_signal_handler = 0;
     call_stack.clear();
+    trace_info = NULL;
   }
 };
 
@@ -245,7 +252,6 @@ static int32_t VgTidToTsTid(ThreadId vg_tid) {
   DCHECK(g_valgrind_threads[vg_tid].zero_based_uniq_tid >= 0);
   return g_valgrind_threads[vg_tid].zero_based_uniq_tid;
 }
-
 
 static vector<string> *g_command_line_options = 0;
 static void InitCommandLineOptions() {
@@ -271,13 +277,8 @@ void ts_print_usage (void) {
 }
 
 void ts_print_debug_usage(void) {
-  Printf("TODO\n");
+  ThreadSanitizerPrintUsage();
 }
-
-
-void evh__die_mem ( Addr a, SizeT len ) {
-}
-
 
 extern int VG_(clo_error_exitcode);
 
@@ -322,6 +323,108 @@ void ts_post_clo_init(void) {
   g_ptid_to_ts_tid = new map<uintptr_t, int>;
 }
 
+// Remember, valgrind is essentially single-threaded.
+// Each time we switch to another thread, we set the global g_cur_tleb
+// to the tleb of the current thread. This allows to load the tleb in one
+// instruction.
+static uintptr_t *g_cur_tleb;
+static void OnStartClientCode(ThreadId vg_tid, ULong nDisp) {
+  ValgrindThread *thr = &g_valgrind_threads[vg_tid];
+  g_cur_tleb = thr->tleb;
+}
+
+// Inline the most expensive call to benefit from constant propagation.
+INLINE void Mop(int ts_tid, uintptr_t a, size_t size, bool is_w) {
+  ThreadSanitizerHandleMemoryAccess(ts_tid, a, size, is_w);
+}
+NOINLINE void MopR1(int ts_tid, uintptr_t a) { Mop(ts_tid, a, 1, false); }
+NOINLINE void MopW1(int ts_tid, uintptr_t a) { Mop(ts_tid, a, 1, true);  }
+NOINLINE void MopR2(int ts_tid, uintptr_t a) { Mop(ts_tid, a, 2, false); }
+NOINLINE void MopW2(int ts_tid, uintptr_t a) { Mop(ts_tid, a, 2, true);  }
+NOINLINE void MopR4(int ts_tid, uintptr_t a) { Mop(ts_tid, a, 4, false); }
+NOINLINE void MopW4(int ts_tid, uintptr_t a) { Mop(ts_tid, a, 4, true);  }
+NOINLINE void MopR8(int ts_tid, uintptr_t a) { Mop(ts_tid, a, 8, false); }
+NOINLINE void MopW8(int ts_tid, uintptr_t a) { Mop(ts_tid, a, 8, true);  }
+NOINLINE void MopR16(int ts_tid, uintptr_t a) { Mop(ts_tid, a, 16, false); }
+NOINLINE void MopW16(int ts_tid, uintptr_t a) { Mop(ts_tid, a, 16, true);  }
+
+typedef void (*MopCallback)(int ts_tid, uintptr_t a);
+static MopCallback mop_callbacks[34] = {
+  // cb,   size*2+is_w
+  NULL,   
+  NULL,
+  MopR1,   // 1*2+0
+  MopW1,   // 1*2+1
+  MopR2,   // 2*2+0
+  MopW2,   // 2*2+1
+  NULL, NULL,
+  MopR4,   // 4*2+0
+  MopW4,   // 4*2+1
+  NULL, NULL, NULL, NULL, NULL, NULL,
+  MopR8,   // 8*2+0
+  MopW8,   // 8*2+1
+  NULL, NULL, NULL, NULL, NULL, NULL,
+  NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+  MopR16,   // 16*2+0
+  MopW16,   // 16*2+1
+};
+
+INLINE void FlushMops(ThreadId vg_tid) {
+  ValgrindThread *thr = &g_valgrind_threads[vg_tid];
+  TraceInfo *t = thr->trace_info;
+  if (!t) return;
+  thr->trace_info = NULL;
+
+  if (global_ignore || thr->ignore_accesses ||
+      LiteRaceSkipTrace(vg_tid, t->id(), G_flags->literace_sampling)) {
+    thr->trace_info = NULL;
+    return;
+  }
+
+  int ts_tid = VgTidToTsTid(vg_tid);
+  if (thr->create_segments)
+    ThreadSanitizerEnterSblock(ts_tid, t->pc());
+  size_t n = t->n_mops();
+  DCHECK(n > 0);
+  uintptr_t *tleb = thr->tleb;
+  size_t i = 0;
+  do {  // while (++i < n)
+    uintptr_t a = tleb[i];
+    if (a == 0) continue;  // This mop was not executed.
+    MopInfo *mop = t->GetMop(i);
+    g_current_pc = mop->pc;
+    MopCallback cb = mop_callbacks[mop->size * 2 + mop->is_write];
+    DCHECK(cb);
+    cb(ts_tid, a);
+    // Slightly slower alternative is:
+    // ThreadSanitizerHandleMemoryAccess(ts_tid, a, mop->size, mop->is_write);
+  } while (++i < n);
+}
+
+static INLINE void OnTrace(TraceInfo *trace_info, bool create_segments) {
+  ThreadId vg_tid = GetVgTid();
+
+  // First, flush the old trace_info.
+  ValgrindThread *thr = &g_valgrind_threads[vg_tid];
+  if (thr->trace_info) FlushMops(vg_tid);
+
+  // Start the new trace, zero the contents of tleb.
+  size_t n = trace_info->n_mops();
+  for (size_t i = 0; i < n; i++)
+    thr->tleb[i] = 0;
+  thr->trace_info = trace_info;
+  thr->create_segments = create_segments;
+  CHECK(thr->trace_info);
+  CHECK(thr->trace_info->n_mops() <= kMaxMopsPerTrace);
+}
+
+VG_REGPARM(1) static void OnTraceCreateSegments(TraceInfo *trace_info) {
+  OnTrace(trace_info, true);
+}
+VG_REGPARM(1) static void OnTraceNoSegments(TraceInfo *trace_info) {
+  OnTrace(trace_info, false);
+}
+
 static inline void Put(EventType type, int32_t tid, uintptr_t pc,
                        uintptr_t a, uintptr_t info) {
   if (DEBUG_MODE && G_flags->dry_run >= 1) return;
@@ -343,13 +446,15 @@ static void rtn_call(Addr sp_post_call_insn, Addr pc_post_call_insn,
   // properly. Or this may be a very deep recursion.
   DCHECK(g_valgrind_threads[vg_tid].call_stack.size() < 10000);
   uintptr_t call_pc = GetVgPc(vg_tid);
-
+  ValgrindThread *thr = &g_valgrind_threads[vg_tid];
+  if (thr->trace_info) FlushMops(vg_tid);
   ThreadSanitizerHandleRtnCall(VgTidToTsTid(vg_tid), call_pc, record.pc,
                                ignore_below);
 
+  int ts_tid = VgTidToTsTid(vg_tid);
 
-  if (G_flags->verbosity >= 2) {
-    Printf("T%d: >>: %s\n", VgTidToTsTid(vg_tid),
+  if (debug_rtn) {
+    Printf("T%d: >>: %p, %s\n", ts_tid, (void*)record.pc,
            PcToRtnNameAndFilePos(record.pc).c_str());
   }
 }
@@ -376,7 +481,9 @@ VG_REGPARM(2)
 void evh__delete_frame ( Addr sp_post_call_insn,
                          Addr pc_post_call_insn) {
   ThreadId vg_tid = GetVgTid();
-  vector<CallStackRecord> &call_stack = g_valgrind_threads[vg_tid].call_stack;
+  ValgrindThread *thr = &g_valgrind_threads[vg_tid];
+  if (thr->trace_info) FlushMops(vg_tid);
+  vector<CallStackRecord> &call_stack = thr->call_stack;
   int32_t ts_tid = VgTidToTsTid(vg_tid);
   while (!call_stack.empty()) {
     CallStackRecord &record = call_stack.back();
@@ -387,60 +494,28 @@ void evh__delete_frame ( Addr sp_post_call_insn,
 }
 #endif
 
-// TODO(kcc): remove this crap completely as soon as we are sure
-// it is indeed crap.
-#if 0
-static INLINE void evh__new_mem_stack_helper ( Addr a, SizeT len ) {
-  CHECK(0);
-  ThreadId vg_tid = GetVgTid();
-  if (!g_valgrind_threads[vg_tid].ignore_accesses) {
-    // avoid stack updates when ignore is on.
-    // TODO: is that right?
-    int32_t ts_tid = VgTidToTsTid(vg_tid);
-    ThreadSanitizerHandleStackMemChange(ts_tid, a, len, true);
-  }
-}
-
-static void evh__new_mem_stack ( Addr a, SizeT len ) {
-  evh__new_mem_stack_helper(a, len);
-}
-VG_REGPARM(1)
-static void evh__new_mem_stack_8 ( Addr a) {
-  evh__new_mem_stack_helper(a, 8);
-}
-VG_REGPARM(1)
-static void evh__new_mem_stack_16 ( Addr a) {
-  evh__new_mem_stack_helper(a, 16);
-}
-VG_REGPARM(1)
-static void evh__new_mem_stack_32 ( Addr a) {
-  evh__new_mem_stack_helper(a, 32);
-}
-#endif
-
-
 static INLINE void evh__die_mem_stack_helper ( Addr a, SizeT len ) {
   ThreadId vg_tid = GetVgTid();
   int32_t ts_tid = VgTidToTsTid(vg_tid);
-  vector<CallStackRecord> &call_stack = g_valgrind_threads[vg_tid].call_stack;
+  ValgrindThread *thr = &g_valgrind_threads[vg_tid];
+  if (thr->trace_info) FlushMops(vg_tid);
+  vector<CallStackRecord> &call_stack = thr->call_stack;
   while (!call_stack.empty()) {
     CallStackRecord &record = call_stack.back();
     Addr cur_top = record.sp;
     if (a < cur_top) break;
     call_stack.pop_back();
     ThreadSanitizerHandleRtnExit(ts_tid);
-    // Put(RTN_EXIT, ts_tid, 0, 0, 0);
-    if (G_flags->verbosity >= 2) {
-      Printf("T%d: <<\n", ts_tid);
+    if (debug_rtn) {
+      Printf("T%d: << %p %s\n", ts_tid, record.pc, PcToRtnNameAndFilePos(record.pc).c_str());
     }
     break;
   }
   if (G_flags->verbosity >= 2) {
     // Printf("T%d: -sp: %p => %p (%ld)\n", ts_tid, a, a + len, len);
   }
-  if (!g_valgrind_threads[vg_tid].ignore_accesses) {
+  if (!thr->ignore_accesses) {
     ThreadSanitizerHandleStackMemChange(ts_tid, a, len, false);
-    // Put(STACK_MEM_DIE, ts_tid, 0, a, len);
   }
 }
 static void evh__die_mem_stack ( Addr a, SizeT len ) {
@@ -490,12 +565,14 @@ void evh__pre_thread_ll_create ( ThreadId parent, ThreadId child ) {
 void evh__pre_workq_task_start(ThreadId vg_tid, Addr workitem) {
   uintptr_t pc = GetVgPc(vg_tid);
   int32_t ts_tid = VgTidToTsTid(vg_tid);
+  FlushMops(vg_tid);
   Put(WAIT_BEFORE, ts_tid, pc, workitem, 0);
   Put(WAIT_AFTER, ts_tid, pc, 0, 0);
 }
 
-void evh__pre_thread_first_insn(const ThreadId tid) {
-  Put(THR_FIRST_INSN, VgTidToTsTid(tid), GetVgPc(tid), 0, 0);
+void evh__pre_thread_first_insn(const ThreadId vg_tid) {
+  FlushMops(vg_tid);
+  Put(THR_FIRST_INSN, VgTidToTsTid(vg_tid), GetVgPc(vg_tid), 0, 0);
 }
 
 
@@ -504,39 +581,10 @@ void evh__pre_thread_ll_exit ( ThreadId quit_tid ) {
 //  Printf("T%d quiting thread; stack size=%ld\n",
 //         VgTidToTsTid(quit_tid),
 //         (int)g_valgrind_threads[quit_tid].call_stack.size());
+  FlushMops(quit_tid);
   Put(THR_END, VgTidToTsTid(quit_tid), 0, 0, 0);
   g_valgrind_threads[quit_tid].zero_based_uniq_tid = -1;
 }
-
-
-// Memory operation...
-static INLINE void Mop(Addr a, bool is_w, SizeT size) {
-  ThreadId vg_tid = GetVgTid();
-  ValgrindThread *thr = &g_valgrind_threads[vg_tid];
-  if (thr->ignore_accesses) {
-    //static int counter;
-    //counter++;
-    //if ((counter % 1024) == 0)
-    //  Printf("ignore: %s\n", PcToRtnNameAndFilePos(pc).c_str());
-    return;
-  }
-  ThreadSanitizerHandleMemoryAccess(VgTidToTsTid(vg_tid), a, size, is_w);
-}
-
-
-VG_REGPARM(1) void evh__mem_help_write_1(Addr a) { Mop(a, true, 1); }
-VG_REGPARM(1) void evh__mem_help_write_2(Addr a) { Mop(a, true, 2); }
-VG_REGPARM(1) void evh__mem_help_write_4(Addr a) { Mop(a, true, 4); }
-VG_REGPARM(1) void evh__mem_help_write_8(Addr a) { Mop(a, true, 8); }
-VG_REGPARM(1) void evh__mem_help_read_1(Addr a) { Mop(a, false, 1); }
-VG_REGPARM(1) void evh__mem_help_read_2(Addr a) { Mop(a, false, 2); }
-VG_REGPARM(1) void evh__mem_help_read_4(Addr a) { Mop(a, false, 4); }
-VG_REGPARM(1) void evh__mem_help_read_8(Addr a) { Mop(a, false, 8); }
-VG_REGPARM(2)
-  void evh__mem_help_write_N(Addr a, SizeT size) { Mop(a, true, size); }
-VG_REGPARM(2)
-  void evh__mem_help_read_N(Addr a, SizeT size) { Mop(a, false, size); }
-
 
   extern "C" void VG_(show_all_errors)();
 
@@ -551,6 +599,8 @@ static inline Bool ignoring_sync(ThreadId vg_tid) {
 Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
   if (!VG_IS_TOOL_USERREQ('T', 'S', args[0]))
     return False;
+  ValgrindThread *thr = &g_valgrind_threads[vg_tid];
+  if (thr->trace_info) FlushMops(vg_tid);
   *ret = 0;
   uintptr_t pc = GetVgPc(vg_tid);
   int32_t ts_tid = VgTidToTsTid(vg_tid);
@@ -765,28 +815,6 @@ static void SignalOut(ThreadId vg_tid, Int sigNo) {
 //  Printf("T%d %s\n", ts_tid, __FUNCTION__);
 }
 
-// ---------------- On Trace entry ------------------ {{{2
-VG_REGPARM(1) static void evh__on_trace_entry(uint32_t trace_no) {
-  ThreadId vg_tid = GetVgTid();
-  uintptr_t pc = GetVgPc(vg_tid);
-  ValgrindThread *thr = &g_valgrind_threads[vg_tid];
-
-  if (thr->ignore_accesses_in_current_trace) {
-    CHECK(thr->ignore_accesses > 0);
-    thr->ignore_accesses--;
-    thr->ignore_accesses_in_current_trace = false;
-  }
-
-  if (thr->ignore_accesses) return;
-
-  if (global_ignore ||
-      LiteRaceSkipTrace(vg_tid, trace_no, G_flags->literace_sampling)) {
-    thr->ignore_accesses_in_current_trace = true;
-    thr->ignore_accesses++;
-  }
-
-  ThreadSanitizerEnterSblock(VgTidToTsTid(vg_tid), pc);
-}
 
 // ---------------------------- Instrumentation ---------------------------{{{1
 static IRTemp gen_Get_SP ( IRSB*           bbOut,
@@ -807,14 +835,17 @@ static IRTemp gen_Get_SP ( IRSB*           bbOut,
 }
 
 
-static void ts_instrument_trace_entry(IRSB *bbOut) {
-   HChar*   hName    = (HChar*)"evh__on_trace_entry";
-   static uint32_t trace_no;
-   trace_no++;
-   IRExpr **args = mkIRExprVec_1(mkIRExpr_HWord(trace_no));
+static void ts_instrument_trace_entry(IRSB *bbOut, TraceInfo *trace_info, 
+                                      bool create_segments) {
+   CHECK(trace_info);
+   HChar*   hName    = (HChar*)(create_segments ?
+       "OnTraceCreateSegments" : "OnTraceNoSegments");
+   void *callback = (void*)(create_segments ?
+       OnTraceCreateSegments : OnTraceNoSegments);
+   IRExpr **args = mkIRExprVec_1(mkIRExpr_HWord((HWord)trace_info));
    IRDirty* di = unsafeIRDirty_0_N( 1,
                            hName,
-                           VG_(fnptr_to_fnentry)((void*)evh__on_trace_entry),
+                           VG_(fnptr_to_fnentry)(callback),
                            args);
    addStmtToIRSB( bbOut, IRStmt_Dirty(di));
 }
@@ -883,111 +914,66 @@ static void ts_instrument_final_jump (
   }
 }
 
-
-static void instrument_mem_access ( IRSB*   bbOut,
+static void instrument_mem_access ( TraceInfo *trace_info,
+                                    IRTemp tleb_temp,
+                                    uintptr_t pc,
+                                    size_t trace_idx,
+                                    IRSB*   bbOut,
                                     IRExpr* addr,
                                     Int     szB,
                                     Bool    isStore,
-                                    Int     hWordTy_szB )
-{
-   IRType   tyAddr   = Ity_INVALID;
-   const HChar*   hName    = NULL;
-   void*    hAddr    = NULL;
-   Int      regparms = 0;
-   IRExpr** argv     = NULL;
-   IRDirty* di       = NULL;
+                                    Int     hWordTy_szB ) {
+  if (!trace_info) return;
+  IRType   tyAddr   = Ity_INVALID;
 
-   tl_assert(isIRAtom(addr));
-   tl_assert(hWordTy_szB == 4 || hWordTy_szB == 8);
+  tl_assert(isIRAtom(addr));
+  tl_assert(hWordTy_szB == 4 || hWordTy_szB == 8);
 
-   tyAddr = typeOfIRExpr( bbOut->tyenv, addr );
-   tl_assert(tyAddr == Ity_I32 || tyAddr == Ity_I64);
+  tyAddr = typeOfIRExpr( bbOut->tyenv, addr );
+  tl_assert(tyAddr == Ity_I32 || tyAddr == Ity_I64);
 
-   /* So the effective address is in 'addr' now. */
-   regparms = 1; // unless stated otherwise
-   if (isStore) {
-      switch (szB) {
-         case 1:
-            hName = "evh__mem_help_write_1";
-            hAddr = (void*)&evh__mem_help_write_1;
-            argv = mkIRExprVec_1( addr );
-            break;
-         case 2:
-            hName = "evh__mem_help_write_2";
-            hAddr = (void*)&evh__mem_help_write_2;
-            argv = mkIRExprVec_1( addr );
-            break;
-         case 4:
-            hName = "evh__mem_help_write_4";
-            hAddr = (void*)&evh__mem_help_write_4;
-            argv = mkIRExprVec_1( addr );
-            break;
-         case 8:
-            hName = "evh__mem_help_write_8";
-            hAddr = (void*)&evh__mem_help_write_8;
-            argv = mkIRExprVec_1( addr );
-            break;
-         default:
-            tl_assert(szB > 8 && szB <= 512); /* stay sane */
-            regparms = 2;
-            hName = "evh__mem_help_write_N";
-            hAddr = (void*)&evh__mem_help_write_N;
-            argv = mkIRExprVec_2( addr, mkIRExpr_HWord( szB ));
-            break;
-      }
-   } else {
-      switch (szB) {
-         case 1:
-            hName = "evh__mem_help_read_1";
-            hAddr = (void*)&evh__mem_help_read_1;
-            argv = mkIRExprVec_1( addr );
-            break;
-         case 2:
-            hName = "evh__mem_help_read_2";
-            hAddr = (void*)&evh__mem_help_read_2;
-            argv = mkIRExprVec_1( addr );
-            break;
-         case 4:
-            hName = "evh__mem_help_read_4";
-            hAddr = (void*)&evh__mem_help_read_4;
-            argv = mkIRExprVec_1( addr );
-            break;
-         case 8:
-            hName = "evh__mem_help_read_8";
-            hAddr = (void*)&evh__mem_help_read_8;
-            argv = mkIRExprVec_1( addr );
-            break;
-         default:
-            tl_assert(szB > 8 && szB <= 512); /* stay sane */
-            regparms = 2;
-            hName = "evh__mem_help_read_N";
-            hAddr = (void*)&evh__mem_help_read_N;
-            argv = mkIRExprVec_2( addr, mkIRExpr_HWord( szB ));
-            break;
-      }
-   }
+  if (trace_idx == kMaxMopsPerTrace) {
+    Report("INFO: too many mops in trace: %p %s\n", pc,
+           PcToRtnName(pc, true).c_str());
+  }
+  if (trace_idx >= kMaxMopsPerTrace) {
+    return;
+  }
 
-   /* Add the helper. */
-   tl_assert(hName);
-   tl_assert(hAddr);
-   tl_assert(argv);
-   di = unsafeIRDirty_0_N( regparms,
-                           (HChar*)hName, VG_(fnptr_to_fnentry)( hAddr ),
-                           argv );
-   addStmtToIRSB( bbOut, IRStmt_Dirty(di) );
+  MopInfo *mop = trace_info->GetMop(trace_idx);
+  mop->pc = pc;
+  mop->size = szB;
+  CHECK(szB == 1 || szB == 2 || szB == 4 || szB == 8 || szB == 16);
+  mop->is_write = isStore;
+
+  CHECK(tleb_temp != IRTemp_INVALID);
+  // Generate OnMop expression: g_cur_tleb[idx] = addr
+  IRExpr *idx_expr  = mkIRExpr_HWord(trace_idx * sizeof(uintptr_t));
+  IRExpr *tleb_plus_idx_expr = IRExpr_Binop(
+      sizeof(uintptr_t) == 8 ? Iop_Add64 : Iop_Add32,
+      IRExpr_RdTmp(tleb_temp), idx_expr);
+  IRTemp t2 = newIRTemp(bbOut->tyenv, tyAddr);
+  IRStmt *t2_stmt = IRStmt_WrTmp(t2, tleb_plus_idx_expr);
+  IRStmt *store_stmt = IRStmt_Store(Iend_LE, IRExpr_RdTmp(t2), addr);
+
+  addStmtToIRSB(bbOut, t2_stmt);
+  addStmtToIRSB(bbOut, store_stmt);
 }
 
-int instrument_statement ( IRStmt* st, IRSB* bbIn, IRSB* bbOut, IRType hWordTy,
-                           bool do_instrument ) {
-  int res = 0;
+void instrument_statement (IRStmt* st, IRSB* bbIn, IRSB* bbOut, IRType hWordTy,
+                           TraceInfo *trace_info, IRTemp tleb_temp,
+                           size_t *idx, uintptr_t *cur_pc) {
   switch (st->tag) {
     case Ist_NoOp:
     case Ist_AbiHint:
     case Ist_Put:
     case Ist_PutI:
-    case Ist_IMark:
     case Ist_Exit:
       /* None of these can contain any memory references. */
+      break;
+
+    case Ist_IMark:
+      *cur_pc = st->Ist.IMark.addr;
       break;
 
     case Ist_MBE:
@@ -1005,27 +991,27 @@ int instrument_statement ( IRStmt* st, IRSB* bbIn, IRSB* bbOut, IRType hWordTy,
       break;
 
     case Ist_Store:
-      if (do_instrument) instrument_mem_access(
+      instrument_mem_access(trace_info, tleb_temp, *cur_pc, (*idx),
         bbOut,
         st->Ist.Store.addr,
         sizeofIRType(typeOfIRExpr(bbIn->tyenv, st->Ist.Store.data)),
         True/*isStore*/,
         sizeofIRType(hWordTy)
       );
-      res++;
+      (*idx)++;
       break;
 
     case Ist_WrTmp: {
       IRExpr* data = st->Ist.WrTmp.data;
       if (data->tag == Iex_Load) {
-        if (do_instrument) instrument_mem_access(
+        instrument_mem_access(trace_info, tleb_temp, *cur_pc, (*idx), 
             bbOut,
             data->Iex.Load.addr,
             sizeofIRType(data->Iex.Load.ty),
             False/*!isStore*/,
             sizeofIRType(hWordTy)
             );
-        res++;
+        (*idx)++;
       }
       break;
     }
@@ -1036,14 +1022,14 @@ int instrument_statement ( IRStmt* st, IRSB* bbIn, IRSB* bbOut, IRType hWordTy,
       if (st->Ist.LLSC.storedata == NULL) {
         /* LL */
         dataTy = typeOfIRTemp(bbIn->tyenv, st->Ist.LLSC.result);
-        if (do_instrument) instrument_mem_access(
+        instrument_mem_access(trace_info, tleb_temp, *cur_pc, (*idx), 
           bbOut,
           st->Ist.LLSC.addr,
           sizeofIRType(dataTy),
           False/*isStore*/,
           sizeofIRType(hWordTy)
         );
-        res++;
+        (*idx)++;
       } else {
         /* SC */
         /* ignore */
@@ -1061,18 +1047,18 @@ int instrument_statement ( IRStmt* st, IRSB* bbIn, IRSB* bbOut, IRType hWordTy,
         tl_assert(d->mSize != 0);
         dataSize = d->mSize;
         if (d->mFx == Ifx_Read || d->mFx == Ifx_Modify) {
-          if (do_instrument) instrument_mem_access(
+          instrument_mem_access(trace_info, tleb_temp, *cur_pc, (*idx), 
             bbOut, d->mAddr, dataSize, False/*!isStore*/,
             sizeofIRType(hWordTy)
           );
-          res++;
+          (*idx)++;
         }
         if (d->mFx == Ifx_Write || d->mFx == Ifx_Modify) {
-          if (do_instrument) instrument_mem_access(
+          instrument_mem_access(trace_info, tleb_temp, *cur_pc, (*idx),
             bbOut, d->mAddr, dataSize, True/*isStore*/,
             sizeofIRType(hWordTy)
           );
-          res++;
+          (*idx)++;
         }
       } else {
         tl_assert(d->mAddr == NULL);
@@ -1085,9 +1071,7 @@ int instrument_statement ( IRStmt* st, IRSB* bbIn, IRSB* bbOut, IRType hWordTy,
       ppIRStmt(st);
       tl_assert(0);
   } /* switch (st->tag) */
-  return res;
 }
-
 
 static IRSB* ts_instrument ( VgCallbackClosure* closure,
                              IRSB* bbIn,
@@ -1097,19 +1081,19 @@ static IRSB* ts_instrument ( VgCallbackClosure* closure,
   if (G_flags->dry_run >= 2) return bbIn;
   Int   i;
   IRSB* bbOut;
+  uintptr_t pc = closure->nraddr;
 
   char objname[kBuffSize];
-  if (VG_(get_objname)(closure->nraddr, (Char*)objname, kBuffSize)) {
+  if (VG_(get_objname)(pc, (Char*)objname, kBuffSize)) {
     if (StringMatch("*/ld-2*", objname)) {
       // we want to completely ignore ld-so.
       return bbIn;
     }
   }
 
-  bool instrument_memory =
-      ThreadSanitizerWantToInstrumentSblock(closure->nraddr);
+  bool instrument_memory = ThreadSanitizerWantToInstrumentSblock(pc);
   bool create_segments =
-      ThreadSanitizerWantToCreateSegmentsOnSblockEntry(closure->nraddr);
+      ThreadSanitizerWantToCreateSegmentsOnSblockEntry(pc);
 
   if (gWordTy != hWordTy) {
     /* We don't currently support this case. */
@@ -1129,34 +1113,53 @@ static IRSB* ts_instrument ( VgCallbackClosure* closure,
     i++;
   }
   int first = i;
-  int n_mops = 0;
+  size_t n_mops = 0;
+  uintptr_t cur_pc = pc;
+
+  IRTemp tleb_temp = IRTemp_INVALID;
+
   // count mops
   if (instrument_memory) {
     for (i = first; i < bbIn->stmts_used; i++) {
       IRStmt* st = bbIn->stmts[i];
       tl_assert(st);
       tl_assert(isFlatIRStmt(st));
-      n_mops += instrument_statement(st, bbIn, bbOut, hWordTy, false);
+      instrument_statement(st, bbIn, bbOut, hWordTy,
+                           NULL, tleb_temp, &n_mops, &cur_pc);
     } /* iterate over bbIn->stmts */
   }
-  int n_mops_done = 0;
+  TraceInfo *trace_info = NULL;
+  if (n_mops > 0) {
+    trace_info = TraceInfo::NewTraceInfo(n_mops, pc);
+  }
+  size_t n_mops_done = 0;
+  bool need_to_insert_on_trace = n_mops > 0;
   // instrument mops and copy the rest of BB to the new one.
   for (i = first; i < bbIn->stmts_used; i++) {
     IRStmt* st = bbIn->stmts[i];
     tl_assert(st);
     tl_assert(isFlatIRStmt(st));
-    if (i == first && n_mops && G_flags->keep_history >= 1 && create_segments) {
-      ts_instrument_trace_entry(bbOut);
+    if (st->tag != Ist_IMark && need_to_insert_on_trace) {
+      ts_instrument_trace_entry(bbOut, trace_info,
+                                create_segments && G_flags->keep_history >= 1);
+      need_to_insert_on_trace = false;
+      // Generate temp for *g_cur_tleb.
+      IRType   tyAddr = sizeof(uintptr_t) == 8 ?  Ity_I64 : Ity_I32;
+      IRExpr *tleb_ptr_expr = mkIRExpr_HWord((HWord)&g_cur_tleb);
+      IRExpr *tleb_expr = IRExpr_Load(Iend_LE, tyAddr, tleb_ptr_expr);
+      tleb_temp = newIRTemp(bbOut->tyenv, tyAddr);
+      IRStmt *stmt = IRStmt_WrTmp(tleb_temp, tleb_expr);
+      addStmtToIRSB(bbOut, stmt);
     }
     if (instrument_memory) {
-      n_mops_done += instrument_statement(st, bbIn, bbOut, hWordTy, true);
+      instrument_statement(st, bbIn, bbOut, hWordTy,
+                           trace_info, tleb_temp, &n_mops_done, &cur_pc);
     }
     addStmtToIRSB( bbOut, st );
   } /* iterate over bbIn->stmts */
   CHECK(n_mops == n_mops_done);
-
   ts_instrument_final_jump(bbOut, bbIn->next, bbIn->jumpkind, layout, gWordTy, hWordTy);
-
+  // ppIRSB(bbOut);
   return bbOut;
 }
 
@@ -1166,13 +1169,12 @@ void ts_pre_clo_init(void) {
   VG_(details_version)         ((Char*)NULL);
   VG_(details_description)     ((Char*)"a data race detector");
   VG_(details_copyright_author)(
-      (Char*)"Copyright (C) 2008-2009, and GNU GPL'd, by Google Inc.");
+      (Char*)"Copyright (C) 2008-2010, and GNU GPL'd, by Google Inc.");
   VG_(details_bug_reports_to)  ((Char*)"data-race-test@googlegroups.com");
 
   VG_(basic_tool_funcs)        (ts_post_clo_init,
                                 ts_instrument,
                                 ts_fini);
-
 
   VG_(needs_client_requests)     (ts_handle_client_request);
 
@@ -1180,70 +1182,24 @@ void ts_pre_clo_init(void) {
                                   ts_print_usage,
                                   ts_print_debug_usage);
 
-//   VG_(needs_var_info)(); // optional
-
-/*
-   VG_(needs_core_errors)         ();
-
-
-   // FIXME?
-   //VG_(needs_sanity_checks)       (hg_cheap_sanity_check,
-   //                                hg_expensive_sanity_check);
-   // FIXME: surely this isn't thread-aware
-   VG_(track_copy_mem_remap)      ( shadow_mem_copy_range );
-
-   VG_(track_change_mem_mprotect) ( evh__set_perms );
-
-   */
-
-//   VG_(track_new_mem_startup)     ( evh__new_mem_w_perms );
-//   VG_(track_new_mem_stack_signal)( evh__new_mem_w_tid );
-//   VG_(track_new_mem_brk)         ( evh__new_mem_w_tid );
-//   VG_(track_new_mem_mmap)        ( evh__new_mem_w_perms );
-
-//   VG_(track_new_mem_stack)       ( evh__new_mem_stack);
-//   VG_(track_new_mem_stack_8)       ( evh__new_mem_stack_8);
-//   VG_(track_new_mem_stack_16)       ( evh__new_mem_stack_16);
-//   VG_(track_new_mem_stack_32)       ( evh__new_mem_stack_32);
-
-
    VG_(track_die_mem_stack)       ( evh__die_mem_stack );
    VG_(track_die_mem_stack_8)     ( evh__die_mem_stack_8 );
    VG_(track_die_mem_stack_16)     ( evh__die_mem_stack_16 );
    VG_(track_die_mem_stack_32)     ( evh__die_mem_stack_32 );
 
-   VG_(track_die_mem_stack_signal)( evh__die_mem );
-   VG_(track_die_mem_brk)         ( evh__die_mem );
-   VG_(track_die_mem_munmap)      ( evh__die_mem );
-
-   /*
-   // FIXME: what is this for?
-   VG_(track_ban_mem_stack)       (NULL);
-
-   VG_(track_pre_mem_read)        ( evh__pre_mem_read );
-   VG_(track_pre_mem_read_asciiz) ( evh__pre_mem_read_asciiz );
-   VG_(track_pre_mem_write)       ( evh__pre_mem_write );
-   VG_(track_post_mem_write)      (NULL);
-
-   /////////////////
-
-   */
    VG_(track_pre_thread_ll_create)( evh__pre_thread_ll_create );
    VG_(track_workq_task_start)( evh__pre_workq_task_start );
    VG_(track_pre_thread_first_insn)( evh__pre_thread_first_insn );
    VG_(track_pre_thread_ll_exit)  ( evh__pre_thread_ll_exit );
-
-//
-//   VG_(track_start_client_code)( evh__start_client_code );
-//   VG_(track_stop_client_code)( evh__stop_client_code );
 
    VG_(clo_vex_control).iropt_unroll_thresh = 0;
    VG_(clo_vex_control).guest_chase_thresh = 0;
 
    VG_(track_pre_deliver_signal) (&SignalIn);
    VG_(track_post_deliver_signal)(&SignalOut);
-}
 
+   VG_(track_start_client_code)( OnStartClientCode );
+}
 
 VG_DETERMINE_INTERFACE_VERSION(ts_pre_clo_init)
 
