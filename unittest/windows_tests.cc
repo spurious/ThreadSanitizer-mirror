@@ -359,7 +359,9 @@ DWORD CALLBACK PrintDirectoryListingJob(void *param) {
   return 0;
 }
 
-TEST(NegativeTests, CreateFileVsFindFirstFileTest) {
+// This test is not very friendly to bots environment, so you should only
+// run it manually.
+TEST(NegativeTests, DISABLED_CreateFileVsFindFirstFileTest) {
   hDone = ::CreateEvent(NULL, false, false, NULL);
 
   ::CreateDirectory("ZZZ", NULL);
