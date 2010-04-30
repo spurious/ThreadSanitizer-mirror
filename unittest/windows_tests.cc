@@ -362,7 +362,7 @@ DWORD CALLBACK PrintDirectoryListingJob(void *param) {
 TEST(NegativeTests, CreateFileVsFindFirstFileTest) {
   hDone = ::CreateEvent(NULL, false, false, NULL);
 
-  CHECK(::CreateDirectory("ZZZ", NULL));
+  ::CreateDirectory("ZZZ", NULL);
 
   // Run PrintDirectoryListingJob in a concurrent thread.
   CHECK(::QueueUserWorkItem(PrintDirectoryListingJob, NULL,
