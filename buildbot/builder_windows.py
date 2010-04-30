@@ -3,6 +3,7 @@ from buildbot.steps.source import SVN
 from buildbot.steps.shell import Compile
 from buildbot.steps.shell import Test
 from buildbot.steps.shell import ShellCommand
+from buildbot.steps.transfer import FileUpload
 from common import *
 
 

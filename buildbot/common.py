@@ -32,7 +32,7 @@ def getTestDesc(os, bits, opt, static):
   return '(' + ','.join(desc) + ')'
 
 
-def addBuildTestStep(factory, os, bits, opt, static):
+def addBuildTestStep(factory, os, bits, opt, static, more_args=None):
   """Adds a step for building a unit test binary."""
   command = ['make', '-C', 'unittest', 'all']
   command.append('OS=%s' % os)
@@ -46,7 +46,11 @@ def addBuildTestStep(factory, os, bits, opt, static):
 
   command.append('STATIC=%d' % static)
 
+  if more_args:
+    command.extend(more_args)
+
   desc_common = getTestDesc(os, bits, opt, static)
+  
   print command
   factory.addStep(Compile(command = command,
                           description = 'building unittests ' + desc_common,
