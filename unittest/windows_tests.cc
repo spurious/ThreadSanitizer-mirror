@@ -339,11 +339,11 @@ namespace FileSystemReports {  // {{{1
 HANDLE hDone = NULL;
 
 void CreateFileJob() {
-  HANDLE hFile = CreateFileA("bin\\tmpfile", GENERIC_READ | GENERIC_WRITE,
+  HANDLE hFile = CreateFileA("ZZZ\\tmpfile", GENERIC_READ | GENERIC_WRITE,
                       FILE_SHARE_READ, NULL, CREATE_ALWAYS,
                       FILE_ATTRIBUTE_NORMAL, NULL);
   CloseHandle(hFile);
-  DWORD attr1 = GetFileAttributes("bin");  // "Concurrent write" is here.
+  DWORD attr1 = GetFileAttributes("ZZZ");  // "Concurrent write" is here.
 }
 
 DWORD CALLBACK PrintDirectoryListingJob(void *param) {
@@ -351,7 +351,7 @@ DWORD CALLBACK PrintDirectoryListingJob(void *param) {
   WIN32_FIND_DATAA data;
 
   // "Current write" is here.
-  HANDLE hFind = FindFirstFileA("bin/*", &data);
+  HANDLE hFind = FindFirstFileA("ZZZ/*", &data);
   CHECK(hFind != INVALID_HANDLE_VALUE);
 
   CloseHandle(hFind);
@@ -362,8 +362,7 @@ DWORD CALLBACK PrintDirectoryListingJob(void *param) {
 TEST(NegativeTests, CreateFileVsFindFirstFileTest) {
   hDone = ::CreateEvent(NULL, false, false, NULL);
 
-  // It seems like this test DOESN'T work if the CreateDirectory succeeds :-)
-  CHECK(!::CreateDirectory("bin", NULL));
+  CHECK(::CreateDirectory("ZZZ", NULL));
 
   // Run PrintDirectoryListingJob in a concurrent thread.
   CHECK(::QueueUserWorkItem(PrintDirectoryListingJob, NULL,
@@ -372,7 +371,8 @@ TEST(NegativeTests, CreateFileVsFindFirstFileTest) {
 
   ::WaitForSingleObject(hDone, INFINITE);
   ::CloseHandle(hDone);
-  CHECK(::DeleteFile("bin\\tmpfile"));
+  CHECK(::DeleteFile("ZZZ\\tmpfile"));
+  CHECK(::RemoveDirectory("ZZZ"));
 }
 
 }  //namespace
