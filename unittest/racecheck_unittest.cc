@@ -6794,7 +6794,7 @@ REGISTER_TEST2(Run, 503, MEMORY_USAGE | PRINT_STATS
 
 // test504: force massive cache fetch-wback (50% misses, mostly CacheLineZ) {{{1
 namespace test504 {
-
+#ifndef WINE // Valgrind+wine hate large static objects
 const int N_THREADS = 2,
           HG_CACHELINE_COUNT = 1 << 16,
           HG_CACHELINE_SIZE  = 1 << 6,
@@ -6835,12 +6835,14 @@ void Run() {
 }
 
 REGISTER_TEST2(Run, 504, PERFORMANCE | PRINT_STATS | EXCLUDE_FROM_ALL)
+#endif // WINE
 }  // namespace test504
 
 // test505: force massive cache fetch-wback (60% misses) {{{1
 // modification of test504 - more threads, byte accesses and lots of mutexes
 // so it produces lots of CacheLineF misses (30-50% of CacheLineZ misses)
 namespace test505 {
+#ifndef WINE // Valgrind+wine hate large static objects
 
 const int N_THREADS = 2,
           HG_CACHELINE_COUNT = 1 << 16,
@@ -6886,6 +6888,7 @@ void Run() {
 }
 
 REGISTER_TEST2(Run, 505, PERFORMANCE | PRINT_STATS | EXCLUDE_FROM_ALL)
+#endif // WINE
 }  // namespace test505
 
 // test506: massive HB's using Barriers {{{1

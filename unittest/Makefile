@@ -3,8 +3,8 @@ include ../common.mk
 
 DEFINES=-DOS_$(OS) -DARCH_$(ARCH)
 
-CFLAGS=$(OPTFLAGS) $(ARCHFLAGS) $(EXTRA_CFLAGS) $(DEFINES)
-CXXFLAGS=$(OPTFLAGS) $(ARCHFLAGS) $(EXTRA_CXXFLAGS) $(DEFINES)
+CFLAGS+=$(OPTFLAGS) $(ARCHFLAGS) $(OS_CFLAGS) $(DEFINES) $(EXTRA_CFLAGS)
+CXXFLAGS+=$(OPTFLAGS) $(ARCHFLAGS) $(OS_CXXFLAGS) $(DEFINES) $(EXTRA_CXXFLAGS)
 ifeq ($(OS), darwin)
 LDFLAGS=$(LDOPT) $(ARCHFLAGS) $(STATICFLAGS) -framework Foundation
 else
@@ -19,16 +19,16 @@ BUILD=${OS}-${ARCH}-${OX}${S}
 BIN=bin/
 
 ifeq ($(OS), linux)
-  EXTRA_CXXFLAGS=-Wall -Werror -Wno-sign-compare -Wshadow -Wno-unused-function
-  EXTRA_CFLAGS=-Wall -Werror -Wno-sign-compare -Wshadow -Wno-unused-function -std=c89
+  OS_CXXFLAGS=-Wall -Werror -Wno-sign-compare -Wshadow -Wno-unused-function
+  OS_CFLAGS=-Wall -Werror -Wno-sign-compare -Wshadow -Wno-unused-function -std=c89
   LIBS=-lpthread
 else ifeq ($(OS), darwin)
-  EXTRA_CXXFLAGS=-Wall -Werror -Wno-sign-compare -Wshadow -Wno-unused-function
-  EXTRA_CFLAGS=-Wall -Werror -Wno-sign-compare -Wshadow -Wno-unused-function -std=c89
+  OS_CXXFLAGS=-Wall -Werror -Wno-sign-compare -Wshadow -Wno-unused-function
+  OS_CFLAGS=-Wall -Werror -Wno-sign-compare -Wshadow -Wno-unused-function -std=c89
   LIBS=-lpthread
 else ifeq ($(OS), windows)
-  EXTRA_CXXFLAGS=/EHs- /EHa- /wd4530   /D_CRT_SECURE_NO_DEPRECATE /D_SECURE_SCL=0 /nologo /Gy /D "WIN32"
-  EXTRA_CFLAGS=/EHs- /EHa- /wd4530   /D_CRT_SECURE_NO_DEPRECATE /D_SECURE_SCL=0 /nologo /Gy /D "WIN32"
+  OS_CXXFLAGS=/EHs- /EHa- /wd4530   /D_CRT_SECURE_NO_DEPRECATE /D_SECURE_SCL=0 /nologo /Gy /D "WIN32"
+  OS_CFLAGS=/EHs- /EHa- /wd4530   /D_CRT_SECURE_NO_DEPRECATE /D_SECURE_SCL=0 /nologo /Gy /D "WIN32"
 else
   OS=UNKNOWN_OS
 endif
