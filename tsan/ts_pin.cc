@@ -2413,15 +2413,21 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
 //  INSERT_AFTER_0("recv", After_WaitingIOCall);
 
   // strlen and friends.
-  ReplaceFunc3(img, rtn, "memchr", (AFUNPTR)Replace_memchr);
-  ReplaceFunc3(img, rtn, "strchr", (AFUNPTR)Replace_strchr);
-  ReplaceFunc3(img, rtn, "index", (AFUNPTR)Replace_strchr);
-  ReplaceFunc3(img, rtn, "strrchr", (AFUNPTR)Replace_strrchr);
-  ReplaceFunc3(img, rtn, "rindex", (AFUNPTR)Replace_strrchr);
-  ReplaceFunc3(img, rtn, "strlen", (AFUNPTR)Replace_strlen);
-  ReplaceFunc3(img, rtn, "strcmp", (AFUNPTR)Replace_strcmp);
-  ReplaceFunc3(img, rtn, "memcpy", (AFUNPTR)Replace_memcpy);
-  ReplaceFunc3(img, rtn, "strcpy", (AFUNPTR)Replace_strcpy);
+  // These wrappers will generate memory access events.
+  // So, if we don't want to get those events (e.g. memcpy inside 
+  // ld.so or ntdll.dll) we don't wrap them and the regular
+  // ignore machinery will make sure we don't get the events.
+  if (ThreadSanitizerWantToInstrumentSblock(RTN_Address(rtn))) {
+    ReplaceFunc3(img, rtn, "memchr", (AFUNPTR)Replace_memchr);
+    ReplaceFunc3(img, rtn, "strchr", (AFUNPTR)Replace_strchr);
+    ReplaceFunc3(img, rtn, "index", (AFUNPTR)Replace_strchr);
+    ReplaceFunc3(img, rtn, "strrchr", (AFUNPTR)Replace_strrchr);
+    ReplaceFunc3(img, rtn, "rindex", (AFUNPTR)Replace_strrchr);
+    ReplaceFunc3(img, rtn, "strlen", (AFUNPTR)Replace_strlen);
+    ReplaceFunc3(img, rtn, "strcmp", (AFUNPTR)Replace_strcmp);
+    ReplaceFunc3(img, rtn, "memcpy", (AFUNPTR)Replace_memcpy);
+    ReplaceFunc3(img, rtn, "strcpy", (AFUNPTR)Replace_strcpy);
+  }
 
   // pthread_once
   WrapFunc4(img, rtn, "pthread_once", (AFUNPTR)WRAP_NAME(pthread_once));
