@@ -359,7 +359,7 @@ DWORD CALLBACK PrintDirectoryListingJob(void *param) {
   return 0;
 }
 
-TEST(NegativeTests, DISABLED_CreateFileVsFindFirstFileTest) {
+TEST(NegativeTests, CreateFileVsFindFirstFileTest) {
   hDone = ::CreateEvent(NULL, false, false, NULL);
 
   // It seems like this test DOESN'T work if the CreateDirectory succeeds :-)
