@@ -375,11 +375,13 @@ static MopCallback mop_callbacks[34] = {
   MopW16,   // 16*2+1
 };
 
-INLINE void FlushMops(ThreadId vg_tid) {
+INLINE void FlushMops(ThreadId vg_tid, bool keep_trace_info = false) {
   ValgrindThread *thr = &g_valgrind_threads[vg_tid];
   TraceInfo *t = thr->trace_info;
   if (!t) return;
-  thr->trace_info = NULL;
+  if (!keep_trace_info) {
+    thr->trace_info = NULL;
+  }
 
   if (global_ignore || thr->ignore_accesses ||
       LiteRaceSkipTrace(vg_tid, t->id(), G_flags->literace_sampling)) {
@@ -397,6 +399,7 @@ INLINE void FlushMops(ThreadId vg_tid) {
   do {  // while (++i < n)
     uintptr_t a = tleb[i];
     if (a == 0) continue;  // This mop was not executed.
+    tleb[i] = 0;
     MopInfo *mop = t->GetMop(i);
     g_current_pc = mop->pc;
     MopCallback cb = mop_callbacks[mop->size * 2 + mop->is_write];
@@ -504,7 +507,7 @@ static INLINE void evh__die_mem_stack_helper ( Addr a, SizeT len ) {
   ThreadId vg_tid = GetVgTid();
   int32_t ts_tid = VgTidToTsTid(vg_tid);
   ValgrindThread *thr = &g_valgrind_threads[vg_tid];
-  if (thr->trace_info) FlushMops(vg_tid);
+  if (thr->trace_info) FlushMops(vg_tid, true /* keep_trace_info */);
   vector<CallStackRecord> &call_stack = thr->call_stack;
   while (!call_stack.empty()) {
     CallStackRecord &record = call_stack.back();
