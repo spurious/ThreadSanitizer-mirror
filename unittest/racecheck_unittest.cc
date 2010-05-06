@@ -3162,6 +3162,21 @@ TEST(NegativeTests, StrlenAndFriends) {
 }
 }  // namespace test71
 
+namespace NegativeTests_EmptyRep {
+void Worker() {
+  string s;
+  s.erase();
+}
+
+TEST(NegativeTests, EmptyRepTest) {
+  // This is a test for the reports on an internal race in std::string implementation.
+  // See http://gcc.gnu.org/bugzilla/show_bug.cgi?id=40518
+  // ThreadSanitizer should be silent on this.
+  MyThreadArray mta(Worker, Worker);
+  mta.Start();
+  mta.Join();
+}
+}  //namespace NegativeTests_EmptyRep
 
 // test72: STAB. Stress test for the number of segment sets (SSETs). {{{1
 namespace test72 {
