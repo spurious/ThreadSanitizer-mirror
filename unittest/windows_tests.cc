@@ -379,5 +379,30 @@ TEST(NegativeTests, DISABLED_CreateFileVsFindFirstFileTest) {
 
 }  //namespace
 
+namespace WindowsAtomicsTests { // {{{1
+int GLOB = 42;
+
+inline int Atomic_Read(volatile const int* ptr) {
+  int value = *ptr;
+  return value;
+}
+
+inline void Atomic_Write(volatile int* ptr, int value) {
+  *ptr = value;
+}
+
+void Worker() {
+  int value = Atomic_Read(&GLOB);
+  Atomic_Write(&GLOB, ~value);
+}
+
+TEST(NegativeTests, WindowsAtomicsTests) {
+  MyThreadArray mta(Worker, Worker);
+  mta.Start();
+  mta.Join();
+}
+
+}  // namespace
+
 // End {{{1
  // vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker
