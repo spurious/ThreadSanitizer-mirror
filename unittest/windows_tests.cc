@@ -380,14 +380,19 @@ TEST(NegativeTests, DISABLED_CreateFileVsFindFirstFileTest) {
 }  //namespace
 
 namespace WindowsAtomicsTests { // {{{1
+// This test should not give us any reports if compiled with proper MSVS flags.
+// The Atomic_{Read,Write} functions are ignored in racecheck_unittest.ignore
+
 int GLOB = 42;
 
 inline int Atomic_Read(volatile const int* ptr) {
+  // MSVS volatile gives us atomicity.
   int value = *ptr;
   return value;
 }
 
 inline void Atomic_Write(volatile int* ptr, int value) {
+  // MSVS volatile gives us atomicity.
   *ptr = value;
 }
 
