@@ -647,6 +647,12 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
       // Printf("Free: %p\n", args[1]);
       Put(FREE, ts_tid, pc, /*ptr=*/args[1], 0);
       break;
+    case TSREQ_MMAP:
+      Put(MMAP, ts_tid, pc, /*ptr=*/args[1], /*size=*/args[2]);
+      break;
+    case TSREQ_MUNMAP:
+      Put(MUNMAP, ts_tid, pc, /*ptr=*/args[1], /*size=*/args[2]);
+      break;
     case TSREQ_BENIGN_RACE:
       Put(BENIGN_RACE, ts_tid, /*descr=*/args[3],
           /*p=*/args[1], /*size=*/args[2]);

@@ -58,6 +58,13 @@ class HeapMap {
     map_.erase(a);
   }
 
+  void EraseRange(uintptr_t start, uintptr_t end) {
+    CHECK(IsValidPtr(start));
+    CHECK(IsValidPtr(end));
+    // TODO(glider): the [start, end) range may cover several map_ records.
+    EraseInfo(start);
+  }
+
   HeapInfo *GetInfo(uintptr_t a) {
     CHECK(this);
     CHECK(IsValidPtr(a));

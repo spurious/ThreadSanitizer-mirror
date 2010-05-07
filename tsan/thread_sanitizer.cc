@@ -5208,6 +5208,8 @@ class Detector {
       case THR_END     : HandleThreadEnd(TID(e_->tid()));     break;
       case MALLOC      : HandleMalloc();     break;
       case FREE        : HandleFree();         break;
+      case MMAP        : HandleMalloc();      break;  // same as MALLOC
+      case MUNMAP      : HandleMunmap();     break;
 
 
       case WRITER_LOCK : HandleLock(true);     break;
@@ -5974,6 +5976,22 @@ class Detector {
 
     ClearMemoryStateOnFree(a, a + size);
     G_heap_map->EraseInfo(a);
+  }
+
+  void HandleMunmap() {
+    // TODO(glider): at the moment we handle only munmap()s of single mmap()ed
+    // regions. The correct implementation should handle arbitrary munmap()s
+    // that may carve the existing mappings or split them into two parts.
+    // It should also be possible to munmap() several mappings at a time.
+    uintptr_t a = e_->a();
+    HeapInfo *info = G_heap_map->GetInfo(a);
+    uintptr_t size = e_->info();
+    if (!info || info->ptr != a || info->size != size)
+      return;
+    // TODO(glider): we may want to handle memory deletion and call
+    // Segment::Unref for all the unmapped memory.
+    Segment::Unref(info->sid, __FUNCTION__);
+    G_heap_map->EraseRange(a, a + size);
   }
 
   void HandleThreadStart(TID child_tid, TID parent_tid, uintptr_t pc) {

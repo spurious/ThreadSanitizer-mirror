@@ -1307,7 +1307,7 @@ uintptr_t WRAP_NAME(mmap)(WRAP_PARAM6) {
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_6();
 
   if (ret != (ADDRINT)-1L) {
-    DumpEvent(MALLOC, tid, pc, ret, arg1);
+    DumpEvent(MMAP, tid, pc, ret, arg1);
   }
 
   return ret;
@@ -1317,7 +1317,9 @@ uintptr_t WRAP_NAME(munmap)(WRAP_PARAM6) {
   PinThread &t = g_pin_threads[tid];
   TLEBFlushLocked(t);
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_6();
-  // We don't actually send eny event here, no need.
+  if (ret != -1L) {
+    DumpEvent(MUNMAP, tid, pc, arg0, arg1);
+  }
   return ret;
 }
 

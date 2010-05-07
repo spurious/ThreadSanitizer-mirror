@@ -345,11 +345,26 @@ WRAP_WORKQ_OPS(VG_Z_LIBC_SONAME, __workq_ops);
       CALL_FN_W_6W(ret, fn, ptr, size, a, b, c, d); \
     IGNORE_ALL_ACCESSES_AND_SYNC_END(); \
     if (ret != (void*)-1) { \
-      DO_CREQ_v_WW(TSREQ_MALLOC,  void*, ret, long, size); \
+      DO_CREQ_v_WW(TSREQ_MMAP,  void*, ret, long, size); \
     } \
     return ret; \
   }
 #endif  // VG_WORDSIZE == 4
+
+#define WRAP_MUNMAP(soname, fnname) \
+  int I_WRAP_SONAME_FNNAME_ZU(soname,fnname) (void *ptr, size_t size); \
+  int I_WRAP_SONAME_FNNAME_ZU(soname,fnname) (void *ptr, size_t size){ \
+    void* ret;\
+    OrigFn fn;\
+    VALGRIND_GET_ORIG_FN(fn);\
+    IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN(); \
+      CALL_FN_W_WW(ret, fn, ptr, size); \
+    IGNORE_ALL_ACCESSES_AND_SYNC_END(); \
+    if (ret != -1) { \
+      DO_CREQ_v_WW(TSREQ_MUNMAP, void*, ptr, size_t, size); \
+    } \
+    return ret; \
+  }
 
 #define WRAP_ZONE_MALLOC(soname, fnname) \
   void* I_WRAP_SONAME_FNNAME_ZU(soname,fnname) (void* zone, SizeT n); \
@@ -432,12 +447,11 @@ WRAP_REALLOC(NONE, memalign);
 WRAP_POSIX_MEMALIGN(VG_Z_LIBC_SONAME, posix_memalign);
 WRAP_POSIX_MEMALIGN(NONE, posix_memalign);
 
-// TODO(timurrrr): handle munmap.
-// Looks like munmap may be used to free page-sized subregions of memory
-// returned my mmap. This could be nasty. Need investigation.
-
 WRAP_MMAP(VG_Z_LIBC_SONAME, mmap);
 WRAP_MMAP(NONE, mmap);
+
+WRAP_MUNMAP(VG_Z_LIBC_SONAME, munmap);
+WRAP_MUNMAP(NONE, munmap);
 
 #define WRAP_FREE(soname, fnname) \
   void I_WRAP_SONAME_FNNAME_ZU(soname,fnname) (void *ptr); \
