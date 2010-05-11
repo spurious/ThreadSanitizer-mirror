@@ -112,7 +112,8 @@
   #define ANNOTATE_CONDVAR_SIGNAL(cv) \
     AnnotateCondVarSignal(__FILE__, __LINE__, cv)
 
-  /* Report that we are about to signal_all on the condition variable at "cv". */
+  /* Report that we are about to signal_all on the condition variable at address
+     "cv". */
   #define ANNOTATE_CONDVAR_SIGNAL_ALL(cv) \
     AnnotateCondVarSignalAll(__FILE__, __LINE__, cv)
 
@@ -186,7 +187,8 @@
   #define ANNOTATE_PCQ_PUT(pcq) \
     AnnotatePCQPut(__FILE__, __LINE__, pcq)
 
-  /* Report that we've just got an element from a FIFO queue at address "pcq". */
+  /* Report that we've just got an element from a FIFO queue at address
+     "pcq". */
   #define ANNOTATE_PCQ_GET(pcq) \
     AnnotatePCQGet(__FILE__, __LINE__, pcq)
 
