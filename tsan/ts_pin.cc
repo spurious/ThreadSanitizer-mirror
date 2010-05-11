@@ -1323,7 +1323,7 @@ uintptr_t WRAP_NAME(munmap)(WRAP_PARAM6) {
   PinThread &t = g_pin_threads[tid];
   TLEBFlushLocked(t);
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_6();
-  if (ret != -1L) {
+  if (ret != (uintptr_t)-1L) {
     DumpEvent(MUNMAP, tid, pc, arg0, arg1);
   }
   return ret;
