@@ -6401,6 +6401,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
               reinterpret_cast<intptr_t*>(&G_flags->trace_addr));
 
   FindIntFlag("max_mem_in_mb", 0, args, &G_flags->max_mem_in_mb);
+  FindBoolFlag("offline", false, args, &G_flags->offline);
   FindBoolFlag("attach_mode", false, args, &G_flags->attach_mode);
   if (G_flags->max_mem_in_mb == 0) {
     G_flags->max_mem_in_mb = GetMemoryLimitInMb();

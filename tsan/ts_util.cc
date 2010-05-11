@@ -335,6 +335,39 @@ bool StringMatch(const string& wildcard, const string& text) {
 
   return !*c_wildcard;
 }
+//--------- Sockets ------------------ {{{1
+#if defined(TS_PIN) && defined(__GNUC__)
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netdb.h>
+FILE *OpenSocketForWriting(const string &host_and_port) {
+  size_t col = host_and_port.find(":");
+  if (col == string::npos) return NULL;
+  string host = host_and_port.substr(0, col);
+  string port_str = host_and_port.substr(col + 1);
+  int sockfd;
+  struct sockaddr_in serv_addr;
+  struct hostent *server;
+  sockfd = socket(AF_INET, SOCK_STREAM, 0);
+  if (sockfd < 0) return NULL;
+  server = gethostbyname(host.c_str());
+  if (server == 0) return NULL;
+  memset(&serv_addr, 0, sizeof(serv_addr));
+  serv_addr.sin_family = AF_INET;
+  memcpy((char *)&serv_addr.sin_addr.s_addr,
+         (char *)server->h_addr,
+         server->h_length);
+  serv_addr.sin_port = htons(atoi(port_str.c_str()));
+  if (connect(sockfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0)
+    return NULL;
+  return fdopen(sockfd, "w");
+}
+#else
+FILE *OpenSocketForWriting(const string &host_and_port) {
+  return NULL;  // unimplemented.
+}
+#endif
 //--------- TSLock ------------------ {{{1
 // #define TS_LOCK_PIPE
 #define TS_LOCK_PIN

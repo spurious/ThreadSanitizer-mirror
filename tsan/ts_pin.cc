@@ -307,6 +307,12 @@ static void TLEBFlushUnlocked(ThreadLocalEventBuffer &tleb) {
     G_stats->tleb_flush[idx]++;
   }
 
+  if (G_flags->offline) {
+    fwrite(tleb.events, sizeof(uintptr_t), tleb.size, G_out);
+    tleb.size = 0;
+    return;
+  }
+
   size_t i;
   for (i = 0; i < tleb.size; ) {
     uintptr_t event = tleb.events[i++];
@@ -2657,7 +2663,10 @@ int main(INT32 argc, CHAR **argv) {
     return 0;
   }
 
-  if (!G_flags->log_file.empty()) {
+  FILE *socket_output = OpenSocketForWriting(G_flags->log_file);
+  if (socket_output) {
+    G_out = socket_output;
+  } else if (!G_flags->log_file.empty()) {
     // Replace %p with tool PID
     string fname = G_flags->log_file;
     char pid_str[100] = "";

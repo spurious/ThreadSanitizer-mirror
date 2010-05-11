@@ -55,6 +55,7 @@ struct FLAGS {
   vector<string>   cut_stack_below;
   string           summary_file;
   string           log_file;
+  bool             offline;
   intptr_t         max_n_threads;
   bool             compress_cache_lines;
   bool             unlock_on_mutex_destroy;

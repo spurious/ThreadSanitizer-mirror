@@ -258,6 +258,9 @@ size_t GetVmSizeInMb();
 // Sets the contents of the file 'file_name' to 'str'.
 void OpenFileWriteStringAndClose(const string &file_name, const string &str);
 
+// If host_and_port looks like myhost:12345, open a socket for writing
+// and returns a FILE object. Retuns NULL on failure.
+FILE *OpenSocketForWriting(const string &host_and_port);
 
 // Match a wild card which may contain '*' and '?'.
 bool StringMatch(const string &pattern, const string &str);
