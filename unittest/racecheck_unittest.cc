@@ -3168,10 +3168,11 @@ void Worker() {
   s.erase();
 }
 
-TEST(NegativeTests, EmptyRepTest) {
+TEST(NegativeTests, DISABLED_EmptyRepTest) {
   // This is a test for the reports on an internal race in std::string implementation.
   // See http://gcc.gnu.org/bugzilla/show_bug.cgi?id=40518
-  // ThreadSanitizer should be silent on this.
+  // ThreadSanitizer should be silent on this, but currently it is silent
+  // only on Valgrind/Linux.
   MyThreadArray mta(Worker, Worker);
   mta.Start();
   mta.Join();
