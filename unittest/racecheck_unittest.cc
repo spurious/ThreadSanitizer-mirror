@@ -3855,7 +3855,9 @@ struct B: A {
 
 void Waiter() {
   A *a = new B;
-  ANNOTATE_EXPECT_RACE(a, "BenignRaceInDtor: expected race on a->vptr");
+  // TODO(kcc): once all variants of ThreadSanitizer learn to ignore this race,
+  // remove this annotation.
+  ANNOTATE_BENIGN_RACE(a, "BenignRaceInDtor: benign race on a->vptr");
   printf("Waiter: B created\n");
   Q.Put(a);
   usleep(100000); // so that Worker calls a->f() first.
