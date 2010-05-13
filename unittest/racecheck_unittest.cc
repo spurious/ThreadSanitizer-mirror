@@ -3855,7 +3855,7 @@ struct B: A {
 
 void Waiter() {
   A *a = new B;
-  ANNOTATE_EXPECT_RACE(a, "aexpected race on a->vptr");
+  ANNOTATE_EXPECT_RACE(a, "BenignRaceInDtor: expected race on a->vptr");
   printf("Waiter: B created\n");
   Q.Put(a);
   usleep(100000); // so that Worker calls a->f() first.
@@ -3931,12 +3931,14 @@ TEST(PositiveTests, HarmfulRaceInDtor) {
   printf("test314: race on vptr; May print A::F() or B::F().\n");
   { // Will print B::F()
     a = new B;
+    ANNOTATE_EXPECT_RACE(a, "HarmfulRaceInDtor: expected race on a->vptr");
     MyThreadArray t(Thread1, Thread2);
     t.Start();
     t.Join();
   }
   { // Will print A::F()
     a = new B;
+    ANNOTATE_EXPECT_RACE(a, "HarmfulRaceInDtor: expected race on a->vptr");
     MyThreadArray t(Thread2, Thread1);
     t.Start();
     t.Join();
