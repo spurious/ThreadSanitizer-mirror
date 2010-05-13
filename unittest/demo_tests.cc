@@ -506,25 +506,26 @@ TEST(DemoTests, test313) {
 
 // test314: minimalistic test for race in vptr. {{{1
 namespace test314 {
-#ifndef WIN32
 // Race on vptr. Will run A::F() or B::F() depending on the timing.
 class A {
  public:
-  A() {
-    sem_init(&sem_, 0, 0);
-  }
+  A() : done_(false) { }
   virtual void F() {
     printf ("A::F()\n");
   }
   void Done() {
-    sem_post(&sem_);
+    MutexLock lock(&mu_);
+    done_ = true;
   }
   virtual ~A() {
-    sem_wait(&sem_);
-    sem_destroy(&sem_);
+    while (true) {
+      MutexLock lock(&mu_);
+      if (done_) break;
+    }
   }
  private:
-  sem_t sem_;
+  Mutex mu_;
+  bool  done_;
 };
 
 class B : public A {
@@ -559,7 +560,6 @@ TEST(DemoTests, test314) {
     t.Join();
   }
 }
-#endif  // WIN32
 }  // namespace test314
 
 // test315: demo for hybrid's false positive. {{{1

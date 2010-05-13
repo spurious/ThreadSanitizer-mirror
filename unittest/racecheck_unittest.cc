@@ -3800,7 +3800,7 @@ TEST(NegativeTests, RunningOnValgrindTest) {
 }
 
 namespace PositiveTests_BenignRaceInDtor {  // {{{
-// test86: Test for race inside DTOR: racey write to vptr. Benign.
+// Test for race inside DTOR: racey write to vptr. Benign.
 // This test shows a racey access to vptr (the pointer to vtbl).
 // We have class A and class B derived from A.
 // Both classes have a virtual function f() and a virtual DTOR.
@@ -3811,7 +3811,7 @@ namespace PositiveTests_BenignRaceInDtor {  // {{{
 // (flag_stopped == true) but at the very beginning of B::~B
 // a->vptr is written to.
 // So, we have a race on a->vptr.
-// On this particular test this race is benign, but test87 shows
+// On this particular test this race is benign, but HarmfulRaceInDtor shows
 // how such race could harm.
 //
 //
@@ -3855,7 +3855,7 @@ struct B: A {
 
 void Waiter() {
   A *a = new B;
-  ANNOTATE_EXPECT_RACE(a, "test86: expected race on a->vptr");
+  ANNOTATE_EXPECT_RACE(a, "aexpected race on a->vptr");
   printf("Waiter: B created\n");
   Q.Put(a);
   usleep(100000); // so that Worker calls a->f() first.
@@ -3886,71 +3886,64 @@ TEST(PositiveTests, BenignRaceInDtor) {
 }  // namespace
 
 
-// test87: Test for race inside DTOR: racey write to vptr. Harmful.{{{1
-namespace test87 {
-// A variation of test86 where the race is harmful.
-// Here we have class C derived from B.
-// We create an object 'A *a = new C' in Thread1 and pass it to Thread2.
-// Thread2 calls a->f().
-// Thread1 calls 'delete a'.
-// It first calls C::~C, then B::~B where it rewrites the vptr to point
-// to B::vtbl. This is a problem because Thread2 might not have called a->f()
-// and now it will call B::f instead of C::f.
-//
-bool flag_stopped = false;
-Mutex mu;
-
-ProducerConsumerQueue Q(INT_MAX);  // Used to pass A* between threads.
-
-struct A {
-  A()  { printf("A::A()\n"); }
-  virtual ~A() { printf("A::~A()\n"); }
-  virtual void f() = 0; // pure virtual.
-};
-
-struct B: A {
-  B()  { printf("B::B()\n"); }
-  virtual ~B() {
-    // The race is here.    <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
-    printf("B::~B()\n");
-    // wait until flag_stopped is true.
-    mu.LockWhen(Condition(&ArgIsTrue, &flag_stopped));
-    mu.Unlock();
-    printf("B::~B() done\n");
+namespace PositiveTests_HarmfulRaceInDtor {  // {{{
+// A variation of BenignRaceInDtor where the race is harmful.
+// Race on vptr. Will run A::F() or B::F() depending on the timing.
+class A {
+ public:
+  A() : done_(false) { }
+  virtual void F() {
+    printf ("A::F()\n");
   }
-  virtual void f() = 0; // pure virtual.
+  void Done() {
+    MutexLock lock(&mu_);
+    done_ = true;
+  }
+  virtual ~A() {
+    while (true) {
+      MutexLock lock(&mu_);
+      if (done_) break;
+    }
+  }
+ private:
+  Mutex mu_;
+  bool  done_;
 };
 
-struct C: B {
-  C()  { printf("C::C()\n"); }
-  virtual ~C() { printf("C::~C()\n"); }
-  virtual void f() { }
+class B : public A {
+ public:
+  virtual void F() {
+    printf ("B::F()\n");
+  }
 };
 
-void Waiter() {
-  A *a = new C;
-  Q.Put(a);
+static A *a;
+
+void Thread1() {
+  a->F();
+  a->Done();
+};
+
+void Thread2() {
   delete a;
 }
-
-void Worker() {
-  A *a = reinterpret_cast<A*>(Q.Get());
-  a->f();
-
-  mu.Lock();
-  flag_stopped = true;
-  ANNOTATE_CONDVAR_SIGNAL(&mu);
-  mu.Unlock();
+TEST(PositiveTests, HarmfulRaceInDtor) {
+  printf("test314: race on vptr; May print A::F() or B::F().\n");
+  { // Will print B::F()
+    a = new B;
+    MyThreadArray t(Thread1, Thread2);
+    t.Start();
+    t.Join();
+  }
+  { // Will print A::F()
+    a = new B;
+    MyThreadArray t(Thread2, Thread1);
+    t.Start();
+    t.Join();
+  }
 }
 
-void Run() {
-  printf("test87: positive, race inside DTOR\n");
-  MyThreadArray t(Waiter, Worker);
-  t.Start();
-  t.Join();
-}
-REGISTER_TEST2(Run, 87, FEATURE|EXCLUDE_FROM_ALL)
-}  // namespace test87
+}  // namespace
 
 
 // test88: Test for ANNOTATE_IGNORE_WRITES_*{{{1
