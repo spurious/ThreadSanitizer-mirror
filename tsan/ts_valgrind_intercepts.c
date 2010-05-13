@@ -354,13 +354,13 @@ WRAP_WORKQ_OPS(VG_Z_LIBC_SONAME, __workq_ops);
 #define WRAP_MUNMAP(soname, fnname) \
   int I_WRAP_SONAME_FNNAME_ZU(soname,fnname) (void *ptr, size_t size); \
   int I_WRAP_SONAME_FNNAME_ZU(soname,fnname) (void *ptr, size_t size){ \
-    void* ret;\
+    int ret;\
     OrigFn fn;\
     VALGRIND_GET_ORIG_FN(fn);\
     IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN(); \
       CALL_FN_W_WW(ret, fn, ptr, size); \
     IGNORE_ALL_ACCESSES_AND_SYNC_END(); \
-    if (ret != -1) { \
+    if (ret == 0) { \
       DO_CREQ_v_WW(TSREQ_MUNMAP, void*, ptr, size_t, size); \
     } \
     return ret; \
