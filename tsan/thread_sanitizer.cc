@@ -5966,7 +5966,7 @@ class Detector {
     uintptr_t max_write_size = 1024;
     // Handle the memory deletion as a write, but don't touch all
     // the memory if there is too much of it, limit with the first 1K.
-    if (size) {
+    if (size && G_flags->free_is_write) {
       HandleMemoryAccess(e_->tid(), a,
                          min(max_write_size, size), true /*is_w*/);
     }
@@ -6359,6 +6359,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
                &G_flags->suggest_happens_before_arcs);
   FindBoolFlag("show_pc", false, args, &G_flags->show_pc);
   FindBoolFlag("ignore_in_dtor", false, args, &G_flags->ignore_in_dtor);
+  FindBoolFlag("free_is_write", false, args, &G_flags->free_is_write);
   FindBoolFlag("exit_after_main", false, args, &G_flags->exit_after_main);
 
   FindBoolFlag("show_stats", false, args, &G_flags->show_stats);

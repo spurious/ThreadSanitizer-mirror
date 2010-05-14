@@ -69,6 +69,7 @@ struct FLAGS {
   bool        fast_mode;
   bool        pure_happens_before;
   bool        ignore_in_dtor;
+  bool        free_is_write;
   bool        exit_after_main;
   bool        demangle;
   bool        announce_threads;
