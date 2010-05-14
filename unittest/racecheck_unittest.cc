@@ -6455,7 +6455,7 @@ int *p;
 void Read() { CHECK(p[1] == 777); }
 void Free() { free(p);}
 
-TEST(PositiveTests, ReadVsFree) {
+TEST(PositiveTests, DISABLED_ReadVsFree) {
   p = (int*)malloc(2 * sizeof(int));
   p[1] = 777;
   ANNOTATE_EXPECT_RACE(&p[1], "race: read vs free");
