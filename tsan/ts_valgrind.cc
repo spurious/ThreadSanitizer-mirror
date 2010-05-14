@@ -375,6 +375,34 @@ static MopCallback mop_callbacks[34] = {
   MopW16,   // 16*2+1
 };
 
+INLINE void HandleMopsLoop(TraceInfo *t, int ts_tid, uintptr_t *tleb,
+                           bool check_store_of_a_const) {
+  size_t n = t->n_mops();
+  DCHECK(n > 0);
+  size_t i  = 0;
+  do {
+    uintptr_t a = tleb[i];
+    if (a == 0) return;  // This mop was not executed.
+    tleb[i] = 0;  // we've consumed thi mop, clear it.
+    MopInfo *mop = t->GetMop(i);
+    if (check_store_of_a_const && mop->size == 0) {
+      // This is a special case for '*a = constant', see comments near MopInfo.
+      DCHECK(i + 1 < n);
+      DCHECK(tleb[i + 1] != 0);
+      DCHECK(t->GetMop(i + 1)->is_write);
+      if (mop->pc == a) {
+        i++;
+      }
+      continue;
+    }
+    DCHECK(mop->size != 0);
+    g_current_pc = mop->pc;
+    MopCallback cb = mop_callbacks[mop->size * 2 + mop->is_write];
+    DCHECK(cb);
+    cb(ts_tid, a);
+  } while (++i < n);
+}
+
 INLINE void FlushMops(ThreadId vg_tid, bool keep_trace_info = false) {
   ValgrindThread *thr = &g_valgrind_threads[vg_tid];
   TraceInfo *t = thr->trace_info;
@@ -392,22 +420,13 @@ INLINE void FlushMops(ThreadId vg_tid, bool keep_trace_info = false) {
   int ts_tid = VgTidToTsTid(vg_tid);
   if (thr->create_segments)
     ThreadSanitizerEnterSblock(ts_tid, t->pc());
-  size_t n = t->n_mops();
-  DCHECK(n > 0);
-  uintptr_t *tleb = thr->tleb;
-  size_t i = 0;
-  do {  // while (++i < n)
-    uintptr_t a = tleb[i];
-    if (a == 0) continue;  // This mop was not executed.
-    tleb[i] = 0;
-    MopInfo *mop = t->GetMop(i);
-    g_current_pc = mop->pc;
-    MopCallback cb = mop_callbacks[mop->size * 2 + mop->is_write];
-    DCHECK(cb);
-    cb(ts_tid, a);
-    // Slightly slower alternative is:
-    // ThreadSanitizerHandleMemoryAccess(ts_tid, a, mop->size, mop->is_write);
-  } while (++i < n);
+
+  // Seperate calls so that the check_store_of_a_const parameter is inlined.
+  if (t->has_stores_of_const()) {
+    HandleMopsLoop(t, ts_tid, thr->tleb, true);
+  } else {
+    HandleMopsLoop(t, ts_tid, thr->tleb, false);
+  }
 }
 
 static INLINE void OnTrace(TraceInfo *trace_info, bool create_segments) {
@@ -929,16 +948,33 @@ static void ts_instrument_final_jump (
   }
 }
 
+// Generate exprs/stmts that make g_cur_tleb[idx] = x.
+static void gen_store_to_tleb(IRSB *bbOut, IRTemp tleb_temp,
+                              uintptr_t idx, IRExpr *x, IRType tyAddr) {
+  CHECK(tleb_temp != IRTemp_INVALID);
+  IRExpr *idx_expr  = mkIRExpr_HWord(idx * sizeof(uintptr_t));
+  IRExpr *tleb_plus_idx_expr = IRExpr_Binop(
+      sizeof(uintptr_t) == 8 ? Iop_Add64 : Iop_Add32,
+      IRExpr_RdTmp(tleb_temp), idx_expr);
+  IRTemp temp = newIRTemp(bbOut->tyenv, tyAddr);
+  IRStmt *temp_stmt = IRStmt_WrTmp(temp, tleb_plus_idx_expr);
+  IRStmt *store_stmt = IRStmt_Store(Iend_LE, IRExpr_RdTmp(temp), x);
+
+  addStmtToIRSB(bbOut, temp_stmt);
+  addStmtToIRSB(bbOut, store_stmt);
+}
+
+
 static void instrument_mem_access ( TraceInfo *trace_info,
                                     IRTemp tleb_temp,
                                     uintptr_t pc,
-                                    size_t trace_idx,
+                                    size_t  *trace_idx,
                                     IRSB*   bbOut,
+                                    IRStmt* st,
                                     IRExpr* addr,
                                     Int     szB,
                                     Bool    isStore,
                                     Int     hWordTy_szB ) {
-  if (!trace_info) return;
   IRType   tyAddr   = Ity_INVALID;
 
   tl_assert(isIRAtom(addr));
@@ -947,32 +983,76 @@ static void instrument_mem_access ( TraceInfo *trace_info,
   tyAddr = typeOfIRExpr( bbOut->tyenv, addr );
   tl_assert(tyAddr == Ity_I32 || tyAddr == Ity_I64);
 
-  if (trace_idx == kMaxMopsPerTrace) {
-    Report("INFO: too many mops in trace: %p %s\n", pc,
-           PcToRtnName(pc, true).c_str());
+  bool is_store_of_a_const = false;
+  uintptr_t stored_const = 0;
+
+  if (st->tag == Ist_Store) {
+    // Is this '*a == constant' instruction?
+    CHECK(isStore);
+    IRExpr *data_to_store = st->Ist.Store.data;
+    if (data_to_store->tag == Iex_Const) {
+      IRConst *con = data_to_store->Iex.Const.con;
+      if (con->tag == Ico_U32 || con->tag == Ico_U64) {
+        stored_const = con->tag == Ico_U32 ? con->Ico.U32 : con->Ico.U64;
+        string name;
+        uintptr_t offset;
+        // Is the constant inside someone's vptr?
+        if (stored_const > 0x100 &&  // check that it looks like a pointer
+            GetNameAndOffsetOfGlobalObject(stored_const, &name, &offset) &&
+            name.find("_ZTVN") == 0) {
+          is_store_of_a_const = true;
+          // ppIRStmt(st);
+          // Printf(" storing vptr %s %p %p\n", name.c_str(), stored_const, offset);
+        }
+      }
+    }
   }
-  if (trace_idx >= kMaxMopsPerTrace) {
+
+  size_t next_trace_idx = *trace_idx + 1 + (is_store_of_a_const == true);
+
+  if (next_trace_idx > kMaxMopsPerTrace) {
+    if (next_trace_idx == kMaxMopsPerTrace) {
+      Report("INFO: too many mops in trace: %p %s\n", pc,
+             PcToRtnName(pc, true).c_str());
+    }
     return;
   }
 
-  MopInfo *mop = trace_info->GetMop(trace_idx);
+  if (!trace_info) {
+    // not instrumenting yet.
+    *trace_idx = next_trace_idx;
+    return;
+  }
+
+  if (is_store_of_a_const) {
+    // generate expression g_cur_tleb[idx] = *addr
+    IRExpr *addr_load_expr = IRExpr_Load(Iend_LE, tyAddr, addr);
+    IRTemp star_addr = newIRTemp(bbOut->tyenv, tyAddr);
+    IRStmt *star_addr_stmt = IRStmt_WrTmp(star_addr, addr_load_expr);
+    addStmtToIRSB(bbOut, star_addr_stmt);
+    gen_store_to_tleb(bbOut, tleb_temp, *trace_idx,
+                      IRExpr_RdTmp(star_addr), tyAddr);
+
+    // create a mop {stored_const, 0, true}
+    MopInfo *mop = trace_info->GetMop(*trace_idx);
+    mop->pc = stored_const;
+    mop->size = 0;
+    mop->is_write = isStore;
+    (*trace_idx)++;
+    trace_info->set_has_stores_of_const();
+  }
+
+  // OnMop: g_cur_tleb[idx] = addr
+  gen_store_to_tleb(bbOut, tleb_temp, *trace_idx, addr, tyAddr);
+  // Create a mop {pc, size, is_write}
+  MopInfo *mop = trace_info->GetMop(*trace_idx);
+  CHECK(szB == 1 || szB == 2 || szB == 4 || szB == 8 || szB == 10 || szB == 16);
   mop->pc = pc;
   mop->size = szB;
-  CHECK(szB == 1 || szB == 2 || szB == 4 || szB == 8 || szB == 10 || szB == 16);
   mop->is_write = isStore;
+  (*trace_idx)++;
 
-  CHECK(tleb_temp != IRTemp_INVALID);
-  // Generate OnMop expression: g_cur_tleb[idx] = addr
-  IRExpr *idx_expr  = mkIRExpr_HWord(trace_idx * sizeof(uintptr_t));
-  IRExpr *tleb_plus_idx_expr = IRExpr_Binop(
-      sizeof(uintptr_t) == 8 ? Iop_Add64 : Iop_Add32,
-      IRExpr_RdTmp(tleb_temp), idx_expr);
-  IRTemp t2 = newIRTemp(bbOut->tyenv, tyAddr);
-  IRStmt *t2_stmt = IRStmt_WrTmp(t2, tleb_plus_idx_expr);
-  IRStmt *store_stmt = IRStmt_Store(Iend_LE, IRExpr_RdTmp(t2), addr);
-
-  addStmtToIRSB(bbOut, t2_stmt);
-  addStmtToIRSB(bbOut, store_stmt);
+  CHECK(*trace_idx == next_trace_idx);
 }
 
 void instrument_statement (IRStmt* st, IRSB* bbIn, IRSB* bbOut, IRType hWordTy,
@@ -1006,27 +1086,25 @@ void instrument_statement (IRStmt* st, IRSB* bbIn, IRSB* bbOut, IRType hWordTy,
       break;
 
     case Ist_Store:
-      instrument_mem_access(trace_info, tleb_temp, *cur_pc, (*idx),
-        bbOut,
+      instrument_mem_access(trace_info, tleb_temp, *cur_pc, idx,
+        bbOut, st,
         st->Ist.Store.addr,
         sizeofIRType(typeOfIRExpr(bbIn->tyenv, st->Ist.Store.data)),
         True/*isStore*/,
         sizeofIRType(hWordTy)
       );
-      (*idx)++;
       break;
 
     case Ist_WrTmp: {
       IRExpr* data = st->Ist.WrTmp.data;
       if (data->tag == Iex_Load) {
-        instrument_mem_access(trace_info, tleb_temp, *cur_pc, (*idx), 
-            bbOut,
+        instrument_mem_access(trace_info, tleb_temp, *cur_pc, idx,
+            bbOut, st,
             data->Iex.Load.addr,
             sizeofIRType(data->Iex.Load.ty),
             False/*!isStore*/,
             sizeofIRType(hWordTy)
             );
-        (*idx)++;
       }
       break;
     }
@@ -1037,14 +1115,13 @@ void instrument_statement (IRStmt* st, IRSB* bbIn, IRSB* bbOut, IRType hWordTy,
       if (st->Ist.LLSC.storedata == NULL) {
         /* LL */
         dataTy = typeOfIRTemp(bbIn->tyenv, st->Ist.LLSC.result);
-        instrument_mem_access(trace_info, tleb_temp, *cur_pc, (*idx), 
-          bbOut,
+        instrument_mem_access(trace_info, tleb_temp, *cur_pc, idx, 
+          bbOut, st,
           st->Ist.LLSC.addr,
           sizeofIRType(dataTy),
           False/*isStore*/,
           sizeofIRType(hWordTy)
         );
-        (*idx)++;
       } else {
         /* SC */
         /* ignore */
@@ -1062,18 +1139,16 @@ void instrument_statement (IRStmt* st, IRSB* bbIn, IRSB* bbOut, IRType hWordTy,
         tl_assert(d->mSize != 0);
         dataSize = d->mSize;
         if (d->mFx == Ifx_Read || d->mFx == Ifx_Modify) {
-          instrument_mem_access(trace_info, tleb_temp, *cur_pc, (*idx), 
-            bbOut, d->mAddr, dataSize, False/*!isStore*/,
+          instrument_mem_access(trace_info, tleb_temp, *cur_pc, idx,
+            bbOut, st, d->mAddr, dataSize, False/*!isStore*/,
             sizeofIRType(hWordTy)
           );
-          (*idx)++;
         }
         if (d->mFx == Ifx_Write || d->mFx == Ifx_Modify) {
-          instrument_mem_access(trace_info, tleb_temp, *cur_pc, (*idx),
-            bbOut, d->mAddr, dataSize, True/*isStore*/,
+          instrument_mem_access(trace_info, tleb_temp, *cur_pc, idx,
+            bbOut, st, d->mAddr, dataSize, True/*isStore*/,
             sizeofIRType(hWordTy)
           );
-          (*idx)++;
         }
       } else {
         tl_assert(d->mAddr == NULL);
