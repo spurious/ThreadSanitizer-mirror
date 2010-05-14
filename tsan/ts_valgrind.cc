@@ -999,7 +999,7 @@ static void instrument_mem_access ( TraceInfo *trace_info,
         // Is the constant inside someone's vptr?
         if (stored_const > 0x100 &&  // check that it looks like a pointer
             GetNameAndOffsetOfGlobalObject(stored_const, &name, &offset) &&
-            name.find("_ZTVN") == 0) {
+            name.find("_ZT")) {
           is_store_of_a_const = true;
           // ppIRStmt(st);
           // Printf(" storing vptr %s %p %p\n", name.c_str(), stored_const, offset);
