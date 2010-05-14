@@ -34,7 +34,8 @@ else
 endif
 
 all: $(BIN)racecheck_unittest-$(BUILD)$(EXE) $(BIN)demo_tests-$(BUILD)$(EXE) \
-     $(BIN)bigtest-$(BUILD)$(EXE) $(BIN)output_test1-$(BUILD)$(EXE)
+     $(BIN)bigtest-$(BUILD)$(EXE) $(BIN)output_test1-$(BUILD)$(EXE) \
+		 $(BIN)memory_unittest-$(BUILD)$(EXE)
 ifeq ($(OS), linux)
 all: $(BIN)deadlock_unittest-$(BUILD)$(EXE)
 endif
@@ -87,6 +88,10 @@ $(BIN)output_test1-$(BUILD)$(EXE): $(BIN)output_test1-$(BUILD).$(OBJ) \
 	${LD} $(LDFLAGS) $^ $(LIBS) $(LINKO)$@
 
 $(BIN)bigtest-$(BUILD)$(EXE): $(BIN)bigtest-$(BUILD).$(OBJ) ${DYNAMIC_ANNOTATIONS_O} | bin
+	${LD} $(LDFLAGS) $^ $(LIBS) $(LINKO)$@
+
+$(BIN)memory_unittest-$(BUILD)$(EXE): $(BIN)memory_unittest-$(BUILD).$(OBJ) \
+		$(TEST_UTILS_O) $(GTEST_LIB) ${DYNAMIC_ANNOTATIONS_O} | bin
 	${LD} $(LDFLAGS) $^ $(LIBS) $(LINKO)$@
 
 $(BIN)%-$(BUILD).$(OBJ): %.cc ${DYNAMIC_ANNOTATIONS} thread_wrappers.h thread_wrappers_win.h thread_wrappers_pthread.h old_test_suite.h test_utils.h | bin
