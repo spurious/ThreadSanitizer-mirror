@@ -30,10 +30,16 @@
  */
 
 #include "test_utils.h"
+#include "old_test_suite.h"
 
 #include <gtest/gtest.h>
 
 void Noop() {}
+
+namespace NoopTest {
+  REGISTER_TEST(Noop, 0);
+  // Dummy to initialize 'TheMapOfTests'
+}
 
 TEST(Wrappers, StrchrTest) {
   // DrMemory bug http://code.google.com/p/dynamorio/issues/detail?id=275
