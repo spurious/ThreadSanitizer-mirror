@@ -1492,6 +1492,21 @@ static void On_PredicatedMop(BOOL is_running, uintptr_t *addr,
   }
 }
 
+static void OnMopCheckIdentStoreBefore(uintptr_t *addr, THREADID tid, ADDRINT idx, ADDRINT a) {
+  // Write the value of *a to tleb.
+  addr[idx] = *(uintptr_t*)a;
+}
+static void OnMopCheckIdentStoreAfter(uintptr_t *addr, THREADID tid, ADDRINT idx, ADDRINT a) {
+  // Check if the previous value of *a is equal to the new one.
+  // If not, we have a regular memory access. If yes, we have an ident operation,
+  // which we want to ignore.
+  uintptr_t previous_value_of_a = addr[idx];
+  uintptr_t new_value_of_a = *(uintptr_t*)a;
+  // 111...111 if the values are different, 0 otherwise.
+  uintptr_t ne_mask = -(uintptr_t)(new_value_of_a != previous_value_of_a);
+  addr[idx] = ne_mask & a;
+}
+
 //---------- I/O; exit------------------------------- {{{2
 static const uintptr_t kIOMagic = 0x1234c678;
 
@@ -1850,6 +1865,14 @@ static bool InstrumentCall(INS ins) {
 
 // return the number of inserted instrumentations.
 static void InstrumentMopsInBBl(BBL bbl, RTN rtn, TraceInfo *trace_info, size_t *mop_idx) {
+  bool dtor_head = false;
+
+  if (BBL_Address(bbl) == RTN_Address(rtn)) {
+    string demangled_rtn_name = Demangle(RTN_Name(rtn).c_str());
+    if (demangled_rtn_name.find("::~") != string::npos)
+      dtor_head = true;
+  }
+
   INS tail = BBL_InsTail(bbl);
   // All memory reads/writes
   for( INS ins = BBL_InsHead(bbl);
@@ -1914,17 +1937,41 @@ static void InstrumentMopsInBBl(BBL bbl, RTN rtn, TraceInfo *trace_info, size_t 
 
       if (ins_ignore_writes && is_write) continue;
       if (ins_ignore_reads && !is_write) continue;
+      
+      bool check_ident_store = false;
+      if (dtor_head && is_write && INS_IsMov(ins) && size == sizeof(void*)) {
+        // This is a special case for '*addr = value', where we want to ignore the
+        // access if *addr == value before the store.
+        CHECK(!is_predicated);
+        check_ident_store = true;
+      }
 
       if (trace_info) {
         if (debug_ins) {
           Printf("    size=%ld is_w=%d\n", size, (int)is_write);
         }
+        IPOINT point = IPOINT_BEFORE;
+        AFUNPTR on_mop_callback = (AFUNPTR)OnMop;
+        if (check_ident_store) {
+          INS_InsertCall(ins, IPOINT_BEFORE,
+            (AFUNPTR)OnMopCheckIdentStoreBefore,
+            IARG_REG_VALUE, tls_reg,
+            IARG_THREAD_ID,
+            IARG_ADDRINT, *mop_idx,
+            IARG_MEMORYOP_EA, i,
+            IARG_END);
+          // This is just a MOV, so we can insert the instrumentation code 
+          // after the insn.
+          point = IPOINT_AFTER;
+          on_mop_callback = (AFUNPTR)OnMopCheckIdentStoreAfter;
+        }
+
         MopInfo *mop = trace_info->GetMop(*mop_idx);
         mop->pc = INS_Address(ins);
         mop->size = size;
         mop->is_write = is_write;
         if (is_predicated) {
-          INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
+          INS_InsertPredicatedCall(ins, point,
             (AFUNPTR)On_PredicatedMop,
             IARG_EXECUTING,
             IARG_REG_VALUE, tls_reg,
@@ -1933,8 +1980,8 @@ static void InstrumentMopsInBBl(BBL bbl, RTN rtn, TraceInfo *trace_info, size_t 
             IARG_MEMORYOP_EA, i,
             IARG_END);
         } else {
-          INS_InsertCall(ins, IPOINT_BEFORE,
-            (AFUNPTR)OnMop,
+          INS_InsertCall(ins, point,
+            on_mop_callback,
             IARG_REG_VALUE, tls_reg,
             IARG_THREAD_ID,
             IARG_ADDRINT, *mop_idx,

@@ -388,6 +388,7 @@ INLINE void HandleMopsLoop(TraceInfo *t, int ts_tid, uintptr_t *tleb,
       if (mop->size == 0) {
         // This is a special case for '*addr = value', where we want to ignore the
         // access if *addr == value before the store. See comments near MopInfo.
+        // TODO(kcc): the way we did this in PIN looks a bit cleaner.
         DCHECK(mop->pc == 0);
         DCHECK(mop->is_write);
         DCHECK(i + 1 < n);
