@@ -376,25 +376,33 @@ static MopCallback mop_callbacks[34] = {
 };
 
 INLINE void HandleMopsLoop(TraceInfo *t, int ts_tid, uintptr_t *tleb,
-                           bool check_store_of_a_const) {
+                           bool check_ident_store) {
   size_t n = t->n_mops();
   DCHECK(n > 0);
   size_t i  = 0;
+  MopInfo *mop = NULL;
   do {
     uintptr_t a = tleb[i];
-    if (a == 0) return;  // This mop was not executed.
-    tleb[i] = 0;  // we've consumed thi mop, clear it.
-    MopInfo *mop = t->GetMop(i);
-    if (check_store_of_a_const && mop->size == 0) {
-      // This is a special case for '*a = constant', see comments near MopInfo.
-      DCHECK(i + 1 < n);
-      DCHECK(tleb[i + 1] != 0);
-      DCHECK(t->GetMop(i + 1)->is_write);
-      if (mop->pc == a) {
-        i++;
+    if (check_ident_store) {
+      mop = t->GetMop(i);
+      if (mop->size == 0) {
+        // This is a special case for '*addr = value', where we want to ignore the
+        // access if *addr == value before the store. See comments near MopInfo.
+        DCHECK(mop->pc == 0);
+        DCHECK(mop->is_write);
+        DCHECK(i + 1 < n);
+        DCHECK(t->GetMop(i + 1)->is_write);
+        DCHECK(t->GetMop(i + 1)->pc != 0);
+        DCHECK(t->GetMop(i + 1)->size != 0);
+        if (a == 0)  // (*addr - value == 0) ==> ignore the store.
+          i++;
+        continue;
       }
-      continue;
     }
+
+    if (a == 0) return;  // This mop was not executed.
+    mop = t->GetMop(i);
+    tleb[i] = 0;  // we've consumed thi mop, clear it.
     DCHECK(mop->size != 0);
     g_current_pc = mop->pc;
     MopCallback cb = mop_callbacks[mop->size * 2 + mop->is_write];
@@ -421,8 +429,8 @@ INLINE void FlushMops(ThreadId vg_tid, bool keep_trace_info = false) {
   if (thr->create_segments)
     ThreadSanitizerEnterSblock(ts_tid, t->pc());
 
-  // Seperate calls so that the check_store_of_a_const parameter is inlined.
-  if (t->has_stores_of_const()) {
+  // Seperate calls so that the check_ident_store parameter is inlined.
+  if (t->dtor_head()) {
     HandleMopsLoop(t, ts_tid, thr->tleb, true);
   } else {
     HandleMopsLoop(t, ts_tid, thr->tleb, false);
@@ -974,6 +982,7 @@ static void instrument_mem_access ( TraceInfo *trace_info,
                                     IRExpr* addr,
                                     Int     szB,
                                     Bool    isStore,
+                                    Bool    dtor_head,
                                     Int     hWordTy_szB ) {
   IRType   tyAddr   = Ity_INVALID;
 
@@ -983,32 +992,14 @@ static void instrument_mem_access ( TraceInfo *trace_info,
   tyAddr = typeOfIRExpr( bbOut->tyenv, addr );
   tl_assert(tyAddr == Ity_I32 || tyAddr == Ity_I64);
 
-  bool is_store_of_a_const = false;
-  uintptr_t stored_const = 0;
+  bool check_ident_store = false;
 
-  if (st->tag == Ist_Store) {
-    // Is this '*a == constant' instruction?
-    CHECK(isStore);
-    IRExpr *data_to_store = st->Ist.Store.data;
-    if (data_to_store->tag == Iex_Const) {
-      IRConst *con = data_to_store->Iex.Const.con;
-      if (con->tag == Ico_U32 || con->tag == Ico_U64) {
-        stored_const = con->tag == Ico_U32 ? con->Ico.U32 : con->Ico.U64;
-        string name;
-        uintptr_t offset;
-        // Is the constant inside someone's vptr?
-        if (stored_const > 0x100 &&  // check that it looks like a pointer
-            GetNameAndOffsetOfGlobalObject(stored_const, &name, &offset) &&
-            name.find("_ZT")) {
-          is_store_of_a_const = true;
-          // ppIRStmt(st);
-          // Printf(" storing vptr %s %p %p\n", name.c_str(), stored_const, offset);
-        }
-      }
-    }
+  if (st->tag == Ist_Store && dtor_head && 
+      typeOfIRExpr(bbOut->tyenv, st->Ist.Store.data) == tyAddr) {
+    check_ident_store = true;
   }
 
-  size_t next_trace_idx = *trace_idx + 1 + (is_store_of_a_const == true);
+  size_t next_trace_idx = *trace_idx + 1 + (check_ident_store == true);
 
   if (next_trace_idx > kMaxMopsPerTrace) {
     if (next_trace_idx == kMaxMopsPerTrace) {
@@ -1024,22 +1015,28 @@ static void instrument_mem_access ( TraceInfo *trace_info,
     return;
   }
 
-  if (is_store_of_a_const) {
+  if (check_ident_store) {
     // generate expression g_cur_tleb[idx] = *addr
     IRExpr *addr_load_expr = IRExpr_Load(Iend_LE, tyAddr, addr);
     IRTemp star_addr = newIRTemp(bbOut->tyenv, tyAddr);
     IRStmt *star_addr_stmt = IRStmt_WrTmp(star_addr, addr_load_expr);
     addStmtToIRSB(bbOut, star_addr_stmt);
+    IRTemp eq = newIRTemp(bbOut->tyenv, tyAddr);
+    IRExpr *eq_expr = IRExpr_Binop(sizeof(uintptr_t) == 8 ? Iop_Sub64 : Iop_Sub32,
+                                   IRExpr_RdTmp(star_addr), 
+                                   st->Ist.Store.data);
+    IRStmt *eq_stmt = IRStmt_WrTmp(eq, eq_expr);
+    addStmtToIRSB(bbOut, eq_stmt);
     gen_store_to_tleb(bbOut, tleb_temp, *trace_idx,
-                      IRExpr_RdTmp(star_addr), tyAddr);
+                      IRExpr_RdTmp(eq), tyAddr);
 
     // create a mop {stored_const, 0, true}
     MopInfo *mop = trace_info->GetMop(*trace_idx);
-    mop->pc = stored_const;
+    mop->pc = 0;
     mop->size = 0;
     mop->is_write = isStore;
     (*trace_idx)++;
-    trace_info->set_has_stores_of_const();
+    CHECK(trace_info->dtor_head());
   }
 
   // OnMop: g_cur_tleb[idx] = addr
@@ -1057,7 +1054,7 @@ static void instrument_mem_access ( TraceInfo *trace_info,
 
 void instrument_statement (IRStmt* st, IRSB* bbIn, IRSB* bbOut, IRType hWordTy,
                            TraceInfo *trace_info, IRTemp tleb_temp,
-                           size_t *idx, uintptr_t *cur_pc) {
+                           size_t *idx, uintptr_t *cur_pc, bool dtor_head) {
   switch (st->tag) {
     case Ist_NoOp:
     case Ist_AbiHint:
@@ -1090,7 +1087,7 @@ void instrument_statement (IRStmt* st, IRSB* bbIn, IRSB* bbOut, IRType hWordTy,
         bbOut, st,
         st->Ist.Store.addr,
         sizeofIRType(typeOfIRExpr(bbIn->tyenv, st->Ist.Store.data)),
-        True/*isStore*/,
+        True/*isStore*/, dtor_head,
         sizeofIRType(hWordTy)
       );
       break;
@@ -1102,7 +1099,7 @@ void instrument_statement (IRStmt* st, IRSB* bbIn, IRSB* bbOut, IRType hWordTy,
             bbOut, st,
             data->Iex.Load.addr,
             sizeofIRType(data->Iex.Load.ty),
-            False/*!isStore*/,
+            False/*!isStore*/, dtor_head,
             sizeofIRType(hWordTy)
             );
       }
@@ -1119,7 +1116,7 @@ void instrument_statement (IRStmt* st, IRSB* bbIn, IRSB* bbOut, IRType hWordTy,
           bbOut, st,
           st->Ist.LLSC.addr,
           sizeofIRType(dataTy),
-          False/*isStore*/,
+          False/*isStore*/, dtor_head,
           sizeofIRType(hWordTy)
         );
       } else {
@@ -1140,13 +1137,13 @@ void instrument_statement (IRStmt* st, IRSB* bbIn, IRSB* bbOut, IRType hWordTy,
         dataSize = d->mSize;
         if (d->mFx == Ifx_Read || d->mFx == Ifx_Modify) {
           instrument_mem_access(trace_info, tleb_temp, *cur_pc, idx,
-            bbOut, st, d->mAddr, dataSize, False/*!isStore*/,
+            bbOut, st, d->mAddr, dataSize, False/*!isStore*/, dtor_head,
             sizeofIRType(hWordTy)
           );
         }
         if (d->mFx == Ifx_Write || d->mFx == Ifx_Modify) {
           instrument_mem_access(trace_info, tleb_temp, *cur_pc, idx,
-            bbOut, st, d->mAddr, dataSize, True/*isStore*/,
+            bbOut, st, d->mAddr, dataSize, True/*isStore*/, dtor_head,
             sizeofIRType(hWordTy)
           );
         }
@@ -1167,7 +1164,7 @@ static IRSB* ts_instrument ( VgCallbackClosure* closure,
                              IRSB* bbIn,
                              VexGuestLayout* layout,
                              VexGuestExtents* vge,
-                             IRType gWordTy, IRType hWordTy ) {
+                             IRType gWordTy, IRType hWordTy) {
   if (G_flags->dry_run >= 2) return bbIn;
   Int   i;
   IRSB* bbOut;
@@ -1208,6 +1205,16 @@ static IRSB* ts_instrument ( VgCallbackClosure* closure,
 
   IRTemp tleb_temp = IRTemp_INVALID;
 
+  bool dtor_head = false;
+  char buff[1000];
+  // get_fnname_w_offset returns demangled name with optional "+offset" prefix.
+  // If we have "::~" and don't have "+", this SB is the first in this dtor.
+  if (VG_(get_fnname_w_offset)(pc, (Char*)buff, sizeof(buff)) &&
+      VG_(strstr)((Char*)buff, (Char*)"::~") != NULL &&
+      VG_(strchr)((Char*)buff, '+') == NULL) {
+    dtor_head = true;
+  }
+
   // count mops
   if (instrument_memory) {
     for (i = first; i < bbIn->stmts_used; i++) {
@@ -1215,12 +1222,12 @@ static IRSB* ts_instrument ( VgCallbackClosure* closure,
       tl_assert(st);
       tl_assert(isFlatIRStmt(st));
       instrument_statement(st, bbIn, bbOut, hWordTy,
-                           NULL, tleb_temp, &n_mops, &cur_pc);
+                           NULL, tleb_temp, &n_mops, &cur_pc, dtor_head);
     } /* iterate over bbIn->stmts */
   }
   TraceInfo *trace_info = NULL;
   if (n_mops > 0) {
-    trace_info = TraceInfo::NewTraceInfo(n_mops, pc);
+    trace_info = TraceInfo::NewTraceInfo(n_mops, pc, dtor_head);
   }
   size_t n_mops_done = 0;
   bool need_to_insert_on_trace = n_mops > 0;
@@ -1243,13 +1250,13 @@ static IRSB* ts_instrument ( VgCallbackClosure* closure,
     }
     if (instrument_memory) {
       instrument_statement(st, bbIn, bbOut, hWordTy,
-                           trace_info, tleb_temp, &n_mops_done, &cur_pc);
+                           trace_info, tleb_temp, &n_mops_done, &cur_pc, dtor_head);
     }
     addStmtToIRSB( bbOut, st );
   } /* iterate over bbIn->stmts */
   CHECK(n_mops == n_mops_done);
   ts_instrument_final_jump(bbOut, bbIn->next, bbIn->jumpkind, layout, gWordTy, hWordTy);
-  // ppIRSB(bbOut);
+  //ppIRSB(bbOut);
   return bbOut;
 }
 

@@ -1990,7 +1990,7 @@ void CallbackForTRACE(TRACE trace, void *v) {
 
   TraceInfo *trace_info = NULL;
   if (n_mops) {
-    trace_info = TraceInfo::NewTraceInfo(n_mops, INS_Address(head));
+    trace_info = TraceInfo::NewTraceInfo(n_mops, INS_Address(head), false);
     INS_InsertCall(head, IPOINT_BEFORE,
                    (AFUNPTR)OnTrace,
                    IARG_THREAD_ID,
