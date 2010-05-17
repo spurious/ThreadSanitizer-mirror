@@ -375,43 +375,6 @@ static MopCallback mop_callbacks[34] = {
   MopW16,   // 16*2+1
 };
 
-INLINE void HandleMopsLoop(TraceInfo *t, int ts_tid, uintptr_t *tleb,
-                           bool check_ident_store) {
-  size_t n = t->n_mops();
-  DCHECK(n > 0);
-  size_t i  = 0;
-  MopInfo *mop = NULL;
-  do {
-    uintptr_t a = tleb[i];
-    if (check_ident_store) {
-      mop = t->GetMop(i);
-      if (mop->size == 0) {
-        // This is a special case for '*addr = value', where we want to ignore the
-        // access if *addr == value before the store. See comments near MopInfo.
-        // TODO(kcc): the way we did this in PIN looks a bit cleaner.
-        DCHECK(mop->pc == 0);
-        DCHECK(mop->is_write);
-        DCHECK(i + 1 < n);
-        DCHECK(t->GetMop(i + 1)->is_write);
-        DCHECK(t->GetMop(i + 1)->pc != 0);
-        DCHECK(t->GetMop(i + 1)->size != 0);
-        if (a == 0)  // (*addr - value == 0) ==> ignore the store.
-          i++;
-        continue;
-      }
-    }
-
-    if (a == 0) return;  // This mop was not executed.
-    mop = t->GetMop(i);
-    tleb[i] = 0;  // we've consumed thi mop, clear it.
-    DCHECK(mop->size != 0);
-    g_current_pc = mop->pc;
-    MopCallback cb = mop_callbacks[mop->size * 2 + mop->is_write];
-    DCHECK(cb);
-    cb(ts_tid, a);
-  } while (++i < n);
-}
-
 INLINE void FlushMops(ThreadId vg_tid, bool keep_trace_info = false) {
   ValgrindThread *thr = &g_valgrind_threads[vg_tid];
   TraceInfo *t = thr->trace_info;
@@ -430,12 +393,21 @@ INLINE void FlushMops(ThreadId vg_tid, bool keep_trace_info = false) {
   if (thr->create_segments)
     ThreadSanitizerEnterSblock(ts_tid, t->pc());
 
-  // Seperate calls so that the check_ident_store parameter is inlined.
-  if (t->dtor_head()) {
-    HandleMopsLoop(t, ts_tid, thr->tleb, true);
-  } else {
-    HandleMopsLoop(t, ts_tid, thr->tleb, false);
-  }
+  size_t n = t->n_mops();
+  DCHECK(n > 0);
+  size_t i  = 0;
+  uintptr_t *tleb = thr->tleb;
+  do {
+    uintptr_t a = tleb[i];
+    if (a == 0) continue;  // This mop was not executed.
+    MopInfo *mop = t->GetMop(i);
+    tleb[i] = 0;  // we've consumed this mop, clear it.
+    DCHECK(mop->size != 0);
+    g_current_pc = mop->pc;
+    MopCallback cb = mop_callbacks[mop->size * 2 + mop->is_write];
+    DCHECK(cb);
+    cb(ts_tid, a);
+  } while (++i < n);
 }
 
 static INLINE void OnTrace(TraceInfo *trace_info, bool create_segments) {
@@ -973,7 +945,6 @@ static void gen_store_to_tleb(IRSB *bbOut, IRTemp tleb_temp,
   addStmtToIRSB(bbOut, store_stmt);
 }
 
-
 static void instrument_mem_access ( TraceInfo *trace_info,
                                     IRTemp tleb_temp,
                                     uintptr_t pc,
@@ -1000,7 +971,7 @@ static void instrument_mem_access ( TraceInfo *trace_info,
     check_ident_store = true;
   }
 
-  size_t next_trace_idx = *trace_idx + 1 + (check_ident_store == true);
+  size_t next_trace_idx = *trace_idx + 1;
 
   if (next_trace_idx > kMaxMopsPerTrace) {
     if (next_trace_idx == kMaxMopsPerTrace) {
@@ -1016,32 +987,45 @@ static void instrument_mem_access ( TraceInfo *trace_info,
     return;
   }
 
+  IRExpr *expr_to_store = NULL;
+
   if (check_ident_store) {
-    // generate expression g_cur_tleb[idx] = *addr
+    int is_64 = (sizeof(void*) == 8);
+    // generate expression (*addr == new_value ? 0 : addr):
+
+    // old_value = *addr
     IRExpr *addr_load_expr = IRExpr_Load(Iend_LE, tyAddr, addr);
     IRTemp star_addr = newIRTemp(bbOut->tyenv, tyAddr);
     IRStmt *star_addr_stmt = IRStmt_WrTmp(star_addr, addr_load_expr);
     addStmtToIRSB(bbOut, star_addr_stmt);
-    IRTemp eq = newIRTemp(bbOut->tyenv, tyAddr);
-    IRExpr *eq_expr = IRExpr_Binop(sizeof(uintptr_t) == 8 ? Iop_Sub64 : Iop_Sub32,
-                                   IRExpr_RdTmp(star_addr), 
-                                   st->Ist.Store.data);
-    IRStmt *eq_stmt = IRStmt_WrTmp(eq, eq_expr);
-    addStmtToIRSB(bbOut, eq_stmt);
-    gen_store_to_tleb(bbOut, tleb_temp, *trace_idx,
-                      IRExpr_RdTmp(eq), tyAddr);
+    // sub = (old_value - new_value)
+    IRTemp sub = newIRTemp(bbOut->tyenv, tyAddr);
+    IRExpr *sub_expr = IRExpr_Binop((IROp)(Iop_Sub32 + is_64),
+                                    IRExpr_RdTmp(star_addr),
+                                    st->Ist.Store.data);
+    IRStmt *sub_stmt = IRStmt_WrTmp(sub, sub_expr);
+    addStmtToIRSB(bbOut, sub_stmt);
+    // mask = (sub==0) ? 0 : -1
+    IRTemp mask = newIRTemp(bbOut->tyenv, tyAddr);
+    IRExpr *mask_expr = IRExpr_Unop((IROp)(Iop_CmpwNEZ32 + is_64),
+                                    IRExpr_RdTmp(sub));
+    IRStmt *mask_stmt = IRStmt_WrTmp(mask, mask_expr);
+    addStmtToIRSB(bbOut, mask_stmt);
 
-    // create a mop {stored_const, 0, true}
-    MopInfo *mop = trace_info->GetMop(*trace_idx);
-    mop->pc = 0;
-    mop->size = 0;
-    mop->is_write = isStore;
-    (*trace_idx)++;
-    CHECK(trace_info->dtor_head());
+    // res = mask & addr
+    IRTemp and_tmp = newIRTemp(bbOut->tyenv, tyAddr);
+    IRExpr *and_expr = IRExpr_Binop((IROp)(Iop_And32 + is_64),
+                                    IRExpr_RdTmp(mask), addr);
+    IRStmt *and_stmt = IRStmt_WrTmp(and_tmp, and_expr);
+    addStmtToIRSB(bbOut, and_stmt);
+
+    expr_to_store = IRExpr_RdTmp(and_tmp);
+  } else {
+    expr_to_store = addr;
   }
 
-  // OnMop: g_cur_tleb[idx] = addr
-  gen_store_to_tleb(bbOut, tleb_temp, *trace_idx, addr, tyAddr);
+  // OnMop: g_cur_tleb[idx] = expr_to_store
+  gen_store_to_tleb(bbOut, tleb_temp, *trace_idx, expr_to_store, tyAddr);
   // Create a mop {pc, size, is_write}
   MopInfo *mop = trace_info->GetMop(*trace_idx);
   CHECK(szB == 1 || szB == 2 || szB == 4 || szB == 8 || szB == 10 || szB == 16);
@@ -1210,6 +1194,8 @@ static IRSB* ts_instrument ( VgCallbackClosure* closure,
   char buff[1000];
   // get_fnname_w_offset returns demangled name with optional "+offset" prefix.
   // If we have "::~" and don't have "+", this SB is the first in this dtor.
+  // We do all this stuff to avoid benign races on vptr:
+  // http://code.google.com/p/data-race-test/wiki/PopularDataRaces#Data_race_on_vptr
   if (VG_(get_fnname_w_offset)(pc, (Char*)buff, sizeof(buff)) &&
       VG_(strstr)((Char*)buff, (Char*)"::~") != NULL &&
       VG_(strchr)((Char*)buff, '+') == NULL) {
@@ -1228,7 +1214,7 @@ static IRSB* ts_instrument ( VgCallbackClosure* closure,
   }
   TraceInfo *trace_info = NULL;
   if (n_mops > 0) {
-    trace_info = TraceInfo::NewTraceInfo(n_mops, pc, dtor_head);
+    trace_info = TraceInfo::NewTraceInfo(n_mops, pc);
   }
   size_t n_mops_done = 0;
   bool need_to_insert_on_trace = n_mops > 0;

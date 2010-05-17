@@ -1937,7 +1937,7 @@ static void InstrumentMopsInBBl(BBL bbl, RTN rtn, TraceInfo *trace_info, size_t 
 
       if (ins_ignore_writes && is_write) continue;
       if (ins_ignore_reads && !is_write) continue;
-      
+
       bool check_ident_store = false;
       if (dtor_head && is_write && INS_IsMov(ins) && size == sizeof(void*)) {
         // This is a special case for '*addr = value', where we want to ignore the
@@ -2037,7 +2037,7 @@ void CallbackForTRACE(TRACE trace, void *v) {
 
   TraceInfo *trace_info = NULL;
   if (n_mops) {
-    trace_info = TraceInfo::NewTraceInfo(n_mops, INS_Address(head), false);
+    trace_info = TraceInfo::NewTraceInfo(n_mops, INS_Address(head));
     INS_InsertCall(head, IPOINT_BEFORE,
                    (AFUNPTR)OnTrace,
                    IARG_THREAD_ID,
