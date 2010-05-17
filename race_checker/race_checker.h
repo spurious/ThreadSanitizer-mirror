@@ -172,7 +172,7 @@ class RaceChecker {
   #ifdef _MSC_VER
     _snprintf_s(tmp, sizeof(tmp), _TRUNCATE, "0x%X", ptr);
   #else
-    snprintf(tmp, sizeof(tmp), "0x%X", ptr);
+    snprintf(tmp, sizeof(tmp), "%p", ptr);
   #endif
     return tmp;
   }
