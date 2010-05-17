@@ -11,11 +11,6 @@ Index: coregrind/m_syswrap/syswrap-generic.c
  
     // Do the important checks:  it is a file, is executable, permissions are
     // ok, etc.  We allow setuid executables to run only in the case when
-@@ -4115,4 +4115,3 @@
- /*--------------------------------------------------------------------*/
- /*--- end                                                          ---*/
- /*--------------------------------------------------------------------*/
--
 Index: coregrind/m_syswrap/syswrap-aix5.c
 ===================================================================
 --- coregrind/m_syswrap/syswrap-aix5.c	(revision 11026)
