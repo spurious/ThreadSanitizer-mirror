@@ -28,13 +28,12 @@ def generate(settings):
   os = 'linux'
   #                  test binary | tsan + run parameters
   #             bits, opt, static,   tsan-debug,   mode
-  variants = [((  64,   1, False),(        True, 'fast')),
-              ((  64,   1, False),(        True, 'slow')),
-              ((  64,   1, False),(        True,  'phb')),
-              ((  32,   1, False),(        True, 'slow')),
-              ((  64,   0, False),(        True, 'slow')),
-              ((  64,   1, False),(       False,  'phb')),
-              ((  32,   0, False),(       False, 'slow'))]
+  variants = [((  64,   1, False),(        True, 'hybrid')),
+              ((  64,   1, False),(        True,    'phb')),
+              ((  32,   1, False),(        True, 'hybrid')),
+              ((  64,   0, False),(        True, 'hybrid')),
+              ((  64,   1, False),(       False,    'phb')),
+              ((  32,   0, False),(       False, 'hybrid'))]
   for (test_variant, run_variant) in variants:
     (tsan_debug, mode) = run_variant
     if not test_binaries.has_key(test_variant):

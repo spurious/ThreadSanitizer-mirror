@@ -103,13 +103,9 @@ def addTestStep(factory, debug, mode, test_binary, test_desc,
     env['TS_ROOT'] = 'tsan'
 
   if mode == 'phb':
-    env['TSAN_PURE_HAPPENS_BEFORE'] = '1'
-    args.extend(['--pure-happens-before=yes', '--ignore-in-dtor=no'])
-  elif mode == 'fast':
-    env['TSAN_FAST_MODE'] = '1'
-    args.extend(['--fast-mode=yes', '--pure-happens-before=no', '--ignore-in-dtor=yes'])
-  else: # mode == 'slow'
-    args.extend(['--fast-mode=no', '--pure-happens-before=no', '--ignore-in-dtor=no'])
+    args.extend(['--pure-happens-before=yes'])
+  elif mode == 'hybrid':
+    args.extend(['--pure-happens-before=no'])
 
   args.append('--suppressions=unittest/racecheck_unittest.supp')
   args.append('--ignore=unittest/racecheck_unittest.ignore')

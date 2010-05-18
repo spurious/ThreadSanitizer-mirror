@@ -28,7 +28,7 @@ def generate(settings):
   os = 'linux'
   #                  test binary | tsan + run parameters
   #             bits, opt, static,   tsan-debug,   mode
-  variants = [((  64,   0, False),(        False, 'fast'))]
+  variants = [((  64,   0, False),(        False, 'hybrid'))]
   for (test_variant, run_variant) in variants:
     (tsan_debug, mode) = run_variant
     if not test_binaries.has_key(test_variant):

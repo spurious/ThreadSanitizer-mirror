@@ -42,8 +42,8 @@ def generate(settings):
 #               ((  32,   1, False),(        True, 'slow', 'racecheck_unittest')),
 #               ((  64,   0, False),(        True, 'slow', 'racecheck_unittest')),
 #               ((  64,   1, False),(        True, 'slow',         'demo_tests'))]
-  variants = [((  64,   0, False),(        True, 'phb', 'racecheck_unittest')),
-              ((  64,   1, False),(        True, 'slow',         'demo_tests'))]
+  variants = [((  64,   0, False),(        True, 'phb',    'racecheck_unittest')),
+              ((  64,   1, False),(        True, 'hybrid',         'demo_tests'))]
   runAllTests(f1, variants, 'linux')
 
 
