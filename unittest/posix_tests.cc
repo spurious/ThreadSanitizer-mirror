@@ -36,6 +36,7 @@
 #endif
 
 #include <fcntl.h>
+#include <fenv.h>
 #include <queue>
 #include <signal.h>
 #include <stdlib.h>
@@ -915,3 +916,11 @@ TEST(Signals, SignalsAndWaitTest) {
 }
 
 }  // namespace;
+
+TEST(WeirdSizesTests, FegetenvTest) {
+  // http://code.google.com/p/data-race-test/issues/detail?id=36
+  fenv_t tmp;
+  if (fegetenv(&tmp) != 0)
+    FAIL() << "fegetenv failed";
+}
+
