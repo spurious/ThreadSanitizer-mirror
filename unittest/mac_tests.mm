@@ -1,3 +1,4 @@
+#include <fenv.h>
 #include <gtest/gtest.h>
 #include <sys/types.h>
 #include <sys/mman.h>
@@ -85,6 +86,12 @@ TEST(MacTests, ShmMmapRegressionTest) {
     munmap(virt_addr, 4096);
     shm_unlink("apple.shm.notification_center");
   }
+}
+
+TEST(MacTests, DISABLED_FegetenvTest) {
+  fenv_t tmp;
+  if (fegetenv(&tmp) != 0)
+    FAIL() << "fegetenv failed";
 }
 
 }  // namespace MacTests
