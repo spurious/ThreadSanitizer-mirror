@@ -2596,34 +2596,16 @@ class ShadowValue {
 // -------- CacheLine --------------- {{{1
 class CacheLineBase {
  public:
-  // Returns true iff the cacheline is accessed by more than one threads or
-  // fast-mode is disabled.
-  bool IsShared() const {
-    if (creator_tid_.raw() == kSharedID)
-      return true;
-    if (creator_tid_.valid() || creator_tid_.raw() == kFastModeID)
-      return false;
-    CHECK(0);
-    return true;
-  }
-
   static const uintptr_t kLineSizeBits = Mask::kNBitsLog;  // Don't change this.
   static const uintptr_t kLineSize = Mask::kNBits;
-  static const int32_t kFastModeID;
-  static const int32_t kSharedID;
  protected:
   uintptr_t tag_;
-  TID creator_tid_;
-  bool is_compressed_;
 
   Mask has_shadow_value_;
-  Mask fast_mode_used_;
   Mask traced_;
   Mask racey_;
   Mask published_;
 };
-const int32_t CacheLineBase::kFastModeID = -2;
-const int32_t CacheLineBase::kSharedID = -3;
 
 // Uncompressed line. Just a vector of kLineSize shadow values.
 class CacheLineUncompressed : public CacheLineBase {
@@ -2655,7 +2637,6 @@ class CacheLine : public CacheLineUncompressed {
   }
 
   const Mask &has_shadow_value() const { return has_shadow_value_;  }
-  Mask &fast_mode_used()   { return fast_mode_used_;  }
   Mask &traced() { return traced_; }
   Mask &published() { return published_; }
   Mask &racey()  { return racey_; }
@@ -2664,16 +2645,9 @@ class CacheLine : public CacheLineUncompressed {
   // Add a new shadow value to a place where there was no shadow value before.
   void AddNewSvalAtOffset(uintptr_t off) {
     CHECK(!has_shadow_value().Get(off));
-    DCHECK(this->IsShared());
     has_shadow_value_.Set(off);
     published_.Clear(off);
     GetValuePointer(off)->Clear();
-  }
-
-  TID creator_tid() const { return creator_tid_; }
-  void set_creator_tid(TID tid) { creator_tid_ = tid; }
-  void ResetCreatorTID() {
-    creator_tid_ = TID(G_flags->fast_mode ? kFastModeID : kSharedID);
   }
 
   // Return true if this line has no useful information in it.
@@ -2684,7 +2658,6 @@ class CacheLine : public CacheLineUncompressed {
     if (!traced().Empty()) return false;
     if (!published().Empty()) return false;
     // No shadow values, but has creator tid.
-    if (creator_tid().valid()) return false;
     return true;
   }
 
@@ -2697,7 +2670,6 @@ class CacheLine : public CacheLineUncompressed {
 
   void Clear() {
     has_shadow_value_.Clear();
-    fast_mode_used_.Clear();
     traced_.Clear();
     published_.Clear();
     racey_.Clear();
@@ -2730,13 +2702,7 @@ class CacheLine : public CacheLineUncompressed {
     return false;
   }
 
-  static CacheLine *Compress(CacheLine *line);
-  static CacheLine *Uncompress(CacheLine *line);
-
   static void InitClassMembers() {
-    CHECK(!TID(kFastModeID).valid());
-    CHECK(!TID(kSharedID).valid());
-
     if (DEBUG_MODE) {
       Printf("sizeof(CacheLine) = %ld\n", sizeof(CacheLine));
     }
@@ -2746,9 +2712,7 @@ class CacheLine : public CacheLineUncompressed {
  private:
   explicit CacheLine(uintptr_t tag) {
     tag_ = tag;
-    is_compressed_ = false;
     Clear();
-    ResetCreatorTID();
   }
   ~CacheLine() { }
 
@@ -2758,28 +2722,6 @@ class CacheLine : public CacheLineUncompressed {
 };
 
 FreeList *CacheLine::free_list_;
-
-// static
-CacheLine *CacheLine::Compress(CacheLine *line) {
-  if (!G_flags->compress_cache_lines) {
-    return line;
-  }
-  CHECK(0);
-  return NULL;
-}
-
-// static
-CacheLine *CacheLine::Uncompress(CacheLine *line) {
-  if (!G_flags->compress_cache_lines) {
-    DCHECK(!line->is_compressed_);
-    return line;
-  }
-  if (!line->is_compressed_) {
-    return line;
-  }
-  CHECK(0);
-  return NULL;
-}
 
 // If range [a,b) fits into one line, return that line's tag.
 // Else range [a,b) is broken into these ranges:
@@ -3177,32 +3119,8 @@ void INLINE ClearMemoryStateInOneLine(uintptr_t addr,
     ClearPublishedAttribute(line, mask);
   }
   Mask old_used = line->ClearRangeAndReturnOldUsed(beg, end);
-  if (line->IsShared()) {
-    if (UNLIKELY(!old_used.Empty())) {
-      UnrefSegmentsInMemoryRange(beg, end, old_used, line);
-    }
-  } else {
-    // Line is in fast mode. No shadow values.
-    CHECK(line->has_shadow_value().Empty());
-  }
-
-  line->fast_mode_used().ClearRange(beg, end);
-
-  if (line->fast_mode_used().Empty() && line->has_shadow_value().Empty()) {
-    if (UNLIKELY(G_flags->trace_level > 0 &&
-                 line->creator_tid().raw() != CacheLine::kFastModeID)) {
-      if (G_flags->trace_addr >= line->tag() &&
-          G_flags->trace_addr <  line->tag() + CacheLine::kLineSize) {
-        Printf("TRACE: cleared creator_tid for line %p\n", line->tag());
-      }
-    }
-    line->ResetCreatorTID();
-    DCHECK(line->has_shadow_value().Empty());
-  }
-
-  // This is used only by fast mode.
-  if (is_new_mem) {
-    line->fast_mode_used().SetRange(beg, end);
+  if (UNLIKELY(!old_used.Empty())) {
+    UnrefSegmentsInMemoryRange(beg, end, old_used, line);
   }
 }
 
@@ -4210,22 +4128,6 @@ struct Thread {
     StackTrace::Delete(trace);
   }
 
-  bool NOINLINE CallStackContainsDtor() {
-    // TODO(kcc): can check this w/o demangling?
-    for (int i = call_stack_.size() - 1; i >= 0; i--) {
-      uintptr_t pc = call_stack_[i];
-      string str = PcToRtnNameWithStats(pc, false);
-      // shortcut: if 'D' is not present in mangled name -- not a DTOR
-      if (str.find('D') == string::npos) continue;
-
-      string demangled = PcToRtnNameWithStats(pc, true);
-      if (demangled.find('~') != string::npos) {
-        return true;
-      }
-    }
-    return false;
-  }
-
   static void ForgetAllState() {
     // G_flags->debug_level = 2;
     for (int i = 0; i < Thread::NumberOfThreads(); i++) {
@@ -4500,8 +4402,6 @@ class ReportStorage {
                           ShadowValue old_sval, ShadowValue new_sval,
                           bool is_published) {
     Thread *thr = Thread::Get(tid);
-    bool in_dtor = G_flags->ignore_in_dtor && thr->CallStackContainsDtor();
-
     {
       // Check this isn't a "_ZNSs4_Rep20_S_empty_rep_storageE" report.
       uintptr_t offset;
@@ -4523,8 +4423,6 @@ class ReportStorage {
       is_expected = true;
       g_found_races_since_EXPECT_RACE_BEGIN++;
     }
-
-    if (!is_expected && in_dtor) return false;
 
     if (is_expected && !G_flags->show_expected_races) return false;
 
@@ -5698,7 +5596,6 @@ class Detector {
     uintptr_t offset = CacheLine::ComputeOffset(addr);
     ShadowValue new_sval;
 
-    DCHECK(cache_line->IsShared());
     if (UNLIKELY(!cache_line->has_shadow_value().Get(offset))) {
       cache_line->AddNewSvalAtOffset(offset);
     }
@@ -5768,56 +5665,6 @@ class Detector {
     return new_sval;
   }
 
-  // return true if we can skip the memory access due to fast mode.
-  INLINE bool FastModeCheckAndUpdateCreatorTid(CacheLine *cache_line,
-                                               TID tid,
-                                               bool tracing) {
-    // See
-    // http://code.google.com/p/data-race-test/wiki/ThreadSanitizerAlgorithm#Fast_mode
-    // for the details.
-
-    if (cache_line->IsShared()) {
-      G_stats->fast_mode_mt++;
-      return false;
-    }
-
-    // If the line is in the fast mode, there should be no svals.
-
-    bool res = false;
-    int case_num = 0;
-    TID creator_tid = cache_line->creator_tid();
-    if (creator_tid.raw() == CacheLine::kFastModeID) {
-      DCHECK(cache_line->has_shadow_value().Empty());
-      // we see this cache line for the first time (since it has been cleared).
-      cache_line->set_creator_tid(tid);
-      G_stats->fast_mode_first_time++;
-      res = true;
-      case_num = 1;
-    } else if (creator_tid == tid) {
-      DCHECK(cache_line->has_shadow_value().Empty());
-      // We are still in the same tid. Just return.
-      G_stats->fast_mode_still_in_creator++;
-      res = true;
-      case_num = 2;
-    } else {
-      DCHECK(cache_line->has_shadow_value().Empty());
-      CHECK(creator_tid.valid());
-      // We are transitioning from exclusive mode into shared for this
-      // cacheline.
-      cache_line->set_creator_tid(TID(CacheLine::kSharedID));
-      G_stats->fast_mode_transition++;
-      res = false;
-      case_num = 3;
-    }
-    if (UNLIKELY(tracing)) {
-      Printf("TRACE: T%d line=%p; tag=%p; creator=%d/%d; fast-mode, case#%d\n",
-             tid.raw(), cache_line, cache_line->tag(),
-             creator_tid.raw(), cache_line->creator_tid().raw(), case_num);
-    }
-    return res;
-  }
-
-
   INLINE void HandleMemoryAccessInternal(TID tid,
                                          uintptr_t addr, uintptr_t size,
                                          bool is_w) {
@@ -5856,14 +5703,6 @@ class Detector {
       }
     }
 
-    // TODO(timurrrr): bug with unaligned access that touches two CacheLines.
-    if (FastModeCheckAndUpdateCreatorTid(cache_line, tid, tracing)) {
-      uintptr_t upper_bound = min(offset + size,
-                                  (uintptr_t) CacheLine::kLineSize);
-      cache_line->fast_mode_used().SetRange(offset, upper_bound);
-      return;
-    }
-
     if (UNLIKELY(g_so_far_only_one_thread)) return;
 
     if (DEBUG_MODE && UNLIKELY(G_flags->keep_history >= 2)) {
@@ -5888,11 +5727,6 @@ class Detector {
       for (uintptr_t x = a; x < b; x++) {
         offset = CacheLine::ComputeOffset(x);
         cache_line = G_cache->GetLineOrCreateNew(x, __LINE__);
-        if (FastModeCheckAndUpdateCreatorTid(cache_line, tid, tracing)) {
-          cache_line->fast_mode_used().Set(offset);
-          continue;
-        }
-        DCHECK(cache_line->IsShared());
         HandleMemoryAccessHelper(is_w, cache_line, x, 1, tid, thr, tracing);
         G_stats->n_access_slow++;
       }
@@ -6331,7 +6165,17 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
                &G_flags->segment_set_recycle_queue_size);
   FindUIntFlag("recent_segments_cache_size", 10, args,
                &G_flags->recent_segments_cache_size);
-  FindBoolFlag("fast_mode", false, args, &G_flags->fast_mode);
+
+  bool fast_mode = false;
+  FindBoolFlag("fast_mode", false, args, &fast_mode);
+  if (fast_mode) {
+    Printf("INFO: --fast-mode is deprecated\n");
+  }
+  bool ignore_in_dtor = false;
+  FindBoolFlag("ignore_in_dtor", false, args, &ignore_in_dtor);
+  if (ignore_in_dtor) {
+    Printf("INFO: --ignore-in-dtor is deprecated\n");
+  }
 
   int has_phb = FindBoolFlag("pure_happens_before", true, args,
                               &G_flags->pure_happens_before);
@@ -6358,7 +6202,6 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   FindBoolFlag("suggest_happens_before_arcs", true, args,
                &G_flags->suggest_happens_before_arcs);
   FindBoolFlag("show_pc", false, args, &G_flags->show_pc);
-  FindBoolFlag("ignore_in_dtor", false, args, &G_flags->ignore_in_dtor);
   FindBoolFlag("free_is_write", false, args, &G_flags->free_is_write);
   FindBoolFlag("exit_after_main", false, args, &G_flags->exit_after_main);
 
@@ -6462,13 +6305,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
 
   G_flags->max_n_threads        = 100000;
 
-  if (G_flags->pure_happens_before) {
-    // disable fast mode in pure happens-before mode.
-    G_flags->fast_mode = false;
-  }
-
   if (G_flags->full_output) {
-    G_flags->ignore_in_dtor = false;
     G_flags->announce_threads = true;
     G_flags->show_pc = true;
     G_flags->show_states = true;
@@ -6680,14 +6517,8 @@ const char *ThreadSanitizerQuery(const char *query) {
   if (str == "pure_happens_before" && G_flags->pure_happens_before == true) {
     ret = "1";
   }
-  if (str == "hybrid_fast" &&
-      G_flags->pure_happens_before == false &&
-      G_flags->fast_mode == true) {
-    ret = "1";
-  }
   if (str == "hybrid_full" &&
-      G_flags->pure_happens_before == false &&
-      G_flags->fast_mode == false) {
+      G_flags->pure_happens_before == false) {
     ret = "1";
   }
   if (DEBUG_MODE && G_flags->debug_level >= 2) {
@@ -6809,7 +6640,6 @@ static bool ThreadSanitizerPrintReport(ThreadSanitizerReport *report) {
 // -------- TODO -------------------------- {{{1
 // - Support configurable aliases for function names (is it doable in valgrind)?
 // - Correctly support atomic operations (not just ignore).
-// - Implement initialization state. (do we need it if we have fast-mode?)
 // - Handle INC as just one write
 //   - same for memset, etc
 // - Implement correct handling of memory accesses with different sizes.

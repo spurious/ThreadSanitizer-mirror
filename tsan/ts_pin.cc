@@ -2749,12 +2749,9 @@ int main(INT32 argc, CHAR **argv) {
   TRACE_AddInstrumentFunction(CallbackForTRACE, 0);
   PIN_AddFollowChildProcessFunction(CallbackForExec, NULL);
 
-  Report("ThreadSanitizerPin r%s: "
-         "pure-happens-before=%s fast-mode=%s ignore-in-dtor=%s\n",
+  Report("ThreadSanitizerPin r%s: %s\n",
          TS_VERSION,
-         G_flags->pure_happens_before ? "yes" : "no",
-         G_flags->fast_mode ? "yes" : "no",
-         G_flags->ignore_in_dtor ? "yes" : "no");
+         G_flags->pure_happens_before ? "hybrid=no" : "hybrid=yes");
   if (DEBUG_MODE) {
     Report("INFO: Debug build\n");
   }

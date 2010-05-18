@@ -71,13 +71,6 @@ struct Stats {
            history_creates_new_segment);
     Printf("   Forget all history: %'ld\n", n_forgets);
 
-    if (G_flags->fast_mode)
-      Printf("   Fast mode: first time      : %'ld;\n"
-             "              still in creator: %'ld;\n"
-             "              transition      : %'ld;\n"
-             "              mt              : %'ld;\n",
-             fast_mode_first_time, fast_mode_still_in_creator,
-             fast_mode_transition, fast_mode_mt);
     PrintStatsForSeg();
     PrintStatsForSS();
     PrintStatsForLS();
@@ -201,9 +194,6 @@ struct Stats {
   uintptr_t seg_create, seg_reuse;
 
   uintptr_t publish_set, publish_get, publish_clear;
-
-  uintptr_t fast_mode_first_time, fast_mode_still_in_creator,
-            fast_mode_transition, fast_mode_mt;
 
   uintptr_t pc_to_strings, pc_to_rtn_name;
 
