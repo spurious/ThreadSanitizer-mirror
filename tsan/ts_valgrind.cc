@@ -961,6 +961,12 @@ static void instrument_mem_access ( TraceInfo *trace_info,
   tyAddr = typeOfIRExpr( bbOut->tyenv, addr );
   tl_assert(tyAddr == Ity_I32 || tyAddr == Ity_I64);
 
+  if (szB == 28) {
+    // Ignore weird-sized accesses for now.
+    // See http://code.google.com/p/data-race-test/issues/detail?id=36
+    return;
+  }
+
   bool check_ident_store = false;
 
   if (st->tag == Ist_Store && dtor_head && 
@@ -1025,7 +1031,11 @@ static void instrument_mem_access ( TraceInfo *trace_info,
   gen_store_to_tleb(bbOut, tleb_temp, *trace_idx, expr_to_store, tyAddr);
   // Create a mop {pc, size, is_write}
   MopInfo *mop = trace_info->GetMop(*trace_idx);
-  CHECK(szB == 1 || szB == 2 || szB == 4 || szB == 8 || szB == 10 || szB == 16);
+  if (!(szB == 1 || szB == 2 || szB == 4 || szB == 8 || szB == 10 || szB == 16)) {
+    Printf("ERROR! Unknown memory access size: %d bytes.\n", szB);
+    ppIRStmt(st);
+    CHECK(0);
+  }
   mop->pc = pc;
   mop->size = szB;
   mop->is_write = isStore;

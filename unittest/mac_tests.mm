@@ -88,7 +88,7 @@ TEST(MacTests, ShmMmapRegressionTest) {
   }
 }
 
-TEST(MacTests, DISABLED_FegetenvTest) {
+TEST(MacTests, FegetenvTest) {
   fenv_t tmp;
   if (fegetenv(&tmp) != 0)
     FAIL() << "fegetenv failed";
