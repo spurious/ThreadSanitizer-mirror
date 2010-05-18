@@ -177,10 +177,6 @@ static inline uintptr_t GetVgPc(ThreadId vg_tid) {
   return (uintptr_t)VG_(get_IP)(vg_tid);
 }
 
-static inline uintptr_t GetVgSp(ThreadId vg_tid) {
-  return (uintptr_t)VG_(get_SP)(vg_tid);
-}
-
 #ifdef VGP_arm_linux
 static inline uintptr_t GetVgLr(ThreadId vg_tid) {
   return (uintptr_t) VG_(get_LR)(vg_tid);
@@ -414,30 +410,12 @@ INLINE void FlushMops(ThreadId vg_tid, bool keep_trace_info = false) {
   } while (++i < n);
 }
 
-static INLINE void UpdateCallStack(ValgrindThread *thr, uintptr_t sp) {
-  vector<CallStackRecord> &call_stack = thr->call_stack;
-  while (!call_stack.empty()) {
-    CallStackRecord &record = call_stack.back();
-    Addr cur_top = record.sp;
-    if (sp < cur_top) break;
-    call_stack.pop_back();
-    int32_t ts_tid = thr->zero_based_uniq_tid;
-    ThreadSanitizerHandleRtnExit(ts_tid);
-    if (debug_rtn) {
-      Printf("T%d: << %p %s\n", ts_tid, record.pc, PcToRtnNameAndFilePos(record.pc).c_str());
-    }
-    break;
-  }
-}
-
-static INLINE void OnTrace(TraceInfo *trace_info, uintptr_t sp,
-                           bool create_segments) {
+static INLINE void OnTrace(TraceInfo *trace_info, bool create_segments) {
   ThreadId vg_tid = GetVgTid();
 
   // First, flush the old trace_info.
   ValgrindThread *thr = &g_valgrind_threads[vg_tid];
   if (thr->trace_info) FlushMops(vg_tid);
-  UpdateCallStack(thr, sp);
 
   // Start the new trace, zero the contents of tleb.
   size_t n = trace_info->n_mops();
@@ -445,16 +423,15 @@ static INLINE void OnTrace(TraceInfo *trace_info, uintptr_t sp,
     thr->tleb[i] = 0;
   thr->trace_info = trace_info;
   thr->create_segments = create_segments;
-  DCHECK(thr->trace_info);
-  DCHECK(thr->trace_info->n_mops() <= kMaxMopsPerTrace);
+  CHECK(thr->trace_info);
+  CHECK(thr->trace_info->n_mops() <= kMaxMopsPerTrace);
 }
 
-VG_REGPARM(1) static void OnTraceCreateSegments(TraceInfo *trace_info,
-                                                uintptr_t sp) {
-  OnTrace(trace_info, sp, true);
+VG_REGPARM(1) static void OnTraceCreateSegments(TraceInfo *trace_info) {
+  OnTrace(trace_info, true);
 }
-VG_REGPARM(1) static void OnTraceNoSegments(TraceInfo *trace_info, uintptr_t sp) {
-  OnTrace(trace_info, sp, false);
+VG_REGPARM(1) static void OnTraceNoSegments(TraceInfo *trace_info) {
+  OnTrace(trace_info, false);
 }
 
 static inline void Put(EventType type, int32_t tid, uintptr_t pc,
@@ -467,8 +444,6 @@ static inline void Put(EventType type, int32_t tid, uintptr_t pc,
 static void rtn_call(Addr sp_post_call_insn, Addr pc_post_call_insn,
                      IGNORE_BELOW_RTN ignore_below) {
   ThreadId vg_tid = GetVgTid();
-  ValgrindThread *thr = &g_valgrind_threads[vg_tid];
-  UpdateCallStack(thr, sp_post_call_insn);
   CallStackRecord record;
   record.pc = pc_post_call_insn;
   record.sp = sp_post_call_insn;
@@ -480,6 +455,7 @@ static void rtn_call(Addr sp_post_call_insn, Addr pc_post_call_insn,
   // properly. Or this may be a very deep recursion.
   DCHECK(g_valgrind_threads[vg_tid].call_stack.size() < 10000);
   uintptr_t call_pc = GetVgPc(vg_tid);
+  ValgrindThread *thr = &g_valgrind_threads[vg_tid];
   if (thr->trace_info) FlushMops(vg_tid);
   ThreadSanitizerHandleRtnCall(VgTidToTsTid(vg_tid), call_pc, record.pc,
                                ignore_below);
@@ -531,6 +507,22 @@ static INLINE void evh__die_mem_stack_helper ( Addr a, SizeT len ) {
   ThreadId vg_tid = GetVgTid();
   int32_t ts_tid = VgTidToTsTid(vg_tid);
   ValgrindThread *thr = &g_valgrind_threads[vg_tid];
+  if (thr->trace_info) FlushMops(vg_tid, true /* keep_trace_info */);
+  vector<CallStackRecord> &call_stack = thr->call_stack;
+  while (!call_stack.empty()) {
+    CallStackRecord &record = call_stack.back();
+    Addr cur_top = record.sp;
+    if (a < cur_top) break;
+    call_stack.pop_back();
+    ThreadSanitizerHandleRtnExit(ts_tid);
+    if (debug_rtn) {
+      Printf("T%d: << %p %s\n", ts_tid, record.pc, PcToRtnNameAndFilePos(record.pc).c_str());
+    }
+    break;
+  }
+  if (G_flags->verbosity >= 2) {
+    // Printf("T%d: -sp: %p => %p (%ld)\n", ts_tid, a, a + len, len);
+  }
   if (!thr->ignore_accesses) {
     ThreadSanitizerHandleStackMemChange(ts_tid, a, len, false);
   }
@@ -617,7 +609,6 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
   if (!VG_IS_TOOL_USERREQ('T', 'S', args[0]))
     return False;
   ValgrindThread *thr = &g_valgrind_threads[vg_tid];
-  UpdateCallStack(thr, GetVgSp(vg_tid));
   if (thr->trace_info) FlushMops(vg_tid);
   *ret = 0;
   uintptr_t pc = GetVgPc(vg_tid);
@@ -859,20 +850,15 @@ static IRTemp gen_Get_SP ( IRSB*           bbOut,
 }
 
 
-static void ts_instrument_trace_entry(IRSB *bbOut,
-                                      VexGuestLayout* layout,
-                                      TraceInfo *trace_info,
+static void ts_instrument_trace_entry(IRSB *bbOut, TraceInfo *trace_info, 
                                       bool create_segments) {
    CHECK(trace_info);
    HChar*   hName    = (HChar*)(create_segments ?
        "OnTraceCreateSegments" : "OnTraceNoSegments");
    void *callback = (void*)(create_segments ?
        OnTraceCreateSegments : OnTraceNoSegments);
-
-   IRTemp sp = gen_Get_SP(bbOut, layout, sizeof(void*));
-   IRExpr **args = mkIRExprVec_2(mkIRExpr_HWord((HWord)trace_info),
-                                 IRExpr_RdTmp(sp));
-   IRDirty* di = unsafeIRDirty_0_N(2,
+   IRExpr **args = mkIRExprVec_1(mkIRExpr_HWord((HWord)trace_info));
+   IRDirty* di = unsafeIRDirty_0_N( 1,
                            hName,
                            VG_(fnptr_to_fnentry)(callback),
                            args);
@@ -1238,7 +1224,7 @@ static IRSB* ts_instrument ( VgCallbackClosure* closure,
     tl_assert(st);
     tl_assert(isFlatIRStmt(st));
     if (st->tag != Ist_IMark && need_to_insert_on_trace) {
-      ts_instrument_trace_entry(bbOut, layout, trace_info,
+      ts_instrument_trace_entry(bbOut, trace_info,
                                 create_segments && G_flags->keep_history >= 1);
       need_to_insert_on_trace = false;
       // Generate temp for *g_cur_tleb.
