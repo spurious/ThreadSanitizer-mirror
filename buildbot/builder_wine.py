@@ -23,7 +23,7 @@ def generate(settings):
   f1.addStep(ShellCommand(command='WINEPREFIX=`pwd`/.wine ./tsan.sh --max-mem-in-mb=5000 --suppressions=unittest/racecheck_unittest.supp ' +
                           '--ignore=unittest/racecheck_unittest.ignore --announce-threads ' +
                           '--trace-children=yes --trace-children-skip="*wineserver*,*winemenubuilder*,*services.exe*,*wineboot.exe*,*winedevice.exe*" ' +
-                          '--vex-iropt-precise-memory-exns=yes --pure-happens-before=no --show-pc=yes --error_exitcode=1' +
+                          '--vex-iropt-precise-memory-exns=yes --pure-happens-before=no --show-pc=yes --error_exitcode=1 ' +
                           '/usr/local/wine/bin/wine unittest/bin/racecheck_unittest-windows-x86-O0.exe',
              env={'WINE': '/usr/local/wine/bin/wine', 'WINESERVER': '/usr/local/wine/bin/wineserver'},
              description='testing',
