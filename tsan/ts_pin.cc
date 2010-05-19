@@ -24,10 +24,6 @@
 
 // Author: Konstantin Serebryany.
 // Author: Timur Iskhodzhanov.
-//
-// ******* WARNING ********
-// This code is experimental. Do not expect anything here to work.
-// ***** END WARNING ******
 
 #define __STDC_LIMIT_MACROS
 #include "pin.H"
