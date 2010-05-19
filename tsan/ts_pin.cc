@@ -29,6 +29,7 @@
 // This code is experimental. Do not expect anything here to work.
 // ***** END WARNING ******
 
+#define __STDC_LIMIT_MACROS
 #include "pin.H"
 
 #include <stdio.h>
@@ -41,6 +42,7 @@
 #include "ts_lock.h"
 #include "ts_trace_info.h"
 #include "ts_literace.h"
+#include "ts_race_verifier.h"
 
 
 #if defined(__GNUC__)
@@ -293,6 +295,8 @@ static void DumpEventInternal(EventType type, int32_t uniq_tid, uintptr_t pc,
 
 static void TLEBFlushUnlocked(ThreadLocalEventBuffer &tleb) {
   PinThread &t = *tleb.t;
+  // global_ignore should be always on with race verifier
+  DCHECK(!g_race_verifier_active || global_ignore);
   DCHECK(tleb.size <= kThreadLocalEventBufferSize);
   if (DEBUG_MODE && t.thread_done) {
     Printf("ACHTUNG!!! an event from a dead thread T%d\n", t.tid);
@@ -1433,10 +1437,10 @@ static void OnTraceNoMops(THREADID tid, ADDRINT sp) {
   G_stats->mops_per_trace[0]++;
 }
 
-static void OnTrace(THREADID tid, ADDRINT sp,
-                    TraceInfo *trace_info,
-                    uintptr_t **tls_reg_p) {
+static void OnTrace(THREADID tid, ADDRINT sp, TraceInfo *trace_info,
+    uintptr_t **tls_reg_p) {
   PinThread &t = g_pin_threads[tid];
+
   DCHECK(trace_info);
   uintptr_t pc = trace_info->pc();
   DebugOnlyShowPcAndSp(__FUNCTION__, t.tid, pc, sp);
@@ -1454,6 +1458,59 @@ static void OnTrace(THREADID tid, ADDRINT sp,
   const size_t mop_stat_size = TS_ARRAY_SIZE(G_stats->mops_per_trace);
   G_stats->mops_per_trace[n < mop_stat_size ? n : mop_stat_size - 1]++;
 }
+
+/* Verify all mop accesses in the last trace of the given thread by registering
+   them with RaceVerifier and sleeping a bit. */
+static void OnTraceVerifyInternal(PinThread &t, uintptr_t **tls_reg_p) {
+  DCHECK(g_race_verifier_active);
+  if (t.trace_info) {
+    int need_sleep = 0;
+    for (unsigned i = 0; i < t.trace_info->n_mops(); ++i) {
+      uintptr_t addr = (*tls_reg_p)[i];
+      if (addr) {
+        MopInfo *mop = t.trace_info->GetMop(i);
+        need_sleep += RaceVerifierStartAccess(t.uniq_tid, addr, mop->pc,
+            mop->is_write);
+      }
+    }
+
+    if (!need_sleep)
+      return;
+
+    usleep(G_flags->race_verifier_sleep_ms * 1000);
+
+    for (unsigned i = 0; i < t.trace_info->n_mops(); ++i) {
+      uintptr_t addr = (*tls_reg_p)[i];
+      if (addr) {
+        MopInfo *mop = t.trace_info->GetMop(i);
+        RaceVerifierEndAccess(t.uniq_tid, addr, mop->pc, mop->is_write);
+      }
+    }
+  }
+}
+
+static void OnTraceNoMopsVerify(THREADID tid, ADDRINT sp,
+    uintptr_t **tls_reg_p) {
+  PinThread &t = g_pin_threads[tid];
+  DCHECK(g_race_verifier_active);
+  OnTraceVerifyInternal(t, tls_reg_p);
+  t.trace_info = NULL;
+}
+
+static void OnTraceVerify(THREADID tid, ADDRINT sp, TraceInfo *trace_info,
+    uintptr_t **tls_reg_p) {
+  DCHECK(g_race_verifier_active);
+  PinThread &t = g_pin_threads[tid];
+  OnTraceVerifyInternal(t, tls_reg_p);
+
+  size_t n = trace_info->n_mops();
+  DCHECK(n > 0);
+
+  t.trace_info = trace_info;
+  trace_info->counter()++;
+  *tls_reg_p = TLEBAddTrace(t);
+}
+
 
 //---------- Memory accesses -------------------------- {{{2
 // 'addr' is the section of t.tleb.events which is set in OnTrace.
@@ -1752,8 +1809,9 @@ static void On_AnnotateCondVarWait(THREADID tid, ADDRINT pc,
 static void On_AnnotateEnableRaceDetection(THREADID tid, ADDRINT pc,
                                         ADDRINT file, ADDRINT line,
                                         ADDRINT enable) {
-  TLEBSimpleEvent(g_pin_threads[tid],
-                  enable ? TLEB_GLOBAL_IGNORE_OFF : TLEB_GLOBAL_IGNORE_ON);
+  if (!g_race_verifier_active)
+    TLEBSimpleEvent(g_pin_threads[tid],
+        enable ? TLEB_GLOBAL_IGNORE_OFF : TLEB_GLOBAL_IGNORE_ON);
 }
 
 static void On_AnnotateIgnoreReadsBegin(THREADID tid, ADDRINT pc,
@@ -1864,7 +1922,7 @@ static bool InstrumentCall(INS ins) {
 
 
 // return the number of inserted instrumentations.
-static void InstrumentMopsInBBl(BBL bbl, RTN rtn, TraceInfo *trace_info, size_t *mop_idx) {
+static void InstrumentMopsInBBl(BBL bbl, RTN rtn, TraceInfo *trace_info, uintptr_t instrument_pc, size_t *mop_idx) {
   bool dtor_head = false;
 
   if (BBL_Address(bbl) == RTN_Address(rtn)) {
@@ -1937,6 +1995,7 @@ static void InstrumentMopsInBBl(BBL bbl, RTN rtn, TraceInfo *trace_info, size_t 
 
       if (ins_ignore_writes && is_write) continue;
       if (ins_ignore_reads && !is_write) continue;
+      if (instrument_pc && instrument_pc != INS_Address(ins)) continue;
 
       bool check_ident_store = false;
       if (dtor_head && is_write && INS_IsMov(ins) && size == sizeof(void*)) {
@@ -1972,21 +2031,21 @@ static void InstrumentMopsInBBl(BBL bbl, RTN rtn, TraceInfo *trace_info, size_t 
         mop->is_write = is_write;
         if (is_predicated) {
           INS_InsertPredicatedCall(ins, point,
-            (AFUNPTR)On_PredicatedMop,
-            IARG_EXECUTING,
-            IARG_REG_VALUE, tls_reg,
-            IARG_THREAD_ID,
-            IARG_ADDRINT, *mop_idx,
-            IARG_MEMORYOP_EA, i,
-            IARG_END);
+              (AFUNPTR)On_PredicatedMop,
+              IARG_EXECUTING,
+              IARG_REG_VALUE, tls_reg,
+              IARG_THREAD_ID,
+              IARG_ADDRINT, *mop_idx,
+              IARG_MEMORYOP_EA, i,
+              IARG_END);
         } else {
           INS_InsertCall(ins, point,
-            on_mop_callback,
-            IARG_REG_VALUE, tls_reg,
-            IARG_THREAD_ID,
-            IARG_ADDRINT, *mop_idx,
-            IARG_MEMORYOP_EA, i,
-            IARG_END);
+              on_mop_callback,
+              IARG_REG_VALUE, tls_reg,
+              IARG_THREAD_ID,
+              IARG_ADDRINT, *mop_idx,
+              IARG_MEMORYOP_EA, i,
+              IARG_END);
         }
       }
       (*mop_idx)++;
@@ -2023,11 +2082,26 @@ void CallbackForTRACE(TRACE trace, void *v) {
     }
   }
 
+  uintptr_t instrument_pc = 0;
+  if (g_race_verifier_active) {
+    // Check if this trace looks like part of a possible race report.
+    uintptr_t min_pc = UINTPTR_MAX;
+    uintptr_t max_pc = 0;
+    for(BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
+      min_pc = MIN(min_pc, INS_Address(BBL_InsHead(bbl)));
+      max_pc = MAX(max_pc, INS_Address(BBL_InsTail(bbl)));
+    }
+
+    bool verify_trace = RaceVerifierGetAddresses(min_pc, max_pc, &instrument_pc);
+    if (!verify_trace)
+      ignore_memory = true;
+  }
+
   size_t n_mops = 0;
   // count the mops.
   for(BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
     if (!ignore_memory) {
-      InstrumentMopsInBBl(bbl, rtn, NULL, &n_mops);
+      InstrumentMopsInBBl(bbl, rtn, NULL, instrument_pc, &n_mops);
     }
   }
 
@@ -2038,19 +2112,29 @@ void CallbackForTRACE(TRACE trace, void *v) {
   TraceInfo *trace_info = NULL;
   if (n_mops) {
     trace_info = TraceInfo::NewTraceInfo(n_mops, INS_Address(head));
+    AFUNPTR handler = (AFUNPTR)(g_race_verifier_active ? OnTraceVerify : OnTrace);
     INS_InsertCall(head, IPOINT_BEFORE,
-                   (AFUNPTR)OnTrace,
+                   handler,
                    IARG_THREAD_ID,
                    IARG_REG_VALUE, REG_STACK_PTR,
                    IARG_PTR, trace_info,
                    IARG_REG_REFERENCE, tls_reg,
                    IARG_END);
   } else {
-    INS_InsertCall(head, IPOINT_BEFORE,
-                   (AFUNPTR)OnTraceNoMops,
-                   IARG_THREAD_ID,
-                   IARG_REG_VALUE, REG_STACK_PTR,
-                   IARG_END);
+    if (g_race_verifier_active) {
+      INS_InsertCall(head, IPOINT_BEFORE,
+                     (AFUNPTR)OnTraceNoMopsVerify,
+                     IARG_THREAD_ID,
+                     IARG_REG_VALUE, REG_STACK_PTR,
+                     IARG_REG_REFERENCE, tls_reg,
+                     IARG_END);
+    } else {
+      INS_InsertCall(head, IPOINT_BEFORE,
+                     (AFUNPTR)OnTraceNoMops,
+                     IARG_THREAD_ID,
+                     IARG_REG_VALUE, REG_STACK_PTR,
+                     IARG_END);
+    }
   }
 
   // instrument the mops. We want to do it after we instrumented the head
@@ -2065,14 +2149,17 @@ void CallbackForTRACE(TRACE trace, void *v) {
              PcToRtnName(trace_info->pc(), false).c_str());
     }
     for(BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
-      InstrumentMopsInBBl(bbl, rtn, trace_info, &i);
+      InstrumentMopsInBBl(bbl, rtn, trace_info, instrument_pc, &i);
     }
   }
 
   // instrument the calls, do it after all other instrumentation.
-  for(BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
-   InstrumentCall(BBL_InsTail(bbl));
+  if (!g_race_verifier_active) {
+    for(BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
+      InstrumentCall(BBL_InsTail(bbl));
+    }
   }
+
   CHECK(n_mops == i);
 }
 
@@ -2755,6 +2842,12 @@ int main(INT32 argc, CHAR **argv) {
   if (DEBUG_MODE) {
     Report("INFO: Debug build\n");
   }
+
+  if (g_race_verifier_active) {
+    RaceVerifierInit(G_flags->race_verifier, G_flags->race_verifier_extra);
+    global_ignore = true;
+  }
+
   StartThreadSanitizerThread();
   // Fire!
   PIN_StartProgram();

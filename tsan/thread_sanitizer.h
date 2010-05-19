@@ -111,10 +111,15 @@ struct FLAGS {
 
   intptr_t     error_exitcode;
   bool         trace_children;
+
+  vector<string> race_verifier;
+  vector<string> race_verifier_extra;
+  intptr_t       race_verifier_sleep_ms;
 };
 
 extern FLAGS *G_flags;
 
+extern bool g_race_verifier_active;
 
 extern bool debug_expected_races;
 extern bool debug_malloc;
@@ -124,7 +129,7 @@ extern bool debug_rtn;
 extern bool debug_wrap;
 extern bool debug_ins;
 extern bool debug_shadow_stack;
-
+extern bool debug_race_verifier;
 
 //--------- TS Exports ----------------- {{{1
 #include "ts_events.h"

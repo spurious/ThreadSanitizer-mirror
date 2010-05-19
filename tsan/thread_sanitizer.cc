@@ -65,6 +65,8 @@ uint32_t g_lock_era = 0;
 
 FLAGS *G_flags = NULL;
 
+bool g_race_verifier_active = false;
+
 bool debug_expected_races = false;
 bool debug_malloc = false;
 bool debug_free = false;
@@ -76,6 +78,7 @@ bool debug_ins = false;
 bool debug_shadow_stack = false;
 bool debug_happens_before = false;
 bool debug_cache = false;
+bool debug_race_verifier = false;
 
 // -------- Util ----------------------------- {{{1
 
@@ -4472,8 +4475,9 @@ class ReportStorage {
 
 
   void PrintConcurrentSegmentSet(SSID ssid, TID tid, SID sid,
-                                        LSID lsid, bool is_w,
-                                        const char *descr, set<LID> *locks) {
+                                 LSID lsid, bool is_w,
+                                 const char *descr, set<LID> *locks,
+                                 set<SID>* concurrent_sids) {
     if (ssid.IsEmpty()) return;
     bool printed_header = false;
     Thread *thr1 = Thread::Get(tid);
@@ -4482,6 +4486,9 @@ class ReportStorage {
       Segment *seg = Segment::Get(concurrent_sid);
       if (Segment::HappensBeforeOrSameThread(concurrent_sid, sid)) continue;
       if (!LockSet::IntersectionIsEmpty(lsid, seg->lsid(is_w))) continue;
+      if (concurrent_sids) {
+        concurrent_sids->insert(concurrent_sid);
+      }
       Thread *thr2 = Thread::Get(seg->tid());
       if (!printed_header) {
         Report("  %sConcurrent %s happened at (OR AFTER) these points:%s\n",
@@ -4524,6 +4531,22 @@ class ReportStorage {
   void SetProgramFinished() {
     CHECK(!program_finished_);
     program_finished_ = true;
+  }
+
+  string RaceInfoString(uintptr_t pc, set<SID>& concurrent_sids) {
+    string s;
+    char buf[100];
+    snprintf(buf, 100, "Race verifier data: %p", (void*)pc);
+    s += buf;
+    for (set<SID>::iterator it = concurrent_sids.begin();
+         it != concurrent_sids.end(); ++it) {
+      // Take the first pc of the concurrent stack trace.
+      uintptr_t concurrent_pc = *Segment::embedded_stack_trace(*it);
+      snprintf(buf, 100, ",%p", (void*)concurrent_pc);
+      s += buf;
+    }
+    s += "\n";
+    return s;
   }
 
   void PrintRaceReport(ThreadSanitizerDataRaceReport *race) {
@@ -4579,12 +4602,15 @@ class ReportStorage {
       Report(" old state: %s\n", race->old_sval.ToString().c_str());
       Report(" new state: %s\n", race->new_sval.ToString().c_str());
     }
+    set<SID> concurrent_sids;
     if (G_flags->keep_history) {
       PrintConcurrentSegmentSet(race->new_sval.wr_ssid(),
-                                tid, sid, lsid, true, "write(s)", &all_locks);
+                                tid, sid, lsid, true, "write(s)", &all_locks,
+                                &concurrent_sids);
       if (is_w) {
         PrintConcurrentSegmentSet(race->new_sval.rd_ssid(),
-                                  tid, sid, lsid, false, "read(s)", &all_locks);
+                                  tid, sid, lsid, false, "read(s)", &all_locks,
+                                  &concurrent_sids);
       }
     } else {
       Report("  %sAccess history is disabled. "
@@ -4621,6 +4647,9 @@ class ReportStorage {
       }
     }
 
+    string raceInfoString = RaceInfoString(race->stack_trace->Get(0),
+        concurrent_sids);
+    Report("   %s", raceInfoString.c_str());
     Report("}}}\n");
   }
 
@@ -6312,6 +6341,13 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
     G_flags->file_prefix_to_cut.clear();
   }
 
+  FindIntFlag("race_verifier_sleep_ms", 10, args,
+      &G_flags->race_verifier_sleep_ms);
+  FindStringFlag("race_verifier", args, &G_flags->race_verifier);
+  FindStringFlag("race_verifier_extra", args, &G_flags->race_verifier_extra);
+  g_race_verifier_active =
+      !(G_flags->race_verifier.empty() && G_flags->race_verifier_extra.empty());
+  Printf("ThreadSanitizer running in Race Verifier mode.\n");
 
   if (!args->empty()) {
     ReportUnknownFlagAndExit(args->front());
@@ -6328,6 +6364,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   debug_shadow_stack = PhaseDebugIsOn("shadow_stack");
   debug_happens_before = PhaseDebugIsOn("happens_before");
   debug_cache = PhaseDebugIsOn("cache");
+  debug_race_verifier = PhaseDebugIsOn("race_verifier");
 }
 
 // -------- ThreadSanitizer ------------------ {{{1
