@@ -131,6 +131,8 @@ static const char *kEventNames[] = {
   "STACK_MEM_DIE",
   "MALLOC",
   "FREE",
+  "MMAP",
+  "MUNMAP",
   "PUBLISH_RANGE",
   "UNPUBLISH_RANGE",
   "HB_LOCK",
