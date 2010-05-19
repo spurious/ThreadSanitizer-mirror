@@ -61,6 +61,8 @@ namespace WINDOWS
 # define YIELD() // __yield()
 # define popen(x,y) (NULL)
 # define ATOMIC_READ(a)         _InterlockedCompareExchange(a, 0, 0)
+# define usleep(x) WINDOWS::Sleep((x)/1000)
+# define UINTPTR_MAX ((uintptr_t)-1)
 #endif
 
 
