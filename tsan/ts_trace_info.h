@@ -57,6 +57,7 @@ class TraceInfo {
   size_t pc()     const { return pc_; }
   size_t id()     const { return id_; }
   size_t &counter()     { return counter_; }
+  bool   generate_segments() const { return generate_segments_; }
 
   static void PrintTraceProfile();
 
@@ -67,6 +68,7 @@ class TraceInfo {
   size_t pc_;
   size_t id_;
   size_t counter_;
+  bool   generate_segments_;
   MopInfo mops_[1];
 
   static size_t id_counter_;

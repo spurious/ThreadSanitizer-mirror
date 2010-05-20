@@ -347,7 +347,6 @@ static void TLEBFlushUnlocked(ThreadLocalEventBuffer &tleb) {
             }
           }
         } else {
-          ThreadSanitizerEnterSblock(t.uniq_tid, trace_info->pc());
           ThreadSanitizerHandleTrace(t.uniq_tid, trace_info, tleb.events+i);
         }
       }

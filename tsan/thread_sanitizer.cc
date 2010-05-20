@@ -3426,6 +3426,8 @@ TraceInfo *TraceInfo::NewTraceInfo(size_t n_mops, uintptr_t pc) {
   res->pc_ = pc;
   res->id_ = id_counter_++;
   res->counter_ = 0;
+  res->generate_segments_ =
+      ThreadSanitizerWantToCreateSegmentsOnSblockEntry(pc);
   if (g_all_traces == NULL) {
     g_all_traces = new vector<TraceInfo*>;
     CHECK(id_counter_ == 1);
@@ -4978,11 +4980,15 @@ class Detector {
     HandleMemoryAccessInternal(TID(tid), thr, pc, addr, size, is_w);
   }
 
-  void INLINE HandleTrace(int32_t tid, TraceInfo *t,
+  void INLINE HandleTrace(int32_t raw_tid, TraceInfo *t,
                           uintptr_t *tleb) {
-    Thread *thr = Thread::Get(TID(tid));
+    TID tid(raw_tid);
+    Thread *thr = Thread::Get(tid);
     if (thr->ignore_all()) return;
     DCHECK(t);
+    if (t->generate_segments()) {
+      HandleSblockEnter(tid, t->pc());
+    }
     size_t n = t->n_mops();
     DCHECK(n);
     size_t i = 0;
@@ -4993,7 +4999,7 @@ class Detector {
       tleb[i] = 0;  // we've consumed this mop, clear it.
       DCHECK(mop->size != 0);
       DCHECK(mop->pc != 0);
-      HandleMemoryAccessInternal(TID(tid), thr, mop->pc, addr, mop->size,
+      HandleMemoryAccessInternal(tid, thr, mop->pc, addr, mop->size,
                                  mop->is_write);
     } while (++i < n);
   }

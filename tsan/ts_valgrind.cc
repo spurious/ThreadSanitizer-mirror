@@ -220,7 +220,6 @@ struct ValgrindThread {
   // thread-local event buffer (tleb).
   uintptr_t tleb[kMaxMopsPerTrace];
   TraceInfo *trace_info;
-  bool       create_segments;
 
   ValgrindThread() {
     Clear();
@@ -346,8 +345,6 @@ INLINE void FlushMops(ThreadId vg_tid, bool keep_trace_info = false) {
   }
 
   int ts_tid = VgTidToTsTid(vg_tid);
-  if (thr->create_segments)
-    ThreadSanitizerEnterSblock(ts_tid, t->pc());
 
   size_t n = t->n_mops();
   DCHECK(n > 0);
@@ -355,7 +352,8 @@ INLINE void FlushMops(ThreadId vg_tid, bool keep_trace_info = false) {
   ThreadSanitizerHandleTrace(ts_tid, t, tleb);
 }
 
-static INLINE void OnTrace(TraceInfo *trace_info, bool create_segments) {
+VG_REGPARM(1)
+static void OnTrace(TraceInfo *trace_info) {
   ThreadId vg_tid = GetVgTid();
 
   // First, flush the old trace_info.
@@ -367,16 +365,8 @@ static INLINE void OnTrace(TraceInfo *trace_info, bool create_segments) {
   for (size_t i = 0; i < n; i++)
     thr->tleb[i] = 0;
   thr->trace_info = trace_info;
-  thr->create_segments = create_segments;
   CHECK(thr->trace_info);
   CHECK(thr->trace_info->n_mops() <= kMaxMopsPerTrace);
-}
-
-VG_REGPARM(1) static void OnTraceCreateSegments(TraceInfo *trace_info) {
-  OnTrace(trace_info, true);
-}
-VG_REGPARM(1) static void OnTraceNoSegments(TraceInfo *trace_info) {
-  OnTrace(trace_info, false);
 }
 
 static inline void Put(EventType type, int32_t tid, uintptr_t pc,
@@ -795,13 +785,10 @@ static IRTemp gen_Get_SP ( IRSB*           bbOut,
 }
 
 
-static void ts_instrument_trace_entry(IRSB *bbOut, TraceInfo *trace_info, 
-                                      bool create_segments) {
+static void ts_instrument_trace_entry(IRSB *bbOut, TraceInfo *trace_info) {
    CHECK(trace_info);
-   HChar*   hName    = (HChar*)(create_segments ?
-       "OnTraceCreateSegments" : "OnTraceNoSegments");
-   void *callback = (void*)(create_segments ?
-       OnTraceCreateSegments : OnTraceNoSegments);
+   HChar*   hName = (HChar*)"OnTrace";
+   void *callback = (void*)OnTrace;
    IRExpr **args = mkIRExprVec_1(mkIRExpr_HWord((HWord)trace_info));
    IRDirty* di = unsafeIRDirty_0_N( 1,
                            hName,
@@ -1119,8 +1106,6 @@ static IRSB* ts_instrument ( VgCallbackClosure* closure,
   }
 
   bool instrument_memory = ThreadSanitizerWantToInstrumentSblock(pc);
-  bool create_segments =
-      ThreadSanitizerWantToCreateSegmentsOnSblockEntry(pc);
 
   if (gWordTy != hWordTy) {
     /* We don't currently support this case. */
@@ -1179,8 +1164,7 @@ static IRSB* ts_instrument ( VgCallbackClosure* closure,
     tl_assert(st);
     tl_assert(isFlatIRStmt(st));
     if (st->tag != Ist_IMark && need_to_insert_on_trace) {
-      ts_instrument_trace_entry(bbOut, trace_info,
-                                create_segments && G_flags->keep_history >= 1);
+      ts_instrument_trace_entry(bbOut, trace_info);
       need_to_insert_on_trace = false;
       // Generate temp for *g_cur_tleb.
       IRType   tyAddr = sizeof(uintptr_t) == 8 ?  Ity_I64 : Ity_I32;
