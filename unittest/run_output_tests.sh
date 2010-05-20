@@ -1,5 +1,7 @@
 #!/bin/sh
 
+FAILED=
+
 for TEST in "$@"
 do
   echo "=============================="
@@ -16,7 +18,17 @@ do
   CMD="$TSAN $SUPP $IGNORE -- ./${BIN}output_tests/${TEST}-${BUILD}${EXE} 2>&1 | python match_output.py output_tests/${TEST}.tmpl"
   echo "Running"
   echo "$ $CMD"
-  $CMD
+  if $CMD ;
+  then
+    echo "[  PASS  ]"
+  else
+    echo "[ FAILED ]"
+    FAILED=yes
+  fi
   echo "=============================="
   echo
 done
+
+if [ "$FAILED" == "yes" ]; then
+  exit 1
+fi
