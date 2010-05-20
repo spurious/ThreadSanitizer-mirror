@@ -6347,7 +6347,9 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   FindStringFlag("race_verifier_extra", args, &G_flags->race_verifier_extra);
   g_race_verifier_active =
       !(G_flags->race_verifier.empty() && G_flags->race_verifier_extra.empty());
-  Printf("ThreadSanitizer running in Race Verifier mode.\n");
+  if (g_race_verifier_active) {
+    Printf("INFO: ThreadSanitizer running in Race Verifier mode.\n");
+  }
 
   if (!args->empty()) {
     ReportUnknownFlagAndExit(args->front());
