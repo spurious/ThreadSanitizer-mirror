@@ -1,36 +1,6 @@
 SVN_ROOT=..
 OPT=1
 
-PLATFORM=$(shell uname -s | sed -e "s/CYGWIN.*/Windows/" | sed -e "s/Darwin/Mac/")
-BITNESS=$(shell uname -m | sed -e "s/i.86/32/;s/x86_64/64/;s/amd64/64/;s/arm.*/arm/")
-
-ifeq ($(PLATFORM)$(BITNESS), Linux64)
-default: l64 l32
-endif
-
-ifeq ($(PLATFORM)$(BITNESS), Linux32)
-default: l32
-endif
-
-ifeq ($(PLATFORM)$(BITNESS), Mac32)
-default: m
-endif
-
-ifeq ($(PLATFORM)$(BITNESS), Windows32)
-default: w
-endif
-
-dummy:
-	@echo "Can't determine default configuration!"
-	@echo "For 64-bit Linux build: make l64"
-	@echo "For 32-bit Linux build: make l32"
-	@echo "For mixed  Linux build: make l"
-	@echo "For 32-bit Mac   build: make m"
-	@echo "For ARM    Linux build: make la"
-	@exit 1
-
-# This should go after the platform/bitness detection code, otherwise
-# we'll have a wrong default target from gtest...
 include ../common.mk
 
 OUTDIR=bin
