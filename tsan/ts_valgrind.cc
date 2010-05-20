@@ -331,47 +331,6 @@ static void OnStartClientCode(ThreadId vg_tid, ULong nDisp) {
   g_cur_tleb = thr->tleb;
 }
 
-// Inline the most expensive call to benefit from constant propagation.
-INLINE void Mop(int ts_tid, uintptr_t a, size_t size, bool is_w) {
-  ThreadSanitizerHandleMemoryAccess(ts_tid, a, size, is_w);
-}
-NOINLINE void MopR1(int ts_tid, uintptr_t a) { Mop(ts_tid, a, 1, false); }
-NOINLINE void MopW1(int ts_tid, uintptr_t a) { Mop(ts_tid, a, 1, true);  }
-NOINLINE void MopR2(int ts_tid, uintptr_t a) { Mop(ts_tid, a, 2, false); }
-NOINLINE void MopW2(int ts_tid, uintptr_t a) { Mop(ts_tid, a, 2, true);  }
-NOINLINE void MopR4(int ts_tid, uintptr_t a) { Mop(ts_tid, a, 4, false); }
-NOINLINE void MopW4(int ts_tid, uintptr_t a) { Mop(ts_tid, a, 4, true);  }
-NOINLINE void MopR8(int ts_tid, uintptr_t a) { Mop(ts_tid, a, 8, false); }
-NOINLINE void MopW8(int ts_tid, uintptr_t a) { Mop(ts_tid, a, 8, true);  }
-NOINLINE void MopR10(int ts_tid, uintptr_t a) { Mop(ts_tid, a, 10, false); }
-NOINLINE void MopW10(int ts_tid, uintptr_t a) { Mop(ts_tid, a, 10, true);  }
-NOINLINE void MopR16(int ts_tid, uintptr_t a) { Mop(ts_tid, a, 16, false); }
-NOINLINE void MopW16(int ts_tid, uintptr_t a) { Mop(ts_tid, a, 16, true);  }
-
-typedef void (*MopCallback)(int ts_tid, uintptr_t a);
-static MopCallback mop_callbacks[34] = {
-  // cb,   size*2+is_w
-  NULL,   
-  NULL,
-  MopR1,   // 1*2+0
-  MopW1,   // 1*2+1
-  MopR2,   // 2*2+0
-  MopW2,   // 2*2+1
-  NULL, NULL,  // 3
-  MopR4,   // 4*2+0
-  MopW4,   // 4*2+1
-  NULL, NULL, NULL, NULL, NULL, NULL,  // 5, 6, 7
-  MopR8,   // 8*2+0
-  MopW8,   // 8*2+1
-  NULL, NULL,  // 9
-  MopR10,   // 10*2+0
-  MopW10,   // 10*2+1
-  NULL, NULL, NULL, NULL, NULL, NULL,  // 11, 12, 13
-  NULL, NULL, NULL, NULL,  // 14, 15
-  MopR16,   // 16*2+0
-  MopW16,   // 16*2+1
-};
-
 INLINE void FlushMops(ThreadId vg_tid, bool keep_trace_info = false) {
   ValgrindThread *thr = &g_valgrind_threads[vg_tid];
   TraceInfo *t = thr->trace_info;
@@ -392,19 +351,8 @@ INLINE void FlushMops(ThreadId vg_tid, bool keep_trace_info = false) {
 
   size_t n = t->n_mops();
   DCHECK(n > 0);
-  size_t i  = 0;
   uintptr_t *tleb = thr->tleb;
-  do {
-    uintptr_t a = tleb[i];
-    if (a == 0) continue;  // This mop was not executed.
-    MopInfo *mop = t->GetMop(i);
-    tleb[i] = 0;  // we've consumed this mop, clear it.
-    DCHECK(mop->size != 0);
-    g_current_pc = mop->pc;
-    MopCallback cb = mop_callbacks[mop->size * 2 + mop->is_write];
-    DCHECK(cb);
-    cb(ts_tid, a);
-  } while (++i < n);
+  ThreadSanitizerHandleTrace(ts_tid, t, tleb);
 }
 
 static INLINE void OnTrace(TraceInfo *trace_info, bool create_segments) {

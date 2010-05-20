@@ -38,8 +38,6 @@
 
 // ------------- Globals ------------- {{{1
 static map<string, int> *g_event_type_map;
-static uintptr_t g_current_pc;
-
 struct PcInfo {
   string img_name;
   string file_name;
@@ -136,7 +134,6 @@ void ReadEventsFromFile(FILE *file) {
   int n_events = 0;
   while (ReadOneEventFromFile(file, &event)) {
     // event.Print();
-    g_current_pc = event.pc();
     n_events++;
     ThreadSanitizerHandleOneEvent(&event);
   }
@@ -165,10 +162,6 @@ void PcToStrings(uintptr_t pc, bool demangle,
 
 string PcToRtnName(uintptr_t pc, bool demangle) {
   return string("unimplemented");
-}
-
-uintptr_t GetPcOfCurrentThread() {
-  return g_current_pc;
 }
 //------------- main ---------------------------- {{{1
 int main(int argc, char *argv[]) {

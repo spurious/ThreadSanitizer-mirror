@@ -3413,6 +3413,49 @@ struct RecentSegmentsCache {
   size_t cache_size_;
 };
 
+// -------- TraceInfo ------------------ {{{1
+size_t TraceInfo::id_counter_;
+vector<TraceInfo*> *TraceInfo::g_all_traces;
+
+TraceInfo *TraceInfo::NewTraceInfo(size_t n_mops, uintptr_t pc) {
+  size_t mem_size = (sizeof(TraceInfo) + (n_mops - 1) * sizeof(MopInfo));
+  uint8_t *mem = new uint8_t[mem_size];
+  memset(mem, 0xab, mem_size);
+  TraceInfo *res = new (mem) TraceInfo;
+  res->n_mops_ = n_mops;
+  res->pc_ = pc;
+  res->id_ = id_counter_++;
+  res->counter_ = 0;
+  if (g_all_traces == NULL) {
+    g_all_traces = new vector<TraceInfo*>;
+    CHECK(id_counter_ == 1);
+  }
+  g_all_traces->push_back(res);
+  return res;
+}
+
+void TraceInfo::PrintTraceProfile() {
+  int64_t total_counter = 0;
+  multimap<size_t, TraceInfo*> traces;
+  for (size_t i = 0; i < g_all_traces->size(); i++) {
+    TraceInfo *trace = (*g_all_traces)[i];
+    traces.insert(make_pair(trace->counter(), trace));
+    total_counter += trace->counter();
+  }
+  Printf("TraceProfile: %ld traces, %lld hits\n",
+         g_all_traces->size(), total_counter);
+  int i = 0;
+  for (multimap<size_t, TraceInfo*>::reverse_iterator it = traces.rbegin();
+       it != traces.rend(); ++it, i++) {
+    TraceInfo *trace = it->second;
+    int64_t c = it->first;
+    int64_t permile = (c * 1000) / total_counter;
+    if (permile == 0 || i >= 20) break;
+    Printf("TR%ld c=%lld (%lld/1000) n_mops=%ld\n", trace->id(), c,
+           permile, trace->n_mops());
+  }
+}
+
 // -------- Thread ------------------ {{{1
 struct Thread {
  public:
@@ -3737,7 +3780,7 @@ struct Thread {
              vts()->ToString().c_str(),
              Segment::ToString(sid()).c_str());
       if (G_flags->debug_level >= 1) {
-        ReportStackTrace(GetPcOfCurrentThread());
+        ReportStackTrace();
       }
     }
   }
@@ -3758,7 +3801,7 @@ struct Thread {
              vts()->ToString().c_str(), Segment::ToString(sid()).c_str(),
              (signaller->vts)->ToString().c_str());
       if (G_flags->debug_level >= 1) {
-        ReportStackTrace(GetPcOfCurrentThread());
+        ReportStackTrace();
       }
     }
   }
@@ -4927,11 +4970,32 @@ class Detector {
     HandleOneEventInternal(event);
   }
 
-  void INLINE HandleMemoryAccess(int32_t tid,
+  void INLINE HandleMemoryAccess(int32_t tid, uintptr_t pc,
                           uintptr_t addr, uintptr_t size,
                           bool is_w) {
     G_stats->events[is_w ? WRITE : READ]++;
-    HandleMemoryAccessInternal(TID(tid), addr, size, is_w);
+    Thread *thr = Thread::Get(TID(tid));
+    HandleMemoryAccessInternal(TID(tid), thr, pc, addr, size, is_w);
+  }
+
+  void INLINE HandleTrace(int32_t tid, TraceInfo *t,
+                          uintptr_t *tleb) {
+    Thread *thr = Thread::Get(TID(tid));
+    if (thr->ignore_all()) return;
+    DCHECK(t);
+    size_t n = t->n_mops();
+    DCHECK(n);
+    size_t i = 0;
+    do {
+      uintptr_t addr = tleb[i];
+      if (addr == 0) continue;  // This mop was not executed.
+      MopInfo *mop = t->GetMop(i);
+      tleb[i] = 0;  // we've consumed this mop, clear it.
+      DCHECK(mop->size != 0);
+      DCHECK(mop->pc != 0);
+      HandleMemoryAccessInternal(TID(tid), thr, mop->pc, addr, mop->size,
+                                 mop->is_write);
+    } while (++i < n);
   }
 
   void INLINE HandleStackMemChange(int32_t tid, uintptr_t addr,
@@ -5102,10 +5166,10 @@ class Detector {
 
     switch (type) {
       case READ:
-        HandleMemoryAccess(e_->tid(), e_->a(), e_->info(), false);
+        HandleMemoryAccess(e_->tid(), e_->pc(), e_->a(), e_->info(), false);
         break;
       case WRITE:
-        HandleMemoryAccess(e_->tid(), e_->a(), e_->info(), true);
+        HandleMemoryAccess(e_->tid(), e_->pc(), e_->a(), e_->info(), true);
         break;
       case RTN_CALL:
         HandleRtnCall(TID(e_->tid()), e_->pc(), e_->a(),
@@ -5619,6 +5683,7 @@ class Detector {
                                               uintptr_t addr,
                                               uintptr_t size,
                                               TID tid,
+                                              uintptr_t pc,
                                               Thread *thr,
                                               bool tracing
                                              ) {
@@ -5649,13 +5714,13 @@ class Detector {
              is_published ? " P" : "",
              cache_line,
              cache_line->published().ToString().c_str());
-      thr->ReportStackTrace(GetPcOfCurrentThread());
+      thr->ReportStackTrace(pc);
     }
 
     // Check for race.
     if (UNLIKELY(is_race)) {
       if (G_flags->report_races && !cache_line->racey().Get(offset)) {
-        reports_.AddReport(tid, GetPcOfCurrentThread(), is_w, addr, size,
+        reports_.AddReport(tid, pc, is_w, addr, size,
                            old_sval, new_sval, is_published);
       }
       // new_sval.set_racey(true);
@@ -5694,7 +5759,7 @@ class Detector {
     return new_sval;
   }
 
-  INLINE void HandleMemoryAccessInternal(TID tid,
+  INLINE void HandleMemoryAccessInternal(TID tid, Thread *thr, uintptr_t pc,
                                          uintptr_t addr, uintptr_t size,
                                          bool is_w) {
     DCHECK(size > 0);
@@ -5707,10 +5772,9 @@ class Detector {
       sampler.Sample(tid, type);
     }
 
-    Thread *thr = Thread::Get(tid);
     DCHECK(thr->is_running());
     if (thr->ignore(is_w)) return;
-    if (thr->bus_lock_is_set()) return;
+    // if (thr->bus_lock_is_set()) return;
 
     DCHECK(thr->lsid(false) == thr->segment()->lsid(false));
     DCHECK(thr->lsid(true) == thr->segment()->lsid(true));
@@ -5736,27 +5800,27 @@ class Detector {
 
     if (DEBUG_MODE && UNLIKELY(G_flags->keep_history >= 2)) {
       // Keep the precise history. Very SLOW!
-      HandleSblockEnter(tid, GetPcOfCurrentThread());
+      HandleSblockEnter(tid, pc);
     }
 
     if        (size == 8 && cache_line->SameValueStored(addr, 8)) {
-      HandleMemoryAccessHelper(is_w, cache_line, addr, size, tid, thr, tracing);
+      HandleMemoryAccessHelper(is_w, cache_line, addr, size, tid, pc, thr, tracing);
       if (DEBUG_MODE) G_stats->n_access8++;
     } else if (size == 4 && cache_line->SameValueStored(addr, 4)) {
-      HandleMemoryAccessHelper(is_w, cache_line, addr, size, tid, thr, tracing);
+      HandleMemoryAccessHelper(is_w, cache_line, addr, size, tid, pc, thr, tracing);
       if (DEBUG_MODE) G_stats->n_access4++;
     } else if (size == 2 && cache_line->SameValueStored(addr, 2)) {
-      HandleMemoryAccessHelper(is_w, cache_line, addr, size, tid, thr, tracing);
+      HandleMemoryAccessHelper(is_w, cache_line, addr, size, tid, pc, thr, tracing);
       if (DEBUG_MODE) G_stats->n_access2++;
     } else if (size == 1) {
-      HandleMemoryAccessHelper(is_w, cache_line, addr, size, tid, thr, tracing);
+      HandleMemoryAccessHelper(is_w, cache_line, addr, size, tid, pc, thr, tracing);
       if (DEBUG_MODE) G_stats->n_access1++;
     } else {
       // slow case
       for (uintptr_t x = a; x < b; x++) {
         offset = CacheLine::ComputeOffset(x);
         cache_line = G_cache->GetLineOrCreateNew(x, __LINE__);
-        HandleMemoryAccessHelper(is_w, cache_line, x, 1, tid, thr, tracing);
+        HandleMemoryAccessHelper(is_w, cache_line, x, 1, tid, pc, thr, tracing);
         G_stats->n_access_slow++;
       }
     }
@@ -5830,7 +5894,7 @@ class Detector {
     // Handle the memory deletion as a write, but don't touch all
     // the memory if there is too much of it, limit with the first 1K.
     if (size && G_flags->free_is_write) {
-      HandleMemoryAccess(e_->tid(), a,
+      HandleMemoryAccess(e_->tid(), a, e_->pc(),
                          min(max_write_size, size), true /*is_w*/);
     }
     // update G_heap_map
@@ -6648,10 +6712,15 @@ extern void ThreadSanitizerHandleOneEvent(Event *e) {
   G_detector->HandleOneEvent(e);
 }
 
-void INLINE ThreadSanitizerHandleMemoryAccess(int32_t tid,
+void INLINE ThreadSanitizerHandleMemoryAccess(int32_t tid, uintptr_t pc,
                                               uintptr_t addr, uintptr_t size,
                                               bool is_w) {
-  G_detector->HandleMemoryAccess(tid, addr, size, is_w);
+  G_detector->HandleMemoryAccess(tid, pc, addr, size, is_w);
+}
+
+extern INLINE void ThreadSanitizerHandleTrace(int32_t tid, TraceInfo *trace_info,
+                                       uintptr_t *tleb) {
+  G_detector->HandleTrace(tid, trace_info, tleb);
 }
 
 void INLINE ThreadSanitizerHandleStackMemChange(int32_t tid, uintptr_t addr,

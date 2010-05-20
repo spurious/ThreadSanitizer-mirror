@@ -113,8 +113,6 @@ static TSLock g_thread_create_lock;
 // Under g_thread_create_lock.
 static THREADID g_tid_of_thread_which_called_create_thread = -1;
 
-static uintptr_t g_current_pc;
-
 #ifdef _MSC_VER
 // On Windows, we need to create a h-b arc between
 // RtlQueueWorkItem(callback, x, y) and the call to callback.
@@ -230,10 +228,6 @@ string PcToRtnName(uintptr_t pc, bool demangle) {
   return res;
 }
 
-uintptr_t GetPcOfCurrentThread() {
-  return g_current_pc;
-}
-
 //--------------- ThreadLocalEventBuffer ----------------- {{{1
 // thread local event buffer is an array of uintptr_t.
 // The events are encoded like this:
@@ -340,22 +334,21 @@ static void TLEBFlushUnlocked(ThreadLocalEventBuffer &tleb) {
       DCHECK(trace_info);
       size_t n = trace_info->n_mops();
       if (do_this_trace) {
-        if (DumpEventPlainText(SBLOCK_ENTER, t.uniq_tid, 
-                               trace_info->pc(), 0, 0) == false) {;
-          ThreadSanitizerEnterSblock(t.uniq_tid, trace_info->pc());
-        }
-        for (size_t j = 0; j < n; j++) {
-          MopInfo *mop = trace_info->GetMop(j);
-          DCHECK(mop->size);
-          DCHECK(mop);
-          uintptr_t addr = tleb.events[i + j];
-          if (addr) {
-            g_current_pc = mop->pc;
-            if (DumpEventPlainText(mop->is_write ? WRITE : READ, t.uniq_tid,
-                                   mop->pc, addr, mop->size)) continue;
-            ThreadSanitizerHandleMemoryAccess(t.uniq_tid, addr,
-                                              mop->size, mop->is_write);
+        if (DEBUG_MODE && !G_flags->dump_events.empty()) {
+          DumpEventPlainText(SBLOCK_ENTER, t.uniq_tid, trace_info->pc(), 0, 0);
+          for (size_t j = 0; j < n; j++) {
+            MopInfo *mop = trace_info->GetMop(j);
+            DCHECK(mop->size);
+            DCHECK(mop);
+            uintptr_t addr = tleb.events[i + j];
+            if (addr) {
+              DumpEventPlainText(mop->is_write ? WRITE : READ, t.uniq_tid,
+                                     mop->pc, addr, mop->size);
+            }
           }
+        } else {
+          ThreadSanitizerEnterSblock(t.uniq_tid, trace_info->pc());
+          ThreadSanitizerHandleTrace(t.uniq_tid, trace_info, tleb.events+i);
         }
       }
       i += n;

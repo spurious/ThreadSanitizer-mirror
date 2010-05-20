@@ -73,49 +73,7 @@ class TraceInfo {
   static vector<TraceInfo*> *g_all_traces;
 };
 
-// We declare static members here.  So, this file should not be included into
-// mulitple .cc files within the same program.
-size_t TraceInfo::id_counter_;
-vector<TraceInfo*> *TraceInfo::g_all_traces;
 
-TraceInfo *TraceInfo::NewTraceInfo(size_t n_mops, uintptr_t pc) {
-  size_t mem_size = (sizeof(TraceInfo) + (n_mops - 1) * sizeof(MopInfo));
-  uint8_t *mem = new uint8_t[mem_size];
-  memset(mem, 0xab, mem_size);
-  TraceInfo *res = new (mem) TraceInfo;
-  res->n_mops_ = n_mops;
-  res->pc_ = pc;
-  res->id_ = id_counter_++;
-  res->counter_ = 0;
-  if (g_all_traces == NULL) {
-    g_all_traces = new vector<TraceInfo*>;
-    CHECK(id_counter_ == 1);
-  }
-  g_all_traces->push_back(res);
-  return res;
-}
-
-void TraceInfo::PrintTraceProfile() {
-  int64_t total_counter = 0;
-  multimap<size_t, TraceInfo*> traces;
-  for (size_t i = 0; i < g_all_traces->size(); i++) {
-    TraceInfo *trace = (*g_all_traces)[i];
-    traces.insert(make_pair(trace->counter(), trace));
-    total_counter += trace->counter();
-  }
-  Printf("TraceProfile: %ld traces, %lld hits\n",
-         g_all_traces->size(), total_counter);
-  int i = 0;
-  for (multimap<size_t, TraceInfo*>::reverse_iterator it = traces.rbegin();
-       it != traces.rend(); ++it, i++) {
-    TraceInfo *trace = it->second;
-    int64_t c = it->first;
-    int64_t permile = (c * 1000) / total_counter;
-    if (permile == 0 || i >= 20) break;
-    Printf("TR%ld c=%lld (%lld/1000) n_mops=%ld\n", trace->id(), c,
-           permile, trace->n_mops());
-  }
-}
 
 // end. {{{1
 #endif  // TS_TRACE_INFO_
