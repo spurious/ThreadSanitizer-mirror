@@ -1820,7 +1820,11 @@ static void On_AnnotateIgnoreWritesEnd(THREADID tid, ADDRINT pc,
                                        ADDRINT file, ADDRINT line) {
   DumpEvent(IGNORE_WRITES_END, tid, pc, 0, 0);
 }
-
+static void On_AnnotateThreadName(THREADID tid, ADDRINT pc,
+                                  ADDRINT file, ADDRINT line,
+                                  ADDRINT name) {
+  DumpEvent(SET_THREAD_NAME, tid, pc, name, 0);
+}
 static void On_AnnotatePublishMemoryRange(THREADID tid, ADDRINT pc,
                                           ADDRINT file, ADDRINT line,
                                           ADDRINT a, ADDRINT size) {
@@ -2523,6 +2527,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_BEFORE_0("AnnotateIgnoreReadsEnd", On_AnnotateIgnoreReadsEnd);
   INSERT_BEFORE_0("AnnotateIgnoreWritesBegin", On_AnnotateIgnoreWritesBegin);
   INSERT_BEFORE_0("AnnotateIgnoreWritesEnd", On_AnnotateIgnoreWritesEnd);
+  INSERT_BEFORE_3("AnnotateThreadName", On_AnnotateThreadName);
   INSERT_BEFORE_4("AnnotatePublishMemoryRange", On_AnnotatePublishMemoryRange);
   INSERT_BEFORE_4("AnnotateUnpublishMemoryRange", On_AnnotateUnpublishMemoryRange);
   INSERT_BEFORE_3("AnnotateMutexIsUsedAsCondVar", On_AnnotateMutexIsUsedAsCondVar);

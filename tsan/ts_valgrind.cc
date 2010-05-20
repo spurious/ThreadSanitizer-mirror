@@ -637,9 +637,6 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
     case TSREQ_SET_THREAD_NAME:
       Put(SET_THREAD_NAME, ts_tid, pc, /*name=*/args[1], 0);
       break;
-    case TSREQ_SET_LOCK_NAME:
-      Put(SET_LOCK_NAME, ts_tid, pc, /*lock=*/args[1], /*name=*/args[2]);
-      break;
     case TSREQ_IGNORE_ALL_ACCESSES_BEGIN:
       g_valgrind_threads[vg_tid].ignore_accesses++;
       break;
