@@ -5001,6 +5001,9 @@ class Detector {
       DCHECK(mop->pc != 0);
       HandleMemoryAccessInternal(tid, thr, mop->pc, addr, mop->size,
                                  mop->is_write);
+      if (DEBUG_MODE) {
+        G_stats->events[mop->is_write ? WRITE : READ]++;
+      }
     } while (++i < n);
   }
 
