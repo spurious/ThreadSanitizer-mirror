@@ -3119,6 +3119,10 @@ void WorkerX() {
   CHECK(strchr(str, 'Y') == NULL);
   CHECK(memchr(str, 'X', 8) == str);
   CHECK(memchr(str, 'x', 8) == str+1);
+  char tmp[100] = "Zzz";
+  CHECK(memmove(tmp, str, strlen(str) + 1) == tmp);
+  CHECK(strcmp(tmp,str) == 0);
+  CHECK(memmove(str, tmp, strlen(tmp) + 1) == str);
   CHECK(strrchr(str, 'X') == str+2);
   CHECK(strrchr(str, 'x') == str+3);
   CHECK(strrchr(str, 'Y') == NULL);
@@ -3799,7 +3803,7 @@ TEST(NegativeTests, RunningOnValgrindTest) {
   printf("RunningOnValgrind() = %d\n", RunningOnValgrind());
 }
 
-namespace PositiveTests_BenignRaceInDtor {  // {{{
+namespace NegativeTests_BenignRaceInDtor {  // {{{
 // Test for race inside DTOR: racey write to vptr. Benign.
 // This test shows a racey access to vptr (the pointer to vtbl).
 // We have class A and class B derived from A.
@@ -3877,7 +3881,7 @@ void Worker() {
   printf("Worker: done\n");
 }
 
-TEST(PositiveTests, BenignRaceInDtor) {
+TEST(NegativeTests, BenignRaceInDtor) {
   MyThreadArray t(Waiter, Worker);
   t.Start();
   t.Join();
@@ -6122,6 +6126,10 @@ void DoMemcpy() {
   memcpy(GLOB, GLOB + 1, 1);
 }
 
+void DoMemmove() {
+  memmove(GLOB, GLOB + 1, 1);
+}
+
 void Write0() {
   GLOB[0] = 'z';
 }
@@ -6162,6 +6170,11 @@ void RunThreads(void (*f1)(void), void (*f2)(void), char *mem) {
 TEST(PositiveTests, RaceInMemcpy) {
   static char mem[4];
   RunThreads(DoMemcpy, DoMemcpy, mem);
+}
+
+TEST(PositiveTests, RaceInMemmove) {
+  static char mem[4];
+  RunThreads(DoMemmove, DoMemmove, mem);
 }
 
 TEST(PositiveTests, RaceInStrlen1) {
