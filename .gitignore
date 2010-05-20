@@ -1,0 +1,7 @@
+unittest/bin
+tsan/bin
+third_party/googletest
+third_party/stlport
+third_party/valgrind
+*.pdb
+upload.py
