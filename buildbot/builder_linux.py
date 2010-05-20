@@ -14,14 +14,12 @@ def generate(settings):
   addTsanTestsStep(f1, ['amd64-linux-debug', 'x86-linux-debug'])
 
   # Run output tests.
-  output_test_binary = unitTestBinary('linux', 64, 0, False, test_base_name='output_test1')
-  output_test_desc = getTestDesc('linux', 64, 0, False);
-  addTestStep(f1, False, 'phb', output_test_binary,
-              output_test_desc,
-              extra_args=["--error_exitcode=1"],
-              append_command = ' 2>&1 | unittest/match_output.py unittest/output_test1.tmpl',
-              test_base_name='output_test1')
-
+  f1.addStep(ShellCommand(command='make -C unittest OS=linux ARCH=amd64 TSAN="../tsan.sh" run_output_tests',
+                          description="running output tests 64",
+                          descriptionDone="output tests 64"))
+  f1.addStep(ShellCommand(command='make -C unittest OS=linux ARCH=x86 TSAN="../tsan.sh" run_output_tests',
+                          description="running output tests 32",
+                          descriptionDone="output tests 32"))
 
   # Run unit tests.
   test_binaries = {} # (bits, opt, static) -> (binary, desc)
