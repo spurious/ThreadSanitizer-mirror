@@ -33,12 +33,20 @@ else
   OS=UNKNOWN_OS
 endif
 
+OUTPUT_TESTS_LIST=$(patsubst output_tests/%.cc,%,$(wildcard output_tests/*.cc))
+OUTPUT_TESTS_OBJS=$(patsubst %,$(BIN)output_tests/%-$(BUILD)$(EXE),$(OUTPUT_TESTS_LIST))
+
 all: $(BIN)racecheck_unittest-$(BUILD)$(EXE) $(BIN)demo_tests-$(BUILD)$(EXE) \
-     $(BIN)bigtest-$(BUILD)$(EXE) $(BIN)output_test1-$(BUILD)$(EXE) \
+     $(BIN)bigtest-$(BUILD)$(EXE) output_tests \
 		 $(BIN)memory_unittest-$(BUILD)$(EXE)
 ifeq ($(OS), linux)
 all: $(BIN)deadlock_unittest-$(BUILD)$(EXE)
 endif
+
+output_tests: bin/output_tests $(OUTPUT_TESTS_OBJS)
+
+run_output_tests: output_tests
+	BUILD=$(BUILD) BIN=$(BIN) ./run_output_tests.sh $(OUTPUT_TESTS_LIST)
 
 w:
 	$(MAKE) all OS=windows ARCH=x86
@@ -52,6 +60,8 @@ l64:
 
 bin:
 	mkdir -p bin
+bin/output_tests:
+	mkdir -p bin/output_tests
 
 DYNAMIC_ANNOTATIONS_DIR=../dynamic_annotations
 DYNAMIC_ANNOTATIONS_H=${DYNAMIC_ANNOTATIONS_DIR}/dynamic_annotations.h
@@ -83,8 +93,8 @@ $(BIN)demo_tests-$(BUILD)$(EXE): $(BIN)demo_tests-$(BUILD).$(OBJ) \
 		$(TEST_UTILS_O) $(GTEST_LIB) ${DYNAMIC_ANNOTATIONS_O} | bin
 	${LD} $(LDFLAGS) $^ $(LIBS) $(LINKO)$@
 
-$(BIN)output_test1-$(BUILD)$(EXE): $(BIN)output_test1-$(BUILD).$(OBJ) \
-		${DYNAMIC_ANNOTATIONS_O} | bin
+$(BIN)output_tests/%-$(BUILD)$(EXE): $(BIN)output_tests/%-$(BUILD).$(OBJ) \
+		${TEST_UTILS_O} ${DYNAMIC_ANNOTATIONS_O} | bin
 	${LD} $(LDFLAGS) $^ $(LIBS) $(LINKO)$@
 
 $(BIN)bigtest-$(BUILD)$(EXE): $(BIN)bigtest-$(BUILD).$(OBJ) ${DYNAMIC_ANNOTATIONS_O} | bin
@@ -96,12 +106,12 @@ $(BIN)memory_unittest-$(BUILD)$(EXE): $(BIN)memory_unittest-$(BUILD).$(OBJ) $(BI
 
 $(BIN)%-$(BUILD).$(OBJ): %.cc ${DYNAMIC_ANNOTATIONS} thread_wrappers.h thread_wrappers_win.h thread_wrappers_pthread.h old_test_suite.h test_utils.h | bin
 	${CXX} ${CXXFLAGS} \
-		 -I${DYNAMIC_ANNOTATIONS_DIR} -I${GTEST_ROOT}/include \
+		 -I${DYNAMIC_ANNOTATIONS_DIR} -I${GTEST_ROOT}/include -I. \
 		 -DDYNAMIC_ANNOTATIONS_ENABLED=1 -c $< $(O)$@
 
 $(BIN)%-$(BUILD).$(OBJ): %.mm ${DYNAMIC_ANNOTATIONS} thread_wrappers.h thread_wrappers_win.h thread_wrappers_pthread.h old_test_suite.h test_utils.h | bin
 	${CXX} ${CXXFLAGS} \
-		 -I${DYNAMIC_ANNOTATIONS_DIR} -I${GTEST_ROOT}/include \
+		 -I${DYNAMIC_ANNOTATIONS_DIR} -I${GTEST_ROOT}/include -I. \
 		 -DDYNAMIC_ANNOTATIONS_ENABLED=1 -c $< $(O)$@
 
 
