@@ -122,7 +122,8 @@ class PerformanceTestEventListener: public ::testing::EmptyTestEventListener {
 int main(int argc, char** argv) {
   MAIN_INIT_ACTION;
   testing::InitGoogleTest(&argc, argv);
-  printf("FLAGS [phb=%i, fm=%i]\n", Tsan_PureHappensBefore(), Tsan_FastMode());
+  printf("FLAGS [phb=%i, fm=%i, rv=%i]\n", Tsan_PureHappensBefore(),
+      Tsan_FastMode(), Tsan_RaceVerifier());
 
   int shuffle_seed = 0;  // non-zero to shuffle.
 

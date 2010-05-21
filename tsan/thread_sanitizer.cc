@@ -6633,6 +6633,9 @@ const char *ThreadSanitizerQuery(const char *query) {
       G_flags->pure_happens_before == false) {
     ret = "1";
   }
+  if (str == "race_verifier" && g_race_verifier_active == true) {
+    ret = "1";
+  }
   if (DEBUG_MODE && G_flags->debug_level >= 2) {
     Printf("ThreadSanitizerQuery(\"%s\") = \"%s\"\n", query, ret);
   }

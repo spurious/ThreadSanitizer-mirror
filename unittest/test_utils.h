@@ -82,6 +82,11 @@ inline bool Tsan_FastMode()           {
   return ret;
 }
 
+inline bool Tsan_RaceVerifier() {
+  static bool ret = ThreadSanitizerQueryMatch("race_verifier", "1");
+  return ret;
+}
+
 // Initialize *(mem) to 0 if Tsan_FastMode.
 #define FAST_MODE_INIT(mem) do { if (Tsan_FastMode()) { *(mem) = 0; } } while(0)
 
