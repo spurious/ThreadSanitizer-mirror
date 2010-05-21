@@ -9,6 +9,7 @@ JTSAN_EVENTS="$TMPDIR/jtsan.events"
 TSAN_OUT="$TMPDIR/tsan.out"
 
 set -x
+set -e
 mkdir $TMPDIR
 java -ea \
   -Xbootclasspath/p:$JTSAN_ROOT/agent.jar \
