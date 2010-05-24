@@ -500,8 +500,11 @@ static void TLEBAddGenericEventAndFlush(PinThread &t,
 // Must be called from its thread (except for THR_END case)!
 static void DumpEvent(EventType type, int32_t tid, uintptr_t pc,
                       uintptr_t a, uintptr_t info) {
-  PinThread &t = g_pin_threads[tid];
-  TLEBAddGenericEventAndFlush(t, type, pc, a, info);
+  if (!g_race_verifier_active ||
+      (type == EXPECT_RACE || type == BENIGN_RACE)) {
+    PinThread &t = g_pin_threads[tid];
+    TLEBAddGenericEventAndFlush(t, type, pc, a, info);
+  }
 }
 
 //--------- Wraping and relacing --------------- {{{1
