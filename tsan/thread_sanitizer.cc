@@ -6414,7 +6414,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
     G_flags->file_prefix_to_cut.clear();
   }
 
-  FindIntFlag("race_verifier_sleep_ms", 10, args,
+  FindIntFlag("race_verifier_sleep_ms", 100, args,
       &G_flags->race_verifier_sleep_ms);
   FindStringFlag("race_verifier", args, &G_flags->race_verifier);
   FindStringFlag("race_verifier_extra", args, &G_flags->race_verifier_extra);
