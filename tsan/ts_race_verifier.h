@@ -44,5 +44,6 @@ void RaceVerifierEndAccess(int thread_id, uintptr_t addr, uintptr_t pc,
 
 void RaceVerifierInit(const std::vector<std::string>& fileNames,
     const std::vector<std::string>& raceInfos);
+void RaceVerifierFini();
 
 #endif // TS_RACE_VERIFIER_H_

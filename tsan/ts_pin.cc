@@ -2670,6 +2670,9 @@ static void CallbackForFini(INT32 code, void *v) {
     DumpEvent(THR_END, 0, 0, 0, 0);
   }
   ThreadSanitizerFini();
+  if (g_race_verifier_active) {
+    RaceVerifierFini();
+  }
   if (G_flags->show_stats) {
     TraceInfo::PrintTraceProfile();
   }

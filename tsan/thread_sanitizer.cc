@@ -4363,21 +4363,14 @@ static void ForgetAllStateAndStartOver(const char *reason) {
   }
 }
 // -------- Expected Race ---------------------- {{{1
-// Information about expected races.
-struct ExpectedRace {
-  uintptr_t   ptr;
-  uintptr_t   size;
-  bool        is_benign;
-  int         count;
-  const char *description;
-  uintptr_t   pc;
-};
-
 typedef  HeapMap<ExpectedRace> ExpectedRacesMap;
 static ExpectedRacesMap *G_expected_races_map;
 static bool g_expecting_races;
 static int g_found_races_since_EXPECT_RACE_BEGIN;
 
+ExpectedRace* ThreadSanitizerFindExpectedRace(uintptr_t addr) {
+  return G_expected_races_map->GetInfo(addr);
+}
 
 // -------- Suppressions ----------------------- {{{1
 static const char default_suppressions[] =
@@ -4705,6 +4698,7 @@ class ReportStorage {
     vector<string> funcs_demangled;
     vector<string> objects;
 
+    CHECK(!g_race_verifier_active);
     CHECK(report->stack_trace);
     CHECK(report->stack_trace->size());
     for (size_t i = 0; i < report->stack_trace->size(); i++) {
@@ -5036,7 +5030,8 @@ class Detector {
     for (ExpectedRacesMap::iterator it = G_expected_races_map->begin();
          it != G_expected_races_map->end(); ++it) {
       ExpectedRace race = it->second;
-      if (race.count == 0 && !race.is_benign) {
+      if (race.count == 0 && !race.is_benign &&
+          !(g_race_verifier_active && !race.is_verifiable)) {
         ++missing;
         Printf("Missing an expected race on %p: %s (annotated at %s)\n",
                it->first,
@@ -5382,6 +5377,8 @@ class Detector {
     expected_race.size = size;
     expected_race.count = 0;
     expected_race.is_benign = is_benign;
+    expected_race.is_verifiable = !descr ||
+        (string(descr).find("UNVERIFIABLE") == string::npos);
     expected_race.description = descr;
     expected_race.pc = cur_thread_->GetCallstackEntry(1);
     G_expected_races_map->InsertInfo(ptr, expected_race);

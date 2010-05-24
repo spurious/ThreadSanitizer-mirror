@@ -7236,5 +7236,47 @@ TEST(IgnoreTests, IndirectCallToFunR) {
 }
 }  // namespace
 
+namespace RaceVerifierTests_Simple {
+int     GLOB = 0;
+
+void Worker1() {
+  GLOB = 1;
+}
+
+void Worker2() {
+  GLOB = 2;
+}
+
+TEST(RaceVerifierTests, Simple) {
+  ANNOTATE_EXPECT_RACE(&GLOB, "SimpleRace.");
+  MyThreadArray t(Worker1, Worker2);
+  t.Start();
+  t.Join();
+}
+}  // namespace
+
+namespace RaceVerifierTests_Unverifiable {
+StealthNotification n;
+int     GLOB = 0;
+
+void Worker1() {
+  GLOB = 1;
+  n.signal();
+}
+
+void Worker2() {
+  n.wait();
+  GLOB = 2;
+}
+
+TEST(RaceVerifierTests, Unverifiable) {
+  ANNOTATE_EXPECT_RACE(&GLOB, "SimpleRace. UNVERIFIABLE.");
+  MyThreadArray t(Worker1, Worker2);
+  t.Start();
+  t.Join();
+}
+}  // namespace
+
+
 // End {{{1
  // vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker

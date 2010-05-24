@@ -218,6 +218,21 @@ class Event {
 #include "ts_stats.h"
 extern Stats *G_stats;
 
+// -------- Expected Race ---------------------- {{{1
+// Information about expected races.
+struct ExpectedRace {
+  uintptr_t   ptr;
+  uintptr_t   size;
+  bool        is_benign;
+  bool        is_verifiable;
+  int         count;
+  const char *description;
+  uintptr_t   pc;
+};
+
+ExpectedRace* ThreadSanitizerFindExpectedRace(uintptr_t addr);
+
 // end. {{{1
 #endif  //  THREAD_SANITIZER_H_
+
 // vim:shiftwidth=2:softtabstop=2:expandtab

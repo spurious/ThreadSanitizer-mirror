@@ -73,6 +73,7 @@ static AddressMap* racecheck_map;
 // data addresses that are ignored (they have already been reported)
 static set<uintptr_t>* ignore_addresses;
 
+static int n_reports;
 
 /**
  * Given max and min pc of a trace (both inclusive!), returns whether this trace
@@ -161,7 +162,19 @@ static PossibleRace* FindRaceForAddr(uintptr_t addr) {
 static void PrintRaceReport(uintptr_t addr) {
   PossibleRace* race = FindRaceForAddr(addr);
   if (race) {
-    Printf("Confirmed race:\n");
+    ExpectedRace* expected_race = ThreadSanitizerFindExpectedRace(addr);
+    if (expected_race)
+      expected_race->count++;
+    bool is_expected = !!expected_race;
+    bool is_unverifiable = is_expected && !expected_race->is_verifiable;
+
+    if (is_expected && !is_unverifiable && !G_flags->show_expected_races)
+      return;
+
+    if (is_unverifiable)
+      Printf("WARNING: Confirmed a race that was marked as UNVERIFIABLE:\n");
+    else
+      Printf("WARNING: Confirmed a race:\n");
     const string& report = race->report;
     if (report.empty()) {
       PrintRaceReportEmpty(addr);
@@ -171,6 +184,8 @@ static void PrintRaceReport(uintptr_t addr) {
     // Suppress future reports for this race.
     race->reported = true;
     ignore_addresses->insert(addr);
+
+    n_reports++;
   } else {
     Printf("Warning: unexpected race found!\n");
     PrintRaceReportEmpty(addr);
@@ -324,4 +339,10 @@ void RaceVerifierInit(const vector<string>& fileNames,
        it != raceInfos.end(); ++it) {
     RaceVerifierParseRaceInfo(*it);
   }
+}
+
+void RaceVerifierFini() {
+  Report("RaceVerifier summary: verified %d race(s)\n", n_reports);
+  int n_errors = GetNumberOfFoundErrors();
+  SetNumberOfFoundErrors(n_errors + n_reports);
 }
