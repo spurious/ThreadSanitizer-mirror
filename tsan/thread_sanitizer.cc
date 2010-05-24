@@ -4698,7 +4698,6 @@ class ReportStorage {
     vector<string> funcs_demangled;
     vector<string> objects;
 
-    CHECK(!g_race_verifier_active);
     CHECK(report->stack_trace);
     CHECK(report->stack_trace->size());
     for (size_t i = 0; i < report->stack_trace->size(); i++) {
