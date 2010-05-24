@@ -46,7 +46,7 @@ def generate(settings):
   #             bits, opt, static,   tsan-debug,   mode
   variants = [
     # ((  32,   1, False),(        True, 'fast')),
-    # ((  32,   1, False),(        True, 'slow')),
+    ((  32,   1, False),(        True, 'hybrid')),
     ((  32,   1, False),(        True,  'phb')),
     # ((  32,   0, False),(        True, 'slow')),
     ((  32,   0, False),(       False,  'phb'))
