@@ -5903,7 +5903,7 @@ class Detector {
     // Handle the memory deletion as a write, but don't touch all
     // the memory if there is too much of it, limit with the first 1K.
     if (size && G_flags->free_is_write) {
-      HandleMemoryAccess(e_->tid(), a, e_->pc(),
+      HandleMemoryAccess(e_->tid(), e_->pc(), a,
                          min(max_write_size, size), true /*is_w*/);
     }
     // update G_heap_map
