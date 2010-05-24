@@ -7278,5 +7278,28 @@ TEST(RaceVerifierTests, Unverifiable) {
 }  // namespace
 
 
+namespace RaceVerifierTests_ManyRacesInOneTrace {
+StealthNotification n;
+int     array[2];
+
+void Worker1() {
+  array[0] = 1;
+  array[1] = 2;
+}
+
+void Worker2() {
+  array[1] = array[0];
+}
+
+TEST(RaceVerifierTests, ManyRacesInOneTrace) {
+  ANNOTATE_EXPECT_RACE(array + 0, "RaceVerifierTests_ManyRacesInOneTrace: race 1.");
+  ANNOTATE_EXPECT_RACE(array + 1, "RaceVerifierTests_ManyRacesInOneTrace: race 2.");
+  MyThreadArray t(Worker1, Worker2);
+  t.Start();
+  t.Join();
+}
+}  // namespace
+
+
 // End {{{1
  // vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker
