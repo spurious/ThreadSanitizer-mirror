@@ -185,7 +185,8 @@ static void PrintRaceReport(uintptr_t addr) {
     race->reported = true;
     ignore_addresses->insert(addr);
 
-    n_reports++;
+    if (!is_expected || is_unverifiable)
+      n_reports++;
   } else {
     Printf("Warning: unexpected race found!\n");
     PrintRaceReportEmpty(addr);
