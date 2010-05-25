@@ -5608,6 +5608,9 @@ class Detector {
         LSID w2_ls = Segment::Get(ss->GetSID(w2))->lsid(true);
         if (LockSet::IntersectionIsEmpty(w1_ls, w2_ls)) {
           return true;
+        } else {
+          // In happens-before mode the intersection of the LSes must be empty.
+          DCHECK(!G_flags->pure_happens_before);
         }
       }
       // check all write-read pairs
@@ -5619,6 +5622,9 @@ class Detector {
           continue;
         if (LockSet::IntersectionIsEmpty(w1_ls, r_ls)) {
           return true;
+        } else {
+          // In happens-before mode the intersection of the LSes must be empty.
+          DCHECK(!G_flags->pure_happens_before);
         }
       }
     }
