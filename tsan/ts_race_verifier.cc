@@ -290,7 +290,13 @@ static void RaceVerifierParseRaceInfo(const string& raceInfo) {
 /* Parse a TSan log and add all race verifier info's from it to our storage of
    possible races. */
 static void RaceVerifierParseFile(const string& fileName) {
+  Printf("Reading race data from %s\n", fileName.c_str());
   std::fstream fs(fileName.c_str(), std::ios_base::in);
+  if (!fs.good()) {
+    Printf("Open failed for unknown reason\n");
+    return;
+  }
+  int count = 0;
   string line;
   std::ostringstream* os = NULL;
   const string RACEINFO_MARKER = "Race verifier data: ";
@@ -310,12 +316,14 @@ static void RaceVerifierParseFile(const string& fileName) {
       (*os) << "}}}" << std::endl;
       race->report = os->str();
       (*races_map)[race->pc] = race;
+      count ++;
       delete os;
       os = NULL;
     } else if (os) {
       (*os) << line << std::endl;
     }
   }
+  Printf("Got %d possible races\n", count);
   // TODO(eugenis): check for I/O errors
 }
 
