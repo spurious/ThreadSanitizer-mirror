@@ -294,7 +294,7 @@ static void RaceVerifierParseRaceInfo(const string& raceInfo) {
 
 class StringStream {
  public:
-  StringStream(string s) : s_(s), data_(s.c_str()), p_(data_) {}
+  StringStream(const string &s) : s_(s), data_(s.c_str()), p_(data_) {}
 
   bool Eof() {
     return !*p_;
