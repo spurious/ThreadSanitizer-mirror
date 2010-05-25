@@ -849,51 +849,6 @@ class LockSet {
     return end == intersection.begin();
   }
 
-  NOINLINE static LSID Intersect(LSID lsid1, LSID lsid2) {
-    // TODO(kcc): avoid code duplication with IntersectionIsEmpty().
-    ScopedMallocCostCenter cc("LockSet::Intersect");
-    // at least one empty
-    if (lsid1.IsEmpty() || lsid2.IsEmpty())
-      return LSID(0);  // empty
-
-    // both singletons
-    if (lsid1.IsSingleton() && lsid2.IsSingleton()) {
-      return lsid1 == lsid2 ? lsid1 : LSID(0);
-    }
-
-    // first is singleton, second is not
-    if (lsid1.IsSingleton()) {
-      const LSSet &set2 = Get(lsid2);
-      return set2.count(LID(lsid1.raw())) ? lsid1 : LSID(0);
-    }
-
-    // second is singleton, first is not
-    if (lsid2.IsSingleton()) {
-      const LSSet &set1 = Get(lsid1);
-      return set1.count(LID(lsid2.raw())) ? lsid2 : LSID(0);
-    }
-
-    // both are not singletons
-    const LSSet &set1 = Get(lsid1);
-    const LSSet &set2 = Get(lsid2);
-
-    FixedArray<LID> intersection(min(set1.size(), set2.size()));
-    LID *end = set_intersection(set1.begin(), set1.end(),
-                                set2.begin(), set2.end(),
-                                intersection.begin());
-    if (intersection.begin() == end) {
-      return LSID(0);  // empty
-    }
-    if (end - intersection.begin() == 1) {
-      return LSID(intersection[0].raw());  // Singleton
-    }
-    LSSet set(intersection.begin(), end);
-    return ComputeId(set);
-  }
-
-
-
-
   static string ToString(LSID lsid) {
     if (lsid.IsEmpty()) {
       return "{}";
