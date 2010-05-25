@@ -90,6 +90,15 @@ def generate(settings):
 
   # Run benchmarks.
   platform = 'linux-experimental'
+  benchmark_modes = {
+    35:'phb',
+    72:'phb',
+    73:'phb',
+    151:'phb',
+    502:'phb',
+    503:'phb',
+    512:'hybrid',
+  }
 
   bigtest_binary = unitTestBinary('linux', 64, 0, False, test_base_name='bigtest')
   bigtest_desc = getTestDesc('linux', 64, 0, False)
@@ -105,8 +114,8 @@ def generate(settings):
   racecheck_desc = getTestDesc('linux', 64, 0, False)
   step_generator = chromium_utils.InitializePartiallyWithArguments(
       genBenchmarkStep, factory, platform, 'racecheck_unittest')
-  for test_id in [35, 72, 73, 151, 502, 503]:
-    addTestStep(f1, False, 'phb', racecheck_binary,
+  for test_id, mode in benchmark_modes.items():
+    addTestStep(f1, False, mode, racecheck_binary,
                 racecheck_desc + ', test ' + str(test_id),
                 extra_args=["--error_exitcode=1"],
                 extra_test_args=["--gtest_filter=NonGtestTests*", str(test_id)],
@@ -129,8 +138,8 @@ def generate(settings):
   racecheck32_desc = getTestDesc('linux', 32, 0, False)
   step_generator = chromium_utils.InitializePartiallyWithArguments(
       genBenchmarkStep, factory, platform, 'racecheck_unittest32')
-  for test_id in [35, 72, 73, 151, 502, 503]:
-    addTestStep(f1, False, 'phb', racecheck32_binary,
+  for test_id, mode in benchmark_modes.items():
+    addTestStep(f1, False, mode, racecheck32_binary,
                 racecheck32_desc + ', test ' + str(test_id),
                 extra_args=["--error_exitcode=1"],
                 extra_test_args=["--gtest_filter=NonGtestTests*", str(test_id)],
