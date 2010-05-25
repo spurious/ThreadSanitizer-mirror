@@ -312,6 +312,7 @@ static void TLEBFlushUnlocked(ThreadLocalEventBuffer &tleb) {
   size_t i;
   for (i = 0; i < tleb.size; ) {
     uintptr_t event = tleb.events[i++];
+    DCHECK(!g_race_verifier_active || event == SBLOCK_ENTER);
     if (event == RTN_EXIT) {
       if (DumpEventPlainText(RTN_EXIT, t.uniq_tid, 0, 0, 0)) continue;
       ThreadSanitizerHandleRtnExit(t.uniq_tid);
@@ -474,6 +475,8 @@ static void TLEBStartThread(PinThread &t) {
 }
 
 static void TLEBSimpleEvent(PinThread &t, uintptr_t event) {
+  if (g_race_verifier_active)
+    return;
   if (t.tleb.size + 1 > kThreadLocalEventBufferSize) {
     TLEBFlushLocked(t);
   }
@@ -881,7 +884,8 @@ void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
   }
 
   // This is a lock-free (thread local) operation.
-  TLEBStartThread(t);
+  if (!g_race_verifier_active)
+    TLEBStartThread(t);
 }
 
 static void Before_start_thread(THREADID tid, ADDRINT pc, ADDRINT sp) {
