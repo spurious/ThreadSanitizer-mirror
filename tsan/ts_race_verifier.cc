@@ -31,9 +31,6 @@
 #include <set>
 #include <iterator>
 #include <algorithm>
-#include <iostream>
-#include <sstream>
-#include <fstream>
 
 #include "ts_lock.h"
 #include "ts_util.h"
@@ -260,22 +257,29 @@ void RaceVerifierEndAccess(int thread_id, uintptr_t addr, uintptr_t pc,
    "Race verifier data: ", not including the said words. It looks like
    "pc,trace[,trace]...", without spaces. */
 static PossibleRace* ParseRaceInfo(const string& raceInfo) {
-  std::istringstream iss(raceInfo);
   PossibleRace* race = new PossibleRace();
-  iss >> std::hex;
-  iss >> race->pc;
-  while (iss.good()) {
-    char delim;
-    iss >> delim;
-    if (delim != ',')
+  const char* p = raceInfo.c_str();
+  size_t idx = 0;
+  while (true) {
+    DCHECK(sizeof(unsigned long) == sizeof(uintptr_t));
+    unsigned long addr;
+    if (1 != sscanf(p + idx, "%lx", &addr)) {
+      Printf("Parse error: %s\n", p);
+      delete race;
       return NULL;
-    uintptr_t trace;
-    iss >> trace;
-    race->traces.push_back(trace);
+    }
+    if (!race->pc)
+      race->pc = addr;
+    else
+      race->traces.push_back(addr);
+    idx = raceInfo.find(',', idx);
+    if (idx == string::npos) {
+      // raceInfo already ends with \n
+      Printf("Possible race: %s", raceInfo.c_str());
+      return race;
+    }
+    ++idx;
   }
-  race->reported = false;
-  Printf("Possible race: %s\n", raceInfo.c_str());
-  return race;
 }
 
 /* Parse a race description and add it to races_map. */
@@ -287,44 +291,64 @@ static void RaceVerifierParseRaceInfo(const string& raceInfo) {
     Printf("Bad raceInfo: %s\n", raceInfo.c_str());
 }
 
+
+class StringStream {
+ public:
+  StringStream(string s) : s_(s), data_(s.c_str()), p_(data_) {}
+
+  bool Eof() {
+    return !*p_;
+  }
+
+  string NextLine() {
+    const char* first = p_;
+    while (*p_ && *p_ != '\n') {
+      ++p_;
+    }
+    if (*p_)
+      ++p_;
+    return string(first, p_ - first);
+  }
+
+ private:
+  const string& s_;
+  const char* data_;
+  const char* p_;
+};
+
 /* Parse a TSan log and add all race verifier info's from it to our storage of
    possible races. */
 static void RaceVerifierParseFile(const string& fileName) {
   Printf("Reading race data from %s\n", fileName.c_str());
-  std::fstream fs(fileName.c_str(), std::ios_base::in);
-  if (!fs.good()) {
-    Printf("Open failed for unknown reason\n");
-    return;
-  }
-  int count = 0;
-  string line;
-  std::ostringstream* os = NULL;
   const string RACEINFO_MARKER = "Race verifier data: ";
-  while (fs.good()) {
-    getline(fs, line);
+  string log = ReadFileToString(fileName, true /* die_if_failed */);
+  StringStream ss(log);
+  string* desc = NULL;
+  int count = 0;
+  while (!ss.Eof()) {
+    string line = ss.NextLine();
     size_t pos;
     if ((line.find("WARNING: Possible data race during") !=
             string::npos) ||
         (line.find("WARNING: Expected data race during") !=
             string::npos)) {
-      os = new std::ostringstream();
-      (*os) << line << std::endl;
+      desc = new string();
+      (*desc) += line;
     } else if ((pos = line.find(RACEINFO_MARKER)) != string::npos) {
       pos += RACEINFO_MARKER.size();
       string raceInfo = line.substr(pos);
       PossibleRace* race = ParseRaceInfo(raceInfo);
-      (*os) << "}}}" << std::endl;
-      race->report = os->str();
+      (*desc) += "}}}\n";
+      race->report = *desc;
       (*races_map)[race->pc] = race;
       count ++;
-      delete os;
-      os = NULL;
-    } else if (os) {
-      (*os) << line << std::endl;
+      delete desc;
+      desc = NULL;
+    } else if (desc) {
+      (*desc) += line;
     }
   }
   Printf("Got %d possible races\n", count);
-  // TODO(eugenis): check for I/O errors
 }
 
 /**
