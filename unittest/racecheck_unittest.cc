@@ -7112,6 +7112,39 @@ void Run () {
 REGISTER_TEST2(Run, 511, MEMORY_USAGE | PRINT_STATS | EXCLUDE_FROM_ALL);
 }  // namespace test511
 
+// test512: Access the same memory with the same big LockSet {{{1
+namespace test512 {
+const int N_MUTEXES = 128;
+const int DATA_SIZE = 1024;
+
+Mutex mu[N_MUTEXES];
+int   GLOB[DATA_SIZE];
+
+void TP() {
+  for (int j = 0; j < 10; j++) {
+    for (int m = 0; m < N_MUTEXES; m++)
+      mu[m].Lock();
+    for (int i = 0; i < 3000; i++) {
+      ANNOTATE_CONDVAR_SIGNAL(&GLOB);  // Force new segment
+      for (int k = 0; k < DATA_SIZE; k++)
+        GLOB[k] = 42;
+    }
+    for (int m = 0; m < N_MUTEXES; m++)
+      mu[m].Unlock();
+  }
+}
+
+void Run() {
+   MyThreadArray t(TP, TP);
+   printf("test512: Access the same memory with the same big LockSet.\n");
+
+   t.Start();
+   t.Join();
+}
+
+REGISTER_TEST2(Run, 512, EXCLUDE_FROM_ALL | PERFORMANCE)
+}  // namespace test512
+
 // test513: --fast-mode benchmark {{{1
 namespace test513 {
 
