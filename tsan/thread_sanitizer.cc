@@ -838,6 +838,10 @@ class LockSet {
       return set1.count(LID(lsid2.raw())) == 0;
     }
 
+    // LockSets are equal and not empty
+    if (lsid1 == lsid2)
+      return false;
+
     // both are not singletons
     const LSSet &set1 = Get(lsid1);
     const LSSet &set2 = Get(lsid2);
