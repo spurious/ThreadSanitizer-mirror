@@ -1876,6 +1876,10 @@ static void On_AnnotatePCQGet(THREADID tid, ADDRINT pc,
   DumpEvent(PCQ_GET, tid, pc, pcq, 0);
 }
 
+int WRAP_NAME(RunningOnValgrind)(WRAP_PARAM4) {
+  return 1;
+}
+
 //--------- Instrumentation ----------------------- {{{1
 static bool IgnoreImage(IMG img) {
   string name = IMG_Name(img);
@@ -2543,6 +2547,8 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_BEFORE_3("AnnotatePCQDestroy", On_AnnotatePCQDestroy);
   INSERT_BEFORE_3("AnnotatePCQPut", On_AnnotatePCQPut);
   INSERT_BEFORE_3("AnnotatePCQGet", On_AnnotatePCQGet);
+  WrapFunc4(img, rtn, "RunningOnValgrind",
+            (AFUNPTR)WRAP_NAME(RunningOnValgrind));
 
   // I/O
   INSERT_BEFORE_0("write", Before_SignallingIOCall);
