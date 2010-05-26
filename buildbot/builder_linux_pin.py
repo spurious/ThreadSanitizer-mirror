@@ -22,7 +22,18 @@ def runAllTests(factory, variants, os):
     else:
       extra_args=["--error_exitcode=1"]
     addTestStep(factory, tsan_debug, mode, test_binary, test_desc, frontend='pin',
-                pin_root='../../../third_party/pin', extra_args = extra_args)
+                pin_root='../../../third_party/pin', extra_args=extra_args, test_base_name=base_name)
+    if base_name == 'racecheck_unittest':
+      addTestStep(factory, tsan_debug, mode, test_binary, test_desc + ' RV 1st pass', frontend='pin',
+                  pin_root='../../../third_party/pin',
+                  extra_args=extra_args + ['--show-expected-races', '--error_exitcode=1'],
+                  extra_test_args=['--gtest_filter="RaceVerifierTests.*"'],
+                  append_command='2>&1 | tee raceverifier.log')
+      addTestStep(factory, tsan_debug, mode, test_binary, test_desc + ' RV 2nd pass', frontend='pin',
+                  pin_root='../../../third_party/pin',
+                  extra_args=extra_args + ['--error_exitcode=1', '--race-verifier=raceverifier.log'],
+                  extra_test_args=['--gtest_filter="RaceVerifierTests.*"'],
+                  append_command='2>&1')
 
 
 def generate(settings):

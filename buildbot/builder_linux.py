@@ -39,7 +39,15 @@ def generate(settings):
       test_desc = getTestDesc(os, bits, opt, static)
       test_binaries[test_variant] = test_desc
     test_binary = unitTestBinary(os, bits, opt, static)
-    addTestStep(f1, tsan_debug, mode, test_binary, test_desc, extra_args=["--error_exitcode=1"])
+    addTestStep(f1, tsan_debug, mode, test_binary, test_desc, extra_args=['--error_exitcode=1'])
+    # addTestStep(f1, tsan_debug, mode, test_binary, test_desc + ' RV 1st pass',
+    #             extra_args=['--show-expected-races', '--error_exitcode=1'],
+    #             extra_test_args=['--gtest_filter="RaceVerifierTests.*"'],
+    #             append_command='2>&1 | tee raceverifier.log')
+    # addTestStep(f1, tsan_debug, mode, test_binary, test_desc + ' RV 2nd pass',
+    #             extra_args=['--error_exitcode=1', '--race-verifier=raceverifier.log'],
+    #             extra_test_args=['--gtest_filter="RaceVerifierTests.*"'],
+    #             append_command='2>&1')
 
 
   # Run unit tests with 32-bit valgrind.
