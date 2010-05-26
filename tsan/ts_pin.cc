@@ -1749,6 +1749,7 @@ static void After_sem_trywait(THREADID tid, ADDRINT pc, ADDRINT ret) {
 }
 
 // etc
+#if defined(__GNUC__)
 uintptr_t WRAP_NAME(lockf)(WRAP_PARAM4) {
   const long offset_magic = 0xFEB0ACC0;
 
@@ -1762,6 +1763,7 @@ uintptr_t WRAP_NAME(lockf)(WRAP_PARAM4) {
 
   return ret;
 }
+#endif
 
 //--------- Annotations -------------------------- {{{2
 static void On_AnnotateBenignRace(THREADID tid, ADDRINT pc,
@@ -2407,6 +2409,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   WrapFunc4(img, rtn, "free", (AFUNPTR)WRAP_NAME(free));
 
   // Linux: operator new/delete
+#if defined(__GNUC__)
   WrapFunc4(img, rtn, "_Znwm", (AFUNPTR)WRAP_NAME(malloc));
   WrapFunc4(img, rtn, "_Znam", (AFUNPTR)WRAP_NAME(malloc));
   WrapFunc4(img, rtn, "_Znwj", (AFUNPTR)WRAP_NAME(malloc));
@@ -2419,22 +2422,21 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   WrapFunc4(img, rtn, "_ZdlPv", (AFUNPTR)WRAP_NAME(free));
   WrapFunc4(img, rtn, "_ZdlPvRKSt9nothrow_t", (AFUNPTR)WRAP_NAME(free));
   WrapFunc4(img, rtn, "_ZdaPvRKSt9nothrow_t", (AFUNPTR)WRAP_NAME(free));
+#endif  // __GNUC__
 
   // Windows: operator new/delete
+#if defined(_MSC_VER)
   WrapFunc4(img, rtn, "operator new", (AFUNPTR)WRAP_NAME(malloc));
   WrapFunc4(img, rtn, "operator new[]", (AFUNPTR)WRAP_NAME(malloc));
   WrapFunc4(img, rtn, "operator delete", (AFUNPTR)WRAP_NAME(free));
   WrapFunc4(img, rtn, "operator delete[]", (AFUNPTR)WRAP_NAME(free));
+#endif  // _MSC_VER
 
+#if defined(__GNUC__)
   WrapFunc6(img, rtn, "mmap", (AFUNPTR)WRAP_NAME(mmap));
   WrapFunc4(img, rtn, "munmap", (AFUNPTR)WRAP_NAME(munmap));
 
   WrapFunc4(img, rtn, "lockf", (AFUNPTR)WRAP_NAME(lockf));
-
-  // ThreadSanitizerQuery
-  WrapFunc4(img, rtn, "ThreadSanitizerQuery",
-            (AFUNPTR)WRAP_NAME(ThreadSanitizerQuery));
-
   // pthread create/join
   WrapFunc4(img, rtn, "pthread_create", (AFUNPTR)WRAP_NAME(pthread_create));
   WrapFunc4(img, rtn, "pthread_join", (AFUNPTR)WRAP_NAME(pthread_join));
@@ -2480,6 +2482,9 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   WrapFunc4(img, rtn, "pthread_barrier_wait",
             (AFUNPTR)WRAP_NAME(pthread_barrier_wait));
 
+  // pthread_once
+  WrapFunc4(img, rtn, "pthread_once", (AFUNPTR)WRAP_NAME(pthread_once));
+
   // sem_*
   INSERT_AFTER_1("sem_open", After_sem_open);
   INSERT_BEFORE_1("sem_post", Before_sem_post);
@@ -2487,7 +2492,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_AFTER_0("sem_wait", After_sem_wait);
   INSERT_BEFORE_1("sem_trywait", Before_sem_wait);
   INSERT_AFTER_1("sem_trywait", After_sem_trywait);
-
+#endif  // __GNUC__
 
 #ifdef _MSC_VER
   WrapStdCallFunc6(rtn, "CreateThread", (AFUNPTR)WRAP_NAME(CreateThread));
@@ -2522,7 +2527,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   WRAPSTD1(RtlAllWakeConditionVariable);
   WRAPSTD4(RtlSleepConditionVariableSRW);
   WRAPSTD3(RtlSleepConditionVariableCS);
-#endif
+#endif  // if 1
 
   WRAPSTD3(RtlQueueWorkItem);
   WRAPSTD6(RegisterWaitForSingleObject);
@@ -2535,7 +2540,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   WrapStdCallFunc2(rtn, "GlobalAlloc", (AFUNPTR)WRAP_NAME(GlobalAlloc));
 //  WrapStdCallFunc3(rtn, "RtlAllocateHeap", (AFUNPTR) WRAP_NAME(AllocateHeap));
 //  WrapStdCallFunc3(rtn, "HeapCreate", (AFUNPTR) WRAP_NAME(HeapCreate));
-#endif
+#endif  // _MSC_VER
 
   // Annotations.
   INSERT_BEFORE_4("AnnotateBenignRace", On_AnnotateBenignRace);
@@ -2564,6 +2569,10 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_BEFORE_3("AnnotatePCQDestroy", On_AnnotatePCQDestroy);
   INSERT_BEFORE_3("AnnotatePCQPut", On_AnnotatePCQPut);
   INSERT_BEFORE_3("AnnotatePCQGet", On_AnnotatePCQGet);
+
+  // ThreadSanitizerQuery
+  WrapFunc4(img, rtn, "ThreadSanitizerQuery",
+            (AFUNPTR)WRAP_NAME(ThreadSanitizerQuery));
   WrapFunc4(img, rtn, "RunningOnValgrind",
             (AFUNPTR)WRAP_NAME(RunningOnValgrind));
 
@@ -2595,9 +2604,6 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
     ReplaceFunc3(img, rtn, "memcpy", (AFUNPTR)Replace_memcpy);
     ReplaceFunc3(img, rtn, "strcpy", (AFUNPTR)Replace_strcpy);
   }
-
-  // pthread_once
-  WrapFunc4(img, rtn, "pthread_once", (AFUNPTR)WRAP_NAME(pthread_once));
 
   // __cxa_guard_acquire / __cxa_guard_release
   INSERT_BEFORE_1("__cxa_guard_acquire", Before_cxa_guard_acquire);
