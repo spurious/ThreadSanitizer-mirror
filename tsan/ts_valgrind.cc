@@ -288,7 +288,8 @@ void ts_post_clo_init(void) {
 
   // we get num-callers from valgrind flags.
   G_flags->num_callers = VG_(clo_backtrace_size);
-  G_flags->error_exitcode = VG_(clo_error_exitcode);
+  if (!G_flags->error_exitcode)
+    G_flags->error_exitcode = VG_(clo_error_exitcode);
 
   extern Int   VG_(clo_n_suppressions);
   extern Int   VG_(clo_gen_suppressions);
