@@ -156,6 +156,10 @@ struct Stats {
       Printf("tleb_flush[%ld]=%ld\n", i, tleb_flush[i]);
     }
     Printf("IgnoreBelowCache miss=%ld\n", ignore_below_cache_miss);
+    for (size_t i = 0; i < TS_ARRAY_SIZE(msm_branch_count); i++) {
+      if (msm_branch_count[i])
+        Printf("msm_branch_count[%02d] = %'ld\n", i, msm_branch_count[i]);
+    }
   }
 
 
@@ -209,6 +213,7 @@ struct Stats {
   uintptr_t tleb_flush[10];
 
   uintptr_t ignore_below_cache_miss;
+  uintptr_t msm_branch_count[16];
 };
 
 

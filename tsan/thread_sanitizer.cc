@@ -190,7 +190,7 @@ class LSID: public ID {
   }
   bool IsEmpty() const { return raw() == 0; }
   bool IsSingleton() const { return raw() > 0; }
-  LID Singleton() const { return LID(raw()); }
+  LID GetSingleton() const { return LID(raw()); }
 };
 
 // SegmentSet ID.
@@ -209,7 +209,7 @@ class SSID: public ID {
   bool IsEmpty() const { return raw() == 0; }
   bool IsSingleton() const {return raw() > 0; }
   bool IsTuple() const {return raw() < 0; }
-  SID  Singleton() const {
+  SID  GetSingleton() const {
     DCHECK(IsSingleton());
     return SID(raw());
   }
@@ -769,7 +769,7 @@ class LockSet {
     LSID res;
     if (lsid.IsSingleton()) {
       LSSet set;
-      set.insert(lsid.Singleton());
+      set.insert(lsid.GetSingleton());
       set.insert(lid);
       G_stats->ls_add_to_singleton++;
       res = ComputeId(set);
@@ -792,7 +792,7 @@ class LockSet {
 
     if (lsid.IsSingleton()) {
       // removing the only lock -> LSID(0)
-      if (lsid.Singleton() != lid) return false;
+      if (lsid.GetSingleton() != lid) return false;
       G_stats->ls_remove_from_singleton++;
       *new_lsid = LSID(0);
       return true;
@@ -857,7 +857,7 @@ class LockSet {
     if (lsid.IsEmpty()) {
       return "{}";
     } else if (lsid.IsSingleton()) {
-      return "{" + Lock::ToString(lsid.Singleton()) + "}";
+      return "{" + Lock::ToString(lsid.GetSingleton()) + "}";
     }
     const LSSet &set = Get(lsid);
     string res = "{";
@@ -875,7 +875,7 @@ class LockSet {
     if (lsid.IsEmpty()) return;
     Report("%s%s%s\n", c_green, descr, c_default);
     if (lsid.IsSingleton()) {
-      LID lid = lsid.Singleton();
+      LID lid = lsid.GetSingleton();
       Lock::ReportLockWithOrWithoutContext(lid,
                                            locks_reported->count(lid) == 0);
       locks_reported->insert(lid);
@@ -893,7 +893,7 @@ class LockSet {
   static void AddLocksToSet(LSID lsid, set<LID> *locks) {
     if (lsid.IsEmpty()) return;
     if (lsid.IsSingleton()) {
-      locks->insert(lsid.Singleton());
+      locks->insert(lsid.GetSingleton());
     } else {
       const LSSet &set = Get(lsid);
       for (LSSet::const_iterator it = set.begin(); it != set.end(); ++it) {
@@ -1705,7 +1705,7 @@ class SegmentSet {
     DCHECK(ssid.valid());
     if (DEBUG_MODE) {
       if (ssid.IsSingleton()) {
-        Segment::AssertLive(ssid.Singleton(), line);
+        Segment::AssertLive(ssid.GetSingleton(), line);
       } else {
         DCHECK(ssid.IsTuple());
         int idx = -ssid.raw()-1;
@@ -1761,7 +1761,7 @@ class SegmentSet {
   static void INLINE Ref(SSID ssid, const char *where) {
     DCHECK(ssid.valid());
     if (ssid.IsSingleton()) {
-      Segment::Ref(ssid.Singleton(), where);
+      Segment::Ref(ssid.GetSingleton(), where);
     } else {
       SegmentSet *sset = Get(ssid);
       // Printf("SSRef   : %d ref=%d %s\n", ssid.raw(), sset->ref_count_, where);
@@ -1773,7 +1773,7 @@ class SegmentSet {
   static void INLINE Unref(SSID ssid, const char *where) {
     DCHECK(ssid.valid());
     if (ssid.IsSingleton()) {
-      Segment::Unref(ssid.Singleton(), where);
+      Segment::Unref(ssid.GetSingleton(), where);
     } else {
       SegmentSet *sset = Get(ssid);
       // Printf("SSUnref : %d ref=%d %s\n", ssid.raw(), sset->ref_count_, where);
@@ -1887,8 +1887,8 @@ class SegmentSet {
     DCHECK(ssid.valid());
     if (ssid.IsSingleton()) {
       DCHECK(i == 0);
-      Segment::AssertLive(ssid.Singleton(), line);
-      return ssid.Singleton();
+      Segment::AssertLive(ssid.GetSingleton(), line);
+      return ssid.GetSingleton();
     } else {
       AssertLive(ssid, __LINE__);
       SID sid = Get(ssid)->GetSID(i);
@@ -1899,7 +1899,7 @@ class SegmentSet {
 
   static bool INLINE Contains(SSID ssid, SID seg) {
     if (LIKELY(ssid.IsSingleton())) {
-      return ssid.Singleton() == seg;
+      return ssid.GetSingleton() == seg;
     } else if (LIKELY(ssid.IsEmpty())) {
       return false;
     }
@@ -2173,7 +2173,7 @@ SSID SegmentSet::RemoveSegmentFromSS(SSID old_ssid, SID sid_to_remove) {
   if (old_ssid.IsEmpty()) {
     res = old_ssid;  // Nothing to remove.
   } else if (LIKELY(old_ssid.IsSingleton())) {
-    SID sid = old_ssid.Singleton();
+    SID sid = old_ssid.GetSingleton();
     if (Segment::HappensBeforeOrSameThread(sid, sid_to_remove))
       res = SSID(0);  // Empty.
     else
@@ -2605,11 +2605,13 @@ class CacheLine : public CacheLineUncompressed {
   uintptr_t tag() { return tag_; }
 
   // Add a new shadow value to a place where there was no shadow value before.
-  void AddNewSvalAtOffset(uintptr_t off) {
+  ShadowValue *AddNewSvalAtOffset(uintptr_t off) {
     CHECK(!has_shadow_value().Get(off));
     has_shadow_value_.Set(off);
     published_.Clear(off);
-    GetValuePointer(off)->Clear();
+    ShadowValue *res = GetValuePointer(off);
+    res->Clear();
+    return res;
   }
 
   // Return true if this line has no useful information in it.
@@ -5649,7 +5651,87 @@ class Detector {
   }
 
 
-  INLINE ShadowValue HandleMemoryAccessHelper(bool is_w,
+  // Fast path implementation for the case when we stay in the same thread.
+  // In this case we don't need to call HappensBefore(), deal with
+  // Tuple segment sets and check for race.
+  // If this function returns true, the ShadowValue *new_sval is updated
+  // in the same way as MemoryStateMachine() would have done it. Just faster.
+  INLINE bool MemoryStateMachineSameThread(bool is_w, ShadowValue old_sval,
+                                           TID tid, SID sid,
+                                           ShadowValue *new_sval) {
+#define MSM_STAT(i) do { if (DEBUG_MODE) \
+  G_stats->msm_branch_count[i]++; } while(0)
+    SSID rd_ssid = old_sval.rd_ssid();
+    SSID wr_ssid = old_sval.wr_ssid();
+    if (rd_ssid.IsEmpty()) {
+      if (wr_ssid.IsSingleton()) {
+        // *** CASE 01 ***: rd_ssid == 0, wr_ssid == singleton
+        SID wr_sid = wr_ssid.GetSingleton();
+        if (wr_sid == sid) {
+          // same segment, nothing changed.
+          *new_sval = old_sval;
+          MSM_STAT(1);
+          return true;
+        }
+        if (tid == Segment::Get(wr_sid)->tid()) {
+          // same thread, but the segments are different.
+          DCHECK(sid != wr_sid);
+          if (is_w) {  // wr => wr
+            new_sval->set(SSID(0), SSID(sid));
+            Segment::Unref(wr_sid, "FastPath2");
+          } else {     // wr -> rd
+            new_sval->set(SSID(sid), wr_ssid);
+          }
+          Segment::Ref(sid, "FastPath3");
+          MSM_STAT(2);
+          return true;
+        }
+      } else if (wr_ssid.IsEmpty()) {
+        // *** CASE 00 ***: rd_ssid == 0, wr_ssid == 0
+        if (is_w) new_sval->set(SSID(0), SSID(sid));
+        else      new_sval->set(SSID(sid), SSID(0));
+        Segment::Ref(sid, "FastPath1");
+        MSM_STAT(0);
+        return true;
+      }
+    } else if (rd_ssid.IsSingleton()) {
+      if (wr_ssid.IsEmpty()) {
+        // *** CASE 10 ***: rd_ssid == singleton, wr_ssid == 0
+        SID rd_sid = rd_ssid.GetSingleton();
+        if (rd_sid == sid) {
+          // same segment.
+          if (is_w) new_sval->set(SSID(0), SSID(sid));
+          else     *new_sval = old_sval;
+          MSM_STAT(3);
+          return true;
+        }
+        if (tid == Segment::Get(rd_sid)->tid()) {
+          // same thread, but the segments are different.
+          DCHECK(sid != rd_sid);
+          if (is_w) {  // rd => wr
+            new_sval->set(SSID(0), SSID(sid));
+          } else {  // rd => rd
+            new_sval->set(SSID(sid), SSID(0));
+          }
+          Segment::Ref(sid, "FastPath5");
+          Segment::Unref(rd_sid, "FastPath4");
+          MSM_STAT(4);
+          return true;
+        }
+      } else if (wr_ssid.IsSingleton()){
+        // *** CASE 11 ***: rd_ssid == singleton, wr_ssid == singleton
+        DCHECK(!rd_ssid.IsSingleton());
+        // TODO(kcc): this case is less important, but still worth implementing.
+        MSM_STAT(5);
+        return false;
+      }
+    }
+    MSM_STAT(6);
+    return false;
+#undef MSM_STAT
+  }
+
+  INLINE void HandleMemoryAccessHelper(bool is_w,
                                               CacheLine *cache_line,
                                               uintptr_t addr,
                                               uintptr_t size,
@@ -5659,60 +5741,67 @@ class Detector {
                                               bool tracing
                                              ) {
     uintptr_t offset = CacheLine::ComputeOffset(addr);
-    ShadowValue new_sval;
+
+    ShadowValue old_sval;
+    ShadowValue *sval_p = NULL;
 
     if (UNLIKELY(!cache_line->has_shadow_value().Get(offset))) {
-      cache_line->AddNewSvalAtOffset(offset);
+      sval_p = cache_line->AddNewSvalAtOffset(offset);
+      DCHECK(sval_p->IsNew());
+    } else {
+      sval_p = cache_line->GetValuePointer(offset);
     }
-    ShadowValue *sval_p = cache_line->GetValuePointer(offset);
-    ShadowValue old_sval = *sval_p;
+    old_sval = *sval_p;
 
-    bool is_published = cache_line->published().Get(offset);
-    // We check only the first bit for publishing, oh well.
+    bool is_published = false;
 
-    if (UNLIKELY(is_published)) {
-      const VTS *signaller_vts = GetPublisherVTS(addr);
-      CHECK(signaller_vts);
-      thr->NewSegmentForWait(signaller_vts);
+    if (!MemoryStateMachineSameThread(is_w, old_sval, tid,
+                                      thr->sid(), sval_p)) {
+      is_published = cache_line->published().Get(offset);
+      // We check only the first bit for publishing, oh well.
+      if (UNLIKELY(is_published)) {
+        const VTS *signaller_vts = GetPublisherVTS(addr);
+        CHECK(signaller_vts);
+        thr->NewSegmentForWait(signaller_vts);
+      }
+
+      bool is_race = MemoryStateMachine(old_sval, thr, is_w, sval_p);
+
+      // Check for race.
+      if (UNLIKELY(is_race)) {
+        if (G_flags->report_races && !cache_line->racey().Get(offset)) {
+          reports_.AddReport(tid, pc, is_w, addr, size,
+                             old_sval, *sval_p, is_published);
+        }
+        cache_line->racey().Set(offset);
+      }
+
+      // Ref/Unref segments
+      RefAndUnrefTwoSegSetPairsIfDifferent(sval_p->rd_ssid(),
+                                           old_sval.rd_ssid(),
+                                           sval_p->wr_ssid(),
+                                           old_sval.wr_ssid());
     }
-
-    bool is_race = MemoryStateMachine(old_sval, thr, is_w, &new_sval);
 
     if (UNLIKELY(tracing)) {
       Printf("TRACE: T%d %s[%d] addr=%p sval: %s%s; line=%p (P=%s)\n",
              tid.raw(), is_w ? "wr" : "rd",
-             size, addr, new_sval.ToString().c_str(),
+             size, addr, sval_p->ToString().c_str(),
              is_published ? " P" : "",
              cache_line,
              cache_line->published().ToString().c_str());
       thr->ReportStackTrace(pc);
     }
 
-    // Check for race.
-    if (UNLIKELY(is_race)) {
-      if (G_flags->report_races && !cache_line->racey().Get(offset)) {
-        reports_.AddReport(tid, pc, is_w, addr, size,
-                           old_sval, new_sval, is_published);
-      }
-      // new_sval.set_racey(true);
-      cache_line->racey().Set(offset);
-    }
-
-    // Ref/Unref segments
-    RefAndUnrefTwoSegSetPairsIfDifferent(new_sval.rd_ssid(),
-                                     old_sval.rd_ssid(),
-                                     new_sval.wr_ssid(),
-                                     old_sval.wr_ssid());
-
     if (DEBUG_MODE) {
       // check that the SSIDs/SIDs in the new sval have sane ref counters.
-      CHECK(!new_sval.wr_ssid().IsEmpty() || !new_sval.rd_ssid().IsEmpty());
+      CHECK(!sval_p->wr_ssid().IsEmpty() || !sval_p->rd_ssid().IsEmpty());
       for (int i = 0; i < 2; i++) {
-        SSID ssid = i ? new_sval.rd_ssid() : new_sval.wr_ssid();
+        SSID ssid = i ? sval_p->rd_ssid() : sval_p->wr_ssid();
         if (ssid.IsEmpty()) continue;
         if (ssid.IsSingleton()) {
           // singleton segment should have ref count > 0.
-          SID sid = ssid.Singleton();
+          SID sid = ssid.GetSingleton();
           Segment *seg = Segment::Get(sid);
           CHECK(seg->ref_count() > 0);
           if (sid == thr->sid()) {
@@ -5725,9 +5814,6 @@ class Detector {
         }
       }
     }
-
-    *sval_p = new_sval;
-    return new_sval;
   }
 
   INLINE void HandleMemoryAccessInternal(TID tid, Thread *thr, uintptr_t pc,
