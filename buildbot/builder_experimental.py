@@ -106,7 +106,7 @@ def generate(settings):
       genBenchmarkStep, factory, platform, 'bigtest')
   addTestStep(f1, False, 'phb', bigtest_binary,
               bigtest_desc,
-              extra_args=["--error_exitcode=1"],
+              extra_args=["--error_exitcode=1", "--suppressions=unittest/bigtest.supp"],
               test_base_name='bigtest',
               step_generator=step_generator)
 
