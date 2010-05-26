@@ -26,7 +26,7 @@ def generate(settings):
                 'VALGRIND_INST_ROOT=../out',
                 'VALGRIND_ROOT=../third_party/valgrind',
                 'PIN_ROOT=../../../../third_party/pin']
-  f1.addStep(Compile(command=['make', '-C', 'tsan', '-j4'] + path_flags + ['lo', 'ld'],
+  f1.addStep(Compile(command=['make', '-C', 'tsan', '-j2'] + path_flags + ['lo', 'ld'],
                      description='building tsan',
                      descriptionDone='build tsan'))
 
@@ -47,7 +47,7 @@ def generate(settings):
                   'VALGRIND_INST_ROOT=../out32',
                   'VALGRIND_ROOT=../third_party/valgrind32',
                   'PIN_ROOT=']
-  f1.addStep(Compile(command=['make', '-C', 'tsan', '-j4', 'OFFLINE='] + path_flags32 + ['l32o', 'l32d'],
+  f1.addStep(Compile(command=['make', '-C', 'tsan', '-j2', 'OFFLINE='] + path_flags32 + ['l32o', 'l32d'],
                      description='building 32-bit tsan',
                      descriptionDone='build 32-bit tsan'))
 
