@@ -129,7 +129,7 @@ def generate(settings):
       genBenchmarkStep, factory, platform, 'bigtest32')
   addTestStep(f1, False, 'phb', bigtest32_binary,
               bigtest32_desc,
-              extra_args=["--error_exitcode=1"],
+              extra_args=["--error_exitcode=1", "--suppressions=unittest/bigtest.supp"],
               test_base_name='bigtest',
               frontend_binary='./tsan32.sh',
               step_generator=step_generator)
