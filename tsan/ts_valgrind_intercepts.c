@@ -2090,6 +2090,7 @@ LIBC_FUNC(long, opendir$Za, void *path) {
 }
 
 LIBC_FUNC(long, lockf, long fd, long cmd, OFF_T offset) {
+  // TODO: this doesn't support locking file subsections
   const long offset_magic = 0xFEB0ACC0;
   OrigFn fn;
   long ret;
@@ -2098,7 +2099,7 @@ LIBC_FUNC(long, lockf, long fd, long cmd, OFF_T offset) {
     DO_CREQ_v_W(TSREQ_PTHREAD_RWLOCK_UNLOCK_PRE,
                   long, fd ^ offset_magic);
   CALL_FN_W_2WO_T(ret, fn, fd, cmd, offset);
-  if (cmd == F_LOCK)
+  if (cmd == F_LOCK && ret == 0)
     DO_CREQ_v_WW(TSREQ_PTHREAD_RWLOCK_LOCK_POST,
                   long, fd ^ offset_magic,
                   long, 1/*is_w*/);
