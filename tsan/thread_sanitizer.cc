@@ -5720,7 +5720,7 @@ class Detector {
         }
       } else if (wr_ssid.IsSingleton()){
         // *** CASE 11 ***: rd_ssid == singleton, wr_ssid == singleton
-        DCHECK(!rd_ssid.IsSingleton());
+        DCHECK(rd_ssid.IsSingleton());
         // TODO(kcc): this case is less important, but still worth implementing.
         MSM_STAT(5);
         return false;
