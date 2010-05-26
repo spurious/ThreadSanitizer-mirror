@@ -42,6 +42,7 @@
 #include <stdlib.h>
 #include <string>
 #include <vector>
+#include <unistd.h>
 
 #include "test_utils.h"
 #include <gtest/gtest.h>
@@ -924,3 +925,53 @@ TEST(WeirdSizesTests, FegetenvTest) {
     FAIL() << "fegetenv failed";
 }
 
+//  {{{1
+namespace NegativeTests_LockfTest {
+
+class ShmMutex {
+ public:
+  ShmMutex() : fd_(-1) { }
+  void set_fd(int fd) {
+    CHECK(fd_ == -1);
+    fd_ = fd;
+  }
+  void Lock() {
+    LockOrUnlockInternal(true);
+  }
+  void Unlock() {
+    LockOrUnlockInternal(false);
+  }
+ private:
+  void LockOrUnlockInternal(bool lock) {
+    CHECK(fd_ >= 0);
+    while (lockf(fd_, lock ? F_LOCK : F_ULOCK, 0) < 0) {
+      if (errno == EINTR) {
+        continue;
+      } else if (errno == ENOLCK) {
+        usleep(5000);
+        continue;
+      }
+      CHECK(0);
+    }
+
+  }
+
+  int fd_;
+} mu;
+
+int GLOB;
+
+void Worker() {
+  mu.Lock();
+  GLOB++;
+  mu.Unlock();
+}
+
+TEST(NegativeTests,DISABLED_LockfTest) {
+  mu.set_fd(1 /* stdout */);
+  MyThreadArray mta(Worker, Worker);
+  mta.Start();
+  mta.Join();
+}
+
+}
