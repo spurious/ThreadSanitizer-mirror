@@ -2183,7 +2183,7 @@ namespace test51 {
 int     GLOB = 0;
 int     COND = 0;
 Mutex   MU;
-
+StealthNotification n1, n2;
 
 // scheduler dependent results because of several signals
 // second signal will be lost
@@ -2208,8 +2208,7 @@ Mutex   MU;
 //                              j. MU.Unlock()
 
 void Waker() {
-
-  usleep(10000);  // Make sure the waiter blocks.
+  n1.wait();  // Make sure the waiter blocks.
 
   GLOB = 1;
 
@@ -2218,7 +2217,7 @@ void Waker() {
   CV.Signal();
   MU.Unlock();
 
-  usleep(10000);  // Make sure the waiter is signalled.
+  n2.wait();  // Make sure the waiter continued.
 
   GLOB = 2;
 
@@ -2230,12 +2229,13 @@ void Waker() {
 
 void Waiter() {
   MU.Lock();
+  n1.signal();  // Ready to get the first signal.
   while(COND != 1)
     CV.Wait(&MU);
   MU.Unlock();
 
-
   GLOB = 3;
+  n2.signal(); // Ready to miss the second signal.
 }
 void Run() {
   FAST_MODE_INIT(&GLOB);
