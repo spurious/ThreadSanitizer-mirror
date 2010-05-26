@@ -1320,10 +1320,10 @@ uintptr_t WRAP_NAME(mmap)(WRAP_PARAM6) {
   return ret;
 }
 
-uintptr_t WRAP_NAME(munmap)(WRAP_PARAM6) {
+uintptr_t WRAP_NAME(munmap)(WRAP_PARAM4) {
   PinThread &t = g_pin_threads[tid];
   TLEBFlushLocked(t);
-  uintptr_t ret = CALL_ME_INSIDE_WRAPPER_6();
+  uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
   if (ret != (uintptr_t)-1L) {
     DumpEvent(MUNMAP, tid, pc, arg0, arg1);
   }
@@ -1746,6 +1746,21 @@ static void After_sem_trywait(THREADID tid, ADDRINT pc, ADDRINT ret) {
   } else {
     DumpEvent(TWAIT_AFTER, tid, pc, 0, 0);
   }
+}
+
+// etc
+uintptr_t WRAP_NAME(lockf)(WRAP_PARAM4) {
+  const long offset_magic = 0xFEB0ACC0;
+
+  if (arg1 == F_ULOCK)
+    DumpEvent(UNLOCK, tid, pc, arg0 ^ offset_magic, 0);
+
+  uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
+
+  if (arg1 == F_LOCK && ret == 0)
+    DumpEvent(WRITER_LOCK, tid, pc, arg0 ^ offset_magic, 0);
+
+  return ret;
 }
 
 //--------- Annotations -------------------------- {{{2
@@ -2412,7 +2427,9 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   WrapFunc4(img, rtn, "operator delete[]", (AFUNPTR)WRAP_NAME(free));
 
   WrapFunc6(img, rtn, "mmap", (AFUNPTR)WRAP_NAME(mmap));
-  WrapFunc6(img, rtn, "munmap", (AFUNPTR)WRAP_NAME(munmap));
+  WrapFunc4(img, rtn, "munmap", (AFUNPTR)WRAP_NAME(munmap));
+
+  WrapFunc4(img, rtn, "lockf", (AFUNPTR)WRAP_NAME(lockf));
 
   // ThreadSanitizerQuery
   WrapFunc4(img, rtn, "ThreadSanitizerQuery",
