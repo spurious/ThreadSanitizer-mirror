@@ -3069,8 +3069,7 @@ static void NOINLINE UnrefSegmentsInMemoryRange(uintptr_t a, uintptr_t b,
 
 
 void INLINE ClearMemoryStateInOneLine(uintptr_t addr,
-                                      uintptr_t beg, uintptr_t end,
-                                      bool is_new_mem) {
+                                      uintptr_t beg, uintptr_t end) {
   CacheLine *line = G_cache->GetLineIfExists(addr, __LINE__);
   // CacheLine *line = G_cache->GetLineOrCreateNew(addr, __LINE__);
   if (!line) return;
@@ -3091,7 +3090,7 @@ void INLINE ClearMemoryStateInOneLine(uintptr_t addr,
 
 
 // clear memory state for [a,b)
-void INLINE ClearMemoryState(uintptr_t a, uintptr_t b, bool is_new_mem) {
+void INLINE ClearMemoryState(uintptr_t a, uintptr_t b) {
   if (a == b) return;
   CHECK(a < b);
   uintptr_t line1_tag = 0, line2_tag = 0;
@@ -3099,20 +3098,20 @@ void INLINE ClearMemoryState(uintptr_t a, uintptr_t b, bool is_new_mem) {
                                                     &line1_tag, &line2_tag);
   if (single_line_tag) {
     ClearMemoryStateInOneLine(a, a - single_line_tag,
-                              b - single_line_tag, is_new_mem);
+                              b - single_line_tag);
     return;
   }
 
   uintptr_t a_tag = CacheLine::ComputeTag(a);
-  ClearMemoryStateInOneLine(a, a - a_tag, CacheLine::kLineSize, is_new_mem);
+  ClearMemoryStateInOneLine(a, a - a_tag, CacheLine::kLineSize);
 
   for (uintptr_t tag_i = line1_tag; tag_i < line2_tag;
        tag_i += CacheLine::kLineSize) {
-    ClearMemoryStateInOneLine(tag_i, 0, CacheLine::kLineSize, is_new_mem);
+    ClearMemoryStateInOneLine(tag_i, 0, CacheLine::kLineSize);
   }
 
   if (b > line2_tag) {
-    ClearMemoryStateInOneLine(line2_tag, 0, b - line2_tag, is_new_mem);
+    ClearMemoryStateInOneLine(line2_tag, 0, b - line2_tag);
   }
 
   if (DEBUG_MODE && G_flags->debug_level >= 2) {
@@ -4963,11 +4962,11 @@ class Detector {
   }
 
   void INLINE HandleStackMemChange(int32_t tid, uintptr_t addr,
-                                   uintptr_t size, bool is_new) {
+                                   uintptr_t size) {
     Thread *thr = Thread::Get(TID(tid));
     if (thr->ignore_all()) return;
-    G_stats->events[is_new ? STACK_MEM_NEW : STACK_MEM_DIE]++;
-    HandleStackMem(TID(tid), addr, size, is_new);
+    G_stats->events[STACK_MEM_DIE]++;
+    HandleStackMem(TID(tid), addr, size);
   }
 
   void ShowUnfreedHeap() {
@@ -5367,23 +5366,16 @@ class Detector {
     lock->set_is_pure_happens_before(true);
   }
 
-  void INLINE ClearMemoryStateOnStackNewMem(uintptr_t a, uintptr_t b) {
-    ClearMemoryState(a, b, true);
-  }
   void INLINE ClearMemoryStateOnStackDieMem(uintptr_t a, uintptr_t b) {
-    ClearMemoryState(a, b, false);
+    ClearMemoryState(a, b);
   }
 
-  void INLINE HandleStackMem(TID tid, uintptr_t addr,
-                             uintptr_t size, bool is_new_mem) {
+  void INLINE HandleStackMem(TID tid, uintptr_t addr, uintptr_t size) {
     uintptr_t a = addr;
     DCHECK(size > 0);
     DCHECK(size < 128 * 1024 * 1024);  // stay sane.
     uintptr_t b = a + size;
-    if (is_new_mem)
-      ClearMemoryStateOnStackNewMem(a, b);
-    else
-      ClearMemoryStateOnStackDieMem(a, b);
+    ClearMemoryStateOnStackDieMem(a, b);
     if (G_flags->sample_events) {
       static EventSampler sampler;
       sampler.Sample(tid, "SampleStackChange");
@@ -5884,10 +5876,10 @@ class Detector {
   }
 
   void NOINLINE ClearMemoryStateOnMalloc(uintptr_t a, uintptr_t b) {
-    ClearMemoryState(a, b, /*is_new_mem=*/true);
+    ClearMemoryState(a, b);
   }
   void NOINLINE ClearMemoryStateOnFree(uintptr_t a, uintptr_t b) {
-    ClearMemoryState(a, b, /*is_new_mem=*/false);
+    ClearMemoryState(a, b);
   }
 
   // MALLOC
@@ -6012,7 +6004,7 @@ class Detector {
       GetThreadStack(tid.raw(), &stack_min, &stack_max);
       Thread *thr = Thread::Get(tid);
       thr->SetStack(stack_min, stack_max);
-      ClearMemoryState(thr->min_sp(), thr->max_sp(), /*is_new_mem=*/true);
+      ClearMemoryState(thr->min_sp(), thr->max_sp());
     }
   }
 
@@ -6058,7 +6050,7 @@ class Detector {
                Segment::ToString(child->sid()).c_str(),
                child->vts()->ToString().c_str());
       }
-      ClearMemoryState(child->min_sp(), child->max_sp(), /*is_new_mem=*/false);
+      ClearMemoryState(child->min_sp(), child->max_sp());
     } else {
       reports_.SetProgramFinished();
     }
@@ -6784,8 +6776,8 @@ extern INLINE void ThreadSanitizerHandleTrace(int32_t tid, TraceInfo *trace_info
 }
 
 void INLINE ThreadSanitizerHandleStackMemChange(int32_t tid, uintptr_t addr,
-                                                uintptr_t size, bool is_new) {
-  G_detector->HandleStackMemChange(tid, addr, size, is_new);
+                                                uintptr_t size) {
+  G_detector->HandleStackMemChange(tid, addr, size);
 }
 
 void INLINE ThreadSanitizerEnterSblock(int32_t tid, uintptr_t pc) {
