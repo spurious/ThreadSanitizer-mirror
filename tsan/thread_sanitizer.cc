@@ -1536,7 +1536,8 @@ class Segment {
   static void INLINE Ref(SID sid, const char *where) {
     Segment *seg = GetInternal(sid);
     if (ProfileSeg(sid)) {
-      Printf("SegRef   : %d ref=%d %s\n", sid.raw(), seg->ref_count_, where);
+      Printf("SegRef   : %d ref=%d %s; tid=%d\n", sid.raw(),
+             seg->ref_count_, where, seg->tid().raw());
     }
     DCHECK(seg->ref_count_ >= 0);
     seg->ref_count_++;
@@ -5649,7 +5650,7 @@ class Detector {
   // If this function returns true, the ShadowValue *new_sval is updated
   // in the same way as MemoryStateMachine() would have done it. Just faster.
   INLINE bool MemoryStateMachineSameThread(bool is_w, ShadowValue old_sval,
-                                           TID tid, SID sid,
+                                           TID tid, SID cur_sid,
                                            ShadowValue *new_sval) {
 #define MSM_STAT(i) do { if (DEBUG_MODE) \
   G_stats->msm_branch_count[i]++; } while(0)
@@ -5659,66 +5660,112 @@ class Detector {
       if (wr_ssid.IsSingleton()) {
         // *** CASE 01 ***: rd_ssid == 0, wr_ssid == singleton
         SID wr_sid = wr_ssid.GetSingleton();
-        if (wr_sid == sid) {
-          // same segment, nothing changed.
-          *new_sval = old_sval;
+        if (wr_sid == cur_sid) {  // --- w/r: {0, cur} => {0, cur}
           MSM_STAT(1);
+          // no op
           return true;
         }
         if (tid == Segment::Get(wr_sid)->tid()) {
           // same thread, but the segments are different.
-          DCHECK(sid != wr_sid);
-          if (is_w) {  // wr => wr
-            new_sval->set(SSID(0), SSID(sid));
-            Segment::Unref(wr_sid, "FastPath2");
-          } else {     // wr -> rd
-            new_sval->set(SSID(sid), wr_ssid);
+          DCHECK(cur_sid != wr_sid);
+          if (is_w) {    // -------------- w: {0, wr} => {0, cur}
+            MSM_STAT(2);
+            new_sval->set(SSID(0), SSID(cur_sid));
+            Segment::Unref(wr_sid, "FastPath01");
+          } else {       // -------------- r: {0, wr} => {cur, wr}
+            MSM_STAT(3);
+            new_sval->set(SSID(cur_sid), wr_ssid);
           }
-          Segment::Ref(sid, "FastPath3");
-          MSM_STAT(2);
+          Segment::Ref(cur_sid, "FastPath01");
           return true;
         }
       } else if (wr_ssid.IsEmpty()) {
         // *** CASE 00 ***: rd_ssid == 0, wr_ssid == 0
-        if (is_w) new_sval->set(SSID(0), SSID(sid));
-        else      new_sval->set(SSID(sid), SSID(0));
-        Segment::Ref(sid, "FastPath1");
-        MSM_STAT(0);
+        if (is_w) {      // -------------- w: {0, 0} => {0, cur}
+          MSM_STAT(4);
+          new_sval->set(SSID(0), SSID(cur_sid));
+        } else {         // -------------- r: {0, 0} => {cur, 0}
+          MSM_STAT(5);
+          new_sval->set(SSID(cur_sid), SSID(0));
+        }
+        Segment::Ref(cur_sid, "FastPath00");
         return true;
       }
     } else if (rd_ssid.IsSingleton()) {
+      SID rd_sid = rd_ssid.GetSingleton();
       if (wr_ssid.IsEmpty()) {
         // *** CASE 10 ***: rd_ssid == singleton, wr_ssid == 0
-        SID rd_sid = rd_ssid.GetSingleton();
-        if (rd_sid == sid) {
+        if (rd_sid == cur_sid) {
           // same segment.
-          if (is_w) new_sval->set(SSID(0), SSID(sid));
-          else     *new_sval = old_sval;
-          MSM_STAT(3);
+          if (is_w) {    // -------------- w: {cur, 0} => {0, cur}
+            MSM_STAT(6);
+            new_sval->set(SSID(0), SSID(cur_sid));
+          } else {       // -------------- r: {cur, 0} => {cur, 0}
+            MSM_STAT(7);
+            // no op
+          }
           return true;
         }
         if (tid == Segment::Get(rd_sid)->tid()) {
           // same thread, but the segments are different.
-          DCHECK(sid != rd_sid);
-          if (is_w) {  // rd => wr
-            new_sval->set(SSID(0), SSID(sid));
-          } else {  // rd => rd
-            new_sval->set(SSID(sid), SSID(0));
+          DCHECK(cur_sid != rd_sid);
+          if (is_w) {  // -------------- w: {rd, 0} => {0, cur}
+            MSM_STAT(8);
+            new_sval->set(SSID(0), SSID(cur_sid));
+          } else {     // -------------- r: {rd, 0} => {cur, 0}
+            MSM_STAT(9);
+            new_sval->set(SSID(cur_sid), SSID(0));
           }
-          Segment::Ref(sid, "FastPath5");
-          Segment::Unref(rd_sid, "FastPath4");
-          MSM_STAT(4);
+          Segment::Ref(cur_sid, "FastPath10");
+          Segment::Unref(rd_sid, "FastPath10");
           return true;
         }
       } else if (wr_ssid.IsSingleton()){
         // *** CASE 11 ***: rd_ssid == singleton, wr_ssid == singleton
         DCHECK(rd_ssid.IsSingleton());
-        // TODO(kcc): this case is less important, but still worth implementing.
-        MSM_STAT(5);
-        return false;
+        SID wr_sid = wr_ssid.GetSingleton();
+        DCHECK(wr_sid != rd_sid);  // By definition of ShadowValue.
+        if (cur_sid == rd_sid) {
+          if (tid == Segment::Get(wr_sid)->tid()) {
+            if (is_w) {  // -------------- w: {cur, wr} => {0, cur}
+              MSM_STAT(10);
+              new_sval->set(SSID(0), SSID(cur_sid));
+              Segment::Unref(wr_sid, "FastPath11");
+            } else {     // -------------- r: {cur, wr} => {cur, wr}
+              MSM_STAT(11);
+              // no op
+            }
+            return true;
+          }
+        } else if (cur_sid == wr_sid){
+          if (tid == Segment::Get(rd_sid)->tid()) {
+            if (is_w) {  // -------------- w: {rd, cur} => {rd, cur}
+              MSM_STAT(12);
+              // no op
+            } else {     // -------------- r: {rd, cur} => {0, cur}
+              MSM_STAT(13);
+              new_sval->set(SSID(0), SSID(cur_sid));
+              Segment::Unref(rd_sid, "FastPath11");
+            }
+            return true;
+          }
+        } else if (tid == Segment::Get(rd_sid)->tid() &&
+                   tid == Segment::Get(wr_sid)->tid()) {
+          if (is_w) {    // -------------- w: {rd, wr} => {0, cur}
+            MSM_STAT(14);
+            new_sval->set(SSID(0), SSID(cur_sid));
+            Segment::Unref(wr_sid, "FastPath11");
+          } else {       // -------------- r: {rd, wr} => {cur, wr}
+            MSM_STAT(15);
+            new_sval->set(SSID(cur_sid), wr_ssid);
+          }
+          Segment::Unref(rd_sid, "FastPath11");
+          Segment::Ref(cur_sid, "FastPath11");
+          return true;
+        }
       }
     }
-    MSM_STAT(6);
+    MSM_STAT(0);
     return false;
 #undef MSM_STAT
   }
