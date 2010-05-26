@@ -36,6 +36,7 @@
 #include <errno.h>
 #include <pthread.h>
 #include <fcntl.h>  // O_CREAT
+#include <unistd.h> // F_LOCK
 
 #include "valgrind.h"
 #include "pub_tool_basics.h"
@@ -313,43 +314,38 @@ MAIN_WRAPPER_DECL {
 
 WRAP_WORKQ_OPS(VG_Z_LIBC_SONAME, __workq_ops);
 
+// Hacky workaround for https://bugs.kde.org/show_bug.cgi?id=228471
+// Used in mmap and lockf wrappers.
 #if VG_WORDSIZE == 4
-#define WRAP_MMAP(soname, fnname) \
-  void* I_WRAP_SONAME_FNNAME_ZU(soname,fnname) (void *ptr, long size, long a, \
-                                                long b, long c, unsigned long long d); \
-  void* I_WRAP_SONAME_FNNAME_ZU(soname,fnname) (void *ptr, long size, long a, \
-                                                long b, long c, unsigned long long d){ \
-    void* ret;\
-    OrigFn fn;\
-    unsigned long d_hi = d >> 32; \
-    unsigned long d_lo = d & 0xffffffff; \
-    VALGRIND_GET_ORIG_FN(fn);\
-    IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN(); \
-      CALL_FN_W_7W(ret, fn, ptr, size, a, b, c, d_lo, d_hi); \
-    IGNORE_ALL_ACCESSES_AND_SYNC_END(); \
-    if (ret != (void*)-1) { \
-      DO_CREQ_v_WW(TSREQ_MALLOC,  void*, ret, long, size); \
-    } \
-    return ret; \
-  }
+typedef unsigned long long OFF_T;
+#define CALL_FN_W_5WO_T(ret,fn,p1,p2,p3,p4,p5,off_t_p) CALL_FN_W_7W(ret,fn,\
+                        p1,p2,p3,p4,p5,off_t_p & 0xffffffff, off_t_p >> 32)
+#define CALL_FN_W_2WO_T(ret,fn,p1,p2,off_t_p) CALL_FN_W_WWWW(ret,fn,\
+                                 p1,p2,off_t_p & 0xffffffff, off_t_p >> 32)
 #else
+typedef long OFF_T;
+#define CALL_FN_W_5WO_T(ret,fn,p1,p2,p3,p4,p5,off_t_p) CALL_FN_W_6W(ret,fn,\
+                                                    p1,p2,p3,p4,p5,off_t_p)
+#define CALL_FN_W_2WO_T(ret,fn,p1,p2,off_t_p) CALL_FN_W_WWW(ret,fn,\
+                                                    p1,p2,off_t_p)
+#endif
+
 #define WRAP_MMAP(soname, fnname) \
   void* I_WRAP_SONAME_FNNAME_ZU(soname,fnname) (void *ptr, long size, long a, \
-                                                long b, long c, long d); \
+                                                long b, long c, OFF_T d); \
   void* I_WRAP_SONAME_FNNAME_ZU(soname,fnname) (void *ptr, long size, long a, \
-                                                long b, long c, long d){ \
+                                                long b, long c, OFF_T d){ \
     void* ret;\
     OrigFn fn;\
     VALGRIND_GET_ORIG_FN(fn);\
     IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN(); \
-      CALL_FN_W_6W(ret, fn, ptr, size, a, b, c, d); \
+      CALL_FN_W_5WO_T(ret, fn, ptr, size, a, b, c, d); \
     IGNORE_ALL_ACCESSES_AND_SYNC_END(); \
     if (ret != (void*)-1) { \
       DO_CREQ_v_WW(TSREQ_MMAP,  void*, ret, long, size); \
     } \
     return ret; \
   }
-#endif  // VG_WORDSIZE == 4
 
 #define WRAP_MUNMAP(soname, fnname) \
   int I_WRAP_SONAME_FNNAME_ZU(soname,fnname) (void *ptr, size_t size); \
@@ -2091,6 +2087,23 @@ LIBC_FUNC(long, opendir, void *path) {
 
 LIBC_FUNC(long, opendir$Za, void *path) {
   return opendir_WRK(path);
+}
+
+LIBC_FUNC(long, lockf, long fd, long cmd, OFF_T offset) {
+  const long offset_magic = 0xFEB0ACC0;
+  OrigFn fn;
+  long ret;
+  VALGRIND_GET_ORIG_FN(fn);
+  if (cmd == F_ULOCK)
+    DO_CREQ_v_W(TSREQ_PTHREAD_RWLOCK_UNLOCK_PRE,
+                  long, fd ^ offset_magic);
+  CALL_FN_W_2WO_T(ret, fn, fd, cmd, offset);
+  if (cmd == F_LOCK)
+    DO_CREQ_v_WW(TSREQ_PTHREAD_RWLOCK_LOCK_POST,
+                  long, fd ^ offset_magic,
+                  long, 1/*is_w*/);
+
+  return ret;
 }
 
 /* 
