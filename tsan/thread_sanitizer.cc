@@ -6567,6 +6567,10 @@ static void SetupIgnore() {
   g_ignore_lists->funs.push_back("_EH_epilog3");
   g_ignore_lists->funs.push_back("_EH_prolog3_catch");
 
+#ifdef VGO_darwin
+  g_ignore_lists->funs_r.push_back("__CFDoExternRefOperation");
+#endif
+
   // do not create segments in our Replace_* functions
   g_ignore_lists->funs_hist.push_back("Replace_memcpy");
   g_ignore_lists->funs_hist.push_back("Replace_memchr");
