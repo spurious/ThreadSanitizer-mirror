@@ -422,8 +422,6 @@ void Waiter(int *var, HANDLE sem) {
 }
 
 TEST(NegativeTests, DISABLED_SimpleSemaphoreTest) {
-  int RACEY = 0;
-
   HANDLE sem = CreateSemaphore(NULL,
                                0 /* initial count */,
                                20 /* max count */,
@@ -431,15 +429,38 @@ TEST(NegativeTests, DISABLED_SimpleSemaphoreTest) {
   ASSERT_TRUE(sem != NULL);
 
   {
+    int VAR = 0;
     ThreadPool tp(2);
     tp.StartWorkers();
-    tp.Add(NewCallback(Waiter, &RACEY, sem));
-    tp.Add(NewCallback(Poster, &RACEY, sem));
+    tp.Add(NewCallback(Waiter, &VAR, sem));
+    tp.Add(NewCallback(Poster, &VAR, sem));
   }
 
   CloseHandle(sem);
-  sem = NULL;
 }
+
+TEST(SyscallTests, DISABLED_SemaphoreNameReuseTest) {
+  const char NAME[] = "SemaphoreZZZ";
+  HANDLE h1 = CreateSemaphore(NULL, 0, 10, NAME),
+         h2 = CreateSemaphore(NULL, 5, 15, NAME);
+  ASSERT_TRUE(h1 != NULL);
+  ASSERT_TRUE(h2 != NULL);
+
+  // h1 and h2 refer to the same semaphore but are not equal.
+  EXPECT_NE(h1, h2);
+
+  {
+    int VAR = 0;
+    ThreadPool tp(2);
+    tp.StartWorkers();
+    tp.Add(NewCallback(Waiter, &VAR, h1));
+    tp.Add(NewCallback(Poster, &VAR, h2));
+  }
+
+  CloseHandle(h1);
+  CloseHandle(h2);
+}
+
 }
 // End {{{1
  // vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker
