@@ -421,7 +421,7 @@ void Waiter(int *var, HANDLE sem) {
   EXPECT_EQ(*var, 1);
 }
 
-TEST(NegativeTests, DISABLED_SimpleSemaphoreTest) {
+TEST(NegativeTests, SimpleSemaphoreTest) {
   HANDLE sem = CreateSemaphore(NULL,
                                0 /* initial count */,
                                20 /* max count */,

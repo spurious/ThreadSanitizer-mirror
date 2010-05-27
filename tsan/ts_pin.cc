@@ -1108,6 +1108,12 @@ uintptr_t WRAP_NAME(SetEvent)(WRAP_PARAM4) {
   return ret;
 }
 
+uintptr_t WRAP_NAME(ReleaseSemaphore)(WRAP_PARAM4) {
+  DumpEvent(SIGNAL, tid, pc, arg0, 0);
+  uintptr_t ret = CallStdCallFun3(ctx, tid, f, arg0, arg1, arg2);
+  return ret;
+}
+
 uintptr_t WRAP_NAME(RtlInterlockedPushEntrySList)(WRAP_PARAM4) {
   DumpEvent(SIGNAL, tid, pc, arg1, 0);
   uintptr_t ret = CallStdCallFun2(ctx, tid, f, arg0, arg1);
@@ -2510,6 +2516,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   WRAPSTD1(RtlTryEnterCriticalSection);
   WRAPSTD1(RtlLeaveCriticalSection);
   WRAPSTD1(SetEvent);
+  WRAPSTD3(ReleaseSemaphore);
 
   WRAPSTD1(RtlInterlockedPopEntrySList);
   WRAPSTD2(RtlInterlockedPushEntrySList);
