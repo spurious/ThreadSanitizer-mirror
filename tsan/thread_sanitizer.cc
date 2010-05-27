@@ -6616,6 +6616,15 @@ static void SetupIgnore() {
 
 #ifdef VGO_darwin
   g_ignore_lists->funs_r.push_back("__CFDoExternRefOperation");
+
+  // TODO(glider): investigate the reports listed at
+  // http://code.google.com/p/data-race-test/issues/detail?id=39
+  g_ignore_lists->funs_r.push_back("_pthread_free_pthread_onstack");
+
+  // pthread_lib_{enter,exit} shouldn't give us any reports since they
+  // have IGNORE_ALL_ACCESSES_BEGIN/END but they do give the reports...
+  g_ignore_lists->funs_r.push_back("pthread_lib_enter");
+  g_ignore_lists->funs_r.push_back("pthread_lib_exit");
 #endif
 
   // do not create segments in our Replace_* functions
