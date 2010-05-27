@@ -440,6 +440,7 @@ TEST(NegativeTests, SimpleSemaphoreTest) {
 }
 
 TEST(NegativeTests, DISABLED_SemaphoreNameReuseTest) {
+  // TODO(timurrrr): Semaphore reuse is not yet understood by TSan.
   const char NAME[] = "SemaphoreZZZ";
   HANDLE h1 = CreateSemaphore(NULL, 0, 10, NAME),
          h2 = CreateSemaphore(NULL, 0, 15, NAME);
@@ -477,6 +478,7 @@ void Waiter(int *var, HANDLE h) {
 }
 
 TEST(NegativeTests, DISABLED_EventHandleReuseTest) {
+  // TODO(timurrrr): DuplicateHandle is not yet understood by TSan.
   HANDLE h1 = CreateEvent(NULL, false, false, NULL);
   ASSERT_TRUE(h1 != NULL);
   HANDLE h2 = NULL;
