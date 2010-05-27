@@ -61,8 +61,8 @@ TEST(NegativeTests, WindowsJoinWithTimeout) {  // {{{1
   HANDLE t = ::CreateThread(0, 0,
                             (LPTHREAD_START_ROUTINE)LongWorker, 0, 0, 0);
   CHECK(t > 0);
-  CHECK(WAIT_TIMEOUT == ::WaitForSingleObject(t, 1));
-  CHECK(WAIT_OBJECT_0 == ::WaitForSingleObject(t, INFINITE));
+  EXPECT_EQ(WAIT_TIMEOUT, ::WaitForSingleObject(t, 1));
+  EXPECT_EQ(WAIT_OBJECT_0, ::WaitForSingleObject(t, INFINITE));
 }
 
 TEST(NegativeTests, HappensBeforeOnThreadJoin) {  // {{{1
