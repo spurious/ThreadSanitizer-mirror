@@ -2722,7 +2722,7 @@ class Cache {
     uintptr_t cli = ComputeCacheLineIndexInCache(a);
     CacheLine *res = lines_[cli];
     if (LIKELY(res && res->tag() == tag)) {
-      G_stats->cache_fast_get++;
+      // G_stats->cache_fast_get++;
     } else {
       res = WriteBackAndFetch(tag, cli, create_new_if_need);
     }
