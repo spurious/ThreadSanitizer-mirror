@@ -168,7 +168,6 @@ extern void ThreadSanitizerPrintUsage();
 extern const char *ThreadSanitizerQuery(const char *query);
 extern bool PhaseDebugIsOn(const char *phase_name);
 
-extern bool g_so_far_only_one_thread;
 extern bool g_has_entered_main;
 extern bool g_has_exited_main;
 

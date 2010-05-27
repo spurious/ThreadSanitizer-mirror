@@ -54,7 +54,6 @@ const int kMaxSegmentSetSize = 4;
 
 // -------- Globals --------------- {{{1
 
-bool g_so_far_only_one_thread = false;
 bool g_has_entered_main = false;
 bool g_has_exited_main = false;
 
@@ -3817,7 +3816,6 @@ struct Thread {
 
   void INLINE HandleSblockEnter(uintptr_t pc) {
     if (!G_flags->keep_history) return;
-    if (g_so_far_only_one_thread) return;
 
     SetTopPc(pc);
 
@@ -3873,7 +3871,6 @@ struct Thread {
   // as we entered pthread_create).
   void HandleThreadCreateBefore(TID parent_tid, uintptr_t pc) {
     CHECK(parent_tid == tid());
-    g_so_far_only_one_thread = false;
     // Store ctx and vts under TID(0).
     ThreadCreateInfo info;
     info.ctx = CreateStackTrace(pc);
@@ -5892,8 +5889,6 @@ class Detector {
       }
     }
 
-    if (UNLIKELY(g_so_far_only_one_thread)) return;
-
     if (DEBUG_MODE && UNLIKELY(G_flags->keep_history >= 2)) {
       // Keep the precise history. Very SLOW!
       HandleSblockEnter(tid, pc);
@@ -6026,11 +6021,9 @@ class Detector {
       // main thread, we are done.
       vts = VTS::CreateSingleton(child_tid);
     } else if (!parent_tid.valid()) {
-      g_so_far_only_one_thread = false;
       Report("INFO: creating thread T%d w/o a parent\n", child_tid.raw());
       vts = VTS::CreateSingleton(child_tid);
     } else {
-      g_so_far_only_one_thread = false;
       Thread *parent = Thread::Get(parent_tid);
       CHECK(parent);
       parent->HandleChildThreadStart(child_tid, &vts, &creation_context);
@@ -6744,7 +6737,6 @@ const char *ThreadSanitizerQuery(const char *query) {
 
 extern void ThreadSanitizerInit() {
   ScopedMallocCostCenter cc("ThreadSanitizerInit");
-  g_so_far_only_one_thread = true;
   CHECK_EQ(sizeof(ShadowValue), 8);
   CHECK(G_flags);
   G_stats        = new Stats;
