@@ -409,5 +409,37 @@ TEST(NegativeTests, WindowsAtomicsTests) {
 
 }  // namespace
 
+namespace WindowsSemaphoreTests {
+void Poster(int *var, HANDLE sem) {
+  *var = 1;
+  ReleaseSemaphore(sem, 1, NULL);
+}
+
+void Waiter(int *var, HANDLE sem) {
+  DWORD ret = ::WaitForSingleObject(sem, INFINITE);
+  ASSERT_EQ(ret, WAIT_OBJECT_0);
+  EXPECT_EQ(*var, 1);
+}
+
+TEST(NegativeTests, DISABLED_SimpleSemaphoreTest) {
+  int RACEY = 0;
+
+  HANDLE sem = CreateSemaphore(NULL,
+                               0 /* initial count */,
+                               20 /* max count */,
+                               NULL);
+  ASSERT_TRUE(sem != NULL);
+
+  {
+    ThreadPool tp(2);
+    tp.StartWorkers();
+    tp.Add(NewCallback(Waiter, &RACEY, sem));
+    tp.Add(NewCallback(Poster, &RACEY, sem));
+  }
+
+  CloseHandle(sem);
+  sem = NULL;
+}
+}
 // End {{{1
  // vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker
