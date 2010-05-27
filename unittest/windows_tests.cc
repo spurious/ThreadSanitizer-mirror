@@ -439,10 +439,10 @@ TEST(NegativeTests, SimpleSemaphoreTest) {
   CloseHandle(sem);
 }
 
-TEST(SyscallTests, DISABLED_SemaphoreNameReuseTest) {
+TEST(NegativeTests, DISABLED_SemaphoreNameReuseTest) {
   const char NAME[] = "SemaphoreZZZ";
   HANDLE h1 = CreateSemaphore(NULL, 0, 10, NAME),
-         h2 = CreateSemaphore(NULL, 5, 15, NAME);
+         h2 = CreateSemaphore(NULL, 0, 15, NAME);
   ASSERT_TRUE(h1 != NULL);
   ASSERT_TRUE(h2 != NULL);
 
@@ -455,6 +455,45 @@ TEST(SyscallTests, DISABLED_SemaphoreNameReuseTest) {
     tp.StartWorkers();
     tp.Add(NewCallback(Waiter, &VAR, h1));
     tp.Add(NewCallback(Poster, &VAR, h2));
+  }
+
+  CloseHandle(h1);
+  CloseHandle(h2);
+}
+
+}
+
+namespace HandleReuseTests {
+
+void Waker(int *var, HANDLE h) {
+  *var = 1;
+  SetEvent(h);
+}
+
+void Waiter(int *var, HANDLE h) {
+  DWORD ret = ::WaitForSingleObject(h, INFINITE);
+  ASSERT_EQ(ret, WAIT_OBJECT_0);
+  EXPECT_EQ(*var, 1);
+}
+
+TEST(NegativeTests, DISABLED_EventHandleReuseTest) {
+  HANDLE h1 = CreateEvent(NULL, false, false, NULL);
+  ASSERT_TRUE(h1 != NULL);
+  HANDLE h2 = NULL;
+  DuplicateHandle(GetCurrentProcess(), h1,
+                  GetCurrentProcess(), &h2,
+                  0 /* access */, FALSE /* inherit*/, DUPLICATE_SAME_ACCESS);
+  ASSERT_TRUE(h2 != NULL);
+
+  // h1 and h2 refer to the same Event but are not equal.
+  EXPECT_NE(h1, h2);
+
+  {
+    int VAR = 0;
+    ThreadPool tp(2);
+    tp.StartWorkers();
+    tp.Add(NewCallback(Waiter, &VAR, h1));
+    tp.Add(NewCallback(Waker,  &VAR, h2));
   }
 
   CloseHandle(h1);

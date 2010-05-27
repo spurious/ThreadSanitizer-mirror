@@ -145,7 +145,7 @@ class CondVar {
  public:
   CondVar()   {
     signaled_ = false;
-    hSignal_  =CreateEvent(NULL, false, false, NULL);
+    hSignal_  = CreateEvent(NULL, false, false, NULL);
     CHECK(hSignal_ != NULL);
   }
   ~CondVar()  {
