@@ -54,6 +54,7 @@ const int kMaxSegmentSetSize = 4;
 
 // -------- Globals --------------- {{{1
 
+bool g_has_expensive_flags = false;
 bool g_so_far_only_one_thread = false;
 bool g_has_entered_main = false;
 bool g_has_exited_main = false;
@@ -3427,6 +3428,7 @@ struct Thread {
       tid_(tid),
       sid_(0),
       parent_tid_(parent_tid),
+      thread_local_copy_of_g_has_expensive_flags_(g_has_expensive_flags),
       max_sp_(0),
       min_sp_(0),
       creation_context_(creation_context),
@@ -4161,6 +4163,10 @@ struct Thread {
     signaller_map_      = new SignallerMap;
   }
 
+  bool thread_local_copy_of_g_has_expensive_flags() const {
+    return thread_local_copy_of_g_has_expensive_flags_;
+  }
+
  private:
   bool is_running_;
   string thread_name_;
@@ -4168,6 +4174,7 @@ struct Thread {
   TID    tid_;         // This thread's tid.
   SID    sid_;         // Current segment ID.
   TID    parent_tid_;  // Parent's tid.
+  bool   thread_local_copy_of_g_has_expensive_flags_;
   uintptr_t  max_sp_;
   uintptr_t  min_sp_;
   StackTrace *creation_context_;
@@ -4930,7 +4937,6 @@ class Detector {
   void INLINE HandleMemoryAccess(int32_t tid, uintptr_t pc,
                           uintptr_t addr, uintptr_t size,
                           bool is_w) {
-    G_stats->events[is_w ? WRITE : READ]++;
     Thread *thr = Thread::Get(TID(tid));
     if (g_so_far_only_one_thread) return;
     HandleMemoryAccessInternal(TID(tid), thr, pc, addr, size, is_w);
@@ -4958,9 +4964,6 @@ class Detector {
       DCHECK(mop->pc != 0);
       HandleMemoryAccessInternal(tid, thr, mop->pc, addr, mop->size,
                                  mop->is_write);
-      if (DEBUG_MODE) {
-        G_stats->events[mop->is_write ? WRITE : READ]++;
-      }
     } while (++i < n);
   }
 
@@ -5773,14 +5776,12 @@ class Detector {
   }
 
   INLINE void HandleMemoryAccessHelper(bool is_w,
-                                              CacheLine *cache_line,
-                                              uintptr_t addr,
-                                              uintptr_t size,
-                                              TID tid,
-                                              uintptr_t pc,
-                                              Thread *thr,
-                                              bool tracing
-                                             ) {
+                                       CacheLine *cache_line,
+                                       uintptr_t addr,
+                                       uintptr_t size,
+                                       TID tid,
+                                       uintptr_t pc,
+                                       Thread *thr) {
     uintptr_t offset = CacheLine::ComputeOffset(addr);
 
     ShadowValue old_sval;
@@ -5794,11 +5795,9 @@ class Detector {
     }
     old_sval = *sval_p;
 
-    bool is_published = false;
-
     if (!MemoryStateMachineSameThread(is_w, old_sval, tid,
                                       thr->sid(), sval_p)) {
-      is_published = cache_line->published().Get(offset);
+      bool is_published = cache_line->published().Get(offset);
       // We check only the first bit for publishing, oh well.
       if (UNLIKELY(is_published)) {
         const VTS *signaller_vts = GetPublisherVTS(addr);
@@ -5824,15 +5823,6 @@ class Detector {
                                            old_sval.wr_ssid());
     }
 
-    if (UNLIKELY(tracing)) {
-      Printf("TRACE: T%d %s[%d] addr=%p sval: %s%s; line=%p (P=%s)\n",
-             tid.raw(), is_w ? "wr" : "rd",
-             size, addr, sval_p->ToString().c_str(),
-             is_published ? " P" : "",
-             cache_line,
-             cache_line->published().ToString().c_str());
-      thr->ReportStackTrace(pc);
-    }
 
     if (DEBUG_MODE) {
       // check that the SSIDs/SIDs in the new sval have sane ref counters.
@@ -5861,15 +5851,6 @@ class Detector {
                                          uintptr_t addr, uintptr_t size,
                                          bool is_w) {
     DCHECK(size > 0);
-    if (UNLIKELY(G_flags->sample_events > 0)) {
-      const char *type =
-          (cur_thread_->ignore(is_w))
-          ? "SampleMemoryAccessIgnored"
-          : "SampleMemoryAccess";
-      static EventSampler sampler;
-      sampler.Sample(tid, type);
-    }
-
     DCHECK(thr->is_running());
     if (thr->ignore(is_w)) return;
     // if (thr->bus_lock_is_set()) return;
@@ -5877,23 +5858,11 @@ class Detector {
     DCHECK(thr->lsid(false) == thr->segment()->lsid(false));
     DCHECK(thr->lsid(true) == thr->segment()->lsid(true));
 
-    G_stats->memory_access_sizes[size <= 16 ? size : 17 ]++;
-
     uintptr_t a = addr,
               b = a + size,
               offset = CacheLine::ComputeOffset(a);
 
     CacheLine *cache_line = G_cache->GetLineOrCreateNew(addr, __LINE__);
-
-    bool tracing = false;
-    if (UNLIKELY(G_flags->trace_level >= 1)) {
-      if (UNLIKELY(cache_line->traced().Get(offset))) {
-        tracing = true;
-      } else if (UNLIKELY(addr == G_flags->trace_addr)) {
-        tracing = true;
-      }
-    }
-
 
     if (DEBUG_MODE && UNLIKELY(G_flags->keep_history >= 2)) {
       // Keep the precise history. Very SLOW!
@@ -5901,24 +5870,59 @@ class Detector {
     }
 
     if        (size == 8 && cache_line->SameValueStored(addr, 8)) {
-      HandleMemoryAccessHelper(is_w, cache_line, addr, size, tid, pc, thr, tracing);
+      HandleMemoryAccessHelper(is_w, cache_line, addr, size, tid, pc, thr);
       if (DEBUG_MODE) G_stats->n_access8++;
     } else if (size == 4 && cache_line->SameValueStored(addr, 4)) {
-      HandleMemoryAccessHelper(is_w, cache_line, addr, size, tid, pc, thr, tracing);
+      HandleMemoryAccessHelper(is_w, cache_line, addr, size, tid, pc, thr);
       if (DEBUG_MODE) G_stats->n_access4++;
     } else if (size == 2 && cache_line->SameValueStored(addr, 2)) {
-      HandleMemoryAccessHelper(is_w, cache_line, addr, size, tid, pc, thr, tracing);
+      HandleMemoryAccessHelper(is_w, cache_line, addr, size, tid, pc, thr);
       if (DEBUG_MODE) G_stats->n_access2++;
     } else if (size == 1) {
-      HandleMemoryAccessHelper(is_w, cache_line, addr, size, tid, pc, thr, tracing);
+      HandleMemoryAccessHelper(is_w, cache_line, addr, size, tid, pc, thr);
       if (DEBUG_MODE) G_stats->n_access1++;
     } else {
       // slow case
       for (uintptr_t x = a; x < b; x++) {
-        offset = CacheLine::ComputeOffset(x);
         cache_line = G_cache->GetLineOrCreateNew(x, __LINE__);
-        HandleMemoryAccessHelper(is_w, cache_line, x, 1, tid, pc, thr, tracing);
+        HandleMemoryAccessHelper(is_w, cache_line, x, 1, tid, pc, thr);
         G_stats->n_access_slow++;
+      }
+    }
+
+    if (thr->thread_local_copy_of_g_has_expensive_flags()) {
+      G_stats->memory_access_sizes[size <= 16 ? size : 17 ]++;
+      G_stats->events[is_w ? WRITE : READ]++;
+      if (G_flags->trace_level >= 1) {
+        bool tracing = false;
+        if (cache_line->traced().Get(offset)) {
+          tracing = true;
+        } else if (addr == G_flags->trace_addr) {
+          tracing = true;
+        }
+        if (tracing) {
+          for (uintptr_t x = a; x < b; x++) {
+            offset = CacheLine::ComputeOffset(x);
+            cache_line = G_cache->GetLineOrCreateNew(x, __LINE__);
+            ShadowValue *sval_p = cache_line->GetValuePointer(offset);
+            if (cache_line->has_shadow_value().Get(offset) == 0) {
+              continue;
+            }
+            bool is_published = cache_line->published().Get(offset);
+            Printf("TRACE: T%d %s[%d] addr=%p sval: %s%s; line=%p (P=%s)\n",
+                   tid.raw(), is_w ? "wr" : "rd",
+                   size, addr, sval_p->ToString().c_str(),
+                   is_published ? " P" : "",
+                   cache_line,
+                   cache_line->published().ToString().c_str());
+            thr->ReportStackTrace(pc);
+          }
+        }
+      }
+      if (G_flags->sample_events > 0) {
+        const char *type = "SampleMemoryAccess";
+        static EventSampler sampler;
+        sampler.Sample(tid, type);
       }
     }
   }
@@ -6528,6 +6532,10 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   debug_happens_before = PhaseDebugIsOn("happens_before");
   debug_cache = PhaseDebugIsOn("cache");
   debug_race_verifier = PhaseDebugIsOn("race_verifier");
+
+  g_has_expensive_flags = G_flags->trace_level > 0 ||
+      G_flags->show_stats                          ||
+      G_flags->sample_events > 0;
 }
 
 // -------- ThreadSanitizer ------------------ {{{1
