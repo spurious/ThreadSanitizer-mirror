@@ -42,19 +42,23 @@ namespace NoopTest {
 }
 
 TEST(Wrappers, StrchrTest) {
-  // DrMemory bug http://code.google.com/p/dynamorio/issues/detail?id=275
+  // There were bugs in TSan and Dr. Memory with strchr wrappers.
+  // Fix for TSan bug: http://code.google.com/p/data-race-test/source/diff?spec=svn1641&old=1527&r=1645&format=side&path=/trunk/tsan/ts_replace.h
+  // Dr. Memory bug:   http://code.google.com/p/dynamorio/issues/detail?id=275
   char foo[8] = {10, 20, 127, 128, 250, -50, 0};
-  CHECK(strchr(foo, 10) != 0);
-  CHECK(strchr(foo, 127) != 0);
-  CHECK(strchr(foo, 128) != 0);
-  CHECK(strchr(foo, 250) != 0);
-  CHECK(strchr(foo, -50) != 0);
-  CHECK(strchr(foo, -60) == 0);
-  CHECK(strchr(foo, 0) != 0);
-  CHECK(strrchr(foo, 10) != 0);
-  CHECK(strrchr(foo, 0) != 0);
-  CHECK(strrchr(foo, 250) != 0);
-  CHECK(strrchr(foo, -60) == 0);
+  EXPECT_TRUE(strchr(foo, 10) != 0);
+  EXPECT_TRUE(strchr(foo, 127) != 0);
+  EXPECT_TRUE(strchr(foo, 128) != 0);
+  EXPECT_TRUE(strchr(foo, 250) != 0);
+  EXPECT_TRUE(strchr(foo, -50) != 0);
+  EXPECT_TRUE(strchr(foo, -60) == 0);
+  EXPECT_TRUE(strchr(foo, 0) != 0);
+  EXPECT_TRUE(strchr(foo, 0) == foo + strlen(foo));
+  EXPECT_TRUE(strrchr(foo, 10) != 0);
+  EXPECT_TRUE(strrchr(foo, 0) != 0);
+  EXPECT_TRUE(strrchr(foo, 0) == foo + strlen(foo));
+  EXPECT_TRUE(strrchr(foo, 250) != 0);
+  EXPECT_TRUE(strrchr(foo, -60) == 0);
 }
 
 TEST(Threads, EmptyThreadTest) {

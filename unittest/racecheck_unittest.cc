@@ -3102,30 +3102,30 @@ namespace NegativeTests_Strlen {  // {{{1
 char    *str;
 void WorkerX() {
   usleep(100000);
-  CHECK(strlen(str) == 4);
+  ASSERT_TRUE(strlen(str) == 4);
 #ifndef WIN32
-  CHECK(index(str, 'X') == str);
-  CHECK(index(str, 'x') == str+1);
-  CHECK(index(str, 'Y') == NULL);
-  CHECK(rindex(str, 'X') == str+2);
-  CHECK(rindex(str, 'x') == str+3);
-  CHECK(rindex(str, 'Y') == NULL);
+  EXPECT_TRUE(index(str, 'X') == str);
+  EXPECT_TRUE(index(str, 'x') == str+1);
+  EXPECT_TRUE(index(str, 'Y') == NULL);
+  EXPECT_TRUE(rindex(str, 'X') == str+2);
+  EXPECT_TRUE(rindex(str, 'x') == str+3);
+  EXPECT_TRUE(rindex(str, 'Y') == NULL);
 #else
-  CHECK(lstrlenA(NULL) == 0); 
-  CHECK(lstrlenW(NULL) == 0); 
+  EXPECT_TRUE(lstrlenA(NULL) == 0);
+  EXPECT_TRUE(lstrlenW(NULL) == 0);
 #endif
-  CHECK(strchr(str, 'X') == str);
-  CHECK(strchr(str, 'x') == str+1);
-  CHECK(strchr(str, 'Y') == NULL);
-  CHECK(memchr(str, 'X', 8) == str);
-  CHECK(memchr(str, 'x', 8) == str+1);
+  EXPECT_TRUE(strchr(str, 'X') == str);
+  EXPECT_TRUE(strchr(str, 'x') == str+1);
+  EXPECT_TRUE(strchr(str, 'Y') == NULL);
+  EXPECT_TRUE(memchr(str, 'X', 8) == str);
+  EXPECT_TRUE(memchr(str, 'x', 8) == str+1);
   char tmp[100] = "Zzz";
-  CHECK(memmove(tmp, str, strlen(str) + 1) == tmp);
-  CHECK(strcmp(tmp,str) == 0);
-  CHECK(memmove(str, tmp, strlen(tmp) + 1) == str);
-  CHECK(strrchr(str, 'X') == str+2);
-  CHECK(strrchr(str, 'x') == str+3);
-  CHECK(strrchr(str, 'Y') == NULL);
+  EXPECT_TRUE(memmove(tmp, str, strlen(str) + 1) == tmp);
+  EXPECT_TRUE(strcmp(tmp,str) == 0);
+  EXPECT_TRUE(memmove(str, tmp, strlen(tmp) + 1) == str);
+  EXPECT_TRUE(strrchr(str, 'X') == str+2);
+  EXPECT_TRUE(strrchr(str, 'x') == str+3);
+  EXPECT_TRUE(strrchr(str, 'Y') == NULL);
 }
 void WorkerY() {
   str[5] = 'Y';
@@ -3149,19 +3149,19 @@ TEST(NegativeTests, StrlenAndFriends) {
   printf("\tstrX=%s; strY=%s\n", str, str+5);
 
   char foo[8] = {10, 20, 127, 128, 250, -50, 0};
-  CHECK(strchr(foo, 10) != 0);
-  CHECK(strchr(foo, 127) != 0);
-  CHECK(strchr(foo, 128) != 0);
-  CHECK(strchr(foo, 250) != 0);
-  CHECK(strchr(foo, -50) != 0);
-  CHECK(strchr(foo, -60) == 0);
-  CHECK(strchr(foo, 0) != 0);
-  CHECK(strchr(foo, 0) == foo + strlen(foo));
-  CHECK(strrchr(foo, 10) != 0);
-  CHECK(strrchr(foo, 0) != 0);
-  CHECK(strrchr(foo, 0) == foo + strlen(foo));
-  CHECK(strrchr(foo, 250) != 0);
-  CHECK(strrchr(foo, -60) == 0);
+  EXPECT_TRUE(strchr(foo, 10) != 0);
+  EXPECT_TRUE(strchr(foo, 127) != 0);
+  EXPECT_TRUE(strchr(foo, 128) != 0);
+  EXPECT_TRUE(strchr(foo, 250) != 0);
+  EXPECT_TRUE(strchr(foo, -50) != 0);
+  EXPECT_TRUE(strchr(foo, -60) == 0);
+  EXPECT_TRUE(strchr(foo, 0) != 0);
+  EXPECT_TRUE(strchr(foo, 0) == foo + strlen(foo));
+  EXPECT_TRUE(strrchr(foo, 10) != 0);
+  EXPECT_TRUE(strrchr(foo, 0) != 0);
+  EXPECT_TRUE(strrchr(foo, 0) == foo + strlen(foo));
+  EXPECT_TRUE(strrchr(foo, 250) != 0);
+  EXPECT_TRUE(strrchr(foo, -60) == 0);
   // TODO(kcc): add more tests to check that interceptors are correct.
 }
 }  // namespace test71
