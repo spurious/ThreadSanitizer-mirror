@@ -54,6 +54,7 @@ const int kMaxSegmentSetSize = 4;
 
 // -------- Globals --------------- {{{1
 
+bool g_so_far_only_one_thread = false;
 bool g_has_entered_main = false;
 bool g_has_exited_main = false;
 
@@ -3816,6 +3817,7 @@ struct Thread {
 
   void INLINE HandleSblockEnter(uintptr_t pc) {
     if (!G_flags->keep_history) return;
+    if (g_so_far_only_one_thread) return;
 
     SetTopPc(pc);
 
@@ -3871,6 +3873,7 @@ struct Thread {
   // as we entered pthread_create).
   void HandleThreadCreateBefore(TID parent_tid, uintptr_t pc) {
     CHECK(parent_tid == tid());
+    g_so_far_only_one_thread = false;
     // Store ctx and vts under TID(0).
     ThreadCreateInfo info;
     info.ctx = CreateStackTrace(pc);
@@ -4929,6 +4932,7 @@ class Detector {
                           bool is_w) {
     G_stats->events[is_w ? WRITE : READ]++;
     Thread *thr = Thread::Get(TID(tid));
+    if (g_so_far_only_one_thread) return;
     HandleMemoryAccessInternal(TID(tid), thr, pc, addr, size, is_w);
   }
 
@@ -4937,6 +4941,7 @@ class Detector {
     TID tid(raw_tid);
     Thread *thr = Thread::Get(tid);
     if (thr->ignore_all()) return;
+    if (g_so_far_only_one_thread) return;
     DCHECK(t);
     if (t->generate_segments()) {
       HandleSblockEnter(tid, t->pc());
@@ -5889,6 +5894,7 @@ class Detector {
       }
     }
 
+
     if (DEBUG_MODE && UNLIKELY(G_flags->keep_history >= 2)) {
       // Keep the precise history. Very SLOW!
       HandleSblockEnter(tid, pc);
@@ -6021,9 +6027,11 @@ class Detector {
       // main thread, we are done.
       vts = VTS::CreateSingleton(child_tid);
     } else if (!parent_tid.valid()) {
+      g_so_far_only_one_thread = false;
       Report("INFO: creating thread T%d w/o a parent\n", child_tid.raw());
       vts = VTS::CreateSingleton(child_tid);
     } else {
+      g_so_far_only_one_thread = false;
       Thread *parent = Thread::Get(parent_tid);
       CHECK(parent);
       parent->HandleChildThreadStart(child_tid, &vts, &creation_context);
@@ -6613,7 +6621,6 @@ static void SetupIgnore() {
   // TODO(glider): investigate the reports listed at
   // http://code.google.com/p/data-race-test/issues/detail?id=39
   g_ignore_lists->funs_r.push_back("_pthread_free_pthread_onstack");
-  g_ignore_lists->funs_r.push_back("_pthread_exit");
 
   // pthread_lib_{enter,exit} shouldn't give us any reports since they
   // have IGNORE_ALL_ACCESSES_BEGIN/END but they do give the reports...
@@ -6738,6 +6745,7 @@ const char *ThreadSanitizerQuery(const char *query) {
 
 extern void ThreadSanitizerInit() {
   ScopedMallocCostCenter cc("ThreadSanitizerInit");
+  g_so_far_only_one_thread = true;
   CHECK_EQ(sizeof(ShadowValue), 8);
   CHECK(G_flags);
   G_stats        = new Stats;
