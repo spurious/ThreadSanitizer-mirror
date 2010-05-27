@@ -6613,6 +6613,7 @@ static void SetupIgnore() {
   // TODO(glider): investigate the reports listed at
   // http://code.google.com/p/data-race-test/issues/detail?id=39
   g_ignore_lists->funs_r.push_back("_pthread_free_pthread_onstack");
+  g_ignore_lists->funs_r.push_back("_pthread_exit");
 
   // pthread_lib_{enter,exit} shouldn't give us any reports since they
   // have IGNORE_ALL_ACCESSES_BEGIN/END but they do give the reports...
