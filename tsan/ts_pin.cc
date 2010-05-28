@@ -552,6 +552,7 @@ static bool RtnMatchesName(const string &rtn_name, const string &name) {
 #define WRAPSTD2(name) WrapStdCallFunc2(rtn, #name, (AFUNPTR)Wrap_##name)
 #define WRAPSTD3(name) WrapStdCallFunc3(rtn, #name, (AFUNPTR)Wrap_##name)
 #define WRAPSTD4(name) WrapStdCallFunc4(rtn, #name, (AFUNPTR)Wrap_##name)
+#define WRAPSTD5(name) WrapStdCallFunc5(rtn, #name, (AFUNPTR)Wrap_##name)
 #define WRAPSTD6(name) WrapStdCallFunc6(rtn, #name, (AFUNPTR)Wrap_##name)
 #define WRAPSTD7(name) WrapStdCallFunc7(rtn, #name, (AFUNPTR)Wrap_##name)
 #define WRAP_PARAM4  THREADID tid, ADDRINT pc, CONTEXT *ctx, \
@@ -1054,6 +1055,23 @@ uintptr_t CallStdCallFun4(CONTEXT *ctx, THREADID tid,
   return ret;
 }
 
+uintptr_t CallStdCallFun5(CONTEXT *ctx, THREADID tid,
+                         AFUNPTR f, uintptr_t arg0, uintptr_t arg1,
+                         uintptr_t arg2, uintptr_t arg3,
+                         uintptr_t arg4) {
+  uintptr_t ret = 0xdeadbee5;
+  PIN_CallApplicationFunction(ctx, tid,
+                              CALLINGSTD_STDCALL, (AFUNPTR)(f),
+                              PIN_PARG(uintptr_t), &ret,
+                              PIN_PARG(uintptr_t), arg0,
+                              PIN_PARG(uintptr_t), arg1,
+                              PIN_PARG(uintptr_t), arg2,
+                              PIN_PARG(uintptr_t), arg3,
+                              PIN_PARG(uintptr_t), arg4,
+                              PIN_PARG_END());
+  return ret;
+}
+
 uintptr_t CallStdCallFun6(CONTEXT *ctx, THREADID tid,
                          AFUNPTR f, uintptr_t arg0, uintptr_t arg1,
                          uintptr_t arg2, uintptr_t arg3,
@@ -1077,7 +1095,7 @@ uintptr_t CallStdCallFun7(CONTEXT *ctx, THREADID tid,
                          uintptr_t arg2, uintptr_t arg3,
                          uintptr_t arg4, uintptr_t arg5,
                          uintptr_t arg6) {
-  uintptr_t ret = 0xdeadbee6;
+  uintptr_t ret = 0xdeadbee7;
   PIN_CallApplicationFunction(ctx, tid,
                               CALLINGSTD_STDCALL, (AFUNPTR)(f),
                               PIN_PARG(uintptr_t), &ret,
@@ -1316,6 +1334,9 @@ uintptr_t WRAP_NAME(HeapCreate)(WRAP_PARAM4) {
   return ret;
 }
 
+// We don't use the definition of WAIT_OBJECT_0 from winbase.h because
+// it can't be compiled here for some reason.
+#define WAIT_OBJECT_0_ 0
 
 uintptr_t WRAP_NAME(WaitForSingleObjectEx)(WRAP_PARAM4) {
   if (G_flags->verbosity >= 1) {
@@ -1327,7 +1348,7 @@ uintptr_t WRAP_NAME(WaitForSingleObjectEx)(WRAP_PARAM4) {
   uintptr_t ret = CallStdCallFun3(ctx, tid, f, arg0, arg1, arg2);
   //Printf("T%d after pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0, arg1);
 
-  if (ret == 0) {
+  if (ret == WAIT_OBJECT_0_) {
     bool is_thread_handle = false;
     {
       ScopedReentrantClientLock lock(__LINE__);
@@ -1339,6 +1360,47 @@ uintptr_t WRAP_NAME(WaitForSingleObjectEx)(WRAP_PARAM4) {
     if (is_thread_handle)
       HandleThreadJoinAfter(tid, arg0);
     DumpEvent(WAIT, tid, pc, arg0, 0);
+  }
+
+  return ret;
+}
+
+uintptr_t WRAP_NAME(WaitForMultipleObjectsEx)(WRAP_PARAM6) {
+  if (G_flags->verbosity >= 1) {
+    ShowPcAndSp(__FUNCTION__, tid, pc, 0);
+    Printf("arg0=%lx arg1=%lx arg2=%lx arg3=%lx\n", arg0, arg1, arg2, arg3);
+  }
+
+  //Printf("T%d before pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0, arg1);
+  uintptr_t ret = CallStdCallFun5(ctx, tid, f, arg0, arg1, arg2, arg3, arg4);
+  //Printf("T%d after pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0, arg1);
+
+  if (ret >= WAIT_OBJECT_0_ && ret < WAIT_OBJECT_0_ + arg0) {
+    // TODO(timurrrr): add support for WAIT_ABANDONED_0
+
+    int start_id, count;
+    if (arg2 /* wait_for_all */ == 1) {
+      start_id = 0;
+      count = arg0;
+    } else {
+      start_id = ret - WAIT_OBJECT_0_;
+      count = 1;
+    }
+
+    for (int i = start_id; i < start_id + count; i++) {
+      uintptr_t handle = ((uintptr_t*)arg1)[i];
+      bool is_thread_handle = false;
+      {
+        ScopedReentrantClientLock lock(__LINE__);
+        if (g_win_handles_which_are_threads) {
+          is_thread_handle = g_win_handles_which_are_threads->count(handle) > 0;
+          g_win_handles_which_are_threads->erase(handle);
+        }
+      }
+      if (is_thread_handle)
+        HandleThreadJoinAfter(tid, handle);
+      DumpEvent(WAIT, tid, pc, handle, 0);
+    }
   }
 
   return ret;
@@ -2401,6 +2463,35 @@ void WrapStdCallFunc4(RTN rtn, char *name, AFUNPTR replacement_func) {
   }
 }
 
+void WrapStdCallFunc5(RTN rtn, char *name, AFUNPTR replacement_func) {
+  if (RTN_Valid(rtn) && RtnMatchesName(RTN_Name(rtn), name)) {
+    InformAboutFunctionWrap(rtn, name);
+    PROTO proto = PROTO_Allocate(PIN_PARG(uintptr_t),
+                                 CALLINGSTD_STDCALL,
+                                 "proto",
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG_END());
+    RTN_ReplaceSignature(rtn,
+                         AFUNPTR(replacement_func),
+                         IARG_PROTOTYPE, proto,
+                         IARG_THREAD_ID,
+                         IARG_INST_PTR,
+                         IARG_CONTEXT,
+                         IARG_ORIG_FUNCPTR,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 2,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 3,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 4,
+                         IARG_END);
+    PROTO_Free(proto);
+  }
+}
+
 void WrapStdCallFunc6(RTN rtn, char *name, AFUNPTR replacement_func) {
   if (RTN_Valid(rtn) && RtnMatchesName(RTN_Name(rtn), name)) {
     InformAboutFunctionWrap(rtn, name);
@@ -2619,6 +2710,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   WRAPSTD2(UnregisterWaitEx);
 
   WRAPSTD3(WaitForSingleObjectEx);
+  WRAPSTD5(WaitForMultipleObjectsEx);
 
   WrapStdCallFunc4(rtn, "VirtualAlloc", (AFUNPTR)(WRAP_NAME(VirtualAlloc)));
   WrapStdCallFunc6(rtn, "ZwAllocateVirtualMemory", (AFUNPTR)(WRAP_NAME(ZwAllocateVirtualMemory)));

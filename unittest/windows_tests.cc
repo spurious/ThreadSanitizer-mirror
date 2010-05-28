@@ -46,6 +46,11 @@ void WriteWorker(int *var) {
   *var = 42;
 }
 
+void VeryLongWriteWorker(int *var) {
+  Sleep(1000);
+  *var = 42;
+}
+
 TEST(NegativeTests, WindowsThreadStackSizeTest) {  // {{{1
 // Just spawn few threads with different stack sizes.
   int sizes[3] = {1 << 19, 1 << 21, 1 << 22};
@@ -54,6 +59,7 @@ TEST(NegativeTests, WindowsThreadStackSizeTest) {  // {{{1
                              (LPTHREAD_START_ROUTINE)DummyWorker, 0, 0, 0);
     CHECK(t > 0);
     ::WaitForSingleObject(t, INFINITE);
+    CloseHandle(t);
   }
 }
 
@@ -63,6 +69,7 @@ TEST(NegativeTests, WindowsJoinWithTimeout) {  // {{{1
   ASSERT_TRUE(t > 0);
   EXPECT_EQ(WAIT_TIMEOUT,  ::WaitForSingleObject(t, 1));
   EXPECT_EQ(WAIT_OBJECT_0, ::WaitForSingleObject(t, INFINITE));
+  CloseHandle(t);
 }
 
 TEST(NegativeTests, HappensBeforeOnThreadJoin) {  // {{{1
@@ -76,6 +83,7 @@ TEST(NegativeTests, HappensBeforeOnThreadJoin) {  // {{{1
   EXPECT_EQ(WAIT_TIMEOUT,  ::WaitForSingleObject(t, 1));
   EXPECT_EQ(WAIT_OBJECT_0, ::WaitForSingleObject(t, INFINITE));
   EXPECT_EQ(*var, 42);
+  CloseHandle(t);
   delete var;
 }
 
@@ -92,6 +100,49 @@ TEST(NegativeTests, HappensBeforeOnThreadJoinTidReuse) {  // {{{1
   CHECK(WAIT_OBJECT_0 == ::WaitForSingleObject(t2, INFINITE));
   CHECK(*var == 42);
   delete var;
+}
+
+TEST(NegativeTests, WaitForMultipleObjectsWaitAllTest) {
+  int var1 = 13,
+      var2 = 13;
+  HANDLE t1 = ::CreateThread(0, 0,
+                            (LPTHREAD_START_ROUTINE)WriteWorker, &var1, 0, 0),
+         t2 = ::CreateThread(0, 0,
+                            (LPTHREAD_START_ROUTINE)WriteWorker, &var2, 0, 0);
+  ASSERT_TRUE(t1 > 0);
+  ASSERT_TRUE(t2 > 0);
+
+  HANDLE handles[2] = {t1, t2};
+  // Calling WaitForMultipleObjectsTest two times to make sure the H-B arc
+  // are created on the second call.
+  EXPECT_EQ(WAIT_TIMEOUT,  ::WaitForMultipleObjects(2, handles, TRUE, 1));
+  EXPECT_EQ(WAIT_OBJECT_0, ::WaitForMultipleObjects(2, handles, TRUE, INFINITE));
+  EXPECT_EQ(var1, 42);
+  EXPECT_EQ(var2, 42);
+  CloseHandle(t1);
+  CloseHandle(t2);
+}
+
+TEST(NegativeTests, WaitForMultipleObjectsWaitOneTest) {
+  int var1 = 13,
+      var2 = 13;
+  HANDLE t1 = ::CreateThread(0, 0,
+                            (LPTHREAD_START_ROUTINE)VeryLongWriteWorker, &var1, 0, 0),
+         t2 = ::CreateThread(0, 0,
+                            (LPTHREAD_START_ROUTINE)WriteWorker, &var2, 0, 0);
+  ASSERT_TRUE(t1 > 0);
+  ASSERT_TRUE(t2 > 0);
+
+  HANDLE handles[2] = {t1, t2};
+  // Calling WaitForMultipleObjectsTest two times to make sure the H-B arc
+  // are created on the second call.
+  EXPECT_EQ(WAIT_TIMEOUT,  ::WaitForMultipleObjects(2, handles, FALSE, 1));
+  EXPECT_EQ(WAIT_OBJECT_0 + 1, ::WaitForMultipleObjects(2, handles, FALSE, INFINITE));
+  EXPECT_EQ(var2, 42);
+  EXPECT_EQ(WAIT_OBJECT_0, ::WaitForMultipleObjects(1, handles, FALSE, INFINITE));
+  EXPECT_EQ(var1, 42);
+  CloseHandle(t1);
+  CloseHandle(t2);
 }
 
 namespace RegisterWaitForSingleObjectTest {  // {{{1
