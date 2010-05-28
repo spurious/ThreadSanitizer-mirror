@@ -359,15 +359,18 @@ static void OnTrace(TraceInfo *trace_info) {
 
   // First, flush the old trace_info.
   ValgrindThread *thr = &g_valgrind_threads[vg_tid];
-  if (thr->trace_info) FlushMops(vg_tid);
+  if (thr->trace_info) {
+    FlushMops(vg_tid);
+  }
 
   // Start the new trace, zero the contents of tleb.
   size_t n = trace_info->n_mops();
+  uintptr_t *tleb = thr->tleb;
   for (size_t i = 0; i < n; i++)
-    thr->tleb[i] = 0;
+    tleb[i] = 0;
   thr->trace_info = trace_info;
-  CHECK(thr->trace_info);
-  CHECK(thr->trace_info->n_mops() <= kMaxMopsPerTrace);
+  DCHECK(thr->trace_info);
+  DCHECK(thr->trace_info->n_mops() <= kMaxMopsPerTrace);
 }
 
 static inline void Put(EventType type, int32_t tid, uintptr_t pc,
