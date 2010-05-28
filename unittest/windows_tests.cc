@@ -42,6 +42,7 @@ void LongWorker() {
 }
 
 void WriteWorker(int *var) {
+  LongWorker();
   *var = 42;
 }
 
@@ -57,11 +58,10 @@ TEST(NegativeTests, WindowsThreadStackSizeTest) {  // {{{1
 }
 
 TEST(NegativeTests, WindowsJoinWithTimeout) {  // {{{1
-// Just spawn few threads with different stack sizes.
   HANDLE t = ::CreateThread(0, 0,
                             (LPTHREAD_START_ROUTINE)LongWorker, 0, 0, 0);
-  CHECK(t > 0);
-  EXPECT_EQ(WAIT_TIMEOUT, ::WaitForSingleObject(t, 1));
+  ASSERT_TRUE(t > 0);
+  EXPECT_EQ(WAIT_TIMEOUT,  ::WaitForSingleObject(t, 1));
   EXPECT_EQ(WAIT_OBJECT_0, ::WaitForSingleObject(t, INFINITE));
 }
 
@@ -69,9 +69,13 @@ TEST(NegativeTests, HappensBeforeOnThreadJoin) {  // {{{1
   int *var = new int;
   HANDLE t = ::CreateThread(0, 0,
                             (LPTHREAD_START_ROUTINE)WriteWorker, var, 0, 0);
-  CHECK(t > 0);
-  CHECK(WAIT_OBJECT_0 == ::WaitForSingleObject(t, INFINITE));
-  CHECK(*var == 42);
+  ASSERT_TRUE(t > 0);
+  // Calling WaitForSingleObject two times to make sure the H-B arc
+  // is created on the second call. There was a bug that the thread handle
+  // was deleted even when WaitForSingleObject timed out.
+  EXPECT_EQ(WAIT_TIMEOUT,  ::WaitForSingleObject(t, 1));
+  EXPECT_EQ(WAIT_OBJECT_0, ::WaitForSingleObject(t, INFINITE));
+  EXPECT_EQ(*var, 42);
   delete var;
 }
 

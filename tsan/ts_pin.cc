@@ -1322,24 +1322,22 @@ uintptr_t WRAP_NAME(WaitForSingleObjectEx)(WRAP_PARAM4) {
     ShowPcAndSp(__FUNCTION__, tid, pc, 0);
     Printf("arg0=%lx arg1=%lx\n", arg0, arg1);
   }
-  bool is_thread_handle = false;
-
-  {
-    ScopedReentrantClientLock lock(__LINE__);
-    if (g_win_handles_which_are_threads) {
-      is_thread_handle = g_win_handles_which_are_threads->count(arg0) > 0;
-      g_win_handles_which_are_threads->erase(arg0);
-    }
-  }
 
   //Printf("T%d before pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0, arg1);
   uintptr_t ret = CallStdCallFun3(ctx, tid, f, arg0, arg1, arg2);
   //Printf("T%d after pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0, arg1);
 
   if (ret == 0) {
-    if (is_thread_handle) {
-      HandleThreadJoinAfter(tid, arg0);
+    bool is_thread_handle = false;
+    {
+      ScopedReentrantClientLock lock(__LINE__);
+      if (g_win_handles_which_are_threads) {
+        is_thread_handle = g_win_handles_which_are_threads->count(arg0) > 0;
+        g_win_handles_which_are_threads->erase(arg0);
+      }
     }
+    if (is_thread_handle)
+      HandleThreadJoinAfter(tid, arg0);
     DumpEvent(WAIT, tid, pc, arg0, 0);
   }
 
