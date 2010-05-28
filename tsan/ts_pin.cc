@@ -553,12 +553,14 @@ static bool RtnMatchesName(const string &rtn_name, const string &name) {
 #define WRAPSTD3(name) WrapStdCallFunc3(rtn, #name, (AFUNPTR)Wrap_##name)
 #define WRAPSTD4(name) WrapStdCallFunc4(rtn, #name, (AFUNPTR)Wrap_##name)
 #define WRAPSTD6(name) WrapStdCallFunc6(rtn, #name, (AFUNPTR)Wrap_##name)
+#define WRAPSTD7(name) WrapStdCallFunc7(rtn, #name, (AFUNPTR)Wrap_##name)
 #define WRAP_PARAM4  THREADID tid, ADDRINT pc, CONTEXT *ctx, \
                                 AFUNPTR f,\
                                 uintptr_t arg0, uintptr_t arg1, \
                                 uintptr_t arg2, uintptr_t arg3
 
 #define WRAP_PARAM6 WRAP_PARAM4, uintptr_t arg4, uintptr_t arg5
+#define WRAP_PARAM8 WRAP_PARAM6, uintptr_t arg6, uintptr_t arg7
 
 static uintptr_t CallFun4(CONTEXT *ctx, THREADID tid,
                          AFUNPTR f, uintptr_t arg0, uintptr_t arg1,
@@ -1070,6 +1072,26 @@ uintptr_t CallStdCallFun6(CONTEXT *ctx, THREADID tid,
   return ret;
 }
 
+uintptr_t CallStdCallFun7(CONTEXT *ctx, THREADID tid,
+                         AFUNPTR f, uintptr_t arg0, uintptr_t arg1,
+                         uintptr_t arg2, uintptr_t arg3,
+                         uintptr_t arg4, uintptr_t arg5,
+                         uintptr_t arg6) {
+  uintptr_t ret = 0xdeadbee6;
+  PIN_CallApplicationFunction(ctx, tid,
+                              CALLINGSTD_STDCALL, (AFUNPTR)(f),
+                              PIN_PARG(uintptr_t), &ret,
+                              PIN_PARG(uintptr_t), arg0,
+                              PIN_PARG(uintptr_t), arg1,
+                              PIN_PARG(uintptr_t), arg2,
+                              PIN_PARG(uintptr_t), arg3,
+                              PIN_PARG(uintptr_t), arg4,
+                              PIN_PARG(uintptr_t), arg5,
+                              PIN_PARG(uintptr_t), arg6,
+                              PIN_PARG_END());
+  return ret;
+}
+
 uintptr_t WRAP_NAME(RtlInitializeCriticalSection)(WRAP_PARAM4) {
 //  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
   DumpEvent(LOCK_CREATE, tid, pc, arg0, 0);
@@ -1100,6 +1122,12 @@ uintptr_t WRAP_NAME(RtlLeaveCriticalSection)(WRAP_PARAM4) {
   return CallStdCallFun1(ctx, tid, f, arg0);
 }
 
+uintptr_t WRAP_NAME(DuplicateHandle)(WRAP_PARAM8) {
+  Printf("WARNING: DuplicateHandle called for handle 0x%X.\n", arg1);
+  Printf("Future events on this handle may be processed incorrectly.\n");
+  return CallStdCallFun7(ctx, tid, f, arg0, arg1, arg2, arg3, arg4, arg5, arg6);
+}
+
 uintptr_t WRAP_NAME(SetEvent)(WRAP_PARAM4) {
   //Printf("T%d before pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
   DumpEvent(SIGNAL, tid, pc, arg0, 0);
@@ -1108,10 +1136,26 @@ uintptr_t WRAP_NAME(SetEvent)(WRAP_PARAM4) {
   return ret;
 }
 
+uintptr_t InternalWrapCreateSemaphore(WRAP_PARAM4) {
+  if (arg3 != NULL) {
+    Printf("WARNING: CreateSemaphore called with lpName='%s'.\n", arg3);
+    Printf("Future events on this semaphore may be processed incorrectly "
+           "if it is reused.\n");
+  }
+  return CallStdCallFun4(ctx, tid, f, arg0, arg1, arg2, arg3);
+}
+
+uintptr_t WRAP_NAME(CreateSemaphoreA)(WRAP_PARAM4) {
+  return InternalWrapCreateSemaphore(tid, pc, ctx, f, arg0, arg1, arg2, arg3);
+}
+
+uintptr_t WRAP_NAME(CreateSemaphoreW)(WRAP_PARAM4) {
+  return InternalWrapCreateSemaphore(tid, pc, ctx, f, arg0, arg1, arg2, arg3);
+}
+
 uintptr_t WRAP_NAME(ReleaseSemaphore)(WRAP_PARAM4) {
   DumpEvent(SIGNAL, tid, pc, arg0, 0);
-  uintptr_t ret = CallStdCallFun3(ctx, tid, f, arg0, arg1, arg2);
-  return ret;
+  return CallStdCallFun3(ctx, tid, f, arg0, arg1, arg2);
 }
 
 uintptr_t WRAP_NAME(RtlInterlockedPushEntrySList)(WRAP_PARAM4) {
@@ -2390,6 +2434,39 @@ void WrapStdCallFunc6(RTN rtn, char *name, AFUNPTR replacement_func) {
   }
 }
 
+void WrapStdCallFunc7(RTN rtn, char *name, AFUNPTR replacement_func) {
+  if (RTN_Valid(rtn) && RtnMatchesName(RTN_Name(rtn), name)) {
+    InformAboutFunctionWrap(rtn, name);
+    PROTO proto = PROTO_Allocate(PIN_PARG(uintptr_t),
+                                 CALLINGSTD_STDCALL,
+                                 "proto",
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG_END());
+    RTN_ReplaceSignature(rtn,
+                         AFUNPTR(replacement_func),
+                         IARG_PROTOTYPE, proto,
+                         IARG_THREAD_ID,
+                         IARG_INST_PTR,
+                         IARG_CONTEXT,
+                         IARG_ORIG_FUNCPTR,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 2,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 3,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 4,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 5,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 6,
+                         IARG_END);
+    PROTO_Free(proto);
+  }
+}
+
 
 #endif
 
@@ -2515,7 +2592,10 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   WRAPSTD1(RtlEnterCriticalSection);
   WRAPSTD1(RtlTryEnterCriticalSection);
   WRAPSTD1(RtlLeaveCriticalSection);
+  WRAPSTD7(DuplicateHandle);
   WRAPSTD1(SetEvent);
+  WRAPSTD4(CreateSemaphoreA);
+  WRAPSTD4(CreateSemaphoreW);
   WRAPSTD3(ReleaseSemaphore);
 
   WRAPSTD1(RtlInterlockedPopEntrySList);
