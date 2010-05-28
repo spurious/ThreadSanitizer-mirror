@@ -3428,7 +3428,6 @@ struct Thread {
       tid_(tid),
       sid_(0),
       parent_tid_(parent_tid),
-      thread_local_copy_of_g_has_expensive_flags_(g_has_expensive_flags),
       max_sp_(0),
       min_sp_(0),
       creation_context_(creation_context),
@@ -4161,10 +4160,6 @@ struct Thread {
     memset(all_threads_, 0, sizeof(Thread*) * G_flags->max_n_threads);
     n_threads_          = 0;
     signaller_map_      = new SignallerMap;
-  }
-
-  bool thread_local_copy_of_g_has_expensive_flags() const {
-    return thread_local_copy_of_g_has_expensive_flags_;
   }
 
  private:
@@ -4939,7 +4934,25 @@ class Detector {
                           bool is_w) {
     Thread *thr = Thread::Get(TID(tid));
     if (g_so_far_only_one_thread) return;
-    HandleMemoryAccessInternal(TID(tid), thr, pc, addr, size, is_w);
+    HandleMemoryAccessInternal(TID(tid), thr, pc, addr, size, is_w, 
+                               g_has_expensive_flags);
+  }
+
+  void INLINE HandleTraceLoop(TraceInfo *t, Thread *thr, TID tid, 
+                              uintptr_t *tleb, size_t n,
+                              bool has_expensive_flags) {
+    size_t i = 0;
+    do {
+      uintptr_t addr = tleb[i];
+      if (addr == 0) continue;  // This mop was not executed.
+      MopInfo *mop = t->GetMop(i);
+      tleb[i] = 0;  // we've consumed this mop, clear it.
+      DCHECK(mop->size != 0);
+      DCHECK(mop->pc != 0);
+      HandleMemoryAccessInternal(tid, thr, mop->pc, addr, mop->size,
+                                 mop->is_write, has_expensive_flags);
+    } while (++i < n);
+
   }
 
   void INLINE HandleTrace(int32_t raw_tid, TraceInfo *t,
@@ -4954,17 +4967,11 @@ class Detector {
     }
     size_t n = t->n_mops();
     DCHECK(n);
-    size_t i = 0;
-    do {
-      uintptr_t addr = tleb[i];
-      if (addr == 0) continue;  // This mop was not executed.
-      MopInfo *mop = t->GetMop(i);
-      tleb[i] = 0;  // we've consumed this mop, clear it.
-      DCHECK(mop->size != 0);
-      DCHECK(mop->pc != 0);
-      HandleMemoryAccessInternal(tid, thr, mop->pc, addr, mop->size,
-                                 mop->is_write);
-    } while (++i < n);
+    if (g_has_expensive_flags) {
+      HandleTraceLoop(t, thr, tid, tleb, n, true);
+    } else {
+      HandleTraceLoop(t, thr, tid, tleb, n, false);
+    }
   }
 
   void INLINE HandleStackMemChange(int32_t tid, uintptr_t addr,
@@ -5849,7 +5856,7 @@ class Detector {
 
   INLINE void HandleMemoryAccessInternal(TID tid, Thread *thr, uintptr_t pc,
                                          uintptr_t addr, uintptr_t size,
-                                         bool is_w) {
+                                         bool is_w, bool has_expensive_flags) {
     DCHECK(size > 0);
     DCHECK(thr->is_running());
     if (thr->ignore(is_w)) return;
@@ -5890,7 +5897,7 @@ class Detector {
       }
     }
 
-    if (thr->thread_local_copy_of_g_has_expensive_flags()) {
+    if (has_expensive_flags) {
       G_stats->memory_access_sizes[size <= 16 ? size : 17 ]++;
       G_stats->events[is_w ? WRITE : READ]++;
       if (G_flags->trace_level >= 1) {
