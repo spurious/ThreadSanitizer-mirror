@@ -815,11 +815,12 @@ static THREADID HandleThreadCreateAfter(THREADID tid, pthread_t child_ptid) {
   CHECK(last_child_tid);
 
   g_pin_threads[last_child_tid].my_ptid = child_ptid;
+  int uniq_tid_of_child = g_pin_threads[last_child_tid].uniq_tid;
   g_pin_threads[tid].last_child_tid = 0;
 
   g_thread_create_lock.Unlock();
 
-  DumpEvent(THR_CREATE_AFTER, tid, 0, 0, last_child_tid);
+  DumpEvent(THR_CREATE_AFTER, tid, 0, 0, uniq_tid_of_child);
 
   return last_child_tid;
 }
