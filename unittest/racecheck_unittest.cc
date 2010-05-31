@@ -7112,7 +7112,7 @@ void Run () {
 REGISTER_TEST2(Run, 511, MEMORY_USAGE | PRINT_STATS | EXCLUDE_FROM_ALL);
 }  // namespace test511
 
-// test512: Access the same memory with the same big LockSet {{{1
+// test512: Access the same memory with big intersecting LockSets {{{1
 namespace test512 {
 const int N_MUTEXES = 128;
 const int DATA_SIZE = 1024;
@@ -7121,6 +7121,8 @@ Mutex mu[N_MUTEXES];
 int   GLOB[DATA_SIZE];
 
 void TP() {
+  Mutex thread_mu;
+  thread_mu.Lock();
   for (int j = 0; j < 10; j++) {
     for (int m = 0; m < N_MUTEXES; m++)
       mu[m].Lock();
@@ -7132,11 +7134,12 @@ void TP() {
     for (int m = 0; m < N_MUTEXES; m++)
       mu[m].Unlock();
   }
+  thread_mu.Unlock();
 }
 
 void Run() {
    MyThreadArray t(TP, TP);
-   printf("test512: Access the same memory with the same big LockSet.\n");
+   printf("test512: Access the same memory with big intersecting LockSets.\n");
 
    t.Start();
    t.Join();
