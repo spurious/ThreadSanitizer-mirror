@@ -6405,12 +6405,12 @@ void Worker(int depth) {
 }
 
 TEST(StressTests, ThreadTree3) {
-  ANNOTATE_EXPECT_RACE(&GLOB, "race");
+  ANNOTATE_EXPECT_RACE(&GLOB, "StressTests.ThreadTree3 race");
   Worker(3);
 }
 
 TEST(StressTests, DISABLED_ThreadTree7) {
-  ANNOTATE_EXPECT_RACE(&GLOB, "race");
+  ANNOTATE_EXPECT_RACE(&GLOB, "StressTests.ThreadTree7 race");
   Worker(7);
 }
 }  // namespace test313
