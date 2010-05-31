@@ -843,7 +843,15 @@ class LockSet {
     if (lsid1 == lsid2)
       return false;
 
-    // both are not singletons
+    // both are not singletons - slow path.
+    bool ret = true,
+         cache_hit = false;
+    DCHECK(lsid2.raw() < 0);
+    if (ls_intersection_cache_->Lookup(lsid1.raw(), -lsid2.raw(), &ret)) {
+      if (!DEBUG_MODE)
+        return ret;
+      cache_hit = true;
+    }
     const LSSet &set1 = Get(lsid1);
     const LSSet &set2 = Get(lsid2);
 
@@ -851,7 +859,10 @@ class LockSet {
     LID *end = set_intersection(set1.begin(), set1.end(),
                             set2.begin(), set2.end(),
                             intersection.begin());
-    return end == intersection.begin();
+    DCHECK(!cache_hit || (ret == (end == intersection.begin())));
+    ret = (end == intersection.begin());
+    ls_intersection_cache_->Insert(lsid1.raw(), -lsid2.raw(), ret);
+    return ret;
   }
 
   static string ToString(LSID lsid) {
@@ -910,6 +921,7 @@ class LockSet {
     ls_add_cache_ = new LSCache;
     ls_rem_cache_ = new LSCache;
     ls_rem_cache_ = new LSCache;
+    ls_intersection_cache_ = new LSIntersectionCache;
   }
 
  private:
@@ -961,6 +973,8 @@ class LockSet {
   static LSCache *ls_add_cache_;
   static LSCache *ls_rem_cache_;
   static LSCache *ls_int_cache_;
+  typedef IntPairToBoolCache<kPrimeSizeOfLsCache> LSIntersectionCache;
+  static LSIntersectionCache *ls_intersection_cache_;
 };
 
 LockSet::Map *LockSet::map_;
@@ -969,6 +983,7 @@ const char *LockSet::kLockSetVecAllocCC = "kLockSetVecAllocCC";
 LockSet::LSCache *LockSet::ls_add_cache_;
 LockSet::LSCache *LockSet::ls_rem_cache_;
 LockSet::LSCache *LockSet::ls_int_cache_;
+LockSet::LSIntersectionCache *LockSet::ls_intersection_cache_;
 
 
 static string TwoLockSetsToString(LSID rd_lockset, LSID wr_lockset) {
