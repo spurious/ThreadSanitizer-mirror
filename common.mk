@@ -98,7 +98,7 @@ ifeq ($(OS), windows)
 else
   ifeq ($(OPT), 1)
     OX=O1
-    OPTFLAGS=-gstabs -O1
+    OPTFLAGS=-g -O1
   else
     OX=O0
     OPTFLAGS=-g -O0
