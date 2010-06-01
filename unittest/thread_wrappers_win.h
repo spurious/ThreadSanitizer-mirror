@@ -195,19 +195,25 @@ class MyThread {
   typedef void *(*worker_t)(void*);
 
   MyThread(worker_t worker, void *arg = NULL, const char *name = NULL)
-      :w_(worker), arg_(arg), name_(name) {}
+      :w_(worker), arg_(arg), name_(name), t_(NULL) {}
   MyThread(void (*worker)(void), void *arg = NULL, const char *name = NULL)
-      :w_(reinterpret_cast<worker_t>(worker)), arg_(arg), name_(name) {}
+      :w_(reinterpret_cast<worker_t>(worker)), arg_(arg), name_(name), t_(NULL) {}
   MyThread(void (*worker)(void *), void *arg = NULL, const char *name = NULL)
-      :w_(reinterpret_cast<worker_t>(worker)), arg_(arg), name_(name) {}
+      :w_(reinterpret_cast<worker_t>(worker)), arg_(arg), name_(name), t_(NULL) {}
 
-  ~MyThread(){ w_ = NULL; arg_ = NULL;}
+  ~MyThread(){
+    CloseHandle(t_);
+    t_ = NULL;
+  }
   void Start() {
     DWORD thr_id;
     t_ = ::CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)ThreadBody, this, 0, &thr_id);
     CHECK(t_ > 0);
   }
-  void Join() { CHECK(WAIT_OBJECT_0 == ::WaitForSingleObject(t_, INFINITE)); }
+  void Join() {
+    CHECK(t_ > 0);
+    CHECK(WAIT_OBJECT_0 == ::WaitForSingleObject(t_, INFINITE));
+  }
   HANDLE tid() const { return t_; }
  private:
   static DWORD WINAPI ThreadBody(MyThread *my_thread) {
