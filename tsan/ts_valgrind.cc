@@ -353,6 +353,24 @@ INLINE void FlushMops(ThreadId vg_tid, bool keep_trace_info = false) {
   ThreadSanitizerHandleTrace(ts_tid, t, tleb);
 }
 
+static void UpdateCallStack(ThreadId vg_tid, uintptr_t sp) {
+  int32_t ts_tid = VgTidToTsTid(vg_tid);
+  ValgrindThread *thr = &g_valgrind_threads[vg_tid];
+  if (thr->trace_info) FlushMops(vg_tid, true /* keep_trace_info */);
+  vector<CallStackRecord> &call_stack = thr->call_stack;
+  while (!call_stack.empty()) {
+    CallStackRecord &record = call_stack.back();
+    Addr cur_top = record.sp;
+    if (sp < cur_top) break;
+    call_stack.pop_back();
+    ThreadSanitizerHandleRtnExit(ts_tid);
+    if (debug_rtn) {
+      Printf("T%d: << %p %s\n", ts_tid, record.pc, PcToRtnNameAndFilePos(record.pc).c_str());
+    }
+    break;
+  }
+}
+
 VG_REGPARM(1)
 static void OnTrace(TraceInfo *trace_info) {
   ThreadId vg_tid = GetVgTid();
@@ -444,26 +462,10 @@ void evh__delete_frame ( Addr sp_post_call_insn,
 
 static INLINE void evh__die_mem_stack_helper ( Addr a, SizeT len ) {
   ThreadId vg_tid = GetVgTid();
-  int32_t ts_tid = VgTidToTsTid(vg_tid);
   ValgrindThread *thr = &g_valgrind_threads[vg_tid];
-  if (thr->trace_info) FlushMops(vg_tid, true /* keep_trace_info */);
-  vector<CallStackRecord> &call_stack = thr->call_stack;
-  while (!call_stack.empty()) {
-    CallStackRecord &record = call_stack.back();
-    Addr cur_top = record.sp;
-    if (a < cur_top) break;
-    call_stack.pop_back();
-    ThreadSanitizerHandleRtnExit(ts_tid);
-    if (debug_rtn) {
-      Printf("T%d: << %p %s\n", ts_tid, record.pc, PcToRtnNameAndFilePos(record.pc).c_str());
-    }
-    break;
-  }
-  if (G_flags->verbosity >= 2) {
-    // Printf("T%d: -sp: %p => %p (%ld)\n", ts_tid, a, a + len, len);
-  }
+  UpdateCallStack(vg_tid, a);
   if (!thr->ignore_accesses) {
-    ThreadSanitizerHandleStackMemChange(ts_tid, a, len);
+    ThreadSanitizerHandleStackMemChange(thr->zero_based_uniq_tid, a, len);
   }
 }
 static void evh__die_mem_stack ( Addr a, SizeT len ) {
