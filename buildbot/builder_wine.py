@@ -21,7 +21,7 @@ def generate(settings):
 
   # Run racecheck_unittest under Wine
   f1.addStep(ShellCommand(command='WINEPREFIX=`pwd`/.wine ./tsan.sh --max-mem-in-mb=5000 --suppressions=unittest/racecheck_unittest.supp ' +
-                          '--suppressions=unittest/wine.supp' +
+                          '--suppressions=unittest/wine.supp ' +
                           '--ignore=unittest/racecheck_unittest.ignore --announce-threads ' +
                           '--trace-children=yes --trace-children-skip="*wineserver*,*winemenubuilder*,*services.exe*,*wineboot.exe*,*winedevice.exe*" ' +
                           '--vex-iropt-precise-memory-exns=yes --pure-happens-before=no --show-pc=yes --error_exitcode=1 ' +
