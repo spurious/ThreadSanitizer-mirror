@@ -177,6 +177,10 @@ static inline uintptr_t GetVgPc(ThreadId vg_tid) {
   return (uintptr_t)VG_(get_IP)(vg_tid);
 }
 
+static inline uintptr_t GetVgSp(ThreadId vg_tid) {
+  return (uintptr_t)VG_(get_SP)(vg_tid);
+}
+
 #ifdef VGP_arm_linux
 static inline uintptr_t GetVgLr(ThreadId vg_tid) {
   return (uintptr_t) VG_(get_LR)(vg_tid);
@@ -353,8 +357,16 @@ INLINE void FlushMops(ThreadId vg_tid, bool keep_trace_info = false) {
   ThreadSanitizerHandleTrace(ts_tid, t, tleb);
 }
 
-static void UpdateCallStack(ThreadId vg_tid, uintptr_t sp) {
-  int32_t ts_tid = VgTidToTsTid(vg_tid);
+static void ShowCallStack(ValgrindThread *thr) {
+  size_t n = thr->call_stack.size();
+  Printf("        ");
+  for (size_t i = n - 1; i > n - 10 && i >= 0; i--) {
+    Printf("{pc=%p sp=%p}, ", thr->call_stack[i].pc, thr->call_stack[i].sp);
+  }
+  Printf("\n");
+}
+
+static INLINE void UpdateCallStack(ThreadId vg_tid, uintptr_t sp) {
   ValgrindThread *thr = &g_valgrind_threads[vg_tid];
   if (thr->trace_info) FlushMops(vg_tid, true /* keep_trace_info */);
   vector<CallStackRecord> &call_stack = thr->call_stack;
@@ -363,11 +375,15 @@ static void UpdateCallStack(ThreadId vg_tid, uintptr_t sp) {
     Addr cur_top = record.sp;
     if (sp < cur_top) break;
     call_stack.pop_back();
+    int32_t ts_tid = VgTidToTsTid(vg_tid);
     ThreadSanitizerHandleRtnExit(ts_tid);
     if (debug_rtn) {
-      Printf("T%d: << %p %s\n", ts_tid, record.pc, PcToRtnNameAndFilePos(record.pc).c_str());
+      Printf("T%d: [%ld]<< pc=%p sp=%p cur_sp=%p %s\n",
+             ts_tid, thr->call_stack.size(), record.pc,
+             record.sp, sp,
+             PcToRtnNameAndFilePos(record.pc).c_str());
+      ShowCallStack(thr);
     }
-    break;
   }
 }
 
@@ -380,6 +396,8 @@ static void OnTrace(TraceInfo *trace_info) {
   if (thr->trace_info) {
     FlushMops(vg_tid);
   }
+
+  UpdateCallStack(vg_tid, GetVgSp(vg_tid));
 
   // Start the new trace, zero the contents of tleb.
   size_t n = trace_info->n_mops();
@@ -403,25 +421,28 @@ static void rtn_call(Addr sp_post_call_insn, Addr pc_post_call_insn,
   ThreadId vg_tid = GetVgTid();
   CallStackRecord record;
   record.pc = pc_post_call_insn;
-  record.sp = sp_post_call_insn;
+  record.sp = sp_post_call_insn + 4;  // sp before call.
+  UpdateCallStack(vg_tid, record.sp);
 #ifdef VGP_arm_linux
   record.lr = GetVgLr(vg_tid);
 #endif
-  g_valgrind_threads[vg_tid].call_stack.push_back(record);
+  ValgrindThread *thr = &g_valgrind_threads[vg_tid];
+  thr->call_stack.push_back(record);
   // If the shadow stack grows too high this usually means it is not cleaned
   // properly. Or this may be a very deep recursion.
-  DCHECK(g_valgrind_threads[vg_tid].call_stack.size() < 10000);
+  DCHECK(thr->call_stack.size() < 10000);
   uintptr_t call_pc = GetVgPc(vg_tid);
-  ValgrindThread *thr = &g_valgrind_threads[vg_tid];
   if (thr->trace_info) FlushMops(vg_tid);
   ThreadSanitizerHandleRtnCall(VgTidToTsTid(vg_tid), call_pc, record.pc,
                                ignore_below);
 
-  int ts_tid = VgTidToTsTid(vg_tid);
-
   if (debug_rtn) {
-    Printf("T%d: >>: %p, %s\n", ts_tid, (void*)record.pc,
+    int ts_tid = VgTidToTsTid(vg_tid);
+    Printf("T%d: [%ld]>> pc=%p sp=%p %s\n",
+           ts_tid, thr->call_stack.size(), (void*)record.pc,
+           (void*)record.sp,
            PcToRtnNameAndFilePos(record.pc).c_str());
+    ShowCallStack(thr);
   }
 }
 
@@ -463,7 +484,6 @@ void evh__delete_frame ( Addr sp_post_call_insn,
 static INLINE void evh__die_mem_stack_helper ( Addr a, SizeT len ) {
   ThreadId vg_tid = GetVgTid();
   ValgrindThread *thr = &g_valgrind_threads[vg_tid];
-  UpdateCallStack(vg_tid, a);
   if (!thr->ignore_accesses) {
     ThreadSanitizerHandleStackMemChange(thr->zero_based_uniq_tid, a, len);
   }
@@ -551,6 +571,7 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
     return False;
   ValgrindThread *thr = &g_valgrind_threads[vg_tid];
   if (thr->trace_info) FlushMops(vg_tid);
+  UpdateCallStack(vg_tid, GetVgSp(vg_tid));
   *ret = 0;
   uintptr_t pc = GetVgPc(vg_tid);
   int32_t ts_tid = VgTidToTsTid(vg_tid);
