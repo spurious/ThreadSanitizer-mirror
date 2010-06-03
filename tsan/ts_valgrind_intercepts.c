@@ -2535,6 +2535,32 @@ ANN_FUNC(void, AnnotateSetVerbosity, char *file, int line, void *mem)
 
 
 
+//-------------- NaCl Support -------------- {{{1
+// A bit hackish implementation of NaCl support.
+// We need to notify the valgrind core about
+//   a) nacl memory range
+//   b) nacl .nexe file
+#include "coregrind/pub_core_clreq.h"
+void I_WRAP_SONAME_FNNAME_ZZ(NONE, StopForDebuggerInit) (void *arg);
+void I_WRAP_SONAME_FNNAME_ZZ(NONE, StopForDebuggerInit) (void *arg) {
+  int res;
+  OrigFn fn;
+  VALGRIND_GET_ORIG_FN(fn);
+  CALL_FN_v_W(fn, arg);
+  VALGRIND_DO_CLIENT_REQUEST(res, 0, VG_USERREQ__NACL_MEM_START, arg, 0, 0, 0, 0);
+}
+
+int I_WRAP_SONAME_FNNAME_ZZ(NONE, GioMemoryFileSnapshotCtor) (void *a, char *file);
+int I_WRAP_SONAME_FNNAME_ZZ(NONE, GioMemoryFileSnapshotCtor) (void *a, char *file) {
+  int res;
+  OrigFn fn;
+  int ret;
+  VALGRIND_GET_ORIG_FN(fn);
+  CALL_FN_W_WW(ret, fn, a, file);
+  VALGRIND_DO_CLIENT_REQUEST(res, 0, VG_USERREQ__NACL_FILE, file, 0, 0, 0, 0);
+  return ret;
+}
+
 //-------------- Functions to Ignore -------------- {{{1
 // For some functions we want to ignore everything that happens 
 // after they were called and before they returned. 
