@@ -2562,8 +2562,8 @@ int I_WRAP_SONAME_FNNAME_ZZ(NONE, GioMemoryFileSnapshotCtor) (void *a, char *fil
 }
 
 //-------------- Functions to Ignore -------------- {{{1
-// For some functions we want to ignore everything that happens 
-// after they were called and before they returned. 
+// For some functions we want to ignore everything that happens
+// after they were called and before they returned.
 // Is there any way that allows to do this via a command line?
 #define WRAP_AND_IGNORE(soname, fnname) \
   void* I_WRAP_SONAME_FNNAME_ZU(soname,fnname) (void *a1, void *a2, void *a3, void *a4); \
@@ -2577,11 +2577,7 @@ int I_WRAP_SONAME_FNNAME_ZZ(NONE, GioMemoryFileSnapshotCtor) (void *a, char *fil
     return ret; \
   }
 
-// Ideally, this list should be passed via command line flags.
-// But alas, valgrind can't do that...
-// So, we have to list the functions during the tool build time.
-// We do it in a separate file to simplify changes there.
-#include "ts_wrap_and_ignore.h"
+WRAP_AND_IGNORE(NONE, getenv);
 
 // {{{1 end
 // vim:shiftwidth=2:softtabstop=2:expandtab
