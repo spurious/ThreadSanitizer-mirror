@@ -584,8 +584,19 @@ static void* ThreadSanitizerStartThread ( void* xargsV )
    int local_stack_var = 0;
    /* Tell the tool what my pthread_t is. */
    DO_CREQ_v_W(TSREQ_SET_MY_PTHREAD_T, pthread_t,me);
-   /* also, tell where the stack is */
+#ifdef VGO_darwin
+   /* Tell the tool what my stack size and stack top are.
+      This is Darwin-specific and works as long as ThreadSanitizerStartThread
+      is used for pthreads only.
+   */
+   size_t stacksize = pthread_get_stacksize_np(me);
+   void* stackaddr = pthread_get_stackaddr_np(me);
+   DO_CREQ_v_WW(TSREQ_SET_STACKTOP_STACKSIZE, size_t, stackaddr,
+                                              void*, stacksize);
+#else
+   /* Let the tool guess where the stack starts. */
    DO_CREQ_v_W(TSREQ_THR_STACK_TOP, void*, &local_stack_var);
+#endif
    /* allow the parent to proceed.  We can't let it proceed until
       we're ready because (1) we need to make sure it doesn't exit and
       hence deallocate xargs[] while we still need it, and (2) we
