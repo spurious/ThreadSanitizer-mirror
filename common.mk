@@ -1,5 +1,6 @@
 PLATFORM=$(shell uname -s | sed -e "s/CYGWIN.*/Windows/" | sed -e "s/Darwin/Mac/")
 BITNESS=$(shell uname -m | sed -e "s/i.86/32/;s/x86_64/64/;s/amd64/64/;s/arm.*/arm/")
+MAJOR_V=$(shell uname -r | sed -e "s/\([0-9]*\)\..*/\1/")
 
 ifeq ($(PLATFORM)$(BITNESS), Linux64)
 default: l64 l32
@@ -15,6 +16,10 @@ endif
 
 ifeq ($(PLATFORM)$(BITNESS), Windows32)
 default: w
+endif
+
+ifeq ($(PLATFORM), Mac)
+  DARWIN_VERSION=darwin_$(MAJOR_V)
 endif
 
 dummy:
