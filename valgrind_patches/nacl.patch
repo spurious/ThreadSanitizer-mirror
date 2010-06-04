@@ -141,6 +141,7 @@ Index: coregrind/m_debuginfo/debuginfo.c
 +
 +int LoadNaClDebugInfo(Addr a);
 +int LoadNaClDebugInfo(Addr a) {
++#if defined(VGO_linux)
 +  DebugInfo *di;
 +  SizeT rw_start = 0;
 +  const NSegment *seg;
@@ -198,6 +199,7 @@ Index: coregrind/m_debuginfo/debuginfo.c
 +    VG_(printf)("Can't read NaCl debug info\n");
 +    VG_(exit)(1);
 +  }
++#endif  // VGO_linux
 +  return 0;
 +}
 +
