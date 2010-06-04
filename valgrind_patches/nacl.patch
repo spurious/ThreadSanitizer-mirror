@@ -95,7 +95,7 @@ Index: coregrind/m_syswrap/syswrap-generic.c
     Bool rr, ww, xx;
  
     /* 'a' is the return value from a real kernel mmap, hence: */
-@@ -170,6 +172,10 @@
+@@ -170,6 +172,12 @@
     ww = toBool(prot & VKI_PROT_WRITE);
     xx = toBool(prot & VKI_PROT_EXEC);
  
@@ -133,7 +133,7 @@ Index: coregrind/m_debuginfo/debuginfo.c
 ===================================================================
 --- coregrind/m_debuginfo/debuginfo.c	(revision 11094)
 +++ coregrind/m_debuginfo/debuginfo.c	(working copy)
-@@ -598,6 +598,72 @@
+@@ -598,6 +598,74 @@
     will be one or above.  If the returned value is zero, no debug info
     was read. */
  
