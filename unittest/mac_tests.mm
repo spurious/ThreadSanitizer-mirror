@@ -78,14 +78,19 @@ TEST(MacTests, ShmMmapRegressionTest) {
 #ifdef OS_darwin_9
   int md;
   void *virt_addr;
-  md = shm_open("com.apple.shm.notification_center", 0, 0);
-  printf("md: %d\n", md);
-  virt_addr = mmap(0, 4096, 1, 1, md, 0);
-  if (virt_addr == (void*)-1) {
-    FAIL() << "mmap returned -1";
+  shm_unlink("apple.shm.notification_center");
+  md = shm_open("apple.shm.notification_center", 0, 0);
+  if (md != -1) {
+    virt_addr = mmap(0, 4096, 1, 1, md, 0);
+    if (virt_addr == (void*)-1) {
+      shm_unlink("apple.shm.notification_center");
+      FAIL() << "mmap returned -1";
+    } else {
+      munmap(virt_addr, 4096);
+      shm_unlink("apple.shm.notification_center");
+    } 
   } else {
-    munmap(virt_addr, 4096);
-    shm_unlink("apple.shm.notification_center");
+    printf("shm_open() returned -1\n");
   }
 #endif
 }
