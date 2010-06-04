@@ -99,10 +99,12 @@ Index: coregrind/m_syswrap/syswrap-generic.c
     ww = toBool(prot & VKI_PROT_WRITE);
     xx = toBool(prot & VKI_PROT_EXEC);
  
++#ifdef VGA_amd64
 +   if (len >= fourgig + 2 * guardpage) {
 +     VG_(printf)("Valgrind: ignoring NaCl's mmap(84G)\n");
 +     return;
 +   }
++#endif  // VGA_amd64
     VG_TRACK( new_mem_mmap, a, len, rr, ww, xx, di_handle );
  }
  
