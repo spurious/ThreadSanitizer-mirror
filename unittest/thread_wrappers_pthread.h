@@ -80,12 +80,13 @@ static const bool kMallocUsesMutex = false;
 
   // TODO(timurrrr) this is a hack
   #define memalign(A,B) malloc(B)
-
+#ifndef OS_darwin_10
   // TODO(timurrrr) this is a hack
   static int posix_memalign(void **out, size_t al, size_t size) {
     *out = memalign(al, size);
     return (*out == 0);
   }
+#endif
 #endif
 
 

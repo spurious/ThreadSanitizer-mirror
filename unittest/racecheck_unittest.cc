@@ -5783,8 +5783,13 @@ void Getter() {
     usleep(1000);
   }
 #ifndef WIN32
+#ifdef OS_darwin
+  printf("T=%p: non_zero_received=%d\n",
+         (void*)pthread_self(), non_zero_received);
+#else
   printf("T=%d: non_zero_received=%d\n",
          (int)pthread_self(), non_zero_received);
+#endif
 #endif
 }
 

@@ -75,9 +75,11 @@ TEST(MacTests, WqthreadRegressionTest) {
 // Regression test for a bug with passing a 32-bit value instead of a 64-bit
 // as the last parameter to mmap().
 TEST(MacTests, ShmMmapRegressionTest) {
+#ifdef OS_darwin_9
   int md;
   void *virt_addr;
-  md = shm_open("apple.shm.notification_center", 0, 0);
+  md = shm_open("com.apple.shm.notification_center", 0, 0);
+  printf("md: %d\n", md);
   virt_addr = mmap(0, 4096, 1, 1, md, 0);
   if (virt_addr == (void*)-1) {
     FAIL() << "mmap returned -1";
@@ -85,6 +87,7 @@ TEST(MacTests, ShmMmapRegressionTest) {
     munmap(virt_addr, 4096);
     shm_unlink("apple.shm.notification_center");
   }
+#endif
 }
 
 }  // namespace MacTests

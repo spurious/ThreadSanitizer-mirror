@@ -811,6 +811,7 @@ TEST(PositiveTests, CyclicBarrierTwoCallsTest) {
 
 TEST(NegativeTests, Mmap84GTest) {  // {{{1
 #ifdef ARCH_amd64
+#ifdef OS_linux
   // test that we can mmap 84G and can do it fast.
   size_t size = (1ULL << 32) * 21;  // 21 * 4G
   void *mem_ptr = mmap((void *) 0,
@@ -820,6 +821,7 @@ TEST(NegativeTests, Mmap84GTest) {  // {{{1
                        -1,
                        (off_t) 0);
   printf("res=%p\n", mem_ptr);
+#endif
 #endif
 }
 
