@@ -727,9 +727,6 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
     case TSREQ_PTHREAD_SPIN_LOCK_INIT_OR_UNLOCK:
       Put(UNLOCK_OR_INIT, ts_tid, pc, /*lock=*/args[1], 0);
       break;
-    case TSREQ_PTHREAD_RWLOCK_UNLOCK_POST:
-      break;
-
     case TSREQ_POSIX_SEM_INIT_POST:
     case TSREQ_POSIX_SEM_DESTROY_PRE:
       break;

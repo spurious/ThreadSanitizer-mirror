@@ -970,10 +970,7 @@ PTH_FUNC(int, pthreadZumutexZuunlock, // pthread_mutex_unlock
 
    CALL_FN_W_W(ret, fn, mutex);
 
-   if (ret == 0 /*success*/) {
-      DO_CREQ_v_W(TSREQ_PTHREAD_RWLOCK_UNLOCK_POST,
-                  pthread_mutex_t*,mutex);
-   } else {
+   if (ret != 0 /*error*/) {
       DO_PthAPIerror( "pthread_mutex_unlock", ret );
    }
 
@@ -1074,9 +1071,6 @@ PTH_FUNC(int, pthreadZuspinZuunlock, void *lock) {
   }
   DO_CREQ_v_W(TSREQ_PTHREAD_RWLOCK_UNLOCK_PRE, void*, lock);
   CALL_FN_W_W(ret, fn, lock);
-  if (ret == 0) {
-    DO_CREQ_v_W(TSREQ_PTHREAD_RWLOCK_UNLOCK_POST, void*, lock);
-  }
   if (TRACE_PTH_FNS) {
     fprintf(stderr, " -- %p >>\n", lock);
   }
@@ -1108,9 +1102,10 @@ static int pthread_cond_wait_WRK(pthread_cond_t* cond, pthread_mutex_t* mutex)
     fprintf(stderr, "<< pthread_cond_wait %p %p", cond, mutex);
     fflush(stderr);
   }
-  if (is_outermost)
-  DO_CREQ_v_WW(TSREQ_PTHREAD_COND_WAIT_PRE,
+  if (is_outermost) {
+    DO_CREQ_v_WW(TSREQ_PTHREAD_COND_WAIT_PRE,
                               pthread_cond_t*,cond, pthread_mutex_t*,mutex);
+  }
 
   CALL_FN_W_WW(ret, fn, cond,mutex);
 
@@ -1626,10 +1621,7 @@ static int pthread_rwlock_unlock_WRK(pthread_rwlock_t* rwlock)
 
    CALL_FN_W_W(ret, fn, rwlock);
 
-   if (ret == 0 /*success*/) {
-      DO_CREQ_v_W(TSREQ_PTHREAD_RWLOCK_UNLOCK_POST,
-                  pthread_rwlock_t*,rwlock);
-   } else {
+   if (ret != 0 /*error*/) {
       DO_PthAPIerror( "pthread_rwlock_unlock", ret );
    }
 
