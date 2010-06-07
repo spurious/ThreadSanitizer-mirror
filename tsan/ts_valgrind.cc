@@ -691,6 +691,21 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
     case TSREQ_RESET_STATS:
     case TSREQ_PTH_API_ERROR:
       break;
+    case TSREQ_PTHREAD_COND_WAIT_PRE:
+      if (ignoring_sync(vg_tid))
+        break;
+      Put(WAIT_BEFORE, ts_tid, pc, /*cv=*/args[1], /*lock=*/args[2]);
+      break;
+    case TSREQ_PTHREAD_COND_WAIT_POST:
+      if (ignoring_sync(vg_tid))
+        break;
+      Put(WAIT_AFTER, ts_tid, pc, 0, 0);
+      break;
+    case TSREQ_PTHREAD_COND_TWAIT_POST:
+      if (ignoring_sync(vg_tid))
+        break;
+      Put(TWAIT_AFTER, ts_tid, pc, 0, 0);
+      break;
     case TSREQ_PTHREAD_RWLOCK_CREATE_POST:
       Put(LOCK_CREATE, ts_tid, pc, /*lock=*/args[1], 0);
       break;
