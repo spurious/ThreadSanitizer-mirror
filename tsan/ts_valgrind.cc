@@ -536,8 +536,7 @@ void evh__pre_workq_task_start(ThreadId vg_tid, Addr workitem) {
   uintptr_t pc = GetVgPc(vg_tid);
   int32_t ts_tid = VgTidToTsTid(vg_tid);
   FlushMops(vg_tid);
-  Put(WAIT_BEFORE, ts_tid, pc, workitem, 0);
-  Put(WAIT_AFTER, ts_tid, pc, 0, 0);
+  Put(WAIT, ts_tid, pc, workitem, 0);
 }
 
 void evh__pre_thread_first_insn(const ThreadId vg_tid) {
@@ -692,12 +691,6 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
     case TSREQ_RESET_STATS:
     case TSREQ_PTH_API_ERROR:
       break;
-    case TSREQ_PTHREAD_COND_SIGNAL_PRE:
-    case TSREQ_PTHREAD_COND_BROADCAST_PRE:
-      if (ignoring_sync(vg_tid))
-        break;
-      Put(SIGNAL, ts_tid, pc, /*cv=*/args[1], 0);
-      break;
     case TSREQ_PTHREAD_COND_WAIT_PRE:
       if (ignoring_sync(vg_tid))
         break;
@@ -740,12 +733,15 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
     case TSREQ_POSIX_SEM_INIT_POST:
     case TSREQ_POSIX_SEM_DESTROY_PRE:
       break;
-    case TSREQ_POSIX_SEM_POST_PRE:
-      Put(SIGNAL, ts_tid, pc, /*sem=*/args[1], 0);
+    case TSREQ_SIGNAL:
+      if (ignoring_sync(vg_tid))
+        break;
+      Put(SIGNAL, ts_tid, pc, args[1], 0);
       break;
-    case TSREQ_POSIX_SEM_WAIT_POST:
-      Put(WAIT_BEFORE, ts_tid, pc, /*sem=*/args[1], 0);
-      Put(WAIT_AFTER, ts_tid, pc, 0, 0);
+    case TSREQ_WAIT:
+      if (ignoring_sync(vg_tid))
+        break;
+      Put(WAIT, ts_tid, pc, args[1], 0);
       break;
     case TSREQ_CYCLIC_BARRIER_INIT:
       Put(CYCLIC_BARRIER_INIT, ts_tid, pc, args[1], args[2]);

@@ -1,9 +1,9 @@
 /*
-  This file is part of ThreadSanitizer, a dynamic data race detector 
+  This file is part of ThreadSanitizer, a dynamic data race detector
   based on Valgrind.
 
   Copyright (C) 2008-2009 Google Inc
-     opensource@google.com 
+     opensource@google.com
   Copyright (C) 2007-2008 OpenWorks LLP
       info@open-works.co.uk
 
@@ -26,8 +26,8 @@
 */
 
 // Author: Konstantin Serebryany.
-// Parts of the code in this file are taken from Helgrind, 
-// a data race detector written by Julian Seward. 
+// Parts of the code in this file are taken from Helgrind,
+// a data race detector written by Julian Seward.
 
 #define _GNU_SOURCE 1
 #include <stdio.h>
@@ -105,7 +105,7 @@ static inline int  VALGRIND_TS_SEGMENT_ID(void) {
    ret_ty I_WRAP_SONAME_FNNAME_ZZ(VG_Z_LIBSTDCXX_SONAME,f)(args)
 
 
-// Do a client request.  This is a macro rather than a function 
+// Do a client request.  This is a macro rather than a function
 // so as to avoid having an extra function in the stack trace.
 
 #define DO_CREQ_v_v(_creqF)                              \
@@ -223,17 +223,17 @@ static inline void IGNORE_ALL_ACCESSES_AND_SYNC_END(void) {
 
 //-------------- Wrapper for main() -------- {{{1
 #define MAIN_WRAPPER_DECL \
- int I_WRAP_SONAME_FNNAME_ZU(NONE,main) (long argc, char **argv, char **env) 
+ int I_WRAP_SONAME_FNNAME_ZU(NONE,main) (long argc, char **argv, char **env)
 
 MAIN_WRAPPER_DECL;
 MAIN_WRAPPER_DECL {
-  int ret; 
+  int ret;
   OrigFn fn;
   VALGRIND_GET_ORIG_FN(fn);
-  DO_CREQ_v_WW(TSREQ_MAIN_IN,  long, argc, char **, argv); 
+  DO_CREQ_v_WW(TSREQ_MAIN_IN,  long, argc, char **, argv);
   CALL_FN_W_WWW(ret, fn, argc, argv, env);
-  DO_CREQ_v_W(TSREQ_MAIN_OUT,  void*, ret); 
-  return ret; 
+  DO_CREQ_v_W(TSREQ_MAIN_OUT,  void*, ret);
+  return ret;
 }
 
 //-------------- MALLOC -------------------- {{{1
@@ -307,7 +307,7 @@ MAIN_WRAPPER_DECL {
     CALL_FN_W_WWW(ret, fn, options, item, priority); \
     /* Trigger only on workq_ops(QUEUE_ADD) */ \
     if (options == 1) { \
-      DO_CREQ_v_W(TSREQ_PTHREAD_COND_SIGNAL_PRE, void*,item); \
+      DO_CREQ_v_W(TSREQ_SIGNAL, void*,item); \
     } \
     return ret; \
   }
@@ -593,9 +593,11 @@ static void* ThreadSanitizerStartThread ( void* xargsV )
    DO_CREQ_v_WW(TSREQ_SET_STACKTOP_STACKSIZE, size_t, stackaddr,
                                               void*, stacksize);
 #else
-   int local_stack_var = 0;
-   /* Let the tool guess where the stack starts. */
-   DO_CREQ_v_W(TSREQ_THR_STACK_TOP, void*, &local_stack_var);
+   {
+     int local_stack_var = 0;
+     /* Let the tool guess where the stack starts. */
+     DO_CREQ_v_W(TSREQ_THR_STACK_TOP, void*, &local_stack_var);
+   }
 #endif
    /* allow the parent to proceed.  We can't let it proceed until
       we're ready because (1) we need to make sure it doesn't exit and
@@ -638,7 +640,7 @@ static int pthread_create_WRK(pthread_t *thread, const pthread_attr_t *attr,
             opportunity. */
          sched_yield();
       }
-   } else { 
+   } else {
       DO_PthAPIerror( "pthread_create", ret );
    }
 
@@ -676,7 +678,7 @@ static int pthread_join_WRK(pthread_t thread, void** value_pointer)
       before pthread_join (the original) returns.  See email below.*/
    if (ret == 0 /*success*/) {
       DO_CREQ_v_W(TSREQ_PTHREAD_JOIN_POST, pthread_t,thread);
-   } else { 
+   } else {
       DO_PthAPIerror( "pthread_join", ret );
    }
 
@@ -705,7 +707,7 @@ PTH_FUNC(int, pthreadZujoin$Za, // pthread_join$* (Darwin)
 Me:
 I have a question re the NPTL pthread_join implementation.
 
-  Suppose I am the thread 'stayer'.  
+  Suppose I am the thread 'stayer'.
 
   If I call pthread_join(quitter), is it guaranteed that the
   thread 'quitter' has really exited before pthread_join returns?
@@ -720,10 +722,10 @@ confirmation.
   'quitter' will be running start_thread() in nptl/pthread_create.c
 
   The last action of start_thread() is to exit via
-  __exit_thread_inline(0), which simply does sys_exit 
+  __exit_thread_inline(0), which simply does sys_exit
   (nptl/pthread_create.c:403)
 
-  'stayer' meanwhile is waiting for lll_wait_tid (pd->tid) 
+  'stayer' meanwhile is waiting for lll_wait_tid (pd->tid)
   (call at nptl/pthread_join.c:89)
 
   As per comment at nptl/sysdeps/unix/sysv/linux/i386/lowlevellock.h:536,
@@ -1153,7 +1155,7 @@ static int pthread_cond_timedwait_WRK(pthread_cond_t* cond,
    VALGRIND_GET_ORIG_FN(fn);
 
    if (TRACE_PTH_FNS) {
-      fprintf(stderr, "<< pthread_cond_timedwait %p %p %p", 
+      fprintf(stderr, "<< pthread_cond_timedwait %p %p %p",
                       cond, mutex, abstime);
       fflush(stderr);
    }
@@ -1190,14 +1192,14 @@ static int pthread_cond_timedwait_WRK(pthread_cond_t* cond,
 }
 
 PTH_FUNC(int, pthreadZucondZutimedwaitZAZa, // pthread_cond_timedwait@*
-         pthread_cond_t* cond, pthread_mutex_t* mutex, 
+         pthread_cond_t* cond, pthread_mutex_t* mutex,
          struct timespec* abstime)
 {
   return pthread_cond_timedwait_WRK(cond, mutex, abstime);
 }
 
 PTH_FUNC(int, pthreadZucondZutimedwait$Za, // pthread_cond_timedwait$*
-         pthread_cond_t* cond, pthread_mutex_t* mutex, 
+         pthread_cond_t* cond, pthread_mutex_t* mutex,
          struct timespec* abstime)
 {
   return pthread_cond_timedwait_WRK(cond, mutex, abstime);
@@ -1216,7 +1218,7 @@ static int pthread_cond_signal_WRK(pthread_cond_t* cond)
       fflush(stderr);
    }
 
-   DO_CREQ_v_W(TSREQ_PTHREAD_COND_SIGNAL_PRE,
+   DO_CREQ_v_W(TSREQ_SIGNAL,
                pthread_cond_t*,cond);
 
    CALL_FN_W_W(ret, fn, cond);
@@ -1260,12 +1262,12 @@ static int pthread_cond_broadcast_WRK(pthread_cond_t* cond)
       fflush(stderr);
    }
 
-   DO_CREQ_v_W(TSREQ_PTHREAD_COND_BROADCAST_PRE,
+   DO_CREQ_v_W(TSREQ_SIGNAL,
                pthread_cond_t*,cond);
 
    CALL_FN_W_W(ret, fn, cond);
 
-   if (ret != 0) { 
+   if (ret != 0) {
       DO_PthAPIerror( "pthread_cond_broadcast", ret );
    }
 
@@ -1289,10 +1291,8 @@ PTH_FUNC(int, pthreadZucondZubroadcastZAZa, // pthread_cond_broadcast@*
   return pthread_cond_broadcast_WRK(cond);
 }
 
-static void do_wait_pre_and_post(void *cv, void *mu) {
-  // fprintf(stderr, "do_wait_pre_and_post: %p %p\n", cv, mu);
-  DO_CREQ_v_WW(TSREQ_PTHREAD_COND_WAIT_PRE, void *, cv, void *, mu);
-  DO_CREQ_v_WW(TSREQ_PTHREAD_COND_WAIT_POST, void *, 0, void *, 0);
+static void do_wait(void *cv) {
+  DO_CREQ_v_W(TSREQ_WAIT, void *, cv);
 }
 
 /*----------------------------------------------------------------*/
@@ -1317,7 +1317,7 @@ static int pthread_barrier_wait_WRK(pthread_barrier_t* b)
    CALL_FN_W_W(ret, fn, b);
    DO_CREQ_v_W(TSREQ_CYCLIC_BARRIER_WAIT_AFTER, void*,b);
 
-   // FIXME: handle ret 
+   // FIXME: handle ret
    if (TRACE_PTH_FNS) {
       fprintf(stderr, "  pthread_barrier_wait -> %d >>\n", ret);
    }
@@ -1345,7 +1345,7 @@ PTH_FUNC(int, pthreadZubarrierZuinit, void *b, void *a, unsigned n) {
 /*----------------------------------------------------------------*/
 
 /* Handled:   pthread_rwlock_init pthread_rwlock_destroy
-              pthread_rwlock_rdlock 
+              pthread_rwlock_rdlock
               pthread_rwlock_wrlock
               pthread_rwlock_unlock
 
@@ -1372,7 +1372,7 @@ static int pthread_rwlock_init_WRK(pthread_rwlock_t *rwl,
    if (ret == 0 /*success*/) {
       DO_CREQ_v_W(TSREQ_PTHREAD_RWLOCK_CREATE_POST,
                   pthread_rwlock_t*,rwl);
-   } else { 
+   } else {
       DO_PthAPIerror( "pthread_rwlock_init", ret );
    }
 
@@ -1445,7 +1445,7 @@ static int pthread_rwlock_wrlock_WRK(pthread_rwlock_t* rwlock)
    }
 
    DO_CREQ_v_WWW(TSREQ_PTHREAD_RWLOCK_LOCK_PRE,
-                 pthread_rwlock_t*,rwlock, 
+                 pthread_rwlock_t*,rwlock,
                  long,1/*isW*/, long,0/*!isTryLock*/);
 
    CALL_FN_W_W(ret, fn, rwlock);
@@ -1453,7 +1453,7 @@ static int pthread_rwlock_wrlock_WRK(pthread_rwlock_t* rwlock)
    if (ret == 0 /*success*/) {
       DO_CREQ_v_WW(TSREQ_PTHREAD_RWLOCK_LOCK_POST,
                    pthread_rwlock_t*,rwlock, long,1/*isW*/);
-   } else { 
+   } else {
       DO_PthAPIerror( "pthread_rwlock_wrlock", ret );
    }
 
@@ -1494,7 +1494,7 @@ static int pthread_rwlock_rdlock_WRK(pthread_rwlock_t* rwlock)
    if (ret == 0 /*success*/) {
       DO_CREQ_v_WW(TSREQ_PTHREAD_RWLOCK_LOCK_POST,
                    pthread_rwlock_t*,rwlock, long,0/*!isW*/);
-   } else { 
+   } else {
       DO_PthAPIerror( "pthread_rwlock_rdlock", ret );
    }
 
@@ -1527,7 +1527,7 @@ static int pthread_rwlock_trywrlock_WRK(pthread_rwlock_t* rwlock)
    }
 
    DO_CREQ_v_WWW(TSREQ_PTHREAD_RWLOCK_LOCK_PRE,
-                 pthread_rwlock_t*,rwlock, 
+                 pthread_rwlock_t*,rwlock,
                  long,1/*isW*/, long,1/*isTryLock*/);
 
    CALL_FN_W_W(ret, fn, rwlock);
@@ -1540,7 +1540,7 @@ static int pthread_rwlock_trywrlock_WRK(pthread_rwlock_t* rwlock)
    if (ret == 0 /*success*/) {
       DO_CREQ_v_WW(TSREQ_PTHREAD_RWLOCK_LOCK_POST,
                    pthread_rwlock_t*,rwlock, long,1/*isW*/);
-   } else { 
+   } else {
       if (ret != EBUSY)
          DO_PthAPIerror( "pthread_rwlock_trywrlock", ret );
    }
@@ -1574,7 +1574,7 @@ static int pthread_rwlock_tryrdlock_WRK(pthread_rwlock_t* rwlock)
    }
 
    DO_CREQ_v_WWW(TSREQ_PTHREAD_RWLOCK_LOCK_PRE,
-                 pthread_rwlock_t*,rwlock, 
+                 pthread_rwlock_t*,rwlock,
                  long,0/*!isW*/, long,1/*isTryLock*/);
 
    CALL_FN_W_W(ret, fn, rwlock);
@@ -1587,7 +1587,7 @@ static int pthread_rwlock_tryrdlock_WRK(pthread_rwlock_t* rwlock)
    if (ret == 0 /*success*/) {
       DO_CREQ_v_WW(TSREQ_PTHREAD_RWLOCK_LOCK_POST,
                    pthread_rwlock_t*,rwlock, long,0/*!isW*/);
-   } else { 
+   } else {
       if (ret != EBUSY)
          DO_PthAPIerror( "pthread_rwlock_tryrdlock", ret );
    }
@@ -1629,7 +1629,7 @@ static int pthread_rwlock_unlock_WRK(pthread_rwlock_t* rwlock)
    if (ret == 0 /*success*/) {
       DO_CREQ_v_W(TSREQ_PTHREAD_RWLOCK_UNLOCK_POST,
                   pthread_rwlock_t*,rwlock);
-   } else { 
+   } else {
       DO_PthAPIerror( "pthread_rwlock_unlock", ret );
    }
 
@@ -1659,7 +1659,7 @@ PTH_FUNC(int, pthreadZurwlockZuunlock$Za, // pthread_rwlock_unlock$*
 
 #define TRACE_SEM_FNS 0
 
-/* Handled: 
+/* Handled:
      int sem_init(sem_t *sem, int pshared, unsigned value);
      int sem_destroy(sem_t *sem);
      int sem_wait(sem_t *sem);
@@ -1672,7 +1672,7 @@ PTH_FUNC(int, pthreadZurwlockZuunlock$Za, // pthread_rwlock_unlock$*
 */
 
 /* glibc-2.5 has sem_init@@GLIBC_2.2.5 (amd64-linux)
-             and sem_init@@GLIBC_2.1 (x86-linux): match sem_init@*   
+             and sem_init@@GLIBC_2.1 (x86-linux): match sem_init@*
    sem_init is not implemented for Darwin. */
 PTH_FUNC(int, semZuinitZAZa, sem_t* sem, int pshared, unsigned long value)
 {
@@ -1760,7 +1760,7 @@ static int sem_wait_WRK(sem_t* sem, const char *name, int is_try)
    CALL_FN_W_W(ret, fn, sem);
 
    if (ret == 0) {
-      DO_CREQ_v_W(TSREQ_POSIX_SEM_WAIT_POST, sem_t*,sem);
+      DO_CREQ_v_W(TSREQ_WAIT, sem_t*,sem);
    } else {
       if (!is_try) {
          DO_PthAPIerror( name, errno );
@@ -1809,7 +1809,7 @@ static int sem_post_WRK(OrigFn fn, sem_t* sem)
       fflush(stderr);
    }
 
-   DO_CREQ_v_W(TSREQ_POSIX_SEM_POST_PRE, sem_t*,sem);
+   DO_CREQ_v_W(TSREQ_SIGNAL, sem_t*,sem);
 
    CALL_FN_W_W(ret, fn, sem);
 
@@ -1840,48 +1840,48 @@ PTH_FUNC(int, semZupost$Za, sem_t* sem) { /* sem_post$* */
    return sem_post_WRK(fn, sem);
 }
 
-/* From man page: 
+/* From man page:
    sem_t *sem_open(const char *name, int oflag, ...);
    ...
-   The oflag argument controls whether the semaphore is created or merely 
-   accessed by the call to sem_open(). The following flag bits may be 
+   The oflag argument controls whether the semaphore is created or merely
+   accessed by the call to sem_open(). The following flag bits may be
    set in oflag:
    ...
-   If O_CREAT is set and the semaphore already exists, then O_CREAT has no 
-   effect, except as noted under O_EXCL. Otherwise, sem_open() creates a 
-   named semaphore. The O_CREAT flag requires a third and a fourth 
-   argument: mode, which is of type mode_t, and value, which is of 
+   If O_CREAT is set and the semaphore already exists, then O_CREAT has no
+   effect, except as noted under O_EXCL. Otherwise, sem_open() creates a
+   named semaphore. The O_CREAT flag requires a third and a fourth
+   argument: mode, which is of type mode_t, and value, which is of
    type unsigned int. The semaphore is created with an initial value of value.
 */
-static sem_t *sem_open_WRK(OrigFn fn, 
-                           const char *name, int oflag, 
+static sem_t *sem_open_WRK(OrigFn fn,
+                           const char *name, int oflag,
                            mode_t mode, unsigned int value) {
 
    sem_t *ret;
    CALL_FN_W_WWWW(ret, fn, name, oflag, mode, value);
-   if ((oflag & O_CREAT) && 
-       value > 0 && 
+   if ((oflag & O_CREAT) &&
+       value > 0 &&
        ret != SEM_FAILED) {
-     // This semaphore has been created with a non-zero value. 
-     // The semaphore is initialized only on the first call to sem_open, 
+     // This semaphore has been created with a non-zero value.
+     // The semaphore is initialized only on the first call to sem_open,
      // next call will return an existing semaphore.
      // Ideally, we need to handle it like sem_init with a non-zero value.
-     // But in such case we also need to handle sem_unlink. 
+     // But in such case we also need to handle sem_unlink.
      //
-     // To avoid this complexity we simply do a POST here.
-     DO_CREQ_v_W(TSREQ_POSIX_SEM_POST_PRE, sem_t*, ret);
+     // To avoid this complexity we simply do a SIGNAL here.
+     DO_CREQ_v_W(TSREQ_SIGNAL, sem_t*, ret);
    }
    return ret;
 }
 
-PTH_FUNC(sem_t *, semZuopen, const char *name, int oflag, 
+PTH_FUNC(sem_t *, semZuopen, const char *name, int oflag,
          mode_t mode, unsigned int value) { /* sem_open */
    OrigFn fn;
    VALGRIND_GET_ORIG_FN(fn);
    return sem_open_WRK(fn, name, oflag, mode, value);
 }
 
-PTH_FUNC(sem_t *, semZuopenZAZa, const char *name, int oflag, 
+PTH_FUNC(sem_t *, semZuopenZAZa, const char *name, int oflag,
          mode_t mode, unsigned int value) { /* sem_open@* */
    OrigFn fn;
    VALGRIND_GET_ORIG_FN(fn);
@@ -1899,7 +1899,7 @@ static void *AtExitMagic(void) {
    long    ret;\
    VALGRIND_GET_ORIG_FN(fn);\
    CALL_FN_W_W(ret, fn, callback);\
-   DO_CREQ_v_W(TSREQ_PTHREAD_COND_SIGNAL_PRE, void*, AtExitMagic());\
+   DO_CREQ_v_W(TSREQ_SIGNAL, void*, AtExitMagic());\
    return ret;\
 }\
 
@@ -1909,7 +1909,7 @@ LIBC_FUNC(long, atexit, void *callback)  ATEXIT_BODY
 #define EXIT_BODY { \
    OrigFn fn;\
    VALGRIND_GET_ORIG_FN(fn);\
-   do_wait_pre_and_post(AtExitMagic(), 0);\
+   do_wait(AtExitMagic());\
    CALL_FN_v_W(fn, x);\
 }\
 
@@ -1928,7 +1928,7 @@ NONE_FUNC(int, epoll_wait, int epfd, void * events, int maxevents, int timeout) 
    VALGRIND_GET_ORIG_FN(fn);
 //   fprintf(stderr, "T%d socket epoll_wait: %d\n", VALGRIND_TS_THREAD_ID(), epfd);
    o = SocketMagic(epfd);
-   do_wait_pre_and_post(o, 0);
+   do_wait(o);
    CALL_FN_W_WWWW(ret, fn, epfd, events, maxevents, timeout);
    return ret;
 }
@@ -1940,7 +1940,7 @@ NONE_FUNC(int, epoll_ctl, int epfd, int op, int fd, void *event) {
    VALGRIND_GET_ORIG_FN(fn);
 //   fprintf(stderr, "T%d socket epoll_ctl: %d\n", VALGRIND_TS_THREAD_ID(), epfd);
    o = SocketMagic(epfd);
-   DO_CREQ_v_W(TSREQ_PTHREAD_COND_SIGNAL_PRE, void*, o);
+   DO_CREQ_v_W(TSREQ_SIGNAL, void*, o);
    CALL_FN_W_WWWW(ret, fn, epfd, op, fd, event);
    return ret;
 }
@@ -1954,7 +1954,7 @@ PTH_FUNC(long, send, int s, void *buf, long len, int flags) {
    VALGRIND_GET_ORIG_FN(fn);
 //   fprintf(stderr, "T%d socket send: %d %ld\n", VALGRIND_TS_THREAD_ID(), s, len);
    o = SocketMagic(s);
-   DO_CREQ_v_W(TSREQ_PTHREAD_COND_SIGNAL_PRE, void*, o);
+   DO_CREQ_v_W(TSREQ_SIGNAL, void*, o);
    CALL_FN_W_WWWW(ret, fn, s, buf, len, flags);
    return ret;
 }
@@ -1965,7 +1965,7 @@ PTH_FUNC(long, sendmsg, int s, void *msg, int flags) {
    void *o;
    VALGRIND_GET_ORIG_FN(fn);
    o = SocketMagic(s);
-   DO_CREQ_v_W(TSREQ_PTHREAD_COND_SIGNAL_PRE, void*, o);
+   DO_CREQ_v_W(TSREQ_SIGNAL, void*, o);
    CALL_FN_W_WWW(ret, fn, s, msg, flags);
    return ret;
 }
@@ -1983,7 +1983,7 @@ PTH_FUNC(long, recv, int s, void *buf, long len, int flags) {
    if (ret >= 0) {
       // Do client request only if we received something
       // or the connection was closed.
-      do_wait_pre_and_post(o, 0);
+      do_wait(o);
    }
    return ret;
 }
@@ -1998,7 +1998,7 @@ PTH_FUNC(long, recvmsg, int s, void *msg, int flags) {
    if (ret >= 0) {
       // Do client request only if we received something
       // or the connection was closed.
-      do_wait_pre_and_post(o, 0);
+      do_wait(o);
    }
    return ret;
 }
@@ -2015,7 +2015,7 @@ PTH_FUNC(long, read, int s, void *a2, long count) {
    o = SocketMagic(s);
    if (ret >= 0) {
       // Do client request only if we read something or the EOF was reached.
-      do_wait_pre_and_post(o, 0);
+      do_wait(o);
    }
    return ret;
 }
@@ -2027,7 +2027,7 @@ PTH_FUNC(long, write, int s, void *a2, long a3) {
    VALGRIND_GET_ORIG_FN(fn);
 //   fprintf(stderr, "T%d socket write: %d\n", VALGRIND_TS_THREAD_ID(), s);
    o = SocketMagic(s);
-   DO_CREQ_v_W(TSREQ_PTHREAD_COND_SIGNAL_PRE, void*, o);
+   DO_CREQ_v_W(TSREQ_SIGNAL, void*, o);
    CALL_FN_W_WWW(ret, fn, s, a2, a3);
    return ret;
 }
@@ -2040,7 +2040,7 @@ LIBC_FUNC(long, unlink, void *path) {
    void *o;
    VALGRIND_GET_ORIG_FN(fn);
    o = SocketMagic((long)path);
-   DO_CREQ_v_W(TSREQ_PTHREAD_COND_SIGNAL_PRE, void*, o);
+   DO_CREQ_v_W(TSREQ_SIGNAL, void*, o);
    CALL_FN_W_W(ret, fn, path);
    return ret;
 }
@@ -2053,9 +2053,9 @@ static int open_WRK(void *path, int flags, int mode) {
    void *o;
    VALGRIND_GET_ORIG_FN(fn);
    o = SocketMagic((long)path);
-   DO_CREQ_v_W(TSREQ_PTHREAD_COND_SIGNAL_PRE, void*, o);
+   DO_CREQ_v_W(TSREQ_SIGNAL, void*, o);
    CALL_FN_W_WWW(ret, fn, path, flags, mode);
-   do_wait_pre_and_post(o, 0);
+   do_wait(o);
    return ret;
 }
 
@@ -2074,7 +2074,7 @@ LIBC_FUNC(int, rmdir, void *path) {
    void *o;
    VALGRIND_GET_ORIG_FN(fn);
    o = SocketMagic((long)path);
-   DO_CREQ_v_W(TSREQ_PTHREAD_COND_SIGNAL_PRE, void*, o);
+   DO_CREQ_v_W(TSREQ_SIGNAL, void*, o);
    CALL_FN_W_W(ret, fn, path);
    return ret;
 }
@@ -2088,7 +2088,7 @@ static long opendir_WRK(void *path) {
    VALGRIND_GET_ORIG_FN(fn);
    CALL_FN_W_W(ret, fn, path);
    o = SocketMagic((long)path);
-   do_wait_pre_and_post(o, 0);
+   do_wait(o);
    return ret;
 }
 
@@ -2118,19 +2118,19 @@ LIBC_FUNC(long, lockf, long fd, long cmd, OFF_T offset) {
   return ret;
 }
 
-/* 
+/*
   Support for pthread_once and function-level static objects.
 
-  pthread_once is supported by simply ignoring everything that happens 
+  pthread_once is supported by simply ignoring everything that happens
   inside pthread_once.
 
-  Another approach would be to SIGNAL when pthread_once with a given 
-  pthread_once_t is called for the first time and to WAIT after 
+  Another approach would be to SIGNAL when pthread_once with a given
+  pthread_once_t is called for the first time and to WAIT after
   each pthread_once. But implementing this is a bit tricky and probably
-  not worth it. 
+  not worth it.
 
-  Thread safe initialization of function-level static objects is 
-  supported in gcc (strarting from 4.something). 
+  Thread safe initialization of function-level static objects is
+  supported in gcc (strarting from 4.something).
   From gcc/cp/decl.c:
   --------------------------------------------------------------
        Emit code to perform this initialization but once.  This code
@@ -2363,21 +2363,21 @@ ANN_FUNC(void, AnnotateCondVarWait, const char *file, int line, void *cv, void *
 {
   const char *name = "AnnotateCondVarWait";
   ANN_TRACE("--#%d %s[%p|%p] %s:%d\n", tid, name, cv, lock, file, line);
-  do_wait_pre_and_post(cv, 0 /*lock is unused*/);
+  do_wait(cv);
 }
 
 ANN_FUNC(void, AnnotateCondVarSignal, const char *file, int line, void *cv)
 {
   const char *name = "AnnotateCondVarSignal";
   ANN_TRACE("--#%d %s[%p] %s:%d\n", tid, name, cv, file, line);
-  DO_CREQ_v_W(TSREQ_PTHREAD_COND_SIGNAL_PRE, void*,cv);
+  DO_CREQ_v_W(TSREQ_SIGNAL, void*,cv);
 }
 
 ANN_FUNC(void, AnnotateCondVarSignalAll, const char *file, int line, void *cv)
 {
   const char *name = "AnnotateCondVarSignalAll";
   ANN_TRACE("--#%d %s[%p] %s:%d\n", tid, name, cv, file, line);
-  DO_CREQ_v_W(TSREQ_PTHREAD_COND_BROADCAST_PRE, void*,cv);
+  DO_CREQ_v_W(TSREQ_SIGNAL, void*,cv);
 }
 
 
@@ -2524,7 +2524,7 @@ ANN_FUNC(void, AnnotateTraceMemory, char *file, int line, void *mem)
   DO_CREQ_v_W(TSREQ_TRACE_MEM,   void*, mem);
 }
 
-#undef TRACE_ANN_FNS 
+#undef TRACE_ANN_FNS
 #define TRACE_ANN_FNS 1
 
 ANN_FUNC(void, AnnotateNoOp, char *file, int line, void *mem)
@@ -2540,7 +2540,7 @@ ANN_FUNC(void, AnnotateSetVerbosity, char *file, int line, void *mem)
   const char *name = "AnnotateSetVerbosity";
   OrigFn fn;
   VALGRIND_GET_ORIG_FN(fn);
-  fprintf(stderr, "%s fn=%p\n", name, (void*)fn.nraddr); 
+  fprintf(stderr, "%s fn=%p\n", name, (void*)fn.nraddr);
   ANN_TRACE("--#%d/%d %s[%p] %s:%d\n", tid, sid, name, mem, file, line);
 }
 

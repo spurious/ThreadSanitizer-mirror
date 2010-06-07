@@ -1188,8 +1188,7 @@ uintptr_t WRAP_NAME(RtlInterlockedPopEntrySList)(WRAP_PARAM4) {
   uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
   // Printf("T%d %s list=%p item=%p\n", tid, __FUNCTION__, arg0, ret);
   if (ret) {
-    DumpEvent(WAIT_BEFORE, tid, pc, ret, 0);
-    DumpEvent(WAIT_AFTER, tid, pc, 0, 0);
+    DumpEvent(WAIT, tid, pc, ret, 0);
   }
   return ret;
 }
@@ -1533,8 +1532,7 @@ void InsertBeforeEvent_Call(THREADID tid, ADDRINT pc, ADDRINT target,
   // h-b edge from RtlQueueWorkItem to here.
   CHECK(g_windows_thread_pool_calback_set);
   if (g_windows_thread_pool_calback_set->count(target)) {
-    DumpEvent(WAIT_BEFORE, tid, pc, target, 0);
-    DumpEvent(WAIT_AFTER, tid, pc, 0, 0);
+    DumpEvent(WAIT, tid, pc, target, 0);
   }
 #endif
 }
@@ -1680,8 +1678,7 @@ static void Before_SignallingIOCall(THREADID tid, ADDRINT pc) {
 }
 
 static void After_WaitingIOCall(THREADID tid, ADDRINT pc) {
-  DumpEvent(WAIT_BEFORE, tid, pc, kIOMagic, 0);
-  DumpEvent(WAIT_AFTER, tid, pc, 0, 0);
+  DumpEvent(WAIT, tid, pc, kIOMagic, 0);
 }
 
 static const uintptr_t kAtexitMagic = 0x9876f432;
@@ -1691,8 +1688,7 @@ static void On_atexit(THREADID tid, ADDRINT pc) {
 }
 
 static void On_exit(THREADID tid, ADDRINT pc) {
-  DumpEvent(WAIT_BEFORE, tid, pc, kAtexitMagic, 0);
-  DumpEvent(WAIT_AFTER, tid, pc, 0, 0);
+  DumpEvent(WAIT, tid, pc, kAtexitMagic, 0);
 }
 
 //---------- Synchronization -------------------------- {{{2
@@ -1926,8 +1922,7 @@ static void On_AnnotateCondVarSignal(THREADID tid, ADDRINT pc,
 
 static void On_AnnotateCondVarWait(THREADID tid, ADDRINT pc,
                                    ADDRINT file, ADDRINT line, ADDRINT obj) {
-  DumpEvent(WAIT_BEFORE, tid, pc, obj, 0);
-  DumpEvent(WAIT_AFTER, tid, pc, obj, 0);
+  DumpEvent(WAIT, tid, pc, obj, 0);
 }
 
 
