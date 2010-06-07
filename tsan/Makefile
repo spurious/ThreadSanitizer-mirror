@@ -201,8 +201,10 @@ $(OUTDIR):
 	mkdir -p $(OUTDIR)
 
 TS_HEADERS=thread_sanitizer.h ts_util.h suppressions.h ts_replace.h ts_heap_info.h \
-	   ts_simple_cache.h ts_stats.h ts_lock.h ts_events.h ts_trace_info.h \
-	   ts_literace.h ts_race_verifier.h
+	   ts_simple_cache.h ts_stats.h ts_lock.h ts_events.h ts_event_names.h \
+	   ts_trace_info.h ts_literace.h ts_race_verifier.h
+ts_event_names.h: ts_events.h
+	sed -n '/^enum/,/^};/ {s/enum EventType/static const char *kEventNames[] = /; s/^  \([A-Z_]\+\)/  "\1"/g; p}' $< > $@
 ifeq ($(DEBUG), 0)
 # in optimized build, we include thread_sanitizer.cc into other files.
 $(VGP)ts_valgrind.o: thread_sanitizer.cc
@@ -262,4 +264,4 @@ $(P)ts_dynamorio.so: $(TS_DR_OBJECTS)
 	$(LD) $(ARCHFLAGS) $(DR_LDFLAGS) $(DR_LIBPATHS) -o $@ $^  $(DR_LIBS) $(DR_LD_SCRIPT)
 
 clean: GTEST_CLEAN
-	rm -rfv $(OUTDIR) core* pintool.log* pin.log $(VALGRIND_INST_ROOT)/lib/valgrind/*tsan*
+	rm -rfv $(OUTDIR) ts_event_names.h core* pintool.log* pin.log $(VALGRIND_INST_ROOT)/lib/valgrind/*tsan*
