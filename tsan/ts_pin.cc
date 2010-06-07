@@ -1817,20 +1817,22 @@ static uintptr_t WRAP_NAME(pthread_barrier_wait)(WRAP_PARAM4) {
 static void Before_pthread_cond_signal(THREADID tid, ADDRINT pc, ADDRINT cv) {
   DumpEvent(SIGNAL, tid, pc, cv, 0);
 }
-static void Before_pthread_cond_wait(THREADID tid, ADDRINT pc,
-                                     ADDRINT cv, ADDRINT mu) {
-  DumpEvent(WAIT_BEFORE, tid, pc, cv, mu);
+
+static uintptr_t WRAP_NAME(pthread_cond_wait)(WRAP_PARAM4) {
+  DumpEvent(UNLOCK, tid, pc, arg1, 0);
+  uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
+  DumpEvent(WAIT, tid, pc, arg0, 0);
+  DumpEvent(WRITER_LOCK, tid, pc, arg1, 0);
+  return ret;
 }
-static void After_pthread_cond_wait(THREADID tid, ADDRINT pc) {
-  DumpEvent(WAIT_AFTER, tid, pc, 0, 0);
-}
-static void After_pthread_cond_timedwait(THREADID tid, ADDRINT pc,
-                                         ADDRINT ret) {
+static uintptr_t WRAP_NAME(pthread_cond_timedwait)(WRAP_PARAM4) {
+  DumpEvent(UNLOCK, tid, pc, arg1, 0);
+  uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
   if (ret == 0) {
-    DumpEvent(WAIT_AFTER, tid, pc, 0, 0);
-  } else {
-    DumpEvent(TWAIT_AFTER, tid, pc, 0, 0);
+    DumpEvent(WAIT, tid, pc, arg0, 0);
   }
+  DumpEvent(WRITER_LOCK, tid, pc, arg1, 0);
+  return ret;
 }
 
 // sem
@@ -1841,18 +1843,18 @@ static void After_sem_open(THREADID tid, ADDRINT pc, ADDRINT ret) {
 static void Before_sem_post(THREADID tid, ADDRINT pc, ADDRINT sem) {
   DumpEvent(SIGNAL, tid, pc, sem, 0);
 }
-static void Before_sem_wait(THREADID tid, ADDRINT pc, ADDRINT sem) {
-  DumpEvent(WAIT_BEFORE, tid, pc, sem, 0);
+
+static uintptr_t WRAP_NAME(sem_wait)(WRAP_PARAM4) {
+  uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
+  DumpEvent(WAIT, tid, pc, arg0, 0);
+  return ret;
 }
-static void After_sem_wait(THREADID tid, ADDRINT pc) {
-  DumpEvent(WAIT_AFTER, tid, pc, 0, 0);
-}
-static void After_sem_trywait(THREADID tid, ADDRINT pc, ADDRINT ret) {
+static uintptr_t WRAP_NAME(sem_trywait)(WRAP_PARAM4) {
+  uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
   if (ret == 0) {
-    DumpEvent(WAIT_AFTER, tid, pc, 0, 0);
-  } else {
-    DumpEvent(TWAIT_AFTER, tid, pc, 0, 0);
+    DumpEvent(WAIT, tid, pc, arg0, 0);
   }
+  return ret;
 }
 
 // etc
@@ -2615,11 +2617,8 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
 
    // pthread_cond_*
   INSERT_BEFORE_1("pthread_cond_signal", Before_pthread_cond_signal);
-  INSERT_BEFORE_2("pthread_cond_wait", Before_pthread_cond_wait);
-  INSERT_AFTER_0("pthread_cond_wait", After_pthread_cond_wait);
-
-  INSERT_BEFORE_2("pthread_cond_timedwait", Before_pthread_cond_wait);
-  INSERT_AFTER_1("pthread_cond_timedwait", After_pthread_cond_timedwait);
+  WRAP4(pthread_cond_wait);
+  WRAP4(pthread_cond_timedwait);
 
   // pthread_mutex_*
   INSERT_BEFORE_1("pthread_mutex_init", Before_pthread_mutex_init);
@@ -2656,10 +2655,8 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   // sem_*
   INSERT_AFTER_1("sem_open", After_sem_open);
   INSERT_BEFORE_1("sem_post", Before_sem_post);
-  INSERT_BEFORE_1("sem_wait", Before_sem_wait);
-  INSERT_AFTER_0("sem_wait", After_sem_wait);
-  INSERT_BEFORE_1("sem_trywait", Before_sem_wait);
-  INSERT_AFTER_1("sem_trywait", After_sem_trywait);
+  WRAP4(sem_wait);
+  WRAP4(sem_trywait);
 #endif  // __GNUC__
 
 #ifdef _MSC_VER

@@ -3632,14 +3632,12 @@ struct Thread {
     }
 
     if (G_flags->pure_happens_before || lock->is_pure_happens_before()) {
-      HandleWait(lock->lock_addr(), NULL, false);
+      HandleWait(lock->lock_addr());
     }
     if (G_flags->suggest_happens_before_arcs) {
       lock_history_.OnLock(lock->lid());
     }
-
     NewSegmentForLockingEvent();
-
   }
 
   void HandleUnlock(uintptr_t lock_addr) {
@@ -3716,31 +3714,7 @@ struct Thread {
   const LockHistory &lock_history() { return lock_history_; }
 
   // SIGNAL/WAIT events.
-  // Normally, each HandleWaitBefore() should be followed by
-  // HandleWaitAfter(). But if a signal interrupts us, we may have
-  // two (or more!) HandleWaitBefore() calls before a subsequent
-  // HandleWaitAfter(). Hence we have to use a stack.
-  void HandleWaitBefore(uintptr_t cv, uintptr_t mu) {
-    CvAndMu cv_and_mu;
-    cv_and_mu.cv = cv;
-    cv_and_mu.mu = mu;
-    wait_cv_and_mu_stack.push(cv_and_mu);
-    if (mu) {
-      HandleUnlock(mu);
-    }
-  }
-  void HandleWaitAfter(bool timed_out) {
-    CHECK(wait_cv_and_mu_stack.empty() == false);
-    CvAndMu cv_and_mu = wait_cv_and_mu_stack.top();
-    wait_cv_and_mu_stack.pop();
-    HandleWait(cv_and_mu.cv, cv_and_mu.mu, timed_out);
-  }
-
-  void HandleWait(uintptr_t cv, uintptr_t mu, bool timed_out) {
-    if (mu) {
-      // HandleUnlock is called in HandleWaitBefore().
-      HandleLock(mu, true);
-    }
+  void HandleWait(uintptr_t cv) {
 
     SignallerMap::iterator it = signaller_map_->find(cv);
     if (it != signaller_map_->end()) {
@@ -3749,9 +3723,8 @@ struct Thread {
     }
 
     if (debug_happens_before) {
-      Printf("T%d: %s: %p (%p):\n    %s %s\n", tid_.raw(),
-             timed_out ? "TimedOutWait" : "Wait",
-             cv, mu,
+      Printf("T%d: Wait: %p:\n    %s %s\n", tid_.raw(),
+             cv,
              vts()->ToString().c_str(),
              Segment::ToString(sid()).c_str());
       if (G_flags->debug_level >= 1) {
@@ -4030,7 +4003,7 @@ struct Thread {
       Printf("T%d barrier %p (epoch %d) wait after\n", tid().raw(),
              barrier, epoch);
     }
-    HandleWait(barrier + epoch, 0, false);
+    HandleWait(barrier + epoch);
   }
 
   // Call stack  -------------
@@ -4188,13 +4161,6 @@ struct Thread {
 
   LSID   rd_lockset_;
   LSID   wr_lockset_;
-
-  struct CvAndMu {
-    uintptr_t cv;
-    uintptr_t mu;
-  };
-
-  stack<CvAndMu> wait_cv_and_mu_stack;
 
   int ignore_[2];  // 0 for reads, 1 for writes.
   StackTrace *ignore_context_[2];
@@ -5197,11 +5163,8 @@ class Detector {
       case LOCK_CREATE:
       case LOCK_DESTROY: HandleLockCreateOrDestroy(); break;
 
-      case SIGNAL      : HandleSignal();       break;
-      case WAIT        : HandleWait();   break;
-      case WAIT_BEFORE : HandleWaitBefore();   break;
-      case WAIT_AFTER  : HandleWaitAfter(false);    break;
-      case TWAIT_AFTER : HandleWaitAfter(true);   break;
+      case SIGNAL      : cur_thread_->HandleSignal(e_->a());  break;
+      case WAIT        : cur_thread_->HandleWait(e_->a());   break;
 
       case CYCLIC_BARRIER_INIT:
         cur_thread_->HandleBarrierInit(e_->a(), e_->info());
@@ -5476,39 +5439,6 @@ class Detector {
       }
       Lock::Destroy(lock_addr);
     }
-  }
-
-  // SIGNAL
-  void HandleSignal() {
-    if (G_flags->verbosity >= 2) {
-      e_->Print();
-    }
-    cur_thread_->HandleSignal(e_->a());
-  }
-  // WAIT
-  void HandleWait() {
-    if (G_flags->verbosity >= 2) {
-      e_->Print();
-      cur_thread_->ReportStackTrace();
-    }
-    cur_thread_->HandleWait(e_->a(), NULL, false);
-  }
-  // WAIT_BEFORE
-  void HandleWaitBefore() {
-    if (G_flags->verbosity >= 2) {
-      e_->Print();
-      cur_thread_->ReportStackTrace();
-    }
-    cur_thread_->HandleWaitBefore(e_->a(), e_->info());
-  }
-
-  // WAIT_AFTER, TWAIT_AFTER
-  void HandleWaitAfter(bool timed_out) {
-    if (G_flags->verbosity >= 2) {
-      e_->Print();
-    }
-    // e_->Print();
-    cur_thread_->HandleWaitAfter(timed_out);
   }
 
   void HandleTraceMem() {

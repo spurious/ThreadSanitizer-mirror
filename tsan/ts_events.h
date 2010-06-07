@@ -57,9 +57,6 @@ enum EventType {
   SBLOCK_ENTER,       // {tid, pc, 0, 0}
   SIGNAL,             // {tid, pc, obj, 0}
   WAIT,               // {tid, pc, obj, 0}
-  WAIT_BEFORE,        // {tid, pc, cv, mu}
-  WAIT_AFTER,         // {tid, pc, cv, mu} 
-  TWAIT_AFTER,        // {tid, pc, cv, mu}
   CYCLIC_BARRIER_INIT,         // {tid, pc, obj, n}
   CYCLIC_BARRIER_WAIT_BEFORE,  // {tid, pc, obj, 0}
   CYCLIC_BARRIER_WAIT_AFTER,   // {tid, pc, obj, 0}
