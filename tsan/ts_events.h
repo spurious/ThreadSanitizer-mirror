@@ -28,69 +28,113 @@
 #ifndef TS_EVENTS_H_
 #define TS_EVENTS_H_
 
+// Each event contains tid (the id of the current thread).
+// Most events contain pc (the program counter).
+// Some events contain:
+//  * addr, a memory address, a lock address, etc
+//  * size of a memory range
+// Few events contain a string (e.g. SET_THREAD_NAME).
+
 enum EventType {
-  NOOP,
-  READ,
-  WRITE,
-  READER_LOCK,
-  WRITER_LOCK,
-  UNLOCK,
-  UNLOCK_OR_INIT,
-  LOCK_CREATE,
-  LOCK_DESTROY,
-  BUS_LOCK_ACQUIRE,
-  BUS_LOCK_RELEASE,
+  NOOP,               // Should not appear.
+  READ,               // {tid, pc, addr, size}
+  WRITE,              // {tid, pc, addr, size}
+  READER_LOCK,        // {tid, pc, lock, 0}
+  WRITER_LOCK,        // {tid, pc, lock, 0}
+  UNLOCK,             // {tid, pc, lock, 0}
+  UNLOCK_OR_INIT,     // {tid, pc, lock, 0}
+  LOCK_CREATE,        // {tid, pc, lock, 0}
+  LOCK_DESTROY,       // {tid, pc, lock, 0}
   THR_CREATE_BEFORE,  // Parent thread's event. {tid, pc, 0, 0}
-  THR_CREATE_AFTER,  // Parent thread's event. {tid, 0, 0, child_tid}
-  THR_START,   // Child thread's event {tid, 0, 0, parent_tid}
-  THR_FIRST_INSN,
-  THR_END,
-  THR_JOIN_AFTER,  // {tid, pc, joined_tid}
-  THR_STACK_TOP,  // {tid, pc, stack_top, stack_size_if_known}
-  RTN_EXIT,
-  RTN_CALL,
-  SBLOCK_ENTER,
-  BBLOCK_ENTER,
-  SIGNAL,
-  WAIT,  // {tid, pc, obj, 0}
-  WAIT_BEFORE,
-  WAIT_AFTER,
-  TWAIT_AFTER,
-  CYCLIC_BARRIER_INIT,  // {tid, pc, obj, n}
+  THR_CREATE_AFTER,   // Parent thread's event. {tid, 0, 0, child_tid}
+  THR_START,          // Child thread's event {tid, 0, 0, parent_tid}
+  THR_FIRST_INSN,     // Used only by valgrind.
+  THR_END,            // {tid, 0, 0, 0}
+  THR_JOIN_AFTER,     // {tid, pc, joined_tid}
+  THR_STACK_TOP,      // {tid, pc, stack_top, stack_size_if_known}
+  RTN_EXIT,           // {tid, 0, 0, 0}
+  RTN_CALL,           // {tid, pc, 0, 0}
+  SBLOCK_ENTER,       // {tid, pc, 0, 0}
+  SIGNAL,             // {tid, pc, obj, 0}
+  WAIT,               // {tid, pc, obj, 0}
+  WAIT_BEFORE,        // {tid, pc, cv, mu}
+  WAIT_AFTER,         // {tid, pc, cv, mu} 
+  TWAIT_AFTER,        // {tid, pc, cv, mu}
+  CYCLIC_BARRIER_INIT,         // {tid, pc, obj, n}
   CYCLIC_BARRIER_WAIT_BEFORE,  // {tid, pc, obj, 0}
-  CYCLIC_BARRIER_WAIT_AFTER,  // {tid, pc, obj, 0}
-  PCQ_CREATE,
-  PCQ_DESTROY,
-  PCQ_PUT,
-  PCQ_GET,
-  SP_CHANGE,
-  STACK_MEM_NEW,
-  STACK_MEM_DIE,
-  MALLOC,
-  FREE,
-  MMAP,
-  MUNMAP,
-  PUBLISH_RANGE,
-  UNPUBLISH_RANGE,
-  HB_LOCK,
-  IGNORE_READS_BEG,
-  IGNORE_READS_END,
-  IGNORE_WRITES_BEG,
-  IGNORE_WRITES_END,
-  SET_THREAD_NAME,
-  SET_LOCK_NAME,
-  TRACE_MEM,
-  EXPECT_RACE,  // {tid, descr, ptr, size}
-  BENIGN_RACE,  // {tid, descr, ptr, size}
+  CYCLIC_BARRIER_WAIT_AFTER,   // {tid, pc, obj, 0}
+  PCQ_CREATE,         // {tid, pc, pcq_addr, 0}
+  PCQ_DESTROY,        // {tid, pc, pcq_addr, 0}
+  PCQ_PUT,            // {tid, pc, pcq_addr, 0}
+  PCQ_GET,            // {tid, pc, pcq_addr, 0}
+  STACK_MEM_DIE,      // {tid, pc, addr, size}
+  MALLOC,             // {tid, pc, addr, size}
+  FREE,               // {tid, pc, addr, 0}
+  MMAP,               // {tid, pc, addr, size}
+  MUNMAP,             // {tid, pc, addr, size}
+  PUBLISH_RANGE,      // may be deprecated later.
+  UNPUBLISH_RANGE,    // deprecated. TODO(kcc): get rid of this.
+  HB_LOCK,            // {tid, pc, addr, 0}
+  IGNORE_READS_BEG,   // {tid, pc, 0, 0}
+  IGNORE_READS_END,   // {tid, pc, 0, 0}
+  IGNORE_WRITES_BEG,  // {tid, pc, 0, 0}
+  IGNORE_WRITES_END,  // {tid, pc, 0, 0}
+  SET_THREAD_NAME,    // {tid, pc, name_str, 0}
+  SET_LOCK_NAME,      // {tid, pc, lock, lock_name_str}
+  TRACE_MEM,          // {tid, pc, addr, 0}
+  EXPECT_RACE,        // {tid, descr_str, ptr, size}
+  BENIGN_RACE,        // {tid, descr_str, ptr, size}
   EXPECT_RACE_BEGIN,  // {tid, pc, 0, 0}
-  EXPECT_RACE_END,  // {tid, pc, 0, 0}
-  VERBOSITY,
-  STACK_TRACE,
-  FLUSH_STATE,
-  LAST_EVENT
+  EXPECT_RACE_END,    // {tid, pc, 0, 0}
+  VERBOSITY,          // Used for debugging.
+  STACK_TRACE,        // {tid, pc, 0, 0}, for debugging.
+  FLUSH_STATE,        // {tid, pc, 0, 0}
+  LAST_EVENT          // Should not appear.
 };
 
 #include "ts_event_names.h"  // generated from this file by sed.
+
+class Event {
+ public:
+  Event(EventType type, int32_t tid, uintptr_t pc, uintptr_t a, uintptr_t info)
+      : type_(type),
+      tid_(tid),
+      pc_(pc),
+      a_(a),
+      info_(info) {
+      }
+  Event() {}  // Not initialized.
+
+  void Init(EventType type, int32_t tid, uintptr_t pc, uintptr_t a, uintptr_t info) {
+    type_ = type;
+    tid_  = tid;
+    pc_   = pc;
+    a_    = a;
+    info_ = info;
+  }
+
+
+  EventType type()  const { return type_; }
+  int32_t   tid()   const { return tid_; }
+  uintptr_t a()     const { return a_; }
+  uintptr_t pc()    const { return pc_; }
+  uintptr_t info()  const { return info_; }
+  void      Print() const {
+    Printf("T%d: %s [pc=%p; a=%p; i=%p]\n",
+           tid(), TypeString(type()), pc(), a(), info());
+
+  }
+  static const char *TypeString(EventType type) {
+    return kEventNames[type];
+  }
+ private:
+  EventType      type_;
+  int32_t   tid_;
+  uintptr_t pc_;
+  uintptr_t a_;
+  uintptr_t info_;
+};
+
 
 // end. {{{1
 #endif  // TS_EVENTS_H_

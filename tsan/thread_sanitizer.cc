@@ -3449,7 +3449,6 @@ struct Thread {
       announced_(false),
       rd_lockset_(0),
       wr_lockset_(0),
-      bus_lock_is_set_(false),
       vts_at_exit_(NULL),
       lock_history_(128),
       recent_segments_cache_(G_flags->recent_segments_cache_size) {
@@ -3603,9 +3602,6 @@ struct Thread {
   }
 
   // Locks
-  void set_bus_lock_is_set(bool is_set) { bus_lock_is_set_ = is_set; }
-  bool bus_lock_is_set() const { return bus_lock_is_set_; }
-
   void HandleLock(uintptr_t lock_addr, bool is_w_lock) {
 
     if (debug_lock) {
@@ -4199,8 +4195,6 @@ struct Thread {
   };
 
   stack<CvAndMu> wait_cv_and_mu_stack;
-
-  bool      bus_lock_is_set_;
 
   int ignore_[2];  // 0 for reads, 1 for writes.
   StackTrace *ignore_context_[2];
@@ -5203,9 +5197,6 @@ class Detector {
       case LOCK_CREATE:
       case LOCK_DESTROY: HandleLockCreateOrDestroy(); break;
 
-      case BUS_LOCK_ACQUIRE   : HandleBusLock(true);  break;
-      case BUS_LOCK_RELEASE   : HandleBusLock(false); break;
-
       case SIGNAL      : HandleSignal();       break;
       case WAIT        : HandleWait();   break;
       case WAIT_BEFORE : HandleWaitBefore();   break;
@@ -5486,22 +5477,6 @@ class Detector {
       Lock::Destroy(lock_addr);
     }
   }
-
-
-  void HandleBusLock(bool is_acquire) {
-    if (G_flags->verbosity >= 3) {
-      e_->Print();
-    }
-    // TODO(kcc): do something smarter with atomics.
-    if (is_acquire) {
-//      cur_thread_->HandleLock(kTheBusLock, true);
-      cur_thread_->set_bus_lock_is_set(true);
-    } else {
-//      cur_thread_->HandleUnlock(kTheBusLock);
-      cur_thread_->set_bus_lock_is_set(false);
-    }
-  }
-
 
   // SIGNAL
   void HandleSignal() {

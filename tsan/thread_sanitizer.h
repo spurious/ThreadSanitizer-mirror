@@ -134,7 +134,6 @@ extern bool debug_race_verifier;
 //--------- TS Exports ----------------- {{{1
 #include "ts_events.h"
 #include "ts_trace_info.h"
-class Event;
 
 extern void ThreadSanitizerInit();
 extern void ThreadSanitizerFini();
@@ -170,48 +169,6 @@ extern bool PhaseDebugIsOn(const char *phase_name);
 
 extern bool g_has_entered_main;
 extern bool g_has_exited_main;
-
-//--------- Event ------------------------- {{{1
-class Event {
- public:
-  Event(EventType type, int32_t tid, uintptr_t pc, uintptr_t a, uintptr_t info)
-      : type_(type),
-      tid_(tid),
-      pc_(pc),
-      a_(a),
-      info_(info) {
-      }
-  Event() {}  // Not initialized.
-
-  void Init(EventType type, int32_t tid, uintptr_t pc, uintptr_t a, uintptr_t info) {
-    type_ = type;
-    tid_  = tid;
-    pc_   = pc;
-    a_    = a;
-    info_ = info;
-  }
-
-
-  EventType type()  const { return type_; }
-  int32_t   tid()   const { return tid_; }
-  uintptr_t a()     const { return a_; }
-  uintptr_t pc()    const { return pc_; }
-  uintptr_t info()  const { return info_; }
-  void      Print() const {
-    Printf("T%d: %s [pc=%p; a=%p; i=%p]\n",
-           tid(), TypeString(type()), pc(), a(), info());
-
-  }
-  static const char *TypeString(EventType type) {
-    return kEventNames[type];
-  }
- private:
-  EventType      type_;
-  int32_t   tid_;
-  uintptr_t pc_;
-  uintptr_t a_;
-  uintptr_t info_;
-};
 
 // -------- Stats ------------------- {{{1
 #include "ts_stats.h"
