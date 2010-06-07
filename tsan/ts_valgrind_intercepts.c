@@ -838,12 +838,6 @@ PTH_FUNC(int, pthreadZumutexZulock, // pthread_mutex_lock
 
    is_outermost = pthread_lib_enter();
 
-   if (is_outermost)
-      DO_CREQ_v_WWW(TSREQ_PTHREAD_RWLOCK_LOCK_PRE,
-                    pthread_mutex_t*, mutex,
-                    long, 1/*is_w*/,
-                    long, 0/*!isTryLock*/);
-
    CALL_FN_W_W(ret, fn, mutex);
 
    /* There's a hole here: libpthread now knows the lock is locked,
@@ -882,9 +876,6 @@ static int pthread_mutex_trylock_WRK(pthread_mutex_t *mutex)
    if (TRACE_PTH_FNS) {
       fprintf(stderr, "<< pthread_mxtrylock %p", mutex); fflush(stderr);
    }
-
-   DO_CREQ_v_WWW(TSREQ_PTHREAD_RWLOCK_LOCK_PRE,
-                pthread_mutex_t*,mutex, long, 1/*is_w*/, long,1/*isTryLock*/);
 
    CALL_FN_W_W(ret, fn, mutex);
 
@@ -927,9 +918,6 @@ PTH_FUNC(int, pthreadZumutexZutimedlock, // pthread_mutex_timedlock
       fprintf(stderr, "<< pthread_mxtimedlock %p %p", mutex, timeout);
       fflush(stderr);
    }
-
-   DO_CREQ_v_WWW(TSREQ_PTHREAD_RWLOCK_LOCK_PRE,
-                pthread_mutex_t*,mutex, long, 1/*is_w*/, long,1/*isTryLock-ish*/);
 
    CALL_FN_W_WW(ret, fn, mutex,timeout);
 
@@ -1025,8 +1013,6 @@ PTH_FUNC(int, pthreadZuspinZulock, void *lock) {
   if (TRACE_PTH_FNS) {
     fprintf(stderr, "<< %s %p", func, lock);
   }
-  DO_CREQ_v_WWW(TSREQ_PTHREAD_RWLOCK_LOCK_PRE, void *, lock,
-               long, 1 /*is_w*/, long, 0 /*is_try_lock*/);
   CALL_FN_W_W(ret, fn, lock);
   if (ret == 0) {
     DO_CREQ_v_WW(TSREQ_PTHREAD_RWLOCK_LOCK_POST, void *, lock,
@@ -1047,8 +1033,6 @@ PTH_FUNC(int, pthreadZuspinZutrylock, void *lock) {
   if (TRACE_PTH_FNS) {
     fprintf(stderr, "<< %s %p", func, lock);
   }
-  DO_CREQ_v_WWW(TSREQ_PTHREAD_RWLOCK_LOCK_PRE, void *, lock,
-               long, 1 /*is_w*/, long, 1 /*is_try_lock*/);
   CALL_FN_W_W(ret, fn, lock);
   if (ret == 0) {
     DO_CREQ_v_WW(TSREQ_PTHREAD_RWLOCK_LOCK_POST, void *, lock,
@@ -1439,10 +1423,6 @@ static int pthread_rwlock_wrlock_WRK(pthread_rwlock_t* rwlock)
       fprintf(stderr, "<< pthread_rwl_wlk %p", rwlock); fflush(stderr);
    }
 
-   DO_CREQ_v_WWW(TSREQ_PTHREAD_RWLOCK_LOCK_PRE,
-                 pthread_rwlock_t*,rwlock,
-                 long,1/*isW*/, long,0/*!isTryLock*/);
-
    CALL_FN_W_W(ret, fn, rwlock);
 
    if (ret == 0 /*success*/) {
@@ -1480,10 +1460,6 @@ static int pthread_rwlock_rdlock_WRK(pthread_rwlock_t* rwlock)
       fprintf(stderr, "<< pthread_rwl_rlk %p", rwlock); fflush(stderr);
    }
 
-   DO_CREQ_v_WWW(TSREQ_PTHREAD_RWLOCK_LOCK_PRE,
-                 pthread_rwlock_t*,rwlock,
-                 long,0/*!isW*/, long,0/*!isTryLock*/);
-
    CALL_FN_W_W(ret, fn, rwlock);
 
    if (ret == 0 /*success*/) {
@@ -1520,10 +1496,6 @@ static int pthread_rwlock_trywrlock_WRK(pthread_rwlock_t* rwlock)
    if (TRACE_PTH_FNS) {
       fprintf(stderr, "<< pthread_rwl_trywlk %p", rwlock); fflush(stderr);
    }
-
-   DO_CREQ_v_WWW(TSREQ_PTHREAD_RWLOCK_LOCK_PRE,
-                 pthread_rwlock_t*,rwlock,
-                 long,1/*isW*/, long,1/*isTryLock*/);
 
    CALL_FN_W_W(ret, fn, rwlock);
 
@@ -1567,10 +1539,6 @@ static int pthread_rwlock_tryrdlock_WRK(pthread_rwlock_t* rwlock)
    if (TRACE_PTH_FNS) {
       fprintf(stderr, "<< pthread_rwl_tryrlk %p", rwlock); fflush(stderr);
    }
-
-   DO_CREQ_v_WWW(TSREQ_PTHREAD_RWLOCK_LOCK_PRE,
-                 pthread_rwlock_t*,rwlock,
-                 long,0/*!isW*/, long,1/*isTryLock*/);
 
    CALL_FN_W_W(ret, fn, rwlock);
 

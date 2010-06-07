@@ -712,8 +712,6 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
     case TSREQ_PTHREAD_RWLOCK_DESTROY_PRE:
       Put(LOCK_DESTROY, ts_tid, pc, /*lock=*/args[1], 0);
       break;
-    case TSREQ_PTHREAD_RWLOCK_LOCK_PRE:
-      break;
     case TSREQ_PTHREAD_RWLOCK_LOCK_POST:
       if (ignoring_sync(vg_tid))
         break;
