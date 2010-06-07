@@ -108,11 +108,6 @@ Index: coregrind/m_syswrap/syswrap-generic.c
     VG_TRACK( new_mem_mmap, a, len, rr, ww, xx, di_handle );
  }
  
-@@ -4115,4 +4121,3 @@
- /*--------------------------------------------------------------------*/
- /*--- end                                                          ---*/
- /*--------------------------------------------------------------------*/
--
 Index: coregrind/pub_core_clreq.h
 ===================================================================
 --- coregrind/pub_core_clreq.h	(revision 11094)
