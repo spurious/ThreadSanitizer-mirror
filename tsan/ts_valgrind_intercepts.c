@@ -1087,15 +1087,16 @@ static int pthread_cond_wait_WRK(pthread_cond_t* cond, pthread_mutex_t* mutex)
     fflush(stderr);
   }
   if (is_outermost) {
-    DO_CREQ_v_WW(TSREQ_PTHREAD_COND_WAIT_PRE,
-                              pthread_cond_t*,cond, pthread_mutex_t*,mutex);
+    DO_CREQ_v_W(TSREQ_PTHREAD_RWLOCK_UNLOCK_PRE, pthread_mutex_t*,mutex);
   }
 
   CALL_FN_W_WW(ret, fn, cond,mutex);
 
-  if (is_outermost)
-  DO_CREQ_v_WW(TSREQ_PTHREAD_COND_WAIT_POST,
-                              pthread_cond_t*,cond, pthread_mutex_t*,mutex);
+  if (is_outermost) {
+    DO_CREQ_v_W(TSREQ_WAIT, void *,cond);
+    DO_CREQ_v_WW(TSREQ_PTHREAD_RWLOCK_LOCK_POST, void *, mutex,
+                 long, 1 /*is_w*/);
+  }
 
   if (ret != 0) {
     DO_PthAPIerror( "pthread_cond_wait", ret );
@@ -1142,20 +1143,19 @@ static int pthread_cond_timedwait_WRK(pthread_cond_t* cond,
    /* Tell the tool a cond-wait is about to happen, so it can check
       for bogus argument values.  In return it tells us whether it
       thinks the mutex is valid or not. */
-   if (is_outermost) DO_CREQ_v_WW(TSREQ_PTHREAD_COND_WAIT_PRE,
-                               pthread_cond_t*,cond, pthread_mutex_t*,mutex);
+   if (is_outermost) {
+     DO_CREQ_v_W(TSREQ_PTHREAD_RWLOCK_UNLOCK_PRE, void *,mutex);
+   }
 
 
    CALL_FN_W_WWW(ret, fn, cond,mutex,abstime);
 
    if (is_outermost) {
       if (ret == 0) {
-         DO_CREQ_v_WW(TSREQ_PTHREAD_COND_WAIT_POST,
-                      pthread_cond_t*,cond, pthread_mutex_t*,mutex);
-      } else {
-         DO_CREQ_v_WW(TSREQ_PTHREAD_COND_TWAIT_POST,
-                      pthread_cond_t*,cond, pthread_mutex_t*,mutex);
+         DO_CREQ_v_W(TSREQ_WAIT, void *, cond);
       }
+      DO_CREQ_v_WW(TSREQ_PTHREAD_RWLOCK_LOCK_POST, void *,mutex,
+                  long, 1 /*is_w*/);
    }
 
    if (ret != 0 && ret != ETIMEDOUT) {
