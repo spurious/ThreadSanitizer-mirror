@@ -129,13 +129,23 @@ bool ReadOneEventFromFile(FILE *file, Event *event) {
   return false;
 }
 
+static const uint32_t max_unknown_thread = 10000;
+
+static bool known_threads[max_unknown_thread] = {};
+
 void ReadEventsFromFile(FILE *file) {
   Event event;
   int n_events = 0;
   while (ReadOneEventFromFile(file, &event)) {
     // event.Print();
     n_events++;
-    ThreadSanitizerHandleOneEvent(&event);
+    uint32_t tid = event.tid();
+    if (event.type() == THR_START && tid < max_unknown_thread) {
+      known_threads[tid] = true;
+    }
+    if (tid >= max_unknown_thread || known_threads[tid]) {
+      ThreadSanitizerHandleOneEvent(&event);
+    }
   }
   Printf("INFO: ThreadSanitizerOffline: %d events read\n", n_events);
 }
