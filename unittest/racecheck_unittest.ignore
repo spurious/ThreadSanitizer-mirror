@@ -1,3 +1,5 @@
 fun_r:*FunRFunction*
 
 fun:WindowsAtomicsTests::Atomic_*
+
+fun_r:*OptIgnoreTests*IntermediateJumpHereFunction*

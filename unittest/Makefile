@@ -9,6 +9,7 @@ endif
 
 CFLAGS+=$(OPTFLAGS) $(ARCHFLAGS) $(OS_CFLAGS) $(DEFINES) $(EXTRA_CFLAGS)
 CXXFLAGS+=$(OPTFLAGS) $(ARCHFLAGS) $(OS_CXXFLAGS) $(DEFINES) $(EXTRA_CXXFLAGS)
+OPT_CXXFLAGS=$(CXXFLAGS) -O2 -g $(ARCHFLAGS) $(OS_CXXFLAGS) $(DEFINES) $(EXTRA_CXXFLAGS) -foptimize-sibling-calls
 ifeq ($(OS), darwin)
 LDFLAGS=$(LDOPT) $(ARCHFLAGS) $(STATICFLAGS) -framework Foundation
 else
@@ -75,7 +76,7 @@ DYNAMIC_ANNOTATIONS=${DYNAMIC_ANNOTATIONS_C} ${DYNAMIC_ANNOTATIONS_H}
 
 TEST_UTILS_O=$(BIN)test_utils-$(BUILD).$(OBJ)
 
-$(BIN)racecheck_unittest-$(BUILD)$(EXE): $(BIN)racecheck_unittest-$(BUILD).$(OBJ) $(BIN)old_test_suite-$(BUILD).$(OBJ) \
+$(BIN)racecheck_unittest-$(BUILD)$(EXE): $(BIN)racecheck_unittest-$(BUILD).$(OBJ) $(BIN)old_test_suite-$(BUILD).$(OBJ) $(BIN)opt_tests-$(BUILD).$(OBJ) \
 		$(TEST_UTILS_O) $(GTEST_LIB)  ${DYNAMIC_ANNOTATIONS_O} | bin
 	${LD} ${LDFLAGS} $^ $(LIBS) $(LINKO)$@
 
@@ -110,6 +111,11 @@ $(BIN)memory_unittest-$(BUILD)$(EXE): $(BIN)memory_unittest-$(BUILD).$(OBJ) $(BI
 
 $(BIN)%-$(BUILD).$(OBJ): %.cc ${DYNAMIC_ANNOTATIONS} thread_wrappers.h thread_wrappers_win.h thread_wrappers_pthread.h old_test_suite.h test_utils.h | bin
 	${CXX} ${CXXFLAGS} \
+		 -I${DYNAMIC_ANNOTATIONS_DIR} -I${GTEST_ROOT}/include -I. \
+		 -DDYNAMIC_ANNOTATIONS_ENABLED=1 -c $< $(O)$@
+
+$(BIN)opt_tests-$(BUILD).$(OBJ): opt_tests.cc ${DYNAMIC_ANNOTATIONS} thread_wrappers.h thread_wrappers_win.h thread_wrappers_pthread.h old_test_suite.h test_utils.h | bin
+	${CXX} ${OPT_CXXFLAGS} \
 		 -I${DYNAMIC_ANNOTATIONS_DIR} -I${GTEST_ROOT}/include -I. \
 		 -DDYNAMIC_ANNOTATIONS_ENABLED=1 -c $< $(O)$@
 
