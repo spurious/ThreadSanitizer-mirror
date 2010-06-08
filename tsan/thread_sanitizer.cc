@@ -1437,7 +1437,7 @@ class Segment {
 
   // static methods
 
-  static uintptr_t *embedded_stack_trace(SID sid) { 
+  static uintptr_t *embedded_stack_trace(SID sid) {
     DCHECK(sid.valid());
     return &all_stacks_[sid.raw() * kSizeOfHistoryStackTrace];
   }
@@ -1488,7 +1488,9 @@ class Segment {
     seg->lsid_[1] = wr_lockset;
     seg->vts_ = vts;
     seg->lock_era_ = g_lock_era;
-    embedded_stack_trace(sid)[0] = 0;
+    if (kSizeOfHistoryStackTrace > 0) {
+      embedded_stack_trace(sid)[0] = 0;
+    }
     DCHECK(seg->vts_);
     return sid;
   }
@@ -1635,13 +1637,15 @@ class Segment {
       if (refcount > 10) refcount = 10;
       ref_to_freq_map[refcount]++;
     }
-    for (map<int, int>::iterator it = ref_to_freq_map.begin(); 
+    for (map<int, int>::iterator it = ref_to_freq_map.begin();
          it != ref_to_freq_map.end(); ++it) {
       Printf("ref %d => freq %d\n", it->first, it->second);
     }
   }
 
   static void InitClassMembers() {
+    if (G_flags->keep_history == 0)
+      kSizeOfHistoryStackTrace = 0;
     uintptr_t actual_size_of_segment = sizeof(Segment) +
         kSizeOfHistoryStackTrace * sizeof(uintptr_t);
     Report("INFO: Allocating %'ld (%'ld * %'ld) bytes for Segments.\n",
@@ -1655,7 +1659,7 @@ class Segment {
 
     if (kSizeOfHistoryStackTrace) {
       all_stacks_  = new uintptr_t[kMaxSID * kSizeOfHistoryStackTrace];
-      memset(all_stacks_, 0, sizeof(uintptr_t) * 
+      memset(all_stacks_, 0, sizeof(uintptr_t) *
              kMaxSID * kSizeOfHistoryStackTrace);
     } else {
       all_stacks_ = NULL;
@@ -1686,7 +1690,7 @@ class Segment {
   // static class members.
 
   static Segment *all_segments_;
-  // We store stack traces separately because their size is unknown 
+  // We store stack traces separately because their size is unknown
   // at compile time and and because they are needed rarely.
   static uintptr_t *all_stacks_;
 
@@ -3363,7 +3367,8 @@ struct RecentSegmentsCache {
       // occasions but we don't really care that much.
       uintptr_t *emb_trace = Segment::embedded_stack_trace(sid);
       size_t n = curr_stack.size();
-      if (*emb_trace &&  // This stack trace was filled
+      if (kSizeOfHistoryStackTrace > 0 &&
+          *emb_trace &&  // This stack trace was filled
           curr_stack.size() >= 3 &&
           emb_trace[0] == curr_stack[n-1] &&
           emb_trace[1] == curr_stack[n-2] &&
