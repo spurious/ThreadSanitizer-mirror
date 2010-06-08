@@ -38,21 +38,21 @@
 namespace OptIgnoreTests {  // {{{1 Test how the tool works with indirect calls to fun_r functions
 int GLOB = 0;
 
-void NotIgnoredRacey() {
+void NOINLINE NotIgnoredRacey() {
   GLOB++;
 }
 
-void IntermediateJumpHereFunction() {
+void NOINLINE IntermediateJumpHereFunction() {
   NotIgnoredRacey();
   usleep(1);  // Prevent tail call optimization.
 }
 
-void DoTailCall() {
+void NOINLINE DoTailCall() {
   IntermediateJumpHereFunction();  // This tail call should be optimized.
 }
 
 // Test that a function that is called using jump is ignored.
-TEST(IgnoreTests, TailCall) {
+TEST(IgnoreTests, DISABLED_TailCall) {
   MyThreadArray mta(DoTailCall, DoTailCall);
   mta.Start();
   mta.Join();
