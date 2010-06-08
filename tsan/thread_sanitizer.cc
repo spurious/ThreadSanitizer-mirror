@@ -72,6 +72,7 @@ bool debug_expected_races = false;
 bool debug_malloc = false;
 bool debug_free = false;
 bool debug_thread = false;
+bool debug_ignore = false;
 bool debug_rtn = false;
 bool debug_lock = false;
 bool debug_wrap = false;
@@ -6456,6 +6457,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   debug_malloc = PhaseDebugIsOn("malloc");
   debug_free = PhaseDebugIsOn("free");
   debug_thread = PhaseDebugIsOn("thread");
+  debug_ignore = PhaseDebugIsOn("ignore");
   debug_rtn = PhaseDebugIsOn("rtn");
   debug_lock = PhaseDebugIsOn("lock");
   debug_wrap = PhaseDebugIsOn("wrap");
@@ -6557,6 +6559,8 @@ static void SetupIgnore() {
 
 #ifdef VGO_darwin
   g_ignore_lists->funs_r.push_back("__CFDoExternRefOperation");
+  g_ignore_lists->funs_r.push_back("_CFAutoreleasePoolPop");
+  g_ignore_lists->funs_r.push_back("_CFAutoreleasePoolPush");
 
   // pthread_lib_{enter,exit} shouldn't give us any reports since they
   // have IGNORE_ALL_ACCESSES_BEGIN/END but they do give the reports...
@@ -6651,7 +6655,7 @@ bool NOINLINE ThreadSanitizerIgnoreAccessesBelowFunction(uintptr_t pc) {
 
   string rtn_name = PcToRtnNameWithStats(pc, false);
   bool ret = StringVectorMatch(g_ignore_lists->funs_r, rtn_name);
-  if (ret && G_flags->verbosity >= 1) {
+  if (ret && debug_ignore) {
     Report("INFO: ignoring all accesses below the function '%s' (%p)\n",
            PcToRtnNameAndFilePos(pc).c_str(), pc);
   }
