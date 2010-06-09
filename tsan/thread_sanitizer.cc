@@ -6595,6 +6595,15 @@ static void SetupIgnore() {
   g_ignore_lists->funs.push_back("_EH_epilog3");
   g_ignore_lists->funs.push_back("_EH_prolog3_catch");
 
+  // NaCl
+  // This function does a push as a first instruction, before we can tell
+  // ThreadSanitizer about the new stack location.
+  g_ignore_lists->funs.push_back("nc_thread_starter");
+  // The following 2 functions generate false(?) reports on global arrays
+  // nacl_user, nacl_thread, nacl_sys when a thread index is reused.
+  g_ignore_lists->funs.push_back("NaClAppThreadCtor");
+  g_ignore_lists->funs.push_back("NaClSysCommonThreadSuicide");
+
 #ifdef VGO_darwin
   g_ignore_lists->funs_r.push_back("__CFDoExternRefOperation");
   g_ignore_lists->funs_r.push_back("_CFAutoreleasePoolPop");
