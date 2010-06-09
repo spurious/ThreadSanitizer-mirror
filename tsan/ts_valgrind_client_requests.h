@@ -38,6 +38,11 @@
 
 #include "valgrind.h"
 
+/*
+ * WARNING: The following enum defines the ThreadSanitizer ABI.
+ * Existing elements should never be changed, new elements should be added to
+ * the end.
+ */
 enum {
   TSREQ_NOOP = VG_USERREQ_TOOL_BASE('T','S'),
   TSREQ_CLEAN_MEMORY,
