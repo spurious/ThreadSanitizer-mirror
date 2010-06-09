@@ -36,8 +36,7 @@
 // -------- Constants --------------- {{{1
 // Segment ID (SID)      is in range [1, kMaxSID-1]
 // Segment Set ID (SSID) is in range [-kMaxSID+1, -1]
-// This is not a compile-time constant, but it can only be changed
-// at startup.
+// This is not a compile-time constant, but it can only be changed at startup.
 int kMaxSID = (1 << 23);
 
 // Lock ID (LID)      is in range [1, kMaxLID-1]
@@ -1440,10 +1439,32 @@ class Segment {
 
   static uintptr_t *embedded_stack_trace(SID sid) {
     DCHECK(sid.valid());
-    return &all_stacks_[sid.raw() * kSizeOfHistoryStackTrace];
+    DCHECK(kSizeOfHistoryStackTrace > 0);
+    size_t chunk_idx = (unsigned)sid.raw() / kChunkSizeForStacks;
+    size_t idx       = (unsigned)sid.raw() % kChunkSizeForStacks;
+    DCHECK(chunk_idx < n_stack_chunks_);
+    DCHECK(all_stacks_[chunk_idx] != NULL);
+    return &all_stacks_[chunk_idx][idx * kSizeOfHistoryStackTrace];
+  }
+
+  static void ensure_space_for_stack_trace(SID sid) {
+    DCHECK(sid.valid());
+    DCHECK(kSizeOfHistoryStackTrace > 0);
+    size_t chunk_idx = (unsigned)sid.raw() / kChunkSizeForStacks;
+    DCHECK(chunk_idx < n_stack_chunks_);
+    if (all_stacks_[chunk_idx])
+      return;
+    for (size_t i = 0; i <= chunk_idx; i++) {
+      if (all_stacks_[i]) continue;
+      all_stacks_[i] = new uintptr_t[
+          kChunkSizeForStacks * kSizeOfHistoryStackTrace];
+      // we don't clear this memory, it will be clreared later lazily.
+      // We also never delete it because it will be used until the very end.
+    }
   }
 
   static string StackTraceString(SID sid) {
+    DCHECK(kSizeOfHistoryStackTrace > 0);
     return StackTrace::EmbeddedStackTraceToString(
         embedded_stack_trace(sid), kSizeOfHistoryStackTrace);
   }
@@ -1490,6 +1511,7 @@ class Segment {
     seg->vts_ = vts;
     seg->lock_era_ = g_lock_era;
     if (kSizeOfHistoryStackTrace > 0) {
+      ensure_space_for_stack_trace(sid);
       embedded_stack_trace(sid)[0] = 0;
     }
     DCHECK(seg->vts_);
@@ -1647,10 +1669,13 @@ class Segment {
   static void InitClassMembers() {
     if (G_flags->keep_history == 0)
       kSizeOfHistoryStackTrace = 0;
-    uintptr_t actual_size_of_segment = sizeof(Segment) +
-        kSizeOfHistoryStackTrace * sizeof(uintptr_t);
-    Report("INFO: Allocating %'ld (%'ld * %'ld) bytes for Segments.\n",
-           actual_size_of_segment * kMaxSID, actual_size_of_segment, kMaxSID);
+    Report("INFO: Allocating %ldMb (%ld * %ldM) for Segments.\n",
+           (sizeof(Segment) * kMaxSID) >> 20,
+           sizeof(Segment), kMaxSID >> 20);
+    if (kSizeOfHistoryStackTrace) {
+      Report("INFO: Will allocate up to %ldMb for 'previous' stack traces.\n",
+             (kSizeOfHistoryStackTrace * sizeof(uintptr_t) * kMaxSID) >> 20);
+    }
 
     all_segments_  = new Segment[kMaxSID];
     // initialization all segments to 0.
@@ -1658,12 +1683,12 @@ class Segment {
     // initialize all_segments_[0] with garbage
     memset(all_segments_, -1, sizeof(Segment));
 
-    if (kSizeOfHistoryStackTrace) {
-      all_stacks_  = new uintptr_t[kMaxSID * kSizeOfHistoryStackTrace];
-      memset(all_stacks_, 0, sizeof(uintptr_t) *
-             kMaxSID * kSizeOfHistoryStackTrace);
-    } else {
-      all_stacks_ = NULL;
+    if (kSizeOfHistoryStackTrace > 0) {
+      n_stack_chunks_ = kMaxSID / kChunkSizeForStacks;
+      if (n_stack_chunks_ * kChunkSizeForStacks < (size_t)kMaxSID)
+        n_stack_chunks_++;
+      all_stacks_ = new uintptr_t*[n_stack_chunks_];
+      memset(all_stacks_, 0, sizeof(uintptr_t*) * n_stack_chunks_);
     }
     n_segments_    = 1;
     reusable_sids_ = new vector<SID>;
@@ -1690,10 +1715,18 @@ class Segment {
 
   // static class members.
 
+  // One large array of segments. The size is set by a command line (--max-sid)
+  // and never changes. Once we are out of vacant segments, we flush the state.
   static Segment *all_segments_;
   // We store stack traces separately because their size is unknown
-  // at compile time and and because they are needed rarely.
-  static uintptr_t *all_stacks_;
+  // at compile time and because they are needed less often.
+  // The stacks are stored as an array of chunks, instead of one array, 
+  // so that for small tests we do not require too much RAM.
+  // We don't use vector<> or another resizable array to avoid expensive 
+  // resizing.
+  enum { kChunkSizeForStacks = DEBUG_MODE ? 512 : 4 * 1024 * 1024 };
+  static uintptr_t **all_stacks_;
+  static size_t      n_stack_chunks_;
 
   static int32_t n_segments_;
   static vector<SID> *reusable_sids_;
@@ -1701,7 +1734,8 @@ class Segment {
 };
 
 Segment          *Segment::all_segments_;
-uintptr_t        *Segment::all_stacks_;
+uintptr_t       **Segment::all_stacks_;
+size_t            Segment::n_stack_chunks_;
 int32_t           Segment::n_segments_;
 vector<SID>      *Segment::reusable_sids_;
 vector<SID>      *Segment::recycled_sids_;
@@ -3366,17 +3400,18 @@ struct RecentSegmentsCache {
       // If they match the current segment stack, don't create a new segment.
       // This can probably lead to a little bit wrong stack traces in rare
       // occasions but we don't really care that much.
-      uintptr_t *emb_trace = Segment::embedded_stack_trace(sid);
-      size_t n = curr_stack.size();
-      if (kSizeOfHistoryStackTrace > 0 &&
-          *emb_trace &&  // This stack trace was filled
-          curr_stack.size() >= 3 &&
-          emb_trace[0] == curr_stack[n-1] &&
-          emb_trace[1] == curr_stack[n-2] &&
-          emb_trace[2] == curr_stack[n-3]) {
-        G_stats->history_uses_same_segment++;
-        *needs_refill = false;
-        return sid;
+      if (kSizeOfHistoryStackTrace > 0) {
+        size_t n = curr_stack.size();
+        uintptr_t *emb_trace = Segment::embedded_stack_trace(sid);
+        if(*emb_trace &&  // This stack trace was filled
+           curr_stack.size() >= 3 &&
+           emb_trace[0] == curr_stack[n-1] &&
+           emb_trace[1] == curr_stack[n-2] &&
+           emb_trace[2] == curr_stack[n-3]) {
+          G_stats->history_uses_same_segment++;
+          *needs_refill = false;
+          return sid;
+        }
       }
     }
 
@@ -3773,7 +3808,9 @@ struct Thread {
     sid_ = new_sid;
     Segment::Ref(new_sid, "Thread::NewSegmentWithoutUnrefingOld");
 
-    FillEmbeddedStackTrace(Segment::embedded_stack_trace(sid()));
+    if (kSizeOfHistoryStackTrace > 0) {
+      FillEmbeddedStackTrace(Segment::embedded_stack_trace(sid()));
+    }
     if (0)
     Printf("2: %s T%d/S%d old_sid=%d NewSegment: %s\n", call_site,
            tid().raw(), sid().raw(), old_sid.raw(),
@@ -3821,8 +3858,9 @@ struct Thread {
         Segment::Unref(sid_, "Thread::HandleSblockEnter");
         sid_ = match;
       }
-      if (refill_stack)
+      if (refill_stack && kSizeOfHistoryStackTrace > 0) {
         FillEmbeddedStackTrace(Segment::embedded_stack_trace(sid()));
+      }
     } else {
       G_stats->history_creates_new_segment++;
       VTS *new_vts = vts()->Clone();
