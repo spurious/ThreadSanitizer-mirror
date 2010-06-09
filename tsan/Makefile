@@ -75,8 +75,7 @@ endif
 
 ifeq ($(OS), linux)
   PIN_CXXFLAGS=$(PIN_CXXFLAGS_L)
-  VG_LD_FLAGS=-static -Wl,-defsym,valt_load_address=0x38000000 -nodefaultlibs -nostartfiles \
-    -u _start  -Wl,-T,$(VALGRIND_ROOT)/valt_load_address_$(ARCH_OS).lds
+  VG_LD_FLAGS=-static -nodefaultlibs -nostartfiles -Wl,-Ttext=0x38000000
   VG_LD_PRELOAD_FLAGS= -nodefaultlibs -shared -Wl,-z,interpose,-z,initfirst
   DR_OS=LINUX
 else ifeq ($(OS), darwin)
