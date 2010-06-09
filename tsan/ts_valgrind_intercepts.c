@@ -40,10 +40,8 @@
 
 #include "valgrind.h"
 #include "pub_tool_basics.h"
-#include "pub_tool_libcassert.h"
 #include "pub_tool_redir.h"
 #include "pub_tool_threadstate.h"
-#include "pub_tool_tooliface.h"
 
 #define NOINLINE __attribute__ ((noinline))
 
