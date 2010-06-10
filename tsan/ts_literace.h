@@ -52,21 +52,6 @@ static const size_t n_literace_threads = 8;
 static uint32_t literace_counters[n_literace_threads][n_literace_counters];
 
 
-#ifdef _MSC_VER
-#include <intrin.h>
-inline unsigned u32_log2(unsigned x) {
-  unsigned long y;
-  _BitScanReverse(&y, x);
-  return y;
-}
-#endif
-
-#ifdef __GNUC__
-inline unsigned u32_log2(unsigned x) {
-  return 31 - __builtin_clz(x);
-}
-#endif
-
 INLINE bool LiteRaceSkipTrace(int tid, uint32_t trace_no, uint32_t sampling_rate) {
   DCHECK(u32_log2(1) == 0);
   DCHECK(u32_log2(1 << 4) == 4);

@@ -46,7 +46,6 @@ extern void ThreadSanitizerDumpAllStacks();
 # define CHECK assert
 #endif
 
-
 #if defined(TS_VALGRIND)
 # include "ts_valgrind.h"
 # define TS_USE_STLPORT
@@ -302,6 +301,21 @@ inline uintptr_t tsan_bswap(uintptr_t x) {
 # error  "Unknown Configuration"
 #endif // __WORDSIZE
 }
+
+#ifdef _MSC_VER
+inline unsigned u32_log2(unsigned x) {
+  unsigned long y;
+  _BitScanReverse(&y, x);
+  return y;
+}
+#endif
+
+#ifdef __GNUC__
+inline unsigned u32_log2(unsigned x) {
+  return 31 - __builtin_clz(x);
+}
+#endif
+
 
 
 #endif  // TS_UTIL_H_
