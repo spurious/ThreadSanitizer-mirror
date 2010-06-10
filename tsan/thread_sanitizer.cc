@@ -1396,11 +1396,9 @@ class Mask {
 #ifdef __GNUC__
     ret =  __builtin_ctzl(m_);
 #elif defined(_MSC_VER)
-    uintptr_t index;
-    if (sizeof(uintptr_t) == 8)
-      _BitScanReverse64(&index, m_);
-    else 
-      _BitScanReverse(&index, m_);
+    unsigned long index;
+    DCHECK(sizeof(uintptr_t) == 4);
+    _BitScanReverse(&index, m_);
     ret = index;
 #else
 # error "Unsupported"
