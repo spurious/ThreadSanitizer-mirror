@@ -3103,7 +3103,6 @@ static void PublishRange(uintptr_t a, uintptr_t b, VTS *vts) {
 }
 
 // -------- Clear Memory State ------------------ {{{1
-
 static void NOINLINE UnrefSegmentsInMemoryRange(uintptr_t a, uintptr_t b,
                                                 Mask mask, CacheLine *line) {
   DCHECK(!mask.Empty());
@@ -3122,7 +3121,6 @@ static void NOINLINE UnrefSegmentsInMemoryRange(uintptr_t a, uintptr_t b,
     }
   }
 }
-
 
 void INLINE ClearMemoryStateInOneLine(uintptr_t addr,
                                       uintptr_t beg, uintptr_t end) {
@@ -3143,10 +3141,8 @@ void INLINE ClearMemoryStateInOneLine(uintptr_t addr,
   }
 }
 
-
-
 // clear memory state for [a,b)
-void INLINE ClearMemoryState(uintptr_t a, uintptr_t b) {
+void NOINLINE ClearMemoryState(uintptr_t a, uintptr_t b) {
   if (a == b) return;
   CHECK(a < b);
   uintptr_t line1_tag = 0, line2_tag = 0;
@@ -3179,8 +3175,6 @@ void INLINE ClearMemoryState(uintptr_t a, uintptr_t b) {
     }
   }
 }
-
-
 
 // -------- ThreadSanitizerReport -------------- {{{1
 struct ThreadSanitizerReport {
@@ -5392,16 +5386,12 @@ class Detector {
     lock->set_is_pure_happens_before(true);
   }
 
-  void INLINE ClearMemoryStateOnStackDieMem(uintptr_t a, uintptr_t b) {
-    ClearMemoryState(a, b);
-  }
-
   void INLINE HandleStackMem(TID tid, uintptr_t addr, uintptr_t size) {
     uintptr_t a = addr;
     DCHECK(size > 0);
     DCHECK(size < 128 * 1024 * 1024);  // stay sane.
     uintptr_t b = a + size;
-    ClearMemoryStateOnStackDieMem(a, b);
+    ClearMemoryState(a, b);
     if (G_flags->sample_events) {
       static EventSampler sampler;
       sampler.Sample(tid, "SampleStackChange");
@@ -5898,13 +5888,6 @@ class Detector {
     }
   }
 
-  void NOINLINE ClearMemoryStateOnMalloc(uintptr_t a, uintptr_t b) {
-    ClearMemoryState(a, b);
-  }
-  void NOINLINE ClearMemoryStateOnFree(uintptr_t a, uintptr_t b) {
-    ClearMemoryState(a, b);
-  }
-
   // MALLOC
   void HandleMalloc() {
     ScopedMallocCostCenter cc("HandleMalloc");
@@ -5929,7 +5912,7 @@ class Detector {
     cur_thread_->NewSegmentForMallocEvent();
     uintptr_t b = a + size;
     CHECK(a <= b);
-    ClearMemoryStateOnMalloc(a, b);
+    ClearMemoryState(a, b);
     // update heap_map
     HeapInfo info;
     info.ptr  = a;
@@ -5973,7 +5956,7 @@ class Detector {
     CHECK(info->ptr == a);
     Segment::Unref(info->sid, __FUNCTION__);
 
-    ClearMemoryStateOnFree(a, a + size);
+    ClearMemoryState(a, a + size);
     G_heap_map->EraseInfo(a);
   }
 
@@ -6055,7 +6038,7 @@ class Detector {
     }
     if (sp_min < sp_max) {
       CHECK((sp_max - sp_min) < 128 * 1024 * 1024); // stay sane.
-      ClearMemoryStateOnFree(sp_min, sp_max);
+      ClearMemoryState(sp_min, sp_max);
       thr->SetStack(sp_min, sp_max);
     }
   }
