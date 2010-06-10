@@ -1389,6 +1389,26 @@ class Mask {
     }
   }
 
+  // Get index of some set bit (asumes mask is non zero).
+  size_t GetSomeSetBit() {
+    DCHECK(m_);
+    size_t ret;
+#ifdef __GNUC__
+    ret =  __builtin_ctzl(m_);
+#elif defined(_MSC_VER)
+    uintptr_t index;
+    if (sizeof(uintptr_t) == 8)
+      _BitScanReverse64(&index, m_);
+    else 
+      _BitScanReverse(&index, m_);
+    ret = index;
+#else
+# error "Unsupported"
+#endif
+    DCHECK(this->Get(ret));
+    return ret;
+  }
+
   void Subtract(Mask m) { m_ &= ~m.m_; }
   void Union(Mask m) { m_ |= m.m_; }
 
@@ -3103,11 +3123,12 @@ static void PublishRange(uintptr_t a, uintptr_t b, VTS *vts) {
 }
 
 // -------- Clear Memory State ------------------ {{{1
-static void NOINLINE UnrefSegmentsInMemoryRange(uintptr_t a, uintptr_t b,
+static void INLINE UnrefSegmentsInMemoryRange(uintptr_t a, uintptr_t b,
                                                 Mask mask, CacheLine *line) {
-  DCHECK(!mask.Empty());
-  for (uintptr_t x = a; x < b; x++) {  // slow?
-    if (!mask.Get(x)) continue;
+  while (!mask.Empty()) {
+    uintptr_t x = mask.GetSomeSetBit();
+    DCHECK(mask.Get(x));
+    mask.Clear(x);
     ShadowValue sval = line->GetValue(x);
     SSID rd_ssid = sval.rd_ssid();
     if (!rd_ssid.IsEmpty()) {
@@ -3136,9 +3157,7 @@ void INLINE ClearMemoryStateInOneLine(uintptr_t addr,
     ClearPublishedAttribute(line, mask);
   }
   Mask old_used = line->ClearRangeAndReturnOldUsed(beg, end);
-  if (UNLIKELY(!old_used.Empty())) {
-    UnrefSegmentsInMemoryRange(beg, end, old_used, line);
-  }
+  UnrefSegmentsInMemoryRange(beg, end, old_used, line);
 }
 
 // clear memory state for [a,b)
