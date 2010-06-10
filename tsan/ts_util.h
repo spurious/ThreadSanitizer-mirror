@@ -67,6 +67,7 @@ extern void ThreadSanitizerDumpAllStacks();
 # undef NDEBUG  // Assert is always on.
 # include <assert.h>
 # include <stdio.h>
+# include <intrin.h>
 # define TS_USE_WIN_STL
 
 #else
