@@ -298,7 +298,7 @@ static void TLEBFlushUnlocked(ThreadLocalEventBuffer &tleb) {
 
   if (1 || DEBUG_MODE) {
     size_t max_idx = TS_ARRAY_SIZE(G_stats->tleb_flush);
-    size_t idx = (tleb.size * max_idx - 1) / kThreadLocalEventBufferSize;
+    size_t idx = min(u32_log2(tleb.size), max_idx - 1);
     CHECK(idx < max_idx);
     G_stats->tleb_flush[idx]++;
   }
