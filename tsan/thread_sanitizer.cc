@@ -2960,7 +2960,7 @@ class Cache {
     }
   }
 
-  static const int kNumLines = 1 << 16;
+  static const int kNumLines = 1 << 21;
   CacheLine *lines_[kNumLines];
 
   // tag => CacheLine
