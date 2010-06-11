@@ -6400,10 +6400,12 @@ int     GLOB = 0;
 void Worker(int depth) {
   CHECK(depth >= 0);
   if (depth > 0) {
-    ThreadPool pool(2);
-    pool.StartWorkers();
-    pool.Add(NewCallback(Worker, depth-1));
-    pool.Add(NewCallback(Worker, depth-1));
+    MyThread t1((MyThread::worker_t)Worker, (void*)(depth - 1));
+    MyThread t2((MyThread::worker_t)Worker, (void*)(depth - 1));
+    t1.Start();
+    t2.Start();
+    t1.Join();
+    t2.Join();
   } else {
     GLOB++; // Race here
   }
@@ -6411,11 +6413,13 @@ void Worker(int depth) {
 
 TEST(StressTests, ThreadTree3) {
   ANNOTATE_EXPECT_RACE(&GLOB, "StressTests.ThreadTree3 race");
+  ANNOTATE_TRACE_MEMORY(&GLOB);
   Worker(3);
 }
 
 TEST(StressTests, DISABLED_ThreadTree7) {
   ANNOTATE_EXPECT_RACE(&GLOB, "StressTests.ThreadTree7 race");
+  ANNOTATE_TRACE_MEMORY(&GLOB);
   Worker(7);
 }
 }  // namespace test313
