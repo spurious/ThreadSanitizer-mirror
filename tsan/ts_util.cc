@@ -370,18 +370,21 @@ FILE *OpenSocketForWriting(const string &host_and_port) {
 #endif
 //--------- TSLock ------------------ {{{1
 #ifdef _MSC_VER
+//# define TS_LOCK_PIPE
 # define TS_LOCK_PIN
 #else
 # define TS_LOCK_PIPE
 #endif
 
-#if defined(TS_LOCK_PIPE) && defined(TS_PIN) && defined(__GNUC__)
+#if defined(TS_LOCK_PIPE) && defined(TS_PIN)
+#ifdef __GNUC__
 #include <unistd.h>
 // Lock based on pipe's send/receive. The idea is shamelessly stolen from
 // valgrind's /coregrind/m_scheduler/sema.c
 struct TSLock::Rep {
   char pipe_char;
   int pipe_fd[2];
+
   void Write() {
     char buf[2];
     buf[0] = pipe_char;
@@ -402,19 +405,61 @@ struct TSLock::Rep {
     if (pipe_char == 'Z' + 1) pipe_char = 'A';
     return true;
   }
+  void Open() {
+    CHECK(0 == pipe(pipe_fd));
+    CHECK(pipe_fd[0] != pipe_fd[1]);
+    pipe_char = 'A';
+  }
+  void Close() {
+    close(pipe_fd[0]);
+    close(pipe_fd[1]);
+  }
 };
+#elif defined(_MSC_VER)
+struct TSLock::Rep {
+  char pipe_char;
+  WINDOWS::HANDLE pipe_fd[2];
+  void Write() {
+    char buf[2];
+    buf[0] = pipe_char;
+    buf[1] = 0;
+    WINDOWS::DWORD n_written = 0;
+    int res = WINDOWS::WriteFile(pipe_fd[1], buf, 1, &n_written, NULL);
+    CHECK(res != 0 && n_written == 1);
+  }
+  bool Read() {
+    char buf[2];
+    buf[0] = 0;
+    buf[1] = 0;
+    WINDOWS::DWORD n_read  = 0;
+    int res = WINDOWS::ReadFile(pipe_fd[0], buf, 1, &n_read, NULL);
+    if (res == 0 && n_read == 0)
+      return false;
+    //Printf("rep::Read: %c\n", buf[0]);
+
+    pipe_char++;
+    if (pipe_char == 'Z' + 1) pipe_char = 'A';
+    return true;
+  }
+  void Open() {
+    CHECK(WINDOWS::CreatePipe(&pipe_fd[0], &pipe_fd[1], NULL, 0));
+    CHECK(pipe_fd[0] != pipe_fd[1]);
+    pipe_char = 'A';
+  }
+  void Close() {
+    WINDOWS::CloseHandle(pipe_fd[0]);
+    WINDOWS::CloseHandle(pipe_fd[1]);
+  }
+};
+#endif
 
 TSLock::TSLock() {
   rep_ = new Rep;
-  int r = pipe(rep_->pipe_fd);
-  CHECK(r == 0);
-  CHECK(rep_->pipe_fd[0] != rep_->pipe_fd[1]);
-  rep_->pipe_char = 'A';
+  rep_->Open();
   rep_->Write();
 }
 TSLock::~TSLock() {
-  close(rep_->pipe_fd[0]);
-  close(rep_->pipe_fd[1]);
+  rep_->Close();
 }
 void TSLock::Lock() {
   while(rep_->Read() == false)
@@ -423,8 +468,7 @@ void TSLock::Lock() {
 void TSLock::Unlock() {
   rep_->Write();
 }
-#endif  // TS_LOCK_PIPE
-
+#endif  // __GNUC__ & TS_LOCK_PIPE
 
 #if defined(TS_LOCK_PIN) && defined(TS_PIN)
 #include "pin.H"
