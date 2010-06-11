@@ -92,7 +92,7 @@ struct FLAGS {
 
   intptr_t     literace_sampling;
 
-  bool         separate_analysis_thread;
+  intptr_t     locking_scheme;  // Used for internal experiments with locking.
 
   bool         report_races;
   bool         thread_coverage;

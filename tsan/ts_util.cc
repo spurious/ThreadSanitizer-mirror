@@ -369,8 +369,11 @@ FILE *OpenSocketForWriting(const string &host_and_port) {
 }
 #endif
 //--------- TSLock ------------------ {{{1
-// #define TS_LOCK_PIPE
-#define TS_LOCK_PIN
+#ifdef _MSC_VER
+# define TS_LOCK_PIN
+#else
+# define TS_LOCK_PIPE
+#endif
 
 #if defined(TS_LOCK_PIPE) && defined(TS_PIN) && defined(__GNUC__)
 #include <unistd.h>

@@ -108,7 +108,26 @@ static int n_started_threads = 0;
 
 const uint32_t kMaxThreads = PIN_MAX_THREADS;
 
+// Experimental locking schemes (choosen by --locking_scheme=<n>).
+// The ThreadSanitizer is single-threaded (alas) so we have to serialize all
+// callbacks to ThreadSanitizer.
+enum {
+  // Just acquire the lock before the callbacks and the releise afterwrds.
+  LOCKING_ON_FLUSH        = 1,
+  // Do all analysis in a separate thread, pass events via a locked queue.
+  LOCKING_SEPARATE_THREAD = 2,
+  // Valgrind-like serialization: a thread holds a lock for a long time.
+  // The release happens:
+  //  - before a syscall
+  //  - when the current thread consumed a large number of events.
+  //  - on special events like thread create/start/end/join.
+  LOCKING_ON_SYSCALL      = 3,
+};
+
+// Serializes the ThreadSanitizer callbacks.
 static TSLock g_main_ts_lock;
+
+// Serializes calls to pthread_create and CreateThread.
 static TSLock g_thread_create_lock;
 // Under g_thread_create_lock.
 static THREADID g_tid_of_thread_which_called_create_thread = -1;
@@ -161,6 +180,8 @@ struct PinThread {
   int spin_lock_recursion_depth;
   bool         thread_finished;
   bool         thread_done;
+  bool         holding_lock;
+  int          n_flushes;
 };
 
 // Array of pin threads, indexed by pin's THREADID.
@@ -169,7 +190,7 @@ static PinThread *g_pin_threads;
 // If true, ignore all accesses in all threads.
 static bool global_ignore;
 
-// Used only if separate_analysis_thread==true.
+// Used only if locking_scheme=LOCKING_SEPARATE_THREAD.
 static vector<ThreadLocalEventBuffer *> *g_tleb_queue;
 
 #ifdef _MSC_VER
@@ -195,7 +216,7 @@ void PcToStrings(uintptr_t pc, bool demangle,
                 string *file_name, int *line_no) {
   if (G_flags->symbolize) {
     RTN rtn;
-    G_stats->lock_sites[5]++;
+    //G_stats->lock_sites[5]++;
     ScopedReentrantClientLock lock(__LINE__);
     // ClientLock must be held.
     PIN_GetSourceLocation(pc, NULL, line_no, file_name);
@@ -215,7 +236,7 @@ string PcToRtnName(uintptr_t pc, bool demangle) {
   string res;
   if (G_flags->symbolize) {
     {
-      G_stats->lock_sites[6]++;
+      //G_stats->lock_sites[6]++;
       ScopedReentrantClientLock lock(__LINE__);
       RTN rtn = RTN_FindByAddress(pc);
       if (RTN_Valid(rtn)) {
@@ -275,6 +296,29 @@ static bool DumpEventPlainText(EventType type, int32_t tid, uintptr_t pc,
           (long)pc, (long)a, (long)info);
   return true;
 #endif
+}
+
+static void AcquireSyscallLock(THREADID tid) {
+  CHECK(G_flags->locking_scheme == LOCKING_ON_SYSCALL);
+  PinThread &t = g_pin_threads[tid];
+  if (!t.holding_lock) {
+    G_stats->lock_sites[3]++;
+    g_main_ts_lock.Lock();
+    t.holding_lock = true;
+    // Printf("T%d acquire\n", t.uniq_tid);
+  }
+}
+
+static void ReleaseSyscallLock(THREADID tid, int where) {
+  if (G_flags->locking_scheme != LOCKING_ON_SYSCALL)
+    return;
+  PinThread &t = g_pin_threads[tid];
+  if (t.holding_lock) {
+    // Printf("T%d release syscall lock, line %d\n", tid, where);
+    t.holding_lock = false;
+    t.n_flushes = 0;
+    g_main_ts_lock.Unlock();
+  }
 }
 
 static void DumpEventInternal(EventType type, int32_t uniq_tid, uintptr_t pc,
@@ -411,22 +455,33 @@ static void TLEBFlushLocked(PinThread &t) {
     return;
   }
   CHECK(t.tleb.size <= kThreadLocalEventBufferSize);
-  G_stats->lock_sites[1]++;
-  if (G_flags->separate_analysis_thread) {
+  int locking_scheme = G_flags->locking_scheme;
+  if (locking_scheme == LOCKING_SEPARATE_THREAD) {
     ThreadLocalEventBuffer *tleb_copy = new ThreadLocalEventBuffer;
     memcpy(tleb_copy, &t.tleb, sizeof(uintptr_t) * (t.tleb.size + 2));
     tleb_copy->t = &t;
     CHECK(g_tleb_queue);
     {
+      G_stats->lock_sites[2]++;
       ScopedLock lock(&g_main_ts_lock);
       g_tleb_queue->push_back(tleb_copy);
       // Printf("Sent     %p t=%d size=%ld\n", tleb_copy,
       // (int)tleb_copy->t->tid, tleb_copy->size);
     }
     t.tleb.size = 0;
-  } else {
+  } else if (locking_scheme == LOCKING_ON_FLUSH){
+    G_stats->lock_sites[0]++;
     ScopedLock lock(&g_main_ts_lock);
     TLEBFlushUnlocked(t.tleb);
+  } else if (locking_scheme == LOCKING_ON_SYSCALL) {
+    AcquireSyscallLock(t.tid);
+    TLEBFlushUnlocked(t.tleb);
+    t.n_flushes++;
+    if (t.n_flushes > 1000) {
+      ReleaseSyscallLock(t.tid, __LINE__);
+    }
+  } else {
+    CHECK(0);
   }
 }
 
@@ -793,8 +848,8 @@ void TmpCallback2(THREADID tid, ADDRINT pc) {
 
 //--------- Threads --------------------------------- {{{2
 static void HandleThreadCreateBefore(THREADID tid, ADDRINT pc) {
-  G_stats->lock_sites[8]++;
   DumpEvent(THR_CREATE_BEFORE, tid, pc, 0, 0);
+  ReleaseSyscallLock(tid, __LINE__);
   g_thread_create_lock.Lock();
   CHECK(g_tid_of_thread_which_called_create_thread == (THREADID)-1);
   g_tid_of_thread_which_called_create_thread = tid;
@@ -821,7 +876,7 @@ static THREADID HandleThreadCreateAfter(THREADID tid, pthread_t child_ptid) {
   g_thread_create_lock.Unlock();
 
   DumpEvent(THR_CREATE_AFTER, tid, 0, 0, uniq_tid_of_child);
-
+  ReleaseSyscallLock(tid, __LINE__);
   return last_child_tid;
 }
 
@@ -845,7 +900,6 @@ void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
   if (g_pin_threads == NULL) {
     g_pin_threads = new PinThread[kMaxThreads];
   }
-  PinThread &t = g_pin_threads[tid];
   PIN_SetContextReg(ctxt, tls_reg, (ADDRINT)0xfafafa);
 
   bool has_parent = true;
@@ -857,6 +911,7 @@ void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
   }
 
   CHECK(tid < kMaxThreads);
+  PinThread &t = g_pin_threads[tid];
   memset(&t, 0, sizeof(PinThread));
   t.uniq_tid = n_started_threads++;
   t.tid = tid;
@@ -944,6 +999,7 @@ void CallbackForThreadFini(THREADID tid, const CONTEXT *ctxt,
   if (debug_thread) {
     Printf("T%d Thread finished (ptid=%d)\n", tid, t.my_ptid);
   }
+  ReleaseSyscallLock(tid, __LINE__);
 }
 
 static bool HandleThreadJoinAfter(THREADID tid, pthread_t joined_ptid) {
@@ -985,7 +1041,14 @@ static bool HandleThreadJoinAfter(THREADID tid, pthread_t joined_ptid) {
     Printf("T%d JoinAfter   parent=%d child=%d (uniq=%d)\n", tid, tid,
            joined_tid, joined_uniq_tid);
   }
+  ReleaseSyscallLock(tid, __LINE__);
+
+  // Here we send an event for a different thread (joined_tid), which is already
+  // dead.
   DumpEvent(THR_END, joined_tid, 0, 0, 0);
+  ReleaseSyscallLock(joined_tid, __LINE__);
+
+
   DumpEvent(THR_JOIN_AFTER, tid, 0, joined_uniq_tid, 0);
   return true;
 }
@@ -1512,6 +1575,7 @@ void InsertBeforeEvent_SysCall(THREADID tid, ADDRINT sp) {
   PinThread &t = g_pin_threads[tid];
   UpdateCallStack(t, sp);
   TLEBFlushLocked(t);
+  ReleaseSyscallLock(tid, __LINE__);
 }
 
 void InsertBeforeEvent_Call(THREADID tid, ADDRINT pc, ADDRINT target,
@@ -2864,7 +2928,7 @@ static void ThreadSanitizerThread(void *) {
   }
 }
 static void StartThreadSanitizerThread() {
-  if (G_flags->separate_analysis_thread == false) return;
+  if (G_flags->locking_scheme != LOCKING_SEPARATE_THREAD) return;
   g_tleb_queue = new vector<ThreadLocalEventBuffer*>;
   PIN_THREAD_UID uid;
   PIN_SpawnInternalThread(&ThreadSanitizerThread, NULL, 0, &uid);
@@ -2872,7 +2936,7 @@ static void StartThreadSanitizerThread() {
 
 //--------- Fini ---------- {{{1
 static void CallbackForFini(INT32 code, void *v) {
-  if (!G_flags->separate_analysis_thread) {
+  if (G_flags->locking_scheme != LOCKING_SEPARATE_THREAD) {
     DumpEvent(THR_END, 0, 0, 0, 0);
   }
   ThreadSanitizerFini();
