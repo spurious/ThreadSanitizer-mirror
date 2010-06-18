@@ -2804,7 +2804,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_BEFORE_4("AnnotatePublishMemoryRange", On_AnnotatePublishMemoryRange);
   INSERT_BEFORE_4("AnnotateUnpublishMemoryRange", On_AnnotateUnpublishMemoryRange);
   INSERT_BEFORE_3("AnnotateMutexIsUsedAsCondVar", On_AnnotateMutexIsUsedAsCondVar);
-  INSERT_BEFORE_3("AnnotateMutexIsNotPhb", On_AnnotateMutexIsNotPhb);
+  INSERT_BEFORE_3("AnnotateMutexIsNotPHB", On_AnnotateMutexIsNotPhb);
 
   INSERT_BEFORE_3("AnnotatePCQCreate", On_AnnotatePCQCreate);
   INSERT_BEFORE_3("AnnotatePCQDestroy", On_AnnotatePCQDestroy);
