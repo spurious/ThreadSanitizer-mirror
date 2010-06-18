@@ -2475,6 +2475,13 @@ ANN_FUNC(void, AnnotateMutexIsUsedAsCondVar, char *file, int line, void *mu)
   DO_CREQ_v_W(TSREQ_MUTEX_IS_USED_AS_CONDVAR,   void*, mu);
 }
 
+ANN_FUNC(void, AnnotateMutexIsNotPHB, char *file, int line, void *mu)
+{
+  const char *name = "AnnotateMutexIsNotPhb";
+  ANN_TRACE("--#%d %s[%p] %s:%d\n", tid, name, mu, file, line);
+  DO_CREQ_v_W(TSREQ_MUTEX_IS_NOT_PHB, void*, mu);
+}
+
 ANN_FUNC(void, AnnotateTraceMemory, char *file, int line, void *mem)
 {
   const char *name = "AnnotateTraceMemory";

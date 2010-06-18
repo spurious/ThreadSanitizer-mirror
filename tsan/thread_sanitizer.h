@@ -115,6 +115,8 @@ struct FLAGS {
   vector<string> race_verifier;
   vector<string> race_verifier_extra;
   intptr_t       race_verifier_sleep_ms;
+
+  bool nacl_untrusted;
 };
 
 extern FLAGS *G_flags;
@@ -187,6 +189,14 @@ struct ExpectedRace {
 };
 
 ExpectedRace* ThreadSanitizerFindExpectedRace(uintptr_t addr);
+
+// Tell ThreadSanitizer about the location of NaCl untrusted region.
+void ThreadSanitizerNaclUntrustedRegion(uintptr_t mem_start, uintptr_t mem_end);
+
+// Returns true if accesses and locks at the given address should be ignored
+// according to the current NaCl flags (--nacl-untrusted). Always false if not a
+// NaCl program.
+bool ThreadSanitizerIgnoreForNacl(uintptr_t addr);
 
 // end. {{{1
 #endif  //  THREAD_SANITIZER_H_

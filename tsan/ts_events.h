@@ -72,6 +72,7 @@ enum EventType {
   PUBLISH_RANGE,      // may be deprecated later.
   UNPUBLISH_RANGE,    // deprecated. TODO(kcc): get rid of this.
   HB_LOCK,            // {tid, pc, addr, 0}
+  NON_HB_LOCK,        // {tid, pc, addr, 0}
   IGNORE_READS_BEG,   // {tid, pc, 0, 0}
   IGNORE_READS_END,   // {tid, pc, 0, 0}
   IGNORE_WRITES_BEG,  // {tid, pc, 0, 0}

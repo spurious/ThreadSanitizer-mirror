@@ -36,6 +36,8 @@
 #include "ts_trace_info.h"
 #include "ts_literace.h"
 
+#include "coregrind/pub_core_clreq.h"
+
 
 //---------------------- C++ malloc support -------------- {{{1
 class MallocCostCenterStack {
@@ -557,15 +559,26 @@ void evh__pre_thread_ll_exit ( ThreadId quit_tid ) {
 
   extern "C" void VG_(show_all_errors)();
 
-// Whether we are currently ignoring sync events for the given thread.
-static inline Bool ignoring_sync(ThreadId vg_tid) {
+// Whether we are currently ignoring sync events for the given thread at the
+// given address.
+static inline Bool ignoring_sync(ThreadId vg_tid, uintptr_t addr) {
   // We ignore locking events if ignore_sync != 0 and if we are not
   // inside a signal handler.
-  return g_valgrind_threads[vg_tid].ignore_sync &&
-      !g_valgrind_threads[vg_tid].in_signal_handler;
+  return (g_valgrind_threads[vg_tid].ignore_sync &&
+          !g_valgrind_threads[vg_tid].in_signal_handler) ||
+      ThreadSanitizerIgnoreForNacl(addr);
 }
 
 Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
+  if (args[0] == VG_USERREQ__NACL_MEM_START) {
+    // This will get truncated on x86-32, but we don't support it with NaCl
+    // anyway.
+    const uintptr_t kFourGig = (uintptr_t)0x100000000ULL;
+    uintptr_t mem_start = args[1];
+    uintptr_t mem_end = mem_start + kFourGig;
+    ThreadSanitizerNaclUntrustedRegion(mem_start, mem_end);
+    return True;
+  }
   if (!VG_IS_TOOL_USERREQ('T', 'S', args[0]))
     return False;
   ValgrindThread *thr = &g_valgrind_threads[vg_tid];
@@ -640,6 +653,9 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
     case TSREQ_MUTEX_IS_USED_AS_CONDVAR:
       Put(HB_LOCK, ts_tid, pc, /*lock=*/args[1], 0);
       break;
+    case TSREQ_MUTEX_IS_NOT_PHB:
+      Put(NON_HB_LOCK, ts_tid, pc, /*lock=*/args[1], 0);
+      break;
     case TSREQ_GLOBAL_IGNORE_ON:
       Report("INFO: GLOBAL IGNORE ON\n");
       global_ignore = true;
@@ -698,12 +714,12 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
       Put(LOCK_DESTROY, ts_tid, pc, /*lock=*/args[1], 0);
       break;
     case TSREQ_PTHREAD_RWLOCK_LOCK_POST:
-      if (ignoring_sync(vg_tid))
+      if (ignoring_sync(vg_tid, args[1]))
         break;
       Put(args[2] ? WRITER_LOCK : READER_LOCK, ts_tid, pc, /*lock=*/args[1], 0);
       break;
     case TSREQ_PTHREAD_RWLOCK_UNLOCK_PRE:
-      if (ignoring_sync(vg_tid))
+      if (ignoring_sync(vg_tid, args[1]))
         break;
       Put(UNLOCK, ts_tid, pc, /*lock=*/args[1], 0);
       break;
@@ -714,12 +730,12 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
     case TSREQ_POSIX_SEM_DESTROY_PRE:
       break;
     case TSREQ_SIGNAL:
-      if (ignoring_sync(vg_tid))
+      if (ignoring_sync(vg_tid, args[1]))
         break;
       Put(SIGNAL, ts_tid, pc, args[1], 0);
       break;
     case TSREQ_WAIT:
-      if (ignoring_sync(vg_tid))
+      if (ignoring_sync(vg_tid, args[1]))
         break;
       Put(WAIT, ts_tid, pc, args[1], 0);
       break;

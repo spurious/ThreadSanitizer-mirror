@@ -7292,6 +7292,35 @@ TEST(IgnoreTests, IndirectCallToFunR) {
 }
 }  // namespace
 
+namespace MutexNotPhbTests {
+
+int GLOB = 0;
+Mutex mu;
+StealthNotification n;
+
+void SignalThread() {
+  GLOB = 1;
+  mu.Lock();
+  mu.Unlock();
+  n.signal();
+}
+
+void WaitThread() {
+  n.wait();
+  mu.Lock();
+  mu.Unlock();
+  GLOB = 2;
+}
+
+TEST(MutexNotPhbTests, MutexNotPhbTest) {
+  ANNOTATE_NOT_HAPPENS_BEFORE_MUTEX(&mu);
+  ANNOTATE_EXPECT_RACE(&GLOB, "MutexNotPhbTest. TP.");
+  MyThreadArray mta(SignalThread, WaitThread);
+  mta.Start();
+  mta.Join();
+}
+} // namespace
+
 namespace RaceVerifierTests_Simple {
 int     GLOB = 0;
 

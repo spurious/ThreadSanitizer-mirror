@@ -2041,6 +2041,12 @@ static void On_AnnotateMutexIsUsedAsCondVar(THREADID tid, ADDRINT pc,
   DumpEvent(HB_LOCK, tid, pc, mu, 0);
 }
 
+static void On_AnnotateMutexIsNotPhb(THREADID tid, ADDRINT pc,
+                                     ADDRINT file, ADDRINT line,
+                                     ADDRINT mu) {
+  DumpEvent(NON_HB_LOCK, tid, pc, mu, 0);
+}
+
 static void On_AnnotatePCQCreate(THREADID tid, ADDRINT pc,
                                  ADDRINT file, ADDRINT line,
                                  ADDRINT pcq) {
@@ -2798,6 +2804,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_BEFORE_4("AnnotatePublishMemoryRange", On_AnnotatePublishMemoryRange);
   INSERT_BEFORE_4("AnnotateUnpublishMemoryRange", On_AnnotateUnpublishMemoryRange);
   INSERT_BEFORE_3("AnnotateMutexIsUsedAsCondVar", On_AnnotateMutexIsUsedAsCondVar);
+  INSERT_BEFORE_3("AnnotateMutexIsNotPhb", On_AnnotateMutexIsNotPhb);
 
   INSERT_BEFORE_3("AnnotatePCQCreate", On_AnnotatePCQCreate);
   INSERT_BEFORE_3("AnnotatePCQDestroy", On_AnnotatePCQDestroy);

@@ -63,6 +63,9 @@ size_t g_last_flush_time;
 // Incremented on each Lock and Unlock. Used by LockHistory.
 uint32_t g_lock_era = 0;
 
+uintptr_t g_nacl_mem_start = (uintptr_t)-1;
+uintptr_t g_nacl_mem_end = (uintptr_t)-1;
+
 FLAGS *G_flags = NULL;
 
 bool g_race_verifier_active = false;
@@ -567,7 +570,7 @@ class Lock {
     Lock *res = LookupOrCreate(lock_addr);
     res->rd_held_ = 0;
     res->wr_held_ = 0;
-    res->is_pure_happens_before_ = false;
+    res->is_pure_happens_before_ = G_flags->pure_happens_before;
     res->last_lock_site_ = NULL;
     return res;
   }
@@ -689,7 +692,7 @@ class Lock {
       lid_(lid),
       rd_held_(0),
       wr_held_(0),
-      is_pure_happens_before_(false),
+      is_pure_happens_before_(G_flags->pure_happens_before),
       last_lock_site_(0),
       name_(NULL) {
   }
@@ -863,6 +866,19 @@ class LockSet {
     ret = (end == intersection.begin());
     ls_intersection_cache_->Insert(lsid1.raw(), -lsid2.raw(), ret);
     return ret;
+  }
+
+  static bool HasNonPhbLocks(LSID lsid) {
+    if (lsid.IsEmpty())
+      return false;
+    if (lsid.IsSingleton())
+      return !Lock::LIDtoLock(LID(lsid.raw()))->is_pure_happens_before();
+
+    LSSet set = Get(lsid);
+    for (LSSet::iterator it = set.begin(); it != set.end(); ++it)
+      if (!Lock::LIDtoLock(*it)->is_pure_happens_before())
+        return true;
+    return false;
   }
 
   static string ToString(LSID lsid) {
@@ -3683,9 +3699,10 @@ struct Thread {
       lock->RdLock(CreateStackTrace());
     }
 
-    if (G_flags->pure_happens_before || lock->is_pure_happens_before()) {
+    if (lock->is_pure_happens_before()) {
       HandleWait(lock->lock_addr());
     }
+
     if (G_flags->suggest_happens_before_arcs) {
       lock_history_.OnLock(lock->lid());
     }
@@ -3716,7 +3733,7 @@ struct Thread {
       ReportStackTrace(0, 7);
     }
 
-    if (G_flags->pure_happens_before || lock->is_pure_happens_before()) {
+    if (lock->is_pure_happens_before()) {
       HandleSignal(lock->lock_addr());
     }
 
@@ -5267,6 +5284,7 @@ class Detector {
         break;
 
       case HB_LOCK     : HandleHBLock();       break;
+      case NON_HB_LOCK : HandleNonHBLock();    break;
 
       case IGNORE_READS_BEG:  HandleIgnore(false, true);  break;
       case IGNORE_READS_END:  HandleIgnore(false, false); break;
@@ -5409,6 +5427,16 @@ class Detector {
     Lock *lock = Lock::LookupOrCreate(e_->a());
     CHECK(lock);
     lock->set_is_pure_happens_before(true);
+  }
+
+  // NON_HB_LOCK
+  void HandleNonHBLock() {
+    if (G_flags->verbosity >= 2) {
+      e_->Print();
+    }
+    Lock *lock = Lock::LookupOrCreate(e_->a());
+    CHECK(lock);
+    lock->set_is_pure_happens_before(false);
   }
 
   void INLINE HandleStackMem(TID tid, uintptr_t addr, uintptr_t size) {
@@ -5555,7 +5583,9 @@ class Detector {
           return true;
         } else {
           // In happens-before mode the intersection of the LSes must be empty.
-          DCHECK(!G_flags->pure_happens_before);
+          DCHECK(!G_flags->pure_happens_before ||
+                 LockSet::HasNonPhbLocks(w1_ls) ||
+                 LockSet::HasNonPhbLocks(w2_ls));
         }
       }
       // check all write-read pairs
@@ -5569,7 +5599,9 @@ class Detector {
           return true;
         } else {
           // In happens-before mode the intersection of the LSes must be empty.
-          DCHECK(!G_flags->pure_happens_before);
+          DCHECK(!G_flags->pure_happens_before ||
+                 LockSet::HasNonPhbLocks(w1_ls) ||
+                 LockSet::HasNonPhbLocks(r_ls));
         }
       }
     }
@@ -6507,6 +6539,8 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
     Printf("INFO: ThreadSanitizer running in Race Verifier mode.\n");
   }
 
+  FindBoolFlag("nacl_untrusted", false, args, &G_flags->nacl_untrusted);
+
   if (!args->empty()) {
     ReportUnknownFlagAndExit(args->front());
   }
@@ -6674,22 +6708,38 @@ bool StringVectorMatch(const vector<string>& v, const string& s) {
   return false;
 }
 
+void ThreadSanitizerNaclUntrustedRegion(uintptr_t mem_start, uintptr_t mem_end) {
+  g_nacl_mem_start = mem_start;
+  g_nacl_mem_end = mem_end;
+}
+
+bool AddrIsInNaclUntrustedRegion(uintptr_t addr) {
+  return addr >= g_nacl_mem_start && addr < g_nacl_mem_end;
+}
+
+bool ThreadSanitizerIgnoreForNacl(uintptr_t addr) {
+  // Ignore trusted addresses if tracing untrusted code, and ignore untrusted
+  // addresses otherwise.
+  return G_flags->nacl_untrusted != AddrIsInNaclUntrustedRegion(addr);
+}
+
 bool ThreadSanitizerWantToInstrumentSblock(uintptr_t pc) {
   string img_name, rtn_name, file_name;
   int line_no;
   G_stats->pc_to_strings++;
   PcToStrings(pc, false, &img_name, &rtn_name, &file_name, &line_no);
 
-  bool ret = !(StringVectorMatch(g_ignore_lists->files, file_name)
+  bool ignore = StringVectorMatch(g_ignore_lists->files, file_name)
         || StringVectorMatch(g_ignore_lists->objs, img_name)
         || StringVectorMatch(g_ignore_lists->funs, rtn_name)
-        || StringVectorMatch(g_ignore_lists->funs_r, rtn_name));
+        || StringVectorMatch(g_ignore_lists->funs_r, rtn_name);
   if (0) {
     Printf("%s: pc=%p file_name=%s img_name=%s rtn_name=%s ret=%d\n",
            __FUNCTION__, pc, file_name.c_str(), img_name.c_str(),
-           rtn_name.c_str(), ret);
+           rtn_name.c_str(), !ignore);
   }
-  return ret;
+  bool nacl_ignore = ThreadSanitizerIgnoreForNacl(pc);
+  return !(ignore || nacl_ignore);
 }
 
 bool ThreadSanitizerWantToCreateSegmentsOnSblockEntry(uintptr_t pc) {
