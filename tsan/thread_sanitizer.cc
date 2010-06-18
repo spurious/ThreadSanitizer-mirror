@@ -128,7 +128,7 @@ class ID {
   typedef int32_t T;
   explicit ID(T id) : id_(id) {}
   ID(const ID &id) : id_(id.id_) {}
-  bool operator ==  (const ID &id) const { return id_ == id.id_; }
+  INLINE bool operator ==  (const ID &id) const { return id_ == id.id_; }
   bool operator !=  (const ID &id) const { return id_ != id.id_; }
   bool operator <  (const ID &id) const { return id_ < id.id_; }
   bool operator >  (const ID &id) const { return id_ > id.id_; }
@@ -276,7 +276,7 @@ class PairCache {
     }
   }
 
-  bool Lookup(A a, B b, Ret *v) {
+  INLINE bool Lookup(A a, B b, Ret *v) {
     // check the array
     if (kArraySize != 0 && ArrayLookup(a, b, v)) {
       G_stats->ls_cache_fast++;
@@ -309,7 +309,7 @@ class PairCache {
     }
   };
 
-  bool ArrayLookup(A a, B b, Ret *v) {
+  INLINE bool ArrayLookup(A a, B b, Ret *v) {
     for (int i = 0; i < (array_filled_ ? kArraySize : array_pos_); i++) {
       Entry & entry = array_[i];
       if (entry.Match(a, b)) {
@@ -730,7 +730,7 @@ static string SetOfLocksToString(const set<LID> &locks) {
 template <typename T, size_t SizeLimit = 1024>
 class FixedArray {
  public:
-  explicit FixedArray(size_t array_size)
+  explicit INLINE FixedArray(size_t array_size)
       : size_(array_size),
         array_((array_size <= SizeLimit
                 ? alloc_space_
@@ -1335,13 +1335,13 @@ class Mask {
   Mask() : m_(0) {}
   Mask(const Mask &m) : m_(m.m_) { }
   explicit Mask(uintptr_t m) : m_(m) { }
-  bool Get(uintptr_t idx) const   { return m_ & (kOne << idx); }
-  void Set(uintptr_t idx)   { m_ |= kOne << idx; }
-  void Clear(uintptr_t idx) { m_ &= ~(kOne << idx); }
-  bool Empty() const {return m_ == 0; }
+  INLINE bool Get(uintptr_t idx) const   { return m_ & (kOne << idx); }
+  INLINE void Set(uintptr_t idx)   { m_ |= kOne << idx; }
+  INLINE void Clear(uintptr_t idx) { m_ &= ~(kOne << idx); }
+  INLINE bool Empty() const {return m_ == 0; }
 
   // Clear bits in range [a,b) and return old [a,b) range.
-  Mask ClearRangeAndReturnOld(uintptr_t a, uintptr_t b) {
+  INLINE Mask ClearRangeAndReturnOld(uintptr_t a, uintptr_t b) {
     DCHECK(a < b);
     DCHECK(b <= kNBits);
     uintptr_t res;
@@ -1358,11 +1358,11 @@ class Mask {
     return Mask(res);
   }
 
-  void ClearRange(uintptr_t a, uintptr_t b) {
+  INLINE void ClearRange(uintptr_t a, uintptr_t b) {
     ClearRangeAndReturnOld(a, b);
   }
 
-  void SetRange(uintptr_t a, uintptr_t b) {
+  INLINE void SetRange(uintptr_t a, uintptr_t b) {
     DCHECK(a < b);
     DCHECK(b <= kNBits);
     uintptr_t n_bits_in_mask = (b - a);
@@ -1375,7 +1375,7 @@ class Mask {
     }
   }
 
-  uintptr_t GetRange(uintptr_t a, uintptr_t b) const {
+  INLINE uintptr_t GetRange(uintptr_t a, uintptr_t b) const {
     // a bug was fixed here
     DCHECK(a < b);
     DCHECK(b <= kNBits);
@@ -1455,7 +1455,7 @@ class Segment {
 
   // static methods
 
-  static uintptr_t *embedded_stack_trace(SID sid) {
+  static INLINE uintptr_t *embedded_stack_trace(SID sid) {
     DCHECK(sid.valid());
     DCHECK(kSizeOfHistoryStackTrace > 0);
     size_t chunk_idx = (unsigned)sid.raw() / kChunkSizeForStacks;
@@ -1557,7 +1557,7 @@ class Segment {
     }
   }
 
-  static Segment *Get(SID sid) {
+  static INLINE Segment *Get(SID sid) {
     AssertLive(sid, __LINE__);
     Segment *res = GetInternal(sid);
     DCHECK(res->vts());
@@ -1714,10 +1714,10 @@ class Segment {
   }
 
  private:
-  static Segment *GetSegmentByIndex(int32_t index) {
+  static INLINE Segment *GetSegmentByIndex(int32_t index) {
     return &all_segments_[index];
   }
-  static Segment *GetInternal(SID sid) {
+  static INLINE Segment *GetInternal(SID sid) {
     DCHECK(sid.valid());
     DCHECK(sid.raw() < n_segments_);
     Segment *res = GetSegmentByIndex(sid.raw());
@@ -2590,17 +2590,17 @@ class ShadowValue {
     wr_ssid_ = 0;
   }
 
-  bool IsNew() const { return rd_ssid_ == 0 && wr_ssid_ == 0; }
+  INLINE bool IsNew() const { return rd_ssid_ == 0 && wr_ssid_ == 0; }
   // new experimental state machine.
   SSID rd_ssid() const { return SSID(rd_ssid_); }
   SSID wr_ssid() const { return SSID(wr_ssid_); }
-  void set(SSID rd_ssid, SSID wr_ssid) {
+  INLINE void set(SSID rd_ssid, SSID wr_ssid) {
     rd_ssid_ = rd_ssid.raw();
     wr_ssid_ = wr_ssid.raw();
   }
 
   // comparison
-  bool operator == (const ShadowValue &sval) const {
+  INLINE bool operator == (const ShadowValue &sval) const {
     return rd_ssid_ == sval.rd_ssid_ &&
         wr_ssid_ == sval.wr_ssid_;
   }
@@ -2730,7 +2730,7 @@ class CacheLine : public CacheLineUncompressed {
   }
 
   // TODO(timurrrr): add a comment on how this actually works.
-  bool SameValueStored(uintptr_t addr, uintptr_t size) {
+  bool INLINE SameValueStored(uintptr_t addr, uintptr_t size) {
     uintptr_t off = ComputeOffset(addr);
     if (off & (size - 1)) return false;  // Not aligned.
     DCHECK(off + size <= kLineSize);

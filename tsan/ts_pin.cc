@@ -1544,7 +1544,7 @@ uintptr_t WRAP_NAME(free)(WRAP_PARAM4) {
 
 
 //-------- Routines and stack ---------------------- {{{2
-static void UpdateCallStack(PinThread &t, ADDRINT sp) {
+static INLINE void UpdateCallStack(PinThread &t, ADDRINT sp) {
   while (t.shadow_stack.size() > 0 && sp >= t.shadow_stack.back().sp) {
     TLEBAddRtnExit(t);
     size_t size = t.shadow_stack.size();
