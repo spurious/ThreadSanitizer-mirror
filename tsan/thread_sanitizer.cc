@@ -4308,7 +4308,7 @@ struct HeapInfo {
   uintptr_t   ptr;
   uintptr_t   size;
   SID         sid;
-  HeapInfo() :ptr(0), size(0), sid(0) { }
+  HeapInfo() : ptr(0), size(0), sid(0) { }
 
   Segment *seg() { return Segment::Get(sid); }
   TID tid() { return seg()->tid(); }
@@ -4316,6 +4316,14 @@ struct HeapInfo {
 };
 
 static HeapMap<HeapInfo> *G_heap_map;
+
+struct ThreadStackInfo {
+  uintptr_t   ptr;
+  uintptr_t   size;
+  ThreadStackInfo() : ptr(0), size(0) { }
+};
+
+static HeapMap<ThreadStackInfo> *G_thread_stack_map;
 
 // -------- Forget all state -------- {{{1
 // We need to forget all state and start over because we've
@@ -5204,9 +5212,9 @@ class Detector {
       case THR_STACK_TOP      : HandleThreadStackTop(); break;
 
       case THR_END     : HandleThreadEnd(TID(e_->tid()));     break;
-      case MALLOC      : HandleMalloc();     break;
+      case MALLOC      : HandleMalloc(false);     break;
       case FREE        : HandleFree();         break;
-      case MMAP        : HandleMalloc();      break;  // same as MALLOC
+      case MMAP        : HandleMalloc(true);      break;  // same as MALLOC
       case MUNMAP      : HandleMunmap();     break;
 
 
@@ -5906,7 +5914,7 @@ class Detector {
   }
 
   // MALLOC
-  void HandleMalloc() {
+  void HandleMalloc(bool is_mmap) {
     ScopedMallocCostCenter cc("HandleMalloc");
     TID tid = cur_tid_;
     uintptr_t a = e_->a();
@@ -5947,6 +5955,15 @@ class Detector {
     // CHECK(!G_heap_map->count(a));  // we may have two calls
                                       //  to AnnotateNewMemory.
     G_heap_map->InsertInfo(a, info);
+
+    if (is_mmap) {
+      // Mmap may be used for thread stack, so we should keep the mmap info
+      // when state is flushing.
+      ThreadStackInfo ts_info;
+      ts_info.ptr = a;
+      ts_info.size = size;
+      G_thread_stack_map->InsertInfo(a, ts_info);
+    }
   }
 
   // FREE
@@ -5983,14 +6000,18 @@ class Detector {
     // that may carve the existing mappings or split them into two parts.
     // It should also be possible to munmap() several mappings at a time.
     uintptr_t a = e_->a();
-    HeapInfo *info = G_heap_map->GetInfo(a);
+    HeapInfo *h_info = G_heap_map->GetInfo(a);
     uintptr_t size = e_->info();
-    if (!info || info->ptr != a || info->size != size)
-      return;
-    // TODO(glider): we may want to handle memory deletion and call
-    // Segment::Unref for all the unmapped memory.
-    Segment::Unref(info->sid, __FUNCTION__);
-    G_heap_map->EraseRange(a, a + size);
+    if (h_info && h_info->ptr != a && h_info->size != size) {
+      // TODO(glider): we may want to handle memory deletion and call
+      // Segment::Unref for all the unmapped memory.
+      Segment::Unref(h_info->sid, __FUNCTION__);
+      G_heap_map->EraseRange(a, a + size);
+    }
+
+    ThreadStackInfo *ts_info = G_thread_stack_map->GetInfo(a);
+    if (ts_info && ts_info->ptr != a && ts_info->size != size)
+      G_thread_stack_map->EraseRange(a, a + size);
   }
 
   void HandleThreadStart(TID child_tid, TID parent_tid, uintptr_t pc) {
@@ -6038,17 +6059,17 @@ class Detector {
     uintptr_t sp = e_->a();
     uintptr_t sp_min = 0, sp_max = 0;
     uintptr_t stack_size_if_known = e_->info();
-    HeapInfo *heap_info;
+    ThreadStackInfo *stack_info;
     if (stack_size_if_known) {
       sp_min = sp - stack_size_if_known;
       sp_max = sp;
-    } else if (NULL != (heap_info = G_heap_map->GetInfo(sp))){
+    } else if (NULL != (stack_info = G_thread_stack_map->GetInfo(sp))) {
       if (G_flags->verbosity >= 2) {
         Printf("T%d %s: %p\n%s\n", e_->tid(), __FUNCTION__,  sp,
              reports_.DescribeMemory(sp).c_str());
       }
-      sp_min = heap_info->ptr;
-      sp_max = heap_info->ptr + heap_info->size;
+      sp_min = stack_info->ptr;
+      sp_max = stack_info->ptr + stack_info->size;
     }
     if (debug_thread) {
       Printf("T%d SP: %p [%p %p)\n", e_->tid(), sp, sp_min, sp_max);
@@ -6732,6 +6753,7 @@ extern void ThreadSanitizerInit() {
   G_cache        = new Cache;
   G_expected_races_map = new ExpectedRacesMap;
   G_heap_map           = new HeapMap<HeapInfo>;
+  G_thread_stack_map   = new HeapMap<ThreadStackInfo>;
   {
     ScopedMallocCostCenter cc1("Segment::InitClassMembers");
     Segment::InitClassMembers();
