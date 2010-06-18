@@ -1146,10 +1146,15 @@ class VTS {
     return res;
   }
 
+  static INLINE void FlushHBCache() {
+    hb_cache_->Flush();
+  }
+
   static INLINE bool HappensBeforeCached(const VTS *vts_a, const VTS *vts_b) {
     bool res = false;
     if (hb_cache_->Lookup(vts_a->uniq_id_, vts_b->uniq_id_, &res)) {
       G_stats->n_vts_hb_cached++;
+      DCHECK(res == HappensBefore(vts_a, vts_b));
       return res;
     }
     res = HappensBefore(vts_a, vts_b);
@@ -3996,6 +4001,9 @@ struct Thread {
         Printf("%s\n", (*ctx)->ToString().c_str());
       }
     }
+
+    // Parent should have ticked its VTS so there should be no h-b.
+    DCHECK(!VTS::HappensBefore(parent->vts(), *vts));
   }
 
   // Support for Cyclic Barrier, e.g. pthread_barrier_t.
@@ -4198,6 +4206,7 @@ struct Thread {
     // G_flags->debug_level = 2;
     for (int i = 0; i < Thread::NumberOfThreads(); i++) {
       Thread *thr = Get(TID(i));
+      thr->child_tid_to_create_info_.clear();
       thr->recent_segments_cache_.ForgetAllState();
       thr->sid_ = SID();  // Reset the old SID so we don't try to read its VTS.
       VTS *singleton_vts = VTS::CreateSingleton(TID(i), 2);
@@ -4366,6 +4375,7 @@ static void ForgetAllStateAndStartOver(const char *reason) {
   SegmentSet::ForgetAllState();
   G_cache->ForgetAllState();
   Thread::ForgetAllState();
+  VTS::FlushHBCache();
 
   G_heap_map->Clear();
 

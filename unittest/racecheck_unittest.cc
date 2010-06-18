@@ -5518,7 +5518,7 @@ TEST(NegativeTests, StackReuseTest) {
   t.Join();
 }
 
-TEST(NegativeTests, DISABLED_StackReuseWithFlushTest) {
+TEST(NegativeTests, StackReuseWithFlushTest) {
   MyThreadArray t1(Worker0, Worker1, Worker2, Worker3);
   MyThreadArray t2(Worker0, Worker1, Worker2, Worker3);
   t1.Start();
