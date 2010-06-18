@@ -5476,10 +5476,10 @@ void Worker() {  // Spawn few threads that touch per_thread_global.
   t.Start();
   t.Join();
 }
-void Worker0() { sleep(0); Worker(); }
-void Worker1() { sleep(1); Worker(); }
-void Worker2() { sleep(2); Worker(); }
-void Worker3() { sleep(3); Worker(); }
+void Worker0() { usleep(0);      Worker(); }
+void Worker1() { usleep(100000); Worker(); }
+void Worker2() { usleep(200000); Worker(); }
+void Worker3() { usleep(300000); Worker(); }
 
 #ifdef WIN32
 TEST(NegativeTests, DISABLED_PerThreadTest) {  // issue #23
@@ -5507,15 +5507,26 @@ void Worker() {  // Spawn few threads that touch stack.
   t.Start();
   t.Join();
 }
-void Worker0() { sleep(0); Worker(); }
-void Worker1() { sleep(1); Worker(); }
-void Worker2() { sleep(2); Worker(); }
-void Worker3() { sleep(3); Worker(); }
+void Worker0() { usleep(0);      Worker(); }
+void Worker1() { usleep(100000); Worker(); }
+void Worker2() { usleep(200000); Worker(); }
+void Worker3() { usleep(300000); Worker(); }
 
 TEST(NegativeTests, StackReuseTest) {
   MyThreadArray t(Worker0, Worker1, Worker2, Worker3);
   t.Start();
   t.Join();
+}
+
+TEST(NegativeTests, DISABLED_StackReuseWithFlushTest) {
+  MyThreadArray t1(Worker0, Worker1, Worker2, Worker3);
+  MyThreadArray t2(Worker0, Worker1, Worker2, Worker3);
+  t1.Start();
+  ANNOTATE_FLUSH_STATE();
+  usleep(400000);
+  t2.Start();
+  t2.Join();
+  t1.Join();
 }
 }  // namespace test131
 
