@@ -51,8 +51,10 @@ struct Stats {
            "     2: %'ld\n"
            "     4: %'ld\n"
            "     8: %'ld\n"
-           "     s: %'ld\n",
-           n_access1, n_access2, n_access4, n_access8, n_access_slow);
+           "     s: %'ld (iter: %'ld; avg: %f)\n",
+           n_access1, n_access2, n_access4, n_access8,
+           n_access_slow, n_access_slow_iter,
+           (float)n_access_slow_iter / n_access_slow);
     PrintStatsForCache();
 //    Printf("   Mops:\n"
 //           "    total  = %'ld\n"
@@ -175,7 +177,8 @@ struct Stats {
             ls_add_cache_hit, ls_rem_cache_hit,
             ls_cache_fast;
 
-  uintptr_t n_access1, n_access2, n_access4, n_access8, n_access_slow;
+  uintptr_t n_access1, n_access2, n_access4, n_access8,
+            n_access_slow, n_access_slow_iter;
 
   uintptr_t cache_fast_get;
   uintptr_t cache_new_line;

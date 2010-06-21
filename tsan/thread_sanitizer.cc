@@ -5914,8 +5914,9 @@ class Detector {
       for (uintptr_t x = a; x < b; x++) {
         cache_line = G_cache->GetLineOrCreateNew(x, __LINE__);
         HandleMemoryAccessHelper(is_w, cache_line, x, 1, tid, pc, thr);
-        G_stats->n_access_slow++;
       }
+      G_stats->n_access_slow++;
+      G_stats->n_access_slow_iter += size;
     }
 
     if (has_expensive_flags) {
