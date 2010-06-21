@@ -181,7 +181,7 @@ struct PinThread {
   bool         thread_finished;
   bool         thread_done;
   bool         holding_lock;
-  int          n_flushes;
+  int          n_consumed_events;
 };
 
 // Array of pin threads, indexed by pin's THREADID.
@@ -316,7 +316,7 @@ static void ReleaseSyscallLock(THREADID tid, int where) {
   if (t.holding_lock) {
     // Printf("T%d release syscall lock, line %d\n", tid, where);
     t.holding_lock = false;
-    t.n_flushes = 0;
+    t.n_consumed_events = 0;
     g_main_ts_lock.Unlock();
   }
 }
@@ -475,9 +475,9 @@ static void TLEBFlushLocked(PinThread &t) {
     TLEBFlushUnlocked(t.tleb);
   } else if (locking_scheme == LOCKING_ON_SYSCALL) {
     AcquireSyscallLock(t.tid);
+    t.n_consumed_events += t.tleb.size;
     TLEBFlushUnlocked(t.tleb);
-    t.n_flushes++;
-    if (t.n_flushes > 1000) {
+    if (t.n_consumed_events > (1 << 18)) {
       ReleaseSyscallLock(t.tid, __LINE__);
     }
   } else {
@@ -1576,6 +1576,7 @@ void InsertBeforeEvent_SysCall(THREADID tid, ADDRINT sp) {
   UpdateCallStack(t, sp);
   TLEBFlushLocked(t);
   ReleaseSyscallLock(tid, __LINE__);
+  G_stats->lock_sites[4]++;
 }
 
 void InsertBeforeEvent_Call(THREADID tid, ADDRINT pc, ADDRINT target,
