@@ -71,7 +71,8 @@ def tryGetStatus():
   f.close()
   status_all = len(re.findall('class="LastBuild box ', text))
   status_green = len(re.findall('class="LastBuild box success', text))
-  return status_green == status_all
+  status_red_wine = len(re.findall('class="LastBuild box failure"><a href="builders/buildbot-wine', text))
+  return status_green == status_all - status_red_wine
 
 def getStatus():
   while True:
