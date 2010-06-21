@@ -1358,14 +1358,14 @@ uintptr_t WRAP_NAME(UnregisterWaitEx)(WRAP_PARAM4) {
 }
 
 uintptr_t WRAP_NAME(VirtualAlloc)(WRAP_PARAM4) {
-  Printf("T%d VirtualAlloc: %p %p %p %p\n", tid, arg0, arg1, arg2, arg3);
+  // Printf("T%d VirtualAlloc: %p %p %p %p\n", tid, arg0, arg1, arg2, arg3);
   uintptr_t ret = CallStdCallFun4(ctx, tid, f, arg0, arg1, arg2, arg3);
   return ret;
 }
 
 uintptr_t WRAP_NAME(GlobalAlloc)(WRAP_PARAM4) {
   uintptr_t ret = CallStdCallFun2(ctx, tid, f, arg0, arg1);
-  Printf("T%d %s(%p %p)=%p\n", tid, __FUNCTION__, arg0, arg1, ret);
+  // Printf("T%d %s(%p %p)=%p\n", tid, __FUNCTION__, arg0, arg1, ret);
   if (ret != 0) {
     DumpEvent(MALLOC, tid, pc, ret, arg1);
   }
