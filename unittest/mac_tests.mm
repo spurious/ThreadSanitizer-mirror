@@ -1,7 +1,13 @@
+#ifdef OS_darwin_10
+#include <dispatch/dispatch.h>
+#endif
+
 #include <gtest/gtest.h>
 #include <sys/types.h>
 #include <sys/mman.h>
 #import <Foundation/Foundation.h>
+
+#include "test_utils.h"
 
 #ifndef OS_darwin
 #error "This file should be built on Darwin only."
@@ -96,3 +102,29 @@ TEST(MacTests, ShmMmapRegressionTest) {
 }
 
 }  // namespace MacTests
+
+#ifdef OS_darwin_10
+namespace SnowLeopardTests {
+
+int GLOB = 0;
+StealthNotification sn1, sn2;
+
+void worker_do_add(int *var, int val, StealthNotification *sn) {
+  (*var) += val;
+  fprintf(stderr, "var=%d\n", *var);
+  sn->signal();
+}
+
+TEST(SnowLeopardTests, GCD_GlobalQueueRace) {
+  ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "SnowLeopardTests.GCD_GlobalQueueRace TP.");
+  dispatch_queue_t queue = dispatch_get_global_queue(0,0);
+  dispatch_block_t block_plus = ^{ worker_do_add(&GLOB, 1, &sn1); };
+  dispatch_block_t block_minus = ^{ worker_do_add(&GLOB, -1, &sn2); };
+  dispatch_async(queue, block_plus);
+  dispatch_async(queue, block_minus);
+  sn1.wait();
+  sn2.wait();
+}
+
+}  // namespace SnowLeopardTests
+#endif
