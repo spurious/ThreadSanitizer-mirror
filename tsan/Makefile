@@ -126,19 +126,24 @@ la:
 w: w32
 w32: w32o w32d
 
-m: m32
-m32: m32o m32d
-
 w32d:
 	$(MAKE) all OS=windows ARCH=x86 DEBUG=1
 
 w32o:
 	$(MAKE) all OS=windows ARCH=x86 DEBUG=0
 
+m: m32 m64
+m32: m32o m32d
+m64: m64o m64d
+
 m32o:
 	$(MAKE) all OS=darwin ARCH=x86 DEBUG=0
 m32d:
 	$(MAKE) all OS=darwin ARCH=x86 DEBUG=1
+m64o:
+	$(MAKE) all OS=darwin ARCH=amd64 DEBUG=0
+m64d:
+	$(MAKE) all OS=darwin ARCH=amd64 DEBUG=1
 
 install:
 	@echo The 'install' target is deprecated.
