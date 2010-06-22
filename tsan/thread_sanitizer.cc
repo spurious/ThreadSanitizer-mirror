@@ -4413,6 +4413,22 @@ static const char default_suppressions[] =
 "   fun:pthread_mutex_unlock                                          \n"
 "   fun:_dyld_register_func_for_*_image                               \n"
 "}                                                                    \n"
+
+"{                                                                      \n"
+"  Benign reports in __NSOperationInternal when using workqueue threads \n"
+"  ThreadSanitizer:Race                                                 \n"
+"  fun:__+[__NSOperationInternal _observeValueForKeyPath:ofObject:changeKind:oldValue:newValue:indexes:context:]_block_invoke_*\n"
+"  fun:_dispatch_call_block_and_release                                 \n"
+"}                                                                      \n"
+
+"{                                                                    \n"
+"  Benign race in GCD when using workqueue threads.                   \n"
+"  ThreadSanitizer:Race                                               \n"
+"  fun:____startOperations_block_invoke_*                             \n"
+"  ...                                                                \n"
+"  fun:_dispatch_call_block_and_release                               \n"
+"}                                                                    \n"
+
 #endif
 
 #ifdef _MSC_VER
