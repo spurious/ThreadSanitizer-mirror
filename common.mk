@@ -11,7 +11,7 @@ default: l32
 endif
 
 ifeq ($(PLATFORM)$(BITNESS), Mac32)
-default: m
+default: m32
 endif
 
 ifeq ($(PLATFORM)$(BITNESS), Windows32)
@@ -27,7 +27,7 @@ dummy:
 	@echo "For 64-bit Linux build: make l64"
 	@echo "For 32-bit Linux build: make l32"
 	@echo "For mixed  Linux build: make l"
-	@echo "For 32-bit Mac   build: make m"
+	@echo "For 32-bit Mac   build: make m32"
 	@echo "For ARM    Linux build: make la"
 	@exit 1
 
