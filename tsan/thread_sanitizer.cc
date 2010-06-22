@@ -2651,36 +2651,10 @@ class ShadowValue {
 };
 
 // -------- CacheLine --------------- {{{1
-class CacheLineBase {
+class CacheLine {
  public:
   static const uintptr_t kLineSizeBits = Mask::kNBitsLog;  // Don't change this.
   static const uintptr_t kLineSize = Mask::kNBits;
- protected:
-  uintptr_t tag_;
-
-  Mask has_shadow_value_;
-  Mask traced_;
-  Mask racey_;
-  Mask published_;
-};
-
-// Uncompressed line. Just a vector of kLineSize shadow values.
-class CacheLineUncompressed : public CacheLineBase {
- protected:
-  ShadowValue vals_[kLineSize];
-};
-
-// Compressed line. Few shadow values and their positions.
-class CacheLineCompressed : public CacheLineBase {
- public:
-  static const uintptr_t kCompressedLineSize = 10;
-  uintptr_t   n_vals;
-  ShadowValue vals[kCompressedLineSize];
-  Mask        positions[kCompressedLineSize];
-};
-
-class CacheLine : public CacheLineUncompressed {
- public:
 
   static CacheLine *CreateNewCacheLine(uintptr_t tag) {
     ScopedMallocCostCenter cc("CreateNewCacheLine");
@@ -2774,6 +2748,15 @@ class CacheLine : public CacheLineUncompressed {
     Clear();
   }
   ~CacheLine() { }
+
+  uintptr_t tag_;
+
+  Mask has_shadow_value_;
+  Mask traced_;
+  Mask racey_;
+  Mask published_;
+  ShadowValue vals_[kLineSize];
+
 
   // no non-static data members.
 
@@ -6457,8 +6440,6 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   FindIntFlag("dry_run", 0, args, &G_flags->dry_run);
   FindBoolFlag("report_races", true, args, &G_flags->report_races);
   FindIntFlag("locking_scheme", 1, args, &G_flags->locking_scheme);
-  FindBoolFlag("compress_cache_lines", false, args,
-               &G_flags->compress_cache_lines);
   FindBoolFlag("unlock_on_mutex_destroy", true, args,
                &G_flags->unlock_on_mutex_destroy);
 
