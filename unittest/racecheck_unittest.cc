@@ -5166,161 +5166,85 @@ void Run() {
 REGISTER_TEST(Run, 121)
 }  // namespace test121
 
-// test123 TP: accesses of different sizes. {{{1
-namespace test123 {
+namespace PositiveTests_DifferentSizeAccessTest {  // {{{1
 
-uint64_t MEM[8];
+uint64_t arr[1000];
+size_t    arr_index = 0;
+uint64_t *MEM;
+size_t size[3];
+size_t offset[3];
 
-#define GenericWrite(p,size,off) { \
-  if (size == 64) {\
-    CHECK(off == 0);\
-    (p)[off] = 1;\
-  } else if (size == 32) {\
-    CHECK(off <= 2);\
-    uint32_t *x = (uint32_t*)(p);\
-    x[off] = 1;\
-  } else if (size == 16) {\
-    CHECK(off <= 4);\
-    uint16_t *x = (uint16_t*)(p);\
-    x[off] = 1;\
-  } else if (size == 8) {\
-    CHECK(off <= 8);\
-    uint8_t *x = (uint8_t*)(p);\
-    x[off] = 1;\
-  } else {\
-    CHECK(0);\
-  }\
-}\
-
-// Q. Hey dude, why so many functions?
-// A. I need different stack traces for different accesses.
-
-void Wr64_0() { GenericWrite(&MEM[0], 64, 0); }
-void Wr64_1() { GenericWrite(&MEM[1], 64, 0); }
-void Wr64_2() { GenericWrite(&MEM[2], 64, 0); }
-void Wr64_3() { GenericWrite(&MEM[3], 64, 0); }
-void Wr64_4() { GenericWrite(&MEM[4], 64, 0); }
-void Wr64_5() { GenericWrite(&MEM[5], 64, 0); }
-void Wr64_6() { GenericWrite(&MEM[6], 64, 0); }
-void Wr64_7() { GenericWrite(&MEM[7], 64, 0); }
-
-void Wr32_0() { GenericWrite(&MEM[0], 32, 0); }
-void Wr32_1() { GenericWrite(&MEM[1], 32, 1); }
-void Wr32_2() { GenericWrite(&MEM[2], 32, 0); }
-void Wr32_3() { GenericWrite(&MEM[3], 32, 1); }
-void Wr32_4() { GenericWrite(&MEM[4], 32, 0); }
-void Wr32_5() { GenericWrite(&MEM[5], 32, 1); }
-void Wr32_6() { GenericWrite(&MEM[6], 32, 0); }
-void Wr32_7() { GenericWrite(&MEM[7], 32, 1); }
-
-void Wr16_0() { GenericWrite(&MEM[0], 16, 0); }
-void Wr16_1() { GenericWrite(&MEM[1], 16, 1); }
-void Wr16_2() { GenericWrite(&MEM[2], 16, 2); }
-void Wr16_3() { GenericWrite(&MEM[3], 16, 3); }
-void Wr16_4() { GenericWrite(&MEM[4], 16, 0); }
-void Wr16_5() { GenericWrite(&MEM[5], 16, 1); }
-void Wr16_6() { GenericWrite(&MEM[6], 16, 2); }
-void Wr16_7() { GenericWrite(&MEM[7], 16, 3); }
-
-void Wr8_0() { GenericWrite(&MEM[0], 8, 0); }
-void Wr8_1() { GenericWrite(&MEM[1], 8, 1); }
-void Wr8_2() { GenericWrite(&MEM[2], 8, 2); }
-void Wr8_3() { GenericWrite(&MEM[3], 8, 3); }
-void Wr8_4() { GenericWrite(&MEM[4], 8, 4); }
-void Wr8_5() { GenericWrite(&MEM[5], 8, 5); }
-void Wr8_6() { GenericWrite(&MEM[6], 8, 6); }
-void Wr8_7() { GenericWrite(&MEM[7], 8, 7); }
-
-void WriteAll64() {
-  Wr64_0();
-  Wr64_1();
-  Wr64_2();
-  Wr64_3();
-  Wr64_4();
-  Wr64_5();
-  Wr64_6();
-  Wr64_7();
+void GenericWrite(size_t s, size_t off) {
+  switch(s) {
+    case 8:
+      CHECK(off == 0);
+      ((uint64_t*)MEM)[off] = 1;
+      break;
+    case 4:
+      CHECK(off < 2);
+      ((uint32_t*)MEM)[off] = 1;
+      break;
+    case 2:
+      CHECK(off < 4);
+      ((uint16_t*)MEM)[off] = 1;
+      break;
+    case 1:
+      CHECK(off < 8);
+      ((uint8_t*)MEM)[off] = 1;
+      break;
+    default: CHECK(0); break;
+  }
 }
 
-void WriteAll32() {
-  Wr32_0();
-  Wr32_1();
-  Wr32_2();
-  Wr32_3();
-  Wr32_4();
-  Wr32_5();
-  Wr32_6();
-  Wr32_7();
+void Thread1() { GenericWrite(size[0], offset[0]); }
+void Thread2() { GenericWrite(size[1], offset[1]); }
+
+bool TwoRangesIntersect(size_t beg1, size_t end1, size_t beg2, size_t end2) {
+  if (beg1 <= beg2 && end1 > beg2) return true;
+  if (beg2 <= beg1 && end2 > beg1) return true;
+  return false;
 }
 
-void WriteAll16() {
-  Wr16_0();
-  Wr16_1();
-  Wr16_2();
-  Wr16_3();
-  Wr16_4();
-  Wr16_5();
-  Wr16_6();
-  Wr16_7();
-}
-
-void WriteAll8() {
-  Wr8_0();
-  Wr8_1();
-  Wr8_2();
-  Wr8_3();
-  Wr8_4();
-  Wr8_5();
-  Wr8_6();
-  Wr8_7();
-}
-
-void W00() { WriteAll64(); }
-void W01() { WriteAll64(); }
-void W02() { WriteAll64(); }
-
-void W10() { WriteAll32(); }
-void W11() { WriteAll32(); }
-void W12() { WriteAll32(); }
-
-void W20() { WriteAll16(); }
-void W21() { WriteAll16(); }
-void W22() { WriteAll16(); }
-
-void W30() { WriteAll8(); }
-void W31() { WriteAll8(); }
-void W32() { WriteAll8(); }
-
-typedef void (*F)(void);
-
-void TestTwoSizes(F f1, F f2) {
-  // first f1, then f2
-  ANNOTATE_NEW_MEMORY(MEM, sizeof(MEM));
-  memset(MEM, 0, sizeof(MEM));
-  MyThreadArray t1(f1, f2);
+void RunTwoThreads(size_t size1, size_t offset1, size_t size2, size_t offset2) {
+  size[0] = size1;
+  size[1] = size2;
+  offset[0] = offset1;
+  offset[1] = offset2;
+  long beg1 = offset1 * size1;
+  long end1 = beg1 + size1;
+  long beg2 = offset2 * size2;
+  long end2 = beg2 + size2;
+  bool have_intersection = TwoRangesIntersect(beg1, end1, beg2, end2);
+  char descr[1024];
+  snprintf(descr, sizeof(descr), "Testing: [%ld, %ld) vs [%ld, %ld] (%s intersection)",
+          beg1, end1, beg2, end2, have_intersection ? "have" : "no");
+  fprintf(stderr, "%s\n", descr);
+  MEM = &arr[arr_index++];
+  char *racey_addr = (char*)MEM + max(beg1, beg2);
+  if (have_intersection) ANNOTATE_EXPECT_RACE(racey_addr, strdup(descr));
+  MyThreadArray t1(Thread1, Thread2);
   t1.Start();
   t1.Join();
-  // reverse order
-  ANNOTATE_NEW_MEMORY(MEM, sizeof(MEM));
-  memset(MEM, 0, sizeof(MEM));
-  MyThreadArray t2(f2, f1);
-  t2.Start();
-  t2.Join();
 }
 
-void Run() {
-  printf("test123: positive (different sizes)\n");
-  TestTwoSizes(W00, W10);
-//  TestTwoSizes(W01, W20);
-//  TestTwoSizes(W02, W30);
-//  TestTwoSizes(W11, W21);
-//  TestTwoSizes(W12, W31);
-//  TestTwoSizes(W22, W32);
-
+void TestTwoSizes(size_t size1, size_t offset1, size_t size2, size_t offset2) {
+  RunTwoThreads(size1, offset1, size2, offset2);
+  RunTwoThreads(size2, offset2, size1, offset1);
 }
-REGISTER_TEST2(Run, 123, FEATURE|EXCLUDE_FROM_ALL)
+
+TEST(PositiveTests, DISABLED_DifferentSizeAccessTest) {
+  for(int size1_log = 3; size1_log >= 0; size1_log--) {
+    for (int size2_log = size1_log; size2_log >= 0; size2_log--) {
+      for (int off1 = 0; off1 < (1 << (3-size1_log)); off1++) {
+        for (int off2 = 0; off2 < (1 << (3-size2_log)); off2++) {
+          RunTwoThreads(1 << size1_log, off1, 1 << size2_log, off2);
+        }
+      }
+    }
+  }
+}
+#undef TEST_TWO_SIZES
 }  // namespace test123
-
 
 // test124: What happens if we delete an unlocked lock? {{{1
 namespace test124 {
