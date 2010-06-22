@@ -2751,15 +2751,14 @@ class CacheLine {
 
   uintptr_t tag_;
 
+  // data members
   Mask has_shadow_value_;
   Mask traced_;
   Mask racey_;
   Mask published_;
   ShadowValue vals_[kLineSize];
 
-
-  // no non-static data members.
-
+  // static data members.
   static FreeList *free_list_;
 };
 
