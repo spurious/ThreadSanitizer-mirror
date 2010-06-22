@@ -59,10 +59,10 @@
 
 /* The following preprocessor magic prepends the value of
    DYNAMIC_ANNOTATIONS_PREFIX to annotation function names. */
-#define DYNAMIC_ANNOTATIONS_GLUE0(A,B) A##B
-#define DYNAMIC_ANNOTATIONS_GLUE(A,B) DYNAMIC_ANNOTATIONS_GLUE0(A,B)
+#define DYNAMIC_ANNOTATIONS_GLUE0(A, B) A##B
+#define DYNAMIC_ANNOTATIONS_GLUE(A, B) DYNAMIC_ANNOTATIONS_GLUE0(A, B)
 #define DYNAMIC_ANNOTATIONS_NAME(name) \
-  DYNAMIC_ANNOTATIONS_GLUE(DYNAMIC_ANNOTATIONS_PREFIX,name)
+  DYNAMIC_ANNOTATIONS_GLUE(DYNAMIC_ANNOTATIONS_PREFIX, name)
 
 #ifndef DYNAMIC_ANNOTATIONS_ENABLED
 # define DYNAMIC_ANNOTATIONS_ENABLED 0
@@ -522,7 +522,7 @@ int RunningOnValgrind(void);
      one can use
         ... = ANNOTATE_UNPROTECTED_READ(x); */
   template <class T>
-  inline T ANNOTATE_UNPROTECTED_READ(const volatile T &x) {
+  inline T ANNOTATE_UNPROTECTED_READ(const volatile T const &x) {
     ANNOTATE_IGNORE_READS_BEGIN();
     T res = x;
     ANNOTATE_IGNORE_READS_END();
