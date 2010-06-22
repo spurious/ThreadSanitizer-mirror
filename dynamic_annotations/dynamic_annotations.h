@@ -522,7 +522,7 @@ int RunningOnValgrind(void);
      one can use
         ... = ANNOTATE_UNPROTECTED_READ(x); */
   template <class T>
-  inline T ANNOTATE_UNPROTECTED_READ(const volatile T const &x) {
+  inline T ANNOTATE_UNPROTECTED_READ(const volatile T &x) {
     ANNOTATE_IGNORE_READS_BEGIN();
     T res = x;
     ANNOTATE_IGNORE_READS_END();
