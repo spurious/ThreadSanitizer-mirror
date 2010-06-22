@@ -5216,7 +5216,7 @@ void RunTwoThreads(size_t size1, size_t offset1, size_t size2, size_t offset2) {
   long end2 = beg2 + size2;
   bool have_intersection = TwoRangesIntersect(beg1, end1, beg2, end2);
   char descr[1024];
-  snprintf(descr, sizeof(descr), "Testing: [%ld, %ld) vs [%ld, %ld] (%s intersection)",
+  sprintf(descr, "Testing: [%ld, %ld) vs [%ld, %ld] (%s intersection)",
           beg1, end1, beg2, end2, have_intersection ? "have" : "no");
   fprintf(stderr, "%s\n", descr);
   MEM = &arr[arr_index++];
