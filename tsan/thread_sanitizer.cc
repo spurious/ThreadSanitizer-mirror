@@ -2690,7 +2690,6 @@ class CacheLine {
     // If the line is traced or published, we want to keep it.
     if (!traced().Empty()) return false;
     if (!published().Empty()) return false;
-    // No shadow values, but has creator tid.
     return true;
   }
 
