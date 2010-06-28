@@ -36,7 +36,10 @@
 #include "ts_trace_info.h"
 #include "ts_literace.h"
 
+#include "coregrind/pub_core_basics.h"
+#include "coregrind/pub_core_machine.h"
 #include "coregrind/pub_core_clreq.h"
+#include "coregrind/pub_core_threadstate.h"
 
 
 //---------------------- C++ malloc support -------------- {{{1
@@ -180,7 +183,9 @@ static inline uintptr_t GetVgPc(ThreadId vg_tid) {
 }
 
 static inline uintptr_t GetVgSp(ThreadId vg_tid) {
-  return (uintptr_t)VG_(get_SP)(vg_tid);
+  Addr sp = VG_(threads)[vg_tid].arch.vex.VG_STACK_PTR;
+  DCHECK(sp == VG_(get_SP)(vg_tid));
+  return sp;
 }
 
 #ifdef VGP_arm_linux
