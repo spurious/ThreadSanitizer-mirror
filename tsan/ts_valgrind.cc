@@ -1219,10 +1219,13 @@ void ts_pre_clo_init(void) {
                                   ts_print_usage,
                                   ts_print_debug_usage);
 
-   VG_(track_die_mem_stack)       ( evh__die_mem_stack );
-   VG_(track_die_mem_stack_8)     ( evh__die_mem_stack_8 );
-   VG_(track_die_mem_stack_16)     ( evh__die_mem_stack_16 );
-   VG_(track_die_mem_stack_32)     ( evh__die_mem_stack_32 );
+   if (0) {
+     // TODO(kcc): remove this completely.
+     VG_(track_die_mem_stack)       ( evh__die_mem_stack );
+     VG_(track_die_mem_stack_8)     ( evh__die_mem_stack_8 );
+     VG_(track_die_mem_stack_16)     ( evh__die_mem_stack_16 );
+     VG_(track_die_mem_stack_32)     ( evh__die_mem_stack_32 );
+   }
 
    VG_(track_pre_thread_ll_create)( evh__pre_thread_ll_create );
    VG_(track_workq_task_start)( evh__pre_workq_task_start );
