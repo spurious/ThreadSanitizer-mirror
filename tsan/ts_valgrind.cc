@@ -1218,9 +1218,13 @@ void ts_pre_clo_init(void) {
   VG_(needs_command_line_options)(ts_process_cmd_line_option,
                                   ts_print_usage,
                                   ts_print_debug_usage);
-
+#ifdef VGO_darwin
+   if (1) {
+#else
    if (0) {
+#endif
      // TODO(kcc): remove this completely.
+     // TODO(glider): why do we still need this on Mac?
      VG_(track_die_mem_stack)       ( evh__die_mem_stack );
      VG_(track_die_mem_stack_8)     ( evh__die_mem_stack_8 );
      VG_(track_die_mem_stack_16)     ( evh__die_mem_stack_16 );
