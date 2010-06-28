@@ -5232,7 +5232,7 @@ void TestTwoSizes(size_t size1, size_t offset1, size_t size2, size_t offset2) {
   RunTwoThreads(size2, offset2, size1, offset1);
 }
 
-TEST(PositiveTests, DISABLED_DifferentSizeAccessTest) {
+TEST(PositiveTests, DifferentSizeAccessTest) {
   for(int size1_log = 3; size1_log >= 0; size1_log--) {
     for (int size2_log = size1_log; size2_log >= 0; size2_log--) {
       for (int off1 = 0; off1 < (1 << (3-size1_log)); off1++) {
