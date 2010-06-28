@@ -5216,10 +5216,10 @@ void RunTwoThreads(size_t size1, size_t offset1, size_t size2, size_t offset2) {
   long end2 = beg2 + size2;
   bool have_intersection = TwoRangesIntersect(beg1, end1, beg2, end2);
   char descr[1024];
-  sprintf(descr, "Testing: [%ld, %ld) vs [%ld, %ld] (%s intersection)",
-          beg1, end1, beg2, end2, have_intersection ? "have" : "no");
-  fprintf(stderr, "%s\n", descr);
   MEM = &arr[arr_index++];
+  sprintf(descr, "Testing: [%ld, %ld) vs [%ld, %ld] (%s intersection); p=%p",
+          beg1, end1, beg2, end2, have_intersection ? "have" : "no", MEM);
+  fprintf(stderr, "%s\n", descr);
   char *racey_addr = (char*)MEM + max(beg1, beg2);
   if (have_intersection) ANNOTATE_EXPECT_RACE(racey_addr, strdup(descr));
   MyThreadArray t1(Thread1, Thread2);
@@ -5243,8 +5243,7 @@ TEST(PositiveTests, DISABLED_DifferentSizeAccessTest) {
     }
   }
 }
-#undef TEST_TWO_SIZES
-}  // namespace test123
+}  // namespace
 
 // test124: What happens if we delete an unlocked lock? {{{1
 namespace test124 {
