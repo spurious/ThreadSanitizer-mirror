@@ -2634,6 +2634,28 @@ class ShadowValue {
     return false;
   }
 
+  void Ref(const char *where) {
+    if (!rd_ssid().IsEmpty()) {
+      DCHECK(rd_ssid().valid());
+      SegmentSet::Ref(rd_ssid(), where);
+    }
+    if (!wr_ssid().IsEmpty()) {
+      DCHECK(wr_ssid().valid());
+      SegmentSet::Ref(wr_ssid(), where);
+    }
+  }
+
+  void Unref(const char *where) {
+    if (!rd_ssid().IsEmpty()) {
+      DCHECK(rd_ssid().valid());
+      SegmentSet::Unref(rd_ssid(), where);
+    }
+    if (!wr_ssid().IsEmpty()) {
+      DCHECK(wr_ssid().valid());
+      SegmentSet::Unref(wr_ssid(), where);
+    }
+  }
+
   string ToString() const {
     char buff[1000];
     if (IsNew()) {
@@ -2651,6 +2673,46 @@ class ShadowValue {
 };
 
 // -------- CacheLine --------------- {{{1
+// The CacheLine is a set of Mask::kNBits (32 or 64) Shadow Values.
+// The shadow values in a cache line are grouped in subsets of 8 values.
+// If a particular address of memory is always accessed by aligned 8-byte
+// read/write instructions, only the shadow value correspoding to the
+// first byte is set, the rest shadow values are not used.
+// Ditto to aligned 4- and 2-byte accesses.
+// If a memory was accessed as 8 bytes and then it was accesed as 4 bytes,
+// (e.g. someone used a C union) we need to split the shadow value into two.
+// If the memory was accessed as 4 bytes and is now accessed as 8 bytes,
+// we need to try joining the shadow values.
+//
+// Hence the concept of granularity_mask (which is a string of 16 bits).
+// 0000000000000000 -- no accesses were observed to these 8 bytes.
+// 0000000000000001 -- all accesses were 8 bytes (aligned).
+// 0000000000000110 -- all accesses were 4 bytes (aligned).
+// 0000000001111000 -- all accesses were 2 bytes (aligned).
+// 0111111110000000 -- all accesses were 1 byte.
+// 0110000000100010 -- First 4 bytes were accessed by 4 byte insns,
+//   next 2 bytes by 2 byte insns, last 2 bytes by 1 byte insns.
+
+
+INLINE bool GranularityIs8(uintptr_t off, uint16_t gr) {
+  return gr & 1;
+}
+
+INLINE bool GranularityIs4(uintptr_t off, uint16_t gr) {
+  uintptr_t off_within_8_bytes = (off >> 2) & 1;  // 0 or 1.
+  return ((gr >> (1 + off_within_8_bytes)) & 1);
+}
+
+INLINE bool GranularityIs2(uintptr_t off, uint16_t gr) {
+  uintptr_t off_within_8_bytes = (off >> 1) & 3;  // 0, 1, 2, or 3
+  return ((gr >> (3 + off_within_8_bytes)) & 1);
+}
+
+INLINE bool GranularityIs1(uintptr_t off, uint16_t gr) {
+  uintptr_t off_within_8_bytes = (off) & 7;       // 0, ..., 7
+  return ((gr >> (7 + off_within_8_bytes)) & 1);
+}
+
 class CacheLine {
  public:
   static const uintptr_t kLineSizeBits = Mask::kNBitsLog;  // Don't change this.
@@ -2673,13 +2735,35 @@ class CacheLine {
   Mask &racey()  { return racey_; }
   uintptr_t tag() { return tag_; }
 
+  void DebugTrace(uintptr_t off, const char *where_str, int where_int) {
+    if (DEBUG_MODE && tag() == G_flags->trace_addr) {
+      uintptr_t off8 = off & ~7;
+      Printf("CacheLine %p, off=%ld off8=%ld gr=%d "
+             "has_sval: %d%d%d%d%d%d%d%d (%s:%d)\n",
+             tag(), off, off8,
+             granularity_[off/8],
+             has_shadow_value_.Get(off8 + 0),
+             has_shadow_value_.Get(off8 + 1),
+             has_shadow_value_.Get(off8 + 2),
+             has_shadow_value_.Get(off8 + 3),
+             has_shadow_value_.Get(off8 + 4),
+             has_shadow_value_.Get(off8 + 5),
+             has_shadow_value_.Get(off8 + 6),
+             has_shadow_value_.Get(off8 + 7),
+             where_str, where_int
+             );
+    }
+  }
+
   // Add a new shadow value to a place where there was no shadow value before.
   ShadowValue *AddNewSvalAtOffset(uintptr_t off) {
+    DebugTrace(off, __FUNCTION__, __LINE__);
     CHECK(!has_shadow_value().Get(off));
     has_shadow_value_.Set(off);
     published_.Clear(off);
     ShadowValue *res = GetValuePointer(off);
     res->Clear();
+    DebugTrace(off, __FUNCTION__, __LINE__);
     return res;
   }
 
@@ -2697,6 +2781,9 @@ class CacheLine {
     traced_.ClearRange(from, to);
     published_.ClearRange(from, to);
     racey_.ClearRange(from, to);
+    for (uintptr_t x = (from + 7) / 8; x < to / 8; x++) {
+      granularity_[x] = 0;
+    }
     return has_shadow_value_.ClearRangeAndReturnOld(from, to);
   }
 
@@ -2705,6 +2792,8 @@ class CacheLine {
     traced_.Clear();
     published_.Clear();
     racey_.Clear();
+    for (size_t i = 0; i < TS_ARRAY_SIZE(granularity_); i++)
+      granularity_[i] = 0;
   }
 
   ShadowValue *GetValuePointer(uintptr_t offset) {
@@ -2723,15 +2812,142 @@ class CacheLine {
     return ComputeTag(a) + kLineSize;
   }
 
-  // TODO(timurrrr): add a comment on how this actually works.
-  bool INLINE SameValueStored(uintptr_t addr, uintptr_t size) {
-    uintptr_t off = ComputeOffset(addr);
-    if (off & (size - 1)) return false;  // Not aligned.
-    DCHECK(off + size <= kLineSize);
-    DCHECK(size == 2 || size == 4 || size == 8);
-    if (has_shadow_value_.GetRange(off + 1, off + size) == 0)
-      return true;
-    return false;
+  uint16_t *granularity_mask(uintptr_t off) {
+    DCHECK(off < kLineSize);
+    return &granularity_[off / 8];
+  }
+
+  void Split_8_to_4(uintptr_t off) {
+    DebugTrace(off, __FUNCTION__, __LINE__);
+    uint16_t gr = *granularity_mask(off);
+    if (GranularityIs8(off, gr)) {
+      DCHECK(!GranularityIs4(off, gr));
+      DCHECK(!GranularityIs2(off, gr));
+      DCHECK(!GranularityIs1(off, gr));
+      uintptr_t off_8_aligned = off & ~7;
+      if (has_shadow_value_.Get(off_8_aligned)) {
+        ShadowValue sval = GetValue(off_8_aligned);
+        sval.Ref("Split_8_to_4");
+        DCHECK(!has_shadow_value_.Get(off_8_aligned + 4));
+        *AddNewSvalAtOffset(off_8_aligned + 4) = sval;
+      }
+      *granularity_mask(off) = gr = 3 << 1;
+      DCHECK(GranularityIs4(off, gr));
+      DebugTrace(off, __FUNCTION__, __LINE__);
+    }
+  }
+
+  void Split_4_to_2(uintptr_t off) {
+    DebugTrace(off, __FUNCTION__, __LINE__);
+    uint16_t gr = *granularity_mask(off);
+    if (GranularityIs4(off, gr)) {
+      DCHECK(!GranularityIs8(off, gr));
+      DCHECK(!GranularityIs2(off, gr));
+      DCHECK(!GranularityIs1(off, gr));
+      uint16_t off_4_aligned = off & ~3;
+      if (has_shadow_value_.Get(off_4_aligned)) {
+        ShadowValue sval = GetValue(off_4_aligned);
+        sval.Ref("Split_4_to_2");
+        DCHECK(!has_shadow_value_.Get(off_4_aligned + 2));
+        *AddNewSvalAtOffset(off_4_aligned + 2) = sval;
+      }
+      // Clear this 4-granularity bit.
+      uintptr_t off_within_8_bytes = (off >> 2) & 1;  // 0 or 1.
+      gr &= ~(1 << (1 + off_within_8_bytes));
+      // Set two 2-granularity bits.
+      gr |= 3 << (3 + 2 * off_within_8_bytes);
+      *granularity_mask(off) = gr;
+      DebugTrace(off, __FUNCTION__, __LINE__);
+    }
+  }
+
+  void Split_2_to_1(uintptr_t off) {
+    DebugTrace(off, __FUNCTION__, __LINE__);
+    uint16_t gr = *granularity_mask(off);
+    if (GranularityIs2(off, gr)) {
+      DCHECK(!GranularityIs8(off, gr));
+      DCHECK(!GranularityIs4(off, gr));
+      DCHECK(!GranularityIs1(off, gr));
+      uint16_t off_2_aligned = off & ~1;
+      if (has_shadow_value_.Get(off_2_aligned)) {
+        ShadowValue sval = GetValue(off_2_aligned);
+        sval.Ref("Split_2_to_1");
+        DCHECK(!has_shadow_value_.Get(off_2_aligned + 1));
+        *AddNewSvalAtOffset(off_2_aligned + 1) = sval;
+      }
+      // Clear this 2-granularity bit.
+      uintptr_t off_within_8_bytes = (off >> 1) & 3;  // 0, 1, 2, or 3
+      gr &= ~(1 << (3 + off_within_8_bytes));
+      // Set two 1-granularity bits.
+      gr |= 3 << (7 + 2 * off_within_8_bytes);
+      *granularity_mask(off) = gr;
+      DebugTrace(off, __FUNCTION__, __LINE__);
+    }
+  }
+
+  void Join_1_to_2(uintptr_t off) {
+    DebugTrace(off, __FUNCTION__, __LINE__);
+    DCHECK((off & 1) == 0);
+    uint16_t gr = *granularity_mask(off);
+    if (GranularityIs1(off, gr)) {
+      DCHECK(GranularityIs1(off + 1, gr));
+      if (has_shadow_value_.Get(off) && has_shadow_value_.Get(off + 1)) {
+        if (GetValue(off) == GetValue(off + 1)) {
+          ShadowValue *sval_p = GetValuePointer(off + 1);
+          sval_p->Unref("Join_1_to_2");
+          sval_p->Clear();
+          has_shadow_value_.Clear(off + 1);
+          uintptr_t off_within_8_bytes = (off >> 1) & 3;  // 0, 1, 2, or 3
+          // Clear two 1-granularity bits.
+          gr &= ~(3 << (7 + 2 * off_within_8_bytes));
+          // Set one 2-granularity bit.
+          gr |= 1 << (3 + off_within_8_bytes);
+          *granularity_mask(off) = gr;
+          DebugTrace(off, __FUNCTION__, __LINE__);
+        }
+      }
+    }
+  }
+
+  void Join_2_to_4(uintptr_t off) {
+    DebugTrace(off, __FUNCTION__, __LINE__);
+    DCHECK((off & 3) == 0);
+    uint16_t gr = *granularity_mask(off);
+    if (GranularityIs2(off, gr) && GranularityIs2(off + 2, gr)) {
+      if (has_shadow_value_.Get(off) && has_shadow_value_.Get(off + 2)) {
+        if (GetValue(off) == GetValue(off + 2)) {
+          ShadowValue *sval_p = GetValuePointer(off + 2);
+          sval_p->Unref("Join_2_to_4");
+          sval_p->Clear();
+          has_shadow_value_.Clear(off + 2);
+          uintptr_t off_within_8_bytes = (off >> 2) & 1;  // 0 or 1.
+          // Clear two 2-granularity bits.
+          gr &= ~(3 << (3 + 2 * off_within_8_bytes));
+          // Set one 4-granularity bit.
+          gr |= 1 << (1 + off_within_8_bytes);
+          *granularity_mask(off) = gr;
+          DebugTrace(off, __FUNCTION__, __LINE__);
+        }
+      }
+    }
+  }
+
+  void Join_4_to_8(uintptr_t off) {
+    DebugTrace(off, __FUNCTION__, __LINE__);
+    DCHECK((off & 7) == 0);
+    uint16_t gr = *granularity_mask(off);
+    if (GranularityIs4(off, gr) && GranularityIs4(off + 4, gr)) {
+      if (has_shadow_value_.Get(off) && has_shadow_value_.Get(off + 4)) {
+        if (GetValue(off) == GetValue(off + 4)) {
+          ShadowValue *sval_p = GetValuePointer(off + 4);
+          sval_p->Unref("Join_4_to_8");
+          sval_p->Clear();
+          has_shadow_value_.Clear(off + 4);
+          *granularity_mask(off) = 1;
+          DebugTrace(off, __FUNCTION__, __LINE__);
+        }
+      }
+    }
   }
 
   static void InitClassMembers() {
@@ -2755,6 +2971,7 @@ class CacheLine {
   Mask traced_;
   Mask racey_;
   Mask published_;
+  uint16_t granularity_[kLineSize / 8];
   ShadowValue vals_[kLineSize];
 
   // static data members.
@@ -2780,6 +2997,8 @@ uintptr_t GetCacheLinesForRange(uintptr_t a, uintptr_t b,
   *line2_tag = CacheLine::ComputeTag(b);
   return 0;
 }
+
+
 
 // -------- Cache ------------------ {{{1
 class Cache {
@@ -3129,17 +3348,7 @@ static void INLINE UnrefSegmentsInMemoryRange(uintptr_t a, uintptr_t b,
     uintptr_t x = mask.GetSomeSetBit();
     DCHECK(mask.Get(x));
     mask.Clear(x);
-    ShadowValue sval = line->GetValue(x);
-    SSID rd_ssid = sval.rd_ssid();
-    if (!rd_ssid.IsEmpty()) {
-      DCHECK(rd_ssid.valid());
-      SegmentSet::Unref(rd_ssid, "Detector::UnrefSegmentsInMemoryRange");
-    }
-    SSID wr_ssid = sval.wr_ssid();
-    if (!wr_ssid.IsEmpty()) {
-      DCHECK(wr_ssid.valid());
-      SegmentSet::Unref(wr_ssid, "Detector::UnrefSegmentsInMemoryRange");
-    }
+    line->GetValuePointer(x)->Unref("Detector::UnrefSegmentsInMemoryRange");
   }
 }
 
@@ -5885,7 +6094,7 @@ class Detector {
 
     uintptr_t a = addr,
               b = a + size,
-              offset = CacheLine::ComputeOffset(a);
+              off = CacheLine::ComputeOffset(a);
 
     CacheLine *cache_line = G_cache->GetLineOrCreateNew(addr, __LINE__);
 
@@ -5894,26 +6103,112 @@ class Detector {
       HandleSblockEnter(tid, pc);
     }
 
-    if        (size == 8 && cache_line->SameValueStored(addr, 8)) {
-      HandleMemoryAccessHelper(is_w, cache_line, addr, size, tid, pc, thr);
-      if (DEBUG_MODE) G_stats->n_access8++;
-    } else if (size == 4 && cache_line->SameValueStored(addr, 4)) {
-      HandleMemoryAccessHelper(is_w, cache_line, addr, size, tid, pc, thr);
-      if (DEBUG_MODE) G_stats->n_access4++;
-    } else if (size == 2 && cache_line->SameValueStored(addr, 2)) {
-      HandleMemoryAccessHelper(is_w, cache_line, addr, size, tid, pc, thr);
-      if (DEBUG_MODE) G_stats->n_access2++;
+     uint16_t *granularity_mask = cache_line->granularity_mask(off);
+     uint16_t gr = *granularity_mask;
+
+     if        (size == 8 && (off & 7) == 0) {
+      if (!gr) {
+        *granularity_mask = gr = 1;  // 0000000000000001
+      }
+      if (GranularityIs8(off, gr)) {
+        if (has_expensive_flags) G_stats->n_fast_access8++;
+        cache_line->DebugTrace(off, __FUNCTION__, __LINE__);
+        HandleMemoryAccessHelper(is_w, cache_line, addr, size, tid, pc, thr);
+      } else {
+        if (has_expensive_flags) G_stats->n_slow_access8++;
+        cache_line->Join_1_to_2(off);
+        cache_line->Join_1_to_2(off + 2);
+        cache_line->Join_1_to_2(off + 4);
+        cache_line->Join_1_to_2(off + 6);
+        cache_line->Join_2_to_4(off);
+        cache_line->Join_2_to_4(off + 4);
+        cache_line->Join_4_to_8(off);
+        goto slow_path;
+      }
+    } else if (size == 4 && (off & 3) == 0) {
+      if (!gr) {
+        *granularity_mask = gr = 3 << 1;  // 0000000000000110
+      }
+      if (GranularityIs4(off, gr)) {
+        if (has_expensive_flags) G_stats->n_fast_access4++;
+        cache_line->DebugTrace(off, __FUNCTION__, __LINE__);
+        HandleMemoryAccessHelper(is_w, cache_line, addr, size, tid, pc, thr);
+      } else {
+        if (has_expensive_flags) G_stats->n_slow_access4++;
+        cache_line->Split_8_to_4(off);
+        cache_line->Join_1_to_2(off);
+        cache_line->Join_1_to_2(off + 2);
+        cache_line->Join_2_to_4(off);
+        goto slow_path;
+      }
+    } else if (size == 2 && (off & 1) == 0) {
+      if (!gr) {
+        *granularity_mask = gr = 15 << 3;  // 0000000001111000
+      }
+      if (GranularityIs2(off, gr)) {
+        if (has_expensive_flags) G_stats->n_fast_access2++;
+        cache_line->DebugTrace(off, __FUNCTION__, __LINE__);
+        HandleMemoryAccessHelper(is_w, cache_line, addr, size, tid, pc, thr);
+      } else {
+        if (has_expensive_flags) G_stats->n_slow_access2++;
+        cache_line->Split_8_to_4(off);
+        cache_line->Split_4_to_2(off);
+        cache_line->Join_1_to_2(off);
+        goto slow_path;
+      }
     } else if (size == 1) {
-      HandleMemoryAccessHelper(is_w, cache_line, addr, size, tid, pc, thr);
-      if (DEBUG_MODE) G_stats->n_access1++;
+      if (!gr) {
+        *granularity_mask = gr = 255 << 7;  // 0111111110000000
+      }
+      if (GranularityIs1(off, gr)) {
+        if (has_expensive_flags) G_stats->n_fast_access1++;
+        cache_line->DebugTrace(off, __FUNCTION__, __LINE__);
+        HandleMemoryAccessHelper(is_w, cache_line, addr, size, tid, pc, thr);
+      } else {
+        if (has_expensive_flags) G_stats->n_slow_access1++;
+        cache_line->Split_8_to_4(off);
+        cache_line->Split_4_to_2(off);
+        cache_line->Split_2_to_1(off);
+        goto slow_path;
+      }
     } else {
-      // slow case
+      if (has_expensive_flags) G_stats->n_very_slow_access++;
+      // Very slow: size is not 1,2,4,8 or address is unaligned.
+      // Handle this access as a series of 1-byte accesses.
       for (uintptr_t x = a; x < b; x++) {
+        off = CacheLine::ComputeOffset(x);
+        uint16_t *granularity_mask = cache_line->granularity_mask(off);
+        if (!*granularity_mask) {
+          *granularity_mask = 1;
+        }
         cache_line = G_cache->GetLineOrCreateNew(x, __LINE__);
+        cache_line->DebugTrace(off, __FUNCTION__, __LINE__);
+        cache_line->Split_8_to_4(off);
+        cache_line->Split_4_to_2(off);
+        cache_line->Split_2_to_1(off);
         HandleMemoryAccessHelper(is_w, cache_line, x, 1, tid, pc, thr);
       }
-      G_stats->n_access_slow++;
-      G_stats->n_access_slow_iter += size;
+    }
+
+    if (0) {
+      slow_path:
+      DCHECK(size == 1 || size == 2 || size == 4 || size == 8);
+      DCHECK((addr & (size - 1)) == 0);  // size-aligned.
+      gr = *granularity_mask;
+      CHECK(gr);
+      // size is one of 1, 2, 4, 8; address is size-aligned, but the granularity
+      // is different.
+      for (uintptr_t x = a; x < b;) {
+        if (has_expensive_flags) G_stats->n_access_slow_iter++;
+        off = CacheLine::ComputeOffset(x);
+        cache_line->DebugTrace(off, __FUNCTION__, __LINE__);
+        HandleMemoryAccessHelper(is_w, cache_line, x, size, tid, pc, thr);
+        // How many bytes we just accesssed? 
+        if     (GranularityIs8(off, gr)) x += 8;
+        else if(GranularityIs4(off, gr)) x += 4;
+        else if(GranularityIs2(off, gr)) x += 2;
+        else                             x += 1;
+      }
     }
 
     if (has_expensive_flags) {
@@ -5921,20 +6216,20 @@ class Detector {
       G_stats->events[is_w ? WRITE : READ]++;
       if (G_flags->trace_level >= 1) {
         bool tracing = false;
-        if (cache_line->traced().Get(offset)) {
+        if (cache_line->traced().Get(off)) {
           tracing = true;
         } else if (addr == G_flags->trace_addr) {
           tracing = true;
         }
         if (tracing) {
           for (uintptr_t x = a; x < b; x++) {
-            offset = CacheLine::ComputeOffset(x);
+            off = CacheLine::ComputeOffset(x);
             cache_line = G_cache->GetLineOrCreateNew(x, __LINE__);
-            ShadowValue *sval_p = cache_line->GetValuePointer(offset);
-            if (cache_line->has_shadow_value().Get(offset) == 0) {
+            ShadowValue *sval_p = cache_line->GetValuePointer(off);
+            if (cache_line->has_shadow_value().Get(off) == 0) {
               continue;
             }
-            bool is_published = cache_line->published().Get(offset);
+            bool is_published = cache_line->published().Get(off);
             Printf("TRACE: T%d %s[%d] addr=%p sval: %s%s; line=%p (P=%s)\n",
                    tid.raw(), is_w ? "wr" : "rd",
                    size, addr, sval_p->ToString().c_str(),
