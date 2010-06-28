@@ -5243,6 +5243,26 @@ TEST(PositiveTests, DISABLED_DifferentSizeAccessTest) {
     }
   }
 }
+
+
+const int kStressArrSize = 100;
+char stress_arr[kStressArrSize];
+
+void StressWorker() {
+  const int n = 100000;
+  char foo[kStressArrSize];
+  memset(foo, 0, sizeof(foo));
+  for (int i = 0; i < n; i++) {
+    memcpy(stress_arr + i % (kStressArrSize / 2), foo, i % (kStressArrSize / 3));
+  }
+}
+
+TEST(StressTests, DifferentSizeAccessStressTest) {
+  ANNOTATE_BENIGN_RACE_SIZED(stress_arr, sizeof(stress_arr), "race");
+  MyThreadArray t(StressWorker, StressWorker, StressWorker);
+  t.Start();
+  t.Join();
+}
 }  // namespace
 
 // test124: What happens if we delete an unlocked lock? {{{1
