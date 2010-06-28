@@ -5220,8 +5220,18 @@ void RunTwoThreads(size_t size1, size_t offset1, size_t size2, size_t offset2) {
   sprintf(descr, "Testing: [%ld, %ld) vs [%ld, %ld] (%s intersection); p=%p",
           beg1, end1, beg2, end2, have_intersection ? "have" : "no", MEM);
   fprintf(stderr, "%s\n", descr);
-  char *racey_addr = (char*)MEM + max(beg1, beg2);
-  if (have_intersection) ANNOTATE_EXPECT_RACE(racey_addr, strdup(descr));
+  char *racey_addr_beg = (char*)MEM + max(beg1, beg2);
+  char *racey_addr_end = (char*)MEM + min(end1, end2);
+  if (have_intersection) {
+    ANNOTATE_EXPECT_RACE(racey_addr_beg, strdup(descr));
+    if (racey_addr_end - racey_addr_beg >= 2) {
+      // We expect a race on the first racey byte, but we may also see some
+      // races in other bytes (e.g. if a 8-byte store is implemented via two
+      // 4-byte stores on a 32-bit arch). Ignore these extra races.
+      ANNOTATE_BENIGN_RACE_SIZED(racey_addr_beg+1, racey_addr_end - racey_addr_beg - 1,
+                           "race");
+    }
+  }
   MyThreadArray t1(Thread1, Thread2);
   t1.Start();
   t1.Join();
@@ -5232,7 +5242,7 @@ void TestTwoSizes(size_t size1, size_t offset1, size_t size2, size_t offset2) {
   RunTwoThreads(size2, offset2, size1, offset1);
 }
 
-TEST(PositiveTests, DISABLED_DifferentSizeAccessTest) {
+TEST(PositiveTests, DifferentSizeAccessTest) {
   for(int size1_log = 3; size1_log >= 0; size1_log--) {
     for (int size2_log = size1_log; size2_log >= 0; size2_log--) {
       for (int off1 = 0; off1 < (1 << (3-size1_log)); off1++) {
