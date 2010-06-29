@@ -3166,7 +3166,7 @@ TEST(NegativeTests, StrlenAndFriends) {
 }
 }  // namespace test71
 
-namespace NegativeTests_EmptyRep {
+namespace NegativeTests_EmptyRep {  // {{{1
 void Worker() {
   string s;
   s.erase();
@@ -3182,6 +3182,42 @@ TEST(NegativeTests, DISABLED_EmptyRepTest) {
   mta.Join();
 }
 }  //namespace NegativeTests_EmptyRep
+
+namespace NegativeTests_StdStringDtor {  // {{{1
+// Some implementations of std::string (including the one on Linux)
+// are unfriendly to race detectors since they use atomic reference counting
+// in a way that race detectors can not understand.
+// As of ThreadSanitizer r2273 this test fails (ThreadSanitizer produces a false
+// warning inside operator delete called from ~basic_string)
+string *s;
+
+Mutex mu;
+int done = 0;  // under mu.
+
+void Worker() {
+  string x = *s;  // force string copy (increments ref count).
+  {
+    MutexLock lock(&mu);
+    done++;
+  }
+  // x is destructed, ref count is decremented.
+}
+
+TEST(NegativeTests, DISABLED_StdStringDtor) {
+  MyThreadArray mta(Worker, Worker, Worker);
+  s = new string ("foo");
+  mta.Start();
+
+  while (1) {
+    MutexLock lock(&mu);
+    if (done == 3) break;
+  }
+
+  delete s;  // ref count becomes zero and the object is destroyed.
+  mta.Join();
+}
+}  //namespace NegativeTests_EmptyRep
+
 
 // test72: STAB. Stress test for the number of segment sets (SSETs). {{{1
 namespace test72 {
