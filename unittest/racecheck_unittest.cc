@@ -3894,7 +3894,10 @@ namespace PositiveTests_HarmfulRaceInDtor {  // {{{
 // Race on vptr. Will run A::F() or B::F() depending on the timing.
 class A {
  public:
-  A() : done_(false) { }
+  A() : done_(false) {
+    // W/o this annotation tsan may produce additional warnings in hybrid mode.
+    ANNOTATE_PURE_HAPPENS_BEFORE_MUTEX(&mu_);
+  }
   virtual void F() {
     printf ("A::F()\n");
   }
