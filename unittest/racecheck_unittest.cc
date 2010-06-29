@@ -3412,8 +3412,7 @@ struct RefCountedClass {
     annotate_unref_ = true;
   }
   void Annotate_Race() {
-    ANNOTATE_BENIGN_RACE(&this->data_, "needs annotation");
-    ANNOTATE_BENIGN_RACE(&this->ref_, "needs annotation");
+    ANNOTATE_BENIGN_RACE_SIZED(this, sizeof(*this), "needs annotation");
   }
  private:
   bool annotate_unref_;
