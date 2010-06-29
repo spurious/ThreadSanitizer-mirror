@@ -6314,12 +6314,17 @@ class Detector {
     if (!info || info->ptr != a)
       return;
     uintptr_t size = info->size;
-    uintptr_t max_write_size = 1024;
     // Handle the memory deletion as a write, but don't touch all
     // the memory if there is too much of it, limit with the first 1K.
     if (size && G_flags->free_is_write) {
-      HandleMemoryAccess(e_->tid(), e_->pc(), a,
-                         min(max_write_size, size), true /*is_w*/);
+      const uintptr_t max_write_size = 1024;
+      uintptr_t write_size = min(max_write_size, size);
+      uintptr_t step = sizeof(uintptr_t);
+      // We simulate 4- or 8-byte accesses to make analysis faster.
+      for (uintptr_t i = 0; i < write_size; i += step) {
+        uintptr_t this_size = write_size - i >= step ? step : write_size - i;
+        HandleMemoryAccess(e_->tid(), e_->pc(), a + i, this_size, true);
+      }
     }
     // update G_heap_map
     CHECK(info->ptr == a);
@@ -6723,7 +6728,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   FindBoolFlag("suggest_happens_before_arcs", true, args,
                &G_flags->suggest_happens_before_arcs);
   FindBoolFlag("show_pc", false, args, &G_flags->show_pc);
-  FindBoolFlag("free_is_write", false, args, &G_flags->free_is_write);
+  FindBoolFlag("free_is_write", true, args, &G_flags->free_is_write);
   FindBoolFlag("exit_after_main", false, args, &G_flags->exit_after_main);
 
   FindBoolFlag("show_stats", false, args, &G_flags->show_stats);
