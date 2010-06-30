@@ -485,9 +485,9 @@ class StackTrace {
   static string EmbeddedStackTraceToString(const uintptr_t *emb_trace, size_t n,
                                            const char *indent = "    ") {
     string res = "";
+    const int kBuffSize = 10000;
+    char *buff = new char [kBuffSize];
     for (size_t i = 0; i < n; i++) {
-      const int kBuffSize = 10000;
-      char buff[kBuffSize];
       if (!emb_trace[i]) break;
       string rtn_and_file = PcToRtnNameAndFilePos(emb_trace[i]);
       string rtn = PcToRtnName(emb_trace[i], true);
@@ -514,6 +514,7 @@ class StackTrace {
       if (CutStackBelowFunc(rtn))
         break;
     }
+    delete [] buff;
     return res;
   }
 
