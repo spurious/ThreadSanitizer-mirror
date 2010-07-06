@@ -6947,6 +6947,7 @@ static void SetupIgnore() {
 
   g_ignore_lists->funs.push_back("pthread_create");
   g_ignore_lists->funs.push_back("pthread_create@*");
+  g_ignore_lists->funs.push_back("pthread_create_WRK");
   g_ignore_lists->funs.push_back("exit");
   g_ignore_lists->funs.push_back("__cxa_*");
   g_ignore_lists->funs.push_back("__lll_mutex_unlock_wake");
