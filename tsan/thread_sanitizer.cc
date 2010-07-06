@@ -674,8 +674,9 @@ class Lock {
     Lock *lock = LIDtoLock(lid);
     CHECK(lock);
     if (lock->last_lock_site_) {
-      Report("   %s\n%s",
+      Report("   %s (%p)\n%s",
              lock->ToString().c_str(),
+             lock->lock_addr_,
              lock->last_lock_site_->ToString().c_str());
     } else {
       Report("   %s. This lock was probably destroyed"
@@ -6405,7 +6406,7 @@ class Detector {
       sp_min = sp - stack_size_if_known;
       sp_max = sp;
     } else if (NULL != (stack_info = G_thread_stack_map->GetInfo(sp))) {
-      if (G_flags->verbosity >= 2) {
+      if (debug_thread) {
         Printf("T%d %s: %p\n%s\n", e_->tid(), __FUNCTION__,  sp,
              reports_.DescribeMemory(sp).c_str());
       }
@@ -6413,7 +6414,7 @@ class Detector {
       sp_max = stack_info->ptr + stack_info->size;
     }
     if (debug_thread) {
-      Printf("T%d SP: %p [%p %p)\n", e_->tid(), sp, sp_min, sp_max);
+      Printf("T%d SP: %p [%p %p), size=%ldM\n", e_->tid(), sp, sp_min, sp_max, (sp_max - sp_min) >> 20);
     }
     if (sp_min < sp_max) {
       CHECK((sp_max - sp_min) < 128 * 1024 * 1024); // stay sane.
