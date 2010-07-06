@@ -51,6 +51,8 @@ VGP=$(P)vg-
 PINP=$(P)pin-
 DRP=$(P)dr-
 
+STRIP=strip
+
 DEFINES=-DTS_VERSION=\"$(TS_VERSION)\"
 
 ifeq ($(DEBUG), 1)
@@ -78,6 +80,7 @@ ifeq ($(OS), linux)
   VG_LD_FLAGS=-Wl,--build-id=none  -Wl,-Ttext=0x38000000  -static -nodefaultlibs -nostartfiles -u _start 
   VG_LD_PRELOAD_FLAGS= -nodefaultlibs -shared -Wl,-z,interpose,-z,initfirst
   DR_OS=LINUX
+  STRIP=strip -g  # keep some symbols for profiling.
 else ifeq ($(OS), darwin)
   VG_LD_FLAGS=-Wl,-u,__start -Wl,-e,__start -Wl,-bind_at_load /usr/lib/dyld -arch i386 \
       -Wl,-seg1addr,0xf0080000 -Wl,-stack_addr,0xf0080000 -Wl,-stack_size,0x80000 -Wl,-pagezero_size,0xf0000000 \
@@ -151,7 +154,7 @@ install:
 self-contained: TS_valgrind
 	./mk-self-contained-valgrind.sh $(VALGRIND_INST_ROOT) tsan$(D) $(OUTDIR)/tsan-$(ARCHOS)$(D)-self-contained.sh
 self-contained-stripped: TS_valgrind
-	strip $(OUTDIR)/tsan-*$(OS)
+	$(STRIP) $(OUTDIR)/tsan-*$(OS)
 	./mk-self-contained-valgrind.sh $(VALGRIND_INST_ROOT) tsan$(D) $(OUTDIR)/tsan-$(ARCHOS)$(D)-self-contained.sh
 
 TSAN_SFX_DIR=tsan-$(ARCHOS)
