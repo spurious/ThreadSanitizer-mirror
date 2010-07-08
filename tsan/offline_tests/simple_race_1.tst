@@ -1,6 +1,5 @@
 # Start thread T0.
 THR_START 0 0 0 0
-THR_FIRST_INSN 0 0 0 0
 
 
 # Create two locks.
@@ -10,7 +9,6 @@ LOCK_CREATE 0 ff1 7778 0
 
 # Start thread T1
 THR_START 1 ff 0 0
-THR_FIRST_INSN 1 ff 0 0
 
 # Call few functions in T0
 RTN_CALL 0 ca000001 ca000002 0
