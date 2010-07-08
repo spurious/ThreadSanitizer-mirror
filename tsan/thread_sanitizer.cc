@@ -1056,8 +1056,7 @@ class VTS {
     return res;
   }
 
-  // TODO(timurrrr): rename Delete/Clone with Unref/Ref
-  static void Delete(VTS *vts) {
+  static void Unref(VTS *vts) {
     if (!vts) return;
     CHECK_GT(vts->ref_count_, 0);
     vts->ref_count_--;
@@ -1523,7 +1522,7 @@ class Segment {
       seg = GetSegmentByIndex(n_segments_);
 
       // This VTS may not be empty due to ForgetAllState().
-      VTS::Delete(seg->vts_);
+      VTS::Unref(seg->vts_);
 
       if (ProfileSeg(SID(n_segments_))) {
        Printf("Segment: allocated SID %d\n", n_segments_);
@@ -1594,13 +1593,13 @@ class Segment {
 
   static bool RecycleOneSid(SID sid) {
     ScopedMallocCostCenter malloc_cc("Segment::RecycleOneSid()");
-    const size_t kRecyclePeriod = 10000;  // TODO(kcc): test it!
+    const size_t kRecyclePeriod = DEBUG_MODE ? 100 : 10000;
     Segment *seg = GetInternal(sid);
     DCHECK(seg->ref_count_ == 0);
     DCHECK(sid.raw() < n_segments_);
     if (!seg->vts()) return false;  // Already recycled.
     seg->tid_ = TID();
-    VTS::Delete(seg->vts_);
+    VTS::Unref(seg->vts_);
     seg->vts_ = NULL;
     recycled_sids_->push_back(sid);
     if (recycled_sids_->size() > kRecyclePeriod
@@ -3278,7 +3277,7 @@ static void ClearPublishedAttribute(CacheLine *line, Mask mask) {
                info.mask.ToString().c_str());
       G_stats->publish_clear++;
       if (info.mask.Empty()) {
-        VTS::Delete(info.vts);
+        VTS::Unref(info.vts);
         g_publish_info_map->erase(it);
         deleted_some = true;
         break;
@@ -4006,7 +4005,7 @@ struct Thread {
       signaller->vts = vts()->Clone();
     } else {
       VTS *new_vts = VTS::Join(signaller->vts, vts());
-      VTS::Delete(signaller->vts);
+      VTS::Unref(signaller->vts);
       signaller->vts = new_vts;
     }
     NewSegmentForSignal();
@@ -4180,8 +4179,8 @@ struct Thread {
     *ctx = info.ctx;
     VTS *singleton = VTS::CreateSingleton(child_tid);
     *vts = VTS::Join(singleton, info.vts);
-    VTS::Delete(singleton);
-    VTS::Delete(info.vts);
+    VTS::Unref(singleton);
+    VTS::Unref(info.vts);
 
 
     if (debug_thread) {
@@ -4250,7 +4249,7 @@ struct Thread {
       // We are blocking the first time after reset. Clear the VTS.
       info.calls_before_reset = info.barrier_count;
       Signaller &signaller = (*signaller_map_)[barrier + epoch];
-      VTS::Delete(signaller.vts);
+      VTS::Unref(signaller.vts);
       signaller.vts = NULL;
       if (debug_happens_before) {
         Printf("T%d barrier %p (epoch %d) reset\n", tid().raw(),
@@ -4404,7 +4403,7 @@ struct Thread {
       VTS *singleton_vts = VTS::CreateSingleton(TID(i), 2);
       thr->NewSegmentWithoutUnrefingOld("ForgetAllState", singleton_vts);
       if (thr->vts_at_exit_) {
-        VTS::Delete(thr->vts_at_exit_);
+        VTS::Unref(thr->vts_at_exit_);
         thr->vts_at_exit_ = singleton_vts->Clone();
       }
     }
@@ -4460,7 +4459,7 @@ struct Thread {
     public:
      void ClearAndDeleteElements() {
        for (iterator it = begin(); it != end(); ++it) {
-         VTS::Delete(it->second.vts);
+         VTS::Unref(it->second.vts);
        }
        clear();
      }
@@ -4577,7 +4576,7 @@ static void ForgetAllStateAndStartOver(const char *reason) {
     PCQ &pcq = it->second;
     for (deque<VTS*>::iterator it2 = pcq.putters.begin();
          it2 != pcq.putters.end(); ++it2) {
-      VTS::Delete(*it2);
+      VTS::Unref(*it2);
       *it2 = VTS::CreateSingleton(TID(0), 1);
     }
   }
@@ -5575,7 +5574,7 @@ class Detector {
     pcq.putters.pop_front();
     CHECK(putter);
     cur_thread_->NewSegmentForWait(putter);
-    VTS::Delete(putter);
+    VTS::Unref(putter);
   }
 
   // PUBLISH_RANGE
