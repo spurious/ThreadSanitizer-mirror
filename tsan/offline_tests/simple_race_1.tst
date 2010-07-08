@@ -9,7 +9,6 @@ LOCK_CREATE 0 ff1 7778 0
 
 
 # Start thread T1
-THR_SET_PTID 0 ff 1 0
 THR_START 1 ff 0 0
 THR_FIRST_INSN 1 ff 0 0
 
@@ -29,7 +28,6 @@ MALLOC 0 cdeffedc ccc ff
 MALLOC 0 cdeffedc cccccccc ff
 
 # Acquire lock 7777 in T0
-LOCK_BEFORE 0 aa 7777 0
 WRITER_LOCK 0 aa 7777 0
 
 # Write to 0xabcde in T0
@@ -37,7 +35,6 @@ SBLOCK_ENTER 0 ca000003 0 0
 WRITE 0 aa008001 abcde 1
 
 # Acquire reader lock 7778 in T1
-LOCK_BEFORE 1 bb 7778 0
 READER_LOCK 1 bb 7778 0
 
 ##############
