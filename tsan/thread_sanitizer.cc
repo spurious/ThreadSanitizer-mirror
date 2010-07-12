@@ -5799,9 +5799,8 @@ class Detector {
         if (LockSet::IntersectionIsEmpty(w1_ls, w2_ls)) {
           return true;
         } else {
-          // In happens-before mode the intersection of the LSes must be empty.
-          DCHECK(!G_flags->pure_happens_before ||
-                 LockSet::HasNonPhbLocks(w1_ls) ||
+          // May happen only if the locks in the intersection are hybrid locks.
+          DCHECK(LockSet::HasNonPhbLocks(w1_ls) &&
                  LockSet::HasNonPhbLocks(w2_ls));
         }
       }
@@ -5815,9 +5814,8 @@ class Detector {
         if (LockSet::IntersectionIsEmpty(w1_ls, r_ls)) {
           return true;
         } else {
-          // In happens-before mode the intersection of the LSes must be empty.
-          DCHECK(!G_flags->pure_happens_before ||
-                 LockSet::HasNonPhbLocks(w1_ls) ||
+          // May happen only if the locks in the intersection are hybrid locks.
+          DCHECK(LockSet::HasNonPhbLocks(w1_ls) &&
                  LockSet::HasNonPhbLocks(r_ls));
         }
       }
