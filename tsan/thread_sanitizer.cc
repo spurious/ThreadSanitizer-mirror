@@ -607,8 +607,13 @@ class Lock {
 
   void set_is_pure_happens_before(bool x) { is_pure_happens_before_ = x; }
 
-  void WrLock(StackTrace *lock_site) {
+  void WrLock(TID tid, StackTrace *lock_site) {
     CHECK(!rd_held_);
+    if (wr_held_ == 0) {
+      thread_holding_me_in_write_mode_ = tid;
+    } else {
+      CHECK(thread_holding_me_in_write_mode_ == tid);
+    }
     wr_held_++;
     StackTrace::Delete(last_lock_site_);
     last_lock_site_ = lock_site;
@@ -707,6 +712,7 @@ class Lock {
   bool      is_pure_happens_before_;
   StackTrace *last_lock_site_;
   const char *name_;
+  TID       thread_holding_me_in_write_mode_;
 
   // Static members
   typedef map<uintptr_t, Lock*> Map;
@@ -3867,10 +3873,11 @@ struct Thread {
 
   // Locks
   void HandleLock(uintptr_t lock_addr, bool is_w_lock) {
+    Lock *lock = Lock::LookupOrCreate(lock_addr);
 
     if (debug_lock) {
-      Printf("T%d %sLock   %p; %s\n",
-           tid_.raw(),
+      Printf("T%d lid=%d %sLock   %p; %s\n",
+           tid_.raw(), lock->lid().raw(),
            is_w_lock ? "Wr" : "Rd",
            lock_addr,
            LockSet::ToString(lsid(is_w_lock)).c_str());
@@ -3878,7 +3885,6 @@ struct Thread {
       ReportStackTrace(0, 7);
     }
 
-    Lock *lock = Lock::LookupOrCreate(lock_addr);
     // NOTE: we assume that all locks can be acquired recurively.
     // No warning about recursive locking will be issued.
     if (is_w_lock) {
@@ -3886,7 +3892,7 @@ struct Thread {
       // multiset.
       wr_lockset_ = LockSet::Add(wr_lockset_, lock);
       rd_lockset_ = LockSet::Add(rd_lockset_, lock);
-      lock->WrLock(CreateStackTrace());
+      lock->WrLock(tid_, CreateStackTrace());
     } else {
       if (lock->wr_held()) {
         ReportStackTrace();
@@ -3921,8 +3927,8 @@ struct Thread {
     bool is_w_lock = lock->wr_held();
 
     if (debug_lock) {
-      Printf("T%d %sUnlock %p; %s\n",
-             tid_.raw(),
+      Printf("T%d lid=%d %sUnlock %p; %s\n",
+             tid_.raw(), lock->lid().raw(),
              is_w_lock ? "Wr" : "Rd",
              lock_addr,
              LockSet::ToString(lsid(is_w_lock)).c_str());
@@ -5452,9 +5458,9 @@ class Detector {
       case MUNMAP      : HandleMunmap();     break;
 
 
-      case WRITER_LOCK : HandleLock(true);     break;
-      case READER_LOCK : HandleLock(false);    break;
-      case UNLOCK      : HandleUnlock();       break;
+      case WRITER_LOCK : cur_thread_->HandleLock(e_->a(), true);     break;
+      case READER_LOCK : cur_thread_->HandleLock(e_->a(), false);    break;
+      case UNLOCK      : cur_thread_->HandleUnlock(e_->a());       break;
       case UNLOCK_OR_INIT : HandleUnlockOrInit(); break;
 
       case LOCK_CREATE:
@@ -5666,23 +5672,6 @@ class Detector {
       static EventSampler sampler;
       sampler.Sample(tid, "SampleStackChange");
     }
-  }
-
-  void HandleLock(bool is_w_lock) {
-    if (debug_lock) {
-      e_->Print();
-      cur_thread_->ReportStackTrace();
-    }
-    cur_thread_->HandleLock(e_->a(), is_w_lock);
-  }
-
-  // UNLOCK
-  void HandleUnlock() {
-    if (debug_lock) {
-      e_->Print();
-      cur_thread_->ReportStackTrace();
-    }
-    cur_thread_->HandleUnlock(e_->a());
   }
 
   // UNLOCK_OR_INIT
