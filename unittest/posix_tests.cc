@@ -977,3 +977,38 @@ TEST(NegativeTests,DISABLED_LockfTest) {
 }
 
 }
+namespace PositiveTests_LockThenNoLock {  // {{{1
+// Regression test for a bug fixed by r2312
+int GLOB;
+pthread_mutex_t mu;
+StealthNotification n1, n2;
+
+void Worker1() {
+  pthread_mutex_lock(&mu);
+  GLOB = 1;
+  pthread_mutex_unlock(&mu);
+  n1.signal();
+  n2.wait();
+  GLOB = 2;
+}
+
+void Worker2() {
+  pthread_mutex_lock(&mu);
+  GLOB = 3;
+  pthread_mutex_unlock(&mu);
+  n2.signal();
+  n1.wait();
+  GLOB = 4;
+}
+
+TEST(PositiveTests, LockThenNoLock) {
+  pthread_mutex_init(&mu, NULL);
+  ANNOTATE_TRACE_MEMORY(&GLOB);
+  ANNOTATE_EXPECT_RACE(&GLOB, "race");
+  ANNOTATE_NOT_HAPPENS_BEFORE_MUTEX(&mu);
+  MyThreadArray t(Worker1, Worker2);
+  t.Start();
+  t.Join();
+  pthread_mutex_destroy(&mu);
+}
+}  // namespace
