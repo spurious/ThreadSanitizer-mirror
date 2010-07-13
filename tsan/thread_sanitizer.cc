@@ -1013,12 +1013,12 @@ LockSet::LSIntersectionCache *LockSet::ls_intersection_cache_;
 static string TwoLockSetsToString(LSID rd_lockset, LSID wr_lockset) {
   string res;
   if (rd_lockset == wr_lockset) {
-    res = "locks held: ";
+    res = "L";
     res += LockSet::ToString(wr_lockset);
   } else {
-    res = "writer locks held: ";
+    res = "WR-L";
     res += LockSet::ToString(wr_lockset);
-    res += "; reader locks held: ";
+    res += "/RD-L";
     res += LockSet::ToString(rd_lockset);
   }
   return res;
@@ -2668,7 +2668,7 @@ class ShadowValue {
     if (IsNew()) {
       return "{New}";
     }
-    snprintf(buff, sizeof(buff), "Reads: %s; Writes: %s",
+    snprintf(buff, sizeof(buff), "R: %s; W: %s",
             SegmentSet::ToStringWithLocks(rd_ssid()).c_str(),
             SegmentSet::ToStringWithLocks(wr_ssid()).c_str());
     return buff;
@@ -6218,12 +6218,13 @@ class Detector {
               continue;
             }
             bool is_published = cache_line->published().Get(off);
-            Printf("TRACE: T%d %s[%d] addr=%p sval: %s%s; line=%p (P=%s)\n",
-                   tid.raw(), is_w ? "wr" : "rd",
+            Printf("TRACE: T%d/S%d %s[%d] addr=%p sval: %s%s; line=%p (P=%s)\n",
+                   tid.raw(), thr->sid().raw(), is_w ? "wr" : "rd",
                    size, addr, sval_p->ToString().c_str(),
                    is_published ? " P" : "",
                    cache_line,
-                   cache_line->published().ToString().c_str());
+                   cache_line->published().Empty() ?
+                     "0" : cache_line->published().ToString().c_str());
             thr->ReportStackTrace(pc);
           }
         }
