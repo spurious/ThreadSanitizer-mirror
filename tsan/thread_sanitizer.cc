@@ -2429,9 +2429,11 @@ SSID SegmentSet::AddSegmentToTupleSS(SSID ssid, SID new_sid) {
     }
 
     if (tid == new_tid) {
-      if (seg->vts() == new_seg->vts()) {
-        // Optimization: if a segment with the same VTS as the current is
-        // already inside SS, don't modify the SS.
+      if (seg->vts() == new_seg->vts() &&
+          seg->lsid(true) == new_seg->lsid(true) &&
+          seg->lsid(false) == new_seg->lsid(false)) {
+        // Optimization: if a segment with the same VTS and LS
+        // as in the current is already inside SS, don't modify the SS.
         // Improves performance with --keep-history >= 1.
         return ssid;
       }
