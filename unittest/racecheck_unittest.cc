@@ -5151,8 +5151,7 @@ REGISTER_TEST(Run, 120)
 }  // namespace test120
 
 
-// test121: TP. Example of double-checked-locking  {{{1
-namespace test121 {
+namespace DoubleCheckedLocking {  // {{{1
 struct Foo {
   uintptr_t padding1[16];
   uintptr_t a;
@@ -5166,14 +5165,14 @@ void InitMe() {
   if (!foo) {
     MutexLock lock(&mu);
     if (!foo) {
-      ANNOTATE_EXPECT_RACE_FOR_TSAN(&foo, "test121. Double-checked locking (ptr)");
+      ANNOTATE_EXPECT_RACE_FOR_TSAN(&foo, "Double-checked locking (ptr)");
       foo = new Foo;
       if (Tsan_PureHappensBefore()) {
         // A pure h-b detector may or may not detect this.
         ANNOTATE_BENIGN_RACE(&foo->a, "real race");
-      } else if (!Tsan_FastMode()) {
+      } else {
         // ThreadSanitizer in full hybrid mode must detect it.
-        ANNOTATE_EXPECT_RACE_FOR_TSAN(&foo->a, "test121. Double-checked locking (obj)");
+        ANNOTATE_EXPECT_RACE_FOR_TSAN(&foo->a, "Double-checked locking (obj)");
       }
       foo->a = 42;
     }
@@ -5193,16 +5192,41 @@ void Worker2() { UseMe(); }
 void Worker3() { UseMe(); }
 
 
-void Run() {
+TEST(PositiveTests, DoubleCheckedLocking1) {
+  foo = NULL;
   FAST_MODE_INIT(&foo);
-  printf("test121: TP. Example of double-checked-locking\n");
   MyThreadArray t1(Worker1, Worker2, Worker3);
   t1.Start();
   t1.Join();
   delete foo;
 }
-REGISTER_TEST(Run, 121)
-}  // namespace test121
+
+void InitMe2() {
+  if (foo) return;
+  printf("%s:%d\n", __FUNCTION__, __LINE__);
+  Foo *x = new Foo;
+  ANNOTATE_BENIGN_RACE_SIZED(x, sizeof(*x), "may or may not detect this race");
+  x->a = 42;
+  MutexLock lock(&mu);
+  foo = x;
+}
+
+void DCLWorker2() {
+  InitMe2();
+  CHECK(foo);
+  CHECK(foo->a == 42);
+}
+
+TEST(PositiveTests, DoubleCheckedLocking2) {
+  foo = NULL;
+  ANNOTATE_EXPECT_RACE(&foo, "real race");
+  MyThreadArray t1(DCLWorker2, DCLWorker2, DCLWorker2, DCLWorker2);
+  t1.Start();
+  t1.Join();
+  delete foo;
+}
+
+}  // namespace DoubleCheckedLocking
 
 namespace PositiveTests_DifferentSizeAccessTest {  // {{{1
 
