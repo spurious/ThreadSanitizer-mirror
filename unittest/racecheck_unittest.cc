@@ -5201,29 +5201,32 @@ TEST(PositiveTests, DoubleCheckedLocking1) {
   delete foo;
 }
 
+Foo *foo2;
+Mutex mu2;
+
 void InitMe2() {
-  if (foo) return;
+  if (foo2) return;
   printf("%s:%d\n", __FUNCTION__, __LINE__);
   Foo *x = new Foo;
   ANNOTATE_BENIGN_RACE_SIZED(x, sizeof(*x), "may or may not detect this race");
   x->a = 42;
-  MutexLock lock(&mu);
-  foo = x;
+  MutexLock lock(&mu2);
+  foo2 = x;
 }
 
 void DCLWorker2() {
   InitMe2();
-  CHECK(foo);
-  CHECK(foo->a == 42);
+  CHECK(foo2);
+  CHECK(foo2->a == 42);
 }
 
 TEST(PositiveTests, DoubleCheckedLocking2) {
-  foo = NULL;
-  ANNOTATE_EXPECT_RACE(&foo, "real race");
+  foo2 = NULL;
+  ANNOTATE_EXPECT_RACE(&foo2, "real race");
   MyThreadArray t1(DCLWorker2, DCLWorker2, DCLWorker2, DCLWorker2);
   t1.Start();
   t1.Join();
-  delete foo;
+  delete foo2;
 }
 
 }  // namespace DoubleCheckedLocking
