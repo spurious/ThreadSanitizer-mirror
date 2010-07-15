@@ -29,17 +29,9 @@ def generate(settings):
                      description='jtsan Agent ant',
                      descriptionDone='jtsan Agent ant'))
 
-  f1.addStep(Compile(command=['make', '-C', 'jtsan'],
-                     description='building jtsan unittests',
-                     descriptionDone='build jtsan unittests'))
-
-  f1.addStep(Test(command='jtsan/jtsan.sh ThreadSanitizerTest',
+  f1.addStep(Compile(command=['make', '-C', 'jtsan', 'tsan'],
                   description='testing jtsan',
                   descriptionDone='test jtsan'))
-
-  f1.addStep(Test(command='tsan/bin/amd64-linux-debug-ts_offline <jtsan/jtsan.events',
-                  description='testing events with offline tsan',
-                  descriptionDone='test events with offline tsan'))
 
   # binaries = {
   #   'tsan/bin/tsan-amd64-linux-debug-self-contained.sh' : 'tsan-r%s-amd64-linux-debug-self-contained.sh',
