@@ -1,6 +1,11 @@
 # Pass the correct path to MTRAT.
 MTRAT=mtrat
-TESTS=testNegative1 testNegative2
+TESTS=-testPositive_WW_HashSetAccessNoLocks \
+      -testPositive_WW_LockInBetween \
+      -testNegative_CountDownLatch \
+      -testNegative_CyclicBarrier \
+      -testNegative_ReadWriteLock_TryLock \
+      -testNegative_Semaphore
 
 JTSAN_ROOT=../third_party/java-thread-sanitizer/dist
 JTSAN_LOGFILE=jtsan.events
