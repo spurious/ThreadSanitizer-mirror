@@ -14,21 +14,38 @@ def generate(settings):
   # Build tsan and install it to out/.
   path_flags = ['OFFLINE=1',
                 'VALGRIND_INST_ROOT=',
+                'GTEST_ROOT=',
                 'VALGRIND_ROOT=',
                 'PIN_ROOT=']
-  f1.addStep(Compile(command=['make', '-C', 'tsan', '-j2'] + path_flags + ['lo', 'ld'],
+  f1.addStep(Compile(command=['make', '-C', 'tsan', 'l64d'] + path_flags,
                      description='building offline tsan',
                      descriptionDone='build offline tsan'))
+
+  f1.addStep(Compile(command='third_party/java-thread-sanitizer ant download',
+                     description='jtsan Agent ant downloading',
+                     descriptionDone='jtsan Agent ant download'))
+
+  f1.addStep(Compile(command='third_party/java-thread-sanitizer ant',
+                     description='jtsan Agent ant',
+                     descriptionDone='jtsan Agent ant'))
+
+  f1.addStep(Compile(command=['make', '-C', 'jtsan'],
+                     description='building jtsan unittests',
+                     descriptionDone='build jtsan unittests'))
+
+  f1.addStep(Test(command='jtsan/jtsan.sh ThreadSanitizerTest',
+                  description='testing jtsan',
+                  descriptionDone='test jtsan'))
+
+  f1.addStep(Test(command='tsan/bin/amd64-linux-debug-ts_offline <jtsan/jtsan.events',
+                  description='testing events with offline tsan',
+                  descriptionDone='test events with offline tsan'))
 
   # binaries = {
   #   'tsan/bin/tsan-amd64-linux-debug-self-contained.sh' : 'tsan-r%s-amd64-linux-debug-self-contained.sh',
   #   'tsan/bin/tsan-amd64-linux-self-contained.sh' : 'tsan-r%s-amd64-linux-self-contained.sh',
   #   'tsan/bin32/tsan-x86-linux-self-contained.sh' : 'tsan-r%s-x86-linux-self-contained.sh'}
   # addUploadBinariesStep(f1, binaries)
-
-  f1.addStep(ShellCommand(command=["true"],
-                          description='testing',
-                          descriptionDone='test'))
 
   b1 = {'name': 'buildbot-jtsan',
         'slavename': 'bot6name',
