@@ -19,11 +19,8 @@ mtrat: ThreadSanitizerTest.class
 
 # Run tests under ThreadSanitizer
 tsan: ThreadSanitizerTest.class
-	 java -ea \
-		-Xbootclasspath/p:${JTSAN_ROOT}/agent.jar \
-		-javaagent:${JTSAN_ROOT}/agent.jar=-logfile=${JTSAN_LOGFILE} \
-		ThreadSanitizerTest ${TESTS} \
-		&& ../tsan/bin/amd64-linux-debug-ts_offline --error_exitcode=1 <${JTSAN_LOGFILE}
+	./jtsan.sh ThreadSanitizerTest ${TESTS} \
+	&& ../tsan/bin/amd64-linux-debug-ts_offline --error_exitcode=1 <${JTSAN_LOGFILE}
 
 # Clean
 clean:
