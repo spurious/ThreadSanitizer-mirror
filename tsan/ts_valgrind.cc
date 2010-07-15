@@ -102,7 +102,7 @@ extern "C" int puts(const char *s) {
 extern "C" void exit(int e) { VG_(exit)(e); }
 
 #ifndef VGP_arm_linux
-extern "C" void abort() { CHECK(0); }
+//extern "C" void abort() { CHECK(0); }
 #endif
 
 

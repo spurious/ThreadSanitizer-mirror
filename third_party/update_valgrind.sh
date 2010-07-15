@@ -6,7 +6,7 @@ update_subversion() {
 
 checkout() {
   echo "No directory 'valgrind'; doing svn checkout"
-  svn co -r 24 http://valgrind-variant.googlecode.com/svn/trunk/valgrind valgrind
+  svn co -r 31 http://valgrind-variant.googlecode.com/svn/trunk/valgrind valgrind
 }
 
 if [[ -d valgrind ]]; then
