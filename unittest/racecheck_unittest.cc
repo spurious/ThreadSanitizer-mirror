@@ -5208,7 +5208,7 @@ void InitMe2() {
   if (foo2) return;
   printf("%s:%d\n", __FUNCTION__, __LINE__);
   Foo *x = new Foo;
-  ANNOTATE_BENIGN_RACE_SIZED(x, sizeof(*x), "may or may not detect this race");
+  ANNOTATE_BENIGN_RACE(&x->a, "may or may not detect this race");
   x->a = 42;
   MutexLock lock(&mu2);
   foo2 = x;
