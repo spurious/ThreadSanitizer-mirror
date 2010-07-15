@@ -1,6 +1,9 @@
 # Pass the correct path to MTRAT.
 MTRAT=mtrat
-TESTS=
+TESTS=testNegative1 testNegative2
+
+JTSAN_ROOT=../third_party/java-thread-sanitizer/dist
+JTSAN_LOGFILE=jtsan.events
 
 # Build the unittests.
 ThreadSanitizerTest.class: ThreadSanitizerTest.java RaceDetectorApi.java
@@ -16,7 +19,11 @@ mtrat: ThreadSanitizerTest.class
 
 # Run tests under ThreadSanitizer
 tsan: ThreadSanitizerTest.class
-	 java -Xbootclasspath/p:dist/agent.jar -javaagent:dist/agent.jar ThreadSanitizerTest ${TESTS}
+	 java -ea \
+		-Xbootclasspath/p:${JTSAN_ROOT}/agent.jar \
+		-javaagent:${JTSAN_ROOT}/agent.jar=-logfile=${JTSAN_LOGFILE} \
+		ThreadSanitizerTest ${TESTS} \
+		&& ../tsan/bin/amd64-linux-debug-ts_offline --error_exitcode=1 <${JTSAN_LOGFILE}
 
 # Clean
 clean:
