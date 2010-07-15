@@ -186,6 +186,8 @@ static void PrintRaceReport(uintptr_t addr) {
   } else {
     Printf("Warning: unexpected race found!\n");
     PrintRaceReportEmpty(addr);
+
+    n_reports ++;
   }
 }
 
@@ -220,8 +222,17 @@ bool RaceVerifierStartAccess(int thread_id, uintptr_t addr, uintptr_t pc,
   vector<CallSite>& reads = typedCallSites->reads;
   (is_w ? writes : reads).push_back(callSite);
   if (writes.size() > 0 && writes.size() + reads.size() > 1) {
-    // race!
-    PrintRaceReport(addr);
+    bool is_race = false;
+    for (size_t i = 0; !is_race && i < writes.size(); ++i) {
+      for (size_t j = 0; !is_race && j < writes.size(); ++j)
+        if (writes[i].thread_id != writes[j].thread_id)
+          is_race = true;
+      for (size_t j = 0; !is_race && j < reads.size(); ++j)
+        if (writes[i].thread_id != reads[j].thread_id)
+          is_race = true;
+    }
+    if (is_race)
+      PrintRaceReport(addr);
   }
   racecheck_lock.Unlock();
   return true;

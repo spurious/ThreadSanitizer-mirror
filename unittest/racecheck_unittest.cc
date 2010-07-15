@@ -7361,10 +7361,11 @@ TEST(RaceVerifierTests, Simple) {
 
 namespace RaceVerifierTests_Unverifiable {
 StealthNotification n;
-int     GLOB = 0;
+int GLOB = 0;
 
 void Worker1() {
-  GLOB = 1;
+  if (!GLOB)
+    GLOB = 1;
   n.signal();
 }
 
