@@ -21,11 +21,11 @@ def generate(settings):
                      description='building offline tsan',
                      descriptionDone='build offline tsan'))
 
-  f1.addStep(Compile(command='third_party/java-thread-sanitizer ant download',
+  f1.addStep(Compile(command='cd third_party/java-thread-sanitizer && ant download',
                      description='jtsan Agent ant downloading',
                      descriptionDone='jtsan Agent ant download'))
 
-  f1.addStep(Compile(command='third_party/java-thread-sanitizer ant',
+  f1.addStep(Compile(command='cd third_party/java-thread-sanitizer && ant',
                      description='jtsan Agent ant',
                      descriptionDone='jtsan Agent ant'))
 
