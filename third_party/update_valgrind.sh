@@ -1,12 +1,14 @@
 #!/bin/bash
 
+REV=32
+
 update_subversion() {
-  svn up
+  svn up -r$REV
 }
 
 checkout() {
   echo "No directory 'valgrind'; doing svn checkout"
-  svn co -r 32 http://valgrind-variant.googlecode.com/svn/trunk/valgrind valgrind
+  svn co -r $REV http://valgrind-variant.googlecode.com/svn/trunk/valgrind valgrind
 }
 
 if [[ -d valgrind ]]; then
