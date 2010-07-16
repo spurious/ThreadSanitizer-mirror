@@ -189,6 +189,9 @@ int main(int argc, char *argv[]) {
   ReadEventsFromFile(stdin);
 
   ThreadSanitizerFini();
+  if (G_flags->error_exitcode && GetNumberOfFoundErrors() > 0) {
+    exit(G_flags->error_exitcode);
+  }
 }
 
 // -------- thread_sanitizer.cc -------------------------- {{{1
