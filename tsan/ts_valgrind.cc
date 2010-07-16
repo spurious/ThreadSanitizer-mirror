@@ -101,9 +101,9 @@ extern "C" int puts(const char *s) {
 
 extern "C" void exit(int e) { VG_(exit)(e); }
 
-#ifdef VGO_darwin
+//#ifdef VGO_darwin
 extern "C" void abort() { CHECK(0); }
-#endif
+//#endif
 
 
 // TODO: make this rtn public
