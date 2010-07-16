@@ -5200,36 +5200,49 @@ TEST(PositiveTests, DoubleCheckedLocking1) {
   t1.Join();
   delete foo;
 }
+}  // namespace DoubleCheckedLocking
 
-Foo *foo2;
-Mutex mu2;
+namespace DoubleCheckedLocking2 {  // {{{1
+struct Foo {
+  uintptr_t padding1[16];
+  uintptr_t a;
+  uintptr_t padding2[16];
+};
 
-void InitMe2() {
-  if (foo2) return;
-  printf("%s:%d\n", __FUNCTION__, __LINE__);
+Foo *foo;
+Mutex mu;
+
+void InitMe() {
+  if (foo) return;
   Foo *x = new Foo;
   ANNOTATE_BENIGN_RACE(&x->a, "may or may not detect this race");
   x->a = 42;
-  MutexLock lock(&mu2);
-  foo2 = x;
+  {
+    MutexLock lock(&mu);
+    if (!foo) {
+      foo = x;
+      x = NULL;
+    }
+  }
+  if (x) delete x;
 }
 
-void DCLWorker2() {
-  InitMe2();
-  CHECK(foo2);
-  CHECK(foo2->a == 42);
+void Worker() {
+  InitMe();
+  CHECK(foo);
+  CHECK(foo->a == 42);
 }
 
 TEST(PositiveTests, DoubleCheckedLocking2) {
-  foo2 = NULL;
-  ANNOTATE_EXPECT_RACE(&foo2, "real race");
-  MyThreadArray t1(DCLWorker2, DCLWorker2, DCLWorker2, DCLWorker2);
+  foo = NULL;
+  ANNOTATE_EXPECT_RACE(&foo, "real race");
+  MyThreadArray t1(Worker, Worker, Worker, Worker);
   t1.Start();
   t1.Join();
-  delete foo2;
+  delete foo;
 }
 
-}  // namespace DoubleCheckedLocking
+}  // namespace DoubleCheckedLocking2
 
 namespace PositiveTests_DifferentSizeAccessTest {  // {{{1
 
