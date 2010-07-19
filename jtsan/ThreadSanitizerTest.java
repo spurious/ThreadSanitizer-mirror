@@ -208,7 +208,7 @@ public class ThreadSanitizerTest {
   }
 
   public void testPositive_WW_NoLocksShort() {
-    describe("Race: two unlocked writesl; short");
+    describe("Race: two unlocked writes; short");
     new ThreadRunner2() {
       public void thread1() { shared_short_var = 1; }
       public void thread2() { shared_short_var = 2; }
@@ -216,7 +216,7 @@ public class ThreadSanitizerTest {
   }
 
   public void testPositive_WW_NoLocksChar() {
-    describe("Race: two unlocked writesl; char");
+    describe("Race: two unlocked writes; char");
     new ThreadRunner2() {
       public void thread1() { shared_char_var = 1; }
       public void thread2() { shared_char_var = 2; }
@@ -224,7 +224,7 @@ public class ThreadSanitizerTest {
   }
 
   public void testPositive_WW_NoLocksLong() {
-    describe("Race: two unlocked writesl; long");
+    describe("Race: two unlocked writes; long");
     new ThreadRunner2() {
       public void thread1() { shared_long_var = 1; }
       public void thread2() { shared_long_var = 2; }
@@ -232,7 +232,7 @@ public class ThreadSanitizerTest {
   }
 
   public void testPositive_WW_NoLocksFloat() {
-    describe("Race: two unlocked writesl; float");
+    describe("Race: two unlocked writes; float");
     new ThreadRunner2() {
       public void thread1() { shared_float_var = 1; }
       public void thread2() { shared_float_var = 2; }
@@ -240,7 +240,7 @@ public class ThreadSanitizerTest {
   }
 
   public void testPositive_WW_NoLocksDouble() {
-    describe("Race: two unlocked writesl; double");
+    describe("Race: two unlocked writes; double");
     new ThreadRunner2() {
       public void thread1() { shared_double_var = 1; }
       public void thread2() { shared_double_var = 2; }
@@ -248,7 +248,7 @@ public class ThreadSanitizerTest {
   }
 
   public void testPositive_WW_NoLocksObj() {
-    describe("Race: two unlocked writesl; long");
+    describe("Race: two unlocked writes; long");
     new ThreadRunner2() {
       public void thread1() { shared_obj = new Integer(0); }
       public void thread2() { shared_obj = new Integer(1); }
