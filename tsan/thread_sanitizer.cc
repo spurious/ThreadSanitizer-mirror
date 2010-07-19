@@ -5504,6 +5504,8 @@ class Detector {
         CHECK(g_expecting_races == true);
         g_expecting_races = false;
         if (g_found_races_since_EXPECT_RACE_BEGIN == 0) {
+          int n_errs = GetNumberOfFoundErrors();
+          SetNumberOfFoundErrors(n_errs + 1);
           Printf("WARNING: expected race not found.\n");
         }
         break;
