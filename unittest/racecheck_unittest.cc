@@ -3189,8 +3189,6 @@ namespace NegativeTests_StdStringDtor {  // {{{1
 // in a way that race detectors can not understand.
 //
 // See http://code.google.com/p/data-race-test/issues/detail?id=40
-//
-// The report is suppressed in TSan in r2336
 string *s;
 
 Mutex mu;
@@ -3205,7 +3203,7 @@ void Worker() {
   // x is destructed, ref count is decremented.
 }
 
-TEST(NegativeTests, StdStringDtor) {
+TEST(NegativeTests, DISABLED_StdStringDtor) {
   MyThreadArray mta(Worker, Worker, Worker);
   s = new string ("foo");
   mta.Start();
