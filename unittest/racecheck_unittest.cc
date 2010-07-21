@@ -3187,8 +3187,10 @@ namespace NegativeTests_StdStringDtor {  // {{{1
 // Some implementations of std::string (including the one on Linux)
 // are unfriendly to race detectors since they use atomic reference counting
 // in a way that race detectors can not understand.
-// As of ThreadSanitizer r2273 this test fails (ThreadSanitizer produces a false
-// warning inside operator delete called from ~basic_string)
+//
+// See http://code.google.com/p/data-race-test/issues/detail?id=40
+//
+// The report is suppressed in TSan in r2336
 string *s;
 
 Mutex mu;
@@ -3203,7 +3205,7 @@ void Worker() {
   // x is destructed, ref count is decremented.
 }
 
-TEST(NegativeTests, DISABLED_StdStringDtor) {
+TEST(NegativeTests, StdStringDtor) {
   MyThreadArray mta(Worker, Worker, Worker);
   s = new string ("foo");
   mta.Start();

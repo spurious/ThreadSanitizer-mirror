@@ -4630,23 +4630,34 @@ static const char default_suppressions[] =
 
 #endif
 
-#ifdef _MSC_VER
+#ifndef _MSC_VER
+"{                                                                   \n"
+"  False reports on std::string internals. See TSan issue #40.       \n"
+"  ThreadSanitizer:Race                                              \n"
+"  fun:operator delete*                                              \n"
+"  ...                                                               \n"
+"  fun:*~basic_string*                                               \n"
+"}                                                                   \n"
+#else
 "{                                                                   \n"
 "  False lock report inside ntdll.dll                                \n"
 "  ThreadSanitizer:InvalidLock                                       \n"
 "  fun:*                                                             \n"
 "  obj:*ntdll.dll                                                    \n"
 "}                                                                   \n"
+
 "{                                                                   \n"
 "  False report due to lack of debug symbols in ntdll.dll  (a)       \n"
 "  ThreadSanitizer:InvalidLock                                       \n"
 "  fun:*SRWLock*                                                     \n"
 "}                                                                   \n"
+
 "{                                                                   \n"
 "  False report due to lack of debug symbols in ntdll.dll  (b)       \n"
 "  ThreadSanitizer:UnlockForeign                                     \n"
 "  fun:*SRWLock*                                                     \n"
 "}                                                                   \n"
+
 "{                                                                   \n"
 "  False report due to lack of debug symbols in ntdll.dll  (c)       \n"
 "  ThreadSanitizer:UnlockNonLocked                                   \n"
