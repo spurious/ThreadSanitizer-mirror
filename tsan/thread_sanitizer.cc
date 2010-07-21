@@ -4634,10 +4634,10 @@ static const char default_suppressions[] =
 "{                                                                   \n"
 "  False reports on std::string internals. See TSan issue #40.       \n"
 "  ThreadSanitizer:Race                                              \n"
-"  fun:operator delete*                                              \n"
 "  ...                                                               \n"
 "  fun:*~basic_string*                                               \n"
 "}                                                                   \n"
+
 #else
 "{                                                                   \n"
 "  False lock report inside ntdll.dll                                \n"
@@ -4664,6 +4664,12 @@ static const char default_suppressions[] =
 "  fun:*SRWLock*                                                     \n"
 "}                                                                   \n"
 
+"{                                                                   \n"
+"  False reports on std::string internals (2). See TSan issue #40.   \n"
+"  ThreadSanitizer:Race                                              \n"
+"  ...                                                               \n"
+"  fun:*basic_string*scalar deleting destructor*                     \n"
+"}                                                                   \n"
 #endif
 
 ;
