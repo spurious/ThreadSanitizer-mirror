@@ -3848,6 +3848,7 @@ struct Thread {
   // Return the TID of the joined child and it's vts
   TID HandleThreadJoinAfter(VTS **vts_at_exit, TID joined_tid) {
     CHECK(joined_tid.raw() > 0);
+    CHECK(GetIfExists(joined_tid) != NULL);
     *vts_at_exit = Thread::Get(joined_tid)->vts_at_exit_;
     if (*vts_at_exit == NULL) {
       Printf("vts_at_exit==NULL; parent=%d, child=%d\n",
