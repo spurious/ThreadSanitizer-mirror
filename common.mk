@@ -103,7 +103,7 @@ ifeq ($(OS), windows)
 else
   ifeq ($(OPT), 1)
     OX=O1
-    OPTFLAGS=-g -O1
+    OPTFLAGS=-g -O1 -fno-inline -fno-omit-frame-pointer -fno-builtin
   else
     OX=O0
     OPTFLAGS=-g -O0
