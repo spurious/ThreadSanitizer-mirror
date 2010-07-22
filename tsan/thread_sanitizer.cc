@@ -6986,6 +6986,7 @@ static void SetupIgnore() {
   g_ignore_lists->funs_r.push_back("RtlDestroyQueryDebugBuffer");
   g_ignore_lists->funs_r.push_back("BCryptGenerateSymmetricKey");
 #else
+  // http://code.google.com/p/data-race-test/issues/detail?id=40
   g_ignore_lists->funs_r.push_back("*~basic_string*");
 #endif
 
