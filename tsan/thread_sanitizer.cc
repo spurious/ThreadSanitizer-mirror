@@ -6971,7 +6971,7 @@ static void SetupIgnore() {
   g_ignore_lists->funs_r.push_back("__CFDoExternRefOperation");
   g_ignore_lists->funs_r.push_back("_CFAutoreleasePoolPop");
   g_ignore_lists->funs_r.push_back("_CFAutoreleasePoolPush");
-  g_ignore_lists->funs_r.push_back("OSAtomicAdd32")
+  g_ignore_lists->funs_r.push_back("OSAtomicAdd32");
 
   // pthread_lib_{enter,exit} shouldn't give us any reports since they
   // have IGNORE_ALL_ACCESSES_BEGIN/END but they do give the reports...
@@ -6985,6 +6985,8 @@ static void SetupIgnore() {
 
   g_ignore_lists->funs_r.push_back("RtlDestroyQueryDebugBuffer");
   g_ignore_lists->funs_r.push_back("BCryptGenerateSymmetricKey");
+#else
+  g_ignore_lists->funs_r.push_back("*~basic_string*");
 #endif
 
   // do not create segments in our Replace_* functions
