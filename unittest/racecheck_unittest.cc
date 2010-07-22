@@ -3191,15 +3191,11 @@ namespace NegativeTests_StdStringDtor {  // {{{1
 // See http://code.google.com/p/data-race-test/issues/detail?id=40
 string *s;
 
-Mutex mu;
-int done = 0;  // under mu.
+BlockingCounter counter(3);
 
 void Worker() {
   string x = *s;  // force string copy (increments ref count).
-  {
-    MutexLock lock(&mu);
-    done++;
-  }
+  counter.DecrementCount();
   // x is destructed, ref count is decremented.
 }
 
@@ -3208,10 +3204,7 @@ TEST(NegativeTests, StdStringDtor) {
   s = new string ("foo");
   mta.Start();
 
-  while (1) {
-    MutexLock lock(&mu);
-    if (done == 3) break;
-  }
+  counter.Wait();
 
   delete s;  // ref count becomes zero and the object is destroyed.
   mta.Join();
