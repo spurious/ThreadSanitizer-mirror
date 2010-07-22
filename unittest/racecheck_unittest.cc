@@ -3203,7 +3203,7 @@ void Worker() {
   // x is destructed, ref count is decremented.
 }
 
-TEST(NegativeTests, DISABLED_StdStringDtor) {
+TEST(NegativeTests, StdStringDtor) {
   MyThreadArray mta(Worker, Worker, Worker);
   s = new string ("foo");
   mta.Start();
