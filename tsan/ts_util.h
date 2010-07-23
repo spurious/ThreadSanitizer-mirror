@@ -42,6 +42,11 @@ extern void ThreadSanitizerDumpAllStacks();
           __FUNCTION__, __FILE__, __LINE__, #x); \
    ThreadSanitizerDumpAllStacks(); \
    exit(1); }} while (0)
+#elif defined(TS_OFFLINE)
+extern int n_offline_events;
+# define CHECK(x) do { if (!(x)) { \
+    Printf("ASSERT ON %d EVENT\n", n_offline_events); \
+     assert(x);}} while (0)
 #else
 # define CHECK assert
 #endif

@@ -47,6 +47,7 @@ struct PcInfo {
 
 static map<uintptr_t, PcInfo> *g_pc_info_map;
 
+int n_offline_events;
 //------------- Utils ------------------- {{{1
 static EventType EventNameToEventType(const char *name) {
   map<string, int>::iterator it = g_event_type_map->find(name);
@@ -135,10 +136,10 @@ static bool known_threads[max_unknown_thread] = {};
 
 void ReadEventsFromFile(FILE *file) {
   Event event;
-  int n_events = 0;
+  n_offline_events = 0;
   while (ReadOneEventFromFile(file, &event)) {
     // event.Print();
-    n_events++;
+    n_offline_events++;
     uint32_t tid = event.tid();
     if (event.type() == THR_START && tid < max_unknown_thread) {
       known_threads[tid] = true;
@@ -147,7 +148,7 @@ void ReadEventsFromFile(FILE *file) {
       ThreadSanitizerHandleOneEvent(&event);
     }
   }
-  Printf("INFO: ThreadSanitizerOffline: %d events read\n", n_events);
+  Printf("INFO: ThreadSanitizerOffline: %d events read\n", n_offline_events);
 }
 //------------- ThreadSanitizer exports ------------ {{{1
 

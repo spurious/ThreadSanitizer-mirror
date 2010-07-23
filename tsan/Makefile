@@ -194,6 +194,7 @@ endif
 
 ifeq ($(OFFLINE), 1)
 TS_offline: $(P)ts_offline$(EXE)
+DEFINES+=-DTS_OFFLINE=1
 else
 TS_offline:
 endif
@@ -228,7 +229,6 @@ TS_DR_OBJECTS=$(DRP)ts_dynamorio.$(OBJ) $(DRP)ts_util.$(OBJ)
 
 $(P)%.$(OBJ): %.cc $(TS_HEADERS) | $(OUTDIR)
 	$(CXX) $(CXXFLAGS) $(ARCHFLAGS) $(O)$@ -c $< $(DEFINES)
-
 
 $(VGP)%.o: %.cc $(TS_HEADERS) $(TS_VG_HEADERS) | $(OUTDIR)
 	$(CXX) $(CXXFLAGS) $(VG_CXXFLAGS) $(ARCHFLAGS) $(VG_INCLUDES) $(VG_DEFINES) -o $@ -c $< $(DEFINES)
