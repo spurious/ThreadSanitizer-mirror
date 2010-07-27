@@ -3189,22 +3189,44 @@ namespace NegativeTests_StdStringDtor {  // {{{1
 // in a way that race detectors can not understand.
 //
 // See http://code.google.com/p/data-race-test/issues/detail?id=40
-string *s;
+string *s = NULL;
+BlockingCounter *counter = NULL;
 
-BlockingCounter counter(3);
-
-void Worker() {
+void DestroyWorker() {
   string x = *s;  // force string copy (increments ref count).
-  counter.DecrementCount();
+  counter->DecrementCount();
   // x is destructed, ref count is decremented.
 }
 
-TEST(NegativeTests, StdStringDtor) {
-  MyThreadArray mta(Worker, Worker, Worker);
+void AssignWorker() {
+  string x = *s;  // force string copy (increments ref count).
+  counter->DecrementCount();
+  // x is assigned, the ref count is decremented.
+  usleep(100000);
+  x = "ZZZ";
+}
+
+TEST(NegativeTests, StdStringDtorVsDtor) {
+  MyThreadArray mta(DestroyWorker, DestroyWorker, DestroyWorker);
+  counter = new BlockingCounter(3);
   s = new string ("foo");
   mta.Start();
 
-  counter.Wait();
+  counter->Wait();
+  delete counter;
+
+  delete s;  // ref count becomes zero and the object is destroyed.
+  mta.Join();
+}
+
+TEST(NegativeTests, DISABLED_StdStringDtorVsAssign) {
+  MyThreadArray mta(AssignWorker, AssignWorker, AssignWorker);
+  counter = new BlockingCounter(3);
+  s = new string ("foo");
+  mta.Start();
+
+  counter->Wait();
+  delete counter;
 
   delete s;  // ref count becomes zero and the object is destroyed.
   mta.Join();
