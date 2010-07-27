@@ -3213,10 +3213,10 @@ TEST(NegativeTests, StdStringDtorVsDtor) {
   mta.Start();
 
   counter->Wait();
-  delete counter;
 
   delete s;  // ref count becomes zero and the object is destroyed.
   mta.Join();
+  delete counter;
 }
 
 TEST(NegativeTests, DISABLED_StdStringDtorVsAssign) {
@@ -3226,10 +3226,10 @@ TEST(NegativeTests, DISABLED_StdStringDtorVsAssign) {
   mta.Start();
 
   counter->Wait();
-  delete counter;
 
   delete s;  // ref count becomes zero and the object is destroyed.
   mta.Join();
+  delete counter;
 }
 }  //namespace NegativeTests_EmptyRep
 
