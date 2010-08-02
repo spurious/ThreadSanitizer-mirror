@@ -25,7 +25,7 @@ mtrat: ThreadSanitizerTest.class
 tsan: ThreadSanitizerTest.class
 	./jtsan.sh ThreadSanitizerTest ${TESTS} \
 	&& ../tsan/bin/amd64-linux-debug-ts_offline --error_exitcode=1 <${JTSAN_LOGFILE} \
-	|| (echo '========================================' && cat ${JTSAN_LOGFILE})
+	|| (echo '========================================' && cat ${JTSAN_LOGFILE} && exit 1)
 # Clean
 clean:
 	rm -fr *.class bin dist *log
