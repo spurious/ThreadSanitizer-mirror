@@ -47,7 +47,7 @@ struct PcInfo {
 
 static map<uintptr_t, PcInfo> *g_pc_info_map;
 
-int n_offline_events;
+int offline_line_n;
 //------------- Utils ------------------- {{{1
 static EventType EventNameToEventType(const char *name) {
   map<string, int>::iterator it = g_event_type_map->find(name);
@@ -72,7 +72,10 @@ static void SkipCommentText(FILE *file) {
   while (true) {
     int c = fgetc(file);
     if (c == EOF) break;
-    if (c == '\n')  break;
+    if (c == '\n') {
+      offline_line_n++;
+      break;
+    }
     if (i < kBufSize - 1)
       buff[i++] = c;
   }
@@ -123,6 +126,7 @@ bool ReadOneEventFromFile(FILE *file, Event *event) {
   uint32_t tid;
   unsigned long pc, a, info;
   SkipWhiteSpaceAndComments(file);
+  offline_line_n++;
   if (5 == fscanf(file, "%s%x%lx%lx%lx", name, &tid, &pc, &a, &info)) {
     event->Init(EventNameToEventType(name), tid, pc, a, info);
     return true;
@@ -136,10 +140,11 @@ static bool known_threads[max_unknown_thread] = {};
 
 void ReadEventsFromFile(FILE *file) {
   Event event;
-  n_offline_events = 0;
+  int n_events = 0;
+  offline_line_n = 0;
   while (ReadOneEventFromFile(file, &event)) {
     // event.Print();
-    n_offline_events++;
+    n_events++;
     uint32_t tid = event.tid();
     if (event.type() == THR_START && tid < max_unknown_thread) {
       known_threads[tid] = true;
@@ -148,7 +153,7 @@ void ReadEventsFromFile(FILE *file) {
       ThreadSanitizerHandleOneEvent(&event);
     }
   }
-  Printf("INFO: ThreadSanitizerOffline: %d events read\n", n_offline_events);
+  Printf("INFO: ThreadSanitizerOffline: %d events read\n", n_events);
 }
 //------------- ThreadSanitizer exports ------------ {{{1
 
