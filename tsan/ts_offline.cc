@@ -35,6 +35,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <ctype.h>
+#include <time.h>
 
 // ------------- Globals ------------- {{{1
 static map<string, int> *g_event_type_map;
@@ -196,7 +197,7 @@ int main(int argc, char *argv[]) {
 
   ThreadSanitizerFini();
   if (G_flags->error_exitcode && GetNumberOfFoundErrors() > 0) {
-    exit(G_flags->error_exitcode);
+    return G_flags->error_exitcode;
   }
 }
 
