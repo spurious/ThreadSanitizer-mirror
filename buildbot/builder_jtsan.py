@@ -29,7 +29,7 @@ def generate(settings):
                      description='jtsan Agent ant',
                      descriptionDone='jtsan Agent ant'))
 
-  f1.addStep(Compile(command=['make', '-C', 'jtsan', 'tsan'],
+  f1.addStep(Test(command=['make', '-C', 'jtsan', 'buildbot'],
                   description='testing jtsan',
                   descriptionDone='test jtsan'))
 
