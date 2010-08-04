@@ -2,6 +2,7 @@
 MTRAT=mtrat
 TESTS=-testPositive_WW_HashSetAccessNoLocks \
       -testPositive_WW_LockInBetween \
+      -testPositive_WritingUnderReaderLock \
       -testNegative_CyclicBarrier \
       -testNegative_ReadWriteLock_TryLock \
       -testNegative_CountDownLatch \
