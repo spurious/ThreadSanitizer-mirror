@@ -34,6 +34,12 @@
 
 #include <gtest/gtest.h>
 
+#ifdef WIN32
+#include <Wbemidl.h>
+#pragma comment(lib, "Wbemuuid.lib")
+#pragma comment(lib, "Ole32.lib")
+#endif
+
 void Noop() {}
 
 namespace NoopTest {
@@ -54,11 +60,18 @@ TEST(Wrappers, StrchrTest) {
   EXPECT_TRUE(strchr(foo, -60) == 0);
   EXPECT_TRUE(strchr(foo, 0) != 0);
   EXPECT_TRUE(strchr(foo, 0) == foo + strlen(foo));
+
   EXPECT_TRUE(strrchr(foo, 10) != 0);
   EXPECT_TRUE(strrchr(foo, 0) != 0);
   EXPECT_TRUE(strrchr(foo, 0) == foo + strlen(foo));
   EXPECT_TRUE(strrchr(foo, 250) != 0);
   EXPECT_TRUE(strrchr(foo, -60) == 0);
+
+#ifdef WIN32
+  EXPECT_TRUE(lstrlenA(NULL) == 0);
+  EXPECT_TRUE(lstrlenW(NULL) == 0);
+#endif
+  //EXPECT_EQ(
 }
 
 TEST(Threads, EmptyThreadTest) {
@@ -73,4 +86,28 @@ TEST(SyscallTests, OutputDebugStringTest) {
   // DrMemory bug http://code.google.com/p/dynamorio/issues/detail?id=281
   OutputDebugString("Hello!\n");
 }
+
+TEST(ComTests, DISABLED_IWbemLocator_ConnectServerTest) {
+  // DrMemory crashes on this test,
+  // see http://code.google.com/p/drmemory/issues/detail?id=21
+  HRESULT hr;
+  ::CoInitialize(NULL);
+  IWbemLocator *wmi_locator = NULL;
+  hr = ::CoCreateInstance(CLSID_WbemLocator, NULL, CLSCTX_INPROC_SERVER,
+                          __uuidof(IWbemLocator),
+                          reinterpret_cast<void**>(&wmi_locator));
+  ASSERT_FALSE(FAILED(hr));
+
+  printf("before ConnectServer...\n");
+  IWbemServices *wmi_services_r = NULL;
+  hr = wmi_locator->ConnectServer(L"ROOT\\CIMV2", NULL, NULL, 0,
+                                  NULL, 0, 0, &wmi_services_r);
+  printf("after  ConnectServer...\n");
+  EXPECT_FALSE(FAILED(hr));
+
+  wmi_locator->Release();
+  wmi_services_r->Release();
+  ::CoUninitialize();
+}
+
 #endif
