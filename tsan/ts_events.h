@@ -87,6 +87,8 @@ enum EventType {
   VERBOSITY,          // Used for debugging.
   STACK_TRACE,        // {tid, pc, 0, 0}, for debugging.
   FLUSH_STATE,        // {tid, pc, 0, 0}
+  PC_DESCRIPTION,     // {0, pc, descr_str, 0}, for ts_offline.
+  PRINT_MESSAGE,      // {tid, pc, message_str, 0}, for ts_offline.
   LAST_EVENT          // Should not appear.
 };
 
