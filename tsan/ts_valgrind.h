@@ -24,6 +24,7 @@
 */
 
 // Author: Konstantin Serebryany.
+// Note: the rest of ThreadSanitizer is published under the BSD license.
 
 #ifndef TS_VALGRIND_H_
 #define TS_VALGRIND_H_

@@ -26,8 +26,10 @@
 */
 
 // Author: Konstantin Serebryany.
-// Parts of the code in this file are taken from Helgrind,
+// Parts of the code in this file are derived from Helgrind,
 // a data race detector written by Julian Seward.
+// Note that the rest of ThreadSanitizer code is not derived from Helgrind
+// and is published under the BSD license.
 
 #define _GNU_SOURCE 1
 #include <stdio.h>
