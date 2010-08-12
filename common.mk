@@ -41,6 +41,7 @@ ifeq ($(OS), linux)
   CXX=g++
   CC=gcc
   LD=g++
+  LTLD=g++
   SO=so
   OBJ=o
   EXE=
