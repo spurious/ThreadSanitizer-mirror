@@ -89,7 +89,7 @@ else ifeq ($(OS), darwin)
       -Wl,-seg1addr,0xf0080000 -Wl,-stack_addr,0xf0080000 -Wl,-stack_size,0x80000 -Wl,-pagezero_size,0xf0000000 \
       -nodefaultlibs -nostartfiles
   VG_LD_PRELOAD_FLAGS=-arch i386 -dynamic -dynamiclib -all_load
-  VG_CXXFLAGS+=-fno-weak -bind_at_load
+  VG_CXXFLAGS+=-fno-weak -bind_at_load -fno-PIC
 else ifeq ($(OS), windows)
   VALGRIND_ROOT= # no valgrind on windows :(
   CXXFLAGS=/c /Zi /MT /EHs- /EHa- /wd4530   /D_CRT_SECURE_NO_DEPRECATE /D_SECURE_SCL=0 /nologo /Gy /Ox /GL
@@ -251,7 +251,7 @@ $(P)preload-%.o: %.c $(TS_HEADERS) $(TS_VG_HEADERS) | $(OUTDIR)
 	$(CC) $(CFLAGS) $(ARCHFLAGS) $(VG_INCLUDES) $(VG_DEFINES) -o $@ -c $<
 
 $(OUTDIR)/tsan$(D)-$(ARCHOS): $(TS_VG_OBJECTS)
-	$(LD) $(LDFLAGS) $(ARCHFLAGS) $(VG_LD_FLAGS) -o $@ $^ $(VALGRIND_LIBS) -lgcc
+	$(LTLD) $(LDFLAGS) $(ARCHFLAGS) $(VG_LD_FLAGS) -o $@ $^ $(VALGRIND_LIBS) -lgcc
 	ln -sf `pwd`/$@ $(VALGRIND_INST_ROOT)/lib/valgrind/  # install the symlink into the valgrind inst dir.
 
 $(OUTDIR)/vgpreload_tsan$(D)-$(ARCHOS).so: $(P)preload-ts_valgrind_intercepts.o

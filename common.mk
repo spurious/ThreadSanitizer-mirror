@@ -50,6 +50,7 @@ else ifeq ($(OS), darwin)
   CXX=g++
   CC=gcc
   LD=g++
+  LTLD=$(SVN_ROOT)/third_party/valgrind/coregrind/link_tool_exe_darwin 0x38000000 g++
   SO=so
   OBJ=o
   EXE=
