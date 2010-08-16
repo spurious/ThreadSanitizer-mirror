@@ -107,7 +107,7 @@ int GetNumberOfFoundErrors() {
 
 
 #ifndef TS_VALGRIND
-FILE *G_out = stdout;
+FILE *G_out = stderr;
 #endif
 
 static string RemoveUnsupportedFormat(const char *str) {
@@ -174,7 +174,7 @@ void Report(const char *format, ...) {
   int len = strlen(buff);
   bool last_was_new_line = true;
   for (int i = 0; i < len; i++) {
-    if (last_was_new_line)
+    if (G_flags->show_pid && last_was_new_line)
       res += pid_buff;
     last_was_new_line = (buff[i] == '\n');
     res += buff[i];

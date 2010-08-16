@@ -6696,6 +6696,16 @@ bool PhaseDebugIsOn(const char *phase_name) {
 }
 
 void ThreadSanitizerParseFlags(vector<string> *args) {
+#ifdef TS_OFFLINE
+  string input_type_tmp;
+  FindStringFlag("input_type", args, &input_type_tmp);
+  if (input_type_tmp.size() > 0) {
+    G_flags->input_type = input_type_tmp;
+  } else {
+    G_flags->input_type = "str";
+  }
+#endif
+
   // Check this first.
   FindIntFlag("v", 0, args, &G_flags->verbosity);
 
@@ -6748,6 +6758,12 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   FindBoolFlag("show_stats", false, args, &G_flags->show_stats);
   FindBoolFlag("color", false, args, &G_flags->color);
   FindBoolFlag("html", false, args, &G_flags->html);
+#ifdef TS_OFFLINE
+  bool show_pid_default = false;
+#else
+  bool show_pid_default = true;
+#endif
+  FindBoolFlag("show_pid", show_pid_default, args, &G_flags->show_pid);
 
   FindIntFlag("dry_run", 0, args, &G_flags->dry_run);
   FindBoolFlag("report_races", true, args, &G_flags->report_races);
@@ -6798,12 +6814,6 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   FindStringFlag("log_file", args, &log_file_tmp);
   if (log_file_tmp.size() > 0) {
     G_flags->log_file = log_file_tmp.back();
-  }
-
-  vector<string> offline_syntax_temp;
-  FindStringFlag("offline_syntax", args, &offline_syntax_temp);
-  if (offline_syntax_temp.size() > 0) {
-    G_flags->offline_syntax = offline_syntax_temp.back();
   }
 
   G_flags->tsan_program_name = "valgrind --tool=tsan";

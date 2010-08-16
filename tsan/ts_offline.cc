@@ -34,6 +34,7 @@
 
 // ------------- Includes ------------- {{{1
 #include "thread_sanitizer.h"
+#include "ts_events.h"
 
 #include <stdio.h>
 #include <stdarg.h>
@@ -51,7 +52,34 @@ struct PcInfo {
 
 static map<uintptr_t, PcInfo> *g_pc_info_map;
 
-int offline_line_n;
+unsigned long offline_line_n;
+//------------- Read binary file Utils ------------ {{{1
+static const int kBufSize = 65536;
+
+template<typename T>
+static bool Read(FILE *fp, T *res) {
+  unsigned char buf[16];
+  int size = fread(buf, sizeof(T), 1, fp);
+  *res = 0;
+  for (unsigned int i=0; i<sizeof(T); i++) {
+    *res <<= 8;
+    *res += buf[i];
+  }
+  return size == 1;
+}
+
+
+static bool ReadANSI(FILE *file, string *res) {
+  char buf[kBufSize];
+  unsigned short length;
+  if (!Read<unsigned short>(file, &length)) {
+    return false;
+  }
+  int size = fread(buf, 1, (int)length, file);
+  buf[length] = 0;
+  *res = (char *)buf;
+  return size == length;
+}
 //------------- Utils ------------------- {{{1
 static EventType EventNameToEventType(const char *name) {
   map<string, int>::iterator it = g_event_type_map->find(name);
@@ -70,7 +98,6 @@ static void InitEventTypeMap() {
 }
 
 static void SkipCommentText(FILE *file) {
-  const int kBufSize = 1000;
   char buff[kBufSize];
   int i = 0;
   while (true) {
@@ -105,7 +132,7 @@ static void SkipCommentText(FILE *file) {
   }
   if (buff[0] == '>') {
     // Just print the rest of comment.
-    Printf("%s\n", buff + 1);
+    Printf("%s\n", buff + 2);
   }
 }
 
@@ -124,7 +151,9 @@ static void SkipWhiteSpaceAndComments(FILE *file) {
   ungetc(c, file);
 }
 
-bool ReadOneEventFromFile(FILE *file, Event *event) {
+typedef bool (*EventReader)(FILE *, Event *);
+
+bool ReadOneStrEventFromFile(FILE *file, Event *event) {
   CHECK(event);
   char name[1024];
   uint32_t tid;
@@ -138,16 +167,144 @@ bool ReadOneEventFromFile(FILE *file, Event *event) {
   return false;
 }
 
+bool ProcessCodePosition(FILE *input, int *pc, string *str) {
+  bool ok = Read<int>(input, pc);
+  ok &= ReadANSI(input, str);
+  return ok;
+}
+
+bool ProcessMessage(FILE *input, string *str) {
+  return ReadANSI(input, str);
+}
+
+// Read information about event in format: [[[info] address] pc] tid.
+bool ProcessEvent(FILE *input, EventType type, Event *event) {
+  bool ok = true;
+  unsigned short tid = 0;
+  int pc = 0;
+  int64_t address = 0;
+  unsigned short extra = 0;
+  // It's tricky switch without breaks.
+  switch (type) {
+    case THR_START:
+      ok &= Read<unsigned short>(input, &extra);
+      // fallthrough.
+    case READ:
+    case READER_LOCK:
+    case SIGNAL:
+    case THR_JOIN_AFTER:
+    case UNLOCK:
+    case WAIT:
+    case WRITE:
+    case WRITER_LOCK:
+      ok &= Read<int64_t>(input, &address);
+      // fallthrough.
+    case EXPECT_RACE_BEGIN:
+    case EXPECT_RACE_END:
+    case RTN_EXIT:
+    case SBLOCK_ENTER:
+    case STACK_TRACE:
+    case THR_END:
+    case THR_FIRST_INSN:
+      ok &= Read<int>(input, &pc);
+      // fallthrough.
+    case RTN_CALL:
+      ok &= Read<unsigned short>(input, &tid);
+      break;
+    default:
+      // read unsupported EventType.
+      CHECK(false);
+  }
+  if (type == READ || type == WRITE) {
+    extra = 1;
+  }
+  event->Init(type, (int)tid, pc, address, (int)extra);
+  return ok;
+}
+
+bool ReadOneBinEventFromFile(FILE *input, Event *event) {
+  CHECK(event);
+  bool ok = true;
+  EventType type;
+  unsigned char typeOrd;
+  int pc;
+  int line;
+  char rtn[kBufSize];
+  char file[kBufSize];
+  string str;
+  while (ok) {
+    offline_line_n++;
+    ok &= Read<unsigned char>(input, &typeOrd);
+    if (!ok) break;
+    type = (EventType)typeOrd;
+    switch (type) {
+      case PC_DESCRIPTION:
+        ok &= ProcessCodePosition(input, &pc, &str);
+        if (sscanf(str.c_str(), "%s %s %d", rtn, file, &line) == 3 && pc != 0) {
+          CHECK(g_pc_info_map);
+          PcInfo pc_info;
+          pc_info.img_name = "java";
+          pc_info.rtn_name = rtn;
+          pc_info.file_name = file;
+          pc_info.line = line;
+          (*g_pc_info_map)[pc] = pc_info;
+        }
+        break;
+      case PRINT_MESSAGE:
+        ok &= ProcessMessage(input, &str);
+        // Just print the rest of comment.
+        Printf("%s\n", str.c_str());
+        break;
+      default:
+        ok &= ProcessEvent(input, type, event);
+        return ok;
+    }
+  }
+  return false;
+}
+
+void DecodeEventsFromFile(FILE *input, FILE *output) {
+  uint64_t n_lines = 0;
+  bool ok = true;
+  EventType type;
+  unsigned char typeOrd;
+  int pc;
+  string str;
+  Event event;
+  while (ok) {
+    ok &= Read<unsigned char>(input, &typeOrd);
+    if (!ok) break;
+    type = (EventType)typeOrd;
+    switch (type) {
+      case PC_DESCRIPTION:
+        ok &= ProcessCodePosition(input, &pc, &str);
+        fprintf(output, "#PC %x java %s\n", pc, str.c_str());
+        break;
+      case PRINT_MESSAGE:
+        ok &= ProcessMessage(input, &str);
+        fprintf(output, "#> %s\n", str.c_str());
+        break;
+      default:
+        ok &= ProcessEvent(input, type, &event);
+        fprintf(output, "%s %x %x %lx %lx\n", kEventNames[event.type()],
+            event.tid(), (unsigned int)event.pc(), event.a(), event.info());
+        break;
+    }
+    n_lines++;
+  }
+  Printf("INFO: ThreadSanitizer write %ld lines.\n", n_lines);
+}
+
 static const uint32_t max_unknown_thread = 10000;
 
 static bool known_threads[max_unknown_thread] = {};
 
-void ReadEventsFromFile(FILE *file) {
+INLINE void ReadEventsFromFile(FILE *file, EventReader event_reader_cb) {
   Event event;
-  int n_events = 0;
+  uint64_t n_events = 0;
   offline_line_n = 0;
-  while (ReadOneEventFromFile(file, &event)) {
-    // event.Print();
+  while (event_reader_cb(file, &event)) {
+    //event.Print();
     n_events++;
     uint32_t tid = event.tid();
     if (event.type() == THR_START && tid < max_unknown_thread) {
@@ -157,7 +314,7 @@ void ReadEventsFromFile(FILE *file) {
       ThreadSanitizerHandleOneEvent(&event);
     }
   }
-  Printf("INFO: ThreadSanitizerOffline: %d events read\n", n_events);
+  Printf("INFO: ThreadSanitizerOffline: %ld events read\n", n_events);
 }
 //------------- ThreadSanitizer exports ------------ {{{1
 
@@ -185,7 +342,7 @@ string PcToRtnName(uintptr_t pc, bool demangle) {
 }
 //------------- main ---------------------------- {{{1
 int main(int argc, char *argv[]) {
-  printf("INFO: ThreadSanitizerOffline r%s\n", TS_VERSION);
+  Printf("INFO: ThreadSanitizerOffline r%s\n", TS_VERSION);
 
   InitEventTypeMap();
   g_pc_info_map = new map<uintptr_t, PcInfo>;
@@ -196,7 +353,22 @@ int main(int argc, char *argv[]) {
   ThreadSanitizerInit();
 
   CHECK(G_flags);
-  ReadEventsFromFile(stdin);
+  if (G_flags->input_type == "bin") {
+    ReadEventsFromFile(stdin, ReadOneBinEventFromFile);
+  } else if (G_flags->input_type == "decode") {
+    FILE* output;
+    if (G_flags->log_file.size() > 0) {
+      output = fopen(G_flags->log_file.c_str(), "w");
+    } else {
+      output = stdout;
+    }
+    DecodeEventsFromFile(stdin, output);
+  } else if (G_flags->input_type == "str") {
+    ReadEventsFromFile(stdin, ReadOneStrEventFromFile);
+  } else {
+    Printf("Error: Unknown input_type value %s\n", G_flags->input_type.c_str());
+    exit(5);
+  }
 
   ThreadSanitizerFini();
   if (G_flags->error_exitcode && GetNumberOfFoundErrors() > 0) {

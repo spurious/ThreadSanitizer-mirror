@@ -46,6 +46,8 @@ string Demangle(const char *str);
 
 //--------- FLAGS ---------------------------------- {{{1
 struct FLAGS {
+  string           input_type; // for ts_offline.
+                               // Possible values: str, bin, decode.
   bool             ignore_stack;
   intptr_t         verbosity;
   bool             show_stats;
@@ -82,6 +84,7 @@ struct FLAGS {
   bool        show_pc;
   bool        color;  // Colorify terminal output.
   bool        html;  // Output in html format.
+  bool        show_pid;
 
   intptr_t  debug_level;
   vector<string> debug_phase;
@@ -103,8 +106,6 @@ struct FLAGS {
   string       dump_events;  // The name of log file. Debug mode only.
   bool         symbolize;
   bool         attach_mode;
-
-  string       offline_syntax;
 
   string       tsan_program_name;
   string       tsan_url;

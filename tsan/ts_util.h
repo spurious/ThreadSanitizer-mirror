@@ -46,9 +46,9 @@ extern void ThreadSanitizerDumpAllStacks();
    ThreadSanitizerDumpAllStacks(); \
    exit(1); }} while (0)
 #elif defined(TS_OFFLINE)
-extern int offline_line_n;
+extern unsigned long offline_line_n;
 # define CHECK(x) do { if (!(x)) { \
-    Printf("ASSERT on line %d\n", offline_line_n); \
+    Printf("ASSERT on line %ld\n", offline_line_n); \
      assert(x);}} while (0)
 #else
 # define CHECK assert
