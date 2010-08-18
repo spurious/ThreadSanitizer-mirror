@@ -69,8 +69,6 @@ uint32_t g_lock_era = 0;
 uintptr_t g_nacl_mem_start = (uintptr_t)-1;
 uintptr_t g_nacl_mem_end = (uintptr_t)-1;
 
-FLAGS *G_flags = NULL;
-
 bool g_race_verifier_active = false;
 
 bool debug_expected_races = false;

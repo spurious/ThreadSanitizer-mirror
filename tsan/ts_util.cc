@@ -35,6 +35,7 @@
 #include "ts_lock.h"
 #include <stdarg.h>
 
+FLAGS *G_flags = NULL;
 
 #if defined(_MSC_VER)
 
@@ -151,6 +152,7 @@ void Report(const char *format, ...) {
   int buff_size = 1024*16;
   char *buff = new char[buff_size];
   CHECK(buff);
+  DCHECK(G_flags);
 
   va_list args;
 
