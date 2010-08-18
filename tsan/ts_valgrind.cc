@@ -1116,7 +1116,7 @@ static IRSB* ts_instrument ( VgCallbackClosure* closure,
   if (G_flags->dry_run >= 2) return bbIn;
   Int   i;
   IRSB* bbOut;
-  uintptr_t pc = closure->nraddr;
+  uintptr_t pc = closure->readdr;
 
   char objname[kBuffSize];
   if (VG_(get_objname)(pc, (Char*)objname, kBuffSize)) {
