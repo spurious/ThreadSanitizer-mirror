@@ -1012,3 +1012,34 @@ TEST(PositiveTests, LockThenNoLock) {
   pthread_mutex_destroy(&mu);
 }
 }  // namespace
+
+namespace NegativeTests_PthreadCondWaitRelativeNp {
+int GLOB = 0;
+pthread_mutex_t mu;
+pthread_cond_t cv;
+
+void Waiter() {
+  struct timespec tv = {1000, 1000};
+  pthread_mutex_lock(&mu);
+  pthread_cond_timedwait_relative_np(&cv, &mu, &tv);
+  GLOB = 2;
+  pthread_mutex_unlock(&mu);
+}
+
+void Waker() {
+  pthread_mutex_lock(&mu);
+  GLOB = 1;
+  pthread_cond_signal(&cv);
+  pthread_mutex_unlock(&mu);
+}
+
+TEST(NegativeTests, PthreadCondWaitRelativeNpTest) {
+  pthread_mutex_init(&mu, NULL);
+  pthread_cond_init(&cv, NULL);
+  MyThreadArray t(Waiter, Waker);
+  t.Start();
+  t.Join();
+  pthread_mutex_destroy(&mu);
+  pthread_cond_destroy(&cv);
+}
+}  // namespace

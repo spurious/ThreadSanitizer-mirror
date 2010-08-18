@@ -1184,6 +1184,13 @@ PTH_FUNC(int, pthreadZucondZutimedwait$Za, // pthread_cond_timedwait$*
   return pthread_cond_timedwait_WRK(cond, mutex, abstime);
 }
 
+PTH_FUNC(int, pthreadZucondZutimedwaitZurelativeZunp, // pthread_cond_timedwait_relative_np
+         pthread_cond_t* cond, pthread_mutex_t* mutex,
+         struct timespec* abstime)
+{
+  return pthread_cond_timedwait_WRK(cond, mutex, abstime);
+}
+
 
 // pthread_cond_signal
 static int pthread_cond_signal_WRK(pthread_cond_t* cond)

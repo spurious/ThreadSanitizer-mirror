@@ -622,7 +622,7 @@ class Lock {
 
   void WrUnlock() {
     CHECK(!rd_held_);
-    CHECK(wr_held_);
+    CHECK(wr_held_ > 0);
     wr_held_--;
   }
 
