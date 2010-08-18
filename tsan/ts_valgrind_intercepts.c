@@ -2204,10 +2204,13 @@ MEMCPY(NONE, _intel_fast_memcpy)
    { return Replace_strchr(s, c); }
 
 // Apparently index() is the same thing as strchr()
-STRCHR(VG_Z_LIBC_SONAME,          strchr)
-STRCHR(VG_Z_LIBC_SONAME,          index)
-STRCHR(NONE,                      strchr)
-STRCHR(NONE,                      index)
+STRCHR(VG_Z_LIBC_SONAME, strchr)
+STRCHR(VG_Z_LIBC_SONAME, index)
+STRCHR(NONE,             strchr)
+STRCHR(NONE,             index)
+#if defined(VGO_linux)
+STRCHR(VG_Z_LIBC_SONAME, __GI_strchr)
+#endif
 
 // --- STRRCHR RINDEX -----------------------------------------------------
 //
@@ -2216,10 +2219,13 @@ STRCHR(NONE,                      index)
    char* VG_REPLACE_FUNCTION_ZU(soname,fnname)( const char* str, int c ) \
    { return Replace_strrchr(str, c); }
 
-STRRCHR(VG_Z_LIBC_SONAME,          strrchr)
-STRRCHR(VG_Z_LIBC_SONAME,          rindex)
-STRRCHR(NONE,                      strrchr)
-STRRCHR(NONE,                      rindex)
+STRRCHR(VG_Z_LIBC_SONAME, strrchr)
+STRRCHR(VG_Z_LIBC_SONAME, rindex)
+STRRCHR(NONE,             strrchr)
+STRRCHR(NONE,             rindex)
+#if defined(VGO_linux)
+STRRCHR(VG_Z_LIBC_SONAME, __GI_strrchr)
+#endif
 
 // --- STRCMP -----------------------------------------------------
 //
@@ -2230,8 +2236,11 @@ STRRCHR(NONE,                      rindex)
           ( const char* s1, const char* s2 ) \
    { return Replace_strcmp(s1, s2); }
 
-STRCMP(VG_Z_LIBC_SONAME,          strcmp)
-STRCMP(NONE,                      strcmp)
+STRCMP(VG_Z_LIBC_SONAME, strcmp)
+STRCMP(NONE,             strcmp)
+#if defined(VGO_linux)
+STRCMP(VG_Z_LIBC_SONAME, __GI_strcmp)
+#endif
 
 #define MEMCHR(soname, fnname) \
    void* VG_REPLACE_FUNCTION_ZU(soname,fnname) (const void *s, int c, SizeT n); \
@@ -2252,8 +2261,11 @@ MEMCHR(NONE, memchr)
    SizeT VG_REPLACE_FUNCTION_ZU(soname,fnname)( const char* str ) \
    { return Replace_strlen(str); }
 
-STRLEN(VG_Z_LIBC_SONAME,          strlen)
-STRLEN(NONE,                      strlen)
+STRLEN(VG_Z_LIBC_SONAME, strlen)
+STRLEN(NONE,             strlen)
+#if defined(VGO_linux)
+STRLEN(VG_Z_LIBC_SONAME, __GI_strlen)
+#endif
 
 // --- STRCPY -----------------------------------------------------
 //
@@ -2264,6 +2276,9 @@ STRLEN(NONE,                      strlen)
 
 STRCPY(VG_Z_LIBC_SONAME, strcpy)
 STRCPY(NONE,             strcpy)
+#if defined(VGO_linux)
+STRCPY(VG_Z_LIBC_SONAME, __GI_strcpy)
+#endif
 
 //------------------------ Annotations ---------------- {{{1
 
