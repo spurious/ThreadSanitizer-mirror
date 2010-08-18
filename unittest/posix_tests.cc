@@ -1013,6 +1013,7 @@ TEST(PositiveTests, LockThenNoLock) {
 }
 }  // namespace
 
+#ifdef __APPLE__
 namespace NegativeTests_PthreadCondWaitRelativeNp {
 int GLOB = 0;
 pthread_mutex_t mu;
@@ -1043,3 +1044,4 @@ TEST(NegativeTests, PthreadCondWaitRelativeNpTest) {
   pthread_cond_destroy(&cv);
 }
 }  // namespace
+#endif  // __APPLE__
