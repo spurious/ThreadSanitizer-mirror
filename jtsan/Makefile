@@ -12,8 +12,8 @@ JTSAN_ROOT=../third_party/java-thread-sanitizer/dist
 JTSAN_LOGFILE=jtsan.events
 
 # Build the unittests.
-ThreadSanitizerTest.class: ThreadSanitizerTest.java RaceDetectorApi.java
-	javac $^
+ThreadSanitizerTest.class: ThreadSanitizerTest.java
+	javac -cp ../third_party/java-thread-sanitizer/dist/agent.jar $^
 
 # Run the unittests natively.
 run: ThreadSanitizerTest.class

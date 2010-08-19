@@ -48,6 +48,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.TimeUnit;
 
+import org.jtsan.RaceDetectorApi;
 
 // All tests for a Java race detector.
 public class ThreadSanitizerTest {
@@ -104,10 +105,10 @@ public class ThreadSanitizerTest {
           !exclude_pattern.matcher(method_name).matches() ) {
         System.out.println("======================= " + method_name +
                            " =======================");
-        RaceDetectorApi.Print("======== " + method_name + " ========");
+        RaceDetectorApi.print("======== " + method_name + " ========");
         boolean is_positive_test = positive_test_pattern.matcher(method_name).matches();
         if (is_positive_test) {
-          RaceDetectorApi.ExpectRaceBegin();
+          RaceDetectorApi.expectRaceBegin();
         }
         try {
           method.invoke(t);
@@ -115,7 +116,7 @@ public class ThreadSanitizerTest {
           assert false : e;
         }
         if (is_positive_test) {
-          RaceDetectorApi.ExpectRaceEnd();
+          RaceDetectorApi.expectRaceEnd();
         }
       }
     }
@@ -187,7 +188,7 @@ public class ThreadSanitizerTest {
 
   private void describe(String str) {
     System.out.println(str);
-    RaceDetectorApi.Print(str);
+    RaceDetectorApi.print(str);
   }
 
   private void shortSleep() {
@@ -365,7 +366,7 @@ public class ThreadSanitizerTest {
   //------------------ Negative tests ---------------------
   public void testNegative_NoOp() {
     Object obj = new Integer(0);
-    RaceDetectorApi.NoOp(obj);
+    RaceDetectorApi.noOp(obj);
   }
   public void testNegative1() {
     describe("Correct code: two locked updates");
