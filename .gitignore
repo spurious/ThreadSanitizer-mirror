@@ -5,3 +5,4 @@ third_party/stlport
 third_party/valgrind
 *.pdb
 upload.py
+*.class
