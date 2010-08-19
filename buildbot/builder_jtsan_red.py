@@ -43,9 +43,9 @@ def generate(settings):
   #   'tsan/bin32/tsan-x86-linux-self-contained.sh' : 'tsan-r%s-x86-linux-self-contained.sh'}
   # addUploadBinariesStep(f1, binaries)
 
-  b1 = {'name': 'buildbot-jtsan',
+  b1 = {'name': 'buildbot-jtsan-red',
         'slavename': 'bot6name',
-        'builddir': 'full_jtsan',
+        'builddir': 'full_jtsan_red',
         'factory': f1,
         }
 
