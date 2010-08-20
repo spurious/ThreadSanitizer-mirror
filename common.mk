@@ -10,16 +10,18 @@ ifeq ($(PLATFORM)$(BITNESS), Linux32)
 default: l32
 endif
 
-ifeq ($(PLATFORM)$(BITNESS), Mac32)
-default: m32
-endif
 
 ifeq ($(PLATFORM)$(BITNESS), Windows32)
 default: w
 endif
 
 ifeq ($(PLATFORM), Mac)
-  DARWIN_VERSION=darwin_$(MAJOR_V)
+ifeq ($(MAJOR_V), 9)
+default: m32
+endif
+ifeq ($(MAJOR_V), 10)
+default: m64 m32
+endif
 endif
 
 dummy:
@@ -27,7 +29,9 @@ dummy:
 	@echo "For 64-bit Linux build: make l64"
 	@echo "For 32-bit Linux build: make l32"
 	@echo "For mixed  Linux build: make l"
+	@echo "For 64-bit Mac   build: make m64"
 	@echo "For 32-bit Mac   build: make m32"
+	@echo "For mixed  Mac   build: make m"
 	@echo "For ARM    Linux build: make la"
 	@exit 1
 
