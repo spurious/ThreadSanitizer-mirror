@@ -1,6 +1,6 @@
 #!/bin/bash
 
-REV=58
+REV=59
 
 update_subversion() {
   svn up -r$REV
