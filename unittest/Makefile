@@ -55,8 +55,11 @@ run_output_tests: output_tests
 
 w:
 	$(MAKE) all OS=windows ARCH=x86
-m:
+m: m32 m64
+m32:
 	$(MAKE) all OS=darwin ARCH=x86
+m64:
+	$(MAKE) all OS=darwin ARCH=amd64
 l: l32 l64
 l32:
 	$(MAKE) all OS=linux ARCH=x86
