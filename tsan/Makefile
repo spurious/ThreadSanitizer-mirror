@@ -85,10 +85,18 @@ ifeq ($(OS), linux)
   DR_OS=LINUX
   STRIP=strip -g  # keep some symbols for profiling.
 else ifeq ($(OS), darwin)
+ifeq ($(ARCH), x86)
   VG_LD_FLAGS=-Wl,-u,__start -Wl,-e,__start -Wl,-bind_at_load /usr/lib/dyld -arch i386 \
       -Wl,-seg1addr,0xf0080000 -Wl,-stack_addr,0xf0080000 -Wl,-stack_size,0x80000 -Wl,-pagezero_size,0xf0000000 \
       -nodefaultlibs -nostartfiles
   VG_LD_PRELOAD_FLAGS=-arch i386 -dynamic -dynamiclib -all_load
+endif
+ifeq ($(ARCH), amd64)
+  VG_LD_FLAGS=-Wl,-u,__start -Wl,-e,__start -Wl,-bind_at_load /usr/lib/dyld -arch x86_64 \
+      -Wl,-seg1addr,0xf0080000 -Wl,-stack_addr,0xf0080000 -Wl,-stack_size,0x80000 -Wl,-pagezero_size,0xf0000000 \
+      -nodefaultlibs -nostartfiles
+  VG_LD_PRELOAD_FLAGS=-arch x86_64 -dynamic -dynamiclib -all_load
+endif
   VG_CXXFLAGS+=-fno-weak -bind_at_load -fno-PIC
 else ifeq ($(OS), windows)
   VALGRIND_ROOT= # no valgrind on windows :(

@@ -55,7 +55,12 @@ else ifeq ($(OS), darwin)
   CXX=g++
   CC=gcc
   LD=g++
+ifeq ($(ARCH), x86)
   LTLD=$(VALGRIND_ROOT)/coregrind/link_tool_exe_darwin 0x38000000 g++
+endif
+ifeq ($(ARCH), amd64)
+  LTLD=$(VALGRIND_ROOT)/coregrind/link_tool_exe_darwin 0x138000000 g++
+endif
   SO=so
   OBJ=o
   EXE=
