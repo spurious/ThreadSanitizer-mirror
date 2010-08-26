@@ -1,19 +1,22 @@
 #!/bin/bash
 
-REV=59
+VG_REPO=http://valgrind-variant.googlecode.com/svn/trunk/valgrind
+VG_REV=59
+VG_DIR=$(dirname "${0}")
+VG_DIR=$(cd "${VG_DIR}" && /bin/pwd)/valgrind
 
 update_subversion() {
-  svn up -r$REV
+  svn up -r${VG_REV}
 }
 
 checkout() {
-  echo "No directory 'valgrind'; doing svn checkout"
-  svn co -r $REV http://valgrind-variant.googlecode.com/svn/trunk/valgrind valgrind
+  echo "No directory '${VG_DIR}'; doing svn checkout"
+  svn co -r ${VG_REV} ${VG_REPO} ${VG_DIR}
 }
 
-if [[ -d valgrind ]]; then
-  cd valgrind && update_subversion
+if [[ -d ${VG_DIR} ]]; then
+  cd ${VG_DIR} && update_subversion
 else
-  checkout && cd valgrind
+  checkout
 fi
 
