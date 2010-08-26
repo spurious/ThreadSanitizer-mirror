@@ -41,6 +41,7 @@
 #include "thread_sanitizer.h"
 
 struct PossibleRace {
+  PossibleRace() : pc(0), reported(false) {}
   // racy instruction
   uintptr_t pc;
   // concurrent traces
@@ -273,26 +274,30 @@ void RaceVerifierEndAccess(int thread_id, uintptr_t addr, uintptr_t pc,
 static PossibleRace* ParseRaceInfo(const string& raceInfo) {
   PossibleRace* race = new PossibleRace();
   const char* p = raceInfo.c_str();
-  size_t idx = 0;
   while (true) {
-    DCHECK(sizeof(unsigned long) == sizeof(uintptr_t));
-    unsigned long addr;
-    if (1 != sscanf(p + idx, "%lx", &addr)) {
+    char* end;
+    uintptr_t addr = my_strtol(p, &end);
+    if (p == end) {
       Printf("Parse error: %s\n", p);
-      delete race;
-      return NULL;
+      exit(1);
     }
     if (!race->pc)
       race->pc = addr;
     else
       race->traces.push_back(addr);
-    idx = raceInfo.find(',', idx);
-    if (idx == string::npos) {
+    while (*end == '\n' || *end == '\r')
+      ++end;
+    if (*end == '\0') {
       // raceInfo already ends with \n
       Printf("Possible race: %s", raceInfo.c_str());
       return race;
     }
-    ++idx;
+    if (*end != ',') {
+      Printf("Parse error: comma expected: %s\n", end);
+      delete race;
+      return NULL;
+    }
+    p = end + 1;
   }
 }
 

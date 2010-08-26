@@ -37,11 +37,13 @@
 #include "thread_sanitizer.h"
 #include "ts_trace_info.h"
 #include "ts_literace.h"
+#include "ts_race_verifier.h"
 
 #include "coregrind/pub_core_basics.h"
 #include "coregrind/pub_core_machine.h"
 #include "coregrind/pub_core_clreq.h"
 #include "coregrind/pub_core_threadstate.h"
+#include "pub_tool_libcproc.h"
 
 
 //---------------------- C++ malloc support -------------- {{{1
@@ -234,6 +236,14 @@ struct ValgrindThread {
   uintptr_t tleb[kMaxMopsPerTrace];
   TraceInfo *trace_info;
 
+  // PC (as in trace_info->pc()) of the trace currently being verified.
+  // 0 if outside of the verification sleep loop.
+  // -1 in the last iteration of the loop.
+  uintptr_t verifier_current_pc;
+
+  // End time of the current verification loop.
+  unsigned verifier_wakeup_time_ms;
+
   ValgrindThread() {
     Clear();
   }
@@ -245,6 +255,8 @@ struct ValgrindThread {
     in_signal_handler = 0;
     call_stack.clear();
     trace_info = NULL;
+    verifier_current_pc = 0;
+    verifier_wakeup_time_ms = 0;
   }
 };
 
@@ -332,6 +344,11 @@ void ts_post_clo_init(void) {
 
   g_valgrind_threads = new ValgrindThread[VG_N_THREADS];
   g_ptid_to_ts_tid = new map<uintptr_t, int>;
+
+  if (g_race_verifier_active) {
+    RaceVerifierInit(G_flags->race_verifier, G_flags->race_verifier_extra);
+    global_ignore = true;
+  }
 }
 
 // Remember, valgrind is essentially single-threaded.
@@ -345,6 +362,7 @@ static void OnStartClientCode(ThreadId vg_tid, ULong nDisp) {
 }
 
 INLINE void FlushMops(ThreadId vg_tid, bool keep_trace_info = false) {
+  DCHECK(!g_race_verifier_active || global_ignore);
   ValgrindThread *thr = &g_valgrind_threads[vg_tid];
   TraceInfo *t = thr->trace_info;
   if (!t) return;
@@ -376,6 +394,7 @@ static void ShowCallStack(ValgrindThread *thr) {
 }
 
 static INLINE void UpdateCallStack(ThreadId vg_tid, uintptr_t sp) {
+  DCHECK(!g_race_verifier_active);
   ValgrindThread *thr = &g_valgrind_threads[vg_tid];
   if (thr->trace_info) FlushMops(vg_tid, true /* keep_trace_info */);
   vector<CallStackRecord> &call_stack = thr->call_stack;
@@ -398,6 +417,7 @@ static INLINE void UpdateCallStack(ThreadId vg_tid, uintptr_t sp) {
 
 VG_REGPARM(1)
 static void OnTrace(TraceInfo *trace_info) {
+  DCHECK(!g_race_verifier_active);
   ThreadId vg_tid = GetVgTid();
 
   // First, flush the old trace_info.
@@ -427,6 +447,7 @@ static inline void Put(EventType type, int32_t tid, uintptr_t pc,
 
 static void rtn_call(Addr sp_post_call_insn, Addr pc_post_call_insn,
                      IGNORE_BELOW_RTN ignore_below) {
+  DCHECK(!g_race_verifier_active);
   ThreadId vg_tid = GetVgTid();
   CallStackRecord record;
   record.pc = pc_post_call_insn;
@@ -476,6 +497,7 @@ VG_REGPARM(2) void evh__rtn_call_ignore_no ( Addr sp, Addr pc) {
 VG_REGPARM(2)
 void evh__delete_frame ( Addr sp_post_call_insn,
                          Addr pc_post_call_insn) {
+  DCHECK(!race_verifier_active);
   ThreadId vg_tid = GetVgTid();
   ValgrindThread *thr = &g_valgrind_threads[vg_tid];
   if (thr->trace_info) FlushMops(vg_tid);
@@ -588,12 +610,20 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
   }
   if (!VG_IS_TOOL_USERREQ('T', 'S', args[0]))
     return False;
+  int32_t ts_tid = VgTidToTsTid(vg_tid);
+  // Ignore almost everything in race verifier mode.
+  if (g_race_verifier_active) {
+    if (args[0] == TSREQ_EXPECT_RACE) {
+      Put(EXPECT_RACE, ts_tid, /*descr=*/args[3],
+          /*p=*/args[1], /*size*/args[2]);
+    }
+    return True;
+  }
   ValgrindThread *thr = &g_valgrind_threads[vg_tid];
   if (thr->trace_info) FlushMops(vg_tid);
   UpdateCallStack(vg_tid, GetVgSp(vg_tid));
   *ret = 0;
   uintptr_t pc = GetVgPc(vg_tid);
-  int32_t ts_tid = VgTidToTsTid(vg_tid);
   switch (args[0]) {
     case TSREQ_SET_MY_PTHREAD_T:
       (*g_ptid_to_ts_tid)[args[1]] = ts_tid;
@@ -792,7 +822,159 @@ static void SignalOut(ThreadId vg_tid, Int sigNo) {
 }
 
 
+// ---------------------------- RaceVerifier    ---------------------------{{{1
+
+/**
+ * In race verifier mode _every_ IRSB is instrumented with a sleep loop at the
+ * beginning (but, of course, in most cases it is not executed).
+ * Its code logically looks like
+ *  irsb_start:
+ *   bool need_sleep = OnTraceVerify1();
+ *   if (need_sleep) {
+ *     sched_yield();
+ *     goto irsb_start;
+ *   }
+ *   OnTraceVerify2(trace_info);
+ *
+ * This loop verifies mops from the _previous_ trace_info and sets up the new
+ * trace info in OnTraceVerify2. Only IRSBs with "interesting" mops have
+ * non-zero trace_info.
+ */
+
+/**
+ * Race verification loop.
+ * On the first pass (for a trace_info), if there are mops to be verified,
+ * register them with RaceVerifier and calculate the wake up time.
+ * On the following passes, check the wake up time against the clock.
+ * The loop state is kept in ValgrindThread.
+ * Returns true if need to sleep more, false if the loop must be ended.
+ */
+VG_REGPARM(1)
+static uint32_t OnTraceVerify1() {
+  DCHECK(g_race_verifier_active);
+  ThreadId vg_tid = GetVgTid();
+
+  // First, flush the old trace_info.
+  ValgrindThread *thr = &g_valgrind_threads[vg_tid];
+
+  // thr->trace_info is the trace info for the previous superblock.
+  if (!thr->trace_info)
+    // Nothing to do here.
+    return 0;
+
+  if (!thr->verifier_current_pc) {
+    // This is the first iteration of the sleep loop.
+    // Register memory accesses.
+    size_t n = thr->trace_info->n_mops();
+    uintptr_t* tleb = thr->tleb;
+    int need_sleep = 0;
+    for (size_t i = 0; i < n; ++i) {
+      uintptr_t addr = tleb[i];
+      if (addr) {
+        MopInfo *mop = thr->trace_info->GetMop(i);
+        need_sleep += RaceVerifierStartAccess(thr->zero_based_uniq_tid, addr,
+            mop->pc, mop->is_write);
+      }
+    }
+    // Setup the sleep timer.
+    thr->verifier_current_pc = thr->trace_info->pc();
+    if (need_sleep) {
+      unsigned now = VG_(read_millisecond_timer)();
+      thr->verifier_wakeup_time_ms = now + G_flags->race_verifier_sleep_ms;
+      return 1;
+    } else {
+      thr->verifier_current_pc = (unsigned)-1;
+      return 0;
+    }
+  } else {
+    // Continuation of the sleep loop.
+    DCHECK(thr->verifier_current_pc == thr->trace_info->pc());
+    unsigned now = VG_(read_millisecond_timer)();
+    if (now < thr->verifier_wakeup_time_ms) {
+      // sleep more
+      return 1;
+    } else {
+      // done, go straight to OnTraceVerify2
+      thr->verifier_current_pc = (unsigned)-1;
+      return 0;
+    }
+  }
+}
+
+/**
+ * Race verification loop exit.
+ * Unregisters mops with the RaceVerifier.
+ * Sets up the new trace_info.
+ */
+VG_REGPARM(1)
+static void OnTraceVerify2(TraceInfo *trace_info) {
+  DCHECK(g_race_verifier_active);
+  ThreadId vg_tid = GetVgTid();
+  ValgrindThread *thr = &g_valgrind_threads[vg_tid];
+
+  DCHECK(!thr->trace_info || thr->verifier_current_pc == (unsigned)-1);
+  thr->verifier_current_pc = 0;
+  thr->verifier_wakeup_time_ms = 0;
+
+  if (thr->trace_info) {
+    // Unregister accesses from the old trace_info.
+    size_t n = thr->trace_info->n_mops();
+    uintptr_t* tleb = thr->tleb;
+    for (size_t i = 0; i < n; ++i) {
+      uintptr_t addr = tleb[i];
+      if (addr) {
+        MopInfo *mop = thr->trace_info->GetMop(i);
+        RaceVerifierEndAccess(thr->zero_based_uniq_tid, addr,
+            mop->pc, mop->is_write);
+      }
+    }
+  }
+
+  // Start the new trace, zero the contents of tleb.
+  thr->trace_info = trace_info;
+  if (trace_info) {
+    size_t n = trace_info->n_mops();
+    uintptr_t *tleb = thr->tleb;
+    for (size_t i = 0; i < n; i++)
+      tleb[i] = 0;
+    DCHECK(thr->trace_info->n_mops() <= kMaxMopsPerTrace);
+  }
+}
+
+/**
+ * Add a race verification preamble to the IRSB.
+ */
+static void ts_instrument_trace_entry_verify(IRSB *bbOut, TraceInfo *trace_info,
+    uintptr_t cur_pc) {
+   HChar*   hName = (HChar*)"OnTraceVerify1";
+   void *callback = (void*)OnTraceVerify1;
+   IRExpr **args = mkIRExprVec_0();
+   IRTemp need_sleep = newIRTemp(bbOut->tyenv, Ity_I32);
+   IRDirty* di = unsafeIRDirty_1_N(need_sleep, 0, hName,
+       VG_(fnptr_to_fnentry)(callback), args);
+   addStmtToIRSB( bbOut, IRStmt_Dirty(di));
+
+   IRTemp need_sleep_i1 = newIRTemp(bbOut->tyenv, Ity_I1);
+   IRStmt* cmp_stmt = IRStmt_WrTmp(need_sleep_i1,
+       IRExpr_Binop(Iop_CmpNE32,
+           IRExpr_RdTmp(need_sleep),
+           IRExpr_Const(IRConst_U32(0))));
+   addStmtToIRSB(bbOut, cmp_stmt);
+
+   IRStmt* exit_stmt = IRStmt_Exit(IRExpr_RdTmp(need_sleep_i1),
+       Ijk_YieldNoRedir, IRConst_U64(cur_pc));
+   addStmtToIRSB(bbOut, exit_stmt);
+
+   hName = (HChar*)"OnTraceVerify2";
+   callback = (void*)OnTraceVerify2;
+   args = mkIRExprVec_1(mkIRExpr_HWord((HWord)trace_info));
+   di = unsafeIRDirty_0_N(1, hName, VG_(fnptr_to_fnentry)(callback), args);
+   addStmtToIRSB( bbOut, IRStmt_Dirty(di));
+}
+
+
 // ---------------------------- Instrumentation ---------------------------{{{1
+
 static IRTemp gen_Get_SP ( IRSB*           bbOut,
                            VexGuestLayout* layout,
                            Int             hWordTy_szB )
@@ -810,7 +992,6 @@ static IRTemp gen_Get_SP ( IRSB*           bbOut,
   return sp_temp;
 }
 
-
 static void ts_instrument_trace_entry(IRSB *bbOut, TraceInfo *trace_info) {
    CHECK(trace_info);
    HChar*   hName = (HChar*)"OnTrace";
@@ -822,8 +1003,6 @@ static void ts_instrument_trace_entry(IRSB *bbOut, TraceInfo *trace_info) {
                            args);
    addStmtToIRSB( bbOut, IRStmt_Dirty(di));
 }
-
-
 
 static void ts_instrument_final_jump (
                                 /*MOD*/IRSB* sbOut,
@@ -1163,14 +1342,27 @@ static IRSB* ts_instrument ( VgCallbackClosure* closure,
     dtor_head = true;
   }
 
+
+  uintptr_t instrument_pc = 0; // if != 0, instrument only the instruction at this address
+  if (g_race_verifier_active) {
+    uintptr_t min_pc = vge->base[0];
+    uintptr_t max_pc = min_pc + vge->len[0];
+    bool verify_trace = RaceVerifierGetAddresses(min_pc, max_pc, &instrument_pc);
+    if (!verify_trace)
+      instrument_memory = false;
+  }
+
   // count mops
   if (instrument_memory) {
     for (i = first; i < bbIn->stmts_used; i++) {
       IRStmt* st = bbIn->stmts[i];
       tl_assert(st);
       tl_assert(isFlatIRStmt(st));
-      instrument_statement(st, bbIn, bbOut, hWordTy,
-                           NULL, tleb_temp, &n_mops, &cur_pc, dtor_head);
+      if (st->tag == Ist_IMark)
+        cur_pc = st->Ist.IMark.addr;
+      if (!instrument_pc || cur_pc == instrument_pc)
+        instrument_statement(st, bbIn, bbOut, hWordTy,
+            NULL, tleb_temp, &n_mops, &cur_pc, dtor_head);
     } /* iterate over bbIn->stmts */
   }
   TraceInfo *trace_info = NULL;
@@ -1178,14 +1370,18 @@ static IRSB* ts_instrument ( VgCallbackClosure* closure,
     trace_info = TraceInfo::NewTraceInfo(n_mops, pc);
   }
   size_t n_mops_done = 0;
-  bool need_to_insert_on_trace = n_mops > 0;
+  bool need_to_insert_on_trace = n_mops > 0 || g_race_verifier_active;
   // instrument mops and copy the rest of BB to the new one.
   for (i = first; i < bbIn->stmts_used; i++) {
     IRStmt* st = bbIn->stmts[i];
     tl_assert(st);
     tl_assert(isFlatIRStmt(st));
     if (st->tag != Ist_IMark && need_to_insert_on_trace) {
-      ts_instrument_trace_entry(bbOut, trace_info);
+      if (g_race_verifier_active) {
+        ts_instrument_trace_entry_verify(bbOut, trace_info, closure->readdr);
+      } else {
+        ts_instrument_trace_entry(bbOut, trace_info);
+      }
       need_to_insert_on_trace = false;
       // Generate temp for *g_cur_tleb.
       IRType   tyAddr = sizeof(uintptr_t) == 8 ?  Ity_I64 : Ity_I32;
@@ -1196,14 +1392,17 @@ static IRSB* ts_instrument ( VgCallbackClosure* closure,
       addStmtToIRSB(bbOut, stmt);
     }
     if (instrument_memory) {
-      instrument_statement(st, bbIn, bbOut, hWordTy,
-                           trace_info, tleb_temp, &n_mops_done, &cur_pc, dtor_head);
+      if (st->tag == Ist_IMark)
+        cur_pc = st->Ist.IMark.addr;
+      if (!instrument_pc || cur_pc == instrument_pc)
+        instrument_statement(st, bbIn, bbOut, hWordTy,
+            trace_info, tleb_temp, &n_mops_done, &cur_pc, dtor_head);
     }
     addStmtToIRSB( bbOut, st );
   } /* iterate over bbIn->stmts */
   CHECK(n_mops == n_mops_done);
-  ts_instrument_final_jump(bbOut, bbIn->next, bbIn->jumpkind, layout, gWordTy, hWordTy);
-  //ppIRSB(bbOut);
+  if (!g_race_verifier_active)
+    ts_instrument_final_jump(bbOut, bbIn->next, bbIn->jumpkind, layout, gWordTy, hWordTy);
   return bbOut;
 }
 
@@ -1239,9 +1438,12 @@ void ts_pre_clo_init(void) {
    }
 
    VG_(track_pre_thread_ll_create)( evh__pre_thread_ll_create );
-   VG_(track_workq_task_start)( evh__pre_workq_task_start );
-   VG_(track_pre_thread_first_insn)( evh__pre_thread_first_insn );
    VG_(track_pre_thread_ll_exit)  ( evh__pre_thread_ll_exit );
+
+   if (!g_race_verifier_active) {
+     VG_(track_workq_task_start)( evh__pre_workq_task_start );
+     VG_(track_pre_thread_first_insn)( evh__pre_thread_first_insn );
+   }
 
    VG_(clo_vex_control).iropt_unroll_thresh = 0;
    VG_(clo_vex_control).guest_chase_thresh = 0;

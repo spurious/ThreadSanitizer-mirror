@@ -496,6 +496,5 @@ void TSLock::Unlock() {
 }
 #endif  // TS_LOCK_PIN
 
-
 // end. {{{1
 // vim:shiftwidth=2:softtabstop=2:expandtab:tw=80

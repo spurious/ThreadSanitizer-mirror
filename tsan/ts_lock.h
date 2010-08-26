@@ -31,6 +31,13 @@
 #define TS_LOCK_H_
 
 //--------- Simple Lock ------------------ {{{1
+#ifdef TS_VALGRIND
+class TSLock {
+ public:
+  void Lock() {};
+  void Unlock() {};
+};
+#else
 class TSLock {
  public:
   TSLock();
@@ -41,6 +48,7 @@ class TSLock {
   struct Rep;
   Rep *rep_;
 };
+#endif
 
 class ScopedLock {
  public:

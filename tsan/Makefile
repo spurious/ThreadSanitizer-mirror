@@ -232,7 +232,7 @@ $(P)ts_offline.$(OBJ): thread_sanitizer.cc
 endif
 TS_VG_HEADERS=ts_valgrind.h ts_valgrind_client_requests.h
 
-TS_VG_OBJECTS=$(VGP)thread_sanitizer.o $(VGP)ts_valgrind.o $(VGP)ts_valgrind_libc.o $(VGP)ts_util.o $(VGP)suppressions.o
+TS_VG_OBJECTS=$(VGP)thread_sanitizer.o $(VGP)ts_valgrind.o $(VGP)ts_valgrind_libc.o $(VGP)ts_util.o $(VGP)suppressions.o $(VGP)ts_race_verifier.o
 TS_PIN_OBJECTS=$(PINP)ts_pin.$(OBJ) $(PINP)ts_util.$(OBJ) $(PINP)thread_sanitizer.$(OBJ) $(PINP)suppressions.$(OBJ) $(PINP)ts_race_verifier.$(OBJ)
 TS_OFFLINE_OBJECTS=$(OFF)ts_offline.$(OBJ) $(OFF)thread_sanitizer.$(OBJ) $(OFF)ts_util.$(OBJ) $(OFF)suppressions.$(OBJ)
 TS_DR_OBJECTS=$(DRP)ts_dynamorio.$(OBJ) $(DRP)ts_util.$(OBJ)
