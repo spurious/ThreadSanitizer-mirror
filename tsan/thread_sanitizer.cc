@@ -4988,21 +4988,23 @@ class ReportStorage {
       ThreadSanitizerBadUnlockReport *bad_unlock =
           reinterpret_cast<ThreadSanitizerBadUnlockReport*>(report);
       Report("WARNING: Lock %s was released by thread T%d"
-             " which did not acquire this lock.\n%s",
+             " which did not acquire this lock: {{{\n%s}}}\n",
              Lock::ToString(bad_unlock->lid).c_str(),
              bad_unlock->tid.raw(),
              bad_unlock->stack_trace->ToString().c_str());
     } else if (report->type == ThreadSanitizerReport::UNLOCK_NONLOCKED) {
       ThreadSanitizerBadUnlockReport *bad_unlock =
           reinterpret_cast<ThreadSanitizerBadUnlockReport*>(report);
-      Report("WARNING: Unlocking a non-locked lock %s in thread T%d\n%s",
+      Report("WARNING: Unlocking a non-locked lock %s in thread T%d: "
+             "{{{\n%s}}}\n",
              Lock::ToString(bad_unlock->lid).c_str(),
              bad_unlock->tid.raw(),
              bad_unlock->stack_trace->ToString().c_str());
     } else if (report->type == ThreadSanitizerReport::INVALID_LOCK) {
       ThreadSanitizerInvalidLockReport *invalid_lock =
           reinterpret_cast<ThreadSanitizerInvalidLockReport*>(report);
-      Report("WARNING: accessing an invalid lock %p in thread T%d\n%s",
+      Report("WARNING: accessing an invalid lock %p in thread T%d: "
+             "{{{\n%s}}}\n",
              invalid_lock->lock_addr,
              invalid_lock->tid.raw(),
              invalid_lock->stack_trace->ToString().c_str());
