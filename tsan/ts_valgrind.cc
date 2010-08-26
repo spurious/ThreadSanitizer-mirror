@@ -944,8 +944,8 @@ static void OnTraceVerify2(TraceInfo *trace_info) {
 /**
  * Add a race verification preamble to the IRSB.
  */
-static void ts_instrument_trace_entry_verify(IRSB *bbOut, TraceInfo *trace_info,
-    uintptr_t cur_pc) {
+static void ts_instrument_trace_entry_verify(IRSB *bbOut,
+    VexGuestLayout* layout, TraceInfo *trace_info, uintptr_t cur_pc) {
    HChar*   hName = (HChar*)"OnTraceVerify1";
    void *callback = (void*)OnTraceVerify1;
    IRExpr **args = mkIRExprVec_0();
@@ -961,8 +961,10 @@ static void ts_instrument_trace_entry_verify(IRSB *bbOut, TraceInfo *trace_info,
            IRExpr_Const(IRConst_U32(0))));
    addStmtToIRSB(bbOut, cmp_stmt);
 
+   IRConst* exit_dst = layout->sizeof_IP == 8 ?
+       IRConst_U64(cur_pc) : IRConst_U32(cur_pc);
    IRStmt* exit_stmt = IRStmt_Exit(IRExpr_RdTmp(need_sleep_i1),
-       Ijk_YieldNoRedir, IRConst_U64(cur_pc));
+       Ijk_YieldNoRedir, exit_dst);
    addStmtToIRSB(bbOut, exit_stmt);
 
    hName = (HChar*)"OnTraceVerify2";
@@ -1378,7 +1380,8 @@ static IRSB* ts_instrument ( VgCallbackClosure* closure,
     tl_assert(isFlatIRStmt(st));
     if (st->tag != Ist_IMark && need_to_insert_on_trace) {
       if (g_race_verifier_active) {
-        ts_instrument_trace_entry_verify(bbOut, trace_info, closure->readdr);
+        ts_instrument_trace_entry_verify(bbOut, layout, trace_info,
+            closure->readdr);
       } else {
         ts_instrument_trace_entry(bbOut, trace_info);
       }
