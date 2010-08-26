@@ -276,7 +276,7 @@ static PossibleRace* ParseRaceInfo(const string& raceInfo) {
   const char* p = raceInfo.c_str();
   while (true) {
     char* end;
-    uintptr_t addr = my_strtol(p, &end);
+    uintptr_t addr = my_strtol(p, &end, 16);
     if (p == end) {
       Printf("Parse error: %s\n", p);
       exit(1);

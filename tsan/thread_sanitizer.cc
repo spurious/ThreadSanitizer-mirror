@@ -6584,7 +6584,7 @@ static void FindIntFlag(const char *name, intptr_t default_val,
       if (!FlagNameMatch(str, name, &flag_value)) continue;
       char *end_ptr;
       const char *beg_ptr = flag_value.c_str();
-      intptr_t int_val = my_strtol(beg_ptr, &end_ptr);
+      intptr_t int_val = my_strtol(beg_ptr, &end_ptr, 0);
       if (flag_value.empty() || beg_ptr + flag_value.size() != end_ptr)
         ReportUnknownFlagAndExit(str);
       *retval = int_val;
@@ -6652,7 +6652,7 @@ static size_t GetMemoryLimitInMbFromProcSelfLimits() {
   if (proc_self_limits[pos] == 'u')
     return 0;  // 'unlimited'.
   char *end;
-  size_t result = my_strtol(proc_self_limits.c_str() + pos, &end);
+  size_t result = my_strtol(proc_self_limits.c_str() + pos, &end, 0);
   result >>= 20;
   return result;
 #else
@@ -6677,7 +6677,7 @@ static size_t GetMemoryLimitInMb() {
     (const char*)getenv("VALGRIND_MEMORY_LIMIT_IN_MB");
   if (from_env_str) {
     char *end;
-    size_t from_env_value = (size_t)my_strtol(from_env_str, &end);
+    size_t from_env_value = (size_t)my_strtol(from_env_str, &end, 0);
     if (ret > from_env_value)
       ret = from_env_value;
   }

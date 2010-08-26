@@ -187,17 +187,14 @@ void Report(const char *format, ...) {
   Printf("%s", res.c_str());
 }
 
-long my_strtol(const char *str, char **end) {
+long my_strtol(const char *str, char **end, int base) {
 #ifdef TS_VALGRIND
-  if (str && str[0] == '0' && str[1] == 'x') {
+  if (base == 16 || (base == 0 && str && str[0] == '0' && str[1] == 'x')) {
     return VG_(strtoll16)((Char*)str, (Char**)end);
   }
   return VG_(strtoll10)((Char*)str, (Char**)end);
 #else
-  if (str && str[0] == '0' && str[1] == 'x') {
-    return strtoll(str, end, 16);
-  }
-  return strtoll(str, end, 10);
+  return strtoll(str, end, base);
 #endif
 }
 
@@ -278,7 +275,7 @@ size_t GetVmSizeInMb() {
   vm_size_str += vm_size_name_len;
   while(*vm_size_str == ' ') vm_size_str++;
   char *end;
-  size_t vm_size_in_kb = my_strtol(vm_size_str, &end);
+  size_t vm_size_in_kb = my_strtol(vm_size_str, &end, 0);
   return vm_size_in_kb >> 10;
 #else
   return 0;

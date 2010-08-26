@@ -253,7 +253,7 @@ class ThreadSanitizerReport;
 // Time since some moment before the program start.
 extern size_t TimeInMilliSeconds();
 
-extern "C" long my_strtol(const char *str, char **end);
+extern "C" long my_strtol(const char *str, char **end, int base);
 extern void Printf(const char *format, ...);
 
 string ConvertToPlatformIndependentPath(const string &s);
