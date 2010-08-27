@@ -617,6 +617,7 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
       Put(EXPECT_RACE, ts_tid, /*descr=*/args[3],
           /*p=*/args[1], /*size*/args[2]);
     }
+    *ret = 0;
     return True;
   }
   ValgrindThread *thr = &g_valgrind_threads[vg_tid];
