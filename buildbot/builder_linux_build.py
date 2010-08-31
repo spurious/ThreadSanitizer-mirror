@@ -47,26 +47,43 @@ def generate(settings):
                   'VALGRIND_INST_ROOT=../out32',
                   'VALGRIND_ROOT=../third_party/valgrind32',
                   'PIN_ROOT=']
-  f1.addStep(Compile(command=['make', '-C', 'tsan', '-j2', 'OFFLINE='] + path_flags32 + ['l32o', 'l32d'],
+  f1.addStep(Compile(command=['make', '-C', 'tsan', '-j2', 'OFFLINE='] + path_flags32 + ['l32o'],
                      description='building 32-bit tsan',
                      descriptionDone='build 32-bit tsan'))
 
   f1.addStep(ShellCommand(command=['make', '-C', 'tsan'] + path_flags32 +
-                          ['OS=linux', 'ARCH=x86', 'DEBUG=0', 'self-contained'],
+                          ['OS=linux', 'ARCH=x86', 'DEBUG=0', 'self-contained-stripped'],
                           description='packing self-contained tsan (32-bit)',
                           descriptionDone='pack self-contained tsan (32-bit)'))
 
+  # Build 64-bit-only tsan and install it to out64/.
+  path_flags64 = ['OFFLINE=',
+                  'OUTDIR=bin64',
+                  'VALGRIND_INST_ROOT=../out64',
+                  'VALGRIND_ROOT=../third_party/valgrind64',
+                  'PIN_ROOT=']
+  f1.addStep(Compile(command=['make', '-C', 'tsan', '-j2', 'OFFLINE='] + path_flags64 + ['l64o'],
+                     description='building 64-bit tsan',
+                     descriptionDone='build 64-bit tsan'))
 
-  f1.addStep(ShellCommand(command='ln -s tsan/bin/tsan-amd64-linux-self-contained.sh tsan.sh; ' +
-                          'ln -s tsan/bin/tsan-amd64-linux-debug-self-contained.sh tsan-debug.sh; ' +
-                          'ln -s tsan/bin32/tsan-x86-linux-self-contained.sh tsan32.sh',
+  f1.addStep(ShellCommand(command=['make', '-C', 'tsan'] + path_flags64 +
+                          ['OS=linux', 'ARCH=amd64', 'DEBUG=0', 'self-contained-stripped'],
+                          description='packing self-contained tsan (64-bit)',
+                          descriptionDone='pack self-contained tsan (64-bit)'))
+
+
+  f1.addStep(ShellCommand(command='ln -s tsan/bin/tsan-amd64-linux-self-contained.sh tsan.sh && ' +
+                          'ln -s tsan/bin/tsan-amd64-linux-debug-self-contained.sh tsan-debug.sh && ' +
+                          'ln -s tsan/bin32/tsan-x86-linux-self-contained.sh tsan32.sh && ' +
+                          'ln -s tsan/bin64/tsan-amd64-linux-self-contained.sh tsan64.sh',
                           description='symlinking tsan',
                           descriptionDone='symlink tsan'))
 
   binaries = {
     'tsan/bin/tsan-amd64-linux-debug-self-contained.sh' : 'tsan-r%s-amd64-linux-debug-self-contained.sh',
     'tsan/bin/tsan-amd64-linux-self-contained.sh' : 'tsan-r%s-amd64-linux-self-contained.sh',
-    'tsan/bin32/tsan-x86-linux-self-contained.sh' : 'tsan-r%s-x86-linux-self-contained.sh'}
+    'tsan/bin32/tsan-x86-linux-self-contained.sh' : 'tsan-r%s-x86-linux-self-contained.sh',
+    'tsan/bin64/tsan-amd64-linux-self-contained.sh' : 'tsan-r%s-amd64only-linux-self-contained.sh'}
   addUploadBinariesStep(f1, binaries)
 
   os = 'linux'
