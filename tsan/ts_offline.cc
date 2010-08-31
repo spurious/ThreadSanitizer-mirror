@@ -32,14 +32,10 @@
 // Reads program events from a file and detects races.
 // See http://code.google.com/p/data-race-test
 
-// ------------- Defines ------------- {{{1
-#define __STDC_FORMAT_MACROS
-
 // ------------- Includes ------------- {{{1
 #include "thread_sanitizer.h"
 #include "ts_events.h"
 
-#include <inttypes.h>
 #include <stdio.h>
 #include <stdarg.h>
 #include <ctype.h>
@@ -290,8 +286,9 @@ void DecodeEventsFromFile(FILE *input, FILE *output) {
         break;
       default:
         ok &= ProcessEvent(input, type, &event);
-        fprintf(output, "%s %x %x %" PRIuPTR " %" PRIuPTR "\n", kEventNames[event.type()],
-            event.tid(), (unsigned int)event.pc(), event.a(), event.info());
+        fprintf(output, "%s %x %x %lx %lx\n", kEventNames[event.type()],
+            event.tid(), (unsigned int)event.pc(),
+            (long unsigned int)event.a(), (long unsigned int)event.info());
         break;
     }
     n_lines++;
