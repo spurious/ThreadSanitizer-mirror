@@ -1430,7 +1430,10 @@ static int pthread_rwlock_wrlock_WRK(pthread_rwlock_t* rwlock)
       fprintf(stderr, "<< pthread_rwl_wlk %p", rwlock); fflush(stderr);
    }
 
+
+   IGNORE_ALL_SYNC_BEGIN();
    CALL_FN_W_W(ret, fn, rwlock);
+   IGNORE_ALL_SYNC_END();
 
    if (ret == 0 /*success*/) {
       DO_CREQ_v_WW(TSREQ_PTHREAD_RWLOCK_LOCK_POST,
@@ -1467,7 +1470,9 @@ static int pthread_rwlock_rdlock_WRK(pthread_rwlock_t* rwlock)
       fprintf(stderr, "<< pthread_rwl_rlk %p", rwlock); fflush(stderr);
    }
 
+   IGNORE_ALL_SYNC_BEGIN();
    CALL_FN_W_W(ret, fn, rwlock);
+   IGNORE_ALL_SYNC_END();
 
    if (ret == 0 /*success*/) {
       DO_CREQ_v_WW(TSREQ_PTHREAD_RWLOCK_LOCK_POST,
@@ -1504,7 +1509,9 @@ static int pthread_rwlock_trywrlock_WRK(pthread_rwlock_t* rwlock)
       fprintf(stderr, "<< pthread_rwl_trywlk %p", rwlock); fflush(stderr);
    }
 
+   IGNORE_ALL_SYNC_BEGIN();
    CALL_FN_W_W(ret, fn, rwlock);
+   IGNORE_ALL_SYNC_END();
 
    /* There's a hole here: libpthread now knows the lock is locked,
       but the tool doesn't, so some other thread could run and detect
@@ -1547,7 +1554,9 @@ static int pthread_rwlock_tryrdlock_WRK(pthread_rwlock_t* rwlock)
       fprintf(stderr, "<< pthread_rwl_tryrlk %p", rwlock); fflush(stderr);
    }
 
+   IGNORE_ALL_SYNC_BEGIN();
    CALL_FN_W_W(ret, fn, rwlock);
+   IGNORE_ALL_SYNC_END();
 
    /* There's a hole here: libpthread now knows the lock is locked,
       but the tool doesn't, so some other thread could run and detect
@@ -1594,7 +1603,9 @@ static int pthread_rwlock_unlock_WRK(pthread_rwlock_t* rwlock)
    DO_CREQ_v_W(TSREQ_PTHREAD_RWLOCK_UNLOCK_PRE,
                pthread_rwlock_t*,rwlock);
 
+   IGNORE_ALL_SYNC_BEGIN();
    CALL_FN_W_W(ret, fn, rwlock);
+   IGNORE_ALL_SYNC_END();
 
    if (ret != 0 /*error*/) {
       DO_PthAPIerror( "pthread_rwlock_unlock", ret );
