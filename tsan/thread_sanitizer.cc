@@ -606,6 +606,15 @@ class Lock {
   LID       lid()       const { return lid_; }
   bool is_pure_happens_before() const { return is_pure_happens_before_; }
 
+  // When a lock is pure happens-before, we need to create hb arcs
+  // between all Unlock/Lock pairs except RdUnlock/RdLock.
+  // For that purpose have two IDs on which we signal/wait.
+  // One id is the lock_addr itself, the second id is derived
+  // from lock_addr.
+  uintptr_t wr_signal_addr() const { return lock_addr(); }
+  uintptr_t rd_signal_addr() const { return lock_addr() + 1; }
+
+
   void set_is_pure_happens_before(bool x) { is_pure_happens_before_ = x; }
 
   void WrLock(TID tid, StackTrace *lock_site) {
@@ -3906,7 +3915,11 @@ struct Thread {
     }
 
     if (lock->is_pure_happens_before()) {
-      HandleWait(lock->lock_addr());
+      if (is_w_lock) {
+        HandleWait(lock->wr_signal_addr());
+      } else {
+        HandleWait(lock->rd_signal_addr());
+      }
     }
 
     if (G_flags->suggest_happens_before_arcs) {
@@ -3940,7 +3953,12 @@ struct Thread {
     }
 
     if (lock->is_pure_happens_before()) {
-      HandleSignal(lock->lock_addr());
+      // reader unlock signals only to writer lock,
+      // writer unlock signals to both.
+      if (is_w_lock) {
+        HandleSignal(lock->rd_signal_addr());
+      }
+      HandleSignal(lock->wr_signal_addr());
     }
 
     if (!lock->wr_held() && !lock->rd_held()) {
