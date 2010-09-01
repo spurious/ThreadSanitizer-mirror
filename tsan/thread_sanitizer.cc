@@ -6990,6 +6990,7 @@ static void SetupIgnore() {
   g_ignore_lists->funs.push_back("pthread_create_WRK");
   g_ignore_lists->funs.push_back("exit");
   g_ignore_lists->funs.push_back("__cxa_*");
+  g_ignore_lists->funs.push_back("*__gnu_cxx*__exchange_and_add*");
   g_ignore_lists->funs.push_back("__lll_mutex_unlock_wake");
   g_ignore_lists->funs.push_back("__sigsetjmp");
   g_ignore_lists->funs.push_back("__sigjmp_save");
