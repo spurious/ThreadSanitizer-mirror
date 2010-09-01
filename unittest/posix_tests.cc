@@ -920,6 +920,27 @@ TEST(Signals, SignalsAndWaitTest) {
   t.Join();
 }
 
+pid_t child_pid = 0;
+
+void child_handler(int signum) {
+  if (signum == SIGCHLD && child_pid == 0) {
+    printf("Whoops, PID shouldn't be 0!\n");
+  }
+}
+
+TEST(Signals, PositiveTests_RaceInSignal) {
+  // Currently the data race on child_pid can't be found,
+  // see http://code.google.com/p/data-race-test/issues/detail?id=46
+  //ANNOTATE_EXPECT_RACE(&child_pid, "Race on pid: fork vs signal handler");
+  signal(SIGCHLD, child_handler);
+  child_pid = fork();
+  if (child_pid == 0) {
+    // in child
+    exit(0);
+  }
+  wait(NULL);
+}
+
 }  // namespace;
 
 TEST(WeirdSizesTests, FegetenvTest) {
