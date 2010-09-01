@@ -466,7 +466,9 @@ int     GLOB[n_threads];
 int adder_num; // updated atomically.
 
 void Adder() {
-  int my_num = AtomicIncrement(&adder_num, 1);
+  int my_num = AtomicIncrement(&adder_num, 1) - 1;
+  CHECK(my_num >= 0);
+  CHECK(my_num < n_threads);
 
   ReaderLockScoped lock(&mu);
   GLOB[my_num]++;
