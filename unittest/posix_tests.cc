@@ -927,8 +927,7 @@ TEST(WeirdSizesTests, FegetenvTest) {
     FAIL() << "fegetenv failed";
 }
 
-//  {{{1
-namespace NegativeTests_LockfTest {
+namespace NegativeTests_LockfTest {  // {{{1
 
 class ShmMutex {
  public:
@@ -1014,7 +1013,7 @@ TEST(PositiveTests, LockThenNoLock) {
 }  // namespace
 
 #ifdef __APPLE__
-namespace NegativeTests_PthreadCondWaitRelativeNp {
+namespace NegativeTests_PthreadCondWaitRelativeNp {  // {{{1
 int GLOB = 0;
 pthread_mutex_t mu;
 pthread_cond_t cv;
@@ -1045,3 +1044,36 @@ TEST(NegativeTests, PthreadCondWaitRelativeNpTest) {
 }
 }  // namespace
 #endif  // __APPLE__
+
+namespace PositiveTests_RWLockVsRWLockTest {  // {{{1
+// Test that reader lock/unlock do not create a hb-arc.
+RWLock mu;
+int GLOB;
+StealthNotification n;
+
+void Thread1() {
+  GLOB = 1;
+  mu.ReaderLock();
+  mu.ReaderUnlock();
+  n.signal();
+}
+
+void Thread2() {
+  n.wait();
+  mu.ReaderLock();
+  mu.ReaderUnlock();
+  GLOB = 1;
+}
+
+TEST(PositiveTests, RWLockVsRWLockTest) {
+  ANNOTATE_PURE_HAPPENS_BEFORE_MUTEX(&mu);
+  ANNOTATE_EXPECT_RACE(&GLOB, "rwunlock/rwlock is not a hb-arc");
+  MyThreadArray t(Thread1, Thread2);
+  t.Start();
+  t.Join();
+}
+
+}  // namespace
+
+// End {{{1
+ // vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker
