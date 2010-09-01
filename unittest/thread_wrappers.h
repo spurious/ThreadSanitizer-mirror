@@ -197,7 +197,7 @@ Closure *NewCallback(void (*f)(P1), P1 p1) {
   Closure *res = new Closure;
   res->n_params = 1;
   res->f = (void*)(f);
-  res->param1 = (void*)p1;
+  res->param1 = (void*)(intptr_t)p1;
   res->param2 = NULL;
   return res;
 }

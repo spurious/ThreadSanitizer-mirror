@@ -51,7 +51,7 @@ TEST(Wrappers, StrchrTest) {
   // There were bugs in TSan and Dr. Memory with strchr wrappers.
   // Fix for TSan bug: http://code.google.com/p/data-race-test/source/diff?spec=svn1641&old=1527&r=1645&format=side&path=/trunk/tsan/ts_replace.h
   // Dr. Memory bug:   http://code.google.com/p/dynamorio/issues/detail?id=275
-  char foo[8] = {10, 20, 127, 128, 250, -50, 0};
+  char foo[8] = {10, 20, 127, (char)128, (char)250, -50, 0};
   EXPECT_TRUE(strchr(foo, 10) != 0);
   EXPECT_TRUE(strchr(foo, 127) != 0);
   EXPECT_TRUE(strchr(foo, 128) != 0);

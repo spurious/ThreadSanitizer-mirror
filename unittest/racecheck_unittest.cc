@@ -3148,7 +3148,7 @@ TEST(NegativeTests, StrlenAndFriends) {
   t2.Join();
   printf("\tstrX=%s; strY=%s\n", str, str+5);
 
-  char foo[8] = {10, 20, 127, 128, 250, -50, 0};
+  char foo[8] = {10, 20, 127, (char)128, (char)250, -50, 0};
   EXPECT_TRUE(strchr(foo, 10) != 0);
   EXPECT_TRUE(strchr(foo, 127) != 0);
   EXPECT_TRUE(strchr(foo, 128) != 0);
@@ -3256,14 +3256,7 @@ void Worker() {
 
   n %= Nlog;
 
-  long t0 = clock();
-  long t = t0;
-
   for (int it = 0; it < N_iter; it++) {
-    if(n == 0) {
-      //printf("Iter: %d; %ld %ld\n", it, clock() - t, clock() - t0);
-      t = clock();
-    }
     // Iterate N_iter times, block on barrier after each iteration.
     // This way Helgrind will create new segments after each barrier.
 
@@ -4713,6 +4706,7 @@ void F1() {
 //  ANNOTATE_TRACE_MEMORY(&ar[31]);
   ar[0] = 1;
   ar[31] = 1;
+  CHECK(ar[0] == 1);
 }
 
 void Worker() {
@@ -4721,6 +4715,7 @@ void Worker() {
 //  ANNOTATE_TRACE_MEMORY(&ar[31]);
   ar[0] = 1;
   ar[31] = 1;
+  CHECK(ar[0] == 1);
   F1();
 }
 
@@ -6457,8 +6452,8 @@ int     GLOB = 0;
 void Worker(int depth) {
   CHECK(depth >= 0);
   if (depth > 0) {
-    MyThread t1((MyThread::worker_t)Worker, (void*)(depth - 1));
-    MyThread t2((MyThread::worker_t)Worker, (void*)(depth - 1));
+    MyThread t1((MyThread::worker_t)Worker, (void*)(intptr_t)(depth - 1));
+    MyThread t2((MyThread::worker_t)Worker, (void*)(intptr_t)(depth - 1));
     t1.Start();
     t2.Start();
     t1.Join();

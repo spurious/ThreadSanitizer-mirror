@@ -24,11 +24,11 @@ BUILD=${OS}-${ARCH}-${OX}${S}
 BIN=bin/
 
 ifeq ($(OS), linux)
-  OS_CXXFLAGS=-Wall -Werror -Wno-sign-compare -Wshadow -Wno-unused-function
+  OS_CXXFLAGS=-Wall -Werror -Wno-sign-compare -Wshadow -Wno-unused-function -std=c++0x
   OS_CFLAGS=-Wall -Werror -Wno-sign-compare -Wshadow -Wno-unused-function -std=c89
   LIBS=-lpthread -lrt
 else ifeq ($(OS), darwin)
-  OS_CXXFLAGS=-Wall -Werror -Wno-sign-compare -Wshadow -Wno-unused-function
+  OS_CXXFLAGS=-Wall -Werror -Wno-sign-compare -Wshadow -Wno-unused-function -std=c++0x
   OS_CFLAGS=-Wall -Werror -Wno-sign-compare -Wshadow -Wno-unused-function -std=c89
   LIBS=-lpthread
 else ifeq ($(OS), windows)
@@ -87,6 +87,10 @@ ifeq ($(OS), windows)
 $(BIN)racecheck_unittest-$(BUILD)$(EXE): $(BIN)windows_tests-$(BUILD).$(OBJ)
 else
 $(BIN)racecheck_unittest-$(BUILD)$(EXE): $(BIN)posix_tests-$(BUILD).$(OBJ)
+endif
+
+ifeq ($(OS), linux)
+$(BIN)racecheck_unittest-$(BUILD)$(EXE): $(BIN)libstdc++_tests-$(BUILD).$(OBJ)
 endif
 
 ifeq ($(OS), darwin)
