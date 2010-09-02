@@ -213,6 +213,7 @@ bool ProcessEvent(FILE *input, EventType type, Event *event) {
       break;
     default:
       // read unsupported EventType.
+      Printf("Unsupported EventType %s %d\n", type, (int)type);
       CHECK(false);
   }
   if (type == READ || type == WRITE) {
@@ -264,7 +265,7 @@ bool ReadOneBinEventFromFile(FILE *input, Event *event) {
 }
 
 void DecodeEventsFromFile(FILE *input, FILE *output) {
-  uint64_t n_lines = 0;
+  offline_line_n = 0;
   bool ok = true;
   EventType type;
   unsigned char typeOrd;
@@ -291,9 +292,9 @@ void DecodeEventsFromFile(FILE *input, FILE *output) {
             (long unsigned int)event.a(), (long unsigned int)event.info());
         break;
     }
-    n_lines++;
+    offline_line_n++;
   }
-  Printf("INFO: ThreadSanitizer write %ld lines.\n", n_lines);
+  Printf("INFO: ThreadSanitizer write %ld lines.\n", offline_line_n);
 }
 
 static const uint32_t max_unknown_thread = 10000;
