@@ -28,7 +28,7 @@ ifeq ($(OS), linux)
   OS_CFLAGS=-Wall -Werror -Wno-sign-compare -Wshadow -Wno-unused-function -std=c89
   LIBS=-lpthread -lrt
 else ifeq ($(OS), darwin)
-  OS_CXXFLAGS=-Wall -Werror -Wno-sign-compare -Wshadow -Wno-unused-function -std=c++0x
+  OS_CXXFLAGS=-Wall -Werror -Wno-sign-compare -Wshadow -Wno-unused-function
   OS_CFLAGS=-Wall -Werror -Wno-sign-compare -Wshadow -Wno-unused-function -std=c89
   LIBS=-lpthread
 else ifeq ($(OS), windows)
