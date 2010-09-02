@@ -542,6 +542,9 @@ static void evh__die_mem_stack_32 ( Addr a ) {
 
 void ts_fini(Int exitcode) {
   ThreadSanitizerFini();
+  if (g_race_verifier_active) {
+    RaceVerifierFini();
+  }
   if (G_flags->error_exitcode && GetNumberOfFoundErrors() > 0) {
     exit(G_flags->error_exitcode);
   }
@@ -648,6 +651,9 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
         Report("INFO: Exited main(); ret=%d\n", (int)args[1]);
         VG_(show_all_errors)();
         ThreadSanitizerFini();
+        if (g_race_verifier_active) {
+          RaceVerifierFini();
+        }
         exit((int)args[1]);
       }
       break;
@@ -866,6 +872,11 @@ static uint32_t OnTraceVerify1() {
   if (!thr->verifier_current_pc) {
     // This is the first iteration of the sleep loop.
     // Register memory accesses.
+    int sleep_time_ms = RaceVerifierGetSleepTime(thr->trace_info->pc());
+    if (!sleep_time_ms) {
+      thr->trace_info = NULL;
+      return 0;
+    }
     size_t n = thr->trace_info->n_mops();
     uintptr_t* tleb = thr->tleb;
     int need_sleep = 0;
@@ -881,7 +892,7 @@ static uint32_t OnTraceVerify1() {
     thr->verifier_current_pc = thr->trace_info->pc();
     if (need_sleep) {
       unsigned now = VG_(read_millisecond_timer)();
-      thr->verifier_wakeup_time_ms = now + G_flags->race_verifier_sleep_ms;
+      thr->verifier_wakeup_time_ms = now + sleep_time_ms;
       return 1;
     } else {
       thr->verifier_current_pc = (unsigned)-1;

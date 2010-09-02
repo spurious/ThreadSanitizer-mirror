@@ -74,6 +74,11 @@ static AddressMap* racecheck_map;
 // data addresses that are ignored (they have already been reported)
 static set<uintptr_t>* ignore_addresses;
 
+// starting pc of the trace -> visit count
+// used to reduce the sleep time for hot traces
+typedef map<uintptr_t, int> VisitCountMap;
+static VisitCountMap* visit_count_map;
+
 static int n_reports;
 
 /**
@@ -371,6 +376,33 @@ static void RaceVerifierParseFile(const string& fileName) {
 }
 
 /**
+ * Return the time to sleep for the given trace.
+ * @param trace_pc The starting pc of the trace.
+ * @return Time to sleep in ms, or 0 if this trace should be ignored.
+ */
+int RaceVerifierGetSleepTime(uintptr_t trace_pc) {
+  racecheck_lock.Lock();
+  int visit_count = ++(*visit_count_map)[trace_pc];
+  int tm;
+  if (visit_count < 20) {
+    tm = G_flags->race_verifier_sleep_ms;
+  } else if (visit_count < 200) {
+    tm = G_flags->race_verifier_sleep_ms / 10;
+  } else {
+    tm = 0;
+  }
+  if (debug_race_verifier) {
+    if (visit_count == 20) {
+      Printf("RaceVerifier: Trace %x: sleep time reduced.\n", trace_pc);
+    } else if (visit_count == 200) {
+      Printf("RaceVerifier: Trace %x: ignored.\n", trace_pc);
+    }
+  }
+  racecheck_lock.Unlock();
+  return tm;
+}
+
+/**
  * Init the race verifier. Should be called exactly once before any other
  * functions in this file.
  * @param fileNames Names of TSan log to parse.
@@ -380,6 +412,7 @@ void RaceVerifierInit(const vector<string>& fileNames,
     const vector<string>& raceInfos) {
   races_map = new map<uintptr_t, PossibleRace*>();
   racecheck_map = new AddressMap();
+  visit_count_map = new VisitCountMap();
   ignore_addresses = new set<uintptr_t>();
 
   for (vector<string>::const_iterator it = fileNames.begin();

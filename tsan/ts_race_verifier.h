@@ -44,6 +44,7 @@ bool RaceVerifierStartAccess(int thread_id, uintptr_t addr, uintptr_t pc,
     bool is_w);
 void RaceVerifierEndAccess(int thread_id, uintptr_t addr, uintptr_t pc,
     bool is_w);
+int RaceVerifierGetSleepTime(uintptr_t trace_pc);
 
 void RaceVerifierInit(const std::vector<std::string>& fileNames,
     const std::vector<std::string>& raceInfos);
