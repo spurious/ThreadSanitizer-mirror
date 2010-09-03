@@ -4706,13 +4706,25 @@ class ReportStorage {
       Report("INFO: generate_suppressions = true\n");
     }
     // Read default suppressions
-    suppressions_.ReadFromString(default_suppressions);
+    int n = suppressions_.ReadFromString(default_suppressions);
+    if (n == -1) {
+      Report("Error reading default suppressions at line %d: %s\n",
+          suppressions_.GetErrorLineNo(),
+          suppressions_.GetErrorString().c_str());
+      exit(1);
+    }
 
     // Read user-supplied suppressions.
     for (size_t i = 0; i < G_flags->suppressions.size(); i++) {
       const string &supp_path = G_flags->suppressions[i];
       Report("INFO: reading suppressions file %s\n", supp_path.c_str());
       int n = suppressions_.ReadFromString(ReadFileToString(supp_path, true));
+      if (n == -1) {
+        Report("Error at line %d: %s\n",
+            suppressions_.GetErrorLineNo(),
+            suppressions_.GetErrorString().c_str());
+        exit(1);
+      }
       Report("INFO: %6d suppression(s) read from file %s\n",
              n, supp_path.c_str());
     }

@@ -289,6 +289,7 @@ Suppressions::~Suppressions() {
 }
 
 int Suppressions::ReadFromString(const string &str) {
+  int sizeBefore = rep_->suppressions.size();
   Parser parser(str);
   Suppression supp;
   while (parser.NextSuppression(&supp)) {
@@ -299,7 +300,7 @@ int Suppressions::ReadFromString(const string &str) {
     rep_->error_line_no_ = parser.GetLineNo();
     return -1;
   }
-  return rep_->suppressions.size();
+  return rep_->suppressions.size() - sizeBefore;
 }
 
 string Suppressions::GetErrorString() {
