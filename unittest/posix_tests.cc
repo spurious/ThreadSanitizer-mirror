@@ -943,9 +943,9 @@ TEST(Signals, PositiveTests_RaceInSignal) {
   }
   wait(NULL);
 }
+#endif  // __APPLE__
 
 }  // namespace;
-#endif  // __APPLE__
 
 TEST(WeirdSizesTests, FegetenvTest) {
   // http://code.google.com/p/data-race-test/issues/detail?id=36
