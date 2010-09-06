@@ -920,6 +920,9 @@ TEST(Signals, SignalsAndWaitTest) {
   t.Join();
 }
 
+#ifndef __APPLE__
+// this test crashes on Mac in debug TSan build, see
+// http://code.google.com/p/data-race-test/issues/detail?id=47
 pid_t child_pid = 0;
 
 void child_handler(int signum) {
@@ -942,6 +945,7 @@ TEST(Signals, PositiveTests_RaceInSignal) {
 }
 
 }  // namespace;
+#endif  // __APPLE__
 
 TEST(WeirdSizesTests, FegetenvTest) {
   // http://code.google.com/p/data-race-test/issues/detail?id=36
