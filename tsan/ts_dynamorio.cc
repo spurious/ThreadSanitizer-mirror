@@ -81,7 +81,7 @@
 static void *g_lock;
 static int   g_n_created_threads;
 
-typedef hash_map<intptr_t, string> SymbolsTable;
+typedef unordered_map<intptr_t, string> SymbolsTable;
 static SymbolsTable *sym_tab;
 
 string *g_main_module_path;
@@ -336,7 +336,7 @@ int replace_foo(int i, int j, int k) {
   return 1;
 }
 
-typedef hash_map<intptr_t, void*> FunctionsReplaceMap;
+typedef unordered_map<intptr_t, void*> FunctionsReplaceMap;
 static FunctionsReplaceMap *fun_replace_map;
 
 namespace wrap {

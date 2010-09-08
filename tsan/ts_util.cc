@@ -90,7 +90,6 @@ bool GetNameAndOffsetOfGlobalObject(uintptr_t addr,
 
 #ifndef TS_VALGRIND
 void GetThreadStack(int tid, uintptr_t *min_addr, uintptr_t *max_addr) {
-  // UNIMPLEMENTED
   *min_addr = 0xfffa;
   *max_addr = 0xfffb;
 }
@@ -295,7 +294,7 @@ void OpenFileWriteStringAndClose(const string &file_name, const string &str) {
   write(fd, str.c_str(), str.size());
   close(fd);
 #else
-  UNIMPLEMENTED();
+  CHECK(0);
 #endif
 }
 

@@ -139,10 +139,10 @@ static THREADID g_tid_of_thread_which_called_create_thread = -1;
 // On Windows, we need to create a h-b arc between
 // RtlQueueWorkItem(callback, x, y) and the call to callback.
 // Same for RegisterWaitForSingleObject.
-static hash_set<uintptr_t> *g_windows_thread_pool_calback_set;
+static unordered_set<uintptr_t> *g_windows_thread_pool_calback_set;
 // Similarly, we need h-b arcs between the returns from callbacks and
 // thre related UnregisterWaitEx. Damn, what a stupid interface!
-static hash_map<uintptr_t, uintptr_t> *g_windows_thread_pool_wait_object_map;
+static unordered_map<uintptr_t, uintptr_t> *g_windows_thread_pool_wait_object_map;
 #endif
 
 //--------------- StackFrame ----------------- {{{1
@@ -197,7 +197,7 @@ static bool global_ignore;
 static vector<ThreadLocalEventBuffer *> *g_tleb_queue;
 
 #ifdef _MSC_VER
-static hash_set<pthread_t> *g_win_handles_which_are_threads;
+static unordered_set<pthread_t> *g_win_handles_which_are_threads;
 #endif
 
 //------------- ThreadSanitizer exports ------------ {{{1
@@ -275,9 +275,9 @@ static bool DumpEventPlainText(EventType type, int32_t tid, uintptr_t pc,
 #else
   if (G_flags->dump_events.empty()) return false;
 
-  static hash_set<uintptr_t> *pc_set;
+  static unordered_set<uintptr_t> *pc_set;
   if (pc_set == NULL) {
-    pc_set = new hash_set<uintptr_t>;
+    pc_set = new unordered_set<uintptr_t>;
   }
   static FILE *log_file = NULL;
   if (log_file == NULL) {
@@ -967,7 +967,7 @@ static uintptr_t WRAP_NAME(CreateThread)(WRAP_PARAM6) {
   {
     ScopedReentrantClientLock lock(__LINE__);
     if (g_win_handles_which_are_threads == NULL) {
-      g_win_handles_which_are_threads = new hash_set<pthread_t>;
+      g_win_handles_which_are_threads = new unordered_set<pthread_t>;
     }
     g_win_handles_which_are_threads->insert(child_ptid);
   }
@@ -3103,8 +3103,8 @@ int main(INT32 argc, CHAR **argv) {
   tls_reg = PIN_ClaimToolRegister();
   CHECK(REG_valid(tls_reg));
 #if _MSC_VER
-  g_windows_thread_pool_calback_set = new hash_set<uintptr_t>;
-  g_windows_thread_pool_wait_object_map = new hash_map<uintptr_t, uintptr_t>;
+  g_windows_thread_pool_calback_set = new unordered_set<uintptr_t>;
+  g_windows_thread_pool_wait_object_map = new unordered_map<uintptr_t, uintptr_t>;
 #endif
 
   // Set up PIN callbacks.

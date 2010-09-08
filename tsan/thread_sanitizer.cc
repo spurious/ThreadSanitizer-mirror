@@ -1763,7 +1763,7 @@ class Segment {
   }
 
   // Data members.
-  uint32_t ref_count_;
+  int32_t ref_count_;
   TID      tid_;
   LSID     lsid_[2];
   VTS *vts_;
@@ -2235,10 +2235,10 @@ class SegmentSet {
 
    private:
     // TODO(timurrrr): consider making a custom hash_table.
-#if defined(_MSC_VER)
-    typedef hash_map<SegmentSet*, SSID, SSTraits > MapType__;
-#elif 1
-    typedef hash_map<SegmentSet*, SSID, SSHash, SSEq > MapType__;
+//#if defined(_MSC_VER)
+//    typedef hash_map<SegmentSet*, SSID, SSTraits > MapType__;
+#if 1
+    typedef unordered_map<SegmentSet*, SSID, SSHash, SSEq > MapType__;
 #else
     // Old code, may be useful for debugging.
     typedef map<SegmentSet*, SSID, Less > MapType__;
@@ -3205,7 +3205,7 @@ class Cache {
 
   // tag => CacheLine
 #if 1
-  typedef hash_map<uintptr_t, CacheLine*> Map;
+  typedef unordered_map<uintptr_t, CacheLine*> Map;
 #else
   typedef map<uintptr_t, CacheLine*> Map;
 #endif
@@ -4250,7 +4250,7 @@ struct Thread {
   // signal and wait (it is unlikely that more than 4 epochs are live at once.
   enum { kNumberOfPossibleBarrierEpochsLiveAtOnce = 4 };
   // Maps the barrier pointer to CyclicBarrierInfo.
-  typedef hash_map<uintptr_t, CyclicBarrierInfo> CyclicBarrierMap;
+  typedef unordered_map<uintptr_t, CyclicBarrierInfo> CyclicBarrierMap;
 
   CyclicBarrierInfo &GetCyclicBarrierInfo(uintptr_t barrier) {
     if (cyclic_barrier_map_ == NULL) {
@@ -7134,7 +7134,7 @@ bool ThreadSanitizerWantToCreateSegmentsOnSblockEntry(uintptr_t pc) {
 
 // Returns true if function at "pc" is marked as "fun_r" in the ignore file.
 bool NOINLINE ThreadSanitizerIgnoreAccessesBelowFunction(uintptr_t pc) {
-  typedef hash_map<uintptr_t, bool> Cache;
+  typedef unordered_map<uintptr_t, bool> Cache;
   static Cache *cache = NULL;
   if (!cache)
     cache = new Cache;

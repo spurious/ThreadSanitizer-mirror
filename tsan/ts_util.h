@@ -94,10 +94,19 @@ extern unsigned long offline_line_n;
 #include <string>
 #include <bitset>
 #include "ext/algorithm"
+
+#ifdef __APPLE__
+// Apple's unordered_map in gcc 4.0 does not support -fno-exceptions.
 #include "ext/hash_map"
 #include "ext/hash_set"
-using __gnu_cxx::hash_map;
-using __gnu_cxx::hash_set;
+#define unordered_map __gnu_cxx::hash_map
+#define unordered_set __gnu_cxx::hash_set
+#else
+#include "tr1/unordered_map"
+#include "tr1/unordered_set"
+using std::tr1::unordered_map;
+using std::tr1::unordered_set;
+#endif
 
 #elif defined(TS_USE_STLPORT)  // ------------- STLport ----------
 #include "set"
@@ -111,8 +120,11 @@ using __gnu_cxx::hash_set;
 #include "string"
 #include "bitset"
 #include "algorithm"
-using std::hash_map;
-using std::hash_set;
+
+#include "unordered_map"
+#include "unordered_set"
+using std::tr1::unordered_map;
+using std::tr1::unordered_set;
 
 #elif defined(TS_USE_WIN_STL)  // ------------- MSVC STL ---------
 #include <string.h>
@@ -125,16 +137,15 @@ using std::hash_set;
 #include <algorithm>
 #include <string>
 #include <bitset>
-#include <hash_map>
-#include <hash_set>
-using stdext::hash_map;
-using stdext::hash_set;
 
+#include <unordered_map>
+#include <unordered_set>
+using std::tr1::unordered_map;
+using std::tr1::unordered_set;
 
 #else
 # error "Unknown STL"
 #endif  // TS_USE_STANDARD_STL
-
 
 using std::set;
 using std::multiset;
@@ -154,8 +165,6 @@ using std::make_pair;
 using std::unique_copy;
 
 //--------- defines ------------------- {{{1
-#define UNIMPLEMENTED() CHECK(0 == 42)
-
 #ifdef TS_VALGRIND
 // TODO(kcc) get rid of these macros.
 #define sprintf(arg1, arg2...) VG_(sprintf)((Char*)arg1, (HChar*)arg2)
@@ -304,7 +313,6 @@ inline uintptr_t tsan_bswap(uintptr_t x) {
 #endif // ARM
 #elif defined(_WIN32)
   return x;  // TODO(kcc)
-  // UNIMPLEMENTED();
 #else
 # error  "Unknown Configuration"
 #endif // __WORDSIZE
