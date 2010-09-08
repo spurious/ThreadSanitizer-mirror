@@ -138,10 +138,15 @@ using std::tr1::unordered_set;
 #include <string>
 #include <bitset>
 
-#include <unordered_map>
-#include <unordered_set>
-using std::tr1::unordered_map;
-using std::tr1::unordered_set;
+// No such thing in VC 2005
+//#include <unordered_map>
+//#include <unordered_set>
+//using std::tr1::unordered_map;
+//using std::tr1::unordered_set;
+#include <hash_map>
+#include <hash_set>
+#define unordered_map stdext::hash_map
+#define unordered_set stdext::hash_set
 
 #else
 # error "Unknown STL"
