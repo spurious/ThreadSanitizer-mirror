@@ -187,6 +187,7 @@ struct ExpectedRace {
   uintptr_t   size;
   bool        is_benign;
   bool        is_verifiable;
+  bool        is_nacl_untrusted;
   int         count;
   const char *description;
   uintptr_t   pc;

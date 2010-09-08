@@ -4748,8 +4748,13 @@ class ReportStorage {
     bool is_expected = false;
     ExpectedRace *expected_race = G_expected_races_map->GetInfo(addr);
     if (expected_race) {
-      is_expected = true;
-      expected_race->count++;
+      if (G_flags->nacl_untrusted != expected_race->is_nacl_untrusted) {
+        Report("WARNING: this race is only expected in NaCl %strusted mode\n",
+            expected_race->is_nacl_untrusted ? "un" : "");
+      } else {
+        is_expected = true;
+        expected_race->count++;
+      }
     }
 
     if (g_expecting_races) {
@@ -5335,7 +5340,8 @@ class Detector {
          it != G_expected_races_map->end(); ++it) {
       ExpectedRace race = it->second;
       if (race.count == 0 && !race.is_benign &&
-          !(g_race_verifier_active && !race.is_verifiable)) {
+          !(g_race_verifier_active && !race.is_verifiable) &&
+          (G_flags->nacl_untrusted == race.is_nacl_untrusted)) {
         ++missing;
         Printf("Missing an expected race on %p: %s (annotated at %s)\n",
                it->first,
@@ -5680,6 +5686,8 @@ class Detector {
     expected_race.is_benign = is_benign;
     expected_race.is_verifiable = !descr ||
         (string(descr).find("UNVERIFIABLE") == string::npos);
+    expected_race.is_nacl_untrusted = !descr ||
+        (string(descr).find("NACL_UNTRUSTED") != string::npos);
     expected_race.description = descr;
     expected_race.pc = cur_thread_->GetCallstackEntry(1);
     G_expected_races_map->InsertInfo(ptr, expected_race);
