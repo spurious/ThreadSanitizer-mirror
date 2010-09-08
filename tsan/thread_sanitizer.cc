@@ -2237,7 +2237,7 @@ class SegmentSet {
     // TODO(timurrrr): consider making a custom hash_table.
 #if defined(_MSC_VER)
     typedef stdext::hash_map<SegmentSet*, SSID, SSTraits > MapType__;
-#if 1
+#elif 1
     typedef unordered_map<SegmentSet*, SSID, SSHash, SSEq > MapType__;
 #else
     // Old code, may be useful for debugging.
