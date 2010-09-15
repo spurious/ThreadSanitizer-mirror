@@ -33,9 +33,9 @@
 
 #include <gtest/gtest.h>
 
-namespace AtomicityTests {  // {{{1
+#include <map>
 
-
+namespace AtomicityTests_LockedVector {  // {{{1
 // The most popular form of atomicity violation.
 // Every method of a class is locked, but not every method is atomic.
 // So,
@@ -64,7 +64,7 @@ class LockedVector {
   Mutex       mu_;
 };
 
-const int N = 10000;
+const int N = 100;
 LockedVector v;
 
 void Worker() {
@@ -72,6 +72,7 @@ void Worker() {
     if (v.size() > 0)
       v.pop_back();
     v.push_back(i);
+    usleep(1);
   }
 }
 
@@ -83,4 +84,58 @@ TEST(AtomicityTests, DISABLED_LockedVector) {
   t.Join();
 }
 
+}  // namespace
+
+namespace AtomicityTests_ReaderThenWriterLockTest {  // {{{1
+// Atomicity violation with a map and a reader lock. 
+// The function CheckMapAndInsertIfNeeded first checks if an element 
+// with a given key exists. If not, it inserts such element. 
+// The problem here is that during the first part we hold a reader lock,
+// then we release it and grap writer lock, but the code has (incorrect)
+// assumption that the map has not been changed between ReaderUnlock and
+// WriterLock.
+
+typedef std::map<int, int> Map;
+Map *m;
+
+RWLock mu;
+
+void CheckMapAndInsertIfNeeded(int key, int val) {
+  Map::iterator it;
+
+  {
+    ReaderLockScoped reader(&mu);
+    it = m->find(key);
+    if (it != m->end())
+      return;
+  }
+  // <<<<< Another thread may change the map here.
+  {
+    WriterLockScoped writer(&mu);
+    // CHECK(m->find(key) == m->end());
+    if (m->find(key) != m->end()) {
+      printf("Here comes the result of atomicity violation!\n");
+      return;
+    }
+    (*m)[key] = val;
+  }
 }
+
+void Worker() {
+  for (int i = 0; i < 1000; i++) {
+    CheckMapAndInsertIfNeeded(i, i);
+    usleep(0);
+  }
+}
+
+TEST(AtomicityTests, ReaderThenWriterLockTest) {
+  m = new Map();
+  MyThreadArray t(Worker, Worker, Worker);
+  t.Start();
+  t.Join();
+  delete m;
+}
+}  // namespace
+
+// End {{{1
+// vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker
