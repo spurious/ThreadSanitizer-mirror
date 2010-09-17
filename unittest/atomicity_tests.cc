@@ -86,7 +86,9 @@ TEST(AtomicityTests, DISABLED_LockedVector) {
 
 }  // namespace
 
+
 namespace AtomicityTests_ReaderThenWriterLockTest {  // {{{1
+#ifndef _MSC_VER
 // Atomicity violation with a map and a reader lock. 
 // The function CheckMapAndInsertIfNeeded first checks if an element 
 // with a given key exists. If not, it inserts such element. 
@@ -135,6 +137,7 @@ TEST(AtomicityTests, ReaderThenWriterLockTest) {
   t.Join();
   delete m;
 }
+#endif  // _MSC_VER
 }  // namespace
 
 // End {{{1
