@@ -6960,22 +6960,65 @@ void SplitStringIntoLinesAndRemoveBlanksAndComments(
   }
 }
 
+// A triple of patterns to ignore a function, an object file and a source file
+// by their names.
+struct IgnoreTriple {
+  string fun;
+  string obj;
+  string file;
+
+  IgnoreTriple(string ifun, string iobj, string ifile) : fun(ifun) {
+    obj = ConvertToPlatformIndependentPath(iobj);
+    file = ConvertToPlatformIndependentPath(ifile);
+    CHECK(!((ifun == "*") && (iobj == "*") && (ifile == "*")));
+  }
+};
+
+struct IgnoreObj : public IgnoreTriple {
+  IgnoreObj(string obj) : IgnoreTriple("*", obj, "*") {}
+};
+
+struct IgnoreFun : public IgnoreTriple {
+  IgnoreFun(string fun) : IgnoreTriple(fun, "*", "*") {}
+};
+
+struct IgnoreFile : public IgnoreTriple {
+  IgnoreFile(string file) : IgnoreTriple("*", "*", file) {}
+};
+
 struct IgnoreLists {
-  vector<string> funs;
-  vector<string> funs_r;
-  vector<string> funs_hist;
-  vector<string> objs;
-  vector<string> files;
+  vector<IgnoreTriple> ignores;
+  vector<IgnoreTriple> ignores_r;
+  vector<IgnoreTriple> ignores_hist;
 };
 
 static IgnoreLists *g_ignore_lists;
 
-bool ReadIgnoreLine(string input_line, string prefix,
-                    vector<string> &output_list) {
-  if (input_line.find(prefix) != 0)
+bool CutStringPrefixIfPresent(const string &input, const string &prefix,
+                     /* OUT */ string *output) {
+  if (input.find(prefix) == 0) {
+    *output = input.substr(prefix.size());
+    return true;
+  } else {
     return false;
-  string s = input_line.substr(prefix.size());
-  output_list.push_back(s);
+  }
+}
+
+bool ReadIgnoreLine(string input_line, IgnoreLists *ignore_lists) {
+  string tail;
+  if (CutStringPrefixIfPresent(input_line, "obj:", &tail)) {
+    ignore_lists->ignores.push_back(IgnoreObj(tail));
+  } else if (CutStringPrefixIfPresent(input_line, "src:", &tail)) {
+    ignore_lists->ignores.push_back(IgnoreFile(tail));
+  } else if (CutStringPrefixIfPresent(input_line, "fun:", &tail)) {
+    ignore_lists->ignores.push_back(IgnoreFun(tail));
+  } else if (CutStringPrefixIfPresent(input_line, "fun_r:", &tail)) {
+    ignore_lists->ignores_r.push_back(IgnoreFun(tail));
+  } else if (CutStringPrefixIfPresent(input_line, "fun_hist:", &tail)) {
+    ignore_lists->ignores_hist.push_back(IgnoreFun(tail));
+  } else {
+    return false;
+  }
   return true;
 }
 
@@ -6984,76 +7027,77 @@ static void SetupIgnore() {
   g_ignore_lists = new IgnoreLists;
   // add some major ignore entries so that tsan remains sane
   // even w/o any ignore file.
-  g_ignore_lists->objs.push_back("*/libpthread-*");
-  g_ignore_lists->objs.push_back("*/libpthread.so*");
-  g_ignore_lists->objs.push_back("*/ld-2*.so");
+  g_ignore_lists->ignores.push_back(IgnoreObj("*/libpthread-*"));
+  g_ignore_lists->ignores.push_back(IgnoreObj("*/libpthread.so*"));
+  g_ignore_lists->ignores.push_back(IgnoreObj("*/ld-2*.so"));
 
-  g_ignore_lists->objs.push_back("*ole32.dll");
-  g_ignore_lists->objs.push_back("*OLEAUT32.dll");
-  g_ignore_lists->objs.push_back("*MSCTF.dll");
-  g_ignore_lists->objs.push_back("*ntdll.dll");
-  g_ignore_lists->objs.push_back("*ntdll.dll.so");
-  g_ignore_lists->objs.push_back("*mswsock.dll");
-  g_ignore_lists->objs.push_back("*WS2_32.dll");
-  g_ignore_lists->objs.push_back("*msvcrt.dll");
-  g_ignore_lists->objs.push_back("*kernel32.dll");
-  g_ignore_lists->objs.push_back("*ADVAPI32.DLL");
+  g_ignore_lists->ignores.push_back(IgnoreObj("*ole32.dll"));
+  g_ignore_lists->ignores.push_back(IgnoreObj("*OLEAUT32.dll"));
+  g_ignore_lists->ignores.push_back(IgnoreObj("*MSCTF.dll"));
+  g_ignore_lists->ignores.push_back(IgnoreObj("*ntdll.dll"));
+  g_ignore_lists->ignores.push_back(IgnoreObj("*ntdll.dll.so"));
+  g_ignore_lists->ignores.push_back(IgnoreObj("*mswsock.dll"));
+  g_ignore_lists->ignores.push_back(IgnoreObj("*WS2_32.dll"));
+  g_ignore_lists->ignores.push_back(IgnoreObj("*msvcrt.dll"));
+  g_ignore_lists->ignores.push_back(IgnoreObj("*kernel32.dll"));
+  g_ignore_lists->ignores.push_back(IgnoreObj("*ADVAPI32.DLL"));
 
 #ifdef VGO_darwin
-  g_ignore_lists->objs.push_back("/usr/lib/dyld");
-  g_ignore_lists->objs.push_back("/usr/lib/libobjc.A.dylib");
-  g_ignore_lists->objs.push_back("*/libSystem.*.dylib");
+  g_ignore_lists->ignores.push_back(IgnoreObj("/usr/lib/dyld"));
+  g_ignore_lists->ignores.push_back(IgnoreObj("/usr/lib/libobjc.A.dylib"));
+  g_ignore_lists->ignores.push_back(IgnoreObj("*/libSystem.*.dylib"));
 #endif
 
-  g_ignore_lists->funs.push_back("pthread_create");
-  g_ignore_lists->funs.push_back("pthread_create@*");
-  g_ignore_lists->funs.push_back("pthread_create_WRK");
-  g_ignore_lists->funs.push_back("exit");
-  g_ignore_lists->funs.push_back("__cxa_*");
-  g_ignore_lists->funs.push_back("*__gnu_cxx*__exchange_and_add*");
-  g_ignore_lists->funs.push_back("__lll_mutex_unlock_wake");
-  g_ignore_lists->funs.push_back("__sigsetjmp");
-  g_ignore_lists->funs.push_back("__sigjmp_save");
-  g_ignore_lists->funs.push_back("_setjmp");
-  g_ignore_lists->funs.push_back("_longjmp_unwind");
-  g_ignore_lists->funs.push_back("longjmp");
-  g_ignore_lists->funs.push_back("_EH_epilog3");
-  g_ignore_lists->funs.push_back("_EH_prolog3_catch");
+  g_ignore_lists->ignores.push_back(IgnoreFun("pthread_create"));
+  g_ignore_lists->ignores.push_back(IgnoreFun("pthread_create@*"));
+  g_ignore_lists->ignores.push_back(IgnoreFun("pthread_create_WRK"));
+  g_ignore_lists->ignores.push_back(IgnoreFun("exit"));
+  g_ignore_lists->ignores.push_back(IgnoreFun("__cxa_*"));
+  g_ignore_lists->ignores.push_back(
+      IgnoreFun("*__gnu_cxx*__exchange_and_add*"));
+  g_ignore_lists->ignores.push_back(IgnoreFun("__lll_mutex_unlock_wake"));
+  g_ignore_lists->ignores.push_back(IgnoreFun("__sigsetjmp"));
+  g_ignore_lists->ignores.push_back(IgnoreFun("__sigjmp_save"));
+  g_ignore_lists->ignores.push_back(IgnoreFun("_setjmp"));
+  g_ignore_lists->ignores.push_back(IgnoreFun("_longjmp_unwind"));
+  g_ignore_lists->ignores.push_back(IgnoreFun("longjmp"));
+  g_ignore_lists->ignores.push_back(IgnoreFun("_EH_epilog3"));
+  g_ignore_lists->ignores.push_back(IgnoreFun("_EH_prolog3_catch"));
 
 #ifdef VGO_darwin
-  g_ignore_lists->funs_r.push_back("__CFDoExternRefOperation");
-  g_ignore_lists->funs_r.push_back("_CFAutoreleasePoolPop");
-  g_ignore_lists->funs_r.push_back("_CFAutoreleasePoolPush");
-  g_ignore_lists->funs_r.push_back("OSAtomicAdd32");
+  g_ignore_lists->ignores_r.push_back(IgnoreFun("__CFDoExternRefOperation"));
+  g_ignore_lists->ignores_r.push_back(IgnoreFun("_CFAutoreleasePoolPop"));
+  g_ignore_lists->ignores_r.push_back(IgnoreFun("_CFAutoreleasePoolPush"));
+  g_ignore_lists->ignores_r.push_back(IgnoreFun("OSAtomicAdd32"));
 
   // pthread_lib_{enter,exit} shouldn't give us any reports since they
   // have IGNORE_ALL_ACCESSES_BEGIN/END but they do give the reports...
-  g_ignore_lists->funs_r.push_back("pthread_lib_enter");
-  g_ignore_lists->funs_r.push_back("pthread_lib_exit");
+  g_ignore_lists->ignores_r.push_back(IgnoreFun("pthread_lib_enter"));
+  g_ignore_lists->ignores_r.push_back(IgnoreFun("pthread_lib_exit"));
 #endif
 
 #ifdef _MSC_VER
-  g_ignore_lists->funs.push_back("unnamedImageEntryPoint");
-  g_ignore_lists->funs.push_back("_Mtxunlock");
+  g_ignore_lists->ignores.push_back(IgnoreFun("unnamedImageEntryPoint"));
+  g_ignore_lists->ignores.push_back(IgnoreFun("_Mtxunlock"));
 
-  g_ignore_lists->funs_r.push_back("RtlDestroyQueryDebugBuffer");
-  g_ignore_lists->funs_r.push_back("BCryptGenerateSymmetricKey");
+  g_ignore_lists->ignores_r.push_back(IgnoreFun("RtlDestroyQueryDebugBuffer"));
+  g_ignore_lists->ignores_r.push_back(IgnoreFun("BCryptGenerateSymmetricKey"));
 #else
   // http://code.google.com/p/data-race-test/issues/detail?id=40
-  g_ignore_lists->funs_r.push_back("_ZNSsD1Ev");
+  g_ignore_lists->ignores_r.push_back(IgnoreFun("_ZNSsD1Ev"));
 #endif
 
   // do not create segments in our Replace_* functions
-  g_ignore_lists->funs_hist.push_back("Replace_memcpy");
-  g_ignore_lists->funs_hist.push_back("Replace_memchr");
-  g_ignore_lists->funs_hist.push_back("Replace_strcpy");
-  g_ignore_lists->funs_hist.push_back("Replace_strchr");
-  g_ignore_lists->funs_hist.push_back("Replace_strrchr");
-  g_ignore_lists->funs_hist.push_back("Replace_strlen");
-  g_ignore_lists->funs_hist.push_back("Replace_strcmp");
+  g_ignore_lists->ignores_hist.push_back(IgnoreFun("Replace_memcpy"));
+  g_ignore_lists->ignores_hist.push_back(IgnoreFun("Replace_memchr"));
+  g_ignore_lists->ignores_hist.push_back(IgnoreFun("Replace_strcpy"));
+  g_ignore_lists->ignores_hist.push_back(IgnoreFun("Replace_strchr"));
+  g_ignore_lists->ignores_hist.push_back(IgnoreFun("Replace_strrchr"));
+  g_ignore_lists->ignores_hist.push_back(IgnoreFun("Replace_strlen"));
+  g_ignore_lists->ignores_hist.push_back(IgnoreFun("Replace_strcmp"));
 
   // Ignore everything in our own file.
-  g_ignore_lists->files.push_back("*ts_valgrind_intercepts.c");
+  g_ignore_lists->ignores.push_back(IgnoreFile("*ts_valgrind_intercepts.c"));
 
   // Now read the ignore files.
   for (size_t i = 0; i < G_flags->ignore.size(); i++) {
@@ -7064,22 +7108,12 @@ static void SetupIgnore() {
     SplitStringIntoLinesAndRemoveBlanksAndComments(str, &lines);
     for (size_t j = 0; j < lines.size(); j++) {
       string &line = lines[j];
-      bool line_parsed =
-          ReadIgnoreLine(line, "obj:", g_ignore_lists->objs) ||
-          ReadIgnoreLine(line, "src:", g_ignore_lists->files) ||
-          ReadIgnoreLine(line, "fun:",      g_ignore_lists->funs) ||
-          ReadIgnoreLine(line, "fun_r:",    g_ignore_lists->funs_r) ||
-          ReadIgnoreLine(line, "fun_hist:", g_ignore_lists->funs_hist);
+      bool line_parsed = ReadIgnoreLine(line, g_ignore_lists);
       if (!line_parsed) {
         Printf("Error reading ignore file line:\n%s\n", line.c_str());
         CHECK(0);
       }
     }
-  }
-
-  for (size_t i = 0; i < g_ignore_lists->files.size(); i++) {
-    string &cur = g_ignore_lists->files[i];
-    cur = ConvertToPlatformIndependentPath(cur);
   }
 }
 
@@ -7087,6 +7121,32 @@ bool StringVectorMatch(const vector<string>& v, const string& s) {
   for (size_t i = 0; i < v.size(); i++) {
     if (StringMatch(v[i], s))
       return true;
+  }
+  return false;
+}
+
+// True iff there exists a triple each of which components is either empty
+// or matches the corresponding string.
+bool TripleVectorMatchKnown(const vector<IgnoreTriple>& v,
+                       const string& fun,
+                       const string& obj,
+                       const string& file) {
+  for (size_t i = 0; i < v.size(); i++) {
+    if ((fun.size() == 0 || StringMatch(v[i].fun, fun)) &&
+        (obj.size() == 0 || StringMatch(v[i].obj, obj)) &&
+        (file.size() == 0 || StringMatch(v[i].file, file))) {
+      if ((fun.size() == 0 || v[i].fun == "*") &&
+          (obj.size() == 0 || v[i].obj == "*") &&
+          (file.size() == 0 || v[i].file == "*")) {
+        // At least one of the matched features should be either non-empty
+        // or match a non-trivial pattern.
+        // For example, a <*, *, filename.ext> triple should NOT match
+        // fun="fun", obj="obj.o", file="".
+        return false;
+      } else {
+        return true;
+      }
+    }
   }
   return false;
 }
@@ -7112,10 +7172,10 @@ bool ThreadSanitizerWantToInstrumentSblock(uintptr_t pc) {
   G_stats->pc_to_strings++;
   PcToStrings(pc, false, &img_name, &rtn_name, &file_name, &line_no);
 
-  bool ignore = StringVectorMatch(g_ignore_lists->files, file_name)
-        || StringVectorMatch(g_ignore_lists->objs, img_name)
-        || StringVectorMatch(g_ignore_lists->funs, rtn_name)
-        || StringVectorMatch(g_ignore_lists->funs_r, rtn_name);
+  bool ignore = TripleVectorMatchKnown(g_ignore_lists->ignores,
+                                       rtn_name, img_name, file_name) ||
+                TripleVectorMatchKnown(g_ignore_lists->ignores_r,
+                                       rtn_name, img_name, file_name);
   if (0) {
     Printf("%s: pc=%p file_name=%s img_name=%s rtn_name=%s ret=%d\n",
            __FUNCTION__, pc, file_name.c_str(), img_name.c_str(),
@@ -7129,7 +7189,8 @@ bool ThreadSanitizerWantToCreateSegmentsOnSblockEntry(uintptr_t pc) {
   string rtn_name;
   rtn_name = PcToRtnNameWithStats(pc, false);
 
-  return !(StringVectorMatch(g_ignore_lists->funs_hist, rtn_name));
+  return !(TripleVectorMatchKnown(g_ignore_lists->ignores_hist,
+                                  rtn_name, "", ""));
 }
 
 // Returns true if function at "pc" is marked as "fun_r" in the ignore file.
@@ -7145,7 +7206,8 @@ bool NOINLINE ThreadSanitizerIgnoreAccessesBelowFunction(uintptr_t pc) {
     return i->second;
 
   string rtn_name = PcToRtnNameWithStats(pc, false);
-  bool ret = StringVectorMatch(g_ignore_lists->funs_r, rtn_name);
+  bool ret =
+      TripleVectorMatchKnown(g_ignore_lists->ignores_r, rtn_name, "", "");
   if (ret && debug_ignore) {
     Report("INFO: ignoring all accesses below the function '%s' (%p)\n",
            PcToRtnNameAndFilePos(pc).c_str(), pc);
