@@ -115,6 +115,18 @@ bool RaceVerifierGetAddresses(uintptr_t min_pc, uintptr_t max_pc,
   return !!pc;
 }
 
+static void UpdateSummary() {
+  if (!G_flags->summary_file.empty()) {
+    char buff[100];
+    snprintf(buff, sizeof(buff),
+	     "RaceVerifier: %d report(s) verified\n", n_reports);
+    // We overwrite the contents of this file with the new summary.
+    // We don't do that at the end because even if we crash later
+    // we will already have the summary.
+    OpenFileWriteStringAndClose(G_flags->summary_file, buff);
+  }
+}
+
 /* Build and print a race report for a data address. Does not print stack traces
    and symbols and all the fancy stuff - we don't have that info. Used when we
    don't have a ready report - for unexpected races and for
@@ -198,6 +210,7 @@ static void PrintRaceReport(uintptr_t addr) {
 
     n_reports ++;
   }
+  UpdateSummary();
 }
 
 /**
