@@ -32,14 +32,14 @@ def generate(settings):
 
   # Build self-contained tsan binaries.
   f1.addStep(ShellCommand(command=['make', '-C', 'tsan'] + path_flags +
-                          ['OS=linux', 'ARCH=amd64', 'DEBUG=0', 'self-contained-stripped'],
-                          description='packing self-contained tsan',
-                          descriptionDone='pack self-contained tsan'))
-
-  f1.addStep(ShellCommand(command=['make', '-C', 'tsan'] + path_flags +
                           ['OS=linux', 'ARCH=amd64', 'DEBUG=1', 'self-contained'],
                           description='packing self-contained tsan (debug)',
                           descriptionDone='pack self-contained tsan (debug)'))
+
+  f1.addStep(ShellCommand(command=['make', '-C', 'tsan'] + path_flags +
+                          ['OS=linux', 'ARCH=amd64', 'DEBUG=0', 'self-contained-stripped'],
+                          description='packing self-contained tsan',
+                          descriptionDone='pack self-contained tsan'))
 
   # Build 32-bit tsan and install it to out32/.
   path_flags32 = ['OFFLINE=',
