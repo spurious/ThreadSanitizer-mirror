@@ -59,14 +59,14 @@
 
 #ifdef DYNAMIC_ANNOTATIONS_WANT_ATTRIBUTE_WEAK
 # ifdef __GNUC__
-#  define ATTRIBUTE_WEAK __attribute__((weak))
+#  define DYNAMIC_ANNOTATIONS_ATTRIBUTE_WEAK __attribute__((weak))
 # else
 /* TODO(glider): for Windows support we may want to change this macro in order
    to prepend __declspec(selectany) to the annotations' declarations. */
 #  error weak annotations are not supported for your compiler
 # endif
 #else
-# define ATTRIBUTE_WEAK
+# define DYNAMIC_ANNOTATIONS_ATTRIBUTE_WEAK
 #endif
 
 /* The following preprocessor magic prepends the value of
@@ -429,81 +429,99 @@ extern "C" {
 
 
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateRWLockCreate)(
-    const char *file, int line, const volatile void *lock) ATTRIBUTE_WEAK;
+    const char *file, int line,
+    const volatile void *lock) DYNAMIC_ANNOTATIONS_ATTRIBUTE_WEAK;
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateRWLockDestroy)(
-    const char *file, int line, const volatile void *lock) ATTRIBUTE_WEAK;
+    const char *file, int line,
+    const volatile void *lock) DYNAMIC_ANNOTATIONS_ATTRIBUTE_WEAK;
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateRWLockAcquired)(
-    const char *file, int line, const volatile void *lock, long is_w) ATTRIBUTE_WEAK;
+    const char *file, int line,
+    const volatile void *lock, long is_w) DYNAMIC_ANNOTATIONS_ATTRIBUTE_WEAK;
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateRWLockReleased)(
-    const char *file, int line, const volatile void *lock, long is_w) ATTRIBUTE_WEAK;
+    const char *file, int line,
+    const volatile void *lock, long is_w) DYNAMIC_ANNOTATIONS_ATTRIBUTE_WEAK;
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateBarrierInit)(
     const char *file, int line, const volatile void *barrier, long count,
-    long reinitialization_allowed) ATTRIBUTE_WEAK;
+    long reinitialization_allowed) DYNAMIC_ANNOTATIONS_ATTRIBUTE_WEAK;
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateBarrierWaitBefore)(
-    const char *file, int line, const volatile void *barrier) ATTRIBUTE_WEAK;
+    const char *file, int line,
+    const volatile void *barrier) DYNAMIC_ANNOTATIONS_ATTRIBUTE_WEAK;
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateBarrierWaitAfter)(
-    const char *file, int line, const volatile void *barrier) ATTRIBUTE_WEAK;
+    const char *file, int line,
+    const volatile void *barrier) DYNAMIC_ANNOTATIONS_ATTRIBUTE_WEAK;
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateBarrierDestroy)(
-    const char *file, int line, const volatile void *barrier) ATTRIBUTE_WEAK;
+    const char *file, int line,
+    const volatile void *barrier) DYNAMIC_ANNOTATIONS_ATTRIBUTE_WEAK;
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateCondVarWait)(
     const char *file, int line, const volatile void *cv,
-    const volatile void *lock) ATTRIBUTE_WEAK;
+    const volatile void *lock) DYNAMIC_ANNOTATIONS_ATTRIBUTE_WEAK;
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateCondVarSignal)(
-    const char *file, int line, const volatile void *cv) ATTRIBUTE_WEAK;
+    const char *file, int line,
+    const volatile void *cv) DYNAMIC_ANNOTATIONS_ATTRIBUTE_WEAK;
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateCondVarSignalAll)(
-    const char *file, int line, const volatile void *cv) ATTRIBUTE_WEAK;
+    const char *file, int line,
+    const volatile void *cv) DYNAMIC_ANNOTATIONS_ATTRIBUTE_WEAK;
 void DYNAMIC_ANNOTATIONS_NAME(AnnotatePublishMemoryRange)(
     const char *file, int line,
-    const volatile void *address, long size) ATTRIBUTE_WEAK;
+    const volatile void *address, long size) DYNAMIC_ANNOTATIONS_ATTRIBUTE_WEAK;
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateUnpublishMemoryRange)(
     const char *file, int line,
-    const volatile void *address, long size) ATTRIBUTE_WEAK;
+    const volatile void *address, long size) DYNAMIC_ANNOTATIONS_ATTRIBUTE_WEAK;
 void DYNAMIC_ANNOTATIONS_NAME(AnnotatePCQCreate)(
-    const char *file, int line, const volatile void *pcq) ATTRIBUTE_WEAK;
+    const char *file, int line,
+    const volatile void *pcq) DYNAMIC_ANNOTATIONS_ATTRIBUTE_WEAK;
 void DYNAMIC_ANNOTATIONS_NAME(AnnotatePCQDestroy)(
-    const char *file, int line, const volatile void *pcq) ATTRIBUTE_WEAK;
+    const char *file, int line,
+    const volatile void *pcq) DYNAMIC_ANNOTATIONS_ATTRIBUTE_WEAK;
 void DYNAMIC_ANNOTATIONS_NAME(AnnotatePCQPut)(
-    const char *file, int line, const volatile void *pcq) ATTRIBUTE_WEAK;
+    const char *file, int line,
+    const volatile void *pcq) DYNAMIC_ANNOTATIONS_ATTRIBUTE_WEAK;
 void DYNAMIC_ANNOTATIONS_NAME(AnnotatePCQGet)(
-    const char *file, int line, const volatile void *pcq) ATTRIBUTE_WEAK;
+    const char *file, int line,
+    const volatile void *pcq) DYNAMIC_ANNOTATIONS_ATTRIBUTE_WEAK;
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateNewMemory)(
     const char *file, int line,
-    const volatile void *mem, long size) ATTRIBUTE_WEAK;
+    const volatile void *mem, long size) DYNAMIC_ANNOTATIONS_ATTRIBUTE_WEAK;
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateExpectRace)(
     const char *file, int line, const volatile void *mem,
-    const char *description) ATTRIBUTE_WEAK;
+    const char *description) DYNAMIC_ANNOTATIONS_ATTRIBUTE_WEAK;
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateBenignRace)(
     const char *file, int line, const volatile void *mem,
-    const char *description) ATTRIBUTE_WEAK;
+    const char *description) DYNAMIC_ANNOTATIONS_ATTRIBUTE_WEAK;
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateBenignRaceSized)(
     const char *file, int line, const volatile void *mem, long size,
-    const char *description) ATTRIBUTE_WEAK;
+    const char *description) DYNAMIC_ANNOTATIONS_ATTRIBUTE_WEAK;
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateMutexIsUsedAsCondVar)(
-    const char *file, int line, const volatile void *mu) ATTRIBUTE_WEAK;
+    const char *file, int line,
+    const volatile void *mu) DYNAMIC_ANNOTATIONS_ATTRIBUTE_WEAK;
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateMutexIsNotPHB)(
-    const char *file, int line, const volatile void *mu) ATTRIBUTE_WEAK;
+    const char *file, int line,
+    const volatile void *mu) DYNAMIC_ANNOTATIONS_ATTRIBUTE_WEAK;
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateTraceMemory)(
-    const char *file, int line, const volatile void *arg) ATTRIBUTE_WEAK;
+    const char *file, int line,
+    const volatile void *arg) DYNAMIC_ANNOTATIONS_ATTRIBUTE_WEAK;
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateThreadName)(
-    const char *file, int line, const char *name) ATTRIBUTE_WEAK;
+    const char *file, int line,
+    const char *name) DYNAMIC_ANNOTATIONS_ATTRIBUTE_WEAK;
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateIgnoreReadsBegin)(
-    const char *file, int line) ATTRIBUTE_WEAK;
+    const char *file, int line) DYNAMIC_ANNOTATIONS_ATTRIBUTE_WEAK;
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateIgnoreReadsEnd)(
-    const char *file, int line) ATTRIBUTE_WEAK;
+    const char *file, int line) DYNAMIC_ANNOTATIONS_ATTRIBUTE_WEAK;
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateIgnoreWritesBegin)(
-    const char *file, int line) ATTRIBUTE_WEAK;
+    const char *file, int line) DYNAMIC_ANNOTATIONS_ATTRIBUTE_WEAK;
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateIgnoreWritesEnd)(
-    const char *file, int line) ATTRIBUTE_WEAK;
+    const char *file, int line) DYNAMIC_ANNOTATIONS_ATTRIBUTE_WEAK;
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateIgnoreSyncBegin)(
-    const char *file, int line) ATTRIBUTE_WEAK;
+    const char *file, int line) DYNAMIC_ANNOTATIONS_ATTRIBUTE_WEAK;
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateIgnoreSyncEnd)(
-    const char *file, int line) ATTRIBUTE_WEAK;
+    const char *file, int line) DYNAMIC_ANNOTATIONS_ATTRIBUTE_WEAK;
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateEnableRaceDetection)(
-    const char *file, int line, int enable) ATTRIBUTE_WEAK;
+    const char *file, int line, int enable) DYNAMIC_ANNOTATIONS_ATTRIBUTE_WEAK;
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateNoOp)(
-    const char *file, int line, const volatile void *arg) ATTRIBUTE_WEAK;
+    const char *file, int line,
+    const volatile void *arg) DYNAMIC_ANNOTATIONS_ATTRIBUTE_WEAK;
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateFlushState)(
-    const char *file, int line) ATTRIBUTE_WEAK;
+    const char *file, int line) DYNAMIC_ANNOTATIONS_ATTRIBUTE_WEAK;
 
 
 /* Return non-zero value if running under valgrind.
