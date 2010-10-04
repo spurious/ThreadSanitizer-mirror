@@ -62,6 +62,12 @@ extern unsigned long offline_line_n;
 #define _GLIBCXX_USE_C99 1
 #endif  // ARM
 
+#elif defined(TS_LLVM)
+# define TS_USE_STLPORT
+# include <assert.h>
+# include <fcntl.h>
+# include <time.h>
+
 #elif defined(__GNUC__)
 # undef NDEBUG  // Assert is always on.
 # include <assert.h>
@@ -168,6 +174,10 @@ using std::sort;
 using std::pair;
 using std::make_pair;
 using std::unique_copy;
+
+#ifdef TS_LLVM
+# include "tsan_rtl_wrap.h"
+#endif
 
 //--------- defines ------------------- {{{1
 #ifdef TS_VALGRIND

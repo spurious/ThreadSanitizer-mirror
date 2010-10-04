@@ -6,13 +6,14 @@ ERRORLVL=-Werror
 ERRORLVL=-Werror -Wno-deprecated
 OBJS32=x86-thread_sanitizer.o x86-ts_util.o x86-suppressions.o
 TSAN_PATH=../../tsan
-FLAGS=-Istlport -I../../third_party/stlport -I$(TSAN_PATH) -DTS_LLVM -fno-exceptions -g -D_STLP_NO_IOSTREAMS=1
+FLAGS=-I. -Istlport -I../../third_party/stlport -I$(TSAN_PATH) -DTS_LLVM -fno-exceptions -g -D_STLP_NO_IOSTREAMS=1
 
 FOREIGN_HEADERS=$(TSAN_PATH)/ts_lock.h $(TSAN_PATH)/ts_stats.h \
                 $(TSAN_PATH)/ts_heap_info.h $(TSAN_PATH)/ts_trace_info.h \
-		$(TSAN_PATH)/ts_simple_cache.h $(TSAN_PATH)/ts_replace.h
+                $(TSAN_PATH)/ts_simple_cache.h $(TSAN_PATH)/ts_replace.h \
+                $(TSAN_PATH)/ts_util.h
 
-TS_HEADERS=thread_sanitizer.h ts_util.h \
+TS_HEADERS=thread_sanitizer.h  \
            ts_event_names.h ts_events.h suppressions.h
 
 RTL_32_O=tsan_rtl32.o
