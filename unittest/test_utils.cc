@@ -25,9 +25,8 @@
 
 // Author: Konstantin Serebryany <opensource@google.com>
 #include "test_utils.h"
-/*
+
 const char *ThreadSanitizerQuery(const char *query) {
   printf("Not running under ThreadSanitizer (query=%s)\n", query);
   return NULL;
 }
-*/

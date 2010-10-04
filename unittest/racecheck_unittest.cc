@@ -2887,9 +2887,7 @@ void Signaller2() {
 
 void Waiter1() {
   MU.Lock();
-  while (C1 != 1) {
-    CV.Wait(&MU);
-  }
+  while (C1 != 1) CV.Wait(&MU);
   ANNOTATE_CONDVAR_WAIT(&CV);
   MU.Unlock();
   GLOB1 = 2;
@@ -2897,9 +2895,7 @@ void Waiter1() {
 
 void Waiter2() {
   MU.Lock();
-  while (C2 != 1) {
-    CV.Wait(&MU);
-  }
+  while (C2 != 1) CV.Wait(&MU);
   ANNOTATE_CONDVAR_WAIT(&CV);
   MU.Unlock();
   GLOB2 = 2;

@@ -7,7 +7,7 @@ else
 DEFINES=-DOS_$(OS) -DARCH_$(ARCH)
 endif
 
-CFLAGS+=$(OPTFLAGS) $(ARCHFLAGS) $(OS_CFLAGS) $(DEFINES) $(EXTRA_CFLAGS) -DDYNAMIC_ANNOTATIONS_WANT_ATTRIBUTE_WEAK
+CFLAGS+=$(OPTFLAGS) $(ARCHFLAGS) $(OS_CFLAGS) $(DEFINES) $(EXTRA_CFLAGS)
 CXXFLAGS+=$(OPTFLAGS) $(ARCHFLAGS) $(OS_CXXFLAGS) $(DEFINES) $(EXTRA_CXXFLAGS)
 OPT_CXXFLAGS=$(CXXFLAGS) -O2 -g $(ARCHFLAGS) $(OS_CXXFLAGS) $(DEFINES) $(EXTRA_CXXFLAGS) -foptimize-sibling-calls
 ifeq ($(OS), darwin)
@@ -93,7 +93,7 @@ $(BIN)racecheck_unittest-$(BUILD)$(EXE): $(BIN)posix_tests-$(BUILD).$(OBJ)
 endif
 
 ifeq ($(OS), linux)
-#$(BIN)racecheck_unittest-$(BUILD)$(EXE): $(BIN)libstdc++_tests-$(BUILD).$(OBJ)
+$(BIN)racecheck_unittest-$(BUILD)$(EXE): $(BIN)libstdc++_tests-$(BUILD).$(OBJ)
 endif
 
 ifeq ($(OS), darwin)

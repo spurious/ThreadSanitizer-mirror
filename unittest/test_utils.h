@@ -67,10 +67,8 @@ inline bool ThreadSanitizerQueryMatch(const char *query, const char *expected_an
   const char *answer = ThreadSanitizerQuery(query);
   if (answer == NULL) {
     // Not running under ThreadSanitizer at all.
-    fprintf(stderr, "Not running under ThreadSanitizer at all.\n");
     return false;
   }
-  fprintf(stderr, "QUERY: %s\nANSWER=%s\nEXPECTED=%s\n", query, answer, expected_answer);
   return string(answer) == expected_answer;
 }
 
