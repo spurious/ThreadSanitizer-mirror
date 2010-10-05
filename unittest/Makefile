@@ -93,7 +93,9 @@ $(BIN)racecheck_unittest-$(BUILD)$(EXE): $(BIN)posix_tests-$(BUILD).$(OBJ)
 endif
 
 ifeq ($(OS), linux)
+ifndef OMIT_CPP0X
 $(BIN)racecheck_unittest-$(BUILD)$(EXE): $(BIN)libstdc++_tests-$(BUILD).$(OBJ)
+endif
 endif
 
 ifeq ($(OS), darwin)
