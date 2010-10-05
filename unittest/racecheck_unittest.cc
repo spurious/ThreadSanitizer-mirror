@@ -7439,7 +7439,7 @@ void Worker1() {
   fprintf(stdout, "Hello from a thread\n");
 }
 
-TEST(PrintfTests, Simple) {
+TEST(PrintfTests, DISABLED_Simple) {
   MyThreadArray t(Worker1, Worker1);
   t.Start();
   t.Join();
@@ -7461,7 +7461,7 @@ void Worker2() {
   s2[3] = 'z';
 }
 
-TEST(PrintfTests, RaceOnPrintfArgument) {
+TEST(PrintfTests, DISABLED_RaceOnPrintfArgument) {
   ANNOTATE_EXPECT_RACE(s + 3, "PrintfTests_RaceOnPrintfArgument (stdout).");
   ANNOTATE_EXPECT_RACE(s2 + 3, "PrintfTests_RaceOnPrintfArgument (stderr).");
   MyThreadArray t(Worker1, Worker2);
@@ -7485,7 +7485,7 @@ void Worker2() {
   fprintf(stdout, "the other thread have already printed %d characters\n", a);
 }
 
-TEST(PrintfTests, RaceOnOutputArgument) {
+TEST(PrintfTests, DISABLED_RaceOnOutputArgument) {
   ANNOTATE_EXPECT_RACE(&a, "PrintfTests_RaceOnOutputArgument:int.");
   MyThreadArray t(Worker1, Worker2);
   t.Start();
