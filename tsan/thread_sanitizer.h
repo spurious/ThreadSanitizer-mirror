@@ -102,6 +102,7 @@ struct FLAGS {
 
   bool         report_races;
   bool         thread_coverage;
+  bool         atomicity;
   bool         call_coverage;
   string       dump_events;  // The name of log file. Debug mode only.
   bool         symbolize;

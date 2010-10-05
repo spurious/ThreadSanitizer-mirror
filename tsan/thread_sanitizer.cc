@@ -532,12 +532,21 @@ class StackTrace {
     Printf("\n");
   }
 
+  static bool Equals(const StackTrace *t1, const StackTrace *t2) {
+    if (t1->size_ != t2->size_) return false;
+    for (size_t i = 0; i < t1->size_; i++) {
+      if (t1->arr_[i] != t2->arr_[i]) return false;
+    }
+    return true;
+  }
+
   struct Less {
     bool operator() (const StackTrace *t1, const StackTrace *t2) const {
       size_t size = min(t1->size_, t2->size_);
       for (size_t i = 0; i < size; i++) {
-        if (t1->arr_[i] != t2->arr_[i])
+        if (t1->arr_[i] != t2->arr_[i]) {
           return (t1->arr_[i] < t2->arr_[i]);
+        }
       }
       return t1->size_ < t2->size_;
     }
@@ -1445,6 +1454,15 @@ class Mask {
     return ret;
   }
 
+  size_t PopCount() {
+#ifdef __GNUC__
+    return __builtin_popcountl(m_);
+#else
+    CHECK(0);
+    return 0;
+#endif
+  }
+
   void Subtract(Mask m) { m_ &= ~m.m_; }
   void Union(Mask m) { m_ |= m.m_; }
 
@@ -1473,6 +1491,79 @@ class Mask {
 
  private:
   uintptr_t m_;
+};
+
+// -------- BitSet -------------------{{{1
+// Poor man's sparse bit set.
+class BitSet {
+ public:
+  // Add range [a,b). The range should be within one line (kNBitsLog).
+  void Add(uintptr_t a, uintptr_t b) {
+    uintptr_t line = a & ~(Mask::kNBits - 1);
+    DCHECK(a < b);
+    DCHECK(a - line < Mask::kNBits);
+    if (!(b - line <= Mask::kNBits)) {
+      Printf("XXXXX %p %p %p b-line=%ld size=%ld a-line=%ld\n", a, b, line,
+             b - line, b - a, a - line);
+      return;
+    }
+    DCHECK(b - line <= Mask::kNBits);
+    DCHECK(line == ((b - 1) & ~(Mask::kNBits - 1)));
+    Mask &mask= map_[line];
+    mask.SetRange(a - line, b - line);
+  }
+
+  bool empty() { return map_.empty(); }
+
+  size_t size() {
+    size_t res = 0;
+    for (Map::iterator it = map_.begin(); it != map_.end(); ++it) {
+      res += it->second.PopCount();
+    }
+    return res;
+  }
+
+  string ToString() {
+    char buff[100];
+    string res;
+    int lines = 0;
+    snprintf(buff, sizeof(buff), " %ld lines %ld bits:",
+             (long)map_.size(), (long)size());
+    res += buff;
+    for (Map::iterator it = map_.begin(); it != map_.end(); ++it) {
+      Mask mask = it->second;
+      snprintf(buff, sizeof(buff), " l%d (%ld):", lines++, (long)mask.PopCount());
+      res += buff;
+      uintptr_t line = it->first;
+      bool is_in = false;
+      for (size_t i = 0; i < Mask::kNBits; i++) {
+        uintptr_t addr = line + i;
+        if (mask.Get(i)) {
+          if (!is_in) {
+            snprintf(buff, sizeof(buff), " [%lx,", (long)addr);
+            res += buff;
+            is_in = true;
+          }
+        } else {
+          if (is_in) {
+            snprintf(buff, sizeof(buff), "%lx);", (long)addr);
+            res += buff;
+            is_in = false;
+          }
+        }
+      }
+      if (is_in) {
+        snprintf(buff, sizeof(buff), "%lx);", (long)(line + Mask::kNBits));
+        res += buff;
+      }
+    }
+    return res;
+  }
+
+  void Clear() { map_.clear(); }
+ private:
+  typedef map<uintptr_t, Mask> Map;
+  Map map_;
 };
 
 // -------- Segment -------------------{{{1
@@ -3430,7 +3521,8 @@ struct ThreadSanitizerReport {
     DATA_RACE,
     UNLOCK_FOREIGN,
     UNLOCK_NONLOCKED,
-    INVALID_LOCK
+    INVALID_LOCK,
+    ATOMICITY_VIOLATION,
   };
 
   // Common fields.
@@ -3444,6 +3536,7 @@ struct ThreadSanitizerReport {
       case UNLOCK_FOREIGN:   return "UnlockForeign";
       case UNLOCK_NONLOCKED: return "UnlockNonLocked";
       case INVALID_LOCK:     return "InvalidLock";
+      case ATOMICITY_VIOLATION: return "AtomicityViolation";
     }
     CHECK(0);
     return NULL;
@@ -3482,6 +3575,13 @@ struct ThreadSanitizerBadUnlockReport : public ThreadSanitizerReport {
 struct ThreadSanitizerInvalidLockReport : public ThreadSanitizerReport {
   uintptr_t lock_addr;
 };
+
+class AtomicityRegion;
+
+struct ThreadSanitizerAtomicityViolationReport : public ThreadSanitizerReport {
+  AtomicityRegion *r1, *r2, *r3;
+};
+
 
 // -------- LockHistory ------------- {{{1
 // For each thread we store a limited amount of history of locks and unlocks.
@@ -3717,6 +3817,142 @@ void TraceInfo::PrintTraceProfile() {
   }
 }
 
+// -------- Atomicity --------------- {{{1
+// An attempt to detect atomicity violations (aka high level races).
+// Here we try to find a very restrictive pattern:
+// Thread1                    Thread2
+//   r1: {
+//     mu.Lock();
+//     code_r1();
+//     mu.Unlock();
+//   }
+//   r2: {
+//     mu.Lock();
+//     code_r2();
+//     mu.Unlock();
+//   }
+//                           r3: {
+//                             mu.Lock();
+//                             code_r3();
+//                             mu.Unlock();
+//                           }
+// We have 3 regions of code such that
+// - two of them are in one thread and 3-rd in another thread.
+// - all 3 regions have the same lockset,
+// - the distance between r1 and r2 is small,
+// - there is no h-b arc between r2 and r3,
+// - r1 and r2 have different stack traces,
+//
+// In this situation we report a 'Suspected atomicity violation'.
+//
+// Current status:
+// this code detects atomicity violations on our two motivating examples
+// (--gtest_filter=*Atomicity*  --gtest_also_run_disabled_tests) and does
+// not overwhelm with false reports.
+// However, this functionality is still raw and not tuned for performance.
+
+// TS_ATOMICITY is on in debug mode or if we enabled it at the build time.
+#ifndef TS_ATOMICITY
+# define TS_ATOMICITY DEBUG_MODE
+#endif
+
+
+struct AtomicityRegion {
+  int lock_era;
+  TID tid;
+  VTS *vts;
+  StackTrace *stack_trace;
+  LSID lsid[2];
+  BitSet access_set[2];
+  bool used;
+  int n_mops_since_start;
+
+  void Print() {
+    Report("T%d era=%d nmss=%ld AtomicityRegion:\n  rd: %s\n  wr: %s\n  %s\n%s",
+           tid.raw(),
+           lock_era,
+           n_mops_since_start,
+           access_set[0].ToString().c_str(),
+           access_set[1].ToString().c_str(),
+           TwoLockSetsToString(lsid[false], lsid[true]).c_str(),
+           stack_trace->ToString().c_str()
+          );
+  }
+};
+
+bool SimilarLockSetForAtomicity(AtomicityRegion *r1, AtomicityRegion *r2) {
+  // Compare only reader locksets (in case one region took reader locks)
+  return ((r1->lsid[0] == r2->lsid[0]));
+}
+
+static deque<AtomicityRegion *> *g_atomicity_regions;
+static map<StackTrace *, int, StackTrace::Less> *reported_atomicity_stacks_;
+const size_t kMaxAtomicityRegions = 8;
+
+static void HandleAtomicityRegion(AtomicityRegion *atomicity_region) {
+  if (!g_atomicity_regions) {
+    g_atomicity_regions = new deque<AtomicityRegion*>;
+    reported_atomicity_stacks_ = new map<StackTrace *, int, StackTrace::Less>;
+  }
+
+  if (g_atomicity_regions->size() >= kMaxAtomicityRegions) {
+    AtomicityRegion *to_delete = g_atomicity_regions->back();
+    g_atomicity_regions->pop_back();
+    if (!to_delete->used) {
+      VTS::Unref(to_delete->vts);
+      StackTrace::Delete(to_delete->stack_trace);
+      delete to_delete;
+    }
+  }
+  g_atomicity_regions->push_front(atomicity_region);
+  size_t n = g_atomicity_regions->size();
+
+  if (0) {
+    for (size_t i = 0; i < n; i++) {
+      AtomicityRegion *r = (*g_atomicity_regions)[i];
+      r->Print();
+    }
+  }
+
+  AtomicityRegion *r3 = (*g_atomicity_regions)[0];
+  for (size_t i = 1; i < n; i++) {
+    AtomicityRegion *r2 = (*g_atomicity_regions)[i];
+    if (r2->tid     != r3->tid &&
+        SimilarLockSetForAtomicity(r2, r3) &&
+        !VTS::HappensBeforeCached(r2->vts, r3->vts)) {
+      for (size_t j = i + 1; j < n; j++) {
+        AtomicityRegion *r1 = (*g_atomicity_regions)[j];
+        if (r1->tid != r2->tid) continue;
+        CHECK(r2->lock_era > r1->lock_era);
+        if (r2->lock_era - r1->lock_era > 2) break;
+        if (!SimilarLockSetForAtomicity(r1, r2)) continue;
+        if (StackTrace::Equals(r1->stack_trace, r2->stack_trace)) continue;
+        if (!(r1->access_set[1].empty() &&
+              !r2->access_set[1].empty() &&
+              !r3->access_set[1].empty())) continue;
+        CHECK(r1->n_mops_since_start <= r2->n_mops_since_start);
+        if (r2->n_mops_since_start - r1->n_mops_since_start > 5) continue;
+        if ((*reported_atomicity_stacks_)[r1->stack_trace] > 0) continue;
+
+        (*reported_atomicity_stacks_)[r1->stack_trace]++;
+        (*reported_atomicity_stacks_)[r2->stack_trace]++;
+        (*reported_atomicity_stacks_)[r3->stack_trace]++;
+        r1->used = r2->used = r3->used = true;
+        ThreadSanitizerAtomicityViolationReport *report =
+            new ThreadSanitizerAtomicityViolationReport;
+        report->type = ThreadSanitizerReport::ATOMICITY_VIOLATION;
+        report->tid = TID(0);
+        report->stack_trace = r1->stack_trace;
+        report->r1 = r1;
+        report->r2 = r2;
+        report->r3 = r3;
+        ThreadSanitizerPrintReport(report);
+        break;
+      }
+    }
+  }
+}
+
 // -------- Thread ------------------ {{{1
 struct Thread {
  public:
@@ -3727,6 +3963,9 @@ struct Thread {
       parent_tid_(parent_tid),
       max_sp_(0),
       min_sp_(0),
+      stack_size_for_ignore_(0),
+      min_sp_for_ignore_(0),
+      n_mops_since_start_(0),
       creation_context_(creation_context),
       announced_(false),
       rd_lockset_(0),
@@ -3756,6 +3995,10 @@ struct Thread {
   TID tid() const { return tid_; }
   TID parent_tid() const { return parent_tid_; }
 
+  void increment_n_mops_since_start() {
+    n_mops_since_start_++;
+  }
+
   // STACK
   uintptr_t max_sp() const { return max_sp_; }
   uintptr_t min_sp() const { return min_sp_; }
@@ -3766,10 +4009,21 @@ struct Thread {
     CHECK(stack_max - stack_min <= 64 * 1024 * 1024);
     min_sp_ = stack_min;
     max_sp_ = stack_max;
+    if (G_flags->ignore_stack) {
+      min_sp_for_ignore_ = min_sp_;
+      stack_size_for_ignore_ = max_sp_ - min_sp_;
+    } else {
+      CHECK(min_sp_for_ignore_ == 0 &&
+            stack_size_for_ignore_ == 0);
+    }
   }
 
   bool MemoryIsInStack(uintptr_t a) {
     return a >= min_sp_ && a <= max_sp_;
+  }
+
+  bool IgnoreMemoryIfInStack(uintptr_t a) {
+    return (a - min_sp_for_ignore_) < stack_size_for_ignore_;
   }
 
 
@@ -3884,6 +4138,28 @@ struct Thread {
     return all_threads_[tid.raw()];
   }
 
+  void HandleAccessSet() {
+    BitSet *rd_set = lock_era_access_set(false);
+    BitSet *wr_set = lock_era_access_set(true);
+    if (rd_set->empty() && wr_set->empty()) return;
+    CHECK(G_flags->atomicity && !G_flags->pure_happens_before);
+    AtomicityRegion *atomicity_region = new AtomicityRegion;
+    atomicity_region->lock_era = g_lock_era;
+    atomicity_region->tid = tid();
+    atomicity_region->vts = vts()->Clone();
+    atomicity_region->lsid[0] = lsid(0);
+    atomicity_region->lsid[1] = lsid(1);
+    atomicity_region->access_set[0] = *rd_set;
+    atomicity_region->access_set[1] = *wr_set;
+    atomicity_region->stack_trace = CreateStackTrace();
+    atomicity_region->used = false;
+    atomicity_region->n_mops_since_start = this->n_mops_since_start_;
+    // atomicity_region->Print();
+    // Printf("----------- %s\n", __FUNCTION__);
+    // ReportStackTrace(0, 7);
+    HandleAtomicityRegion(atomicity_region);
+  }
+
   // Locks
   void HandleLock(uintptr_t lock_addr, bool is_w_lock) {
     Lock *lock = Lock::LookupOrCreate(lock_addr);
@@ -3926,9 +4202,13 @@ struct Thread {
       lock_history_.OnLock(lock->lid());
     }
     NewSegmentForLockingEvent();
+    lock_era_access_set_[0].Clear();
+    lock_era_access_set_[1].Clear();
   }
 
   void HandleUnlock(uintptr_t lock_addr) {
+    HandleAccessSet();
+
     Lock *lock = Lock::Lookup(lock_addr);
     // If the lock is not found, report an error.
     if (lock == NULL) {
@@ -3997,7 +4277,8 @@ struct Thread {
     }
 
     NewSegmentForLockingEvent();
-
+    lock_era_access_set_[0].Clear();
+    lock_era_access_set_[1].Clear();
   }
 
   LSID lsid(bool is_w) {
@@ -4446,6 +4727,10 @@ struct Thread {
     signaller_map_      = new SignallerMap;
   }
 
+  BitSet *lock_era_access_set(int is_w) {
+    return &lock_era_access_set_[is_w];
+  }
+
  private:
   bool is_running_;
   string thread_name_;
@@ -4456,6 +4741,9 @@ struct Thread {
   bool   thread_local_copy_of_g_has_expensive_flags_;
   uintptr_t  max_sp_;
   uintptr_t  min_sp_;
+  uintptr_t  stack_size_for_ignore_;
+  uintptr_t  min_sp_for_ignore_;
+  uintptr_t  n_mops_since_start_;
   StackTrace *creation_context_;
   bool      announced_;
 
@@ -4475,6 +4763,7 @@ struct Thread {
   PtrToBoolCache<251> ignore_below_cache_;
 
   LockHistory lock_history_;
+  BitSet lock_era_access_set_[2];
   RecentSegmentsCache recent_segments_cache_;
 
   map<TID, ThreadCreateInfo> child_tid_to_create_info_;
@@ -5049,6 +5338,15 @@ class ReportStorage {
              invalid_lock->lock_addr,
              invalid_lock->tid.raw(),
              invalid_lock->stack_trace->ToString().c_str());
+    } else if (report->type == ThreadSanitizerReport::ATOMICITY_VIOLATION) {
+      ThreadSanitizerAtomicityViolationReport *av =
+          reinterpret_cast<ThreadSanitizerAtomicityViolationReport*>(report);
+      Report("WARNING: Suspected atomicity violation {{{\n");
+      av->r1->Print();
+      av->r2->Print();
+      av->r3->Print();
+      Report("}}}\n");
+
     } else {
       CHECK(report->type == ThreadSanitizerReport::DATA_RACE);
       ThreadSanitizerDataRaceReport *race =
@@ -5276,11 +5574,11 @@ class Detector {
                           bool is_w) {
     Thread *thr = Thread::Get(TID(tid));
     if (g_so_far_only_one_thread) return;
-    HandleMemoryAccessInternal(TID(tid), thr, pc, addr, size, is_w, 
+    HandleMemoryAccessInternal(TID(tid), thr, pc, addr, size, is_w,
                                g_has_expensive_flags);
   }
 
-  void INLINE HandleTraceLoop(TraceInfo *t, Thread *thr, TID tid, 
+  void INLINE HandleTraceLoop(TraceInfo *t, Thread *thr, TID tid,
                               uintptr_t *tleb, size_t n,
                               bool has_expensive_flags) {
     size_t i = 0;
@@ -5294,7 +5592,6 @@ class Detector {
       HandleMemoryAccessInternal(tid, thr, mop->pc, addr, mop->size,
                                  mop->is_write, has_expensive_flags);
     } while (++i < n);
-
   }
 
   void INLINE HandleTrace(int32_t raw_tid, TraceInfo *t,
@@ -6073,6 +6370,7 @@ class Detector {
                                        TID tid,
                                        uintptr_t pc,
                                        Thread *thr) {
+    DCHECK((addr & (size - 1)) == 0);  // size-aligned.
     uintptr_t offset = CacheLine::ComputeOffset(addr);
 
     ShadowValue old_sval;
@@ -6141,9 +6439,22 @@ class Detector {
   INLINE void HandleMemoryAccessInternal(TID tid, Thread *thr, uintptr_t pc,
                                          uintptr_t addr, uintptr_t size,
                                          bool is_w, bool has_expensive_flags) {
+
+    if (TS_ATOMICITY && G_flags->atomicity) {
+      HandleMemoryAccessForAtomicityViolationDetector(thr, pc, 
+                                                      addr, size, is_w);
+      return;
+    }
     DCHECK(size > 0);
     DCHECK(thr->is_running());
     if (thr->ignore(is_w)) return;
+
+    // We do not check and ignore stack now.
+    // On unoptimized binaries this would give ~10% speedup if ignore_stack==true,
+    // but if --ignore_stack==false this would cost few extra insns.
+    // On optimized binaries ignoring stack gives nearly nothing.
+    // if (thr->IgnoreMemoryIfInStack(addr)) return;
+
     // if (thr->bus_lock_is_set()) return;
 
     DCHECK(thr->lsid(false) == thr->segment()->lsid(false));
@@ -6259,12 +6570,14 @@ class Detector {
         if (has_expensive_flags) G_stats->n_access_slow_iter++;
         off = CacheLine::ComputeOffset(x);
         cache_line->DebugTrace(off, __FUNCTION__, __LINE__);
-        HandleMemoryAccessHelper(is_w, cache_line, x, size, tid, pc, thr);
-        // How many bytes we just accesssed? 
-        if     (GranularityIs8(off, gr)) x += 8;
-        else if(GranularityIs4(off, gr)) x += 4;
-        else if(GranularityIs2(off, gr)) x += 2;
-        else                             x += 1;
+        size_t s = 0;
+        // How many bytes are we going to access?
+        if     (GranularityIs8(off, gr)) s = 8;
+        else if(GranularityIs4(off, gr)) s = 4;
+        else if(GranularityIs2(off, gr)) s = 2;
+        else                             s = 1;
+        HandleMemoryAccessHelper(is_w, cache_line, x, s, tid, pc, thr);
+        x += s;
       }
     }
 
@@ -6305,6 +6618,38 @@ class Detector {
       }
     }
   }
+
+
+  void HandleMemoryAccessForAtomicityViolationDetector(Thread *thr,
+                                                       uintptr_t pc,
+                                                       uintptr_t addr,
+                                                       uintptr_t size,
+                                                       bool is_w) {
+    CHECK(G_flags->atomicity);
+    TID tid = thr->tid();
+    if (thr->MemoryIsInStack(addr)) return;
+
+    LSID wr_lsid = thr->lsid(0);
+    LSID rd_lsid = thr->lsid(1);
+    if (wr_lsid.raw() == 0 && rd_lsid.raw() == 0) {
+      thr->increment_n_mops_since_start();
+      return;
+    }
+    // uint64_t combined_lsid = wr_lsid.raw();
+    // combined_lsid = (combined_lsid << 32) | rd_lsid.raw();
+    // if (combined_lsid == 0) return;
+
+//    Printf("Era=%d T%d %s a=%p pc=%p in_stack=%d %s\n", g_lock_era,
+//           tid.raw(), is_w ? "W" : "R", addr, pc, thr->MemoryIsInStack(addr),
+//           PcToRtnNameAndFilePos(pc).c_str());
+
+    BitSet *range_set = thr->lock_era_access_set(is_w);
+    // Printf("era %d T%d access under lock pc=%p addr=%p size=%p w=%d\n",
+    //        g_lock_era, tid.raw(), pc, addr, size, is_w);
+    range_set->Add(addr, addr + size);
+    // Printf("   %s\n", range_set->ToString().c_str());
+  }
+
 
   // MALLOC
   void HandleMalloc(bool is_mmap) {
@@ -6753,7 +7098,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   // Check this first.
   FindIntFlag("v", 0, args, &G_flags->verbosity);
 
-  FindBoolFlag("ignore_stack", true, args, &G_flags->ignore_stack);
+  FindBoolFlag("ignore_stack", false, args, &G_flags->ignore_stack);
   FindIntFlag("keep_history", 1, args, &G_flags->keep_history);
   FindUIntFlag("segment_set_recycle_queue_size", DEBUG_MODE ? 10 : 10000, args,
                &G_flags->segment_set_recycle_queue_size);
@@ -6834,6 +7179,14 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   FindStringFlag("ignore", args, &G_flags->ignore);
 
   FindBoolFlag("thread_coverage", false, args, &G_flags->thread_coverage);
+  
+  FindBoolFlag("atomicity", false, args, &G_flags->atomicity);
+  if (G_flags->atomicity) {
+    // When doing atomicity violation checking we should not 
+    // create h-b arcs between Unlocks and Locks.
+    G_flags->pure_happens_before = false;
+  }
+
   FindBoolFlag("call_coverage", false, args, &G_flags->call_coverage);
   FindStringFlag("dump_events", args, &G_flags->dump_events);
   FindBoolFlag("symbolize", true, args, &G_flags->symbolize);
