@@ -4742,6 +4742,12 @@ class ReportStorage {
       if (GetNameAndOffsetOfGlobalObject(addr, &symbol_descr, &offset)) {
         if (StringMatch("*empty_rep_storage*", symbol_descr))
           return false;
+        if (StringMatch("_IO_stdfile_*_lock", symbol_descr))
+          return false;
+        if (StringMatch("_IO_*_stdout_", symbol_descr))
+          return false;
+        if (StringMatch("_IO_*_stderr_", symbol_descr))
+          return false;
       }
     }
 
@@ -7055,7 +7061,8 @@ static void SetupIgnore() {
   g_ignore_lists->ignores.push_back(IgnoreFun("__cxa_*"));
   g_ignore_lists->ignores.push_back(
       IgnoreFun("*__gnu_cxx*__exchange_and_add*"));
-  g_ignore_lists->ignores.push_back(IgnoreFun("__lll_mutex_unlock_wake"));
+  g_ignore_lists->ignores.push_back(IgnoreFun("__lll_mutex_*"));
+  g_ignore_lists->ignores.push_back(IgnoreFun("__lll_*lock_*"));
   g_ignore_lists->ignores.push_back(IgnoreFun("__sigsetjmp"));
   g_ignore_lists->ignores.push_back(IgnoreFun("__sigjmp_save"));
   g_ignore_lists->ignores.push_back(IgnoreFun("_setjmp"));

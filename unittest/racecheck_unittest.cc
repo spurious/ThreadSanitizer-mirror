@@ -7428,6 +7428,68 @@ TEST(RaceVerifierTests, ManyRacesInOneTrace) {
 }
 }  // namespace
 
+namespace PrintfTests_Simple {
+
+void Worker1() {
+  // This one is a printf() => vfprintf()
+  fprintf(stderr, "Hello from a thread: %d\n", 2);
+  // This one is a puts()
+  fprintf(stderr, "Hello from a thread\n");
+  fprintf(stdout, "Hello from a thread: %d\n", 2);
+  fprintf(stdout, "Hello from a thread\n");
+}
+
+TEST(PrintfTests, Simple) {
+  MyThreadArray t(Worker1, Worker1);
+  t.Start();
+  t.Join();
+}
+}  // namespace
+
+namespace PrintfTests_RaceOnPrintfArgument {
+
+volatile char s[] = "abracadabra";
+volatile char s2[] = "abracadabra";
+
+void Worker1() {
+  fprintf(stdout, "printing a string: %s\n", s);
+  fprintf(stderr, "printing a string: %s\n", s2);
+}
+
+void Worker2() {
+  s[3] = 'z';
+  s2[3] = 'z';
+}
+
+TEST(PrintfTests, RaceOnPrintfArgument) {
+  ANNOTATE_EXPECT_RACE(s + 3, "PrintfTests_RaceOnPrintfArgument (stdout).");
+  ANNOTATE_EXPECT_RACE(s2 + 3, "PrintfTests_RaceOnPrintfArgument (stderr).");
+  MyThreadArray t(Worker1, Worker2);
+  t.Start();
+  t.Join();
+}
+}  // namespace
+
+namespace PrintfTests_RaceOnOutputArgument {
+
+volatile char s[] = "abracadabra";
+volatile int a = 0;
+
+void Worker1() {
+  fprintf(stdout, "printing a string: %s%n\n", s, &a);
+}
+
+void Worker2() {
+  fprintf(stdout, "the other thread have already printed %d characters\n", a);
+}
+
+TEST(PrintfTests, RaceOnOutputArgument) {
+  ANNOTATE_EXPECT_RACE(&a, "PrintfTests_RaceOnOutputArgument:int.");
+  MyThreadArray t(Worker1, Worker2);
+  t.Start();
+  t.Join();
+}
+}  // namespace
 
 // End {{{1
  // vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker
