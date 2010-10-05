@@ -7470,6 +7470,8 @@ TEST(PrintfTests, RaceOnPrintfArgument) {
 }
 }  // namespace
 
+// Apparently, %n is not supported in windows
+#ifndef WIN32
 namespace PrintfTests_RaceOnOutputArgument {
 
 volatile char s[] = "abracadabra";
@@ -7490,6 +7492,7 @@ TEST(PrintfTests, RaceOnOutputArgument) {
   t.Join();
 }
 }  // namespace
+#endif
 
 // End {{{1
  // vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker
