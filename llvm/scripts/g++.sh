@@ -75,7 +75,7 @@ LOG=instrumentation.log
 
 #exit
 # Translate C code to LLVM bitcode.
-$LLVM_GCC -emit-llvm -m32 $SRC -g -S $CXXFLAGS $ARGS -o "$SRC_BIT" || exit 1
+$LLVM_GPP -emit-llvm -m32 $SRC -g -S $CXXFLAGS $ARGS -o "$SRC_BIT" || exit 1
 # Instrument the bitcode.
 $OPT -load "$PASS_SO" $INST_MODE "$SRC_BIT" -S  > "$SRC_INSTR" 2>$LOG || exit 1
 cat $LOG | grep "^->" | sed "s/^->//" > "$SRC_DBG"
@@ -83,5 +83,5 @@ cat $LOG | grep -v "^->"
 # Translate LLVM bitcode to native assembly code.
 $LLC -march=x86 -O0 $SRC_INSTR  -o $SRC_ASM || exit 1
 # Compile the object file.
-$LLVM_GCC -m32 -c $SRC_ASM -O0 -g -o $SRC_OBJ
+$LLVM_GPP -m32 -c $SRC_ASM -O0 -g -o $SRC_OBJ
 
