@@ -7439,7 +7439,7 @@ void Worker1() {
   fprintf(stdout, "Hello from a thread\n");
 }
 
-TEST(PrintfTests, DISABLED_Simple) {
+TEST(PrintfTests, Simple) {
   MyThreadArray t(Worker1, Worker1);
   t.Start();
   t.Join();

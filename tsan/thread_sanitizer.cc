@@ -7073,6 +7073,11 @@ static void SetupIgnore() {
   g_ignore_lists->ignores.push_back(IgnoreFun("_EH_epilog3"));
   g_ignore_lists->ignores.push_back(IgnoreFun("_EH_prolog3_catch"));
 
+  // Dangerous: recursively ignoring vfprintf hides races on printf arguments.
+  // See PrintfTests in unittest/racecheck_unittest.cc
+  // TODO(eugenis): Do something about this.
+  g_ignore_lists->ignores_r.push_back(IgnoreFun("vfprintf"));
+
 #ifdef VGO_darwin
   g_ignore_lists->ignores_r.push_back(IgnoreFun("__CFDoExternRefOperation"));
   g_ignore_lists->ignores_r.push_back(IgnoreFun("_CFAutoreleasePoolPop"));
