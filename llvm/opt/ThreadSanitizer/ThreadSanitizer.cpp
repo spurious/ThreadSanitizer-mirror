@@ -426,10 +426,14 @@ namespace {
           InstrumentMemcpy(BI, TLEB);
           unknown = false;
         }
-        if (isa<CallInst>(BI)) {
+        // TODO(glider): invoke!
+        if (isa<CallInst>(BI) || isa<InvokeInst>(BI)) {
           std::vector<Value*> inst(1);
           llvm::Instruction &IN = *BI;
-          if (static_cast<CallInst&>(IN).getCalledFunction() == BBFlushFn) {
+          if ((isa<CallInst>(BI) &&
+               static_cast<CallInst&>(IN).getCalledFunction() == BBFlushFn) ||
+              (isa<InvokeInst>(BI) &&
+               static_cast<InvokeInst&>(IN).getCalledFunction() == BBFlushFn)) {
             // TODO(glider): we shouldn't encounter BBFlushFn at all.
 #if DEBUG
             errs() << "BBFlushFn!\n";
