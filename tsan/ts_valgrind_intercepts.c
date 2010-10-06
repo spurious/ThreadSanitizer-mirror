@@ -502,6 +502,38 @@ WRAP_FREE(VG_Z_LIBSTDCXX_SONAME, _ZdaPvRKSt9nothrow_t);
 // operator delete
 WRAP_FREE_ZZ(NONE, operatorZsdeleteZa);
 
+
+//------------ Wrappers for stdio functions ---------
+/* These functions have internal synchronization that we don't handle and get
+   lots of false positives. To fix this, we wrap these functions, touch their
+   arguments, and pass them through to the original function, ignoring all
+   memory accesses inside it. */
+
+size_t I_WRAP_SONAME_FNNAME_ZU(VG_Z_LIBC_SONAME, fwrite) (const void *ptr, size_t size, size_t nmemb, void* stream);
+size_t I_WRAP_SONAME_FNNAME_ZU(VG_Z_LIBC_SONAME, fwrite) (const void *ptr, size_t size, size_t nmemb, void* stream) {
+  size_t ret;
+  OrigFn fn;
+  READ(ptr, size * nmemb);
+  VALGRIND_GET_ORIG_FN(fn);
+  IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
+  CALL_FN_W_WWWW(ret, fn, ptr, size, nmemb, stream);
+  IGNORE_ALL_ACCESSES_AND_SYNC_END();
+  return ret;
+}
+
+int I_WRAP_SONAME_FNNAME_ZU(VG_Z_LIBC_SONAME, puts) (const char *s);
+int I_WRAP_SONAME_FNNAME_ZU(VG_Z_LIBC_SONAME, puts) (const char *s) {
+  int ret;
+  OrigFn fn;
+  READ_STRING(s);
+  VALGRIND_GET_ORIG_FN(fn);
+  IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
+  CALL_FN_W_W(ret, fn, s);
+  IGNORE_ALL_ACCESSES_AND_SYNC_END();
+  return ret;
+}
+
+
 //-------------- PTHREADS -------------------- {{{1
 /* A lame version of strerror which doesn't use the real libc
    strerror_r, since using the latter just generates endless more

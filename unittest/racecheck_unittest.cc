@@ -7446,6 +7446,48 @@ TEST(PrintfTests, Simple) {
 }
 }  // namespace
 
+namespace PrintfTests_RaceOnFwriteArgument {
+
+char s[] = "abracadabra\n";
+
+void Worker1() {
+  fwrite(s, 1, sizeof(s) - 1, stdout);
+}
+
+void Worker2() {
+  s[3] = 'z';
+}
+
+TEST(PrintfTests, RaceOnFwriteArgument) {
+  ANNOTATE_TRACE_MEMORY(s + 3);
+  ANNOTATE_EXPECT_RACE(s + 3, "PrintfTests_RaceOnFwriteArgument.");
+  MyThreadArray t(Worker1, Worker2);
+  t.Start();
+  t.Join();
+}
+}  // namespace
+
+namespace PrintfTests_RaceOnPutsArgument {
+
+char s[] = "abracadabra";
+
+void Worker1() {
+  puts(s);
+}
+
+void Worker2() {
+  s[3] = 'z';
+}
+
+TEST(PrintfTests, RaceOnPutsArgument) {
+  ANNOTATE_TRACE_MEMORY(s + 3);
+  ANNOTATE_EXPECT_RACE(s + 3, "PrintfTests_RaceOnPutsArgument.");
+  MyThreadArray t(Worker1, Worker2);
+  t.Start();
+  t.Join();
+}
+}  // namespace
+
 namespace PrintfTests_RaceOnPrintfArgument {
 
 volatile char s[] = "abracadabra";

@@ -131,4 +131,28 @@ static NOINLINE int Replace_strcmp(EXTRA_REPLACE_PARAMS const char *s1,
   if (c1 > c2) return 1;
   return 0;
 }
+
+// Read every byte in the memory range.
+static NOINLINE void READ(const void* p, size_t size) {
+  const volatile char* start = (const volatile char*)p;
+  const volatile char* end = start + size;
+  volatile char tmp = 0;
+  for (; start < end; ++start) {
+    // If we just read the bytes, Valgrind will optimize it out.
+    tmp ^= *start;
+  }
+  REPORT_READ_RANGE(p, size);
+}
+
+// Read every byte in the null-terminated string.
+static NOINLINE void READ_STRING(const char* s) {
+  const volatile char* p = (const volatile char*)s;
+  volatile char tmp = 0;
+  char c;
+  for (; c = *p; ++p) {
+    tmp ^= c;
+  }
+  REPORT_READ_RANGE(s, p - s);
+}
+
 #endif  // TS_REPLACE_H_
