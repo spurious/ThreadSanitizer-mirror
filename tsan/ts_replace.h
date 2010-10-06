@@ -133,7 +133,7 @@ static NOINLINE int Replace_strcmp(EXTRA_REPLACE_PARAMS const char *s1,
 }
 
 // Read every byte in the memory range.
-static NOINLINE void READ(const void* p, size_t size) {
+static NOINLINE void ReadMemory(const void* p, size_t size) {
   const volatile char* start = (const volatile char*)p;
   const volatile char* end = start + size;
   volatile char tmp = 0;
@@ -145,11 +145,11 @@ static NOINLINE void READ(const void* p, size_t size) {
 }
 
 // Read every byte in the null-terminated string.
-static NOINLINE void READ_STRING(const char* s) {
+static NOINLINE void ReadString(const char* s) {
   const volatile char* p = (const volatile char*)s;
   volatile char tmp = 0;
   char c;
-  for (; c = *p; ++p) {
+  for (; (c = *p); ++p) {
     tmp ^= c;
   }
   REPORT_READ_RANGE(s, p - s);

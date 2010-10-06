@@ -513,7 +513,7 @@ size_t I_WRAP_SONAME_FNNAME_ZU(VG_Z_LIBC_SONAME, fwrite) (const void *ptr, size_
 size_t I_WRAP_SONAME_FNNAME_ZU(VG_Z_LIBC_SONAME, fwrite) (const void *ptr, size_t size, size_t nmemb, void* stream) {
   size_t ret;
   OrigFn fn;
-  READ(ptr, size * nmemb);
+  ReadMemory(ptr, size * nmemb);
   VALGRIND_GET_ORIG_FN(fn);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   CALL_FN_W_WWWW(ret, fn, ptr, size, nmemb, stream);
@@ -525,7 +525,7 @@ int I_WRAP_SONAME_FNNAME_ZU(VG_Z_LIBC_SONAME, puts) (const char *s);
 int I_WRAP_SONAME_FNNAME_ZU(VG_Z_LIBC_SONAME, puts) (const char *s) {
   int ret;
   OrigFn fn;
-  READ_STRING(s);
+  ReadString(s);
   VALGRIND_GET_ORIG_FN(fn);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   CALL_FN_W_W(ret, fn, s);
