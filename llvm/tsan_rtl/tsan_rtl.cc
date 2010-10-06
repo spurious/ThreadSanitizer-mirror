@@ -1,5 +1,6 @@
 #include "tsan_rtl.h"
 #include <errno.h>
+#include <stdlib.h>
 
 static inline void Put(EventType type, int32_t tid, pc_t pc,
                        uintptr_t a, uintptr_t info);
@@ -771,11 +772,40 @@ int strcmp(const char *s1, const char *s2) {
 // atexit() and exit() wrappers. {{{1
 // atexit -> exit is a happens-before arc.
 static const uintptr_t kAtExitMagic = 0x12345678;
+
+typedef void atexit_worker(void);
+
+// TODO(glider): sysconf(_SC_ATEXIT_MAX)
+#define ATEXIT_MAX 32
+atexit_worker* atexit_stack[ATEXIT_MAX];
+int atexit_index = -1;
+void push_atexit(atexit_worker *worker) {
+  GIL scoped;
+  atexit_index++;
+  assert(atexit_index < ATEXIT_MAX);
+  atexit_stack[atexit_index] = worker;
+}
+
+atexit_worker* pop_atexit() {
+  GIL scoped;
+  assert(atexit_index > -1);
+  return atexit_stack[atexit_index--];
+}
+
+void atexit_callback() {
+  DECLARE_TID_AND_PC();
+  atexit_worker *worker = pop_atexit();
+  Put(WAIT, tid, pc, (uintptr_t)worker, 0);
+  (*worker)();
+}
+
 extern "C"
 int __wrap_atexit(void (*function)(void)) {
   DECLARE_TID_AND_PC();
-  int result = __real_atexit(function);
-  Put(SIGNAL, tid, pc, kAtExitMagic, 0);
+  push_atexit(function);
+  int result = __real_atexit(atexit_callback);
+  Put(SIGNAL, tid, pc, kAtExitMagic, 0);  // TODO(glider): do we need it?
+  Put(SIGNAL, tid, pc, (uintptr_t)function, 0);
   return result;
 }
 
