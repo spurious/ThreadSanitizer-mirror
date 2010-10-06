@@ -1455,7 +1455,7 @@ class Mask {
   }
 
   size_t PopCount() {
-#ifdef __GNUC__
+#ifdef VGO_linux
     return __builtin_popcountl(m_);
 #else
     CHECK(0);
