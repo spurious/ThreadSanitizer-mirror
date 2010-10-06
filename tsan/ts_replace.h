@@ -141,7 +141,6 @@ static NOINLINE void ReadMemory(const void* p, size_t size) {
     // If we just read the bytes, Valgrind will optimize it out.
     tmp ^= *start;
   }
-  REPORT_READ_RANGE(p, size);
 }
 
 // Read every byte in the null-terminated string.
@@ -152,7 +151,6 @@ static NOINLINE void ReadString(const char* s) {
   for (; (c = *p); ++p) {
     tmp ^= c;
   }
-  REPORT_READ_RANGE(s, p - s);
 }
 
 #endif  // TS_REPLACE_H_

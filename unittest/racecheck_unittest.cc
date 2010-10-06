@@ -7536,5 +7536,26 @@ TEST(PrintfTests, DISABLED_RaceOnOutputArgument) {
 }  // namespace
 #endif
 
+namespace PrintfTests_Fflush {
+
+volatile char s[] = "abracadabra";
+volatile int a = 0;
+
+void Worker1() {
+  fflush(NULL);
+}
+
+void Worker2() {
+  fflush(NULL);
+}
+
+TEST(PrintfTests, Fflush) {
+  MyThreadArray t(Worker1, Worker2);
+  t.Start();
+  t.Join();
+}
+}  // namespace
+
+
 // End {{{1
  // vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker

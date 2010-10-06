@@ -1067,6 +1067,16 @@ static uintptr_t WRAP_NAME(pthread_join)(WRAP_PARAM4) {
   return ret;
 }
 
+static size_t WRAP_NAME(fwrite)(WRAP_PARAM4) {
+  void* p = (void*)arg0;
+  size_t size = (size_t)arg1 * (size_t)arg2;
+  REPORT_READ_RANGE(p, size);
+  IgnoreMopsBegin(tid, pc);
+  size_t ret = CALL_ME_INSIDE_WRAPPER_4();
+  IgnoreMopsEnd(tid, pc);
+  return ret;
+}
+
 #ifdef _MSC_VER
 
 
@@ -2684,6 +2694,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   // pthread create/join
   WrapFunc4(img, rtn, "pthread_create", (AFUNPTR)WRAP_NAME(pthread_create));
   WrapFunc4(img, rtn, "pthread_join", (AFUNPTR)WRAP_NAME(pthread_join));
+  WrapFunc4(img, rtn, "fwrite", (AFUNPTR)WRAP_NAME(fwrite));
 
   INSERT_FN(IPOINT_BEFORE, "start_thread",
             Before_start_thread,

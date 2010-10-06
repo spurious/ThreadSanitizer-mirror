@@ -7418,6 +7418,10 @@ static void SetupIgnore() {
   g_ignore_lists->ignores.push_back(IgnoreFun("__lll_*lock_*"));
   g_ignore_lists->ignores.push_back(IgnoreFun("__fprintf_chk"));
   g_ignore_lists->ignores.push_back(IgnoreFun("_IO_file_xsputn*"));
+  // fflush internals
+  g_ignore_lists->ignores.push_back(IgnoreFun("_IO_adjust_column"));
+  g_ignore_lists->ignores.push_back(IgnoreFun("_IO_flush_all_lockp"));
+
   g_ignore_lists->ignores.push_back(IgnoreFun("__sigsetjmp"));
   g_ignore_lists->ignores.push_back(IgnoreFun("__sigjmp_save"));
   g_ignore_lists->ignores.push_back(IgnoreFun("_setjmp"));
