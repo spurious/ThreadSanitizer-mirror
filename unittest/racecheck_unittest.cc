@@ -3122,6 +3122,7 @@ void WorkerX() {
   char tmp[100] = "Zzz";
   EXPECT_TRUE(memmove(tmp, str, strlen(str) + 1) == tmp);
   EXPECT_TRUE(strcmp(tmp,str) == 0);
+  EXPECT_TRUE(strncmp(tmp,str, 4) == 0);
   EXPECT_TRUE(memmove(str, tmp, strlen(tmp) + 1) == str);
   EXPECT_TRUE(strrchr(str, 'X') == str+2);
   EXPECT_TRUE(strrchr(str, 'x') == str+3);
@@ -6215,6 +6216,11 @@ void DoStrcmp() {
   CHECK(strcmp(GLOB, "xxx") != 0);
 }
 
+void DoStrncmp() {
+  CHECK(strncmp(GLOB, "xxx", 3) != 0);
+}
+
+
 void RunThreads(void (*f1)(void), void (*f2)(void), char *mem) {
   GLOB = mem;
   strcpy(GLOB, "foo");
@@ -6268,6 +6274,12 @@ TEST(PositiveTests, RaceInStrcmp) {
   static char mem[4];
   RunThreads(Write0, DoStrcmp, mem);
 }
+
+TEST(PositiveTests, RaceInStrncmp) {
+  static char mem[4];
+  RunThreads(Write0, DoStrncmp, mem);
+}
+
 }  // namespace
 
 // test157: TN. Test for stack traces (using ANNOTATE_NO_OP). {{{1
