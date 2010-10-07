@@ -2302,6 +2302,9 @@ MEMCHR(NONE, memchr)
 
 STRNCMP(VG_Z_LIBC_SONAME, strncmp)
 STRNCMP(NONE,             strncmp)
+#if defined(VGO_linux)
+STRNCMP(VG_Z_LIBC_SONAME, __GI_strncmp)
+#endif
 
 // --- STRLEN -----------------------------------------------------
 //
