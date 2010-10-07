@@ -132,6 +132,25 @@ static NOINLINE int Replace_strcmp(EXTRA_REPLACE_PARAMS const char *s1,
   return 0;
 }
 
+static NOINLINE int Replace_strncmp(EXTRA_REPLACE_PARAMS const char *s1,
+                                    const char *s2, size_t n) {
+  unsigned char c1 = 0;
+  unsigned char c2 = 0;
+  size_t i;
+  for (i = 0; i < n; i++) {
+    c1 = (unsigned char)s1[i];
+    c2 = (unsigned char)s2[i];
+    if (c1 != c2) break;
+    if (c1 == 0) break;
+  }
+  REPORT_READ_RANGE(s1, i < n ? i+1 : n);
+  REPORT_READ_RANGE(s2, i < n ? i+1 : n);
+  if (c1 < c2) return -1;
+  if (c1 > c2) return 1;
+  return 0;
+}
+
+
 // Read every byte in the memory range.
 static NOINLINE void ReadMemory(const void* p, size_t size) {
   const volatile char* start = (const volatile char*)p;

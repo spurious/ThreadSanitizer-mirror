@@ -2293,6 +2293,20 @@ STRCMP(VG_Z_LIBC_SONAME, __GI_strcmp)
 MEMCHR(VG_Z_LIBC_SONAME, memchr)
 MEMCHR(NONE, memchr)
 
+#define STRNCMP(soname, fnname) \
+   int VG_REPLACE_FUNCTION_ZU(soname,fnname) \
+          ( const char* s1, const char* s2, size_t n); \
+   int VG_REPLACE_FUNCTION_ZU(soname,fnname) \
+          ( const char* s1, const char* s2, size_t n) \
+   { return Replace_strncmp(s1, s2, n); }
+
+STRNCMP(VG_Z_LIBC_SONAME, strncmp)
+STRNCMP(NONE,             strncmp)
+//#if defined(VGO_linux)
+//STRCMP(VG_Z_LIBC_SONAME, __GI_strcmp)
+//#endif
+
+
 // --- STRLEN -----------------------------------------------------
 //
 // Note that this replacement often doesn't get used because gcc inlines
