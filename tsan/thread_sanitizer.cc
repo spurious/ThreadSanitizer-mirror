@@ -7513,7 +7513,7 @@ bool TripleVectorMatchKnown(const vector<IgnoreTriple>& v,
         // or match a non-trivial pattern.
         // For example, a <*, *, filename.ext> triple should NOT match
         // fun="fun", obj="obj.o", file="".
-        return false;
+        continue;
       } else {
         return true;
       }
@@ -7547,7 +7547,7 @@ bool ThreadSanitizerWantToInstrumentSblock(uintptr_t pc) {
                                        rtn_name, img_name, file_name) ||
                 TripleVectorMatchKnown(g_ignore_lists->ignores_r,
                                        rtn_name, img_name, file_name);
-  if (0) {
+  if (debug_ignore) {
     Printf("%s: pc=%p file_name=%s img_name=%s rtn_name=%s ret=%d\n",
            __FUNCTION__, pc, file_name.c_str(), img_name.c_str(),
            rtn_name.c_str(), !ignore);
