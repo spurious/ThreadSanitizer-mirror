@@ -226,6 +226,15 @@ namespace {
           getAddr(BBCount, BBNumMops, BI);
           SrcPtr = IN.getSource();
           DestPtr = IN.getDest();
+          if (SrcPtr->getType()->isSized()) {
+            src_size = getAnalysis<TargetData>().getTypeStoreSizeInBits(
+                cast<PointerType>(SrcPtr->getType())->getElementType());
+          }
+          if (DestPtr->getType()->isSized()) {
+            dest_size = getAnalysis<TargetData>().getTypeStoreSizeInBits(
+                cast<PointerType>(DestPtr->getType())->getElementType());
+          }
+
           if (SrcPtr->getType() != UIntPtr) {
             Value *Tmp = BitCastInst::CreatePointerCast(SrcPtr, UIntPtr, "", BI);
             SrcPtr = Tmp;
@@ -234,15 +243,6 @@ namespace {
             Value *Tmp = BitCastInst::CreatePointerCast(DestPtr, UIntPtr, "", BI);
             DestPtr = Tmp;
           }
-          if (SrcPtr->getType()->isSized()) {
-            src_size = getAnalysis<TargetData>().getTypeStoreSizeInBits(
-                                                 SrcPtr->getType());
-          }
-          if (DestPtr->getType()->isSized()) {
-            dest_size = getAnalysis<TargetData>().getTypeStoreSizeInBits(
-                                                  DestPtr->getType());
-          }
-
           std::vector<Constant*> mop(3);
           BBNumMops++;
           ModuleMopCount++;
@@ -253,13 +253,13 @@ namespace {
           BBNumMops++;
           ModuleMopCount++;
           mop[0] = ConstantInt::get(Int32, getAddr(BBCount, BBNumMops, BI));
-          mop[1] = ConstantInt::get(Int32, src_size);
+          mop[1] = ConstantInt::get(Int32, src_size/8);
           mop[2] = ConstantInt::get(Int32, /*LOAD*/0);
           passport.push_back(ConstantStruct::get(MopTy, mop));
           BBNumMops++;
           ModuleMopCount++;
           mop[0] = ConstantInt::get(Int32, getAddr(BBCount, BBNumMops, BI));
-          mop[1] = ConstantInt::get(Int32, dest_size);
+          mop[1] = ConstantInt::get(Int32, dest_size/8);
           mop[2] = ConstantInt::get(Int32, /*STORE*/1);
           passport.push_back(ConstantStruct::get(MopTy, mop));
         }
@@ -317,17 +317,13 @@ namespace {
       llvm::MemCpyInst &IN = static_cast<MemCpyInst&>(*BI);
       std::vector <Value*> idx(1);
       idx[0] = ConstantInt::get(Int32, TLEBIndex);
-      MopPtr = IN.getLength();
+      MopPtr = new IntToPtrInst(IN.getLength(), UIntPtr, "", BI);
       TLEBPtr =
           GetElementPtrInst::Create(TLEB,
                                     idx.begin(),
                                     idx.end(),
                                     "",
                                     BI);
-      if (MopPtr->getType() == UIntPtr) {
-      } else {
-        MopPtr = new IntToPtrInst(MopPtr, UIntPtr, "", BI);
-      }
       new StoreInst(MopPtr, TLEBPtr, BI);
       TLEBIndex++;
       idx[0] = ConstantInt::get(Int32, TLEBIndex);
