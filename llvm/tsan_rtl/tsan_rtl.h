@@ -4,10 +4,12 @@
 #ifndef TSAN_RTL_H_
 #define TSAN_RTL_H_
 
+#include <errno.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <pthread.h>
+#include <semaphore.h>
 
 #include <stdio.h>
 #include "string"

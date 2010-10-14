@@ -1,6 +1,5 @@
 #include "tsan_rtl.h"
-#include <errno.h>
-#include <stdlib.h>
+
 
 static inline void Put(EventType type, int32_t tid, pc_t pc,
                        uintptr_t a, uintptr_t info);
@@ -516,6 +515,36 @@ int __wrap___cxa_guard_release(int *guard) {
   return result;
 }
 
+// Unnamed POSIX semaphores {{{1
+// TODO(glider): support AnnotateIgnoreSync here.
+extern "C"
+int __wrap_sem_wait(sem_t *sem) {
+  DECLARE_TID_AND_PC();
+  int result = __real_sem_wait(sem);
+  if (result == 0) {
+    Put(WAIT, tid, pc, (uintptr_t)sem, 0);
+  }
+  return result;
+}
+
+extern "C"
+int __wrap_sem_trywait(sem_t *sem) {
+  DECLARE_TID_AND_PC();
+  int result = __real_sem_trywait(sem);
+  if (result == 0) {
+    Put(WAIT, tid, pc, (uintptr_t)sem, 0);
+  }
+  return result;
+}
+
+extern "C"
+int __wrap_sem_post(sem_t *sem) {
+  DECLARE_TID_AND_PC();
+  Put(SIGNAL, tid, pc, (uintptr_t)sem, 0);
+  return __real_sem_post(sem);
+}
+
+// }}}
 // libpthread wrappers {{{1
 extern "C"
 int __wrap_pthread_cond_timedwait(pthread_cond_t *cond, pthread_mutex_t *mutex,

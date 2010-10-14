@@ -27,6 +27,10 @@ int __real_pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex);
 int __real_pthread_cond_timedwait(pthread_cond_t *cond, pthread_mutex_t *mutex,
                                   const struct timespec *abstime);
 
+int __real_sem_wait(sem_t *sem);
+int __real_sem_trywait(sem_t *sem);
+int __real_sem_post(sem_t *sem);
+
 size_t __real_strlen(const char *s);
 void *__real_memchr(const char *s, int c, size_t n);
 

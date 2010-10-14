@@ -1674,9 +1674,9 @@ PTH_FUNC(int, pthreadZurwlockZuunlock$Za, // pthread_rwlock_unlock$*
      int sem_destroy(sem_t *sem);
      int sem_wait(sem_t *sem);
      int sem_post(sem_t *sem);
+     int sem_trywait(sem_t *sem);
 
    Unhandled:
-     int sem_trywait(sem_t *sem);
      int sem_timedwait(sem_t *restrict sem,
                        const struct timespec *restrict abs_timeout);
 */
