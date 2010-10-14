@@ -517,6 +517,20 @@ int __wrap___cxa_guard_release(int *guard) {
 
 // Unnamed POSIX semaphores {{{1
 // TODO(glider): support AnnotateIgnoreSync here.
+
+extern "C"
+sem_t *__wrap_sem_open(const char *name, int oflag,
+                mode_t mode, unsigned int value) {
+  sem_t *result = __real_sem_open(name, oflag, mode, value);
+  if ((oflag & O_CREAT) &&
+      value > 0 &&
+      result != SEM_FAILED) {
+    DECLARE_TID_AND_PC();
+    Put(SIGNAL, tid, pc, (uintptr_t)result, 0);
+  }
+  return result;
+}
+
 extern "C"
 int __wrap_sem_wait(sem_t *sem) {
   DECLARE_TID_AND_PC();
@@ -545,6 +559,7 @@ int __wrap_sem_post(sem_t *sem) {
 }
 
 // }}}
+
 // libpthread wrappers {{{1
 extern "C"
 int __wrap_pthread_cond_timedwait(pthread_cond_t *cond, pthread_mutex_t *mutex,

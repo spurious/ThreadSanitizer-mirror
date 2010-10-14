@@ -30,6 +30,7 @@ wrap pthread_cond_signal
 wrap pthread_cond_wait
 wrap pthread_cond_timedwait
 
+wrap sem_open
 wrap sem_post
 wrap sem_wait
 wrap sem_trywait
