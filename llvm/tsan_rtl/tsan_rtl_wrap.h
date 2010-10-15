@@ -3,6 +3,9 @@
 
 #ifndef LLVM_SRC_MOP_IMPL_MOP_WRAP_H_
 #define LLVM_SRC_MOP_IMPL_MOP_WRAP_H_
+
+#include <semaphore.h>
+
 extern "C" {
 int __real_pthread_create(pthread_t *thread,
                           const pthread_attr_t *attr,
@@ -49,6 +52,15 @@ int __real___cxa_guard_release(int *guard);
 
 int __real_atexit(void (*function)(void));
 void __real_exit(int status);
+
+void *__real_mmap(void *addr, size_t length, int prot, int flags,
+                  int fd, off_t offset);
+int __real_munmap(void *addr, size_t length);
+void *__real_calloc(size_t nmemb, size_t size);
+void *__real_malloc(size_t size);
+void __real_free(void *ptr);
+void *__real_realloc(void *ptr, size_t size);
+
 }
 
 

@@ -248,7 +248,7 @@ int GetTid(ThreadInfo *info) {
               }
       case 2:
       default: {
-                 exit(2);
+                 __real_exit(2);
                }
     }
     if (info->tid == 0) {
@@ -493,6 +493,25 @@ static inline void IGNORE_ALL_ACCESSES_END() {
   Put(IGNORE_WRITES_END, tid, pc, 0, 0);
 }
 
+static inline void IGNORE_ALL_SYNC_BEGIN(void) {
+  //TODO(glider): sync++
+}
+
+static inline void IGNORE_ALL_SYNC_END(void) {
+  //TODO(glider): sync--
+}
+
+
+static inline void IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN(void) {
+  IGNORE_ALL_ACCESSES_BEGIN();
+  IGNORE_ALL_SYNC_BEGIN();
+}
+
+static inline void IGNORE_ALL_ACCESSES_AND_SYNC_END(void) {
+  IGNORE_ALL_ACCESSES_END();
+  IGNORE_ALL_SYNC_END();
+}
+
 // TODO(glider): for each runtime static initialization a guard variable
 // with a name like "_ZGVZN4testEvE1a" ("guard variable for test()::a")
 // is created. It's more correct to emit a WAIT event upon each read of
@@ -514,6 +533,78 @@ int __wrap___cxa_guard_release(int *guard) {
   IGNORE_ALL_ACCESSES_END();
   return result;
 }
+
+// Memory allocation routines {{{1
+extern "C"
+void *__wrap_mmap(void *addr, size_t length, int prot, int flags,
+                  int fd, off_t offset) {
+  void *result;
+  IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
+  result = __real_mmap(addr, length, prot, flags, fd, offset);
+  IGNORE_ALL_ACCESSES_AND_SYNC_END();
+  if (result != (void*) -1) {
+    DECLARE_TID_AND_PC();
+    Put(MMAP, tid, pc, (uintptr_t)result, (uintptr_t)length);
+  }
+  return result;
+}
+
+extern "C"
+int __wrap_munmap(void *addr, size_t length) {
+  int result;
+  DECLARE_TID_AND_PC();
+  IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
+  result = __real_munmap(addr, length);
+  IGNORE_ALL_ACCESSES_AND_SYNC_END();
+  if (result == 0) {
+    Put(MUNMAP, tid, pc, (uintptr_t)addr, (uintptr_t)length);
+  }
+  return result;
+}
+
+extern "C"
+void *__wrap_calloc(size_t nmemb, size_t size) {
+  void *result;
+  DECLARE_TID_AND_PC();
+  IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
+  result = __real_calloc(nmemb, size);
+  IGNORE_ALL_ACCESSES_AND_SYNC_END();
+  Put(MALLOC, tid, pc, (uintptr_t)result, nmemb * size);
+  return result;
+}
+
+extern "C"
+void *__wrap_malloc(size_t size) {
+  void *result;
+  DECLARE_TID_AND_PC();
+  IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
+  result = __real_malloc(size);
+  IGNORE_ALL_ACCESSES_AND_SYNC_END();
+  Put(MALLOC, tid, pc, (uintptr_t)result, size);
+  return result;
+}
+
+extern "C"
+void __wrap_free(void *ptr) {
+  DECLARE_TID_AND_PC();
+  Put(FREE, tid, pc, (uintptr_t)ptr, 0);
+  IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
+  __real_free(ptr);
+  IGNORE_ALL_ACCESSES_AND_SYNC_END();
+}
+
+extern "C"
+void *__wrap_realloc(void *ptr, size_t size) {
+  void *result;
+  DECLARE_TID_AND_PC();
+  IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
+  result = __real_realloc(ptr, size);
+  IGNORE_ALL_ACCESSES_AND_SYNC_END();
+  Put(MALLOC, tid, pc, (uintptr_t)result, size);
+  return result;
+}
+
+// }}}
 
 // Unnamed POSIX semaphores {{{1
 // TODO(glider): support AnnotateIgnoreSync here.
@@ -898,6 +989,7 @@ void __wrap_exit(int status) {
 
 // }}}
 
+// instrumentation API {{{1
 extern "C"
 void rtn_call(void *addr) {
   int tid = GetTid();
@@ -917,9 +1009,9 @@ void rtn_exit() {
   GIL scoped;
   unsafe_flush_tleb();
   INFO.passport_index--;
-  //fprintf(out_file, "RTN_EXIT %d 0 0 0\n", tid);
   UPut(RTN_EXIT, tid, 0, 0, 0);
 }
+// }}}
 
 // dynamic_annotations {{{1
 extern "C"
