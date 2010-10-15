@@ -20,6 +20,12 @@ wrap pthread_mutex_lock
 wrap pthread_mutex_unlock
 wrap pthread_mutex_trylock
 
+wrap pthread_rwlock_init
+wrap pthread_rwlock_destroy
+wrap pthread_rwlock_rdlock
+wrap pthread_rwlock_wrlock
+wrap pthread_rwlock_unlock
+
 wrap pthread_spin_init
 wrap pthread_spin_destroy
 wrap pthread_spin_lock

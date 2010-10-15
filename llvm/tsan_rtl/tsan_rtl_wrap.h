@@ -16,6 +16,14 @@ int __real_pthread_mutex_trylock(pthread_mutex_t *mutex);
 int __real_pthread_mutex_unlock(pthread_mutex_t *mutex);
 int __real_pthread_mutex_destroy(pthread_mutex_t *mutex);
 
+int __real_pthread_rwlock_init(pthread_rwlock_t *rwlock,
+                               const pthread_rwlockattr_t *attr);
+int __real_pthread_rwlock_destroy(pthread_rwlock_t *rwlock);
+int __real_pthread_rwlock_wrlock(pthread_rwlock_t *rwlock);
+int __real_pthread_rwlock_rdlock(pthread_rwlock_t *rwlock);
+int __real_pthread_rwlock_unlock(pthread_rwlock_t *rwlock);
+
+
 int __real_pthread_spin_destroy(pthread_spinlock_t *lock);
 int __real_pthread_spin_init(pthread_spinlock_t *lock, int pshared);
 int __real_pthread_spin_lock(pthread_spinlock_t *lock);

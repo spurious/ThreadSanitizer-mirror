@@ -586,8 +586,7 @@ int __wrap_pthread_cond_signal(pthread_cond_t *cond) {
 
 extern "C"
 int __wrap_pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex) {
-  int tid = GetTid();
-  pc_t pc = GetPc();
+  DECLARE_TID_AND_PC();
   Put(UNLOCK, tid, pc, (uintptr_t)mutex, 0);
   int result = __real_pthread_cond_wait(cond, mutex);
   Put(WAIT, tid, pc, (uintptr_t)cond, 0);
@@ -599,8 +598,7 @@ extern "C"
 int __wrap_pthread_mutex_lock(pthread_mutex_t *mutex) {
   int result = __real_pthread_mutex_lock(mutex);
   if (result == 0 /* success */) {
-    int tid = GetTid();
-    pc_t pc = GetPc();
+    DECLARE_TID_AND_PC();
     Put(WRITER_LOCK, tid, pc, (uintptr_t)mutex, 0);
   }
   // TODO(glider): should we handle error codes?
@@ -611,8 +609,7 @@ extern "C"
 int __wrap_pthread_mutex_trylock(pthread_mutex_t *mutex) {
   int result = __real_pthread_mutex_trylock(mutex);
   if (result == 0) {
-    int tid = GetTid();
-    pc_t pc = GetPc();
+    DECLARE_TID_AND_PC();
     Put(WRITER_LOCK, tid, pc, (uintptr_t)mutex, 0);
   }
   return result;
@@ -620,22 +617,79 @@ int __wrap_pthread_mutex_trylock(pthread_mutex_t *mutex) {
 
 extern "C"
 int __wrap_pthread_mutex_unlock(pthread_mutex_t *mutex) {
-  int tid = GetTid();
-  pc_t pc = GetPc();
-  // TODO(glider): reader/writer locks
+  DECLARE_TID_AND_PC();
   Put(UNLOCK, tid, pc, (uintptr_t) mutex, 0);
-  int result = __real_pthread_mutex_unlock(mutex);
-
-  return result;
+  return __real_pthread_mutex_unlock(mutex);
 }
 
 extern "C"
 int __wrap_pthread_mutex_destroy(pthread_mutex_t *mutex) {
-  int tid = GetTid();
-  pc_t pc = GetPc();
+  DECLARE_TID_AND_PC();
   Put(LOCK_DESTROY, tid, pc, (uintptr_t)mutex, 0);  // before the actual call.
-  int result = __real_pthread_mutex_destroy(mutex);
+  return __real_pthread_mutex_destroy(mutex);
+}
+
+extern "C"
+int __wrap_pthread_mutex_init(pthread_mutex_t *mutex,
+                              const pthread_mutexattr_t *attr) {
+  int result, mbRec;
+  DECLARE_TID_AND_PC();
+  mbRec = 0; // unused so far
+  if (attr) {
+    int ty, zzz;
+    zzz = pthread_mutexattr_gettype(attr, &ty);
+    if (zzz == 0 && ty == PTHREAD_MUTEX_RECURSIVE) mbRec = 1;
+  }
+  result = __real_pthread_mutex_init(mutex, attr);
+  if (result == 0) {
+    Put(LOCK_CREATE, tid, pc, (uintptr_t)mutex, 0);
+  }
   return result;
+}
+
+extern "C"
+int __wrap_pthread_rwlock_init(pthread_rwlock_t *rwlock,
+                               const pthread_rwlockattr_t *attr) {
+  DECLARE_TID_AND_PC();
+  int result = __real_pthread_rwlock_init(rwlock, attr);
+  if (result == 0) {
+    Put(LOCK_CREATE, tid, pc, (uintptr_t)rwlock, 0);
+  }
+  return result;
+}
+
+extern "C"
+int __wrap_pthread_rwlock_destroy(pthread_rwlock_t *rwlock) {
+  DECLARE_TID_AND_PC();
+  Put(LOCK_DESTROY, tid, pc, (uintptr_t)rwlock, 0);  // before the actual call.
+  return __real_pthread_rwlock_destroy(rwlock);
+}
+
+extern "C"
+int __wrap_pthread_rwlock_wrlock(pthread_rwlock_t *rwlock) {
+  DECLARE_TID_AND_PC();
+  int result = __real_pthread_rwlock_wrlock(rwlock);
+  if (result == 0) {
+    Put(WRITER_LOCK, tid, pc, (uintptr_t)rwlock, 0);
+  }
+  return result;
+}
+
+extern "C"
+int __wrap_pthread_rwlock_rdlock(pthread_rwlock_t *rwlock) {
+  DECLARE_TID_AND_PC();
+  int result = __real_pthread_rwlock_rdlock(rwlock);
+  if (result == 0) {
+    Put(READER_LOCK, tid, pc, (uintptr_t)rwlock, 0);
+  }
+  return result;
+}
+
+extern "C"
+int __wrap_pthread_rwlock_unlock(pthread_rwlock_t *rwlock) {
+  DECLARE_TID_AND_PC();
+  Put(UNLOCK, tid, pc, (uintptr_t)rwlock, 0);
+  return __real_pthread_rwlock_unlock(rwlock);
 }
 
 extern "C"
@@ -674,25 +728,6 @@ int __wrap_pthread_join(pthread_t thread, void **value_ptr) {
     assert(joined_tid > 0);
     pc_t pc = GetPc();
     Put(THR_JOIN_AFTER, tid, pc, joined_tid, 0);
-  }
-  return result;
-}
-
-extern "C"
-int __wrap_pthread_mutex_init(pthread_mutex_t *mutex,
-                              const pthread_mutexattr_t *attr) {
-  int result, mbRec;
-  int tid = GetTid();
-  pc_t pc = GetPc();
-  mbRec = 0; // unused so far
-  if (attr) {
-    int ty, zzz;
-    zzz = pthread_mutexattr_gettype(attr, &ty);
-    if (zzz == 0 && ty == PTHREAD_MUTEX_RECURSIVE) mbRec = 1;
-  }
-  result = __real_pthread_mutex_init(mutex, attr);
-  if (result == 0) {
-    Put(LOCK_CREATE, tid, pc, (uintptr_t)mutex, 0);
   }
   return result;
 }
@@ -912,6 +947,12 @@ void AnnotateEnableRaceDetection(char *file, int line, int enable) {
   fprintf(stderr, "enable: %d, global_ignore: %d\n", enable, global_ignore);
 }
 
+
+extern "C"
+void AnnotateMutexIsUsedAsCondVar(char *file, int line, void *mu) {
+  DECLARE_TID_AND_PC();
+  Put(HB_LOCK, tid, pc, (uintptr_t)mu, 0);
+}
 
 extern "C"
 void AnnotatePCQGet(const char *file, int line, void *pcq) {
