@@ -802,6 +802,24 @@ int __wrap_pthread_rwlock_unlock(pthread_rwlock_t *rwlock) {
 }
 
 extern "C"
+int __wrap_pthread_barrier_init(pthread_barrier_t *barrier,
+                         const pthread_barrierattr_t *attr, unsigned count) {
+  DECLARE_TID_AND_PC();
+  Put(CYCLIC_BARRIER_INIT, tid, pc, (uintptr_t)barrier, count);
+  return __real_pthread_barrier_init(barrier, attr, count);
+}
+
+extern "C"
+int __wrap_pthread_barrier_wait(pthread_barrier_t *barrier) {
+  DECLARE_TID_AND_PC();
+  Put(CYCLIC_BARRIER_WAIT_BEFORE, tid, pc, (uintptr_t)barrier, 0);
+  int result = __real_pthread_barrier_wait(barrier);
+  Put(CYCLIC_BARRIER_WAIT_AFTER, tid, pc, (uintptr_t)barrier, 0);
+  return result;
+}
+
+
+extern "C"
 int __wrap_pthread_join(pthread_t thread, void **value_ptr) {
   // Note that the ThreadInfo of |thread| is valid no more.
   int tid = GetTid();
@@ -1081,6 +1099,12 @@ extern "C"
 void AnnotateTraceMemory(char *file, int line, void *mem) {
   DECLARE_TID_AND_PC();
   Put(TRACE_MEM, tid, pc, (uintptr_t)mem, 0);
+}
+
+extern "C"
+void AnnotateFlushState(char *file, int line) {
+  DECLARE_TID_AND_PC();
+  Put(TRACE_MEM, tid, pc, 0, 0);
 }
 
 extern "C"
