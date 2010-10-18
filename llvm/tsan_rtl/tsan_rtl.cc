@@ -396,6 +396,7 @@ struct callback_arg {
   pthread_worker *routine;
   void *arg;
   int parent;
+  pthread_attr_t *attr;
 };
 
 // TODO(glider): we should get rid of Finished[],
@@ -422,11 +423,17 @@ void *pthread_callback(void *arg) {
   pthread_worker *routine = cb_arg->routine;
   void *routine_arg = cb_arg->arg;
   int parent = cb_arg->parent;
+  pthread_attr_t *attr = cb_arg->attr;
+  // TODO(glider): we may depend on ulimit().
+  size_t stack_size = 8 << 20;  // 8M
+  if (attr) {
+    pthread_attr_getstacksize(attr, &stack_size);
+  }
 
 
   Put(THR_START, INFO.tid, 0, 0, parent);
   delete cb_arg;
-  Put(THR_STACK_TOP, tid, pc, (uintptr_t)&result, 0);
+  Put(THR_STACK_TOP, tid, pc, (uintptr_t)&result, stack_size);
   DPrintf("Before routine() in T%d\n", tid);
 
   GIL::Lock();
@@ -466,13 +473,14 @@ void unsafe_forget_thread(int tid, int from) {
 
 extern "C"
 int __wrap_pthread_create(pthread_t *thread,
-                          const pthread_attr_t *attr,
+                          pthread_attr_t *attr,
                           void *(*start_routine)(void*), void *arg) {
   int tid = GetTid();
-  callback_arg *cb_arg = new callback_arg; // TODO(glider): heap alloc?
+  callback_arg *cb_arg = new callback_arg;
   cb_arg->routine = start_routine;
   cb_arg->arg = arg;
   cb_arg->parent = tid;
+  cb_arg->attr = attr;
   Put(THR_CREATE_BEFORE, tid, 0, 0, 0);
   PTH_INIT = 1;
   int result = __real_pthread_create(thread, attr, pthread_callback, cb_arg);
