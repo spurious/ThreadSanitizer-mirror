@@ -205,6 +205,7 @@ long my_strtol(const char *str, char **end, int base) {
 #if defined(__GNUC__)
   typedef int TS_FILE;
   #define TS_FILE_INVALID (-1)
+  #define read(fd, buf, size) __real_read(fd, buf, size)
 #elif defined(_MSC_VER)
   typedef FILE *TS_FILE;
   #define TS_FILE_INVALID (NULL)

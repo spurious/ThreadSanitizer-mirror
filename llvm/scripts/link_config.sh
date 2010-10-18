@@ -45,3 +45,15 @@ wrap atexit
 wrap exit
 
 wrap strlen
+
+wrap mmap
+wrap munmap
+wrap calloc
+wrap malloc
+wrap free
+wrap realloc
+
+wrap read
+wrap write
+
+wrap pthread_once

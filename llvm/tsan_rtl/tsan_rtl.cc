@@ -1,4 +1,5 @@
 #include "tsan_rtl.h"
+#include <sys/stat.h>
 
 
 static inline void Put(EventType type, int32_t tid, pc_t pc,
@@ -542,6 +543,15 @@ int __wrap___cxa_guard_release(int *guard) {
   return result;
 }
 
+extern "C"
+int __wrap_pthread_once(pthread_once_t *once_control,
+                        void (*init_routine) (void)) {
+  IGNORE_ALL_ACCESSES_BEGIN();
+  int result = __real_pthread_once(once_control, init_routine);
+  IGNORE_ALL_ACCESSES_END();
+  return result;
+}
+
 // Memory allocation routines {{{1
 extern "C"
 void *__wrap_mmap(void *addr, size_t length, int prot, int flags,
@@ -883,6 +893,8 @@ int __wrap_pthread_spin_unlock(pthread_spinlock_t *lock) {
 
 
 // }}}
+
+
 // TODO(glider): update PCs
 
 // STR* wrappers {{{1
@@ -997,6 +1009,34 @@ void __wrap_exit(int status) {
 
 // }}}
 
+const uintptr_t kFdMagicConst = 0xf11ede5c;
+uintptr_t FdMagic(int fd) {
+  uintptr_t result = kFdMagicConst;
+  struct stat stat_b;
+  fstat(fd, &stat_b);
+  if (stat_b.st_dev) result = (uintptr_t)stat_b.st_dev;
+  return result;
+}
+
+extern "C"
+ssize_t __wrap_read(int fd, void *buf, size_t count) {
+  // TODO(glider): we should treat dup()ped fds as equal ones.
+  DECLARE_TID_AND_PC();
+  ssize_t result = __real_read(fd, buf, count);
+  // It only makes sense to wait for a previous write, not EOF.
+  if (result > 0) {
+    Put(WAIT, tid, pc, FdMagic(fd), 0);
+  }
+  return result;
+}
+
+extern "C"
+ssize_t __wrap_write(int fd, const void *buf, size_t count) {
+  DECLARE_TID_AND_PC();
+  Put(SIGNAL, tid, pc, FdMagic(fd), 0);
+  return __real_write(fd, buf, count);
+}
+
 // instrumentation API {{{1
 extern "C"
 void rtn_call(void *addr) {
@@ -1033,11 +1073,14 @@ void AnnotateCondVarSignal(const char *file, int line, void *cv) {
 
 extern"C"
 void AnnotateCondVarWait(const char *file, int line, void *cv, void *lock) {
-  int tid = GetTid();
-  //{GIL scoped;
-  //fprintf(out_file, "WAIT %d 0 %p 0\n", tid, cv);
-  //}
-  Put(WAIT, tid, 0, (uintptr_t)cv, 0);
+  DECLARE_TID_AND_PC();
+  Put(WAIT, tid, pc, (uintptr_t)cv, 0);
+}
+
+extern "C"
+void AnnotateTraceMemory(char *file, int line, void *mem) {
+  DECLARE_TID_AND_PC();
+  Put(TRACE_MEM, tid, pc, (uintptr_t)mem, 0);
 }
 
 extern "C"

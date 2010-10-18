@@ -61,6 +61,10 @@ void *__real_malloc(size_t size);
 void __real_free(void *ptr);
 void *__real_realloc(void *ptr, size_t size);
 
+ssize_t __real_write(int fd, const void *buf, size_t count);
+ssize_t __real_read(int fd, const void *buf, size_t count);
+
+int __real_pthread_once(pthread_once_t *once_control, void (*init_routine) (void));
 }
 
 
