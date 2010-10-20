@@ -852,6 +852,25 @@ static void EnableSigprof(Sigaction SignalHandler) {
   }
 }
 
+static void DisableSigprof() {
+  struct sigaction sa;
+  sa.sa_handler = SIG_DFL;
+  sa.sa_flags = SA_RESTART | SA_SIGINFO;
+  sigemptyset(&sa.sa_mask);
+  if (sigaction(SIGPROF, &sa, NULL) != 0) {
+    perror("sigaction");
+    abort();
+  }
+  struct itimerval timer;
+  timer.it_interval.tv_sec = 0;
+  timer.it_interval.tv_usec = 0;
+  timer.it_value = timer.it_interval;
+  if (setitimer(ITIMER_PROF, &timer, 0) != 0) {
+    perror("setitimer");
+    abort();
+  }
+}
+
 void MallocTestWorker() {
   for (int i = 0; i < 100000; i++) {
     void *x = malloc((i % 64) + 1);
@@ -879,6 +898,7 @@ TEST(Signals, SignalsAndMallocTestWithMutex) {
   t.Start();
   t.Join();
   printf("\tGLOB=%d\n", GLOB);
+  DisableSigprof();
 }
 #endif
 
@@ -899,6 +919,7 @@ TEST(Signals, DISABLED_SignalsAndMallocTestWithSpinlock) {
   t.Start();
   t.Join();
   printf("\tGLOB=%d\n", GLOB);
+  DisableSigprof();
 }
 
 // Regression test for
@@ -918,6 +939,7 @@ TEST(Signals, SignalsAndWaitTest) {
   MyThreadArray t(WaitTestWorker, WaitTestWorker, WaitTestWorker);
   t.Start();
   t.Join();
+  DisableSigprof();
 }
 
 #ifndef __APPLE__
