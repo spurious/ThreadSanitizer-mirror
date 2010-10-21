@@ -1,7 +1,6 @@
 #include "tsan_rtl.h"
 #include <sys/stat.h>
 
-
 static inline void Put(EventType type, int32_t tid, pc_t pc,
                        uintptr_t a, uintptr_t info);
 
@@ -76,25 +75,53 @@ __thread ThreadInfo INFO;
 __thread int INIT = 0;
 __thread int events = 0;
 
-FILE *out_file = NULL;
 int RTL_INIT = 0;
 int PTH_INIT = 0;
 int DBG_INIT = 0;
 int HAVE_THREAD_0 = 0;
 static bool global_ignore = true;
 
-pthread_mutex_t global_lock = PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP;
+//pthread_mutex_t global_lock = PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP;
+
+// USE_SPINLOCK macro switches between pthreadmutex and pthread spinlock as 
+// the global lock. Unfortunately spinlocks can't be used together with condvars,
+// so this is temporarily disabled (although may bring a performance gain).
+//#define USE_SPINLOCK 1
+#undef USE_SPINLOCK // TODO(glider): can't use spinlocks with condvar_wait :(
+
+// BLOCK_SIGNALS macro enables blocking the signals any time the global lock
+// is taken. This brings huge overhead to the lock and looks unnecessary now, 
+// because our signal handler can run even under the global lock.
+//#define BLOCK_SIGNALS 1
+#undef BLOCK_SIGNALS
+
+#ifdef USE_SPINLOCK
+pthread_spinlock_t global_lock;
+#define GIL_LOCK __real_pthread_spin_lock
+#define GIL_UNLOCK __real_pthread_spin_unlock
+static bool gil_initialized = false;
+#else
+pthread_mutex_t global_lock = PTHREAD_MUTEX_INITIALIZER;
+#define GIL_LOCK __real_pthread_mutex_lock
+#define GIL_UNLOCK __real_pthread_mutex_unlock
+#define GIL_TRYLOCK __real_pthread_mutex_trylock
+#endif
+
 pthread_t gil_owner = 0;
-int gil_depth = 0;
+__thread int gil_depth = 0;
 std::map<pthread_t, int> Tids;
 std::map<int, pthread_t> PThreads;
 std::map<int, bool> Finished;
 std::map<int, pthread_cond_t*> FinishConds; // TODO(glider): we shouldn't need these.
 std::map<pthread_t, pthread_cond_t*> InitConds; // TODO(glider): we shouldn't need these.
 int max_tid = -1;
-//__thread int TID = -1;
-//__thread uintptr_t TLEB[1000];
-//__thread uintptr_t curr_bb_index = 0;
+
+__thread  sigset_t glob_sig_blocked, glob_sig_old;
+
+// We don't initialize these.
+struct sigaction signal_actions[NSIG];  // protected by GIL
+__thread siginfo_t pending_signals[NSIG];
+__thread bool pending_signal_flags[NSIG];
 
 class GIL {
  public:
@@ -104,25 +131,77 @@ class GIL {
   ~GIL() {
     Unlock();
   }
+
   static void Lock() {
-    __real_pthread_mutex_lock(&global_lock);
+#ifdef USE_SPINLOCK
+    if (!gil_initialized) {
+      pthread_spin_init(&global_lock, 0);
+      gil_initialized = true;
+    }
+#endif
+#if BLOCK_SIGNALS
+    sigfillset(&glob_sig_blocked);
+    pthread_sigmask(SIG_BLOCK, &glob_sig_blocked, &glob_sig_old);
+#endif
+    if (!gil_depth) GIL_LOCK(&global_lock);
 #ifdef DEBUG
     gil_owner = pthread_self();
+#endif
     gil_depth++;
-#endif
-
   }
+
+  static bool TryLock() {
+#ifdef USE_SPINLOCK
+    if (!gil_initialized) {
+      pthread_spin_init(&global_lock, 0);
+      gil_initialized = true;
+    }
+#endif
+#ifdef BLOCK_SIGNALS
+    sigfillset(&glob_sig_blocked);
+    pthread_sigmask(SIG_BLOCK, &glob_sig_blocked, &glob_sig_old);
+#endif
+#ifdef DEBUG
+    gil_owner = pthread_self();
+#endif
+    bool result;
+    if (!gil_depth) {
+      result = !(bool) GIL_TRYLOCK(&global_lock);
+      if (result) gil_depth++;
+      return result;
+    } else {
+      return false;
+    }
+  }
+
   static void Unlock() {
+    if (gil_depth == 1) {
+      unsafe_clear_pending_signals();
+      gil_depth--;
 #ifdef DEBUG
-    gil_depth--;
-    if (gil_depth == 0) gil_owner = 0;
+      gil_owner = 0;
 #endif
-
-    __real_pthread_mutex_unlock(&global_lock);
+      GIL_UNLOCK(&global_lock);
+    } else {
+      gil_depth--;
+    }
+#ifdef BLOCK_SIGNALS
+    pthread_sigmask(SIG_SETMASK, &glob_sig_old, &glob_sig_old);
+    siginfo_t info;
+    struct timespec zero_timeout = {0, 0};
+    int sig = sigtimedwait(&glob_sig_old, &info, &zero_timeout);
+    if (sig > 0) {
+      // TODO(glider): signal_actions should be accessed under the global lock.
+      signal_actions[sig].sa_sigaction(sig, &info, NULL);
+    }
+#endif
   }
 #ifdef DEBUG
-  static pthread_t GetOwner() {
+  static pthread_t GetOwner_deprecated() {
     return gil_owner;
+  }
+  static int GetDepth() {
+    return gil_depth;
   }
 #endif
 };
@@ -130,7 +209,7 @@ class GIL {
 static inline void UPut(EventType type, int32_t tid, pc_t pc,
                         uintptr_t a, uintptr_t info) {
 #ifdef DEBUG
-  assert(GIL::GetOwner() == pthread_self());
+  assert(GIL::GetDepth());
 #endif
   if (!HAVE_THREAD_0 && type != THR_START) {
     UPut(THR_START, 0, 0, 0, 0);
@@ -160,8 +239,6 @@ static inline void Put(EventType type, int32_t tid, pc_t pc,
 // TODO(glider): atexit()
 void finalize() {
   ThreadSanitizerFini();
-  fclose(out_file);
-  out_file = NULL;
 }
 inline void init_debug() {
   if (DBG_INIT) return;
@@ -177,9 +254,9 @@ bool in_initialize = false;
 bool initialize() {
   if (in_initialize) return false;
   in_initialize = true;
+
   // Only one thread exists at this moment.
   G_flags = new FLAGS;
-  out_file = fopen("offline.events", "w");
   G_out = stderr;
   vector<string> args;
   char *env = getenv("TSAN_ARGS");
@@ -218,9 +295,9 @@ pc_t GetPc() {
 }
 
 int GetTid(ThreadInfo *info) {
-  GIL scoped;
   //if (!PTH_INIT && RTL_INIT) return 0;
   if (INIT == 0) {
+    GIL scoped;
     // thread initialization
     pthread_t pt = pthread_self();
     max_tid++;
@@ -259,7 +336,6 @@ int GetTid(ThreadInfo *info) {
   }
   return info->tid;
 }
-
 
 int GetTid() {
   return GetTid(&INFO);
@@ -300,11 +376,7 @@ void unsafe_flush_tleb_slice(ThreadInfo *info,
     }
   }
   passport.flushed = slice_end;
-  if (slice_end == passport.num_mops) {
-    //fprintf(out_file, "#===BB_END=====\n\n");
-  }
 } // }}}
-
 
 
 // TODO(glider): we may want the basic block address to differ from the PC
@@ -312,11 +384,11 @@ void unsafe_flush_tleb_slice(ThreadInfo *info,
 extern "C"
 void* bb_flush(LLVMMopInfo *next_mops,
                int next_num_mops, void *next_bb_index) {
-  // {{{1
+  GIL scoped;
   Passport &passport = INFO.passport[INFO.passport_index];
   if (passport.mop_info) {
     // This is not a function entry block
-    GIL scoped;
+    //GIL scoped;
     unsafe_flush_tleb_slice(&INFO, passport.flushed, passport.num_mops);
     passport.flushed = 0;
   }
@@ -328,8 +400,9 @@ void* bb_flush(LLVMMopInfo *next_mops,
   } else {
     passport.curr_bb_index = next_bb_index;
   }
+  //UNBLOCK_SIGNALS();
   return (void*) INFO.TLEB;
-} // }}}
+}
 
 extern "C"
 void bb_flush_slice(int slice_start, int slice_end) {
@@ -349,7 +422,7 @@ void unsafe_flush_tleb() {
       passport.num_mops = 0;
     }
   } else {
-    DPrintf("ERROR: thread %d not found!\n", tid);
+    DPrintf("ERROR: thread %d not found!\n", GetTid());
     assert(0);
   }
   Passport &passport = info->passport[info->passport_index];
@@ -359,37 +432,7 @@ void unsafe_flush_tleb() {
   } else {
     passport.curr_bb_index = 0;
   }
-
 }
-
-void unused_unsafe_flush_tleb(int tid) {
-  ThreadInfo *info = NULL;
-  int local_tid = GetTid();
-  if (local_tid == tid) {
-    info = &INFO;
-  } else if (PThreads.find(tid) != PThreads.end()) {
-    DPrintf("T%d: pthread_self()=%p, info=%p, info->tid: %d\n", local_tid, (void*)PThreads[tid], info, info->tid);
-  }
-  if (info) {
-    Passport &passport = info->passport[info->passport_index];
-    if (passport.num_mops) {
-      unsafe_flush_tleb_slice(info, passport.flushed, passport.num_mops);
-      passport.flushed = 0;
-      passport.num_mops = 0;
-    }
-  } else {
-    //fprintf(out_file, "#ERROR: thread %d not found!\n", tid);
-  }
-  Passport &passport = info->passport[info->passport_index];
-  if (passport.known_bb_addr) {
-    passport.curr_bb_index = passport.known_bb_addr;
-    passport.known_bb_addr = NULL;
-  } else {
-    passport.curr_bb_index = 0;
-  }
-
-}
-
 
 typedef void *(pthread_worker)(void*);
 
@@ -410,6 +453,7 @@ void dump_finished() {
 }
 
 void *pthread_callback(void *arg) {
+  GIL::Lock();
   void *result = NULL;
 
   assert((PTH_INIT==1) && (RTL_INIT==1));
@@ -431,13 +475,14 @@ void *pthread_callback(void *arg) {
     pthread_attr_getstacksize(attr, &stack_size);
   }
 
-
-  Put(THR_START, INFO.tid, 0, 0, parent);
+  for (int sig = 0; sig < NSIG; sig++) {
+    pending_signal_flags[sig] = false;
+  }
+  UPut(THR_START, INFO.tid, 0, 0, parent);
   delete cb_arg;
-  Put(THR_STACK_TOP, tid, pc, (uintptr_t)&result, stack_size);
+  UPut(THR_STACK_TOP, tid, pc, (uintptr_t)&result, stack_size);
   DPrintf("Before routine() in T%d\n", tid);
 
-  GIL::Lock();
   Finished[tid] = false;
   dump_finished();
   GIL::Unlock();
@@ -1055,11 +1100,81 @@ ssize_t __wrap_write(int fd, const void *buf, size_t count) {
   return __real_write(fd, buf, count);
 }
 
+
+// Signal handling {{{1
+/* Initial support for signals. Each user signal handler is stored in
+ signal_actions[] and RTLSignalHandler is installed instead. When a signal is
+ received, it is put into a thread-local array of pending signals (see the
+ comments in RTLSignalHandler). Each time we're about to release the global
+ lock, we handle all the pending signals.
+*/
+
+int unsafe_clear_pending_signals() {
+  int result = 0;
+  for (int sig = 0; sig < NSIG; sig++) {
+    if (pending_signal_flags[sig]) {
+      DPrintf("[T%d] Pending signal: %d\n", GetTid(), sig);
+      sigfillset(&glob_sig_blocked);
+      pthread_sigmask(SIG_BLOCK, &glob_sig_blocked, &glob_sig_old);
+      pending_signal_flags[sig] = false;
+      signal_actions[sig].sa_sigaction(sig, &pending_signals[sig], NULL);
+      pthread_sigmask(SIG_SETMASK, &glob_sig_old, &glob_sig_old);
+      result++;
+    }
+  }
+  return result;
+}
+
+extern "C"
+void RTLSignalHandler(int sig, siginfo_t* info, void* context) {
+  /* TODO(glider): The code under "#if 0" assumes that it's legal to handle
+   * signals on the thread running client code. In fact ThreadSanitizer calls
+   * malloc() from STLPort, so if a signal is received when the client code is
+   * inside malloc(), a deadlock may happen. A temporal solution is to always
+   * enqueue the signals. In the future we can get rid of malloc() calls within
+   * ThreadSanitzer. */
+#if 0
+  if (GIL::TryLock()) {
+    // We're in the client code. Call the handler.
+    signal_actions[sig].sa_sigaction(sig, info, context);
+    GIL::Unlock();
+  } else {
+    // We're in TSan code. Let's enqueue the signal
+    if (!pending_signal_flags[sig]) {
+      pending_signals[sig] = *info;
+      pending_signal_flags[sig] = true;
+    }
+  }
+#else
+  if (!pending_signal_flags[sig]) {
+    pending_signals[sig] = *info;
+    pending_signal_flags[sig] = true;
+  }
+#endif
+}
+
+// TODO(glider): wrap signal()
+extern "C"
+int __wrap_sigaction(int signum, const struct sigaction *act,
+                     struct sigaction *oldact) {
+  GIL scoped;
+  if ((act->sa_handler == SIG_IGN) || (act->sa_handler == SIG_DFL)) {
+   return __real_sigaction(signum, act, oldact);
+  } else {
+    signal_actions[signum] = *act;
+    struct sigaction new_act = *act;
+    new_act.sa_sigaction = RTLSignalHandler;
+    return __real_sigaction(signum, &new_act, oldact);
+  }
+}
+
+// }}}
+
 // instrumentation API {{{1
 extern "C"
 void rtn_call(void *addr) {
-  int tid = GetTid();
   GIL scoped;
+  int tid = GetTid();
   UPut(RTN_CALL, tid, 0, (uintptr_t)addr, 0);
   INFO.passport_index++;
   Passport &passport = INFO.passport[INFO.passport_index];
@@ -1071,8 +1186,8 @@ void rtn_call(void *addr) {
 
 extern "C"
 void rtn_exit() {
-  int tid = GetTid();
   GIL scoped;
+  int tid = GetTid();
   unsafe_flush_tleb();
   INFO.passport_index--;
   UPut(RTN_EXIT, tid, 0, 0, 0);
@@ -1082,11 +1197,8 @@ void rtn_exit() {
 // dynamic_annotations {{{1
 extern "C"
 void AnnotateCondVarSignal(const char *file, int line, void *cv) {
-  int tid = GetTid();
-  pc_t pc = __LINE__;
-  GIL scoped;
-  //fprintf(out_file, "SIGNAL %d 0 %p 0\n", tid, cv);
-  UPut(SIGNAL, tid, pc, (uintptr_t)cv, 0);
+  DECLARE_TID_AND_PC();
+  Put(SIGNAL, tid, pc, (uintptr_t)cv, 0);
 }
 
 extern"C"

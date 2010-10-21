@@ -69,6 +69,10 @@ int __real_pthread_once(pthread_once_t *once_control, void (*init_routine) (void
 int __real_pthread_barrier_init(pthread_barrier_t *barrier,
                          const pthread_barrierattr_t *attr, unsigned count);
 int __real_pthread_barrier_wait(pthread_barrier_t *barrier);
+
+int __real_sigaction(int signum, const struct sigaction *act,
+                     struct sigaction *oldact);
+
 }
 
 

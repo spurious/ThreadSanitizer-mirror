@@ -5,6 +5,7 @@
 #define TSAN_RTL_H_
 
 #include <errno.h>
+#include <signal.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -24,12 +25,15 @@ int GetTid();
 pc_t GetPc();
 
 void ReadDbgInfo(string filename);
+
 #define DECLARE_TID() \
   int tid = GetTid();
 
 #define DECLARE_TID_AND_PC() \
   int tid = GetTid(); \
   pc_t pc = GetPc();
+
+int unsafe_clear_pending_signals();
 
 #include "tsan_rtl_wrap.h"
 

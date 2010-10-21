@@ -60,3 +60,5 @@ wrap read
 wrap write
 
 wrap pthread_once
+
+wrap sigaction
