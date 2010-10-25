@@ -149,6 +149,6 @@ endif
 
 .PHONY: GTEST_CLEAN
 GTEST_CLEAN:
-	rm -rf ${GTEST_ROOT}/msvc/Debug
-	rm -rf ${GTEST_ROOT}/msvc/Release
+	rm -rf ${GTEST_ROOT}/msvc/gtest/Debug
+	rm -rf ${GTEST_ROOT}/msvc/gtest/Release
 	rm -rf ${GTEST_ROOT}/make-*

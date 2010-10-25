@@ -110,4 +110,42 @@ TEST(ComTests, DISABLED_IWbemLocator_ConnectServerTest) {
   ::CoUninitialize();
 }
 
+namespace HeapTests {
+class MyMutex {
+ public:
+  MyMutex() {
+    ::InitializeCriticalSectionAndSpinCount(&lock_, 2000);
+  }
+  ~MyMutex() {
+    ::DeleteCriticalSection(&lock_);
+  }
+ private:
+  CRITICAL_SECTION lock_;
+};
+
+TEST(HeapTest, MutexAllocatedOnHeapTest) {
+  MyMutex *m = new MyMutex();
+  delete m;
+}
+
+class MyClass {
+ public:
+  explicit MyClass(int size) : ptr_(NULL) {
+    ptr_ = realloc(ptr_, size);
+  }
+  ~MyClass() {
+    free(ptr_);
+  }
+ private:
+  void *ptr_;
+};
+
+TEST(HeapTest, ReallocInHeapObjectTest) {
+  const MyClass m(50031);
+  MyClass *obj = new MyClass(50031);
+  delete obj;
+}
+
+}  // namespace HeapTests
+
 #endif
