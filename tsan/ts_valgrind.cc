@@ -319,9 +319,16 @@ void ts_post_clo_init(void) {
   extern Int   VG_(clo_n_suppressions);
   extern Int   VG_(clo_gen_suppressions);
   extern Char* VG_(clo_suppressions)[];
+  extern Int   VG_(clo_n_fullpath_after);
+  extern Char* VG_(clo_fullpath_after)[];
   // get the suppressions from Valgrind
   for (int i = 0; i < VG_(clo_n_suppressions); i++) {
     G_flags->suppressions.push_back((char*)VG_(clo_suppressions)[i]);
+  }
+  // get the --fullpath-after prefixes from Valgrind and treat them as
+  // --file-prefix-to-cut arguments.
+  for (int i = 0; i < VG_(clo_n_fullpath_after); i++) {
+    G_flags->file_prefix_to_cut.push_back((char*)VG_(clo_fullpath_after)[i]);
   }
   G_flags->generate_suppressions |= VG_(clo_gen_suppressions) >= 1;
 
