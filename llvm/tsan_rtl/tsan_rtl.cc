@@ -123,6 +123,13 @@ struct sigaction signal_actions[NSIG];  // protected by GIL
 __thread siginfo_t pending_signals[NSIG];
 __thread bool pending_signal_flags[NSIG];
 
+int stats_lock_taken = 0;
+int stats_events_processed = 0;
+int stats_cur_events = 0;
+int stats_non_local = 0;
+const int kNumBuckets = 11;
+int stats_event_buckets[kNumBuckets];
+
 class GIL {
  public:
   GIL() {
@@ -143,7 +150,10 @@ class GIL {
     sigfillset(&glob_sig_blocked);
     pthread_sigmask(SIG_BLOCK, &glob_sig_blocked, &glob_sig_old);
 #endif
-    if (!gil_depth) GIL_LOCK(&global_lock);
+    if (!gil_depth) {
+      GIL_LOCK(&global_lock);
+      stats_lock_taken++;
+    }
 #ifdef DEBUG
     gil_owner = pthread_self();
 #endif
@@ -181,6 +191,10 @@ class GIL {
 #ifdef DEBUG
       gil_owner = 0;
 #endif
+      if (stats_cur_events<kNumBuckets) {
+        stats_event_buckets[stats_cur_events]++;
+      }
+      stats_cur_events = 0;
       GIL_UNLOCK(&global_lock);
     } else {
       gil_depth--;
@@ -206,6 +220,47 @@ class GIL {
 #endif
 };
 
+bool isThreadLocalEvent(EventType type) {
+  switch (type) {
+    case READ:
+    case WRITE:
+    case SBLOCK_ENTER:
+    case RTN_CALL:
+    case RTN_EXIT:
+      return true;
+    default:
+      return false;
+  }
+}
+
+// TODO(glider): finish with the tests to avoid regressions.
+#if 0
+static inline void PutEvent(EventType type, int32_t tid, pc_t pc,
+                            uintptr_t a, uintptr_t info) {
+#ifdef DEBUG
+  assert(GIL::GetDepth());
+#endif
+  if (!HAVE_THREAD_0 && type != THR_START) {
+    PutEvent(THR_START, 0, 0, 0, 0);
+  }
+  if (RTL_INIT != 1) return;
+  if (!global_ignore || !isThreadLocalEvent(type)) {
+    Event event(type, tid, pc, a, info);
+    if (G_flags->verbosity) {
+      if ((G_flags->verbosity >= 2) ||
+          (type == THR_START) || (type == THR_END) || (type == THR_JOIN_AFTER) || (type == THR_CREATE_BEFORE)) {
+        event.Print();
+      }
+    }
+    stats_events_processed++;
+    stats_cur_events++;
+    if (!isThreadLocalEvent(type)) stats_non_local++;
+    ThreadSanitizerHandleOneEvent(&event);
+    if ((type==THR_START) && (tid==0)) HAVE_THREAD_0 = 1;
+  }
+}
+#endif
+
 static inline void UPut(EventType type, int32_t tid, pc_t pc,
                         uintptr_t a, uintptr_t info) {
 #ifdef DEBUG
@@ -215,9 +270,7 @@ static inline void UPut(EventType type, int32_t tid, pc_t pc,
     UPut(THR_START, 0, 0, 0, 0);
   }
   if (RTL_INIT != 1) return;
-  if (!global_ignore ||
-      ((type!=READ) && (type!=WRITE) && (type!=SBLOCK_ENTER) &&
-       (type != RTN_CALL) && (type != RTN_EXIT))) {
+  if (!global_ignore || !isThreadLocalEvent(type)) {
     Event event(type, tid, pc, a, info);
     if (G_flags->verbosity) {
       if ((G_flags->verbosity >= 2) ||
@@ -225,7 +278,13 @@ static inline void UPut(EventType type, int32_t tid, pc_t pc,
         event.Print();
       }
     }
-    ThreadSanitizerHandleOneEvent(&event);
+    stats_events_processed++;
+    stats_cur_events++;
+    if (!isThreadLocalEvent(type)) stats_non_local++;
+    // Do not flush writes to 0x0.
+    if ((type != WRITE) || (a != 0)) {
+      ThreadSanitizerHandleOneEvent(&event);
+    }
     if ((type==THR_START) && (tid==0)) HAVE_THREAD_0 = 1;
   }
 }
@@ -239,6 +298,18 @@ static inline void Put(EventType type, int32_t tid, pc_t pc,
 // TODO(glider): atexit()
 void finalize() {
   ThreadSanitizerFini();
+  Printf("Locks: %d\nEvents: %d\n",
+         stats_lock_taken, stats_events_processed);
+  Printf("Non-bufferable events: %d\n", stats_non_local);
+  int total_events = 0;
+  int total_locks = 0;
+  for (int i=0; i<kNumBuckets; i++) {
+    Printf("%d events under a lock: %d times\n", i, stats_event_buckets[i]);
+    total_locks += stats_event_buckets[i];
+    total_events += stats_event_buckets[i]*i;
+  }
+  Printf("Locks within buckets: %d\n", total_locks);
+  Printf("Events within buckets: %d\n", total_events);
 }
 inline void init_debug() {
   if (DBG_INIT) return;
@@ -269,6 +340,9 @@ bool initialize() {
       start = env_args.find_first_not_of(" ", stop);
       stop = env_args.find_first_of(" ", start);
     }
+  }
+  for (int i=0; i<kNumBuckets; i++) {
+    stats_event_buckets[i] = 0;
   }
 
   ThreadSanitizerParseFlags(&args);
