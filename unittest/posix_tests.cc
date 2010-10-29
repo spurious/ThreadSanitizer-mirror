@@ -853,6 +853,7 @@ static void EnableSigprof(Sigaction SignalHandler) {
 }
 
 static void DisableSigprof() {
+  // Disable the profiling timer.
   struct itimerval timer;
   timer.it_interval.tv_sec = 0;
   timer.it_interval.tv_usec = 0;
@@ -861,6 +862,16 @@ static void DisableSigprof() {
     perror("setitimer");
     abort();
   }
+  // Wait for any pending SIGPROF signals.
+  struct timespec zero;
+  zero.tv_sec = 0;
+  zero.tv_nsec = 0;
+  sigset_t prof;
+  sigemptyset(&prof);
+  sigaddset(&prof, SIGPROF);
+  sigtimedwait(prof, NULL, zero);
+
+  // Reset the SIGPROF handler.
   struct sigaction sa;
   sa.sa_handler = SIG_DFL;
   sa.sa_flags = SA_RESTART | SA_SIGINFO;
