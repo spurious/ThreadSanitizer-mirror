@@ -862,17 +862,9 @@ static void DisableSigprof() {
     perror("setitimer");
     abort();
   }
-  // Wait for any pending SIGPROF signals.
-  sigset_t pending;
-  int sig;
-  CHECK(!sigpending(&pending));
-  if (sigismember(&pending, SIGPROF)) {
-    sigwait(&pending, &sig);
-  }
-
-  // Reset the SIGPROF handler.
+  // Ignore SIGPROFs from now on.
   struct sigaction sa;
-  sa.sa_handler = SIG_DFL;
+  sa.sa_handler = SIG_IGN;
   sa.sa_flags = SA_RESTART | SA_SIGINFO;
   sigemptyset(&sa.sa_mask);
   if (sigaction(SIGPROF, &sa, NULL) != 0) {
