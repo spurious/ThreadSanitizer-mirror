@@ -31,7 +31,7 @@ namespace {
     Constant *MopFn, *BBStartFn, *BBEndFn, *BBFlushFn, *BBFlushSliceFn;
     Constant *RtnCallFn, *RtnExitFn;
     const PointerType *UIntPtr, *MopTyPtr, *Int8Ptr;
-    const Type *Int32;
+    const Type *Int32, *ArithmeticPtr;
     const Type *Void;
     const StructType *MopTy;
     const ArrayType *BBPassportType, *BBExtPassportType;
@@ -64,6 +64,13 @@ namespace {
       return result;
     }
 
+    bool isDtor(llvm::StringRef mangled_name) {
+      // TODO(glider): need a demangler here.
+      if (mangled_name.find("D0") != std::string::npos) return true;
+      if (mangled_name.find("D1") != std::string::npos) return true;
+      return false;
+    }
+
     virtual bool runOnModule(Module &M) {
       BBCount = 0;
       ModuleFunctionCount = 0;
@@ -72,6 +79,7 @@ namespace {
       LLVMContext &Context = M.getContext();
       UIntPtr = Type::getInt32PtrTy(Context);
       Int32 = Type::getInt32Ty(Context);
+      ArithmeticPtr = Type::getInt32Ty(Context);
       Int8Ptr = PointerType::get(Type::getInt8Ty(Context), 0);
       Void = Type::getVoidTy(Context);
       MopTy = StructType::get(Context, Int32, Int32, Int32, NULL);
@@ -104,30 +112,32 @@ namespace {
         ModuleFunctionCount++;
         FnBB = nBB;
         int startBBCount = BBCount;
-        bool instrument_call_ret = true;
+        bool first_dtor_bb = false;
 #if DEBUG
-        errs() << "F" << ModuleFunctionCount << ": " << F->getNameStr() << "\n";
+        errs() << "F" << ModuleFunctionCount << ": " << F->getName() << "\n";
 #endif
         if (F->isDeclaration()) continue;
         //Function *FunPtr = F;
-        if ((F->getNameStr()).find("_Znw") != std::string::npos) {
+        // TODO(glider): document this.
+        if ((F->getName()).find("_Znw") != std::string::npos) {
           continue;
         }
-        if ((F->getNameStr()).find("_Zdl") != std::string::npos) {
+        if ((F->getName()).find("_Zdl") != std::string::npos) {
           continue;
         }
+        if (isDtor(F->getName())) first_dtor_bb = true;
+
         for (Function::iterator BB = F->begin(), E = F->end(); BB != E; ++BB) {
           nBB++;
           //FunPtr = NULL;
-          runOnBasicBlock(M, BB, instrument_call_ret);
+          runOnBasicBlock(M, BB, first_dtor_bb);
+          first_dtor_bb = false;
         }
-        if (instrument_call_ret) {
-          Instruction* First = F->begin()->begin();
-          std::vector<Value*> inst(1);
-          // BBNumMops = 0 at the start of basic block.
-          inst[0] = ConstantInt::get(Int32, getAddr(startBBCount, 0, First));
-          CallInst::Create(RtnCallFn, inst.begin(), inst.end(), "", First);
-        }
+        Instruction* First = F->begin()->begin();
+        std::vector<Value*> inst(1);
+        // BBNumMops = 0 at the start of basic block.
+        inst[0] = ConstantInt::get(Int32, getAddr(startBBCount, 0, First));
+        CallInst::Create(RtnCallFn, inst.begin(), inst.end(), "", First);
       }
       return true;
     }
@@ -138,7 +148,7 @@ namespace {
       std::string dir = Loc.getDirectory();
       errs() << "->";
       errs().write_hex(addr);
-      errs() << "|" <<  IN.getParent()->getParent()->getNameStr() << "|" <<
+      errs() << "|" <<  IN.getParent()->getParent()->getName() << "|" <<
                 file << "|" << Loc.getLineNumber() << "|" <<
                 dir << "\n";
     }
@@ -281,23 +291,44 @@ namespace {
     }
 
     void InstrumentMop(BasicBlock::iterator &BI, bool isStore,
-                       Value *TLEB) {
-      std::vector<Value*> Args(3);
+                       Value *TLEB, bool check_ident_store) {
+      Value *MopAddr;
       llvm::Instruction &IN = *BI;
       if (isStore) {
-        Args[0] = (static_cast<StoreInst&>(IN).getPointerOperand());
+        MopAddr = (static_cast<StoreInst&>(IN).getPointerOperand());
       } else {
-        Args[0] = (static_cast<LoadInst&>(IN).getPointerOperand());
-      }
-      //Args[2] = ConstantInt::get(Int32, isStore);
-
-      if (Args[0]->getType() == UIntPtr) {
-      } else {
-        Args[0] = BitCastInst::CreatePointerCast(Args[0], UIntPtr, "", BI);
+        MopAddr = (static_cast<LoadInst&>(IN).getPointerOperand());
       }
 
-      //Args[1] = ConstantInt::get(Type::getInt32Ty(BI->getContext()), size/8);
-      //CallInst::Create(MopFn, Args.begin(), Args.end(), "", BI);
+      if (!check_ident_store || !isStore) {
+        // Most of the time we don't check the stores for identical values.
+        if (MopAddr->getType() == UIntPtr) {
+        } else {
+          MopAddr = BitCastInst::CreatePointerCast(MopAddr, UIntPtr, "", BI);
+        }
+      } else {
+        // In the first BB of each destructor we check if a store instruction
+        // rewrites the memory with the same value. If so, this is a benign
+        // race on VPTR and we replace the pointer with NULL.
+
+        // How to check that %a is being rewritten with its value?
+        // Consider we're instrumenting the following line:
+        //             store %new, %a
+        // Then the %ptr to be put into TLEB is calculated as follows:
+        // %old      = load %a
+        // %destcast = ptrtoint %a to i32
+        // %neq      = icmp neq %old, %new
+        // %neqcast  = zext %neq to i32
+        // %ptr      = mul %a, %neq
+        Value *New = static_cast<StoreInst&>(IN).getOperand(0);
+        Value *Old = new LoadInst(MopAddr, "", BI);
+        Value *DestCast = BitCastInst::CreatePointerCast(MopAddr, ArithmeticPtr, "", BI);
+        Value *Neq = new ICmpInst(BI, ICmpInst::ICMP_NE, Old, New, "");
+        Value *NeqCast = BitCastInst::CreateZExtOrBitCast(Neq, ArithmeticPtr, "", BI);
+        Value *Ptr = BinaryOperator::Create(Instruction::Mul, DestCast, NeqCast, "",
+                                            BI);
+        MopAddr = new IntToPtrInst(Ptr, UIntPtr, "", BI);
+      }
 
       std::vector <Value*> idx;
       idx.push_back(ConstantInt::get(Int32, TLEBIndex));
@@ -307,7 +338,7 @@ namespace {
                                     idx.end(),
                                     "",
                                     BI);
-      new StoreInst(Args[0], TLEBPtr, BI);
+      new StoreInst(MopAddr, TLEBPtr, BI);
       TLEBIndex++;
     }
 
@@ -358,7 +389,7 @@ namespace {
     }
 
     bool runOnBasicBlock(Module &M, Function::iterator &BB,
-                         bool instrument_ret) {
+                         bool first_dtor_bb) {
       BBCount++;
       OldTLEBIndex = 0;
       TLEBIndex = 0;
@@ -407,7 +438,7 @@ namespace {
           errs() << "<";
 #endif
           // Instrument LOAD.
-          InstrumentMop(BI, false, TLEB);
+          InstrumentMop(BI, false, TLEB, first_dtor_bb);
           unknown = false;
         }
         if (isa<StoreInst>(BI)) {
@@ -415,7 +446,7 @@ namespace {
           errs() << ">";
 #endif
           // Instrument STORE.
-          InstrumentMop(BI, true, TLEB);
+          InstrumentMop(BI, true, TLEB, first_dtor_bb);
           unknown = false;
         }
         if (isa<MemCpyInst>(BI)) {
@@ -444,7 +475,7 @@ namespace {
           OldTLEBIndex = TLEBIndex;
           unknown = false;
         }
-        if (isa<ReturnInst>(BI) && instrument_ret) {
+        if (isa<ReturnInst>(BI)) {
 #if DEBUG
           errs() << "-";
 #endif
