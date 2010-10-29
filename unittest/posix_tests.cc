@@ -863,13 +863,12 @@ static void DisableSigprof() {
     abort();
   }
   // Wait for any pending SIGPROF signals.
-  struct timespec zero;
-  zero.tv_sec = 0;
-  zero.tv_nsec = 0;
-  sigset_t prof;
-  sigemptyset(&prof);
-  sigaddset(&prof, SIGPROF);
-  sigtimedwait(&prof, NULL, &zero);
+  sigset_t pending;
+  int sig;
+  CHECK(!sigpending(&pending));
+  if (sigismember(&pending, SIGPROF)) {
+    sigwait(&pending, &sig);
+  }
 
   // Reset the SIGPROF handler.
   struct sigaction sa;
