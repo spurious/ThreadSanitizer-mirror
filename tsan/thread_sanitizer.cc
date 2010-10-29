@@ -5042,6 +5042,16 @@ class ReportStorage {
 
     bool is_expected = false;
     ExpectedRace *expected_race = G_expected_races_map->GetInfo(addr);
+    if (debug_expected_races) {
+      Printf("Checking expected race for %lx; exp_race=%p\n",
+             addr, expected_race);
+      if (expected_race) {
+        Printf("  ptr=0x%lx size=0x%lx end=0x%lx\n",
+               expected_race->ptr, expected_race->size,
+               expected_race->ptr + expected_race->size);
+      }
+    }
+
     if (expected_race) {
       if (G_flags->nacl_untrusted != expected_race->is_nacl_untrusted) {
         Report("WARNING: this race is only expected in NaCl %strusted mode\n",
@@ -5998,6 +6008,14 @@ class Detector {
       Printf("T%d: EXPECT_RACE: ptr=%p size=%ld descr='%s' is_benign=%d\n",
              tid.raw(), ptr, size, descr, is_benign);
       cur_thread_->ReportStackTrace(ptr);
+      int i = 0;
+      for (ExpectedRacesMap::iterator it = G_expected_races_map->begin();
+           it != G_expected_races_map->end(); ++it) {
+        ExpectedRace &x = it->second;
+        Printf("  [%d] %p [0x%lx,0x%lx) size=0x%lx\n",
+               i, &x, x.ptr, x.ptr + x.size, x.size);
+        i++;
+      }
     }
   }
 
