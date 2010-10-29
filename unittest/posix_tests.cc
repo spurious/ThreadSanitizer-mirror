@@ -869,7 +869,7 @@ static void DisableSigprof() {
   sigset_t prof;
   sigemptyset(&prof);
   sigaddset(&prof, SIGPROF);
-  sigtimedwait(prof, NULL, zero);
+  sigtimedwait(&prof, NULL, &zero);
 
   // Reset the SIGPROF handler.
   struct sigaction sa;
