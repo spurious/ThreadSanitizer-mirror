@@ -72,6 +72,7 @@ uintptr_t g_nacl_mem_end = (uintptr_t)-1;
 bool g_race_verifier_active = false;
 
 bool debug_expected_races = false;
+bool debug_benign_races = false;
 bool debug_malloc = false;
 bool debug_free = false;
 bool debug_thread = false;
@@ -5652,7 +5653,7 @@ class Detector {
     for (ExpectedRacesMap::iterator it = G_expected_races_map->begin();
          it != G_expected_races_map->end(); ++it) {
       ExpectedRace race = it->second;
-      if (race.count == 0 && !race.is_benign &&
+      if (race.count == 0 &&
           !(g_race_verifier_active && !race.is_verifiable) &&
           (G_flags->nacl_untrusted == race.is_nacl_untrusted)) {
         ++missing;
@@ -5858,11 +5859,11 @@ class Detector {
 
 
       case EXPECT_RACE :
-        HandleExpectRace(false, e_->a(), e_->info(),
+        HandleExpectRace(e_->a(), e_->info(),
                          (const char*)e_->pc(), cur_tid_);
         break;
       case BENIGN_RACE :
-        HandleExpectRace(true, e_->a(), e_->info(),
+        HandleBenignRace(e_->a(), e_->info(),
                          (const char*)e_->pc(), cur_tid_);
         break;
       case EXPECT_RACE_BEGIN:
@@ -5989,14 +5990,28 @@ class Detector {
     cur_thread_->set_ignore(is_w, on);
   }
 
-  // EXPECT_RACE, BENIGN_RACE
-  void HandleExpectRace(bool is_benign, uintptr_t ptr, uintptr_t size,
+  // BENIGN_RACE
+  void HandleBenignRace(uintptr_t ptr, uintptr_t size,
+                        const char *descr, TID tid) {
+    if (debug_benign_races) {
+      Printf("T%d: BENIGN_RACE: ptr=%p size=%ld descr='%s'\n",
+             tid.raw(), ptr, size, descr);
+    }
+    // Simply set all 'racey' bits in the shadow state of [ptr, ptr+size).
+    for (uintptr_t p = ptr; p < ptr + size; p++) {
+      CacheLine *line = G_cache->GetLineOrCreateNew(p, __LINE__);
+      CHECK(line);
+      line->racey().Set(CacheLine::ComputeOffset(p));
+    }
+  }
+
+  // EXPECT_RACE
+  void HandleExpectRace(uintptr_t ptr, uintptr_t size,
                         const char *descr, TID tid) {
     ExpectedRace expected_race;
     expected_race.ptr = ptr;
     expected_race.size = size;
     expected_race.count = 0;
-    expected_race.is_benign = is_benign;
     expected_race.is_verifiable = !descr ||
         (string(descr).find("UNVERIFIABLE") == string::npos);
     expected_race.is_nacl_untrusted = !descr ||
@@ -6005,8 +6020,8 @@ class Detector {
     expected_race.pc = cur_thread_->GetCallstackEntry(1);
     G_expected_races_map->InsertInfo(ptr, expected_race);
     if (debug_expected_races) {
-      Printf("T%d: EXPECT_RACE: ptr=%p size=%ld descr='%s' is_benign=%d\n",
-             tid.raw(), ptr, size, descr, is_benign);
+      Printf("T%d: EXPECT_RACE: ptr=%p size=%ld descr='%s'\n",
+             tid.raw(), ptr, size, descr);
       cur_thread_->ReportStackTrace(ptr);
       int i = 0;
       for (ExpectedRacesMap::iterator it = G_expected_races_map->begin();
@@ -7291,6 +7306,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   }
 
   debug_expected_races = PhaseDebugIsOn("expected_races");
+  debug_benign_races = PhaseDebugIsOn("benign_races");
   debug_malloc = PhaseDebugIsOn("malloc");
   debug_free = PhaseDebugIsOn("free");
   debug_thread = PhaseDebugIsOn("thread");

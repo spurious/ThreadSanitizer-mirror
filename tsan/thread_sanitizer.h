@@ -186,7 +186,6 @@ extern Stats *G_stats;
 struct ExpectedRace {
   uintptr_t   ptr;
   uintptr_t   size;
-  bool        is_benign;
   bool        is_verifiable;
   bool        is_nacl_untrusted;
   int         count;
