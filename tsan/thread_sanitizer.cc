@@ -5266,7 +5266,7 @@ class ReportStorage {
       Report("%s", race->racey_addr_description.c_str());
     }
     if (race->is_expected) {
-      ExpectedRace *expected_race = 
+      ExpectedRace *expected_race =
           G_expected_races_map->GetInfo(race->racey_addr);
       if (expected_race) {
         CHECK(expected_race->description);
@@ -5646,13 +5646,16 @@ class Detector {
     }
   }
 
-  void HandleProgramEnd() {
+  void FlushExpectedRaces() {
     // Report("ThreadSanitizerValgrind: done\n");
     // check if we found all expected races (for unit tests only).
     int missing = 0;
     for (ExpectedRacesMap::iterator it = G_expected_races_map->begin();
          it != G_expected_races_map->end(); ++it) {
       ExpectedRace race = it->second;
+      if (debug_expected_races) {
+        Printf("Checking if expected race fired: %p\n", race.ptr);
+      }
       if (race.count == 0 &&
           !(g_race_verifier_active && !race.is_verifiable) &&
           (G_flags->nacl_untrusted == race.is_nacl_untrusted)) {
@@ -5668,7 +5671,10 @@ class Detector {
       int n_errs = GetNumberOfFoundErrors();
       SetNumberOfFoundErrors(n_errs + missing);
     }
+  }
 
+  void HandleProgramEnd() {
+    FlushExpectedRaces();
     // ShowUnfreedHeap();
     EventSampler::ShowSamples();
     ShowStats();
@@ -5866,6 +5872,9 @@ class Detector {
         HandleBenignRace(e_->a(), e_->info(),
                          (const char*)e_->pc(), cur_tid_);
         break;
+      case FLUSH_EXPECTED_RACES:
+        FlushExpectedRaces();
+        break;
       case EXPECT_RACE_BEGIN:
         CHECK(g_expecting_races == false);
         g_expecting_races = true;
@@ -6016,7 +6025,8 @@ class Detector {
         (string(descr).find("UNVERIFIABLE") == string::npos);
     expected_race.is_nacl_untrusted = !descr ||
         (string(descr).find("NACL_UNTRUSTED") != string::npos);
-    expected_race.description = descr;
+    CHECK(descr);
+    expected_race.description = strdup(descr);
     expected_race.pc = cur_thread_->GetCallstackEntry(1);
     G_expected_races_map->InsertInfo(ptr, expected_race);
     if (debug_expected_races) {

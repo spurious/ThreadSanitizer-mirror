@@ -1971,6 +1971,12 @@ static void On_AnnotateExpectRace(THREADID tid, ADDRINT pc,
   DumpEvent(EXPECT_RACE, tid, descr, a, 1);
 }
 
+static void On_AnnotateFlushExpectedRaces(THREADID tid, ADDRINT pc,
+                                  ADDRINT file, ADDRINT line) {
+  DumpEvent(FLUSH_EXPECTED_RACES, 0, 0, 0, 0);
+}
+
+
 static void On_AnnotateTraceMemory(THREADID tid, ADDRINT pc,
                                    ADDRINT file, ADDRINT line,
                                    ADDRINT a) {
@@ -2801,6 +2807,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_BEFORE_4("AnnotateBenignRace", On_AnnotateBenignRace);
   INSERT_BEFORE_5("AnnotateBenignRaceSized", On_AnnotateBenignRaceSized);
   INSERT_BEFORE_4("AnnotateExpectRace", On_AnnotateExpectRace);
+  INSERT_BEFORE_2("AnnotateFlushExpectedRaces", On_AnnotateFlushExpectedRaces);
   INSERT_BEFORE_3("AnnotateTraceMemory", On_AnnotateTraceMemory);
   INSERT_BEFORE_4("AnnotateNewMemory", On_AnnotateNewMemory);
   INSERT_BEFORE_3("AnnotateNoOp", On_AnnotateNoOp);

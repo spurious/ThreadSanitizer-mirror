@@ -92,6 +92,7 @@ enum EventType {
   FLUSH_STATE,        // {tid, pc, 0, 0}
   PC_DESCRIPTION,     // {0, pc, descr_str, 0}, for ts_offline.
   PRINT_MESSAGE,      // {tid, pc, message_str, 0}, for ts_offline.
+  FLUSH_EXPECTED_RACES,  // {0, 0, 0, 0}
   LAST_EVENT          // Should not appear.
 };
 
