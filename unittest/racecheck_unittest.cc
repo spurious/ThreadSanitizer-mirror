@@ -7568,6 +7568,51 @@ TEST(PrintfTests, Fflush) {
 }
 }  // namespace
 
+namespace BenignRaceTest {  // {{{1
+BlockingCounter *blocking_counter;
+const int kArrayLen = 97;
+char X[kArrayLen];
+char *P;
+
+void Worker() {
+  (*P)++;
+  usleep(1000);
+  blocking_counter->DecrementCount();
+}
+
+
+TEST(NegativeTests, BenignRaceTest) {
+  ThreadPool pool(3);
+  pool.StartWorkers();
+
+  for (int i = 0; i < 1000; i++) {
+    blocking_counter = new BlockingCounter(3);
+    long len = (i % (kArrayLen / 3)) + 1;
+    long beg = i % (kArrayLen - len);
+    long end = beg + len;
+    CHECK(beg < kArrayLen);
+    CHECK(end <= kArrayLen);
+    bool is_expected = 0; // i % 2;  // TODO(kcc): test expected races as well.
+    long pos = i % len;
+    P = X + beg + pos;
+    CHECK(P < X + kArrayLen);
+    // printf("[%d] b=%ld e=%ld p=%ld is_expected=%d\n",
+    //       i, beg, end, pos, is_expected);
+    ANNOTATE_NEW_MEMORY(X, kArrayLen);
+    if (is_expected) {
+      ANNOTATE_EXPECT_RACE(P, "expected race in BenignRaceTest");
+    } else {
+      ANNOTATE_BENIGN_RACE_SIZED(X + beg, len, "");
+    }
+    pool.Add(NewCallback(Worker));
+    pool.Add(NewCallback(Worker));
+    pool.Add(NewCallback(Worker));
+    blocking_counter->Wait();
+    delete blocking_counter;
+  }
+}
+}
+
 
 // End {{{1
  // vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker
