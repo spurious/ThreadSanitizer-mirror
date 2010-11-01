@@ -3985,6 +3985,7 @@ TEST(PositiveTests, HarmfulRaceInDtor) {
     MyThreadArray t(Thread1, Thread2);
     t.Start();
     t.Join();
+    ANNOTATE_FLUSH_EXPECTED_RACES();
   }
   { // Will print A::F()
     a = new B;
@@ -3992,6 +3993,7 @@ TEST(PositiveTests, HarmfulRaceInDtor) {
     MyThreadArray t(Thread2, Thread1);
     t.Start();
     t.Join();
+    ANNOTATE_FLUSH_EXPECTED_RACES();
   }
 }
 
@@ -7592,7 +7594,7 @@ TEST(NegativeTests, BenignRaceTest) {
     long end = beg + len;
     CHECK(beg < kArrayLen);
     CHECK(end <= kArrayLen);
-    bool is_expected = 0; // i % 2;  // TODO(kcc): test expected races as well.
+    bool is_expected = i % 2;
     long pos = i % len;
     P = X + beg + pos;
     CHECK(P < X + kArrayLen);
@@ -7609,6 +7611,7 @@ TEST(NegativeTests, BenignRaceTest) {
     pool.Add(NewCallback(Worker));
     blocking_counter->Wait();
     delete blocking_counter;
+    ANNOTATE_FLUSH_EXPECTED_RACES();
   }
 }
 }
