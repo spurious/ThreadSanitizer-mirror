@@ -446,12 +446,16 @@ void unsafe_flush_tleb_slice(ThreadInfo *info,
     unsigned long addr = info->TLEB[i];
     switch (mops[i].is_write) {
       case 1: {
-        UPut(WRITE, tid, mops[i].pc, addr, mops[i].size * write_len);
+        if (write_len) {
+          UPut(WRITE, tid, mops[i].pc, addr, mops[i].size * write_len);
+        }
         write_len = 1;
         break;
       }
       case 0: {
-        UPut(READ, tid, mops[i].pc, addr, mops[i].size * read_len);
+        if (read_len) {
+          UPut(READ, tid, mops[i].pc, addr, mops[i].size * read_len);
+        }
         read_len = 1;
         break;
       }
@@ -1394,7 +1398,6 @@ void AnnotateEnableRaceDetection(char *file, int line, int enable) {
   global_ignore = !enable;
   fprintf(stderr, "enable: %d, global_ignore: %d\n", enable, global_ignore);
 }
-
 
 extern "C"
 void AnnotateMutexIsUsedAsCondVar(char *file, int line, void *mu) {
