@@ -1364,7 +1364,13 @@ void AnnotateCondVarSignal(const char *file, int line, void *cv) {
   Put(SIGNAL, tid, pc, (uintptr_t)cv, 0);
 }
 
-extern"C"
+extern "C"
+void AnnotateMutexIsNotPHB(const char *file, int line, void *mu) {
+  DECLARE_TID_AND_PC();
+  Put(NON_HB_LOCK, tid, pc, (uintptr_t)mu, 0);
+}
+
+extern "C"
 void AnnotateCondVarWait(const char *file, int line, void *cv, void *lock) {
   DECLARE_TID_AND_PC();
   Put(WAIT, tid, pc, (uintptr_t)cv, 0);
