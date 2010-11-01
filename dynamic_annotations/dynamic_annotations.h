@@ -367,6 +367,9 @@
     DYNAMIC_ANNOTATIONS_NAME(AnnotateExpectRace)(__FILE__, __LINE__, address, \
         description)
 
+  #define ANNOTATE_FLUSH_EXPECTED_RACES() \
+    DYNAMIC_ANNOTATIONS_NAME(AnnotateFlushExpectedRaces)(__FILE__, __LINE__)
+
   /* A no-op. Insert where you like to test the interceptors. */
   #define ANNOTATE_NO_OP(arg) \
     DYNAMIC_ANNOTATIONS_NAME(AnnotateNoOp)(__FILE__, __LINE__, arg)
@@ -402,6 +405,7 @@
   #define ANNOTATE_PCQ_GET(pcq) /* empty */
   #define ANNOTATE_NEW_MEMORY(address, size) /* empty */
   #define ANNOTATE_EXPECT_RACE(address, description) /* empty */
+  #define ANNOTATE_FLUSH_EXPECTED_RACES(address, description) /* empty */
   #define ANNOTATE_BENIGN_RACE(address, description) /* empty */
   #define ANNOTATE_BENIGN_RACE_SIZED(address, size, description) /* empty */
   #define ANNOTATE_PURE_HAPPENS_BEFORE_MUTEX(mu) /* empty */
@@ -485,6 +489,8 @@ void DYNAMIC_ANNOTATIONS_NAME(AnnotateNewMemory)(
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateExpectRace)(
     const char *file, int line, const volatile void *mem,
     const char *description) DYNAMIC_ANNOTATIONS_ATTRIBUTE_WEAK;
+void DYNAMIC_ANNOTATIONS_NAME(AnnotateFlushExpectedRaces)(
+    const char *file, int line) DYNAMIC_ANNOTATIONS_ATTRIBUTE_WEAK;
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateBenignRace)(
     const char *file, int line, const volatile void *mem,
     const char *description) DYNAMIC_ANNOTATIONS_ATTRIBUTE_WEAK;

@@ -92,6 +92,8 @@ void DYNAMIC_ANNOTATIONS_NAME(AnnotateNewMemory)(
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateExpectRace)(
     const char *file, int line, const volatile void *mem,
     const char *description){}
+void DYNAMIC_ANNOTATIONS_NAME(AnnotateFlushExpectedRaces)(
+    const char *file, int line){}
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateBenignRace)(
     const char *file, int line, const volatile void *mem,
     const char *description){}
