@@ -74,6 +74,7 @@ void SplitString(string &src, char delim, vector<string> *dest,
 __thread ThreadInfo INFO;
 __thread int INIT = 0;
 __thread int events = 0;
+__thread int IN_RTL = 0;
 
 int RTL_INIT = 0;
 int PTH_INIT = 0;
@@ -158,6 +159,7 @@ class GIL {
     gil_owner = pthread_self();
 #endif
     gil_depth++;
+    IN_RTL++;
   }
 
   static bool TryLock() {
@@ -177,7 +179,10 @@ class GIL {
     bool result;
     if (!gil_depth) {
       result = !(bool) GIL_TRYLOCK(&global_lock);
-      if (result) gil_depth++;
+      if (result) {
+        gil_depth++;
+        IN_RTL++;
+      }
       return result;
     } else {
       return false;
@@ -198,6 +203,7 @@ class GIL {
       GIL_UNLOCK(&global_lock);
     } else {
       gil_depth--;
+      IN_RTL--;
     }
 #ifdef BLOCK_SIGNALS
     pthread_sigmask(SIG_SETMASK, &glob_sig_old, &glob_sig_old);
@@ -283,7 +289,9 @@ static inline void UPut(EventType type, int32_t tid, pc_t pc,
     if (!isThreadLocalEvent(type)) stats_non_local++;
     // Do not flush writes to 0x0.
     if ((type != WRITE) || (a != 0)) {
+      IN_RTL++;
       ThreadSanitizerHandleOneEvent(&event);
+      IN_RTL--;
     }
     if ((type==THR_START) && (tid==0)) HAVE_THREAD_0 = 1;
   }
@@ -297,7 +305,9 @@ static inline void Put(EventType type, int32_t tid, pc_t pc,
 
 // TODO(glider): atexit()
 void finalize() {
+  IN_RTL++;
   ThreadSanitizerFini();
+  IN_RTL--;
   Printf("Locks: %d\nEvents: %d\n",
          stats_lock_taken, stats_events_processed);
   Printf("Non-bufferable events: %d\n", stats_non_local);
@@ -326,6 +336,8 @@ bool initialize() {
   if (in_initialize) return false;
   in_initialize = true;
 
+  assert(IN_RTL == 0);
+  IN_RTL++;
   // Only one thread exists at this moment.
   G_flags = new FLAGS;
   G_out = stderr;
@@ -347,6 +359,7 @@ bool initialize() {
 
   ThreadSanitizerParseFlags(&args);
   ThreadSanitizerInit();
+  IN_RTL--;
   init_debug();
   global_ignore = false;
   __real_atexit(finalize);
@@ -743,6 +756,64 @@ void *__wrap_realloc(void *ptr, size_t size) {
 
 // }}}
 
+// new/delete {{{1
+#if 0
+extern "C"
+void *__wrap__ZnwjPv(unsigned int a, void*b) {
+  if (IN_RTL) return __real__ZnwjPv(a, b);
+  IN_RTL++;
+  DECLARE_TID_AND_PC();
+  IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
+  void *result = __real__ZnwjPv(a, b);
+  IGNORE_ALL_ACCESSES_AND_SYNC_END();
+  Put(MALLOC, tid, pc, (uintptr_t)result, a);
+  IN_RTL--;
+  return result;
+}
+
+extern "C"
+void __wrap__ZdlPvS_(void *ptr, void *b) {
+  if (IN_RTL) {
+    //__real__ZdlPvS_(ptr, b);
+    return;
+  }
+  DECLARE_TID_AND_PC();
+  Put(FREE, tid, pc, (uintptr_t)ptr, 0);
+  IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
+  //__real__ZdlPvS_(ptr, b);
+  IGNORE_ALL_ACCESSES_AND_SYNC_END();
+}
+// }}}
+#endif
+extern "C"
+void *__wrap__Znwj(unsigned int size) {
+  if (IN_RTL) return __real__Znwj(size);
+  IN_RTL++;
+  DECLARE_TID_AND_PC();
+  IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
+  void *result = __real__Znwj(size);
+  IGNORE_ALL_ACCESSES_AND_SYNC_END();
+  Put(MALLOC, tid, pc, (uintptr_t)result, size);
+  IN_RTL--;
+  return result;
+}
+
+extern "C"
+void __wrap__ZdlPv(void *ptr) {
+  if (IN_RTL) {
+    __real__ZdlPv(ptr);
+    return;
+  }
+  IN_RTL++;
+  DECLARE_TID_AND_PC();
+  Put(FREE, tid, pc, (uintptr_t)ptr, 0);
+  IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
+  __real__ZdlPv(ptr);
+  IGNORE_ALL_ACCESSES_AND_SYNC_END();
+  IN_RTL--;
+}
+// }}}
+
 // Unnamed POSIX semaphores {{{1
 // TODO(glider): support AnnotateIgnoreSync here.
 
@@ -894,11 +965,31 @@ int __wrap_pthread_rwlock_destroy(pthread_rwlock_t *rwlock) {
 }
 
 extern "C"
+int __wrap_pthread_rwlock_trywrlock(pthread_rwlock_t *rwlock) {
+  DECLARE_TID_AND_PC();
+  int result = __real_pthread_rwlock_trywrlock(rwlock);
+  if (result == 0) {
+    Put(WRITER_LOCK, tid, pc, (uintptr_t)rwlock, 0);
+  }
+  return result;
+}
+
+extern "C"
 int __wrap_pthread_rwlock_wrlock(pthread_rwlock_t *rwlock) {
   DECLARE_TID_AND_PC();
   int result = __real_pthread_rwlock_wrlock(rwlock);
   if (result == 0) {
     Put(WRITER_LOCK, tid, pc, (uintptr_t)rwlock, 0);
+  }
+  return result;
+}
+
+extern "C"
+int __wrap_pthread_rwlock_tryrdlock(pthread_rwlock_t *rwlock) {
+  DECLARE_TID_AND_PC();
+  int result = __real_pthread_rwlock_tryrdlock(rwlock);
+  if (result == 0) {
+    Put(READER_LOCK, tid, pc, (uintptr_t)rwlock, 0);
   }
   return result;
 }

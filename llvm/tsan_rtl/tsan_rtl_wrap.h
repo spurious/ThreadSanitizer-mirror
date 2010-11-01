@@ -22,7 +22,9 @@ int __real_pthread_mutex_destroy(pthread_mutex_t *mutex);
 int __real_pthread_rwlock_init(pthread_rwlock_t *rwlock,
                                const pthread_rwlockattr_t *attr);
 int __real_pthread_rwlock_destroy(pthread_rwlock_t *rwlock);
+int __real_pthread_rwlock_trywrlock(pthread_rwlock_t *rwlock);
 int __real_pthread_rwlock_wrlock(pthread_rwlock_t *rwlock);
+int __real_pthread_rwlock_tryrdlock(pthread_rwlock_t *rwlock);
 int __real_pthread_rwlock_rdlock(pthread_rwlock_t *rwlock);
 int __real_pthread_rwlock_unlock(pthread_rwlock_t *rwlock);
 
@@ -73,6 +75,10 @@ int __real_pthread_barrier_wait(pthread_barrier_t *barrier);
 int __real_sigaction(int signum, const struct sigaction *act,
                      struct sigaction *oldact);
 
+
+
+void *__real__Znwj(unsigned int size);
+void __real__ZdlPv(void *ptr);
 }
 
 

@@ -22,7 +22,9 @@ wrap pthread_mutex_trylock
 
 wrap pthread_rwlock_init
 wrap pthread_rwlock_destroy
+wrap pthread_rwlock_tryrdlock
 wrap pthread_rwlock_rdlock
+wrap pthread_rwlock_trywrlock
 wrap pthread_rwlock_wrlock
 wrap pthread_rwlock_unlock
 
@@ -62,3 +64,8 @@ wrap write
 wrap pthread_once
 
 wrap sigaction
+
+# operator new(unsigned int)
+wrap _Znwj
+# operator delete(void*)
+wrap _ZdlPv
