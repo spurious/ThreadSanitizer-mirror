@@ -1128,61 +1128,59 @@ int __wrap_pthread_spin_unlock(pthread_spinlock_t *lock) {
 // STR* wrappers {{{1
 extern
 const char *strchr(const char *s, int c) {
-  int tid = GetTid();
-  pc_t pc = GetPc();
+  DECLARE_TID_AND_PC();
   return Replace_strchr(tid, pc, s, c);
 }
 
 extern
 const char *strrchr(const char *s, int c) {
-  int tid = GetTid();
-  pc_t pc = GetPc();
+  DECLARE_TID_AND_PC();
   return Replace_strrchr(tid, pc, s, c);
 }
 
 extern "C"
 size_t __wrap_strlen(const char *s) {
-  int tid = GetTid();
-  pc_t pc = GetPc();
+  DECLARE_TID_AND_PC();
   return Replace_strlen(tid, pc, s);
 }
 
 extern
 void *memcpy(char *dest, const char *src, size_t n) {
-  int tid = GetTid();
-  pc_t pc = GetPc();
+  DECLARE_TID_AND_PC();
   return Replace_memcpy(tid, pc, dest, src, n);
 }
 
 extern
 char *strcpy(char *dest, const char *src) {
-  int tid = GetTid();
-  pc_t pc = GetPc();
+  DECLARE_TID_AND_PC();
   return Replace_strcpy(tid, pc, dest, src);
 }
 
 extern "C"
 void *__wrap_memchr(const char *s, int c, size_t n) {
-  int tid = GetTid();
-  pc_t pc = GetPc();
+  DECLARE_TID_AND_PC();
   return Replace_memchr(tid, pc, s, c, n);
 }
 
 // TODO(glider): replace all str*
-//namespace std {
 extern
 void *memchr(void *s, int c, size_t n) {
-  int tid = GetTid();
-  pc_t pc = GetPc();
+  DECLARE_TID_AND_PC();
   return Replace_memchr(tid, pc, (char*)s, c, n);
 }
-//}
 
 extern
 int strcmp(const char *s1, const char *s2) {
   int tid = GetTid();
   pc_t pc = GetPc();
   return Replace_strcmp(tid, pc, s1, s2);
+}
+
+extern
+int strncmp(const char *s1, const char *s2, size_t n) {
+  int tid = GetTid();
+  pc_t pc = GetPc();
+  return Replace_strncmp(tid, pc, s1, s2, n);
 }
 
 // }}}
