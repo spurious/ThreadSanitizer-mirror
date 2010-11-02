@@ -6025,8 +6025,14 @@ class Detector {
         (string(descr).find("UNVERIFIABLE") == string::npos);
     expected_race.is_nacl_untrusted = !descr ||
         (string(descr).find("NACL_UNTRUSTED") != string::npos);
+    // copy descr (may not have strdup)
     CHECK(descr);
-    expected_race.description = strdup(descr);
+    size_t descr_len = strlen(descr);
+    char *d = new char [descr_len + 1];
+    memcpy(d, descr, descr_len);
+    d[descr_len] = 0;
+    expected_race.description = d;
+
     expected_race.pc = cur_thread_->GetCallstackEntry(1);
     G_expected_races_map->InsertInfo(ptr, expected_race);
     if (debug_expected_races) {
