@@ -7585,8 +7585,12 @@ void Worker() {
 
 
 TEST(NegativeTests, BenignRaceTest) {
-  ThreadPool pool(3);
-  pool.StartWorkers();
+  ThreadPool pool1(1);
+  ThreadPool pool2(1);
+  ThreadPool pool3(1);
+  pool1.StartWorkers();
+  pool2.StartWorkers();
+  pool3.StartWorkers();
 
   for (int i = 0; i < 1000; i++) {
     blocking_counter = new BlockingCounter(3);
@@ -7607,9 +7611,9 @@ TEST(NegativeTests, BenignRaceTest) {
     } else {
       ANNOTATE_BENIGN_RACE_SIZED(X + beg, len, "");
     }
-    pool.Add(NewCallback(Worker));
-    pool.Add(NewCallback(Worker));
-    pool.Add(NewCallback(Worker));
+    pool1.Add(NewCallback(Worker));
+    pool2.Add(NewCallback(Worker));
+    pool3.Add(NewCallback(Worker));
     blocking_counter->Wait();
     delete blocking_counter;
     ANNOTATE_FLUSH_EXPECTED_RACES();
