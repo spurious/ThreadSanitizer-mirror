@@ -2143,9 +2143,19 @@ static bool InstrumentCall(INS ins) {
 
 // return the number of inserted instrumentations.
 static void InstrumentMopsInBBl(BBL bbl, RTN rtn, TraceInfo *trace_info, uintptr_t instrument_pc, size_t *mop_idx) {
+  // compute 'dtor_head', see
+  // http://code.google.com/p/data-race-test/wiki/PopularDataRaces#Data_race_on_vptr
+  // On x86_64 only the first BB of DTOR is treated as dtor_head.
+  // On x86, we have to treat more BBs as dtor_head due to -fPIC.
+  // See http://code.google.com/p/chromium/issues/detail?id=61199
   bool dtor_head = false;
+#ifdef TARGET_IA32
+  size_t max_offset_for_dtor_head = 32;
+#else
+  size_t max_offset_for_dtor_head = 0;
+#endif
 
-  if (BBL_Address(bbl) == RTN_Address(rtn)) {
+  if (BBL_Address(bbl) - RTN_Address(rtn) <= max_offset_for_dtor_head) {
     string demangled_rtn_name = Demangle(RTN_Name(rtn).c_str());
     if (demangled_rtn_name.find("::~") != string::npos)
       dtor_head = true;

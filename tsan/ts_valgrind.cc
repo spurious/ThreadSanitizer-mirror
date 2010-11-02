@@ -1361,9 +1361,25 @@ static IRSB* ts_instrument ( VgCallbackClosure* closure,
   // We do all this stuff to avoid benign races on vptr:
   // http://code.google.com/p/data-race-test/wiki/PopularDataRaces#Data_race_on_vptr
   if (VG_(get_fnname_w_offset)(pc, (Char*)buff, sizeof(buff)) &&
-      VG_(strstr)((Char*)buff, (Char*)"::~") != NULL &&
-      VG_(strchr)((Char*)buff, '+') == NULL) {
-    dtor_head = true;
+      VG_(strstr)((Char*)buff, (Char*)"::~") != NULL) {
+    char *offset_str = (char*)VG_(strchr)((Char*)buff, '+');
+    if (offset_str == NULL) {
+      // we are in the first BB of DTOR.
+      dtor_head = true;
+    } else {
+      // We are not in the first BB.
+      // On x86_64 (it seems like) the vfptr is updated only in the first BB.
+      // On x86 with -fPIC, the vfptr may be updated in the second BB
+      // (because -fPIC adds a call which splits the first BB).
+      // See http://code.google.com/p/chromium/issues/detail?id=61199
+#ifdef VGA_x86
+      char *end;
+      size_t offset = my_strtol(offset_str + 1, &end, 10);
+      if (offset <= 32) {
+        dtor_head = true;
+      }
+#endif
+    }
   }
 
 
