@@ -5671,6 +5671,7 @@ class Detector {
       int n_errs = GetNumberOfFoundErrors();
       SetNumberOfFoundErrors(n_errs + missing);
     }
+    G_expected_races_map->Clear();
   }
 
   void HandleProgramEnd() {
