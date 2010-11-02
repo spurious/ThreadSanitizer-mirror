@@ -7572,17 +7572,18 @@ TEST(PrintfTests, Fflush) {
 }  // namespace
 
 namespace BenignRaceTest {  // {{{1
-BlockingCounter *blocking_counter;
 const int kArrayLen = 97;
 char X[kArrayLen];
 char *P;
 
+int counter;
+
+
 void Worker() {
   (*P)++;
-  usleep(1000);
-  blocking_counter->DecrementCount();
+  ANNOTATE_HAPPENS_BEFORE(P);
+  AtomicIncrement(&counter, -1);
 }
-
 
 TEST(NegativeTests, BenignRaceTest) {
   ThreadPool pool1(1);
@@ -7592,8 +7593,10 @@ TEST(NegativeTests, BenignRaceTest) {
   pool2.StartWorkers();
   pool3.StartWorkers();
 
+  ANNOTATE_BENIGN_RACE(&counter, "");
+
   for (int i = 0; i < 1000; i++) {
-    blocking_counter = new BlockingCounter(3);
+    counter = 3;
     long len = (i % (kArrayLen / 3)) + 1;
     long beg = i % (kArrayLen - len);
     long end = beg + len;
@@ -7614,8 +7617,11 @@ TEST(NegativeTests, BenignRaceTest) {
     pool1.Add(NewCallback(Worker));
     pool2.Add(NewCallback(Worker));
     pool3.Add(NewCallback(Worker));
-    blocking_counter->Wait();
-    delete blocking_counter;
+
+    while(AtomicIncrement(&counter, 0) != 0)
+      usleep(1000);
+    ANNOTATE_HAPPENS_AFTER(P);
+
     ANNOTATE_FLUSH_EXPECTED_RACES();
   }
 }
