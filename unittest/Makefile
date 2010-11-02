@@ -20,7 +20,7 @@ endif
 # ARCH= x86, amd64
 # OX = O0, O1, ...
 # S= <empty>, -static
-BUILD=${OS}-${ARCH}-${OX}${S}
+BUILD=${OS}-${ARCH}-${OX}${S}${EXTRA_BUILD_SUFFIX}
 BIN=bin/
 
 ifeq ($(OS), linux)
