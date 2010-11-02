@@ -3978,10 +3978,11 @@ void Thread2() {
   delete a;
 }
 TEST(PositiveTests, HarmfulRaceInDtor) {
+  ANNOTATE_FLUSH_EXPECTED_RACES();
   printf("test314: race on vptr; May print A::F() or B::F().\n");
   { // Will print B::F()
     a = new B;
-    ANNOTATE_EXPECT_RACE(a, "HarmfulRaceInDtor: expected race on a->vptr");
+    ANNOTATE_EXPECT_RACE(a, "HarmfulRaceInDtor #1: expected race on a->vptr");
     MyThreadArray t(Thread1, Thread2);
     t.Start();
     t.Join();
@@ -3989,7 +3990,7 @@ TEST(PositiveTests, HarmfulRaceInDtor) {
   }
   { // Will print A::F()
     a = new B;
-    ANNOTATE_EXPECT_RACE(a, "HarmfulRaceInDtor: expected race on a->vptr");
+    ANNOTATE_EXPECT_RACE(a, "HarmfulRaceInDtor #2: expected race on a->vptr");
     MyThreadArray t(Thread2, Thread1);
     t.Start();
     t.Join();
