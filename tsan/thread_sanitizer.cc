@@ -7605,7 +7605,7 @@ bool NOINLINE ThreadSanitizerIgnoreAccessesBelowFunction(uintptr_t pc) {
 
 // We intercept a user function with this name
 // and answer the user query with a non-NULL string.
-const char *ThreadSanitizerQuery(const char *query) {
+extern "C" const char *ThreadSanitizerQuery(const char *query) {
   const char *ret = "0";
   string str(query);
   if (str == "pure_happens_before" && G_flags->pure_happens_before == true) {

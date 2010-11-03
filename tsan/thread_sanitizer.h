@@ -173,7 +173,7 @@ extern void ThreadSanitizerHandleRtnCall(int32_t tid, uintptr_t call_pc,
 
 extern void ThreadSanitizerHandleRtnExit(int32_t tid);
 extern void ThreadSanitizerPrintUsage();
-extern const char *ThreadSanitizerQuery(const char *query);
+extern "C" const char *ThreadSanitizerQuery(const char *query);
 extern bool PhaseDebugIsOn(const char *phase_name);
 
 extern bool g_has_entered_main;
