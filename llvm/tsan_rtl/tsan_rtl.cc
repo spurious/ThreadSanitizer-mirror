@@ -1395,7 +1395,7 @@ void AnnotateTraceMemory(char *file, int line, void *mem) {
 extern "C"
 void AnnotateFlushState(char *file, int line) {
   DECLARE_TID_AND_PC();
-  Put(TRACE_MEM, tid, pc, 0, 0);
+  Put(FLUSH_STATE, tid, pc, 0, 0);
 }
 
 extern "C"
