@@ -9,15 +9,18 @@ TSAN_PATH=../../tsan
 FLAGS=-I. -Istlport -I../../third_party/stlport -I$(TSAN_PATH) \
       -fno-exceptions -g -O0 \
       -D_STLP_NO_IOSTREAMS=1 -DTS_LLVM \
-      -DDYNAMIC_ANNOTATIONS_WANT_ATTRIBUTE_WEAK
+      -DDYNAMIC_ANNOTATIONS_WANT_ATTRIBUTE_WEAK \
+      -DDEBUG=1
 
 FOREIGN_HEADERS=$(TSAN_PATH)/ts_lock.h $(TSAN_PATH)/ts_stats.h \
                 $(TSAN_PATH)/ts_heap_info.h $(TSAN_PATH)/ts_trace_info.h \
                 $(TSAN_PATH)/ts_simple_cache.h $(TSAN_PATH)/ts_replace.h \
                 $(TSAN_PATH)/ts_util.h $(TSAN_PATH)/ts_event_names.h \
-                $(TSAN_PATH)/ts_events.h $(TSAN_PATH)/suppressions.h
+                $(TSAN_PATH)/ts_events.h $(TSAN_PATH)/suppressions.h \
+		$(TSAN_PATH)/thread_sanitizer.h
 
-TS_HEADERS=thread_sanitizer.h
+#TS_HEADERS=thread_sanitizer.h
+TS_HEADERS=
 
 RTL_32_O=tsan_rtl32.o
 

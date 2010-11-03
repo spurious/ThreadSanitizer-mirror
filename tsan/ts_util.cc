@@ -106,8 +106,12 @@ int GetNumberOfFoundErrors() {
 }
 
 
-#ifndef TS_VALGRIND
+#if !defined(TS_VALGRIND) && !defined(TS_LLVM)
 FILE *G_out = stderr;
+#endif
+
+#ifdef TS_LLVM
+FILE *G_out;
 #endif
 
 static string RemoveUnsupportedFormat(const char *str) {
@@ -172,7 +176,11 @@ void Report(const char *format, ...) {
   snprintf(pid_buff, sizeof(pid_buff), "==%d== ", getpid());
 
   string res;
+#ifndef TS_LLVM
   int len = strlen(buff);
+#else
+  int len = __real_strlen(buff);
+#endif
   bool last_was_new_line = true;
   for (int i = 0; i < len; i++) {
     if (G_flags->show_pid && last_was_new_line)
@@ -201,6 +209,9 @@ long my_strtol(const char *str, char **end, int base) {
 #if defined(__GNUC__)
   typedef int TS_FILE;
   #define TS_FILE_INVALID (-1)
+#ifdef TS_LLVM
+  #define read(fd, buf, size) __real_read(fd, buf, size)
+#endif
 #elif defined(_MSC_VER)
   typedef FILE *TS_FILE;
   #define TS_FILE_INVALID (NULL)
