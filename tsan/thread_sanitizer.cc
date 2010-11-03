@@ -6452,7 +6452,7 @@ class Detector {
           reports_.AddReport(tid, pc, is_w, addr, size,
                              old_sval, *sval_p, is_published);
         }
-        cache_line->racey().Set(offset);
+        cache_line->racey().SetRange(offset, offset + size);
       }
 
       // Ref/Unref segments
@@ -7317,6 +7317,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   }
 
   FindBoolFlag("nacl_untrusted", false, args, &G_flags->nacl_untrusted);
+  FindBoolFlag("threaded_analysis", false, args, &G_flags->threaded_analysis);
 
   if (!args->empty()) {
     ReportUnknownFlagAndExit(args->front());

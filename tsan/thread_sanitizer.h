@@ -122,6 +122,8 @@ struct FLAGS {
   intptr_t       race_verifier_sleep_ms;
 
   bool nacl_untrusted;
+
+  bool threaded_analysis;
 };
 
 extern FLAGS *G_flags;
