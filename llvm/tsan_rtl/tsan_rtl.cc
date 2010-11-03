@@ -579,6 +579,12 @@ void *pthread_callback(void *arg) {
   GIL::Unlock();
 
   result = (*routine)(routine_arg);
+
+  // We're about to stop the current thread. Block all the signals to prevent
+  // invoking the handlers after THR_END is sent to ThreadSanitizer.
+  sigfillset(&glob_sig_blocked);
+  pthread_sigmask(SIG_BLOCK, &glob_sig_blocked, &glob_sig_old);
+
   GIL::Lock();
   Finished[tid] = true;
   dump_finished();
