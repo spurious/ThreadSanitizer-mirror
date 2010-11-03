@@ -5315,7 +5315,7 @@ void RunTwoThreads(size_t size1, size_t offset1, size_t size2, size_t offset2) {
   char *racey_addr_beg = (char*)MEM + max(beg1, beg2);
   char *racey_addr_end = (char*)MEM + min(end1, end2);
   if (have_intersection) {
-    ANNOTATE_EXPECT_RACE(racey_addr_beg, strdup(descr));
+    ANNOTATE_EXPECT_RACE(racey_addr_beg, descr);
     if (racey_addr_end - racey_addr_beg >= 2) {
       // We expect a race on the first racey byte, but we may also see some
       // races in other bytes (e.g. if a 8-byte store is implemented via two
