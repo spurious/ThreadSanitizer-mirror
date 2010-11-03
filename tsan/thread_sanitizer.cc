@@ -4799,33 +4799,6 @@ Thread::SignallerMap       *Thread::signaller_map_;
 Thread::CyclicBarrierMap   *Thread::cyclic_barrier_map_;
 
 
-// -------- Unpublish memory range [a,b) {{{1
-// Create happens-before arcs from all previous accesses to memory [a,b)
-// to here.
-static void UnpublishRange(uintptr_t a, uintptr_t b, Thread *thread) {
-  CHECK(a < b);
-  for (uintptr_t x = a; x < b; x++) {
-    CacheLine *line = G_cache->GetLineOrCreateNew(x, __LINE__);
-    CHECK(line);
-    uintptr_t off = CacheLine::ComputeOffset(x);
-    if (!line->has_shadow_value().Get(off)) continue;
-    ShadowValue sval = line->GetValue(off);
-    // Printf("UnpublishRange: %x %s\n", x, sval.ToString().c_str());
-    SSID ssids[2];
-    ssids[0] = sval.rd_ssid();
-    ssids[1] = sval.wr_ssid();
-    for (int i = 0; i < 2; i++) {
-      SSID ssid = ssids[i];
-      if (ssid.IsEmpty()) continue;
-      for (int j = 0; j < SegmentSet::Size(ssid); j++) {
-        SID sid = SegmentSet::GetSID(ssid, j, __LINE__);
-        if (Segment::Get(sid)->tid() == thread->tid()) continue;
-        thread->NewSegmentForWait(Segment::Get(sid)->vts());
-      }
-    }
-  }
-}
-
 // -------- PCQ --------------------- {{{1
 struct PCQ {
   uintptr_t pcq_addr;
@@ -5911,7 +5884,9 @@ class Detector {
         break;
 
       case PUBLISH_RANGE : HandlePublishRange(); break;
-      case UNPUBLISH_RANGE : HandleUnpublishRange(); break;
+      case UNPUBLISH_RANGE :
+        Report("WARNING: ANNOTATE_UNPUBLISH_MEMORY_RANGE is deprecated\n");
+        break;
 
       case TRACE_MEM   : HandleTraceMem();   break;
       case STACK_TRACE : HandleStackTrace(); break;
@@ -5981,16 +5956,6 @@ class Detector {
 
     cur_thread_->NewSegmentForSignal();
     // Printf("Publish: [%p, %p)\n", mem, mem+size);
-  }
-
-  // UNPUBLISH_RANGE
-  void HandleUnpublishRange() {
-    if (G_flags->verbosity >= 2) {
-      e_->Print();
-    }
-    uintptr_t mem = e_->a();
-    uintptr_t size = e_->info();
-    UnpublishRange(mem, mem + size, cur_thread_);
   }
 
   void HandleIgnore(bool is_w, bool on) {
