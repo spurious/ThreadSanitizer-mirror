@@ -76,6 +76,14 @@ __thread int INIT = 0;
 __thread int events = 0;
 __thread int IN_RTL = 0;
 
+#ifdef DEBUG
+#define CHECK_IN_RTL() do { \
+  assert((IN_RTL >= 0) && (IN_RTL <= 5)); \
+} while (0)
+#else
+#define CHECK_IN_RTL()
+#endif
+
 int RTL_INIT = 0;
 int PTH_INIT = 0;
 int DBG_INIT = 0;
@@ -154,12 +162,13 @@ class GIL {
     if (!gil_depth) {
       GIL_LOCK(&global_lock);
       stats_lock_taken++;
+      IN_RTL++;
+      CHECK_IN_RTL();
     }
 #ifdef DEBUG
     gil_owner = pthread_self();
 #endif
     gil_depth++;
-    IN_RTL++;
   }
 
   static bool TryLock() {
@@ -182,6 +191,7 @@ class GIL {
       if (result) {
         gil_depth++;
         IN_RTL++;
+        CHECK_IN_RTL();
       }
       return result;
     } else {
@@ -201,9 +211,10 @@ class GIL {
       }
       stats_cur_events = 0;
       GIL_UNLOCK(&global_lock);
+      IN_RTL--;
+      CHECK_IN_RTL();
     } else {
       gil_depth--;
-      IN_RTL--;
     }
 #ifdef BLOCK_SIGNALS
     pthread_sigmask(SIG_SETMASK, &glob_sig_old, &glob_sig_old);
@@ -290,8 +301,10 @@ static inline void UPut(EventType type, int32_t tid, pc_t pc,
     // Do not flush writes to 0x0.
     if ((type != WRITE) || (a != 0)) {
       IN_RTL++;
+      CHECK_IN_RTL();
       ThreadSanitizerHandleOneEvent(&event);
       IN_RTL--;
+      CHECK_IN_RTL();
     }
     if ((type==THR_START) && (tid==0)) HAVE_THREAD_0 = 1;
   }
@@ -306,8 +319,10 @@ static inline void Put(EventType type, int32_t tid, pc_t pc,
 // TODO(glider): atexit()
 void finalize() {
   IN_RTL++;
+  CHECK_IN_RTL();
   ThreadSanitizerFini();
   IN_RTL--;
+  CHECK_IN_RTL();
   Printf("Locks: %d\nEvents: %d\n",
          stats_lock_taken, stats_events_processed);
   Printf("Non-bufferable events: %d\n", stats_non_local);
@@ -338,6 +353,7 @@ bool initialize() {
 
   assert(IN_RTL == 0);
   IN_RTL++;
+  CHECK_IN_RTL();
   // Only one thread exists at this moment.
   G_flags = new FLAGS;
   G_out = stderr;
@@ -360,6 +376,7 @@ bool initialize() {
   ThreadSanitizerParseFlags(&args);
   ThreadSanitizerInit();
   IN_RTL--;
+  CHECK_IN_RTL();
   init_debug();
   global_ignore = false;
   __real_atexit(finalize);
@@ -799,12 +816,14 @@ extern "C"
 void *__wrap__Znwj(unsigned int size) {
   if (IN_RTL) return __real__Znwj(size);
   IN_RTL++;
+  CHECK_IN_RTL();
   DECLARE_TID_AND_PC();
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   void *result = __real__Znwj(size);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
   Put(MALLOC, tid, pc, (uintptr_t)result, size);
   IN_RTL--;
+  CHECK_IN_RTL();
   return result;
 }
 
@@ -815,12 +834,14 @@ void __wrap__ZdlPv(void *ptr) {
     return;
   }
   IN_RTL++;
+  CHECK_IN_RTL();
   DECLARE_TID_AND_PC();
   Put(FREE, tid, pc, (uintptr_t)ptr, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   __real__ZdlPv(ptr);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
   IN_RTL--;
+  CHECK_IN_RTL();
 }
 // }}}
 
@@ -1527,7 +1548,12 @@ void ReadDbgInfo(string filename) {
 
 
 string PcToRtnName(pc_t pc, bool demangle) {
-  GIL scoped; // TODO(glider): this should be some different lock.
+  // This routine is called by ThreadSanitizer, thus the global lock is already
+  // taken.
+  // TODO(glider): |debug_info| should be definitely protected by its own lock.
+#ifdef DEBUG
+  assert(GIL::GetDepth());
+#endif
   if (debug_info && (debug_info->find(pc) != debug_info->end())) {
     return (*debug_info)[pc].fun;
   }
