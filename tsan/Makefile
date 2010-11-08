@@ -219,7 +219,7 @@ endif
 $(OUTDIR):
 	mkdir -p $(OUTDIR)
 
-TS_HEADERS=thread_sanitizer.h ts_util.h suppressions.h ts_replace.h ts_heap_info.h \
+TS_HEADERS=thread_sanitizer.h ts_util.h ts_stl.h suppressions.h ignore.h ts_replace.h ts_heap_info.h \
 	   ts_simple_cache.h ts_stats.h ts_lock.h ts_events.h ts_event_names.h \
 	   ts_trace_info.h ts_literace.h ts_race_verifier.h
 ts_event_names.h: ts_events.h
@@ -232,9 +232,9 @@ $(P)ts_offline.$(OBJ): thread_sanitizer.cc
 endif
 TS_VG_HEADERS=ts_valgrind.h ts_valgrind_client_requests.h
 
-TS_VG_OBJECTS=$(VGP)thread_sanitizer.o $(VGP)ts_valgrind.o $(VGP)ts_valgrind_libc.o $(VGP)ts_util.o $(VGP)suppressions.o $(VGP)ts_race_verifier.o
-TS_PIN_OBJECTS=$(PINP)ts_pin.$(OBJ) $(PINP)ts_util.$(OBJ) $(PINP)thread_sanitizer.$(OBJ) $(PINP)suppressions.$(OBJ) $(PINP)ts_race_verifier.$(OBJ)
-TS_OFFLINE_OBJECTS=$(OFF)ts_offline.$(OBJ) $(OFF)thread_sanitizer.$(OBJ) $(OFF)ts_util.$(OBJ) $(OFF)suppressions.$(OBJ)
+TS_VG_OBJECTS=$(VGP)thread_sanitizer.o $(VGP)ts_valgrind.o $(VGP)ts_valgrind_libc.o $(VGP)ts_util.o $(VGP)suppressions.o $(VGP)ignore.o $(VGP)stringmatch.o $(VGP)ts_race_verifier.o
+TS_PIN_OBJECTS=$(PINP)ts_pin.$(OBJ) $(PINP)ts_util.$(OBJ) $(PINP)thread_sanitizer.$(OBJ) $(PINP)suppressions.$(OBJ) $(PINP)ignore.$(OBJ) $(PINP)stringmatch.$(OBJ) $(PINP)ts_race_verifier.$(OBJ)
+TS_OFFLINE_OBJECTS=$(OFF)ts_offline.$(OBJ) $(OFF)thread_sanitizer.$(OBJ) $(OFF)ts_util.$(OBJ) $(OFF)suppressions.$(OBJ) $(OFF)ignore.$(OBJ) $(OFF)stringmatch.$(OBJ)
 TS_DR_OBJECTS=$(DRP)ts_dynamorio.$(OBJ) $(DRP)ts_util.$(OBJ)
 
 $(P)%.$(OBJ): %.cc $(TS_HEADERS) | $(OUTDIR)
@@ -269,7 +269,7 @@ $(OUTDIR)/vgpreload_tsan$(D)-$(ARCHOS).so: $(P)preload-ts_valgrind_intercepts.o
 $(P)ts_offline$(EXE): $(TS_OFFLINE_OBJECTS)
 	$(LD) $(LDFLAGS) $(ARCHFLAGS) $(LINKO)$@ $^
 
-$(P)suppressions_test$(EXE): $(P)gtest-suppressions_test.$(OBJ) $(P)suppressions.$(OBJ) $(P)ts_util.$(OBJ) $(GTEST_LIB)
+$(P)suppressions_test$(EXE): $(P)gtest-suppressions_test.$(OBJ) $(P)suppressions.$(OBJ) $(P)stringmatch.$(OBJ) $(P)ts_util.$(OBJ) $(GTEST_LIB)
 	$(LD) $(LDFLAGS) $(ARCHFLAGS) $(LINKO)$@ $^
 
 $(P)thread_sanitizer_test$(EXE): $(P)gtest-thread_sanitizer_test.$(OBJ) $(P)ts_util.$(OBJ) $(GTEST_LIB)

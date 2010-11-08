@@ -29,6 +29,9 @@
 
 // This file contains the parser for valgrind-compatible suppressions.
 
+#include "stringmatch.h"
+
+#include "ts_util.h"
 #include "suppressions.h"
 
 // TODO(eugenis): convert checks to warning messages.
