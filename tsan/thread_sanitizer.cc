@@ -2882,8 +2882,9 @@ class CacheLine {
   bool Empty() {
     // The line has shadow values.
     if (!has_shadow_value().Empty()) return false;
-    // If the line is traced or published, we want to keep it.
+    // If the line is traced, racey or published, we want to keep it.
     if (!traced().Empty()) return false;
+    if (!racey().Empty()) return false;
     if (!published().Empty()) return false;
     return true;
   }
