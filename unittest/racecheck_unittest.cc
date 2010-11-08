@@ -6340,6 +6340,7 @@ namespace MemoryTypes {  // {{{1
     t1.Join();
     t2.Join();
     CHECK(*mem == 1);
+    ANNOTATE_FLUSH_EXPECTED_RACES();
   }
 
   void RaceOnLocalStack(void (*callback)(void *)) {
