@@ -7594,8 +7594,9 @@ TEST(NegativeTests, BenignRaceTest) {
   pool3.StartWorkers();
 
   ANNOTATE_BENIGN_RACE(&counter, "");
+  const int kNIter = 1000;
 
-  for (int i = 0; i < 1000; i++) {
+  for (int i = 0; i < kNIter; i++) {
     counter = 3;
     long len = (i % (kArrayLen / 3)) + 1;
     long beg = i % (kArrayLen - len);
@@ -7613,6 +7614,9 @@ TEST(NegativeTests, BenignRaceTest) {
       ANNOTATE_EXPECT_RACE(P, "expected race in BenignRaceTest");
     } else {
       ANNOTATE_BENIGN_RACE_SIZED(X + beg, len, "");
+    }
+    if ((i % (kNIter / 10)) == 0) {
+      ANNOTATE_FLUSH_STATE();
     }
     pool1.Add(NewCallback(Worker));
     pool2.Add(NewCallback(Worker));
