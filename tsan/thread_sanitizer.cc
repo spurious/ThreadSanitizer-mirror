@@ -3142,14 +3142,24 @@ class Cache {
   }
 
   void ForgetAllState() {
+    map<uintptr_t, Mask> racey_masks;
     for (int i = 0; i < kNumLines; i++) {
       lines_[i] = NULL;
     }
     for (Map::iterator i = storage_.begin(); i != storage_.end(); ++i) {
       CacheLine *line = i->second;
+      if (!line->racey().Empty()) {
+        racey_masks[line->tag()] = line->racey();
+      }
       CacheLine::Delete(line);
     }
     storage_.clear();
+    // Restore the racey masks.
+    for (map<uintptr_t, Mask>::iterator it = racey_masks.begin();
+         it != racey_masks.end(); it++) {
+      CacheLine *line = GetLineOrCreateNew(it->first, __LINE__);
+      line->racey() = it->second;
+    }
   }
 
   void PrintStorageStats() {
