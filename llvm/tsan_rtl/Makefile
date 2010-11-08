@@ -35,6 +35,12 @@ $(TSAN_PATH)/ts_event_names.h:
 tsan_rtl32.o: $(SRC) tsan_rtl.h
 	$(CXX) $(SRC) $(FLAGS) -m32 -g $(ERRORLVL) -Wall -c -o $(RTL_32_O)
 
+x86-stack_info.o:	stack_info.cc stack_info.h
+	$(CXX) -m32 -o $@ -c $< $(ERRORLVL) $(FLAGS) -USTACKINFO_STANDALONE
+
+stack_info32:	stack_info.cc stack_info.h
+	$(CXX) -m32 -o $@ $< $(ERRORLVL) $(FLAGS) -DSTACKINFO_STANDALONE -lpthread
+
 x86-%.o:	%.cc $(TS_HEADERS) $(FOREIGN_HEADERS)
 	$(CXX) -m32 -o $@ -c $< $(ERRORLVL) $(FLAGS)
 
