@@ -1,4 +1,5 @@
 #include "tsan_rtl.h"
+
 #include <sys/stat.h>
 
 static inline void Put(EventType type, int32_t tid, pc_t pc,
@@ -576,11 +577,15 @@ void *pthread_callback(void *arg) {
   pthread_worker *routine = cb_arg->routine;
   void *routine_arg = cb_arg->arg;
   int parent = cb_arg->parent;
-  pthread_attr_t *attr = cb_arg->attr;
-  // TODO(glider): we may depend on ulimit().
+  pthread_attr_t attr;
   size_t stack_size = 8 << 20;  // 8M
-  if (attr) {
-    pthread_attr_getstacksize(attr, &stack_size);
+  void *stack_top = NULL;
+
+  // Get the stack size and stack top for the current thread.
+  // TODO(glider): do something if pthread_getattr_np() is not supported.
+  if (pthread_getattr_np(pthread_self(), &attr) == 0) {
+    pthread_attr_getstack(&attr, &stack_top, &stack_size);
+    pthread_attr_destroy(&attr);
   }
 
   for (int sig = 0; sig < NSIG; sig++) {
@@ -588,7 +593,19 @@ void *pthread_callback(void *arg) {
   }
   UPut(THR_START, INFO.tid, 0, 0, parent);
   delete cb_arg;
-  UPut(THR_STACK_TOP, tid, pc, (uintptr_t)&result, stack_size);
+
+  if (stack_top) {
+    // We don't intercept the mmap2 syscall that allocates thread stack, so pass
+    // the event to ThreadSanitizer manually.
+    // TODO(glider): technically our parent allocates the stack. Maybe this
+    // should be fixed.
+    UPut(MMAP, tid, pc, (uintptr_t)stack_top, stack_size);
+    UPut(THR_STACK_TOP, tid, pc, (uintptr_t)stack_top, stack_size);
+  } else {
+    // Something's gone wrong. ThreadSanitizer will proceed, but if the stack
+    // is reused by another thread, false positives will be reported.
+    UPut(THR_STACK_TOP, tid, pc, (uintptr_t)&result, stack_size);
+  }
   DPrintf("Before routine() in T%d\n", tid);
 
   Finished[tid] = false;
