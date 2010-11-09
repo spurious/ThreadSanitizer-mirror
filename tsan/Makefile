@@ -219,7 +219,7 @@ endif
 $(OUTDIR):
 	mkdir -p $(OUTDIR)
 
-TS_HEADERS=thread_sanitizer.h ts_util.h ts_stl.h suppressions.h ignore.h ts_replace.h ts_heap_info.h \
+TS_HEADERS=thread_sanitizer.h ts_util.h suppressions.h ignore.h ts_replace.h ts_heap_info.h \
 	   ts_simple_cache.h ts_stats.h ts_lock.h ts_events.h ts_event_names.h \
 	   ts_trace_info.h ts_literace.h ts_race_verifier.h
 ts_event_names.h: ts_events.h
