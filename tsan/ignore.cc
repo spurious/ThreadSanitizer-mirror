@@ -4,6 +4,32 @@
 
 IgnoreLists *g_ignore_lists;
 
+static void SplitStringIntoLinesAndRemoveBlanksAndComments(
+    const string &str, vector<string> *lines) {
+  string cur_line;
+  bool in_comment = false;
+  for (size_t pos = 0; pos < str.size(); pos++) {
+    char ch = str[pos];
+    if (ch == '\n') {
+      if (!cur_line.empty()) {
+        // Printf("++ %s\n", cur_line.c_str());
+        lines->push_back(cur_line);
+      }
+      cur_line.clear();
+      in_comment = false;
+      continue;
+    }
+    if (ch == ' ' || ch == '\t') continue;
+    if (ch == '#') {
+      in_comment = true;
+      continue;
+    }
+    if (!in_comment) {
+      cur_line += ch;
+    }
+  }
+}
+
 static bool CutStringPrefixIfPresent(const string &input, const string &prefix,
                      /* OUT */ string *output) {
   if (input.find(prefix) == 0) {
@@ -14,7 +40,7 @@ static bool CutStringPrefixIfPresent(const string &input, const string &prefix,
   }
 }
 
-bool ReadIgnoreLine(string input_line, IgnoreLists *ignore_lists) {
+static bool ReadIgnoreLine(string input_line, IgnoreLists *ignore_lists) {
   string tail;
   if (CutStringPrefixIfPresent(input_line, "obj:", &tail)) {
     ignore_lists->ignores.push_back(IgnoreObj(tail));
@@ -32,6 +58,18 @@ bool ReadIgnoreLine(string input_line, IgnoreLists *ignore_lists) {
   return true;
 }
 
+void ReadIgnoresFromString(string ignoreString) {
+  vector<string> lines;
+  SplitStringIntoLinesAndRemoveBlanksAndComments(ignoreString, &lines);
+  for (size_t j = 0; j < lines.size(); j++) {
+    string &line = lines[j];
+    bool line_parsed = ReadIgnoreLine(line, g_ignore_lists);
+    if (!line_parsed) {
+      Printf("Error reading ignore file line:\n%s\n", line.c_str());
+      CHECK(0);
+    }
+  }
+}
 
 static bool StringVectorMatch(const vector<string>& v, const string& s) {
   for (size_t i = 0; i < v.size(); i++) {

@@ -7323,32 +7323,6 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
 
 // -------- ThreadSanitizer ------------------ {{{1
 
-void SplitStringIntoLinesAndRemoveBlanksAndComments(
-    const string &str, vector<string> *lines) {
-  string cur_line;
-  bool in_comment = false;
-  for (size_t pos = 0; pos < str.size(); pos++) {
-    char ch = str[pos];
-    if (ch == '\n') {
-      if (!cur_line.empty()) {
-        // Printf("++ %s\n", cur_line.c_str());
-        lines->push_back(cur_line);
-      }
-      cur_line.clear();
-      in_comment = false;
-      continue;
-    }
-    if (ch == ' ' || ch == '\t') continue;
-    if (ch == '#') {
-      in_comment = true;
-      continue;
-    }
-    if (!in_comment) {
-      cur_line += ch;
-    }
-  }
-}
-
 // Setup the list of functions/images/files to ignore.
 static void SetupIgnore() {
   g_ignore_lists = new IgnoreLists;
@@ -7443,16 +7417,7 @@ static void SetupIgnore() {
     string file_name = G_flags->ignore[i];
     Report("INFO: Reading ignore file: %s\n", file_name.c_str());
     string str = ReadFileToString(file_name, true);
-    vector<string> lines;
-    SplitStringIntoLinesAndRemoveBlanksAndComments(str, &lines);
-    for (size_t j = 0; j < lines.size(); j++) {
-      string &line = lines[j];
-      bool line_parsed = ReadIgnoreLine(line, g_ignore_lists);
-      if (!line_parsed) {
-        Printf("Error reading ignore file line:\n%s\n", line.c_str());
-        CHECK(0);
-      }
-    }
+    ReadIgnoresFromString(str);
   }
 }
 
