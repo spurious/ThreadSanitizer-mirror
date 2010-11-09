@@ -219,18 +219,6 @@ long my_strtol(const char *str, char **end, int base) {
   #define close fclose
 #endif
 
-string ConvertToPlatformIndependentPath(const string &s) {
-  string ret = s;
-#ifdef _MSC_VER
-  // TODO(timurrrr): do we need anything apart from s/\\///g?
-  size_t it = 0;
-  while ((it = ret.find("\\", it)) != string::npos) {
-    ret.replace(it, 1, "/");
-  }
-#endif // _MSC_VER
-  return ret;
-}
-
 TS_FILE OpenFileReadOnly(const string &file_name, bool die_if_failed) {
   TS_FILE ret = TS_FILE_INVALID;
 #ifdef TS_VALGRIND

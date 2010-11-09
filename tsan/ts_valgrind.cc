@@ -38,6 +38,7 @@
 #include "ts_trace_info.h"
 #include "ts_literace.h"
 #include "ts_race_verifier.h"
+#include "common_util.h"
 
 #include "coregrind/pub_core_basics.h"
 #include "coregrind/pub_core_machine.h"

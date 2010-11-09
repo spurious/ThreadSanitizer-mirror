@@ -42,6 +42,7 @@
 #include "ts_trace_info.h"
 #include "ts_literace.h"
 #include "ts_race_verifier.h"
+#include "common_util.h"
 
 
 #if defined(__GNUC__)

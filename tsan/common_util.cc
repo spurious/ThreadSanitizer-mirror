@@ -1,4 +1,4 @@
-#include "stringmatch.h"
+#include "common_util.h"
 
 bool StringMatch(const string& wildcard, const string& text) {
   const char* c_text = text.c_str();
@@ -37,4 +37,16 @@ bool StringMatch(const string& wildcard, const string& text) {
   }
 
   return !*c_wildcard;
+}
+
+string ConvertToPlatformIndependentPath(const string &s) {
+  string ret = s;
+#ifdef _MSC_VER
+  // TODO(timurrrr): do we need anything apart from s/\\///g?
+  size_t it = 0;
+  while ((it = ret.find("\\", it)) != string::npos) {
+    ret.replace(it, 1, "/");
+  }
+#endif // _MSC_VER
+  return ret;
 }

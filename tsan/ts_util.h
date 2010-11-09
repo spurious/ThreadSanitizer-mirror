@@ -280,8 +280,6 @@ extern size_t TimeInMilliSeconds();
 extern "C" long my_strtol(const char *str, char **end, int base);
 extern void Printf(const char *format, ...);
 
-string ConvertToPlatformIndependentPath(const string &s);
-
 string ReadFileToString(const string &file_name, bool die_if_failed);
 
 // Get the current memory footprint of myself (parse /proc/self/status).
@@ -293,9 +291,6 @@ void OpenFileWriteStringAndClose(const string &file_name, const string &str);
 // If host_and_port looks like myhost:12345, open a socket for writing
 // and returns a FILE object. Retuns NULL on failure.
 FILE *OpenSocketForWriting(const string &host_and_port);
-
-// Match a wild card which may contain '*' and '?'.
-bool StringMatch(const string &pattern, const string &str);
 
 // If addr is inside a global object, returns true and sets 'name' and 'offset'
 bool GetNameAndOffsetOfGlobalObject(uintptr_t addr,

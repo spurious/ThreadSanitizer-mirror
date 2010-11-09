@@ -34,7 +34,7 @@
 #ifndef INCLUDE_THREAD_SANITIZER_CC
 
 #include "thread_sanitizer.h"
-#include "stringmatch.h"
+#include "common_util.h"
 #include "suppressions.h"
 #include "ignore.h"
 #include <stdarg.h>
