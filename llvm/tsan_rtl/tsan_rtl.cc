@@ -1,10 +1,8 @@
 #include "tsan_rtl.h"
 
+#include "ts_trace_info.h"
+
 #include <sys/stat.h>
-
-static inline void Put(EventType type, int32_t tid, pc_t pc,
-                       uintptr_t a, uintptr_t info);
-
 
 #define EXTRA_REPLACE_PARAMS int tid, pc_t pc,
 #define REPORT_READ_RANGE(x, size) do { \
@@ -35,8 +33,8 @@ struct LLVMMopInfo {
 
 struct Passport {
   LLVMMopInfo *mop_info;
+  TraceInfoPOD *trace_info;
   int num_mops;
-  int flushed;
   void *curr_bb_index;
   void *known_bb_addr;
 };
@@ -246,6 +244,11 @@ bool isThreadLocalEvent(EventType type) {
     case RTN_CALL:
     case RTN_EXIT:
       return true;
+    case IGNORE_WRITES_END:
+    case IGNORE_READS_END:
+    case IGNORE_WRITES_BEG:
+    case IGNORE_READS_BEG:
+      return false;
     default:
       return false;
   }
@@ -279,13 +282,52 @@ static inline void PutEvent(EventType type, int32_t tid, pc_t pc,
 }
 #endif
 
+static inline void USPut(EventType type, int32_t tid, pc_t pc,
+                        uintptr_t a, uintptr_t info) {
+  if (!HAVE_THREAD_0 && type != THR_START) {
+    USPut(THR_START, 0, 0, 0, 0);
+  }
+  if (RTL_INIT != 1) return;
+
+  unsafe_flush_tleb();
+  Event event(type, tid, pc, a, info);
+  if (G_flags->verbosity) {
+    if ((G_flags->verbosity >= 2) ||
+        (type == THR_START) || (type == THR_END) || (type == THR_JOIN_AFTER) || (type == THR_CREATE_BEFORE)) {
+      event.Print();
+    }
+  }
+  stats_events_processed++;
+  stats_cur_events++;
+  stats_non_local++;
+
+  IN_RTL++;
+  CHECK_IN_RTL();
+  ThreadSanitizerHandleOneEvent(&event);
+  IN_RTL--;
+  CHECK_IN_RTL();
+
+  if ((type==THR_START) && (tid==0)) HAVE_THREAD_0 = 1;
+}
+
+// Put a synchronization event to ThreadSanitizer.
+static inline void SPut(EventType type, int32_t tid, pc_t pc,
+                        uintptr_t a, uintptr_t info) {
+#ifdef DEBUG
+  assert(!GIL::GetDepth() || (type == THR_START));
+#endif
+  GIL scoped;
+  USPut(type, tid, pc, a, info);
+}
+
 static inline void UPut(EventType type, int32_t tid, pc_t pc,
                         uintptr_t a, uintptr_t info) {
 #ifdef DEBUG
   assert(GIL::GetDepth());
 #endif
+  assert(isThreadLocalEvent(type));
   if (!HAVE_THREAD_0 && type != THR_START) {
-    UPut(THR_START, 0, 0, 0, 0);
+    SPut(THR_START, 0, 0, 0, 0);
   }
   if (RTL_INIT != 1) return;
   if (!global_ignore || !isThreadLocalEvent(type)) {
@@ -314,7 +356,11 @@ static inline void UPut(EventType type, int32_t tid, pc_t pc,
 static inline void Put(EventType type, int32_t tid, pc_t pc,
                        uintptr_t a, uintptr_t info) {
   GIL scoped;
-  UPut(type, tid, pc, a, info);
+  if (isThreadLocalEvent(type)) {
+    UPut(type, tid, pc, a, info);
+  } else {
+    USPut(type, tid, pc, a, info);
+  }
 }
 
 // TODO(glider): atexit()
@@ -409,8 +455,8 @@ int GetTid(ThreadInfo *info) {
     info->tid = max_tid;
     info->passport_index = 0;
     info->passport[0].mop_info = NULL;
+    info->passport[0].trace_info = NULL;
     info->passport[0].num_mops = 0;
-    info->passport[0].flushed = 0;
     info->passport[0].curr_bb_index = NULL;
     info->passport[0].known_bb_addr = NULL;
     switch (RTL_INIT) {
@@ -435,7 +481,7 @@ int GetTid(ThreadInfo *info) {
                }
     }
     if (info->tid == 0) {
-      //UPut(THR_START, 0, 0, 0, 0);
+      //SPut(THR_START, 0, 0, 0, 0);
     }
     INIT = 1;
   }
@@ -449,6 +495,10 @@ int GetTid() {
 void unsafe_flush_tleb_slice(ThreadInfo *info,
                              int slice_start, int slice_end) {
   // {{{1
+  if (slice_start) {
+    // We do want to flush only full blocks.
+    assert(false);
+  }
   Passport &passport = info->passport[info->passport_index];
   int tid = info->tid;
   if (slice_start == 0) {
@@ -484,7 +534,6 @@ void unsafe_flush_tleb_slice(ThreadInfo *info,
       }
     }
   }
-  passport.flushed = slice_end;
 } // }}}
 
 
@@ -497,9 +546,7 @@ void* bb_flush(LLVMMopInfo *next_mops,
   Passport &passport = INFO.passport[INFO.passport_index];
   if (passport.mop_info) {
     // This is not a function entry block
-    //GIL scoped;
-    unsafe_flush_tleb_slice(&INFO, passport.flushed, passport.num_mops);
-    passport.flushed = 0;
+    unsafe_flush_tleb_slice(&INFO, 0, passport.num_mops);
   }
   passport.mop_info = next_mops;
   passport.num_mops = next_num_mops;
@@ -509,12 +556,12 @@ void* bb_flush(LLVMMopInfo *next_mops,
   } else {
     passport.curr_bb_index = next_bb_index;
   }
-  //UNBLOCK_SIGNALS();
   return (void*) INFO.TLEB;
 }
 
 extern "C"
 void bb_flush_slice(int slice_start, int slice_end) {
+  assert(false); // bb_flush_slice is deprecated
   GIL scoped;
   unsafe_flush_tleb_slice(&INFO, slice_start, slice_end);
 }
@@ -522,12 +569,16 @@ void bb_flush_slice(int slice_start, int slice_end) {
 // Flushes the local TLEB assuming someone is holding the global lock already.
 // Our RTL shouldn't need a thread to flush someone else's TLEB.
 void unsafe_flush_tleb() {
+#ifdef DEBUG
+  if (G_flags->verbosity >= 2) {
+    Printf("unsafe_flush_tleb\n");
+  }
+#endif
   ThreadInfo *info = &INFO;
   if (info) {
     Passport &passport = info->passport[info->passport_index];
     if (passport.num_mops) {
-      unsafe_flush_tleb_slice(info, passport.flushed, passport.num_mops);
-      passport.flushed = 0;
+      unsafe_flush_tleb_slice(info, 0, passport.num_mops);
       passport.num_mops = 0;
     }
   } else {
@@ -591,7 +642,7 @@ void *pthread_callback(void *arg) {
   for (int sig = 0; sig < NSIG; sig++) {
     pending_signal_flags[sig] = false;
   }
-  UPut(THR_START, INFO.tid, 0, 0, parent);
+  SPut(THR_START, INFO.tid, 0, 0, parent);
   delete cb_arg;
 
   if (stack_top) {
@@ -599,12 +650,12 @@ void *pthread_callback(void *arg) {
     // the event to ThreadSanitizer manually.
     // TODO(glider): technically our parent allocates the stack. Maybe this
     // should be fixed.
-    UPut(MMAP, tid, pc, (uintptr_t)stack_top, stack_size);
-    UPut(THR_STACK_TOP, tid, pc, (uintptr_t)stack_top, stack_size);
+    USPut(MMAP, tid, pc, (uintptr_t)stack_top, stack_size);
+    USPut(THR_STACK_TOP, tid, pc, (uintptr_t)stack_top, stack_size);
   } else {
     // Something's gone wrong. ThreadSanitizer will proceed, but if the stack
     // is reused by another thread, false positives will be reported.
-    UPut(THR_STACK_TOP, tid, pc, (uintptr_t)&result, stack_size);
+    SPut(THR_STACK_TOP, tid, pc, (uintptr_t)&result, stack_size);
   }
   DPrintf("Before routine() in T%d\n", tid);
 
@@ -626,7 +677,7 @@ void *pthread_callback(void *arg) {
 
   // Flush all the events not flushed so far.
   unsafe_flush_tleb();
-  UPut(THR_END, tid, 0, 0, 0);
+  USPut(THR_END, tid, 0, 0, 0);
   if (FinishConds.find(tid) != FinishConds.end()) {
     DPrintf("T%d (child of T%d): Signaling on %p\n", tid, parent, FinishConds[tid]);
     __real_pthread_cond_signal(FinishConds[tid]);
@@ -658,7 +709,7 @@ int __wrap_pthread_create(pthread_t *thread,
   cb_arg->arg = arg;
   cb_arg->parent = tid;
   cb_arg->attr = attr;
-  Put(THR_CREATE_BEFORE, tid, 0, 0, 0);
+  SPut(THR_CREATE_BEFORE, tid, 0, 0, 0);
   PTH_INIT = 1;
   int result = __real_pthread_create(thread, attr, pthread_callback, cb_arg);
   DPrintf("pthread_create(%p)\n", *thread);
@@ -738,7 +789,7 @@ void *__wrap_mmap(void *addr, size_t length, int prot, int flags,
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
   if (result != (void*) -1) {
     DECLARE_TID_AND_PC();
-    Put(MMAP, tid, pc, (uintptr_t)result, (uintptr_t)length);
+    SPut(MMAP, tid, pc, (uintptr_t)result, (uintptr_t)length);
   }
   return result;
 }
@@ -751,7 +802,7 @@ int __wrap_munmap(void *addr, size_t length) {
   result = __real_munmap(addr, length);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
   if (result == 0) {
-    Put(MUNMAP, tid, pc, (uintptr_t)addr, (uintptr_t)length);
+    SPut(MUNMAP, tid, pc, (uintptr_t)addr, (uintptr_t)length);
   }
   return result;
 }
@@ -763,7 +814,7 @@ void *__wrap_calloc(size_t nmemb, size_t size) {
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   result = __real_calloc(nmemb, size);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
-  Put(MALLOC, tid, pc, (uintptr_t)result, nmemb * size);
+  SPut(MALLOC, tid, pc, (uintptr_t)result, nmemb * size);
   return result;
 }
 
@@ -774,14 +825,14 @@ void *__wrap_malloc(size_t size) {
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   result = __real_malloc(size);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
-  Put(MALLOC, tid, pc, (uintptr_t)result, size);
+  SPut(MALLOC, tid, pc, (uintptr_t)result, size);
   return result;
 }
 
 extern "C"
 void __wrap_free(void *ptr) {
   DECLARE_TID_AND_PC();
-  Put(FREE, tid, pc, (uintptr_t)ptr, 0);
+  SPut(FREE, tid, pc, (uintptr_t)ptr, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   __real_free(ptr);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
@@ -794,7 +845,7 @@ void *__wrap_realloc(void *ptr, size_t size) {
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   result = __real_realloc(ptr, size);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
-  Put(MALLOC, tid, pc, (uintptr_t)result, size);
+  SPut(MALLOC, tid, pc, (uintptr_t)result, size);
   return result;
 }
 
@@ -810,7 +861,7 @@ void *__wrap__ZnwjPv(unsigned int a, void*b) {
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   void *result = __real__ZnwjPv(a, b);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
-  Put(MALLOC, tid, pc, (uintptr_t)result, a);
+  SPut(MALLOC, tid, pc, (uintptr_t)result, a);
   IN_RTL--;
   return result;
 }
@@ -822,7 +873,7 @@ void __wrap__ZdlPvS_(void *ptr, void *b) {
     return;
   }
   DECLARE_TID_AND_PC();
-  Put(FREE, tid, pc, (uintptr_t)ptr, 0);
+  SPut(FREE, tid, pc, (uintptr_t)ptr, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   //__real__ZdlPvS_(ptr, b);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
@@ -838,7 +889,7 @@ void *__wrap__Znwj(unsigned int size) {
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   void *result = __real__Znwj(size);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
-  Put(MALLOC, tid, pc, (uintptr_t)result, size);
+  SPut(MALLOC, tid, pc, (uintptr_t)result, size);
   IN_RTL--;
   CHECK_IN_RTL();
   return result;
@@ -853,7 +904,7 @@ void __wrap__ZdlPv(void *ptr) {
   IN_RTL++;
   CHECK_IN_RTL();
   DECLARE_TID_AND_PC();
-  Put(FREE, tid, pc, (uintptr_t)ptr, 0);
+  SPut(FREE, tid, pc, (uintptr_t)ptr, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   __real__ZdlPv(ptr);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
@@ -873,7 +924,7 @@ sem_t *__wrap_sem_open(const char *name, int oflag,
       value > 0 &&
       result != SEM_FAILED) {
     DECLARE_TID_AND_PC();
-    Put(SIGNAL, tid, pc, (uintptr_t)result, 0);
+    SPut(SIGNAL, tid, pc, (uintptr_t)result, 0);
   }
   return result;
 }
@@ -883,7 +934,7 @@ int __wrap_sem_wait(sem_t *sem) {
   DECLARE_TID_AND_PC();
   int result = __real_sem_wait(sem);
   if (result == 0) {
-    Put(WAIT, tid, pc, (uintptr_t)sem, 0);
+    SPut(WAIT, tid, pc, (uintptr_t)sem, 0);
   }
   return result;
 }
@@ -893,7 +944,7 @@ int __wrap_sem_trywait(sem_t *sem) {
   DECLARE_TID_AND_PC();
   int result = __real_sem_trywait(sem);
   if (result == 0) {
-    Put(WAIT, tid, pc, (uintptr_t)sem, 0);
+    SPut(WAIT, tid, pc, (uintptr_t)sem, 0);
   }
   return result;
 }
@@ -901,7 +952,7 @@ int __wrap_sem_trywait(sem_t *sem) {
 extern "C"
 int __wrap_sem_post(sem_t *sem) {
   DECLARE_TID_AND_PC();
-  Put(SIGNAL, tid, pc, (uintptr_t)sem, 0);
+  SPut(SIGNAL, tid, pc, (uintptr_t)sem, 0);
   return __real_sem_post(sem);
 }
 
@@ -913,12 +964,12 @@ int __wrap_pthread_cond_timedwait(pthread_cond_t *cond, pthread_mutex_t *mutex,
                                   const struct timespec *abstime) {
   int tid = GetTid();
   pc_t pc = GetPc();
-  Put(UNLOCK, tid, pc, (uintptr_t)mutex, 0);
+  SPut(UNLOCK, tid, pc, (uintptr_t)mutex, 0);
   int result = __real_pthread_cond_timedwait(cond, mutex, abstime);
   if (result == 0) {
-    Put(WAIT, tid, pc, (uintptr_t)cond, 0);
+    SPut(WAIT, tid, pc, (uintptr_t)cond, 0);
   }
-  Put(WRITER_LOCK, tid, pc, (uintptr_t)mutex, 0);
+  SPut(WRITER_LOCK, tid, pc, (uintptr_t)mutex, 0);
   return result;
 }
 
@@ -927,17 +978,17 @@ int __wrap_pthread_cond_signal(pthread_cond_t *cond) {
   int tid = GetTid();
   pc_t pc = GetPc();
   int result = __real_pthread_cond_signal(cond);
-  Put(SIGNAL, tid, pc, (uintptr_t)cond, 0);
+  SPut(SIGNAL, tid, pc, (uintptr_t)cond, 0);
   return result;
 }
 
 extern "C"
 int __wrap_pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex) {
   DECLARE_TID_AND_PC();
-  Put(UNLOCK, tid, pc, (uintptr_t)mutex, 0);
+  SPut(UNLOCK, tid, pc, (uintptr_t)mutex, 0);
   int result = __real_pthread_cond_wait(cond, mutex);
-  Put(WAIT, tid, pc, (uintptr_t)cond, 0);
-  Put(WRITER_LOCK, tid, pc, (uintptr_t)mutex, 0);
+  SPut(WAIT, tid, pc, (uintptr_t)cond, 0);
+  SPut(WRITER_LOCK, tid, pc, (uintptr_t)mutex, 0);
   return result;
 }
 
@@ -946,7 +997,7 @@ int __wrap_pthread_mutex_lock(pthread_mutex_t *mutex) {
   int result = __real_pthread_mutex_lock(mutex);
   if (result == 0 /* success */) {
     DECLARE_TID_AND_PC();
-    Put(WRITER_LOCK, tid, pc, (uintptr_t)mutex, 0);
+    SPut(WRITER_LOCK, tid, pc, (uintptr_t)mutex, 0);
   }
   // TODO(glider): should we handle error codes?
   return result;
@@ -957,7 +1008,7 @@ int __wrap_pthread_mutex_trylock(pthread_mutex_t *mutex) {
   int result = __real_pthread_mutex_trylock(mutex);
   if (result == 0) {
     DECLARE_TID_AND_PC();
-    Put(WRITER_LOCK, tid, pc, (uintptr_t)mutex, 0);
+    SPut(WRITER_LOCK, tid, pc, (uintptr_t)mutex, 0);
   }
   return result;
 }
@@ -965,14 +1016,14 @@ int __wrap_pthread_mutex_trylock(pthread_mutex_t *mutex) {
 extern "C"
 int __wrap_pthread_mutex_unlock(pthread_mutex_t *mutex) {
   DECLARE_TID_AND_PC();
-  Put(UNLOCK, tid, pc, (uintptr_t) mutex, 0);
+  SPut(UNLOCK, tid, pc, (uintptr_t) mutex, 0);
   return __real_pthread_mutex_unlock(mutex);
 }
 
 extern "C"
 int __wrap_pthread_mutex_destroy(pthread_mutex_t *mutex) {
   DECLARE_TID_AND_PC();
-  Put(LOCK_DESTROY, tid, pc, (uintptr_t)mutex, 0);  // before the actual call.
+  SPut(LOCK_DESTROY, tid, pc, (uintptr_t)mutex, 0);  // before the actual call.
   return __real_pthread_mutex_destroy(mutex);
 }
 
@@ -989,7 +1040,7 @@ int __wrap_pthread_mutex_init(pthread_mutex_t *mutex,
   }
   result = __real_pthread_mutex_init(mutex, attr);
   if (result == 0) {
-    Put(LOCK_CREATE, tid, pc, (uintptr_t)mutex, 0);
+    SPut(LOCK_CREATE, tid, pc, (uintptr_t)mutex, 0);
   }
   return result;
 }
@@ -1000,7 +1051,7 @@ int __wrap_pthread_rwlock_init(pthread_rwlock_t *rwlock,
   DECLARE_TID_AND_PC();
   int result = __real_pthread_rwlock_init(rwlock, attr);
   if (result == 0) {
-    Put(LOCK_CREATE, tid, pc, (uintptr_t)rwlock, 0);
+    SPut(LOCK_CREATE, tid, pc, (uintptr_t)rwlock, 0);
   }
   return result;
 }
@@ -1008,7 +1059,7 @@ int __wrap_pthread_rwlock_init(pthread_rwlock_t *rwlock,
 extern "C"
 int __wrap_pthread_rwlock_destroy(pthread_rwlock_t *rwlock) {
   DECLARE_TID_AND_PC();
-  Put(LOCK_DESTROY, tid, pc, (uintptr_t)rwlock, 0);  // before the actual call.
+  SPut(LOCK_DESTROY, tid, pc, (uintptr_t)rwlock, 0);  // before the actual call.
   return __real_pthread_rwlock_destroy(rwlock);
 }
 
@@ -1017,7 +1068,7 @@ int __wrap_pthread_rwlock_trywrlock(pthread_rwlock_t *rwlock) {
   DECLARE_TID_AND_PC();
   int result = __real_pthread_rwlock_trywrlock(rwlock);
   if (result == 0) {
-    Put(WRITER_LOCK, tid, pc, (uintptr_t)rwlock, 0);
+    SPut(WRITER_LOCK, tid, pc, (uintptr_t)rwlock, 0);
   }
   return result;
 }
@@ -1027,7 +1078,7 @@ int __wrap_pthread_rwlock_wrlock(pthread_rwlock_t *rwlock) {
   DECLARE_TID_AND_PC();
   int result = __real_pthread_rwlock_wrlock(rwlock);
   if (result == 0) {
-    Put(WRITER_LOCK, tid, pc, (uintptr_t)rwlock, 0);
+    SPut(WRITER_LOCK, tid, pc, (uintptr_t)rwlock, 0);
   }
   return result;
 }
@@ -1037,7 +1088,7 @@ int __wrap_pthread_rwlock_tryrdlock(pthread_rwlock_t *rwlock) {
   DECLARE_TID_AND_PC();
   int result = __real_pthread_rwlock_tryrdlock(rwlock);
   if (result == 0) {
-    Put(READER_LOCK, tid, pc, (uintptr_t)rwlock, 0);
+    SPut(READER_LOCK, tid, pc, (uintptr_t)rwlock, 0);
   }
   return result;
 }
@@ -1047,7 +1098,7 @@ int __wrap_pthread_rwlock_rdlock(pthread_rwlock_t *rwlock) {
   DECLARE_TID_AND_PC();
   int result = __real_pthread_rwlock_rdlock(rwlock);
   if (result == 0) {
-    Put(READER_LOCK, tid, pc, (uintptr_t)rwlock, 0);
+    SPut(READER_LOCK, tid, pc, (uintptr_t)rwlock, 0);
   }
   return result;
 }
@@ -1055,7 +1106,7 @@ int __wrap_pthread_rwlock_rdlock(pthread_rwlock_t *rwlock) {
 extern "C"
 int __wrap_pthread_rwlock_unlock(pthread_rwlock_t *rwlock) {
   DECLARE_TID_AND_PC();
-  Put(UNLOCK, tid, pc, (uintptr_t)rwlock, 0);
+  SPut(UNLOCK, tid, pc, (uintptr_t)rwlock, 0);
   return __real_pthread_rwlock_unlock(rwlock);
 }
 
@@ -1063,16 +1114,16 @@ extern "C"
 int __wrap_pthread_barrier_init(pthread_barrier_t *barrier,
                          const pthread_barrierattr_t *attr, unsigned count) {
   DECLARE_TID_AND_PC();
-  Put(CYCLIC_BARRIER_INIT, tid, pc, (uintptr_t)barrier, count);
+  SPut(CYCLIC_BARRIER_INIT, tid, pc, (uintptr_t)barrier, count);
   return __real_pthread_barrier_init(barrier, attr, count);
 }
 
 extern "C"
 int __wrap_pthread_barrier_wait(pthread_barrier_t *barrier) {
   DECLARE_TID_AND_PC();
-  Put(CYCLIC_BARRIER_WAIT_BEFORE, tid, pc, (uintptr_t)barrier, 0);
+  SPut(CYCLIC_BARRIER_WAIT_BEFORE, tid, pc, (uintptr_t)barrier, 0);
   int result = __real_pthread_barrier_wait(barrier);
-  Put(CYCLIC_BARRIER_WAIT_AFTER, tid, pc, (uintptr_t)barrier, 0);
+  SPut(CYCLIC_BARRIER_WAIT_AFTER, tid, pc, (uintptr_t)barrier, 0);
   return result;
 }
 
@@ -1112,7 +1163,7 @@ int __wrap_pthread_join(pthread_t thread, void **value_ptr) {
   {
     assert(joined_tid > 0);
     pc_t pc = GetPc();
-    Put(THR_JOIN_AFTER, tid, pc, joined_tid, 0);
+    SPut(THR_JOIN_AFTER, tid, pc, joined_tid, 0);
   }
   return result;
 }
@@ -1123,7 +1174,7 @@ int __wrap_pthread_spin_init(pthread_spinlock_t *lock, int pshared) {
   if (result == 0) {
     int tid = GetTid();
     pc_t pc = GetPc();
-    Put(UNLOCK_OR_INIT, tid, pc, (uintptr_t)lock, 0);
+    SPut(UNLOCK_OR_INIT, tid, pc, (uintptr_t)lock, 0);
   }
   return result;
 }
@@ -1132,7 +1183,7 @@ extern "C"
 int __wrap_pthread_spin_destroy(pthread_spinlock_t *lock) {
   int tid = GetTid();
   pc_t pc = GetPc();
-  Put(LOCK_DESTROY, tid, pc, (uintptr_t)lock, 0);
+  SPut(LOCK_DESTROY, tid, pc, (uintptr_t)lock, 0);
   return __real_pthread_spin_destroy(lock);
 }
 
@@ -1143,7 +1194,7 @@ int __wrap_pthread_spin_lock(pthread_spinlock_t *lock) {
   if (result == 0) {
     int tid = GetTid();
     pc_t pc = GetPc();
-    Put(WRITER_LOCK, tid, pc, (uintptr_t)lock, 0);
+    SPut(WRITER_LOCK, tid, pc, (uintptr_t)lock, 0);
   }
   return result;
 }
@@ -1154,7 +1205,7 @@ int __wrap_pthread_spin_trylock(pthread_spinlock_t *lock) {
   if (result == 0) {
     int tid = GetTid();
     pc_t pc = GetPc();
-    Put(WRITER_LOCK, tid, pc, (uintptr_t)lock, 0);
+    SPut(WRITER_LOCK, tid, pc, (uintptr_t)lock, 0);
   }
   return result;
 }
@@ -1163,7 +1214,7 @@ extern "C"
 int __wrap_pthread_spin_unlock(pthread_spinlock_t *lock) {
   int tid = GetTid();
   pc_t pc = GetPc();
-  Put(UNLOCK, tid, pc, (uintptr_t)lock, 0);
+  SPut(UNLOCK, tid, pc, (uintptr_t)lock, 0);
   return __real_pthread_spin_unlock(lock);
 }
 
@@ -1259,7 +1310,7 @@ atexit_worker* pop_atexit() {
 void atexit_callback() {
   DECLARE_TID_AND_PC();
   atexit_worker *worker = pop_atexit();
-  Put(WAIT, tid, pc, (uintptr_t)worker, 0);
+  SPut(WAIT, tid, pc, (uintptr_t)worker, 0);
   (*worker)();
 }
 
@@ -1268,15 +1319,15 @@ int __wrap_atexit(void (*function)(void)) {
   DECLARE_TID_AND_PC();
   push_atexit(function);
   int result = __real_atexit(atexit_callback);
-  Put(SIGNAL, tid, pc, kAtExitMagic, 0);  // TODO(glider): do we need it?
-  Put(SIGNAL, tid, pc, (uintptr_t)function, 0);
+  SPut(SIGNAL, tid, pc, kAtExitMagic, 0);  // TODO(glider): do we need it?
+  SPut(SIGNAL, tid, pc, (uintptr_t)function, 0);
   return result;
 }
 
 extern "C"
 void __wrap_exit(int status) {
   DECLARE_TID_AND_PC();
-  Put(WAIT, tid, pc, kAtExitMagic, 0);
+  SPut(WAIT, tid, pc, kAtExitMagic, 0);
   __real_exit(status);
 }
 
@@ -1299,7 +1350,7 @@ ssize_t __wrap_read(int fd, void *buf, size_t count) {
   ssize_t result = __real_read(fd, buf, count);
   // It only makes sense to wait for a previous write, not EOF.
   if (result > 0) {
-    Put(WAIT, tid, pc, FdMagic(fd), 0);
+    SPut(WAIT, tid, pc, FdMagic(fd), 0);
   }
   return result;
 }
@@ -1307,7 +1358,7 @@ ssize_t __wrap_read(int fd, void *buf, size_t count) {
 extern "C"
 ssize_t __wrap_write(int fd, const void *buf, size_t count) {
   DECLARE_TID_AND_PC();
-  Put(SIGNAL, tid, pc, FdMagic(fd), 0);
+  SPut(SIGNAL, tid, pc, FdMagic(fd), 0);
   return __real_write(fd, buf, count);
 }
 
@@ -1386,12 +1437,14 @@ extern "C"
 void rtn_call(void *addr) {
   GIL scoped;
   int tid = GetTid();
+  // TODO(glider): this is unnecessary if we flush before each call/invoke
+  // insn.
+  unsafe_flush_tleb();
   UPut(RTN_CALL, tid, 0, (uintptr_t)addr, 0);
-  INFO.passport_index++;
+  //INFO.passport_index++;
   Passport &passport = INFO.passport[INFO.passport_index];
   passport.mop_info = NULL;
   passport.num_mops = 0;
-  passport.flushed = 0;
   passport.known_bb_addr = addr;
 }
 
@@ -1400,7 +1453,7 @@ void rtn_exit() {
   GIL scoped;
   int tid = GetTid();
   unsafe_flush_tleb();
-  INFO.passport_index--;
+//  INFO.passport_index--;
   UPut(RTN_EXIT, tid, 0, 0, 0);
 }
 // }}}
@@ -1409,31 +1462,31 @@ void rtn_exit() {
 extern "C"
 void AnnotateCondVarSignal(const char *file, int line, void *cv) {
   DECLARE_TID_AND_PC();
-  Put(SIGNAL, tid, pc, (uintptr_t)cv, 0);
+  SPut(SIGNAL, tid, pc, (uintptr_t)cv, 0);
 }
 
 extern "C"
 void AnnotateMutexIsNotPHB(const char *file, int line, void *mu) {
   DECLARE_TID_AND_PC();
-  Put(NON_HB_LOCK, tid, pc, (uintptr_t)mu, 0);
+  SPut(NON_HB_LOCK, tid, pc, (uintptr_t)mu, 0);
 }
 
 extern "C"
 void AnnotateCondVarWait(const char *file, int line, void *cv, void *lock) {
   DECLARE_TID_AND_PC();
-  Put(WAIT, tid, pc, (uintptr_t)cv, 0);
+  SPut(WAIT, tid, pc, (uintptr_t)cv, 0);
 }
 
 extern "C"
 void AnnotateTraceMemory(char *file, int line, void *mem) {
   DECLARE_TID_AND_PC();
-  Put(TRACE_MEM, tid, pc, (uintptr_t)mem, 0);
+  SPut(TRACE_MEM, tid, pc, (uintptr_t)mem, 0);
 }
 
 extern "C"
 void AnnotateFlushState(char *file, int line) {
   DECLARE_TID_AND_PC();
-  Put(FLUSH_STATE, tid, pc, 0, 0);
+  SPut(FLUSH_STATE, tid, pc, 0, 0);
 }
 
 extern "C"
@@ -1446,31 +1499,31 @@ void AnnotateEnableRaceDetection(char *file, int line, int enable) {
 extern "C"
 void AnnotateMutexIsUsedAsCondVar(char *file, int line, void *mu) {
   DECLARE_TID_AND_PC();
-  Put(HB_LOCK, tid, pc, (uintptr_t)mu, 0);
+  SPut(HB_LOCK, tid, pc, (uintptr_t)mu, 0);
 }
 
 extern "C"
 void AnnotatePCQGet(const char *file, int line, void *pcq) {
   DECLARE_TID_AND_PC();
-  Put(PCQ_GET, tid, pc, (uintptr_t)pcq, 0);
+  SPut(PCQ_GET, tid, pc, (uintptr_t)pcq, 0);
 }
 
 extern "C"
 void AnnotatePCQPut(const char *file, int line, void *pcq) {
   DECLARE_TID_AND_PC();
-  Put(PCQ_PUT, tid, pc, (uintptr_t)pcq, 0);
+  SPut(PCQ_PUT, tid, pc, (uintptr_t)pcq, 0);
 }
 
 extern "C"
 void AnnotatePCQDestroy(const char *file, int line, void *pcq) {
   DECLARE_TID_AND_PC();
-  Put(PCQ_DESTROY, tid, pc, (uintptr_t)pcq, 0);
+  SPut(PCQ_DESTROY, tid, pc, (uintptr_t)pcq, 0);
 }
 
 extern "C"
 void AnnotatePCQCreate(const char *file, int line, void *pcq) {
   DECLARE_TID_AND_PC();
-  Put(PCQ_CREATE, tid, pc, (uintptr_t)pcq, 0);
+  SPut(PCQ_CREATE, tid, pc, (uintptr_t)pcq, 0);
 }
 
 
@@ -1478,21 +1531,21 @@ extern "C"
 void AnnotateExpectRace(const char *file, int line,
                         void *mem, char *description) {
   int tid = GetTid();
-  Put(EXPECT_RACE, tid, (uintptr_t)description, (uintptr_t)mem, 1);
+  SPut(EXPECT_RACE, tid, (uintptr_t)description, (uintptr_t)mem, 1);
 }
 
 extern "C"
 void AnnotateBenignRace(const char *file, int line,
                         void *mem, char *description) {
   DECLARE_TID();
-  Put(BENIGN_RACE, tid, (uintptr_t)description, (uintptr_t)mem, 1);
+  SPut(BENIGN_RACE, tid, (uintptr_t)description, (uintptr_t)mem, 1);
 }
 
 extern "C"
 void AnnotateBenignRaceSized(const char *file, int line,
                         void *mem, long size, char *description) {
   DECLARE_TID();
-  Put(BENIGN_RACE, tid, (uintptr_t)description,
+  SPut(BENIGN_RACE, tid, (uintptr_t)description,
       (uintptr_t)mem, (uintptr_t)size);
 }
 

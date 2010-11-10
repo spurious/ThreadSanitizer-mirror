@@ -45,7 +45,7 @@ namespace {
     TsanOnlineInstrument() : ModulePass(&ID) { }
 
     uintptr_t getAddr(int bb_index, int mop_index, Instruction *dump) {
-      uintptr_t result = ((ModuleID *kBBAddr) + bb_index) * kBBAddr + mop_index;
+      uintptr_t result = ((ModuleID * kBBAddr) + bb_index) * kBBAddr + mop_index;
       if (dump) {
         DumpDebugInfo(result, *dump);
       }
@@ -153,16 +153,21 @@ namespace {
                 dir << "\n";
     }
 
-    bool ShouldFlush(Function::iterator &BB) {
-      for (BasicBlock::iterator BI = BB->begin(), BE = BB->end();
+
+    bool ShouldFlushSlice(BasicBlock::iterator &Begin,
+                          BasicBlock::iterator &End) {
+      for (BasicBlock::iterator BI = Begin, BE = End;
            BI != BE; ++BI) {
+#if DEBUG
+        BI->dump();
+#endif
         if (isa<LoadInst>(BI)) {
           return true;
         }
         if (isa<StoreInst>(BI)) {
           return true;
         }
-        if (isa<MemCpyInst>(BI)) {
+        if (isa<MemTransferInst>(BI)) {
           return true;
         }
         if (isa<CallInst>(BI)) {
@@ -172,15 +177,36 @@ namespace {
       return false;
     }
 
-    bool MakePassport(Module &M, Function::iterator &BB) {
-      Passport passport;
-      bool isStore, isMop, isMemCpy;
-      int size, src_size, dest_size;
-      BBNumMops = 0;
+    bool unused_ShouldFlush(Function::iterator &BB) {
       for (BasicBlock::iterator BI = BB->begin(), BE = BB->end();
            BI != BE; ++BI) {
+        if (isa<LoadInst>(BI)) {
+          return true;
+        }
+        if (isa<StoreInst>(BI)) {
+          return true;
+        }
+        if (isa<MemTransferInst>(BI)) {
+          return true;
+        }
+        if (isa<CallInst>(BI)) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    bool MakePassportFromSlice(Module &M,
+                               BasicBlock::iterator &Begin,
+                               BasicBlock::iterator &End) {
+      Passport passport;
+      bool isStore, isMop, isMemTransfer;
+      int size, src_size, dest_size;
+      BBNumMops = 0;
+      for (BasicBlock::iterator BI = Begin, BE = End;
+           BI != BE; ++BI) {
         isMop = false;
-        isMemCpy = false;
+        isMemTransfer = false;
         if (isa<LoadInst>(BI)) {
           isStore = false;
           isMop = true;
@@ -189,8 +215,127 @@ namespace {
           isStore = true;
           isMop = true;
         }
-        if (isa<MemCpyInst>(BI)) {
-          isMemCpy = true;
+        if (isa<MemTransferInst>(BI)) {
+          isMemTransfer = true;
+        }
+        if (isa<CallInst>(BI) && !isMemTransfer) {
+          // CallInst or maybe other instructions that may cause a jump.
+          assert(false);
+        }
+        if (isMop) {
+          size = 32;
+          BBNumMops++;
+          ModuleMopCount++;
+          Value *MopPtr;
+          llvm::Instruction &IN = *BI;
+          getAddr(BBCount, BBNumMops, BI);
+          if (isStore) {
+            MopPtr = (static_cast<StoreInst&>(IN).getPointerOperand());
+          } else {
+            MopPtr = (static_cast<LoadInst&>(IN).getPointerOperand());
+          }
+          if (MopPtr->getType()->isSized()) {
+            if
+              (cast<PointerType>(MopPtr->getType())->getElementType()->isSized())
+                {
+                  size =
+                    getAnalysis<TargetData>().getTypeStoreSizeInBits(
+                      cast<PointerType>(MopPtr->getType())->getElementType()
+                    );
+                }
+          }
+
+
+          if (MopPtr->getType() != UIntPtr) {
+            MopPtr = BitCastInst::CreatePointerCast(MopPtr, UIntPtr, "", BI);
+          }
+
+          std::vector<Constant*> mop;
+          mop.push_back(ConstantInt::get(Int32, getAddr(BBCount, BBNumMops, BI)));
+          mop.push_back(ConstantInt::get(Int32, size/8));
+          mop.push_back(ConstantInt::get(Int32, isStore));
+          passport.push_back(ConstantStruct::get(MopTy, mop));
+        }
+        if (isMemTransfer) {
+          src_size = 32, dest_size = 32;
+          Value *SrcPtr, *DestPtr;
+          llvm::MemTransferInst &IN = static_cast<MemTransferInst&>(*BI);
+          getAddr(BBCount, BBNumMops, BI);
+          SrcPtr = IN.getSource();
+          DestPtr = IN.getDest();
+          if (SrcPtr->getType()->isSized()) {
+            src_size = getAnalysis<TargetData>().getTypeStoreSizeInBits(
+                cast<PointerType>(SrcPtr->getType())->getElementType());
+          }
+          if (DestPtr->getType()->isSized()) {
+            dest_size = getAnalysis<TargetData>().getTypeStoreSizeInBits(
+                cast<PointerType>(DestPtr->getType())->getElementType());
+          }
+
+          if (SrcPtr->getType() != UIntPtr) {
+            Value *Tmp = BitCastInst::CreatePointerCast(SrcPtr, UIntPtr, "", BI);
+            SrcPtr = Tmp;
+          }
+          if (DestPtr->getType() != UIntPtr) {
+            Value *Tmp = BitCastInst::CreatePointerCast(DestPtr, UIntPtr, "", BI);
+            DestPtr = Tmp;
+          }
+          std::vector<Constant*> mop(3);
+          BBNumMops++;
+          ModuleMopCount++;
+          mop[0] = ConstantInt::get(Int32, getAddr(BBCount, BBNumMops, BI));
+          mop[1] = ConstantInt::get(Int32, 0);
+          mop[2] = ConstantInt::get(Int32, /*LENGTH*/2);
+          passport.push_back(ConstantStruct::get(MopTy, mop));
+          BBNumMops++;
+          ModuleMopCount++;
+          mop[0] = ConstantInt::get(Int32, getAddr(BBCount, BBNumMops, BI));
+          mop[1] = ConstantInt::get(Int32, src_size/8);
+          mop[2] = ConstantInt::get(Int32, /*LOAD*/0);
+          passport.push_back(ConstantStruct::get(MopTy, mop));
+          BBNumMops++;
+          ModuleMopCount++;
+          mop[0] = ConstantInt::get(Int32, getAddr(BBCount, BBNumMops, BI));
+          mop[1] = ConstantInt::get(Int32, dest_size/8);
+          mop[2] = ConstantInt::get(Int32, /*STORE*/1);
+          passport.push_back(ConstantStruct::get(MopTy, mop));
+        }
+      }
+      if (BBNumMops) {
+        BBPassportType = ArrayType::get(MopTy, BBNumMops);
+        BBPassportGlob = new GlobalVariable(
+            M,
+            BBPassportType,
+            false,
+            GlobalValue::InternalLinkage,
+            ConstantArray::get(BBPassportType, passport),
+            "bb_passport",
+            false, 0
+            );
+        return true;
+      }
+      return false;
+    }
+
+    bool unused_MakePassport(Module &M, Function::iterator &BB) {
+      Passport passport;
+      bool isStore, isMop, isMemTransfer;
+      int size, src_size, dest_size;
+      BBNumMops = 0;
+      for (BasicBlock::iterator BI = BB->begin(), BE = BB->end();
+           BI != BE; ++BI) {
+        isMop = false;
+        isMemTransfer = false;
+        if (isa<LoadInst>(BI)) {
+          isStore = false;
+          isMop = true;
+        }
+        if (isa<StoreInst>(BI)) {
+          isStore = true;
+          isMop = true;
+        }
+        if (isa<MemTransferInst>(BI)) {
+          isMemTransfer = true;
         }
         if (isa<CallInst>(BI)) {
           // CallInst or maybe other instructions that may cause a jump.
@@ -229,10 +374,10 @@ namespace {
           mop.push_back(ConstantInt::get(Int32, isStore));
           passport.push_back(ConstantStruct::get(MopTy, mop));
         }
-        if (isMemCpy) {
+        if (isMemTransfer) {
           src_size = 32, dest_size = 32;
           Value *SrcPtr, *DestPtr;
-          llvm::MemCpyInst &IN = static_cast<MemCpyInst&>(*BI);
+          llvm::MemTransferInst &IN = static_cast<MemTransferInst&>(*BI);
           getAddr(BBCount, BBNumMops, BI);
           SrcPtr = IN.getSource();
           DestPtr = IN.getDest();
@@ -342,10 +487,11 @@ namespace {
       TLEBIndex++;
     }
 
-    void InstrumentMemcpy(BasicBlock::iterator &BI,
+    // Instrument llvm.memcpy and llvm.memmove.
+    void InstrumentMemTransfer(BasicBlock::iterator &BI,
                           Value *TLEB) {
       Value *MopPtr, *TLEBPtr;
-      llvm::MemCpyInst &IN = static_cast<MemCpyInst&>(*BI);
+      llvm::MemTransferInst &IN = static_cast<MemTransferInst&>(*BI);
       std::vector <Value*> idx(1);
       idx[0] = ConstantInt::get(Int32, TLEBIndex);
       MopPtr = new IntToPtrInst(IN.getLength(), UIntPtr, "", BI);
@@ -388,14 +534,183 @@ namespace {
       TLEBIndex++;
     }
 
+    bool flushBeforeCall(Module &M, BasicBlock::iterator &BI) {
+      std::vector <Value*> Args(3);
+      Args[0] = ConstantPointerNull::get(MopTyPtr);
+      Args[1] = ConstantInt::get(Int32, 0);
+      Args[2] = ConstantInt::get(Int32, 0);
+      CallInst::Create(BBFlushFn, Args.begin(), Args.end(), "", BI);
+      return true;
+    }
+
+    // Process a real basic block, i.e. a piece of code containing no calls.
+    // Returns true iff a call to bb_flush was inserted.
+    bool runOnBasicBlockSlice(Module &M,
+                              BasicBlock::iterator &Begin,
+                              BasicBlock::iterator &End,
+                              bool first_dtor_bb) {
+      bool result = false;
+      BBCount++;
+      OldTLEBIndex = 0;
+      TLEBIndex = 0;
+      Value *TLEB = NULL;
+      bool have_passport = MakePassportFromSlice(M, Begin, End);
+      if (ShouldFlushSlice(Begin, End)) {
+        BasicBlock::iterator First = Begin;
+#if DEBUG
+        errs() << "BI: " << First->getOpcodeName() << "\n";
+#endif
+        std::vector <Value*> Args(3);
+        std::vector <Value*> idx;
+        idx.push_back(ConstantInt::get(Int32, 0));
+        idx.push_back(ConstantInt::get(Int32, 0));
+        if (have_passport) {
+          Args[0] =
+            GetElementPtrInst::Create(BBPassportGlob,
+                                      idx.begin(),
+                                      idx.end(),
+                                      "",
+                                      First);
+        } else {
+          Args[0] = ConstantPointerNull::get(MopTyPtr);
+        }
+
+        Args[1] = ConstantInt::get(Int32, BBNumMops);
+        Args[2] = ConstantInt::get(Int32, getAddr(BBCount, 0, First));
+        TLEB = CallInst::Create(BBFlushFn, Args.begin(), Args.end(), "",
+                           First);
+        result = true;
+      }
+
+#if DEBUG
+      errs() << "========BB("<< BBCount<<")===========\n";
+#endif
+
+      for (BasicBlock::iterator BI = Begin, BE = End;
+           BI != BE; ++BI) {
+        bool unknown = true;  // we just don't want a bunch of nested if()s
+        if (isa<LoadInst>(BI)) {
+#if DEBUG
+          errs() << "<";
+#endif
+          // Instrument LOAD.
+          InstrumentMop(BI, false, TLEB, first_dtor_bb);
+          unknown = false;
+        }
+        if (isa<StoreInst>(BI)) {
+#if DEBUG
+          errs() << ">";
+#endif
+          // Instrument STORE.
+          InstrumentMop(BI, true, TLEB, first_dtor_bb);
+          unknown = false;
+        }
+        if (isa<MemTransferInst>(BI)) {
+          InstrumentMemTransfer(BI, TLEB);
+          unknown = false;
+        }
+        // TODO(glider): invoke!
+        if ((isa<CallInst>(BI) && !isa<MemTransferInst>(BI)) || isa<InvokeInst>(BI)) {
+          // BBSlice can't contain a call or invoke instruction.
+          errs() << "Invalid instruction: ";
+          BI->dump();
+          assert(false);
+        }
+        if (unknown) {
+#if DEBUG
+          errs() << " ";
+#endif
+        }
+#if DEBUG
+        //errs() << "BI: " << BI->getOpcodeName() << "\n";
+#endif
+      }
+#if DEBUG
+      errs() << "========BB===========\n";
+#endif
+      return result;
+    }
+
     bool runOnBasicBlock(Module &M, Function::iterator &BB,
+                         bool first_dtor_bb) {
+//      errs() << "BB: "<<BB->getParent()->getName() <<"\n";
+      BasicBlock::iterator Begin = BB->begin(), End = BB->begin();
+      bool validBegin = false, validEnd = false;
+      bool dirty = false, new_dirty = false;
+      for (BasicBlock::iterator BI = BB->begin(), BE = BB->end();
+           BI != BE;
+           ++BI) {
+        if (!validBegin) {
+          Begin = BI;
+          validBegin = true;
+        }
+        bool unknown = true;  // we just don't want a bunch of nested if()s
+        if ((isa<CallInst>(BI) && !isa<MemTransferInst>(BI)) || isa<InvokeInst>(BI)) {
+          std::vector<Value*> inst(1);
+          llvm::Instruction &IN = *BI;
+          if ((isa<CallInst>(BI) &&
+               static_cast<CallInst&>(IN).getCalledFunction() == BBFlushFn) ||
+              (isa<InvokeInst>(BI) &&
+               static_cast<InvokeInst&>(IN).getCalledFunction() == BBFlushFn)) {
+            // TODO(glider): we shouldn't encounter BBFlushFn at all.
+            errs() << "BBFlushFn!\n";
+            assert(false);
+          }
+          // TODO(glider): should we invalidate first_dtor_bb after the first
+          // slice?
+          if (validBegin && validEnd) {
+            End = BI;
+            new_dirty = runOnBasicBlockSlice(M, Begin, End, first_dtor_bb);
+            dirty = dirty || new_dirty;
+          } else {
+            if (dirty) {
+              flushBeforeCall(M, BI);
+            }
+          }
+          validBegin = false;
+          validEnd = false;
+          unknown = false;
+        }
+
+        if (isa<ReturnInst>(BI)) {
+#if DEBUG
+          errs() << "-";
+#endif
+          if (validBegin && validEnd) {
+            End = BI;
+            new_dirty = runOnBasicBlockSlice(M, Begin, End, first_dtor_bb);
+            dirty = dirty || new_dirty;
+          }
+          validBegin = false;
+          validEnd = false;
+
+          std::vector<Value*> inst(0);
+          CallInst::Create(RtnExitFn, inst.begin(), inst.end(), "", BI);
+          unknown = false;
+        }
+
+        if (unknown) {
+          // do nothing
+          End = BI;
+          validEnd = true;
+        }
+      }
+      if (validBegin) {
+        End = BB->end();
+        runOnBasicBlockSlice(M, Begin, End, first_dtor_bb);
+      }
+
+    }
+
+
+    bool unused_runOnBasicBlock(Module &M, Function::iterator &BB,
                          bool first_dtor_bb) {
       BBCount++;
       OldTLEBIndex = 0;
       TLEBIndex = 0;
       Value *TLEB = NULL;
-      bool have_passport = MakePassport(M, BB);
-      if (ShouldFlush(BB)) {
+      bool have_passport = unused_MakePassport(M, BB);
+      if (unused_ShouldFlush(BB)) {
 //      if (have_passport) {
         BasicBlock::iterator First = BB->begin();
 #if DEBUG
@@ -417,11 +732,7 @@ namespace {
         }
 
         Args[1] = ConstantInt::get(Int32, BBNumMops);
-//        if (FunPtrOrNull) {
-//          Args[2] = BitCastInst::CreatePointerCast(FunPtrOrNull, Int32, "fcast", First);
-//        } else {
-          Args[2] = ConstantInt::get(Int32, getAddr(BBCount, 0, First));
-//        }
+        Args[2] = ConstantInt::get(Int32, getAddr(BBCount, 0, First));
         TLEB = CallInst::Create(BBFlushFn, Args.begin(), Args.end(), "",
                            First);
       }
@@ -449,8 +760,8 @@ namespace {
           InstrumentMop(BI, true, TLEB, first_dtor_bb);
           unknown = false;
         }
-        if (isa<MemCpyInst>(BI)) {
-          InstrumentMemcpy(BI, TLEB);
+        if (isa<MemTransferInst>(BI)) {
+          InstrumentMemTransfer(BI, TLEB);
           unknown = false;
         }
         // TODO(glider): invoke!
