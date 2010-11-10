@@ -4,22 +4,22 @@ RANLIB=ranlib
 SRC=tsan_rtl.cc
 ERRORLVL=-Werror
 ERRORLVL=-Werror -Wno-deprecated -Wno-unused-function
-OBJS32=x86-thread_sanitizer.o x86-ts_util.o x86-suppressions.o
+OBJS32=x86-thread_sanitizer.o x86-ts_util.o x86-suppressions.o x86-common_util.o x86-ignore.o
 TSAN_PATH=../../tsan
+
 FLAGS=-I. -Istlport -I../../third_party/stlport -I$(TSAN_PATH) \
       -fno-exceptions -g -O0 \
       -D_STLP_NO_IOSTREAMS=1 -DTS_LLVM \
-      -DDYNAMIC_ANNOTATIONS_WANT_ATTRIBUTE_WEAK \
-      -DDEBUG=1
+      -DDYNAMIC_ANNOTATIONS_WANT_ATTRIBUTE_WEAK
 
 FOREIGN_HEADERS=$(TSAN_PATH)/ts_lock.h $(TSAN_PATH)/ts_stats.h \
                 $(TSAN_PATH)/ts_heap_info.h $(TSAN_PATH)/ts_trace_info.h \
                 $(TSAN_PATH)/ts_simple_cache.h $(TSAN_PATH)/ts_replace.h \
                 $(TSAN_PATH)/ts_util.h $(TSAN_PATH)/ts_event_names.h \
                 $(TSAN_PATH)/ts_events.h $(TSAN_PATH)/suppressions.h \
-		$(TSAN_PATH)/thread_sanitizer.h
+                $(TSAN_PATH)/ignore.h $(TSAN_PATH)/common_util.h \
+                $(TSAN_PATH)/thread_sanitizer.h
 
-#TS_HEADERS=thread_sanitizer.h
 TS_HEADERS=
 
 RTL_32_O=tsan_rtl32.o
