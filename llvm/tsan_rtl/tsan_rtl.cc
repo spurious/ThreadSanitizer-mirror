@@ -1490,6 +1490,18 @@ void AnnotateFlushState(char *file, int line) {
 }
 
 extern "C"
+void AnnotateNewMemory(char *file, int line, void *mem, long size) {
+  DECLARE_TID_AND_PC();
+  SPut(MALLOC, tid, pc, (uintptr_t)mem, size);
+}
+
+extern "C"
+void AnnotateFlushExpectedRaces(char *file, int line) {
+  DECLARE_TID_AND_PC();
+  SPut(FLUSH_EXPECTED_RACES, tid, pc, 0, 0);
+}
+
+extern "C"
 void AnnotateEnableRaceDetection(char *file, int line, int enable) {
   GIL scoped;
   global_ignore = !enable;
@@ -1589,6 +1601,8 @@ void AnnotateIgnoreWritesEnd(char *file, int line, void *mu) {
   Put(IGNORE_WRITES_END, tid, pc, 0, 0);
   DPrintf("IGNORE_WRITES_END @%p\n", mu);
 }
+
+
 // }}}
 
 // Debug info routines {{{1
