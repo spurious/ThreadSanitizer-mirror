@@ -28,7 +28,7 @@ namespace {
     int BBCount, ModuleFunctionCount, ModuleMopCount, TLEBIndex, OldTLEBIndex;
     Value *BBPassportGlob;
     int BBNumMops;
-    Constant *MopFn, *BBStartFn, *BBEndFn, *BBFlushFn, *BBFlushSliceFn;
+    Constant *BBFlushFn;
     Constant *RtnCallFn, *RtnExitFn;
     const PointerType *UIntPtr, *MopTyPtr, *Int8Ptr;
     const Type *Int32, *ArithmeticPtr;
@@ -87,24 +87,18 @@ namespace {
       BBExtPassportType = ArrayType::get(MopTy, kTLEBSize);
       TLEBTy = ArrayType::get(UIntPtr, kTLEBSize);
       TLEBPtrType = PointerType::get(UIntPtr, 0);
-      MopFn = M.getOrInsertFunction("mop", Void,
-                                    UIntPtr, Int32, Int32,
-                                    (Type*)0);
-      BBStartFn = M.getOrInsertFunction("bb_start", TLEBPtrType, (Type*)0);
-      BBEndFn = M.getOrInsertFunction("bb_end",
-                                      Void,
-                                      MopTyPtr, Int32, (Type*)0);
+
       // void* bb_flush(next_mops, next_num_mops, next_bb_index)
       BBFlushFn = M.getOrInsertFunction("bb_flush",
                                         TLEBPtrType,
                                         MopTyPtr, Int32, Int32, (Type*)0);
-      // void bb_flush_slice(slice_start, slice_end)
-      BBFlushSliceFn = M.getOrInsertFunction("bb_flush_slice",
-                                             Void,
-                                             Int32, Int32, (Type*)0);
+
+      // void rtn_call(void *addr)
       RtnCallFn = M.getOrInsertFunction("rtn_call",
                                         Void,
                                         Int32, (Type*)0);
+
+      // void rtn_exit()
       RtnExitFn = M.getOrInsertFunction("rtn_exit",
                                         Void, (Type*)0);
       int nBB = 1, FnBB = 1;
@@ -117,7 +111,7 @@ namespace {
         errs() << "F" << ModuleFunctionCount << ": " << F->getName() << "\n";
 #endif
         if (F->isDeclaration()) continue;
-        //Function *FunPtr = F;
+
         // TODO(glider): document this.
         if ((F->getName()).find("_Znw") != std::string::npos) {
           continue;
@@ -129,7 +123,6 @@ namespace {
 
         for (Function::iterator BB = F->begin(), E = F->end(); BB != E; ++BB) {
           nBB++;
-          //FunPtr = NULL;
           runOnBasicBlock(M, BB, first_dtor_bb);
           first_dtor_bb = false;
         }
