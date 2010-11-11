@@ -26,7 +26,6 @@
 
 struct Passport {
   MopInfo *mop_info;
-  TraceInfoPOD *trace_info;
   int num_mops;
   void *curr_bb_index;
   void *known_bb_addr;
@@ -448,7 +447,6 @@ int GetTid(ThreadInfo *info) {
     info->tid = max_tid;
     info->passport_index = 0;
     info->passport[0].mop_info = NULL;
-    info->passport[0].trace_info = NULL;
     info->passport[0].num_mops = 0;
     info->passport[0].curr_bb_index = NULL;
     info->passport[0].known_bb_addr = NULL;
