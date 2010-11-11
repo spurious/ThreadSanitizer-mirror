@@ -38,6 +38,10 @@ void unsafe_flush_tleb();
 static inline void Put(EventType type, int32_t tid, pc_t pc,
                        uintptr_t a, uintptr_t info);
 
+// Put a synchronization event to ThreadSanitizer.
+static inline void SPut(EventType type, int32_t tid, pc_t pc,
+                        uintptr_t a, uintptr_t info);
+
 
 
 #include "tsan_rtl_wrap.h"

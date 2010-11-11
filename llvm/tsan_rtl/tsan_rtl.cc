@@ -6,9 +6,9 @@
 
 #define EXTRA_REPLACE_PARAMS int tid, pc_t pc,
 #define REPORT_READ_RANGE(x, size) do { \
-    if (size) Put(READ, tid, pc, (uintptr_t)(x), (size)); } while(0)
+    if (size) SPut(READ, tid, pc, (uintptr_t)(x), (size)); } while(0)
 #define REPORT_WRITE_RANGE(x, size) do { \
-    if (size) Put(WRITE, tid, pc, (uintptr_t)(x), (size)); } while(0)
+    if (size) SPut(WRITE, tid, pc, (uintptr_t)(x), (size)); } while(0)
 #include "ts_replace.h"
 
 #define DEBUG 1
@@ -24,15 +24,8 @@
 # define DEBUG_DO(code)
 #endif
 
-
-struct LLVMMopInfo {
-  pc_t pc;  // in fact it's the MOp number
-  int size;
-  int is_write;
-};
-
 struct Passport {
-  LLVMMopInfo *mop_info;
+  MopInfo *mop_info;
   TraceInfoPOD *trace_info;
   int num_mops;
   void *curr_bb_index;
@@ -508,28 +501,17 @@ void unsafe_flush_tleb_slice(ThreadInfo *info,
       UPut(SBLOCK_ENTER, (uintptr_t)tid, (uintptr_t)bb_addr, 0, 0);
     }
   }
-  LLVMMopInfo *mops = passport.mop_info;
-  int read_len = 1, write_len = 1;
+  MopInfo *mops = passport.mop_info;
   for (int i = slice_start; i < slice_end; ++i) {
     unsigned long addr = info->TLEB[i];
+    assert(mops[i].size);
     switch (mops[i].is_write) {
       case 1: {
-        if (write_len) {
-          UPut(WRITE, tid, mops[i].pc, addr, mops[i].size * write_len);
-        }
-        write_len = 1;
+        UPut(WRITE, tid, mops[i].pc, addr, mops[i].size);
         break;
       }
       case 0: {
-        if (read_len) {
-          UPut(READ, tid, mops[i].pc, addr, mops[i].size * read_len);
-        }
-        read_len = 1;
-        break;
-      }
-      case 2: {
-        write_len = addr;
-        read_len = addr;
+        UPut(READ, tid, mops[i].pc, addr, mops[i].size);
         break;
       }
     }
@@ -540,7 +522,7 @@ void unsafe_flush_tleb_slice(ThreadInfo *info,
 // TODO(glider): we may want the basic block address to differ from the PC
 // of the first MOP in that basic block.
 extern "C"
-void* bb_flush(LLVMMopInfo *next_mops,
+void* bb_flush(MopInfo *next_mops,
                int next_num_mops, void *next_bb_index) {
   GIL scoped;
   Passport &passport = INFO.passport[INFO.passport_index];
@@ -1247,6 +1229,21 @@ extern
 void *memcpy(char *dest, const char *src, size_t n) {
   DECLARE_TID_AND_PC();
   return Replace_memcpy(tid, pc, dest, src, n);
+}
+
+extern "C"
+void *rtl_memcpy(char *dest, const char *src, size_t n) {
+  DECLARE_TID_AND_PC();
+  return Replace_memcpy(tid, pc, dest, src, n);
+}
+
+extern "C"
+void *rtl_memmove(char *dest, const char *src, size_t n) {
+  DECLARE_TID_AND_PC();
+  void *result = memmove(dest, src, n);
+  REPORT_READ_RANGE(src, n);
+  REPORT_WRITE_RANGE(dest, n);
+  return result;
 }
 
 extern
