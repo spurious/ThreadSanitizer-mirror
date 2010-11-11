@@ -6331,6 +6331,7 @@ namespace MemoryTypes {  // {{{1
   }
 
   void RaceOnMemory(void (*callback)(void *), char *mem) {
+    ANNOTATE_FLUSH_EXPECTED_RACES();
     ANNOTATE_EXPECT_RACE(mem, "race");
     FAST_MODE_INIT(mem);
     MyThread t1(callback, mem),
