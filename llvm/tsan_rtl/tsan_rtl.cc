@@ -11,9 +11,6 @@
     if (size) SPut(WRITE, tid, pc, (uintptr_t)(x), (size)); } while(0)
 #include "ts_replace.h"
 
-#define DEBUG 1
-#undef DEBUG
-
 #ifdef DEBUG
 # define DPrintf(params...) \
     Printf(params)
@@ -25,7 +22,7 @@
 #endif
 
 struct Passport {
-  MopInfo *mop_info;
+  TraceInfoPOD *trace_info;
   int num_mops;
   void *curr_bb_index;
   void *known_bb_addr;
@@ -284,6 +281,41 @@ static inline void SPut(EventType type, int32_t tid, pc_t pc,
   USPut(type, tid, pc, a, info);
 }
 
+static inline void UPutTrace(int32_t tid, TraceInfoPOD *trace, uintptr_t *tleb) {
+#ifdef DEBUG
+  assert(GIL::GetDepth());
+#endif
+  if (!HAVE_THREAD_0) {
+    SPut(THR_START, 0, 0, 0, 0);
+  }
+  if (RTL_INIT != 1) return;
+  if (!global_ignore) {
+    stats_events_processed += trace->n_mops_;
+    stats_cur_events += trace->n_mops_;
+
+    IN_RTL++;
+    CHECK_IN_RTL();
+    assert(trace);
+    if (G_flags->verbosity >= 2) {
+      Event sblock(SBLOCK_ENTER, tid, trace->pc_, 0, trace->n_mops_);
+      sblock.Print();
+      assert(trace->n_mops_);
+      for (size_t i = 0; i < trace->n_mops_; i++) {
+        if (trace->mops_[i].is_write) {
+          Event event(WRITE, tid, trace->mops_[i].pc, tleb[i], trace->mops_[i].size);
+          event.Print();
+        } else {
+          Event event(READ, tid, trace->mops_[i].pc, tleb[i], trace->mops_[i].size);
+          event.Print();
+        }
+      }
+    }
+    ThreadSanitizerHandleTrace(tid, reinterpret_cast<TraceInfo*>(trace), tleb);
+    IN_RTL--;
+    CHECK_IN_RTL();
+  }
+}
+
 static inline void UPut(EventType type, int32_t tid, pc_t pc,
                         uintptr_t a, uintptr_t info) {
 #ifdef DEBUG
@@ -424,7 +456,7 @@ int GetTid(ThreadInfo *info) {
     max_tid++;
     info->tid = max_tid;
     info->passport_index = 0;
-    info->passport[0].mop_info = NULL;
+    info->passport[0].trace_info = NULL;
     info->passport[0].num_mops = 0;
     info->passport[0].curr_bb_index = NULL;
     info->passport[0].known_bb_addr = NULL;
@@ -470,43 +502,22 @@ void unsafe_flush_tleb_slice(ThreadInfo *info,
   }
   Passport &passport = info->passport[info->passport_index];
   int tid = info->tid;
-  if (slice_start == 0) {
-    // enter sblock
-    void *bb_addr = passport.curr_bb_index;
-    if (bb_addr) {
-      UPut(SBLOCK_ENTER, (uintptr_t)tid, (uintptr_t)bb_addr, 0, 0);
-    }
-  }
-  MopInfo *mops = passport.mop_info;
-  for (int i = slice_start; i < slice_end; ++i) {
-    unsigned long addr = info->TLEB[i];
-    assert(mops[i].size);
-    switch (mops[i].is_write) {
-      case 1: {
-        UPut(WRITE, tid, mops[i].pc, addr, mops[i].size);
-        break;
-      }
-      case 0: {
-        UPut(READ, tid, mops[i].pc, addr, mops[i].size);
-        break;
-      }
-    }
-  }
+  UPutTrace(tid, passport.trace_info, info->TLEB);
 } // }}}
 
 
 // TODO(glider): we may want the basic block address to differ from the PC
 // of the first MOP in that basic block.
 extern "C"
-void* bb_flush(MopInfo *next_mops,
+void* bb_flush(TraceInfoPOD *next_mops,
                int next_num_mops, void *next_bb_index) {
   GIL scoped;
   Passport &passport = INFO.passport[INFO.passport_index];
-  if (passport.mop_info) {
+  if (passport.trace_info) {
     // This is not a function entry block
     unsafe_flush_tleb_slice(&INFO, 0, passport.num_mops);
   }
-  passport.mop_info = next_mops;
+  passport.trace_info = next_mops;
   passport.num_mops = next_num_mops;
   if (passport.known_bb_addr) {
     passport.curr_bb_index = passport.known_bb_addr;
@@ -528,9 +539,9 @@ void unsafe_flush_tleb() {
   ThreadInfo *info = &INFO;
   if (info) {
     Passport &passport = info->passport[info->passport_index];
-    if (passport.num_mops) {
+    if (passport.trace_info) {
       unsafe_flush_tleb_slice(info, 0, passport.num_mops);
-      passport.num_mops = 0;
+      passport.trace_info = NULL;
     }
   } else {
     DPrintf("ERROR: thread %d not found!\n", GetTid());
@@ -1384,7 +1395,7 @@ void rtn_call(void *addr) {
   UPut(RTN_CALL, tid, 0, (uintptr_t)addr, 0);
   //INFO.passport_index++;
   Passport &passport = INFO.passport[INFO.passport_index];
-  passport.mop_info = NULL;
+  passport.trace_info = NULL;
   passport.num_mops = 0;
   passport.known_bb_addr = addr;
 }
@@ -1601,3 +1612,9 @@ void PcToStrings(pc_t pc, bool demangle,
   }
 }
 // }}}
+
+#ifdef INCLUDE_THREAD_SANITIZER_CC
+# undef INCLUDE_THREAD_SANITIZER_CC
+# include "thread_sanitizer.cc"
+#endif
+

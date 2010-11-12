@@ -7,6 +7,18 @@ ERRORLVL=-Werror -Wno-deprecated -Wno-unused-function
 OBJS32=x86-thread_sanitizer.o x86-ts_util.o x86-suppressions.o x86-common_util.o x86-ignore.o
 TSAN_PATH=../../tsan
 
+ifeq ($(DEBUG), 1)
+  D=-debug
+  DEFINES+=-DDEBUG=1
+  OBJS32=x86-thread_sanitizer.o x86-ts_util.o x86-suppressions.o x86-common_util.o x86-ignore.o
+else
+  D=
+  # In optimized mode, thread_sanitizer.cc is included into the tool code.
+  DEFINES+=-DINCLUDE_THREAD_SANITIZER_CC=1
+  OBJS32=x86-ts_util.o x86-suppressions.o x86-common_util.o x86-ignore.o
+endif
+
+
 FLAGS=-I. -Istlport -I../../third_party/stlport -I$(TSAN_PATH) \
       -fno-exceptions -g -O2 \
       -D_STLP_NO_IOSTREAMS=1 -DTS_LLVM \

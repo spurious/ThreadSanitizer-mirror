@@ -32,11 +32,11 @@ namespace {
     Constant *BBFlushFn;
     Constant *RtnCallFn, *RtnExitFn;
     Constant *MemCpyFn, *MemMoveFn;
-    const PointerType *UIntPtr, *MopTyPtr, *Int8Ptr;
+    const PointerType *UIntPtr, *MopTyPtr, *Int8Ptr, *TraceInfoTypePtr;
     const Type *Int32, *Int8, *ArithmeticPtr;
     const Type *Void;
-    const StructType *MopTy;
-    const ArrayType *BBPassportType, *BBExtPassportType;
+    const StructType *MopTy, *TraceInfoType, *BBTraceInfoType;
+    const ArrayType *BBPassportType, *BBExtPassportType, *MopArrayType;
     const Type *TLEBTy;
     const PointerType *TLEBPtrType;
     static const int kTLEBSize = 100;
@@ -87,14 +87,33 @@ namespace {
       Void = Type::getVoidTy(Context);
       MopTy = StructType::get(Context, Int32, Int8, Int8, NULL);
       MopTyPtr = PointerType::get(MopTy, 0);
-      BBExtPassportType = ArrayType::get(MopTy, kTLEBSize);
+      MopArrayType = ArrayType::get(MopTy, kTLEBSize);
+
+      ///BBExtPassportType = ArrayType::get(MopTy, kTLEBSize);
+
+      // class TraceInfoPOD {
+      //  protected:
+      //   size_t n_mops_;
+      //   size_t pc_;
+      //   size_t id_;
+      //   size_t counter_;
+      //   bool   generate_segments_;
+      //   MopInfo mops_[1];
+      // };
+
+      TraceInfoType = StructType::get(Context,
+                                    Int32, Int32, Int32, Int32, Int8,
+                                    MopArrayType,
+                                    NULL);
+      TraceInfoTypePtr = PointerType::get(TraceInfoType, 0);
+
       TLEBTy = ArrayType::get(UIntPtr, kTLEBSize);
       TLEBPtrType = PointerType::get(UIntPtr, 0);
 
       // void* bb_flush(next_mops, next_num_mops, next_bb_index)
       BBFlushFn = M.getOrInsertFunction("bb_flush",
                                         TLEBPtrType,
-                                        MopTyPtr, Int32, Int32, (Type*)0);
+                                        TraceInfoTypePtr, Int32, Int32, (Type*)0);
 
       // void rtn_call(void *addr)
       RtnCallFn = M.getOrInsertFunction("rtn_call",
@@ -238,12 +257,35 @@ namespace {
       }
       if (BBNumMops) {
         BBPassportType = ArrayType::get(MopTy, BBNumMops);
+        LLVMContext &Context = M.getContext();
+        BBTraceInfoType = StructType::get(Context,
+                                    Int32, Int32, Int32, Int32, Int8,
+                                    BBPassportType,
+                                    NULL);
+
+        std::vector<Constant*> trace_info;
+        // num_mops_
+        trace_info.push_back(ConstantInt::get(Int32, BBNumMops));
+        // pc_
+        trace_info.push_back(ConstantInt::get(Int32, getAddr(BBCount,
+                                                             0, NULL)));
+        // id_ == pc_
+        trace_info.push_back(ConstantInt::get(Int32, getAddr(BBCount,
+                                                             0, NULL)));
+        // counter_
+        trace_info.push_back(ConstantInt::get(Int32, 0));
+        // generate_segments_
+        trace_info.push_back(ConstantInt::get(Int8, 1));
+        // mops_
+        trace_info.push_back(ConstantArray::get(BBPassportType, passport));
+
         BBPassportGlob = new GlobalVariable(
             M,
-            BBPassportType,
+            BBTraceInfoType,
             false,
             GlobalValue::InternalLinkage,
-            ConstantArray::get(BBPassportType, passport),
+            ConstantStruct::get(BBTraceInfoType, trace_info),
+//            ConstantArray::get(BBPassportType, passport),
             "bb_passport",
             false, 0
             );
@@ -331,7 +373,7 @@ namespace {
 
     bool flushBeforeCall(Module &M, BasicBlock::iterator &BI) {
       std::vector <Value*> Args(3);
-      Args[0] = ConstantPointerNull::get(MopTyPtr);
+      Args[0] = ConstantPointerNull::get(TraceInfoTypePtr);
       Args[1] = ConstantInt::get(Int32, 0);
       Args[2] = ConstantInt::get(Int32, 0);
       CallInst::Create(BBFlushFn, Args.begin(), Args.end(), "", BI);
@@ -358,7 +400,7 @@ namespace {
         std::vector <Value*> Args(3);
         std::vector <Value*> idx;
         idx.push_back(ConstantInt::get(Int32, 0));
-        idx.push_back(ConstantInt::get(Int32, 0));
+//        idx.push_back(ConstantInt::get(Int32, 0));
         if (have_passport) {
           Args[0] =
             GetElementPtrInst::Create(BBPassportGlob,
@@ -366,8 +408,10 @@ namespace {
                                       idx.end(),
                                       "",
                                       First);
+          Args[0] = BitCastInst::CreatePointerCast(Args[0], TraceInfoTypePtr,
+                                                   "", First);
         } else {
-          Args[0] = ConstantPointerNull::get(MopTyPtr);
+          Args[0] = ConstantPointerNull::get(TraceInfoTypePtr);
         }
 
         Args[1] = ConstantInt::get(Int32, BBNumMops);
