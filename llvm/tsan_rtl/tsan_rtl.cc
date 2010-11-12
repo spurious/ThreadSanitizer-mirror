@@ -805,7 +805,6 @@ void *__wrap_realloc(void *ptr, size_t size) {
 // }}}
 
 // new/delete {{{1
-#endif
 extern "C"
 void *__wrap__Znwj(unsigned int size) {
   if (IN_RTL) return __real__Znwj(size);
