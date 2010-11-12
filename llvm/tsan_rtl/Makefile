@@ -8,7 +8,7 @@ OBJS32=x86-thread_sanitizer.o x86-ts_util.o x86-suppressions.o x86-common_util.o
 TSAN_PATH=../../tsan
 
 FLAGS=-I. -Istlport -I../../third_party/stlport -I$(TSAN_PATH) \
-      -fno-exceptions -g -O0 \
+      -fno-exceptions -g -O2 \
       -D_STLP_NO_IOSTREAMS=1 -DTS_LLVM \
       -DDYNAMIC_ANNOTATIONS_WANT_ATTRIBUTE_WEAK
 
