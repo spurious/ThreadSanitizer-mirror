@@ -99,8 +99,8 @@ namespace AtomicityTests_ReaderThenWriterLockTest {  // {{{1
 
 typedef std::map<int, int> Map;
 Map *m;
-
 RWLock mu;
+bool reported = false;
 
 void CheckMapAndInsertIfNeeded(int key, int val) {
   Map::iterator it;
@@ -116,7 +116,10 @@ void CheckMapAndInsertIfNeeded(int key, int val) {
     WriterLockScoped writer(&mu);
     // CHECK(m->find(key) == m->end());
     if (m->find(key) != m->end()) {
-      printf("Here comes the result of atomicity violation!\n");
+      if (!reported) {
+        printf("Here comes the result of atomicity violation!\n");
+        reported = true;
+      }
       return;
     }
     (*m)[key] = val;
