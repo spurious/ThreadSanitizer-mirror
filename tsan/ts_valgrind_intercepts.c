@@ -626,15 +626,15 @@ static void* ThreadSanitizerStartThread ( void* xargsV )
    */
    stacksize = pthread_get_stacksize_np(me);
    stackaddr = pthread_get_stackaddr_np(me);
-   DO_CREQ_v_WW(TSREQ_SET_STACKTOP_STACKSIZE, size_t, stackaddr,
-                                              void*, stacksize);
+   DO_CREQ_v_WW(TSREQ_SET_STACKTOP_STACKSIZE, void*, stackaddr,
+                                              size_t, stacksize);
 #else
    if (pthread_getattr_np(pthread_self(), &attr) == 0) {
      pthread_attr_getstack(&attr, &stackaddr, &stacksize);
      pthread_attr_destroy(&attr);
-     DO_CREQ_v_WW(TSREQ_SET_STACKTOP_STACKSIZE, size_t, stackaddr + stacksize,
-                                                void*, stacksize);
-//     DO_CREQ_v_W(TSREQ_THR_STACK_TOP, void*, stackaddr);
+     DO_CREQ_v_WW(TSREQ_SET_STACKTOP_STACKSIZE,
+                  void*, (char*)stackaddr + stacksize,
+                  size_t, stacksize);
    } else {
      /* Let the tool guess where the stack starts. */
      DO_CREQ_v_W(TSREQ_THR_STACK_TOP, void*, &stacksize);
