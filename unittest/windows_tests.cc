@@ -30,8 +30,8 @@
 */
 
 #include <gtest/gtest.h>
-#include "gtest_fixture_injection.h"
 #include "test_utils.h"
+#include "gtest_fixture_injection.h"
 
 void DummyWorker() {
 }
