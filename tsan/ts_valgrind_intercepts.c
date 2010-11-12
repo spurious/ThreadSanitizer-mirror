@@ -615,20 +615,27 @@ static void* ThreadSanitizerStartThread ( void* xargsV )
    pthread_t me = pthread_self();
    /* Tell the tool what my pthread_t is. */
    DO_CREQ_v_W(TSREQ_SET_MY_PTHREAD_T, pthread_t,me);
+   size_t stacksize = 0;
+   void *stackaddr = NULL;
 #ifdef VGO_darwin
    /* Tell the tool what my stack size and stack top are.
       This is Darwin-specific and works as long as ThreadSanitizerStartThread
       is used for pthreads only.
    */
-   size_t stacksize = pthread_get_stacksize_np(me);
-   void* stackaddr = pthread_get_stackaddr_np(me);
+   stacksize = pthread_get_stacksize_np(me);
+   stackaddr = pthread_get_stackaddr_np(me);
    DO_CREQ_v_WW(TSREQ_SET_STACKTOP_STACKSIZE, size_t, stackaddr,
                                               void*, stacksize);
 #else
-   {
-     int local_stack_var = 0;
+   pthread_attr_t attr;
+   if (pthread_getattr_np(pthread_self(), &attr) == 0) {
+     pthread_attr_getstack(&attr, &stackaddr, &stacksize);
+     pthread_attr_destroy(&attr);
+     DO_CREQ_v_WW(TSREQ_SET_STACKTOP_STACKSIZE, size_t, stackaddr,
+                                                void*, stacksize);
+   } else {
      /* Let the tool guess where the stack starts. */
-     DO_CREQ_v_W(TSREQ_THR_STACK_TOP, void*, &local_stack_var);
+     DO_CREQ_v_W(TSREQ_THR_STACK_TOP, void*, &stacksize);
    }
 #endif
    /* allow the parent to proceed.  We can't let it proceed until
