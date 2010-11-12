@@ -43,9 +43,20 @@ struct MopInfo {
   bool      is_write;
 };
 
+
+class TraceInfoPOD {
+ public:
+  size_t n_mops_;
+  size_t pc_;
+  size_t id_;
+  size_t counter_;
+  bool   generate_segments_;
+  MopInfo mops_[1];
+};
+
 // An instance of this class is created for each TRACE (SEME region)
 // during instrumentation.
-class TraceInfo {
+class TraceInfo : protected TraceInfoPOD {
  public:
   static TraceInfo *NewTraceInfo(size_t n_mops, uintptr_t pc);
   void DeleteTraceInfo(TraceInfo *trace_info) {
@@ -65,17 +76,10 @@ class TraceInfo {
   static void PrintTraceProfile();
 
  private:
-  TraceInfo() { }
-
-  size_t n_mops_;
-  size_t pc_;
-  size_t id_;
-  size_t counter_;
-  bool   generate_segments_;
-  MopInfo mops_[1];
-
   static size_t id_counter_;
   static vector<TraceInfo*> *g_all_traces;
+
+  TraceInfo() : TraceInfoPOD() { }
 };
 
 
