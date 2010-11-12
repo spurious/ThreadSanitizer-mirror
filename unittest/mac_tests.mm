@@ -7,8 +7,8 @@
 #include <sys/mman.h>
 #import <Foundation/Foundation.h>
 
-#include "gtest_fixture_injection.h"
 #include "test_utils.h"
+#include "gtest_fixture_injection.h"
 
 #ifndef OS_darwin
 #error "This file should be built on Darwin only."
