@@ -6346,6 +6346,8 @@ namespace MemoryTypes {  // {{{1
 
   void RaceOnLocalStack(void (*callback)(void *)) {
     char object_on_stack = 0;
+    // We may have had races on the main stack before -- forget about them.
+    ANNOTATE_NEW_MEMORY(&object_on_stack, 1);
     RaceOnMemory(callback, &object_on_stack);
   }
 
