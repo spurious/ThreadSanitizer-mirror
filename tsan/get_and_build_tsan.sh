@@ -19,38 +19,27 @@ fi
 
 TOPDIR=`pwd`
 
-ARCH=`uname -m`
+VG_ARCH=$(uname -m | sed -e "s/i.86/x86/;s/x86_64/amd64/;s/arm.*/arm/")
+
+# Translate OS to valgrind-style identifiers
 OS=`uname -s`
-
-echo ------------------------------------------------
-echo Building ThreadSanitizer for $ARCH $OS
-echo ------------------------------------------------
-sleep 1
-
-# Translate ARCH and OS to valgrind-style identifiers
-if [ "$ARCH" == "i386" ]; then
-  VG_ARCH="x86"
-elif [ "$ARCH" == "x86_64" ]; then
-  VG_ARCH="amd64"
-fi
-
 if [ "$OS" == "Linux" ]; then
   VG_OS="linux"
 elif [ "$OS" == "Darwin" ]; then
   VG_OS="darwin"
 fi
 
-if [ "$ARCH $OS" == "x86_64 Linux" ]; then
-  TARGET=lo  # 32- and 64-bit optimized linux binaries
-elif [ "$ARCH $OS" == "i386 Linux" ]; then
-  TARGET=l32o # 32-only optimized Linux binaries
-elif [ "$ARCH $OS" == "i386 Darwin" ]; then
-  TARGET=m32o # 32-only optimized Mac binaries
-else
-  echo "Unsupport platform: $ARCH $OS"
+if ! echo -n "$OS $VG_ARCH" | \
+     grep "\(Linux \(amd64\|x86\)\)\|Darwin x86" >/dev/null
+then
+  echo "ThreadSanitizer is not yet supported on $OS $VG_ARCH"
   exit 1
 fi
 
+echo ------------------------------------------------
+echo Building ThreadSanitizer for $OS $VG_ARCH
+echo ------------------------------------------------
+sleep 1
 
 # Build Valgind.
 cd $TOPDIR/third_party || exit 1
@@ -58,7 +47,7 @@ cd $TOPDIR/third_party || exit 1
 ./build_and_install_valgrind.sh $VALGRIND_INST_ROOT || exit 1
 
 cd $TOPDIR/tsan || exit 1
-make -s -j4 OFFLINE= GTEST_ROOT= PIN_ROOT= ${TARGET} VALGRIND_INST_ROOT=$VALGRIND_INST_ROOT|| exit 1
+make -s -j4 OFFLINE= GTEST_ROOT= PIN_ROOT= VALGRIND_INST_ROOT=$VALGRIND_INST_ROOT || exit 1
 # Build the self contained binaries.
 make self-contained OS=$VG_OS ARCH=$VG_ARCH VALGRIND_INST_ROOT=$VALGRIND_INST_ROOT || exit 1
 
