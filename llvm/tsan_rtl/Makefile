@@ -6,6 +6,7 @@ ERRORLVL=-Werror
 ERRORLVL=-Werror -Wno-deprecated -Wno-unused-function
 OBJS32=x86-thread_sanitizer.o x86-ts_util.o x86-suppressions.o x86-common_util.o x86-ignore.o
 TSAN_PATH=../../tsan
+DEFINES=
 
 ifeq ($(DEBUG), 1)
   D=-debug
@@ -45,7 +46,7 @@ $(TSAN_PATH)/ts_event_names.h:
 	make -C $(TSAN_PATH) ts_event_names.h
 
 tsan_rtl32.o: $(SRC) tsan_rtl.h
-	$(CXX) $(SRC) $(FLAGS) -m32 -g $(ERRORLVL) -Wall -c -o $(RTL_32_O)
+	$(CXX) $(SRC) $(FLAGS) -m32 -g $(ERRORLVL) -Wall -c -o $(RTL_32_O) $(DEFINES)
 
 x86-stack_info.o:	stack_info.cc stack_info.h
 	$(CXX) -m32 -o $@ -c $< $(ERRORLVL) $(FLAGS) -USTACKINFO_STANDALONE
