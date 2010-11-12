@@ -6043,9 +6043,7 @@ void Writer2() {
   n.wait();
   GLOB++;
 }
-void Run() {
-  printf("test150: real race\n");
-  FAST_MODE_INIT(&GLOB);
+TEST(PositiveTests, RaceDetectedAfterJoin) {
   ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "real race");
   MyThread t1(Writer1);
   MyThread t2(Writer2);
@@ -6056,7 +6054,6 @@ void Run() {
   t2.Join();
   printf("\tGLOB=%d\n", GLOB);
 }
-REGISTER_TEST(Run, 150)
 }  // namespace test150
 
 
@@ -6098,14 +6095,10 @@ void AtExitThread() {
   atexit(AtExitCallback);
 }
 
-void Run() {
-  FAST_MODE_INIT(&GLOB);
-  printf("test152: negative (atexit)\n");
+TEST(NegativeTests, AtExitTest) {
   t = new MyThread(AtExitThread);
   t->Start(); // We don't join it.
-//  printf("\tGLOB=%d\n", GLOB);
 }
-REGISTER_TEST(Run, 152)
 }  // namespace test152
 
 // test153:  test for vanilla pthread_spinlock_t {{{1
