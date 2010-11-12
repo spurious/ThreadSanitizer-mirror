@@ -296,32 +296,19 @@ TEST(PositiveTests, test110) {
   NEW_ARR = new int[10];
 
 
-  FAST_MODE_INIT(STACK);
   ANNOTATE_EXPECT_RACE(STACK, "real race on stack object");
-  FAST_MODE_INIT(&GLOB);
   ANNOTATE_EXPECT_RACE(&GLOB, "real race on global object");
-  FAST_MODE_INIT(&STATIC);
   ANNOTATE_EXPECT_RACE(&STATIC, "real race on a static global object");
-  FAST_MODE_INIT(MALLOC);
   ANNOTATE_EXPECT_RACE(MALLOC, "real race on a malloc-ed object");
-  FAST_MODE_INIT(CALLOC);
   ANNOTATE_EXPECT_RACE(CALLOC, "real race on a calloc-ed object");
-  FAST_MODE_INIT(REALLOC);
   ANNOTATE_EXPECT_RACE(REALLOC, "real race on a realloc-ed object");
-  FAST_MODE_INIT(VALLOC);
   ANNOTATE_EXPECT_RACE(VALLOC, "real race on a valloc-ed object");
-  FAST_MODE_INIT(PVALLOC);
   ANNOTATE_EXPECT_RACE(PVALLOC, "real race on a pvalloc-ed object");
-  FAST_MODE_INIT(MEMALIGN);
   ANNOTATE_EXPECT_RACE(MEMALIGN, "real race on a memalign-ed object");
-  FAST_MODE_INIT(POSIX_MEMALIGN);
   ANNOTATE_EXPECT_RACE(POSIX_MEMALIGN, "real race on a posix_memalign-ed object");
-  FAST_MODE_INIT(MMAP);
   ANNOTATE_EXPECT_RACE(MMAP, "real race on a mmap-ed object");
 
-  FAST_MODE_INIT(NEW);
   ANNOTATE_EXPECT_RACE(NEW, "real race on a new-ed object");
-  FAST_MODE_INIT(NEW_ARR);
   ANNOTATE_EXPECT_RACE(NEW_ARR, "real race on a new[]-ed object");
 
   MyThreadArray t(Worker, Worker, Worker);
@@ -633,8 +620,6 @@ void Waiter2() {
 }
 
 TEST(NegativeTests, test141) {
-  FAST_MODE_INIT(&GLOB1);
-  FAST_MODE_INIT(&GLOB2);
   printf("test141: FP. unlink/fopen, rmdir/opendir.\n");
 
   dir_name = strdup("/tmp/tsan-XXXXXX");
@@ -721,10 +706,6 @@ void Worker3() {
 }
 
 TEST(PositiveTests, test146) {
-  FAST_MODE_INIT(&GLOB1);
-  FAST_MODE_INIT(&GLOB2);
-  FAST_MODE_INIT(&GLOB3);
-  FAST_MODE_INIT(&GLOB4);
   ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB1, "test146. TP: a data race on GLOB1.");
   ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB3, "test146. TP: a data race on GLOB3.");
   ANNOTATE_TRACE_MEMORY(&GLOB1);
