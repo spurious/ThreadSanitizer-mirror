@@ -43,6 +43,7 @@
 #include "test_utils.h"
 
 #include <gtest/gtest.h>
+#include "gtest_fixture_injection.h"
 
 // The tests are
 // - Stability tests (marked STAB)

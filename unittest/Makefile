@@ -121,7 +121,9 @@ $(BIN)memory_unittest-$(BUILD)$(EXE): $(BIN)memory_unittest-$(BUILD).$(OBJ) $(BI
 		$(TEST_UTILS_O) $(GTEST_LIB) ${DYNAMIC_ANNOTATIONS_O} | bin
 	${LD} $(LDFLAGS) $^ $(LIBS) $(LINKO)$@
 
-$(BIN)%-$(BUILD).$(OBJ): %.cc ${DYNAMIC_ANNOTATIONS} thread_wrappers.h thread_wrappers_win.h thread_wrappers_pthread.h old_test_suite.h test_utils.h | bin
+$(BIN)%-$(BUILD).$(OBJ): %.cc ${DYNAMIC_ANNOTATIONS} thread_wrappers.h \
+		thread_wrappers_win.h thread_wrappers_pthread.h old_test_suite.h \
+		test_utils.h gtest_fixture_injection.h | bin
 	${CXX} ${CXXFLAGS} \
 		 -I${DYNAMIC_ANNOTATIONS_DIR} -I${GTEST_ROOT}/include -I. \
 		 -DDYNAMIC_ANNOTATIONS_ENABLED=1 -c $< $(O)$@

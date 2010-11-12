@@ -7,6 +7,7 @@
 #include <sys/mman.h>
 #import <Foundation/Foundation.h>
 
+#include "gtest_fixture_injection.h"
 #include "test_utils.h"
 
 #ifndef OS_darwin

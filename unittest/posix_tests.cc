@@ -46,6 +46,7 @@
 
 #include "test_utils.h"
 #include <gtest/gtest.h>
+#include "gtest_fixture_injection.h"
 
 static CondVar CV;
 static int     COND = 0;
