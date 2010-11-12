@@ -246,34 +246,6 @@ bool isThreadLocalEvent(EventType type) {
   }
 }
 
-// TODO(glider): finish with the tests to avoid regressions.
-#if 0
-static inline void PutEvent(EventType type, int32_t tid, pc_t pc,
-                            uintptr_t a, uintptr_t info) {
-#ifdef DEBUG
-  assert(GIL::GetDepth());
-#endif
-  if (!HAVE_THREAD_0 && type != THR_START) {
-    PutEvent(THR_START, 0, 0, 0, 0);
-  }
-  if (RTL_INIT != 1) return;
-  if (!global_ignore || !isThreadLocalEvent(type)) {
-    Event event(type, tid, pc, a, info);
-    if (G_flags->verbosity) {
-      if ((G_flags->verbosity >= 2) ||
-          (type == THR_START) || (type == THR_END) || (type == THR_JOIN_AFTER) || (type == THR_CREATE_BEFORE)) {
-        event.Print();
-      }
-    }
-    stats_events_processed++;
-    stats_cur_events++;
-    if (!isThreadLocalEvent(type)) stats_non_local++;
-    ThreadSanitizerHandleOneEvent(&event);
-    if ((type==THR_START) && (tid==0)) HAVE_THREAD_0 = 1;
-  }
-}
-#endif
-
 static inline void USPut(EventType type, int32_t tid, pc_t pc,
                         uintptr_t a, uintptr_t info) {
   if (!HAVE_THREAD_0 && type != THR_START) {
@@ -545,13 +517,6 @@ void* bb_flush(MopInfo *next_mops,
   return (void*) INFO.TLEB;
 }
 
-extern "C"
-void bb_flush_slice(int slice_start, int slice_end) {
-  assert(false); // bb_flush_slice is deprecated
-  GIL scoped;
-  unsafe_flush_tleb_slice(&INFO, slice_start, slice_end);
-}
-
 // Flushes the local TLEB assuming someone is holding the global lock already.
 // Our RTL shouldn't need a thread to flush someone else's TLEB.
 void unsafe_flush_tleb() {
@@ -734,6 +699,7 @@ static inline void IGNORE_ALL_ACCESSES_AND_SYNC_END(void) {
   IGNORE_ALL_SYNC_END();
 }
 
+// Static initialization and pthread_once() {{{1
 // TODO(glider): for each runtime static initialization a guard variable
 // with a name like "_ZGVZN4testEvE1a" ("guard variable for test()::a")
 // is created. It's more correct to emit a WAIT event upon each read of
@@ -764,6 +730,7 @@ int __wrap_pthread_once(pthread_once_t *once_control,
   IGNORE_ALL_ACCESSES_END();
   return result;
 }
+// }}}
 
 // Memory allocation routines {{{1
 extern "C"
@@ -838,33 +805,6 @@ void *__wrap_realloc(void *ptr, size_t size) {
 // }}}
 
 // new/delete {{{1
-#if 0
-extern "C"
-void *__wrap__ZnwjPv(unsigned int a, void*b) {
-  if (IN_RTL) return __real__ZnwjPv(a, b);
-  IN_RTL++;
-  DECLARE_TID_AND_PC();
-  IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
-  void *result = __real__ZnwjPv(a, b);
-  IGNORE_ALL_ACCESSES_AND_SYNC_END();
-  SPut(MALLOC, tid, pc, (uintptr_t)result, a);
-  IN_RTL--;
-  return result;
-}
-
-extern "C"
-void __wrap__ZdlPvS_(void *ptr, void *b) {
-  if (IN_RTL) {
-    //__real__ZdlPvS_(ptr, b);
-    return;
-  }
-  DECLARE_TID_AND_PC();
-  SPut(FREE, tid, pc, (uintptr_t)ptr, 0);
-  IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
-  //__real__ZdlPvS_(ptr, b);
-  IGNORE_ALL_ACCESSES_AND_SYNC_END();
-}
-// }}}
 #endif
 extern "C"
 void *__wrap__Znwj(unsigned int size) {
@@ -1335,6 +1275,7 @@ void __wrap_exit(int status) {
 
 // }}}
 
+// Happens-before arc between read() and write() {{{1
 const uintptr_t kFdMagicConst = 0xf11ede5c;
 uintptr_t FdMagic(int fd) {
   uintptr_t result = kFdMagicConst;
@@ -1362,7 +1303,7 @@ ssize_t __wrap_write(int fd, const void *buf, size_t count) {
   SPut(SIGNAL, tid, pc, FdMagic(fd), 0);
   return __real_write(fd, buf, count);
 }
-
+// }}}
 
 // Signal handling {{{1
 /* Initial support for signals. Each user signal handler is stored in
