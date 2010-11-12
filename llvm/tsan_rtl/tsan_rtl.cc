@@ -21,18 +21,10 @@
 # define DEBUG_DO(code)
 #endif
 
-struct Passport {
-  TraceInfoPOD *trace_info;
-  int num_mops;
-  void *curr_bb_index;
-  void *known_bb_addr;
-};
-
 struct ThreadInfo {
   int tid;
   uintptr_t TLEB[1000];
-  Passport passport[100];
-  int passport_index;
+  TraceInfoPOD *trace_info;
 };
 
 struct LLVMDebugInfo {
@@ -359,7 +351,6 @@ static inline void Put(EventType type, int32_t tid, pc_t pc,
   }
 }
 
-// TODO(glider): atexit()
 void finalize() {
   IN_RTL++;
   CHECK_IN_RTL();
@@ -382,7 +373,6 @@ void finalize() {
     // This is the last atexit hook, so it's ok to terminate the program.
     _exit(G_flags->error_exitcode);
   }
-
 }
 
 inline void init_debug() {
@@ -443,6 +433,7 @@ class Init {
 
 static Init dummy_init;
 
+// TODO(glider): GetPc should return valid PCs.
 pc_t GetPc() {
   return 0;
 }
@@ -455,11 +446,7 @@ int GetTid(ThreadInfo *info) {
     pthread_t pt = pthread_self();
     max_tid++;
     info->tid = max_tid;
-    info->passport_index = 0;
-    info->passport[0].trace_info = NULL;
-    info->passport[0].num_mops = 0;
-    info->passport[0].curr_bb_index = NULL;
-    info->passport[0].known_bb_addr = NULL;
+    info->trace_info = NULL;
     switch (RTL_INIT) {
       case 1: {
         Tids[pt] = info->tid;
@@ -493,38 +480,23 @@ int GetTid() {
   return GetTid(&INFO);
 }
 
-void unsafe_flush_tleb_slice(ThreadInfo *info,
-                             int slice_start, int slice_end) {
+void unsafe_flush_trace(ThreadInfo *info) {
   // {{{1
-  if (slice_start) {
-    // We do want to flush only full blocks.
-    assert(false);
-  }
-  Passport &passport = info->passport[info->passport_index];
   int tid = info->tid;
-  UPutTrace(tid, passport.trace_info, info->TLEB);
+  UPutTrace(tid, info->trace_info, info->TLEB);
 } // }}}
 
 
 // TODO(glider): we may want the basic block address to differ from the PC
 // of the first MOP in that basic block.
 extern "C"
-void* bb_flush(TraceInfoPOD *next_mops,
-               int next_num_mops, void *next_bb_index) {
+void* bb_flush(TraceInfoPOD *next_mops) {
   GIL scoped;
-  Passport &passport = INFO.passport[INFO.passport_index];
-  if (passport.trace_info) {
+  if (INFO.trace_info) {
     // This is not a function entry block
-    unsafe_flush_tleb_slice(&INFO, 0, passport.num_mops);
+    unsafe_flush_trace(&INFO);
   }
-  passport.trace_info = next_mops;
-  passport.num_mops = next_num_mops;
-  if (passport.known_bb_addr) {
-    passport.curr_bb_index = passport.known_bb_addr;
-    passport.known_bb_addr = NULL;
-  } else {
-    passport.curr_bb_index = next_bb_index;
-  }
+  INFO.trace_info = next_mops;
   return (void*) INFO.TLEB;
 }
 
@@ -538,21 +510,13 @@ void unsafe_flush_tleb() {
 #endif
   ThreadInfo *info = &INFO;
   if (info) {
-    Passport &passport = info->passport[info->passport_index];
-    if (passport.trace_info) {
-      unsafe_flush_tleb_slice(info, 0, passport.num_mops);
-      passport.trace_info = NULL;
+    if (info->trace_info) {
+      unsafe_flush_trace(info);
+      info->trace_info = NULL;
     }
   } else {
     DPrintf("ERROR: thread %d not found!\n", GetTid());
     assert(0);
-  }
-  Passport &passport = info->passport[info->passport_index];
-  if (passport.known_bb_addr) {
-    passport.curr_bb_index = passport.known_bb_addr;
-    passport.known_bb_addr = NULL;
-  } else {
-    passport.curr_bb_index = 0;
   }
 }
 
@@ -580,8 +544,7 @@ void *pthread_callback(void *arg) {
 
   assert((PTH_INIT==1) && (RTL_INIT==1));
   assert(INIT == 0);
-  int tid = GetTid();
-  pc_t pc = GetPc();
+  DECLARE_TID_AND_PC();
   assert(INIT == 1);
   assert(tid != 0);
   assert(INFO.tid != 0);
@@ -611,7 +574,8 @@ void *pthread_callback(void *arg) {
     // We don't intercept the mmap2 syscall that allocates thread stack, so pass
     // the event to ThreadSanitizer manually.
     // TODO(glider): technically our parent allocates the stack. Maybe this
-    // should be fixed.
+    // should be fixed and its tid should be passed in the MMAP event.
+    // TODO(glider): we don't need MMAP at all. Remove it.
     USPut(MMAP, tid, pc, (uintptr_t)stack_top, stack_size);
     USPut(THR_STACK_TOP, tid, pc, (uintptr_t)stack_top, stack_size);
   } else {
@@ -898,8 +862,7 @@ int __wrap_sem_post(sem_t *sem) {
 extern "C"
 int __wrap_pthread_cond_timedwait(pthread_cond_t *cond, pthread_mutex_t *mutex,
                                   const struct timespec *abstime) {
-  int tid = GetTid();
-  pc_t pc = GetPc();
+  DECLARE_TID_AND_PC();
   SPut(UNLOCK, tid, pc, (uintptr_t)mutex, 0);
   int result = __real_pthread_cond_timedwait(cond, mutex, abstime);
   if (result == 0) {
@@ -911,8 +874,7 @@ int __wrap_pthread_cond_timedwait(pthread_cond_t *cond, pthread_mutex_t *mutex,
 
 extern "C"
 int __wrap_pthread_cond_signal(pthread_cond_t *cond) {
-  int tid = GetTid();
-  pc_t pc = GetPc();
+  DECLARE_TID_AND_PC();
   int result = __real_pthread_cond_signal(cond);
   SPut(SIGNAL, tid, pc, (uintptr_t)cond, 0);
   return result;
@@ -1108,8 +1070,7 @@ extern "C"
 int __wrap_pthread_spin_init(pthread_spinlock_t *lock, int pshared) {
   int result = __real_pthread_spin_init(lock, pshared);
   if (result == 0) {
-    int tid = GetTid();
-    pc_t pc = GetPc();
+    DECLARE_TID_AND_PC();
     SPut(UNLOCK_OR_INIT, tid, pc, (uintptr_t)lock, 0);
   }
   return result;
@@ -1117,8 +1078,7 @@ int __wrap_pthread_spin_init(pthread_spinlock_t *lock, int pshared) {
 
 extern "C"
 int __wrap_pthread_spin_destroy(pthread_spinlock_t *lock) {
-  int tid = GetTid();
-  pc_t pc = GetPc();
+  DECLARE_TID_AND_PC();
   SPut(LOCK_DESTROY, tid, pc, (uintptr_t)lock, 0);
   return __real_pthread_spin_destroy(lock);
 }
@@ -1128,8 +1088,7 @@ extern "C"
 int __wrap_pthread_spin_lock(pthread_spinlock_t *lock) {
   int result = __real_pthread_spin_lock(lock);
   if (result == 0) {
-    int tid = GetTid();
-    pc_t pc = GetPc();
+    DECLARE_TID_AND_PC();
     SPut(WRITER_LOCK, tid, pc, (uintptr_t)lock, 0);
   }
   return result;
@@ -1139,8 +1098,7 @@ extern "C"
 int __wrap_pthread_spin_trylock(pthread_spinlock_t *lock) {
   int result = __real_pthread_spin_trylock(lock);
   if (result == 0) {
-    int tid = GetTid();
-    pc_t pc = GetPc();
+    DECLARE_TID_AND_PC();
     SPut(WRITER_LOCK, tid, pc, (uintptr_t)lock, 0);
   }
   return result;
@@ -1148,17 +1106,13 @@ int __wrap_pthread_spin_trylock(pthread_spinlock_t *lock) {
 
 extern "C"
 int __wrap_pthread_spin_unlock(pthread_spinlock_t *lock) {
-  int tid = GetTid();
-  pc_t pc = GetPc();
+  DECLARE_TID_AND_PC();
   SPut(UNLOCK, tid, pc, (uintptr_t)lock, 0);
   return __real_pthread_spin_unlock(lock);
 }
 
 
 // }}}
-
-
-// TODO(glider): update PCs
 
 // STR* wrappers {{{1
 extern
@@ -1221,15 +1175,13 @@ void *memchr(void *s, int c, size_t n) {
 
 extern
 int strcmp(const char *s1, const char *s2) {
-  int tid = GetTid();
-  pc_t pc = GetPc();
+  DECLARE_TID_AND_PC();
   return Replace_strcmp(tid, pc, s1, s2);
 }
 
 extern
 int strncmp(const char *s1, const char *s2, size_t n) {
-  int tid = GetTid();
-  pc_t pc = GetPc();
+  DECLARE_TID_AND_PC();
   return Replace_strncmp(tid, pc, s1, s2, n);
 }
 
@@ -1393,11 +1345,7 @@ void rtn_call(void *addr) {
   // insn.
   unsafe_flush_tleb();
   UPut(RTN_CALL, tid, 0, (uintptr_t)addr, 0);
-  //INFO.passport_index++;
-  Passport &passport = INFO.passport[INFO.passport_index];
-  passport.trace_info = NULL;
-  passport.num_mops = 0;
-  passport.known_bb_addr = addr;
+  INFO.trace_info = NULL;
 }
 
 extern "C"
@@ -1405,7 +1353,6 @@ void rtn_exit() {
   GIL scoped;
   int tid = GetTid();
   unsafe_flush_tleb();
-//  INFO.passport_index--;
   UPut(RTN_EXIT, tid, 0, 0, 0);
 }
 // }}}
@@ -1524,32 +1471,28 @@ const char *ThreadSanitizerQuery(const char *query) {
 */
 extern "C"
 void AnnotateIgnoreReadsBegin(char *file, int line, void *mu) {
-  int tid = GetTid();
-  pc_t pc = GetPc();
+  DECLARE_TID_AND_PC();
   Put(IGNORE_READS_BEG, tid, pc, 0, 0);
   DPrintf("IGNORE_READS_BEG @%p\n", mu);
 }
 
 extern "C"
 void AnnotateIgnoreReadsEnd(char *file, int line, void *mu) {
-  int tid = GetTid();
-  pc_t pc = GetPc();
+  DECLARE_TID_AND_PC();
   Put(IGNORE_READS_END, tid, pc, 0, 0);
   DPrintf("IGNORE_READS_END @%p\n", mu);
 }
 
 extern "C"
 void AnnotateIgnoreWritesBegin(char *file, int line, void *mu) {
-  int tid = GetTid();
-  pc_t pc = GetPc();
+  DECLARE_TID_AND_PC();
   Put(IGNORE_WRITES_BEG, tid, pc, 0, 0);
   DPrintf("IGNORE_WRITES_BEG @%p\n", mu);
 }
 
 extern "C"
 void AnnotateIgnoreWritesEnd(char *file, int line, void *mu) {
-  int tid = GetTid();
-  pc_t pc = GetPc();
+  DECLARE_TID_AND_PC();
   Put(IGNORE_WRITES_END, tid, pc, 0, 0);
   DPrintf("IGNORE_WRITES_END @%p\n", mu);
 }
@@ -1613,8 +1556,9 @@ void PcToStrings(pc_t pc, bool demangle,
 }
 // }}}
 
+// Include thread_sanitizer.cc {{{1
 #ifdef INCLUDE_THREAD_SANITIZER_CC
 # undef INCLUDE_THREAD_SANITIZER_CC
 # include "thread_sanitizer.cc"
 #endif
-
+// }}}
