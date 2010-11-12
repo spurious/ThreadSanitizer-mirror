@@ -374,7 +374,13 @@ void finalize() {
   }
   Printf("Locks within buckets: %d\n", total_locks);
   Printf("Events within buckets: %d\n", total_events);
+  if (G_flags->error_exitcode && GetNumberOfFoundErrors() > 0) {
+    // This is the last atexit hook, so it's ok to terminate the program.
+    _exit(G_flags->error_exitcode);
+  }
+
 }
+
 inline void init_debug() {
   if (DBG_INIT) return;
   char *dbg_info = getenv("TSAN_DBG_INFO");
