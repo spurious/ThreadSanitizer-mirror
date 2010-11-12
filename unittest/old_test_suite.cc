@@ -72,6 +72,7 @@ TEST(NonGtestTests, All) {
       printf("test%i was excluded\n", test_id);
     } else {
       (*TheMapOfTests)[test_id].Run();
+      ANNOTATE_FLUSH_EXPECTED_RACES();
     }
   }
 }
