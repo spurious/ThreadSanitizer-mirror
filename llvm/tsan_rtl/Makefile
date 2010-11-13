@@ -4,7 +4,8 @@ RANLIB=ranlib
 SRC=tsan_rtl.cc
 ERRORLVL=-Werror
 ERRORLVL=-Werror -Wno-deprecated -Wno-unused-function
-OBJS32=x86-thread_sanitizer.o x86-ts_util.o x86-suppressions.o x86-common_util.o x86-ignore.o
+#OBJS32=x86-thread_sanitizer.o x86-ts_util.o x86-suppressions.o x86-common_util.o x86-ignore.o
+OBJS32=
 TSAN_PATH=../../tsan
 DEFINES=
 
@@ -55,10 +56,10 @@ stack_info32:	stack_info.cc stack_info.h
 	$(CXX) -m32 -o $@ $< $(ERRORLVL) $(FLAGS) -DSTACKINFO_STANDALONE -lpthread
 
 x86-%.o:	%.cc $(TS_HEADERS) $(FOREIGN_HEADERS)
-	$(CXX) -m32 -o $@ -c $< $(ERRORLVL) $(FLAGS)
+	$(CXX) -m32 -o $@ -c $< $(ERRORLVL) $(FLAGS) $(DEFINES)
 
 x86-%.o:	$(TSAN_PATH)/%.cc $(TS_HEADERS) $(FOREIGN_HEADERS)
-	$(CXX) -m32 -o $@ -c $< $(ERRORLVL) $(FLAGS)
+	$(CXX) -m32 -o $@ -c $< $(ERRORLVL) $(FLAGS) $(DEFINES)
 
 
 clean:
