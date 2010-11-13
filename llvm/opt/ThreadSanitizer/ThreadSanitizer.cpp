@@ -40,16 +40,24 @@ namespace {
     const Type *TLEBTy;
     const PointerType *TLEBPtrType;
     static const int kTLEBSize = 100;
-    static const int kBBAddr = 1000;
-    static const int kFNV1aPrime = 6733;
+    static const int kBBHiAddr = 5000, kBBLoAddr = 100;
+    static const int kFNV1aPrime = 6733, kFNV1aModulo = 2048;
+    static const int kMaxAddr = 1 << 30;
     int ModuleID;
 
     TsanOnlineInstrument() : ModulePass(&ID) { }
 
     uintptr_t getAddr(int bb_index, int mop_index, Instruction *dump) {
-      uintptr_t result = ((ModuleID * kBBAddr) + bb_index) * kBBAddr + mop_index;
+      uintptr_t result = ((ModuleID * kBBHiAddr) + bb_index) * kBBLoAddr + mop_index;
       if (dump) {
         DumpDebugInfo(result, *dump);
+      }
+      if ((result < 0) || (result > kMaxAddr)) {
+        errs() << "bb_index: " << bb_index << " mop_index: " << mop_index;
+        errs() << " result: " << result << " kMaxAddr: " << kMaxAddr << "\n";
+        errs() << "result = ((" << ModuleID << " * " << kBBHiAddr << ") + " <<
+          bb_index << ") * " << kBBLoAddr << " + " << mop_index << "\n";
+        assert(false);
       }
       return result;
     }
@@ -60,8 +68,8 @@ namespace {
       std::string name = M.getModuleIdentifier();
       for (size_t i = 0; i < name.size(); i++) {
         tmp = name[i];
-        result = (result ^ tmp) % 512;
-        result = (result * kFNV1aPrime) % 512;
+        result = (result ^ tmp) % kFNV1aModulo;
+        result = (result * kFNV1aPrime) % kFNV1aModulo;
       }
       return result;
     }
@@ -268,10 +276,9 @@ namespace {
         trace_info.push_back(ConstantInt::get(Int32, BBNumMops));
         // pc_
         trace_info.push_back(ConstantInt::get(Int32, getAddr(BBCount,
-                                                             0, NULL)));
-        // id_ == pc_
-        trace_info.push_back(ConstantInt::get(Int32, getAddr(BBCount,
-                                                             0, NULL)));
+                                                             0, Begin)));
+        // id_ == 0 initially.
+        trace_info.push_back(ConstantInt::get(Int32, 0));
         // counter_
         trace_info.push_back(ConstantInt::get(Int32, 0));
         // generate_segments_
