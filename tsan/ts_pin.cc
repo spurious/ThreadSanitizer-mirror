@@ -1193,6 +1193,16 @@ uintptr_t WRAP_NAME(RtlInitializeCriticalSection)(WRAP_PARAM4) {
   DumpEvent(LOCK_CREATE, tid, pc, arg0, 0);
   return CallStdCallFun1(ctx, tid, f, arg0);
 }
+uintptr_t WRAP_NAME(RtlInitializeCriticalSectionAndSpinCount)(WRAP_PARAM4) {
+//  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
+  DumpEvent(LOCK_CREATE, tid, pc, arg0, 0);
+  return CallStdCallFun2(ctx, tid, f, arg0, arg1);
+}
+uintptr_t WRAP_NAME(RtlInitializeCriticalSectionEx)(WRAP_PARAM4) {
+//  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
+  DumpEvent(LOCK_CREATE, tid, pc, arg0, 0);
+  return CallStdCallFun3(ctx, tid, f, arg0, arg1, arg2);
+}
 uintptr_t WRAP_NAME(RtlDeleteCriticalSection)(WRAP_PARAM4) {
 //  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
   DumpEvent(LOCK_DESTROY, tid, pc, arg0, 0);
@@ -2772,6 +2782,8 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_BEFORE_0("ExitThread", Before_RtlExitUserThread);
 
   WRAPSTD1(RtlInitializeCriticalSection);
+  WRAPSTD2(RtlInitializeCriticalSectionAndSpinCount);
+  WRAPSTD3(RtlInitializeCriticalSectionEx);
   WRAPSTD1(RtlDeleteCriticalSection);
   WRAPSTD1(RtlEnterCriticalSection);
   WRAPSTD1(RtlTryEnterCriticalSection);
@@ -2797,6 +2809,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   /* We haven't seen these syscalls used in the wild yet.
   WRAPSTD2(RtlUpdateClonedSRWLock);
   WRAPSTD1(RtlAcquireReleaseSRWLockExclusive);
+  WRAPSTD1(RtlUpdateClonedCriticalSection);
   */
 
   WRAPSTD1(RtlWakeConditionVariable);
