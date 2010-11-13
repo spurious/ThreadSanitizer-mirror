@@ -1283,7 +1283,7 @@ uintptr_t WRAP_NAME(RtlAcquireSRWLockShared)(WRAP_PARAM4) {
 uintptr_t WRAP_NAME(RtlTryAcquireSRWLockExclusive)(WRAP_PARAM4) {
   // Printf("T%d %s %p\n", tid, __FUNCTION__, arg0);
   uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
-  if (ret) {
+  if (ret & 0xFF) {  // Looks like this syscall return value is just 1 byte.
     DumpEvent(WRITER_LOCK, tid, pc, arg0, 0);
   }
   return ret;
@@ -1291,7 +1291,7 @@ uintptr_t WRAP_NAME(RtlTryAcquireSRWLockExclusive)(WRAP_PARAM4) {
 uintptr_t WRAP_NAME(RtlTryAcquireSRWLockShared)(WRAP_PARAM4) {
   // Printf("T%d %s %p\n", tid, __FUNCTION__, arg0);
   uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
-  if (ret) {
+  if (ret & 0xFF) {  // Looks like this syscall return value is just 1 byte.
     DumpEvent(READER_LOCK, tid, pc, arg0, 0);
   }
   return ret;
@@ -2794,6 +2794,11 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   WRAPSTD1(RtlReleaseSRWLockShared);
   WRAPSTD1(RtlInitializeSRWLock);
 
+  /* We haven't seen these syscalls used in the wild yet.
+  WRAPSTD2(RtlUpdateClonedSRWLock);
+  WRAPSTD1(RtlAcquireReleaseSRWLockExclusive);
+  */
+
   WRAPSTD1(RtlWakeConditionVariable);
   WRAPSTD1(RtlWakeAllConditionVariable);
   WRAPSTD4(RtlSleepConditionVariableSRW);
@@ -2903,6 +2908,12 @@ static void CallbackForIMG(IMG img, void *v) {
   }
   // In DEBUG_MODE check that we have the debug symbols in the Windows guts.
   // We should work w/o them too.
+  // TODO(timurrrr): I doubt the problem is the missing symbols.
+  // I have a strong gut feeling that this syscall was added
+  // in Vista but only used since Windows 7. We had its wrapper wrong
+  // (found on W7) but the Vista build was fine for months.
+  // Also, we wrap RtlReleaseSRWLock*, so our TSan assertions would have been
+  // broken if RtlTryAcquireSRWLock* wasn't wrapped - and we haven't see this.
   if (DEBUG_MODE && img_name.find("ntdll.dll") != string::npos) {
     if (g_wrapped_functions.count("RtlTryAcquireSRWLockExclusive") == 0) {
       Printf("WARNING: Debug symbols for ntdll.dll not found.\n");
