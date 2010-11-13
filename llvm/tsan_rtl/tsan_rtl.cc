@@ -119,6 +119,31 @@ int stats_non_local = 0;
 const int kNumBuckets = 11;
 int stats_event_buckets[kNumBuckets];
 
+pthread_mutex_t tsan_lock = PTHREAD_MUTEX_INITIALIZER;
+
+class TSanLock {
+ public:
+  TSanLock() {
+    __real_pthread_mutex_lock(&tsan_lock);
+  }
+  ~TSanLock() {
+    __real_pthread_mutex_unlock(&tsan_lock);
+  }
+};
+
+pthread_mutex_t debug_info_lock = PTHREAD_MUTEX_INITIALIZER;
+
+class DbgInfoLock {
+ public:
+  DbgInfoLock() {
+    __real_pthread_mutex_lock(&debug_info_lock);
+  }
+  ~DbgInfoLock() {
+    __real_pthread_mutex_unlock(&debug_info_lock);
+  }
+};
+
+
 class GIL {
  public:
   GIL() {
@@ -256,7 +281,10 @@ static inline void USPut(EventType type, int32_t tid, pc_t pc,
 
   IN_RTL++;
   CHECK_IN_RTL();
-  ThreadSanitizerHandleOneEvent(&event);
+  {
+    TSanLock scoped;
+    ThreadSanitizerHandleOneEvent(&event);
+  }
   IN_RTL--;
   CHECK_IN_RTL();
 
@@ -266,9 +294,6 @@ static inline void USPut(EventType type, int32_t tid, pc_t pc,
 // Put a synchronization event to ThreadSanitizer.
 static inline void SPut(EventType type, int32_t tid, pc_t pc,
                         uintptr_t a, uintptr_t info) {
-#ifdef DEBUG
-  assert(!GIL::GetDepth() || (type == THR_START));
-#endif
   GIL scoped;
   USPut(type, tid, pc, a, info);
 }
@@ -302,7 +327,10 @@ static inline void UPutTrace(int32_t tid, TraceInfoPOD *trace, uintptr_t *tleb) 
         }
       }
     }
-    ThreadSanitizerHandleTrace(tid, reinterpret_cast<TraceInfo*>(trace), tleb);
+    {
+      TSanLock scoped;
+      ThreadSanitizerHandleTrace(tid, reinterpret_cast<TraceInfo*>(trace), tleb);
+    }
     IN_RTL--;
     CHECK_IN_RTL();
   }
@@ -333,7 +361,10 @@ static inline void UPut(EventType type, int32_t tid, pc_t pc,
     if ((type != WRITE) || (a != 0)) {
       IN_RTL++;
       CHECK_IN_RTL();
-      ThreadSanitizerHandleOneEvent(&event);
+      {
+        TSanLock scoped;
+        ThreadSanitizerHandleOneEvent(&event);
+      }
       IN_RTL--;
       CHECK_IN_RTL();
     }
@@ -354,6 +385,7 @@ static inline void Put(EventType type, int32_t tid, pc_t pc,
 void finalize() {
   IN_RTL++;
   CHECK_IN_RTL();
+  // atexit hooks are ran from a single thread.
   ThreadSanitizerFini();
   IN_RTL--;
   CHECK_IN_RTL();
@@ -1129,8 +1161,14 @@ const char *strrchr(const char *s, int c) {
 
 extern "C"
 size_t __wrap_strlen(const char *s) {
+  if (IN_RTL) return __real_strlen(s);
   DECLARE_TID_AND_PC();
-  return Replace_strlen(tid, pc, s);
+  IN_RTL++;
+  CHECK_IN_RTL();
+  size_t result = Replace_strlen(tid, pc, s);
+  IN_RTL--;
+  CHECK_IN_RTL();
+  return result;
 }
 
 extern
@@ -1502,7 +1540,7 @@ void AnnotateIgnoreWritesEnd(char *file, int line, void *mu) {
 
 // Debug info routines {{{1
 void ReadDbgInfo(string filename) {
-  GIL scoped; // TODO(glider): this should be some different lock.
+  DbgInfoLock scoped;
   debug_info = new map<pc_t, LLVMDebugInfo>;
   string contents = ReadFileToString(filename, false);
   vector<string> lines;
@@ -1524,15 +1562,8 @@ void ReadDbgInfo(string filename) {
   }
 }
 
-
-
 string PcToRtnName(pc_t pc, bool demangle) {
-  // This routine is called by ThreadSanitizer, thus the global lock is already
-  // taken.
-  // TODO(glider): |debug_info| should be definitely protected by its own lock.
-#ifdef DEBUG
-  assert(GIL::GetDepth());
-#endif
+  DbgInfoLock scoped;
   if (debug_info && (debug_info->find(pc) != debug_info->end())) {
     return (*debug_info)[pc].fun;
   }
@@ -1542,6 +1573,7 @@ string PcToRtnName(pc_t pc, bool demangle) {
 void PcToStrings(pc_t pc, bool demangle,
                  string *img_name, string *rtn_name,
                  string *file_name, int *line_no) {
+  DbgInfoLock scoped;
   if (debug_info && (debug_info->find(pc) != debug_info->end())) {
     img_name = NULL;
     *rtn_name = (*debug_info)[pc].fun;
