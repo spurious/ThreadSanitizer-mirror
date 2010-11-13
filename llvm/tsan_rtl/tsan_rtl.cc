@@ -268,30 +268,31 @@ static inline void SPut(EventType type, int32_t tid, pc_t pc,
   if (RTL_INIT != 1) return;
 
   flush_tleb();
-  Event event(type, tid, pc, a, info);
-  if (G_flags->verbosity) {
-    if ((G_flags->verbosity >= 2) ||
-        (type == THR_START) || (type == THR_END) || (type == THR_JOIN_AFTER) || (type == THR_CREATE_BEFORE)) {
-      event.Print();
+  if (!G_flags->dry_run) {
+    Event event(type, tid, pc, a, info);
+    if (G_flags->verbosity) {
+      if ((G_flags->verbosity >= 2) ||
+          (type == THR_START) || (type == THR_END) || (type == THR_JOIN_AFTER) || (type == THR_CREATE_BEFORE)) {
+        event.Print();
+      }
     }
-  }
-  stats_events_processed++;
-  stats_cur_events++;
-  stats_non_local++;
+    stats_events_processed++;
+    stats_cur_events++;
+    stats_non_local++;
 
-  IN_RTL++;
-  CHECK_IN_RTL();
-  {
-    TSanLock scoped;
-    ThreadSanitizerHandleOneEvent(&event);
+    IN_RTL++;
+    CHECK_IN_RTL();
+    {
+      TSanLock scoped;
+      ThreadSanitizerHandleOneEvent(&event);
+    }
+    IN_RTL--;
+    CHECK_IN_RTL();
   }
-  IN_RTL--;
-  CHECK_IN_RTL();
-
   if ((type==THR_START) && (tid==0)) HAVE_THREAD_0 = 1;
 }
 
-static inline void PutTrace(int32_t tid, TraceInfoPOD *trace, uintptr_t *tleb) {
+static inline void flush_trace(ThreadInfo *info) {
 #ifdef DEBUG
   // TODO(glider): PutTrace shouldn't be called without a lock taken.
   // However flushing events from unsafe_clear_pending_signals (called from
@@ -302,7 +303,10 @@ static inline void PutTrace(int32_t tid, TraceInfoPOD *trace, uintptr_t *tleb) {
     SPut(THR_START, 0, 0, 0, 0);
   }
   if (RTL_INIT != 1) return;
-  if (!global_ignore) {
+  if (!global_ignore && !G_flags->dry_run) {
+    int32_t tid = info->tid;
+    TraceInfoPOD *trace = info -> trace_info;
+    uintptr_t *tleb = info->TLEB;
     stats_events_processed += trace->n_mops_;
     stats_cur_events += trace->n_mops_;
 
@@ -342,7 +346,7 @@ static inline void UPut(EventType type, int32_t tid, pc_t pc,
     SPut(THR_START, 0, 0, 0, 0);
   }
   if (RTL_INIT != 1) return;
-  if (!global_ignore || !isThreadLocalEvent(type)) {
+  if ((!G_flags->dry_run && !global_ignore) || !isThreadLocalEvent(type)) {
     Event event(type, tid, pc, a, info);
     if (G_flags->verbosity) {
       if ((G_flags->verbosity >= 2) ||
@@ -506,13 +510,6 @@ int GetTid(ThreadInfo *info) {
 int GetTid() {
   return GetTid(&INFO);
 }
-
-void flush_trace(ThreadInfo *info) {
-  // {{{1
-  int tid = info->tid;
-  PutTrace(tid, info->trace_info, info->TLEB);
-} // }}}
-
 
 // TODO(glider): we may want the basic block address to differ from the PC
 // of the first MOP in that basic block.
