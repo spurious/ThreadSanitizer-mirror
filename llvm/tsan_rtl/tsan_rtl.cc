@@ -446,9 +446,9 @@ bool initialize() {
 
   ThreadSanitizerParseFlags(&args);
   ThreadSanitizerInit();
+  init_debug();
   IN_RTL--;
   CHECK_IN_RTL();
-  init_debug();
   global_ignore = false;
   __real_atexit(finalize);
   RTL_INIT = 1;
