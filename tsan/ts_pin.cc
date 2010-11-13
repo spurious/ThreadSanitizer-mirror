@@ -1320,7 +1320,7 @@ uintptr_t WRAP_NAME(RtlWakeConditionVariable)(WRAP_PARAM4) {
   uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
   return ret;
 }
-uintptr_t WRAP_NAME(RtlAllWakeConditionVariable)(WRAP_PARAM4) {
+uintptr_t WRAP_NAME(RtlWakeAllConditionVariable)(WRAP_PARAM4) {
   // Printf("T%d %s arg0=%p\n", tid, __FUNCTION__, arg0);
   DumpEvent(SIGNAL, tid, pc, arg0, 0);
   uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
@@ -2795,7 +2795,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   WRAPSTD1(RtlInitializeSRWLock);
 
   WRAPSTD1(RtlWakeConditionVariable);
-  WRAPSTD1(RtlAllWakeConditionVariable);
+  WRAPSTD1(RtlWakeAllConditionVariable);
   WRAPSTD4(RtlSleepConditionVariableSRW);
   WRAPSTD3(RtlSleepConditionVariableCS);
 #endif  // if 1
