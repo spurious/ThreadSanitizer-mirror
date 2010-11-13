@@ -260,14 +260,14 @@ bool isThreadLocalEvent(EventType type) {
   }
 }
 
-static inline void USPut(EventType type, int32_t tid, pc_t pc,
+static inline void SPut(EventType type, int32_t tid, pc_t pc,
                         uintptr_t a, uintptr_t info) {
   if (!HAVE_THREAD_0 && type != THR_START) {
-    USPut(THR_START, 0, 0, 0, 0);
+    SPut(THR_START, 0, 0, 0, 0);
   }
   if (RTL_INIT != 1) return;
 
-  unsafe_flush_tleb();
+  flush_tleb();
   Event event(type, tid, pc, a, info);
   if (G_flags->verbosity) {
     if ((G_flags->verbosity >= 2) ||
@@ -291,16 +291,12 @@ static inline void USPut(EventType type, int32_t tid, pc_t pc,
   if ((type==THR_START) && (tid==0)) HAVE_THREAD_0 = 1;
 }
 
-// Put a synchronization event to ThreadSanitizer.
-static inline void SPut(EventType type, int32_t tid, pc_t pc,
-                        uintptr_t a, uintptr_t info) {
-  GIL scoped;
-  USPut(type, tid, pc, a, info);
-}
-
-static inline void UPutTrace(int32_t tid, TraceInfoPOD *trace, uintptr_t *tleb) {
+static inline void PutTrace(int32_t tid, TraceInfoPOD *trace, uintptr_t *tleb) {
 #ifdef DEBUG
-  assert(GIL::GetDepth());
+  // TODO(glider): PutTrace shouldn't be called without a lock taken.
+  // However flushing events from unsafe_clear_pending_signals (called from
+  // GIL::Unlock) is done under a mutex.
+//  assert(!GIL::GetDepth());
 #endif
   if (!HAVE_THREAD_0) {
     SPut(THR_START, 0, 0, 0, 0);
@@ -374,11 +370,11 @@ static inline void UPut(EventType type, int32_t tid, pc_t pc,
 
 static inline void Put(EventType type, int32_t tid, pc_t pc,
                        uintptr_t a, uintptr_t info) {
-  GIL scoped;
   if (isThreadLocalEvent(type)) {
+    GIL scoped;
     UPut(type, tid, pc, a, info);
   } else {
-    USPut(type, tid, pc, a, info);
+    SPut(type, tid, pc, a, info);
   }
 }
 
@@ -512,10 +508,10 @@ int GetTid() {
   return GetTid(&INFO);
 }
 
-void unsafe_flush_trace(ThreadInfo *info) {
+void flush_trace(ThreadInfo *info) {
   // {{{1
   int tid = info->tid;
-  UPutTrace(tid, info->trace_info, info->TLEB);
+  PutTrace(tid, info->trace_info, info->TLEB);
 } // }}}
 
 
@@ -523,10 +519,9 @@ void unsafe_flush_trace(ThreadInfo *info) {
 // of the first MOP in that basic block.
 extern "C"
 void* bb_flush(TraceInfoPOD *next_mops) {
-  GIL scoped;
   if (INFO.trace_info) {
     // This is not a function entry block
-    unsafe_flush_trace(&INFO);
+    flush_trace(&INFO);
   }
   INFO.trace_info = next_mops;
   return (void*) INFO.TLEB;
@@ -534,16 +529,16 @@ void* bb_flush(TraceInfoPOD *next_mops) {
 
 // Flushes the local TLEB assuming someone is holding the global lock already.
 // Our RTL shouldn't need a thread to flush someone else's TLEB.
-void unsafe_flush_tleb() {
+void flush_tleb() {
 #ifdef DEBUG
   if (G_flags->verbosity >= 2) {
-    Printf("unsafe_flush_tleb\n");
+    Printf("flush_tleb\n");
   }
 #endif
   ThreadInfo *info = &INFO;
   if (info) {
     if (info->trace_info) {
-      unsafe_flush_trace(info);
+      flush_trace(info);
       info->trace_info = NULL;
     }
   } else {
@@ -608,8 +603,8 @@ void *pthread_callback(void *arg) {
     // TODO(glider): technically our parent allocates the stack. Maybe this
     // should be fixed and its tid should be passed in the MMAP event.
     // TODO(glider): we don't need MMAP at all. Remove it.
-    USPut(MMAP, tid, pc, (uintptr_t)stack_top, stack_size);
-    USPut(THR_STACK_TOP, tid, pc, (uintptr_t)stack_top, stack_size);
+    SPut(MMAP, tid, pc, (uintptr_t)stack_top, stack_size);
+    SPut(THR_STACK_TOP, tid, pc, (uintptr_t)stack_top, stack_size);
   } else {
     // Something's gone wrong. ThreadSanitizer will proceed, but if the stack
     // is reused by another thread, false positives will be reported.
@@ -634,8 +629,8 @@ void *pthread_callback(void *arg) {
   DPrintf("After routine() in T%d\n", tid);
 
   // Flush all the events not flushed so far.
-  unsafe_flush_tleb();
-  USPut(THR_END, tid, 0, 0, 0);
+  flush_tleb();
+  SPut(THR_END, tid, 0, 0, 0);
   if (FinishConds.find(tid) != FinishConds.end()) {
     DPrintf("T%d (child of T%d): Signaling on %p\n", tid, parent, FinishConds[tid]);
     __real_pthread_cond_signal(FinishConds[tid]);
@@ -1171,11 +1166,14 @@ size_t __wrap_strlen(const char *s) {
   return result;
 }
 
-extern
-void *memcpy(char *dest, const char *src, size_t n) {
+#if 0
+// TODO(glider): do we need memcpy?
+extern "C"
+void *__wrap_memcpy(void *dest, const void *src, size_t n) {
   DECLARE_TID_AND_PC();
   return Replace_memcpy(tid, pc, dest, src, n);
 }
+#endif
 
 extern "C"
 void *rtl_memcpy(char *dest, const char *src, size_t n) {
@@ -1377,21 +1375,19 @@ int __wrap_sigaction(int signum, const struct sigaction *act,
 // instrumentation API {{{1
 extern "C"
 void rtn_call(void *addr) {
-  GIL scoped;
   int tid = GetTid();
   // TODO(glider): this is unnecessary if we flush before each call/invoke
   // insn.
-  unsafe_flush_tleb();
-  UPut(RTN_CALL, tid, 0, (uintptr_t)addr, 0);
+  flush_tleb();
+  Put(RTN_CALL, tid, 0, (uintptr_t)addr, 0);
   INFO.trace_info = NULL;
 }
 
 extern "C"
 void rtn_exit() {
-  GIL scoped;
   int tid = GetTid();
-  unsafe_flush_tleb();
-  UPut(RTN_EXIT, tid, 0, 0, 0);
+  flush_tleb();
+  Put(RTN_EXIT, tid, 0, 0, 0);
 }
 // }}}
 
