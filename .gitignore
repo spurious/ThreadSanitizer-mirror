@@ -6,3 +6,4 @@ third_party/valgrind
 *.pdb
 upload.py
 *.class
+_CL_*
