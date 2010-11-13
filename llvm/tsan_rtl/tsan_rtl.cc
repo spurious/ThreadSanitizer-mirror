@@ -335,7 +335,7 @@ static inline void PutTrace(int32_t tid, TraceInfoPOD *trace, uintptr_t *tleb) {
 static inline void UPut(EventType type, int32_t tid, pc_t pc,
                         uintptr_t a, uintptr_t info) {
 #ifdef DEBUG
-  assert(GIL::GetDepth());
+  assert(!GIL::GetDepth());
 #endif
   assert(isThreadLocalEvent(type));
   if (!HAVE_THREAD_0 && type != THR_START) {
@@ -371,7 +371,6 @@ static inline void UPut(EventType type, int32_t tid, pc_t pc,
 static inline void Put(EventType type, int32_t tid, pc_t pc,
                        uintptr_t a, uintptr_t info) {
   if (isThreadLocalEvent(type)) {
-    GIL scoped;
     UPut(type, tid, pc, a, info);
   } else {
     SPut(type, tid, pc, a, info);
