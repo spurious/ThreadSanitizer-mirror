@@ -37,6 +37,7 @@
 #include "common_util.h"
 #include "suppressions.h"
 #include "ignore.h"
+#include "ts_lock.h"
 #include <stdarg.h>
 // -------- Constants --------------- {{{1
 // Segment ID (SID)      is in range [1, kMaxSID-1]
@@ -3121,17 +3122,90 @@ class Cache {
     ForgetAllState();
   }
 
-  // HOT
+  const static CacheLine *kLineIsLocked /* = 1 */;
+  INLINE bool LineIsNullOrLocked(CacheLine *line) const {
+    return (uintptr_t)line <= 1;
+  }
+
+  // Get a CacheLine for exclusive use.
+  // May return NULL or kLineIsLocked.
+  INLINE CacheLine *AcquireLine(uintptr_t a, int call_site) {
+    uintptr_t cli = ComputeCacheLineIndexInCache(a);
+    CacheLine **addr = &lines_[cli];
+    CacheLine *res = (CacheLine*)AtomicExchange(
+        (uintptr_t*)addr, (uintptr_t)kLineIsLocked);
+    if (DEBUG_MODE && debug_cache) {
+      uintptr_t tag = CacheLine::ComputeTag(a);
+      if (res)
+        Printf("Acquire %p empty=%d tag=%lx cli=%lx site=%d\n",
+               res, res->Empty(), res->tag(), cli, call_site);
+      else
+        Printf("Acquire tag=%lx cli=%d site=%d\n", tag, cli, call_site);
+    }
+
+    return res;
+  }
+
+  // Release a CacheLine from exclusive use.
+  INLINE void ReleaseLine(uintptr_t a, CacheLine *line, int call_site) {
+    if (TS_SERIALIZED) return;
+    DCHECK(line != kLineIsLocked);
+    uintptr_t cli = ComputeCacheLineIndexInCache(a);
+    DCHECK(line == NULL ||
+           cli == ComputeCacheLineIndexInCache(line->tag()));
+    CacheLine **addr = &lines_[cli];
+    DCHECK(*addr == kLineIsLocked);
+    ReleaseStore((uintptr_t*)addr, (uintptr_t)line);
+    if (DEBUG_MODE && debug_cache) {
+      uintptr_t tag = CacheLine::ComputeTag(a);
+      if (line)
+        Printf("Release %p empty=%d tag=%lx cli=%lx site=%d\n",
+               line, line->Empty(), line->tag(), cli, call_site);
+      else
+        Printf("Release tag=%lx cli=%d site=%d\n", tag, cli, call_site);
+    }
+  }
+
+  // Get a CacheLine. This operation should be performed under a lock
+  // (whatever that is), but other threads may be acquiring the same line
+  // concurrently w/o a lock.
+  // Every call to GetLine() which returns non-null line
+  // should be followed by a call to ReleaseLine().
   INLINE CacheLine *GetLine(uintptr_t a, bool create_new_if_need, int call_site) {
     uintptr_t tag = CacheLine::ComputeTag(a);
     DCHECK(tag <= a);
     DCHECK(tag + CacheLine::kLineSize > a);
     uintptr_t cli = ComputeCacheLineIndexInCache(a);
-    CacheLine *res = lines_[cli];
-    if (LIKELY(res && res->tag() == tag)) {
+    CacheLine *res = NULL;
+    CacheLine *line = NULL;
+    int iter = 0;
+
+    if (TS_SERIALIZED) {
+      line = lines_[cli];
+    } else {
+      do {
+        line = AcquireLine(tag, call_site);
+        iter++;
+        DCHECK(iter < (1 << 30));
+      } while (line == kLineIsLocked);
+      DCHECK(lines_[cli] == kLineIsLocked);
+    }
+
+
+    if (LIKELY(line && line->tag() == tag)) {
+      res = line;
       // G_stats->cache_fast_get++;
     } else {
-      res = WriteBackAndFetch(tag, cli, create_new_if_need);
+      res = WriteBackAndFetch(line, tag, cli, create_new_if_need);
+      if (!res) {
+        ReleaseLine(a, line, call_site);
+      }
+    }
+    if (DEBUG_MODE && debug_cache) {
+      if (res)
+        Printf("GetLine %p empty=%d tag=%lx\n", res, res->Empty(), res->tag());
+      else
+        Printf("GetLine res=NULL, line=%p tag=%lx cli=%lx\n", line, tag, cli);
     }
     return res;
   }
@@ -3161,6 +3235,8 @@ class Cache {
          it != racey_masks.end(); it++) {
       CacheLine *line = GetLineOrCreateNew(it->first, __LINE__);
       line->racey() = it->second;
+      DCHECK(!line->racey().Empty());
+      ReleaseLine(line->tag(), line, __LINE__);
     }
   }
 
@@ -3225,7 +3301,8 @@ class Cache {
     return (addr >> CacheLine::kLineSizeBits) & (kNumLines - 1);
   }
 
-  NOINLINE CacheLine *WriteBackAndFetch(uintptr_t tag, uintptr_t cli,
+  NOINLINE CacheLine *WriteBackAndFetch(CacheLine *old_line,
+                                        uintptr_t tag, uintptr_t cli,
                                         bool create_new_if_need) {
     ScopedMallocCostCenter cc("Cache::WriteBackAndFetch");
     CacheLine *res;
@@ -3236,29 +3313,48 @@ class Cache {
     } else {
       Map::iterator it = storage_.find(tag);
       if (it == storage_.end()) {
+        if (DEBUG_MODE && debug_cache) {
+          Printf("WriteBackAndFetch: old_line=%ld tag=%lx cli=%ld\n",
+                 old_line, tag, cli);
+        }
         return NULL;
       }
       line_for_this_tag = &(it->second);
     }
     CHECK(line_for_this_tag);
-    CacheLine *old_line = lines_[cli];
+    DCHECK(old_line != kLineIsLocked);
     if (*line_for_this_tag == NULL) {
       // creating a new cache line
       CHECK(storage_.size() == old_storage_size + 1);
       res = CacheLine::CreateNewCacheLine(tag);
+      if (DEBUG_MODE && debug_cache) {
+        Printf("%s %d new line %p cli=%lx\n", __FUNCTION__, __LINE__, res, cli);
+      }
       *line_for_this_tag = res;
-      lines_[cli]        = res;
       G_stats->cache_new_line++;
     } else {
       // taking an existing cache line from storage.
       res = *line_for_this_tag;
+      if (DEBUG_MODE && debug_cache) {
+        Printf("%s %d exi line %p tag=%lx old=%p empty=%d cli=%lx\n",
+             __FUNCTION__, __LINE__, res, res->tag(), old_line,
+             res->Empty(), cli);
+      }
       DCHECK(!res->Empty());
-      lines_[cli]        = res;
       G_stats->cache_fetch++;
     }
 
+    if (TS_SERIALIZED) {
+      lines_[cli] = res;
+    } else {
+      DCHECK(lines_[cli] == kLineIsLocked);
+    }
 
     if (old_line) {
+      if (DEBUG_MODE && debug_cache) {
+        Printf("%s %d old line %p empty=%d\n", __FUNCTION__, __LINE__,
+               old_line, old_line->Empty());
+      }
       if (old_line->Empty()) {
         storage_.erase(old_line->tag());
         CacheLine::Delete(old_line);
@@ -3318,6 +3414,7 @@ class Cache {
 };
 
 static  Cache *G_cache;
+const CacheLine *Cache::kLineIsLocked = (CacheLine*)1L;
 
 // -------- Published range -------------------- {{{1
 struct PublishInfo {
@@ -3428,6 +3525,7 @@ static void PublishRangeInOneLine(uintptr_t addr, uintptr_t a,
   }
 
   line->published().SetRange(a, b);
+  G_cache->ReleaseLine(tag, line, __LINE__);
 
   PublishInfo pub_info;
   pub_info.tag  = tag;
@@ -3480,17 +3578,19 @@ void INLINE ClearMemoryStateInOneLine(uintptr_t addr,
                                       uintptr_t beg, uintptr_t end) {
   CacheLine *line = G_cache->GetLineIfExists(addr, __LINE__);
   // CacheLine *line = G_cache->GetLineOrCreateNew(addr, __LINE__);
-  if (!line) return;
-  DCHECK(beg < CacheLine::kLineSize);
-  DCHECK(end <= CacheLine::kLineSize);
-  DCHECK(beg < end);
-  Mask published = line->published();
-  if (UNLIKELY(!published.Empty())) {
-    Mask mask(published.GetRange(beg, end));
-    ClearPublishedAttribute(line, mask);
+  if (line) {
+    DCHECK(beg < CacheLine::kLineSize);
+    DCHECK(end <= CacheLine::kLineSize);
+    DCHECK(beg < end);
+    Mask published = line->published();
+    if (UNLIKELY(!published.Empty())) {
+      Mask mask(published.GetRange(beg, end));
+      ClearPublishedAttribute(line, mask);
+    }
+    Mask old_used = line->ClearRangeAndReturnOldUsed(beg, end);
+    UnrefSegmentsInMemoryRange(beg, end, old_used, line);
+    G_cache->ReleaseLine(addr, line, __LINE__);
   }
-  Mask old_used = line->ClearRangeAndReturnOldUsed(beg, end);
-  UnrefSegmentsInMemoryRange(beg, end, old_used, line);
 }
 
 // clear memory state for [a,b)
@@ -3524,6 +3624,7 @@ void NOINLINE ClearMemoryState(uintptr_t a, uintptr_t b) {
       uintptr_t off = CacheLine::ComputeOffset(x);
       CacheLine *line = G_cache->GetLineOrCreateNew(x, __LINE__);
       CHECK(!line->has_shadow_value().Get(off));
+      G_cache->ReleaseLine(x, line, __LINE__);
     }
   }
 }
@@ -5990,6 +6091,7 @@ class Detector {
       CacheLine *line = G_cache->GetLineOrCreateNew(p, __LINE__);
       CHECK(line);
       line->racey().Set(CacheLine::ComputeOffset(p));
+      G_cache->ReleaseLine(p, line, __LINE__);
     }
   }
 
@@ -6132,9 +6234,10 @@ class Detector {
     if (G_flags->trace_level == 0) return;
     TID tid = cur_tid_;
     uintptr_t a = e_->a();
-    CacheLine *cache_line = G_cache->GetLineOrCreateNew(a, __LINE__);
+    CacheLine *line = G_cache->GetLineOrCreateNew(a, __LINE__);
     uintptr_t offset = CacheLine::ComputeOffset(a);
-    cache_line->traced().Set(offset);
+    line->traced().Set(offset);
+    G_cache->ReleaseLine(a, line, __LINE__);
     if (G_flags->verbosity >= 2) e_->Print();
   }
 
@@ -6570,14 +6673,17 @@ class Detector {
     } else {
       if (has_expensive_flags) G_stats->n_very_slow_access++;
       // Very slow: size is not 1,2,4,8 or address is unaligned.
-      // Handle this access as a series of 1-byte accesses.
-      for (uintptr_t x = a; x < b; x++) {
+      // Handle this access as a series of 1-byte accesses, but only
+      // inside the current cache line.
+      // TODO(kcc): do we want to handle the next cache line as well?
+      uintptr_t max_x = min(b, CacheLine::ComputeNextTag(a));
+      for (uintptr_t x = a; x < max_x; x++) {
         off = CacheLine::ComputeOffset(x);
+        DCHECK(CacheLine::ComputeTag(x) == cache_line->tag());
         uint16_t *granularity_mask = cache_line->granularity_mask(off);
         if (!*granularity_mask) {
           *granularity_mask = 1;
         }
-        cache_line = G_cache->GetLineOrCreateNew(x, __LINE__);
         cache_line->DebugTrace(off, __FUNCTION__, __LINE__);
         cache_line->Split_8_to_4(off);
         cache_line->Split_4_to_2(off);
@@ -6588,6 +6694,7 @@ class Detector {
 
     if (0) {
       slow_path:
+      DCHECK(cache_line);
       DCHECK(size == 1 || size == 2 || size == 4 || size == 8);
       DCHECK((addr & (size - 1)) == 0);  // size-aligned.
       gr = *granularity_mask;
@@ -6609,33 +6716,40 @@ class Detector {
       }
     }
 
+    DCHECK(cache_line);
+    G_cache->ReleaseLine(a, cache_line, __LINE__);
+    cache_line = NULL;  // just in case.
+
     if (has_expensive_flags) {
       G_stats->memory_access_sizes[size <= 16 ? size : 17 ]++;
       G_stats->events[is_w ? WRITE : READ]++;
       if (G_flags->trace_level >= 1) {
         bool tracing = false;
+        cache_line = G_cache->GetLineIfExists(a, __LINE__);
+        DCHECK(cache_line);
         if (cache_line->traced().Get(off)) {
           tracing = true;
         } else if (addr == G_flags->trace_addr) {
           tracing = true;
         }
+        G_cache->ReleaseLine(a, cache_line, __LINE__);
         if (tracing) {
           for (uintptr_t x = a; x < b; x++) {
             off = CacheLine::ComputeOffset(x);
             cache_line = G_cache->GetLineOrCreateNew(x, __LINE__);
             ShadowValue *sval_p = cache_line->GetValuePointer(off);
-            if (cache_line->has_shadow_value().Get(off) == 0) {
-              continue;
-            }
-            bool is_published = cache_line->published().Get(off);
-            Printf("TRACE: T%d/S%d %s[%d] addr=%p sval: %s%s; line=%p (P=%s)\n",
-                   tid.raw(), thr->sid().raw(), is_w ? "wr" : "rd",
-                   size, addr, sval_p->ToString().c_str(),
-                   is_published ? " P" : "",
-                   cache_line,
-                   cache_line->published().Empty() ?
+            if (cache_line->has_shadow_value().Get(off) != 0) {
+              bool is_published = cache_line->published().Get(off);
+              Printf("TRACE: T%d/S%d %s[%d] addr=%p sval: %s%s; line=%p P=%s\n",
+                     tid.raw(), thr->sid().raw(), is_w ? "wr" : "rd",
+                     size, addr, sval_p->ToString().c_str(),
+                     is_published ? " P" : "",
+                     cache_line,
+                     cache_line->published().Empty() ?
                      "0" : cache_line->published().ToString().c_str());
-            thr->ReportStackTrace(pc);
+              thr->ReportStackTrace(pc);
+            }
+            G_cache->ReleaseLine(x, cache_line, __LINE__);
           }
         }
       }
