@@ -21,28 +21,27 @@
 extern FILE* G_out;
 
 typedef uintptr_t pc_t;
-int GetTid();
+typedef intptr_t tid_t;
+tid_t GetTid();
 pc_t GetPc();
 
 void ReadDbgInfo(string filename);
 
 #define DECLARE_TID() \
-  int tid = GetTid();
+  tid_t tid = GetTid();
 
 #define DECLARE_TID_AND_PC() \
-  int tid = GetTid(); \
+  tid_t tid = GetTid(); \
   pc_t pc = GetPc();
 
 int unsafe_clear_pending_signals();
 void flush_tleb();
-static inline void Put(EventType type, int32_t tid, pc_t pc,
+static inline void Put(EventType type, tid_t tid, pc_t pc,
                        uintptr_t a, uintptr_t info);
 
 // Put a synchronization event to ThreadSanitizer.
-static inline void SPut(EventType type, int32_t tid, pc_t pc,
+static inline void SPut(EventType type, tid_t tid, pc_t pc,
                         uintptr_t a, uintptr_t info);
-
-
 
 #include "tsan_rtl_wrap.h"
 

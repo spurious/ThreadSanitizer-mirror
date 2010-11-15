@@ -7,7 +7,7 @@
 
 #include <sys/stat.h>
 
-#define EXTRA_REPLACE_PARAMS int tid, pc_t pc,
+#define EXTRA_REPLACE_PARAMS tid_t tid, pc_t pc,
 #define REPORT_READ_RANGE(x, size) do { \
     if (size) SPut(READ, tid, pc, (uintptr_t)(x), (size)); } while(0)
 #define REPORT_WRITE_RANGE(x, size) do { \
@@ -25,7 +25,7 @@
 #endif
 
 struct ThreadInfo {
-  int tid;
+  tid_t tid;
   uintptr_t TLEB[1000];
   TraceInfoPOD *trace_info;
 };
@@ -102,12 +102,12 @@ pthread_mutex_t global_lock = PTHREAD_MUTEX_INITIALIZER;
 
 pthread_t gil_owner = 0;
 __thread int gil_depth = 0;
-std::map<pthread_t, int> Tids;
-std::map<int, pthread_t> PThreads;
-std::map<int, bool> Finished;
-std::map<int, pthread_cond_t*> FinishConds; // TODO(glider): we shouldn't need these.
+std::map<pthread_t, tid_t> Tids;
+std::map<tid_t, pthread_t> PThreads;
+std::map<tid_t, bool> Finished;
+std::map<tid_t, pthread_cond_t*> FinishConds; // TODO(glider): we shouldn't need these.
 std::map<pthread_t, pthread_cond_t*> InitConds; // TODO(glider): we shouldn't need these.
-int max_tid = -1;
+tid_t max_tid = -1;
 
 __thread  sigset_t glob_sig_blocked, glob_sig_old;
 
@@ -264,7 +264,7 @@ bool isThreadLocalEvent(EventType type) {
   }
 }
 
-static inline void SPut(EventType type, int32_t tid, pc_t pc,
+static inline void SPut(EventType type, tid_t tid, pc_t pc,
                         uintptr_t a, uintptr_t info) {
   if (!HAVE_THREAD_0 && type != THR_START) {
     SPut(THR_START, 0, 0, 0, 0);
@@ -308,7 +308,7 @@ static void inline flush_trace(ThreadInfo *info) {
   }
   if (RTL_INIT != 1) return;
   if (!global_ignore && !G_flags->dry_run) {
-    int32_t tid = info->tid;
+    tid_t tid = info->tid;
     TraceInfoPOD *trace = info -> trace_info;
     uintptr_t *tleb = info->TLEB;
     stats_events_processed += trace->n_mops_;
@@ -353,7 +353,7 @@ static void inline flush_trace(ThreadInfo *info) {
   }
 }
 
-static inline void UPut(EventType type, int32_t tid, pc_t pc,
+static inline void UPut(EventType type, tid_t tid, pc_t pc,
                         uintptr_t a, uintptr_t info) {
 #ifdef DEBUG
   assert(!GIL::GetDepth());
@@ -389,7 +389,7 @@ static inline void UPut(EventType type, int32_t tid, pc_t pc,
   }
 }
 
-static inline void Put(EventType type, int32_t tid, pc_t pc,
+static inline void Put(EventType type, tid_t tid, pc_t pc,
                        uintptr_t a, uintptr_t info) {
   if (isThreadLocalEvent(type)) {
     UPut(type, tid, pc, a, info);
@@ -482,11 +482,11 @@ class Init {
 static Init dummy_init;
 
 // TODO(glider): GetPc should return valid PCs.
-pc_t GetPc() {
+inline pc_t GetPc() {
   return 0;
 }
 
-int GetTid(ThreadInfo *info) {
+inline tid_t GetTid(ThreadInfo *info) {
   //if (!PTH_INIT && RTL_INIT) return 0;
   if (INIT == 0) {
     GIL scoped;
@@ -524,7 +524,7 @@ int GetTid(ThreadInfo *info) {
   return info->tid;
 }
 
-int GetTid() {
+inline tid_t GetTid() {
   return GetTid(&INFO);
 }
 
@@ -565,14 +565,14 @@ typedef void *(pthread_worker)(void*);
 struct callback_arg {
   pthread_worker *routine;
   void *arg;
-  int parent;
+  tid_t parent;
   pthread_attr_t *attr;
 };
 
 // TODO(glider): we should get rid of Finished[],
 // as FinishConds should guarantee that the thread has finished.
 void dump_finished() {
-  map<int, bool>::iterator iter;
+  map<tid_t, bool>::iterator iter;
   for (iter = Finished.begin(); iter != Finished.end(); ++iter) {
     DPrintf("Finished[%d] = %d\n", iter->first, iter->second);
   }
@@ -592,7 +592,7 @@ void *pthread_callback(void *arg) {
   callback_arg *cb_arg = (callback_arg*)arg;
   pthread_worker *routine = cb_arg->routine;
   void *routine_arg = cb_arg->arg;
-  int parent = cb_arg->parent;
+  tid_t parent = cb_arg->parent;
   pthread_attr_t attr;
   size_t stack_size = 8 << 20;  // 8M
   void *stack_top = NULL;
@@ -654,7 +654,7 @@ void *pthread_callback(void *arg) {
   return result;
 }
 
-void unsafe_forget_thread(int tid, int from) {
+void unsafe_forget_thread(tid_t tid, tid_t from) {
   DPrintf("T%d: forgetting about T%d\n", from, tid);
   assert(PThreads.find(tid) != PThreads.end());
   pthread_t pt = PThreads[tid];
@@ -669,7 +669,7 @@ extern "C"
 int __wrap_pthread_create(pthread_t *thread,
                           pthread_attr_t *attr,
                           void *(*start_routine)(void*), void *arg) {
-  int tid = GetTid();
+  tid_t tid = GetTid();
   callback_arg *cb_arg = new callback_arg;
   cb_arg->routine = start_routine;
   cb_arg->arg = arg;
@@ -1069,8 +1069,8 @@ int __wrap_pthread_barrier_wait(pthread_barrier_t *barrier) {
 extern "C"
 int __wrap_pthread_join(pthread_t thread, void **value_ptr) {
   // Note that the ThreadInfo of |thread| is valid no more.
-  int tid = GetTid();
-  int joined_tid = -1;
+  tid_t tid = GetTid();
+  tid_t joined_tid = -1;
   {
     GIL scoped;
     if (Tids.find(thread) == Tids.end()) {
@@ -1388,7 +1388,7 @@ int __wrap_sigaction(int signum, const struct sigaction *act,
 // instrumentation API {{{1
 extern "C"
 void rtn_call(void *addr) {
-  int tid = GetTid();
+  tid_t tid = GetTid();
   // TODO(glider): this is unnecessary if we flush before each call/invoke
   // insn.
   flush_tleb();
@@ -1398,7 +1398,7 @@ void rtn_call(void *addr) {
 
 extern "C"
 void rtn_exit() {
-  int tid = GetTid();
+  tid_t tid = GetTid();
   flush_tleb();
   Put(RTN_EXIT, tid, 0, 0, 0);
 }
@@ -1488,7 +1488,7 @@ void AnnotatePCQCreate(const char *file, int line, void *pcq) {
 extern "C"
 void AnnotateExpectRace(const char *file, int line,
                         void *mem, char *description) {
-  int tid = GetTid();
+  tid_t tid = GetTid();
   SPut(EXPECT_RACE, tid, (uintptr_t)description, (uintptr_t)mem, 1);
 }
 
