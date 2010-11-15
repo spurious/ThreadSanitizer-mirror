@@ -80,7 +80,7 @@ inline uintptr_t NoBarrier_AtomicIncrement(volatile uintptr_t* ptr,
                                           uintptr_t increment) {
   uintptr_t tmp = 0;
   if (ptr) tmp = *ptr;
-  return tmp + increment;
+  return tmp += increment;
 }
 
 #elif defined(__GNUC__)
