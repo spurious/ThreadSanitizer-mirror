@@ -71,14 +71,6 @@ void ReadIgnoresFromString(string ignoreString) {
   }
 }
 
-static bool StringVectorMatch(const vector<string>& v, const string& s) {
-  for (size_t i = 0; i < v.size(); i++) {
-    if (StringMatch(v[i], s))
-      return true;
-  }
-  return false;
-}
-
 // True iff there exists a triple each of which components is either empty
 // or matches the corresponding string.
 bool TripleVectorMatchKnown(const vector<IgnoreTriple>& v,
