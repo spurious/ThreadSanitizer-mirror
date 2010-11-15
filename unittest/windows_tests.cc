@@ -52,6 +52,12 @@ void VeryLongWriteWorker(int *var) {
   *var = 42;
 }
 
+TEST(NegativeTests, DISABLED_WindowsCreateThreadFailureTest) {  // {{{1
+  HANDLE t = ::CreateThread(0, -1,
+                           (LPTHREAD_START_ROUTINE)DummyWorker, 0, 0, 0);
+  CHECK(t == 0);
+}
+
 TEST(NegativeTests, WindowsThreadStackSizeTest) {  // {{{1
 // Just spawn few threads with different stack sizes.
   int sizes[3] = {1 << 19, 1 << 21, 1 << 22};
