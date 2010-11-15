@@ -251,6 +251,14 @@ int getpid();
   #error "Unknown Configuration"
 #endif
 
+#if defined(TS_VALGRIND)
+# define TS_SERIALIZED 1
+#else
+// Hope to make it 0 one day :)
+# define TS_SERIALIZED 1
+#endif
+
+
 #define TS_ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
 
 //--------- Malloc profiling ------------------- {{{1

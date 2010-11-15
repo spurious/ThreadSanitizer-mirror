@@ -30,6 +30,8 @@
 #ifndef TS_LOCK_H_
 #define TS_LOCK_H_
 
+#include "ts_util.h"
+
 //--------- Simple Lock ------------------ {{{1
 #ifdef TS_VALGRIND
 class TSLock {
@@ -61,6 +63,44 @@ class ScopedLock {
   TSLock *lock_;
 };
 
+//--------- Atomic operations {{{1
+#if TS_SERIALIZED == 1
+// No need for atomics when all ThreadSanitizer logic is serialized.
+inline uintptr_t AtomicExchange(uintptr_t *ptr, uintptr_t new_value) {
+  uintptr_t old_value = *ptr;
+  *ptr = new_value;
+  return old_value;
+}
+
+inline void ReleaseStore(uintptr_t *ptr, uintptr_t value) {
+  *ptr = value;
+}
+
+#elif defined(__GNUC__)
+
+inline uintptr_t AtomicExchange(uintptr_t *ptr, uintptr_t new_value) {
+  return __sync_lock_test_and_set(ptr, new_value);
+}
+
+inline void ReleaseStore(uintptr_t *ptr, uintptr_t value) {
+  __asm__ __volatile__("" : : : "memory");
+  *ptr = value;
+}
+
+#elif defined(_MSC_VER)
+
+inline uintptr_t AtomicExchange(uintptr_t *ptr, uintptr_t new_value) {
+  return InterlockedExchange(ptr, new_value);
+}
+
+inline void ReleaseStore(uintptr_t *ptr, uintptr_t value) {
+  *(volatile uintptr_t*)ptr = value;
+  // TODO(kcc): anything to add here?
+}
+
+#else
+# error "unsupported configuration"
+#endif
 
 // end. {{{1
 #endif  // TS_LOCK_H_
