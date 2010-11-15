@@ -78,9 +78,7 @@ inline void ReleaseStore(uintptr_t *ptr, uintptr_t value) {
 
 inline uintptr_t NoBarrier_AtomicIncrement(volatile uintptr_t* ptr,
                                           uintptr_t increment) {
-  uintptr_t tmp = 0;
-  if (ptr) tmp = *ptr;
-  return tmp += increment;
+  return *ptr += increment;
 }
 
 #elif defined(__GNUC__)
