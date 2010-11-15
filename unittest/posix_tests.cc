@@ -809,6 +809,22 @@ TEST(NegativeTests, Mmap84GTest) {  // {{{1
 #endif
 }
 
+namespace NegativeTests_PthreadCreateFailureTest {  // {{{1
+
+void* ThreadRoutine(void *) {
+  return NULL;
+}
+
+TEST(NegativeTests, DISABLED_PthreadCreateFailureTest) {
+  pthread_attr_t attributes;
+  pthread_attr_init(&attributes);
+  pthread_attr_setstacksize(&attributes, -1);
+  pthread_t handle;
+  CHECK(pthread_create(&handle, &attributes, ThreadRoutine, NULL) != 0);
+}
+
+}  // namespace NegativeTests_PthreadCreateFailureTest
+
 namespace Signals {  // {{{1
 
 typedef void (*Sigaction)(int, siginfo_t *, void *);
