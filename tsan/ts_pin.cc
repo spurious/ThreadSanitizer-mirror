@@ -835,6 +835,13 @@ static void HandleThreadCreateBefore(THREADID tid, ADDRINT pc) {
   n_created_threads++;
 }
 
+static void HandleThreadCreateAbort(THREADID tid) {
+  CHECK(g_tid_of_thread_which_called_create_thread == tid);
+  g_tid_of_thread_which_called_create_thread = (THREADID)-1;
+  n_created_threads--;
+  g_thread_create_lock.Unlock();
+}
+
 static THREADID HandleThreadCreateAfter(THREADID tid, pthread_t child_ptid) {
   // Spin, waiting for last_child_tid to appear (i.e. wait for the thread to
   // actually start) so that we know the child's tid. No locks.
@@ -842,7 +849,7 @@ static THREADID HandleThreadCreateAfter(THREADID tid, pthread_t child_ptid) {
     YIELD();
   }
 
-  CHECK(g_tid_of_thread_which_called_create_thread != (THREADID)-1);
+  CHECK(g_tid_of_thread_which_called_create_thread == tid);
   g_tid_of_thread_which_called_create_thread = -1;
 
   THREADID last_child_tid = g_pin_threads[tid].last_child_tid;
@@ -863,6 +870,10 @@ static uintptr_t WRAP_NAME(pthread_create)(WRAP_PARAM4) {
 
   IgnoreMopsBegin(tid, pc);
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
+  if (ret != 0) {
+    HandleThreadCreateAbort(tid);
+    return ret;
+  }
   IgnoreMopsEnd(tid, pc);
 
   pthread_t child_ptid = *(pthread_t*)arg0;
@@ -937,8 +948,10 @@ static uintptr_t WRAP_NAME(CreateThread)(WRAP_PARAM6) {
 
   HandleThreadCreateBefore(tid, pc);
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_6();
-  if (ret == NULL)
+  if (ret == NULL) {
+    HandleThreadCreateAbort(tid);
     return ret;
+  }
   pthread_t child_ptid = ret;
   THREADID child_tid = HandleThreadCreateAfter(tid, child_ptid);
   {

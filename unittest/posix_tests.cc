@@ -815,12 +815,13 @@ void* ThreadRoutine(void *) {
   return NULL;
 }
 
-TEST(NegativeTests, DISABLED_PthreadCreateFailureTest) {
+TEST(NegativeTests, PthreadCreateFailureTest) {
   pthread_attr_t attributes;
   pthread_attr_init(&attributes);
   pthread_attr_setstacksize(&attributes, -1);
   pthread_t handle;
   CHECK(pthread_create(&handle, &attributes, ThreadRoutine, NULL) != 0);
+  pthread_attr_destroy(&attributes);
 }
 
 }  // namespace NegativeTests_PthreadCreateFailureTest
