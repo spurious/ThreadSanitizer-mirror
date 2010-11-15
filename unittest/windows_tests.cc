@@ -52,7 +52,7 @@ void VeryLongWriteWorker(int *var) {
   *var = 42;
 }
 
-TEST(NegativeTests, DISABLED_WindowsCreateThreadFailureTest) {  // {{{1
+TEST(NegativeTests, WindowsCreateThreadFailureTest) {  // {{{1
   HANDLE t = ::CreateThread(0, -1,
                            (LPTHREAD_START_ROUTINE)DummyWorker, 0, 0, 0);
   CHECK(t == 0);

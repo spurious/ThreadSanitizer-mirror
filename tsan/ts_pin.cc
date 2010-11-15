@@ -937,6 +937,8 @@ static uintptr_t WRAP_NAME(CreateThread)(WRAP_PARAM6) {
 
   HandleThreadCreateBefore(tid, pc);
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_6();
+  if (ret == NULL)
+    return ret;
   pthread_t child_ptid = ret;
   THREADID child_tid = HandleThreadCreateAfter(tid, child_ptid);
   {
