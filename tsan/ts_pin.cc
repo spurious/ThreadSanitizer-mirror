@@ -547,6 +547,7 @@ static bool RtnMatchesName(const string &rtn_name, const string &name) {
 #define WRAPSTD5(name) WrapStdCallFunc5(rtn, #name, (AFUNPTR)Wrap_##name)
 #define WRAPSTD6(name) WrapStdCallFunc6(rtn, #name, (AFUNPTR)Wrap_##name)
 #define WRAPSTD7(name) WrapStdCallFunc7(rtn, #name, (AFUNPTR)Wrap_##name)
+#define WRAPSTD8(name) WrapStdCallFunc8(rtn, #name, (AFUNPTR)Wrap_##name)
 #define WRAP_PARAM4  THREADID tid, ADDRINT pc, CONTEXT *ctx, \
                                 AFUNPTR f,\
                                 uintptr_t arg0, uintptr_t arg1, \
@@ -588,9 +589,51 @@ static uintptr_t CallFun6(CONTEXT *ctx, THREADID tid,
   return ret;
 }
 
+static uintptr_t CallFun7(CONTEXT *ctx, THREADID tid,
+                         AFUNPTR f, uintptr_t arg0, uintptr_t arg1,
+                         uintptr_t arg2, uintptr_t arg3,
+                         uintptr_t arg4, uintptr_t arg5,
+                         uintptr_t arg6) {
+  uintptr_t ret = 0xdeadbee1;
+  PIN_CallApplicationFunction(ctx, tid,
+                              CALLINGSTD_DEFAULT, (AFUNPTR)(f),
+                              PIN_PARG(uintptr_t), &ret,
+                              PIN_PARG(uintptr_t), arg0,
+                              PIN_PARG(uintptr_t), arg1,
+                              PIN_PARG(uintptr_t), arg2,
+                              PIN_PARG(uintptr_t), arg3,
+                              PIN_PARG(uintptr_t), arg4,
+                              PIN_PARG(uintptr_t), arg5,
+                              PIN_PARG(uintptr_t), arg6,
+                              PIN_PARG_END());
+  return ret;
+}
+
+static uintptr_t CallFun8(CONTEXT *ctx, THREADID tid,
+                         AFUNPTR f, uintptr_t arg0, uintptr_t arg1,
+                         uintptr_t arg2, uintptr_t arg3,
+                         uintptr_t arg4, uintptr_t arg5,
+                         uintptr_t arg6, uintptr_t arg7) {
+  uintptr_t ret = 0xdeadbee1;
+  PIN_CallApplicationFunction(ctx, tid,
+                              CALLINGSTD_DEFAULT, (AFUNPTR)(f),
+                              PIN_PARG(uintptr_t), &ret,
+                              PIN_PARG(uintptr_t), arg0,
+                              PIN_PARG(uintptr_t), arg1,
+                              PIN_PARG(uintptr_t), arg2,
+                              PIN_PARG(uintptr_t), arg3,
+                              PIN_PARG(uintptr_t), arg4,
+                              PIN_PARG(uintptr_t), arg5,
+                              PIN_PARG(uintptr_t), arg6,
+                              PIN_PARG(uintptr_t), arg7,
+                              PIN_PARG_END());
+  return ret;
+}
 
 #define CALL_ME_INSIDE_WRAPPER_4() CallFun4(ctx, tid, f, arg0, arg1, arg2, arg3)
 #define CALL_ME_INSIDE_WRAPPER_6() CallFun6(ctx, tid, f, arg0, arg1, arg2, arg3, arg4, arg5)
+#define CALL_ME_INSIDE_WRAPPER_7() CallFun7(ctx, tid, f, arg0, arg1, arg2, arg3, arg4, arg5, arg6)
+#define CALL_ME_INSIDE_WRAPPER_8() CallFun8(ctx, tid, f, arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7)
 
 // Completely replace (i.e. not wrap) a function with 3 (or less) parameters.
 // The original function will not be called.
@@ -2592,6 +2635,40 @@ void WrapStdCallFunc7(RTN rtn, char *name, AFUNPTR replacement_func) {
   }
 }
 
+void WrapStdCallFunc8(RTN rtn, char *name, AFUNPTR replacement_func) {
+  if (RTN_Valid(rtn) && RtnMatchesName(RTN_Name(rtn), name)) {
+    InformAboutFunctionWrap(rtn, name);
+    PROTO proto = PROTO_Allocate(PIN_PARG(uintptr_t),
+                                 CALLINGSTD_STDCALL,
+                                 "proto",
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG(uintptr_t),
+                                 PIN_PARG_END());
+    RTN_ReplaceSignature(rtn,
+                         AFUNPTR(replacement_func),
+                         IARG_PROTOTYPE, proto,
+                         IARG_THREAD_ID,
+                         IARG_INST_PTR,
+                         IARG_CONTEXT,
+                         IARG_ORIG_FUNCPTR,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 2,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 3,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 4,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 5,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 6,
+                         IARG_FUNCARG_ENTRYPOINT_VALUE, 7,
+                         IARG_END);
+    PROTO_Free(proto);
+  }
+}
 
 #endif
 
