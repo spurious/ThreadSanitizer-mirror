@@ -2,6 +2,9 @@
 
 #include "ts_trace_info.h"
 
+#include "ts_literace.h"
+#include "ts_lock.h"
+
 #include <sys/stat.h>
 
 #define EXTRA_REPLACE_PARAMS int tid, pc_t pc,
@@ -69,6 +72,7 @@ int PTH_INIT = 0;
 int DBG_INIT = 0;
 int HAVE_THREAD_0 = 0;
 static bool global_ignore = true;
+uintptr_t bb_unique_id = 0;
 
 //pthread_mutex_t global_lock = PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP;
 
@@ -292,7 +296,7 @@ static inline void SPut(EventType type, int32_t tid, pc_t pc,
   if ((type==THR_START) && (tid==0)) HAVE_THREAD_0 = 1;
 }
 
-static inline void flush_trace(ThreadInfo *info) {
+static void inline flush_trace(ThreadInfo *info) {
 #ifdef DEBUG
   // TODO(glider): PutTrace shouldn't be called without a lock taken.
   // However flushing events from unsafe_clear_pending_signals (called from
@@ -310,29 +314,42 @@ static inline void flush_trace(ThreadInfo *info) {
     stats_events_processed += trace->n_mops_;
     stats_cur_events += trace->n_mops_;
 
-    IN_RTL++;
-    CHECK_IN_RTL();
-    assert(trace);
-    if (G_flags->verbosity >= 2) {
-      Event sblock(SBLOCK_ENTER, tid, trace->pc_, 0, trace->n_mops_);
-      sblock.Print();
-      assert(trace->n_mops_);
-      for (size_t i = 0; i < trace->n_mops_; i++) {
-        if (trace->mops_[i].is_write) {
-          Event event(WRITE, tid, trace->mops_[i].pc, tleb[i], trace->mops_[i].size);
-          event.Print();
-        } else {
-          Event event(READ, tid, trace->mops_[i].pc, tleb[i], trace->mops_[i].size);
-          event.Print();
+    // If the trace is encountered for the first time, set its ID to a unique
+    // number.
+    // TODO(glider): we've got a benign race here: if a basic block is
+    // simultaneously executed on multiple threads its ID may change several
+    // times. As a result the count of this block executions may be off by the
+    // number of threads.
+    if (!trace->id_) {
+      bb_unique_id = NoBarrier_AtomicIncrement(&bb_unique_id, 1);
+      trace->id_ = bb_unique_id;
+    }
+    if (G_flags->literace_sampling == 0 ||
+        !LiteRaceSkipTrace(tid, trace->id_, G_flags->literace_sampling)) {
+      IN_RTL++;
+      CHECK_IN_RTL();
+      assert(trace);
+      if (G_flags->verbosity >= 2) {
+        Event sblock(SBLOCK_ENTER, tid, trace->pc_, 0, trace->n_mops_);
+        sblock.Print();
+        assert(trace->n_mops_);
+        for (size_t i = 0; i < trace->n_mops_; i++) {
+          if (trace->mops_[i].is_write) {
+            Event event(WRITE, tid, trace->mops_[i].pc, tleb[i], trace->mops_[i].size);
+            event.Print();
+          } else {
+            Event event(READ, tid, trace->mops_[i].pc, tleb[i], trace->mops_[i].size);
+            event.Print();
+          }
         }
       }
+      {
+        TSanLock scoped;
+        ThreadSanitizerHandleTrace(tid, reinterpret_cast<TraceInfo*>(trace), tleb);
+      }
+      IN_RTL--;
+      CHECK_IN_RTL();
     }
-    {
-      TSanLock scoped;
-      ThreadSanitizerHandleTrace(tid, reinterpret_cast<TraceInfo*>(trace), tleb);
-    }
-    IN_RTL--;
-    CHECK_IN_RTL();
   }
 }
 

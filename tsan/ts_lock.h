@@ -76,6 +76,13 @@ inline void ReleaseStore(uintptr_t *ptr, uintptr_t value) {
   *ptr = value;
 }
 
+inline uintptr_t NoBarrier_AtomicIncrement(volatile uintptr_t* ptr,
+                                          uintptr_t increment) {
+  uintptr_t tmp = 0;
+  if (ptr) tmp = *ptr;
+  return tmp + increment;
+}
+
 #elif defined(__GNUC__)
 
 inline uintptr_t AtomicExchange(uintptr_t *ptr, uintptr_t new_value) {
@@ -85,6 +92,16 @@ inline uintptr_t AtomicExchange(uintptr_t *ptr, uintptr_t new_value) {
 inline void ReleaseStore(uintptr_t *ptr, uintptr_t value) {
   __asm__ __volatile__("" : : : "memory");
   *ptr = value;
+}
+
+inline uintptr_t NoBarrier_AtomicIncrement(volatile uintptr_t* ptr,
+                                          uintptr_t increment) {
+  uintptr_t temp = increment;
+  __asm__ __volatile__("lock; xaddl %0,%1"
+                       : "+r" (temp), "+m" (*ptr)
+                       : : "memory");
+  // temp now holds the old value of *ptr
+  return temp + increment;
 }
 
 #elif defined(_MSC_VER)
