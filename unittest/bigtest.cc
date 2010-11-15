@@ -709,7 +709,7 @@ void RegisterStatNames() {
 int main(int argc, const char **argv) {
    long init = GetTimeInMs();
    RegisterStatNames();
-   const char *default_goals[] = {"N_THREADS=2", "N_MEM_ACCESSES_K=130000",
+   const char *default_goals[] = {"N_THREADS=20", "N_MEM_ACCESSES_K=130000",
         "N_MUTEXES=1800", "N_CV=80", "N_MUTEX_LOCK_UNLOCK=107000",
         "N_CV_SIGNALS=3600", "N_CV_WAITS=500"};
    const char ** goal_list = NULL;
