@@ -5088,6 +5088,15 @@ static const char default_suppressions[] =
 "}                                                                   \n"
 #endif
 
+#ifdef TS_PIN
+"{                                                                   \n"
+"  Suppression for issue 54 (PIN lacks support for IFUNC)            \n"
+"  ThreadSanitizer:Race                                              \n"
+"  ...                                                               \n"
+"  fun:*NegativeTests_Strlen::Worker*                                \n"
+"}                                                                   \n"
+#endif
+
 ;
 
 // -------- Report Storage --------------------- {{{1
@@ -7481,11 +7490,6 @@ static void SetupIgnore() {
   g_ignore_lists->ignores.push_back(IgnoreObj("/usr/lib/dyld"));
   g_ignore_lists->ignores.push_back(IgnoreObj("/usr/lib/libobjc.A.dylib"));
   g_ignore_lists->ignores.push_back(IgnoreObj("*/libSystem.*.dylib"));
-#endif
-
-#ifdef TS_PIN
-  // Workaround for http://code.google.com/p/data-race-test/issues/detail?id=54
-  g_ignore_lists->ignores.push_back(IgnoreFun("__nss_hosts_lookup"));
 #endif
 
   g_ignore_lists->ignores.push_back(IgnoreFun("pthread_create"));
