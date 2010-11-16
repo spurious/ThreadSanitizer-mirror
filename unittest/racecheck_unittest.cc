@@ -6474,6 +6474,7 @@ TEST(StressTests, StartAndJoinManyThreads) {
 }  // namespace
 
 namespace StressTests_ManyAccesses {  // {{{1
+#ifndef NO_BARRIER
 const int kNumThreads = 4;
 const int kArrayLen = 1024 * 1024;
 const int kNumIter = 1;
@@ -6503,7 +6504,7 @@ TEST(StressTests, ManyAccessesNoRaceTest) {
   t.Join();
   delete [] array;
 }
-
+#undef  // NO_BARRIER
 }  // namespace
 
 namespace NegativeTests_EnableRaceDetectionTest {  // {{{1
