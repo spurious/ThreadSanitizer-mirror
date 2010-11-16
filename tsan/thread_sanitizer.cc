@@ -7506,9 +7506,11 @@ static void SetupIgnore() {
 #ifdef _MSC_VER
   g_ignore_lists->ignores.push_back(IgnoreFun("unnamedImageEntryPoint"));
   g_ignore_lists->ignores.push_back(IgnoreFun("_Mtxunlock"));
+  g_ignore_lists->ignores.push_back(IgnoreFun("IsNLSDefinedString"));
 
   g_ignore_lists->ignores_r.push_back(IgnoreFun("RtlDestroyQueryDebugBuffer"));
   g_ignore_lists->ignores_r.push_back(IgnoreFun("BCryptGenerateSymmetricKey"));
+  g_ignore_lists->ignores_r.push_back(IgnoreFun("CreateThread"));
 #else
   // http://code.google.com/p/data-race-test/issues/detail?id=40
   g_ignore_lists->ignores_r.push_back(IgnoreFun("_ZNSsD1Ev"));
