@@ -6553,7 +6553,7 @@ namespace  RepPrefixedInstructionsTest {  //{{{1
 #if defined (__GNUC__) && (defined(ARCH_x86) || defined(ARCH_amd64))
 void rep_clr_1(uint8_t *s, long n)
 {
-  int d0, d1;
+  intptr_t d0, d1;
       __asm__ __volatile__ (
       "rep ; stosb"
       : "=&c" (d0), "=&D" (d1)
