@@ -7483,6 +7483,11 @@ static void SetupIgnore() {
   g_ignore_lists->ignores.push_back(IgnoreObj("*/libSystem.*.dylib"));
 #endif
 
+#ifdef TS_PIN
+  // Workaround for http://code.google.com/p/data-race-test/issues/detail?id=54
+  g_ignore_lists->ignores.push_back(IgnoreFun("__nss_hosts_lookup"));
+#endif
+
   g_ignore_lists->ignores.push_back(IgnoreFun("pthread_create"));
   g_ignore_lists->ignores.push_back(IgnoreFun("pthread_create@*"));
   g_ignore_lists->ignores.push_back(IgnoreFun("pthread_create_WRK"));
