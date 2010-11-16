@@ -7514,7 +7514,9 @@ static void SetupIgnore() {
   // Dangerous: recursively ignoring vfprintf hides races on printf arguments.
   // See PrintfTests in unittest/racecheck_unittest.cc
   // TODO(eugenis): Do something about this.
+  // http://code.google.com/p/data-race-test/issues/detail?id=53
   g_ignore_lists->ignores_r.push_back(IgnoreFun("vfprintf"));
+  g_ignore_lists->ignores_r.push_back(IgnoreFun("_stbuf"));
 
 #ifdef VGO_darwin
   g_ignore_lists->ignores_r.push_back(IgnoreFun("__CFDoExternRefOperation"));
