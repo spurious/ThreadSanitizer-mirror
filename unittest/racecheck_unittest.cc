@@ -6504,7 +6504,7 @@ TEST(StressTests, ManyAccessesNoRaceTest) {
   t.Join();
   delete [] array;
 }
-#undef  // NO_BARRIER
+#endif  // NO_BARRIER
 }  // namespace
 
 namespace NegativeTests_EnableRaceDetectionTest {  // {{{1
