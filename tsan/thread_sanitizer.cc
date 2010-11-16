@@ -89,6 +89,25 @@ bool debug_happens_before = false;
 bool debug_cache = false;
 bool debug_race_verifier = false;
 
+// -------- TIL --------------- {{{1
+// ThreadSanitizer Internal lock (scoped).
+class TIL {
+ public:
+  TIL(TSLock *lock) : lock_(lock) {
+    DCHECK(lock_);
+    if (TS_SERIALIZED == 0)
+      lock_->Lock();
+  }
+  ~TIL() {
+    if (TS_SERIALIZED == 0)
+      lock_->Unlock();
+  }
+ private:
+  TSLock *lock_;
+};
+
+static TSLock *ts_lock;
+
 // -------- Util ----------------------------- {{{1
 
 string PcToRtnNameWithStats(uintptr_t pc, bool demangle) {
@@ -7624,6 +7643,7 @@ extern "C" const char *ThreadSanitizerQuery(const char *query) {
 
 extern void ThreadSanitizerInit() {
   ScopedMallocCostCenter cc("ThreadSanitizerInit");
+  ts_lock = new TSLock;
   g_so_far_only_one_thread = true;
   CHECK_EQ(sizeof(ShadowValue), 8);
   CHECK(G_flags);
@@ -7702,35 +7722,42 @@ extern void ThreadSanitizerDumpAllStacks() {
 
 
 extern void ThreadSanitizerHandleOneEvent(Event *e) {
+  TIL til(ts_lock);
   G_detector->HandleOneEvent(e);
 }
 
 void INLINE ThreadSanitizerHandleMemoryAccess(int32_t tid, uintptr_t pc,
                                               uintptr_t addr, uintptr_t size,
                                               bool is_w) {
+  TIL til(ts_lock);
   G_detector->HandleMemoryAccess(tid, pc, addr, size, is_w);
 }
 
 extern INLINE void ThreadSanitizerHandleTrace(int32_t tid, TraceInfo *trace_info,
                                        uintptr_t *tleb) {
+  TIL til(ts_lock);
   G_detector->HandleTrace(tid, trace_info, tleb);
 }
 
 void INLINE ThreadSanitizerHandleStackMemChange(int32_t tid, uintptr_t addr,
                                                 uintptr_t size) {
+  TIL til(ts_lock);
   G_detector->HandleStackMemChange(tid, addr, size);
 }
 
 void INLINE ThreadSanitizerEnterSblock(int32_t tid, uintptr_t pc) {
+  TIL til(ts_lock);
   G_detector->HandleSblockEnter(TID(tid), pc);
 }
 
 void INLINE ThreadSanitizerHandleRtnCall(int32_t tid, uintptr_t call_pc,
                                          uintptr_t target_pc,
                                          IGNORE_BELOW_RTN ignore_below) {
+  TIL til(ts_lock);
   G_detector->HandleRtnCall(TID(tid), call_pc, target_pc, ignore_below);
 }
 void INLINE ThreadSanitizerHandleRtnExit(int32_t tid) {
+  TIL til(ts_lock);
   Thread::Get(TID(tid))->HandleRtnExit();
 }
 

@@ -112,7 +112,7 @@ static int n_started_threads = 0;
 
 const uint32_t kMaxThreads = PIN_MAX_THREADS;
 
-// Serializes the ThreadSanitizer callbacks.
+// Serializes the ThreadSanitizer callbacks if TS_SERIALIZED==1
 static TSLock g_main_ts_lock;
 
 // Serializes calls to pthread_create and CreateThread.
@@ -418,7 +418,9 @@ static void TLEBFlushLocked(PinThread &t) {
   }
   CHECK(t.tleb.size <= kThreadLocalEventBufferSize);
   G_stats->lock_sites[0]++;
+#if TS_SERIALIZED==1
   ScopedLock lock(&g_main_ts_lock);
+#endif
   TLEBFlushUnlocked(t.tleb);
 }
 

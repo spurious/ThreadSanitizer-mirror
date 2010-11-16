@@ -251,10 +251,16 @@ int getpid();
   #error "Unknown Configuration"
 #endif
 
-#if defined(TS_VALGRIND)
+// When TS_SERIALIZED==1, all calls to ThreadSanitizer* functions
+// should be serialized somehow. For example:
+//  - Valgrind serializes threads by using a pipe-based semaphore.
+//  - ThreadSanitizerOffline is single-threaded by nature.
+//  - A Multi-threaded environment (e.g. PIN) can use a single global Mutex.
+// When TS_SERIALIZED==0, ThreadSanitizer takes care of synchronization itself.
+
+#if defined(TS_PIN)
 # define TS_SERIALIZED 1
 #else
-// Hope to make it 0 one day :)
 # define TS_SERIALIZED 1
 #endif
 

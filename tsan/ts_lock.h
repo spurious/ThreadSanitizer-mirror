@@ -33,7 +33,7 @@
 #include "ts_util.h"
 
 //--------- Simple Lock ------------------ {{{1
-#ifdef TS_VALGRIND
+#if defined(TS_VALGRIND) || defined(TS_OFFLINE)
 class TSLock {
  public:
   void Lock() {};
