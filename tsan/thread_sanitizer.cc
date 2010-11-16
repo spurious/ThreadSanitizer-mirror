@@ -6985,7 +6985,8 @@ class Detector {
       sp_max = stack_info->ptr + stack_info->size;
     }
     if (debug_thread) {
-      Printf("T%d SP: %p [%p %p), size=%ldM\n", e_->tid(), sp, sp_min, sp_max, (sp_max - sp_min) >> 20);
+      Printf("T%d SP: %p [%p %p), size=%ldK\n",
+             e_->tid(), sp, sp_min, sp_max, (sp_max - sp_min) >> 10);
     }
     if (sp_min < sp_max) {
       CHECK((sp_max - sp_min) > 128 * 1024); // stay sane.
