@@ -479,6 +479,7 @@ TEST(NegativeTests, test125) {
   ANNOTATE_PURE_HAPPENS_BEFORE_MUTEX(&mu);
 
   // run Adders, then Aggregator
+  adder_num = 0;
   {
     MyThreadArray t(Adder, Adder, Adder, Aggregator);
     t.Start();
