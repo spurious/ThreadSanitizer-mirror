@@ -6473,6 +6473,39 @@ TEST(StressTests, StartAndJoinManyThreads) {
 }
 }  // namespace
 
+namespace StressTests_ManyAccesses {  // {{{1
+const int kNumThreads = 4;
+const int kArrayLen = 1024 * 1024;
+const int kNumIter = 1;
+int thread_id;
+int *array = NULL;
+Barrier *barrier;
+
+void NoRaceWorker() {
+  int id = AtomicIncrement(&thread_id, 1);
+  CHECK(id >= 0 && id < kNumThreads);
+  barrier->Block();
+  int *ptr = array + id * kArrayLen;
+  for (int it = 0; it < kNumIter; it++) {
+    for (int i = 0; i < kArrayLen; i++) {
+      ptr[i]++;
+    }
+  }
+}
+
+// 4 threads accessing different memory.
+TEST(StressTests, ManyAccessesNoRaceTest) {
+  thread_id = -1;
+  barrier = new Barrier(4);
+  array = new int[kArrayLen * kNumThreads];
+  MyThreadArray t(NoRaceWorker, NoRaceWorker, NoRaceWorker, NoRaceWorker);
+  t.Start();
+  t.Join();
+  delete [] array;
+}
+
+}  // namespace
+
 namespace NegativeTests_EnableRaceDetectionTest {  // {{{1
 const size_t size = 10000;
 const size_t n_iter = 1000;
