@@ -930,6 +930,7 @@ static uintptr_t WRAP_NAME(pthread_create)(WRAP_PARAM4) {
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
   if (ret != 0) {
     HandleThreadCreateAbort(tid);
+    IgnoreMopsEnd(tid, pc);
     return ret;
   }
   IgnoreMopsEnd(tid, pc);
