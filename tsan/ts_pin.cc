@@ -996,7 +996,64 @@ void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
 
 static void Before_start_thread(THREADID tid, ADDRINT pc, ADDRINT sp) {
   PinThread &t = g_pin_threads[tid];
-  DumpEvent(THR_STACK_TOP, tid, pc, sp, t.thread_stack_size_if_known);
+  if (debug_thread) {
+    Printf("T%d Before_start_thread: sp=%p my_ptid=%p diff=%p\n",
+         tid, sp, t.my_ptid, t.my_ptid - sp);
+  }
+  // This is a rather scary hack, but I see no easy way to avoid it.
+  // On linux NPTL, the pthread_t structure is the same block of memory
+  // as the stack (and the tls?). Somewhere inside the pthread_t
+  // object lives the address of stackblock followed by its size
+  // (see nptl/descr.h).
+  // At the current point we may not know the value of pthread_t (my_ptid),
+  // but we do know the current sp, which is a bit less than my_ptid.
+  //
+  // address                        value
+  // ------------------------------------------------
+  // 0xffffffffffffffff:
+  //
+  // stackblock + stackblock_size:
+  // my_ptid:
+  //
+  //                                stackblock_size
+  //                                stackblock
+  //
+  // current_sp:
+  //
+  //
+  // stackblock:
+  //
+  // 0x0000000000000000:
+  // -------------------------------------------------
+  //
+  // So, we itrate from sp to the higher addresses (but just in case, not more
+  // than 1 page) trying to find a pair of values which looks like stackblock
+  // and stackblock_size. Oh well.
+  // Note that in valgrind we are able to get this info from
+  //  pthread_getattr_np (linux) or pthread_get_stackaddr_np (mac),
+  // but in PIN we can't call those (can we?).
+  uintptr_t prev = 0;
+  for (uintptr_t sp1 = sp; sp1 - sp < 0x1000;
+       sp1 += sizeof(uintptr_t)) {
+    uintptr_t val = *(uintptr_t*)sp1;
+    if (val == 0) continue;
+    if (prev &&
+        (prev & 0xfff) == 0 && // stack is page aligned
+        prev < sp &&           // min stack is < sp
+        prev + val > sp &&     // max stack is > sp
+        val >= (1 << 19) &&    // stack size is >= 512k
+        val <= 128 * (1 << 20) // stack size is hardly > 128M
+        ) {
+      if (debug_thread) {
+        Printf("T%d found stack: %p size=%p\n", tid, prev, val);
+      }
+      DumpEvent(THR_STACK_TOP, tid, pc, prev + val, val);
+      return;
+    }
+    prev = val;
+  }
+  CHECK(0);  // I really hope the hack above always works.
+  // DumpEvent(THR_STACK_TOP, tid, pc, sp, t.thread_stack_size_if_known);
 }
 
 #ifdef _MSC_VER

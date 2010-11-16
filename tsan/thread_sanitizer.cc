@@ -6979,6 +6979,7 @@ class Detector {
       Printf("T%d SP: %p [%p %p), size=%ldM\n", e_->tid(), sp, sp_min, sp_max, (sp_max - sp_min) >> 20);
     }
     if (sp_min < sp_max) {
+      CHECK((sp_max - sp_min) > 128 * 1024); // stay sane.
       CHECK((sp_max - sp_min) < 128 * 1024 * 1024); // stay sane.
       ClearMemoryState(sp_min, sp_max);
       thr->SetStack(sp_min, sp_max);
