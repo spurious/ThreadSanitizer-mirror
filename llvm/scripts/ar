@@ -4,10 +4,10 @@
 # information for the object files.
 
 set -x
-HERE=`dirname $0`
+SCRIPT_ROOT=`dirname $0`
+source "$SCRIPT_ROOT/common.sh"
 
-AR=ar
-LINK_DBG="$HERE/link_debuginfo.sh"
+LINK_DBG="$SCRIPT_ROOT/link_debuginfo.sh"
 
 until [ -z "$1" ]
 do
@@ -25,5 +25,8 @@ do
   shift
 done
 
-${AR} ${ARGS}
+${TSAN_AR} ${ARGS} || exit 1
+if [ "$ARGS" ]
+then
 ${LINK_DBG} ${DBG_FILES} -o ${LIB_DBG}
+fi

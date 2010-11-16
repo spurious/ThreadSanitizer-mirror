@@ -9,7 +9,6 @@ SCRIPT_ROOT=`dirname $0`
 
 source "$SCRIPT_ROOT/common.sh"
 
-
 SRC=$1
 FNAME=`echo $SRC | sed 's/\.[^.]*$//'`
 SRC_BIT="$FNAME.ll"
@@ -63,5 +62,5 @@ LOG=instrumentation.log
 
 set_platform_dependent_vars
 # Link with $TSAN_RTL
-$LD $MARCH -g $ARGS $LDFLAGS $TSAN_RTL -o $SRC_EXE || exit 1
+$TSAN_LD $MARCH -g $ARGS $LDFLAGS $TSAN_RTL -o $SRC_EXE || exit 1
 $LINK_DBG $DBG_FILES -o $SRC_DBG

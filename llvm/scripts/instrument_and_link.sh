@@ -51,5 +51,5 @@ $LLC -march=$XARCH -O0 $SRC_INSTR  -o $SRC_ASM || exit 1
 # Compile the object file.
 $LLVM_GCC $MARCH -c $SRC_ASM -O0 $DEBUG -o $SRC_OBJ
 # Link with the mops_impl.o
-$LD $MARCH $DEBUG $SRC_OBJ $LDFLAGS $TSAN_RTL -o $SRC_EXE
+$TSAN_LD $MARCH $DEBUG $SRC_OBJ $LDFLAGS $TSAN_RTL -o $SRC_EXE
 

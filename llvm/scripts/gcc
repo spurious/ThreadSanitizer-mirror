@@ -1,14 +1,11 @@
 #!/bin/bash
 #
 # A wrapper for g++ that detects whether g++ is used as a compiler or linker
-# and either instruments the compiled source files or calls ld.sh to link
+# and either instruments the compiled source files or calls ./ld to link
 # the object files.
 
 set -x
 SCRIPT_ROOT=`dirname $0`
-
-echo $*
-
 source "$SCRIPT_ROOT/common.sh"
 
 ALL_ARGS=
@@ -57,7 +54,7 @@ done
 
 if [ "$LD_MODE" == "1" ]
 then
-  $SCRIPT_ROOT/ld.sh $ALL_ARGS
+  $SCRIPT_ROOT/ld $ALL_ARGS
   exit
 fi
 

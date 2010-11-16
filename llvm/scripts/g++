@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # A wrapper for g++ that detects whether g++ is used as a compiler or linker
-# and either instruments the compiled source files or calls ld.sh to link
+# and either instruments the compiled source files or calls ./ld to link
 # the object files.
 
 set -x
