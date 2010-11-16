@@ -1,26 +1,30 @@
-#define DEBUG_TYPE "mops"
+#define DEBUG_TYPE "tsan"
+#include "llvm/ADT/Statistic.h"
+#include "llvm/Analysis/DebugInfo.h"
+#include "llvm/CallingConv.h"
 #include "llvm/Constants.h"
 #include "llvm/DerivedTypes.h"
-#include "llvm/Analysis/DebugInfo.h"
-#include "llvm/Instructions.h"
-#include "llvm/InstrTypes.h"
-#include "llvm/IntrinsicInst.h"
+#include "llvm/Function.h"
 #include "llvm/InlineAsm.h"
-#include "llvm/CallingConv.h"
+#include "llvm/InstrTypes.h"
+#include "llvm/Instructions.h"
+#include "llvm/IntrinsicInst.h"
+#include "llvm/Module.h"
 #include "llvm/Pass.h"
+#include "llvm/Support/CommandLine.h"
+#include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetData.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Type.h"
-#include "llvm/Function.h"
-#include "llvm/Module.h"
-#include "llvm/Support/raw_ostream.h"
-#include "llvm/ADT/Statistic.h"
 
 #include <stdint.h>
 using namespace llvm;
 
 #define DEBUG 0
+
+static cl::opt<std::string>
+TargetArch("arch", cl::desc("Target arch: x86 or x64"));
 
 namespace {
   typedef std::vector <Constant*> Passport;
@@ -33,19 +37,28 @@ namespace {
     Constant *RtnCallFn, *RtnExitFn;
     Constant *MemCpyFn, *MemMoveFn;
     const PointerType *UIntPtr, *MopTyPtr, *Int8Ptr, *TraceInfoTypePtr;
-    const Type *Int32, *Int8, *ArithmeticPtr;
+    const Type *PlatformInt, *Int8, *ArithmeticPtr;
     const Type *Void;
     const StructType *MopTy, *TraceInfoType, *BBTraceInfoType;
     const ArrayType *BBPassportType, *BBExtPassportType, *MopArrayType;
     const Type *TLEBTy;
     const PointerType *TLEBPtrType;
     static const int kTLEBSize = 100;
+    // TODO(glider): hashing constants and BB addresses should be different on
+    // x86 and x86-64.
     static const int kBBHiAddr = 5000, kBBLoAddr = 100;
     static const int kFNV1aPrime = 6733, kFNV1aModulo = 2048;
     static const int kMaxAddr = 1 << 30;
+    int arch_size_;
     int ModuleID;
 
-    TsanOnlineInstrument() : ModulePass(&ID) { }
+    TsanOnlineInstrument() : ModulePass(&ID) {
+      if (TargetArch == "x86-64") {
+        arch_size_ = 64;
+      } else {
+        arch_size_ = 32;
+      }
+    }
 
     uintptr_t getAddr(int bb_index, int mop_index, Instruction *dump) {
       uintptr_t result = ((ModuleID * kBBHiAddr) + bb_index) * kBBLoAddr + mop_index;
@@ -60,6 +73,11 @@ namespace {
         assert(false);
       }
       return result;
+    }
+
+    // Get the target architecture word size in bits.
+    int getArchSize() {
+      return arch_size_;
     }
 
     uintptr_t getModuleID(Module &M) {
@@ -87,18 +105,25 @@ namespace {
       ModuleMopCount = 0;
       ModuleID = getModuleID(M);
       LLVMContext &Context = M.getContext();
-      UIntPtr = Type::getInt32PtrTy(Context);
+      if (getArchSize() == 64) {
+        UIntPtr = Type::getInt64PtrTy(Context);
+        PlatformInt = Type::getInt64Ty(Context);
+        ArithmeticPtr = Type::getInt64Ty(Context);
+      } else {
+        UIntPtr = Type::getInt32PtrTy(Context);
+        PlatformInt = Type::getInt32Ty(Context);
+        ArithmeticPtr = Type::getInt32Ty(Context);
+      }
       Int8 = Type::getInt8Ty(Context);
-      Int32 = Type::getInt32Ty(Context);
-      ArithmeticPtr = Type::getInt32Ty(Context);
       Int8Ptr = PointerType::get(Type::getInt8Ty(Context), 0);
       Void = Type::getVoidTy(Context);
-      MopTy = StructType::get(Context, Int32, Int8, Int8, NULL);
+      MopTy = StructType::get(Context, PlatformInt, Int8, Int8, NULL);
       MopTyPtr = PointerType::get(MopTy, 0);
       MopArrayType = ArrayType::get(MopTy, kTLEBSize);
 
-      ///BBExtPassportType = ArrayType::get(MopTy, kTLEBSize);
 
+      // TraceInfoType represents the following class declared in
+      // ts_trace_info.h:
       // class TraceInfoPOD {
       //  protected:
       //   size_t n_mops_;
@@ -108,9 +133,8 @@ namespace {
       //   bool   generate_segments_;
       //   MopInfo mops_[1];
       // };
-
       TraceInfoType = StructType::get(Context,
-                                    Int32, Int32, Int32, Int32, Int8,
+                                    PlatformInt, PlatformInt, PlatformInt, PlatformInt, Int8,
                                     MopArrayType,
                                     NULL);
       TraceInfoTypePtr = PointerType::get(TraceInfoType, 0);
@@ -126,7 +150,7 @@ namespace {
       // void rtn_call(void *addr)
       RtnCallFn = M.getOrInsertFunction("rtn_call",
                                         Void,
-                                        Int32, (Type*)0);
+                                        PlatformInt, (Type*)0);
 
       // void rtn_exit()
       RtnExitFn = M.getOrInsertFunction("rtn_exit",
@@ -134,10 +158,10 @@ namespace {
 
       MemCpyFn = M.getOrInsertFunction("rtl_memcpy",
                                        UIntPtr,
-                                       UIntPtr, UIntPtr, Int32, (Type*)0);
+                                       UIntPtr, UIntPtr, PlatformInt, (Type*)0);
       MemMoveFn = M.getOrInsertFunction("rtl_memmove",
                                        UIntPtr,
-                                       UIntPtr, UIntPtr, Int32, (Type*)0);
+                                       UIntPtr, UIntPtr, PlatformInt, (Type*)0);
 
 
       int nBB = 1, FnBB = 1;
@@ -168,7 +192,7 @@ namespace {
         Instruction* First = F->begin()->begin();
         std::vector<Value*> inst(1);
         // BBNumMops = 0 at the start of basic block.
-        inst[0] = ConstantInt::get(Int32, getAddr(startBBCount, 0, First));
+        inst[0] = ConstantInt::get(PlatformInt, getAddr(startBBCount, 0, First));
         CallInst::Create(RtnCallFn, inst.begin(), inst.end(), "", First);
       }
       return true;
@@ -229,7 +253,7 @@ namespace {
           assert(false);
         }
         if (isMop) {
-          size = 32;
+          size = getArchSize();
           BBNumMops++;
           ModuleMopCount++;
           Value *MopPtr;
@@ -257,8 +281,8 @@ namespace {
           }
 
           std::vector<Constant*> mop;
-          mop.push_back(ConstantInt::get(Int32, getAddr(BBCount, BBNumMops, BI)));
-          mop.push_back(ConstantInt::get(Int8, size/8));
+          mop.push_back(ConstantInt::get(PlatformInt, getAddr(BBCount, BBNumMops, BI)));
+          mop.push_back(ConstantInt::get(Int8, size / 8));
           mop.push_back(ConstantInt::get(Int8, isStore));
           passport.push_back(ConstantStruct::get(MopTy, mop));
         }
@@ -267,20 +291,20 @@ namespace {
         BBPassportType = ArrayType::get(MopTy, BBNumMops);
         LLVMContext &Context = M.getContext();
         BBTraceInfoType = StructType::get(Context,
-                                    Int32, Int32, Int32, Int32, Int8,
+                                    PlatformInt, PlatformInt, PlatformInt, PlatformInt, Int8,
                                     BBPassportType,
                                     NULL);
 
         std::vector<Constant*> trace_info;
         // num_mops_
-        trace_info.push_back(ConstantInt::get(Int32, BBNumMops));
+        trace_info.push_back(ConstantInt::get(PlatformInt, BBNumMops));
         // pc_
-        trace_info.push_back(ConstantInt::get(Int32, getAddr(BBCount,
+        trace_info.push_back(ConstantInt::get(PlatformInt, getAddr(BBCount,
                                                              0, Begin)));
         // id_ == 0 initially.
-        trace_info.push_back(ConstantInt::get(Int32, 0));
+        trace_info.push_back(ConstantInt::get(PlatformInt, 0));
         // counter_
-        trace_info.push_back(ConstantInt::get(Int32, 0));
+        trace_info.push_back(ConstantInt::get(PlatformInt, 0));
         // generate_segments_
         trace_info.push_back(ConstantInt::get(Int8, 1));
         // mops_
@@ -292,7 +316,6 @@ namespace {
             false,
             GlobalValue::InternalLinkage,
             ConstantStruct::get(BBTraceInfoType, trace_info),
-//            ConstantArray::get(BBPassportType, passport),
             "bb_passport",
             false, 0
             );
@@ -342,7 +365,7 @@ namespace {
       }
 
       std::vector <Value*> idx;
-      idx.push_back(ConstantInt::get(Int32, TLEBIndex));
+      idx.push_back(ConstantInt::get(PlatformInt, TLEBIndex));
       Value *TLEBPtr =
           GetElementPtrInst::Create(TLEB,
                                     idx.begin(),
@@ -404,8 +427,7 @@ namespace {
 #endif
         std::vector <Value*> Args(1);
         std::vector <Value*> idx;
-        idx.push_back(ConstantInt::get(Int32, 0));
-//        idx.push_back(ConstantInt::get(Int32, 0));
+        idx.push_back(ConstantInt::get(PlatformInt, 0));
         if (have_passport) {
           Args[0] =
             GetElementPtrInst::Create(BBPassportGlob,
@@ -432,17 +454,11 @@ namespace {
            BI != BE; ++BI) {
         bool unknown = true;  // we just don't want a bunch of nested if()s
         if (isa<LoadInst>(BI)) {
-#if DEBUG
-          errs() << "<";
-#endif
           // Instrument LOAD.
           InstrumentMop(BI, false, TLEB, first_dtor_bb);
           unknown = false;
         }
         if (isa<StoreInst>(BI)) {
-#if DEBUG
-          errs() << ">";
-#endif
           // Instrument STORE.
           InstrumentMop(BI, true, TLEB, first_dtor_bb);
           unknown = false;
@@ -455,13 +471,8 @@ namespace {
           assert(false);
         }
         if (unknown) {
-#if DEBUG
-          errs() << " ";
-#endif
+          // do nothing
         }
-#if DEBUG
-        //errs() << "BI: " << BI->getOpcodeName() << "\n";
-#endif
       }
 #if DEBUG
       errs() << "========BB===========\n";
@@ -513,9 +524,6 @@ namespace {
         }
 
         if (isa<ReturnInst>(BI)) {
-#if DEBUG
-          errs() << "-";
-#endif
           if (validBegin && validEnd) {
             End = BI;
             new_dirty = runOnBasicBlockSlice(M, Begin, End, first_dtor_bb);
@@ -539,9 +547,7 @@ namespace {
         End = BB->end();
         runOnBasicBlockSlice(M, Begin, End, first_dtor_bb);
       }
-
     }
-
 
   private:
     virtual void getAnalysisUsage(AnalysisUsage &AU) const {

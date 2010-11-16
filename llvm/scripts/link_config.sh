@@ -67,5 +67,6 @@ wrap sigaction
 
 # operator new(unsigned int)
 wrap _Znwj
+wrap _Znwm
 # operator delete(void*)
 wrap _ZdlPv

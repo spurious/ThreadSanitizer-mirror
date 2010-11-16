@@ -4,8 +4,6 @@ RANLIB=ranlib
 SRC=tsan_rtl.cc
 ERRORLVL=-Werror
 ERRORLVL=-Werror -Wno-deprecated -Wno-unused-function
-#OBJS32=x86-thread_sanitizer.o x86-ts_util.o x86-suppressions.o x86-common_util.o x86-ignore.o
-OBJS32=
 TSAN_PATH=../../tsan
 DEFINES=
 
@@ -13,11 +11,13 @@ ifeq ($(DEBUG), 1)
   D=-debug
   DEFINES+=-DDEBUG=1
   OBJS32=x86-thread_sanitizer.o x86-ts_util.o x86-suppressions.o x86-common_util.o x86-ignore.o
+  OBJS64=amd64-thread_sanitizer.o amd64-ts_util.o amd64-suppressions.o amd64-common_util.o amd64-ignore.o
 else
   D=
   # In optimized mode, thread_sanitizer.cc is included into the tool code.
   DEFINES+=-DINCLUDE_THREAD_SANITIZER_CC=1
   OBJS32=x86-ts_util.o x86-suppressions.o x86-common_util.o x86-ignore.o
+  OBJS64=amd64-ts_util.o amd64-suppressions.o amd64-common_util.o amd64-ignore.o
 endif
 
 
@@ -37,23 +37,25 @@ FOREIGN_HEADERS=$(TSAN_PATH)/ts_lock.h $(TSAN_PATH)/ts_stats.h \
 TS_HEADERS=
 
 RTL_32_O=tsan_rtl32.o
+RTL_64_O=tsan_rtl64.o
 
-all:	$(OBJS32) $(RTL_32_O)
+all:	$(OBJS32) $(OBJS64) $(RTL_32_O) $(RTL_64_O)
 	$(AR) tsan_rtl32.a $(OBJS32) $(RTL_32_O)
 	$(RANLIB) tsan_rtl32.a
+	$(AR) tsan_rtl64.a $(OBJS64) $(RTL_64_O)
+	$(RANLIB) tsan_rtl64.a
+
 
 
 $(TSAN_PATH)/ts_event_names.h:
 	make -C $(TSAN_PATH) ts_event_names.h
 
 tsan_rtl32.o: $(SRC) tsan_rtl.h
-	$(CXX) $(SRC) $(FLAGS) -m32 -g $(ERRORLVL) -Wall -c -o $(RTL_32_O) $(DEFINES)
+	$(CXX) $(SRC) $(FLAGS) -m32 -g $(ERRORLVL) -Wall -c -o $(RTL_32_O) $(DEFINES) -DTSAN_RTL_X86
 
-x86-stack_info.o:	stack_info.cc stack_info.h
-	$(CXX) -m32 -o $@ -c $< $(ERRORLVL) $(FLAGS) -USTACKINFO_STANDALONE
+tsan_rtl64.o: $(SRC) tsan_rtl.h
+	$(CXX) $(SRC) $(FLAGS) -m64 -g $(ERRORLVL) -Wall -c -o $(RTL_64_O) $(DEFINES) -DTSAN_RTL_X64
 
-stack_info32:	stack_info.cc stack_info.h
-	$(CXX) -m32 -o $@ $< $(ERRORLVL) $(FLAGS) -DSTACKINFO_STANDALONE -lpthread
 
 x86-%.o:	%.cc $(TS_HEADERS) $(FOREIGN_HEADERS)
 	$(CXX) -m32 -o $@ -c $< $(ERRORLVL) $(FLAGS) $(DEFINES)
@@ -61,6 +63,25 @@ x86-%.o:	%.cc $(TS_HEADERS) $(FOREIGN_HEADERS)
 x86-%.o:	$(TSAN_PATH)/%.cc $(TS_HEADERS) $(FOREIGN_HEADERS)
 	$(CXX) -m32 -o $@ -c $< $(ERRORLVL) $(FLAGS) $(DEFINES)
 
+amd64-%.o:	%.cc $(TS_HEADERS) $(FOREIGN_HEADERS)
+	$(CXX) -m64 -o $@ -c $< $(ERRORLVL) $(FLAGS) $(DEFINES)
+
+amd64-%.o:	$(TSAN_PATH)/%.cc $(TS_HEADERS) $(FOREIGN_HEADERS)
+	$(CXX) -m64 -o $@ -c $< $(ERRORLVL) $(FLAGS) $(DEFINES)
 
 clean:
 	rm -f *.o *.a
+
+# These targets are currently unused.
+x86-stack_info.o:	stack_info.cc stack_info.h
+	$(CXX) -m32 -o $@ -c $< $(ERRORLVL) $(FLAGS) -USTACKINFO_STANDALONE
+
+stack_info32:	stack_info.cc stack_info.h
+	$(CXX) -m32 -o $@ $< $(ERRORLVL) $(FLAGS) -DSTACKINFO_STANDALONE -lpthread
+
+amd64-stack_info.o:	stack_info.cc stack_info.h
+	$(CXX) -m64 -o $@ -c $< $(ERRORLVL) $(FLAGS) -USTACKINFO_STANDALONE
+
+stack_info64:	stack_info.cc stack_info.h
+	$(CXX) -m64 -o $@ $< $(ERRORLVL) $(FLAGS) -DSTACKINFO_STANDALONE -lpthread
+

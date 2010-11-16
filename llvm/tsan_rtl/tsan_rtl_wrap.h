@@ -78,6 +78,7 @@ int __real_sigaction(int signum, const struct sigaction *act,
 
 
 void *__real__Znwj(unsigned int size);
+void *__real__Znwm(unsigned int size);
 void __real__ZdlPv(void *ptr);
 }
 

@@ -820,6 +820,7 @@ void *__wrap_realloc(void *ptr, size_t size) {
 // }}}
 
 // new/delete {{{1
+#ifdef TSAN_RTL_X86
 extern "C"
 void *__wrap__Znwj(unsigned int size) {
   if (IN_RTL) return __real__Znwj(size);
@@ -834,6 +835,25 @@ void *__wrap__Znwj(unsigned int size) {
   CHECK_IN_RTL();
   return result;
 }
+#endif
+
+#ifdef TSAN_RTL_X64
+extern "C"
+void *__wrap__Znwm(unsigned int size) {
+  if (IN_RTL) return __real__Znwm(size);
+  IN_RTL++;
+  CHECK_IN_RTL();
+  DECLARE_TID_AND_PC();
+  IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
+  void *result = __real__Znwm(size);
+  IGNORE_ALL_ACCESSES_AND_SYNC_END();
+  SPut(MALLOC, tid, pc, (uintptr_t)result, size);
+  IN_RTL--;
+  CHECK_IN_RTL();
+  return result;
+}
+#endif
+
 
 extern "C"
 void __wrap__ZdlPv(void *ptr) {

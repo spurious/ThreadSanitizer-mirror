@@ -6,6 +6,7 @@
 
 set -x
 SCRIPT_ROOT=`dirname $0`
+echo $*
 
 source "$SCRIPT_ROOT/common.sh"
 
@@ -32,6 +33,14 @@ do
     else
       SRC_OBJ=${1:2}
     fi
+  elif [ `expr match "$1" "-m64"` -gt 0 ]
+  then
+    PLATFORM="x86-64"
+    ARGS="$ARGS $1"
+  elif [ `expr match "$1" "-m32"` -gt 0 ]
+  then
+    PLATFORM="x86"
+    ARGS="$ARGS $1"
   elif [ `expr match "$1" ".*\.[ao]"` -gt 0 ]
   then
     LD_MODE=1
@@ -73,15 +82,16 @@ LDFLAGS+="-Wl,--wrap,pthread_mutex_lock -Wl,--wrap,pthread_mutex_unlock"
 
 LOG=instrumentation.log
 
-#exit
+set_platform_dependent_vars
+
 # Translate C code to LLVM bitcode.
-$LLVM_GPP -emit-llvm -m32 $SRC -g -S $CXXFLAGS $ARGS -o "$SRC_BIT" || exit 1
+$LLVM_GPP -emit-llvm $MARCH $SRC -g -S $CXXFLAGS $ARGS -o "$SRC_BIT" || exit 1
 # Instrument the bitcode.
-$OPT -load "$PASS_SO" $INST_MODE "$SRC_BIT" -S  > "$SRC_INSTR" 2>$LOG || exit 1
+$OPT -load "$PASS_SO" $INST_MODE -arch=$XARCH "$SRC_BIT" -S  > "$SRC_INSTR" 2>$LOG || exit 1
 cat $LOG | grep "^->" | sed "s/^->//" > "$SRC_DBG"
 cat $LOG | grep -v "^->"
 # Translate LLVM bitcode to native assembly code.
-$LLC -march=x86 -O0 $SRC_INSTR  -o $SRC_ASM || exit 1
+$LLC -march=$XARCH -O0 $SRC_INSTR  -o $SRC_ASM || exit 1
 # Compile the object file.
-$LLVM_GPP -m32 -c $SRC_ASM -O0 -g -o $SRC_OBJ
+$LLVM_GPP $MARCH -c $SRC_ASM -O0 -g -o $SRC_OBJ
 

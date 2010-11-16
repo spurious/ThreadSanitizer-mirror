@@ -20,6 +20,8 @@ SRC_EXE="$FNAME"
 
 ARGS=
 DBG_FILES=
+# TODO(glider): x86-64 should be the default arch
+PLATFORM="x86"
 
 until [ -z "$1" ]
 do
@@ -36,8 +38,10 @@ do
     fi
   elif [ `expr match "$1" "-m64"` -gt 0 ]
   then
-    # pass
-    echo "Dropped arg: $1"
+    PLATFORM="x86-64"
+  elif [ `expr match "$1" "-m32"` -gt 0 ]
+  then
+    PLATFORM="x86"
   elif [ `expr match "$1" ".*\.[ao]"` -gt 0 ]
   then
     DBG_FILES="$DBG_FILES $1.dbg"
@@ -57,6 +61,7 @@ CXXFLAGS=
 
 LOG=instrumentation.log
 
-# Link with the mops_impl.o
-$LD -g $ARGS $LDFLAGS $TSAN_RTL -o $SRC_EXE || exit 1
+set_platform_dependent_vars
+# Link with $TSAN_RTL
+$LD $MARCH -g $ARGS $LDFLAGS $TSAN_RTL -o $SRC_EXE || exit 1
 $LINK_DBG $DBG_FILES -o $SRC_DBG
