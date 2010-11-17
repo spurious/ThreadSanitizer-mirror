@@ -93,9 +93,11 @@ bool debug_race_verifier = false;
 // ThreadSanitizer Internal lock (scoped).
 class TIL {
  public:
-  TIL(TSLock *lock, int lock_site) : lock_(lock) {
+  TIL(TSLock *lock, int lock_site, bool need_locking = true) :
+    lock_(lock),
+    need_locking_(need_locking) {
     DCHECK(lock_);
-    if (TS_SERIALIZED == 0) {
+    if (need_locking_ && (TS_SERIALIZED == 0)) {
       lock_->Lock();
       if (DEBUG_MODE) {
         G_stats->lock_sites[lock_site]++;
@@ -103,11 +105,12 @@ class TIL {
     }
   }
   ~TIL() {
-    if (TS_SERIALIZED == 0)
+    if (need_locking_ && (TS_SERIALIZED == 0))
       lock_->Unlock();
   }
  private:
   TSLock *lock_;
+  bool need_locking_;
 };
 
 static TSLock *ts_lock;
@@ -5694,16 +5697,15 @@ class EventSampler {
 EventSampler::SampleMapMap *EventSampler::samples_;
 
 // -------- Detector ---------------------- {{{1
-// Basically, a collection of event handlers.
+// Collection of event handlers.
 class Detector {
  public:
   void INLINE HandleMemoryAccess(int32_t tid, uintptr_t pc,
                           uintptr_t addr, uintptr_t size,
-                          bool is_w) {
+                          bool is_w, bool need_locking) {
     Thread *thr = Thread::Get(TID(tid));
-    if (g_so_far_only_one_thread) return;
     HandleMemoryAccessInternal(TID(tid), thr, pc, addr, size, is_w,
-                               g_has_expensive_flags);
+                               g_has_expensive_flags, need_locking);
   }
 
   void INLINE HandleTraceLoop(TraceInfo *t, Thread *thr, TID tid,
@@ -5718,7 +5720,7 @@ class Detector {
       DCHECK(mop->size != 0);
       DCHECK(mop->pc != 0);
       HandleMemoryAccessInternal(tid, thr, mop->pc, addr, mop->size,
-                                 mop->is_write, has_expensive_flags);
+                                 mop->is_write, has_expensive_flags, true);
     } while (++i < n);
   }
 
@@ -5730,6 +5732,7 @@ class Detector {
     if (g_so_far_only_one_thread) return;
     DCHECK(t);
     if (t->generate_segments()) {
+      TIL til(ts_lock, 5);  // TODO(kcc): get rid of this lock (TS_SERIALIZED).
       HandleSblockEnter(tid, t->pc());
     }
     size_t n = t->n_mops();
@@ -5903,10 +5906,10 @@ class Detector {
 
     switch (type) {
       case READ:
-        HandleMemoryAccess(e->tid(), e->pc(), e->a(), e->info(), false);
+        HandleMemoryAccess(e->tid(), e->pc(), e->a(), e->info(), false, true);
         return;
       case WRITE:
-        HandleMemoryAccess(e->tid(), e->pc(), e->a(), e->info(), true);
+        HandleMemoryAccess(e->tid(), e->pc(), e->a(), e->info(), true, true);
         return;
       case RTN_CALL:
         HandleRtnCall(TID(e->tid()), e->pc(), e->a(),
@@ -6733,7 +6736,8 @@ slow_path:
 
   INLINE void HandleMemoryAccessInternal(TID tid, Thread *thr, uintptr_t pc,
                                          uintptr_t addr, uintptr_t size,
-                                         bool is_w, bool has_expensive_flags) {
+                                         bool is_w, bool has_expensive_flags,
+                                         bool need_locking) {
 
     if (TS_ATOMICITY && G_flags->atomicity) {
       HandleMemoryAccessForAtomicityViolationDetector(thr, pc,
@@ -6743,6 +6747,7 @@ slow_path:
     DCHECK(size > 0);
     DCHECK(thr->is_running());
     if (thr->ignore(is_w)) return;
+    if (g_so_far_only_one_thread) return;
 
     // We do not check and ignore stack now.
     // On unoptimized binaries this would give ~10% speedup if ignore_stack==true,
@@ -6750,12 +6755,13 @@ slow_path:
     // On optimized binaries ignoring stack gives nearly nothing.
     // if (thr->IgnoreMemoryIfInStack(addr)) return;
 
-    // if (thr->bus_lock_is_set()) return;
-
     DCHECK(thr->lsid(false) == thr->segment()->lsid(false));
     DCHECK(thr->lsid(true) == thr->segment()->lsid(true));
 
     CacheLine *cache_line = NULL;
+
+    // Everything below goes under a lock.
+    TIL til(ts_lock, 2, need_locking);
 
     cache_line = G_cache->GetLineOrCreateNew(addr, __LINE__);
     HandleAccessGranularityAndExecuteHelper(cache_line, tid, thr, pc, addr,
@@ -6914,7 +6920,8 @@ slow_path:
       // We simulate 4- or 8-byte accesses to make analysis faster.
       for (uintptr_t i = 0; i < write_size; i += step) {
         uintptr_t this_size = write_size - i >= step ? step : write_size - i;
-        HandleMemoryAccess(e->tid(), e->pc(), a + i, this_size, true);
+        HandleMemoryAccess(e->tid(), e->pc(), a + i, this_size,
+                           /*is_w=*/true, /*need_locking*/false);
       }
     }
     // update G_heap_map
@@ -7618,7 +7625,8 @@ bool ThreadSanitizerWantToInstrumentSblock(uintptr_t pc) {
 bool ThreadSanitizerWantToCreateSegmentsOnSblockEntry(uintptr_t pc) {
   string rtn_name;
   rtn_name = PcToRtnNameWithStats(pc, false);
-
+  if (G_flags->keep_history == 0)
+    return false;
   return !(TripleVectorMatchKnown(g_ignore_lists->ignores_hist,
                                   rtn_name, "", ""));
 }
@@ -7754,19 +7762,19 @@ extern void ThreadSanitizerHandleOneEvent(Event *e) {
 void INLINE ThreadSanitizerHandleMemoryAccess(int32_t tid, uintptr_t pc,
                                               uintptr_t addr, uintptr_t size,
                                               bool is_w) {
-  TIL til(ts_lock, 1);
-  G_detector->HandleMemoryAccess(tid, pc, addr, size, is_w);
+  // The lock is taken inside on the slow path.
+  G_detector->HandleMemoryAccess(tid, pc, addr, size, is_w, true);
 }
 
 extern INLINE void ThreadSanitizerHandleTrace(int32_t tid, TraceInfo *trace_info,
                                        uintptr_t *tleb) {
-  TIL til(ts_lock, 2);
+  // The lock is taken inside on the slow path.
   G_detector->HandleTrace(tid, trace_info, tleb);
 }
 
 void INLINE ThreadSanitizerHandleStackMemChange(int32_t tid, uintptr_t addr,
                                                 uintptr_t size) {
-  TIL til(ts_lock, 3);
+  CHECK(TS_SERIALIZED == 1); // we should kill this function.
   G_detector->HandleStackMemChange(tid, addr, size);
 }
 
