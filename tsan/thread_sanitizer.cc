@@ -6608,40 +6608,19 @@ class Detector {
     }
   }
 
-  INLINE void HandleMemoryAccessInternal(TID tid, Thread *thr, uintptr_t pc,
-                                         uintptr_t addr, uintptr_t size,
-                                         bool is_w, bool has_expensive_flags) {
 
-    if (TS_ATOMICITY && G_flags->atomicity) {
-      HandleMemoryAccessForAtomicityViolationDetector(thr, pc, 
-                                                      addr, size, is_w);
-      return;
-    }
-    DCHECK(size > 0);
-    DCHECK(thr->is_running());
-    if (thr->ignore(is_w)) return;
-
-    // We do not check and ignore stack now.
-    // On unoptimized binaries this would give ~10% speedup if ignore_stack==true,
-    // but if --ignore_stack==false this would cost few extra insns.
-    // On optimized binaries ignoring stack gives nearly nothing.
-    // if (thr->IgnoreMemoryIfInStack(addr)) return;
-
-    // if (thr->bus_lock_is_set()) return;
-
-    DCHECK(thr->lsid(false) == thr->segment()->lsid(false));
-    DCHECK(thr->lsid(true) == thr->segment()->lsid(true));
-
+  INLINE void HandleAccessGranularityAndExecuteHelper(
+      CacheLine *cache_line,
+      TID tid, Thread *thr, uintptr_t pc, uintptr_t addr, uintptr_t size,
+      bool is_w, bool has_expensive_flags) {
     uintptr_t a = addr,
               b = a + size,
               off = CacheLine::ComputeOffset(a);
 
-    CacheLine *cache_line = G_cache->GetLineOrCreateNew(addr, __LINE__);
+    uint16_t *granularity_mask = cache_line->granularity_mask(off);
+    uint16_t gr = *granularity_mask;
 
-     uint16_t *granularity_mask = cache_line->granularity_mask(off);
-     uint16_t gr = *granularity_mask;
-
-     if        (size == 8 && (off & 7) == 0) {
+    if        (size == 8 && (off & 7) == 0) {
       if (!gr) {
         *granularity_mask = gr = 1;  // 0000000000000001
       }
@@ -6729,7 +6708,7 @@ class Detector {
     }
 
     if (0) {
-      slow_path:
+slow_path:
       DCHECK(cache_line);
       DCHECK(size == 1 || size == 2 || size == 4 || size == 8);
       DCHECK((addr & (size - 1)) == 0);  // size-aligned.
@@ -6751,9 +6730,39 @@ class Detector {
         x += s;
       }
     }
+  }
+
+  INLINE void HandleMemoryAccessInternal(TID tid, Thread *thr, uintptr_t pc,
+                                         uintptr_t addr, uintptr_t size,
+                                         bool is_w, bool has_expensive_flags) {
+
+    if (TS_ATOMICITY && G_flags->atomicity) {
+      HandleMemoryAccessForAtomicityViolationDetector(thr, pc,
+                                                      addr, size, is_w);
+      return;
+    }
+    DCHECK(size > 0);
+    DCHECK(thr->is_running());
+    if (thr->ignore(is_w)) return;
+
+    // We do not check and ignore stack now.
+    // On unoptimized binaries this would give ~10% speedup if ignore_stack==true,
+    // but if --ignore_stack==false this would cost few extra insns.
+    // On optimized binaries ignoring stack gives nearly nothing.
+    // if (thr->IgnoreMemoryIfInStack(addr)) return;
+
+    // if (thr->bus_lock_is_set()) return;
+
+    DCHECK(thr->lsid(false) == thr->segment()->lsid(false));
+    DCHECK(thr->lsid(true) == thr->segment()->lsid(true));
+
+
+    CacheLine *cache_line = G_cache->GetLineOrCreateNew(addr, __LINE__);
+    HandleAccessGranularityAndExecuteHelper(cache_line, tid, thr, pc, addr,
+                                            size, is_w, has_expensive_flags);
 
     DCHECK(cache_line);
-    G_cache->ReleaseLine(a, cache_line, __LINE__);
+    G_cache->ReleaseLine(addr, cache_line, __LINE__);
     cache_line = NULL;  // just in case.
 
     if (has_expensive_flags) {
@@ -6761,16 +6770,17 @@ class Detector {
       G_stats->events[is_w ? WRITE : READ]++;
       if (G_flags->trace_level >= 1) {
         bool tracing = false;
-        cache_line = G_cache->GetLineIfExists(a, __LINE__);
+        cache_line = G_cache->GetLineIfExists(addr, __LINE__);
         DCHECK(cache_line);
+        uintptr_t off = CacheLine::ComputeOffset(addr);
         if (cache_line->traced().Get(off)) {
           tracing = true;
         } else if (addr == G_flags->trace_addr) {
           tracing = true;
         }
-        G_cache->ReleaseLine(a, cache_line, __LINE__);
+        G_cache->ReleaseLine(addr, cache_line, __LINE__);
         if (tracing) {
-          for (uintptr_t x = a; x < b; x++) {
+          for (uintptr_t x = addr; x < addr + size; x++) {
             off = CacheLine::ComputeOffset(x);
             cache_line = G_cache->GetLineOrCreateNew(x, __LINE__);
             ShadowValue *sval_p = cache_line->GetValuePointer(off);
