@@ -5909,18 +5909,20 @@ class Detector {
         HandleMemoryAccess(e->tid(), e->pc(), e->a(), e->info(), true);
         break;
       case RTN_CALL:
-        // Currently calling HandleRtnCall from HandleOneEvent causes a
-        // deadlock. TODO(kcc): do something with it.
-        CHECK(TS_SERIALIZED);
         HandleRtnCall(TID(e->tid()), e->pc(), e->a(),
                       IGNORE_BELOW_RTN_UNKNOWN);
         break;
       case RTN_EXIT:
-        CHECK(TS_SERIALIZED);
         thread->HandleRtnExit();
         break;
+      default: break;
+    }
+
+    // Everything else is under a lock.
+    TIL til(ts_lock, 0);
+
+    switch (type) {
       case SBLOCK_ENTER:
-        CHECK(TS_SERIALIZED);
         HandleSblockEnter(TID(e->tid()), e->pc());
         break;
       case THR_START   :
@@ -6028,11 +6030,6 @@ class Detector {
       case VERBOSITY   : e->Print(); G_flags->verbosity = e->info(); break;
       case FLUSH_STATE : FlushState();       break;
       default                 : break;
-    }
-
-    if (DEBUG_MODE && G_flags->verbosity  >= 5) {
-      Printf("<< ");
-      e->Print();
     }
   }
 
@@ -7750,7 +7747,7 @@ extern void ThreadSanitizerDumpAllStacks() {
 
 
 extern void ThreadSanitizerHandleOneEvent(Event *e) {
-  TIL til(ts_lock, 0);
+  // Lock is inside on some paths.
   G_detector->HandleOneEvent(e);
 }
 
