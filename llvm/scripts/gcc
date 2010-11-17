@@ -54,7 +54,7 @@ done
 
 if [ "$LD_MODE" == "1" ]
 then
-  $SCRIPT_ROOT/ld $ALL_ARGS
+  $SCRIPT_ROOT/ld.sh $ALL_ARGS
   exit
 fi
 
