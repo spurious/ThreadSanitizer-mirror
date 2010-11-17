@@ -4739,8 +4739,11 @@ struct Thread {
     call_stack_.push_back(target_pc);
 
     bool ignore = false;
+    // TODO(kcc): unimplemented for TS_SERIALIZED==0
+    if (TS_SERIALIZED == 0 && ignore_below == IGNORE_BELOW_RTN_UNKNOWN)
+      ignore_below = IGNORE_BELOW_RTN_NO;
+
     if (ignore_below == IGNORE_BELOW_RTN_UNKNOWN) {
-      if (TS_SERIALIZED == 0) CHECK(0);  // unimplemented;
       if (ignore_below_cache_.Lookup(target_pc, &ignore) == false) {
         ignore = ThreadSanitizerIgnoreAccessesBelowFunction(target_pc);
         ignore_below_cache_.Insert(target_pc, ignore);
