@@ -94,7 +94,7 @@ inline void ReleaseStore(uintptr_t *ptr, uintptr_t value) {
 
 inline uintptr_t NoBarrier_AtomicIncrement(volatile uintptr_t* ptr,
                                           uintptr_t increment) {
-  return __sync_fetch_and_add(ptr, increment);
+  return __sync_add_and_fetch(ptr, increment);
 }
 
 #elif defined(_MSC_VER)
