@@ -6537,13 +6537,15 @@ class Detector {
 #undef MSM_STAT
   }
 
-  INLINE void HandleMemoryAccessHelper(bool is_w,
+  // return false if we were not able to complete the task (fast_path_only).
+  INLINE bool HandleMemoryAccessHelper(bool is_w,
                                        CacheLine *cache_line,
                                        uintptr_t addr,
                                        uintptr_t size,
                                        TID tid,
                                        uintptr_t pc,
-                                       Thread *thr) {
+                                       Thread *thr,
+                                       bool fast_path_only) {
     DCHECK((addr & (size - 1)) == 0);  // size-aligned.
     uintptr_t offset = CacheLine::ComputeOffset(addr);
 
@@ -6558,8 +6560,14 @@ class Detector {
     }
     old_sval = *sval_p;
 
-    if (!MemoryStateMachineSameThread(is_w, old_sval, tid,
-                                      thr->sid(), sval_p)) {
+    bool res = false;
+    bool fast_path_ok = MemoryStateMachineSameThread(
+        is_w, old_sval, tid, thr->sid(), sval_p);
+    if (fast_path_ok) {
+      res = true;
+    } else if (fast_path_only) {
+      res = false;
+    } else {
       bool is_published = cache_line->published().Get(offset);
       // We check only the first bit for publishing, oh well.
       if (UNLIKELY(is_published)) {
@@ -6584,6 +6592,7 @@ class Detector {
                                            old_sval.rd_ssid(),
                                            sval_p->wr_ssid(),
                                            old_sval.wr_ssid());
+      res = true;
     }
 
 
@@ -6608,13 +6617,15 @@ class Detector {
         }
       }
     }
+    return res;
   }
 
 
-  INLINE void HandleAccessGranularityAndExecuteHelper(
+  // return false if we were not able to complete the task (fast_path_only).
+  INLINE bool HandleAccessGranularityAndExecuteHelper(
       CacheLine *cache_line,
       TID tid, Thread *thr, uintptr_t pc, uintptr_t addr, uintptr_t size,
-      bool is_w, bool has_expensive_flags) {
+      bool is_w, bool has_expensive_flags, bool fast_path_only) {
     uintptr_t a = addr,
               b = a + size,
               off = CacheLine::ComputeOffset(a);
@@ -6629,7 +6640,7 @@ class Detector {
       if (GranularityIs8(off, gr)) {
         if (has_expensive_flags) G_stats->n_fast_access8++;
         cache_line->DebugTrace(off, __FUNCTION__, __LINE__);
-        HandleMemoryAccessHelper(is_w, cache_line, addr, size, tid, pc, thr);
+        goto one_call;
       } else {
         if (has_expensive_flags) G_stats->n_slow_access8++;
         cache_line->Join_1_to_2(off);
@@ -6648,7 +6659,7 @@ class Detector {
       if (GranularityIs4(off, gr)) {
         if (has_expensive_flags) G_stats->n_fast_access4++;
         cache_line->DebugTrace(off, __FUNCTION__, __LINE__);
-        HandleMemoryAccessHelper(is_w, cache_line, addr, size, tid, pc, thr);
+        goto one_call;
       } else {
         if (has_expensive_flags) G_stats->n_slow_access4++;
         cache_line->Split_8_to_4(off);
@@ -6664,7 +6675,7 @@ class Detector {
       if (GranularityIs2(off, gr)) {
         if (has_expensive_flags) G_stats->n_fast_access2++;
         cache_line->DebugTrace(off, __FUNCTION__, __LINE__);
-        HandleMemoryAccessHelper(is_w, cache_line, addr, size, tid, pc, thr);
+        goto one_call;
       } else {
         if (has_expensive_flags) G_stats->n_slow_access2++;
         cache_line->Split_8_to_4(off);
@@ -6679,7 +6690,7 @@ class Detector {
       if (GranularityIs1(off, gr)) {
         if (has_expensive_flags) G_stats->n_fast_access1++;
         cache_line->DebugTrace(off, __FUNCTION__, __LINE__);
-        HandleMemoryAccessHelper(is_w, cache_line, addr, size, tid, pc, thr);
+        goto one_call;
       } else {
         if (has_expensive_flags) G_stats->n_slow_access1++;
         cache_line->Split_8_to_4(off);
@@ -6688,6 +6699,7 @@ class Detector {
         goto slow_path;
       }
     } else {
+      if (fast_path_only) return false;
       if (has_expensive_flags) G_stats->n_very_slow_access++;
       // Very slow: size is not 1,2,4,8 or address is unaligned.
       // Handle this access as a series of 1-byte accesses, but only
@@ -6705,33 +6717,39 @@ class Detector {
         cache_line->Split_8_to_4(off);
         cache_line->Split_4_to_2(off);
         cache_line->Split_2_to_1(off);
-        HandleMemoryAccessHelper(is_w, cache_line, x, 1, tid, pc, thr);
+        if (!HandleMemoryAccessHelper(is_w, cache_line, x, 1, tid, pc, thr, false))
+          return false;
       }
+      return true;
     }
 
-    if (0) {
 slow_path:
-      DCHECK(cache_line);
-      DCHECK(size == 1 || size == 2 || size == 4 || size == 8);
-      DCHECK((addr & (size - 1)) == 0);  // size-aligned.
-      gr = *granularity_mask;
-      CHECK(gr);
-      // size is one of 1, 2, 4, 8; address is size-aligned, but the granularity
-      // is different.
-      for (uintptr_t x = a; x < b;) {
-        if (has_expensive_flags) G_stats->n_access_slow_iter++;
-        off = CacheLine::ComputeOffset(x);
-        cache_line->DebugTrace(off, __FUNCTION__, __LINE__);
-        size_t s = 0;
-        // How many bytes are we going to access?
-        if     (GranularityIs8(off, gr)) s = 8;
-        else if(GranularityIs4(off, gr)) s = 4;
-        else if(GranularityIs2(off, gr)) s = 2;
-        else                             s = 1;
-        HandleMemoryAccessHelper(is_w, cache_line, x, s, tid, pc, thr);
-        x += s;
-      }
+    if (fast_path_only) return false;
+    DCHECK(cache_line);
+    DCHECK(size == 1 || size == 2 || size == 4 || size == 8);
+    DCHECK((addr & (size - 1)) == 0);  // size-aligned.
+    gr = *granularity_mask;
+    CHECK(gr);
+    // size is one of 1, 2, 4, 8; address is size-aligned, but the granularity
+    // is different.
+    for (uintptr_t x = a; x < b;) {
+      if (has_expensive_flags) G_stats->n_access_slow_iter++;
+      off = CacheLine::ComputeOffset(x);
+      cache_line->DebugTrace(off, __FUNCTION__, __LINE__);
+      size_t s = 0;
+      // How many bytes are we going to access?
+      if     (GranularityIs8(off, gr)) s = 8;
+      else if(GranularityIs4(off, gr)) s = 4;
+      else if(GranularityIs2(off, gr)) s = 2;
+      else                             s = 1;
+      if (!HandleMemoryAccessHelper(is_w, cache_line, x, s, tid, pc, thr, false))
+        return false;
+      x += s;
     }
+    return true;
+one_call:
+    return HandleMemoryAccessHelper(is_w, cache_line, addr, size, tid, pc,
+                                    thr, fast_path_only);
   }
 
   INLINE void HandleMemoryAccessInternal(TID tid, Thread *thr, uintptr_t pc,
@@ -6760,12 +6778,28 @@ slow_path:
 
     CacheLine *cache_line = NULL;
 
+#if 0  // cool new code which doesn't really work
+    G_cache->AcquireLine(addr, __LINE__);
+    if (!Cache::LineIsNullOrLocked(cache_line)) {
+      bool res = HandleAccessGranularityAndExecuteHelper(
+          cache_line, tid, thr, pc, addr,
+          size, is_w, has_expensive_flags,
+          /*fast_path_only=*/true);
+      G_cache->ReleaseLine(addr, cache_line, __LINE__);
+      if (res)
+        return;
+    } else if (cache_line == NULL) {
+      G_cache->ReleaseLine(addr, cache_line, __LINE__);
+    }
+#endif
+
     // Everything below goes under a lock.
     TIL til(ts_lock, 2, need_locking);
 
     cache_line = G_cache->GetLineOrCreateNew(addr, __LINE__);
     HandleAccessGranularityAndExecuteHelper(cache_line, tid, thr, pc, addr,
-                                            size, is_w, has_expensive_flags);
+                                            size, is_w, has_expensive_flags,
+                                            /*fast_path_only=*/false);
     G_cache->ReleaseLine(addr, cache_line, __LINE__);
     cache_line = NULL;  // just in case.
 
