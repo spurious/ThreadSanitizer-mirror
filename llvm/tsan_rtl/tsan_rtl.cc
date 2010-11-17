@@ -259,7 +259,7 @@ static inline void SPut(EventType type, tid_t tid, pc_t pc,
   }
   if (RTL_INIT != 1) return;
 
-  flush_tleb();
+  if (type != THR_START) flush_tleb();
   if (!G_flags->dry_run) {
     Event event(type, tid, pc, a, info);
     if (G_flags->verbosity) {
@@ -442,7 +442,7 @@ void finalize() {
 }
 
 inline void init_debug() {
-  if (DBG_INIT) return;
+  assert(DBG_INIT == 0);
   char *dbg_info = getenv("TSAN_DBG_INFO");
   if (dbg_info) {
     ReadDbgInfo(dbg_info);
@@ -1320,7 +1320,6 @@ void __wrap_exit(int status) {
   SPut(WAIT, tid, pc, kAtExitMagic, 0);
   __real_exit(status);
 }
-
 
 // }}}
 
