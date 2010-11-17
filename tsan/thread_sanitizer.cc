@@ -5937,9 +5937,11 @@ class Detector {
                       IGNORE_BELOW_RTN_UNKNOWN);
         break;
       case RTN_EXIT:
+        CHECK(TS_SERIALIZED);
         Thread::Get(TID(e_->tid()))->HandleRtnExit();
         break;
       case SBLOCK_ENTER:
+        CHECK(TS_SERIALIZED);
         HandleSblockEnter(TID(e_->tid()), e_->pc());
         break;
       case THR_START   :
