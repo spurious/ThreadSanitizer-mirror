@@ -4740,6 +4740,7 @@ struct Thread {
 
     bool ignore = false;
     if (ignore_below == IGNORE_BELOW_RTN_UNKNOWN) {
+      if (TS_SERIALIZED == 0) CHECK(0);  // unimplemented;
       if (ignore_below_cache_.Lookup(target_pc, &ignore) == false) {
         ignore = ThreadSanitizerIgnoreAccessesBelowFunction(target_pc);
         ignore_below_cache_.Insert(target_pc, ignore);
@@ -7617,7 +7618,6 @@ bool ThreadSanitizerWantToCreateSegmentsOnSblockEntry(uintptr_t pc) {
 
 // Returns true if function at "pc" is marked as "fun_r" in the ignore file.
 bool NOINLINE ThreadSanitizerIgnoreAccessesBelowFunction(uintptr_t pc) {
-  TIL til(ts_lock, 5);
   typedef unordered_map<uintptr_t, bool> Cache;
   static Cache *cache = NULL;
   if (!cache)
