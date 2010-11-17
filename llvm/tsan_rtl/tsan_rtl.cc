@@ -123,18 +123,6 @@ int stats_non_local = 0;
 const int kNumBuckets = 11;
 int stats_event_buckets[kNumBuckets];
 
-pthread_mutex_t tsan_lock = PTHREAD_MUTEX_INITIALIZER;
-
-class TSanLock {
- public:
-  TSanLock() {
-    __real_pthread_mutex_lock(&tsan_lock);
-  }
-  ~TSanLock() {
-    __real_pthread_mutex_unlock(&tsan_lock);
-  }
-};
-
 pthread_mutex_t debug_info_lock = PTHREAD_MUTEX_INITIALIZER;
 
 class DbgInfoLock {
@@ -287,7 +275,6 @@ static inline void SPut(EventType type, tid_t tid, pc_t pc,
     IN_RTL++;
     CHECK_IN_RTL();
     {
-      TSanLock scoped;
       ThreadSanitizerHandleOneEvent(&event);
     }
     IN_RTL--;
@@ -344,7 +331,6 @@ static void inline flush_trace(ThreadInfo *info) {
         }
       }
       {
-        TSanLock scoped;
         ThreadSanitizerHandleTrace(tid, reinterpret_cast<TraceInfo*>(trace), tleb);
       }
       IN_RTL--;
@@ -358,6 +344,8 @@ static inline void UPut(EventType type, tid_t tid, pc_t pc,
 #ifdef DEBUG
   assert(!GIL::GetDepth());
 #endif
+  // TODO(glider): UPut is deprecated.
+  assert(false);
   assert(isThreadLocalEvent(type));
   if (!HAVE_THREAD_0 && type != THR_START) {
     SPut(THR_START, 0, 0, 0, 0);
@@ -379,7 +367,6 @@ static inline void UPut(EventType type, tid_t tid, pc_t pc,
       IN_RTL++;
       CHECK_IN_RTL();
       {
-        TSanLock scoped;
         ThreadSanitizerHandleOneEvent(&event);
       }
       IN_RTL--;
@@ -392,9 +379,40 @@ static inline void UPut(EventType type, tid_t tid, pc_t pc,
 static inline void Put(EventType type, tid_t tid, pc_t pc,
                        uintptr_t a, uintptr_t info) {
   if (isThreadLocalEvent(type)) {
+    assert(false);
     UPut(type, tid, pc, a, info);
   } else {
     SPut(type, tid, pc, a, info);
+  }
+}
+
+static inline void RPut(EventType type, tid_t tid, pc_t pc,
+                        uintptr_t a, uintptr_t info) {
+  if (!HAVE_THREAD_0 && type != THR_START) {
+    SPut(THR_START, 0, 0, 0, 0);
+  }
+  if (RTL_INIT != 1) return;
+  if ((!G_flags->dry_run && !global_ignore) || !isThreadLocalEvent(type)) {
+    Event event(type, tid, pc, a, info);
+    if (G_flags->verbosity) {
+      if ((G_flags->verbosity >= 2) ||
+          (type == THR_START) || (type == THR_END) || (type == THR_JOIN_AFTER) || (type == THR_CREATE_BEFORE)) {
+        event.Print();
+      }
+    }
+    stats_events_processed++;
+    stats_cur_events++;
+    if (!isThreadLocalEvent(type)) stats_non_local++;
+    // Do not flush writes to 0x0.
+    IN_RTL++;
+    CHECK_IN_RTL();
+    if (type == RTN_CALL) {
+      ThreadSanitizerHandleRtnCall(tid, pc, a, IGNORE_BELOW_RTN_UNKNOWN);
+    } else {
+      ThreadSanitizerHandleRtnExit(tid);
+    }
+    IN_RTL--;
+    CHECK_IN_RTL();
   }
 }
 
@@ -1412,7 +1430,7 @@ void rtn_call(void *addr) {
   // TODO(glider): this is unnecessary if we flush before each call/invoke
   // insn.
   flush_tleb();
-  Put(RTN_CALL, tid, 0, (uintptr_t)addr, 0);
+  RPut(RTN_CALL, tid, 0, (uintptr_t)addr, 0);
   INFO.trace_info = NULL;
 }
 
@@ -1420,7 +1438,7 @@ extern "C"
 void rtn_exit() {
   tid_t tid = GetTid();
   flush_tleb();
-  Put(RTN_EXIT, tid, 0, 0, 0);
+  RPut(RTN_EXIT, tid, 0, 0, 0);
 }
 // }}}
 

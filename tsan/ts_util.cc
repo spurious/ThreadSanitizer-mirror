@@ -453,5 +453,27 @@ void TSLock::Unlock() {
 }
 #endif  // TS_LOCK_PIN
 
+#if defined(TS_LLVM)
+#include "tsan_rtl_wrap.h"
+
+struct TSLock::Rep {
+  pthread_mutex_t lock;
+};
+TSLock::TSLock() {
+  rep_ = new Rep();
+  __real_pthread_mutex_init(&rep_->lock, NULL);
+}
+TSLock::~TSLock() {
+  __real_pthread_mutex_destroy(&rep_->lock);
+  delete rep_;
+}
+void TSLock::Lock() {
+  __real_pthread_mutex_lock(&rep_->lock);
+}
+void TSLock::Unlock() {
+  __real_pthread_mutex_unlock(&rep_->lock);
+}
+#endif  // TS_LLVM
+
 // end. {{{1
 // vim:shiftwidth=2:softtabstop=2:expandtab:tw=80

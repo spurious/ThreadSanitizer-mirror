@@ -4,6 +4,7 @@
 #ifndef LLVM_SRC_MOP_IMPL_MOP_WRAP_H_
 #define LLVM_SRC_MOP_IMPL_MOP_WRAP_H_
 
+#include <pthread.h>
 #include <semaphore.h>
 
 extern "C" {

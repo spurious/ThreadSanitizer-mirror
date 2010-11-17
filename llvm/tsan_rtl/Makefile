@@ -6,6 +6,7 @@ ERRORLVL=-Werror
 ERRORLVL=-Werror -Wno-deprecated -Wno-unused-function
 TSAN_PATH=../../tsan
 DEFINES=
+RTL_DEPS=
 
 ifeq ($(DEBUG), 1)
   D=-debug
@@ -16,6 +17,7 @@ else
   D=
   # In optimized mode, thread_sanitizer.cc is included into the tool code.
   DEFINES+=-DINCLUDE_THREAD_SANITIZER_CC=1
+  RTL_DEPS+=$(TSAN_PATH)/thread_sanitizer.cc
   OBJS32=x86-ts_util.o x86-suppressions.o x86-common_util.o x86-ignore.o
   OBJS64=amd64-ts_util.o amd64-suppressions.o amd64-common_util.o amd64-ignore.o
 endif
@@ -50,10 +52,10 @@ all:	$(OBJS32) $(OBJS64) $(RTL_32_O) $(RTL_64_O)
 $(TSAN_PATH)/ts_event_names.h:
 	make -C $(TSAN_PATH) ts_event_names.h
 
-tsan_rtl32.o: $(SRC) tsan_rtl.h
+tsan_rtl32.o: $(SRC) tsan_rtl.h $(RTL_DEPS)
 	$(CXX) $(SRC) $(FLAGS) -m32 -g $(ERRORLVL) -Wall -c -o $(RTL_32_O) $(DEFINES) -DTSAN_RTL_X86
 
-tsan_rtl64.o: $(SRC) tsan_rtl.h
+tsan_rtl64.o: $(SRC) tsan_rtl.h $(RTL_DEPS)
 	$(CXX) $(SRC) $(FLAGS) -m64 -g $(ERRORLVL) -Wall -c -o $(RTL_64_O) $(DEFINES) -DTSAN_RTL_X64
 
 

@@ -262,6 +262,8 @@ int getpid();
  // someone defined this already, leave it as is.
 #elif defined(TS_PIN)
 # define TS_SERIALIZED 1
+#elif defined(TS_LLVM)
+# define TS_SERIALIZED 0
 #else
 # define TS_SERIALIZED 1
 #endif
