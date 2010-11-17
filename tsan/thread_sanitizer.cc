@@ -1672,7 +1672,7 @@ class Segment {
       sid = reusable_sids_->back();
       reusable_sids_->pop_back();
       seg = GetInternal(sid);
-      DCHECK(!seg->ref_count_);
+      DCHECK(!seg->seg_ref_count_);
       DCHECK(!seg->vts());
       DCHECK(!seg->tid().valid());
       CHECK(sid.valid());
@@ -1681,7 +1681,7 @@ class Segment {
       }
     }
     DCHECK(seg);
-    seg->ref_count_ = 0;
+    seg->seg_ref_count_ = 0;
     seg->tid_ = tid;
     seg->lsid_[0] = rd_lockset;
     seg->lsid_[1] = wr_lockset;
@@ -1732,7 +1732,7 @@ class Segment {
     ScopedMallocCostCenter malloc_cc("Segment::RecycleOneSid()");
     const size_t kRecyclePeriod = DEBUG_MODE ? 100 : 10000;
     Segment *seg = GetInternal(sid);
-    DCHECK(seg->ref_count_ == 0);
+    DCHECK(seg->seg_ref_count_ == 0);
     DCHECK(sid.raw() < n_segments_);
     if (!seg->vts()) return false;  // Already recycled.
     seg->tid_ = TID();
@@ -1749,25 +1749,25 @@ class Segment {
     return true;
   }
 
-  int ref_count() const {return ref_count_; }
+  intptr_t ref_count() const {return seg_ref_count_; }
 
   static void INLINE Ref(SID sid, const char *where) {
     Segment *seg = GetInternal(sid);
     if (ProfileSeg(sid)) {
-      Printf("SegRef   : %d ref=%d %s; tid=%d\n", sid.raw(),
-             seg->ref_count_, where, seg->tid().raw());
+      Printf("SegRef   : %d ref=%ld %s; tid=%d\n", sid.raw(),
+             seg->seg_ref_count_, where, seg->tid().raw());
     }
-    DCHECK(seg->ref_count_ >= 0);
-    seg->ref_count_++;
+    DCHECK(seg->seg_ref_count_ >= 0);
+    seg->seg_ref_count_++;
   }
   static void INLINE Unref(SID sid, const char *where) {
     Segment *seg = GetInternal(sid);
     if (ProfileSeg(sid)) {
-      Printf("SegUnref : %d ref=%d %s\n", sid.raw(), seg->ref_count_, where);
+      Printf("SegUnref : %d ref=%ld %s\n", sid.raw(), seg->seg_ref_count_, where);
     }
-    DCHECK(seg->ref_count_ > 0);
-    seg->ref_count_--;
-    if (seg->ref_count_ == 0) {
+    DCHECK(seg->seg_ref_count_ > 0);
+    seg->seg_ref_count_--;
+    if (seg->seg_ref_count_ == 0) {
       RecycleOneSid(sid);
     }
   }
@@ -1833,7 +1833,7 @@ class Segment {
     map<int, int> ref_to_freq_map;
     for (int i = 1; i < n_segments_; i++) {
       Segment *seg = GetInternal(SID(i));
-      int refcount = seg->ref_count_;
+      intptr_t refcount = seg->seg_ref_count_;
       if (refcount > 10) refcount = 10;
       ref_to_freq_map[refcount]++;
     }
@@ -1884,11 +1884,11 @@ class Segment {
   }
 
   // Data members.
-  int32_t ref_count_;
-  TID      tid_;
+  intptr_t seg_ref_count_;
   LSID     lsid_[2];
+  TID      tid_;
+  uint32_t lock_era_;
   VTS *vts_;
-  uint32_t lock_era_; /* followed by a 32 bit padding on 64-bit arch :( */
 
   // static class members.
 
