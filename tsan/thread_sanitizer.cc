@@ -5904,17 +5904,17 @@ class Detector {
     switch (type) {
       case READ:
         HandleMemoryAccess(e->tid(), e->pc(), e->a(), e->info(), false);
-        break;
+        return;
       case WRITE:
         HandleMemoryAccess(e->tid(), e->pc(), e->a(), e->info(), true);
-        break;
+        return;
       case RTN_CALL:
         HandleRtnCall(TID(e->tid()), e->pc(), e->a(),
                       IGNORE_BELOW_RTN_UNKNOWN);
-        break;
+        return;
       case RTN_EXIT:
         thread->HandleRtnExit();
-        break;
+        return;
       default: break;
     }
 
