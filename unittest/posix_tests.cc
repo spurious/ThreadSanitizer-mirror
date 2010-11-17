@@ -811,7 +811,7 @@ TEST(NegativeTests, Mmap84GTest) {  // {{{1
 }
 
 namespace NegativeTests_PthreadCreateFailureTest {  // {{{1
-
+#ifdef OS_linux
 void* ThreadRoutine(void *) {
   return NULL;
 }
@@ -824,7 +824,7 @@ TEST(NegativeTests, PthreadCreateFailureTest) {
   CHECK(pthread_create(&handle, &attributes, ThreadRoutine, NULL) != 0);
   pthread_attr_destroy(&attributes);
 }
-
+#endif  // OS_linux
 }  // namespace NegativeTests_PthreadCreateFailureTest
 
 namespace Signals {  // {{{1
