@@ -258,7 +258,9 @@ int getpid();
 //  - A Multi-threaded environment (e.g. PIN) can use a single global Mutex.
 // When TS_SERIALIZED==0, ThreadSanitizer takes care of synchronization itself.
 
-#if defined(TS_PIN)
+#if defined(TS_SERIALIZED)
+ // someone defined this already, leave it as is.
+#elif defined(TS_PIN)
 # define TS_SERIALIZED 1
 #else
 # define TS_SERIALIZED 1

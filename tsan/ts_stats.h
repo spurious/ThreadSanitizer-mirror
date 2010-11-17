@@ -154,10 +154,15 @@ struct Stats {
       Printf("  mop_per_trace[%d] = %'ld\n", i, mops_per_trace[i]);
     }
 
+    uintptr_t total_locks = 0;
     for (size_t i = 0; i < TS_ARRAY_SIZE(lock_sites); i++) {
       if(lock_sites[i] == 0) continue;
       Printf("lock_sites[%ld]=%ld\n", i, lock_sites[i]);
+      total_locks += lock_sites[i];
     }
+    Printf("lock_sites all=%ld\n", total_locks);
+
+
     for (size_t i = 0; i < TS_ARRAY_SIZE(tleb_flush); i++) {
       if(tleb_flush[i] == 0) continue;
       Printf("tleb_flush[%ld]=%ld\n", i, tleb_flush[i]);
