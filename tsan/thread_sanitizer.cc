@@ -6416,12 +6416,13 @@ class Detector {
   // If this function returns true, the ShadowValue *new_sval is updated
   // in the same way as MemoryStateMachine() would have done it. Just faster.
   INLINE bool MemoryStateMachineSameThread(bool is_w, ShadowValue old_sval,
-                                           TID tid, SID cur_sid,
+                                           TID tid, Thread *thr,
                                            ShadowValue *new_sval) {
 #define MSM_STAT(i) do { if (DEBUG_MODE) \
   G_stats->msm_branch_count[i]++; } while(0)
     SSID rd_ssid = old_sval.rd_ssid();
     SSID wr_ssid = old_sval.wr_ssid();
+    SID cur_sid = thr->sid();
     if (rd_ssid.IsEmpty()) {
       if (wr_ssid.IsSingleton()) {
         // *** CASE 01 ***: rd_ssid == 0, wr_ssid == singleton
@@ -6561,7 +6562,7 @@ class Detector {
 
     bool res = false;
     bool fast_path_ok = MemoryStateMachineSameThread(
-        is_w, old_sval, tid, thr->sid(), sval_p);
+        is_w, old_sval, tid, thr, sval_p);
     if (fast_path_ok) {
       res = true;
     } else if (fast_path_only) {
