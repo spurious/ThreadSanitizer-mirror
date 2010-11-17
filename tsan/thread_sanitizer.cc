@@ -3146,7 +3146,7 @@ class Cache {
   }
 
   const static CacheLine *kLineIsLocked /* = 1 */;
-  INLINE bool LineIsNullOrLocked(CacheLine *line) const {
+  INLINE static bool LineIsNullOrLocked(CacheLine *line) {
     return (uintptr_t)line <= 1;
   }
 
@@ -5697,12 +5697,6 @@ EventSampler::SampleMapMap *EventSampler::samples_;
 // Basically, a collection of event handlers.
 class Detector {
  public:
-  INLINE void HandleOneEvent(Event *event) {
-    cur_tid_ = TID(event->tid());
-    cur_thread_ = Thread::GetIfExists(cur_tid_);
-    HandleOneEventInternal(event);
-  }
-
   void INLINE HandleMemoryAccess(int32_t tid, uintptr_t pc,
                           uintptr_t addr, uintptr_t size,
                           bool is_w) {
@@ -5893,113 +5887,98 @@ class Detector {
     FlushIfNeeded();
   }
 
- private:
-  void ShowProcSelfStatus() {
-    if (G_flags->show_proc_self_status) {
-      string str = ReadFileToString("/proc/self/status", false);
-      if (!str.empty()) {
-        Printf("%s", str.c_str());
-      }
-    }
-  }
+  void INLINE HandleOneEvent(Event *e) {
+    ScopedMallocCostCenter malloc_cc("HandleOneEvent");
 
-  void ShowStats() {
-    if (G_flags->show_stats) {
-      G_stats->PrintStats();
-      G_cache->PrintStorageStats();
-    }
-  }
-
-  void INLINE HandleOneEventInternal(Event *event) {
-    ScopedMallocCostCenter malloc_cc("HandleOneEventInternal");
-
-    e_ = event;
-    DCHECK(event);
-    EventType type = e_->type();
+    DCHECK(e);
+    EventType type = e->type();
     DCHECK(type != NOOP);
     G_stats->events[type]++;
+    Thread *thread = NULL;
     if (type != THR_START) {
-      Thread::Get(TID(e_->tid()))->SetTopPc(e_->pc());
+      thread = Thread::Get(TID(e->tid()));
+      DCHECK(thread);
+      thread->SetTopPc(e->pc());
     }
 
     switch (type) {
       case READ:
-        HandleMemoryAccess(e_->tid(), e_->pc(), e_->a(), e_->info(), false);
+        HandleMemoryAccess(e->tid(), e->pc(), e->a(), e->info(), false);
         break;
       case WRITE:
-        HandleMemoryAccess(e_->tid(), e_->pc(), e_->a(), e_->info(), true);
+        HandleMemoryAccess(e->tid(), e->pc(), e->a(), e->info(), true);
         break;
       case RTN_CALL:
         // Currently calling HandleRtnCall from HandleOneEvent causes a
         // deadlock. TODO(kcc): do something with it.
         CHECK(TS_SERIALIZED);
-        HandleRtnCall(TID(e_->tid()), e_->pc(), e_->a(),
+        HandleRtnCall(TID(e->tid()), e->pc(), e->a(),
                       IGNORE_BELOW_RTN_UNKNOWN);
         break;
       case RTN_EXIT:
         CHECK(TS_SERIALIZED);
-        Thread::Get(TID(e_->tid()))->HandleRtnExit();
+        thread->HandleRtnExit();
         break;
       case SBLOCK_ENTER:
         CHECK(TS_SERIALIZED);
-        HandleSblockEnter(TID(e_->tid()), e_->pc());
+        HandleSblockEnter(TID(e->tid()), e->pc());
         break;
       case THR_START   :
-        HandleThreadStart(TID(e_->tid()), TID(e_->info()), e_->pc());
+        HandleThreadStart(TID(e->tid()), TID(e->info()), e->pc());
         break;
       case THR_CREATE_BEFORE:
-        cur_thread_->HandleThreadCreateBefore(TID(e_->tid()), e_->pc());
+        thread->HandleThreadCreateBefore(TID(e->tid()), e->pc());
         break;
       case THR_CREATE_AFTER:
-        cur_thread_->HandleThreadCreateAfter(TID(e_->tid()), TID(e_->info()));
+        thread->HandleThreadCreateAfter(TID(e->tid()), TID(e->info()));
         break;
       case THR_FIRST_INSN:
-        HandleThreadFirstInsn(TID(e_->tid()));
+        HandleThreadFirstInsn(TID(e->tid()));
         break;
-      case THR_JOIN_AFTER     : HandleThreadJoinAfter();   break;
-      case THR_STACK_TOP      : HandleThreadStackTop(); break;
+      case THR_JOIN_AFTER     : HandleThreadJoinAfter(e);   break;
+      case THR_STACK_TOP      : HandleThreadStackTop(e); break;
 
-      case THR_END     : HandleThreadEnd(TID(e_->tid()));     break;
-      case MALLOC      : HandleMalloc(false);     break;
-      case FREE        : HandleFree();         break;
-      case MMAP        : HandleMalloc(true);      break;  // same as MALLOC
-      case MUNMAP      : HandleMunmap();     break;
+      case THR_END     : HandleThreadEnd(TID(e->tid()));     break;
+      case MALLOC      : HandleMalloc(e, false);     break;
+      case FREE        : HandleFree(e);         break;
+      case MMAP        : HandleMalloc(e, true);      break;  // same as MALLOC
+      case MUNMAP      : HandleMunmap(e);     break;
 
 
-      case WRITER_LOCK : cur_thread_->HandleLock(e_->a(), true);     break;
-      case READER_LOCK : cur_thread_->HandleLock(e_->a(), false);    break;
-      case UNLOCK      : cur_thread_->HandleUnlock(e_->a());       break;
-      case UNLOCK_OR_INIT : HandleUnlockOrInit(); break;
+      case WRITER_LOCK : thread->HandleLock(e->a(), true);     break;
+      case READER_LOCK : thread->HandleLock(e->a(), false);    break;
+      case UNLOCK      : thread->HandleUnlock(e->a());       break;
+      case UNLOCK_OR_INIT : HandleUnlockOrInit(e); break;
 
       case LOCK_CREATE:
-      case LOCK_DESTROY: HandleLockCreateOrDestroy(); break;
+      case LOCK_DESTROY: HandleLockCreateOrDestroy(e); break;
 
-      case SIGNAL      : cur_thread_->HandleSignal(e_->a());  break;
-      case WAIT        : cur_thread_->HandleWait(e_->a());   break;
+      case SIGNAL      : thread->HandleSignal(e->a());  break;
+      case WAIT        : thread->HandleWait(e->a());   break;
 
       case CYCLIC_BARRIER_INIT:
-        cur_thread_->HandleBarrierInit(e_->a(), e_->info());
+        thread->HandleBarrierInit(e->a(), e->info());
         break;
       case CYCLIC_BARRIER_WAIT_BEFORE  :
-        cur_thread_->HandleBarrierWaitBefore(e_->a());
+        thread->HandleBarrierWaitBefore(e->a());
         break;
       case CYCLIC_BARRIER_WAIT_AFTER  :
-        cur_thread_->HandleBarrierWaitAfter(e_->a());
+        thread->HandleBarrierWaitAfter(e->a());
         break;
 
-      case PCQ_CREATE   : HandlePcqCreate();   break;
-      case PCQ_DESTROY  : HandlePcqDestroy();  break;
-      case PCQ_PUT      : HandlePcqPut();      break;
-      case PCQ_GET      : HandlePcqGet();      break;
+      case PCQ_CREATE   : HandlePcqCreate(e);   break;
+      case PCQ_DESTROY  : HandlePcqDestroy(e);  break;
+      case PCQ_PUT      : HandlePcqPut(e);      break;
+      case PCQ_GET      : HandlePcqGet(e);      break;
 
 
       case EXPECT_RACE :
-        HandleExpectRace(e_->a(), e_->info(),
-                         (const char*)e_->pc(), cur_tid_);
+        HandleExpectRace(e->a(), e->info(),
+                         (const char*)e->pc(), TID(e->tid()));
         break;
       case BENIGN_RACE :
-        HandleBenignRace(e_->a(), e_->info(),
-                         (const char*)e_->pc(), cur_tid_);
+        HandleBenignRace(e->a(), e->info(),
+                         (const char*)e->pc(), TID(e->tid()));
         break;
       case FLUSH_EXPECTED_RACES:
         FlushExpectedRaces();
@@ -6019,105 +5998,126 @@ class Detector {
         }
         break;
 
-      case HB_LOCK     : HandleHBLock();       break;
-      case NON_HB_LOCK : HandleNonHBLock();    break;
+      case HB_LOCK     : HandleHBLock(e);       break;
+      case NON_HB_LOCK : HandleNonHBLock(e);    break;
 
-      case IGNORE_READS_BEG:  HandleIgnore(false, true);  break;
-      case IGNORE_READS_END:  HandleIgnore(false, false); break;
-      case IGNORE_WRITES_BEG: HandleIgnore(true, true);   break;
-      case IGNORE_WRITES_END: HandleIgnore(true, false);  break;
+      case IGNORE_READS_BEG:  HandleIgnore(e, false, true);  break;
+      case IGNORE_READS_END:  HandleIgnore(e, false, false); break;
+      case IGNORE_WRITES_BEG: HandleIgnore(e, true, true);   break;
+      case IGNORE_WRITES_END: HandleIgnore(e, true, false);  break;
 
       case SET_THREAD_NAME:
-        cur_thread_->set_thread_name((const char*)e_->a());
+        thread->set_thread_name((const char*)e->a());
         break;
       case SET_LOCK_NAME: {
-          uintptr_t lock_addr = e_->a();
-          const char *name = reinterpret_cast<const char *>(e_->info());
+          uintptr_t lock_addr = e->a();
+          const char *name = reinterpret_cast<const char *>(e->info());
           Lock *lock = Lock::LookupOrCreate(lock_addr);
           lock->set_name(name);
         }
         break;
 
-      case PUBLISH_RANGE : HandlePublishRange(); break;
+      case PUBLISH_RANGE : HandlePublishRange(e); break;
       case UNPUBLISH_RANGE :
         Report("WARNING: ANNOTATE_UNPUBLISH_MEMORY_RANGE is deprecated\n");
         break;
 
-      case TRACE_MEM   : HandleTraceMem();   break;
-      case STACK_TRACE : HandleStackTrace(); break;
+      case TRACE_MEM   : HandleTraceMem(e);   break;
+      case STACK_TRACE : HandleStackTrace(e); break;
       case NOOP        : CHECK(0);           break;  // can't happen.
-      case VERBOSITY   : e_->Print(); G_flags->verbosity = e_->info(); break;
+      case VERBOSITY   : e->Print(); G_flags->verbosity = e->info(); break;
       case FLUSH_STATE : FlushState();       break;
       default                 : break;
     }
 
     if (DEBUG_MODE && G_flags->verbosity  >= 5) {
       Printf("<< ");
-      e_->Print();
+      e->Print();
+    }
+  }
+
+ private:
+  void ShowProcSelfStatus() {
+    if (G_flags->show_proc_self_status) {
+      string str = ReadFileToString("/proc/self/status", false);
+      if (!str.empty()) {
+        Printf("%s", str.c_str());
+      }
+    }
+  }
+
+  void ShowStats() {
+    if (G_flags->show_stats) {
+      G_stats->PrintStats();
+      G_cache->PrintStorageStats();
     }
   }
 
   // PCQ_CREATE, PCQ_DESTROY, PCQ_PUT, PCQ_GET
-  void HandlePcqCreate() {
+  void HandlePcqCreate(Event *e) {
     if (G_flags->verbosity >= 2) {
-      e_->Print();
+      e->Print();
     }
     PCQ pcq;
-    pcq.pcq_addr = e_->a();
-    CHECK(!g_pcq_map->count(e_->a()));
-    (*g_pcq_map)[e_->a()] = pcq;
+    pcq.pcq_addr = e->a();
+    CHECK(!g_pcq_map->count(e->a()));
+    (*g_pcq_map)[e->a()] = pcq;
   }
-  void HandlePcqDestroy() {
+  void HandlePcqDestroy(Event *e) {
     if (G_flags->verbosity >= 2) {
-      e_->Print();
+      e->Print();
     }
-    CHECK(g_pcq_map->count(e_->a()));
-    g_pcq_map->erase(e_->a());
+    CHECK(g_pcq_map->count(e->a()));
+    g_pcq_map->erase(e->a());
   }
-  void HandlePcqPut() {
+  void HandlePcqPut(Event *e) {
     if (G_flags->verbosity >= 2) {
-      e_->Print();
+      e->Print();
     }
-    PCQ &pcq = (*g_pcq_map)[e_->a()];
-    CHECK(pcq.pcq_addr == e_->a());
-    VTS *vts = cur_thread_->segment()->vts()->Clone();
+    PCQ &pcq = (*g_pcq_map)[e->a()];
+    CHECK(pcq.pcq_addr == e->a());
+    Thread *thread = Thread::Get(TID(e->tid()));
+    VTS *vts = thread->segment()->vts()->Clone();
     pcq.putters.push_back(vts);
-    cur_thread_->NewSegmentForSignal();
+    thread->NewSegmentForSignal();
   }
-  void HandlePcqGet() {
+  void HandlePcqGet(Event *e) {
     if (G_flags->verbosity >= 2) {
-      e_->Print();
+      e->Print();
     }
-    PCQ &pcq = (*g_pcq_map)[e_->a()];
-    CHECK(pcq.pcq_addr == e_->a());
+    PCQ &pcq = (*g_pcq_map)[e->a()];
+    CHECK(pcq.pcq_addr == e->a());
     CHECK(!pcq.putters.empty());
     VTS *putter = pcq.putters.front();
     pcq.putters.pop_front();
     CHECK(putter);
-    cur_thread_->NewSegmentForWait(putter);
+    Thread *thread = Thread::Get(TID(e->tid()));
+    thread->NewSegmentForWait(putter);
     VTS::Unref(putter);
   }
 
   // PUBLISH_RANGE
-  void HandlePublishRange() {
+  void HandlePublishRange(Event *e) {
     if (G_flags->verbosity >= 2) {
-      e_->Print();
+      e->Print();
     }
-    uintptr_t mem = e_->a();
-    uintptr_t size = e_->info();
+    uintptr_t mem = e->a();
+    uintptr_t size = e->info();
 
-    VTS *vts = cur_thread_->segment()->vts();
+    Thread *thread = Thread::Get(TID(e->tid()));
+    VTS *vts = thread->segment()->vts();
     PublishRange(mem, mem + size, vts);
 
-    cur_thread_->NewSegmentForSignal();
+    thread->NewSegmentForSignal();
     // Printf("Publish: [%p, %p)\n", mem, mem+size);
   }
 
-  void HandleIgnore(bool is_w, bool on) {
+  void HandleIgnore(Event *e, bool is_w, bool on) {
     if (G_flags->verbosity >= 2) {
-      e_->Print();
+      e->Print();
     }
-    cur_thread_->set_ignore(is_w, on);
+    Thread *thread = Thread::Get(TID(e->tid()));
+    thread->set_ignore(is_w, on);
   }
 
   // BENIGN_RACE
@@ -6155,12 +6155,13 @@ class Detector {
     d[descr_len] = 0;
     expected_race.description = d;
 
-    expected_race.pc = cur_thread_->GetCallstackEntry(1);
+    Thread *thread = Thread::Get(tid);
+    expected_race.pc = thread->GetCallstackEntry(1);
     G_expected_races_map->InsertInfo(ptr, expected_race);
     if (debug_expected_races) {
       Printf("T%d: EXPECT_RACE: ptr=%p size=%ld descr='%s'\n",
              tid.raw(), ptr, size, descr);
-      cur_thread_->ReportStackTrace(ptr);
+      thread->ReportStackTrace(ptr);
       int i = 0;
       for (ExpectedRacesMap::iterator it = G_expected_races_map->begin();
            it != G_expected_races_map->end(); ++it) {
@@ -6172,29 +6173,28 @@ class Detector {
     }
   }
 
-  void HandleStackTrace() {
-    e_->Print();
-    cur_thread_->ReportStackTrace();
+  void HandleStackTrace(Event *e) {
+    Thread *thread = Thread::Get(TID(e->tid()));
+    e->Print();
+    thread->ReportStackTrace();
   }
 
   // HB_LOCK
-  void HandleHBLock() {
+  void HandleHBLock(Event *e) {
     if (G_flags->verbosity >= 2) {
-      e_->Print();
-//      cur_thread_->ReportStackTrace();
+      e->Print();
     }
-//    cur_thread_->ReportStackTrace();
-    Lock *lock = Lock::LookupOrCreate(e_->a());
+    Lock *lock = Lock::LookupOrCreate(e->a());
     CHECK(lock);
     lock->set_is_pure_happens_before(true);
   }
 
   // NON_HB_LOCK
-  void HandleNonHBLock() {
+  void HandleNonHBLock(Event *e) {
     if (G_flags->verbosity >= 2) {
-      e_->Print();
+      e->Print();
     }
-    Lock *lock = Lock::LookupOrCreate(e_->a());
+    Lock *lock = Lock::LookupOrCreate(e->a());
     CHECK(lock);
     lock->set_is_pure_happens_before(false);
   }
@@ -6217,31 +6217,33 @@ class Detector {
   // if the lock was not seen before or if it is currently unlocked.
   // TODO(kcc): is there a way to distinguish pthread_spin_init
   // and pthread_spin_unlock?
-  void HandleUnlockOrInit() {
+  void HandleUnlockOrInit(Event *e) {
+    Thread *thread = Thread::Get(TID(e->tid()));
     if (G_flags->verbosity >= 2) {
-      e_->Print();
-      cur_thread_->ReportStackTrace();
+      e->Print();
+      thread->ReportStackTrace();
     }
-    uintptr_t lock_addr = e_->a();
+    uintptr_t lock_addr = e->a();
     Lock *lock = Lock::Lookup(lock_addr);
     if (lock && lock->wr_held()) {
       // We know this lock and it is locked. Just unlock it.
-      cur_thread_->HandleUnlock(lock_addr);
+      thread->HandleUnlock(lock_addr);
     } else {
       // Never seen this lock or it is currently unlocked. Init it.
       Lock::Create(lock_addr);
     }
   }
 
-  void HandleLockCreateOrDestroy() {
-    uintptr_t lock_addr = e_->a();
+  void HandleLockCreateOrDestroy(Event *e) {
+    Thread *thread = Thread::Get(TID(e->tid()));
+    uintptr_t lock_addr = e->a();
     if (debug_lock) {
-      e_->Print();
+      e->Print();
     }
-    if (e_->type() == LOCK_CREATE) {
+    if (e->type() == LOCK_CREATE) {
       Lock::Create(lock_addr);
     } else {
-      CHECK(e_->type() == LOCK_DESTROY);
+      CHECK(e->type() == LOCK_DESTROY);
       // A locked pthread_mutex_t can not be destroyed but other lock types can.
       // When destroying a lock, we must unlock it.
       // If there is a bug in a program when someone attempts to unlock
@@ -6256,30 +6258,30 @@ class Detector {
         ThreadSanitizerInvalidLockReport *report =
             new ThreadSanitizerInvalidLockReport;
         report->type = ThreadSanitizerReport::INVALID_LOCK;
-        report->tid = cur_tid_;
+        report->tid = TID(e->tid());
         report->lock_addr = lock_addr;
-        report->stack_trace = cur_thread_->CreateStackTrace();
+        report->stack_trace = thread->CreateStackTrace();
         ThreadSanitizerPrintReport(report);
         return;
       }
       if (lock->wr_held() || lock->rd_held()) {
         if (G_flags->unlock_on_mutex_destroy && !g_has_exited_main) {
-          cur_thread_->HandleUnlock(lock_addr);
+          thread->HandleUnlock(lock_addr);
         }
       }
       Lock::Destroy(lock_addr);
     }
   }
 
-  void HandleTraceMem() {
+  void HandleTraceMem(Event *e) {
     if (G_flags->trace_level == 0) return;
-    TID tid = cur_tid_;
-    uintptr_t a = e_->a();
+    TID tid(e->tid());
+    uintptr_t a = e->a();
     CacheLine *line = G_cache->GetLineOrCreateNew(a, __LINE__);
     uintptr_t offset = CacheLine::ComputeOffset(a);
     line->traced().Set(offset);
     G_cache->ReleaseLine(a, line, __LINE__);
-    if (G_flags->verbosity >= 2) e_->Print();
+    if (G_flags->verbosity >= 2) e->Print();
   }
 
   INLINE void RefAndUnrefTwoSegSetPairsIfDifferent(SSID new_ssid1,
@@ -6756,22 +6758,22 @@ slow_path:
     DCHECK(thr->lsid(false) == thr->segment()->lsid(false));
     DCHECK(thr->lsid(true) == thr->segment()->lsid(true));
 
+    CacheLine *cache_line = NULL;
 
-    CacheLine *cache_line = G_cache->GetLineOrCreateNew(addr, __LINE__);
+    cache_line = G_cache->GetLineOrCreateNew(addr, __LINE__);
     HandleAccessGranularityAndExecuteHelper(cache_line, tid, thr, pc, addr,
                                             size, is_w, has_expensive_flags);
-
-    DCHECK(cache_line);
     G_cache->ReleaseLine(addr, cache_line, __LINE__);
     cache_line = NULL;  // just in case.
 
-    if (has_expensive_flags) {
+    if (has_expensive_flags && TS_SERIALIZED == 1) {
+      // TODO(kcc): implement this for TS_SERIALIZED==0
       G_stats->memory_access_sizes[size <= 16 ? size : 17 ]++;
       G_stats->events[is_w ? WRITE : READ]++;
       if (G_flags->trace_level >= 1) {
-        bool tracing = false;
         cache_line = G_cache->GetLineIfExists(addr, __LINE__);
         DCHECK(cache_line);
+        bool tracing = false;
         uintptr_t off = CacheLine::ComputeOffset(addr);
         if (cache_line->traced().Get(off)) {
           tracing = true;
@@ -6840,11 +6842,11 @@ slow_path:
 
 
   // MALLOC
-  void HandleMalloc(bool is_mmap) {
+  void HandleMalloc(Event *e, bool is_mmap) {
     ScopedMallocCostCenter cc("HandleMalloc");
-    TID tid = cur_tid_;
-    uintptr_t a = e_->a();
-    uintptr_t size = e_->info();
+    TID tid(e->tid());
+    uintptr_t a = e->a();
+    uintptr_t size = e->info();
 
 
     if (a == 0)
@@ -6859,8 +6861,8 @@ slow_path:
       return;
     }
     #endif
-
-    cur_thread_->NewSegmentForMallocEvent();
+    Thread *thread = Thread::Get(tid);
+    thread->NewSegmentForMallocEvent();
     uintptr_t b = a + size;
     CHECK(a <= b);
     ClearMemoryState(a, b);
@@ -6868,13 +6870,13 @@ slow_path:
     HeapInfo info;
     info.ptr  = a;
     info.size = size;
-    info.sid  = cur_thread_->sid();
+    info.sid  = thread->sid();
     Segment::Ref(info.sid, __FUNCTION__);
     if (debug_malloc) {
       Printf("T%d MALLOC: %p [%p %p) %s %s\n%s\n",
              tid.raw(), size, a, a+size,
-             Segment::ToString(cur_thread_->sid()).c_str(),
-             cur_thread_->segment()->vts()->ToString().c_str(),
+             Segment::ToString(thread->sid()).c_str(),
+             thread->segment()->vts()->ToString().c_str(),
              info.StackTraceString().c_str());
     }
 
@@ -6893,11 +6895,12 @@ slow_path:
   }
 
   // FREE
-  void HandleFree() {
-    uintptr_t a = e_->a();
+  void HandleFree(Event *e) {
+    Thread *thread = Thread::Get(TID(e->tid()));
+    uintptr_t a = e->a();
     if (debug_free) {
-      e_->Print();
-      cur_thread_->ReportStackTrace(e_->pc());
+      e->Print();
+      thread->ReportStackTrace(e->pc());
     }
     if (a == 0)
       return;
@@ -6914,7 +6917,7 @@ slow_path:
       // We simulate 4- or 8-byte accesses to make analysis faster.
       for (uintptr_t i = 0; i < write_size; i += step) {
         uintptr_t this_size = write_size - i >= step ? step : write_size - i;
-        HandleMemoryAccess(e_->tid(), e_->pc(), a + i, this_size, true);
+        HandleMemoryAccess(e->tid(), e->pc(), a + i, this_size, true);
       }
     }
     // update G_heap_map
@@ -6925,14 +6928,14 @@ slow_path:
     G_heap_map->EraseInfo(a);
   }
 
-  void HandleMunmap() {
+  void HandleMunmap(Event *e) {
     // TODO(glider): at the moment we handle only munmap()s of single mmap()ed
     // regions. The correct implementation should handle arbitrary munmap()s
     // that may carve the existing mappings or split them into two parts.
     // It should also be possible to munmap() several mappings at a time.
-    uintptr_t a = e_->a();
+    uintptr_t a = e->a();
     HeapInfo *h_info = G_heap_map->GetInfo(a);
-    uintptr_t size = e_->info();
+    uintptr_t size = e->info();
     if (h_info && h_info->ptr == a && h_info->size == size) {
       // TODO(glider): we may want to handle memory deletion and call
       // Segment::Unref for all the unmapped memory.
@@ -6966,8 +6969,7 @@ slow_path:
 
     Thread *new_thread = new Thread(child_tid, parent_tid,
                                     vts, creation_context);
-    cur_thread_ = Thread::Get(child_tid);
-    CHECK(new_thread == cur_thread_);
+    CHECK(new_thread == Thread::Get(child_tid));
   }
 
   // Executes before the first instruction of the thread but after the thread
@@ -6984,19 +6986,19 @@ slow_path:
   }
 
   // THR_STACK_TOP
-  void HandleThreadStackTop() {
-    Thread *thr = Thread::Get(TID(e_->tid()));
+  void HandleThreadStackTop(Event *e) {
+    Thread *thr = Thread::Get(TID(e->tid()));
     // Stack grows from bottom up.
-    uintptr_t sp = e_->a();
+    uintptr_t sp = e->a();
     uintptr_t sp_min = 0, sp_max = 0;
-    uintptr_t stack_size_if_known = e_->info();
+    uintptr_t stack_size_if_known = e->info();
     ThreadStackInfo *stack_info;
     if (stack_size_if_known) {
       sp_min = sp - stack_size_if_known;
       sp_max = sp;
     } else if (NULL != (stack_info = G_thread_stack_map->GetInfo(sp))) {
       if (debug_thread) {
-        Printf("T%d %s: %p\n%s\n", e_->tid(), __FUNCTION__,  sp,
+        Printf("T%d %s: %p\n%s\n", e->tid(), __FUNCTION__,  sp,
              reports_.DescribeMemory(sp).c_str());
       }
       sp_min = stack_info->ptr;
@@ -7004,7 +7006,7 @@ slow_path:
     }
     if (debug_thread) {
       Printf("T%d SP: %p [%p %p), size=%ldK\n",
-             e_->tid(), sp, sp_min, sp_max, (sp_max - sp_min) >> 10);
+             e->tid(), sp, sp_min, sp_max, (sp_max - sp_min) >> 10);
     }
     if (sp_min < sp_max) {
       CHECK((sp_max - sp_min) > 128 * 1024); // stay sane.
@@ -7048,11 +7050,11 @@ slow_path:
   }
 
   // THR_JOIN_AFTER
-  void HandleThreadJoinAfter() {
-    TID tid = cur_tid_;
+  void HandleThreadJoinAfter(Event *e) {
+    TID tid(e->tid());
     Thread *parent_thr = Thread::Get(tid);
     VTS *vts_at_exit = NULL;
-    TID child_tid = parent_thr->HandleThreadJoinAfter(&vts_at_exit, TID(e_->a()));
+    TID child_tid = parent_thr->HandleThreadJoinAfter(&vts_at_exit, TID(e->a()));
     CHECK(vts_at_exit);
     CHECK(parent_thr->sid().valid());
     Segment::AssertLive(parent_thr->sid(),  __LINE__);
@@ -7062,11 +7064,6 @@ slow_path:
              child_tid.raw(), parent_thr->vts()->ToString().c_str());
     }
   }
-  // data members
-  Event *e_;
-  TID cur_tid_;
-  Thread *cur_thread_;
-
  public:
   // TODO(kcc): merge this into Detector class. (?)
   ReportStorage reports_;
