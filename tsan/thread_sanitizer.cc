@@ -1758,7 +1758,7 @@ class Segment {
              seg->seg_ref_count_, where, seg->tid().raw());
     }
     DCHECK(seg->seg_ref_count_ >= 0);
-    seg->seg_ref_count_++;
+    NoBarrier_AtomicIncrement((uintptr_t*)&seg->seg_ref_count_);
   }
   static void INLINE Unref(SID sid, const char *where) {
     Segment *seg = GetInternal(sid);
@@ -1766,8 +1766,7 @@ class Segment {
       Printf("SegUnref : %d ref=%ld %s\n", sid.raw(), seg->seg_ref_count_, where);
     }
     DCHECK(seg->seg_ref_count_ > 0);
-    seg->seg_ref_count_--;
-    if (seg->seg_ref_count_ == 0) {
+    if (NoBarrier_AtomicDecrement((uintptr_t*)&seg->seg_ref_count_) == 0) {
       RecycleOneSid(sid);
     }
   }
