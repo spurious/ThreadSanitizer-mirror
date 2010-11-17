@@ -6638,11 +6638,6 @@ class Detector {
 
     CacheLine *cache_line = G_cache->GetLineOrCreateNew(addr, __LINE__);
 
-    if (DEBUG_MODE && UNLIKELY(G_flags->keep_history >= 2)) {
-      // Keep the precise history. Very SLOW!
-      HandleSblockEnter(tid, pc);
-    }
-
      uint16_t *granularity_mask = cache_line->granularity_mask(off);
      uint16_t gr = *granularity_mask;
 
