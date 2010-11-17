@@ -95,9 +95,15 @@ inline void ReleaseStore(uintptr_t *ptr, uintptr_t value) {
 inline uintptr_t NoBarrier_AtomicIncrement(volatile uintptr_t* ptr,
                                           uintptr_t increment) {
   uintptr_t temp = increment;
-  __asm__ __volatile__("lock; xaddl %0,%1"
-                       : "+r" (temp), "+m" (*ptr)
-                       : : "memory");
+  if (sizeof(uintptr_t) == 4) {
+    __asm__ __volatile__("lock; xaddl %0,%1"
+                         : "+r" (temp), "+m" (*ptr)
+                         : : "memory");
+  } else {
+    __asm__ __volatile__("lock; xaddq %0,%1"
+                         : "+r" (temp), "+m" (*ptr)
+                         : : "memory");
+  }
   // temp now holds the old value of *ptr
   return temp + increment;
 }
