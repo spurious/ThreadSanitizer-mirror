@@ -5930,11 +5930,9 @@ class Detector {
         HandleMemoryAccess(e_->tid(), e_->pc(), e_->a(), e_->info(), true);
         break;
       case RTN_CALL:
-#if (TS_SERIALIZED == 0)
         // Currently calling HandleRtnCall from HandleOneEvent causes a
-        // deadlock.
-        CHECK(false);
-#endif
+        // deadlock. TODO(kcc): do something with it.
+        CHECK(TS_SERIALIZED);
         HandleRtnCall(TID(e_->tid()), e_->pc(), e_->a(),
                       IGNORE_BELOW_RTN_UNKNOWN);
         break;
