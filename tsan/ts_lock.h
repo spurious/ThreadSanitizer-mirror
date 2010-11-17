@@ -76,9 +76,12 @@ inline void ReleaseStore(uintptr_t *ptr, uintptr_t value) {
   *ptr = value;
 }
 
-inline uintptr_t NoBarrier_AtomicIncrement(volatile uintptr_t* ptr,
-                                          uintptr_t increment) {
-  return *ptr += increment;
+inline uintptr_t NoBarrier_AtomicIncrement(uintptr_t* ptr) {
+  return *ptr += 1;
+}
+
+inline uintptr_t NoBarrier_AtomicDecrement(uintptr_t* ptr) {
+  return *ptr -= 1;
 }
 
 #elif defined(__GNUC__)
@@ -89,12 +92,15 @@ inline uintptr_t AtomicExchange(uintptr_t *ptr, uintptr_t new_value) {
 
 inline void ReleaseStore(uintptr_t *ptr, uintptr_t value) {
   __asm__ __volatile__("" : : : "memory");
-  *ptr = value;
+  *(volatile uintptr_t*)ptr = value;
 }
 
-inline uintptr_t NoBarrier_AtomicIncrement(volatile uintptr_t* ptr,
-                                          uintptr_t increment) {
-  return __sync_add_and_fetch(ptr, increment);
+inline uintptr_t NoBarrier_AtomicIncrement(uintptr_t* ptr) {
+  return __sync_add_and_fetch(ptr, 1);
+}
+
+inline uintptr_t NoBarrier_AtomicDecrement(uintptr_t* ptr) {
+  return __sync_add_and_fetch(ptr, -1);
 }
 
 #elif defined(_MSC_VER)
@@ -106,6 +112,14 @@ inline uintptr_t AtomicExchange(uintptr_t *ptr, uintptr_t new_value) {
 inline void ReleaseStore(uintptr_t *ptr, uintptr_t value) {
   *(volatile uintptr_t*)ptr = value;
   // TODO(kcc): anything to add here?
+}
+
+inline uintptr_t NoBarrier_AtomicIncrement(uintptr_t* ptr) {
+  return InterlockedIncrement(ptr);
+}
+
+inline uintptr_t NoBarrier_AtomicDecrement(uintptr_t* ptr) {
+  return InterlockedDecrement(ptr);
 }
 
 #else
