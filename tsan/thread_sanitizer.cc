@@ -5930,6 +5930,11 @@ class Detector {
         HandleMemoryAccess(e_->tid(), e_->pc(), e_->a(), e_->info(), true);
         break;
       case RTN_CALL:
+#if (TS_SERIALIZED == 0)
+        // Currently calling HandleRtnCall from HandleOneEvent causes a
+        // deadlock.
+        CHECK(false);
+#endif
         HandleRtnCall(TID(e_->tid()), e_->pc(), e_->a(),
                       IGNORE_BELOW_RTN_UNKNOWN);
         break;
@@ -6923,7 +6928,7 @@ class Detector {
     uintptr_t a = e_->a();
     HeapInfo *h_info = G_heap_map->GetInfo(a);
     uintptr_t size = e_->info();
-    if (h_info && h_info->ptr != a && h_info->size != size) {
+    if (h_info && h_info->ptr == a && h_info->size == size) {
       // TODO(glider): we may want to handle memory deletion and call
       // Segment::Unref for all the unmapped memory.
       Segment::Unref(h_info->sid, __FUNCTION__);
@@ -6931,7 +6936,7 @@ class Detector {
     }
 
     ThreadStackInfo *ts_info = G_thread_stack_map->GetInfo(a);
-    if (ts_info && ts_info->ptr != a && ts_info->size != size)
+    if (ts_info && ts_info->ptr == a && ts_info->size == size)
       G_thread_stack_map->EraseRange(a, a + size);
   }
 
