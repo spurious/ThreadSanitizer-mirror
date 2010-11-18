@@ -4527,9 +4527,8 @@ struct Thread {
     if (!G_flags->keep_history) return;
     if (g_so_far_only_one_thread) return;
     if (this->ignore_all()) return;
-    TIL til(ts_lock, 5);  // TODO(kcc): get rid of this lock (TS_SERIALIZED).
 
-    G_stats->events[SBLOCK_ENTER]++;
+    this->stats.events[SBLOCK_ENTER]++;
 
     SetTopPc(pc);
 
@@ -4537,15 +4536,17 @@ struct Thread {
     SID match = recent_segments_cache_.Search(call_stack_, sid(),
                                               /*OUT*/&refill_stack);
     if (match.valid()) {
+      // This part is 100% thread-local, no need for locking.
       if (sid_ != match) {
         Segment::Ref(match, "Thread::HandleSblockEnter");
-        Segment::Unref(sid_, "Thread::HandleSblockEnter");
+        this->AddDeadSid(sid_, "Thread::HandleSblockEnter");
         sid_ = match;
       }
       if (refill_stack && kSizeOfHistoryStackTrace > 0) {
         FillEmbeddedStackTrace(Segment::embedded_stack_trace(sid()));
       }
     } else {
+      TIL til(ts_lock, 5);  // TODO(kcc): get rid of this lock (TS_SERIALIZED).
       G_stats->history_creates_new_segment++;
       VTS *new_vts = vts()->Clone();
       NewSegment("HandleSblockEnter", new_vts);
