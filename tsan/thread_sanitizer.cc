@@ -1760,16 +1760,22 @@ class Segment {
     DCHECK(seg->seg_ref_count_ >= 0);
     NoBarrier_AtomicIncrement((uintptr_t*)&seg->seg_ref_count_);
   }
-  static void INLINE Unref(SID sid, const char *where) {
+
+  static INLINE intptr_t UnrefNoRecycle(SID sid, const char *where) {
     Segment *seg = GetInternal(sid);
     if (ProfileSeg(sid)) {
       Printf("SegUnref : %d ref=%ld %s\n", sid.raw(), seg->seg_ref_count_, where);
     }
     DCHECK(seg->seg_ref_count_ > 0);
-    if (NoBarrier_AtomicDecrement((uintptr_t*)&seg->seg_ref_count_) == 0) {
+    return NoBarrier_AtomicDecrement((uintptr_t*)&seg->seg_ref_count_);
+  }
+
+  static void INLINE Unref(SID sid, const char *where) {
+    if (UnrefNoRecycle(sid, where) == 0) {
       RecycleOneSid(sid);
     }
   }
+
 
   static void ForgetAllState() {
     n_segments_ = 1;
@@ -4130,6 +4136,7 @@ struct Thread {
     CHECK(all_threads_[tid.raw()] == NULL);
     n_threads_ = max(n_threads_, tid.raw() + 1);
     all_threads_[tid.raw()] = this;
+    dead_sids_.reserve(kMaxNumDeadSids);
   }
 
   TID tid() const { return tid_; }
@@ -4859,6 +4866,7 @@ struct Thread {
         VTS::Unref(thr->vts_at_exit_);
         thr->vts_at_exit_ = singleton_vts->Clone();
       }
+      thr->dead_sids_.clear();
     }
     signaller_map_->ClearAndDeleteElements();
   }
@@ -4873,6 +4881,37 @@ struct Thread {
 
   BitSet *lock_era_access_set(int is_w) {
     return &lock_era_access_set_[is_w];
+  }
+
+  // --------- dead SIDs
+  // When running fast path w/o a lock we need to recycle SIDs to a thread-local
+  // pool. HasRoomForDeadSids and AddDeadSid may be called w/o a lock.
+  // FlushDeadSids should be called under a lock.
+  enum { kMaxNumDeadSids = 64 };
+  INLINE void AddDeadSid(SID sid, const char *where) {
+    if (TS_SERIALIZED) {
+      Segment::Unref(sid, where);
+    } else {
+      if (Segment::UnrefNoRecycle(sid, where) == 0) {
+        dead_sids_.push_back(sid);
+      }
+    }
+  }
+
+  INLINE void FlushDeadSids() {
+    if (TS_SERIALIZED) return;
+    size_t n = dead_sids_.size();
+    for (size_t i = 0; i < n; i++) {
+      SID sid = dead_sids_[i];
+      DCHECK(Segment::Get(sid)->ref_count() == 0);
+      Segment::RecycleOneSid(sid);
+    }
+    dead_sids_.clear();
+  }
+
+  INLINE bool HasRoomForDeadSids() const {
+    return TS_SERIALIZED ? false :
+        dead_sids_.size() < kMaxNumDeadSids - 2;
   }
 
  private:
@@ -4903,6 +4942,8 @@ struct Thread {
   // Contains "true" for those functions in the stacktrace which inclusively
   // ignore memory accesses.
   vector<unsigned char> call_stack_ignore_rec_;
+
+  vector<SID> dead_sids_;
 
   PtrToBoolCache<251> ignore_below_cache_;
 
@@ -6031,7 +6072,7 @@ class Detector {
       case NOOP        : CHECK(0);           break;  // can't happen.
       case VERBOSITY   : e->Print(); G_flags->verbosity = e->info(); break;
       case FLUSH_STATE : FlushState();       break;
-      default                 : break;
+      default                 : CHECK(0);    break;
     }
   }
 
@@ -6438,7 +6479,7 @@ class Detector {
           if (is_w) {    // -------------- w: {0, wr} => {0, cur}
             MSM_STAT(2);
             new_sval->set(SSID(0), SSID(cur_sid));
-            Segment::Unref(wr_sid, "FastPath01");
+            thr->AddDeadSid(wr_sid, "FastPath01");
           } else {       // -------------- r: {0, wr} => {cur, wr}
             MSM_STAT(3);
             new_sval->set(SSID(cur_sid), wr_ssid);
@@ -6484,7 +6525,7 @@ class Detector {
             new_sval->set(SSID(cur_sid), SSID(0));
           }
           Segment::Ref(cur_sid, "FastPath10");
-          Segment::Unref(rd_sid, "FastPath10");
+          thr->AddDeadSid(rd_sid, "FastPath10");
           return true;
         }
       } else if (wr_ssid.IsSingleton()){
@@ -6497,7 +6538,7 @@ class Detector {
             if (is_w) {  // -------------- w: {cur, wr} => {0, cur}
               MSM_STAT(10);
               new_sval->set(SSID(0), SSID(cur_sid));
-              Segment::Unref(wr_sid, "FastPath11");
+              thr->AddDeadSid(wr_sid, "FastPath11");
             } else {     // -------------- r: {cur, wr} => {cur, wr}
               MSM_STAT(11);
               // no op
@@ -6512,7 +6553,7 @@ class Detector {
             } else {     // -------------- r: {rd, cur} => {0, cur}
               MSM_STAT(13);
               new_sval->set(SSID(0), SSID(cur_sid));
-              Segment::Unref(rd_sid, "FastPath11");
+              thr->AddDeadSid(rd_sid, "FastPath11");
             }
             return true;
           }
@@ -6521,12 +6562,12 @@ class Detector {
           if (is_w) {    // -------------- w: {rd, wr} => {0, cur}
             MSM_STAT(14);
             new_sval->set(SSID(0), SSID(cur_sid));
-            Segment::Unref(wr_sid, "FastPath11");
+            thr->AddDeadSid(wr_sid, "FastPath11");
           } else {       // -------------- r: {rd, wr} => {cur, wr}
             MSM_STAT(15);
             new_sval->set(SSID(cur_sid), wr_ssid);
           }
-          Segment::Unref(rd_sid, "FastPath11");
+          thr->AddDeadSid(rd_sid, "FastPath11");
           Segment::Ref(cur_sid, "FastPath11");
           return true;
         }
@@ -6778,24 +6819,33 @@ one_call:
 
     CacheLine *cache_line = NULL;
 
-#if 0  // cool new code which doesn't really work
-    G_cache->AcquireLine(addr, __LINE__);
-    if (!Cache::LineIsNullOrLocked(cache_line)) {
-      bool res = HandleAccessGranularityAndExecuteHelper(
-          cache_line, tid, thr, pc, addr,
-          size, is_w, has_expensive_flags,
-          /*fast_path_only=*/true);
-      G_cache->ReleaseLine(addr, cache_line, __LINE__);
-      if (res)
-        return;
-    } else if (cache_line == NULL) {
-      G_cache->ReleaseLine(addr, cache_line, __LINE__);
+    if (thr->HasRoomForDeadSids()) {
+      // cool new code which doesn't really work;
+      // it is anabled only under TS_SERIALIZED==0.
+
+      // Acquire a line w/o locks.
+      cache_line = G_cache->AcquireLine(addr, __LINE__);
+      if (!Cache::LineIsNullOrLocked(cache_line)) {
+        // The line is ours and non-empty -- fire the fast path.
+        bool res = HandleAccessGranularityAndExecuteHelper(
+            cache_line, tid, thr, pc, addr,
+            size, is_w, has_expensive_flags,
+            /*fast_path_only=*/true);
+        // release the line.
+        G_cache->ReleaseLine(addr, cache_line, __LINE__);
+        if (res) {
+          // fast path succeded, we are done.
+          return;
+        }
+      } else if (cache_line == NULL) {
+        // We grabbed the cache slot but it is empty, release it.
+        G_cache->ReleaseLine(addr, cache_line, __LINE__);
+      }
     }
-#endif
 
     // Everything below goes under a lock.
     TIL til(ts_lock, 2, need_locking);
-
+    thr->FlushDeadSids();
     cache_line = G_cache->GetLineOrCreateNew(addr, __LINE__);
     HandleAccessGranularityAndExecuteHelper(cache_line, tid, thr, pc, addr,
                                             size, is_w, has_expensive_flags,
