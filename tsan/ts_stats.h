@@ -246,7 +246,7 @@ struct Stats : ThreadLocalStats {
 
   uintptr_t n_forgets;
 
-  uintptr_t lock_sites[10];
+  uintptr_t lock_sites[20];
 
   uintptr_t locked_access;
 

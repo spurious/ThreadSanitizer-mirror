@@ -112,6 +112,7 @@ class TIL {
 };
 
 static TSLock *ts_lock;
+static TSLock *ts_ignore_below_lock;
 
 // -------- Util ----------------------------- {{{1
 
@@ -4753,10 +4754,6 @@ struct Thread {
     call_stack_.push_back(target_pc);
 
     bool ignore = false;
-    // TODO(kcc): unimplemented for TS_SERIALIZED==0
-    if (TS_SERIALIZED == 0 && ignore_below == IGNORE_BELOW_RTN_UNKNOWN)
-      ignore_below = IGNORE_BELOW_RTN_NO;
-
     if (ignore_below == IGNORE_BELOW_RTN_UNKNOWN) {
       if (ignore_below_cache_.Lookup(target_pc, &ignore) == false) {
         ignore = ThreadSanitizerIgnoreAccessesBelowFunction(target_pc);
@@ -7739,17 +7736,22 @@ bool ThreadSanitizerWantToCreateSegmentsOnSblockEntry(uintptr_t pc) {
 bool NOINLINE ThreadSanitizerIgnoreAccessesBelowFunction(uintptr_t pc) {
   typedef unordered_map<uintptr_t, bool> Cache;
   static Cache *cache = NULL;
-  if (!cache)
-    cache = new Cache;
+  {
+    TIL ignore_below_lock(ts_ignore_below_lock, 18);
+    if (!cache)
+      cache = new Cache;
 
-  // Fast path - check if we already know the answer.
-  Cache::iterator i = cache->find(pc);
-  if (i != cache->end())
-    return i->second;
+    // Fast path - check if we already know the answer.
+    Cache::iterator i = cache->find(pc);
+    if (i != cache->end())
+      return i->second;
+  }
 
   string rtn_name = PcToRtnNameWithStats(pc, false);
   bool ret =
       TripleVectorMatchKnown(g_ignore_lists->ignores_r, rtn_name, "", "");
+  // Grab the lock again
+  TIL ignore_below_lock(ts_ignore_below_lock, 19);
   if (ret && debug_ignore) {
     Report("INFO: ignoring all accesses below the function '%s' (%p)\n",
            PcToRtnNameAndFilePos(pc).c_str(), pc);
@@ -7781,6 +7783,7 @@ extern "C" const char *ThreadSanitizerQuery(const char *query) {
 extern void ThreadSanitizerInit() {
   ScopedMallocCostCenter cc("ThreadSanitizerInit");
   ts_lock = new TSLock;
+  ts_ignore_below_lock = new TSLock;
   g_so_far_only_one_thread = true;
   CHECK_EQ(sizeof(ShadowValue), 8);
   CHECK(G_flags);
