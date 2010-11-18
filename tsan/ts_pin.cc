@@ -201,7 +201,6 @@ void PcToStrings(uintptr_t pc, bool demangle,
                 string *file_name, int *line_no) {
   if (G_flags->symbolize) {
     RTN rtn;
-    //G_stats->lock_sites[5]++;
     ScopedReentrantClientLock lock(__LINE__);
     // ClientLock must be held.
     PIN_GetSourceLocation(pc, NULL, line_no, file_name);
@@ -221,7 +220,6 @@ string PcToRtnName(uintptr_t pc, bool demangle) {
   string res;
   if (G_flags->symbolize) {
     {
-      //G_stats->lock_sites[6]++;
       ScopedReentrantClientLock lock(__LINE__);
       RTN rtn = RTN_FindByAddress(pc);
       if (RTN_Valid(rtn)) {
@@ -417,8 +415,8 @@ static void TLEBFlushLocked(PinThread &t) {
     return;
   }
   CHECK(t.tleb.size <= kThreadLocalEventBufferSize);
-  G_stats->lock_sites[0]++;
 #if TS_SERIALIZED==1
+  G_stats->lock_sites[0]++;
   ScopedLock lock(&g_main_ts_lock);
 #endif
   TLEBFlushUnlocked(t.tleb);
@@ -1606,7 +1604,6 @@ void InsertBeforeEvent_SysCall(THREADID tid, ADDRINT sp) {
   PinThread &t = g_pin_threads[tid];
   UpdateCallStack(t, sp);
   TLEBFlushLocked(t);
-  G_stats->lock_sites[4]++;
 }
 
 void InsertBeforeEvent_Call(THREADID tid, ADDRINT pc, ADDRINT target,
