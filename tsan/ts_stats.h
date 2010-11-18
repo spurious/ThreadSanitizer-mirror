@@ -32,8 +32,30 @@
 
 #include "ts_util.h"
 
-// Statistic counters for the entire tool.
-struct Stats {
+// Statistic counters for each thread.
+// For stats accessed concurrently from different threads
+// we don't want to use global stats to avoid cache line ping-pong.
+struct ThreadLocalStats {
+  ThreadLocalStats() { Clear(); }
+  void Clear() {
+    memset(this, 0, sizeof(*this));
+  }
+  void Add(const ThreadLocalStats &s) {
+    uintptr_t *p1 = (uintptr_t*)this;
+    uintptr_t *p2 = (uintptr_t*)&s;
+    size_t n = sizeof(*this) / sizeof(uintptr_t);
+    for (size_t i = 0; i < n; i++) {
+      p1[i] += p2[i];
+    }
+  }
+  uintptr_t memory_access_sizes[18];
+  uintptr_t events[LAST_EVENT];
+  uintptr_t unlocked_access_try1, unlocked_access_try2, unlocked_access_ok;
+};
+
+// Statistic counters for the entire tool, including aggregated
+// ThreadLocalStats.
+struct Stats : ThreadLocalStats {
   Stats() {
     memset(this, 0, sizeof(*this));
   }
@@ -179,8 +201,6 @@ struct Stats {
   }
 
 
-  uintptr_t memory_access_sizes[18];
-  uintptr_t events[LAST_EVENT];
 
   uintptr_t n_vts_hb;
   uintptr_t n_vts_hb_cached;
@@ -228,7 +248,6 @@ struct Stats {
 
   uintptr_t lock_sites[10];
 
-  uintptr_t unlocked_access_try1, unlocked_access_try2, unlocked_access_ok;
   uintptr_t locked_access;
 
   uintptr_t tleb_flush[10];

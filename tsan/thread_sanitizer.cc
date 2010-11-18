@@ -4102,6 +4102,8 @@ static void HandleAtomicityRegion(AtomicityRegion *atomicity_region) {
 // -------- Thread ------------------ {{{1
 struct Thread {
  public:
+  ThreadLocalStats stats;
+
   Thread(TID tid, TID parent_tid, VTS *vts, StackTrace *creation_context)
     : is_running_(true),
       tid_(tid),
@@ -6818,18 +6820,18 @@ one_call:
     DCHECK(thr->lsid(true) == thr->segment()->lsid(true));
 
     CacheLine *cache_line = NULL;
-    INC_STAT(G_stats->memory_access_sizes[size <= 16 ? size : 17 ]);
-    INC_STAT(G_stats->events[is_w ? WRITE : READ]);
+    INC_STAT(thr->stats.memory_access_sizes[size <= 16 ? size : 17 ]);
+    INC_STAT(thr->stats.events[is_w ? WRITE : READ]);
 
     if (need_locking && thr->HasRoomForDeadSids()) {
-      INC_STAT(G_stats->unlocked_access_try1);
+      INC_STAT(thr->stats.unlocked_access_try1);
       // cool new code which doesn't really work;
       // it is anabled only under TS_SERIALIZED==0.
 
       // Acquire a line w/o locks.
       cache_line = G_cache->AcquireLine(addr, __LINE__);
       if (!Cache::LineIsNullOrLocked(cache_line)) {
-        INC_STAT(G_stats->unlocked_access_try2);
+        INC_STAT(thr->stats.unlocked_access_try2);
         // The line is ours and non-empty -- fire the fast path.
         bool res = HandleAccessGranularityAndExecuteHelper(
             cache_line, tid, thr, pc, addr,
@@ -6838,7 +6840,7 @@ one_call:
         // release the line.
         G_cache->ReleaseLine(addr, cache_line, __LINE__);
         if (res) {
-          INC_STAT(G_stats->unlocked_access_ok);
+          INC_STAT(thr->stats.unlocked_access_ok);
           // fast path succeded, we are done.
           return;
         }
@@ -6851,7 +6853,12 @@ one_call:
 
     // Everything below goes under a lock.
     TIL til(ts_lock, 2, need_locking);
-    if (need_locking) INC_STAT(G_stats->locked_access);
+    if (need_locking) {
+      INC_STAT(G_stats->locked_access);
+      // Add the thread-local stats to global stats.
+      G_stats->Add(thr->stats);
+      thr->stats.Clear();
+    }
     thr->FlushDeadSids();
     cache_line = G_cache->GetLineOrCreateNew(addr, __LINE__);
     HandleAccessGranularityAndExecuteHelper(cache_line, tid, thr, pc, addr,
