@@ -18,7 +18,7 @@ SCRIPT_ROOT=`dirname $0`
 source "$SCRIPT_ROOT/common.sh"
 
 PLATFORM=$1
-set_platform_dependent_vars()
+set_platform_dependent_vars
 
 SRC=$2
 FNAME=`echo $SRC | sed 's/\.[^.]*$//'`
