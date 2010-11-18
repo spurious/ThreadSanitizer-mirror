@@ -4526,6 +4526,10 @@ struct Thread {
   void INLINE HandleSblockEnter(uintptr_t pc) {
     if (!G_flags->keep_history) return;
     if (g_so_far_only_one_thread) return;
+    if (this->ignore_all()) return;
+    TIL til(ts_lock, 5);  // TODO(kcc): get rid of this lock (TS_SERIALIZED).
+
+    G_stats->events[SBLOCK_ENTER]++;
 
     SetTopPc(pc);
 
@@ -5686,6 +5690,7 @@ class EventSampler {
     if ((counter_ & ((1 << G_flags->sample_events) - 1)) != 0)
       return;
 
+    TIL til(ts_lock, 8);
     string pos =  Thread::Get(tid)->
         CallStackToStringRtnOnly(G_flags->sample_events_depth);
     (*samples_)[event_name][pos]++;
@@ -5694,6 +5699,7 @@ class EventSampler {
   // Show existing samples
   static void ShowSamples() {
     if (G_flags->sample_events == 0) return;
+    TIL til(ts_lock, 8);
     for (SampleMapMap::iterator it1 = samples_->begin();
          it1 != samples_->end(); ++it1) {
       string name = it1->first;
@@ -5772,7 +5778,6 @@ class Detector {
     if (g_so_far_only_one_thread) return;
     DCHECK(t);
     if (t->generate_segments()) {
-      TIL til(ts_lock, 5);  // TODO(kcc): get rid of this lock (TS_SERIALIZED).
       HandleSblockEnter(tid, t->pc());
     }
     size_t n = t->n_mops();
@@ -5881,6 +5886,7 @@ class Detector {
   void FlushIfNeeded() {
     // Are we out of segment IDs?
     if (Segment::NumberOfSegments() > ((kMaxSID * 15) / 16)) {
+      TIL til(ts_lock, 7);
       if (DEBUG_MODE) {
         G_cache->PrintStorageStats();
         Segment::ShowSegmentStats();
@@ -5895,6 +5901,7 @@ class Detector {
       const int kFreq = 1014 * 16;
       if ((counter % kFreq) == 0) {  // Don't do it too often.
         // TODO(kcc): find a way to check memory limit more frequently.
+        TIL til(ts_lock, 7);
         FlushIfOutOfMem();
       }
     }
@@ -5903,6 +5910,7 @@ class Detector {
     if (flush_period && (counter % (1024 * 4)) == 0) {
       size_t cur_time = TimeInMilliSeconds();
       if (cur_time - g_last_flush_time  > flush_period) {
+        TIL til(ts_lock, 7);
         ForgetAllStateAndStartOver(
           "Doing periodic flush (period is set by --flush_period=n_seconds)");
       }
@@ -5911,9 +5919,7 @@ class Detector {
 
   void INLINE HandleSblockEnter(TID tid, uintptr_t pc) {
     Thread *thr = Thread::Get(tid);
-    if (thr->ignore_all()) return;
     thr->HandleSblockEnter(pc);
-    G_stats->events[SBLOCK_ENTER]++;
 
     FlushIfNeeded();
 
@@ -5958,6 +5964,9 @@ class Detector {
       case RTN_EXIT:
         thread->HandleRtnExit();
         return;
+      case SBLOCK_ENTER:
+        HandleSblockEnter(TID(e->tid()), e->pc());
+        break;
       default: break;
     }
 
@@ -5965,9 +5974,6 @@ class Detector {
     TIL til(ts_lock, 0);
 
     switch (type) {
-      case SBLOCK_ENTER:
-        HandleSblockEnter(TID(e->tid()), e->pc());
-        break;
       case THR_START   :
         HandleThreadStart(TID(e->tid()), TID(e->info()), e->pc());
         break;
@@ -7876,7 +7882,6 @@ void INLINE ThreadSanitizerHandleStackMemChange(int32_t tid, uintptr_t addr,
 }
 
 void INLINE ThreadSanitizerEnterSblock(int32_t tid, uintptr_t pc) {
-  TIL til(ts_lock, 4);
   G_detector->HandleSblockEnter(TID(tid), pc);
 }
 
