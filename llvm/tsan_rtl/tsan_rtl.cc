@@ -308,7 +308,7 @@ static void inline flush_trace(ThreadInfo *info) {
     // times. As a result the count of this block executions may be off by the
     // number of threads.
     if (!trace->id_) {
-      bb_unique_id = NoBarrier_AtomicIncrement(&bb_unique_id, 1);
+      bb_unique_id = NoBarrier_AtomicIncrement(&bb_unique_id);
       trace->id_ = bb_unique_id;
     }
     if (G_flags->literace_sampling == 0 ||
