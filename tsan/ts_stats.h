@@ -161,6 +161,10 @@ struct Stats {
       total_locks += lock_sites[i];
     }
     Printf("lock_sites all=%ld\n", total_locks);
+    Printf("unlocked_access_try1=%ld\n", unlocked_access_try1);
+    Printf("unlocked_access_try2=%ld\n", unlocked_access_try2);
+    Printf("unlocked_access_ok  =%ld\n", unlocked_access_ok);
+    Printf("locked_access       =%ld\n", locked_access);
 
 
     for (size_t i = 0; i < TS_ARRAY_SIZE(tleb_flush); i++) {
@@ -223,6 +227,9 @@ struct Stats {
   uintptr_t n_forgets;
 
   uintptr_t lock_sites[10];
+
+  uintptr_t unlocked_access_try1, unlocked_access_try2, unlocked_access_ok;
+  uintptr_t locked_access;
 
   uintptr_t tleb_flush[10];
 

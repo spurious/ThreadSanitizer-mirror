@@ -6797,7 +6797,7 @@ one_call:
                                          uintptr_t addr, uintptr_t size,
                                          bool is_w, bool has_expensive_flags,
                                          bool need_locking) {
-
+  #define INC_STAT(stat) do { if (has_expensive_flags) (stat)++; } while(0)
     if (TS_ATOMICITY && G_flags->atomicity) {
       HandleMemoryAccessForAtomicityViolationDetector(thr, pc,
                                                       addr, size, is_w);
@@ -6818,14 +6818,18 @@ one_call:
     DCHECK(thr->lsid(true) == thr->segment()->lsid(true));
 
     CacheLine *cache_line = NULL;
+    INC_STAT(G_stats->memory_access_sizes[size <= 16 ? size : 17 ]);
+    INC_STAT(G_stats->events[is_w ? WRITE : READ]);
 
-    if (thr->HasRoomForDeadSids()) {
+    if (need_locking && thr->HasRoomForDeadSids()) {
+      INC_STAT(G_stats->unlocked_access_try1);
       // cool new code which doesn't really work;
       // it is anabled only under TS_SERIALIZED==0.
 
       // Acquire a line w/o locks.
       cache_line = G_cache->AcquireLine(addr, __LINE__);
       if (!Cache::LineIsNullOrLocked(cache_line)) {
+        INC_STAT(G_stats->unlocked_access_try2);
         // The line is ours and non-empty -- fire the fast path.
         bool res = HandleAccessGranularityAndExecuteHelper(
             cache_line, tid, thr, pc, addr,
@@ -6834,6 +6838,7 @@ one_call:
         // release the line.
         G_cache->ReleaseLine(addr, cache_line, __LINE__);
         if (res) {
+          INC_STAT(G_stats->unlocked_access_ok);
           // fast path succeded, we are done.
           return;
         }
@@ -6843,8 +6848,10 @@ one_call:
       }
     }
 
+
     // Everything below goes under a lock.
     TIL til(ts_lock, 2, need_locking);
+    if (need_locking) INC_STAT(G_stats->locked_access);
     thr->FlushDeadSids();
     cache_line = G_cache->GetLineOrCreateNew(addr, __LINE__);
     HandleAccessGranularityAndExecuteHelper(cache_line, tid, thr, pc, addr,
@@ -6855,8 +6862,6 @@ one_call:
 
     if (has_expensive_flags && TS_SERIALIZED == 1) {
       // TODO(kcc): implement this for TS_SERIALIZED==0
-      G_stats->memory_access_sizes[size <= 16 ? size : 17 ]++;
-      G_stats->events[is_w ? WRITE : READ]++;
       if (G_flags->trace_level >= 1) {
         cache_line = G_cache->GetLineIfExists(addr, __LINE__);
         DCHECK(cache_line);
@@ -6894,6 +6899,7 @@ one_call:
         sampler.Sample(tid, type);
       }
     }
+#undef INC_STAT
   }
 
 
