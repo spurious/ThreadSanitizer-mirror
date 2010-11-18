@@ -6853,12 +6853,7 @@ one_call:
 
     // Everything below goes under a lock.
     TIL til(ts_lock, 2, need_locking);
-    if (need_locking) {
-      INC_STAT(G_stats->locked_access);
-      // Add the thread-local stats to global stats.
-      G_stats->Add(thr->stats);
-      thr->stats.Clear();
-    }
+    if (need_locking) INC_STAT(G_stats->locked_access);
     thr->FlushDeadSids();
     cache_line = G_cache->GetLineOrCreateNew(addr, __LINE__);
     HandleAccessGranularityAndExecuteHelper(cache_line, tid, thr, pc, addr,
@@ -7119,6 +7114,11 @@ one_call:
 
   // THR_END
   void HandleThreadEnd(TID tid) {
+    Thread *thr = Thread::Get(tid);
+    // Add the thread-local stats to global stats.
+    G_stats->Add(thr->stats);
+    thr->stats.Clear();
+
     // Printf("HandleThreadEnd: %d\n", tid.raw());
     if (tid != TID(0)) {
       Thread *child = Thread::Get(tid);
@@ -7136,7 +7136,6 @@ one_call:
     }
 
 
-    Thread *thr = Thread::Get(tid);
     for (int rd_or_rw = 0; rd_or_rw <= 1; rd_or_rw++) {
       if (thr->ignore(rd_or_rw)) {
         Report("WARNING: T%d ended while the 'ignore %s' bit is set\n",
