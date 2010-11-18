@@ -182,7 +182,7 @@ struct Stats : ThreadLocalStats {
       Printf("lock_sites[%ld]=%ld\n", i, lock_sites[i]);
       total_locks += lock_sites[i];
     }
-    Printf("lock_sites all=%ld\n", total_locks);
+    Printf("lock_sites[*]=%ld\n", total_locks);
     Printf("unlocked_access_try1=%ld\n", unlocked_access_try1);
     Printf("unlocked_access_try2=%ld\n", unlocked_access_try2);
     Printf("unlocked_access_ok  =%ld\n", unlocked_access_ok);
