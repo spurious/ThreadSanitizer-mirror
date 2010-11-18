@@ -6476,11 +6476,15 @@ TEST(StressTests, StartAndJoinManyThreads) {
 namespace StressTests_ManyAccesses {  // {{{1
 #ifndef NO_BARRIER
 const int kNumThreads = 4;
-const int kArrayLen = 1024 * 1024;
-const int kNumIter = 1;
+const int kArrayLen = 1024;
+const int kNumIter = 512;
 int thread_id;
 int *array = NULL;
 Barrier *barrier;
+
+void IncrementMe(int *x) {
+  (*x)++;
+}
 
 void NoRaceWorker() {
   int id = AtomicIncrement(&thread_id, 1);
@@ -6489,7 +6493,7 @@ void NoRaceWorker() {
   int *ptr = array + id * kArrayLen;
   for (int it = 0; it < kNumIter; it++) {
     for (int i = 0; i < kArrayLen; i++) {
-      ptr[i]++;
+      IncrementMe(ptr + i);
     }
   }
 }
