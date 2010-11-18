@@ -99,9 +99,7 @@ class TIL {
     DCHECK(lock_);
     if (need_locking_ && (TS_SERIALIZED == 0)) {
       lock_->Lock();
-      if (DEBUG_MODE) {
-        G_stats->lock_sites[lock_site]++;
-      }
+      G_stats->lock_sites[lock_site]++;
     }
   }
   ~TIL() {
