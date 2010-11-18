@@ -150,7 +150,7 @@ static NOINLINE int Replace_strncmp(EXTRA_REPLACE_PARAMS const char *s1,
   return 0;
 }
 
-
+#if defined(TS_VALGRIND)
 // Read every byte in the memory range.
 static NOINLINE void ReadMemory(const void* p, size_t size) {
   const volatile char* start = (const volatile char*)p;
@@ -171,5 +171,6 @@ static NOINLINE void ReadString(const char* s) {
     tmp ^= c;
   }
 }
+#endif   // TS_VALGRIND
 
 #endif  // TS_REPLACE_H_
