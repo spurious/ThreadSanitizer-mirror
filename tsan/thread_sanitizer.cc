@@ -6821,30 +6821,33 @@ one_call:
     INC_STAT(thr->stats.memory_access_sizes[size <= 16 ? size : 17 ]);
     INC_STAT(thr->stats.events[is_w ? WRITE : READ]);
 
-    if (need_locking && thr->HasRoomForDeadSids()) {
-      INC_STAT(thr->stats.unlocked_access_try1);
-      // cool new code which doesn't really work;
-      // it is anabled only under TS_SERIALIZED==0.
+    if (need_locking) {
+      if (thr->HasRoomForDeadSids()) {
+        // cool new code which doesn't really work;
+        // it is anabled only under TS_SERIALIZED==0.
 
-      // Acquire a line w/o locks.
-      cache_line = G_cache->AcquireLine(addr, __LINE__);
-      if (!Cache::LineIsNullOrLocked(cache_line)) {
-        INC_STAT(thr->stats.unlocked_access_try2);
-        // The line is ours and non-empty -- fire the fast path.
-        bool res = HandleAccessGranularityAndExecuteHelper(
-            cache_line, tid, thr, pc, addr,
-            size, is_w, has_expensive_flags,
-            /*fast_path_only=*/true);
-        // release the line.
-        G_cache->ReleaseLine(addr, cache_line, __LINE__);
-        if (res) {
-          INC_STAT(thr->stats.unlocked_access_ok);
-          // fast path succeded, we are done.
-          return;
+        // Acquire a line w/o locks.
+        cache_line = G_cache->AcquireLine(addr, __LINE__);
+        if (!Cache::LineIsNullOrLocked(cache_line)) {
+          // The line is ours and non-empty -- fire the fast path.
+          bool res = HandleAccessGranularityAndExecuteHelper(
+              cache_line, tid, thr, pc, addr,
+              size, is_w, has_expensive_flags,
+              /*fast_path_only=*/true);
+          // release the line.
+          G_cache->ReleaseLine(addr, cache_line, __LINE__);
+          if (res) {
+            INC_STAT(thr->stats.unlocked_access_ok);
+            // fast path succeded, we are done.
+            return;
+          }
+        } else if (cache_line == NULL) {
+          // We grabbed the cache slot but it is empty, release it.
+          G_cache->ReleaseLine(addr, cache_line, __LINE__);
         }
-      } else if (cache_line == NULL) {
-        // We grabbed the cache slot but it is empty, release it.
-        G_cache->ReleaseLine(addr, cache_line, __LINE__);
+        INC_STAT(thr->stats.unlocked_access_try2);
+      } else {
+        INC_STAT(thr->stats.unlocked_access_try1);
       }
     }
 
