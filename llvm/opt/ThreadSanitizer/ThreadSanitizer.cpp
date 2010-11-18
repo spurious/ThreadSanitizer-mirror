@@ -19,7 +19,12 @@
 #include "llvm/Type.h"
 
 #include <stdint.h>
+#include <stdio.h>
+
+#include <map>
+#include <set>
 using namespace llvm;
+using namespace std;
 
 #define DEBUG 0
 
@@ -28,6 +33,14 @@ TargetArch("arch", cl::desc("Target arch: x86 or x64"));
 
 namespace {
   typedef std::vector <Constant*> Passport;
+  struct DebugPcInfo {
+    DebugPcInfo(string s, string f, uintptr_t l)
+        : symbol(s), file(f), line(l) { }
+    string symbol;
+    string file;
+    uintptr_t line;
+  };
+
   struct TsanOnlineInstrument : public ModulePass { // {{{1
     static char ID; // Pass identification, replacement for typeid
     int BBCount, ModuleFunctionCount, ModuleMopCount, TLEBIndex, OldTLEBIndex;
@@ -37,7 +50,7 @@ namespace {
     Constant *RtnCallFn, *RtnExitFn;
     Constant *MemCpyFn, *MemMoveFn;
     const PointerType *UIntPtr, *MopTyPtr, *Int8Ptr, *TraceInfoTypePtr;
-    const Type *PlatformInt, *Int8, *ArithmeticPtr;
+    const Type *PlatformInt, *Int8, *ArithmeticPtr, *Int32;
     const Type *Void;
     const StructType *MopTy, *TraceInfoType, *BBTraceInfoType;
     const ArrayType *BBPassportType, *BBExtPassportType, *MopArrayType;
@@ -49,8 +62,12 @@ namespace {
     static const int kBBHiAddr = 5000, kBBLoAddr = 100;
     static const int kFNV1aPrime = 6733, kFNV1aModulo = 2048;
     static const int kMaxAddr = 1 << 30;
+    static const int kDebugInfoMagicNumber = 0xdb914f0;
     int arch_size_;
     int ModuleID;
+    set<string> debug_symbol_set;
+    set<string> debug_file_set;
+    map<uintptr_t, DebugPcInfo> debug_pc_map;
 
     TsanOnlineInstrument() : ModulePass(&ID) {
       if (TargetArch == "x86-64") {
@@ -99,6 +116,101 @@ namespace {
       return false;
     }
 
+
+    void writeDebugInfo(Module &M) {
+      // The debug info is stored in a per-module global structure named
+      // "rtl_debug_info${ModuleID}".
+      // TODO(glider): this may lead to name collisions.
+      LLVMContext &Context = M.getContext();
+      std::vector<Constant*> dummy;
+      dummy.push_back(ConstantInt::get(PlatformInt, ModuleID));
+      map<string, size_t> files;
+      map<string, size_t> symbols;
+      uintptr_t files_size = 0, files_count = 0;
+      uintptr_t symbols_size = 0, symbols_count = 0;
+      uintptr_t pcs_size = 0;
+      vector<Constant*> files_raw;
+      vector<Constant*> symbols_raw;
+      vector<Constant*> pcs;
+      for (set<string>::iterator it = debug_file_set.begin();
+           it != debug_file_set.end();
+           ++it) {
+        files[*it] = files_count;
+        files_count++;
+        files_size += (it->size() + 1);
+        for (int i = 0; i < it->size(); i++) {
+          files_raw.push_back(ConstantInt::get(Int8, it->c_str()[i]));
+        }
+        files_raw.push_back(ConstantInt::get(Int8, 0));
+      }
+      for (set<string>::iterator it = debug_symbol_set.begin();
+           it != debug_symbol_set.end();
+           ++it) {
+        symbols[*it] = symbols_count;
+        symbols_count++;
+        symbols_size += (it->size() + 1);
+        for (int i = 0; i < it->size(); i++) {
+          symbols_raw.push_back(ConstantInt::get(Int8, it->c_str()[i]));
+        }
+        symbols_raw.push_back(ConstantInt::get(Int8, 0));
+      }
+
+
+      // pc, symbol, file, line
+      StructType *PcInfo = StructType::get(Context,
+                                           PlatformInt, PlatformInt,
+                                           PlatformInt, PlatformInt,
+                                           NULL);
+      for (map<uintptr_t, DebugPcInfo>::iterator it = debug_pc_map.begin();
+           it != debug_pc_map.end();
+           ++it) {
+        vector<Constant*> pc;
+        pc.push_back(ConstantInt::get(PlatformInt, it->first));
+        pc.push_back(ConstantInt::get(PlatformInt, symbols[it->second.symbol]));
+        pc.push_back(ConstantInt::get(PlatformInt, files[it->second.file]));
+        pc.push_back(ConstantInt::get(PlatformInt, it->second.line));
+        pcs.push_back(ConstantStruct::get(PcInfo, pc));
+        pcs_size++;
+      }
+      // magic, files_size, symbols_size, pcs_size, files[], symbols[], pcs[]
+      StructType *DebugInfoType = StructType::get(Context,
+          Int32,
+          PlatformInt, PlatformInt, PlatformInt,
+          ArrayType::get(Int8, files_size),
+          ArrayType::get(Int8, symbols_size),
+          ArrayType::get(PcInfo, pcs_size),
+          NULL);
+
+      vector<Constant*> debug_info;
+      debug_info.push_back(ConstantInt::get(Int32, kDebugInfoMagicNumber));
+      debug_info.push_back(ConstantInt::get(PlatformInt, files_size));
+      debug_info.push_back(ConstantInt::get(PlatformInt, symbols_size));
+      debug_info.push_back(ConstantInt::get(PlatformInt, pcs_size));
+      debug_info.push_back(
+          ConstantArray::get(ArrayType::get(Int8, files_size), files_raw));
+      debug_info.push_back(
+          ConstantArray::get(ArrayType::get(Int8, symbols_size), symbols_raw));
+#if 1
+      debug_info.push_back(
+          ConstantArray::get(ArrayType::get(PcInfo, pcs_size), pcs));
+#endif
+      Constant *DebugInfo = ConstantStruct::get(DebugInfoType, debug_info);
+
+      char var_id_str[50];
+      snprintf(var_id_str, sizeof(var_id_str), "rtl_debug_info%d", ModuleID);
+
+      GlobalValue *GV = new GlobalVariable(
+          M,
+          DebugInfoType,
+          false,
+          GlobalValue::InternalLinkage,
+          DebugInfo,
+          var_id_str,
+          false, 0
+      );
+      GV->setSection("tsan_rtl_debug_info"); 
+    }
+
     virtual bool runOnModule(Module &M) {
       BBCount = 0;
       ModuleFunctionCount = 0;
@@ -115,6 +227,7 @@ namespace {
         ArithmeticPtr = Type::getInt32Ty(Context);
       }
       Int8 = Type::getInt8Ty(Context);
+      Int32 = Type::getInt32Ty(Context);
       Int8Ptr = PointerType::get(Type::getInt8Ty(Context), 0);
       Void = Type::getVoidTy(Context);
       MopTy = StructType::get(Context, PlatformInt, Int8, Int8, NULL);
@@ -146,22 +259,27 @@ namespace {
       BBFlushFn = M.getOrInsertFunction("bb_flush",
                                         TLEBPtrType,
                                         TraceInfoTypePtr, (Type*)0);
+      cast<Function>(BBFlushFn)->setLinkage(Function::ExternalWeakLinkage);
 
       // void rtn_call(void *addr)
       RtnCallFn = M.getOrInsertFunction("rtn_call",
                                         Void,
                                         PlatformInt, (Type*)0);
+      cast<Function>(RtnCallFn)->setLinkage(Function::ExternalWeakLinkage);
 
       // void rtn_exit()
       RtnExitFn = M.getOrInsertFunction("rtn_exit",
                                         Void, (Type*)0);
+      cast<Function>(RtnExitFn)->setLinkage(Function::ExternalWeakLinkage);
 
       MemCpyFn = M.getOrInsertFunction("rtl_memcpy",
                                        UIntPtr,
                                        UIntPtr, UIntPtr, PlatformInt, (Type*)0);
+      cast<Function>(MemCpyFn)->setLinkage(Function::ExternalWeakLinkage);
       MemMoveFn = M.getOrInsertFunction("rtl_memmove",
                                        UIntPtr,
                                        UIntPtr, UIntPtr, PlatformInt, (Type*)0);
+      cast<Function>(MemMoveFn)->setLinkage(Function::ExternalWeakLinkage);
 
 
       int nBB = 1, FnBB = 1;
@@ -195,6 +313,8 @@ namespace {
         inst[0] = ConstantInt::get(PlatformInt, getAddr(startBBCount, 0, First));
         CallInst::Create(RtnCallFn, inst.begin(), inst.end(), "", First);
       }
+      writeDebugInfo(M);
+
       return true;
     }
 
@@ -207,6 +327,12 @@ namespace {
       errs() << "|" <<  IN.getParent()->getParent()->getName() << "|" <<
                 file << "|" << Loc.getLineNumber() << "|" <<
                 dir << "\n";
+      debug_file_set.insert(dir + "/" + file);
+      debug_symbol_set.insert(IN.getParent()->getParent()->getName());
+      debug_pc_map.insert(
+          make_pair(addr, DebugPcInfo(IN.getParent()->getParent()->getName(),
+                                      dir + "/" + file,
+                                      Loc.getLineNumber())));
     }
 
 
