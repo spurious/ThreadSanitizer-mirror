@@ -595,103 +595,8 @@ static uintptr_t CallFun6(CONTEXT *ctx, THREADID tid,
   return ret;
 }
 
-static uintptr_t CallFun7(CONTEXT *ctx, THREADID tid,
-                         AFUNPTR f, uintptr_t arg0, uintptr_t arg1,
-                         uintptr_t arg2, uintptr_t arg3,
-                         uintptr_t arg4, uintptr_t arg5,
-                         uintptr_t arg6) {
-  uintptr_t ret = 0xdeadbee1;
-  PIN_CallApplicationFunction(ctx, tid,
-                              CALLINGSTD_DEFAULT, (AFUNPTR)(f),
-                              PIN_PARG(uintptr_t), &ret,
-                              PIN_PARG(uintptr_t), arg0,
-                              PIN_PARG(uintptr_t), arg1,
-                              PIN_PARG(uintptr_t), arg2,
-                              PIN_PARG(uintptr_t), arg3,
-                              PIN_PARG(uintptr_t), arg4,
-                              PIN_PARG(uintptr_t), arg5,
-                              PIN_PARG(uintptr_t), arg6,
-                              PIN_PARG_END());
-  return ret;
-}
-
-static uintptr_t CallFun8(CONTEXT *ctx, THREADID tid,
-                         AFUNPTR f, uintptr_t arg0, uintptr_t arg1,
-                         uintptr_t arg2, uintptr_t arg3,
-                         uintptr_t arg4, uintptr_t arg5,
-                         uintptr_t arg6, uintptr_t arg7) {
-  uintptr_t ret = 0xdeadbee1;
-  PIN_CallApplicationFunction(ctx, tid,
-                              CALLINGSTD_DEFAULT, (AFUNPTR)(f),
-                              PIN_PARG(uintptr_t), &ret,
-                              PIN_PARG(uintptr_t), arg0,
-                              PIN_PARG(uintptr_t), arg1,
-                              PIN_PARG(uintptr_t), arg2,
-                              PIN_PARG(uintptr_t), arg3,
-                              PIN_PARG(uintptr_t), arg4,
-                              PIN_PARG(uintptr_t), arg5,
-                              PIN_PARG(uintptr_t), arg6,
-                              PIN_PARG(uintptr_t), arg7,
-                              PIN_PARG_END());
-  return ret;
-}
-
-static uintptr_t CallFun10(CONTEXT *ctx, THREADID tid,
-                         AFUNPTR f, uintptr_t arg0, uintptr_t arg1,
-                         uintptr_t arg2, uintptr_t arg3,
-                         uintptr_t arg4, uintptr_t arg5,
-                         uintptr_t arg6, uintptr_t arg7,
-                         uintptr_t arg8, uintptr_t arg9) {
-  uintptr_t ret = 0xdeadbee1;
-  PIN_CallApplicationFunction(ctx, tid,
-                              CALLINGSTD_DEFAULT, (AFUNPTR)(f),
-                              PIN_PARG(uintptr_t), &ret,
-                              PIN_PARG(uintptr_t), arg0,
-                              PIN_PARG(uintptr_t), arg1,
-                              PIN_PARG(uintptr_t), arg2,
-                              PIN_PARG(uintptr_t), arg3,
-                              PIN_PARG(uintptr_t), arg4,
-                              PIN_PARG(uintptr_t), arg5,
-                              PIN_PARG(uintptr_t), arg6,
-                              PIN_PARG(uintptr_t), arg7,
-                              PIN_PARG(uintptr_t), arg8,
-                              PIN_PARG(uintptr_t), arg9,
-                              PIN_PARG_END());
-  return ret;
-}
-
-static uintptr_t CallFun11(CONTEXT *ctx, THREADID tid,
-                         AFUNPTR f, uintptr_t arg0, uintptr_t arg1,
-                         uintptr_t arg2, uintptr_t arg3,
-                         uintptr_t arg4, uintptr_t arg5,
-                         uintptr_t arg6, uintptr_t arg7,
-                         uintptr_t arg8, uintptr_t arg9,
-                         uintptr_t arg10) {
-  uintptr_t ret = 0xdeadbee1;
-  PIN_CallApplicationFunction(ctx, tid,
-                              CALLINGSTD_DEFAULT, (AFUNPTR)(f),
-                              PIN_PARG(uintptr_t), &ret,
-                              PIN_PARG(uintptr_t), arg0,
-                              PIN_PARG(uintptr_t), arg1,
-                              PIN_PARG(uintptr_t), arg2,
-                              PIN_PARG(uintptr_t), arg3,
-                              PIN_PARG(uintptr_t), arg4,
-                              PIN_PARG(uintptr_t), arg5,
-                              PIN_PARG(uintptr_t), arg6,
-                              PIN_PARG(uintptr_t), arg7,
-                              PIN_PARG(uintptr_t), arg8,
-                              PIN_PARG(uintptr_t), arg9,
-                              PIN_PARG(uintptr_t), arg10,
-                              PIN_PARG_END());
-  return ret;
-}
-
 #define CALL_ME_INSIDE_WRAPPER_4() CallFun4(ctx, tid, f, arg0, arg1, arg2, arg3)
 #define CALL_ME_INSIDE_WRAPPER_6() CallFun6(ctx, tid, f, arg0, arg1, arg2, arg3, arg4, arg5)
-#define CALL_ME_INSIDE_WRAPPER_7() CallFun7(ctx, tid, f, arg0, arg1, arg2, arg3, arg4, arg5, arg6)
-#define CALL_ME_INSIDE_WRAPPER_8() CallFun8(ctx, tid, f, arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7)
-#define CALL_ME_INSIDE_WRAPPER_10() CallFun10(ctx, tid, f, arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9)
-#define CALL_ME_INSIDE_WRAPPER_11() CallFun11(ctx, tid, f, arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10)
 
 // Completely replace (i.e. not wrap) a function with 3 (or less) parameters.
 // The original function will not be called.
@@ -2361,7 +2266,7 @@ static void InstrumentMopsInBBl(BBL bbl, RTN rtn, TraceInfo *trace_info, uintptr
             IARG_ADDRINT, *mop_idx,
             IARG_MEMORYOP_EA, i,
             IARG_END);
-          // This is just a MOV, so we can insert the instrumentation code 
+          // This is just a MOV, so we can insert the instrumentation code
           // after the insn.
           point = IPOINT_AFTER;
           on_mop_callback = (AFUNPTR)OnMopCheckIdentStoreAfter;
@@ -3097,7 +3002,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
 
   // strlen and friends.
   // These wrappers will generate memory access events.
-  // So, if we don't want to get those events (e.g. memcpy inside 
+  // So, if we don't want to get those events (e.g. memcpy inside
   // ld.so or ntdll.dll) we don't wrap them and the regular
   // ignore machinery will make sure we don't get the events.
   if (ThreadSanitizerWantToInstrumentSblock(RTN_Address(rtn))) {
