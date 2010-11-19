@@ -34,9 +34,10 @@ TargetArch("arch", cl::desc("Target arch: x86 or x64"));
 namespace {
   typedef std::vector <Constant*> Passport;
   struct DebugPcInfo {
-    DebugPcInfo(string s, string f, uintptr_t l)
-        : symbol(s), file(f), line(l) { }
+    DebugPcInfo(string s, string p, string f, uintptr_t l)
+        : symbol(s), path(p), file(f), line(l) { }
     string symbol;
+    string path;
     string file;
     uintptr_t line;
   };
@@ -67,6 +68,7 @@ namespace {
     int ModuleID;
     set<string> debug_symbol_set;
     set<string> debug_file_set;
+    set<string> debug_path_set;
     map<uintptr_t, DebugPcInfo> debug_pc_map;
 
     TsanOnlineInstrument() : ModulePass(&ID) {
@@ -125,13 +127,13 @@ namespace {
       std::vector<Constant*> dummy;
       dummy.push_back(ConstantInt::get(PlatformInt, ModuleID));
       map<string, size_t> files;
+      map<string, size_t> paths;
       map<string, size_t> symbols;
       uintptr_t files_size = 0, files_count = 0;
+      uintptr_t paths_size = 0, paths_count = 0;
       uintptr_t symbols_size = 0, symbols_count = 0;
       uintptr_t pcs_size = 0;
       vector<Constant*> files_raw;
-      vector<Constant*> symbols_raw;
-      vector<Constant*> pcs;
       for (set<string>::iterator it = debug_file_set.begin();
            it != debug_file_set.end();
            ++it) {
@@ -143,6 +145,21 @@ namespace {
         }
         files_raw.push_back(ConstantInt::get(Int8, 0));
       }
+
+      vector<Constant*> paths_raw;
+      for (set<string>::iterator it = debug_path_set.begin();
+           it != debug_path_set.end();
+           ++it) {
+        paths[*it] = paths_count;
+        paths_count++;
+        paths_size += (it->size() + 1);
+        for (int i = 0; i < it->size(); i++) {
+          paths_raw.push_back(ConstantInt::get(Int8, it->c_str()[i]));
+        }
+        paths_raw.push_back(ConstantInt::get(Int8, 0));
+      }
+
+      vector<Constant*> symbols_raw;
       for (set<string>::iterator it = debug_symbol_set.begin();
            it != debug_symbol_set.end();
            ++it) {
@@ -154,11 +171,12 @@ namespace {
         }
         symbols_raw.push_back(ConstantInt::get(Int8, 0));
       }
+      vector<Constant*> pcs;
 
-
-      // pc, symbol, file, line
+      // pc, symbol, path, file, line
       StructType *PcInfo = StructType::get(Context,
                                            PlatformInt, PlatformInt,
+                                           PlatformInt,
                                            PlatformInt, PlatformInt,
                                            NULL);
       for (map<uintptr_t, DebugPcInfo>::iterator it = debug_pc_map.begin();
@@ -167,15 +185,19 @@ namespace {
         vector<Constant*> pc;
         pc.push_back(ConstantInt::get(PlatformInt, it->first));
         pc.push_back(ConstantInt::get(PlatformInt, symbols[it->second.symbol]));
+        pc.push_back(ConstantInt::get(PlatformInt, paths[it->second.file]));
         pc.push_back(ConstantInt::get(PlatformInt, files[it->second.file]));
         pc.push_back(ConstantInt::get(PlatformInt, it->second.line));
         pcs.push_back(ConstantStruct::get(PcInfo, pc));
         pcs_size++;
       }
-      // magic, files_size, symbols_size, pcs_size, files[], symbols[], pcs[]
+      // magic,
+      // paths_size, files_size, symbols_size, pcs_size,
+      // paths[], files[], symbols[], pcs[]
       StructType *DebugInfoType = StructType::get(Context,
           Int32,
-          PlatformInt, PlatformInt, PlatformInt,
+          PlatformInt, PlatformInt, PlatformInt, PlatformInt,
+          ArrayType::get(Int8, paths_size),
           ArrayType::get(Int8, files_size),
           ArrayType::get(Int8, symbols_size),
           ArrayType::get(PcInfo, pcs_size),
@@ -183,17 +205,19 @@ namespace {
 
       vector<Constant*> debug_info;
       debug_info.push_back(ConstantInt::get(Int32, kDebugInfoMagicNumber));
+      debug_info.push_back(ConstantInt::get(PlatformInt, paths_size));
       debug_info.push_back(ConstantInt::get(PlatformInt, files_size));
       debug_info.push_back(ConstantInt::get(PlatformInt, symbols_size));
       debug_info.push_back(ConstantInt::get(PlatformInt, pcs_size));
+
+      debug_info.push_back(
+          ConstantArray::get(ArrayType::get(Int8, paths_size), paths_raw));
       debug_info.push_back(
           ConstantArray::get(ArrayType::get(Int8, files_size), files_raw));
       debug_info.push_back(
           ConstantArray::get(ArrayType::get(Int8, symbols_size), symbols_raw));
-#if 1
       debug_info.push_back(
           ConstantArray::get(ArrayType::get(PcInfo, pcs_size), pcs));
-#endif
       Constant *DebugInfo = ConstantStruct::get(DebugInfoType, debug_info);
 
       char var_id_str[50];
@@ -327,11 +351,12 @@ namespace {
       errs() << "|" <<  IN.getParent()->getParent()->getName() << "|" <<
                 file << "|" << Loc.getLineNumber() << "|" <<
                 dir << "\n";
-      debug_file_set.insert(dir + "/" + file);
+      debug_path_set.insert(dir);
+      debug_file_set.insert(file);
       debug_symbol_set.insert(IN.getParent()->getParent()->getName());
       debug_pc_map.insert(
           make_pair(addr, DebugPcInfo(IN.getParent()->getParent()->getName(),
-                                      dir + "/" + file,
+                                      dir, file,
                                       Loc.getLineNumber())));
     }
 
