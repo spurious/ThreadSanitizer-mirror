@@ -7648,6 +7648,8 @@ static void SetupIgnore() {
   g_ignore_lists->ignores_r.push_back(IgnoreFun("_CFAutoreleasePoolPop"));
   g_ignore_lists->ignores_r.push_back(IgnoreFun("_CFAutoreleasePoolPush"));
   g_ignore_lists->ignores_r.push_back(IgnoreFun("OSAtomicAdd32"));
+  g_ignore_lists->ignores_r.push_back(
+      IgnoreTriple("_dispatch_Block_copy", "/usr/lib/libSystem.B.dylib", "*"));
 
   // pthread_lib_{enter,exit} shouldn't give us any reports since they
   // have IGNORE_ALL_ACCESSES_BEGIN/END but they do give the reports...
