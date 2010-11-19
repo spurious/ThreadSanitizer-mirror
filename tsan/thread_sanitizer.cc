@@ -1723,13 +1723,8 @@ class Segment {
     return res;
   }
 
-  static int NumLiveSegments() {
-    return n_segments_ - recycled_sids_->size() - reusable_sids_->size();
-  }
-
   static bool RecycleOneSid(SID sid) {
     ScopedMallocCostCenter malloc_cc("Segment::RecycleOneSid()");
-    const size_t kRecyclePeriod = DEBUG_MODE ? 100 : 10000;
     Segment *seg = GetInternal(sid);
     DCHECK(seg->seg_ref_count_ == 0);
     DCHECK(sid.raw() < n_segments_);
@@ -1737,11 +1732,7 @@ class Segment {
     seg->tid_ = TID();
     VTS::Unref(seg->vts_);
     seg->vts_ = NULL;
-    recycled_sids_->push_back(sid);
-    if (recycled_sids_->size() > kRecyclePeriod
-        && reusable_sids_->empty()) {
-      recycled_sids_->swap(*reusable_sids_);
-    }
+    reusable_sids_->push_back(sid);
     if (ProfileSeg(sid)) {
       Printf("Segment: recycled SID %d\n", sid.raw());
     }
@@ -1779,7 +1770,6 @@ class Segment {
   static void ForgetAllState() {
     n_segments_ = 1;
     reusable_sids_->clear();
-    recycled_sids_->clear();
     // vts_'es will be freed in AddNewSegment.
   }
 
@@ -1833,7 +1823,6 @@ class Segment {
     Printf("Segment::ShowSegmentStats:\n");
     Printf("n_segments_: %d\n", n_segments_);
     Printf("reusable_sids_: %ld\n", reusable_sids_->size());
-    Printf("recycled_sids_: %ld\n", recycled_sids_->size());
     map<int, int> ref_to_freq_map;
     for (int i = 1; i < n_segments_; i++) {
       Segment *seg = GetInternal(SID(i));
@@ -1873,7 +1862,6 @@ class Segment {
     }
     n_segments_    = 1;
     reusable_sids_ = new vector<SID>;
-    recycled_sids_ = new vector<SID>;
   }
 
  private:
@@ -1911,7 +1899,6 @@ class Segment {
 
   static int32_t n_segments_;
   static vector<SID> *reusable_sids_;
-  static vector<SID> *recycled_sids_;
 };
 
 Segment          *Segment::all_segments_;
@@ -1919,7 +1906,6 @@ uintptr_t       **Segment::all_stacks_;
 size_t            Segment::n_stack_chunks_;
 int32_t           Segment::n_segments_;
 vector<SID>      *Segment::reusable_sids_;
-vector<SID>      *Segment::recycled_sids_;
 
 // -------- SegmentSet -------------- {{{1
 class SegmentSet {
