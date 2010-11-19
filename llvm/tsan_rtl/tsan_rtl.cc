@@ -5,6 +5,8 @@
 #include "ts_literace.h"
 #include "ts_lock.h"
 
+#include <elf.h>
+#include <sys/mman.h>
 #include <sys/stat.h>
 
 #define EXTRA_REPLACE_PARAMS tid_t tid, pc_t pc,
@@ -32,7 +34,7 @@ struct ThreadInfo {
 
 struct LLVMDebugInfo {
   pc_t pc;
-  int line;
+  uintptr_t line;
   string fun;
   string file;
   string path;
@@ -446,6 +448,8 @@ inline void init_debug() {
   char *dbg_info = getenv("TSAN_DBG_INFO");
   if (dbg_info) {
     ReadDbgInfo(dbg_info);
+  } else {
+    ReadElf();
   }
   DBG_INIT = 1;
 }
@@ -531,6 +535,7 @@ inline tid_t GetTid(ThreadInfo *info) {
               }
       case 2:
       default: {
+                 Printf("ThreadSanitizer initialization reentrancy detected\n");
                  __real_exit(2);
                }
     }
@@ -1260,8 +1265,8 @@ void *memchr(void *s, int c, size_t n) {
   return Replace_memchr(tid, pc, (char*)s, c, n);
 }
 
-extern
-int strcmp(const char *s1, const char *s2) {
+extern "C"
+int __wrap_strcmp(const char *s1, const char *s2) {
   DECLARE_TID_AND_PC();
   return Replace_strcmp(tid, pc, s1, s2);
 }
@@ -1585,6 +1590,138 @@ void AnnotateIgnoreWritesEnd(char *file, int line, void *mu) {
 // }}}
 
 // Debug info routines {{{1
+struct PcInfo {
+  uintptr_t pc;
+  uintptr_t symbol;
+  uintptr_t path;
+  uintptr_t file;
+  uintptr_t line;
+};
+
+void ReadDbgInfoFromSection(char* start, char* end) {
+  static const int kDebugInfoMagicNumber = 0xdb914f0;
+  char *p = start;
+  while (p < end) {
+    while ((p < end) && (*((int*)p) != kDebugInfoMagicNumber)) p++;
+    if (p >= end) break;
+    uintptr_t *head = (uintptr_t*)p;
+    uintptr_t paths_size = head[1];
+    uintptr_t files_size = head[2];
+    uintptr_t symbols_size = head[3];
+    uintptr_t pcs_size = head[4];
+    p += 5 * sizeof(uintptr_t);
+
+    char *paths_raw = p;
+    map<uintptr_t, string> paths;
+    uintptr_t paths_count = 0;
+    char *pstart = paths_raw;
+    for (size_t i = 0; i < paths_size; i++) {
+      if (!pstart) pstart = paths_raw + i;
+      if (paths_raw[i] == '\0') {
+        paths[paths_count++] = string(pstart);
+        Printf("path: %s\n", paths[paths_count-1].c_str());
+        pstart = NULL;
+      }
+    }
+
+    char *files_raw = paths_raw + paths_size;
+    map<uintptr_t, string> files;
+    uintptr_t files_count = 0;
+    char *fstart = files_raw;
+    for (size_t i = 0; i < files_size; i++) {
+      if (!fstart) fstart = files_raw + i;
+      if (files_raw[i] == '\0') {
+        files[files_count++] = string(fstart);
+        DPrintf("file: %s\n", files[files_count-1].c_str());
+        fstart = NULL;
+      }
+    }
+
+    map<uintptr_t, string> symbols;
+    uintptr_t symbols_count = 0;
+    char *symbols_raw = files_raw + files_size;
+    char *sstart = symbols_raw;
+    for (size_t i = 0; i < symbols_size; i++) {
+      if (!sstart) sstart = symbols_raw + i;
+      if (symbols_raw[i] == '\0') {
+        symbols[symbols_count++] = string(sstart);
+        DPrintf("symbol: %s\n", symbols[symbols_count-1].c_str());
+        sstart = NULL;
+      }
+    }
+    size_t pad = (uintptr_t)(symbols_raw + symbols_size) % sizeof(uintptr_t);
+    if (pad) pad = sizeof(uintptr_t) - pad;
+    PcInfo *pcs = (PcInfo*)(symbols_raw + symbols_size + pad);
+    debug_info = new map<pc_t, LLVMDebugInfo>;
+    for (size_t i = 0; i < pcs_size; i++) {
+      LLVMDebugInfo info;
+      info.pc = pcs[i].pc;
+      DPrintf("pc: %p, sym: %s\n", info.pc, symbols[pcs[i].symbol].c_str());
+      info.line = pcs[i].line;
+      info.fun = symbols[pcs[i].symbol];
+      // TODO(glider): split file and path
+      info.file = files[pcs[i].file];
+      info.path = files[pcs[i].file];
+      (*debug_info)[info.pc] = info;
+    }
+  }
+
+}
+
+void ReadElf() {
+  string maps = ReadFileToString("/proc/self/maps", false);
+  // TODO(glider): get the addresses
+ //uintptr_t map = 0x400000;
+  size_t start = maps.find("/");
+  size_t end = maps.find("\n");
+  string filename = maps.substr(start, end - start);
+  Printf("Reading debug info from %s\n", filename.c_str());
+  int fd = open(filename.c_str(), 0);
+  struct stat st;
+  fstat(fd, &st);
+  char* map = (char*)__real_mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+
+//  uintptr_t map = 0x007cb000;
+//  uintptr_t map = 0x007ef000;
+//  uintptr_t map = 0x00c18000;
+  Printf("%s\n", maps.c_str());
+
+  // TODO: check for elf magic.
+  // TODO: support 32-bit elf.
+  Elf64_Ehdr* ehdr = (Elf64_Ehdr*)map;
+  Elf64_Shdr* shdrs = (Elf64_Shdr*)(map + ehdr->e_shoff);
+  char *hdr_strings = map + shdrs[ehdr->e_shstrndx].sh_offset;
+  int shnum = ehdr->e_shnum;
+
+  char* debug_info_section = NULL;
+  size_t debug_info_size = 0;
+
+  IN_RTL++;
+  CHECK_IN_RTL();
+  for (int i = 0; i < shnum; ++i) {
+    Elf64_Shdr* shdr = shdrs + i;
+    Elf64_Off off = shdr->sh_offset;
+    Elf64_Word name = shdr->sh_name;
+    Elf64_Word size = shdr->sh_size;
+    DPrintf("Section name: %d, %s\n", name ,hdr_strings+name);
+    if (strcmp(hdr_strings+name, "tsan_rtl_debug_info") == 0) {
+      debug_info_section = map + off;
+      debug_info_size = size;
+      break;
+    }
+  }
+  IN_RTL--;
+  CHECK_IN_RTL();
+  assert(debug_info_section);
+  // Parse the debug info section.
+  ReadDbgInfoFromSection(debug_info_section,
+                         debug_info_section + debug_info_size);
+  // Finalize.
+  __real_munmap(map, st.st_size);
+  close(fd);
+  //exit(1);
+}
+
 void ReadDbgInfo(string filename) {
   DbgInfoLock scoped;
   debug_info = new map<pc_t, LLVMDebugInfo>;

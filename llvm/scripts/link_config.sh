@@ -50,6 +50,7 @@ wrap atexit
 wrap exit
 
 wrap strlen
+wrap strcmp
 
 wrap mmap
 wrap munmap

@@ -25,6 +25,7 @@ typedef intptr_t tid_t;
 tid_t GetTid();
 pc_t GetPc();
 
+void ReadElf();
 void ReadDbgInfo(string filename);
 
 #define DECLARE_TID() \

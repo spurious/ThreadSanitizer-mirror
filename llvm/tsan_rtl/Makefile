@@ -42,8 +42,8 @@ RTL_32_O=tsan_rtl32.o
 RTL_64_O=tsan_rtl64.o
 
 all:	$(OBJS32) $(OBJS64) $(RTL_32_O) $(RTL_64_O)
-	$(AR) tsan_rtl32.a $(OBJS32) $(RTL_32_O)
-	$(RANLIB) tsan_rtl32.a
+#	$(AR) tsan_rtl32.a $(OBJS32) $(RTL_32_O)
+#	$(RANLIB) tsan_rtl32.a
 	$(AR) tsan_rtl64.a $(OBJS64) $(RTL_64_O)
 	$(RANLIB) tsan_rtl64.a
 

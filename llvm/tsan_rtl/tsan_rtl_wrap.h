@@ -48,6 +48,7 @@ int __real_sem_trywait(sem_t *sem);
 int __real_sem_post(sem_t *sem);
 
 size_t __real_strlen(const char *s);
+int __real_strcmp(const char *s1, const char *s2);
 void *__real_memchr(const char *s, int c, size_t n);
 
 int __real___cxa_guard_acquire(int *guard);
