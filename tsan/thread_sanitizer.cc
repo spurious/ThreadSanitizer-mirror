@@ -1645,17 +1645,32 @@ class Segment {
         embedded_stack_trace(sid), kSizeOfHistoryStackTrace);
   }
 
-  static SID AddNewSegment(TID tid, VTS *vts,
-                           LSID rd_lockset, LSID wr_lockset) {
-    ScopedMallocCostCenter malloc_cc("Segment::AddNewSegment()");
-    DCHECK(vts);
-    DCHECK(tid.valid());
-    SID sid;
-    Segment *seg;
-    if (reusable_sids_->empty()) {
+  // Allocate `n` fresh segments, put SIDs into `fresh_sids`.
+  static INLINE void AllocateFreshSegments(size_t n, SID *fresh_sids) {
+    ScopedMallocCostCenter malloc_cc(__FUNCTION__);
+    size_t i = 0;
+    size_t n_reusable = min(n, reusable_sids_->size());
+    // First, allocate from reusable_sids_.
+    for (; i < n_reusable; i++) {
+      G_stats->seg_reuse++;
+      DCHECK(!reusable_sids_->empty());
+      SID sid = reusable_sids_->back();
+      reusable_sids_->pop_back();
+      Segment *seg = GetInternal(sid);
+      DCHECK(!seg->seg_ref_count_);
+      DCHECK(!seg->vts());
+      DCHECK(!seg->tid().valid());
+      CHECK(sid.valid());
+      if (ProfileSeg(sid)) {
+       Printf("Segment: reused SID %d\n", sid.raw());
+      }
+      fresh_sids[i] = sid;
+    }
+    // allocate the rest from new sids.
+    for (; i < n; i++) {
       G_stats->seg_create++;
       CHECK(n_segments_ < kMaxSID);
-      seg = GetSegmentByIndex(n_segments_);
+      Segment *seg = GetSegmentByIndex(n_segments_);
 
       // This VTS may not be empty due to ForgetAllState().
       VTS::Unref(seg->vts_);
@@ -1664,21 +1679,21 @@ class Segment {
        Printf("Segment: allocated SID %d\n", n_segments_);
       }
 
-      sid = SID(n_segments_);
-      n_segments_++;
-    } else {
-      G_stats->seg_reuse++;
-      sid = reusable_sids_->back();
-      reusable_sids_->pop_back();
-      seg = GetInternal(sid);
-      DCHECK(!seg->seg_ref_count_);
-      DCHECK(!seg->vts());
-      DCHECK(!seg->tid().valid());
-      CHECK(sid.valid());
-      if (ProfileSeg(sid)) {
-       Printf("Segment: reused SID %d\n", sid.raw());
+      SID sid = fresh_sids[i] = SID(n_segments_);
+      if (kSizeOfHistoryStackTrace > 0) {
+        ensure_space_for_stack_trace(sid);
       }
+      n_segments_++;
     }
+  }
+
+  // Initialize the contents of the given segment.
+  static INLINE void SetupFreshSid(SID sid, TID tid, VTS *vts,
+                                   LSID rd_lockset, LSID wr_lockset) {
+    DCHECK(vts);
+    DCHECK(tid.valid());
+    DCHECK(sid.valid());
+    Segment *seg = GetInternal(sid);
     DCHECK(seg);
     seg->seg_ref_count_ = 0;
     seg->tid_ = tid;
@@ -1686,11 +1701,15 @@ class Segment {
     seg->lsid_[1] = wr_lockset;
     seg->vts_ = vts;
     seg->lock_era_ = g_lock_era;
-    if (kSizeOfHistoryStackTrace > 0) {
-      ensure_space_for_stack_trace(sid);
-      embedded_stack_trace(sid)[0] = 0;
-    }
-    DCHECK(seg->vts_);
+    embedded_stack_trace(sid)[0] = 0;
+  }
+
+  static INLINE SID AddNewSegment(TID tid, VTS *vts,
+                           LSID rd_lockset, LSID wr_lockset) {
+    ScopedMallocCostCenter malloc_cc("Segment::AddNewSegment()");
+    SID sid;
+    AllocateFreshSegments(1, &sid);
+    SetupFreshSid(sid, tid, vts, rd_lockset, wr_lockset);
     return sid;
   }
 
