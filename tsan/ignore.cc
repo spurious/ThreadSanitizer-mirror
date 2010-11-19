@@ -3,6 +3,7 @@
 #include "ignore.h"
 
 IgnoreLists *g_ignore_lists;
+IgnoreLists *g_white_lists;
 
 static void SplitStringIntoLinesAndRemoveBlanksAndComments(
     const string &str, vector<string> *lines) {
@@ -58,12 +59,12 @@ static bool ReadIgnoreLine(string input_line, IgnoreLists *ignore_lists) {
   return true;
 }
 
-void ReadIgnoresFromString(string ignoreString) {
+void ReadIgnoresFromString(string ignoreString, IgnoreLists *ignore_lists) {
   vector<string> lines;
   SplitStringIntoLinesAndRemoveBlanksAndComments(ignoreString, &lines);
   for (size_t j = 0; j < lines.size(); j++) {
     string &line = lines[j];
-    bool line_parsed = ReadIgnoreLine(line, g_ignore_lists);
+    bool line_parsed = ReadIgnoreLine(line, ignore_lists);
     if (!line_parsed) {
       Printf("Error reading ignore file line:\n%s\n", line.c_str());
       CHECK(0);

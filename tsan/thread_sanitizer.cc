@@ -7687,7 +7687,7 @@ static void SetupIgnore() {
     string file_name = G_flags->ignore[i];
     Report("INFO: Reading ignore file: %s\n", file_name.c_str());
     string str = ReadFileToString(file_name, true);
-    ReadIgnoresFromString(str);
+    ReadIgnoresFromString(str, g_ignore_lists);
   }
 }
 

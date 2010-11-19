@@ -38,7 +38,9 @@ struct IgnoreLists {
 
 extern IgnoreLists *g_ignore_lists;
 
-void ReadIgnoresFromString(string ignoreString);
+extern IgnoreLists *g_white_lists;
+
+void ReadIgnoresFromString(string ignoreString, IgnoreLists* ignoreLists);
 
 bool TripleVectorMatchKnown(const vector<IgnoreTriple>& v,
     const string& fun,
