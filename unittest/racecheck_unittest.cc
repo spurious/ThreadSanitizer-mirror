@@ -3930,8 +3930,11 @@ class A {
   }
   virtual ~A() {
     while (true) {
-      MutexLock lock(&mu_);
-      if (done_) break;
+      {
+        MutexLock lock(&mu_);
+        if (done_) break;
+      }
+      usleep(10);  // yield.
     }
   }
  private:
@@ -3951,6 +3954,7 @@ static A *a;
 void Thread1() {
   a->F();
   a->Done();
+  usleep(200000);
 };
 
 void Thread2() {
