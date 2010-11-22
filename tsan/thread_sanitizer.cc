@@ -1701,7 +1701,9 @@ class Segment {
     seg->lsid_[1] = wr_lockset;
     seg->vts_ = vts;
     seg->lock_era_ = g_lock_era;
-    embedded_stack_trace(sid)[0] = 0;
+    if (kSizeOfHistoryStackTrace) {
+      embedded_stack_trace(sid)[0] = 0;
+    }
   }
 
   static INLINE SID AddNewSegment(TID tid, VTS *vts,
@@ -1758,25 +1760,25 @@ class Segment {
     return true;
   }
 
-  intptr_t ref_count() const {return seg_ref_count_; }
+  int32_t ref_count() const {return seg_ref_count_; }
 
   static void INLINE Ref(SID sid, const char *where) {
     Segment *seg = GetInternal(sid);
     if (ProfileSeg(sid)) {
-      Printf("SegRef   : %d ref=%ld %s; tid=%d\n", sid.raw(),
+      Printf("SegRef   : %d ref=%d %s; tid=%d\n", sid.raw(),
              seg->seg_ref_count_, where, seg->tid().raw());
     }
     DCHECK(seg->seg_ref_count_ >= 0);
-    NoBarrier_AtomicIncrement((uintptr_t*)&seg->seg_ref_count_);
+    AtomicIncrementRefcount(&seg->seg_ref_count_);
   }
 
   static INLINE intptr_t UnrefNoRecycle(SID sid, const char *where) {
     Segment *seg = GetInternal(sid);
     if (ProfileSeg(sid)) {
-      Printf("SegUnref : %d ref=%ld %s\n", sid.raw(), seg->seg_ref_count_, where);
+      Printf("SegUnref : %d ref=%d %s\n", sid.raw(), seg->seg_ref_count_, where);
     }
     DCHECK(seg->seg_ref_count_ > 0);
-    return NoBarrier_AtomicDecrement((uintptr_t*)&seg->seg_ref_count_);
+    return AtomicDecrementRefcount(&seg->seg_ref_count_);
   }
 
   static void INLINE Unref(SID sid, const char *where) {
@@ -1845,7 +1847,7 @@ class Segment {
     map<int, int> ref_to_freq_map;
     for (int i = 1; i < n_segments_; i++) {
       Segment *seg = GetInternal(SID(i));
-      intptr_t refcount = seg->seg_ref_count_;
+      int32_t refcount = seg->seg_ref_count_;
       if (refcount > 10) refcount = 10;
       ref_to_freq_map[refcount]++;
     }
@@ -1895,7 +1897,7 @@ class Segment {
   }
 
   // Data members.
-  intptr_t seg_ref_count_;
+  int32_t seg_ref_count_;
   LSID     lsid_[2];
   TID      tid_;
   uint32_t lock_era_;

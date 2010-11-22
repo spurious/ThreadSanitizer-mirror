@@ -32,6 +32,11 @@
 
 #include "ts_util.h"
 
+#if (DEBUG > 0) && (TS_SERIALIZED == 0)
+# define DYNAMIC_ANNOTATIONS_ENABLED 1
+#endif
+#include "dynamic_annotations.h"
+
 //--------- Simple Lock ------------------ {{{1
 #if defined(TS_VALGRIND) || defined(TS_OFFLINE)
 class TSLock {
@@ -76,11 +81,11 @@ ALWAYS_INLINE void ReleaseStore(uintptr_t *ptr, uintptr_t value) {
   *ptr = value;
 }
 
-ALWAYS_INLINE uintptr_t NoBarrier_AtomicIncrement(uintptr_t* ptr) {
+ALWAYS_INLINE int32_t NoBarrier_AtomicIncrement(int32_t* ptr) {
   return *ptr += 1;
 }
 
-ALWAYS_INLINE uintptr_t NoBarrier_AtomicDecrement(uintptr_t* ptr) {
+ALWAYS_INLINE int32_t NoBarrier_AtomicDecrement(int32_t* ptr) {
   return *ptr -= 1;
 }
 
@@ -95,11 +100,11 @@ ALWAYS_INLINE void ReleaseStore(uintptr_t *ptr, uintptr_t value) {
   *(volatile uintptr_t*)ptr = value;
 }
 
-ALWAYS_INLINE uintptr_t NoBarrier_AtomicIncrement(uintptr_t* ptr) {
+ALWAYS_INLINE int32_t NoBarrier_AtomicIncrement(int32_t* ptr) {
   return __sync_add_and_fetch(ptr, 1);
 }
 
-ALWAYS_INLINE uintptr_t NoBarrier_AtomicDecrement(uintptr_t* ptr) {
+ALWAYS_INLINE int32_t NoBarrier_AtomicDecrement(int32_t* ptr) {
   return __sync_add_and_fetch(ptr, -1);
 }
 
@@ -114,17 +119,33 @@ ALWAYS_INLINE void ReleaseStore(uintptr_t *ptr, uintptr_t value) {
   // TODO(kcc): anything to add here?
 }
 
-ALWAYS_INLINE uintptr_t NoBarrier_AtomicIncrement(uintptr_t* ptr) {
+ALWAYS_INLINE int32_t NoBarrier_AtomicIncrement(int32_t* ptr) {
   return InterlockedIncrement(ptr);
 }
 
-ALWAYS_INLINE uintptr_t NoBarrier_AtomicDecrement(uintptr_t* ptr) {
+ALWAYS_INLINE int32_t NoBarrier_AtomicDecrement(int32_t* ptr) {
   return InterlockedDecrement(ptr);
 }
 
 #else
 # error "unsupported configuration"
 #endif
+
+
+ALWAYS_INLINE int32_t AtomicIncrementRefcount(int32_t *refcount) {
+  return NoBarrier_AtomicIncrement(refcount);
+}
+
+ALWAYS_INLINE int32_t AtomicDecrementRefcount(int32_t *refcount) {
+  ANNOTATE_HAPPENS_BEFORE(refcount);
+  int32_t res = NoBarrier_AtomicDecrement(refcount);
+  if (res == 0) {
+    ANNOTATE_HAPPENS_AFTER(refcount);
+  }
+  return res;
+}
+
+
 
 // end. {{{1
 #endif  // TS_LOCK_H_

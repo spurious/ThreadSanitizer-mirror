@@ -56,6 +56,7 @@ DRP=$(P)dr-
 
 STRIP=strip
 
+INCLUDES=-I../dynamic_annotations
 DEFINES=-DTS_VERSION=\"$(TS_VERSION)\"
 
 ifeq ($(DEBUG), 1)
@@ -221,7 +222,8 @@ $(OUTDIR):
 
 TS_HEADERS=thread_sanitizer.h ts_util.h suppressions.h ignore.h ts_replace.h ts_heap_info.h \
 	   ts_simple_cache.h ts_stats.h ts_lock.h ts_events.h ts_event_names.h \
-	   ts_trace_info.h ts_literace.h ts_race_verifier.h
+	   ts_trace_info.h ts_literace.h ts_race_verifier.h \
+	   ../dynamic_annotations/dynamic_annotations.h
 ts_event_names.h: ts_events.h
 	sed -n '/^enum/,/^};/ {s/enum EventType/static const char *kEventNames[] = /; s/^  \([A-Z_]\+\)/  "\1"/g; p}' $< > $@
 ifeq ($(DEBUG), 0)
@@ -238,19 +240,19 @@ TS_OFFLINE_OBJECTS=$(OFF)ts_offline.$(OBJ) $(OFF)thread_sanitizer.$(OBJ) $(OFF)t
 TS_DR_OBJECTS=$(DRP)ts_dynamorio.$(OBJ) $(DRP)ts_util.$(OBJ)
 
 $(P)%.$(OBJ): %.cc $(TS_HEADERS) | $(OUTDIR)
-	$(CXX) $(CXXFLAGS) $(ARCHFLAGS) $(O)$@ -c $< $(DEFINES)
+	$(CXX) $(CXXFLAGS) $(ARCHFLAGS) $(O)$@ -c $< $(DEFINES) $(INCLUDES)
 
 $(OFF)%.$(OBJ): %.cc $(TS_HEADERS) | $(OUTDIR)
-	$(CXX) $(CXXFLAGS) $(ARCHFLAGS) $(OFFLINE_DEFINES) $(O)$@ -c $< $(DEFINES)
+	$(CXX) $(CXXFLAGS) $(ARCHFLAGS) $(OFFLINE_DEFINES) $(O)$@ -c $< $(DEFINES) $(INCLUDES)
 
 $(VGP)%.o: %.cc $(TS_HEADERS) $(TS_VG_HEADERS) | $(OUTDIR)
-	$(CXX) $(CXXFLAGS) $(VG_CXXFLAGS) $(ARCHFLAGS) $(VG_INCLUDES) $(VG_DEFINES) -o $@ -c $< $(DEFINES)
+	$(CXX) $(CXXFLAGS) $(VG_CXXFLAGS) $(ARCHFLAGS) $(VG_INCLUDES) $(VG_DEFINES) -o $@ -c $< $(DEFINES) $(INCLUDES)
 
 $(PINP)%.$(OBJ): %.cc $(TS_HEADERS) $(TS_PIN_HEADERS) | $(OUTDIR)
-	$(CXX) $(CXXFLAGS) $(PIN_CXXFLAGS) $(ARCHFLAGS) $(PIN_INCLUDES) $(PIN_DEFINES) $(O)$@ -c $< $(DEFINES)
+	$(CXX) $(CXXFLAGS) $(PIN_CXXFLAGS) $(ARCHFLAGS) $(PIN_INCLUDES) $(PIN_DEFINES) $(O)$@ -c $< $(DEFINES) $(INCLUDES)
 
 $(DRP)%.$(OBJ): %.cc $(TS_HEADERS) $(TS_DR_HEADERS) | $(OUTDIR)
-	$(CXX) $(CXXFLAGS) $(DR_CXXFLAGS) $(ARCHFLAGS) $(DR_INCLUDES) $(DR_DEFINES) $(O)$@ -c $< $(DEFINES)
+	$(CXX) $(CXXFLAGS) $(DR_CXXFLAGS) $(ARCHFLAGS) $(DR_INCLUDES) $(DR_DEFINES) $(O)$@ -c $< $(DEFINES) $(INCLUDES)
 
 $(P)gtest-%.$(OBJ): %.cc $(TS_HEADERS) | $(OUTDIR)
 	$(CXX) $(CXXFLAGS) $(ARCHFLAGS) -I$(GTEST_ROOT)/include $(O)$@ -c $<
