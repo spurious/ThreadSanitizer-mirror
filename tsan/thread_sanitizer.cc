@@ -1113,8 +1113,7 @@ class VTS {
   static void Unref(VTS *vts) {
     if (!vts) return;
     CHECK_GT(vts->ref_count_, 0);
-    vts->ref_count_--;
-    if (vts->ref_count_ == 0) {
+    if (AtomicDecrementRefcount(&vts->ref_count_) == 0) {
       G_stats->vts_delete++;
       size_t size = vts->size_;  // can't use vts->size().
       size_t rounded_size = RoundUpSizeForEfficientUseOfFreeList(size);
@@ -1135,7 +1134,7 @@ class VTS {
 
   VTS *Clone() {
     G_stats->vts_clone++;
-    ref_count_++;
+    AtomicIncrementRefcount(&ref_count_);
     return this;
   }
 
@@ -1674,6 +1673,8 @@ class Segment {
 
       // This VTS may not be empty due to ForgetAllState().
       VTS::Unref(seg->vts_);
+      seg->vts_ = 0;
+      seg->seg_ref_count_ = 0;
 
       if (ProfileSeg(SID(n_segments_))) {
        Printf("Segment: allocated SID %d\n", n_segments_);
@@ -1695,6 +1696,7 @@ class Segment {
     DCHECK(sid.valid());
     Segment *seg = GetInternal(sid);
     DCHECK(seg);
+    DCHECK(seg->seg_ref_count_ == 0);
     seg->seg_ref_count_ = 0;
     seg->tid_ = tid;
     seg->lsid_[0] = rd_lockset;
@@ -1744,19 +1746,24 @@ class Segment {
     return res;
   }
 
+  static INLINE void RecycleOneFreshSid(SID sid) {
+    Segment *seg = GetInternal(sid);
+    seg->tid_ = TID();
+    seg->vts_ = NULL;
+    reusable_sids_->push_back(sid);
+    if (ProfileSeg(sid)) {
+      Printf("Segment: recycled SID %d\n", sid.raw());
+    }
+  }
+
   static bool RecycleOneSid(SID sid) {
     ScopedMallocCostCenter malloc_cc("Segment::RecycleOneSid()");
     Segment *seg = GetInternal(sid);
     DCHECK(seg->seg_ref_count_ == 0);
     DCHECK(sid.raw() < n_segments_);
     if (!seg->vts()) return false;  // Already recycled.
-    seg->tid_ = TID();
     VTS::Unref(seg->vts_);
-    seg->vts_ = NULL;
-    reusable_sids_->push_back(sid);
-    if (ProfileSeg(sid)) {
-      Printf("Segment: recycled SID %d\n", sid.raw());
-    }
+    RecycleOneFreshSid(sid);
     return true;
   }
 
@@ -3876,6 +3883,7 @@ struct RecentSegmentsCache {
     deque<SID>::iterator it = queue_.begin();
     for (; it != queue_.end(); it++) {
       SID sid = *it;
+      Segment::AssertLive(sid, __LINE__);
       Segment *seg = Segment::Get(sid);
 
       if (seg->ref_count() == 1 + (sid == curr_sid)) {
@@ -4145,6 +4153,7 @@ struct Thread {
     n_threads_ = max(n_threads_, tid.raw() + 1);
     all_threads_[tid.raw()] = this;
     dead_sids_.reserve(kMaxNumDeadSids);
+    fresh_sids_.reserve(kMaxNumFreshSids);
   }
 
   TID tid() const { return tid_; }
@@ -4262,6 +4271,8 @@ struct Thread {
     CHECK(!vts_at_exit_);
     vts_at_exit_ = vts()->Clone();
     CHECK(vts_at_exit_);
+    FlushDeadSids();
+    ReleaseFreshSids();
   }
 
   // Return the TID of the joined child and it's vts
@@ -4553,12 +4564,25 @@ struct Thread {
       if (refill_stack && kSizeOfHistoryStackTrace > 0) {
         FillEmbeddedStackTrace(Segment::embedded_stack_trace(sid()));
       }
+    } else if (fresh_sids_.size() > 0) {
+      // We have a fresh ready-to-use segment in thread local cache.
+      SID fresh_sid = fresh_sids_.back();
+      fresh_sids_.pop_back();
+      Segment::SetupFreshSid(fresh_sid, tid(), vts()->Clone(),
+                             rd_lockset_, wr_lockset_);
+      this->AddDeadSid(sid_, "Thread::HandleSblockEnter-1");
+      Segment::Ref(fresh_sid, "Thread::HandleSblockEnter-1");
+      sid_ = fresh_sid;
+      recent_segments_cache_.Push(sid());
+      G_stats->history_uses_preallocated_segment++;
     } else {
-      TIL til(ts_lock, 5);  // TODO(kcc): get rid of this lock (TS_SERIALIZED).
+      // No fresh SIDs available, have to grab a lock and get few.
+      TIL til(ts_lock, 5);
       G_stats->history_creates_new_segment++;
       VTS *new_vts = vts()->Clone();
       NewSegment("HandleSblockEnter", new_vts);
       recent_segments_cache_.Push(sid());
+      GetSomeFreshSids();  // fill the thread-local SID cache.
     }
   }
 
@@ -4876,6 +4900,7 @@ struct Thread {
         thr->vts_at_exit_ = singleton_vts->Clone();
       }
       thr->dead_sids_.clear();
+      thr->fresh_sids_.clear();
     }
     signaller_map_->ClearAndDeleteElements();
   }
@@ -4892,11 +4917,15 @@ struct Thread {
     return &lock_era_access_set_[is_w];
   }
 
-  // --------- dead SIDs
+  // --------- dead SIDs, fresh SIDs
   // When running fast path w/o a lock we need to recycle SIDs to a thread-local
   // pool. HasRoomForDeadSids and AddDeadSid may be called w/o a lock.
   // FlushDeadSids should be called under a lock.
-  enum { kMaxNumDeadSids = 64 };
+  // When creating a new segment on SBLOCK_ENTER, we need to get a fresh SID
+  // from somewhere. We keep a pile of fresh ready-to-use SIDs in
+  // a thread-local array.
+  enum { kMaxNumDeadSids = 64,
+         kMaxNumFreshSids = 256, };
   INLINE void AddDeadSid(SID sid, const char *where) {
     if (TS_SERIALIZED) {
       Segment::Unref(sid, where);
@@ -4912,6 +4941,7 @@ struct Thread {
     size_t n = dead_sids_.size();
     for (size_t i = 0; i < n; i++) {
       SID sid = dead_sids_[i];
+      Segment::AssertLive(sid, __LINE__);
       DCHECK(Segment::Get(sid)->ref_count() == 0);
       Segment::RecycleOneSid(sid);
     }
@@ -4921,6 +4951,22 @@ struct Thread {
   INLINE bool HasRoomForDeadSids() const {
     return TS_SERIALIZED ? false :
         dead_sids_.size() < kMaxNumDeadSids - 2;
+  }
+
+  void GetSomeFreshSids() {
+    size_t cur_size = fresh_sids_.size();
+    DCHECK(cur_size <= kMaxNumFreshSids);
+    DCHECK(fresh_sids_.capacity() >= kMaxNumFreshSids);
+    size_t n_requested_sids = kMaxNumFreshSids - cur_size;
+    fresh_sids_.resize(kMaxNumFreshSids);
+    Segment::AllocateFreshSegments(n_requested_sids, &fresh_sids_[cur_size]);
+  }
+
+  void ReleaseFreshSids() {
+    for (size_t i = 0; i < fresh_sids_.size(); i++) {
+      Segment::RecycleOneFreshSid(fresh_sids_[i]);
+    }
+    fresh_sids_.clear();
   }
 
  private:
@@ -4953,6 +4999,7 @@ struct Thread {
   vector<unsigned char> call_stack_ignore_rec_;
 
   vector<SID> dead_sids_;
+  vector<SID> fresh_sids_;
 
   PtrToBoolCache<251> ignore_below_cache_;
 

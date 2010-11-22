@@ -95,9 +95,10 @@ struct Stats : ThreadLocalStats {
     Printf("   StackTrace: create: %'ld; delete %'ld\n",
            stack_trace_create, stack_trace_delete);
 
-    Printf("   History segments: same: %'ld; reuse: %'ld; new: %'ld\n",
+    Printf("   History segments: same: %'ld; reuse: %'ld; "
+           "preallocated: %'ld; new: %'ld\n",
            history_uses_same_segment, history_reuses_segment,
-           history_creates_new_segment);
+           history_uses_preallocated_segment, history_creates_new_segment);
     Printf("   Forget all history: %'ld\n", n_forgets);
 
     PrintStatsForSeg();
@@ -242,7 +243,7 @@ struct Stats : ThreadLocalStats {
   uintptr_t stack_trace_create, stack_trace_delete;
 
   uintptr_t history_uses_same_segment, history_creates_new_segment,
-            history_reuses_segment;
+            history_reuses_segment, history_uses_preallocated_segment;
 
   uintptr_t n_forgets;
 
