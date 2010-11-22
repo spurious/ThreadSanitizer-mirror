@@ -7490,7 +7490,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   FindBoolFlag("free_is_write", true, args, &G_flags->free_is_write);
   FindBoolFlag("exit_after_main", false, args, &G_flags->exit_after_main);
 
-  FindBoolFlag("show_stats", false, args, &G_flags->show_stats);
+  FindIntFlag("show_stats", 0, args, &G_flags->show_stats);
   FindBoolFlag("color", false, args, &G_flags->color);
   FindBoolFlag("html", false, args, &G_flags->html);
 #ifdef TS_OFFLINE
@@ -7635,7 +7635,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   debug_race_verifier = PhaseDebugIsOn("race_verifier");
 
   g_has_expensive_flags = G_flags->trace_level > 0 ||
-      G_flags->show_stats                          ||
+      G_flags->show_stats > 1                      ||
       G_flags->sample_events > 0;
 }
 
