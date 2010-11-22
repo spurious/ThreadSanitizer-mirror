@@ -185,7 +185,7 @@ namespace {
         vector<Constant*> pc;
         pc.push_back(ConstantInt::get(PlatformInt, it->first));
         pc.push_back(ConstantInt::get(PlatformInt, symbols[it->second.symbol]));
-        pc.push_back(ConstantInt::get(PlatformInt, paths[it->second.file]));
+        pc.push_back(ConstantInt::get(PlatformInt, paths[it->second.path]));
         pc.push_back(ConstantInt::get(PlatformInt, files[it->second.file]));
         pc.push_back(ConstantInt::get(PlatformInt, it->second.line));
         pcs.push_back(ConstantStruct::get(PcInfo, pc));
