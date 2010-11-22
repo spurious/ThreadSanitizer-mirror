@@ -33,11 +33,14 @@ struct ThreadInfo {
 };
 
 struct LLVMDebugInfo {
+  LLVMDebugInfo()
+    : pc(0), line(0) { }
   pc_t pc;
-  uintptr_t line;
-  string fun;
+  string symbol;
   string file;
   string path;
+  string fullpath;  // = path + "/" + file
+  uintptr_t line;
 };
 
 map<pc_t, LLVMDebugInfo> *debug_info = NULL;
@@ -74,7 +77,7 @@ int PTH_INIT = 0;
 int DBG_INIT = 0;
 int HAVE_THREAD_0 = 0;
 static bool global_ignore = true;
-uintptr_t bb_unique_id = 0;
+int32_t bb_unique_id = 0;
 
 //pthread_mutex_t global_lock = PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP;
 
@@ -1448,80 +1451,85 @@ void rtn_exit() {
 
 // dynamic_annotations {{{1
 extern "C"
-void AnnotateCondVarSignal(const char *file, int line, void *cv) {
+void AnnotateCondVarSignal(const char *file, int line,
+                           const volatile void *cv) {
   DECLARE_TID_AND_PC();
   SPut(SIGNAL, tid, pc, (uintptr_t)cv, 0);
 }
 
 extern "C"
-void AnnotateMutexIsNotPHB(const char *file, int line, void *mu) {
+void AnnotateMutexIsNotPHB(const char *file, int line,
+                           const volatile void *mu) {
   DECLARE_TID_AND_PC();
   SPut(NON_HB_LOCK, tid, pc, (uintptr_t)mu, 0);
 }
 
 extern "C"
-void AnnotateCondVarWait(const char *file, int line, void *cv, void *lock) {
+void AnnotateCondVarWait(const char *file, int line,
+                         const volatile void *cv, const volatile void *lock) {
   DECLARE_TID_AND_PC();
   SPut(WAIT, tid, pc, (uintptr_t)cv, 0);
 }
 
 extern "C"
-void AnnotateTraceMemory(char *file, int line, void *mem) {
+void AnnotateTraceMemory(const char *file, int line, const volatile void *mem) {
   DECLARE_TID_AND_PC();
   SPut(TRACE_MEM, tid, pc, (uintptr_t)mem, 0);
 }
 
 extern "C"
-void AnnotateFlushState(char *file, int line) {
+void AnnotateFlushState(const char *file, int line) {
   DECLARE_TID_AND_PC();
   SPut(FLUSH_STATE, tid, pc, 0, 0);
 }
 
 extern "C"
-void AnnotateNewMemory(char *file, int line, void *mem, long size) {
+void AnnotateNewMemory(const char *file, int line,
+                       const volatile void *mem, long size) {
   DECLARE_TID_AND_PC();
   SPut(MALLOC, tid, pc, (uintptr_t)mem, size);
 }
 
 extern "C"
-void AnnotateFlushExpectedRaces(char *file, int line) {
+void AnnotateFlushExpectedRaces(const char *file, int line) {
   DECLARE_TID_AND_PC();
   SPut(FLUSH_EXPECTED_RACES, tid, pc, 0, 0);
 }
 
 extern "C"
-void AnnotateEnableRaceDetection(char *file, int line, int enable) {
+void AnnotateEnableRaceDetection(const char *file, int line, int enable) {
   GIL scoped;
   global_ignore = !enable;
   fprintf(stderr, "enable: %d, global_ignore: %d\n", enable, global_ignore);
 }
 
 extern "C"
-void AnnotateMutexIsUsedAsCondVar(char *file, int line, void *mu) {
+void AnnotateMutexIsUsedAsCondVar(const char *file, int line,
+                                  const volatile void *mu) {
   DECLARE_TID_AND_PC();
   SPut(HB_LOCK, tid, pc, (uintptr_t)mu, 0);
 }
 
 extern "C"
-void AnnotatePCQGet(const char *file, int line, void *pcq) {
+void AnnotatePCQGet(const char *file, int line, const volatile void *pcq) {
   DECLARE_TID_AND_PC();
   SPut(PCQ_GET, tid, pc, (uintptr_t)pcq, 0);
 }
 
 extern "C"
-void AnnotatePCQPut(const char *file, int line, void *pcq) {
+void AnnotatePCQPut(const char *file, int line, const volatile void *pcq) {
   DECLARE_TID_AND_PC();
   SPut(PCQ_PUT, tid, pc, (uintptr_t)pcq, 0);
 }
 
 extern "C"
-void AnnotatePCQDestroy(const char *file, int line, void *pcq) {
+void AnnotatePCQDestroy(const char *file, int line, const volatile void *pcq) {
   DECLARE_TID_AND_PC();
   SPut(PCQ_DESTROY, tid, pc, (uintptr_t)pcq, 0);
 }
 
 extern "C"
-void AnnotatePCQCreate(const char *file, int line, void *pcq) {
+void AnnotatePCQCreate(const char *file, int line, const volatile void *pcq) {
   DECLARE_TID_AND_PC();
   SPut(PCQ_CREATE, tid, pc, (uintptr_t)pcq, 0);
 }
@@ -1529,61 +1537,49 @@ void AnnotatePCQCreate(const char *file, int line, void *pcq) {
 
 extern "C"
 void AnnotateExpectRace(const char *file, int line,
-                        void *mem, char *description) {
+                        const volatile void *mem, const char *description) {
   tid_t tid = GetTid();
   SPut(EXPECT_RACE, tid, (uintptr_t)description, (uintptr_t)mem, 1);
 }
 
 extern "C"
 void AnnotateBenignRace(const char *file, int line,
-                        void *mem, char *description) {
+                        const volatile void *mem, const char *description) {
   DECLARE_TID();
   SPut(BENIGN_RACE, tid, (uintptr_t)description, (uintptr_t)mem, 1);
 }
 
 extern "C"
 void AnnotateBenignRaceSized(const char *file, int line,
-                        void *mem, long size, char *description) {
+                        const volatile void *mem, long size,
+                        const char *description) {
   DECLARE_TID();
   SPut(BENIGN_RACE, tid, (uintptr_t)description,
       (uintptr_t)mem, (uintptr_t)size);
 }
 
-// TODO(glider): that should be enough to keep the ThreadSanitizerQuery from
-// thread_sanitizer.cc
-/*
 extern "C"
-const char *ThreadSanitizerQuery(const char *query) {
-  Printf("QUERY: %s\n", query);
-  return const_cast<char*>(ThreadSanitizerQuery(query));
-}
-*/
-extern "C"
-void AnnotateIgnoreReadsBegin(char *file, int line, void *mu) {
+void AnnotateIgnoreReadsBegin(const char *file, int line) {
   DECLARE_TID_AND_PC();
   Put(IGNORE_READS_BEG, tid, pc, 0, 0);
-  DPrintf("IGNORE_READS_BEG @%p\n", mu);
 }
 
 extern "C"
-void AnnotateIgnoreReadsEnd(char *file, int line, void *mu) {
+void AnnotateIgnoreReadsEnd(const char *file, int line) {
   DECLARE_TID_AND_PC();
   Put(IGNORE_READS_END, tid, pc, 0, 0);
-  DPrintf("IGNORE_READS_END @%p\n", mu);
 }
 
 extern "C"
-void AnnotateIgnoreWritesBegin(char *file, int line, void *mu) {
+void AnnotateIgnoreWritesBegin(const char *file, int line) {
   DECLARE_TID_AND_PC();
   Put(IGNORE_WRITES_BEG, tid, pc, 0, 0);
-  DPrintf("IGNORE_WRITES_BEG @%p\n", mu);
 }
 
 extern "C"
-void AnnotateIgnoreWritesEnd(char *file, int line, void *mu) {
+void AnnotateIgnoreWritesEnd(const char *file, int line) {
   DECLARE_TID_AND_PC();
   Put(IGNORE_WRITES_END, tid, pc, 0, 0);
-  DPrintf("IGNORE_WRITES_END @%p\n", mu);
 }
 
 
@@ -1601,6 +1597,7 @@ struct PcInfo {
 void ReadDbgInfoFromSection(char* start, char* end) {
   static const int kDebugInfoMagicNumber = 0xdb914f0;
   char *p = start;
+  debug_info = new map<pc_t, LLVMDebugInfo>;
   while (p < end) {
     while ((p < end) && (*((int*)p) != kDebugInfoMagicNumber)) p++;
     if (p >= end) break;
@@ -1619,7 +1616,7 @@ void ReadDbgInfoFromSection(char* start, char* end) {
       if (!pstart) pstart = paths_raw + i;
       if (paths_raw[i] == '\0') {
         paths[paths_count++] = string(pstart);
-        Printf("path: %s\n", paths[paths_count-1].c_str());
+        DPrintf("path: %s\n", paths[paths_count-1].c_str());
         pstart = NULL;
       }
     }
@@ -1652,44 +1649,56 @@ void ReadDbgInfoFromSection(char* start, char* end) {
     size_t pad = (uintptr_t)(symbols_raw + symbols_size) % sizeof(uintptr_t);
     if (pad) pad = sizeof(uintptr_t) - pad;
     PcInfo *pcs = (PcInfo*)(symbols_raw + symbols_size + pad);
-    debug_info = new map<pc_t, LLVMDebugInfo>;
     for (size_t i = 0; i < pcs_size; i++) {
-      LLVMDebugInfo info;
-      info.pc = pcs[i].pc;
-      DPrintf("pc: %p, sym: %s\n", info.pc, symbols[pcs[i].symbol].c_str());
-      info.line = pcs[i].line;
-      info.fun = symbols[pcs[i].symbol];
-      // TODO(glider): split file and path
-      info.file = files[pcs[i].file];
-      info.path = files[pcs[i].file];
-      (*debug_info)[info.pc] = info;
+      DPrintf("pc: %p, sym: %s, file: %s, path: %s, line: %d\n",
+             pcs[i].pc, symbols[pcs[i].symbol].c_str(),
+             files[pcs[i].file].c_str(), paths[pcs[i].path].c_str(),
+             pcs[i].line);
+      (*debug_info)[pcs[i].pc].pc = pcs[i].pc;
+      (*debug_info)[pcs[i].pc].symbol = symbols[pcs[i].symbol];
+      (*debug_info)[pcs[i].pc].file = files[pcs[i].file];
+      (*debug_info)[pcs[i].pc].path = paths[pcs[i].path];
+      // TODO(glider): move the path-related logic to the compiler.
+      if ((files[pcs[i].file] != "")  && (paths[pcs[i].path] != "")) {
+        if (paths[pcs[i].path][paths[pcs[i].path].size() - 1] != '/') {
+          (*debug_info)[pcs[i].pc].fullpath =
+              paths[pcs[i].path] + "/" + files[pcs[i].file];
+        } else {
+          (*debug_info)[pcs[i].pc].fullpath =
+              paths[pcs[i].path] + files[pcs[i].file];
+        }
+      } else {
+        (*debug_info)[pcs[i].pc].fullpath = files[pcs[i].file];
+      }
+      (*debug_info)[pcs[i].pc].line = pcs[i].line;
     }
   }
-
 }
 
 void ReadElf() {
   string maps = ReadFileToString("/proc/self/maps", false);
-  // TODO(glider): get the addresses
- //uintptr_t map = 0x400000;
   size_t start = maps.find("/");
   size_t end = maps.find("\n");
   string filename = maps.substr(start, end - start);
-  Printf("Reading debug info from %s\n", filename.c_str());
+  DPrintf("Reading debug info from %s\n", filename.c_str());
   int fd = open(filename.c_str(), 0);
   struct stat st;
   fstat(fd, &st);
   char* map = (char*)__real_mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
 
-//  uintptr_t map = 0x007cb000;
-//  uintptr_t map = 0x007ef000;
-//  uintptr_t map = 0x00c18000;
-  Printf("%s\n", maps.c_str());
-
-  // TODO: check for elf magic.
-  // TODO: support 32-bit elf.
-  Elf64_Ehdr* ehdr = (Elf64_Ehdr*)map;
-  Elf64_Shdr* shdrs = (Elf64_Shdr*)(map + ehdr->e_shoff);
+#ifdef TSAN_RTL_X86
+  typedef Elf32_Ehdr Elf_Ehdr;
+  typedef Elf32_Shdr Elf_Shdr;
+  typedef Elf32_Off Elf_Off;
+  typedef Elf32_Word Elf_Word;
+#else
+  typedef Elf64_Ehdr Elf_Ehdr;
+  typedef Elf64_Shdr Elf_Shdr;
+  typedef Elf64_Off Elf_Off;
+  typedef Elf64_Word Elf_Word;
+#endif
+  Elf_Ehdr* ehdr = (Elf_Ehdr*)map;
+  Elf_Shdr* shdrs = (Elf_Shdr*)(map + ehdr->e_shoff);
   char *hdr_strings = map + shdrs[ehdr->e_shstrndx].sh_offset;
   int shnum = ehdr->e_shnum;
 
@@ -1699,12 +1708,12 @@ void ReadElf() {
   IN_RTL++;
   CHECK_IN_RTL();
   for (int i = 0; i < shnum; ++i) {
-    Elf64_Shdr* shdr = shdrs + i;
-    Elf64_Off off = shdr->sh_offset;
-    Elf64_Word name = shdr->sh_name;
-    Elf64_Word size = shdr->sh_size;
-    DPrintf("Section name: %d, %s\n", name ,hdr_strings+name);
-    if (strcmp(hdr_strings+name, "tsan_rtl_debug_info") == 0) {
+    Elf_Shdr* shdr = shdrs + i;
+    Elf_Off off = shdr->sh_offset;
+    Elf_Word name = shdr->sh_name;
+    Elf_Word size = shdr->sh_size;
+    DPrintf("Section name: %d, %s\n", name ,hdr_strings + name);
+    if (strcmp(hdr_strings + name, "tsan_rtl_debug_info") == 0) {
       debug_info_section = map + off;
       debug_info_size = size;
       break;
@@ -1719,7 +1728,6 @@ void ReadElf() {
   // Finalize.
   __real_munmap(map, st.st_size);
   close(fd);
-  //exit(1);
 }
 
 void ReadDbgInfo(string filename) {
@@ -1738,7 +1746,7 @@ void ReadDbgInfo(string filename) {
     } else {
       info.line = 0;
     }
-    info.fun = parts[1];
+    info.symbol = parts[1];
     info.file = parts[2];
     info.path = parts[4];
     (*debug_info)[info.pc] = info;
@@ -1748,7 +1756,7 @@ void ReadDbgInfo(string filename) {
 string PcToRtnName(pc_t pc, bool demangle) {
   DbgInfoLock scoped;
   if (debug_info && (debug_info->find(pc) != debug_info->end())) {
-    return (*debug_info)[pc].fun;
+    return (*debug_info)[pc].symbol;
   }
   return "";
 }
@@ -1759,8 +1767,8 @@ void PcToStrings(pc_t pc, bool demangle,
   DbgInfoLock scoped;
   if (debug_info && (debug_info->find(pc) != debug_info->end())) {
     img_name = NULL;
-    *rtn_name = (*debug_info)[pc].fun;
-    *file_name = ((*debug_info)[pc].file);
+    *rtn_name = (*debug_info)[pc].symbol;
+    *file_name = ((*debug_info)[pc].fullpath);
     *line_no = ((*debug_info)[pc].line);
   } else {
     img_name = NULL;

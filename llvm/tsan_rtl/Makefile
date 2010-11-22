@@ -23,7 +23,8 @@ else
 endif
 
 
-FLAGS=-I. -Istlport -I../../third_party/stlport -I$(TSAN_PATH) \
+FLAGS=-I. -Istlport -I../../third_party/stlport \
+      -I$(TSAN_PATH) -I../../dynamic_annotations \
       -fno-exceptions -g -O2 \
       -D_STLP_NO_IOSTREAMS=1 -DTS_LLVM \
       -DDYNAMIC_ANNOTATIONS_WANT_ATTRIBUTE_WEAK
@@ -42,8 +43,8 @@ RTL_32_O=tsan_rtl32.o
 RTL_64_O=tsan_rtl64.o
 
 all:	$(OBJS32) $(OBJS64) $(RTL_32_O) $(RTL_64_O)
-#	$(AR) tsan_rtl32.a $(OBJS32) $(RTL_32_O)
-#	$(RANLIB) tsan_rtl32.a
+	$(AR) tsan_rtl32.a $(OBJS32) $(RTL_32_O)
+	$(RANLIB) tsan_rtl32.a
 	$(AR) tsan_rtl64.a $(OBJS64) $(RTL_64_O)
 	$(RANLIB) tsan_rtl64.a
 
