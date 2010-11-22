@@ -714,21 +714,21 @@ static uintptr_t WRAP_NAME(ThreadSanitizerQuery)(WRAP_PARAM4) {
 }
 
 //--------- Ignores -------------------------------- {{{2
-static void IgnoreMopsBegin(THREADID tid, ADDRINT pc) {
+static void IgnoreMopsBegin(THREADID tid) {
 //  if (tid == 0) Printf("Ignore++ %d\n", z++); 
   TLEBSimpleEvent(g_pin_threads[tid], TLEB_IGNORE_ALL_BEGIN);
 }
-static void IgnoreMopsEnd(THREADID tid, ADDRINT pc) {
+static void IgnoreMopsEnd(THREADID tid) {
 //  if (tid == 0) Printf("Ignore-- %d\n", z--);
   TLEBSimpleEvent(g_pin_threads[tid], TLEB_IGNORE_ALL_END);
 }
 
-static void IgnoreSyncAndMopsBegin(THREADID tid, ADDRINT pc) {
-  IgnoreMopsBegin(tid, pc);
+static void IgnoreSyncAndMopsBegin(THREADID tid) {
+  IgnoreMopsBegin(tid);
   TLEBSimpleEvent(g_pin_threads[tid], TLEB_IGNORE_SYNC_BEGIN);
 }
-static void IgnoreSyncAndMopsEnd(THREADID tid, ADDRINT pc) {
-  IgnoreMopsEnd(tid, pc);
+static void IgnoreSyncAndMopsEnd(THREADID tid) {
+  IgnoreMopsEnd(tid);
   TLEBSimpleEvent(g_pin_threads[tid], TLEB_IGNORE_SYNC_END);
 }
 
@@ -756,7 +756,7 @@ static void IgnoreSyncAndMopsEnd(THREADID tid, ADDRINT pc) {
 // We also need to ignore all accesses inside these two functions.
 
 static void Before_cxa_guard_acquire(THREADID tid, ADDRINT pc, ADDRINT guard) {
-  IgnoreMopsBegin(tid, pc);
+  IgnoreMopsBegin(tid);
 }
 
 static void After_cxa_guard_acquire(THREADID tid, ADDRINT pc, ADDRINT ret) {
@@ -764,19 +764,19 @@ static void After_cxa_guard_acquire(THREADID tid, ADDRINT pc, ADDRINT ret) {
     // Continue ignoring, it will end in __cxa_guard_release.
   } else {
     // Stop ignoring, there will be no matching call to __cxa_guard_release.
-    IgnoreMopsEnd(tid, pc);
+    IgnoreMopsEnd(tid);
   }
 }
 
 static void After_cxa_guard_release(THREADID tid, ADDRINT pc) {
-  IgnoreMopsEnd(tid, pc);
+  IgnoreMopsEnd(tid);
 }
 
 static uintptr_t WRAP_NAME(pthread_once)(WRAP_PARAM4) {
   uintptr_t ret;
-  IgnoreMopsBegin(tid, pc);
+  IgnoreMopsBegin(tid);
   ret = CALL_ME_INSIDE_WRAPPER_4();
-  IgnoreMopsEnd(tid, pc);
+  IgnoreMopsEnd(tid);
   return ret;
 }
 
@@ -791,6 +791,7 @@ void TmpCallback2(THREADID tid, ADDRINT pc) {
 static void HandleThreadCreateBefore(THREADID tid, ADDRINT pc) {
   DumpEvent(THR_CREATE_BEFORE, tid, pc, 0, 0);
   g_thread_create_lock.Lock();
+  IgnoreMopsBegin(tid);
   CHECK(g_tid_of_thread_which_called_create_thread == (THREADID)-1);
   g_tid_of_thread_which_called_create_thread = tid;
   n_created_threads++;
@@ -800,6 +801,7 @@ static void HandleThreadCreateAbort(THREADID tid) {
   CHECK(g_tid_of_thread_which_called_create_thread == tid);
   g_tid_of_thread_which_called_create_thread = (THREADID)-1;
   n_created_threads--;
+  IgnoreMopsEnd(tid);
   g_thread_create_lock.Unlock();
 }
 
@@ -820,6 +822,7 @@ static THREADID HandleThreadCreateAfter(THREADID tid, pthread_t child_ptid) {
   int uniq_tid_of_child = g_pin_threads[last_child_tid].uniq_tid;
   g_pin_threads[tid].last_child_tid = 0;
 
+  IgnoreMopsEnd(tid);
   g_thread_create_lock.Unlock();
 
   DumpEvent(THR_CREATE_AFTER, tid, 0, 0, uniq_tid_of_child);
@@ -829,14 +832,11 @@ static THREADID HandleThreadCreateAfter(THREADID tid, pthread_t child_ptid) {
 static uintptr_t WRAP_NAME(pthread_create)(WRAP_PARAM4) {
   HandleThreadCreateBefore(tid, pc);
 
-  IgnoreMopsBegin(tid, pc);
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
   if (ret != 0) {
     HandleThreadCreateAbort(tid);
-    IgnoreMopsEnd(tid, pc);
     return ret;
   }
-  IgnoreMopsEnd(tid, pc);
 
   pthread_t child_ptid = *(pthread_t*)arg0;
   HandleThreadCreateAfter(tid, child_ptid);
@@ -997,7 +997,7 @@ static void Before_RtlExitUserThread(THREADID tid, ADDRINT pc) {
     // This way we will avoid h-b arcs between unrelated threads.
     // We also start ignoring all mops, otherwise we will get tons of race
     // reports from the windows guts.
-    IgnoreSyncAndMopsBegin(tid, pc);
+    IgnoreSyncAndMopsBegin(tid);
   }
 }
 #endif  // _MSC_VER
@@ -1077,9 +1077,9 @@ static size_t WRAP_NAME(fwrite)(WRAP_PARAM4) {
   void* p = (void*)arg0;
   size_t size = (size_t)arg1 * (size_t)arg2;
   REPORT_READ_RANGE(p, size);
-  IgnoreMopsBegin(tid, pc);
+  IgnoreMopsBegin(tid);
   size_t ret = CALL_ME_INSIDE_WRAPPER_4();
-  IgnoreMopsEnd(tid, pc);
+  IgnoreMopsEnd(tid);
   return ret;
 }
 
@@ -1533,9 +1533,9 @@ uintptr_t WRAP_NAME(munmap)(WRAP_PARAM4) {
 }
 
 uintptr_t WRAP_NAME(malloc)(WRAP_PARAM4) {
-  IgnoreSyncAndMopsBegin(tid, pc);
+  IgnoreSyncAndMopsBegin(tid);
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
-  IgnoreSyncAndMopsEnd(tid, pc);
+  IgnoreSyncAndMopsEnd(tid);
 
   DumpEvent(MALLOC, tid, pc, ret, arg0);
   return ret;
@@ -1544,9 +1544,9 @@ uintptr_t WRAP_NAME(malloc)(WRAP_PARAM4) {
 uintptr_t WRAP_NAME(realloc)(WRAP_PARAM4) {
   PinThread &t = g_pin_threads[tid];
   TLEBFlushLocked(t);
-  IgnoreSyncAndMopsBegin(tid, pc);
+  IgnoreSyncAndMopsBegin(tid);
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
-  IgnoreSyncAndMopsEnd(tid, pc);
+  IgnoreSyncAndMopsEnd(tid);
 
   // TODO: handle FREE? We don't do it in Valgrind right now.
   DumpEvent(MALLOC, tid, pc, ret, arg1);
@@ -1554,9 +1554,9 @@ uintptr_t WRAP_NAME(realloc)(WRAP_PARAM4) {
 }
 
 uintptr_t WRAP_NAME(calloc)(WRAP_PARAM4) {
-  IgnoreSyncAndMopsBegin(tid, pc);
+  IgnoreSyncAndMopsBegin(tid);
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
-  IgnoreSyncAndMopsEnd(tid, pc);
+  IgnoreSyncAndMopsEnd(tid);
 
   DumpEvent(MALLOC, tid, pc, ret, arg0*arg1);
   return ret;
@@ -1565,9 +1565,9 @@ uintptr_t WRAP_NAME(calloc)(WRAP_PARAM4) {
 uintptr_t WRAP_NAME(free)(WRAP_PARAM4) {
   DumpEvent(FREE, tid, pc, arg0, 0);
 
-  IgnoreSyncAndMopsBegin(tid, pc);
+  IgnoreSyncAndMopsBegin(tid);
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
-  IgnoreSyncAndMopsEnd(tid, pc);
+  IgnoreSyncAndMopsEnd(tid);
   return ret;
 }
 
