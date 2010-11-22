@@ -4956,6 +4956,10 @@ struct Thread {
   void GetSomeFreshSids() {
     size_t cur_size = fresh_sids_.size();
     DCHECK(cur_size <= kMaxNumFreshSids);
+    if (cur_size > kMaxNumFreshSids / 2) {
+      // We already have quite a few fresh SIDs, do nothing.
+      return;
+    }
     DCHECK(fresh_sids_.capacity() >= kMaxNumFreshSids);
     size_t n_requested_sids = kMaxNumFreshSids - cur_size;
     fresh_sids_.resize(kMaxNumFreshSids);
@@ -6025,9 +6029,16 @@ class Detector {
     // Everything else is under a lock.
     TIL til(ts_lock, 0);
 
-    switch (type) {
-      case THR_START   :
+    if (UNLIKELY(type == THR_START)) {
         HandleThreadStart(TID(e->tid()), TID(e->info()), e->pc());
+        return;
+    }
+
+    // Since we have the lock, get some fresh SIDs.
+    thread->GetSomeFreshSids();
+
+    switch (type) {
+      case THR_START   : CHECK(0); break;
         break;
       case THR_CREATE_BEFORE:
         thread->HandleThreadCreateBefore(TID(e->tid()), e->pc());
@@ -6914,6 +6925,7 @@ one_call:
     TIL til(ts_lock, 2, need_locking);
     if (need_locking) INC_STAT(G_stats->locked_access);
     thr->FlushDeadSids();
+    thr->GetSomeFreshSids();
     cache_line = G_cache->GetLineOrCreateNew(addr, __LINE__);
     HandleAccessGranularityAndExecuteHelper(cache_line, tid, thr, pc, addr,
                                             size, is_w, has_expensive_flags,
