@@ -1491,6 +1491,11 @@ void AnnotateNewMemory(const char *file, int line,
 }
 
 extern "C"
+void AnnotateNoOp(const char *file, int line, const volatile void *mem) {
+  // Do nothing.
+}
+
+extern "C"
 void AnnotateFlushExpectedRaces(const char *file, int line) {
   DECLARE_TID_AND_PC();
   SPut(FLUSH_EXPECTED_RACES, tid, pc, 0, 0);
@@ -1582,6 +1587,11 @@ void AnnotateIgnoreWritesEnd(const char *file, int line) {
   Put(IGNORE_WRITES_END, tid, pc, 0, 0);
 }
 
+// TODO(glider): we may need a flag to tune this.
+extern "C"
+int RunningOnValgrind(void) {
+  return 0;
+}
 
 // }}}
 
