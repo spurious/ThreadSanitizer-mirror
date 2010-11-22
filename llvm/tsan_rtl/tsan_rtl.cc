@@ -1587,6 +1587,26 @@ void AnnotateIgnoreWritesEnd(const char *file, int line) {
   Put(IGNORE_WRITES_END, tid, pc, 0, 0);
 }
 
+extern "C"
+void AnnotatePublishMemoryRange(const char *file, int line,
+                                const volatile void *address, long size) {
+  DECLARE_TID_AND_PC();
+  Put(PUBLISH_RANGE, tid, pc, (uintptr_t)address, (uintptr_t)size);
+}
+
+extern "C"
+void AnnotateUnpublishMemoryRange(const char *file, int line,
+                                const volatile void *address, long size) {
+  DECLARE_TID_AND_PC();
+  Put(UNPUBLISH_RANGE, tid, pc, (uintptr_t)address, (uintptr_t)size);
+}
+
+extern "C"
+void AnnotateThreadName(const char *file, int line, const char *thread_name) {
+  DECLARE_TID_AND_PC();
+  Put(SET_THREAD_NAME, tid, pc, (uintptr_t)thread_name, 0);
+}
+
 // TODO(glider): we may need a flag to tune this.
 extern "C"
 int RunningOnValgrind(void) {
