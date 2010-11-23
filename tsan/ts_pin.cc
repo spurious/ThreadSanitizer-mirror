@@ -1343,14 +1343,19 @@ uintptr_t WRAP_NAME(RtlWakeAllConditionVariable)(WRAP_PARAM4) {
   return ret;
 }
 uintptr_t WRAP_NAME(RtlSleepConditionVariableSRW)(WRAP_PARAM4) {
+  // No need to unlock/lock - looks like RtlSleepConditionVariableSRW performs
+  // Rtl{Acquire,Release}SRW... calls itself!
   uintptr_t ret = CallStdCallFun4(ctx, tid, f, arg0, arg1, arg2, arg3);
-  DumpEvent(WAIT, tid, pc, arg0, 0);
+  if ((ret & 0xFF) == 0)
+    DumpEvent(WAIT, tid, pc, arg0, 0);
   // Printf("T%d %s arg0=%p arg1=%p; ret=%d\n", tid, __FUNCTION__, arg0, arg1, ret);
   return ret;
 }
 uintptr_t WRAP_NAME(RtlSleepConditionVariableCS)(WRAP_PARAM4) {
+  // TODO(timurrrr): do we need unlock/lock?
   uintptr_t ret = CallStdCallFun3(ctx, tid, f, arg0, arg1, arg2);
-  DumpEvent(WAIT, tid, pc, arg0, 0);
+  if ((ret & 0xFF) == 0)
+    DumpEvent(WAIT, tid, pc, arg0, 0);
   // Printf("T%d %s arg0=%p arg1=%p; ret=%d\n", tid, __FUNCTION__, arg0, arg1, ret);
   return ret;
 }
