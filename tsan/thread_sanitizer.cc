@@ -6928,7 +6928,11 @@ one_call:
     TIL til(ts_lock, 2, need_locking);
     if (need_locking) INC_STAT(G_stats->locked_access);
     thr->FlushDeadSids();
-    thr->GetSomeFreshSids();
+    if (TS_SERIALIZED == 0) {
+      // In serialized version this is the hotspot, so grab fresh SIDs
+      // only in non-zerial variant.
+      thr->GetSomeFreshSids();
+    }
     cache_line = G_cache->GetLineOrCreateNew(addr, __LINE__);
     HandleAccessGranularityAndExecuteHelper(cache_line, tid, thr, pc, addr,
                                             size, is_w, has_expensive_flags,
