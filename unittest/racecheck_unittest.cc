@@ -6479,9 +6479,8 @@ TEST(StressTests, StartAndJoinManyThreads) {
 
 namespace StressTests_ManyAccesses {  // {{{1
 #ifndef NO_BARRIER
-const int kNumThreads = 4;
-const int kArrayLen = 1024;
-const int kNumIter = 512;
+const int kArrayLen = 1024 * 8;
+const int kNumIter = 128;
 int thread_id;
 int *array = NULL;
 Barrier *barrier;
@@ -6492,7 +6491,6 @@ void IncrementMe(int *x) {
 
 void NoRaceWorker() {
   int id = AtomicIncrement(&thread_id, 1);
-  CHECK(id >= 0 && id < kNumThreads);
   barrier->Block();
   int *ptr = array + id * kArrayLen;
   for (int it = 0; it < kNumIter; it++) {
@@ -6502,15 +6500,34 @@ void NoRaceWorker() {
   }
 }
 
-// 4 threads accessing different memory.
-TEST(StressTests, ManyAccessesNoRaceTest) {
+void RunThreads(int n_threads, void (*f)(void)) {
   thread_id = -1;
-  barrier = new Barrier(4);
-  array = new int[kArrayLen * kNumThreads];
-  MyThreadArray t(NoRaceWorker, NoRaceWorker, NoRaceWorker, NoRaceWorker);
-  t.Start();
-  t.Join();
+  barrier = new Barrier(n_threads);
+  array = new int[kArrayLen * n_threads];
+  MyThread **t = new MyThread*[n_threads];
+  for (int i = 0; i < n_threads; i++) t[i] = new MyThread(NoRaceWorker);
+  for (int i = 0; i < n_threads; i++) t[i]->Start();
+  for (int i = 0; i < n_threads; i++) t[i]->Join();
+  for (int i = 0; i < n_threads; i++) delete t[i];
+  delete [] t;
   delete [] array;
+}
+
+// 2 threads accessing different memory.
+TEST(StressTests, ManyAccessesNoRace2Test) {
+  RunThreads(2, NoRaceWorker);
+}
+// 4 threads accessing different memory.
+TEST(StressTests, ManyAccessesNoRace4Test) {
+  RunThreads(4, NoRaceWorker);
+}
+// 8 threads accessing different memory.
+TEST(StressTests, DISABLED_ManyAccessesNoRace8Test) {
+  RunThreads(8, NoRaceWorker);
+}
+// 16 threads accessing different memory.
+TEST(StressTests, DISABLED_ManyAccessesNoRace16Test) {
+  RunThreads(16, NoRaceWorker);
 }
 #endif  // NO_BARRIER
 }  // namespace
