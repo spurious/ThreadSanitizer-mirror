@@ -6930,7 +6930,7 @@ one_call:
     thr->FlushDeadSids();
     if (TS_SERIALIZED == 0) {
       // In serialized version this is the hotspot, so grab fresh SIDs
-      // only in non-zerial variant.
+      // only in non-serial variant.
       thr->GetSomeFreshSids();
     }
     cache_line = G_cache->GetLineOrCreateNew(addr, __LINE__);
