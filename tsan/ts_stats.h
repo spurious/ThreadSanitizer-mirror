@@ -51,6 +51,9 @@ struct ThreadLocalStats {
   uintptr_t memory_access_sizes[18];
   uintptr_t events[LAST_EVENT];
   uintptr_t unlocked_access_try1, unlocked_access_try2, unlocked_access_ok;
+  uintptr_t n_fast_access1, n_fast_access2, n_fast_access4, n_fast_access8,
+            n_slow_access1, n_slow_access2, n_slow_access4, n_slow_access8,
+            n_very_slow_access, n_access_slow_iter;
 };
 
 // Statistic counters for the entire tool, including aggregated
@@ -211,10 +214,6 @@ struct Stats : ThreadLocalStats {
             ls_remove_from_singleton, ls_remove_from_multi,
             ls_add_cache_hit, ls_rem_cache_hit,
             ls_cache_fast;
-
-  uintptr_t n_fast_access1, n_fast_access2, n_fast_access4, n_fast_access8,
-            n_slow_access1, n_slow_access2, n_slow_access4, n_slow_access8,
-            n_very_slow_access, n_access_slow_iter;
 
   uintptr_t cache_fast_get;
   uintptr_t cache_new_line;

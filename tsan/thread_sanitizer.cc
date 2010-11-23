@@ -6748,11 +6748,11 @@ class Detector {
         *granularity_mask = gr = 1;  // 0000000000000001
       }
       if (GranularityIs8(off, gr)) {
-        if (has_expensive_flags) G_stats->n_fast_access8++;
+        if (has_expensive_flags) thr->stats.n_fast_access8++;
         cache_line->DebugTrace(off, __FUNCTION__, __LINE__);
         goto one_call;
       } else {
-        if (has_expensive_flags) G_stats->n_slow_access8++;
+        if (has_expensive_flags) thr->stats.n_slow_access8++;
         cache_line->Join_1_to_2(off);
         cache_line->Join_1_to_2(off + 2);
         cache_line->Join_1_to_2(off + 4);
@@ -6767,11 +6767,11 @@ class Detector {
         *granularity_mask = gr = 3 << 1;  // 0000000000000110
       }
       if (GranularityIs4(off, gr)) {
-        if (has_expensive_flags) G_stats->n_fast_access4++;
+        if (has_expensive_flags) thr->stats.n_fast_access4++;
         cache_line->DebugTrace(off, __FUNCTION__, __LINE__);
         goto one_call;
       } else {
-        if (has_expensive_flags) G_stats->n_slow_access4++;
+        if (has_expensive_flags) thr->stats.n_slow_access4++;
         cache_line->Split_8_to_4(off);
         cache_line->Join_1_to_2(off);
         cache_line->Join_1_to_2(off + 2);
@@ -6783,11 +6783,11 @@ class Detector {
         *granularity_mask = gr = 15 << 3;  // 0000000001111000
       }
       if (GranularityIs2(off, gr)) {
-        if (has_expensive_flags) G_stats->n_fast_access2++;
+        if (has_expensive_flags) thr->stats.n_fast_access2++;
         cache_line->DebugTrace(off, __FUNCTION__, __LINE__);
         goto one_call;
       } else {
-        if (has_expensive_flags) G_stats->n_slow_access2++;
+        if (has_expensive_flags) thr->stats.n_slow_access2++;
         cache_line->Split_8_to_4(off);
         cache_line->Split_4_to_2(off);
         cache_line->Join_1_to_2(off);
@@ -6798,11 +6798,11 @@ class Detector {
         *granularity_mask = gr = 255 << 7;  // 0111111110000000
       }
       if (GranularityIs1(off, gr)) {
-        if (has_expensive_flags) G_stats->n_fast_access1++;
+        if (has_expensive_flags) thr->stats.n_fast_access1++;
         cache_line->DebugTrace(off, __FUNCTION__, __LINE__);
         goto one_call;
       } else {
-        if (has_expensive_flags) G_stats->n_slow_access1++;
+        if (has_expensive_flags) thr->stats.n_slow_access1++;
         cache_line->Split_8_to_4(off);
         cache_line->Split_4_to_2(off);
         cache_line->Split_2_to_1(off);
@@ -6810,7 +6810,7 @@ class Detector {
       }
     } else {
       if (fast_path_only) return false;
-      if (has_expensive_flags) G_stats->n_very_slow_access++;
+      if (has_expensive_flags) thr->stats.n_very_slow_access++;
       // Very slow: size is not 1,2,4,8 or address is unaligned.
       // Handle this access as a series of 1-byte accesses, but only
       // inside the current cache line.
@@ -6843,7 +6843,7 @@ slow_path:
     // size is one of 1, 2, 4, 8; address is size-aligned, but the granularity
     // is different.
     for (uintptr_t x = a; x < b;) {
-      if (has_expensive_flags) G_stats->n_access_slow_iter++;
+      if (has_expensive_flags) thr->stats.n_access_slow_iter++;
       off = CacheLine::ComputeOffset(x);
       cache_line->DebugTrace(off, __FUNCTION__, __LINE__);
       size_t s = 0;
