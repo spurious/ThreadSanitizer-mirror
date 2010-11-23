@@ -50,7 +50,7 @@ struct ThreadLocalStats {
   }
   uintptr_t memory_access_sizes[18];
   uintptr_t events[LAST_EVENT];
-  uintptr_t unlocked_access_try1, unlocked_access_try2, unlocked_access_ok;
+  uintptr_t unlocked_access_ok;
   uintptr_t n_fast_access1, n_fast_access2, n_fast_access4, n_fast_access8,
             n_slow_access1, n_slow_access2, n_slow_access4, n_slow_access8,
             n_very_slow_access, n_access_slow_iter;
@@ -187,10 +187,14 @@ struct Stats : ThreadLocalStats {
       total_locks += lock_sites[i];
     }
     Printf("lock_sites[*]=%ld\n", total_locks);
-    Printf("unlocked_access_try1=%ld\n", unlocked_access_try1);
-    Printf("unlocked_access_try2=%ld\n", unlocked_access_try2);
     Printf("unlocked_access_ok  =%ld\n", unlocked_access_ok);
-    Printf("locked_access       =%ld\n", locked_access);
+    uintptr_t all_locked_access = 0;
+    for (size_t i = 0; i < TS_ARRAY_SIZE(locked_access); i++) {
+      uintptr_t t = locked_access[i];
+      if (t) Printf("locked_access[%ld]   =%ld\n", i, t);
+      all_locked_access += t;
+    }
+    Printf("locked_access[*]   =%ld\n", all_locked_access);
 
 
     for (size_t i = 0; i < TS_ARRAY_SIZE(tleb_flush); i++) {
@@ -248,7 +252,7 @@ struct Stats : ThreadLocalStats {
 
   uintptr_t lock_sites[20];
 
-  uintptr_t locked_access;
+  uintptr_t locked_access[6];
 
   uintptr_t tleb_flush[10];
 

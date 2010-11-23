@@ -6893,6 +6893,8 @@ one_call:
     INC_STAT(thr->stats.memory_access_sizes[size <= 16 ? size : 17 ]);
     INC_STAT(thr->stats.events[is_w ? WRITE : READ]);
 
+    int locked_access_case = 0;
+
     if (need_locking) {
       if (thr->HasRoomForDeadSids()) {
         // cool new code which doesn't really work;
@@ -6912,21 +6914,29 @@ one_call:
             INC_STAT(thr->stats.unlocked_access_ok);
             // fast path succeded, we are done.
             return;
+          } else {
+            locked_access_case = 1;
           }
         } else if (cache_line == NULL) {
+          locked_access_case = 2;
           // We grabbed the cache slot but it is empty, release it.
           G_cache->ReleaseLine(addr, cache_line, __LINE__);
+        } else {
+          locked_access_case = 3;
         }
-        INC_STAT(thr->stats.unlocked_access_try2);
       } else {
-        INC_STAT(thr->stats.unlocked_access_try1);
+        locked_access_case = 4;
       }
+    } else {
+      locked_access_case = 5;
     }
 
 
     // Everything below goes under a lock.
     TIL til(ts_lock, 2, need_locking);
-    if (need_locking) INC_STAT(G_stats->locked_access);
+    if (need_locking) {
+      INC_STAT(G_stats->locked_access[locked_access_case]);
+    }
     thr->FlushDeadSids();
     if (TS_SERIALIZED == 0) {
       // In serialized version this is the hotspot, so grab fresh SIDs
