@@ -6513,6 +6513,11 @@ void RunThreads(int n_threads, void (*f)(void)) {
   delete [] array;
 }
 
+// Just one thread.
+TEST(StressTests, ManyAccessesNoRace1Test) {
+  RunThreads(1, NoRaceWorker);
+}
+
 // 2 threads accessing different memory.
 TEST(StressTests, ManyAccessesNoRace2Test) {
   RunThreads(2, NoRaceWorker);
