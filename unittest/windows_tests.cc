@@ -309,6 +309,21 @@ TEST(NegativeTests, WindowsSRWLockTest) {
   CHECK(*obj == 2);
   delete obj;
 }
+
+TEST(NegativeTests, WindowsSRWLockHackyInitializationTest) {
+  // A similar pattern has been found on Chromium media_unittests
+  InitializeSRWLock(&SRWLock);
+  AcquireSRWLockExclusive(&SRWLock);
+  // Leave the lock acquired
+
+  // Reset the lock
+  InitializeSRWLock(&SRWLock);
+  obj = new int(0);
+  MyThreadArray t(Reader, Writer, Reader, Writer);
+  t.Start();
+  t.Join();
+  delete obj;
+}
 #endif // WINVER >= 0x0600
 }  // namespace
 

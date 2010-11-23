@@ -1324,6 +1324,7 @@ uintptr_t WRAP_NAME(RtlReleaseSRWLockShared)(WRAP_PARAM4) {
   return ret;
 }
 uintptr_t WRAP_NAME(RtlInitializeSRWLock)(WRAP_PARAM4) {
+  // Printf("T%d %s %p\n", tid, __FUNCTION__, arg0);
   DumpEvent(LOCK_CREATE, tid, pc, arg0, 0);
   uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
   return ret;
@@ -2922,6 +2923,9 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   WRAPSTD1(RtlReleaseSRWLockExclusive);
   WRAPSTD1(RtlReleaseSRWLockShared);
   WRAPSTD1(RtlInitializeSRWLock);
+  // For some reason, RtlInitializeSRWLock is aliased to RtlInitializeSRWLock..
+  WrapStdCallFunc1(rtn, "RtlRunOnceInitialize",
+                   (AFUNPTR)Wrap_RtlInitializeSRWLock);
 
   /* We haven't seen these syscalls used in the wild yet.
   WRAPSTD2(RtlUpdateClonedSRWLock);
