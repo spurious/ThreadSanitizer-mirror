@@ -4554,6 +4554,8 @@ struct Thread {
     bool refill_stack = false;
     SID match = recent_segments_cache_.Search(call_stack_, sid(),
                                               /*OUT*/&refill_stack);
+    DCHECK(kSizeOfHistoryStackTrace > 0);
+
     if (match.valid()) {
       // This part is 100% thread-local, no need for locking.
       if (sid_ != match) {
@@ -4561,7 +4563,7 @@ struct Thread {
         this->AddDeadSid(sid_, "Thread::HandleSblockEnter");
         sid_ = match;
       }
-      if (refill_stack && kSizeOfHistoryStackTrace > 0) {
+      if (refill_stack) {
         FillEmbeddedStackTrace(Segment::embedded_stack_trace(sid()));
       }
     } else if (fresh_sids_.size() > 0) {
@@ -4574,6 +4576,7 @@ struct Thread {
       Segment::Ref(fresh_sid, "Thread::HandleSblockEnter-1");
       sid_ = fresh_sid;
       recent_segments_cache_.Push(sid());
+      FillEmbeddedStackTrace(Segment::embedded_stack_trace(sid()));
       G_stats->history_uses_preallocated_segment++;
     } else {
       // No fresh SIDs available, have to grab a lock and get few.
