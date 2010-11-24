@@ -3892,7 +3892,6 @@ struct RecentSegmentsCache {
         // The refcount of an unused segment is equal to
         // *) 1 if it is stored only in the cache,
         // *) 2 if it is the current segment of the Thread.
-        G_stats->history_reuses_segment++;
         *needs_refill = true;
         return sid;
       }
@@ -3909,7 +3908,6 @@ struct RecentSegmentsCache {
            emb_trace[0] == curr_stack[n-1] &&
            emb_trace[1] == curr_stack[n-2] &&
            emb_trace[2] == curr_stack[n-3]) {
-          G_stats->history_uses_same_segment++;
           *needs_refill = false;
           return sid;
         }
@@ -4564,7 +4562,10 @@ struct Thread {
         sid_ = match;
       }
       if (refill_stack) {
+        this->stats.history_reuses_segment++;
         FillEmbeddedStackTrace(Segment::embedded_stack_trace(sid()));
+      } else {
+        this->stats.history_uses_same_segment++;
       }
     } else if (fresh_sids_.size() > 0) {
       // We have a fresh ready-to-use segment in thread local cache.
@@ -4577,11 +4578,11 @@ struct Thread {
       sid_ = fresh_sid;
       recent_segments_cache_.Push(sid());
       FillEmbeddedStackTrace(Segment::embedded_stack_trace(sid()));
-      G_stats->history_uses_preallocated_segment++;
+      this->stats.history_uses_preallocated_segment++;
     } else {
       // No fresh SIDs available, have to grab a lock and get few.
       TIL til(ts_lock, 5);
-      G_stats->history_creates_new_segment++;
+      this->stats.history_creates_new_segment++;
       VTS *new_vts = vts()->Clone();
       NewSegment("HandleSblockEnter", new_vts);
       recent_segments_cache_.Push(sid());

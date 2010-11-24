@@ -57,6 +57,9 @@ struct ThreadLocalStats {
 
   uintptr_t mops_per_trace[16];
   uintptr_t locked_access[6];
+  uintptr_t history_uses_same_segment, history_creates_new_segment,
+            history_reuses_segment, history_uses_preallocated_segment;
+
 };
 
 // Statistic counters for the entire tool, including aggregated
@@ -246,9 +249,6 @@ struct Stats : ThreadLocalStats {
   uintptr_t pc_to_strings, pc_to_rtn_name;
 
   uintptr_t stack_trace_create, stack_trace_delete;
-
-  uintptr_t history_uses_same_segment, history_creates_new_segment,
-            history_reuses_segment, history_uses_preallocated_segment;
 
   uintptr_t n_forgets;
 
