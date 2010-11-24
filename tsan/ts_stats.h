@@ -54,6 +54,8 @@ struct ThreadLocalStats {
   uintptr_t n_fast_access1, n_fast_access2, n_fast_access4, n_fast_access8,
             n_slow_access1, n_slow_access2, n_slow_access4, n_slow_access8,
             n_very_slow_access, n_access_slow_iter;
+
+  uintptr_t mops_per_trace[16];
 };
 
 // Statistic counters for the entire tool, including aggregated
@@ -227,7 +229,6 @@ struct Stats : ThreadLocalStats {
 
   uintptr_t mops_total;
   uintptr_t mops_uniq;
-  uintptr_t mops_per_trace[16];
 
   uintptr_t vts_create_big, vts_create_small,
             vts_clone, vts_delete, vts_total_size;
