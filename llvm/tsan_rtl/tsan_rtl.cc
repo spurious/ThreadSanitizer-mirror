@@ -316,6 +316,16 @@ static void inline flush_trace(ThreadInfo *info) {
       bb_unique_id = NoBarrier_AtomicIncrement(&bb_unique_id);
       trace->id_ = bb_unique_id;
     }
+    // Increment the trace counter in a racey way. This can lead to small
+    // deviations if the trace is hot, but we can afford them.
+    trace->counter_++;
+
+    // Update the mops_per_trace[] counters. TODO(glider): this should be moved
+    // to thread_sanitizer.cc
+    const size_t mop_stat_size = TS_ARRAY_SIZE(G_stats->mops_per_trace);
+    G_stats->mops_per_trace[(trace->n_mops_ < mop_stat_size) ?
+        trace->n_mops_ : mop_stat_size - 1]++;
+
     if (G_flags->literace_sampling == 0 ||
         !LiteRaceSkipTrace(tid, trace->id_, G_flags->literace_sampling)) {
       IN_RTL++;
@@ -1343,21 +1353,32 @@ uintptr_t FdMagic(int fd) {
 
 extern "C"
 ssize_t __wrap_read(int fd, void *buf, size_t count) {
-  // TODO(glider): we should treat dup()ped fds as equal ones.
-  DECLARE_TID_AND_PC();
   ssize_t result = __real_read(fd, buf, count);
+  if (IN_RTL) return result;
+  IN_RTL++;
+  CHECK_IN_RTL();
+  DECLARE_TID_AND_PC();
+  // TODO(glider): we should treat dup()ped fds as equal ones.
   // It only makes sense to wait for a previous write, not EOF.
   if (result > 0) {
     SPut(WAIT, tid, pc, FdMagic(fd), 0);
   }
+  IN_RTL--;
+  CHECK_IN_RTL();
   return result;
 }
 
 extern "C"
 ssize_t __wrap_write(int fd, const void *buf, size_t count) {
+  if (IN_RTL) return __real_write(fd, buf, count);
+  IN_RTL++;
+  CHECK_IN_RTL();
   DECLARE_TID_AND_PC();
   SPut(SIGNAL, tid, pc, FdMagic(fd), 0);
-  return __real_write(fd, buf, count);
+  ssize_t result = __real_write(fd, buf, count);
+  IN_RTL--;
+  CHECK_IN_RTL();
+  return result;
 }
 // }}}
 
