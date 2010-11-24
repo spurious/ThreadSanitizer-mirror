@@ -475,6 +475,27 @@ void TSLock::Unlock() {
 }
 #endif  // TS_LLVM
 
+
+//--------------- Atomics ----------------- {{{1
+#if defined (_MSC_VER) && TS_SERIALIZED == 0
+uintptr_t AtomicExchange(uintptr_t *ptr, uintptr_t new_value) {
+  return WINDOWS::InterlockedExchange((unsigned long*)ptr, new_value);
+}
+
+void ReleaseStore(uintptr_t *ptr, uintptr_t value) {
+  *(volatile uintptr_t*)ptr = value;
+  // TODO(kcc): anything to add here?
+}
+
+int32_t NoBarrier_AtomicIncrement(int32_t* ptr) {
+  return WINDOWS::InterlockedIncrement((unsigned int *)ptr);
+}
+
+int32_t NoBarrier_AtomicDecrement(int32_t* ptr) {
+  return WINDOWS::InterlockedDecrement((unsigned int *)ptr);
+}
+#endif  // _MSC_VER && TS_SERIALIZED
+
 //--------- Dynamic Annotations ------------- {{{1
 // Instead of linking in the file dynamic_annotations.c
 // we simply define the few required functions here.

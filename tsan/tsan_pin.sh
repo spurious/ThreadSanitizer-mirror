@@ -3,6 +3,7 @@
 PIN_ROOT=${PIN_ROOT:-$HOME/pin}
 TS_ROOT=${TS_ROOT:-`dirname $0`}
 TS_VARIANT=-debug
+MT=
 
 UNAME_OS=`uname -o`
 if [ "$UNAME_OS" == "GNU/Linux" ]; then
@@ -30,6 +31,7 @@ for arg in "$@"; do
   case $arg in
     --opt) TS_VARIANT="";;
     --dbg) TS_VARIANT="-debug";;
+    --mt)  MT=mt;;
     --v=[1-9]) VERBOZE=1; TS_FLAGS="$TS_FLAGS $arg";;
     --) shift; break;;
     -*) TS_FLAGS="$TS_FLAGS $arg";;
@@ -63,7 +65,7 @@ run() {
 }
 
 run $PIN_ROOT/$PIN_BINARY $PIN_FLAGS $FOLLOW \
-  -t64 $TS_ROOT/bin/amd64-$OS${TS_VARIANT}-ts_pin.$DLL \
-  -t   $TS_ROOT/bin/x86-$OS${TS_VARIANT}-ts_pin.$DLL \
+  -t64 $TS_ROOT/bin/amd64-$OS${TS_VARIANT}-ts_pin$MT.$DLL \
+  -t   $TS_ROOT/bin/x86-$OS${TS_VARIANT}-ts_pin$MT.$DLL \
  $TS_FLAGS -- $TS_PARAMS
 

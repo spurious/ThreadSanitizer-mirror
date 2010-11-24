@@ -52,6 +52,7 @@ P=$(OUTDIR)/$(ARCHOS)$(D)-
 OFF=$(P)off-
 VGP=$(P)vg-
 PINP=$(P)pin-
+PINMTP=$(P)pinmp-
 DRP=$(P)dr-
 
 STRIP=strip
@@ -193,7 +194,7 @@ ifeq ($(PIN_ROOT), )
 TS_pin:
 	@echo PIN_ROOT is not set. Not building the PIN-based variant.
 else
-TS_pin: $(P)ts_pin.$(SO)
+TS_pin: $(P)ts_pinmt.$(SO) $(P)ts_pin.$(SO)
 endif
 
 ifeq ($(DYNAMORIO_ROOT), )
@@ -230,12 +231,14 @@ ifeq ($(DEBUG), 0)
 # in optimized build, we include thread_sanitizer.cc into other files.
 $(VGP)ts_valgrind.o: thread_sanitizer.cc
 $(PINP)ts_pin.$(OBJ):  thread_sanitizer.cc
+$(PINMTP)ts_pin.$(OBJ):  thread_sanitizer.cc
 $(P)ts_offline.$(OBJ): thread_sanitizer.cc
 endif
 TS_VG_HEADERS=ts_valgrind.h ts_valgrind_client_requests.h
 
 TS_VG_OBJECTS=$(VGP)thread_sanitizer.o $(VGP)ts_valgrind.o $(VGP)ts_valgrind_libc.o $(VGP)ts_util.o $(VGP)suppressions.o $(VGP)ignore.o $(VGP)common_util.o $(VGP)ts_race_verifier.o
 TS_PIN_OBJECTS=$(PINP)ts_pin.$(OBJ) $(PINP)ts_util.$(OBJ) $(PINP)thread_sanitizer.$(OBJ) $(PINP)suppressions.$(OBJ) $(PINP)ignore.$(OBJ) $(PINP)common_util.$(OBJ) $(PINP)ts_race_verifier.$(OBJ)
+TS_PINMT_OBJECTS=$(PINMTP)ts_pin.$(OBJ) $(PINMTP)ts_util.$(OBJ) $(PINMTP)thread_sanitizer.$(OBJ) $(PINMTP)suppressions.$(OBJ) $(PINMTP)ignore.$(OBJ) $(PINMTP)common_util.$(OBJ) $(PINMTP)ts_race_verifier.$(OBJ)
 TS_OFFLINE_OBJECTS=$(OFF)ts_offline.$(OBJ) $(OFF)thread_sanitizer.$(OBJ) $(OFF)ts_util.$(OBJ) $(OFF)suppressions.$(OBJ) $(OFF)ignore.$(OBJ) $(OFF)common_util.$(OBJ)
 TS_DR_OBJECTS=$(DRP)ts_dynamorio.$(OBJ) $(DRP)ts_util.$(OBJ)
 
@@ -250,6 +253,9 @@ $(VGP)%.o: %.cc $(TS_HEADERS) $(TS_VG_HEADERS) | $(OUTDIR)
 
 $(PINP)%.$(OBJ): %.cc $(TS_HEADERS) $(TS_PIN_HEADERS) | $(OUTDIR)
 	$(CXX) $(CXXFLAGS) $(PIN_CXXFLAGS) $(ARCHFLAGS) $(PIN_INCLUDES) $(PIN_DEFINES) $(O)$@ -c $< $(DEFINES) $(INCLUDES)
+
+$(PINMTP)%.$(OBJ): %.cc $(TS_HEADERS) $(TS_PIN_HEADERS) | $(OUTDIR)
+	$(CXX) $(CXXFLAGS) $(PIN_CXXFLAGS) $(ARCHFLAGS) $(PIN_INCLUDES) $(PIN_DEFINES) $(O)$@ -c $< $(DEFINES) $(INCLUDES) -DTS_SERIALIZED=0
 
 $(DRP)%.$(OBJ): %.cc $(TS_HEADERS) $(TS_DR_HEADERS) | $(OUTDIR)
 	$(CXX) $(CXXFLAGS) $(DR_CXXFLAGS) $(ARCHFLAGS) $(DR_INCLUDES) $(DR_DEFINES) $(O)$@ -c $< $(DEFINES) $(INCLUDES)
@@ -280,8 +286,14 @@ $(P)thread_sanitizer_test$(EXE): $(P)gtest-thread_sanitizer_test.$(OBJ) $(P)ts_u
 $(P)ts_pin.so: $(TS_PIN_OBJECTS)
 	$(LD) $(ARCHFLAGS) $(PIN_LDFLAGS) $(PIN_LIBPATHS) -o $@ $^  $(PIN_LIBS)
 
+$(P)ts_pinmt.so: $(TS_PINMT_OBJECTS)
+	$(LD) $(ARCHFLAGS) $(PIN_LDFLAGS) $(PIN_LIBPATHS) -o $@ $^  $(PIN_LIBS)
+
 $(P)ts_pin.dll: $(TS_PIN_OBJECTS)
 	$(LD) $(ARCHFLAGS) $(PIN_LDFLAGS) $(PIN_LIBPATHS)  /IMPLIB:$(PINP)ts_pin.lib /PDB:$(PINP)ts_pin.pdb /OUT:$@  $^  $(PIN_LIBS)
+
+$(P)ts_pinmt.dll: $(TS_PINMT_OBJECTS)
+	$(LD) $(ARCHFLAGS) $(PIN_LDFLAGS) $(PIN_LIBPATHS)  /IMPLIB:$(PINMTP)ts_pin.lib /PDB:$(PINMTP)ts_pin.pdb /OUT:$@  $^  $(PIN_LIBS)
 
 $(P)ts_dynamorio.so: $(TS_DR_OBJECTS)
 	$(LD) $(ARCHFLAGS) $(DR_LDFLAGS) $(DR_LIBPATHS) -o $@ $^  $(DR_LIBS) $(DR_LD_SCRIPT)

@@ -109,23 +109,10 @@ ALWAYS_INLINE int32_t NoBarrier_AtomicDecrement(int32_t* ptr) {
 }
 
 #elif defined(_MSC_VER)
-
-ALWAYS_INLINE uintptr_t AtomicExchange(uintptr_t *ptr, uintptr_t new_value) {
-  return InterlockedExchange(ptr, new_value);
-}
-
-ALWAYS_INLINE void ReleaseStore(uintptr_t *ptr, uintptr_t value) {
-  *(volatile uintptr_t*)ptr = value;
-  // TODO(kcc): anything to add here?
-}
-
-ALWAYS_INLINE int32_t NoBarrier_AtomicIncrement(int32_t* ptr) {
-  return InterlockedIncrement(ptr);
-}
-
-ALWAYS_INLINE int32_t NoBarrier_AtomicDecrement(int32_t* ptr) {
-  return InterlockedDecrement(ptr);
-}
+uintptr_t AtomicExchange(uintptr_t *ptr, uintptr_t new_value);
+void ReleaseStore(uintptr_t *ptr, uintptr_t value);
+int32_t NoBarrier_AtomicIncrement(int32_t* ptr);
+int32_t NoBarrier_AtomicDecrement(int32_t* ptr);
 
 #else
 # error "unsupported configuration"
