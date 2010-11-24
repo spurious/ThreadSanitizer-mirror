@@ -13,6 +13,7 @@ source "$SCRIPT_ROOT/common.sh"
 ALL_ARGS=
 ARGS=
 LD_MODE=
+OX=-O0
 
 until [ -z "$1" ]
 do
@@ -44,7 +45,10 @@ do
   elif [ `expr match "$1" ".*\.[ao]"` -gt 0 ]
   then
     LD_MODE=1
-  elif [ `expr match "$1" "-c\|-O\|-std=\|-Werror"` -gt 0 ]
+  elif [ `expr match "$1" "-O"` -gt 0 ]
+  then
+    OX=$1
+  elif [ `expr match "$1" "-c\|-std=\|-Werror"` -gt 0 ]
   then
     # pass
     echo "Dropped arg: $1"
@@ -91,7 +95,7 @@ $OPT -load "$PASS_SO" $INST_MODE -arch=$XARCH "$SRC_BIT" -S  > "$SRC_INSTR" 2>$L
 cat $LOG | grep "^->" | sed "s/^->//" > "$SRC_DBG"
 cat $LOG | grep -v "^->"
 # Translate LLVM bitcode to native assembly code.
-$LLC -march=$XARCH -O0 $SRC_INSTR  -o $SRC_ASM || exit 1
+$LLC -march=$XARCH $OX $SRC_INSTR  -o $SRC_ASM || exit 1
 # Compile the object file.
-$LLVM_GPP $MARCH -c $SRC_ASM -O0 -g -o $SRC_OBJ
+$LLVM_GPP $MARCH -c $SRC_ASM $OX -g -o $SRC_OBJ
 
