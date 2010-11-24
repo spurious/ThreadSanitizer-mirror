@@ -7728,11 +7728,6 @@ static void SetupIgnore() {
   // TODO(eugenis): Do something about this.
   // http://code.google.com/p/data-race-test/issues/detail?id=53
   g_ignore_lists->ignores_r.push_back(IgnoreFun("vfprintf"));
-  g_ignore_lists->ignores_r.push_back(IgnoreFun("_stbuf"));
-
-  // TODO(timurrrr): Add support for FLS (fiber-local-storage)
-  // http://code.google.com/p/data-race-test/issues/detail?id=55
-  g_ignore_lists->ignores_r.push_back(IgnoreFun("_freefls"));
 
 #ifdef VGO_darwin
   g_ignore_lists->ignores_r.push_back(IgnoreFun("__CFDoExternRefOperation"));
@@ -7755,6 +7750,15 @@ static void SetupIgnore() {
 
   g_ignore_lists->ignores_r.push_back(IgnoreFun("RtlDestroyQueryDebugBuffer"));
   g_ignore_lists->ignores_r.push_back(IgnoreFun("BCryptGenerateSymmetricKey"));
+  g_ignore_lists->ignores_r.push_back(IgnoreFun("SHGetItemFromDataObject"));
+
+  // http://code.google.com/p/data-race-test/issues/detail?id=53
+  g_ignore_lists->ignores_r.push_back(IgnoreFun("_stbuf"));
+  g_ignore_lists->ignores_r.push_back(IgnoreFun("_getptd"));
+
+  // TODO(timurrrr): Add support for FLS (fiber-local-storage)
+  // http://code.google.com/p/data-race-test/issues/detail?id=55
+  g_ignore_lists->ignores_r.push_back(IgnoreFun("_freefls"));
 #else
   // http://code.google.com/p/data-race-test/issues/detail?id=40
   g_ignore_lists->ignores_r.push_back(IgnoreFun("_ZNSsD1Ev"));
