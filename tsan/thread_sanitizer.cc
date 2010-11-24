@@ -5817,6 +5817,10 @@ class Detector {
                               uintptr_t *tleb, size_t n,
                               bool has_expensive_flags) {
     size_t i = 0;
+    if (has_expensive_flags) {
+      const size_t mop_stat_size = TS_ARRAY_SIZE(G_stats->mops_per_trace);
+      thr->stats.mops_per_trace[n < mop_stat_size ? n : mop_stat_size - 1]++;
+    }
     do {
       uintptr_t addr = tleb[i];
       if (addr == 0) continue;  // This mop was not executed.

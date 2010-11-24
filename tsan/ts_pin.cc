@@ -1636,9 +1636,10 @@ void InsertBeforeEvent_Call(THREADID tid, ADDRINT pc, ADDRINT target,
 }
 
 static void OnTraceNoMops(THREADID tid, ADDRINT sp) {
+  // TODO(kcc): do we really need it?
   PinThread &t = g_pin_threads[tid];
   UpdateCallStack(t, sp);
-  G_stats->mops_per_trace[0]++;
+  //G_stats->mops_per_trace[0]++;
 }
 
 static void OnTrace(THREADID tid, ADDRINT sp, TraceInfo *trace_info,
@@ -1657,10 +1658,6 @@ static void OnTrace(THREADID tid, ADDRINT sp, TraceInfo *trace_info,
   t.trace_info = trace_info;
   trace_info->counter()++;
   *tls_reg_p = TLEBAddTrace(t);
-
-  // stats
-  const size_t mop_stat_size = TS_ARRAY_SIZE(G_stats->mops_per_trace);
-  G_stats->mops_per_trace[n < mop_stat_size ? n : mop_stat_size - 1]++;
 }
 
 /* Verify all mop accesses in the last trace of the given thread by registering
