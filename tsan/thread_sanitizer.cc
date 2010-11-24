@@ -7197,7 +7197,7 @@ one_call:
              e->tid(), sp, sp_min, sp_max, (sp_max - sp_min) >> 10);
     }
     if (sp_min < sp_max) {
-      CHECK((sp_max - sp_min) > 128 * 1024); // stay sane.
+      CHECK((sp_max - sp_min) >= 8 * 1024); // stay sane.
       CHECK((sp_max - sp_min) < 128 * 1024 * 1024); // stay sane.
       ClearMemoryState(sp_min, sp_max);
       thr->SetStack(sp_min, sp_max);
