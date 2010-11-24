@@ -5956,8 +5956,11 @@ class Detector {
       }
       ForgetAllStateAndStartOver("ThreadSanitizer has run out of segment IDs");
     }
+
+#ifdef TS_VALGRIND  // GetVmSizeInMb() works only with valgrind any way.
     static int counter;
-    counter++;
+    counter++;  // ATTENTION: don't do this in multi-threaded code -- too slow.
+    CHECK(TS_SERIALIZED == 1);
 
     // Are we out of memory?
     if (G_flags->max_mem_in_mb > 0) {
@@ -5968,7 +5971,9 @@ class Detector {
         FlushIfOutOfMem();
       }
     }
+#endif
 
+#if 0  // do we still need it? Hope not..
     size_t flush_period = G_flags->flush_period * 1000;  // milliseconds.
     if (flush_period && (counter % (1024 * 4)) == 0) {
       size_t cur_time = TimeInMilliSeconds();
@@ -5978,6 +5983,7 @@ class Detector {
           "Doing periodic flush (period is set by --flush_period=n_seconds)");
       }
     }
+#endif
   }
 
   void INLINE HandleSblockEnter(TID tid, uintptr_t pc) {
