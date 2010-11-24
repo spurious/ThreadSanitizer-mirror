@@ -175,7 +175,7 @@ sfx:
 	rm -rf $(TSAN_SFX_DIR)
 	mkdir -p $(TSAN_SFX_DIR)
 	cp -r $(PIN_ROOT)/ia32 bin/$(ARCHOS)-debug-ts_pin.dll \
-		bin/$(ARCHOS)-ts_pin.dll tsan.bat tsan-debug.bat  $(TSAN_SFX_DIR)
+		bin/$(ARCHOS)-ts_pin.dll tsan.bat tsan-debug.bat tsan_mt.bat $(TSAN_SFX_DIR)
 	cp license_for_windows.txt $(TSAN_SFX_DIR)/LICENSE
 	7z a -sfx tsan-$(ARCHOS)-sfx.exe $(TSAN_SFX_DIR)
 	rm -rf $(TSAN_SFX_DIR)
