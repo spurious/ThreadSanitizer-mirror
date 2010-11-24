@@ -56,6 +56,7 @@ struct ThreadLocalStats {
             n_very_slow_access, n_access_slow_iter;
 
   uintptr_t mops_per_trace[16];
+  uintptr_t locked_access[6];
 };
 
 // Statistic counters for the entire tool, including aggregated
@@ -252,8 +253,6 @@ struct Stats : ThreadLocalStats {
   uintptr_t n_forgets;
 
   uintptr_t lock_sites[20];
-
-  uintptr_t locked_access[6];
 
   uintptr_t tleb_flush[10];
 

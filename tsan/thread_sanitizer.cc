@@ -6869,6 +6869,72 @@ one_call:
                                     thr, fast_path_only);
   }
 
+#if TS_SERIALIZED == 1
+  INLINE  // TODO(kcc): this can also be made NOINLINE later.
+#else
+  NOINLINE
+#endif
+  void HandleMemoryAccessSlowLocked(TID tid, Thread *thr, uintptr_t pc,
+                                           uintptr_t addr, uintptr_t size,
+                                           bool is_w, bool has_expensive_flags,
+                                           bool need_locking) {
+    TIL til(ts_lock, 2, need_locking);
+    thr->FlushDeadSids();
+    if (TS_SERIALIZED == 0) {
+      // In serialized version this is the hotspot, so grab fresh SIDs
+      // only in non-serial variant.
+      thr->GetSomeFreshSids();
+    }
+    CacheLine *cache_line = G_cache->GetLineOrCreateNew(addr, __LINE__);
+    HandleAccessGranularityAndExecuteHelper(cache_line, tid, thr, pc, addr,
+                                            size, is_w, has_expensive_flags,
+                                            /*fast_path_only=*/false);
+    G_cache->ReleaseLine(addr, cache_line, __LINE__);
+    cache_line = NULL;  // just in case.
+
+    if (has_expensive_flags && TS_SERIALIZED == 1) {
+      // TODO(kcc): implement this for TS_SERIALIZED==0
+      if (G_flags->trace_level >= 1) {
+        cache_line = G_cache->GetLineIfExists(addr, __LINE__);
+        DCHECK(cache_line);
+        bool tracing = false;
+        uintptr_t off = CacheLine::ComputeOffset(addr);
+        if (cache_line->traced().Get(off)) {
+          tracing = true;
+        } else if (addr == G_flags->trace_addr) {
+          tracing = true;
+        }
+        G_cache->ReleaseLine(addr, cache_line, __LINE__);
+        if (tracing) {
+          for (uintptr_t x = addr; x < addr + size; x++) {
+            off = CacheLine::ComputeOffset(x);
+            cache_line = G_cache->GetLineOrCreateNew(x, __LINE__);
+            ShadowValue *sval_p = cache_line->GetValuePointer(off);
+            if (cache_line->has_shadow_value().Get(off) != 0) {
+              bool is_published = cache_line->published().Get(off);
+              Printf("TRACE: T%d/S%d %s[%d] addr=%p sval: %s%s; line=%p P=%s\n",
+                     tid.raw(), thr->sid().raw(), is_w ? "wr" : "rd",
+                     size, addr, sval_p->ToString().c_str(),
+                     is_published ? " P" : "",
+                     cache_line,
+                     cache_line->published().Empty() ?
+                     "0" : cache_line->published().ToString().c_str());
+              thr->ReportStackTrace(pc);
+            }
+            G_cache->ReleaseLine(x, cache_line, __LINE__);
+          }
+        }
+      }
+      if (G_flags->sample_events > 0) {
+        const char *type = "SampleMemoryAccess";
+        static EventSampler sampler;
+        sampler.Sample(tid, type);
+      }
+    }
+
+
+  }
+
   INLINE void HandleMemoryAccessInternal(TID tid, Thread *thr, uintptr_t pc,
                                          uintptr_t addr, uintptr_t size,
                                          bool is_w, bool has_expensive_flags,
@@ -6935,64 +7001,14 @@ one_call:
       locked_access_case = 5;
     }
 
+    if (need_locking) {
+      INC_STAT(thr->stats.locked_access[locked_access_case]);
+    }
 
     // Everything below goes under a lock.
-    TIL til(ts_lock, 2, need_locking);
-    if (need_locking) {
-      INC_STAT(G_stats->locked_access[locked_access_case]);
-    }
-    thr->FlushDeadSids();
-    if (TS_SERIALIZED == 0) {
-      // In serialized version this is the hotspot, so grab fresh SIDs
-      // only in non-serial variant.
-      thr->GetSomeFreshSids();
-    }
-    cache_line = G_cache->GetLineOrCreateNew(addr, __LINE__);
-    HandleAccessGranularityAndExecuteHelper(cache_line, tid, thr, pc, addr,
-                                            size, is_w, has_expensive_flags,
-                                            /*fast_path_only=*/false);
-    G_cache->ReleaseLine(addr, cache_line, __LINE__);
-    cache_line = NULL;  // just in case.
-
-    if (has_expensive_flags && TS_SERIALIZED == 1) {
-      // TODO(kcc): implement this for TS_SERIALIZED==0
-      if (G_flags->trace_level >= 1) {
-        cache_line = G_cache->GetLineIfExists(addr, __LINE__);
-        DCHECK(cache_line);
-        bool tracing = false;
-        uintptr_t off = CacheLine::ComputeOffset(addr);
-        if (cache_line->traced().Get(off)) {
-          tracing = true;
-        } else if (addr == G_flags->trace_addr) {
-          tracing = true;
-        }
-        G_cache->ReleaseLine(addr, cache_line, __LINE__);
-        if (tracing) {
-          for (uintptr_t x = addr; x < addr + size; x++) {
-            off = CacheLine::ComputeOffset(x);
-            cache_line = G_cache->GetLineOrCreateNew(x, __LINE__);
-            ShadowValue *sval_p = cache_line->GetValuePointer(off);
-            if (cache_line->has_shadow_value().Get(off) != 0) {
-              bool is_published = cache_line->published().Get(off);
-              Printf("TRACE: T%d/S%d %s[%d] addr=%p sval: %s%s; line=%p P=%s\n",
-                     tid.raw(), thr->sid().raw(), is_w ? "wr" : "rd",
-                     size, addr, sval_p->ToString().c_str(),
-                     is_published ? " P" : "",
-                     cache_line,
-                     cache_line->published().Empty() ?
-                     "0" : cache_line->published().ToString().c_str());
-              thr->ReportStackTrace(pc);
-            }
-            G_cache->ReleaseLine(x, cache_line, __LINE__);
-          }
-        }
-      }
-      if (G_flags->sample_events > 0) {
-        const char *type = "SampleMemoryAccess";
-        static EventSampler sampler;
-        sampler.Sample(tid, type);
-      }
-    }
+    HandleMemoryAccessSlowLocked(tid, thr, pc, addr, size,
+                                 is_w, has_expensive_flags,
+                                 need_locking);
 #undef INC_STAT
   }
 
