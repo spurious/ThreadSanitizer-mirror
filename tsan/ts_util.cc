@@ -479,7 +479,7 @@ void TSLock::Unlock() {
 //--------------- Atomics ----------------- {{{1
 #if defined (_MSC_VER) && TS_SERIALIZED == 0
 uintptr_t AtomicExchange(uintptr_t *ptr, uintptr_t new_value) {
-  return WINDOWS::InterlockedExchange((volatile unsigned long*)ptr, new_value);
+  return WINDOWS::InterlockedExchange((volatile WINDOWS::LONG*)ptr, new_value);
 }
 
 void ReleaseStore(uintptr_t *ptr, uintptr_t value) {
@@ -488,11 +488,11 @@ void ReleaseStore(uintptr_t *ptr, uintptr_t value) {
 }
 
 int32_t NoBarrier_AtomicIncrement(int32_t* ptr) {
-  return WINDOWS::InterlockedIncrement((volatile unsigned int *)ptr);
+  return WINDOWS::InterlockedIncrement((volatile WINDOWS::LONG *)ptr);
 }
 
 int32_t NoBarrier_AtomicDecrement(int32_t* ptr) {
-  return WINDOWS::InterlockedDecrement((volatile unsigned int *)ptr);
+  return WINDOWS::InterlockedDecrement((volatile WINDOWS::LONG *)ptr);
 }
 #endif  // _MSC_VER && TS_SERIALIZED
 
