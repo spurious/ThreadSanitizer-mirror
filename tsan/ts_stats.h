@@ -40,14 +40,6 @@ struct ThreadLocalStats {
   void Clear() {
     memset(this, 0, sizeof(*this));
   }
-  void Add(const ThreadLocalStats &s) {
-    uintptr_t *p1 = (uintptr_t*)this;
-    uintptr_t *p2 = (uintptr_t*)&s;
-    size_t n = sizeof(*this) / sizeof(uintptr_t);
-    for (size_t i = 0; i < n; i++) {
-      p1[i] += p2[i];
-    }
-  }
   uintptr_t memory_access_sizes[18];
   uintptr_t events[LAST_EVENT];
   uintptr_t unlocked_access_ok;
@@ -63,10 +55,20 @@ struct ThreadLocalStats {
 };
 
 // Statistic counters for the entire tool, including aggregated
-// ThreadLocalStats.
-struct Stats : ThreadLocalStats {
+// ThreadLocalStats (which are made private so that one can not
+// increment them using the global stats object).
+struct Stats : private ThreadLocalStats {
   Stats() {
     memset(this, 0, sizeof(*this));
+  }
+
+  void Add(const ThreadLocalStats &s) {
+    uintptr_t *p1 = (uintptr_t*)this;
+    uintptr_t *p2 = (uintptr_t*)&s;
+    size_t n = sizeof(*this) / sizeof(uintptr_t);
+    for (size_t i = 0; i < n; i++) {
+      p1[i] += p2[i];
+    }
   }
 
   void PrintStats() {

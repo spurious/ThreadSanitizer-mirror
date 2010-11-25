@@ -4782,7 +4782,7 @@ struct Thread {
 
   void HandleRtnCall(uintptr_t call_pc, uintptr_t target_pc,
                      IGNORE_BELOW_RTN ignore_below) {
-    G_stats->events[RTN_CALL]++;
+    this->stats.events[RTN_CALL]++;
     if (!call_stack_.empty() && call_pc) {
       call_stack_.back() = call_pc;
     }
@@ -4812,7 +4812,7 @@ struct Thread {
   }
 
   void HandleRtnExit() {
-    G_stats->events[RTN_EXIT]++;
+    this->stats.events[RTN_EXIT]++;
     if (!call_stack_.empty()) {
       if (call_stack_ignore_rec_.back())
         set_ignore_all(false);
@@ -5819,7 +5819,7 @@ class Detector {
                               bool has_expensive_flags) {
     size_t i = 0;
     if (has_expensive_flags) {
-      const size_t mop_stat_size = TS_ARRAY_SIZE(G_stats->mops_per_trace);
+      const size_t mop_stat_size = TS_ARRAY_SIZE(thr->stats.mops_per_trace);
       thr->stats.mops_per_trace[n < mop_stat_size ? n : mop_stat_size - 1]++;
     }
     do {
@@ -5857,7 +5857,7 @@ class Detector {
                                    uintptr_t size) {
     Thread *thr = Thread::Get(TID(tid));
     if (thr->ignore_all()) return;
-    G_stats->events[STACK_MEM_DIE]++;
+    thr->stats.events[STACK_MEM_DIE]++;
     HandleStackMem(TID(tid), addr, size);
   }
 
@@ -6012,12 +6012,12 @@ class Detector {
     DCHECK(e);
     EventType type = e->type();
     DCHECK(type != NOOP);
-    G_stats->events[type]++;
     Thread *thread = NULL;
     if (type != THR_START) {
       thread = Thread::Get(TID(e->tid()));
       DCHECK(thread);
       thread->SetTopPc(e->pc());
+      thread->stats.events[type]++;
     }
 
     switch (type) {
@@ -6045,6 +6045,7 @@ class Detector {
 
     if (UNLIKELY(type == THR_START)) {
         HandleThreadStart(TID(e->tid()), TID(e->info()), e->pc());
+        Thread::Get(TID(e->tid()))->stats.events[type]++;
         return;
     }
 
