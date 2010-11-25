@@ -283,28 +283,54 @@ namespace {
       BBFlushFn = M.getOrInsertFunction("bb_flush",
                                         TLEBPtrType,
                                         TraceInfoTypePtr, (Type*)0);
-      cast<Function>(BBFlushFn)->setLinkage(Function::ExternalWeakLinkage);
+      //cast<Function>(BBFlushFn)->setLinkage(Function::ExternalWeakLinkage);
 
       // void rtn_call(void *addr)
       RtnCallFn = M.getOrInsertFunction("rtn_call",
                                         Void,
                                         PlatformInt, (Type*)0);
-      cast<Function>(RtnCallFn)->setLinkage(Function::ExternalWeakLinkage);
+      //cast<Function>(RtnCallFn)->setLinkage(Function::ExternalWeakLinkage);
 
       // void rtn_exit()
       RtnExitFn = M.getOrInsertFunction("rtn_exit",
                                         Void, (Type*)0);
-      cast<Function>(RtnExitFn)->setLinkage(Function::ExternalWeakLinkage);
+      //cast<Function>(RtnExitFn)->setLinkage(Function::ExternalWeakLinkage);
 
       MemCpyFn = M.getOrInsertFunction("rtl_memcpy",
                                        UIntPtr,
                                        UIntPtr, UIntPtr, PlatformInt, (Type*)0);
-      cast<Function>(MemCpyFn)->setLinkage(Function::ExternalWeakLinkage);
+      //cast<Function>(MemCpyFn)->setLinkage(Function::ExternalWeakLinkage);
       MemMoveFn = M.getOrInsertFunction("rtl_memmove",
                                        UIntPtr,
                                        UIntPtr, UIntPtr, PlatformInt, (Type*)0);
-      cast<Function>(MemMoveFn)->setLinkage(Function::ExternalWeakLinkage);
+      //cast<Function>(MemMoveFn)->setLinkage(Function::ExternalWeakLinkage);
 
+
+      // Split each basic block into smaller blocks containing no more than one
+      // call instruction at the end.
+      for (Module::iterator F = M.begin(), E = M.end(); F != E; ++F) {
+        for (Function::iterator BB = F->begin(), E = F->end(); BB != E; ++BB) {
+          bool do_split = false;
+          for (BasicBlock::iterator BI = BB->begin(), BE = BB->end();
+               BI != BE;
+               ++BI) {
+            if (do_split) {
+              // No need to split a terminator into a separate block.
+              if (!isa<TerminatorInst>(BI)) {
+                ///BI->dump();
+                SplitBlock(BB, BI, this);
+              }
+              do_split = false;
+              break;
+            }
+            // A call may not occur inside of a basic block, iff this is not a
+            // call to @llvm.dbg.declare
+            if (isaCallOrInvoke(BI)) {
+              do_split = true;
+            }
+          }
+        }
+      }
 
       int nBB = 1, FnBB = 1;
       for (Module::iterator F = M.begin(), E = M.end(); F != E; ++F) {
@@ -312,9 +338,7 @@ namespace {
         FnBB = nBB;
         int startBBCount = BBCount;
         bool first_dtor_bb = false;
-#if DEBUG
-        errs() << "F" << ModuleFunctionCount << ": " << F->getName() << "\n";
-#endif
+
         if (F->isDeclaration()) continue;
 
         // TODO(glider): document this.
@@ -359,6 +383,10 @@ namespace {
                                       dir, file,
                                       Loc.getLineNumber())));
     }
+    bool isaCallOrInvoke(BasicBlock::iterator &BI) {
+      return ((isa<CallInst>(BI) && (!isa<DbgDeclareInst>(BI))) ||
+              isa<InvokeInst>(BI));
+    }
 
 
     bool ShouldFlushSlice(BasicBlock::iterator &Begin,
@@ -374,12 +402,13 @@ namespace {
         if (isa<StoreInst>(BI)) {
           return true;
         }
-        if (isa<CallInst>(BI)) {
+        if (isaCallOrInvoke(BI)) {
           return true;
         }
       }
       return false;
     }
+
 
     bool MakePassportFromSlice(Module &M,
                                BasicBlock::iterator &Begin,
@@ -399,7 +428,7 @@ namespace {
           isStore = true;
           isMop = true;
         }
-        if (isa<CallInst>(BI)) {
+        if (isaCallOrInvoke(BI)) {
           // CallInst or maybe other instructions that may cause a jump.
           assert(false);
         }
@@ -615,7 +644,7 @@ namespace {
           unknown = false;
         }
         // TODO(glider): invoke!
-        if (isa<CallInst>(BI) && unknown) {
+        if (isaCallOrInvoke(BI) && unknown) {
           // BBSlice can't contain a call or invoke instruction.
           errs() << "Invalid instruction: ";
           BI->dump();
@@ -644,7 +673,7 @@ namespace {
           validBegin = true;
         }
         bool unknown = true;  // we just don't want a bunch of nested if()s
-        if (isa<CallInst>(BI) || isa<InvokeInst>(BI)) {
+        if (isaCallOrInvoke(BI)) {
           if (isa<MemTransferInst>(BI)) {
             InstrumentMemTransfer(BI);
           }
