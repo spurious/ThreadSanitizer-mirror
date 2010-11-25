@@ -6981,32 +6981,39 @@ one_call:
         // Acquire a line w/o locks.
         cache_line = G_cache->AcquireLine(addr, __LINE__);
         if (!Cache::LineIsNullOrLocked(cache_line)) {
-          // The line is ours and non-empty -- fire the fast path.
-          bool res = HandleAccessGranularityAndExecuteHelper(
-              cache_line, tid, thr, pc, addr,
-              size, is_w, has_expensive_flags,
-              /*fast_path_only=*/true);
-          // release the line.
-          G_cache->ReleaseLine(addr, cache_line, __LINE__);
-          if (res) {
-            INC_STAT(thr->stats.unlocked_access_ok);
-            // fast path succeded, we are done.
-            return;
+          // The line is not empty or locked -- check the tag.
+          if (cache_line->tag() == CacheLine::ComputeTag(addr)) {
+            // The line is ours and non-empty -- fire the fast path.
+            bool res = HandleAccessGranularityAndExecuteHelper(
+                cache_line, tid, thr, pc, addr,
+                size, is_w, has_expensive_flags,
+                /*fast_path_only=*/true);
+            // release the line.
+            G_cache->ReleaseLine(addr, cache_line, __LINE__);
+            if (res) {
+              INC_STAT(thr->stats.unlocked_access_ok);
+              // fast path succeded, we are done.
+              return;
+            } else {
+              locked_access_case = 1;
+            }
           } else {
-            locked_access_case = 1;
+            locked_access_case = 2;
+            // The line has a wrong tag.
+            G_cache->ReleaseLine(addr, cache_line, __LINE__);
           }
         } else if (cache_line == NULL) {
-          locked_access_case = 2;
+          locked_access_case = 3;
           // We grabbed the cache slot but it is empty, release it.
           G_cache->ReleaseLine(addr, cache_line, __LINE__);
         } else {
-          locked_access_case = 3;
+          locked_access_case = 4;
         }
       } else {
-        locked_access_case = 4;
+        locked_access_case = 5;
       }
     } else {
-      locked_access_case = 5;
+      locked_access_case = 6;
     }
 
     if (need_locking) {
