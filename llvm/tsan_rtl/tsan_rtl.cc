@@ -208,10 +208,12 @@ class GIL {
 #ifdef DEBUG
       gil_owner = 0;
 #endif
-      if (stats_cur_events<kNumBuckets) {
-        stats_event_buckets[stats_cur_events]++;
+      if (G_flags->verbosity) {
+        if (stats_cur_events<kNumBuckets) {
+          stats_event_buckets[stats_cur_events]++;
+        }
+        stats_cur_events = 0;
       }
-      stats_cur_events = 0;
       GIL_UNLOCK(&global_lock);
       IN_RTL--;
       CHECK_IN_RTL();
@@ -273,9 +275,11 @@ static inline void SPut(EventType type, tid_t tid, pc_t pc,
         event.Print();
       }
     }
-    stats_events_processed++;
-    stats_cur_events++;
-    stats_non_local++;
+    if (G_flags->verbosity) {
+      stats_events_processed++;
+      stats_cur_events++;
+      stats_non_local++;
+    }
 
     IN_RTL++;
     CHECK_IN_RTL();
@@ -301,7 +305,7 @@ static void inline flush_trace(ThreadInfo *info) {
   if (RTL_INIT != 1) return;
   if (!global_ignore && !G_flags->dry_run) {
     tid_t tid = info->tid;
-    TraceInfoPOD *trace = info -> trace_info;
+    TraceInfoPOD *trace = info->trace_info;
     uintptr_t *tleb = info->TLEB;
     stats_events_processed += trace->n_mops_;
     stats_cur_events += trace->n_mops_;
@@ -323,8 +327,9 @@ static void inline flush_trace(ThreadInfo *info) {
     // Update the mops_per_trace[] counters. TODO(glider): this should be moved
     // to thread_sanitizer.cc
     const size_t mop_stat_size = TS_ARRAY_SIZE(G_stats->mops_per_trace);
-    G_stats->mops_per_trace[(trace->n_mops_ < mop_stat_size) ?
-        trace->n_mops_ : mop_stat_size - 1]++;
+    if (G_flags->show_stats)
+        G_stats->mops_per_trace[(trace->n_mops_ < mop_stat_size) ?
+            trace->n_mops_ : mop_stat_size - 1]++;
 
     if (G_flags->literace_sampling == 0 ||
         !LiteRaceSkipTrace(tid, trace->id_, G_flags->literace_sampling)) {
@@ -415,8 +420,10 @@ static inline void RPut(EventType type, tid_t tid, pc_t pc,
         event.Print();
       }
     }
-    stats_events_processed++;
-    stats_cur_events++;
+    if (G_flags->verbosity) {
+      stats_events_processed++;
+      stats_cur_events++;
+    }
     if (!isThreadLocalEvent(type)) stats_non_local++;
     // Do not flush writes to 0x0.
     IN_RTL++;
