@@ -65,7 +65,7 @@ struct Stats : private ThreadLocalStats {
   void Add(const ThreadLocalStats &s) {
     uintptr_t *p1 = (uintptr_t*)this;
     uintptr_t *p2 = (uintptr_t*)&s;
-    size_t n = sizeof(*this) / sizeof(uintptr_t);
+    size_t n = sizeof(s) / sizeof(uintptr_t);
     for (size_t i = 0; i < n; i++) {
       p1[i] += p2[i];
     }
@@ -195,7 +195,7 @@ struct Stats : private ThreadLocalStats {
       total_locks += lock_sites[i];
     }
     Printf("lock_sites[*]=%ld\n", total_locks);
-    Printf("unlocked_access_ok  =%ld\n", unlocked_access_ok);
+    Printf("unlocked_access_ok =%ld\n", unlocked_access_ok);
     uintptr_t all_locked_access = 0;
     for (size_t i = 0; i < TS_ARRAY_SIZE(locked_access); i++) {
       uintptr_t t = locked_access[i];
