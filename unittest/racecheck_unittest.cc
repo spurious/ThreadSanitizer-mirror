@@ -4275,19 +4275,24 @@ int COND2 = 0;
 Mutex MU, MU2;
 CondVar CV, CV2;
 
-void Thr1() {
-  usleep(10000);  // Make sure the waiter blocks.
+StealthNotification n1, n2, n3;
 
+void Thr1() {
+
+  n2.wait();  // Make sure the waiter blocks.
   GLOB = 1; // WRITE
 
   MU.Lock();
   COND = 1;
   CV.Signal();
   MU.Unlock();
+  n1.signal();
 }
 void Thr2() {
-  usleep(1000*1000); // Make sure CV2.Signal() "happens after" CV.Signal()
-  usleep(10000);  // Make sure the waiter blocks.
+  // Make sure CV2.Signal() "happens after" CV.Signal()
+  n1.wait();
+  // Make sure the waiter blocks.
+  n3.wait();
 
   MU2.Lock();
   COND2 = 1;
@@ -4296,12 +4301,14 @@ void Thr2() {
 }
 void Thr3() {
   MU.Lock();
+  n2.signal();
   while(COND != 1)
     CV.Wait(&MU);
   MU.Unlock();
 }
 void Thr4() {
   MU2.Lock();
+  n3.signal();
   while(COND2 != 1)
     CV2.Wait(&MU2);
   MU2.Unlock();
