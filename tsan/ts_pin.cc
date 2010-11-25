@@ -444,7 +444,7 @@ static void TLEBAddRtnExit(PinThread &t) {
   DCHECK(t.tleb.size <= kThreadLocalEventBufferSize);
 }
 
-static uintptr_t *TLEBAddTrace(PinThread &t) {
+static INLINE uintptr_t *TLEBAddTrace(PinThread &t) {
   size_t n = t.trace_info->n_mops();
   DCHECK(n > 0);
   if (t.tleb.size + 2 + n > kThreadLocalEventBufferSize) {
@@ -1656,7 +1656,8 @@ static void OnTrace(THREADID tid, ADDRINT sp, TraceInfo *trace_info,
   DCHECK(n > 0);
 
   t.trace_info = trace_info;
-  trace_info->counter()++;
+  if (G_flags->show_stats)  // this stat may be racey; avoid ping-pong.
+    trace_info->counter()++;
   *tls_reg_p = TLEBAddTrace(t);
 }
 
