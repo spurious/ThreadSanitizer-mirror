@@ -5907,10 +5907,11 @@ class Detector {
     }
   }
 
-  void FlushExpectedRaces() {
+  void FlushExpectedRaces(bool print_summary) {
     // Report("ThreadSanitizerValgrind: done\n");
     // check if we found all expected races (for unit tests only).
-    int missing = 0;
+    static int total_missing = 0;
+    int this_flush_missing = 0;
     for (ExpectedRacesMap::iterator it = G_expected_races_map->begin();
          it != G_expected_races_map->end(); ++it) {
       ExpectedRace race = it->second;
@@ -5920,7 +5921,7 @@ class Detector {
       if (race.count == 0 &&
           !(g_race_verifier_active && !race.is_verifiable) &&
           (G_flags->nacl_untrusted == race.is_nacl_untrusted)) {
-        ++missing;
+        ++this_flush_missing;
         Printf("Missing an expected race on %p: %s (annotated at %s)\n",
                it->first,
                race.description,
@@ -5928,15 +5929,19 @@ class Detector {
       }
     }
 
-    if (missing) {
+    if (this_flush_missing) {
       int n_errs = GetNumberOfFoundErrors();
-      SetNumberOfFoundErrors(n_errs + missing);
+      SetNumberOfFoundErrors(n_errs + this_flush_missing);
+      total_missing += this_flush_missing;
     }
     G_expected_races_map->Clear();
+
+    if (print_summary)
+      Report("WARNING: %d expected races were NOT detected!\n", total_missing);
   }
 
   void HandleProgramEnd() {
-    FlushExpectedRaces();
+    FlushExpectedRaces(true);
     // ShowUnfreedHeap();
     EventSampler::ShowSamples();
     ShowStats();
@@ -6145,7 +6150,7 @@ class Detector {
                          (const char*)e->pc(), TID(e->tid()));
         break;
       case FLUSH_EXPECTED_RACES:
-        FlushExpectedRaces();
+        FlushExpectedRaces(false);
         break;
       case EXPECT_RACE_BEGIN:
         CHECK(g_expecting_races == false);
