@@ -320,16 +320,12 @@ static void inline flush_trace(ThreadInfo *info) {
       bb_unique_id = NoBarrier_AtomicIncrement(&bb_unique_id);
       trace->id_ = bb_unique_id;
     }
+
     // Increment the trace counter in a racey way. This can lead to small
     // deviations if the trace is hot, but we can afford them.
-    trace->counter_++;
-
-    // Update the mops_per_trace[] counters. TODO(glider): this should be moved
-    // to thread_sanitizer.cc
-    const size_t mop_stat_size = TS_ARRAY_SIZE(G_stats->mops_per_trace);
-    if (G_flags->show_stats)
-        G_stats->mops_per_trace[(trace->n_mops_ < mop_stat_size) ?
-            trace->n_mops_ : mop_stat_size - 1]++;
+    // Unfortunately this also leads to cache ping-pong and may affect the
+    // performance.
+    if (G_flags->show_stats) trace->counter_++;
 
     if (G_flags->literace_sampling == 0 ||
         !LiteRaceSkipTrace(tid, trace->id_, G_flags->literace_sampling)) {
