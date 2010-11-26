@@ -3215,6 +3215,39 @@ TEST(NegativeTests, DISABLED_StdStringDtorVsAssign) {
 }  //namespace NegativeTests_EmptyRep
 
 
+namespace NegativeTests_FprintfThreadCreateTest {
+// Check that fprintf doesn't introduce h-b with the start of the
+// following thread
+int *GLOB;
+StealthNotification *n;
+
+void Worker1() {
+  *GLOB = 1;
+  fprintf(stdout, "Hello, world!\n");
+  n->signal();
+}
+
+void Worker2() {
+  *GLOB = 2;
+}
+
+TEST(NegativeTests, FprintfThreadCreateTest) {
+  GLOB = new int;
+  ANNOTATE_EXPECT_RACE(GLOB, "TP: NegativeTests.FprintfThreadCreateTest");
+  n = new StealthNotification;
+  MyThread t1(Worker1);
+  t1.Start();
+  n->wait();
+  MyThread t2(Worker2);
+  t2.Start();
+  t2.Join();
+  t1.Join();
+  delete n;
+  delete GLOB;
+}
+
+} // namespace NegativeTests_FprintfThreadCreateTest
+
 // test72: STAB. Stress test for the number of segment sets (SSETs). {{{1
 namespace test72 {
 #ifndef NO_BARRIER

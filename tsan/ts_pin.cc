@@ -896,6 +896,11 @@ void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
 
   // This is a lock-free (thread local) operation.
   TLEBStartThread(t);
+#ifdef _MSC_VER
+  // Ignore all mops & sync before the real thread code.
+  // See the corresponding IgnoreSyncAndMopsEnd in Before_BaseThreadInitThunk.
+  IgnoreSyncAndMopsBegin(tid);
+#endif
 }
 
 static void Before_start_thread(THREADID tid, ADDRINT pc, ADDRINT sp) {
@@ -987,6 +992,11 @@ static void Before_BaseThreadInitThunk(THREADID tid, ADDRINT pc, ADDRINT sp) {
   PinThread &t = g_pin_threads[tid];
   size_t stack_size = t.thread_stack_size_if_known;
   // Printf("T%d %s %p %p\n", tid, __FUNCTION__, sp, stack_size);
+  if (tid != 0) {
+    // Ignore all mops & sync before the real thread code.
+    // See the corresponding IgnoreSyncAndMopsBegin in CallbackForThreadStart.
+    IgnoreSyncAndMopsEnd(tid);
+  }
   DumpEvent(THR_STACK_TOP, tid, pc, sp, stack_size);
 }
 
