@@ -3945,6 +3945,7 @@ class A {
 class B : public A {
  public:
   virtual void F() {
+    // TODO(kcc): enable this printf back once issue 57 is fixed.
     // printf ("B::F()\n");
   }
 };
@@ -3962,7 +3963,6 @@ void Thread2() {
 }
 TEST(PositiveTests, HarmfulRaceInDtorB) {
   ANNOTATE_FLUSH_EXPECTED_RACES();
-  ThreadSanitizerQuery("trace-level=1");
   // Will print B::F()
   a = new B;
   ANNOTATE_EXPECT_RACE(a, "HarmfulRaceInDtor #1: expected race on a->vptr");
@@ -3971,12 +3971,10 @@ TEST(PositiveTests, HarmfulRaceInDtorB) {
   t.Start();
   t.Join();
   ANNOTATE_FLUSH_EXPECTED_RACES();
-  ThreadSanitizerQuery("trace-level=0");
 }
 
 TEST(PositiveTests, HarmfulRaceInDtorA) {
   ANNOTATE_FLUSH_EXPECTED_RACES();
-  ThreadSanitizerQuery("trace-level=1");
   // Will print A::F()
   a = new B;
   ANNOTATE_EXPECT_RACE(a, "HarmfulRaceInDtor #2: expected race on a->vptr");
@@ -3985,7 +3983,6 @@ TEST(PositiveTests, HarmfulRaceInDtorA) {
   t.Start();
   t.Join();
   ANNOTATE_FLUSH_EXPECTED_RACES();
-  ThreadSanitizerQuery("trace-level=0");
 }
 
 }  // namespace
