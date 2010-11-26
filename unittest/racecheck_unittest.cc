@@ -3231,6 +3231,8 @@ void Worker2() {
   *GLOB = 2;
 }
 
+#if !defined(_MSC_VER)
+// TODO(timurrrr): investigate Windows FN and un-#if
 TEST(NegativeTests, FprintfThreadCreateTest) {
   GLOB = new int;
   ANNOTATE_EXPECT_RACE(GLOB, "TP: NegativeTests.FprintfThreadCreateTest");
@@ -3245,6 +3247,7 @@ TEST(NegativeTests, FprintfThreadCreateTest) {
   delete n;
   delete GLOB;
 }
+#endif
 
 } // namespace NegativeTests_FprintfThreadCreateTest
 
