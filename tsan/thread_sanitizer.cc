@@ -7688,7 +7688,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   G_flags->cut_stack_below.push_back("BaseThreadInitThunk");
   FindStringFlag("cut_stack_below", args, &G_flags->cut_stack_below);
 
-  FindIntFlag("num_callers", 32, args, &G_flags->num_callers);
+  FindIntFlag("num_callers", 12, args, &G_flags->num_callers);
 
   G_flags->max_n_threads        = 100000;
 
