@@ -110,17 +110,23 @@ namespace SnowLeopardTests {
 int GLOB = 0;
 StealthNotification sn1, sn2;
 
-void worker_do_add(int *var, int val, StealthNotification *sn) {
+void worker_do_add(int *var, int val,
+                   StealthNotification *notify,
+                   StealthNotification *waitfor) {
   (*var) += val;
   fprintf(stderr, "var=%d\n", *var);
-  sn->signal();
+  notify->signal();
+  // Make sure that the callbacks are ran on different threads.
+  if (waitfor) {
+    waitfor->wait();
+  }
 }
 
 TEST(SnowLeopardTests, GCD_GlobalQueueRace) {
   ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "SnowLeopardTests.GCD_GlobalQueueRace TP.");
   dispatch_queue_t queue = dispatch_get_global_queue(0,0);
-  dispatch_block_t block_plus = ^{ worker_do_add(&GLOB, 1, &sn1); };
-  dispatch_block_t block_minus = ^{ worker_do_add(&GLOB, -1, &sn2); };
+  dispatch_block_t block_plus = ^{ worker_do_add(&GLOB, 1, &sn1, &sn2); };
+  dispatch_block_t block_minus = ^{ worker_do_add(&GLOB, -1, &sn2, NULL); };
   dispatch_async(queue, block_plus);
   dispatch_async(queue, block_minus);
   sn1.wait();
