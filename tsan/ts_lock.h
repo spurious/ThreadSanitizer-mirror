@@ -43,6 +43,7 @@ class TSLock {
  public:
   void Lock() {};
   void Unlock() {};
+  void AssertHeld() {};
 };
 #else
 class TSLock {
@@ -51,6 +52,7 @@ class TSLock {
   ~TSLock();
   void Lock();
   void Unlock();
+  void AssertHeld();
  private:
   struct Rep;
   Rep *rep_;

@@ -344,6 +344,7 @@ FILE *OpenSocketForWriting(const string &host_and_port) {
 // Lock based on pipe's send/receive. The idea (but not the code) 
 // is shamelessly stolen from valgrind's /coregrind/m_scheduler/sema.c
 struct TSLock::Rep {
+  bool held;
   char pipe_char;
   int pipe_fd[2];
 
@@ -379,6 +380,7 @@ struct TSLock::Rep {
 };
 #elif defined(_MSC_VER)
 struct TSLock::Rep {
+  bool held;
   char pipe_char;
   WINDOWS::HANDLE pipe_fd[2];
   void Write() {
@@ -417,6 +419,7 @@ struct TSLock::Rep {
 
 TSLock::TSLock() {
   rep_ = new Rep;
+  rep_->held = false;
   rep_->Open();
   rep_->Write();
 }
@@ -426,9 +429,14 @@ TSLock::~TSLock() {
 void TSLock::Lock() {
   while(rep_->Read() == false)
     ;
+  rep_->held = true;
 }
 void TSLock::Unlock() {
+  rep_->held = false;
   rep_->Write();
+}
+void TSLock::AssertHeld() {
+  DCHECK(rep_->held);
 }
 #endif  // __GNUC__ & TS_LOCK_PIPE
 
@@ -436,10 +444,12 @@ void TSLock::Unlock() {
 #include "pin.H"
 struct TSLock::Rep {
   PIN_LOCK lock;
+  bool held;
 };
 
 TSLock::TSLock() {
   rep_ = new Rep();
+  rep_->held = false;
   InitLock(&rep_->lock);
 }
 TSLock::~TSLock() {
@@ -447,9 +457,14 @@ TSLock::~TSLock() {
 }
 void TSLock::Lock() {
   GetLock(&rep_->lock, __LINE__);
+  rep_->held = true;
 }
 void TSLock::Unlock() {
+  rep_->held = false;
   ReleaseLock(&rep_->lock);
+}
+void TSLock::AssertHeld() {
+  DCHECK(rep_->held);
 }
 #endif  // TS_LOCK_PIN
 
@@ -458,9 +473,11 @@ void TSLock::Unlock() {
 
 struct TSLock::Rep {
   pthread_mutex_t lock;
+  bool held;
 };
 TSLock::TSLock() {
   rep_ = new Rep();
+  rep_->held = false;
   __real_pthread_mutex_init(&rep_->lock, NULL);
 }
 TSLock::~TSLock() {
@@ -469,9 +486,14 @@ TSLock::~TSLock() {
 }
 void TSLock::Lock() {
   __real_pthread_mutex_lock(&rep_->lock);
+  rep_->held = true;
 }
 void TSLock::Unlock() {
+  rep_->held = false;
   __real_pthread_mutex_unlock(&rep_->lock);
+}
+void TSLock::AssertHeld() {
+  DCHECK(rep_->held);
 }
 #endif  // TS_LLVM
 

@@ -5091,6 +5091,8 @@ static HeapMap<ThreadStackInfo> *G_thread_stack_map;
 // We need to forget all state and start over because we've
 // run out of some resources (most likely, segment IDs).
 static void ForgetAllStateAndStartOver(const char *reason) {
+  // This is done under the main lock.
+  ts_lock->AssertHeld();
   g_last_flush_time = TimeInMilliSeconds();
   Report("INFO: %s. Flushing state.\n", reason);
 
@@ -6893,6 +6895,8 @@ one_call:
                                            bool is_w, bool has_expensive_flags,
                                            bool need_locking) {
     TIL til(ts_lock, 2, need_locking);
+    DCHECK(thr->lsid(false) == thr->segment()->lsid(false));
+    DCHECK(thr->lsid(true) == thr->segment()->lsid(true));
     thr->FlushDeadSids();
     if (TS_SERIALIZED == 0) {
       // In serialized version this is the hotspot, so grab fresh SIDs
@@ -6945,8 +6949,6 @@ one_call:
         sampler.Sample(tid, type);
       }
     }
-
-
   }
 
   INLINE void HandleMemoryAccessInternal(TID tid, Thread *thr, uintptr_t pc,
@@ -6969,9 +6971,6 @@ one_call:
     // but if --ignore_stack==false this would cost few extra insns.
     // On optimized binaries ignoring stack gives nearly nothing.
     // if (thr->IgnoreMemoryIfInStack(addr)) return;
-
-    DCHECK(thr->lsid(false) == thr->segment()->lsid(false));
-    DCHECK(thr->lsid(true) == thr->segment()->lsid(true));
 
     CacheLine *cache_line = NULL;
     INC_STAT(thr->stats.memory_access_sizes[size <= 16 ? size : 17 ]);
