@@ -31,5 +31,5 @@ ThreadSanitizer.so:	ThreadSanitizer.cpp
 	$(CXX) -shared -g ThreadSanitizer.o -o ThreadSanitizer.so
 
 clean:
-	rm *.o
-	rm *.so
+	rm -f *.o
+	rm -f *.so
