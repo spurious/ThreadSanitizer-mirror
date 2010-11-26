@@ -114,6 +114,12 @@ class TIL {
 static TSLock *ts_lock;
 static TSLock *ts_ignore_below_lock;
 
+static void AssertTILHeld() {
+  if (TS_SERIALIZED == 0) {
+    ts_lock->AssertHeld();
+  }
+}
+
 // -------- Util ----------------------------- {{{1
 
 string PcToRtnNameWithStats(uintptr_t pc, bool demangle) {
@@ -3177,9 +3183,9 @@ class Cache {
     return (uintptr_t)line <= 1;
   }
 
-  // Get a CacheLine for exclusive use.
+  // Try to get a CacheLine for exclusive use.
   // May return NULL or kLineIsLocked.
-  INLINE CacheLine *AcquireLine(uintptr_t a, int call_site) {
+  INLINE CacheLine *TryAcquireLine(uintptr_t a, int call_site) {
     uintptr_t cli = ComputeCacheLineIndexInCache(a);
     CacheLine **addr = &lines_[cli];
     CacheLine *res = (CacheLine*)AtomicExchange(
@@ -3187,13 +3193,24 @@ class Cache {
     if (DEBUG_MODE && debug_cache) {
       uintptr_t tag = CacheLine::ComputeTag(a);
       if (res)
-        Printf("Acquire %p empty=%d tag=%lx cli=%lx site=%d\n",
+        Printf("TryAcquire %p empty=%d tag=%lx cli=%lx site=%d\n",
                res, res->Empty(), res->tag(), cli, call_site);
       else
-        Printf("Acquire tag=%lx cli=%d site=%d\n", tag, cli, call_site);
+        Printf("TryAcquire tag=%lx cli=%d site=%d\n", tag, cli, call_site);
     }
-
     return res;
+  }
+
+  INLINE CacheLine *AcquireLine(uintptr_t a, int call_site) {
+    CacheLine *line = NULL;
+    int iter = 0;
+    do {
+      line = TryAcquireLine(a, call_site);
+      iter++;
+      DCHECK(iter < (1 << 30));
+    } while (line == kLineIsLocked);
+    DCHECK(lines_[ComputeCacheLineIndexInCache(a)] == kLineIsLocked);
+    return line;
   }
 
   // Release a CacheLine from exclusive use.
@@ -3228,17 +3245,11 @@ class Cache {
     uintptr_t cli = ComputeCacheLineIndexInCache(a);
     CacheLine *res = NULL;
     CacheLine *line = NULL;
-    int iter = 0;
 
     if (TS_SERIALIZED) {
       line = lines_[cli];
     } else {
-      do {
-        line = AcquireLine(tag, call_site);
-        iter++;
-        DCHECK(iter < (1 << 30));
-      } while (line == kLineIsLocked);
-      DCHECK(lines_[cli] == kLineIsLocked);
+      line = AcquireLine(tag, call_site);
     }
 
 
@@ -5092,7 +5103,7 @@ static HeapMap<ThreadStackInfo> *G_thread_stack_map;
 // run out of some resources (most likely, segment IDs).
 static void ForgetAllStateAndStartOver(const char *reason) {
   // This is done under the main lock.
-  ts_lock->AssertHeld();
+  AssertTILHeld();
   g_last_flush_time = TimeInMilliSeconds();
   Report("INFO: %s. Flushing state.\n", reason);
 
@@ -6984,7 +6995,7 @@ one_call:
         // it is anabled only under TS_SERIALIZED==0.
 
         // Acquire a line w/o locks.
-        cache_line = G_cache->AcquireLine(addr, __LINE__);
+        cache_line = G_cache->TryAcquireLine(addr, __LINE__);
         if (!Cache::LineIsNullOrLocked(cache_line)) {
           // The line is not empty or locked -- check the tag.
           if (cache_line->tag() == CacheLine::ComputeTag(addr)) {
