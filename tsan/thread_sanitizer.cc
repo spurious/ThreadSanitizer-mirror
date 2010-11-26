@@ -5936,8 +5936,8 @@ class Detector {
     }
     G_expected_races_map->Clear();
 
-    if (print_summary)
-      Report("WARNING: %d expected races were NOT detected!\n", total_missing);
+    if (print_summary && total_missing > 0)
+      Report("WARNING: %d expected race(s) NOT detected!\n", total_missing);
   }
 
   void HandleProgramEnd() {
