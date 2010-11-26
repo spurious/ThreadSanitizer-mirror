@@ -152,6 +152,12 @@ string PcToRtnNameAndFilePos(uintptr_t pc) {
   return rtn_name + " " + file_name + ":" + buff;
 }
 
+void SetHasExpensiveFlags() {
+  g_has_expensive_flags = G_flags->trace_level > 0 ||
+      G_flags->show_stats > 1                      ||
+      G_flags->sample_events > 0;
+}
+
 // -------- ID ---------------------- {{{1
 // We wrap int32_t into ID class and then inherit various ID type from ID.
 // This is done in an attempt to implement type safety of IDs, i.e.
@@ -7698,9 +7704,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   debug_cache = PhaseDebugIsOn("cache");
   debug_race_verifier = PhaseDebugIsOn("race_verifier");
 
-  g_has_expensive_flags = G_flags->trace_level > 0 ||
-      G_flags->show_stats > 1                      ||
-      G_flags->sample_events > 0;
+  SetHasExpensiveFlags();
 }
 
 // -------- ThreadSanitizer ------------------ {{{1
@@ -7903,6 +7907,16 @@ extern "C" const char *ThreadSanitizerQuery(const char *query) {
   }
   if (DEBUG_MODE && G_flags->debug_level >= 2) {
     Printf("ThreadSanitizerQuery(\"%s\") = \"%s\"\n", query, ret);
+  }
+  if (str == "trace-level=0") {
+    Report("INFO: trace-level=0\n");
+    G_flags->trace_level = 0;
+    SetHasExpensiveFlags();
+  }
+  if (str == "trace-level=1") {
+    Report("INFO: trace-level=1\n");
+    G_flags->trace_level = 1;
+    SetHasExpensiveFlags();
   }
   return ret;
 }
