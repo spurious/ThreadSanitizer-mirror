@@ -518,14 +518,5 @@ int32_t NoBarrier_AtomicDecrement(int32_t* ptr) {
 }
 #endif  // _MSC_VER && TS_SERIALIZED
 
-//--------- Dynamic Annotations ------------- {{{1
-// Instead of linking in the file dynamic_annotations.c
-// we simply define the few required functions here.
-extern "C" NOINLINE void AnnotateCondVarWait(
-    const char *file, int line, const volatile void *cv,
-    const volatile void *lock){}
-extern "C" NOINLINE void AnnotateCondVarSignal(
-    const char *file, int line, const volatile void *cv){}
-
 // end. {{{1
 // vim:shiftwidth=2:softtabstop=2:expandtab:tw=80

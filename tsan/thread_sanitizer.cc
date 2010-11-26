@@ -7953,6 +7953,7 @@ extern void ThreadSanitizerInit() {
   ts_lock = new TSLock;
   ts_ignore_below_lock = new TSLock;
   g_so_far_only_one_thread = true;
+  ANNOTATE_BENIGN_RACE(&g_so_far_only_one_thread, "real benign race");
   CHECK_EQ(sizeof(ShadowValue), 8);
   CHECK(G_flags);
   G_stats        = new Stats;
