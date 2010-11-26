@@ -3954,7 +3954,7 @@ static A *a;
 void Thread1() {
   a->F();
   a->Done();
-  usleep(200000);
+  sleep(1);
 };
 
 void Thread2() {
@@ -7669,6 +7669,42 @@ TEST(NegativeTests, BenignRaceTest) {
 }
 }
 
+namespace StressTests_FlushStateTest {  // {{{1
+// Stress test for FlushState which happens in parallel with some work.
+const int N = 1000;
+int array[N];
+
+void Flusher() {
+  for (int i = 0; i < 10; i++) {
+    usleep(1000);
+    ANNOTATE_FLUSH_STATE();
+  }
+}
+
+void Write1(int i) { array[i]++; }
+void Write2(int i) { array[i]--; }
+int Read1(int i) { volatile int z = array[i]; return z; }
+int Read2(int i) { volatile int z = array[i]; return z; }
+
+void Worker() {
+  for (int iter = 0; iter < 10; iter++) {
+    usleep(1000);
+    for (int i = 0; i < N; i++) {
+      Write1(i);
+      Write2(i);
+      Read1(i);
+      Read2(i);
+    }
+  }
+}
+
+TEST(StressTests, DISABLED_FlushStateTest) {
+  MyThreadArray t(Flusher, Worker, Worker, Worker);
+  t.Start();
+  t.Join();
+}
+
+}  // namespace
 
 // End {{{1
  // vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker
