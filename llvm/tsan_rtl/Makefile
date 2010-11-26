@@ -27,7 +27,8 @@ FLAGS=-I. -Istlport -I../../third_party/stlport \
       -I$(TSAN_PATH) -I../../dynamic_annotations \
       -fno-exceptions -g -O2 \
       -D_STLP_NO_IOSTREAMS=1 -DTS_LLVM \
-      -DDYNAMIC_ANNOTATIONS_WANT_ATTRIBUTE_WEAK
+      -DDYNAMIC_ANNOTATIONS_WANT_ATTRIBUTE_WEAK \
+      -DDYNAMIC_ANNOTATIONS_PREFIX=LLVM
 
 FOREIGN_HEADERS=$(TSAN_PATH)/ts_lock.h $(TSAN_PATH)/ts_stats.h \
                 $(TSAN_PATH)/ts_heap_info.h $(TSAN_PATH)/ts_trace_info.h \
