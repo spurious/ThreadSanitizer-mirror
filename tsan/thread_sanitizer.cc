@@ -7938,11 +7938,13 @@ extern "C" const char *ThreadSanitizerQuery(const char *query) {
   if (str == "trace-level=0") {
     Report("INFO: trace-level=0\n");
     G_flags->trace_level = 0;
+    debug_happens_before = false;
     SetHasExpensiveFlags();
   }
   if (str == "trace-level=1") {
     Report("INFO: trace-level=1\n");
     G_flags->trace_level = 1;
+    debug_happens_before = true;
     SetHasExpensiveFlags();
   }
   return ret;
