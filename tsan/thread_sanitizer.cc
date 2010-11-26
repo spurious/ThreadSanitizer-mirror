@@ -3445,7 +3445,7 @@ class Cache {
     }
   }
 
-  static const int kNumLines = 1 << 21;
+  static const int kNumLines = 1 << (DEBUG_MODE ? 14 : 21);
   CacheLine *lines_[kNumLines];
 
   // tag => CacheLine
