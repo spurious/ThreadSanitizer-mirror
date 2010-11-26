@@ -89,7 +89,7 @@ LOG=instrumentation.log
 set_platform_dependent_vars
 
 # Translate C code to LLVM bitcode.
-$LLVM_GPP -emit-llvm $MARCH $SRC -g -S $CXXFLAGS $ARGS -o "$SRC_BIT" || exit 1
+$LLVM_GPP -emit-llvm $MARCH $SRC -g -S $CXXFLAGS $DA_FLAGS $ARGS -o "$SRC_BIT" || exit 1
 # Instrument the bitcode.
 $OPT -load "$PASS_SO" $INST_MODE -arch=$XARCH "$SRC_BIT" -S  > "$SRC_INSTR" 2>$LOG || exit 1
 cat $LOG | grep "^->" | sed "s/^->//" > "$SRC_DBG"
