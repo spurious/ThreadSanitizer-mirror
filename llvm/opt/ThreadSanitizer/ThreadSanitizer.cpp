@@ -71,6 +71,12 @@ namespace {
     set<string> debug_path_set;
     map<uintptr_t, DebugPcInfo> debug_pc_map;
 
+    // TODO(glider): box the trace into a class that provides the set of
+    // predecessors.
+    typedef set<BasicBlock*> BlockSet;
+    typedef vector<BasicBlock*> BlockVector;
+    map<BasicBlock*, BlockSet> predecessors;
+
     TsanOnlineInstrument() : ModulePass(&ID) {
       if (TargetArch == "x86-64") {
         arch_size_ = 64;
@@ -235,6 +241,190 @@ namespace {
       GV->setSection("tsan_rtl_debug_info"); 
     }
 
+
+    BlockSet &getPredecessors(BasicBlock* bb) {
+      return predecessors[bb];
+    }
+
+    // In fact a BB ends with a call iff it contains a call.
+    bool endsWithCall(Function::iterator BB) {
+      for (BasicBlock::iterator BI = BB->begin(), BE = BB->end();
+           BI != BE;
+           ++BI) {
+        if (isaCallOrInvoke(BI)) return true;
+      }
+      return false;
+    }
+
+    bool traceHasCycles(BlockSet &trace,
+                        BasicBlock *current_bb, BlockSet &used) {
+      TerminatorInst *BBTerm = current_bb->getTerminator();
+      // Iterate over the successors of the block being considered.
+      // If it can be added to the trace, do it.
+      for (int i = 0, e = BBTerm->getNumSuccessors(); i != e; ++i) {
+        BasicBlock *child = BBTerm->getSuccessor(i);
+        // Skip the children not belonging to the same trace.
+        if (trace.find(child) == trace.end()) continue;
+        if (used.find(child) != used.end()) return true;
+        used.insert(child);
+        if (traceHasCycles(trace, child, used)) return true;
+        used.erase(child);
+      }
+      return false;
+    }
+
+    // TODO(glider): may want to handle indirectbr.
+    // A trace is valid if and only if:
+    //  -- it has a single entry point
+    //  -- it contains no loops
+    bool validTrace(BlockSet &trace) {
+      BlockVector to_see;
+      BlockSet entries;
+      BlockSet accessible;
+      int num_edges = 0;
+#if DEBUG
+        errs() << "VALIDATING:\n";
+        for (BlockSet::iterator I = trace.begin(), E = trace.end();
+             I != E; ++I) {
+          errs() << "    " << (*I)->getName();
+        }
+        errs() << "\n";
+#endif
+
+
+      // Initialize to_see and find all the entry points.
+      for (BlockSet::iterator BB = trace.begin(), E = trace.end();
+           BB != E; ++BB) {
+        to_see.push_back(*BB);
+        BlockSet &pred = getPredecessors(*BB);
+        Function *F = (*BB)->getParent();
+        BasicBlock *entry = F->begin();
+#if DEBUG
+        errs() << "!!" << (*BB)->getName() << "\n";
+#endif
+        if (*BB == entry) {
+          entries.insert(*BB);
+#if DEBUG
+          errs() << "? ->" << (*BB)->getName() << "\n";
+#endif
+        }
+        for (BlockSet::iterator I = pred.begin(), E = pred.end();
+             I != E; ++I) {
+#if DEBUG
+          errs() << (*I)->getName() << "->" << (*BB)->getName() << "\n";
+#endif
+          if (trace.find(*I) != trace.end()) {
+            num_edges++;
+          } else {
+            entries.insert(*BB);
+          }
+        }
+      }
+      if (entries.size() > 1) {
+#if DEBUG
+        errs() << "MULTIPLE ENTRY DETECTED\n";
+#endif
+        return false;
+      }
+      return true;
+      // TODO(glider): looks like the greedy algorithm allows us not to check
+      // for cycles inside trace. But we may want to assert that the only
+      // possible cycle can lead to the entry block from within the trace.
+      BlockSet used_empty;
+      // entries.begin() is the only trace entry.
+      if (traceHasCycles(trace, *(entries.begin()), used_empty)) {
+#if DEBUG
+        errs() << "LOOP DETECTED\n";
+#endif
+        return false;
+      }
+      return true;
+    }
+
+    bool buildClosure(Function::iterator BB,
+                      BlockSet &trace, BlockSet &used) {
+      BlockVector to_see;
+      to_see.push_back(BB);
+      trace.insert(BB);
+      used.insert(BB);
+      for (int i = 0; i<to_see.size(); ++i) {
+        BasicBlock *current_bb = to_see[i];
+        // A call should end the trace immediately.
+        if (endsWithCall(current_bb)) continue;
+        TerminatorInst *BBTerm = current_bb->getTerminator();
+        // Iterate over the successors of the block being considered.
+        // If it can be added to the trace, do it.
+        for (int i = 0, e = BBTerm->getNumSuccessors(); i != e; ++i) {
+          BasicBlock *child = BBTerm->getSuccessor(i);
+          if (trace.find(child) != trace.end()) continue;
+          if (used.find(child) != used.end()) continue;
+          trace.insert(child);
+          if (validTrace(trace)) {
+            used.insert(child);
+            to_see.push_back(child);
+          } else {
+            trace.erase(child);
+          }
+        }
+      }
+    }
+
+    void cachePredecessors(Module &M) {
+      for (Module::iterator F = M.begin(), E = M.end(); F != E; ++F) {
+        if (F->isDeclaration()) continue;
+        for (Function::iterator BB = F->begin(), E = F->end(); BB != E; ++BB) {
+          TerminatorInst *BBTerm = BB->getTerminator();
+          for (int i = 0, e = BBTerm->getNumSuccessors(); i != e; ++i) {
+            BasicBlock *child = BBTerm->getSuccessor(i);
+            predecessors[child].insert(BB);
+          }
+        }
+      }
+    }
+
+    bool buildTraces(Module &M) {
+      vector<BlockSet> traces;
+      BlockSet used_bbs;
+      BlockVector to_see;
+      BlockSet visited;
+      cachePredecessors(M);
+      for (Module::iterator F = M.begin(), E = M.end(); F != E; ++F) {
+        if (F->isDeclaration()) continue;
+        BlockSet current_trace;
+        to_see.push_back(F->begin());
+        for (int i = 0; i < to_see.size(); ++i) {
+          BasicBlock *current_bb = to_see[i];
+#if DEBUG
+          errs() << "BB: " << current_bb->getName() << "\n";
+#endif
+          if (used_bbs.find(current_bb) == used_bbs.end()) {
+            assert(current_trace.size() == 0);
+            buildClosure(current_bb, current_trace, used_bbs);
+            traces.push_back(current_trace);
+            current_trace.clear();
+          }
+          TerminatorInst *BBTerm = current_bb->getTerminator();
+          for (int ch = 0, e = BBTerm->getNumSuccessors(); ch != e; ++ch) {
+            BasicBlock *child = BBTerm->getSuccessor(ch);
+            if (visited.find(child) == visited.end()) {
+              to_see.push_back(child);
+              visited.insert(child);
+            }
+          }
+        }
+      }
+
+#if DEBUG
+      for (int i = 0; i < traces.size(); ++i) {
+        errs() << "TRACE:\n";
+        for (BlockSet::iterator I = traces[i].begin(), E = traces[i].end();
+             I != E; ++I) {
+          errs() << "    " << (*I)->getName() << "\n";
+        }
+      }
+#endif
+    }
+
     virtual bool runOnModule(Module &M) {
       BBCount = 0;
       ModuleFunctionCount = 0;
@@ -331,6 +521,8 @@ namespace {
           }
         }
       }
+      // TODO(glider): exploit the traces.
+      buildTraces(M);
 
       int nBB = 1, FnBB = 1;
       for (Module::iterator F = M.begin(), E = M.end(); F != E; ++F) {
@@ -383,6 +575,7 @@ namespace {
                                       dir, file,
                                       Loc.getLineNumber())));
     }
+
     bool isaCallOrInvoke(BasicBlock::iterator &BI) {
       return ((isa<CallInst>(BI) && (!isa<DbgDeclareInst>(BI))) ||
               isa<InvokeInst>(BI));
