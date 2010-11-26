@@ -3213,6 +3213,15 @@ class Cache {
     return line;
   }
 
+  void AcquireAllLines() {
+    if (TS_SERIALIZED == 0) return;
+    for (uintptr_t i = 0; i < (uintptr_t)kNumLines; i++) {
+      CacheLine *line = AcquireLine(i << CacheLine::kLineSizeBits, __LINE__);
+      CHECK(line != kLineIsLocked);
+      CHECK(lines_[i] == kLineIsLocked);
+    }
+  }
+
   // Release a CacheLine from exclusive use.
   INLINE void ReleaseLine(uintptr_t a, CacheLine *line, int call_site) {
     if (TS_SERIALIZED) return;
@@ -4599,6 +4608,7 @@ struct Thread {
     } else {
       // No fresh SIDs available, have to grab a lock and get few.
       TIL til(ts_lock, 5);
+      AssertTILHeld();
       this->stats.history_creates_new_segment++;
       VTS *new_vts = vts()->Clone();
       NewSegment("HandleSblockEnter", new_vts);
@@ -5104,6 +5114,7 @@ static HeapMap<ThreadStackInfo> *G_thread_stack_map;
 static void ForgetAllStateAndStartOver(const char *reason) {
   // This is done under the main lock.
   AssertTILHeld();
+  G_cache->AcquireAllLines();
   g_last_flush_time = TimeInMilliSeconds();
   Report("INFO: %s. Flushing state.\n", reason);
 
@@ -5770,6 +5781,7 @@ class EventSampler {
       return;
 
     TIL til(ts_lock, 8);
+    AssertTILHeld();
     string pos =  Thread::Get(tid)->
         CallStackToStringRtnOnly(G_flags->sample_events_depth);
     (*samples_)[event_name][pos]++;
@@ -5779,6 +5791,7 @@ class EventSampler {
   static void ShowSamples() {
     if (G_flags->sample_events == 0) return;
     TIL til(ts_lock, 8);
+    AssertTILHeld();
     for (SampleMapMap::iterator it1 = samples_->begin();
          it1 != samples_->end(); ++it1) {
       string name = it1->first;
@@ -5970,6 +5983,7 @@ class Detector {
     // Are we out of segment IDs?
     if (Segment::NumberOfSegments() > ((kMaxSID * 15) / 16)) {
       TIL til(ts_lock, 7);
+      AssertTILHeld();
       if (DEBUG_MODE) {
         G_cache->PrintStorageStats();
         Segment::ShowSegmentStats();
@@ -5988,6 +6002,7 @@ class Detector {
       if ((counter % kFreq) == 0) {  // Don't do it too often.
         // TODO(kcc): find a way to check memory limit more frequently.
         TIL til(ts_lock, 7);
+        AssertTILHeld();
         FlushIfOutOfMem();
       }
     }
@@ -6061,6 +6076,7 @@ class Detector {
 
     // Everything else is under a lock.
     TIL til(ts_lock, 0);
+    AssertTILHeld();
 
     if (UNLIKELY(type == THR_START)) {
         HandleThreadStart(TID(e->tid()), TID(e->info()), e->pc());
@@ -6906,6 +6922,7 @@ one_call:
                                            bool is_w, bool has_expensive_flags,
                                            bool need_locking) {
     TIL til(ts_lock, 2, need_locking);
+    AssertTILHeld();
     DCHECK(thr->lsid(false) == thr->segment()->lsid(false));
     DCHECK(thr->lsid(true) == thr->segment()->lsid(true));
     thr->FlushDeadSids();
