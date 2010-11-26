@@ -715,19 +715,21 @@ static uintptr_t WRAP_NAME(ThreadSanitizerQuery)(WRAP_PARAM4) {
 
 //--------- Ignores -------------------------------- {{{2
 static void IgnoreMopsBegin(THREADID tid) {
-//  if (tid == 0) Printf("Ignore++ %d\n", z++); 
+  // if (tid != 0) Printf("T%d IgnoreMops++\n", tid);
   TLEBSimpleEvent(g_pin_threads[tid], TLEB_IGNORE_ALL_BEGIN);
 }
 static void IgnoreMopsEnd(THREADID tid) {
-//  if (tid == 0) Printf("Ignore-- %d\n", z--);
+  // if (tid != 0) Printf("T%d IgnoreMops--\n", tid);
   TLEBSimpleEvent(g_pin_threads[tid], TLEB_IGNORE_ALL_END);
 }
 
 static void IgnoreSyncAndMopsBegin(THREADID tid) {
+  // if (tid != 0) Printf("T%d IgnoreSync++\n", tid);
   IgnoreMopsBegin(tid);
   TLEBSimpleEvent(g_pin_threads[tid], TLEB_IGNORE_SYNC_BEGIN);
 }
 static void IgnoreSyncAndMopsEnd(THREADID tid) {
+  // if (tid != 0) Printf("T%d IgnoreSync--\n", tid);
   IgnoreMopsEnd(tid);
   TLEBSimpleEvent(g_pin_threads[tid], TLEB_IGNORE_SYNC_END);
 }
@@ -996,6 +998,9 @@ static void Before_BaseThreadInitThunk(THREADID tid, ADDRINT pc, ADDRINT sp) {
     // Ignore all mops & sync before the real thread code.
     // See the corresponding IgnoreSyncAndMopsBegin in CallbackForThreadStart.
     IgnoreSyncAndMopsEnd(tid);
+    TLEBFlushLocked(t);
+    CHECK(t.ignore_lock_events == 0);
+    CHECK(t.ignore_all_mops == 0);
   }
   DumpEvent(THR_STACK_TOP, tid, pc, sp, stack_size);
 }
