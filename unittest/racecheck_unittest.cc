@@ -3945,7 +3945,7 @@ class A {
 class B : public A {
  public:
   virtual void F() {
-    printf ("B::F()\n");
+    // printf ("B::F()\n");
   }
 };
 
