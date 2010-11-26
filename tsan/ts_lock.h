@@ -107,7 +107,7 @@ ALWAYS_INLINE int32_t NoBarrier_AtomicIncrement(int32_t* ptr) {
 }
 
 ALWAYS_INLINE int32_t NoBarrier_AtomicDecrement(int32_t* ptr) {
-  return __sync_add_and_fetch(ptr, -1);
+  return __sync_sub_and_fetch(ptr, 1);
 }
 
 #elif defined(_MSC_VER)
