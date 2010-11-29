@@ -18,6 +18,29 @@
 #include "suppressions.h"
 #include "ts_util.h"
 
+
+
+int unsafe_clear_pending_signals();
+
+static bool global_ignore = true;
+class GIL {
+ public:
+  GIL() {
+    Lock();
+  }
+  ~GIL() {
+    Unlock();
+  }
+
+  static void Lock();
+
+  static bool TryLock();
+  static void Unlock();
+#ifdef DEBUG
+  static int GetDepth();
+#endif
+};
+
 extern FILE* G_out;
 
 typedef uintptr_t pc_t;
@@ -35,14 +58,23 @@ void ReadDbgInfo(string filename);
   tid_t tid = GetTid(); \
   pc_t pc = GetPc();
 
-int unsafe_clear_pending_signals();
 void flush_tleb();
+
 static inline void Put(EventType type, tid_t tid, pc_t pc,
                        uintptr_t a, uintptr_t info);
-
-// Put a synchronization event to ThreadSanitizer.
 static inline void SPut(EventType type, tid_t tid, pc_t pc,
                         uintptr_t a, uintptr_t info);
+
+
+// Put a synchronization event to ThreadSanitizer.
+extern void ExPut(EventType type, tid_t tid, pc_t pc,
+                        uintptr_t a, uintptr_t info);
+extern void ExSPut(EventType type, tid_t tid, pc_t pc,
+                        uintptr_t a, uintptr_t info);
+
+
+extern tid_t ExGetTid();
+extern pc_t ExGetPc();
 
 #include "tsan_rtl_wrap.h"
 

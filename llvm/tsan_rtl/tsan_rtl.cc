@@ -16,6 +16,17 @@
     if (size) SPut(WRITE, tid, pc, (uintptr_t)(x), (size)); } while(0)
 #include "ts_replace.h"
 
+#ifdef DEBUG_LEVEL
+#define DEBUG 1
+#endif
+
+#if (DEBUG_LEVEL == 2)
+# define DDPrintf(params...) \
+    Printf(params)
+#else
+# define DDPrintf(params...)
+#endif
+
 #ifdef DEBUG
 # define DPrintf(params...) \
     Printf(params)
@@ -62,22 +73,50 @@ void SplitString(string &src, char delim, vector<string> *dest,
 __thread ThreadInfo INFO;
 __thread int INIT = 0;
 __thread int events = 0;
-__thread int IN_RTL = 0;
-
-#ifdef DEBUG
-#define CHECK_IN_RTL() do { \
-  assert((IN_RTL >= 0) && (IN_RTL <= 5)); \
-} while (0)
-#else
-#define CHECK_IN_RTL()
-#endif
 
 int RTL_INIT = 0;
 int PTH_INIT = 0;
 int DBG_INIT = 0;
 int HAVE_THREAD_0 = 0;
-static bool global_ignore = true;
 int32_t bb_unique_id = 0;
+
+
+std::map<pthread_t, tid_t> Tids;
+std::map<tid_t, pthread_t> PThreads;
+std::map<tid_t, bool> Finished;
+std::map<tid_t, pthread_cond_t*> FinishConds; // TODO(glider): we shouldn't need these.
+std::map<pthread_t, pthread_cond_t*> InitConds; // TODO(glider): we shouldn't need these.
+tid_t max_tid = 0;
+
+__thread  sigset_t glob_sig_blocked, glob_sig_old;
+
+// We don't initialize these.
+struct sigaction signal_actions[NSIG];  // protected by GIL
+__thread siginfo_t pending_signals[NSIG];
+__thread bool pending_signal_flags[NSIG];
+
+// Stats {{{1
+int stats_lock_taken = 0;
+int stats_events_processed = 0;
+int stats_cur_events = 0;
+int stats_non_local = 0;
+const int kNumBuckets = 11;
+int stats_event_buckets[kNumBuckets];
+
+// }}}
+
+
+pthread_mutex_t debug_info_lock = PTHREAD_MUTEX_INITIALIZER;
+
+class DbgInfoLock {
+ public:
+  DbgInfoLock() {
+    __real_pthread_mutex_lock(&debug_info_lock);
+  }
+  ~DbgInfoLock() {
+    __real_pthread_mutex_unlock(&debug_info_lock);
+  }
+};
 
 //pthread_mutex_t global_lock = PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP;
 
@@ -107,139 +146,106 @@ pthread_mutex_t global_lock = PTHREAD_MUTEX_INITIALIZER;
 
 pthread_t gil_owner = 0;
 __thread int gil_depth = 0;
-std::map<pthread_t, tid_t> Tids;
-std::map<tid_t, pthread_t> PThreads;
-std::map<tid_t, bool> Finished;
-std::map<tid_t, pthread_cond_t*> FinishConds; // TODO(glider): we shouldn't need these.
-std::map<pthread_t, pthread_cond_t*> InitConds; // TODO(glider): we shouldn't need these.
-tid_t max_tid = -1;
 
-__thread  sigset_t glob_sig_blocked, glob_sig_old;
+// Reentrancy counter {{{1
+__thread int IN_RTL = 0;
 
-// We don't initialize these.
-struct sigaction signal_actions[NSIG];  // protected by GIL
-__thread siginfo_t pending_signals[NSIG];
-__thread bool pending_signal_flags[NSIG];
-
-int stats_lock_taken = 0;
-int stats_events_processed = 0;
-int stats_cur_events = 0;
-int stats_non_local = 0;
-const int kNumBuckets = 11;
-int stats_event_buckets[kNumBuckets];
-
-pthread_mutex_t debug_info_lock = PTHREAD_MUTEX_INITIALIZER;
-
-class DbgInfoLock {
- public:
-  DbgInfoLock() {
-    __real_pthread_mutex_lock(&debug_info_lock);
-  }
-  ~DbgInfoLock() {
-    __real_pthread_mutex_unlock(&debug_info_lock);
-  }
-};
+#ifdef DEBUG
+#define CHECK_IN_RTL() do { \
+  assert((IN_RTL >= 0) && (IN_RTL <= 5)); \
+} while (0)
+#else
+#define CHECK_IN_RTL()
+#endif
+// }}}
 
 
-class GIL {
- public:
-  GIL() {
-    Lock();
-  }
-  ~GIL() {
-    Unlock();
-  }
-
-  static void Lock() {
+void GIL::Lock() {
 #ifdef USE_SPINLOCK
-    if (!gil_initialized) {
-      pthread_spin_init(&global_lock, 0);
-      gil_initialized = true;
-    }
+  if (!gil_initialized) {
+    pthread_spin_init(&global_lock, 0);
+    gil_initialized = true;
+  }
 #endif
 #if BLOCK_SIGNALS
-    sigfillset(&glob_sig_blocked);
-    pthread_sigmask(SIG_BLOCK, &glob_sig_blocked, &glob_sig_old);
+  sigfillset(&glob_sig_blocked);
+  pthread_sigmask(SIG_BLOCK, &glob_sig_blocked, &glob_sig_old);
 #endif
-    if (!gil_depth) {
-      GIL_LOCK(&global_lock);
-      stats_lock_taken++;
+  if (!gil_depth) {
+    GIL_LOCK(&global_lock);
+    stats_lock_taken++;
+    IN_RTL++;
+    CHECK_IN_RTL();
+  }
+#ifdef DEBUG
+  gil_owner = pthread_self();
+#endif
+  gil_depth++;
+}
+
+bool GIL::TryLock() {
+#ifdef USE_SPINLOCK
+  if (!gil_initialized) {
+    pthread_spin_init(&global_lock, 0);
+    gil_initialized = true;
+  }
+#endif
+#ifdef BLOCK_SIGNALS
+  sigfillset(&glob_sig_blocked);
+  pthread_sigmask(SIG_BLOCK, &glob_sig_blocked, &glob_sig_old);
+#endif
+#ifdef DEBUG
+  gil_owner = pthread_self();
+#endif
+  bool result;
+  if (!gil_depth) {
+    result = !(bool) GIL_TRYLOCK(&global_lock);
+    if (result) {
+      gil_depth++;
       IN_RTL++;
       CHECK_IN_RTL();
     }
-#ifdef DEBUG
-    gil_owner = pthread_self();
-#endif
-    gil_depth++;
+    return result;
+  } else {
+    return false;
   }
+}
 
-  static bool TryLock() {
-#ifdef USE_SPINLOCK
-    if (!gil_initialized) {
-      pthread_spin_init(&global_lock, 0);
-      gil_initialized = true;
-    }
-#endif
-#ifdef BLOCK_SIGNALS
-    sigfillset(&glob_sig_blocked);
-    pthread_sigmask(SIG_BLOCK, &glob_sig_blocked, &glob_sig_old);
-#endif
+void GIL::Unlock() {
+  if (gil_depth == 1) {
+    unsafe_clear_pending_signals();
+    gil_depth--;
 #ifdef DEBUG
-    gil_owner = pthread_self();
+    gil_owner = 0;
 #endif
-    bool result;
-    if (!gil_depth) {
-      result = !(bool) GIL_TRYLOCK(&global_lock);
-      if (result) {
-        gil_depth++;
-        IN_RTL++;
-        CHECK_IN_RTL();
+    if (G_flags->verbosity) {
+      if (stats_cur_events<kNumBuckets) {
+        stats_event_buckets[stats_cur_events]++;
       }
-      return result;
-    } else {
-      return false;
+      stats_cur_events = 0;
     }
+    GIL_UNLOCK(&global_lock);
+    IN_RTL--;
+    CHECK_IN_RTL();
+  } else {
+    gil_depth--;
   }
-
-  static void Unlock() {
-    if (gil_depth == 1) {
-      unsafe_clear_pending_signals();
-      gil_depth--;
-#ifdef DEBUG
-      gil_owner = 0;
-#endif
-      if (G_flags->verbosity) {
-        if (stats_cur_events<kNumBuckets) {
-          stats_event_buckets[stats_cur_events]++;
-        }
-        stats_cur_events = 0;
-      }
-      GIL_UNLOCK(&global_lock);
-      IN_RTL--;
-      CHECK_IN_RTL();
-    } else {
-      gil_depth--;
-    }
 #ifdef BLOCK_SIGNALS
-    pthread_sigmask(SIG_SETMASK, &glob_sig_old, &glob_sig_old);
-    siginfo_t info;
-    struct timespec zero_timeout = {0, 0};
-    int sig = sigtimedwait(&glob_sig_old, &info, &zero_timeout);
-    if (sig > 0) {
-      // TODO(glider): signal_actions should be accessed under the global lock.
-      signal_actions[sig].sa_sigaction(sig, &info, NULL);
-    }
-#endif
+  pthread_sigmask(SIG_SETMASK, &glob_sig_old, &glob_sig_old);
+  siginfo_t info;
+  struct timespec zero_timeout = {0, 0};
+  int sig = sigtimedwait(&glob_sig_old, &info, &zero_timeout);
+  if (sig > 0) {
+    // TODO(glider): signal_actions should be accessed under the global lock.
+    signal_actions[sig].sa_sigaction(sig, &info, NULL);
   }
+#endif
+}
 #ifdef DEBUG
-  static pthread_t GetOwner_deprecated() {
-    return gil_owner;
-  }
-  static int GetDepth() {
-    return gil_depth;
-  }
+int GIL::GetDepth() {
+  return gil_depth;
+}
 #endif
-};
 
 bool isThreadLocalEvent(EventType type) {
   switch (type) {
@@ -257,6 +263,15 @@ bool isThreadLocalEvent(EventType type) {
     default:
       return false;
   }
+}
+
+extern void ExSPut(EventType type, tid_t tid, pc_t pc,
+                   uintptr_t a, uintptr_t info) {
+  SPut(type, tid, pc, a, info);
+}
+extern void ExPut(EventType type, tid_t tid, pc_t pc,
+                   uintptr_t a, uintptr_t info) {
+  Put(type, tid, pc, a, info);
 }
 
 static inline void SPut(EventType type, tid_t tid, pc_t pc,
@@ -349,6 +364,7 @@ static void inline flush_trace(ThreadInfo *info) {
       {
         ThreadSanitizerHandleTrace(tid, reinterpret_cast<TraceInfo*>(trace), tleb);
       }
+      memset(tleb, '\0', 1000 * sizeof(uintptr_t));
       IN_RTL--;
       CHECK_IN_RTL();
     }
@@ -524,14 +540,19 @@ inline pc_t GetPc() {
   return 0;
 }
 
+extern pc_t ExGetPc() {
+  return 0;
+}
+
+
 inline tid_t GetTid(ThreadInfo *info) {
   //if (!PTH_INIT && RTL_INIT) return 0;
   if (INIT == 0) {
     GIL scoped;
     // thread initialization
     pthread_t pt = pthread_self();
-    max_tid++;
     info->tid = max_tid;
+    max_tid++;
     info->trace_info = NULL;
     switch (RTL_INIT) {
       case 1: {
@@ -539,7 +560,7 @@ inline tid_t GetTid(ThreadInfo *info) {
         if (InitConds.find(pt) != InitConds.end()) {
           __real_pthread_cond_signal(InitConds[pt]);
         }
-        DPrintf("T%d: pthread_self()=%p\n", info->tid, (void*)pt);
+        DDPrintf("T%d: pthread_self()=%p\n", info->tid, (void*)pt);
         PThreads[info->tid] = pt;
         break;
               }
@@ -567,10 +588,15 @@ inline tid_t GetTid() {
   return GetTid(&INFO);
 }
 
+extern tid_t ExGetTid() {
+  return GetTid();
+}
+
 // TODO(glider): we may want the basic block address to differ from the PC
 // of the first MOP in that basic block.
 extern "C"
 void* bb_flush(TraceInfoPOD *next_mops) {
+///  Printf("bb_flush(%p)\n", next_mops);
   if (INFO.trace_info) {
     // This is not a function entry block
     flush_trace(&INFO);
@@ -584,7 +610,7 @@ void* bb_flush(TraceInfoPOD *next_mops) {
 void flush_tleb() {
 #ifdef DEBUG
   if (G_flags->verbosity >= 2) {
-    Printf("flush_tleb\n");
+    DDPrintf("flush_tleb\n");
   }
 #endif
   ThreadInfo *info = &INFO;
@@ -1473,189 +1499,6 @@ void rtn_exit() {
 }
 // }}}
 
-// dynamic_annotations {{{1
-extern "C"
-void DYNAMIC_ANNOTATIONS_NAME(AnnotateCondVarSignal)(const char *file, int line,
-                                                     const volatile void *cv) {
-  DECLARE_TID_AND_PC();
-  SPut(SIGNAL, tid, pc, (uintptr_t)cv, 0);
-}
-
-extern "C"
-void DYNAMIC_ANNOTATIONS_NAME(AnnotateMutexIsNotPHB)(const char *file, int line,
-                                                     const volatile void *mu) {
-  DECLARE_TID_AND_PC();
-  SPut(NON_HB_LOCK, tid, pc, (uintptr_t)mu, 0);
-}
-
-extern "C"
-void DYNAMIC_ANNOTATIONS_NAME(AnnotateCondVarWait)(const char *file, int line,
-                                                   const volatile void *cv,
-                                                   const volatile void *lock) {
-  DECLARE_TID_AND_PC();
-  SPut(WAIT, tid, pc, (uintptr_t)cv, 0);
-}
-
-extern "C"
-void DYNAMIC_ANNOTATIONS_NAME(AnnotateTraceMemory)(const char *file, int line,
-                                                   const volatile void *mem) {
-  DECLARE_TID_AND_PC();
-  SPut(TRACE_MEM, tid, pc, (uintptr_t)mem, 0);
-}
-
-extern "C"
-void DYNAMIC_ANNOTATIONS_NAME(AnnotateFlushState)(const char *file, int line) {
-  DECLARE_TID_AND_PC();
-  SPut(FLUSH_STATE, tid, pc, 0, 0);
-}
-
-extern "C"
-void DYNAMIC_ANNOTATIONS_NAME(AnnotateNewMemory)(const char *file, int line,
-                                                 const volatile void *mem,
-                                                 long size) {
-  DECLARE_TID_AND_PC();
-  SPut(MALLOC, tid, pc, (uintptr_t)mem, size);
-}
-
-extern "C"
-void DYNAMIC_ANNOTATIONS_NAME(AnnotateNoOp)(
-    const char *file, int line, const volatile void *mem) {
-  // Do nothing.
-}
-
-extern "C"
-void DYNAMIC_ANNOTATIONS_NAME(AnnotateFlushExpectedRaces)(
-    const char *file, int line) {
-  DECLARE_TID_AND_PC();
-  SPut(FLUSH_EXPECTED_RACES, tid, pc, 0, 0);
-}
-
-extern "C"
-void DYNAMIC_ANNOTATIONS_NAME(AnnotateEnableRaceDetection)(
-    const char *file, int line, int enable) {
-  GIL scoped;
-  global_ignore = !enable;
-  fprintf(stderr, "enable: %d, global_ignore: %d\n", enable, global_ignore);
-}
-
-extern "C"
-void DYNAMIC_ANNOTATIONS_NAME(AnnotateMutexIsUsedAsCondVar)(
-    const char *file, int line, const volatile void *mu) {
-  DECLARE_TID_AND_PC();
-  SPut(HB_LOCK, tid, pc, (uintptr_t)mu, 0);
-}
-
-extern "C"
-void DYNAMIC_ANNOTATIONS_NAME(AnnotatePCQGet)(
-    const char *file, int line, const volatile void *pcq) {
-  DECLARE_TID_AND_PC();
-  SPut(PCQ_GET, tid, pc, (uintptr_t)pcq, 0);
-}
-
-extern "C"
-void DYNAMIC_ANNOTATIONS_NAME(AnnotatePCQPut)(
-    const char *file, int line, const volatile void *pcq) {
-  DECLARE_TID_AND_PC();
-  SPut(PCQ_PUT, tid, pc, (uintptr_t)pcq, 0);
-}
-
-extern "C"
-void DYNAMIC_ANNOTATIONS_NAME(AnnotatePCQDestroy)(
-    const char *file, int line, const volatile void *pcq) {
-  DECLARE_TID_AND_PC();
-  SPut(PCQ_DESTROY, tid, pc, (uintptr_t)pcq, 0);
-}
-
-extern "C"
-void DYNAMIC_ANNOTATIONS_NAME(AnnotatePCQCreate)(
-    const char *file, int line, const volatile void *pcq) {
-  DECLARE_TID_AND_PC();
-  SPut(PCQ_CREATE, tid, pc, (uintptr_t)pcq, 0);
-}
-
-
-extern "C"
-void DYNAMIC_ANNOTATIONS_NAME(AnnotateExpectRace)(
-    const char *file, int line,
-    const volatile void *mem, const char *description) {
-  tid_t tid = GetTid();
-  SPut(EXPECT_RACE, tid, (uintptr_t)description, (uintptr_t)mem, 1);
-}
-
-extern "C"
-void DYNAMIC_ANNOTATIONS_NAME(AnnotateBenignRace)(
-    const char *file, int line,
-    const volatile void *mem, const char *description) {
-  DECLARE_TID();
-  SPut(BENIGN_RACE, tid, (uintptr_t)description, (uintptr_t)mem, 1);
-}
-
-extern "C"
-void DYNAMIC_ANNOTATIONS_NAME(AnnotateBenignRaceSized)(
-    const char *file, int line,
-    const volatile void *mem, long size, const char *description) {
-  DECLARE_TID();
-  SPut(BENIGN_RACE, tid, (uintptr_t)description,
-      (uintptr_t)mem, (uintptr_t)size);
-}
-
-extern "C"
-void DYNAMIC_ANNOTATIONS_NAME(AnnotateIgnoreReadsBegin)(
-    const char *file, int line) {
-  DECLARE_TID_AND_PC();
-  Put(IGNORE_READS_BEG, tid, pc, 0, 0);
-}
-
-extern "C"
-void DYNAMIC_ANNOTATIONS_NAME(AnnotateIgnoreReadsEnd)(
-    const char *file, int line) {
-  DECLARE_TID_AND_PC();
-  Put(IGNORE_READS_END, tid, pc, 0, 0);
-}
-
-extern "C"
-void DYNAMIC_ANNOTATIONS_NAME(AnnotateIgnoreWritesBegin)(
-    const char *file, int line) {
-  DECLARE_TID_AND_PC();
-  Put(IGNORE_WRITES_BEG, tid, pc, 0, 0);
-}
-
-extern "C"
-void DYNAMIC_ANNOTATIONS_NAME(AnnotateIgnoreWritesEnd)(
-    const char *file, int line) {
-  DECLARE_TID_AND_PC();
-  Put(IGNORE_WRITES_END, tid, pc, 0, 0);
-}
-
-extern "C"
-void DYNAMIC_ANNOTATIONS_NAME(AnnotatePublishMemoryRange)(
-    const char *file, int line, const volatile void *address, long size) {
-  DECLARE_TID_AND_PC();
-  Put(PUBLISH_RANGE, tid, pc, (uintptr_t)address, (uintptr_t)size);
-}
-
-extern "C"
-void DYNAMIC_ANNOTATIONS_NAME(AnnotateUnpublishMemoryRange)(
-    const char *file, int line,
-                                const volatile void *address, long size) {
-  DECLARE_TID_AND_PC();
-  Put(UNPUBLISH_RANGE, tid, pc, (uintptr_t)address, (uintptr_t)size);
-}
-
-extern "C"
-void DYNAMIC_ANNOTATIONS_NAME(AnnotateThreadName)(
-    const char *file, int line, const char *thread_name) {
-  DECLARE_TID_AND_PC();
-  Put(SET_THREAD_NAME, tid, pc, (uintptr_t)thread_name, 0);
-}
-
-// TODO(glider): we may need a flag to tune this.
-extern "C"
-int RunningOnValgrind(void) {
-  return 0;
-}
-
-// }}}
 
 // Debug info routines {{{1
 struct PcInfo {
@@ -1688,7 +1531,7 @@ void ReadDbgInfoFromSection(char* start, char* end) {
       if (!pstart) pstart = paths_raw + i;
       if (paths_raw[i] == '\0') {
         paths[paths_count++] = string(pstart);
-        DPrintf("path: %s\n", paths[paths_count-1].c_str());
+        DDPrintf("path: %s\n", paths[paths_count-1].c_str());
         pstart = NULL;
       }
     }
@@ -1701,7 +1544,7 @@ void ReadDbgInfoFromSection(char* start, char* end) {
       if (!fstart) fstart = files_raw + i;
       if (files_raw[i] == '\0') {
         files[files_count++] = string(fstart);
-        DPrintf("file: %s\n", files[files_count-1].c_str());
+        DDPrintf("file: %s\n", files[files_count-1].c_str());
         fstart = NULL;
       }
     }
@@ -1714,7 +1557,7 @@ void ReadDbgInfoFromSection(char* start, char* end) {
       if (!sstart) sstart = symbols_raw + i;
       if (symbols_raw[i] == '\0') {
         symbols[symbols_count++] = string(sstart);
-        DPrintf("symbol: %s\n", symbols[symbols_count-1].c_str());
+        DDPrintf("symbol: %s\n", symbols[symbols_count-1].c_str());
         sstart = NULL;
       }
     }
@@ -1722,7 +1565,7 @@ void ReadDbgInfoFromSection(char* start, char* end) {
     if (pad) pad = sizeof(uintptr_t) - pad;
     PcInfo *pcs = (PcInfo*)(symbols_raw + symbols_size + pad);
     for (size_t i = 0; i < pcs_size; i++) {
-      DPrintf("pc: %p, sym: %s, file: %s, path: %s, line: %d\n",
+      DDPrintf("pc: %p, sym: %s, file: %s, path: %s, line: %d\n",
              pcs[i].pc, symbols[pcs[i].symbol].c_str(),
              files[pcs[i].file].c_str(), paths[pcs[i].path].c_str(),
              pcs[i].line);
@@ -1752,7 +1595,7 @@ void ReadElf() {
   size_t start = maps.find("/");
   size_t end = maps.find("\n");
   string filename = maps.substr(start, end - start);
-  DPrintf("Reading debug info from %s\n", filename.c_str());
+  DDPrintf("Reading debug info from %s\n", filename.c_str());
   int fd = open(filename.c_str(), 0);
   struct stat st;
   fstat(fd, &st);
@@ -1784,7 +1627,7 @@ void ReadElf() {
     Elf_Off off = shdr->sh_offset;
     Elf_Word name = shdr->sh_name;
     Elf_Word size = shdr->sh_size;
-    DPrintf("Section name: %d, %s\n", name ,hdr_strings + name);
+    DDPrintf("Section name: %d, %s\n", name ,hdr_strings + name);
     if (strcmp(hdr_strings + name, "tsan_rtl_debug_info") == 0) {
       debug_info_section = map + off;
       debug_info_size = size;
