@@ -170,6 +170,7 @@ struct PinThread {
   bool         thread_done;
   bool         holding_lock;
   int          n_consumed_events;
+  char         padding[64];  // avoid any chance of ping-pong.
 };
 
 // Array of pin threads, indexed by pin's THREADID.
