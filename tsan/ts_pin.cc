@@ -163,8 +163,8 @@ struct PinThread {
   size_t       last_child_stack_size_if_known;
   vector<StackFrame> shadow_stack;
   TraceInfo    *trace_info;
-  int ignore_all_mops;  // if >0, ignore all mops.
-  int ignore_lock_events;  // if > 0, ignore all lock/unlock events.
+  int ignore_accesses;  // if > 0, ignore all memory accesses.
+  int ignore_sync;      // if > 0, ignore all sync events.
   int spin_lock_recursion_depth;
   bool         thread_finished;
   bool         thread_done;
@@ -333,7 +333,7 @@ static void TLEBFlushUnlocked(ThreadLocalEventBuffer &tleb) {
       bool do_this_trace = ((G_flags->literace_sampling == 0 ||
                              !LiteRaceSkipTrace(t.uniq_tid, t.trace_info->id(),
                                                 G_flags->literace_sampling)));
-      if (t.ignore_all_mops || global_ignore)
+      if (t.ignore_accesses || global_ignore)
         do_this_trace = false;
 
       TraceInfo *trace_info = (TraceInfo*) tleb.events[i++];
@@ -371,15 +371,15 @@ static void TLEBFlushUnlocked(ThreadLocalEventBuffer &tleb) {
       i += 3;  // consume the unneeded data.
       DCHECK(i == tleb.size);  // should be last event in this tleb.
     } else if (event == TLEB_IGNORE_ALL_BEGIN){
-      t.ignore_all_mops++;
+      t.ignore_accesses++;
     } else if (event == TLEB_IGNORE_ALL_END){
-      t.ignore_all_mops--;
-      CHECK(t.ignore_all_mops >= 0);
+      t.ignore_accesses--;
+      CHECK(t.ignore_accesses >= 0);
     } else if (event == TLEB_IGNORE_SYNC_BEGIN){
-      t.ignore_lock_events++;
+      t.ignore_sync++;
     } else if (event == TLEB_IGNORE_SYNC_END){
-      t.ignore_lock_events--;
-      CHECK(t.ignore_lock_events >= 0);
+      t.ignore_sync--;
+      CHECK(t.ignore_sync >= 0);
     } else if (event == TLEB_GLOBAL_IGNORE_ON){
       Report("INFO: GLOBAL IGNORE ON\n");
       global_ignore = true;
@@ -392,10 +392,11 @@ static void TLEBFlushUnlocked(ThreadLocalEventBuffer &tleb) {
       uintptr_t pc    = tleb.events[i++];
       uintptr_t a     = tleb.events[i++];
       uintptr_t info  = tleb.events[i++];
-      if (t.ignore_lock_events &&
-          (event == WRITER_LOCK || event == READER_LOCK || event == UNLOCK)) {
+      if (t.ignore_sync &&
+          (event == WRITER_LOCK || event == READER_LOCK || event == UNLOCK ||
+           event == SIGNAL || event == WAIT)) {
         // do nothing, we are ignoring locks.
-      } else if ((t.ignore_all_mops || global_ignore) && (event == READ || event == WRITE)) {
+      } else if ((t.ignore_accesses || global_ignore) && (event == READ || event == WRITE)) {
         // do nothing, we are ignoring mops.
       } else {
         DumpEventInternal((EventType)event, t.uniq_tid, pc, a, info);
@@ -1002,8 +1003,8 @@ static void Before_BaseThreadInitThunk(THREADID tid, ADDRINT pc, ADDRINT sp) {
     // See the corresponding IgnoreSyncAndMopsBegin in CallbackForThreadStart.
     IgnoreSyncAndMopsEnd(tid);
     TLEBFlushLocked(t);
-    CHECK(t.ignore_lock_events == 0);
-    CHECK(t.ignore_all_mops == 0);
+    CHECK(t.ignore_sync == 0);
+    CHECK(t.ignore_accesses == 0);
   }
   */
   DumpEvent(THR_STACK_TOP, tid, pc, sp, stack_size);
@@ -1215,22 +1216,34 @@ uintptr_t CallStdCallFun7(CONTEXT *ctx, THREADID tid,
 uintptr_t WRAP_NAME(RtlInitializeCriticalSection)(WRAP_PARAM4) {
 //  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
   DumpEvent(LOCK_CREATE, tid, pc, arg0, 0);
-  return CallStdCallFun1(ctx, tid, f, arg0);
+  IgnoreSyncAndMopsBegin(tid);
+  uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
+  IgnoreSyncAndMopsEnd(tid);
+  return ret;
 }
 uintptr_t WRAP_NAME(RtlInitializeCriticalSectionAndSpinCount)(WRAP_PARAM4) {
 //  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
   DumpEvent(LOCK_CREATE, tid, pc, arg0, 0);
-  return CallStdCallFun2(ctx, tid, f, arg0, arg1);
+  IgnoreSyncAndMopsBegin(tid);
+  uintptr_t ret = CallStdCallFun2(ctx, tid, f, arg0, arg1);
+  IgnoreSyncAndMopsEnd(tid);
+  return ret;
 }
 uintptr_t WRAP_NAME(RtlInitializeCriticalSectionEx)(WRAP_PARAM4) {
 //  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
   DumpEvent(LOCK_CREATE, tid, pc, arg0, 0);
-  return CallStdCallFun3(ctx, tid, f, arg0, arg1, arg2);
+  IgnoreSyncAndMopsBegin(tid);
+  uintptr_t ret = CallStdCallFun3(ctx, tid, f, arg0, arg1, arg2);
+  IgnoreSyncAndMopsEnd(tid);
+  return ret;
 }
 uintptr_t WRAP_NAME(RtlDeleteCriticalSection)(WRAP_PARAM4) {
 //  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
   DumpEvent(LOCK_DESTROY, tid, pc, arg0, 0);
-  return CallStdCallFun1(ctx, tid, f, arg0);
+  IgnoreSyncAndMopsBegin(tid);
+  uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
+  IgnoreSyncAndMopsEnd(tid);
+  return ret;
 }
 uintptr_t WRAP_NAME(RtlEnterCriticalSection)(WRAP_PARAM4) {
 //  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);

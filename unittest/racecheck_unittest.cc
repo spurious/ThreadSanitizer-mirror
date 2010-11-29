@@ -3214,6 +3214,63 @@ TEST(NegativeTests, DISABLED_StdStringDtorVsAssign) {
 }
 }  //namespace NegativeTests_EmptyRep
 
+namespace PositiveTests_MutexDtorNoSync {
+// Check that Mutex::~Mutex() doesn't introduce h-b arcs.
+int *GLOB = NULL;
+
+void WriteThenScopedLocalMutex() {
+  *GLOB = 1;
+  {
+    Mutex l;
+  }
+}
+
+void ScopedLocalMutexThenWrite() {
+  {
+    Mutex l;
+  }
+  *GLOB = 2;
+}
+
+TEST(PositiveTests, MutexDtorNoSyncTest) {
+  GLOB = new int(0);
+  ANNOTATE_EXPECT_RACE(GLOB, "TP: PositiveTests.MutexDtorNoSyncTest");
+  MyThreadArray t(WriteThenScopedLocalMutex,
+                  ScopedLocalMutexThenWrite);
+  t.Start();
+  t.Join();
+  delete GLOB;
+}
+
+void WriteThenScopedLocalMutexLockUnlock() {
+  *GLOB = 1;
+  {
+    Mutex l;
+    l.Lock();
+    l.Unlock();
+  }
+}
+
+void ScopedLocalMutexLockUnlockThenWrite() {
+  {
+    Mutex l;
+    l.Lock();
+    l.Unlock();
+  }
+  *GLOB = 2;
+}
+
+TEST(PositiveTests, MutexDtorNoSyncTest2) {
+  GLOB = new int(0);
+  ANNOTATE_EXPECT_RACE(GLOB, "TP: PositiveTests.MutexDtorNoSyncTest2");
+  MyThreadArray t(WriteThenScopedLocalMutexLockUnlock,
+                  ScopedLocalMutexLockUnlockThenWrite);
+  t.Start();
+  t.Join();
+  delete GLOB;
+}
+
+}  // namespace PositiveTests_MutexDtorSync
 
 namespace PositiveTests_FprintfThreadCreateTest {
 // Check that fprintf doesn't introduce h-b with the start of the
