@@ -57,6 +57,10 @@
 # define DYNAMIC_ANNOTATIONS_PREFIX
 #endif
 
+#ifndef DYNAMIC_ANNOTATIONS_PROVIDE_RUNNING_ON_VALGRIND
+# define DYNAMIC_ANNOTATIONS_PROVIDE_RUNNING_ON_VALGRIND 1
+#endif
+
 #ifdef DYNAMIC_ANNOTATIONS_WANT_ATTRIBUTE_WEAK
 # ifdef __GNUC__
 #  define DYNAMIC_ANNOTATIONS_ATTRIBUTE_WEAK __attribute__((weak))
@@ -529,7 +533,7 @@ void DYNAMIC_ANNOTATIONS_NAME(AnnotateNoOp)(
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateFlushState)(
     const char *file, int line) DYNAMIC_ANNOTATIONS_ATTRIBUTE_WEAK;
 
-
+#if DYNAMIC_ANNOTATIONS_PROVIDE_RUNNING_ON_VALGRIND == 1
 /* Return non-zero value if running under valgrind.
 
   If "valgrind.h" is included into dynamic_annotations.c,
@@ -546,6 +550,7 @@ void DYNAMIC_ANNOTATIONS_NAME(AnnotateFlushState)(
       change its return value.
  */
 int RunningOnValgrind(void);
+#endif /* DYNAMIC_ANNOTATIONS_PROVIDE_RUNNING_ON_VALGRIND == 1 */
 
 #ifdef __cplusplus
 }
