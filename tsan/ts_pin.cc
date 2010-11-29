@@ -289,7 +289,32 @@ static void DumpEventInternal(EventType type, int32_t uniq_tid, uintptr_t pc,
   ThreadSanitizerHandleOneEvent(&event);
 }
 
-static void TLEBFlushUnlocked(ThreadLocalEventBuffer &tleb) {
+static void HandleInnerEvent(PinThread &t, uintptr_t event) {
+  DCHECK(event > LAST_EVENT);
+  if (event == TLEB_IGNORE_ALL_BEGIN){
+    t.ignore_accesses++;
+  } else if (event == TLEB_IGNORE_ALL_END){
+    t.ignore_accesses--;
+    CHECK(t.ignore_accesses >= 0);
+  } else if (event == TLEB_IGNORE_SYNC_BEGIN){
+    t.ignore_sync++;
+  } else if (event == TLEB_IGNORE_SYNC_END){
+    t.ignore_sync--;
+    CHECK(t.ignore_sync >= 0);
+  } else if (event == TLEB_GLOBAL_IGNORE_ON){
+    Report("INFO: GLOBAL IGNORE ON\n");
+    global_ignore = true;
+  } else if (event == TLEB_GLOBAL_IGNORE_OFF){
+    Report("INFO: GLOBAL IGNORE OFF\n");
+    global_ignore = false;
+  } else {
+    Printf("Event: %ld (last: %ld)\n", event, LAST_EVENT);
+    CHECK(0);
+  }
+}
+
+static INLINE void TLEBFlushUnlocked(ThreadLocalEventBuffer &tleb) {
+  if (tleb.size == 0) return;
   PinThread &t = *tleb.t;
   // global_ignore should be always on with race verifier
   DCHECK(!g_race_verifier_active || global_ignore);
@@ -298,16 +323,15 @@ static void TLEBFlushUnlocked(ThreadLocalEventBuffer &tleb) {
     Printf("ACHTUNG!!! an event from a dead thread T%d\n", t.tid);
   }
   DCHECK(!t.thread_done);
-  if (tleb.size == 0) return;
 
-  if (1 || DEBUG_MODE) {
+  if (TS_SERIALIZED == 1 || DEBUG_MODE) {
     size_t max_idx = TS_ARRAY_SIZE(G_stats->tleb_flush);
     size_t idx = min((size_t)u32_log2(tleb.size), max_idx - 1);
     CHECK(idx < max_idx);
     G_stats->tleb_flush[idx]++;
   }
 
-  if (G_flags->offline) {
+  if (TS_SERIALIZED == 1 && G_flags->offline) {
     fwrite(tleb.events, sizeof(uintptr_t), tleb.size, G_out);
     tleb.size = 0;
     return;
@@ -370,22 +394,8 @@ static void TLEBFlushUnlocked(ThreadLocalEventBuffer &tleb) {
       t.thread_done = true;
       i += 3;  // consume the unneeded data.
       DCHECK(i == tleb.size);  // should be last event in this tleb.
-    } else if (event == TLEB_IGNORE_ALL_BEGIN){
-      t.ignore_accesses++;
-    } else if (event == TLEB_IGNORE_ALL_END){
-      t.ignore_accesses--;
-      CHECK(t.ignore_accesses >= 0);
-    } else if (event == TLEB_IGNORE_SYNC_BEGIN){
-      t.ignore_sync++;
-    } else if (event == TLEB_IGNORE_SYNC_END){
-      t.ignore_sync--;
-      CHECK(t.ignore_sync >= 0);
-    } else if (event == TLEB_GLOBAL_IGNORE_ON){
-      Report("INFO: GLOBAL IGNORE ON\n");
-      global_ignore = true;
-    } else if (event == TLEB_GLOBAL_IGNORE_OFF){
-      Report("INFO: GLOBAL IGNORE OFF\n");
-      global_ignore = false;
+    } else if (event > LAST_EVENT) {
+      HandleInnerEvent(t, event);
     } else {
       // all other events.
       CHECK(event > NOOP && event < LAST_EVENT);
@@ -410,21 +420,29 @@ static void TLEBFlushUnlocked(ThreadLocalEventBuffer &tleb) {
   }
 }
 
-static void TLEBFlushLocked(PinThread &t) {
+static INLINE void TLEBFlushLocked(PinThread &t) {
+#if TS_SERIALIZED==1
   if (G_flags->dry_run) {
     t.tleb.size = 0;
     return;
   }
   CHECK(t.tleb.size <= kThreadLocalEventBufferSize);
-#if TS_SERIALIZED==1
   G_stats->lock_sites[0]++;
   ScopedLock lock(&g_main_ts_lock);
-#endif
   TLEBFlushUnlocked(t.tleb);
+#else
+  TLEBFlushUnlocked(t.tleb);
+#endif
 }
 
 static void TLEBAddRtnCall(PinThread &t, uintptr_t call_pc,
                            uintptr_t target_pc, IGNORE_BELOW_RTN ignore_below) {
+  if (TS_SERIALIZED == 0) {
+    TLEBFlushLocked(t);
+    ThreadSanitizerHandleRtnCall(t.uniq_tid, call_pc, target_pc,
+                                 ignore_below);
+    return;
+  }
   DCHECK(t.tleb.size <= kThreadLocalEventBufferSize);
   if (t.tleb.size + 4 > kThreadLocalEventBufferSize) {
     TLEBFlushLocked(t);
@@ -438,6 +456,11 @@ static void TLEBAddRtnCall(PinThread &t, uintptr_t call_pc,
 }
 
 static void TLEBAddRtnExit(PinThread &t) {
+  if (TS_SERIALIZED == 0) {
+    TLEBFlushLocked(t);
+    ThreadSanitizerHandleRtnExit(t.uniq_tid);
+    return;
+  }
   if (t.tleb.size + 1 > kThreadLocalEventBufferSize) {
     TLEBFlushLocked(t);
   }
@@ -448,11 +471,20 @@ static void TLEBAddRtnExit(PinThread &t) {
 static INLINE uintptr_t *TLEBAddTrace(PinThread &t) {
   size_t n = t.trace_info->n_mops();
   DCHECK(n > 0);
-  if (t.tleb.size + 2 + n > kThreadLocalEventBufferSize) {
+  if (TS_SERIALIZED == 0) {
+    TLEBFlushLocked(t);
+  } else if (t.tleb.size + 2 + n > kThreadLocalEventBufferSize) {
     TLEBFlushLocked(t);
   }
-  t.tleb.events[t.tleb.size++] = SBLOCK_ENTER;
-  t.tleb.events[t.tleb.size++] = (uintptr_t)t.trace_info;
+  if (TS_SERIALIZED == 1) {
+    t.tleb.events[t.tleb.size++] = SBLOCK_ENTER;
+    t.tleb.events[t.tleb.size++] = (uintptr_t)t.trace_info;
+  } else {
+    DCHECK(t.tleb.size == 0);
+    t.tleb.events[0] = SBLOCK_ENTER;
+    t.tleb.events[1] = (uintptr_t)t.trace_info;
+    t.tleb.size += 2;
+  }
   // not every address will be written to. so they will stay 0.
   for (size_t i = 0; i < n; i++) {
     t.tleb.events[t.tleb.size + i] = 0;
@@ -471,6 +503,16 @@ static void TLEBStartThread(PinThread &t) {
 static void TLEBSimpleEvent(PinThread &t, uintptr_t event) {
   if (g_race_verifier_active)
     return;
+  if (TS_SERIALIZED == 0) {
+    TLEBFlushLocked(t);
+    if (event < LAST_EVENT) {
+      Event e((EventType)event, t.uniq_tid, 0, 0, 0);
+      ThreadSanitizerHandleOneEvent(&e);
+    } else {
+      HandleInnerEvent(t, event);
+    }
+    return;
+  }
   if (t.tleb.size + 1 > kThreadLocalEventBufferSize) {
     TLEBFlushLocked(t);
   }
@@ -481,6 +523,12 @@ static void TLEBSimpleEvent(PinThread &t, uintptr_t event) {
 static void TLEBAddGenericEventAndFlush(PinThread &t,
                                         EventType type, uintptr_t pc,
                                         uintptr_t a, uintptr_t info) {
+  if (TS_SERIALIZED == 0) {
+    TLEBFlushLocked(t);
+    Event e(type, t.uniq_tid, pc, a, info);
+    ThreadSanitizerHandleOneEvent(&e);
+    return;
+  }
   if (t.tleb.size + 4 > kThreadLocalEventBufferSize) {
     TLEBFlushLocked(t);
   }
@@ -1679,18 +1727,20 @@ static void OnTrace(THREADID tid, ADDRINT sp, TraceInfo *trace_info,
   PinThread &t = g_pin_threads[tid];
 
   DCHECK(trace_info);
-  uintptr_t pc = trace_info->pc();
-  DebugOnlyShowPcAndSp(__FUNCTION__, t.tid, pc, sp);
+  DCHECK(trace_info->n_mops() > 0);
+  DebugOnlyShowPcAndSp(__FUNCTION__, t.tid, trace_info->pc(), sp);
 
   UpdateCallStack(t, sp);
 
-  size_t n = trace_info->n_mops();
-  DCHECK(n > 0);
 
   t.trace_info = trace_info;
-  if (G_flags->show_stats)  // this stat may be racey; avoid ping-pong.
+  if (DEBUG_MODE)  // this stat may be racey; avoid ping-pong.
     trace_info->counter()++;
   *tls_reg_p = TLEBAddTrace(t);
+
+  if (TS_SERIALIZED == 0) {
+    DCHECK(*tls_reg_p == &t.tleb.events[2]);
+  }
 }
 
 /* Verify all mop accesses in the last trace of the given thread by registering
@@ -1737,8 +1787,7 @@ static void OnTraceVerify(THREADID tid, ADDRINT sp, TraceInfo *trace_info,
   PinThread &t = g_pin_threads[tid];
   OnTraceVerifyInternal(t, tls_reg_p);
 
-  size_t n = trace_info->n_mops();
-  DCHECK(n > 0);
+  DCHECK(trace_info->n_mops() > 0);
 
   t.trace_info = trace_info;
   trace_info->counter()++;
