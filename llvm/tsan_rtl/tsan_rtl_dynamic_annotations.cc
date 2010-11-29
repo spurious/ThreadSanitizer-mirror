@@ -10,6 +10,7 @@
   tid_t tid = ExGetTid(); \
   pc_t pc = ExGetPc();
 
+extern bool global_ignore;
 
 // dynamic_annotations {{{1
 extern "C"

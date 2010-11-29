@@ -37,6 +37,8 @@
 # define DEBUG_DO(code)
 #endif
 
+bool global_ignore = false;
+
 struct ThreadInfo {
   tid_t tid;
   uintptr_t TLEB[1000];

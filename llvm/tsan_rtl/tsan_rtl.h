@@ -22,7 +22,6 @@
 
 int unsafe_clear_pending_signals();
 
-static bool global_ignore = true;
 class GIL {
  public:
   GIL() {
