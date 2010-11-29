@@ -639,7 +639,7 @@ struct callback_arg {
 void dump_finished() {
   map<tid_t, bool>::iterator iter;
   for (iter = Finished.begin(); iter != Finished.end(); ++iter) {
-    DPrintf("Finished[%d] = %d\n", iter->first, iter->second);
+    DDPrintf("Finished[%d] = %d\n", iter->first, iter->second);
   }
 }
 
@@ -688,10 +688,12 @@ void *pthread_callback(void *arg) {
     // is reused by another thread, false positives will be reported.
     SPut(THR_STACK_TOP, tid, pc, (uintptr_t)&result, stack_size);
   }
-  DPrintf("Before routine() in T%d\n", tid);
+  DDPrintf("Before routine() in T%d\n", tid);
 
   Finished[tid] = false;
+#ifdef DEBUG
   dump_finished();
+#endif
   GIL::Unlock();
 
   result = (*routine)(routine_arg);
@@ -703,24 +705,26 @@ void *pthread_callback(void *arg) {
 
   GIL::Lock();
   Finished[tid] = true;
+#ifdef DEBUG
   dump_finished();
-  DPrintf("After routine() in T%d\n", tid);
+#endif
+  DDPrintf("After routine() in T%d\n", tid);
 
   // Flush all the events not flushed so far.
   flush_tleb();
   SPut(THR_END, tid, 0, 0, 0);
   if (FinishConds.find(tid) != FinishConds.end()) {
-    DPrintf("T%d (child of T%d): Signaling on %p\n", tid, parent, FinishConds[tid]);
+    DDPrintf("T%d (child of T%d): Signaling on %p\n", tid, parent, FinishConds[tid]);
     __real_pthread_cond_signal(FinishConds[tid]);
   } else {
-    DPrintf("T%d (child of T%d): Not signaling, condvar not ready\n", tid, parent);
+    DDPrintf("T%d (child of T%d): Not signaling, condvar not ready\n", tid, parent);
   }
   GIL::Unlock();
   return result;
 }
 
 void unsafe_forget_thread(tid_t tid, tid_t from) {
-  DPrintf("T%d: forgetting about T%d\n", from, tid);
+  DDPrintf("T%d: forgetting about T%d\n", from, tid);
   assert(PThreads.find(tid) != PThreads.end());
   pthread_t pt = PThreads[tid];
   Tids.erase(pt);
@@ -743,7 +747,7 @@ int __wrap_pthread_create(pthread_t *thread,
   SPut(THR_CREATE_BEFORE, tid, 0, 0, 0);
   PTH_INIT = 1;
   int result = __real_pthread_create(thread, attr, pthread_callback, cb_arg);
-  DPrintf("pthread_create(%p)\n", *thread);
+  DDPrintf("pthread_create(%p)\n", *thread);
   return result;
 }
 
@@ -1161,22 +1165,22 @@ int __wrap_pthread_join(pthread_t thread, void **value_ptr) {
     if (Tids.find(thread) == Tids.end()) {
       InitConds[thread] = new pthread_cond_t;
       pthread_cond_init(InitConds[thread], NULL);
-      DPrintf("T%d: Initializing InitConds[%p]=%p\n", tid, thread, InitConds[thread]);
-      DPrintf("T%d (parent of %p): Waiting on InitConds[%p]=%p\n", tid, thread, thread, InitConds[thread]);
+      DDPrintf("T%d: Initializing InitConds[%p]=%p\n", tid, thread, InitConds[thread]);
+      DDPrintf("T%d (parent of %p): Waiting on InitConds[%p]=%p\n", tid, thread, thread, InitConds[thread]);
       __real_pthread_cond_wait(InitConds[thread], &global_lock);
     }
     assert (Tids.find(thread) != Tids.end());
     joined_tid = Tids[thread];
-    DPrintf("T%d: Finished[T%d]=%d\n", tid, joined_tid, Finished[joined_tid]);
+    DDPrintf("T%d: Finished[T%d]=%d\n", tid, joined_tid, Finished[joined_tid]);
     if (Finished.find(joined_tid) == Finished.end()) {
       Finished[joined_tid] = false;
-      DPrintf("T%d: setting Finished[T%d]=false\n", tid, joined_tid);
+      DDPrintf("T%d: setting Finished[T%d]=false\n", tid, joined_tid);
     }
     if (!Finished[joined_tid]) {
       FinishConds[joined_tid] = new pthread_cond_t;
       pthread_cond_init(FinishConds[joined_tid], NULL);
-      DPrintf("T%d: Initializing FinishConds[%d]=%p\n", tid, joined_tid, FinishConds[joined_tid]);
-      DPrintf("T%d (parent of T%d): Waiting on FinishConds[%d]=%p\n", tid, joined_tid, joined_tid, FinishConds[joined_tid]);
+      DDPrintf("T%d: Initializing FinishConds[%d]=%p\n", tid, joined_tid, FinishConds[joined_tid]);
+      DDPrintf("T%d (parent of T%d): Waiting on FinishConds[%d]=%p\n", tid, joined_tid, joined_tid, FinishConds[joined_tid]);
       __real_pthread_cond_wait(FinishConds[joined_tid], &global_lock);
     }
     unsafe_forget_thread(joined_tid, tid); // TODO(glider): earlier?
