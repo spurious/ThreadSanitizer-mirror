@@ -6,6 +6,10 @@ wrap () {
   LDFLAGS+="-Wl,--wrap,$1 "
 }
 
+undefined () {
+  LDFLAGS+="-Wl,--undefined,$1 "
+}
+
 LDFLAGS="-lpthread "
 
 wrap __cxa_guard_acquire
@@ -71,3 +75,8 @@ wrap _Znwj
 wrap _Znwm
 # operator delete(void*)
 wrap _ZdlPv
+
+# TODO(glider): without defining this annotation bigtest is missing
+# LLVMAnnotateCondVarSignal(). Strange enough, to be investigated.
+# Also "LLVM" is a prefix that may change in the future.
+undefined LLVMAnnotateCondVarSignal
