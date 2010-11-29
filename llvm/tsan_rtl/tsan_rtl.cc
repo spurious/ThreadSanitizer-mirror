@@ -98,13 +98,15 @@ __thread siginfo_t pending_signals[NSIG];
 __thread bool pending_signal_flags[NSIG];
 
 // Stats {{{1
+#undef ENABLE_STATS
+#ifdef ENABLE_STATS
 int stats_lock_taken = 0;
 int stats_events_processed = 0;
 int stats_cur_events = 0;
 int stats_non_local = 0;
 const int kNumBuckets = 11;
 int stats_event_buckets[kNumBuckets];
-
+#endif
 // }}}
 
 
@@ -175,7 +177,9 @@ void GIL::Lock() {
 #endif
   if (!gil_depth) {
     GIL_LOCK(&global_lock);
+#ifdef ENABLE_STATS
     stats_lock_taken++;
+#endif
     IN_RTL++;
     CHECK_IN_RTL();
   }
@@ -220,12 +224,14 @@ void GIL::Unlock() {
 #ifdef DEBUG
     gil_owner = 0;
 #endif
+#ifdef ENABLE_STATS
     if (G_flags->verbosity) {
       if (stats_cur_events<kNumBuckets) {
         stats_event_buckets[stats_cur_events]++;
       }
       stats_cur_events = 0;
     }
+#endif
     GIL_UNLOCK(&global_lock);
     IN_RTL--;
     CHECK_IN_RTL();
@@ -292,11 +298,13 @@ static inline void SPut(EventType type, tid_t tid, pc_t pc,
         event.Print();
       }
     }
+#ifdef ENABLE_STATS
     if (G_flags->verbosity) {
       stats_events_processed++;
       stats_cur_events++;
       stats_non_local++;
     }
+#endif
 
     IN_RTL++;
     CHECK_IN_RTL();
@@ -324,8 +332,10 @@ static void inline flush_trace(ThreadInfo *info) {
     tid_t tid = info->tid;
     TraceInfoPOD *trace = info->trace_info;
     uintptr_t *tleb = info->TLEB;
+#ifdef ENABLE_STATS
     stats_events_processed += trace->n_mops_;
     stats_cur_events += trace->n_mops_;
+#endif
 
     // If the trace is encountered for the first time, set its ID to a unique
     // number.
@@ -393,9 +403,11 @@ static inline void UPut(EventType type, tid_t tid, pc_t pc,
         event.Print();
       }
     }
+#ifdef ENABLE_STATS
     stats_events_processed++;
     stats_cur_events++;
     if (!isThreadLocalEvent(type)) stats_non_local++;
+#endif
     // Do not flush writes to 0x0.
     if ((type != WRITE) || (a != 0)) {
       IN_RTL++;
@@ -434,11 +446,13 @@ static inline void RPut(EventType type, tid_t tid, pc_t pc,
         event.Print();
       }
     }
+#ifdef ENABLE_STATS
     if (G_flags->verbosity) {
       stats_events_processed++;
       stats_cur_events++;
     }
     if (!isThreadLocalEvent(type)) stats_non_local++;
+#endif
     // Do not flush writes to 0x0.
     IN_RTL++;
     CHECK_IN_RTL();
@@ -459,6 +473,7 @@ void finalize() {
   ThreadSanitizerFini();
   IN_RTL--;
   CHECK_IN_RTL();
+#if ENABLE_STATS
   Printf("Locks: %d\nEvents: %d\n",
          stats_lock_taken, stats_events_processed);
   Printf("Non-bufferable events: %d\n", stats_non_local);
@@ -471,6 +486,7 @@ void finalize() {
   }
   Printf("Locks within buckets: %d\n", total_locks);
   Printf("Events within buckets: %d\n", total_events);
+#endif
   if (G_flags->error_exitcode && GetNumberOfFoundErrors() > 0) {
     // This is the last atexit hook, so it's ok to terminate the program.
     _exit(G_flags->error_exitcode);
@@ -512,9 +528,11 @@ bool initialize() {
       stop = env_args.find_first_of(" ", start);
     }
   }
+#ifdef ENABLE_STATS
   for (int i=0; i<kNumBuckets; i++) {
     stats_event_buckets[i] = 0;
   }
+#endif
 
   ThreadSanitizerParseFlags(&args);
   ThreadSanitizerInit();
