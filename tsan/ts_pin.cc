@@ -902,7 +902,6 @@ void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
   if (g_pin_threads == NULL) {
     g_pin_threads = new PinThread[kMaxThreads];
   }
-  PIN_SetContextReg(ctxt, tls_reg, (ADDRINT)0xfafafa);
 
   bool has_parent = true;
   if (tid == 0) {
@@ -918,6 +917,9 @@ void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
   t.uniq_tid = n_started_threads++;
   t.tid = tid;
   t.tleb.t = &t;
+
+
+  PIN_SetContextReg(ctxt, tls_reg, (ADDRINT)&t.tleb.events[2]);
 
 #if 0
   if (n_started_threads == 2) {
@@ -1722,9 +1724,24 @@ static void OnTraceNoMops(THREADID tid, ADDRINT sp) {
   //G_stats->mops_per_trace[0]++;
 }
 
-static void OnTrace(THREADID tid, ADDRINT sp, TraceInfo *trace_info,
+static void OnTraceSerial(THREADID tid, ADDRINT sp, TraceInfo *trace_info,
     uintptr_t **tls_reg_p) {
   PinThread &t = g_pin_threads[tid];
+
+  DCHECK(trace_info);
+  DCHECK(trace_info->n_mops() > 0);
+  DebugOnlyShowPcAndSp(__FUNCTION__, t.tid, trace_info->pc(), sp);
+
+  UpdateCallStack(t, sp);
+
+  t.trace_info = trace_info;
+  trace_info->counter()++;
+  *tls_reg_p = TLEBAddTrace(t);
+}
+
+static void OnTraceParallel(uintptr_t *tls_reg, ADDRINT sp, TraceInfo *trace_info) {
+  // Get the thread handler directly from tls_reg.
+  PinThread &t = *(PinThread*)(tls_reg - 4);
 
   DCHECK(trace_info);
   DCHECK(trace_info->n_mops() > 0);
@@ -1736,11 +1753,7 @@ static void OnTrace(THREADID tid, ADDRINT sp, TraceInfo *trace_info,
   t.trace_info = trace_info;
   if (DEBUG_MODE)  // this stat may be racey; avoid ping-pong.
     trace_info->counter()++;
-  *tls_reg_p = TLEBAddTrace(t);
-
-  if (TS_SERIALIZED == 0) {
-    DCHECK(*tls_reg_p == &t.tleb.events[2]);
-  }
+  TLEBAddTrace(t);
 }
 
 /* Verify all mop accesses in the last trace of the given thread by registering
@@ -2441,14 +2454,25 @@ void CallbackForTRACE(TRACE trace, void *v) {
   TraceInfo *trace_info = NULL;
   if (n_mops) {
     trace_info = TraceInfo::NewTraceInfo(n_mops, INS_Address(head));
-    AFUNPTR handler = (AFUNPTR)(g_race_verifier_active ? OnTraceVerify : OnTrace);
-    INS_InsertCall(head, IPOINT_BEFORE,
-                   handler,
-                   IARG_THREAD_ID,
-                   IARG_REG_VALUE, REG_STACK_PTR,
-                   IARG_PTR, trace_info,
-                   IARG_REG_REFERENCE, tls_reg,
-                   IARG_END);
+    if (TS_SERIALIZED == 0) {
+      // TODO(kcc): implement race verifier here.
+      INS_InsertCall(head, IPOINT_BEFORE,
+                     (AFUNPTR)OnTraceParallel,
+                     IARG_REG_VALUE, tls_reg,
+                     IARG_REG_VALUE, REG_STACK_PTR,
+                     IARG_PTR, trace_info,
+                     IARG_END);
+    } else {
+      AFUNPTR handler = (AFUNPTR)(g_race_verifier_active ?
+                                  OnTraceVerify : OnTraceSerial);
+      INS_InsertCall(head, IPOINT_BEFORE,
+                     handler,
+                     IARG_THREAD_ID,
+                     IARG_REG_VALUE, REG_STACK_PTR,
+                     IARG_PTR, trace_info,
+                     IARG_REG_REFERENCE, tls_reg,
+                     IARG_END);
+    }
   } else {
     if (g_race_verifier_active) {
       INS_InsertCall(head, IPOINT_BEFORE,

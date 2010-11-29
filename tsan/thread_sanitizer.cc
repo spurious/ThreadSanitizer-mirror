@@ -8049,7 +8049,7 @@ void INLINE ThreadSanitizerHandleMemoryAccess(int32_t tid, uintptr_t pc,
   G_detector->HandleMemoryAccess(tid, pc, addr, size, is_w, true);
 }
 
-extern INLINE void ThreadSanitizerHandleTrace(int32_t tid, TraceInfo *trace_info,
+extern NOINLINE void ThreadSanitizerHandleTrace(int32_t tid, TraceInfo *trace_info,
                                        uintptr_t *tleb) {
   // The lock is taken inside on the slow path.
   G_detector->HandleTrace(tid, trace_info, tleb);
