@@ -3215,7 +3215,7 @@ TEST(NegativeTests, DISABLED_StdStringDtorVsAssign) {
 }  //namespace NegativeTests_EmptyRep
 
 
-namespace NegativeTests_FprintfThreadCreateTest {
+namespace PositiveTests_FprintfThreadCreateTest {
 // Check that fprintf doesn't introduce h-b with the start of the
 // following thread
 int *GLOB;
@@ -3233,9 +3233,9 @@ void Worker2() {
 
 #if !defined(_MSC_VER)
 // TODO(timurrrr): investigate Windows FN and un-#if
-TEST(NegativeTests, FprintfThreadCreateTest) {
+TEST(PositiveTests, FprintfThreadCreateTest) {
   GLOB = new int;
-  ANNOTATE_EXPECT_RACE(GLOB, "TP: NegativeTests.FprintfThreadCreateTest");
+  ANNOTATE_EXPECT_RACE(GLOB, "TP: PositiveTests.FprintfThreadCreateTest");
   n = new StealthNotification;
   MyThread t1(Worker1);
   t1.Start();
@@ -3249,7 +3249,7 @@ TEST(NegativeTests, FprintfThreadCreateTest) {
 }
 #endif
 
-} // namespace NegativeTests_FprintfThreadCreateTest
+} // namespace PositiveTests_FprintfThreadCreateTest
 
 // test72: STAB. Stress test for the number of segment sets (SSETs). {{{1
 namespace test72 {
