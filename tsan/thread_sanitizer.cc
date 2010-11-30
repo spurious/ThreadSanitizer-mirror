@@ -3178,13 +3178,16 @@ class Cache {
     ForgetAllState(TID(0));
   }
 
-  const static CacheLine *kLineIsLocked /* = 1 */;
+  INLINE static CacheLine *kLineIsLocked() {
+    return (CacheLine*)1;
+  }
+
   INLINE static bool LineIsNullOrLocked(CacheLine *line) {
     return (uintptr_t)line <= 1;
   }
 
   INLINE CacheLine *TidMagic(TID tid) {
-    return (CacheLine*)kLineIsLocked;
+    return kLineIsLocked();
   }
 
   // Try to get a CacheLine for exclusive use.
@@ -3193,7 +3196,7 @@ class Cache {
     uintptr_t cli = ComputeCacheLineIndexInCache(a);
     CacheLine **addr = &lines_[cli];
     CacheLine *res = (CacheLine*)AtomicExchange(
-           (uintptr_t*)addr, (uintptr_t)kLineIsLocked);
+           (uintptr_t*)addr, (uintptr_t)kLineIsLocked());
     if (DEBUG_MODE && debug_cache) {
       uintptr_t tag = CacheLine::ComputeTag(a);
       if (res)
@@ -3212,7 +3215,7 @@ class Cache {
       line = TryAcquireLine(tid, a, call_site);
       iter++;
       DCHECK(iter < (1 << 30));
-    } while (line == kLineIsLocked);
+    } while (line == kLineIsLocked());
     DCHECK(lines_[ComputeCacheLineIndexInCache(a)] == TidMagic(tid));
     return line;
   }
@@ -3220,7 +3223,7 @@ class Cache {
   // Release a CacheLine from exclusive use.
   INLINE void ReleaseLine(TID tid, uintptr_t a, CacheLine *line, int call_site) {
     if (TS_SERIALIZED) return;
-    DCHECK(line != kLineIsLocked);
+    DCHECK(line != kLineIsLocked());
     uintptr_t cli = ComputeCacheLineIndexInCache(a);
     DCHECK(line == NULL ||
            cli == ComputeCacheLineIndexInCache(line->tag()));
@@ -3387,7 +3390,7 @@ class Cache {
       line_for_this_tag = &(it->second);
     }
     CHECK(line_for_this_tag);
-    DCHECK(old_line != kLineIsLocked);
+    DCHECK(old_line != kLineIsLocked());
     if (*line_for_this_tag == NULL) {
       // creating a new cache line
       CHECK(storage_.size() == old_storage_size + 1);
@@ -3479,7 +3482,6 @@ class Cache {
 };
 
 static  Cache *G_cache;
-const CacheLine *Cache::kLineIsLocked = (CacheLine*)1L;
 
 // -------- Published range -------------------- {{{1
 struct PublishInfo {
