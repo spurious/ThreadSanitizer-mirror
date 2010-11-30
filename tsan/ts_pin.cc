@@ -486,11 +486,11 @@ static INLINE uintptr_t *TLEBAddTrace(PinThread &t) {
     t.tleb.events[1] = (uintptr_t)t.trace_info;
     t.tleb.size += 2;
   }
+  uintptr_t *mop_addresses = &t.tleb.events[t.tleb.size];
   // not every address will be written to. so they will stay 0.
   for (size_t i = 0; i < n; i++) {
-    t.tleb.events[t.tleb.size + i] = 0;
+    mop_addresses[i] = 0;
   }
-  uintptr_t *mop_addresses = &t.tleb.events[t.tleb.size];
   t.tleb.size += n;
   DCHECK(t.tleb.size <= kThreadLocalEventBufferSize);
   return mop_addresses;
