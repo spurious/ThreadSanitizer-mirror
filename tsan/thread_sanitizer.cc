@@ -3222,8 +3222,6 @@ class Cache {
     CacheLine *res = (CacheLine*)AtomicExchange(
            (uintptr_t*)addr, (uintptr_t)kLineIsLocked());
 #endif
-    // Touch the result so that we see the perf ticks on this instruction.
-    // res = (CacheLine*)((uintptr_t)res & ~(7UL));
     if (DEBUG_MODE && debug_cache) {
       uintptr_t tag = CacheLine::ComputeTag(a);
       if (res)
