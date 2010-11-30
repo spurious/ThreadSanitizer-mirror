@@ -7,7 +7,11 @@ ALL_ARGS=
 ARGS=
 LD_MODE=
 OX=-O0
+OPT_OX=
 DEBUG=
+OPT_PASSES=-adce
+OPT_PASSES=-reg2mem -mem2reg -adce
+OPT_PASSES=-verify
 OPT_PASSES=
 
 until [ -z "$1" ]
@@ -40,9 +44,14 @@ do
   elif [ `expr match "$1" ".*\.[ao]"` -gt 0 ]
   then
     LD_MODE=1
+  elif [ `expr match "$1" "-O0"` -gt 0 ]
+  then
+    OX=$1
+    OPT_OX=
   elif [ `expr match "$1" "-O"` -gt 0 ]
   then
     OX=$1
+    OPT_OX=$1
   elif [ `expr match "$1" "-g"` -gt 0 ]
   then
     DEBUG=-g
@@ -62,11 +71,12 @@ then
   exit
 fi
 
-
+DEBUG=
 #SRC=$1
 #echo $ARGS
 FNAME=`echo $SRC | sed 's/\.[^.]*$//'`
 SRC_BIT="$FNAME.ll"
+SRC_TMP="$FNAME-tmp.ll"
 SRC_INSTR="$FNAME-instr.ll"
 SRC_ASM="$FNAME.S"
 if [ -z $SRC_OBJ ]
@@ -84,9 +94,11 @@ LOG=instrumentation.log
 set_platform_dependent_vars
 
 # Translate C code to LLVM bitcode.
-$COMPILER -emit-llvm $MARCH $SRC $DEBUG -S $DA_FLAGS $ARGS -o "$SRC_BIT" || exit 1
+$COMPILER -emit-llvm $MARCH $SRC $OX $DEBUG -S $DA_FLAGS $ARGS -o "$SRC_BIT" || exit 1
 # Instrument the bitcode.
-$OPT $OPT_PASSES -load "$PASS_SO" $INST_MODE -arch=$XARCH "$SRC_BIT" -S  > "$SRC_INSTR" 2>$LOG || exit 1
+$OPT $OPT_PASSES  "$SRC_BIT" -S  > "$SRC_TMP" 2>$LOG || exit 1
+$OPT -load "$PASS_SO" $INST_MODE -arch=$XARCH "$SRC_TMP" -S  > "$SRC_INSTR" 2>$LOG || exit 1
+
 
 # Obsolete. TODO(glider): remove.
 #cat $LOG | grep "^->" | sed "s/^->//" > "$SRC_DBG"
