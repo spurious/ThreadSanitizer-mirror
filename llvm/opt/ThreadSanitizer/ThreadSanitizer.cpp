@@ -42,11 +42,22 @@ namespace {
     uintptr_t line;
   };
 
+  typedef set<BasicBlock*> BlockSet;
+  typedef vector<BasicBlock*> BlockVector;
+
+  struct Trace {
+    BlockSet blocks;
+    BasicBlock *entry;
+  };
+
+  typedef vector<Trace> TraceVector;
+
   struct TsanOnlineInstrument : public ModulePass { // {{{1
     static char ID; // Pass identification, replacement for typeid
     int BBCount, ModuleFunctionCount, ModuleMopCount, TLEBIndex, OldTLEBIndex;
-    Value *BBPassportGlob;
+    Value *BBPassportGlob, *TracePassportGlob;
     int BBNumMops;
+    int TraceCount, TraceNumMops;
     Constant *BBFlushFn;
     Constant *RtnCallFn, *RtnExitFn;
     Constant *MemCpyFn, *MemMoveFn;
@@ -55,6 +66,7 @@ namespace {
     const Type *Void;
     const StructType *MopTy, *TraceInfoType, *BBTraceInfoType;
     const ArrayType *BBPassportType, *BBExtPassportType, *MopArrayType;
+    const ArrayType *TracePassportType, *TraceExtPassportType;
     const Type *TLEBTy;
     const PointerType *TLEBPtrType;
     static const int kTLEBSize = 100;
@@ -73,8 +85,6 @@ namespace {
 
     // TODO(glider): box the trace into a class that provides the set of
     // predecessors.
-    typedef set<BasicBlock*> BlockSet;
-    typedef vector<BasicBlock*> BlockVector;
     map<BasicBlock*, BlockSet> predecessors;
 
     TsanOnlineInstrument() : ModulePass(&ID) {
@@ -85,10 +95,10 @@ namespace {
       }
     }
 
-    uintptr_t getAddr(int bb_index, int mop_index, Instruction *dump) {
+    uintptr_t getAddr(int bb_index, int mop_index, Instruction *cur_inst) {
       uintptr_t result = ((ModuleID * kBBHiAddr) + bb_index) * kBBLoAddr + mop_index;
-      if (dump) {
-        DumpDebugInfo(result, *dump);
+      if (cur_inst) {
+        DumpDebugInfo(result, *cur_inst);
       }
       if ((result < 0) || (result > kMaxAddr)) {
         errs() << "bb_index: " << bb_index << " mop_index: " << mop_index;
@@ -256,7 +266,7 @@ namespace {
       return false;
     }
 
-    bool traceHasCycles(BlockSet &trace,
+    bool traceHasCycles(Trace &trace,
                         BasicBlock *current_bb, BlockSet &used) {
       TerminatorInst *BBTerm = current_bb->getTerminator();
       // Iterate over the successors of the block being considered.
@@ -264,7 +274,7 @@ namespace {
       for (int i = 0, e = BBTerm->getNumSuccessors(); i != e; ++i) {
         BasicBlock *child = BBTerm->getSuccessor(i);
         // Skip the children not belonging to the same trace.
-        if (trace.find(child) == trace.end()) continue;
+        if (trace.blocks.find(child) == trace.blocks.end()) continue;
         if (used.find(child) != used.end()) return true;
         used.insert(child);
         if (traceHasCycles(trace, child, used)) return true;
@@ -277,7 +287,7 @@ namespace {
     // A trace is valid if and only if:
     //  -- it has a single entry point
     //  -- it contains no loops
-    bool validTrace(BlockSet &trace) {
+    bool validTrace(Trace &trace) {
       BlockVector to_see;
       BlockSet entries;
       BlockSet accessible;
@@ -293,7 +303,7 @@ namespace {
 
 
       // Initialize to_see and find all the entry points.
-      for (BlockSet::iterator BB = trace.begin(), E = trace.end();
+      for (BlockSet::iterator BB = trace.blocks.begin(), E = trace.blocks.end();
            BB != E; ++BB) {
         to_see.push_back(*BB);
         BlockSet &pred = getPredecessors(*BB);
@@ -313,7 +323,7 @@ namespace {
 #if DEBUG
           errs() << (*I)->getName() << "->" << (*BB)->getName() << "\n";
 #endif
-          if (trace.find(*I) != trace.end()) {
+          if (trace.blocks.find(*I) != trace.blocks.end()) {
             num_edges++;
           } else {
             entries.insert(*BB);
@@ -342,10 +352,10 @@ namespace {
     }
 
     bool buildClosure(Function::iterator BB,
-                      BlockSet &trace, BlockSet &used) {
+                      Trace &trace, BlockSet &used) {
       BlockVector to_see;
       to_see.push_back(BB);
-      trace.insert(BB);
+      trace.blocks.insert(BB);
       used.insert(BB);
       for (int i = 0; i<to_see.size(); ++i) {
         BasicBlock *current_bb = to_see[i];
@@ -356,77 +366,78 @@ namespace {
         // If it can be added to the trace, do it.
         for (int i = 0, e = BBTerm->getNumSuccessors(); i != e; ++i) {
           BasicBlock *child = BBTerm->getSuccessor(i);
-          if (trace.find(child) != trace.end()) continue;
+          if (trace.blocks.find(child) != trace.blocks.end()) continue;
           if (used.find(child) != used.end()) continue;
-          trace.insert(child);
+          trace.blocks.insert(child);
           if (validTrace(trace)) {
             used.insert(child);
             to_see.push_back(child);
           } else {
-            trace.erase(child);
+            trace.blocks.erase(child);
           }
         }
       }
     }
 
-    void cachePredecessors(Module &M) {
-      for (Module::iterator F = M.begin(), E = M.end(); F != E; ++F) {
-        if (F->isDeclaration()) continue;
-        for (Function::iterator BB = F->begin(), E = F->end(); BB != E; ++BB) {
-          TerminatorInst *BBTerm = BB->getTerminator();
-          for (int i = 0, e = BBTerm->getNumSuccessors(); i != e; ++i) {
-            BasicBlock *child = BBTerm->getSuccessor(i);
-            predecessors[child].insert(BB);
-          }
+    void cachePredecessors(Function &F) {
+      for (Function::iterator BB = F.begin(), E = F.end(); BB != E; ++BB) {
+        TerminatorInst *BBTerm = BB->getTerminator();
+        for (int i = 0, e = BBTerm->getNumSuccessors(); i != e; ++i) {
+          BasicBlock *child = BBTerm->getSuccessor(i);
+          predecessors[child].insert(BB);
         }
       }
     }
 
-    bool buildTraces(Module &M) {
-      vector<BlockSet> traces;
+    TraceVector buildTraces(Function &F) {
+      TraceVector traces;
       BlockSet used_bbs;
       BlockVector to_see;
       BlockSet visited;
-      cachePredecessors(M);
-      for (Module::iterator F = M.begin(), E = M.end(); F != E; ++F) {
-        if (F->isDeclaration()) continue;
-        BlockSet current_trace;
-        to_see.push_back(F->begin());
-        for (int i = 0; i < to_see.size(); ++i) {
-          BasicBlock *current_bb = to_see[i];
+      cachePredecessors(F);
+      Trace current_trace;
+      to_see.push_back(F.begin());
+      for (int i = 0; i < to_see.size(); ++i) {
+        BasicBlock *current_bb = to_see[i];
 #if DEBUG
-          errs() << "BB: " << current_bb->getName() << "\n";
+        errs() << "BB: " << current_bb->getName() << "\n";
 #endif
-          if (used_bbs.find(current_bb) == used_bbs.end()) {
-            assert(current_trace.size() == 0);
-            buildClosure(current_bb, current_trace, used_bbs);
-            traces.push_back(current_trace);
-            current_trace.clear();
-          }
-          TerminatorInst *BBTerm = current_bb->getTerminator();
-          for (int ch = 0, e = BBTerm->getNumSuccessors(); ch != e; ++ch) {
-            BasicBlock *child = BBTerm->getSuccessor(ch);
-            if (visited.find(child) == visited.end()) {
-              to_see.push_back(child);
-              visited.insert(child);
-            }
+        if (used_bbs.find(current_bb) == used_bbs.end()) {
+          assert(current_trace.blocks.size() == 0);
+          current_trace.entry = current_bb;
+          buildClosure(current_bb, current_trace, used_bbs);
+          traces.push_back(current_trace);
+          current_trace.blocks.clear();
+          current_trace.entry = NULL;
+        }
+        TerminatorInst *BBTerm = current_bb->getTerminator();
+        for (int ch = 0, e = BBTerm->getNumSuccessors(); ch != e; ++ch) {
+          BasicBlock *child = BBTerm->getSuccessor(ch);
+          if (visited.find(child) == visited.end()) {
+            to_see.push_back(child);
+            visited.insert(child);
           }
         }
       }
 
-#if DEBUG
+//#if DEBUG
+#if 0
       for (int i = 0; i < traces.size(); ++i) {
         errs() << "TRACE:\n";
-        for (BlockSet::iterator I = traces[i].begin(), E = traces[i].end();
+        for (BlockSet::iterator I = traces[i].blocks.begin(),
+                                E = traces[i].blocks.end();
              I != E; ++I) {
           errs() << "    " << (*I)->getName() << "\n";
+///          (*I)->getParent()->dump();
         }
       }
 #endif
+      return traces;
     }
 
     virtual bool runOnModule(Module &M) {
       BBCount = 0;
+      TraceCount = 0;
       ModuleFunctionCount = 0;
       ModuleMopCount = 0;
       ModuleID = getModuleID(M);
@@ -521,14 +532,11 @@ namespace {
           }
         }
       }
-      // TODO(glider): exploit the traces.
-      buildTraces(M);
 
-      int nBB = 1, FnBB = 1;
       for (Module::iterator F = M.begin(), E = M.end(); F != E; ++F) {
         ModuleFunctionCount++;
-        FnBB = nBB;
         int startBBCount = BBCount;
+        int startTraceCount = TraceCount;
         bool first_dtor_bb = false;
 
         if (F->isDeclaration()) continue;
@@ -542,9 +550,19 @@ namespace {
         }
         if (isDtor(F->getName())) first_dtor_bb = true;
 
+#if 1
+        TraceVector traces(buildTraces(*F));
+        for (int i = 0; i < traces.size(); ++i) {
+          runOnTrace(M, traces[i], first_dtor_bb);
+          first_dtor_bb = false;
+        }
+        Instruction* First = F->begin()->begin();
+        std::vector<Value*> inst(1);
+        inst[0] = ConstantInt::get(PlatformInt, getAddr(startTraceCount, 0, First));
+        CallInst::Create(RtnCallFn, inst.begin(), inst.end(), "", First);
+#else
         for (Function::iterator BB = F->begin(), E = F->end(); BB != E; ++BB) {
-          nBB++;
-          runOnBasicBlock(M, BB, first_dtor_bb);
+          runOnBasicBlockUnused(M, BB, first_dtor_bb);
           first_dtor_bb = false;
         }
         Instruction* First = F->begin()->begin();
@@ -552,10 +570,49 @@ namespace {
         // BBNumMops = 0 at the start of basic block.
         inst[0] = ConstantInt::get(PlatformInt, getAddr(startBBCount, 0, First));
         CallInst::Create(RtnCallFn, inst.begin(), inst.end(), "", First);
+#endif
       }
       writeDebugInfo(M);
 
+///      M.dump();
       return true;
+    }
+
+    void runOnTrace(Module &M, Trace &trace, bool first_dtor_bb) {
+      Value *TLEB = NULL;
+      TLEBIndex = 0;
+      TraceCount++;
+      bool have_passport = makeTracePassport(M, trace);
+      bool should_flush = shouldFlushTrace(trace);
+      if (shouldFlushTrace(trace)) {
+        Instruction *First = trace.entry->begin();
+///        First->dump();
+        assert(First);
+///        errs() << First->getName() << "\n";
+        std::vector <Value*> Args(1);
+        std::vector <Value*> idx;
+        idx.push_back(ConstantInt::get(PlatformInt, 0));
+        if (have_passport) {
+          Args[0] =
+            GetElementPtrInst::Create(TracePassportGlob,
+                                      idx.begin(),
+                                      idx.end(),
+                                      "",
+                                      First);
+          Args[0] = BitCastInst::CreatePointerCast(Args[0], TraceInfoTypePtr,
+                                                   "", First);
+        } else {
+          Args[0] = ConstantPointerNull::get(TraceInfoTypePtr);
+        }
+
+        TLEB = CallInst::Create(BBFlushFn, Args.begin(), Args.end(), "",
+                           First);
+      }
+      for (BlockSet::iterator TI = trace.blocks.begin(), TE = trace.blocks.end();
+           TI != TE; ++TI) {
+        runOnBasicBlock(M, *TI, first_dtor_bb, TLEB);
+        first_dtor_bb = false;
+      }
     }
 
     void DumpDebugInfo(uintptr_t addr, Instruction &IN) {
@@ -602,6 +659,121 @@ namespace {
       return false;
     }
 
+    bool shouldFlushTrace(Trace &trace) {
+      for (BlockSet::iterator TI = trace.blocks.begin(), TE = trace.blocks.end();
+           TI != TE; ++TI) {
+        for (BasicBlock::iterator BI = (*TI)->begin(), BE = (*TI)->end();
+             BI != BE; ++BI) {
+          if (isa<LoadInst>(BI)) {
+            return true;
+          }
+          if (isa<StoreInst>(BI)) {
+            return true;
+          }
+        }
+      }
+      return false;
+    }
+
+    bool makeTracePassport(Module &M, Trace &trace) {
+      Passport passport;
+      bool isStore, isMop;
+      int size, src_size, dest_size;
+      TraceNumMops = 0;
+      for (BlockSet::iterator TI = trace.blocks.begin(), TE = trace.blocks.end();
+           TI != TE; ++TI) {
+        for (BasicBlock::iterator BI = (*TI)->begin(), BE = (*TI)->end();
+             BI != BE; ++BI) {
+          isMop = false;
+          if (isa<LoadInst>(BI)) {
+            isStore = false;
+            isMop = true;
+          }
+          if (isa<StoreInst>(BI)) {
+            isStore = true;
+            isMop = true;
+          }
+          if (isaCallOrInvoke(BI)) {
+            // CallInst or maybe other instructions that may cause a jump.
+            // TODO(glider): assert that the next instruction is strictly a
+            // branch.
+            //assert(false);
+          }
+          if (isMop) {
+            size = getArchSize();
+            TraceNumMops++;
+            ModuleMopCount++;
+            Value *MopPtr;
+            llvm::Instruction &IN = *BI;
+            getAddr(TraceCount, TraceNumMops, BI);
+            if (isStore) {
+              MopPtr = (static_cast<StoreInst&>(IN).getPointerOperand());
+            } else {
+              MopPtr = (static_cast<LoadInst&>(IN).getPointerOperand());
+            }
+            if (MopPtr->getType()->isSized()) {
+              if (cast<PointerType>(MopPtr->getType())->getElementType()->isSized())
+                  {
+                    size =
+                      getAnalysis<TargetData>().getTypeStoreSizeInBits(
+                        cast<PointerType>(MopPtr->getType())->getElementType()
+                      );
+                  }
+            }
+
+
+            if (MopPtr->getType() != UIntPtr) {
+              MopPtr = BitCastInst::CreatePointerCast(MopPtr, UIntPtr, "", BI);
+            }
+
+            std::vector<Constant*> mop;
+            mop.push_back(ConstantInt::get(PlatformInt, getAddr(TraceCount,
+                                                                TraceNumMops, BI)));
+            mop.push_back(ConstantInt::get(Int8, size / 8));
+            mop.push_back(ConstantInt::get(Int8, isStore));
+            passport.push_back(ConstantStruct::get(MopTy, mop));
+          }
+        }
+
+      }
+      if (TraceNumMops) {
+        TracePassportType = ArrayType::get(MopTy, TraceNumMops);
+        LLVMContext &Context = M.getContext();
+        BBTraceInfoType = StructType::get(Context,
+                                    PlatformInt, PlatformInt, PlatformInt, PlatformInt, Int8,
+                                    TracePassportType,
+                                    NULL);
+
+        std::vector<Constant*> trace_info;
+        // num_mops_
+        trace_info.push_back(ConstantInt::get(PlatformInt, TraceNumMops));
+        // pc_
+        // TODO(glider): the Trace class should provide its entry BB.
+        Instruction *First = trace.entry->begin();
+        trace_info.push_back(ConstantInt::get(PlatformInt, getAddr(TraceCount,
+                                                             0, First)));
+        // id_ == 0 initially.
+        trace_info.push_back(ConstantInt::get(PlatformInt, 0));
+        // counter_
+        trace_info.push_back(ConstantInt::get(PlatformInt, 0));
+        // generate_segments_
+        trace_info.push_back(ConstantInt::get(Int8, 1));
+        // mops_
+        trace_info.push_back(ConstantArray::get(TracePassportType, passport));
+
+        TracePassportGlob = new GlobalVariable(
+            M,
+            BBTraceInfoType,
+            false,
+            GlobalValue::InternalLinkage,
+            ConstantStruct::get(BBTraceInfoType, trace_info),
+            "trace_passport",
+            false, 0
+            );
+        return true;
+      }
+      return false;
+    }
 
     bool MakePassportFromSlice(Module &M,
                                BasicBlock::iterator &Begin,
@@ -701,6 +873,8 @@ namespace {
                        Value *TLEB, bool check_ident_store) {
       Value *MopAddr;
       llvm::Instruction &IN = *BI;
+///      errs() << "  instrumenting ";
+///      BI->dump();
       if (isStore) {
         MopAddr = (static_cast<StoreInst&>(IN).getPointerOperand());
       } else {
@@ -853,7 +1027,58 @@ namespace {
       return result;
     }
 
-    bool runOnBasicBlock(Module &M, Function::iterator &BB,
+    bool runOnBasicBlock(Module &M, BasicBlock *BB,
+                         bool first_dtor_bb,
+                         Value *TLEB) {
+      bool result = false;
+      OldTLEBIndex = 0;
+///      errs() << "Instrumenting " << BB->getName() << "\n";
+
+      for (BasicBlock::iterator BI = BB->begin(), BE = BB->end();
+           BI != BE;
+           ++BI) {
+        bool unknown = true;  // we just don't want a bunch of nested if()s
+        if (isaCallOrInvoke(BI)) {
+          if (isa<MemTransferInst>(BI)) {
+            InstrumentMemTransfer(BI);
+          }
+          llvm::Instruction &IN = *BI;
+          if ((isa<CallInst>(BI) &&
+               static_cast<CallInst&>(IN).getCalledFunction() == BBFlushFn) ||
+              (isa<InvokeInst>(BI) &&
+               static_cast<InvokeInst&>(IN).getCalledFunction() == BBFlushFn)) {
+            // TODO(glider): we shouldn't encounter BBFlushFn at all.
+            // Or not?
+///            errs() << "BBFlushFn!\n";
+///            assert(false);
+            continue;
+          }
+          flushBeforeCall(M, BI);
+        }
+
+        if (isa<ReturnInst>(BI)) {
+          std::vector<Value*> inst(0);
+          CallInst::Create(RtnExitFn, inst.begin(), inst.end(), "", BI);
+          unknown = false;
+        }
+        if (isa<LoadInst>(BI)) {
+          // Instrument LOAD.
+          InstrumentMop(BI, false, TLEB, first_dtor_bb);
+          unknown = false;
+        }
+        if (isa<StoreInst>(BI)) {
+          // Instrument STORE.
+          InstrumentMop(BI, true, TLEB, first_dtor_bb);
+          unknown = false;
+        }
+
+        if (unknown) {
+          // do nothing
+        }
+      }
+    }
+
+    bool runOnBasicBlockUnused(Module &M, Function::iterator &BB,
                          bool first_dtor_bb) {
       BasicBlock::iterator Begin = BB->begin(), End = BB->begin();
       bool validBegin = false, validEnd = false;
