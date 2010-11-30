@@ -6583,8 +6583,8 @@ TEST(StressTests, StartAndJoinManyThreads) {
 
 namespace StressTests_ManyAccesses {  // {{{1
 #ifndef NO_BARRIER
-const int kArrayLen = 1024 * 8;
-const int kNumIter = 128;
+const int kArrayLen = 1024 * 16;
+const int kNumIter = 1024 * 2;
 int thread_id;
 int *array = NULL;
 Barrier *barrier;
@@ -6618,16 +6618,16 @@ void RunThreads(int n_threads, void (*f)(void)) {
 }
 
 // Just one thread.
-TEST(StressTests, ManyAccessesNoRace1Test) {
+TEST(StressTests, DISABLED_ManyAccessesNoRace1Test) {
   RunThreads(1, NoRaceWorker);
 }
 
 // 2 threads accessing different memory.
-TEST(StressTests, ManyAccessesNoRace2Test) {
+TEST(StressTests, DISABLED_ManyAccessesNoRace2Test) {
   RunThreads(2, NoRaceWorker);
 }
 // 4 threads accessing different memory.
-TEST(StressTests, ManyAccessesNoRace4Test) {
+TEST(StressTests, DISABLED_ManyAccessesNoRace4Test) {
   RunThreads(4, NoRaceWorker);
 }
 // 8 threads accessing different memory.
