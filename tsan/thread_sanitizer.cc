@@ -3186,14 +3186,8 @@ class Cache {
     return (uintptr_t)line <= 1;
   }
 
-#define EXPERIMENTAL_TRY_ACQUIRE_WITHOUT_ATOMICS 0
-
   INLINE CacheLine *TidMagic(TID tid) {
-#if EXPERIMENTAL_TRY_ACQUIRE_WITHOUT_ATOMICS
-    return (CacheLine*)(tid.raw() + 2);
-#else
     return kLineIsLocked();
-#endif
   }
 
   // Try to get a CacheLine for exclusive use.
@@ -3201,27 +3195,8 @@ class Cache {
   INLINE CacheLine *TryAcquireLine(TID tid, uintptr_t a, int call_site) {
     uintptr_t cli = ComputeCacheLineIndexInCache(a);
     CacheLine **addr = &lines_[cli];
-#if EXPERIMENTAL_TRY_ACQUIRE_WITHOUT_ATOMICS
-    __asm__ __volatile__("" : : : "memory");
-    CacheLine *res = *addr;
-    if (res == 0 || (uintptr_t)res > (1 << 16)) {
-      __asm__ __volatile__("" : : : "memory");
-      *addr = TidMagic(tid);
-      __asm__ __volatile__("" : : : "memory");
-      CacheLine *x = *addr;
-      __asm__ __volatile__("" : : : "memory");
-      if (x == TidMagic(tid)) {
-        // ok!
-      } else {
-        res = kLineIsLocked();
-      }
-    } else {
-      res = kLineIsLocked();
-    }
-#else
     CacheLine *res = (CacheLine*)AtomicExchange(
            (uintptr_t*)addr, (uintptr_t)kLineIsLocked());
-#endif
     if (DEBUG_MODE && debug_cache) {
       uintptr_t tag = CacheLine::ComputeTag(a);
       if (res)
