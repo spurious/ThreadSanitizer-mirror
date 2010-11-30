@@ -619,11 +619,14 @@ namespace {
       DILocation Loc(IN.getMetadata("dbg"));
       std::string file = Loc.getFilename();
       std::string dir = Loc.getDirectory();
+#if 0
+      // TODO(glider): we don't want to print the debug info anymore.
       errs() << "->";
       errs().write_hex(addr);
       errs() << "|" <<  IN.getParent()->getParent()->getName() << "|" <<
                 file << "|" << Loc.getLineNumber() << "|" <<
                 dir << "\n";
+#endif
       debug_path_set.insert(dir);
       debug_file_set.insert(file);
       debug_symbol_set.insert(IN.getParent()->getParent()->getName());
