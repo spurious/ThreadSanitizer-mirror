@@ -571,9 +571,13 @@ namespace {
       bool should_flush = shouldFlushTrace(trace);
       if (shouldFlushTrace(trace)) {
         Instruction *First = trace.entry->begin();
-///        First->dump();
+        for (BasicBlock::iterator BI = trace.entry->begin(),
+             BE = trace.entry->end();
+             BI != BE; ++BI) {
+          First = BI;
+          if (!isa<PHINode>(First)) break;
+        }
         assert(First);
-///        errs() << First->getName() << "\n";
         std::vector <Value*> Args(1);
         std::vector <Value*> idx;
         idx.push_back(ConstantInt::get(PlatformInt, 0));
