@@ -140,7 +140,7 @@ class StealthNotification {
 
   void wait() {
     while (!flag_) {
-      sleep(0);
+      usleep(1000);
     }
   }
 
