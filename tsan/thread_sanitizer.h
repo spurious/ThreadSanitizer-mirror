@@ -147,9 +147,6 @@ extern bool debug_race_verifier;
 extern void ThreadSanitizerInit();
 extern void ThreadSanitizerFini();
 extern void ThreadSanitizerHandleOneEvent(Event *event);
-extern void ThreadSanitizerHandleMemoryAccess(int32_t tid, uintptr_t pc,
-                                              uintptr_t addr, uintptr_t size,
-                                              bool is_w);
 extern void ThreadSanitizerHandleTrace(int32_t tid, TraceInfo *trace_info,
                                        uintptr_t *tleb);
 extern void ThreadSanitizerHandleStackMemChange(int32_t tid, uintptr_t addr,
