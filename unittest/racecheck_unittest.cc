@@ -7788,7 +7788,7 @@ void Worker() {
   }
 }
 
-TEST(StressTests, DISABLED_FlushStateTest) {
+TEST(StressTests, FlushStateTest) {
   MyThreadArray t(Flusher, Worker, Worker, Worker);
   t.Start();
   t.Join();

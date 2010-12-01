@@ -12,3 +12,8 @@
    fun:*test136*
 }
 
+{
+   fun:*StressTests*FlushStateTest*
+   ThreadSanitizer:Race
+   ...
+}
