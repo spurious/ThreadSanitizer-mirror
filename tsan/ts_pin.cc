@@ -1752,7 +1752,7 @@ static void OnTraceParallel(uintptr_t *tls_reg, ADDRINT sp, TraceInfo *trace_inf
 
 
   t.trace_info = trace_info;
-  if (G_flags->show_stats)  // this stat may be racey; avoid ping-pong.
+  if (DEBUG_MODE && G_flags->show_stats)  // this stat may be racey; avoid ping-pong.
     trace_info->counter()++;
   TLEBAddTrace(t);
 }
