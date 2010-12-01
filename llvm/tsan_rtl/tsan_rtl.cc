@@ -376,7 +376,9 @@ static void inline flush_trace(ThreadInfo *info) {
       {
         ThreadSanitizerHandleTrace(tid, reinterpret_cast<TraceInfo*>(trace), tleb);
       }
-      memset(tleb, '\0', 1000 * sizeof(uintptr_t));
+      // Clean up the TLEB. It's better to do this in ThreadSanitizer, however.
+      // TODO(glider): add a DCHECK() for this once it's done.
+      for (size_t i = 0; i < trace->n_mops_; i++) tleb[i] = 0;
       IN_RTL--;
       CHECK_IN_RTL();
     }
@@ -627,7 +629,7 @@ void* bb_flush(TraceInfoPOD *next_mops) {
 
 // Flushes the local TLEB assuming someone is holding the global lock already.
 // Our RTL shouldn't need a thread to flush someone else's TLEB.
-void flush_tleb() {
+inline void flush_tleb() {
 #ifdef DEBUG
   if (G_flags->verbosity >= 2) {
     DDPrintf("flush_tleb\n");
