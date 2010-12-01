@@ -10,20 +10,18 @@ DEFINES=
 RTL_DEPS=
 
 OBJS32=x86-ts_util.o x86-suppressions.o \
-       x86-common_util.o x86-ignore.o x86-tsan_rtl_dynamic_annotations.o
+       x86-common_util.o x86-ignore.o x86-tsan_rtl_dynamic_annotations.o \
+       x86-thread_sanitizer.o x86-dynamic_annotations.o
 OBJS64=amd64-ts_util.o amd64-suppressions.o \
-       amd64-common_util.o amd64-ignore.o amd64-tsan_rtl_dynamic_annotations.o
+       amd64-common_util.o amd64-ignore.o \
+       amd64-tsan_rtl_dynamic_annotations.o \
+       amd64-thread_sanitizer.o amd64-dynamic_annotations.o
 
 ifeq ($(DEBUG), 1)
   D=-debug
   DEFINES+=-DDEBUG=1
-  OBJS32+=x86-thread_sanitizer.o x86-dynamic_annotations.o
-  OBJS64+=amd64-thread_sanitizer.o amd64-dynamic_annotations.o
 else
   D=
-  # In optimized mode, thread_sanitizer.cc is included into the tool code.
-  DEFINES+=-DINCLUDE_THREAD_SANITIZER_CC=1
-  RTL_DEPS+=$(TSAN_PATH)/thread_sanitizer.cc
 endif
 
 COMMON_FLAGS=-I. -Istlport -I../../third_party/stlport \
