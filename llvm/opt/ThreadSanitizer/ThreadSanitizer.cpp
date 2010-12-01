@@ -64,7 +64,7 @@ namespace {
     const Type *PlatformInt, *Int8, *ArithmeticPtr, *Int32;
     const Type *Void;
     const StructType *MopTy, *TraceInfoType, *BBTraceInfoType;
-    const ArrayType *BBPassportType, *BBExtPassportType, *MopArrayType;
+    const ArrayType *MopArrayType;
     const ArrayType *TracePassportType, *TraceExtPassportType;
     const Type *TLEBTy;
     const PointerType *TLEBPtrType;
@@ -466,11 +466,10 @@ namespace {
       //   size_t pc_;
       //   size_t id_;
       //   size_t counter_;
-      //   bool   generate_segments_;
       //   MopInfo mops_[1];
       // };
       TraceInfoType = StructType::get(Context,
-                                    PlatformInt, PlatformInt, PlatformInt, PlatformInt, Int8,
+                                    PlatformInt, PlatformInt, PlatformInt, PlatformInt,
                                     MopArrayType,
                                     NULL);
       TraceInfoTypePtr = PointerType::get(TraceInfoType, 0);
@@ -711,7 +710,7 @@ namespace {
         TracePassportType = ArrayType::get(MopTy, TraceNumMops);
         LLVMContext &Context = M.getContext();
         BBTraceInfoType = StructType::get(Context,
-                                    PlatformInt, PlatformInt, PlatformInt, PlatformInt, Int8,
+                                    PlatformInt, PlatformInt, PlatformInt, PlatformInt,
                                     TracePassportType,
                                     NULL);
 
@@ -727,8 +726,6 @@ namespace {
         trace_info.push_back(ConstantInt::get(PlatformInt, 0));
         // counter_
         trace_info.push_back(ConstantInt::get(PlatformInt, 0));
-        // generate_segments_
-        trace_info.push_back(ConstantInt::get(Int8, 1));
         // mops_
         trace_info.push_back(ConstantArray::get(TracePassportType, passport));
 
