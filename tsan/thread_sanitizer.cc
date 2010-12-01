@@ -5864,17 +5864,9 @@ EventSampler::SampleMapMap *EventSampler::samples_;
 // Collection of event handlers.
 class Detector {
  public:
-  void INLINE HandleMemoryAccess(int32_t tid, uintptr_t pc,
-                          uintptr_t addr, uintptr_t size,
-                          bool is_w, bool need_locking) {
-    Thread *thr = Thread::Get(TID(tid));
-    HandleMemoryAccessInternal(TID(tid), thr, pc, addr, size, is_w,
-                               g_has_expensive_flags, need_locking);
-  }
-
   void INLINE HandleTraceLoop(TraceInfo *t, Thread *thr, TID tid,
                               uintptr_t *tleb, size_t n,
-                              bool has_expensive_flags) {
+                              bool has_expensive_flags, bool need_locking) {
     size_t i = 0;
     if (has_expensive_flags) {
       const size_t mop_stat_size = TS_ARRAY_SIZE(thr->stats.mops_per_trace);
@@ -5888,12 +5880,13 @@ class Detector {
       DCHECK(mop->size != 0);
       DCHECK(mop->pc != 0);
       HandleMemoryAccessInternal(tid, thr, mop->pc, addr, mop->size,
-                                 mop->is_write, has_expensive_flags, true);
+                                 mop->is_write, has_expensive_flags,
+                                 need_locking);
     } while (++i < n);
   }
 
   void INLINE HandleTrace(int32_t raw_tid, TraceInfo *t,
-                          uintptr_t *tleb) {
+                          uintptr_t *tleb, bool need_locking) {
     TID tid(raw_tid);
     Thread *thr = Thread::Get(tid);
     if (thr->ignore_all()) return;
@@ -5905,11 +5898,28 @@ class Detector {
     size_t n = t->n_mops();
     DCHECK(n);
     if (g_has_expensive_flags) {
-      HandleTraceLoop(t, thr, tid, tleb, n, true);
+      HandleTraceLoop(t, thr, tid, tleb, n, true, need_locking);
     } else {
-      HandleTraceLoop(t, thr, tid, tleb, n, false);
+      HandleTraceLoop(t, thr, tid, tleb, n, false, need_locking);
     }
   }
+
+  // Special case of a trace with just one mop and no sblock.
+  void INLINE HandleMemoryAccess(int32_t tid, uintptr_t pc,
+                          uintptr_t addr, uintptr_t size,
+                          bool is_w, bool need_locking) {
+    CHECK(size);
+    TraceInfoPOD trace_info;
+    trace_info.n_mops_ = 1;
+    trace_info.pc_ = 0;  // don't create an sblock.
+    trace_info.id_ = 0;
+    trace_info.counter_ = 0;
+    trace_info.mops_[0].pc = pc;
+    trace_info.mops_[0].size = size;
+    trace_info.mops_[0].is_write = is_w;
+    HandleTrace(tid, (TraceInfo*)&trace_info, &addr, need_locking);
+  }
+
 
   void INLINE HandleStackMemChange(int32_t tid, uintptr_t addr,
                                    uintptr_t size) {
@@ -8081,7 +8091,7 @@ void INLINE ThreadSanitizerHandleMemoryAccess(int32_t tid, uintptr_t pc,
 extern NOINLINE void ThreadSanitizerHandleTrace(int32_t tid, TraceInfo *trace_info,
                                        uintptr_t *tleb) {
   // The lock is taken inside on the slow path.
-  G_detector->HandleTrace(tid, trace_info, tleb);
+  G_detector->HandleTrace(tid, trace_info, tleb, /*need_locking=*/true);
 }
 
 void INLINE ThreadSanitizerHandleStackMemChange(int32_t tid, uintptr_t addr,

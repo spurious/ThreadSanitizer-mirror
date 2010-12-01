@@ -39,7 +39,7 @@
 //  tleb[idx] = actual_address
 struct MopInfo {
   uintptr_t pc;
-  uint8_t   size;  // 0, 1, 2, 4, 8, 10, or 16
+  uint32_t  size;
   bool      is_write;
 };
 
@@ -69,7 +69,6 @@ class TraceInfo : protected TraceInfoPOD {
   size_t pc()     const { return pc_; }
   size_t id()     const { return id_; }
   size_t &counter()     { return counter_; }
-  bool   generate_segments() const { return pc_ != 0; }
 
   static void PrintTraceProfile();
 
