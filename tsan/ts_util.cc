@@ -517,6 +517,21 @@ int32_t NoBarrier_AtomicDecrement(int32_t* ptr) {
   return WINDOWS::InterlockedDecrement((volatile WINDOWS::LONG *)ptr);
 }
 #endif  // _MSC_VER && TS_SERIALIZED
+//--------------- YIELD ----------------- {{{1
+#if defined (_MSC_VER)
+void YIELD() {
+  WINDOWS::Sleep(0);
+}
+#elif defined(TS_VALGRIND)
+void YIELD() {
+}
+#elif defined(__GNUC__)
+void YIELD() {
+  sched_yield();
+}
+#else
+#error "Unknown config"
+#endif
 
 // end. {{{1
 // vim:shiftwidth=2:softtabstop=2:expandtab:tw=80

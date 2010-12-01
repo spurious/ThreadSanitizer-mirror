@@ -47,7 +47,6 @@
 
 #if defined(__GNUC__)
 # include <cxxabi.h>  // __cxa_demangle
-# define YIELD() usleep(0)
 # define ATOMIC_READ(a) __sync_add_and_fetch(a, 0)
 
 #elif defined(_MSC_VER)
@@ -58,7 +57,6 @@ namespace WINDOWS
 }
 
 #include <intrin.h>
-# define YIELD() // __yield()
 # define popen(x,y) (NULL)
 # define ATOMIC_READ(a)         _InterlockedCompareExchange(a, 0, 0)
 # define usleep(x) WINDOWS::Sleep((x)/1000)
