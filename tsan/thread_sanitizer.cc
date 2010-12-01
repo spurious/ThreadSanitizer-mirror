@@ -3217,11 +3217,8 @@ class Cache {
     do {
       line = TryAcquireLine(tid, a, call_site);
       iter++;
-      if (iter > 10) {
-        usleep(iter);
-        if ((iter % 1024) == 0) {
-          Printf("T%d %s iter=%d\n", tid.raw(), __FUNCTION__, iter);
-        }
+      if ((iter % 1024) == 0) {
+        Printf("T%d %s iter=%d\n", tid.raw(), __FUNCTION__, iter);
       }
       if (iter == max_iter) {
         Printf("Failed to acquire a cache line: T%d a=%p site=%d\n",
