@@ -7692,7 +7692,7 @@ void Worker2() {
   fflush(NULL);
 }
 
-TEST(PrintfTests, Fflush) {
+TEST(PrintfTests, DISABLED_Fflush) {
   MyThreadArray t(Worker1, Worker2);
   t.Start();
   t.Join();
