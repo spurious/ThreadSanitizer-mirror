@@ -44,8 +44,7 @@ struct MopInfo {
 };
 
 
-class TraceInfoPOD {
- public:
+struct TraceInfoPOD {
   size_t n_mops_;
   size_t pc_;
   size_t id_;

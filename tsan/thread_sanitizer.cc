@@ -5899,7 +5899,7 @@ class Detector {
     if (thr->ignore_all()) return;
     if (g_so_far_only_one_thread) return;
     DCHECK(t);
-    if (t->generate_segments()) {
+    if (t->pc()) {
       HandleSblockEnter(tid, t->pc());
     }
     size_t n = t->n_mops();
