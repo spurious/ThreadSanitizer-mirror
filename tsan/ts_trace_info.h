@@ -50,7 +50,6 @@ class TraceInfoPOD {
   size_t pc_;
   size_t id_;
   size_t counter_;
-  bool   generate_segments_;
   MopInfo mops_[1];
 };
 
@@ -71,7 +70,7 @@ class TraceInfo : protected TraceInfoPOD {
   size_t pc()     const { return pc_; }
   size_t id()     const { return id_; }
   size_t &counter()     { return counter_; }
-  bool   generate_segments() const { return generate_segments_; }
+  bool   generate_segments() const { return pc_ != 0; }
 
   static void PrintTraceProfile();
 

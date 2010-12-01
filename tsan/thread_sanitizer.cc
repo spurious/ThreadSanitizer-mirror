@@ -3978,11 +3978,9 @@ TraceInfo *TraceInfo::NewTraceInfo(size_t n_mops, uintptr_t pc) {
   memset(mem, 0xab, mem_size);
   TraceInfo *res = new (mem) TraceInfo;
   res->n_mops_ = n_mops;
-  res->pc_ = pc;
+  res->pc_ = ThreadSanitizerWantToCreateSegmentsOnSblockEntry(pc) ? pc : NULL;
   res->id_ = id_counter_++;
   res->counter_ = 0;
-  res->generate_segments_ =
-      ThreadSanitizerWantToCreateSegmentsOnSblockEntry(pc);
   if (g_all_traces == NULL) {
     g_all_traces = new vector<TraceInfo*>;
     CHECK(id_counter_ == 1);
