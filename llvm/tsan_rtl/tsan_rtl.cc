@@ -140,7 +140,7 @@ class DbgInfoLock {
 pthread_spinlock_t global_lock;
 #define GIL_LOCK __real_pthread_spin_lock
 #define GIL_UNLOCK __real_pthread_spin_unlock
-static bool gil_initialized = false;
+bool gil_initialized = false;
 #else
 pthread_mutex_t global_lock = PTHREAD_MUTEX_INITIALIZER;
 #define GIL_LOCK __real_pthread_mutex_lock
@@ -225,7 +225,7 @@ void GIL::Unlock() {
     gil_owner = 0;
 #endif
 #ifdef ENABLE_STATS
-    if (G_flags->verbosity) {
+    if (UNLIKELY(G_flags->verbosity)) {
       if (stats_cur_events<kNumBuckets) {
         stats_event_buckets[stats_cur_events]++;
       }
@@ -282,8 +282,8 @@ extern void ExPut(EventType type, tid_t tid, pc_t pc,
   Put(type, tid, pc, a, info);
 }
 
-static inline void SPut(EventType type, tid_t tid, pc_t pc,
-                        uintptr_t a, uintptr_t info) {
+inline void SPut(EventType type, tid_t tid, pc_t pc,
+                 uintptr_t a, uintptr_t info) {
   if (!HAVE_THREAD_0 && type != THR_START) {
     SPut(THR_START, 0, 0, 0, 0);
   }
@@ -317,7 +317,7 @@ static inline void SPut(EventType type, tid_t tid, pc_t pc,
   if ((type==THR_START) && (tid==0)) HAVE_THREAD_0 = 1;
 }
 
-static void inline flush_trace(ThreadInfo *info) {
+void inline flush_trace() {
 #ifdef DEBUG
   // TODO(glider): PutTrace shouldn't be called without a lock taken.
   // However flushing events from unsafe_clear_pending_signals (called from
@@ -328,10 +328,10 @@ static void inline flush_trace(ThreadInfo *info) {
     SPut(THR_START, 0, 0, 0, 0);
   }
   if (RTL_INIT != 1) return;
-  if (!global_ignore && !G_flags->dry_run) {
-    tid_t tid = info->tid;
-    TraceInfoPOD *trace = info->trace_info;
-    uintptr_t *tleb = info->TLEB;
+  if (!global_ignore && LIKELY(!G_flags->dry_run)) {
+    tid_t tid = INFO.tid;
+    TraceInfoPOD *trace = INFO.trace_info;
+    uintptr_t *tleb = INFO.TLEB;
 #ifdef ENABLE_STATS
     stats_events_processed += trace->n_mops_;
     stats_cur_events += trace->n_mops_;
@@ -385,71 +385,28 @@ static void inline flush_trace(ThreadInfo *info) {
   }
 }
 
-static inline void UPut(EventType type, tid_t tid, pc_t pc,
-                        uintptr_t a, uintptr_t info) {
+inline void Put(EventType type, tid_t tid, pc_t pc,
+                uintptr_t a, uintptr_t info) {
 #ifdef DEBUG
-  assert(!GIL::GetDepth());
+  assert(!isThreadLocalEvent(type));
 #endif
-  // TODO(glider): UPut is deprecated.
-  assert(false);
-  assert(isThreadLocalEvent(type));
+  SPut(type, tid, pc, a, info);
+}
+
+// RPut is strictly for putting RTN_CALL and RTN_EXIT events.
+inline void RPut(EventType type, tid_t tid, pc_t pc,
+                 uintptr_t a, uintptr_t info) {
   if (!HAVE_THREAD_0 && type != THR_START) {
     SPut(THR_START, 0, 0, 0, 0);
   }
   if (RTL_INIT != 1) return;
-  if ((!G_flags->dry_run && !global_ignore) || !isThreadLocalEvent(type)) {
+  if (LIKELY(!G_flags->dry_run)) {
     Event event(type, tid, pc, a, info);
-    if (G_flags->verbosity) {
-      if ((G_flags->verbosity >= 2) ||
-          (type == THR_START) || (type == THR_END) || (type == THR_JOIN_AFTER) || (type == THR_CREATE_BEFORE)) {
-        event.Print();
-      }
+    if (UNLIKELY(G_flags->verbosity >= 2)) {
+      event.Print();
     }
 #ifdef ENABLE_STATS
-    stats_events_processed++;
-    stats_cur_events++;
-    if (!isThreadLocalEvent(type)) stats_non_local++;
-#endif
-    // Do not flush writes to 0x0.
-    if ((type != WRITE) || (a != 0)) {
-      IN_RTL++;
-      CHECK_IN_RTL();
-      {
-        ThreadSanitizerHandleOneEvent(&event);
-      }
-      IN_RTL--;
-      CHECK_IN_RTL();
-    }
-    if ((type==THR_START) && (tid==0)) HAVE_THREAD_0 = 1;
-  }
-}
-
-static inline void Put(EventType type, tid_t tid, pc_t pc,
-                       uintptr_t a, uintptr_t info) {
-  if (isThreadLocalEvent(type)) {
-    assert(false);
-    UPut(type, tid, pc, a, info);
-  } else {
-    SPut(type, tid, pc, a, info);
-  }
-}
-
-static inline void RPut(EventType type, tid_t tid, pc_t pc,
-                        uintptr_t a, uintptr_t info) {
-  if (!HAVE_THREAD_0 && type != THR_START) {
-    SPut(THR_START, 0, 0, 0, 0);
-  }
-  if (RTL_INIT != 1) return;
-  if ((!G_flags->dry_run && !global_ignore) || !isThreadLocalEvent(type)) {
-    Event event(type, tid, pc, a, info);
-    if (G_flags->verbosity) {
-      if ((G_flags->verbosity >= 2) ||
-          (type == THR_START) || (type == THR_END) || (type == THR_JOIN_AFTER) || (type == THR_CREATE_BEFORE)) {
-        event.Print();
-      }
-    }
-#ifdef ENABLE_STATS
-    if (G_flags->verbosity) {
+    if (UNLIKELY(G_flags->verbosity)) {
       stats_events_processed++;
       stats_cur_events++;
     }
@@ -555,7 +512,7 @@ class Init {
   }
 };
 
-static Init dummy_init;
+Init dummy_init;
 
 // TODO(glider): GetPc should return valid PCs.
 inline pc_t GetPc() {
@@ -621,7 +578,7 @@ void* bb_flush(TraceInfoPOD *next_mops) {
 ///  Printf("bb_flush(%p)\n", next_mops);
   if (INFO.trace_info) {
     // This is not a function entry block
-    flush_trace(&INFO);
+    flush_trace();
   }
   INFO.trace_info = next_mops;
   return (void*) INFO.TLEB;
@@ -631,14 +588,14 @@ void* bb_flush(TraceInfoPOD *next_mops) {
 // Our RTL shouldn't need a thread to flush someone else's TLEB.
 inline void flush_tleb() {
 #ifdef DEBUG
-  if (G_flags->verbosity >= 2) {
+  if (UNLIKELY(G_flags->verbosity >= 2)) {
     DDPrintf("flush_tleb\n");
   }
 #endif
   ThreadInfo *info = &INFO;
   if (info) {
     if (info->trace_info) {
-      flush_trace(info);
+      flush_trace();
       info->trace_info = NULL;
     }
   } else {
@@ -774,33 +731,33 @@ int __wrap_pthread_create(pthread_t *thread,
 }
 
 
-static inline void IGNORE_ALL_ACCESSES_BEGIN() {
+inline void IGNORE_ALL_ACCESSES_BEGIN() {
   DECLARE_TID_AND_PC();
   Put(IGNORE_READS_BEG, tid, pc, 0, 0);
   Put(IGNORE_WRITES_BEG, tid, pc, 0, 0);
 }
 
-static inline void IGNORE_ALL_ACCESSES_END() {
+inline void IGNORE_ALL_ACCESSES_END() {
   DECLARE_TID_AND_PC();
   Put(IGNORE_READS_END, tid, pc, 0, 0);
   Put(IGNORE_WRITES_END, tid, pc, 0, 0);
 }
 
-static inline void IGNORE_ALL_SYNC_BEGIN(void) {
+inline void IGNORE_ALL_SYNC_BEGIN(void) {
   //TODO(glider): sync++
 }
 
-static inline void IGNORE_ALL_SYNC_END(void) {
+inline void IGNORE_ALL_SYNC_END(void) {
   //TODO(glider): sync--
 }
 
 
-static inline void IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN(void) {
+inline void IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN(void) {
   IGNORE_ALL_ACCESSES_BEGIN();
   IGNORE_ALL_SYNC_BEGIN();
 }
 
-static inline void IGNORE_ALL_ACCESSES_AND_SYNC_END(void) {
+inline void IGNORE_ALL_ACCESSES_AND_SYNC_END(void) {
   IGNORE_ALL_ACCESSES_END();
   IGNORE_ALL_SYNC_END();
 }
