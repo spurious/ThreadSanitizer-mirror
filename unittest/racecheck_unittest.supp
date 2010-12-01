@@ -16,4 +16,5 @@
    fun:*StressTests*FlushStateTest*
    ThreadSanitizer:Race
    ...
+   fun:*StressTests*FlushStateTest*
 }
