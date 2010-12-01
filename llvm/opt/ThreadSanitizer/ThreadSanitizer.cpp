@@ -1,5 +1,6 @@
 #define DEBUG_TYPE "tsan"
 #include "llvm/ADT/Statistic.h"
+#include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/DebugInfo.h"
 #include "llvm/CallingConv.h"
 #include "llvm/Constants.h"
@@ -44,10 +45,12 @@ namespace {
 
   typedef set<BasicBlock*> BlockSet;
   typedef vector<BasicBlock*> BlockVector;
+  typedef set<Instruction*> InstSet;
 
   struct Trace {
     BlockSet blocks;
     BasicBlock *entry;
+    InstSet to_instrument;
   };
 
   typedef vector<Trace> TraceVector;
@@ -60,7 +63,7 @@ namespace {
     Constant *BBFlushFn;
     Constant *RtnCallFn, *RtnExitFn;
     Constant *MemCpyFn, *MemMoveFn;
-    const PointerType *UIntPtr, *MopTyPtr, *Int8Ptr, *TraceInfoTypePtr;
+    const PointerType *UIntPtr, *TraceInfoTypePtr;
     const Type *PlatformInt, *Int8, *ArithmeticPtr, *Int32;
     const Type *Void;
     const StructType *MopTy, *TraceInfoType, *BBTraceInfoType;
@@ -68,6 +71,7 @@ namespace {
     const ArrayType *TracePassportType, *TraceExtPassportType;
     const Type *TLEBTy;
     const PointerType *TLEBPtrType;
+    AliasAnalysis *AA;
     static const int kTLEBSize = 100;
     // TODO(glider): hashing constants and BB addresses should be different on
     // x86 and x86-64.
@@ -440,6 +444,10 @@ namespace {
       ModuleMopCount = 0;
       ModuleID = getModuleID(M);
       LLVMContext &Context = M.getContext();
+
+      AA = &getAnalysis<AliasAnalysis>();
+
+      // Arch size dependent types.
       if (getArchSize() == 64) {
         UIntPtr = Type::getInt64PtrTy(Context);
         PlatformInt = Type::getInt64Ty(Context);
@@ -449,14 +457,12 @@ namespace {
         PlatformInt = Type::getInt32Ty(Context);
         ArithmeticPtr = Type::getInt32Ty(Context);
       }
+
       Int8 = Type::getInt8Ty(Context);
       Int32 = Type::getInt32Ty(Context);
-      Int8Ptr = PointerType::get(Type::getInt8Ty(Context), 0);
       Void = Type::getVoidTy(Context);
       MopTy = StructType::get(Context, PlatformInt, Int8, Int8, NULL);
-      MopTyPtr = PointerType::get(MopTy, 0);
       MopArrayType = ArrayType::get(MopTy, kTLEBSize);
-
 
       // TraceInfoType represents the following class declared in
       // ts_trace_info.h:
@@ -566,6 +572,7 @@ namespace {
       Value *TLEB = NULL;
       TLEBIndex = 0;
       TraceCount++;
+      markMopsToInstrument(M, trace);
       bool have_passport = makeTracePassport(M, trace);
       bool should_flush = shouldFlushTrace(trace);
       if (shouldFlushTrace(trace)) {
@@ -598,7 +605,7 @@ namespace {
       }
       for (BlockSet::iterator TI = trace.blocks.begin(), TE = trace.blocks.end();
            TI != TE; ++TI) {
-        runOnBasicBlock(M, *TI, first_dtor_bb, TLEB);
+        runOnBasicBlock(M, *TI, first_dtor_bb, TLEB, trace);
         first_dtor_bb = false;
       }
     }
@@ -645,6 +652,131 @@ namespace {
       return false;
     }
 
+    int getMopPtrSize(Value *mopPtr, bool isStore) {
+      int result = getArchSize();
+      const Type *mop_type = mopPtr->getType();
+      if (mop_type->isSized()) {
+        if (cast<PointerType>(mop_type)->getElementType()->isSized()) {
+          result = getAnalysis<TargetData>().getTypeStoreSizeInBits(
+              cast<PointerType>(mop_type)->getElementType());
+        }
+      }
+      return result;
+    }
+
+    bool markMopsToInstrument(Module &M, Trace &trace) {
+      bool isStore, isMop;
+      int size;
+      // Map from AA location into access size.
+      typedef map<pair<Value*, int>, Instruction*> LocMap;
+      LocMap store_map, load_map;
+      for (BlockSet::iterator TI = trace.blocks.begin(),
+                              TE = trace.blocks.end();
+           TI != TE; ++TI) {
+        store_map.clear();
+        load_map.clear();
+        for (BasicBlock::iterator BI = (*TI)->begin(), BE = (*TI)->end();
+             BI != BE; ++BI) {
+          isMop = false;
+          if (isa<LoadInst>(BI)) {
+            isStore = false;
+            isMop = true;
+          }
+          if (isa<StoreInst>(BI)) {
+            isStore = true;
+            isMop = true;
+          }
+          if (isaCallOrInvoke(BI)) {
+            // CallInst or maybe other instructions that may cause a jump.
+            // TODO(glider): assert that the next instruction is strictly a
+            // branch.
+            //assert(false);
+          }
+          if (isMop) {
+            llvm::Instruction &IN = *BI;
+            Value *MopPtr;
+            if (isStore) {
+              MopPtr = (static_cast<StoreInst&>(IN).getPointerOperand());
+            } else {
+              MopPtr = (static_cast<LoadInst&>(IN).getPointerOperand());
+            }
+            size = getMopPtrSize(MopPtr, isStore);
+
+            bool has_alias = false;
+            // Iff the current operation is STORE, it may modify store_map.
+            if (isStore) {
+              for (LocMap::iterator LI = store_map.begin(), LE = store_map.end();
+                   LI != LE; ++LI) {
+                const pair<Value*, int> &location = LI->first;
+                AliasAnalysis::AliasResult R = AA->alias(MopPtr, size,
+                                                         location.first,
+                                                         location.second);
+                if ((R == AliasAnalysis::MustAlias) &&
+                    (size == location.second)) {
+                  ///errs() << "ALIAS\n";
+                // TODO(glider): do we need an assertion here?
+///                  assert(size == location.second);
+                  // We've already seen a STORE of the same size accessing the
+                  // same memory location. We're a STORE, too, so drop it.
+                      trace.to_instrument.erase(LI->second);
+                      trace.to_instrument.insert(BI);
+                      store_map.erase(LI);
+                      store_map[make_pair(MopPtr, size)] = BI;
+                      has_alias = true;
+                      ///BI->dump();
+                      // There cannot be other STORE operations aliasing the same
+                      // location.
+                      break;
+                } else {
+                ///    errs() << "NOALIAS\n";
+                }
+              }
+              if (!has_alias) {
+                store_map[make_pair(MopPtr, size)] = BI;
+                trace.to_instrument.insert(BI);
+              }
+            }
+            // Any newer access to the same memory location removes the
+            // previous access from the load_map.
+            for (LocMap::iterator LI = load_map.begin(), LE = load_map.end();
+                 LI != LE; ++LI) {
+              const pair<Value*, int> &location = LI->first;
+              AliasAnalysis::AliasResult R = AA->alias(MopPtr, size,
+                                                       location.first,
+                                                       location.second);
+              if ((R == AliasAnalysis::MustAlias) && (size == location.second)) {
+ ///               errs() << "ALIAS\n";
+                // TODO(glider): do we need an assertion here?
+///                assert(size == location.second);
+                // Drop the previous access.
+                trace.to_instrument.erase(LI->second);
+                // It's ok to insert the same BI into to_instrument twice.
+                trace.to_instrument.insert(BI);
+                load_map.erase(LI);
+                if (!isStore) {
+                  load_map[make_pair(MopPtr, size)] = BI;
+                }
+                has_alias = true;
+///                BI->dump();
+                // There cannot be other STORE operations aliasing the same
+                // location.
+                break;
+              } else {
+///                  errs() << "NOALIAS\n";
+              }
+            }
+
+            if (!has_alias) {
+              if (!isStore) {
+                load_map[make_pair(MopPtr, size)] = BI;
+              }
+              trace.to_instrument.insert(BI);
+            }
+          }
+        }
+      }
+    }
+
     bool makeTracePassport(Module &M, Trace &trace) {
       Passport passport;
       bool isStore, isMop;
@@ -670,26 +802,21 @@ namespace {
             //assert(false);
           }
           if (isMop) {
-            size = getArchSize();
+            if (trace.to_instrument.find(BI) == trace.to_instrument.end())
+              continue;
             TraceNumMops++;
             ModuleMopCount++;
-            Value *MopPtr;
+
+
             llvm::Instruction &IN = *BI;
             getAddr(TraceCount, TraceNumMops, BI);
+            Value *MopPtr;
             if (isStore) {
               MopPtr = (static_cast<StoreInst&>(IN).getPointerOperand());
             } else {
               MopPtr = (static_cast<LoadInst&>(IN).getPointerOperand());
             }
-            if (MopPtr->getType()->isSized()) {
-              if (cast<PointerType>(MopPtr->getType())->getElementType()->isSized())
-                  {
-                    size =
-                      getAnalysis<TargetData>().getTypeStoreSizeInBits(
-                        cast<PointerType>(MopPtr->getType())->getElementType()
-                      );
-                  }
-            }
+            size = getMopPtrSize(MopPtr, isStore);
 
 
             if (MopPtr->getType() != UIntPtr) {
@@ -745,11 +872,10 @@ namespace {
 
 
     void InstrumentMop(BasicBlock::iterator &BI, bool isStore,
-                       Value *TLEB, bool check_ident_store) {
+                       Value *TLEB, bool check_ident_store, Trace &trace) {
+      if (trace.to_instrument.find(BI) == trace.to_instrument.end()) return;
       Value *MopAddr;
       llvm::Instruction &IN = *BI;
-///      errs() << "  instrumenting ";
-///      BI->dump();
       if (isStore) {
         MopAddr = (static_cast<StoreInst&>(IN).getPointerOperand());
       } else {
@@ -832,11 +958,9 @@ namespace {
 
     bool runOnBasicBlock(Module &M, BasicBlock *BB,
                          bool first_dtor_bb,
-                         Value *TLEB) {
+                         Value *TLEB, Trace &trace) {
       bool result = false;
       OldTLEBIndex = 0;
-///      errs() << "Instrumenting " << BB->getName() << "\n";
-
       for (BasicBlock::iterator BI = BB->begin(), BE = BB->end();
            BI != BE;
            ++BI) {
@@ -866,12 +990,12 @@ namespace {
         }
         if (isa<LoadInst>(BI)) {
           // Instrument LOAD.
-          InstrumentMop(BI, false, TLEB, first_dtor_bb);
+          InstrumentMop(BI, false, TLEB, first_dtor_bb, trace);
           unknown = false;
         }
         if (isa<StoreInst>(BI)) {
           // Instrument STORE.
-          InstrumentMop(BI, true, TLEB, first_dtor_bb);
+          InstrumentMop(BI, true, TLEB, first_dtor_bb, trace);
           unknown = false;
         }
 
@@ -883,7 +1007,9 @@ namespace {
 
   private:
     virtual void getAnalysisUsage(AnalysisUsage &AU) const {
+      AU.setPreservesAll();
       AU.addRequired<TargetData>();
+      AU.addRequired<AliasAnalysis>();
     }
   };
   // }}}
