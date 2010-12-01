@@ -65,8 +65,6 @@ ifeq ($(DEBUG), 1)
   DEFINES+=-DDEBUG=1
 else
   D=
-  # In optimized mode, thread_sanitizer.cc is included into the tool code.
-  DEFINES+=-DINCLUDE_THREAD_SANITIZER_CC=1
 endif
 
 ifeq ($(ARCH), x86)
@@ -229,13 +227,6 @@ TS_HEADERS=thread_sanitizer.h ts_util.h suppressions.h ignore.h ts_replace.h ts_
 	   ../dynamic_annotations/dynamic_annotations.h
 ts_event_names.h: ts_events.h
 	sed -n '/^enum/,/^};/ {s/enum EventType/static const char *kEventNames[] = /; s/^  \([A-Z_]\+\)/  "\1"/g; p}' $< > $@
-ifeq ($(DEBUG), 0)
-# in optimized build, we include thread_sanitizer.cc into other files.
-$(VGP)ts_valgrind.o: thread_sanitizer.cc
-$(PINP)ts_pin.$(OBJ):  thread_sanitizer.cc
-$(PINMTP)ts_pin.$(OBJ):  thread_sanitizer.cc
-$(P)ts_offline.$(OBJ): thread_sanitizer.cc
-endif
 TS_VG_HEADERS=ts_valgrind.h ts_valgrind_client_requests.h
 
 TS_VG_OBJECTS=$(VGP)thread_sanitizer.o $(VGP)ts_valgrind.o $(VGP)ts_valgrind_libc.o $(VGP)ts_util.o $(VGP)suppressions.o $(VGP)ignore.o $(VGP)common_util.o $(VGP)ts_race_verifier.o

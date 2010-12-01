@@ -1498,12 +1498,5 @@ void ts_pre_clo_init(void) {
 
 VG_DETERMINE_INTERFACE_VERSION(ts_pre_clo_init)
 
-// -------- thread_sanitizer.cc -------------------------- {{{1
-// ... for performance reasons...
-#ifdef INCLUDE_THREAD_SANITIZER_CC
-# undef INCLUDE_THREAD_SANITIZER_CC
-# include "thread_sanitizer.cc"
-#endif
-
 // {{{1 end
 // vim:shiftwidth=2:softtabstop=2:expandtab

@@ -53,3 +53,6 @@ extern "C" void * memmove(void *a, const void *b, unsigned long size) {
 extern "C" int memcmp(const void *a, const void *b, unsigned long c) {
   return VG_(memcmp)(a,b,c);
 }
+extern "C" void* __memcpy_chk(void *dest, const void *src, unsigned long n) {
+   return VG_(memcpy)(dest,src,n);
+}
