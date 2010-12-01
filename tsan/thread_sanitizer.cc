@@ -3211,10 +3211,15 @@ class Cache {
   INLINE CacheLine *AcquireLine(TID tid, uintptr_t a, int call_site) {
     CacheLine *line = NULL;
     int iter = 0;
+    const int max_iter = 1 << 30;
     do {
       line = TryAcquireLine(tid, a, call_site);
       iter++;
-      DCHECK(iter < (1 << 30));
+      if (iter == max_iter) {
+        Printf("Failed to acquire a cache line: T%d a=%p site=%d\n",
+               tid.raw(), a, call_site);
+        CHECK(iter < max_iter);
+      }
     } while (line == kLineIsLocked());
     DCHECK(lines_[ComputeCacheLineIndexInCache(a)] == TidMagic(tid));
     return line;
@@ -3237,6 +3242,15 @@ class Cache {
                line, line->Empty(), line->tag(), cli, call_site);
       else
         Printf("Release tag=%lx cli=%d site=%d\n", tag, cli, call_site);
+    }
+  }
+
+  void AcquireAllLines(TID tid) {
+    CHECK(TS_SERIALIZED == 0);
+    for (size_t i = 0; i < (size_t)kNumLines; i++) {
+      uintptr_t tag = i << CacheLine::kLineSizeBits;
+      AcquireLine(tid, tag, __LINE__);
+      CHECK(lines_[i] == kLineIsLocked());
     }
   }
 
@@ -3286,10 +3300,11 @@ class Cache {
   }
 
   void ForgetAllState(TID tid) {
-    map<uintptr_t, Mask> racey_masks;
     for (int i = 0; i < kNumLines; i++) {
+      if (TS_SERIALIZED == 0) CHECK(LineIsNullOrLocked(lines_[i]));
       lines_[i] = NULL;
     }
+    map<uintptr_t, Mask> racey_masks;
     for (Map::iterator i = storage_.begin(); i != storage_.end(); ++i) {
       CacheLine *line = i->second;
       if (!line->racey().Empty()) {
@@ -5111,8 +5126,16 @@ static HeapMap<ThreadStackInfo> *G_thread_stack_map;
 static void ForgetAllStateAndStartOver(TID tid, const char *reason) {
   // This is done under the main lock.
   AssertTILHeld();
-  g_last_flush_time = TimeInMilliSeconds();
-  Report("INFO: %s. Flushing state.\n", reason);
+  size_t start_time = g_last_flush_time = TimeInMilliSeconds();
+  Report("T%d INFO: %s. Flushing state.\n", tid.raw(), reason);
+
+  if (TS_SERIALIZED == 0) {
+    // We own the lock, but we also must acquire all cache lines
+    // so that the fast-path (unlocked) code does not execute while
+    // we are flushing.
+    G_cache->AcquireAllLines(tid);
+  }
+
 
   if (0) {
     Report("INFO: Thread Sanitizer will now forget all history.\n");
@@ -5129,7 +5152,6 @@ static void ForgetAllStateAndStartOver(TID tid, const char *reason) {
 
   Segment::ForgetAllState();
   SegmentSet::ForgetAllState();
-  G_cache->ForgetAllState(tid);
   Thread::ForgetAllState();
   VTS::FlushHBCache();
 
@@ -5144,6 +5166,16 @@ static void ForgetAllStateAndStartOver(TID tid, const char *reason) {
       VTS::Unref(*it2);
       *it2 = VTS::CreateSingleton(TID(0), 1);
     }
+  }
+
+  // Must be the last one to flush as it effectively releases the
+  // cach lines and enables fast path code to run in other threads.
+  G_cache->ForgetAllState(tid);
+
+  size_t stop_time = TimeInMilliSeconds();
+  if ((stop_time - start_time > 0)) {
+    Report("T%d INFO: Flush took %ld ms\n", tid.raw(),
+           stop_time - start_time);
   }
 }
 // -------- Expected Race ---------------------- {{{1
