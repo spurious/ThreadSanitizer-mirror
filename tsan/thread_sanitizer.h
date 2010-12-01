@@ -159,8 +159,6 @@ extern bool ThreadSanitizerWantToInstrumentSblock(uintptr_t pc);
 extern bool ThreadSanitizerWantToCreateSegmentsOnSblockEntry(uintptr_t pc);
 extern bool ThreadSanitizerIgnoreAccessesBelowFunction(uintptr_t pc);
 
-extern void ThreadSanitizerEnterSblock(int32_t tid, uintptr_t pc);
-
 enum IGNORE_BELOW_RTN {
   IGNORE_BELOW_RTN_UNKNOWN,
   IGNORE_BELOW_RTN_NO,

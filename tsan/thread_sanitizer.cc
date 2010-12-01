@@ -275,6 +275,8 @@ const char *c_yellow  = "";
 const char *c_default = "";
 
 
+// -------- Forward decls ------ {{{1
+static void ForgetAllStateAndStartOver(TID tid, const char *reason);
 // -------- Simple Cache ------ {{{1
 #include "ts_simple_cache.h"
 // -------- PairCache & IntPairToIntCache ------ {{{1
@@ -3211,10 +3213,16 @@ class Cache {
   INLINE CacheLine *AcquireLine(TID tid, uintptr_t a, int call_site) {
     CacheLine *line = NULL;
     int iter = 0;
-    const int max_iter = 1 << 30;
+    const int max_iter = 1 << 20;
     do {
       line = TryAcquireLine(tid, a, call_site);
       iter++;
+      if (iter > 10) {
+        usleep(iter);
+        if ((iter % 1024) == 0) {
+          Printf("T%d %s iter=%d\n", tid.raw(), __FUNCTION__, iter);
+        }
+      }
       if (iter == max_iter) {
         Printf("Failed to acquire a cache line: T%d a=%p site=%d\n",
                tid.raw(), a, call_site);
@@ -3658,6 +3666,7 @@ static void INLINE UnrefSegmentsInMemoryRange(uintptr_t a, uintptr_t b,
 
 void INLINE ClearMemoryStateInOneLine(TID tid, uintptr_t addr,
                                       uintptr_t beg, uintptr_t end) {
+  AssertTILHeld();
   CacheLine *line = G_cache->GetLineIfExists(tid, addr, __LINE__);
   // CacheLine *line = G_cache->GetLineOrCreateNew(addr, __LINE__);
   if (line) {
@@ -4576,10 +4585,29 @@ struct Thread {
     }
   }
 
-  void INLINE HandleSblockEnter(uintptr_t pc) {
-    if (!G_flags->keep_history) return;
-    if (g_so_far_only_one_thread) return;
-    if (this->ignore_all()) return;
+  void NOINLINE HandleSblockEnterSlowLocked() {
+    AssertTILHeld();
+    if (Segment::NumberOfSegments() > ((kMaxSID * 15) / 16)) {
+      // too few sids left -- flush state.
+      if (DEBUG_MODE) {
+        G_cache->PrintStorageStats();
+        Segment::ShowSegmentStats();
+      }
+      ForgetAllStateAndStartOver(tid(),
+                                 "ThreadSanitizer has run out of segment IDs");
+    }
+    this->stats.history_creates_new_segment++;
+    VTS *new_vts = vts()->Clone();
+    NewSegment("HandleSblockEnter", new_vts);
+    recent_segments_cache_.Push(sid());
+    GetSomeFreshSids();  // fill the thread-local SID cache.
+  }
+
+  INLINE bool HandleSblockEnter(uintptr_t pc, bool allow_slow_path) {
+    DCHECK(G_flags->keep_history);
+    DCHECK(!g_so_far_only_one_thread);
+    DCHECK(!this->ignore_all());
+    if (!pc) return true;
 
     this->stats.events[SBLOCK_ENTER]++;
 
@@ -4616,15 +4644,12 @@ struct Thread {
       FillEmbeddedStackTrace(Segment::embedded_stack_trace(sid()));
       this->stats.history_uses_preallocated_segment++;
     } else {
-      // No fresh SIDs available, have to grab a lock and get few.
-      TIL til(ts_lock, 5);
+      if (!allow_slow_path) return false;
       AssertTILHeld();
-      this->stats.history_creates_new_segment++;
-      VTS *new_vts = vts()->Clone();
-      NewSegment("HandleSblockEnter", new_vts);
-      recent_segments_cache_.Push(sid());
-      GetSomeFreshSids();  // fill the thread-local SID cache.
+      // No fresh SIDs available, have to grab a lock and get few.
+      HandleSblockEnterSlowLocked();
     }
+    return true;
   }
 
   void NewSegmentForWait(const VTS *signaller_vts) {
@@ -5171,7 +5196,7 @@ static void ForgetAllStateAndStartOver(TID tid, const char *reason) {
   G_cache->ForgetAllState(tid);
 
   size_t stop_time = TimeInMilliSeconds();
-  if ((stop_time - start_time > 0)) {
+  if (DEBUG_MODE || (stop_time - start_time > 0)) {
     Report("T%d INFO: Flush took %ld ms\n", tid.raw(),
            stop_time - start_time);
   }
@@ -5872,6 +5897,7 @@ class Detector {
       const size_t mop_stat_size = TS_ARRAY_SIZE(thr->stats.mops_per_trace);
       thr->stats.mops_per_trace[n < mop_stat_size ? n : mop_stat_size - 1]++;
     }
+    uintptr_t sblock_pc = t->pc();
     do {
       uintptr_t addr = tleb[i];
       if (addr == 0) continue;  // This mop was not executed.
@@ -5879,7 +5905,7 @@ class Detector {
       tleb[i] = 0;  // we've consumed this mop, clear it.
       DCHECK(mop->size != 0);
       DCHECK(mop->pc != 0);
-      HandleMemoryAccessInternal(tid, thr, mop->pc, addr, mop->size,
+      HandleMemoryAccessInternal(tid, thr, &sblock_pc, mop->pc, addr, mop->size,
                                  mop->is_write, has_expensive_flags,
                                  need_locking);
     } while (++i < n);
@@ -5892,9 +5918,6 @@ class Detector {
     if (thr->ignore_all()) return;
     if (g_so_far_only_one_thread) return;
     DCHECK(t);
-    if (t->pc()) {
-      HandleSblockEnter(tid, t->pc());
-    }
     size_t n = t->n_mops();
     DCHECK(n);
     if (g_has_expensive_flags) {
@@ -6022,16 +6045,6 @@ class Detector {
 
   void FlushIfNeeded(TID tid) {
     // Are we out of segment IDs?
-    if (Segment::NumberOfSegments() > ((kMaxSID * 15) / 16)) {
-      TIL til(ts_lock, 7);
-      AssertTILHeld();
-      if (DEBUG_MODE) {
-        G_cache->PrintStorageStats();
-        Segment::ShowSegmentStats();
-      }
-      ForgetAllStateAndStartOver(tid, "ThreadSanitizer has run out of segment IDs");
-    }
-
 #ifdef TS_VALGRIND  // GetVmSizeInMb() works only with valgrind any way.
     static int counter;
     counter++;  // ATTENTION: don't do this in multi-threaded code -- too slow.
@@ -6060,18 +6073,6 @@ class Detector {
       }
     }
 #endif
-  }
-
-  void INLINE HandleSblockEnter(TID tid, uintptr_t pc) {
-    Thread *thr = Thread::Get(tid);
-    thr->HandleSblockEnter(pc);
-
-    FlushIfNeeded(tid);
-
-    if (UNLIKELY(G_flags->sample_events)) {
-      static EventSampler sampler;
-      sampler.Sample(tid, "SampleSblockEnter");
-    }
   }
 
   void HandleRtnCall(TID tid, uintptr_t call_pc, uintptr_t target_pc,
@@ -6109,9 +6110,6 @@ class Detector {
       case RTN_EXIT:
         thread->HandleRtnExit();
         return;
-      case SBLOCK_ENTER:
-        HandleSblockEnter(TID(e->tid()), e->pc());
-        break;
       default: break;
     }
 
@@ -6130,6 +6128,9 @@ class Detector {
 
     switch (type) {
       case THR_START   : CHECK(0); break;
+        break;
+      case SBLOCK_ENTER:
+        thread->HandleSblockEnter(e->pc(), /*allow_slow_path=*/true);
         break;
       case THR_CREATE_BEFORE:
         thread->HandleThreadCreateBefore(TID(e->tid()), e->pc());
@@ -6963,7 +6964,6 @@ one_call:
                                            uintptr_t addr, uintptr_t size,
                                            bool is_w, bool has_expensive_flags,
                                            bool need_locking) {
-    TIL til(ts_lock, 2, need_locking);
     AssertTILHeld();
     DCHECK(thr->lsid(false) == thr->segment()->lsid(false));
     DCHECK(thr->lsid(true) == thr->segment()->lsid(true));
@@ -7021,7 +7021,9 @@ one_call:
     }
   }
 
-  INLINE void HandleMemoryAccessInternal(TID tid, Thread *thr, uintptr_t pc,
+  INLINE void HandleMemoryAccessInternal(TID tid, Thread *thr,
+                                         uintptr_t *sblock_pc,
+                                         uintptr_t pc,
                                          uintptr_t addr, uintptr_t size,
                                          bool is_w, bool has_expensive_flags,
                                          bool need_locking) {
@@ -7033,8 +7035,8 @@ one_call:
     }
     DCHECK(size > 0);
     DCHECK(thr->is_running());
+    DCHECK(g_so_far_only_one_thread == false);
     if (thr->ignore(is_w)) return;
-    if (g_so_far_only_one_thread) return;
 
     // We do not check and ignore stack now.
     // On unoptimized binaries this would give ~10% speedup if ignore_stack==true,
@@ -7049,46 +7051,51 @@ one_call:
     int locked_access_case = 0;
 
     if (need_locking) {
+      // The fast (unlocked) path.
       if (thr->HasRoomForDeadSids()) {
-        // cool new code which doesn't really work;
-        // it is anabled only under TS_SERIALIZED==0.
-
         // Acquire a line w/o locks.
         cache_line = G_cache->TryAcquireLine(tid, addr, __LINE__);
         if (!Cache::LineIsNullOrLocked(cache_line)) {
           // The line is not empty or locked -- check the tag.
           if (cache_line->tag() == CacheLine::ComputeTag(addr)) {
             // The line is ours and non-empty -- fire the fast path.
-            bool res = HandleAccessGranularityAndExecuteHelper(
-                cache_line, tid, thr, pc, addr,
-                size, is_w, has_expensive_flags,
-                /*fast_path_only=*/true);
-            // release the line.
-            G_cache->ReleaseLine(tid, addr, cache_line, __LINE__);
-            if (res) {
-              INC_STAT(thr->stats.unlocked_access_ok);
-              // fast path succeded, we are done.
-              return;
+            if (thr->HandleSblockEnter(*sblock_pc, /*allow_slow_path=*/false)) {
+              *sblock_pc = 0;  // don't do SblockEnter any more.
+              bool res = HandleAccessGranularityAndExecuteHelper(
+                  cache_line, tid, thr, pc, addr,
+                  size, is_w, has_expensive_flags,
+                  /*fast_path_only=*/true);
+              // release the line.
+              G_cache->ReleaseLine(tid, addr, cache_line, __LINE__);
+              if (res) {
+                INC_STAT(thr->stats.unlocked_access_ok);
+                // fast path succeded, we are done.
+                return;
+              } else {
+                locked_access_case = 1;
+              }
             } else {
-              locked_access_case = 1;
+              // we were not able to handle SblockEnter.
+              G_cache->ReleaseLine(tid, addr, cache_line, __LINE__);
+              locked_access_case = 2;
             }
           } else {
-            locked_access_case = 2;
+            locked_access_case = 3;
             // The line has a wrong tag.
             G_cache->ReleaseLine(tid, addr, cache_line, __LINE__);
           }
         } else if (cache_line == NULL) {
-          locked_access_case = 3;
+          locked_access_case = 4;
           // We grabbed the cache slot but it is empty, release it.
           G_cache->ReleaseLine(tid, addr, cache_line, __LINE__);
         } else {
-          locked_access_case = 4;
+          locked_access_case = 5;
         }
       } else {
-        locked_access_case = 5;
+        locked_access_case = 6;
       }
     } else {
-      locked_access_case = 6;
+      locked_access_case = 7;
     }
 
     if (need_locking) {
@@ -7096,6 +7103,9 @@ one_call:
     }
 
     // Everything below goes under a lock.
+    TIL til(ts_lock, 2, need_locking);
+    thr->HandleSblockEnter(*sblock_pc, /*allow_slow_path=*/true);
+    *sblock_pc = 0;  // don't do SblockEnter any more.
     HandleMemoryAccessSlowLocked(tid, thr, pc, addr, size,
                                  is_w, has_expensive_flags,
                                  need_locking);
@@ -8098,10 +8108,6 @@ void INLINE ThreadSanitizerHandleStackMemChange(int32_t tid, uintptr_t addr,
                                                 uintptr_t size) {
   CHECK(TS_SERIALIZED == 1); // we should kill this function.
   G_detector->HandleStackMemChange(tid, addr, size);
-}
-
-void INLINE ThreadSanitizerEnterSblock(int32_t tid, uintptr_t pc) {
-  G_detector->HandleSblockEnter(TID(tid), pc);
 }
 
 void INLINE ThreadSanitizerHandleRtnCall(int32_t tid, uintptr_t call_pc,

@@ -48,7 +48,7 @@ struct ThreadLocalStats {
             n_very_slow_access, n_access_slow_iter;
 
   uintptr_t mops_per_trace[16];
-  uintptr_t locked_access[7];
+  uintptr_t locked_access[8];
   uintptr_t history_uses_same_segment, history_creates_new_segment,
             history_reuses_segment, history_uses_preallocated_segment;
 
