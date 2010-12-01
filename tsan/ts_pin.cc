@@ -65,23 +65,12 @@ namespace WINDOWS
 # define UINTPTR_MAX ((uintptr_t)-1)
 #endif
 
-
-static void DumpEvent(EventType type, int32_t tid, uintptr_t pc,
-                      uintptr_t a, uintptr_t info);
-// TODO(kcc): do we need to handle these as a part of some TRACE?
-#define REPORT_READ_RANGE(x, size) do { \
-  if (size) DumpEvent(READ, tid, pc, (uintptr_t)(x), (size)); } while(0)
-
-#define REPORT_WRITE_RANGE(x, size) do { \
-  if (size) DumpEvent(WRITE, tid, pc, (uintptr_t)(x), (size)); } while(0)
-
-#define EXTRA_REPLACE_PARAMS THREADID tid, uintptr_t pc,
-#include "ts_replace.h"
-
 #ifdef NDEBUG
 # error "Please don't define NDEBUG"
 #endif
 
+static void DumpEvent(EventType type, int32_t tid, uintptr_t pc,
+                      uintptr_t a, uintptr_t info);
 //------ Global PIN lock ------- {{{1
 class ScopedReentrantClientLock {
  public:
@@ -182,6 +171,19 @@ static bool global_ignore;
 #ifdef _MSC_VER
 static unordered_set<pthread_t> *g_win_handles_which_are_threads;
 #endif
+
+//-------------------- ts_replace ------------------- {{{1
+// TODO(kcc): do we need to handle these as a part of some TRACE?
+#define REPORT_READ_RANGE(x, size) do { \
+  if (size && !g_pin_threads[tid].ignore_accesses) \
+    DumpEvent(READ, tid, pc, (uintptr_t)(x), (size)); } while(0)
+
+#define REPORT_WRITE_RANGE(x, size) do { \
+  if (size && !g_pin_threads[tid].ignore_accesses) \
+    DumpEvent(WRITE, tid, pc, (uintptr_t)(x), (size)); } while(0)
+
+#define EXTRA_REPLACE_PARAMS THREADID tid, uintptr_t pc,
+#include "ts_replace.h"
 
 //------------- ThreadSanitizer exports ------------ {{{1
 string Demangle(const char *str) {
