@@ -8097,19 +8097,19 @@ extern NOINLINE void ThreadSanitizerHandleTrace(int32_t tid, TraceInfo *trace_in
   G_detector->HandleTrace(tid, trace_info, tleb, /*need_locking=*/true);
 }
 
-void INLINE ThreadSanitizerHandleStackMemChange(int32_t tid, uintptr_t addr,
+void NOINLINE ThreadSanitizerHandleStackMemChange(int32_t tid, uintptr_t addr,
                                                 uintptr_t size) {
   CHECK(TS_SERIALIZED == 1); // we should kill this function.
   G_detector->HandleStackMemChange(tid, addr, size);
 }
 
-void INLINE ThreadSanitizerHandleRtnCall(int32_t tid, uintptr_t call_pc,
+void NOINLINE ThreadSanitizerHandleRtnCall(int32_t tid, uintptr_t call_pc,
                                          uintptr_t target_pc,
                                          IGNORE_BELOW_RTN ignore_below) {
   // This does locking on a cold path. Hot path in thread-local.
   G_detector->HandleRtnCall(TID(tid), call_pc, target_pc, ignore_below);
 }
-void INLINE ThreadSanitizerHandleRtnExit(int32_t tid) {
+void NOINLINE ThreadSanitizerHandleRtnExit(int32_t tid) {
   // This is a thread-local operation, no need for locking.
   Thread::Get(TID(tid))->HandleRtnExit();
 }
