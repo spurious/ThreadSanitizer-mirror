@@ -71,7 +71,7 @@ namespace {
     const PointerType *UIntPtr, *TraceInfoTypePtr;
     const Type *PlatformInt, *Int8, *ArithmeticPtr, *Int32;
     const Type *Void;
-    const StructType *MopTy, *TraceInfoType, *BBTraceInfoType;
+    const StructType *MopType, *TraceInfoType, *BBTraceInfoType;
     const ArrayType *MopArrayType;
     const ArrayType *TracePassportType, *TraceExtPassportType;
     const Type *TLEBTy;
@@ -466,13 +466,19 @@ namespace {
       Int8 = Type::getInt8Ty(Context);
       Int32 = Type::getInt32Ty(Context);
       Void = Type::getVoidTy(Context);
-      MopTy = StructType::get(Context, PlatformInt, Int8, Int8, NULL);
-      MopArrayType = ArrayType::get(MopTy, kTLEBSize);
+
+      // MopType represents the following class declared in ts_trace_info.h:
+      // struct MopInfo {
+      //   uintptr_t pc;
+      //   uint32_t  size;
+      //   bool      is_write;
+      // };
+      MopType = StructType::get(Context, PlatformInt, Int32, Int8, NULL);
+      MopArrayType = ArrayType::get(MopType, kTLEBSize);
 
       // TraceInfoType represents the following class declared in
       // ts_trace_info.h:
-      // class TraceInfoPOD {
-      //  protected:
+      // struct TraceInfoPOD {
       //   size_t n_mops_;
       //   size_t pc_;
       //   size_t id_;
@@ -836,15 +842,15 @@ namespace {
             std::vector<Constant*> mop;
             mop.push_back(ConstantInt::get(PlatformInt, getAddr(TraceCount,
                                                                 TraceNumMops, BI)));
-            mop.push_back(ConstantInt::get(Int8, size / 8));
+            mop.push_back(ConstantInt::get(Int32, size / 8));
             mop.push_back(ConstantInt::get(Int8, isStore));
-            passport.push_back(ConstantStruct::get(MopTy, mop));
+            passport.push_back(ConstantStruct::get(MopType, mop));
           }
         }
 
       }
       if (TraceNumMops) {
-        TracePassportType = ArrayType::get(MopTy, TraceNumMops);
+        TracePassportType = ArrayType::get(MopType, TraceNumMops);
         LLVMContext &Context = M.getContext();
         BBTraceInfoType = StructType::get(Context,
                                     PlatformInt, PlatformInt, PlatformInt, PlatformInt,
