@@ -5909,7 +5909,13 @@ class Detector {
     } while (++i < n);
   }
 
-  void INLINE HandleTrace(int32_t raw_tid, TraceInfo *t,
+#ifdef _MSC_VER
+  NOINLINE
+  // With MSVC, INLINE would cause the compilation to be insanely slow.
+#else
+  INLINE
+#endif
+  void HandleTrace(int32_t raw_tid, TraceInfo *t,
                           uintptr_t *tleb, bool need_locking) {
     TID tid(raw_tid);
     Thread *thr = Thread::Get(tid);
