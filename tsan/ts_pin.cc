@@ -413,10 +413,10 @@ static INLINE void TLEBFlushUnlocked(ThreadLocalEventBuffer &tleb) {
     } else {
       // all other events.
       CHECK(event > NOOP && event < LAST_EVENT);
+      uintptr_t pc    = tleb.events[i++];
+      uintptr_t a     = tleb.events[i++];
+      uintptr_t info  = tleb.events[i++];
       if (!WantToIgnoreEvent(t, event)) {
-        uintptr_t pc    = tleb.events[i++];
-        uintptr_t a     = tleb.events[i++];
-        uintptr_t info  = tleb.events[i++];
         DumpEventInternal((EventType)event, t.uniq_tid, pc, a, info);
       }
     }
