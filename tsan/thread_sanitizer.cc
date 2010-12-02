@@ -6959,6 +6959,44 @@ one_call:
                                     thr, fast_path_only);
   }
 
+  INLINE bool IsTraced(CacheLine *cache_line, uintptr_t addr,
+                       bool has_expensive_flags) {
+    if (!has_expensive_flags) return false;
+    if (G_flags->trace_level == 0) return false;
+    DCHECK(cache_line);
+    uintptr_t off = CacheLine::ComputeOffset(addr);
+    if (cache_line->traced().Get(off)) {
+      return true;
+    } else if (addr == G_flags->trace_addr) {
+      return true;
+    }
+    return false;
+  }
+
+  void DoTrace(Thread *thr, uintptr_t addr, uintptr_t size, bool is_w,
+               bool pc, bool need_locking) {
+    TIL til(ts_lock, 1, need_locking);
+    for (uintptr_t x = addr; x < addr + size; x++) {
+      uintptr_t off = CacheLine::ComputeOffset(x);
+      CacheLine *cache_line = G_cache->GetLineOrCreateNew(thr->tid(),
+                                                          x, __LINE__);
+      ShadowValue *sval_p = cache_line->GetValuePointer(off);
+      if (cache_line->has_shadow_value().Get(off) != 0) {
+        bool is_published = cache_line->published().Get(off);
+        Printf("TRACE: T%d/S%d %s[%d] addr=%p sval: %s%s; line=%p P=%s\n",
+               thr->tid().raw(), thr->sid().raw(), is_w ? "wr" : "rd",
+               size, addr, sval_p->ToString().c_str(),
+               is_published ? " P" : "",
+               cache_line,
+               cache_line->published().Empty() ?
+               "0" : cache_line->published().ToString().c_str());
+        thr->ReportStackTrace(pc);
+      }
+      G_cache->ReleaseLine(thr->tid(), x, cache_line, __LINE__);
+    }
+  }
+
+
 #if TS_SERIALIZED == 1
   INLINE  // TODO(kcc): this can also be made NOINLINE later.
 #else
@@ -6981,41 +7019,13 @@ one_call:
     HandleAccessGranularityAndExecuteHelper(cache_line, tid, thr, pc, addr,
                                             size, is_w, has_expensive_flags,
                                             /*fast_path_only=*/false);
+    bool tracing = IsTraced(cache_line, addr, has_expensive_flags);
     G_cache->ReleaseLine(tid, addr, cache_line, __LINE__);
     cache_line = NULL;  // just in case.
 
-    if (has_expensive_flags && TS_SERIALIZED == 1) {
-      // TODO(kcc): implement this for TS_SERIALIZED==0
-      if (G_flags->trace_level >= 1) {
-        cache_line = G_cache->GetLineIfExists(tid, addr, __LINE__);
-        DCHECK(cache_line);
-        bool tracing = false;
-        uintptr_t off = CacheLine::ComputeOffset(addr);
-        if (cache_line->traced().Get(off)) {
-          tracing = true;
-        } else if (addr == G_flags->trace_addr) {
-          tracing = true;
-        }
-        G_cache->ReleaseLine(tid, addr, cache_line, __LINE__);
-        if (tracing) {
-          for (uintptr_t x = addr; x < addr + size; x++) {
-            off = CacheLine::ComputeOffset(x);
-            cache_line = G_cache->GetLineOrCreateNew(tid, x, __LINE__);
-            ShadowValue *sval_p = cache_line->GetValuePointer(off);
-            if (cache_line->has_shadow_value().Get(off) != 0) {
-              bool is_published = cache_line->published().Get(off);
-              Printf("TRACE: T%d/S%d %s[%d] addr=%p sval: %s%s; line=%p P=%s\n",
-                     tid.raw(), thr->sid().raw(), is_w ? "wr" : "rd",
-                     size, addr, sval_p->ToString().c_str(),
-                     is_published ? " P" : "",
-                     cache_line,
-                     cache_line->published().Empty() ?
-                     "0" : cache_line->published().ToString().c_str());
-              thr->ReportStackTrace(pc);
-            }
-            G_cache->ReleaseLine(tid, x, cache_line, __LINE__);
-          }
-        }
+    if (has_expensive_flags) {
+      if (tracing) {
+        DoTrace(thr, addr, size, is_w, pc, /*need_locking=*/false);
       }
       if (G_flags->sample_events > 0) {
         const char *type = "SampleMemoryAccess";
@@ -7069,8 +7079,12 @@ one_call:
                   cache_line, tid, thr, pc, addr,
                   size, is_w, has_expensive_flags,
                   /*fast_path_only=*/true);
+              bool traced = IsTraced(cache_line, addr, has_expensive_flags);
               // release the line.
               G_cache->ReleaseLine(tid, addr, cache_line, __LINE__);
+              if (res && has_expensive_flags && traced) {
+                DoTrace(thr, addr, size, is_w, pc, /*need_locking=*/true);
+              }
               if (res) {
                 INC_STAT(thr->stats.unlocked_access_ok);
                 // fast path succeded, we are done.
