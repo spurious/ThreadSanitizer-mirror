@@ -124,29 +124,16 @@ class DbgInfoLock {
 
 //pthread_mutex_t global_lock = PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP;
 
-// USE_SPINLOCK macro switches between pthreadmutex and pthread spinlock as 
-// the global lock. Unfortunately spinlocks can't be used together with condvars,
-// so this is temporarily disabled (although may bring a performance gain).
-//#define USE_SPINLOCK 1
-#undef USE_SPINLOCK // TODO(glider): can't use spinlocks with condvar_wait :(
-
 // BLOCK_SIGNALS macro enables blocking the signals any time the global lock
 // is taken. This brings huge overhead to the lock and looks unnecessary now, 
 // because our signal handler can run even under the global lock.
 //#define BLOCK_SIGNALS 1
 #undef BLOCK_SIGNALS
 
-#ifdef USE_SPINLOCK
-pthread_spinlock_t global_lock;
-#define GIL_LOCK __real_pthread_spin_lock
-#define GIL_UNLOCK __real_pthread_spin_unlock
-bool gil_initialized = false;
-#else
 pthread_mutex_t global_lock = PTHREAD_MUTEX_INITIALIZER;
 #define GIL_LOCK __real_pthread_mutex_lock
 #define GIL_UNLOCK __real_pthread_mutex_unlock
 #define GIL_TRYLOCK __real_pthread_mutex_trylock
-#endif
 
 pthread_t gil_owner = 0;
 __thread int gil_depth = 0;
@@ -165,12 +152,6 @@ __thread int IN_RTL = 0;
 
 
 void GIL::Lock() {
-#ifdef USE_SPINLOCK
-  if (!gil_initialized) {
-    pthread_spin_init(&global_lock, 0);
-    gil_initialized = true;
-  }
-#endif
 #if BLOCK_SIGNALS
   sigfillset(&glob_sig_blocked);
   pthread_sigmask(SIG_BLOCK, &glob_sig_blocked, &glob_sig_old);
@@ -190,12 +171,6 @@ void GIL::Lock() {
 }
 
 bool GIL::TryLock() {
-#ifdef USE_SPINLOCK
-  if (!gil_initialized) {
-    pthread_spin_init(&global_lock, 0);
-    gil_initialized = true;
-  }
-#endif
 #ifdef BLOCK_SIGNALS
   sigfillset(&glob_sig_blocked);
   pthread_sigmask(SIG_BLOCK, &glob_sig_blocked, &glob_sig_old);
@@ -354,7 +329,7 @@ void inline flush_trace() {
     // performance.
     if (G_flags->show_stats) trace->counter_++;
 
-    if (G_flags->literace_sampling == 0 ||
+    if (LIKELY(G_flags->literace_sampling == 0) ||
         !LiteRaceSkipTrace(tid, trace->id_, G_flags->literace_sampling)) {
       IN_RTL++;
       CHECK_IN_RTL();
