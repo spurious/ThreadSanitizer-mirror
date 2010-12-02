@@ -1247,14 +1247,35 @@ size_t __wrap_strlen(const char *s) {
   return result;
 }
 
-#if 0
 // TODO(glider): do we need memcpy?
+// The instrumentation pass replaces llvm.memcpy and llvm.memmove
+// with calls to rtl_memcpy and rtl_memmove, but some prior optimizations may
+// convert the intrinsics into calls to memcpy() and memmove().
 extern "C"
-void *__wrap_memcpy(void *dest, const void *src, size_t n) {
+char *__wrap_memcpy(char *dest, const char *src, size_t n) {
+  if (IN_RTL) return __real_memcpy(dest, src, n);
   DECLARE_TID_AND_PC();
-  return Replace_memcpy(tid, pc, dest, src, n);
+  IN_RTL++;
+  CHECK_IN_RTL();
+  char *result = Replace_memcpy(tid, pc, dest, src, n);
+  IN_RTL--;
+  CHECK_IN_RTL();
+  return result;
 }
-#endif
+
+extern "C"
+void *__wrap_memmove(char *dest, const char *src, size_t n) {
+  if (IN_RTL) return __real_memmove(dest, src, n);
+  DECLARE_TID_AND_PC();
+  IN_RTL++;
+  CHECK_IN_RTL();
+  void *result = __real_memmove(dest, src, n);
+  REPORT_READ_RANGE(src, n);
+  REPORT_WRITE_RANGE(dest, n);
+  IN_RTL--;
+  CHECK_IN_RTL();
+  return result;
+}
 
 extern "C"
 void *rtl_memcpy(char *dest, const char *src, size_t n) {
@@ -1265,7 +1286,7 @@ void *rtl_memcpy(char *dest, const char *src, size_t n) {
 extern "C"
 void *rtl_memmove(char *dest, const char *src, size_t n) {
   DECLARE_TID_AND_PC();
-  void *result = memmove(dest, src, n);
+  void *result = __real_memmove(dest, src, n);
   REPORT_READ_RANGE(src, n);
   REPORT_WRITE_RANGE(dest, n);
   return result;

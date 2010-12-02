@@ -520,7 +520,6 @@ namespace {
                                        UIntPtr, UIntPtr, PlatformInt, (Type*)0);
       //cast<Function>(MemMoveFn)->setLinkage(Function::ExternalWeakLinkage);
 
-
       // Split each basic block into smaller blocks containing no more than one
       // call instruction at the end.
       for (Module::iterator F = M.begin(), E = M.end(); F != E; ++F) {
@@ -541,6 +540,10 @@ namespace {
             // A call may not occur inside of a basic block, iff this is not a
             // call to @llvm.dbg.declare
             if (isaCallOrInvoke(BI)) {
+              do_split = true;
+            }
+            if (isa<MemTransferInst>(BI)) {
+              InstrumentMemTransfer(BI);
               do_split = true;
             }
           }
@@ -982,9 +985,9 @@ namespace {
            ++BI) {
         bool unknown = true;  // we just don't want a bunch of nested if()s
         if (isaCallOrInvoke(BI)) {
-          if (isa<MemTransferInst>(BI)) {
-            InstrumentMemTransfer(BI);
-          }
+          //if (isa<MemTransferInst>(BI)) {
+          //  InstrumentMemTransfer(BI);
+          //}
           llvm::Instruction &IN = *BI;
           if ((isa<CallInst>(BI) &&
                static_cast<CallInst&>(IN).getCalledFunction() == BBFlushFn) ||

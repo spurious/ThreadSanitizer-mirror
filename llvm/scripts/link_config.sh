@@ -76,6 +76,9 @@ wrap _Znwm
 # operator delete(void*)
 wrap _ZdlPv
 
+wrap memcpy
+wrap memmove
+
 # TODO(glider): without defining this annotation bigtest is missing
 # LLVMAnnotateCondVarSignal(). Strange enough, to be investigated.
 # Also "LLVM" is a prefix that may change in the future.
