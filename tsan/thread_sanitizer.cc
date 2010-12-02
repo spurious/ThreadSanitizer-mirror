@@ -7671,6 +7671,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   FindIntFlag("literace_sampling", 0, args, &G_flags->literace_sampling);
   CHECK(G_flags->literace_sampling < 32);
 
+  FindStringFlag("fullpath_after", args, &G_flags->file_prefix_to_cut);
   FindStringFlag("file_prefix_to_cut", args, &G_flags->file_prefix_to_cut);
   for (size_t i = 0; i < G_flags->file_prefix_to_cut.size(); i++) {
     G_flags->file_prefix_to_cut[i] =
