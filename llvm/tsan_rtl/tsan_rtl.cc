@@ -284,10 +284,10 @@ extern void ExPut(EventType type, tid_t tid, pc_t pc,
 
 inline void SPut(EventType type, tid_t tid, pc_t pc,
                  uintptr_t a, uintptr_t info) {
-  if (!HAVE_THREAD_0 && type != THR_START) {
-    SPut(THR_START, 0, 0, 0, 0);
-  }
-  if (RTL_INIT != 1) return;
+#ifdef DEBUG
+  assert(HAVE_THREAD_0 || ((type == THR_START) && (tid == 0)));
+  assert(RTL_INIT == 1);
+#endif
 
   if (type != THR_START) flush_tleb();
   if (!G_flags->dry_run) {
@@ -324,10 +324,10 @@ void inline flush_trace() {
   // GIL::Unlock) is done under a mutex.
 //  assert(!GIL::GetDepth());
 #endif
-  if (!HAVE_THREAD_0) {
-    SPut(THR_START, 0, 0, 0, 0);
-  }
-  if (RTL_INIT != 1) return;
+#ifdef DEBUG
+  assert(HAVE_THREAD_0 || ((type == THR_START) && (tid == 0)));
+  assert(RTL_INIT == 1);
+#endif
   if (!global_ignore && LIKELY(!G_flags->dry_run)) {
     tid_t tid = INFO.tid;
     TraceInfoPOD *trace = INFO.trace_info;
@@ -396,10 +396,10 @@ inline void Put(EventType type, tid_t tid, pc_t pc,
 // RPut is strictly for putting RTN_CALL and RTN_EXIT events.
 inline void RPut(EventType type, tid_t tid, pc_t pc,
                  uintptr_t a, uintptr_t info) {
-  if (!HAVE_THREAD_0 && type != THR_START) {
-    SPut(THR_START, 0, 0, 0, 0);
-  }
-  if (RTL_INIT != 1) return;
+#ifdef DEBUG
+  assert(HAVE_THREAD_0 || ((type == THR_START) && (tid == 0)));
+  assert(RTL_INIT == 1);
+#endif
   if (LIKELY(!G_flags->dry_run)) {
     Event event(type, tid, pc, a, info);
     if (UNLIKELY(G_flags->verbosity >= 2)) {
@@ -502,6 +502,7 @@ bool initialize() {
   __real_atexit(finalize);
   RTL_INIT = 1;
   in_initialize = false;
+  SPut(THR_START, 0, 0, 0, 0);
   return true;
 }
 
@@ -554,9 +555,6 @@ inline tid_t GetTid(ThreadInfo *info) {
                  Printf("ThreadSanitizer initialization reentrancy detected\n");
                  __real_exit(2);
                }
-    }
-    if (info->tid == 0) {
-      //SPut(THR_START, 0, 0, 0, 0);
     }
     INIT = 1;
   }
