@@ -314,6 +314,19 @@ static void HandleInnerEvent(PinThread &t, uintptr_t event) {
   }
 }
 
+static INLINE bool WantToIgnoreEvent(PinThread &t, uintptr_t event) {
+  if (t.ignore_sync &&
+      (event == WRITER_LOCK || event == READER_LOCK || event == UNLOCK ||
+       event == SIGNAL || event == WAIT)) {
+    // do nothing, we are ignoring locks.
+    return true;
+  } else if ((t.ignore_accesses || global_ignore) && (event == READ || event == WRITE)) {
+    // do nothing, we are ignoring mops.
+    return true;
+  }
+  return false;
+}
+
 static INLINE void TLEBFlushUnlocked(ThreadLocalEventBuffer &tleb) {
   if (tleb.size == 0) return;
   PinThread &t = *tleb.t;
@@ -400,16 +413,10 @@ static INLINE void TLEBFlushUnlocked(ThreadLocalEventBuffer &tleb) {
     } else {
       // all other events.
       CHECK(event > NOOP && event < LAST_EVENT);
-      uintptr_t pc    = tleb.events[i++];
-      uintptr_t a     = tleb.events[i++];
-      uintptr_t info  = tleb.events[i++];
-      if (t.ignore_sync &&
-          (event == WRITER_LOCK || event == READER_LOCK || event == UNLOCK ||
-           event == SIGNAL || event == WAIT)) {
-        // do nothing, we are ignoring locks.
-      } else if ((t.ignore_accesses || global_ignore) && (event == READ || event == WRITE)) {
-        // do nothing, we are ignoring mops.
-      } else {
+      if (!WantToIgnoreEvent(t, event)) {
+        uintptr_t pc    = tleb.events[i++];
+        uintptr_t a     = tleb.events[i++];
+        uintptr_t info  = tleb.events[i++];
         DumpEventInternal((EventType)event, t.uniq_tid, pc, a, info);
       }
     }
@@ -525,6 +532,7 @@ static void TLEBAddGenericEventAndFlush(PinThread &t,
                                         EventType type, uintptr_t pc,
                                         uintptr_t a, uintptr_t info) {
   if (TS_SERIALIZED == 0) {
+    if (WantToIgnoreEvent(t, type)) return;
     TLEBFlushLocked(t);
     Event e(type, t.uniq_tid, pc, a, info);
     ThreadSanitizerHandleOneEvent(&e);
