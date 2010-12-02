@@ -29,8 +29,13 @@ using namespace std;
 
 #define DEBUG 0
 
+// Command-line flags.
 static cl::opt<std::string>
-TargetArch("arch", cl::desc("Target arch: x86 or x64"));
+    TargetArch("arch", cl::desc("Target arch: x86 or x64"));
+static cl::opt<bool>
+    InstrumentAll("instrument-all",
+                  cl::desc("Do not optimize the instrumentation "
+                           "of memory operations"));
 
 namespace {
   typedef std::vector <Constant*> Passport;
@@ -693,6 +698,11 @@ namespace {
             //assert(false);
           }
           if (isMop) {
+            if (InstrumentAll) {
+              trace.to_instrument.insert(BI);
+              continue;
+            }
+            // Falling through.
             llvm::Instruction &IN = *BI;
             Value *MopPtr;
             if (isStore) {
