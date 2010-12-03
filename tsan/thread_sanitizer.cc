@@ -3215,13 +3215,11 @@ class Cache {
     do {
       line = TryAcquireLine(tid, a, call_site);
       iter++;
-      if ((iter % 8) == 0) {
+      if ((iter % (1 << 12)) == 0) {
         YIELD();
-        if ((iter % (1 << 10)) == 0) {
-          G_stats->try_acquire_line_spin++;
-          if ((iter % (1 << 15)) == 0) {
-            Printf("T%d %s iter=%d\n", tid.raw(), __FUNCTION__, iter);
-          }
+        G_stats->try_acquire_line_spin++;
+        if ((iter % (1 << 15)) == 0) {
+          Printf("T%d %s iter=%d\n", tid.raw(), __FUNCTION__, iter);
         }
       }
       if (iter == max_iter) {

@@ -513,7 +513,13 @@ TSLock::~TSLock() {
 }
 void TSLock::Lock() {
   int *p = (int*)&rep_;
-  int c = __sync_val_compare_and_swap(p, 0, 1);
+  const int kSpinCount = 100;
+  DCHECK(kSpinCount > 0);
+  int c;
+  for (int i = 0; i < kSpinCount; i++) {
+    c = __sync_val_compare_and_swap(p, 0, 1);
+    if (c == 0) break;
+  }
   if (c == 0) {
     // The mutex was unlocked. Now it's ours. Done.
     return;
