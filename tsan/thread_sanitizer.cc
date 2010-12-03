@@ -3211,14 +3211,17 @@ class Cache {
   INLINE CacheLine *AcquireLine(TID tid, uintptr_t a, int call_site) {
     CacheLine *line = NULL;
     int iter = 0;
-    const int max_iter = 1 << 20;
+    const int max_iter = 1 << 25;
     do {
       line = TryAcquireLine(tid, a, call_site);
       iter++;
       if ((iter % 8) == 0) {
         YIELD();
-        if ((iter % 1024) == 0) {
-          Printf("T%d %s iter=%d\n", tid.raw(), __FUNCTION__, iter);
+        if ((iter % (1 << 10)) == 0) {
+          G_stats->try_acquire_line_spin++;
+          if ((iter % (1 << 15)) == 0) {
+            Printf("T%d %s iter=%d\n", tid.raw(), __FUNCTION__, iter);
+          }
         }
       }
       if (iter == max_iter) {
@@ -4004,6 +4007,7 @@ void TraceInfo::PrintTraceProfile() {
     traces.insert(make_pair(trace->counter(), trace));
     total_counter += trace->counter();
   }
+  if (total_counter == 0) return;
   Printf("TraceProfile: %ld traces, %lld hits\n",
          g_all_traces->size(), total_counter);
   int i = 0;

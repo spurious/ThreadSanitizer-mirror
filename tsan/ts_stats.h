@@ -203,6 +203,7 @@ struct Stats : private ThreadLocalStats {
       all_locked_access += t;
     }
     Printf("locked_access[*]   =%ld\n", all_locked_access);
+    Printf("try_acquire_line_spin =%ld\n", try_acquire_line_spin);
 
 
     for (size_t i = 0; i < TS_ARRAY_SIZE(tleb_flush); i++) {
@@ -260,6 +261,8 @@ struct Stats : private ThreadLocalStats {
 
   uintptr_t ignore_below_cache_miss;
   uintptr_t msm_branch_count[16];
+
+  uintptr_t try_acquire_line_spin;
 };
 
 
