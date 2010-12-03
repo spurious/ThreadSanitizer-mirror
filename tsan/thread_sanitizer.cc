@@ -5900,6 +5900,7 @@ class Detector {
       thr->stats.mops_per_trace[n < mop_stat_size ? n : mop_stat_size - 1]++;
     }
     uintptr_t sblock_pc = t->pc();
+    size_t n_locks = 0;
     do {
       uintptr_t addr = tleb[i];
       if (addr == 0) continue;  // This mop was not executed.
@@ -5907,10 +5908,14 @@ class Detector {
       tleb[i] = 0;  // we've consumed this mop, clear it.
       DCHECK(mop->size != 0);
       DCHECK(mop->pc != 0);
-      HandleMemoryAccessInternal(tid, thr, &sblock_pc, mop->pc, addr, mop->size,
+      n_locks += HandleMemoryAccessInternal(tid, thr, &sblock_pc, mop->pc, addr, mop->size,
                                  mop->is_write, has_expensive_flags,
                                  need_locking);
     } while (++i < n);
+    if (has_expensive_flags) {
+      const size_t stat_size = TS_ARRAY_SIZE(thr->stats.locks_per_trace);
+      thr->stats.locks_per_trace[n_locks < stat_size ? n_locks : stat_size - 1]++;
+    }
   }
 
 #ifdef _MSC_VER
@@ -7039,7 +7044,7 @@ one_call:
     }
   }
 
-  INLINE void HandleMemoryAccessInternal(TID tid, Thread *thr,
+  INLINE bool HandleMemoryAccessInternal(TID tid, Thread *thr,
                                          uintptr_t *sblock_pc,
                                          uintptr_t pc,
                                          uintptr_t addr, uintptr_t size,
@@ -7049,12 +7054,12 @@ one_call:
     if (TS_ATOMICITY && G_flags->atomicity) {
       HandleMemoryAccessForAtomicityViolationDetector(thr, pc,
                                                       addr, size, is_w);
-      return;
+      return false;
     }
     DCHECK(size > 0);
     DCHECK(thr->is_running());
     DCHECK(g_so_far_only_one_thread == false);
-    if (thr->ignore(is_w)) return;
+    if (thr->ignore(is_w)) return false;
 
     // We do not check and ignore stack now.
     // On unoptimized binaries this would give ~10% speedup if ignore_stack==true,
@@ -7092,7 +7097,7 @@ one_call:
               if (res) {
                 INC_STAT(thr->stats.unlocked_access_ok);
                 // fast path succeded, we are done.
-                return;
+                return false;
               } else {
                 locked_access_case = 1;
               }
@@ -7131,6 +7136,7 @@ one_call:
     HandleMemoryAccessSlowLocked(tid, thr, pc, addr, size,
                                  is_w, has_expensive_flags,
                                  need_locking);
+    return true;
 #undef INC_STAT
   }
 

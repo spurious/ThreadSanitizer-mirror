@@ -48,6 +48,7 @@ struct ThreadLocalStats {
             n_very_slow_access, n_access_slow_iter;
 
   uintptr_t mops_per_trace[16];
+  uintptr_t locks_per_trace[16];
   uintptr_t locked_access[8];
   uintptr_t history_uses_same_segment, history_creates_new_segment,
             history_reuses_segment, history_uses_preallocated_segment;
@@ -185,7 +186,10 @@ struct Stats : private ThreadLocalStats {
       }
     }
     for (size_t i = 0; i < TS_ARRAY_SIZE(mops_per_trace); i++) {
-      Printf("  mop_per_trace[%d] = %'ld\n", i, mops_per_trace[i]);
+      Printf("  mops_per_trace[%d] = %'ld\n", i, mops_per_trace[i]);
+    }
+    for (size_t i = 0; i < TS_ARRAY_SIZE(locks_per_trace); i++) {
+      Printf("  locks_per_trace[%d] = %'ld\n", i, locks_per_trace[i]);
     }
 
     uintptr_t total_locks = 0;
