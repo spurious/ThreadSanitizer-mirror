@@ -1139,7 +1139,7 @@ class VTS {
 
   static VTS *CreateSingleton(TID tid, int32_t clk = 1) {
     VTS *res = Create(1);
-    res->arr_[0].tid = tid;
+    res->arr_[0].tid = tid.raw();
     res->arr_[0].clk = clk;
     return res;
   }
@@ -1156,7 +1156,7 @@ class VTS {
     bool found = false;
     for (size_t i = 0; i < res->size(); i++) {
       res->arr_[i] = vts->arr_[i];
-      if (res->arr_[i].tid == id_to_tick) {
+      if (res->arr_[i].tid == id_to_tick.raw()) {
         res->arr_[i].clk++;
         found = true;
       }
@@ -1274,7 +1274,7 @@ class VTS {
     string res = "[";
     for (size_t i = 0; i < size(); i++) {
       char buff[100];
-      snprintf(buff, sizeof(buff), "%d:%d;", arr_[i].tid.raw(), arr_[i].clk);
+      snprintf(buff, sizeof(buff), "%d:%d;", arr_[i].tid, arr_[i].clk);
       if (i) res += " ";
       res += buff;
     }
@@ -1382,7 +1382,7 @@ class VTS {
   ~VTS() {}
 
   struct TS {
-    TID     tid;
+    int32_t tid;
     int32_t clk;
   };
 
