@@ -5083,7 +5083,7 @@ struct Thread {
     VTS *vts;
   };
 
-  class SignallerMap: public map<uintptr_t, Signaller> {
+  class SignallerMap: public unordered_map<uintptr_t, Signaller> {
     public:
      void ClearAndDeleteElements() {
        for (iterator it = begin(); it != end(); ++it) {
