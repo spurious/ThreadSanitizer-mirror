@@ -526,6 +526,7 @@ void TSLock::Lock() {
   // Block.
   while (c != 0) {
     syscall(SYS_futex, p, FUTEX_WAIT, 2, 0, 0, 0);
+    G_stats->futex_wait++;
     c = __sync_lock_test_and_set(p, 2);
   }
 }

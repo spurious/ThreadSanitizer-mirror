@@ -199,6 +199,7 @@ struct Stats : private ThreadLocalStats {
       total_locks += lock_sites[i];
     }
     Printf("lock_sites[*]=%ld\n", total_locks);
+    Printf("futex_wait   =%ld\n", futex_wait);
     Printf("unlocked_access_ok =%ld\n", unlocked_access_ok);
     uintptr_t all_locked_access = 0;
     for (size_t i = 0; i < TS_ARRAY_SIZE(locked_access); i++) {
@@ -267,6 +268,7 @@ struct Stats : private ThreadLocalStats {
   uintptr_t msm_branch_count[16];
 
   uintptr_t try_acquire_line_spin;
+  uintptr_t futex_wait;
 };
 
 
