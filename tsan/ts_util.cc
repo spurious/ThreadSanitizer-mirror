@@ -335,7 +335,7 @@ FILE *OpenSocketForWriting(const string &host_and_port) {
 //# define TS_LOCK_PIPE
 # define TS_LOCK_PIN
 #else
-# define TS_LOCK_PIPE
+# define TS_LOCK_FUTEX
 #endif
 
 #if defined(TS_LOCK_PIPE) && defined(TS_PIN)
@@ -496,6 +496,53 @@ void TSLock::AssertHeld() {
   DCHECK(rep_->held);
 }
 #endif  // TS_LLVM
+
+#if defined(TS_LOCK_FUTEX) && defined(__GNUC__) && defined (TS_PIN)
+#include <linux/futex.h>
+#include <sys/time.h>
+#include <syscall.h>
+
+// Simple futex-based lock.
+// The idea is taken from "Futexes Are Tricky" by Ulrich Drepper
+
+TSLock::TSLock() {
+  rep_ = 0;
+}
+TSLock::~TSLock() {
+  DCHECK(rep_ == 0);
+}
+void TSLock::Lock() {
+  int *p = (int*)&rep_;
+  int c = __sync_val_compare_and_swap(p, 0, 1);
+  if (c == 0) {
+    // The mutex was unlocked. Now it's ours. Done.
+    return;
+  }
+  DCHECK(c == 1 || c == 2);
+  // We are going to block on this lock. Make sure others know that.
+  if (c != 2) {
+    c = __sync_lock_test_and_set(p, 2);
+  }
+  // Block.
+  while (c != 0) {
+    syscall(SYS_futex, p, FUTEX_WAIT, 2, 0, 0, 0);
+    c = __sync_lock_test_and_set(p, 2);
+  }
+}
+void TSLock::Unlock() {
+  int *p = (int*)&rep_;
+  DCHECK(*p == 1 || *p == 2);
+  int c = __sync_sub_and_fetch(p, 1);
+  DCHECK(c == 0 || c == 1);
+  if (c == 1) {
+    *p = 0;
+    syscall(SYS_futex, p, FUTEX_WAKE, 1, 0, 0, 0);
+  }
+}
+void TSLock::AssertHeld() {
+  DCHECK(rep_);
+}
+#endif
 
 
 //--------------- Atomics ----------------- {{{1
