@@ -1014,7 +1014,7 @@ static void Before_start_thread(THREADID tid, ADDRINT pc, ADDRINT sp) {
         (prev & 0xfff) == 0 && // stack is page aligned
         prev < sp &&           // min stack is < sp
         prev + val > sp &&     // max stack is > sp
-        val >= (1 << 19) &&    // stack size is >= 512k
+        val >= (1 << 15) &&    // stack size is >= 32k
         val <= 128 * (1 << 20) // stack size is hardly > 128M
         ) {
       if (debug_thread) {
