@@ -426,6 +426,7 @@ static INLINE void UpdateCallStack(ThreadId vg_tid, uintptr_t sp) {
 VG_REGPARM(1)
 static void OnTrace(TraceInfo *trace_info) {
   DCHECK(!g_race_verifier_active);
+  if (global_ignore) return;
   ThreadId vg_tid = GetVgTid();
 
   // First, flush the old trace_info.
@@ -456,6 +457,7 @@ static inline void Put(EventType type, int32_t tid, uintptr_t pc,
 static void rtn_call(Addr sp_post_call_insn, Addr pc_post_call_insn,
                      IGNORE_BELOW_RTN ignore_below) {
   DCHECK(!g_race_verifier_active);
+  if (global_ignore) return;
   ThreadId vg_tid = GetVgTid();
   CallStackRecord record;
   record.pc = pc_post_call_insn;
@@ -714,10 +716,14 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
     case TSREQ_GLOBAL_IGNORE_ON:
       Report("INFO: GLOBAL IGNORE ON\n");
       global_ignore = true;
+      Put(IGNORE_READS_BEG, ts_tid, pc, 0, 0);
+      Put(IGNORE_WRITES_BEG, ts_tid, pc, 0, 0);
       break;
     case TSREQ_GLOBAL_IGNORE_OFF:
       Report("INFO: GLOBAL IGNORE OFF\n");
       global_ignore = false;
+      Put(IGNORE_READS_END, ts_tid, pc, 0, 0);
+      Put(IGNORE_WRITES_END, ts_tid, pc, 0, 0);
       break;
     case TSREQ_IGNORE_READS_BEGIN:
       Put(IGNORE_READS_BEG, ts_tid, pc, 0, 0);
