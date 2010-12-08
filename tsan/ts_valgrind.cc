@@ -426,6 +426,7 @@ static INLINE void UpdateCallStack(ThreadId vg_tid, uintptr_t sp) {
 VG_REGPARM(1)
 static void OnTrace(TraceInfo *trace_info) {
   DCHECK(!g_race_verifier_active);
+  //trace_info->counter()++;
   if (global_ignore) return;
   ThreadId vg_tid = GetVgTid();
 

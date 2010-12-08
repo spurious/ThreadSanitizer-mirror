@@ -4014,9 +4014,14 @@ void TraceInfo::PrintTraceProfile() {
     TraceInfo *trace = it->second;
     int64_t c = it->first;
     int64_t permile = (c * 1000) / total_counter;
+    CHECK(trace->n_mops() > 0);
+    uintptr_t pc = trace->GetMop(0)->pc;
+    CHECK(pc);
     if (permile == 0 || i >= 20) break;
-    Printf("TR%ld c=%lld (%lld/1000) n_mops=%ld\n", trace->id(), c,
-           permile, trace->n_mops());
+    Printf("TR%ld pc: %p %p c=%lld (%lld/1000) n_mops=%ld %s\n",
+           trace->id(), trace->pc(), pc, c,
+           permile, trace->n_mops(),
+           PcToRtnNameAndFilePos(pc).c_str());
   }
 }
 
@@ -5843,6 +5848,7 @@ class EventSampler {
     if (G_flags->sample_events == 0) return;
     TIL til(ts_lock, 8);
     AssertTILHeld();
+    Printf("ShowSamples: \n");
     for (SampleMapMap::iterator it1 = samples_->begin();
          it1 != samples_->end(); ++it1) {
       string name = it1->first;
@@ -6015,6 +6021,7 @@ class Detector {
     // ShowUnfreedHeap();
     EventSampler::ShowSamples();
     ShowStats();
+    TraceInfo::PrintTraceProfile();
     ShowProcSelfStatus();
     reports_.PrintUsedSuppression();
     reports_.PrintSummary();
@@ -6071,6 +6078,14 @@ class Detector {
         FlushIfOutOfMem(tid);
       }
     }
+#if 0
+    if ((counter % (1024 * 1024 * 64)) == 0 ||
+        counter == (1024 * 1024)) {
+      // ShowStats();
+      EventSampler::ShowSamples();
+      TraceInfo::PrintTraceProfile();
+    }
+#endif
 #endif
 
 #if 0  // do we still need it? Hope not..
@@ -8135,6 +8150,11 @@ void NOINLINE ThreadSanitizerHandleRtnCall(int32_t tid, uintptr_t call_pc,
                                          IGNORE_BELOW_RTN ignore_below) {
   // This does locking on a cold path. Hot path in thread-local.
   G_detector->HandleRtnCall(TID(tid), call_pc, target_pc, ignore_below);
+
+  if (G_flags->sample_events) {
+    static EventSampler sampler;
+    sampler.Sample(TID(tid), "RTN_CALL");
+  }
 }
 void NOINLINE ThreadSanitizerHandleRtnExit(int32_t tid) {
   // This is a thread-local operation, no need for locking.
