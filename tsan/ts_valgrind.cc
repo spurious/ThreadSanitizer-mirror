@@ -262,7 +262,7 @@ struct ValgrindThread {
 };
 
 // If true, ignore all accesses in all threads.
-static bool global_ignore;
+extern bool global_ignore;
 
 // Array of VG_N_THREADS
 static ValgrindThread *g_valgrind_threads = 0;
@@ -717,14 +717,10 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
     case TSREQ_GLOBAL_IGNORE_ON:
       Report("INFO: GLOBAL IGNORE ON\n");
       global_ignore = true;
-      Put(IGNORE_READS_BEG, ts_tid, pc, 0, 0);
-      Put(IGNORE_WRITES_BEG, ts_tid, pc, 0, 0);
       break;
     case TSREQ_GLOBAL_IGNORE_OFF:
       Report("INFO: GLOBAL IGNORE OFF\n");
       global_ignore = false;
-      Put(IGNORE_READS_END, ts_tid, pc, 0, 0);
-      Put(IGNORE_WRITES_END, ts_tid, pc, 0, 0);
       break;
     case TSREQ_IGNORE_READS_BEGIN:
       Put(IGNORE_READS_BEG, ts_tid, pc, 0, 0);

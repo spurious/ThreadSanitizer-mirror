@@ -57,6 +57,9 @@ const int kMaxSegmentSetSize = 4;
 
 // -------- Globals --------------- {{{1
 
+// If true, ignore all accesses in all threads.
+bool global_ignore;
+
 bool g_has_expensive_flags = false;
 bool g_so_far_only_one_thread = false;
 bool g_has_entered_main = false;
@@ -7255,7 +7258,7 @@ one_call:
     uintptr_t size = info->size;
     // Handle the memory deletion as a write, but don't touch all
     // the memory if there is too much of it, limit with the first 1K.
-    if (size && G_flags->free_is_write) {
+    if (size && G_flags->free_is_write && !global_ignore) {
       const uintptr_t max_write_size = 1024;
       uintptr_t write_size = min(max_write_size, size);
       uintptr_t step = sizeof(uintptr_t);

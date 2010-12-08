@@ -164,7 +164,7 @@ struct PinThread {
 static PinThread *g_pin_threads;
 
 // If true, ignore all accesses in all threads.
-static bool global_ignore;
+extern bool global_ignore;
 
 #ifdef _MSC_VER
 static unordered_set<pthread_t> *g_win_handles_which_are_threads;
