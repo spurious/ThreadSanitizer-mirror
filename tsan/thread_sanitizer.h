@@ -97,6 +97,7 @@ struct FLAGS {
   intptr_t     flush_period;
 
   intptr_t     literace_sampling;
+  bool         start_with_global_ignore_on;
 
   intptr_t     locking_scheme;  // Used for internal experiments with locking.
 

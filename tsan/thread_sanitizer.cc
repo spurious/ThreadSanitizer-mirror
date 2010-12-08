@@ -7710,6 +7710,8 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
 
   FindIntFlag("literace_sampling", 0, args, &G_flags->literace_sampling);
   CHECK(G_flags->literace_sampling < 32);
+  FindBoolFlag("start_with_global_ignore_on", true, args,
+               &G_flags->start_with_global_ignore_on);
 
   FindStringFlag("fullpath_after", args, &G_flags->file_prefix_to_cut);
   FindStringFlag("file_prefix_to_cut", args, &G_flags->file_prefix_to_cut);
@@ -8106,6 +8108,10 @@ extern void ThreadSanitizerInit() {
 
   if (G_flags->verbosity >= 1) {
     Report("INFO: Started pid %d\n",  getpid());
+  }
+  if (G_flags->start_with_global_ignore_on) {
+    global_ignore = true;
+    Report("INFO: STARTING WITH GLOBAL IGNORE ON\n");
   }
 }
 
