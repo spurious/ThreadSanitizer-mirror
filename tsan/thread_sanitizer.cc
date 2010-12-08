@@ -7710,7 +7710,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
 
   FindIntFlag("literace_sampling", 0, args, &G_flags->literace_sampling);
   CHECK(G_flags->literace_sampling < 32);
-  FindBoolFlag("start_with_global_ignore_on", true, args,
+  FindBoolFlag("start_with_global_ignore_on", false, args,
                &G_flags->start_with_global_ignore_on);
 
   FindStringFlag("fullpath_after", args, &G_flags->file_prefix_to_cut);
