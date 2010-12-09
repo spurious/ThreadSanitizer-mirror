@@ -4610,7 +4610,6 @@ struct Thread {
 
   INLINE bool HandleSblockEnter(uintptr_t pc, bool allow_slow_path) {
     DCHECK(G_flags->keep_history);
-    DCHECK(!g_so_far_only_one_thread);
     DCHECK(!this->ignore_all_accesses());
     if (!pc) return true;
 
@@ -4686,11 +4685,19 @@ struct Thread {
     VTS        *vts;
   };
 
+  static void StopIgnoringAccessesInT0BecauseNewThreadStarted() {
+    AssertTILHeld();
+    if (g_so_far_only_one_thread) {
+      g_so_far_only_one_thread = false;
+      Get(TID(0))->set_ignore_all_accesses(false);
+    }
+  }
+
   // This event comes before the child is created (e.g. just
   // as we entered pthread_create).
   void HandleThreadCreateBefore(TID parent_tid, uintptr_t pc) {
     CHECK(parent_tid == tid());
-    g_so_far_only_one_thread = false;
+    StopIgnoringAccessesInT0BecauseNewThreadStarted();
     // Store ctx and vts under TID(0).
     ThreadCreateInfo info;
     info.ctx = CreateStackTrace(pc);
@@ -5933,7 +5940,6 @@ class Detector {
     TID tid(raw_tid);
     Thread *thr = Thread::Get(tid);
     if (thr->ignore_all_accesses()) return;
-    if (g_so_far_only_one_thread) return;
     DCHECK(t);
     size_t n = t->n_mops();
     DCHECK(n);
@@ -7071,7 +7077,6 @@ one_call:
     }
     DCHECK(size > 0);
     DCHECK(thr->is_running());
-    DCHECK(g_so_far_only_one_thread == false);
     DCHECK(!thr->ignore_all_accesses());
 
     // We do not check and ignore stack now.
@@ -7303,11 +7308,11 @@ one_call:
       // main thread, we are done.
       vts = VTS::CreateSingleton(child_tid);
     } else if (!parent_tid.valid()) {
-      g_so_far_only_one_thread = false;
+      Thread::StopIgnoringAccessesInT0BecauseNewThreadStarted();
       Report("INFO: creating thread T%d w/o a parent\n", child_tid.raw());
       vts = VTS::CreateSingleton(child_tid);
     } else {
-      g_so_far_only_one_thread = false;
+      Thread::StopIgnoringAccessesInT0BecauseNewThreadStarted();
       Thread *parent = Thread::Get(parent_tid);
       CHECK(parent);
       parent->HandleChildThreadStart(child_tid, &vts, &creation_context);
@@ -7316,6 +7321,9 @@ one_call:
     Thread *new_thread = new Thread(child_tid, parent_tid,
                                     vts, creation_context);
     CHECK(new_thread == Thread::Get(child_tid));
+    if (child_tid == TID(0)) {
+      new_thread->set_ignore_all_accesses(true); // until a new thread comes.
+    }
   }
 
   // Executes before the first instruction of the thread but after the thread
