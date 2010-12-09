@@ -96,6 +96,7 @@ __thread  sigset_t glob_sig_blocked, glob_sig_old;
 struct sigaction signal_actions[NSIG];  // protected by GIL
 __thread siginfo_t pending_signals[NSIG];
 __thread bool pending_signal_flags[NSIG];
+__thread bool have_pending_signals;
 
 // Stats {{{1
 #undef ENABLE_STATS
@@ -192,7 +193,8 @@ bool GIL::TryLock() {
 
 void GIL::Unlock() {
   if (gil_depth == 1) {
-    unsafe_clear_pending_signals();
+    // TODO(glider): don't need to handle pending signals here.
+    ///unsafe_clear_pending_signals();
     gil_depth--;
 #ifdef DEBUG
     gil_owner = 0;
@@ -268,7 +270,11 @@ inline void SPut(EventType type, tid_t tid, pc_t pc,
     if (G_flags->verbosity) {
       if ((G_flags->verbosity >= 2) ||
           (type == THR_START) || (type == THR_END) || (type == THR_JOIN_AFTER) || (type == THR_CREATE_BEFORE)) {
+        IN_RTL++;
+        CHECK_IN_RTL();
         event.Print();
+        IN_RTL--;
+        CHECK_IN_RTL();
       }
     }
 #ifdef ENABLE_STATS
@@ -286,6 +292,7 @@ inline void SPut(EventType type, tid_t tid, pc_t pc,
     }
     IN_RTL--;
     CHECK_IN_RTL();
+    unsafe_clear_pending_signals();
   }
   if ((type==THR_START) && (tid==0)) HAVE_THREAD_0 = 1;
 }
@@ -356,6 +363,7 @@ void inline flush_trace() {
       for (size_t i = 0; i < trace->n_mops_; i++) tleb[i] = 0;
       IN_RTL--;
       CHECK_IN_RTL();
+      unsafe_clear_pending_signals();
     }
   }
 }
@@ -397,6 +405,7 @@ inline void RPut(EventType type, tid_t tid, pc_t pc,
     }
     IN_RTL--;
     CHECK_IN_RTL();
+    unsafe_clear_pending_signals();
   }
 }
 
@@ -492,11 +501,11 @@ Init dummy_init;
 
 // TODO(glider): GetPc should return valid PCs.
 inline pc_t GetPc() {
-  return 0;
+  return 1;
 }
 
 extern pc_t ExGetPc() {
-  return 0;
+  return GetPc();
 }
 
 inline tid_t GetTid(ThreadInfo *info) {
@@ -622,6 +631,8 @@ void *pthread_callback(void *arg) {
   for (int sig = 0; sig < NSIG; sig++) {
     pending_signal_flags[sig] = false;
   }
+  have_pending_signals = false;
+
   SPut(THR_START, INFO.tid, 0, 0, parent);
   delete cb_arg;
 
@@ -818,11 +829,16 @@ void *__wrap_malloc(size_t size) {
 
 extern "C"
 void __wrap_free(void *ptr) {
+  if (IN_RTL) return __real_free(ptr);
+  IN_RTL++;
+  CHECK_IN_RTL();
   DECLARE_TID_AND_PC();
   SPut(FREE, tid, pc, (uintptr_t)ptr, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   __real_free(ptr);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
+  IN_RTL--;
+  CHECK_IN_RTL();
 }
 
 extern "C"
@@ -1393,8 +1409,8 @@ ssize_t __wrap_write(int fd, const void *buf, size_t count) {
  comments in RTLSignalHandler). Each time we're about to release the global
  lock, we handle all the pending signals.
 */
-
-int unsafe_clear_pending_signals() {
+inline int unsafe_clear_pending_signals() {
+  if (!have_pending_signals) return 0;
   int result = 0;
   for (int sig = 0; sig < NSIG; sig++) {
     if (pending_signal_flags[sig]) {
@@ -1407,6 +1423,7 @@ int unsafe_clear_pending_signals() {
       result++;
     }
   }
+  have_pending_signals = false;
   return result;
 }
 
@@ -1414,26 +1431,24 @@ extern "C"
 void RTLSignalHandler(int sig, siginfo_t* info, void* context) {
   /* TODO(glider): The code under "#if 0" assumes that it's legal to handle
    * signals on the thread running client code. In fact ThreadSanitizer calls
-   * malloc() from STLPort, so if a signal is received when the client code is
-   * inside malloc(), a deadlock may happen. A temporal solution is to always
-   * enqueue the signals. In the future we can get rid of malloc() calls within
+   * some non-reentrable routines, so if a signal is received when the client
+   * code is inside them a deadlock may happen. A temporal solution is to always
+   * enqueue the signals. In the future we can get rid of such calls within
    * ThreadSanitzer. */
 #if 0
-  if (GIL::TryLock()) {
+  if (IN_RTL == 0) {
+#else
+  if (0) {
+#endif
     // We're in the client code. Call the handler.
     signal_actions[sig].sa_sigaction(sig, info, context);
-    GIL::Unlock();
   } else {
     // We're in TSan code. Let's enqueue the signal
     if (!pending_signal_flags[sig]) {
       pending_signals[sig] = *info;
       pending_signal_flags[sig] = true;
+      have_pending_signals = true;
     }
-  }
-#else
-  if (!pending_signal_flags[sig]) {
-    pending_signals[sig] = *info;
-    pending_signal_flags[sig] = true;
   }
 #endif
 }
