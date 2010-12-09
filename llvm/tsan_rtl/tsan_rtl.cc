@@ -501,7 +501,7 @@ Init dummy_init;
 
 // TODO(glider): GetPc should return valid PCs.
 inline pc_t GetPc() {
-  return 1;
+  return 0;
 }
 
 extern pc_t ExGetPc() {
@@ -1405,10 +1405,11 @@ extern "C"
 char *__wrap_memcpy(char *dest, const char *src, size_t n) {
   if (IN_RTL) return __real_memcpy(dest, src, n);
   DECLARE_TID_AND_PC();
-  RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_memcpy, 0);
   IN_RTL++;
   CHECK_IN_RTL();
+  RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_memcpy, 0);
   char *result = Replace_memcpy(tid, pc, dest, src, n);
+  RPut(RTN_EXIT, tid, pc, 0, 0);
   IN_RTL--;
   CHECK_IN_RTL();
   return result;
