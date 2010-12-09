@@ -7867,6 +7867,7 @@ static void SetupIgnore() {
   g_ignore_lists->ignores.push_back(IgnoreObj("*/libSystem.*.dylib"));
 #endif
 
+  g_ignore_lists->ignores.push_back(IgnoreFun("ThreadSanitizerStartThread"));
   g_ignore_lists->ignores.push_back(IgnoreFun("pthread_create"));
   g_ignore_lists->ignores.push_back(IgnoreFun("pthread_create@*"));
   g_ignore_lists->ignores.push_back(IgnoreFun("pthread_create_WRK"));
