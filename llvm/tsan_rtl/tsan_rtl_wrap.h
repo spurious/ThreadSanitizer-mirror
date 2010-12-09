@@ -81,10 +81,18 @@ int __real_sigaction(int signum, const struct sigaction *act,
                      struct sigaction *oldact);
 
 
-
+// operator new(unsigned int)
 void *__real__Znwj(unsigned int size);
-void *__real__Znwm(unsigned int size);
+// operator new[](unsigned int)
+void *__real__Znaj(unsigned int size);
+// operator new(unsigned long)
+void *__real__Znwm(unsigned long size);
+// operator new[](unsigned long)
+void *__real__Znam(unsigned long size);
+// operator delete(void*)
 void __real__ZdlPv(void *ptr);
+// operator delete[](void*)
+void __real__ZdaPv(void *ptr);
 }
 
 

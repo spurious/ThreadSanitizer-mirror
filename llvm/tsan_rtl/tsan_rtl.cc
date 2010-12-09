@@ -870,11 +870,26 @@ void *__wrap__Znwj(unsigned int size) {
   CHECK_IN_RTL();
   return result;
 }
+
+extern "C"
+void *__wrap__Znaj(unsigned int size) {
+  if (IN_RTL) return __real__Znaj(size);
+  IN_RTL++;
+  CHECK_IN_RTL();
+  DECLARE_TID_AND_PC();
+  IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
+  void *result = __real__Znaj(size);
+  IGNORE_ALL_ACCESSES_AND_SYNC_END();
+  SPut(MALLOC, tid, pc, (uintptr_t)result, size);
+  IN_RTL--;
+  CHECK_IN_RTL();
+  return result;
+}
 #endif
 
 #ifdef TSAN_RTL_X64
 extern "C"
-void *__wrap__Znwm(unsigned int size) {
+void *__wrap__Znwm(unsigned long size) {
   if (IN_RTL) return __real__Znwm(size);
   IN_RTL++;
   CHECK_IN_RTL();
@@ -887,6 +902,22 @@ void *__wrap__Znwm(unsigned int size) {
   CHECK_IN_RTL();
   return result;
 }
+
+extern "C"
+void *__wrap__Znam(unsigned long size) {
+  if (IN_RTL) return __real__Znam(size);
+  IN_RTL++;
+  CHECK_IN_RTL();
+  DECLARE_TID_AND_PC();
+  IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
+  void *result = __real__Znam(size);
+  IGNORE_ALL_ACCESSES_AND_SYNC_END();
+  SPut(MALLOC, tid, pc, (uintptr_t)result, size);
+  IN_RTL--;
+  CHECK_IN_RTL();
+  return result;
+}
+
 #endif
 
 
@@ -902,6 +933,23 @@ void __wrap__ZdlPv(void *ptr) {
   SPut(FREE, tid, pc, (uintptr_t)ptr, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   __real__ZdlPv(ptr);
+  IGNORE_ALL_ACCESSES_AND_SYNC_END();
+  IN_RTL--;
+  CHECK_IN_RTL();
+}
+
+extern "C"
+void __wrap__ZdaPv(void *ptr) {
+  if (IN_RTL) {
+    __real__ZdaPv(ptr);
+    return;
+  }
+  IN_RTL++;
+  CHECK_IN_RTL();
+  DECLARE_TID_AND_PC();
+  SPut(FREE, tid, pc, (uintptr_t)ptr, 0);
+  IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
+  __real__ZdaPv(ptr);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
   IN_RTL--;
   CHECK_IN_RTL();
