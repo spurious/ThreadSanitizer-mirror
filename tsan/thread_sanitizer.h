@@ -51,6 +51,7 @@ struct FLAGS {
   bool             ignore_stack;
   intptr_t         verbosity;
   intptr_t         show_stats;  // 0 -- no stats; 1 -- some stats; 2 more stats.
+  bool             trace_profile;
   bool             show_expected_races;
   uintptr_t        trace_addr;
   uintptr_t        segment_set_recycle_queue_size;

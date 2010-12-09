@@ -4001,6 +4001,7 @@ TraceInfo *TraceInfo::NewTraceInfo(size_t n_mops, uintptr_t pc) {
 }
 
 void TraceInfo::PrintTraceProfile() {
+  if (!G_flags->trace_profile) return;
   int64_t total_counter = 0;
   multimap<size_t, TraceInfo*> traces;
   for (size_t i = 0; i < g_all_traces->size(); i++) {
@@ -7686,6 +7687,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   FindBoolFlag("exit_after_main", false, args, &G_flags->exit_after_main);
 
   FindIntFlag("show_stats", 0, args, &G_flags->show_stats);
+  FindBoolFlag("trace_profile", false, args, &G_flags->trace_profile);
   FindBoolFlag("color", false, args, &G_flags->color);
   FindBoolFlag("html", false, args, &G_flags->html);
 #ifdef TS_OFFLINE
