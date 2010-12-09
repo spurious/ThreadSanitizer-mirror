@@ -85,6 +85,8 @@ wrap _ZdaPv
 
 wrap memcpy
 wrap memmove
+wrap strchr
+wrap strrchr
 
 # TODO(glider): without defining this annotation bigtest is missing
 # LLVMAnnotateCondVarSignal(). Strange enough, to be investigated.

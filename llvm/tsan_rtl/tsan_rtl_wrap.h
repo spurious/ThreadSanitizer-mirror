@@ -59,6 +59,8 @@ void __real_exit(int status);
 
 char *__real_memcpy(char *dest, const char *src, size_t n);
 void *__real_memmove(void *dest, const void *src, size_t n);
+char *__real_strchr(const char *s, int c);
+char *__real_strrchr(const char *s, int c);
 
 void *__real_mmap(void *addr, size_t length, int prot, int flags,
                   int fd, off_t offset);
