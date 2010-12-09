@@ -151,6 +151,7 @@ struct PinThread {
   vector<StackFrame> shadow_stack;
   TraceInfo    *trace_info;
   int ignore_accesses;  // if > 0, ignore all memory accesses.
+  int ignore_accesses_depth;
   int ignore_sync;      // if > 0, ignore all sync events.
   int spin_lock_recursion_depth;
   bool         thread_finished;
@@ -290,13 +291,19 @@ static void DumpEventInternal(EventType type, int32_t uniq_tid, uintptr_t pc,
   ThreadSanitizerHandleOneEvent(&event);
 }
 
+void ComputeIgnoreAccesses(PinThread &t) {
+  t.ignore_accesses = (t.ignore_accesses_depth != 0) || (global_ignore != 0);
+}
+
 static void HandleInnerEvent(PinThread &t, uintptr_t event) {
   DCHECK(event > LAST_EVENT);
   if (event == TLEB_IGNORE_ALL_BEGIN){
-    t.ignore_accesses++;
+    t.ignore_accesses_depth++;
+    ComputeIgnoreAccesses(t);
   } else if (event == TLEB_IGNORE_ALL_END){
-    t.ignore_accesses--;
-    CHECK(t.ignore_accesses >= 0);
+    t.ignore_accesses_depth--;
+    CHECK(t.ignore_accesses_depth >= 0);
+    ComputeIgnoreAccesses(t);
   } else if (event == TLEB_IGNORE_SYNC_BEGIN){
     t.ignore_sync++;
   } else if (event == TLEB_IGNORE_SYNC_END){
@@ -320,7 +327,7 @@ static INLINE bool WantToIgnoreEvent(PinThread &t, uintptr_t event) {
        event == SIGNAL || event == WAIT)) {
     // do nothing, we are ignoring locks.
     return true;
-  } else if ((t.ignore_accesses || global_ignore) && (event == READ || event == WRITE)) {
+  } else if (t.ignore_accesses && (event == READ || event == WRITE)) {
     // do nothing, we are ignoring mops.
     return true;
   }
@@ -371,7 +378,7 @@ static INLINE void TLEBFlushUnlocked(ThreadLocalEventBuffer &tleb) {
       bool do_this_trace = ((G_flags->literace_sampling == 0 ||
                              !LiteRaceSkipTrace(t.uniq_tid, t.trace_info->id(),
                                                 G_flags->literace_sampling)));
-      if (t.ignore_accesses || global_ignore)
+      if (t.ignore_accesses)
         do_this_trace = false;
 
       TraceInfo *trace_info = (TraceInfo*) tleb.events[i++];
@@ -926,6 +933,7 @@ void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
   t.uniq_tid = n_started_threads++;
   t.tid = tid;
   t.tleb.t = &t;
+  ComputeIgnoreAccesses(t);
 
 
   PIN_SetContextReg(ctxt, tls_reg, (ADDRINT)&t.tleb.events[2]);
