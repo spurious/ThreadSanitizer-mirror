@@ -4184,6 +4184,7 @@ struct Thread {
       announced_(false),
       rd_lockset_(0),
       wr_lockset_(0),
+      ignore_all_accesses_(false),
       vts_at_exit_(NULL),
       lock_history_(128),
       recent_segments_cache_(G_flags->recent_segments_cache_size) {
@@ -4193,8 +4194,7 @@ struct Thread {
     call_stack_.reserve(100);
     call_stack_ignore_rec_.reserve(100);
     HandleRtnCall(0, 0, IGNORE_BELOW_RTN_UNKNOWN);
-    ignore_[0] = ignore_[1] = 0;
-    ignore_context_[0] = ignore_context_[1] = NULL;
+    ignore_context_ = NULL;
     if (tid != TID(0) && parent_tid.valid()) {
       CHECK(creation_context_);
     }
@@ -4280,23 +4280,18 @@ struct Thread {
   bool is_running() const { return is_running_; }
 
   // ignore
-  INLINE void set_ignore(bool is_w, bool on) {
-    ignore_[is_w] += on ? 1 : -1;
-    CHECK(ignore_[is_w] >= 0);
+  INLINE void set_ignore_all_accesses(bool on) {
+    ignore_all_accesses_ += on ? 1 : -1;
+    CHECK(ignore_all_accesses_ >= 0);
     if (DEBUG_MODE && on && G_flags->debug_level >= 1) {
-      StackTrace::Delete(ignore_context_[is_w]);
-      ignore_context_[is_w] = CreateStackTrace(0, 3);
+      StackTrace::Delete(ignore_context_);
+      ignore_context_ = CreateStackTrace(0, 3);
     }
   }
-  INLINE void set_ignore_all(bool on) {
-    set_ignore(false, on);
-    set_ignore(true, on);
-  }
-  bool ignore(bool is_w) { return ignore_[is_w] > 0; }
-  bool ignore_all() { return (ignore_[0] > 0) && (ignore_[1] > 0); }
+  bool ignore_all_accesses() { return ignore_all_accesses_; }
 
-  StackTrace *GetLastIgnoreContext(bool is_w) {
-    return ignore_context_[is_w];
+  StackTrace *GetLastIgnoreContext() {
+    return ignore_context_;
   }
 
   SID sid() const {
@@ -4615,7 +4610,7 @@ struct Thread {
   INLINE bool HandleSblockEnter(uintptr_t pc, bool allow_slow_path) {
     DCHECK(G_flags->keep_history);
     DCHECK(!g_so_far_only_one_thread);
-    DCHECK(!this->ignore_all());
+    DCHECK(!this->ignore_all_accesses());
     if (!pc) return true;
 
     this->stats.events[SBLOCK_ENTER]++;
@@ -4877,7 +4872,7 @@ struct Thread {
     }
 
     if (ignore) {
-      set_ignore_all(true);
+      set_ignore_all_accesses(true);
     }
     call_stack_ignore_rec_.push_back(ignore);
   }
@@ -4886,7 +4881,7 @@ struct Thread {
     this->stats.events[RTN_EXIT]++;
     if (!call_stack_.empty()) {
       if (call_stack_ignore_rec_.back())
-        set_ignore_all(false);
+        set_ignore_all_accesses(false);
       call_stack_ignore_rec_.pop_back();
       call_stack_.pop_back();
     }
@@ -5067,8 +5062,8 @@ struct Thread {
   LSID   rd_lockset_;
   LSID   wr_lockset_;
 
-  int ignore_[2];  // 0 for reads, 1 for writes.
-  StackTrace *ignore_context_[2];
+  int ignore_all_accesses_;
+  StackTrace *ignore_context_;
 
   VTS *vts_at_exit_;
 
@@ -5936,7 +5931,7 @@ class Detector {
                           uintptr_t *tleb, bool need_locking) {
     TID tid(raw_tid);
     Thread *thr = Thread::Get(tid);
-    if (thr->ignore_all()) return;
+    if (thr->ignore_all_accesses()) return;
     if (g_so_far_only_one_thread) return;
     DCHECK(t);
     size_t n = t->n_mops();
@@ -5968,7 +5963,7 @@ class Detector {
   void INLINE HandleStackMemChange(int32_t tid, uintptr_t addr,
                                    uintptr_t size) {
     Thread *thr = Thread::Get(TID(tid));
-    if (thr->ignore_all()) return;
+    if (thr->ignore_all_accesses()) return;
     thr->stats.events[STACK_MEM_DIE]++;
     HandleStackMem(TID(tid), addr, size);
   }
@@ -6349,7 +6344,7 @@ class Detector {
       e->Print();
     }
     Thread *thread = Thread::Get(TID(e->tid()));
-    thread->set_ignore(is_w, on);
+    thread->set_ignore_all_accesses(on);
   }
 
   // BENIGN_RACE
@@ -7076,7 +7071,7 @@ one_call:
     DCHECK(size > 0);
     DCHECK(thr->is_running());
     DCHECK(g_so_far_only_one_thread == false);
-    if (thr->ignore(is_w)) return false;
+    DCHECK(!thr->ignore_all_accesses());
 
     // We do not check and ignore stack now.
     // On unoptimized binaries this would give ~10% speedup if ignore_stack==true,
@@ -7391,14 +7386,12 @@ one_call:
     }
 
 
-    for (int rd_or_rw = 0; rd_or_rw <= 1; rd_or_rw++) {
-      if (thr->ignore(rd_or_rw)) {
-        Report("WARNING: T%d ended while the 'ignore %s' bit is set\n",
-              tid.raw(), rd_or_rw ? "writes" : "reads");
-        if (G_flags->debug_level >= 1) {
-          Report("Last ignore call was here: \n%s\n",
-                 thr->GetLastIgnoreContext(rd_or_rw)->ToString().c_str());
-        }
+    if (thr->ignore_all_accesses()) {
+      Report("WARNING: T%d ended while the 'ignore_all_accesses' bit is set\n",
+             tid.raw());
+      if (G_flags->debug_level >= 1) {
+        Report("Last ignore call was here: \n%s\n",
+               thr->GetLastIgnoreContext()->ToString().c_str());
       }
     }
     ShowProcSelfStatus();
