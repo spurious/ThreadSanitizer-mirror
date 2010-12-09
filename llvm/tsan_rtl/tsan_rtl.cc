@@ -37,7 +37,7 @@
 # define DEBUG_DO(code)
 #endif
 
-bool global_ignore = false;
+extern bool global_ignore;
 
 struct ThreadInfo {
   tid_t tid;
@@ -121,8 +121,6 @@ class DbgInfoLock {
     __real_pthread_mutex_unlock(&debug_info_lock);
   }
 };
-
-//pthread_mutex_t global_lock = PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP;
 
 // BLOCK_SIGNALS macro enables blocking the signals any time the global lock
 // is taken. This brings huge overhead to the lock and looks unnecessary now, 
@@ -318,6 +316,8 @@ void inline flush_trace() {
     // simultaneously executed on multiple threads its ID may change several
     // times. As a result the count of this block executions may be off by the
     // number of threads.
+    // TODO(glider): no need to set trace->id
+    // if G_flags->literace_sampling == 0
     if (!trace->id_) {
       bb_unique_id = NoBarrier_AtomicIncrement(&bb_unique_id);
       trace->id_ = bb_unique_id;
@@ -327,14 +327,14 @@ void inline flush_trace() {
     // deviations if the trace is hot, but we can afford them.
     // Unfortunately this also leads to cache ping-pong and may affect the
     // performance.
-    if (G_flags->show_stats) trace->counter_++;
+    if (UNLIKELY(G_flags->show_stats)) trace->counter_++;
 
     if (LIKELY(G_flags->literace_sampling == 0) ||
         !LiteRaceSkipTrace(tid, trace->id_, G_flags->literace_sampling)) {
       IN_RTL++;
       CHECK_IN_RTL();
       assert(trace);
-      if (G_flags->verbosity >= 2) {
+      if (UNLIKELY(G_flags->verbosity >= 2)) {
         Event sblock(SBLOCK_ENTER, tid, trace->pc_, 0, trace->n_mops_);
         sblock.Print();
         assert(trace->n_mops_);
@@ -499,7 +499,6 @@ extern pc_t ExGetPc() {
   return 0;
 }
 
-
 inline tid_t GetTid(ThreadInfo *info) {
   //if (!PTH_INIT && RTL_INIT) return 0;
   if (INIT == 0) {
@@ -548,7 +547,6 @@ extern tid_t ExGetTid() {
 // of the first MOP in that basic block.
 extern "C"
 void* bb_flush(TraceInfoPOD *next_mops) {
-///  Printf("bb_flush(%p)\n", next_mops);
   if (INFO.trace_info) {
     // This is not a function entry block
     flush_trace();
@@ -559,7 +557,7 @@ void* bb_flush(TraceInfoPOD *next_mops) {
 
 // Flushes the local TLEB assuming someone is holding the global lock already.
 // Our RTL shouldn't need a thread to flush someone else's TLEB.
-inline void flush_tleb() {
+void inline flush_tleb() {
 #ifdef DEBUG
   if (UNLIKELY(G_flags->verbosity >= 2)) {
     DDPrintf("flush_tleb\n");
@@ -1460,19 +1458,18 @@ int __wrap_sigaction(int signum, const struct sigaction *act,
 // instrumentation API {{{1
 extern "C"
 void rtn_call(void *addr) {
-  tid_t tid = GetTid();
   // TODO(glider): this is unnecessary if we flush before each call/invoke
   // insn.
   flush_tleb();
-  RPut(RTN_CALL, tid, 0, (uintptr_t)addr, 0);
-  INFO.trace_info = NULL;
+  DECLARE_TID_AND_PC();
+  RPut(RTN_CALL, tid, pc, (uintptr_t)addr, 0);
 }
 
 extern "C"
 void rtn_exit() {
-  tid_t tid = GetTid();
   flush_tleb();
-  RPut(RTN_EXIT, tid, 0, 0, 0);
+  DECLARE_TID_AND_PC();
+  RPut(RTN_EXIT, tid, pc, 0, 0);
 }
 // }}}
 
