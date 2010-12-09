@@ -1450,7 +1450,6 @@ void RTLSignalHandler(int sig, siginfo_t* info, void* context) {
       have_pending_signals = true;
     }
   }
-#endif
 }
 
 // TODO(glider): wrap signal()
