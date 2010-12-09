@@ -1470,7 +1470,7 @@ void ts_pre_clo_init(void) {
                                   ts_print_usage,
                                   ts_print_debug_usage);
 #ifdef VGO_darwin
-   if (1) {
+   if (0) {
 #else
    if (0) {
 #endif
