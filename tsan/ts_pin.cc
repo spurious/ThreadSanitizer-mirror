@@ -1025,8 +1025,9 @@ static void Before_start_thread(THREADID tid, ADDRINT pc, ADDRINT sp) {
     }
     prev = val;
   }
-  CHECK(0);  // I really hope the hack above always works.
-  // DumpEvent(THR_STACK_TOP, tid, pc, sp, t.thread_stack_size_if_known);
+  // The hack above does not always works. (TODO(kcc)). Do something.
+  Printf("WARNING: ThreadSanitizerPin is guessing stack size for T%d\n", tid);
+  DumpEvent(THR_STACK_TOP, tid, pc, sp, t.thread_stack_size_if_known);
 }
 
 #ifdef _MSC_VER
