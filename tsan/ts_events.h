@@ -67,7 +67,7 @@ enum EventType {
   PCQ_DESTROY,        // {tid, pc, pcq_addr, 0}
   PCQ_PUT,            // {tid, pc, pcq_addr, 0}
   PCQ_GET,            // {tid, pc, pcq_addr, 0}
-  STACK_MEM_DIE,      // {tid, pc, addr, size}
+  STACK_MEM_DIE,      // deprecated.
   MALLOC,             // {tid, pc, addr, size}
   FREE,               // {tid, pc, addr, 0}
   MMAP,               // {tid, pc, addr, size}

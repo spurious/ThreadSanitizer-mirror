@@ -151,8 +151,6 @@ extern void ThreadSanitizerFini();
 extern void ThreadSanitizerHandleOneEvent(Event *event);
 extern void ThreadSanitizerHandleTrace(int32_t tid, TraceInfo *trace_info,
                                        uintptr_t *tleb);
-extern void ThreadSanitizerHandleStackMemChange(int32_t tid, uintptr_t addr,
-                                                uintptr_t size);
 extern void ThreadSanitizerParseFlags(vector<string>* args);
 extern bool ThreadSanitizerWantToInstrumentSblock(uintptr_t pc);
 extern bool ThreadSanitizerWantToCreateSegmentsOnSblockEntry(uintptr_t pc);

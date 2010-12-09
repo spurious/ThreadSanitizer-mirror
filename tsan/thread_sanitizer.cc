@@ -5966,15 +5966,6 @@ class Detector {
     HandleTrace(tid, (TraceInfo*)&trace_info, &addr, need_locking);
   }
 
-
-  void INLINE HandleStackMemChange(int32_t tid, uintptr_t addr,
-                                   uintptr_t size) {
-    Thread *thr = Thread::Get(TID(tid));
-    if (thr->ignore_all_accesses()) return;
-    thr->stats.events[STACK_MEM_DIE]++;
-    HandleStackMem(TID(tid), addr, size);
-  }
-
   void ShowUnfreedHeap() {
     // check if there is not deleted memory
     // (for debugging free() interceptors, not for leak detection)
@@ -6431,18 +6422,6 @@ class Detector {
     Lock *lock = Lock::LookupOrCreate(e->a());
     CHECK(lock);
     lock->set_is_pure_happens_before(false);
-  }
-
-  void INLINE HandleStackMem(TID tid, uintptr_t addr, uintptr_t size) {
-    uintptr_t a = addr;
-    DCHECK(size > 0);
-    DCHECK(size < 128 * 1024 * 1024);  // stay sane.
-    uintptr_t b = a + size;
-    ClearMemoryState(tid, a, b);
-    if (G_flags->sample_events) {
-      static EventSampler sampler;
-      sampler.Sample(tid, "SampleStackChange");
-    }
   }
 
   // UNLOCK_OR_INIT
@@ -8151,12 +8130,6 @@ extern NOINLINE void ThreadSanitizerHandleTrace(int32_t tid, TraceInfo *trace_in
                                        uintptr_t *tleb) {
   // The lock is taken inside on the slow path.
   G_detector->HandleTrace(tid, trace_info, tleb, /*need_locking=*/true);
-}
-
-void NOINLINE ThreadSanitizerHandleStackMemChange(int32_t tid, uintptr_t addr,
-                                                uintptr_t size) {
-  CHECK(TS_SERIALIZED == 1); // we should kill this function.
-  G_detector->HandleStackMemChange(tid, addr, size);
 }
 
 void NOINLINE ThreadSanitizerHandleRtnCall(int32_t tid, uintptr_t call_pc,

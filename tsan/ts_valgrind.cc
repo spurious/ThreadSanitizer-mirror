@@ -523,34 +523,6 @@ void evh__delete_frame ( Addr sp_post_call_insn,
 }
 #endif
 
-static INLINE void evh__die_mem_stack_helper ( Addr a, SizeT len ) {
-  ThreadId vg_tid = GetVgTid();
-  ValgrindThread *thr = &g_valgrind_threads[vg_tid];
-  if (!thr->ignore_accesses) {
-    ThreadSanitizerHandleStackMemChange(thr->zero_based_uniq_tid, a, len);
-  }
-}
-static void evh__die_mem_stack ( Addr a, SizeT len ) {
-//  Printf("** %d\n", (int)len);
-  evh__die_mem_stack_helper(a, len);
-}
-VG_REGPARM(1)
-static void evh__die_mem_stack_8 ( Addr a) {
-//  Printf("** 8\n");
-  evh__die_mem_stack_helper(a, 8);
-}
-VG_REGPARM(1)
-static void evh__die_mem_stack_16 ( Addr a ) {
-//  Printf("** 16\n");
-  evh__die_mem_stack_helper(a, 16);
-}
-VG_REGPARM(1)
-static void evh__die_mem_stack_32 ( Addr a ) {
-//  Printf("** 32\n");
-  evh__die_mem_stack_helper(a, 32);
-}
-
-
 void ts_fini(Int exitcode) {
   ThreadSanitizerFini();
   if (g_race_verifier_active) {
@@ -1469,19 +1441,6 @@ void ts_pre_clo_init(void) {
   VG_(needs_command_line_options)(ts_process_cmd_line_option,
                                   ts_print_usage,
                                   ts_print_debug_usage);
-#ifdef VGO_darwin
-   if (0) {
-#else
-   if (0) {
-#endif
-     // TODO(kcc): remove this completely.
-     // TODO(glider): why do we still need this on Mac?
-     VG_(track_die_mem_stack)       ( evh__die_mem_stack );
-     VG_(track_die_mem_stack_8)     ( evh__die_mem_stack_8 );
-     VG_(track_die_mem_stack_16)     ( evh__die_mem_stack_16 );
-     VG_(track_die_mem_stack_32)     ( evh__die_mem_stack_32 );
-   }
-
    VG_(track_pre_thread_ll_create)( evh__pre_thread_ll_create );
    VG_(track_pre_thread_ll_exit)  ( evh__pre_thread_ll_exit );
 
