@@ -4002,6 +4002,7 @@ TraceInfo *TraceInfo::NewTraceInfo(size_t n_mops, uintptr_t pc) {
 
 void TraceInfo::PrintTraceProfile() {
   if (!G_flags->trace_profile) return;
+  if (!g_all_traces) return;
   int64_t total_counter = 0;
   multimap<size_t, TraceInfo*> traces;
   for (size_t i = 0; i < g_all_traces->size(); i++) {
