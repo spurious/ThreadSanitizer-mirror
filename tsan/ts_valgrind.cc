@@ -184,7 +184,10 @@ static inline ThreadId GetVgTid() {
 }
 
 static inline uintptr_t GetVgPc(ThreadId vg_tid) {
-  return (uintptr_t)VG_(get_IP)(vg_tid);
+  Addr pc = VG_(threads)[vg_tid].arch.vex.VG_INSTR_PTR;
+  DCHECK(pc == VG_(get_IP)(vg_tid));
+  return pc;
+  //return (uintptr_t)VG_(get_IP)(vg_tid);
 }
 
 static inline uintptr_t GetVgSp(ThreadId vg_tid) {
@@ -369,22 +372,21 @@ static void OnStartClientCode(ThreadId vg_tid, ULong nDisp) {
   g_cur_tleb = thr->tleb;
 }
 
-INLINE void FlushMops(ThreadId vg_tid, bool keep_trace_info = false) {
+INLINE void FlushMops(ValgrindThread *thr, bool keep_trace_info = false) {
   DCHECK(!g_race_verifier_active || global_ignore);
-  ValgrindThread *thr = &g_valgrind_threads[vg_tid];
   TraceInfo *t = thr->trace_info;
   if (!t) return;
   if (!keep_trace_info) {
     thr->trace_info = NULL;
   }
 
+  int ts_tid = thr->zero_based_uniq_tid;
+
   if (global_ignore || thr->ignore_accesses ||
-      LiteRaceSkipTrace(vg_tid, t->id(), G_flags->literace_sampling)) {
+      LiteRaceSkipTrace(ts_tid, t->id(), G_flags->literace_sampling)) {
     thr->trace_info = NULL;
     return;
   }
-
-  int ts_tid = VgTidToTsTid(vg_tid);
 
   size_t n = t->n_mops();
   DCHECK(n > 0);
@@ -401,17 +403,16 @@ static void ShowCallStack(ValgrindThread *thr) {
   Printf("\n");
 }
 
-static INLINE void UpdateCallStack(ThreadId vg_tid, uintptr_t sp) {
+static INLINE void UpdateCallStack(ValgrindThread *thr, uintptr_t sp) {
   DCHECK(!g_race_verifier_active);
-  ValgrindThread *thr = &g_valgrind_threads[vg_tid];
-  if (thr->trace_info) FlushMops(vg_tid, true /* keep_trace_info */);
+  if (thr->trace_info) FlushMops(thr, true /* keep_trace_info */);
   vector<CallStackRecord> &call_stack = thr->call_stack;
   while (!call_stack.empty()) {
     CallStackRecord &record = call_stack.back();
     Addr cur_top = record.sp;
     if (sp < cur_top) break;
     call_stack.pop_back();
-    int32_t ts_tid = VgTidToTsTid(vg_tid);
+    int32_t ts_tid = thr->zero_based_uniq_tid;
     ThreadSanitizerHandleRtnExit(ts_tid);
     if (debug_rtn) {
       Printf("T%d: [%ld]<< pc=%p sp=%p cur_sp=%p %s\n",
@@ -429,14 +430,14 @@ static void OnTrace(TraceInfo *trace_info) {
   //trace_info->counter()++;
   if (global_ignore) return;
   ThreadId vg_tid = GetVgTid();
+  ValgrindThread *thr = &g_valgrind_threads[vg_tid];
 
   // First, flush the old trace_info.
-  ValgrindThread *thr = &g_valgrind_threads[vg_tid];
   if (thr->trace_info) {
-    FlushMops(vg_tid);
+    FlushMops(thr);
   }
 
-  UpdateCallStack(vg_tid, GetVgSp(vg_tid));
+  UpdateCallStack(thr, GetVgSp(vg_tid));
 
   // Start the new trace, zero the contents of tleb.
   size_t n = trace_info->n_mops();
@@ -460,25 +461,25 @@ static void rtn_call(Addr sp_post_call_insn, Addr pc_post_call_insn,
   DCHECK(!g_race_verifier_active);
   if (global_ignore) return;
   ThreadId vg_tid = GetVgTid();
+  ValgrindThread *thr = &g_valgrind_threads[vg_tid];
+  int ts_tid = thr->zero_based_uniq_tid;
   CallStackRecord record;
   record.pc = pc_post_call_insn;
   record.sp = sp_post_call_insn + 4;  // sp before call.
-  UpdateCallStack(vg_tid, record.sp);
+  UpdateCallStack(thr, record.sp);
 #ifdef VGP_arm_linux
   record.lr = GetVgLr(vg_tid);
 #endif
-  ValgrindThread *thr = &g_valgrind_threads[vg_tid];
   thr->call_stack.push_back(record);
   // If the shadow stack grows too high this usually means it is not cleaned
   // properly. Or this may be a very deep recursion.
   DCHECK(thr->call_stack.size() < 10000);
   uintptr_t call_pc = GetVgPc(vg_tid);
-  if (thr->trace_info) FlushMops(vg_tid);
-  ThreadSanitizerHandleRtnCall(VgTidToTsTid(vg_tid), call_pc, record.pc,
+  if (thr->trace_info) FlushMops(thr);
+  ThreadSanitizerHandleRtnCall(ts_tid, call_pc, record.pc,
                                ignore_below);
 
   if (debug_rtn) {
-    int ts_tid = VgTidToTsTid(vg_tid);
     Printf("T%d: [%ld]>> pc=%p sp=%p %s\n",
            ts_tid, thr->call_stack.size(), (void*)record.pc,
            (void*)record.sp,
@@ -511,7 +512,7 @@ void evh__delete_frame ( Addr sp_post_call_insn,
   DCHECK(!race_verifier_active);
   ThreadId vg_tid = GetVgTid();
   ValgrindThread *thr = &g_valgrind_threads[vg_tid];
-  if (thr->trace_info) FlushMops(vg_tid);
+  if (thr->trace_info) FlushMops(thr);
   vector<CallStackRecord> &call_stack = thr->call_stack;
   int32_t ts_tid = VgTidToTsTid(vg_tid);
   while (!call_stack.empty()) {
@@ -552,12 +553,14 @@ void evh__pre_thread_ll_create ( ThreadId parent, ThreadId child ) {
 void evh__pre_workq_task_start(ThreadId vg_tid, Addr workitem) {
   uintptr_t pc = GetVgPc(vg_tid);
   int32_t ts_tid = VgTidToTsTid(vg_tid);
-  FlushMops(vg_tid);
+  ValgrindThread *thr = &g_valgrind_threads[vg_tid];
+  FlushMops(thr);
   Put(WAIT, ts_tid, pc, workitem, 0);
 }
 
 void evh__pre_thread_first_insn(const ThreadId vg_tid) {
-  FlushMops(vg_tid);
+  ValgrindThread *thr = &g_valgrind_threads[vg_tid];
+  FlushMops(thr);
   Put(THR_FIRST_INSN, VgTidToTsTid(vg_tid), GetVgPc(vg_tid), 0, 0);
 }
 
@@ -567,7 +570,8 @@ void evh__pre_thread_ll_exit ( ThreadId quit_tid ) {
 //  Printf("T%d quiting thread; stack size=%ld\n",
 //         VgTidToTsTid(quit_tid),
 //         (int)g_valgrind_threads[quit_tid].call_stack.size());
-  FlushMops(quit_tid);
+  ValgrindThread *thr = &g_valgrind_threads[quit_tid];
+  FlushMops(thr);
   Put(THR_END, VgTidToTsTid(quit_tid), 0, 0, 0);
   g_valgrind_threads[quit_tid].zero_based_uniq_tid = -1;
 }
@@ -607,8 +611,8 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
     return True;
   }
   ValgrindThread *thr = &g_valgrind_threads[vg_tid];
-  if (thr->trace_info) FlushMops(vg_tid);
-  UpdateCallStack(vg_tid, GetVgSp(vg_tid));
+  if (thr->trace_info) FlushMops(thr);
+  UpdateCallStack(thr, GetVgSp(vg_tid));
   *ret = 0;
   uintptr_t pc = GetVgPc(vg_tid);
   switch (args[0]) {
