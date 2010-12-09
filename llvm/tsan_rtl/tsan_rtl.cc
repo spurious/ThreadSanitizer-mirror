@@ -1448,6 +1448,7 @@ void *__wrap_memchr(const char *s, int c, size_t n) {
   return result;
 }
 
+#ifdef TSAN_RTL_X86
 extern
 void *memchr(void *s, int c, unsigned int n) {
   DECLARE_TID_AND_PC();
@@ -1456,6 +1457,18 @@ void *memchr(void *s, int c, unsigned int n) {
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
 }
+#endif
+
+#ifdef TSAN_RTL_X64
+extern
+void *memchr(void *s, int c, unsigned long n) {
+  DECLARE_TID_AND_PC();
+  RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_memchr, 0);
+  void *result = Replace_memchr(tid, pc, (char*)s, c, n);
+  RPut(RTN_EXIT, tid, pc, 0, 0);
+  return result;
+}
+#endif
 
 extern "C"
 int __wrap_strcmp(const char *s1, const char *s2) {
