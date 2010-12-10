@@ -3371,8 +3371,8 @@ int main(INT32 argc, CHAR **argv) {
   TRACE_AddInstrumentFunction(CallbackForTRACE, 0);
   PIN_AddFollowChildProcessFunction(CallbackForExec, NULL);
 
-  Report("ThreadSanitizerPin r%s: %s\n",
-         TS_VERSION,
+  Report("ThreadSanitizerPin r%s pin %d: %s\n",
+         TS_VERSION, PIN_BUILD_NUMBER,
          G_flags->pure_happens_before ? "hybrid=no" : "hybrid=yes");
   if (DEBUG_MODE) {
     Report("INFO: Debug build\n");
