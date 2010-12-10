@@ -312,9 +312,11 @@ static void HandleInnerEvent(PinThread &t, uintptr_t event) {
   } else if (event == TLEB_GLOBAL_IGNORE_ON){
     Report("INFO: GLOBAL IGNORE ON\n");
     global_ignore = true;
+    ComputeIgnoreAccesses();
   } else if (event == TLEB_GLOBAL_IGNORE_OFF){
     Report("INFO: GLOBAL IGNORE OFF\n");
     global_ignore = false;
+    ComputeIgnoreAccesses();
   } else {
     Printf("Event: %ld (last: %ld)\n", event, LAST_EVENT);
     CHECK(0);
@@ -1760,6 +1762,7 @@ static void OnTraceSerial(THREADID tid, ADDRINT sp, TraceInfo *trace_info,
 static void OnTraceParallel(uintptr_t *tls_reg, ADDRINT sp, TraceInfo *trace_info) {
   // Get the thread handler directly from tls_reg.
   PinThread &t = *(PinThread*)(tls_reg - 4);
+  if (t.ignore_accesses) return;
 
   DCHECK(trace_info);
   DCHECK(trace_info->n_mops() > 0);
