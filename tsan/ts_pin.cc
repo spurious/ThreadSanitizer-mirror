@@ -1365,11 +1365,11 @@ uintptr_t InternalWrapCreateSemaphore(WRAP_PARAM4) {
 }
 
 uintptr_t WRAP_NAME(CreateSemaphoreA)(WRAP_PARAM4) {
-  return InternalWrapCreateSemaphore(tid, pc, ctx, f, arg0, arg1, arg2, arg3);
+  return InternalWrapCreateSemaphore(tid, pc, sp, ctx, f, arg0, arg1, arg2, arg3);
 }
 
 uintptr_t WRAP_NAME(CreateSemaphoreW)(WRAP_PARAM4) {
-  return InternalWrapCreateSemaphore(tid, pc, ctx, f, arg0, arg1, arg2, arg3);
+  return InternalWrapCreateSemaphore(tid, pc, sp, ctx, f, arg0, arg1, arg2, arg3);
 }
 
 uintptr_t WRAP_NAME(ReleaseSemaphore)(WRAP_PARAM4) {
