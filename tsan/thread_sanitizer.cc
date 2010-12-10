@@ -3178,6 +3178,7 @@ uintptr_t GetCacheLinesForRange(uintptr_t a, uintptr_t b,
 class Cache {
  public:
   Cache() {
+    memset(lines_, '\0', sizeof(lines_));
     ForgetAllState(TID(0));
   }
 
