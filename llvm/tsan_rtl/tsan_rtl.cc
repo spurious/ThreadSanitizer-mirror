@@ -863,7 +863,8 @@ void __wrap_free(void *ptr) {
   CHECK_IN_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_free, 0);
-  SPut(FREE, tid, pc, (uintptr_t)ptr, 0);
+  // Normally pc is equal to 0, but FREE asserts that it is not.
+  SPut(FREE, tid, (pc_t)__wrap_free, (uintptr_t)ptr, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   __real_free(ptr);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
@@ -972,7 +973,7 @@ void __wrap__ZdlPv(void *ptr) {
   CHECK_IN_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__ZdlPv, 0);
-  SPut(FREE, tid, pc, (uintptr_t)ptr, 0);
+  SPut(FREE, tid, (pc_t)__wrap__ZdlPv, (uintptr_t)ptr, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   __real__ZdlPv(ptr);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
@@ -991,7 +992,7 @@ void __wrap__ZdaPv(void *ptr) {
   CHECK_IN_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__ZdaPv, 0);
-  SPut(FREE, tid, pc, (uintptr_t)ptr, 0);
+  SPut(FREE, tid, (pc_t)__wrap__ZdaPv, (uintptr_t)ptr, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   __real__ZdaPv(ptr);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
@@ -1369,6 +1370,7 @@ extern "C"
 char *__wrap_strchr(const char *s, int c) {
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_strchr, 0);
+  pc = (pc_t)__wrap_strchr;
   char *result = Replace_strchr(tid, pc, s, c);
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
@@ -1378,6 +1380,7 @@ extern "C"
 char *__wrap_strrchr(const char *s, int c) {
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_strrchr, 0);
+  pc = (pc_t)__wrap_strrchr;
   char *result = Replace_strrchr(tid, pc, s, c);
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
@@ -1390,6 +1393,7 @@ size_t __wrap_strlen(const char *s) {
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_strlen, 0);
   IN_RTL++;
   CHECK_IN_RTL();
+  pc = (pc_t)__wrap_strlen;
   size_t result = Replace_strlen(tid, pc, s);
   IN_RTL--;
   CHECK_IN_RTL();
@@ -1408,6 +1412,7 @@ char *__wrap_memcpy(char *dest, const char *src, size_t n) {
   IN_RTL++;
   CHECK_IN_RTL();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_memcpy, 0);
+  pc = (pc_t)__wrap_memcpy;
   char *result = Replace_memcpy(tid, pc, dest, src, n);
   RPut(RTN_EXIT, tid, pc, 0, 0);
   IN_RTL--;
@@ -1419,6 +1424,7 @@ extern "C"
 void *__wrap_memmove(char *dest, const char *src, size_t n) {
   if (IN_RTL) return __real_memmove(dest, src, n);
   DECLARE_TID_AND_PC();
+  pc = (pc_t)__wrap_memmove;
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_memmove, 0);
   IN_RTL++;
   CHECK_IN_RTL();
@@ -1432,7 +1438,7 @@ void *__wrap_memmove(char *dest, const char *src, size_t n) {
 }
 
 
-
+// TODO(glider): ???
 extern
 char *strcpy(char *dest, const char *src) {
   DECLARE_TID_AND_PC();
@@ -1443,6 +1449,7 @@ extern "C"
 void *__wrap_memchr(const char *s, int c, size_t n) {
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_memchr, 0);
+  pc = (pc_t)__wrap_memchr;
   void *result = Replace_memchr(tid, pc, s, c, n);
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
@@ -1453,6 +1460,7 @@ extern
 void *memchr(void *s, int c, unsigned int n) {
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_memchr, 0);
+  pc = (pc_t)__wrap_memchr;
   void *result = Replace_memchr(tid, pc, (char*)s, c, n);
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
@@ -1464,6 +1472,7 @@ extern
 void *memchr(void *s, int c, unsigned long n) {
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_memchr, 0);
+  pc = (pc_t)__wrap_memchr;
   void *result = Replace_memchr(tid, pc, (char*)s, c, n);
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
@@ -1474,6 +1483,7 @@ extern "C"
 int __wrap_strcmp(const char *s1, const char *s2) {
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_strcmp, 0);
+  pc = (pc_t)__wrap_strcmp;
   int result = Replace_strcmp(tid, pc, s1, s2);
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
@@ -1483,6 +1493,7 @@ extern "C"
 int strncmp(const char *s1, const char *s2, size_t n) {
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)strncmp, 0);
+  pc = (pc_t)strncmp;
   int result = Replace_strncmp(tid, pc, s1, s2, n);
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
@@ -1692,6 +1703,7 @@ void* bb_flush(TraceInfoPOD *next_mops) {
 extern "C"
 void *rtl_memcpy(char *dest, const char *src, size_t n) {
   DECLARE_TID_AND_PC();
+  pc = (pc_t)rtl_memcpy;
   return Replace_memcpy(tid, pc, dest, src, n);
 }
 
@@ -1699,6 +1711,7 @@ extern "C"
 void *rtl_memmove(char *dest, const char *src, size_t n) {
   DECLARE_TID_AND_PC();
   void *result = __real_memmove(dest, src, n);
+  pc = (pc_t)rtl_memmove;
   REPORT_READ_RANGE(src, n);
   REPORT_WRITE_RANGE(dest, n);
   return result;
