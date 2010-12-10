@@ -36,6 +36,11 @@ static cl::opt<bool>
     InstrumentAll("instrument-all",
                   cl::desc("Do not optimize the instrumentation "
                            "of memory operations"));
+static cl::opt<bool>
+    WorkaroundVptrRace("workaround-vptr-race",
+                       cl::desc("Work around benign races on VPTR in "
+                                "destructors"),
+                       cl::init(true));
 
 namespace {
   typedef std::vector <Constant*> Passport;
@@ -564,7 +569,7 @@ namespace {
         if ((F->getName()).find("_Zdl") != std::string::npos) {
           continue;
         }
-        if (isDtor(F->getName())) first_dtor_bb = true;
+        if (isDtor(F->getName())) first_dtor_bb = WorkaroundVptrRace;
 
         TraceVector traces(buildTraces(*F));
         for (int i = 0; i < traces.size(); ++i) {
