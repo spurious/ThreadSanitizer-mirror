@@ -1810,15 +1810,17 @@ void ReadDbgInfoFromSection(char* start, char* end) {
 }
 
 void ReadElf() {
-  string maps = ReadFileToString("/proc/self/maps", false);
-  size_t start = maps.find("/");
-  size_t end = maps.find("\n");
-  string filename = maps.substr(start, end - start);
-  DDPrintf("Reading debug info from %s\n", filename.c_str());
-  int fd = open(filename.c_str(), 0);
+  const int kBufSize = 1000;
+  char fname[kBufSize];
+  memset(fname, '\0', sizeof(fname));
+  int fsize = readlink("/proc/self/exe", fname, kBufSize);
+  assert(fsize < kBufSize);
+  int fd = open(fname, 0);
   struct stat st;
   fstat(fd, &st);
-  char* map = (char*)__real_mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+  DDPrintf("Reading debug info from %s (%d bytes)\n", fname, st.st_size);
+  char* map = (char*)__real_mmap(NULL, st.st_size,
+                                 PROT_READ, MAP_PRIVATE, fd, 0);
 
 #ifdef TSAN_RTL_X86
   typedef Elf32_Ehdr Elf_Ehdr;
