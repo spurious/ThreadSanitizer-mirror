@@ -312,11 +312,11 @@ static void HandleInnerEvent(PinThread &t, uintptr_t event) {
   } else if (event == TLEB_GLOBAL_IGNORE_ON){
     Report("INFO: GLOBAL IGNORE ON\n");
     global_ignore = true;
-    ComputeIgnoreAccesses();
+    ComputeIgnoreAccesses(t);
   } else if (event == TLEB_GLOBAL_IGNORE_OFF){
     Report("INFO: GLOBAL IGNORE OFF\n");
     global_ignore = false;
-    ComputeIgnoreAccesses();
+    ComputeIgnoreAccesses(t);
   } else {
     Printf("Event: %ld (last: %ld)\n", event, LAST_EVENT);
     CHECK(0);
