@@ -1762,6 +1762,7 @@ static void OnTraceSerial(THREADID tid, ADDRINT sp, TraceInfo *trace_info,
 static void OnTraceParallel(uintptr_t *tls_reg, ADDRINT sp, TraceInfo *trace_info) {
   // Get the thread handler directly from tls_reg.
   PinThread &t = *(PinThread*)(tls_reg - 4);
+  t.trace_info = trace_info;
   if (t.ignore_accesses) return;
 
   DCHECK(trace_info);
@@ -1771,7 +1772,6 @@ static void OnTraceParallel(uintptr_t *tls_reg, ADDRINT sp, TraceInfo *trace_inf
   UpdateCallStack(t, sp);
 
 
-  t.trace_info = trace_info;
   if (DEBUG_MODE && G_flags->show_stats)  // this stat may be racey; avoid ping-pong.
     trace_info->counter()++;
   TLEBAddTrace(t);
