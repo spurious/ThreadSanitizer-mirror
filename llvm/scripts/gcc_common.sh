@@ -10,7 +10,7 @@ OX=-O0
 OPT_OX=
 DEBUG=
 OPT_PASSES=-adce
-OPT_PASSES=-reg2mem -mem2reg -adce
+OPT_PASSES="-reg2mem -mem2reg -adce"
 OPT_PASSES=-verify
 OPT_PASSES=
 
@@ -41,7 +41,7 @@ do
   then
     PLATFORM="x86"
     ARGS="$ARGS $1"
-  elif [ `expr match "$1" ".*\.[ao]"` -gt 0 ]
+  elif [ `expr match "$1" ".*\.[ao]\$"` -gt 0 ]
   then
     LD_MODE=1
   elif [ `expr match "$1" "-O0"` -gt 0 ]
@@ -107,5 +107,5 @@ $OPT -load "$PASS_SO" $INST_MODE -arch=$XARCH "$SRC_TMP" -S  > "$SRC_INSTR" 2>$L
 # Translate LLVM bitcode to native assembly code.
 $LLC -march=$XARCH $OX $SRC_INSTR  -o $SRC_ASM || exit 1
 # Compile the object file.
-$COMPILER $MARCH -c $SRC_ASM $OX $DEBUG -o $SRC_OBJ
+$COMPILER $MARCH -c $SRC_ASM $OX $DEBUG -o $SRC_OBJ || exit 1
 

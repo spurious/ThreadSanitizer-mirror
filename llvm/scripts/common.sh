@@ -3,11 +3,6 @@
 
 PASS_SO="$SCRIPT_ROOT/../opt/ThreadSanitizer/ThreadSanitizer.so"
 
-if [ -z "$TSAN_AR" ]
-then
-  TSAN_AR=/usr/bin/ar
-fi
-
 # Note that we're using g++ instead of ld
 if [ -z "$TSAN_LD" ]
 then
@@ -18,7 +13,6 @@ LLVM_GCC=llvm-gcc
 LLVM_GPP=llvm-g++
 OPT=opt
 LLC=llc
-LINK_DBG="$SCRIPT_ROOT/link_debuginfo.sh"
 TSAN_RTL="$SCRIPT_ROOT/../tsan_rtl/tsan_rtl32.a"
 
 # Additional flags for dynamic annotations.
