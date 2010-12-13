@@ -60,7 +60,6 @@ const int kMaxSegmentSetSize = 4;
 // If true, ignore all accesses in all threads.
 bool global_ignore;
 
-bool g_has_expensive_flags = false;
 bool g_so_far_only_one_thread = false;
 bool g_has_entered_main = false;
 bool g_has_exited_main = false;
@@ -157,12 +156,6 @@ string PcToRtnNameAndFilePos(uintptr_t pc) {
   char buff[10];
   snprintf(buff, sizeof(buff), "%d", line_no);
   return rtn_name + " " + file_name + ":" + buff;
-}
-
-void SetHasExpensiveFlags() {
-  g_has_expensive_flags = G_flags->trace_level > 0 ||
-      G_flags->show_stats > 1                      ||
-      G_flags->sample_events > 0;
 }
 
 // -------- ID ---------------------- {{{1
@@ -4192,17 +4185,19 @@ struct Thread {
       announced_(false),
       rd_lockset_(0),
       wr_lockset_(0),
-      ignore_all_accesses_(false),
+      expensive_bits_(0),
       vts_at_exit_(NULL),
       lock_history_(128),
       recent_segments_cache_(G_flags->recent_segments_cache_size) {
 
     NewSegmentWithoutUnrefingOld("Thread Creation", vts);
+    ignore_depth_[0] = ignore_depth_[1] = 0;
 
     call_stack_.reserve(100);
     call_stack_ignore_rec_.reserve(100);
     HandleRtnCall(0, 0, IGNORE_BELOW_RTN_UNKNOWN);
-    ignore_context_ = NULL;
+    ignore_context_[0] = NULL;
+    ignore_context_[1] = NULL;
     if (tid != TID(0) && parent_tid.valid()) {
       CHECK(creation_context_);
     }
@@ -4287,19 +4282,39 @@ struct Thread {
 
   bool is_running() const { return is_running_; }
 
+  INLINE void ComputeExpensiveBits() {
+    bool has_expensive_flags = G_flags->trace_level > 0 ||
+        G_flags->show_stats > 1                      ||
+        G_flags->sample_events > 0;
+
+    expensive_bits_ =
+        (ignore_depth_[0] == true) |
+        ((ignore_depth_[1] == true) << 1) |
+        ((has_expensive_flags == true) << 2);
+
+  }
+  
+  int expensive_bits() { return expensive_bits_; }
+  int ignore_reads() { return expensive_bits() & 1; }
+  int ignore_writes() { return (expensive_bits() >> 1) & 1; }
+
   // ignore
-  INLINE void set_ignore_all_accesses(bool on) {
-    ignore_all_accesses_ += on ? 1 : -1;
-    CHECK(ignore_all_accesses_ >= 0);
+  INLINE void set_ignore_accesses(bool is_w, bool on) {
+    ignore_depth_[is_w] += on ? 1 : -1;
+    CHECK(ignore_depth_[is_w] >= 0);
+    ComputeExpensiveBits();
     if (DEBUG_MODE && on && G_flags->debug_level >= 1) {
-      StackTrace::Delete(ignore_context_);
-      ignore_context_ = CreateStackTrace(0, 3);
+      StackTrace::Delete(ignore_context_[is_w]);
+      ignore_context_[is_w] = CreateStackTrace(0, 3);
     }
   }
-  bool ignore_all_accesses() { return ignore_all_accesses_; }
+  INLINE void set_ignore_all_accesses(bool on) {
+    set_ignore_accesses(false, on);
+    set_ignore_accesses(true, on);
+  }
 
-  StackTrace *GetLastIgnoreContext() {
-    return ignore_context_;
+  StackTrace *GetLastIgnoreContext(bool is_w) {
+    return ignore_context_[is_w];
   }
 
   SID sid() const {
@@ -4617,7 +4632,7 @@ struct Thread {
 
   INLINE bool HandleSblockEnter(uintptr_t pc, bool allow_slow_path) {
     DCHECK(G_flags->keep_history);
-    DCHECK(!this->ignore_all_accesses());
+    DCHECK(!this->ignore_reads() || !this->ignore_writes());
     if (!pc) return true;
 
     this->stats.events[SBLOCK_ENTER]++;
@@ -5077,8 +5092,14 @@ struct Thread {
   LSID   rd_lockset_;
   LSID   wr_lockset_;
 
-  int ignore_all_accesses_;
-  StackTrace *ignore_context_;
+  // These bits should be read in the hottest loop, so we combine them all
+  // together.
+  // bit 1 -- ignore reads.
+  // bit 2 -- ignore writes.
+  // bit 3 -- have expensive flags
+  int expensive_bits_;
+  int ignore_depth_[2];
+  StackTrace *ignore_context_[2];
 
   VTS *vts_at_exit_;
 
@@ -5911,7 +5932,8 @@ class Detector {
  public:
   void INLINE HandleTraceLoop(TraceInfo *t, Thread *thr, TID tid,
                               uintptr_t *tleb, size_t n,
-                              bool has_expensive_flags, bool need_locking) {
+                              int expensive_bits, bool need_locking) {
+    bool has_expensive_flags = (expensive_bits & 4) != 0;
     size_t i = 0;
     if (has_expensive_flags) {
       const size_t mop_stat_size = TS_ARRAY_SIZE(thr->stats.mops_per_trace);
@@ -5926,8 +5948,11 @@ class Detector {
       tleb[i] = 0;  // we've consumed this mop, clear it.
       DCHECK(mop->size != 0);
       DCHECK(mop->pc != 0);
+      bool is_w = mop->is_write;
+      if ((expensive_bits & 1) && is_w == false) continue;
+      if ((expensive_bits & 2) && is_w == true) continue;
       n_locks += HandleMemoryAccessInternal(tid, thr, &sblock_pc, mop->pc, addr, mop->size,
-                                 mop->is_write, has_expensive_flags,
+                                 is_w, has_expensive_flags,
                                  need_locking);
     } while (++i < n);
     if (has_expensive_flags) {
@@ -5946,14 +5971,18 @@ class Detector {
                           uintptr_t *tleb, bool need_locking) {
     TID tid(raw_tid);
     Thread *thr = Thread::Get(tid);
-    if (thr->ignore_all_accesses()) return;
     DCHECK(t);
     size_t n = t->n_mops();
     DCHECK(n);
-    if (g_has_expensive_flags) {
-      HandleTraceLoop(t, thr, tid, tleb, n, true, need_locking);
+    // 0 bit - ignore reads, 1 bit -- ignore writes, 
+    // 2 bit - has_expensive_flags.
+    int expensive_bits = thr->expensive_bits();
+
+    if (expensive_bits == 0) {
+      HandleTraceLoop(t, thr, tid, tleb, n, 0, need_locking);
     } else {
-      HandleTraceLoop(t, thr, tid, tleb, n, false, need_locking);
+      if ((expensive_bits & 3) == 3) return;  // everything is ignored.
+      HandleTraceLoop(t, thr, tid, tleb, n, expensive_bits, need_locking);
     }
   }
 
@@ -6349,7 +6378,7 @@ class Detector {
       e->Print();
     }
     Thread *thread = Thread::Get(TID(e->tid()));
-    thread->set_ignore_all_accesses(on);
+    thread->set_ignore_accesses(is_w, on);
   }
 
   // BENIGN_RACE
@@ -7063,7 +7092,7 @@ one_call:
     }
     DCHECK(size > 0);
     DCHECK(thr->is_running());
-    DCHECK(!thr->ignore_all_accesses());
+    DCHECK(!thr->ignore_reads() || !thr->ignore_writes());
 
     // We do not check and ignore stack now.
     // On unoptimized binaries this would give ~10% speedup if ignore_stack==true,
@@ -7381,12 +7410,18 @@ one_call:
     }
 
 
-    if (thr->ignore_all_accesses()) {
-      Report("WARNING: T%d ended while the 'ignore_all_accesses' bit is set\n",
-             tid.raw());
+    if (thr->ignore_reads() || thr->ignore_writes()) {
+      Report("WARNING: T%d ended while at least one 'ignore' bit is set: "
+             "ignore_wr=%d ignore_rd=%d\n", 
+             thr->ignore_reads(), thr->ignore_writes(), tid.raw());
       if (G_flags->debug_level >= 1) {
-        Report("Last ignore call was here: \n%s\n",
-               thr->GetLastIgnoreContext()->ToString().c_str());
+        for (int i = 0; i < 2; i++) {
+          StackTrace *context = thr->GetLastIgnoreContext(i);
+          if (context) {
+            Report("Last ignore_%s call was here: \n%s\n", i ? "wr" : "rd",
+               context->ToString().c_str());
+          }
+        }
       }
     }
     ShowProcSelfStatus();
@@ -7821,8 +7856,6 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   debug_happens_before = PhaseDebugIsOn("happens_before");
   debug_cache = PhaseDebugIsOn("cache");
   debug_race_verifier = PhaseDebugIsOn("race_verifier");
-
-  SetHasExpensiveFlags();
 }
 
 // -------- ThreadSanitizer ------------------ {{{1
@@ -8031,13 +8064,11 @@ extern "C" const char *ThreadSanitizerQuery(const char *query) {
     Report("INFO: trace-level=0\n");
     G_flags->trace_level = 0;
     debug_happens_before = false;
-    SetHasExpensiveFlags();
   }
   if (str == "trace-level=1") {
     Report("INFO: trace-level=1\n");
     G_flags->trace_level = 1;
     debug_happens_before = true;
-    SetHasExpensiveFlags();
   }
   return ret;
 }
