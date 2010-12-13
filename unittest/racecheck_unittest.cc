@@ -4081,25 +4081,73 @@ TEST(PositiveTests, HarmfulRaceInDtorA) {
 }  // namespace
 
 
-// test88: Test for ANNOTATE_IGNORE_WRITES_*{{{1
-namespace test88 {
-// a recey write annotated with ANNOTATE_IGNORE_WRITES_BEGIN/END.
-int     GLOB = 0;
-void Worker() {
+namespace AnnotateIgnoreTests {  // {{{1
+
+int racey_write = 0;
+
+void RaceyWriter() {
   ANNOTATE_IGNORE_WRITES_BEGIN();
-  GLOB = 1;
+  racey_write = 1;
   ANNOTATE_IGNORE_WRITES_END();
 }
-void Run() {
-  printf("test88: negative, test for ANNOTATE_IGNORE_WRITES_*\n");
-  MyThread t(Worker);
+
+TEST(NegativeTests, AnnotateIgnoreWritesTest) {
+  MyThread t(RaceyWriter);
   t.Start();
-  GLOB = 1;
+  racey_write = 1;
   t.Join();
-  printf("\tGLOB=%d\n", GLOB);
 }
-REGISTER_TEST(Run, 88)
-}  // namespace test88
+
+int racey_read = 0;
+
+void RaceyReader() {
+  ANNOTATE_IGNORE_READS_BEGIN();
+  CHECK(racey_read != 777);
+  ANNOTATE_IGNORE_READS_END();
+}
+
+TEST(NegativeTests, AnnotateIgnoreReadsTest) {
+  MyThread t(RaceyReader);
+  t.Start();
+  racey_read = 1;
+  t.Join();
+}
+
+int incorrectly_annotated_racey_write = 0;
+
+void IncorrectlyAnnotatedRaceyWriter() {
+  ANNOTATE_IGNORE_READS_BEGIN();
+  incorrectly_annotated_racey_write = 1;
+  ANNOTATE_IGNORE_READS_END();
+}
+
+TEST(PositiveTests, AnnotateIgnoreReadsOnWriteTest) {
+  ANNOTATE_EXPECT_RACE(&incorrectly_annotated_racey_write, "expected race");
+  MyThread t(IncorrectlyAnnotatedRaceyWriter);
+  t.Start();
+  incorrectly_annotated_racey_write = 1;
+  t.Join();
+  ANNOTATE_FLUSH_EXPECTED_RACES();
+}
+
+int incorrectly_annotated_racey_read = 0;
+
+void IncorrectlyAnnotatedRaceyReader() {
+  ANNOTATE_IGNORE_WRITES_BEGIN();
+  CHECK(incorrectly_annotated_racey_read != 777);
+  ANNOTATE_IGNORE_WRITES_END();
+}
+
+TEST(PositiveTests, AnnotateIgnoreWritesOnReadTest) {
+  ANNOTATE_EXPECT_RACE(&incorrectly_annotated_racey_read, "expected race");
+  MyThread t(IncorrectlyAnnotatedRaceyReader);
+  t.Start();
+  incorrectly_annotated_racey_read = 1;
+  t.Join();
+  ANNOTATE_FLUSH_EXPECTED_RACES();
+}
+
+}  // namespace
 
 
 // test89: Test for debug info. {{{1
