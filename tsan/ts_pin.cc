@@ -2221,6 +2221,31 @@ static void On_AnnotatePCQGet(THREADID tid, ADDRINT pc,
   DumpEvent(0, PCQ_GET, tid, pc, pcq, 0);
 }
 
+static void On_AnnotateRWLockCreate(THREADID tid, ADDRINT pc,
+                                    ADDRINT file, ADDRINT line,
+                                    ADDRINT lock) {
+  DumpEvent(0, LOCK_CREATE, tid, pc, lock, 0);
+}
+
+static void On_AnnotateRWLockDestroy(THREADID tid, ADDRINT pc,
+                                    ADDRINT file, ADDRINT line,
+                                    ADDRINT lock) {
+  DumpEvent(0, LOCK_DESTROY, tid, pc, lock, 0);
+}
+
+static void On_AnnotateRWLockAcquired(THREADID tid, ADDRINT pc,
+                                     ADDRINT file, ADDRINT line,
+                                     ADDRINT lock, ADDRINT is_w) {
+  DumpEvent(0, is_w ? WRITER_LOCK : READER_LOCK, tid, pc, lock, 0);
+}
+
+static void On_AnnotateRWLockReleased(THREADID tid, ADDRINT pc,
+                                     ADDRINT file, ADDRINT line,
+                                     ADDRINT lock, ADDRINT is_w) {
+  DumpEvent(0, UNLOCK, tid, pc, lock, 0);
+}
+
+
 int WRAP_NAME(RunningOnValgrind)(WRAP_PARAM4) {
   return 1;
 }
@@ -3102,6 +3127,11 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_BEFORE_3("AnnotatePCQDestroy", On_AnnotatePCQDestroy);
   INSERT_BEFORE_3("AnnotatePCQPut", On_AnnotatePCQPut);
   INSERT_BEFORE_3("AnnotatePCQGet", On_AnnotatePCQGet);
+
+  INSERT_BEFORE_3("AnnotateRWLockCreate", On_AnnotateRWLockCreate);
+  INSERT_BEFORE_3("AnnotateRWLockDestroy", On_AnnotateRWLockDestroy);
+  INSERT_BEFORE_4("AnnotateRWLockAcquired", On_AnnotateRWLockAcquired);
+  INSERT_BEFORE_4("AnnotateRWLockReleased", On_AnnotateRWLockReleased);
 
   // ThreadSanitizerQuery
   WrapFunc4(img, rtn, "ThreadSanitizerQuery",
