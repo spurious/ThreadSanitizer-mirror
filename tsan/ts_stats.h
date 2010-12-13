@@ -30,6 +30,7 @@
 #ifndef TS_STATS_
 #define TS_STATS_
 
+#include "dynamic_annotations.h"
 #include "ts_util.h"
 
 // Statistic counters for each thread.
@@ -61,6 +62,11 @@ struct ThreadLocalStats {
 struct Stats : private ThreadLocalStats {
   Stats() {
     memset(this, 0, sizeof(*this));
+    ANNOTATE_BENIGN_RACE(&vts_clone, "Race on vts_clone");
+    ANNOTATE_BENIGN_RACE(&ignore_below_cache_miss,
+                         "Race on ignore_below_cache_miss");
+    ANNOTATE_BENIGN_RACE_SIZED(msm_branch_count, sizeof(msm_branch_count),
+                               "Race on msm_branch_count[]");
   }
 
   void Add(const ThreadLocalStats &s) {

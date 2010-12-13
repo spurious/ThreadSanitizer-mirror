@@ -1739,7 +1739,7 @@ class Segment {
 
   static void AssertLive(SID sid, int line) {
     if (DEBUG_MODE) {
-      if (!(sid.raw() < n_segments_)) {
+      if (!(sid.raw() < ANNOTATE_UNPROTECTED_READ(n_segments_))) {
         Printf("Segment::AssertLive: failed on sid=%d n_segments = %dline=%d\n",
                sid.raw(), n_segments_, line);
       }
@@ -1782,7 +1782,7 @@ class Segment {
     return true;
   }
 
-  int32_t ref_count() const {return seg_ref_count_; }
+  int32_t ref_count() const {return ANNOTATE_UNPROTECTED_READ(seg_ref_count_); }
 
   static void INLINE Ref(SID sid, const char *where) {
     Segment *seg = GetInternal(sid);
@@ -1913,7 +1913,7 @@ class Segment {
   }
   static INLINE Segment *GetInternal(SID sid) {
     DCHECK(sid.valid());
-    DCHECK(sid.raw() < n_segments_);
+    DCHECK(sid.raw() < ANNOTATE_UNPROTECTED_READ(n_segments_));
     Segment *res = GetSegmentByIndex(sid.raw());
     return res;
   }
@@ -3179,6 +3179,8 @@ class Cache {
  public:
   Cache() {
     memset(lines_, '\0', sizeof(lines_));
+    ANNOTATE_BENIGN_RACE_SIZED(lines_, sizeof(lines_),
+                               "Cache::lines_ accessed without a lock");
     ForgetAllState(TID(0));
   }
 
@@ -3208,6 +3210,9 @@ class Cache {
                res, res->Empty(), res->tag(), cli, call_site);
       else
         Printf("TryAcquire tag=%lx cli=%d site=%d\n", tag, cli, call_site);
+    }
+    if ((DYNAMIC_ANNOTATIONS_ENABLED != 0) && res) {
+      ANNOTATE_HAPPENS_AFTER((void*)cli);
     }
     return res;
   }
@@ -3246,6 +3251,7 @@ class Cache {
     CacheLine **addr = &lines_[cli];
     DCHECK(*addr == TidMagic(tid));
     ReleaseStore((uintptr_t*)addr, (uintptr_t)line);
+    ANNOTATE_HAPPENS_BEFORE((void*)cli);
     if (DEBUG_MODE && debug_cache) {
       uintptr_t tag = CacheLine::ComputeTag(a);
       if (line)
@@ -4340,7 +4346,7 @@ struct Thread {
     return joined_tid;
   }
 
-  static int NumberOfThreads() { return n_threads_; }
+  static int NumberOfThreads() { return ANNOTATE_UNPROTECTED_READ(n_threads_); }
 
   static Thread *GetIfExists(TID tid) {
     if (tid.raw() < NumberOfThreads())
