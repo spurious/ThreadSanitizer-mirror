@@ -602,6 +602,8 @@ void *pthread_callback(void *arg) {
   assert(tid != 0);
   assert(INFO.tid != 0);
 
+  memset(INFO.TLEB, '\0', sizeof(INFO.TLEB));
+
   callback_arg *cb_arg = (callback_arg*)arg;
   pthread_worker *routine = cb_arg->routine;
   void *routine_arg = cb_arg->arg;
