@@ -1741,14 +1741,6 @@ void InsertBeforeEvent_Call(THREADID tid, ADDRINT pc, ADDRINT target,
 #endif
 }
 
-static void OnTraceNoMops(THREADID tid, ADDRINT sp) {
-  // TODO(kcc): remove this.
-  CHECK(0);
-  PinThread &t = g_pin_threads[tid];
-  UpdateCallStack(t, sp);
-  //G_stats->mops_per_trace[0]++;
-}
-
 static void OnTraceSerial(THREADID tid, ADDRINT sp, TraceInfo *trace_info,
     uintptr_t **tls_reg_p) {
   PinThread &t = g_pin_threads[tid];
@@ -2506,12 +2498,6 @@ void CallbackForTRACE(TRACE trace, void *v) {
                      IARG_THREAD_ID,
                      IARG_REG_VALUE, REG_STACK_PTR,
                      IARG_REG_REFERENCE, tls_reg,
-                     IARG_END);
-    } else if (0) { // TODO(kcc): remove this.
-      INS_InsertCall(head, IPOINT_BEFORE,
-                     (AFUNPTR)OnTraceNoMops,
-                     IARG_THREAD_ID,
-                     IARG_REG_VALUE, REG_STACK_PTR,
                      IARG_END);
     }
   }
