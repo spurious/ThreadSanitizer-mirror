@@ -54,6 +54,7 @@ struct ThreadLocalStats {
   uintptr_t history_uses_same_segment, history_creates_new_segment,
             history_reuses_segment, history_uses_preallocated_segment;
 
+  uintptr_t msm_branch_count[16];
 };
 
 // Statistic counters for the entire tool, including aggregated
@@ -271,7 +272,6 @@ struct Stats : private ThreadLocalStats {
   uintptr_t tleb_flush[10];
 
   uintptr_t ignore_below_cache_miss;
-  uintptr_t msm_branch_count[16];
 
   uintptr_t try_acquire_line_spin;
   uintptr_t futex_wait;

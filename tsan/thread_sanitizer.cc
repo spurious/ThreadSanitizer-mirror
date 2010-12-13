@@ -6669,7 +6669,7 @@ class Detector {
                                            TID tid, Thread *thr,
                                            ShadowValue *new_sval) {
 #define MSM_STAT(i) do { if (DEBUG_MODE) \
-  G_stats->msm_branch_count[i]++; } while(0)
+  thr->stats.msm_branch_count[i]++; } while(0)
     SSID rd_ssid = old_sval.rd_ssid();
     SSID wr_ssid = old_sval.wr_ssid();
     SID cur_sid = thr->sid();
