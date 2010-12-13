@@ -3211,7 +3211,7 @@ class Cache {
       else
         Printf("TryAcquire tag=%lx cli=%d site=%d\n", tag, cli, call_site);
     }
-    if ((DYNAMIC_ANNOTATIONS_ENABLED != 0) && res) {
+    if (res) {
       ANNOTATE_HAPPENS_AFTER((void*)cli);
     }
     return res;
