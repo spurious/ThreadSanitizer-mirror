@@ -324,9 +324,10 @@ void inline flush_trace() {
     // times. As a result the count of this block executions may be off by the
     // number of threads.
     // TODO(glider): no need to set trace->id
-    // if G_flags->literace_sampling == 0
+    // if G_flags->literace_sampling == 0.
     if (!trace->id_) {
       bb_unique_id = NoBarrier_AtomicIncrement(&bb_unique_id);
+      ANNOTATE_BENIGN_RACE(&trace->id_, "Race on trace->id");
       trace->id_ = bb_unique_id;
     }
 
@@ -484,9 +485,11 @@ bool initialize() {
   CHECK_IN_RTL();
   global_ignore = false;
   __real_atexit(finalize);
+  ANNOTATE_BENIGN_RACE(&bb_unique_id, "Race on bb_unique_id");
   RTL_INIT = 1;
   in_initialize = false;
   SPut(THR_START, 0, 0, 0, 0);
+
   return true;
 }
 
