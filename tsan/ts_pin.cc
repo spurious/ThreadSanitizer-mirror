@@ -67,7 +67,7 @@ namespace WINDOWS
 # error "Please don't define NDEBUG"
 #endif
 
-static void DumpEvent(EventType type, int32_t tid, uintptr_t pc,
+static void DumpEvent(CONTEXT *ctx, EventType type, int32_t tid, uintptr_t pc,
                       uintptr_t a, uintptr_t info);
 //------ Global PIN lock ------- {{{1
 class ScopedReentrantClientLock {
@@ -175,11 +175,11 @@ static unordered_set<pthread_t> *g_win_handles_which_are_threads;
 // TODO(kcc): do we need to handle these as a part of some TRACE?
 #define REPORT_READ_RANGE(x, size) do { \
   if (size && !g_pin_threads[tid].ignore_accesses) \
-    DumpEvent(READ, tid, pc, (uintptr_t)(x), (size)); } while(0)
+    DumpEvent(0, READ, tid, pc, (uintptr_t)(x), (size)); } while(0)
 
 #define REPORT_WRITE_RANGE(x, size) do { \
   if (size && !g_pin_threads[tid].ignore_accesses) \
-    DumpEvent(WRITE, tid, pc, (uintptr_t)(x), (size)); } while(0)
+    DumpEvent(0, WRITE, tid, pc, (uintptr_t)(x), (size)); } while(0)
 
 #define EXTRA_REPLACE_PARAMS THREADID tid, uintptr_t pc,
 #include "ts_replace.h"
@@ -559,13 +559,17 @@ static void TLEBAddGenericEventAndFlush(PinThread &t,
   DCHECK(t.tleb.size <= kThreadLocalEventBufferSize);
 }
 
+static void UpdateCallStack(PinThread &t, ADDRINT sp);
 
 // Must be called from its thread (except for THR_END case)!
-static void DumpEvent(EventType type, int32_t tid, uintptr_t pc,
+static void DumpEvent(CONTEXT *ctx, EventType type, int32_t tid, uintptr_t pc,
                       uintptr_t a, uintptr_t info) {
   if (!g_race_verifier_active ||
       (type == EXPECT_RACE || type == BENIGN_RACE)) {
     PinThread &t = g_pin_threads[tid];
+    if (ctx) {
+      UpdateCallStack(t, PIN_GetContextReg(ctx, REG_STACK_PTR));
+    }
     TLEBAddGenericEventAndFlush(t, type, pc, a, info);
   }
 }
@@ -858,7 +862,7 @@ void TmpCallback2(THREADID tid, ADDRINT pc) {
 
 //--------- Threads --------------------------------- {{{2
 static void HandleThreadCreateBefore(THREADID tid, ADDRINT pc) {
-  DumpEvent(THR_CREATE_BEFORE, tid, pc, 0, 0);
+  DumpEvent(0, THR_CREATE_BEFORE, tid, pc, 0, 0);
   g_thread_create_lock.Lock();
   IgnoreMopsBegin(tid);
   CHECK(g_tid_of_thread_which_called_create_thread == (THREADID)-1);
@@ -894,7 +898,7 @@ static THREADID HandleThreadCreateAfter(THREADID tid, pthread_t child_ptid) {
   IgnoreMopsEnd(tid);
   g_thread_create_lock.Unlock();
 
-  DumpEvent(THR_CREATE_AFTER, tid, 0, 0, uniq_tid_of_child);
+  DumpEvent(0, THR_CREATE_AFTER, tid, 0, 0, uniq_tid_of_child);
   return last_child_tid;
 }
 
@@ -1030,14 +1034,14 @@ static void Before_start_thread(THREADID tid, ADDRINT pc, ADDRINT sp) {
       if (debug_thread) {
         Printf("T%d found stack: %p size=%p\n", tid, prev, val);
       }
-      DumpEvent(THR_STACK_TOP, tid, pc, prev + val, val);
+      DumpEvent(0, THR_STACK_TOP, tid, pc, prev + val, val);
       return;
     }
     prev = val;
   }
   // The hack above does not always works. (TODO(kcc)). Do something.
   Printf("WARNING: ThreadSanitizerPin is guessing stack size for T%d\n", tid);
-  DumpEvent(THR_STACK_TOP, tid, pc, sp, t.thread_stack_size_if_known);
+  DumpEvent(0, THR_STACK_TOP, tid, pc, sp, t.thread_stack_size_if_known);
 }
 
 #ifdef _MSC_VER
@@ -1077,7 +1081,7 @@ static void Before_BaseThreadInitThunk(THREADID tid, ADDRINT pc, ADDRINT sp) {
     CHECK(t.ignore_accesses == 0);
   }
   */
-  DumpEvent(THR_STACK_TOP, tid, pc, sp, stack_size);
+  DumpEvent(0, THR_STACK_TOP, tid, pc, sp, stack_size);
 }
 
 static void Before_RtlExitUserThread(THREADID tid, ADDRINT pc) {
@@ -1145,10 +1149,10 @@ static bool HandleThreadJoinAfter(THREADID tid, pthread_t joined_ptid) {
 
   // Here we send an event for a different thread (joined_tid), which is already
   // dead.
-  DumpEvent(THR_END, joined_tid, 0, 0, 0);
+  DumpEvent(0, THR_END, joined_tid, 0, 0, 0);
 
 
-  DumpEvent(THR_JOIN_AFTER, tid, 0, joined_uniq_tid, 0);
+  DumpEvent(0, THR_JOIN_AFTER, tid, 0, joined_uniq_tid, 0);
   return true;
 }
 
@@ -1285,7 +1289,7 @@ uintptr_t CallStdCallFun7(CONTEXT *ctx, THREADID tid,
 
 uintptr_t WRAP_NAME(RtlInitializeCriticalSection)(WRAP_PARAM4) {
 //  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
-  DumpEvent(LOCK_CREATE, tid, pc, arg0, 0);
+  DumpEvent(ctx, LOCK_CREATE, tid, pc, arg0, 0);
   IgnoreSyncAndMopsBegin(tid);
   uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
   IgnoreSyncAndMopsEnd(tid);
@@ -1293,7 +1297,7 @@ uintptr_t WRAP_NAME(RtlInitializeCriticalSection)(WRAP_PARAM4) {
 }
 uintptr_t WRAP_NAME(RtlInitializeCriticalSectionAndSpinCount)(WRAP_PARAM4) {
 //  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
-  DumpEvent(LOCK_CREATE, tid, pc, arg0, 0);
+  DumpEvent(ctx, LOCK_CREATE, tid, pc, arg0, 0);
   IgnoreSyncAndMopsBegin(tid);
   uintptr_t ret = CallStdCallFun2(ctx, tid, f, arg0, arg1);
   IgnoreSyncAndMopsEnd(tid);
@@ -1301,7 +1305,7 @@ uintptr_t WRAP_NAME(RtlInitializeCriticalSectionAndSpinCount)(WRAP_PARAM4) {
 }
 uintptr_t WRAP_NAME(RtlInitializeCriticalSectionEx)(WRAP_PARAM4) {
 //  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
-  DumpEvent(LOCK_CREATE, tid, pc, arg0, 0);
+  DumpEvent(ctx, LOCK_CREATE, tid, pc, arg0, 0);
   IgnoreSyncAndMopsBegin(tid);
   uintptr_t ret = CallStdCallFun3(ctx, tid, f, arg0, arg1, arg2);
   IgnoreSyncAndMopsEnd(tid);
@@ -1309,7 +1313,7 @@ uintptr_t WRAP_NAME(RtlInitializeCriticalSectionEx)(WRAP_PARAM4) {
 }
 uintptr_t WRAP_NAME(RtlDeleteCriticalSection)(WRAP_PARAM4) {
 //  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
-  DumpEvent(LOCK_DESTROY, tid, pc, arg0, 0);
+  DumpEvent(ctx, LOCK_DESTROY, tid, pc, arg0, 0);
   IgnoreSyncAndMopsBegin(tid);
   uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
   IgnoreSyncAndMopsEnd(tid);
@@ -1318,20 +1322,20 @@ uintptr_t WRAP_NAME(RtlDeleteCriticalSection)(WRAP_PARAM4) {
 uintptr_t WRAP_NAME(RtlEnterCriticalSection)(WRAP_PARAM4) {
 //  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
   uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
-  DumpEvent(WRITER_LOCK, tid, pc, arg0, 0);
+  DumpEvent(ctx, WRITER_LOCK, tid, pc, arg0, 0);
   return ret;
 }
 uintptr_t WRAP_NAME(RtlTryEnterCriticalSection)(WRAP_PARAM4) {
   // Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+5, arg0);
   uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
   if (ret) {
-    DumpEvent(WRITER_LOCK, tid, pc, arg0, 0);
+    DumpEvent(ctx, WRITER_LOCK, tid, pc, arg0, 0);
   }
   return ret;
 }
 uintptr_t WRAP_NAME(RtlLeaveCriticalSection)(WRAP_PARAM4) {
 //  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
-  DumpEvent(UNLOCK, tid, pc, arg0, 0);
+  DumpEvent(ctx, UNLOCK, tid, pc, arg0, 0);
   return CallStdCallFun1(ctx, tid, f, arg0);
 }
 
@@ -1343,7 +1347,7 @@ uintptr_t WRAP_NAME(DuplicateHandle)(WRAP_PARAM8) {
 
 uintptr_t WRAP_NAME(SetEvent)(WRAP_PARAM4) {
   //Printf("T%d before pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
-  DumpEvent(SIGNAL, tid, pc, arg0, 0);
+  DumpEvent(ctx, SIGNAL, tid, pc, arg0, 0);
   uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
   //Printf("T%d after pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
   return ret;
@@ -1367,12 +1371,12 @@ uintptr_t WRAP_NAME(CreateSemaphoreW)(WRAP_PARAM4) {
 }
 
 uintptr_t WRAP_NAME(ReleaseSemaphore)(WRAP_PARAM4) {
-  DumpEvent(SIGNAL, tid, pc, arg0, 0);
+  DumpEvent(ctx, SIGNAL, tid, pc, arg0, 0);
   return CallStdCallFun3(ctx, tid, f, arg0, arg1, arg2);
 }
 
 uintptr_t WRAP_NAME(RtlInterlockedPushEntrySList)(WRAP_PARAM4) {
-  DumpEvent(SIGNAL, tid, pc, arg1, 0);
+  DumpEvent(ctx, SIGNAL, tid, pc, arg1, 0);
   uintptr_t ret = CallStdCallFun2(ctx, tid, f, arg0, arg1);
   // Printf("T%d %s list=%p item=%p\n", tid, __FUNCTION__, arg0, arg1);
   return ret;
@@ -1382,26 +1386,26 @@ uintptr_t WRAP_NAME(RtlInterlockedPopEntrySList)(WRAP_PARAM4) {
   uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
   // Printf("T%d %s list=%p item=%p\n", tid, __FUNCTION__, arg0, ret);
   if (ret) {
-    DumpEvent(WAIT, tid, pc, ret, 0);
+    DumpEvent(ctx, WAIT, tid, pc, ret, 0);
   }
   return ret;
 }
 
 uintptr_t WRAP_NAME(RtlAcquireSRWLockExclusive)(WRAP_PARAM4) {
   uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
-  DumpEvent(WRITER_LOCK, tid, pc, arg0, 0);
+  DumpEvent(ctx, WRITER_LOCK, tid, pc, arg0, 0);
   return ret;
 }
 uintptr_t WRAP_NAME(RtlAcquireSRWLockShared)(WRAP_PARAM4) {
   uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
-  DumpEvent(READER_LOCK, tid, pc, arg0, 0);
+  DumpEvent(ctx, READER_LOCK, tid, pc, arg0, 0);
   return ret;
 }
 uintptr_t WRAP_NAME(RtlTryAcquireSRWLockExclusive)(WRAP_PARAM4) {
   // Printf("T%d %s %p\n", tid, __FUNCTION__, arg0);
   uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
   if (ret & 0xFF) {  // Looks like this syscall return value is just 1 byte.
-    DumpEvent(WRITER_LOCK, tid, pc, arg0, 0);
+    DumpEvent(ctx, WRITER_LOCK, tid, pc, arg0, 0);
   }
   return ret;
 }
@@ -1409,38 +1413,38 @@ uintptr_t WRAP_NAME(RtlTryAcquireSRWLockShared)(WRAP_PARAM4) {
   // Printf("T%d %s %p\n", tid, __FUNCTION__, arg0);
   uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
   if (ret & 0xFF) {  // Looks like this syscall return value is just 1 byte.
-    DumpEvent(READER_LOCK, tid, pc, arg0, 0);
+    DumpEvent(ctx, READER_LOCK, tid, pc, arg0, 0);
   }
   return ret;
 }
 uintptr_t WRAP_NAME(RtlReleaseSRWLockExclusive)(WRAP_PARAM4) {
   // Printf("T%d %s %p\n", tid, __FUNCTION__, arg0);
-  DumpEvent(UNLOCK, tid, pc, arg0, 0);
+  DumpEvent(ctx, UNLOCK, tid, pc, arg0, 0);
   uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
   return ret;
 }
 uintptr_t WRAP_NAME(RtlReleaseSRWLockShared)(WRAP_PARAM4) {
   // Printf("T%d %s %p\n", tid, __FUNCTION__, arg0);
-  DumpEvent(UNLOCK, tid, pc, arg0, 0);
+  DumpEvent(ctx, UNLOCK, tid, pc, arg0, 0);
   uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
   return ret;
 }
 uintptr_t WRAP_NAME(RtlInitializeSRWLock)(WRAP_PARAM4) {
   // Printf("T%d %s %p\n", tid, __FUNCTION__, arg0);
-  DumpEvent(LOCK_CREATE, tid, pc, arg0, 0);
+  DumpEvent(ctx, LOCK_CREATE, tid, pc, arg0, 0);
   uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
   return ret;
 }
 
 uintptr_t WRAP_NAME(RtlWakeConditionVariable)(WRAP_PARAM4) {
   // Printf("T%d %s arg0=%p\n", tid, __FUNCTION__, arg0);
-  DumpEvent(SIGNAL, tid, pc, arg0, 0);
+  DumpEvent(ctx, SIGNAL, tid, pc, arg0, 0);
   uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
   return ret;
 }
 uintptr_t WRAP_NAME(RtlWakeAllConditionVariable)(WRAP_PARAM4) {
   // Printf("T%d %s arg0=%p\n", tid, __FUNCTION__, arg0);
-  DumpEvent(SIGNAL, tid, pc, arg0, 0);
+  DumpEvent(ctx, SIGNAL, tid, pc, arg0, 0);
   uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
   return ret;
 }
@@ -1449,7 +1453,7 @@ uintptr_t WRAP_NAME(RtlSleepConditionVariableSRW)(WRAP_PARAM4) {
   // Rtl{Acquire,Release}SRW... calls itself!
   uintptr_t ret = CallStdCallFun4(ctx, tid, f, arg0, arg1, arg2, arg3);
   if ((ret & 0xFF) == 0)
-    DumpEvent(WAIT, tid, pc, arg0, 0);
+    DumpEvent(ctx, WAIT, tid, pc, arg0, 0);
   // Printf("T%d %s arg0=%p arg1=%p; ret=%d\n", tid, __FUNCTION__, arg0, arg1, ret);
   return ret;
 }
@@ -1457,7 +1461,7 @@ uintptr_t WRAP_NAME(RtlSleepConditionVariableCS)(WRAP_PARAM4) {
   // TODO(timurrrr): do we need unlock/lock?
   uintptr_t ret = CallStdCallFun3(ctx, tid, f, arg0, arg1, arg2);
   if ((ret & 0xFF) == 0)
-    DumpEvent(WAIT, tid, pc, arg0, 0);
+    DumpEvent(ctx, WAIT, tid, pc, arg0, 0);
   // Printf("T%d %s arg0=%p arg1=%p; ret=%d\n", tid, __FUNCTION__, arg0, arg1, ret);
   return ret;
 }
@@ -1465,7 +1469,7 @@ uintptr_t WRAP_NAME(RtlSleepConditionVariableCS)(WRAP_PARAM4) {
 uintptr_t WRAP_NAME(RtlQueueWorkItem)(WRAP_PARAM4) {
   // Printf("T%d %s arg0=%p arg1=%p; arg2=%d\n", tid, __FUNCTION__, arg0, arg1, arg2);
   g_windows_thread_pool_calback_set->insert(arg0);
-  DumpEvent(SIGNAL, tid, pc, arg0, 0);
+  DumpEvent(ctx, SIGNAL, tid, pc, arg0, 0);
   uintptr_t ret = CallStdCallFun3(ctx, tid, f, arg0, arg1, arg2);
   return ret;
 }
@@ -1473,7 +1477,7 @@ uintptr_t WRAP_NAME(RtlQueueWorkItem)(WRAP_PARAM4) {
 uintptr_t WRAP_NAME(RegisterWaitForSingleObject)(WRAP_PARAM6) {
   // Printf("T%d %s arg0=%p arg2=%p\n", tid, __FUNCTION__, arg0, arg2);
   g_windows_thread_pool_calback_set->insert(arg2);
-  DumpEvent(SIGNAL, tid, pc, arg2, 0);
+  DumpEvent(ctx, SIGNAL, tid, pc, arg2, 0);
   uintptr_t ret = CallStdCallFun6(ctx, tid, f, arg0, arg1, arg2, arg3, arg4, arg5);
   if (ret) {
     uintptr_t wait_object = *(uintptr_t*)arg0;
@@ -1489,7 +1493,7 @@ uintptr_t WRAP_NAME(UnregisterWaitEx)(WRAP_PARAM4) {
   // Printf("T%d %s arg0=%p obj=%p\n", tid, __FUNCTION__, arg0, obj);
   uintptr_t ret = CallStdCallFun2(ctx, tid, f, arg0, arg1);
   if (ret) {
-    DumpEvent(WAIT, tid, pc, obj, 0);
+    DumpEvent(ctx, WAIT, tid, pc, obj, 0);
   }
   return ret;
 }
@@ -1504,7 +1508,7 @@ uintptr_t WRAP_NAME(GlobalAlloc)(WRAP_PARAM4) {
   uintptr_t ret = CallStdCallFun2(ctx, tid, f, arg0, arg1);
   // Printf("T%d %s(%p %p)=%p\n", tid, __FUNCTION__, arg0, arg1, ret);
   if (ret != 0) {
-    DumpEvent(MALLOC, tid, pc, ret, arg1);
+    DumpEvent(ctx, MALLOC, tid, pc, ret, arg1);
   }
   return ret;
 }
@@ -1514,7 +1518,7 @@ uintptr_t WRAP_NAME(ZwAllocateVirtualMemory)(WRAP_PARAM6) {
   uintptr_t ret = CallStdCallFun6(ctx, tid, f, arg0, arg1, arg2, arg3, arg4, arg5);
   // Printf("T%d <<%s(%p %p) = %p\n", tid, __FUNCTION__, *(void**)arg1, *(void**)arg3, ret);
   if (ret == 0) {
-    DumpEvent(MALLOC, tid, pc, *(uintptr_t*)arg1, *(uintptr_t*)arg3);
+    DumpEvent(ctx, MALLOC, tid, pc, *(uintptr_t*)arg1, *(uintptr_t*)arg3);
   }
   return ret;
 }
@@ -1523,7 +1527,7 @@ uintptr_t WRAP_NAME(AllocateHeap)(WRAP_PARAM4) {
   uintptr_t ret = CallStdCallFun3(ctx, tid, f, arg0, arg1, arg2);
   // Printf("T%d RtlAllocateHeap(%p %p %p)=%p\n", tid, arg0, arg1, arg2, ret);
   if (ret != 0) {
-    DumpEvent(MALLOC, tid, pc, ret, arg3);
+    DumpEvent(ctx, MALLOC, tid, pc, ret, arg3);
   }
   return ret;
 }
@@ -1559,7 +1563,7 @@ uintptr_t WRAP_NAME(WaitForSingleObjectEx)(WRAP_PARAM4) {
     }
     if (is_thread_handle)
       HandleThreadJoinAfter(tid, arg0);
-    DumpEvent(WAIT, tid, pc, arg0, 0);
+    DumpEvent(ctx, WAIT, tid, pc, arg0, 0);
   }
 
   return ret;
@@ -1599,7 +1603,7 @@ uintptr_t WRAP_NAME(WaitForMultipleObjectsEx)(WRAP_PARAM6) {
       }
       if (is_thread_handle)
         HandleThreadJoinAfter(tid, handle);
-      DumpEvent(WAIT, tid, pc, handle, 0);
+      DumpEvent(ctx, WAIT, tid, pc, handle, 0);
     }
   }
 
@@ -1624,7 +1628,7 @@ uintptr_t WRAP_NAME(mmap)(WRAP_PARAM6) {
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_6();
 
   if (ret != (ADDRINT)-1L) {
-    DumpEvent(MMAP, tid, pc, ret, arg1);
+    DumpEvent(ctx, MMAP, tid, pc, ret, arg1);
   }
 
   return ret;
@@ -1635,7 +1639,7 @@ uintptr_t WRAP_NAME(munmap)(WRAP_PARAM4) {
   TLEBFlushLocked(t);
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
   if (ret != (uintptr_t)-1L) {
-    DumpEvent(MUNMAP, tid, pc, arg0, arg1);
+    DumpEvent(ctx, MUNMAP, tid, pc, arg0, arg1);
   }
   return ret;
 }
@@ -1645,7 +1649,7 @@ uintptr_t WRAP_NAME(malloc)(WRAP_PARAM4) {
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
   IgnoreSyncAndMopsEnd(tid);
 
-  DumpEvent(MALLOC, tid, pc, ret, arg0);
+  DumpEvent(ctx, MALLOC, tid, pc, ret, arg0);
   return ret;
 }
 
@@ -1657,7 +1661,7 @@ uintptr_t WRAP_NAME(realloc)(WRAP_PARAM4) {
   IgnoreSyncAndMopsEnd(tid);
 
   // TODO: handle FREE? We don't do it in Valgrind right now.
-  DumpEvent(MALLOC, tid, pc, ret, arg1);
+  DumpEvent(ctx, MALLOC, tid, pc, ret, arg1);
   return ret;
 }
 
@@ -1666,12 +1670,12 @@ uintptr_t WRAP_NAME(calloc)(WRAP_PARAM4) {
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
   IgnoreSyncAndMopsEnd(tid);
 
-  DumpEvent(MALLOC, tid, pc, ret, arg0*arg1);
+  DumpEvent(ctx, MALLOC, tid, pc, ret, arg0*arg1);
   return ret;
 }
 
 uintptr_t WRAP_NAME(free)(WRAP_PARAM4) {
-  DumpEvent(FREE, tid, pc, arg0, 0);
+  DumpEvent(ctx, FREE, tid, pc, arg0, 0);
 
   IgnoreSyncAndMopsBegin(tid);
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
@@ -1691,7 +1695,7 @@ static INLINE void UpdateCallStack(PinThread &t, ADDRINT sp) {
     // h-b edge from here to UnregisterWaitEx.
     CHECK(g_windows_thread_pool_calback_set);
     if (g_windows_thread_pool_calback_set->count(popped_pc)) {
-      DumpEvent(SIGNAL, t.tid, 0, popped_pc, 0);
+      DumpEvent(0, SIGNAL, t.tid, 0, popped_pc, 0);
       // Printf("T%d ret %p\n", t.tid, popped_pc);
     }
 #endif
@@ -1732,13 +1736,14 @@ void InsertBeforeEvent_Call(THREADID tid, ADDRINT pc, ADDRINT target,
   // h-b edge from RtlQueueWorkItem to here.
   CHECK(g_windows_thread_pool_calback_set);
   if (g_windows_thread_pool_calback_set->count(target)) {
-    DumpEvent(WAIT, tid, pc, target, 0);
+    DumpEvent(0, WAIT, tid, pc, target, 0);
   }
 #endif
 }
 
 static void OnTraceNoMops(THREADID tid, ADDRINT sp) {
-  // TODO(kcc): do we really need it?
+  // TODO(kcc): remove this.
+  CHECK(0);
   PinThread &t = g_pin_threads[tid];
   UpdateCallStack(t, sp);
   //G_stats->mops_per_trace[0]++;
@@ -1885,32 +1890,32 @@ static void OnMopCheckIdentStoreAfter(uintptr_t *addr, THREADID tid, ADDRINT idx
 static const uintptr_t kIOMagic = 0x1234c678;
 
 static void Before_SignallingIOCall(THREADID tid, ADDRINT pc) {
-  DumpEvent(SIGNAL, tid, pc, kIOMagic, 0);
+  DumpEvent(0, SIGNAL, tid, pc, kIOMagic, 0);
 }
 
 static void After_WaitingIOCall(THREADID tid, ADDRINT pc) {
-  DumpEvent(WAIT, tid, pc, kIOMagic, 0);
+  DumpEvent(0, WAIT, tid, pc, kIOMagic, 0);
 }
 
 static const uintptr_t kAtexitMagic = 0x9876f432;
 
 static void On_atexit(THREADID tid, ADDRINT pc) {
-  DumpEvent(SIGNAL, tid, pc, kAtexitMagic, 0);
+  DumpEvent(0, SIGNAL, tid, pc, kAtexitMagic, 0);
 }
 
 static void On_exit(THREADID tid, ADDRINT pc) {
-  DumpEvent(WAIT, tid, pc, kAtexitMagic, 0);
+  DumpEvent(0, WAIT, tid, pc, kAtexitMagic, 0);
 }
 
 //---------- Synchronization -------------------------- {{{2
 // locks
 static void Before_pthread_unlock(THREADID tid, ADDRINT pc, ADDRINT mu) {
-  DumpEvent(UNLOCK, tid, pc, mu, 0);
+  DumpEvent(0, UNLOCK, tid, pc, mu, 0);
 }
 
 static uintptr_t WRAP_NAME(pthread_mutex_lock)(WRAP_PARAM4) {
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
-  DumpEvent(WRITER_LOCK, tid, pc, arg0, 0);
+  DumpEvent(ctx, WRITER_LOCK, tid, pc, arg0, 0);
   return ret;
 }
 
@@ -1934,49 +1939,49 @@ static uintptr_t WRAP_NAME(pthread_spin_lock)(WRAP_PARAM4) {
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
   t.spin_lock_recursion_depth--;
   if (t.spin_lock_recursion_depth == 0) {
-    DumpEvent(WRITER_LOCK, tid, pc, arg0, 0);
+    DumpEvent(ctx, WRITER_LOCK, tid, pc, arg0, 0);
   }
   return ret;
 }
 
 static uintptr_t WRAP_NAME(pthread_rwlock_wrlock)(WRAP_PARAM4) {
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
-  DumpEvent(WRITER_LOCK, tid, pc, arg0, 0);
+  DumpEvent(ctx, WRITER_LOCK, tid, pc, arg0, 0);
   return ret;
 }
 
 static uintptr_t WRAP_NAME(pthread_rwlock_rdlock)(WRAP_PARAM4) {
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
-  DumpEvent(READER_LOCK, tid, pc, arg0, 0);
+  DumpEvent(ctx, READER_LOCK, tid, pc, arg0, 0);
   return ret;
 }
 
 static uintptr_t WRAP_NAME(pthread_mutex_trylock)(WRAP_PARAM4) {
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
   if (ret == 0)
-    DumpEvent(WRITER_LOCK, tid, pc, arg0, 0);
+    DumpEvent(ctx, WRITER_LOCK, tid, pc, arg0, 0);
   return ret;
 }
 
 static uintptr_t WRAP_NAME(pthread_spin_trylock)(WRAP_PARAM4) {
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
   if (ret == 0)
-    DumpEvent(WRITER_LOCK, tid, pc, arg0, 0);
+    DumpEvent(ctx, WRITER_LOCK, tid, pc, arg0, 0);
   return ret;
 }
 
 static uintptr_t WRAP_NAME(pthread_spin_init)(WRAP_PARAM4) {
-  DumpEvent(UNLOCK_OR_INIT, tid, pc, arg0, 0);
+  DumpEvent(ctx, UNLOCK_OR_INIT, tid, pc, arg0, 0);
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
   return ret;
 }
 static uintptr_t WRAP_NAME(pthread_spin_destroy)(WRAP_PARAM4) {
-  DumpEvent(LOCK_DESTROY, tid, pc, arg0, 0);
+  DumpEvent(ctx, LOCK_DESTROY, tid, pc, arg0, 0);
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
   return ret;
 }
 static uintptr_t WRAP_NAME(pthread_spin_unlock)(WRAP_PARAM4) {
-  DumpEvent(UNLOCK_OR_INIT, tid, pc, arg0, 0);
+  DumpEvent(ctx, UNLOCK_OR_INIT, tid, pc, arg0, 0);
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
   return ret;
 }
@@ -1984,86 +1989,86 @@ static uintptr_t WRAP_NAME(pthread_spin_unlock)(WRAP_PARAM4) {
 static uintptr_t WRAP_NAME(pthread_rwlock_trywrlock)(WRAP_PARAM4) {
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
   if (ret == 0)
-    DumpEvent(WRITER_LOCK, tid, pc, arg0, 0);
+    DumpEvent(ctx, WRITER_LOCK, tid, pc, arg0, 0);
   return ret;
 }
 
 static uintptr_t WRAP_NAME(pthread_rwlock_tryrdlock)(WRAP_PARAM4) {
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
   if (ret == 0)
-    DumpEvent(READER_LOCK, tid, pc, arg0, 0);
+    DumpEvent(ctx, READER_LOCK, tid, pc, arg0, 0);
   return ret;
 }
 
 
 static void Before_pthread_mutex_init(THREADID tid, ADDRINT pc, ADDRINT mu) {
-  DumpEvent(LOCK_CREATE, tid, pc, mu, 0);
+  DumpEvent(0, LOCK_CREATE, tid, pc, mu, 0);
 }
 static void Before_pthread_rwlock_init(THREADID tid, ADDRINT pc, ADDRINT mu) {
-  DumpEvent(LOCK_CREATE, tid, pc, mu, 0);
+  DumpEvent(0, LOCK_CREATE, tid, pc, mu, 0);
 }
 
 static void Before_pthread_mutex_destroy(THREADID tid, ADDRINT pc, ADDRINT mu) {
-  DumpEvent(LOCK_DESTROY, tid, pc, mu, 0);
+  DumpEvent(0, LOCK_DESTROY, tid, pc, mu, 0);
 }
 static void Before_pthread_rwlock_destroy(THREADID tid, ADDRINT pc, ADDRINT mu) {
-  DumpEvent(LOCK_DESTROY, tid, pc, mu, 0);
+  DumpEvent(0, LOCK_DESTROY, tid, pc, mu, 0);
 }
 
 // barrier
 static uintptr_t WRAP_NAME(pthread_barrier_init)(WRAP_PARAM4) {
-  DumpEvent(CYCLIC_BARRIER_INIT, tid, pc, arg0, arg2);
+  DumpEvent(ctx, CYCLIC_BARRIER_INIT, tid, pc, arg0, arg2);
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
   return ret;
 }
 static uintptr_t WRAP_NAME(pthread_barrier_wait)(WRAP_PARAM4) {
-  DumpEvent(CYCLIC_BARRIER_WAIT_BEFORE, tid, pc, arg0, 0);
+  DumpEvent(ctx, CYCLIC_BARRIER_WAIT_BEFORE, tid, pc, arg0, 0);
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
-  DumpEvent(CYCLIC_BARRIER_WAIT_AFTER, tid, pc, arg0, 0);
+  DumpEvent(ctx, CYCLIC_BARRIER_WAIT_AFTER, tid, pc, arg0, 0);
   return ret;
 }
 
 
 // condvar
 static void Before_pthread_cond_signal(THREADID tid, ADDRINT pc, ADDRINT cv) {
-  DumpEvent(SIGNAL, tid, pc, cv, 0);
+  DumpEvent(0, SIGNAL, tid, pc, cv, 0);
 }
 
 static uintptr_t WRAP_NAME(pthread_cond_wait)(WRAP_PARAM4) {
-  DumpEvent(UNLOCK, tid, pc, arg1, 0);
+  DumpEvent(ctx, UNLOCK, tid, pc, arg1, 0);
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
-  DumpEvent(WAIT, tid, pc, arg0, 0);
-  DumpEvent(WRITER_LOCK, tid, pc, arg1, 0);
+  DumpEvent(ctx, WAIT, tid, pc, arg0, 0);
+  DumpEvent(ctx, WRITER_LOCK, tid, pc, arg1, 0);
   return ret;
 }
 static uintptr_t WRAP_NAME(pthread_cond_timedwait)(WRAP_PARAM4) {
-  DumpEvent(UNLOCK, tid, pc, arg1, 0);
+  DumpEvent(ctx, UNLOCK, tid, pc, arg1, 0);
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
   if (ret == 0) {
-    DumpEvent(WAIT, tid, pc, arg0, 0);
+    DumpEvent(ctx, WAIT, tid, pc, arg0, 0);
   }
-  DumpEvent(WRITER_LOCK, tid, pc, arg1, 0);
+  DumpEvent(ctx, WRITER_LOCK, tid, pc, arg1, 0);
   return ret;
 }
 
 // sem
 static void After_sem_open(THREADID tid, ADDRINT pc, ADDRINT ret) {
   // TODO(kcc): need to handle it more precise?
-  DumpEvent(SIGNAL, tid, pc, ret, 0);
+  DumpEvent(0, SIGNAL, tid, pc, ret, 0);
 }
 static void Before_sem_post(THREADID tid, ADDRINT pc, ADDRINT sem) {
-  DumpEvent(SIGNAL, tid, pc, sem, 0);
+  DumpEvent(0, SIGNAL, tid, pc, sem, 0);
 }
 
 static uintptr_t WRAP_NAME(sem_wait)(WRAP_PARAM4) {
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
-  DumpEvent(WAIT, tid, pc, arg0, 0);
+  DumpEvent(ctx, WAIT, tid, pc, arg0, 0);
   return ret;
 }
 static uintptr_t WRAP_NAME(sem_trywait)(WRAP_PARAM4) {
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
   if (ret == 0) {
-    DumpEvent(WAIT, tid, pc, arg0, 0);
+    DumpEvent(ctx, WAIT, tid, pc, arg0, 0);
   }
   return ret;
 }
@@ -2074,12 +2079,12 @@ uintptr_t WRAP_NAME(lockf)(WRAP_PARAM4) {
   const long offset_magic = 0xFEB0ACC0;
 
   if (arg1 == F_ULOCK)
-    DumpEvent(UNLOCK, tid, pc, arg0 ^ offset_magic, 0);
+    DumpEvent(ctx, UNLOCK, tid, pc, arg0 ^ offset_magic, 0);
 
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
 
   if (arg1 == F_LOCK && ret == 0)
-    DumpEvent(WRITER_LOCK, tid, pc, arg0 ^ offset_magic, 0);
+    DumpEvent(ctx, WRITER_LOCK, tid, pc, arg0 ^ offset_magic, 0);
 
   return ret;
 }
@@ -2089,59 +2094,59 @@ uintptr_t WRAP_NAME(lockf)(WRAP_PARAM4) {
 static void On_AnnotateBenignRace(THREADID tid, ADDRINT pc,
                                   ADDRINT file, ADDRINT line,
                                   ADDRINT a, ADDRINT descr) {
-  DumpEvent(BENIGN_RACE, tid, descr, a, 1);
+  DumpEvent(0, BENIGN_RACE, tid, descr, a, 1);
 }
 
 static void On_AnnotateBenignRaceSized(THREADID tid, ADDRINT pc,
                                        ADDRINT file, ADDRINT line,
                                        ADDRINT a, ADDRINT size, ADDRINT descr) {
-  DumpEvent(BENIGN_RACE, tid, descr, a, size);
+  DumpEvent(0, BENIGN_RACE, tid, descr, a, size);
 }
 
 static void On_AnnotateExpectRace(THREADID tid, ADDRINT pc,
                                   ADDRINT file, ADDRINT line,
                                   ADDRINT a, ADDRINT descr) {
-  DumpEvent(EXPECT_RACE, tid, descr, a, 1);
+  DumpEvent(0, EXPECT_RACE, tid, descr, a, 1);
 }
 
 static void On_AnnotateFlushExpectedRaces(THREADID tid, ADDRINT pc,
                                   ADDRINT file, ADDRINT line) {
-  DumpEvent(FLUSH_EXPECTED_RACES, 0, 0, 0, 0);
+  DumpEvent(0, FLUSH_EXPECTED_RACES, 0, 0, 0, 0);
 }
 
 
 static void On_AnnotateTraceMemory(THREADID tid, ADDRINT pc,
                                    ADDRINT file, ADDRINT line,
                                    ADDRINT a) {
-  DumpEvent(TRACE_MEM, tid, pc, a, 0);
+  DumpEvent(0, TRACE_MEM, tid, pc, a, 0);
 }
 
 static void On_AnnotateNewMemory(THREADID tid, ADDRINT pc,
                                    ADDRINT file, ADDRINT line,
                                    ADDRINT a, ADDRINT size) {
-  DumpEvent(MALLOC, tid, pc, a, size);
+  DumpEvent(0, MALLOC, tid, pc, a, size);
 }
 
 static void On_AnnotateNoOp(THREADID tid, ADDRINT pc,
                             ADDRINT file, ADDRINT line, ADDRINT a) {
   Printf("%s T%d: %s:%d %p\n", __FUNCTION__, tid, (char*)file, (int)line, a);
-  //DumpEvent(STACK_TRACE, tid, pc, 0, 0);
+  //DumpEvent(0, STACK_TRACE, tid, pc, 0, 0);
 //  PrintShadowStack(tid);
 }
 
 static void On_AnnotateFlushState(THREADID tid, ADDRINT pc,
                                   ADDRINT file, ADDRINT line) {
-  DumpEvent(FLUSH_STATE, tid, pc, 0, 0);
+  DumpEvent(0, FLUSH_STATE, tid, pc, 0, 0);
 }
 
 static void On_AnnotateCondVarSignal(THREADID tid, ADDRINT pc,
                                      ADDRINT file, ADDRINT line, ADDRINT obj) {
-  DumpEvent(SIGNAL, tid, pc, obj, 0);
+  DumpEvent(0, SIGNAL, tid, pc, obj, 0);
 }
 
 static void On_AnnotateCondVarWait(THREADID tid, ADDRINT pc,
                                    ADDRINT file, ADDRINT line, ADDRINT obj) {
-  DumpEvent(WAIT, tid, pc, obj, 0);
+  DumpEvent(0, WAIT, tid, pc, obj, 0);
 }
 
 
@@ -2155,73 +2160,73 @@ static void On_AnnotateEnableRaceDetection(THREADID tid, ADDRINT pc,
 
 static void On_AnnotateIgnoreReadsBegin(THREADID tid, ADDRINT pc,
                                         ADDRINT file, ADDRINT line) {
-  DumpEvent(IGNORE_READS_BEG, tid, pc, 0, 0);
+  DumpEvent(0, IGNORE_READS_BEG, tid, pc, 0, 0);
 }
 static void On_AnnotateIgnoreReadsEnd(THREADID tid, ADDRINT pc,
                                       ADDRINT file, ADDRINT line) {
-  DumpEvent(IGNORE_READS_END, tid, pc, 0, 0);
+  DumpEvent(0, IGNORE_READS_END, tid, pc, 0, 0);
 }
 static void On_AnnotateIgnoreWritesBegin(THREADID tid, ADDRINT pc,
                                          ADDRINT file, ADDRINT line) {
-  DumpEvent(IGNORE_WRITES_BEG, tid, pc, 0, 0);
+  DumpEvent(0, IGNORE_WRITES_BEG, tid, pc, 0, 0);
 }
 static void On_AnnotateIgnoreWritesEnd(THREADID tid, ADDRINT pc,
                                        ADDRINT file, ADDRINT line) {
-  DumpEvent(IGNORE_WRITES_END, tid, pc, 0, 0);
+  DumpEvent(0, IGNORE_WRITES_END, tid, pc, 0, 0);
 }
 static void On_AnnotateThreadName(THREADID tid, ADDRINT pc,
                                   ADDRINT file, ADDRINT line,
                                   ADDRINT name) {
-  DumpEvent(SET_THREAD_NAME, tid, pc, name, 0);
+  DumpEvent(0, SET_THREAD_NAME, tid, pc, name, 0);
 }
 static void On_AnnotatePublishMemoryRange(THREADID tid, ADDRINT pc,
                                           ADDRINT file, ADDRINT line,
                                           ADDRINT a, ADDRINT size) {
-  DumpEvent(PUBLISH_RANGE, tid, pc, a, size);
+  DumpEvent(0, PUBLISH_RANGE, tid, pc, a, size);
 }
 
 static void On_AnnotateUnpublishMemoryRange(THREADID tid, ADDRINT pc,
                                           ADDRINT file, ADDRINT line,
                                           ADDRINT a, ADDRINT size) {
 //  Printf("T%d %s %lx %lx\n", tid, __FUNCTION__, a, size);
-  DumpEvent(UNPUBLISH_RANGE, tid, pc, a, size);
+  DumpEvent(0, UNPUBLISH_RANGE, tid, pc, a, size);
 }
 
 
 static void On_AnnotateMutexIsUsedAsCondVar(THREADID tid, ADDRINT pc,
                                             ADDRINT file, ADDRINT line,
                                             ADDRINT mu) {
-  DumpEvent(HB_LOCK, tid, pc, mu, 0);
+  DumpEvent(0, HB_LOCK, tid, pc, mu, 0);
 }
 
 static void On_AnnotateMutexIsNotPhb(THREADID tid, ADDRINT pc,
                                      ADDRINT file, ADDRINT line,
                                      ADDRINT mu) {
-  DumpEvent(NON_HB_LOCK, tid, pc, mu, 0);
+  DumpEvent(0, NON_HB_LOCK, tid, pc, mu, 0);
 }
 
 static void On_AnnotatePCQCreate(THREADID tid, ADDRINT pc,
                                  ADDRINT file, ADDRINT line,
                                  ADDRINT pcq) {
-  DumpEvent(PCQ_CREATE, tid, pc, pcq, 0);
+  DumpEvent(0, PCQ_CREATE, tid, pc, pcq, 0);
 }
 
 static void On_AnnotatePCQDestroy(THREADID tid, ADDRINT pc,
                                   ADDRINT file, ADDRINT line,
                                   ADDRINT pcq) {
-  DumpEvent(PCQ_DESTROY, tid, pc, pcq, 0);
+  DumpEvent(0, PCQ_DESTROY, tid, pc, pcq, 0);
 }
 
 static void On_AnnotatePCQPut(THREADID tid, ADDRINT pc,
                               ADDRINT file, ADDRINT line,
                               ADDRINT pcq) {
-  DumpEvent(PCQ_PUT, tid, pc, pcq, 0);
+  DumpEvent(0, PCQ_PUT, tid, pc, pcq, 0);
 }
 
 static void On_AnnotatePCQGet(THREADID tid, ADDRINT pc,
                               ADDRINT file, ADDRINT line,
                               ADDRINT pcq) {
-  DumpEvent(PCQ_GET, tid, pc, pcq, 0);
+  DumpEvent(0, PCQ_GET, tid, pc, pcq, 0);
 }
 
 int WRAP_NAME(RunningOnValgrind)(WRAP_PARAM4) {
@@ -2502,7 +2507,7 @@ void CallbackForTRACE(TRACE trace, void *v) {
                      IARG_REG_VALUE, REG_STACK_PTR,
                      IARG_REG_REFERENCE, tls_reg,
                      IARG_END);
-    } else {
+    } else if (0) { // TODO(kcc): remove this.
       INS_InsertCall(head, IPOINT_BEFORE,
                      (AFUNPTR)OnTraceNoMops,
                      IARG_THREAD_ID,
@@ -3208,7 +3213,7 @@ static BOOL CallbackForExec(CHILD_PROCESS childProcess, VOID *val) {
 
 //--------- Fini ---------- {{{1
 static void CallbackForFini(INT32 code, void *v) {
-  DumpEvent(THR_END, 0, 0, 0, 0);
+  DumpEvent(0, THR_END, 0, 0, 0, 0);
   ThreadSanitizerFini();
   if (g_race_verifier_active) {
     RaceVerifierFini();
