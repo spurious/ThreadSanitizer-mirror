@@ -1015,13 +1015,13 @@ static void Before_start_thread(THREADID tid, ADDRINT pc, ADDRINT sp) {
   // -------------------------------------------------
   //
   // So, we itrate from sp to the higher addresses (but just in case, not more
-  // than 1 page) trying to find a pair of values which looks like stackblock
-  // and stackblock_size. Oh well.
+  // than a few pages) trying to find a pair of values which looks like
+  // stackblock and stackblock_size. Oh well.
   // Note that in valgrind we are able to get this info from
   //  pthread_getattr_np (linux) or pthread_get_stackaddr_np (mac),
   // but in PIN we can't call those (can we?).
   uintptr_t prev = 0;
-  for (uintptr_t sp1 = sp; sp1 - sp < 0x1000;
+  for (uintptr_t sp1 = sp; sp1 - sp < 0x2000;
        sp1 += sizeof(uintptr_t)) {
     uintptr_t val = *(uintptr_t*)sp1;
     if (val == 0) continue;
