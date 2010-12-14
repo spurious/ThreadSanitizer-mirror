@@ -5935,10 +5935,6 @@ class Detector {
                               int expensive_bits, bool need_locking) {
     bool has_expensive_flags = (expensive_bits & 4) != 0;
     size_t i = 0;
-    if (has_expensive_flags) {
-      const size_t mop_stat_size = TS_ARRAY_SIZE(thr->stats.mops_per_trace);
-      thr->stats.mops_per_trace[n < mop_stat_size ? n : mop_stat_size - 1]++;
-    }
     uintptr_t sblock_pc = t->pc();
     size_t n_locks = 0;
     do {
@@ -5956,8 +5952,10 @@ class Detector {
                                  need_locking);
     } while (++i < n);
     if (has_expensive_flags) {
+      const size_t mop_stat_size = TS_ARRAY_SIZE(thr->stats.mops_per_trace);
+      thr->stats.mops_per_trace[min(n, mop_stat_size - 1)]++;
       const size_t stat_size = TS_ARRAY_SIZE(thr->stats.locks_per_trace);
-      thr->stats.locks_per_trace[n_locks < stat_size ? n_locks : stat_size - 1]++;
+      thr->stats.locks_per_trace[min(n_locks, stat_size - 1)]++;
     }
   }
 
