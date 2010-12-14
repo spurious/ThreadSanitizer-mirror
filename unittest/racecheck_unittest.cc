@@ -4100,14 +4100,18 @@ TEST(NegativeTests, AnnotateIgnoreWritesTest) {
 
 int racey_read = 0;
 
-void RaceyReader() {
+void RaceyReader1() {
   ANNOTATE_IGNORE_READS_BEGIN();
   CHECK(racey_read != 777);
   ANNOTATE_IGNORE_READS_END();
 }
 
+void RaceyReader2() {
+  CHECK(ANNOTATE_UNPROTECTED_READ(racey_read) != 777);
+}
+
 TEST(NegativeTests, AnnotateIgnoreReadsTest) {
-  MyThread t(RaceyReader);
+  MyThreadArray t(RaceyReader1, RaceyReader2);
   t.Start();
   racey_read = 1;
   t.Join();
