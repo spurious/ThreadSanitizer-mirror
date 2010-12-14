@@ -86,6 +86,8 @@ int32_t bb_unique_id = 0;
 std::map<pthread_t, tid_t> Tids;
 std::map<tid_t, pthread_t> PThreads;
 std::map<tid_t, bool> Finished;
+// TODO(glider): verify that we need this much condvars.
+std::map<tid_t, pthread_cond_t*> ChildThreadStartConds;
 std::map<tid_t, pthread_cond_t*> FinishConds; // TODO(glider): we shouldn't need these.
 std::map<pthread_t, pthread_cond_t*> InitConds; // TODO(glider): we shouldn't need these.
 tid_t max_tid = 0;
@@ -610,10 +612,13 @@ void *pthread_callback(void *arg) {
   callback_arg *cb_arg = (callback_arg*)arg;
   pthread_worker *routine = cb_arg->routine;
   void *routine_arg = cb_arg->arg;
-  tid_t parent = cb_arg->parent;
   pthread_attr_t attr;
   size_t stack_size = 8 << 20;  // 8M
   void *stack_top = NULL;
+
+  // We already know the child pid -- get the parent condvar to signal.
+  tid_t parent = cb_arg->parent;
+  pthread_cond_t *parent_cond = ChildThreadStartConds[parent];
 
   // Get the stack size and stack top for the current thread.
   // TODO(glider): do something if pthread_getattr_np() is not supported.
@@ -650,6 +655,8 @@ void *pthread_callback(void *arg) {
   dump_finished();
 #endif
   GIL::Unlock();
+  DDPrintf("pthread_cond_signal(ChildThreadStartConds[%d])\n", parent);
+  __real_pthread_cond_signal(parent_cond);
 
   result = (*routine)(routine_arg);
 
@@ -722,7 +729,30 @@ int __wrap_pthread_create(pthread_t *thread,
   cb_arg->attr = attr;
   SPut(THR_CREATE_BEFORE, tid, 0, 0, 0);
   PTH_INIT = 1;
+  pthread_cond_t *cond = new pthread_cond_t;
+  pthread_cond_init(cond, NULL);
+  {
+    GIL scoped;
+    ChildThreadStartConds[tid] = cond;
+    DDPrintf("Setting ChildThreadStartConds[%d]\n", tid);
+  }
   int result = __real_pthread_create(thread, attr, pthread_callback, cb_arg);
+  tid_t child_tid = 0;
+  {
+    GIL scoped;
+    if (Tids.find(*thread) == Tids.end()) {
+      DDPrintf("pthread_cond_wait(ChildThreadStartConds[%d])\n", tid);
+      __real_pthread_cond_wait(cond, &global_lock);
+    } else {
+      DDPrintf("Tids.find(%d) == Tids.end()", *thread);
+      DDPrintf(", not waiting on ChildThreadStartConds[%d]\n", tid);
+    }
+    child_tid = Tids[*thread];
+    ChildThreadStartConds.erase(tid);
+    DDPrintf("Erasing ChildThreadStartConds[%d]\n", tid);
+  }
+  delete cond;
+  SPut(THR_CREATE_AFTER, tid, 0, 0, child_tid);
   DDPrintf("pthread_create(%p)\n", *thread);
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
