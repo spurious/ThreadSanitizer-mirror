@@ -738,7 +738,7 @@ int __wrap_pthread_create(pthread_t *thread,
   }
   int result = __real_pthread_create(thread, attr, pthread_callback, cb_arg);
   tid_t child_tid = 0;
-  {
+  if (result == 0) {
     GIL scoped;
     if (Tids.find(*thread) == Tids.end()) {
       DDPrintf("pthread_cond_wait(ChildThreadStartConds[%d])\n", tid);
