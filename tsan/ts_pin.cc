@@ -316,6 +316,7 @@ static void HandleInnerEvent(PinThread &t, uintptr_t event) {
   } else if (event == TLEB_GLOBAL_IGNORE_OFF){
     Report("INFO: GLOBAL IGNORE OFF\n");
     global_ignore = false;
+    CODECACHE_FlushCache();  // We need to reinstrument everything.
     ComputeIgnoreAccesses(t);
   } else {
     Printf("Event: %ld (last: %ld)\n", event, LAST_EVENT);
@@ -2440,6 +2441,11 @@ static void InstrumentMopsInBBl(BBL bbl, RTN rtn, TraceInfo *trace_info, uintptr
 
 void CallbackForTRACE(TRACE trace, void *v) {
   CHECK(n_started_threads > 0);
+  if (global_ignore) {
+    // Once global_ignore is set to false we will reinstrument everything.
+    return;
+  }
+
 #if 0
   if (n_started_threads == 1) {
     // There are no threads running other than the main thread.
