@@ -633,7 +633,11 @@ void *pthread_callback(void *arg) {
   have_pending_signals = false;
 
   SPut(THR_START, INFO.tid, 0, 0, parent);
+  IN_RTL++;
+  CHECK_IN_RTL();
   delete cb_arg;
+  IN_RTL--;
+  CHECK_IN_RTL();
 
   if (stack_top) {
     // We don't intercept the mmap2 syscall that allocates thread stack, so pass
@@ -722,6 +726,8 @@ int __wrap_pthread_create(pthread_t *thread,
                           void *(*start_routine)(void*), void *arg) {
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_create, 0);
+  IN_RTL++;
+  CHECK_IN_RTL();
   callback_arg *cb_arg = new callback_arg;
   cb_arg->routine = start_routine;
   cb_arg->arg = arg;
@@ -736,6 +742,8 @@ int __wrap_pthread_create(pthread_t *thread,
     ChildThreadStartConds[tid] = cond;
     DDPrintf("Setting ChildThreadStartConds[%d]\n", tid);
   }
+  IN_RTL--;
+  CHECK_IN_RTL();
   int result = __real_pthread_create(thread, attr, pthread_callback, cb_arg);
   tid_t child_tid = 0;
   if (result == 0) {
@@ -751,8 +759,12 @@ int __wrap_pthread_create(pthread_t *thread,
     ChildThreadStartConds.erase(tid);
     DDPrintf("Erasing ChildThreadStartConds[%d]\n", tid);
   }
+  IN_RTL++;
+  CHECK_IN_RTL();
   delete cond;
-  SPut(THR_CREATE_AFTER, tid, 0, 0, child_tid);
+  IN_RTL--;
+  CHECK_IN_RTL();
+  if (result) SPut(THR_CREATE_AFTER, tid, 0, 0, child_tid);
   DDPrintf("pthread_create(%p)\n", *thread);
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
@@ -1306,6 +1318,9 @@ int __wrap_pthread_join(pthread_t thread, void **value_ptr) {
   tid_t joined_tid = -1;
   {
     GIL scoped;
+    // TODO(glider): locking GIL should probably enforce IN_RTL++.
+    IN_RTL++;
+    CHECK_IN_RTL();
     if (Tids.find(thread) == Tids.end()) {
       InitConds[thread] = new pthread_cond_t;
       pthread_cond_init(InitConds[thread], NULL);
@@ -1328,6 +1343,8 @@ int __wrap_pthread_join(pthread_t thread, void **value_ptr) {
       __real_pthread_cond_wait(FinishConds[joined_tid], &global_lock);
     }
     unsafe_forget_thread(joined_tid, tid); // TODO(glider): earlier?
+    IN_RTL--;
+    CHECK_IN_RTL();
   }
 
   int result = __real_pthread_join(thread, value_ptr);
