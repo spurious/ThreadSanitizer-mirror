@@ -58,10 +58,10 @@ $(TSAN_PATH)/ts_event_names.h:
 	make -C $(TSAN_PATH) ts_event_names.h
 
 tsan_rtl32.o: $(SRC) tsan_rtl.h $(RTL_DEPS)
-	$(CXX) $(SRC) $(FLAGS) -m32 -g $(ERRORLVL) $(DA_FLAGS) -Wall -c -o $(RTL_32_O) $(DEFINES) -DTSAN_RTL_X86
+	$(CXX) $(SRC) $(FLAGS) -m32 $(ERRORLVL) $(DA_FLAGS) -Wall -c -o $(RTL_32_O) $(DEFINES) -DTSAN_RTL_X86
 
 tsan_rtl64.o: $(SRC) tsan_rtl.h $(RTL_DEPS)
-	$(CXX) $(SRC) $(FLAGS) -m64 -g $(ERRORLVL) $(DA_FLAGS) -Wall -c -o $(RTL_64_O) $(DEFINES) -DTSAN_RTL_X64
+	$(CXX) $(SRC) $(FLAGS) -m64 $(ERRORLVL) $(DA_FLAGS) -Wall -c -o $(RTL_64_O) $(DEFINES) -DTSAN_RTL_X64
 
 
 x86-%.o:	%.cc $(TS_HEADERS) $(FOREIGN_HEADERS)
