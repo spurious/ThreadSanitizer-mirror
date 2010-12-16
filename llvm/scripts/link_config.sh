@@ -52,6 +52,7 @@ wrap sem_trywait
 
 wrap atexit
 wrap exit
+wrap fork
 
 wrap strlen
 wrap strcmp
