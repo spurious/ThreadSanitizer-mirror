@@ -108,10 +108,11 @@ namespace {
       }
     }
 
-    uintptr_t getAddr(int bb_index, int mop_index, Instruction *cur_inst) {
+    uintptr_t getAddr(int bb_index, int mop_index,
+                      BasicBlock::iterator cur_inst) {
       uintptr_t result = ((ModuleID * kBBHiAddr) + bb_index) * kBBLoAddr + mop_index;
       if (cur_inst) {
-        DumpDebugInfo(result, *cur_inst);
+        DumpDebugInfo(result, cur_inst);
       }
       if ((result < 0) || (result > kMaxAddr)) {
         errs() << "bb_index: " << bb_index << " mop_index: " << mop_index;
@@ -576,7 +577,7 @@ namespace {
           runOnTrace(M, traces[i], first_dtor_bb);
           first_dtor_bb = false;
         }
-        Instruction* First = F->begin()->begin();
+        BasicBlock::iterator First = F->begin()->begin();
         std::vector<Value*> inst(1);
         inst[0] = ConstantInt::get(PlatformInt, getAddr(startTraceCount, 0, First));
         CallInst::Create(RtnCallFn, inst.begin(), inst.end(), "", First);
@@ -629,25 +630,30 @@ namespace {
       }
     }
 
-    void DumpDebugInfo(uintptr_t addr, Instruction &IN) {
-      DILocation Loc(IN.getMetadata("dbg"));
+    void DumpDebugInfo(uintptr_t addr, BasicBlock::iterator BI) {
+      DILocation Loc(BI->getMetadata("dbg"));
+      BasicBlock::iterator OldBI = BI;
+      if (!Loc.getLineNumber()) {
+        for (BasicBlock::iterator BE = BI->getParent()->end();
+             BI != BE; ++BI) {
+            Loc = DILocation(BI->getMetadata("dbg"));
+            if (Loc.getLineNumber()) break;
+        }
+      }
+      if (!Loc.getLineNumber()) {
+        BI = OldBI;
+        Loc = DILocation(OldBI->getMetadata("dbg"));
+      }
       std::string file = Loc.getFilename();
       std::string dir = Loc.getDirectory();
-#if 0
-      // TODO(glider): we don't want to print the debug info anymore.
-      errs() << "->";
-      errs().write_hex(addr);
-      errs() << "|" <<  IN.getParent()->getParent()->getName() << "|" <<
-                file << "|" << Loc.getLineNumber() << "|" <<
-                dir << "\n";
-#endif
+      uintptr_t line = Loc.getLineNumber();
+
       debug_path_set.insert(dir);
       debug_file_set.insert(file);
-      debug_symbol_set.insert(IN.getParent()->getParent()->getName());
+      debug_symbol_set.insert(BI->getParent()->getParent()->getName());
       debug_pc_map.insert(
-          make_pair(addr, DebugPcInfo(IN.getParent()->getParent()->getName(),
-                                      dir, file,
-                                      Loc.getLineNumber())));
+          make_pair(addr, DebugPcInfo(BI->getParent()->getParent()->getName(),
+                                      dir, file, line)));
     }
 
     bool isaCallOrInvoke(BasicBlock::iterator &BI) {
