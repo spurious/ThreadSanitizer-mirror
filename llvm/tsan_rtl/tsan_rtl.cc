@@ -254,6 +254,10 @@ extern void ExSPut(EventType type, tid_t tid, pc_t pc,
                    uintptr_t a, uintptr_t info) {
   SPut(type, tid, pc, a, info);
 }
+extern void ExRPut(EventType type, tid_t tid, pc_t pc,
+                   uintptr_t a, uintptr_t info) {
+  RPut(type, tid, pc, a, info);
+}
 extern void ExPut(EventType type, tid_t tid, pc_t pc,
                    uintptr_t a, uintptr_t info) {
   Put(type, tid, pc, a, info);
@@ -454,9 +458,11 @@ bool in_initialize = false;
 
 bool initialize() {
   if (in_initialize) return false;
+  if (RTL_INIT == 1) return true;
   in_initialize = true;
 
-  assert(IN_RTL == 0);
+  // TODO(glider): do we need it?
+  //assert(IN_RTL == 0);
   IN_RTL++;
   CHECK_IN_RTL();
   // Only one thread exists at this moment.
@@ -495,6 +501,10 @@ bool initialize() {
   return true;
 }
 
+// TODO(glider): we shouldn't need static initialization of the RTL:
+//  -- it's fragile
+//  -- we do initialize everything once GetTid is called for the first time.
+#if 0
 class Init {
  public:
   Init() {
@@ -503,6 +513,7 @@ class Init {
 };
 
 Init dummy_init;
+#endif
 
 // TODO(glider): GetPc should return valid PCs.
 inline pc_t GetPc() {
@@ -513,23 +524,24 @@ extern pc_t ExGetPc() {
   return GetPc();
 }
 
-inline tid_t GetTid(ThreadInfo *info) {
-  //if (!PTH_INIT && RTL_INIT) return 0;
+inline tid_t GetTid() {
+  IN_RTL++;
+  CHECK_IN_RTL();
   if (INIT == 0) {
     GIL scoped;
     // thread initialization
     pthread_t pt = pthread_self();
-    info->tid = max_tid;
+    INFO.tid = max_tid;
     max_tid++;
-    info->trace_info = NULL;
+    INFO.trace_info = NULL;
     switch (RTL_INIT) {
       case 1: {
-        Tids[pt] = info->tid;
+        Tids[pt] = INFO.tid;
         if (InitConds.find(pt) != InitConds.end()) {
           __real_pthread_cond_signal(InitConds[pt]);
         }
-        DDPrintf("T%d: pthread_self()=%p\n", info->tid, (void*)pt);
-        PThreads[info->tid] = pt;
+        DDPrintf("T%d: pthread_self()=%p\n", INFO.tid, (void*)pt);
+        PThreads[INFO.tid] = pt;
         break;
               }
       case 0: {
@@ -540,17 +552,20 @@ inline tid_t GetTid(ThreadInfo *info) {
               }
       case 2:
       default: {
+                 // Printf() may call malloc() -- use __real_malloc().
+                 IN_RTL++;
+                 CHECK_IN_RTL();
                  Printf("ThreadSanitizer initialization reentrancy detected\n");
+                 IN_RTL--;
+                 CHECK_IN_RTL();
                  __real_exit(2);
                }
     }
     INIT = 1;
   }
-  return info->tid;
-}
-
-inline tid_t GetTid() {
-  return GetTid(&INFO);
+  IN_RTL--;
+  CHECK_IN_RTL();
+  return INFO.tid;
 }
 
 extern tid_t ExGetTid() {
@@ -618,6 +633,7 @@ void *pthread_callback(void *arg) {
 
   // We already know the child pid -- get the parent condvar to signal.
   tid_t parent = cb_arg->parent;
+  assert(ChildThreadStartConds.find(parent) != ChildThreadStartConds.end());
   pthread_cond_t *parent_cond = ChildThreadStartConds[parent];
 
   // Get the stack size and stack top for the current thread.
@@ -735,7 +751,8 @@ int __wrap_pthread_create(pthread_t *thread,
   cb_arg->attr = attr;
   SPut(THR_CREATE_BEFORE, tid, 0, 0, 0);
   PTH_INIT = 1;
-  pthread_cond_t *cond = new pthread_cond_t;
+  pthread_cond_t *cond =
+      (pthread_cond_t*) __real_malloc(sizeof(pthread_cond_t));
   pthread_cond_init(cond, NULL);
   {
     GIL scoped;
@@ -761,7 +778,7 @@ int __wrap_pthread_create(pthread_t *thread,
   }
   IN_RTL++;
   CHECK_IN_RTL();
-  delete cond;
+  __real_free(cond);
   IN_RTL--;
   CHECK_IN_RTL();
   if (result) SPut(THR_CREATE_AFTER, tid, 0, 0, child_tid);
@@ -792,12 +809,12 @@ inline void IGNORE_ALL_SYNC_END(void) {
 }
 
 
-inline void IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN(void) {
+void IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN(void) {
   IGNORE_ALL_ACCESSES_BEGIN();
   IGNORE_ALL_SYNC_BEGIN();
 }
 
-inline void IGNORE_ALL_ACCESSES_AND_SYNC_END(void) {
+void IGNORE_ALL_ACCESSES_AND_SYNC_END(void) {
   IGNORE_ALL_ACCESSES_END();
   IGNORE_ALL_SYNC_END();
 }
@@ -892,6 +909,9 @@ void *__wrap_calloc(size_t nmemb, size_t size) {
 
 extern "C"
 void *__wrap_malloc(size_t size) {
+  if (IN_RTL) return __real_malloc(size);
+  IN_RTL++;
+  CHECK_IN_RTL();
   void *result;
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_malloc, 0);
@@ -900,6 +920,8 @@ void *__wrap_malloc(size_t size) {
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
   SPut(MALLOC, tid, pc, (uintptr_t)result, size);
   RPut(RTN_EXIT, tid, pc, 0, 0);
+  IN_RTL--;
+  CHECK_IN_RTL();
   return result;
 }
 
@@ -1607,6 +1629,16 @@ void __wrap_exit(int status) {
 
 // }}}
 
+extern "C"
+pid_t __wrap_fork() {
+  pid_t result;
+  IN_RTL++;
+  CHECK_IN_RTL();
+  result = __real_fork();
+  IN_RTL--;
+  CHECK_IN_RTL();
+  return result;
+}
 // Happens-before arc between read() and write() {{{1
 const uintptr_t kFdMagicConst = 0xf11ede5c;
 uintptr_t FdMagic(int fd) {

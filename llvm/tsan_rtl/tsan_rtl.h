@@ -21,6 +21,15 @@
 //#define DEBUG 1
 #undef DEBUG
 
+#ifdef DEBUG
+#define CHECK_IN_RTL() do { \
+  assert((IN_RTL >= 0) && (IN_RTL <= 5)); \
+} while (0)
+#else
+#define CHECK_IN_RTL()
+#endif
+
+
 int unsafe_clear_pending_signals();
 
 class GIL {
@@ -58,21 +67,30 @@ void ReadDbgInfo(string filename);
   tid_t tid = GetTid(); \
   pc_t pc = GetPc();
 
+#define EX_DECLARE_TID_AND_PC() \
+  tid_t tid = ExGetTid(); \
+  pc_t pc = ExGetPc();
+
 void flush_tleb();
 
-static inline void Put(EventType type, tid_t tid, pc_t pc,
-                       uintptr_t a, uintptr_t info);
-static inline void SPut(EventType type, tid_t tid, pc_t pc,
-                        uintptr_t a, uintptr_t info);
-
+inline void Put(EventType type, tid_t tid, pc_t pc,
+                uintptr_t a, uintptr_t info);
+inline void SPut(EventType type, tid_t tid, pc_t pc,
+                 uintptr_t a, uintptr_t info);
+inline void RPut(EventType type, tid_t tid, pc_t pc,
+                 uintptr_t a, uintptr_t info);
 
 // Put a synchronization event to ThreadSanitizer.
 extern void ExPut(EventType type, tid_t tid, pc_t pc,
                         uintptr_t a, uintptr_t info);
 extern void ExSPut(EventType type, tid_t tid, pc_t pc,
                         uintptr_t a, uintptr_t info);
+extern void ExRPut(EventType type, tid_t tid, pc_t pc,
+                        uintptr_t a, uintptr_t info);
 
 
+void IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN(void);
+void IGNORE_ALL_ACCESSES_AND_SYNC_END(void);
 extern tid_t ExGetTid();
 extern pc_t ExGetPc();
 

@@ -57,6 +57,8 @@ int __real___cxa_guard_release(int *guard);
 int __real_atexit(void (*function)(void));
 void __real_exit(int status);
 
+pid_t __real_fork();
+
 char *__real_memcpy(char *dest, const char *src, size_t n);
 void *__real_memmove(void *dest, const void *src, size_t n);
 char *__real_strchr(const char *s, int c);
@@ -66,7 +68,7 @@ void *__real_mmap(void *addr, size_t length, int prot, int flags,
                   int fd, off_t offset);
 int __real_munmap(void *addr, size_t length);
 void *__real_calloc(size_t nmemb, size_t size);
-void *__real_malloc(size_t size);
+void *__real_malloc(size_t size); 
 void __real_free(void *ptr);
 void *__real_realloc(void *ptr, size_t size);
 
