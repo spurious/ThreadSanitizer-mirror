@@ -1126,9 +1126,10 @@ TEST(PositiveTests, RWLockVsRWLockTest) {
 
 }  // namespace
 
-namespace TLSTests {
-// Test the support for libpthread TLS destructors.
+namespace TSDTests {
+// Test the support for libpthread TSD destructors.
 void Destructor(void *ptr) {
+  printf("In TSD destructor\n");
   free(ptr);
 }
 
@@ -1142,7 +1143,7 @@ void Worker() {
   CHECK(*read == *value);
 }
 
-TEST(TLSTests, TLSDestructorTest) {
+TEST(TSDTests, TSDDestructorTest) {
   MyThreadArray t(Worker, Worker);
   t.Start();
   t.Join();
