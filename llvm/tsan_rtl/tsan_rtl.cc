@@ -38,7 +38,7 @@
 #endif
 
 extern bool global_ignore;
-static const int kTLEBSize = 2000;
+static const size_t kTLEBSize = 2000;
 
 struct ThreadInfo {
   tid_t tid;
