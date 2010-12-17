@@ -1126,5 +1126,29 @@ TEST(PositiveTests, RWLockVsRWLockTest) {
 
 }  // namespace
 
+namespace TLSTests {
+// Test the support for libpthread TLS destructors.
+void Destructor(void *ptr) {
+  free(ptr);
+}
+
+void Worker() {
+  pthread_key_t key;
+  pthread_key_create(&key, Destructor);
+  int *value = (int*) malloc(sizeof(int));
+  *value = 42;
+  pthread_setspecific(key, value);
+  int *read = (int*) pthread_getspecific(key);
+  CHECK(*read == *value);
+}
+
+TEST(TLSTests, TLSDestructorTest) {
+  MyThreadArray t(Worker, Worker);
+  t.Start();
+  t.Join();
+}
+
+}
+
 // End {{{1
  // vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker
