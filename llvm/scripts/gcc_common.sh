@@ -16,7 +16,7 @@ OPT_PASSES="-reg2mem -mem2reg -adce"
 OPT_PASSES=-verify
 OPT_PASSES=
 COMPILE_FAST=1
-COMPILE_FAST=
+#COMPILE_FAST=
 
 until [ -z "$1" ]
 do

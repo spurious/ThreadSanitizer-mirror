@@ -41,6 +41,9 @@ int __real_pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex);
 int __real_pthread_cond_timedwait(pthread_cond_t *cond, pthread_mutex_t *mutex,
                                   const struct timespec *abstime);
 
+int __real_pthread_key_create(pthread_key_t *key,
+                              void (*destr_function) (void *));
+
 sem_t *__real_sem_open(const char *name, int oflag,
                 mode_t mode, unsigned int value);
 int __real_sem_wait(sem_t *sem);

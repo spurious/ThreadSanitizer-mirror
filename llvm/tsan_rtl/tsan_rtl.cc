@@ -76,6 +76,15 @@ void SplitString(string &src, char delim, vector<string> *dest,
 __thread ThreadInfo INFO;
 __thread int INIT = 0;
 __thread int events = 0;
+typedef void (tsd_destructor)(void*);
+struct tsd_slot {
+  pthread_key_t key;
+  tsd_destructor *dtor;
+};
+
+// TODO(glider): PTHREAD_KEYS_MAX
+__thread tsd_slot tsd_slots[100];
+__thread int tsd_slot_index = -1;
 
 int RTL_INIT = 0;
 int PTH_INIT = 0;
@@ -697,6 +706,30 @@ void *pthread_callback(void *arg) {
   dump_finished();
 #endif
   DDPrintf("After routine() in T%d\n", tid);
+
+  // Call the TSD destructors set by pthread_key_create().
+  int iter = PTHREAD_DESTRUCTOR_ITERATIONS;
+  while (iter) {
+    bool dirty = false;
+    for (int i = 0; i < tsd_slot_index + 1; ++i) {
+      // TODO(glider): we may want to delete keys associated with NULL values
+      // from the map
+      void *value = pthread_getspecific(tsd_slots[i].key);
+      if (value) {
+        dirty = true;
+        // Associate NULL with the key and call the destructor.
+        pthread_setspecific(tsd_slots[i].key, NULL);
+        (*tsd_slots[i].dtor)(value);
+      }
+    }
+    iter--;
+    if (!dirty) iter = 0;
+  }
+  // Delete all the keys to guarantee that their destructors won't be called by
+  // libpthread.
+  for (int i = 0; i < tsd_slot_index + 1; ++i) {
+    pthread_key_delete(tsd_slots[i].key);
+  }
 
   // Flush all the events not flushed so far.
   flush_tleb();
@@ -1337,6 +1370,20 @@ int __wrap_pthread_barrier_wait(pthread_barrier_t *barrier) {
   return result;
 }
 
+extern "C"
+int __wrap_pthread_key_create(pthread_key_t *key,
+                              void (*destr_function) (void *)) {
+  // We don't want libpthread to know about the destructors.
+  int result = __real_pthread_key_create(key, NULL);
+  if (result == 0) {
+    tsd_slot_index++;
+    // TODO(glider): we should delete TSD slots on pthread_key_delete.
+    assert(tsd_slot_index < (int)sizeof(tsd_slots));
+    tsd_slots[tsd_slot_index].key = *key;
+    tsd_slots[tsd_slot_index].dtor = destr_function;
+  }
+  return result;
+}
 
 extern "C"
 int __wrap_pthread_join(pthread_t thread, void **value_ptr) {

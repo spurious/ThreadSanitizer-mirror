@@ -45,6 +45,8 @@ wrap pthread_cond_timedwait
 wrap pthread_barrier_init
 wrap pthread_barrier_wait
 
+wrap pthread_key_create
+
 wrap sem_open
 wrap sem_post
 wrap sem_wait
