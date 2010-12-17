@@ -20,7 +20,7 @@ SRC_EXE="$FNAME"
 ARGS=
 DBG_FILES=
 # TODO(glider): x86-64 should be the default arch
-PLATFORM="x86"
+#PLATFORM="x86-64"
 
 until [ -z "$1" ]
 do
@@ -43,7 +43,6 @@ do
     PLATFORM="x86"
   elif [ `expr match "$1" ".*\.[ao]"` -gt 0 ]
   then
-    DBG_FILES="$DBG_FILES $1.dbg"
     ARGS="$ARGS $1"
   else
     ARGS="$ARGS $1"

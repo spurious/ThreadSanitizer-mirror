@@ -3,6 +3,8 @@
 # Copyright 2010 Google Inc. All Rights Reserved.
 # Author: glider@google.com (Alexander Potapenko)
 
+SCRIPT_ROOT=`dirname $0`
+source "$SCRIPT_ROOT/common.sh"
 ALL_ARGS=
 ARGS=
 LD_MODE=
@@ -13,6 +15,8 @@ OPT_PASSES=-adce
 OPT_PASSES="-reg2mem -mem2reg -adce"
 OPT_PASSES=-verify
 OPT_PASSES=
+COMPILE_FAST=1
+#COMPILE_FAST=
 
 until [ -z "$1" ]
 do
@@ -55,10 +59,12 @@ do
   elif [ `expr match "$1" "-g"` -gt 0 ]
   then
     DEBUG=-g
-  elif [ `expr match "$1" "-c\|-std=\|-Werror"` -gt 0 ]
+  elif [ `expr match "$1" "-c\|-std=\|-Werror\|-finstrument-functions\|-Wno"` -gt 0 ]
   then
-    # pass
-    echo "Dropped arg: $1"
+    if [ "$COMPILE_FAST" != "1" ]
+    then
+      echo "Dropped arg: $1"
+    fi
   else
     ARGS="$ARGS $1"
   fi
@@ -67,11 +73,10 @@ done
 
 if [ "$LD_MODE" == "1" ]
 then
-  $SCRIPT_ROOT/ld.sh $ALL_ARGS
+  PLATFORM=$PLATFORM $SCRIPT_ROOT/ld.sh $ALL_ARGS
   exit
 fi
 
-DEBUG=
 #SRC=$1
 #echo $ARGS
 FNAME=`echo $SRC | sed 's/\.[^.]*$//'`
@@ -84,7 +89,6 @@ then
   SRC_OBJ=`basename $FNAME.o`
 fi
 SRC_EXE="$FNAME"
-SRC_DBG="$SRC_OBJ.dbg"
 
 INST_MODE=-offline
 INST_MODE=-online
@@ -93,16 +97,20 @@ LOG=instrumentation.log
 
 set_platform_dependent_vars
 
+
+if [ "$COMPILE_FAST" == "1" ]
+then
+# Translate C code to LLVM bitcode.
+$COMPILER -emit-llvm $MARCH $SRC $OX $DEBUG -c $DA_FLAGS $ARGS -o "$SRC_BIT" || exit 1
+# Instrument the bitcode.
+$OPT $OPT_PASSES -load "$PASS_SO" $INST_MODE -arch=$XARCH "$SRC_TMP" -o "$SRC_INSTR" 2>$LOG || exit 1
+else
 # Translate C code to LLVM bitcode.
 $COMPILER -emit-llvm $MARCH $SRC $OX $DEBUG -S $DA_FLAGS $ARGS -o "$SRC_BIT" || exit 1
 # Instrument the bitcode.
 $OPT $OPT_PASSES  "$SRC_BIT" -S  > "$SRC_TMP" 2>$LOG || exit 1
 $OPT -load "$PASS_SO" $INST_MODE -arch=$XARCH "$SRC_TMP" -S  > "$SRC_INSTR" 2>$LOG || exit 1
-
-
-# Obsolete. TODO(glider): remove.
-#cat $LOG | grep "^->" | sed "s/^->//" > "$SRC_DBG"
-#cat $LOG | grep -v "^->"
+fi
 
 # Translate LLVM bitcode to native assembly code.
 $LLC -march=$XARCH $OX $SRC_INSTR  -o $SRC_ASM || exit 1

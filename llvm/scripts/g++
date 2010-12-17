@@ -4,7 +4,6 @@
 # and either instruments the compiled source files or calls ./ld to link
 # the object files.
 
-set -x
 SCRIPT_ROOT=`dirname $0`
 source "$SCRIPT_ROOT/common.sh"
 COMPILER="$LLVM_GPP"
