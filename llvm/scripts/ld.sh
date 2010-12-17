@@ -9,16 +9,9 @@ SCRIPT_ROOT=`dirname $0`
 
 source "$SCRIPT_ROOT/common.sh"
 
-SRC=$1
-FNAME=`echo $SRC | sed 's/\.[^.]*$//'`
-SRC_BIT="$FNAME.ll"
-SRC_INSTR="$FNAME-instr.ll"
-SRC_ASM="$FNAME.S"
-SRC_OBJ="$FNAME.o"
-SRC_EXE="$FNAME"
+SRC_EXE=""
 
 ARGS=
-DBG_FILES=
 # TODO(glider): x86-64 should be the default arch
 #PLATFORM="x86-64"
 
@@ -49,7 +42,6 @@ do
   fi
   shift
 done
-SRC_DBG="$SRC_EXE.dbg"
 
 source "$SCRIPT_ROOT/link_config.sh"
 

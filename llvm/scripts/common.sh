@@ -18,7 +18,8 @@ TSAN_RTL="$SCRIPT_ROOT/../tsan_rtl/tsan_rtl32.a"
 # Additional flags for dynamic annotations.
 DA_FLAGS="-DDYNAMIC_ANNOTATIONS_WANT_ATTRIBUTE_WEAK -DRACECHECK_UNITTEST_WANT_ATTRIBUTE_WEAK -DDYNAMIC_ANNOTATIONS_PREFIX=LLVM"
 
-PLATFORM="x86"
+PLATFORM="x86-64"
+
 set_platform_dependent_vars () {
   if [ "$PLATFORM" == "x86-64" ]
   then

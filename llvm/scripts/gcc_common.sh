@@ -16,7 +16,7 @@ OPT_PASSES="-reg2mem -mem2reg -adce"
 OPT_PASSES=-verify
 OPT_PASSES=
 COMPILE_FAST=1
-#COMPILE_FAST=
+COMPILE_FAST=
 
 until [ -z "$1" ]
 do
@@ -103,7 +103,7 @@ then
 # Translate C code to LLVM bitcode.
 $COMPILER -emit-llvm $MARCH $SRC $OX $DEBUG -c $DA_FLAGS $ARGS -o "$SRC_BIT" || exit 1
 # Instrument the bitcode.
-$OPT $OPT_PASSES -load "$PASS_SO" $INST_MODE -arch=$XARCH "$SRC_TMP" -o "$SRC_INSTR" 2>$LOG || exit 1
+$OPT $OPT_PASSES -load "$PASS_SO" $INST_MODE -arch=$XARCH "$SRC_BIT" -o "$SRC_INSTR" 2>$LOG || exit 1
 else
 # Translate C code to LLVM bitcode.
 $COMPILER -emit-llvm $MARCH $SRC $OX $DEBUG -S $DA_FLAGS $ARGS -o "$SRC_BIT" || exit 1
