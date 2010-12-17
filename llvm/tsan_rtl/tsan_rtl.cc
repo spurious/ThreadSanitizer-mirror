@@ -38,10 +38,11 @@
 #endif
 
 extern bool global_ignore;
+static const int kTLEBSize = 2000;
 
 struct ThreadInfo {
   tid_t tid;
-  uintptr_t TLEB[1000];
+  uintptr_t TLEB[kTLEBSize];
   TraceInfoPOD *trace_info;
 };
 
@@ -365,6 +366,11 @@ void inline flush_trace() {
       {
         ThreadSanitizerHandleTrace(tid, reinterpret_cast<TraceInfo*>(trace), tleb);
       }
+
+      // TODO(glider): the instrumentation pass may generate basic blocks that
+      // are larger than sizeof(TLEB). There should be a flag to control this,
+      // because we don't want to check the trace size in runtime.
+      DCHECK(trace->n_mops_ <= kTLEBSize);
       // Clean up the TLEB. It's better to do this in ThreadSanitizer, however.
       // TODO(glider): add a DCHECK() for this once it's done.
       for (size_t i = 0; i < trace->n_mops_; i++) tleb[i] = 0;
