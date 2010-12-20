@@ -7409,10 +7409,11 @@ one_call:
     }
 
 
-    if (thr->ignore_reads() || thr->ignore_writes()) {
+    if (g_so_far_only_one_thread == false
+        && (thr->ignore_reads() || thr->ignore_writes())) {
       Report("WARNING: T%d ended while at least one 'ignore' bit is set: "
-             "ignore_wr=%d ignore_rd=%d\n", 
-             thr->ignore_reads(), thr->ignore_writes(), tid.raw());
+             "ignore_wr=%d ignore_rd=%d\n", tid.raw(),
+             thr->ignore_reads(), thr->ignore_writes());
       if (G_flags->debug_level >= 1) {
         for (int i = 0; i < 2; i++) {
           StackTrace *context = thr->GetLastIgnoreContext(i);
