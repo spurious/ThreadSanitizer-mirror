@@ -1153,7 +1153,7 @@ TEST(TSDTests, TSDDestructorTest) {
   MyThreadArray t(Worker0, Worker1);
   t.Start();
   t.Join();
-  for (int i = 0; i < sizeof(tsd_array); ++i) {
+  for (int i = 0; i < 2; ++i) {
     CHECK(tsd_array[i] == kInitialValue);
   }
 }
