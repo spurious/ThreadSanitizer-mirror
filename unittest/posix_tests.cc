@@ -1142,7 +1142,7 @@ void DoWork(int index) {
   *value = 42;
   pthread_setspecific(key, value);
   int *read = (int*) pthread_getspecific(key);
-  CHECK(*read == *value);
+  CHECK(read == value);
 }
 
 void Worker0() { DoWork(0); }
