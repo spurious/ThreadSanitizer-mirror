@@ -1128,25 +1128,34 @@ TEST(PositiveTests, RWLockVsRWLockTest) {
 
 namespace TSDTests {
 // Test the support for libpthread TSD destructors.
+pthread_key_t key;
+const int kInitialValue = 0xfeedface;
+int tsd_array[2];
+
 void Destructor(void *ptr) {
-  printf("In TSD destructor\n");
-  free(ptr);
+  int *write = (int*) ptr;
+  *write = kInitialValue;
 }
 
-void Worker() {
-  pthread_key_t key;
-  pthread_key_create(&key, Destructor);
-  int *value = (int*) malloc(sizeof(int));
+void DoWork(int index) {
+  int *value = &(tsd_array[index]);
   *value = 42;
   pthread_setspecific(key, value);
   int *read = (int*) pthread_getspecific(key);
   CHECK(*read == *value);
 }
 
+void Worker0() { DoWork(0); }
+void Worker1() { DoWork(1); }
+
 TEST(TSDTests, TSDDestructorTest) {
-  MyThreadArray t(Worker, Worker);
+  pthread_key_create(&key, Destructor);
+  MyThreadArray t(Worker0, Worker1);
   t.Start();
   t.Join();
+  for (int i = 0; i < sizeof(tsd_array); ++i) {
+    CHECK(tsd_array[i] == kInitialValue);
+  }
 }
 
 }
