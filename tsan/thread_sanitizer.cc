@@ -4289,8 +4289,8 @@ struct Thread {
         G_flags->sample_events > 0;
 
     expensive_bits_ =
-        (ignore_depth_[0] == true) |
-        ((ignore_depth_[1] == true) << 1) |
+        (ignore_depth_[0] != 0) |
+        ((ignore_depth_[1] != 0) << 1) |
         ((has_expensive_flags == true) << 2);
   }
 
