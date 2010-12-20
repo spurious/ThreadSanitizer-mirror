@@ -4209,6 +4209,7 @@ struct Thread {
     all_threads_[tid.raw()] = this;
     dead_sids_.reserve(kMaxNumDeadSids);
     fresh_sids_.reserve(kMaxNumFreshSids);
+    ComputeExpensiveBits();
   }
 
   TID tid() const { return tid_; }
@@ -4291,9 +4292,8 @@ struct Thread {
         (ignore_depth_[0] == true) |
         ((ignore_depth_[1] == true) << 1) |
         ((has_expensive_flags == true) << 2);
-
   }
-  
+
   int expensive_bits() { return expensive_bits_; }
   int ignore_reads() { return expensive_bits() & 1; }
   int ignore_writes() { return (expensive_bits() >> 1) & 1; }
@@ -6187,6 +6187,7 @@ class Detector {
       case THR_START   : CHECK(0); break;
         break;
       case SBLOCK_ENTER:
+        if (thread->ignore_reads() && thread->ignore_writes()) break;
         thread->HandleSblockEnter(e->pc(), /*allow_slow_path=*/true);
         break;
       case THR_CREATE_BEFORE:
