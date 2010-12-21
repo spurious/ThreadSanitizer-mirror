@@ -34,6 +34,12 @@ do
   elif [ `expr match "$1" "-m32"` -gt 0 ]
   then
     PLATFORM="x86"
+  # TODO(glider): make tsan_rtl_debug_info not collectible by
+  # --gc-sections.
+  elif [ `expr match "$1" "-Wl,--gc-sections"` -gt 0 ]
+  then
+    # pass
+    true
   elif [ `expr match "$1" ".*\.[ao]"` -gt 0 ]
   then
     ARGS="$ARGS $1"
