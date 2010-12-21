@@ -7865,8 +7865,7 @@ static void SetupIgnore() {
   g_ignore_lists = new IgnoreLists;
   // add some major ignore entries so that tsan remains sane
   // even w/o any ignore file.
-  g_ignore_lists->ignores.push_back(IgnoreObj("*/libpthread-*"));
-  g_ignore_lists->ignores.push_back(IgnoreObj("*/libpthread.so*"));
+  g_ignore_lists->ignores.push_back(IgnoreObj("*/libpthread*"));
   g_ignore_lists->ignores.push_back(IgnoreObj("*/ld-2*.so"));
 
   g_ignore_lists->ignores.push_back(IgnoreObj("*ole32.dll"));
