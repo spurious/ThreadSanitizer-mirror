@@ -3,6 +3,7 @@
 #include "ignore.h"
 
 IgnoreLists *g_ignore_lists;
+vector<string>* g_ignore_obj;
 IgnoreLists *g_white_lists;
 
 static void SplitStringIntoLinesAndRemoveBlanksAndComments(
@@ -95,5 +96,12 @@ bool TripleVectorMatchKnown(const vector<IgnoreTriple>& v,
       }
     }
   }
+  return false;
+}
+
+bool StringVectorMatch(const vector<string>& v, const string& obj) {
+  for (size_t i = 0; i < v.size(); i++)
+    if (StringMatch(v[i], obj))
+      return true;
   return false;
 }
