@@ -1566,6 +1566,7 @@ void *__wrap_memmove(char *dest, const char *src, size_t n) {
 extern
 char *strcpy(char *dest, const char *src) {
   DECLARE_TID_AND_PC();
+  pc = (pc_t)strcpy;
   return Replace_strcpy(tid, pc, dest, src);
 }
 
