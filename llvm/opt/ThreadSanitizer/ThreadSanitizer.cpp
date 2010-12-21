@@ -151,9 +151,9 @@ namespace {
 #if defined(__GNUC__)
       demangled = __cxxabiv1::__cxa_demangle(mangled_name.data(),
                                              0, 0, &status);
-#else
+#endif
       if (demangled) {
-        char *found = strchr('~', demangled);
+        char *found = strchr(demangled, '~');
         free(demangled);
         if (found) {
           return true;
@@ -166,7 +166,6 @@ namespace {
         if (mangled_name.find("D1") != std::string::npos) return true;
       }
       return false;
-#endif
     }
 
 
