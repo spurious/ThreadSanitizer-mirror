@@ -83,8 +83,10 @@ struct tsd_slot {
 };
 
 // TODO(glider): PTHREAD_KEYS_MAX
-__thread tsd_slot tsd_slots[100];
-__thread int tsd_slot_index = -1;
+// TODO(glider): there could be races if pthread_key_create is called from
+// concurrent threads. This is prohibited by POSIX, however.
+tsd_slot tsd_slots[100];
+int tsd_slot_index = -1;
 
 int RTL_INIT = 0;
 int PTH_INIT = 0;
@@ -724,11 +726,6 @@ void *pthread_callback(void *arg) {
     }
     iter--;
     if (!dirty) iter = 0;
-  }
-  // Delete all the keys to guarantee that their destructors won't be called by
-  // libpthread.
-  for (int i = 0; i < tsd_slot_index + 1; ++i) {
-    pthread_key_delete(tsd_slots[i].key);
   }
 
   // Flush all the events not flushed so far.
@@ -1378,7 +1375,7 @@ int __wrap_pthread_key_create(pthread_key_t *key,
   if (result == 0) {
     tsd_slot_index++;
     // TODO(glider): we should delete TSD slots on pthread_key_delete.
-    assert(tsd_slot_index < (int)sizeof(tsd_slots));
+    assert(tsd_slot_index < (int)(sizeof(tsd_slots) / sizeof(tsd_slot)));
     tsd_slots[tsd_slot_index].key = *key;
     tsd_slots[tsd_slot_index].dtor = destr_function;
   }
