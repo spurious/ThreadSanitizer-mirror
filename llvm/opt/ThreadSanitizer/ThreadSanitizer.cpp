@@ -27,6 +27,10 @@
 using namespace llvm;
 using namespace std;
 
+#if defined(__GNUC__)
+# include <cxxabi.h>  // __cxa_demangle
+#endif
+
 #define DEBUG 0
 
 // Command-line flags.
@@ -142,10 +146,27 @@ namespace {
     }
 
     bool isDtor(llvm::StringRef mangled_name) {
-      // TODO(glider): need a demangler here.
-      if (mangled_name.find("D0") != std::string::npos) return true;
-      if (mangled_name.find("D1") != std::string::npos) return true;
+      int status;
+      char *demangled = NULL;
+#if defined(__GNUC__)
+      demangled = __cxxabiv1::__cxa_demangle(mangled_name.data(),
+                                             0, 0, &status);
+#else
+      if (demangled) {
+        char *found = strchr('~', demangled);
+        free(demangled);
+        if (found) {
+          return true;
+        } else {
+          return false;
+        }
+      } else {
+        // TODO(glider): need a demangler here.
+        if (mangled_name.find("D0") != std::string::npos) return true;
+        if (mangled_name.find("D1") != std::string::npos) return true;
+      }
       return false;
+#endif
     }
 
 
