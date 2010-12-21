@@ -340,7 +340,10 @@ void PcToStrings(uintptr_t pc, bool demangle,
 }
 
 string PcToRtnName(uintptr_t pc, bool demangle) {
-  return string("unimplemented");
+  string img, rtn, file;
+  int line;
+  PcToStrings(pc, demangle, &img, &rtn, &file, &line);
+  return rtn;
 }
 //------------- main ---------------------------- {{{1
 int main(int argc, char *argv[]) {

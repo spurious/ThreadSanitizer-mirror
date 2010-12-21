@@ -7,6 +7,19 @@ bool StringMatch(const string& wildcard, const string& text) {
   // definite, optimal match.
   const char* c_text_last = NULL;
   const char* c_wildcard_last = NULL;
+
+  char last_wc_char = wildcard[wildcard.size() - 1];
+
+  if (last_wc_char == '*' && wildcard.size() == 1) {
+    return true;  // '*' matches everything.
+  }
+
+  if (last_wc_char != '*' && last_wc_char != text[text.size() - 1]) {
+    // short cut for the case when the wildcard does not end with '*'
+    // and the last characters of wildcard and text do not match.
+    return false;
+  }
+
   while (*c_text) {
     if (*c_wildcard == '*') {
       while (*++c_wildcard == '*') {
