@@ -721,7 +721,7 @@ void *pthread_callback(void *arg) {
         dirty = true;
         // Associate NULL with the key and call the destructor.
         pthread_setspecific(tsd_slots[i].key, NULL);
-        (*tsd_slots[i].dtor)(value);
+        if (tsd_slots[i].dtor) (*tsd_slots[i].dtor)(value);
       }
     }
     iter--;
@@ -1372,7 +1372,7 @@ int __wrap_pthread_key_create(pthread_key_t *key,
                               void (*destr_function) (void *)) {
   // We don't want libpthread to know about the destructors.
   int result = __real_pthread_key_create(key, NULL);
-  if (result == 0) {
+  if (destr_function && (result == 0)) {
     tsd_slot_index++;
     // TODO(glider): we should delete TSD slots on pthread_key_delete.
     assert(tsd_slot_index < (int)(sizeof(tsd_slots) / sizeof(tsd_slot)));
