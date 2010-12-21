@@ -14,8 +14,9 @@ bool StringMatch(const string& wildcard, const string& text) {
     return true;  // '*' matches everything.
   }
 
-  if (last_wc_char != '*' && last_wc_char != text[text.size() - 1]) {
-    // short cut for the case when the wildcard does not end with '*'
+  if (last_wc_char != '*' && last_wc_char != '?'
+      && last_wc_char != text[text.size() - 1]) {
+    // short cut for the case when the wildcard does not end with '*' or '?'
     // and the last characters of wildcard and text do not match.
     return false;
   }
