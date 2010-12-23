@@ -75,6 +75,9 @@ void SplitString(string &src, char delim, vector<string> *dest,
 
 __thread ThreadInfo INFO;
 __thread int INIT = 0;
+// A condvar passed to child thread to notify the parent that the TID is
+// already set up.
+__thread pthread_cond_t *ParentCond;
 __thread int events = 0;
 typedef void (tsd_destructor)(void*);
 struct tsd_slot {
@@ -651,7 +654,9 @@ void *pthread_callback(void *arg) {
   // We already know the child pid -- get the parent condvar to signal.
   tid_t parent = cb_arg->parent;
   assert(ChildThreadStartConds.find(parent) != ChildThreadStartConds.end());
-  pthread_cond_t *parent_cond = ChildThreadStartConds[parent];
+  ParentCond = ChildThreadStartConds[parent];
+  ChildThreadStartConds.erase(parent);
+  DDPrintf("Erasing ChildThreadStartConds[%d]\n", parent);
 
   // Get the stack size and stack top for the current thread.
   // TODO(glider): do something if pthread_getattr_np() is not supported.
@@ -693,7 +698,7 @@ void *pthread_callback(void *arg) {
 #endif
   GIL::Unlock();
   DDPrintf("pthread_cond_signal(ChildThreadStartConds[%d])\n", parent);
-  __real_pthread_cond_signal(parent_cond);
+  __real_pthread_cond_signal(ParentCond);
 
   result = (*routine)(routine_arg);
 
@@ -737,6 +742,9 @@ void *pthread_callback(void *arg) {
   } else {
     DDPrintf("T%d (child of T%d): Not signaling, condvar not ready\n", tid, parent);
   }
+  // The parent is guaranteed not to wait for this thread to start, so it's ok
+  // to deallocate ParentCond.
+  __real_free(ParentCond);
   GIL::Unlock();
   return result;
 }
@@ -787,11 +795,13 @@ int __wrap_pthread_create(pthread_t *thread,
   cb_arg->attr = attr;
   SPut(THR_CREATE_BEFORE, tid, 0, 0, 0);
   PTH_INIT = 1;
-  pthread_cond_t *cond =
-      (pthread_cond_t*) __real_malloc(sizeof(pthread_cond_t));
-  pthread_cond_init(cond, NULL);
+  pthread_cond_t *cond;
   {
     GIL scoped;
+    // |cond| escapes to the child thread via ChildThreadStartConds, where it's
+    // used to initialize ParentCond.
+    cond = (pthread_cond_t*) __real_malloc(sizeof(pthread_cond_t));
+    pthread_cond_init(cond, NULL);
     ChildThreadStartConds[tid] = cond;
     DDPrintf("Setting ChildThreadStartConds[%d]\n", tid);
   }
@@ -809,14 +819,7 @@ int __wrap_pthread_create(pthread_t *thread,
       DDPrintf(", not waiting on ChildThreadStartConds[%d]\n", tid);
     }
     child_tid = Tids[*thread];
-    ChildThreadStartConds.erase(tid);
-    DDPrintf("Erasing ChildThreadStartConds[%d]\n", tid);
   }
-  IN_RTL++;
-  CHECK_IN_RTL();
-  __real_free(cond);
-  IN_RTL--;
-  CHECK_IN_RTL();
   if (result) SPut(THR_CREATE_AFTER, tid, 0, 0, child_tid);
   DDPrintf("pthread_create(%p)\n", *thread);
   RPut(RTN_EXIT, tid, pc, 0, 0);
@@ -1923,6 +1926,9 @@ void ReadDbgInfoFromSection(char* start, char* end) {
              pcs[i].pc, symbols[pcs[i].symbol].c_str(),
              files[pcs[i].file].c_str(), paths[pcs[i].path].c_str(),
              pcs[i].line);
+#ifdef DEBUG
+      assert((*debug_info).find(pcs[i].pc) == (*debug_info).end());
+#endif
       (*debug_info)[pcs[i].pc].pc = pcs[i].pc;
       (*debug_info)[pcs[i].pc].symbol = symbols[pcs[i].symbol];
       (*debug_info)[pcs[i].pc].file = files[pcs[i].file];
