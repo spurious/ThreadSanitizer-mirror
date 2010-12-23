@@ -3213,7 +3213,7 @@ class Cache {
   INLINE CacheLine *AcquireLine(TID tid, uintptr_t a, int call_site) {
     CacheLine *line = NULL;
     int iter = 0;
-    const int max_iter = 1 << 25;
+    const int max_iter = 1 << 30;
     do {
       line = TryAcquireLine(tid, a, call_site);
       iter++;
@@ -8134,6 +8134,8 @@ extern void ThreadSanitizerInit() {
     global_ignore = true;
     Report("INFO: STARTING WITH GLOBAL IGNORE ON\n");
   }
+  ANNOTATE_BENIGN_RACE(&g_lock_era,
+                       "g_lock_era may be incremented in a racey way");
 }
 
 extern void ThreadSanitizerFini() {
