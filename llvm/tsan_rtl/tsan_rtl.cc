@@ -696,9 +696,9 @@ void *pthread_callback(void *arg) {
 #ifdef DEBUG
   dump_finished();
 #endif
-  GIL::Unlock();
   DDPrintf("pthread_cond_signal(ChildThreadStartConds[%d])\n", parent);
   __real_pthread_cond_signal(ParentCond);
+  GIL::Unlock();
 
   result = (*routine)(routine_arg);
 
