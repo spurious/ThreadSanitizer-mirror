@@ -9,11 +9,14 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 
+#include <map>
+#include <vector>
+
 #define EXTRA_REPLACE_PARAMS tid_t tid, pc_t pc,
 #define REPORT_READ_RANGE(x, size) do { \
-    if (size) SPut(READ, tid, pc, (uintptr_t)(x), (size)); } while(0)
+    if (size) SPut(READ, tid, pc, (uintptr_t)(x), (size)); } while (0)
 #define REPORT_WRITE_RANGE(x, size) do { \
-    if (size) SPut(WRITE, tid, pc, (uintptr_t)(x), (size)); } while(0)
+    if (size) SPut(WRITE, tid, pc, (uintptr_t)(x), (size)); } while (0)
 #include "ts_replace.h"
 
 #ifdef DEBUG_LEVEL
@@ -31,7 +34,7 @@
 # define DPrintf(params...) \
     Printf(params)
 # define DEBUG_DO(code) \
-  do { code } while(0)
+  do { code } while (0)
 #else
 # define DPrintf(params...)
 # define DEBUG_DO(code)
@@ -103,8 +106,9 @@ std::map<tid_t, pthread_t> PThreads;
 std::map<tid_t, bool> Finished;
 // TODO(glider): verify that we need this much condvars.
 std::map<tid_t, pthread_cond_t*> ChildThreadStartConds;
-std::map<tid_t, pthread_cond_t*> FinishConds; // TODO(glider): we shouldn't need these.
-std::map<pthread_t, pthread_cond_t*> InitConds; // TODO(glider): we shouldn't need these.
+// TODO(glider): we shouldn't need InitConds (and maybe FinishConds).
+std::map<pthread_t, pthread_cond_t*> InitConds;
+std::map<tid_t, pthread_cond_t*> FinishConds;
 tid_t max_tid = 0;
 
 __thread  sigset_t glob_sig_blocked, glob_sig_old;
@@ -141,9 +145,9 @@ class DbgInfoLock {
 };
 
 // BLOCK_SIGNALS macro enables blocking the signals any time the global lock
-// is taken. This brings huge overhead to the lock and looks unnecessary now, 
+// is taken. This brings huge overhead to the lock and looks unnecessary now,
 // because our signal handler can run even under the global lock.
-//#define BLOCK_SIGNALS 1
+// #define BLOCK_SIGNALS 1
 #undef BLOCK_SIGNALS
 
 pthread_mutex_t global_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -196,7 +200,7 @@ bool GIL::TryLock() {
 #endif
   bool result;
   if (!gil_depth) {
-    result = !(bool) GIL_TRYLOCK(&global_lock);
+    result = !static_cast<bool>(GIL_TRYLOCK(&global_lock));
     if (result) {
       gil_depth++;
       IN_RTL++;
@@ -210,15 +214,13 @@ bool GIL::TryLock() {
 
 void GIL::Unlock() {
   if (gil_depth == 1) {
-    // TODO(glider): don't need to handle pending signals here.
-    ///unsafe_clear_pending_signals();
     gil_depth--;
 #ifdef DEBUG
     gil_owner = 0;
 #endif
 #ifdef ENABLE_STATS
     if (UNLIKELY(G_flags->verbosity)) {
-      if (stats_cur_events<kNumBuckets) {
+      if (stats_cur_events < kNumBuckets) {
         stats_event_buckets[stats_cur_events]++;
       }
       stats_cur_events = 0;
@@ -290,7 +292,10 @@ inline void SPut(EventType type, tid_t tid, pc_t pc,
     Event event(type, tid, pc, a, info);
     if (G_flags->verbosity) {
       if ((G_flags->verbosity >= 2) ||
-          (type == THR_START) || (type == THR_END) || (type == THR_JOIN_AFTER) || (type == THR_CREATE_BEFORE)) {
+          (type == THR_START) ||
+          (type == THR_END) ||
+          (type == THR_JOIN_AFTER) ||
+          (type == THR_CREATE_BEFORE)) {
         IN_RTL++;
         CHECK_IN_RTL();
         event.Print();
@@ -315,7 +320,7 @@ inline void SPut(EventType type, tid_t tid, pc_t pc,
     CHECK_IN_RTL();
     unsafe_clear_pending_signals();
   }
-  if ((type==THR_START) && (tid==0)) HAVE_THREAD_0 = 1;
+  if ((type == THR_START) && (tid == 0)) HAVE_THREAD_0 = 1;
 }
 
 void inline flush_trace() {
@@ -369,16 +374,20 @@ void inline flush_trace() {
         assert(trace->n_mops_);
         for (size_t i = 0; i < trace->n_mops_; i++) {
           if (trace->mops_[i].is_write) {
-            Event event(WRITE, tid, trace->mops_[i].pc, tleb[i], trace->mops_[i].size);
+            Event event(WRITE,
+                        tid, trace->mops_[i].pc, tleb[i], trace->mops_[i].size);
             event.Print();
           } else {
-            Event event(READ, tid, trace->mops_[i].pc, tleb[i], trace->mops_[i].size);
+            Event event(READ,
+                        tid, trace->mops_[i].pc, tleb[i], trace->mops_[i].size);
             event.Print();
           }
         }
       }
       {
-        ThreadSanitizerHandleTrace(tid, reinterpret_cast<TraceInfo*>(trace), tleb);
+        ThreadSanitizerHandleTrace(tid,
+                                   reinterpret_cast<TraceInfo*>(trace),
+                                   tleb);
       }
 
       // TODO(glider): the instrumentation pass may generate basic blocks that
@@ -449,7 +458,7 @@ void finalize() {
   Printf("Non-bufferable events: %d\n", stats_non_local);
   int total_events = 0;
   int total_locks = 0;
-  for (int i=0; i<kNumBuckets; i++) {
+  for (int i = 0; i < kNumBuckets; i++) {
     Printf("%d events under a lock: %d times\n", i, stats_event_buckets[i]);
     total_locks += stats_event_buckets[i];
     total_events += stats_event_buckets[i]*i;
@@ -483,7 +492,7 @@ bool initialize() {
   in_initialize = true;
 
   // TODO(glider): do we need it?
-  //assert(IN_RTL == 0);
+  // assert(IN_RTL == 0);
   IN_RTL++;
   CHECK_IN_RTL();
   // Only one thread exists at this moment.
@@ -495,14 +504,14 @@ bool initialize() {
     string env_args(const_cast<char*>(env));
     size_t start = env_args.find_first_not_of(" ");
     size_t stop = env_args.find_first_of(" ", start);
-    while(start != string::npos || stop != string::npos) {
+    while (start != string::npos || stop != string::npos) {
       args.push_back(env_args.substr(start, stop - start));
       start = env_args.find_first_not_of(" ", stop);
       stop = env_args.find_first_of(" ", start);
     }
   }
 #ifdef ENABLE_STATS
-  for (int i=0; i<kNumBuckets; i++) {
+  for (int i = 0; i < kNumBuckets; i++) {
     stats_event_buckets[i] = 0;
   }
 #endif
@@ -636,7 +645,7 @@ void *pthread_callback(void *arg) {
   GIL::Lock();
   void *result = NULL;
 
-  assert((PTH_INIT==1) && (RTL_INIT==1));
+  assert((PTH_INIT == 1) && (RTL_INIT == 1));
   assert(INIT == 0);
   DECLARE_TID_AND_PC();
   assert(INIT == 1);
@@ -738,10 +747,12 @@ void *pthread_callback(void *arg) {
   flush_tleb();
   SPut(THR_END, tid, 0, 0, 0);
   if (FinishConds.find(tid) != FinishConds.end()) {
-    DDPrintf("T%d (child of T%d): Signaling on %p\n", tid, parent, FinishConds[tid]);
+    DDPrintf("T%d (child of T%d): Signaling on %p\n",
+             tid, parent, FinishConds[tid]);
     __real_pthread_cond_signal(FinishConds[tid]);
   } else {
-    DDPrintf("T%d (child of T%d): Not signaling, condvar not ready\n", tid, parent);
+    DDPrintf("T%d (child of T%d): Not signaling, condvar not ready\n",
+             tid, parent);
   }
   // The parent is guaranteed not to wait for this thread to start, so it's ok
   // to deallocate ParentCond.
@@ -841,13 +852,12 @@ inline void IGNORE_ALL_ACCESSES_END() {
 }
 
 inline void IGNORE_ALL_SYNC_BEGIN(void) {
-  //TODO(glider): sync++
+  // TODO(glider): sync++
 }
 
 inline void IGNORE_ALL_SYNC_END(void) {
-  //TODO(glider): sync--
+  // TODO(glider): sync--
 }
-
 
 void IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN(void) {
   IGNORE_ALL_ACCESSES_BEGIN();
@@ -890,7 +900,7 @@ int __wrap___cxa_guard_release(int *guard) {
 
 extern "C"
 int __wrap_pthread_once(pthread_once_t *once_control,
-                        void (*init_routine) (void)) {
+                        void (*init_routine)(void)) {
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_once, 0);
   IGNORE_ALL_ACCESSES_BEGIN();
@@ -1254,7 +1264,7 @@ int __wrap_pthread_mutex_init(pthread_mutex_t *mutex,
   int result, mbRec;
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_mutex_init, 0);
-  mbRec = 0; // unused so far
+  mbRec = 0;  // TODO(glider): unused so far.
   if (attr) {
     int ty, zzz;
     zzz = pthread_mutexattr_gettype(attr, &ty);
@@ -1373,7 +1383,7 @@ int __wrap_pthread_barrier_wait(pthread_barrier_t *barrier) {
 
 extern "C"
 int __wrap_pthread_key_create(pthread_key_t *key,
-                              void (*destr_function) (void *)) {
+                              void (*destr_function)(void *)) {
   // We don't want libpthread to know about the destructors.
   int result = __real_pthread_key_create(key, NULL);
   if (destr_function && (result == 0)) {
@@ -1400,11 +1410,13 @@ int __wrap_pthread_join(pthread_t thread, void **value_ptr) {
     if (Tids.find(thread) == Tids.end()) {
       InitConds[thread] = new pthread_cond_t;
       pthread_cond_init(InitConds[thread], NULL);
-      DDPrintf("T%d: Initializing InitConds[%p]=%p\n", tid, thread, InitConds[thread]);
-      DDPrintf("T%d (parent of %p): Waiting on InitConds[%p]=%p\n", tid, thread, thread, InitConds[thread]);
+      DDPrintf("T%d: Initializing InitConds[%p]=%p\n",
+               tid, thread, InitConds[thread]);
+      DDPrintf("T%d (parent of %p): Waiting on InitConds[%p]=%p\n",
+               tid, thread, thread, InitConds[thread]);
       __real_pthread_cond_wait(InitConds[thread], &global_lock);
     }
-    assert (Tids.find(thread) != Tids.end());
+    assert(Tids.find(thread) != Tids.end());
     joined_tid = Tids[thread];
     DDPrintf("T%d: Finished[T%d]=%d\n", tid, joined_tid, Finished[joined_tid]);
     if (Finished.find(joined_tid) == Finished.end()) {
@@ -1414,11 +1426,13 @@ int __wrap_pthread_join(pthread_t thread, void **value_ptr) {
     if (!Finished[joined_tid]) {
       FinishConds[joined_tid] = new pthread_cond_t;
       pthread_cond_init(FinishConds[joined_tid], NULL);
-      DDPrintf("T%d: Initializing FinishConds[%d]=%p\n", tid, joined_tid, FinishConds[joined_tid]);
-      DDPrintf("T%d (parent of T%d): Waiting on FinishConds[%d]=%p\n", tid, joined_tid, joined_tid, FinishConds[joined_tid]);
+      DDPrintf("T%d: Initializing FinishConds[%d]=%p\n",
+               tid, joined_tid, FinishConds[joined_tid]);
+      DDPrintf("T%d (parent of T%d): Waiting on FinishConds[%d]=%p\n",
+               tid, joined_tid, joined_tid, FinishConds[joined_tid]);
       __real_pthread_cond_wait(FinishConds[joined_tid], &global_lock);
     }
-    unsafe_forget_thread(joined_tid, tid); // TODO(glider): earlier?
+    unsafe_forget_thread(joined_tid, tid);  // TODO(glider): earlier?
     IN_RTL--;
     CHECK_IN_RTL();
   }
@@ -1798,7 +1812,7 @@ int __wrap_sigaction(int signum, const struct sigaction *act,
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_sigaction, 0);
   if ((act->sa_handler == SIG_IGN) || (act->sa_handler == SIG_DFL)) {
-   result = __real_sigaction(signum, act, oldact);
+    result = __real_sigaction(signum, act, oldact);
   } else {
     signal_actions[signum] = *act;
     struct sigaction new_act = *act;
@@ -2078,7 +2092,7 @@ void ReadElf() {
     Elf_Off off = shdr->sh_offset;
     Elf_Word name = shdr->sh_name;
     Elf_Word size = shdr->sh_size;
-    DDPrintf("Section name: %d, %s\n", name ,hdr_strings + name);
+    DDPrintf("Section name: %d, %s\n", name, hdr_strings + name);
     if (strcmp(hdr_strings + name, "tsan_rtl_debug_info") == 0) {
       debug_info_section = map + off;
       debug_info_size = size;
@@ -2106,7 +2120,7 @@ void ReadDbgInfo(string filename) {
     vector<string> parts;
     SplitString(lines[i], '|', &parts, true);
     LLVMDebugInfo info;
-    info.pc = strtol(parts[0].c_str(), NULL, 16); // TODO(glider): error code
+    info.pc = strtol(parts[0].c_str(), NULL, 16);  // TODO(glider): error code
     if (parts[3] != "") {
       info.line = strtol(parts[3].c_str(), NULL, 10);
     } else {
