@@ -78,9 +78,6 @@ void SplitString(string &src, char delim, vector<string> *dest,
 
 __thread ThreadInfo INFO;
 __thread int INIT = 0;
-// A condvar passed to child thread to notify the parent that the TID is
-// already set up.
-__thread pthread_cond_t *ParentCond;
 __thread int events = 0;
 typedef void (tsd_destructor)(void*);
 struct tsd_slot {
@@ -104,9 +101,12 @@ int32_t bb_unique_id = 0;
 std::map<pthread_t, tid_t> Tids;
 std::map<tid_t, pthread_t> PThreads;
 std::map<tid_t, bool> Finished;
-// TODO(glider): verify that we need this much condvars.
-std::map<tid_t, pthread_cond_t*> ChildThreadStartConds;
+// TODO(glider): before spawning a new child thread its parent creates a
+// pthread barrier which is used to guarantee that the child has already
+// initialized before exiting pthread_create.
+std::map<tid_t, pthread_barrier_t*> ChildThreadStartBarriers;
 // TODO(glider): we shouldn't need InitConds (and maybe FinishConds).
+// How about using barriers here as well?
 std::map<pthread_t, pthread_cond_t*> InitConds;
 std::map<tid_t, pthread_cond_t*> FinishConds;
 tid_t max_tid = 0;
@@ -663,10 +663,9 @@ void *pthread_callback(void *arg) {
 
   // We already know the child pid -- get the parent condvar to signal.
   tid_t parent = cb_arg->parent;
-  assert(ChildThreadStartConds.find(parent) != ChildThreadStartConds.end());
-  ParentCond = ChildThreadStartConds[parent];
-  ChildThreadStartConds.erase(parent);
-  DDPrintf("Erasing ChildThreadStartConds[%d]\n", parent);
+  assert(ChildThreadStartBarriers.find(parent) !=
+         ChildThreadStartBarriers.end());
+  pthread_barrier_t *parent_barrier = ChildThreadStartBarriers[parent];
 
   // Get the stack size and stack top for the current thread.
   // TODO(glider): do something if pthread_getattr_np() is not supported.
@@ -706,8 +705,8 @@ void *pthread_callback(void *arg) {
 #ifdef DEBUG
   dump_finished();
 #endif
-  DDPrintf("pthread_cond_signal(ChildThreadStartConds[%d])\n", parent);
-  __real_pthread_cond_signal(ParentCond);
+  // Wait for the parent.
+  __real_pthread_barrier_wait(parent_barrier);
   GIL::Unlock();
 
   result = (*routine)(routine_arg);
@@ -754,9 +753,6 @@ void *pthread_callback(void *arg) {
     DDPrintf("T%d (child of T%d): Not signaling, condvar not ready\n",
              tid, parent);
   }
-  // The parent is guaranteed not to wait for this thread to start, so it's ok
-  // to deallocate ParentCond.
-  __real_free(ParentCond);
   GIL::Unlock();
   return result;
 }
@@ -807,32 +803,36 @@ int __wrap_pthread_create(pthread_t *thread,
   cb_arg->attr = attr;
   SPut(THR_CREATE_BEFORE, tid, 0, 0, 0);
   PTH_INIT = 1;
-  pthread_cond_t *cond;
+  pthread_barrier_t *barrier;
   {
     GIL scoped;
-    // |cond| escapes to the child thread via ChildThreadStartConds, where it's
-    // used to initialize ParentCond.
-    cond = (pthread_cond_t*) __real_malloc(sizeof(pthread_cond_t));
-    pthread_cond_init(cond, NULL);
-    ChildThreadStartConds[tid] = cond;
-    DDPrintf("Setting ChildThreadStartConds[%d]\n", tid);
+    // |barrier| escapes to the child thread via ChildThreadStartBarriers.
+    barrier = (pthread_barrier_t*) __real_malloc(sizeof(pthread_barrier_t));
+    __real_pthread_barrier_init(barrier, NULL, 2);
+    ChildThreadStartBarriers[tid] = barrier;
+    DDPrintf("Setting ChildThreadStartBarriers[%d]\n", tid);
   }
   IN_RTL--;
   CHECK_IN_RTL();
   int result = __real_pthread_create(thread, attr, pthread_callback, cb_arg);
   tid_t child_tid = 0;
   if (result == 0) {
-    GIL scoped;
-    if (Tids.find(*thread) == Tids.end()) {
-      DDPrintf("pthread_cond_wait(ChildThreadStartConds[%d])\n", tid);
-      __real_pthread_cond_wait(cond, &global_lock);
-    } else {
-      DDPrintf("Tids.find(%d) == Tids.end()", *thread);
-      DDPrintf(", not waiting on ChildThreadStartConds[%d]\n", tid);
-    }
+    __real_pthread_barrier_wait(barrier);
+    GIL scoped;  // Should be strictly after pthread_barrier_wait()
     child_tid = Tids[*thread];
+    ChildThreadStartBarriers.erase(tid);
+    pthread_barrier_destroy(barrier);
+    __real_free(barrier);
+  } else {
+    // Do not wait on the barrier.
+    GIL scoped;
+    child_tid = Tids[*thread];
+    ChildThreadStartBarriers.erase(tid);
+    pthread_barrier_destroy(barrier);
+    __real_free(barrier);
   }
-  if (result) SPut(THR_CREATE_AFTER, tid, 0, 0, child_tid);
+  // TODO(glider): isn't it "if (!result)"?
+  if (!result) SPut(THR_CREATE_AFTER, tid, 0, 0, child_tid);
   DDPrintf("pthread_create(%p)\n", *thread);
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
