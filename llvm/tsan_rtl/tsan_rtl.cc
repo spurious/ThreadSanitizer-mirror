@@ -470,6 +470,7 @@ inline void init_debug() {
     ReadDbgInfo(dbg_info);
   } else {
     ReadElf();
+    AddWrappersDbgInfo();
   }
   DBG_INIT = 1;
 }
@@ -1948,6 +1949,28 @@ void ReadDbgInfoFromSection(char* start, char* end) {
       (*debug_info)[pcs[i].pc].line = pcs[i].line;
     }
   }
+}
+
+void AddOneWrapperDbgInfo(pc_t pc, const char *symbol) {
+  (*debug_info)[pc].pc = pc;
+  (*debug_info)[pc].symbol = symbol;
+  (*debug_info)[pc].fullpath = __FILE__;
+  (*debug_info)[pc].file = __FILE__;
+  (*debug_info)[pc].path = "";
+  // TODO(glider): we need exact line numbers.
+  (*debug_info)[pc].line = 0;
+}
+
+#define WRAPPER_DBG_INFO(fun) AddOneWrapperDbgInfo((pc_t)fun, #fun)
+
+void AddWrappersDbgInfo() {
+  WRAPPER_DBG_INFO(__wrap__ZdlPv);
+  WRAPPER_DBG_INFO(__wrap_pthread_create);
+  WRAPPER_DBG_INFO(__wrap_pthread_join);
+  WRAPPER_DBG_INFO(__wrap_pthread_key_create);
+  WRAPPER_DBG_INFO(__wrap_pthread_cond_signal);
+  WRAPPER_DBG_INFO(__wrap_pthread_cond_wait);
+  WRAPPER_DBG_INFO(__wrap_pthread_cond_timedwait);
 }
 
 void ReadElf() {

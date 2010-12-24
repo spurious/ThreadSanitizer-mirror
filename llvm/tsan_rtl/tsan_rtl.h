@@ -58,6 +58,7 @@ tid_t GetTid();
 pc_t GetPc();
 
 void ReadElf();
+void AddWrappersDbgInfo();
 void ReadDbgInfo(string filename);
 
 #define DECLARE_TID() \
