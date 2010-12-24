@@ -1964,13 +1964,79 @@ void AddOneWrapperDbgInfo(pc_t pc, const char *symbol) {
 #define WRAPPER_DBG_INFO(fun) AddOneWrapperDbgInfo((pc_t)fun, #fun)
 
 void AddWrappersDbgInfo() {
-  WRAPPER_DBG_INFO(__wrap__ZdlPv);
   WRAPPER_DBG_INFO(__wrap_pthread_create);
   WRAPPER_DBG_INFO(__wrap_pthread_join);
-  WRAPPER_DBG_INFO(__wrap_pthread_key_create);
+  WRAPPER_DBG_INFO(__wrap_pthread_mutex_init);
+  WRAPPER_DBG_INFO(__wrap_pthread_mutex_lock);
+  WRAPPER_DBG_INFO(__wrap_pthread_mutex_trylock);
+  WRAPPER_DBG_INFO(__wrap_pthread_mutex_unlock);
+  WRAPPER_DBG_INFO(__wrap_pthread_mutex_destroy);
+
+  WRAPPER_DBG_INFO(__wrap_pthread_rwlock_init);
+  WRAPPER_DBG_INFO(__wrap_pthread_rwlock_destroy);
+  WRAPPER_DBG_INFO(__wrap_pthread_rwlock_trywrlock);
+  WRAPPER_DBG_INFO(__wrap_pthread_rwlock_wrlock);
+  WRAPPER_DBG_INFO(__wrap_pthread_rwlock_tryrdlock);
+  WRAPPER_DBG_INFO(__wrap_pthread_rwlock_rdlock);
+  WRAPPER_DBG_INFO(__wrap_pthread_rwlock_unlock);
+
+  WRAPPER_DBG_INFO(__wrap_pthread_spin_init);
+  WRAPPER_DBG_INFO(__wrap_pthread_spin_destroy);
+  WRAPPER_DBG_INFO(__wrap_pthread_spin_lock);
+  WRAPPER_DBG_INFO(__wrap_pthread_spin_trylock);
+  WRAPPER_DBG_INFO(__wrap_pthread_spin_unlock);
+
   WRAPPER_DBG_INFO(__wrap_pthread_cond_signal);
   WRAPPER_DBG_INFO(__wrap_pthread_cond_wait);
   WRAPPER_DBG_INFO(__wrap_pthread_cond_timedwait);
+
+  WRAPPER_DBG_INFO(__wrap_pthread_key_create);
+
+  WRAPPER_DBG_INFO(__wrap_sem_open);
+  WRAPPER_DBG_INFO(__wrap_sem_wait);
+  WRAPPER_DBG_INFO(__wrap_sem_trywait);
+  WRAPPER_DBG_INFO(__wrap_sem_post);
+
+  WRAPPER_DBG_INFO(__wrap___cxa_guard_acquire);
+  WRAPPER_DBG_INFO(__wrap___cxa_guard_release);
+
+  WRAPPER_DBG_INFO(__wrap_atexit);
+  WRAPPER_DBG_INFO(__wrap_exit);
+
+  WRAPPER_DBG_INFO(__wrap_strlen);
+  WRAPPER_DBG_INFO(__wrap_strcmp);
+  WRAPPER_DBG_INFO(__wrap_memchr);
+  WRAPPER_DBG_INFO(__wrap_memcpy);
+  WRAPPER_DBG_INFO(__wrap_memmove);
+  WRAPPER_DBG_INFO(__wrap_strchr);
+  WRAPPER_DBG_INFO(__wrap_strrchr);
+
+  WRAPPER_DBG_INFO(__wrap_mmap);
+  WRAPPER_DBG_INFO(__wrap_munmap);
+  WRAPPER_DBG_INFO(__wrap_calloc);
+  WRAPPER_DBG_INFO(__wrap_malloc);
+  WRAPPER_DBG_INFO(__wrap_realloc);
+  WRAPPER_DBG_INFO(__wrap_free);
+
+  WRAPPER_DBG_INFO(__wrap_read);
+  WRAPPER_DBG_INFO(__wrap_write);
+
+  WRAPPER_DBG_INFO(__wrap_pthread_once);
+  WRAPPER_DBG_INFO(__wrap_pthread_barrier_init);
+  WRAPPER_DBG_INFO(__wrap_pthread_barrier_wait);
+
+  WRAPPER_DBG_INFO(__wrap_sigaction);
+
+#ifdef TSAN_RTL_X86
+  WRAPPER_DBG_INFO(__wrap__Znwj);
+  WRAPPER_DBG_INFO(__wrap__Znaj);
+#endif  // TSAN_RTL_X86
+#ifdef TSAN_RTL_X64
+  WRAPPER_DBG_INFO(__wrap__Znwm);
+  WRAPPER_DBG_INFO(__wrap__Znam);
+#endif  // TSAN_RTL_X64
+  WRAPPER_DBG_INFO(__wrap__ZdlPv);
+  WRAPPER_DBG_INFO(__wrap__ZdaPv);
 }
 
 void ReadElf() {

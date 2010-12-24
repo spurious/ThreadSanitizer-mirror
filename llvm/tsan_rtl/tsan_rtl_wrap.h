@@ -29,9 +29,8 @@ int __real_pthread_rwlock_tryrdlock(pthread_rwlock_t *rwlock);
 int __real_pthread_rwlock_rdlock(pthread_rwlock_t *rwlock);
 int __real_pthread_rwlock_unlock(pthread_rwlock_t *rwlock);
 
-
-int __real_pthread_spin_destroy(pthread_spinlock_t *lock);
 int __real_pthread_spin_init(pthread_spinlock_t *lock, int pshared);
+int __real_pthread_spin_destroy(pthread_spinlock_t *lock);
 int __real_pthread_spin_lock(pthread_spinlock_t *lock);
 int __real_pthread_spin_trylock(pthread_spinlock_t *lock);
 int __real_pthread_spin_unlock(pthread_spinlock_t *lock);
@@ -50,10 +49,6 @@ int __real_sem_wait(sem_t *sem);
 int __real_sem_trywait(sem_t *sem);
 int __real_sem_post(sem_t *sem);
 
-size_t __real_strlen(const char *s);
-int __real_strcmp(const char *s1, const char *s2);
-void *__real_memchr(const char *s, int c, size_t n);
-
 int __real___cxa_guard_acquire(int *guard);
 int __real___cxa_guard_release(int *guard);
 
@@ -62,6 +57,9 @@ void __real_exit(int status);
 
 pid_t __real_fork();
 
+size_t __real_strlen(const char *s);
+int __real_strcmp(const char *s1, const char *s2);
+void *__real_memchr(const char *s, int c, size_t n);
 char *__real_memcpy(char *dest, const char *src, size_t n);
 void *__real_memmove(void *dest, const void *src, size_t n);
 char *__real_strchr(const char *s, int c);
@@ -72,8 +70,8 @@ void *__real_mmap(void *addr, size_t length, int prot, int flags,
 int __real_munmap(void *addr, size_t length);
 void *__real_calloc(size_t nmemb, size_t size);
 void *__real_malloc(size_t size); 
-void __real_free(void *ptr);
 void *__real_realloc(void *ptr, size_t size);
+void __real_free(void *ptr);
 
 ssize_t __real_write(int fd, const void *buf, size_t count);
 ssize_t __real_read(int fd, const void *buf, size_t count);
@@ -101,6 +99,5 @@ void __real__ZdlPv(void *ptr);
 // operator delete[](void*)
 void __real__ZdaPv(void *ptr);
 }
-
 
 #endif  // LLVM_SRC_MOP_IMPL_MOP_WRAP_H_
