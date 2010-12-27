@@ -23,6 +23,10 @@
 #define DEBUG 1
 #endif
 
+#ifndef DEBUG
+#define DEBUG 0
+#endif
+
 #if (DEBUG_LEVEL == 2)
 # define DDPrintf(params...) \
     Printf(params)
@@ -30,7 +34,7 @@
 # define DDPrintf(params...)
 #endif
 
-#ifdef DEBUG
+#if (DEBUG)
 # define DPrintf(params...) \
     Printf(params)
 # define DEBUG_DO(code) \
@@ -161,7 +165,7 @@ __thread int gil_depth = 0;
 // Reentrancy counter {{{1
 __thread int IN_RTL = 0;
 
-#ifdef DEBUG
+#if (DEBUG)
 #define CHECK_IN_RTL() do { \
   assert((IN_RTL >= 0) && (IN_RTL <= 5)); \
 } while (0)
@@ -184,7 +188,7 @@ void GIL::Lock() {
     IN_RTL++;
     CHECK_IN_RTL();
   }
-#ifdef DEBUG
+#if (DEBUG)
   gil_owner = pthread_self();
 #endif
   gil_depth++;
@@ -195,7 +199,7 @@ bool GIL::TryLock() {
   sigfillset(&glob_sig_blocked);
   pthread_sigmask(SIG_BLOCK, &glob_sig_blocked, &glob_sig_old);
 #endif
-#ifdef DEBUG
+#if (DEBUG)
   gil_owner = pthread_self();
 #endif
   bool result;
@@ -215,7 +219,7 @@ bool GIL::TryLock() {
 void GIL::Unlock() {
   if (gil_depth == 1) {
     gil_depth--;
-#ifdef DEBUG
+#if (DEBUG)
     gil_owner = 0;
 #endif
 #ifdef ENABLE_STATS
@@ -243,7 +247,7 @@ void GIL::Unlock() {
   }
 #endif
 }
-#ifdef DEBUG
+#if (DEBUG)
 int GIL::GetDepth() {
   return gil_depth;
 }
@@ -282,13 +286,13 @@ extern void ExPut(EventType type, tid_t tid, pc_t pc,
 
 INLINE void SPut(EventType type, tid_t tid, pc_t pc,
                  uintptr_t a, uintptr_t info) {
-#ifdef DEBUG
+#if (DEBUG)
   assert(HAVE_THREAD_0 || ((type == THR_START) && (tid == 0)));
   assert(RTL_INIT == 1);
 #endif
 
   if (type != THR_START) flush_tleb();
-  if (!G_flags->dry_run) {
+  if (!DEBUG || !G_flags->dry_run) {
     Event event(type, tid, pc, a, info);
     if (G_flags->verbosity) {
       if ((G_flags->verbosity >= 2) ||
@@ -324,17 +328,17 @@ INLINE void SPut(EventType type, tid_t tid, pc_t pc,
 }
 
 void INLINE flush_trace() {
-#ifdef DEBUG
+#if (DEBUG)
   // TODO(glider): PutTrace shouldn't be called without a lock taken.
   // However flushing events from unsafe_clear_pending_signals (called from
   // GIL::Unlock) is done under a mutex.
 //  assert(!GIL::GetDepth());
 #endif
-#ifdef DEBUG
+#if (DEBUG)
   assert(HAVE_THREAD_0 || ((type == THR_START) && (tid == 0)));
   assert(RTL_INIT == 1);
 #endif
-  if (!global_ignore && LIKELY(!G_flags->dry_run)) {
+  if (!global_ignore && (!DEBUG || LIKELY(!G_flags->dry_run))) {
     tid_t tid = INFO.tid;
     TraceInfoPOD *trace = INFO.trace_info;
     uintptr_t *tleb = INFO.TLEB;
@@ -368,7 +372,7 @@ void INLINE flush_trace() {
       IN_RTL++;
       CHECK_IN_RTL();
       assert(trace);
-      if (UNLIKELY(G_flags->verbosity >= 2)) {
+      if (DEBUG && UNLIKELY(G_flags->verbosity >= 2)) {
         Event sblock(SBLOCK_ENTER, tid, trace->pc_, 0, trace->n_mops_);
         sblock.Print();
         assert(trace->n_mops_);
@@ -406,7 +410,7 @@ void INLINE flush_trace() {
 
 INLINE void Put(EventType type, tid_t tid, pc_t pc,
                 uintptr_t a, uintptr_t info) {
-#ifdef DEBUG
+#if (DEBUG)
   assert(!isThreadLocalEvent(type));
 #endif
   SPut(type, tid, pc, a, info);
@@ -415,11 +419,11 @@ INLINE void Put(EventType type, tid_t tid, pc_t pc,
 // RPut is strictly for putting RTN_CALL and RTN_EXIT events.
 INLINE void RPut(EventType type, tid_t tid, pc_t pc,
                  uintptr_t a, uintptr_t info) {
-#ifdef DEBUG
+#if (DEBUG)
   assert(HAVE_THREAD_0 || ((type == THR_START) && (tid == 0)));
   assert(RTL_INIT == 1);
 #endif
-  if (LIKELY(!G_flags->dry_run)) {
+  if (!DEBUG || LIKELY(!G_flags->dry_run)) {
     Event event(type, tid, pc, a, info);
     if (UNLIKELY(G_flags->verbosity >= 2)) {
       event.Print();
@@ -555,8 +559,6 @@ extern pc_t ExGetPc() {
 }
 
 INLINE tid_t GetTid() {
-  IN_RTL++;
-  CHECK_IN_RTL();
   if (INIT == 0) {
     GIL scoped;
     // thread initialization
@@ -593,8 +595,6 @@ INLINE tid_t GetTid() {
     }
     INIT = 1;
   }
-  IN_RTL--;
-  CHECK_IN_RTL();
   return INFO.tid;
 }
 
@@ -606,7 +606,7 @@ extern tid_t ExGetTid() {
 // Flushes the local TLEB assuming someone is holding the global lock already.
 // Our RTL shouldn't need a thread to flush someone else's TLEB.
 void INLINE flush_tleb() {
-#ifdef DEBUG
+#if (DEBUG)
   if (UNLIKELY(G_flags->verbosity >= 2)) {
     DDPrintf("flush_tleb\n");
   }
@@ -702,7 +702,7 @@ void *pthread_callback(void *arg) {
   DDPrintf("Before routine() in T%d\n", tid);
 
   Finished[tid] = false;
-#ifdef DEBUG
+#if (DEBUG)
   dump_finished();
 #endif
   // Wait for the parent.
@@ -718,7 +718,7 @@ void *pthread_callback(void *arg) {
 
   GIL::Lock();
   Finished[tid] = true;
-#ifdef DEBUG
+#if (DEBUG)
   dump_finished();
 #endif
   DDPrintf("After routine() in T%d\n", tid);
@@ -1940,7 +1940,7 @@ void ReadDbgInfoFromSection(char* start, char* end) {
              pcs[i].pc, symbols[pcs[i].symbol].c_str(),
              files[pcs[i].file].c_str(), paths[pcs[i].path].c_str(),
              pcs[i].line);
-#ifdef DEBUG
+#if (DEBUG)
       assert((*debug_info).find(pcs[i].pc) == (*debug_info).end());
 #endif
       (*debug_info)[pcs[i].pc].pc = pcs[i].pc;
