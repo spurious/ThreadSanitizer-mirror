@@ -10,13 +10,7 @@ RTL_32_A=$(RTL_PATH)/tsan_rtl32.a
 RTL_64_A=$(RTL_PATH)/tsan_rtl64.a
 TARGETS=$(OPT) $(RTL_32_A) $(RTL_64_A)
 
-all:	$(TARGETS)
-
-$(OPT):
+all:	
 	make -C $(OPT_PATH)
-
-$(RTL_32_A):
 	make -C $(RTL_PATH)
-
-$(RTL_64_A):
 	make -C $(RTL_PATH)
