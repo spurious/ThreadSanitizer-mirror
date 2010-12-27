@@ -10,6 +10,10 @@
   tid_t tid = ExGetTid(); \
   pc_t pc = ExGetPc();
 
+#undef DECLARE_TID
+#define DECLARE_TID() \
+  tid_t tid = ExGetTid();
+
 extern bool global_ignore;
 
 // dynamic_annotations {{{1
