@@ -45,10 +45,16 @@ TS_HEADERS=
 
 RTL_32_O=tsan_rtl32.o
 RTL_64_O=tsan_rtl64.o
+RTL_32_A=tsan_rtl32.a
+RTL_64_A=tsan_rtl64.a
 
-all:	$(OBJS32) $(OBJS64) $(RTL_32_O) $(RTL_64_O)
+all:	$(RTL_32_A) $(RTL_64_A)
+
+$(RTL_32_A):	$(OBJS32) $(RTL_32_O)
 	$(AR) tsan_rtl32.a $(OBJS32) $(RTL_32_O)
 	$(RANLIB) tsan_rtl32.a
+
+$(RTL_64_A):	$(OBJS64) $(RTL_64_O)
 	$(AR) tsan_rtl64.a $(OBJS64) $(RTL_64_O)
 	$(RANLIB) tsan_rtl64.a
 

@@ -33,7 +33,7 @@ SRC_DBG="$FNAME.dbg"
 INST_MODE=-offline
 INST_MODE=-online
 CXXFLAGS=
-OPT_PASSES=-reg2mem -mem2reg -adce
+OPT_PASSES=
 
 source "$SCRIPT_ROOT/link_config.sh"
 
@@ -41,6 +41,8 @@ DEBUG=-g
 #DEBUG=
 
 LOG=instrumentation.log
+
+OX=-O1
 
 # Translate C code to LLVM IR.
 $LLVM_GCC -emit-llvm $MARCH $SRC $DEBUG -S $CXXFLAGS -o "$SRC_BIT" || exit 1
@@ -50,9 +52,9 @@ $OPT -load "$PASS_SO" $INST_MODE -arch=$XARCH "$SRC_TMP" -S  > "$SRC_INSTR" 2>$L
 cat $LOG | grep "^->" | sed "s/^->//" > "$SRC_DBG"
 cat $LOG | grep -v "^->"
 # Translate LLVM IR to native assembly code.
-$LLC -march=$XARCH -O0 $SRC_INSTR  -o $SRC_ASM || exit 1
+$LLC -march=$XARCH $OX $SRC_INSTR  -o $SRC_ASM || exit 1
 # Compile the object file.
-$LLVM_GCC $MARCH -c $SRC_ASM -O0 $DEBUG -o $SRC_OBJ
+$LLVM_GCC $MARCH -c $SRC_ASM $OX $DEBUG -o $SRC_OBJ
 # Link with the mops_impl.o
 $TSAN_LD $MARCH $DEBUG $SRC_OBJ $LDFLAGS $TSAN_RTL -o $SRC_EXE
 

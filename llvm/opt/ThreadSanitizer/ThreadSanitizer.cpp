@@ -949,9 +949,10 @@ namespace {
         // Then the %ptr to be put into TLEB is calculated as follows:
         // %old      = load %a
         // %destcast = ptrtoint %a to i32
-        // %neq      = icmp neq %old, %new
+        // %neq      = icmp ne %old, %new
         // %neqcast  = zext %neq to i32
-        // %ptr      = mul %a, %neq
+        // %intptr   = mul %destcast, %neqcast
+        // %ptr      = inttoptr %intptr to i32
         Value *New = static_cast<StoreInst&>(IN).getOperand(0);
         Value *Old = new LoadInst(MopAddr, "", BI);
         Value *DestCast = BitCastInst::CreatePointerCast(MopAddr, ArithmeticPtr, "", BI);

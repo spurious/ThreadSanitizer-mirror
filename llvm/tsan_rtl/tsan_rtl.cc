@@ -831,7 +831,6 @@ int __wrap_pthread_create(pthread_t *thread,
     pthread_barrier_destroy(barrier);
     __real_free(barrier);
   }
-  // TODO(glider): isn't it "if (!result)"?
   if (!result) SPut(THR_CREATE_AFTER, tid, 0, 0, child_tid);
   DDPrintf("pthread_create(%p)\n", *thread);
   RPut(RTN_EXIT, tid, pc, 0, 0);
