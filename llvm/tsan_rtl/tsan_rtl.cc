@@ -280,7 +280,7 @@ extern void ExPut(EventType type, tid_t tid, pc_t pc,
   Put(type, tid, pc, a, info);
 }
 
-inline void SPut(EventType type, tid_t tid, pc_t pc,
+INLINE void SPut(EventType type, tid_t tid, pc_t pc,
                  uintptr_t a, uintptr_t info) {
 #ifdef DEBUG
   assert(HAVE_THREAD_0 || ((type == THR_START) && (tid == 0)));
@@ -323,7 +323,7 @@ inline void SPut(EventType type, tid_t tid, pc_t pc,
   if ((type == THR_START) && (tid == 0)) HAVE_THREAD_0 = 1;
 }
 
-void inline flush_trace() {
+void INLINE flush_trace() {
 #ifdef DEBUG
   // TODO(glider): PutTrace shouldn't be called without a lock taken.
   // However flushing events from unsafe_clear_pending_signals (called from
@@ -404,7 +404,7 @@ void inline flush_trace() {
   }
 }
 
-inline void Put(EventType type, tid_t tid, pc_t pc,
+INLINE void Put(EventType type, tid_t tid, pc_t pc,
                 uintptr_t a, uintptr_t info) {
 #ifdef DEBUG
   assert(!isThreadLocalEvent(type));
@@ -413,7 +413,7 @@ inline void Put(EventType type, tid_t tid, pc_t pc,
 }
 
 // RPut is strictly for putting RTN_CALL and RTN_EXIT events.
-inline void RPut(EventType type, tid_t tid, pc_t pc,
+INLINE void RPut(EventType type, tid_t tid, pc_t pc,
                  uintptr_t a, uintptr_t info) {
 #ifdef DEBUG
   assert(HAVE_THREAD_0 || ((type == THR_START) && (tid == 0)));
@@ -472,7 +472,7 @@ void finalize() {
   }
 }
 
-inline void init_debug() {
+INLINE void init_debug() {
   assert(DBG_INIT == 0);
   char *dbg_info = getenv("TSAN_DBG_INFO");
   if (dbg_info) {
@@ -546,7 +546,7 @@ Init dummy_init;
 #endif
 
 // TODO(glider): GetPc should return valid PCs.
-inline pc_t GetPc() {
+INLINE pc_t GetPc() {
   return 0;
 }
 
@@ -554,7 +554,7 @@ extern pc_t ExGetPc() {
   return GetPc();
 }
 
-inline tid_t GetTid() {
+INLINE tid_t GetTid() {
   IN_RTL++;
   CHECK_IN_RTL();
   if (INIT == 0) {
@@ -605,7 +605,7 @@ extern tid_t ExGetTid() {
 
 // Flushes the local TLEB assuming someone is holding the global lock already.
 // Our RTL shouldn't need a thread to flush someone else's TLEB.
-void inline flush_tleb() {
+void INLINE flush_tleb() {
 #ifdef DEBUG
   if (UNLIKELY(G_flags->verbosity >= 2)) {
     DDPrintf("flush_tleb\n");
@@ -838,23 +838,23 @@ int __wrap_pthread_create(pthread_t *thread,
 }
 
 
-inline void IGNORE_ALL_ACCESSES_BEGIN() {
+INLINE void IGNORE_ALL_ACCESSES_BEGIN() {
   DECLARE_TID_AND_PC();
   Put(IGNORE_READS_BEG, tid, pc, 0, 0);
   Put(IGNORE_WRITES_BEG, tid, pc, 0, 0);
 }
 
-inline void IGNORE_ALL_ACCESSES_END() {
+INLINE void IGNORE_ALL_ACCESSES_END() {
   DECLARE_TID_AND_PC();
   Put(IGNORE_READS_END, tid, pc, 0, 0);
   Put(IGNORE_WRITES_END, tid, pc, 0, 0);
 }
 
-inline void IGNORE_ALL_SYNC_BEGIN(void) {
+INLINE void IGNORE_ALL_SYNC_BEGIN(void) {
   // TODO(glider): sync++
 }
 
-inline void IGNORE_ALL_SYNC_END(void) {
+INLINE void IGNORE_ALL_SYNC_END(void) {
   // TODO(glider): sync--
 }
 
@@ -1759,7 +1759,7 @@ ssize_t __wrap_write(int fd, const void *buf, size_t count) {
  comments in RTLSignalHandler). Each time we're about to release the global
  lock, we handle all the pending signals.
 */
-inline int unsafe_clear_pending_signals() {
+INLINE int unsafe_clear_pending_signals() {
   if (!have_pending_signals) return 0;
   int result = 0;
   for (int sig = 0; sig < NSIG; sig++) {
