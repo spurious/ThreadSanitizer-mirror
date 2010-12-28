@@ -547,8 +547,7 @@ void evh__pre_thread_ll_create ( ThreadId parent, ThreadId child ) {
   g_valgrind_threads[child].Clear();
   g_valgrind_threads[child].zero_based_uniq_tid = g_uniq_thread_id_counter++;
   // Printf("VG: T%d: VG_THR_START: parent=%d\n", VgTidToTsTid(child), VgTidToTsTid(parent));
-  uintptr_t pc = GetVgPc(parent);
-  Put(THR_START, VgTidToTsTid(child), pc, 0,
+  Put(THR_START, VgTidToTsTid(child), 0, 0,
       parent > 0 ? VgTidToTsTid(parent) : 0);
 }
 
