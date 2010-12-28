@@ -3924,7 +3924,7 @@ struct RecentSegmentsCache {
     queue_.clear();  // Don't unref - the segments are already dead.
   }
 
-  INLINE SID Search(CallStack &curr_stack,
+  INLINE SID Search(CallStack *curr_stack,
                     SID curr_sid, /*OUT*/ bool *needs_refill) {
     // TODO(timurrrr): we can probably move the matched segment to the head
     // of the queue.
@@ -3950,13 +3950,13 @@ struct RecentSegmentsCache {
       // This can probably lead to a little bit wrong stack traces in rare
       // occasions but we don't really care that much.
       if (kSizeOfHistoryStackTrace > 0) {
-        size_t n = curr_stack.size();
+        size_t n = curr_stack->size();
         uintptr_t *emb_trace = Segment::embedded_stack_trace(sid);
         if(*emb_trace &&  // This stack trace was filled
-           curr_stack.size() >= 3 &&
-           emb_trace[0] == curr_stack[n-1] &&
-           emb_trace[1] == curr_stack[n-2] &&
-           emb_trace[2] == curr_stack[n-3]) {
+           curr_stack->size() >= 3 &&
+           emb_trace[0] == (*curr_stack)[n-1] &&
+           emb_trace[1] == (*curr_stack)[n-2] &&
+           emb_trace[2] == (*curr_stack)[n-3]) {
           *needs_refill = false;
           return sid;
         }
@@ -4171,7 +4171,8 @@ struct Thread {
  public:
   ThreadLocalStats stats;
 
-  Thread(TID tid, TID parent_tid, VTS *vts, StackTrace *creation_context)
+  Thread(TID tid, TID parent_tid, VTS *vts, StackTrace *creation_context,
+         CallStack *call_stack)
     : is_running_(true),
       tid_(tid),
       sid_(0),
@@ -4188,6 +4189,7 @@ struct Thread {
       wr_lockset_(0),
       expensive_bits_(0),
       vts_at_exit_(NULL),
+      call_stack_(call_stack),
       lock_history_(128),
       recent_segments_cache_(G_flags->recent_segments_cache_size) {
 
@@ -4605,9 +4607,9 @@ struct Thread {
 
 
   void SetTopPc(uintptr_t pc) {
-    DCHECK(!call_stack_.empty());
+    DCHECK(!call_stack_->empty());
     if (pc) {
-      call_stack_.back() = pc;
+      call_stack_->back() = pc;
     }
   }
 
@@ -4871,17 +4873,17 @@ struct Thread {
 
   // Call stack  -------------
   void PopCallStack() {
-    CHECK(!call_stack_.empty());
-    call_stack_.pop_back();
+    CHECK(!call_stack_->empty());
+    call_stack_->pop_back();
   }
 
   void HandleRtnCall(uintptr_t call_pc, uintptr_t target_pc,
                      IGNORE_BELOW_RTN ignore_below) {
     this->stats.events[RTN_CALL]++;
-    if (!call_stack_.empty() && call_pc) {
-      call_stack_.back() = call_pc;
+    if (!call_stack_->empty() && call_pc) {
+      call_stack_->back() = call_pc;
     }
-    call_stack_.push_back(target_pc);
+    call_stack_->push_back(target_pc);
 
     bool ignore = false;
     if (ignore_below == IGNORE_BELOW_RTN_UNKNOWN) {
@@ -4914,8 +4916,8 @@ struct Thread {
 
   void HandleRtnExit() {
     this->stats.events[RTN_EXIT]++;
-    if (!call_stack_.empty()) {
-      call_stack_.pop_back();
+    if (!call_stack_->empty()) {
+      call_stack_->pop_back();
       if (fun_r_ignore_) {
         if (--fun_r_ignore_ == 0) {
           set_ignore_all_accesses(false);
@@ -4925,18 +4927,14 @@ struct Thread {
   }
 
   uintptr_t GetCallstackEntry(size_t offset_from_top) {
-    if (offset_from_top >= call_stack_.size()) return 0;
-    return call_stack_[call_stack_.size() - offset_from_top - 1];
-  }
-
-  CallStack *GetCallStack() {
-    return &call_stack_;
+    if (offset_from_top >= call_stack_->size()) return 0;
+    return (*call_stack_)[call_stack_->size() - offset_from_top - 1];
   }
 
   string CallStackRtnName(size_t offset_from_top = 0) {
-    if (call_stack_.size() <= offset_from_top)
+    if (call_stack_->size() <= offset_from_top)
       return "";
-    uintptr_t pc = call_stack_[call_stack_.size() - offset_from_top - 1];
+    uintptr_t pc = (*call_stack_)[call_stack_->size() - offset_from_top - 1];
     return PcToRtnNameWithStats(pc, false);
   }
 
@@ -4951,16 +4949,17 @@ struct Thread {
   }
 
   uintptr_t CallStackTopPc() {
-    if (call_stack_.empty())
+    if (call_stack_->empty())
       return 0;
-    return call_stack_.back();
+    return call_stack_->back();
   }
 
   INLINE void FillEmbeddedStackTrace(uintptr_t *emb_trace) {
-    size_t size = min(call_stack_.size(), (size_t)kSizeOfHistoryStackTrace);
-    size_t idx = call_stack_.size() - 1;
+    size_t size = min(call_stack_->size(), (size_t)kSizeOfHistoryStackTrace);
+    size_t idx = call_stack_->size() - 1;
+    uintptr_t *pcs = call_stack_->pcs;
     for (size_t i = 0; i < size; i++, idx--) {
-      emb_trace[i] = call_stack_[idx];
+      emb_trace[i] = pcs[idx];
     }
     if (size < (size_t) kSizeOfHistoryStackTrace) {
       emb_trace[size] = 0;
@@ -4968,22 +4967,23 @@ struct Thread {
   }
 
   INLINE void FillStackTrace(StackTrace *trace, size_t size) {
-    size_t idx = call_stack_.size() - 1;
+    size_t idx = call_stack_->size() - 1;
+    uintptr_t *pcs = call_stack_->pcs;
     for (size_t i = 0; i < size; i++, idx--) {
-      trace->Set(i, call_stack_[idx]);
+      trace->Set(i, pcs[idx]);
     }
   }
 
   INLINE StackTrace *CreateStackTrace(uintptr_t pc = 0,
                                       int max_len = -1,
                                       int capacity = 0) {
-    if (!call_stack_.empty() && pc) {
-      call_stack_.back() = pc;
+    if (!call_stack_->empty() && pc) {
+      call_stack_->back() = pc;
     }
     if (max_len <= 0) {
       max_len = G_flags->num_callers;
     }
-    int size = call_stack_.size();
+    int size = call_stack_->size();
     if (size > max_len)
       size = max_len;
     StackTrace *res = StackTrace::CreateNewEmptyStackTrace(size, capacity);
@@ -5115,7 +5115,7 @@ struct Thread {
 
   VTS *vts_at_exit_;
 
-  CallStack call_stack_;
+  CallStack *call_stack_;
 
   vector<SID> dead_sids_;
   vector<SID> fresh_sids_;
@@ -6184,7 +6184,7 @@ class Detector {
     AssertTILHeld();
 
     if (UNLIKELY(type == THR_START)) {
-        HandleThreadStart(TID(e->tid()), TID(e->info()), e->pc());
+        HandleThreadStart(TID(e->tid()), TID(e->info()), (CallStack*)e->pc());
         Thread::Get(TID(e->tid()))->stats.events[type]++;
         return;
     }
@@ -7322,7 +7322,7 @@ one_call:
       G_thread_stack_map->EraseRange(a, a + size);
   }
 
-  void HandleThreadStart(TID child_tid, TID parent_tid, uintptr_t pc) {
+  void HandleThreadStart(TID child_tid, TID parent_tid, CallStack *call_stack) {
     // Printf("HandleThreadStart: tid=%d parent_tid=%d pc=%lx pid=%d\n",
     //         child_tid.raw(), parent_tid.raw(), pc, getpid());
     VTS *vts = NULL;
@@ -7341,8 +7341,11 @@ one_call:
       parent->HandleChildThreadStart(child_tid, &vts, &creation_context);
     }
 
+    if (!call_stack) {
+      call_stack = new CallStack();
+    }
     Thread *new_thread = new Thread(child_tid, parent_tid,
-                                    vts, creation_context);
+                                    vts, creation_context, call_stack);
     CHECK(new_thread == Thread::Get(child_tid));
     if (child_tid == TID(0)) {
       new_thread->set_ignore_all_accesses(true); // until a new thread comes.
@@ -8195,10 +8198,6 @@ void NOINLINE ThreadSanitizerHandleRtnCall(int32_t tid, uintptr_t call_pc,
 void NOINLINE ThreadSanitizerHandleRtnExit(int32_t tid) {
   // This is a thread-local operation, no need for locking.
   Thread::Get(TID(tid))->HandleRtnExit();
-}
-
-extern CallStack *ThreadSanitizerCallStackForThread(int32_t tid) {
-  return Thread::Get(TID(tid))->GetCallStack();
 }
 
 static bool ThreadSanitizerPrintReport(ThreadSanitizerReport *report) {

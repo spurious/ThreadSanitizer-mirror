@@ -50,7 +50,7 @@ enum EventType {
   LOCK_DESTROY,       // {tid, pc, lock, 0}
   THR_CREATE_BEFORE,  // Parent thread's event. {tid, pc, 0, 0}
   THR_CREATE_AFTER,   // Parent thread's event. {tid, 0, 0, child_tid}
-  THR_START,          // Child thread's event {tid, 0, 0, parent_tid}
+  THR_START,          // Child thread's event {tid, CallStack, 0, parent_tid}
   THR_FIRST_INSN,     // Used only by valgrind.
   THR_END,            // {tid, 0, 0, 0}
   THR_JOIN_AFTER,     // {tid, pc, joined_tid}

@@ -198,9 +198,6 @@ extern void ThreadSanitizerHandleRtnCall(int32_t tid, uintptr_t call_pc,
 
 extern void ThreadSanitizerHandleRtnExit(int32_t tid);
 
-// Get the CallStack structure to implement faster rtn enter/exit.
-extern CallStack *ThreadSanitizerCallStackForThread(int32_t tid);
-
 extern void ThreadSanitizerPrintUsage();
 extern "C" const char *ThreadSanitizerQuery(const char *query);
 extern bool PhaseDebugIsOn(const char *phase_name);
