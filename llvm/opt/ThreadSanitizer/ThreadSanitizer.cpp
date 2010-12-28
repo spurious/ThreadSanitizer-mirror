@@ -82,6 +82,7 @@ namespace {
     const Type *Void;
     const StructType *MopType, *TraceInfoType, *BBTraceInfoType;
     const ArrayType *MopArrayType;
+    const ArrayType *LiteRaceCountersArrayType, *LiteRaceSkipArrayType;
     const ArrayType *TracePassportType, *TraceExtPassportType;
     const Type *TLEBTy;
     const PointerType *TLEBPtrType;
@@ -93,6 +94,8 @@ namespace {
     static const int kFNV1aPrime = 6733, kFNV1aModulo = 2048;
     static const int kMaxAddr = 1 << 30;
     static const int kDebugInfoMagicNumber = 0xdb914f0;
+    // TODO(glider): must be in sync with ts_trace_info.h
+    static const int kLiteRaceNumTids = 8;
     int arch_size_;
     int ModuleID;
     set<string> debug_symbol_set;
@@ -501,19 +504,27 @@ namespace {
       // };
       MopType = StructType::get(Context, PlatformInt, Int32, Int8, NULL);
       MopArrayType = ArrayType::get(MopType, kTLEBSize);
+      LiteRaceCountersArrayType = ArrayType::get(Int32, kLiteRaceNumTids);
+      LiteRaceSkipArrayType = ArrayType::get(Int32, kLiteRaceNumTids);
 
       // TraceInfoType represents the following class declared in
       // ts_trace_info.h:
       // struct TraceInfoPOD {
+      //   enum { kLiteRaceNumTids = 8 };  // takes zero bytes
       //   size_t n_mops_;
       //   size_t pc_;
       //   size_t id_;
       //   size_t counter_;
+      //   uint32_t literace_counters[kLiteRaceNumTids];
+      //   int32_t literace_num_to_skip[kLiteRaceNumTids];
       //   MopInfo mops_[1];
       // };
       TraceInfoType = StructType::get(Context,
-                                    PlatformInt, PlatformInt, PlatformInt, PlatformInt,
+                                    PlatformInt, PlatformInt,
+                                    PlatformInt, PlatformInt,
                                     MopArrayType,
+                                    LiteRaceCountersArrayType,
+                                    LiteRaceSkipArrayType,
                                     NULL);
       TraceInfoTypePtr = PointerType::get(TraceInfoType, 0);
 
@@ -887,7 +898,10 @@ namespace {
         TracePassportType = ArrayType::get(MopType, TraceNumMops);
         LLVMContext &Context = M.getContext();
         BBTraceInfoType = StructType::get(Context,
-                                    PlatformInt, PlatformInt, PlatformInt, PlatformInt,
+                                    PlatformInt, PlatformInt,
+                                    PlatformInt, PlatformInt,
+                                    LiteRaceCountersArrayType,
+                                    LiteRaceSkipArrayType,
                                     TracePassportType,
                                     NULL);
 
@@ -903,6 +917,16 @@ namespace {
         trace_info.push_back(ConstantInt::get(PlatformInt, 0));
         // counter_
         trace_info.push_back(ConstantInt::get(PlatformInt, 0));
+        // literace_counters[]
+        trace_info.push_back(
+            ConstantArray::get(LiteRaceCountersArrayType,
+                vector<Constant*>(kLiteRaceNumTids,
+                                  ConstantInt::get(PlatformInt, 0))));
+        // literace_num_to_skip[]
+        trace_info.push_back(
+            ConstantArray::get(LiteRaceSkipArrayType,
+                vector<Constant*>(kLiteRaceNumTids,
+                                  ConstantInt::get(PlatformInt, 0))));
         // mops_
         trace_info.push_back(ConstantArray::get(TracePassportType, passport));
 

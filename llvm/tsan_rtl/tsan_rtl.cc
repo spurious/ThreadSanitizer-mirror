@@ -1,8 +1,6 @@
 #include "tsan_rtl.h"
 
 #include "ts_trace_info.h"
-
-#include "ts_literace.h"
 #include "ts_lock.h"
 
 #include <elf.h>
@@ -366,45 +364,46 @@ void INLINE flush_trace() {
     // Unfortunately this also leads to cache ping-pong and may affect the
     // performance.
     if (UNLIKELY(G_flags->show_stats)) trace->counter_++;
-
-    if (LIKELY(G_flags->literace_sampling == 0) ||
-        !LiteRaceSkipTrace(tid, trace->id_, G_flags->literace_sampling)) {
-      IN_RTL++;
-      CHECK_IN_RTL();
-      assert(trace);
-      if (DEBUG && UNLIKELY(G_flags->verbosity >= 2)) {
-        Event sblock(SBLOCK_ENTER, tid, trace->pc_, 0, trace->n_mops_);
-        sblock.Print();
-        assert(trace->n_mops_);
-        for (size_t i = 0; i < trace->n_mops_; i++) {
-          if (trace->mops_[i].is_write) {
-            Event event(WRITE,
-                        tid, trace->mops_[i].pc, tleb[i], trace->mops_[i].size);
-            event.Print();
-          } else {
-            Event event(READ,
-                        tid, trace->mops_[i].pc, tleb[i], trace->mops_[i].size);
-            event.Print();
-          }
+    IN_RTL++;
+    CHECK_IN_RTL();
+    assert(trace);
+    TraceInfo *trace_info = reinterpret_cast<TraceInfo*>(trace);
+    if (UNLIKELY(G_flags->literace_sampling)) {
+      trace_info->LiteRaceUpdate(tid % TraceInfoPOD::kLiteRaceNumTids,
+                               G_flags->literace_sampling);
+    }
+    if (DEBUG && UNLIKELY(G_flags->verbosity >= 2)) {
+      Event sblock(SBLOCK_ENTER, tid, trace->pc_, 0, trace->n_mops_);
+      sblock.Print();
+      assert(trace->n_mops_);
+      for (size_t i = 0; i < trace->n_mops_; i++) {
+        if (trace->mops_[i].is_write) {
+          Event event(WRITE,
+                      tid, trace->mops_[i].pc, tleb[i], trace->mops_[i].size);
+          event.Print();
+        } else {
+          Event event(READ,
+                      tid, trace->mops_[i].pc, tleb[i], trace->mops_[i].size);
+          event.Print();
         }
       }
-      {
-        ThreadSanitizerHandleTrace(tid,
-                                   reinterpret_cast<TraceInfo*>(trace),
-                                   tleb);
-      }
-
-      // TODO(glider): the instrumentation pass may generate basic blocks that
-      // are larger than sizeof(TLEB). There should be a flag to control this,
-      // because we don't want to check the trace size in runtime.
-      DCHECK(trace->n_mops_ <= kTLEBSize);
-      // Clean up the TLEB. It's better to do this in ThreadSanitizer, however.
-      // TODO(glider): add a DCHECK() for this once it's done.
-      for (size_t i = 0; i < trace->n_mops_; i++) tleb[i] = 0;
-      IN_RTL--;
-      CHECK_IN_RTL();
-      unsafe_clear_pending_signals();
     }
+    {
+      ThreadSanitizerHandleTrace(tid,
+                                 trace_info,
+                                 tleb);
+    }
+
+    // TODO(glider): the instrumentation pass may generate basic blocks that
+    // are larger than sizeof(TLEB). There should be a flag to control this,
+    // because we don't want to check the trace size in runtime.
+    DCHECK(trace->n_mops_ <= kTLEBSize);
+    // Clean up the TLEB. It's better to do this in ThreadSanitizer, however.
+    // TODO(glider): add a DCHECK() for this once it's done.
+    for (size_t i = 0; i < trace->n_mops_; i++) tleb[i] = 0;
+    IN_RTL--;
+    CHECK_IN_RTL();
+    unsafe_clear_pending_signals();
   }
 }
 

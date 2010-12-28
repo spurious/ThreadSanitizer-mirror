@@ -7,4 +7,5 @@
 SCRIPT_ROOT=`dirname $0`
 source "$SCRIPT_ROOT/common.sh"
 COMPILER="$LLVM_GCC"
+FALLBACK_COMPILER="/usr/bin/gcc"
 source "$SCRIPT_ROOT/gcc_common.sh"
