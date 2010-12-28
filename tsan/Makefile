@@ -223,7 +223,7 @@ $(OUTDIR):
 
 TS_HEADERS=thread_sanitizer.h ts_util.h suppressions.h ignore.h ts_replace.h ts_heap_info.h \
 	   ts_simple_cache.h ts_stats.h ts_lock.h ts_events.h ts_event_names.h \
-	   ts_trace_info.h ts_literace.h ts_race_verifier.h \
+	   ts_trace_info.h ts_race_verifier.h \
 	   ../dynamic_annotations/dynamic_annotations.h
 ts_event_names.h: ts_events.h
 	sed -n '/^enum/,/^};/ {s/enum EventType/static const char *kEventNames[] = /; s/^  \([A-Z_]\+\)/  "\1"/g; p}' $< > $@

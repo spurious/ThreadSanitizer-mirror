@@ -40,7 +40,6 @@
 #include "thread_sanitizer.h"
 #include "ts_lock.h"
 #include "ts_trace_info.h"
-#include "ts_literace.h"
 #include "ts_race_verifier.h"
 #include "common_util.h"
 
@@ -142,6 +141,7 @@ struct ThreadLocalEventBuffer {
 struct PinThread {
   ThreadLocalEventBuffer tleb;
   int          uniq_tid;
+  uint32_t     literace_sampling;  // cache of a flag.
   volatile long last_child_tid;
   THREADID     tid;
   THREADID     parent_tid;
@@ -378,14 +378,16 @@ static INLINE void TLEBFlushUnlocked(ThreadLocalEventBuffer &tleb) {
       ThreadSanitizerHandleRtnCall(t.uniq_tid, call_pc, target_pc,
                                    ignore_below);
     } else if (event == SBLOCK_ENTER){
-      bool do_this_trace = ((G_flags->literace_sampling == 0 ||
-                             !LiteRaceSkipTrace(t.uniq_tid, t.trace_info->id(),
-                                                G_flags->literace_sampling)));
-      if (t.ignore_accesses)
-        do_this_trace = false;
-
       TraceInfo *trace_info = (TraceInfo*) tleb.events[i++];
       DCHECK(trace_info);
+      bool do_this_trace = true;
+      if (t.ignore_accesses) {
+        do_this_trace = false;
+      } else if (t.literace_sampling) {
+        do_this_trace = !trace_info->LiteRaceSkipTraceRealTid(
+            t.uniq_tid, t.literace_sampling);
+      }
+
       size_t n = trace_info->n_mops();
       if (do_this_trace) {
         if (DEBUG_MODE && !G_flags->dump_events.empty()) {
@@ -938,6 +940,7 @@ void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
   PinThread &t = g_pin_threads[tid];
   memset(&t, 0, sizeof(PinThread));
   t.uniq_tid = n_started_threads++;
+  t.literace_sampling = G_flags->literace_sampling;
   t.tid = tid;
   t.tleb.t = &t;
   ComputeIgnoreAccesses(t);

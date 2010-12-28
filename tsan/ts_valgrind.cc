@@ -36,7 +36,6 @@
 #include "ts_valgrind_client_requests.h"
 #include "thread_sanitizer.h"
 #include "ts_trace_info.h"
-#include "ts_literace.h"
 #include "ts_race_verifier.h"
 #include "common_util.h"
 
@@ -230,6 +229,7 @@ const size_t kMaxMopsPerTrace = 2048;
 
 struct ValgrindThread {
   int32_t zero_based_uniq_tid;
+  uint32_t literace_sampling;
   vector<CallStackRecord> call_stack;
 
   int ignore_accesses;
@@ -254,6 +254,7 @@ struct ValgrindThread {
 
   void Clear() {
     zero_based_uniq_tid = -1;
+    literace_sampling = G_flags->literace_sampling;  // cache it.
     ignore_accesses = 0;
     ignore_sync = 0;
     in_signal_handler = 0;
@@ -383,7 +384,8 @@ INLINE void FlushMops(ValgrindThread *thr, bool keep_trace_info = false) {
   int ts_tid = thr->zero_based_uniq_tid;
 
   if (global_ignore || thr->ignore_accesses ||
-      LiteRaceSkipTrace(ts_tid, t->id(), G_flags->literace_sampling)) {
+       (thr->literace_sampling &&
+        t->LiteRaceSkipTraceRealTid(ts_tid, thr->literace_sampling))) {
     thr->trace_info = NULL;
     return;
   }
