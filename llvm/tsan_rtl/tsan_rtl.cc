@@ -79,6 +79,7 @@ void SplitString(string &src, char delim, vector<string> *dest,
 }
 
 __thread ThreadInfo INFO;
+__thread CallStackPod ShadowStack;
 __thread int INIT = 0;
 __thread int events = 0;
 typedef void (tsd_destructor)(void*);
@@ -322,7 +323,9 @@ INLINE void SPut(EventType type, tid_t tid, pc_t pc,
     CHECK_IN_RTL();
     unsafe_clear_pending_signals();
   }
-  if ((type == THR_START) && (tid == 0)) HAVE_THREAD_0 = 1;
+  if (type == THR_START) {
+    if (tid == 0) HAVE_THREAD_0 = 1;
+  }
 }
 
 void INLINE flush_trace() {
@@ -333,12 +336,12 @@ void INLINE flush_trace() {
 //  assert(!GIL::GetDepth());
 #endif
 #if (DEBUG)
-  assert(HAVE_THREAD_0 || ((type == THR_START) && (tid == 0)));
   assert(RTL_INIT == 1);
 #endif
   if (!global_ignore && (!DEBUG || LIKELY(!G_flags->dry_run))) {
     tid_t tid = INFO.tid;
     TraceInfoPOD *trace = INFO.trace_info;
+    if (DEBUG) assert(trace);
     uintptr_t *tleb = INFO.TLEB;
 #ifdef ENABLE_STATS
     stats_events_processed += trace->n_mops_;
@@ -529,7 +532,7 @@ bool initialize() {
   ANNOTATE_BENIGN_RACE(&bb_unique_id, "Race on bb_unique_id");
   RTL_INIT = 1;
   in_initialize = false;
-  SPut(THR_START, 0, 0, 0, 0);
+  SPut(THR_START, 0, (pc_t) &ShadowStack, 0, 0);
 
   return true;
 }
@@ -557,7 +560,7 @@ extern pc_t ExGetPc() {
   return GetPc();
 }
 
-INLINE tid_t GetTid() {
+INLINE void MaybeInitTid() {
   if (INIT == 0) {
     GIL scoped;
     // thread initialization
@@ -577,7 +580,7 @@ INLINE tid_t GetTid() {
               }
       case 0: {
         RTL_INIT = 2;
-        if (!initialize()) return 0;
+        if (!initialize()) return;
         RTL_INIT = 1;
         break;
               }
@@ -594,6 +597,10 @@ INLINE tid_t GetTid() {
     }
     INIT = 1;
   }
+}
+
+INLINE tid_t GetTid() {
+  MaybeInitTid();
   return INFO.tid;
 }
 
@@ -678,7 +685,7 @@ void *pthread_callback(void *arg) {
   }
   have_pending_signals = false;
 
-  SPut(THR_START, INFO.tid, 0, 0, parent);
+  SPut(THR_START, INFO.tid, (pc_t) &ShadowStack, 0, parent);
   IN_RTL++;
   CHECK_IN_RTL();
   delete cb_arg;
@@ -1828,22 +1835,22 @@ extern "C"
 void rtn_call(void *addr) {
   // TODO(glider): this is unnecessary if we flush before each call/invoke
   // insn.
-  flush_tleb();
-  DECLARE_TID_AND_PC();
-  RPut(RTN_CALL, tid, pc, (uintptr_t)addr, 0);
+  //flush_tleb();
+  ShadowStack.pcs_[ShadowStack.size_] = (uintptr_t)addr;
+  ShadowStack.size_++;
 }
 
 extern "C"
 void rtn_exit() {
-  flush_tleb();
-  DECLARE_TID_AND_PC();
-  RPut(RTN_EXIT, tid, pc, 0, 0);
+  //flush_tleb();
+  ShadowStack.size_--;
 }
 
 // TODO(glider): we may want the basic block address to differ from the PC
 // of the first MOP in that basic block.
 extern "C"
 void* bb_flush(TraceInfoPOD *next_mops) {
+  MaybeInitTid();
   if (INFO.trace_info) {
     // This is not a function entry block
     flush_trace();

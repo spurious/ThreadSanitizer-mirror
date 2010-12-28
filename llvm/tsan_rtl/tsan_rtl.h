@@ -72,6 +72,7 @@ void ReadDbgInfo(string filename);
   tid_t tid = ExGetTid(); \
   pc_t pc = ExGetPc();
 
+void MaybeInitTid();
 void flush_tleb();
 
 inline void Put(EventType type, tid_t tid, pc_t pc,
