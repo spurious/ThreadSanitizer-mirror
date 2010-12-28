@@ -4179,6 +4179,7 @@ struct Thread {
       max_sp_(0),
       min_sp_(0),
       stack_size_for_ignore_(0),
+      fun_r_ignore_(0),
       min_sp_for_ignore_(0),
       n_mops_since_start_(0),
       creation_context_(creation_context),
@@ -4194,7 +4195,6 @@ struct Thread {
     ignore_depth_[0] = ignore_depth_[1] = 0;
 
     call_stack_.reserve(100);
-    call_stack_ignore_rec_.reserve(100);
     HandleRtnCall(0, 0, IGNORE_BELOW_RTN_UNKNOWN);
     ignore_context_[0] = NULL;
     ignore_context_[1] = NULL;
@@ -4902,18 +4902,26 @@ struct Thread {
     }
 
     if (ignore) {
-      set_ignore_all_accesses(true);
+      if (!fun_r_ignore_) {
+        fun_r_ignore_ = 1;
+        set_ignore_all_accesses(true);
+      }
+    } else {
+      if (fun_r_ignore_) {
+        fun_r_ignore_++;
+      }
     }
-    call_stack_ignore_rec_.push_back(ignore);
   }
 
   void HandleRtnExit() {
     this->stats.events[RTN_EXIT]++;
     if (!call_stack_.empty()) {
-      if (call_stack_ignore_rec_.back())
-        set_ignore_all_accesses(false);
-      call_stack_ignore_rec_.pop_back();
       call_stack_.pop_back();
+      if (fun_r_ignore_) {
+        if (--fun_r_ignore_ == 0) {
+          set_ignore_all_accesses(false);
+        }
+      }
     }
   }
 
@@ -5084,6 +5092,7 @@ struct Thread {
   uintptr_t  max_sp_;
   uintptr_t  min_sp_;
   uintptr_t  stack_size_for_ignore_;
+  uintptr_t  fun_r_ignore_;  // > 0 if we are inside a fun_r-ed function.
   uintptr_t  min_sp_for_ignore_;
   uintptr_t  n_mops_since_start_;
   StackTrace *creation_context_;
@@ -5104,9 +5113,6 @@ struct Thread {
   VTS *vts_at_exit_;
 
   vector<uintptr_t> call_stack_;
-  // Contains "true" for those functions in the stacktrace which inclusively
-  // ignore memory accesses.
-  vector<unsigned char> call_stack_ignore_rec_;
 
   vector<SID> dead_sids_;
   vector<SID> fresh_sids_;
