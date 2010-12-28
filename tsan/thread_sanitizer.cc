@@ -3895,6 +3895,36 @@ struct LockHistory {
   size_t size_;
 };
 
+// -------- CallStack ------------- {{{1
+const size_t kMaxCallStackSize = 1 << 12;
+
+struct CallStack {
+  uintptr_t pcs[kMaxCallStackSize];
+  uintptr_t *end;
+
+  CallStack() { Clear(); }
+
+  size_t size() { return end - pcs; }
+  bool empty() { return end == pcs; }
+  uintptr_t &back() {
+    DCHECK(!empty());
+    return *(end - 1);
+  }
+  void pop_back() {
+    DCHECK(!empty());
+    end--;
+  }
+  void push_back(uintptr_t pc) {
+    DCHECK(size() < kMaxCallStackSize);
+    *end = pc;
+    end++;
+  }
+  void Clear() {
+    end = pcs;
+  }
+  uintptr_t &operator[] (size_t i) { return pcs[i]; }
+};
+
 // -------- RecentSegmentsCache ------------- {{{1
 // For each thread we store a limited amount of recent segments with
 // the same VTS and LS as the current segment.
@@ -3924,7 +3954,7 @@ struct RecentSegmentsCache {
     queue_.clear();  // Don't unref - the segments are already dead.
   }
 
-  INLINE SID Search(const vector<uintptr_t> &curr_stack,
+  INLINE SID Search(CallStack &curr_stack,
                     SID curr_sid, /*OUT*/ bool *needs_refill) {
     // TODO(timurrrr): we can probably move the matched segment to the head
     // of the queue.
@@ -4194,7 +4224,6 @@ struct Thread {
     NewSegmentWithoutUnrefingOld("Thread Creation", vts);
     ignore_depth_[0] = ignore_depth_[1] = 0;
 
-    call_stack_.reserve(100);
     HandleRtnCall(0, 0, IGNORE_BELOW_RTN_UNKNOWN);
     ignore_context_[0] = NULL;
     ignore_context_[1] = NULL;
@@ -4930,7 +4959,7 @@ struct Thread {
     return call_stack_[call_stack_.size() - offset_from_top - 1];
   }
 
-  string CallStackRtnName(size_t offset_from_top = 0) const {
+  string CallStackRtnName(size_t offset_from_top = 0) {
     if (call_stack_.size() <= offset_from_top)
       return "";
     uintptr_t pc = call_stack_[call_stack_.size() - offset_from_top - 1];
@@ -4947,7 +4976,7 @@ struct Thread {
     return res;
   }
 
-  uintptr_t CallStackTopPc() const {
+  uintptr_t CallStackTopPc() {
     if (call_stack_.empty())
       return 0;
     return call_stack_.back();
@@ -5112,7 +5141,7 @@ struct Thread {
 
   VTS *vts_at_exit_;
 
-  vector<uintptr_t> call_stack_;
+  CallStack call_stack_;
 
   vector<SID> dead_sids_;
   vector<SID> fresh_sids_;
