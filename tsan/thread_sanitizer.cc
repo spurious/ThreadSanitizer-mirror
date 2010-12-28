@@ -4929,6 +4929,10 @@ struct Thread {
     return call_stack_[call_stack_.size() - offset_from_top - 1];
   }
 
+  CallStack *GetCallStack() {
+    return &call_stack_;
+  }
+
   string CallStackRtnName(size_t offset_from_top = 0) {
     if (call_stack_.size() <= offset_from_top)
       return "";
@@ -8191,6 +8195,10 @@ void NOINLINE ThreadSanitizerHandleRtnCall(int32_t tid, uintptr_t call_pc,
 void NOINLINE ThreadSanitizerHandleRtnExit(int32_t tid) {
   // This is a thread-local operation, no need for locking.
   Thread::Get(TID(tid))->HandleRtnExit();
+}
+
+extern CallStack *ThreadSanitizerCallStackForThread(int32_t tid) {
+  return Thread::Get(TID(tid))->GetCallStack();
 }
 
 static bool ThreadSanitizerPrintReport(ThreadSanitizerReport *report) {
