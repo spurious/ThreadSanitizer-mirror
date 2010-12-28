@@ -3895,36 +3895,6 @@ struct LockHistory {
   size_t size_;
 };
 
-// -------- CallStack ------------- {{{1
-const size_t kMaxCallStackSize = 1 << 12;
-
-struct CallStack {
-  uintptr_t *end;
-  uintptr_t pcs[kMaxCallStackSize];
-
-  CallStack() { Clear(); }
-
-  size_t size() { return end - pcs; }
-  bool empty() { return end == pcs; }
-  uintptr_t &back() {
-    DCHECK(!empty());
-    return *(end - 1);
-  }
-  void pop_back() {
-    DCHECK(!empty());
-    end--;
-  }
-  void push_back(uintptr_t pc) {
-    DCHECK(size() < kMaxCallStackSize);
-    *end = pc;
-    end++;
-  }
-  void Clear() {
-    end = pcs;
-  }
-  uintptr_t &operator[] (size_t i) { return pcs[i]; }
-};
-
 // -------- RecentSegmentsCache ------------- {{{1
 // For each thread we store a limited amount of recent segments with
 // the same VTS and LS as the current segment.

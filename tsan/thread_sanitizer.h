@@ -142,6 +142,36 @@ extern bool debug_ins;
 extern bool debug_shadow_stack;
 extern bool debug_race_verifier;
 
+// -------- CallStack ------------- {{{1
+const size_t kMaxCallStackSize = 1 << 12;
+
+struct CallStack {
+  uintptr_t *end;
+  uintptr_t pcs[kMaxCallStackSize];
+
+  CallStack() { Clear(); }
+
+  size_t size() { return end - pcs; }
+  bool empty() { return end == pcs; }
+  uintptr_t &back() {
+    DCHECK(!empty());
+    return *(end - 1);
+  }
+  void pop_back() {
+    DCHECK(!empty());
+    end--;
+  }
+  void push_back(uintptr_t pc) {
+    DCHECK(size() < kMaxCallStackSize);
+    *end = pc;
+    end++;
+  }
+  void Clear() {
+    end = pcs;
+  }
+  uintptr_t &operator[] (size_t i) { return pcs[i]; }
+};
+
 //--------- TS Exports ----------------- {{{1
 #include "ts_events.h"
 #include "ts_trace_info.h"
