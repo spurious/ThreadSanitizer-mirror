@@ -3899,8 +3899,8 @@ struct LockHistory {
 const size_t kMaxCallStackSize = 1 << 12;
 
 struct CallStack {
-  uintptr_t pcs[kMaxCallStackSize];
   uintptr_t *end;
+  uintptr_t pcs[kMaxCallStackSize];
 
   CallStack() { Clear(); }
 
