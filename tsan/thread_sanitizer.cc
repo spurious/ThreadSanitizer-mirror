@@ -4957,7 +4957,7 @@ struct Thread {
   INLINE void FillEmbeddedStackTrace(uintptr_t *emb_trace) {
     size_t size = min(call_stack_->size(), (size_t)kSizeOfHistoryStackTrace);
     size_t idx = call_stack_->size() - 1;
-    uintptr_t *pcs = call_stack_->pcs;
+    uintptr_t *pcs = call_stack_->pcs();
     for (size_t i = 0; i < size; i++, idx--) {
       emb_trace[i] = pcs[idx];
     }
@@ -4968,7 +4968,7 @@ struct Thread {
 
   INLINE void FillStackTrace(StackTrace *trace, size_t size) {
     size_t idx = call_stack_->size() - 1;
-    uintptr_t *pcs = call_stack_->pcs;
+    uintptr_t *pcs = call_stack_->pcs();
     for (size_t i = 0; i < size; i++, idx--) {
       trace->Set(i, pcs[idx]);
     }

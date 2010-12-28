@@ -145,31 +145,45 @@ extern bool debug_race_verifier;
 // -------- CallStack ------------- {{{1
 const size_t kMaxCallStackSize = 1 << 12;
 
-struct CallStack {
-  uintptr_t *end;
-  uintptr_t pcs[kMaxCallStackSize];
+struct CallStackPod {
+  uintptr_t size_;
+  uintptr_t pcs_[kMaxCallStackSize];
+};
+
+struct CallStack: public CallStackPod {
 
   CallStack() { Clear(); }
 
-  size_t size() { return end - pcs; }
-  bool empty() { return end == pcs; }
+  size_t size() { return size_; }
+  uintptr_t *pcs() { return pcs_; }
+
+  bool empty() { return size_ == 0; }
+
   uintptr_t &back() {
     DCHECK(!empty());
-    return *(end - 1);
+    return pcs_[size_ - 1];
   }
+
   void pop_back() {
-    DCHECK(!empty());
-    end--;
+    DCHECK(size_ > 0);
+    size_--;
   }
+
   void push_back(uintptr_t pc) {
-    DCHECK(size() < kMaxCallStackSize);
-    *end = pc;
-    end++;
+    DCHECK(size_ < kMaxCallStackSize);
+    pcs_[size_] = pc;
+    size_++;
   }
+
   void Clear() {
-    end = pcs;
+    size_ = 0;
   }
-  uintptr_t &operator[] (size_t i) { return pcs[i]; }
+
+  uintptr_t &operator[] (size_t i) {
+    DCHECK(i < size_);
+    return pcs_[i];
+  }
+
 };
 
 //--------- TS Exports ----------------- {{{1
