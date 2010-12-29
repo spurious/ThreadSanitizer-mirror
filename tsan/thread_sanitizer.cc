@@ -5001,6 +5001,7 @@ struct Thread {
     // G_flags->debug_level = 2;
     for (int i = 0; i < Thread::NumberOfThreads(); i++) {
       Thread *thr = Get(TID(i));
+      if (!thr->is_running()) continue;
       thr->child_tid_to_create_info_.clear();
       thr->recent_segments_cache_.ForgetAllState();
       thr->sid_ = SID();  // Reset the old SID so we don't try to read its VTS.
