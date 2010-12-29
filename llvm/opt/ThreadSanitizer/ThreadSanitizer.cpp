@@ -31,7 +31,7 @@ using namespace std;
 # include <cxxabi.h>  // __cxa_demangle
 #endif
 
-#define DEBUG 0
+#define DEBUG 1
 
 // Command-line flags.
 static cl::opt<std::string>
@@ -333,7 +333,7 @@ namespace {
       BlockSet entries;
       BlockSet accessible;
       int num_edges = 0;
-#if DEBUG
+#if DEBUG > 1
         errs() << "VALIDATING:\n";
         for (BlockSet::iterator I = trace.begin(), E = trace.end();
              I != E; ++I) {
@@ -350,18 +350,18 @@ namespace {
         BlockSet &pred = getPredecessors(*BB);
         Function *F = (*BB)->getParent();
         BasicBlock *entry = F->begin();
-#if DEBUG
+#if DEBUG > 1
         errs() << "!!" << (*BB)->getName() << "\n";
 #endif
         if (*BB == entry) {
           entries.insert(*BB);
-#if DEBUG
+#if DEBUG > 1
           errs() << "? ->" << (*BB)->getName() << "\n";
 #endif
         }
         for (BlockSet::iterator I = pred.begin(), E = pred.end();
              I != E; ++I) {
-#if DEBUG
+#if DEBUG > 1
           errs() << (*I)->getName() << "->" << (*BB)->getName() << "\n";
 #endif
           if (trace.blocks.find(*I) != trace.blocks.end()) {
@@ -372,7 +372,7 @@ namespace {
         }
       }
       if (entries.size() > 1) {
-#if DEBUG
+#if DEBUG > 1
         errs() << "MULTIPLE ENTRY DETECTED\n";
 #endif
         return false;
@@ -384,7 +384,7 @@ namespace {
       BlockSet used_empty;
       // entries.begin() is the only trace entry.
       if (traceHasCycles(trace, *(entries.begin()), used_empty)) {
-#if DEBUG
+#if DEBUG > 1
         errs() << "LOOP DETECTED\n";
 #endif
         return false;
@@ -440,7 +440,7 @@ namespace {
       to_see.push_back(F.begin());
       for (int i = 0; i < to_see.size(); ++i) {
         BasicBlock *current_bb = to_see[i];
-#if DEBUG
+#if DEBUG > 1
         errs() << "BB: " << current_bb->getName() << "\n";
 #endif
         if (used_bbs.find(current_bb) == used_bbs.end()) {
@@ -479,6 +479,11 @@ namespace {
     //   ShadowStack.size_++;
     //
     void InsertRtnCall(uintptr_t addr, BasicBlock::iterator &Before) {
+#if DEBUG
+        std::vector<Value*> inst(1);
+        inst[0] = ConstantInt::get(PlatformInt, addr);
+        CallInst::Create(RtnCallFn, inst.begin(), inst.end(), "", Before);
+#else
       // TODO(glider): each call instruction should update the top of the shadow
       // stack.
       std::vector <Value*> size_idx;
@@ -506,10 +511,16 @@ namespace {
                                               ConstantInt::get(PlatformInt, 1),
                                               "", Before);
       new StoreInst(NewSize, StackSizePtr, Before);
+#endif
     }
 
     // Insert the code that pops a stack frame from the shadow stack.
     void InsertRtnExit(BasicBlock::iterator &Before) {
+#if DEBUG
+      std::vector<Value*> inst(0);
+      CallInst::Create(RtnExitFn, inst.begin(), inst.end(), "", Before);
+#else
+
       std::vector <Value*> size_idx;
       size_idx.push_back(ConstantInt::get(PlatformInt, 0));
       size_idx.push_back(ConstantInt::get(Int32, 0));
@@ -523,6 +534,7 @@ namespace {
                                               ConstantInt::get(PlatformInt, 1),
                                               "", Before);
       new StoreInst(NewSize, StackSizePtr, Before);
+#endif
     }
 
     virtual bool runOnModule(Module &M) {
@@ -679,14 +691,10 @@ namespace {
           first_dtor_bb = false;
         }
         BasicBlock::iterator First = F->begin()->begin();
-//        std::vector<Value*> inst(1);
-//        inst[0] = ConstantInt::get(PlatformInt, getAddr(startTraceCount, 0, First));
-//        CallInst::Create(RtnCallFn, inst.begin(), inst.end(), "", First);
         InsertRtnCall(getAddr(startTraceCount, 0, First), First);
       }
       writeDebugInfo(M);
 
-///      M.dump();
       return true;
     }
 
@@ -1130,8 +1138,6 @@ namespace {
         }
 
         if (isa<ReturnInst>(BI)) {
-///          std::vector<Value*> inst(0);
-///          CallInst::Create(RtnExitFn, inst.begin(), inst.end(), "", BI);
           InsertRtnExit(BI);
           unknown = false;
         }
