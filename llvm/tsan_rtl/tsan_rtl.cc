@@ -98,7 +98,6 @@ int RTL_INIT = 0;
 int PTH_INIT = 0;
 int DBG_INIT = 0;
 int HAVE_THREAD_0 = 0;
-int32_t bb_unique_id = 0;
 
 
 std::map<pthread_t, tid_t> Tids;
@@ -329,6 +328,7 @@ INLINE void SPut(EventType type, tid_t tid, pc_t pc,
 }
 
 void INLINE flush_trace() {
+  if (DEBUG) assert(ShadowStack.size_ > 0);
 #if (DEBUG)
   // TODO(glider): PutTrace shouldn't be called without a lock taken.
   // However flushing events from unsafe_clear_pending_signals (called from
@@ -347,20 +347,6 @@ void INLINE flush_trace() {
     stats_events_processed += trace->n_mops_;
     stats_cur_events += trace->n_mops_;
 #endif
-
-    // If the trace is encountered for the first time, set its ID to a unique
-    // number.
-    // TODO(glider): we've got a benign race here: if a basic block is
-    // simultaneously executed on multiple threads its ID may change several
-    // times. As a result the count of this block executions may be off by the
-    // number of threads.
-    // TODO(glider): no need to set trace->id
-    // if G_flags->literace_sampling == 0.
-    if (!trace->id_) {
-      bb_unique_id = NoBarrier_AtomicIncrement(&bb_unique_id);
-      ANNOTATE_BENIGN_RACE(&trace->id_, "Race on trace->id");
-      trace->id_ = bb_unique_id;
-    }
 
     // Increment the trace counter in a racey way. This can lead to small
     // deviations if the trace is hot, but we can afford them.
@@ -515,7 +501,6 @@ bool initialize() {
   CHECK_IN_RTL();
   global_ignore = false;
   __real_atexit(finalize);
-  ANNOTATE_BENIGN_RACE(&bb_unique_id, "Race on bb_unique_id");
   RTL_INIT = 1;
   in_initialize = false;
   SPut(THR_START, 0, (pc_t) &ShadowStack, 0, 0);

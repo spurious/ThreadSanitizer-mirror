@@ -579,7 +579,6 @@ namespace {
       //   enum { kLiteRaceNumTids = 8 };  // takes zero bytes
       //   size_t n_mops_;
       //   size_t pc_;
-      //   size_t id_;
       //   size_t counter_;
       //   uint32_t literace_counters[kLiteRaceNumTids];
       //   int32_t literace_num_to_skip[kLiteRaceNumTids];
@@ -587,7 +586,7 @@ namespace {
       // };
       TraceInfoType = StructType::get(Context,
                                     PlatformInt, PlatformInt,
-                                    PlatformInt, PlatformInt,
+                                    PlatformInt,
                                     MopArrayType,
                                     LiteRaceCountersArrayType,
                                     LiteRaceSkipArrayType,
@@ -978,7 +977,7 @@ namespace {
         LLVMContext &Context = M.getContext();
         BBTraceInfoType = StructType::get(Context,
                                     PlatformInt, PlatformInt,
-                                    PlatformInt, PlatformInt,
+                                    PlatformInt,
                                     LiteRaceCountersArrayType,
                                     LiteRaceSkipArrayType,
                                     TracePassportType,
@@ -990,10 +989,8 @@ namespace {
         // pc_
         // TODO(glider): the Trace class should provide its entry BB.
         Instruction *First = trace.entry->begin();
-        trace_info.push_back(ConstantInt::get(PlatformInt, getAddr(TraceCount,
-                                                             0, First)));
-        // id_ == 0 initially.
-        trace_info.push_back(ConstantInt::get(PlatformInt, 0));
+        trace_info.push_back(ConstantInt::get(PlatformInt,
+                                              getAddr(TraceCount, 0, First)));
         // counter_
         trace_info.push_back(ConstantInt::get(PlatformInt, 0));
         // literace_counters[]
