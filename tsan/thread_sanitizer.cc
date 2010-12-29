@@ -3277,6 +3277,14 @@ class Cache {
     CacheLine *res = NULL;
     CacheLine *line = NULL;
 
+    if (create_new_if_need == false && lines_[cli] == 0) {
+      // There is no such line in the cache, nor should it be in the storage.
+      // Check that the storage indeed does not have this line.
+      // Such DCHECK is racey if tsan is multi-threaded.
+      DCHECK(TS_SERIALIZED == 0 || storage_.count(tag) == 0);
+      return NULL;
+    }
+
     if (TS_SERIALIZED) {
       line = lines_[cli];
     } else {
