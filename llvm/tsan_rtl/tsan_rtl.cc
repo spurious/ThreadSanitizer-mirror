@@ -392,6 +392,7 @@ void INLINE flush_trace() {
       }
     }
     {
+      if (DEBUG) assert(ShadowStack.size_ >= 0);
       ThreadSanitizerHandleTrace(tid,
                                  trace_info,
                                  tleb);
@@ -1895,7 +1896,6 @@ void rtn_exit() {
 // of the first MOP in that basic block.
 extern "C"
 void* bb_flush(TraceInfoPOD *next_mops) {
-  assert(ShadowStack.size_ > 0);
   MaybeInitTid();
   if (INFO.trace_info) {
     // This is not a function entry block
