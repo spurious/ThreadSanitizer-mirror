@@ -74,6 +74,8 @@ void ReadDbgInfo(string filename);
 
 void MaybeInitTid();
 void flush_tleb();
+extern "C" void rtn_call(void *addr);
+extern "C" void rtn_exit();
 
 inline void Put(EventType type, tid_t tid, pc_t pc,
                 uintptr_t a, uintptr_t info);

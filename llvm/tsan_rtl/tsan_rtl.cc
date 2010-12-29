@@ -421,34 +421,19 @@ INLINE void Put(EventType type, tid_t tid, pc_t pc,
 // RPut is strictly for putting RTN_CALL and RTN_EXIT events.
 INLINE void RPut(EventType type, tid_t tid, pc_t pc,
                  uintptr_t a, uintptr_t info) {
+  MaybeInitTid();
 #if (DEBUG)
   assert(HAVE_THREAD_0 || ((type == THR_START) && (tid == 0)));
   assert(RTL_INIT == 1);
 #endif
-  if (!DEBUG || LIKELY(!G_flags->dry_run)) {
-    Event event(type, tid, pc, a, info);
-    if (UNLIKELY(G_flags->verbosity >= 2)) {
-      event.Print();
-    }
-#ifdef ENABLE_STATS
-    if (UNLIKELY(G_flags->verbosity)) {
-      stats_events_processed++;
-      stats_cur_events++;
-    }
-    if (!isThreadLocalEvent(type)) stats_non_local++;
-#endif
-    // Do not flush writes to 0x0.
-    IN_RTL++;
-    CHECK_IN_RTL();
     if (type == RTN_CALL) {
-      ThreadSanitizerHandleRtnCall(tid, pc, a, IGNORE_BELOW_RTN_UNKNOWN);
+      rtn_call((void*)a);
+      ///ThreadSanitizerHandleRtnCall(tid, pc, a, IGNORE_BELOW_RTN_UNKNOWN);
     } else {
-      ThreadSanitizerHandleRtnExit(tid);
+      rtn_exit();
+      ///ThreadSanitizerHandleRtnExit(tid);
     }
-    IN_RTL--;
-    CHECK_IN_RTL();
     unsafe_clear_pending_signals();
-  }
 }
 
 void finalize() {
@@ -612,20 +597,10 @@ extern tid_t ExGetTid() {
 // Flushes the local TLEB assuming someone is holding the global lock already.
 // Our RTL shouldn't need a thread to flush someone else's TLEB.
 void INLINE flush_tleb() {
-#if (DEBUG)
-  if (UNLIKELY(G_flags->verbosity >= 2)) {
-    DDPrintf("flush_tleb\n");
-  }
-#endif
-  ThreadInfo *info = &INFO;
-  if (info) {
-    if (info->trace_info) {
-      flush_trace();
-      info->trace_info = NULL;
-    }
-  } else {
-    DPrintf("ERROR: thread %d not found!\n", GetTid());
-    assert(0);
+  MaybeInitTid();
+  if (INFO.trace_info) {
+    flush_trace();
+    INFO.trace_info = NULL;
   }
 }
 
@@ -774,6 +749,14 @@ void unsafe_forget_thread(tid_t tid, tid_t from) {
   FinishConds.erase(tid);
 }
 
+#define FLUSH_TRACE() \
+  flush_tleb();
+/*  if (INFO.trace_info) { \
+    flush_trace(); \
+  } \
+  INFO.trace_info = NULL;
+  */
+
 
 // To declare a wrapper for foo(bar) you should:
 //  -- add the __wrap_foo(bar) prototype to tsan_rtl_wrap.h
@@ -798,6 +781,7 @@ extern "C"
 int __wrap_pthread_create(pthread_t *thread,
                           pthread_attr_t *attr,
                           void *(*start_routine)(void*), void *arg) {
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_create, 0);
   IN_RTL++;
@@ -882,6 +866,7 @@ void IGNORE_ALL_ACCESSES_AND_SYNC_END(void) {
 // __cxa_guard_release() call.
 extern "C"
 int __wrap___cxa_guard_acquire(int *guard) {
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap___cxa_guard_acquire, 0);
   long result = __real___cxa_guard_acquire(guard);
@@ -895,6 +880,7 @@ int __wrap___cxa_guard_acquire(int *guard) {
 
 extern "C"
 int __wrap___cxa_guard_release(int *guard) {
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap___cxa_guard_release, 0);
   long result = __real___cxa_guard_release(guard);
@@ -906,6 +892,7 @@ int __wrap___cxa_guard_release(int *guard) {
 extern "C"
 int __wrap_pthread_once(pthread_once_t *once_control,
                         void (*init_routine)(void)) {
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_once, 0);
   IGNORE_ALL_ACCESSES_BEGIN();
@@ -921,6 +908,7 @@ extern "C"
 void *__wrap_mmap(void *addr, size_t length, int prot, int flags,
                   int fd, off_t offset) {
   void *result;
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)addr, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
@@ -937,6 +925,7 @@ void *__wrap_mmap(void *addr, size_t length, int prot, int flags,
 extern "C"
 int __wrap_munmap(void *addr, size_t length) {
   int result;
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)addr, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
@@ -952,6 +941,7 @@ int __wrap_munmap(void *addr, size_t length) {
 extern "C"
 void *__wrap_calloc(size_t nmemb, size_t size) {
   void *result;
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_calloc, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
@@ -965,6 +955,7 @@ void *__wrap_calloc(size_t nmemb, size_t size) {
 extern "C"
 void *__wrap_malloc(size_t size) {
   if (IN_RTL) return __real_malloc(size);
+  FLUSH_TRACE();
   IN_RTL++;
   CHECK_IN_RTL();
   void *result;
@@ -983,6 +974,7 @@ void *__wrap_malloc(size_t size) {
 extern "C"
 void __wrap_free(void *ptr) {
   if (IN_RTL) return __real_free(ptr);
+  FLUSH_TRACE();
   IN_RTL++;
   CHECK_IN_RTL();
   DECLARE_TID_AND_PC();
@@ -992,14 +984,18 @@ void __wrap_free(void *ptr) {
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   __real_free(ptr);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
+  RPut(RTN_EXIT, tid, pc, 0, 0);
   IN_RTL--;
   CHECK_IN_RTL();
-  RPut(RTN_EXIT, tid, pc, 0, 0);
 }
 
 extern "C"
 void *__wrap_realloc(void *ptr, size_t size) {
+  if (IN_RTL) return __real_realloc(ptr, size);
+  FLUSH_TRACE();
   void *result;
+  IN_RTL++;
+  CHECK_IN_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_realloc, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
@@ -1007,6 +1003,8 @@ void *__wrap_realloc(void *ptr, size_t size) {
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
   SPut(MALLOC, tid, pc, (uintptr_t)result, size);
   RPut(RTN_EXIT, tid, pc, 0, 0);
+  IN_RTL--;
+  CHECK_IN_RTL();
   return result;
 }
 
@@ -1017,6 +1015,7 @@ void *__wrap_realloc(void *ptr, size_t size) {
 extern "C"
 void *__wrap__Znwj(unsigned int size) {
   if (IN_RTL) return __real__Znwj(size);
+  FLUSH_TRACE();
   IN_RTL++;
   CHECK_IN_RTL();
   DECLARE_TID_AND_PC();
@@ -1034,6 +1033,7 @@ void *__wrap__Znwj(unsigned int size) {
 extern "C"
 void *__wrap__Znaj(unsigned int size) {
   if (IN_RTL) return __real__Znaj(size);
+  FLUSH_TRACE();
   IN_RTL++;
   CHECK_IN_RTL();
   DECLARE_TID_AND_PC();
@@ -1053,6 +1053,7 @@ void *__wrap__Znaj(unsigned int size) {
 extern "C"
 void *__wrap__Znwm(unsigned long size) {
   if (IN_RTL) return __real__Znwm(size);
+  FLUSH_TRACE();
   IN_RTL++;
   CHECK_IN_RTL();
   DECLARE_TID_AND_PC();
@@ -1070,6 +1071,7 @@ void *__wrap__Znwm(unsigned long size) {
 extern "C"
 void *__wrap__Znam(unsigned long size) {
   if (IN_RTL) return __real__Znam(size);
+  FLUSH_TRACE();
   IN_RTL++;
   CHECK_IN_RTL();
   DECLARE_TID_AND_PC();
@@ -1093,6 +1095,7 @@ void __wrap__ZdlPv(void *ptr) {
     __real__ZdlPv(ptr);
     return;
   }
+  FLUSH_TRACE();
   IN_RTL++;
   CHECK_IN_RTL();
   DECLARE_TID_AND_PC();
@@ -1132,6 +1135,7 @@ void __wrap__ZdaPv(void *ptr) {
 extern "C"
 sem_t *__wrap_sem_open(const char *name, int oflag,
                 mode_t mode, unsigned int value) {
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_sem_open, 0);
   sem_t *result = __real_sem_open(name, oflag, mode, value);
@@ -1146,6 +1150,7 @@ sem_t *__wrap_sem_open(const char *name, int oflag,
 
 extern "C"
 int __wrap_sem_wait(sem_t *sem) {
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_sem_wait, 0);
   int result = __real_sem_wait(sem);
@@ -1158,6 +1163,7 @@ int __wrap_sem_wait(sem_t *sem) {
 
 extern "C"
 int __wrap_sem_trywait(sem_t *sem) {
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_sem_wait, 0);
   int result = __real_sem_trywait(sem);
@@ -1170,6 +1176,7 @@ int __wrap_sem_trywait(sem_t *sem) {
 
 extern "C"
 int __wrap_sem_post(sem_t *sem) {
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_sem_post, 0);
   SPut(SIGNAL, tid, pc, (uintptr_t)sem, 0);
@@ -1184,6 +1191,7 @@ int __wrap_sem_post(sem_t *sem) {
 extern "C"
 int __wrap_pthread_cond_timedwait(pthread_cond_t *cond, pthread_mutex_t *mutex,
                                   const struct timespec *abstime) {
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_cond_timedwait, 0);
   SPut(UNLOCK, tid, pc, (uintptr_t)mutex, 0);
@@ -1198,6 +1206,7 @@ int __wrap_pthread_cond_timedwait(pthread_cond_t *cond, pthread_mutex_t *mutex,
 
 extern "C"
 int __wrap_pthread_cond_signal(pthread_cond_t *cond) {
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_cond_signal, 0);
   int result = __real_pthread_cond_signal(cond);
@@ -1208,6 +1217,7 @@ int __wrap_pthread_cond_signal(pthread_cond_t *cond) {
 
 extern "C"
 int __wrap_pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex) {
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_cond_wait, 0);
   SPut(UNLOCK, tid, pc, (uintptr_t)mutex, 0);
@@ -1220,6 +1230,7 @@ int __wrap_pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex) {
 
 extern "C"
 int __wrap_pthread_mutex_lock(pthread_mutex_t *mutex) {
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_mutex_lock, 0);
   int result = __real_pthread_mutex_lock(mutex);
@@ -1233,6 +1244,7 @@ int __wrap_pthread_mutex_lock(pthread_mutex_t *mutex) {
 
 extern "C"
 int __wrap_pthread_mutex_trylock(pthread_mutex_t *mutex) {
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_mutex_trylock, 0);
   int result = __real_pthread_mutex_trylock(mutex);
@@ -1245,6 +1257,7 @@ int __wrap_pthread_mutex_trylock(pthread_mutex_t *mutex) {
 
 extern "C"
 int __wrap_pthread_mutex_unlock(pthread_mutex_t *mutex) {
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_mutex_unlock, 0);
   SPut(UNLOCK, tid, pc, (uintptr_t) mutex, 0);
@@ -1255,6 +1268,7 @@ int __wrap_pthread_mutex_unlock(pthread_mutex_t *mutex) {
 
 extern "C"
 int __wrap_pthread_mutex_destroy(pthread_mutex_t *mutex) {
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_mutex_destroy, 0);
   SPut(LOCK_DESTROY, tid, pc, (uintptr_t)mutex, 0);  // before the actual call.
@@ -1266,6 +1280,7 @@ int __wrap_pthread_mutex_destroy(pthread_mutex_t *mutex) {
 extern "C"
 int __wrap_pthread_mutex_init(pthread_mutex_t *mutex,
                               const pthread_mutexattr_t *attr) {
+  FLUSH_TRACE();
   int result, mbRec;
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_mutex_init, 0);
@@ -1286,6 +1301,7 @@ int __wrap_pthread_mutex_init(pthread_mutex_t *mutex,
 extern "C"
 int __wrap_pthread_rwlock_init(pthread_rwlock_t *rwlock,
                                const pthread_rwlockattr_t *attr) {
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_rwlock_init, 0);
   int result = __real_pthread_rwlock_init(rwlock, attr);
@@ -1298,6 +1314,7 @@ int __wrap_pthread_rwlock_init(pthread_rwlock_t *rwlock,
 
 extern "C"
 int __wrap_pthread_rwlock_destroy(pthread_rwlock_t *rwlock) {
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_rwlock_destroy, 0);
   SPut(LOCK_DESTROY, tid, pc, (uintptr_t)rwlock, 0);  // before the actual call.
@@ -1308,6 +1325,7 @@ int __wrap_pthread_rwlock_destroy(pthread_rwlock_t *rwlock) {
 
 extern "C"
 int __wrap_pthread_rwlock_trywrlock(pthread_rwlock_t *rwlock) {
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_rwlock_trywrlock, 0);
   int result = __real_pthread_rwlock_trywrlock(rwlock);
@@ -1320,6 +1338,7 @@ int __wrap_pthread_rwlock_trywrlock(pthread_rwlock_t *rwlock) {
 
 extern "C"
 int __wrap_pthread_rwlock_wrlock(pthread_rwlock_t *rwlock) {
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_rwlock_wrlock, 0);
   int result = __real_pthread_rwlock_wrlock(rwlock);
@@ -1332,6 +1351,7 @@ int __wrap_pthread_rwlock_wrlock(pthread_rwlock_t *rwlock) {
 
 extern "C"
 int __wrap_pthread_rwlock_tryrdlock(pthread_rwlock_t *rwlock) {
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_rwlock_tryrdlock, 0);
   int result = __real_pthread_rwlock_tryrdlock(rwlock);
@@ -1344,6 +1364,7 @@ int __wrap_pthread_rwlock_tryrdlock(pthread_rwlock_t *rwlock) {
 
 extern "C"
 int __wrap_pthread_rwlock_rdlock(pthread_rwlock_t *rwlock) {
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_rwlock_rdlock, 0);
   int result = __real_pthread_rwlock_rdlock(rwlock);
@@ -1356,6 +1377,7 @@ int __wrap_pthread_rwlock_rdlock(pthread_rwlock_t *rwlock) {
 
 extern "C"
 int __wrap_pthread_rwlock_unlock(pthread_rwlock_t *rwlock) {
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_rwlock_unlock, 0);
   SPut(UNLOCK, tid, pc, (uintptr_t)rwlock, 0);
@@ -1367,6 +1389,7 @@ int __wrap_pthread_rwlock_unlock(pthread_rwlock_t *rwlock) {
 extern "C"
 int __wrap_pthread_barrier_init(pthread_barrier_t *barrier,
                          const pthread_barrierattr_t *attr, unsigned count) {
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_barrier_init, 0);
   SPut(CYCLIC_BARRIER_INIT, tid, pc, (uintptr_t)barrier, count);
@@ -1377,6 +1400,7 @@ int __wrap_pthread_barrier_init(pthread_barrier_t *barrier,
 
 extern "C"
 int __wrap_pthread_barrier_wait(pthread_barrier_t *barrier) {
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_barrier_wait, 0);
   SPut(CYCLIC_BARRIER_WAIT_BEFORE, tid, pc, (uintptr_t)barrier, 0);
@@ -1389,6 +1413,7 @@ int __wrap_pthread_barrier_wait(pthread_barrier_t *barrier) {
 extern "C"
 int __wrap_pthread_key_create(pthread_key_t *key,
                               void (*destr_function)(void *)) {
+  FLUSH_TRACE();
   // We don't want libpthread to know about the destructors.
   int result = __real_pthread_key_create(key, NULL);
   if (destr_function && (result == 0)) {
@@ -1404,6 +1429,7 @@ int __wrap_pthread_key_create(pthread_key_t *key,
 extern "C"
 int __wrap_pthread_join(pthread_t thread, void **value_ptr) {
   // Note that the ThreadInfo of |thread| is valid no more.
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_join, 0);
   tid_t joined_tid = -1;
@@ -1454,6 +1480,7 @@ int __wrap_pthread_join(pthread_t thread, void **value_ptr) {
 
 extern "C"
 int __wrap_pthread_spin_init(pthread_spinlock_t *lock, int pshared) {
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_spin_init, 0);
   int result = __real_pthread_spin_init(lock, pshared);
@@ -1466,6 +1493,7 @@ int __wrap_pthread_spin_init(pthread_spinlock_t *lock, int pshared) {
 
 extern "C"
 int __wrap_pthread_spin_destroy(pthread_spinlock_t *lock) {
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_spin_destroy, 0);
   SPut(LOCK_DESTROY, tid, pc, (uintptr_t)lock, 0);
@@ -1477,6 +1505,7 @@ int __wrap_pthread_spin_destroy(pthread_spinlock_t *lock) {
 
 extern "C"
 int __wrap_pthread_spin_lock(pthread_spinlock_t *lock) {
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_spin_lock, 0);
   int result = __real_pthread_spin_lock(lock);
@@ -1489,6 +1518,7 @@ int __wrap_pthread_spin_lock(pthread_spinlock_t *lock) {
 
 extern "C"
 int __wrap_pthread_spin_trylock(pthread_spinlock_t *lock) {
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_spin_trylock, 0);
   int result = __real_pthread_spin_trylock(lock);
@@ -1501,6 +1531,7 @@ int __wrap_pthread_spin_trylock(pthread_spinlock_t *lock) {
 
 extern "C"
 int __wrap_pthread_spin_unlock(pthread_spinlock_t *lock) {
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_spin_unlock, 0);
   SPut(UNLOCK, tid, pc, (uintptr_t)lock, 0);
@@ -1515,6 +1546,7 @@ int __wrap_pthread_spin_unlock(pthread_spinlock_t *lock) {
 // STR* wrappers {{{1
 extern "C"
 char *__wrap_strchr(const char *s, int c) {
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_strchr, 0);
   pc = (pc_t)__wrap_strchr;
@@ -1525,6 +1557,7 @@ char *__wrap_strchr(const char *s, int c) {
 
 extern "C"
 char *__wrap_strrchr(const char *s, int c) {
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_strrchr, 0);
   pc = (pc_t)__wrap_strrchr;
@@ -1536,6 +1569,7 @@ char *__wrap_strrchr(const char *s, int c) {
 extern "C"
 size_t __wrap_strlen(const char *s) {
   if (IN_RTL) return __real_strlen(s);
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_strlen, 0);
   IN_RTL++;
@@ -1555,6 +1589,7 @@ size_t __wrap_strlen(const char *s) {
 extern "C"
 char *__wrap_memcpy(char *dest, const char *src, size_t n) {
   if (IN_RTL) return __real_memcpy(dest, src, n);
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   IN_RTL++;
   CHECK_IN_RTL();
@@ -1570,6 +1605,7 @@ char *__wrap_memcpy(char *dest, const char *src, size_t n) {
 extern "C"
 void *__wrap_memmove(char *dest, const char *src, size_t n) {
   if (IN_RTL) return __real_memmove(dest, src, n);
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   pc = (pc_t)__wrap_memmove;
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_memmove, 0);
@@ -1588,6 +1624,7 @@ void *__wrap_memmove(char *dest, const char *src, size_t n) {
 // TODO(glider): ???
 extern
 char *strcpy(char *dest, const char *src) {
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   pc = (pc_t)strcpy;
   return Replace_strcpy(tid, pc, dest, src);
@@ -1595,6 +1632,7 @@ char *strcpy(char *dest, const char *src) {
 
 extern "C"
 void *__wrap_memchr(const char *s, int c, size_t n) {
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_memchr, 0);
   pc = (pc_t)__wrap_memchr;
@@ -1606,6 +1644,7 @@ void *__wrap_memchr(const char *s, int c, size_t n) {
 #ifdef TSAN_RTL_X86
 extern
 void *memchr(void *s, int c, unsigned int n) {
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_memchr, 0);
   pc = (pc_t)__wrap_memchr;
@@ -1618,6 +1657,7 @@ void *memchr(void *s, int c, unsigned int n) {
 #ifdef TSAN_RTL_X64
 extern
 void *memchr(void *s, int c, unsigned long n) {
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_memchr, 0);
   pc = (pc_t)__wrap_memchr;
@@ -1629,6 +1669,7 @@ void *memchr(void *s, int c, unsigned long n) {
 
 extern "C"
 int __wrap_strcmp(const char *s1, const char *s2) {
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_strcmp, 0);
   pc = (pc_t)__wrap_strcmp;
@@ -1639,6 +1680,7 @@ int __wrap_strcmp(const char *s1, const char *s2) {
 
 extern "C"
 int strncmp(const char *s1, const char *s2, size_t n) {
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)strncmp, 0);
   pc = (pc_t)strncmp;
@@ -1681,6 +1723,7 @@ void atexit_callback() {
 
 extern "C"
 int __wrap_atexit(void (*function)(void)) {
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_atexit, 0);
   push_atexit(function);
@@ -1693,6 +1736,7 @@ int __wrap_atexit(void (*function)(void)) {
 
 extern "C"
 void __wrap_exit(int status) {
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_exit, 0);
   SPut(WAIT, tid, pc, kAtExitMagic, 0);
@@ -1705,6 +1749,7 @@ void __wrap_exit(int status) {
 
 extern "C"
 pid_t __wrap_fork() {
+  FLUSH_TRACE();
   pid_t result;
   IN_RTL++;
   CHECK_IN_RTL();
@@ -1725,6 +1770,7 @@ uintptr_t FdMagic(int fd) {
 
 extern "C"
 ssize_t __wrap_read(int fd, void *buf, size_t count) {
+  FLUSH_TRACE();
   ssize_t result = __real_read(fd, buf, count);
   if (IN_RTL) return result;
   IN_RTL++;
@@ -1745,6 +1791,7 @@ ssize_t __wrap_read(int fd, void *buf, size_t count) {
 extern "C"
 ssize_t __wrap_write(int fd, const void *buf, size_t count) {
   if (IN_RTL) return __real_write(fd, buf, count);
+  FLUSH_TRACE();
   IN_RTL++;
   CHECK_IN_RTL();
   DECLARE_TID_AND_PC();
@@ -1835,14 +1882,12 @@ extern "C"
 void rtn_call(void *addr) {
   // TODO(glider): this is unnecessary if we flush before each call/invoke
   // insn.
-  //flush_tleb();
   ShadowStack.pcs_[ShadowStack.size_] = (uintptr_t)addr;
   ShadowStack.size_++;
 }
 
 extern "C"
 void rtn_exit() {
-  //flush_tleb();
   ShadowStack.size_--;
 }
 
@@ -1850,6 +1895,7 @@ void rtn_exit() {
 // of the first MOP in that basic block.
 extern "C"
 void* bb_flush(TraceInfoPOD *next_mops) {
+  assert(ShadowStack.size_ > 0);
   MaybeInitTid();
   if (INFO.trace_info) {
     // This is not a function entry block
@@ -1860,6 +1906,7 @@ void* bb_flush(TraceInfoPOD *next_mops) {
 }
 extern "C"
 void *rtl_memcpy(char *dest, const char *src, size_t n) {
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   pc = (pc_t)rtl_memcpy;
   return Replace_memcpy(tid, pc, dest, src, n);
@@ -1867,6 +1914,7 @@ void *rtl_memcpy(char *dest, const char *src, size_t n) {
 
 extern "C"
 void *rtl_memmove(char *dest, const char *src, size_t n) {
+  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   void *result = __real_memmove(dest, src, n);
   pc = (pc_t)rtl_memmove;
