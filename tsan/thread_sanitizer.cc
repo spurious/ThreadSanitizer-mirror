@@ -3988,7 +3988,6 @@ struct RecentSegmentsCache {
 };
 
 // -------- TraceInfo ------------------ {{{1
-size_t TraceInfo::id_counter_;
 vector<TraceInfo*> *TraceInfo::g_all_traces;
 
 TraceInfo *TraceInfo::NewTraceInfo(size_t n_mops, uintptr_t pc) {
@@ -3998,11 +3997,9 @@ TraceInfo *TraceInfo::NewTraceInfo(size_t n_mops, uintptr_t pc) {
   TraceInfo *res = new (mem) TraceInfo;
   res->n_mops_ = n_mops;
   res->pc_ = ThreadSanitizerWantToCreateSegmentsOnSblockEntry(pc) ? pc : NULL;
-  res->id_ = id_counter_++;
   res->counter_ = 0;
   if (g_all_traces == NULL) {
     g_all_traces = new vector<TraceInfo*>;
-    CHECK(id_counter_ == 1);
   }
   g_all_traces->push_back(res);
   return res;
@@ -4031,8 +4028,8 @@ void TraceInfo::PrintTraceProfile() {
     uintptr_t pc = trace->GetMop(0)->pc;
     CHECK(pc);
     if (permile == 0 || i >= 20) break;
-    Printf("TR%ld pc: %p %p c=%lld (%lld/1000) n_mops=%ld %s\n",
-           trace->id(), trace->pc(), pc, c,
+    Printf("TR=%p pc: %p %p c=%lld (%lld/1000) n_mops=%ld %s\n",
+           trace, trace->pc(), pc, c,
            permile, trace->n_mops(),
            PcToRtnNameAndFilePos(pc).c_str());
   }
@@ -6010,7 +6007,6 @@ class Detector {
     TraceInfoPOD trace_info;
     trace_info.n_mops_ = 1;
     trace_info.pc_ = 0;  // don't create an sblock.
-    trace_info.id_ = 0;
     trace_info.counter_ = 0;
     trace_info.mops_[0].pc = pc;
     trace_info.mops_[0].size = size;

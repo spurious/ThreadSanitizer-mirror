@@ -72,7 +72,6 @@ struct TraceInfoPOD {
   enum { kLiteRaceNumTids = 8 };
   size_t n_mops_;
   size_t pc_;
-  size_t id_;
   size_t counter_;
   uint32_t literace_counters[kLiteRaceNumTids];
   int32_t  literace_num_to_skip[kLiteRaceNumTids];
@@ -94,7 +93,6 @@ class TraceInfo : protected TraceInfoPOD {
 
   size_t n_mops() const { return n_mops_; }
   size_t pc()     const { return pc_; }
-  size_t id()     const { return id_; }
   size_t &counter()     { return counter_; }
 
   static void PrintTraceProfile();

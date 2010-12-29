@@ -2542,7 +2542,7 @@ void CallbackForTRACE(TRACE trace, void *v) {
   size_t i = 0;
   if (n_mops) {
     if (debug_ins) {
-      Printf("TRACE %ld (%p); n_mops=%ld %s\n", trace_info->id(),
+      Printf("TRACE %p (%p); n_mops=%ld %s\n", trace_info,
              TRACE_Address(trace),
              trace_info->n_mops(),
              PcToRtnName(trace_info->pc(), false).c_str());
