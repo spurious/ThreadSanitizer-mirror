@@ -388,9 +388,10 @@ void INLINE flush_trace() {
     // are larger than sizeof(TLEB). There should be a flag to control this,
     // because we don't want to check the trace size in runtime.
     DCHECK(trace->n_mops_ <= kTLEBSize);
-    // Clean up the TLEB. It's better to do this in ThreadSanitizer, however.
-    // TODO(glider): add a DCHECK() for this once it's done.
-    for (size_t i = 0; i < trace->n_mops_; i++) tleb[i] = 0;
+    // Check that ThreadSanitizer cleans up the TLEB.
+    if (DEBUG) {
+      for (size_t i = 0; i < trace->n_mops_; i++) DCHECK(tleb[i] == 0);
+    }
     IN_RTL--;
     CHECK_IN_RTL();
     unsafe_clear_pending_signals();
