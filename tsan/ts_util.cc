@@ -468,7 +468,7 @@ void TSLock::AssertHeld() {
 }
 #endif  // TS_LOCK_PIN
 
-#if defined(TS_LLVM)
+#if defined(TS_WRAP_PTHREAD_LOCK)
 #include "tsan_rtl_wrap.h"
 
 struct TSLock::Rep {
@@ -497,7 +497,8 @@ void TSLock::AssertHeld() {
 }
 #endif  // TS_LLVM
 
-#if defined(TS_LOCK_FUTEX) && defined(__GNUC__) && defined (TS_PIN)
+#if defined(TS_LOCK_FUTEX) && defined(__GNUC__) && \
+ (defined (TS_PIN) || defined (TS_LLVM))
 #include <linux/futex.h>
 #include <sys/time.h>
 #include <syscall.h>
