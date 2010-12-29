@@ -31,7 +31,7 @@ using namespace std;
 # include <cxxabi.h>  // __cxa_demangle
 #endif
 
-#define DEBUG 1
+#define DEBUG 0
 
 // Command-line flags.
 static cl::opt<std::string>
