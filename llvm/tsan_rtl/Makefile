@@ -17,9 +17,12 @@ OBJS64=amd64-ts_util.o amd64-suppressions.o \
        amd64-tsan_rtl_dynamic_annotations.o \
        amd64-thread_sanitizer.o amd64-dynamic_annotations.o
 
+DA_FLAGS=$(COMMON_FLAGS) -DDYNAMIC_ANNOTATIONS_PROVIDE_RUNNING_ON_VALGRIND=0
+
 ifeq ($(DEBUG), 1)
   D=-debug
   DEFINES+=-DDEBUG=1
+  DA_FLAGS+=-DDYNAMIC_ANNOTATIONS_ENABLED=1
 else
   D=
 endif
@@ -30,8 +33,6 @@ COMMON_FLAGS=-I. -Istlport -I../../third_party/stlport \
       -D_STLP_NO_IOSTREAMS=1 -DTS_LLVM \
 
 FLAGS=$(COMMON_FLAGS) -DDYNAMIC_ANNOTATIONS_WANT_ATTRIBUTE_WEAK
-DA_FLAGS=$(COMMON_FLAGS) -DDYNAMIC_ANNOTATIONS_ENABLED=1 \
-                         -DDYNAMIC_ANNOTATIONS_PROVIDE_RUNNING_ON_VALGRIND=0
 
 FOREIGN_HEADERS=$(TSAN_PATH)/ts_lock.h $(TSAN_PATH)/ts_stats.h \
                 $(TSAN_PATH)/ts_heap_info.h $(TSAN_PATH)/ts_trace_info.h \
