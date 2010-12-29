@@ -75,6 +75,7 @@ namespace {
     Value *TracePassportGlob;
     int TraceCount, TraceNumMops;
     Constant *BBFlushFn;
+    // TODO(glider): get rid of rtn_call/rtn_exit at all.
     Constant *RtnCallFn, *RtnExitFn;
     Constant *MemCpyFn, *MemMoveFn;
     const PointerType *UIntPtr, *TraceInfoTypePtr;
@@ -86,6 +87,9 @@ namespace {
     const ArrayType *TracePassportType, *TraceExtPassportType;
     const Type *TLEBTy;
     const PointerType *TLEBPtrType;
+    Value *ShadowStack;
+    const StructType *CallStackType;
+    const ArrayType *CallStackArrayType;
     AliasAnalysis *AA;
     static const int kTLEBSize = 100;
     // TODO(glider): hashing constants and BB addresses should be different on
@@ -96,6 +100,7 @@ namespace {
     static const int kDebugInfoMagicNumber = 0xdb914f0;
     // TODO(glider): must be in sync with ts_trace_info.h
     static const int kLiteRaceNumTids = 8;
+    static const size_t kMaxCallStackSize = 1 << 12;
     int arch_size_;
     int ModuleID;
     set<string> debug_symbol_set;
@@ -288,7 +293,6 @@ namespace {
       GV->setSection("tsan_rtl_debug_info"); 
     }
 
-
     BlockSet &getPredecessors(BasicBlock* bb) {
       return predecessors[bb];
     }
@@ -456,20 +460,69 @@ namespace {
           }
         }
       }
-
-//#if DEBUG
-#if 0
-      for (int i = 0; i < traces.size(); ++i) {
-        errs() << "TRACE:\n";
-        for (BlockSet::iterator I = traces[i].blocks.begin(),
-                                E = traces[i].blocks.end();
-             I != E; ++I) {
-          errs() << "    " << (*I)->getName() << "\n";
-///          (*I)->getParent()->dump();
-        }
-      }
-#endif
       return traces;
+    }
+
+    // Insert the code that updates the shadow stack with the value of |addr|.
+    // This effectively adds the following instructions:
+    //
+    //   %0 = load i64* getelementptr inbounds (%struct.CallStackPod* @ShadowStack, i64 0, i32 0)
+    //   %1 = getelementptr %struct.CallStackPod* @ShadowStack, i64 0, i32 1, i64 %0
+    //   store i64 %addr, i64* %1
+    //   %2 = load i64* getelementptr inbounds (%struct.CallStackPod* @ShadowStack, i64 0, i32 0)
+    //   %3 = add i64 %2, 1
+    //   store i64 %3, i64* getelementptr inbounds (%struct.CallStackPod* @ShadowStack, i64 0, i32 0)
+    //
+    // Or, in C++:
+    //
+    //   ShadowStack.pcs_[ShadowStack.size_] = (uintptr_t)addr;
+    //   ShadowStack.size_++;
+    //
+    void InsertRtnCall(uintptr_t addr, BasicBlock::iterator &Before) {
+      // TODO(glider): each call instruction should update the top of the shadow
+      // stack.
+      std::vector <Value*> size_idx;
+      size_idx.push_back(ConstantInt::get(PlatformInt, 0));
+      size_idx.push_back(ConstantInt::get(Int32, 0));
+      Value *StackSizePtr =
+          GetElementPtrInst::Create(ShadowStack,
+                                    size_idx.begin(), size_idx.end(),
+                                    "", Before);
+      Value *StackSize = new LoadInst(StackSizePtr, "", Before);
+
+      std::vector <Value*> pcs_idx;
+      pcs_idx.push_back(ConstantInt::get(PlatformInt, 0));
+      pcs_idx.push_back(ConstantInt::get(Int32, 1));
+      pcs_idx.push_back(StackSize);
+      Value *StackSlotPtr =
+          GetElementPtrInst::Create(ShadowStack,
+                                    pcs_idx.begin(), pcs_idx.end(),
+                                    "", Before);
+      Value *Addr = ConstantInt::get(PlatformInt, addr);
+      new StoreInst(Addr, StackSlotPtr, Before);
+
+      Value *NewSize = BinaryOperator::Create(Instruction::Add,
+                                              StackSize,
+                                              ConstantInt::get(PlatformInt, 1),
+                                              "", Before);
+      new StoreInst(NewSize, StackSizePtr, Before);
+    }
+
+    // Insert the code that pops a stack frame from the shadow stack.
+    void InsertRtnExit(BasicBlock::iterator &Before) {
+      std::vector <Value*> size_idx;
+      size_idx.push_back(ConstantInt::get(PlatformInt, 0));
+      size_idx.push_back(ConstantInt::get(Int32, 0));
+      Value *StackSizePtr =
+          GetElementPtrInst::Create(ShadowStack,
+                                    size_idx.begin(), size_idx.end(),
+                                    "", Before);
+      Value *StackSize = new LoadInst(StackSizePtr, "", Before);
+      Value *NewSize = BinaryOperator::Create(Instruction::Sub,
+                                              StackSize,
+                                              ConstantInt::get(PlatformInt, 1),
+                                              "", Before);
+      new StoreInst(NewSize, StackSizePtr, Before);
     }
 
     virtual bool runOnModule(Module &M) {
@@ -503,6 +556,7 @@ namespace {
       //   bool      is_write;
       // };
       MopType = StructType::get(Context, PlatformInt, Int32, Int8, NULL);
+
       MopArrayType = ArrayType::get(MopType, kTLEBSize);
       LiteRaceCountersArrayType = ArrayType::get(Int32, kLiteRaceNumTids);
       LiteRaceSkipArrayType = ArrayType::get(Int32, kLiteRaceNumTids);
@@ -528,6 +582,27 @@ namespace {
                                     NULL);
       TraceInfoTypePtr = PointerType::get(TraceInfoType, 0);
 
+      // CallStackType represents the following class declared in
+      // thread_sanitizer.h:
+      //
+      // const size_t kMaxCallStackSize = 1 << 12;
+      // struct CallStackPod {
+      //   uintptr_t size_;
+      //   uintptr_t pcs_[kMaxCallStackSize];
+      // };
+      CallStackArrayType = ArrayType::get(PlatformInt, kMaxCallStackSize);
+      CallStackType = StructType::get(Context,
+                                      PlatformInt,
+                                      CallStackArrayType,
+                                      NULL);
+      ShadowStack = new GlobalVariable(M,
+                                       CallStackType,
+                                       /*isConstant*/true,
+                                       GlobalValue::ExternalLinkage,
+                                       /*Initializer*/0,
+                                       "ShadowStack",
+                                       /*InsertBefore*/0,
+                                       /*ThreadLocal*/true);
       TLEBTy = ArrayType::get(UIntPtr, kTLEBSize);
       TLEBPtrType = PointerType::get(UIntPtr, 0);
 
@@ -535,27 +610,22 @@ namespace {
       BBFlushFn = M.getOrInsertFunction("bb_flush",
                                         TLEBPtrType,
                                         TraceInfoTypePtr, (Type*)0);
-      //cast<Function>(BBFlushFn)->setLinkage(Function::ExternalWeakLinkage);
 
       // void rtn_call(void *addr)
       RtnCallFn = M.getOrInsertFunction("rtn_call",
                                         Void,
                                         PlatformInt, (Type*)0);
-      //cast<Function>(RtnCallFn)->setLinkage(Function::ExternalWeakLinkage);
 
       // void rtn_exit()
       RtnExitFn = M.getOrInsertFunction("rtn_exit",
                                         Void, (Type*)0);
-      //cast<Function>(RtnExitFn)->setLinkage(Function::ExternalWeakLinkage);
 
       MemCpyFn = M.getOrInsertFunction("rtl_memcpy",
                                        UIntPtr,
                                        UIntPtr, UIntPtr, PlatformInt, (Type*)0);
-      //cast<Function>(MemCpyFn)->setLinkage(Function::ExternalWeakLinkage);
       MemMoveFn = M.getOrInsertFunction("rtl_memmove",
                                        UIntPtr,
                                        UIntPtr, UIntPtr, PlatformInt, (Type*)0);
-      //cast<Function>(MemMoveFn)->setLinkage(Function::ExternalWeakLinkage);
 
       // Split each basic block into smaller blocks containing no more than one
       // call instruction at the end.
@@ -609,9 +679,10 @@ namespace {
           first_dtor_bb = false;
         }
         BasicBlock::iterator First = F->begin()->begin();
-        std::vector<Value*> inst(1);
-        inst[0] = ConstantInt::get(PlatformInt, getAddr(startTraceCount, 0, First));
-        CallInst::Create(RtnCallFn, inst.begin(), inst.end(), "", First);
+//        std::vector<Value*> inst(1);
+//        inst[0] = ConstantInt::get(PlatformInt, getAddr(startTraceCount, 0, First));
+//        CallInst::Create(RtnCallFn, inst.begin(), inst.end(), "", First);
+        InsertRtnCall(getAddr(startTraceCount, 0, First), First);
       }
       writeDebugInfo(M);
 
@@ -1059,8 +1130,9 @@ namespace {
         }
 
         if (isa<ReturnInst>(BI)) {
-          std::vector<Value*> inst(0);
-          CallInst::Create(RtnExitFn, inst.begin(), inst.end(), "", BI);
+///          std::vector<Value*> inst(0);
+///          CallInst::Create(RtnExitFn, inst.begin(), inst.end(), "", BI);
+          InsertRtnExit(BI);
           unknown = false;
         }
         if (isa<LoadInst>(BI)) {
