@@ -133,7 +133,7 @@ ifeq ($(OS), windows)
     GTEST_LIB=$(GTEST_ROOT)/msvc/gtest/$(GTEST_BUILD)/gtestd.lib
   endif
 else
-  GTEST_MAKE_DIR=$(GTEST_ROOT)/make-$(OS)-$(ARCH)
+  GTEST_MAKE_DIR=$(GTEST_ROOT)/make-$(OS)-$(ARCH)$(EXTRA_BUILD_SUFFIX)
   GTEST_LIB=$(GTEST_MAKE_DIR)/gtest_main.a
 endif
 
