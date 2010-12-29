@@ -5987,16 +5987,22 @@ class Detector {
     DCHECK(t);
     size_t n = t->n_mops();
     DCHECK(n);
-    // 0 bit - ignore reads, 1 bit -- ignore writes, 
+    // 0 bit - ignore reads, 1 bit -- ignore writes,
     // 2 bit - has_expensive_flags.
     int expensive_bits = thr->expensive_bits();
 
     if (expensive_bits == 0) {
       HandleTraceLoop(t, thr, tid, tleb, n, 0, need_locking);
     } else {
-      if ((expensive_bits & 3) == 3) return;  // everything is ignored.
-      HandleTraceLoop(t, thr, tid, tleb, n, expensive_bits, need_locking);
+      if ((expensive_bits & 3) == 3) {
+        // everything is ignored, just clear the tleb.
+        for (size_t i = 0; i < n; i++) tleb[i] = 0;
+      } else {
+        HandleTraceLoop(t, thr, tid, tleb, n, expensive_bits, need_locking);
+      }
     }
+    // At the end, the tleb must be cleared.
+    for (size_t i = 0; i < n; i++) DCHECK(tleb[i] == 0);
   }
 
   // Special case of a trace with just one mop and no sblock.
