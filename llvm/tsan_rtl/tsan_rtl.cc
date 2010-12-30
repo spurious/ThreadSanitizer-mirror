@@ -328,8 +328,8 @@ INLINE void SPut(EventType type, tid_t tid, pc_t pc,
 }
 
 void INLINE flush_trace() {
-  if (DEBUG) assert(ShadowStack.size_ > 0);
-  if (DEBUG) assert(ShadowStack.size_ < kMaxCallStackSize);
+  if (DEBUG) assert((size_t)(ShadowStack.end_ - ShadowStack.pcs_) > 0);
+  if (DEBUG) assert((size_t)(ShadowStack.end_ - ShadowStack.pcs_) < kMaxCallStackSize);
 #if (DEBUG)
   // TODO(glider): PutTrace shouldn't be called without a lock taken.
   // However flushing events from unsafe_clear_pending_signals (called from
@@ -378,7 +378,7 @@ void INLINE flush_trace() {
       }
     }
     {
-      if (DEBUG) assert(ShadowStack.size_ >= 0);
+      if (DEBUG) assert(ShadowStack.pcs_ <= ShadowStack.end_);
       ThreadSanitizerHandleTrace(tid,
                                  trace_info,
                                  TLEB);
@@ -502,6 +502,7 @@ bool initialize() {
   global_ignore = false;
   __real_atexit(finalize);
   RTL_INIT = 1;
+  ShadowStack.end_ = ShadowStack.pcs_;
   in_initialize = false;
   SPut(THR_START, 0, (pc_t) &ShadowStack, 0, 0);
 
@@ -623,6 +624,7 @@ void *pthread_callback(void *arg) {
   }
   have_pending_signals = false;
 
+  ShadowStack.end_ = ShadowStack.pcs_;
   SPut(THR_START, INFO.tid, (pc_t) &ShadowStack, 0, parent);
   IN_RTL++;
   CHECK_IN_RTL();
@@ -1847,17 +1849,17 @@ extern "C"
 void rtn_call(void *addr) {
   // TODO(glider): this is unnecessary if we flush before each call/invoke
   // insn.
-  ShadowStack.pcs_[ShadowStack.size_] = (uintptr_t)addr;
-  ShadowStack.size_++;
-  if (DEBUG) assert(ShadowStack.size_ > 0);
-  if (DEBUG) assert(ShadowStack.size_ < kMaxCallStackSize);
+  *ShadowStack.end_ = (uintptr_t)addr;
+  ShadowStack.end_++;
+  if (DEBUG) assert(ShadowStack.end_ > ShadowStack.pcs_);
+  if (DEBUG) assert((size_t)(ShadowStack.end_ - ShadowStack.pcs_) < kMaxCallStackSize);
 }
 
 extern "C"
 void rtn_exit() {
-  if (DEBUG) assert(ShadowStack.size_ > 0);
-  if (DEBUG) assert(ShadowStack.size_ < kMaxCallStackSize);
-  ShadowStack.size_--;
+  if (DEBUG) assert(ShadowStack.end_ > ShadowStack.pcs_);
+  if (DEBUG) assert((size_t)(ShadowStack.end_ - ShadowStack.pcs_) < kMaxCallStackSize);
+  ShadowStack.end_--;
 }
 
 // TODO(glider): we may want the basic block address to differ from the PC

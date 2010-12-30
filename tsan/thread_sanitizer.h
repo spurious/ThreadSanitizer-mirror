@@ -146,7 +146,7 @@ extern bool debug_race_verifier;
 const size_t kMaxCallStackSize = 1 << 12;
 
 struct CallStackPod {
-  uintptr_t size_;
+  uintptr_t *end_;
   uintptr_t pcs_[kMaxCallStackSize];
 };
 
@@ -154,33 +154,33 @@ struct CallStack: public CallStackPod {
 
   CallStack() { Clear(); }
 
-  size_t size() { return size_; }
+  size_t size() { return (size_t)(end_ - pcs_); }
   uintptr_t *pcs() { return pcs_; }
 
-  bool empty() { return size_ == 0; }
+  bool empty() { return end_ == pcs_; }
 
   uintptr_t &back() {
     DCHECK(!empty());
-    return pcs_[size_ - 1];
+    return *end_;
   }
 
   void pop_back() {
-    DCHECK(size_ > 0);
-    size_--;
+    DCHECK(end_ - pcs_ > 0);
+    end_--;
   }
 
   void push_back(uintptr_t pc) {
-    DCHECK(size_ < kMaxCallStackSize);
-    pcs_[size_] = pc;
-    size_++;
+    DCHECK(size_t(end_ - pcs_) < kMaxCallStackSize);
+    *end_ = pc;
+    end_++;
   }
 
   void Clear() {
-    size_ = 0;
+    end_ = pcs_;
   }
 
   uintptr_t &operator[] (size_t i) {
-    DCHECK(i < size_);
+    DCHECK(i < (size_t)(end_ - pcs_));
     return pcs_[i];
   }
 

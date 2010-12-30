@@ -1140,9 +1140,13 @@ void Destructor(void *ptr) {
 void DoWork(int index) {
   int *value = &(tsd_array[index]);
   *value = 42;
-  pthread_setspecific(key, value);
-  int *read = (int*) pthread_getspecific(key);
-  CHECK(read == value);
+  int set = pthread_setspecific(key, value);
+  if (set == 0) {
+    int *read = (int*) pthread_getspecific(key);
+    CHECK(read == value);
+  } else {
+    printf("set = %d, EINVAL = %d\n", set, EINVAL);
+  }
 }
 
 void Worker0() { DoWork(0); }

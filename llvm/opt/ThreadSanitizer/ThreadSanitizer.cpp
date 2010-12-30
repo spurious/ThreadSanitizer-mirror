@@ -87,7 +87,7 @@ namespace {
     const ArrayType *TracePassportType, *TraceExtPassportType;
     const Type *TLEBTy;
     const PointerType *TLEBPtrType;
-    Value *ShadowStack, *CurrentStackSize, *TLEB;
+    Value *ShadowStack, *CurrentStackEnd, *TLEB;
     const StructType *CallStackType;
     const ArrayType *CallStackArrayType;
     AliasAnalysis *AA;
@@ -467,17 +467,16 @@ namespace {
     // Insert the code that updates the shadow stack with the value of |addr|.
     // This effectively adds the following instructions:
     //
-    //   %0 = load i64* getelementptr inbounds (%struct.CallStackPod* @ShadowStack, i64 0, i32 0)
-    //   %1 = getelementptr %struct.CallStackPod* @ShadowStack, i64 0, i32 1, i64 %0
-    //   store i64 %addr, i64* %1
-    //   %2 = load i64* getelementptr inbounds (%struct.CallStackPod* @ShadowStack, i64 0, i32 0)
-    //   %3 = add i64 %2, 1
-    //   store i64 %3, i64* getelementptr inbounds (%struct.CallStackPod* @ShadowStack, i64 0, i32 0)
+    //   %0 = load i64** getelementptr inbounds (%struct.CallStackPod* @ShadowStack, i64 0, i32 0), align 32
+    //   store i64 %pc, i64* %0, align 8
+    //   %1 = load i64** getelementptr inbounds (%struct.CallStackPod* @ShadowStack, i64 0, i32 0), align 32
+    //   %2 = getelementptr inbounds i64* %1, i64 1
+    //   store i64* %2, i64** getelementptr inbounds (%struct.CallStackPod* @ShadowStack, i64 0, i32 0), align 32
     //
     // Or, in C++:
     //
-    //   ShadowStack.pcs_[ShadowStack.size_] = (uintptr_t)addr;
-    //   ShadowStack.size_++;
+    //   *ShadowStack.end_ = (uintptr_t)addr;
+    //   ShadowStack.end_++;
     //
     void InsertRtnCall(uintptr_t addr, BasicBlock::iterator &Before) {
 #if DEBUG
@@ -487,33 +486,25 @@ namespace {
 #else
       // TODO(glider): each call instruction should update the top of the shadow
       // stack.
-      std::vector <Value*> size_idx;
-      size_idx.push_back(ConstantInt::get(PlatformInt, 0));
-      size_idx.push_back(ConstantInt::get(Int32, 0));
-      Value *StackSizePtr =
+      std::vector <Value*> end_idx;
+      end_idx.push_back(ConstantInt::get(PlatformInt, 0));
+      end_idx.push_back(ConstantInt::get(Int32, 0));
+      Value *StackEndPtr =
           GetElementPtrInst::Create(ShadowStack,
-                                    size_idx.begin(), size_idx.end(),
+                                    end_idx.begin(), end_idx.end(),
                                     "", Before);
-      (cast<GetElementPtrInst>(StackSizePtr))->setIsInBounds();
-      Value *StackSize = new LoadInst(StackSizePtr, "", Before);
-      CurrentStackSize = StackSize;
-      std::vector <Value*> pcs_idx;
-      pcs_idx.push_back(ConstantInt::get(PlatformInt, 0));
-      pcs_idx.push_back(ConstantInt::get(Int32, 1));
-      pcs_idx.push_back(StackSize);
-      Value *StackSlotPtr =
-          GetElementPtrInst::Create(ShadowStack,
-                                    pcs_idx.begin(), pcs_idx.end(),
-                                    "", Before);
-      (cast<GetElementPtrInst>(StackSlotPtr))->setIsInBounds();
+      Value *StackEnd = new LoadInst(StackEndPtr, "", Before);
+      CurrentStackEnd = StackEnd;
       Value *Addr = ConstantInt::get(PlatformInt, addr);
-      new StoreInst(Addr, StackSlotPtr, Before);
+      new StoreInst(Addr, StackEnd, Before);
 
-      Value *NewSize = BinaryOperator::Create(Instruction::Add,
-                                              StackSize,
-                                              ConstantInt::get(PlatformInt, 1),
-                                              "", Before);
-      new StoreInst(NewSize, StackSizePtr, Before);
+      std::vector <Value*> new_idx;
+      new_idx.push_back(ConstantInt::get(Int32, 1));
+      Value *NewStackEnd =
+          GetElementPtrInst::Create(StackEnd,
+                                    new_idx.begin(), new_idx.end(),
+                                    "", Before);
+      new StoreInst(NewStackEnd, StackEndPtr, Before);
 #endif
     }
 
@@ -523,12 +514,12 @@ namespace {
       std::vector<Value*> inst(0);
       CallInst::Create(RtnExitFn, inst.begin(), inst.end(), "", Before);
 #else
-      std::vector <Value*> size_idx;
-      size_idx.push_back(ConstantInt::get(PlatformInt, 0));
-      size_idx.push_back(ConstantInt::get(Int32, 0));
-      Value *StackSizePtr =
+      std::vector <Value*> end_idx;
+      end_idx.push_back(ConstantInt::get(PlatformInt, 0));
+      end_idx.push_back(ConstantInt::get(Int32, 0));
+      Value *StackEndPtr =
           GetElementPtrInst::Create(ShadowStack,
-                                    size_idx.begin(), size_idx.end(),
+                                    end_idx.begin(), end_idx.end(),
                                     "", Before);
       // TODO(glider): the following lines may introduce an error if no
       // dependence analysis is done after the instrumentation.
@@ -537,9 +528,9 @@ namespace {
 ///                                              CurrentStackSize,
 ///                                              ConstantInt::get(PlatformInt, 1),
 ///                                              "", Before);
-      // Restore the original shadow stack size.
-      assert(CurrentStackSize);
-      new StoreInst(CurrentStackSize, StackSizePtr, Before);
+      // Restore the original shadow stack |end_| pointer.
+      assert(CurrentStackEnd);
+      new StoreInst(CurrentStackEnd, StackEndPtr, Before);
 #endif
     }
 
@@ -604,12 +595,12 @@ namespace {
       //
       // const size_t kMaxCallStackSize = 1 << 12;
       // struct CallStackPod {
-      //   uintptr_t size_;
+      //   uintptr_t *end_;
       //   uintptr_t pcs_[kMaxCallStackSize];
       // };
       CallStackArrayType = ArrayType::get(PlatformInt, kMaxCallStackSize);
       CallStackType = StructType::get(Context,
-                                      PlatformInt,
+                                      UIntPtr,
                                       CallStackArrayType,
                                       NULL);
       ShadowStack = new GlobalVariable(M,
