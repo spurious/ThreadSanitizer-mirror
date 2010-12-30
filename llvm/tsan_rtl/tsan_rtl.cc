@@ -329,6 +329,7 @@ INLINE void SPut(EventType type, tid_t tid, pc_t pc,
 
 void INLINE flush_trace() {
   if (DEBUG) assert(ShadowStack.size_ > 0);
+  if (DEBUG) assert(ShadowStack.size_ < kMaxCallStackSize);
 #if (DEBUG)
   // TODO(glider): PutTrace shouldn't be called without a lock taken.
   // However flushing events from unsafe_clear_pending_signals (called from
@@ -1871,10 +1872,14 @@ void rtn_call(void *addr) {
   // insn.
   ShadowStack.pcs_[ShadowStack.size_] = (uintptr_t)addr;
   ShadowStack.size_++;
+  if (DEBUG) assert(ShadowStack.size_ > 0);
+  if (DEBUG) assert(ShadowStack.size_ < kMaxCallStackSize);
 }
 
 extern "C"
 void rtn_exit() {
+  if (DEBUG) assert(ShadowStack.size_ > 0);
+  if (DEBUG) assert(ShadowStack.size_ < kMaxCallStackSize);
   ShadowStack.size_--;
 }
 
