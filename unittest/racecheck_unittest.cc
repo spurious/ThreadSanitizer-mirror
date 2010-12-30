@@ -6444,7 +6444,7 @@ REGISTER_TEST(Run, 157);
 namespace MemoryTypes {  // {{{1
   void WriteChar(void *param) {
     *(char*)param = 1;
-    //usleep(50);  // let other threads hit this before exiting.
+    usleep(500000);  // let other threads hit this before exiting.
   }
 
   void RaceOnMemory(void (*callback)(void *), char *mem) {
