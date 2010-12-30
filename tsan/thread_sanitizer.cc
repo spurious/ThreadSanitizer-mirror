@@ -6380,6 +6380,13 @@ class Detector {
     if (G_flags->verbosity >= 2) {
       e->Print();
     }
+    static int reported_deprecation;
+    reported_deprecation++;
+    if (reported_deprecation < 20) {
+      Report("WARNING: ANNOTATE_PUBLISH_MEMORY_RANGE is deprecated and will not"
+             " be supported in future versions of ThreadSanitizer.\n");
+    }
+
     uintptr_t mem = e->a();
     uintptr_t size = e->info();
 
