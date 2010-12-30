@@ -161,16 +161,16 @@ struct CallStack: public CallStackPod {
 
   uintptr_t &back() {
     DCHECK(!empty());
-    return *end_;
+    return *(end_ - 1);
   }
 
   void pop_back() {
-    DCHECK(end_ - pcs_ > 0);
+    DCHECK(!empty());
     end_--;
   }
 
   void push_back(uintptr_t pc) {
-    DCHECK(size_t(end_ - pcs_) < kMaxCallStackSize);
+    DCHECK(size() < kMaxCallStackSize);
     *end_ = pc;
     end_++;
   }
@@ -180,7 +180,7 @@ struct CallStack: public CallStackPod {
   }
 
   uintptr_t &operator[] (size_t i) {
-    DCHECK(i < (size_t)(end_ - pcs_));
+    DCHECK(i < size());
     return pcs_[i];
   }
 
