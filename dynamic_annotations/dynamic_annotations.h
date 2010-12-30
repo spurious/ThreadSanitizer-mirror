@@ -148,13 +148,7 @@
   #define ANNOTATE_HAPPENS_BEFORE(obj) ANNOTATE_CONDVAR_SIGNAL(obj)
   #define ANNOTATE_HAPPENS_AFTER(obj)  ANNOTATE_CONDVAR_WAIT(obj)
 
-  /* Report that the bytes in the range [pointer, pointer+size) are about
-     to be published safely. The race checker will create a happens-before
-     arc from the call ANNOTATE_PUBLISH_MEMORY_RANGE(pointer, size) to
-     subsequent accesses to this memory.
-     Note: this annotation may not work properly if the race detector uses
-     sampling, i.e. does not observe all memory accesses.
-     */
+  /* DEPRECATED. Don't use it. */
   #define ANNOTATE_PUBLISH_MEMORY_RANGE(pointer, size) \
     DYNAMIC_ANNOTATIONS_NAME(AnnotatePublishMemoryRange)(__FILE__, __LINE__, \
         pointer, size)
