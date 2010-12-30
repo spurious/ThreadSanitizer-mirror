@@ -91,6 +91,8 @@ wrap memmove
 wrap strchr
 wrap strrchr
 
+wrap __libc_csu_init
+
 # TODO(glider): without defining this annotation bigtest is missing
 # LLVMAnnotateCondVarSignal(). Strange enough, to be investigated.
 # Also "LLVM" is a prefix that may change in the future.

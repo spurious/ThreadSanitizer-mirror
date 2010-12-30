@@ -111,7 +111,7 @@ std::map<tid_t, pthread_barrier_t*> ChildThreadStartBarriers;
 // How about using barriers here as well?
 std::map<pthread_t, pthread_cond_t*> InitConds;
 std::map<tid_t, pthread_cond_t*> FinishConds;
-tid_t max_tid = 0;
+tid_t max_tid;
 
 __thread  sigset_t glob_sig_blocked, glob_sig_old;
 
@@ -409,7 +409,6 @@ INLINE void Put(EventType type, tid_t tid, pc_t pc,
 // RPut is strictly for putting RTN_CALL and RTN_EXIT events.
 INLINE void RPut(EventType type, tid_t tid, pc_t pc,
                  uintptr_t a, uintptr_t info) {
-  MaybeInitTid();
 #if (DEBUG)
   assert(HAVE_THREAD_0 || ((type == THR_START) && (tid == 0)));
   assert(RTL_INIT == 1);
@@ -509,20 +508,6 @@ bool initialize() {
   return true;
 }
 
-// TODO(glider): we shouldn't need static initialization of the RTL:
-//  -- it's fragile
-//  -- we do initialize everything once GetTid is called for the first time.
-#if 0
-class Init {
- public:
-  Init() {
-    initialize();
-  }
-};
-
-Init dummy_init;
-#endif
-
 // TODO(glider): GetPc should return valid PCs.
 INLINE pc_t GetPc() {
   return 0;
@@ -532,47 +517,38 @@ extern pc_t ExGetPc() {
   return GetPc();
 }
 
-INLINE void MaybeInitTid() {
-  if (INIT == 0) {
-    GIL scoped;
-    // thread initialization
-    pthread_t pt = pthread_self();
-    INFO.tid = max_tid;
-    max_tid++;
-    INFO.trace_info = NULL;
-    switch (RTL_INIT) {
-      case 1: {
-        Tids[pt] = INFO.tid;
-        if (InitConds.find(pt) != InitConds.end()) {
-          __real_pthread_cond_signal(InitConds[pt]);
-        }
-        DDPrintf("T%d: pthread_self()=%p\n", INFO.tid, (void*)pt);
-        PThreads[INFO.tid] = pt;
-        break;
-              }
-      case 0: {
-        RTL_INIT = 2;
-        if (!initialize()) return;
-        RTL_INIT = 1;
-        break;
-              }
-      case 2:
-      default: {
-                 // Printf() may call malloc() -- use __real_malloc().
-                 IN_RTL++;
-                 CHECK_IN_RTL();
-                 Printf("ThreadSanitizer initialization reentrancy detected\n");
-                 IN_RTL--;
-                 CHECK_IN_RTL();
-                 __real_exit(2);
-               }
-    }
-    INIT = 1;
+INLINE void InitRTL() {
+  assert(INIT == 0);
+  GIL scoped;
+  // Initialize thread #0.
+  INFO.tid = 0;
+  max_tid = 1;
+  INFO.trace_info = NULL;
+  assert(RTL_INIT == 0);
+  // Initialize ThreadSanitizer et. al.
+  if (!initialize()) __real_exit(2);
+  RTL_INIT = 1;
+  INIT = 1;
+}
+
+INLINE void InitTid() {
+  if (DEBUG) assert(RTL_INIT == 1);
+  GIL scoped;
+  // thread initialization
+  pthread_t pt = pthread_self();
+  INFO.tid = max_tid;
+  max_tid++;
+  INFO.trace_info = NULL;
+  Tids[pt] = INFO.tid;
+  if (InitConds.find(pt) != InitConds.end()) {
+    __real_pthread_cond_signal(InitConds[pt]);
   }
+  DDPrintf("T%d: pthread_self()=%p\n", INFO.tid, (void*)pt);
+  PThreads[INFO.tid] = pt;
+  INIT = 1;
 }
 
 INLINE tid_t GetTid() {
-  MaybeInitTid();
   return INFO.tid;
 }
 
@@ -584,7 +560,6 @@ extern tid_t ExGetTid() {
 // Flushes the local TLEB assuming someone is holding the global lock already.
 // Our RTL shouldn't need a thread to flush someone else's TLEB.
 void INLINE flush_tleb() {
-  MaybeInitTid();
   if (INFO.trace_info) {
     flush_trace();
     INFO.trace_info = NULL;
@@ -615,6 +590,7 @@ void *pthread_callback(void *arg) {
 
   assert((PTH_INIT == 1) && (RTL_INIT == 1));
   assert(INIT == 0);
+  InitTid();
   DECLARE_TID_AND_PC();
   assert(INIT == 1);
   assert(tid != 0);
@@ -738,12 +714,6 @@ void unsafe_forget_thread(tid_t tid, tid_t from) {
 
 #define FLUSH_TRACE() \
   flush_tleb();
-/*  if (INFO.trace_info) { \
-    flush_trace(); \
-  } \
-  INFO.trace_info = NULL;
-  */
-
 
 // To declare a wrapper for foo(bar) you should:
 //  -- add the __wrap_foo(bar) prototype to tsan_rtl_wrap.h
@@ -763,6 +733,12 @@ void unsafe_forget_thread(tid_t tid, tid_t from) {
 //
 // Rule of thumb: __wrap_foo should never make a tail call to __real_foo,
 // because it normally should end with IN_RTL-- and RTN_EXIT.
+
+extern "C"
+void __wrap___libc_csu_init(void) {
+  InitRTL();
+  __real___libc_csu_init();
+}
 
 extern "C"
 int __wrap_pthread_create(pthread_t *thread,
@@ -1888,7 +1864,7 @@ void rtn_exit() {
 // of the first MOP in that basic block.
 extern "C"
 void bb_flush(TraceInfoPOD *next_mops) {
-  MaybeInitTid();
+  if (DEBUG) assert(INIT);
   if (INFO.trace_info) {
     // This is not a function entry block
     flush_trace();
