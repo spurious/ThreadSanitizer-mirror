@@ -7129,6 +7129,11 @@ one_call:
     CacheLine *cache_line = NULL;
     INC_STAT(thr->stats.memory_access_sizes[size <= 16 ? size : 17 ]);
     INC_STAT(thr->stats.events[is_w ? WRITE : READ]);
+    if (has_expensive_flags) {
+      thr->stats.access_to_first_1g += (addr >> 30) == 0;
+      thr->stats.access_to_first_2g += (addr >> 31) == 0;
+      thr->stats.access_to_first_4g += (addr >> 32) == 0;
+    }
 
     int locked_access_case = 0;
 

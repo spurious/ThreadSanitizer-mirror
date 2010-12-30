@@ -55,6 +55,10 @@ struct ThreadLocalStats {
             history_reuses_segment, history_uses_preallocated_segment;
 
   uintptr_t msm_branch_count[16];
+
+  uintptr_t access_to_first_1g;
+  uintptr_t access_to_first_2g;
+  uintptr_t access_to_first_4g;
 };
 
 // Statistic counters for the entire tool, including aggregated
@@ -207,15 +211,17 @@ struct Stats : private ThreadLocalStats {
     }
     Printf("lock_sites[*]=%ld\n", total_locks);
     Printf("futex_wait   =%ld\n", futex_wait);
-    Printf("unlocked_access_ok =%ld\n", unlocked_access_ok);
+    Printf("unlocked_access_ok =%'ld\n", unlocked_access_ok);
     uintptr_t all_locked_access = 0;
     for (size_t i = 0; i < TS_ARRAY_SIZE(locked_access); i++) {
       uintptr_t t = locked_access[i];
-      if (t) Printf("locked_access[%ld]   =%ld\n", i, t);
+      if (t) Printf("locked_access[%ld]   =%'ld\n", i, t);
       all_locked_access += t;
     }
-    Printf("locked_access[*]   =%ld\n", all_locked_access);
+    Printf("locked_access[*]   =%'ld\n", all_locked_access);
     Printf("try_acquire_line_spin =%ld\n", try_acquire_line_spin);
+    Printf("access to first 1/2/4 G: %'ld %'ld %'ld\n",
+           access_to_first_1g, access_to_first_2g, access_to_first_4g);
 
 
     for (size_t i = 0; i < TS_ARRAY_SIZE(tleb_flush); i++) {
