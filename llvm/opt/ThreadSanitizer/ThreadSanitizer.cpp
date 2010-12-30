@@ -87,7 +87,7 @@ namespace {
     const ArrayType *TracePassportType, *TraceExtPassportType;
     const Type *TLEBTy;
     const PointerType *TLEBPtrType;
-    Value *ShadowStack;
+    Value *ShadowStack, *CurrentStackSize;
     const StructType *CallStackType;
     const ArrayType *CallStackArrayType;
     AliasAnalysis *AA;
@@ -493,8 +493,9 @@ namespace {
           GetElementPtrInst::Create(ShadowStack,
                                     size_idx.begin(), size_idx.end(),
                                     "", Before);
+      (cast<GetElementPtrInst>(StackSizePtr))->setIsInBounds();
       Value *StackSize = new LoadInst(StackSizePtr, "", Before);
-
+      CurrentStackSize = StackSize;
       std::vector <Value*> pcs_idx;
       pcs_idx.push_back(ConstantInt::get(PlatformInt, 0));
       pcs_idx.push_back(ConstantInt::get(Int32, 1));
@@ -503,6 +504,7 @@ namespace {
           GetElementPtrInst::Create(ShadowStack,
                                     pcs_idx.begin(), pcs_idx.end(),
                                     "", Before);
+      (cast<GetElementPtrInst>(StackSlotPtr))->setIsInBounds();
       Value *Addr = ConstantInt::get(PlatformInt, addr);
       new StoreInst(Addr, StackSlotPtr, Before);
 
@@ -520,7 +522,6 @@ namespace {
       std::vector<Value*> inst(0);
       CallInst::Create(RtnExitFn, inst.begin(), inst.end(), "", Before);
 #else
-
       std::vector <Value*> size_idx;
       size_idx.push_back(ConstantInt::get(PlatformInt, 0));
       size_idx.push_back(ConstantInt::get(Int32, 0));
@@ -528,12 +529,16 @@ namespace {
           GetElementPtrInst::Create(ShadowStack,
                                     size_idx.begin(), size_idx.end(),
                                     "", Before);
-      Value *StackSize = new LoadInst(StackSizePtr, "", Before);
-      Value *NewSize = BinaryOperator::Create(Instruction::Sub,
-                                              StackSize,
-                                              ConstantInt::get(PlatformInt, 1),
-                                              "", Before);
-      new StoreInst(NewSize, StackSizePtr, Before);
+      // TODO(glider): the following lines may introduce an error if no
+      // dependence analysis is done after the instrumentation.
+///      Value *StackSize = new LoadInst(StackSizePtr, "", Before);
+///      Value *NewSize = BinaryOperator::Create(Instruction::Sub,
+///                                              CurrentStackSize,
+///                                              ConstantInt::get(PlatformInt, 1),
+///                                              "", Before);
+      // Restore the original shadow stack size.
+      assert(CurrentStackSize);
+      new StoreInst(CurrentStackSize, StackSizePtr, Before);
 #endif
     }
 
@@ -689,11 +694,22 @@ namespace {
           runOnTrace(M, traces[i], first_dtor_bb);
           first_dtor_bb = false;
         }
+        // Instrument routine calls and exits.
+        // InsertRtnExit uses the shadow stack size obtained by InsertRtnCall
+        // and should be always executed after it.
         BasicBlock::iterator First = F->begin()->begin();
         InsertRtnCall(getAddr(startTraceCount, 0, First), First);
+        for (Function::iterator BB = F->begin(), E = F->end(); BB != E; ++BB) {
+          for (BasicBlock::iterator BI = BB->begin(), BE = BB->end();
+               BI != BE;
+               ++BI) {
+            if (isa<ReturnInst>(BI)) {
+              InsertRtnExit(BI);
+            }
+          }
+        }
       }
       writeDebugInfo(M);
-
       return true;
     }
 
@@ -1132,11 +1148,6 @@ namespace {
             continue;
           }
           flushBeforeCall(M, BI);
-        }
-
-        if (isa<ReturnInst>(BI)) {
-          InsertRtnExit(BI);
-          unknown = false;
         }
         if (isa<LoadInst>(BI)) {
           // Instrument LOAD.
