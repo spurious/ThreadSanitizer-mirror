@@ -1704,9 +1704,11 @@ atexit_worker* pop_atexit() {
 
 void atexit_callback() {
   DECLARE_TID_AND_PC();
+  RPut(RTN_CALL, tid, pc, (uintptr_t)atexit_callback, 0);
   atexit_worker *worker = pop_atexit();
   SPut(WAIT, tid, pc, (uintptr_t)worker, 0);
   (*worker)();
+  RPut(RTN_EXIT, tid, pc, 0, 0);
 }
 
 extern "C"
@@ -2095,6 +2097,8 @@ void AddWrappersDbgInfo() {
 #endif  // TSAN_RTL_X64
   WRAPPER_DBG_INFO(__wrap__ZdlPv);
   WRAPPER_DBG_INFO(__wrap__ZdaPv);
+
+  WRAPPER_DBG_INFO(atexit_callback);
 }
 
 void ReadElf() {
