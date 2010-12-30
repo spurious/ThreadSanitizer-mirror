@@ -87,7 +87,7 @@ namespace {
     const ArrayType *TracePassportType, *TraceExtPassportType;
     const Type *TLEBTy;
     const PointerType *TLEBPtrType;
-    Value *ShadowStack, *CurrentStackSize;
+    Value *ShadowStack, *CurrentStackSize, *TLEB;
     const StructType *CallStackType;
     const ArrayType *CallStackArrayType;
     AliasAnalysis *AA;
@@ -342,7 +342,6 @@ namespace {
         errs() << "\n";
 #endif
 
-
       // Initialize to_see and find all the entry points.
       for (BlockSet::iterator BB = trace.blocks.begin(), E = trace.blocks.end();
            BB != E; ++BB) {
@@ -392,12 +391,14 @@ namespace {
       return true;
     }
 
-    bool buildClosure(Function::iterator BB,
+    // Build a valid trace starting at |Entry| and containing no basic blocks
+    // from |used| and write it into |trace|.
+    bool buildClosure(Function::iterator Entry,
                       Trace &trace, BlockSet &used) {
       BlockVector to_see;
-      to_see.push_back(BB);
-      trace.blocks.insert(BB);
-      used.insert(BB);
+      to_see.push_back(Entry);
+      trace.blocks.insert(Entry);
+      used.insert(Entry);
       for (int i = 0; i<to_see.size(); ++i) {
         BasicBlock *current_bb = to_see[i];
         // A call should end the trace immediately.
@@ -621,10 +622,18 @@ namespace {
                                        /*ThreadLocal*/true);
       TLEBTy = ArrayType::get(UIntPtr, kTLEBSize);
       TLEBPtrType = PointerType::get(UIntPtr, 0);
+      TLEB = new GlobalVariable(M,
+                                TLEBTy,
+                                /*isConstant*/true,
+                                GlobalValue::ExternalLinkage,
+                                /*Initializer*/0,
+                                "TLEB",
+                                /*InsertBefore*/0,
+                                /*ThreadLocal*/true);
 
       // void* bb_flush(next_mops)
       BBFlushFn = M.getOrInsertFunction("bb_flush",
-                                        TLEBPtrType,
+                                        Void,
                                         TraceInfoTypePtr, (Type*)0);
 
       // void rtn_call(void *addr)
@@ -689,11 +698,13 @@ namespace {
         }
         if (isDtor(F->getName())) first_dtor_bb = WorkaroundVptrRace;
 
+        // Instrument the traces.
         TraceVector traces(buildTraces(*F));
         for (int i = 0; i < traces.size(); ++i) {
           runOnTrace(M, traces[i], first_dtor_bb);
           first_dtor_bb = false;
         }
+
         // Instrument routine calls and exits.
         // InsertRtnExit uses the shadow stack size obtained by InsertRtnCall
         // and should be always executed after it.
@@ -714,7 +725,6 @@ namespace {
     }
 
     void runOnTrace(Module &M, Trace &trace, bool first_dtor_bb) {
-      Value *TLEB = NULL;
       TLEBIndex = 0;
       TraceCount++;
       markMopsToInstrument(M, trace);
@@ -745,12 +755,13 @@ namespace {
           Args[0] = ConstantPointerNull::get(TraceInfoTypePtr);
         }
 
-        TLEB = CallInst::Create(BBFlushFn, Args.begin(), Args.end(), "",
-                           First);
+        CallInst::Create(BBFlushFn, Args.begin(), Args.end(), "",
+                         First);
       }
-      for (BlockSet::iterator TI = trace.blocks.begin(), TE = trace.blocks.end();
+      for (BlockSet::iterator TI = trace.blocks.begin(),
+                              TE = trace.blocks.end();
            TI != TE; ++TI) {
-        runOnBasicBlock(M, *TI, first_dtor_bb, TLEB, trace);
+        runOnBasicBlock(M, *TI, first_dtor_bb, trace);
         first_dtor_bb = false;
       }
     }
@@ -786,6 +797,7 @@ namespace {
               isa<InvokeInst>(BI));
     }
 
+    // A trace should be (sometimes) flushed iff it contains memory operations.
     bool shouldFlushTrace(Trace &trace) {
       for (BlockSet::iterator TI = trace.blocks.begin(), TE = trace.blocks.end();
            TI != TE; ++TI) {
@@ -1038,7 +1050,7 @@ namespace {
 
 
     void InstrumentMop(BasicBlock::iterator &BI, bool isStore,
-                       Value *TLEB, bool check_ident_store, Trace &trace) {
+                       bool check_ident_store, Trace &trace) {
       if (trace.to_instrument.find(BI) == trace.to_instrument.end()) return;
       Value *MopAddr;
       llvm::Instruction &IN = *BI;
@@ -1079,7 +1091,9 @@ namespace {
         MopAddr = new IntToPtrInst(Ptr, UIntPtr, "", BI);
       }
 
+      // Store the pointer into TLEB[TLEBIndex].
       std::vector <Value*> idx;
+      idx.push_back(ConstantInt::get(Int32, 0));
       idx.push_back(ConstantInt::get(PlatformInt, TLEBIndex));
       Value *TLEBPtr =
           GetElementPtrInst::Create(TLEB,
@@ -1125,7 +1139,7 @@ namespace {
 
     bool runOnBasicBlock(Module &M, BasicBlock *BB,
                          bool first_dtor_bb,
-                         Value *TLEB, Trace &trace) {
+                         Trace &trace) {
       bool result = false;
       OldTLEBIndex = 0;
       for (BasicBlock::iterator BI = BB->begin(), BE = BB->end();
@@ -1151,12 +1165,12 @@ namespace {
         }
         if (isa<LoadInst>(BI)) {
           // Instrument LOAD.
-          InstrumentMop(BI, false, TLEB, first_dtor_bb, trace);
+          InstrumentMop(BI, false, first_dtor_bb, trace);
           unknown = false;
         }
         if (isa<StoreInst>(BI)) {
           // Instrument STORE.
-          InstrumentMop(BI, true, TLEB, first_dtor_bb, trace);
+          InstrumentMop(BI, true, first_dtor_bb, trace);
           unknown = false;
         }
 

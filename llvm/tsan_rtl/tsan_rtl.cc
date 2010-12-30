@@ -43,11 +43,9 @@
 #endif
 
 extern bool global_ignore;
-static const size_t kTLEBSize = 2000;
 
 struct ThreadInfo {
   tid_t tid;
-  uintptr_t TLEB[kTLEBSize];
   TraceInfoPOD *trace_info;
 };
 
@@ -80,6 +78,8 @@ void SplitString(string &src, char delim, vector<string> *dest,
 
 __thread ThreadInfo INFO;
 __thread CallStackPod ShadowStack;
+static const size_t kTLEBSize = 2000;
+__thread uintptr_t TLEB[kTLEBSize];
 __thread int INIT = 0;
 __thread int events = 0;
 typedef void (tsd_destructor)(void*);
@@ -343,7 +343,6 @@ void INLINE flush_trace() {
     tid_t tid = INFO.tid;
     TraceInfoPOD *trace = INFO.trace_info;
     if (DEBUG) assert(trace);
-    uintptr_t *tleb = INFO.TLEB;
 #ifdef ENABLE_STATS
     stats_events_processed += trace->n_mops_;
     stats_cur_events += trace->n_mops_;
@@ -369,11 +368,11 @@ void INLINE flush_trace() {
       for (size_t i = 0; i < trace->n_mops_; i++) {
         if (trace->mops_[i].is_write) {
           Event event(WRITE,
-                      tid, trace->mops_[i].pc, tleb[i], trace->mops_[i].size);
+                      tid, trace->mops_[i].pc, TLEB[i], trace->mops_[i].size);
           event.Print();
         } else {
           Event event(READ,
-                      tid, trace->mops_[i].pc, tleb[i], trace->mops_[i].size);
+                      tid, trace->mops_[i].pc, TLEB[i], trace->mops_[i].size);
           event.Print();
         }
       }
@@ -382,7 +381,7 @@ void INLINE flush_trace() {
       if (DEBUG) assert(ShadowStack.size_ >= 0);
       ThreadSanitizerHandleTrace(tid,
                                  trace_info,
-                                 tleb);
+                                 TLEB);
     }
 
     // TODO(glider): the instrumentation pass may generate basic blocks that
@@ -391,7 +390,7 @@ void INLINE flush_trace() {
     DCHECK(trace->n_mops_ <= kTLEBSize);
     // Check that ThreadSanitizer cleans up the TLEB.
     if (DEBUG) {
-      for (size_t i = 0; i < trace->n_mops_; i++) DCHECK(tleb[i] == 0);
+      for (size_t i = 0; i < trace->n_mops_; i++) DCHECK(TLEB[i] == 0);
     }
     IN_RTL--;
     CHECK_IN_RTL();
@@ -621,7 +620,7 @@ void *pthread_callback(void *arg) {
   assert(tid != 0);
   assert(INFO.tid != 0);
 
-  memset(INFO.TLEB, '\0', sizeof(INFO.TLEB));
+  memset(TLEB, '\0', sizeof(TLEB));
 
   callback_arg *cb_arg = (callback_arg*)arg;
   pthread_worker *routine = cb_arg->routine;
@@ -1888,14 +1887,13 @@ void rtn_exit() {
 // TODO(glider): we may want the basic block address to differ from the PC
 // of the first MOP in that basic block.
 extern "C"
-void* bb_flush(TraceInfoPOD *next_mops) {
+void bb_flush(TraceInfoPOD *next_mops) {
   MaybeInitTid();
   if (INFO.trace_info) {
     // This is not a function entry block
     flush_trace();
   }
   INFO.trace_info = next_mops;
-  return (void*) INFO.TLEB;
 }
 extern "C"
 void *rtl_memcpy(char *dest, const char *src, size_t n) {

@@ -10,7 +10,7 @@ ARGS=
 LD_MODE=
 OX=-O0
 OPT_OX=
-DEBUG=
+DEBUG=-g
 OPT_PASSES=-adce
 OPT_PASSES="-reg2mem -mem2reg -adce"
 OPT_PASSES=-verify
@@ -102,13 +102,13 @@ then
 # Translate C code to LLVM bitcode.
 $COMPILER -emit-llvm $MARCH $SRC $OX $DEBUG -c $DA_FLAGS $ARGS -o "$SRC_BIT" ||   exit 1
 # Instrument the bitcode.
-$OPT $OPT_PASSES -load "$PASS_SO" $INST_MODE -arch=$XARCH "$SRC_BIT" -o "$SRC_INSTR" 2>$LOG || exit 1
+$OPT $OPT_PASSES -load "$PASS_SO" $INST_MODE -arch=$XARCH -memdep -domtree "$SRC_BIT" -o "$SRC_INSTR" 2>$LOG || exit 1
 else
 # Translate C code to LLVM bitcode.
 $COMPILER -emit-llvm $MARCH $SRC $OX $DEBUG -S $DA_FLAGS $ARGS -o "$SRC_BIT" || exit 1
 # Instrument the bitcode.
 $OPT $OPT_PASSES  "$SRC_BIT" -S  > "$SRC_TMP" 2>$LOG || exit 1
-$OPT -load "$PASS_SO" $INST_MODE -arch=$XARCH "$SRC_TMP" -S  > "$SRC_INSTR" 2>$LOG || exit 1
+$OPT -load "$PASS_SO" $INST_MODE -arch=$XARCH -memdep "$SRC_TMP" -S  > "$SRC_INSTR" 2>$LOG || exit 1
 fi
 
 # Translate LLVM bitcode to native assembly code.
