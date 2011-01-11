@@ -290,38 +290,36 @@ INLINE void SPut(EventType type, tid_t tid, pc_t pc,
 #endif
 
   if (type != THR_START) flush_tleb();
-  if (!DEBUG || !G_flags->dry_run) {
-    Event event(type, tid, pc, a, info);
-    if (G_flags->verbosity) {
-      if ((G_flags->verbosity >= 2) ||
-          (type == THR_START) ||
-          (type == THR_END) ||
-          (type == THR_JOIN_AFTER) ||
-          (type == THR_CREATE_BEFORE)) {
-        IN_RTL++;
-        CHECK_IN_RTL();
-        event.Print();
-        IN_RTL--;
-        CHECK_IN_RTL();
-      }
+  Event event(type, tid, pc, a, info);
+  if (G_flags->verbosity) {
+    if ((G_flags->verbosity >= 2) ||
+        (type == THR_START) ||
+        (type == THR_END) ||
+        (type == THR_JOIN_AFTER) ||
+        (type == THR_CREATE_BEFORE)) {
+      IN_RTL++;
+      CHECK_IN_RTL();
+      event.Print();
+      IN_RTL--;
+      CHECK_IN_RTL();
     }
+  }
 #ifdef ENABLE_STATS
-    if (G_flags->verbosity) {
-      stats_events_processed++;
-      stats_cur_events++;
-      stats_non_local++;
-    }
+  if (G_flags->verbosity) {
+    stats_events_processed++;
+    stats_cur_events++;
+    stats_non_local++;
+  }
 #endif
 
-    IN_RTL++;
-    CHECK_IN_RTL();
-    {
-      ThreadSanitizerHandleOneEvent(&event);
-    }
-    IN_RTL--;
-    CHECK_IN_RTL();
-    unsafe_clear_pending_signals();
+  IN_RTL++;
+  CHECK_IN_RTL();
+  {
+    ThreadSanitizerHandleOneEvent(&event);
   }
+  IN_RTL--;
+  CHECK_IN_RTL();
+  unsafe_clear_pending_signals();
   if (type == THR_START) {
     if (tid == 0) HAVE_THREAD_0 = 1;
   }
@@ -339,7 +337,7 @@ void INLINE flush_trace() {
 #if (DEBUG)
   assert(RTL_INIT == 1);
 #endif
-  if (!global_ignore && (!DEBUG || LIKELY(!G_flags->dry_run))) {
+  if (!global_ignore) {
     tid_t tid = INFO.tid;
     TraceInfoPOD *trace = INFO.trace_info;
     if (DEBUG) assert(trace);
@@ -497,6 +495,10 @@ bool initialize() {
   ThreadSanitizerParseFlags(&args);
   ThreadSanitizerInit();
   init_debug();
+  if (G_flags->dry_run) {
+    Printf("WARNING: the --dry_run flag is not supported anymore. "
+           "Ignoring.\n");
+  }
   IN_RTL--;
   CHECK_IN_RTL();
   global_ignore = false;
@@ -1704,11 +1706,16 @@ int __wrap_atexit(void (*function)(void)) {
 extern "C"
 void __wrap_exit(int status) {
   FLUSH_TRACE();
+  if (IN_RTL) __real_exit(status);
+  IN_RTL++;
+  CHECK_IN_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_exit, 0);
   SPut(WAIT, tid, pc, kAtExitMagic, 0);
   __real_exit(status);
-  // This is in fact never called.
+  // This in fact is never executed.
+  IN_RTL--;
+  CHECK_IN_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
 }
 
