@@ -71,7 +71,7 @@ namespace {
 
   struct TsanOnlineInstrument : public ModulePass { // {{{1
     static char ID; // Pass identification, replacement for typeid
-    int ModuleFunctionCount, ModuleMopCount, TLEBIndex, OldTLEBIndex;
+    int ModuleFunctionCount, ModuleMopCount, TLEBIndex;
     Value *TracePassportGlob;
     int TraceCount, TraceNumMops;
     Constant *BBFlushFn;
@@ -628,11 +628,13 @@ namespace {
                                         TraceInfoTypePtr, (Type*)0);
 
       // void rtn_call(void *addr)
+      // TODO(glider): we should finally get rid of it at all.
       RtnCallFn = M.getOrInsertFunction("rtn_call",
                                         Void,
                                         PlatformInt, (Type*)0);
 
       // void rtn_exit()
+      // TODO(glider): we should finally get rid of it at all.
       RtnExitFn = M.getOrInsertFunction("rtn_exit",
                                         Void, (Type*)0);
 
@@ -720,8 +722,7 @@ namespace {
       TraceCount++;
       markMopsToInstrument(M, trace);
       bool have_passport = makeTracePassport(M, trace);
-      bool should_flush = shouldFlushTrace(trace);
-      if (shouldFlushTrace(trace)) {
+      if (have_passport) {
         Instruction *First = trace.entry->begin();
         for (BasicBlock::iterator BI = trace.entry->begin(),
              BE = trace.entry->end();
@@ -733,27 +734,23 @@ namespace {
         std::vector <Value*> Args(1);
         std::vector <Value*> idx;
         idx.push_back(ConstantInt::get(PlatformInt, 0));
-        if (have_passport) {
-          Args[0] =
+        Args[0] =
             GetElementPtrInst::Create(TracePassportGlob,
                                       idx.begin(),
                                       idx.end(),
                                       "",
                                       First);
-          Args[0] = BitCastInst::CreatePointerCast(Args[0], TraceInfoTypePtr,
-                                                   "", First);
-        } else {
-          Args[0] = ConstantPointerNull::get(TraceInfoTypePtr);
-        }
+        Args[0] = BitCastInst::CreatePointerCast(Args[0], TraceInfoTypePtr,
+                                                 "", First);
 
-        CallInst::Create(BBFlushFn, Args.begin(), Args.end(), "",
-                         First);
-      }
-      for (BlockSet::iterator TI = trace.blocks.begin(),
-                              TE = trace.blocks.end();
-           TI != TE; ++TI) {
-        runOnBasicBlock(M, *TI, first_dtor_bb, trace);
-        first_dtor_bb = false;
+          CallInst::Create(BBFlushFn, Args.begin(), Args.end(), "",
+                           First);
+        for (BlockSet::iterator TI = trace.blocks.begin(),
+                                TE = trace.blocks.end();
+             TI != TE; ++TI) {
+          runOnBasicBlock(M, *TI, first_dtor_bb, trace);
+          first_dtor_bb = false;
+        }
       }
     }
 
@@ -786,23 +783,6 @@ namespace {
     bool isaCallOrInvoke(BasicBlock::iterator &BI) {
       return ((isa<CallInst>(BI) && (!isa<DbgDeclareInst>(BI))) ||
               isa<InvokeInst>(BI));
-    }
-
-    // A trace should be (sometimes) flushed iff it contains memory operations.
-    bool shouldFlushTrace(Trace &trace) {
-      for (BlockSet::iterator TI = trace.blocks.begin(), TE = trace.blocks.end();
-           TI != TE; ++TI) {
-        for (BasicBlock::iterator BI = (*TI)->begin(), BE = (*TI)->end();
-             BI != BE; ++BI) {
-          if (isa<LoadInst>(BI)) {
-            return true;
-          }
-          if (isa<StoreInst>(BI)) {
-            return true;
-          }
-        }
-      }
-      return false;
     }
 
     int getMopPtrSize(Value *mopPtr, bool isStore) {
@@ -989,7 +969,6 @@ namespace {
             passport.push_back(ConstantStruct::get(MopType, mop));
           }
         }
-
       }
       if (TraceNumMops) {
         TracePassportType = ArrayType::get(MopType, TraceNumMops);
@@ -1121,26 +1100,13 @@ namespace {
       }
     }
 
-    bool flushBeforeCall(Module &M, BasicBlock::iterator &BI) {
-      std::vector <Value*> Args(1);
-      Args[0] = ConstantPointerNull::get(TraceInfoTypePtr);
-      CallInst::Create(BBFlushFn, Args.begin(), Args.end(), "", BI);
-      return true;
-    }
-
-    bool runOnBasicBlock(Module &M, BasicBlock *BB,
+    void runOnBasicBlock(Module &M, BasicBlock *BB,
                          bool first_dtor_bb,
                          Trace &trace) {
-      bool result = false;
-      OldTLEBIndex = 0;
       for (BasicBlock::iterator BI = BB->begin(), BE = BB->end();
            BI != BE;
            ++BI) {
-        bool unknown = true;  // we just don't want a bunch of nested if()s
         if (isaCallOrInvoke(BI)) {
-          //if (isa<MemTransferInst>(BI)) {
-          //  InstrumentMemTransfer(BI);
-          //}
           llvm::Instruction &IN = *BI;
           if ((isa<CallInst>(BI) &&
                static_cast<CallInst&>(IN).getCalledFunction() == BBFlushFn) ||
@@ -1152,21 +1118,14 @@ namespace {
 ///            assert(false);
             continue;
           }
-          flushBeforeCall(M, BI);
         }
         if (isa<LoadInst>(BI)) {
           // Instrument LOAD.
           InstrumentMop(BI, false, first_dtor_bb, trace);
-          unknown = false;
         }
         if (isa<StoreInst>(BI)) {
           // Instrument STORE.
           InstrumentMop(BI, true, first_dtor_bb, trace);
-          unknown = false;
-        }
-
-        if (unknown) {
-          // do nothing
         }
       }
     }
