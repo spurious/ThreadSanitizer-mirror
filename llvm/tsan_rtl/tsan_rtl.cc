@@ -47,6 +47,7 @@ __thread bool thread_local_ignore;
 
 struct ThreadInfo {
   tid_t tid;
+  tid_t literace_tid;
   TraceInfoPOD *trace_info;
   bool *thread_local_ignore;
 };
@@ -358,8 +359,10 @@ void INLINE flush_trace() {
     CHECK_IN_RTL();
     assert(trace);
     TraceInfo *trace_info = reinterpret_cast<TraceInfo*>(trace);
-    if (UNLIKELY(G_flags->literace_sampling)) {
-      trace_info->LiteRaceUpdate(tid % TraceInfoPOD::kLiteRaceNumTids,
+
+    // We optimize for --literace_sampling to be the default mode.
+    if (1 || G_flags->literace_sampling) {
+      trace_info->LiteRaceUpdate(INFO.literace_tid,
                                G_flags->literace_sampling);
     }
     if (DEBUG && UNLIKELY(G_flags->verbosity >= 2)) {
@@ -527,6 +530,7 @@ INLINE void InitRTL() {
   GIL scoped;
   // Initialize thread #0.
   INFO.tid = 0;
+  INFO.literace_tid = 0;
   max_tid = 1;
   INFO.trace_info = NULL;
   assert(RTL_INIT == 0);
@@ -542,6 +546,7 @@ INLINE void InitTid() {
   // thread initialization
   pthread_t pt = pthread_self();
   INFO.tid = max_tid;
+  INFO.literace_tid = INFO.tid % TraceInfoPOD::kLiteRaceNumTids;
   max_tid++;
   INFO.trace_info = NULL;
   INFO.thread_local_ignore = &thread_local_ignore;
