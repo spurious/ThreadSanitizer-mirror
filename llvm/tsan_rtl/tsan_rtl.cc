@@ -43,10 +43,12 @@
 #endif
 
 extern bool global_ignore;
+__thread bool thread_local_ignore;
 
 struct ThreadInfo {
   tid_t tid;
   TraceInfoPOD *trace_info;
+  bool *thread_local_ignore;
 };
 
 struct LLVMDebugInfo {
@@ -100,6 +102,7 @@ int DBG_INIT = 0;
 int HAVE_THREAD_0 = 0;
 
 
+std::map<pthread_t, ThreadInfo*> ThreadInfoMap;
 std::map<pthread_t, tid_t> Tids;
 std::map<tid_t, pthread_t> PThreads;
 std::map<tid_t, bool> Finished;
@@ -337,7 +340,7 @@ void INLINE flush_trace() {
 #if (DEBUG)
   assert(RTL_INIT == 1);
 #endif
-  if (!global_ignore) {
+  if (!thread_local_ignore) {
     tid_t tid = INFO.tid;
     TraceInfoPOD *trace = INFO.trace_info;
     if (DEBUG) assert(trace);
@@ -501,7 +504,6 @@ bool initialize() {
   }
   IN_RTL--;
   CHECK_IN_RTL();
-  global_ignore = false;
   __real_atexit(finalize);
   RTL_INIT = 1;
   ShadowStack.end_ = ShadowStack.pcs_;
@@ -542,12 +544,15 @@ INLINE void InitTid() {
   INFO.tid = max_tid;
   max_tid++;
   INFO.trace_info = NULL;
+  INFO.thread_local_ignore = &thread_local_ignore;
+  thread_local_ignore = global_ignore;
   Tids[pt] = INFO.tid;
   if (InitConds.find(pt) != InitConds.end()) {
     __real_pthread_cond_signal(InitConds[pt]);
   }
   DDPrintf("T%d: pthread_self()=%p\n", INFO.tid, (void*)pt);
   PThreads[INFO.tid] = pt;
+  ThreadInfoMap[pt] = &INFO;
   INIT = 1;
 }
 
@@ -586,6 +591,16 @@ void dump_finished() {
     DDPrintf("Finished[%d] = %d\n", iter->first, iter->second);
   }
 }
+
+void set_global_ignore(bool new_value) {
+  GIL scoped;
+  global_ignore = new_value;
+  map<pthread_t, ThreadInfo*>::iterator iter;
+  for (iter = ThreadInfoMap.begin(); iter != ThreadInfoMap.end(); ++iter) {
+    *(iter->second->thread_local_ignore) = new_value;
+  }
+}
+
 
 void *pthread_callback(void *arg) {
   GIL::Lock();
@@ -705,6 +720,8 @@ void *pthread_callback(void *arg) {
   return result;
 }
 
+// Erase the information about the deleted thread. This function should be
+// always called after a lock.
 void unsafe_forget_thread(tid_t tid, tid_t from) {
   DDPrintf("T%d: forgetting about T%d\n", from, tid);
   assert(PThreads.find(tid) != PThreads.end());
@@ -714,6 +731,7 @@ void unsafe_forget_thread(tid_t tid, tid_t from) {
   Finished.erase(tid);
   InitConds.erase(pt);
   FinishConds.erase(tid);
+  ThreadInfoMap.erase(pt);
 }
 
 #define FLUSH_TRACE() \

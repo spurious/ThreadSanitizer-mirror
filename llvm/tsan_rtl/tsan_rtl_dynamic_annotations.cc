@@ -76,8 +76,7 @@ void DYNAMIC_ANNOTATIONS_NAME(AnnotateFlushExpectedRaces)(
 extern "C"
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateEnableRaceDetection)(
     const char *file, int line, int enable) {
-  GIL scoped;
-  global_ignore = !enable;
+  set_global_ignore(!enable);
   fprintf(stderr, "enable: %d, global_ignore: %d\n", enable, global_ignore);
 }
 
