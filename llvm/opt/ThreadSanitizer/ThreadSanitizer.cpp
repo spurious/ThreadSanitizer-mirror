@@ -46,6 +46,11 @@ static cl::opt<bool>
                                 "destructors"),
                        cl::init(true));
 
+static cl::opt<bool>
+    EnableLiteraceSampling("enable-literace-sampling",
+                           cl::desc("Flush hot traces less frequently"),
+                           cl::init(false));
+
 namespace {
   typedef std::vector <Constant*> Passport;
   struct DebugPcInfo {
@@ -324,10 +329,10 @@ namespace {
       return false;
     }
 
-    // TODO(glider): may want to handle indirectbr.
     // A trace is valid if and only if:
     //  -- it has a single entry point
     //  -- it contains no loops
+    // TODO(glider): may want to handle indirectbr.
     bool validTrace(Trace &trace) {
       BlockVector to_see;
       BlockSet entries;
@@ -486,6 +491,7 @@ namespace {
 #else
       // TODO(glider): each call instruction should update the top of the shadow
       // stack.
+      // Is this necessary if we already update the stacks inside each wrapper?
       std::vector <Value*> end_idx;
       end_idx.push_back(ConstantInt::get(PlatformInt, 0));
       end_idx.push_back(ConstantInt::get(Int32, 0));
@@ -623,6 +629,8 @@ namespace {
                                 /*ThreadLocal*/true);
 
       // void* bb_flush(next_mops)
+      // TODO(glider): need another name, because we now flush superblocks, not
+      // basic blocks.
       BBFlushFn = M.getOrInsertFunction("bb_flush",
                                         Void,
                                         TraceInfoTypePtr, (Type*)0);
@@ -656,7 +664,6 @@ namespace {
             if (do_split) {
               // No need to split a terminator into a separate block.
               if (!isa<TerminatorInst>(BI)) {
-                ///BI->dump();
                 SplitBlock(BB, BI, this);
               }
               do_split = false;
@@ -683,6 +690,8 @@ namespace {
         if (F->isDeclaration()) continue;
 
         // TODO(glider): document this.
+        // I even can't remember why in the world we do skip new/delete.
+        // Probably should be removed.
         if ((F->getName()).find("_Znw") != std::string::npos) {
           continue;
         }
@@ -717,6 +726,26 @@ namespace {
       return true;
     }
 
+    void insertFlushCall(Trace &trace, Instruction *Before) {
+      assert(Before);
+      if (!EnableLiteraceSampling) {
+        // Sampling is off -- just insert an unconditional call to bb_flush().
+        std::vector <Value*> Args(1);
+        std::vector <Value*> idx;
+        idx.push_back(ConstantInt::get(PlatformInt, 0));
+        Args[0] =
+            GetElementPtrInst::Create(TracePassportGlob,
+                                      idx.begin(),
+                                      idx.end(),
+                                      "",
+                                      Before);
+        Args[0] = BitCastInst::CreatePointerCast(Args[0], TraceInfoTypePtr, "",
+                                                 Before);
+        CallInst::Create(BBFlushFn, Args.begin(), Args.end(), "", Before);
+      } else {
+      }
+    }
+
     void runOnTrace(Module &M, Trace &trace, bool first_dtor_bb) {
       TLEBIndex = 0;
       TraceCount++;
@@ -730,21 +759,8 @@ namespace {
           First = BI;
           if (!isa<PHINode>(First)) break;
         }
-        assert(First);
-        std::vector <Value*> Args(1);
-        std::vector <Value*> idx;
-        idx.push_back(ConstantInt::get(PlatformInt, 0));
-        Args[0] =
-            GetElementPtrInst::Create(TracePassportGlob,
-                                      idx.begin(),
-                                      idx.end(),
-                                      "",
-                                      First);
-        Args[0] = BitCastInst::CreatePointerCast(Args[0], TraceInfoTypePtr,
-                                                 "", First);
 
-          CallInst::Create(BBFlushFn, Args.begin(), Args.end(), "",
-                           First);
+        insertFlushCall(trace, First);
         for (BlockSet::iterator TI = trace.blocks.begin(),
                                 TE = trace.blocks.end();
              TI != TE; ++TI) {
@@ -830,7 +846,15 @@ namespace {
               trace.to_instrument.insert(BI);
               continue;
             }
-            // Falling through.
+            // Falling through to the alias-analysis-based optimization.
+            // If two operations in the same trace access the same memory
+            // location, then we can instrument only one of them (the latter
+            // among the strongest):
+            //
+            // L1, L2 -> instrument L2
+            // L1, S2 -> instrument S2
+            // S1, L2 -> instrument S1
+            // S1, S2 -> instrument S2
             llvm::Instruction &IN = *BI;
             Value *MopPtr;
             if (isStore) {
@@ -843,7 +867,8 @@ namespace {
             bool has_alias = false;
             // Iff the current operation is STORE, it may modify store_map.
             if (isStore) {
-              for (LocMap::iterator LI = store_map.begin(), LE = store_map.end();
+              for (LocMap::iterator LI = store_map.begin(),
+                                    LE = store_map.end();
                    LI != LE; ++LI) {
                 const pair<Value*, int> &location = LI->first;
                 AliasAnalysis::AliasResult R = AA->alias(MopPtr, size,
@@ -851,22 +876,32 @@ namespace {
                                                          location.second);
                 if ((R == AliasAnalysis::MustAlias) &&
                     (size == location.second)) {
-                  ///errs() << "ALIAS\n";
-                // TODO(glider): do we need an assertion here?
-///                  assert(size == location.second);
                   // We've already seen a STORE of the same size accessing the
                   // same memory location. We're a STORE, too, so drop it.
-                      trace.to_instrument.erase(LI->second);
-                      trace.to_instrument.insert(BI);
-                      store_map.erase(LI);
-                      store_map[make_pair(MopPtr, size)] = BI;
-                      has_alias = true;
-                      ///BI->dump();
-                      // There cannot be other STORE operations aliasing the same
-                      // location.
-                      break;
-                } else {
-                ///    errs() << "NOALIAS\n";
+                  trace.to_instrument.erase(LI->second);
+                  trace.to_instrument.insert(BI);
+                  store_map.erase(LI);
+                  store_map[make_pair(MopPtr, size)] = BI;
+                  has_alias = true;
+                  // There cannot be other STORE operations aliasing the
+                  // same location.
+                  break;
+                }
+              }
+              // Drop the possible LOAD accessing the same memory location.
+              for (LocMap::iterator LI = load_map.begin(),
+                                    LE = load_map.end();
+                   LI != LE; ++LI) {
+                const pair<Value*, int> &location = LI->first;
+                AliasAnalysis::AliasResult R = AA->alias(MopPtr, size,
+                                                         location.first,
+                                                         location.second);
+                if ((R == AliasAnalysis::MustAlias) &&
+                    (size == location.second)) {
+                  trace.to_instrument.erase(LI->second);
+                  // There cannot be other LOAD operations aliasing the
+                  // same location.
+                  break;
                 }
               }
               if (!has_alias) {
@@ -882,10 +917,8 @@ namespace {
               AliasAnalysis::AliasResult R = AA->alias(MopPtr, size,
                                                        location.first,
                                                        location.second);
-              if ((R == AliasAnalysis::MustAlias) && (size == location.second)) {
- ///               errs() << "ALIAS\n";
-                // TODO(glider): do we need an assertion here?
-///                assert(size == location.second);
+              if ((R == AliasAnalysis::MustAlias) &&
+                  (size == location.second)) {
                 // Drop the previous access.
                 trace.to_instrument.erase(LI->second);
                 // It's ok to insert the same BI into to_instrument twice.
@@ -895,12 +928,9 @@ namespace {
                   load_map[make_pair(MopPtr, size)] = BI;
                 }
                 has_alias = true;
-///                BI->dump();
-                // There cannot be other STORE operations aliasing the same
+                // There cannot be other LOAD operations aliasing the same
                 // location.
                 break;
-              } else {
-///                  errs() << "NOALIAS\n";
               }
             }
 
@@ -985,7 +1015,6 @@ namespace {
         // num_mops_
         trace_info.push_back(ConstantInt::get(PlatformInt, TraceNumMops));
         // pc_
-        // TODO(glider): the Trace class should provide its entry BB.
         Instruction *First = trace.entry->begin();
         trace_info.push_back(ConstantInt::get(PlatformInt,
                                               getAddr(TraceCount, 0, First)));
