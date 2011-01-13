@@ -53,7 +53,7 @@ class GIL {
 extern FILE* G_out;
 
 typedef uintptr_t pc_t;
-typedef intptr_t tid_t;
+typedef uintptr_t tid_t;
 tid_t GetTid();
 pc_t GetPc();
 

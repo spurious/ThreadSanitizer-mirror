@@ -44,6 +44,8 @@
 
 extern bool global_ignore;
 __thread bool thread_local_ignore;
+__thread bool thread_local_show_stats;
+__thread int thread_local_literace;
 
 struct ThreadInfo {
   tid_t tid;
@@ -354,14 +356,18 @@ void INLINE flush_trace() {
     // deviations if the trace is hot, but we can afford them.
     // Unfortunately this also leads to cache ping-pong and may affect the
     // performance.
-    if (UNLIKELY(G_flags->show_stats)) trace->counter_++;
+    if (DEBUG && G_flags->show_stats) trace->counter_++;
     IN_RTL++;
     CHECK_IN_RTL();
     assert(trace);
     TraceInfo *trace_info = reinterpret_cast<TraceInfo*>(trace);
 
     // We optimize for --literace_sampling to be the default mode.
-    if (1 || G_flags->literace_sampling) {
+    // Possible values:
+    // -- 1
+    // -- G_flags->literace_sampling
+    // -- thread_local_literace
+    if (G_flags->literace_sampling) {
       trace_info->LiteRaceUpdate(INFO.literace_tid,
                                G_flags->literace_sampling);
     }
@@ -551,6 +557,8 @@ INLINE void InitTid() {
   INFO.trace_info = NULL;
   INFO.thread_local_ignore = &thread_local_ignore;
   thread_local_ignore = global_ignore;
+  thread_local_show_stats = G_flags->show_stats;
+  thread_local_literace = G_flags->literace_sampling;
   Tids[pt] = INFO.tid;
   if (InitConds.find(pt) != InitConds.end()) {
     __real_pthread_cond_signal(InitConds[pt]);
