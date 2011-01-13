@@ -612,7 +612,7 @@ namespace {
       ShadowStack = new GlobalVariable(M,
                                        CallStackType,
                                        /*isConstant*/true,
-                                       GlobalValue::ExternalLinkage,
+                                       GlobalValue::ExternalWeakLinkage,
                                        /*Initializer*/0,
                                        "ShadowStack",
                                        /*InsertBefore*/0,
@@ -622,7 +622,7 @@ namespace {
       TLEB = new GlobalVariable(M,
                                 TLEBTy,
                                 /*isConstant*/true,
-                                GlobalValue::ExternalLinkage,
+                                GlobalValue::ExternalWeakLinkage,
                                 /*Initializer*/0,
                                 "TLEB",
                                 /*InsertBefore*/0,
@@ -634,6 +634,7 @@ namespace {
       BBFlushFn = M.getOrInsertFunction("bb_flush",
                                         Void,
                                         TraceInfoTypePtr, (Type*)0);
+      cast<Function>(BBFlushFn)->setLinkage(Function::ExternalWeakLinkage);
 
       // void rtn_call(void *addr)
       // TODO(glider): we should finally get rid of it at all.
@@ -649,9 +650,11 @@ namespace {
       MemCpyFn = M.getOrInsertFunction("rtl_memcpy",
                                        UIntPtr,
                                        UIntPtr, UIntPtr, PlatformInt, (Type*)0);
+      cast<Function>(MemCpyFn)->setLinkage(Function::ExternalWeakLinkage);
       MemMoveFn = M.getOrInsertFunction("rtl_memmove",
                                        UIntPtr,
                                        UIntPtr, UIntPtr, PlatformInt, (Type*)0);
+      cast<Function>(MemMoveFn)->setLinkage(Function::ExternalWeakLinkage);
 
       // Split each basic block into smaller blocks containing no more than one
       // call instruction at the end.
