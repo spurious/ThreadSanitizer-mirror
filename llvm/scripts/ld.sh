@@ -14,6 +14,8 @@ ARGS=
 # TODO(glider): x86-64 should be the default arch
 #PLATFORM="x86-64"
 
+SHARED=
+
 until [ -z "$1" ]
 do
   if [ `expr match "$1" "-o"` -gt 0 ]
@@ -39,6 +41,9 @@ do
   then
     # pass
     true
+  elif [ `expr match "$1" "-shared"` -gt 0 ]
+  then
+    SHARED=1
   elif [ `expr match "$1" ".*\.[ao]"` -gt 0 ]
   then
     ARGS="$ARGS $1"
@@ -57,5 +62,11 @@ CXXFLAGS=
 LOG=instrumentation.log
 
 set_platform_dependent_vars
-# Link with $TSAN_RTL
-$TSAN_LD $MARCH -g $ARGS $LDFLAGS $TSAN_RTL -o $SRC_EXE || exit 1
+if [ "$SHARED" != "1" ]
+then
+  # Link with $TSAN_RTL
+  $TSAN_LD $MARCH  $ARGS $LDFLAGS $TSAN_RTL -o $SRC_EXE || exit 1
+else
+  # The target is a .so library -- don't link it with $TSAN_RTL.
+  $TSAN_LD $MARCH -shared  $ARGS -o $SRC_EXE || exit 1
+fi

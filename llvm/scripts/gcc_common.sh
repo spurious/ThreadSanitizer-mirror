@@ -8,7 +8,12 @@ source "$SCRIPT_ROOT/common.sh"
 ALL_ARGS=
 ARGS=
 LD_MODE=
+# Optimization level: -O0, -O1 etc.
 OX=-O0
+# -fPIC flag.
+FPIC=
+# llc analog of -fPIC is -relocation-model=pic
+LLC_PIC=
 OPT_OX=
 DEBUG=
 OPT_PASSES=-adce
@@ -56,6 +61,10 @@ do
   then
     OX=$1
     OPT_OX=$1
+  elif [ `expr match "$1" "-fPIC"` -gt 0 ]
+  then
+    FPIC=-fPIC
+    LLC_PIC=-relocation-model=pic
   elif [ `expr match "$1" "-g"` -gt 0 ]
   then
     DEBUG=-g
@@ -100,24 +109,24 @@ set_platform_dependent_vars
 if [ "$COMPILE_FAST" == "1" ]
 then
 # Translate C code to LLVM bitcode.
-$COMPILER -emit-llvm $MARCH $SRC $OX $DEBUG -c $DA_FLAGS $ARGS -o "$SRC_BIT" ||   exit 1
+$COMPILER -emit-llvm $MARCH $SRC $OX $FPIC $DEBUG -c $DA_FLAGS $ARGS -o "$SRC_BIT" ||   exit 1
 # Instrument the bitcode.
 $OPT $OPT_PASSES -load "$PASS_SO" $INST_MODE -arch=$XARCH "$SRC_BIT" -o "$SRC_INSTR" 2>$LOG || exit 1
 else
 # Translate C code to LLVM bitcode.
-$COMPILER -emit-llvm $MARCH $SRC $OX $DEBUG -S $DA_FLAGS $ARGS -o "$SRC_BIT" || exit 1
+$COMPILER -emit-llvm $MARCH $SRC $OX $FPIC $DEBUG -S $DA_FLAGS $ARGS -o "$SRC_BIT" || exit 1
 # Instrument the bitcode.
-$OPT $OPT_PASSES  "$SRC_BIT" -S  > "$SRC_TMP" 2>$LOG || exit 1
-$OPT -load "$PASS_SO" $INST_MODE -arch=$XARCH "$SRC_TMP" -S  > "$SRC_INSTR" 2>$LOG || exit 1
+$OPT $OPT_PASSES  "$SRC_BIT" $FPIC -S  > "$SRC_TMP" 2>$LOG || exit 1
+$OPT -load "$PASS_SO" $INST_MODE -arch=$XARCH $FPIC "$SRC_TMP" -S  > "$SRC_INSTR" 2>$LOG || exit 1
 fi
 
 # Translate LLVM bitcode to native assembly code.
-$LLC -march=$XARCH $OX $SRC_INSTR  -o $SRC_ASM 
-if [ ! $? ]
+$LLC -march=$XARCH $LLC_PIC $OX $SRC_INSTR  -o $SRC_ASM
+if [ "$?" != "0" ]
 then
-  $FALLBACK_COMPILER $MARCH $SRC $OX $DEBUG -c $DA_FLAGS $ARGS -o $SRC_OBJ
+  $FALLBACK_COMPILER $MARCH $SRC $OX $FPIC $DEBUG -c $DA_FLAGS $ARGS -o $SRC_OBJ
   exit 0
+else
+  # Compile the object file.
+  $COMPILER $MARCH -c $SRC_ASM $OX $FPIC $DEBUG -o $SRC_OBJ || $FALLBACK_COMPILER $MARCH $SRC $OX $FPIC $DEBUG -c $DA_FLAGS $ARGS -o $SRC_OBJ ||   exit 1
 fi
-# Compile the object file.
-$COMPILER $MARCH -c $SRC_ASM $OX $DEBUG -o $SRC_OBJ || $FALLBACK_COMPILER $MARCH $SRC $OX $DEBUG -c $DA_FLAGS $ARGS -o $SRC_OBJ ||   exit 1
-
