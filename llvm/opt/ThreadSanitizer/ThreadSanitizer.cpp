@@ -76,7 +76,8 @@ namespace {
 
   struct TsanOnlineInstrument : public ModulePass { // {{{1
     static char ID; // Pass identification, replacement for typeid
-    int ModuleFunctionCount, ModuleMopCount, TLEBIndex;
+    int ModuleFunctionCount, ModuleMopCount, FunctionMopCount, TLEBIndex,
+        FunctionMopCountOnTrace;
     Value *TracePassportGlob;
     int TraceCount, TraceNumMops;
     Constant *BBFlushFn;
@@ -99,8 +100,11 @@ namespace {
     static const int kTLEBSize = 100;
     // TODO(glider): hashing constants and BB addresses should be different on
     // x86 and x86-64.
-    static const int kBBHiAddr = 5000, kBBLoAddr = 100;
-    static const int kFNV1aPrime = 6733, kFNV1aModulo = 2048;
+    static const int kBBHiAddr = 2048, kBBLoAddr = 128;
+    //static const int kFNV1aPrime = 6733, kFNV1aModulo = 2048;
+    // TODO(glider): these numbers are in fact unfair, see
+    // http://isthe.com/chongo/tech/comp/fnv/index.html
+    static const int kFNV1aPrime = 104729, kFNV1aModulo = 65536;
     static const int kMaxAddr = 1 << 30;
     static const int kDebugInfoMagicNumber = 0xdb914f0;
     // TODO(glider): must be in sync with ts_trace_info.h
@@ -111,7 +115,7 @@ namespace {
     set<string> debug_symbol_set;
     set<string> debug_file_set;
     set<string> debug_path_set;
-    map<uintptr_t, DebugPcInfo> debug_pc_map;
+    map<Constant*, DebugPcInfo> debug_pc_map;
 
     // TODO(glider): box the trace into a class that provides the set of
     // predecessors.
@@ -125,18 +129,18 @@ namespace {
       }
     }
 
-    uintptr_t getAddr(int bb_index, int mop_index,
-                      BasicBlock::iterator cur_inst) {
-      uintptr_t result = ((ModuleID * kBBHiAddr) + bb_index) * kBBLoAddr + mop_index;
+    // instruction_address = function_address + c_offset
+    // (number of mops is always less or equal to the function size)
+    Constant *getInstructionAddr(int mop_index,
+                                 BasicBlock::iterator cur_inst) {
+      Value *cur_fun = cur_inst->getParent()->getParent();
+      Constant *c_offset = ConstantInt::get(PlatformInt, mop_index);
+      Constant *result =
+          ConstantExpr::getAdd(
+              ConstantExpr::getPtrToInt(cast<Constant>(cur_fun), PlatformInt),
+              c_offset);
       if (cur_inst) {
-        DumpDebugInfo(result, cur_inst);
-      }
-      if ((result < 0) || (result > kMaxAddr)) {
-        errs() << "bb_index: " << bb_index << " mop_index: " << mop_index;
-        errs() << " result: " << result << " kMaxAddr: " << kMaxAddr << "\n";
-        errs() << "result = ((" << ModuleID << " * " << kBBHiAddr << ") + " <<
-          bb_index << ") * " << kBBLoAddr << " + " << mop_index << "\n";
-        assert(false);
+        DumpInstructionDebugInfo(result, cur_inst);
       }
       return result;
     }
@@ -242,11 +246,12 @@ namespace {
                                            PlatformInt,
                                            PlatformInt, PlatformInt,
                                            NULL);
-      for (map<uintptr_t, DebugPcInfo>::iterator it = debug_pc_map.begin();
+      for (map<Constant*, DebugPcInfo>::iterator it = debug_pc_map.begin();
            it != debug_pc_map.end();
            ++it) {
         vector<Constant*> pc;
-        pc.push_back(ConstantInt::get(PlatformInt, it->first));
+        ///pc.push_back(ConstantInt::get(PlatformInt, it->first));
+        pc.push_back(it->first);
         pc.push_back(ConstantInt::get(PlatformInt, symbols[it->second.symbol]));
         pc.push_back(ConstantInt::get(PlatformInt, paths[it->second.path]));
         pc.push_back(ConstantInt::get(PlatformInt, files[it->second.file]));
@@ -483,10 +488,10 @@ namespace {
     //   *ShadowStack.end_ = (uintptr_t)addr;
     //   ShadowStack.end_++;
     //
-    void InsertRtnCall(uintptr_t addr, BasicBlock::iterator &Before) {
+    void InsertRtnCall(Constant *addr, BasicBlock::iterator &Before) {
 #if DEBUG
         std::vector<Value*> inst(1);
-        inst[0] = ConstantInt::get(PlatformInt, addr);
+        inst[0] = addr;
         CallInst::Create(RtnCallFn, inst.begin(), inst.end(), "", Before);
 #else
       // TODO(glider): each call instruction should update the top of the shadow
@@ -501,8 +506,7 @@ namespace {
                                     "", Before);
       Value *StackEnd = new LoadInst(StackEndPtr, "", Before);
       CurrentStackEnd = StackEnd;
-      Value *Addr = ConstantInt::get(PlatformInt, addr);
-      new StoreInst(Addr, StackEnd, Before);
+      new StoreInst(addr, StackEnd, Before);
 
       std::vector <Value*> new_idx;
       new_idx.push_back(ConstantInt::get(Int32, 1));
@@ -687,6 +691,7 @@ namespace {
 
       for (Module::iterator F = M.begin(), E = M.end(); F != E; ++F) {
         ModuleFunctionCount++;
+        FunctionMopCount = 0;
         int startTraceCount = TraceCount;
         bool first_dtor_bb = false;
 
@@ -714,7 +719,7 @@ namespace {
         // InsertRtnExit uses the shadow stack size obtained by InsertRtnCall
         // and should be always executed after it.
         BasicBlock::iterator First = F->begin()->begin();
-        InsertRtnCall(getAddr(startTraceCount, 0, First), First);
+        InsertRtnCall(getInstructionAddr(0, First), First);
         for (Function::iterator BB = F->begin(), E = F->end(); BB != E; ++BB) {
           for (BasicBlock::iterator BI = BB->begin(), BE = BB->end();
                BI != BE;
@@ -773,7 +778,7 @@ namespace {
       }
     }
 
-    void DumpDebugInfo(uintptr_t addr, BasicBlock::iterator BI) {
+    void DumpInstructionDebugInfo(Constant *addr, BasicBlock::iterator BI) {
       DILocation Loc(BI->getMetadata("dbg"));
       BasicBlock::iterator OldBI = BI;
       if (!Loc.getLineNumber()) {
@@ -798,6 +803,7 @@ namespace {
           make_pair(addr, DebugPcInfo(BI->getParent()->getParent()->getName(),
                                       dir, file, line)));
     }
+
 
     bool isaCallOrInvoke(BasicBlock::iterator &BI) {
       return ((isa<CallInst>(BI) && (!isa<DbgDeclareInst>(BI))) ||
@@ -953,6 +959,7 @@ namespace {
       bool isStore, isMop;
       int size, src_size, dest_size;
       TraceNumMops = 0;
+      FunctionMopCountOnTrace = FunctionMopCount + 1;
       for (BlockSet::iterator TI = trace.blocks.begin(), TE = trace.blocks.end();
            TI != TE; ++TI) {
         for (BasicBlock::iterator BI = (*TI)->begin(), BE = (*TI)->end();
@@ -976,11 +983,11 @@ namespace {
             if (trace.to_instrument.find(BI) == trace.to_instrument.end())
               continue;
             TraceNumMops++;
+            FunctionMopCount++;
             ModuleMopCount++;
 
 
             llvm::Instruction &IN = *BI;
-            getAddr(TraceCount, TraceNumMops, BI);
             Value *MopPtr;
             if (isStore) {
               MopPtr = (static_cast<StoreInst&>(IN).getPointerOperand());
@@ -995,8 +1002,7 @@ namespace {
             }
 
             std::vector<Constant*> mop;
-            mop.push_back(ConstantInt::get(PlatformInt, getAddr(TraceCount,
-                                                                TraceNumMops, BI)));
+            mop.push_back(getInstructionAddr(FunctionMopCount, BI));
             mop.push_back(ConstantInt::get(Int32, size / 8));
             mop.push_back(ConstantInt::get(Int8, isStore));
             passport.push_back(ConstantStruct::get(MopType, mop));
@@ -1019,8 +1025,7 @@ namespace {
         trace_info.push_back(ConstantInt::get(PlatformInt, TraceNumMops));
         // pc_
         Instruction *First = trace.entry->begin();
-        trace_info.push_back(ConstantInt::get(PlatformInt,
-                                              getAddr(TraceCount, 0, First)));
+        trace_info.push_back(getInstructionAddr(FunctionMopCountOnTrace, First));
         // counter_
         trace_info.push_back(ConstantInt::get(PlatformInt, 0));
         // literace_counters[]
