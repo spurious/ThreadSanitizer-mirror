@@ -1624,8 +1624,11 @@ extern
 char *strcpy(char *dest, const char *src) {
   FLUSH_TRACE();
   DECLARE_TID_AND_PC();
+  RPut(RTN_CALL, tid, pc, (uintptr_t)strcpy, 0);
   pc = (pc_t)strcpy;
-  return Replace_strcpy(tid, pc, dest, src);
+  char *result = Replace_strcpy(tid, pc, dest, src);
+  RPut(RTN_EXIT, tid, pc, 0, 0);
+  return result;
 }
 
 extern "C"
