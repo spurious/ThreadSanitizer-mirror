@@ -2001,26 +2001,30 @@ void ReadDbgInfoFromSection(char* start, char* end) {
              pcs[i].pc, symbols[pcs[i].symbol].c_str(),
              files[pcs[i].file].c_str(), paths[pcs[i].path].c_str(),
              pcs[i].line);
-#if (DEBUG)
-      assert((*debug_info).find(pcs[i].pc) == (*debug_info).end());
-#endif
-      (*debug_info)[pcs[i].pc].pc = pcs[i].pc;
-      (*debug_info)[pcs[i].pc].symbol = symbols[pcs[i].symbol];
-      (*debug_info)[pcs[i].pc].file = files[pcs[i].file];
-      (*debug_info)[pcs[i].pc].path = paths[pcs[i].path];
-      // TODO(glider): move the path-related logic to the compiler.
-      if ((files[pcs[i].file] != "")  && (paths[pcs[i].path] != "")) {
-        if (paths[pcs[i].path][paths[pcs[i].path].size() - 1] != '/') {
-          (*debug_info)[pcs[i].pc].fullpath =
-              paths[pcs[i].path] + "/" + files[pcs[i].file];
-        } else {
-          (*debug_info)[pcs[i].pc].fullpath =
-              paths[pcs[i].path] + files[pcs[i].file];
-        }
+      // If we've already seen this pc, check that it is inside the same
+      // function, but do not update the debug info (it may be different).
+      // TODO(glider): generate more correct debug info.
+      if ((*debug_info).find(pcs[i].pc) != (*debug_info).end()) {
+        assert((*debug_info)[pcs[i].pc].symbol == symbols[pcs[i].symbol]);
       } else {
-        (*debug_info)[pcs[i].pc].fullpath = files[pcs[i].file];
+        (*debug_info)[pcs[i].pc].pc = pcs[i].pc;
+        (*debug_info)[pcs[i].pc].symbol = symbols[pcs[i].symbol];
+        (*debug_info)[pcs[i].pc].file = files[pcs[i].file];
+        (*debug_info)[pcs[i].pc].path = paths[pcs[i].path];
+        // TODO(glider): move the path-related logic to the compiler.
+        if ((files[pcs[i].file] != "")  && (paths[pcs[i].path] != "")) {
+          if (paths[pcs[i].path][paths[pcs[i].path].size() - 1] != '/') {
+            (*debug_info)[pcs[i].pc].fullpath =
+                paths[pcs[i].path] + "/" + files[pcs[i].file];
+          } else {
+            (*debug_info)[pcs[i].pc].fullpath =
+                paths[pcs[i].path] + files[pcs[i].file];
+          }
+        } else {
+          (*debug_info)[pcs[i].pc].fullpath = files[pcs[i].file];
+        }
+        (*debug_info)[pcs[i].pc].line = pcs[i].line;
       }
-      (*debug_info)[pcs[i].pc].line = pcs[i].line;
     }
   }
 }
