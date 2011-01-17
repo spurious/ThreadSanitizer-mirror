@@ -41,6 +41,11 @@ static cl::opt<bool>
                   cl::desc("Do not optimize the instrumentation "
                            "of memory operations"));
 static cl::opt<bool>
+    PrintStats("print-stats",
+                  cl::desc("Print the instrumentation stats"),
+                  cl::init(false));
+
+static cl::opt<bool>
     WorkaroundVptrRace("workaround-vptr-race",
                        cl::desc("Work around benign races on VPTR in "
                                 "destructors"),
@@ -848,7 +853,7 @@ namespace {
         }
       }
       writeDebugInfo(M);
-      instrumentation_stats.printStats();
+      if (PrintStats) instrumentation_stats.printStats();
       return true;
     }
 
