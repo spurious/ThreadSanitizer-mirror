@@ -69,7 +69,31 @@ namespace {
   struct Trace {
     BlockSet blocks;
     BasicBlock *entry;
+    set<BasicBlock*> exits;
     InstSet to_instrument;
+  };
+
+  struct InstrumentationStats {
+    InstrumentationStats();
+    void newFunction();
+    void newTrace();
+    void newBasicBlocks(int num);
+    void newInstrumentedBasicBlock();
+    void newMop();
+    void finalize();
+    void printStats();
+
+    vector<int> traces;
+    // numbers
+    int num_functions;
+    int num_traces;
+    int num_bbs;
+    int num_inst_bbs;
+    int num_inst_bbs_in_trace;
+    int num_mops;
+
+    // medians
+    int med_trace_size;
   };
 
   typedef vector<Trace> TraceVector;
@@ -80,7 +104,7 @@ namespace {
         FunctionMopCountOnTrace;
     Value *TracePassportGlob;
     int TraceCount, TraceNumMops;
-    Constant *BBFlushFn;
+    Constant *BBFlushFn, *BBFlushCurrentFn;
     // TODO(glider): get rid of rtn_call/rtn_exit at all.
     Constant *RtnCallFn, *RtnExitFn;
     Constant *MemCpyFn, *MemMoveFn;
@@ -112,6 +136,7 @@ namespace {
     static const size_t kMaxCallStackSize = 1 << 12;
     int arch_size_;
     int ModuleID;
+    InstrumentationStats instrumentation_stats;
     set<string> debug_symbol_set;
     set<string> debug_file_set;
     set<string> debug_path_set;
@@ -325,7 +350,11 @@ namespace {
       for (int i = 0, e = BBTerm->getNumSuccessors(); i != e; ++i) {
         BasicBlock *child = BBTerm->getSuccessor(i);
         // Skip the children not belonging to the same trace.
-        if (trace.blocks.find(child) == trace.blocks.end()) continue;
+        // If the child doesn't belong to the same trace, add current_bb to the
+        // list of trace exits.
+        if (trace.blocks.find(child) == trace.blocks.end()) {
+          trace.exits.insert(current_bb);
+        }
         if (used.find(child) != used.end()) return true;
         used.insert(child);
         if (traceHasCycles(trace, child, used)) return true;
@@ -386,6 +415,39 @@ namespace {
 #endif
         return false;
       }
+
+      trace.exits.clear();
+      for (BlockSet::iterator BB = trace.blocks.begin(), E = trace.blocks.end();
+           BB != E; ++BB) {
+        TerminatorInst *BBTerm = (*BB)->getTerminator();
+        // Iff any successor of a basic block doesn't belong to a trace,
+        // then no successors of that basic block should belong to the trace.
+        if (BBTerm->getNumSuccessors() > 0) {
+          BasicBlock *child = BBTerm->getSuccessor(0);
+          bool has_ext_successors =
+              (trace.blocks.find(child) == trace.blocks.end());
+          if (has_ext_successors) {
+            trace.exits.insert(*BB);
+          }
+          for (int i = 0, e = BBTerm->getNumSuccessors(); i != e; ++i) {
+            BasicBlock *child = BBTerm->getSuccessor(i);
+            // If any basic block loops to the trace entry, the trace is
+            // invalid. It's guaranteed that no basic block loops to itself.
+            if (child == trace.entry) return false;
+            bool is_external = trace.blocks.find(child) == trace.blocks.end();
+            if (has_ext_successors != is_external) {
+              return false;
+            }
+          }
+        }
+        // Treat the UNREACHABLE instruction as a trace exit. This won't hurt
+        // because its instrumentation will be unreachable too.
+        if (isa<UnreachableInst>(BBTerm) || isa<ReturnInst>(BBTerm)) {
+          trace.exits.insert(*BB);
+        }
+      }
+      // A valid trace should have at least one exit!
+      assert(trace.exits.size());
       return true;
       // TODO(glider): looks like the greedy algorithm allows us not to check
       // for cycles inside trace. But we may want to assert that the only
@@ -418,10 +480,14 @@ namespace {
         // If it can be added to the trace, do it.
         for (int i = 0, e = BBTerm->getNumSuccessors(); i != e; ++i) {
           BasicBlock *child = BBTerm->getSuccessor(i);
+          ///child->dump();
           if (trace.blocks.find(child) != trace.blocks.end()) continue;
           if (used.find(child) != used.end()) continue;
+          Instruction *First = child->begin();
+          if (isa<CallInst>(First) || isa<InvokeInst>(First)) continue;
           trace.blocks.insert(child);
           if (validTrace(trace)) {
+            assert(trace.exits.size());
             used.insert(child);
             to_see.push_back(child);
           } else {
@@ -429,6 +495,27 @@ namespace {
           }
         }
       }
+      // Populate the vector of trace exits.
+      trace.exits.clear();
+      for (BlockSet::iterator BB = trace.blocks.begin(), E = trace.blocks.end();
+           BB != E; ++BB) {
+        TerminatorInst *BBTerm = (*BB)->getTerminator();
+        if (BBTerm->getNumSuccessors() > 0)  {
+          // We've already checked that having an external successor implies
+          // being an exit.
+          BasicBlock *child = BBTerm->getSuccessor(0);
+          bool has_ext_successors =
+              (trace.blocks.find(child) == trace.blocks.end());
+          if (has_ext_successors) {
+            trace.exits.insert(*BB);
+          }
+        }
+        if (endsWithCall(*BB)) trace.exits.insert(*BB);
+        if (isa<ReturnInst>(BBTerm) || isa<UnreachableInst>(BBTerm)) {
+          trace.exits.insert(*BB);
+        }
+      }
+      assert(trace.exits.size());
     }
 
     void cachePredecessors(Function &F) {
@@ -458,6 +545,7 @@ namespace {
           assert(current_trace.blocks.size() == 0);
           current_trace.entry = current_bb;
           buildClosure(current_bb, current_trace, used_bbs);
+          assert(current_trace.exits.size());
           traces.push_back(current_trace);
           current_trace.blocks.clear();
           current_trace.entry = NULL;
@@ -640,6 +728,16 @@ namespace {
                                         TraceInfoTypePtr, (Type*)0);
       cast<Function>(BBFlushFn)->setLinkage(Function::ExternalWeakLinkage);
 
+      // void* bb_flush_current(cur_mops)
+      // TODO(glider): need another name, because we now flush superblocks, not
+      // basic blocks.
+      BBFlushCurrentFn = M.getOrInsertFunction("bb_flush_current",
+                                               Void,
+                                               TraceInfoTypePtr, (Type*)0);
+      cast<Function>(BBFlushCurrentFn)->
+          setLinkage(Function::ExternalWeakLinkage);
+
+
       // void rtn_call(void *addr)
       // TODO(glider): we should finally get rid of it at all.
       RtnCallFn = M.getOrInsertFunction("rtn_call",
@@ -664,26 +762,42 @@ namespace {
       // call instruction at the end.
       for (Module::iterator F = M.begin(), E = M.end(); F != E; ++F) {
         for (Function::iterator BB = F->begin(), E = F->end(); BB != E; ++BB) {
-          bool do_split = false;
+          bool need_split = false;
+          BasicBlock::iterator OldBI = BB->end();
           for (BasicBlock::iterator BI = BB->begin(), BE = BB->end();
                BI != BE;
                ++BI) {
-            if (do_split) {
-              // No need to split a terminator into a separate block.
-              if (!isa<TerminatorInst>(BI)) {
-                SplitBlock(BB, BI, this);
+            if (isa<LoadInst>(BI) || isa<StoreInst>(BI)) {
+              need_split = true;
+            }
+            if (isa<TerminatorInst>(BI)) {
+              for (int i = 0,
+                       e = cast<TerminatorInst>(BI)->getNumSuccessors();
+                   i != e; ++i) {
+                BasicBlock *child = cast<TerminatorInst>(BI)->getSuccessor(i);
+                if (child == BB) {
+                  SplitBlock(BB, BI, this);
+                  break;
+                }
               }
-              do_split = false;
               break;
             }
             // A call may not occur inside of a basic block, iff this is not a
             // call to @llvm.dbg.declare
             if (isaCallOrInvoke(BI)) {
-              do_split = true;
+              if (need_split) {
+                SplitBlock(BB, BI, this);
+                need_split = false;
+                break;
+              }
             }
             if (isa<MemTransferInst>(BI)) {
               InstrumentMemTransfer(BI);
-              do_split = true;
+              if (need_split) {
+                SplitBlock(BB, BI, this);
+                need_split = false;
+                break;
+              }
             }
           }
         }
@@ -708,9 +822,12 @@ namespace {
         }
         if (isDtor(F->getName())) first_dtor_bb = WorkaroundVptrRace;
 
+        instrumentation_stats.newFunction();
+        instrumentation_stats.newBasicBlocks(F->size());
         // Instrument the traces.
         TraceVector traces(buildTraces(*F));
         for (int i = 0; i < traces.size(); ++i) {
+          assert(traces[i].exits.size());
           runOnTrace(M, traces[i], first_dtor_bb);
           first_dtor_bb = false;
         }
@@ -731,6 +848,7 @@ namespace {
         }
       }
       writeDebugInfo(M);
+      instrumentation_stats.printStats();
       return true;
     }
 
@@ -754,12 +872,34 @@ namespace {
       }
     }
 
+    void insertFlushCurrentCall(Trace &trace, Instruction *Before) {
+      assert(Before);
+      if (!EnableLiteraceSampling) {
+        // Sampling is off -- just insert an unconditional call to bb_flush().
+        std::vector <Value*> Args(1);
+        std::vector <Value*> idx;
+        idx.push_back(ConstantInt::get(PlatformInt, 0));
+        Args[0] =
+            GetElementPtrInst::Create(TracePassportGlob,
+                                      idx.begin(),
+                                      idx.end(),
+                                      "",
+                                      Before);
+        Args[0] = BitCastInst::CreatePointerCast(Args[0], TraceInfoTypePtr, "",
+                                                 Before);
+        CallInst::Create(BBFlushCurrentFn, Args.begin(), Args.end(), "", Before);
+      } else {
+      }
+    }
+
     void runOnTrace(Module &M, Trace &trace, bool first_dtor_bb) {
       TLEBIndex = 0;
       TraceCount++;
+      instrumentation_stats.newTrace();
       markMopsToInstrument(M, trace);
       bool have_passport = makeTracePassport(M, trace);
       if (have_passport) {
+#if 0
         Instruction *First = trace.entry->begin();
         for (BasicBlock::iterator BI = trace.entry->begin(),
              BE = trace.entry->end();
@@ -769,11 +909,21 @@ namespace {
         }
 
         insertFlushCall(trace, First);
+#endif
         for (BlockSet::iterator TI = trace.blocks.begin(),
                                 TE = trace.blocks.end();
              TI != TE; ++TI) {
           runOnBasicBlock(M, *TI, first_dtor_bb, trace);
           first_dtor_bb = false;
+        }
+        // If a trace has a passport, we should be able to insert a flush call
+        // before its exit points.
+        assert(trace.exits.size());
+        for (BlockSet::iterator EI = trace.exits.begin(),
+                                EE = trace.exits.end();
+             EI != EE; ++EI) {
+
+          insertFlushCurrentCall(trace, (*EI)->getTerminator());
         }
       }
     }
@@ -1056,9 +1206,10 @@ namespace {
     }
 
 
-    void InstrumentMop(BasicBlock::iterator &BI, bool isStore,
+    void instrumentMop(BasicBlock::iterator &BI, bool isStore,
                        bool check_ident_store, Trace &trace) {
       if (trace.to_instrument.find(BI) == trace.to_instrument.end()) return;
+      instrumentation_stats.newMop();
       Value *MopAddr;
       llvm::Instruction &IN = *BI;
       if (isStore) {
@@ -1137,9 +1288,11 @@ namespace {
       }
     }
 
+    // This method is ran only for instrumented basic blocks.
     void runOnBasicBlock(Module &M, BasicBlock *BB,
                          bool first_dtor_bb,
                          Trace &trace) {
+      instrumentation_stats.newInstrumentedBasicBlock();
       for (BasicBlock::iterator BI = BB->begin(), BE = BB->end();
            BI != BE;
            ++BI) {
@@ -1158,11 +1311,11 @@ namespace {
         }
         if (isa<LoadInst>(BI)) {
           // Instrument LOAD.
-          InstrumentMop(BI, false, first_dtor_bb, trace);
+          instrumentMop(BI, false, first_dtor_bb, trace);
         }
         if (isa<StoreInst>(BI)) {
           // Instrument STORE.
-          InstrumentMop(BI, true, first_dtor_bb, trace);
+          instrumentMop(BI, true, first_dtor_bb, trace);
         }
       }
     }
@@ -1173,8 +1326,64 @@ namespace {
       AU.addRequired<TargetData>();
       AU.addRequired<AliasAnalysis>();
     }
-  };
-  // }}}
+// }}}
+  };  // struct TsanOnlineInstrument
+
+  InstrumentationStats::InstrumentationStats() {
+    num_functions = 0;
+    num_traces = 0;
+    num_bbs = 0;
+    num_inst_bbs = 0;
+    num_inst_bbs_in_trace = -1;
+    traces.clear();
+    num_mops = 0;
+    med_trace_size = -1;
+  }
+
+  void InstrumentationStats::newFunction() {
+    num_functions++;
+  }
+
+  void InstrumentationStats::newTrace() {
+    num_traces++;
+    if (num_inst_bbs_in_trace > 0) {
+      traces.push_back(num_inst_bbs_in_trace);
+    }
+    num_inst_bbs_in_trace = 0;
+  }
+
+  void InstrumentationStats::newBasicBlocks(int num) {
+    num_bbs += num;
+  }
+
+  void InstrumentationStats::newInstrumentedBasicBlock() {
+    num_inst_bbs++;
+    num_inst_bbs_in_trace++;
+  }
+
+  void InstrumentationStats::newMop() {
+    num_mops++;
+  }
+
+  void InstrumentationStats::finalize() {
+    if (num_inst_bbs_in_trace) {
+      traces.push_back(num_inst_bbs_in_trace);
+      num_inst_bbs_in_trace = 0;
+    }
+    sort(traces.begin(), traces.end());
+    if (traces.size()) med_trace_size = traces[traces.size() / 2];
+  }
+
+  void InstrumentationStats::printStats() {
+    finalize();
+    errs() << "# of functions in the module: " << num_functions << "\n";
+    errs() << "# of traces in the module: " << num_traces << "\n";
+    errs() << "median trace size: " << med_trace_size << "\n";
+    errs() << "# of basic blocks in the module: " << num_bbs << "\n";
+    errs() << "# of instrumented basic blocks in the module: "
+           << num_inst_bbs << "\n";
+    errs() << "# of memory operations in the module: " << num_mops << "\n";
+  }
 }
 
 char TsanOnlineInstrument::ID = 0;
