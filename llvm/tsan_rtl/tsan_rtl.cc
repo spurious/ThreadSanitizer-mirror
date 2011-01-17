@@ -50,7 +50,6 @@ __thread int thread_local_literace;
 struct ThreadInfo {
   tid_t tid;
   tid_t literace_tid;
-  TraceInfoPOD *trace_info;
   bool *thread_local_ignore;
 };
 
@@ -290,10 +289,8 @@ extern void ExPut(EventType type, tid_t tid, pc_t pc,
 
 INLINE void SPut(EventType type, tid_t tid, pc_t pc,
                  uintptr_t a, uintptr_t info) {
-#if (DEBUG)
-  assert(HAVE_THREAD_0 || ((type == THR_START) && (tid == 0)));
-  assert(RTL_INIT == 1);
-#endif
+  DCHECK(HAVE_THREAD_0 || ((type == THR_START) && (tid == 0)));
+  DCHECK(RTL_INIT == 1);
 
   if (type != THR_START) flush_tleb();
   Event event(type, tid, pc, a, info);
@@ -331,22 +328,19 @@ INLINE void SPut(EventType type, tid_t tid, pc_t pc,
   }
 }
 
-void INLINE flush_trace() {
-  if (DEBUG) assert((size_t)(ShadowStack.end_ - ShadowStack.pcs_) > 0);
-  if (DEBUG) assert((size_t)(ShadowStack.end_ - ShadowStack.pcs_) < kMaxCallStackSize);
+void INLINE flush_trace(TraceInfoPOD *trace) {
+  DCHECK((size_t)(ShadowStack.end_ - ShadowStack.pcs_) > 0);
+  DCHECK((size_t)(ShadowStack.end_ - ShadowStack.pcs_) < kMaxCallStackSize);
 #if (DEBUG)
   // TODO(glider): PutTrace shouldn't be called without a lock taken.
   // However flushing events from unsafe_clear_pending_signals (called from
   // GIL::Unlock) is done under a mutex.
 //  assert(!GIL::GetDepth());
 #endif
-#if (DEBUG)
-  assert(RTL_INIT == 1);
-#endif
+  DCHECK(RTL_INIT == 1);
   if (!thread_local_ignore) {
     tid_t tid = INFO.tid;
-    TraceInfoPOD *trace = INFO.trace_info;
-    if (DEBUG) assert(trace);
+    DCHECK(trace);
 #ifdef ENABLE_STATS
     stats_events_processed += trace->n_mops_;
     stats_cur_events += trace->n_mops_;
@@ -357,9 +351,6 @@ void INLINE flush_trace() {
     // Unfortunately this also leads to cache ping-pong and may affect the
     // performance.
     if (DEBUG && G_flags->show_stats) trace->counter_++;
-    IN_RTL++;
-    CHECK_IN_RTL();
-    assert(trace);
     TraceInfo *trace_info = reinterpret_cast<TraceInfo*>(trace);
 
     // We optimize for --literace_sampling to be the default mode.
@@ -367,14 +358,16 @@ void INLINE flush_trace() {
     // -- 1
     // -- G_flags->literace_sampling
     // -- thread_local_literace
-    if (G_flags->literace_sampling) {
+    if (thread_local_literace) {
       trace_info->LiteRaceUpdate(INFO.literace_tid,
                                G_flags->literace_sampling);
     }
     if (DEBUG && UNLIKELY(G_flags->verbosity >= 2)) {
+      IN_RTL++;
+      CHECK_IN_RTL();
       Event sblock(SBLOCK_ENTER, tid, trace->pc_, 0, trace->n_mops_);
       sblock.Print();
-      assert(trace->n_mops_);
+      DCHECK(trace->n_mops_);
       for (size_t i = 0; i < trace->n_mops_; i++) {
         if (trace->mops_[i].is_write) {
           Event event(WRITE,
@@ -386,12 +379,18 @@ void INLINE flush_trace() {
           event.Print();
         }
       }
+      IN_RTL--;
+      CHECK_IN_RTL();
     }
     {
-      if (DEBUG) assert(ShadowStack.pcs_ <= ShadowStack.end_);
+      IN_RTL++;
+      CHECK_IN_RTL();
+      DCHECK(ShadowStack.pcs_ <= ShadowStack.end_);
       ThreadSanitizerHandleTrace(tid,
                                  trace_info,
                                  TLEB);
+      IN_RTL--;
+      CHECK_IN_RTL();
     }
 
     // TODO(glider): the instrumentation pass may generate basic blocks that
@@ -402,35 +401,27 @@ void INLINE flush_trace() {
     if (DEBUG) {
       for (size_t i = 0; i < trace->n_mops_; i++) DCHECK(TLEB[i] == 0);
     }
-    IN_RTL--;
-    CHECK_IN_RTL();
     unsafe_clear_pending_signals();
   }
 }
 
 INLINE void Put(EventType type, tid_t tid, pc_t pc,
                 uintptr_t a, uintptr_t info) {
-#if (DEBUG)
-  assert(!isThreadLocalEvent(type));
-#endif
+  DCHECK(!isThreadLocalEvent(type));
   SPut(type, tid, pc, a, info);
 }
 
 // RPut is strictly for putting RTN_CALL and RTN_EXIT events.
 INLINE void RPut(EventType type, tid_t tid, pc_t pc,
                  uintptr_t a, uintptr_t info) {
-#if (DEBUG)
-  assert(HAVE_THREAD_0 || ((type == THR_START) && (tid == 0)));
-  assert(RTL_INIT == 1);
-#endif
-    if (type == RTN_CALL) {
-      rtn_call((void*)a);
-      ///ThreadSanitizerHandleRtnCall(tid, pc, a, IGNORE_BELOW_RTN_UNKNOWN);
-    } else {
-      rtn_exit();
-      ///ThreadSanitizerHandleRtnExit(tid);
-    }
-    unsafe_clear_pending_signals();
+  DCHECK(HAVE_THREAD_0 || ((type == THR_START) && (tid == 0)));
+  DCHECK(RTL_INIT == 1);
+  if (type == RTN_CALL) {
+    rtn_call((void*)a);
+  } else {
+    rtn_exit();
+  }
+  unsafe_clear_pending_signals();
 }
 
 void finalize() {
@@ -461,7 +452,7 @@ void finalize() {
 }
 
 INLINE void init_debug() {
-  assert(DBG_INIT == 0);
+  CHECK(DBG_INIT == 0);
   char *dbg_info = getenv("TSAN_DBG_INFO");
   if (dbg_info) {
     ReadDbgInfo(dbg_info);
@@ -532,14 +523,13 @@ extern pc_t ExGetPc() {
 }
 
 INLINE void InitRTL() {
-  assert(INIT == 0);
+  CHECK(INIT == 0);
   GIL scoped;
   // Initialize thread #0.
   INFO.tid = 0;
   INFO.literace_tid = 0;
   max_tid = 1;
-  INFO.trace_info = NULL;
-  assert(RTL_INIT == 0);
+  CHECK(RTL_INIT == 0);
   // Initialize ThreadSanitizer et. al.
   if (!initialize()) __real_exit(2);
   RTL_INIT = 1;
@@ -547,14 +537,13 @@ INLINE void InitRTL() {
 }
 
 INLINE void InitTid() {
-  if (DEBUG) assert(RTL_INIT == 1);
+  DCHECK(RTL_INIT == 1);
   GIL scoped;
   // thread initialization
   pthread_t pt = pthread_self();
   INFO.tid = max_tid;
   INFO.literace_tid = INFO.tid % TraceInfoPOD::kLiteRaceNumTids;
   max_tid++;
-  INFO.trace_info = NULL;
   INFO.thread_local_ignore = &thread_local_ignore;
   thread_local_ignore = global_ignore;
   thread_local_show_stats = G_flags->show_stats;
@@ -581,10 +570,8 @@ extern tid_t ExGetTid() {
 // Flushes the local TLEB assuming someone is holding the global lock already.
 // Our RTL shouldn't need a thread to flush someone else's TLEB.
 void INLINE flush_tleb() {
-  if (INFO.trace_info) {
-    flush_trace();
-    INFO.trace_info = NULL;
-  }
+// TODO(glider): we shouldn't need this anymore.
+///    flush_trace();
 }
 
 typedef void *(pthread_worker)(void*);
@@ -619,13 +606,13 @@ void *pthread_callback(void *arg) {
   GIL::Lock();
   void *result = NULL;
 
-  assert((PTH_INIT == 1) && (RTL_INIT == 1));
-  assert(INIT == 0);
+  CHECK((PTH_INIT == 1) && (RTL_INIT == 1));
+  CHECK(INIT == 0);
   InitTid();
   DECLARE_TID_AND_PC();
-  assert(INIT == 1);
-  assert(tid != 0);
-  assert(INFO.tid != 0);
+  DCHECK(INIT == 1);
+  DCHECK(tid != 0);
+  CHECK(INFO.tid != 0);
 
   memset(TLEB, '\0', sizeof(TLEB));
 
@@ -638,7 +625,7 @@ void *pthread_callback(void *arg) {
 
   // We already know the child pid -- get the parent condvar to signal.
   tid_t parent = cb_arg->parent;
-  assert(ChildThreadStartBarriers.find(parent) !=
+  CHECK(ChildThreadStartBarriers.find(parent) !=
          ChildThreadStartBarriers.end());
   pthread_barrier_t *parent_barrier = ChildThreadStartBarriers[parent];
 
@@ -737,7 +724,7 @@ void *pthread_callback(void *arg) {
 // always called after a lock.
 void unsafe_forget_thread(tid_t tid, tid_t from) {
   DDPrintf("T%d: forgetting about T%d\n", from, tid);
-  assert(PThreads.find(tid) != PThreads.end());
+  CHECK(PThreads.find(tid) != PThreads.end());
   pthread_t pt = PThreads[tid];
   Tids.erase(pt);
   PThreads.erase(tid);
@@ -747,8 +734,11 @@ void unsafe_forget_thread(tid_t tid, tid_t from) {
   ThreadInfoMap.erase(pt);
 }
 
+#define FLUSH_TRACE()
+#if 0
 #define FLUSH_TRACE() \
-  flush_tleb();
+  flush_tleb()
+#endif
 
 // To declare a wrapper for foo(bar) you should:
 //  -- add the __wrap_foo(bar) prototype to tsan_rtl_wrap.h
@@ -1417,7 +1407,7 @@ int __wrap_pthread_key_create(pthread_key_t *key,
   if (destr_function && (result == 0)) {
     tsd_slot_index++;
     // TODO(glider): we should delete TSD slots on pthread_key_delete.
-    assert(tsd_slot_index < (int)(sizeof(tsd_slots) / sizeof(tsd_slot)));
+    DCHECK(tsd_slot_index < (int)(sizeof(tsd_slots) / sizeof(tsd_slot)));
     tsd_slots[tsd_slot_index].key = *key;
     tsd_slots[tsd_slot_index].dtor = destr_function;
   }
@@ -1445,7 +1435,7 @@ int __wrap_pthread_join(pthread_t thread, void **value_ptr) {
                tid, thread, thread, InitConds[thread]);
       __real_pthread_cond_wait(InitConds[thread], &global_lock);
     }
-    assert(Tids.find(thread) != Tids.end());
+    DCHECK(Tids.find(thread) != Tids.end());
     joined_tid = Tids[thread];
     DDPrintf("T%d: Finished[T%d]=%d\n", tid, joined_tid, Finished[joined_tid]);
     if (Finished.find(joined_tid) == Finished.end()) {
@@ -1468,7 +1458,7 @@ int __wrap_pthread_join(pthread_t thread, void **value_ptr) {
 
   int result = __real_pthread_join(thread, value_ptr);
   {
-    assert(joined_tid > 0);
+    DCHECK(joined_tid > 0);
     pc_t pc = GetPc();
     SPut(THR_JOIN_AFTER, tid, pc, joined_tid, 0);
   }
@@ -1705,13 +1695,13 @@ int atexit_index = -1;
 void push_atexit(atexit_worker *worker) {
   GIL scoped;
   atexit_index++;
-  assert(atexit_index < ATEXIT_MAX);
+  CHECK(atexit_index < ATEXIT_MAX);
   atexit_stack[atexit_index] = worker;
 }
 
 atexit_worker* pop_atexit() {
   GIL scoped;
-  assert(atexit_index > -1);
+  CHECK(atexit_index > -1);
   return atexit_stack[atexit_index--];
 }
 
@@ -1892,28 +1882,37 @@ void rtn_call(void *addr) {
   // insn.
   *ShadowStack.end_ = (uintptr_t)addr;
   ShadowStack.end_++;
-  if (DEBUG) assert(ShadowStack.end_ > ShadowStack.pcs_);
-  if (DEBUG) assert((size_t)(ShadowStack.end_ - ShadowStack.pcs_) < kMaxCallStackSize);
+  DCHECK(ShadowStack.end_ > ShadowStack.pcs_);
+  DCHECK((size_t)(ShadowStack.end_ - ShadowStack.pcs_) < kMaxCallStackSize);
 }
 
 extern "C"
 void rtn_exit() {
-  if (DEBUG) assert(ShadowStack.end_ > ShadowStack.pcs_);
-  if (DEBUG) assert((size_t)(ShadowStack.end_ - ShadowStack.pcs_) < kMaxCallStackSize);
+  DCHECK(ShadowStack.end_ > ShadowStack.pcs_);
+  DCHECK((size_t)(ShadowStack.end_ - ShadowStack.pcs_) < kMaxCallStackSize);
   ShadowStack.end_--;
 }
 
+// TODO(glider): bb_flush is deprecated.
+#if 0
 // TODO(glider): we may want the basic block address to differ from the PC
 // of the first MOP in that basic block.
 extern "C"
 void bb_flush(TraceInfoPOD *next_mops) {
-  if (DEBUG) assert(INIT);
+  DCHECK(INIT);
   if (INFO.trace_info) {
     // This is not a function entry block
     flush_trace();
   }
   INFO.trace_info = next_mops;
 }
+#endif
+
+extern "C"
+void bb_flush_current(TraceInfoPOD *curr_mops) {
+  flush_trace(curr_mops);
+}
+
 extern "C"
 void *rtl_memcpy(char *dest, const char *src, size_t n) {
   FLUSH_TRACE();
@@ -2008,7 +2007,7 @@ void ReadDbgInfoFromSection(char* start, char* end) {
       // function, but do not update the debug info (it may be different).
       // TODO(glider): generate more correct debug info.
       if ((*debug_info).find(pcs[i].pc) != (*debug_info).end()) {
-        assert((*debug_info)[pcs[i].pc].symbol == symbols[pcs[i].symbol]);
+        CHECK((*debug_info)[pcs[i].pc].symbol == symbols[pcs[i].symbol]);
       } else {
         (*debug_info)[pcs[i].pc].pc = pcs[i].pc;
         (*debug_info)[pcs[i].pc].symbol = symbols[pcs[i].symbol];
@@ -2127,7 +2126,7 @@ void ReadElf() {
   char fname[kBufSize];
   memset(fname, '\0', sizeof(fname));
   int fsize = readlink("/proc/self/exe", fname, kBufSize);
-  assert(fsize < kBufSize);
+  CHECK(fsize < kBufSize);
   int fd = open(fname, 0);
   struct stat st;
   fstat(fd, &st);
@@ -2170,7 +2169,7 @@ void ReadElf() {
   }
   IN_RTL--;
   CHECK_IN_RTL();
-  assert(debug_info_section);
+  CHECK(debug_info_section);
   // Parse the debug info section.
   ReadDbgInfoFromSection(debug_info_section,
                          debug_info_section + debug_info_size);
