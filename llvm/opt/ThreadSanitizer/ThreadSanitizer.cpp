@@ -1223,7 +1223,8 @@ namespace {
         MopAddr = (static_cast<LoadInst&>(IN).getPointerOperand());
       }
 
-      if (!check_ident_store || !isStore) {
+      if (!check_ident_store || !isStore ||
+          !(static_cast<StoreInst&>(IN).getOperand(0)->getType()->isPointerTy())) {
         // Most of the time we don't check the stores for identical values.
         if (MopAddr->getType() == UIntPtr) {
         } else {
@@ -1233,6 +1234,8 @@ namespace {
         // In the first BB of each destructor we check if a store instruction
         // rewrites the memory with the same value. If so, this is a benign
         // race on VPTR and we replace the pointer with NULL.
+        // Note that this is done only if rewriting pointers.
+        // TODO(glider): in fact this should be done only if accessing _ZVT*
 
         // How to check that %a is being rewritten with its value?
         // Consider we're instrumenting the following line:
