@@ -1,11 +1,9 @@
-#!/bin/bash
+#!/usr/bin/env python
 #
-# A wrapper for g++ that detects whether g++ is used as a compiler or linker
+# A wrapper for gcc that detects whether gcc is used as a compiler or linker
 # and either instruments the compiled source files or calls ./ld to link
 # the object files.
 
-SCRIPT_ROOT=`dirname $0`
-source "$SCRIPT_ROOT/common.sh"
-COMPILER="$LLVM_GCC"
-FALLBACK_COMPILER="/usr/bin/gcc"
-source "$SCRIPT_ROOT/gcc_common.sh"
+from common import *
+gcc(LLVM_GCC, GCC)
+
