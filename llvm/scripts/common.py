@@ -53,7 +53,8 @@ def print_args(args):
 def gcc(default_cc, fallback_cc):
   source_extensions = re.compile(".*(\.cc$|\.cpp$|\.c$|\.S$)")
   obj_extensions = re.compile(".*(\.a$|\.o$)")
-  drop_args = ['-c', '-std=c++0x', '-Werror', '-finstrument-functions']
+  drop_args = ['-c', '-std=c++0x', '-Werror', '-finstrument-functions',
+  '-Wl,--gc-sections']
   drop_re = re.compile('^-Wno.*')
 
   from_asm = False
