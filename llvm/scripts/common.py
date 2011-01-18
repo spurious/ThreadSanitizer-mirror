@@ -28,7 +28,8 @@ LINK_CONFIG = SCRIPT_ROOT + '/link_config.txt'
 PASS_SO = SCRIPT_ROOT + '/../opt/ThreadSanitizer/ThreadSanitizer.so'
 DA_FLAGS=['-DDYNAMIC_ANNOTATIONS_WANT_ATTRIBUTE_WEAK',
           '-DRACECHECK_UNITTEST_WANT_ATTRIBUTE_WEAK',
-          '-DDYNAMIC_ANNOTATIONS_PREFIX=LLVM']
+          '-DDYNAMIC_ANNOTATIONS_PREFIX=LLVM',
+          '-D__clang__']
 
 
 P32='x86'
