@@ -103,8 +103,8 @@ def gcc(default_cc, fallback_cc):
     if arg == "-g":
       debug_info = arg
       continue
-    if arg.startswith("-m"):
-      platform = PLATFORM[value]
+    if arg in ['-m32', '-m64']:
+      platform = PLATFORM[arg[2:]]
       compiler_args += [arg]
       continue
     if arg.startswith("-O"):
