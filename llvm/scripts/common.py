@@ -51,7 +51,7 @@ def print_args(args):
 
 
 def gcc(default_cc, fallback_cc):
-  source_extensions = re.compile(".*(\.cc$|\.cpp$|\.c$|\.S$)")
+  source_extensions = re.compile(".*(\.cc$|\.cpp$|\.c$|\.S$|\.cxx$)")
   obj_extensions = re.compile(".*(\.a$|\.o$)")
   drop_args = ['-c', '-std=c++0x', '-Werror', '-finstrument-functions',
   '-Wl,--gc-sections']
@@ -183,6 +183,7 @@ def gcc(default_cc, fallback_cc):
     retcode = subprocess.call(llc_args)
     if retcode != 0:
       fallback_args = [fallback_cc] + args
+      fallback_args += ['-c']
       retcode = subprocess.call(fallback_args)
       if retcode != 0: sys.exit(retcode)
       return
