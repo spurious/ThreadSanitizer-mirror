@@ -3132,7 +3132,8 @@ TEST(NegativeTests, StrlenAndFriends) {
   t2.Start();
   t1.Join();
   t2.Join();
-  printf("\tstrX=%s; strY=%s\n", str, str+5);
+  ASSERT_STREQ("XxXx", str);
+  ASSERT_STREQ("YY", str+5);
 
   char foo[8] = {10, 20, 127, (char)128, (char)250, -50, 0};
   EXPECT_TRUE(strchr(foo, 10) != 0);
