@@ -3176,6 +3176,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
     ReplaceFunc3(img, rtn, "strncmp", (AFUNPTR)Replace_strncmp);
     ReplaceFunc3(img, rtn, "memcpy", (AFUNPTR)Replace_memcpy);
     ReplaceFunc3(img, rtn, "strcpy", (AFUNPTR)Replace_strcpy);
+    ReplaceFunc3(img, rtn, "stpcpy", (AFUNPTR)Replace_stpcpy);
   }
 
   // __cxa_guard_acquire / __cxa_guard_release

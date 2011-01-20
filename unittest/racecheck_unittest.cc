@@ -33,10 +33,12 @@
 */
 
 #include <fcntl.h>
-#include <queue>
 #include <signal.h>
 #include <stdlib.h>
+#include <string.h>
+
 #include <string>
+#include <queue>
 #include <vector>
 
 #include "old_test_suite.h"
@@ -3104,6 +3106,9 @@ void WorkerX() {
   EXPECT_TRUE(strcmp(tmp,str) == 0);
   EXPECT_TRUE(strncmp(tmp,str, 4) == 0);
   EXPECT_TRUE(memmove(str, tmp, strlen(tmp) + 1) == str);
+#ifndef WIN32
+  EXPECT_TRUE(stpcpy(str, tmp) == str+4);
+#endif
   EXPECT_TRUE(strrchr(str, 'X') == str+2);
   EXPECT_TRUE(strrchr(str, 'x') == str+3);
   EXPECT_TRUE(strrchr(str, 'Y') == NULL);
