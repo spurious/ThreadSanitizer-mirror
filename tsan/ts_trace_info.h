@@ -66,21 +66,30 @@ struct MopInfo {
 //
 // Note: ANNOTATE_PUBLISH_MEMORY() does not work with sampling... :(
 
+struct LiteRaceCounters {
+  uint32_t counter;
+  int32_t num_to_skip;
+};
 
+typedef LiteRaceCounters LiteRaceStorage[8][8];
 
 struct TraceInfoPOD {
   enum { kLiteRaceNumTids = 8 };
+  enum { kLiteRaceStorageSize = 8 };
   size_t n_mops_;
   size_t pc_;
   size_t counter_;
   uint32_t literace_counters[kLiteRaceNumTids];
   int32_t  literace_num_to_skip[kLiteRaceNumTids];
+  // [kLiteRaceNumTids]x[kLiteRaceStorageSize]
+  LiteRaceStorage *literace_storage;
+  int32_t storage_index;
   MopInfo mops_[1];
 };
 
 // An instance of this class is created for each TRACE (SEME region)
 // during instrumentation.
-class TraceInfo : protected TraceInfoPOD {
+class TraceInfo : public TraceInfoPOD {
  public:
   static TraceInfo *NewTraceInfo(size_t n_mops, uintptr_t pc);
   void DeleteTraceInfo(TraceInfo *trace_info) {
@@ -121,8 +130,22 @@ class TraceInfo : protected TraceInfoPOD {
     literace_counters[tid_modulo_num] = cur_counter + next_num_to_skip;
   }
 
+  INLINE void LLVMLiteRaceUpdate(uintptr_t tid_modulo_num,
+                                 uint32_t sampling_rate) {
+    DCHECK(sampling_rate < 32);
+    DCHECK(sampling_rate > 0);
+    LiteRaceCounters *counters =
+        &((*literace_storage)[tid_modulo_num][storage_index]);
+    uint32_t cur_counter = counters->counter;
+    // The bigger the counter the bigger the number of skipped accesses.
+    int32_t next_num_to_skip = (cur_counter >> (32 - sampling_rate)) + 1;
+    counters->num_to_skip = next_num_to_skip;
+    counters->counter = cur_counter + next_num_to_skip;
+  }
+
   // This is all racey, but ok.
-  INLINE bool LiteRaceSkipTrace(uint32_t tid_modulo_num, uint32_t sampling_rate) {
+  INLINE bool LiteRaceSkipTrace(uint32_t tid_modulo_num,
+                                uint32_t sampling_rate) {
     if (LiteRaceSkipTraceQuickCheck(tid_modulo_num)) return true;
     LiteRaceUpdate(tid_modulo_num, sampling_rate);
     return false;
