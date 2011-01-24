@@ -51,6 +51,7 @@ def print_args(args):
 
 
 def gcc(default_cc, fallback_cc):
+  fallback_cc = '/bin/false'
   source_extensions = re.compile(".*(\.cc$|\.cpp$|\.c$|\.S$|\.cxx$)")
   obj_extensions = re.compile(".*(\.a$|\.o$)")
   drop_args = ['-c', '-std=c++0x', '-Werror', '-finstrument-functions',
@@ -61,9 +62,10 @@ def gcc(default_cc, fallback_cc):
   preprocess_only = False
   run_linker = False
   build_so = False
+  compile_pic = False
   fpic = ""
   llc_pic = ""
-  debug_info = ""
+  debug_info_args = []
   compiler_args = []
   platform = P64
   optimization = "-O0"
@@ -101,10 +103,10 @@ def gcc(default_cc, fallback_cc):
       build_so = True
       run_linker = True
     if arg == "-g":
-      debug_info = arg
+      debug_info_args = [arg]
       continue
     if arg in ['-m32', '-m64']:
-      platform = PLATFORM[arg[2:]]
+      platform = PLATFORM[arg]
       compiler_args += [arg]
       continue
     if arg.startswith("-O"):
@@ -121,6 +123,7 @@ def gcc(default_cc, fallback_cc):
       run_linker = True
       continue
     if arg == "-fPIC":
+      compile_pic = True
       fpic = arg
       llc_pic = "-relocation-model=pic"
       continue
@@ -137,7 +140,7 @@ def gcc(default_cc, fallback_cc):
   src_instrumented = filename + '-instr.ll'
   src_asm = filename + '.S'
   if src_obj is None:
-    src_obj = filename + '.o'
+    src_obj = os.path.basename(filename) + '.o'
   src_exe = filename
 
   # Now let's decide how to invoke the compiler
@@ -167,8 +170,11 @@ def gcc(default_cc, fallback_cc):
     return
 
   if not from_asm:
-    llvm_gcc_args = [default_cc, '-emit-llvm', MARCH[platform], src_file, optimization,
-        debug_info, fpic, '-c'] + DA_FLAGS + compiler_args + ['-o', src_bitcode]
+    llvm_gcc_args = [default_cc, '-emit-llvm', MARCH[platform], src_file,
+        optimization] + debug_info_args + ['-c'] + DA_FLAGS + compiler_args + ['-o', src_bitcode]
+    if compile_pic:
+      llvm_gcc_args += [fpic]
+    #print_args(llvm_gcc_args)
     retcode = subprocess.call(llvm_gcc_args)
     if retcode != 0: sys.exit(retcode)
 
@@ -178,8 +184,9 @@ def gcc(default_cc, fallback_cc):
     retcode = subprocess.call(opt_args, stderr=file("instrumentation.log", 'w'))
     if retcode != 0: sys.exit(retcode)
 
-    llc_args = [LLC, '-march=' + XARCH[platform], llc_pic, optimization,
+    llc_args = [LLC, '-march=' + XARCH[platform], optimization,
         src_instrumented, '-o', src_asm]
+    if compile_pic: llc_args += [llc_pic]
     retcode = subprocess.call(llc_args)
     if retcode != 0:
       fallback_args = [fallback_cc] + args
@@ -188,8 +195,9 @@ def gcc(default_cc, fallback_cc):
       if retcode != 0: sys.exit(retcode)
       return
 
-  cc_args = [default_cc, MARCH[platform], '-c', src_asm, optimization, fpic,
-      debug_info, '-o', src_obj]
+  cc_args = [default_cc, MARCH[platform], '-c', src_asm, optimization]
+  cc_args += debug_info_args + [ '-o', src_obj]
+  if compile_pic: cc_args += [fpic]
   retcode = subprocess.call(cc_args)
   if retcode != 0:
     fallback_args = [fallback_cc] + args
