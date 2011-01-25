@@ -49,7 +49,6 @@ __thread int thread_local_literace;
 
 struct ThreadInfo {
   tid_t tid;
-  tid_t literace_tid;
   bool *thread_local_ignore;
 };
 
@@ -81,6 +80,7 @@ void SplitString(string &src, char delim, vector<string> *dest,
 }
 
 __thread ThreadInfo INFO;
+__thread tid_t LTID;  // literace TID = TID % kLiteRaceNumTids
 __thread CallStackPod ShadowStack;
 static const size_t kTLEBSize = 2000;
 __thread uintptr_t TLEB[kTLEBSize];
@@ -102,7 +102,6 @@ int RTL_INIT = 0;
 int PTH_INIT = 0;
 int DBG_INIT = 0;
 int HAVE_THREAD_0 = 0;
-
 
 std::map<pthread_t, ThreadInfo*> ThreadInfoMap;
 std::map<pthread_t, tid_t> Tids;
@@ -359,8 +358,8 @@ void INLINE flush_trace(TraceInfoPOD *trace) {
     // -- G_flags->literace_sampling
     // -- thread_local_literace
     if (thread_local_literace) {
-      trace_info->LiteRaceUpdate(INFO.literace_tid,
-                               G_flags->literace_sampling);
+      trace_info->LLVMLiteRaceUpdate(LTID,
+                               thread_local_literace);
     }
     if (DEBUG && UNLIKELY(G_flags->verbosity >= 2)) {
       IN_RTL++;
@@ -522,18 +521,32 @@ extern pc_t ExGetPc() {
   return GetPc();
 }
 
-INLINE void InitRTL() {
+// Should be called under the global lock.
+INLINE void UnsafeInitTidCommon() {
+  IN_RTL++;
+  CHECK_IN_RTL();
+  memset(TLEB, 0, kTLEBSize);
+  INFO.thread_local_ignore = &thread_local_ignore;
+  thread_local_ignore = global_ignore;
+  thread_local_show_stats = G_flags->show_stats;
+  thread_local_literace = G_flags->literace_sampling;
+  LTID = (INFO.tid % TraceInfoPOD::kLiteRaceNumTids);
+  IN_RTL--;
+  CHECK_IN_RTL();
+  INIT = 1;
+}
+
+INLINE void InitRTLAndTid0() {
   CHECK(INIT == 0);
   GIL scoped;
-  // Initialize thread #0.
-  INFO.tid = 0;
-  INFO.literace_tid = 0;
-  max_tid = 1;
   CHECK(RTL_INIT == 0);
   // Initialize ThreadSanitizer et. al.
   if (!initialize()) __real_exit(2);
   RTL_INIT = 1;
-  INIT = 1;
+  // Initialize thread #0.
+  INFO.tid = 0;
+  max_tid = 1;
+  UnsafeInitTidCommon();
 }
 
 INLINE void InitTid() {
@@ -542,20 +555,16 @@ INLINE void InitTid() {
   // thread initialization
   pthread_t pt = pthread_self();
   INFO.tid = max_tid;
-  INFO.literace_tid = INFO.tid % TraceInfoPOD::kLiteRaceNumTids;
   max_tid++;
-  INFO.thread_local_ignore = &thread_local_ignore;
-  thread_local_ignore = global_ignore;
-  thread_local_show_stats = G_flags->show_stats;
-  thread_local_literace = G_flags->literace_sampling;
-  Tids[pt] = INFO.tid;
+  // TODO(glider): remove InitConds.
   if (InitConds.find(pt) != InitConds.end()) {
     __real_pthread_cond_signal(InitConds[pt]);
   }
   DDPrintf("T%d: pthread_self()=%p\n", INFO.tid, (void*)pt);
+  UnsafeInitTidCommon();
+  Tids[pt] = INFO.tid;
   PThreads[INFO.tid] = pt;
   ThreadInfoMap[pt] = &INFO;
-  INIT = 1;
 }
 
 INLINE tid_t GetTid() {
@@ -761,7 +770,7 @@ void unsafe_forget_thread(tid_t tid, tid_t from) {
 
 extern "C"
 void __wrap___libc_csu_init(void) {
-  InitRTL();
+  InitRTLAndTid0();
   __real___libc_csu_init();
 }
 

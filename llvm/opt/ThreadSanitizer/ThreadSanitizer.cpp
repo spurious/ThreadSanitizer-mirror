@@ -54,7 +54,7 @@ static cl::opt<bool>
 static cl::opt<bool>
     EnableLiteraceSampling("enable-literace-sampling",
                            cl::desc("Flush hot traces less frequently"),
-                           cl::init(false));
+                           cl::init(true));
 
 namespace {
   typedef std::vector <Constant*> Passport;
@@ -76,6 +76,9 @@ namespace {
     BasicBlock *entry;
     set<BasicBlock*> exits;
     InstSet to_instrument;
+    int num_mops;
+
+    Trace() : num_mops(0) {}
   };
 
   struct InstrumentationStats {
@@ -108,21 +111,25 @@ namespace {
     int ModuleFunctionCount, ModuleMopCount, FunctionMopCount, TLEBIndex,
         FunctionMopCountOnTrace;
     Value *TracePassportGlob;
-    int TraceCount, TraceNumMops;
+    GlobalVariable *LiteRaceStorageGlob;
+    int TraceCount, TraceNumMops, InstrumentedTraceCount;
     Constant *BBFlushFn, *BBFlushCurrentFn;
     // TODO(glider): get rid of rtn_call/rtn_exit at all.
     Constant *RtnCallFn, *RtnExitFn;
-    Constant *MemCpyFn, *MemMoveFn;
-    const PointerType *UIntPtr, *TraceInfoTypePtr;
+    Constant *MemCpyFn, *MemMoveFn, *MemSetIntrinsicFn;
+    const PointerType *UIntPtr, *TraceInfoTypePtr, *Int8Ptr;
     const Type *PlatformInt, *Int8, *ArithmeticPtr, *Int32;
     const Type *Void;
     const StructType *MopType, *TraceInfoType, *BBTraceInfoType;
+    const StructType *LiteRaceCountersType;
+    const ArrayType *LiteRaceStorageType, *LiteRaceStorageLineType;
+    const PointerType *LiteRaceStoragePtrType;
     const ArrayType *MopArrayType;
     const ArrayType *LiteRaceCountersArrayType, *LiteRaceSkipArrayType;
     const ArrayType *TracePassportType, *TraceExtPassportType;
     const Type *TLEBTy;
     const PointerType *TLEBPtrType;
-    Value *ShadowStack, *CurrentStackEnd, *TLEB;
+    Value *ShadowStack, *CurrentStackEnd, *TLEB, *LiteraceTid;
     const StructType *CallStackType;
     const ArrayType *CallStackArrayType;
     AliasAnalysis *AA;
@@ -138,6 +145,7 @@ namespace {
     static const int kDebugInfoMagicNumber = 0xdb914f0;
     // TODO(glider): must be in sync with ts_trace_info.h
     static const int kLiteRaceNumTids = 8;
+    static const int kLiteRaceStorageSize = 8;
     static const size_t kMaxCallStackSize = 1 << 12;
     int arch_size_;
     int ModuleID;
@@ -324,13 +332,14 @@ namespace {
       GlobalValue *GV = new GlobalVariable(
           M,
           DebugInfoType,
-          false,
+          /*isConstant*/true,
           GlobalValue::InternalLinkage,
           DebugInfo,
           var_id_str,
-          false, 0
+          /*ThreadLocal*/false,
+          /*AddressSpace*/0
       );
-      GV->setSection("tsan_rtl_debug_info"); 
+      GV->setSection("tsan_rtl_debug_info");
     }
 
     BlockSet &getPredecessors(BasicBlock* bb) {
@@ -485,7 +494,6 @@ namespace {
         // If it can be added to the trace, do it.
         for (int i = 0, e = BBTerm->getNumSuccessors(); i != e; ++i) {
           BasicBlock *child = BBTerm->getSuccessor(i);
-          ///child->dump();
           if (trace.blocks.find(child) != trace.blocks.end()) continue;
           if (used.find(child) != used.end()) continue;
           Instruction *First = child->begin();
@@ -639,6 +647,7 @@ namespace {
 
     virtual bool runOnModule(Module &M) {
       TraceCount = 0;
+      InstrumentedTraceCount = 0;
       ModuleFunctionCount = 0;
       ModuleMopCount = 0;
       ModuleID = getModuleID(M);
@@ -658,6 +667,7 @@ namespace {
       }
 
       Int8 = Type::getInt8Ty(Context);
+      Int8Ptr = Type::getInt8PtrTy(Context);
       Int32 = Type::getInt32Ty(Context);
       Void = Type::getVoidTy(Context);
 
@@ -672,6 +682,21 @@ namespace {
       MopArrayType = ArrayType::get(MopType, kTLEBSize);
       LiteRaceCountersArrayType = ArrayType::get(Int32, kLiteRaceNumTids);
       LiteRaceSkipArrayType = ArrayType::get(Int32, kLiteRaceNumTids);
+
+      // struct LiteRaceCounters {
+      //   uint32_t counter;
+      //   int32_t num_to_skip;
+      // };
+      LiteRaceCountersType = StructType::get(Context,
+                                             Int32, Int32, NULL);
+      LiteRaceStorageLineType =
+          ArrayType::get(LiteRaceCountersType,
+                         kLiteRaceStorageSize);
+      LiteRaceStorageType =
+          ArrayType::get(LiteRaceStorageLineType,
+                         kLiteRaceNumTids);
+
+      LiteRaceStoragePtrType = PointerType::get(LiteRaceStorageType, 0);
 
       // TraceInfoType represents the following class declared in
       // ts_trace_info.h:
@@ -712,6 +737,14 @@ namespace {
                                        GlobalValue::ExternalWeakLinkage,
                                        /*Initializer*/0,
                                        "ShadowStack",
+                                       /*InsertBefore*/0,
+                                       /*ThreadLocal*/true);
+      LiteraceTid = new GlobalVariable(M,
+                                       PlatformInt,
+                                       /*isConstant*/false,
+                                       GlobalValue::ExternalWeakLinkage,
+                                       /*Initializer*/0,
+                                       "LTID",
                                        /*InsertBefore*/0,
                                        /*ThreadLocal*/true);
       TLEBTy = ArrayType::get(UIntPtr, kTLEBSize);
@@ -762,6 +795,10 @@ namespace {
                                        UIntPtr,
                                        UIntPtr, UIntPtr, PlatformInt, (Type*)0);
       cast<Function>(MemMoveFn)->setLinkage(Function::ExternalWeakLinkage);
+      const Type *Tys[] = { PlatformInt };
+      MemSetIntrinsicFn = Intrinsic::getDeclaration(&M,
+                                                    Intrinsic::memset,
+                                                    Tys, /*numTys*/1);
 
       // Split each basic block into smaller blocks containing no more than one
       // call instruction at the end.
@@ -864,13 +901,15 @@ namespace {
         std::vector <Value*> Args(1);
         std::vector <Value*> idx;
         idx.push_back(ConstantInt::get(PlatformInt, 0));
-        Args[0] =
+        Value *PassportPtr =
             GetElementPtrInst::Create(TracePassportGlob,
                                       idx.begin(),
                                       idx.end(),
                                       "",
                                       Before);
-        Args[0] = BitCastInst::CreatePointerCast(Args[0], TraceInfoTypePtr, "",
+        Args[0] = BitCastInst::CreatePointerCast(PassportPtr,
+                                                 TraceInfoTypePtr,
+                                                 "",
                                                  Before);
         CallInst::Create(BBFlushFn, Args.begin(), Args.end(), "", Before);
       } else {
@@ -884,16 +923,127 @@ namespace {
         std::vector <Value*> Args(1);
         std::vector <Value*> idx;
         idx.push_back(ConstantInt::get(PlatformInt, 0));
-        Args[0] =
+        Value *PassportPtr =
             GetElementPtrInst::Create(TracePassportGlob,
                                       idx.begin(),
                                       idx.end(),
                                       "",
                                       Before);
-        Args[0] = BitCastInst::CreatePointerCast(Args[0], TraceInfoTypePtr, "",
+        Args[0] = BitCastInst::CreatePointerCast(PassportPtr, TraceInfoTypePtr,
+                                                 "",
                                                  Before);
-        CallInst::Create(BBFlushCurrentFn, Args.begin(), Args.end(), "", Before);
+        CallInst::Create(BBFlushCurrentFn,
+                         Args.begin(), Args.end(), "", Before);
+
       } else {
+        // Sampling is on -- each trace should be instrumented with the code
+        // that decrements the literace counter and checks whether it is
+        // greater than 0. If yes, the TLEB should be flushed, otherwise it
+        // should be cleared. If we don't clean up the TLEB, the dirty
+        // addresses may be occasionally passed to ThreadSanitizer during the
+        // next flush.
+        //
+        //       literace > 0 ?
+        //          /    \
+        //         /      \
+        //        /        \
+        //       /          \
+        //   yes, flush  no, cleanup
+        //       \          /
+        //        \        /
+        //         \      /
+        //           exit
+        //
+        //     int32_t num_to_skip = --(literace_num_to_skip[tid_modulo_num]);
+        //     if (num_to_skip > 0) {
+        //       return true;
+        //     }
+        //     return false;
+        //
+        //   %0 = load i32* @tid_modulo_num, align 4
+        //   %1 = sext i32 %0 to i64
+        //   %2 = getelementptr inbounds [7 x i32]* @literace_num_to_skip, i64 0, i64 %1
+        //   %3 = load i32* %2, align 4
+        //   %4 = sub i32 %3, 1
+        //   store i32 %4, i32* %2, align 4
+        //   %5 = icmp sgt i32 %4, 0
+
+        BasicBlock *BB = Before->getParent();
+        BasicBlock *FinishBB = SplitBlock(BB, Before, this);
+        TerminatorInst *BBOldTerm = BB->getTerminator();
+        LLVMContext &Context = BB->getContext();
+        BasicBlock *CleanupBB =
+            BasicBlock::Create(Context, "clean_tleb", BB->getParent());
+        BasicBlock *FlushBB =
+            BasicBlock::Create(Context, "flush_tleb", BB->getParent());
+        // TODO(glider): implement the flush.
+        vector <Value*> num_to_skip;
+        num_to_skip.push_back(ConstantInt::get(Int32, 0));
+        Value *LiteraceTidValue = new LoadInst(LiteraceTid, "", BBOldTerm);
+        num_to_skip.push_back(LiteraceTidValue);
+        num_to_skip.push_back(ConstantInt::get(
+            Int32, (InstrumentedTraceCount-1) % kLiteRaceStorageSize));
+        num_to_skip.push_back(ConstantInt::get(Int32, 1));
+
+        Value *NumToSkipSlot =
+            GetElementPtrInst::Create(LiteRaceStorageGlob,
+                                      num_to_skip.begin(),
+                                      num_to_skip.end(),
+                                      "",
+                                      BBOldTerm);
+
+        Value *NumToSkip = new LoadInst(NumToSkipSlot, "", BBOldTerm);
+        Value *NewNumToSkip =
+            BinaryOperator::CreateSub(NumToSkip,
+                                      ConstantInt::get(Int32, 1),
+                                      "",
+                                      BBOldTerm);
+
+        new StoreInst(NewNumToSkip, NumToSkipSlot, BBOldTerm);
+        Value *LiteraceCond = new ICmpInst(BBOldTerm,
+                                           ICmpInst::ICMP_SGT,
+                                           NewNumToSkip,
+                                           ConstantInt::get(Int32, 0),
+                                           "");
+        BranchInst *BBNewTerm = BranchInst::Create(/*ifTrue*/CleanupBB,
+                                                   /*ifFalse*/FlushBB,
+                                                   LiteraceCond);
+        ReplaceInstWithInst(BBOldTerm, BBNewTerm);
+
+        // Set up the cleanup block. It should contain:
+        //  memset(TLEB, 0, num_mops)
+        //  branch to the original block end
+        BranchInst *CleanupTerm = BranchInst::Create(FinishBB, CleanupBB);
+        vector <Value*> MSArgs;
+        MSArgs.push_back(BitCastInst::CreatePointerCast(TLEB,
+                                                        Int8Ptr,
+                                                        "",
+                                                        CleanupTerm));
+        MSArgs.push_back(ConstantInt::get(Int8, 0));
+        MSArgs.push_back(ConstantInt::get(PlatformInt,
+                                          trace.num_mops * arch_size_ / 8));
+        MSArgs.push_back(ConstantInt::get(Int32, 1));
+        CallInst::Create(MemSetIntrinsicFn,
+                         MSArgs.begin(), MSArgs.end(),
+                         "", CleanupTerm);
+
+        BranchInst *FlushTerm = BranchInst::Create(FinishBB, FlushBB);
+        std::vector <Value*> Args(1);
+        std::vector <Value*> idx;
+        idx.push_back(ConstantInt::get(PlatformInt, 0));
+        Args[0] =
+            GetElementPtrInst::Create(TracePassportGlob,
+                                      idx.begin(),
+                                      idx.end(),
+                                      "",
+                                      FlushTerm);
+        Args[0] = BitCastInst::CreatePointerCast(Args[0],
+                                                 TraceInfoTypePtr,
+                                                 "",
+                                                 FlushTerm);
+        CallInst::Create(BBFlushCurrentFn,
+                         Args.begin(), Args.end(),
+                         "", FlushTerm);
       }
     }
 
@@ -904,17 +1054,6 @@ namespace {
       markMopsToInstrument(M, trace);
       bool have_passport = makeTracePassport(M, trace);
       if (have_passport) {
-#if 0
-        Instruction *First = trace.entry->begin();
-        for (BasicBlock::iterator BI = trace.entry->begin(),
-             BE = trace.entry->end();
-             BI != BE; ++BI) {
-          First = BI;
-          if (!isa<PHINode>(First)) break;
-        }
-
-        insertFlushCall(trace, First);
-#endif
         for (BlockSet::iterator TI = trace.blocks.begin(),
                                 TE = trace.blocks.end();
              TI != TE; ++TI) {
@@ -1165,6 +1304,30 @@ namespace {
         }
       }
       if (TraceNumMops) {
+        if (InstrumentedTraceCount % kLiteRaceStorageSize == 0) {
+          vector <Constant*> counters;
+          counters.push_back(ConstantInt::get(Int32, 0));
+          counters.push_back(ConstantInt::get(Int32, 0));
+          Constant *StorageArray = ConstantArray::get(LiteRaceStorageType,
+              vector<Constant*>(kLiteRaceNumTids,
+                  ConstantArray::get(LiteRaceStorageLineType,
+                      vector<Constant*>(kLiteRaceStorageSize,
+                          ConstantStruct::get(LiteRaceCountersType,
+                                              counters)))));
+          LiteRaceStorageGlob = new GlobalVariable(
+            M,
+            LiteRaceStorageType,
+            /*isConstant*/false,
+            GlobalValue::InternalLinkage,
+            StorageArray,
+            "literace_storage",
+            /*ThreadLocal*/false,
+            /*AddressSpace*/0
+          );
+          // TODO(glider): this can be moved to .bss -- need to check.
+          LiteRaceStorageGlob->setSection(".data");
+        }
+
         TracePassportType = ArrayType::get(MopType, TraceNumMops);
         LLVMContext &Context = M.getContext();
         BBTraceInfoType = StructType::get(Context,
@@ -1172,6 +1335,8 @@ namespace {
                                     PlatformInt,
                                     LiteRaceCountersArrayType,
                                     LiteRaceSkipArrayType,
+                                    LiteRaceStoragePtrType,
+                                    Int32,
                                     TracePassportType,
                                     NULL);
 
@@ -1180,7 +1345,8 @@ namespace {
         trace_info.push_back(ConstantInt::get(PlatformInt, TraceNumMops));
         // pc_
         Instruction *First = trace.entry->begin();
-        trace_info.push_back(getInstructionAddr(FunctionMopCountOnTrace, First));
+        trace_info.push_back(getInstructionAddr(FunctionMopCountOnTrace,
+                                                First));
         // counter_
         trace_info.push_back(ConstantInt::get(PlatformInt, 0));
         // literace_counters[]
@@ -1193,18 +1359,27 @@ namespace {
             ConstantArray::get(LiteRaceSkipArrayType,
                 vector<Constant*>(kLiteRaceNumTids,
                                   ConstantInt::get(PlatformInt, 0))));
+        // *literace_storage
+        trace_info.push_back(LiteRaceStorageGlob);
+        // storage_index
+        trace_info.push_back(
+            ConstantInt::get(Int32,
+                             InstrumentedTraceCount % kLiteRaceStorageSize));
         // mops_
         trace_info.push_back(ConstantArray::get(TracePassportType, passport));
 
         TracePassportGlob = new GlobalVariable(
             M,
             BBTraceInfoType,
-            false,
+            /*isConstant*/true,
             GlobalValue::InternalLinkage,
             ConstantStruct::get(BBTraceInfoType, trace_info),
             "trace_passport",
-            false, 0
+            /*ThreadLocal*/false,
+            /*AddressSpace*/0
             );
+        InstrumentedTraceCount++;
+        trace.num_mops = TraceNumMops;
         return true;
       }
       return false;
