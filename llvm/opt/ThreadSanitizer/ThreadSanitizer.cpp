@@ -31,8 +31,9 @@ using namespace std;
 # include <cxxabi.h>  // __cxa_demangle
 #endif
 
-#define DEBUG 2
+//#define DEBUG 1
 //#define DEBUG_TRACES 1
+//#define DEBUG_CYCLES 1
 
 // Command-line flags.
 static cl::opt<std::string>
@@ -366,10 +367,24 @@ namespace {
       return false;
     }
 
-    bool traceHasCycles(Trace &trace,
-                        BasicBlock *current_bb, BlockSet &used) {
-      TerminatorInst *BBTerm = current_bb->getTerminator();
-#ifdef DEBUG_TRACES
+    bool visit(BasicBlock *node, Trace &trace, BlockSet &visited) {
+      if (visited.find(node) == visited.end()) {
+        visited.insert(node);
+        TerminatorInst *BBTerm = node->getTerminator();
+        for (int i = 0, e = BBTerm->getNumSuccessors(); i != e; ++i) {
+          BasicBlock *child = BBTerm->getSuccessor(i);
+          if (trace.blocks.find(child) == trace.blocks.end()) continue;
+          if (!visit(child, trace, visited)) return false;
+        }
+        return false;  // we haven't visited |node| before
+      } else {
+        return true;  // we're seeing |node| for the second time
+      }
+    }
+
+    // Sort the trace topologically to check whether there are cycles.
+    bool traceHasCycles(Trace &trace) {
+#ifdef DEBUG_CYCLES
         errs() << "LOOKING FOR CYCLES: [ ";
         for (BlockSet::iterator I = trace.blocks.begin(),
                                 E = trace.blocks.end();
@@ -378,25 +393,8 @@ namespace {
         }
         errs() << "]\n";
 #endif
-      // Iterate over the successors of the block being considered.
-      // If it can be added to the trace, do it.
-      for (int i = 0, e = BBTerm->getNumSuccessors(); i != e; ++i) {
-        BasicBlock *child = BBTerm->getSuccessor(i);
-        // Skip the children not belonging to the same trace.
-        // If the child doesn't belong to the same trace, add current_bb to the
-        // list of trace exits.
-        if (trace.blocks.find(child) == trace.blocks.end()) {
-          trace.exits.insert(current_bb);
-          continue;
-        }
-        if (used.find(child) != used.end()) return true;
-        used.insert(child);
-        if (traceHasCycles(trace, child, used)) {
-          return true;
-        }
-        used.erase(child);
-      }
-      return false;
+      BlockSet visited;
+      return visit(trace.entry, trace, visited);
     }
 
     // A trace is valid if and only if:
@@ -404,7 +402,6 @@ namespace {
     //  -- it contains no loops
     // TODO(glider): may want to handle indirectbr.
     bool validTrace(Trace &trace) {
-      BlockVector to_see;
       BlockSet entries;
       BlockSet accessible;
       int num_edges = 0;
@@ -417,10 +414,9 @@ namespace {
         errs() << "]\n";
 #endif
 
-      // Initialize to_see and find all the entry points.
+      // Find all the entry points.
       for (BlockSet::iterator BB = trace.blocks.begin(), E = trace.blocks.end();
            BB != E; ++BB) {
-        to_see.push_back(*BB);
         BlockSet &pred = getPredecessors(*BB);
         Function *F = (*BB)->getParent();
         BasicBlock *entry = F->begin();
@@ -445,7 +441,6 @@ namespace {
 #ifdef DEBUG_TRACES
             errs() << "  entry block: " << (*BB)->getName() << "\n";
 #endif
-
           }
         }
       }
@@ -455,21 +450,21 @@ namespace {
 #endif
         return false;
       }
-#ifdef DEBUG_TRACES
-      errs() << "  VALIDATION OK\n";
-#endif
 //      return true;
       // TODO(glider): looks like the greedy algorithm allows us not to check
       // for cycles inside trace. But we may want to assert that the only
       // possible cycle can lead to the entry block from within the trace.
       BlockSet used_empty;
       // entries.begin() is the only trace entry.
-      if (traceHasCycles(trace, *(entries.begin()), used_empty)) {
+#if 1
+      // TODO(glider): no need for redundant cycle checks
+      if (traceHasCycles(trace)) {
 #ifdef DEBUG_TRACES
         errs() << "LOOP DETECTED\n";
 #endif
         return false;
       }
+#endif
       trace.exits.clear();
       for (BlockSet::iterator BB = trace.blocks.begin(), E = trace.blocks.end();
            BB != E; ++BB) {
@@ -510,6 +505,9 @@ namespace {
       }
       // A valid trace should have at least one exit!
       assert(trace.exits.size());
+#ifdef DEBUG_TRACES
+      errs() << "  VALIDATION OK\n";
+#endif
       return true;
     }
 
@@ -521,48 +519,52 @@ namespace {
     //  -- for each basic blocks P, C1, C2 such as
     //          (P in T1) and (P->C1) and (P->C2):
     //     (C1 in T2) if and only if (C2 in T2)
-    void buildClosureNew(Function::iterator Entry,
-        Trace &trace, BlockSet &used) {
+    void buildClosureInner(Trace &trace, BlockSet &used) {
       BlockSet children;
       for (BlockSet::iterator SI = trace.blocks.begin(),
                               SE = trace.blocks.end();
-           SI != SE; ++SI) {
-        Trace new_trace(trace);
-        BlockSet new_used(used);
+                   SI != SE; ++SI) {
         TerminatorInst *BBTerm = (*SI)->getTerminator();
-        int num_children = 0;
-        // Add all the children to the set.
         for (int i = 0, e = BBTerm->getNumSuccessors(); i != e; ++i) {
           BasicBlock *child = BBTerm->getSuccessor(i);
           if (trace.blocks.find(child) != trace.blocks.end()) continue;
           // If a child doesn't belong to this trace, we can't use it and thus
           // any other child of this node.
           if (used.find(child) != used.end()) {
-            num_children = -1;
+            children.clear();
             break;
           }
           Instruction *First = child->begin();
           if (isa<CallInst>(First) || isa<InvokeInst>(First)) {
-            ///errs() << child->getName() << " starts with a call -- skipping\n";
-            num_children = -1;
+            /// Child basic block starts with a call -- it can't be added.
+            children.clear();
             break;
           }
-          new_trace.blocks.insert(child);
-          new_used.insert(child);
-          num_children++;
+          children.insert(child);
         }
-        if (num_children <= 0) {
-          // No new blocks from this one.
-          continue;
-        } else {
-          BlockSet used_empty;
-          if (!traceHasCycles(new_trace, Entry, used_empty)) {
-            buildClosureNew(Entry, new_trace, new_used);
-            if (validTrace(new_trace)) {
-              trace = new_trace;
-              used = new_used;
+        if (children.empty()) break;
+      }
+      if (children.empty()) {
+        return;
+      } else {
+        for (BlockSet::iterator CI = children.begin(),
+                                CE = children.end();
+                 CI != CE; ++CI) {
+            trace.blocks.insert(*CI);
+        }
+        if (!traceHasCycles(trace)) {
+          buildClosureInner(trace, used);
+          if (validTrace(trace)) {
+            return;
+          } else {
+            for (BlockSet::iterator CI = children.begin(),
+                                    CE = children.end();
+                     CI != CE; ++CI) {
+              trace.blocks.erase(*CI);
             }
           }
+        } else {
+          errs() << "Has cycles\n";
         }
       }
     }
@@ -570,25 +572,14 @@ namespace {
     void buildClosure(Function::iterator Entry,
                       Trace &trace, BlockSet &used) {
       BlockVector to_see;
-      BlockSet children;
       to_see.push_back(Entry);
       trace.blocks.insert(Entry);
       used.insert(Entry);
 #ifdef DEBUG_TRACES
       errs() << "buildClosure(" << Entry->getName() << ")\n";
 #endif
-      buildClosureNew(Entry, trace, used);
-        assert(validTrace(trace));
-        if (validTrace(trace)) {
-          for (BlockSet::iterator SI = children.begin(), SE = children.end();
-               SI != SE; ++SI) {
-          }
-        } else {
-          for (BlockSet::iterator SI = children.begin(), SE = children.end();
-               SI != SE; ++SI) {
-            trace.blocks.erase(*SI);
-          }
-        }
+      buildClosureInner(trace, used);
+      assert(validTrace(trace));
 #ifdef DEBUG_TRACES
       errs() << "TRACE: [ ";
       for (BlockSet::iterator I = trace.blocks.begin(), E = trace.blocks.end();
@@ -625,6 +616,12 @@ namespace {
           assert(current_trace.blocks.size() == 0);
           current_trace.entry = current_bb;
           buildClosure(current_bb, current_trace, used_bbs);
+          for (BlockSet::iterator SI = current_trace.blocks.begin(),
+                                  SE = current_trace.blocks.end();
+                   SI != SE; ++SI) {
+            used_bbs.insert(*SI);
+          }
+
           assert(current_trace.exits.size());
           traces.push_back(current_trace);
           current_trace.blocks.clear();
@@ -1478,7 +1475,6 @@ namespace {
             );
         InstrumentedTraceCount++;
         trace.num_mops = TraceNumMops;
-        ///TracePassportGlob->dump();
         return true;
       }
       return false;
