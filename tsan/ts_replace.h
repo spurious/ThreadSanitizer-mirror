@@ -126,6 +126,19 @@ static NOINLINE char *Replace_stpcpy(EXTRA_REPLACE_PARAMS char *dst,
   return dst + i;
 }
 
+static NOINLINE char *Replace_strncpy(EXTRA_REPLACE_PARAMS char *dst,
+                                     const char *src, size_t n) {
+  size_t i;
+  for (i = 0; i < n; i++) {
+    dst[i] = src[i];
+    if (src[i] == 0) break;
+  }
+  REPORT_READ_RANGE(src, i < n ? i+1 : n);
+  REPORT_WRITE_RANGE(dst, i < n ? i+1 : n);
+  return dst;
+}
+
+
 static NOINLINE int Replace_strcmp(EXTRA_REPLACE_PARAMS const char *s1,
                                    const char *s2) {
   unsigned char c1;

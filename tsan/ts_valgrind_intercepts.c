@@ -2345,6 +2345,19 @@ STRCPY(NONE,             strcpy)
 STRCPY(VG_Z_LIBC_SONAME, __GI_strcpy)
 #endif
 
+// --- STRNCPY -----------------------------------------------------
+//
+#define STRNCPY(soname, fnname) \
+   char* VG_REPLACE_FUNCTION_ZU(soname, fnname) ( char* dst, const char* src, size_t n ); \
+   char* VG_REPLACE_FUNCTION_ZU(soname, fnname) ( char* dst, const char* src, size_t n ) \
+   { return Replace_strncpy(dst, src, n); }
+
+STRNCPY(VG_Z_LIBC_SONAME, strncpy)
+STRNCPY(NONE,             strncpy)
+#if defined(VGO_linux)
+STRNCPY(VG_Z_LIBC_SONAME, __GI_strncpy)
+#endif
+
 // --- STPCPY -----------------------------------------------------
 //
 #define STPCPY(soname, fnname) \
