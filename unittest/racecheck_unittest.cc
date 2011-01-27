@@ -3108,6 +3108,8 @@ void WorkerX() {
   EXPECT_TRUE(memmove(str, tmp, strlen(tmp) + 1) == str);
 #ifndef WIN32
   EXPECT_TRUE(stpcpy(tmp, str) == tmp+4);
+  EXPECT_TRUE(strcpy(tmp, str) == tmp);
+  EXPECT_TRUE(strncpy(tmp, str, 4) == tmp);
 #endif
   EXPECT_TRUE(strrchr(str, 'X') == str+2);
   EXPECT_TRUE(strrchr(str, 'x') == str+3);
