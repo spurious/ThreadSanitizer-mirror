@@ -115,7 +115,7 @@ namespace {
 
   };
 
-  typedef vector<Trace> TraceVector;
+  typedef vector<Trace*> TraceVector;
 
   struct TsanOnlineInstrument : public ModulePass { // {{{1
     static char ID; // Pass identification, replacement for typeid
@@ -180,17 +180,15 @@ namespace {
 
     // instruction_address = function_address + c_offset
     // (number of mops is always less or equal to the function size)
-    Constant *getInstructionAddr(int mop_index,
-                                 BasicBlock::iterator cur_inst) {
+    Constant *getInstructionAddr(int mop_index, BasicBlock::iterator &cur_inst) {
+      return ConstantInt::get(PlatformInt, mop_index);
       Value *cur_fun = cur_inst->getParent()->getParent();
       Constant *c_offset = ConstantInt::get(PlatformInt, mop_index);
       Constant *result =
           ConstantExpr::getAdd(
               ConstantExpr::getPtrToInt(cast<Constant>(cur_fun), PlatformInt),
               c_offset);
-      if (cur_inst) {
-        DumpInstructionDebugInfo(result, cur_inst);
-      }
+      DumpInstructionDebugInfo(result, cur_inst);
       return result;
     }
 
@@ -454,9 +452,6 @@ namespace {
       // TODO(glider): looks like the greedy algorithm allows us not to check
       // for cycles inside trace. But we may want to assert that the only
       // possible cycle can lead to the entry block from within the trace.
-      BlockSet used_empty;
-      // entries.begin() is the only trace entry.
-#if 1
       // TODO(glider): no need for redundant cycle checks
       if (traceHasCycles(trace)) {
 #ifdef DEBUG_TRACES
@@ -464,7 +459,6 @@ namespace {
 #endif
         return false;
       }
-#endif
       trace.exits.clear();
       for (BlockSet::iterator BB = trace.blocks.begin(), E = trace.blocks.end();
            BB != E; ++BB) {
@@ -565,22 +559,22 @@ namespace {
           }
         } else {
           errs() << "Has cycles\n";
+          for (BlockSet::iterator CI = children.begin(),
+                                  CE = children.end();
+                   CI != CE; ++CI) {
+            trace.blocks.erase(*CI);
+          }
         }
       }
     }
 
-    void buildClosure(Function::iterator Entry,
-                      Trace &trace, BlockSet &used) {
-      BlockVector to_see;
-      to_see.push_back(Entry);
-      trace.blocks.insert(Entry);
-      used.insert(Entry);
+    void buildClosure(Trace &trace, BlockSet &used) {
 #ifdef DEBUG_TRACES
-      errs() << "buildClosure(" << Entry->getName() << ")\n";
+      errs() << "buildClosure(" << (*trace.blocks.begin())->getName() << ")\n";
 #endif
       buildClosureInner(trace, used);
       assert(validTrace(trace));
-#ifdef DEBUG_TRACES
+#if DEBUG_TRACES
       errs() << "TRACE: [ ";
       for (BlockSet::iterator I = trace.blocks.begin(), E = trace.blocks.end();
            I != E; ++I) {
@@ -608,24 +602,23 @@ namespace {
       BlockVector to_see;
       BlockSet visited;
       cachePredecessors(F);
-      Trace current_trace;
+      Trace *current_trace = new Trace;
       to_see.push_back(F.begin());
       for (int i = 0; i < to_see.size(); ++i) {
         BasicBlock *current_bb = to_see[i];
         if (used_bbs.find(current_bb) == used_bbs.end()) {
-          assert(current_trace.blocks.size() == 0);
-          current_trace.entry = current_bb;
-          buildClosure(current_bb, current_trace, used_bbs);
-          for (BlockSet::iterator SI = current_trace.blocks.begin(),
-                                  SE = current_trace.blocks.end();
+          assert(current_trace->blocks.size() == 0);
+          current_trace->entry = current_bb;
+          current_trace->blocks.insert(current_bb);
+          buildClosure(*current_trace, used_bbs);
+          for (BlockSet::iterator SI = current_trace->blocks.begin(),
+                                  SE = current_trace->blocks.end();
                    SI != SE; ++SI) {
             used_bbs.insert(*SI);
           }
-
-          assert(current_trace.exits.size());
+          assert(current_trace->exits.size());
           traces.push_back(current_trace);
-          current_trace.blocks.clear();
-          current_trace.entry = NULL;
+          current_trace = new Trace;
         }
         TerminatorInst *BBTerm = current_bb->getTerminator();
         for (int ch = 0, e = BBTerm->getNumSuccessors(); ch != e; ++ch) {
@@ -964,8 +957,8 @@ namespace {
         // Instrument the traces.
         TraceVector traces(buildTraces(*F));
         for (int i = 0; i < traces.size(); ++i) {
-          assert(traces[i].exits.size());
-          runOnTrace(M, traces[i], first_dtor_bb);
+          assert(traces[i]->exits.size());
+          runOnTrace(M, *(traces[i]), first_dtor_bb);
           first_dtor_bb = false;
         }
 
@@ -1071,7 +1064,6 @@ namespace {
             BasicBlock::Create(Context, "clean_tleb", BB->getParent());
         BasicBlock *FlushBB =
             BasicBlock::Create(Context, "flush_tleb", BB->getParent());
-        // TODO(glider): implement the flush.
         vector <Value*> num_to_skip;
         num_to_skip.push_back(ConstantInt::get(Int32, 0));
         Value *LiteraceTidValue = new LoadInst(LiteraceTid, "", BBOldTerm);
@@ -1165,6 +1157,7 @@ namespace {
           insertFlushCurrentCall(trace, (*EI)->getTerminator());
         }
       }
+
     }
 
     void DumpInstructionDebugInfo(Constant *addr, BasicBlock::iterator BI) {
@@ -1192,7 +1185,6 @@ namespace {
           make_pair(addr, DebugPcInfo(BI->getParent()->getParent()->getName(),
                                       dir, file, line)));
     }
-
 
     bool isaCallOrInvoke(BasicBlock::iterator &BI) {
       return ((isa<CallInst>(BI) && (!isa<DbgDeclareInst>(BI))) ||
@@ -1439,7 +1431,7 @@ namespace {
         // num_mops_
         trace_info.push_back(ConstantInt::get(PlatformInt, TraceNumMops));
         // pc_
-        Instruction *First = trace.entry->begin();
+        BasicBlock::iterator First = trace.entry->begin();
         trace_info.push_back(getInstructionAddr(FunctionMopCountOnTrace,
                                                 First));
         // counter_
@@ -1638,9 +1630,11 @@ namespace {
       max_trace_size_mops = (max_trace_size_mops > num_inst_mops_in_trace)?
           max_trace_size_mops : num_inst_mops_in_trace;
     }
-    int index = (num_inst_bbs_in_trace >= kNumStats) ?
-        kNumStats - 1 : num_inst_bbs_in_trace;
-    num_traces_with_n_inst_bbs[num_inst_bbs_in_trace]++;
+    int index = kNumStats - 1;
+    index = (num_inst_bbs_in_trace >= index) ?
+        index : num_inst_bbs_in_trace;
+    num_traces_with_n_inst_bbs[index]++;
+    errs() << num_inst_bbs_in_trace << "\n";
     num_inst_bbs_in_trace = 0;
     num_inst_mops_in_trace = 0;
   }
