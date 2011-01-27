@@ -181,7 +181,6 @@ namespace {
     // instruction_address = function_address + c_offset
     // (number of mops is always less or equal to the function size)
     Constant *getInstructionAddr(int mop_index, BasicBlock::iterator &cur_inst) {
-      return ConstantInt::get(PlatformInt, mop_index);
       Value *cur_fun = cur_inst->getParent()->getParent();
       Constant *c_offset = ConstantInt::get(PlatformInt, mop_index);
       Constant *result =
