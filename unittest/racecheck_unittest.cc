@@ -3082,6 +3082,7 @@ namespace NegativeTests_Strlen {  // {{{1
 // with a simpler implementation.
 
 char    *str;
+char    *tmp2;
 void WorkerX() {
   usleep(100000);
   ASSERT_TRUE(strlen(str) == 4);
@@ -3107,9 +3108,13 @@ void WorkerX() {
   EXPECT_TRUE(strncmp(tmp,str, 4) == 0);
   EXPECT_TRUE(memmove(str, tmp, strlen(tmp) + 1) == str);
 #ifndef WIN32
-  EXPECT_TRUE(stpcpy(tmp, str) == tmp+4);
-  EXPECT_TRUE(strcpy(tmp, str) == tmp);
+  EXPECT_TRUE(stpcpy(tmp2, str) == tmp2+4);
+  EXPECT_TRUE(strcpy(tmp2, str) == tmp2);
   EXPECT_TRUE(strncpy(tmp, str, 4) == tmp);
+  // These may not be properly intercepted since gcc -O1 may inline
+  // strcpy/stpcpy in presence of a statically sized array. Damn.
+  // EXPECT_TRUE(stpcpy(tmp, str) == tmp+4);
+  // EXPECT_TRUE(strcpy(tmp, str) == tmp);
 #endif
   EXPECT_TRUE(strrchr(str, 'X') == str+2);
   EXPECT_TRUE(strrchr(str, 'x') == str+3);
@@ -3123,6 +3128,7 @@ void WorkerY() {
 
 TEST(NegativeTests, StrlenAndFriends) {
   str = new char[8];
+  tmp2 = new char[8];
   str[0] = 'X';
   str[1] = 'x';
   str[2] = 'X';
@@ -3151,6 +3157,8 @@ TEST(NegativeTests, StrlenAndFriends) {
   EXPECT_TRUE(strrchr(foo, 0) == foo + strlen(foo));
   EXPECT_TRUE(strrchr(foo, 250) != 0);
   EXPECT_TRUE(strrchr(foo, -60) == 0);
+  delete [] str;
+  delete [] tmp2;
   // TODO(kcc): add more tests to check that interceptors are correct.
 }
 }  // namespace test71
