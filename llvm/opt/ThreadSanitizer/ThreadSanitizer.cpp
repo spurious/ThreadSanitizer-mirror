@@ -35,7 +35,7 @@ using namespace std;
 //#define DEBUG_TRACES 1
 //#define DEBUG_CYCLES 1
 
-// Command-line flags.
+// Command-line flags. {{{1
 static cl::opt<std::string>
     TargetArch("arch", cl::desc("Target arch: x86 or x64"));
 static cl::opt<bool>
@@ -54,9 +54,28 @@ static cl::opt<bool>
                        cl::init(true));
 
 static cl::opt<bool>
-    EnableLiteraceSampling("enable-literace-sampling",
+    EnableLiteRaceSampling("enable-literace-sampling",
                            cl::desc("Flush hot traces less frequently"),
                            cl::init(true));
+static cl::opt<bool>
+    EnableFunctionInstrumentation("enable-function-instrumentation",
+                      cl::desc("Update the shadow stack upon function "
+                               "entries/exits"),
+                      cl::init(true));
+static cl::opt<bool>
+    EnableMemoryInstrumentation("enable-memory-instrumentation",
+                                cl::desc("Instrument memory operations"),
+                                cl::init(true));
+static cl::opt<bool>
+    EnableTraceFlushing("enable-trace-flushing",
+                        cl::desc("Insert a flush after each trace"),
+                        cl::init(true));
+static cl::opt<bool>
+    DoNothing("do-nothing",
+              cl::desc("Do not modify the code, exit immediately"),
+              cl::init(false));
+
+// }}}
 
 namespace {
   typedef std::vector <Constant*> Passport;
@@ -646,6 +665,7 @@ namespace {
     //   ShadowStack.end_++;
     //
     void InsertRtnCall(Constant *addr, BasicBlock::iterator &Before) {
+      if (!EnableFunctionInstrumentation) return;
 #if DEBUG_RTN
         std::vector<Value*> inst(1);
         inst[0] = addr;
@@ -677,6 +697,7 @@ namespace {
 
     // Insert the code that pops a stack frame from the shadow stack.
     void InsertRtnExit(BasicBlock::iterator &Before) {
+      if (!EnableFunctionInstrumentation) return;
 #if DEBUG_RTN
       std::vector<Value*> inst(0);
       CallInst::Create(RtnExitFn, inst.begin(), inst.end(), "", Before);
@@ -702,6 +723,7 @@ namespace {
     }
 
     virtual bool runOnModule(Module &M) {
+      if (DoNothing) return true;
       InstrumentedTraceCount = 0;
       ModuleFunctionCount = 0;
       ModuleMopCount = 0;
@@ -916,7 +938,7 @@ namespace {
               }
             }
             if (isa<MemTransferInst>(BI)) {
-              InstrumentMemTransfer(BI);
+              instrumentMemTransfer(BI);
               if ((need_split || BI == BB->begin()) &&
                   already_splitted.find(BI) == already_splitted.end()) {
                 already_splitted.insert(BI);
@@ -981,9 +1003,10 @@ namespace {
       return true;
     }
 
+    // TODO(glider): either allow to switch to bb_flush or delete this.
     void insertFlushCall(Trace &trace, Instruction *Before) {
       assert(Before);
-      if (!EnableLiteraceSampling) {
+      if (!EnableLiteRaceSampling) {
         // Sampling is off -- just insert an unconditional call to bb_flush().
         std::vector <Value*> Args(1);
         std::vector <Value*> idx;
@@ -1005,7 +1028,7 @@ namespace {
 
     void insertFlushCurrentCall(Trace &trace, Instruction *Before) {
       assert(Before);
-      if (!EnableLiteraceSampling) {
+      if (!EnableLiteRaceSampling) {
         // Sampling is off -- just insert an unconditional call to bb_flush().
         std::vector <Value*> Args(1);
         std::vector <Value*> idx;
@@ -1019,9 +1042,10 @@ namespace {
         Args[0] = BitCastInst::CreatePointerCast(PassportPtr, TraceInfoTypePtr,
                                                  "",
                                                  Before);
-        CallInst::Create(BBFlushCurrentFn,
-                         Args.begin(), Args.end(), "", Before);
-
+        if (EnableTraceFlushing) {
+          CallInst::Create(BBFlushCurrentFn,
+                           Args.begin(), Args.end(), "", Before);
+        }
       } else {
         // Sampling is on -- each trace should be instrumented with the code
         // that decrements the literace counter and checks whether it is
@@ -1127,6 +1151,8 @@ namespace {
                                                  TraceInfoTypePtr,
                                                  "",
                                                  FlushTerm);
+        // TODO(glider): We'll get a mess if
+        // EnableLiteRaceSampling == true and EnableTraceFlushing == false
         CallInst::Create(BBFlushCurrentFn,
                          Args.begin(), Args.end(),
                          "", FlushTerm);
@@ -1390,6 +1416,7 @@ namespace {
         }
       }
       if (TraceNumMops) {
+        // TODO(glider): don't create literace storage if sampling is disabled.
         if (InstrumentedTraceCount % kLiteRaceStorageSize == 0) {
           vector <Constant*> counters;
           counters.push_back(ConstantInt::get(Int32, 0));
@@ -1474,6 +1501,7 @@ namespace {
     void instrumentMop(BasicBlock::iterator &BI, bool isStore,
                        bool check_ident_store, Trace &trace) {
       if (trace.to_instrument.find(BI) == trace.to_instrument.end()) return;
+      if (!EnableMemoryInstrumentation) return;
       instrumentation_stats.newInstrumentedMop();
       Value *MopAddr;
       llvm::Instruction &IN = *BI;
@@ -1532,7 +1560,8 @@ namespace {
     }
 
     // Instrument llvm.memcpy and llvm.memmove.
-    void InstrumentMemTransfer(BasicBlock::iterator &BI) {
+    void instrumentMemTransfer(BasicBlock::iterator &BI) {
+      if (!EnableMemoryInstrumentation) return;
       MemTransferInst &IN = static_cast<MemTransferInst&>(*BI);
       std::vector <Value*> arg(3);
       arg[0] = IN.getDest();
