@@ -25,18 +25,9 @@
 
 CXX=g++
 
-TSAN_PATH=../../../tsan
-OPT=-O2
-
-ThreadSanitizer.so:	ThreadSanitizer.cpp ThreadSanitizer.h ignore.o common_util.o
-	$(CXX) -c $(OPT) -fPIC -g ThreadSanitizer.cpp -o ThreadSanitizer.o -D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS
-	$(CXX) -shared -g ThreadSanitizer.o ignore.o common_util.o -o ThreadSanitizer.so
-
-ignore.o:	$(TSAN_PATH)/ignore.cc $(TSAN_PATH)/ignore.h
-	$(CXX) -c $(OPT) -fPIC -g $< -o $@
-
-common_util.o:	$(TSAN_PATH)/common_util.cc $(TSAN_PATH)/common_util.h
-	$(CXX) -c $(OPT) -fPIC -g $< -o $@
+ThreadSanitizer.so:	ThreadSanitizer.cpp ThreadSanitizer.h
+	$(CXX) -c -O0 -fPIC -g ThreadSanitizer.cpp -o ThreadSanitizer.o -D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS
+	$(CXX) -shared -g ThreadSanitizer.o -o ThreadSanitizer.so
 
 clean:
 	rm -f *.o

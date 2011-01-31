@@ -17,8 +17,6 @@
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Type.h"
 
-#include "../../../tsan/common_util.h"
-
 #include <stdint.h>
 #include <stdio.h>
 
@@ -82,28 +80,6 @@ static cl::opt<bool>
               cl::init(false));
 
 // }}}
-
-// Required by OpenFileReadOnly in common_util.h
-void Report(const char *format, ...) {
-  int buff_size = 1024*16;
-  char *buff = new char[buff_size];
-  CHECK(buff);
-
-  va_list args;
-
-  while (1) {
-    va_start(args, format);
-    int ret = vsnprintf(buff, buff_size, format, args);
-    va_end(args);
-    if (ret < buff_size) break;
-    delete [] buff;
-    buff_size *= 2;
-    buff = new char[buff_size];
-    CHECK(buff);
-    // Printf("Resized buff: %d\n", buff_size);
-  }
-  errs() << buff;
-}
 
 namespace {
 
@@ -869,41 +845,32 @@ bool TsanOnlineInstrument::runOnModule(Module &M) {
     ModuleFunctionCount++;
     FunctionMopCount = 0;
     bool first_dtor_bb = false;
-    bool ignore_recursively = false;
 
     if (F->isDeclaration()) continue;
-    if (shouldIgnoreFunction(F->getNameStr())) continue;
 
-    if (!shouldIgnoreFunctionRecursively(F->getNameStr())) {
-      // We shouldn't ignore the function -- instrument it.
+    // TODO(glider): document this.
+    // I even can't remember why in the world we do skip new/delete.
+    // Probably should be removed.
+    if ((F->getName()).find("_Znw") != string::npos) {
+      continue;
+    }
+    if ((F->getName()).find("_Zdl") != string::npos) {
+      continue;
+    }
+    if (isDtor(F->getNameStr())) first_dtor_bb = WorkaroundVptrRace;
 
-      // TODO(glider): document this.
-      // I even can't remember why in the world we do skip new/delete.
-      // Probably should be removed.
-      if ((F->getName()).find("_Znw") != string::npos) {
-        continue;
-      }
-      if ((F->getName()).find("_Zdl") != string::npos) {
-        continue;
-      }
-      if (isDtor(F->getNameStr())) first_dtor_bb = WorkaroundVptrRace;
-
-      instrumentation_stats.newFunction();
-      instrumentation_stats.newBasicBlocks(F->size());
+    instrumentation_stats.newFunction();
+    instrumentation_stats.newBasicBlocks(F->size());
 #ifdef DEBUG_TRACES
-      errs() << "\n\nFUNCTION: " << F->getName() << "\n";
-      F->dump();
+    errs() << "\n\nFUNCTION: " << F->getName() << "\n";
+    F->dump();
 #endif
-      // Instrument the traces.
-      TraceVector traces(buildTraces(*F));
-      for (int i = 0; i < traces.size(); ++i) {
-        assert(traces[i]->exits.size());
-        runOnTrace(M, *(traces[i]), first_dtor_bb);
-        first_dtor_bb = false;
-      }
-    } else {
-      // Ignore the memory operations in the function.
-      ignore_recursively = true;
+    // Instrument the traces.
+    TraceVector traces(buildTraces(*F));
+    for (int i = 0; i < traces.size(); ++i) {
+      assert(traces[i]->exits.size());
+      runOnTrace(M, *(traces[i]), first_dtor_bb);
+      first_dtor_bb = false;
     }
 
     // Instrument routine calls and exits.
@@ -911,13 +878,11 @@ bool TsanOnlineInstrument::runOnModule(Module &M) {
     // insertRtnCall() and should be always executed after it.
     BasicBlock::iterator First = F->begin()->begin();
     insertRtnCall(getInstructionAddr(0, First), First);
-    if (ignore_recursively) insertIgnoreInc(First);
     for (Function::iterator BB = F->begin(), E = F->end(); BB != E; ++BB) {
       for (BasicBlock::iterator BI = BB->begin(), BE = BB->end();
            BI != BE;
            ++BI) {
         if (isa<ReturnInst>(BI)) {
-          if (ignore_recursively) insertIgnoreDec(BI);
           insertRtnExit(BI);
         }
       }
@@ -1559,23 +1524,11 @@ void TsanOnlineInstrument::getAnalysisUsage(AnalysisUsage &AU) const {
 }
 
 void TsanOnlineInstrument::parseIgnoreFile(string &file) {
-  string ignore_contents = ReadFileToString(file, /*die_if_failed*/true);
-  ReadIgnoresFromString(ignore_contents, &Ignores);
-}
-
-bool TsanOnlineInstrument::shouldIgnoreFunction(const string &symbol) {
-  return false;
-}
-
-bool TsanOnlineInstrument::shouldIgnoreFunctionRecursively(
-    const string &symbol) {
-  return false;
 }
 
 // }}}
 }  // namespace
 
-// InstrumentationStats implementation {{{1
 InstrumentationStats::InstrumentationStats() {
   num_functions = 0;
   num_traces = 0;
@@ -1670,8 +1623,6 @@ void InstrumentationStats::printStats() {
       num_traces_with_n_inst_bbs[i] << "\n";
   }
 }
-
-// }}}
 
 char TsanOnlineInstrument::ID = 0;
 RegisterPass<TsanOnlineInstrument> X("online",

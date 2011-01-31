@@ -51,6 +51,7 @@ def print_args(args):
 
 
 def gcc(default_cc, fallback_cc):
+  fallback_cc = '/bin/false'
   source_extensions = re.compile(".*(\.cc$|\.cpp$|\.c$|\.S$|\.cxx$)")
   obj_extensions = re.compile(".*(\.a$|\.o$)")
   drop_args = ['-c', '-std=c++0x', '-Werror', '-finstrument-functions',
@@ -64,7 +65,7 @@ def gcc(default_cc, fallback_cc):
   compile_pic = False
   fpic = ""
   llc_pic = ""
-  debug_info_args = ["-g"]
+  debug_info_args = []
   compiler_args = []
   platform = P64
   optimization = "-O0"
@@ -161,13 +162,6 @@ def gcc(default_cc, fallback_cc):
     if retcode != 0: sys.exit(retcode)
     return
 
-#  # TODO(glider): remove
-#  fallback_args = [fallback_cc] + args
-#  if src_obj:
-#    fallback_args += ['-o', src_obj]
-#  print_args(fallback_args)
-#  retcode = subprocess.call(fallback_args)
-#  sys.exit(retcode)
 
   if preprocess_only:
     exec_args = [fallback_cc] + args
@@ -187,15 +181,8 @@ def gcc(default_cc, fallback_cc):
     # TODO(glider): additional opt passes.
     opt_args = [OPT, '-load', PASS_SO, '-online', '-arch=' + XARCH[platform],
         src_bitcode, '-o', src_instrumented]
-    print_args(opt_args)
     retcode = subprocess.call(opt_args, stderr=file("instrumentation.log", 'w'))
-    if retcode != 0:
-      fallback_args = [fallback_cc] + args
-      if src_obj:
-        fallback_args += ['-o', src_obj]
-      retcode = subprocess.call(fallback_args)
-      if retcode != 0: sys.exit(retcode)
-      return
+    if retcode != 0: sys.exit(retcode)
 
     llc_args = [LLC, '-march=' + XARCH[platform], optimization,
         src_instrumented, '-o', src_asm]
@@ -206,7 +193,6 @@ def gcc(default_cc, fallback_cc):
       fallback_args += ['-c']
       retcode = subprocess.call(fallback_args)
       if retcode != 0: sys.exit(retcode)
-      print retcode
       return
 
   cc_args = [default_cc, MARCH[platform], '-c', src_asm, optimization]
