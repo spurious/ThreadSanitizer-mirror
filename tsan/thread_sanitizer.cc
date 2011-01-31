@@ -5891,6 +5891,12 @@ class EventSampler {
     string pos =  Thread::Get(tid)->
         CallStackToStringRtnOnly(G_flags->sample_events_depth);
     (*samples_)[event_name][pos]++;
+    total_samples_++;
+    if (total_samples_ >= print_after_this_number_of_samples_) {
+      print_after_this_number_of_samples_ +=
+          print_after_this_number_of_samples_ / 2;
+      ShowSamples();
+    }
   }
 
   // Show existing samples
@@ -5898,7 +5904,7 @@ class EventSampler {
     if (G_flags->sample_events == 0) return;
     TIL til(ts_lock, 8);
     AssertTILHeld();
-    Printf("ShowSamples: \n");
+    Printf("ShowSamples: (all samples: %lld)\n", total_samples_);
     for (SampleMapMap::iterator it1 = samples_->begin();
          it1 != samples_->end(); ++it1) {
       string name = it1->first;
@@ -5926,9 +5932,10 @@ class EventSampler {
     }
   }
 
-
   static void InitClassMembers() {
     samples_ = new SampleMapMap;
+    total_samples_ = 0;
+    print_after_this_number_of_samples_ = 1000;
   }
 
  private:
@@ -5937,9 +5944,13 @@ class EventSampler {
   typedef map<string, int> SampleMap;
   typedef map<string, SampleMap> SampleMapMap;
   static SampleMapMap *samples_;
+  static int64_t total_samples_;
+  static int64_t print_after_this_number_of_samples_;
 };
 
 EventSampler::SampleMapMap *EventSampler::samples_;
+int64_t EventSampler::total_samples_;
+int64_t EventSampler::print_after_this_number_of_samples_;
 
 // -------- Detector ---------------------- {{{1
 // Collection of event handlers.
