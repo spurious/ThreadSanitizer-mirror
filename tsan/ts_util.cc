@@ -30,6 +30,7 @@
 //
 // See ts_util.h for mode details.
 
+#include "common_util.h"
 #include "thread_sanitizer.h"
 #include "ts_stats.h"
 #include "ts_lock.h"
@@ -203,55 +204,6 @@ long my_strtol(const char *str, char **end, int base) {
 #else
   return strtoll(str, end, base);
 #endif
-}
-
-
-#if defined(__GNUC__)
-  typedef int TS_FILE;
-  #define TS_FILE_INVALID (-1)
-#ifdef TS_LLVM
-  #define read(fd, buf, size) __real_read(fd, buf, size)
-#endif
-#elif defined(_MSC_VER)
-  typedef FILE *TS_FILE;
-  #define TS_FILE_INVALID (NULL)
-  #define read(fd, buf, size) fread(buf, 1, size, fd)
-  #define close fclose
-#endif
-
-TS_FILE OpenFileReadOnly(const string &file_name, bool die_if_failed) {
-  TS_FILE ret = TS_FILE_INVALID;
-#ifdef TS_VALGRIND
-  SysRes sres = VG_(open)((const Char*)file_name.c_str(), VKI_O_RDONLY, 0);
-  if (!sr_isError(sres))
-    ret = sr_Res(sres);
-#elif defined(_MSC_VER)
-  ret = fopen(file_name.c_str(), "r");
-#else // no TS_VALGRIND
-  ret = open(file_name.c_str(), O_RDONLY);
-#endif
-  if (ret == TS_FILE_INVALID && die_if_failed) {
-    Report("ERROR: can not open file %s\n", file_name.c_str());
-    exit(1);
-  }
-  return ret;
-}
-
-// Read the contents of a file to string. Valgrind version.
-string ReadFileToString(const string &file_name, bool die_if_failed) {
-  TS_FILE fd = OpenFileReadOnly(file_name, die_if_failed);
-  if (fd == TS_FILE_INVALID) {
-    return string();
-  }
-  char buff[257] = {0};
-  int n_read;
-  string res;
-  while ((n_read = read(fd, buff, sizeof(buff) - 1)) > 0) {
-    buff[n_read] = 0;
-    res += buff;
-  }
-  close(fd);
-  return res;
 }
 
 size_t GetVmSizeInMb() {

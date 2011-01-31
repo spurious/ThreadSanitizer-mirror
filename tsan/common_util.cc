@@ -1,5 +1,7 @@
 #include "common_util.h"
 
+void Report(const char *format, ...);
+
 bool StringMatch(const string& wildcard, const string& text) {
   const char* c_text = text.c_str();
   const char* c_wildcard = wildcard.c_str();
@@ -63,4 +65,39 @@ string ConvertToPlatformIndependentPath(const string &s) {
   }
 #endif // _MSC_VER
   return ret;
+}
+
+TS_FILE OpenFileReadOnly(const string &file_name, bool die_if_failed) {
+  TS_FILE ret = TS_FILE_INVALID;
+#ifdef TS_VALGRIND
+  SysRes sres = VG_(open)((const Char*)file_name.c_str(), VKI_O_RDONLY, 0);
+  if (!sr_isError(sres))
+    ret = sr_Res(sres);
+#elif defined(_MSC_VER)
+  ret = fopen(file_name.c_str(), "r");
+#else // no TS_VALGRIND
+  ret = open(file_name.c_str(), O_RDONLY);
+#endif
+  if (ret == TS_FILE_INVALID && die_if_failed) {
+    Report("ERROR: can not open file %s\n", file_name.c_str());
+    exit(1);
+  }
+  return ret;
+}
+
+// Read the contents of a file to string. Valgrind version.
+string ReadFileToString(const string &file_name, bool die_if_failed) {
+  TS_FILE fd = OpenFileReadOnly(file_name, die_if_failed);
+  if (fd == TS_FILE_INVALID) {
+    return string();
+  }
+  char buff[257] = {0};
+  int n_read;
+  string res;
+  while ((n_read = read(fd, buff, sizeof(buff) - 1)) > 0) {
+    buff[n_read] = 0;
+    res.append(buff, n_read);
+  }
+  close(fd);
+  return res;
 }

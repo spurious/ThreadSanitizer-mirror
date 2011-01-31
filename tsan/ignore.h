@@ -2,7 +2,6 @@
 #define TSAN_IGNORE_H__
 
 #include "common_util.h"
-#include "ts_util.h"
 
 // A triple of patterns to ignore a function, an object file and a source file
 // by their names.
