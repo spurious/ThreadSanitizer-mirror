@@ -233,6 +233,8 @@ struct Stats : private ThreadLocalStats {
       if (msm_branch_count[i])
         Printf("msm_branch_count[%02d] = %'ld\n", i, msm_branch_count[i]);
     }
+    if (read_proc_self_stats)
+      Printf("read_proc_self_stats   =%ld\n", read_proc_self_stats);
   }
 
 
@@ -281,6 +283,7 @@ struct Stats : private ThreadLocalStats {
 
   uintptr_t try_acquire_line_spin;
   uintptr_t futex_wait;
+  uintptr_t read_proc_self_stats;
 };
 
 

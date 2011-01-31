@@ -208,15 +208,16 @@ long my_strtol(const char *str, char **end, int base) {
 
 size_t GetVmSizeInMb() {
 #ifdef VGO_linux
-  static int fd = -2;
-  if (fd == -2) {  // safe since valgrind is single-threaded.
-    fd = OpenFileReadOnly("/proc/self/status", false);
-  }
+  const char *path ="/proc/self/status";
+  uintptr_t counter = G_stats->read_proc_self_stats++;
+  if (counter >= 1024 && ((counter & (counter - 1)) == 0))
+    Report("INFO: reading %s for %ld'th time\n", path, counter);
+  int  fd = OpenFileReadOnly(path, false);
   if (fd < 0) return 0;
   char buff[10 * 1024];
-  VG_(lseek)(fd, 0, SEEK_SET);
   int n_read = read(fd, buff, sizeof(buff) - 1);
   buff[n_read] = 0;
+  close(fd);
   const char *vm_size_name = "VmSize:";
   const int   vm_size_name_len = 7;
   const char *vm_size_str = (const char *)VG_(strstr)((Char*)buff,

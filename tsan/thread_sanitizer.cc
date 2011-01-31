@@ -6132,7 +6132,7 @@ class Detector {
 
     // Are we out of memory?
     if (G_flags->max_mem_in_mb > 0) {
-      const int kFreq = 1014 * 16;
+      const int kFreq = 1014 * 32;
       if ((counter % kFreq) == 0) {  // Don't do it too often.
         // TODO(kcc): find a way to check memory limit more frequently.
         TIL til(ts_lock, 7);
