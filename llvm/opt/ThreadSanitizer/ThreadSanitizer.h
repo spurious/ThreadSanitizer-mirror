@@ -12,6 +12,8 @@
 #include <string>
 #include <vector>
 
+#include "../../../tsan/ignore.h"
+
 namespace {
 
 typedef std::vector <llvm::Constant*> Passport;
@@ -99,10 +101,14 @@ struct TsanOnlineInstrument : public llvm::ModulePass { // {{{1
   int getMopPtrSize(llvm::Value *mopPtr, bool isStore);
   void markMopsToInstrument(llvm::Module &M, Trace &trace);
   bool makeTracePassport(llvm::Module &M, Trace &trace);
+  bool shouldIgnoreFunction(llvm::Function &F);
+  bool shouldIgnoreFunctionRecursively(llvm::Function &F);
   // Instrumentation routines.
   void insertRtnCall(llvm::Constant *addr,
                      llvm::BasicBlock::iterator &Before);
   void insertRtnExit(llvm::BasicBlock::iterator &Before);
+  void insertIgnoreInc(llvm::BasicBlock::iterator &Before);
+  void insertIgnoreDec(llvm::BasicBlock::iterator &Before);
   void insertFlushCall(Trace &trace, llvm::Instruction *Before);
   void insertFlushCurrentCall(Trace &trace, llvm::Instruction *Before);
   void instrumentMop(llvm::BasicBlock::iterator &BI,
@@ -112,6 +118,7 @@ struct TsanOnlineInstrument : public llvm::ModulePass { // {{{1
   void instrumentMemTransfer(llvm::BasicBlock::iterator &BI);
 
   static char ID; // Pass identification, replacement for typeid
+  IgnoreLists Ignores;
   int ArchSize;
   int ModuleID;
   int ModuleFunctionCount, ModuleMopCount, FunctionMopCount, TLEBIndex,

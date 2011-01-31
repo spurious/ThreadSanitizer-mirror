@@ -31,7 +31,6 @@ DA_FLAGS=['-DDYNAMIC_ANNOTATIONS_WANT_ATTRIBUTE_WEAK',
           '-DDYNAMIC_ANNOTATIONS_PREFIX=LLVM',
           '-D__clang__']
 
-
 P32='x86'
 P64='x86-64'
 PLATFORM = {'-m32': P32, '-m64': P64 }
@@ -40,6 +39,9 @@ XARCH = { P32: P32, P64: P64 }
 TSAN_RTL = {P32: SCRIPT_ROOT+'/../tsan_rtl/tsan_rtl32.a',
             P64: SCRIPT_ROOT+'/../tsan_rtl/tsan_rtl64.a' }
 
+TSAN_IGNORE = ''
+if 'TSAN_IGNORE' in os.environ:
+  TSAN_IGNORE = os.environ['TSAN_IGNORE']
 
 def setup_parser(parser):
   pass
@@ -179,8 +181,10 @@ def gcc(default_cc, fallback_cc):
     if retcode != 0: sys.exit(retcode)
 
     # TODO(glider): additional opt passes.
-    opt_args = [OPT, '-load', PASS_SO, '-online', '-arch=' + XARCH[platform],
-        src_bitcode, '-o', src_instrumented]
+    opt_args = [OPT, '-load', PASS_SO, '-online', '-arch=' + XARCH[platform]]
+    if TSAN_IGNORE:
+      opt_args += ['-ignore', TSAN_IGNORE]
+    opt_args += [src_bitcode, '-o', src_instrumented]
     retcode = subprocess.call(opt_args, stderr=file("instrumentation.log", 'w'))
     if retcode != 0: sys.exit(retcode)
 
