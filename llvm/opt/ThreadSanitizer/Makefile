@@ -25,7 +25,7 @@
 
 CXX=g++
 
-ThreadSanitizer.so:	ThreadSanitizer.cpp
+ThreadSanitizer.so:	ThreadSanitizer.cpp ThreadSanitizer.h
 	$(CXX) -c -O0 -fPIC -g ThreadSanitizer.cpp -o ThreadSanitizer.o -D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS
 	$(CXX) -shared -g ThreadSanitizer.o -o ThreadSanitizer.so
 
