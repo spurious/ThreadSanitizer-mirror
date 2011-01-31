@@ -43,13 +43,13 @@
 #endif
 
 extern bool global_ignore;
-__thread bool thread_local_ignore;
+__thread int thread_local_ignore;
 __thread bool thread_local_show_stats;
 __thread int thread_local_literace;
 
 struct ThreadInfo {
   tid_t tid;
-  bool *thread_local_ignore;
+  int *thread_local_ignore;
 };
 
 struct LLVMDebugInfo {
@@ -527,7 +527,7 @@ INLINE void UnsafeInitTidCommon() {
   CHECK_IN_RTL();
   memset(TLEB, 0, kTLEBSize);
   INFO.thread_local_ignore = &thread_local_ignore;
-  thread_local_ignore = global_ignore;
+  thread_local_ignore = !!global_ignore;
   thread_local_show_stats = G_flags->show_stats;
   thread_local_literace = G_flags->literace_sampling;
   LTID = (INFO.tid % TraceInfoPOD::kLiteRaceNumTids);
@@ -604,9 +604,10 @@ void dump_finished() {
 void set_global_ignore(bool new_value) {
   GIL scoped;
   global_ignore = new_value;
+  int add = new_value ? 1 : -1;
   map<pthread_t, ThreadInfo*>::iterator iter;
   for (iter = ThreadInfoMap.begin(); iter != ThreadInfoMap.end(); ++iter) {
-    *(iter->second->thread_local_ignore) = new_value;
+    *(iter->second->thread_local_ignore) += add;
   }
 }
 
@@ -944,6 +945,7 @@ void *__wrap_calloc(size_t nmemb, size_t size) {
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   result = __real_calloc(nmemb, size);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
+  pc = (pc_t) __wrap_calloc;
   SPut(MALLOC, tid, pc, (uintptr_t)result, nmemb * size);
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
@@ -961,6 +963,7 @@ void *__wrap_malloc(size_t size) {
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   result = __real_malloc(size);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
+  pc = (pc_t) __wrap_malloc;
   SPut(MALLOC, tid, pc, (uintptr_t)result, size);
   RPut(RTN_EXIT, tid, pc, 0, 0);
   IN_RTL--;
@@ -995,9 +998,11 @@ void *__wrap_realloc(void *ptr, size_t size) {
   CHECK_IN_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_realloc, 0);
+  SPut(FREE, tid, pc, (uintptr_t)ptr, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   result = __real_realloc(ptr, size);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
+  pc = (pc_t) __wrap_realloc;
   SPut(MALLOC, tid, pc, (uintptr_t)result, size);
   RPut(RTN_EXIT, tid, pc, 0, 0);
   IN_RTL--;
@@ -1020,6 +1025,26 @@ void *__wrap__Znwj(unsigned int size) {
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   void *result = __real__Znwj(size);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
+  pc = (pc_t) __wrap__Znwj;
+  SPut(MALLOC, tid, pc, (uintptr_t)result, size);
+  IN_RTL--;
+  CHECK_IN_RTL();
+  RPut(RTN_EXIT, tid, pc, 0, 0);
+  return result;
+}
+
+extern "C"
+void *__wrap__ZnwjRKSt9nothrow_t(unsigned long size, std::nothrow_t &nt) {
+  if (IN_RTL) return __real__ZnwjRKSt9nothrow_t(size, nt);
+  FLUSH_TRACE();
+  IN_RTL++;
+  CHECK_IN_RTL();
+  DECLARE_TID_AND_PC();
+  RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__ZnwjRKSt9nothrow_t, 0);
+  IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
+  void *result = __real__ZnwjRKSt9nothrow_t(size, nt);
+  IGNORE_ALL_ACCESSES_AND_SYNC_END();
+  pc = (pc_t) __wrap__ZnwjRKSt9nothrow_t;
   SPut(MALLOC, tid, pc, (uintptr_t)result, size);
   IN_RTL--;
   CHECK_IN_RTL();
@@ -1038,6 +1063,26 @@ void *__wrap__Znaj(unsigned int size) {
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   void *result = __real__Znaj(size);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
+  pc = (pc_t) __wrap__Znaj;
+  SPut(MALLOC, tid, pc, (uintptr_t)result, size);
+  IN_RTL--;
+  CHECK_IN_RTL();
+  RPut(RTN_EXIT, tid, pc, 0, 0);
+  return result;
+}
+
+extern "C"
+void *__wrap__ZnajRKSt9nothrow_t(unsigned long size, std::nothrow_t &nt) {
+  if (IN_RTL) return __real__ZnajRKSt9nothrow_t(size, nt);
+  FLUSH_TRACE();
+  IN_RTL++;
+  CHECK_IN_RTL();
+  DECLARE_TID_AND_PC();
+  RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__ZnajRKSt9nothrow_t, 0);
+  IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
+  void *result = __real__ZnajRKSt9nothrow_t(size, nt);
+  IGNORE_ALL_ACCESSES_AND_SYNC_END();
+  pc = (pc_t) __wrap__ZnajRKSt9nothrow_t;
   SPut(MALLOC, tid, pc, (uintptr_t)result, size);
   IN_RTL--;
   CHECK_IN_RTL();
@@ -1058,6 +1103,26 @@ void *__wrap__Znwm(unsigned long size) {
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   void *result = __real__Znwm(size);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
+  pc = (pc_t) __wrap__Znwm;
+  SPut(MALLOC, tid, pc, (uintptr_t)result, size);
+  IN_RTL--;
+  CHECK_IN_RTL();
+  RPut(RTN_EXIT, tid, pc, 0, 0);
+  return result;
+}
+
+extern "C"
+void *__wrap__ZnwmRKSt9nothrow_t(unsigned long size, std::nothrow_t &nt) {
+  if (IN_RTL) return __real__ZnwmRKSt9nothrow_t(size, nt);
+  FLUSH_TRACE();
+  IN_RTL++;
+  CHECK_IN_RTL();
+  DECLARE_TID_AND_PC();
+  RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__ZnwmRKSt9nothrow_t, 0);
+  IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
+  void *result = __real__ZnwmRKSt9nothrow_t(size, nt);
+  IGNORE_ALL_ACCESSES_AND_SYNC_END();
+  pc = (pc_t) __wrap__ZnwmRKSt9nothrow_t;
   SPut(MALLOC, tid, pc, (uintptr_t)result, size);
   IN_RTL--;
   CHECK_IN_RTL();
@@ -1076,6 +1141,26 @@ void *__wrap__Znam(unsigned long size) {
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   void *result = __real__Znam(size);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
+  pc = (pc_t) __wrap__Znam;
+  SPut(MALLOC, tid, pc, (uintptr_t)result, size);
+  IN_RTL--;
+  CHECK_IN_RTL();
+  RPut(RTN_EXIT, tid, pc, 0, 0);
+  return result;
+}
+
+extern "C"
+void *__wrap__ZnamRKSt9nothrow_t(unsigned long size, std::nothrow_t &nt) {
+  if (IN_RTL) return __real__ZnamRKSt9nothrow_t(size, nt);
+  FLUSH_TRACE();
+  IN_RTL++;
+  CHECK_IN_RTL();
+  DECLARE_TID_AND_PC();
+  RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__ZnamRKSt9nothrow_t, 0);
+  IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
+  void *result = __real__ZnamRKSt9nothrow_t(size, nt);
+  IGNORE_ALL_ACCESSES_AND_SYNC_END();
+  pc = (pc_t) __wrap__ZnamRKSt9nothrow_t;
   SPut(MALLOC, tid, pc, (uintptr_t)result, size);
   IN_RTL--;
   CHECK_IN_RTL();
@@ -1107,6 +1192,26 @@ void __wrap__ZdlPv(void *ptr) {
 }
 
 extern "C"
+void __wrap__ZdlPvRKSt9nothrow_t(void *ptr, std::nothrow_t &nt) {
+  if (IN_RTL) {
+    __real__ZdlPvRKSt9nothrow_t(ptr, nt);
+    return;
+  }
+  FLUSH_TRACE();
+  IN_RTL++;
+  CHECK_IN_RTL();
+  DECLARE_TID_AND_PC();
+  RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__ZdlPvRKSt9nothrow_t, 0);
+  SPut(FREE, tid, (pc_t)__wrap__ZdlPvRKSt9nothrow_t, (uintptr_t)ptr, 0);
+  IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
+  __real__ZdlPvRKSt9nothrow_t(ptr, nt);
+  IGNORE_ALL_ACCESSES_AND_SYNC_END();
+  IN_RTL--;
+  CHECK_IN_RTL();
+  RPut(RTN_EXIT, tid, pc, 0, 0);
+}
+
+extern "C"
 void __wrap__ZdaPv(void *ptr) {
   if (IN_RTL) {
     __real__ZdaPv(ptr);
@@ -1119,6 +1224,26 @@ void __wrap__ZdaPv(void *ptr) {
   SPut(FREE, tid, (pc_t)__wrap__ZdaPv, (uintptr_t)ptr, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   __real__ZdaPv(ptr);
+  IGNORE_ALL_ACCESSES_AND_SYNC_END();
+  IN_RTL--;
+  CHECK_IN_RTL();
+  RPut(RTN_EXIT, tid, pc, 0, 0);
+}
+
+extern "C"
+void __wrap__ZdaPvRKSt9nothrow_t(void *ptr, std::nothrow_t &nt) {
+  if (IN_RTL) {
+    __real__ZdaPvRKSt9nothrow_t(ptr, nt);
+    return;
+  }
+  FLUSH_TRACE();
+  IN_RTL++;
+  CHECK_IN_RTL();
+  DECLARE_TID_AND_PC();
+  RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__ZdaPvRKSt9nothrow_t, 0);
+  SPut(FREE, tid, (pc_t)__wrap__ZdaPvRKSt9nothrow_t, (uintptr_t)ptr, 0);
+  IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
+  __real__ZdaPvRKSt9nothrow_t(ptr, nt);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
   IN_RTL--;
   CHECK_IN_RTL();
@@ -2118,14 +2243,20 @@ void AddWrappersDbgInfo() {
 
 #ifdef TSAN_RTL_X86
   WRAPPER_DBG_INFO(__wrap__Znwj);
+  WRAPPER_DBG_INFO(__wrap__ZnwjRKSt9nothrow_t);
   WRAPPER_DBG_INFO(__wrap__Znaj);
+  WRAPPER_DBG_INFO(__wrap__ZnajRKSt9nothrow_t);
 #endif  // TSAN_RTL_X86
 #ifdef TSAN_RTL_X64
   WRAPPER_DBG_INFO(__wrap__Znwm);
+  WRAPPER_DBG_INFO(__wrap__ZnwmRKSt9nothrow_t);
   WRAPPER_DBG_INFO(__wrap__Znam);
+  WRAPPER_DBG_INFO(__wrap__ZnamRKSt9nothrow_t);
 #endif  // TSAN_RTL_X64
   WRAPPER_DBG_INFO(__wrap__ZdlPv);
+  WRAPPER_DBG_INFO(__wrap__ZdlPvRKSt9nothrow_t);
   WRAPPER_DBG_INFO(__wrap__ZdaPv);
+  WRAPPER_DBG_INFO(__wrap__ZdaPvRKSt9nothrow_t);
 
   WRAPPER_DBG_INFO(atexit_callback);
 }

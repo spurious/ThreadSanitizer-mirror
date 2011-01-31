@@ -7,6 +7,8 @@
 #include "llvm/Module.h"
 #include "llvm/Pass.h"
 
+#include "../../../tsan/ignore.h"
+
 #include <map>
 #include <set>
 #include <string>
@@ -103,6 +105,8 @@ struct TsanOnlineInstrument : public llvm::ModulePass { // {{{1
   void insertRtnCall(llvm::Constant *addr,
                      llvm::BasicBlock::iterator &Before);
   void insertRtnExit(llvm::BasicBlock::iterator &Before);
+  void insertIgnoreInc(llvm::BasicBlock::iterator &Before);
+  void insertIgnoreDec(llvm::BasicBlock::iterator &Before);
   void insertFlushCall(Trace &trace, llvm::Instruction *Before);
   void insertFlushCurrentCall(Trace &trace, llvm::Instruction *Before);
   void instrumentMop(llvm::BasicBlock::iterator &BI,
@@ -112,6 +116,7 @@ struct TsanOnlineInstrument : public llvm::ModulePass { // {{{1
   void instrumentMemTransfer(llvm::BasicBlock::iterator &BI);
 
   static char ID; // Pass identification, replacement for typeid
+  IgnoreLists Ignores;
   int ArchSize;
   int ModuleID;
   int ModuleFunctionCount, ModuleMopCount, FunctionMopCount, TLEBIndex,

@@ -61,16 +61,22 @@ wrap sigaction
 
 # operator new(unsigned int)
 wrap _Znwj
+wrap _ZnwjRKSt9nothrow_t
 # operator new[](unsigned int)
 wrap _Znaj
+wrap _ZnajRKSt9nothrow_t
 # operator new(unsigned long)
 wrap _Znwm
+wrap _ZnwmRKSt9nothrow_t
 # operator new[](unsigned long)
 wrap _Znam
+wrap _ZnamRKSt9nothrow_t
 # operator delete(void*)
 wrap _ZdlPv
+wrap _ZdlPvRKSt9nothrow_t
 # operator delete[](void*)
 wrap _ZdaPv
+wrap _ZdaPvRKSt9nothrow_t
 
 wrap memcpy
 wrap memmove
