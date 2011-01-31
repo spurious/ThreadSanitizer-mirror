@@ -58,6 +58,7 @@ struct FLAGS {
   uintptr_t        recent_segments_cache_size;
   vector<string>   file_prefix_to_cut;
   vector<string>   ignore;
+  vector<string>   whitelist;
   vector<string>   cut_stack_below;
   string           summary_file;
   string           log_file;

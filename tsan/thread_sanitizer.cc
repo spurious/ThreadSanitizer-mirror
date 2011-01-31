@@ -7782,6 +7782,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   }
 
   FindStringFlag("ignore", args, &G_flags->ignore);
+  FindStringFlag("whitelist", args, &G_flags->whitelist);
 
   FindBoolFlag("thread_coverage", false, args, &G_flags->thread_coverage);
   
@@ -7899,6 +7900,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
 // Setup the list of functions/images/files to ignore.
 static void SetupIgnore() {
   g_ignore_lists = new IgnoreLists;
+  g_white_lists = new IgnoreLists;
   // add some major ignore entries so that tsan remains sane
   // even w/o any ignore file.
   g_ignore_lists->ignores.push_back(IgnoreObj("*/libpthread*"));
@@ -7998,12 +8000,18 @@ static void SetupIgnore() {
   // Ignore everything in our own file.
   g_ignore_lists->ignores.push_back(IgnoreFile("*ts_valgrind_intercepts.c"));
 
-  // Now read the ignore files.
+  // Now read the ignore/whitelist files.
   for (size_t i = 0; i < G_flags->ignore.size(); i++) {
     string file_name = G_flags->ignore[i];
     Report("INFO: Reading ignore file: %s\n", file_name.c_str());
     string str = ReadFileToString(file_name, true);
     ReadIgnoresFromString(str, g_ignore_lists);
+  }
+  for (size_t i = 0; i < G_flags->whitelist.size(); i++) {
+    string file_name = G_flags->whitelist[i];
+    Report("INFO: Reading whitelist file: %s\n", file_name.c_str());
+    string str = ReadFileToString(file_name, true);
+    ReadIgnoresFromString(str, g_white_lists);
   }
 }
 
@@ -8027,6 +8035,16 @@ bool ThreadSanitizerWantToInstrumentSblock(uintptr_t pc) {
   int line_no;
   G_stats->pc_to_strings++;
   PcToStrings(pc, false, &img_name, &rtn_name, &file_name, &line_no);
+
+  if (g_white_lists->ignores.size() > 0) {
+    bool in_white_list = TripleVectorMatchKnown(g_white_lists->ignores, 
+                                                rtn_name, img_name, file_name);
+    if (in_white_list) {
+      Printf("Whitelisted rtn: %s\n", rtn_name.c_str());
+    } else {
+      return false;
+    } 
+  }
 
   bool ignore = TripleVectorMatchKnown(g_ignore_lists->ignores,
                                        rtn_name, img_name, file_name) ||
