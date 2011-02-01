@@ -116,6 +116,7 @@ struct TsanOnlineInstrument : public llvm::ModulePass { // {{{1
                      bool check_ident_store,
                      Trace &trace);
   void instrumentMemTransfer(llvm::BasicBlock::iterator &BI);
+  void instrumentCall(llvm::BasicBlock::iterator &BI);
 
   static char ID; // Pass identification, replacement for typeid
   IgnoreLists Ignores;

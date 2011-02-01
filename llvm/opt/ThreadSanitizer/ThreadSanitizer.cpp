@@ -34,7 +34,7 @@ using namespace std;
 //#define DEBUG 1
 //#define DEBUG_TRACES 1
 //#define DEBUG_CYCLES 1
-#define DEBUG_DEBUG_INFO 1
+//#define DEBUG_DEBUG_INFO 1
 
 // Command-line flags. {{{1
 static cl::opt<string>
@@ -594,14 +594,13 @@ void TsanOnlineInstrument::insertRtnCall(Constant *addr,
       GetElementPtrInst::Create(ShadowStack,
                                 end_idx.begin(), end_idx.end(),
                                 "", Before);
-  Value *StackEnd = new LoadInst(StackEndPtr, "", Before);
-  CurrentStackEnd = StackEnd;
-  new StoreInst(addr, StackEnd, Before);
+  CurrentStackEnd = new LoadInst(StackEndPtr, "", Before);
+  new StoreInst(addr, CurrentStackEnd, Before);
 
   vector <Value*> new_idx;
   new_idx.push_back(ConstantInt::get(Int32, 1));
   Value *NewStackEnd =
-      GetElementPtrInst::Create(StackEnd,
+      GetElementPtrInst::Create(CurrentStackEnd,
                                 new_idx.begin(), new_idx.end(),
                                 "", Before);
   new StoreInst(NewStackEnd, StackEndPtr, Before);
@@ -1105,6 +1104,7 @@ void TsanOnlineInstrument::runOnTrace(Module &M,
   markMopsToInstrument(M, trace);
   bool have_passport = makeTracePassport(M, trace);
   if (have_passport) {
+    // Instrument memory operations and function calls.
     instrumentation_stats.newTrace();
     for (BlockSet::iterator TI = trace.blocks.begin(),
                             TE = trace.blocks.end();
@@ -1118,8 +1118,21 @@ void TsanOnlineInstrument::runOnTrace(Module &M,
     for (BlockSet::iterator EI = trace.exits.begin(),
                             EE = trace.exits.end();
          EI != EE; ++EI) {
-
       insertFlushCurrentCall(trace, (*EI)->getTerminator());
+    }
+  } else {
+    // Instrument only function calls.
+    for (BlockSet::iterator EI = trace.exits.begin(),
+                            EE = trace.exits.end();
+         EI != EE; ++EI) {
+      for (BasicBlock::iterator BI = (*EI)->begin(), BE = (*EI)->end();
+           BI != BE;
+           ++BI) {
+        if (isaCallOrInvoke(BI)) {
+          llvm::Instruction &IN = *BI;
+          instrumentCall(BI);
+        }
+      }
     }
   }
 }
@@ -1335,7 +1348,6 @@ bool TsanOnlineInstrument::makeTracePassport(Module &M, Trace &trace) {
         FunctionMopCount++;
         ModuleMopCount++;
 
-
         llvm::Instruction &IN = *BI;
         Value *MopPtr;
         if (isStore) {
@@ -1530,7 +1542,25 @@ void TsanOnlineInstrument::instrumentMemTransfer(BasicBlock::iterator &BI) {
   }
 }
 
-// This method is ran only for instrumented basic blocks.
+void TsanOnlineInstrument::instrumentCall(BasicBlock::iterator &BI) {
+  // TODO(glider): should we somehow distinguish the addresses of mops and
+  // calls?
+  FunctionMopCount++;
+  vector <Value*> end_idx;
+  end_idx.push_back(ConstantInt::get(PlatformInt, 0));
+  end_idx.push_back(ConstantInt::get(Int32, 0));
+  // TODO(glider): can we avoid getting the element pointer twice?
+  Value *StackEndPtr =
+      GetElementPtrInst::Create(ShadowStack,
+                                end_idx.begin(), end_idx.end(),
+                                "", BI);
+  Value *StackEnd = new LoadInst(StackEndPtr, "", BI);
+
+  new StoreInst(getInstructionAddr(FunctionMopCount, BI),
+                StackEnd, BI);
+}
+
+// This method is ran only for basic blocks to be instrumented.
 void TsanOnlineInstrument::runOnBasicBlock(Module &M, BasicBlock *BB,
                                            bool first_dtor_bb,
                                            Trace &trace) {
@@ -1540,16 +1570,7 @@ void TsanOnlineInstrument::runOnBasicBlock(Module &M, BasicBlock *BB,
        ++BI) {
     if (isaCallOrInvoke(BI)) {
       llvm::Instruction &IN = *BI;
-      if ((isa<CallInst>(BI) &&
-           static_cast<CallInst&>(IN).getCalledFunction() == BBFlushFn) ||
-          (isa<InvokeInst>(BI) &&
-           static_cast<InvokeInst&>(IN).getCalledFunction() == BBFlushFn)) {
-        // TODO(glider): we shouldn't encounter BBFlushFn at all.
-        // Or not?
-///            errs() << "BBFlushFn!\n";
-///            assert(false);
-        continue;
-      }
+      instrumentCall(BI);
     }
     if (isa<LoadInst>(BI)) {
       // Instrument LOAD.
@@ -1627,7 +1648,6 @@ void InstrumentationStats::newTrace() {
   index = (num_inst_bbs_in_trace >= index) ?
       index : num_inst_bbs_in_trace;
   num_traces_with_n_inst_bbs[index]++;
-  errs() << num_inst_bbs_in_trace << "\n";
   num_inst_bbs_in_trace = 0;
   num_inst_mops_in_trace = 0;
 }
