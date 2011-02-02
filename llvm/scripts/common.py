@@ -164,7 +164,7 @@ def gcc(default_cc, fallback_cc):
           ld_args.append('-Wl,--' + pieces[0] + ',' + pieces[1])
       ld_args += [TSAN_RTL[platform]]
     ld_args += ['-o', src_obj]
-
+    #print_args(ld_args)
     retcode = subprocess.call(ld_args)
     if retcode != 0: sys.exit(retcode)
     return
@@ -189,7 +189,7 @@ def gcc(default_cc, fallback_cc):
     # TODO(glider): additional opt passes.
     opt_args = [OPT, '-load', PASS_SO, '-online', '-arch=' + XARCH[platform]]
     if TSAN_IGNORE:
-      opt_args += ['-ignore', TSAN_IGNORE]
+      opt_args += ['-ignore=' + TSAN_IGNORE]
     opt_args += [src_bitcode, '-o', src_instrumented]
     #print_args(opt_args)
     retcode = subprocess.call(opt_args, stderr=file("instrumentation.log", 'w'))
