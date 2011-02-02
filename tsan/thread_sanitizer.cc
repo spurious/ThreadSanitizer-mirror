@@ -1988,7 +1988,9 @@ class SegmentSet {
     DCHECK(ssid.valid());
     DCHECK(!ssid.IsSingleton());
     int idx = -ssid.raw()-1;
+    ANNOTATE_IGNORE_READS_BEGIN();
     DCHECK(idx < static_cast<int>(vec_->size()) && idx >= 0);
+    ANNOTATE_IGNORE_READS_END();
     SegmentSet *res = (*vec_)[idx];
     DCHECK(res);
     DCHECK(res->size() >= 2);

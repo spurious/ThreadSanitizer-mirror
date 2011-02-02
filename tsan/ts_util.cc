@@ -461,8 +461,11 @@ void TSLock::AssertHeld() {
 
 TSLock::TSLock() {
   rep_ = 0;
+  ANNOTATE_BENIGN_RACE(&rep_, "Benign race on TSLock::rep_");
+  ANNOTATE_RWLOCK_CREATE(this);
 }
 TSLock::~TSLock() {
+  ANNOTATE_RWLOCK_DESTROY(this);
   DCHECK(rep_ == 0);
 }
 void TSLock::Lock() {
@@ -476,6 +479,7 @@ void TSLock::Lock() {
   }
   if (c == 0) {
     // The mutex was unlocked. Now it's ours. Done.
+    ANNOTATE_RWLOCK_ACQUIRED(this, /*is_w*/true);
     return;
   }
   DCHECK(c == 1 || c == 2);
@@ -489,6 +493,7 @@ void TSLock::Lock() {
     G_stats->futex_wait++;
     c = __sync_lock_test_and_set(p, 2);
   }
+  ANNOTATE_RWLOCK_ACQUIRED(this, /*is_w*/true);
 }
 void TSLock::Unlock() {
   int *p = (int*)&rep_;
@@ -499,6 +504,7 @@ void TSLock::Unlock() {
     *p = 0;
     syscall(SYS_futex, p, FUTEX_WAKE, 1, 0, 0, 0);
   }
+  ANNOTATE_RWLOCK_RELEASED(this, /*is_w*/true);
 }
 void TSLock::AssertHeld() {
   DCHECK(rep_);
