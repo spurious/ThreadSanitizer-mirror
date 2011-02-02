@@ -51,9 +51,14 @@ def print_args(args):
     print "    ", i, "\\"
   print "    ", args[-1]
 
+def do_fallback(fallback_cc, args):
+  fallback_args = [fallback_cc] + args
+  fallback_args += ['-c']
+  #print_args(fallback_args)
+  retcode = subprocess.call(fallback_args)
+  if retcode != 0: sys.exit(retcode)
 
 def gcc(default_cc, fallback_cc):
-  fallback_cc = '/bin/false'
   source_extensions = re.compile(".*(\.cc$|\.cpp$|\.c$|\.S$|\.cxx$)")
   obj_extensions = re.compile(".*(\.a$|\.o$)")
   drop_args = ['-c', '-std=c++0x', '-Werror', '-finstrument-functions',
@@ -164,7 +169,6 @@ def gcc(default_cc, fallback_cc):
     if retcode != 0: sys.exit(retcode)
     return
 
-
   if preprocess_only:
     exec_args = [fallback_cc] + args
     retcode = subprocess.call(exec_args)
@@ -178,30 +182,34 @@ def gcc(default_cc, fallback_cc):
       llvm_gcc_args += [fpic]
     #print_args(llvm_gcc_args)
     retcode = subprocess.call(llvm_gcc_args)
-    if retcode != 0: sys.exit(retcode)
+    if retcode != 0:
+      do_fallback(fallback_cc, args)
+      return
 
     # TODO(glider): additional opt passes.
     opt_args = [OPT, '-load', PASS_SO, '-online', '-arch=' + XARCH[platform]]
     if TSAN_IGNORE:
       opt_args += ['-ignore', TSAN_IGNORE]
     opt_args += [src_bitcode, '-o', src_instrumented]
+    #print_args(opt_args)
     retcode = subprocess.call(opt_args, stderr=file("instrumentation.log", 'w'))
-    if retcode != 0: sys.exit(retcode)
+    if retcode != 0:
+      do_fallback(fallback_cc, args)
+      return
 
     llc_args = [LLC, '-march=' + XARCH[platform], optimization,
         src_instrumented, '-o', src_asm]
+    #print_args(llc_args)
     if compile_pic: llc_args += [llc_pic]
     retcode = subprocess.call(llc_args)
     if retcode != 0:
-      fallback_args = [fallback_cc] + args
-      fallback_args += ['-c']
-      retcode = subprocess.call(fallback_args)
-      if retcode != 0: sys.exit(retcode)
+      do_fallback(fallback_cc, args)
       return
 
   cc_args = [default_cc, MARCH[platform], '-c', src_asm, optimization]
   cc_args += debug_info_args + [ '-o', src_obj]
   if compile_pic: cc_args += [fpic]
+  #print_args(cc_args)
   retcode = subprocess.call(cc_args)
   if retcode != 0:
     fallback_args = [fallback_cc] + args
