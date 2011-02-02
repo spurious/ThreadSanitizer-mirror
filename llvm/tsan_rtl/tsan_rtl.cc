@@ -1393,6 +1393,7 @@ int __wrap_pthread_mutex_destroy(pthread_mutex_t *mutex) {
   FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_mutex_destroy, 0);
+  pc = (pc_t)__wrap_pthread_mutex_destroy;
   SPut(LOCK_DESTROY, tid, pc, (uintptr_t)mutex, 0);  // before the actual call.
   int result = __real_pthread_mutex_destroy(mutex);
   RPut(RTN_EXIT, tid, pc, 0, 0);
@@ -1439,6 +1440,7 @@ int __wrap_pthread_rwlock_destroy(pthread_rwlock_t *rwlock) {
   FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_rwlock_destroy, 0);
+  pc = (pc_t)__wrap_pthread_rwlock_destroy;
   SPut(LOCK_DESTROY, tid, pc, (uintptr_t)rwlock, 0);  // before the actual call.
   int result = __real_pthread_rwlock_destroy(rwlock);
   RPut(RTN_EXIT, tid, pc, 0, 0);
@@ -1618,6 +1620,7 @@ int __wrap_pthread_spin_destroy(pthread_spinlock_t *lock) {
   FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_spin_destroy, 0);
+  pc = (pc_t)__wrap_pthread_spin_destroy;
   SPut(LOCK_DESTROY, tid, pc, (uintptr_t)lock, 0);
   int result = __real_pthread_spin_destroy(lock);
   RPut(RTN_EXIT, tid, pc, 0, 0);
