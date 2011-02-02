@@ -729,6 +729,14 @@ bool TsanOnlineInstrument::runOnModule(Module &M) {
                                    "ShadowStack",
                                    /*InsertBefore*/0,
                                    /*ThreadLocal*/true);
+  ThreadLocalIgnore = new GlobalVariable(M,
+                                         PlatformInt,
+                                         /*isConstant*/false,
+                                         GlobalValue::ExternalWeakLinkage,
+                                         /*Initializer*/0,
+                                         "thread_local_ignore",
+                                         /*InsertBefore*/0,
+                                         /*ThreadLocal*/true);
   LiteraceTid = new GlobalVariable(M,
                                    PlatformInt,
                                    /*isConstant*/false,
@@ -929,12 +937,25 @@ bool TsanOnlineInstrument::runOnModule(Module &M) {
 
 void TsanOnlineInstrument::insertIgnoreInc(
     llvm::BasicBlock::iterator &Before) {
-  // TODO(glider): unimplemented
+  Value *Old = new LoadInst(ThreadLocalIgnore, "", Before);
+  Value *New =
+      BinaryOperator::CreateAdd(Old,
+                                ConstantInt::get(PlatformInt, 1),
+                                "",
+                                Before);
+  new StoreInst(New, ThreadLocalIgnore, Before);
 }
 
 void TsanOnlineInstrument::insertIgnoreDec(
     llvm::BasicBlock::iterator &Before) {
-  // TODO(glider): unimplemented
+  Value *Old = new LoadInst(ThreadLocalIgnore, "", Before);
+  Value *New =
+      BinaryOperator::CreateSub(Old,
+                                ConstantInt::get(PlatformInt, 1),
+                                "",
+                                Before);
+  new StoreInst(New, ThreadLocalIgnore, Before);
+
 }
 
 // TODO(glider): either allow the user to use bb_flush() and implement the

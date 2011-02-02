@@ -151,6 +151,7 @@ struct TsanOnlineInstrument : public llvm::ModulePass { // {{{1
 
   // Globals provided by the RTL.
   llvm::Value *ShadowStack, *CurrentStackEnd, *TLEB, *LiteraceTid;
+  llvm::Value *ThreadLocalIgnore;
   llvm::AliasAnalysis *AA;
   // Constants.
   static const int kTLEBSize = 100;
