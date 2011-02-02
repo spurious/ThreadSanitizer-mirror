@@ -998,11 +998,11 @@ void *__wrap_realloc(void *ptr, size_t size) {
   CHECK_IN_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_realloc, 0);
+  pc = (pc_t) __wrap_realloc;
   SPut(FREE, tid, pc, (uintptr_t)ptr, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   result = __real_realloc(ptr, size);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
-  pc = (pc_t) __wrap_realloc;
   SPut(MALLOC, tid, pc, (uintptr_t)result, size);
   RPut(RTN_EXIT, tid, pc, 0, 0);
   IN_RTL--;
