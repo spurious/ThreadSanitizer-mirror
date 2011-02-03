@@ -2205,6 +2205,7 @@ void ReadDbgInfoFromSection(char* start, char* end) {
 void AddOneWrapperDbgInfo(pc_t pc, const char *symbol) {
   (*debug_info)[pc].pc = pc;
   (*debug_info)[pc].symbol = symbol;
+  (*debug_info)[pc].demangled_symbol = symbol;
   (*debug_info)[pc].fullpath = __FILE__;
   (*debug_info)[pc].file = __FILE__;
   (*debug_info)[pc].path = "";
