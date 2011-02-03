@@ -10,6 +10,10 @@
 #include <map>
 #include <vector>
 
+#if defined(__GNUC__)
+# include <cxxabi.h>  // __cxa_demangle
+#endif
+
 #define EXTRA_REPLACE_PARAMS tid_t tid, pc_t pc,
 #define REPORT_READ_RANGE(x, size) do { \
     if (size) SPut(READ, tid, pc, (uintptr_t)(x), (size)); } while (0)
@@ -57,6 +61,7 @@ struct LLVMDebugInfo {
     : pc(0), line(0) { }
   pc_t pc;
   string symbol;
+  string demangled_symbol;
   string file;
   string path;
   string fullpath;  // = path + "/" + file
@@ -1184,6 +1189,7 @@ void __wrap__ZdlPv(void *ptr) {
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__ZdlPv, 0);
   SPut(FREE, tid, (pc_t)__wrap__ZdlPv, (uintptr_t)ptr, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
+  //if (ptr) memset(ptr, 0, 4);
   __real__ZdlPv(ptr);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
   IN_RTL--;
@@ -2148,6 +2154,20 @@ void ReadDbgInfoFromSection(char* start, char* end) {
       } else {
         (*debug_info)[pcs[i].pc].pc = pcs[i].pc;
         (*debug_info)[pcs[i].pc].symbol = symbols[pcs[i].symbol];
+#if defined(__GNUC__)
+        char *demangled = NULL;
+        int status;
+        demangled = __cxxabiv1::__cxa_demangle(symbols[pcs[i].symbol].c_str(),
+                                               0, 0, &status);
+        if (demangled) {
+          (*debug_info)[pcs[i].pc].demangled_symbol = demangled;
+          __real_free(demangled);
+        } else {
+          (*debug_info)[pcs[i].pc].demangled_symbol = symbols[pcs[i].symbol];
+        }
+#else
+        (*debug_info)[pcs[i].pc].demangled_symbol = symbols[pcs[i].symbol];
+#endif
         (*debug_info)[pcs[i].pc].file = files[pcs[i].file];
         (*debug_info)[pcs[i].pc].path = paths[pcs[i].path];
         // TODO(glider): move the path-related logic to the compiler.
@@ -2358,7 +2378,11 @@ void PcToStrings(pc_t pc, bool demangle,
   DbgInfoLock scoped;
   if (debug_info && (debug_info->find(pc) != debug_info->end())) {
     img_name = NULL;
-    *rtn_name = (*debug_info)[pc].symbol;
+    if (demangle) {
+      *rtn_name = (*debug_info)[pc].demangled_symbol;
+    } else {
+      *rtn_name = (*debug_info)[pc].symbol;
+    }
     *file_name = ((*debug_info)[pc].fullpath);
     *line_no = ((*debug_info)[pc].line);
   } else {
