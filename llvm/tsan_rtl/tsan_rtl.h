@@ -18,10 +18,11 @@
 #include "suppressions.h"
 #include "ts_util.h"
 
-// #define DEBUG 1
-#undef DEBUG
+#ifndef DEBUG
+#define DEBUG 0
+#endif
 
-#ifdef DEBUG
+#if (DEBUG)
 #define CHECK_IN_RTL() do { \
   assert((IN_RTL >= 0) && (IN_RTL <= 5)); \
 } while (0)
@@ -45,7 +46,7 @@ class GIL {
 
   static bool TryLock();
   static void Unlock();
-#ifdef DEBUG
+#if (DEBUG)
   static int GetDepth();
 #endif
 };

@@ -25,10 +25,6 @@
 #define DEBUG 1
 #endif
 
-#ifndef DEBUG
-#define DEBUG 0
-#endif
-
 #if (DEBUG_LEVEL == 2)
 # define DDPrintf(params...) \
     Printf(params)
@@ -172,13 +168,6 @@ __thread int gil_depth = 0;
 // Reentrancy counter {{{1
 __thread int IN_RTL = 0;
 
-#if (DEBUG)
-#define CHECK_IN_RTL() do { \
-  assert((IN_RTL >= 0) && (IN_RTL <= 5)); \
-} while (0)
-#else
-#define CHECK_IN_RTL()
-#endif
 // }}}
 
 
@@ -366,7 +355,7 @@ void INLINE flush_trace(TraceInfoPOD *trace) {
       trace_info->LLVMLiteRaceUpdate(LTID,
                                thread_local_literace);
     }
-    if (DEBUG && UNLIKELY(G_flags->verbosity >= 2)) {
+    if (DEBUG && G_flags->verbosity >= 2) {
       IN_RTL++;
       CHECK_IN_RTL();
       Event sblock(SBLOCK_ENTER, tid, trace->pc_, 0, trace->n_mops_);
@@ -1906,6 +1895,7 @@ uintptr_t FdMagic(int fd) {
   struct stat stat_b;
   fstat(fd, &stat_b);
   if (stat_b.st_dev) result = (uintptr_t)stat_b.st_dev;
+  if (S_TYPEISSHM(&stat_b)) result = fd;
   return result;
 }
 
@@ -1945,6 +1935,30 @@ ssize_t __wrap_write(int fd, const void *buf, size_t count) {
   return result;
 }
 // }}}
+
+extern "C"
+int __wrap_lockf64(int fd, int cmd, off_t len) {
+  // TODO(glider): support len != 0
+  if (IN_RTL || len) return __real_lockf64(fd, cmd, len);
+  FLUSH_TRACE();
+  IN_RTL++;
+  CHECK_IN_RTL();
+  DECLARE_TID_AND_PC();
+  RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_lockf64, 0);
+  int result = __real_lockf64(fd, cmd, len);
+  if (result == 0) {
+    if (cmd == F_LOCK) {
+      SPut(WAIT, tid, pc, FdMagic(fd), 0);
+    }
+    if (cmd == F_ULOCK) {
+      SPut(SIGNAL, tid, pc, FdMagic(fd), 0);
+    }
+  }
+  IN_RTL--;
+  CHECK_IN_RTL();
+  RPut(RTN_EXIT, tid, pc, 0, 0);
+  return result;
+}
 
 // Signal handling {{{1
 /* Initial support for signals. Each user signal handler is stored in

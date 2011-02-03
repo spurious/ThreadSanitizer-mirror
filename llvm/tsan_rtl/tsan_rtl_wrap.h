@@ -71,12 +71,13 @@ void *__real_mmap(void *addr, size_t length, int prot, int flags,
                   int fd, off_t offset);
 int __real_munmap(void *addr, size_t length);
 void *__real_calloc(size_t nmemb, size_t size);
-void *__real_malloc(size_t size); 
+void *__real_malloc(size_t size);
 void *__real_realloc(void *ptr, size_t size);
 void __real_free(void *ptr);
 
 ssize_t __real_write(int fd, const void *buf, size_t count);
 ssize_t __real_read(int fd, const void *buf, size_t count);
+int __real_lockf64(int fd, int cmd, off_t len);
 
 int __real_pthread_once(pthread_once_t *once_control, void (*init_routine) (void));
 

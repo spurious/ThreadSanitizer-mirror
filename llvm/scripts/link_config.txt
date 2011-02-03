@@ -54,6 +54,7 @@ wrap realloc
 
 wrap read
 wrap write
+wrap lockf64
 
 wrap pthread_once
 
