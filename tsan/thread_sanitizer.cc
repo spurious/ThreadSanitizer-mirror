@@ -5297,6 +5297,15 @@ static const char default_suppressions[] =
 "  fun:_dispatch_call_block_and_release                               \n"
 "}                                                                    \n"
 
+"{                                                                    \n"
+"  Benign race in NSOQSchedule when using workqueue threads.          \n"
+"  ThreadSanitizer:Race                                               \n"
+"  fun:____NSOQSchedule_block_invoke_*                                \n"
+"  ...                                                                \n"
+"  fun:_dispatch_call_block_and_release                               \n"
+"}                                                                    \n"
+
+
 #endif
 
 #ifndef _MSC_VER
