@@ -76,9 +76,9 @@ struct InstrumentationStats {
 struct TsanOnlineInstrument : public llvm::ModulePass { // {{{1
   TsanOnlineInstrument();
   virtual bool runOnModule(llvm::Module &M);
-  void runOnTrace(llvm::Module &M, Trace &trace, bool first_dtor_bb);
-  void runOnBasicBlock(llvm::Module &M,
-                       llvm::BasicBlock *BB,
+  void runOnFunction(llvm::Module::iterator &F);
+  void runOnTrace(Trace &trace, bool first_dtor_bb);
+  void runOnBasicBlock(llvm::BasicBlock *BB,
                        bool first_dtor_bb,
                        Trace &trace);
   llvm::Constant *getInstructionAddr(int mop_index,
@@ -98,9 +98,10 @@ struct TsanOnlineInstrument : public llvm::ModulePass { // {{{1
   void cachePredecessors(llvm::Function &F);
   TraceVector buildTraces(llvm::Function &F);
   bool isaCallOrInvoke(llvm::BasicBlock::iterator &BI);
+  int numMopsInFunction(llvm::Module::iterator &F);
   int getMopPtrSize(llvm::Value *mopPtr, bool isStore);
-  void markMopsToInstrument(llvm::Module &M, Trace &trace);
-  bool makeTracePassport(llvm::Module &M, Trace &trace);
+  void markMopsToInstrument(Trace &trace);
+  bool makeTracePassport(Trace &trace);
   bool shouldIgnoreFunction(llvm::Function &F);
   bool shouldIgnoreFunctionRecursively(llvm::Function &F);
   // Instrumentation routines.
@@ -178,6 +179,8 @@ struct TsanOnlineInstrument : public llvm::ModulePass { // {{{1
   // TODO(glider): box the trace into a class that provides the set of
   // predecessors.
   std::map<llvm::BasicBlock*, BlockSet> predecessors;
+  llvm::Module *ThisModule;
+  llvm::LLVMContext *ThisModuleContext;
 private:
   virtual void getAnalysisUsage(llvm::AnalysisUsage &AU) const;
 };  // }}}

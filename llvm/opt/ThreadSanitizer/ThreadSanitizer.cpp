@@ -81,6 +81,11 @@ static cl::opt<bool>
               cl::desc("Do not modify the code, exit immediately"),
               cl::init(false));
 
+static cl::opt<bool>
+    SkipFunctionsWithoutMops("skip-functions-without-mops",
+                             cl::desc("Do not instrument functions "
+                                      "containing no memory operations"),
+                             cl::init(true));
 // }}}
 
 // Required by OpenFileReadOnly in common_util.h
@@ -634,6 +639,105 @@ void TsanOnlineInstrument::insertRtnExit(BasicBlock::iterator &Before) {
 #endif
 }
 
+int TsanOnlineInstrument::numMopsInFunction(Module::iterator &F) {
+  int result = 0;
+  for (Function::iterator BB = F->begin(), E = F->end(); BB != E; ++BB) {
+    for (BasicBlock::iterator BI = BB->begin(), BE = BB->end();
+         BI != BE;
+         ++BI) {
+      if (isa<LoadInst>(BI) || isa<StoreInst>(BI)) {
+        result++;
+      }
+    }
+  }
+}
+
+void TsanOnlineInstrument::runOnFunction(Module::iterator &F) {
+  ModuleFunctionCount++;
+  FunctionMopCount = 0;
+  int num_mops_in_traces = 0;
+  TracePassportGlob = NULL;
+  bool first_dtor_bb = false;
+  bool ignore_recursively = false;
+
+  if (F->isDeclaration()) return;
+  if (shouldIgnoreFunction(*F)) return;
+
+  if (!shouldIgnoreFunctionRecursively(*F)) {
+    // We shouldn't ignore the function -- instrument it.
+
+    // TODO(glider): document this.
+    // I even can't remember why in the world we do skip new/delete.
+    // Probably should be removed: if someone has implemented his own
+    // new/delete operators, we definitely do not want to compile them.
+    // Upd: looks like these are placement new/delete operators.
+    if ((F->getName()).find("_Znw") != string::npos) {
+      //F->dump();
+      //assert(false)
+      return;
+    }
+    if ((F->getName()).find("_Zdl") != string::npos) {
+      //F->dump();
+      //assert(false)
+      return;
+    }
+    // TODO(glider): rely on the vtable mangled name instead of first_dtor_bb.
+    if (isDtor(F->getNameStr())) first_dtor_bb = WorkaroundVptrRace;
+
+    instrumentation_stats.newFunction();
+    instrumentation_stats.newBasicBlocks(F->size());
+#ifdef DEBUG_TRACES
+    errs() << "\n\nFUNCTION: " << F->getName() << "\n";
+    F->dump();
+#endif
+
+    // Build the traces.
+    TraceVector traces(buildTraces(*F));
+    for (int i = 0; i < traces.size(); ++i) {
+      assert(traces[i]->exits.size());
+      markMopsToInstrument(*traces[i]);
+      num_mops_in_traces += traces[i]->num_mops;
+    }
+
+    // TODO(glider): if we skip the function instrumentation, we also do not
+    // update the shadow stack frame. This may speed up small functions (there
+    // are lots of them if we compile with -fno-inline-functions), but we may
+    // also lose stack pecision if the skipped function calls instrumented
+    // functions. Controversial, need to evaluate.
+    if (SkipFunctionsWithoutMops && !num_mops_in_traces) return;
+    // runOnTrace() instruments function calls, so we need to check
+    // SkipFunctionsWithoutMops first.
+
+    // Instrument the traces.
+    for (int i = 0; i < traces.size(); ++i) {
+      assert(traces[i]->exits.size());
+      runOnTrace(*(traces[i]), first_dtor_bb);
+      first_dtor_bb = false;
+    }
+  } else {
+    // Ignore the memory operations in the function.
+    ignore_recursively = true;
+  }
+
+
+  // Instrument routine calls and exits.
+  // insertRtnExit() uses the shadow stack size obtained by
+  // insertRtnCall() and should be always executed after it.
+  BasicBlock::iterator First = F->begin()->begin();
+  insertRtnCall(getInstructionAddr(0, First), First);
+  if (ignore_recursively) insertIgnoreInc(First);
+  for (Function::iterator BB = F->begin(), E = F->end(); BB != E; ++BB) {
+    for (BasicBlock::iterator BI = BB->begin(), BE = BB->end();
+         BI != BE;
+         ++BI) {
+      if (isa<ReturnInst>(BI)) {
+        if (ignore_recursively) insertIgnoreDec(BI);
+        insertRtnExit(BI);
+      }
+    }
+  }
+}
+
 // virtual
 bool TsanOnlineInstrument::runOnModule(Module &M) {
   if (DoNothing) return true;
@@ -641,25 +745,26 @@ bool TsanOnlineInstrument::runOnModule(Module &M) {
   ModuleFunctionCount = 0;
   ModuleMopCount = 0;
   ModuleID = getModuleID(M);
-  LLVMContext &Context = M.getContext();
+  ThisModule = &M;
+  ThisModuleContext = &(M.getContext());
 
   AA = &getAnalysis<AliasAnalysis>();
 
   // Arch size dependent types.
   if (ArchSize == 64) {
-    UIntPtr = Type::getInt64PtrTy(Context);
-    PlatformInt = Type::getInt64Ty(Context);
-    ArithmeticPtr = Type::getInt64Ty(Context);
+    UIntPtr = Type::getInt64PtrTy(*ThisModuleContext);
+    PlatformInt = Type::getInt64Ty(*ThisModuleContext);
+    ArithmeticPtr = Type::getInt64Ty(*ThisModuleContext);
   } else {
-    UIntPtr = Type::getInt32PtrTy(Context);
-    PlatformInt = Type::getInt32Ty(Context);
-    ArithmeticPtr = Type::getInt32Ty(Context);
+    UIntPtr = Type::getInt32PtrTy(*ThisModuleContext);
+    PlatformInt = Type::getInt32Ty(*ThisModuleContext);
+    ArithmeticPtr = Type::getInt32Ty(*ThisModuleContext);
   }
 
-  Int8 = Type::getInt8Ty(Context);
-  Int8Ptr = Type::getInt8PtrTy(Context);
-  Int32 = Type::getInt32Ty(Context);
-  Void = Type::getVoidTy(Context);
+  Int8 = Type::getInt8Ty(*ThisModuleContext);
+  Int8Ptr = Type::getInt8PtrTy(*ThisModuleContext);
+  Int32 = Type::getInt32Ty(*ThisModuleContext);
+  Void = Type::getVoidTy(*ThisModuleContext);
 
   // MopType represents the following class declared in ts_trace_info.h:
   // struct MopInfo {
@@ -667,7 +772,7 @@ bool TsanOnlineInstrument::runOnModule(Module &M) {
   //   uint32_t  size;
   //   bool      is_write;
   // };
-  MopType = StructType::get(Context, PlatformInt, Int32, Int8, NULL);
+  MopType = StructType::get(*ThisModuleContext, PlatformInt, Int32, Int8, NULL);
 
   MopArrayType = ArrayType::get(MopType, kTLEBSize);
   LiteRaceCountersArrayType = ArrayType::get(Int32, kLiteRaceNumTids);
@@ -677,7 +782,7 @@ bool TsanOnlineInstrument::runOnModule(Module &M) {
   //   uint32_t counter;
   //   int32_t num_to_skip;
   // };
-  LiteRaceCountersType = StructType::get(Context,
+  LiteRaceCountersType = StructType::get(*ThisModuleContext,
                                          Int32, Int32, NULL);
   LiteRaceStorageLineType =
       ArrayType::get(LiteRaceCountersType,
@@ -699,7 +804,7 @@ bool TsanOnlineInstrument::runOnModule(Module &M) {
   //   int32_t literace_num_to_skip[kLiteRaceNumTids];
   //   MopInfo mops_[1];
   // };
-  TraceInfoType = StructType::get(Context,
+  TraceInfoType = StructType::get(*ThisModuleContext,
                                 PlatformInt, PlatformInt,
                                 PlatformInt,
                                 MopArrayType,
@@ -717,7 +822,7 @@ bool TsanOnlineInstrument::runOnModule(Module &M) {
   //   uintptr_t pcs_[kMaxCallStackSize];
   // };
   CallStackArrayType = ArrayType::get(PlatformInt, kMaxCallStackSize);
-  CallStackType = StructType::get(Context,
+  CallStackType = StructType::get(*ThisModuleContext,
                                   UIntPtr,
                                   CallStackArrayType,
                                   NULL);
@@ -819,11 +924,6 @@ bool TsanOnlineInstrument::runOnModule(Module &M) {
         if (isa<LoadInst>(BI) || isa<StoreInst>(BI)) {
           need_split = true;
         }
-/*          }
-      for (BasicBlock::iterator BI = BB->begin(), BE = BB->end();
-           BI != BE;
-           ++BI) {
-           */
         // An INVOKE is treated as CALL, not as a regular terminator.
         // TODO(glider): this should be fixed once we support exceptions.
         if (isa<TerminatorInst>(BI) && !(isa<InvokeInst>(BI))) {
@@ -873,62 +973,7 @@ bool TsanOnlineInstrument::runOnModule(Module &M) {
   }
 
   for (Module::iterator F = M.begin(), E = M.end(); F != E; ++F) {
-    ModuleFunctionCount++;
-    FunctionMopCount = 0;
-    bool first_dtor_bb = false;
-    bool ignore_recursively = false;
-
-    if (F->isDeclaration()) continue;
-    if (shouldIgnoreFunction(*F)) continue;
-
-    if (!shouldIgnoreFunctionRecursively(*F)) {
-      // We shouldn't ignore the function -- instrument it.
-
-      // TODO(glider): document this.
-      // I even can't remember why in the world we do skip new/delete.
-      // Probably should be removed.
-      if ((F->getName()).find("_Znw") != string::npos) {
-        continue;
-      }
-      if ((F->getName()).find("_Zdl") != string::npos) {
-        continue;
-      }
-      if (isDtor(F->getNameStr())) first_dtor_bb = WorkaroundVptrRace;
-
-      instrumentation_stats.newFunction();
-      instrumentation_stats.newBasicBlocks(F->size());
-#ifdef DEBUG_TRACES
-      errs() << "\n\nFUNCTION: " << F->getName() << "\n";
-      F->dump();
-#endif
-      // Instrument the traces.
-      TraceVector traces(buildTraces(*F));
-      for (int i = 0; i < traces.size(); ++i) {
-        assert(traces[i]->exits.size());
-        runOnTrace(M, *(traces[i]), first_dtor_bb);
-        first_dtor_bb = false;
-      }
-    } else {
-      // Ignore the memory operations in the function.
-      ignore_recursively = true;
-    }
-
-    // Instrument routine calls and exits.
-    // insertRtnExit() uses the shadow stack size obtained by
-    // insertRtnCall() and should be always executed after it.
-    BasicBlock::iterator First = F->begin()->begin();
-    insertRtnCall(getInstructionAddr(0, First), First);
-    if (ignore_recursively) insertIgnoreInc(First);
-    for (Function::iterator BB = F->begin(), E = F->end(); BB != E; ++BB) {
-      for (BasicBlock::iterator BI = BB->begin(), BE = BB->end();
-           BI != BE;
-           ++BI) {
-        if (isa<ReturnInst>(BI)) {
-          if (ignore_recursively) insertIgnoreDec(BI);
-          insertRtnExit(BI);
-        }
-      }
-    }
+    runOnFunction(F);
   }
   writeModuleDebugInfo(M);
   if (PrintStats) instrumentation_stats.printStats();
@@ -1117,20 +1162,18 @@ void TsanOnlineInstrument::insertFlushCurrentCall(Trace &trace,
   }
 }
 
-void TsanOnlineInstrument::runOnTrace(Module &M,
-                                      Trace &trace,
+void TsanOnlineInstrument::runOnTrace(Trace &trace,
                                       bool first_dtor_bb) {
   TLEBIndex = 0;
 //      instrumentation_stats.newTrace();
-  markMopsToInstrument(M, trace);
-  bool have_passport = makeTracePassport(M, trace);
+  bool have_passport = makeTracePassport(trace);
   if (have_passport) {
     // Instrument memory operations and function calls.
     instrumentation_stats.newTrace();
     for (BlockSet::iterator TI = trace.blocks.begin(),
                             TE = trace.blocks.end();
          TI != TE; ++TI) {
-      runOnBasicBlock(M, *TI, first_dtor_bb, trace);
+      runOnBasicBlock(*TI, first_dtor_bb, trace);
       first_dtor_bb = false;
     }
     // If a trace has a passport, we should be able to insert a flush call
@@ -1205,7 +1248,7 @@ int TsanOnlineInstrument::getMopPtrSize(Value *mopPtr, bool isStore) {
   return result;
 }
 
-void TsanOnlineInstrument::markMopsToInstrument(Module &M, Trace &trace) {
+void TsanOnlineInstrument::markMopsToInstrument(Trace &trace) {
   bool isStore, isMop;
   int size;
   // Map from AA location into access size.
@@ -1335,9 +1378,10 @@ void TsanOnlineInstrument::markMopsToInstrument(Module &M, Trace &trace) {
       }
     }
   }
+  trace.num_mops = trace.to_instrument.size();
 }
 
-bool TsanOnlineInstrument::makeTracePassport(Module &M, Trace &trace) {
+bool TsanOnlineInstrument::makeTracePassport(Trace &trace) {
   Passport passport;
   bool isStore, isMop;
   int size, src_size, dest_size;
@@ -1404,7 +1448,7 @@ bool TsanOnlineInstrument::makeTracePassport(Module &M, Trace &trace) {
                       ConstantStruct::get(LiteRaceCountersType,
                                           counters)))));
       LiteRaceStorageGlob = new GlobalVariable(
-        M,
+        *ThisModule,
         LiteRaceStorageType,
         /*isConstant*/false,
         GlobalValue::InternalLinkage,
@@ -1418,8 +1462,7 @@ bool TsanOnlineInstrument::makeTracePassport(Module &M, Trace &trace) {
     }
 
     TracePassportType = ArrayType::get(MopType, TraceNumMops);
-    LLVMContext &Context = M.getContext();
-    BBTraceInfoType = StructType::get(Context,
+    BBTraceInfoType = StructType::get(*ThisModuleContext,
                                 PlatformInt, PlatformInt,
                                 PlatformInt,
                                 LiteRaceCountersArrayType,
@@ -1458,7 +1501,7 @@ bool TsanOnlineInstrument::makeTracePassport(Module &M, Trace &trace) {
     trace_info.push_back(ConstantArray::get(TracePassportType, passport));
 
     TracePassportGlob = new GlobalVariable(
-        M,
+        *ThisModule,
         BBTraceInfoType,
         /*isConstant*/true,
         GlobalValue::InternalLinkage,
@@ -1582,7 +1625,7 @@ void TsanOnlineInstrument::instrumentCall(BasicBlock::iterator &BI) {
 }
 
 // This method is ran only for basic blocks to be instrumented.
-void TsanOnlineInstrument::runOnBasicBlock(Module &M, BasicBlock *BB,
+void TsanOnlineInstrument::runOnBasicBlock(BasicBlock *BB,
                                            bool first_dtor_bb,
                                            Trace &trace) {
   instrumentation_stats.newInstrumentedBasicBlock();
