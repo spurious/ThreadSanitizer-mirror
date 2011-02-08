@@ -2321,6 +2321,8 @@ void AddWrappersDbgInfo() {
   WRAPPER_DBG_INFO(__wrap__ZdaPvRKSt9nothrow_t);
 
   WRAPPER_DBG_INFO(atexit_callback);
+  WRAPPER_DBG_INFO(strcpy);
+  WRAPPER_DBG_INFO(strncmp);
 }
 
 void ReadElf() {
