@@ -501,8 +501,33 @@ bool initialize() {
   RTL_INIT = 1;
   ShadowStack.end_ = ShadowStack.pcs_;
   in_initialize = false;
-  SPut(THR_START, 0, (pc_t) &ShadowStack, 0, 0);
+  // Get the stack size and stack top for the current thread.
+  // TODO(glider): do something if pthread_getattr_np() is not supported.
+  pthread_attr_t attr;
+  size_t stack_size = 8 << 20;  // 8M
+  void *stack_top = NULL;
+  if (pthread_getattr_np(pthread_self(), &attr) == 0) {
+    pthread_attr_getstack(&attr, &stack_top, &stack_size);
+    pthread_attr_destroy(&attr);
+  }
 
+  for (int sig = 0; sig < NSIG; sig++) {
+    pending_signal_flags[sig] = false;
+  }
+  have_pending_signals = false;
+
+  SPut(THR_START, 0, (pc_t) &ShadowStack, 0, 0);
+  if (stack_top) {
+    // We don't intercept the mmap2 syscall that allocates thread stack, so pass
+    // the event to ThreadSanitizer manually.
+    // TODO(glider): technically our parent allocates the stack. Maybe this
+    // should be fixed and its tid should be passed in the MMAP event.
+    SPut(THR_STACK_TOP, 0, 0, (uintptr_t)stack_top, stack_size);
+  } else {
+    // Something's gone wrong. ThreadSanitizer will proceed, but if the stack
+    // is reused by another thread, false positives will be reported.
+    SPut(THR_STACK_TOP, 0, 0, (uintptr_t)&stack_size, stack_size);
+  }
   return true;
 }
 
@@ -658,12 +683,11 @@ void *pthread_callback(void *arg) {
     // the event to ThreadSanitizer manually.
     // TODO(glider): technically our parent allocates the stack. Maybe this
     // should be fixed and its tid should be passed in the MMAP event.
-    // TODO(glider): we don't need MMAP at all. Remove it.
-    SPut(MMAP, tid, pc, (uintptr_t)stack_top, stack_size);
     SPut(THR_STACK_TOP, tid, pc, (uintptr_t)stack_top, stack_size);
   } else {
     // Something's gone wrong. ThreadSanitizer will proceed, but if the stack
     // is reused by another thread, false positives will be reported.
+    // &result is the address of a stack allocated var.
     SPut(THR_STACK_TOP, tid, pc, (uintptr_t)&result, stack_size);
   }
   DDPrintf("Before routine() in T%d\n", tid);
