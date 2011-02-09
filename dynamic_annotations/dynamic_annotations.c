@@ -73,6 +73,10 @@ void DYNAMIC_ANNOTATIONS_NAME(AnnotateCondVarSignal)(
     const char *file, int line, const volatile void *cv){}
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateCondVarSignalAll)(
     const char *file, int line, const volatile void *cv){}
+void DYNAMIC_ANNOTATIONS_NAME(AnnotateHappensBefore)(
+    const char *file, int line, const volatile void *obj) {};
+void DYNAMIC_ANNOTATIONS_NAME(AnnotateHappensAfter)(
+    const char *file, int line, const volatile void *obj) {};
 void DYNAMIC_ANNOTATIONS_NAME(AnnotatePublishMemoryRange)(
     const char *file, int line, const volatile void *address, long size){}
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateUnpublishMemoryRange)(

@@ -2145,6 +2145,15 @@ static void On_AnnotateCondVarWait(THREADID tid, ADDRINT pc,
   DumpEvent(0, WAIT, tid, pc, obj, 0);
 }
 
+static void On_AnnotateHappensBefore(THREADID tid, ADDRINT pc,
+                                     ADDRINT file, ADDRINT line, ADDRINT obj) {
+  DumpEvent(0, SIGNAL, tid, pc, obj, 0);
+}
+
+static void On_AnnotateHappensAfter(THREADID tid, ADDRINT pc,
+                                    ADDRINT file, ADDRINT line, ADDRINT obj) {
+  DumpEvent(0, WAIT, tid, pc, obj, 0);
+}
 
 static void On_AnnotateEnableRaceDetection(THREADID tid, ADDRINT pc,
                                         ADDRINT file, ADDRINT line,
@@ -3120,6 +3129,8 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_BEFORE_3("AnnotateCondVarWait", On_AnnotateCondVarWait);
   INSERT_BEFORE_3("AnnotateCondVarSignal", On_AnnotateCondVarSignal);
   INSERT_BEFORE_3("AnnotateCondVarSignalAll", On_AnnotateCondVarSignal);
+  INSERT_BEFORE_3("AnnotateHappensBefore", On_AnnotateHappensBefore);
+  INSERT_BEFORE_3("AnnotateHappensAfter", On_AnnotateHappensAfter);
 
   INSERT_BEFORE_3("AnnotateEnableRaceDetection", On_AnnotateEnableRaceDetection);
   INSERT_BEFORE_0("AnnotateIgnoreReadsBegin", On_AnnotateIgnoreReadsBegin);

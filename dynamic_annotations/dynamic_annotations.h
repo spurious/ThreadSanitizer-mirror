@@ -143,8 +143,10 @@
     DYNAMIC_ANNOTATIONS_NAME(AnnotateCondVarSignalAll)(__FILE__, __LINE__, cv)
 
   /* Annotations for user-defined synchronization mechanisms. */
-  #define ANNOTATE_HAPPENS_BEFORE(obj) ANNOTATE_CONDVAR_SIGNAL(obj)
-  #define ANNOTATE_HAPPENS_AFTER(obj)  ANNOTATE_CONDVAR_WAIT(obj)
+  #define ANNOTATE_HAPPENS_BEFORE(obj) \
+    DYNAMIC_ANNOTATIONS_NAME(AnnotateHappensBefore)(__FILE__, __LINE__, obj)
+  #define ANNOTATE_HAPPENS_AFTER(obj) \
+    DYNAMIC_ANNOTATIONS_NAME(AnnotateHappensAfter)(__FILE__, __LINE__, obj)
 
   /* DEPRECATED. Don't use it. */
   #define ANNOTATE_PUBLISH_MEMORY_RANGE(pointer, size) \
@@ -461,6 +463,12 @@ void DYNAMIC_ANNOTATIONS_NAME(AnnotateCondVarSignal)(
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateCondVarSignalAll)(
     const char *file, int line,
     const volatile void *cv) DYNAMIC_ANNOTATIONS_ATTRIBUTE_WEAK;
+void DYNAMIC_ANNOTATIONS_NAME(AnnotateHappensBefore)(
+    const char *file, int line,
+    const volatile void *obj) DYNAMIC_ANNOTATIONS_ATTRIBUTE_WEAK;
+void DYNAMIC_ANNOTATIONS_NAME(AnnotateHappensAfter)(
+    const char *file, int line,
+    const volatile void *obj) DYNAMIC_ANNOTATIONS_ATTRIBUTE_WEAK;
 void DYNAMIC_ANNOTATIONS_NAME(AnnotatePublishMemoryRange)(
     const char *file, int line,
     const volatile void *address, long size) DYNAMIC_ANNOTATIONS_ATTRIBUTE_WEAK;

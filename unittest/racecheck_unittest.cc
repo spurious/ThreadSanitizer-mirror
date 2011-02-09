@@ -3528,12 +3528,12 @@ struct RefCountedClass {
     ref_--;
     bool do_delete = ref_ == 0;
     if (annotate_unref_) {
-      ANNOTATE_CONDVAR_SIGNAL(this);
+      ANNOTATE_HAPPENS_BEFORE(this);
     }
     MU.Unlock();
     if (do_delete) {
       if (annotate_unref_) {
-        ANNOTATE_CONDVAR_WAIT(this);
+        ANNOTATE_HAPPENS_AFTER(this);
       }
       delete this;
     }
@@ -3717,9 +3717,9 @@ struct AtomicRefCountedClass {
     // But this implementation of reference counting is enough for
     // the purpose of Helgrind demonstration.
     AtomicIncrement(&ref_, -1);
-    if (annotate_unref_) { ANNOTATE_CONDVAR_SIGNAL(this); }
+    if (annotate_unref_) { ANNOTATE_HAPPENS_BEFORE(this); }
     if (ref_ == 0) {
-      if (annotate_unref_) { ANNOTATE_CONDVAR_WAIT(this); }
+      if (annotate_unref_) { ANNOTATE_HAPPENS_AFTER(this); }
       delete this;
     }
   }
@@ -6956,10 +6956,10 @@ int DecRef() {
 
 // Correct and friendly to race detectors.
 int DecRefAnnotated() {
-  ANNOTATE_CONDVAR_SIGNAL(&ref_count);
+  ANNOTATE_HAPPENS_BEFORE(&ref_count);
   int res = AtomicIncrement(&ref_count, -1);
   if (res == 0) {
-    ANNOTATE_CONDVAR_WAIT(&ref_count);
+    ANNOTATE_HAPPENS_AFTER(&ref_count);
   }
   return res;
 }

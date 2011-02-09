@@ -2453,6 +2453,19 @@ ANN_FUNC(void, AnnotateCondVarSignalAll, const char *file, int line, void *cv)
   DO_CREQ_v_W(TSREQ_SIGNAL, void*,cv);
 }
 
+ANN_FUNC(void, AnnotateHappensBefore, const char *file, int line, void *obj)
+{
+  const char *name = "AnnotateHappensBefore";
+  ANN_TRACE("--#%d %s[%p] %s:%d\n", tid, name, obj, file, line);
+  DO_CREQ_v_W(TSREQ_SIGNAL, void*, obj);
+}
+
+ANN_FUNC(void, AnnotateHappensAfter, const char *file, int line, void *obj)
+{
+  const char *name = "AnnotateHappensAfter";
+  ANN_TRACE("--#%d %s[%p] %s:%d\n", tid, name, obj, file, line);
+  do_wait(obj);
+}
 
 ANN_FUNC(void, AnnotatePCQCreate, const char *file, int line, void *pcq)
 {
