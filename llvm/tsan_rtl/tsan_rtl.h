@@ -30,6 +30,15 @@
 #define CHECK_IN_RTL()
 #endif
 
+#define ENTER_RTL() do { \
+  IN_RTL++; \
+  CHECK_IN_RTL(); \
+} while (0)
+
+#define LEAVE_RTL() do { \
+  IN_RTL--; \
+  CHECK_IN_RTL(); \
+} while (0)
 
 int unsafe_clear_pending_signals();
 
