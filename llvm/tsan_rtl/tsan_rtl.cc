@@ -1013,7 +1013,7 @@ extern "C" void *__libc_realloc(void *ptr, size_t size);
 // Wrap malloc() from libc.
 extern "C"
 void *malloc(size_t size) {
-  if (IN_RTL || !RTL_INIT) return __libc_malloc(size);
+  if (IN_RTL || !RTL_INIT || !INIT) return __libc_malloc(size);
   GIL scoped;
   FLUSH_TRACE();
   IN_RTL++;
@@ -1053,7 +1053,7 @@ void __wrap_free(void *ptr) {
 
 extern "C"
 void free(void *ptr) {
-  if (IN_RTL || !RTL_INIT) return __libc_free(ptr);
+  if (IN_RTL || !RTL_INIT || !INIT) return __libc_free(ptr);
   GIL scoped;
   FLUSH_TRACE();
   IN_RTL++;
@@ -1094,7 +1094,7 @@ void *__wrap_realloc(void *ptr, size_t size) {
 
 extern "C"
 void *realloc(void *ptr, size_t size) {
-  if (IN_RTL || !RTL_INIT) return __libc_realloc(ptr, size);
+  if (IN_RTL || !RTL_INIT || !INIT) return __libc_realloc(ptr, size);
   GIL scoped;
   FLUSH_TRACE();
   void *result;
@@ -2145,7 +2145,6 @@ int __wrap_sigaction(int signum, const struct sigaction *act,
 // instrumentation API {{{1
 extern "C"
 void rtn_call(void *addr) {
-  if (!RTL_INIT) return;
   // TODO(glider): this is unnecessary if we flush before each call/invoke
   // insn.
   *ShadowStack.end_ = (uintptr_t)addr;
@@ -2156,7 +2155,6 @@ void rtn_call(void *addr) {
 
 extern "C"
 void rtn_exit() {
-  if (!RTL_INIT) return;
   DCHECK(ShadowStack.end_ > ShadowStack.pcs_);
   DCHECK((size_t)(ShadowStack.end_ - ShadowStack.pcs_) < kMaxCallStackSize);
   ShadowStack.end_--;
