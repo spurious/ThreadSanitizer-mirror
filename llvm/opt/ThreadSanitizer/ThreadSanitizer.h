@@ -2,6 +2,7 @@
 // Author: glider@google.com (Alexander Potapenko)
 
 #include "llvm/Analysis/AliasAnalysis.h"
+#include "llvm/Analysis/DebugInfo.h"
 #include "llvm/Constants.h"
 #include "llvm/Instructions.h"
 #include "llvm/Module.h"
@@ -84,8 +85,9 @@ struct TsanOnlineInstrument : public llvm::ModulePass { // {{{1
   llvm::Constant *getInstructionAddr(int mop_index,
                                      llvm::BasicBlock::iterator &cur_inst);
   void parseIgnoreFile(std::string &file);
+  llvm::DILocation getTopInlinedLocation(llvm::BasicBlock::iterator &BI);
   void dumpInstructionDebugInfo(llvm::Constant *addr,
-                                llvm::BasicBlock::iterator BI);
+                                llvm::BasicBlock::iterator &BI);
   uintptr_t getModuleID(llvm::Module &M);
   bool isDtor(const std::string &mangled_name);
   void writeModuleDebugInfo(llvm::Module &M);

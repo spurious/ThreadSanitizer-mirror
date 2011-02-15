@@ -34,7 +34,7 @@ using namespace std;
 //#define DEBUG 1
 //#define DEBUG_TRACES 1
 //#define DEBUG_CYCLES 1
-//#define DEBUG_DEBUG_INFO 1
+#define DEBUG_DEBUG_INFO 1
 
 // Command-line flags. {{{1
 static cl::opt<string>
@@ -129,11 +129,13 @@ TsanOnlineInstrument::TsanOnlineInstrument() : ModulePass(&ID) {
 Constant *TsanOnlineInstrument::getInstructionAddr(
     int mop_index, BasicBlock::iterator &cur_inst) {
   Value *cur_fun = cur_inst->getParent()->getParent();
-  Constant *c_offset = ConstantInt::get(PlatformInt, mop_index);
+  Constant *c_offset = ConstantInt::get(PlatformInt, mop_index +
+                                        cur_fun->getNameStr().size());
   Constant *result =
       ConstantExpr::getAdd(
           ConstantExpr::getPtrToInt(cast<Constant>(cur_fun), PlatformInt),
           c_offset);
+  errs() << "#" << cur_fun->getNameStr() << " + " << mop_index << ":\n";
   dumpInstructionDebugInfo(result, cur_inst);
   return result;
 }
@@ -1201,21 +1203,37 @@ void TsanOnlineInstrument::runOnTrace(Trace &trace,
   }
 }
 
-void TsanOnlineInstrument::dumpInstructionDebugInfo(Constant *addr,
-                                                    BasicBlock::iterator BI) {
+// Find the topmost location of the instruction in the inline stack.
+DILocation TsanOnlineInstrument::getTopInlinedLocation(
+    BasicBlock::iterator &BI) {
   DILocation Loc(BI->getMetadata("dbg"));
+  while (true) {
+    DILocation Orig(Loc.getOrigLocation());
+    if (Orig.getNode() != NULL) {
+      Loc = Orig;
+    } else {
+      break;
+    }
+  }
+  return Loc;
+}
+
+void TsanOnlineInstrument::dumpInstructionDebugInfo(Constant *addr,
+                                                    BasicBlock::iterator &BI) {
+  DILocation Loc = getTopInlinedLocation(BI);
   BasicBlock::iterator OldBI = BI;
   if (!Loc.getLineNumber()) {
     for (BasicBlock::iterator BE = BI->getParent()->end();
          BI != BE; ++BI) {
-        Loc = DILocation(BI->getMetadata("dbg"));
+        Loc = getTopInlinedLocation(BI);
         if (Loc.getLineNumber()) break;
     }
   }
   if (!Loc.getLineNumber()) {
     BI = OldBI;
-    Loc = DILocation(OldBI->getMetadata("dbg"));
+    Loc = getTopInlinedLocation(BI);
   }
+
   string file = Loc.getFilename();
   string dir = Loc.getDirectory();
   string symbol = BI->getParent()->getParent()->getNameStr();
