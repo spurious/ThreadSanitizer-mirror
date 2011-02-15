@@ -17,6 +17,21 @@
 extern bool global_ignore;
 
 // dynamic_annotations {{{1
+
+extern "C"
+void DYNAMIC_ANNOTATIONS_NAME(AnnotateHappensBefore)(const char *file, int line,
+                                                     const volatile void *cv) {
+  DECLARE_TID_AND_PC();
+  ExSPut(SIGNAL, tid, pc, (uintptr_t)cv, 0);
+}
+
+extern "C"
+void DYNAMIC_ANNOTATIONS_NAME(AnnotateHappensAfter)(const char *file, int line,
+                                                    const volatile void *cv) {
+  DECLARE_TID_AND_PC();
+  ExSPut(WAIT, tid, pc, (uintptr_t)cv, 0);
+}
+
 extern "C"
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateCondVarSignal)(const char *file, int line,
                                                      const volatile void *cv) {
