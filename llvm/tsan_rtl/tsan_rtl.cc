@@ -2274,7 +2274,13 @@ void ReadDbgInfoFromSection(char* start, char* end) {
       // function, but do not update the debug info (it may be different).
       // TODO(glider): generate more correct debug info.
       if ((*debug_info).find(pcs[i].pc) != (*debug_info).end()) {
-        CHECK((*debug_info)[pcs[i].pc].symbol == symbols[pcs[i].symbol]);
+        if ((*debug_info)[pcs[i].pc].symbol != symbols[pcs[i].symbol]) {
+          Printf("ERROR: conflicting symbols for pc %p:\n  %s\n  %s\n",
+                 pcs[i].pc,
+                 (*debug_info)[pcs[i].pc].symbol.c_str(),
+                 symbols[pcs[i].symbol].c_str());
+///          CHECK(false);
+        }
       } else {
         (*debug_info)[pcs[i].pc].pc = pcs[i].pc;
         (*debug_info)[pcs[i].pc].symbol = symbols[pcs[i].symbol];
