@@ -43,6 +43,7 @@
 #endif
 
 extern bool global_ignore;
+bool FORKED_CHILD = false;  // if true, cannot access other threads' TLS
 __thread int thread_local_ignore;
 __thread bool thread_local_show_stats;
 __thread int thread_local_literace;
@@ -167,7 +168,6 @@ __thread int gil_depth = 0;
 
 // Reentrancy counter {{{1
 __thread int IN_RTL = 0;
-
 // }}}
 
 
@@ -629,7 +629,6 @@ void set_global_ignore(bool new_value) {
     *(iter->second->thread_local_ignore) += add;
   }
 }
-
 
 void *pthread_callback(void *arg) {
   GIL::Lock();
@@ -1990,10 +1989,33 @@ void __wrap_exit(int status) {
 extern "C"
 pid_t __wrap_fork() {
   FLUSH_TRACE();
+  GIL scoped;
   pid_t result;
   IN_RTL++;
   CHECK_IN_RTL();
+  Printf("Before fork() in process %d\n", getpid());
   result = __real_fork();
+  Printf("After fork() in process %d\n", getpid());
+  if (result == 0) {
+    // Ignore all accesses in the child process. If someone is flushing the
+    // TLEB in a thread under TSLock, and we're doing fork() in another thread,
+    // then TSLock will remain locked forever in the child process, and trying
+    // to analyze further memory accesses will cause a deadlock.
+    // If someone is trying to take locks or spawn more threads in the child
+    // process, he's very likely to have problems already -- let's not bother
+    // him with race reports.
+
+    thread_local_ignore = 1;
+    // Haha, all our resources that address the TLS of other threads are valid
+    // no more!
+    FORKED_CHILD = true;
+    // TODO(glider): check for FORKED_CHILD every time we access someone's TLS.
+
+    // We also keep IN_RTL > 0 to avoid other threads taking GIL for the same
+    // reason.
+    return result;
+  }
+  // Falling through to the parent process.
   IN_RTL--;
   CHECK_IN_RTL();
   return result;
