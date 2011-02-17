@@ -2040,6 +2040,9 @@ pid_t __wrap_fork() {
     // process, he's very likely to have problems already -- let's not bother
     // him with race reports.
 
+    // TODO(glider): Chrome does this often. Maybe it's better to re-initialize
+    // ThreadSanitizer and some RTL parts upon fork().
+
     thread_local_ignore = 1;
     // Haha, all our resources that address the TLS of other threads are valid
     // no more!
@@ -2139,7 +2142,7 @@ INLINE int unsafe_clear_pending_signals() {
   int result = 0;
   for (int sig = 0; sig < NSIG; sig++) {
     if (pending_signal_flags[sig]) {
-      DPrintf("[T%d] Pending signal: %d\n", GetTid(), sig);
+      DDPrintf("[T%d] Pending signal: %d\n", GetTid(), sig);
       sigfillset(&glob_sig_blocked);
       pthread_sigmask(SIG_BLOCK, &glob_sig_blocked, &glob_sig_old);
       pending_signal_flags[sig] = false;
