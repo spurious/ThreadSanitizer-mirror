@@ -129,8 +129,7 @@ TsanOnlineInstrument::TsanOnlineInstrument() : ModulePass(&ID) {
 Constant *TsanOnlineInstrument::getInstructionAddr(
     int mop_index, BasicBlock::iterator &cur_inst) {
   Value *cur_fun = cur_inst->getParent()->getParent();
-  Constant *c_offset = ConstantInt::get(PlatformInt, mop_index +
-                                        cur_fun->getNameStr().size());
+  Constant *c_offset = ConstantInt::get(PlatformInt, mop_index);
   Constant *result =
       ConstantExpr::getAdd(
           ConstantExpr::getPtrToInt(cast<Constant>(cur_fun), PlatformInt),
