@@ -7,6 +7,9 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 
+#include <asm/prctl.h>
+#include <sys/prctl.h>
+
 #include <map>
 #include <vector>
 
@@ -41,6 +44,8 @@
 # define DPrintf(params...)
 # define DEBUG_DO(code)
 #endif
+
+int static_tls_size;
 
 extern bool global_ignore;
 bool FORKED_CHILD = false;  // if true, cannot access other threads' TLS
@@ -458,6 +463,33 @@ INLINE void init_debug() {
 
 bool in_initialize = false;
 
+// TODO(glider): maybe use inline assembly instead?
+extern "C" int arch_prctl(int code, unsigned long *addr);
+
+// Tell the tool about the static TLS location. We assume that GIL is taken
+// already.
+// TODO(glider): handle the dynamic TLS.
+void unsafeMapTls(tid_t tid, pc_t pc) {
+  // According to "ELF Handling For Thread-Local Storage"
+  // (http://www.akkadia.org/drepper/tls.pdf),
+  // the static thread-local storage for x86 and x86-64 is located before the
+  // TCB (stored in %gs or %fs, respectively). Its size is equal to the total
+  // size of .tbss and .tdata sections of the binary.
+  // We notify ThreadSanitizer about the static TLS location each time a new
+  // thread is started to prevent false positives on reused TLS.
+  // The TLS may be not contained in the thread stack, so clearing the stack is
+  // not enough.
+  unsigned long tsd;
+#ifdef TSAN_RTL_X86
+  arch_prctl(ARCH_GET_GS, &tsd);
+#endif
+#ifdef TSAN_RTL_X64
+  arch_prctl(ARCH_GET_FS, &tsd);
+#endif
+  unsigned long low = (tsd - static_tls_size);
+  SPut(MMAP, tid, pc, low, static_tls_size);
+}
+
 bool initialize() {
   if (in_initialize) return false;
   if (RTL_INIT == 1) return true;
@@ -528,6 +560,7 @@ bool initialize() {
     // is reused by another thread, false positives will be reported.
     SPut(THR_STACK_TOP, 0, 0, (uintptr_t)&stack_size, stack_size);
   }
+  unsafeMapTls(0, 0);
   return true;
 }
 
@@ -683,12 +716,14 @@ void *pthread_callback(void *arg) {
     // TODO(glider): technically our parent allocates the stack. Maybe this
     // should be fixed and its tid should be passed in the MMAP event.
     SPut(THR_STACK_TOP, tid, pc, (uintptr_t)stack_top, stack_size);
+//    SPut(MMAP, tid, pc, (uintptr_t)(stack_top) - stack_size, stack_size);
   } else {
     // Something's gone wrong. ThreadSanitizer will proceed, but if the stack
     // is reused by another thread, false positives will be reported.
     // &result is the address of a stack allocated var.
     SPut(THR_STACK_TOP, tid, pc, (uintptr_t)&result, stack_size);
   }
+  unsafeMapTls(tid, pc);
   DDPrintf("Before routine() in T%d\n", tid);
 
   Finished[tid] = false;
@@ -2474,6 +2509,9 @@ void ReadElf() {
 
   char* debug_info_section = NULL;
   size_t debug_info_size = 0;
+  // As per csu/libc-tls.c, static TLS block has some surplus bytes beyond the
+  // size of .tdata and .tbss.
+  static_tls_size = 2048;
 
   IN_RTL++;
   CHECK_IN_RTL();
@@ -2482,11 +2520,19 @@ void ReadElf() {
     Elf_Off off = shdr->sh_offset;
     Elf_Word name = shdr->sh_name;
     Elf_Word size = shdr->sh_size;
+    Elf_Word flags = shdr->sh_flags;
     DDPrintf("Section name: %d, %s\n", name, hdr_strings + name);
     if (strcmp(hdr_strings + name, "tsan_rtl_debug_info") == 0) {
       debug_info_section = map + off;
       debug_info_size = size;
-      break;
+      continue;
+    }
+    if (flags && SHF_TLS) {
+      if ((strcmp(hdr_strings + name, ".tbss") == 0) ||
+          (strcmp(hdr_strings + name, ".tdata") == 0)) {
+        static_tls_size += size;
+        continue;
+      }
     }
   }
   IN_RTL--;
