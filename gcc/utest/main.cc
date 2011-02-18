@@ -1,4 +1,4 @@
-
+/*
 #include <pthread.h>
 #include <stdio.h>
 
@@ -127,30 +127,44 @@ int main()
         }
         printf("\n");
     }
-}
 
-
-
-/*
-#include <vector>
-
-
-struct X
-{
-  X(int x) {}
-};
-
-X* g_array [10];
-
-int count = 10;
-
-int main() {
-  std::vector<int> local_arr (count);
-
-  for (int i = 0; i < count; i++)
-    g_array[i] = new X (count);
+    return 0;
 }
 */
+
+
+
+typedef struct debug_info_t {
+  char const*                   file;
+  int                           line;
+  int                           pos;
+} debug_info_t;
+
+
+typedef struct static_func_desc_t {
+  int                           call_count;
+  debug_info_t const*           calls;
+  int                           mop_count;
+  debug_info_t const*           mops;
+} static_func_desc_t;
+
+static debug_info_t relite_calls [] = {
+    {"aaaaa", 1, 1},
+    {"bbbbb", 2, 2},
+};
+
+static debug_info_t relite_mops [] = {
+    {"ccccc", 1, 1},
+    {"ddddd", 2, 2},
+};
+
+static static_func_desc_t relite_func_desc = {
+    888, relite_calls, 999, relite_mops
+};
+
+
+int main() {
+}
 
 
 

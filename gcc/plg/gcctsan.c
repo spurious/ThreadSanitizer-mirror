@@ -20,8 +20,9 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-#define GCCTSAN_PAUSE
-#define GCCTSAN_DUMP
+//#define GCCTSAN_PAUSE
+//#define GCCTSAN_DUMP
+#define RELITE_INSTRUMENT_FUNCTIONS
 
 
 #ifdef GCCTSAN_DUMP
@@ -412,11 +413,12 @@ static void instrument(gimple_stmt_iterator* gsi) {
     tree lhs = gimple_call_lhs(stmt);
     if (lhs != 0)
       process_store(&loc, gsi, lhs);
-  } /* else if (gimple_code(stmt) == GIMPLE_RETURN) {
-    gimple cleanup = gimple_build_call(gcctsan_leave, 0);
-    gsi_insert_before(gsi, cleanup, GSI_SAME_STMT);
+#ifdef RELITE_INSTRUMENT_FUNCTIONS
+  } else if (gimple_code(stmt) == GIMPLE_RETURN) {
+    gimple func_leave = gimple_build_call(rt_func(rt_leave), 0);
+    gsi_insert_before(gsi, func_leave, GSI_SAME_STMT);
   }
-  */
+#endif
 }
 
 
@@ -442,18 +444,18 @@ static unsigned instrumentation_pass() {
   basic_block bb;
   gimple_stmt_iterator gsi;
 
-  //bool first = false;
+  bool first = false;
   FOR_EACH_BB (bb) {
     for (gsi = gsi_start_bb (bb); !gsi_end_p (gsi); gsi_next (&gsi)) {
-      /*
       if (first == false) {
         first = true;
+#ifdef RELITE_INSTRUMENT_FUNCTIONS
         tree func_ptr = build1(ADDR_EXPR, build_pointer_type(TREE_TYPE(cfun->decl)), cfun->decl);
         func_ptr = convert(ptr_type_node, func_ptr);
-        gimple collect = gimple_build_call(gcctsan_enter, 1, func_ptr);
+        gimple collect = gimple_build_call(rt_func(rt_enter), 1, func_ptr);
         gsi_insert_before(&gsi, collect, GSI_SAME_STMT);
+#endif
       }
-      */
       instrument(&gsi);
     }
   }
@@ -528,6 +530,9 @@ int plugin_init (struct plugin_name_args* info, struct plugin_gcc_version* ver) 
   if (!plugin_default_version_check (ver, &gcc_version))
   {
     DBG("invalid gcc version");
+
+    basever
+
     return 1;
   }
 

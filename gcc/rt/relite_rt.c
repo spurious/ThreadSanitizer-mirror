@@ -87,6 +87,41 @@ typedef struct rl_rt_sync_t {
 } rl_rt_sync_t;
 
 
+typedef struct debug_info_t {
+  char const*                   file;
+  int                           line;
+  int                           pos;
+} debug_info_t;
+
+
+typedef struct static_func_desc_t {
+  int                           call_count;
+  debug_info_t const*           calls;
+  int                           mop_count;
+  debug_info_t const*           mops;
+} static_func_desc_t;
+
+static debug_info_t relite_calls [] = {
+    {"a", 1, 1},
+    {"b", 2, 2},
+};
+
+static debug_info_t relite_mops [] = {
+    {"a", 1, 1},
+    {"b", 2, 2},
+};
+
+static static_func_desc_t relite_func_desc = {
+    2, relite_calls, 2, relite_mops
+};
+
+typedef struct dynamic_func_t {
+  struct static_func_desc_t*    desc;
+  struct dynamic_func_t*        parent;
+  void*                         children;
+} dynamic_func_t;
+
+
 static rl_rt_context_t          ctx;
 static __thread rl_rt_thread_t  thr;
 
