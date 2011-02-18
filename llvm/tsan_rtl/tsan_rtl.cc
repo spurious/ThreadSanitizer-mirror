@@ -7,8 +7,10 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 
+#ifdef TSAN_RTL_X64
 #include <asm/prctl.h>
 #include <sys/prctl.h>
+#endif
 
 #include <map>
 #include <vector>
@@ -463,8 +465,10 @@ INLINE void init_debug() {
 
 bool in_initialize = false;
 
+#ifdef TSAN_RTL_X64
 // TODO(glider): maybe use inline assembly instead?
 extern "C" int arch_prctl(int code, unsigned long *addr);
+#endif
 
 // Tell the tool about the static TLS location. We assume that GIL is taken
 // already.
@@ -479,15 +483,16 @@ void unsafeMapTls(tid_t tid, pc_t pc) {
   // thread is started to prevent false positives on reused TLS.
   // The TLS may be not contained in the thread stack, so clearing the stack is
   // not enough.
-  unsigned long tsd;
 #ifdef TSAN_RTL_X86
-  arch_prctl(ARCH_GET_GS, &tsd);
+  // TODO(glider): find the TSD address somehow. arch_prctl() is only available
+  // on x86-64.
 #endif
 #ifdef TSAN_RTL_X64
+  unsigned long tsd = 0;
   arch_prctl(ARCH_GET_FS, &tsd);
-#endif
   unsigned long low = (tsd - static_tls_size);
   SPut(MMAP, tid, pc, low, static_tls_size);
+#endif
 }
 
 bool initialize() {
