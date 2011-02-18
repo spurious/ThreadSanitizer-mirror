@@ -8,6 +8,7 @@
 #include <tm.h>
 #include <basic-block.h>
 #include <gimple.h>
+#include <tree-flow.h>
 #include <tree-pass.h>
 #include <diagnostic.h>
 #include <c-common.h>
@@ -19,16 +20,16 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-//#define GCCTSAN_PAUSE
-//#define GCCTSAN_DUMP
+#define GCCTSAN_PAUSE
+#define GCCTSAN_DUMP
 
 
 #ifdef GCCTSAN_DUMP
-# define DBG(...) ((void)(fprintf(stderr, "gcctsan: "), \
-    fprintf(stderr, __VA_ARGS__), \
-    fprintf(stderr, "\n")))
+# define DBG(...) ((void)(/*fprintf(stdout, "gcctsan: "),*/ \
+    fprintf(stdout, __VA_ARGS__), \
+    fprintf(stdout, "\n")))
 #else
-# define DBG(...) if (1) {} else fprintf(stderr, __VA_ARGS__)
+# define DBG(...) if (1) {} else fprintf(stdout, __VA_ARGS__)
 #endif
 
 
@@ -134,23 +135,10 @@ static void setup_builtin_declarations() {
 }
 
 
-static void dump_location(gimple stmt, tree expr, char const* what) {
-  if (gimple_has_location(stmt)) {
-    expanded_location loc = expand_location(gimple_location(stmt));
-    DBG("processing %s to '%s' at %d:%d:",
-        what, decl_name(expr), loc.line, loc.column);
-  } else {
-    DBG("processing %s to '%s' at <unknown>:",
-        what, decl_name(expr));
-  }
-}
-
-
-static void process_store(gimple_stmt_iterator* gsi, tree expr) {
-  gcc_assert(gsi != 0);
-  gcc_assert(expr != 0);
-  dump_location(gsi_stmt(*gsi), expr, "store");
-  stat_store += 1;
+static void process_store(expanded_location const* loc, gimple_stmt_iterator* gsi, tree expr) {
+  gcc_assert(loc != 0 && gsi != 0 && expr != 0);
+  int is_instrumented = 0;
+  char const* reason = "";
 
   tree expr_ssa = 0;
   if (TREE_CODE(expr) == SSA_NAME) {
@@ -160,66 +148,118 @@ static void process_store(gimple_stmt_iterator* gsi, tree expr) {
 
   switch (TREE_CODE(expr)) {
     case RESULT_DECL:
-      DBG("ignoring (function result)");
+      reason = "function result";
       break;
     case PARM_DECL:
-      DBG("ignoring (function parameter)");
+      reason = "function parameter";
       break;
+
+    case ARRAY_REF: {
+      tree array = TREE_OPERAND (expr, 0);
+      if (DECL_P(array) || TREE_CODE(array) == SSA_NAME) {
+        TREE_ADDRESSABLE(array) = 1;
+        TREE_USED(array) = 1;
+        if (TREE_CODE(array) == SSA_NAME) {
+          tree array_ssa = SSA_NAME_VAR(array);
+          TREE_ADDRESSABLE(array_ssa) = 1;
+          TREE_USED(array_ssa) = 1;
+        }
+      }
+
+      tree index = TREE_OPERAND (expr, 1);
+      if (DECL_P(index) || TREE_CODE(index) == SSA_NAME) {
+        TREE_USED(index) = 1;
+        if (TREE_CODE(index) == SSA_NAME) {
+          tree index_ssa = SSA_NAME_VAR(index);
+          TREE_USED(index_ssa) = 1;
+        }
+      }
+
+      if (DECL_P(expr)) {
+        TREE_USED(expr) = 1;
+        if (expr_ssa != 0) {
+          TREE_USED(expr_ssa) = 1;
+        }
+      }
+
+      is_instrumented = 1;
+      break;
+    }
 
     case VAR_DECL:
     //!!! case FIELD_DECL:
     //!!! case MEM_REF:
-    //!!! case ARRAY_REF:
     //!!! case ARRAY_RANGE_REF:
     //!!! case TARGET_MEM_REF:
     //!!! case ADDR_EXPR:
     case COMPONENT_REF:
-    case INDIRECT_REF:
-    case ARRAY_REF:
+    //case INDIRECT_REF:
+    //case ARRAY_REF:
     {
+      if (TREE_CODE(TREE_TYPE(expr)) == RECORD_TYPE) {
+        reason = "record type";
+        break;
+      }
+
       //if (TREE_USED(lhs) == 0) return;
-      if (DECL_ARTIFICIAL(expr)) {
-        DBG("ignoring (artificial)");
-        return;
+      if (DECL_ARTIFICIAL(expr) || (expr_ssa && DECL_ARTIFICIAL(expr_ssa))) {
+        reason = "artificial";
+        break;
       }
 
       if (TREE_CODE(expr) == VAR_DECL && TREE_ADDRESSABLE(expr) == 0) {
-        DBG("ignoring (non-addressable var)");
-        return;
+        reason = "non-addressable var";
+        break;
       }
 
-#if 1
-      assert(is_gimple_addressable(expr));
       TREE_ADDRESSABLE(expr) = 1;
       TREE_USED(expr) = 1;
       if (expr_ssa != 0) {
         TREE_ADDRESSABLE(expr_ssa) = 1;
         TREE_USED(expr_ssa) = 1;
+        add_referenced_var(expr_ssa);
       }
-      tree expr_ptr = build1(ADDR_EXPR, build_pointer_type(TREE_TYPE(expr)), expr);
-      expr_ptr = convert(ptr_type_node, expr_ptr);
-      gimple collect = gimple_build_call(rt_func(rt_store), 1, expr_ptr);
-      gsi_insert_after(gsi, collect, GSI_NEW_STMT);
-      //gsi_insert_before(gsi, collect, GSI_SAME_STMT);
 
-      DBG("instrumented");
-      stat_store_instrumented += 1;
-#endif
+      is_instrumented = 1;
       break;
     }
 
     default: {
-      DBG("expression with TREE_CODE=%d - ignoring\n", (int)TREE_CODE(expr));
+      reason = "unknown type";
+      break;
     }
   }
+
+  assert(is_instrumented != 0 || (reason != 0 && reason[0] != 0));
+
+  stat_store += 1;
+  if (is_instrumented) {
+    stat_store_instrumented += 1;
+    assert(is_gimple_addressable(expr));
+    tree expr_ptr = build1(ADDR_EXPR, build_pointer_type(TREE_TYPE(expr)), expr);
+    expr_ptr = convert(ptr_type_node, expr_ptr);
+    gimple collect = gimple_build_call(rt_func(rt_store), 1, expr_ptr);
+    gsi_insert_after(gsi, collect, GSI_NEW_STMT);
+    //find_new_referenced_vars(collect);
+  }
+
+  //if (is_instrumented)
+  DBG("%s:%d:%d: %s store to '%s' code=%s%s type=%s: %s %s",
+      loc->file, loc->line, loc->column,
+      (is_instrumented ? "" : "warning:"),
+      decl_name(expr),
+      tree_code_name[TREE_CODE(expr)],
+      (expr_ssa ? "(ssa)" : ""),
+      tree_code_name[TREE_CODE(TREE_TYPE(expr))],
+      (is_instrumented ? "INSTRUMENTED" : "IGNORED"),
+      reason);
 }
 
 
-static void process_load(gimple_stmt_iterator* gsi, tree expr) {
-  gcc_assert(gsi != 0);
-  gcc_assert(expr != 0);
-  dump_location(gsi_stmt(*gsi), expr, "load");
-  stat_load += 1;
+static void process_load(expanded_location const* loc, gimple_stmt_iterator* gsi, tree expr) {
+  gcc_assert(loc != 0 && gsi != 0 && expr != 0);
+  int is_instrumented = 0;
+  char const* reason = "";
 
   tree expr_ssa = 0;
   if (TREE_CODE(expr) == SSA_NAME) {
@@ -236,22 +276,23 @@ static void process_load(gimple_stmt_iterator* gsi, tree expr) {
       If the TREE_TYPE of the CONSTRUCTOR is an ARRAY_TYPE, then the TREE_PURPOSE of each element in the TREE_LIST will be an INTEGER_CST or a RANGE_EXPR of two INTEGER_CSTs. A single INTEGER_CST indicates which element of the array (indexed from zero) is being assigned to. A RANGE_EXPR indicates an inclusive range of elements to initialize. In both cases the TREE_VALUE is the corresponding initializer. It is re-evaluated for each element of a RANGE_EXPR. If the TREE_PURPOSE is NULL_TREE, then the initializer is for the next available array element.
       In the front end, you should not depend on the fields appearing in any particular order. However, in the middle end, fields must appear in declaration order. You should not assume that all fields will be represented. Unrepresented fields will be set to zero.
       */
+      reason = "constructor expression";
       break;
     }
     case RESULT_DECL:
-      DBG("ignoring (function result)");
+      reason = "function result";
       break;
     case INTEGER_CST:
-      DBG("ignoring (constant)");
+      reason = "constant";
       break;
     case PARM_DECL:
-      DBG("ignoring (function parameter)");
+      reason = "function parameter";
       break;
 
     case VAR_DECL:
     case INDIRECT_REF:
     case COMPONENT_REF:
-    case ARRAY_REF:
+    //case ARRAY_REF:
       //!!! case FIELD_DECL:
       //!!! case MEM_REF:
       //!!! case ARRAY_REF:
@@ -259,40 +300,70 @@ static void process_load(gimple_stmt_iterator* gsi, tree expr) {
       //!!! case TARGET_MEM_REF:
       //!!! case ADDR_EXPR:
     {
+      if (DECL_ARTIFICIAL(expr) || (expr_ssa && DECL_ARTIFICIAL(expr_ssa))) {
+        reason = "artificial";
+        break;
+      }
+
+      if (TREE_CODE(TREE_TYPE(expr)) == RECORD_TYPE) {
+        reason = "record type";
+        break;
+      }
+
       if (is_gimple_addressable(expr) == 0) {
-        DBG("ignoring (doesn't have an address)");
-        return;
+        reason = "doesn't have an address";
+        break;
       }
 
       if (TREE_CODE(expr) == VAR_DECL && TREE_ADDRESSABLE(expr) == 0) {
-        DBG("ignoring (non-addressable var)");
-        return;
+        reason = "non-addressable var";
+        break;
       }
 
-#if 1
       TREE_ADDRESSABLE(expr) = 1;
       TREE_USED(expr) = 1;
+//      add_referenced_var(expr);
       if (expr_ssa != 0) {
         TREE_ADDRESSABLE(expr_ssa) = 1;
         TREE_USED(expr_ssa) = 1;
+        //add_referenced_var(expr_ssa);
+        //mark_operand_necessary(expr_ssa);
       }
 
-      tree expr_ptr = build1(ADDR_EXPR, build_pointer_type(TREE_TYPE(expr)), expr);
-      expr_ptr = convert(ptr_type_node, expr_ptr);
-      gimple collect = gimple_build_call(rt_func(rt_load), 1, expr_ptr);
-      gsi_insert_after(gsi, collect, GSI_NEW_STMT);
-      //gsi_insert_before(gsi, collect, GSI_SAME_STMT);
-#endif
-
-      DBG("instrumented");
-      stat_load_instrumented += 1;
+      is_instrumented = 1;
       break;
     }
 
     default: {
-      DBG("expression with TREE_CODE=%d - ignoring\n", (int)TREE_CODE(expr));
+      reason = "unknown type";
+      break;
     }
   }
+
+  assert(is_instrumented != 0 || (reason != 0 && reason[0] != 0));
+
+  stat_load += 1;
+  if (is_instrumented) {
+    stat_load_instrumented += 1;
+    assert(is_gimple_addressable(expr));
+    tree expr_ptr = build1(ADDR_EXPR, build_pointer_type(TREE_TYPE(expr)), expr);
+    expr_ptr = convert(ptr_type_node, expr_ptr);
+    gimple collect = gimple_build_call(rt_func(rt_load), 1, expr_ptr);
+    gsi_insert_after(gsi, collect, GSI_NEW_STMT);
+    find_new_referenced_vars(collect);
+    is_instrumented = 1;
+  }
+
+  //if (is_instrumented)
+  DBG("%s:%d:%d: %s load of '%s' code=%s%s type=%s: %s %s",
+      loc->file, loc->line, loc->column,
+      (is_instrumented ? "" : "warning:"),
+      decl_name(expr),
+      tree_code_name[TREE_CODE(expr)],
+      (expr_ssa ? "(ssa)" : ""),
+      tree_code_name[TREE_CODE(TREE_TYPE(expr))],
+      (is_instrumented ? "INSTRUMENTED" : "IGNORED"),
+      reason);
 }
 
 
@@ -302,29 +373,30 @@ static void process_load(gimple_stmt_iterator* gsi, tree expr) {
 static void instrument(gimple_stmt_iterator* gsi) {
   gimple stmt = gsi_stmt(*gsi);
   expanded_location loc = expand_location(gimple_location(stmt));
-  DBG("processing %s at %s:%d:%d",
-      gimple_code_name[gimple_code(stmt)], loc.file, loc.line, loc.column);
+  //DBG("processing %s at %s:%d:%d",
+  //    gimple_code_name[gimple_code(stmt)], loc.file, loc.line, loc.column);
 
   stat_gimple += 1;
 
-#if 0
-  if (loc.line == 55)
+#if 1
+  if (loc.line == 3453 && strcmp(loc.file, "../../unittest/racecheck_unittest.cc") == 0) {
     DBG("HIT");
+  }
 #endif
 
   if (is_gimple_assign(stmt)) {
     for (int i = 1; i != gimple_num_ops(stmt); i += 1) {
       tree rhs = gimple_op(stmt, i);
-      process_load(gsi, rhs);
+      process_load(&loc, gsi, rhs);
     }
 
     tree lhs = gimple_assign_lhs(stmt);
-    process_store(gsi, lhs);
+    process_store(&loc, gsi, lhs);
   } else if (is_gimple_call (stmt)) {
     tree fndecl = gimple_call_fndecl(stmt);
     if (fndecl) {
       char const* func_name = decl_name(fndecl);
-      DBG("processing function call '%s'", func_name);
+      //DBG("processing function call '%s'", func_name);
       if (func_name != 0) {
         for (int i = 0; i != sizeof(rt_funcs)/sizeof(rt_funcs[0]); i += 1) {
           if (rt_funcs[i].real_name != 0
@@ -339,7 +411,7 @@ static void instrument(gimple_stmt_iterator* gsi) {
 
     tree lhs = gimple_call_lhs(stmt);
     if (lhs != 0)
-      process_store(gsi, lhs);
+      process_store(&loc, gsi, lhs);
   } /* else if (gimple_code(stmt) == GIMPLE_RETURN) {
     gimple cleanup = gimple_build_call(gcctsan_leave, 0);
     gsi_insert_before(gsi, cleanup, GSI_SAME_STMT);
@@ -349,7 +421,7 @@ static void instrument(gimple_stmt_iterator* gsi) {
 
 
 static unsigned instrumentation_pass() {
-  DBG("instrumentation_pass {");
+  //DBG("instrumentation_pass {");
   assert(cfun != 0);
 
   stat_func += 1;
@@ -363,7 +435,8 @@ static unsigned instrumentation_pass() {
     return 0;
   */
 
-  DBG("instrumenting '%s'", decl_name(cfun->decl));
+  DBG(" ");
+  DBG("PROCESSING FUNCTION '%s'", decl_name(cfun->decl));
   setup_builtin_declarations();
 
   basic_block bb;
@@ -407,7 +480,7 @@ static unsigned instrumentation_pass() {
 
   */
 
-  DBG("}");
+  //DBG("}");
   /*
   //struct function
   gimple_

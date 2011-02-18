@@ -33,7 +33,7 @@
 								<option id="gnu.cpp.compiler.so.debug.option.debugging.level.2134363461" name="Debug Level" superClass="gnu.cpp.compiler.so.debug.option.debugging.level" value="gnu.cpp.compiler.debugging.level.max" valueType="enumerated"/>
 								<option id="gnu.cpp.compiler.option.other.other.1012961417" name="Other flags" superClass="gnu.cpp.compiler.option.other.other" value="-c -fmessage-length=0 -fPIC" valueType="string"/>
 								<option id="gnu.cpp.compiler.option.include.paths.12589403" name="Include paths (-I)" superClass="gnu.cpp.compiler.option.include.paths" valueType="includePath">
-									<listOptionValue builtIn="false" value="${GCCTSAN_GCC_DIR}"/>
+									<listOptionValue builtIn="false" value="&quot;${GCCTSAN_GCC_DIR}&quot;"/>
 								</option>
 								<inputType id="cdt.managedbuild.tool.gnu.cpp.compiler.input.1038678478" superClass="cdt.managedbuild.tool.gnu.cpp.compiler.input"/>
 							</tool>
