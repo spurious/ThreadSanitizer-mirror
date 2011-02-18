@@ -35,6 +35,7 @@ using namespace std;
 //#define DEBUG_TRACES 1
 //#define DEBUG_CYCLES 1
 //#define DEBUG_DEBUG_INFO 1
+#define DEBUG_IGNORE_MOPS 1
 
 // Command-line flags. {{{1
 static cl::opt<string>
@@ -134,7 +135,6 @@ Constant *TsanOnlineInstrument::getInstructionAddr(
       ConstantExpr::getAdd(
           ConstantExpr::getPtrToInt(cast<Constant>(cur_fun), PlatformInt),
           c_offset);
-  errs() << "#" << cur_fun->getNameStr() << " + " << mop_index << ":\n";
   dumpInstructionDebugInfo(result, cur_inst);
   return result;
 }
@@ -1265,6 +1265,37 @@ int TsanOnlineInstrument::getMopPtrSize(Value *mopPtr, bool isStore) {
   return result;
 }
 
+bool TsanOnlineInstrument::ignoreInlinedMop(BasicBlock::iterator &BI) {
+#ifdef DEBUG_IGNORE_MOPS
+  errs() << "ignoreInlinedMop: ";
+  BI->dump();
+#endif
+  DILocation Loc(BI->getMetadata("dbg"));
+  while (true) {
+    DILocation OldLoc = Loc;
+    DISubprogram Sub = getDISubprogram(Loc.getScope().getNode());
+    string symbol = Sub.getLinkageName();
+    string filename = Sub.getFilename();
+#ifdef DEBUG_IGNORE_MOPS
+    errs() << "    " << Sub.getLinkageName() << "  "
+        <<  Sub.getFilename() << "\n";
+#endif
+    if (TripleVectorMatchKnown(Ignores.ignores, symbol, "", filename)) {
+#ifdef DEBUG_IGNORE_MOPS
+      errs() << "    IGNORED\n";
+#endif
+      return true;
+    }
+    DILocation Orig(Loc.getOrigLocation());
+    if (Orig.getNode() != NULL) {
+      Loc = Orig;
+    } else {
+      break;
+    }
+  }
+  return false;
+}
+
 void TsanOnlineInstrument::markMopsToInstrument(Trace &trace) {
   bool isStore, isMop;
   int size;
@@ -1294,6 +1325,7 @@ void TsanOnlineInstrument::markMopsToInstrument(Trace &trace) {
         //assert(false);
       }
       if (isMop) {
+        if (ignoreInlinedMop(BI)) continue;
         if (InstrumentAll) {
           trace.to_instrument.insert(BI);
           continue;

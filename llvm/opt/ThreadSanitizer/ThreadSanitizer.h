@@ -102,6 +102,7 @@ struct TsanOnlineInstrument : public llvm::ModulePass { // {{{1
   bool isaCallOrInvoke(llvm::BasicBlock::iterator &BI);
   int numMopsInFunction(llvm::Module::iterator &F);
   int getMopPtrSize(llvm::Value *mopPtr, bool isStore);
+  bool ignoreInlinedMop(llvm::BasicBlock::iterator &BI);
   void markMopsToInstrument(Trace &trace);
   bool makeTracePassport(Trace &trace);
   bool shouldIgnoreFunction(llvm::Function &F);
