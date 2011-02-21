@@ -2247,6 +2247,9 @@ MEMCPY(NONE, memcpy)
    http://bugs.kde.org/show_bug.cgi?id=139776
  */
 MEMCPY(NONE, _intel_fast_memcpy)
+#if defined(VGO_linux)
+MEMCPY(VG_Z_LIBC_SONAME, __GI_memcpy);
+#endif
 
 // --- STRCHR and INDEX -------------------------------------------
 //
