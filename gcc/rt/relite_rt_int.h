@@ -25,48 +25,30 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef RELITE_RT_H_INCLUDED
-#define RELITE_RT_H_INCLUDED
-#ifdef __cplusplus
-extern "C" {
+
+#ifndef RELITE_RT_INT_H_INCLUDED
+#define RELITE_RT_INT_H_INCLUDED
+
+#include "relite_rt.h"
+
+void                    handle_thread_start ();
+void                    handle_thread_end   ();
+
+void                    handle_sync_create  (void const volatile* addr);
+
+void                    handle_sync_destroy (void const volatile* addr);
+
+void                    handle_sync_acquire (void const volatile* addr,
+                                             int is_mtx);
+
+void                    handle_sync_release (void const volatile* addr,
+                                             int is_mtx);
+
+void                    handle_region_load  (void const volatile* begin,
+                                             void const volatile* end);
+
+void                    handle_region_store (void const volatile* begin,
+                                             void const volatile* end);
+
 #endif
 
-#include "relite_pthread.h"
-#include "relite_stdlib.h"
-
-void    relite_enter                  (void const volatile*);
-void    relite_leave                  ();
-void    relite_store                  (void const volatile*);
-void    relite_load                   (void const volatile*);
-
-
-struct relite_call_desc_t {
-  char const*                   func;
-  char const*                   file;
-  int                           line;
-  int                           pos;
-};
-
-struct relite_mop_desc_t {
-  char const*                   var;
-  char const*                   file;
-  int                           line;
-  int                           pos;
-};
-
-struct relite_func_desc_t {
-  int                               call_count;
-  struct relite_call_desc_t const*  calls;
-  int                               mop_count;
-  struct relite_mop_desc_t const*   mops;
-};
-
-static struct relite_call_desc_t relite_calls [] = {};
-static struct relite_mop_desc_t relite_mops [] = {};
-static struct relite_func_desc_t relite_func_desc = {};
-
-
-#ifdef __cplusplus
-}
-#endif
-#endif

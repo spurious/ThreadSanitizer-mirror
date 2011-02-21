@@ -10,7 +10,7 @@
 
 
 typedef struct relite_context_t relite_context_t;
-typedef struct rt_func_desc_t rt_func_desc_t;
+typedef struct func_desc_t func_desc_t;
 
 
 typedef void            (*instrument_func)  (relite_context_t* ctx,
@@ -19,7 +19,7 @@ typedef void            (*instrument_func)  (relite_context_t* ctx,
                                             tree expr);
 
 
-struct rt_func_desc_t {
+struct func_desc_t {
   char const*           rt_name;
   char const*           real_name;
   tree                  fndecl;
@@ -33,8 +33,9 @@ struct relite_context_t {
   instrument_func       instr_leave;
   instrument_func       instr_store;
   instrument_func       instr_load;
+  instrument_func       instr_func;
 
-  rt_func_desc_t*       rt_funcs;
+  func_desc_t*          rt_funcs;
   int                   rt_func_count;
   int                   rt_func_setup;
 

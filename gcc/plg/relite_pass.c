@@ -76,7 +76,7 @@ static void             setup_rt_funcs      (relite_context_t* ctx) {
   int remain = ctx->rt_func_count;
   tree decl = NAMESPACE_LEVEL(global_namespace)->names;
   for (; decl != 0; decl = TREE_CHAIN(decl)) {
-    if (DECL_IS_BUILTIN(decl) || TREE_CODE(decl) != FUNCTION_DECL)
+    if (DECL_IS_BUILTIN(decl) /*|| TREE_CODE(decl) != FUNCTION_DECL*/)
       continue;
     char const* name = IDENTIFIER_POINTER(DECL_NAME(decl));
     if (name == 0)
@@ -85,6 +85,7 @@ static void             setup_rt_funcs      (relite_context_t* ctx) {
       if (ctx->rt_funcs[i].fndecl == 0
           && strcmp(name, ctx->rt_funcs[i].rt_name) == 0) {
         ctx->rt_funcs[i].fndecl = decl;
+        TREE_NO_WARNING(decl) = 1;
         remain -= 1;
         break;
       }
@@ -387,6 +388,9 @@ void                    relite_pass         (relite_context_t* ctx,
       }
     }
   }
+
+  if (ctx->instr_func)
+    ctx->instr_func(ctx, 0, 0, 0);
 }
 
 

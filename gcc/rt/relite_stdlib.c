@@ -25,48 +25,50 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef RELITE_RT_H_INCLUDED
-#define RELITE_RT_H_INCLUDED
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-#include "relite_pthread.h"
+#include "relite_rt_int.h"
 #include "relite_stdlib.h"
-
-void    relite_enter                  (void const volatile*);
-void    relite_leave                  ();
-void    relite_store                  (void const volatile*);
-void    relite_load                   (void const volatile*);
+#include "relite_dbg.h"
+#include <memory.h>
 
 
-struct relite_call_desc_t {
-  char const*                   func;
-  char const*                   file;
-  int                           line;
-  int                           pos;
-};
 
-struct relite_mop_desc_t {
-  char const*                   var;
-  char const*                   file;
-  int                           line;
-  int                           pos;
-};
-
-struct relite_func_desc_t {
-  int                               call_count;
-  struct relite_call_desc_t const*  calls;
-  int                               mop_count;
-  struct relite_mop_desc_t const*   mops;
-};
-
-static struct relite_call_desc_t relite_calls [] = {};
-static struct relite_mop_desc_t relite_mops [] = {};
-static struct relite_func_desc_t relite_func_desc = {};
-
-
-#ifdef __cplusplus
+void*                   relite_memset        (void* s,
+                                             int c,
+                                             size_t n) {
+  DBG("memset(%p, %d, %zd)", s, c, n);
+  handle_region_store(s, (char*)s + n);
+  return memset(s, c, n);
 }
-#endif
-#endif
+
+
+void*                   relite_memcpy        (void* dst,
+                                             void const* src,
+                                             size_t n) {
+  DBG("memcpy(%p, %p, %zd)", dst, src, n);
+  handle_region_load(src, (char*)src + n);
+  handle_region_store(dst, (char*)dst + n);
+  return memcpy(dst, src, n);
+}
+
+
+int                     relite_memcmp        (void const* s1,
+                                              void const* s2,
+                                              size_t n) {
+  DBG("memcmp(%p, %p, %zd)", s1, s2, n);
+  handle_region_load(s1, (char*)s1 + n);
+  handle_region_load(s2, (char*)s2 + n);
+  return memcmp(s1, s2, n);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+

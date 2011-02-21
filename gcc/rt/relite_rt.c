@@ -1,11 +1,39 @@
+/* Relite
+ * Copyright (c) 2011, Google Inc.
+ * All rights reserved.
+ * Author: Dmitry Vyukov (dvyukov@google.com)
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ *     * Redistributions of source code must retain the above copyright
+ * notice, this list of conditions and the following disclaimer.
+ *     * Neither the name of Google Inc. nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+ * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
 #include "relite_rt.h"
 #include "relite_atomic.h"
+#include "relite_dbg.h"
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <assert.h>
 #include <memory.h>
-#include <errno.h>
+//#include <errno.h>
 #include <unistd.h>
 #include <execinfo.h>
 #include <sys/mman.h>
@@ -57,12 +85,13 @@
 //#define LIKELY(x)               x
 //#define UNLIKELY(x)             x
 
-#define relite_RT_DUMP
 
 typedef     void const volatile*addr_t;
 typedef     uint32_t            thrid_t;
 typedef     uint64_t            timestamp_t;
 typedef     uint64_t            state_t;
+
+
 
 
 __thread void*                 relite_stack [64];
@@ -101,6 +130,7 @@ typedef struct static_func_desc_t {
   debug_info_t const*           mops;
 } static_func_desc_t;
 
+/*
 static debug_info_t relite_calls [] = {
     {"a", 1, 1},
     {"b", 2, 2},
@@ -114,6 +144,7 @@ static debug_info_t relite_mops [] = {
 static static_func_desc_t relite_func_desc = {
     2, relite_calls, 2, relite_mops
 };
+*/
 
 typedef struct dynamic_func_t {
   struct static_func_desc_t*    desc;
@@ -126,14 +157,8 @@ static rl_rt_context_t          ctx;
 static __thread rl_rt_thread_t  thr;
 
 
-#ifdef relite_RT_DUMP
+#ifdef RELITE_RT_DUMP
 static pthread_mutex_t g_dbg_mtx = PTHREAD_MUTEX_INITIALIZER;
-# define DBG(...) (pthread_mutex_lock(&g_dbg_mtx), \
-    (void)(fprintf(stderr, "relite(%u): ", thr.id), \
-    fprintf(stderr, __VA_ARGS__), \
-    fprintf(stderr, "\n"), \
-    pthread_mutex_unlock(&g_dbg_mtx)))
-
 void dump_clock(char const* desc, timestamp_t const* clock) {
   pthread_mutex_lock(&g_dbg_mtx);
   fprintf(stderr, "relite(%u): %s:", thr.id, desc);
@@ -145,11 +170,7 @@ void dump_clock(char const* desc, timestamp_t const* clock) {
   fprintf(stderr, "\n");
   pthread_mutex_unlock(&g_dbg_mtx);
 }
-
-
 #else
-# define DBG(...) if (1) {} else fprintf(stderr, __VA_ARGS__)
-
 void dump_clock(char const* desc, timestamp_t const* clock) {
   (void)desc;
   (void)clock;
@@ -197,11 +218,16 @@ static void atomic_bitmask_free(atomic_size_t* mask, size_t size, size_t bit) {
 */
 
 
-static void handle_thread_start () {
+void handle_thread_start () {
   thr.id = atomic_bitmask_alloc(ctx.thr_mask, THR_MASK_SIZE);
   thr.clock_size = thr.id;
   thr.clock[thr.id] = 1;
   DBG("thread start %u", thr.id);
+}
+
+
+void                    handle_thread_end () {
+
 }
 
 
@@ -247,7 +273,7 @@ static void handle_race(addr_t addr, size_t sz, int is_load, int is_load2) {
     DBG("#%d %s", i, stacktrace_sym[i]);
     char syscom [1024];
     snprintf(syscom, sizeof(syscom)/sizeof(syscom[0]),
-             "addr2line -Cf -e test %p", stacktrace[i]);
+             "addr2line -Cf -e utest %p", stacktrace[i]);
     system(syscom);
   }
   free(stacktrace_sym);
@@ -498,7 +524,105 @@ void            relite_store   (addr_t addr) {
 }
 
 
-void            handle_mutex_create   (addr_t addr) {
+void                    handle_region_load  (void const volatile* begin,
+                                             void const volatile* end) {
+  assert(begin != 0 && begin <= end);
+  DBG("checking region load %p-%p", begin, end);
+  rl_rt_thread_t* self = &thr;
+  uint64_t const my_ts = self->clock[self->id];
+  uint64_t const state_templ = ((uint64_t)self->id << STATE_THRID_SHIFT)
+      | STATE_LOAD_MASK
+      | my_ts;
+  atomic_uint64_t* shadow = get_shadow(begin);
+  atomic_uint64_t* shadow_end = get_shadow(end);
+  assert(shadow <= shadow_end);
+  for (; shadow != shadow_end; shadow += 1) {
+    uint64_t const state = atomic_uint64_load(shadow, memory_order_relaxed);
+    // ensure that the address was not used as a sync variable
+    if (LIKELY((state & STATE_SYNC_MASK) == 0)) {
+      // check that the address is occupied
+      size_t const real_sz = (state & STATE_SIZE_MASK) >> STATE_SIZE_SHIFT;
+      if (real_sz != SZ_8 || ((uintptr_t)shadow % 64) == 0) {
+        size_t prev_thrid = (state & STATE_THRID_MASK) >> STATE_THRID_SHIFT;
+        // ensure that the previous access was from another thread
+        if (UNLIKELY(prev_thrid != self->id)) {
+          // ensure that the previous access was a store
+          if (LIKELY((state & STATE_LOAD_MASK) == 0)) {
+            // check for a race:
+            // the previous access should happen before current store
+            timestamp_t prev_ts = (state & STATE_TIMESTAMP_MASK);
+            if (UNLIKELY(prev_ts > (self->clock[prev_thrid]))) {
+              handle_race(begin + (shadow - get_shadow(begin)), real_sz,
+                          0, (state & STATE_LOAD_MASK) != 0);
+            }
+            // calculate and store new state
+            uint64_t const new_state = state_templ
+                | ((uint64_t)real_sz << STATE_SIZE_SHIFT);
+            atomic_uint64_store(shadow, new_state, memory_order_relaxed);
+          } else {
+            // the previous access was a load, so do nothing
+          }
+        } else {
+          // the previous access was from the same thread,
+          // if it was a load then update the timestamp
+          // (if it was a store, then we better preserve the fact)
+          if (LIKELY((state & STATE_LOAD_MASK) != 0)) {
+            uint64_t const new_state = (state & ~STATE_TIMESTAMP_MASK)
+              | my_ts;
+            atomic_uint64_store(shadow, new_state, memory_order_relaxed);
+          }
+        }
+      }
+    } else {
+      // the address was used as a sync variable,
+      // so do not track races on it
+    }
+  }
+}
+
+
+void                    handle_region_store (void const volatile* begin,
+                                             void const volatile* end) {
+  assert(begin != 0 && begin <= end);
+  DBG("checking region store %p-%p", begin, end);
+  rl_rt_thread_t* self = &thr;
+  uint64_t const my_ts = self->clock[self->id];
+  uint64_t const state_templ = ((uint64_t)self->id << STATE_THRID_SHIFT)
+      | my_ts;
+  atomic_uint64_t* shadow = get_shadow(begin);
+  atomic_uint64_t* shadow_end = get_shadow(end);
+  assert(shadow <= shadow_end);
+  for (; shadow != shadow_end; shadow += 1) {
+    uint64_t const state = atomic_uint64_load(shadow, memory_order_relaxed);
+    // ensure that the address was not used as a sync variable
+    if (LIKELY((state & STATE_SYNC_MASK) == 0)) {
+      // check that the address is occupied
+      size_t const real_sz = (state & STATE_SIZE_MASK) >> STATE_SIZE_SHIFT;
+      if (real_sz != SZ_8 || ((uintptr_t)shadow % 64) == 0) {
+        size_t prev_thrid = (state & STATE_THRID_MASK) >> STATE_THRID_SHIFT;
+        // ensure that the previous access was from another thread
+        if (UNLIKELY(prev_thrid != self->id)) {
+          timestamp_t prev_ts = (state & STATE_TIMESTAMP_MASK);
+          // check for a race:
+          // the previous access should happen before current store
+          if (UNLIKELY(prev_ts > (self->clock[prev_thrid])))
+            handle_race(begin + (shadow - get_shadow(begin)), real_sz,
+                        0, (state & STATE_LOAD_MASK) != 0);
+        }
+        // calculate and store new state
+        uint64_t const new_state = state_templ
+            | ((uint64_t)real_sz << STATE_SIZE_SHIFT);
+        atomic_uint64_store(shadow, new_state, memory_order_relaxed);
+      }
+    } else {
+      // the address was used as a sync variable,
+      // so do not track races on it
+    }
+  }
+}
+
+
+void            handle_sync_create   (addr_t addr) {
   rl_rt_sync_t* sync = malloc(sizeof(rl_rt_sync_t));
   memset(sync, 0, sizeof(rl_rt_sync_t));
   //!!! assert(sync);
@@ -509,7 +633,12 @@ void            handle_mutex_create   (addr_t addr) {
 }
 
 
-void            handle_acquire  (addr_t addr, int is_mtx) {
+void                    handle_sync_destroy (addr_t addr) {
+  (void)addr;
+}
+
+
+void            handle_sync_acquire  (addr_t addr, int is_mtx) {
   atomic_uint64_t* shadow = get_shadow(addr);
   uint64_t const state = atomic_uint64_load(shadow, memory_order_relaxed);
   DBG("acquire at %p, state=%llx", addr, (unsigned long long)state);
@@ -520,7 +649,7 @@ void            handle_acquire  (addr_t addr, int is_mtx) {
 }
 
 
-void            handle_release  (addr_t addr, int is_mtx) {
+void            handle_sync_release  (addr_t addr, int is_mtx) {
   atomic_uint64_t* shadow = get_shadow(addr);
   uint64_t const state = atomic_uint64_load(shadow, memory_order_relaxed);
   DBG("release at %p, state=%llx", addr, (unsigned long long)state);
@@ -530,10 +659,6 @@ void            handle_release  (addr_t addr, int is_mtx) {
   clock_assign_max(sync->clock, thr.clock);
   dump_clock("mutex", sync->clock);
 }
-
-
-
-
 
 
 void relite_enter(void const volatile* p)
@@ -546,126 +671,6 @@ void relite_leave()
 {
   printf("leave\n");
 }
-
-typedef struct relite_pthread_ctx_t {
-  void*         (*start_routine)(void*);
-  void*         arg;
-  void*         ret;
-} relite_pthread_ctx_t;
-
-static void* thread_wrapper(void* p) {
-  relite_pthread_ctx_t* ctx = (relite_pthread_ctx_t*)p;
-  handle_thread_start();
-  handle_acquire(ctx, 0);
-  ctx->ret = ctx->start_routine(ctx->arg);
-  handle_release(ctx, 0);
-  return ctx;
-}
-
-
-int     relite_pthread_create    (pthread_t* th,
-                                   pthread_attr_t* attr,
-                                   void *(*start_routine)(void*),
-                                   void *arg) {
-  DBG("intercepting pthread_create");
-  relite_pthread_ctx_t* ctx = malloc(sizeof(relite_pthread_ctx_t));
-  if (ctx == 0)
-    return ENOMEM;
-  ctx->start_routine = start_routine;
-  ctx->arg = arg;
-  //!!! handle DETACHED
-  handle_mutex_create(ctx);
-  handle_release(ctx, 0);
-  return pthread_create(th, attr, thread_wrapper, ctx);
-}
-
-
-int     relite_pthread_join      (pthread_t th, void** retval) {
-  DBG("intercepting pthread_join");
-  relite_pthread_ctx_t* ctx;
-  int res = pthread_join(th, (void**)&ctx);
-  handle_acquire(ctx, 0);
-  if (retval)
-    *retval = ctx->ret;
-  free(ctx);
-  return res;
-}
-
-
-int     relite_pthread_mutex_init    (pthread_mutex_t* mtx,
-                                       pthread_mutexattr_t* attr) {
-  DBG("intercepting pthread_mutex_init");
-  handle_mutex_create(mtx);
-  return pthread_mutex_init(mtx, attr);
-}
-
-
-int     relite_pthread_mutex_destroy (pthread_mutex_t* mtx) {
-  DBG("intercepting pthread_mutex_destroy");
-  int res = pthread_mutex_destroy(mtx);
-  return res;
-}
-
-
-int     relite_pthread_mutex_lock    (pthread_mutex_t* mtx) {
-  int res = pthread_mutex_lock(mtx);
-  DBG("intercepting pthread_mutex_lock");
-  handle_acquire(mtx, 1);
-  return res;
-}
-
-
-int     relite_pthread_mutex_unlock  (pthread_mutex_t* mtx) {
-  DBG("intercepting pthread_mutex_unlock");
-  handle_release(mtx, 1);
-  return pthread_mutex_unlock(mtx);
-}
-
-
-
-int     relite_pthread_cond_init     (pthread_cond_t* cv,
-                                       pthread_condattr_t const* attr) {
-  int res = pthread_cond_init(cv, attr);
-  return res;
-}
-
-
-int     relite_pthread_cond_destroy  (pthread_cond_t* cv) {
-  int res = pthread_cond_destroy(cv);
-  return res;
-}
-
-
-int     relite_pthread_cond_signal   (pthread_cond_t* cv) {
-  int res = pthread_cond_signal(cv);
-  return res;
-}
-
-
-int     relite_pthread_cond_broadcast(pthread_cond_t* cv) {
-  int res = pthread_cond_broadcast(cv);
-  return res;
-}
-
-
-int     relite_pthread_cond_wait     (pthread_cond_t* cv,
-                                       pthread_mutex_t* mtx) {
-  handle_release(mtx, 1);
-  int res = pthread_cond_wait(cv, mtx);
-  handle_acquire(mtx, 1);
-  return res;
-}
-
-
-int     relite_pthread_cond_timedwait(pthread_cond_t* cv,
-                                       pthread_mutex_t* mtx,
-                                       struct timespec const* ts) {
-  handle_release(mtx, 1);
-  int res = pthread_cond_timedwait(cv, mtx, ts);
-  handle_acquire(mtx, 1);
-  return res;
-}
-
 
 
 

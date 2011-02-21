@@ -25,48 +25,26 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef RELITE_RT_H_INCLUDED
-#define RELITE_RT_H_INCLUDED
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-#include "relite_pthread.h"
-#include "relite_stdlib.h"
-
-void    relite_enter                  (void const volatile*);
-void    relite_leave                  ();
-void    relite_store                  (void const volatile*);
-void    relite_load                   (void const volatile*);
+#include "relite_dbg.h"
+#include <pthread.h>
+#include <stdlib.h>
+#include <stdarg.h>
+#include <stdio.h>
 
 
-struct relite_call_desc_t {
-  char const*                   func;
-  char const*                   file;
-  int                           line;
-  int                           pos;
-};
-
-struct relite_mop_desc_t {
-  char const*                   var;
-  char const*                   file;
-  int                           line;
-  int                           pos;
-};
-
-struct relite_func_desc_t {
-  int                               call_count;
-  struct relite_call_desc_t const*  calls;
-  int                               mop_count;
-  struct relite_mop_desc_t const*   mops;
-};
-
-static struct relite_call_desc_t relite_calls [] = {};
-static struct relite_mop_desc_t relite_mops [] = {};
-static struct relite_func_desc_t relite_func_desc = {};
+static pthread_mutex_t g_dbg_mtx = PTHREAD_MUTEX_INITIALIZER;
 
 
-#ifdef __cplusplus
+void relite_dbg(char const* fmt, ...) {
+  pthread_mutex_lock(&g_dbg_mtx);
+  fprintf(stderr, "relite(%u): ", 0);
+  va_list argptr;
+  va_start(argptr, fmt);
+  vfprintf(stderr, fmt, argptr);
+  va_end(argptr);
+  fprintf(stderr, "\n");
+  pthread_mutex_unlock(&g_dbg_mtx);
 }
-#endif
-#endif
+
+
+

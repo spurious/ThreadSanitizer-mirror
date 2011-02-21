@@ -25,48 +25,34 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef RELITE_RT_H_INCLUDED
-#define RELITE_RT_H_INCLUDED
-#ifdef __cplusplus
-extern "C" {
+#ifndef RELITE_PTHREAD_H_INCLUDED
+#define RELITE_PTHREAD_H_INCLUDED
+
+#include <pthread.h>
+
+int     relite_pthread_create         (pthread_t*,
+                                       pthread_attr_t*,
+                                       void *(*start_routine)(void*),
+                                       void *arg);
+
+int     relite_pthread_join           (pthread_t, void**);
+
+int     relite_pthread_mutex_init     (pthread_mutex_t*,
+                                       pthread_mutexattr_t*);
+int     relite_pthread_mutex_destroy  (pthread_mutex_t*);
+int     relite_pthread_mutex_lock     (pthread_mutex_t*);
+int     relite_pthread_mutex_unlock   (pthread_mutex_t*);
+
+int     relite_pthread_cond_init      (pthread_cond_t*,
+                                       pthread_condattr_t const*);
+int     relite_pthread_cond_destroy   (pthread_cond_t*);
+int     relite_pthread_cond_signal    (pthread_cond_t*);
+int     relite_pthread_cond_broadcast (pthread_cond_t*);
+int     relite_pthread_cond_wait      (pthread_cond_t*,
+                                       pthread_mutex_t*);
+int     relite_pthread_cond_timedwait (pthread_cond_t*,
+                                       pthread_mutex_t*,
+                                       struct timespec const*);
+
 #endif
 
-#include "relite_pthread.h"
-#include "relite_stdlib.h"
-
-void    relite_enter                  (void const volatile*);
-void    relite_leave                  ();
-void    relite_store                  (void const volatile*);
-void    relite_load                   (void const volatile*);
-
-
-struct relite_call_desc_t {
-  char const*                   func;
-  char const*                   file;
-  int                           line;
-  int                           pos;
-};
-
-struct relite_mop_desc_t {
-  char const*                   var;
-  char const*                   file;
-  int                           line;
-  int                           pos;
-};
-
-struct relite_func_desc_t {
-  int                               call_count;
-  struct relite_call_desc_t const*  calls;
-  int                               mop_count;
-  struct relite_mop_desc_t const*   mops;
-};
-
-static struct relite_call_desc_t relite_calls [] = {};
-static struct relite_mop_desc_t relite_mops [] = {};
-static struct relite_func_desc_t relite_func_desc = {};
-
-
-#ifdef __cplusplus
-}
-#endif
-#endif

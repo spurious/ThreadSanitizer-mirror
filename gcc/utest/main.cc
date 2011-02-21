@@ -1,6 +1,6 @@
-/*
 #include <pthread.h>
 #include <stdio.h>
+#include <memory.h>
 
 
 struct data_t
@@ -40,7 +40,14 @@ void* thread_func(void* p)
     // store-store race
     else if (ctx->test == 1)
     {
+      if (ctx->thread)
+      {
         data->var[0] = 1;
+      }
+      else
+      {
+        memset(&data->var[0], 0, sizeof(data->var[0]));
+      }
     }
 
     // load-store race
@@ -96,11 +103,6 @@ void* thread_func(void* p)
 
 
 
-
-
-
-
-
 int main()
 {
     for (int test = 0; test <= 5; test += 1)
@@ -130,42 +132,67 @@ int main()
 
     return 0;
 }
-*/
 
 
 
-typedef struct debug_info_t {
+/*
+struct relite_call_desc_t {
+  char const*                   func;
   char const*                   file;
   int                           line;
   int                           pos;
-} debug_info_t;
-
-
-typedef struct static_func_desc_t {
-  int                           call_count;
-  debug_info_t const*           calls;
-  int                           mop_count;
-  debug_info_t const*           mops;
-} static_func_desc_t;
-
-static debug_info_t relite_calls [] = {
-    {"aaaaa", 1, 1},
-    {"bbbbb", 2, 2},
 };
 
-static debug_info_t relite_mops [] = {
+
+struct relite_mop_desc_t {
+  char const*                   var;
+  char const*                   file;
+  int                           line;
+  int                           pos;
+};
+
+
+struct relite_func_desc_t {
+  int                               call_count;
+  struct relite_call_desc_t const*  calls;
+  int                               mop_count;
+  struct relite_mop_desc_t const*   mops;
+};
+
+static relite_call_desc_t relite_calls [] = {
+    {"x", "aaaaa", 1, 1},
+    {"y", "bbbbb", 2, 2},
+};
+
+static relite_mop_desc_t relite_mops [] = {
     {"ccccc", 1, 1},
     {"ddddd", 2, 2},
 };
 
-static static_func_desc_t relite_func_desc = {
+static relite_func_desc_t relite_func_desc = {
     888, relite_calls, 999, relite_mops
 };
+*/
+
+/*
+
+void bar() {
+
+}
+
+void foo(int* x) {
+  *x += 1;
+  bar();
+  memset(x, 0, sizeof(*x));
+}
 
 
 int main() {
+  int x = 0;
+  foo(&x);
+  //printf("%d/%d", qweqweqwe.call_count, qweqweqwe.mop_count);
 }
-
+*/
 
 
 

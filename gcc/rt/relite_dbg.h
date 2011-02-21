@@ -25,48 +25,17 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef RELITE_RT_H_INCLUDED
-#define RELITE_RT_H_INCLUDED
-#ifdef __cplusplus
-extern "C" {
+#ifndef RELITE_DBG_H_INCLUDED
+#define RELITE_DBG_H_INCLUDED
+
+#define RELITE_RT_DUMP
+
+#ifdef RELITE_RT_DUMP
+void relite_dbg(char const* fmt, ...) __attribute__((format(printf, 1, 2)));
+#define DBG(...) relite_dbg(__VA_ARGS__)
+#else
+#define DBG(fmt, ...) if (1) {} else fprintf(stderr, __VA_ARGS__)
 #endif
 
-#include "relite_pthread.h"
-#include "relite_stdlib.h"
-
-void    relite_enter                  (void const volatile*);
-void    relite_leave                  ();
-void    relite_store                  (void const volatile*);
-void    relite_load                   (void const volatile*);
-
-
-struct relite_call_desc_t {
-  char const*                   func;
-  char const*                   file;
-  int                           line;
-  int                           pos;
-};
-
-struct relite_mop_desc_t {
-  char const*                   var;
-  char const*                   file;
-  int                           line;
-  int                           pos;
-};
-
-struct relite_func_desc_t {
-  int                               call_count;
-  struct relite_call_desc_t const*  calls;
-  int                               mop_count;
-  struct relite_mop_desc_t const*   mops;
-};
-
-static struct relite_call_desc_t relite_calls [] = {};
-static struct relite_mop_desc_t relite_mops [] = {};
-static struct relite_func_desc_t relite_func_desc = {};
-
-
-#ifdef __cplusplus
-}
 #endif
-#endif
+
