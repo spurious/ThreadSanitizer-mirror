@@ -4909,15 +4909,11 @@ struct Thread {
       ignore = ignore_below == IGNORE_BELOW_RTN_YES;
     }
 
-    if (ignore) {
-      if (!fun_r_ignore_) {
-        fun_r_ignore_ = 1;
-        set_ignore_all_accesses(true);
-      }
-    } else {
-      if (fun_r_ignore_) {
-        fun_r_ignore_++;
-      }
+    if (fun_r_ignore_) {
+      fun_r_ignore_++;
+    } else if (ignore) {
+      fun_r_ignore_ = 1;
+      set_ignore_all_accesses(true);
     }
   }
 
