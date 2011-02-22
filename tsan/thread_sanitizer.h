@@ -59,6 +59,7 @@ struct FLAGS {
   vector<string>   file_prefix_to_cut;
   vector<string>   ignore;
   vector<string>   whitelist;
+  bool             ignore_unknown_pcs;  // Ignore PCs with no debug info.
   vector<string>   cut_stack_below;
   string           summary_file;
   string           log_file;

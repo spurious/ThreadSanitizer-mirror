@@ -7798,6 +7798,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
 
   FindStringFlag("ignore", args, &G_flags->ignore);
   FindStringFlag("whitelist", args, &G_flags->whitelist);
+  FindBoolFlag("ignore_unknown_pcs", false, args, &G_flags->ignore_unknown_pcs);
 
   FindBoolFlag("thread_coverage", false, args, &G_flags->thread_coverage);
   
@@ -8055,10 +8056,19 @@ bool ThreadSanitizerWantToInstrumentSblock(uintptr_t pc) {
     bool in_white_list = TripleVectorMatchKnown(g_white_lists->ignores, 
                                                 rtn_name, img_name, file_name);
     if (in_white_list) {
-      Printf("Whitelisted rtn: %s\n", rtn_name.c_str());
+      if (debug_ignore) {
+        Report("INFO: Whitelisted rtn: %s\n", rtn_name.c_str());
+      }
     } else {
       return false;
-    } 
+    }
+  }
+
+  if (G_flags->ignore_unknown_pcs && rtn_name == "???") {
+    if (debug_ignore) {
+      Report("INFO: not instrumenting unknown function at %p\n", pc);
+    }
+    return false;
   }
 
   bool ignore = TripleVectorMatchKnown(g_ignore_lists->ignores,
