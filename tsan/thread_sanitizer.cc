@@ -5887,14 +5887,13 @@ class EventSampler {
  public:
 
   // Sample one event
-  void Sample(TID tid, const char *event_name) {
+  void Sample(TID tid, const char *event_name, bool need_locking) {
     CHECK_NE(G_flags->sample_events, 0);
     (counter_)++;
     if ((counter_ & ((1 << G_flags->sample_events) - 1)) != 0)
       return;
 
-    TIL til(ts_lock, 8);
-    AssertTILHeld();
+    TIL til(ts_lock, 8, need_locking);
     string pos =  Thread::Get(tid)->
         CallStackToStringRtnOnly(G_flags->sample_events_depth);
     (*samples_)[event_name][pos]++;
@@ -5909,8 +5908,6 @@ class EventSampler {
   // Show existing samples
   static void ShowSamples() {
     if (G_flags->sample_events == 0) return;
-    TIL til(ts_lock, 8);
-    AssertTILHeld();
     Printf("ShowSamples: (all samples: %lld)\n", total_samples_);
     for (SampleMapMap::iterator it1 = samples_->begin();
          it1 != samples_->end(); ++it1) {
@@ -5932,8 +5929,8 @@ class EventSampler {
              (int64_t)total << G_flags->sample_events);
       for (map<int, string>::iterator it = reverted_map.begin();
            it != reverted_map.end(); ++it) {
-        Printf("%s: %d%%%% %s\n", name.c_str(),
-               (it->first * 1000) / total, it->second.c_str());
+        Printf("%s: %d samples (~%d%%) %s\n", name.c_str(), it->first,
+               (it->first * 100) / total, it->second.c_str());
       }
       Printf("\n");
     }
@@ -6686,7 +6683,7 @@ class Detector {
     if (UNLIKELY(G_flags->sample_events > 0)) {
       if (new_rd_ssid.IsTuple() || new_wr_ssid.IsTuple()) {
         static EventSampler sampler;
-        sampler.Sample(thr->tid(), "HasTupleSS");
+        sampler.Sample(thr->tid(), "HasTupleSS", false);
       }
     }
 
@@ -7117,7 +7114,7 @@ one_call:
       if (G_flags->sample_events > 0) {
         const char *type = "SampleMemoryAccess";
         static EventSampler sampler;
-        sampler.Sample(tid, type);
+        sampler.Sample(tid, type, false);
       }
     }
   }
@@ -8251,7 +8248,7 @@ void NOINLINE ThreadSanitizerHandleRtnCall(int32_t tid, uintptr_t call_pc,
 
   if (G_flags->sample_events) {
     static EventSampler sampler;
-    sampler.Sample(TID(tid), "RTN_CALL");
+    sampler.Sample(TID(tid), "RTN_CALL", true);
   }
 }
 void NOINLINE ThreadSanitizerHandleRtnExit(int32_t tid) {
