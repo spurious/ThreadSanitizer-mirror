@@ -197,7 +197,7 @@ static inline uintptr_t GetVgSp(ThreadId vg_tid) {
 
 #ifdef VGP_arm_linux
 static inline uintptr_t GetVgLr(ThreadId vg_tid) {
-  return (uintptr_t) VG_(get_LR)(vg_tid);
+  return (uintptr_t)VG_(threads)[vg_tid].arch.vex.guest_R14;
 }
 #endif
 
