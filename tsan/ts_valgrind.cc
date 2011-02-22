@@ -511,7 +511,7 @@ VG_REGPARM(2) void evh__rtn_call_ignore_no ( Addr sp, Addr pc) {
 VG_REGPARM(2)
 void evh__delete_frame ( Addr sp_post_call_insn,
                          Addr pc_post_call_insn) {
-  DCHECK(!race_verifier_active);
+  DCHECK(!g_race_verifier_active);
   ThreadId vg_tid = GetVgTid();
   ValgrindThread *thr = &g_valgrind_threads[vg_tid];
   if (thr->trace_info) FlushMops(thr);
