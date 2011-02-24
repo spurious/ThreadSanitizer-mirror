@@ -59,6 +59,8 @@ struct ThreadLocalStats {
   uintptr_t access_to_first_1g;
   uintptr_t access_to_first_2g;
   uintptr_t access_to_first_4g;
+
+  uintptr_t cache_fast_get;
 };
 
 // Statistic counters for the entire tool, including aggregated
@@ -248,7 +250,6 @@ struct Stats : private ThreadLocalStats {
             ls_add_cache_hit, ls_rem_cache_hit,
             ls_cache_fast;
 
-  uintptr_t cache_fast_get;
   uintptr_t cache_new_line;
   uintptr_t cache_delete_empty_line;
   uintptr_t cache_fetch;

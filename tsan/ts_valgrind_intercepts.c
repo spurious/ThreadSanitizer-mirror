@@ -503,6 +503,28 @@ WRAP_FREE(VG_Z_LIBSTDCXX_SONAME, _ZdaPvRKSt9nothrow_t);
 WRAP_FREE_ZZ(NONE, operatorZsdeleteZa);
 
 
+/* Handle tcmalloc (http://code.google.com/p/google-perftools/) */
+
+/* tc_ functions (used when tcmalloc is running in release mode) */
+WRAP_MALLOC(NONE,tc_malloc);
+WRAP_MALLOC(NONE,tc_new);
+WRAP_MALLOC(NONE,tc_new_nothrow);
+WRAP_MALLOC(NONE,tc_newarray);
+WRAP_MALLOC(NONE,tc_newarray_nothrow);
+WRAP_FREE(NONE,tc_free);
+WRAP_FREE(NONE,tc_cfree);
+WRAP_FREE(NONE,tc_delete);
+WRAP_FREE(NONE,tc_delete_nothrow);
+WRAP_FREE(NONE,tc_deletearray);
+WRAP_FREE(NONE,tc_deletearray_nothrow);
+WRAP_CALLOC(NONE,tc_calloc);
+WRAP_REALLOC(NONE,tc_realloc);
+WRAP_MALLOC(NONE,tc_valloc);
+WRAP_POSIX_MEMALIGN(NONE,tc_memalign);
+WRAP_POSIX_MEMALIGN(NONE,tc_posix_memalign);
+
+
+
 //------------ Wrappers for stdio functions ---------
 /* These functions have internal synchronization that we don't handle and get
    lots of false positives. To fix this, we wrap these functions, touch their
