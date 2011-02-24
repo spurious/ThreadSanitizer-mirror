@@ -3169,41 +3169,6 @@ uintptr_t GetCacheLinesForRange(uintptr_t a, uintptr_t b,
 
 
 
-// -------- FastCache -------------- {{{1
-// Fast cache which stores cache lines for memory in range [kMin, kMax).
-// MALLOC_MMAP_MAX_=0
-template<size_t kMin, size_t kMax>
-class FastCacheForMemoryRange {
- public:
-  FastCacheForMemoryRange() {
-    Report("INFO: Allocating %ldMb for fast cache\n", sizeof(*this) >> 20);
-    memset(cache_, 0, sizeof(cache_));
-  }
-
-  bool AddressIsInRange(uintptr_t a) {
-    return a >= kMin && a < kMax;
-  }
-
-  INLINE CacheLine *GetLine(TID tid, uintptr_t a, bool create_new_if_need) {
-    CHECK(AddressIsInRange(a));
-    uintptr_t cli = (a - kMin) >> CacheLine::kLineSizeBits;
-    CHECK(cli < kCacheSize);
-    CacheLine **cache_line_p = &cache_[cli];
-    if (*cache_line_p == NULL) {
-      if (create_new_if_need == false) return NULL;
-      AssertTILHeld();
-      uintptr_t tag = CacheLine::ComputeTag(a);
-      *cache_line_p = CacheLine::CreateNewCacheLine(tag);
-    }
-    DCHECK(*cache_line_p);
-    return *cache_line_p;
-  }
- private:
-  enum { kRangeSize = kMax - kMin };
-  enum { kCacheSize = kRangeSize / CacheLine::kLineSize };
-  CacheLine *cache_[kCacheSize];
-};
-
 // -------- Cache ------------------ {{{1
 class Cache {
  public:
@@ -3226,27 +3191,16 @@ class Cache {
     return kLineIsLocked();
   }
 
-  INLINE CacheLine *TryAcquireLineFast(TID tid, uintptr_t a) {
-    if (fast_cache_.AddressIsInRange(a)) {
-      return fast_cache_.GetLine(tid, a, false);
-    }
-    return NULL;
-  }
-
   // Try to get a CacheLine for exclusive use.
   // May return NULL or kLineIsLocked.
   INLINE CacheLine *TryAcquireLine(TID tid, uintptr_t a, int call_site) {
-    if (fast_cache_.AddressIsInRange(a)) {
-      return fast_cache_.GetLine(tid, a, false);
-    }
-    CHECK(!fast_cache_.AddressIsInRange(a));
     uintptr_t cli = ComputeCacheLineIndexInCache(a);
     CacheLine **addr = &lines_[cli];
     CacheLine *res = (CacheLine*)AtomicExchange(
            (uintptr_t*)addr, (uintptr_t)kLineIsLocked());
     if (DEBUG_MODE && debug_cache) {
       uintptr_t tag = CacheLine::ComputeTag(a);
-      if (res && res != kLineIsLocked())
+      if (res)
         Printf("TryAcquire %p empty=%d tag=%lx cli=%lx site=%d\n",
                res, res->Empty(), res->tag(), cli, call_site);
       else
@@ -3259,7 +3213,6 @@ class Cache {
   }
 
   INLINE CacheLine *AcquireLine(TID tid, uintptr_t a, int call_site) {
-    CHECK(!fast_cache_.AddressIsInRange(a));
     CacheLine *line = NULL;
     int iter = 0;
     const int max_iter = 1 << 30;
@@ -3269,8 +3222,8 @@ class Cache {
       if ((iter % (1 << 12)) == 0) {
         YIELD();
         G_stats->try_acquire_line_spin++;
-        if (((iter & (iter - 1)) == 0)) {
-          Printf("T%d %s a=%p iter=%d\n", tid.raw(), __FUNCTION__, a, iter);
+        if ((iter % (1 << 15)) == 0) {
+          Printf("T%d %s iter=%d\n", tid.raw(), __FUNCTION__, iter);
         }
       }
       if (iter == max_iter) {
@@ -3286,7 +3239,6 @@ class Cache {
   // Release a CacheLine from exclusive use.
   INLINE void ReleaseLine(TID tid, uintptr_t a, CacheLine *line, int call_site) {
     if (TS_SERIALIZED) return;
-    if (fast_cache_.AddressIsInRange(a)) return;
     DCHECK(line != kLineIsLocked());
     uintptr_t cli = ComputeCacheLineIndexInCache(a);
     DCHECK(line == NULL ||
@@ -3327,10 +3279,6 @@ class Cache {
     CacheLine *res = NULL;
     CacheLine *line = NULL;
 
-    if (fast_cache_.AddressIsInRange(a)) {
-      return fast_cache_.GetLine(tid, a, create_new_if_need);
-    }
-
     if (create_new_if_need == false && lines_[cli] == 0) {
       // There is no such line in the cache, nor should it be in the storage.
       // Check that the storage indeed does not have this line.
@@ -3348,6 +3296,7 @@ class Cache {
 
     if (LIKELY(line && line->tag() == tag)) {
       res = line;
+      // G_stats->cache_fast_get++;
     } else {
       res = WriteBackAndFetch(tid, line, tag, cli, create_new_if_need);
       if (!res) {
@@ -3559,10 +3508,12 @@ class Cache {
   CacheLine *lines_[kNumLines];
 
   // tag => CacheLine
+#if 1
   typedef unordered_map<uintptr_t, CacheLine*> Map;
+#else
+  typedef map<uintptr_t, CacheLine*> Map;
+#endif
   Map storage_;
-
-  FastCacheForMemoryRange<0,  (1<<30) > fast_cache_;
 };
 
 static  Cache *G_cache;
@@ -6055,7 +6006,7 @@ class Detector {
     // 2 bit - has_expensive_flags.
     int expensive_bits = thr->expensive_bits();
 
-    if (1 || expensive_bits == 0) {
+    if (expensive_bits == 0) {
       HandleTraceLoop(t, thr, tid, tleb, n, 0, need_locking);
     } else {
       if ((expensive_bits & 3) == 3) {
@@ -6878,7 +6829,7 @@ class Detector {
   }
 
   // return false if we were not able to complete the task (fast_path_only).
-  NOINLINE bool HandleMemoryAccessHelper(bool is_w,
+  INLINE bool HandleMemoryAccessHelper(bool is_w,
                                        CacheLine *cache_line,
                                        uintptr_t addr,
                                        uintptr_t size,
@@ -7205,12 +7156,7 @@ one_call:
       // The fast (unlocked) path.
       if (thr->HasRoomForDeadSids()) {
         // Acquire a line w/o locks.
-        cache_line = G_cache->TryAcquireLineFast(tid, addr);
-        if (cache_line) {
-          INC_STAT(thr->stats.cache_fast_get);
-        } else {
-          cache_line = G_cache->TryAcquireLine(tid, addr, __LINE__);
-        }
+        cache_line = G_cache->TryAcquireLine(tid, addr, __LINE__);
         if (!Cache::LineIsNullOrLocked(cache_line)) {
           // The line is not empty or locked -- check the tag.
           if (cache_line->tag() == CacheLine::ComputeTag(addr)) {
