@@ -488,12 +488,14 @@ void TSLock::Lock() {
     c = __sync_lock_test_and_set(p, 2);
   }
   // Block.
+  int n_waits = 0;
   while (c != 0) {
     syscall(SYS_futex, p, FUTEX_WAIT, 2, 0, 0, 0);
-    G_stats->futex_wait++;
+    n_waits++;
     c = __sync_lock_test_and_set(p, 2);
   }
   ANNOTATE_RWLOCK_ACQUIRED(this, /*is_w*/true);
+  G_stats->futex_wait += n_waits;
 }
 void TSLock::Unlock() {
   ANNOTATE_RWLOCK_RELEASED(this, /*is_w*/true);
