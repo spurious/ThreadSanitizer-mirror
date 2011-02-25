@@ -29,6 +29,7 @@ ifeq ($(DEBUG), 1)
   D=-debug
   DEFINES+=-DDEBUG=1
   DA_FLAGS+=-DDYNAMIC_ANNOTATIONS_ENABLED=1
+  COMMON_FLAGS+=-fno-inline
 else
   D=
 endif
@@ -107,4 +108,3 @@ amd64-stack_info.o:	stack_info.cc stack_info.h
 
 stack_info64:	stack_info.cc stack_info.h
 	$(CXX) -m64 -o $@ $< $(ERRORLVL) $(FLAGS) -DSTACKINFO_STANDALONE -lpthread
-
