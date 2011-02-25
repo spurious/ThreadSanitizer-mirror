@@ -496,6 +496,7 @@ void TSLock::Lock() {
   ANNOTATE_RWLOCK_ACQUIRED(this, /*is_w*/true);
 }
 void TSLock::Unlock() {
+  ANNOTATE_RWLOCK_RELEASED(this, /*is_w*/true);
   int *p = (int*)&rep_;
   DCHECK(*p == 1 || *p == 2);
   int c = __sync_sub_and_fetch(p, 1);
@@ -504,7 +505,6 @@ void TSLock::Unlock() {
     *p = 0;
     syscall(SYS_futex, p, FUTEX_WAKE, 1, 0, 0, 0);
   }
-  ANNOTATE_RWLOCK_RELEASED(this, /*is_w*/true);
 }
 void TSLock::AssertHeld() {
   DCHECK(rep_);
