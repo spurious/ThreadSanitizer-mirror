@@ -6651,8 +6651,8 @@ TEST(StressTests, StartAndJoinManyThreads) {
 
 namespace StressTests_ManyAccesses {  // {{{1
 #ifndef NO_BARRIER
-const int kArrayLen = 1024 * 16;
-const int kNumIter = 1024 * 2;
+const int kArrayLen = 128;  // Small size, so that everything fits into cache.
+const int kNumIter = 1024 * 1024 * 2;
 int thread_id;
 int *array = NULL;
 Barrier *barrier;
@@ -6664,7 +6664,7 @@ void IncrementMe(int *x) {
 void NoRaceWorker() {
   int id = AtomicIncrement(&thread_id, 1);
   barrier->Block();
-  int *ptr = array + id * kArrayLen;
+  int *ptr = array + id * (kArrayLen + 64);  // pad to avoid false sharing.
   for (int it = 0; it < kNumIter; it++) {
     for (int i = 0; i < kArrayLen; i++) {
       IncrementMe(ptr + i);
@@ -6675,7 +6675,9 @@ void NoRaceWorker() {
 void RunThreads(int n_threads, void (*f)(void)) {
   thread_id = -1;
   barrier = new Barrier(n_threads);
-  array = new int[kArrayLen * n_threads];
+  // Allocate a lot so that operator new uses mmap, unless forced to use brk.
+  array = new int[(kArrayLen + 64) * n_threads + (1 << 22)];
+  printf("ptr = %p\n", array);
   MyThread **t = new MyThread*[n_threads];
   for (int i = 0; i < n_threads; i++) t[i] = new MyThread(NoRaceWorker);
   for (int i = 0; i < n_threads; i++) t[i]->Start();
