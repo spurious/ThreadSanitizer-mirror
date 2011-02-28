@@ -208,26 +208,19 @@ long my_strtol(const char *str, char **end, int base) {
 
 size_t GetVmSizeInMb() {
 #ifdef VGO_linux
-  const char *path ="/proc/self/status";
+  const char *path ="/proc/self/statm";  // see 'man proc'
   uintptr_t counter = G_stats->read_proc_self_stats++;
   if (counter >= 1024 && ((counter & (counter - 1)) == 0))
     Report("INFO: reading %s for %ld'th time\n", path, counter);
   int  fd = OpenFileReadOnly(path, false);
   if (fd < 0) return 0;
-  char buff[10 * 1024];
+  char buff[128];
   int n_read = read(fd, buff, sizeof(buff) - 1);
   buff[n_read] = 0;
   close(fd);
-  const char *vm_size_name = "VmSize:";
-  const int   vm_size_name_len = 7;
-  const char *vm_size_str = (const char *)VG_(strstr)((Char*)buff,
-                                                      (Char*)vm_size_name);
-  if (!vm_size_str) return 0;
-  vm_size_str += vm_size_name_len;
-  while(*vm_size_str == ' ') vm_size_str++;
   char *end;
-  size_t vm_size_in_kb = my_strtol(vm_size_str, &end, 0);
-  return vm_size_in_kb >> 10;
+  size_t vm_size_in_pages = my_strtol(buff, &end, 10);
+  return vm_size_in_pages >> 8;
 #else
   return 0;
 #endif
