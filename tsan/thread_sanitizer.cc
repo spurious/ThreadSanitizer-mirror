@@ -1114,7 +1114,7 @@ class VTS {
       G_stats->vts_create_big++;
     }
     VTS *res = new(mem) VTS(size);
-    G_stats->vts_total_size += size;
+    G_stats->vts_total_create += size;
     return res;
   }
 
@@ -1122,14 +1122,16 @@ class VTS {
     if (!vts) return;
     CHECK_GT(vts->ref_count_, 0);
     if (AtomicDecrementRefcount(&vts->ref_count_) == 0) {
-      G_stats->vts_delete++;
       size_t size = vts->size_;  // can't use vts->size().
       size_t rounded_size = RoundUpSizeForEfficientUseOfFreeList(size);
       if (rounded_size <= kNumberOfFreeLists) {
         free_lists_[rounded_size]->Deallocate(vts);
+        G_stats->vts_delete_small++;
       } else {
+        G_stats->vts_delete_big++;
         delete vts;
       }
+      G_stats->vts_total_delete += rounded_size;
     }
   }
 
@@ -1631,6 +1633,7 @@ class Segment {
   }
 
   static void ensure_space_for_stack_trace(SID sid) {
+    ScopedMallocCostCenter malloc_cc(__FUNCTION__);
     DCHECK(sid.valid());
     DCHECK(kSizeOfHistoryStackTrace > 0);
     size_t chunk_idx = (unsigned)sid.raw() / kChunkSizeForStacks;

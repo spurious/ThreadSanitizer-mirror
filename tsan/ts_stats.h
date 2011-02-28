@@ -86,11 +86,13 @@ struct Stats : private ThreadLocalStats {
   void PrintStats() {
     PrintEventStats();
     Printf("   VTS: created small/big: %'ld / %'ld; "
-           "deleted: %'ld; cloned: %'ld\n",
-           vts_create_small, vts_create_big, vts_delete, vts_clone);
-    Printf("   vts_total_size  = %'ld; avg=%'ld\n",
-           vts_total_size,
-           vts_total_size / (vts_create_small + vts_create_big + 1));
+           "deleted small/big: %'ld / %'ld; cloned: %'ld\n",
+           vts_create_small, vts_create_big,
+           vts_delete_small, vts_delete_big, vts_clone);
+    Printf("   vts_total_create  = %'ld; avg=%'ld; delete = %'ld\n",
+           vts_total_create,
+           vts_total_create / (vts_create_small + vts_create_big + 1),
+           vts_total_delete);
     Printf("   n_seg_hb        = %'ld\n", n_seg_hb);
     Printf("   n_vts_hb        = %'ld\n", n_vts_hb);
     Printf("   n_vts_hb_cached = %'ld\n", n_vts_hb_cached);
@@ -258,7 +260,8 @@ struct Stats : private ThreadLocalStats {
   uintptr_t mops_uniq;
 
   uintptr_t vts_create_big, vts_create_small,
-            vts_clone, vts_delete, vts_total_size;
+            vts_clone, vts_delete_small, vts_delete_big,
+            vts_total_delete, vts_total_create;
 
   uintptr_t ss_create, ss_reuse, ss_find, ss_recycle;
   uintptr_t ss_size_2, ss_size_3, ss_size_4, ss_size_other;
