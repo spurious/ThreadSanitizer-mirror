@@ -313,6 +313,7 @@ void ts_print_debug_usage(void) {
 extern int VG_(clo_error_exitcode);
 
 void ts_post_clo_init(void) {
+  ScopedMallocCostCenter malloc_cc(__FUNCTION__);
   InitCommandLineOptions();
   ThreadSanitizerParseFlags(g_command_line_options);
 
