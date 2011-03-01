@@ -206,6 +206,10 @@ long my_strtol(const char *str, char **end, int base) {
 #endif
 }
 
+// Not thread-safe. Need to make it thread-local if we allow
+// malloc to be called concurrently.
+MallocCostCenterStack g_malloc_stack;
+
 size_t GetVmSizeInMb() {
 #ifdef VGO_linux
   const char *path ="/proc/self/statm";  // see 'man proc'

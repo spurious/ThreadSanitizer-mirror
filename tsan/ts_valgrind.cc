@@ -47,33 +47,6 @@
 
 
 //---------------------- C++ malloc support -------------- {{{1
-class MallocCostCenterStack {
- public:
-  void Push(const char *cc) {
-    DCHECK(size_ < kMaxMallocStackSize);
-    DCHECK(cc);
-    malloc_cost_centers_[size_++] = cc;
-  }
-  void Pop() {
-    DCHECK(size_ > 0);
-    size_--;
-  }
-  const char *Top() {
-    return size_ ? malloc_cost_centers_[size_ - 1] : "default_cc";
-  }
- private:
-  static const int kMaxMallocStackSize = 100;
-  int size_;
-  const char *malloc_cost_centers_[kMaxMallocStackSize];
-};
-
-// Not thread-safe. Need to make it thread-local once we are multi-threaded.
-static MallocCostCenterStack g_malloc_stack;
-
-void PushMallocCostCenter(const char *cc) { g_malloc_stack.Push(cc); }
-void PopMallocCostCenter() { g_malloc_stack.Pop(); }
-
-
 void *operator new (size_t size) {
   return VG_(malloc)((HChar*)g_malloc_stack.Top(), size);
 }

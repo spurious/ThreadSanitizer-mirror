@@ -280,19 +280,37 @@ int getpid();
 #define TS_ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
 
 //--------- Malloc profiling ------------------- {{{1
-void PushMallocCostCenter(const char *cc);
-void PopMallocCostCenter();
+class MallocCostCenterStack {
+ public:
+  void Push(const char *cc) {
+    malloc_cost_centers_[size_++] = cc;
+  }
+  void Pop() {
+    size_--;
+  }
+  const char *Top() {
+    return size_ ? malloc_cost_centers_[size_ - 1] : "default_cc";
+  }
+ private:
+  enum { kMaxMallocStackSize = 100 };
+  int size_;
+  const char *malloc_cost_centers_[kMaxMallocStackSize];
+};
+
+// Not thread-safe. Need to make it thread-local if we allow
+// malloc to be called concurrently.
+extern MallocCostCenterStack g_malloc_stack;
 
 class ScopedMallocCostCenter {
  public:
   ScopedMallocCostCenter(const char *cc) {
-#if defined(DEBUG) && defined(TS_VALGRIND)
-      PushMallocCostCenter(cc);
+#if defined(TS_VALGRIND)
+    g_malloc_stack.Push(cc);
 #endif
   }
   ~ScopedMallocCostCenter() {
-#if defined(DEBUG) && defined(TS_VALGRIND)
-      PopMallocCostCenter();
+#if defined(TS_VALGRIND)
+    g_malloc_stack.Pop();
 #endif
   }
 };
