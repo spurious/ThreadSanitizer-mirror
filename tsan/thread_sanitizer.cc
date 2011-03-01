@@ -122,6 +122,15 @@ static INLINE void AssertTILHeld() {
 
 // -------- Util ----------------------------- {{{1
 
+// Can't use ANNOTATE_UNPROTECTED_READ, it may get instrumented.
+template <class T>
+inline T INTERNAL_ANNOTATE_UNPROTECTED_READ(const volatile T &x) {
+  ANNOTATE_IGNORE_READS_BEGIN();
+  T res = x;
+  ANNOTATE_IGNORE_READS_END();
+  return res;
+}
+
 string PcToRtnNameWithStats(uintptr_t pc, bool demangle) {
   G_stats->pc_to_rtn_name++;
   return PcToRtnName(pc, demangle);
@@ -1735,7 +1744,7 @@ class Segment {
 
   static void AssertLive(SID sid, int line) {
     if (DEBUG_MODE) {
-      if (!(sid.raw() < ANNOTATE_UNPROTECTED_READ(n_segments_))) {
+      if (!(sid.raw() < INTERNAL_ANNOTATE_UNPROTECTED_READ(n_segments_))) {
         Printf("Segment::AssertLive: failed on sid=%d n_segments = %dline=%d\n",
                sid.raw(), n_segments_, line);
       }
@@ -1778,7 +1787,9 @@ class Segment {
     return true;
   }
 
-  int32_t ref_count() const {return ANNOTATE_UNPROTECTED_READ(seg_ref_count_); }
+  int32_t ref_count() const {
+    return INTERNAL_ANNOTATE_UNPROTECTED_READ(seg_ref_count_);
+  }
 
   static void INLINE Ref(SID sid, const char *where) {
     Segment *seg = GetInternal(sid);
@@ -1909,7 +1920,7 @@ class Segment {
   }
   static INLINE Segment *GetInternal(SID sid) {
     DCHECK(sid.valid());
-    DCHECK(sid.raw() < ANNOTATE_UNPROTECTED_READ(n_segments_));
+    DCHECK(sid.raw() < INTERNAL_ANNOTATE_UNPROTECTED_READ(n_segments_));
     Segment *res = GetSegmentByIndex(sid.raw());
     return res;
   }
@@ -4372,7 +4383,9 @@ struct Thread {
     return joined_tid;
   }
 
-  static int NumberOfThreads() { return ANNOTATE_UNPROTECTED_READ(n_threads_); }
+  static int NumberOfThreads() {
+    return INTERNAL_ANNOTATE_UNPROTECTED_READ(n_threads_);
+  }
 
   static Thread *GetIfExists(TID tid) {
     if (tid.raw() < NumberOfThreads())
