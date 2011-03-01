@@ -87,7 +87,7 @@ TEST(SyscallTests, OutputDebugStringTest) {
   OutputDebugString("Hello!\n");
 }
 
-TEST(ComTests, DISABLED_IWbemLocator_ConnectServerTest) {
+TEST(ComTests, IWbemLocator_ConnectServerTest) {
   // DrMemory crashes on this test,
   // see http://code.google.com/p/drmemory/issues/detail?id=21
   HRESULT hr;
