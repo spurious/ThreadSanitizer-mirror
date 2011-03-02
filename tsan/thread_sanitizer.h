@@ -192,10 +192,14 @@ struct CallStack: public CallStackPod {
 #include "ts_events.h"
 #include "ts_trace_info.h"
 
+struct Thread;
 extern void ThreadSanitizerInit();
 extern void ThreadSanitizerFini();
 extern void ThreadSanitizerHandleOneEvent(Event *event);
+extern Thread *ThreadSanitizerGetThreadByTid(int32_t tid);
 extern void ThreadSanitizerHandleTrace(int32_t tid, TraceInfo *trace_info,
+                                       uintptr_t *tleb);
+extern void ThreadSanitizerHandleTrace(Thread *thr, TraceInfo *trace_info,
                                        uintptr_t *tleb);
 extern void ThreadSanitizerParseFlags(vector<string>* args);
 extern bool ThreadSanitizerWantToInstrumentSblock(uintptr_t pc);

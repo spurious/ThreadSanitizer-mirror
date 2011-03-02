@@ -202,6 +202,7 @@ const size_t kMaxMopsPerTrace = 2048;
 
 struct ValgrindThread {
   int32_t zero_based_uniq_tid;
+  Thread *ts_thread;
   uint32_t literace_sampling;
   vector<CallStackRecord> call_stack;
 
@@ -226,6 +227,7 @@ struct ValgrindThread {
   }
 
   void Clear() {
+    ts_thread = NULL;
     zero_based_uniq_tid = -1;
     literace_sampling = G_flags->literace_sampling;  // cache it.
     ignore_accesses = 0;
@@ -355,11 +357,9 @@ INLINE void FlushMops(ValgrindThread *thr, bool keep_trace_info = false) {
     thr->trace_info = NULL;
   }
 
-  int ts_tid = thr->zero_based_uniq_tid;
-
   if (global_ignore || thr->ignore_accesses ||
        (thr->literace_sampling &&
-        t->LiteRaceSkipTraceRealTid(ts_tid, thr->literace_sampling))) {
+        t->LiteRaceSkipTraceRealTid(thr->zero_based_uniq_tid, thr->literace_sampling))) {
     thr->trace_info = NULL;
     return;
   }
@@ -367,7 +367,8 @@ INLINE void FlushMops(ValgrindThread *thr, bool keep_trace_info = false) {
   size_t n = t->n_mops();
   DCHECK(n > 0);
   uintptr_t *tleb = thr->tleb;
-  ThreadSanitizerHandleTrace(ts_tid, t, tleb);
+  DCHECK(thr->ts_thread);
+  ThreadSanitizerHandleTrace(thr->ts_thread, t, tleb);
 }
 
 static void ShowCallStack(ValgrindThread *thr) {
@@ -513,16 +514,19 @@ void ts_fini(Int exitcode) {
 
 void evh__pre_thread_ll_create ( ThreadId parent, ThreadId child ) {
   tl_assert(parent != child);
+  ValgrindThread *thr = &g_valgrind_threads[child];
   //  Printf("thread_create: %d->%d\n", parent, child);
-  if (g_valgrind_threads[child].zero_based_uniq_tid != -1) {
+  if (thr->zero_based_uniq_tid != -1) {
     Printf("ThreadSanitizer WARNING: reusing TID %d w/o exiting thread\n",
            child);
   }
-  g_valgrind_threads[child].Clear();
-  g_valgrind_threads[child].zero_based_uniq_tid = g_uniq_thread_id_counter++;
+  thr->Clear();
+  thr->zero_based_uniq_tid = g_uniq_thread_id_counter++;
   // Printf("VG: T%d: VG_THR_START: parent=%d\n", VgTidToTsTid(child), VgTidToTsTid(parent));
   Put(THR_START, VgTidToTsTid(child), 0, 0,
       parent > 0 ? VgTidToTsTid(parent) : 0);
+  thr->ts_thread = ThreadSanitizerGetThreadByTid(thr->zero_based_uniq_tid);
+  CHECK(thr->ts_thread);
 }
 
 void evh__pre_workq_task_start(ThreadId vg_tid, Addr workitem) {

@@ -279,7 +279,6 @@ const char *c_default = "";
 
 
 // -------- Forward decls ------ {{{1
-struct Thread;
 static void ForgetAllStateAndStartOver(Thread *thr, const char *reason);
 static int32_t raw_tid(Thread *t);
 // -------- Simple Cache ------ {{{1
@@ -6064,10 +6063,8 @@ class Detector {
 #else
   INLINE
 #endif
-  void HandleTrace(int32_t raw_tid, TraceInfo *t,
-                          uintptr_t *tleb, bool need_locking) {
-    TID tid(raw_tid);
-    Thread *thr = Thread::Get(tid);
+  void HandleTrace(Thread *thr, TraceInfo *t,
+                   uintptr_t *tleb, bool need_locking) {
     DCHECK(t);
     size_t n = t->n_mops();
     DCHECK(n);
@@ -6091,7 +6088,7 @@ class Detector {
   }
 
   // Special case of a trace with just one mop and no sblock.
-  void INLINE HandleMemoryAccess(int32_t tid, uintptr_t pc,
+  void INLINE HandleMemoryAccess(Thread *thr, uintptr_t pc,
                           uintptr_t addr, uintptr_t size,
                           bool is_w, bool need_locking) {
     CHECK(size);
@@ -6102,7 +6099,7 @@ class Detector {
     trace_info.mops_[0].pc = pc;
     trace_info.mops_[0].size = size;
     trace_info.mops_[0].is_write = is_w;
-    HandleTrace(tid, (TraceInfo*)&trace_info, &addr, need_locking);
+    HandleTrace(thr, (TraceInfo*)&trace_info, &addr, need_locking);
   }
 
   void ShowUnfreedHeap() {
@@ -6251,27 +6248,27 @@ class Detector {
     DCHECK(e);
     EventType type = e->type();
     DCHECK(type != NOOP);
-    Thread *thread = NULL;
+    Thread *thr = NULL;
     if (type != THR_START) {
-      thread = Thread::Get(TID(e->tid()));
-      DCHECK(thread);
-      thread->SetTopPc(e->pc());
-      thread->stats.events[type]++;
+      thr = Thread::Get(TID(e->tid()));
+      DCHECK(thr);
+      thr->SetTopPc(e->pc());
+      thr->stats.events[type]++;
     }
 
     switch (type) {
       case READ:
-        HandleMemoryAccess(e->tid(), e->pc(), e->a(), e->info(), false, true);
+        HandleMemoryAccess(thr, e->pc(), e->a(), e->info(), false, true);
         return;
       case WRITE:
-        HandleMemoryAccess(e->tid(), e->pc(), e->a(), e->info(), true, true);
+        HandleMemoryAccess(thr, e->pc(), e->a(), e->info(), true, true);
         return;
       case RTN_CALL:
         HandleRtnCall(TID(e->tid()), e->pc(), e->a(),
                       IGNORE_BELOW_RTN_UNKNOWN);
         return;
       case RTN_EXIT:
-        thread->HandleRtnExit();
+        thr->HandleRtnExit();
         return;
       default: break;
     }
@@ -6287,20 +6284,20 @@ class Detector {
     }
 
     // Since we have the lock, get some fresh SIDs.
-    thread->GetSomeFreshSids();
+    thr->GetSomeFreshSids();
 
     switch (type) {
       case THR_START   : CHECK(0); break;
         break;
       case SBLOCK_ENTER:
-        if (thread->ignore_reads() && thread->ignore_writes()) break;
-        thread->HandleSblockEnter(e->pc(), /*allow_slow_path=*/true);
+        if (thr->ignore_reads() && thr->ignore_writes()) break;
+        thr->HandleSblockEnter(e->pc(), /*allow_slow_path=*/true);
         break;
       case THR_CREATE_BEFORE:
-        thread->HandleThreadCreateBefore(TID(e->tid()), e->pc());
+        thr->HandleThreadCreateBefore(TID(e->tid()), e->pc());
         break;
       case THR_CREATE_AFTER:
-        thread->HandleThreadCreateAfter(TID(e->tid()), TID(e->info()));
+        thr->HandleThreadCreateAfter(TID(e->tid()), TID(e->info()));
         break;
       case THR_FIRST_INSN:
         HandleThreadFirstInsn(TID(e->tid()));
@@ -6315,25 +6312,25 @@ class Detector {
       case MUNMAP      : HandleMunmap(e);     break;
 
 
-      case WRITER_LOCK : thread->HandleLock(e->a(), true);     break;
-      case READER_LOCK : thread->HandleLock(e->a(), false);    break;
-      case UNLOCK      : thread->HandleUnlock(e->a());       break;
+      case WRITER_LOCK : thr->HandleLock(e->a(), true);     break;
+      case READER_LOCK : thr->HandleLock(e->a(), false);    break;
+      case UNLOCK      : thr->HandleUnlock(e->a());       break;
       case UNLOCK_OR_INIT : HandleUnlockOrInit(e); break;
 
       case LOCK_CREATE:
       case LOCK_DESTROY: HandleLockCreateOrDestroy(e); break;
 
-      case SIGNAL      : thread->HandleSignal(e->a());  break;
-      case WAIT        : thread->HandleWait(e->a());   break;
+      case SIGNAL      : thr->HandleSignal(e->a());  break;
+      case WAIT        : thr->HandleWait(e->a());   break;
 
       case CYCLIC_BARRIER_INIT:
-        thread->HandleBarrierInit(e->a(), e->info());
+        thr->HandleBarrierInit(e->a(), e->info());
         break;
       case CYCLIC_BARRIER_WAIT_BEFORE  :
-        thread->HandleBarrierWaitBefore(e->a());
+        thr->HandleBarrierWaitBefore(e->a());
         break;
       case CYCLIC_BARRIER_WAIT_AFTER  :
-        thread->HandleBarrierWaitAfter(e->a());
+        thr->HandleBarrierWaitAfter(e->a());
         break;
 
       case PCQ_CREATE   : HandlePcqCreate(e);   break;
@@ -6377,7 +6374,7 @@ class Detector {
       case IGNORE_WRITES_END: HandleIgnore(e, true, false);  break;
 
       case SET_THREAD_NAME:
-        thread->set_thread_name((const char*)e->a());
+        thr->set_thread_name((const char*)e->a());
         break;
       case SET_LOCK_NAME: {
           uintptr_t lock_addr = e->a();
@@ -7408,7 +7405,7 @@ one_call:
       // We simulate 4- or 8-byte accesses to make analysis faster.
       for (uintptr_t i = 0; i < write_size; i += step) {
         uintptr_t this_size = write_size - i >= step ? step : write_size - i;
-        HandleMemoryAccess(e->tid(), e->pc(), a + i, this_size,
+        HandleMemoryAccess(thr, e->pc(), a + i, this_size,
                            /*is_w=*/true, /*need_locking*/false);
       }
     }
@@ -8324,10 +8321,19 @@ extern void ThreadSanitizerHandleOneEvent(Event *e) {
   G_detector->HandleOneEvent(e);
 }
 
+Thread *ThreadSanitizerGetThreadByTid(int32_t tid) {
+  return Thread::Get(TID(tid));
+}
+
 extern NOINLINE void ThreadSanitizerHandleTrace(int32_t tid, TraceInfo *trace_info,
                                        uintptr_t *tleb) {
+  ThreadSanitizerHandleTrace(Thread::Get(TID(tid)), trace_info, tleb);
+}
+extern NOINLINE void ThreadSanitizerHandleTrace(Thread *thr, TraceInfo *trace_info,
+                                                uintptr_t *tleb) {
+  DCHECK(thr);
   // The lock is taken inside on the slow path.
-  G_detector->HandleTrace(tid, trace_info, tleb, /*need_locking=*/true);
+  G_detector->HandleTrace(thr, trace_info, tleb, /*need_locking=*/true);
 }
 
 void NOINLINE ThreadSanitizerHandleRtnCall(int32_t tid, uintptr_t call_pc,
