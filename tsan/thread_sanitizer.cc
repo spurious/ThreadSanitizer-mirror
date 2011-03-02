@@ -6026,17 +6026,18 @@ int64_t EventSampler::print_after_this_number_of_samples_;
 // Collection of event handlers.
 class Detector {
  public:
-  void INLINE HandleTraceLoop(TraceInfo *t, Thread *thr, TID tid,
+  void INLINE HandleTraceLoop(Thread *thr, TID tid, uintptr_t pc,
+                              MopInfo *mops,
                               uintptr_t *tleb, size_t n,
                               int expensive_bits, bool need_locking) {
     bool has_expensive_flags = (expensive_bits & 4) != 0;
     size_t i = 0;
-    uintptr_t sblock_pc = t->pc();
+    uintptr_t sblock_pc = pc;
     size_t n_locks = 0;
     do {
       uintptr_t addr = tleb[i];
       if (addr == 0) continue;  // This mop was not executed.
-      MopInfo *mop = t->GetMop(i);
+      MopInfo *mop = &mops[i];
       tleb[i] = 0;  // we've consumed this mop, clear it.
       DCHECK(mop->size != 0);
       DCHECK(mop->pc != 0);
@@ -6072,13 +6073,14 @@ class Detector {
     int expensive_bits = thr->expensive_bits();
 
     if (expensive_bits == 0) {
-      HandleTraceLoop(t, thr, tid, tleb, n, 0, need_locking);
+      HandleTraceLoop(thr, tid, t->pc(), t->mops(), tleb, n, 0, need_locking);
     } else {
       if ((expensive_bits & 3) == 3) {
         // everything is ignored, just clear the tleb.
         for (size_t i = 0; i < n; i++) tleb[i] = 0;
       } else {
-        HandleTraceLoop(t, thr, tid, tleb, n, expensive_bits, need_locking);
+        HandleTraceLoop(thr, tid, t->pc(), t->mops(), tleb, n, 
+                        expensive_bits, need_locking);
       }
     }
     // At the end, the tleb must be cleared.

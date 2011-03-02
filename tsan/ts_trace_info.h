@@ -103,6 +103,7 @@ class TraceInfo : public TraceInfoPOD {
   size_t n_mops() const { return n_mops_; }
   size_t pc()     const { return pc_; }
   size_t &counter()     { return counter_; }
+  MopInfo *mops()       { return mops_; }
 
   static void PrintTraceProfile();
 
