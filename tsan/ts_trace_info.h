@@ -31,16 +31,50 @@
 #define TS_TRACE_INFO_
 
 #include "ts_util.h"
+#include "unistd.h"
 // Information about one Memory Operation.
 //
 // A memory access is represented by mop[idx] = {pc,size,is_write}
 // which is computed at instrumentation time and {actual_address} computed
 // at run-time. The instrumentation insn looks like
 //  tleb[idx] = actual_address
+// The create_sblock field tells if we want to remember the stack trace
+// which corresponds to this Mop (i.e. create an SBLOCK).
 struct MopInfo {
-  uintptr_t pc;
-  uint32_t  size;
-  bool      is_write;
+ public:
+  MopInfo(uintptr_t pc, size_t size, bool is_write, bool create_sblock) {
+    DCHECK(sizeof(*this) == 8);
+    pc_ = pc;
+    size_minus1_ = size - 1;
+    is_write_ = is_write;
+    create_sblock_ = create_sblock;
+
+    DCHECK(size != 0);
+    DCHECK(size <= 16);
+    DCHECK(this->size() == size);
+    DCHECK(this->is_write() == is_write);
+    DCHECK(this->create_sblock() == create_sblock);
+  }
+
+  MopInfo() {
+    DCHECK(sizeof(*this) == 8);
+    *(uint64_t*)this = 0;
+  }
+
+  uintptr_t pc()            { return pc_; };
+  size_t    size()          { return size_minus1_ + 1; }
+  bool      is_write()      { return is_write_; }
+  bool      create_sblock() { return create_sblock_; }
+
+ private:
+  uintptr_t  size_minus1_   :4;  // 0..15
+  uintptr_t  is_write_      :1;
+  uintptr_t  create_sblock_ :1;
+#if __WORDSIZE == 64
+  uintptr_t  pc_            :48;  // 48 bits is enough for pc.
+#else
+  uintptr_t  pc_;
+#endif
 };
 
 // ---------------- Lite Race ------------------

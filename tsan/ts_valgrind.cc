@@ -854,7 +854,7 @@ static uint32_t OnTraceVerify1() {
       if (addr) {
         MopInfo *mop = thr->trace_info->GetMop(i);
         need_sleep += RaceVerifierStartAccess(thr->zero_based_uniq_tid, addr,
-            mop->pc, mop->is_write);
+            mop->pc(), mop->is_write());
       }
     }
     // Setup the sleep timer.
@@ -906,7 +906,7 @@ static void OnTraceVerify2(TraceInfo *trace_info) {
       if (addr) {
         MopInfo *mop = thr->trace_info->GetMop(i);
         RaceVerifierEndAccess(thr->zero_based_uniq_tid, addr,
-            mop->pc, mop->is_write);
+            mop->pc(), mop->is_write());
       }
     }
   }
@@ -1154,9 +1154,7 @@ static void instrument_mem_access ( TraceInfo *trace_info,
   gen_store_to_tleb(bbOut, tleb_temp, *trace_idx, expr_to_store, tyAddr);
   // Create a mop {pc, size, is_write}
   MopInfo *mop = trace_info->GetMop(*trace_idx);
-  mop->pc = pc;
-  mop->size = szB;
-  mop->is_write = isStore;
+  new (mop) MopInfo(pc, szB, isStore, false);
   (*trace_idx)++;
 
   CHECK(*trace_idx == next_trace_idx);

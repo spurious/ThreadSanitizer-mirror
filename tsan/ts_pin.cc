@@ -172,14 +172,18 @@ static unordered_set<pthread_t> *g_win_handles_which_are_threads;
 #endif
 
 //-------------------- ts_replace ------------------- {{{1
-// TODO(kcc): do we need to handle these as a part of some TRACE?
-#define REPORT_READ_RANGE(x, size) do { \
-  if (size && !g_pin_threads[tid].ignore_accesses) \
-    DumpEvent(0, READ, tid, pc, (uintptr_t)(x), (size)); } while(0)
+static void ReportAccesRange(THREADID tid, uintptr_t pc, EventType type, uintptr_t x, size_t size) {
+  if (size && !g_pin_threads[tid].ignore_accesses) {
+    uintptr_t end = x + size;
+    for(uintptr_t a = x; a < end; a += 8) {
+      size_t cur_size = min((uintptr_t)8, end - a);
+      DumpEvent(0, type, tid, pc, a, cur_size);
+    }
+  }
+}
 
-#define REPORT_WRITE_RANGE(x, size) do { \
-  if (size && !g_pin_threads[tid].ignore_accesses) \
-    DumpEvent(0, WRITE, tid, pc, (uintptr_t)(x), (size)); } while(0)
+#define REPORT_READ_RANGE(x, size) ReportAccesRange(tid, pc, READ, (uintptr_t)x, size)
+#define REPORT_WRITE_RANGE(x, size) ReportAccesRange(tid, pc, WRITE, (uintptr_t)x, size)
 
 #define EXTRA_REPLACE_PARAMS THREADID tid, uintptr_t pc,
 #include "ts_replace.h"
@@ -394,12 +398,12 @@ static INLINE void TLEBFlushUnlocked(ThreadLocalEventBuffer &tleb) {
           DumpEventPlainText(SBLOCK_ENTER, t.uniq_tid, trace_info->pc(), 0, 0);
           for (size_t j = 0; j < n; j++) {
             MopInfo *mop = trace_info->GetMop(j);
-            DCHECK(mop->size);
+            DCHECK(mop->size());
             DCHECK(mop);
             uintptr_t addr = tleb.events[i + j];
             if (addr) {
-              DumpEventPlainText(mop->is_write ? WRITE : READ, t.uniq_tid,
-                                     mop->pc, addr, mop->size);
+              DumpEventPlainText(mop->is_write() ? WRITE : READ, t.uniq_tid,
+                                     mop->pc(), addr, mop->size());
             }
           }
         } else {
@@ -1788,8 +1792,8 @@ static void OnTraceVerifyInternal(PinThread &t, uintptr_t **tls_reg_p) {
       uintptr_t addr = (*tls_reg_p)[i];
       if (addr) {
         MopInfo *mop = t.trace_info->GetMop(i);
-        need_sleep += RaceVerifierStartAccess(t.uniq_tid, addr, mop->pc,
-            mop->is_write);
+        need_sleep += RaceVerifierStartAccess(t.uniq_tid, addr, mop->pc(),
+            mop->is_write());
       }
     }
 
@@ -1802,7 +1806,7 @@ static void OnTraceVerifyInternal(PinThread &t, uintptr_t **tls_reg_p) {
       uintptr_t addr = (*tls_reg_p)[i];
       if (addr) {
         MopInfo *mop = t.trace_info->GetMop(i);
-        RaceVerifierEndAccess(t.uniq_tid, addr, mop->pc, mop->is_write);
+        RaceVerifierEndAccess(t.uniq_tid, addr, mop->pc(), mop->is_write());
       }
     }
   }
@@ -2424,9 +2428,7 @@ static void InstrumentMopsInBBl(BBL bbl, RTN rtn, TraceInfo *trace_info, uintptr
         }
 
         MopInfo *mop = trace_info->GetMop(*mop_idx);
-        mop->pc = INS_Address(ins);
-        mop->size = size;
-        mop->is_write = is_write;
+        new (mop) MopInfo(INS_Address(ins), size, is_write, false);
         if (is_predicated) {
           INS_InsertPredicatedCall(ins, point,
               (AFUNPTR)On_PredicatedMop,

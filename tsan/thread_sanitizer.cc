@@ -4091,7 +4091,7 @@ void TraceInfo::PrintTraceProfile() {
     int64_t c = it->first;
     int64_t permile = (c * 1000) / total_counter;
     CHECK(trace->n_mops() > 0);
-    uintptr_t pc = trace->GetMop(0)->pc;
+    uintptr_t pc = trace->GetMop(0)->pc();
     CHECK(pc);
     if (permile == 0 || i >= 20) break;
     Printf("TR=%p pc: %p %p c=%lld (%lld/1000) n_mops=%ld %s\n",
@@ -6041,10 +6041,10 @@ class Detector {
       if (addr == 0) continue;  // This mop was not executed.
       MopInfo *mop = &mops[i];
       tleb[i] = 0;  // we've consumed this mop, clear it.
-      DCHECK(mop->size != 0);
-      DCHECK(mop->pc != 0);
-      if ((expensive_bits & 1) && mop->is_write == false) continue;
-      if ((expensive_bits & 2) && mop->is_write == true) continue;
+      DCHECK(mop->size() != 0);
+      DCHECK(mop->pc() != 0);
+      if ((expensive_bits & 1) && mop->is_write() == false) continue;
+      if ((expensive_bits & 2) && mop->is_write() == true) continue;
       n_locks += HandleMemoryAccessInternal(thr, &sblock_pc, addr, mop,
                                  has_expensive_flags,
                                  need_locking);
@@ -6089,10 +6089,7 @@ class Detector {
                                  uintptr_t addr, uintptr_t size,
                                  bool is_w, bool need_locking) {
     CHECK(size);
-    MopInfo mop;
-    mop.pc = pc;
-    mop.size = size;
-    mop.is_write = is_w;
+    MopInfo mop(pc, size, is_w, false);
     HandleTrace(thr, &mop, 1, 0/*no sblock*/, &addr, need_locking);
   }
 
@@ -6981,9 +6978,9 @@ class Detector {
       CacheLine *cache_line,
       Thread *thr, uintptr_t addr, MopInfo *mop,
       bool has_expensive_flags, bool fast_path_only) {
-    size_t size = mop->size;
-    uintptr_t pc = mop->pc;
-    bool is_w = mop->is_write;
+    size_t size = mop->size();
+    uintptr_t pc = mop->pc();
+    bool is_w = mop->is_write();
     uintptr_t a = addr;
     uintptr_t b = 0;
     uintptr_t off = CacheLine::ComputeOffset(a);
@@ -7063,7 +7060,7 @@ class Detector {
       // Handle this access as a series of 1-byte accesses, but only
       // inside the current cache line.
       // TODO(kcc): do we want to handle the next cache line as well?
-      b = a + mop->size;
+      b = a + mop->size();
       uintptr_t max_x = min(b, CacheLine::ComputeNextTag(a));
       for (uintptr_t x = a; x < max_x; x++) {
         off = CacheLine::ComputeOffset(x);
@@ -7091,7 +7088,7 @@ slow_path:
     CHECK(gr);
     // size is one of 1, 2, 4, 8; address is size-aligned, but the granularity
     // is different.
-    b = a + mop->size;
+    b = a + mop->size();
     for (uintptr_t x = a; x < b;) {
       if (has_expensive_flags) thr->stats.n_access_slow_iter++;
       off = CacheLine::ComputeOffset(x);
@@ -7127,8 +7124,8 @@ one_call:
   }
 
   void DoTrace(Thread *thr, uintptr_t addr, MopInfo *mop, bool need_locking) {
-    size_t size = mop->size;
-    uintptr_t pc = mop->pc;
+    size_t size = mop->size();
+    uintptr_t pc = mop->pc();
     TIL til(ts_lock, 1, need_locking);
     for (uintptr_t x = addr; x < addr + size; x++) {
       uintptr_t off = CacheLine::ComputeOffset(x);
@@ -7138,7 +7135,7 @@ one_call:
       if (cache_line->has_shadow_value().Get(off) != 0) {
         bool is_published = cache_line->published().Get(off);
         Printf("TRACE: T%d/S%d %s[%d] addr=%p sval: %s%s; line=%p P=%s\n",
-               raw_tid(thr), thr->sid().raw(), mop->is_write ? "wr" : "rd",
+               raw_tid(thr), thr->sid().raw(), mop->is_write() ? "wr" : "rd",
                size, addr, sval_p->ToString().c_str(),
                is_published ? " P" : "",
                cache_line,
@@ -7201,7 +7198,7 @@ one_call:
       HandleMemoryAccessForAtomicityViolationDetector(thr, addr, mop);
       return false;
     }
-    DCHECK(mop->size > 0);
+    DCHECK(mop->size() > 0);
     DCHECK(thr->is_running());
     DCHECK(!thr->ignore_reads() || !thr->ignore_writes());
 
@@ -7212,8 +7209,8 @@ one_call:
     // if (thr->IgnoreMemoryIfInStack(addr)) return;
 
     CacheLine *cache_line = NULL;
-    INC_STAT(thr->stats.memory_access_sizes[mop->size <= 16 ? mop->size : 17 ]);
-    INC_STAT(thr->stats.events[mop->is_write ? WRITE : READ]);
+    INC_STAT(thr->stats.memory_access_sizes[mop->size() <= 16 ? mop->size() : 17 ]);
+    INC_STAT(thr->stats.events[mop->is_write() ? WRITE : READ]);
     if (has_expensive_flags) {
       thr->stats.access_to_first_1g += (addr >> 30) == 0;
       thr->stats.access_to_first_2g += (addr >> 31) == 0;
@@ -7314,10 +7311,10 @@ one_call:
 //           tid.raw(), is_w ? "W" : "R", addr, pc, thr->MemoryIsInStack(addr),
 //           PcToRtnNameAndFilePos(pc).c_str());
 
-    BitSet *range_set = thr->lock_era_access_set(mop->is_write);
+    BitSet *range_set = thr->lock_era_access_set(mop->is_write());
     // Printf("era %d T%d access under lock pc=%p addr=%p size=%p w=%d\n",
     //        g_lock_era, tid.raw(), pc, addr, size, is_w);
-    range_set->Add(addr, addr + mop->size);
+    range_set->Add(addr, addr + mop->size());
     // Printf("   %s\n", range_set->ToString().c_str());
   }
 
