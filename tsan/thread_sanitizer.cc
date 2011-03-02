@@ -6063,24 +6063,21 @@ class Detector {
 #else
   INLINE
 #endif
-  void HandleTrace(Thread *thr, TraceInfo *t,
+  void HandleTrace(Thread *thr, MopInfo *mops, size_t n, uintptr_t pc,
                    uintptr_t *tleb, bool need_locking) {
-    DCHECK(t);
-    size_t n = t->n_mops();
     DCHECK(n);
     // 0 bit - ignore reads, 1 bit -- ignore writes,
     // 2 bit - has_expensive_flags.
     int expensive_bits = thr->expensive_bits();
 
     if (expensive_bits == 0) {
-      HandleTraceLoop(thr, t->pc(), t->mops(), tleb, n, 0, need_locking);
+      HandleTraceLoop(thr, pc, mops, tleb, n, 0, need_locking);
     } else {
       if ((expensive_bits & 3) == 3) {
         // everything is ignored, just clear the tleb.
         for (size_t i = 0; i < n; i++) tleb[i] = 0;
       } else {
-        HandleTraceLoop(thr, t->pc(), t->mops(), tleb, n,
-                        expensive_bits, need_locking);
+        HandleTraceLoop(thr, pc, mops, tleb, n, expensive_bits, need_locking);
       }
     }
     // At the end, the tleb must be cleared.
@@ -6089,17 +6086,14 @@ class Detector {
 
   // Special case of a trace with just one mop and no sblock.
   void INLINE HandleMemoryAccess(Thread *thr, uintptr_t pc,
-                          uintptr_t addr, uintptr_t size,
-                          bool is_w, bool need_locking) {
+                                 uintptr_t addr, uintptr_t size,
+                                 bool is_w, bool need_locking) {
     CHECK(size);
-    TraceInfoPOD trace_info;
-    trace_info.n_mops_ = 1;
-    trace_info.pc_ = 0;  // don't create an sblock.
-    trace_info.counter_ = 0;
-    trace_info.mops_[0].pc = pc;
-    trace_info.mops_[0].size = size;
-    trace_info.mops_[0].is_write = is_w;
-    HandleTrace(thr, (TraceInfo*)&trace_info, &addr, need_locking);
+    MopInfo mop;
+    mop.pc = pc;
+    mop.size = size;
+    mop.is_write = is_w;
+    HandleTrace(thr, &mop, 1, 0/*no sblock*/, &addr, need_locking);
   }
 
   void ShowUnfreedHeap() {
@@ -8333,7 +8327,11 @@ extern NOINLINE void ThreadSanitizerHandleTrace(Thread *thr, TraceInfo *trace_in
                                                 uintptr_t *tleb) {
   DCHECK(thr);
   // The lock is taken inside on the slow path.
-  G_detector->HandleTrace(thr, trace_info, tleb, /*need_locking=*/true);
+  G_detector->HandleTrace(thr,
+                          trace_info->mops(),
+                          trace_info->n_mops(),
+                          trace_info->pc(),
+                          tleb, /*need_locking=*/true);
 }
 
 void NOINLINE ThreadSanitizerHandleRtnCall(int32_t tid, uintptr_t call_pc,
