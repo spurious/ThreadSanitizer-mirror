@@ -31,7 +31,6 @@
 #define TS_TRACE_INFO_
 
 #include "ts_util.h"
-#include "unistd.h"
 // Information about one Memory Operation.
 //
 // A memory access is represented by mop[idx] = {pc,size,is_write}
