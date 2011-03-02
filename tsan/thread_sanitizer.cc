@@ -3183,6 +3183,46 @@ uintptr_t GetCacheLinesForRange(uintptr_t a, uintptr_t b,
 
 
 
+// -------- DirectMapCacheForRange -------------- {{{1
+// Fast cache which stores cache lines for memory in range [kMin, kMax).
+// The simplest way to force a program to allocate memory in first 2G
+// is to set MALLOC_MMAP_MAX_=0 (works with regular malloc on linux).
+template<size_t kMin, size_t kMax>
+class DirectMapCacheForRange {
+ public:
+  DirectMapCacheForRange() {
+    Report("INFO: Allocating %ldMb for fast cache\n", sizeof(*this) >> 20);
+    memset(cache_, 0, sizeof(cache_));
+  }
+
+  INLINE bool AddressIsInRange(uintptr_t a) {
+#ifdef TS_DIRECT_MAP
+    return a >= kMin && a < kMax;
+#else
+    return 0;
+#endif
+  }
+
+  INLINE CacheLine *GetLine(TID tid, uintptr_t a, bool create_new_if_need) {
+    CHECK(AddressIsInRange(a));
+    uintptr_t cli = (a - kMin) >> CacheLine::kLineSizeBits;
+    CHECK(cli < kCacheSize);
+    CacheLine **cache_line_p = &cache_[cli];
+    if (*cache_line_p == NULL) {
+      if (create_new_if_need == false) return NULL;
+      AssertTILHeld();
+      uintptr_t tag = CacheLine::ComputeTag(a);
+      *cache_line_p = CacheLine::CreateNewCacheLine(tag);
+    }
+    DCHECK(*cache_line_p);
+    return *cache_line_p;
+  }
+ private:
+  enum { kRangeSize = kMax - kMin };
+  enum { kCacheSize = kRangeSize / CacheLine::kLineSize };
+  CacheLine *cache_[kCacheSize];
+};
+
 // -------- Cache ------------------ {{{1
 class Cache {
  public:
@@ -3205,16 +3245,23 @@ class Cache {
     return kLineIsLocked();
   }
 
+  INLINE bool IsInDirectCache(uintptr_t a) {
+    return direct_cache_.AddressIsInRange(a);
+  }
+
   // Try to get a CacheLine for exclusive use.
   // May return NULL or kLineIsLocked.
   INLINE CacheLine *TryAcquireLine(TID tid, uintptr_t a, int call_site) {
+    if (IsInDirectCache(a)) {
+      return direct_cache_.GetLine(tid, a, false);
+    }
     uintptr_t cli = ComputeCacheLineIndexInCache(a);
     CacheLine **addr = &lines_[cli];
     CacheLine *res = (CacheLine*)AtomicExchange(
            (uintptr_t*)addr, (uintptr_t)kLineIsLocked());
     if (DEBUG_MODE && debug_cache) {
       uintptr_t tag = CacheLine::ComputeTag(a);
-      if (res)
+      if (res && res != kLineIsLocked())
         Printf("TryAcquire %p empty=%d tag=%lx cli=%lx site=%d\n",
                res, res->Empty(), res->tag(), cli, call_site);
       else
@@ -3227,6 +3274,7 @@ class Cache {
   }
 
   INLINE CacheLine *AcquireLine(TID tid, uintptr_t a, int call_site) {
+    CHECK(!IsInDirectCache(a));
     CacheLine *line = NULL;
     int iter = 0;
     const int max_iter = 1 << 30;
@@ -3236,8 +3284,8 @@ class Cache {
       if ((iter % (1 << 12)) == 0) {
         YIELD();
         G_stats->try_acquire_line_spin++;
-        if ((iter % (1 << 15)) == 0) {
-          Printf("T%d %s iter=%d\n", tid.raw(), __FUNCTION__, iter);
+        if (((iter & (iter - 1)) == 0)) {
+          Printf("T%d %s a=%p iter=%d\n", tid.raw(), __FUNCTION__, a, iter);
         }
       }
       if (iter == max_iter) {
@@ -3253,6 +3301,7 @@ class Cache {
   // Release a CacheLine from exclusive use.
   INLINE void ReleaseLine(TID tid, uintptr_t a, CacheLine *line, int call_site) {
     if (TS_SERIALIZED) return;
+    if (IsInDirectCache(a)) return;
     DCHECK(line != kLineIsLocked());
     uintptr_t cli = ComputeCacheLineIndexInCache(a);
     DCHECK(line == NULL ||
@@ -3293,6 +3342,10 @@ class Cache {
     CacheLine *res = NULL;
     CacheLine *line = NULL;
 
+    if (IsInDirectCache(a)) {
+      return direct_cache_.GetLine(tid, a, create_new_if_need);
+    }
+
     if (create_new_if_need == false && lines_[cli] == 0) {
       // There is no such line in the cache, nor should it be in the storage.
       // Check that the storage indeed does not have this line.
@@ -3310,7 +3363,6 @@ class Cache {
 
     if (LIKELY(line && line->tag() == tag)) {
       res = line;
-      // G_stats->cache_fast_get++;
     } else {
       res = WriteBackAndFetch(tid, line, tag, cli, create_new_if_need);
       if (!res) {
@@ -3522,12 +3574,10 @@ class Cache {
   CacheLine *lines_[kNumLines];
 
   // tag => CacheLine
-#if 1
   typedef unordered_map<uintptr_t, CacheLine*> Map;
-#else
-  typedef map<uintptr_t, CacheLine*> Map;
-#endif
   Map storage_;
+
+  DirectMapCacheForRange<0,  (1<<30) > direct_cache_;
 };
 
 static  Cache *G_cache;
@@ -6903,7 +6953,7 @@ class Detector {
     }
 
 
-    if (DEBUG_MODE) {
+    if (DEBUG_MODE && !fast_path_only) {
       // check that the SSIDs/SIDs in the new sval have sane ref counters.
       CHECK(!sval_p->wr_ssid().IsEmpty() || !sval_p->rd_ssid().IsEmpty());
       for (int i = 0; i < 2; i++) {
@@ -7173,6 +7223,9 @@ one_call:
       if (thr->HasRoomForDeadSids()) {
         // Acquire a line w/o locks.
         cache_line = G_cache->TryAcquireLine(tid, addr, __LINE__);
+        if (has_expensive_flags && cache_line && G_cache->IsInDirectCache(addr)) {
+          INC_STAT(thr->stats.cache_fast_get);
+        }
         if (!Cache::LineIsNullOrLocked(cache_line)) {
           // The line is not empty or locked -- check the tag.
           if (cache_line->tag() == CacheLine::ComputeTag(addr)) {
