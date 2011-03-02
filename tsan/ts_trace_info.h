@@ -44,12 +44,12 @@ struct MopInfo {
   MopInfo(uintptr_t pc, size_t size, bool is_write, bool create_sblock) {
     DCHECK(sizeof(*this) == 8);
     pc_ = pc;
+    if (size > 16) size = 16; // some instructions access more than 16 bytes.
     size_minus1_ = size - 1;
     is_write_ = is_write;
     create_sblock_ = create_sblock;
 
     DCHECK(size != 0);
-    DCHECK(size <= 16);
     DCHECK(this->size() == size);
     DCHECK(this->is_write() == is_write);
     DCHECK(this->create_sblock() == create_sblock);
