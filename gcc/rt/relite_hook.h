@@ -25,47 +25,51 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "relite_dbg.h"
-#include <pthread.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <stdarg.h>
-#include <stdio.h>
-#include <string.h>
+#ifndef RELITE_HOOK_H_INCLUDED
+#define RELITE_HOOK_H_INCLUDED
+
+#include <stddef.h>
+#include <assert.h>
 
 
+typedef enum relite_hook_e {
+  relite_hook_malloc,
+  relite_hook_calloc,
+  relite_hook_realloc,
+  relite_hook_free,
 
-//static pthread_mutex_t g_dbg_mtx = PTHREAD_MUTEX_INITIALIZER;
-extern __thread thrid_t relite_dbg_tid;
+  relite_hook_memset,
+  relite_hook_memcpy,
+  relite_hook_memcmp,
 
+  relite_hook_pthread_create,
+  relite_hook_pthread_join,
 
-void relite_dbg(char const* fmt, ...) {
-  char buf1 [1024];
-  snprintf(buf1, sizeof(buf1) - 1, "relite(%d): %s\n", relite_dbg_tid, fmt);
+  relite_hook_pthread_mutex_init,
+  relite_hook_pthread_mutex_destroy,
+  relite_hook_pthread_mutex_lock,
+  relite_hook_pthread_mutex_trylock,
+  relite_hook_pthread_mutex_unlock,
 
-  va_list argptr;
-  va_start(argptr, fmt);
-  char buf2 [1024];
-  vsnprintf(buf2, sizeof(buf2) - 1, buf1, argptr);
-  va_end(argptr);
-
-  write(1, buf2, strlen(buf2));
-}
-
-
-void                    relite_fatal        (char const* fmt, ...) {
-  char buf1 [1024];
-  snprintf(buf1, sizeof(buf1) - 1, "relite(%d): %s\n", relite_dbg_tid, fmt);
-
-  va_list argptr;
-  va_start(argptr, fmt);
-  char buf2 [1024];
-  vsnprintf(buf2, sizeof(buf2) - 1, buf1, argptr);
-  va_end(argptr);
-
-  write(1, buf2, strlen(buf2));
-  exit(1);
-}
+  relite_hook_pthread_cond_init,
+  relite_hook_pthread_cond_destroy,
+  relite_hook_pthread_cond_signal,
+  relite_hook_pthread_cond_broadcast,
+  relite_hook_pthread_cond_wait,
+  relite_hook_pthread_cond_timedwait,
+} relite_hook_e;
 
 
+typedef void            (*relite_hook_f)    ();
+
+
+void                    relite_hook_init    ();
+relite_hook_f           relite_hook_get     (relite_hook_e hook);
+
+
+void*                   relite_malloc       (size_t size);
+void                    relite_free         (void* ptr);
+
+
+#endif
 

@@ -42,12 +42,31 @@ typedef enum {
 } memory_order;
 
 
+typedef struct __attribute__((aligned(4))) {
+  uint32_t volatile             v;
+} atomic_uint32_t;
+
+
 typedef struct __attribute__((aligned(8))) {
   uint64_t volatile             v;
 } atomic_uint64_t;
 
 
-uint64_t atomic_uint64_load(
+static inline uint32_t atomic_uint32_load (
+  atomic_uint32_t const* a,
+  memory_order mo) {
+  assert(mo & (memory_order_relaxed
+    | memory_order_consume
+    | memory_order_acquire
+    | memory_order_seq_cst));
+  assert(((uintptr_t)a % sizeof(*a)) == 0);
+  uint32_t v = a->v;
+  __asm__ __volatile__ ("" ::: "memory");
+  return v;
+}
+
+
+static inline uint64_t atomic_uint64_load (
   atomic_uint64_t const* a,
   memory_order mo) {
   assert(mo & (memory_order_relaxed
@@ -61,14 +80,36 @@ uint64_t atomic_uint64_load(
 }
 
 
-void atomic_uint64_store(
+static inline void atomic_uint32_store(
+  atomic_uint32_t* a,
+  uint32_t v,
+  memory_order mo) {
+  assert(mo & (memory_order_relaxed
+    | memory_order_release
+    | memory_order_seq_cst));
+  assert(((uintptr_t)a % sizeof(*a)) == 0);
+  if (mo == memory_order_seq_cst) {
+    uint32_t prev;
+    __asm__ __volatile__("xchgl %0, %1"
+      : "=r"(prev), "=m"(a->v)
+      : "0"(v), "m"(a->v)
+      : "memory", "cc");
+  } else {
+    __asm__ __volatile__ ("" ::: "memory");
+    a->v = v;
+    __asm__ __volatile__ ("" ::: "memory");
+  }
+}
+
+
+static inline void atomic_uint64_store(
   atomic_uint64_t* a,
   uint64_t v,
   memory_order mo) {
   assert(mo & (memory_order_relaxed
     | memory_order_release
     | memory_order_seq_cst));
-  assert(((uintptr_t)a % 8) == 0);
+  assert(((uintptr_t)a % sizeof(*a)) == 0);
   if (mo == memory_order_seq_cst) {
     uint64_t prev;
     __asm__ __volatile__("xchgq %0, %1"
@@ -83,7 +124,7 @@ void atomic_uint64_store(
 }
 
 
-uint64_t atomic_uint64_fetch_add(
+static inline uint64_t atomic_uint64_fetch_add(
   atomic_uint64_t* a,
   uint64_t v,
   memory_order mo) {
@@ -92,7 +133,7 @@ uint64_t atomic_uint64_fetch_add(
 }
 
 
-uint64_t atomic_uint64_fetch_and(
+static inline uint64_t atomic_uint64_fetch_and(
   atomic_uint64_t* a,
   uint64_t v,
   memory_order mo) {
@@ -101,7 +142,7 @@ uint64_t atomic_uint64_fetch_and(
 }
 
 
-uint64_t atomic_uint64_fetch_or(
+static inline uint64_t atomic_uint64_fetch_or(
   atomic_uint64_t* a,
   uint64_t v,
   memory_order mo) {
@@ -110,7 +151,7 @@ uint64_t atomic_uint64_fetch_or(
 }
 
 
-int atomic_uint64_compare_exchange(
+static inline int atomic_uint64_compare_exchange(
   atomic_uint64_t* a,
   uint64_t* cmp,
   uint64_t xchg,
@@ -122,6 +163,20 @@ int atomic_uint64_compare_exchange(
     return 1;
   *cmp = prev;
   return 0;
+}
+
+
+static inline int atomic_uint32_exchange(
+  atomic_uint32_t* a,
+  uint32_t v,
+  memory_order mo) {
+  assert(((uintptr_t)a % sizeof(*a)) == 0);
+  uint32_t prev;
+  __asm__ __volatile__("xchgl %0, %1"
+    : "=r"(prev), "=m"(a->v)
+    : "0"(v), "m"(a->v)
+    : "memory", "cc");
+  return prev;
 }
 
 

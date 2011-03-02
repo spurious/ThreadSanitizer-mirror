@@ -1,5 +1,33 @@
+/* Relite
+ * Copyright (c) 2011, Google Inc.
+ * All rights reserved.
+ * Author: Dmitry Vyukov (dvyukov@google.com)
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ *     * Redistributions of source code must retain the above copyright
+ * notice, this list of conditions and the following disclaimer.
+ *     * Neither the name of Google Inc. nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+ * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
 #include <gcc-plugin.h>
 #include <plugin-version.h>
+#include <plugin.h>
 #include <config.h>
 #include <system.h>
 #include <coretypes.h>
@@ -9,7 +37,7 @@
 #include <stdio.h>
 #include "relite_pass.h"
 
-//#define RELITE_USE_PASS_MANAGER
+#define RELITE_USE_PASS_MANAGER
 
 // required by gcc plugin machinery
 bool plugin_is_GPL_compatible = false;
@@ -28,10 +56,33 @@ static void plugin_finish_unit(void* event_data, void* user_data)
 }
 
 
-#if RELITE_USE_PASS_MANAGER
+static tree handle_ignore_attribute(tree* node, tree name, tree args,
+                                  int flags, bool* no_add_attrs)
+{
+  return NULL_TREE;
+}
+
+
+static struct attribute_spec ignore_attr = {
+    "relite_ignore",
+    0,
+    0,
+    0,
+    0,
+    0,
+    handle_ignore_attribute
+};
+
+
+static void register_attributes(void* event_data, void* user_data) {
+  register_attribute(&ignore_attr);
+}
+
+
+#ifdef RELITE_USE_PASS_MANAGER
 static unsigned instrumentation_pass() {
   if (errorcount != 0 || sorrycount != 0)
-    return;
+    return 0;
   gcc_assert(cfun != 0);
   relite_pass(&g_ctx, cfun);
   return 0;
@@ -75,7 +126,7 @@ int plugin_init(struct plugin_name_args* info,
     scanf("%1c", buf);
   }
 
-#if RELITE_USE_PASS_MANAGER
+#ifdef RELITE_USE_PASS_MANAGER
   static struct gimple_opt_pass pass_instrumentation = {{
     GIMPLE_PASS,
     "relite",                             /* name */
@@ -85,28 +136,43 @@ int plugin_init(struct plugin_name_args* info,
     NULL,                                 /* next */
     0,                                    /* static_pass_number */
     TV_NONE,                              /* tv_id */
-    PROP_ssa | PROP_cfg,                  /* properties_required */
+    PROP_trees | PROP_cfg,                /* properties_required */
     0,                                    /* properties_provided */
     0,                                    /* properties_destroyed */
     0,                                    /* todo_flags_start */
-    TODO_verify_all | TODO_update_address_taken | TODO_update_ssa
+    0/*
+    ((unsigned)-1)
+      &~TODO_cleanup_cfg
+      &~TODO_update_address_taken
+      &~TODO_rebuild_alias
+      &~TODO_rebuild_frequencies
+      &~TODO_remove_functions
+      &~TODO_dump_cgraph
+      &~TODO_ggc_collect
+      //&~TODO_df_finish
+      //TODO_verify_all | TODO_update_address_taken | TODO_update_ssa
+       */
   }};
 
   struct register_pass_info pass;
   pass.pass = &pass_instrumentation.pass;
-  pass.reference_pass_name = "ssa";
+  //pass.reference_pass_name = "*warn_unused_result";
+  pass.reference_pass_name = "optimized";
   pass.ref_pass_instance_number = 1;
-  pass.pos_op = PASS_POS_INSERT_BEFORE;
+  pass.pos_op = PASS_POS_INSERT_AFTER;
 
   register_callback(info->base_name, PLUGIN_PASS_MANAGER_SETUP,
                     NULL, &pass);
 #else
-  register_callback(info->base_name, PLUGIN_ALL_PASSES_START,
+  register_callback(info->base_name, PLUGIN_ALL_PASSES_END,
                     &instrumentation_pass, 0);
 #endif
 
   register_callback(info->base_name, PLUGIN_FINISH_UNIT,
                     &plugin_finish_unit, &g_ctx);
+
+  register_callback(info->base_name, PLUGIN_ATTRIBUTES,
+                    register_attributes, 0);
 
   return 0;
 }

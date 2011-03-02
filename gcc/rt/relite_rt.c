@@ -26,16 +26,20 @@
  */
 
 #include "relite_rt.h"
+#include "relite_thr.h"
 #include "relite_atomic.h"
+#include "relite_report.h"
+#include "relite_hook.h"
+#include "relite_stdlib.h"
 #include "relite_dbg.h"
 #include <stdint.h>
 #include <stdlib.h>
+#include <pthread.h>
+#include <time.h>
 #include <stdio.h>
 #include <assert.h>
 #include <memory.h>
-//#include <errno.h>
-#include <unistd.h>
-#include <execinfo.h>
+#include <sched.h>
 #include <sys/mman.h>
 
 
@@ -60,25 +64,6 @@
 //    C - timestamp (clock) (44 bits)
 
 
-#define MAX_THREADS             (64*1024)
-#define THR_MASK_SIZE           (MAX_THREADS / sizeof(size_t) / 8)
-#define SHADOW_BASE             ((atomic_uint64_t*)0x00000D0000000000ull)
-#define SHADOW_SIZE             (0x0000800000000000ull - 0x00000E38E38E3800ull)
-#define STATE_SYNC_MASK         0x8000000000000000ull
-#define STATE_SYNC_SHIFT        63
-#define STATE_SIZE_MASK         0x6000000000000000ull
-#define STATE_SIZE_SHIFT        61
-#define STATE_LOAD_MASK         0x1000000000000000ull
-#define STATE_LOAD_SHIFT        60
-#define STATE_THRID_MASK        0x0FFFF00000000000ull
-#define STATE_THRID_SHIFT       44
-#define STATE_TIMESTAMP_MASK    0x00000FFFFFFFFFFFull
-
-#define SZ_1                    3
-#define SZ_2                    2
-#define SZ_4                    1
-#define SZ_8                    0
-
 #define NOINLINE                __attribute__((noinline))
 #define LIKELY(x)               __builtin_expect(!!(x), 1)
 #define UNLIKELY(x)             __builtin_expect(!!(x), 0)
@@ -86,28 +71,14 @@
 //#define UNLIKELY(x)             x
 
 
-typedef     void const volatile*addr_t;
-typedef     uint32_t            thrid_t;
-typedef     uint64_t            timestamp_t;
-typedef     uint64_t            state_t;
-
-
-
-
 __thread void*                 relite_stack [64];
 __thread void**                relite_func;
 
 
 typedef struct rl_rt_context_t {
+  void*                         shadow_mem;
   atomic_size_t                 thr_mask [THR_MASK_SIZE];
 } rl_rt_context_t;
-
-
-typedef struct rl_rt_thread_t {
-  thrid_t                       id;
-  size_t                        clock_size;
-  timestamp_t                   clock [MAX_THREADS];
-} rl_rt_thread_t;
 
 
 typedef struct rl_rt_sync_t {
@@ -153,145 +124,91 @@ typedef struct dynamic_func_t {
 } dynamic_func_t;
 
 
-static rl_rt_context_t          ctx;
-static __thread rl_rt_thread_t  thr;
-
-
-#ifdef RELITE_RT_DUMP
-static pthread_mutex_t g_dbg_mtx = PTHREAD_MUTEX_INITIALIZER;
-void dump_clock(char const* desc, timestamp_t const* clock) {
-  pthread_mutex_lock(&g_dbg_mtx);
-  fprintf(stderr, "relite(%u): %s:", thr.id, desc);
-  int i;
-  for (i = 0; i != MAX_THREADS; i += 1) {
-    if (clock[i] != 0)
-      fprintf(stderr, " %d=%llu", i, (unsigned long long)(clock[i]));
-  }
-  fprintf(stderr, "\n");
-  pthread_mutex_unlock(&g_dbg_mtx);
-}
-#else
-void dump_clock(char const* desc, timestamp_t const* clock) {
-  (void)desc;
-  (void)clock;
-}
-#endif
-
-static void fatal(char const* msg) __attribute__((noreturn));
-static void fatal(char const* msg) {
-  fprintf(stderr, "rl_rt: %s\n", msg);
-  exit(1);
-}
-
-
-static size_t atomic_bitmask_alloc(atomic_size_t* mask, size_t size) {
-  size_t slot = 0;
-  for (; slot != size; slot += 1) {
-    size_t cmp = atomic_size_load(&mask[slot], memory_order_relaxed);
-    for (;;) {
-      if (cmp == (size_t)-1)
-        break;
-      size_t xchg;
-      size_t idx = 0;
-      for (; idx != 8 * sizeof(size_t); idx += 1) {
-        xchg = cmp | (1ull << idx);
-        if (cmp ^ xchg)
-          break;
-      }
-      if (atomic_size_compare_exchange
-          (&mask[slot], &cmp, xchg, memory_order_relaxed))
-        return slot * sizeof(size_t) * 8 + idx;
-    }
-  }
-  fatal("too many threads");
-}
-
-/*
-static void atomic_bitmask_free(atomic_size_t* mask, size_t size, size_t bit) {
-  size_t const slot = bit / (8 * sizeof(size_t));
-  size_t const idx = bit % (8 * sizeof(size_t));
-  size_t const add = (size_t)(1ull << idx);
-  assert(slot < size);
-  assert((atomic_size_load(&mask[slot], memory_order_relaxed) & add) != 0);
-  atomic_size_fetch_and(&mask[slot], ~add, memory_order_relaxed);
-}
-*/
+static                  rl_rt_context_t     g_ctx;
+static __thread         relite_thr_t*       g_thr;
 
 
 void handle_thread_start () {
-  thr.id = atomic_bitmask_alloc(ctx.thr_mask, THR_MASK_SIZE);
-  thr.clock_size = thr.id;
-  thr.clock[thr.id] = 1;
-  DBG("thread start %u", thr.id);
+  relite_thr_t* thr = relite_thr_init();
+  assert(g_thr == 0);
+  g_thr = thr;
+  DBG("thread start %u", thr->id);
 }
 
 
 void                    handle_thread_end () {
-
+  assert(g_thr != 0);
+  relite_thr_t* thr = g_thr;
+  DBG("thread end %u", thr->id);
+  relite_thr_free(thr);
 }
 
 
 void            rl_rt_init      () __attribute__((constructor(101)));
+
 void            rl_rt_init      () {
-  DBG("initalizing");
-  void* mem = (atomic_uint64_t*)mmap(SHADOW_BASE, SHADOW_SIZE,
-    PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
-  if (mem != SHADOW_BASE)
-    fatal("failed to allocate shadow memory");
-  // reserve thread index 0
-  atomic_size_store(&ctx.thr_mask[0], 1, memory_order_relaxed);
+  if (g_ctx.shadow_mem == SHADOW_BASE)
+    return;
+  DBG("initializing...");
+  g_ctx.shadow_mem = (atomic_uint64_t*)mmap(SHADOW_BASE,SHADOW_SIZE,
+      PROT_READ | PROT_WRITE,
+      MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+  if (g_ctx.shadow_mem != SHADOW_BASE)
+    relite_fatal("failed to allocate shadow memory");
   handle_thread_start();
+  DBG("initialization completed");
+  relite_hook_init();
+  relite_report_init();
 }
 
 
+/*
+void __wrap___libc_csu_init() {
+  rl_rt_init();
+  extern void __real___libc_csu_init();
+  __real___libc_csu_init();
+}
+*/
+
+/*
 void      rl_rt_thr_end       ()
 {
   //atomic_bitmask_free(ctx.thr_mask, THR_MASK_SIZE, thr.id);
 }
+*/
+
+unsigned                relite_rand         (unsigned limit) {
+  return relite_thr_rand(g_thr, limit);
+}
+
+
+void                    relite_sched_shake  () {
+#ifdef RELITE_SCHED_SHAKE
+  relite_thr_t* thr = g_thr;
+  unsigned rnd = relite_thr_rand(thr, 4);
+  if (rnd == 0 || rnd == 1) {
+    // nothing
+  } else if (rnd == 2) {
+    sched_yield();
+  } else if (rnd == 3) {
+    unsigned count = relite_thr_rand(thr, 10000);
+    while (count --> 0) {
+      __asm__ __volatile__ ("pause" ::: "memory");
+    }
+  }
+#endif
+}
 
 
 
-
-
-
-static atomic_uint64_t* get_shadow(addr_t addr) {
+static inline atomic_uint64_t* get_shadow(addr_t addr) {
+  //TODO(dvyukov): how to eliminate it on fast-path?
+  if (g_ctx.shadow_mem == 0)
+    rl_rt_init();
   uintptr_t const offset = (uintptr_t)addr
     - (SHADOW_SIZE & ((uintptr_t)(addr < (addr_t)SHADOW_BASE) - 1));
   atomic_uint64_t* shadow = SHADOW_BASE + offset;
   return shadow;
-}
-
-
-static void handle_race(addr_t addr, size_t sz, int is_load, int is_load2) {
-  void* stacktrace [64];
-  int stacktrace_size = backtrace(
-      stacktrace, sizeof(stacktrace)/sizeof(stacktrace[0]));
-  char** stacktrace_sym =
-      backtrace_symbols(stacktrace, stacktrace_size);
-  int i;
-  for (i = 0; i != stacktrace_size; i += 1) {
-    DBG("#%d %s", i, stacktrace_sym[i]);
-    char syscom [1024];
-    snprintf(syscom, sizeof(syscom)/sizeof(syscom[0]),
-             "addr2line -Cf -e utest %p", stacktrace[i]);
-    system(syscom);
-  }
-  free(stacktrace_sym);
-
-
-
-  unsigned real_size = 8;
-  if (sz == 1)
-    real_size = 4;
-  else if (sz == 2)
-    real_size = 2;
-  else if (sz == 3)
-    real_size = 1;
-  fprintf(stderr, "%s-%s race on %p (%u bytes)\n",
-    (is_load ? "load" : "store"),
-    (is_load2 ? "load" : "store"),
-    addr, real_size);
-
 }
 
 
@@ -426,13 +343,14 @@ static NOINLINE void handle_store_slow(atomic_uint64_t* shadow,
 
 
 
-void            relite_load    (addr_t addr) {
+void            relite_load    (addr_t addr, unsigned flags) {
   int sz = 0;
   assert(addr != 0);
   assert(sz < 4);
   atomic_uint64_t* shadow = get_shadow(addr);
   uint64_t const state = atomic_uint64_load(shadow, memory_order_relaxed);
-  DBG("checking load at %p, state=%llx", addr, (unsigned long long)state);
+  DBG("checking load at %p (flags=%u), state=%llx",
+      addr, flags, (unsigned long long)state);
   // ensure that the address was not used as a sync variable
   if (LIKELY((state & STATE_SYNC_MASK) == 0)) {
     //size_t const real_sz = (state & STATE_SIZE_MASK) >> STATE_SIZE_SHIFT;
@@ -440,7 +358,7 @@ void            relite_load    (addr_t addr) {
     // and that the access is aligned
     //if (LIKELY((real_sz == sz) & is_aligned((uintptr_t)addr, sz))) {
       size_t prev_thrid = (state & STATE_THRID_MASK) >> STATE_THRID_SHIFT;
-      rl_rt_thread_t* self = &thr;
+      relite_thr_t* self = g_thr;
       // ensure that the previous access was from another thread
       if (UNLIKELY(prev_thrid != self->id)) {
         // ensure that the previous access was a store
@@ -448,8 +366,9 @@ void            relite_load    (addr_t addr) {
           timestamp_t prev_ts = (state & STATE_TIMESTAMP_MASK);
           // check for a race:
           // the previous store should happen before current load
-          if (UNLIKELY(prev_ts > self->clock[prev_thrid]))
-            handle_race(addr, sz, 1, 0);
+          if (UNLIKELY(prev_ts > self->clock[prev_thrid])) {
+            relite_report(addr, state, 1);
+          }
           // calculate and store new state
           uint64_t const new_state = ((uint64_t)sz << STATE_SIZE_SHIFT)
             | STATE_LOAD_MASK | ((uint64_t)self->id << STATE_THRID_SHIFT)
@@ -482,14 +401,16 @@ void            relite_load    (addr_t addr) {
 }
 
 
-void            relite_store   (addr_t addr) {
+void            relite_store   (addr_t addr, unsigned flags) {
   int sz = 0;
   assert(addr != 0);
   assert(sz < 4);
   atomic_uint64_t* shadow = get_shadow(addr);
   uint64_t const state = atomic_uint64_load(shadow, memory_order_relaxed);
-  DBG("checking store at %p, state=%llx", addr, (unsigned long long)state);
-  dump_clock("thread", thr.clock);
+  DBG("checking store at %p (flags=%u), state=%llx",
+      addr, flags, (unsigned long long)state);
+  relite_thr_t* self = g_thr;
+  timestamp_t const own_clock = self->own_clock;
   // ensure that the address was not used as a sync variable
   if (LIKELY((state & STATE_SYNC_MASK) == 0)) {
     //size_t const real_sz = (state & STATE_SIZE_MASK) >> STATE_SIZE_SHIFT;
@@ -497,20 +418,30 @@ void            relite_store   (addr_t addr) {
     // and that the access is aligned
     //if (LIKELY((real_sz == sz) & is_aligned((uintptr_t)addr, sz))) {
       size_t prev_thrid = (state & STATE_THRID_MASK) >> STATE_THRID_SHIFT;
-      rl_rt_thread_t* self = &thr;
+      timestamp_t prev_ts = (state & STATE_TIMESTAMP_MASK);
       // ensure that the previous access was from another thread
       if (UNLIKELY(prev_thrid != self->id)) {
-        timestamp_t prev_ts = (state & STATE_TIMESTAMP_MASK);
         // check for a race:
         // the previous access should happen before current store
-        if (UNLIKELY(prev_ts > (self->clock[prev_thrid])))
-          handle_race(addr, sz, 0, (state & STATE_LOAD_MASK) != 0);
+        if (UNLIKELY(prev_ts > (self->clock[prev_thrid]))) {
+          if (UNLIKELY(prev_ts != STATE_UNITIALIZED)) {
+            relite_report(addr, state, 0);
+          }
+        }
+        // calculate and store new state
+        uint64_t const volatile new_state = ((uint64_t)sz << STATE_SIZE_SHIFT)
+            | ((uint64_t)self->id << STATE_THRID_SHIFT)
+            | self->clock[self->id];
+        atomic_uint64_store(shadow, new_state, memory_order_relaxed);
+      } else {
+        if (UNLIKELY(prev_ts != own_clock)) {
+          // calculate and store new state
+          uint64_t const volatile new_state = ((uint64_t)sz << STATE_SIZE_SHIFT)
+            | ((uint64_t)self->id << STATE_THRID_SHIFT)
+            | self->clock[self->id];
+          atomic_uint64_store(shadow, new_state, memory_order_relaxed);
+        }
       }
-      // calculate and store new state
-      uint64_t const new_state = ((uint64_t)sz << STATE_SIZE_SHIFT)
-        | ((uint64_t)self->id << STATE_THRID_SHIFT)
-        | self->clock[self->id];
-      atomic_uint64_store(shadow, new_state, memory_order_relaxed);
     //} else {
     //  // the address is accessed with an unexpected size
     //  // or the access is unaligned,
@@ -526,13 +457,16 @@ void            relite_store   (addr_t addr) {
 
 void                    handle_region_load  (void const volatile* begin,
                                              void const volatile* end) {
+  //TODO(dvyukov): properly handle unaligned head and tail of the region
   assert(begin != 0 && begin <= end);
   DBG("checking region load %p-%p", begin, end);
-  rl_rt_thread_t* self = &thr;
+  relite_thr_t* self = g_thr;
   uint64_t const my_ts = self->clock[self->id];
   uint64_t const state_templ = ((uint64_t)self->id << STATE_THRID_SHIFT)
       | STATE_LOAD_MASK
       | my_ts;
+  timestamp_t const own_clock = self->own_clock;
+  int is_race_detected = 0;
   atomic_uint64_t* shadow = get_shadow(begin);
   atomic_uint64_t* shadow_end = get_shadow(end);
   assert(shadow <= shadow_end);
@@ -542,18 +476,20 @@ void                    handle_region_load  (void const volatile* begin,
     if (LIKELY((state & STATE_SYNC_MASK) == 0)) {
       // check that the address is occupied
       size_t const real_sz = (state & STATE_SIZE_MASK) >> STATE_SIZE_SHIFT;
-      if (real_sz != SZ_8 || ((uintptr_t)shadow % 64) == 0) {
+      if (UNLIKELY(real_sz != SZ_8 || ((uintptr_t)shadow % 64) == 0)) {
         size_t prev_thrid = (state & STATE_THRID_MASK) >> STATE_THRID_SHIFT;
+        timestamp_t prev_ts = (state & STATE_TIMESTAMP_MASK);
         // ensure that the previous access was from another thread
         if (UNLIKELY(prev_thrid != self->id)) {
           // ensure that the previous access was a store
           if (LIKELY((state & STATE_LOAD_MASK) == 0)) {
             // check for a race:
             // the previous access should happen before current store
-            timestamp_t prev_ts = (state & STATE_TIMESTAMP_MASK);
             if (UNLIKELY(prev_ts > (self->clock[prev_thrid]))) {
-              handle_race(begin + (shadow - get_shadow(begin)), real_sz,
-                          0, (state & STATE_LOAD_MASK) != 0);
+              if (is_race_detected == 0) {
+                is_race_detected = 1;
+                relite_report(begin + (shadow - get_shadow(begin)), state, 1);
+              }
             }
             // calculate and store new state
             uint64_t const new_state = state_templ
@@ -567,9 +503,11 @@ void                    handle_region_load  (void const volatile* begin,
           // if it was a load then update the timestamp
           // (if it was a store, then we better preserve the fact)
           if (LIKELY((state & STATE_LOAD_MASK) != 0)) {
-            uint64_t const new_state = (state & ~STATE_TIMESTAMP_MASK)
-              | my_ts;
-            atomic_uint64_store(shadow, new_state, memory_order_relaxed);
+            if (UNLIKELY(prev_ts != own_clock)) {
+              uint64_t const new_state = (state & ~STATE_TIMESTAMP_MASK)
+                  | my_ts;
+              atomic_uint64_store(shadow, new_state, memory_order_relaxed);
+            }
           }
         }
       }
@@ -583,12 +521,14 @@ void                    handle_region_load  (void const volatile* begin,
 
 void                    handle_region_store (void const volatile* begin,
                                              void const volatile* end) {
+  //TODO(dvyukov): properly handle unaligned head and tail of the region
   assert(begin != 0 && begin <= end);
   DBG("checking region store %p-%p", begin, end);
-  rl_rt_thread_t* self = &thr;
+  relite_thr_t* self = g_thr;
   uint64_t const my_ts = self->clock[self->id];
   uint64_t const state_templ = ((uint64_t)self->id << STATE_THRID_SHIFT)
       | my_ts;
+  int is_race_detected = 0;
   atomic_uint64_t* shadow = get_shadow(begin);
   atomic_uint64_t* shadow_end = get_shadow(end);
   assert(shadow <= shadow_end);
@@ -598,16 +538,21 @@ void                    handle_region_store (void const volatile* begin,
     if (LIKELY((state & STATE_SYNC_MASK) == 0)) {
       // check that the address is occupied
       size_t const real_sz = (state & STATE_SIZE_MASK) >> STATE_SIZE_SHIFT;
-      if (real_sz != SZ_8 || ((uintptr_t)shadow % 64) == 0) {
+      if (UNLIKELY(real_sz != SZ_8 || ((uintptr_t)shadow % 64) == 0)) {
         size_t prev_thrid = (state & STATE_THRID_MASK) >> STATE_THRID_SHIFT;
         // ensure that the previous access was from another thread
         if (UNLIKELY(prev_thrid != self->id)) {
           timestamp_t prev_ts = (state & STATE_TIMESTAMP_MASK);
           // check for a race:
           // the previous access should happen before current store
-          if (UNLIKELY(prev_ts > (self->clock[prev_thrid])))
-            handle_race(begin + (shadow - get_shadow(begin)), real_sz,
-                        0, (state & STATE_LOAD_MASK) != 0);
+          if (UNLIKELY(prev_ts > (self->clock[prev_thrid]))) {
+            if (UNLIKELY(prev_ts != STATE_UNITIALIZED)) {
+              if (is_race_detected == 0) {
+                is_race_detected = 1;
+                relite_report(begin + (shadow - get_shadow(begin)), state, 0);
+              }
+            }
+          }
         }
         // calculate and store new state
         uint64_t const new_state = state_templ
@@ -622,9 +567,77 @@ void                    handle_region_store (void const volatile* begin,
 }
 
 
+void                    handle_mem_init     (addr_t begin,
+                                             addr_t end,
+                                             state_t state) {
+  assert(begin != 0 && begin <= end);
+  uint64_t const state_templ = state | ((state_t)SZ_1 << STATE_SIZE_SHIFT);
+  atomic_uint64_t* shadow = get_shadow(begin);
+  atomic_uint64_t* shadow_end = get_shadow(end);
+  assert(shadow <= shadow_end);
+  for (; shadow != shadow_end; shadow += 1) {
+    atomic_uint64_store(shadow, state_templ, memory_order_relaxed);
+  }
+}
+
+
+void                    handle_mem_alloc    (addr_t begin,
+                                             addr_t end) {
+  assert(begin != 0 && begin <= end);
+  relite_thr_t* self = g_thr;
+  uint64_t const state_templ = ((uint64_t)SZ_8 << STATE_SIZE_SHIFT)
+    | ((uint64_t)self->id << STATE_THRID_SHIFT)
+    | self->clock[self->id];
+  atomic_uint64_t* shadow = get_shadow(begin);
+  atomic_uint64_t* shadow_end = get_shadow(end);
+  assert(shadow <= shadow_end);
+  for (; shadow != shadow_end; shadow += 1) {
+    atomic_uint64_store(shadow, state_templ, memory_order_relaxed);
+  }
+}
+
+
+void                    handle_mem_free     (addr_t begin,
+                                             addr_t end) {
+  //TODO(dvyukov): properly handle unaligned head and tail of the region
+  assert(begin != 0 && begin <= end);
+  relite_thr_t* self = g_thr;
+  uint64_t const state_templ = STATE_FREED
+      | ((state_t)SZ_1 << STATE_SIZE_SHIFT);
+  int is_race_detected = 0;
+  atomic_uint64_t* shadow = get_shadow(begin);
+  atomic_uint64_t* shadow_end = get_shadow(end);
+  assert(shadow <= shadow_end);
+  for (; shadow != shadow_end; shadow += 1) {
+    uint64_t const state = atomic_uint64_load(shadow, memory_order_relaxed);
+    // ensure that the address was not used as a sync variable
+    if (LIKELY((state & STATE_SYNC_MASK) == 0)) {
+      timestamp_t prev_ts = (state & STATE_TIMESTAMP_MASK);
+      if (LIKELY(prev_ts != STATE_MINE_ZONE && prev_ts != STATE_UNITIALIZED)) {
+        size_t prev_thrid = (state & STATE_THRID_MASK) >> STATE_THRID_SHIFT;
+        // check for a race:
+        // the previous access should happen before current store
+        if (UNLIKELY(prev_ts > (self->clock[prev_thrid]))) {
+          if (is_race_detected == 0) {
+            is_race_detected = 1;
+            relite_report(begin + (shadow - get_shadow(begin)), state, 0);
+          }
+        }
+      }
+    } else {
+      //TODO(dvyukov): release sync object
+    }
+    atomic_uint64_store(shadow, state_templ, memory_order_relaxed);
+  }
+}
+
+
 void            handle_sync_create   (addr_t addr) {
-  rl_rt_sync_t* sync = malloc(sizeof(rl_rt_sync_t));
-  memset(sync, 0, sizeof(rl_rt_sync_t));
+  DBG("sync_create at %p", addr);
+  rl_rt_sync_t* sync = relite_malloc(sizeof(rl_rt_sync_t));
+  if (sync == 0)
+    return;
+  relite_memset(sync, 0, sizeof(rl_rt_sync_t));
   //!!! assert(sync);
   assert(((uint64_t)sync & STATE_SYNC_MASK) == 0);
   atomic_uint64_t* shadow = get_shadow(addr);
@@ -634,97 +647,99 @@ void            handle_sync_create   (addr_t addr) {
 
 
 void                    handle_sync_destroy (addr_t addr) {
-  (void)addr;
+  atomic_uint64_t* shadow = get_shadow(addr);
+  uint64_t const state = atomic_uint64_load(shadow, memory_order_relaxed);
+  DBG("sync_destroy at %p, state=%llx", addr, (unsigned long long)state);
+  if ((state & STATE_SYNC_MASK) == 0)
+    return;
+  rl_rt_sync_t* sync = (rl_rt_sync_t*)(state & ~STATE_SYNC_MASK);
+  assert(sync != 0);
+  relite_free(sync);
+  //TODO(dvyukov): mute use CAS,
+  // otherwise 2 threads(rl_rt_sync_t*)(state & ~STATE_SYNC_MASK) can free sync simultaneously
 }
 
 
 void            handle_sync_acquire  (addr_t addr, int is_mtx) {
+  //TODO(dvyukov): add scheduler shake
+  // however, it should be placed *before* the load
   atomic_uint64_t* shadow = get_shadow(addr);
   uint64_t const state = atomic_uint64_load(shadow, memory_order_relaxed);
   DBG("acquire at %p, state=%llx", addr, (unsigned long long)state);
-  assert(state & STATE_SYNC_MASK);
+  if ((state & STATE_SYNC_MASK) == 0)
+    return;
   rl_rt_sync_t* sync = (rl_rt_sync_t*)(state & ~STATE_SYNC_MASK);
-  clock_assign_max(thr.clock, sync->clock);
-  dump_clock("thread", thr.clock);
+  relite_thr_t* self = g_thr;
+  clock_assign_max(self->clock, sync->clock);
 }
 
 
 void            handle_sync_release  (addr_t addr, int is_mtx) {
+  if (is_mtx == 0)
+    relite_sched_shake();
   atomic_uint64_t* shadow = get_shadow(addr);
   uint64_t const state = atomic_uint64_load(shadow, memory_order_relaxed);
   DBG("release at %p, state=%llx", addr, (unsigned long long)state);
-  assert(state & STATE_SYNC_MASK);
-  rl_rt_sync_t* sync = (rl_rt_sync_t*)(state & ~STATE_SYNC_MASK);
-  thr.clock[thr.id] += 1;
-  clock_assign_max(sync->clock, thr.clock);
-  dump_clock("mutex", sync->clock);
+  rl_rt_sync_t* sync;
+  if ((state & STATE_SYNC_MASK) == 0) {
+    sync = relite_malloc(sizeof(rl_rt_sync_t));
+    if (sync == 0)
+      return;
+    relite_memset(sync, 0, sizeof(rl_rt_sync_t));
+    uint64_t new_state = STATE_SYNC_MASK | (uint64_t)sync;
+    //TODO(dvyukov): perhaps it's better to do that with CAS
+    // in order to prevent potential races and memory leaks
+    atomic_uint64_store(shadow, new_state, memory_order_relaxed);
+  } else {
+    sync = (rl_rt_sync_t*)(state & ~STATE_SYNC_MASK);
+  }
+  relite_thr_t* self = g_thr;
+  self->own_clock += 1;
+  self->clock[self->id] += 1;
+  clock_assign_max(sync->clock, self->clock);
+}
+
+
+void    relite_acquire                (void const volatile* addr) {
+  handle_sync_acquire(addr, 0);
+}
+
+
+void    relite_release                (void const volatile* addr) {
+  handle_sync_release(addr, 0);
 }
 
 
 void relite_enter(void const volatile* p)
 {
-
-  printf("enter %p\n", p);
+  //DBG("enter %p", p);
 }
+
 
 void relite_leave()
 {
-  printf("leave\n");
+  //DBG("leave");
 }
+
+
+
+
+
+
+
+
+
+
 
 
 
 /*
-else {
-  rl_rt_sync_t* sync = (rl_rt_sync_t*)(state & ~STATE_SYNC_MASK);
-  handle_acquire
-  (void)sync;
+void AnnotateExpectRace(char const* file, int line, void* address, char const* description) {
+
 }
 */
 
 
-
-/*
-#define SHADOW_BASE             ((char*)0x00000D0000000000ull)
-#define SHADOW_SIZE             (0x0000800000000000ull - 0x00000E38E38E3800ull)
-
-
-static uint64_t* get_shadow(void* addr) {
-uintptr_t const offset = (uintptr_t)addr
-  - (SHADOW_SIZE & ((uintptr_t)(addr < SHADOW_BASE) - 1));
-uint64_t* shadow = (uint64_t*)SHADOW_BASE + offset;
-return shadow;
-}
-
-
-
-int main()
-{
-printf("SHADOW_BASE:      %p\n", SHADOW_BASE);
-printf("SHADOW_END:       %p\n", (SHADOW_BASE + SHADOW_SIZE));
-
-printf("%p->%p-%p\n", (void*)0, get_shadow(0), get_shadow(0) + 1);
-
-void* p1 = SHADOW_BASE - 1;
-printf("%p->%p-%p\n", p1, get_shadow(p1), get_shadow(p1) + 1);
-
-void* p2 = (SHADOW_BASE + SHADOW_SIZE);
-printf("%p->%p-%p\n", p2, get_shadow(p2), get_shadow(p2) + 1);
-
-void* p3 = (void*)0x00007fffffffffffull;
-printf("%p->%p-%p\n", p3, get_shadow(p3), get_shadow(p3) + 1);
-}
-*/
-
-
-//  #if defined(__GNUC__) && __WORDSIZE == 64
-
-
-
-int RunningOnValgrind()
-{
-  return 0;
-}
 
 
 

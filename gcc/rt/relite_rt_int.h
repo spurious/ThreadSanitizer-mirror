@@ -30,6 +30,12 @@
 #define RELITE_RT_INT_H_INCLUDED
 
 #include "relite_rt.h"
+#include "relite_defs.h"
+
+//TODO(dvyukov): start all functions with relite prefix
+
+unsigned                relite_rand         (unsigned limit);
+void                    relite_sched_shake  ();
 
 void                    handle_thread_start ();
 void                    handle_thread_end   ();
@@ -49,6 +55,16 @@ void                    handle_region_load  (void const volatile* begin,
 
 void                    handle_region_store (void const volatile* begin,
                                              void const volatile* end);
+
+void                    handle_mem_init     (addr_t begin,
+                                             addr_t end,
+                                             state_t state);
+
+void                    handle_mem_alloc    (addr_t begin,
+                                             addr_t end);
+
+void                    handle_mem_free     (addr_t begin,
+                                             addr_t end);
 
 #endif
 

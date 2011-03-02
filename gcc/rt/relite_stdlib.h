@@ -28,18 +28,38 @@
 #ifndef RELITE_STDLIB_H_INCLUDED
 #define RELITE_STDLIB_H_INCLUDED
 
+#include <stddef.h>
 
-void*                   relite_memset        (void* s,
-                                              int c,
-                                              size_t n);
+/*
+//void*                   relite_malloc       (size_t size);
+void*                   relite_new          (size_t size);
+void*                   relite_calloc       (size_t nmemb, size_t size);
+void*                   relite_realloc      (void* p, size_t size);
+//void                    relite_free         (void* p);
+void                    relite_delete       (void* p);
 
-void*                   relite_memcpy        (void* dst,
-                                              void const* src,
-                                              size_t n);
 
-int                     relite_memcmp        (void const* s1,
-                                              void const* s2,
-                                              size_t n);
+void*                   relite_memset       (void* s,
+                                             int c,
+                                             size_t n);
+
+void*                   relite_memcpy       (void* dst,
+                                             void const* src,
+                                             size_t n);
+
+int                     relite_memcmp       (void const* s1,
+                                             void const* s2,
+                                             size_t n);
+*/
+
+void*                   relite_memset       (void* s,
+                                             int c,
+                                             size_t n);
+
+int                     relite_memcmp       (void const* s1,
+                                             void const* s2,
+                                             size_t n);
+
 
 #endif
 

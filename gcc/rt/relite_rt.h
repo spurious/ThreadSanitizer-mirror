@@ -31,15 +31,22 @@
 extern "C" {
 #endif
 
-#include "relite_pthread.h"
-#include "relite_stdlib.h"
+//#include "relite_pthread.h"
+//#include "relite_stdlib.h"
 
 void    relite_enter                  (void const volatile*);
 void    relite_leave                  ();
-void    relite_store                  (void const volatile*);
-void    relite_load                   (void const volatile*);
 
+void    relite_store                  (void const volatile* addr,
+                                       unsigned flags);
 
+void    relite_load                   (void const volatile* addr,
+                                       unsigned flags);
+
+void    relite_acquire                (void const volatile* addr);
+void    relite_release                (void const volatile* addr);
+
+/*
 struct relite_call_desc_t {
   char const*                   func;
   char const*                   file;
@@ -64,9 +71,33 @@ struct relite_func_desc_t {
 static struct relite_call_desc_t relite_calls [] = {};
 static struct relite_mop_desc_t relite_mops [] = {};
 static struct relite_func_desc_t relite_func_desc = {};
+*/
+
+
+typedef enum relite_report_type_e {
+  relite_report_race_load,
+  relite_report_race_store,
+  relite_report_use_after_free,
+  relite_report_unitialized,
+  relite_report_out_of_bounds,
+} relite_report_type_e;
+
+
+typedef struct relite_report_t {
+  void const volatile*                      addr;
+  int                                       size;
+  relite_report_type_e                      type;
+} relite_report_t;
+
+char const*             relite_report_str   (relite_report_type_e type);
+
+void                    relite_report_hook  (int(*)(relite_report_t const*));
 
 
 #ifdef __cplusplus
 }
 #endif
 #endif
+
+
+

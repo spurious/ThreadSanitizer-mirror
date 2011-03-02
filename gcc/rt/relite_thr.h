@@ -25,47 +25,27 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "relite_dbg.h"
-#include <pthread.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <stdarg.h>
-#include <stdio.h>
-#include <string.h>
+#ifndef RELITE_THR_H_INCLUDED
+#define RELITE_THR_H_INCLUDED
+
+#include "relite_defs.h"
 
 
-
-//static pthread_mutex_t g_dbg_mtx = PTHREAD_MUTEX_INITIALIZER;
-extern __thread thrid_t relite_dbg_tid;
-
-
-void relite_dbg(char const* fmt, ...) {
-  char buf1 [1024];
-  snprintf(buf1, sizeof(buf1) - 1, "relite(%d): %s\n", relite_dbg_tid, fmt);
-
-  va_list argptr;
-  va_start(argptr, fmt);
-  char buf2 [1024];
-  vsnprintf(buf2, sizeof(buf2) - 1, buf1, argptr);
-  va_end(argptr);
-
-  write(1, buf2, strlen(buf2));
-}
+typedef struct relite_thr_t {
+  struct relite_thr_t*                      next;
+  struct relite_thr_t*                      prev;
+  thrid_t                                   id;
+  unsigned                                  rand;
+  timestamp_t                               own_clock;
+  timestamp_t                               clock [MAX_THREADS];
+} relite_thr_t;
 
 
-void                    relite_fatal        (char const* fmt, ...) {
-  char buf1 [1024];
-  snprintf(buf1, sizeof(buf1) - 1, "relite(%d): %s\n", relite_dbg_tid, fmt);
+relite_thr_t*           relite_thr_init     ();
+void                    relite_thr_free     (relite_thr_t* thr);
 
-  va_list argptr;
-  va_start(argptr, fmt);
-  char buf2 [1024];
-  vsnprintf(buf2, sizeof(buf2) - 1, buf1, argptr);
-  va_end(argptr);
+unsigned                relite_thr_rand     (relite_thr_t* thr,
+                                             unsigned limit);
 
-  write(1, buf2, strlen(buf2));
-  exit(1);
-}
-
-
+#endif
 

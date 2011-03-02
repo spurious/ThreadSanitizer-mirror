@@ -25,47 +25,19 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "relite_dbg.h"
-#include <pthread.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <stdarg.h>
-#include <stdio.h>
-#include <string.h>
+#ifndef RELITE_REPORT_H_INCLUDED
+#define RELITE_REPORT_H_INCLUDED
+
+#include "relite_defs.h"
 
 
-
-//static pthread_mutex_t g_dbg_mtx = PTHREAD_MUTEX_INITIALIZER;
-extern __thread thrid_t relite_dbg_tid;
+void                    relite_report_init  ();
 
 
-void relite_dbg(char const* fmt, ...) {
-  char buf1 [1024];
-  snprintf(buf1, sizeof(buf1) - 1, "relite(%d): %s\n", relite_dbg_tid, fmt);
-
-  va_list argptr;
-  va_start(argptr, fmt);
-  char buf2 [1024];
-  vsnprintf(buf2, sizeof(buf2) - 1, buf1, argptr);
-  va_end(argptr);
-
-  write(1, buf2, strlen(buf2));
-}
+void                    relite_report       (addr_t addr,
+                                             state_t state,
+                                             int is_load);
 
 
-void                    relite_fatal        (char const* fmt, ...) {
-  char buf1 [1024];
-  snprintf(buf1, sizeof(buf1) - 1, "relite(%d): %s\n", relite_dbg_tid, fmt);
-
-  va_list argptr;
-  va_start(argptr, fmt);
-  char buf2 [1024];
-  vsnprintf(buf2, sizeof(buf2) - 1, buf1, argptr);
-  va_end(argptr);
-
-  write(1, buf2, strlen(buf2));
-  exit(1);
-}
-
-
+#endif
 

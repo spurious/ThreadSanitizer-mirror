@@ -28,6 +28,7 @@
 #ifndef RELITE_PTHREAD_H_INCLUDED
 #define RELITE_PTHREAD_H_INCLUDED
 
+/*
 #include <pthread.h>
 
 int     relite_pthread_create         (pthread_t*,
@@ -53,6 +54,8 @@ int     relite_pthread_cond_wait      (pthread_cond_t*,
 int     relite_pthread_cond_timedwait (pthread_cond_t*,
                                        pthread_mutex_t*,
                                        struct timespec const*);
+*/
+
 
 #endif
 

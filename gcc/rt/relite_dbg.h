@@ -28,13 +28,19 @@
 #ifndef RELITE_DBG_H_INCLUDED
 #define RELITE_DBG_H_INCLUDED
 
-#define RELITE_RT_DUMP
+//#define RELITE_RT_DUMP
+#include "relite_defs.h"
+
+
+void                    relite_fatal        (char const* fmt, ...)
+                                             __attribute__((noreturn));
+
+void relite_dbg(char const* fmt, ...) __attribute__((format(printf, 1, 2)));
 
 #ifdef RELITE_RT_DUMP
-void relite_dbg(char const* fmt, ...) __attribute__((format(printf, 1, 2)));
 #define DBG(...) relite_dbg(__VA_ARGS__)
 #else
-#define DBG(fmt, ...) if (1) {} else fprintf(stderr, __VA_ARGS__)
+#define DBG(...) if (1) {} else relite_dbg(__VA_ARGS__)
 #endif
 
 #endif

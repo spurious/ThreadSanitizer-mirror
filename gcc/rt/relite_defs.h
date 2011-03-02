@@ -25,47 +25,45 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "relite_dbg.h"
-#include <pthread.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <stdarg.h>
-#include <stdio.h>
-#include <string.h>
+#ifndef RELITE_DEFS_H_INCLUDED
+#define RELITE_DEFS_H_INCLUDED
+
+#include <stdint.h>
+
+//#define RELITE_API_AMBUSH
+#define RELITE_SCHED_SHAKE
 
 
-
-//static pthread_mutex_t g_dbg_mtx = PTHREAD_MUTEX_INITIALIZER;
-extern __thread thrid_t relite_dbg_tid;
-
-
-void relite_dbg(char const* fmt, ...) {
-  char buf1 [1024];
-  snprintf(buf1, sizeof(buf1) - 1, "relite(%d): %s\n", relite_dbg_tid, fmt);
-
-  va_list argptr;
-  va_start(argptr, fmt);
-  char buf2 [1024];
-  vsnprintf(buf2, sizeof(buf2) - 1, buf1, argptr);
-  va_end(argptr);
-
-  write(1, buf2, strlen(buf2));
-}
+typedef                 void const volatile*addr_t;
+typedef                 uint32_t            thrid_t;
+typedef                 uint64_t            timestamp_t;
+typedef                 uint64_t            state_t;
 
 
-void                    relite_fatal        (char const* fmt, ...) {
-  char buf1 [1024];
-  snprintf(buf1, sizeof(buf1) - 1, "relite(%d): %s\n", relite_dbg_tid, fmt);
+//#define MAX_THREADS             (64*1024)
+#define MAX_THREADS             (1000)
+#define THR_MASK_SIZE           (MAX_THREADS / sizeof(size_t) / 8)
+#define SHADOW_BASE             ((atomic_uint64_t*)0x00000D0000000000ull)
+#define SHADOW_SIZE             (0x0000800000000000ull - 0x00000E38E38E3800ull)
+#define STATE_SYNC_MASK         0x8000000000000000ull
+#define STATE_SYNC_SHIFT        63
+#define STATE_SIZE_MASK         0x6000000000000000ull
+#define STATE_SIZE_SHIFT        61
+#define STATE_LOAD_MASK         0x1000000000000000ull
+#define STATE_LOAD_SHIFT        60
+#define STATE_THRID_MASK        0x0FFFF00000000000ull
+#define STATE_THRID_SHIFT       44
+#define STATE_TIMESTAMP_MASK    0x00000FFFFFFFFFFFull
 
-  va_list argptr;
-  va_start(argptr, fmt);
-  char buf2 [1024];
-  vsnprintf(buf2, sizeof(buf2) - 1, buf1, argptr);
-  va_end(argptr);
+#define STATE_UNITIALIZED       0x00000FFFFFFFFFFFull
+#define STATE_MINE_ZONE         0x00000FFFFFFFFFFEull
+#define STATE_FREED             0x00000FFFFFFFFFFDull
 
-  write(1, buf2, strlen(buf2));
-  exit(1);
-}
+#define SZ_1                    3
+#define SZ_2                    2
+#define SZ_4                    1
+#define SZ_8                    0
 
 
+#endif
 
