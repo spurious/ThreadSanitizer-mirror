@@ -6040,11 +6040,10 @@ class Detector {
       tleb[i] = 0;  // we've consumed this mop, clear it.
       DCHECK(mop->size != 0);
       DCHECK(mop->pc != 0);
-      bool is_w = mop->is_write;
-      if ((expensive_bits & 1) && is_w == false) continue;
-      if ((expensive_bits & 2) && is_w == true) continue;
-      n_locks += HandleMemoryAccessInternal(tid, thr, &sblock_pc, mop->pc, addr, mop->size,
-                                 is_w, has_expensive_flags,
+      if ((expensive_bits & 1) && mop->is_write == false) continue;
+      if ((expensive_bits & 2) && mop->is_write == true) continue;
+      n_locks += HandleMemoryAccessInternal(tid, thr, &sblock_pc, addr, mop,
+                                 has_expensive_flags,
                                  need_locking);
     } while (++i < n);
     if (has_expensive_flags) {
@@ -6981,11 +6980,14 @@ class Detector {
   // return false if we were not able to complete the task (fast_path_only).
   INLINE bool HandleAccessGranularityAndExecuteHelper(
       CacheLine *cache_line,
-      TID tid, Thread *thr, uintptr_t pc, uintptr_t addr, uintptr_t size,
-      bool is_w, bool has_expensive_flags, bool fast_path_only) {
-    uintptr_t a = addr,
-              b = a + size,
-              off = CacheLine::ComputeOffset(a);
+      TID tid, Thread *thr, uintptr_t addr, MopInfo *mop,
+      bool has_expensive_flags, bool fast_path_only) {
+    size_t size = mop->size;
+    uintptr_t pc = mop->pc;
+    bool is_w = mop->is_write;
+    uintptr_t a = addr;
+    uintptr_t b = 0;
+    uintptr_t off = CacheLine::ComputeOffset(a);
 
     uint16_t *granularity_mask = cache_line->granularity_mask(off);
     uint16_t gr = *granularity_mask;
@@ -7062,6 +7064,7 @@ class Detector {
       // Handle this access as a series of 1-byte accesses, but only
       // inside the current cache line.
       // TODO(kcc): do we want to handle the next cache line as well?
+      b = a + mop->size;
       uintptr_t max_x = min(b, CacheLine::ComputeNextTag(a));
       for (uintptr_t x = a; x < max_x; x++) {
         off = CacheLine::ComputeOffset(x);
@@ -7089,6 +7092,7 @@ slow_path:
     CHECK(gr);
     // size is one of 1, 2, 4, 8; address is size-aligned, but the granularity
     // is different.
+    b = a + mop->size;
     for (uintptr_t x = a; x < b;) {
       if (has_expensive_flags) thr->stats.n_access_slow_iter++;
       off = CacheLine::ComputeOffset(x);
@@ -7123,8 +7127,9 @@ one_call:
     return false;
   }
 
-  void DoTrace(Thread *thr, uintptr_t addr, uintptr_t size, bool is_w,
-               bool pc, bool need_locking) {
+  void DoTrace(Thread *thr, uintptr_t addr, MopInfo *mop, bool need_locking) {
+    size_t size = mop->size;
+    uintptr_t pc = mop->pc;
     TIL til(ts_lock, 1, need_locking);
     for (uintptr_t x = addr; x < addr + size; x++) {
       uintptr_t off = CacheLine::ComputeOffset(x);
@@ -7134,7 +7139,7 @@ one_call:
       if (cache_line->has_shadow_value().Get(off) != 0) {
         bool is_published = cache_line->published().Get(off);
         Printf("TRACE: T%d/S%d %s[%d] addr=%p sval: %s%s; line=%p P=%s\n",
-               thr->tid().raw(), thr->sid().raw(), is_w ? "wr" : "rd",
+               thr->tid().raw(), thr->sid().raw(), mop->is_write ? "wr" : "rd",
                size, addr, sval_p->ToString().c_str(),
                is_published ? " P" : "",
                cache_line,
@@ -7152,9 +7157,10 @@ one_call:
 #else
   NOINLINE
 #endif
-  void HandleMemoryAccessSlowLocked(TID tid, Thread *thr, uintptr_t pc,
-                                           uintptr_t addr, uintptr_t size,
-                                           bool is_w, bool has_expensive_flags,
+  void HandleMemoryAccessSlowLocked(TID tid, Thread *thr,
+                                           uintptr_t addr,
+                                           MopInfo *mop,
+                                           bool has_expensive_flags,
                                            bool need_locking) {
     AssertTILHeld();
     DCHECK(thr->lsid(false) == thr->segment()->lsid(false));
@@ -7166,8 +7172,8 @@ one_call:
       thr->GetSomeFreshSids();
     }
     CacheLine *cache_line = G_cache->GetLineOrCreateNew(tid, addr, __LINE__);
-    HandleAccessGranularityAndExecuteHelper(cache_line, tid, thr, pc, addr,
-                                            size, is_w, has_expensive_flags,
+    HandleAccessGranularityAndExecuteHelper(cache_line, tid, thr, addr,
+                                            mop, has_expensive_flags,
                                             /*fast_path_only=*/false);
     bool tracing = IsTraced(cache_line, addr, has_expensive_flags);
     G_cache->ReleaseLine(tid, addr, cache_line, __LINE__);
@@ -7175,7 +7181,7 @@ one_call:
 
     if (has_expensive_flags) {
       if (tracing) {
-        DoTrace(thr, addr, size, is_w, pc, /*need_locking=*/false);
+        DoTrace(thr, addr, mop, /*need_locking=*/false);
       }
       if (G_flags->sample_events > 0) {
         const char *type = "SampleMemoryAccess";
@@ -7187,17 +7193,16 @@ one_call:
 
   INLINE bool HandleMemoryAccessInternal(TID tid, Thread *thr,
                                          uintptr_t *sblock_pc,
-                                         uintptr_t pc,
-                                         uintptr_t addr, uintptr_t size,
-                                         bool is_w, bool has_expensive_flags,
+                                         uintptr_t addr,
+                                         MopInfo *mop,
+                                         bool has_expensive_flags,
                                          bool need_locking) {
   #define INC_STAT(stat) do { if (has_expensive_flags) (stat)++; } while(0)
     if (TS_ATOMICITY && G_flags->atomicity) {
-      HandleMemoryAccessForAtomicityViolationDetector(thr, pc,
-                                                      addr, size, is_w);
+      HandleMemoryAccessForAtomicityViolationDetector(thr, addr, mop);
       return false;
     }
-    DCHECK(size > 0);
+    DCHECK(mop->size > 0);
     DCHECK(thr->is_running());
     DCHECK(!thr->ignore_reads() || !thr->ignore_writes());
 
@@ -7208,8 +7213,8 @@ one_call:
     // if (thr->IgnoreMemoryIfInStack(addr)) return;
 
     CacheLine *cache_line = NULL;
-    INC_STAT(thr->stats.memory_access_sizes[size <= 16 ? size : 17 ]);
-    INC_STAT(thr->stats.events[is_w ? WRITE : READ]);
+    INC_STAT(thr->stats.memory_access_sizes[mop->size <= 16 ? mop->size : 17 ]);
+    INC_STAT(thr->stats.events[mop->is_write ? WRITE : READ]);
     if (has_expensive_flags) {
       thr->stats.access_to_first_1g += (addr >> 30) == 0;
       thr->stats.access_to_first_2g += (addr >> 31) == 0;
@@ -7233,14 +7238,14 @@ one_call:
             if (thr->HandleSblockEnter(*sblock_pc, /*allow_slow_path=*/false)) {
               *sblock_pc = 0;  // don't do SblockEnter any more.
               bool res = HandleAccessGranularityAndExecuteHelper(
-                  cache_line, tid, thr, pc, addr,
-                  size, is_w, has_expensive_flags,
+                  cache_line, tid, thr, addr,
+                  mop, has_expensive_flags,
                   /*fast_path_only=*/true);
               bool traced = IsTraced(cache_line, addr, has_expensive_flags);
               // release the line.
               G_cache->ReleaseLine(tid, addr, cache_line, __LINE__);
               if (res && has_expensive_flags && traced) {
-                DoTrace(thr, addr, size, is_w, pc, /*need_locking=*/true);
+                DoTrace(thr, addr, mop, /*need_locking=*/true);
               }
               if (res) {
                 INC_STAT(thr->stats.unlocked_access_ok);
@@ -7281,8 +7286,8 @@ one_call:
     TIL til(ts_lock, 2, need_locking);
     thr->HandleSblockEnter(*sblock_pc, /*allow_slow_path=*/true);
     *sblock_pc = 0;  // don't do SblockEnter any more.
-    HandleMemoryAccessSlowLocked(tid, thr, pc, addr, size,
-                                 is_w, has_expensive_flags,
+    HandleMemoryAccessSlowLocked(tid, thr, addr, mop,
+                                 has_expensive_flags,
                                  need_locking);
     return true;
 #undef INC_STAT
@@ -7290,10 +7295,8 @@ one_call:
 
 
   void HandleMemoryAccessForAtomicityViolationDetector(Thread *thr,
-                                                       uintptr_t pc,
                                                        uintptr_t addr,
-                                                       uintptr_t size,
-                                                       bool is_w) {
+                                                       MopInfo *mop) {
     CHECK(G_flags->atomicity);
     TID tid = thr->tid();
     if (thr->MemoryIsInStack(addr)) return;
@@ -7312,10 +7315,10 @@ one_call:
 //           tid.raw(), is_w ? "W" : "R", addr, pc, thr->MemoryIsInStack(addr),
 //           PcToRtnNameAndFilePos(pc).c_str());
 
-    BitSet *range_set = thr->lock_era_access_set(is_w);
+    BitSet *range_set = thr->lock_era_access_set(mop->is_write);
     // Printf("era %d T%d access under lock pc=%p addr=%p size=%p w=%d\n",
     //        g_lock_era, tid.raw(), pc, addr, size, is_w);
-    range_set->Add(addr, addr + size);
+    range_set->Add(addr, addr + mop->size);
     // Printf("   %s\n", range_set->ToString().c_str());
   }
 
