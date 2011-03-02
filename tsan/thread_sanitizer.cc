@@ -279,7 +279,9 @@ const char *c_default = "";
 
 
 // -------- Forward decls ------ {{{1
-static void ForgetAllStateAndStartOver(TID tid, const char *reason);
+struct Thread;
+static void ForgetAllStateAndStartOver(Thread *thr, const char *reason);
+static int32_t raw_tid(Thread *t);
 // -------- Simple Cache ------ {{{1
 #include "ts_simple_cache.h"
 // -------- PairCache & IntPairToIntCache ------ {{{1
@@ -3203,7 +3205,7 @@ class DirectMapCacheForRange {
 #endif
   }
 
-  INLINE CacheLine *GetLine(TID tid, uintptr_t a, bool create_new_if_need) {
+  INLINE CacheLine *GetLine(uintptr_t a, bool create_new_if_need) {
     CHECK(AddressIsInRange(a));
     uintptr_t cli = (a - kMin) >> CacheLine::kLineSizeBits;
     CHECK(cli < kCacheSize);
@@ -3227,10 +3229,9 @@ class DirectMapCacheForRange {
 class Cache {
  public:
   Cache() {
-    memset(lines_, '\0', sizeof(lines_));
+    memset(lines_, 0, sizeof(lines_));
     ANNOTATE_BENIGN_RACE_SIZED(lines_, sizeof(lines_),
                                "Cache::lines_ accessed without a lock");
-    ForgetAllState(TID(0));
   }
 
   INLINE static CacheLine *kLineIsLocked() {
@@ -3241,7 +3242,7 @@ class Cache {
     return (uintptr_t)line <= 1;
   }
 
-  INLINE CacheLine *TidMagic(TID tid) {
+  INLINE CacheLine *TidMagic(int32_t tid) {
     return kLineIsLocked();
   }
 
@@ -3251,9 +3252,9 @@ class Cache {
 
   // Try to get a CacheLine for exclusive use.
   // May return NULL or kLineIsLocked.
-  INLINE CacheLine *TryAcquireLine(TID tid, uintptr_t a, int call_site) {
+  INLINE CacheLine *TryAcquireLine(Thread *thr, uintptr_t a, int call_site) {
     if (IsInDirectCache(a)) {
-      return direct_cache_.GetLine(tid, a, false);
+      return direct_cache_.GetLine(a, false);
     }
     uintptr_t cli = ComputeCacheLineIndexInCache(a);
     CacheLine **addr = &lines_[cli];
@@ -3273,33 +3274,33 @@ class Cache {
     return res;
   }
 
-  INLINE CacheLine *AcquireLine(TID tid, uintptr_t a, int call_site) {
+  INLINE CacheLine *AcquireLine(Thread *thr, uintptr_t a, int call_site) {
     CHECK(!IsInDirectCache(a));
     CacheLine *line = NULL;
     int iter = 0;
     const int max_iter = 1 << 30;
     do {
-      line = TryAcquireLine(tid, a, call_site);
+      line = TryAcquireLine(thr, a, call_site);
       iter++;
       if ((iter % (1 << 12)) == 0) {
         YIELD();
         G_stats->try_acquire_line_spin++;
         if (((iter & (iter - 1)) == 0)) {
-          Printf("T%d %s a=%p iter=%d\n", tid.raw(), __FUNCTION__, a, iter);
+          Printf("T%d %s a=%p iter=%d\n", raw_tid(thr), __FUNCTION__, a, iter);
         }
       }
       if (iter == max_iter) {
         Printf("Failed to acquire a cache line: T%d a=%p site=%d\n",
-               tid.raw(), a, call_site);
+               raw_tid(thr), a, call_site);
         CHECK(iter < max_iter);
       }
     } while (line == kLineIsLocked());
-    DCHECK(lines_[ComputeCacheLineIndexInCache(a)] == TidMagic(tid));
+    DCHECK(lines_[ComputeCacheLineIndexInCache(a)] == TidMagic(raw_tid(thr)));
     return line;
   }
 
   // Release a CacheLine from exclusive use.
-  INLINE void ReleaseLine(TID tid, uintptr_t a, CacheLine *line, int call_site) {
+  INLINE void ReleaseLine(Thread *thr, uintptr_t a, CacheLine *line, int call_site) {
     if (TS_SERIALIZED) return;
     if (IsInDirectCache(a)) return;
     DCHECK(line != kLineIsLocked());
@@ -3307,7 +3308,7 @@ class Cache {
     DCHECK(line == NULL ||
            cli == ComputeCacheLineIndexInCache(line->tag()));
     CacheLine **addr = &lines_[cli];
-    DCHECK(*addr == TidMagic(tid));
+    DCHECK(*addr == TidMagic(raw_tid(thr)));
     ReleaseStore((uintptr_t*)addr, (uintptr_t)line);
     ANNOTATE_HAPPENS_BEFORE((void*)cli);
     if (DEBUG_MODE && debug_cache) {
@@ -3320,11 +3321,11 @@ class Cache {
     }
   }
 
-  void AcquireAllLines(TID tid) {
+  void AcquireAllLines(Thread *thr) {
     CHECK(TS_SERIALIZED == 0);
     for (size_t i = 0; i < (size_t)kNumLines; i++) {
       uintptr_t tag = i << CacheLine::kLineSizeBits;
-      AcquireLine(tid, tag, __LINE__);
+      AcquireLine(thr, tag, __LINE__);
       CHECK(lines_[i] == kLineIsLocked());
     }
   }
@@ -3334,7 +3335,7 @@ class Cache {
   // concurrently w/o a lock.
   // Every call to GetLine() which returns non-null line
   // should be followed by a call to ReleaseLine().
-  INLINE CacheLine *GetLine(TID tid, uintptr_t a, bool create_new_if_need, int call_site) {
+  INLINE CacheLine *GetLine(Thread *thr, uintptr_t a, bool create_new_if_need, int call_site) {
     uintptr_t tag = CacheLine::ComputeTag(a);
     DCHECK(tag <= a);
     DCHECK(tag + CacheLine::kLineSize > a);
@@ -3343,7 +3344,7 @@ class Cache {
     CacheLine *line = NULL;
 
     if (IsInDirectCache(a)) {
-      return direct_cache_.GetLine(tid, a, create_new_if_need);
+      return direct_cache_.GetLine(a, create_new_if_need);
     }
 
     if (create_new_if_need == false && lines_[cli] == 0) {
@@ -3357,16 +3358,16 @@ class Cache {
     if (TS_SERIALIZED) {
       line = lines_[cli];
     } else {
-      line = AcquireLine(tid, tag, call_site);
+      line = AcquireLine(thr, tag, call_site);
     }
 
 
     if (LIKELY(line && line->tag() == tag)) {
       res = line;
     } else {
-      res = WriteBackAndFetch(tid, line, tag, cli, create_new_if_need);
+      res = WriteBackAndFetch(thr, line, tag, cli, create_new_if_need);
       if (!res) {
-        ReleaseLine(tid, a, line, call_site);
+        ReleaseLine(thr, a, line, call_site);
       }
     }
     if (DEBUG_MODE && debug_cache) {
@@ -3378,14 +3379,14 @@ class Cache {
     return res;
   }
 
-  INLINE CacheLine *GetLineOrCreateNew(TID tid, uintptr_t a, int call_site) {
-    return GetLine(tid, a, true, call_site);
+  INLINE CacheLine *GetLineOrCreateNew(Thread *thr, uintptr_t a, int call_site) {
+    return GetLine(thr, a, true, call_site);
   }
-  INLINE CacheLine *GetLineIfExists(TID tid, uintptr_t a, int call_site) {
-    return GetLine(tid, a, false, call_site);
+  INLINE CacheLine *GetLineIfExists(Thread *thr, uintptr_t a, int call_site) {
+    return GetLine(thr, a, false, call_site);
   }
 
-  void ForgetAllState(TID tid) {
+  void ForgetAllState(Thread *thr) {
     for (int i = 0; i < kNumLines; i++) {
       if (TS_SERIALIZED == 0) CHECK(LineIsNullOrLocked(lines_[i]));
       lines_[i] = NULL;
@@ -3402,10 +3403,10 @@ class Cache {
     // Restore the racey masks.
     for (map<uintptr_t, Mask>::iterator it = racey_masks.begin();
          it != racey_masks.end(); it++) {
-      CacheLine *line = GetLineOrCreateNew(tid, it->first, __LINE__);
+      CacheLine *line = GetLineOrCreateNew(thr, it->first, __LINE__);
       line->racey() = it->second;
       DCHECK(!line->racey().Empty());
-      ReleaseLine(tid, line->tag(), line, __LINE__);
+      ReleaseLine(thr, line->tag(), line, __LINE__);
     }
   }
 
@@ -3470,7 +3471,7 @@ class Cache {
     return (addr >> CacheLine::kLineSizeBits) & (kNumLines - 1);
   }
 
-  NOINLINE CacheLine *WriteBackAndFetch(TID tid, CacheLine *old_line,
+  NOINLINE CacheLine *WriteBackAndFetch(Thread *thr, CacheLine *old_line,
                                         uintptr_t tag, uintptr_t cli,
                                         bool create_new_if_need) {
     ScopedMallocCostCenter cc("Cache::WriteBackAndFetch");
@@ -3516,7 +3517,7 @@ class Cache {
     if (TS_SERIALIZED) {
       lines_[cli] = res;
     } else {
-      DCHECK(lines_[cli] == TidMagic(tid));
+      DCHECK(lines_[cli] == TidMagic(raw_tid(thr)));
     }
 
     if (old_line) {
@@ -3674,14 +3675,14 @@ static void ClearPublishedAttribute(CacheLine *line, Mask mask) {
 }
 
 // Publish range [a, b) in addr's CacheLine with vts.
-static void PublishRangeInOneLine(TID tid, uintptr_t addr, uintptr_t a,
+static void PublishRangeInOneLine(Thread *thr, uintptr_t addr, uintptr_t a,
                                   uintptr_t b, VTS *vts) {
   ScopedMallocCostCenter cc("PublishRangeInOneLine");
   DCHECK(b <= CacheLine::kLineSize);
   DCHECK(a < b);
   uintptr_t tag = CacheLine::ComputeTag(addr);
   CHECK(CheckSanityOfPublishedMemory(tag, __LINE__));
-  CacheLine *line = G_cache->GetLineOrCreateNew(tid, tag, __LINE__);
+  CacheLine *line = G_cache->GetLineOrCreateNew(thr, tag, __LINE__);
 
   if (1 || line->published().GetRange(a, b)) {
     Mask mask(0);
@@ -3691,7 +3692,7 @@ static void PublishRangeInOneLine(TID tid, uintptr_t addr, uintptr_t a,
   }
 
   line->published().SetRange(a, b);
-  G_cache->ReleaseLine(tid, tag, line, __LINE__);
+  G_cache->ReleaseLine(thr, tag, line, __LINE__);
 
   PublishInfo pub_info;
   pub_info.tag  = tag;
@@ -3706,7 +3707,7 @@ static void PublishRangeInOneLine(TID tid, uintptr_t addr, uintptr_t a,
 }
 
 // Publish memory range [a, b).
-static void PublishRange(TID tid, uintptr_t a, uintptr_t b, VTS *vts) {
+static void PublishRange(Thread *thr, uintptr_t a, uintptr_t b, VTS *vts) {
   CHECK(a);
   CHECK(a < b);
   if (kDebugPublish)
@@ -3715,17 +3716,17 @@ static void PublishRange(TID tid, uintptr_t a, uintptr_t b, VTS *vts) {
   uintptr_t line1_tag = 0, line2_tag = 0;
   uintptr_t tag = GetCacheLinesForRange(a, b, &line1_tag, &line2_tag);
   if (tag) {
-    PublishRangeInOneLine(tid, tag, a - tag, b - tag, vts);
+    PublishRangeInOneLine(thr, tag, a - tag, b - tag, vts);
     return;
   }
   uintptr_t a_tag = CacheLine::ComputeTag(a);
-  PublishRangeInOneLine(tid, a, a - a_tag, CacheLine::kLineSize, vts);
+  PublishRangeInOneLine(thr, a, a - a_tag, CacheLine::kLineSize, vts);
   for (uintptr_t tag_i = line1_tag; tag_i < line2_tag;
        tag_i += CacheLine::kLineSize) {
-    PublishRangeInOneLine(tid, tag_i, 0, CacheLine::kLineSize, vts);
+    PublishRangeInOneLine(thr, tag_i, 0, CacheLine::kLineSize, vts);
   }
   if (b > line2_tag) {
-    PublishRangeInOneLine(tid, line2_tag, 0, b - line2_tag, vts);
+    PublishRangeInOneLine(thr, line2_tag, 0, b - line2_tag, vts);
   }
 }
 
@@ -3740,10 +3741,10 @@ static void INLINE UnrefSegmentsInMemoryRange(uintptr_t a, uintptr_t b,
   }
 }
 
-void INLINE ClearMemoryStateInOneLine(TID tid, uintptr_t addr,
+void INLINE ClearMemoryStateInOneLine(Thread *thr, uintptr_t addr,
                                       uintptr_t beg, uintptr_t end) {
   AssertTILHeld();
-  CacheLine *line = G_cache->GetLineIfExists(tid, addr, __LINE__);
+  CacheLine *line = G_cache->GetLineIfExists(thr, addr, __LINE__);
   // CacheLine *line = G_cache->GetLineOrCreateNew(addr, __LINE__);
   if (line) {
     DCHECK(beg < CacheLine::kLineSize);
@@ -3756,42 +3757,42 @@ void INLINE ClearMemoryStateInOneLine(TID tid, uintptr_t addr,
     }
     Mask old_used = line->ClearRangeAndReturnOldUsed(beg, end);
     UnrefSegmentsInMemoryRange(beg, end, old_used, line);
-    G_cache->ReleaseLine(tid, addr, line, __LINE__);
+    G_cache->ReleaseLine(thr, addr, line, __LINE__);
   }
 }
 
 // clear memory state for [a,b)
-void NOINLINE ClearMemoryState(TID tid, uintptr_t a, uintptr_t b) {
+void NOINLINE ClearMemoryState(Thread *thr, uintptr_t a, uintptr_t b) {
   if (a == b) return;
   CHECK(a < b);
   uintptr_t line1_tag = 0, line2_tag = 0;
   uintptr_t single_line_tag = GetCacheLinesForRange(a, b,
                                                     &line1_tag, &line2_tag);
   if (single_line_tag) {
-    ClearMemoryStateInOneLine(tid, a, a - single_line_tag,
+    ClearMemoryStateInOneLine(thr, a, a - single_line_tag,
                               b - single_line_tag);
     return;
   }
 
   uintptr_t a_tag = CacheLine::ComputeTag(a);
-  ClearMemoryStateInOneLine(tid, a, a - a_tag, CacheLine::kLineSize);
+  ClearMemoryStateInOneLine(thr, a, a - a_tag, CacheLine::kLineSize);
 
   for (uintptr_t tag_i = line1_tag; tag_i < line2_tag;
        tag_i += CacheLine::kLineSize) {
-    ClearMemoryStateInOneLine(tid, tag_i, 0, CacheLine::kLineSize);
+    ClearMemoryStateInOneLine(thr, tag_i, 0, CacheLine::kLineSize);
   }
 
   if (b > line2_tag) {
-    ClearMemoryStateInOneLine(tid, line2_tag, 0, b - line2_tag);
+    ClearMemoryStateInOneLine(thr, line2_tag, 0, b - line2_tag);
   }
 
   if (DEBUG_MODE && G_flags->debug_level >= 2) {
     // Check that we've cleared it. Slow!
     for (uintptr_t x = a; x < b; x++) {
       uintptr_t off = CacheLine::ComputeOffset(x);
-      CacheLine *line = G_cache->GetLineOrCreateNew(tid, x, __LINE__);
+      CacheLine *line = G_cache->GetLineOrCreateNew(thr, x, __LINE__);
       CHECK(!line->has_shadow_value().Get(off));
-      G_cache->ReleaseLine(tid, x, line, __LINE__);
+      G_cache->ReleaseLine(thr, x, line, __LINE__);
     }
   }
 }
@@ -4694,7 +4695,7 @@ struct Thread {
         G_cache->PrintStorageStats();
         Segment::ShowSegmentStats();
       }
-      ForgetAllStateAndStartOver(tid(),
+      ForgetAllStateAndStartOver(this,
                                  "ThreadSanitizer has run out of segment IDs");
     }
     this->stats.history_creates_new_segment++;
@@ -5221,6 +5222,10 @@ struct Thread {
   static CyclicBarrierMap *cyclic_barrier_map_;
 };
 
+INLINE static int32_t raw_tid(Thread *t) {
+  return t->tid().raw();
+}
+
 // Thread:: static members
 Thread                    **Thread::all_threads_;
 int                         Thread::n_threads_;
@@ -5265,17 +5270,17 @@ static HeapMap<ThreadStackInfo> *G_thread_stack_map;
 // -------- Forget all state -------- {{{1
 // We need to forget all state and start over because we've
 // run out of some resources (most likely, segment IDs).
-static void ForgetAllStateAndStartOver(TID tid, const char *reason) {
+static void ForgetAllStateAndStartOver(Thread *thr, const char *reason) {
   // This is done under the main lock.
   AssertTILHeld();
   size_t start_time = g_last_flush_time = TimeInMilliSeconds();
-  Report("T%d INFO: %s. Flushing state.\n", tid.raw(), reason);
+  Report("T%d INFO: %s. Flushing state.\n", raw_tid(thr), reason);
 
   if (TS_SERIALIZED == 0) {
     // We own the lock, but we also must acquire all cache lines
     // so that the fast-path (unlocked) code does not execute while
     // we are flushing.
-    G_cache->AcquireAllLines(tid);
+    G_cache->AcquireAllLines(thr);
   }
 
 
@@ -5312,11 +5317,11 @@ static void ForgetAllStateAndStartOver(TID tid, const char *reason) {
 
   // Must be the last one to flush as it effectively releases the
   // cach lines and enables fast path code to run in other threads.
-  G_cache->ForgetAllState(tid);
+  G_cache->ForgetAllState(thr);
 
   size_t stop_time = TimeInMilliSeconds();
   if (DEBUG_MODE || (stop_time - start_time > 0)) {
-    Report("T%d INFO: Flush took %ld ms\n", tid.raw(),
+    Report("T%d INFO: Flush took %ld ms\n", raw_tid(thr),
            stop_time - start_time);
   }
 }
@@ -5459,11 +5464,10 @@ class ReportStorage {
     }
   }
 
-  bool NOINLINE AddReport(TID tid, uintptr_t pc, bool is_w, uintptr_t addr,
+  bool NOINLINE AddReport(Thread *thr, uintptr_t pc, bool is_w, uintptr_t addr,
                           int size,
                           ShadowValue old_sval, ShadowValue new_sval,
                           bool is_published) {
-    Thread *thr = Thread::Get(tid);
     {
       // Check this isn't a "_ZNSs4_Rep20_S_empty_rep_storageE" report.
       uintptr_t offset;
@@ -5529,7 +5533,7 @@ class ReportStorage {
     race_report->last_access_is_w = is_w;
     race_report->racey_addr = addr;
     race_report->racey_addr_description = DescribeMemory(addr);
-    race_report->last_access_tid = tid;
+    race_report->last_access_tid = thr->tid();
     race_report->last_access_sid = thr->sid();
     race_report->last_access_size = size;
     race_report->stack_trace = stack_trace;
@@ -5953,15 +5957,14 @@ class EventSampler {
  public:
 
   // Sample one event
-  void Sample(TID tid, const char *event_name, bool need_locking) {
+  void Sample(Thread *thr, const char *event_name, bool need_locking) {
     CHECK_NE(G_flags->sample_events, 0);
     (counter_)++;
     if ((counter_ & ((1 << G_flags->sample_events) - 1)) != 0)
       return;
 
     TIL til(ts_lock, 8, need_locking);
-    string pos =  Thread::Get(tid)->
-        CallStackToStringRtnOnly(G_flags->sample_events_depth);
+    string pos = thr->CallStackToStringRtnOnly(G_flags->sample_events_depth);
     (*samples_)[event_name][pos]++;
     total_samples_++;
     if (total_samples_ >= print_after_this_number_of_samples_) {
@@ -6026,7 +6029,7 @@ int64_t EventSampler::print_after_this_number_of_samples_;
 // Collection of event handlers.
 class Detector {
  public:
-  void INLINE HandleTraceLoop(Thread *thr, TID tid, uintptr_t pc,
+  void INLINE HandleTraceLoop(Thread *thr, uintptr_t pc,
                               MopInfo *mops,
                               uintptr_t *tleb, size_t n,
                               int expensive_bits, bool need_locking) {
@@ -6043,7 +6046,7 @@ class Detector {
       DCHECK(mop->pc != 0);
       if ((expensive_bits & 1) && mop->is_write == false) continue;
       if ((expensive_bits & 2) && mop->is_write == true) continue;
-      n_locks += HandleMemoryAccessInternal(tid, thr, &sblock_pc, addr, mop,
+      n_locks += HandleMemoryAccessInternal(thr, &sblock_pc, addr, mop,
                                  has_expensive_flags,
                                  need_locking);
     } while (++i < n);
@@ -6073,13 +6076,13 @@ class Detector {
     int expensive_bits = thr->expensive_bits();
 
     if (expensive_bits == 0) {
-      HandleTraceLoop(thr, tid, t->pc(), t->mops(), tleb, n, 0, need_locking);
+      HandleTraceLoop(thr, t->pc(), t->mops(), tleb, n, 0, need_locking);
     } else {
       if ((expensive_bits & 3) == 3) {
         // everything is ignored, just clear the tleb.
         for (size_t i = 0; i < n; i++) tleb[i] = 0;
       } else {
-        HandleTraceLoop(thr, tid, t->pc(), t->mops(), tleb, n, 
+        HandleTraceLoop(thr, t->pc(), t->mops(), tleb, n,
                         expensive_bits, need_locking);
       }
     }
@@ -6161,7 +6164,7 @@ class Detector {
     // Report("ThreadSanitizerValgrind: exiting\n");
   }
 
-  void FlushIfOutOfMem(TID tid) {
+  void FlushIfOutOfMem(Thread *thr) {
     static int max_vm_size;
     static int soft_limit;
     const int hard_limit = G_flags->max_mem_in_mb;
@@ -6183,7 +6186,7 @@ class Detector {
     }
 
     if (vm_size_in_mb > soft_limit) {
-      ForgetAllStateAndStartOver(tid,
+      ForgetAllStateAndStartOver(thr,
           "ThreadSanitizer is running close to its memory limit");
       soft_limit = vm_size_in_mb + 1;
     }
@@ -6191,10 +6194,11 @@ class Detector {
 
   // Force state flushing.
   void FlushState(TID tid) {
-    ForgetAllStateAndStartOver(tid, "State flushing requested by client");
+    ForgetAllStateAndStartOver(Thread::Get(tid), 
+                               "State flushing requested by client");
   }
 
-  void FlushIfNeeded(TID tid) {
+  void FlushIfNeeded(Thread *thr) {
     // Are we out of segment IDs?
 #ifdef TS_VALGRIND  // GetVmSizeInMb() works only with valgrind any way.
     static int counter;
@@ -6208,7 +6212,7 @@ class Detector {
         // TODO(kcc): find a way to check memory limit more frequently.
         TIL til(ts_lock, 7);
         AssertTILHeld();
-        FlushIfOutOfMem(tid);
+        FlushIfOutOfMem(thr);
       }
     }
 #if 0
@@ -6236,9 +6240,9 @@ class Detector {
 
   void HandleRtnCall(TID tid, uintptr_t call_pc, uintptr_t target_pc,
                      IGNORE_BELOW_RTN ignore_below) {
-    Thread::Get(tid)->HandleRtnCall(call_pc, target_pc, ignore_below);
-
-    FlushIfNeeded(tid);
+    Thread *thr = Thread::Get(tid);
+    thr->HandleRtnCall(call_pc, target_pc, ignore_below);
+    FlushIfNeeded(thr);
   }
 
   void INLINE HandleOneEvent(Event *e) {
@@ -6475,7 +6479,7 @@ class Detector {
     TID tid(e->tid());
     Thread *thread = Thread::Get(tid);
     VTS *vts = thread->segment()->vts();
-    PublishRange(tid, mem, mem + size, vts);
+    PublishRange(thread, mem, mem + size, vts);
 
     thread->NewSegmentForSignal();
     // Printf("Publish: [%p, %p)\n", mem, mem+size);
@@ -6492,16 +6496,17 @@ class Detector {
   // BENIGN_RACE
   void HandleBenignRace(uintptr_t ptr, uintptr_t size,
                         const char *descr, TID tid) {
+    Thread *thr = Thread::Get(tid);
     if (debug_benign_races) {
       Printf("T%d: BENIGN_RACE: ptr=%p size=%ld descr='%s'\n",
              tid.raw(), ptr, size, descr);
     }
     // Simply set all 'racey' bits in the shadow state of [ptr, ptr+size).
     for (uintptr_t p = ptr; p < ptr + size; p++) {
-      CacheLine *line = G_cache->GetLineOrCreateNew(tid, p, __LINE__);
+      CacheLine *line = G_cache->GetLineOrCreateNew(thr, p, __LINE__);
       CHECK(line);
       line->racey().Set(CacheLine::ComputeOffset(p));
-      G_cache->ReleaseLine(tid, p, line, __LINE__);
+      G_cache->ReleaseLine(thr, p, line, __LINE__);
     }
   }
 
@@ -6633,11 +6638,12 @@ class Detector {
   void HandleTraceMem(Event *e) {
     if (G_flags->trace_level == 0) return;
     TID tid(e->tid());
+    Thread *thr = Thread::Get(TID(e->tid()));
     uintptr_t a = e->a();
-    CacheLine *line = G_cache->GetLineOrCreateNew(tid, a, __LINE__);
+    CacheLine *line = G_cache->GetLineOrCreateNew(thr, a, __LINE__);
     uintptr_t offset = CacheLine::ComputeOffset(a);
     line->traced().Set(offset);
-    G_cache->ReleaseLine(tid, a, line, __LINE__);
+    G_cache->ReleaseLine(thr, a, line, __LINE__);
     if (G_flags->verbosity >= 2) e->Print();
   }
 
@@ -6750,7 +6756,7 @@ class Detector {
     if (UNLIKELY(G_flags->sample_events > 0)) {
       if (new_rd_ssid.IsTuple() || new_wr_ssid.IsTuple()) {
         static EventSampler sampler;
-        sampler.Sample(thr->tid(), "HasTupleSS", false);
+        sampler.Sample(thr, "HasTupleSS", false);
       }
     }
 
@@ -6774,13 +6780,14 @@ class Detector {
   // If this function returns true, the ShadowValue *new_sval is updated
   // in the same way as MemoryStateMachine() would have done it. Just faster.
   INLINE bool MemoryStateMachineSameThread(bool is_w, ShadowValue old_sval,
-                                           TID tid, Thread *thr,
+                                           Thread *thr,
                                            ShadowValue *new_sval) {
 #define MSM_STAT(i) do { if (DEBUG_MODE) \
   thr->stats.msm_branch_count[i]++; } while(0)
     SSID rd_ssid = old_sval.rd_ssid();
     SSID wr_ssid = old_sval.wr_ssid();
     SID cur_sid = thr->sid();
+    TID tid = thr->tid();
     if (rd_ssid.IsEmpty()) {
       if (wr_ssid.IsSingleton()) {
         // *** CASE 01 ***: rd_ssid == 0, wr_ssid == singleton
@@ -6900,7 +6907,6 @@ class Detector {
                                        CacheLine *cache_line,
                                        uintptr_t addr,
                                        uintptr_t size,
-                                       TID tid,
                                        uintptr_t pc,
                                        Thread *thr,
                                        bool fast_path_only) {
@@ -6920,7 +6926,7 @@ class Detector {
 
     bool res = false;
     bool fast_path_ok = MemoryStateMachineSameThread(
-        is_w, old_sval, tid, thr, sval_p);
+        is_w, old_sval, thr, sval_p);
     if (fast_path_ok) {
       res = true;
     } else if (fast_path_only) {
@@ -6939,7 +6945,7 @@ class Detector {
       // Check for race.
       if (UNLIKELY(is_race)) {
         if (G_flags->report_races && !cache_line->racey().Get(offset)) {
-          reports_.AddReport(tid, pc, is_w, addr, size,
+          reports_.AddReport(thr, pc, is_w, addr, size,
                              old_sval, *sval_p, is_published);
         }
         cache_line->racey().SetRange(offset, offset + size);
@@ -6982,7 +6988,7 @@ class Detector {
   // return false if we were not able to complete the task (fast_path_only).
   INLINE bool HandleAccessGranularityAndExecuteHelper(
       CacheLine *cache_line,
-      TID tid, Thread *thr, uintptr_t addr, MopInfo *mop,
+      Thread *thr, uintptr_t addr, MopInfo *mop,
       bool has_expensive_flags, bool fast_path_only) {
     size_t size = mop->size;
     uintptr_t pc = mop->pc;
@@ -7079,7 +7085,7 @@ class Detector {
         cache_line->Split_8_to_4(off);
         cache_line->Split_4_to_2(off);
         cache_line->Split_2_to_1(off);
-        if (!HandleMemoryAccessHelper(is_w, cache_line, x, 1, tid, pc, thr, false))
+        if (!HandleMemoryAccessHelper(is_w, cache_line, x, 1, pc, thr, false))
           return false;
       }
       return true;
@@ -7105,13 +7111,13 @@ slow_path:
       else if(GranularityIs4(off, gr)) s = 4;
       else if(GranularityIs2(off, gr)) s = 2;
       else                             s = 1;
-      if (!HandleMemoryAccessHelper(is_w, cache_line, x, s, tid, pc, thr, false))
+      if (!HandleMemoryAccessHelper(is_w, cache_line, x, s, pc, thr, false))
         return false;
       x += s;
     }
     return true;
 one_call:
-    return HandleMemoryAccessHelper(is_w, cache_line, addr, size, tid, pc,
+    return HandleMemoryAccessHelper(is_w, cache_line, addr, size, pc,
                                     thr, fast_path_only);
   }
 
@@ -7135,13 +7141,13 @@ one_call:
     TIL til(ts_lock, 1, need_locking);
     for (uintptr_t x = addr; x < addr + size; x++) {
       uintptr_t off = CacheLine::ComputeOffset(x);
-      CacheLine *cache_line = G_cache->GetLineOrCreateNew(thr->tid(),
+      CacheLine *cache_line = G_cache->GetLineOrCreateNew(thr,
                                                           x, __LINE__);
       ShadowValue *sval_p = cache_line->GetValuePointer(off);
       if (cache_line->has_shadow_value().Get(off) != 0) {
         bool is_published = cache_line->published().Get(off);
         Printf("TRACE: T%d/S%d %s[%d] addr=%p sval: %s%s; line=%p P=%s\n",
-               thr->tid().raw(), thr->sid().raw(), mop->is_write ? "wr" : "rd",
+               raw_tid(thr), thr->sid().raw(), mop->is_write ? "wr" : "rd",
                size, addr, sval_p->ToString().c_str(),
                is_published ? " P" : "",
                cache_line,
@@ -7149,7 +7155,7 @@ one_call:
                "0" : cache_line->published().ToString().c_str());
         thr->ReportStackTrace(pc);
       }
-      G_cache->ReleaseLine(thr->tid(), x, cache_line, __LINE__);
+      G_cache->ReleaseLine(thr, x, cache_line, __LINE__);
     }
   }
 
@@ -7159,11 +7165,11 @@ one_call:
 #else
   NOINLINE
 #endif
-  void HandleMemoryAccessSlowLocked(TID tid, Thread *thr,
-                                           uintptr_t addr,
-                                           MopInfo *mop,
-                                           bool has_expensive_flags,
-                                           bool need_locking) {
+  void HandleMemoryAccessSlowLocked(Thread *thr,
+                                    uintptr_t addr,
+                                    MopInfo *mop,
+                                    bool has_expensive_flags,
+                                    bool need_locking) {
     AssertTILHeld();
     DCHECK(thr->lsid(false) == thr->segment()->lsid(false));
     DCHECK(thr->lsid(true) == thr->segment()->lsid(true));
@@ -7173,12 +7179,12 @@ one_call:
       // only in non-serial variant.
       thr->GetSomeFreshSids();
     }
-    CacheLine *cache_line = G_cache->GetLineOrCreateNew(tid, addr, __LINE__);
-    HandleAccessGranularityAndExecuteHelper(cache_line, tid, thr, addr,
+    CacheLine *cache_line = G_cache->GetLineOrCreateNew(thr, addr, __LINE__);
+    HandleAccessGranularityAndExecuteHelper(cache_line, thr, addr,
                                             mop, has_expensive_flags,
                                             /*fast_path_only=*/false);
     bool tracing = IsTraced(cache_line, addr, has_expensive_flags);
-    G_cache->ReleaseLine(tid, addr, cache_line, __LINE__);
+    G_cache->ReleaseLine(thr, addr, cache_line, __LINE__);
     cache_line = NULL;  // just in case.
 
     if (has_expensive_flags) {
@@ -7188,12 +7194,12 @@ one_call:
       if (G_flags->sample_events > 0) {
         const char *type = "SampleMemoryAccess";
         static EventSampler sampler;
-        sampler.Sample(tid, type, false);
+        sampler.Sample(thr, type, false);
       }
     }
   }
 
-  INLINE bool HandleMemoryAccessInternal(TID tid, Thread *thr,
+  INLINE bool HandleMemoryAccessInternal(Thread *thr,
                                          uintptr_t *sblock_pc,
                                          uintptr_t addr,
                                          MopInfo *mop,
@@ -7229,7 +7235,7 @@ one_call:
       // The fast (unlocked) path.
       if (thr->HasRoomForDeadSids()) {
         // Acquire a line w/o locks.
-        cache_line = G_cache->TryAcquireLine(tid, addr, __LINE__);
+        cache_line = G_cache->TryAcquireLine(thr, addr, __LINE__);
         if (has_expensive_flags && cache_line && G_cache->IsInDirectCache(addr)) {
           INC_STAT(thr->stats.cache_fast_get);
         }
@@ -7240,12 +7246,12 @@ one_call:
             if (thr->HandleSblockEnter(*sblock_pc, /*allow_slow_path=*/false)) {
               *sblock_pc = 0;  // don't do SblockEnter any more.
               bool res = HandleAccessGranularityAndExecuteHelper(
-                  cache_line, tid, thr, addr,
+                  cache_line, thr, addr,
                   mop, has_expensive_flags,
                   /*fast_path_only=*/true);
               bool traced = IsTraced(cache_line, addr, has_expensive_flags);
               // release the line.
-              G_cache->ReleaseLine(tid, addr, cache_line, __LINE__);
+              G_cache->ReleaseLine(thr, addr, cache_line, __LINE__);
               if (res && has_expensive_flags && traced) {
                 DoTrace(thr, addr, mop, /*need_locking=*/true);
               }
@@ -7258,18 +7264,18 @@ one_call:
               }
             } else {
               // we were not able to handle SblockEnter.
-              G_cache->ReleaseLine(tid, addr, cache_line, __LINE__);
+              G_cache->ReleaseLine(thr, addr, cache_line, __LINE__);
               locked_access_case = 2;
             }
           } else {
             locked_access_case = 3;
             // The line has a wrong tag.
-            G_cache->ReleaseLine(tid, addr, cache_line, __LINE__);
+            G_cache->ReleaseLine(thr, addr, cache_line, __LINE__);
           }
         } else if (cache_line == NULL) {
           locked_access_case = 4;
           // We grabbed the cache slot but it is empty, release it.
-          G_cache->ReleaseLine(tid, addr, cache_line, __LINE__);
+          G_cache->ReleaseLine(thr, addr, cache_line, __LINE__);
         } else {
           locked_access_case = 5;
         }
@@ -7288,7 +7294,7 @@ one_call:
     TIL til(ts_lock, 2, need_locking);
     thr->HandleSblockEnter(*sblock_pc, /*allow_slow_path=*/true);
     *sblock_pc = 0;  // don't do SblockEnter any more.
-    HandleMemoryAccessSlowLocked(tid, thr, addr, mop,
+    HandleMemoryAccessSlowLocked(thr, addr, mop,
                                  has_expensive_flags,
                                  need_locking);
     return true;
@@ -7345,22 +7351,22 @@ one_call:
       return;
     }
     #endif
-    Thread *thread = Thread::Get(tid);
-    thread->NewSegmentForMallocEvent();
+    Thread *thr = Thread::Get(tid);
+    thr->NewSegmentForMallocEvent();
     uintptr_t b = a + size;
     CHECK(a <= b);
-    ClearMemoryState(tid, a, b);
+    ClearMemoryState(thr, a, b);
     // update heap_map
     HeapInfo info;
     info.ptr  = a;
     info.size = size;
-    info.sid  = thread->sid();
+    info.sid  = thr->sid();
     Segment::Ref(info.sid, __FUNCTION__);
     if (debug_malloc) {
       Printf("T%d MALLOC: %p [%p %p) %s %s\n%s\n",
              tid.raw(), size, a, a+size,
-             Segment::ToString(thread->sid()).c_str(),
-             thread->segment()->vts()->ToString().c_str(),
+             Segment::ToString(thr->sid()).c_str(),
+             thr->segment()->vts()->ToString().c_str(),
              info.StackTraceString().c_str());
     }
 
@@ -7381,11 +7387,11 @@ one_call:
   // FREE
   void HandleFree(Event *e) {
     TID tid(e->tid());
-    Thread *thread = Thread::Get(tid);
+    Thread *thr = Thread::Get(tid);
     uintptr_t a = e->a();
     if (debug_free) {
       e->Print();
-      thread->ReportStackTrace(e->pc());
+      thr->ReportStackTrace(e->pc());
     }
     if (a == 0)
       return;
@@ -7410,7 +7416,7 @@ one_call:
     CHECK(info->ptr == a);
     Segment::Unref(info->sid, __FUNCTION__);
 
-    ClearMemoryState(tid, a, a + size);
+    ClearMemoryState(thr, a, a + size);
     G_heap_map->EraseInfo(a);
   }
 
@@ -7473,7 +7479,7 @@ one_call:
       GetThreadStack(tid.raw(), &stack_min, &stack_max);
       Thread *thr = Thread::Get(tid);
       thr->SetStack(stack_min, stack_max);
-      ClearMemoryState(tid, thr->min_sp(), thr->max_sp());
+      ClearMemoryState(thr, thr->min_sp(), thr->max_sp());
     }
   }
 
@@ -7504,7 +7510,7 @@ one_call:
     if (sp_min < sp_max) {
       CHECK((sp_max - sp_min) >= 8 * 1024); // stay sane.
       CHECK((sp_max - sp_min) < 128 * 1024 * 1024); // stay sane.
-      ClearMemoryState(tid, sp_min, sp_max);
+      ClearMemoryState(thr, sp_min, sp_max);
       thr->SetStack(sp_min, sp_max);
     }
   }
@@ -7527,7 +7533,7 @@ one_call:
                Segment::ToString(child->sid()).c_str(),
                child->vts()->ToString().c_str());
       }
-      ClearMemoryState(tid, child->min_sp(), child->max_sp());
+      ClearMemoryState(thr, child->min_sp(), child->max_sp());
     } else {
       reports_.SetProgramFinished();
     }
@@ -8332,7 +8338,8 @@ void NOINLINE ThreadSanitizerHandleRtnCall(int32_t tid, uintptr_t call_pc,
 
   if (G_flags->sample_events) {
     static EventSampler sampler;
-    sampler.Sample(TID(tid), "RTN_CALL", true);
+    Thread *thr = Thread::Get(TID(tid));
+    sampler.Sample(thr, "RTN_CALL", true);
   }
 }
 void NOINLINE ThreadSanitizerHandleRtnExit(int32_t tid) {
