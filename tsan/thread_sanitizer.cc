@@ -8331,6 +8331,17 @@ extern NOINLINE void ThreadSanitizerHandleTrace(Thread *thr, TraceInfo *trace_in
                           tleb, /*need_locking=*/true);
 }
 
+extern NOINLINE void ThreadSanitizerHandleOneMemoryAccess(Thread *thr,
+                                                          MopInfo mop,
+                                                          uintptr_t addr) {
+  DCHECK(thr);
+  G_detector->HandleTrace(thr,
+                          &mop,
+                          1,
+                          mop.create_sblock() ? mop.pc() : 0,
+                          &addr, /*need_locking=*/true);
+}
+
 void NOINLINE ThreadSanitizerHandleRtnCall(int32_t tid, uintptr_t call_pc,
                                          uintptr_t target_pc,
                                          IGNORE_BELOW_RTN ignore_below) {

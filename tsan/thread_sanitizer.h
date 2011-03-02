@@ -201,6 +201,8 @@ extern void ThreadSanitizerHandleTrace(int32_t tid, TraceInfo *trace_info,
                                        uintptr_t *tleb);
 extern void ThreadSanitizerHandleTrace(Thread *thr, TraceInfo *trace_info,
                                        uintptr_t *tleb);
+extern void ThreadSanitizerHandleOneMemoryAccess(Thread *thr, MopInfo mop,
+                                                 uintptr_t addr);
 extern void ThreadSanitizerParseFlags(vector<string>* args);
 extern bool ThreadSanitizerWantToInstrumentSblock(uintptr_t pc);
 extern bool ThreadSanitizerWantToCreateSegmentsOnSblockEntry(uintptr_t pc);
