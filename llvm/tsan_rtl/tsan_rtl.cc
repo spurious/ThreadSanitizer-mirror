@@ -369,13 +369,15 @@ void INLINE flush_trace(TraceInfoPOD *trace) {
       sblock.Print();
       DCHECK(trace->n_mops_);
       for (size_t i = 0; i < trace->n_mops_; i++) {
-        if (trace->mops_[i].is_write) {
+        if (trace->mops_[i].is_write()) {
           Event event(WRITE,
-                      tid, trace->mops_[i].pc, TLEB[i], trace->mops_[i].size);
+                      tid, trace->mops_[i].pc(),
+                      TLEB[i], trace->mops_[i].size());
           event.Print();
         } else {
           Event event(READ,
-                      tid, trace->mops_[i].pc, TLEB[i], trace->mops_[i].size);
+                      tid, trace->mops_[i].pc(),
+                      TLEB[i], trace->mops_[i].size());
           event.Print();
         }
       }
