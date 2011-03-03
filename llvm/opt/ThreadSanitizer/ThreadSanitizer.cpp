@@ -35,7 +35,7 @@ using namespace std;
 //#define DEBUG_TRACES 1
 //#define DEBUG_CYCLES 1
 //#define DEBUG_DEBUG_INFO 1
-#define DEBUG_IGNORE_MOPS 1
+//#define DEBUG_IGNORE_MOPS 1
 
 // Command-line flags. {{{1
 static cl::opt<string>
@@ -128,12 +128,13 @@ TsanOnlineInstrument::TsanOnlineInstrument() : ModulePass(&ID) {
 // instruction_address = function_address + c_offset
 // (number of mops is always less or equal to the function size)
 Constant *TsanOnlineInstrument::getInstructionAddr(
-    int mop_index, BasicBlock::iterator &cur_inst) {
+    int mop_index, BasicBlock::iterator &cur_inst,
+    const IntegerType *ResultType) {
   Value *cur_fun = cur_inst->getParent()->getParent();
-  Constant *c_offset = ConstantInt::get(PlatformInt, mop_index);
+  Constant *c_offset = ConstantInt::get(ResultType, mop_index);
   Constant *result =
       ConstantExpr::getAdd(
-          ConstantExpr::getPtrToInt(cast<Constant>(cur_fun), PlatformInt),
+          ConstantExpr::getPtrToInt(cast<Constant>(cur_fun), ResultType),
           c_offset);
   dumpInstructionDebugInfo(result, cur_inst);
   return result;
@@ -725,7 +726,7 @@ void TsanOnlineInstrument::runOnFunction(Module::iterator &F) {
   // insertRtnExit() uses the shadow stack size obtained by
   // insertRtnCall() and should be always executed after it.
   BasicBlock::iterator First = F->begin()->begin();
-  insertRtnCall(getInstructionAddr(0, First), First);
+  insertRtnCall(getInstructionAddr(0, First, PlatformInt), First);
   if (ignore_recursively) insertIgnoreInc(First);
   for (Function::iterator BB = F->begin(), E = F->end(); BB != E; ++BB) {
     for (BasicBlock::iterator BI = BB->begin(), BE = BB->end();
@@ -756,15 +757,20 @@ bool TsanOnlineInstrument::runOnModule(Module &M) {
     UIntPtr = Type::getInt64PtrTy(*ThisModuleContext);
     PlatformInt = Type::getInt64Ty(*ThisModuleContext);
     ArithmeticPtr = Type::getInt64Ty(*ThisModuleContext);
+    PlatformPc = IntegerType::get(*ThisModuleContext, 48);
   } else {
     UIntPtr = Type::getInt32PtrTy(*ThisModuleContext);
     PlatformInt = Type::getInt32Ty(*ThisModuleContext);
     ArithmeticPtr = Type::getInt32Ty(*ThisModuleContext);
+    PlatformPc = IntegerType::get(*ThisModuleContext, 32);
   }
 
+  Int1 = Type::getInt1Ty(*ThisModuleContext);
+  Int4 = IntegerType::get(*ThisModuleContext, 4);
   Int8 = Type::getInt8Ty(*ThisModuleContext);
   Int8Ptr = Type::getInt8PtrTy(*ThisModuleContext);
   Int32 = Type::getInt32Ty(*ThisModuleContext);
+  Int64 = Type::getInt64Ty(*ThisModuleContext);
   Void = Type::getVoidTy(*ThisModuleContext);
 
   // MopType represents the following class declared in ts_trace_info.h:
@@ -773,9 +779,27 @@ bool TsanOnlineInstrument::runOnModule(Module &M) {
   //   uint32_t  size;
   //   bool      is_write;
   // };
+  // TODO(glider): the old MopInfo layout is deprecated and should be removed.
   MopType = StructType::get(*ThisModuleContext, PlatformInt, Int32, Int8, NULL);
 
-  MopArrayType = ArrayType::get(MopType, kTLEBSize);
+  // MopType64 represents a 64-bit union of the following layout:
+  // struct MopInfo {
+  //   ...
+  //  private:
+  //   uintptr_t  size_minus1_   :4;  // 0..15
+  //   uintptr_t  is_write_      :1;
+  //   uintptr_t  create_sblock_ :1;
+  // #if __WORDSIZE == 64
+  //   uintptr_t  pc_            :48;  // 48 bits is enough for pc.
+  // #else
+  //   uintptr_t  pc_;
+  // #endif
+  // };
+  //
+  // BUT we use a single 64-bit number instead.
+  MopType64 = Type::getInt64PtrTy(*ThisModuleContext);
+
+  MopArrayType = ArrayType::get(MopType64, kTLEBSize);
   LiteRaceCountersArrayType = ArrayType::get(Int32, kLiteRaceNumTids);
   LiteRaceSkipArrayType = ArrayType::get(Int32, kLiteRaceNumTids);
 
@@ -1471,16 +1495,27 @@ bool TsanOnlineInstrument::makeTracePassport(Trace &trace) {
         }
         size = getMopPtrSize(MopPtr, isStore);
 
-
         if (MopPtr->getType() != UIntPtr) {
           MopPtr = BitCastInst::CreatePointerCast(MopPtr, UIntPtr, "", BI);
         }
 
-        vector<Constant*> mop;
-        mop.push_back(getInstructionAddr(FunctionMopCount, BI));
-        mop.push_back(ConstantInt::get(Int32, size / 8));
-        mop.push_back(ConstantInt::get(Int8, isStore));
-        passport.push_back(ConstantStruct::get(MopType, mop));
+        uint64_t mop_size_minus1 = size / 8 - 1;
+        uint64_t mop_is_write_ = isStore ? 1 : 0;
+        uint64_t mop_create_sblock_ = 0;
+        // TODO(glider): may want to call ThreadSanitizerHandleMemoryAccess
+        // instead of ThreadSanitizerHandleTrace. In this case we'll need to
+        // set |create_sblock_| sometimes.
+        Constant *mop_pc = getInstructionAddr(FunctionMopCount, BI,
+                                              Int64);
+        // Manually fill the union fields.
+        // TODO(glider): a packed structure should be better.
+        Constant *mop =
+            ConstantExpr::getAdd(
+                ConstantInt::get(Int64,
+                    ((((mop_size_minus1 << 1) + mop_is_write_) << 1) +
+                     mop_create_sblock_)  << 58),
+                mop_pc);
+        passport.push_back(mop);
       }
     }
   }
@@ -1510,7 +1545,7 @@ bool TsanOnlineInstrument::makeTracePassport(Trace &trace) {
       LiteRaceStorageGlob->setSection(".data");
     }
 
-    TracePassportType = ArrayType::get(MopType, TraceNumMops);
+    TracePassportType = ArrayType::get(MopType64, TraceNumMops);
     BBTraceInfoType = StructType::get(*ThisModuleContext,
                                 PlatformInt, PlatformInt,
                                 PlatformInt,
@@ -1527,7 +1562,7 @@ bool TsanOnlineInstrument::makeTracePassport(Trace &trace) {
     // pc_
     BasicBlock::iterator First = trace.entry->begin();
     trace_info.push_back(getInstructionAddr(FunctionMopCountOnTrace,
-                                            First));
+                                            First, PlatformInt));
     // counter_
     trace_info.push_back(ConstantInt::get(PlatformInt, 0));
     // literace_counters[]
@@ -1669,7 +1704,7 @@ void TsanOnlineInstrument::instrumentCall(BasicBlock::iterator &BI) {
                                 "", BI);
   Value *StackEnd = new LoadInst(StackEndPtr, "", BI);
 
-  new StoreInst(getInstructionAddr(FunctionMopCount, BI),
+  new StoreInst(getInstructionAddr(FunctionMopCount, BI, PlatformInt),
                 StackEnd, BI);
 }
 

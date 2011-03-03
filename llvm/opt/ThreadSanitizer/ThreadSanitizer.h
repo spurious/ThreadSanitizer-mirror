@@ -83,7 +83,8 @@ struct TsanOnlineInstrument : public llvm::ModulePass { // {{{1
                        bool first_dtor_bb,
                        Trace &trace);
   llvm::Constant *getInstructionAddr(int mop_index,
-                                     llvm::BasicBlock::iterator &cur_inst);
+                                     llvm::BasicBlock::iterator &cur_inst,
+                                     const llvm::IntegerType *ResultType);
   void parseIgnoreFile(std::string &file);
   llvm::DILocation getTopInlinedLocation(llvm::BasicBlock::iterator &BI);
   void dumpInstructionDebugInfo(llvm::Constant *addr,
@@ -138,10 +139,12 @@ struct TsanOnlineInstrument : public llvm::ModulePass { // {{{1
   llvm::Constant *MemCpyFn, *MemMoveFn, *MemSetIntrinsicFn;
   // Basic types.
   const llvm::PointerType *UIntPtr, *TraceInfoTypePtr, *Int8Ptr;
-  const llvm::Type *PlatformInt, *Int8, *ArithmeticPtr, *Int32;
+  const llvm::IntegerType *PlatformInt, *PlatformPc, *ArithmeticPtr, *Int64;
+  const llvm::Type *Int1, *Int4, *Int8, *Int32;
   const llvm::Type *Void;
   // Compound types.
   const llvm::StructType *MopType, *TraceInfoType, *BBTraceInfoType;
+  const llvm::PointerType *MopType64;
   const llvm::StructType *LiteRaceCountersType;
   const llvm::ArrayType *LiteRaceStorageType, *LiteRaceStorageLineType;
   const llvm::PointerType *LiteRaceStoragePtrType;
