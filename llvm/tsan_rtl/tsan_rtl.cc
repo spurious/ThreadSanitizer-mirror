@@ -56,6 +56,7 @@ __thread bool thread_local_show_stats;
 __thread int thread_local_literace;
 
 struct ThreadInfo {
+  Thread *thread;
   tid_t tid;
   int *thread_local_ignore;
 };
@@ -529,7 +530,7 @@ bool initialize() {
 
   ThreadSanitizerParseFlags(&args);
   ThreadSanitizerInit();
-  init_debug();
+  //init_debug();
   if (G_flags->dry_run) {
     Printf("WARNING: the --dry_run flag is not supported anymore. "
            "Ignoring.\n");
@@ -556,6 +557,7 @@ bool initialize() {
   have_pending_signals = false;
 
   SPut(THR_START, 0, (pc_t) &ShadowStack, 0, 0);
+  INFO.thread = ThreadSanitizerGetThreadByTid(0);
   if (stack_top) {
     // We don't intercept the mmap2 syscall that allocates thread stack, so pass
     // the event to ThreadSanitizer manually.
@@ -711,6 +713,8 @@ void *pthread_callback(void *arg) {
 
   ShadowStack.end_ = ShadowStack.pcs_;
   SPut(THR_START, INFO.tid, (pc_t) &ShadowStack, 0, parent);
+  INFO.thread = ThreadSanitizerGetThreadByTid(INFO.tid);
+
   IN_RTL++;
   CHECK_IN_RTL();
   delete cb_arg;
