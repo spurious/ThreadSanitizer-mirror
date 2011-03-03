@@ -30,7 +30,8 @@ VG_INCLUDES=-I$(VALGRIND_ROOT) -I$(VALGRIND_ROOT)/include -I$(VALGRIND_ROOT)/VEX
 
 PIN_CXXFLAGS_L=-fPIC
 PIN_DEFINES=-DBIGARRAY_MULTIPLIER=1 -DUSING_XED  -DTARGET_$(PIN_ARCH2)  -DHOST_$(PIN_ARCH2)   -DTARGET_LINUX -DTS_PIN=1
-PIN_INCLUDES=-I$(PIN_ROOT)/source/include -I$(PIN_ROOT)/source/include/gen -I$(PIN_ROOT)/extras/xed2-$(PIN_ARCH)/include
+PIN_INCLUDES=-I$(PIN_ROOT)/source/include -I$(PIN_ROOT)/source/include/gen \
+             -I$(PIN_ROOT)/extras/xed2-$(PIN_ARCH)/include -I$(PIN_ROOT)/extras/components/include
 PIN_LIBPATHS=-L$(PIN_ROOT)/extras/xed2-$(PIN_ARCH)/lib -L$(PIN_ROOT)/$(PIN_ARCH)/lib -L$(PIN_ROOT)/$(PIN_ARCH)/lib-ext
 PIN_LDFLAGS=-g -shared -Wl,-Bsymbolic -Wl,--version-script=$(PIN_ROOT)/source/include/pintool.ver
 PIN_LIBS= -lpin  -lxed -ldwarf -lelf -ldl -lpthread
