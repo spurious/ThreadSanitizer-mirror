@@ -57,7 +57,7 @@ struct MopInfo {
 
   MopInfo() {
     DCHECK(sizeof(*this) == 8);
-    *(uint64_t*)this = 0;
+    memset(this, 0, sizeof(*this));
   }
 
   uintptr_t pc()            { return pc_; };
