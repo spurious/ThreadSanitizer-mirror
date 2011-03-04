@@ -807,6 +807,8 @@ void unsafe_forget_thread(tid_t tid, tid_t from) {
   ThreadInfoMap.erase(pt);
 }
 
+// TODO(glider): FLUSH_TRACE is deprecated, because we flush before each
+// function call now.
 #define FLUSH_TRACE()
 #if 0
 #define FLUSH_TRACE() \
@@ -1821,22 +1823,26 @@ int __wrap_pthread_spin_unlock(pthread_spinlock_t *lock) {
 // STR* wrappers {{{1
 extern "C"
 char *__wrap_strchr(const char *s, int c) {
-  FLUSH_TRACE();
+  if (IN_RTL) return __real_strchr(s, c);
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_strchr, 0);
+  ENTER_RTL();
   pc = (pc_t)__wrap_strchr;
   char *result = Replace_strchr(tid, pc, s, c);
+  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
 }
 
 extern "C"
 char *__wrap_strrchr(const char *s, int c) {
-  FLUSH_TRACE();
+  if (IN_RTL) return __real_strrchr(s, c);
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_strrchr, 0);
+  ENTER_RTL();
   pc = (pc_t)__wrap_strrchr;
   char *result = Replace_strrchr(tid, pc, s, c);
+  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
 }
@@ -1844,15 +1850,12 @@ char *__wrap_strrchr(const char *s, int c) {
 extern "C"
 size_t __wrap_strlen(const char *s) {
   if (IN_RTL) return __real_strlen(s);
-  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_strlen, 0);
-  IN_RTL++;
-  CHECK_IN_RTL();
+  ENTER_RTL();
   pc = (pc_t)__wrap_strlen;
   size_t result = Replace_strlen(tid, pc, s);
-  IN_RTL--;
-  CHECK_IN_RTL();
+  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
 }
@@ -1864,33 +1867,27 @@ size_t __wrap_strlen(const char *s) {
 extern "C"
 char *__wrap_memcpy(char *dest, const char *src, size_t n) {
   if (IN_RTL) return __real_memcpy(dest, src, n);
-  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
-  IN_RTL++;
-  CHECK_IN_RTL();
+  ENTER_RTL();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_memcpy, 0);
   pc = (pc_t)__wrap_memcpy;
   char *result = Replace_memcpy(tid, pc, dest, src, n);
+  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
-  IN_RTL--;
-  CHECK_IN_RTL();
   return result;
 }
 
 extern "C"
 void *__wrap_memmove(char *dest, const char *src, size_t n) {
   if (IN_RTL) return __real_memmove(dest, src, n);
-  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   pc = (pc_t)__wrap_memmove;
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_memmove, 0);
-  IN_RTL++;
-  CHECK_IN_RTL();
+  ENTER_RTL();
   void *result = __real_memmove(dest, src, n);
   REPORT_READ_RANGE(src, n);
   REPORT_WRITE_RANGE(dest, n);
-  IN_RTL--;
-  CHECK_IN_RTL();
+  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
 }
@@ -1899,7 +1896,6 @@ void *__wrap_memmove(char *dest, const char *src, size_t n) {
 // TODO(glider): ???
 extern
 char *strcpy(char *dest, const char *src) {
-  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)strcpy, 0);
   pc = (pc_t)strcpy;
@@ -1910,11 +1906,13 @@ char *strcpy(char *dest, const char *src) {
 
 extern "C"
 void *__wrap_memchr(const char *s, int c, size_t n) {
-  FLUSH_TRACE();
+  if (IN_RTL) return __real_memchr(s, c, n);
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_memchr, 0);
+  ENTER_RTL();
   pc = (pc_t)__wrap_memchr;
   void *result = Replace_memchr(tid, pc, s, c, n);
+  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
 }
@@ -1922,7 +1920,6 @@ void *__wrap_memchr(const char *s, int c, size_t n) {
 #ifdef TSAN_RTL_X86
 extern
 void *memchr(void *s, int c, unsigned int n) {
-  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_memchr, 0);
   pc = (pc_t)__wrap_memchr;
@@ -1935,11 +1932,12 @@ void *memchr(void *s, int c, unsigned int n) {
 #ifdef TSAN_RTL_X64
 extern
 void *memchr(void *s, int c, unsigned long n) {
-  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_memchr, 0);
+  ENTER_RTL();
   pc = (pc_t)__wrap_memchr;
   void *result = Replace_memchr(tid, pc, (char*)s, c, n);
+  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
 }
@@ -1947,22 +1945,25 @@ void *memchr(void *s, int c, unsigned long n) {
 
 extern "C"
 int __wrap_strcmp(const char *s1, const char *s2) {
-  FLUSH_TRACE();
+  if (IN_RTL) return __real_strcmp(s1, s2);
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_strcmp, 0);
+  ENTER_RTL();
   pc = (pc_t)__wrap_strcmp;
   int result = Replace_strcmp(tid, pc, s1, s2);
+  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
 }
 
 extern "C"
 int strncmp(const char *s1, const char *s2, size_t n) {
-  FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)strncmp, 0);
+  ENTER_RTL();
   pc = (pc_t)strncmp;
   int result = Replace_strncmp(tid, pc, s1, s2, n);
+  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
 }
