@@ -47,6 +47,7 @@ def setup_parser(parser):
   pass
 
 def print_args(args):
+  print
   for i in args[:-1]:
     print "    ", i, "\\"
   print "    ", args[-1]
@@ -156,7 +157,7 @@ def gcc(default_cc, fallback_cc):
     if build_so:
       ld_args += ['-shared']
     else:
-      ld_args += ['-lpthread']
+      ld_args += ['-lpthread', '-lbfd']
       config = file(LINK_CONFIG).readlines()
       for line in config:
         pieces = line[:-1].split(" ")
@@ -192,7 +193,7 @@ def gcc(default_cc, fallback_cc):
       opt_args += ['-ignore=' + TSAN_IGNORE]
     opt_args += [src_bitcode, '-o', src_instrumented]
     #print_args(opt_args)
-    retcode = subprocess.call(opt_args, stderr=file("instrumentation.log", 'w'))
+    retcode = subprocess.call(opt_args, stderr=file(src_file+".instrumentation.log", 'w'))
     if retcode != 0:
       do_fallback(fallback_cc, args)
       return
