@@ -25,9 +25,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <gcc-plugin.h>
-#include <plugin-version.h>
 #include <plugin.h>
+#include <plugin-version.h>
 #include <config.h>
 #include <system.h>
 #include <coretypes.h>
@@ -43,22 +42,31 @@
 bool plugin_is_GPL_compatible = false;
 
 
-// global contest - there is no way to pass contest to compilation passes
-relite_context_t g_ctx;
+// global contest - there is no way to pass a context to compilation passes
+relite_context_t* g_ctx;
 
 
-static void plugin_finish_unit(void* event_data, void* user_data)
-{
+static void             plugin_prepass      (void* event_data,
+                                             void* user_data) {
   (void)event_data;
   (void)user_data;
-  relite_finish(&g_ctx);
-
+  relite_prepass(g_ctx);
 }
 
 
-static tree handle_ignore_attribute(tree* node, tree name, tree args,
-                                  int flags, bool* no_add_attrs)
-{
+static void             plugin_finish_unit  (void* event_data,
+                                             void* user_data) {
+  (void)event_data;
+  (void)user_data;
+  relite_finish(g_ctx);
+}
+
+
+static tree             handle_ignore_attr  (tree* node,
+                                             tree name,
+                                             tree args,
+                                             int flags,
+                                             bool* no_add_attrs) {
   return NULL_TREE;
 }
 
@@ -70,38 +78,27 @@ static struct attribute_spec ignore_attr = {
     0,
     0,
     0,
-    handle_ignore_attribute
+    handle_ignore_attr
 };
 
 
-static void register_attributes(void* event_data, void* user_data) {
+static void             register_attributes (void* event_data,
+                                             void* user_data) {
   register_attribute(&ignore_attr);
 }
 
 
-#ifdef RELITE_USE_PASS_MANAGER
-static unsigned instrumentation_pass() {
+static unsigned         instrumentation_pass() {
   if (errorcount != 0 || sorrycount != 0)
     return 0;
   gcc_assert(cfun != 0);
-  relite_pass(&g_ctx, cfun);
+  relite_pass(g_ctx, cfun);
   return 0;
 }
-#else
-static void instrumentation_pass(void* event_data, void* user_data)
-{
-  (void)event_data;
-  (void)user_data;
-  if (errorcount != 0 || sorrycount != 0)
-    return;
-  gcc_assert(cfun != 0);
-  relite_pass(&g_ctx, cfun);
-}
-#endif
 
 
-int plugin_init(struct plugin_name_args* info,
-                struct plugin_gcc_version* ver) {
+int                     plugin_init         (struct plugin_name_args* info,
+                                             struct plugin_gcc_version* ver) {
   if (strcmp(ver->basever, gcc_version.basever) != 0)
   {
     printf("relite: invalid gcc version\n");
@@ -110,14 +107,14 @@ int plugin_init(struct plugin_name_args* info,
     exit(1);
   }
 
-  setup_context(&g_ctx);
+  g_ctx = create_context();
 
   int do_pause = 0;
   for (int i = 0; i != info->argc; i += 1) {
     if (strcmp(info->argv[i].key, "pause") == 0)
       do_pause = 1;
     else if (strcmp(info->argv[i].key, "debug") == 0)
-      g_ctx.opt_debug = 1;
+      g_ctx->opt_debug = 1;
   }
 
   if (do_pause) {
@@ -126,7 +123,6 @@ int plugin_init(struct plugin_name_args* info,
     scanf("%1c", buf);
   }
 
-#ifdef RELITE_USE_PASS_MANAGER
   static struct gimple_opt_pass pass_instrumentation = {{
     GIMPLE_PASS,
     "relite",                             /* name */
@@ -140,33 +136,20 @@ int plugin_init(struct plugin_name_args* info,
     0,                                    /* properties_provided */
     0,                                    /* properties_destroyed */
     0,                                    /* todo_flags_start */
-    0/*
-    ((unsigned)-1)
-      &~TODO_cleanup_cfg
-      &~TODO_update_address_taken
-      &~TODO_rebuild_alias
-      &~TODO_rebuild_frequencies
-      &~TODO_remove_functions
-      &~TODO_dump_cgraph
-      &~TODO_ggc_collect
-      //&~TODO_df_finish
-      //TODO_verify_all | TODO_update_address_taken | TODO_update_ssa
-       */
+    TODO_dump_cgraph | TODO_dump_func     /* todo_flags_finish */
   }};
 
   struct register_pass_info pass;
   pass.pass = &pass_instrumentation.pass;
-  //pass.reference_pass_name = "*warn_unused_result";
   pass.reference_pass_name = "optimized";
   pass.ref_pass_instance_number = 1;
   pass.pos_op = PASS_POS_INSERT_AFTER;
 
   register_callback(info->base_name, PLUGIN_PASS_MANAGER_SETUP,
                     NULL, &pass);
-#else
-  register_callback(info->base_name, PLUGIN_ALL_PASSES_END,
-                    &instrumentation_pass, 0);
-#endif
+
+  register_callback(info->base_name, PLUGIN_PRE_GENERICIZE,
+                    plugin_prepass, 0);
 
   register_callback(info->base_name, PLUGIN_FINISH_UNIT,
                     &plugin_finish_unit, &g_ctx);
@@ -176,5 +159,8 @@ int plugin_init(struct plugin_name_args* info,
 
   return 0;
 }
+
+
+
 
 

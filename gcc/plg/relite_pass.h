@@ -36,42 +36,43 @@
 #include <gimple.h>
 
 
-typedef struct relite_context_t relite_context_t;
-typedef struct func_desc_t func_desc_t;
-typedef struct expr_desc_t expr_desc_t;
-
-
-struct func_desc_t {
+typedef struct rt_decl_desc_t {
   char const*           rt_name;
   char const*           real_name;
-  tree                  fndecl;
-};
+  tree                  decl;
+} rt_decl_desc_t;
 
 
-struct expr_desc_t {
-  location_t                loc;
-  expanded_location const*  eloc;
-  gimple_stmt_iterator*     gsi;
-  tree                      expr;
-};
+typedef struct relite_context_t {
+  void                  (*setup)            (struct relite_context_t* ctx);
 
+  void                  (*instr_func)       (struct relite_context_t* ctx,
+                                             tree func_decl,
+                                             gimple_seq* pre,
+                                             gimple_seq* post);
 
-typedef void            (*instrument_func)  (relite_context_t* ctx,
-                                             expr_desc_t const* expr);
+  void                  (*instr_mop)        (struct relite_context_t* ctx,
+                                             tree expr,
+                                             location_t loc,
+                                             int is_store,
+                                             int is_sblock,
+                                             gimple_seq* pre,
+                                             gimple_seq* post);
 
+  void                  (*instr_call)       (struct relite_context_t* ctx,
+                                             tree func_decl,
+                                             location_t loc,
+                                             gimple_seq* pre,
+                                             gimple_seq* post);
 
-struct relite_context_t {
   int                   opt_debug;
 
-  instrument_func       instr_enter;
-  instrument_func       instr_leave;
-  instrument_func       instr_store;
-  instrument_func       instr_load;
-  instrument_func       instr_func;
+  int                   func_calls;
 
-  func_desc_t*          rt_funcs;
-  int                   rt_func_count;
-  int                   rt_func_setup;
+  //rt_decl_desc_t*       rt_decl;
+  //int                   rt_decl_count;
+  //int                   rt_decl_setup;
+  int                   setup_completed;
 
   int                   stat_func_total;
   int                   stat_func_instrumented;
@@ -80,36 +81,19 @@ struct relite_context_t {
   int                   stat_store_instrumented;
   int                   stat_load_total;
   int                   stat_load_instrumented;
-};
+} relite_context_t;
 
 
-void                    setup_context       (relite_context_t* ctx);
+relite_context_t*       create_context      ();
 
+
+void                    relite_prepass      (relite_context_t* ctx);
 
 void                    relite_pass         (relite_context_t* ctx,
                                              struct function* func);
 
 
 void                    relite_finish       (relite_context_t* ctx);
-
-
-typedef enum rt_func_index {
-  rt_enter,
-  rt_leave,
-  rt_store,
-  rt_load,
-  rt_acquire,
-  rt_release,
-  rt_call_desc_t,
-  rt_mop_desc_t,
-  rt_func_desc_t,
-  rt_calls,
-  rt_mops,
-  rt_func_desc,
-} rt_func_index;
-
-
-tree                    rt_func             (rt_func_index idx);
 
 
 #endif

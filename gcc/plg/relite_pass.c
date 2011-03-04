@@ -47,10 +47,6 @@
 #include "relite_pass.h"
 
 
-// TODO(dvyukov) if an address of a function that needs to be intercepted
-// is taken, replace it with the wrapper
-
-
 static void             dbg                 (relite_context_t* ctx,
                                              char const* format, ...)
                                           __attribute__((format(printf, 2, 3)));
@@ -99,19 +95,34 @@ static void             dbg_access          (relite_context_t* ctx,
 }
 
 
-static void             setup_rt_funcs      (relite_context_t* ctx) {
-  int remain = ctx->rt_func_count;
+static void             dump_instr_seq      (relite_context_t* ctx,
+                                             char const* what,
+                                             gimple_seq* seq,
+                                             location_t loc) {
+  expanded_location eloc = expand_location(loc);
+  dbg(ctx, "inserting %s at %s:%d:%d gimple seq:",
+      what, eloc.file, eloc.line, eloc.column);
+  gimple_seq_node n = gimple_seq_first(*seq);
+  for (; n != 0; n = n->next) {
+    enum gimple_code gc = gimple_code(n->stmt);
+    dbg(ctx, "  gimple %s", gimple_code_name[gc]);
+  }
+}
+
+/*
+static void             setup_rt_decls      (relite_context_t* ctx) {
+  int remain = ctx->rt_decl_count;
   tree decl = NAMESPACE_LEVEL(global_namespace)->names;
   for (; decl != 0; decl = TREE_CHAIN(decl)) {
-    if (DECL_IS_BUILTIN(decl) /*|| TREE_CODE(decl) != FUNCTION_DECL*/)
+    if (DECL_IS_BUILTIN(decl))
       continue;
     char const* name = IDENTIFIER_POINTER(DECL_NAME(decl));
     if (name == 0)
       continue;
-    for (int i = 0; i != ctx->rt_func_count; i += 1) {
-      if (ctx->rt_funcs[i].fndecl == 0
-          && strcmp(name, ctx->rt_funcs[i].rt_name) == 0) {
-        ctx->rt_funcs[i].fndecl = decl;
+    for (int i = 0; i != ctx->rt_decl_count; i += 1) {
+      if (ctx->rt_decl[i].decl == 0
+          && strcmp(name, ctx->rt_decl[i].rt_name) == 0) {
+        ctx->rt_decl[i].decl = decl;
         TREE_NO_WARNING(decl) = 1;
         remain -= 1;
         break;
@@ -123,24 +134,33 @@ static void             setup_rt_funcs      (relite_context_t* ctx) {
 
   if (remain != 0) {
     printf("relite: can't find runtime function declarations:\n");
-    for (int i = 0; i != ctx->rt_func_count; i += 1) {
-      if (ctx->rt_funcs[i].fndecl == 0)
-        printf("relite: %s\n", ctx->rt_funcs[i].rt_name);
+    for (int i = 0; i != ctx->rt_decl_count; i += 1) {
+      if (ctx->rt_decl[i].decl == 0)
+        printf("relite: %s\n", ctx->rt_decl[i].rt_name);
     }
     exit(1);
   }
 }
 
 
-static tree             find_rt_func        (relite_context_t* ctx,
-                                             char const* func_name) {
-  for (int i = 0; i != ctx->rt_func_count; i += 1) {
-    if (ctx->rt_funcs[i].real_name != 0
-        && strcmp(ctx->rt_funcs[i].real_name, func_name) == 0) {
-      return ctx->rt_funcs[i].fndecl;
+static tree             find_rt_decl        (relite_context_t* ctx,
+                                             char const* decl_name) {
+  for (int i = 0; i != ctx->rt_decl_count; i += 1) {
+    if (ctx->rt_decl[i].real_name != 0
+        && strcmp(ctx->rt_decl[i].real_name, decl_name) == 0) {
+      return ctx->rt_decl[i].decl;
     }
   }
   return 0;
+}
+  */
+
+
+static void             set_location        (gimple_seq seq,
+                                             location_t loc) {
+  gimple_seq_node n;
+  for (n = gimple_seq_first(seq); n != 0; n = n->next)
+    gimple_set_location(n->stmt, loc);
 }
 
 
@@ -168,33 +188,6 @@ static void             process_store       (relite_context_t* ctx,
       break;
 
     case ARRAY_REF: {
-      tree array = TREE_OPERAND (expr, 0);
-      if (DECL_P(array) || TREE_CODE(array) == SSA_NAME) {
-        //TREE_ADDRESSABLE(array) = 1;
-        //TREE_USED(array) = 1;
-        if (TREE_CODE(array) == SSA_NAME) {
-          //tree array_ssa = SSA_NAME_VAR(array);
-          //TREE_ADDRESSABLE(array_ssa) = 1;
-          //TREE_USED(array_ssa) = 1;
-        }
-      }
-
-      tree index = TREE_OPERAND (expr, 1);
-      if (DECL_P(index) || TREE_CODE(index) == SSA_NAME) {
-        //TREE_USED(index) = 1;
-        if (TREE_CODE(index) == SSA_NAME) {
-          //tree index_ssa = SSA_NAME_VAR(index);
-          //TREE_USED(index_ssa) = 1;
-        }
-      }
-
-      if (DECL_P(expr)) {
-        //TREE_USED(expr) = 1;
-        if (expr_ssa != 0) {
-          //TREE_USED(expr_ssa) = 1;
-        }
-      }
-
       do_instrument = 1;
       break;
     }
@@ -239,6 +232,7 @@ static void             process_store       (relite_context_t* ctx,
         }
       }
 
+      /*
       //TREE_ADDRESSABLE(expr) = 1;
       //TREE_USED(expr) = 1;
       if (expr_ssa != 0) {
@@ -246,6 +240,7 @@ static void             process_store       (relite_context_t* ctx,
         //TREE_USED(expr_ssa) = 1;
         add_referenced_var(expr_ssa);
       }
+      */
 
       do_instrument = 1;
       break;
@@ -257,6 +252,7 @@ static void             process_store       (relite_context_t* ctx,
     }
   }
 
+  /*
   if (do_instrument != 0) {
     tree expr_type = TREE_TYPE(expr);
     tree type_decl = TYPE_NAME(expr_type);
@@ -270,19 +266,27 @@ static void             process_store       (relite_context_t* ctx,
       }
     }
   }
+  */
 
   assert(do_instrument != 0 || (reason != 0 && reason[0] != 0));
 
   ctx->stat_store_total += 1;
-  if (do_instrument != 0 && ctx->instr_store) {
+  if (do_instrument != 0 && ctx->instr_mop) {
     ctx->stat_store_instrumented += 1;
     assert(is_gimple_addressable(expr));
-    expr_desc_t desc = {};
-    desc.loc = loc;
-    desc.eloc = eloc;
-    desc.gsi = gsi;
-    desc.expr = expr;
-    ctx->instr_store(ctx, &desc);
+    gimple_seq pre_mop = 0;
+    gimple_seq post_mop = 0;
+    ctx->instr_mop(ctx, expr, 1, 1, loc, &pre_mop, &post_mop);
+    if (pre_mop != 0) {
+      dump_instr_seq(ctx, "before store", &post_mop, loc);
+      set_location(post_mop, loc);
+      gsi_insert_seq_before(gsi, pre_mop, GSI_SAME_STMT);
+    }
+    if (post_mop != 0) {
+      dump_instr_seq(ctx, "after store", &post_mop, loc);
+      set_location(post_mop, loc);
+      gsi_insert_seq_after(gsi, post_mop, GSI_NEW_STMT);
+    }
   }
 
   dbg_access(ctx, "store to", eloc, expr, expr_ssa, do_instrument, reason);
@@ -364,22 +368,12 @@ static void             process_load        (relite_context_t* ctx,
           unsigned fld_size = field->decl_common.size->int_cst.int_cst.low;
           if (((fld_off % __CHAR_BIT__) != 0)
               || ((fld_size % __CHAR_BIT__) != 0)){
-            //TODO(dvyukov): handle bit-fields
+            //TODO(dvyukov): handle bit-fields correctly
             dbg(ctx, "bit_offset=%u, size=%u", fld_off, fld_size);
             reason = "weird bit field";
             break;
           }
         }
-      }
-
-      //TREE_ADDRESSABLE(expr) = 1;
-      //TREE_USED(expr) = 1;
-//      add_referenced_var(expr);
-      if (expr_ssa != 0) {
-        //TREE_ADDRESSABLE(expr_ssa) = 1;
-        //TREE_USED(expr_ssa) = 1;
-        //add_referenced_var(expr_ssa);
-        //mark_operand_necessary(expr_ssa);
       }
 
       do_instrument = 1;
@@ -395,22 +389,29 @@ static void             process_load        (relite_context_t* ctx,
   assert(do_instrument != 0 || (reason != 0 && reason[0] != 0));
 
   ctx->stat_load_total += 1;
-  if (do_instrument != 0 && ctx->instr_load != 0) {
+  if (do_instrument != 0 && ctx->instr_mop != 0) {
     ctx->stat_load_instrumented += 1;
     assert(is_gimple_addressable(expr));
-    expr_desc_t desc = {};
-    desc.loc = loc;
-    desc.eloc = eloc;
-    desc.gsi = gsi;
-    desc.expr = expr;
-    ctx->instr_load(ctx, &desc);
+    gimple_seq pre_mop = 0;
+    gimple_seq post_mop = 0;
+    ctx->instr_mop(ctx, expr, loc, 0, 1, &pre_mop, &post_mop);
+    if (pre_mop != 0) {
+      set_location(post_mop, loc);
+      dump_instr_seq(ctx, "before load", &pre_mop, loc);
+      gsi_insert_seq_before(gsi, pre_mop, GSI_SAME_STMT);
+    }
+    if (post_mop != 0) {
+      set_location(post_mop, loc);
+      dump_instr_seq(ctx, "after load", &post_mop, loc);
+      gsi_insert_seq_after(gsi, post_mop, GSI_NEW_STMT);
+    }
   }
 
   dbg_access(ctx, "load of", eloc, expr, expr_ssa, do_instrument, reason);
 }
 
 
-static void             instrument          (relite_context_t* ctx,
+static void             handle_gimple       (relite_context_t* ctx,
                                              gimple_stmt_iterator* gsi) {
   gimple stmt = gsi_stmt(*gsi);
   location_t const loc = gimple_location(stmt);
@@ -422,7 +423,7 @@ static void             instrument          (relite_context_t* ctx,
     for (gsi2 = gsi_start(gimple_bind_body(stmt));
         !gsi_end_p(gsi2);
         gsi_next(&gsi2)) {
-      instrument(ctx, &gsi2);
+      handle_gimple(ctx, &gsi2);
     }
   } else if (is_gimple_assign(stmt)) {
     for (int i = 1; i != gimple_num_ops(stmt); i += 1) {
@@ -433,24 +434,189 @@ static void             instrument          (relite_context_t* ctx,
     process_store(ctx, loc, &eloc, gsi, lhs);
   } else if (is_gimple_call (stmt)) {
     tree fndecl = gimple_call_fndecl(stmt);
+    /*
+    // TODO(dvyukov) if an address of a function that needs to be intercepted
+    // is taken, replace it with the wrapper
     if (fndecl != 0) {
       char const* func_name = decl_name(fndecl);
       if (func_name != 0) {
         dbg(ctx, "processing function call '%s'", func_name);
-        tree rt_fndecl = find_rt_func(ctx, func_name);
-        if (rt_fndecl != 0) {
-          if ((strcmp(func_name, "operator new") != 0
-              && strcmp(func_name, "operator delete") != 0)
-              || gimple_call_num_args(stmt) == 1) {
-            gimple_call_set_fndecl(stmt, rt_fndecl);
-          }
+        tree rt_decl = find_rt_decl(ctx, func_name);
+        if (rt_decl != 0) {
+          gimple_call_set_fndecl(stmt, rt_decl);
         }
       }
     }
+    */
+
+    if (ctx->instr_call != 0) {
+      gimple_seq pre_call = 0;
+      gimple_seq post_call = 0;
+      ctx->instr_call(ctx, fndecl, loc, &pre_call, &post_call);
+      if (pre_call != 0 || post_call != 0) {
+        ctx->func_calls += 1;
+        if (pre_call != 0) {
+          dump_instr_seq(ctx, "before call", &pre_call, loc);
+          set_location(pre_call, loc);
+          gsi_insert_seq_before(gsi, pre_call, GSI_SAME_STMT);
+        }
+        if (post_call != 0) {
+          dump_instr_seq(ctx, "after call", &post_call, loc);
+          set_location(post_call, loc);
+          gsi_insert_seq_after(gsi, post_call, GSI_NEW_STMT);
+        }
+      }
+    }
+
+    //TODO(dvyukov): check call operands, because strictly saying they are loads
     tree lhs = gimple_call_lhs(stmt);
     if (lhs != 0)
       process_store(ctx, loc, &eloc, gsi, lhs);
   }
+}
+
+
+void                    relite_pass         (relite_context_t* ctx,
+                                             struct function* func) {
+  char const* func_name = decl_name(func->decl);
+  dbg(ctx, "\nPROCESSING FUNCTION '%s'", func_name);
+  ctx->stat_func_total += 1;
+  ctx->func_calls = 0;
+
+  tree func_attr = DECL_ATTRIBUTES(func->decl);
+  for (; func_attr != NULL_TREE; func_attr = TREE_CHAIN(func_attr)) {
+    char const* attr_name = IDENTIFIER_POINTER(TREE_PURPOSE(func_attr));
+    if (strcmp(attr_name, "relite_ignore") == 0) {
+      dbg(ctx, "IGNORING due to relite_ignore attribute");
+      return;
+    }
+  }
+
+  ctx->stat_func_instrumented += 1;
+
+  basic_block bb;
+  FOR_EACH_BB_FN (bb, func) {
+    gimple_stmt_iterator gsi;
+    gimple_stmt_iterator gsi2 = gsi_start_bb (bb);
+    for (;;) {
+      gsi = gsi2;
+      if (gsi_end_p(gsi))
+        break;
+      gsi_next(&gsi2);
+
+      handle_gimple(ctx, &gsi);
+    }
+  }
+
+  gimple_seq pre_func_seq = 0;
+  gimple_seq post_func_seq = 0;
+  if (ctx->instr_func) {
+    ctx->instr_func(ctx, func->decl, &pre_func_seq, &post_func_seq);
+    if (pre_func_seq != 0 || post_func_seq != 0) {
+      int is_first_gimple = 0;
+      basic_block bb;
+      FOR_EACH_BB_FN (bb, func) {
+        gimple_stmt_iterator gsi;
+        gimple_stmt_iterator gsi2 = gsi_start_bb (bb);
+        for (;;) {
+          gsi = gsi2;
+          if (gsi_end_p(gsi))
+            break;
+          gsi_next(&gsi2);
+
+          gimple stmt = gsi_stmt(gsi);
+          location_t loc = gimple_location(stmt);
+          if (is_first_gimple == 0) {
+            is_first_gimple = 1;
+            if (pre_func_seq != 0) {
+              dump_instr_seq(ctx, "at function start", &pre_func_seq, loc);
+              set_location(pre_func_seq, loc);
+              gsi_insert_seq_before(&gsi, pre_func_seq, GSI_SAME_STMT);
+            }
+          }
+          if (gimple_code(stmt) == GIMPLE_RETURN) {
+            if (post_func_seq != 0) {
+              dump_instr_seq(ctx, "at function end", &post_func_seq, loc);
+              set_location(post_func_seq, loc);
+              gsi_insert_seq_before(&gsi, post_func_seq, GSI_SAME_STMT);
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+
+void                    relite_prepass      (relite_context_t* ctx) {
+  if (ctx->setup_completed == 0) {
+    ctx->setup_completed = 1;
+    if (ctx->setup != 0) {
+      ctx->setup(ctx);
+    }
+  }
+}
+
+
+void                    relite_finish       (relite_context_t* ctx) {
+  dbg(ctx, "STATS func: %d/%d, gimple: %d, store: %d/%d, load: %d/%d",
+      ctx->stat_func_instrumented, ctx->stat_func_total,
+      ctx->stat_gimple,
+      ctx->stat_store_instrumented, ctx->stat_store_total,
+      ctx->stat_load_instrumented, ctx->stat_load_total);
+}
+
+
+
+
+
+
+/*
+if (strncmp(func_name, "NoBarrier_", sizeof("NoBarrier_") - 1) == 0) {
+  dbg(ctx, "IGNORING relaxed atomic operation");
+  return;
+}
+
+if (strncmp(func_name, "Acquire_", sizeof("Acquire_") - 1) == 0) {
+  dbg(ctx, "atomic operation with acquire memory ordering");
+  tree arg = DECL_ARGUMENTS(func->decl);
+  if (arg == 0) {
+    dbg(ctx, "IGNORING no arguments");
+    return;
+  }
+  gimple collect = gimple_build_call(rt_func(rt_acquire), 1, arg);
+  insert_before_return(func, collect);
+  return;
+}
+
+if (strncmp(func_name, "Release_", sizeof("Release_") - 1) == 0) {
+  dbg(ctx, "atomic operation with release memory ordering");
+  tree arg = DECL_ARGUMENTS(func->decl);
+  if (arg == 0) {
+    dbg(ctx, "IGNORING no arguments");
+    return;
+  }
+  gimple collect = gimple_build_call(rt_func(rt_release), 1, arg);
+  insert_after_enter(func, collect);
+  return;
+}
+
+if (strncmp(func_name, "Barrier_", sizeof("Barrier_") - 1) == 0) {
+  dbg(ctx, "atomic operation with acquire-release memory ordering");
+  tree arg = DECL_ARGUMENTS(func->decl);
+  if (arg == 0) {
+    dbg(ctx, "IGNORING no arguments");
+    return;
+  }
+  {
+    gimple collect = gimple_build_call(rt_func(rt_acquire), 1, arg);
+    insert_before_return(func, collect);
+  }
+  {
+    gimple collect = gimple_build_call(rt_func(rt_release), 1, arg);
+    insert_after_enter(func, collect);
+  }
+  return;
 }
 
 
@@ -508,118 +674,5 @@ static void             insert_after_enter  (struct function* func,
   assert(is_inserted != 0);
 }
 
-
-void                    relite_pass         (relite_context_t* ctx,
-                                             struct function* func) {
-  if (ctx->rt_func_setup == 0) {
-    setup_rt_funcs(ctx);
-    ctx->rt_func_setup = 1;
-  }
-
-  char const* func_name = decl_name(func->decl);
-
-  dbg(ctx, "\nPROCESSING FUNCTION '%s'", func_name);
-  ctx->stat_func_total += 1;
-
-  tree func_attr = DECL_ATTRIBUTES(func->decl);
-  for (; func_attr != NULL_TREE; func_attr = TREE_CHAIN(func_attr)) {
-    char const* attr_name = IDENTIFIER_POINTER(TREE_PURPOSE(func_attr));
-    if (strcmp(attr_name, "relite_ignore") == 0) {
-      dbg(ctx, "IGNORING due to relite_ignore attribute");
-      return;
-    }
-  }
-
-  if (strncmp(func_name, "NoBarrier_", sizeof("NoBarrier_") - 1) == 0) {
-    dbg(ctx, "IGNORING relaxed atomic operation");
-    return;
-  }
-
-  if (strncmp(func_name, "Acquire_", sizeof("Acquire_") - 1) == 0) {
-    dbg(ctx, "atomic operation with acquire memory ordering");
-    tree arg = DECL_ARGUMENTS(func->decl);
-    if (arg == 0) {
-      dbg(ctx, "IGNORING no arguments");
-      return;
-    }
-    gimple collect = gimple_build_call(rt_func(rt_acquire), 1, arg);
-    insert_before_return(func, collect);
-    return;
-  }
-
-  if (strncmp(func_name, "Release_", sizeof("Release_") - 1) == 0) {
-    dbg(ctx, "atomic operation with release memory ordering");
-    tree arg = DECL_ARGUMENTS(func->decl);
-    if (arg == 0) {
-      dbg(ctx, "IGNORING no arguments");
-      return;
-    }
-    gimple collect = gimple_build_call(rt_func(rt_release), 1, arg);
-    insert_after_enter(func, collect);
-    return;
-  }
-
-  if (strncmp(func_name, "Barrier_", sizeof("Barrier_") - 1) == 0) {
-    dbg(ctx, "atomic operation with acquire-release memory ordering");
-    tree arg = DECL_ARGUMENTS(func->decl);
-    if (arg == 0) {
-      dbg(ctx, "IGNORING no arguments");
-      return;
-    }
-    {
-      gimple collect = gimple_build_call(rt_func(rt_acquire), 1, arg);
-      insert_before_return(func, collect);
-    }
-    {
-      gimple collect = gimple_build_call(rt_func(rt_release), 1, arg);
-      insert_after_enter(func, collect);
-    }
-    return;
-  }
-
-  ctx->stat_func_instrumented += 1;
-
-  int is_first_gimple = 0;
-  basic_block bb;
-  gimple_stmt_iterator gsi;
-  FOR_EACH_BB_FN (bb, func) {
-    for (gsi = gsi_start_bb (bb); !gsi_end_p (gsi); gsi_next (&gsi)) {
-  //for (gsi = gsi_start(func->gimple_body); !gsi_end_p(gsi); gsi_next(&gsi)) {
-      gimple stmt = gsi_stmt(gsi);
-      location_t loc = gimple_location(stmt);
-      expanded_location eloc = expand_location(loc);
-      expr_desc_t desc = {};
-      desc.loc = loc;
-      desc.eloc = &eloc;
-      desc.gsi = &gsi;
-      desc.expr = func->decl;
-      if (is_first_gimple == 0) {
-        if (ctx->instr_enter) {
-          ctx->instr_enter(ctx, &desc);
-        }
-        is_first_gimple = 1;
-      }
-      instrument(ctx, &gsi);
-      if (gimple_code(stmt) == GIMPLE_RETURN) {
-        if (ctx->instr_leave != 0)
-          ctx->instr_leave(ctx, &desc);
-      }
-    }
-  }
-
-  if (ctx->instr_func) {
-    expr_desc_t desc = {};
-    ctx->instr_func(ctx, &desc);
-  }
-}
-
-
-void                    relite_finish       (relite_context_t* ctx) {
-  dbg(ctx, "STATS func: %d/%d, gimple: %d, store: %d/%d, load: %d/%d",
-      ctx->stat_func_instrumented, ctx->stat_func_total,
-      ctx->stat_gimple,
-      ctx->stat_store_instrumented, ctx->stat_store_total,
-      ctx->stat_load_instrumented, ctx->stat_load_total);
-}
-
+*/
 
