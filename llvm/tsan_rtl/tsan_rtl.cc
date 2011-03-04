@@ -16,6 +16,7 @@
 #include <vector>
 
 #if defined(__GNUC__)
+# include <exception>
 # include <cxxabi.h>  // __cxa_demangle
 #endif
 
@@ -557,7 +558,13 @@ bool initialize() {
   have_pending_signals = false;
 
   SPut(THR_START, 0, (pc_t) &ShadowStack, 0, 0);
+
+  IN_RTL++;
+  CHECK_IN_RTL();
   INFO.thread = ThreadSanitizerGetThreadByTid(0);
+  IN_RTL--;
+  CHECK_IN_RTL();
+
   if (stack_top) {
     // We don't intercept the mmap2 syscall that allocates thread stack, so pass
     // the event to ThreadSanitizer manually.
@@ -713,10 +720,10 @@ void *pthread_callback(void *arg) {
 
   ShadowStack.end_ = ShadowStack.pcs_;
   SPut(THR_START, INFO.tid, (pc_t) &ShadowStack, 0, parent);
-  INFO.thread = ThreadSanitizerGetThreadByTid(INFO.tid);
 
   IN_RTL++;
   CHECK_IN_RTL();
+  INFO.thread = ThreadSanitizerGetThreadByTid(INFO.tid);
   delete cb_arg;
   IN_RTL--;
   CHECK_IN_RTL();
@@ -2616,4 +2623,21 @@ void PcToStrings(pc_t pc, bool demangle,
     line_no = NULL;
   }
 }
+
+extern "C" void tsan_rtl_mop(void *addr, unsigned flags);
+
+void tsan_rtl_mop(void *addr, unsigned flags) {
+  IN_RTL++;
+  CHECK_IN_RTL();
+  void* pc = __builtin_return_address(0);
+  uint64_t mop = (uint64_t)pc | ((uint64_t)flags) << 58;
+  MopInfo mop2;
+  memcpy(&mop2, &mop, sizeof(mop));
+  ThreadSanitizerHandleOneMemoryAccess(INFO.thread,
+                                       mop2,
+                                       (uintptr_t)addr);
+  IN_RTL--;
+  CHECK_IN_RTL();
+}
+
 // }}}
