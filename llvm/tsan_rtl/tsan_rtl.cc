@@ -7,6 +7,11 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 
+# include <bfd.h>
+namespace demangle { // name clash with 'basename' from <string.h>
+# include <demangle.h>
+}
+
 #ifdef TSAN_RTL_X64
 #include <asm/prctl.h>
 #include <sys/prctl.h>
@@ -1901,11 +1906,12 @@ void *__wrap_memmove(char *dest, const char *src, size_t n) {
 
 
 // TODO(glider): ???
-extern
-char *strcpy(char *dest, const char *src) {
+extern "C"
+char *__wrap_strcpy(char *dest, const char *src) {
+  if (IN_RTL) return __real_strcpy(dest, src);
   DECLARE_TID_AND_PC();
-  RPut(RTN_CALL, tid, pc, (uintptr_t)strcpy, 0);
-  pc = (pc_t)strcpy;
+  RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_strcpy, 0);
+  pc = (pc_t)__wrap_strcpy;
   char *result = Replace_strcpy(tid, pc, dest, src);
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
@@ -1964,11 +1970,12 @@ int __wrap_strcmp(const char *s1, const char *s2) {
 }
 
 extern "C"
-int strncmp(const char *s1, const char *s2, size_t n) {
+int __wrap_strncmp(const char *s1, const char *s2, size_t n) {
+  if (IN_RTL) return __real_strncmp(s1, s2, n);
   DECLARE_TID_AND_PC();
-  RPut(RTN_CALL, tid, pc, (uintptr_t)strncmp, 0);
+  RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_strncmp, 0);
   ENTER_RTL();
-  pc = (pc_t)strncmp;
+  pc = (pc_t)__wrap_strncmp;
   int result = Replace_strncmp(tid, pc, s1, s2, n);
   LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
@@ -2398,6 +2405,8 @@ void ReadDbgInfoFromSection(char* start, char* end) {
 }
 
 void AddOneWrapperDbgInfo(pc_t pc, const char *symbol) {
+  if (debug_info == 0)
+    return;
   (*debug_info)[pc].pc = pc;
   (*debug_info)[pc].symbol = symbol;
   (*debug_info)[pc].demangled_symbol = symbol;
@@ -2496,8 +2505,8 @@ void AddWrappersDbgInfo() {
   WRAPPER_DBG_INFO(__wrap__ZdaPvRKSt9nothrow_t);
 
   WRAPPER_DBG_INFO(atexit_callback);
-  WRAPPER_DBG_INFO(strcpy);
-  WRAPPER_DBG_INFO(strncmp);
+  WRAPPER_DBG_INFO(__wrap_strcpy);
+  WRAPPER_DBG_INFO(__wrap_strncmp);
 }
 
 void ReadElf() {
@@ -2595,32 +2604,216 @@ void ReadDbgInfo(string filename) {
   }
 }
 
+namespace {
+
+struct BfdData {
+  //bfd_boolean                               unwind_inlines;
+  //bfd_boolean                               base_names;
+  asymbol**                                 syms;
+  bfd*                                      abfd;
+  //asection*                                 section;
+} * bfd_data;
+
+struct BfdSymbol {
+  bfd_vma pc;
+  const char* filename;
+  const char* functionname;
+  unsigned int line;
+  bfd_boolean found;
+};
+
+bool BfdInit() {
+  if (bfd_data != 0)
+    return true;
+  FILE* cmdline = fopen("/proc/self/cmdline", "rb");
+  if (cmdline == 0)
+    return false;
+  char buf [PATH_MAX + 1];
+  if (fread(buf, 1, sizeof(buf)/sizeof(buf[0]) - 1, cmdline) <= 0) {
+    fclose(cmdline);
+    return false;
+  }
+  bfd_init();
+  bfd* abfd = bfd_openr(buf, 0);
+  if (abfd == 0)
+    return false;
+  if (bfd_check_format(abfd, bfd_archive)) {
+    bfd_close(abfd);
+    return false;
+  }
+  char** matching = NULL;
+  if (!bfd_check_format_matches(abfd, bfd_object, &matching)) {
+    bfd_close(abfd);
+    return false;
+  }
+  if ((bfd_get_file_flags(abfd) & HAS_SYMS) == 0) {
+    bfd_close(abfd);
+    return false;
+  }
+
+  asymbol** syms = 0;
+  unsigned int size;
+  long symcount = bfd_read_minisymbols(abfd, 0, (void**)&syms, &size);
+  if (symcount == 0)
+    symcount = bfd_read_minisymbols(abfd, 1, (void**)&syms, &size);
+  if (symcount < 0) {
+    bfd_close(abfd);
+    return false;
+  }
+
+  bfd_data = new BfdData;
+  bfd_data->abfd = abfd;
+  bfd_data->syms = syms;
+  return true;
+}
+
+void find_address_in_section (bfd* abfd,
+                                                 asection* section,
+                                                 void* data) {
+  bfd_vma vma;
+  bfd_size_type size;
+  BfdSymbol* psi = (BfdSymbol*)data;
+
+  if (psi->found)
+    return;
+
+  if ((bfd_get_section_flags(abfd, section) & SEC_ALLOC) == 0)
+    return;
+
+  vma = bfd_get_section_vma(abfd, section);
+  if (psi->pc < vma)
+    return;
+
+  size = bfd_get_section_size(section);
+  if (psi->pc >= vma + size)
+    return;
+
+  psi->found = bfd_find_nearest_line(abfd, section,
+                 bfd_data->syms, psi->pc - vma,
+                 &psi->filename, &psi->functionname,
+                 &psi->line);
+}
+
+static void             translate_addresses (void* xaddr,
+                                             char* buf_func,
+                                             size_t buf_func_len,
+                                             char* buf_file,
+                                             size_t buf_file_len,
+                                             int* line) {
+  char addr [(CHAR_BIT/4) * (sizeof(void*)) + 2] = {0};
+  sprintf(addr, "%p", xaddr);
+  BfdSymbol si = {0};
+  si.pc = bfd_scan_vma (addr, NULL, 16);
+  si.found = FALSE;
+  bfd_map_over_sections(bfd_data->abfd, find_address_in_section, &si);
+
+  if (si.found == 0) {
+    if (buf_func != 0 && buf_func_len != 0)
+      snprintf(buf_func, buf_func_len, "%s", "??");
+    if (buf_file != 0 && buf_file_len != 0)
+      snprintf(buf_file, buf_file_len, "%s", "??:??");
+    if (line != 0)
+      *line = 0;
+  } else {
+    do {
+      char* alloc = 0;
+      const char* name = si.functionname;
+      if (name == 0 || *name == '\0') {
+        name = "??";
+      } else {
+        alloc = bfd_demangle(bfd_data->abfd, name, DMGL_ANSI | DMGL_PARAMS);
+        if (alloc != NULL)
+          name = alloc;
+      }
+      if (buf_func != NULL) {
+        int name_len = strlen(name);
+        int has_paren = name_len != 0 && name[name_len - 1] == ')';
+        snprintf(buf_func, buf_func_len, (has_paren ? "%s" : "%s()"), name);
+      }
+      if (alloc != 0)
+        free(alloc);
+
+      if (si.filename != 0) {
+        char const* h = strrchr(si.filename, '/');
+        if (h != 0)
+          si.filename = h + 1;
+      }
+
+      if (buf_file != NULL)
+        snprintf(buf_file, buf_file_len, "%s",
+                si.filename ? si.filename : "??");
+      if (line != 0)
+        *line = si.line;
+      si.found = bfd_find_inliner_info(bfd_data->abfd,
+                                       &si.filename,
+                                       &si.functionname,
+                                       &si.line);
+    } while (si.found);
+  }
+}
+
+string BfdPcToRtnName(pc_t pc, bool demangle) {
+  if (BfdInit() == false)
+    return string();
+  char buf_func [PATH_MAX + 1];
+  translate_addresses((void*)pc,
+                      buf_func, sizeof(buf_func)/sizeof(buf_func[0]) - 1,
+                      0, 0, 0);
+  return buf_func;
+}
+
+void BfdPcToStrings(pc_t pc, bool demangle,
+                    string *img_name, string *rtn_name,
+                    string *file_name, int *line_no) {
+  if (BfdInit() == false)
+    return;
+
+  char buf_func [PATH_MAX + 1];
+  char buf_file [PATH_MAX + 1];
+  translate_addresses((void*)pc,
+                      buf_func, sizeof(buf_func)/sizeof(buf_func[0]) - 1,
+                      buf_file, sizeof(buf_file)/sizeof(buf_file[0]) - 1,
+                      line_no);
+  rtn_name->assign(buf_func);
+  file_name->assign(buf_file);
+}
+
+} // namespace
+
 string PcToRtnName(pc_t pc, bool demangle) {
   DbgInfoLock scoped;
-  if (debug_info && (debug_info->find(pc) != debug_info->end())) {
-    return (*debug_info)[pc].symbol;
+  if (debug_info) {
+    if (debug_info->find(pc) != debug_info->end()) {
+      return (*debug_info)[pc].symbol;
+    } else {
+      return string();
+    }
+  } else {
+    return BfdPcToRtnName(pc, demangle);
   }
-  return "";
 }
 
 void PcToStrings(pc_t pc, bool demangle,
                  string *img_name, string *rtn_name,
                  string *file_name, int *line_no) {
   DbgInfoLock scoped;
-  if (debug_info && (debug_info->find(pc) != debug_info->end())) {
-    img_name = NULL;
-    if (demangle) {
-      *rtn_name = (*debug_info)[pc].demangled_symbol;
-    } else {
-      *rtn_name = (*debug_info)[pc].symbol;
+  img_name->clear();
+  rtn_name->clear();
+  file_name->clear();
+  line_no[0] = 0;
+  if (debug_info) {
+    if (debug_info->find(pc) != debug_info->end()) {
+      img_name = NULL;
+      if (demangle) {
+        *rtn_name = (*debug_info)[pc].demangled_symbol;
+      } else {
+        *rtn_name = (*debug_info)[pc].symbol;
+      }
+      *file_name = ((*debug_info)[pc].fullpath);
+      *line_no = ((*debug_info)[pc].line);
     }
-    *file_name = ((*debug_info)[pc].fullpath);
-    *line_no = ((*debug_info)[pc].line);
   } else {
-    img_name = NULL;
-    rtn_name = NULL;
-    file_name = NULL;
-    line_no = NULL;
+    BfdPcToStrings(pc, demangle, img_name, rtn_name, file_name, line_no);
   }
 }
 
