@@ -66,14 +66,10 @@ struct MopInfo {
   bool      create_sblock() { return create_sblock_; }
 
  private:
-  uintptr_t  size_minus1_   :4;  // 0..15
-  uintptr_t  is_write_      :1;
+  uint64_t  pc_            :58;  // 48 bits is enough for pc, even on x86-64.
   uintptr_t  create_sblock_ :1;
-#if __WORDSIZE == 64
-  uintptr_t  pc_            :48;  // 48 bits is enough for pc.
-#else
-  uintptr_t  pc_;
-#endif
+  uintptr_t  is_write_      :1;
+  uintptr_t  size_minus1_   :4;  // 0..15
 };
 
 // ---------------- Lite Race ------------------
