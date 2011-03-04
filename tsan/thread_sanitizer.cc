@@ -4062,7 +4062,7 @@ TraceInfo *TraceInfo::NewTraceInfo(size_t n_mops, uintptr_t pc) {
   memset(mem, 0xab, mem_size);
   TraceInfo *res = new (mem) TraceInfo;
   res->n_mops_ = n_mops;
-  res->pc_ = ThreadSanitizerWantToCreateSegmentsOnSblockEntry(pc) ? pc : NULL;
+  res->pc_ = ThreadSanitizerWantToCreateSegmentsOnSblockEntry(pc) ? pc : 0;
   res->counter_ = 0;
   if (g_all_traces == NULL) {
     g_all_traces = new vector<TraceInfo*>;
