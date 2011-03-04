@@ -530,7 +530,7 @@ bool initialize() {
 
   ThreadSanitizerParseFlags(&args);
   ThreadSanitizerInit();
-  //init_debug();
+  init_debug();
   if (G_flags->dry_run) {
     Printf("WARNING: the --dry_run flag is not supported anymore. "
            "Ignoring.\n");
@@ -2551,10 +2551,14 @@ void ReadElf() {
   }
   IN_RTL--;
   CHECK_IN_RTL();
-  CHECK(debug_info_section);
-  // Parse the debug info section.
-  ReadDbgInfoFromSection(debug_info_section,
-                         debug_info_section + debug_info_size);
+  if (debug_info_section) {
+    // Parse the debug info section.
+    ReadDbgInfoFromSection(debug_info_section,
+                           debug_info_section + debug_info_size);
+  } else {
+    Printf("tsan_rtl_debug_info section is missing. You're either using "
+           "the gcc compile-time instrumentation or doing something wrong\n");
+  }
   // Finalize.
   __real_munmap(map, st.st_size);
   close(fd);
