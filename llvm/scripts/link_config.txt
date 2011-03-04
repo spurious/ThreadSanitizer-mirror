@@ -83,6 +83,7 @@ wrap memcpy
 wrap memmove
 wrap strchr
 wrap strrchr
+wrap memchr
 
 wrap __libc_csu_init
 
