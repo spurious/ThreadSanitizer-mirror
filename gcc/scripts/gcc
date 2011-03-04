@@ -1,0 +1,9 @@
+#!/bin/bash
+if [ "$USE_RELITE" == "" ]
+then
+  #/usr/bin/gcc "$@"
+  /home/dvyukov/gcc-dehydra/installed/bin/gcc "$@"
+else
+  /home/dvyukov/gcc-dehydra/installed/bin/gcc -DDYNAMIC_ANNOTATIONS_ENABLED=1 -fno-inline -fno-exceptions -fplugin=/home/dvyukov/tsan/gcc/plg/Debug/librelite.so -include/home/dvyukov/tsan/gcc/plg/relite_rt.h "$@"
+fi
+
