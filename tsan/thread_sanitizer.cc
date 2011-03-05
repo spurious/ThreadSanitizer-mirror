@@ -8079,6 +8079,14 @@ static void SetupIgnore() {
   g_ignore_lists->ignores_r.push_back(IgnoreFun("_ZNSsD1Ev"));
 #endif
 
+#ifdef ANDROID
+  // Android does not have a libpthread; pthread_* functions live in libc.
+  // We have to ignore them one-by-one.
+  g_ignore_lists->ignores.push_back(IgnoreFun("pthread_*"));
+  g_ignore_lists->ignores.push_back(IgnoreFun("__atomic_*"));
+  g_ignore_lists->ignores.push_back(IgnoreFun("__init_tls"));
+#endif
+
   // do not create segments in our Replace_* functions
   g_ignore_lists->ignores_hist.push_back(IgnoreFun("Replace_memcpy"));
   g_ignore_lists->ignores_hist.push_back(IgnoreFun("Replace_memchr"));
