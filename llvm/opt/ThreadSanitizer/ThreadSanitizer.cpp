@@ -48,7 +48,8 @@ static cl::opt<string>
 static cl::opt<bool>
     InstrumentAll("instrument-all",
                   cl::desc("Do not optimize the instrumentation "
-                           "of memory operations"));
+                           "of memory operations"),
+                  cl::init(false));
 static cl::opt<bool>
     PrintStats("print-stats",
                   cl::desc("Print the instrumentation stats"),
@@ -86,7 +87,13 @@ static cl::opt<bool>
     SkipFunctionsWithoutMops("skip-functions-without-mops",
                              cl::desc("Do not instrument functions "
                                       "containing no memory operations"),
-                             cl::init(true));
+                             cl::init(false));
+
+static cl::opt<bool>
+    BasicBlocksAreTraces("basic-blocks-are-traces",
+        cl::desc("Each basic block is treated as a single trace"),
+        cl::init(false));
+
 // }}}
 
 // Required by OpenFileReadOnly in common_util.h
@@ -508,7 +515,8 @@ void TsanOnlineInstrument::buildClosure(Trace &trace, BlockSet &used) {
 #ifdef DEBUG_TRACES
   errs() << "buildClosure(" << (*trace.blocks.begin())->getName() << ")\n";
 #endif
-  buildClosureInner(trace, used);
+  if (!BasicBlocksAreTraces) buildClosureInner(trace, used);
+  // Otherwise proceed with a trace consisting of a single basic block.
   assert(validateTrace(trace));
 #if DEBUG_TRACES
   errs() << "TRACE: [ ";
@@ -591,9 +599,6 @@ void TsanOnlineInstrument::insertRtnCall(Constant *addr,
     inst[0] = addr;
     CallInst::Create(RtnCallFn, inst.begin(), inst.end(), "", Before);
 #else
-  // TODO(glider): each call instruction should update the top of the shadow
-  // stack.
-  // Is this necessary if we already update the stacks inside each wrapper?
   vector <Value*> end_idx;
   end_idx.push_back(ConstantInt::get(PlatformInt, 0));
   end_idx.push_back(ConstantInt::get(Int32, 0));
@@ -602,7 +607,11 @@ void TsanOnlineInstrument::insertRtnCall(Constant *addr,
                                 end_idx.begin(), end_idx.end(),
                                 "", Before);
   CurrentStackEnd = new LoadInst(StackEndPtr, "", Before);
-  new StoreInst(addr, CurrentStackEnd, Before);
+  // TODO(glider): this should be removed completely and the comment on top
+  // should be rewritten. We do not update the stack top (thus saving one
+  // instruction), because it'll be updated by the following call or basic
+  // block entry.
+  ///new StoreInst(addr, CurrentStackEnd, Before);
 
   vector <Value*> new_idx;
   new_idx.push_back(ConstantInt::get(Int32, 1));
