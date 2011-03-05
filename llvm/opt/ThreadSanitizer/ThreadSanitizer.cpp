@@ -84,6 +84,13 @@ static cl::opt<bool>
               cl::init(false));
 
 static cl::opt<bool>
+    IgnoreMopsByOrigin("ignore-mops-by-origin",
+                       cl::desc("Traverse the stack of inlined functions to "
+                                "decide whether each memory operation should "
+                                "be ignored. Experimental feature."),
+                      cl::init(false));
+
+static cl::opt<bool>
     SkipFunctionsWithoutMops("skip-functions-without-mops",
                              cl::desc("Do not instrument functions "
                                       "containing no memory operations"),
@@ -1298,7 +1305,11 @@ int TsanOnlineInstrument::getMopPtrSize(Value *mopPtr, bool isStore) {
   return result;
 }
 
+// True if any function that was inlined at this place is to be ignored
+// recursively.
+// TODO(glider): this seems to be too aggressive, need to check.
 bool TsanOnlineInstrument::ignoreInlinedMop(BasicBlock::iterator &BI) {
+  if (!IgnoreMopsByOrigin) return false;
 #ifdef DEBUG_IGNORE_MOPS
   errs() << "ignoreInlinedMop: ";
   BI->dump();
@@ -1313,7 +1324,7 @@ bool TsanOnlineInstrument::ignoreInlinedMop(BasicBlock::iterator &BI) {
     errs() << "    " << Sub.getLinkageName() << "  "
         <<  Sub.getFilename() << "\n";
 #endif
-    if (TripleVectorMatchKnown(Ignores.ignores, symbol, "", filename)) {
+    if (TripleVectorMatchKnown(Ignores.ignores_r, symbol, "", filename)) {
 #ifdef DEBUG_IGNORE_MOPS
       errs() << "    IGNORED\n";
 #endif
@@ -1358,6 +1369,7 @@ void TsanOnlineInstrument::markMopsToInstrument(Trace &trace) {
         //assert(false);
       }
       if (isMop) {
+        instrumentation_stats.newMop();
         if (ignoreInlinedMop(BI)) continue;
         if (InstrumentAll) {
           trace.to_instrument.insert(BI);
@@ -1778,6 +1790,7 @@ InstrumentationStats::InstrumentationStats() {
   traces_bbs.clear();
   traces_mops.clear();
   num_inst_mops = 0;
+  num_mops = 0;
   med_trace_size_bbs = -1;
   med_trace_size_mops = -1;
   max_trace_size_bbs = -1;
@@ -1818,6 +1831,10 @@ void InstrumentationStats::newInstrumentedBasicBlock() {
   num_inst_bbs_in_trace++;
 }
 
+void InstrumentationStats::newMop() {
+  num_mops++;
+}
+
 void InstrumentationStats::newInstrumentedMop() {
   num_inst_mops++;
   num_inst_mops_in_trace++;
@@ -1855,6 +1872,7 @@ void InstrumentationStats::printStats() {
   errs() << "# of basic blocks in the module: " << num_bbs << "\n";
   errs() << "# of instrumented basic blocks in the module: "
          << num_inst_bbs << "\n";
+  errs() << "# of memory operations in the module: " << num_mops << "\n";
   errs() << "# of instrumented memory operations in the module: "
          << num_inst_mops << "\n";
   for (int i = 0; i < kNumStats; i++) {

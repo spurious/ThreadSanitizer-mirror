@@ -49,6 +49,7 @@ struct InstrumentationStats {
   void newFunction();
   void newTrace();
   void newBasicBlocks(int num);
+  void newMop();
   void newInstrumentedBasicBlock();
   void newInstrumentedMop();
   void finalize();
@@ -59,6 +60,7 @@ struct InstrumentationStats {
   int num_functions;
   int num_traces;
   int num_bbs;
+  int num_mops;
   int num_inst_bbs;
   int num_inst_bbs_in_trace;
   int num_inst_mops;
