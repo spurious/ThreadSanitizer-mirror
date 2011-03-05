@@ -1347,7 +1347,7 @@ static void do_wait(void *cv) {
 /*----------------------------------------------------------------*/
 /*--- pthread_barrier_t functions                              ---*/
 /*----------------------------------------------------------------*/
-#if defined(VGO_darwin)
+#if defined(VGO_darwin) || defined(ANDROID)
 typedef void pthread_barrier_t;
 #endif
 // pthread_barrier_wait
@@ -2141,6 +2141,7 @@ LIBC_FUNC(long, opendir$Za, void *path) {
   return opendir_WRK(path);
 }
 
+#ifndef ANDROID
 LIBC_FUNC(long, lockf, long fd, long cmd, OFF_T offset) {
   // TODO: this doesn't support locking file subsections
   const long offset_magic = 0xFEB0ACC0;
@@ -2158,6 +2159,7 @@ LIBC_FUNC(long, lockf, long fd, long cmd, OFF_T offset) {
 
   return ret;
 }
+#endif
 
 /*
   Support for pthread_once and function-level static objects.
