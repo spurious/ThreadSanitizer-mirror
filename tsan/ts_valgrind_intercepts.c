@@ -314,9 +314,16 @@ MAIN_WRAPPER_DECL {
 
 WRAP_WORKQ_OPS(VG_Z_LIBC_SONAME, __workq_ops);
 
+#ifdef ANDROID
+#define OFF_T_SIZE 4
+#else
+// TODO: this is probably wrong for 32-bit code without -D_FILE_OFFSET_BITS=64
+#define OFF_T_SIZE 8
+#endif
+
 // Hacky workaround for https://bugs.kde.org/show_bug.cgi?id=228471
 // Used in mmap and lockf wrappers.
-#if VG_WORDSIZE == 4
+#if VG_WORDSIZE < OFF_T_SIZE
 typedef unsigned long long OFF_T;
 #define CALL_FN_W_5WO_T(ret,fn,p1,p2,p3,p4,p5,off_t_p) CALL_FN_W_7W(ret,fn,\
                         p1,p2,p3,p4,p5,off_t_p & 0xffffffff, off_t_p >> 32)
