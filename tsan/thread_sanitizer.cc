@@ -3188,6 +3188,9 @@ uintptr_t GetCacheLinesForRange(uintptr_t a, uintptr_t b,
 // Fast cache which stores cache lines for memory in range [kMin, kMax).
 // The simplest way to force a program to allocate memory in first 2G
 // is to set MALLOC_MMAP_MAX_=0 (works with regular malloc on linux).
+
+#ifdef TS_DIRECT_MAP
+
 template<size_t kMin, size_t kMax>
 class DirectMapCacheForRange {
  public:
@@ -3197,11 +3200,7 @@ class DirectMapCacheForRange {
   }
 
   INLINE bool AddressIsInRange(uintptr_t a) {
-#ifdef TS_DIRECT_MAP
     return a >= kMin && a < kMax;
-#else
-    return 0;
-#endif
   }
 
   INLINE CacheLine *GetLine(uintptr_t a, bool create_new_if_need) {
@@ -3223,6 +3222,23 @@ class DirectMapCacheForRange {
   enum { kCacheSize = kRangeSize / CacheLine::kLineSize };
   CacheLine *cache_[kCacheSize];
 };
+
+#else
+
+template<size_t kMin, size_t kMax>
+class DirectMapCacheForRange {
+ public:
+  INLINE bool AddressIsInRange(uintptr_t a) {
+    return false;
+  }
+
+  INLINE CacheLine *GetLine(uintptr_t a, bool create_new_if_need) {
+    CHECK(AddressIsInRange(a));
+    return NULL;
+  }
+};
+
+#endif
 
 // -------- Cache ------------------ {{{1
 class Cache {
