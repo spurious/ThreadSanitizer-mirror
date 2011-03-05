@@ -352,20 +352,16 @@ bool LiteRaceSkipTrace(int tid, uint32_t trace_no, uint32_t sampling_rate);
 
 
 inline uintptr_t tsan_bswap(uintptr_t x) {
-#if defined(__GNUC__) && __WORDSIZE == 64 
-#if defined(VGP_arm_linux)
+#if defined(VGP_arm_linux) && VG_WORDSIZE == 8
   return __builtin_bswap64(x);
-#else
+#elif defined(VGP_arm_linux) && VG_WORDSIZE == 4
+  return __builtin_bswap32(x);
+#elif defined(__GNUC__) && __WORDSIZE == 64
   __asm__("bswapq %0" : "=r" (x) : "0" (x));
   return x;
-#endif // ARM
-#elif defined(__GNUC__) && __WORDSIZE == 32 
-#if defined(VGP_arm_linux)
-  return __builtin_bswap32(x);
-#else
+#elif defined(__GNUC__) && __WORDSIZE == 32
   __asm__("bswapl %0" : "=r" (x) : "0" (x));
   return x;
-#endif // ARM
 #elif defined(_WIN32)
   return x;  // TODO(kcc)
 #else
