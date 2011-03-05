@@ -4421,7 +4421,14 @@ struct Thread {
   TID HandleThreadJoinAfter(VTS **vts_at_exit, TID joined_tid) {
     CHECK(joined_tid.raw() > 0);
     CHECK(GetIfExists(joined_tid) != NULL);
-    *vts_at_exit = Thread::Get(joined_tid)->vts_at_exit_;
+    Thread* joined_thread  = Thread::Get(joined_tid);
+    // Sometimes the joined thread is not truly dead yet.
+    // In that case we just take the current vts.
+    if (joined_thread->is_running_)
+      *vts_at_exit = joined_thread->vts()->Clone();
+    else
+      *vts_at_exit = joined_thread->vts_at_exit_;
+
     if (*vts_at_exit == NULL) {
       Printf("vts_at_exit==NULL; parent=%d, child=%d\n",
              tid().raw(), joined_tid.raw());
