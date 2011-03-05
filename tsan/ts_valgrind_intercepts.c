@@ -813,6 +813,20 @@ That's the key.  The kernel resets the TID field after the thread is
 done.  No way the joiner can return before the thread is gone.
 */
 
+#ifdef ANDROID
+// Android-specific part. Ignore some internal synchronization in bionic.
+PTH_FUNC(int, pthreadZuexit, void* retval) // pthread_exit (Android)
+{
+  int ret;
+  OrigFn fn;
+  VALGRIND_GET_ORIG_FN(fn);
+  IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
+  CALL_FN_W_W(ret, fn, retval);
+  IGNORE_ALL_ACCESSES_AND_SYNC_END();
+  return ret;
+}
+#endif
+
 
 /*----------------------------------------------------------------*/
 /*--- pthread_mutex_t functions                                ---*/
