@@ -128,6 +128,7 @@ struct FLAGS {
   bool nacl_untrusted;
 
   bool threaded_analysis;
+  bool pin_use_fast_interceptors;
 };
 
 extern FLAGS *G_flags;

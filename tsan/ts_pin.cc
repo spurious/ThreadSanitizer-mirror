@@ -122,6 +122,64 @@ struct StackFrame {
   uintptr_t sp;
   StackFrame(uintptr_t p, uintptr_t s) : pc(p), sp(s) { }
 };
+//--------------- InstrumentedCallFrame ----- {{{1
+// Machinery to implement the fast interceptors in PIN
+// (i.e. the ones that don't use PIN_CallApplicationFunction).
+// We instrument the entry of the interesting function (e.g. malloc)
+// and all RET instructions in this function's module (e.g. libc).
+// At entry, we push an InstrumentedCallFrame object onto InstrumentedCallStack.
+// At every RET instruction we check if the stack is not empty (fast path)
+// and if the top contains the current SP. If yes -- this is the function return
+// and we pop the stack.
+struct InstrumentedCallFrame {
+  typedef void (*callback_t)(THREADID tid, ADDRINT ret);
+  callback_t callback;
+  uintptr_t pc;
+  uintptr_t sp;
+  uintptr_t arg[4];
+};
+
+struct InstrumentedCallStack {
+ public:
+  InstrumentedCallStack() : size_(0) { }
+
+  size_t size() { return size_; }
+
+  void Push(InstrumentedCallFrame::callback_t callback,
+            uintptr_t pc,
+            uintptr_t sp,
+            uintptr_t a0, uintptr_t a1) {
+    CHECK(size() < TS_ARRAY_SIZE(frames_));
+    size_++;
+    Top()->callback = callback;
+    Top()->pc = pc;
+    Top()->sp = sp;
+    Top()->arg[0] = a0;
+    Top()->arg[1] = a1;
+  }
+
+  void Pop() {
+    CHECK(size() > 0);
+    size_--;
+  }
+
+  InstrumentedCallFrame *Top() {
+    CHECK(size() > 0);
+    return &frames_[size_-1];
+  }
+
+  void Print() {
+    for (size_t i = 0; i < size(); i++) {
+      Printf( " %p\n", frames_[i].sp);
+      if (i > 0) CHECK(frames_[i].sp <= frames_[i-1].sp);
+    }
+  }
+
+ private:
+  InstrumentedCallFrame frames_[20];
+  size_t size_;
+};
+
 //--------------- PinThread ----------------- {{{1
 const size_t kThreadLocalEventBufferSize = 2048 - 2;
 // The number of mops should be at least 2 less than the size of TLEB
@@ -143,6 +201,7 @@ struct PinThread {
   int          uniq_tid;
   uint32_t     literace_sampling;  // cache of a flag.
   volatile long last_child_tid;
+  InstrumentedCallStack ic_stack;
   THREADID     tid;
   THREADID     parent_tid;
   pthread_t    my_ptid;
@@ -1652,6 +1711,97 @@ uintptr_t WRAP_NAME(munmap)(WRAP_PARAM4) {
   return ret;
 }
 
+#define DEBUG_FAST_INTERCEPTORS 0
+//#define DEBUG_FAST_INTERCEPTORS (tid == 1)
+
+void After_malloc(THREADID tid, ADDRINT ret) {
+  PinThread &t = g_pin_threads[tid];
+  InstrumentedCallFrame *frame = t.ic_stack.Top();
+  size_t size = frame->arg[0];
+  if (DEBUG_FAST_INTERCEPTORS)
+    Printf("T%d %s %ld %p\n", t.tid, __FUNCTION__, size, ret);
+  IgnoreSyncAndMopsEnd(t.tid);
+  DumpEvent(0, MALLOC, t.tid, frame->pc, ret, size);
+}
+
+#define TRACE_FAST_INTERCEPTOR  \
+  if (DEBUG_FAST_INTERCEPTORS) \
+    Printf("T%d %s pc=%p sp=%p *sp=(%p) arg0=%p stack_size=%ld\n",\
+         tid, __FUNCTION__, pc, sp,\
+         ((void**)sp)[0],\
+         arg0,\
+         t.ic_stack.size()\
+         );\
+
+void Before_malloc(THREADID tid, ADDRINT pc, ADDRINT sp, ADDRINT arg0) {
+  PinThread &t = g_pin_threads[tid];
+  IgnoreSyncAndMopsBegin(tid);
+  t.ic_stack.Push(After_malloc, pc, sp, arg0, 0);
+  TRACE_FAST_INTERCEPTOR;
+}
+
+void After_free(THREADID tid, ADDRINT ret) {
+  PinThread &t = g_pin_threads[tid];
+  InstrumentedCallFrame *frame = t.ic_stack.Top();
+  if (DEBUG_FAST_INTERCEPTORS)
+    Printf("T%d %s %p\n", t.tid, __FUNCTION__, frame->arg[0]);
+  IgnoreSyncAndMopsEnd(t.tid);
+}
+
+void Before_free(THREADID tid, ADDRINT pc, ADDRINT sp, ADDRINT arg0) {
+  PinThread &t = g_pin_threads[tid];
+  DumpEvent(0, FREE, tid, pc, arg0, 0);
+  IgnoreSyncAndMopsBegin(tid);
+  t.ic_stack.Push(After_free, pc, sp, arg0, 0);
+  TRACE_FAST_INTERCEPTOR;
+}
+
+void Before_calloc(THREADID tid, ADDRINT pc, ADDRINT sp, ADDRINT arg0,
+                   ADDRINT arg1) {
+  PinThread &t = g_pin_threads[tid];
+  IgnoreSyncAndMopsBegin(tid);
+  t.ic_stack.Push(After_malloc, pc, sp, arg0 * arg1, 0);
+  TRACE_FAST_INTERCEPTOR;
+}
+
+void Before_realloc(THREADID tid, ADDRINT pc, ADDRINT sp, ADDRINT arg0,
+                    ADDRINT arg1) {
+  PinThread &t = g_pin_threads[tid];
+  IgnoreSyncAndMopsBegin(tid);
+  // TODO: handle FREE? We don't do it in Valgrind right now.
+  t.ic_stack.Push(After_malloc, pc, sp, arg1, 0);
+  TRACE_FAST_INTERCEPTOR;
+}
+
+// Fast path for INS_InsertIfCall.
+ADDRINT Before_RET_IF(THREADID tid, ADDRINT pc, ADDRINT sp, ADDRINT ret) {
+  PinThread &t = g_pin_threads[tid];
+  return t.ic_stack.size();
+}
+
+void Before_RET_THEN(THREADID tid, ADDRINT pc, ADDRINT sp, ADDRINT ret) {
+  PinThread &t = g_pin_threads[tid];
+  if (t.ic_stack.size() == 0) return;
+  DCHECK(t.ic_stack.size());
+  InstrumentedCallFrame *frame = t.ic_stack.Top();
+  if (DEBUG_FAST_INTERCEPTORS) {
+    Printf("T%d RET  pc=%p sp=%p *sp=%p frame.sp=%p stack_size %ld\n",
+           tid, pc, sp, *(uintptr_t*)sp, frame->sp, t.ic_stack.size());
+    t.ic_stack.Print();
+  }
+  while (frame->sp <= sp) {
+    if (DEBUG_FAST_INTERCEPTORS)
+      Printf("pop\n");
+    frame->callback(tid, ret);
+    t.ic_stack.Pop();
+    if (t.ic_stack.size()) {
+      frame = t.ic_stack.Top();
+    } else {
+      break;
+    }
+  }
+}
+
 uintptr_t WRAP_NAME(malloc)(WRAP_PARAM4) {
   IgnoreSyncAndMopsBegin(tid);
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
@@ -1847,16 +1997,9 @@ static void OnMop(uintptr_t *addr, THREADID tid, ADDRINT idx, ADDRINT a) {
     PinThread &t= g_pin_threads[tid];
     CHECK(idx < kMaxMopsPerTrace);
     CHECK(idx < t.trace_info->n_mops());
-    CHECK(addr >= t.tleb.events);
-    CHECK(addr < t.tleb.events + kThreadLocalEventBufferSize);
-    if (t.tleb.size > 0) {
-      CHECK(addr + idx < t.tleb.events + t.tleb.size);
-    } else {
-      // t.tleb.size is zero. We just flushed but we are still
-      // getting mop events from the old trace.
-      // This way we may loose some races, but probably we won't
-      // because such situation happens only (?) inside our interceptors.
-    }
+    uintptr_t *ptr = addr + idx;
+    CHECK(ptr >= t.tleb.events);
+    CHECK(ptr < t.tleb.events + kThreadLocalEventBufferSize);
     if (a == G_flags->trace_addr) {
       Printf("T%d %s %lx\n", t.tid, __FUNCTION__, a);
     }
@@ -2508,6 +2651,26 @@ void CallbackForTRACE(TRACE trace, void *v) {
     if (!ignore_memory) {
       InstrumentMopsInBBl(bbl, rtn, NULL, instrument_pc, &n_mops);
     }
+    INS tail = BBL_InsTail(bbl);
+    if (G_flags->pin_use_fast_interceptors && INS_IsRet(tail)) {
+#if 0
+      INS_InsertIfCall(tail, IPOINT_BEFORE,
+                       (AFUNPTR)Before_RET_IF,
+                       IARG_THREAD_ID,
+                       IARG_END);
+
+      INS_InsertThenCall(
+#else
+        INS_InsertCall(
+#endif
+          tail, IPOINT_BEFORE,
+          (AFUNPTR)Before_RET_THEN,
+          IARG_THREAD_ID,
+          IARG_INST_PTR,
+          IARG_REG_VALUE, REG_STACK_PTR,
+          IARG_FUNCRET_EXITPOINT_VALUE,
+          IARG_END);
+    }
   }
 
   // Handle the head of the trace
@@ -2591,6 +2754,17 @@ void CallbackForTRACE(TRACE trace, void *v) {
 
 #define INSERT_BEFORE_FN(name, to_insert, ...) \
     INSERT_FN(IPOINT_BEFORE, name, to_insert, __VA_ARGS__)
+
+#define INSERT_BEFORE_1_SP(name, to_insert) \
+    INSERT_BEFORE_FN(name, to_insert, \
+                     IARG_REG_VALUE, REG_STACK_PTR, \
+                     IARG_FUNCARG_ENTRYPOINT_VALUE, 0)
+
+#define INSERT_BEFORE_2_SP(name, to_insert) \
+    INSERT_BEFORE_FN(name, to_insert, \
+                     IARG_REG_VALUE, REG_STACK_PTR, \
+                     IARG_FUNCARG_ENTRYPOINT_VALUE, 0, \
+                     IARG_FUNCARG_ENTRYPOINT_VALUE, 1)
 
 #define INSERT_BEFORE_0(name, to_insert) \
     INSERT_BEFORE_FN(name, to_insert, IARG_END);
@@ -2967,34 +3141,65 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_AFTER_0("main", After_main);
 
   // malloc/free/etc
-  WrapFunc4(img, rtn, "malloc", (AFUNPTR)WRAP_NAME(malloc));
-  WrapFunc4(img, rtn, "realloc", (AFUNPTR)WRAP_NAME(realloc));
-  WrapFunc4(img, rtn, "calloc", (AFUNPTR)WRAP_NAME(calloc));
-  WrapFunc4(img, rtn, "free", (AFUNPTR)WRAP_NAME(free));
-
-  // Linux: operator new/delete
+  const char *malloc_names[] = {
+    "malloc",
 #if defined(__GNUC__)
-  WrapFunc4(img, rtn, "_Znwm", (AFUNPTR)WRAP_NAME(malloc));
-  WrapFunc4(img, rtn, "_Znam", (AFUNPTR)WRAP_NAME(malloc));
-  WrapFunc4(img, rtn, "_Znwj", (AFUNPTR)WRAP_NAME(malloc));
-  WrapFunc4(img, rtn, "_Znaj", (AFUNPTR)WRAP_NAME(malloc));
-  WrapFunc4(img, rtn, "_ZnwmRKSt9nothrow_t", (AFUNPTR)WRAP_NAME(malloc));
-  WrapFunc4(img, rtn, "_ZnamRKSt9nothrow_t", (AFUNPTR)WRAP_NAME(malloc));
-  WrapFunc4(img, rtn, "_ZnwjRKSt9nothrow_t", (AFUNPTR)WRAP_NAME(malloc));
-  WrapFunc4(img, rtn, "_ZnajRKSt9nothrow_t", (AFUNPTR)WRAP_NAME(malloc));
-  WrapFunc4(img, rtn, "_ZdaPv", (AFUNPTR)WRAP_NAME(free));
-  WrapFunc4(img, rtn, "_ZdlPv", (AFUNPTR)WRAP_NAME(free));
-  WrapFunc4(img, rtn, "_ZdlPvRKSt9nothrow_t", (AFUNPTR)WRAP_NAME(free));
-  WrapFunc4(img, rtn, "_ZdaPvRKSt9nothrow_t", (AFUNPTR)WRAP_NAME(free));
-#endif  // __GNUC__
-
-  // Windows: operator new/delete
+    "_Znwm",
+    "_Znam",
+    "_Znwj",
+    "_Znaj",
+    "_ZnwmRKSt9nothrow_t",
+    "_ZnamRKSt9nothrow_t",
+    "_ZnwjRKSt9nothrow_t",
+    "_ZnajRKSt9nothrow_t",
+#endif
 #if defined(_MSC_VER)
-  WrapFunc4(img, rtn, "operator new", (AFUNPTR)WRAP_NAME(malloc));
-  WrapFunc4(img, rtn, "operator new[]", (AFUNPTR)WRAP_NAME(malloc));
-  WrapFunc4(img, rtn, "operator delete", (AFUNPTR)WRAP_NAME(free));
-  WrapFunc4(img, rtn, "operator delete[]", (AFUNPTR)WRAP_NAME(free));
+    "operator new",
+    "operator new[]",
+    "operator delete",
+    "operator delete[]",
 #endif  // _MSC_VER
+  };
+
+  const char *free_names[] = {
+    "free",
+#if defined(__GNUC__)
+    "_ZdaPv",
+    "_ZdlPv",
+    "_ZdlPvRKSt9nothrow_t",
+    "_ZdaPvRKSt9nothrow_t",
+#endif  // __GNUC__
+#if defined(_MSC_VER)
+    "operator delete",
+    "operator delete[]",
+#endif  // _MSC_VER
+  };
+
+  for (size_t i = 0; i < TS_ARRAY_SIZE(malloc_names); i++) {
+    const char *name = malloc_names[i];
+    if (G_flags->pin_use_fast_interceptors) {
+      INSERT_BEFORE_1_SP(name, Before_malloc);
+    } else {
+      WrapFunc4(img, rtn, name, (AFUNPTR)WRAP_NAME(malloc));
+    }
+  }
+
+  for (size_t i = 0; i < TS_ARRAY_SIZE(free_names); i++) {
+    const char *name = free_names[i];
+    if (G_flags->pin_use_fast_interceptors) {
+      INSERT_BEFORE_1_SP(name, Before_free);
+    } else {
+      WrapFunc4(img, rtn, name, (AFUNPTR)WRAP_NAME(free));
+    }
+  }
+
+  if (G_flags->pin_use_fast_interceptors) {
+    INSERT_BEFORE_2_SP("calloc", Before_calloc);
+    INSERT_BEFORE_2_SP("realloc", Before_realloc);
+  } else {
+    WrapFunc4(img, rtn, "realloc", (AFUNPTR)WRAP_NAME(realloc));
+    WrapFunc4(img, rtn, "calloc", (AFUNPTR)WRAP_NAME(calloc));
+  }
 
 #if defined(__GNUC__)
   WrapFunc6(img, rtn, "mmap", (AFUNPTR)WRAP_NAME(mmap));
