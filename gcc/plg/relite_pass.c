@@ -36,6 +36,7 @@
 #include <gimple.h>
 #include <tree-flow.h>
 #include <tree-pass.h>
+#include <cfghooks.h>
 #include <diagnostic.h>
 #include <c-common.h>
 #include <c-pragma.h>
@@ -277,15 +278,18 @@ static void             process_store       (relite_context_t* ctx,
     gimple_seq pre_mop = 0;
     gimple_seq post_mop = 0;
     ctx->instr_mop(ctx, expr, 1, 1, loc, &pre_mop, &post_mop);
-    if (pre_mop != 0) {
-      dump_instr_seq(ctx, "before store", &post_mop, loc);
-      set_location(post_mop, loc);
-      gsi_insert_seq_before(gsi, pre_mop, GSI_SAME_STMT);
-    }
-    if (post_mop != 0) {
-      dump_instr_seq(ctx, "after store", &post_mop, loc);
-      set_location(post_mop, loc);
-      gsi_insert_seq_after(gsi, post_mop, GSI_NEW_STMT);
+    if (pre_mop != 0 || post_mop != 0) {
+      ctx->func_mops += 1;
+      if (pre_mop != 0) {
+        dump_instr_seq(ctx, "before store", &post_mop, loc);
+        set_location(post_mop, loc);
+        gsi_insert_seq_before(gsi, pre_mop, GSI_SAME_STMT);
+      }
+      if (post_mop != 0) {
+        dump_instr_seq(ctx, "after store", &post_mop, loc);
+        set_location(post_mop, loc);
+        gsi_insert_seq_after(gsi, post_mop, GSI_NEW_STMT);
+      }
     }
   }
 
@@ -395,15 +399,18 @@ static void             process_load        (relite_context_t* ctx,
     gimple_seq pre_mop = 0;
     gimple_seq post_mop = 0;
     ctx->instr_mop(ctx, expr, loc, 0, 1, &pre_mop, &post_mop);
-    if (pre_mop != 0) {
-      set_location(post_mop, loc);
-      dump_instr_seq(ctx, "before load", &pre_mop, loc);
-      gsi_insert_seq_before(gsi, pre_mop, GSI_SAME_STMT);
-    }
-    if (post_mop != 0) {
-      set_location(post_mop, loc);
-      dump_instr_seq(ctx, "after load", &post_mop, loc);
-      gsi_insert_seq_after(gsi, post_mop, GSI_NEW_STMT);
+    if (pre_mop != 0 || post_mop != 0) {
+      ctx->func_mops += 1;
+      if (pre_mop != 0) {
+        set_location(post_mop, loc);
+        dump_instr_seq(ctx, "before load", &pre_mop, loc);
+        gsi_insert_seq_before(gsi, pre_mop, GSI_SAME_STMT);
+      }
+      if (post_mop != 0) {
+        set_location(post_mop, loc);
+        dump_instr_seq(ctx, "after load", &post_mop, loc);
+        gsi_insert_seq_after(gsi, post_mop, GSI_NEW_STMT);
+      }
     }
   }
 
@@ -482,6 +489,7 @@ void                    relite_pass         (relite_context_t* ctx,
   dbg(ctx, "\nPROCESSING FUNCTION '%s'", func_name);
   ctx->stat_func_total += 1;
   ctx->func_calls = 0;
+  ctx->func_mops = 0;
 
   tree func_attr = DECL_ATTRIBUTES(func->decl);
   for (; func_attr != NULL_TREE; func_attr = TREE_CHAIN(func_attr)) {
@@ -513,7 +521,19 @@ void                    relite_pass         (relite_context_t* ctx,
   if (ctx->instr_func) {
     ctx->instr_func(ctx, func->decl, &pre_func_seq, &post_func_seq);
     if (pre_func_seq != 0 || post_func_seq != 0) {
-      int is_first_gimple = 0;
+      if (pre_func_seq != 0) {
+        basic_block entry = ENTRY_BLOCK_PTR;
+        edge entry_edge = single_succ_edge(entry);
+        entry = split_edge(entry_edge);
+        gimple_stmt_iterator gsi = gsi_start_bb(entry);
+        //gimple stmt = gsi_stmt(gsi);
+        //location_t loc = gimple_location(stmt);
+        //dump_instr_seq(ctx, "at function start", &pre_func_seq, loc);
+        //set_location(pre_func_seq, loc);
+        gsi_insert_seq_after(&gsi, pre_func_seq, GSI_NEW_STMT);
+      }
+
+      //int is_first_gimple = 0;
       basic_block bb;
       FOR_EACH_BB_FN (bb, func) {
         gimple_stmt_iterator gsi;
@@ -526,6 +546,7 @@ void                    relite_pass         (relite_context_t* ctx,
 
           gimple stmt = gsi_stmt(gsi);
           location_t loc = gimple_location(stmt);
+          /*
           if (is_first_gimple == 0) {
             is_first_gimple = 1;
             if (pre_func_seq != 0) {
@@ -534,6 +555,7 @@ void                    relite_pass         (relite_context_t* ctx,
               gsi_insert_seq_before(&gsi, pre_func_seq, GSI_SAME_STMT);
             }
           }
+          */
           if (gimple_code(stmt) == GIMPLE_RETURN) {
             if (post_func_seq != 0) {
               dump_instr_seq(ctx, "at function end", &post_func_seq, loc);

@@ -68,6 +68,7 @@ typedef struct relite_context_t {
   int                   opt_debug;
 
   int                   func_calls;
+  int                   func_mops;
 
   //rt_decl_desc_t*       rt_decl;
   //int                   rt_decl_count;
