@@ -7981,7 +7981,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
 
   FindBoolFlag("nacl_untrusted", false, args, &G_flags->nacl_untrusted);
   FindBoolFlag("threaded_analysis", false, args, &G_flags->threaded_analysis);
-  FindBoolFlag("pin_use_fast_interceptors", false, args,
+  FindBoolFlag("pin_use_fast_interceptors", true, args,
                &G_flags->pin_use_fast_interceptors);
 
   if (!args->empty()) {
