@@ -672,6 +672,14 @@ static bool RtnMatchesName(const string &rtn_name, const string &name) {
   return false;
 }
 
+#define FAST_WRAP_PARAM0 THREADID tid, ADDRINT pc, ADDRINT sp
+#define FAST_WRAP_PARAM1 FAST_WRAP_PARAM0, ADDRINT arg0
+#define FAST_WRAP_PARAM2 FAST_WRAP_PARAM1, ADDRINT arg1
+#define FAST_WRAP_PARAM3 FAST_WRAP_PARAM2, ADDRINT arg2
+
+#define PUSH_AFTER_CALLBACK1(callback, a0) \
+  g_pin_threads[tid].ic_stack.Push(After_malloc, pc, sp, a0, 0);
+
 #define WRAP_NAME(name) Wrap_##name
 #define WRAP4(name) WrapFunc4(img, rtn, #name, (AFUNPTR)Wrap_##name)
 #define WRAPSTD1(name) WrapStdCallFunc1(rtn, #name, (AFUNPTR)Wrap_##name)
@@ -1716,13 +1724,12 @@ void After_malloc(THREADID tid, ADDRINT ret) {
          tid, __FUNCTION__, pc, sp,\
          ((void**)sp)[0],\
          arg0,\
-         t.ic_stack.size()\
+         g_pin_threads[tid].ic_stack.size()\
          );\
 
-void Before_malloc(THREADID tid, ADDRINT pc, ADDRINT sp, ADDRINT arg0) {
-  PinThread &t = g_pin_threads[tid];
+void Before_malloc(FAST_WRAP_PARAM1) {
   IgnoreSyncAndMopsBegin(tid);
-  t.ic_stack.Push(After_malloc, pc, sp, arg0, 0);
+  PUSH_AFTER_CALLBACK1(After_malloc, arg0);
   TRACE_FAST_INTERCEPTOR;
 }
 
@@ -1734,28 +1741,23 @@ void After_free(THREADID tid, ADDRINT ret) {
   IgnoreSyncAndMopsEnd(t.tid);
 }
 
-void Before_free(THREADID tid, ADDRINT pc, ADDRINT sp, ADDRINT arg0) {
-  PinThread &t = g_pin_threads[tid];
+void Before_free(FAST_WRAP_PARAM1) {
   DumpEvent(0, FREE, tid, pc, arg0, 0);
   IgnoreSyncAndMopsBegin(tid);
-  t.ic_stack.Push(After_free, pc, sp, arg0, 0);
+  PUSH_AFTER_CALLBACK1(After_free, arg0);
   TRACE_FAST_INTERCEPTOR;
 }
 
-void Before_calloc(THREADID tid, ADDRINT pc, ADDRINT sp, ADDRINT arg0,
-                   ADDRINT arg1) {
-  PinThread &t = g_pin_threads[tid];
+void Before_calloc(FAST_WRAP_PARAM2) {
   IgnoreSyncAndMopsBegin(tid);
-  t.ic_stack.Push(After_malloc, pc, sp, arg0 * arg1, 0);
+  PUSH_AFTER_CALLBACK1(After_malloc, arg0 * arg1);
   TRACE_FAST_INTERCEPTOR;
 }
 
-void Before_realloc(THREADID tid, ADDRINT pc, ADDRINT sp, ADDRINT arg0,
-                    ADDRINT arg1) {
-  PinThread &t = g_pin_threads[tid];
+void Before_realloc(FAST_WRAP_PARAM2) {
   IgnoreSyncAndMopsBegin(tid);
   // TODO: handle FREE? We don't do it in Valgrind right now.
-  t.ic_stack.Push(After_malloc, pc, sp, arg1, 0);
+  PUSH_AFTER_CALLBACK1(After_malloc, arg1);
   TRACE_FAST_INTERCEPTOR;
 }
 
