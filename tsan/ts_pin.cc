@@ -626,16 +626,21 @@ static void TLEBAddGenericEventAndFlush(PinThread &t,
 static void UpdateCallStack(PinThread &t, ADDRINT sp);
 
 // Must be called from its thread (except for THR_END case)!
-static void DumpEvent(CONTEXT *ctx, EventType type, int32_t tid, uintptr_t pc,
-                      uintptr_t a, uintptr_t info) {
+static void DumpEventWithSp(uintptr_t sp, EventType type, int32_t tid, uintptr_t pc,
+                            uintptr_t a, uintptr_t info) {
   if (!g_race_verifier_active ||
       (type == EXPECT_RACE || type == BENIGN_RACE)) {
     PinThread &t = g_pin_threads[tid];
-    if (ctx) {
-      UpdateCallStack(t, PIN_GetContextReg(ctx, REG_STACK_PTR));
+    if (sp) {
+      UpdateCallStack(t, sp);
     }
     TLEBAddGenericEventAndFlush(t, type, pc, a, info);
   }
+}
+static void DumpEvent(CONTEXT *ctx, EventType type, int32_t tid, uintptr_t pc,
+                      uintptr_t a, uintptr_t info) {
+  DumpEventWithSp(ctx ? PIN_GetContextReg(ctx, REG_STACK_PTR) : 0,
+            type, tid, pc, a, info);
 }
 
 //--------- Wraping and relacing --------------- {{{1
@@ -1717,7 +1722,7 @@ void After_malloc(FAST_WRAP_PARAM_AFTER) {
   if (DEBUG_FAST_INTERCEPTORS)
     Printf("T%d %s %ld %p\n", tid, __FUNCTION__, size, ret);
   IgnoreSyncAndMopsEnd(tid);
-  DumpEvent(0, MALLOC, tid, frame.pc, ret, size);
+  DumpEventWithSp(frame.sp, MALLOC, tid, frame.pc, ret, size);
 }
 
 #define TRACE_FAST_INTERCEPTOR  \
@@ -2045,7 +2050,7 @@ static void Before_pthread_unlock(THREADID tid, ADDRINT pc, ADDRINT mu) {
 }
 
 static void After_pthread_mutex_lock(FAST_WRAP_PARAM_AFTER) {
-  DumpEvent(0, WRITER_LOCK, tid, frame.pc, frame.arg[0], 0);
+  DumpEventWithSp(frame.sp, WRITER_LOCK, tid, frame.pc, frame.arg[0], 0);
 }
 
 static void Before_pthread_mutex_lock(FAST_WRAP_PARAM1) {
@@ -2642,7 +2647,7 @@ void CallbackForTRACE(TRACE trace, void *v) {
       InstrumentMopsInBBl(bbl, rtn, NULL, instrument_pc, &n_mops);
     }
     INS tail = BBL_InsTail(bbl);
-    if (G_flags->pin_use_fast_interceptors && INS_IsRet(tail)) {
+    if (INS_IsRet(tail)) {
 #if 0
       INS_InsertIfCall(tail, IPOINT_BEFORE,
                        (AFUNPTR)Before_RET_IF,
@@ -3161,29 +3166,16 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
 
   for (size_t i = 0; i < TS_ARRAY_SIZE(malloc_names); i++) {
     const char *name = malloc_names[i];
-    if (G_flags->pin_use_fast_interceptors) {
-      INSERT_BEFORE_1_SP(name, Before_malloc);
-    } else {
-      WrapFunc4(img, rtn, name, (AFUNPTR)WRAP_NAME(malloc));
-    }
+    INSERT_BEFORE_1_SP(name, Before_malloc);
   }
 
   for (size_t i = 0; i < TS_ARRAY_SIZE(free_names); i++) {
     const char *name = free_names[i];
-    if (G_flags->pin_use_fast_interceptors) {
-      INSERT_BEFORE_1_SP(name, Before_free);
-    } else {
-      WrapFunc4(img, rtn, name, (AFUNPTR)WRAP_NAME(free));
-    }
+    INSERT_BEFORE_1_SP(name, Before_free);
   }
 
-  if (G_flags->pin_use_fast_interceptors) {
-    INSERT_BEFORE_2_SP("calloc", Before_calloc);
-    INSERT_BEFORE_2_SP("realloc", Before_realloc);
-  } else {
-    WrapFunc4(img, rtn, "realloc", (AFUNPTR)WRAP_NAME(realloc));
-    WrapFunc4(img, rtn, "calloc", (AFUNPTR)WRAP_NAME(calloc));
-  }
+  INSERT_BEFORE_2_SP("calloc", Before_calloc);
+  INSERT_BEFORE_2_SP("realloc", Before_realloc);
 
 #if defined(__GNUC__)
   WrapFunc6(img, rtn, "mmap", (AFUNPTR)WRAP_NAME(mmap));
