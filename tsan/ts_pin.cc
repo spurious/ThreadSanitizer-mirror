@@ -88,9 +88,6 @@ class ScopedReentrantClientLock {
 //--------------- Globals ----------------- {{{1
 extern FILE *G_out;
 
-
-static bool main_entered, main_exited;
-
 // Number of threads created by pthread_create (i.e. not counting main thread).
 static int n_created_threads = 0;
 // Number of started threads, i.e. the number of CallbackForThreadStart calls.
@@ -1679,17 +1676,6 @@ uintptr_t WRAP_NAME(WaitForMultipleObjectsEx)(WRAP_PARAM6) {
 
 #endif  // _MSC_VER
 
-//--------- main() --------------------------------- {{{2
-void Before_main(THREADID tid, ADDRINT pc, ADDRINT argc, ADDRINT argv) {
-  CHECK(tid == 0);
-  main_entered = true;
-}
-
-void After_main(THREADID tid, ADDRINT pc) {
-  CHECK(tid == 0);
-  main_exited = true;
-}
-
 //--------- memory allocation ---------------------- {{{2
 uintptr_t WRAP_NAME(mmap)(WRAP_PARAM6) {
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_6();
@@ -3135,10 +3121,6 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
     Printf("%s: %s %s pc=%p\n", __FUNCTION__, rtn_name.c_str(),
            img_name.c_str(), RTN_Address(rtn));
   }
-
-  // main()
-  INSERT_BEFORE_2("main", Before_main);
-  INSERT_AFTER_0("main", After_main);
 
   // malloc/free/etc
   const char *malloc_names[] = {
