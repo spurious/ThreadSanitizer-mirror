@@ -4703,8 +4703,8 @@ struct Thread {
 
 
   void SetTopPc(uintptr_t pc) {
-    DCHECK(!call_stack_->empty());
     if (pc) {
+      DCHECK(!call_stack_->empty());
       call_stack_->back() = pc;
     }
   }
