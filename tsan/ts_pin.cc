@@ -129,7 +129,8 @@ struct StackFrame {
 // and if the top contains the current SP. If yes -- this is the function return
 // and we pop the stack.
 struct InstrumentedCallFrame {
-  typedef void (*callback_t)(THREADID tid, ADDRINT ret);
+  typedef void (*callback_t)(THREADID tid, InstrumentedCallFrame &frame,
+                             ADDRINT ret);
   callback_t callback;
   uintptr_t pc;
   uintptr_t sp;
@@ -677,8 +678,11 @@ static bool RtnMatchesName(const string &rtn_name, const string &name) {
 #define FAST_WRAP_PARAM2 FAST_WRAP_PARAM1, ADDRINT arg1
 #define FAST_WRAP_PARAM3 FAST_WRAP_PARAM2, ADDRINT arg2
 
+#define FAST_WRAP_PARAM_AFTER \
+  THREADID tid, InstrumentedCallFrame &frame, ADDRINT ret
+
 #define PUSH_AFTER_CALLBACK1(callback, a0) \
-  g_pin_threads[tid].ic_stack.Push(After_malloc, pc, sp, a0, 0);
+  g_pin_threads[tid].ic_stack.Push(callback, pc, sp, a0, 0);
 
 #define WRAP_NAME(name) Wrap_##name
 #define WRAP4(name) WrapFunc4(img, rtn, #name, (AFUNPTR)Wrap_##name)
@@ -1708,14 +1712,12 @@ uintptr_t WRAP_NAME(munmap)(WRAP_PARAM4) {
 #define DEBUG_FAST_INTERCEPTORS 0
 //#define DEBUG_FAST_INTERCEPTORS (tid == 1)
 
-void After_malloc(THREADID tid, ADDRINT ret) {
-  PinThread &t = g_pin_threads[tid];
-  InstrumentedCallFrame *frame = t.ic_stack.Top();
-  size_t size = frame->arg[0];
+void After_malloc(FAST_WRAP_PARAM_AFTER) {
+  size_t size = frame.arg[0];
   if (DEBUG_FAST_INTERCEPTORS)
-    Printf("T%d %s %ld %p\n", t.tid, __FUNCTION__, size, ret);
-  IgnoreSyncAndMopsEnd(t.tid);
-  DumpEvent(0, MALLOC, t.tid, frame->pc, ret, size);
+    Printf("T%d %s %ld %p\n", tid, __FUNCTION__, size, ret);
+  IgnoreSyncAndMopsEnd(tid);
+  DumpEvent(0, MALLOC, tid, frame.pc, ret, size);
 }
 
 #define TRACE_FAST_INTERCEPTOR  \
@@ -1733,12 +1735,10 @@ void Before_malloc(FAST_WRAP_PARAM1) {
   TRACE_FAST_INTERCEPTOR;
 }
 
-void After_free(THREADID tid, ADDRINT ret) {
-  PinThread &t = g_pin_threads[tid];
-  InstrumentedCallFrame *frame = t.ic_stack.Top();
+void After_free(FAST_WRAP_PARAM_AFTER) {
   if (DEBUG_FAST_INTERCEPTORS)
-    Printf("T%d %s %p\n", t.tid, __FUNCTION__, frame->arg[0]);
-  IgnoreSyncAndMopsEnd(t.tid);
+    Printf("T%d %s %p\n", tid, __FUNCTION__, frame.arg[0]);
+  IgnoreSyncAndMopsEnd(tid);
 }
 
 void Before_free(FAST_WRAP_PARAM1) {
@@ -1780,7 +1780,7 @@ void Before_RET_THEN(THREADID tid, ADDRINT pc, ADDRINT sp, ADDRINT ret) {
   while (frame->sp <= sp) {
     if (DEBUG_FAST_INTERCEPTORS)
       Printf("pop\n");
-    frame->callback(tid, ret);
+    frame->callback(tid, *frame, ret);
     t.ic_stack.Pop();
     if (t.ic_stack.size()) {
       frame = t.ic_stack.Top();
@@ -2044,10 +2044,12 @@ static void Before_pthread_unlock(THREADID tid, ADDRINT pc, ADDRINT mu) {
   DumpEvent(0, UNLOCK, tid, pc, mu, 0);
 }
 
-static uintptr_t WRAP_NAME(pthread_mutex_lock)(WRAP_PARAM4) {
-  uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
-  DumpEvent(ctx, WRITER_LOCK, tid, pc, arg0, 0);
-  return ret;
+static void After_pthread_mutex_lock(FAST_WRAP_PARAM_AFTER) {
+  DumpEvent(0, WRITER_LOCK, tid, frame.pc, frame.arg[0], 0);
+}
+
+static void Before_pthread_mutex_lock(FAST_WRAP_PARAM1) {
+  PUSH_AFTER_CALLBACK1(After_pthread_mutex_lock, arg0);
 }
 
 // In some versions of libpthread, pthread_spin_lock is effectively
@@ -3210,7 +3212,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_BEFORE_1("pthread_mutex_unlock", Before_pthread_unlock);
 
 
-  WRAP4(pthread_mutex_lock);
+  INSERT_BEFORE_1_SP("pthread_mutex_lock", Before_pthread_mutex_lock);
   WRAP4(pthread_mutex_trylock);
   WRAP4(pthread_spin_lock);
   WRAP4(pthread_spin_trylock);
