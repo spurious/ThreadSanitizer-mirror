@@ -3142,8 +3142,6 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
 #if defined(_MSC_VER)
     "operator new",
     "operator new[]",
-    "operator delete",
-    "operator delete[]",
 #endif  // _MSC_VER
   };
 
