@@ -1989,9 +1989,9 @@ NONE_FUNC(int, epoll_wait, int epfd, void * events, int maxevents, int timeout) 
    void *o;
    VALGRIND_GET_ORIG_FN(fn);
 //   fprintf(stderr, "T%d socket epoll_wait: %d\n", VALGRIND_TS_THREAD_ID(), epfd);
+   CALL_FN_W_WWWW(ret, fn, epfd, events, maxevents, timeout);
    o = SocketMagic(epfd);
    do_wait(o);
-   CALL_FN_W_WWWW(ret, fn, epfd, events, maxevents, timeout);
    return ret;
 }
 
