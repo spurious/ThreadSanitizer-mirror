@@ -377,7 +377,6 @@ static void HandleInnerEvent(PinThread &t, uintptr_t event) {
   } else if (event == TLEB_GLOBAL_IGNORE_OFF){
     Report("INFO: GLOBAL IGNORE OFF\n");
     global_ignore = false;
-    CODECACHE_FlushCache();  // We need to reinstrument everything.
     ComputeIgnoreAccesses(t);
   } else {
     Printf("Event: %ld (last: %ld)\n", event, LAST_EVENT);
@@ -628,8 +627,7 @@ static void UpdateCallStack(PinThread &t, ADDRINT sp);
 // Must be called from its thread (except for THR_END case)!
 static void DumpEventWithSp(uintptr_t sp, EventType type, int32_t tid, uintptr_t pc,
                             uintptr_t a, uintptr_t info) {
-  if (!g_race_verifier_active ||
-      (type == EXPECT_RACE || type == BENIGN_RACE)) {
+  if (!g_race_verifier_active || type == EXPECT_RACE) {
     PinThread &t = g_pin_threads[tid];
     if (sp) {
       UpdateCallStack(t, sp);
@@ -686,8 +684,20 @@ static bool RtnMatchesName(const string &rtn_name, const string &name) {
 #define FAST_WRAP_PARAM_AFTER \
   THREADID tid, InstrumentedCallFrame &frame, ADDRINT ret
 
+
+#define DEBUG_FAST_INTERCEPTORS 0
+//#define DEBUG_FAST_INTERCEPTORS (tid == 1)
+
 #define PUSH_AFTER_CALLBACK1(callback, a0) \
-  g_pin_threads[tid].ic_stack.Push(callback, pc, sp, a0, 0);
+  g_pin_threads[tid].ic_stack.Push(callback, pc, sp, a0, 0); \
+  if (DEBUG_FAST_INTERCEPTORS) \
+    Printf("T%d %s pc=%p sp=%p *sp=(%p) arg0=%p stack_size=%ld\n",\
+         tid, __FUNCTION__, pc, sp,\
+         ((void**)sp)[0],\
+         arg0,\
+         g_pin_threads[tid].ic_stack.size()\
+         );\
+
 
 #define WRAP_NAME(name) Wrap_##name
 #define WRAP4(name) WrapFunc4(img, rtn, #name, (AFUNPTR)Wrap_##name)
@@ -1024,14 +1034,6 @@ void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
 
 
   PIN_SetContextReg(ctxt, tls_reg, (ADDRINT)&t.tleb.events[2]);
-
-#if 0
-  if (n_started_threads == 2) {
-    // we are creating the first non-main thread. Flush the code cache and start
-    // doing real work.
-    CODECACHE_FlushCache();
-  }
-#endif  // _MSC_VER
 
   t.parent_tid = -1;
   if (has_parent) {
@@ -1714,8 +1716,6 @@ uintptr_t WRAP_NAME(munmap)(WRAP_PARAM4) {
   return ret;
 }
 
-#define DEBUG_FAST_INTERCEPTORS 0
-//#define DEBUG_FAST_INTERCEPTORS (tid == 1)
 
 void After_malloc(FAST_WRAP_PARAM_AFTER) {
   size_t size = frame.arg[0];
@@ -1725,19 +1725,9 @@ void After_malloc(FAST_WRAP_PARAM_AFTER) {
   DumpEventWithSp(frame.sp, MALLOC, tid, frame.pc, ret, size);
 }
 
-#define TRACE_FAST_INTERCEPTOR  \
-  if (DEBUG_FAST_INTERCEPTORS) \
-    Printf("T%d %s pc=%p sp=%p *sp=(%p) arg0=%p stack_size=%ld\n",\
-         tid, __FUNCTION__, pc, sp,\
-         ((void**)sp)[0],\
-         arg0,\
-         g_pin_threads[tid].ic_stack.size()\
-         );\
-
 void Before_malloc(FAST_WRAP_PARAM1) {
   IgnoreSyncAndMopsBegin(tid);
   PUSH_AFTER_CALLBACK1(After_malloc, arg0);
-  TRACE_FAST_INTERCEPTOR;
 }
 
 void After_free(FAST_WRAP_PARAM_AFTER) {
@@ -1750,20 +1740,17 @@ void Before_free(FAST_WRAP_PARAM1) {
   DumpEvent(0, FREE, tid, pc, arg0, 0);
   IgnoreSyncAndMopsBegin(tid);
   PUSH_AFTER_CALLBACK1(After_free, arg0);
-  TRACE_FAST_INTERCEPTOR;
 }
 
 void Before_calloc(FAST_WRAP_PARAM2) {
   IgnoreSyncAndMopsBegin(tid);
   PUSH_AFTER_CALLBACK1(After_malloc, arg0 * arg1);
-  TRACE_FAST_INTERCEPTOR;
 }
 
 void Before_realloc(FAST_WRAP_PARAM2) {
   IgnoreSyncAndMopsBegin(tid);
   // TODO: handle FREE? We don't do it in Valgrind right now.
   PUSH_AFTER_CALLBACK1(After_malloc, arg1);
-  TRACE_FAST_INTERCEPTOR;
 }
 
 // Fast path for INS_InsertIfCall.
@@ -2593,19 +2580,6 @@ static void InstrumentMopsInBBl(BBL bbl, RTN rtn, TraceInfo *trace_info, uintptr
 
 void CallbackForTRACE(TRACE trace, void *v) {
   CHECK(n_started_threads > 0);
-  if (global_ignore) {
-    // Once global_ignore is set to false we will reinstrument everything.
-    return;
-  }
-
-#if 0
-  if (n_started_threads == 1) {
-    // There are no threads running other than the main thread.
-    // Do not instrument anything. When another thread starts,
-    // we will flush the code cache.
-    return;
-  }
-#endif  // _MSC_VER
 
   RTN rtn = TRACE_Rtn(trace);
   bool ignore_memory = false;
