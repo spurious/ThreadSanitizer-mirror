@@ -7875,6 +7875,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   FindIntFlag("trace_level", 0, args, &G_flags->trace_level);
 
   FindIntFlag("literace_sampling", 0, args, &G_flags->literace_sampling);
+  FindIntFlag("sampling", 0, args, &G_flags->literace_sampling);
   CHECK(G_flags->literace_sampling < 32);
   CHECK(G_flags->literace_sampling >= 0);
   FindBoolFlag("start_with_global_ignore_on", false, args,
