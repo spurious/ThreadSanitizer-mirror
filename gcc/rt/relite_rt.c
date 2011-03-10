@@ -1,7 +1,7 @@
 /* Relite
  * Copyright (c) 2011, Google Inc.
  * All rights reserved.
- * Author: Dmitry Vyukov (dvyukov@google.com)
+ * Author: Dmitry Vyukov (dvyukov)
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -723,8 +723,17 @@ void relite_leave()
 
 
 
+void    relite_mop                    (void const volatile* addr,
+                                       unsigned long long desc) {
+  void* pc = (void*)(desc & ((1ull << 48) - 1));
+  unsigned sz = ((desc >> 48) & 0xF) + 1;
+  unsigned st = !!(desc & (1ull << 52));
+  unsigned sb = !!(desc & (1ull << 53));
+  printf("MOP: addr=%-14p pc=%-14p sz=%u st=%u sb=%u\n", addr, pc, sz, st, sb);
+}
 
 
+__thread void** ShadowStack;
 
 
 
@@ -738,6 +747,8 @@ void AnnotateExpectRace(char const* file, int line, void* address, char const* d
 
 }
 */
+
+
 
 
 

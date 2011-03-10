@@ -1,7 +1,7 @@
 /* Relite
  * Copyright (c) 2011, Google Inc.
  * All rights reserved.
- * Author: Dmitry Vyukov (dvyukov@google.com)
+ * Author: Dmitry Vyukov (dvyukov)
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -34,6 +34,21 @@ extern "C" {
 //#include "relite_pthread.h"
 //#include "relite_stdlib.h"
 
+/*
+typedef struct relite_call_stack_t {
+  void**    top;
+  void*     base [kMaxCallStackSize];
+} relite_call_stack_t;
+*/
+
+extern __thread void** ShadowStack;
+extern __thread void* INFO;
+
+void tsan_rtl_mop(void* addr, unsigned flags);
+
+void ThreadSanitizerHandleOneMemoryAccess
+          (void* thr, unsigned long long desc, void* addr);
+
 void    relite_enter                  (void const volatile*);
 void    relite_leave                  ();
 
@@ -45,33 +60,6 @@ void    relite_load                   (void const volatile* addr,
 
 void    relite_acquire                (void const volatile* addr);
 void    relite_release                (void const volatile* addr);
-
-/*
-struct relite_call_desc_t {
-  char const*                   func;
-  char const*                   file;
-  int                           line;
-  int                           pos;
-};
-
-struct relite_mop_desc_t {
-  char const*                   var;
-  char const*                   file;
-  int                           line;
-  int                           pos;
-};
-
-struct relite_func_desc_t {
-  int                               call_count;
-  struct relite_call_desc_t const*  calls;
-  int                               mop_count;
-  struct relite_mop_desc_t const*   mops;
-};
-
-static struct relite_call_desc_t relite_calls [] = {};
-static struct relite_mop_desc_t relite_mops [] = {};
-static struct relite_func_desc_t relite_func_desc = {};
-*/
 
 
 typedef enum relite_report_type_e {
