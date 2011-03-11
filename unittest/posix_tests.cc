@@ -43,6 +43,7 @@
 #include <string>
 #include <vector>
 #include <unistd.h>
+#include <sys/epoll.h>
 
 #include "test_utils.h"
 #include <gtest/gtest.h>
@@ -978,6 +979,30 @@ TEST(WeirdSizesTests, FegetenvTest) {
     FAIL() << "fegetenv failed";
 }
 
+namespace NegativeTests_epoll {  // {{{1
+int GLOB;
+
+// Currently, ThreadSanitizer should create hb arcs between 
+// epoll_ctl and epoll_wait regardless of the parameters. Check that.
+
+void Worker1() {
+  GLOB++;
+  struct epoll_event event;
+  epoll_ctl(0, 0, 0, &event);
+}
+void Worker2() {
+  struct epoll_event event;
+  epoll_wait(0, &event, 0, 0);
+  GLOB++;
+}
+
+TEST(NegativeTests,epollTest) {
+  MyThreadArray mta(Worker1, Worker2);
+  mta.Start();
+  mta.Join();
+}
+
+}
 namespace NegativeTests_LockfTest {  // {{{1
 
 class ShmMutex {
