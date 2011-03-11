@@ -1983,7 +1983,7 @@ static void *SocketMagic(long s) {
   return (void*)0xDEADFBAD;
 }
 
-NONE_FUNC(int, epoll_wait, int epfd, void * events, int maxevents, int timeout) {
+LIBC_FUNC(int, epoll_wait, int epfd, void * events, int maxevents, int timeout) {
    OrigFn fn;
    long    ret;
    void *o;
@@ -1995,7 +1995,7 @@ NONE_FUNC(int, epoll_wait, int epfd, void * events, int maxevents, int timeout) 
    return ret;
 }
 
-NONE_FUNC(int, epoll_ctl, int epfd, int op, int fd, void *event) {
+LIBC_FUNC(int, epoll_ctl, int epfd, int op, int fd, void *event) {
    OrigFn fn;
    long    ret;
    void *o;
@@ -2006,8 +2006,6 @@ NONE_FUNC(int, epoll_ctl, int epfd, int op, int fd, void *event) {
    CALL_FN_W_WWWW(ret, fn, epfd, op, fd, event);
    return ret;
 }
-
-
 
 PTH_FUNC(long, send, int s, void *buf, long len, int flags) {
    OrigFn fn;
