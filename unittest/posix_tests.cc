@@ -980,6 +980,7 @@ TEST(WeirdSizesTests, FegetenvTest) {
 }
 
 namespace NegativeTests_epoll {  // {{{1
+#ifdef OS_linux
 int GLOB;
 
 // Currently, ThreadSanitizer should create hb arcs between 
@@ -1001,7 +1002,7 @@ TEST(NegativeTests,epollTest) {
   mta.Start();
   mta.Join();
 }
-
+#endif  // OS_linux
 }
 namespace NegativeTests_LockfTest {  // {{{1
 
