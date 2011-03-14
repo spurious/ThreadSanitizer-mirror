@@ -58,6 +58,18 @@ TEST(NegativeTests, WindowsCreateThreadFailureTest) {  // {{{1
   CHECK(t == 0);
 }
 
+TEST(NegativeTests, DISABLED_WindowsCreateThreadSuspendedTest) {  // {{{1
+  // Hangs under TSan, see
+  // http://code.google.com/p/data-race-test/issues/detail?id=61
+  HANDLE t = ::CreateThread(0, 0,
+                           (LPTHREAD_START_ROUTINE)DummyWorker, 0,
+                           CREATE_SUSPENDED, 0);
+  CHECK(t > 0);
+  EXPECT_EQ(WAIT_TIMEOUT,  ::WaitForSingleObject(t, 200));
+  ResumeThread(t);
+  EXPECT_EQ(WAIT_OBJECT_0, ::WaitForSingleObject(t, INFINITE));
+}
+
 TEST(NegativeTests, WindowsThreadStackSizeTest) {  // {{{1
 // Just spawn few threads with different stack sizes.
   int sizes[3] = {1 << 19, 1 << 21, 1 << 22};
@@ -65,7 +77,7 @@ TEST(NegativeTests, WindowsThreadStackSizeTest) {  // {{{1
     HANDLE t = ::CreateThread(0, sizes[i],
                              (LPTHREAD_START_ROUTINE)DummyWorker, 0, 0, 0);
     CHECK(t > 0);
-    ::WaitForSingleObject(t, INFINITE);
+    EXPECT_EQ(WAIT_OBJECT_0, ::WaitForSingleObject(t, INFINITE));
     CloseHandle(t);
   }
 }
