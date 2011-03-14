@@ -43,7 +43,10 @@
 #include <string>
 #include <vector>
 #include <unistd.h>
-#include <sys/epoll.h>
+
+#ifdef OS_linux
+# include <sys/epoll.h>
+#endif  // OS_linux
 
 #include "test_utils.h"
 #include <gtest/gtest.h>
