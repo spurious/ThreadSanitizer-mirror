@@ -6736,9 +6736,16 @@ TEST(NegativeTests, EnableRaceDetectionTest) {
 namespace PositiveTests_MopVsFree {  // {{{1
 int *p;
 const int kIdx = 77;
+StealthNotification n;
 
-void Read() { CHECK(p[kIdx] == 777); }
-void Free() { free(p);}
+void Read() {
+  CHECK(p[kIdx] == 777);
+  n.signal();
+}
+void Free() {
+  n.wait();
+  free(p);
+}
 
 TEST(PositiveTests, ReadVsFree) {
   p = (int*)malloc(100 * sizeof(int));
