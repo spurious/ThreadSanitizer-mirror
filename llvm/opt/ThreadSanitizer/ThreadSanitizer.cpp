@@ -65,19 +65,24 @@ static cl::opt<bool>
     EnableLiteRaceSampling("enable-literace-sampling",
                            cl::desc("Flush hot traces less frequently"),
                            cl::init(true));
+
 static cl::opt<bool>
     EnableFunctionInstrumentation("enable-function-instrumentation",
                       cl::desc("Update the shadow stack upon function "
                                "entries/exits"),
                       cl::init(true));
+
 static cl::opt<bool>
     EnableMemoryInstrumentation("enable-memory-instrumentation",
                                 cl::desc("Instrument memory operations"),
                                 cl::init(true));
+
 static cl::opt<bool>
     EnableTraceFlushing("enable-trace-flushing",
-                        cl::desc("Insert a flush after each trace"),
-                        cl::init(true));
+        cl::desc("Insert a flush after each trace "
+                 "(otherwise the race detector just won't notice it)"),
+        cl::init(true));
+
 static cl::opt<bool>
     DoNothing("do-nothing",
               cl::desc("Do not modify the code, exit immediately"),
@@ -1370,11 +1375,11 @@ void TsanOnlineInstrument::markMopsToInstrument(Trace &trace) {
       }
       if (isMop) {
         instrumentation_stats.newMop();
-        if (ignoreInlinedMop(BI)) continue;
         if (InstrumentAll) {
           trace.to_instrument.insert(BI);
           continue;
         }
+        if (ignoreInlinedMop(BI)) continue;
         // Falling through to the alias-analysis-based optimization.
         // If two operations in the same trace access the same memory
         // location, then we can instrument only one of them (the latter
