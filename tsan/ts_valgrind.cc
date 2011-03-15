@@ -1215,22 +1215,7 @@ void instrument_statement (IRStmt* st, IRSB* bbIn, IRSB* bbOut, IRType hWordTy,
     }
 
     case Ist_LLSC: {
-      /* Ignore store-conditionals, treat load-linked's as normal loads. */
-      IRType dataTy;
-      if (st->Ist.LLSC.storedata == NULL) {
-        /* LL */
-        dataTy = typeOfIRTemp(bbIn->tyenv, st->Ist.LLSC.result);
-        instrument_mem_access(trace_info, tleb_temp, *cur_pc, idx, 
-          bbOut, st,
-          st->Ist.LLSC.addr,
-          sizeofIRType(dataTy),
-          False/*isStore*/, dtor_head,
-          sizeofIRType(hWordTy)
-        );
-      } else {
-        /* SC */
-        /* ignore */
-      }
+      /* Ignore load-linked's and store-conditionals. */
       break;
     }
 
