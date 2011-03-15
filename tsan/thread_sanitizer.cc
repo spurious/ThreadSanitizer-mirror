@@ -8116,7 +8116,6 @@ static void SetupIgnore() {
   // Android does not have a libpthread; pthread_* functions live in libc.
   // We have to ignore them one-by-one.
   g_ignore_lists->ignores.push_back(IgnoreFun("pthread_*"));
-  g_ignore_lists->ignores.push_back(IgnoreFun("__atomic_*"));
   g_ignore_lists->ignores.push_back(IgnoreFun("__init_tls"));
 #endif
 
