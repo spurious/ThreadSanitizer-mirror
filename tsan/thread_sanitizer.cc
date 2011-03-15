@@ -4614,6 +4614,21 @@ struct Thread {
     lock_era_access_set_[1].Clear();
   }
 
+  void HandleForgetSignaller(uintptr_t cv) {
+    SignallerMap::iterator it = signaller_map_->find(cv);
+    if (it != signaller_map_->end()) {
+      if (debug_happens_before) {
+        Printf("T%d: ForgetSignaller: %p:\n    %s\n", tid_.raw(), cv,
+            (it->second.vts)->ToString().c_str());
+        if (G_flags->debug_level >= 1) {
+          ReportStackTrace();
+        }
+      }
+      VTS::Unref(it->second.vts);
+      signaller_map_->erase(it);
+    }
+  }
+
   LSID lsid(bool is_w) {
     return is_w ? wr_lockset_ : rd_lockset_;
   }
@@ -6642,6 +6657,7 @@ class Detector {
           thread->HandleUnlock(lock_addr);
         }
       }
+      thread->HandleForgetSignaller(lock_addr);
       Lock::Destroy(lock_addr);
     }
   }
