@@ -2,8 +2,7 @@ Before building ThreadSanitizer.so consider installing LLVM and llvm-gcc.
 
 On Ubuntu Lucid Lynx it's enough to run:
 
-sudo apt-get install llvm-dev
-sudo apt-get install llvm-gcc
+sudo apt-get install llvm-dev llvm-gcc binutils-dev
 
 On other systems you may need to install other packages or build LLVM (>=2.7)
 and llvm-gcc (>=4.2) from source tarballs
