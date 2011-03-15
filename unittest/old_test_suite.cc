@@ -77,6 +77,7 @@ TEST(NonGtestTests, All) {
   }
 }
 
+#ifndef ANDROID // GTest version is too old.
 class PerformanceTestEventListener: public ::testing::EmptyTestEventListener {
  public:
   virtual void OnTestEnd(const ::testing::TestInfo& test_info) {
@@ -119,6 +120,7 @@ class PerformanceTestEventListener: public ::testing::EmptyTestEventListener {
     return st.str();
   }
 };
+#endif
 
 int main(int argc, char** argv) {
   MAIN_INIT_ACTION;
@@ -193,10 +195,12 @@ int main(int argc, char** argv) {
     random_shuffle(tests_to_run.begin(), tests_to_run.end(), rnd);
   }
 
+#ifndef ANDROID // GTest version is too old.
   ::testing::TestEventListeners& listeners =
         ::testing::UnitTest::GetInstance()->listeners();
   // Adds a listener to the end.  Google Test takes the ownership.
   listeners.Append(new PerformanceTestEventListener());
+#endif
 
   return RUN_ALL_TESTS();
 }

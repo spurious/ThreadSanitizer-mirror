@@ -3090,9 +3090,11 @@ void WorkerX() {
   EXPECT_TRUE(index(str, 'X') == str);
   EXPECT_TRUE(index(str, 'x') == str+1);
   EXPECT_TRUE(index(str, 'Y') == NULL);
+#ifndef ANDROID
   EXPECT_TRUE(rindex(str, 'X') == str+2);
   EXPECT_TRUE(rindex(str, 'x') == str+3);
   EXPECT_TRUE(rindex(str, 'Y') == NULL);
+#endif
 #else
   EXPECT_TRUE(lstrlenA(NULL) == 0);
   EXPECT_TRUE(lstrlenW(NULL) == 0);
@@ -3108,7 +3110,9 @@ void WorkerX() {
   EXPECT_TRUE(strncmp(tmp,str, 4) == 0);
   EXPECT_TRUE(memmove(str, tmp, strlen(tmp) + 1) == str);
 #ifndef WIN32
+#ifndef ANDROID
   EXPECT_TRUE(stpcpy(tmp2, str) == tmp2+4);
+#endif
   EXPECT_TRUE(strcpy(tmp2, str) == tmp2);
   EXPECT_TRUE(strncpy(tmp, str, 4) == tmp);
   // These may not be properly intercepted since gcc -O1 may inline
@@ -7099,7 +7103,7 @@ REGISTER_TEST2(Run, 503, MEMORY_USAGE | PRINT_STATS
 
 // test504: force massive cache fetch-wback (50% misses, mostly CacheLineZ) {{{1
 namespace test504 {
-#ifndef WINE // Valgrind+wine hate large static objects
+#if !defined(WINE) and !defined(ANDROID) // Valgrind+wine hate large static objects
 const int N_THREADS = 2,
           HG_CACHELINE_COUNT = 1 << 16,
           HG_CACHELINE_SIZE  = 1 << 6,
@@ -7147,7 +7151,7 @@ REGISTER_TEST2(Run, 504, PERFORMANCE | PRINT_STATS | EXCLUDE_FROM_ALL)
 // modification of test504 - more threads, byte accesses and lots of mutexes
 // so it produces lots of CacheLineF misses (30-50% of CacheLineZ misses)
 namespace test505 {
-#ifndef WINE // Valgrind+wine hate large static objects
+#if !defined(WINE) and !defined(ANDROID) // Valgrind+wine hate large static objects
 
 const int N_THREADS = 2,
           HG_CACHELINE_COUNT = 1 << 16,
@@ -7507,6 +7511,7 @@ TEST(RegTests, ThreadChainTest) {
 
 }  // namespace
 
+#ifndef ANDROID // GTest does not support ASSERT_DEBUG_DEATH.
 namespace SimpleDeathTest {  // {{{1 Make sure that the tool handles death tests correctly
 #ifdef WIN32
 TEST(DeathTests, DISABLED_SimpleDeathTest) {
@@ -7516,6 +7521,7 @@ TEST(DeathTests, SimpleDeathTest) {
   ASSERT_DEBUG_DEATH(CHECK(false), "");
 }
 }  // namespace
+#endif
 
 namespace IgnoreTests {  // {{{1 Test how the tool works with indirect calls to fun_r functions
 int GLOB = 0;

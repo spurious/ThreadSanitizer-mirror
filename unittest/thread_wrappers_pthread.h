@@ -62,13 +62,20 @@ static const bool kMallocUsesMutex = false;
   // Linux
   #include <malloc.h> // memalign
 
+  #ifdef ANDROID
+  #define NO_BARRIER
+  #define NO_SPINLOCK
+  #endif
+
   static int AtomicIncrement(volatile int *value, int increment) {
     return __sync_add_and_fetch(value, increment);
   }
 
-#ifndef ANDROID
-  #define TLS __thread
-#endif
+  #ifdef ANDROID
+    #undef TLS
+  #else
+    #define TLS __thread
+  #endif
 
 #else
   // Mac OS X
@@ -267,7 +274,7 @@ class WriterLockScoped {  // Scoped RWLock Locker/Unlocker
   RWLock *mu_;
 };
 
-#ifndef __APPLE__
+#if !defined(__APPLE__) && !defined(ANDROID)
 class SpinLock {
  public:
   SpinLock() {
@@ -286,7 +293,7 @@ class SpinLock {
   pthread_spinlock_t mu_;
 };
 
-#else
+#elif defined(__APPLE__)
 
 class SpinLock {
  public:
