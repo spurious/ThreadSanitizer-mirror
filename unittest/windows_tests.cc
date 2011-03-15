@@ -61,13 +61,17 @@ TEST(NegativeTests, WindowsCreateThreadFailureTest) {  // {{{1
 TEST(NegativeTests, DISABLED_WindowsCreateThreadSuspendedTest) {  // {{{1
   // Hangs under TSan, see
   // http://code.google.com/p/data-race-test/issues/detail?id=61
+  int *var = new int;
   HANDLE t = ::CreateThread(0, 0,
-                           (LPTHREAD_START_ROUTINE)DummyWorker, 0,
+                           (LPTHREAD_START_ROUTINE)WriteWorker, var,
                            CREATE_SUSPENDED, 0);
   CHECK(t > 0);
   EXPECT_EQ(WAIT_TIMEOUT,  ::WaitForSingleObject(t, 200));
-  ResumeThread(t);
+  *var = 1;
+  EXPECT_EQ(1, ResumeThread(t));
   EXPECT_EQ(WAIT_OBJECT_0, ::WaitForSingleObject(t, INFINITE));
+  EXPECT_EQ(42, *var);
+  delete var;
 }
 
 TEST(NegativeTests, WindowsThreadStackSizeTest) {  // {{{1
