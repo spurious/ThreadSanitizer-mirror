@@ -65,7 +65,11 @@ static const bool kMallocUsesMutex = false;
   static int AtomicIncrement(volatile int *value, int increment) {
     return __sync_add_and_fetch(value, increment);
   }
+
+#ifndef ANDROID
   #define TLS __thread
+#endif
+
 #else
   // Mac OS X
   #include <libkern/OSAtomic.h>
