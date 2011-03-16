@@ -2607,19 +2607,16 @@ void ReadDbgInfo(string filename) {
 namespace {
 
 struct BfdData {
-  //bfd_boolean                               unwind_inlines;
-  //bfd_boolean                               base_names;
-  asymbol**                                 syms;
-  bfd*                                      abfd;
-  //asection*                                 section;
+  bfd*                          abfd;
+  asymbol**                     syms;
 } * bfd_data;
 
 struct BfdSymbol {
-  bfd_vma pc;
-  const char* filename;
-  const char* functionname;
-  unsigned int line;
-  bfd_boolean found;
+  bfd_vma                       pc;
+  const char*                   filename;
+  const char*                   functionname;
+  unsigned int                  line;
+  bfd_boolean                   found;
 };
 
 bool BfdInit() {
@@ -2667,9 +2664,9 @@ bool BfdInit() {
   return true;
 }
 
-void find_address_in_section (bfd* abfd,
-                                                 asection* section,
-                                                 void* data) {
+void BfdFindAddressCallback(bfd* abfd,
+                            asection* section,
+                            void* data) {
   bfd_vma vma;
   bfd_size_type size;
   BfdSymbol* psi = (BfdSymbol*)data;
@@ -2689,23 +2686,23 @@ void find_address_in_section (bfd* abfd,
     return;
 
   psi->found = bfd_find_nearest_line(abfd, section,
-                 bfd_data->syms, psi->pc - vma,
-                 &psi->filename, &psi->functionname,
-                 &psi->line);
+                                     bfd_data->syms, psi->pc - vma,
+                                     &psi->filename, &psi->functionname,
+                                     &psi->line);
 }
 
-static void             translate_addresses (void* xaddr,
-                                             char* buf_func,
-                                             size_t buf_func_len,
-                                             char* buf_file,
-                                             size_t buf_file_len,
-                                             int* line) {
+void BfdTranslateAddress(void* xaddr,
+                         char* buf_func,
+                         size_t buf_func_len,
+                         char* buf_file,
+                         size_t buf_file_len,
+                         int* line) {
   char addr [(CHAR_BIT/4) * (sizeof(void*)) + 2] = {0};
   sprintf(addr, "%p", xaddr);
   BfdSymbol si = {0};
   si.pc = bfd_scan_vma (addr, NULL, 16);
   si.found = FALSE;
-  bfd_map_over_sections(bfd_data->abfd, find_address_in_section, &si);
+  bfd_map_over_sections(bfd_data->abfd, BfdFindAddressCallback, &si);
 
   if (si.found == 0) {
     if (buf_func != 0 && buf_func_len != 0)
@@ -2756,7 +2753,7 @@ string BfdPcToRtnName(pc_t pc, bool demangle) {
   if (BfdInit() == false)
     return string();
   char buf_func [PATH_MAX + 1];
-  translate_addresses((void*)pc,
+  BfdTranslateAddress((void*)pc,
                       buf_func, sizeof(buf_func)/sizeof(buf_func[0]) - 1,
                       0, 0, 0);
   return buf_func;
@@ -2767,10 +2764,9 @@ void BfdPcToStrings(pc_t pc, bool demangle,
                     string *file_name, int *line_no) {
   if (BfdInit() == false)
     return;
-
   char buf_func [PATH_MAX + 1];
   char buf_file [PATH_MAX + 1];
-  translate_addresses((void*)pc,
+  BfdTranslateAddress((void*)pc,
                       buf_func, sizeof(buf_func)/sizeof(buf_func[0]) - 1,
                       buf_file, sizeof(buf_file)/sizeof(buf_file[0]) - 1,
                       line_no);
