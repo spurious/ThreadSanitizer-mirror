@@ -1,7 +1,7 @@
 /* Relite
  * Copyright (c) 2011, Google Inc.
  * All rights reserved.
- * Author: Dmitry Vyukov (dvyukov@google.com)
+ * Author: Dmitry Vyukov (dvyukov)
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -45,6 +45,13 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include "relite_pass.h"
+
+#include <config.h>
+#include <system.h>
+#include <tm.h>
+#include <coretypes.h>
+#include <function.h>
+#include <gimple.h>
 
 /*
 static rt_decl_desc_t rt_decl [] = {
@@ -196,10 +203,10 @@ static void             instr_func            (struct relite_context_t* ctx,
                                              tree func_decl,
                                              gimple_seq* pre,
                                              gimple_seq* post) {
-  if (ctx->func_calls != 0) {
-    build_stack_op(pre, PLUS_EXPR);
-    build_stack_op(post, MINUS_EXPR);
-  }
+  if (ctx->func_calls == 0 && ctx->func_mops == 0)
+    return;
+  build_stack_op(pre, PLUS_EXPR);
+  build_stack_op(post, MINUS_EXPR);
 }
 
 
@@ -317,6 +324,8 @@ relite_context_t*       create_context      () {
   //ctx->rt_decl_count    = sizeof(rt_decl)/sizeof(rt_decl[0]);
 
   //build_rt_decls();
+
+  ctx->opt_sblock_size  = 5;
 
   return ctx;
 }

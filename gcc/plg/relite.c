@@ -1,7 +1,7 @@
 /* Relite
  * Copyright (c) 2011, Google Inc.
  * All rights reserved.
- * Author: Dmitry Vyukov (dvyukov@google.com)
+ * Author: Dmitry Vyukov (dvyukov)
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -25,6 +25,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+//!!! TODO(dvyukov): change license to GPL
+
 #include <plugin.h>
 #include <plugin-version.h>
 #include <config.h>
@@ -32,9 +34,12 @@
 #include <coretypes.h>
 #include <tm.h>
 #include <tree-pass.h>
+#include <function.h>
+#include <gimple.h>
 #include <diagnostic.h>
 #include <stdio.h>
 #include "relite_pass.h"
+
 
 #define RELITE_USE_PASS_MANAGER
 
@@ -115,6 +120,11 @@ int                     plugin_init         (struct plugin_name_args* info,
       do_pause = 1;
     else if (strcmp(info->argv[i].key, "debug") == 0)
       g_ctx->opt_debug = 1;
+    else if (strcmp(info->argv[i].key, "sblock-size") == 0
+        && atoi(info->argv[i].value) > 0)
+      g_ctx->opt_sblock_size = atoi(info->argv[i].value);
+    else if (strcmp(info->argv[i].key, "ignore") == 0)
+      g_ctx->opt_ignore = xstrdup(info->argv[i].value);
   }
 
   if (do_pause) {

@@ -1,7 +1,7 @@
 /* Relite
  * Copyright (c) 2011, Google Inc.
  * All rights reserved.
- * Author: Dmitry Vyukov (dvyukov@google.com)
+ * Author: Dmitry Vyukov (dvyukov)
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -28,12 +28,7 @@
 #ifndef RELITE_PASS_H_INCLUDED
 #define RELITE_PASS_H_INCLUDED
 
-#include <config.h>
-#include <system.h>
-#include <tm.h>
-#include <coretypes.h>
-#include <function.h>
-#include <gimple.h>
+#include "relite_ignore.h"
 
 
 typedef struct rt_decl_desc_t {
@@ -66,14 +61,14 @@ typedef struct relite_context_t {
                                              gimple_seq* post);
 
   int                   opt_debug;
+  int                   opt_sblock_size;
+  char const*           opt_ignore;
 
+  int                   setup_completed;
+  int                   ignore_file;
   int                   func_calls;
   int                   func_mops;
-
-  //rt_decl_desc_t*       rt_decl;
-  //int                   rt_decl_count;
-  //int                   rt_decl_setup;
-  int                   setup_completed;
+  relite_ignore_e       func_ignore;
 
   int                   stat_func_total;
   int                   stat_func_instrumented;
@@ -82,6 +77,9 @@ typedef struct relite_context_t {
   int                   stat_store_instrumented;
   int                   stat_load_total;
   int                   stat_load_instrumented;
+  int                   stat_sblock;
+  int                   stat_bb_total;
+  //int                   stat_bb_super;
 } relite_context_t;
 
 

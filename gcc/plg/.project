@@ -80,4 +80,36 @@
 		<nature>org.eclipse.cdt.managedbuilder.core.managedBuildNature</nature>
 		<nature>org.eclipse.cdt.managedbuilder.core.ScannerConfigNature</nature>
 	</natures>
+	<linkedResources>
+		<link>
+			<name>tsan/common_util.cc</name>
+			<type>1</type>
+			<locationURI>PARENT-2-PROJECT_LOC/tsan/common_util.cc</locationURI>
+		</link>
+		<link>
+			<name>tsan/common_util.h</name>
+			<type>1</type>
+			<locationURI>PARENT-2-PROJECT_LOC/tsan/common_util.h</locationURI>
+		</link>
+		<link>
+			<name>tsan/ignore.cc</name>
+			<type>1</type>
+			<locationURI>PARENT-2-PROJECT_LOC/tsan/ignore.cc</locationURI>
+		</link>
+		<link>
+			<name>tsan/ignore.h</name>
+			<type>1</type>
+			<locationURI>PARENT-2-PROJECT_LOC/tsan/ignore.h</locationURI>
+		</link>
+		<link>
+			<name>tsan/ts_util.cc</name>
+			<type>1</type>
+			<locationURI>PARENT-2-PROJECT_LOC/tsan/ts_util.cc</locationURI>
+		</link>
+		<link>
+			<name>tsan/ts_util.h</name>
+			<type>1</type>
+			<locationURI>PARENT-2-PROJECT_LOC/tsan/ts_util.h</locationURI>
+		</link>
+	</linkedResources>
 </projectDescription>
