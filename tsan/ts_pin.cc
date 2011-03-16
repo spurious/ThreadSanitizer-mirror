@@ -215,6 +215,14 @@ struct PinThread {
   bool         thread_done;
   bool         holding_lock;
   int          n_consumed_events;
+#ifdef _MSC_VER
+  enum StartupState {
+    STARTING,
+    CHILD_READY,
+    MAY_CONTINUE,
+  };
+  volatile long startup_state;  // used to handle the CREATE_SUSPENDED flag.
+#endif
   char         padding[64];  // avoid any chance of ping-pong.
 };
 
@@ -968,7 +976,8 @@ static void HandleThreadCreateAbort(THREADID tid) {
   g_thread_create_lock.Unlock();
 }
 
-static THREADID HandleThreadCreateAfter(THREADID tid, pthread_t child_ptid) {
+static THREADID HandleThreadCreateAfter(THREADID tid, pthread_t child_ptid,
+                                        bool suspend_child) {
   // Spin, waiting for last_child_tid to appear (i.e. wait for the thread to
   // actually start) so that we know the child's tid. No locks.
   while (!ATOMIC_READ(&g_pin_threads[tid].last_child_tid)) {
@@ -981,8 +990,27 @@ static THREADID HandleThreadCreateAfter(THREADID tid, pthread_t child_ptid) {
   THREADID last_child_tid = g_pin_threads[tid].last_child_tid;
   CHECK(last_child_tid);
 
-  g_pin_threads[last_child_tid].my_ptid = child_ptid;
-  int uniq_tid_of_child = g_pin_threads[last_child_tid].uniq_tid;
+  PinThread &child_t = g_pin_threads[last_child_tid];
+  child_t.my_ptid = child_ptid;
+
+#ifdef _MSC_VER
+  if (suspend_child) {
+    while (ATOMIC_READ(&child_t.startup_state) != PinThread::CHILD_READY) {
+      YIELD();
+    }
+    // Strictly speaking, PIN forbids calling system functions like this.
+    // This may violate application library isolation but
+    // a) YIELD == WINDOWS::Sleep, so we violate it anyways
+    // b) SuspendThread probably calls NtSuspendThread right away
+    WINDOWS::DWORD old_count = WINDOWS::SuspendThread((WINDOWS::HANDLE)child_ptid);  // TODO handle?
+    CHECK(old_count == 0);
+  }
+  child_t.startup_state = PinThread::MAY_CONTINUE;
+#else
+  CHECK(!suspend_child);  // Not implemented - do we need to?
+#endif
+
+  int uniq_tid_of_child = child_t.uniq_tid;
   g_pin_threads[tid].last_child_tid = 0;
 
   IgnoreMopsEnd(tid);
@@ -1002,7 +1030,7 @@ static uintptr_t WRAP_NAME(pthread_create)(WRAP_PARAM4) {
   }
 
   pthread_t child_ptid = *(pthread_t*)arg0;
-  HandleThreadCreateAfter(tid, child_ptid);
+  HandleThreadCreateAfter(tid, child_ptid, false);
 
   return ret;
 }
@@ -1030,6 +1058,9 @@ void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
   t.literace_sampling = G_flags->literace_sampling;
   t.tid = tid;
   t.tleb.t = &t;
+#if defined(_MSC_VER)
+  t.startup_state = PinThread::STARTING;
+#endif
   ComputeIgnoreAccesses(t);
 
 
@@ -1051,6 +1082,10 @@ void CallbackForThreadStart(THREADID tid, CONTEXT *ctxt,
     g_pin_threads[t.parent_tid].last_child_tid = tid;
     t.thread_stack_size_if_known =
         g_pin_threads[t.parent_tid].last_child_stack_size_if_known;
+  } else {
+#if defined(_MSC_VER)
+    t.startup_state = PinThread::MAY_CONTINUE;
+#endif
   }
 
   // This is a lock-free (thread local) operation.
@@ -1133,13 +1168,22 @@ static uintptr_t WRAP_NAME(CreateThread)(WRAP_PARAM6) {
   t.last_child_stack_size_if_known = arg1 ? arg1 : 1024 * 1024;
 
   HandleThreadCreateBefore(tid, pc);
+
+  // We can't start the thread suspended because we want to get its
+  // PIN thread ID before leaving CreateThread.
+  // So, we reset the CREATE_SUSPENDED flag and SuspendThread before any client
+  // code is executed in the HandleThreadCreateAfter if needed.
+  bool should_be_suspended = arg4 & CREATE_SUSPENDED;
+  arg4 &= ~CREATE_SUSPENDED;
+
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_6();
   if (ret == NULL) {
     HandleThreadCreateAbort(tid);
     return ret;
   }
   pthread_t child_ptid = ret;
-  THREADID child_tid = HandleThreadCreateAfter(tid, child_ptid);
+  THREADID child_tid = HandleThreadCreateAfter(tid, child_ptid,
+                                               should_be_suspended);
   {
     ScopedReentrantClientLock lock(__LINE__);
     if (g_win_handles_which_are_threads == NULL) {
@@ -1165,6 +1209,19 @@ static void Before_BaseThreadInitThunk(THREADID tid, ADDRINT pc, ADDRINT sp) {
   }
   */
   DumpEvent(0, THR_STACK_TOP, tid, pc, sp, stack_size);
+
+#ifdef _MSC_VER
+  if (t.startup_state != PinThread::MAY_CONTINUE) {
+    CHECK(t.startup_state == PinThread::STARTING);
+    t.startup_state = PinThread::CHILD_READY;
+    while (ATOMIC_READ(&t.startup_state) != PinThread::MAY_CONTINUE) {
+      YIELD();
+    }
+    // Corresponds to SIGNAL from ResumeThread if the thread was suspended on
+    // start.
+    DumpEvent(0, WAIT, tid, pc, t.my_ptid, 0);
+  }
+#endif
 }
 
 static void Before_RtlExitUserThread(THREADID tid, ADDRINT pc) {
@@ -1370,6 +1427,12 @@ uintptr_t CallStdCallFun7(CONTEXT *ctx, THREADID tid,
   return ret;
 }
 
+uintptr_t WRAP_NAME(ResumeThread)(WRAP_PARAM4) {
+//  Printf("T%d %s arg0=%p\n", tid, __FUNCTION__, arg0);
+  DumpEvent(ctx, SIGNAL, tid, pc, arg0, 0);
+  uintptr_t ret = CallStdCallFun1(ctx, tid, f, arg0);
+  return ret;
+}
 uintptr_t WRAP_NAME(RtlInitializeCriticalSection)(WRAP_PARAM4) {
 //  Printf("T%d pc=%p %s: %p\n", tid, pc, __FUNCTION__+8, arg0);
   DumpEvent(ctx, LOCK_CREATE, tid, pc, arg0, 0);
@@ -3211,6 +3274,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
 
 #ifdef _MSC_VER
   WrapStdCallFunc6(rtn, "CreateThread", (AFUNPTR)WRAP_NAME(CreateThread));
+  WRAPSTD1(ResumeThread);
 
   INSERT_FN(IPOINT_BEFORE, "BaseThreadInitThunk",
             Before_BaseThreadInitThunk,

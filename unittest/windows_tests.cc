@@ -58,7 +58,7 @@ TEST(NegativeTests, WindowsCreateThreadFailureTest) {  // {{{1
   CHECK(t == 0);
 }
 
-TEST(NegativeTests, DISABLED_WindowsCreateThreadSuspendedTest) {  // {{{1
+TEST(NegativeTests, WindowsCreateThreadSuspendedTest) {  // {{{1
   // Hangs under TSan, see
   // http://code.google.com/p/data-race-test/issues/detail?id=61
   int *var = new int;
