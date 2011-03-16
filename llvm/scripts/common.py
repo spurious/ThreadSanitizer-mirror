@@ -157,13 +157,13 @@ def gcc(default_cc, fallback_cc):
     if build_so:
       ld_args += ['-shared']
     else:
-      ld_args += ['-lpthread', '-lbfd']
       config = file(LINK_CONFIG).readlines()
       for line in config:
         pieces = line[:-1].split(" ")
         if len(pieces) == 2 and pieces[0] in ['wrap', 'undefined']:
           ld_args.append('-Wl,--' + pieces[0] + ',' + pieces[1])
       ld_args += [TSAN_RTL[platform]]
+      ld_args += ['-lpthread', '-lbfd']
     ld_args += ['-o', src_obj]
     #print_args(ld_args)
     retcode = subprocess.call(ld_args)
@@ -219,4 +219,3 @@ def gcc(default_cc, fallback_cc):
     retcode = subprocess.call(fallback_args)
     if retcode != 0: sys.exit(retcode)
     return
-
