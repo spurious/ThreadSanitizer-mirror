@@ -8,8 +8,6 @@
  * version. See http://www.gnu.org/licenses/
  */
 
-//TODO(dvyukov): remove relite_instrument.cc
-
 //TODO(dvyukov): remove commented out code
 
 //TODO(dvyukov): refactor identifier lookup
@@ -28,30 +26,6 @@
 
 //TODO(dvyukov): move all shadow stack support code into callee function
 
-
-/* Gimple IR support functions.
-
-   Copyright 2007, 2008, 2009, 2010 Free Software Foundation, Inc.
-   Contributed by Aldy Hernandez <aldyh@redhat.com>
-
-This file is part of GCC.
-
-GCC is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free
-Software Foundation; either version 3, or (at your option) any later
-version.
-
-GCC is distributed in the hope that it will be useful, but WITHOUT ANY
-WARRANTY; without even the implied warranty of MERCHANTABILITY or
-FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
-for more details.
-
-You should have received a copy of the GNU General Public License
-along with GCC; see the file COPYING3.  If not see
-<http://www.gnu.org/licenses/>.  */
-
-
-
 #include <plugin.h>
 #include <plugin-version.h>
 #include <config.h>
@@ -64,9 +38,6 @@ along with GCC; see the file COPYING3.  If not see
 #include <diagnostic.h>
 #include <stdio.h>
 #include "relite_pass.h"
-
-
-#define RELITE_USE_PASS_MANAGER
 
 // required by gcc plugin machinery
 bool plugin_is_GPL_compatible = false;

@@ -50,6 +50,163 @@ static void             dbg                 (relite_context_t* ctx,
 }
 
 
+static tree             get_rt_mop          () {
+  static tree fn = 0;
+  if (fn == 0) {
+    fn = lookup_name(get_identifier(
+        "tsan_rtl_mop"));
+    if (fn == 0) {
+      printf("relite: can't find tsan_rtl_mop decl\n");
+      exit(1);
+    }
+  }
+  return fn;
+}
+
+
+static tree             get_rt_stack        () {
+  static tree var = 0;
+  if (var == 0) {
+    var = lookup_name(get_identifier("ShadowStack"));
+    if (var == 0) {
+      printf("relite: can't find ShadowStack decl\n");
+      exit(1);
+    }
+  }
+  return var;
+}
+
+
+static tree             get_rt_thread       () {
+  static tree var = 0;
+  if (var == 0) {
+    var = lookup_name(get_identifier("INFO"));
+    if (var == 0) {
+      printf("relite: can't find INFO decl\n");
+      exit(1);
+    }
+  }
+  return var;
+}
+
+
+static void             setup                 (struct relite_context_t* ctx) {
+  get_rt_mop();
+  get_rt_stack();
+  get_rt_thread();
+}
+
+
+static gimple           build_label         (location_t loc, tree* label_ptr) {
+  static unsigned label_seq = 0;
+  char label_name_buf [32];
+  sprintf(label_name_buf, "relite_label_%u", label_seq++);
+  tree pc_label_id = get_identifier(label_name_buf);
+  tree pc_label = build_decl(loc, LABEL_DECL, pc_label_id, void_type_node);
+  DECL_CONTEXT(pc_label) = current_function_decl;
+  DECL_MODE(pc_label) = VOIDmode;
+  C_DECLARED_LABEL_FLAG(pc_label) = 0;
+  DECL_SOURCE_LOCATION(pc_label) = loc;
+  SET_IDENTIFIER_LABEL_VALUE(pc_label_id, pc_label);
+  *label_ptr = pc_label;
+  return gimple_build_label(pc_label);
+}
+
+
+static void             build_stack_op      (gimple_seq* seq,
+                                             enum tree_code op) {
+
+  tree stack = get_rt_stack();
+  tree op_size = TYPE_SIZE(ptr_type_node);
+  double_int op_size_cst = tree_to_double_int(op_size);
+  unsigned size_val = op_size_cst.low / __CHAR_BIT__;
+  op_size = build_int_cst_wide(long_long_unsigned_type_node, size_val, 0);
+  tree op_expr = build2(op, long_long_unsigned_type_node, stack, op_size);
+  op_expr = force_gimple_operand(op_expr, seq, true, NULL_TREE);
+  gimple assign = gimple_build_assign(stack, op_expr);
+  gimple_seq_add_stmt(seq, assign);
+}
+
+
+static void             instr_func            (struct relite_context_t* ctx,
+                                             tree func_decl,
+                                             gimple_seq* pre,
+                                             gimple_seq* post) {
+  if (ctx->func_calls == 0 && ctx->func_mops == 0)
+    return;
+  build_stack_op(pre, PLUS_EXPR);
+  build_stack_op(post, MINUS_EXPR);
+}
+
+
+static void             instr_mop           (struct relite_context_t* ctx,
+                                             tree expr,
+                                             location_t loc,
+                                             int is_store,
+                                             int is_sblock,
+                                             gimple_seq* pre,
+                                             gimple_seq* post) {
+  tree expr_ptr = build_addr(expr, current_function_decl);
+  tree addr_expr = force_gimple_operand(expr_ptr, post, true, NULL_TREE);
+
+  tree expr_size = TYPE_SIZE(TREE_TYPE(expr));
+  double_int size = tree_to_double_int(expr_size);
+  gcc_assert(size.high == 0 && size.low != 0);
+  if (size.low > 128)
+    size.low = 128;
+  size.low = (size.low / 8) - 1;
+  unsigned flags = ((!!is_sblock << 0) + (!!is_store << 1) + (size.low << 2));
+  tree flags_expr = build_int_cst(unsigned_type_node, flags);
+
+  dbg(ctx, "instrumenting mop: is_sblock=%d, is_store=%d, flags=%d",
+      is_sblock, is_store, flags);
+
+  gimple_seq flags_seq = 0;
+  flags_expr = force_gimple_operand(flags_expr, &flags_seq, true, NULL_TREE);
+  gimple_seq_add_seq(post, flags_seq);
+
+  tree call_decl = get_rt_mop();
+  gimple collect = gimple_build_call(
+      call_decl, 2, addr_expr, flags_expr);
+
+  gimple_seq_add_stmt(post, collect);
+}
+
+
+static void             instr_call            (struct relite_context_t* ctx,
+                                             tree func_decl,
+                                             location_t loc,
+                                             gimple_seq* pre,
+                                             gimple_seq* post) {
+  if (func_decl != 0 && DECL_IS_BUILTIN(func_decl))
+    return;
+
+  tree pc_label = 0;
+  gimple pc_gimple = build_label(loc, &pc_label);
+  gimple_seq_add_stmt(pre, pc_gimple);
+
+  tree pc_addr = build1(ADDR_EXPR, ptr_type_node, pc_label);
+  gimple_seq seq = 0;
+  pc_addr = force_gimple_operand(pc_addr, &seq, true, NULL_TREE);
+  gimple_seq_add_seq(pre, seq);
+
+  tree stack = get_rt_stack();
+  tree stack_op = build1(
+      INDIRECT_REF, build_pointer_type(ptr_type_node), stack);
+  gimple assign = gimple_build_assign(stack_op, pc_addr);
+  gimple_seq_add_stmt(pre, assign);
+}
+
+
+relite_context_t*       create_context      () {
+  static relite_context_t g_ctx;
+  relite_context_t* ctx = &g_ctx;
+  ctx->opt_sblock_size  = 5;
+  return ctx;
+}
+
+
+
 typedef enum bb_state_e {
   bb_not_visited,
   bb_candidate,
@@ -58,8 +215,6 @@ typedef enum bb_state_e {
 
 
 typedef struct bb_data_t {
-  //int                   idx;
-  //basic_block           bb;
   bb_state_e            state;
   int                   has_sb;
   char const*           sb_file;
@@ -113,52 +268,6 @@ static void             dump_instr_seq      (relite_context_t* ctx,
   }
 }
 
-/*
-static void             setup_rt_decls      (relite_context_t* ctx) {
-  int remain = ctx->rt_decl_count;
-  tree decl = NAMESPACE_LEVEL(global_namespace)->names;
-  for (; decl != 0; decl = TREE_CHAIN(decl)) {
-    if (DECL_IS_BUILTIN(decl))
-      continue;
-    char const* name = IDENTIFIER_POINTER(DECL_NAME(decl));
-    if (name == 0)
-      continue;
-    for (int i = 0; i != ctx->rt_decl_count; i += 1) {
-      if (ctx->rt_decl[i].decl == 0
-          && strcmp(name, ctx->rt_decl[i].rt_name) == 0) {
-        ctx->rt_decl[i].decl = decl;
-        TREE_NO_WARNING(decl) = 1;
-        remain -= 1;
-        break;
-      }
-    }
-    if (remain == 0)
-      break;
-  }
-
-  if (remain != 0) {
-    printf("relite: can't find runtime function declarations:\n");
-    for (int i = 0; i != ctx->rt_decl_count; i += 1) {
-      if (ctx->rt_decl[i].decl == 0)
-        printf("relite: %s\n", ctx->rt_decl[i].rt_name);
-    }
-    exit(1);
-  }
-}
-
-
-static tree             find_rt_decl        (relite_context_t* ctx,
-                                             char const* decl_name) {
-  for (int i = 0; i != ctx->rt_decl_count; i += 1) {
-    if (ctx->rt_decl[i].real_name != 0
-        && strcmp(ctx->rt_decl[i].real_name, decl_name) == 0) {
-      return ctx->rt_decl[i].decl;
-    }
-  }
-  return 0;
-}
-  */
-
 
 static void             set_location        (gimple_seq seq,
                                              location_t loc) {
@@ -168,240 +277,6 @@ static void             set_location        (gimple_seq seq,
 }
 
 
-/*
-static void             process_store       (relite_context_t* ctx,
-                                             location_t loc,
-                                             expanded_location const* eloc,
-                                             gimple_stmt_iterator* gsi,
-                                             tree expr) {
-  gcc_assert(eloc != 0 && gsi != 0 && expr != 0);
-  int do_instrument = 0;
-  char const* reason = "";
-
-  tree expr_ssa = 0;
-  if (TREE_CODE(expr) == SSA_NAME) {
-    expr_ssa = expr;
-    expr = SSA_NAME_VAR(expr);
-  }
-
-  switch (TREE_CODE(expr)) {
-    case RESULT_DECL:
-      reason = "function result";
-      break;
-    case PARM_DECL:
-      reason = "function parameter";
-      break;
-
-    case ARRAY_REF: {
-      do_instrument = 1;
-      break;
-    }
-
-    case VAR_DECL:
-    //!!! case FIELD_DECL:
-    //!!! case MEM_REF:
-    //!!! case ARRAY_RANGE_REF:
-    //!!! case TARGET_MEM_REF:
-    //!!! case ADDR_EXPR:
-    case COMPONENT_REF:
-    case INDIRECT_REF:
-    {
-      if (TREE_CODE(TREE_TYPE(expr)) == RECORD_TYPE) {
-        reason = "record type";
-        break;
-      }
-
-      //if (TREE_USED(lhs) == 0) return;
-      if (DECL_ARTIFICIAL(expr) || (expr_ssa && DECL_ARTIFICIAL(expr_ssa))) {
-        reason = "artificial";
-        break;
-      }
-
-      if (TREE_CODE(expr) == VAR_DECL && TREE_ADDRESSABLE(expr) == 0) {
-        reason = "non-addressable var";
-        break;
-      }
-
-      if (TREE_CODE(expr) == COMPONENT_REF) {
-        tree field = expr->exp.operands[1];
-        if (TREE_CODE(field) == FIELD_DECL) {
-          unsigned fld_off = field->field_decl.bit_offset->int_cst.int_cst.low;
-          unsigned fld_size = field->decl_common.size->int_cst.int_cst.low;
-          if (((fld_off % __CHAR_BIT__) != 0)
-              || ((fld_size % __CHAR_BIT__) != 0)){
-            //TODO(dvyukov): handle bit-fields
-            dbg(ctx, "bit_offset=%u, size=%u", fld_off, fld_size);
-            reason = "weird bit field";
-            break;
-          }
-        }
-      }
-
-      do_instrument = 1;
-      break;
-    }
-
-    default: {
-      reason = "unknown type";
-      break;
-    }
-  }
-
-//  if (do_instrument != 0) {
-//    tree expr_type = TREE_TYPE(expr);
-//    tree type_decl = TYPE_NAME(expr_type);
-//    if (type_decl != 0) {
-//      char const* type_name = decl_name(type_decl);
-//      if (strncmp(type_name, "Atomic", sizeof("Atomic") - 1) == 0) {
-//        //TODO(dvyukov): check that it's at least volatile
-//        // a race on non-volatile int is not all that cool
-//        reason = "atomic type";
-//        do_instrument = 0;
-//      }
-//    }
-//  }
-
-  assert(do_instrument != 0 || (reason != 0 && reason[0] != 0));
-
-  ctx->stat_store_total += 1;
-  if (do_instrument != 0 && ctx->instr_mop) {
-    ctx->stat_store_instrumented += 1;
-    assert(is_gimple_addressable(expr));
-    gimple_seq pre_mop = 0;
-    gimple_seq post_mop = 0;
-    ctx->instr_mop(ctx, expr, 1, 1, loc, &pre_mop, &post_mop);
-    if (pre_mop != 0 || post_mop != 0) {
-      ctx->func_mops += 1;
-      if (pre_mop != 0) {
-        dump_instr_seq(ctx, "before store", &post_mop, loc);
-        set_location(post_mop, loc);
-        gsi_insert_seq_before(gsi, pre_mop, GSI_SAME_STMT);
-      }
-      if (post_mop != 0) {
-        dump_instr_seq(ctx, "after store", &post_mop, loc);
-        set_location(post_mop, loc);
-        gsi_insert_seq_after(gsi, post_mop, GSI_NEW_STMT);
-      }
-    }
-  }
-
-  //dbg_access(ctx, "store to", eloc, expr, expr_ssa, do_instrument, reason);
-}
-
-
-static void             process_load        (relite_context_t* ctx,
-                                             location_t loc,
-                                             expanded_location const* eloc,
-                                             gimple_stmt_iterator* gsi,
-                                             tree expr) {
-  gcc_assert(eloc != 0 && gsi != 0 && expr != 0);
-  int do_instrument = 0;
-  char const* reason = "";
-
-  tree expr_ssa = 0;
-  if (TREE_CODE(expr) == SSA_NAME) {
-    expr_ssa = expr;
-    expr = SSA_NAME_VAR(expr);
-  }
-
-  switch (TREE_CODE(expr)) {
-    case CONSTRUCTOR: {
-      reason = "constructor expression";
-      break;
-    }
-    case RESULT_DECL:
-      reason = "function result";
-      break;
-    case INTEGER_CST:
-      reason = "constant";
-      break;
-    case PARM_DECL:
-      reason = "function parameter";
-      break;
-
-    case VAR_DECL:
-    //case INDIRECT_REF:
-    case COMPONENT_REF:
-    //case ARRAY_REF:
-      //!!! case FIELD_DECL:
-      //!!! case MEM_REF:
-      //!!! case ARRAY_REF:
-      //!!! case ARRAY_RANGE_REF:
-      //!!! case TARGET_MEM_REF:
-      //!!! case ADDR_EXPR:
-    {
-      if (DECL_ARTIFICIAL(expr) || (expr_ssa && DECL_ARTIFICIAL(expr_ssa))) {
-        reason = "artificial";
-        break;
-      }
-
-      if (TREE_CODE(TREE_TYPE(expr)) == RECORD_TYPE) {
-        reason = "record type";
-        break;
-      }
-
-      if (is_gimple_addressable(expr) == 0) {
-        reason = "doesn't have an address";
-        break;
-      }
-
-      if (TREE_CODE(expr) == VAR_DECL && TREE_ADDRESSABLE(expr) == 0) {
-        reason = "non-addressable var";
-        break;
-      }
-
-      if (TREE_CODE(expr) == COMPONENT_REF) {
-        tree field = expr->exp.operands[1];
-        if (TREE_CODE(field) == FIELD_DECL) {
-          unsigned fld_off = field->field_decl.bit_offset->int_cst.int_cst.low;
-          unsigned fld_size = field->decl_common.size->int_cst.int_cst.low;
-          if (((fld_off % __CHAR_BIT__) != 0)
-              || ((fld_size % __CHAR_BIT__) != 0)){
-            //TODO(dvyukov): handle bit-fields correctly
-            dbg(ctx, "bit_offset=%u, size=%u", fld_off, fld_size);
-            reason = "weird bit field";
-            break;
-          }
-        }
-      }
-
-      do_instrument = 1;
-      break;
-    }
-
-    default: {
-      reason = "unknown type";
-      break;
-    }
-  }
-
-  assert(do_instrument != 0 || (reason != 0 && reason[0] != 0));
-
-  ctx->stat_load_total += 1;
-  if (do_instrument != 0 && ctx->instr_mop != 0) {
-    ctx->stat_load_instrumented += 1;
-    assert(is_gimple_addressable(expr));
-    gimple_seq pre_mop = 0;
-    gimple_seq post_mop = 0;
-    ctx->instr_mop(ctx, expr, loc, 0, 1, &pre_mop, &post_mop);
-    if (pre_mop != 0 || post_mop != 0) {
-      ctx->func_mops += 1;
-      if (pre_mop != 0) {
-        set_location(post_mop, loc);
-        dump_instr_seq(ctx, "before load", &pre_mop, loc);
-        gsi_insert_seq_before(gsi, pre_mop, GSI_SAME_STMT);
-      }
-      if (post_mop != 0) {
-        set_location(post_mop, loc);
-        dump_instr_seq(ctx, "after load", &post_mop, loc);
-        gsi_insert_seq_after(gsi, post_mop, GSI_NEW_STMT);
-      }
-    }
-  }
-
-  //dbg_access(ctx, "load of", eloc, expr, expr_ssa, do_instrument, reason);
-}
-*/
 
 typedef struct  mop_ctx_t {
   relite_context_t*     ctx;
@@ -492,9 +367,6 @@ static void             instrument_mop      (mop_ctx_t* ctx,
   if (reason != 0)
     return;
 
-//  if (is_store == 0)
-//    return;
-
   // If a call gimple contains a load,
   // then we must emit instrumentation BEFORE the gimple.
   // As of now all instrumentation is emitted AFTER the gimple.
@@ -527,7 +399,7 @@ static void             instrument_mop      (mop_ctx_t* ctx,
 
   gimple_seq pre_mop = 0;
   gimple_seq post_mop = 0;
-  ctx->ctx->instr_mop(ctx->ctx, expr, ctx->loc, is_store, is_sblock,
+  instr_mop(ctx->ctx, expr, ctx->loc, is_store, is_sblock,
                       &pre_mop, &post_mop);
   if (pre_mop != 0 || post_mop != 0) {
     ctx->ctx->func_mops += 1;
@@ -583,116 +455,28 @@ static void             handle_gimple       (relite_context_t* ctx,
     bbd->has_sb = 0;
 
     tree fndecl = gimple_call_fndecl(stmt);
-    if (ctx->instr_call != 0) {
-      gimple_seq pre_call = 0;
-      gimple_seq post_call = 0;
-      ctx->instr_call(ctx, fndecl, loc, &pre_call, &post_call);
-      if (pre_call != 0 || post_call != 0) {
-        ctx->func_calls += 1;
-        if (pre_call != 0) {
-          dump_instr_seq(ctx, "before call", &pre_call, loc);
-          set_location(pre_call, loc);
-          gsi_insert_seq_before(gsi, pre_call, GSI_SAME_STMT);
-        }
-        if (post_call != 0) {
-          dump_instr_seq(ctx, "after call", &post_call, loc);
-          set_location(post_call, loc);
-          gsi_insert_seq_after(gsi, post_call, GSI_NEW_STMT);
-        }
+    gimple_seq pre_call = 0;
+    gimple_seq post_call = 0;
+    instr_call(ctx, fndecl, loc, &pre_call, &post_call);
+    if (pre_call != 0 || post_call != 0) {
+      ctx->func_calls += 1;
+      if (pre_call != 0) {
+        dump_instr_seq(ctx, "before call", &pre_call, loc);
+        set_location(pre_call, loc);
+        gsi_insert_seq_before(gsi, pre_call, GSI_SAME_STMT);
+      }
+      if (post_call != 0) {
+        dump_instr_seq(ctx, "after call", &post_call, loc);
+        set_location(post_call, loc);
+        gsi_insert_seq_after(gsi, post_call, GSI_NEW_STMT);
       }
     }
   }
 
   mop_ctx_t mop_ctx = {ctx, bbd, gsi, gimple_location(stmt)};
   walk_stmt_load_store_ops(stmt, &mop_ctx, instrument_load, instrument_store);
-
-
-  /*
-  gimple stmt = gsi_stmt(*gsi);
-  location_t const loc = gimple_location(stmt);
-  expanded_location eloc = expand_location(loc);
-  ctx->stat_gimple += 1;
-
-  if (gimple_code(stmt) == GIMPLE_BIND) {
-    assert(false);
-  } else if (is_gimple_assign(stmt)) {
-    for (int i = 1; i != gimple_num_ops(stmt); i += 1) {
-      tree rhs = gimple_op(stmt, i);
-      process_load(ctx, loc, &eloc, gsi, rhs);
-    }
-    tree lhs = gimple_assign_lhs(stmt);
-    process_store(ctx, loc, &eloc, gsi, lhs);
-  } else if (is_gimple_call (stmt)) {
-    tree fndecl = gimple_call_fndecl(stmt);
-    if (ctx->instr_call != 0) {
-      gimple_seq pre_call = 0;
-      gimple_seq post_call = 0;
-      ctx->instr_call(ctx, fndecl, loc, &pre_call, &post_call);
-      if (pre_call != 0 || post_call != 0) {
-        ctx->func_calls += 1;
-        if (pre_call != 0) {
-          dump_instr_seq(ctx, "before call", &pre_call, loc);
-          set_location(pre_call, loc);
-          gsi_insert_seq_before(gsi, pre_call, GSI_SAME_STMT);
-        }
-        if (post_call != 0) {
-          dump_instr_seq(ctx, "after call", &post_call, loc);
-          set_location(post_call, loc);
-          gsi_insert_seq_after(gsi, post_call, GSI_NEW_STMT);
-        }
-      }
-    }
-
-    //TODO(dvyukov): check call operands, because strictly saying they are loads
-    tree lhs = gimple_call_lhs(stmt);
-    if (lhs != 0)
-      process_store(ctx, loc, &eloc, gsi, lhs);
-  }
-  */
 }
 
-
-/*
-static void             per_block_data_init (struct dom_walk_data* walk_data,
-                                             basic_block bb,
-                                             bool recycled) {
-  //per_block_data_t* data =
-  //    (per_block_data_t*)VEC_last(void_p, walk_data->block_data_stack);
-  //data->has_sb = 0;
-  //if (VEC_length)
-
-
-
-}
-
-static void             process_basic_block (struct dom_walk_data* walk_data,
-                                             basic_block bb) {
-  relite_context_t* ctx = (relite_context_t*)walk_data->global_data;
-
-  VEC(void_p,heap)* stack = walk_data->block_data_stack;
-  per_block_data_t* data = (per_block_data_t*)VEC_last(void_p, stack);
-  data->has_sb = 0;
-  if (VEC_length(void_p, stack) > 1) {
-    per_block_data_t* dom_data = (per_block_data_t*)
-        VEC_index(void_p, stack, VEC_length(void_p, stack) - 2);
-    if (dom_data->has_sb != 0) {
-      data->has_sb = 1;
-      data->sb_loc = dom_data->sb_loc;
-    }
-  }
-
-  gimple_stmt_iterator gsi;
-  for (gsi = gsi_start_bb(bb); !gsi_end_p(gsi); gsi_next(&gsi)) {
-    handle_gimple(ctx, &gsi, data);
-  }
-
-}
-*/
-
-
-//#define BB_NOT_VISITED  (1<<28)
-//#define BB_CANDIDATE    (1<<29)
-//#define BB_VISITED      (1<<30)
 
 static void             instrument_bblock   (relite_context_t* ctx,
                                              bb_data_t* bbd,
@@ -717,18 +501,13 @@ static void             instrument_function (relite_context_t* ctx,
   entry_bb = entry_edge->dest;
   basic_block bb = 0;
   FOR_EACH_BB_FN(bb, func) {
-    //bb_data[bb->index].idx = bb->index;
-    //bb_data[bb->index].bb = bb;
     bb_data[bb->index].state = (bb == entry_bb) ? bb_candidate : bb_not_visited;
-    //BASIC_BLOCK
   }
 
   for (;;) {
     basic_block cur_bb = 0;
     basic_block any_bb = 0;
     FOR_EACH_BB_FN(bb, func) {
-    //int i;
-    //for (i = 0; i != bb_cnt; i += 1) {
       bb_data_t* bbd = &bb_data[bb->index];
       dbg(ctx, "considering bb %d state %d", bb->index, bbd->state);
       if (bbd->state == bb_candidate) {
@@ -791,131 +570,6 @@ static void             instrument_function (relite_context_t* ctx,
         pred->state = bb_candidate;
     }
   }
-
-
-
-  /*
-  basic_block bb = 0;
-  FOR_EACH_BB_FN(bb, func) {
-    assert((bb->flags & (BB_NOT_VISITED | BB_CANDIDATE | BB_VISITED)) == 0);
-    bb->flags |= BB_NOT_VISITED;
-  }
-  bb = ENTRY_BLOCK_PTR_FOR_FUNCTION(func);
-  bb->flags = (bb->flags & ~BB_NOT_VISITED) | BB_CANDIDATE;
-
-  for (;;) {
-    basic_block cur_bb = 0;
-    basic_block any_bb = 0;
-    //int finished = 1;
-    FOR_EACH_BB_FN(bb, func) {
-      assert(!!(bb->flags & BB_NOT_VISITED)
-             + !!(bb->flags & BB_CANDIDATE)
-             + !!(bb->flags & BB_VISITED) == 1);
-      if (bb->flags & BB_CANDIDATE) {
-        int eidx;
-        edge e = 0;
-        cur_bb = bb;
-        any_bb = bb;
-        for (eidx = 0; VEC_iterate(edge,bb->preds,eidx,e); eidx++) {
-          basic_block pred = e->src;
-          if ((pred->flags & BB_VISITED) == 0) {
-            cur_bb = 0;
-            break;
-          }
-        }
-      }
-      if (cur_bb != 0)
-        break;
-    }
-    if (any_bb == 0)
-      break;
-    if (cur_bb == 0)
-      cur_bb = any_bb;
-
-  }
-  */
-
-  //int const bb_count = func->cfg->x_n_basic_blocks;
-  //int remain = bb_count;
-
-  /*
-  int entry_bb = ENTRY_BLOCK_PTR_FOR_FUNCTION(func)->index;
-  int* candidates = XCNEWVEC(int, remain);
-  candidates[entry_bb] = 1;
-  while (remain != 0) {
-    basic_block bb;
-    FOR_EACH_BB_FN (bb, func) {
-
-    int bb_idx;
-    for (bb_idx = 0; bb_idx != bb_count; bb_idx += 1) {
-      if (candidates[bb_idx] == 1) {
-        basic_block bb = func->cfg->
-      }
-    }
-  }
-  xfree(candidates);
-  */
-
-  /*
-  struct dom_walk_data walk_data;
-  walk_data.dom_direction = CDI_DOMINATORS;
-  walk_data.initialize_block_local_data = per_block_data_init;
-  walk_data.before_dom_children = process_basic_block;
-  walk_data.after_dom_children = 0;
-  walk_data.block_local_data_size = sizeof(per_block_data_t);
-  walk_data.global_data = ctx;
-
-  calculate_dominance_info(CDI_DOMINATORS);
-  init_walk_dominator_tree(&walk_data);
-  walk_dominator_tree(&walk_data, ENTRY_BLOCK_PTR_FOR_FUNCTION(func));
-  fini_walk_dominator_tree(&walk_data);
-  free_dominance_info(CDI_DOMINATORS);
-  */
-
-  /*
-  gimple_seq pre_func_seq = 0;
-  gimple_seq post_func_seq = 0;
-  if (ctx->instr_func) {
-    ctx->instr_func(ctx, func->decl, &pre_func_seq, &post_func_seq);
-    if (pre_func_seq != 0 || post_func_seq != 0) {
-      if (pre_func_seq != 0) {
-        basic_block entry = ENTRY_BLOCK_PTR;
-        edge entry_edge = single_succ_edge(entry);
-        entry = split_edge(entry_edge);
-        gimple_stmt_iterator gsi = gsi_start_bb(entry);
-        //gimple stmt = gsi_stmt(gsi);
-        //location_t loc = gimple_location(stmt);
-        //dump_instr_seq(ctx, "at function start", &pre_func_seq, loc);
-        //set_location(pre_func_seq, loc);
-        gsi_insert_seq_after(&gsi, pre_func_seq, GSI_NEW_STMT);
-      }
-
-      //int is_first_gimple = 0;
-      basic_block bb;
-      FOR_EACH_BB_FN (bb, func) {
-        gimple_stmt_iterator gsi;
-        gimple_stmt_iterator gsi2 = gsi_start_bb (bb);
-        for (;;) {
-          gsi = gsi2;
-          if (gsi_end_p(gsi))
-            break;
-          gsi_next(&gsi2);
-
-          gimple stmt = gsi_stmt(gsi);
-          location_t loc = gimple_location(stmt);
-
-          if (gimple_code(stmt) == GIMPLE_RETURN) {
-            if (post_func_seq != 0) {
-              dump_instr_seq(ctx, "at function end", &post_func_seq, loc);
-              set_location(post_func_seq, loc);
-              gsi_insert_seq_before(&gsi, post_func_seq, GSI_SAME_STMT);
-            }
-          }
-        }
-      }
-    }
-  }
-  */
 }
 
 
@@ -946,61 +600,41 @@ void                    relite_pass         (relite_context_t* ctx,
 
   instrument_function(ctx, func);
 
-
-  /*
-  basic_block bb;
-  FOR_EACH_BB_FN (bb, func) {
-    ctx->stat_bb_total += 1;
-    gimple_stmt_iterator gsi;
-    gimple_stmt_iterator gsi2 = gsi_start_bb (bb);
-    for (;;) {
-      gsi = gsi2;
-      if (gsi_end_p(gsi))
-        break;
-      gsi_next(&gsi2);
-
-      handle_gimple(ctx, &gsi);
-    }
-  }
-  */
-
   gimple_seq pre_func_seq = 0;
   gimple_seq post_func_seq = 0;
-  if (ctx->instr_func) {
-    ctx->instr_func(ctx, func->decl, &pre_func_seq, &post_func_seq);
-    if (pre_func_seq != 0 || post_func_seq != 0) {
-      if (pre_func_seq != 0) {
-        basic_block entry = ENTRY_BLOCK_PTR;
-        edge entry_edge = single_succ_edge(entry);
-        entry = split_edge(entry_edge);
-        gimple_stmt_iterator gsi = gsi_start_bb(entry);
-        //gimple stmt = gsi_stmt(gsi);
-        //location_t loc = gimple_location(stmt);
-        //dump_instr_seq(ctx, "at function start", &pre_func_seq, loc);
-        //set_location(pre_func_seq, loc);
-        gsi_insert_seq_after(&gsi, pre_func_seq, GSI_NEW_STMT);
-      }
+  instr_func(ctx, func->decl, &pre_func_seq, &post_func_seq);
+  if (pre_func_seq != 0 || post_func_seq != 0) {
+    if (pre_func_seq != 0) {
+      basic_block entry = ENTRY_BLOCK_PTR;
+      edge entry_edge = single_succ_edge(entry);
+      entry = split_edge(entry_edge);
+      gimple_stmt_iterator gsi = gsi_start_bb(entry);
+      //gimple stmt = gsi_stmt(gsi);
+      //location_t loc = gimple_location(stmt);
+      //dump_instr_seq(ctx, "at function start", &pre_func_seq, loc);
+      //set_location(pre_func_seq, loc);
+      gsi_insert_seq_after(&gsi, pre_func_seq, GSI_NEW_STMT);
+    }
 
-      //int is_first_gimple = 0;
-      basic_block bb;
-      FOR_EACH_BB_FN (bb, func) {
-        gimple_stmt_iterator gsi;
-        gimple_stmt_iterator gsi2 = gsi_start_bb (bb);
-        for (;;) {
-          gsi = gsi2;
-          if (gsi_end_p(gsi))
-            break;
-          gsi_next(&gsi2);
+    //int is_first_gimple = 0;
+    basic_block bb;
+    FOR_EACH_BB_FN (bb, func) {
+      gimple_stmt_iterator gsi;
+      gimple_stmt_iterator gsi2 = gsi_start_bb (bb);
+      for (;;) {
+        gsi = gsi2;
+        if (gsi_end_p(gsi))
+          break;
+        gsi_next(&gsi2);
 
-          gimple stmt = gsi_stmt(gsi);
-          location_t loc = gimple_location(stmt);
+        gimple stmt = gsi_stmt(gsi);
+        location_t loc = gimple_location(stmt);
 
-          if (gimple_code(stmt) == GIMPLE_RETURN) {
-            if (post_func_seq != 0) {
-              dump_instr_seq(ctx, "at function end", &post_func_seq, loc);
-              set_location(post_func_seq, loc);
-              gsi_insert_seq_before(&gsi, post_func_seq, GSI_SAME_STMT);
-            }
+        if (gimple_code(stmt) == GIMPLE_RETURN) {
+          if (post_func_seq != 0) {
+            dump_instr_seq(ctx, "at function end", &post_func_seq, loc);
+            set_location(post_func_seq, loc);
+            gsi_insert_seq_before(&gsi, post_func_seq, GSI_SAME_STMT);
           }
         }
       }
@@ -1012,9 +646,7 @@ void                    relite_pass         (relite_context_t* ctx,
 void                    relite_prepass      (relite_context_t* ctx) {
   if (ctx->setup_completed == 0) {
     ctx->setup_completed = 1;
-    if (ctx->setup != 0) {
-      ctx->setup(ctx);
-    }
+    setup(ctx);
     if (relite_ignore_func(main_input_filename)) {
       dbg(ctx, "IGNORING FILE due to ignore file");
       ctx->ignore_file = 1;
@@ -1035,114 +667,4 @@ void                    relite_finish       (relite_context_t* ctx) {
   dbg(ctx, "sblocks/mop: %d/%d",
       ctx->stat_sblock, mop_count);
 }
-
-
-
-
-
-
-/*
-if (strncmp(func_name, "NoBarrier_", sizeof("NoBarrier_") - 1) == 0) {
-  dbg(ctx, "IGNORING relaxed atomic operation");
-  return;
-}
-
-if (strncmp(func_name, "Acquire_", sizeof("Acquire_") - 1) == 0) {
-  dbg(ctx, "atomic operation with acquire memory ordering");
-  tree arg = DECL_ARGUMENTS(func->decl);
-  if (arg == 0) {
-    dbg(ctx, "IGNORING no arguments");
-    return;
-  }
-  gimple collect = gimple_build_call(rt_func(rt_acquire), 1, arg);
-  insert_before_return(func, collect);
-  return;
-}
-
-if (strncmp(func_name, "Release_", sizeof("Release_") - 1) == 0) {
-  dbg(ctx, "atomic operation with release memory ordering");
-  tree arg = DECL_ARGUMENTS(func->decl);
-  if (arg == 0) {
-    dbg(ctx, "IGNORING no arguments");
-    return;
-  }
-  gimple collect = gimple_build_call(rt_func(rt_release), 1, arg);
-  insert_after_enter(func, collect);
-  return;
-}
-
-if (strncmp(func_name, "Barrier_", sizeof("Barrier_") - 1) == 0) {
-  dbg(ctx, "atomic operation with acquire-release memory ordering");
-  tree arg = DECL_ARGUMENTS(func->decl);
-  if (arg == 0) {
-    dbg(ctx, "IGNORING no arguments");
-    return;
-  }
-  {
-    gimple collect = gimple_build_call(rt_func(rt_acquire), 1, arg);
-    insert_before_return(func, collect);
-  }
-  {
-    gimple collect = gimple_build_call(rt_func(rt_release), 1, arg);
-    insert_after_enter(func, collect);
-  }
-  return;
-}
-
-
-static void             insert_before_return_impl (gimple_stmt_iterator* gsi,
-                                                   gimple collect) {
-  gimple stmt = gsi_stmt(*gsi);
-  if (gimple_code(stmt) == GIMPLE_BIND) {
-    gimple_stmt_iterator gsi2;
-    for (gsi2 = gsi_start(gimple_bind_body(stmt));
-        !gsi_end_p(gsi2);
-        gsi_next(&gsi2)) {
-      insert_before_return_impl(&gsi2, collect);
-    }
-  } else if (gimple_code(stmt) == GIMPLE_RETURN) {
-    gsi_insert_before(gsi, collect, GSI_SAME_STMT);
-  }
-}
-
-
-static void             insert_before_return(struct function* func,
-                                             gimple collect) {
-  gimple_stmt_iterator gsi;
-  for (gsi = gsi_start(func->gimple_body); !gsi_end_p(gsi); gsi_next(&gsi)) {
-    insert_before_return_impl(&gsi, collect);
-  }
-}
-
-
-static void             insert_after_enter_impl   (gimple_stmt_iterator* gsi,
-                                                   gimple collect,
-                                                   int* is_inserted) {
-  gimple stmt = gsi_stmt(*gsi);
-  if (gimple_code(stmt) == GIMPLE_BIND) {
-    gimple_stmt_iterator gsi2;
-    for (gsi2 = gsi_start(gimple_bind_body(stmt));
-        !gsi_end_p(gsi2) && !*is_inserted;
-        gsi_next(&gsi2)) {
-      insert_after_enter_impl(&gsi2, collect, is_inserted);
-    }
-  } else {
-    assert(*is_inserted == 0);
-    *is_inserted = 1;
-    gsi_insert_before(gsi, collect, GSI_SAME_STMT);
-  }
-}
-
-
-static void             insert_after_enter  (struct function* func,
-                                             gimple collect) {
-  int is_inserted = 0;
-  gimple_stmt_iterator gsi;
-  for (gsi = gsi_start(func->gimple_body); !gsi_end_p(gsi); gsi_next(&gsi)) {
-    insert_after_enter_impl(&gsi, collect, &is_inserted);
-  }
-  assert(is_inserted != 0);
-}
-
-*/
 

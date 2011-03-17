@@ -22,27 +22,6 @@ typedef struct rt_decl_desc_t {
 
 
 typedef struct relite_context_t {
-  void                  (*setup)            (struct relite_context_t* ctx);
-
-  void                  (*instr_func)       (struct relite_context_t* ctx,
-                                             tree func_decl,
-                                             gimple_seq* pre,
-                                             gimple_seq* post);
-
-  void                  (*instr_mop)        (struct relite_context_t* ctx,
-                                             tree expr,
-                                             location_t loc,
-                                             int is_store,
-                                             int is_sblock,
-                                             gimple_seq* pre,
-                                             gimple_seq* post);
-
-  void                  (*instr_call)       (struct relite_context_t* ctx,
-                                             tree func_decl,
-                                             location_t loc,
-                                             gimple_seq* pre,
-                                             gimple_seq* post);
-
   int                   opt_debug;
   int                   opt_sblock_size;
   char const*           opt_ignore;
@@ -62,7 +41,6 @@ typedef struct relite_context_t {
   int                   stat_load_instrumented;
   int                   stat_sblock;
   int                   stat_bb_total;
-  //int                   stat_bb_super;
 } relite_context_t;
 
 
