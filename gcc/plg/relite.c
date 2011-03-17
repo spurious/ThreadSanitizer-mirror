@@ -1,31 +1,56 @@
-/* Relite
- * Copyright (c) 2011, Google Inc.
- * All rights reserved.
+/* Relite: GCC instrumentation plugin for ThreadSanitizer
+ * Copyright (c) 2011, Google Inc. All rights reserved.
  * Author: Dmitry Vyukov (dvyukov)
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- *
- *     * Redistributions of source code must retain the above copyright
- * notice, this list of conditions and the following disclaimer.
- *     * Neither the name of Google Inc. nor the names of its
- * contributors may be used to endorse or promote products derived from
- * this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * Relite is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU General Public License as published by the Free
+ * Software Foundation; either version 3, or (at your option) any later
+ * version. See http://www.gnu.org/licenses/
  */
 
-//!!! TODO(dvyukov): change license to GPL
+//TODO(dvyukov): remove relite_instrument.cc
+
+//TODO(dvyukov): remove commented out code
+
+//TODO(dvyukov): refactor identifier lookup
+
+//TODO(dvyukov): collect per-function stats
+
+//TODO(dvyukov): eliminate func params
+
+//TODO(dvyukov): support ignore files
+
+//TODO(dvyukov): support loop-wide sblocks
+
+//TODO(dvyukov): eliminate excessive aliasing mops
+
+//TODO(dvyukov): create specialized tsan_rtl_mop: r/w, sblock, size
+
+//TODO(dvyukov): move all shadow stack support code into callee function
+
+
+/* Gimple IR support functions.
+
+   Copyright 2007, 2008, 2009, 2010 Free Software Foundation, Inc.
+   Contributed by Aldy Hernandez <aldyh@redhat.com>
+
+This file is part of GCC.
+
+GCC is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free
+Software Foundation; either version 3, or (at your option) any later
+version.
+
+GCC is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or
+FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+for more details.
+
+You should have received a copy of the GNU General Public License
+along with GCC; see the file COPYING3.  If not see
+<http://www.gnu.org/licenses/>.  */
+
+
 
 #include <plugin.h>
 #include <plugin-version.h>

@@ -1,28 +1,11 @@
-/* Relite
- * Copyright (c) 2011, Google Inc.
- * All rights reserved.
+/* Relite: GCC instrumentation plugin for ThreadSanitizer
+ * Copyright (c) 2011, Google Inc. All rights reserved.
  * Author: Dmitry Vyukov (dvyukov)
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- *
- *     * Redistributions of source code must retain the above copyright
- * notice, this list of conditions and the following disclaimer.
- *     * Neither the name of Google Inc. nor the names of its
- * contributors may be used to endorse or promote products derived from
- * this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * Relite is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU General Public License as published by the Free
+ * Software Foundation; either version 3, or (at your option) any later
+ * version. See http://www.gnu.org/licenses/
  */
 
 #include <gcc-plugin.h>
@@ -52,6 +35,22 @@
 #include <coretypes.h>
 #include <function.h>
 #include <gimple.h>
+
+
+static void             dbg                 (relite_context_t* ctx,
+                                             char const* format, ...)
+                                          __attribute__((format(printf, 2, 3)));
+
+static void             dbg                 (relite_context_t* ctx,
+                                             char const* format, ...) {
+  if (ctx->opt_debug == 0)
+    return;
+  va_list argptr;
+  va_start(argptr, format);
+  vprintf(format, argptr);
+  va_end(argptr);
+  printf("\n");
+}
 
 /*
 static rt_decl_desc_t rt_decl [] = {
@@ -210,7 +209,7 @@ static void             instr_func            (struct relite_context_t* ctx,
 }
 
 
-static void             instr_mop             (struct relite_context_t* ctx,
+static void             instr_mop           (struct relite_context_t* ctx,
                                              tree expr,
                                              location_t loc,
                                              int is_store,
@@ -273,6 +272,9 @@ static void             instr_mop             (struct relite_context_t* ctx,
   size.low = (size.low / 8) - 1;
   unsigned flags = ((!!is_sblock << 0) + (!!is_store << 1) + (size.low << 2));
   tree flags_expr = build_int_cst(unsigned_type_node, flags);
+
+  dbg(ctx, "instrumenting mop: is_sblock=%d, is_store=%d, flags=%d",
+      is_sblock, is_store, flags);
 
   gimple_seq flags_seq = 0;
   flags_expr = force_gimple_operand(flags_expr, &flags_seq, true, NULL_TREE);

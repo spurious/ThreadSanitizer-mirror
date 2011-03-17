@@ -1,28 +1,11 @@
-/* Relite
- * Copyright (c) 2011, Google Inc.
- * All rights reserved.
+/* Relite: GCC instrumentation plugin for ThreadSanitizer
+ * Copyright (c) 2011, Google Inc. All rights reserved.
  * Author: Dmitry Vyukov (dvyukov)
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- *
- *     * Redistributions of source code must retain the above copyright
- * notice, this list of conditions and the following disclaimer.
- *     * Neither the name of Google Inc. nor the names of its
- * contributors may be used to endorse or promote products derived from
- * this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * Relite is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU General Public License as published by the Free
+ * Software Foundation; either version 3, or (at your option) any later
+ * version. See http://www.gnu.org/licenses/
  */
 
 #include <gcc-plugin.h>
@@ -493,6 +476,7 @@ static void             instrument_mop      (mop_ctx_t* ctx,
       && tcode != VAR_DECL
       && tcode != COMPONENT_REF
       && tcode != INDIRECT_REF //?
+      //TODO(dvyukov): handle those cases
       //&& tcode != FIELD_DECL
       //&& tcode != MEM_REF
       //&& tcode != ARRAY_RANGE_REF
@@ -508,8 +492,8 @@ static void             instrument_mop      (mop_ctx_t* ctx,
   if (reason != 0)
     return;
 
-  if (is_store == 0)
-    return;
+//  if (is_store == 0)
+//    return;
 
   // If a call gimple contains a load,
   // then we must emit instrumentation BEFORE the gimple.
@@ -543,7 +527,7 @@ static void             instrument_mop      (mop_ctx_t* ctx,
 
   gimple_seq pre_mop = 0;
   gimple_seq post_mop = 0;
-  ctx->ctx->instr_mop(ctx->ctx, expr, is_store, is_sblock, ctx->loc,
+  ctx->ctx->instr_mop(ctx->ctx, expr, ctx->loc, is_store, is_sblock,
                       &pre_mop, &post_mop);
   if (pre_mop != 0 || post_mop != 0) {
     ctx->ctx->func_mops += 1;

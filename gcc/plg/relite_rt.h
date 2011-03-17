@@ -1,6 +1,5 @@
-/* Relite
- * Copyright (c) 2011, Google Inc.
- * All rights reserved.
+/* Relite: ThreadSanitizer runtime stub
+ * Copyright (c) 2011, Google Inc. All rights reserved.
  * Author: Dmitry Vyukov (dvyukov)
  *
  * Redistribution and use in source and binary forms, with or without
@@ -29,15 +28,11 @@
 extern "C" {
 #endif
 
-extern __thread void** ShadowStack;
-extern __thread void* INFO;
-void tsan_rtl_mop(void* addr, unsigned flags);
+extern __thread void**  ShadowStack;
+extern __thread void*   INFO;
+extern          void    tsan_rtl_mop    (void* addr, unsigned flags);
 
 #ifdef __cplusplus
 }
 #endif
 
-/*
-//void _Z36ThreadSanitizerHandleOneMemoryAccessP6Thread7MopInfom
-//          (void* thr, unsigned long long desc, void* addr);
-*/
