@@ -51,6 +51,8 @@ static void             dbg                 (relite_context_t* ctx,
 
 
 static gimple           build_label         (location_t loc, tree* label_ptr) {
+  // Builds unique label gimple
+
   static unsigned label_seq = 0;
   char label_name_buf [32];
   sprintf(label_name_buf, "relite_label_%u", label_seq++);
@@ -69,6 +71,8 @@ static gimple           build_label         (location_t loc, tree* label_ptr) {
 static void             build_stack_op      (relite_context_t* ctx,
                                              gimple_seq* seq,
                                              enum tree_code op) {
+  // Builds either (ShadowStack += 1) or (ShadowStack -= 1) expression
+  // depending on 'op' parameter
 
   tree op_size = TYPE_SIZE(ptr_type_node);
   double_int op_size_cst = tree_to_double_int(op_size);
@@ -85,6 +89,7 @@ static void             build_stack_op      (relite_context_t* ctx,
 static void             instr_func          (struct relite_context_t* ctx,
                                              gimple_seq* pre,
                                              gimple_seq* post) {
+  // In this case we need no instrumentation for the function
   if (ctx->func_calls == 0 && ctx->func_mops == 0)
     return;
   build_stack_op(ctx, pre, PLUS_EXPR);
@@ -97,10 +102,12 @@ static void             instr_mop           (struct relite_context_t* ctx,
                                              location_t loc,
                                              int is_store,
                                              int is_sblock,
-                                             gimple_seq* pre,
-                                             gimple_seq* post) {
+                                             gimple_seq* post_gseq) {
+  // Builds the following gimple sequence:
+  // tsan_rtl_mop(&expr, (is_sblock | (is_store << 1) | ((sizeof(expr)-1) << 2)
+
   tree expr_ptr = build_addr(expr, current_function_decl);
-  tree addr_expr = force_gimple_operand(expr_ptr, post, true, NULL_TREE);
+  tree addr_expr = force_gimple_operand(expr_ptr, post_gseq, true, NULL_TREE);
 
   tree expr_size = TYPE_SIZE(TREE_TYPE(expr));
   double_int size = tree_to_double_int(expr_size);
@@ -111,41 +118,41 @@ static void             instr_mop           (struct relite_context_t* ctx,
   unsigned flags = ((!!is_sblock << 0) + (!!is_store << 1) + (size.low << 2));
   tree flags_expr = build_int_cst(unsigned_type_node, flags);
 
-  dbg(ctx, "instrumenting mop: is_sblock=%d, is_store=%d, flags=%d",
-      is_sblock, is_store, flags);
-
   gimple_seq flags_seq = 0;
   flags_expr = force_gimple_operand(flags_expr, &flags_seq, true, NULL_TREE);
-  gimple_seq_add_seq(post, flags_seq);
+  gimple_seq_add_seq(post_gseq, flags_seq);
 
   gimple collect = gimple_build_call(
       ctx->rtl_mop, 2, addr_expr, flags_expr);
 
-  gimple_seq_add_stmt(post, collect);
+  gimple_seq_add_stmt(post_gseq, collect);
 }
 
 
 static void             instr_call          (struct relite_context_t* ctx,
                                              tree func_decl,
                                              location_t loc,
-                                             gimple_seq* pre,
-                                             gimple_seq* post) {
+                                             gimple_seq* gseq) {
+  // Build the following gimple sequence:
+  // relite_unique_label:
+  // ShadowStack[0] = &&relite_unique_label;
+
   if (func_decl != 0 && DECL_IS_BUILTIN(func_decl))
     return;
 
   tree pc_label = 0;
   gimple pc_gimple = build_label(loc, &pc_label);
-  gimple_seq_add_stmt(pre, pc_gimple);
+  gimple_seq_add_stmt(gseq, pc_gimple);
 
   tree pc_addr = build1(ADDR_EXPR, ptr_type_node, pc_label);
   gimple_seq seq = 0;
   pc_addr = force_gimple_operand(pc_addr, &seq, true, NULL_TREE);
-  gimple_seq_add_seq(pre, seq);
+  gimple_seq_add_seq(gseq, seq);
 
   tree stack_op = build1(
       INDIRECT_REF, build_pointer_type(ptr_type_node), ctx->rtl_stack);
   gimple assign = gimple_build_assign(stack_op, pc_addr);
-  gimple_seq_add_stmt(pre, assign);
+  gimple_seq_add_stmt(gseq, assign);
 }
 
 
@@ -250,7 +257,9 @@ static void             instrument_mop      (mop_ctx_t* ctx,
   enum tree_code const tcode = TREE_CODE(expr);
 
   // Below are things we do NOT want to instrument.
-  if (DECL_ARTIFICIAL(expr)/* || (expr_ssa && DECL_ARTIFICIAL(expr_ssa))*/) {
+  if (ctx->ctx->func_ignore & (relite_ignore_mop | relite_ignore_rec)) {
+    reason = "ignore file";
+  } else if (DECL_ARTIFICIAL(expr)/* || (expr_ssa && DECL_ARTIFICIAL(expr_ssa))*/) {
     // artificial variable emitted by the compiler
     reason = "artificial";
   } else if (tcode == RESULT_DECL) {
@@ -314,6 +323,8 @@ static void             instrument_mop      (mop_ctx_t* ctx,
   // As of now all instrumentation is emitted AFTER the gimple.
   assert(!is_gimple_call(stmt) || is_store);
 
+  ctx->ctx->func_mops += 1;
+
   if (is_store)
     ctx->ctx->stat_store_instrumented += 1;
   else
@@ -321,10 +332,15 @@ static void             instrument_mop      (mop_ctx_t* ctx,
 
   expanded_location eloc = expand_location(ctx->loc);
   bb_data_t* bbd = ctx->bbd;
-  int const is_sblock = (bbd->has_sb == 0
+  int is_sblock = (bbd->has_sb == 0
       || !(strcmp(eloc.file, bbd->sb_file) == 0
           && eloc.line >= bbd->sb_line_min
           && eloc.line <= bbd->sb_line_max));
+
+  if (is_sblock == 1 && ctx->ctx->func_ignore == relite_ignore_hist) {
+    dbg(ctx->ctx, "resetting sblock due to ignore_hist");
+    is_sblock = 0;
+  }
 
   dbg(ctx->ctx, "sblock: %s (%d/%s:%d-%d)->(%d/%s:%d-%d)",
       (is_sblock ? "YES" : "NO"),
@@ -339,26 +355,14 @@ static void             instrument_mop      (mop_ctx_t* ctx,
     bbd->sb_line_max = eloc.line + ctx->ctx->opt_sblock_size;
   }
 
-  gimple_seq pre_mop = 0;
   gimple_seq post_mop = 0;
-  instr_mop(ctx->ctx, expr, ctx->loc, is_store, is_sblock,
-                      &pre_mop, &post_mop);
-  if (pre_mop != 0 || post_mop != 0) {
-    ctx->ctx->func_mops += 1;
-    if (pre_mop != 0) {
-      dump_instr_seq(ctx->ctx,
-                     (is_store ? "before store" : "before load"),
-                     &post_mop, ctx->loc);
-      set_location(post_mop, ctx->loc);
-      gsi_insert_seq_before(ctx->gsi, pre_mop, GSI_SAME_STMT);
-    }
-    if (post_mop != 0) {
-      dump_instr_seq(ctx->ctx,
-                     (is_store ? "after store" : "after load"),
-                     &post_mop, ctx->loc);
-      set_location(post_mop, ctx->loc);
-      gsi_insert_seq_after(ctx->gsi, post_mop, GSI_NEW_STMT);
-    }
+  instr_mop(ctx->ctx, expr, ctx->loc, is_store, is_sblock, &post_mop);
+  if (post_mop != 0) {
+    dump_instr_seq(ctx->ctx,
+                   (is_store ? "after store" : "after load"),
+                   &post_mop, ctx->loc);
+    set_location(post_mop, ctx->loc);
+    gsi_insert_seq_after(ctx->gsi, post_mop, GSI_NEW_STMT);
   }
 }
 
@@ -397,21 +401,13 @@ static void             handle_gimple       (relite_context_t* ctx,
     bbd->has_sb = 0;
 
     tree fndecl = gimple_call_fndecl(stmt);
-    gimple_seq pre_call = 0;
-    gimple_seq post_call = 0;
-    instr_call(ctx, fndecl, loc, &pre_call, &post_call);
-    if (pre_call != 0 || post_call != 0) {
+    gimple_seq pre_call_gseq = 0;
+    instr_call(ctx, fndecl, loc, &pre_call_gseq);
+    if (pre_call_gseq != 0) {
       ctx->func_calls += 1;
-      if (pre_call != 0) {
-        dump_instr_seq(ctx, "before call", &pre_call, loc);
-        set_location(pre_call, loc);
-        gsi_insert_seq_before(gsi, pre_call, GSI_SAME_STMT);
-      }
-      if (post_call != 0) {
-        dump_instr_seq(ctx, "after call", &post_call, loc);
-        set_location(post_call, loc);
-        gsi_insert_seq_after(gsi, post_call, GSI_NEW_STMT);
-      }
+      dump_instr_seq(ctx, "before call", &pre_call_gseq, loc);
+      set_location(pre_call_gseq, loc);
+      gsi_insert_seq_before(gsi, pre_call_gseq, GSI_SAME_STMT);
     }
   }
 
@@ -429,8 +425,6 @@ static void             instrument_bblock   (relite_context_t* ctx,
     handle_gimple(ctx, &gsi, bbd);
   }
 }
-
-
 
 
 static void             instrument_function (relite_context_t* ctx) {
@@ -545,18 +539,21 @@ void                    relite_pass         (relite_context_t* ctx) {
   instr_func(ctx, &pre_func_seq, &post_func_seq);
   if (pre_func_seq != 0 || post_func_seq != 0) {
     if (pre_func_seq != 0) {
-      basic_block entry = ENTRY_BLOCK_PTR;
-      edge entry_edge = single_succ_edge(entry);
-      entry = split_edge(entry_edge);
-      gimple_stmt_iterator gsi = gsi_start_bb(entry);
-      //gimple stmt = gsi_stmt(gsi);
-      //location_t loc = gimple_location(stmt);
-      //dump_instr_seq(ctx, "at function start", &pre_func_seq, loc);
-      //set_location(pre_func_seq, loc);
+      basic_block entry_bb = ENTRY_BLOCK_PTR;
+      edge entry_edge = single_succ_edge(entry_bb);
+      basic_block first_bb = entry_edge->dest;
+      gimple_stmt_iterator first_gsi = gsi_start_bb(first_bb);
+      if (!gsi_end_p(first_gsi)) {
+        gimple first_stmt = gsi_stmt(first_gsi);
+        location_t loc = gimple_location(first_stmt);
+        dump_instr_seq(ctx, "at function start", &pre_func_seq, loc);
+        set_location(pre_func_seq, loc);
+      }
+      entry_bb = split_edge(entry_edge);
+      gimple_stmt_iterator gsi = gsi_start_bb(entry_bb);
       gsi_insert_seq_after(&gsi, pre_func_seq, GSI_NEW_STMT);
     }
 
-    //int is_first_gimple = 0;
     basic_block bb;
     FOR_EACH_BB(bb) {
       gimple_stmt_iterator gsi;
@@ -584,19 +581,25 @@ void                    relite_pass         (relite_context_t* ctx) {
 
 
 void                    relite_prepass      (relite_context_t* ctx) {
-  if (ctx->setup_completed == 0) {
-    ctx->setup_completed = 1;
-    ctx->rtl_stack = lookup_name(get_identifier("ShadowStack"));
-    if (ctx->rtl_stack == 0)
-      printf("relite: can't find ShadowStack rtl decl\n"), exit(1);
-    ctx->rtl_mop = lookup_name(get_identifier("tsan_rtl_mop"));
-    if (ctx->rtl_mop == 0)
-      printf("relite: can't find tsan_rtl_mop() rtl decl\n"), exit(1);
+  // Once per-translation unit initialization
+  if (ctx->setup_completed++)
+    return;
 
-    if (relite_ignore_func(main_input_filename)) {
-      dbg(ctx, "IGNORING FILE due to ignore file");
-      ctx->ignore_file = 1;
-    }
+  // Find required RTL definitions
+  ctx->rtl_stack = lookup_name(get_identifier("ShadowStack"));
+  if (ctx->rtl_stack == 0)
+    printf("relite: can't find ShadowStack rtl decl\n"), exit(1);
+  ctx->rtl_ignore = lookup_name(get_identifier("thread_local_ignore"));
+  if (ctx->rtl_ignore == 0)
+    printf("relite: can't find thread_local_ignore rtl decl\n"), exit(1);
+  ctx->rtl_mop = lookup_name(get_identifier("tsan_rtl_mop"));
+  if (ctx->rtl_mop == 0)
+    printf("relite: can't find tsan_rtl_mop() rtl decl\n"), exit(1);
+
+  // Check as to whether we need to completely ignore the file or not
+  if (relite_ignore_func(main_input_filename)) {
+    dbg(ctx, "IGNORING FILE");
+    ctx->ignore_file = 1;
   }
 }
 
@@ -613,4 +616,7 @@ void                    relite_finish       (relite_context_t* ctx) {
   dbg(ctx, "sblocks/mop: %d/%d",
       ctx->stat_sblock, mop_count);
 }
+
+
+
 

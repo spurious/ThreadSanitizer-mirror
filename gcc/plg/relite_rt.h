@@ -29,6 +29,7 @@ extern "C" {
 #endif
 
 extern __thread void**  ShadowStack;
+extern __thread int     thread_local_ignore;
 extern          void    tsan_rtl_mop    (void* addr, unsigned flags);
 
 #ifdef __cplusplus

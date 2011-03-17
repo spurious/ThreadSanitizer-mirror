@@ -20,8 +20,9 @@ typedef struct relite_context_t {
   char const*           opt_ignore;
 
   int                   setup_completed;
-  tree                  rtl_stack;
-  tree                  rtl_mop;
+  tree                  rtl_stack;  // thread local shadow stack
+  tree                  rtl_ignore; // thread local recursive ignore
+  tree                  rtl_mop;    // mop handling function
   int                   ignore_file;
 
   int                   func_calls;
