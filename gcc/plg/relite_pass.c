@@ -50,53 +50,6 @@ static void             dbg                 (relite_context_t* ctx,
 }
 
 
-static tree             get_rt_mop          () {
-  static tree fn = 0;
-  if (fn == 0) {
-    fn = lookup_name(get_identifier(
-        "tsan_rtl_mop"));
-    if (fn == 0) {
-      printf("relite: can't find tsan_rtl_mop decl\n");
-      exit(1);
-    }
-  }
-  return fn;
-}
-
-
-static tree             get_rt_stack        () {
-  static tree var = 0;
-  if (var == 0) {
-    var = lookup_name(get_identifier("ShadowStack"));
-    if (var == 0) {
-      printf("relite: can't find ShadowStack decl\n");
-      exit(1);
-    }
-  }
-  return var;
-}
-
-
-static tree             get_rt_thread       () {
-  static tree var = 0;
-  if (var == 0) {
-    var = lookup_name(get_identifier("INFO"));
-    if (var == 0) {
-      printf("relite: can't find INFO decl\n");
-      exit(1);
-    }
-  }
-  return var;
-}
-
-
-static void             setup                 (struct relite_context_t* ctx) {
-  get_rt_mop();
-  get_rt_stack();
-  get_rt_thread();
-}
-
-
 static gimple           build_label         (location_t loc, tree* label_ptr) {
   static unsigned label_seq = 0;
   char label_name_buf [32];
@@ -113,29 +66,29 @@ static gimple           build_label         (location_t loc, tree* label_ptr) {
 }
 
 
-static void             build_stack_op      (gimple_seq* seq,
+static void             build_stack_op      (relite_context_t* ctx,
+                                             gimple_seq* seq,
                                              enum tree_code op) {
 
-  tree stack = get_rt_stack();
   tree op_size = TYPE_SIZE(ptr_type_node);
   double_int op_size_cst = tree_to_double_int(op_size);
   unsigned size_val = op_size_cst.low / __CHAR_BIT__;
   op_size = build_int_cst_wide(long_long_unsigned_type_node, size_val, 0);
-  tree op_expr = build2(op, long_long_unsigned_type_node, stack, op_size);
+  tree op_expr = build2(op, long_long_unsigned_type_node,
+                        ctx->rtl_stack, op_size);
   op_expr = force_gimple_operand(op_expr, seq, true, NULL_TREE);
-  gimple assign = gimple_build_assign(stack, op_expr);
+  gimple assign = gimple_build_assign(ctx->rtl_stack, op_expr);
   gimple_seq_add_stmt(seq, assign);
 }
 
 
-static void             instr_func            (struct relite_context_t* ctx,
-                                             tree func_decl,
+static void             instr_func          (struct relite_context_t* ctx,
                                              gimple_seq* pre,
                                              gimple_seq* post) {
   if (ctx->func_calls == 0 && ctx->func_mops == 0)
     return;
-  build_stack_op(pre, PLUS_EXPR);
-  build_stack_op(post, MINUS_EXPR);
+  build_stack_op(ctx, pre, PLUS_EXPR);
+  build_stack_op(ctx, post, MINUS_EXPR);
 }
 
 
@@ -165,15 +118,14 @@ static void             instr_mop           (struct relite_context_t* ctx,
   flags_expr = force_gimple_operand(flags_expr, &flags_seq, true, NULL_TREE);
   gimple_seq_add_seq(post, flags_seq);
 
-  tree call_decl = get_rt_mop();
   gimple collect = gimple_build_call(
-      call_decl, 2, addr_expr, flags_expr);
+      ctx->rtl_mop, 2, addr_expr, flags_expr);
 
   gimple_seq_add_stmt(post, collect);
 }
 
 
-static void             instr_call            (struct relite_context_t* ctx,
+static void             instr_call          (struct relite_context_t* ctx,
                                              tree func_decl,
                                              location_t loc,
                                              gimple_seq* pre,
@@ -190,21 +142,11 @@ static void             instr_call            (struct relite_context_t* ctx,
   pc_addr = force_gimple_operand(pc_addr, &seq, true, NULL_TREE);
   gimple_seq_add_seq(pre, seq);
 
-  tree stack = get_rt_stack();
   tree stack_op = build1(
-      INDIRECT_REF, build_pointer_type(ptr_type_node), stack);
+      INDIRECT_REF, build_pointer_type(ptr_type_node), ctx->rtl_stack);
   gimple assign = gimple_build_assign(stack_op, pc_addr);
   gimple_seq_add_stmt(pre, assign);
 }
-
-
-relite_context_t*       create_context      () {
-  static relite_context_t g_ctx;
-  relite_context_t* ctx = &g_ctx;
-  ctx->opt_sblock_size  = 5;
-  return ctx;
-}
-
 
 
 typedef enum bb_state_e {
@@ -491,23 +433,22 @@ static void             instrument_bblock   (relite_context_t* ctx,
 
 
 
-static void             instrument_function (relite_context_t* ctx,
-                                             struct function* func) {
-  int const bb_cnt = func->cfg->x_n_basic_blocks;
+static void             instrument_function (relite_context_t* ctx) {
+  int const bb_cnt = cfun->cfg->x_n_basic_blocks;
   dbg(ctx, "%d basic blocks", bb_cnt);
   bb_data_t* bb_data = xcalloc(bb_cnt, sizeof(bb_data_t));
-  basic_block entry_bb = ENTRY_BLOCK_PTR_FOR_FUNCTION(func);
+  basic_block entry_bb = ENTRY_BLOCK_PTR;
   edge entry_edge = single_succ_edge(entry_bb);
   entry_bb = entry_edge->dest;
   basic_block bb = 0;
-  FOR_EACH_BB_FN(bb, func) {
+  FOR_EACH_BB(bb) {
     bb_data[bb->index].state = (bb == entry_bb) ? bb_candidate : bb_not_visited;
   }
 
   for (;;) {
     basic_block cur_bb = 0;
     basic_block any_bb = 0;
-    FOR_EACH_BB_FN(bb, func) {
+    FOR_EACH_BB(bb) {
       bb_data_t* bbd = &bb_data[bb->index];
       dbg(ctx, "considering bb %d state %d", bb->index, bbd->state);
       if (bbd->state == bb_candidate) {
@@ -573,18 +514,17 @@ static void             instrument_function (relite_context_t* ctx,
 }
 
 
-void                    relite_pass         (relite_context_t* ctx,
-                                             struct function* func) {
+void                    relite_pass         (relite_context_t* ctx) {
   if (ctx->ignore_file != 0)
     return;
 
-  char const* func_name = decl_name(func->decl);
+  char const* func_name = decl_name(cfun->decl);
   dbg(ctx, "\nPROCESSING FUNCTION '%s'", func_name);
   ctx->stat_func_total += 1;
   ctx->func_calls = 0;
   ctx->func_mops = 0;
 
-  tree func_attr = DECL_ATTRIBUTES(func->decl);
+  tree func_attr = DECL_ATTRIBUTES(cfun->decl);
   for (; func_attr != NULL_TREE; func_attr = TREE_CHAIN(func_attr)) {
     char const* attr_name = IDENTIFIER_POINTER(TREE_PURPOSE(func_attr));
     if (strcmp(attr_name, "relite_ignore") == 0) {
@@ -595,14 +535,14 @@ void                    relite_pass         (relite_context_t* ctx,
 
   ctx->stat_func_instrumented += 1;
 
-  char const* asm_name = IDENTIFIER_POINTER(DECL_ASSEMBLER_NAME(func->decl));
+  char const* asm_name = IDENTIFIER_POINTER(DECL_ASSEMBLER_NAME(cfun->decl));
   ctx->func_ignore = relite_ignore_func(asm_name);
 
-  instrument_function(ctx, func);
+  instrument_function(ctx);
 
   gimple_seq pre_func_seq = 0;
   gimple_seq post_func_seq = 0;
-  instr_func(ctx, func->decl, &pre_func_seq, &post_func_seq);
+  instr_func(ctx, &pre_func_seq, &post_func_seq);
   if (pre_func_seq != 0 || post_func_seq != 0) {
     if (pre_func_seq != 0) {
       basic_block entry = ENTRY_BLOCK_PTR;
@@ -618,7 +558,7 @@ void                    relite_pass         (relite_context_t* ctx,
 
     //int is_first_gimple = 0;
     basic_block bb;
-    FOR_EACH_BB_FN (bb, func) {
+    FOR_EACH_BB(bb) {
       gimple_stmt_iterator gsi;
       gimple_stmt_iterator gsi2 = gsi_start_bb (bb);
       for (;;) {
@@ -646,7 +586,13 @@ void                    relite_pass         (relite_context_t* ctx,
 void                    relite_prepass      (relite_context_t* ctx) {
   if (ctx->setup_completed == 0) {
     ctx->setup_completed = 1;
-    setup(ctx);
+    ctx->rtl_stack = lookup_name(get_identifier("ShadowStack"));
+    if (ctx->rtl_stack == 0)
+      printf("relite: can't find ShadowStack rtl decl\n"), exit(1);
+    ctx->rtl_mop = lookup_name(get_identifier("tsan_rtl_mop"));
+    if (ctx->rtl_mop == 0)
+      printf("relite: can't find tsan_rtl_mop() rtl decl\n"), exit(1);
+
     if (relite_ignore_func(main_input_filename)) {
       dbg(ctx, "IGNORING FILE due to ignore file");
       ctx->ignore_file = 1;

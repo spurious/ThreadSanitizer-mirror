@@ -8,15 +8,9 @@
  * version. See http://www.gnu.org/licenses/
  */
 
-//TODO(dvyukov): remove commented out code
-
-//TODO(dvyukov): refactor identifier lookup
+//TODO(dvyukov): support ignore files
 
 //TODO(dvyukov): collect per-function stats
-
-//TODO(dvyukov): eliminate func params
-
-//TODO(dvyukov): support ignore files
 
 //TODO(dvyukov): support loop-wide sblocks
 
@@ -44,14 +38,14 @@ bool plugin_is_GPL_compatible = false;
 
 
 // global contest - there is no way to pass a context to compilation passes
-relite_context_t* g_ctx;
+relite_context_t g_ctx;
 
 
 static void             plugin_prepass      (void* event_data,
                                              void* user_data) {
   (void)event_data;
   (void)user_data;
-  relite_prepass(g_ctx);
+  relite_prepass(&g_ctx);
 }
 
 
@@ -59,7 +53,7 @@ static void             plugin_finish_unit  (void* event_data,
                                              void* user_data) {
   (void)event_data;
   (void)user_data;
-  relite_finish(g_ctx);
+  relite_finish(&g_ctx);
 }
 
 
@@ -93,7 +87,7 @@ static unsigned         instrumentation_pass() {
   if (errorcount != 0 || sorrycount != 0)
     return 0;
   gcc_assert(cfun != 0);
-  relite_pass(g_ctx, cfun);
+  relite_pass(&g_ctx);
   return 0;
 }
 
@@ -108,19 +102,18 @@ int                     plugin_init         (struct plugin_name_args* info,
     exit(1);
   }
 
-  g_ctx = create_context();
-
   int do_pause = 0;
+  g_ctx.opt_sblock_size  = 5;
   for (int i = 0; i != info->argc; i += 1) {
     if (strcmp(info->argv[i].key, "pause") == 0)
       do_pause = 1;
     else if (strcmp(info->argv[i].key, "debug") == 0)
-      g_ctx->opt_debug = 1;
+      g_ctx.opt_debug = 1;
     else if (strcmp(info->argv[i].key, "sblock-size") == 0
         && atoi(info->argv[i].value) > 0)
-      g_ctx->opt_sblock_size = atoi(info->argv[i].value);
+      g_ctx.opt_sblock_size = atoi(info->argv[i].value);
     else if (strcmp(info->argv[i].key, "ignore") == 0)
-      g_ctx->opt_ignore = xstrdup(info->argv[i].value);
+      g_ctx.opt_ignore = xstrdup(info->argv[i].value);
   }
 
   if (do_pause) {

@@ -14,20 +14,16 @@
 #include "relite_ignore.h"
 
 
-typedef struct rt_decl_desc_t {
-  char const*           rt_name;
-  char const*           real_name;
-  tree                  decl;
-} rt_decl_desc_t;
-
-
 typedef struct relite_context_t {
   int                   opt_debug;
   int                   opt_sblock_size;
   char const*           opt_ignore;
 
   int                   setup_completed;
+  tree                  rtl_stack;
+  tree                  rtl_mop;
   int                   ignore_file;
+
   int                   func_calls;
   int                   func_mops;
   relite_ignore_e       func_ignore;
@@ -44,15 +40,8 @@ typedef struct relite_context_t {
 } relite_context_t;
 
 
-relite_context_t*       create_context      ();
-
-
 void                    relite_prepass      (relite_context_t* ctx);
-
-void                    relite_pass         (relite_context_t* ctx,
-                                             struct function* func);
-
-
+void                    relite_pass         (relite_context_t* ctx);
 void                    relite_finish       (relite_context_t* ctx);
 
 
