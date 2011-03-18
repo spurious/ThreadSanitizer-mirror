@@ -52,6 +52,8 @@ struct InstrumentationStats {
   void newMop();
   void newInstrumentedBasicBlock();
   void newInstrumentedMop();
+  void newIgnoredInlinedMop();
+  void newMopUninstrumentedByAA();
   void finalize();
   void printStats();
 
@@ -67,6 +69,11 @@ struct InstrumentationStats {
   int num_inst_mops_in_trace;
 
   int num_traces_with_n_inst_bbs[kNumStats];
+  // uninstrumented mops
+  int num_uninst_mops;
+  int num_uninst_mops_ignored;
+  int num_uninst_mops_aa;
+
   // medians
   int med_trace_size_bbs;
   int med_trace_size_mops;

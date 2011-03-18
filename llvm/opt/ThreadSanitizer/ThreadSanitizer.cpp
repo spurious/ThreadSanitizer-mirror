@@ -709,7 +709,7 @@ void TsanOnlineInstrument::runOnFunction(Module::iterator &F) {
 
     instrumentation_stats.newFunction();
     instrumentation_stats.newBasicBlocks(F->size());
-#ifdef DEBUG_TRACES
+#if (defined(DEBUG_TRACES) || defined(DEBUG_IGNORE_MOPS))
     errs() << "\n\nFUNCTION: " << F->getName() << "\n";
     F->dump();
 #endif
@@ -1327,12 +1327,13 @@ bool TsanOnlineInstrument::ignoreInlinedMop(BasicBlock::iterator &BI) {
     string filename = Sub.getFilename();
 #ifdef DEBUG_IGNORE_MOPS
     errs() << "    " << Sub.getLinkageName() << "  "
-        <<  Sub.getFilename() << "\n";
+        <<  Sub.getFilename() << ":" << Sub.getLineNumber() << "\n";
 #endif
     if (TripleVectorMatchKnown(Ignores.ignores_r, symbol, "", filename)) {
 #ifdef DEBUG_IGNORE_MOPS
       errs() << "    IGNORED\n";
 #endif
+      instrumentation_stats.newIgnoredInlinedMop();
       return true;
     }
     DILocation Orig(Loc.getOrigLocation());
@@ -1473,6 +1474,8 @@ void TsanOnlineInstrument::markMopsToInstrument(Trace &trace) {
             load_map[make_pair(MopPtr, size)] = BI;
           }
           trace.to_instrument.insert(BI);
+        } else {
+          instrumentation_stats.newMopUninstrumentedByAA();
         }
       }
     }
@@ -1800,6 +1803,9 @@ InstrumentationStats::InstrumentationStats() {
   med_trace_size_mops = -1;
   max_trace_size_bbs = -1;
   max_trace_size_mops = -1;
+  num_uninst_mops = 0;
+  num_uninst_mops_aa = 0;
+  num_uninst_mops_ignored = 0;
   for (int i = 0; i < kNumStats; i++) {
     num_traces_with_n_inst_bbs[i] = 0;
   }
@@ -1845,6 +1851,17 @@ void InstrumentationStats::newInstrumentedMop() {
   num_inst_mops_in_trace++;
 }
 
+void InstrumentationStats::newIgnoredInlinedMop() {
+  num_uninst_mops++;
+  num_uninst_mops_ignored++;
+}
+
+void InstrumentationStats::newMopUninstrumentedByAA() {
+  num_uninst_mops++;
+  num_uninst_mops_aa++;
+}
+
+
 void InstrumentationStats::finalize() {
   if (num_inst_bbs_in_trace) {
     max_trace_size_bbs = (max_trace_size_bbs > num_inst_bbs_in_trace)?
@@ -1864,10 +1881,13 @@ void InstrumentationStats::finalize() {
   if (traces_mops.size()) {
     med_trace_size_mops = traces_mops[traces_mops.size() / 2];
   }
+  assert(num_mops == num_inst_mops + num_uninst_mops);
+  assert(num_uninst_mops == num_uninst_mops_aa + num_uninst_mops_ignored);
 }
 
 void InstrumentationStats::printStats() {
   finalize();
+  errs() << "  INSTRUMENTATION STATS\n\n";
   errs() << "# of functions in the module: " << num_functions << "\n";
   errs() << "# of traces in the module: " << num_traces << "\n";
   errs() << "median trace size: " << med_trace_size_bbs << " basic blocks, "
@@ -1880,6 +1900,13 @@ void InstrumentationStats::printStats() {
   errs() << "# of memory operations in the module: " << num_mops << "\n";
   errs() << "# of instrumented memory operations in the module: "
          << num_inst_mops << "\n";
+  errs() << "Total # of uninstrumented mops in the module: "
+         << num_uninst_mops << ", including: \n";
+  errs() << "  # of mops ignored (with --ignore): "
+         << num_uninst_mops_ignored << "\n";
+  errs() << "  # of aliasing mops in the same trace: "
+         << num_uninst_mops_aa << "\n";
+
   for (int i = 0; i < kNumStats; i++) {
     errs() << "# of traces with " << i << " instrumented basic blocks: " <<
       num_traces_with_n_inst_bbs[i] << "\n";
