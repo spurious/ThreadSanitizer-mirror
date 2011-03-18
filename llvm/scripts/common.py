@@ -42,6 +42,9 @@ TSAN_RTL = {P32: SCRIPT_ROOT+'/../tsan_rtl/tsan_rtl32.a',
 TSAN_IGNORE = ''
 if 'TSAN_IGNORE' in os.environ:
   TSAN_IGNORE = os.environ['TSAN_IGNORE']
+TSAN_OPT_ARGS = ''
+if 'TSAN_OPT_ARGS' in os.environ:
+  TSAN_OPT_ARGS = os.environ['TSAN_OPT_ARGS']
 
 def setup_parser(parser):
   pass
@@ -191,6 +194,8 @@ def gcc(default_cc, fallback_cc):
     opt_args = [OPT, '-load', PASS_SO, '-online', '-arch=' + XARCH[platform]]
     if TSAN_IGNORE:
       opt_args += ['-ignore=' + TSAN_IGNORE]
+    if TSAN_OPT_ARGS:
+      opt_args += [TSAN_OPT_ARGS]
     opt_args += [src_bitcode, '-o', src_instrumented]
     #print_args(opt_args)
     retcode = subprocess.call(opt_args, stderr=file(src_file+".instrumentation.log", 'w'))
