@@ -50,6 +50,7 @@ struct InstrumentationStats {
   void newTrace();
   void newBasicBlocks(int num);
   void newMop();
+  void newInstrumentedTrace();
   void newInstrumentedBasicBlock();
   void newInstrumentedMop();
   void newIgnoredInlinedMop();
@@ -61,6 +62,8 @@ struct InstrumentationStats {
   // numbers
   int num_functions;
   int num_traces;
+  int num_inst_traces;
+  int num_inst_traces_in_function;
   int num_bbs;
   int num_mops;
   int num_inst_bbs;
@@ -97,7 +100,7 @@ struct TsanOnlineInstrument : public llvm::ModulePass { // {{{1
   void parseIgnoreFile(std::string &file);
   llvm::DILocation getTopInlinedLocation(llvm::BasicBlock::iterator &BI);
   void dumpInstructionDebugInfo(llvm::Constant *addr,
-                                llvm::BasicBlock::iterator &BI);
+                                const llvm::BasicBlock::iterator BI);
   uintptr_t getModuleID(llvm::Module &M);
   bool isDtor(const std::string &mangled_name);
   void writeModuleDebugInfo(llvm::Module &M);

@@ -1211,11 +1211,11 @@ void TsanOnlineInstrument::insertFlushCurrentCall(Trace &trace,
 void TsanOnlineInstrument::runOnTrace(Trace &trace,
                                       bool first_dtor_bb) {
   TLEBIndex = 0;
-//      instrumentation_stats.newTrace();
+  instrumentation_stats.newTrace();
   bool have_passport = makeTracePassport(trace);
   if (have_passport) {
     // Instrument memory operations and function calls.
-    instrumentation_stats.newTrace();
+    instrumentation_stats.newInstrumentedTrace();
     for (BlockSet::iterator TI = trace.blocks.begin(),
                             TE = trace.blocks.end();
          TI != TE; ++TI) {
@@ -1262,8 +1262,9 @@ DILocation TsanOnlineInstrument::getTopInlinedLocation(
   return Loc;
 }
 
+// Note that BI is copied, not referenced.
 void TsanOnlineInstrument::dumpInstructionDebugInfo(Constant *addr,
-                                                    BasicBlock::iterator &BI) {
+                                                    BasicBlock::iterator BI) {
   DILocation Loc = getTopInlinedLocation(BI);
   BasicBlock::iterator OldBI = BI;
   if (!Loc.getLineNumber()) {
@@ -1413,6 +1414,8 @@ void TsanOnlineInstrument::markMopsToInstrument(Trace &trace) {
                 (size == location.second)) {
               // We've already seen a STORE of the same size accessing the
               // same memory location. We're a STORE, too, so drop it.
+              //
+	      // The number of instrumented accesses won't change.
               trace.to_instrument.erase(LI->second);
               trace.to_instrument.insert(BI);
               store_map.erase(LI);
@@ -1732,16 +1735,17 @@ void TsanOnlineInstrument::instrumentCall(BasicBlock::iterator &BI) {
                                 end_idx.begin(), end_idx.end(),
                                 "", BI);
   Value *StackEnd = new LoadInst(StackEndPtr, "", BI);
-
   new StoreInst(getInstructionAddr(FunctionMopCount, BI, PlatformInt),
                 StackEnd, BI);
 }
 
-// This method is ran only for basic blocks to be instrumented.
+// This method is ran only for basic blocks belonging to traces that are to be
+// instrumented. Note that a single basic block shouldn't necessarily be
+// instrumented.
 void TsanOnlineInstrument::runOnBasicBlock(BasicBlock *BB,
                                            bool first_dtor_bb,
                                            Trace &trace) {
-  instrumentation_stats.newInstrumentedBasicBlock();
+  bool is_instrumented = false;
   for (BasicBlock::iterator BI = BB->begin(), BE = BB->end();
        BI != BE;
        ++BI) {
@@ -1752,12 +1756,15 @@ void TsanOnlineInstrument::runOnBasicBlock(BasicBlock *BB,
     if (isa<LoadInst>(BI)) {
       // Instrument LOAD.
       instrumentMop(BI, false, first_dtor_bb, trace);
+      is_instrumented = true;
     }
     if (isa<StoreInst>(BI)) {
       // Instrument STORE.
       instrumentMop(BI, true, first_dtor_bb, trace);
+      is_instrumented = true;
     }
   }
+  if (is_instrumented) instrumentation_stats.newInstrumentedBasicBlock();
 }
 
 void TsanOnlineInstrument::getAnalysisUsage(AnalysisUsage &AU) const {
@@ -1794,15 +1801,20 @@ InstrumentationStats::InstrumentationStats() {
   num_traces = 0;
   num_bbs = 0;
   num_inst_bbs = 0;
+  num_inst_traces = 0;
   num_inst_bbs_in_trace = -1;
+  num_inst_traces_in_function = -1;
   traces_bbs.clear();
   traces_mops.clear();
   num_inst_mops = 0;
   num_mops = 0;
+  
+  // Ok to init statistics with -1.
   med_trace_size_bbs = -1;
   med_trace_size_mops = -1;
   max_trace_size_bbs = -1;
   max_trace_size_mops = -1;
+
   num_uninst_mops = 0;
   num_uninst_mops_aa = 0;
   num_uninst_mops_ignored = 0;
@@ -1813,6 +1825,10 @@ InstrumentationStats::InstrumentationStats() {
 
 void InstrumentationStats::newFunction() {
   num_functions++;
+  if (num_inst_traces_in_function > 0) {
+    // TODO(glider): see below. 
+  }
+  num_inst_traces_in_function = 0;
 }
 
 void InstrumentationStats::newTrace() {
@@ -1825,16 +1841,23 @@ void InstrumentationStats::newTrace() {
     max_trace_size_mops = (max_trace_size_mops > num_inst_mops_in_trace)?
         max_trace_size_mops : num_inst_mops_in_trace;
   }
-  int index = kNumStats - 1;
-  index = (num_inst_bbs_in_trace >= index) ?
-      index : num_inst_bbs_in_trace;
-  num_traces_with_n_inst_bbs[index]++;
+  if (num_inst_bbs_in_trace > -1) {
+    int index = kNumStats - 1;
+    index = (num_inst_bbs_in_trace >= index) ?
+        index : num_inst_bbs_in_trace;
+    num_traces_with_n_inst_bbs[index]++;
+  }
   num_inst_bbs_in_trace = 0;
   num_inst_mops_in_trace = 0;
 }
 
 void InstrumentationStats::newBasicBlocks(int num) {
   num_bbs += num;
+}
+
+void InstrumentationStats::newInstrumentedTrace() {
+  num_inst_traces++;
+  num_inst_traces_in_function++;
 }
 
 void InstrumentationStats::newInstrumentedBasicBlock() {
@@ -1863,16 +1886,25 @@ void InstrumentationStats::newMopUninstrumentedByAA() {
 
 
 void InstrumentationStats::finalize() {
+  if (num_inst_traces_in_function) {
+    // TODO(glider)
+  }
   if (num_inst_bbs_in_trace) {
     max_trace_size_bbs = (max_trace_size_bbs > num_inst_bbs_in_trace)?
         max_trace_size_bbs : num_inst_bbs_in_trace;
     max_trace_size_mops = (max_trace_size_mops > num_inst_mops_in_trace)?
         max_trace_size_mops : num_inst_mops_in_trace;
     traces_bbs.push_back(num_inst_bbs_in_trace);
-    num_inst_bbs_in_trace = 0;
     traces_mops.push_back(num_inst_mops_in_trace);
-    num_inst_mops_in_trace = 0;
   }
+  int index = kNumStats - 1;
+  index = (num_inst_bbs_in_trace >= index) ?
+      index : num_inst_bbs_in_trace;
+  num_traces_with_n_inst_bbs[index]++;
+  num_inst_bbs_in_trace = 0;
+  num_inst_mops_in_trace = 0;
+
+  // Update the medians.
   sort(traces_bbs.begin(), traces_bbs.end());
   if (traces_bbs.size()) {
     med_trace_size_bbs = traces_bbs[traces_bbs.size() / 2];
@@ -1881,8 +1913,6 @@ void InstrumentationStats::finalize() {
   if (traces_mops.size()) {
     med_trace_size_mops = traces_mops[traces_mops.size() / 2];
   }
-  assert(num_mops == num_inst_mops + num_uninst_mops);
-  assert(num_uninst_mops == num_uninst_mops_aa + num_uninst_mops_ignored);
 }
 
 void InstrumentationStats::printStats() {
@@ -1890,6 +1920,8 @@ void InstrumentationStats::printStats() {
   errs() << "  INSTRUMENTATION STATS\n\n";
   errs() << "# of functions in the module: " << num_functions << "\n";
   errs() << "# of traces in the module: " << num_traces << "\n";
+  errs() << "# of instrumented traces in the module: "
+         << num_inst_traces << "\n";
   errs() << "median trace size: " << med_trace_size_bbs << " basic blocks, "
          << med_trace_size_mops << " memory operations\n";
   errs() << "max trace size: " << max_trace_size_bbs << " basic blocks, "
@@ -1907,10 +1939,21 @@ void InstrumentationStats::printStats() {
   errs() << "  # of aliasing mops in the same trace: "
          << num_uninst_mops_aa << "\n";
 
+  // Buckets.
+  errs() << "\n";
+  int num_traces_in_buckets = 0, num_inst_bbs_in_buckets = 0;
   for (int i = 0; i < kNumStats; i++) {
     errs() << "# of traces with " << i << " instrumented basic blocks: " <<
       num_traces_with_n_inst_bbs[i] << "\n";
+      num_traces_in_buckets += num_traces_with_n_inst_bbs[i];
+      num_inst_bbs_in_buckets += i*num_traces_with_n_inst_bbs[i];
   }
+  assert(num_mops == num_inst_mops + num_uninst_mops);
+  assert(num_uninst_mops == num_uninst_mops_aa + num_uninst_mops_ignored);
+  assert(num_traces >= num_inst_traces);
+  assert(num_traces == num_traces_in_buckets);
+  assert(num_bbs >= num_inst_bbs);
+  assert(num_inst_bbs == num_inst_bbs_in_buckets);
 }
 
 // }}}
