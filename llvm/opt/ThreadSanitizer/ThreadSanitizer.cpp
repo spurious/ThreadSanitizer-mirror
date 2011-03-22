@@ -1415,9 +1415,12 @@ void TsanOnlineInstrument::markMopsToInstrument(Trace &trace) {
               // We've already seen a STORE of the same size accessing the
               // same memory location. We're a STORE, too, so drop it.
               //
-	      // The number of instrumented accesses won't change.
+              // The number of instrumented accesses won't change.
               trace.to_instrument.erase(LI->second);
               trace.to_instrument.insert(BI);
+              // But the number of uninstrumented accesses will.
+              instrumentation_stats.newMopUninstrumentedByAA();
+
               store_map.erase(LI);
               store_map[make_pair(MopPtr, size)] = BI;
               has_alias = true;
@@ -1436,7 +1439,9 @@ void TsanOnlineInstrument::markMopsToInstrument(Trace &trace) {
                                                      location.second);
             if ((R == AliasAnalysis::MustAlias) &&
                 (size == location.second)) {
-              trace.to_instrument.erase(LI->second);
+              if (trace.to_instrument.erase(LI->second)) {
+                instrumentation_stats.newMopUninstrumentedByAA();
+              }
               // There cannot be other LOAD operations aliasing the
               // same location.
               break;
@@ -1446,7 +1451,24 @@ void TsanOnlineInstrument::markMopsToInstrument(Trace &trace) {
             store_map[make_pair(MopPtr, size)] = BI;
             trace.to_instrument.insert(BI);
           }
+        } else {
+          for (LocMap::iterator LI = store_map.begin(), LE = store_map.end();
+               LI != LE; ++LI) {
+            const pair<Value*, int> &location = LI->first;
+            AliasAnalysis::AliasResult R = AA->alias(MopPtr, size,
+                                                     location.first,
+                                                     location.second);
+            if ((R == AliasAnalysis::MustAlias) &&
+                (size == location.second)) {
+              // Drop the current access.
+              has_alias = true;
+              instrumentation_stats.newMopUninstrumentedByAA();
+              // There may be other LOAD operations aliasing the same
+              // location.
+            }
+          }
         }
+
         // Any newer access to the same memory location removes the
         // previous access from the load_map.
         for (LocMap::iterator LI = load_map.begin(), LE = load_map.end();
@@ -1458,7 +1480,9 @@ void TsanOnlineInstrument::markMopsToInstrument(Trace &trace) {
           if ((R == AliasAnalysis::MustAlias) &&
               (size == location.second)) {
             // Drop the previous access.
-            trace.to_instrument.erase(LI->second);
+            if (trace.to_instrument.erase(LI->second)) {
+              instrumentation_stats.newMopUninstrumentedByAA();
+            }
             // It's ok to insert the same BI into to_instrument twice.
             trace.to_instrument.insert(BI);
             load_map.erase(LI);
@@ -1472,13 +1496,12 @@ void TsanOnlineInstrument::markMopsToInstrument(Trace &trace) {
           }
         }
 
+
         if (!has_alias) {
           if (!isStore) {
             load_map[make_pair(MopPtr, size)] = BI;
           }
           trace.to_instrument.insert(BI);
-        } else {
-          instrumentation_stats.newMopUninstrumentedByAA();
         }
       }
     }
