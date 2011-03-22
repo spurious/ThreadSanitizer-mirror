@@ -348,6 +348,13 @@ void INLINE flush_trace(TraceInfoPOD *trace) {
   if (!thread_local_ignore) {
     tid_t tid = INFO.tid;
     DCHECK(trace);
+#if 0
+    events += trace->n_mops_;
+    if ((events & (events - 1)) == 0) {
+      // events is a power of 2
+      Printf("PID: %d, TID: %d, events: %d\n", getpid(), tid, events);
+    }
+#endif
 #ifdef ENABLE_STATS
     stats_events_processed += trace->n_mops_;
     stats_cur_events += trace->n_mops_;
@@ -2051,6 +2058,7 @@ extern "C"
 pid_t __wrap_fork() {
   FLUSH_TRACE();
   GIL scoped;
+  ThreadSanitizerLockAcquire();
   pid_t result;
   IN_RTL++;
   CHECK_IN_RTL();
@@ -2069,10 +2077,11 @@ pid_t __wrap_fork() {
     // TODO(glider): Chrome does this often. Maybe it's better to re-initialize
     // ThreadSanitizer and some RTL parts upon fork().
 
-    thread_local_ignore = 1;
+    //thread_local_ignore = 1;
     // Haha, all our resources that address the TLS of other threads are valid
     // no more!
     FORKED_CHILD = true;
+    ThreadSanitizerLockRelease();
     // TODO(glider): check for FORKED_CHILD every time we access someone's TLS.
 
     // We also keep IN_RTL > 0 to avoid other threads taking GIL for the same
@@ -2082,6 +2091,7 @@ pid_t __wrap_fork() {
   // Falling through to the parent process.
   IN_RTL--;
   CHECK_IN_RTL();
+  ThreadSanitizerLockRelease();
   return result;
 }
 // Happens-before arc between read() and write() {{{1
@@ -2263,6 +2273,7 @@ void bb_flush(TraceInfoPOD *next_mops) {
 
 extern "C"
 void bb_flush_current(TraceInfoPOD *curr_mops) {
+  //return;
   flush_trace(curr_mops);
 }
 
