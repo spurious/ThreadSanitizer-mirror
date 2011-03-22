@@ -93,7 +93,7 @@ static cl::opt<bool>
                        cl::desc("Traverse the stack of inlined functions to "
                                 "decide whether each memory operation should "
                                 "be ignored. Experimental feature."),
-                      cl::init(false));
+                      cl::init(true));
 
 static cl::opt<bool>
     SkipFunctionsWithoutMops("skip-functions-without-mops",
@@ -1946,14 +1946,16 @@ void InstrumentationStats::printStats() {
     errs() << "# of traces with " << i << " instrumented basic blocks: " <<
       num_traces_with_n_inst_bbs[i] << "\n";
       num_traces_in_buckets += num_traces_with_n_inst_bbs[i];
-      num_inst_bbs_in_buckets += i*num_traces_with_n_inst_bbs[i];
+      num_inst_bbs_in_buckets += i * num_traces_with_n_inst_bbs[i];
   }
   assert(num_mops == num_inst_mops + num_uninst_mops);
   assert(num_uninst_mops == num_uninst_mops_aa + num_uninst_mops_ignored);
   assert(num_traces >= num_inst_traces);
   assert(num_traces == num_traces_in_buckets);
   assert(num_bbs >= num_inst_bbs);
-  assert(num_inst_bbs == num_inst_bbs_in_buckets);
+  // TODO(glider): this is incorrect, because we have a finite number of
+  // buckets.
+  // assert(num_inst_bbs == num_inst_bbs_in_buckets);
 }
 
 // }}}
