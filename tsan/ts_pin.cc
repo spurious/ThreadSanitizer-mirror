@@ -2239,6 +2239,17 @@ static uintptr_t WRAP_NAME(pthread_cond_timedwait)(WRAP_PARAM4) {
   return ret;
 }
 
+// epoll
+static const uintptr_t kSocketMagic = 0xDEADFBAD;
+
+static void Before_epoll_ctl(THREADID tid, ADDRINT pc) {
+  DumpEvent(0, SIGNAL, tid, pc, kSocketMagic, 0);
+}
+
+static void After_epoll_wait(THREADID tid, ADDRINT pc) {
+  DumpEvent(0, WAIT, tid, pc, kSocketMagic, 0);
+}
+
 // sem
 static void After_sem_open(THREADID tid, ADDRINT pc, ADDRINT ret) {
   // TODO(kcc): need to handle it more precise?
@@ -3270,6 +3281,9 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_BEFORE_1("sem_post", Before_sem_post);
   WRAP4(sem_wait);
   WRAP4(sem_trywait);
+
+  INSERT_BEFORE_0("epoll_ctl", Before_epoll_ctl);
+  INSERT_AFTER_0("epoll_wait", After_epoll_wait);
 #endif  // __GNUC__
 
 #ifdef _MSC_VER
