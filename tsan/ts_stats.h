@@ -183,6 +183,8 @@ struct Stats : private ThreadLocalStats {
            ls_remove_from_singleton, ls_remove_from_multi);
     Printf("   LockSet cache: add : %'ld; rem : %'ld; fast: %'ld\n",
            ls_add_cache_hit, ls_rem_cache_hit, ls_cache_fast);
+    Printf("   LockSet size: 2: %'ld 3: %'ld 4: %'ld 5: %'ld other: %'ld\n",
+           ls_size_2, ls_size_3, ls_size_4, ls_size_5, ls_size_other);
   }
 
   void PrintEventStats() {
@@ -250,7 +252,8 @@ struct Stats : private ThreadLocalStats {
   uintptr_t ls_add_to_empty, ls_add_to_singleton, ls_add_to_multi,
             ls_remove_from_singleton, ls_remove_from_multi,
             ls_add_cache_hit, ls_rem_cache_hit,
-            ls_cache_fast;
+            ls_cache_fast,
+            ls_size_2, ls_size_3, ls_size_4, ls_size_5, ls_size_other;
 
   uintptr_t cache_new_line;
   uintptr_t cache_delete_empty_line;

@@ -36,6 +36,7 @@
 #include "suppressions.h"
 #include "ignore.h"
 #include "ts_lock.h"
+#include "dense_multimap.h"
 #include <stdarg.h>
 // -------- Constants --------------- {{{1
 // Segment ID (SID)      is in range [1, kMaxSID-1]
@@ -849,14 +850,11 @@ class LockSet {
     }
     LSID res;
     if (lsid.IsSingleton()) {
-      LSSet set;
-      set.insert(lsid.GetSingleton());
-      set.insert(lid);
+      LSSet set(lsid.GetSingleton(), lid);
       G_stats->ls_add_to_singleton++;
       res = ComputeId(set);
     } else {
-      LSSet set = Get(lsid);
-      set.insert(lid);
+      LSSet set(Get(lsid), lid);
       G_stats->ls_add_to_multi++;
       res = ComputeId(set);
     }
@@ -886,10 +884,10 @@ class LockSet {
       return true;
     }
 
-    LSSet set = Get(lsid);
-    LSSet::iterator it = set.find(lid);
-    if (it == set.end()) return false;
-    set.erase(it);
+    LSSet &prev_set = Get(lsid);
+    if (!prev_set.has(lid)) return false;
+    LSSet set(prev_set, LSSet::REMOVE, lid);
+    CHECK(set.size() == prev_set.size() - 1);
     G_stats->ls_remove_from_multi++;
     LSID res = ComputeId(set);
     ls_rem_cache_->Insert(lsid.raw(), lid.raw(), res.raw());
@@ -910,13 +908,13 @@ class LockSet {
     // first is singleton, second is not
     if (lsid1.IsSingleton()) {
       const LSSet &set2 = Get(lsid2);
-      return set2.count(LID(lsid1.raw())) == 0;
+      return set2.has(LID(lsid1.raw())) == false;
     }
 
     // second is singleton, first is not
     if (lsid2.IsSingleton()) {
       const LSSet &set1 = Get(lsid1);
-      return set1.count(LID(lsid2.raw())) == 0;
+      return set1.has(LID(lsid2.raw())) == false;
     }
 
     // LockSets are equal and not empty
@@ -936,7 +934,7 @@ class LockSet {
     const LSSet &set2 = Get(lsid2);
 
     FixedArray<LID> intersection(min(set1.size(), set2.size()));
-    LID *end = set_intersection(set1.begin(), set1.end(),
+    LID *end = std::set_intersection(set1.begin(), set1.end(),
                             set2.begin(), set2.end(),
                             intersection.begin());
     DCHECK(!cache_hit || (ret == (end == intersection.begin())));
@@ -951,8 +949,8 @@ class LockSet {
     if (lsid.IsSingleton())
       return !Lock::LIDtoLock(LID(lsid.raw()))->is_pure_happens_before();
 
-    LSSet set = Get(lsid);
-    for (LSSet::iterator it = set.begin(); it != set.end(); ++it)
+    LSSet &set = Get(lsid);
+    for (LSSet::const_iterator it = set.begin(); it != set.end(); ++it)
       if (!Lock::LIDtoLock(*it)->is_pure_happens_before())
         return true;
     return false;
@@ -1021,7 +1019,7 @@ class LockSet {
   // No instances are allowed.
   LockSet() { }
 
-  typedef multiset<LID> LSSet;
+  typedef DenseMultimap<LID, 3> LSSet;
 
   static LSSet &Get(LSID lsid) {
     ScopedMallocCostCenter cc(__FUNCTION__);
@@ -1032,10 +1030,7 @@ class LockSet {
   }
 
   static LSID ComputeId(const LSSet &set) {
-    if (set.empty()) {
-      // empty lock set has id 0.
-      return LSID(0);
-    }
+    CHECK(set.size() > 0);
     if (set.size() == 1) {
       // signleton lock set has lsid == lid.
       return LSID(set.begin()->raw());
@@ -1048,8 +1043,18 @@ class LockSet {
     if (*id == 0) {
       vec_->push_back(set);
       *id = map_->size();
+      if      (set.size() == 2) G_stats->ls_size_2++;
+      else if (set.size() == 3) G_stats->ls_size_3++;
+      else if (set.size() == 4) G_stats->ls_size_4++;
+      else if (set.size() == 5) G_stats->ls_size_5++;
+      else                      G_stats->ls_size_other++;
       if (*id >= 4096 && ((*id & (*id - 1)) == 0)) {
-        Report("INFO: %d LockSet IDs have been allocated\n", *id);
+        Report("INFO: %d LockSet IDs have been allocated "
+               "(2: %ld 3: %ld 4: %ld 5: %ld)\n",
+               *id,
+               G_stats->ls_size_2, G_stats->ls_size_3,
+               G_stats->ls_size_4, G_stats->ls_size_5
+               );
       }
     }
     return LSID(-*id);
