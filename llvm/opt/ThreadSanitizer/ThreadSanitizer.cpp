@@ -1321,6 +1321,7 @@ bool TsanOnlineInstrument::ignoreInlinedMop(BasicBlock::iterator &BI) {
   BI->dump();
 #endif
   DILocation Loc(BI->getMetadata("dbg"));
+  bool first = true;
   while (true) {
     DILocation OldLoc = Loc;
     DISubprogram Sub = getDISubprogram(Loc.getScope().getNode());
@@ -1330,13 +1331,16 @@ bool TsanOnlineInstrument::ignoreInlinedMop(BasicBlock::iterator &BI) {
     errs() << "    " << Sub.getLinkageName() << "  "
         <<  Sub.getFilename() << ":" << Sub.getLineNumber() << "\n";
 #endif
-    if (TripleVectorMatchKnown(Ignores.ignores_r, symbol, "", filename)) {
+    if ((first &&
+         TripleVectorMatchKnown(Ignores.ignores, symbol, "", filename)) ||
+        TripleVectorMatchKnown(Ignores.ignores_r, symbol, "", filename)) {
 #ifdef DEBUG_IGNORE_MOPS
       errs() << "    IGNORED\n";
 #endif
       instrumentation_stats.newIgnoredInlinedMop();
       return true;
     }
+    first = false;
     DILocation Orig(Loc.getOrigLocation());
     if (Orig.getNode() != NULL) {
       Loc = Orig;
@@ -1940,7 +1944,7 @@ void InstrumentationStats::finalize() {
 
 void InstrumentationStats::printStats() {
   finalize();
-  errs() << "  INSTRUMENTATION STATS\n\n";
+  errs() << "\n  INSTRUMENTATION STATS\n\n";
   errs() << "# of functions in the module: " << num_functions << "\n";
   errs() << "# of traces in the module: " << num_traces << "\n";
   errs() << "# of instrumented traces in the module: "
