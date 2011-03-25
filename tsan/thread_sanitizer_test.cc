@@ -33,6 +33,7 @@
 
 #include "ts_heap_info.h"
 #include "ts_simple_cache.h"
+#include "dense_multimap.h"
 
 // Testing the HeapMap.
 struct TestHeapInfo {
@@ -204,6 +205,55 @@ TEST(ThreadSanitizer, IntPairToBoolCacheTest) {
     c.Insert(a, b, val);
     m[make_pair(a,b)] = val;
   }
+}
+
+TEST(ThreadSanitizer, DenseMultimapTest) {
+  typedef DenseMultimap<int, 3> Map;
+
+  Map m1(1, 2);
+  EXPECT_EQ(m1[0], 1);
+  EXPECT_EQ(m1[1], 2);
+  EXPECT_EQ(m1.size(), 2U);
+
+  Map m2(3, 2);
+  EXPECT_EQ(m2[0], 2);
+  EXPECT_EQ(m2[1], 3);
+  EXPECT_EQ(m2.size(), 2U);
+
+  Map m3(m1, 0);
+  EXPECT_EQ(m3.size(), 3U);
+  EXPECT_EQ(m3[0], 0);
+  EXPECT_EQ(m3[1], 1);
+  EXPECT_EQ(m3[2], 2);
+
+  Map m4(m3, 1);
+  EXPECT_EQ(m4.size(), 4U);
+  EXPECT_EQ(m4[0], 0);
+  EXPECT_EQ(m4[1], 1);
+  EXPECT_EQ(m4[2], 1);
+  EXPECT_EQ(m4[3], 2);
+
+  Map m5(m4, 5);
+  Map m6(m5, -2);
+  Map m7(m6, 2);
+  EXPECT_EQ(m7.size(), 7U);
+
+  EXPECT_TRUE(m7.has(-2));
+  EXPECT_TRUE(m7.has(0));
+  EXPECT_TRUE(m7.has(1));
+  EXPECT_TRUE(m7.has(2));
+  EXPECT_TRUE(m7.has(5));
+  EXPECT_FALSE(m7.has(3));
+  EXPECT_FALSE(m7.has(-1));
+  EXPECT_FALSE(m7.has(4));
+
+  Map m8(m7, Map::REMOVE, 1);
+  EXPECT_EQ(m8.size(), 6U);
+  EXPECT_TRUE(m8.has(1));
+
+  Map m9(m8, Map::REMOVE, 1);
+  EXPECT_EQ(m9.size(), 5U);
+  EXPECT_FALSE(m9.has(1));
 }
 
 int main(int argc, char **argv) {
