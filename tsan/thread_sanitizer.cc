@@ -42,6 +42,8 @@
 // Segment Set ID (SSID) is in range [-kMaxSID+1, -1]
 // This is not a compile-time constant, but it can only be changed at startup.
 int kMaxSID = (1 << 23);
+// Flush state after so many SIDs have been allocated. Set by command line flag.
+int kMaxSIDBeforeFlush;
 
 // Lock ID (LID)      is in range [1, kMaxLID-1]
 // Lock Set ID (LSID) is in range [-kMaxLID+1, -1]
@@ -280,6 +282,7 @@ const char *c_default = "";
 
 // -------- Forward decls ------ {{{1
 static void ForgetAllStateAndStartOver(Thread *thr, const char *reason);
+static void FlushStateIfOutOfSegments(Thread *thr);
 static int32_t raw_tid(Thread *t);
 // -------- Simple Cache ------ {{{1
 #include "ts_simple_cache.h"
@@ -4726,15 +4729,7 @@ struct Thread {
 
   void NOINLINE HandleSblockEnterSlowLocked() {
     AssertTILHeld();
-    if (Segment::NumberOfSegments() > ((kMaxSID * 15) / 16)) {
-      // too few sids left -- flush state.
-      if (DEBUG_MODE) {
-        G_cache->PrintStorageStats();
-        Segment::ShowSegmentStats();
-      }
-      ForgetAllStateAndStartOver(this,
-                                 "ThreadSanitizer has run out of segment IDs");
-    }
+    FlushStateIfOutOfSegments(this);
     this->stats.history_creates_new_segment++;
     VTS *new_vts = vts()->Clone();
     NewSegment("HandleSblockEnter", new_vts);
@@ -5362,6 +5357,18 @@ static void ForgetAllStateAndStartOver(Thread *thr, const char *reason) {
            stop_time - start_time);
   }
 }
+
+static INLINE void FlushStateIfOutOfSegments(Thread *thr) {
+  if (Segment::NumberOfSegments() > kMaxSIDBeforeFlush) {
+    // too few sids left -- flush state.
+    if (DEBUG_MODE) {
+      G_cache->PrintStorageStats();
+      Segment::ShowSegmentStats();
+    }
+    ForgetAllStateAndStartOver(thr, "run out of segment IDs");
+  }
+}
+
 // -------- Expected Race ---------------------- {{{1
 typedef  HeapMap<ExpectedRace> ExpectedRacesMap;
 static ExpectedRacesMap *G_expected_races_map;
@@ -6306,11 +6313,14 @@ class Detector {
     TIL til(ts_lock, 0);
     AssertTILHeld();
 
+
     if (UNLIKELY(type == THR_START)) {
         HandleThreadStart(TID(e->tid()), TID(e->info()), (CallStack*)e->pc());
         Thread::Get(TID(e->tid()))->stats.events[type]++;
         return;
     }
+
+    FlushStateIfOutOfSegments(thr);
 
     // Since we have the lock, get some fresh SIDs.
     thr->GetSomeFreshSids();
@@ -7967,6 +7977,9 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
     Printf("Error: max-sid should be at least 100000. Exiting\n");
     exit(1);
   }
+  FindIntFlag("max_sid_before_flush", (kMaxSID * 15) / 16, args, 
+              &G_flags->max_sid_before_flush);
+  kMaxSIDBeforeFlush = G_flags->max_sid_before_flush;
 
   FindIntFlag("num_callers_in_history", kSizeOfHistoryStackTrace, args,
               &G_flags->num_callers_in_history);
