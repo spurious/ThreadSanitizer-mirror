@@ -1043,11 +1043,14 @@ class LockSet {
     DCHECK(map_);
     DCHECK(vec_);
     // multiple locks.
+    ScopedMallocCostCenter cc("LockSet::ComputeId");
     int32_t *id = &(*map_)[set];
-    ScopedMallocCostCenter cc(__FUNCTION__);
     if (*id == 0) {
       vec_->push_back(set);
       *id = map_->size();
+      if (*id >= 4096 && ((*id & (*id - 1)) == 0)) {
+        Report("INFO: %d LockSet IDs have been allocated\n", *id);
+      }
     }
     return LSID(-*id);
   }
