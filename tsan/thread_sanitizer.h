@@ -90,6 +90,7 @@ struct FLAGS {
   bool        show_pid;
 
   intptr_t  debug_level;
+  bool        save_ignore_context;  // print stack if ignore_end was forgotten.
   vector<string> debug_phase;
   intptr_t  trace_level;
 

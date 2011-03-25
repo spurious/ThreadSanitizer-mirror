@@ -4391,7 +4391,7 @@ struct Thread {
     ignore_depth_[is_w] += on ? 1 : -1;
     CHECK(ignore_depth_[is_w] >= 0);
     ComputeExpensiveBits();
-    if (DEBUG_MODE && on && G_flags->debug_level >= 1) {
+    if (on && G_flags->save_ignore_context) {
       StackTrace::Delete(ignore_context_[is_w]);
       ignore_context_[is_w] = CreateStackTrace(0, 3);
     }
@@ -7571,14 +7571,16 @@ one_call:
       Report("WARNING: T%d ended while at least one 'ignore' bit is set: "
              "ignore_wr=%d ignore_rd=%d\n", tid.raw(),
              thr->ignore_reads(), thr->ignore_writes());
-      if (G_flags->debug_level >= 1) {
-        for (int i = 0; i < 2; i++) {
-          StackTrace *context = thr->GetLastIgnoreContext(i);
-          if (context) {
-            Report("Last ignore_%s call was here: \n%s\n", i ? "wr" : "rd",
-               context->ToString().c_str());
-          }
+      for (int i = 0; i < 2; i++) {
+        StackTrace *context = thr->GetLastIgnoreContext(i);
+        if (context) {
+          Report("Last ignore_%s call was here: \n%s\n", i ? "wr" : "rd",
+                 context->ToString().c_str());
         }
+      }
+      if (G_flags->save_ignore_context == false) {
+        Report("Rerun with --save_ignore_context to see where "
+               "IGNORE_END is missing\n");
       }
     }
     ShowProcSelfStatus();
@@ -7876,6 +7878,8 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   bool show_pid_default = true;
 #endif
   FindBoolFlag("show_pid", show_pid_default, args, &G_flags->show_pid);
+  FindBoolFlag("save_ignore_context", DEBUG_MODE ? true : false, args,
+               &G_flags->save_ignore_context);
 
   FindIntFlag("dry_run", 0, args, &G_flags->dry_run);
   FindBoolFlag("report_races", true, args, &G_flags->report_races);
