@@ -1432,6 +1432,7 @@ void Worker() {
 }
 
 TEST(StressTests, ManyLockSetsTest) {
+  ANNOTATE_FLUSH_STATE();
   for (int iter = 0; iter < N_iter; iter++) {
     for (int i = 0; i < Nlog; i++) {
       MUs[i] = new Mutex;
@@ -1448,6 +1449,7 @@ TEST(StressTests, ManyLockSetsTest) {
 }
 
 TEST(StressTests, EvenMoreLockSetsTest) {
+  ANNOTATE_FLUSH_STATE();
   int nlog = 16;
   int n = 1 << nlog;
   for (int i = 0; i < n; i++) {
