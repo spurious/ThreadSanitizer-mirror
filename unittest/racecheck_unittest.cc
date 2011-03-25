@@ -1412,13 +1412,12 @@ void Run() {
 REGISTER_TEST2(Run, 33, STABILITY|EXCLUDE_FROM_ALL);
 }  // namespace test33
 
-
-// test34: STAB. Stress test for the number of locks sets (LSETs). {{{1
-namespace test34 {
+namespace StressTests_ManyLockSetsTest {  // {{{1
+// Stress test for the number of locks sets (LSETs).
 // Similar to test33, but for lock sets.
 int     GLOB = 0;
-const int N_iter = 48;
-const int Nlog = 10;
+const int N_iter = 1;
+const int Nlog = 13;
 const int N    = 1 << Nlog;
 static int ARR[N];
 static Mutex *MUs[Nlog];
@@ -1432,8 +1431,7 @@ void Worker() {
     }
 }
 
-void Run() {
-  printf("test34:\n");
+TEST(StressTests, ManyLockSetsTest) {
   for (int iter = 0; iter < N_iter; iter++) {
     for (int i = 0; i < Nlog; i++) {
       MUs[i] = new Mutex;
@@ -1444,11 +1442,10 @@ void Run() {
     for (int i = 0; i < Nlog; i++) {
       delete MUs[i];
     }
-    printf("------------------\n");
+    //printf("------------------\n");
   }
   printf("\tGLOB=%d\n", GLOB);
 }
-REGISTER_TEST2(Run, 34, STABILITY|EXCLUDE_FROM_ALL);
 }  // namespace test34
 
 
