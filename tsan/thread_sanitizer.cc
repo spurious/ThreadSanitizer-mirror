@@ -1050,10 +1050,11 @@ class LockSet {
       else                      G_stats->ls_size_other++;
       if (*id >= 4096 && ((*id & (*id - 1)) == 0)) {
         Report("INFO: %d LockSet IDs have been allocated "
-               "(2: %ld 3: %ld 4: %ld 5: %ld)\n",
+               "(2: %ld 3: %ld 4: %ld 5: %ld o: %ld)\n",
                *id,
                G_stats->ls_size_2, G_stats->ls_size_3,
-               G_stats->ls_size_4, G_stats->ls_size_5
+               G_stats->ls_size_4, G_stats->ls_size_5,
+               G_stats->ls_size_other
                );
       }
     }
