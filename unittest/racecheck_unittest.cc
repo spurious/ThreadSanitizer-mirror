@@ -1446,6 +1446,19 @@ TEST(StressTests, ManyLockSetsTest) {
   }
   printf("\tGLOB=%d\n", GLOB);
 }
+
+TEST(StressTests, EvenMoreLockSetsTest) {
+  int nlog = 16;
+  int n = 1 << nlog;
+  for (int i = 0; i < n; i++) {
+    void *lock = (void*)(0x1234 + i);
+    for (int j = 0; j < nlog; j++)
+      if (i & (1 << j)) ANNOTATE_RWLOCK_ACQUIRED(lock, 1);
+    for (int j = 0; j < nlog; j++)
+      if (i & (1 << j)) ANNOTATE_RWLOCK_RELEASED(lock, 1);
+  }
+}
+
 }  // namespace test34
 
 
