@@ -4171,6 +4171,20 @@ TEST(PositiveTests, AnnotateIgnoreWritesOnReadTest) {
   ANNOTATE_FLUSH_EXPECTED_RACES();
 }
 
+void IgnoreReadsBeginWithoutIgnoreEnd() {
+  ANNOTATE_IGNORE_READS_BEGIN();
+}
+void IgnoreWritesBeginWithoutIgnoreEnd() {
+  ANNOTATE_IGNORE_WRITES_BEGIN();
+}
+
+TEST(NegativeTests, IgnoreBeginWithoutIgnoreEnd) {
+  MyThreadArray t(IgnoreReadsBeginWithoutIgnoreEnd,
+                  IgnoreWritesBeginWithoutIgnoreEnd);
+  t.Start();
+  t.Join();
+}
+
 }  // namespace
 
 
