@@ -1956,7 +1956,7 @@ class Segment {
   // so that for small tests we do not require too much RAM.
   // We don't use vector<> or another resizable array to avoid expensive 
   // resizing.
-  enum { kChunkSizeForStacks = DEBUG_MODE ? 512 : 4 * 1024 * 1024 };
+  enum { kChunkSizeForStacks = DEBUG_MODE ? 512 : 1 * 1024 * 1024 };
   static uintptr_t **all_stacks_;
   static size_t      n_stack_chunks_;
 
