@@ -3421,6 +3421,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
     ReplaceFunc3(img, rtn, "strcmp", (AFUNPTR)Replace_strcmp);
     ReplaceFunc3(img, rtn, "strncmp", (AFUNPTR)Replace_strncmp);
     ReplaceFunc3(img, rtn, "memcpy", (AFUNPTR)Replace_memcpy);
+    ReplaceFunc3(img, rtn, "memmove", (AFUNPTR)Replace_memmove);
     ReplaceFunc3(img, rtn, "strcpy", (AFUNPTR)Replace_strcpy);
     ReplaceFunc3(img, rtn, "strncpy", (AFUNPTR)Replace_strncpy);
     ReplaceFunc3(img, rtn, "stpcpy", (AFUNPTR)Replace_stpcpy);

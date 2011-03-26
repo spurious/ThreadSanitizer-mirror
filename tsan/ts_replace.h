@@ -102,6 +102,24 @@ static NOINLINE char *Replace_memcpy(EXTRA_REPLACE_PARAMS char *dst,
   return dst;
 }
 
+static NOINLINE char *Replace_memmove(EXTRA_REPLACE_PARAMS char *dst,
+                                     const char *src, size_t len) {
+
+  size_t i;
+  if (dst < src) {
+    for (i = 0; i < len; i++) {
+      dst[i] = src[i];
+    }
+  } else {
+    for (i = 0; i < len; i++) {
+      dst[len - i - 1] = src[len - i - 1];
+    }
+  }
+  REPORT_READ_RANGE(src, i);
+  REPORT_WRITE_RANGE(dst, i);
+  return dst;
+}
+
 static NOINLINE char *Replace_strcpy(EXTRA_REPLACE_PARAMS char *dst,
                                      const char *src) {
   size_t i;

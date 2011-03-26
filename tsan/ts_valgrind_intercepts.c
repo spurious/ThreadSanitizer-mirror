@@ -2294,6 +2294,22 @@ MEMCPY(NONE, _intel_fast_memcpy)
 MEMCPY(VG_Z_LIBC_SONAME, __GI_memcpy);
 #endif
 
+// --- MEMMOVE -----------------------------------------------------
+//
+#define MEMMOVE(soname, fnname) \
+   void* VG_REPLACE_FUNCTION_ZU(soname,fnname) \
+            ( void *dst, const void *src, SizeT len ); \
+   void* VG_REPLACE_FUNCTION_ZU(soname,fnname) \
+            ( void *dst, const void *src, SizeT len ) \
+   { return Replace_memmove(dst, src, len); }
+
+MEMMOVE(VG_Z_LIBC_SONAME, memmove)
+MEMMOVE(NONE, memmove)
+#if defined(VGO_linux)
+MEMMOVE(VG_Z_LIBC_SONAME, __GI_memmove);
+#endif
+
+
 // --- STRCHR and INDEX -------------------------------------------
 //
 #define STRCHR(soname, fnname) \
