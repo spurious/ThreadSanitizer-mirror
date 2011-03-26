@@ -3177,7 +3177,64 @@ TEST(NegativeTests, StrlenAndFriends) {
   delete [] tmp2;
   // TODO(kcc): add more tests to check that interceptors are correct.
 }
-}  // namespace test71
+
+
+// Stress test for memmove -- make sure we have no false positives due to out
+// ouf bound reads in memmove.
+const int kMemmoveBufSize = 1024 * 128;
+const int kMemmoveMaxSize = 128;
+char buff_before[2 * (kMemmoveMaxSize + 8)];
+char memmove_buffer[kMemmoveBufSize];
+char buff_after[2 * (kMemmoveMaxSize + 8)];
+struct Chunk {
+  size_t size;
+  char *ptr;
+};
+vector<Chunk> chunks;
+int count = -1;
+
+void MemmoveThread() {
+  int myId = AtomicIncrement(&count, 1);
+  CHECK(myId == 0 || myId == 1);
+  char *before = (char*)&buff_before + myId * (kMemmoveMaxSize + 8);
+  char *after  = (char*)&buff_after  + myId * (kMemmoveMaxSize + 8);
+
+  for (size_t i = myId; i < chunks.size(); i += 2) {
+    Chunk &chunk = chunks[i];
+    for (int j = 0; j < chunk.size; j++) {
+      chunk.ptr[j] = j;
+    }
+    for (int k = 0; k < 8; k++) {
+      memmove(before + k, chunk.ptr, chunk.size);
+      memmove(after  + k, chunk.ptr, chunk.size);
+      CHECK(memcmp(before + k, chunk.ptr, chunk.size) == 0);
+      CHECK(memcmp(after + k, chunk.ptr, chunk.size) == 0);
+      memcpy(before + k, chunk.ptr, chunk.size);
+      memcpy(after  + k, chunk.ptr, chunk.size);
+    }
+  }
+}
+
+TEST(NegativeTests, MemmoveTest) {
+  // fill in the chunks
+  size_t total_size = 0;
+  while (total_size < kMemmoveBufSize) {
+    size_t size_left = kMemmoveBufSize - total_size;
+    size_t random_size = (rand() % min(kMemmoveMaxSize, (int)size_left)) + 1;
+    CHECK(random_size <= size_left);
+    Chunk chunk;
+    chunk.size = random_size;
+    chunk.ptr = memmove_buffer + total_size;
+    total_size += random_size;
+    chunks.push_back(chunk);
+  }
+  MyThreadArray t(MemmoveThread, MemmoveThread);
+  t.Start();
+  t.Join();
+}
+
+
+}  // namespace
 
 namespace NegativeTests_EmptyRep {  // {{{1
 void Worker() {
