@@ -8236,6 +8236,7 @@ bool ThreadSanitizerWantToCreateSegmentsOnSblockEntry(uintptr_t pc) {
 
 // Returns true if function at "pc" is marked as "fun_r" in the ignore file.
 bool NOINLINE ThreadSanitizerIgnoreAccessesBelowFunction(uintptr_t pc) {
+  ScopedMallocCostCenter cc(__FUNCTION__);
   typedef unordered_map<uintptr_t, bool> Cache;
   static Cache *cache = NULL;
   {
