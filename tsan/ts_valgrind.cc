@@ -1349,7 +1349,6 @@ static IRSB* ts_instrument ( VgCallbackClosure* closure,
   }
   TraceInfo *trace_info = NULL;
   if (n_mops > 0) {
-    ScopedMallocCostCenter cc("TraceInfo::NewTraceInfo");
     trace_info = TraceInfo::NewTraceInfo(n_mops, pc);
   }
   size_t n_mops_done = 0;

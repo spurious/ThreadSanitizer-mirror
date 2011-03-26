@@ -4085,6 +4085,7 @@ struct RecentSegmentsCache {
 vector<TraceInfo*> *TraceInfo::g_all_traces;
 
 TraceInfo *TraceInfo::NewTraceInfo(size_t n_mops, uintptr_t pc) {
+  ScopedMallocCostCenter cc("TraceInfo::NewTraceInfo");
   size_t mem_size = (sizeof(TraceInfo) + (n_mops - 1) * sizeof(MopInfo));
   uint8_t *mem = new uint8_t[mem_size];
   memset(mem, 0xab, mem_size);
@@ -4094,6 +4095,21 @@ TraceInfo *TraceInfo::NewTraceInfo(size_t n_mops, uintptr_t pc) {
   res->counter_ = 0;
   if (g_all_traces == NULL) {
     g_all_traces = new vector<TraceInfo*>;
+  }
+  res->literace_storage = NULL;
+  if (G_flags->literace_sampling != 0) {
+    ScopedMallocCostCenter cc("TraceInfo::NewTraceInfo::LiteRaceStorage");
+    size_t index_of_this_trace = g_all_traces->size();
+    if ((index_of_this_trace % kLiteRaceStorageSize) == 0) {
+      res->literace_storage = (LiteRaceStorage*)
+          new LiteRaceCounters [kLiteRaceStorageSize * kLiteRaceNumTids];
+      memset(res->literace_storage, 0, sizeof(LiteRaceStorage));
+    } else {
+      CHECK(index_of_this_trace > 0);
+      res->literace_storage = (*g_all_traces)[index_of_this_trace - 1]->literace_storage;
+      CHECK(res->literace_storage);
+    }
+    res->storage_index = index_of_this_trace % kLiteRaceStorageSize;
   }
   g_all_traces->push_back(res);
   return res;
