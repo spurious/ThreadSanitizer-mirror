@@ -37,12 +37,16 @@
 
 #include <fcntl.h>
 #include <fenv.h>
-#include <queue>
+#include <netdb.h>
 #include <signal.h>
 #include <stdlib.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
+#include <queue>
 #include <string>
 #include <vector>
-#include <unistd.h>
 
 #ifdef OS_linux
 # include <sys/epoll.h>
@@ -1155,7 +1159,7 @@ TEST(PositiveTests, RWLockVsRWLockTest) {
 
 }  // namespace
 
-namespace TSDTests {
+namespace TSDTests {  // {{{1
 // Test the support for libpthread TSD destructors.
 pthread_key_t key;
 const int kInitialValue = 0xfeedface;
@@ -1187,7 +1191,23 @@ TEST(TSDTests, TSDDestructorTest) {
   }
 }
 
+}  // namespace
+
+namespace NegativeTests_GetAddrInfoTest {
+void Worker() {
+  struct addrinfo *result = NULL;
+  int error = getaddrinfo("www.google.com", NULL, NULL, &result);
+  CHECK(error == 0);
+  freeaddrinfo(result);
 }
+
+TEST(NegativeTests, GetAddrInfoTest) {
+  MyThreadArray t(Worker, Worker);
+  t.Start();
+  t.Join();
+}
+
+}  // namespace
 
 // End {{{1
  // vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker

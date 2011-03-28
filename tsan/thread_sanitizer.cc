@@ -8152,6 +8152,8 @@ static void SetupIgnore() {
 #else
   // http://code.google.com/p/data-race-test/issues/detail?id=40
   g_ignore_lists->ignores_r.push_back(IgnoreFun("_ZNSsD1Ev"));
+
+  g_ignore_lists->ignores_r.push_back(IgnoreFun("gaih_inet"));
 #endif
 
 #ifdef ANDROID
