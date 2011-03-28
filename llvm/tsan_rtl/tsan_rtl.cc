@@ -239,8 +239,7 @@ void GIL::Unlock() {
     }
 #endif
     GIL_UNLOCK(&global_lock);
-    IN_RTL--;
-    CHECK_IN_RTL();
+    LEAVE_RTL();
   } else {
     gil_depth--;
   }
@@ -1104,8 +1103,7 @@ void free(void *ptr) {
   if (IN_RTL || !RTL_INIT || !INIT) return __libc_free(ptr);
   GIL scoped;
   FLUSH_TRACE();
-  IN_RTL++;
-  CHECK_IN_RTL();
+  ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)free, 0);
   // Normally pc is equal to 0, but FREE asserts that it is not.
@@ -1114,8 +1112,7 @@ void free(void *ptr) {
   __libc_free(ptr);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
   RPut(RTN_EXIT, tid, pc, 0, 0);
-  IN_RTL--;
-  CHECK_IN_RTL();
+  LEAVE_RTL();
 }
 
 extern "C"
@@ -1124,8 +1121,7 @@ void *__wrap_realloc(void *ptr, size_t size) {
   GIL scoped;
   FLUSH_TRACE();
   void *result;
-  IN_RTL++;
-  CHECK_IN_RTL();
+  ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_realloc, 0);
   pc = (pc_t) __wrap_realloc;
@@ -1135,8 +1131,7 @@ void *__wrap_realloc(void *ptr, size_t size) {
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
   SPut(MALLOC, tid, pc, (uintptr_t)result, size);
   RPut(RTN_EXIT, tid, pc, 0, 0);
-  IN_RTL--;
-  CHECK_IN_RTL();
+  LEAVE_RTL();
   return result;
 }
 
@@ -1146,8 +1141,7 @@ void *realloc(void *ptr, size_t size) {
   GIL scoped;
   FLUSH_TRACE();
   void *result;
-  IN_RTL++;
-  CHECK_IN_RTL();
+  ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)realloc, 0);
   pc = (pc_t) realloc;
@@ -1157,8 +1151,7 @@ void *realloc(void *ptr, size_t size) {
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
   SPut(MALLOC, tid, pc, (uintptr_t)result, size);
   RPut(RTN_EXIT, tid, pc, 0, 0);
-  IN_RTL--;
-  CHECK_IN_RTL();
+  LEAVE_RTL();
   return result;
 }
 
@@ -1171,8 +1164,7 @@ void *__wrap__Znwj(unsigned int size) {
   if (IN_RTL) return __real__Znwj(size);
   GIL scoped;
   FLUSH_TRACE();
-  IN_RTL++;
-  CHECK_IN_RTL();
+  ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__Znwj, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
@@ -1180,8 +1172,7 @@ void *__wrap__Znwj(unsigned int size) {
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
   pc = (pc_t) __wrap__Znwj;
   SPut(MALLOC, tid, pc, (uintptr_t)result, size);
-  IN_RTL--;
-  CHECK_IN_RTL();
+  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
 }
@@ -1191,8 +1182,7 @@ void *__wrap__ZnwjRKSt9nothrow_t(unsigned long size, std::nothrow_t &nt) {
   if (IN_RTL) return __real__ZnwjRKSt9nothrow_t(size, nt);
   GIL scoped;
   FLUSH_TRACE();
-  IN_RTL++;
-  CHECK_IN_RTL();
+  ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__ZnwjRKSt9nothrow_t, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
@@ -1200,8 +1190,7 @@ void *__wrap__ZnwjRKSt9nothrow_t(unsigned long size, std::nothrow_t &nt) {
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
   pc = (pc_t) __wrap__ZnwjRKSt9nothrow_t;
   SPut(MALLOC, tid, pc, (uintptr_t)result, size);
-  IN_RTL--;
-  CHECK_IN_RTL();
+  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
 }
@@ -1211,8 +1200,7 @@ void *__wrap__Znaj(unsigned int size) {
   if (IN_RTL) return __real__Znaj(size);
   GIL scoped;
   FLUSH_TRACE();
-  IN_RTL++;
-  CHECK_IN_RTL();
+  ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__Znaj, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
@@ -1220,8 +1208,7 @@ void *__wrap__Znaj(unsigned int size) {
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
   pc = (pc_t) __wrap__Znaj;
   SPut(MALLOC, tid, pc, (uintptr_t)result, size);
-  IN_RTL--;
-  CHECK_IN_RTL();
+  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
 }
@@ -1231,8 +1218,7 @@ void *__wrap__ZnajRKSt9nothrow_t(unsigned long size, std::nothrow_t &nt) {
   if (IN_RTL) return __real__ZnajRKSt9nothrow_t(size, nt);
   GIL scoped;
   FLUSH_TRACE();
-  IN_RTL++;
-  CHECK_IN_RTL();
+  ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__ZnajRKSt9nothrow_t, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
@@ -1240,8 +1226,7 @@ void *__wrap__ZnajRKSt9nothrow_t(unsigned long size, std::nothrow_t &nt) {
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
   pc = (pc_t) __wrap__ZnajRKSt9nothrow_t;
   SPut(MALLOC, tid, pc, (uintptr_t)result, size);
-  IN_RTL--;
-  CHECK_IN_RTL();
+  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
 }
@@ -1253,8 +1238,7 @@ void *__wrap__Znwm(unsigned long size) {
   if (IN_RTL) return __real__Znwm(size);
   GIL scoped;
   FLUSH_TRACE();
-  IN_RTL++;
-  CHECK_IN_RTL();
+  ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__Znwm, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
@@ -1262,8 +1246,7 @@ void *__wrap__Znwm(unsigned long size) {
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
   pc = (pc_t) __wrap__Znwm;
   SPut(MALLOC, tid, pc, (uintptr_t)result, size);
-  IN_RTL--;
-  CHECK_IN_RTL();
+  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
 }
@@ -1273,8 +1256,7 @@ void *__wrap__ZnwmRKSt9nothrow_t(unsigned long size, std::nothrow_t &nt) {
   if (IN_RTL) return __real__ZnwmRKSt9nothrow_t(size, nt);
   GIL scoped;
   FLUSH_TRACE();
-  IN_RTL++;
-  CHECK_IN_RTL();
+  ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__ZnwmRKSt9nothrow_t, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
@@ -1282,8 +1264,7 @@ void *__wrap__ZnwmRKSt9nothrow_t(unsigned long size, std::nothrow_t &nt) {
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
   pc = (pc_t) __wrap__ZnwmRKSt9nothrow_t;
   SPut(MALLOC, tid, pc, (uintptr_t)result, size);
-  IN_RTL--;
-  CHECK_IN_RTL();
+  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
 }
@@ -1293,8 +1274,7 @@ void *__wrap__Znam(unsigned long size) {
   if (IN_RTL) return __real__Znam(size);
   GIL scoped;
   FLUSH_TRACE();
-  IN_RTL++;
-  CHECK_IN_RTL();
+  ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__Znam, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
@@ -1302,8 +1282,7 @@ void *__wrap__Znam(unsigned long size) {
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
   pc = (pc_t) __wrap__Znam;
   SPut(MALLOC, tid, pc, (uintptr_t)result, size);
-  IN_RTL--;
-  CHECK_IN_RTL();
+  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
 }
@@ -1313,8 +1292,7 @@ void *__wrap__ZnamRKSt9nothrow_t(unsigned long size, std::nothrow_t &nt) {
   if (IN_RTL) return __real__ZnamRKSt9nothrow_t(size, nt);
   GIL scoped;
   FLUSH_TRACE();
-  IN_RTL++;
-  CHECK_IN_RTL();
+  ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__ZnamRKSt9nothrow_t, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
@@ -1322,8 +1300,7 @@ void *__wrap__ZnamRKSt9nothrow_t(unsigned long size, std::nothrow_t &nt) {
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
   pc = (pc_t) __wrap__ZnamRKSt9nothrow_t;
   SPut(MALLOC, tid, pc, (uintptr_t)result, size);
-  IN_RTL--;
-  CHECK_IN_RTL();
+  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
 }
@@ -1336,8 +1313,7 @@ void __wrap__ZdlPv(void *ptr) {
   if (IN_RTL) return __real__ZdlPv(ptr);
   GIL scoped;
   FLUSH_TRACE();
-  IN_RTL++;
-  CHECK_IN_RTL();
+  ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__ZdlPv, 0);
   SPut(FREE, tid, (pc_t)__wrap__ZdlPv, (uintptr_t)ptr, 0);
@@ -1345,8 +1321,7 @@ void __wrap__ZdlPv(void *ptr) {
   //if (ptr) memset(ptr, 0, 4);
   __real__ZdlPv(ptr);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
-  IN_RTL--;
-  CHECK_IN_RTL();
+  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
 }
 
@@ -1355,16 +1330,14 @@ void __wrap__ZdlPvRKSt9nothrow_t(void *ptr, std::nothrow_t &nt) {
   if (IN_RTL) return __real__ZdlPvRKSt9nothrow_t(ptr, nt);
   GIL scoped;
   FLUSH_TRACE();
-  IN_RTL++;
-  CHECK_IN_RTL();
+  ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__ZdlPvRKSt9nothrow_t, 0);
   SPut(FREE, tid, (pc_t)__wrap__ZdlPvRKSt9nothrow_t, (uintptr_t)ptr, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   __real__ZdlPvRKSt9nothrow_t(ptr, nt);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
-  IN_RTL--;
-  CHECK_IN_RTL();
+  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
 }
 
@@ -1372,16 +1345,14 @@ extern "C"
 void __wrap__ZdaPv(void *ptr) {
   if (IN_RTL) return __real__ZdaPv(ptr);
   GIL scoped;
-  IN_RTL++;
-  CHECK_IN_RTL();
+  ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__ZdaPv, 0);
   SPut(FREE, tid, (pc_t)__wrap__ZdaPv, (uintptr_t)ptr, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   __real__ZdaPv(ptr);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
-  IN_RTL--;
-  CHECK_IN_RTL();
+  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
 }
 
@@ -1390,16 +1361,14 @@ void __wrap__ZdaPvRKSt9nothrow_t(void *ptr, std::nothrow_t &nt) {
   if (IN_RTL) return __real__ZdaPvRKSt9nothrow_t(ptr, nt);
   GIL scoped;
   FLUSH_TRACE();
-  IN_RTL++;
-  CHECK_IN_RTL();
+  ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__ZdaPvRKSt9nothrow_t, 0);
   SPut(FREE, tid, (pc_t)__wrap__ZdaPvRKSt9nothrow_t, (uintptr_t)ptr, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   __real__ZdaPvRKSt9nothrow_t(ptr, nt);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
-  IN_RTL--;
-  CHECK_IN_RTL();
+  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
 }
 // }}}
@@ -1715,8 +1684,7 @@ int __wrap_pthread_join(pthread_t thread, void **value_ptr) {
   {
     GIL scoped;
     // TODO(glider): locking GIL should probably enforce IN_RTL++.
-    IN_RTL++;
-    CHECK_IN_RTL();
+    ENTER_RTL();
     if (Tids.find(thread) == Tids.end()) {
       InitConds[thread] = new pthread_cond_t;
       pthread_cond_init(InitConds[thread], NULL);
@@ -1743,8 +1711,7 @@ int __wrap_pthread_join(pthread_t thread, void **value_ptr) {
       __real_pthread_cond_wait(FinishConds[joined_tid], &global_lock);
     }
     unsafe_forget_thread(joined_tid, tid);  // TODO(glider): earlier?
-    IN_RTL--;
-    CHECK_IN_RTL();
+    LEAVE_RTL();
   }
 
   int result = __real_pthread_join(thread, value_ptr);
@@ -2026,15 +1993,13 @@ extern "C"
 void __wrap_exit(int status) {
   FLUSH_TRACE();
   if (IN_RTL) __real_exit(status);
-  IN_RTL++;
-  CHECK_IN_RTL();
+  ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_exit, 0);
   SPut(WAIT, tid, pc, kAtExitMagic, 0);
   __real_exit(status);
   // This in fact is never executed.
-  IN_RTL--;
-  CHECK_IN_RTL();
+  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
 }
 
@@ -2046,8 +2011,7 @@ pid_t __wrap_fork() {
   GIL scoped;
   ThreadSanitizerLockAcquire();
   pid_t result;
-  IN_RTL++;
-  CHECK_IN_RTL();
+  ENTER_RTL();
   Printf("Before fork() in process %d\n", getpid());
   result = __real_fork();
   Printf("After fork() in process %d\n", getpid());
@@ -2076,8 +2040,7 @@ pid_t __wrap_fork() {
     return result;
   }
   // Falling through to the parent process.
-  IN_RTL--;
-  CHECK_IN_RTL();
+  LEAVE_RTL();
   ThreadSanitizerLockRelease();
   return result;
 }
@@ -2097,8 +2060,7 @@ ssize_t __wrap_read(int fd, void *buf, size_t count) {
   FLUSH_TRACE();
   ssize_t result = __real_read(fd, buf, count);
   if (IN_RTL) return result;
-  IN_RTL++;
-  CHECK_IN_RTL();
+  ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_read, 0);
   // TODO(glider): we should treat dup()ped fds as equal ones.
@@ -2106,8 +2068,7 @@ ssize_t __wrap_read(int fd, void *buf, size_t count) {
   if (result > 0) {
     SPut(WAIT, tid, pc, FdMagic(fd), 0);
   }
-  IN_RTL--;
-  CHECK_IN_RTL();
+  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
 }
@@ -2625,8 +2586,7 @@ void ReadElf() {
   // size of .tdata and .tbss.
   static_tls_size = 2048;
 
-  IN_RTL++;
-  CHECK_IN_RTL();
+  ENTER_RTL();
   for (int i = 0; i < shnum; ++i) {
     Elf_Shdr* shdr = shdrs + i;
     Elf_Off off = shdr->sh_offset;
@@ -2647,8 +2607,7 @@ void ReadElf() {
       }
     }
   }
-  IN_RTL--;
-  CHECK_IN_RTL();
+  LEAVE_RTL();
   if (debug_info_section) {
     // Parse the debug info section.
     ReadDbgInfoFromSection(debug_info_section,
@@ -2897,8 +2856,7 @@ void PcToStrings(pc_t pc, bool demangle,
 extern "C" void tsan_rtl_mop(void *addr, unsigned flags);
 
 void tsan_rtl_mop(void *addr, unsigned flags) {
-  IN_RTL++;
-  CHECK_IN_RTL();
+  ENTER_RTL();
   void* pc = __builtin_return_address(0);
   uint64_t mop = (uint64_t)pc | ((uint64_t)flags) << 58;
   MopInfo mop2;
@@ -2906,8 +2864,7 @@ void tsan_rtl_mop(void *addr, unsigned flags) {
   ThreadSanitizerHandleOneMemoryAccess(INFO.thread,
                                        mop2,
                                        (uintptr_t)addr);
-  IN_RTL--;
-  CHECK_IN_RTL();
+  LEAVE_RTL();
 }
 
 // }}}
