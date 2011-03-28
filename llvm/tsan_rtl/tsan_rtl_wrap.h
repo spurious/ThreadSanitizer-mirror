@@ -76,6 +76,7 @@ void *__real_calloc(size_t nmemb, size_t size);
 void *__real_malloc(size_t size);
 void *__real_realloc(void *ptr, size_t size);
 void __real_free(void *ptr);
+int __real_posix_memalign(void **memptr, size_t alignment, size_t size);
 
 ssize_t __real_write(int fd, const void *buf, size_t count);
 ssize_t __real_read(int fd, const void *buf, size_t count);

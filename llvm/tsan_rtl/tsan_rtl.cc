@@ -1074,15 +1074,29 @@ void __wrap_free(void *ptr) {
   GIL scoped;
   FLUSH_TRACE();
   DECLARE_TID_AND_PC();
-  RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_free, 0);
   ENTER_RTL();
+  RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_free, 0);
   // Normally pc is equal to 0, but FREE asserts that it is not.
   SPut(FREE, tid, (pc_t)__wrap_free, (uintptr_t)ptr, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   __real_free(ptr);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
-  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
+  LEAVE_RTL();
+}
+
+extern "C"
+int __wrap_posix_memalign(void **memptr, size_t alignment, size_t size) {
+  if (IN_RTL) return __real_posix_memalign(memptr, alignment, size);
+  GIL scoped;
+  ENTER_RTL();
+  DECLARE_TID_AND_PC();
+  RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_posix_memalign, 0);
+  int result = __real_posix_memalign(memptr, alignment, size);
+  if (result) SPut(MALLOC, tid, pc, (uintptr_t)(*memptr), 0);
+  RPut(RTN_EXIT, tid, pc, 0, 0);
+  LEAVE_RTL();
+  return result;
 }
 
 extern "C"
@@ -1421,6 +1435,8 @@ int __wrap_sem_wait(sem_t *sem) {
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
 }
+
+// We do not intercept sel_init and sem_destroy, as they're not interesting.
 
 extern "C"
 int __wrap_sem_trywait(sem_t *sem) {
@@ -2481,6 +2497,7 @@ void AddWrappersDbgInfo() {
   WRAPPER_DBG_INFO(__wrap_malloc);
   WRAPPER_DBG_INFO(__wrap_realloc);
   WRAPPER_DBG_INFO(__wrap_free);
+  WRAPPER_DBG_INFO(__wrap_posix_memalign);
 
   WRAPPER_DBG_INFO(malloc);
   WRAPPER_DBG_INFO(free);
