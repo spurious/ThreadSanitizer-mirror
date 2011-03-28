@@ -8155,6 +8155,7 @@ static void SetupIgnore() {
 
   g_ignore_lists->ignores_r.push_back(IgnoreFun("gaih_inet"));
   g_ignore_lists->ignores_r.push_back(IgnoreFun("getaddrinfo"));
+  g_ignore_lists->ignores_r.push_back(IgnoreFun("gethostbyname2_r"));
 #endif
 
 #ifdef ANDROID
