@@ -81,6 +81,10 @@ ssize_t __real_write(int fd, const void *buf, size_t count);
 ssize_t __real_read(int fd, const void *buf, size_t count);
 int __real_lockf64(int fd, int cmd, off_t len);
 
+int __real_epoll_ctl(int epfd, int op, int fd, struct epoll_event *event);
+int __real_epoll_wait(int epfd, struct epoll_event *events,
+                      int maxevents, int timeout);
+
 int __real_pthread_once(pthread_once_t *once_control, void (*init_routine) (void));
 
 int __real_pthread_barrier_init(pthread_barrier_t *barrier,

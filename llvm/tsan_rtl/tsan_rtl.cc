@@ -195,8 +195,7 @@ void GIL::Lock() {
 #ifdef ENABLE_STATS
     stats_lock_taken++;
 #endif
-    IN_RTL++;
-    CHECK_IN_RTL();
+    ENTER_RTL();
   }
 #if (DEBUG)
   gil_owner = pthread_self();
@@ -217,8 +216,7 @@ bool GIL::TryLock() {
     result = !static_cast<bool>(GIL_TRYLOCK(&global_lock));
     if (result) {
       gil_depth++;
-      IN_RTL++;
-      CHECK_IN_RTL();
+      ENTER_RTL();
     }
     return result;
   } else {
@@ -307,11 +305,9 @@ INLINE void SPut(EventType type, tid_t tid, pc_t pc,
         (type == THR_END) ||
         (type == THR_JOIN_AFTER) ||
         (type == THR_CREATE_BEFORE)) {
-      IN_RTL++;
-      CHECK_IN_RTL();
+      ENTER_RTL();
       event.Print();
-      IN_RTL--;
-      CHECK_IN_RTL();
+      LEAVE_RTL();
     }
   }
 #ifdef ENABLE_STATS
@@ -322,13 +318,11 @@ INLINE void SPut(EventType type, tid_t tid, pc_t pc,
   }
 #endif
 
-  IN_RTL++;
-  CHECK_IN_RTL();
+  ENTER_RTL();
   {
     ThreadSanitizerHandleOneEvent(&event);
   }
-  IN_RTL--;
-  CHECK_IN_RTL();
+  LEAVE_RTL();
   unsafe_clear_pending_signals();
   if (type == THR_START) {
     if (tid == 0) HAVE_THREAD_0 = 1;
@@ -377,8 +371,7 @@ void INLINE flush_trace(TraceInfoPOD *trace) {
                                thread_local_literace);
     }
     if (DEBUG && G_flags->verbosity >= 2) {
-      IN_RTL++;
-      CHECK_IN_RTL();
+      ENTER_RTL();
       Event sblock(SBLOCK_ENTER, tid, trace->pc_, 0, trace->n_mops_);
       sblock.Print();
       DCHECK(trace->n_mops_);
@@ -395,18 +388,15 @@ void INLINE flush_trace(TraceInfoPOD *trace) {
           event.Print();
         }
       }
-      IN_RTL--;
-      CHECK_IN_RTL();
+      LEAVE_RTL();
     }
     {
-      IN_RTL++;
-      CHECK_IN_RTL();
+      ENTER_RTL();
       DCHECK(ShadowStack.pcs_ <= ShadowStack.end_);
       ThreadSanitizerHandleTrace(tid,
                                  trace_info,
                                  TLEB);
-      IN_RTL--;
-      CHECK_IN_RTL();
+      LEAVE_RTL();
     }
 
     // TODO(glider): the instrumentation pass may generate basic blocks that
@@ -441,12 +431,10 @@ INLINE void RPut(EventType type, tid_t tid, pc_t pc,
 }
 
 void finalize() {
-  IN_RTL++;
-  CHECK_IN_RTL();
+  ENTER_RTL();
   // atexit hooks are ran from a single thread.
   ThreadSanitizerFini();
-  IN_RTL--;
-  CHECK_IN_RTL();
+  LEAVE_RTL();
 #if ENABLE_STATS
   Printf("Locks: %d\nEvents: %d\n",
          stats_lock_taken, stats_events_processed);
@@ -518,8 +506,7 @@ bool initialize() {
 
   // TODO(glider): do we need it?
   // assert(IN_RTL == 0);
-  IN_RTL++;
-  CHECK_IN_RTL();
+  ENTER_RTL();
   // Only one thread exists at this moment.
   G_flags = new FLAGS;
   G_out = stderr;
@@ -548,8 +535,7 @@ bool initialize() {
     Printf("WARNING: the --dry_run flag is not supported anymore. "
            "Ignoring.\n");
   }
-  IN_RTL--;
-  CHECK_IN_RTL();
+  LEAVE_RTL();
   __real_atexit(finalize);
   RTL_INIT = 1;
   ShadowStack.end_ = ShadowStack.pcs_;
@@ -571,11 +557,9 @@ bool initialize() {
 
   SPut(THR_START, 0, (pc_t) &ShadowStack, 0, 0);
 
-  IN_RTL++;
-  CHECK_IN_RTL();
+  ENTER_RTL();
   INFO.thread = ThreadSanitizerGetThreadByTid(0);
-  IN_RTL--;
-  CHECK_IN_RTL();
+  LEAVE_RTL();
 
   if (stack_top) {
     // We don't intercept the mmap2 syscall that allocates thread stack, so pass
@@ -603,16 +587,14 @@ extern pc_t ExGetPc() {
 
 // Should be called under the global lock.
 INLINE void UnsafeInitTidCommon() {
-  IN_RTL++;
-  CHECK_IN_RTL();
+  ENTER_RTL();
   memset(TLEB, 0, kTLEBSize);
   INFO.thread_local_ignore = &thread_local_ignore;
   thread_local_ignore = !!global_ignore;
   thread_local_show_stats = G_flags->show_stats;
   thread_local_literace = G_flags->literace_sampling;
   LTID = (INFO.tid % TraceInfoPOD::kLiteRaceNumTids);
-  IN_RTL--;
-  CHECK_IN_RTL();
+  LEAVE_RTL();
   INIT = 1;
 }
 
@@ -733,12 +715,10 @@ void *pthread_callback(void *arg) {
   ShadowStack.end_ = ShadowStack.pcs_;
   SPut(THR_START, INFO.tid, (pc_t) &ShadowStack, 0, parent);
 
-  IN_RTL++;
-  CHECK_IN_RTL();
+  ENTER_RTL();
   INFO.thread = ThreadSanitizerGetThreadByTid(INFO.tid);
   delete cb_arg;
-  IN_RTL--;
-  CHECK_IN_RTL();
+  LEAVE_RTL();
 
   if (stack_top) {
     // We don't intercept the mmap2 syscall that allocates thread stack, so pass
@@ -845,7 +825,7 @@ void unsafe_forget_thread(tid_t tid, tid_t from) {
 // a deadlock. Use IN_RTL to check whether the wrapped function is called from
 // the runtime library and fall back to the original version without emitting
 // events or calling ThreadSanitizer routines. Always enclose potentially
-// reentrant logic with IN_RTL++/IN_RTL--.
+// reentrant logic with ENTER_RTL()/LEAVE_RTL().
 //
 // To protect ThreadSanitizer's shadow stack wrappers should emit
 // RTN_CALL/RTN_EXIT events.
@@ -866,8 +846,7 @@ int __wrap_pthread_create(pthread_t *thread,
   FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_create, 0);
-  IN_RTL++;
-  CHECK_IN_RTL();
+  ENTER_RTL();
   callback_arg *cb_arg = new callback_arg;
   cb_arg->routine = start_routine;
   cb_arg->arg = arg;
@@ -884,8 +863,7 @@ int __wrap_pthread_create(pthread_t *thread,
     ChildThreadStartBarriers[tid] = barrier;
     DDPrintf("Setting ChildThreadStartBarriers[%d]\n", tid);
   }
-  IN_RTL--;
-  CHECK_IN_RTL();
+  LEAVE_RTL();
   int result = __real_pthread_create(thread, attr, pthread_callback, cb_arg);
   tid_t child_tid = 0;
   if (result == 0) {
@@ -990,9 +968,8 @@ extern "C"
 void *__wrap_mmap(void *addr, size_t length, int prot, int flags,
                   int fd, off_t offset) {
   if (IN_RTL) return __real_mmap(addr, length, prot, flags, fd, offset);
-  GIL scoped;
-  IN_RTL++;
-  CHECK_IN_RTL();
+  GIL scoped; // TODO(glider): GIL should force ENTER_RTL.
+  ENTER_RTL();
   void *result;
   FLUSH_TRACE();
   DECLARE_TID_AND_PC();
@@ -1004,8 +981,7 @@ void *__wrap_mmap(void *addr, size_t length, int prot, int flags,
     SPut(MMAP, tid, pc, (uintptr_t)result, (uintptr_t)length);
   }
   RPut(RTN_EXIT, tid, pc, 0, 0);
-  IN_RTL--;
-  CHECK_IN_RTL();
+  LEAVE_RTL();
   return result;
 }
 
@@ -1014,20 +990,18 @@ int __wrap_munmap(void *addr, size_t length) {
   if (IN_RTL) return __real_munmap(addr, length);
   GIL scoped;
   int result;
-  IN_RTL++;
-  CHECK_IN_RTL();
   FLUSH_TRACE();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_munmap, 0);
+  ENTER_RTL();
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   result = __real_munmap(addr, length);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
   if (result == 0) {
     SPut(MUNMAP, tid, pc, (uintptr_t)addr, (uintptr_t)length);
   }
+  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
-  IN_RTL--;
-  CHECK_IN_RTL();
   return result;
 }
 
@@ -1056,8 +1030,7 @@ void *__wrap_malloc(size_t size) {
   if (IN_RTL) return __real_malloc(size);
   GIL scoped;
   FLUSH_TRACE();
-  IN_RTL++;
-  CHECK_IN_RTL();
+  ENTER_RTL();
   void *result;
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_malloc, 0);
@@ -1067,8 +1040,7 @@ void *__wrap_malloc(size_t size) {
   pc = (pc_t) __wrap_malloc;
   SPut(MALLOC, tid, pc, (uintptr_t)result, size);
   RPut(RTN_EXIT, tid, pc, 0, 0);
-  IN_RTL--;
-  CHECK_IN_RTL();
+  LEAVE_RTL();
   return result;
 }
 
@@ -1082,8 +1054,7 @@ void *malloc(size_t size) {
   if (IN_RTL || !RTL_INIT || !INIT) return __libc_malloc(size);
   GIL scoped;
   FLUSH_TRACE();
-  IN_RTL++;
-  CHECK_IN_RTL();
+  ENTER_RTL();
   void *result;
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)malloc, 0);
@@ -1093,8 +1064,7 @@ void *malloc(size_t size) {
   pc = (pc_t) malloc;
   SPut(MALLOC, tid, pc, (uintptr_t)result, size);
   RPut(RTN_EXIT, tid, pc, 0, 0);
-  IN_RTL--;
-  CHECK_IN_RTL();
+  LEAVE_RTL();
   return result;
 }
 
@@ -1103,18 +1073,16 @@ void __wrap_free(void *ptr) {
   if (IN_RTL) return __real_free(ptr);
   GIL scoped;
   FLUSH_TRACE();
-  IN_RTL++;
-  CHECK_IN_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_free, 0);
+  ENTER_RTL();
   // Normally pc is equal to 0, but FREE asserts that it is not.
   SPut(FREE, tid, (pc_t)__wrap_free, (uintptr_t)ptr, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   __real_free(ptr);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
+  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
-  IN_RTL--;
-  CHECK_IN_RTL();
 }
 
 extern "C"
@@ -1918,8 +1886,10 @@ char *__wrap_strcpy(char *dest, const char *src) {
   if (IN_RTL) return __real_strcpy(dest, src);
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_strcpy, 0);
+  ENTER_RTL();
   pc = (pc_t)__wrap_strcpy;
   char *result = Replace_strcpy(tid, pc, dest, src);
+  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
 }
@@ -2082,6 +2052,7 @@ pid_t __wrap_fork() {
     // no more!
     FORKED_CHILD = true;
     ThreadSanitizerLockRelease();
+    //global_ignore = true;
     // TODO(glider): check for FORKED_CHILD every time we access someone's TLS.
 
     // We also keep IN_RTL > 0 to avoid other threads taking GIL for the same
@@ -2129,14 +2100,12 @@ extern "C"
 ssize_t __wrap_write(int fd, const void *buf, size_t count) {
   if (IN_RTL) return __real_write(fd, buf, count);
   FLUSH_TRACE();
-  IN_RTL++;
-  CHECK_IN_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_write, 0);
+  ENTER_RTL();
   SPut(SIGNAL, tid, pc, FdMagic(fd), 0);
   ssize_t result = __real_write(fd, buf, count);
-  IN_RTL--;
-  CHECK_IN_RTL();
+  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
 }
@@ -2147,10 +2116,9 @@ int __wrap_lockf64(int fd, int cmd, off_t len) {
   // TODO(glider): support len != 0
   if (IN_RTL || len) return __real_lockf64(fd, cmd, len);
   FLUSH_TRACE();
-  IN_RTL++;
-  CHECK_IN_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_lockf64, 0);
+  ENTER_RTL();
   int result = __real_lockf64(fd, cmd, len);
   if (result == 0) {
     if (cmd == F_LOCK) {
@@ -2160,11 +2128,40 @@ int __wrap_lockf64(int fd, int cmd, off_t len) {
       SPut(SIGNAL, tid, pc, FdMagic(fd), 0);
     }
   }
-  IN_RTL--;
-  CHECK_IN_RTL();
+  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
 }
+
+extern "C"
+int __wrap_epoll_ctl(int epfd, int op, int fd, struct epoll_event *event) {
+  if (IN_RTL) return __real_epoll_ctl(epfd, op, fd, event);
+  DECLARE_TID_AND_PC();
+  RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_epoll_ctl, 0);
+  ENTER_RTL();
+  int result = __real_epoll_ctl(epfd, op, fd, event);
+  SPut(SIGNAL, tid, pc, FdMagic(epfd), 0);
+  LEAVE_RTL();
+  RPut(RTN_EXIT, tid, pc, 0, 0);
+  return result;
+}
+
+extern "C"
+int __wrap_epoll_wait(int epfd, struct epoll_event *events,
+                      int maxevents, int timeout) {
+  if (IN_RTL) return __real_epoll_wait(epfd, events, maxevents, timeout);
+  DECLARE_TID_AND_PC();
+  RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_epoll_wait, 0);
+  ENTER_RTL();
+  int result = __real_epoll_wait(epfd, events, maxevents, timeout);
+  SPut(WAIT, tid, pc, FdMagic(epfd), 0);
+  LEAVE_RTL();
+  RPut(RTN_EXIT, tid, pc, 0, 0);
+  return result;
+}
+
+
+
 
 // Signal handling {{{1
 /* Initial support for signals. Each user signal handler is stored in
@@ -2491,6 +2488,9 @@ void AddWrappersDbgInfo() {
 
   WRAPPER_DBG_INFO(__wrap_read);
   WRAPPER_DBG_INFO(__wrap_write);
+
+  WRAPPER_DBG_INFO(__wrap_epoll_ctl);
+  WRAPPER_DBG_INFO(__wrap_epoll_wait);
 
   WRAPPER_DBG_INFO(__wrap_pthread_once);
   WRAPPER_DBG_INFO(__wrap_pthread_barrier_init);
