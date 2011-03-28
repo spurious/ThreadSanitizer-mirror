@@ -6843,7 +6843,30 @@ TEST(PositiveTests, ReadVsFree) {
   t.Start();
   t.Join();
 }
+}  // namespace
 
+namespace PositiveTests_FreeVsRead {  // {{{1
+int *p;
+const int kIdx = 77;
+StealthNotification n;
+
+void Free() {
+  free(p);
+  n.signal();
+}
+void Read() {
+  n.wait();
+  CHECK(p[kIdx] != 0x123456);
+}
+
+TEST(PositiveTests, FreeVsRead) {
+  p = (int*)malloc(100 * sizeof(int));
+  p[kIdx] = 777;
+  ANNOTATE_EXPECT_RACE(&p[kIdx], "race: free vs read");
+  MyThreadArray t(Free, Read);
+  t.Start();
+  t.Join();
+}
 }  // namespace
 
 namespace ManySmallObjectsTest {  // {{{1
