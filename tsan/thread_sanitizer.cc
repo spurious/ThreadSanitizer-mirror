@@ -117,6 +117,16 @@ class TIL {
 static TSLock *ts_lock;
 static TSLock *ts_ignore_below_lock;
 
+#ifdef TS_LLVM
+void ThreadSanitizerLockAcquire() {
+  ts_lock->Lock();
+}
+
+void ThreadSanitizerLockRelease() {
+  ts_lock->Unlock();
+}
+#endif
+
 static INLINE void AssertTILHeld() {
   if (TS_SERIALIZED == 0 && DEBUG_MODE) {
     ts_lock->AssertHeld();

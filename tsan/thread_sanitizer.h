@@ -197,6 +197,11 @@ struct CallStack: public CallStackPod {
 struct Thread;
 extern void ThreadSanitizerInit();
 extern void ThreadSanitizerFini();
+// TODO(glider): this is a temporary solution to avoid deadlocks after fork().
+#ifdef TS_LLVM
+extern void ThreadSanitizerLockAcquire();
+extern void ThreadSanitizerLockRelease();
+#endif
 extern void ThreadSanitizerHandleOneEvent(Event *event);
 extern Thread *ThreadSanitizerGetThreadByTid(int32_t tid);
 extern void ThreadSanitizerHandleTrace(int32_t tid, TraceInfo *trace_info,
