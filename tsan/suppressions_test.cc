@@ -31,7 +31,6 @@
 
 #include <gtest/gtest.h>
 
-#include "common_util.h"
 #include "suppressions.h"
 
 #define VEC(arr) *(new vector<string>(arr, arr + sizeof(arr) / sizeof(*arr)))

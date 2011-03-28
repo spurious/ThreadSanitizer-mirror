@@ -29,9 +29,6 @@
 
 // This file contains the parser for valgrind-compatible suppressions.
 
-#include "common_util.h"
-#include "ts_util.h"
-
 #include "suppressions.h"
 
 // TODO(eugenis): convert checks to warning messages.
