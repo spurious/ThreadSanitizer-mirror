@@ -4774,7 +4774,6 @@ struct Thread {
 
   INLINE bool HandleSblockEnter(uintptr_t pc, bool allow_slow_path) {
     DCHECK(G_flags->keep_history);
-    DCHECK(!this->ignore_reads() || !this->ignore_writes());
     if (!pc) return true;
 
     this->stats.events[SBLOCK_ENTER]++;
@@ -7456,6 +7455,22 @@ one_call:
     }
   }
 
+  void ImitateWriteOnFree(Thread *thr, uintptr_t a, uintptr_t size, uintptr_t pc) {
+    // Handle the memory deletion as a write, but don't touch all
+    // the memory if there is too much of it, limit with the first 1K.
+    if (size && G_flags->free_is_write && !global_ignore) {
+      const uintptr_t kMaxWriteSizeOnFree = 2048;
+      uintptr_t write_size = min(kMaxWriteSizeOnFree, size);
+      uintptr_t step = sizeof(uintptr_t);
+      // We simulate 4- or 8-byte accesses to make analysis faster.
+      for (uintptr_t i = 0; i < write_size; i += step) {
+        uintptr_t this_size = write_size - i >= step ? step : write_size - i;
+        HandleMemoryAccess(thr, pc, a + i, this_size,
+                           /*is_w=*/true, /*need_locking*/false);
+      }
+    }
+  }
+
   // FREE
   void HandleFree(Event *e) {
     TID tid(e->tid());
@@ -7471,25 +7486,22 @@ one_call:
     if (!info || info->ptr != a)
       return;
     uintptr_t size = info->size;
-    // Handle the memory deletion as a write, but don't touch all
-    // the memory if there is too much of it, limit with the first 1K.
-    if (size && G_flags->free_is_write && !global_ignore) {
-      const uintptr_t max_write_size = 1024;
-      uintptr_t write_size = min(max_write_size, size);
-      uintptr_t step = sizeof(uintptr_t);
-      // We simulate 4- or 8-byte accesses to make analysis faster.
-      for (uintptr_t i = 0; i < write_size; i += step) {
-        uintptr_t this_size = write_size - i >= step ? step : write_size - i;
-        HandleMemoryAccess(thr, e->pc(), a + i, this_size,
-                           /*is_w=*/true, /*need_locking*/false);
-      }
-    }
+    uintptr_t pc = e->pc();
+    ImitateWriteOnFree(thr, a, size, pc);
     // update G_heap_map
     CHECK(info->ptr == a);
     Segment::Unref(info->sid, __FUNCTION__);
 
     ClearMemoryState(thr, a, a + size);
     G_heap_map->EraseInfo(a);
+
+    // We imitate a Write event again, in case there will be use-after-free.
+    // We also need to create a new sblock so that the previous stack trace
+    // has free() in it.
+    if (G_flags->keep_history && G_flags->free_is_write) {
+      thr->HandleSblockEnter(pc, /*allow_slow_path*/true);
+    }
+    ImitateWriteOnFree(thr, a, size, pc);
   }
 
   void HandleMunmap(Event *e) {
