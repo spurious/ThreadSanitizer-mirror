@@ -57,6 +57,11 @@ wrap read
 wrap write
 wrap lockf64
 
+wrap send
+wrap recv
+wrap sendmsg
+wrap recvmsg
+
 wrap pthread_once
 
 wrap sigaction

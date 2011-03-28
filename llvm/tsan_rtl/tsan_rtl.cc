@@ -2125,6 +2125,59 @@ ssize_t __wrap_write(int fd, const void *buf, size_t count) {
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
 }
+
+extern "C"
+ssize_t __wrap_send(int sockfd, const void *buf, size_t len, int flags) {
+  if (IN_RTL) return __real_send(sockfd, buf, len, flags);
+  DECLARE_TID_AND_PC();
+  RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_send, 0);
+  ENTER_RTL();
+  SPut(SIGNAL, tid, pc, FdMagic(sockfd), 0);
+  ssize_t result = __real_send(sockfd, buf, len, flags);
+  LEAVE_RTL();
+  RPut(RTN_EXIT, tid, pc, 0, 0);
+  return result;
+}
+
+extern "C"
+ssize_t __wrap_recv(int sockfd, void *buf, size_t len, int flags) {
+  if (IN_RTL) return __real_recv(sockfd, buf, len, flags);
+  DECLARE_TID_AND_PC();
+  RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_recv, 0);
+  ENTER_RTL();
+  ssize_t result = __real_recv(sockfd, buf, len, flags);
+  if (result) SPut(WAIT, tid, pc, FdMagic(sockfd), 0);
+  LEAVE_RTL();
+  RPut(RTN_EXIT, tid, pc, 0, 0);
+  return result;
+}
+
+extern "C"
+ssize_t __wrap_sendmsg(int sockfd, const struct msghdr *msg, int flags) {
+  if (IN_RTL) return __real_sendmsg(sockfd, msg, flags);
+  DECLARE_TID_AND_PC();
+  RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_sendmsg, 0);
+  ENTER_RTL();
+  SPut(SIGNAL, tid, pc, FdMagic(sockfd), 0);
+  ssize_t result = __real_sendmsg(sockfd, msg, flags);
+  LEAVE_RTL();
+  RPut(RTN_EXIT, tid, pc, 0, 0);
+  return result;
+}
+
+extern "C"
+ssize_t __wrap_recvmsg(int sockfd, struct msghdr *msg, int flags) {
+  if (IN_RTL) return __real_recvmsg(sockfd, msg, flags);
+  DECLARE_TID_AND_PC();
+  RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_recvmsg, 0);
+  ENTER_RTL();
+  ssize_t result = __real_recvmsg(sockfd, msg, flags);
+  if (result) SPut(WAIT, tid, pc, FdMagic(sockfd), 0);
+  LEAVE_RTL();
+  RPut(RTN_EXIT, tid, pc, 0, 0);
+  return result;
+}
+
 // }}}
 
 extern "C"
