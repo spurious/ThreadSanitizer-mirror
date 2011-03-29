@@ -842,20 +842,22 @@ bool TsanOnlineInstrument::runOnModule(Module &M) {
   // TraceInfoType represents the following class declared in
   // ts_trace_info.h:
   // struct TraceInfoPOD {
-  //   enum { kLiteRaceNumTids = 8 };  // takes zero bytes
-  //   size_t n_mops_;
-  //   size_t pc_;
-  //   size_t counter_;
-  //   uint32_t literace_counters[kLiteRaceNumTids];
-  //   int32_t literace_num_to_skip[kLiteRaceNumTids];
-  //   MopInfo mops_[1];
+  //  enum { kLiteRaceNumTids = 8 };
+  //  enum { kLiteRaceStorageSize = 8 };
+  //  typedef LiteRaceCounters LiteRaceStorage[kLiteRaceNumTids][kLiteRaceStorageSize];
+  //
+  //  size_t n_mops_;
+  //  size_t pc_;
+  //  size_t counter_;
+  //  LiteRaceStorage *literace_storage;
+  //  int32_t storage_index;
+  //  MopInfo mops_[1];
   // };
   TraceInfoType = StructType::get(*ThisModuleContext,
-                                PlatformInt, PlatformInt,
-                                PlatformInt,
+                                PlatformInt, PlatformInt, PlatformInt,
+                                LiteRaceStoragePtrType,
+                                Int32,
                                 MopArrayType,
-                                LiteRaceCountersArrayType,
-                                LiteRaceSkipArrayType,
                                 NULL);
   TraceInfoTypePtr = PointerType::get(TraceInfoType, 0);
 
@@ -1606,10 +1608,7 @@ bool TsanOnlineInstrument::makeTracePassport(Trace &trace) {
 
     TracePassportType = ArrayType::get(MopType64, TraceNumMops);
     BBTraceInfoType = StructType::get(*ThisModuleContext,
-                                PlatformInt, PlatformInt,
-                                PlatformInt,
-                                LiteRaceCountersArrayType,
-                                LiteRaceSkipArrayType,
+                                PlatformInt, PlatformInt, PlatformInt,
                                 LiteRaceStoragePtrType,
                                 Int32,
                                 TracePassportType,
@@ -1624,16 +1623,6 @@ bool TsanOnlineInstrument::makeTracePassport(Trace &trace) {
                                             First, PlatformInt));
     // counter_
     trace_info.push_back(ConstantInt::get(PlatformInt, 0));
-    // literace_counters[]
-    trace_info.push_back(
-        ConstantArray::get(LiteRaceCountersArrayType,
-            vector<Constant*>(kLiteRaceNumTids,
-                              ConstantInt::get(PlatformInt, 0))));
-    // literace_num_to_skip[]
-    trace_info.push_back(
-        ConstantArray::get(LiteRaceSkipArrayType,
-            vector<Constant*>(kLiteRaceNumTids,
-                              ConstantInt::get(PlatformInt, 0))));
     // *literace_storage
     trace_info.push_back(LiteRaceStorageGlob);
     // storage_index
