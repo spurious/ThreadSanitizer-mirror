@@ -946,7 +946,6 @@ void *__wrap_mmap(void *addr, size_t length, int prot, int flags,
                   int fd, off_t offset) {
   if (IN_RTL) {
     void *result = __real_mmap(addr, length, prot, flags, fd, offset);
-    Printf("MMAP(%p, %d)=%p", addr, length, result);
     return result;
   }
   GIL scoped; // TODO(glider): GIL should force ENTER_RTL.
@@ -962,7 +961,6 @@ void *__wrap_mmap(void *addr, size_t length, int prot, int flags,
   }
   RPut(RTN_EXIT, tid, pc, 0, 0);
   LEAVE_RTL();
-  Printf("T%d: MMAP(%p, %d)=%p", tid, addr, length, result);
   return result;
 }
 
