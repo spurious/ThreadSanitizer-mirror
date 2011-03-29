@@ -1194,6 +1194,9 @@ TEST(TSDTests, TSDDestructorTest) {
 }  // namespace
 
 namespace NegativeTests_GetAddrInfoTest {
+#ifndef __APPLE__
+// False positive reports on Mac, see
+// http://code.google.com/p/data-race-test/issues/detail?id=63
 void Worker() {
   struct addrinfo *result = NULL;
   int error = getaddrinfo("www.google.com", NULL, NULL, &result);
@@ -1206,6 +1209,7 @@ TEST(NegativeTests, GetAddrInfoTest) {
   t.Start();
   t.Join();
 }
+#endif
 
 }  // namespace
 
