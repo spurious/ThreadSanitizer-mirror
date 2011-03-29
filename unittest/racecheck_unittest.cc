@@ -3127,6 +3127,11 @@ void WorkerX() {
 #endif
   EXPECT_TRUE(strcpy(tmp2, str) == tmp2);
   EXPECT_TRUE(strncpy(tmp, str, 4) == tmp);
+
+  tmp[0] = 'a'; tmp[1] = 0;
+  EXPECT_TRUE(strcat(tmp, str) == tmp);
+  tmp[0] = 'a'; tmp[1] = 0;
+  EXPECT_TRUE(strncat(tmp, str, 3) == tmp);
   // These may not be properly intercepted since gcc -O1 may inline
   // strcpy/stpcpy in presence of a statically sized array. Damn.
   // EXPECT_TRUE(stpcpy(tmp, str) == tmp+4);
