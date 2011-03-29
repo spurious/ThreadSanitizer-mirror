@@ -944,7 +944,11 @@ int __wrap_pthread_once(pthread_once_t *once_control,
 extern "C"
 void *__wrap_mmap(void *addr, size_t length, int prot, int flags,
                   int fd, off_t offset) {
-  if (IN_RTL) return __real_mmap(addr, length, prot, flags, fd, offset);
+  if (IN_RTL) {
+    void *result = __real_mmap(addr, length, prot, flags, fd, offset);
+    Printf("MMAP(%p, %d)=%p", addr, length, result);
+    return result;
+  }
   GIL scoped; // TODO(glider): GIL should force ENTER_RTL.
   ENTER_RTL();
   void *result;
@@ -958,6 +962,7 @@ void *__wrap_mmap(void *addr, size_t length, int prot, int flags,
   }
   RPut(RTN_EXIT, tid, pc, 0, 0);
   LEAVE_RTL();
+  Printf("T%d: MMAP(%p, %d)=%p", tid, addr, length, result);
   return result;
 }
 
@@ -980,25 +985,50 @@ int __wrap_munmap(void *addr, size_t length) {
   return result;
 }
 
-extern "C"
-void *__wrap_calloc(size_t nmemb, size_t size) {
-  void *result;
-  DECLARE_TID_AND_PC();
-  RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_calloc, 0);
-  IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
-  result = __real_calloc(nmemb, size);
-  IGNORE_ALL_ACCESSES_AND_SYNC_END();
-  pc = (pc_t) __wrap_calloc;
-  SPut(MALLOC, tid, pc, (uintptr_t)result, nmemb * size);
-  RPut(RTN_EXIT, tid, pc, 0, 0);
-  return result;
-}
-
 // TODO(glider): we may want to eliminate the wrappers to weak functions that
 // we replace (malloc(), free(), realloc()).
 // TODO(glider): we may also want to handle calloc(), pvalloc() and other
 // routines provided by libc.
 // Wrap malloc() calls from the client code.
+extern "C" void *__libc_malloc(size_t size);
+extern "C" void *__libc_calloc(size_t nmemb, size_t size);
+extern "C" void __libc_free(void *ptr);
+extern "C" void *__libc_realloc(void *ptr, size_t size);
+
+extern "C"
+void *calloc(size_t nmemb, size_t size) {
+  if (IN_RTL) return __libc_calloc(nmemb, size);
+  GIL scoped;
+  DECLARE_TID_AND_PC();
+  RPut(RTN_CALL, tid, pc, (uintptr_t)calloc, 0);
+  ENTER_RTL();
+  IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
+  void *result = __libc_calloc(nmemb, size);
+  IGNORE_ALL_ACCESSES_AND_SYNC_END();
+  pc = (pc_t) calloc;
+  SPut(MALLOC, tid, pc, (uintptr_t)result, nmemb * size);
+  LEAVE_RTL();
+  RPut(RTN_EXIT, tid, pc, 0, 0);
+  return result;
+}
+
+extern "C"
+void *__wrap_calloc(size_t nmemb, size_t size) {
+  if (IN_RTL) return __real_calloc(nmemb, size);
+  GIL scoped;
+  DECLARE_TID_AND_PC();
+  RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_calloc, 0);
+  ENTER_RTL();
+  IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
+  void *result = __real_calloc(nmemb, size);
+  IGNORE_ALL_ACCESSES_AND_SYNC_END();
+  pc = (pc_t) __wrap_calloc;
+  SPut(MALLOC, tid, pc, (uintptr_t)result, nmemb * size);
+  LEAVE_RTL();
+  RPut(RTN_EXIT, tid, pc, 0, 0);
+  return result;
+}
+
 extern "C"
 void *__wrap_malloc(size_t size) {
   if (IN_RTL) return __real_malloc(size);
@@ -1017,9 +1047,6 @@ void *__wrap_malloc(size_t size) {
   return result;
 }
 
-extern "C" void *__libc_malloc(size_t size);
-extern "C" void __libc_free(void *ptr);
-extern "C" void *__libc_realloc(void *ptr, size_t size);
 
 // Wrap malloc() from libc.
 extern "C"
@@ -1958,6 +1985,9 @@ pid_t __wrap_fork() {
     // Haha, all our resources that address the TLS of other threads are valid
     // no more!
     FORKED_CHILD = true;
+    DECLARE_TID_AND_PC();
+    SPut(FLUSH_STATE, tid, pc, 0, 0);
+    LEAVE_RTL();
     ThreadSanitizerLockRelease();
     //global_ignore = true;
     // TODO(glider): check for FORKED_CHILD every time we access someone's TLS.
@@ -2438,6 +2468,7 @@ void AddWrappersDbgInfo() {
   WRAPPER_DBG_INFO(malloc);
   WRAPPER_DBG_INFO(free);
   WRAPPER_DBG_INFO(realloc);
+  WRAPPER_DBG_INFO(calloc);
 
   WRAPPER_DBG_INFO(__wrap_read);
   WRAPPER_DBG_INFO(__wrap_write);
@@ -2471,6 +2502,9 @@ void AddWrappersDbgInfo() {
   WRAPPER_DBG_INFO(atexit_callback);
   WRAPPER_DBG_INFO(__wrap_strcpy);
   WRAPPER_DBG_INFO(__wrap_strncmp);
+
+  WRAPPER_DBG_INFO(rtl_memmove);
+  WRAPPER_DBG_INFO(rtl_memcpy);
 }
 
 void ReadElf() {
