@@ -53,6 +53,7 @@
 // is instrumented, so we just don't touch reads/writes in replacement
 // functions.
 #define EXTRA_REPLACE_PARAMS
+#define EXTRA_REPLACE_ARGS
 #define REPORT_READ_RANGE(x, size)
 #define REPORT_WRITE_RANGE(x, size)
 #include "ts_replace.h"
@@ -2356,6 +2357,19 @@ STRCMP(NONE,             strcmp)
 STRCMP(VG_Z_LIBC_SONAME, __GI_strcmp)
 #endif
 
+#define MEMCMP(soname, fnname) \
+   int VG_REPLACE_FUNCTION_ZU(soname,fnname) \
+          ( const char* s1, const char* s2 , size_t n); \
+   int VG_REPLACE_FUNCTION_ZU(soname,fnname) \
+          ( const char* s1, const char* s2 , size_t n) \
+   { return Replace_memcmp(s1, s2, n); }
+
+MEMCMP(VG_Z_LIBC_SONAME, memcmp)
+MEMCMP(NONE,             memcmp)
+#if defined(VGO_linux)
+MEMCMP(VG_Z_LIBC_SONAME, __GI_memcmp)
+#endif
+
 #define MEMCHR(soname, fnname) \
    void* VG_REPLACE_FUNCTION_ZU(soname,fnname) (const void *s, int c, SizeT n); \
    void* VG_REPLACE_FUNCTION_ZU(soname,fnname) (const void *s, int c, SizeT n) \
@@ -2418,6 +2432,19 @@ STRNCPY(VG_Z_LIBC_SONAME, strncpy)
 STRNCPY(NONE,             strncpy)
 #if defined(VGO_linux)
 STRNCPY(VG_Z_LIBC_SONAME, __GI_strncpy)
+#endif
+
+// --- STRCAT -----------------------------------------------------
+//
+#define STRCAT(soname, fnname) \
+   char* VG_REPLACE_FUNCTION_ZU(soname, fnname) ( char* dst, const char* src); \
+   char* VG_REPLACE_FUNCTION_ZU(soname, fnname) ( char* dst, const char* src) \
+   { return Replace_strcat(dst, src); }
+
+STRCAT(VG_Z_LIBC_SONAME, strcat)
+STRCAT(NONE,             strcat)
+#if defined(VGO_linux)
+STRCAT(VG_Z_LIBC_SONAME, __GI_strcat)
 #endif
 
 // --- STPCPY -----------------------------------------------------
