@@ -26,6 +26,7 @@ namespace demangle { // name clash with 'basename' from <string.h>
 #endif
 
 #define EXTRA_REPLACE_PARAMS tid_t tid, pc_t pc,
+#define EXTRA_REPLACE_ARGS tid, pc,
 #define REPORT_READ_RANGE(x, size) do { \
     if (size) SPut(READ, tid, pc, (uintptr_t)(x), (size)); } while (0)
 #define REPORT_WRITE_RANGE(x, size) do { \
