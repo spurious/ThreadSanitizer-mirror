@@ -941,6 +941,41 @@ int __wrap_pthread_once(pthread_once_t *once_control,
 // }}}
 
 // Memory allocation routines {{{1
+
+#if (DEBUG)
+# define ALLOC_STAT_COUNTER(X) X##_stat_counter
+# define DECLARE_ALLOC_STATS(X) int ALLOC_STAT_COUNTER(X) = 0
+# define RECORD_ALLOC(X) ALLOC_STAT_COUNTER(X)++
+# define QUOTE(X) #X
+# define STR(X) QUOTE(X)
+# define PRINT_ALLOC_STATS(X) Printf(STR(X)": %d\n", ALLOC_STAT_COUNTER(X))
+#else
+# define DECLARE_ALLOC_STATS(X)
+# define RECORD_ALLOC(X)
+# define PRINT_ALLOC_STATS(X)
+#endif
+
+DECLARE_ALLOC_STATS(calloc);
+DECLARE_ALLOC_STATS(realloc);
+DECLARE_ALLOC_STATS(malloc);
+DECLARE_ALLOC_STATS(free);
+DECLARE_ALLOC_STATS(__wrap_calloc);
+DECLARE_ALLOC_STATS(__wrap_realloc);
+DECLARE_ALLOC_STATS(__wrap_malloc);
+DECLARE_ALLOC_STATS(__wrap_free);
+DECLARE_ALLOC_STATS(__wrap__Znwm);
+DECLARE_ALLOC_STATS(__wrap__ZnwmRKSt9nothrow_t);
+DECLARE_ALLOC_STATS(__wrap__Znwj);
+DECLARE_ALLOC_STATS(__wrap__ZnwjRKSt9nothrow_t);
+DECLARE_ALLOC_STATS(__wrap__Znaj);
+DECLARE_ALLOC_STATS(__wrap__ZnajRKSt9nothrow_t);
+DECLARE_ALLOC_STATS(__wrap__Znam);
+DECLARE_ALLOC_STATS(__wrap__ZnamRKSt9nothrow_t);
+DECLARE_ALLOC_STATS(__wrap__ZdlPv);
+DECLARE_ALLOC_STATS(__wrap__ZdlPvRKSt9nothrow_t);
+DECLARE_ALLOC_STATS(__wrap__ZdaPv);
+DECLARE_ALLOC_STATS(__wrap__ZdaPvRKSt9nothrow_t);
+
 extern "C"
 void *__wrap_mmap(void *addr, size_t length, int prot, int flags,
                   int fd, off_t offset) {
@@ -997,6 +1032,7 @@ extern "C"
 void *calloc(size_t nmemb, size_t size) {
   if (IN_RTL) return __libc_calloc(nmemb, size);
   GIL scoped;
+  RECORD_ALLOC(calloc);
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)calloc, 0);
   ENTER_RTL();
@@ -1014,6 +1050,7 @@ extern "C"
 void *__wrap_calloc(size_t nmemb, size_t size) {
   if (IN_RTL) return __real_calloc(nmemb, size);
   GIL scoped;
+  RECORD_ALLOC(__wrap_calloc);
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_calloc, 0);
   ENTER_RTL();
@@ -1031,6 +1068,7 @@ extern "C"
 void *__wrap_malloc(size_t size) {
   if (IN_RTL) return __real_malloc(size);
   GIL scoped;
+  RECORD_ALLOC(__wrap_malloc);
   ENTER_RTL();
   void *result;
   DECLARE_TID_AND_PC();
@@ -1051,6 +1089,7 @@ extern "C"
 void *malloc(size_t size) {
   if (IN_RTL || !RTL_INIT || !INIT) return __libc_malloc(size);
   GIL scoped;
+  RECORD_ALLOC(malloc);
   ENTER_RTL();
   void *result;
   DECLARE_TID_AND_PC();
@@ -1069,6 +1108,7 @@ extern "C"
 void __wrap_free(void *ptr) {
   if (IN_RTL) return __real_free(ptr);
   GIL scoped;
+  RECORD_ALLOC(__wrap_free);
   DECLARE_TID_AND_PC();
   ENTER_RTL();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_free, 0);
@@ -1099,6 +1139,7 @@ extern "C"
 void free(void *ptr) {
   if (IN_RTL || !RTL_INIT || !INIT) return __libc_free(ptr);
   GIL scoped;
+  RECORD_ALLOC(free);
   ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)free, 0);
@@ -1115,6 +1156,7 @@ extern "C"
 void *__wrap_realloc(void *ptr, size_t size) {
   if (IN_RTL) return __real_realloc(ptr, size);
   GIL scoped;
+  RECORD_ALLOC(__wrap_realloc);
   void *result;
   ENTER_RTL();
   DECLARE_TID_AND_PC();
@@ -1134,6 +1176,7 @@ extern "C"
 void *realloc(void *ptr, size_t size) {
   if (IN_RTL || !RTL_INIT || !INIT) return __libc_realloc(ptr, size);
   GIL scoped;
+  RECORD_ALLOC(realloc);
   void *result;
   ENTER_RTL();
   DECLARE_TID_AND_PC();
@@ -1149,14 +1192,12 @@ void *realloc(void *ptr, size_t size) {
   return result;
 }
 
-// }}}
-
-// new/delete {{{1
 #ifdef TSAN_RTL_X86
 extern "C"
 void *__wrap__Znwj(unsigned int size) {
   if (IN_RTL) return __real__Znwj(size);
   GIL scoped;
+  RECORD_ALLOC(__wrap__Znwj);
   ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__Znwj, 0);
@@ -1174,6 +1215,7 @@ extern "C"
 void *__wrap__ZnwjRKSt9nothrow_t(unsigned long size, std::nothrow_t &nt) {
   if (IN_RTL) return __real__ZnwjRKSt9nothrow_t(size, nt);
   GIL scoped;
+  RECORD_ALLOC(__wrap__ZnwjRKSt9nothrow_t);
   ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__ZnwjRKSt9nothrow_t, 0);
@@ -1191,6 +1233,7 @@ extern "C"
 void *__wrap__Znaj(unsigned int size) {
   if (IN_RTL) return __real__Znaj(size);
   GIL scoped;
+  RECORD_ALLOC(__wrap__Znaj);
   ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__Znaj, 0);
@@ -1208,6 +1251,7 @@ extern "C"
 void *__wrap__ZnajRKSt9nothrow_t(unsigned long size, std::nothrow_t &nt) {
   if (IN_RTL) return __real__ZnajRKSt9nothrow_t(size, nt);
   GIL scoped;
+  RECORD_ALLOC(__wrap__ZnajRKSt9nothrow_t);
   ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__ZnajRKSt9nothrow_t, 0);
@@ -1227,6 +1271,7 @@ extern "C"
 void *__wrap__Znwm(unsigned long size) {
   if (IN_RTL) return __real__Znwm(size);
   GIL scoped;
+  RECORD_ALLOC(__wrap__Znwm);
   ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__Znwm, 0);
@@ -1244,6 +1289,7 @@ extern "C"
 void *__wrap__ZnwmRKSt9nothrow_t(unsigned long size, std::nothrow_t &nt) {
   if (IN_RTL) return __real__ZnwmRKSt9nothrow_t(size, nt);
   GIL scoped;
+  RECORD_ALLOC(__wrap__ZnwmRKSt9nothrow_t);
   ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__ZnwmRKSt9nothrow_t, 0);
@@ -1261,6 +1307,7 @@ extern "C"
 void *__wrap__Znam(unsigned long size) {
   if (IN_RTL) return __real__Znam(size);
   GIL scoped;
+  RECORD_ALLOC(__wrap__Znam);
   ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__Znam, 0);
@@ -1278,6 +1325,7 @@ extern "C"
 void *__wrap__ZnamRKSt9nothrow_t(unsigned long size, std::nothrow_t &nt) {
   if (IN_RTL) return __real__ZnamRKSt9nothrow_t(size, nt);
   GIL scoped;
+  RECORD_ALLOC(__wrap__ZnamRKSt9nothrow_t);
   ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__ZnamRKSt9nothrow_t, 0);
@@ -1298,6 +1346,7 @@ extern "C"
 void __wrap__ZdlPv(void *ptr) {
   if (IN_RTL) return __real__ZdlPv(ptr);
   GIL scoped;
+  RECORD_ALLOC(__wrap__ZdlPv);
   ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__ZdlPv, 0);
@@ -1314,6 +1363,7 @@ extern "C"
 void __wrap__ZdlPvRKSt9nothrow_t(void *ptr, std::nothrow_t &nt) {
   if (IN_RTL) return __real__ZdlPvRKSt9nothrow_t(ptr, nt);
   GIL scoped;
+  RECORD_ALLOC(__wrap__ZdlPvRKSt9nothrow_t);
   ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__ZdlPvRKSt9nothrow_t, 0);
@@ -1329,6 +1379,7 @@ extern "C"
 void __wrap__ZdaPv(void *ptr) {
   if (IN_RTL) return __real__ZdaPv(ptr);
   GIL scoped;
+  RECORD_ALLOC(__wrap__ZdaPv);
   ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__ZdaPv, 0);
@@ -1344,6 +1395,7 @@ extern "C"
 void __wrap__ZdaPvRKSt9nothrow_t(void *ptr, std::nothrow_t &nt) {
   if (IN_RTL) return __real__ZdaPvRKSt9nothrow_t(ptr, nt);
   GIL scoped;
+  RECORD_ALLOC(__wrap__ZdaPvRKSt9nothrow_t);
   ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__ZdaPvRKSt9nothrow_t, 0);
@@ -1958,6 +2010,31 @@ void __wrap_exit(int status) {
 
 // }}}
 
+// TODO(glider): need to print the stats sometimes.
+void PrintAllocStats() {
+  if (DEBUG) Printf("Allocation stats: \n");
+  PRINT_ALLOC_STATS(calloc);
+  PRINT_ALLOC_STATS(realloc);
+  PRINT_ALLOC_STATS(malloc);
+  PRINT_ALLOC_STATS(free);
+  PRINT_ALLOC_STATS(__wrap_calloc);
+  PRINT_ALLOC_STATS(__wrap_realloc);
+  PRINT_ALLOC_STATS(__wrap_malloc);
+  PRINT_ALLOC_STATS(__wrap_free);
+  PRINT_ALLOC_STATS(__wrap__Znwm);
+  PRINT_ALLOC_STATS(__wrap__ZnwmRKSt9nothrow_t);
+  PRINT_ALLOC_STATS(__wrap__Znwj);
+  PRINT_ALLOC_STATS(__wrap__ZnwjRKSt9nothrow_t);
+  PRINT_ALLOC_STATS(__wrap__Znaj);
+  PRINT_ALLOC_STATS(__wrap__ZnajRKSt9nothrow_t);
+  PRINT_ALLOC_STATS(__wrap__Znam);
+  PRINT_ALLOC_STATS(__wrap__ZnamRKSt9nothrow_t);
+  PRINT_ALLOC_STATS(__wrap__ZdlPv);
+  PRINT_ALLOC_STATS(__wrap__ZdlPvRKSt9nothrow_t);
+  PRINT_ALLOC_STATS(__wrap__ZdaPv);
+  PRINT_ALLOC_STATS(__wrap__ZdaPvRKSt9nothrow_t);
+}
+
 extern "C"
 pid_t __wrap_fork() {
   GIL scoped;
@@ -1983,8 +2060,8 @@ pid_t __wrap_fork() {
     // Haha, all our resources that address the TLS of other threads are valid
     // no more!
     FORKED_CHILD = true;
-    DECLARE_TID_AND_PC();
-    SPut(FLUSH_STATE, tid, pc, 0, 0);
+    //DECLARE_TID_AND_PC();
+    //SPut(FLUSH_STATE, tid, pc, 0, 0);
     LEAVE_RTL();
     ThreadSanitizerLockRelease();
     //global_ignore = true;
