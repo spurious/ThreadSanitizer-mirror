@@ -2364,6 +2364,7 @@ STRCMP(VG_Z_LIBC_SONAME, __GI_strcmp)
           ( const char* s1, const char* s2 , size_t n) \
    { return Replace_memcmp(s1, s2, n); }
 
+MEMCMP(VG_Z_LIBC_SONAME, __memcmp_ssse3)
 MEMCMP(VG_Z_LIBC_SONAME, memcmp)
 MEMCMP(NONE,             memcmp)
 #if defined(VGO_linux)
