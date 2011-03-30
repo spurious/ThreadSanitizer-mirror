@@ -493,8 +493,7 @@ void unsafeMapTls(tid_t tid, pc_t pc) {
 #ifdef TSAN_RTL_X64
   unsigned long tsd = 0;
   arch_prctl(ARCH_GET_FS, &tsd);
-  unsigned long low = (tsd - static_tls_size);
-  SPut(MMAP, tid, pc, low, static_tls_size);
+  SPut(MMAP, tid, pc, tsd - static_tls_size, static_tls_size);
 #endif
 }
 
@@ -543,9 +542,12 @@ bool initialize() {
   // TODO(glider): do something if pthread_getattr_np() is not supported.
   pthread_attr_t attr;
   size_t stack_size = 8 << 20;  // 8M
-  void *stack_top = NULL;
+  void *stack_bottom = NULL;
+  // Obtain the stack BOTTOM and size from the thread attributes.
+  // TODO(glider): this code should be merged with the same in
+  // pthread_callback().
   if (pthread_getattr_np(pthread_self(), &attr) == 0) {
-    pthread_attr_getstack(&attr, &stack_top, &stack_size);
+    pthread_attr_getstack(&attr, &stack_bottom, &stack_size);
     pthread_attr_destroy(&attr);
   }
 
@@ -560,12 +562,13 @@ bool initialize() {
   INFO.thread = ThreadSanitizerGetThreadByTid(0);
   LEAVE_RTL();
 
-  if (stack_top) {
+  if (stack_bottom) {
     // We don't intercept the mmap2 syscall that allocates thread stack, so pass
     // the event to ThreadSanitizer manually.
     // TODO(glider): technically our parent allocates the stack. Maybe this
     // should be fixed and its tid should be passed in the MMAP event.
-    SPut(THR_STACK_TOP, 0, 0, (uintptr_t)stack_top, stack_size);
+    SPut(THR_STACK_TOP, 0, 0,
+         (uintptr_t)stack_bottom + stack_size, stack_size);
   } else {
     // Something's gone wrong. ThreadSanitizer will proceed, but if the stack
     // is reused by another thread, false positives will be reported.
@@ -683,7 +686,7 @@ void *pthread_callback(void *arg) {
   void *routine_arg = cb_arg->arg;
   pthread_attr_t attr;
   size_t stack_size = 8 << 20;  // 8M
-  void *stack_top = NULL;
+  void *stack_bottom = NULL;
 
   // We already know the child pid -- get the parent condvar to signal.
   tid_t parent = cb_arg->parent;
@@ -693,8 +696,19 @@ void *pthread_callback(void *arg) {
 
   // Get the stack size and stack top for the current thread.
   // TODO(glider): do something if pthread_getattr_np() is not supported.
+  //
+  // I'm tired confusing the stack top and bottom, so here's the cheat sheet:
+  //   pthread_attr_getstack(addr, stackaddr, stacksize) returns the stack BOTTOM
+  //   and stack size:
+  //
+  //     stackaddr should point to the lowest addressable byte of a buffer of
+  //     stacksize bytes that was allocated by the caller.
+  //
+  //   THR_STACK_TOP takes the stack TOP and stack size (see thread_sanitizer.cc)
+  //
+  //   possible consecutive MMAP/MALLOC/etc. events should use the stack BOTTOM.
   if (pthread_getattr_np(pthread_self(), &attr) == 0) {
-    pthread_attr_getstack(&attr, &stack_top, &stack_size);
+    pthread_attr_getstack(&attr, &stack_bottom, &stack_size);
     pthread_attr_destroy(&attr);
   }
 
@@ -711,13 +725,14 @@ void *pthread_callback(void *arg) {
   delete cb_arg;
   LEAVE_RTL();
 
-  if (stack_top) {
+  if (stack_bottom) {
     // We don't intercept the mmap2 syscall that allocates thread stack, so pass
     // the event to ThreadSanitizer manually.
     // TODO(glider): technically our parent allocates the stack. Maybe this
     // should be fixed and its tid should be passed in the MMAP event.
-    SPut(THR_STACK_TOP, tid, pc, (uintptr_t)stack_top, stack_size);
-//    SPut(MMAP, tid, pc, (uintptr_t)(stack_top) - stack_size, stack_size);
+    SPut(THR_STACK_TOP, tid, pc,
+         (uintptr_t)stack_bottom + stack_size, stack_size);
+    //SPut(MMAP, tid, pc, (uintptr_t)stack_bottom, stack_size);
   } else {
     // Something's gone wrong. ThreadSanitizer will proceed, but if the stack
     // is reused by another thread, false positives will be reported.
@@ -767,7 +782,6 @@ void *pthread_callback(void *arg) {
     iter--;
     if (!dirty) iter = 0;
   }
-
   SPut(THR_END, tid, 0, 0, 0);
   if (FinishConds.find(tid) != FinishConds.end()) {
     DDPrintf("T%d (child of T%d): Signaling on %p\n",
