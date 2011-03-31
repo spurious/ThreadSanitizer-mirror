@@ -55,6 +55,35 @@ void DYNAMIC_ANNOTATIONS_NAME(AnnotateCondVarWait)(const char *file, int line,
 }
 
 extern "C"
+void DYNAMIC_ANNOTATIONS_NAME(AnnotateRWLockCreate)(const char *file, int line,
+                                                    const volatile void *lock) {
+  DECLARE_TID_AND_PC();
+  ExSPut(LOCK_CREATE, tid, pc, (uintptr_t)lock, 0);
+}
+
+extern "C"
+void DYNAMIC_ANNOTATIONS_NAME(AnnotateRWLockDestroy)(const char *file, int line,
+                                                     const volatile void *lock) {
+  DECLARE_TID_AND_PC();
+  ExSPut(LOCK_DESTROY, tid, pc, (uintptr_t)lock, 0);
+}
+
+extern "C"
+void DYNAMIC_ANNOTATIONS_NAME(AnnotateRWLockAcquired)(const char *file, int line,
+                                                      const volatile void *lock,
+                                                      long int is_w) {
+  DECLARE_TID_AND_PC();
+  ExSPut(is_w ? WRITER_LOCK : READER_LOCK, tid, pc, (uintptr_t)lock, 0);
+}
+
+extern "C"
+void DYNAMIC_ANNOTATIONS_NAME(AnnotateRWLockReleased)(
+    const char *file, int line, const volatile void *lock, long int is_w) {
+  DECLARE_TID_AND_PC();
+  ExSPut(UNLOCK, tid, pc, (uintptr_t)lock, 0);
+}
+
+extern "C"
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateTraceMemory)(const char *file, int line,
                                                    const volatile void *mem) {
   DECLARE_TID_AND_PC();
