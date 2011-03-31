@@ -36,7 +36,6 @@
 
 #ifdef WIN32
 #include <Wbemidl.h>
-#include <Wdm.h>
 
 #pragma comment(lib, "Wbemuuid.lib")
 #pragma comment(lib, "Ole32.lib")
@@ -108,6 +107,8 @@ TEST(SyscallTests, OutputDebugStringTest) {
   OutputDebugString("Hello!\n");
 }
 
+#if 0  // requires Win DDK installed
+#include <Wdm.h>
 TEST(SyscallTests, RtlUnicodeStringToIntegerTest) {
   // DrMemory bug http://code.google.com/p/dynamorio/issues/detail?id=286
   WCHAR stringBuffer[] = "123456";
@@ -121,6 +122,7 @@ TEST(SyscallTests, RtlUnicodeStringToIntegerTest) {
   RtlUnicodeStringToInteger(&string, NULL, &out);
   CHECK(out == 123456);
 }
+#endif
 
 TEST(ComTests, IWbemLocator_ConnectServerTest) {
   // DrMemory crashes on this test,
