@@ -109,6 +109,8 @@ extern tid_t ExGetTid();
 extern pc_t ExGetPc();
 void set_global_ignore(bool new_value);
 
+bool ReadGlobalsUsingBfd();
+
 #include "tsan_rtl_wrap.h"
 
 #endif  // TSAN_RTL_H_

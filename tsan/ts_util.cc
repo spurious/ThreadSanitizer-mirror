@@ -70,9 +70,10 @@ size_t TimeInMilliSeconds() {
 
 Stats *G_stats;
 
+#ifndef TS_LLVM
 bool GetNameAndOffsetOfGlobalObject(uintptr_t addr,
                                     string *name, uintptr_t *offset) {
-#ifdef TS_VALGRIND
+# ifdef TS_VALGRIND
     const int kBufLen = 1023;
     char buff[kBufLen+1];
     PtrdiffT off;
@@ -83,10 +84,11 @@ bool GetNameAndOffsetOfGlobalObject(uintptr_t addr,
       return true;
     }
     return false;
-#else
+# else
   return false;
-#endif // TS_VALGRIND
+# endif  // TS_VALGRIND
 }
+#endif  // TS_LLVM
 
 
 #ifndef TS_VALGRIND

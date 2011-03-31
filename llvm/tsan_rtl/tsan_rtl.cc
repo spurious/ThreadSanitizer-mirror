@@ -7,7 +7,8 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 
-# include <bfd.h>
+#include <bfd.h>
+
 namespace demangle { // name clash with 'basename' from <string.h>
 # include <demangle.h>
 }
@@ -81,6 +82,9 @@ struct LLVMDebugInfo {
 };
 
 map<pc_t, LLVMDebugInfo> *debug_info = NULL;
+// end of section : start of section
+map<uintptr_t, uintptr_t> *data_sections = NULL;
+map<pc_t, string> *global_symbols = NULL;
 
 void SplitString(string &src, char delim, vector<string> *dest,
                  bool want_empty) {
@@ -463,6 +467,9 @@ INLINE void init_debug() {
     ReadElf();
     AddWrappersDbgInfo();
   }
+  ENTER_RTL();
+  ReadGlobalsUsingBfd();
+  LEAVE_RTL();
   DBG_INIT = 1;
 }
 
@@ -2376,6 +2383,7 @@ struct PcInfo {
 };
 
 void ReadDbgInfoFromSection(char* start, char* end) {
+  DCHECK(IN_RTL); // operator new and std::map are used below.
   static const int kDebugInfoMagicNumber = 0xdb914f0;
   char *p = start;
   debug_info = new map<pc_t, LLVMDebugInfo>;
@@ -2596,13 +2604,18 @@ void AddWrappersDbgInfo() {
   WRAPPER_DBG_INFO(rtl_memcpy);
 }
 
-void ReadElf() {
+string GetSelfFilename() {
   const int kBufSize = 1000;
   char fname[kBufSize];
   memset(fname, '\0', sizeof(fname));
   int fsize = readlink("/proc/self/exe", fname, kBufSize);
   CHECK(fsize < kBufSize);
-  int fd = open(fname, 0);
+  return fname;
+}
+
+void ReadElf() {
+  string fname = GetSelfFilename();
+  int fd = open(fname.c_str(), 0);
   struct stat st;
   fstat(fd, &st);
   DDPrintf("Reading debug info from %s (%d bytes)\n", fname, st.st_size);
@@ -2614,11 +2627,13 @@ void ReadElf() {
   typedef Elf32_Shdr Elf_Shdr;
   typedef Elf32_Off Elf_Off;
   typedef Elf32_Word Elf_Word;
+  typedef Elf32_Addr Elf_Addr;
 #else
   typedef Elf64_Ehdr Elf_Ehdr;
   typedef Elf64_Shdr Elf_Shdr;
   typedef Elf64_Off Elf_Off;
   typedef Elf64_Word Elf_Word;
+  typedef Elf64_Addr Elf_Addr;
 #endif
   Elf_Ehdr* ehdr = (Elf_Ehdr*)map;
   Elf_Shdr* shdrs = (Elf_Shdr*)(map + ehdr->e_shoff);
@@ -2632,12 +2647,14 @@ void ReadElf() {
   static_tls_size = 2048;
 
   ENTER_RTL();
+  data_sections = new std::map<uintptr_t, uintptr_t>;
   for (int i = 0; i < shnum; ++i) {
     Elf_Shdr* shdr = shdrs + i;
     Elf_Off off = shdr->sh_offset;
     Elf_Word name = shdr->sh_name;
     Elf_Word size = shdr->sh_size;
     Elf_Word flags = shdr->sh_flags;
+    Elf_Addr vma = shdr->sh_addr;
     DDPrintf("Section name: %d, %s\n", name, hdr_strings + name);
     if (strcmp(hdr_strings + name, "tsan_rtl_debug_info") == 0) {
       debug_info_section = map + off;
@@ -2648,11 +2665,24 @@ void ReadElf() {
       if ((strcmp(hdr_strings + name, ".tbss") == 0) ||
           (strcmp(hdr_strings + name, ".tdata") == 0)) {
         static_tls_size += size;
+        // TODO(glider): should we report TLS locations?
+        //(*data_sections)[(uintptr_t)(off + size)] = (uintptr_t)off;
+        //Printf("data_sections[%p] = %p\n", (uintptr_t)(off + size), (uintptr_t)off);
         continue;
       }
     }
+    if (flags && SHF_ALLOC) {
+      // TODO(glider): does any other section contain globals?
+      if ((strcmp(hdr_strings + name, ".bss") == 0) ||
+          (strcmp(hdr_strings + name, ".rodata") == 0) ||
+          (strcmp(hdr_strings + name, ".data") == 0)) {
+        (*data_sections)[(uintptr_t)(vma + size)] = (uintptr_t)vma;
+        DDPrintf("section: %s, data_sections[%p] = %p\n",
+                 hdr_strings + name, (uintptr_t)(vma + size), (uintptr_t)vma);
+      }
+    }
   }
-  LEAVE_RTL();
+
   if (debug_info_section) {
     // Parse the debug info section.
     ReadDbgInfoFromSection(debug_info_section,
@@ -2661,6 +2691,7 @@ void ReadElf() {
     Printf("tsan_rtl_debug_info section is missing. You're either using "
            "the gcc compile-time instrumentation or doing something wrong\n");
   }
+  LEAVE_RTL();
   // Finalize.
   __real_munmap(map, st.st_size);
   close(fd);
@@ -2872,6 +2903,90 @@ string PcToRtnName(pc_t pc, bool demangle) {
   } else {
     return BfdPcToRtnName(pc, demangle);
   }
+}
+
+inline bool IsAddrFromDataSections(uintptr_t addr) {
+  map<uintptr_t, uintptr_t>::iterator iter = data_sections->lower_bound(addr);
+  if (iter == data_sections->end()) return false;  // lookup failed.
+  if ((iter->first >= addr) && (iter->second <= addr)) {
+    return true;
+  } else {
+    return false;
+  }
+}
+
+// TODO(glider): unify all code that operates BFD.
+bool ReadGlobalsUsingBfd() {
+  CHECK(IN_RTL);
+  string fname = GetSelfFilename();
+  global_symbols = new map<uintptr_t, string>;
+
+  bfd_init();
+  bfd* abfd = bfd_openr(fname.c_str(), 0);
+  if (abfd == 0)
+    return false;
+  if (bfd_check_format(abfd, bfd_archive)) {
+    bfd_close(abfd);
+    return false;
+  }
+  char** matching = NULL;
+  if (!bfd_check_format_matches(abfd, bfd_object, &matching)) {
+    bfd_close(abfd);
+    return false;
+  }
+  if ((bfd_get_file_flags(abfd) & HAS_SYMS) == 0) {
+    bfd_close(abfd);
+    return false;
+  }
+
+  asymbol** syms = 0;
+  unsigned int size;
+  int dyn = 0;
+  long symcount = bfd_read_minisymbols(abfd, dyn, (void**)&syms, &size);
+  if (symcount == 0) {
+    dyn = 1;
+    symcount = bfd_read_minisymbols(abfd, dyn, (void**)&syms, &size);
+  }
+  if (symcount < 0) {
+    bfd_close(abfd);
+    return false;
+  }
+
+  char * p = (char*)syms;
+  for (int i = 0; i < symcount; i++) {
+    asymbol *sym = bfd_minisymbol_to_symbol(abfd, dyn, p, NULL);
+    uintptr_t addr = bfd_asymbol_value(sym);
+    if (sym->flags & BSF_OBJECT) {
+      DCHECK(IsAddrFromDataSections(addr));
+      (*global_symbols)[addr] = bfd_asymbol_name(sym);
+      DDPrintf("name: %s, value: %p\n",
+               bfd_asymbol_name(sym), addr);
+    }
+    p += size;
+  }
+  return true;
+}
+
+// GetNameAndOffsetOfGlobalObject(addr) returns true iff:
+//  -- |addr| belongs to .data, .bss or .rodata section
+//  -- there is a symbol with the address less than |addr| in |global_symbols|
+// TODO(glider): this may give false positives. Better to split |global_symbols|
+// by sections.
+bool GetNameAndOffsetOfGlobalObject(uintptr_t addr,
+                                    string *name, uintptr_t *offset) {
+  if (!IsAddrFromDataSections(addr)) return false;
+  map<uintptr_t, string>::iterator iter = global_symbols->lower_bound(addr);
+  if (iter == global_symbols->end()) return false;
+  if (iter->first == addr) {
+    // Exact match.
+    *name = iter->second;
+    *offset = 0;
+  } else {
+    --iter;
+    *name = iter->second;
+    *offset = addr - iter->first;
+  }
+  return true;
 }
 
 void PcToStrings(pc_t pc, bool demangle,
