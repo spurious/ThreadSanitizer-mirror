@@ -1193,7 +1193,7 @@ TEST(TSDTests, TSDDestructorTest) {
 
 }  // namespace
 
-namespace NegativeTests_GetAddrInfoTest {
+namespace NegativeTests_GetAddrInfoTest {  // {{{1
 #ifndef __APPLE__
 // False positive reports on Mac, see
 // http://code.google.com/p/data-race-test/issues/detail?id=63
@@ -1210,7 +1210,33 @@ TEST(NegativeTests, GetAddrInfoTest) {
   t.Join();
 }
 #endif
+}  // namespace
 
+namespace NegativeTests_MktimeTest {  // {{{1
+void Worker2() {
+  struct tm timestruct;
+  timestruct.tm_sec    = 56;
+  timestruct.tm_min    = 34;
+  timestruct.tm_hour   = 12;
+  timestruct.tm_mday   = 31;
+  timestruct.tm_mon    = 3 - 1;
+  timestruct.tm_year   = 2011 - 1900;
+  timestruct.tm_wday   = 4;
+  timestruct.tm_yday   = 0;
+  timestruct.tm_isdst  = -1;
+
+  time_t ret = mktime(&timestruct);
+  CHECK(ret != -1);
+}
+
+// Disabled because fun_r:mktime and fun_r:__mktime_internal don't suppress
+// the reports below mktime
+// http://code.google.com/p/data-race-test/issues/detail?id=63
+TEST(NegativeTests, DISABLED_MktimeTest) {
+  MyThreadArray t(Worker2, Worker2);
+  t.Start();
+  t.Join();
+}
 }  // namespace
 
 // End {{{1
