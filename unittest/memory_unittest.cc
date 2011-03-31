@@ -36,6 +36,8 @@
 
 #ifdef WIN32
 #include <Wbemidl.h>
+#include <Wdm.h>
+
 #pragma comment(lib, "Wbemuuid.lib")
 #pragma comment(lib, "Ole32.lib")
 #endif
@@ -81,10 +83,43 @@ TEST(Threads, EmptyThreadTest) {
   mt.Join();
 }
 
+class MyClass {
+ public:
+  explicit MyClass(int size) : ptr_(NULL) {
+    ptr_ = realloc(ptr_, size);
+  }
+  ~MyClass() {
+    free(ptr_);
+  }
+ private:
+  void *ptr_;
+};
+
+TEST(HeapTest, ReallocInHeapObjectTest) {
+  const MyClass m(50031);
+  MyClass *obj = new MyClass(50031);
+  delete obj;
+}
+
+
 #ifdef WIN32
 TEST(SyscallTests, OutputDebugStringTest) {
   // DrMemory bug http://code.google.com/p/dynamorio/issues/detail?id=281
   OutputDebugString("Hello!\n");
+}
+
+TEST(SyscallTests, RtlUnicodeStringToIntegerTest) {
+  // DrMemory bug http://code.google.com/p/dynamorio/issues/detail?id=286
+  WCHAR stringBuffer[] = "123456";
+  UNICODE_STRING  string;
+
+  string.Buffer = stringBuffer;
+  string.Length = sizeof(stringBuffer);
+  stirng.MaximumLength = sizeof(stringBuffer);
+
+  ULONG out = -1;
+  RtlUnicodeStringToInteger(&string, NULL, &out);
+  CHECK(out == 123456);
 }
 
 TEST(ComTests, IWbemLocator_ConnectServerTest) {
@@ -126,24 +161,6 @@ class MyMutex {
 TEST(HeapTest, MutexAllocatedOnHeapTest) {
   MyMutex *m = new MyMutex();
   delete m;
-}
-
-class MyClass {
- public:
-  explicit MyClass(int size) : ptr_(NULL) {
-    ptr_ = realloc(ptr_, size);
-  }
-  ~MyClass() {
-    free(ptr_);
-  }
- private:
-  void *ptr_;
-};
-
-TEST(HeapTest, ReallocInHeapObjectTest) {
-  const MyClass m(50031);
-  MyClass *obj = new MyClass(50031);
-  delete obj;
 }
 
 }  // namespace HeapTests
