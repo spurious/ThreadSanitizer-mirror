@@ -8089,33 +8089,38 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
 static void SetupIgnore() {
   g_ignore_lists = new IgnoreLists;
   g_white_lists = new IgnoreLists;
-  // add some major ignore entries so that tsan remains sane
-  // even w/o any ignore file.
+
+  // Add some major ignore entries so that tsan remains sane
+  // even w/o any ignore file. First - for all platforms.
+  g_ignore_lists->ignores.push_back(IgnoreFun("ThreadSanitizerStartThread"));
+  g_ignore_lists->ignores.push_back(IgnoreFun("exit"));
+  g_ignore_lists->ignores.push_back(IgnoreFun("longjmp"));
+
+  // Dangerous: recursively ignoring vfprintf hides races on printf arguments.
+  // See PrintfTests in unittest/racecheck_unittest.cc
+  // TODO(eugenis): Do something about this.
+  // http://code.google.com/p/data-race-test/issues/detail?id=53
+  g_ignore_lists->ignores_r.push_back(IgnoreFun("vfprintf"));
+
+  // do not create segments in our Replace_* functions
+  g_ignore_lists->ignores_hist.push_back(IgnoreFun("Replace_memcpy"));
+  g_ignore_lists->ignores_hist.push_back(IgnoreFun("Replace_memchr"));
+  g_ignore_lists->ignores_hist.push_back(IgnoreFun("Replace_strcpy"));
+  g_ignore_lists->ignores_hist.push_back(IgnoreFun("Replace_strchr"));
+  g_ignore_lists->ignores_hist.push_back(IgnoreFun("Replace_strrchr"));
+  g_ignore_lists->ignores_hist.push_back(IgnoreFun("Replace_strlen"));
+  g_ignore_lists->ignores_hist.push_back(IgnoreFun("Replace_strcmp"));
+
+  // Ignore everything in our own file.
+  g_ignore_lists->ignores.push_back(IgnoreFile("*ts_valgrind_intercepts.c"));
+
+#ifndef _MSC_VER
+  // POSIX ignores
   g_ignore_lists->ignores.push_back(IgnoreObj("*/libpthread*"));
   g_ignore_lists->ignores.push_back(IgnoreObj("*/ld-2*.so"));
-
-  g_ignore_lists->ignores.push_back(IgnoreObj("*ole32.dll"));
-  g_ignore_lists->ignores.push_back(IgnoreObj("*OLEAUT32.dll"));
-  g_ignore_lists->ignores.push_back(IgnoreObj("*MSCTF.dll"));
-  g_ignore_lists->ignores.push_back(IgnoreObj("*ntdll.dll"));
-  g_ignore_lists->ignores.push_back(IgnoreObj("*ntdll.dll.so"));
-  g_ignore_lists->ignores.push_back(IgnoreObj("*mswsock.dll"));
-  g_ignore_lists->ignores.push_back(IgnoreObj("*WS2_32.dll"));
-  g_ignore_lists->ignores.push_back(IgnoreObj("*msvcrt.dll"));
-  g_ignore_lists->ignores.push_back(IgnoreObj("*kernel32.dll"));
-  g_ignore_lists->ignores.push_back(IgnoreObj("*ADVAPI32.DLL"));
-
-#ifdef VGO_darwin
-  g_ignore_lists->ignores.push_back(IgnoreObj("/usr/lib/dyld"));
-  g_ignore_lists->ignores.push_back(IgnoreObj("/usr/lib/libobjc.A.dylib"));
-  g_ignore_lists->ignores.push_back(IgnoreObj("*/libSystem.*.dylib"));
-#endif
-
-  g_ignore_lists->ignores.push_back(IgnoreFun("ThreadSanitizerStartThread"));
   g_ignore_lists->ignores.push_back(IgnoreFun("pthread_create"));
   g_ignore_lists->ignores.push_back(IgnoreFun("pthread_create@*"));
   g_ignore_lists->ignores.push_back(IgnoreFun("pthread_create_WRK"));
-  g_ignore_lists->ignores.push_back(IgnoreFun("exit"));
   g_ignore_lists->ignores.push_back(IgnoreFun("__cxa_*"));
   g_ignore_lists->ignores.push_back(
       IgnoreFun("*__gnu_cxx*__exchange_and_add*"));
@@ -8131,31 +8136,47 @@ static void SetupIgnore() {
   g_ignore_lists->ignores.push_back(IgnoreFun("__sigjmp_save"));
   g_ignore_lists->ignores.push_back(IgnoreFun("_setjmp"));
   g_ignore_lists->ignores.push_back(IgnoreFun("_longjmp_unwind"));
-  g_ignore_lists->ignores.push_back(IgnoreFun("longjmp"));
+
+  g_ignore_lists->ignores.push_back(IgnoreFun("__mktime_internal"));
+
+  // http://code.google.com/p/data-race-test/issues/detail?id=40
+  g_ignore_lists->ignores_r.push_back(IgnoreFun("_ZNSsD1Ev"));
+
+  g_ignore_lists->ignores_r.push_back(IgnoreFun("gaih_inet"));
+  g_ignore_lists->ignores_r.push_back(IgnoreFun("getaddrinfo"));
+  g_ignore_lists->ignores_r.push_back(IgnoreFun("gethostbyname2_r"));
+
+  #ifdef VGO_darwin
+    // Mac-only ignores
+    g_ignore_lists->ignores.push_back(IgnoreObj("/usr/lib/dyld"));
+    g_ignore_lists->ignores.push_back(IgnoreObj("/usr/lib/libobjc.A.dylib"));
+    g_ignore_lists->ignores.push_back(IgnoreObj("*/libSystem.*.dylib"));
+    g_ignore_lists->ignores_r.push_back(IgnoreFun("__CFDoExternRefOperation"));
+    g_ignore_lists->ignores_r.push_back(IgnoreFun("_CFAutoreleasePoolPop"));
+    g_ignore_lists->ignores_r.push_back(IgnoreFun("_CFAutoreleasePoolPush"));
+    g_ignore_lists->ignores_r.push_back(IgnoreFun("OSAtomicAdd32"));
+    g_ignore_lists->ignores_r.push_back(IgnoreTriple("_dispatch_Block_copy",
+                                            "/usr/lib/libSystem.B.dylib", "*"));
+
+    // pthread_lib_{enter,exit} shouldn't give us any reports since they
+    // have IGNORE_ALL_ACCESSES_BEGIN/END but they do give the reports...
+    g_ignore_lists->ignores_r.push_back(IgnoreFun("pthread_lib_enter"));
+    g_ignore_lists->ignores_r.push_back(IgnoreFun("pthread_lib_exit"));
+  #endif
+#else
+  // Windows-only ignores
+  g_ignore_lists->ignores.push_back(IgnoreObj("*ole32.dll"));
+  g_ignore_lists->ignores.push_back(IgnoreObj("*OLEAUT32.dll"));
+  g_ignore_lists->ignores.push_back(IgnoreObj("*MSCTF.dll"));
+  g_ignore_lists->ignores.push_back(IgnoreObj("*ntdll.dll"));
+  g_ignore_lists->ignores.push_back(IgnoreObj("*mswsock.dll"));
+  g_ignore_lists->ignores.push_back(IgnoreObj("*WS2_32.dll"));
+  g_ignore_lists->ignores.push_back(IgnoreObj("*msvcrt.dll"));
+  g_ignore_lists->ignores.push_back(IgnoreObj("*kernel32.dll"));
+  g_ignore_lists->ignores.push_back(IgnoreObj("*ADVAPI32.DLL"));
+
   g_ignore_lists->ignores.push_back(IgnoreFun("_EH_epilog3"));
   g_ignore_lists->ignores.push_back(IgnoreFun("_EH_prolog3_catch"));
-
-  // Dangerous: recursively ignoring vfprintf hides races on printf arguments.
-  // See PrintfTests in unittest/racecheck_unittest.cc
-  // TODO(eugenis): Do something about this.
-  // http://code.google.com/p/data-race-test/issues/detail?id=53
-  g_ignore_lists->ignores_r.push_back(IgnoreFun("vfprintf"));
-
-#ifdef VGO_darwin
-  g_ignore_lists->ignores_r.push_back(IgnoreFun("__CFDoExternRefOperation"));
-  g_ignore_lists->ignores_r.push_back(IgnoreFun("_CFAutoreleasePoolPop"));
-  g_ignore_lists->ignores_r.push_back(IgnoreFun("_CFAutoreleasePoolPush"));
-  g_ignore_lists->ignores_r.push_back(IgnoreFun("OSAtomicAdd32"));
-  g_ignore_lists->ignores_r.push_back(
-      IgnoreTriple("_dispatch_Block_copy", "/usr/lib/libSystem.B.dylib", "*"));
-
-  // pthread_lib_{enter,exit} shouldn't give us any reports since they
-  // have IGNORE_ALL_ACCESSES_BEGIN/END but they do give the reports...
-  g_ignore_lists->ignores_r.push_back(IgnoreFun("pthread_lib_enter"));
-  g_ignore_lists->ignores_r.push_back(IgnoreFun("pthread_lib_exit"));
-#endif
-
-#ifdef _MSC_VER
   g_ignore_lists->ignores.push_back(IgnoreFun("unnamedImageEntryPoint"));
   g_ignore_lists->ignores.push_back(IgnoreFun("_Mtxunlock"));
   g_ignore_lists->ignores.push_back(IgnoreFun("IsNLSDefinedString"));
@@ -8171,13 +8192,6 @@ static void SetupIgnore() {
   // TODO(timurrrr): Add support for FLS (fiber-local-storage)
   // http://code.google.com/p/data-race-test/issues/detail?id=55
   g_ignore_lists->ignores_r.push_back(IgnoreFun("_freefls"));
-#else
-  // http://code.google.com/p/data-race-test/issues/detail?id=40
-  g_ignore_lists->ignores_r.push_back(IgnoreFun("_ZNSsD1Ev"));
-
-  g_ignore_lists->ignores_r.push_back(IgnoreFun("gaih_inet"));
-  g_ignore_lists->ignores_r.push_back(IgnoreFun("getaddrinfo"));
-  g_ignore_lists->ignores_r.push_back(IgnoreFun("gethostbyname2_r"));
 #endif
 
 #ifdef ANDROID
@@ -8186,18 +8200,6 @@ static void SetupIgnore() {
   g_ignore_lists->ignores.push_back(IgnoreFun("pthread_*"));
   g_ignore_lists->ignores.push_back(IgnoreFun("__init_tls"));
 #endif
-
-  // do not create segments in our Replace_* functions
-  g_ignore_lists->ignores_hist.push_back(IgnoreFun("Replace_memcpy"));
-  g_ignore_lists->ignores_hist.push_back(IgnoreFun("Replace_memchr"));
-  g_ignore_lists->ignores_hist.push_back(IgnoreFun("Replace_strcpy"));
-  g_ignore_lists->ignores_hist.push_back(IgnoreFun("Replace_strchr"));
-  g_ignore_lists->ignores_hist.push_back(IgnoreFun("Replace_strrchr"));
-  g_ignore_lists->ignores_hist.push_back(IgnoreFun("Replace_strlen"));
-  g_ignore_lists->ignores_hist.push_back(IgnoreFun("Replace_strcmp"));
-
-  // Ignore everything in our own file.
-  g_ignore_lists->ignores.push_back(IgnoreFile("*ts_valgrind_intercepts.c"));
 
   // Now read the ignore/whitelist files.
   for (size_t i = 0; i < G_flags->ignore.size(); i++) {
