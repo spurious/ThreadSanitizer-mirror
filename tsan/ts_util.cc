@@ -234,7 +234,7 @@ size_t GetVmSizeInMb() {
 
 string NormalizeFunctionName(const string &fname) {
   size_t cur_brace = fname.find_first_of("(<");
-  if (cur_brace == fname.npos || cur_brace == 0)
+  if (cur_brace == fname.npos)
     return fname;
 
   DCHECK(fname.find_first_of(")>") != fname.npos);

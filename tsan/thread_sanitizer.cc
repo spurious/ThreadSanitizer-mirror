@@ -5833,6 +5833,9 @@ class ReportStorage {
       funcs_mangled.push_back(rtn);
       funcs_demangled.push_back(PcToRtnName(pc, true));
       objects.push_back(img);
+
+      if (rtn == "main")
+        break;
     }
     string suppression_name;
     if (suppressions_.StackTraceSuppressed("ThreadSanitizer",
