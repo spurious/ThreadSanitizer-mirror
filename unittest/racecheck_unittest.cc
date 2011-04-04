@@ -7671,6 +7671,41 @@ TEST(IgnoreTests, IndirectCallToFunR) {
 }
 }  // namespace
 
+namespace SuppressionTests {
+int GLOB1 = 0, GLOB2 = 0;
+
+void Foo(int *ptr) {
+  (*ptr)++;
+}
+
+template<typename T>
+T TemplateFunction1(T t) {
+  CHECK(t != NULL);
+  (*t)(&GLOB1);
+  return t;
+}
+
+template<typename T>
+T TemplateFunction2() {
+  Foo(&GLOB2);
+  return (T)0;
+}
+
+void Worker() {
+  TemplateFunction1(Foo);
+  TemplateFunction2<void (*)(int)>();
+}
+
+TEST(SuppressionTests, DISABLED_TemplateTypesSuppressionTest) {
+  // This test generates a very awkward report which is rather hard to read and
+  // especially write. It'd be good to strip some type-related info from the
+  // report stacks to avoid this inconvenience.
+  MyThreadArray mta(Worker, Worker);
+  mta.Start();
+  mta.Join();
+}
+}  // namespace
+
 namespace MutexNotPhbTests {
 
 int GLOB = 0;
