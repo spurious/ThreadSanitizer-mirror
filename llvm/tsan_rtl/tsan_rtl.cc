@@ -335,12 +335,6 @@ INLINE void SPut(EventType type, tid_t tid, pc_t pc,
 void INLINE flush_trace(TraceInfoPOD *trace) {
   DCHECK((size_t)(ShadowStack.end_ - ShadowStack.pcs_) > 0);
   DCHECK((size_t)(ShadowStack.end_ - ShadowStack.pcs_) < kMaxCallStackSize);
-#if (DEBUG)
-  // TODO(glider): PutTrace shouldn't be called without a lock taken.
-  // However flushing events from unsafe_clear_pending_signals (called from
-  // GIL::Unlock) is done under a mutex.
-//  assert(!GIL::GetDepth());
-#endif
   DCHECK(RTL_INIT == 1);
   if (!thread_local_ignore) {
     tid_t tid = INFO.tid;
@@ -413,6 +407,74 @@ void INLINE flush_trace(TraceInfoPOD *trace) {
     unsafe_clear_pending_signals();
   }
 }
+
+// A single-memory-access version of flush_trace. This could be possibly sped up
+// a bit.
+void INLINE flush_single_mop(TraceInfoPOD *trace, uintptr_t addr) {
+  DCHECK((size_t)(ShadowStack.end_ - ShadowStack.pcs_) > 0);
+  DCHECK((size_t)(ShadowStack.end_ - ShadowStack.pcs_) < kMaxCallStackSize);
+  DCHECK(trace->n_mops_ == 1);
+  DCHECK(RTL_INIT == 1);
+  if (!thread_local_ignore) {
+    tid_t tid = INFO.tid;
+    DCHECK(trace);
+#if 0
+    events += trace->n_mops_;
+    if ((events & (events - 1)) == 0) {
+      // events is a power of 2
+      Printf("PID: %d, TID: %d, events: %d\n", getpid(), tid, events);
+    }
+#endif
+#ifdef ENABLE_STATS
+    stats_events_processed += trace->n_mops_;
+    stats_cur_events += trace->n_mops_;
+#endif
+
+    // Increment the trace counter in a racey way. This can lead to small
+    // deviations if the trace is hot, but we can afford them.
+    // Unfortunately this also leads to cache ping-pong and may affect the
+    // performance.
+    if (DEBUG && G_flags->show_stats) trace->counter_++;
+    TraceInfo *trace_info = reinterpret_cast<TraceInfo*>(trace);
+
+    // We optimize for --literace_sampling to be the default mode.
+    // Possible values:
+    // -- 1
+    // -- G_flags->literace_sampling
+    // -- thread_local_literace
+    if (thread_local_literace) {
+      trace_info->LLVMLiteRaceUpdate(LTID,
+                               thread_local_literace);
+    }
+    if (DEBUG && G_flags->verbosity >= 2) {
+      ENTER_RTL();
+      Event sblock(SBLOCK_ENTER, tid, trace->pc_, 0, trace->n_mops_);
+      sblock.Print();
+      if (trace->mops_[0].is_write()) {
+        Event event(WRITE,
+                    tid, trace->mops_[0].pc(),
+                    addr, trace->mops_[0].size());
+        event.Print();
+      } else {
+        Event event(READ,
+                    tid, trace->mops_[0].pc(),
+                    addr, trace->mops_[0].size());
+        event.Print();
+      }
+      LEAVE_RTL();
+    }
+    {
+      ENTER_RTL();
+      DCHECK(ShadowStack.pcs_ <= ShadowStack.end_);
+      ThreadSanitizerHandleOneMemoryAccess(INFO.thread,
+                                           trace_info->mops_[0],
+                                           addr);
+      LEAVE_RTL();
+    }
+    unsafe_clear_pending_signals();
+  }
+}
+
 
 INLINE void Put(EventType type, tid_t tid, pc_t pc,
                 uintptr_t a, uintptr_t info) {
