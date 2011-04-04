@@ -260,6 +260,7 @@ TEST(ThreadSanitizer, NormalizeFunctionNameTest) {
   const char *samples[] = {
     /* List of (full demangled name, short name) pairs */
     "pthread_mutex_unlock", "pthread_mutex_unlock",  // simple C functions
+    "(below main)", "(below main)",  // simple C functions
 
     "SuppressionTests::Foo(int*)", "SuppressionTests::Foo",
     "void (*SuppressionTests::TemplateFunction1<void (*)(int*)>(void (*)(int*)))(int*)",
