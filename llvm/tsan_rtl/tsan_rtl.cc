@@ -2356,18 +2356,31 @@ void bb_flush_current(TraceInfoPOD *curr_mops) {
 
 extern "C"
 void *rtl_memcpy(char *dest, const char *src, size_t n) {
+  // No need to check for IN_RTL -- this function is called from the client code
+  // only.
   DECLARE_TID_AND_PC();
+  RPut(RTN_CALL, tid, pc, (uintptr_t)rtl_memcpy, 0);
+  ENTER_RTL();
   pc = (pc_t)rtl_memcpy;
-  return Replace_memcpy(tid, pc, dest, src, n);
+  void *result = Replace_memcpy(tid, pc, dest, src, n);
+  LEAVE_RTL();
+  RPut(RTN_EXIT, tid, pc, 0, 0);
+  return result;
 }
 
 extern "C"
 void *rtl_memmove(char *dest, const char *src, size_t n) {
+  // No need to check for IN_RTL -- this function is called from the client code
+  // only.
   DECLARE_TID_AND_PC();
+  RPut(RTN_CALL, tid, pc, (uintptr_t)rtl_memmove, 0);
+  ENTER_RTL();
   void *result = __real_memmove(dest, src, n);
   pc = (pc_t)rtl_memmove;
   REPORT_READ_RANGE(src, n);
   REPORT_WRITE_RANGE(dest, n);
+  LEAVE_RTL();
+  RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
 }
 // }}}
