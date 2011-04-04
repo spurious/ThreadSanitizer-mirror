@@ -62,7 +62,7 @@
 #define DYNAMIC_ANNOTATIONS_IMPL DYNAMIC_ANNOTATIONS_IMPL_AT(__LINE__)
 #else
 /* A slow generic version. */
-#define DYNAMIC_ANNOTATIONS_IMPL volatile static short lineno; lineno = __LINE__;
+#define DYNAMIC_ANNOTATIONS_IMPL volatile short lineno = __LINE__;
 #endif
 
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateRWLockCreate)(
