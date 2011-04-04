@@ -256,6 +256,38 @@ TEST(ThreadSanitizer, DenseMultimapTest) {
   EXPECT_FALSE(m9.has(1));
 }
 
+TEST(ThreadSanitizer, NormalizeFunctionNameTest) {
+  const char *samples[] = {
+    /* List of (full demangled name, short name) pairs */
+    "pthread_mutex_unlock", "pthread_mutex_unlock",  // simple C functions
+
+    "SuppressionTests::Foo(int*)", "SuppressionTests::Foo",
+    "void (*SuppressionTests::TemplateFunction1<void (*)(int*)>(void (*)(int*)))(int*)",
+        "SuppressionTests::TemplateFunction1",  // Valgrind, Linux
+    "void (**&SuppressionTests::TemplateFunction2<void (*)(int)>())",
+        "SuppressionTests::TemplateFunction2",  // Valgrind, Linux
+    "SuppressionTests::TemplateFunction1<void (__cdecl*)(int *)>",
+        "SuppressionTests::TemplateFunction1",  // PIN, Windows
+
+    "__gnu_cxx::new_allocator<char>::allocate(unsigned long, void const*)",
+        "__gnu_cxx::new_allocator::allocate",
+
+    "PositiveTests_HarmfulRaceInDtor::A::~A()",  // PIN on Linux
+        "PositiveTests_HarmfulRaceInDtor::A::~A",
+    "PositiveTests_HarmfulRaceInDtor::A::~A",  // PIN on Windows
+        "PositiveTests_HarmfulRaceInDtor::A::~A",
+    "PositiveTests_HarmfulRaceInDtor::B::`scalar deleting destructor'",  // PIN
+        "PositiveTests_HarmfulRaceInDtor::B::`scalar deleting destructor'",
+
+    "operator new[](unsigned long)", "operator new[]",
+    "operator new[]", "operator new[]",
+  };
+
+  for (size_t i = 0; i < sizeof(samples) / sizeof(samples[0]); i += 2) {
+    EXPECT_STREQ(NormalizeFunctionName(samples[i]).c_str(), samples[i+1]);
+  }
+}
+
 int main(int argc, char **argv) {
   testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

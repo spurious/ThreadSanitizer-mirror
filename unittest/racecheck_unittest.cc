@@ -7672,7 +7672,7 @@ TEST(IgnoreTests, IndirectCallToFunR) {
 }  // namespace
 
 namespace SuppressionTests {
-int GLOB1 = 0, GLOB2 = 0;
+int GLOB1 = 0, GLOB2 = 0, GLOB3 = 0;
 
 void Foo(int *ptr) {
   (*ptr)++;
@@ -7686,17 +7686,26 @@ T TemplateFunction1(T t) {
 }
 
 template<typename T>
-T TemplateFunction2() {
+T* TemplateFunction2() {
   Foo(&GLOB2);
-  return (T)0;
+  return (T*)0;
+}
+
+typedef char ARRAY[16];
+
+void ArrayFunction(char param[16], ARRAY) {
+  GLOB3++;
 }
 
 void Worker() {
   TemplateFunction1(Foo);
-  TemplateFunction2<void (*)(int)>();
+  TemplateFunction2<void (*)(int*)>();
+  char tmp[16];
+  ARRAY tmp2;
+  ArrayFunction(tmp, tmp2);
 }
 
-TEST(SuppressionTests, DISABLED_TemplateTypesSuppressionTest) {
+TEST(SuppressionTests, TemplateTypesSuppressionTest) {
   // This test generates a very awkward report which is rather hard to read and
   // especially write. It'd be good to strip some type-related info from the
   // report stacks to avoid this inconvenience.

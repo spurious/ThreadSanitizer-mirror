@@ -232,6 +232,57 @@ size_t GetVmSizeInMb() {
 #endif
 }
 
+string NormalizeFunctionName(const string &fname) {
+  string ret;
+  size_t cur_brace = fname.find_first_of("(<");
+  if (cur_brace == fname.npos)
+    return fname;
+
+  DCHECK(cur_brace > 0);
+  DCHECK(fname.find_first_of(")>") != fname.npos);
+  DCHECK(fname.find_first_of(")>") > cur_brace);
+
+  bool returns_fun_ptr = false;
+  size_t braces_depth = 0, read_pointer = 0;
+  if (fname[cur_brace - 1] == ' ') {
+    // Return value type is a function pointer
+    DCHECK(fname[cur_brace] == '(');
+    DCHECK(fname[cur_brace + 1] == '*');
+    read_pointer = cur_brace + 2;
+    while (fname[read_pointer] == '*' || fname[read_pointer] == '&')
+      read_pointer++;
+    braces_depth = 1;
+    returns_fun_ptr = true;
+  }
+
+  while (read_pointer < fname.size()) {
+    size_t next_brace = fname.find_first_of("()<>", read_pointer);
+    if (next_brace == fname.npos) {
+      CHECK(braces_depth == 0);
+      ret += (fname.c_str() + read_pointer);
+      break;
+    }
+
+    if (braces_depth == (returns_fun_ptr ? 1 : 0)) {
+      ret.append(fname, read_pointer, next_brace - read_pointer);
+      returns_fun_ptr = false;
+    }
+
+    if (fname[next_brace] == '(' || fname[next_brace] == '<') {
+      braces_depth++;
+      read_pointer = next_brace + 1;
+    } else if (fname[next_brace] == ')' || fname[next_brace] == '>') {
+      CHECK(braces_depth > 0);
+      braces_depth--;
+      read_pointer = next_brace + 1;
+    } else
+      CHECK(0);
+  }
+  CHECK(braces_depth == 0);
+  CHECK(ret.size() > 0);
+  return ret;
+}
+
 void OpenFileWriteStringAndClose(const string &file_name, const string &str) {
 #ifdef TS_VALGRIND
   SysRes sres = VG_(open)((const Char*)file_name.c_str(),

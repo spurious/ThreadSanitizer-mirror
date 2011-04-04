@@ -1,12 +1,12 @@
 {
-   fun:*test127*
+   Expected UnlockForeign in test127
    ThreadSanitizer:UnlockForeign
    ...
    fun:*test127*
 }
 
 {
-   fun:*test136*
+   Expected UnlockNonLocked in test136
    ThreadSanitizer:UnlockNonLocked
    ...
    fun:*test136*
@@ -17,4 +17,27 @@
    ThreadSanitizer:Race
    ...
    fun:*StressTests*FlushStateTest*
+}
+
+{
+   SuppressionTests.TemplateTypesSuppressionTest (1)
+   ThreadSanitizer:Race
+   fun:SuppressionTests::Foo
+   fun:SuppressionTests::TemplateFunction1
+   fun:SuppressionTests::Worker
+}
+
+{
+   SuppressionTests.TemplateTypesSuppressionTest (2)
+   ThreadSanitizer:Race
+   fun:SuppressionTests::Foo
+   fun:SuppressionTests::TemplateFunction2
+   fun:SuppressionTests::Worker
+}
+
+{
+   SuppressionTests.TemplateTypesSuppressionTest (3)
+   ThreadSanitizer:Race
+   fun:SuppressionTests::ArrayFunction
+   fun:SuppressionTests::Worker
 }
