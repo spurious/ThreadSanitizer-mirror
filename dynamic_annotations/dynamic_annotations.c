@@ -49,19 +49,19 @@
 
 #define DYNAMIC_ANNOTATIONS_STRINGIFY(x) #x
 
-// Identical code folding(-Wl,--icf=all) countermeasures.
-// This makes all Annotate* functions different, which prevents the linker from folding them.
-#if defined(__arm__)
-#define DYNAMIC_ANNOTATIONS_IMPL_AT(lineno) asm("bx lr;\n\t.short " DYNAMIC_ANNOTATIONS_STRINGIFY(lineno) "\n\t");
+/* Identical code folding(-Wl,--icf=all) countermeasures.
+   This makes all Annotate* functions different, which prevents the linker from folding them. */
+#if defined(__GNUC__) && defined(__arm__)
+#define DYNAMIC_ANNOTATIONS_IMPL_AT(lineno) __asm__("bx lr;\n\t.short " DYNAMIC_ANNOTATIONS_STRINGIFY(lineno) "\n\t");
 #define DYNAMIC_ANNOTATIONS_IMPL DYNAMIC_ANNOTATIONS_IMPL_AT(__LINE__)
-#elif defined(__x86_64__)
-#define DYNAMIC_ANNOTATIONS_IMPL_AT(lineno) asm("repz; retq;\n\t.short " DYNAMIC_ANNOTATIONS_STRINGIFY(lineno) "\n\t");
+#elif defined(__GNUC__) && defined(__x86_64__)
+#define DYNAMIC_ANNOTATIONS_IMPL_AT(lineno) __asm__("repz; retq;\n\t.short " DYNAMIC_ANNOTATIONS_STRINGIFY(lineno) "\n\t");
 #define DYNAMIC_ANNOTATIONS_IMPL DYNAMIC_ANNOTATIONS_IMPL_AT(__LINE__)
-#elif defined(__i386__)
-#define DYNAMIC_ANNOTATIONS_IMPL_AT(lineno) asm("repz; ret;\n\t.short " DYNAMIC_ANNOTATIONS_STRINGIFY(lineno) "\n\t");
+#elif defined(__GNUC__) && defined(__i386__)
+#define DYNAMIC_ANNOTATIONS_IMPL_AT(lineno) __asm__("repz; ret;\n\t.short " DYNAMIC_ANNOTATIONS_STRINGIFY(lineno) "\n\t");
 #define DYNAMIC_ANNOTATIONS_IMPL DYNAMIC_ANNOTATIONS_IMPL_AT(__LINE__)
 #else
-// A slow generic version.
+/* A slow generic version. */
 #define DYNAMIC_ANNOTATIONS_IMPL volatile static short lineno; lineno = __LINE__;
 #endif
 
