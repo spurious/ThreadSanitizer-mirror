@@ -2990,6 +2990,14 @@ inline bool IsAddrFromDataSections(uintptr_t addr) {
   }
 }
 
+void DumpDataSectiions() {
+  map<uintptr_t, uintptr_t>::iterator iter = data_sections->begin();
+  Printf("Data sections:\n");
+  while(iter != data_sections->end()) {
+    Printf("[%p, %p]\n", iter->second, iter->first);
+  }
+}
+
 // TODO(glider): unify all code that operates BFD.
 bool ReadGlobalsUsingBfd() {
   CHECK(IN_RTL);
@@ -3032,7 +3040,13 @@ bool ReadGlobalsUsingBfd() {
     asymbol *sym = bfd_minisymbol_to_symbol(abfd, dyn, p, NULL);
     uintptr_t addr = bfd_asymbol_value(sym);
     if (sym->flags & BSF_OBJECT) {
-      DCHECK(IsAddrFromDataSections(addr));
+#if DEBUG
+      if (!IsAddrFromDataSections(addr)) {
+        Printf("name: %s, value: %p not in data sections\n",
+               bfd_asymbol_name(sym), addr);
+        DumpDataSectiions();
+      }
+#endif
       (*global_symbols)[addr] = bfd_asymbol_name(sym);
       DDPrintf("name: %s, value: %p\n",
                bfd_asymbol_name(sym), addr);
