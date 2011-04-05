@@ -23,7 +23,7 @@ else
       if [ "$INSERTED" == "" ]
       then
         INSERTED="1"
-        ARGS+=" /home/dvyukov/tsan/llvm/tsan_rtl/tsan_rtl64.a -lbfd"
+        ARGS+=" /home/dvyukov/tsan/llvm/tsan_rtl/tsan_rtl64.a -lbfd -lpthread"
       fi
     fi
     ARGS+=" $1"

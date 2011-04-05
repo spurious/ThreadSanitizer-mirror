@@ -4,6 +4,7 @@ then
   #/usr/bin/gcc "$@"
   /home/dvyukov/gcc-dehydra/installed/bin/gcc "$@"
 else
-  /home/dvyukov/gcc-dehydra/installed/bin/gcc -DDYNAMIC_ANNOTATIONS_ENABLED=1 -fno-inline -fno-exceptions -fplugin=/home/dvyukov/tsan/gcc/plg/Debug/librelite.so -include/home/dvyukov/tsan/gcc/plg/relite_rt.h "$@"
+  #echo RELITE: /home/dvyukov/gcc-dehydra/installed/bin/gcc -DOMIT_DYNAMIC_ANNOTATIONS_IMPL=1 -DDYNAMIC_ANNOTATIONS_WANT_ATTRIBUTE_WEAK -DDYNAMIC_ANNOTATIONS_PREFIX=LLVM -fno-inline -fno-exceptions -fplugin=/home/dvyukov/tsan/gcc/plg/Debug/librelite.so -fplugin-arg-librelite-ignore="$RELITE_IGNORE" -include/home/dvyukov/tsan/gcc/plg/relite_rt.h "$@"
+  /home/dvyukov/gcc-dehydra/installed/bin/gcc -DDYNAMIC_ANNOTATIONS_WANT_ATTRIBUTE_WEAK -DDYNAMIC_ANNOTATIONS_PREFIX=LLVM -fno-inline -fno-exceptions -fplugin=/home/dvyukov/tsan/gcc/plg/Debug/librelite.so -fplugin-arg-librelite-ignore="$RELITE_IGNORE" -include/home/dvyukov/tsan/gcc/plg/relite_rt.h "$@"
 fi
 
