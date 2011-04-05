@@ -2995,6 +2995,7 @@ void DumpDataSectiions() {
   Printf("Data sections:\n");
   while(iter != data_sections->end()) {
     Printf("[%p, %p]\n", iter->second, iter->first);
+    ++iter;
   }
 }
 
