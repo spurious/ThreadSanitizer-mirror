@@ -93,7 +93,8 @@ struct TsanOnlineInstrument : public llvm::ModulePass { // {{{1
   void runOnTrace(Trace &trace, bool first_dtor_bb);
   void runOnBasicBlock(llvm::BasicBlock *BB,
                        bool first_dtor_bb,
-                       Trace &trace);
+                       Trace &trace,
+                       bool useTLEB);
   llvm::Constant *getInstructionAddr(int mop_index,
                                      llvm::BasicBlock::iterator &cur_inst,
                                      const llvm::IntegerType *ResultType);
@@ -127,11 +128,13 @@ struct TsanOnlineInstrument : public llvm::ModulePass { // {{{1
   void insertIgnoreInc(llvm::BasicBlock::iterator &Before);
   void insertIgnoreDec(llvm::BasicBlock::iterator &Before);
   void insertFlushCall(Trace &trace, llvm::Instruction *Before);
-  void insertFlushCurrentCall(Trace &trace, llvm::Instruction *Before);
-  void instrumentMop(llvm::BasicBlock::iterator &BI,
+  void insertFlushCurrentCall(Trace &trace, llvm::Instruction *Before,
+                              bool useTLEB, llvm::Value *MopAddr);
+  bool instrumentMop(llvm::BasicBlock::iterator &BI,
                      bool isStore,
                      bool check_ident_store,
-                     Trace &trace);
+                     Trace &trace,
+                     bool useTLEB);
   void instrumentMemTransfer(llvm::BasicBlock::iterator &BI);
   void instrumentCall(llvm::BasicBlock::iterator &BI);
 
@@ -145,7 +148,7 @@ struct TsanOnlineInstrument : public llvm::ModulePass { // {{{1
   llvm::Value *TracePassportGlob;
   llvm::GlobalVariable *LiteRaceStorageGlob;
   // Functions provided by the RTL.
-  llvm::Constant *BBFlushFn, *BBFlushCurrentFn;
+  llvm::Constant *BBFlushFn, *BBFlushCurrentFn, *BBFlushMop;
   // TODO(glider): get rid of rtn_call/rtn_exit at all.
   llvm::Constant *RtnCallFn, *RtnExitFn;
   llvm::Constant *MemCpyFn, *MemMoveFn, *MemSetIntrinsicFn;

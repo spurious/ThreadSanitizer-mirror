@@ -106,6 +106,11 @@ static cl::opt<bool>
         cl::desc("Each basic block is treated as a single trace"),
         cl::init(false));
 
+static cl::opt<bool>
+    UseTlebForMinimalBlocks("use-tleb-for-minimal-blocks",
+        cl::desc("Pass blocks containing a single mop via TLEB"),
+        cl::init(true));
+
 // }}}
 
 // Required by OpenFileReadOnly in common_util.h
@@ -926,6 +931,14 @@ bool TsanOnlineInstrument::runOnModule(Module &M) {
   cast<Function>(BBFlushCurrentFn)->
       setLinkage(Function::ExternalWeakLinkage);
 
+  // void* bb_flush_mop(cur_mop, addr)
+  BBFlushMop = M.getOrInsertFunction("bb_flush_mop",
+                                     Void,
+                                     TraceInfoTypePtr, UIntPtr, (Type*)0);
+  cast<Function>(BBFlushCurrentFn)->
+      setLinkage(Function::ExternalWeakLinkage);
+
+
 
   // void rtn_call(void *addr)
   // TODO(glider): we should finally get rid of it at all.
@@ -1076,8 +1089,11 @@ void TsanOnlineInstrument::insertFlushCall(Trace &trace, Instruction *Before) {
   }
 }
 
+// |MopAddr| is ignored iff |useTLEB| == true.
 void TsanOnlineInstrument::insertFlushCurrentCall(Trace &trace,
-                                                  Instruction *Before) {
+                                                  Instruction *Before,
+                                                  bool useTLEB,
+                                                  Value *MopAddr) {
   assert(Before);
   if (!EnableLiteRaceSampling) {
     // Sampling is off -- just insert an unconditional call to bb_flush().
@@ -1104,6 +1120,8 @@ void TsanOnlineInstrument::insertFlushCurrentCall(Trace &trace,
     // should be cleared. If we don't clean up the TLEB, the dirty
     // addresses may be occasionally passed to ThreadSanitizer during the
     // next flush.
+    // In the case of a trace containing a single memory operation we don't use
+    // the TLEB at all, so we don't need to clean it up.
     //
     //       literace > 0 ?
     //          /    \
@@ -1172,41 +1190,73 @@ void TsanOnlineInstrument::insertFlushCurrentCall(Trace &trace,
     ReplaceInstWithInst(BBOldTerm, BBNewTerm);
 
     // Set up the cleanup block. It should contain:
-    //  memset(TLEB, 0, num_mops)
-    //  branch to the original block end
-    BranchInst *CleanupTerm = BranchInst::Create(FinishBB, CleanupBB);
-    vector <Value*> MSArgs;
-    MSArgs.push_back(BitCastInst::CreatePointerCast(TLEB,
-                                                    Int8Ptr,
-                                                    "",
-                                                    CleanupTerm));
-    MSArgs.push_back(ConstantInt::get(Int8, 0));
-    MSArgs.push_back(ConstantInt::get(PlatformInt,
-                                      trace.num_mops * ArchSize / 8));
-    MSArgs.push_back(ConstantInt::get(Int32, 1));
-    CallInst::Create(MemSetIntrinsicFn,
-                     MSArgs.begin(), MSArgs.end(),
-                     "", CleanupTerm);
+    //  -- memset(TLEB, 0, num_mops)
+    //  -- branch to the original block end.
 
+    //  This is the final branch.
+    BranchInst *CleanupTerm = BranchInst::Create(FinishBB, CleanupBB);
+    // This is the memset() (or just a MOV for smaller TLEB sizes).
+    // The TLEB should be cleaned up iff |useTLEB|.
+    if (useTLEB) {
+      vector <Value*> MSArgs;
+      MSArgs.push_back(BitCastInst::CreatePointerCast(TLEB,
+                                                      Int8Ptr,
+                                                      "",
+                                                      CleanupTerm));
+      MSArgs.push_back(ConstantInt::get(Int8, 0));
+      MSArgs.push_back(ConstantInt::get(PlatformInt,
+                                        trace.num_mops * ArchSize / 8));
+      MSArgs.push_back(ConstantInt::get(Int32, 1));
+      CallInst::Create(MemSetIntrinsicFn,
+                       MSArgs.begin(), MSArgs.end(),
+                       "", CleanupTerm);
+    }
+
+    // Set up the flush block. It should contain:
+    //  -- call to either bb_flush_current() or bb_flush_mop().
+    //  -- branch to the original block end.
+
+    // This is the final branch.
     BranchInst *FlushTerm = BranchInst::Create(FinishBB, FlushBB);
-    vector <Value*> Args(1);
-    vector <Value*> idx;
-    idx.push_back(ConstantInt::get(PlatformInt, 0));
-    Args[0] =
-        GetElementPtrInst::Create(TracePassportGlob,
-                                  idx.begin(),
-                                  idx.end(),
-                                  "",
-                                  FlushTerm);
-    Args[0] = BitCastInst::CreatePointerCast(Args[0],
-                                             TraceInfoTypePtr,
-                                             "",
-                                             FlushTerm);
-    // TODO(glider): We'll get a mess if
-    // EnableLiteRaceSampling == true and EnableTraceFlushing == false
-    CallInst::Create(BBFlushCurrentFn,
-                     Args.begin(), Args.end(),
-                     "", FlushTerm);
+    // This is the flush.
+    if (useTLEB) {
+      // Call bb_flush_current(current_mops).
+      assert(MopAddr == NULL);
+      vector <Value*> Args(1);
+      vector <Value*> idx;
+      idx.push_back(ConstantInt::get(PlatformInt, 0));
+      Args[0] =
+          GetElementPtrInst::Create(TracePassportGlob,
+                                    idx.begin(),
+                                    idx.end(),
+                                    "",
+                                    FlushTerm);
+      Args[0] = BitCastInst::CreatePointerCast(Args[0],
+                                               TraceInfoTypePtr,
+                                               "",
+                                               FlushTerm);
+      // TODO(glider): We'll get a mess if
+      // EnableLiteRaceSampling == true and EnableTraceFlushing == false
+      CallInst::Create(BBFlushCurrentFn,
+                       Args.begin(), Args.end(),
+                       "", FlushTerm);
+    } else {
+      // Call bb_flush_mop(current_mop, addr).
+      vector <Value*> Args(2);
+      vector <Value*> idx;
+      idx.push_back(ConstantInt::get(PlatformInt, 0));
+      Value *PassportPtr =
+          GetElementPtrInst::Create(TracePassportGlob,
+                                    idx.begin(),
+                                    idx.end(),
+                                    "",
+                                    FlushTerm);
+      Args[0] = BitCastInst::CreatePointerCast(PassportPtr, TraceInfoTypePtr,
+                                               "",
+                                               FlushTerm);
+      Args[1] = MopAddr;
+      CallInst::Create(BBFlushMop, Args.begin(), Args.end(), "", FlushTerm);
+    }
   }
 }
 
@@ -1216,21 +1266,35 @@ void TsanOnlineInstrument::runOnTrace(Trace &trace,
   instrumentation_stats.newTrace();
   bool have_passport = makeTracePassport(trace);
   if (have_passport) {
-    // Instrument memory operations and function calls.
     instrumentation_stats.newInstrumentedTrace();
-    for (BlockSet::iterator TI = trace.blocks.begin(),
-                            TE = trace.blocks.end();
-         TI != TE; ++TI) {
-      runOnBasicBlock(*TI, first_dtor_bb, trace);
-      first_dtor_bb = false;
-    }
-    // If a trace has a passport, we should be able to insert a flush call
-    // before its exit points.
-    assert(trace.exits.size());
-    for (BlockSet::iterator EI = trace.exits.begin(),
-                            EE = trace.exits.end();
-         EI != EE; ++EI) {
-      insertFlushCurrentCall(trace, (*EI)->getTerminator());
+    if ((trace.to_instrument.size() > 1) || UseTlebForMinimalBlocks) {
+      // Instrument memory operations and function calls.
+      for (BlockSet::iterator TI = trace.blocks.begin(),
+                              TE = trace.blocks.end();
+           TI != TE; ++TI) {
+        runOnBasicBlock(*TI, first_dtor_bb, trace, /*useTLEB*/true);
+        first_dtor_bb = false;
+      }
+      // If a trace has a passport, we should be able to insert a flush call
+      // before its exit points.
+      assert(trace.exits.size());
+      for (BlockSet::iterator EI = trace.exits.begin(),
+                              EE = trace.exits.end();
+           EI != EE; ++EI) {
+        insertFlushCurrentCall(trace, (*EI)->getTerminator(),
+                               /*useTLEB*/true, NULL);
+      }
+    } else {
+      // The trace contains a single memory operation -- just instrument it with
+      // call to bb_flush_mop() instead of passing it through TLEB.
+      // TODO(glider): assert that such a trace consists of a single basic
+      // block.
+      for (BlockSet::iterator TI = trace.blocks.begin(),
+                              TE = trace.blocks.end();
+           TI != TE; ++TI) {
+        runOnBasicBlock(*TI, first_dtor_bb, trace, /*useTLEB*/false);
+        first_dtor_bb = false;
+      }
     }
   } else {
     // Instrument only function calls.
@@ -1649,12 +1713,13 @@ bool TsanOnlineInstrument::makeTracePassport(Trace &trace) {
   return false;
 }
 
-void TsanOnlineInstrument::instrumentMop(BasicBlock::iterator &BI,
+bool TsanOnlineInstrument::instrumentMop(BasicBlock::iterator &BI,
                                          bool isStore,
                                          bool check_ident_store,
-                                         Trace &trace) {
-  if (trace.to_instrument.find(BI) == trace.to_instrument.end()) return;
-  if (!EnableMemoryInstrumentation) return;
+                                         Trace &trace,
+                                         bool useTLEB) {
+  if (trace.to_instrument.find(BI) == trace.to_instrument.end()) return false;
+  if (!EnableMemoryInstrumentation) return false;
   instrumentation_stats.newInstrumentedMop();
   Value *MopAddr;
   llvm::Instruction &IN = *BI;
@@ -1698,18 +1763,25 @@ void TsanOnlineInstrument::instrumentMop(BasicBlock::iterator &BI,
     MopAddr = new IntToPtrInst(Ptr, UIntPtr, "", BI);
   }
 
-  // Store the pointer into TLEB[TLEBIndex].
-  vector <Value*> idx;
-  idx.push_back(ConstantInt::get(Int32, 0));
-  idx.push_back(ConstantInt::get(PlatformInt, TLEBIndex));
-  Value *TLEBPtr =
-      GetElementPtrInst::Create(TLEB,
-                                idx.begin(),
-                                idx.end(),
-                                "",
-                                BI);
-  new StoreInst(MopAddr, TLEBPtr, BI);
-  TLEBIndex++;
+  // MopAddr is calculated regardless of |useTLEB| value.
+  if (useTLEB) {
+    // Store the pointer into TLEB[TLEBIndex].
+    vector <Value*> idx;
+    idx.push_back(ConstantInt::get(Int32, 0));
+    idx.push_back(ConstantInt::get(PlatformInt, TLEBIndex));
+    Value *TLEBPtr =
+        GetElementPtrInst::Create(TLEB,
+                                  idx.begin(),
+                                  idx.end(),
+                                  "",
+                                  BI);
+    new StoreInst(MopAddr, TLEBPtr, BI);
+    TLEBIndex++;
+  } else {
+    // Call bb_flush_mop() instead of TLEB magic.
+    insertFlushCurrentCall(trace, BI, /*useTLEB*/false, MopAddr);
+  }
+  return true;
 }
 
 // Instrument llvm.memcpy and llvm.memmove.
@@ -1760,24 +1832,35 @@ void TsanOnlineInstrument::instrumentCall(BasicBlock::iterator &BI) {
 // instrumented.
 void TsanOnlineInstrument::runOnBasicBlock(BasicBlock *BB,
                                            bool first_dtor_bb,
-                                           Trace &trace) {
+                                           Trace &trace,
+                                           bool useTLEB) {
   bool is_instrumented = false;
   for (BasicBlock::iterator BI = BB->begin(), BE = BB->end();
        BI != BE;
        ++BI) {
     if (isaCallOrInvoke(BI)) {
       llvm::Instruction &IN = *BI;
+      // Calls should be instrumented regardless of |useTLEB|.
       instrumentCall(BI);
     }
+  }
+  // We need two separate passes for calls and mops instrumentation,
+  // because in the case of useTLEB==false a basic block can be splitted (for
+  // the purpose of sampling) and the iterators will be invalidated.
+  for (BasicBlock::iterator BI = BB->begin(), BE = BB->end();
+       BI != BE;
+       ++BI) {
     if (isa<LoadInst>(BI)) {
       // Instrument LOAD.
-      instrumentMop(BI, false, first_dtor_bb, trace);
-      is_instrumented = true;
+      bool inst_result = instrumentMop(BI, false, first_dtor_bb, trace, useTLEB);
+      is_instrumented = is_instrumented || inst_result;
+      if ((!useTLEB) && is_instrumented) break;
     }
     if (isa<StoreInst>(BI)) {
       // Instrument STORE.
-      instrumentMop(BI, true, first_dtor_bb, trace);
-      is_instrumented = true;
+      bool inst_result = instrumentMop(BI, true, first_dtor_bb, trace, useTLEB);
+      is_instrumented = is_instrumented || inst_result;
+      if ((!useTLEB) && is_instrumented) break;
     }
   }
   if (is_instrumented) instrumentation_stats.newInstrumentedBasicBlock();
