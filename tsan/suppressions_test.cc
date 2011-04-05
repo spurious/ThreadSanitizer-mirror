@@ -474,6 +474,23 @@ TEST_F(FailingSuppressionsTest, StacktraceWithParenthesis) {
   ASSERT_EQ(9, ErrorLineNo(data));
 }
 
+TEST_F(FailingSuppressionsTest, StacktraceWithAngleBraces) {
+  const string data =
+      "{\n"
+      "  name\n"
+      "  test_tool:test_warning_type\n"
+      "  {\n"
+      "    fun:fun*2\n"
+      "    fun:fun*3\n"
+      "  }\n"
+      "  {\n"
+      "    fun:fun<int>*4\n"
+      "    obj:obj*5\n"
+      "  }\n"
+      "}";
+  ASSERT_EQ(9, ErrorLineNo(data));
+}
+
 
 TEST(WildcardTest, Simple) {
   EXPECT_TRUE(StringMatch("abc", "abc"));

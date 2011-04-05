@@ -195,8 +195,10 @@ bool Parser::ParseStackTraceLine(StackTraceTemplate* trace, string line) {
       return true;
     } else if (s1 == "fun") {
       Location location = {LT_FUN, s2};
-      PARSER_CHECK(s2.find('(') == string::npos,
-                   "'fun:' lines can't contain '('");
+      PARSER_CHECK(s2.find_first_of("()") == string::npos,
+                   "'fun:' lines can't contain '()'");
+      PARSER_CHECK(s2.find_first_of("<>") == string::npos,
+                   "'fun:' lines can't contain '<>'");
       trace->locations.push_back(location);
       return true;
     } else {
