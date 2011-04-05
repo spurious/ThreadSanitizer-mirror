@@ -80,9 +80,27 @@ static void             build_stack_op      (relite_context_t* ctx,
   op_size = build_int_cst_wide(long_long_unsigned_type_node, size_val, 0);
   tree op_expr = build2(op, long_long_unsigned_type_node,
                         ctx->rtl_stack, op_size);
-  op_expr = force_gimple_operand(op_expr, seq, true, NULL_TREE);
+  gimple_seq op_seq = 0;
+  op_expr = force_gimple_operand(op_expr, &op_seq, true, NULL_TREE);
   gimple assign = gimple_build_assign(ctx->rtl_stack, op_expr);
+  gimple_seq_add_seq(seq, op_seq);
   gimple_seq_add_stmt(seq, assign);
+}
+
+
+static void             build_rec_ignore_op (relite_context_t* ctx,
+                                             gimple_seq* seq,
+                                             enum tree_code op) {
+  // Builds either (thread_local_ignore += 1)
+  // or (thread_local_ignore -= 1) expression depending on 'op' parameter
+
+  tree rec_expr = build2(op, integer_type_node,
+                       ctx->rtl_ignore, integer_one_node);
+  gimple_seq rec_inc = 0;
+  rec_expr = force_gimple_operand(rec_expr, &rec_inc, true, NULL_TREE);
+  gimple rec_assign = gimple_build_assign(ctx->rtl_ignore, rec_expr);
+  gimple_seq_add_seq(seq, rec_inc);
+  gimple_seq_add_stmt(seq, rec_assign);
 }
 
 
@@ -92,8 +110,14 @@ static void             instr_func          (struct relite_context_t* ctx,
   // In this case we need no instrumentation for the function
   if (ctx->func_calls == 0 && ctx->func_mops == 0)
     return;
+
   build_stack_op(ctx, pre, PLUS_EXPR);
   build_stack_op(ctx, post, MINUS_EXPR);
+
+  if (ctx->func_ignore == relite_ignore_rec) {
+    build_rec_ignore_op(ctx, pre, PLUS_EXPR);
+    build_rec_ignore_op(ctx, post, MINUS_EXPR);
+  }
 }
 
 
@@ -277,8 +301,6 @@ static void             instrument_mop      (mop_ctx_t* ctx,
     // as of now crashes compilation
     //TODO(dvyukov): handle it correctly
     reason = "constructor expression";
-  } else if (tcode == CONSTRUCTOR) {
-    reason = "constructor expr";
   } else if (tcode == RESULT_DECL) {
     reason = "function result";
   } else if (tcode == PARM_DECL) {

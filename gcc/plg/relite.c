@@ -8,7 +8,7 @@
  * version. See http://www.gnu.org/licenses/
  */
 
-//TODO(dvyukov): support ignore files
+//TODO(dvyukov): create a makefile
 
 //TODO(dvyukov): collect per-function stats
 
@@ -66,19 +66,12 @@ static tree             handle_ignore_attr  (tree* node,
 }
 
 
-static struct attribute_spec ignore_attr = {
-    "relite_ignore",
-    0,
-    0,
-    0,
-    0,
-    0,
-    handle_ignore_attr
-};
-
-
 static void             register_attributes (void* event_data,
                                              void* user_data) {
+  static struct attribute_spec ignore_attr = {
+      "relite_ignore", 0, 0, 0, 0, 0, handle_ignore_attr
+  };
+
   register_attribute(&ignore_attr);
 }
 
