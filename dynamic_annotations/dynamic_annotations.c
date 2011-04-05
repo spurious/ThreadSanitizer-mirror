@@ -51,20 +51,10 @@
 
 /* Identical code folding(-Wl,--icf=all) countermeasures.
    This makes all Annotate* functions different, which prevents the linker from folding them. */
-#if defined(__GNUC__) && defined(__arm__)
-#define DYNAMIC_ANNOTATIONS_IMPL_AT(lineno) __asm__("bx lr;\n\t.short " DYNAMIC_ANNOTATIONS_STRINGIFY(lineno) "\n\t");
-#define DYNAMIC_ANNOTATIONS_IMPL DYNAMIC_ANNOTATIONS_IMPL_AT(__LINE__)
-#elif defined(__GNUC__) && defined(__x86_64__)
-#define DYNAMIC_ANNOTATIONS_IMPL_AT(lineno) __asm__("repz; retq;\n\t.short " DYNAMIC_ANNOTATIONS_STRINGIFY(lineno) "\n\t");
-#define DYNAMIC_ANNOTATIONS_IMPL DYNAMIC_ANNOTATIONS_IMPL_AT(__LINE__)
-#elif defined(__GNUC__) && defined(__i386__)
-#define DYNAMIC_ANNOTATIONS_IMPL_AT(lineno) __asm__("repz; ret;\n\t.short " DYNAMIC_ANNOTATIONS_STRINGIFY(lineno) "\n\t");
-#define DYNAMIC_ANNOTATIONS_IMPL DYNAMIC_ANNOTATIONS_IMPL_AT(__LINE__)
-#else
-/* A slow generic version. */
-#define DYNAMIC_ANNOTATIONS_IMPL volatile short lineno = __LINE__;
-#endif
+#define DYNAMIC_ANNOTATIONS_IMPL volatile short lineno = (__LINE__ << 8) + __COUNTER__; (void)lineno;
 
+/* WARNING: always add new annotations to the end of the list.
+   Otherwise, lineno (see above) numbers for different Annotate* functions may conflict. */
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateRWLockCreate)(
     const char *file, int line, const volatile void *lock) {DYNAMIC_ANNOTATIONS_IMPL}
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateRWLockDestroy)(
