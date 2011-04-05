@@ -3355,6 +3355,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   // Annotations.
   INSERT_BEFORE_4("AnnotateBenignRace", On_AnnotateBenignRace);
   INSERT_BEFORE_5("AnnotateBenignRaceSized", On_AnnotateBenignRaceSized);
+  INSERT_BEFORE_5("WTFAnnotateBenignRaceSized", On_AnnotateBenignRaceSized);
   INSERT_BEFORE_4("AnnotateExpectRace", On_AnnotateExpectRace);
   INSERT_BEFORE_2("AnnotateFlushExpectedRaces", On_AnnotateFlushExpectedRaces);
   INSERT_BEFORE_3("AnnotateTraceMemory", On_AnnotateTraceMemory);
@@ -3366,7 +3367,9 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_BEFORE_3("AnnotateCondVarSignal", On_AnnotateCondVarSignal);
   INSERT_BEFORE_3("AnnotateCondVarSignalAll", On_AnnotateCondVarSignal);
   INSERT_BEFORE_3("AnnotateHappensBefore", On_AnnotateHappensBefore);
+  INSERT_BEFORE_3("WTFAnnotateHappensBefore", On_AnnotateHappensBefore);
   INSERT_BEFORE_3("AnnotateHappensAfter", On_AnnotateHappensAfter);
+  INSERT_BEFORE_3("WTFAnnotateHappensAfter", On_AnnotateHappensAfter);
 
   INSERT_BEFORE_3("AnnotateEnableRaceDetection", On_AnnotateEnableRaceDetection);
   INSERT_BEFORE_0("AnnotateIgnoreReadsBegin", On_AnnotateIgnoreReadsBegin);

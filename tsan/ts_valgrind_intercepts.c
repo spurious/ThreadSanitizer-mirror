@@ -2550,9 +2550,23 @@ ANN_FUNC(void, AnnotateHappensBefore, const char *file, int line, void *obj)
   DO_CREQ_v_W(TSREQ_SIGNAL, void*, obj);
 }
 
+ANN_FUNC(void, WTFAnnotateHappensBefore, const char *file, int line, void *obj)
+{
+  const char *name = "WTFAnnotateHappensBefore";
+  ANN_TRACE("--#%d %s[%p] %s:%d\n", tid, name, obj, file, line);
+  DO_CREQ_v_W(TSREQ_SIGNAL, void*, obj);
+}
+
 ANN_FUNC(void, AnnotateHappensAfter, const char *file, int line, void *obj)
 {
   const char *name = "AnnotateHappensAfter";
+  ANN_TRACE("--#%d %s[%p] %s:%d\n", tid, name, obj, file, line);
+  do_wait(obj);
+}
+
+ANN_FUNC(void, WTFAnnotateHappensAfter, const char *file, int line, void *obj)
+{
+  const char *name = "WTFAnnotateHappensAfter";
   ANN_TRACE("--#%d %s[%p] %s:%d\n", tid, name, obj, file, line);
   do_wait(obj);
 }
@@ -2609,6 +2623,14 @@ ANN_FUNC(void, AnnotateBenignRace, const char *file, int line, void *mem, char *
 ANN_FUNC(void, AnnotateBenignRaceSized, const char *file, int line, void *mem, long size, char *description)
 {
   const char *name = "AnnotateBenignRace";
+  ANN_TRACE("--#%d %s[%p] %s:%d\n", tid, name, mem, file, line);
+  DO_CREQ_v_WWW(TSREQ_BENIGN_RACE, char*,(char*)mem, long, size,
+                char*,description);
+}
+
+ANN_FUNC(void, WTFAnnotateBenignRaceSized, const char *file, int line, void *mem, long size, char *description)
+{
+  const char *name = "WTFAnnotateBenignRace";
   ANN_TRACE("--#%d %s[%p] %s:%d\n", tid, name, mem, file, line);
   DO_CREQ_v_WWW(TSREQ_BENIGN_RACE, char*,(char*)mem, long, size,
                 char*,description);
