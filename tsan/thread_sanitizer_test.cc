@@ -256,12 +256,45 @@ TEST(ThreadSanitizer, DenseMultimapTest) {
   EXPECT_FALSE(m9.has(1));
 }
 
-TEST(ThreadSanitizer, NormalizeFunctionNameTest) {
+TEST(ThreadSanitizer, NormalizeFunctionNameNotChangingTest) {
   const char *samples[] = {
-    /* List of (full demangled name, short name) pairs */
-    "pthread_mutex_unlock", "pthread_mutex_unlock",  // simple C functions
+    // These functions should not be changed by NormalizeFunctionName():
+    // C functions
+    "main",
+    "pthread_mutex_unlock",
 
+    // C++ operators
+    "operator new[]",
+    "operator delete[]",
+
+    // PIN on Windows handles non-templated C++ code well
+    "my_namespace::ClassName::Method",
+    "PositiveTests_HarmfulRaceInDtor::A::~A",
+    "PositiveTests_HarmfulRaceInDtor::B::`scalar deleting destructor'",
+
+    // Objective-C on Mac
+    "+[NSNavFBENode _virtualNodeOfType:]",
+    "-[NSObject(NSObject) autorelease]",
+    "-[NSObject(NSKeyValueCoding) setValue:forKeyPath:]",
+    "-[NSCell(NSPrivate_CellMouseTracking) _setMouseTrackingInRect:ofView:]",
+    // TODO(glider): other interesting cases from Objective-C?
+    // Should we "s/:.*\]/\]/" ?
+  };
+
+  for (size_t i = 0; i < sizeof(samples) / sizeof(samples[0]); i += 2) {
+    EXPECT_STREQ(NormalizeFunctionName(samples[i]).c_str(), samples[i]);
+  }
+}
+
+TEST(ThreadSanitizer, NormalizeFunctionNameChangingTest) {
+  const char *samples[] = {
+    // These functions should be changed by removing <.*> and (.*) while
+    // correctly handling the "function returns a [template] function pointer"
+    // case.
+    // This is a list of (full demangled name, short name) pairs.
     "SuppressionTests::Foo(int*)", "SuppressionTests::Foo",
+
+    // Functions returning function pointers
     "void (*SuppressionTests::TemplateFunction1<void (*)(int*)>(void (*)(int*)))(int*)",
         "SuppressionTests::TemplateFunction1",  // Valgrind, Linux
     "void (**&SuppressionTests::TemplateFunction2<void (*)(int)>())",
@@ -272,15 +305,10 @@ TEST(ThreadSanitizer, NormalizeFunctionNameTest) {
     "__gnu_cxx::new_allocator<char>::allocate(unsigned long, void const*)",
         "__gnu_cxx::new_allocator::allocate",
 
-    "PositiveTests_HarmfulRaceInDtor::A::~A()",  // PIN on Linux
+    "PositiveTests_HarmfulRaceInDtor::A::~A()",  // Valgrind, Linux
         "PositiveTests_HarmfulRaceInDtor::A::~A",
-    "PositiveTests_HarmfulRaceInDtor::A::~A",  // PIN on Windows
-        "PositiveTests_HarmfulRaceInDtor::A::~A",
-    "PositiveTests_HarmfulRaceInDtor::B::`scalar deleting destructor'",  // PIN
-        "PositiveTests_HarmfulRaceInDtor::B::`scalar deleting destructor'",
 
-    "operator new[](unsigned long)", "operator new[]",
-    "operator new[]", "operator new[]",
+    "operator new[](unsigned long)", "operator new[]",  // Valgrind, Linux
   };
 
   for (size_t i = 0; i < sizeof(samples) / sizeof(samples[0]); i += 2) {

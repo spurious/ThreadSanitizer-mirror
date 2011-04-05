@@ -220,7 +220,7 @@ TEST_F(BaseSuppressionsTest, StartsWithVerticalWildcard) {
       "  ...\n"
       "  fun:qq\n"
       "}";
-  supp_.ReadFromString(data);
+  ASSERT_GT(supp_.ReadFromString(data), 0);
   string m[] = {"fun1", "bb", "qq", "function2"};
   string d[] = {"aaa", "bbb", "ddd", "ccc"};
   string o[] = {"object2", "objt1", "object3", "object4"};
@@ -235,7 +235,7 @@ TEST_F(BaseSuppressionsTest, StartsWithVerticalWildcard2) {
       "  ...\n"
       "  fun:fun1\n"
       "}";
-  supp_.ReadFromString(data);
+  ASSERT_GT(supp_.ReadFromString(data), 0);
   string m[] = {"fun1", "bb", "qq", "function2"};
   string d[] = {"aaa", "bbb", "ddd", "ccc"};
   string o[] = {"object2", "objt1", "object3", "object4"};
@@ -250,7 +250,7 @@ TEST_F(BaseSuppressionsTest, EndsWithVerticalWildcard) {
       "  fun:fun1\n"
       "  ...\n"
       "}";
-  supp_.ReadFromString(data);
+  ASSERT_GT(supp_.ReadFromString(data), 0);
   string m[] = {"fun1", "bb", "qq", "function2"};
   string d[] = {"aaa", "bbb", "ddd", "ccc"};
   string o[] = {"object2", "objt1", "object3", "object4"};
@@ -265,7 +265,7 @@ TEST_F(BaseSuppressionsTest, EndsWithVerticalWildcard2) {
       "  fun:qq\n"
       "  ...\n"
       "}";
-  supp_.ReadFromString(data);
+  ASSERT_GT(supp_.ReadFromString(data), 0);
   string m[] = {"fun1", "bb", "qq", "function2"};
   string d[] = {"aaa", "bbb", "ddd", "ccc"};
   string o[] = {"object2", "objt1", "object3", "object4"};
@@ -283,7 +283,7 @@ TEST_F(BaseSuppressionsTest, Complex) {
       "  ...\n"
       "  fun:function?\n"
       "}";
-  supp_.ReadFromString(data);
+  ASSERT_GT(supp_.ReadFromString(data), 0);
   string m[] = {"fun1", "bb", "qq", "function2"};
   string d[] = {"aaa", "bbb", "ddd", "ccc"};
   string o[] = {"object2", "objt1", "object3", "object4"};
@@ -297,7 +297,7 @@ TEST_F(BaseSuppressionsTest, DemangledNames) {
       "  test_tool:test_warning_type\n"
       "  fun:bb*w?\n"
       "}";
-  supp_.ReadFromString(data);
+  ASSERT_GT(supp_.ReadFromString(data), 0);
   string m[] = {"fun1", "bb", "qq", "function2"};
   string d[] = {"bbbxxwz", "aaa", "ddd", "ccc"};
   string o[] = {"object2", "objt1", "object3", "object4"};
@@ -311,8 +311,22 @@ TEST_F(BaseSuppressionsTest, TrailingWhitespace) {
       "  test_tool:test_warning_type\n"
       "  fun:bb*w? \n"
       "}";
-  supp_.ReadFromString(data);
+  ASSERT_GT(supp_.ReadFromString(data), 0);
   string m[] = {"fun1", "bb", "qq", "function2"};
+  string d[] = {"bbbxxwz", "aaa", "ddd", "ccc"};
+  string o[] = {"object2", "objt1", "object3", "object4"};
+  ASSERT_TRUE(IsSuppressed(VEC(m), VEC(d), VEC(o)));
+}
+
+TEST_F(BaseSuppressionsTest, ObjectiveC) {
+  const string data =
+      "{\n"
+      "  name\n"
+      "  test_tool:test_warning_type\n"
+      "  fun:-[NSObject(NSKeyValueCoding) setValue:forKeyPath:]\n"
+      "}";
+  ASSERT_GT(supp_.ReadFromString(data), 0);
+  string m[] = {"-[NSObject(NSKeyValueCoding) setValue:forKeyPath:]", "function2"};
   string d[] = {"bbbxxwz", "aaa", "ddd", "ccc"};
   string o[] = {"object2", "objt1", "object3", "object4"};
   ASSERT_TRUE(IsSuppressed(VEC(m), VEC(d), VEC(o)));

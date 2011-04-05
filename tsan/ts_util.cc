@@ -233,9 +233,16 @@ size_t GetVmSizeInMb() {
 }
 
 string NormalizeFunctionName(const string &fname) {
-  size_t cur_brace = fname.find_first_of("(<");
-  if (cur_brace == fname.npos)
+  if (fname[1] == '[' && strchr("+-=", fname[0]) != NULL) {
+    // Objective-C function
     return fname;
+  }
+
+  size_t cur_brace = fname.find_first_of("(<");
+  if (cur_brace == fname.npos) {
+    // C function or a well-formatted function name.
+    return fname;
+  }
 
   DCHECK(fname.find_first_of(")>") != fname.npos);
   DCHECK(fname.find_first_of(")>") > cur_brace);
