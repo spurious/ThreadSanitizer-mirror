@@ -2990,7 +2990,7 @@ inline bool IsAddrFromDataSections(uintptr_t addr) {
   }
 }
 
-void DumpDataSectiions() {
+void DumpDataSections() {
   map<uintptr_t, uintptr_t>::iterator iter = data_sections->begin();
   Printf("Data sections:\n");
   while(iter != data_sections->end()) {
@@ -3041,16 +3041,14 @@ bool ReadGlobalsUsingBfd() {
     asymbol *sym = bfd_minisymbol_to_symbol(abfd, dyn, p, NULL);
     uintptr_t addr = bfd_asymbol_value(sym);
     if (sym->flags & BSF_OBJECT) {
-#if DEBUG
-      if (!IsAddrFromDataSections(addr)) {
-        Printf("name: %s, value: %p not in data sections\n",
-               bfd_asymbol_name(sym), addr);
-        DumpDataSectiions();
+      // Some globals, e.g. rtl_debug_info* or _GLOBAL_OFFSET_TABLE_, are not
+      // interesting for us, because they don't belong to the list of known data
+      // sections.
+      if (IsAddrFromDataSections(addr)) {
+        (*global_symbols)[addr] = bfd_asymbol_name(sym);
+        DDPrintf("name: %s, value: %p\n",
+                 bfd_asymbol_name(sym), addr);
       }
-#endif
-      (*global_symbols)[addr] = bfd_asymbol_name(sym);
-      DDPrintf("name: %s, value: %p\n",
-               bfd_asymbol_name(sym), addr);
     }
     p += size;
   }
