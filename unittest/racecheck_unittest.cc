@@ -7714,7 +7714,7 @@ void ArrayFunction(char param[16], ARRAY) {
 
 void Worker() {
   TemplateFunction1(Foo);
-  TemplateFunction2<MyClass<int>>();
+  TemplateFunction2<MyClass<int> >();
   TemplateFunction3<void (*)(int*)>();
   char tmp[16];
   ARRAY tmp2;
