@@ -133,7 +133,10 @@ static void             instr_mop           (struct relite_context_t* ctx,
   tree expr_ptr = build_addr(expr, current_function_decl);
   tree addr_expr = force_gimple_operand(expr_ptr, post_gseq, true, NULL_TREE);
 
-  tree expr_size = TYPE_SIZE(TREE_TYPE(expr));
+  tree expr_type = TREE_TYPE(expr);
+  while (TREE_CODE(expr_type) == ARRAY_TYPE)
+    expr_type = TREE_TYPE(expr_type);
+  tree expr_size = TYPE_SIZE(expr_type);
   double_int size = tree_to_double_int(expr_size);
   gcc_assert(size.high == 0 && size.low != 0);
   if (size.low > 128)
@@ -150,6 +153,58 @@ static void             instr_mop           (struct relite_context_t* ctx,
       ctx->rtl_mop, 2, addr_expr, flags_expr);
 
   gimple_seq_add_stmt(post_gseq, collect);
+}
+
+
+static void             instr_vptr_store    (struct relite_context_t* ctx,
+                                             tree expr,
+                                             tree rhs,
+                                             location_t loc,
+                                             int is_sblock,
+                                             gimple_seq* gseq) {
+  // Builds the following gimple sequence:
+  // int is_store = (expr != rhs);
+  // tsan_rtl_mop(&expr, (is_sblock | (is_store << 1) | ((sizeof(expr)-1) << 2)
+
+  tree expr_ptr = build_addr(expr, current_function_decl);
+  tree addr_expr = force_gimple_operand(expr_ptr, gseq, true, NULL_TREE);
+
+  tree expr_type = TREE_TYPE(expr);
+  while (TREE_CODE(expr_type) == ARRAY_TYPE)
+    expr_type = TREE_TYPE(expr_type);
+  tree expr_size = TYPE_SIZE(expr_type);
+  double_int size = tree_to_double_int(expr_size);
+  gcc_assert(size.high == 0 && size.low != 0);
+  if (size.low > 128)
+    size.low = 128;
+  size.low = (size.low / 8) - 1;
+  unsigned flags = ((!!is_sblock << 0) + (size.low << 2));
+  tree flags_expr = build_int_cst(unsigned_type_node, flags);
+
+  /*
+  tree this_expr = build_c_cast(0, ptr_type_node, expr);
+  tree is_store_expr = build2(EQ_EXPR, integer_type_node, this_expr, rhs);
+
+  //force_gimple_operand(is_store_expr, gseq, true, NULL_TREE);
+
+
+  is_store_expr = build2(LSHIFT_EXPR, integer_type_node,
+                              is_store_expr, integer_one_node);
+  flags_expr = build2(BIT_IOR_EXPR, integer_type_node,
+                              is_store_expr, flags_expr);
+                              */
+
+  tree this_expr = build_c_cast(0, ptr_type_node, expr);
+  flags_expr = build2(EQ_EXPR, integer_type_node, this_expr, rhs);
+
+  gimple_seq flags_seq = 0;
+  flags_expr = force_gimple_operand(flags_expr, &flags_seq, true, NULL_TREE);
+  gimple_seq_add_seq(gseq, flags_seq);
+
+  gimple collect = gimple_build_call(
+      ctx->rtl_mop, 2, addr_expr, flags_expr);
+
+  gimple_seq_add_stmt(gseq, collect);
 }
 
 
@@ -293,10 +348,12 @@ static void             instrument_mop      (mop_ctx_t* ctx,
   } else if (tcode == VAR_DECL && TREE_ADDRESSABLE(expr) == 0) {
     // the var does not live in memory -> no possibility of races
     reason = "non-addressable";
+    /*
   } else if (TREE_CODE(TREE_TYPE(expr)) == RECORD_TYPE) {
     // why don't I instrument records?.. perhaps it crashes compilation,
     // and should be handled more carefully
     reason = "record type";
+    */
   } else if (tcode == CONSTRUCTOR) {
     // as of now crashes compilation
     //TODO(dvyukov): handle it correctly
@@ -334,16 +391,24 @@ static void             instrument_mop      (mop_ctx_t* ctx,
     reason = "unknown type";
   }
 
+  tree is_dtor_vptr_store = 0;
+  if (is_store == 1
+      && tcode == INDIRECT_REF
+      && gimple_assign_single_p(stmt)
+      && strcmp(decl_name(cfun->decl), "__base_dtor ") == 0) {
+    tree op = expr->exp.operands[0];
+    if (TREE_CODE(op) == SSA_NAME)
+      op = SSA_NAME_VAR(op);
+    if (strcmp(decl_name(op), "this") == 0) {
+      is_dtor_vptr_store = gimple_assign_rhs1(stmt);
+    }
+  }
+
   dbg_dump_mop(ctx->ctx, is_store ? "store to" : "load of",
       ctx->loc, expr, expr_ssa, reason);
 
   if (reason != 0)
     return;
-
-  // If a call gimple contains a load,
-  // then we must emit instrumentation BEFORE the gimple.
-  // As of now all instrumentation is emitted AFTER the gimple.
-  assert(!is_gimple_call(stmt) || is_store);
 
   ctx->ctx->func_mops += 1;
 
@@ -355,7 +420,9 @@ static void             instrument_mop      (mop_ctx_t* ctx,
   expanded_location eloc = expand_location(ctx->loc);
   bb_data_t* bbd = ctx->bbd;
   int is_sblock = (bbd->has_sb == 0
-      || !(strcmp(eloc.file, bbd->sb_file) == 0
+      || !(eloc.file != 0
+          && bbd->sb_file != 0
+          && strcmp(eloc.file, bbd->sb_file) == 0
           && eloc.line >= bbd->sb_line_min
           && eloc.line <= bbd->sb_line_max));
 
@@ -377,15 +444,21 @@ static void             instrument_mop      (mop_ctx_t* ctx,
     bbd->sb_line_max = eloc.line + ctx->ctx->opt_sblock_size;
   }
 
-  gimple_seq post_mop = 0;
-  instr_mop(ctx->ctx, expr, ctx->loc, is_store, is_sblock, &post_mop);
-  if (post_mop != 0) {
-    dump_instr_seq(ctx->ctx,
-                   (is_store ? "after store" : "after load"),
-                   &post_mop, ctx->loc);
-    set_location(post_mop, ctx->loc);
-    gsi_insert_seq_after(ctx->gsi, post_mop, GSI_NEW_STMT);
-  }
+  gimple_seq instr_seq = 0;
+  if (is_dtor_vptr_store == 0)
+    instr_mop(ctx->ctx, expr, ctx->loc, is_store, is_sblock, &instr_seq);
+  else
+    instr_vptr_store(ctx->ctx, expr, is_dtor_vptr_store, ctx->loc,
+                          is_sblock, &instr_seq);
+  assert(instr_seq != 0);
+  dump_instr_seq(ctx->ctx,
+                 (is_store ? "after store" : "after load"),
+                 &instr_seq, ctx->loc);
+  set_location(instr_seq, ctx->loc);
+  if (is_gimple_call(stmt) && is_store == 0)
+    gsi_insert_seq_before(ctx->gsi, instr_seq, GSI_SAME_STMT);
+  else
+    gsi_insert_seq_after(ctx->gsi, instr_seq, GSI_NEW_STMT);
 }
 
 
@@ -507,7 +580,9 @@ static void             instrument_function (relite_context_t* ctx) {
         bbd->sb_line_max = pred->sb_line_max;
       } else {
         bbd->has_sb = 0;
-        if (strcmp(bbd->sb_file, pred->sb_file) == 0) {
+        if (bbd->sb_file != 0
+            && pred->sb_file != 0
+            && strcmp(bbd->sb_file, pred->sb_file) == 0) {
           int const sb_line_min = MAX(bbd->sb_line_min, pred->sb_line_min);
           int const sb_line_max = MIN(bbd->sb_line_max, pred->sb_line_max);
           if (sb_line_min <= sb_line_max) {
@@ -618,8 +693,10 @@ void                    relite_prepass      (relite_context_t* ctx) {
   if (ctx->rtl_mop == 0)
     printf("relite: can't find tsan_rtl_mop() rtl decl\n"), exit(1);
 
+  relite_ignore_init(ctx->opt_ignore);
+
   // Check as to whether we need to completely ignore the file or not
-  if (relite_ignore_func(main_input_filename)) {
+  if (relite_ignore_file(main_input_filename)) {
     dbg(ctx, "IGNORING FILE");
     ctx->ignore_file = 1;
   }

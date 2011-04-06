@@ -20,6 +20,23 @@
 
 //TODO(dvyukov): move all shadow stack support code into callee function
 
+//TODO(dvyukov): check handling of races in dtors
+// TSAN_ARGS="--suppressions=racecheck_unittest.supp" ./bin/racecheck_unittest-linux-amd64-O1 --gtest_filter=*Dtor*
+
+//TODO(dvyukov): check induced reads/writes:
+// int g = 0;
+// for (int i = 0; i != N; i += 1)
+//   if (X[i]) g += 1;
+
+//TODO(dvyukov): if it's a call to a known function (malloc/free) ->
+// do not start new sblock
+
+//TODO(dvyukov): do not instrument reads of vtbl
+
+//TODO(dvyukov): do not instrument loads of const vars/members/params
+
+
+
 #include <plugin.h>
 #include <plugin-version.h>
 #include <config.h>
