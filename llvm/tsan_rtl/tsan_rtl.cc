@@ -611,7 +611,7 @@ bool initialize() {
   // Obtain the stack BOTTOM and size from the thread attributes.
   // TODO(glider): this code should be merged with the same in
   // pthread_callback().
-  if (pthread_getattr_np(pthread_self(), &attr) == 0) {
+  if (0 && pthread_getattr_np(pthread_self(), &attr) == 0) {
     pthread_attr_getstack(&attr, &stack_bottom, &stack_size);
     pthread_attr_destroy(&attr);
   }
