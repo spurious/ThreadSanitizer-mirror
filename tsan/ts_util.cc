@@ -238,7 +238,7 @@ string NormalizeFunctionName(const string &demangled) {
     return demangled;
   }
 
-  if (demangled.find_first_of("(") == demangled.npos) {
+  if (demangled.find_first_of("<(") == demangled.npos) {
     // C function or a well-formatted function name.
     return demangled;
   }
@@ -257,28 +257,32 @@ string NormalizeFunctionName(const string &demangled) {
   while ((found = fname.find("(anonymous namespace)")) != fname.npos)
     fname.erase(found, 21);
 
-  size_t first_parenthesis = fname.find_first_of("(");
-  if (first_parenthesis == fname.npos)
+  if (fname.find_first_of("<(") == fname.npos)
     return fname;
   DCHECK(std::count(fname.begin(), fname.end(), '(') ==
          std::count(fname.begin(), fname.end(), ')'));
-  DCHECK(fname.find_first_of(")") != fname.npos);
-  DCHECK(fname.find_first_of(")") > first_parenthesis);
+
+  size_t first_parenthesis = fname.find("(");
 
   string ret;
   bool returns_fun_ptr = false;
   size_t braces_depth = 0, read_pointer = 0;
 
-  DCHECK(fname[first_parenthesis] == '(');
-  if (fname[first_parenthesis - 1] == ' ' &&
-      fname[first_parenthesis + 1] == '*' &&
-      fname[first_parenthesis + 2] != ' ') {
-    // Return value type is a function pointer
-    read_pointer = first_parenthesis + 2;
-    while (fname[read_pointer] == '*' || fname[read_pointer] == '&')
-      read_pointer++;
-    braces_depth = 1;
-    returns_fun_ptr = true;
+  if (first_parenthesis != fname.npos) {
+    DCHECK(fname.find_first_of(")") != fname.npos);
+    DCHECK(fname.find_first_of(")") > first_parenthesis);
+
+    DCHECK(fname[first_parenthesis] == '(');
+    if (fname[first_parenthesis - 1] == ' ' &&
+        fname[first_parenthesis + 1] == '*' &&
+        fname[first_parenthesis + 2] != ' ') {
+      // Return value type is a function pointer
+      read_pointer = first_parenthesis + 2;
+      while (fname[read_pointer] == '*' || fname[read_pointer] == '&')
+        read_pointer++;
+      braces_depth = 1;
+      returns_fun_ptr = true;
+    }
   }
 
   while (read_pointer < fname.size()) {

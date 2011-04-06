@@ -353,6 +353,8 @@ TEST(ThreadSanitizer, NormalizeFunctionNameChangingTest) {
 
     "SuppressionTests::TemplateFunction1<void (__cdecl*)(int *)>",
         "SuppressionTests::TemplateFunction1",  // PIN, Windows
+    "SuppressionTests::MyClass<int>::Fooz",
+        "SuppressionTests::MyClass::Fooz",
 
     "__gnu_cxx::new_allocator<char>::allocate(unsigned long, void const*)",
         "__gnu_cxx::new_allocator::allocate",
