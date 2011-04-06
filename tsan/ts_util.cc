@@ -268,7 +268,7 @@ string NormalizeFunctionName(const string &fname) {
     size_t next_brace = fname.find_first_of("()<>", read_pointer);
     if (next_brace == fname.npos) {
       CHECK(braces_depth == 0);
-      size_t _const = fname.find(" const");
+      size_t _const = fname.find(" const", read_pointer);
       if (_const == fname.npos) {
         ret += (fname.c_str() + read_pointer);
       } else {

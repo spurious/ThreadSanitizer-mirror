@@ -298,6 +298,17 @@ TEST(ThreadSanitizer, NormalizeFunctionNameChangingTest) {
     // case.
     // This is a list of (full demangled name, short name) pairs.
     "SuppressionTests::Foo(int*)", "SuppressionTests::Foo",
+    "logging::LogMessage::Init(char const*, int)", "logging::LogMessage::Init",
+    "void DispatchToMethod<net::SpdySession, void (net::SpdySession::*)(int), int>(net::SpdySession*, void (net::SpdySession::*)(int), Tuple1<int> const&)",
+        "DispatchToMethod",
+    "MessageLoop::DeferOrRunPendingTask(MessageLoop::PendingTask const&)",
+        "MessageLoop::DeferOrRunPendingTask",
+    "spdy::SpdyFramer::ProcessInput(char const*, unsigned long)",
+        "spdy::SpdyFramer::ProcessInput",
+    "base::RefCountedThreadSafe<history::HistoryBackend, base::DefaultRefCountedThreadSafeTraits<history::HistoryBackend> >::Release() const",
+        "base::RefCountedThreadSafe::Release",
+    "net::X509Certificate::Verify(std::string const&, int, net::CertVerifyResult*) const",
+        "net::X509Certificate::Verify",
 
     "SuppressionTests::MyClass<int>::Fooz(int*) const",
         "SuppressionTests::MyClass::Fooz",
