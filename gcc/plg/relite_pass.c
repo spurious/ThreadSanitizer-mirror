@@ -181,21 +181,17 @@ static void             instr_vptr_store    (struct relite_context_t* ctx,
   unsigned flags = ((!!is_sblock << 0) + (size.low << 2));
   tree flags_expr = build_int_cst(unsigned_type_node, flags);
 
-  /*
-  tree this_expr = build_c_cast(0, ptr_type_node, expr);
-  tree is_store_expr = build2(EQ_EXPR, integer_type_node, this_expr, rhs);
-
-  //force_gimple_operand(is_store_expr, gseq, true, NULL_TREE);
-
-
+  //tree this_expr = build_c_cast(0, ptr_type_node, expr);
+  tree is_store_expr = build2(NE_EXPR, integer_type_node,
+                              build_c_cast(0, size_type_node, expr),
+                              build_c_cast(0, size_type_node, rhs));
   is_store_expr = build2(LSHIFT_EXPR, integer_type_node,
                               is_store_expr, integer_one_node);
   flags_expr = build2(BIT_IOR_EXPR, integer_type_node,
                               is_store_expr, flags_expr);
-                              */
 
-  tree this_expr = build_c_cast(0, ptr_type_node, expr);
-  flags_expr = build2(EQ_EXPR, integer_type_node, this_expr, rhs);
+  //tree this_expr = build_c_cast(0, ptr_type_node, expr);
+  //flags_expr = build2(EQ_EXPR, integer_type_node, this_expr, rhs);
 
   gimple_seq flags_seq = 0;
   flags_expr = force_gimple_operand(flags_expr, &flags_seq, true, NULL_TREE);
@@ -252,7 +248,7 @@ typedef struct bb_data_t {
 
 
 static char const*      decl_name           (tree decl) {
-  if (DECL_P(decl)) {
+  if (decl != 0 && DECL_P(decl)) {
     tree id = DECL_NAME(decl);
     if (id) {
       char const* name = IDENTIFIER_POINTER(id);
@@ -305,25 +301,54 @@ static void             set_location        (gimple_seq seq,
 }
 
 
-
+/*
 typedef struct  mop_ctx_t {
   relite_context_t*     ctx;
   bb_data_t*            bbd;
   gimple_stmt_iterator* gsi;
   location_t            loc;
 } mop_ctx_t;
+*/
 
 
-static void             instrument_mop      (mop_ctx_t* ctx,
-                                             gimple stmt,
-                                             tree expr,
-                                             int is_store) {
-  assert(ctx != 0 && stmt != 0 && expr != 0);
+static tree             is_dtor_vptr_store  (gimple                 stmt,
+                                             tree                   expr,
+                                             int                    is_store) {
+  if (is_store == 1
+      && TREE_CODE(expr) == COMPONENT_REF
+      && gimple_assign_single_p(stmt)
+      && strcmp(decl_name(cfun->decl), "__base_dtor ") == 0) {
+    tree comp = expr->exp.operands[0];
+    if (TREE_CODE(comp) == COMPONENT_REF)
+      comp = comp->exp.operands[0];
+    if (TREE_CODE(comp) == INDIRECT_REF) {
+      comp = comp->exp.operands[0];
+      if (TREE_CODE(comp) == SSA_NAME)
+        comp = SSA_NAME_VAR(comp);
+      if (strcmp(decl_name(comp), "this") == 0) {
+        tree field = expr->exp.operands[1];
+        if (TREE_CODE(field) == FIELD_DECL
+            && strncmp(decl_name(field), "_vptr.", sizeof("_vptr.") - 1) == 0) {
+          return gimple_assign_rhs1(stmt);
+        }
+      }
+    }
+  }
+  return 0;
+}
 
+
+static void             instrument_mop      (relite_context_t*      ctx,
+                                             bb_data_t*             bbd,
+                                             gimple                 stmt,
+                                             gimple_stmt_iterator*  gsi,
+                                             location_t             loc,
+                                             tree                   expr,
+                                             int                    is_store) {
   if (is_store)
-    ctx->ctx->stat_store_total += 1;
+    ctx->stat_store_total += 1;
   else
-    ctx->ctx->stat_load_total += 1;
+    ctx->stat_load_total += 1;
 
   char const* reason = 0;
 
@@ -336,7 +361,7 @@ static void             instrument_mop      (mop_ctx_t* ctx,
   enum tree_code const tcode = TREE_CODE(expr);
 
   // Below are things we do NOT want to instrument.
-  if (ctx->ctx->func_ignore & (relite_ignore_mop | relite_ignore_rec)) {
+  if (ctx->func_ignore & (relite_ignore_mop | relite_ignore_rec)) {
     reason = "ignore file";
   } else if (DECL_ARTIFICIAL(expr)/* || (expr_ssa && DECL_ARTIFICIAL(expr_ssa))*/) {
     // artificial variable emitted by the compiler
@@ -371,7 +396,7 @@ static void             instrument_mop      (mop_ctx_t* ctx,
           || ((fld_size % __CHAR_BIT__) != 0)){
         // as of now it crashes compilation
         //TODO(dvyukov): handle bit-fields -> as if touching the whole field
-        dbg(ctx->ctx, "bit_offset=%u, size=%u", fld_off, fld_size);
+        dbg(ctx, "bit_offset=%u, size=%u", fld_off, fld_size);
         reason = "weird bit field";
       }
     }
@@ -391,34 +416,23 @@ static void             instrument_mop      (mop_ctx_t* ctx,
     reason = "unknown type";
   }
 
-  tree is_dtor_vptr_store = 0;
-  if (is_store == 1
-      && tcode == INDIRECT_REF
-      && gimple_assign_single_p(stmt)
-      && strcmp(decl_name(cfun->decl), "__base_dtor ") == 0) {
-    tree op = expr->exp.operands[0];
-    if (TREE_CODE(op) == SSA_NAME)
-      op = SSA_NAME_VAR(op);
-    if (strcmp(decl_name(op), "this") == 0) {
-      is_dtor_vptr_store = gimple_assign_rhs1(stmt);
-    }
-  }
+  tree const dtor_vptr_expr = is_dtor_vptr_store(stmt, expr, is_store);
 
-  dbg_dump_mop(ctx->ctx, is_store ? "store to" : "load of",
-      ctx->loc, expr, expr_ssa, reason);
+  dbg_dump_mop(ctx, dtor_vptr_expr ? "store to vptr in dtor" :
+      is_store ? "store to" : "load of",
+      loc, expr, expr_ssa, reason);
 
   if (reason != 0)
     return;
 
-  ctx->ctx->func_mops += 1;
+  ctx->func_mops += 1;
 
   if (is_store)
-    ctx->ctx->stat_store_instrumented += 1;
+    ctx->stat_store_instrumented += 1;
   else
-    ctx->ctx->stat_load_instrumented += 1;
+    ctx->stat_load_instrumented += 1;
 
-  expanded_location eloc = expand_location(ctx->loc);
-  bb_data_t* bbd = ctx->bbd;
+  expanded_location eloc = expand_location(loc);
   int is_sblock = (bbd->has_sb == 0
       || !(eloc.file != 0
           && bbd->sb_file != 0
@@ -426,42 +440,43 @@ static void             instrument_mop      (mop_ctx_t* ctx,
           && eloc.line >= bbd->sb_line_min
           && eloc.line <= bbd->sb_line_max));
 
-  if (is_sblock == 1 && ctx->ctx->func_ignore == relite_ignore_hist) {
-    dbg(ctx->ctx, "resetting sblock due to ignore_hist");
+  if (is_sblock == 1 && ctx->func_ignore == relite_ignore_hist) {
+    dbg(ctx, "resetting sblock due to ignore_hist");
     is_sblock = 0;
   }
 
-  dbg(ctx->ctx, "sblock: %s (%d/%s:%d-%d)->(%d/%s:%d-%d)",
+  dbg(ctx, "sblock: %s (%d/%s:%d-%d)->(%d/%s:%d-%d)",
       (is_sblock ? "YES" : "NO"),
       bbd->has_sb, bbd->sb_file, bbd->sb_line_min, bbd->sb_line_max,
-      is_sblock, eloc.file, eloc.line, eloc.line + ctx->ctx->opt_sblock_size);
+      is_sblock, eloc.file, eloc.line, eloc.line + ctx->opt_sblock_size);
 
   if (is_sblock) {
-    ctx->ctx->stat_sblock += 1;
+    ctx->stat_sblock += 1;
     bbd->has_sb = 1;
     bbd->sb_file = eloc.file;
     bbd->sb_line_min = eloc.line;
-    bbd->sb_line_max = eloc.line + ctx->ctx->opt_sblock_size;
+    bbd->sb_line_max = eloc.line + ctx->opt_sblock_size;
   }
 
   gimple_seq instr_seq = 0;
-  if (is_dtor_vptr_store == 0)
-    instr_mop(ctx->ctx, expr, ctx->loc, is_store, is_sblock, &instr_seq);
+  if (dtor_vptr_expr == 0)
+    instr_mop(ctx, expr, loc, is_store, is_sblock, &instr_seq);
   else
-    instr_vptr_store(ctx->ctx, expr, is_dtor_vptr_store, ctx->loc,
+    instr_vptr_store(ctx, expr, dtor_vptr_expr, loc,
                           is_sblock, &instr_seq);
   assert(instr_seq != 0);
-  dump_instr_seq(ctx->ctx,
+  dump_instr_seq(ctx,
                  (is_store ? "after store" : "after load"),
-                 &instr_seq, ctx->loc);
-  set_location(instr_seq, ctx->loc);
-  if (is_gimple_call(stmt) && is_store == 0)
-    gsi_insert_seq_before(ctx->gsi, instr_seq, GSI_SAME_STMT);
+                 &instr_seq, loc);
+  set_location(instr_seq, loc);
+  if ((is_gimple_call(stmt) && is_store == 0) || (dtor_vptr_expr != 0))
+    gsi_insert_seq_before(gsi, instr_seq, GSI_SAME_STMT);
   else
-    gsi_insert_seq_after(ctx->gsi, instr_seq, GSI_NEW_STMT);
+    gsi_insert_seq_after(gsi, instr_seq, GSI_NEW_STMT);
 }
 
 
+/*
 static bool             instrument_load     (gimple stmt,
                                              tree expr,
                                              void* arg) {
@@ -478,6 +493,7 @@ static bool             instrument_store    (gimple stmt,
   instrument_mop(ctx, stmt, expr, 1);
   return 0;
 }
+*/
 
 
 static void             handle_gimple       (relite_context_t* ctx,
@@ -490,24 +506,63 @@ static void             handle_gimple       (relite_context_t* ctx,
   dbg(ctx, "%s:%d:%d: processing gimple %s",
       eloc.file, eloc.line, eloc.column, gimple_code_name[gimple_code(stmt)]);
 
-  if (is_gimple_call(stmt)) {
-    // After a function call we must start a brand new sblock,
-    // because the call can contain synchronization or whatever.
-    bbd->has_sb = 0;
+  enum gimple_code const gcode = gimple_code(stmt);
+  switch (gcode) {
+    case GIMPLE_CALL: {
+      // After a function call we must start a brand new sblock,
+      // because the call can contain synchronization or whatever.
+      bbd->has_sb = 0;
 
-    tree fndecl = gimple_call_fndecl(stmt);
-    gimple_seq pre_call_gseq = 0;
-    instr_call(ctx, fndecl, loc, &pre_call_gseq);
-    if (pre_call_gseq != 0) {
-      ctx->func_calls += 1;
-      dump_instr_seq(ctx, "before call", &pre_call_gseq, loc);
-      set_location(pre_call_gseq, loc);
-      gsi_insert_seq_before(gsi, pre_call_gseq, GSI_SAME_STMT);
+      tree fndecl = gimple_call_fndecl(stmt);
+      gcc_assert(strcmp(decl_name(fndecl), "tsan_rtl_mop") != 0);
+      gimple_seq pre_call_gseq = 0;
+      instr_call(ctx, fndecl, loc, &pre_call_gseq);
+      if (pre_call_gseq != 0) {
+        ctx->func_calls += 1;
+        dump_instr_seq(ctx, "before call", &pre_call_gseq, loc);
+        set_location(pre_call_gseq, loc);
+        gsi_insert_seq_before(gsi, pre_call_gseq, GSI_SAME_STMT);
+      }
+
+      // Handle assignment lhs as store
+      tree lhs = gimple_call_lhs(stmt);
+      if (lhs != 0)
+        instrument_mop(ctx, bbd, stmt, gsi, loc, lhs, 1);
+
+      // Handle call arguments as loads
+      for (int i = 0; i != gimple_call_num_args(stmt); i += 1) {
+        tree rhs = gimple_call_arg(stmt, i);
+        instrument_mop(ctx, bbd, stmt, gsi, loc, rhs, 0);
+      }
+
+      break;
     }
+
+    case GIMPLE_ASSIGN: {
+      // Handle assignment lhs as store
+      tree lhs = gimple_assign_lhs(stmt);
+      instrument_mop(ctx, bbd, stmt, gsi, loc, lhs, 1);
+
+      // Handle operands as loads
+      for (int i = 1; i != gimple_num_ops(stmt); i += 1) {
+        tree rhs = gimple_op(stmt, i);
+        instrument_mop(ctx, bbd, stmt, gsi, loc, rhs, 0);
+      }
+      break;
+    }
+
+    case GIMPLE_BIND: {
+      gcc_assert(!"there should be no GIMPLE_BIND on this level");
+      break;
+    }
+
+    default:
+      break;
   }
 
-  mop_ctx_t mop_ctx = {ctx, bbd, gsi, gimple_location(stmt)};
-  walk_stmt_load_store_ops(stmt, &mop_ctx, instrument_load, instrument_store);
+
+  //mop_ctx_t mop_ctx = {ctx, bbd, gsi, gimple_location(stmt)};
+  //walk_stmt_load_store_ops(stmt, &mop_ctx, instrument_load, instrument_store);
 }
 
 
@@ -515,10 +570,19 @@ static void             instrument_bblock   (relite_context_t* ctx,
                                              bb_data_t* bbd,
                                              basic_block bb) {
   ctx->stat_bb_total += 1;
-  gimple_stmt_iterator gsi;
-  for (gsi = gsi_start_bb(bb); !gsi_end_p(gsi); gsi_next(&gsi)) {
+  gimple_stmt_iterator gsi = gsi_start_bb(bb);
+  for (;;) {
+    if (gsi_end_p(gsi))
+      break;
+    gimple_stmt_iterator gsinext = gsi;
+    gsi_next(&gsinext);
     handle_gimple(ctx, &gsi, bbd);
+    gsi = gsinext;
   }
+
+//  for (gsi = gsi_start_bb(bb); !gsi_end_p(gsi); gsi_next(&gsi)) {
+//    handle_gimple(ctx, &gsi, bbd);
+//  }
 }
 
 
