@@ -248,8 +248,10 @@ string NormalizeFunctionName(const string &demangled) {
 
   string fname = demangled;
 
-  // Strip stuff like "(*)" and "(anonymous namespace)" -> they are tricky.
+  // Strip stuff like "(***)" and "(anonymous namespace)" -> they are tricky.
   size_t found = fname.npos;
+  while ((found = fname.find("(**")) != fname.npos)
+    fname.erase(found+2, 1);
   while ((found = fname.find("(*)")) != fname.npos)
     fname.erase(found, 3);
   while ((found = fname.find("(anonymous namespace)")) != fname.npos)
@@ -269,7 +271,8 @@ string NormalizeFunctionName(const string &demangled) {
 
   DCHECK(fname[first_parenthesis] == '(');
   if (fname[first_parenthesis - 1] == ' ' &&
-      fname[first_parenthesis + 1] == '*') {
+      fname[first_parenthesis + 1] == '*' &&
+      fname[first_parenthesis + 2] != ' ') {
     // Return value type is a function pointer
     read_pointer = first_parenthesis + 2;
     while (fname[read_pointer] == '*' || fname[read_pointer] == '&')
@@ -336,7 +339,9 @@ string NormalizeFunctionName(const string &demangled) {
     } else
       CHECK(0);
   }
-  CHECK(braces_depth == 0);
+  CHECK(braces_depth == 0 || demangled.size() > 256);
+  if (braces_depth != 0)
+    return "(malformed frame)";
 
   // Special case: on Linux, Valgrind prepends the return type for template
   // functions. And on Windows we may see `scalar deleting destructor'.

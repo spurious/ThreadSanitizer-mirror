@@ -334,6 +334,12 @@ TEST(ThreadSanitizer, NormalizeFunctionNameChangingTest) {
     "WebCore::operator<<(WebCore::TextStream&, WebCore::LineCap)",
         "WebCore::operator<<",
 
+    "__gnu_cxx::__normal_iterator<void (**)(), std::vector<void (*)(), std::allocator<void (*)()> > >::base() const",
+        "__gnu_cxx::__normal_iterator::base",
+
+    "__gnu_cxx::__normal_iterator<device_orientation::DataFetcher* (* const*)(), std::vector<device_orientation::DataFetcher* (*)(), std::allocator<device_orientation::DataFetcher* (*)()> > >::operator++()",
+        "__gnu_cxx::__normal_iterator::operator++",
+
     "SuppressionTests::MyClass<int>::Fooz(int*) const",
         "SuppressionTests::MyClass::Fooz",
 
