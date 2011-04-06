@@ -40,6 +40,29 @@
   CHECK_IN_RTL(); \
 } while (0)
 
+#ifdef DEBUG_LEVEL
+#define DEBUG 1
+#endif
+
+#if (DEBUG_LEVEL == 2)
+# define DDPrintf(params...) \
+    Printf(params)
+#else
+# define DDPrintf(params...)
+#endif
+
+#if (DEBUG)
+# define DPrintf(params...) \
+    Printf(params)
+# define DEBUG_DO(code) \
+  do { code } while (0)
+#else
+# define DPrintf(params...)
+# define DEBUG_DO(code)
+#endif
+
+
+
 int unsafe_clear_pending_signals();
 
 class GIL {
@@ -60,16 +83,21 @@ class GIL {
 #endif
 };
 
-extern FILE* G_out;
-
 typedef uintptr_t pc_t;
 typedef uintptr_t tid_t;
+typedef map<pc_t, string> PcToStringMap;
 tid_t GetTid();
 pc_t GetPc();
+extern FILE* G_out;
+// Reentrancy counter
+extern __thread int IN_RTL;
+
 
 void ReadElf();
 void AddWrappersDbgInfo();
 void ReadDbgInfo(string filename);
+string GetSelfFilename();
+bool IsAddrFromDataSections(uintptr_t addr);
 
 #define DECLARE_TID() \
   tid_t tid = GetTid();
@@ -109,8 +137,8 @@ extern tid_t ExGetTid();
 extern pc_t ExGetPc();
 void set_global_ignore(bool new_value);
 
-bool ReadGlobalsUsingBfd();
 
 #include "tsan_rtl_wrap.h"
+#include "tsan_rtl_lbfd.h"
 
 #endif  // TSAN_RTL_H_
