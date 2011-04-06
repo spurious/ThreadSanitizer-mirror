@@ -310,6 +310,30 @@ TEST(ThreadSanitizer, NormalizeFunctionNameChangingTest) {
     "net::X509Certificate::Verify(std::string const&, int, net::CertVerifyResult*) const",
         "net::X509Certificate::Verify",
 
+    "(anonymous namespace)::ExtentToStringSet(ExtensionExtent const&, std::set<std::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::less<std::basic_string<char, std::char_traits<char>, std::allocator<char> > >, std::allocator<std::basic_string<char, std::char_traits<char>, std::allocator<char> > > >*)",
+        "::ExtentToStringSet",
+
+    "scoped_ptr<(anonymous namespace)::ImportEndedObserver>::operator->() const",
+        "scoped_ptr::operator->",
+
+    "int (anonymous namespace)::ValueCompare<long>(long, long)",
+        "::ValueCompare",
+
+    "std::basic_string<unsigned short, base::string16_char_traits, std::allocator<unsigned short> > const& std::__median<std::basic_string<unsigned short, base::string16_char_traits, std::allocator<unsigned short> >, (anonymous namespace)::CompareQuality>(std::basic_string<unsigned short, base::string16_char_traits, std::allocator<unsigned short> > const&, std::basic_string<unsigned short, base::string16_char_traits, std::allocator<unsigned short> > const&, std::basic_string<unsigned short, base::string16_char_traits, std::allocator<unsigned short> > const&, (anonymous namespace)::CompareQuality)",
+        "std::__median",
+
+    "net::(anonymous namespace)::CookieSignature::operator<(net::(anonymous namespace)::CookieSignature const&) const",
+        "net::::CookieSignature::operator<",
+
+    "v8::Handle<v8::Value> (*v8::ToCData<v8::Handle<v8::Value> (*)(v8::Arguments const&)>(v8::internal::Object*))(v8::Arguments const&)",
+        "v8::ToCData",
+
+    "v8::internal::Handle<v8::internal::Object> v8::FromCData<v8::Handle<v8::Value> (*)(v8::Local<v8::String>, v8::AccessorInfo const&)>(v8::Handle<v8::Value> (*)(v8::Local<v8::String>, v8::AccessorInfo const&))",
+        "v8::FromCData",
+
+    "WebCore::operator<<(WebCore::TextStream&, WebCore::LineCap)",
+        "WebCore::operator<<",
+
     "SuppressionTests::MyClass<int>::Fooz(int*) const",
         "SuppressionTests::MyClass::Fooz",
 

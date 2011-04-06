@@ -232,32 +232,46 @@ size_t GetVmSizeInMb() {
 #endif
 }
 
-string NormalizeFunctionName(const string &fname) {
-  if (fname[1] == '[' && strchr("+-=", fname[0]) != NULL) {
+string NormalizeFunctionName(const string &demangled) {
+  if (demangled[1] == '[' && strchr("+-=", demangled[0]) != NULL) {
     // Objective-C function
-    return fname;
+    return demangled;
   }
 
-  size_t cur_brace = fname.find_first_of("(<");
-  if (cur_brace == fname.npos) {
+  if (demangled.find_first_of("(") == demangled.npos) {
     // C function or a well-formatted function name.
-    return fname;
+    return demangled;
   }
 
-  DCHECK(fname.find_first_of(")>") != fname.npos);
-  DCHECK(fname.find_first_of(")>") > cur_brace);
+  if (demangled == "(below main)")
+    return demangled;
 
-  if (fname == "(below main)")
+  string fname = demangled;
+
+  // Strip stuff like "(*)" and "(anonymous namespace)" -> they are tricky.
+  size_t found = fname.npos;
+  while ((found = fname.find("(*)")) != fname.npos)
+    fname.erase(found, 3);
+  while ((found = fname.find("(anonymous namespace)")) != fname.npos)
+    fname.erase(found, 21);
+
+  size_t first_parenthesis = fname.find_first_of("(");
+  if (first_parenthesis == fname.npos)
     return fname;
+  DCHECK(std::count(fname.begin(), fname.end(), '(') ==
+         std::count(fname.begin(), fname.end(), ')'));
+  DCHECK(fname.find_first_of(")") != fname.npos);
+  DCHECK(fname.find_first_of(")") > first_parenthesis);
 
   string ret;
   bool returns_fun_ptr = false;
   size_t braces_depth = 0, read_pointer = 0;
-  if (fname[cur_brace - 1] == ' ') {
+
+  DCHECK(fname[first_parenthesis] == '(');
+  if (fname[first_parenthesis - 1] == ' ' &&
+      fname[first_parenthesis + 1] == '*') {
     // Return value type is a function pointer
-    DCHECK(fname[cur_brace] == '(');
-    DCHECK(fname[cur_brace + 1] == '*');
-    read_pointer = cur_brace + 2;
+    read_pointer = first_parenthesis + 2;
     while (fname[read_pointer] == '*' || fname[read_pointer] == '&')
       read_pointer++;
     braces_depth = 1;
@@ -283,6 +297,35 @@ string NormalizeFunctionName(const string &fname) {
       returns_fun_ptr = false;
     }
 
+    if ((fname[next_brace] == '>' || fname[next_brace] == '<') &&
+        next_brace > 0) {
+      // We could have found one of the following operators.
+      const char *OP[] = {">>=", "<<=", "<<", ">>",
+                          "<=", ">=", "<", ">",
+                          "->", "->*",
+                          };
+
+      bool operator_name = false;
+      for (size_t i = 0; i < sizeof(OP)/sizeof(*OP); i++) {
+        size_t op_offset = ((string)OP[i]).find(fname[next_brace]);
+        if (op_offset == string::npos)
+          continue;
+        if (next_brace >= 8 + op_offset &&  // 8 == strlen("operator");
+            "operator" == fname.substr(next_brace - (8 + op_offset), 8) &&
+            OP[i] == fname.substr(next_brace - op_offset, strlen(OP[i]))) {
+          operator_name = true;
+          ret += OP[i] + op_offset;
+          next_brace += strlen(OP[i] + op_offset);
+          break;
+        }
+      }
+
+      if (operator_name) {
+        read_pointer = next_brace;
+        continue;
+      }
+    }
+
     if (fname[next_brace] == '(' || fname[next_brace] == '<') {
       braces_depth++;
       read_pointer = next_brace + 1;
@@ -297,11 +340,20 @@ string NormalizeFunctionName(const string &fname) {
 
   // Special case: on Linux, Valgrind prepends the return type for template
   // functions. And on Windows we may see `scalar deleting destructor'.
-  // And we may see "operaror new" etc. Oh, well...
-  size_t space_or_tick = ret.find_first_of("` ");
-  if (space_or_tick != ret.npos && ret[space_or_tick] == ' ' &&
-      ret.substr(0, space_or_tick) != "operator")
-    ret = ret.substr(space_or_tick + 1);
+  // And we may see "operaror new" etc.
+  // And some STL code inserts const& between the return type and the function
+  // name.
+  // Oh, well...
+  size_t space_or_tick;
+  while (1) {
+    space_or_tick = ret.find_first_of("` ");
+    if (space_or_tick != ret.npos && ret[space_or_tick] == ' ' &&
+        ret.find("operator", 0, space_or_tick) == ret.npos) {
+      ret = ret.substr(space_or_tick + 1);
+    } else {
+      break;
+    }
+  }
   CHECK(ret.size() > 0);
   return ret;
 }

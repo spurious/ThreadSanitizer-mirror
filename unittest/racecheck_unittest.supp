@@ -50,3 +50,10 @@
    fun:SuppressionTests::ArrayFunction
    fun:SuppressionTests::Worker
 }
+
+{
+   SuppressionTests.VeryLongTypeArgumentTest
+   ThreadSanitizer:Race
+   fun:SuppressionTests::F
+   fun:SuppressionTests::WorkerLong
+}

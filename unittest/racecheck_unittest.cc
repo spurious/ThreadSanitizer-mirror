@@ -7729,6 +7729,26 @@ TEST(SuppressionTests, TemplateTypesSuppressionTest) {
   mta.Start();
   mta.Join();
 }
+
+int GLOBLONG = 0;
+class ExtensionExtent {};
+
+void F(const ExtensionExtent& e, std::set<std::string>* result) {
+  // See http://code.google.com/p/data-race-test/issues/detail?id=64
+  GLOBLONG++;
+}
+
+void WorkerLong() {
+  ExtensionExtent e;
+  F(e, NULL);
+}
+
+TEST(SuppressionTests, VeryLongTypeArgumentTest) {
+  MyThreadArray mta(WorkerLong, WorkerLong);
+  mta.Start();
+  mta.Join();
+}
+
 }  // namespace
 
 namespace MutexNotPhbTests {
