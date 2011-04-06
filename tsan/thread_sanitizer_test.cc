@@ -262,6 +262,11 @@ TEST(ThreadSanitizer, NormalizeFunctionNameNotChangingTest) {
     // C functions
     "main",
     "pthread_mutex_unlock",
+    "pthread_create@@GLIBC_2.2.5",
+    "pthread_create@*"
+
+    // Valgrind can give us this, we should keep it.
+    "(below main)",
 
     // C++ operators
     "operator new[]",
@@ -282,7 +287,7 @@ TEST(ThreadSanitizer, NormalizeFunctionNameNotChangingTest) {
   };
 
   for (size_t i = 0; i < sizeof(samples) / sizeof(samples[0]); i += 2) {
-    EXPECT_STREQ(NormalizeFunctionName(samples[i]).c_str(), samples[i]);
+    EXPECT_STREQ(samples[i], NormalizeFunctionName(samples[i]).c_str());
   }
 }
 
@@ -294,11 +299,17 @@ TEST(ThreadSanitizer, NormalizeFunctionNameChangingTest) {
     // This is a list of (full demangled name, short name) pairs.
     "SuppressionTests::Foo(int*)", "SuppressionTests::Foo",
 
-    // Functions returning function pointers
+    "SuppressionTests::MyClass<int>::Fooz(int*) const",
+        "SuppressionTests::MyClass::Fooz",
+
+    // Templates and functions returning function pointers
     "void (*SuppressionTests::TemplateFunction1<void (*)(int*)>(void (*)(int*)))(int*)",
         "SuppressionTests::TemplateFunction1",  // Valgrind, Linux
-    "void (**&SuppressionTests::TemplateFunction2<void (*)(int)>())",
-        "SuppressionTests::TemplateFunction2",  // Valgrind, Linux
+    "void SuppressionTests::TemplateFunction2<void>()",
+        "SuppressionTests::TemplateFunction2",  // OMG, return type in template
+    "void (**&SuppressionTests::TemplateFunction3<void (*)(int)>())",
+        "SuppressionTests::TemplateFunction3",  // Valgrind, Linux
+
     "SuppressionTests::TemplateFunction1<void (__cdecl*)(int *)>",
         "SuppressionTests::TemplateFunction1",  // PIN, Windows
 
@@ -308,11 +319,14 @@ TEST(ThreadSanitizer, NormalizeFunctionNameChangingTest) {
     "PositiveTests_HarmfulRaceInDtor::A::~A()",  // Valgrind, Linux
         "PositiveTests_HarmfulRaceInDtor::A::~A",
 
+    "base::(anonymous namespace)::ThreadFunc(void*)",
+      "base::::ThreadFunc",  // TODO(timurrrr): keep "anonymous namespace"?
+
     "operator new[](unsigned long)", "operator new[]",  // Valgrind, Linux
   };
 
   for (size_t i = 0; i < sizeof(samples) / sizeof(samples[0]); i += 2) {
-    EXPECT_STREQ(NormalizeFunctionName(samples[i]).c_str(), samples[i+1]);
+    EXPECT_STREQ(samples[i+1], NormalizeFunctionName(samples[i]).c_str());
   }
 }
 

@@ -7672,7 +7672,7 @@ TEST(IgnoreTests, IndirectCallToFunR) {
 }  // namespace
 
 namespace SuppressionTests {
-int GLOB1 = 0, GLOB2 = 0, GLOB3 = 0;
+int GLOB1 = 0, GLOB2 = 0, GLOB3 = 0, GLOB4 = 0;
 
 void Foo(int *ptr) {
   (*ptr)++;
@@ -7686,20 +7686,36 @@ T TemplateFunction1(T t) {
 }
 
 template<typename T>
+class MyClass {
+ public:
+  void Fooz(int *ptr) const {
+    Foo(ptr);
+  }
+};
+
+template<typename T>
 T* TemplateFunction2() {
-  Foo(&GLOB2);
+  T t;
+  t.Fooz(&GLOB2);
+  return (T*)0;
+}
+
+template<typename T>
+T* TemplateFunction3() {
+  Foo(&GLOB3);
   return (T*)0;
 }
 
 typedef char ARRAY[16];
 
 void ArrayFunction(char param[16], ARRAY) {
-  GLOB3++;
+  GLOB4++;
 }
 
 void Worker() {
   TemplateFunction1(Foo);
-  TemplateFunction2<void (*)(int*)>();
+  TemplateFunction2<MyClass<int>>();
+  TemplateFunction3<void (*)(int*)>();
   char tmp[16];
   ARRAY tmp2;
   ArrayFunction(tmp, tmp2);

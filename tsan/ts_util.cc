@@ -247,6 +247,9 @@ string NormalizeFunctionName(const string &fname) {
   DCHECK(fname.find_first_of(")>") != fname.npos);
   DCHECK(fname.find_first_of(")>") > cur_brace);
 
+  if (fname == "(below main)")
+    return fname;
+
   string ret;
   bool returns_fun_ptr = false;
   size_t braces_depth = 0, read_pointer = 0;
@@ -265,7 +268,13 @@ string NormalizeFunctionName(const string &fname) {
     size_t next_brace = fname.find_first_of("()<>", read_pointer);
     if (next_brace == fname.npos) {
       CHECK(braces_depth == 0);
-      ret += (fname.c_str() + read_pointer);
+      size_t _const = fname.find(" const");
+      if (_const == fname.npos) {
+        ret += (fname.c_str() + read_pointer);
+      } else {
+        CHECK(_const + 6 == fname.size());
+        ret.append(fname, read_pointer, _const - read_pointer);
+      }
       break;
     }
 
@@ -285,6 +294,14 @@ string NormalizeFunctionName(const string &fname) {
       CHECK(0);
   }
   CHECK(braces_depth == 0);
+
+  // Special case: on Linux, Valgrind prepends the return type for template
+  // functions. And on Windows we may see `scalar deleting destructor'.
+  // And we may see "operaror new" etc. Oh, well...
+  size_t space_or_tick = ret.find_first_of("` ");
+  if (space_or_tick != ret.npos && ret[space_or_tick] == ' ' &&
+      ret.substr(0, space_or_tick) != "operator")
+    ret = ret.substr(space_or_tick + 1);
   CHECK(ret.size() > 0);
   return ret;
 }
