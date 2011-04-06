@@ -553,6 +553,9 @@ class StackTrace {
       if (!emb_trace[i]) break;
       string rtn_and_file = PcToRtnNameAndFilePos(emb_trace[i]);
       string rtn = PcToRtnName(emb_trace[i], true);
+      if (rtn_and_file.find("(below main) ") == 0 ||
+          rtn_and_file.find("ThreadSanitizerStartThread ") == 0)
+        break;
 
       if (i == 0) res += c_bold;
       if (G_flags->show_pc) {
@@ -5830,6 +5833,9 @@ class ReportStorage {
       string img, rtn, file;
       int line;
       PcToStrings(pc, false, &img, &rtn, &file, &line);
+      if (rtn == "(below main)" || rtn == "ThreadSanitizerStartThread")
+        break;
+
       funcs_mangled.push_back(rtn);
       funcs_demangled.push_back(PcToRtnName(pc, true));
       objects.push_back(img);
