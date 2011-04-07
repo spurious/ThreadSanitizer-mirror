@@ -8246,12 +8246,6 @@ bool ThreadSanitizerWantToInstrumentSblock(uintptr_t pc) {
   G_stats->pc_to_strings++;
   PcToStrings(pc, false, &img_name, &rtn_name, &file_name, &line_no);
 
-  if (DEBUG_MODE) {
-    // Heavy test for NormalizeFunctionName: test on all possible inputs in
-    // debug mode. TODO(timurrrr): Remove when tested.
-    NormalizeFunctionName(PcToRtnName(pc, true));
-  }
-
   if (g_white_lists->ignores.size() > 0) {
     bool in_white_list = TripleVectorMatchKnown(g_white_lists->ignores, 
                                                 rtn_name, img_name, file_name);
@@ -8312,6 +8306,12 @@ bool NOINLINE ThreadSanitizerIgnoreAccessesBelowFunction(uintptr_t pc) {
   string rtn_name = PcToRtnNameWithStats(pc, false);
   bool ret =
       TripleVectorMatchKnown(g_ignore_lists->ignores_r, rtn_name, "", "");
+  if (DEBUG_MODE) {
+    // Heavy test for NormalizeFunctionName: test on all possible inputs in
+    // debug mode. TODO(timurrrr): Remove when tested.
+    NormalizeFunctionName(PcToRtnName(pc, true));
+  }
+
   // Grab the lock again
   TIL ignore_below_lock(ts_ignore_below_lock, 19);
   if (ret && debug_ignore) {
