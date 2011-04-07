@@ -343,6 +343,12 @@ TEST(ThreadSanitizer, NormalizeFunctionNameChangingTest) {
     "__gnu_cxx::__normal_iterator<device_orientation::DataFetcher* (* const*)(), std::vector<device_orientation::DataFetcher* (*)(), std::allocator<device_orientation::DataFetcher* (*)()> > >::operator++()",
         "__gnu_cxx::__normal_iterator::operator++",
 
+    "__gnu_cxx::__normal_iterator<std::pair<int, std::basic_string<unsigned short, base::string16_char_traits, std::allocator<unsigned short> > >*, std::vector<std::pair<int, std::basic_string<unsigned short, base::string16_char_traits, std::allocator<unsigned short> > >, std::allocator<std::pair<int, std::basic_string<unsigned short, base::string16_char_traits, std::allocator<unsigned short> > > > > >::operator->() const",
+        "__gnu_cxx::__normal_iterator::operator->",
+
+    "std::less<CancelableRequestConsumerTSimple<PageUsageData*>::PendingRequest>::operator()(CancelableRequestConsumerTSimple<PageUsageData*>::PendingRequest const&, CancelableRequestConsumerTSimple<PageUsageData*>::PendingRequest const&) const",
+        "std::less::operator()",
+
     "SuppressionTests::MyClass<int>::Fooz(int*) const",
         "SuppressionTests::MyClass::Fooz",
 

@@ -342,7 +342,8 @@ string NormalizeFunctionName(const string &demangled) {
     DCHECK(fname.find_first_of(")") != fname.npos);
     DCHECK(fname.find_first_of(")") > first_parenthesis);
     DCHECK(fname[first_parenthesis] == '(');
-    if (fname[first_parenthesis - 1] == ' ' &&
+    if (first_parenthesis + 2 < fname.size() &&
+        fname[first_parenthesis - 1] == ' ' &&
         fname[first_parenthesis + 1] == '*' &&
         fname[first_parenthesis + 2] != ' ') {
       // Return value type is a function pointer
@@ -374,8 +375,14 @@ string NormalizeFunctionName(const string &demangled) {
     }
 
     if (fname[next_brace] == '(') {
-      braces_depth++;
-      read_pointer = next_brace + 1;
+      if (next_brace >= 8 && fname[next_brace+1] == ')' &&
+          "operator" == fname.substr(next_brace - 8, 8)) {
+        ret += "()";
+        read_pointer = next_brace + 2;
+      } else {
+        braces_depth++;
+        read_pointer = next_brace + 1;
+      }
     } else if (fname[next_brace] == ')') {
       CHECK(braces_depth > 0);
       braces_depth--;
