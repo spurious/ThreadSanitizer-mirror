@@ -317,6 +317,11 @@ string NormalizeFunctionName(const string &demangled) {
   if (fname.size() == 0)
     return "(malformed frame)";
 
+#if defined(_MSC_VER)
+  // TODO(timurrrr): remove as soon as the hang/bug is found
+  Printf("NormalizeFunctionName: `%s`\n", demangled.c_str());
+#endif
+
   // Strip stuff like "(***)" and "(anonymous namespace)" -> they are tricky.
   size_t found = fname.npos;
   while ((found = fname.find(", ")) != fname.npos)
