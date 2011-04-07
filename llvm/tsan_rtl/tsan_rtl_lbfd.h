@@ -42,7 +42,7 @@
 
 namespace tsan_rtl_lbfd {
 
-bool ReadGlobalsFromImage(PcToStringMap *global_symbols);
+PcToStringMap* ReadGlobalsFromImage();
 bool BfdInit();
 
 string BfdPcToRtnName(pc_t pc, bool demangle);

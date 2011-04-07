@@ -65,7 +65,7 @@ bool FORKED_CHILD = false;  // if true, cannot access other threads' TLS
 __thread int thread_local_ignore;
 __thread bool thread_local_show_stats;
 __thread int thread_local_literace;
-PcToStringMap *global_symbols = NULL;
+PcToStringMap *global_symbols;
 
 struct ThreadInfo {
   Thread *thread;
@@ -447,7 +447,8 @@ void INLINE flush_single_mop(TraceInfoPOD *trace, uintptr_t addr) {
     if (DEBUG && G_flags->verbosity >= 2) {
       ENTER_RTL();
       Event sblock(SBLOCK_ENTER, tid, trace->pc_, 0, trace->n_mops_);
-      sblock.Print();
+      //sblock.Print();
+      Printf(">>SBLOCK_ENTER [pc=%p, a=(nil), i=0x1]\n", trace->pc_);
       if (trace->mops_[0].is_write()) {
         Event event(WRITE,
                     tid, trace->mops_[0].pc(),
@@ -528,7 +529,8 @@ INLINE void init_debug() {
     AddWrappersDbgInfo();
   }
   ENTER_RTL();
-  tsan_rtl_lbfd::ReadGlobalsFromImage(global_symbols);
+  global_symbols = tsan_rtl_lbfd::ReadGlobalsFromImage();
+  CHECK(global_symbols);
   LEAVE_RTL();
   DBG_INIT = 1;
 }
@@ -2831,6 +2833,7 @@ void DumpDataSections() {
 // by sections.
 bool GetNameAndOffsetOfGlobalObject(uintptr_t addr,
                                     string *name, uintptr_t *offset) {
+  DCHECK(global_symbols);
   if (!IsAddrFromDataSections(addr)) return false;
   map<uintptr_t, string>::iterator iter = global_symbols->lower_bound(addr);
   if (iter == global_symbols->end()) return false;

@@ -56,18 +56,21 @@ struct BfdSymbol {
 };
 
 // TODO(glider): unify all code that operates BFD.
-bool ReadGlobalsFromImage(PcToStringMap *global_symbols) {
+PcToStringMap* ReadGlobalsFromImage() {
   CHECK(IN_RTL);
   string fname = GetSelfFilename();
-  global_symbols = new map<uintptr_t, string>;
+  PcToStringMap *global_symbols = new map<uintptr_t, string>;
 
   bfd_init();
   bfd* abfd = bfd_openr(fname.c_str(), 0);
-  if (abfd == 0)
-    return false;
+  if (abfd == 0) {
+    delete global_symbols;
+    return NULL;
+  }
   if (bfd_check_format(abfd, bfd_archive)) {
     bfd_close(abfd);
-    return false;
+    delete global_symbols;
+    return NULL;
   }
   char** matching = NULL;
   if (!bfd_check_format_matches(abfd, bfd_object, &matching)) {
@@ -108,7 +111,7 @@ bool ReadGlobalsFromImage(PcToStringMap *global_symbols) {
     }
     p += size;
   }
-  return true;
+  return global_symbols;
 }
 
 bool BfdInit() {
