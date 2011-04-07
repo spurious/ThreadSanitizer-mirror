@@ -71,6 +71,11 @@ static cl::opt<bool>
                       cl::desc("Update the shadow stack upon function "
                                "entries/exits"),
                       cl::init(true));
+static cl::opt<bool>
+    InlineShadowStackUpdates("inline-shadow-stack-updates",
+                             cl::desc("Write to shadow stack directly instead "
+                                      "of calling rtn_call() and rtn_exit()"),
+                             cl::init(true));
 
 static cl::opt<bool>
     EnableMemoryInstrumentation("enable-memory-instrumentation",
@@ -611,60 +616,60 @@ TraceVector TsanOnlineInstrument::buildTraces(Function &F) {
 void TsanOnlineInstrument::insertRtnCall(Constant *addr,
                                          BasicBlock::iterator &Before) {
   if (!EnableFunctionInstrumentation) return;
-#if DEBUG_RTN
+  if (!InlineShadowStackUpdates) {
     vector<Value*> inst(1);
     inst[0] = addr;
     CallInst::Create(RtnCallFn, inst.begin(), inst.end(), "", Before);
-#else
-  vector <Value*> end_idx;
-  end_idx.push_back(ConstantInt::get(PlatformInt, 0));
-  end_idx.push_back(ConstantInt::get(Int32, 0));
-  Value *StackEndPtr =
-      GetElementPtrInst::Create(ShadowStack,
-                                end_idx.begin(), end_idx.end(),
-                                "", Before);
-  CurrentStackEnd = new LoadInst(StackEndPtr, "", Before);
-  // TODO(glider): this should be removed completely and the comment on top
-  // should be rewritten. We do not update the stack top (thus saving one
-  // instruction), because it'll be updated by the following call or basic
-  // block entry.
-  ///new StoreInst(addr, CurrentStackEnd, Before);
+  } else {
+    vector <Value*> end_idx;
+    end_idx.push_back(ConstantInt::get(PlatformInt, 0));
+    end_idx.push_back(ConstantInt::get(Int32, 0));
+    Value *StackEndPtr =
+        GetElementPtrInst::Create(ShadowStack,
+                                  end_idx.begin(), end_idx.end(),
+                                  "", Before);
+    CurrentStackEnd = new LoadInst(StackEndPtr, "", Before);
+    // TODO(glider): this should be removed completely and the comment on top
+    // should be rewritten. We do not update the stack top (thus saving one
+    // instruction), because it'll be updated by the following call or basic
+    // block entry.
+    ///new StoreInst(addr, CurrentStackEnd, Before);
 
-  vector <Value*> new_idx;
-  new_idx.push_back(ConstantInt::get(Int32, 1));
-  Value *NewStackEnd =
-      GetElementPtrInst::Create(CurrentStackEnd,
-                                new_idx.begin(), new_idx.end(),
-                                "", Before);
-  new StoreInst(NewStackEnd, StackEndPtr, Before);
-#endif
+    vector <Value*> new_idx;
+    new_idx.push_back(ConstantInt::get(Int32, 1));
+    Value *NewStackEnd =
+        GetElementPtrInst::Create(CurrentStackEnd,
+                                  new_idx.begin(), new_idx.end(),
+                                  "", Before);
+    new StoreInst(NewStackEnd, StackEndPtr, Before);
+  }
 }
 
 // Insert the code that pops a stack frame from the shadow stack.
 void TsanOnlineInstrument::insertRtnExit(BasicBlock::iterator &Before) {
   if (!EnableFunctionInstrumentation) return;
-#if DEBUG_RTN
-  vector<Value*> inst(0);
-  CallInst::Create(RtnExitFn, inst.begin(), inst.end(), "", Before);
-#else
-  vector <Value*> end_idx;
-  end_idx.push_back(ConstantInt::get(PlatformInt, 0));
-  end_idx.push_back(ConstantInt::get(Int32, 0));
-  Value *StackEndPtr =
-      GetElementPtrInst::Create(ShadowStack,
-                                end_idx.begin(), end_idx.end(),
-                                "", Before);
-  // TODO(glider): the following lines may introduce an error if no
-  // dependence analysis is done after the instrumentation.
-///      Value *StackSize = new LoadInst(StackSizePtr, "", Before);
-///      Value *NewSize = BinaryOperator::Create(Instruction::Sub,
-///                                              CurrentStackSize,
-///                                              ConstantInt::get(PlatformInt, 1),
-///                                              "", Before);
-  // Restore the original shadow stack |end_| pointer.
-  assert(CurrentStackEnd);
-  new StoreInst(CurrentStackEnd, StackEndPtr, Before);
-#endif
+  if (!InlineShadowStackUpdates) {
+    vector<Value*> inst(0);
+    CallInst::Create(RtnExitFn, inst.begin(), inst.end(), "", Before);
+  } else {
+    vector <Value*> end_idx;
+    end_idx.push_back(ConstantInt::get(PlatformInt, 0));
+    end_idx.push_back(ConstantInt::get(Int32, 0));
+    Value *StackEndPtr =
+        GetElementPtrInst::Create(ShadowStack,
+                                  end_idx.begin(), end_idx.end(),
+                                  "", Before);
+    // TODO(glider): the following lines may introduce an error if no
+    // dependence analysis is done after the instrumentation.
+  ///      Value *StackSize = new LoadInst(StackSizePtr, "", Before);
+  ///      Value *NewSize = BinaryOperator::Create(Instruction::Sub,
+  ///                                              CurrentStackSize,
+  ///                                              ConstantInt::get(PlatformInt, 1),
+  ///                                              "", Before);
+    // Restore the original shadow stack |end_| pointer.
+    assert(CurrentStackEnd);
+    new StoreInst(CurrentStackEnd, StackEndPtr, Before);
+  }
 }
 
 int TsanOnlineInstrument::numMopsInFunction(Module::iterator &F) {
