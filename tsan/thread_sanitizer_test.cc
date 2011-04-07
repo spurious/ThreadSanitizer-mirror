@@ -322,6 +322,9 @@ TEST(ThreadSanitizer, NormalizeFunctionNameChangingTest) {
     "std::basic_string<unsigned short, base::string16_char_traits, std::allocator<unsigned short> > const& std::__median<std::basic_string<unsigned short, base::string16_char_traits, std::allocator<unsigned short> >, (anonymous namespace)::CompareQuality>(std::basic_string<unsigned short, base::string16_char_traits, std::allocator<unsigned short> > const&, std::basic_string<unsigned short, base::string16_char_traits, std::allocator<unsigned short> > const&, std::basic_string<unsigned short, base::string16_char_traits, std::allocator<unsigned short> > const&, (anonymous namespace)::CompareQuality)",
         "std::__median",
 
+    "std::basic_ostream<char, std::char_traits<char> >& std::operator<< <char, std::char_traits<char> >(std::basic_ostream<char, std::char_traits<char> >&, std::_Setprecision)",
+        "std::operator<<",
+
     "net::(anonymous namespace)::CookieSignature::operator<(net::(anonymous namespace)::CookieSignature const&) const",
         "net::::CookieSignature::operator<",
 

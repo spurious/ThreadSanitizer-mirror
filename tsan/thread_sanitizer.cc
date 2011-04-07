@@ -5914,7 +5914,7 @@ class ReportStorage {
       supp += string("  ThreadSanitizer:") + report->ReportName() + "\n";
       for (size_t i = 0; i < funcs_mangled.size(); i++) {
         const string &func = funcs_demangled[i];
-        if (func.size() == 0 || func == "???") {
+        if (func.size() == 0 || func == "(no symbols") {
           supp += "  obj:" + objects[i] + "\n";
         } else {
           supp += "  fun:" + funcs_demangled[i] + "\n";
@@ -8246,6 +8246,12 @@ bool ThreadSanitizerWantToInstrumentSblock(uintptr_t pc) {
   G_stats->pc_to_strings++;
   PcToStrings(pc, false, &img_name, &rtn_name, &file_name, &line_no);
 
+  if (DEBUG_MODE) {
+    // Heavy test for NormalizeFunctionName: test on all possible inputs in
+    // debug mode. TODO(timurrrr): Remove when tested.
+    NormalizeFunctionName(PcToRtnName(pc, true));
+  }
+
   if (g_white_lists->ignores.size() > 0) {
     bool in_white_list = TripleVectorMatchKnown(g_white_lists->ignores, 
                                                 rtn_name, img_name, file_name);
@@ -8258,7 +8264,7 @@ bool ThreadSanitizerWantToInstrumentSblock(uintptr_t pc) {
     }
   }
 
-  if (G_flags->ignore_unknown_pcs && rtn_name == "???") {
+  if (G_flags->ignore_unknown_pcs && rtn_name == "(no symbols)") {
     if (debug_ignore) {
       Report("INFO: not instrumenting unknown function at %p\n", pc);
     }

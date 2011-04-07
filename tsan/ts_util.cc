@@ -243,13 +243,17 @@ string NormalizeFunctionName(const string &demangled) {
     return demangled;
   }
 
-  if (demangled == "(below main)")
+  if (demangled == "(below main)" || demangled == "(no symbols)")
     return demangled;
 
   string fname = demangled;
 
   // Strip stuff like "(***)" and "(anonymous namespace)" -> they are tricky.
   size_t found = fname.npos;
+  while ((found = fname.find(", ")) != fname.npos)
+    fname.erase(found+1, 1);
+  while ((found = fname.find("> >")) != fname.npos)
+    fname.erase(found+1, 1);
   while ((found = fname.find("(**")) != fname.npos)
     fname.erase(found+2, 1);
   while ((found = fname.find("(*)")) != fname.npos)
@@ -262,12 +266,11 @@ string NormalizeFunctionName(const string &demangled) {
   DCHECK(std::count(fname.begin(), fname.end(), '(') ==
          std::count(fname.begin(), fname.end(), ')'));
 
-  size_t first_parenthesis = fname.find("(");
-
   string ret;
   bool returns_fun_ptr = false;
   size_t braces_depth = 0, read_pointer = 0;
 
+  size_t first_parenthesis = fname.find("(");
   if (first_parenthesis != fname.npos) {
     DCHECK(fname.find_first_of(")") != fname.npos);
     DCHECK(fname.find_first_of(")") > first_parenthesis);
@@ -323,14 +326,13 @@ string NormalizeFunctionName(const string &demangled) {
           operator_name = true;
           ret += OP[i] + op_offset;
           next_brace += strlen(OP[i] + op_offset);
+          read_pointer = next_brace;
           break;
         }
       }
 
-      if (operator_name) {
-        read_pointer = next_brace;
+      if (operator_name)
         continue;
-      }
     }
 
     if (fname[next_brace] == '(' || fname[next_brace] == '<') {
@@ -357,8 +359,10 @@ string NormalizeFunctionName(const string &demangled) {
   while (1) {
     space_or_tick = ret.find_first_of("` ");
     if (space_or_tick != ret.npos && ret[space_or_tick] == ' ' &&
-        ret.find("operator", 0, space_or_tick) == ret.npos) {
+        ret.substr(0, space_or_tick).find("operator") == string::npos) {
       ret = ret.substr(space_or_tick + 1);
+    } else if (space_or_tick + 1 == ret.size()) {
+      ret = ret.substr(0, space_or_tick);
     } else {
       break;
     }
