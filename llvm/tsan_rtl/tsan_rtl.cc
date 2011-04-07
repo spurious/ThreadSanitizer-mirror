@@ -736,6 +736,7 @@ void set_global_ignore(bool new_value) {
 
 void *pthread_callback(void *arg) {
   GIL::Lock();
+  ENTER_RTL();
   void *result = NULL;
 
   CHECK((PTH_INIT == 1) && (RTL_INIT == 1));
@@ -787,10 +788,8 @@ void *pthread_callback(void *arg) {
   ShadowStack.end_ = ShadowStack.pcs_;
   SPut(THR_START, INFO.tid, (pc_t) &ShadowStack, 0, parent);
 
-  ENTER_RTL();
   INFO.thread = ThreadSanitizerGetThreadByTid(INFO.tid);
   delete cb_arg;
-  LEAVE_RTL();
 
   if (stack_bottom) {
     // We don't intercept the mmap2 syscall that allocates thread stack, so pass
@@ -815,6 +814,7 @@ void *pthread_callback(void *arg) {
 #endif
   // Wait for the parent.
   __real_pthread_barrier_wait(parent_barrier);
+  LEAVE_RTL();
   GIL::Unlock();
 
   result = (*routine)(routine_arg);
@@ -825,6 +825,7 @@ void *pthread_callback(void *arg) {
   pthread_sigmask(SIG_BLOCK, &glob_sig_blocked, &glob_sig_old);
 
   GIL::Lock();
+  ENTER_RTL();
   Finished[tid] = true;
 #if (DEBUG)
   dump_finished();
@@ -858,6 +859,10 @@ void *pthread_callback(void *arg) {
     DDPrintf("T%d (child of T%d): Not signaling, condvar not ready\n",
              tid, parent);
   }
+  // Note that we do not do LEAVE_RTL() here to avoid sending events from wrapped
+  // functions (e.g. free()) after this thread has ended.
+  // TODO(glider): need to check whether it's 100% legal.
+  ///LEAVE_RTL();
   GIL::Unlock();
   return result;
 }
