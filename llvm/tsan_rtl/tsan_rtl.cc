@@ -1591,12 +1591,15 @@ int __wrap_pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex) {
 extern "C"
 int __wrap_pthread_mutex_lock(pthread_mutex_t *mutex) {
   DECLARE_TID_AND_PC();
+  GIL scoped;
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_mutex_lock, 0);
+  ENTER_RTL();
   int result = __real_pthread_mutex_lock(mutex);
   if (result == 0 /* success */) {
     SPut(WRITER_LOCK, tid, pc, (uintptr_t)mutex, 0);
   }
   // TODO(glider): should we handle error codes?
+  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
 }
@@ -2383,8 +2386,7 @@ int __wrap_sigaction(int signum, const struct sigaction *act,
 // instrumentation API {{{1
 extern "C"
 void rtn_call(void *addr) {
-  // TODO(glider): this is unnecessary if we flush before each call/invoke
-  // insn.
+  DDPrintf("T%d: RTN_CALL [pc=%p; a=(nil); i=(nil)]\n", INFO.tid, addr);
   *ShadowStack.end_ = (uintptr_t)addr;
   ShadowStack.end_++;
   DCHECK(ShadowStack.end_ > ShadowStack.pcs_);
@@ -2393,6 +2395,7 @@ void rtn_call(void *addr) {
 
 extern "C"
 void rtn_exit() {
+  DDPrintf("T%d: RTN_EXIT [pc=(nil); a=(nil); i=(nil)]\n", INFO.tid);
   DCHECK(ShadowStack.end_ > ShadowStack.pcs_);
   DCHECK((size_t)(ShadowStack.end_ - ShadowStack.pcs_) < kMaxCallStackSize);
   ShadowStack.end_--;
