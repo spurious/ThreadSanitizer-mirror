@@ -8310,7 +8310,7 @@ bool NOINLINE ThreadSanitizerIgnoreAccessesBelowFunction(uintptr_t pc) {
   if (DEBUG_MODE) {
     // Heavy test for NormalizeFunctionName: test on all possible inputs in
     // debug mode. TODO(timurrrr): Remove when tested.
-    NormalizeFunctionName(PcToRtnName(pc, true));
+    PcToRtnName(pc, true);
   }
 
   // Grab the lock again
