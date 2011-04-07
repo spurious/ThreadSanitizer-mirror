@@ -32,8 +32,8 @@ else ifeq ($(OS), darwin)
   OS_CFLAGS=-Wall -Werror -Wno-sign-compare -Wshadow -Wno-unused-function -std=c89
   LIBS=-lpthread
 else ifeq ($(OS), windows)
-  OS_CXXFLAGS=/EHs- /EHa- /wd4530   /D_CRT_SECURE_NO_DEPRECATE /D_SECURE_SCL=0 /nologo /Gy /D "WIN32"
-  OS_CFLAGS=/EHs- /EHa- /wd4530   /D_CRT_SECURE_NO_DEPRECATE /D_SECURE_SCL=0 /nologo /Gy /D "WIN32"
+  OS_CXXFLAGS=/EHs- /EHa- /wd4530 /D_CRT_SECURE_NO_DEPRECATE /D_SECURE_SCL=0 /D_HAS_ITERATOR_DEBUGGING=0 /nologo /Gy /D "WIN32"
+  OS_CFLAGS=/EHs- /EHa- /wd4530 /D_CRT_SECURE_NO_DEPRECATE /D_SECURE_SCL=0 /D_HAS_ITERATOR_DEBUGGING=0 /nologo /Gy /D "WIN32"
 else
   OS=UNKNOWN_OS
 endif
