@@ -8307,7 +8307,8 @@ bool NOINLINE ThreadSanitizerIgnoreAccessesBelowFunction(uintptr_t pc) {
   bool ret =
       TripleVectorMatchKnown(g_ignore_lists->ignores_r, rtn_name, "", "");
 
-  if (DEBUG_MODE) {
+  static size_t throttle = 0;
+  if (DEBUG_MODE && (throttle++ % 2) == 0) {
     // Heavy test for NormalizeFunctionName: test on all possible inputs in
     // debug mode. TODO(timurrrr): Remove when tested.
     NormalizeFunctionName(PcToRtnName(pc, true));
