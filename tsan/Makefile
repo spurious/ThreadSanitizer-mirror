@@ -269,7 +269,7 @@ $(OUTDIR)/vgpreload_tsan$(D)-$(ARCHOS).so: $(P)preload-ts_valgrind_intercepts.o
 	ln -sf `pwd`/$@  $(VALGRIND_INST_ROOT)/lib/valgrind/  # install the symlink into the valgrind inst dir.
 
 $(P)ts_offline$(EXE): $(TS_OFFLINE_OBJECTS)
-	$(LD) $(LDFLAGS) $(ARCHFLAGS) $(LINKO)$@ $^ -static
+	$(LD) $(LDFLAGS) $(ARCHFLAGS) $(LINKO)$@ $^
 
 $(P)suppressions_test$(EXE): $(P)gtest-suppressions_test.$(OBJ) $(P)suppressions.$(OBJ) $(P)common_util.$(OBJ) $(P)ts_util.$(OBJ) $(GTEST_LIB)
 	$(LD) $(LDFLAGS) $(ARCHFLAGS) $(LINKO)$@ $^
