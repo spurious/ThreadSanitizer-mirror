@@ -232,88 +232,29 @@ size_t GetVmSizeInMb() {
 #endif
 }
 
-string NormalizeFunctionName(const string &demangled) {
-  if (demangled[1] == '[' && strchr("+-=", demangled[0]) != NULL) {
-    // Objective-C function
-    return demangled;
-  }
-
-  if (demangled.find_first_of("<(") == demangled.npos) {
-    // C function or a well-formatted function name.
-    return demangled;
-  }
-
-  if (demangled == "(below main)" || demangled == "(no symbols)")
-    return demangled;
-
-  string fname = demangled;
-
-  // Strip stuff like "(***)" and "(anonymous namespace)" -> they are tricky.
-  size_t found = fname.npos;
-  while ((found = fname.find(", ")) != fname.npos)
-    fname.erase(found+1, 1);
-  while ((found = fname.find("> >")) != fname.npos)
-    fname.erase(found+1, 1);
-  while ((found = fname.find("(**")) != fname.npos)
-    fname.erase(found+2, 1);
-  while ((found = fname.find("(*)")) != fname.npos)
-    fname.erase(found, 3);
-  while ((found = fname.find("(anonymous namespace)")) != fname.npos)
-    fname.erase(found, 21);
-
-  if (fname.find_first_of("<(") == fname.npos)
-    return fname;
-  DCHECK(std::count(fname.begin(), fname.end(), '(') ==
-         std::count(fname.begin(), fname.end(), ')'));
-
+static string StripTemplatesFromFunctionName(const string &fname) {
   string ret;
-  bool returns_fun_ptr = false;
-  size_t braces_depth = 0, read_pointer = 0;
-
-  size_t first_parenthesis = fname.find("(");
-  if (first_parenthesis != fname.npos) {
-    DCHECK(fname.find_first_of(")") != fname.npos);
-    DCHECK(fname.find_first_of(")") > first_parenthesis);
-
-    DCHECK(fname[first_parenthesis] == '(');
-    if (fname[first_parenthesis - 1] == ' ' &&
-        fname[first_parenthesis + 1] == '*' &&
-        fname[first_parenthesis + 2] != ' ') {
-      // Return value type is a function pointer
-      read_pointer = first_parenthesis + 2;
-      while (fname[read_pointer] == '*' || fname[read_pointer] == '&')
-        read_pointer++;
-      braces_depth = 1;
-      returns_fun_ptr = true;
-    }
-  }
+  size_t read_pointer = 0, braces_depth = 0;
 
   while (read_pointer < fname.size()) {
-    size_t next_brace = fname.find_first_of("()<>", read_pointer);
+    size_t next_brace = fname.find_first_of("<>", read_pointer);
     if (next_brace == fname.npos) {
       CHECK(braces_depth == 0);
-      size_t _const = fname.find(" const", read_pointer);
-      if (_const == fname.npos) {
-        ret += (fname.c_str() + read_pointer);
-      } else {
-        CHECK(_const + 6 == fname.size());
-        ret.append(fname, read_pointer, _const - read_pointer);
-      }
+      ret += (fname.c_str() + read_pointer);
       break;
     }
 
-    if (braces_depth == (returns_fun_ptr ? 1 : 0)) {
+    if (braces_depth == 0) {
       ret.append(fname, read_pointer, next_brace - read_pointer);
-      returns_fun_ptr = false;
     }
 
-    if ((fname[next_brace] == '>' || fname[next_brace] == '<') &&
-        next_brace > 0) {
+    if (next_brace > 0) {
       // We could have found one of the following operators.
-      const char *OP[] = {">>=", "<<=", "<<", ">>",
-                          "<=", ">=", "<", ">",
+      const char *OP[] = {">>=", "<<=",
+                          ">>", "<<",
+                          ">=", "<=",
                           "->", "->*",
-                          };
+                          "<", ">"};
 
       bool operator_name = false;
       for (size_t i = 0; i < sizeof(OP)/sizeof(*OP); i++) {
@@ -335,15 +276,108 @@ string NormalizeFunctionName(const string &demangled) {
         continue;
     }
 
-    if (fname[next_brace] == '(' || fname[next_brace] == '<') {
+    if (fname[next_brace] == '<') {
       braces_depth++;
       read_pointer = next_brace + 1;
-    } else if (fname[next_brace] == ')' || fname[next_brace] == '>') {
+    } else if (fname[next_brace] == '>') {
       if (braces_depth == 0) {
+        // This IS possible at least for this function on Windows:
+        // "std::operator<<char,std::char_traits<char>,std::allocator<char> >".
+        // Return an empty string and let the caller decide.
         if (DEBUG_MODE)
-          Printf("PANIC: `%s`\n", demangled.c_str());
-        return "(malformed frame)";
+          Printf("PANIC: `%s`\n", fname.c_str());
+        return "";
       }
+      CHECK(braces_depth > 0);
+      braces_depth--;
+      read_pointer = next_brace + 1;
+    } else
+      CHECK(0);
+  }
+  CHECK(braces_depth == 0);
+  CHECK(ret.size() > 0);
+  return ret;
+}
+
+string NormalizeFunctionName(const string &demangled) {
+  if (demangled[1] == '[' && strchr("+-=", demangled[0]) != NULL) {
+    // Objective-C function
+    return demangled;
+  }
+
+  if (demangled.find_first_of("<>()") == demangled.npos) {
+    // C function or a well-formatted function name.
+    return demangled;
+  }
+
+  if (demangled == "(below main)" || demangled == "(no symbols)")
+    return demangled;
+
+  string fname = StripTemplatesFromFunctionName(demangled);
+  if (fname.size() == 0)
+    return "(malformed frame)";
+
+  // Strip stuff like "(***)" and "(anonymous namespace)" -> they are tricky.
+  size_t found = fname.npos;
+  while ((found = fname.find(", ")) != fname.npos)
+    fname.erase(found+1, 1);
+  while ((found = fname.find("(**")) != fname.npos)
+    fname.erase(found+2, 1);
+  while ((found = fname.find("(*)")) != fname.npos)
+    fname.erase(found, 3);
+  while ((found = fname.find("(anonymous namespace)")) != fname.npos)
+    fname.erase(found, 21);
+
+  if (fname.find_first_of("(") == fname.npos)
+    return fname;
+  DCHECK(std::count(fname.begin(), fname.end(), '(') ==
+         std::count(fname.begin(), fname.end(), ')'));
+
+  string ret;
+  bool returns_fun_ptr = false;
+  size_t braces_depth = 0, read_pointer = 0;
+
+  size_t first_parenthesis = fname.find("(");
+  if (first_parenthesis != fname.npos) {
+    DCHECK(fname.find_first_of(")") != fname.npos);
+    DCHECK(fname.find_first_of(")") > first_parenthesis);
+    DCHECK(fname[first_parenthesis] == '(');
+    if (fname[first_parenthesis - 1] == ' ' &&
+        fname[first_parenthesis + 1] == '*' &&
+        fname[first_parenthesis + 2] != ' ') {
+      // Return value type is a function pointer
+      read_pointer = first_parenthesis + 2;
+      while (fname[read_pointer] == '*' || fname[read_pointer] == '&')
+        read_pointer++;
+      braces_depth = 1;
+      returns_fun_ptr = true;
+    }
+  }
+
+  while (read_pointer < fname.size()) {
+    size_t next_brace = fname.find_first_of("()", read_pointer);
+    if (next_brace == fname.npos) {
+      CHECK(braces_depth == 0);
+      size_t _const = fname.find(" const", read_pointer);
+      if (_const == fname.npos) {
+        ret += (fname.c_str() + read_pointer);
+      } else {
+        CHECK(_const + 6 == fname.size());
+        ret.append(fname, read_pointer, _const - read_pointer);
+      }
+      break;
+    }
+
+    if (braces_depth == (returns_fun_ptr ? 1 : 0)) {
+      ret.append(fname, read_pointer, next_brace - read_pointer);
+      returns_fun_ptr = false;
+    }
+
+    if (fname[next_brace] == '(') {
+      braces_depth++;
+      read_pointer = next_brace + 1;
+    } else if (fname[next_brace] == ')') {
+      CHECK(braces_depth > 0);
       braces_depth--;
       read_pointer = next_brace + 1;
     } else
