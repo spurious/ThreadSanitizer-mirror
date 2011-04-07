@@ -1,9 +1,11 @@
 unittest/bin
 tsan/bin
+tsan/ts_event_names.h
 third_party/googletest
 third_party/stlport
 third_party/valgrind
 *.pdb
+*.swp
 upload.py
 *.class
 _CL_*
