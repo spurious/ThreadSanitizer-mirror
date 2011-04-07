@@ -2762,9 +2762,6 @@ void ReadElf() {
     // Parse the debug info section.
     ReadDbgInfoFromSection(debug_info_section,
                            debug_info_section + debug_info_size);
-  } else {
-    Printf("tsan_rtl_debug_info section is missing. You're either using "
-           "the gcc compile-time instrumentation or doing something wrong\n");
   }
   LEAVE_RTL();
   // Finalize.
