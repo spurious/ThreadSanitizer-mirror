@@ -10,7 +10,7 @@ STLPORT_ROOT=../third_party/stlport
 GTEST_ROOT=../third_party/googletest
 OFFLINE=1
 
-TS_VERSION=$(shell /usr/bin/svnversion)
+TS_VERSION=$(shell svnversion)
 
 COPT=-O -fno-omit-frame-pointer
 CWARN=-Wall -Wmissing-prototypes -Wshadow -Wpointer-arith -Wstrict-prototypes \
