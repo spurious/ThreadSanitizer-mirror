@@ -358,6 +358,8 @@ TEST(ThreadSanitizer, NormalizeFunctionNameChangingTest) {
         "SuppressionTests::TemplateFunction1",  // PIN, Windows
     "SuppressionTests::MyClass<int>::Fooz",
         "SuppressionTests::MyClass::Fooz",
+    "std::operator<<char,std::char_traits<char>,std::allocator<char> >",
+        "(malformed frame)",  // Should be "std::operator<"? Really?
 
     "__gnu_cxx::new_allocator<char>::allocate(unsigned long, void const*)",
         "__gnu_cxx::new_allocator::allocate",

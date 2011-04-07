@@ -339,9 +339,11 @@ string NormalizeFunctionName(const string &demangled) {
       braces_depth++;
       read_pointer = next_brace + 1;
     } else if (fname[next_brace] == ')' || fname[next_brace] == '>') {
-      if (braces_depth == 0)
-        Printf("PANIC: `%s`\n", demangled.c_str());
-      CHECK(braces_depth > 0);
+      if (braces_depth == 0) {
+        if (DEBUG_MODE)
+          Printf("PANIC: `%s`\n", demangled.c_str());
+        return "(malformed frame)";
+      }
       braces_depth--;
       read_pointer = next_brace + 1;
     } else
