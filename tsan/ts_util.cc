@@ -314,13 +314,8 @@ string NormalizeFunctionName(const string &demangled) {
     return demangled;
 
   string fname = StripTemplatesFromFunctionName(demangled);
-  if (fname.size() == 0)
+  if (fname.size() == 0 || fname == "(malformed frame)")
     return "(malformed frame)";
-
-#if defined(_MSC_VER)
-  // TODO(timurrrr): remove as soon as the hang/bug is found
-  Printf("NormalizeFunctionName: `%s`\n", demangled.c_str());
-#endif
 
   // Strip stuff like "(***)" and "(anonymous namespace)" -> they are tricky.
   size_t found = fname.npos;
