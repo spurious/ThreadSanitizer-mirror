@@ -367,9 +367,6 @@ TEST(ThreadSanitizer, NormalizeFunctionNameChangingTest) {
     "std::operator<<char,std::char_traits<char>,std::allocator<char> >",
         "(malformed frame)",  // Should be "std::operator<"? Really?
 
-    "(malformed frame)",
-        "(malformed frame)",
-
     "__gnu_cxx::new_allocator<char>::allocate(unsigned long, void const*)",
         "__gnu_cxx::new_allocator::allocate",
 

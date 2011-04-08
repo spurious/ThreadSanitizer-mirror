@@ -295,7 +295,7 @@ static string StripTemplatesFromFunctionName(const string &fname) {
       CHECK(0);
   }
   CHECK(braces_depth == 0);
-  CHECK(ret.size() > 0);
+  CHECK(ret != "");
   return ret;
 }
 
@@ -314,7 +314,7 @@ string NormalizeFunctionName(const string &demangled) {
     return demangled;
 
   string fname = StripTemplatesFromFunctionName(demangled);
-  if (fname.size() == 0 || fname == "(malformed frame)")
+  if (fname.size() == 0)
     return "(malformed frame)";
 
   // Strip stuff like "(***)" and "(anonymous namespace)" -> they are tricky.
@@ -401,18 +401,19 @@ string NormalizeFunctionName(const string &demangled) {
   // name.
   // Oh, well...
   size_t space_or_tick;
+  CHECK(ret != "");
   while (1) {
     space_or_tick = ret.find_first_of("` ");
     if (space_or_tick != ret.npos && ret[space_or_tick] == ' ' &&
         ret.substr(0, space_or_tick).find("operator") == string::npos) {
       ret = ret.substr(space_or_tick + 1);
-    } else if (space_or_tick + 1 == ret.size()) {
+    } else if (space_or_tick != ret.npos && space_or_tick + 1 == ret.size()) {
       ret = ret.substr(0, space_or_tick);
     } else {
       break;
     }
   }
-  CHECK(ret.size() > 0);
+  CHECK(ret != "");
   return ret;
 }
 
