@@ -227,7 +227,7 @@ TS_HEADERS=thread_sanitizer.h ts_util.h suppressions.h ignore.h ts_replace.h ts_
 	   ts_trace_info.h ts_race_verifier.h dense_multimap.h \
 	   ../dynamic_annotations/dynamic_annotations.h
 ts_event_names.h: ts_events.h
-	sed -n '/^enum/,/^};/ {s/enum EventType/static const char *kEventNames[] = /; s/^  \([A-Z_]\+\)/  "\1"/g; }' $< > $@
+	sed -n '/^enum/,/^};/ {s/enum EventType/static const char *kEventNames[] = /; s/^  \([A-Z_]\+\)/  "\1"/g; p}' $< > $@
 TS_VG_HEADERS=ts_valgrind.h ts_valgrind_client_requests.h
 
 TS_VG_OBJECTS=$(VGP)thread_sanitizer.o $(VGP)ts_valgrind.o $(VGP)ts_valgrind_libc.o $(VGP)ts_util.o $(VGP)suppressions.o $(VGP)ignore.o $(VGP)common_util.o $(VGP)ts_race_verifier.o

@@ -129,7 +129,7 @@ class Event {
 
   }
   static const char *TypeString(EventType type) {
-    return NULL;
+    return kEventNames[type];
   }
  private:
   EventType      type_;
