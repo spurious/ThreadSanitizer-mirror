@@ -36,7 +36,6 @@ struct Trace {
   llvm::BasicBlock *entry;
   BlockSet exits;
   InstSet mops_to_instrument;
-  InstSet calls_to_instrument;
   int num_mops;
 
   Trace() : num_mops(0) {}
@@ -207,6 +206,8 @@ struct TsanOnlineInstrument : public llvm::ModulePass { // {{{1
   llvm::LLVMContext *ThisModuleContext;
 private:
   virtual void getAnalysisUsage(llvm::AnalysisUsage &AU) const;
+
+  InstSet calls_to_instrument;
 };  // }}}
 
 }  // namespace

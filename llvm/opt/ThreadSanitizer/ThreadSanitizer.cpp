@@ -703,7 +703,8 @@ void TsanOnlineInstrument::runOnFunction(Module::iterator &F) {
     // I even can't remember why in the world we do skip new/delete.
     // Probably should be removed: if someone has implemented his own
     // new/delete operators, we definitely do not want to compile them.
-    // Upd: looks like these are placement new/delete operators.
+    // Upd: looks like these are placement new/delete operators. Still can't
+    // understand why not instrument them.
     if ((F->getName()).find("_Znw") != string::npos) {
       //F->dump();
       //assert(false)
@@ -724,7 +725,8 @@ void TsanOnlineInstrument::runOnFunction(Module::iterator &F) {
     F->dump();
 #endif
 
-    // Build the traces.
+    // Build the traces. Note that every basic block should belong to some
+    // trace, even if it doesn't contain any memory operations.
     TraceVector traces(buildTraces(*F));
     for (int i = 0; i < traces.size(); ++i) {
       assert(traces[i]->exits.size());
@@ -980,7 +982,6 @@ bool TsanOnlineInstrument::runOnModule(Module &M) {
   setupDataTypes();
   setupRuntimeGlobals();
 
-
   // Split each basic block into smaller blocks containing no more than one
   // call instruction at the end.
   // TODO(glider): rewrite this comment.
@@ -1024,12 +1025,10 @@ bool TsanOnlineInstrument::runOnModule(Module &M) {
         // A call may not occur inside of a basic block, iff this is not a
         // call to @llvm.dbg.declare
         if (isaCallOrInvoke(BI)) {
-///              if ((need_split || BI == BB->begin()) &&
-             if ((already_splitted.find(BI) ==
-                                     already_splitted.end()) && (need_split
-                                                                 ||
-                                                                 BB!=F->begin()))
-               {
+          // Mark the CALL/INVOKE instruction as to be instrumented.
+          calls_to_instrument.insert(BI);
+          if ((already_splitted.find(BI) ==
+               already_splitted.end()) && (need_split || BB!=F->begin())) {
             already_splitted.insert(BI);
             SplitBlock(BB, BI, this);
             need_split = false;
@@ -1314,15 +1313,15 @@ void TsanOnlineInstrument::runOnTrace(Trace &trace,
       }
     }
   } else {
-    // Instrument only function calls.
-    for (BlockSet::iterator EI = trace.exits.begin(),
-                            EE = trace.exits.end();
+    // Instrument only function calls in all the blocks belonging to this trace.
+    for (BlockSet::iterator EI = trace.blocks.begin(),
+                            EE = trace.blocks.end();
          EI != EE; ++EI) {
       for (BasicBlock::iterator BI = (*EI)->begin(), BE = (*EI)->end();
            BI != BE;
            ++BI) {
-        if (isaCallOrInvoke(BI)) {
-          llvm::Instruction &IN = *BI;
+        if (isaCallOrInvoke(BI) &&
+            (calls_to_instrument.find(BI) != calls_to_instrument.end())) {
           instrumentCall(BI);
         }
       }
@@ -1832,7 +1831,6 @@ void TsanOnlineInstrument::instrumentMemTransfer(BasicBlock::iterator &BI) {
 void TsanOnlineInstrument::instrumentCall(BasicBlock::iterator &BI) {
   // TODO(glider): should we somehow distinguish the addresses of mops and
   // calls?
-  BI->dump();
   FunctionMopCount++;
   vector <Value*> end_idx;
   end_idx.push_back(ConstantInt::get(PlatformInt, 0));
