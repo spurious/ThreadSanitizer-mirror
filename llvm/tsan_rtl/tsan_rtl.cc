@@ -1591,7 +1591,6 @@ int __wrap_pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex) {
 extern "C"
 int __wrap_pthread_mutex_lock(pthread_mutex_t *mutex) {
   DECLARE_TID_AND_PC();
-  GIL scoped;
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_mutex_lock, 0);
   ENTER_RTL();
   int result = __real_pthread_mutex_lock(mutex);
