@@ -46,9 +46,6 @@ TSAN_OPT_ARGS = ''
 if 'TSAN_OPT_ARGS' in os.environ:
   TSAN_OPT_ARGS = os.environ['TSAN_OPT_ARGS']
 
-def setup_parser(parser):
-  pass
-
 def print_args(args):
   print
   for i in args[:-1]:
