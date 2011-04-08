@@ -1,11 +1,11 @@
 #!/bin/bash
 
 wrap () {
-  ARGS+="--wrap=$1 "
+  ARGS_MODIFIED+="--wrap=$1 "
 }
 
 undefined() {
-  ARGS+=""
+  ARGS_MODIFIED+=""
 }
 
 if [ "$USE_RELITE" == "" ]
@@ -13,25 +13,39 @@ then
   /usr/bin/ld "$@"
 else
   ARGS=""
+  ARGS_MODIFIED=""
   INSERTED=""
+  SHARED=""
   source /home/dvyukov/tsan/llvm/scripts/link_config.txt
 
   until [ -z "$1" ]
   do
+    if [ "$1" == "-shared" ]
+    then
+      SHARED="1"
+    fi
+
     if [ `expr substr "$1" 1 2` == "-l" ]
     then
       if [ "$INSERTED" == "" ]
       then
         INSERTED="1"
-        ARGS+=" /home/dvyukov/tsan/llvm/tsan_rtl/tsan_rtl64.a -lbfd -lpthread"
+        ARGS_MODIFIED+=" /home/dvyukov/tsan/llvm/tsan_rtl/tsan_rtl64.a -lbfd -lpthread"
       fi
     fi
     ARGS+=" $1"
+    ARGS_MODIFIED+=" $1"
     shift
   done
 
-  echo RELITE: /usr/bin/ld $ARGS
-  /usr/bin/ld $ARGS
+  if [ "$SHARED" == "1" ]
+  then
+    echo RELITE_SHARED: /usr/bin/ld $ARGS
+    /usr/bin/ld $ARGS
+  else
+    echo RELITE: /usr/bin/ld $ARGS_MODIFIED
+    /usr/bin/ld $ARGS_MODIFIED
+  fi
 fi
 
 
