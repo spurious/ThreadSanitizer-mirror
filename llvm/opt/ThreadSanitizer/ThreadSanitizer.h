@@ -35,7 +35,8 @@ struct Trace {
   BlockSet blocks;
   llvm::BasicBlock *entry;
   BlockSet exits;
-  InstSet to_instrument;
+  InstSet mops_to_instrument;
+  InstSet calls_to_instrument;
   int num_mops;
 
   Trace() : num_mops(0) {}
@@ -103,6 +104,8 @@ struct TsanOnlineInstrument : public llvm::ModulePass { // {{{1
   void dumpInstructionDebugInfo(llvm::Constant *addr,
                                 const llvm::BasicBlock::iterator BI);
   uintptr_t getModuleID(llvm::Module &M);
+  void setupDataTypes();
+  void setupRuntimeGlobals();
   bool isDtor(const std::string &mangled_name);
   void writeModuleDebugInfo(llvm::Module &M);
   BlockSet &getPredecessors(llvm::BasicBlock *bb);

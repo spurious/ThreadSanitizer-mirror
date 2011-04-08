@@ -771,18 +771,7 @@ void TsanOnlineInstrument::runOnFunction(Module::iterator &F) {
   }
 }
 
-// virtual
-bool TsanOnlineInstrument::runOnModule(Module &M) {
-  if (DoNothing) return true;
-  InstrumentedTraceCount = 0;
-  ModuleFunctionCount = 0;
-  ModuleMopCount = 0;
-  ModuleID = getModuleID(M);
-  ThisModule = &M;
-  ThisModuleContext = &(M.getContext());
-
-  AA = &getAnalysis<AliasAnalysis>();
-
+void TsanOnlineInstrument::setupDataTypes() {
   // Arch size dependent types.
   if (ArchSize == 64) {
     UIntPtr = Type::getInt64PtrTy(*ThisModuleContext);
@@ -884,7 +873,11 @@ bool TsanOnlineInstrument::runOnModule(Module &M) {
                                   UIntPtr,
                                   CallStackArrayType,
                                   NULL);
-  ShadowStack = new GlobalVariable(M,
+
+}
+
+void TsanOnlineInstrument::setupRuntimeGlobals() {
+  ShadowStack = new GlobalVariable(*ThisModule,
                                    CallStackType,
                                    /*isConstant*/true,
                                    GlobalValue::ExternalWeakLinkage,
@@ -892,7 +885,7 @@ bool TsanOnlineInstrument::runOnModule(Module &M) {
                                    "ShadowStack",
                                    /*InsertBefore*/0,
                                    /*ThreadLocal*/true);
-  ThreadLocalIgnore = new GlobalVariable(M,
+  ThreadLocalIgnore = new GlobalVariable(*ThisModule,
                                          PlatformInt,
                                          /*isConstant*/false,
                                          GlobalValue::ExternalWeakLinkage,
@@ -900,7 +893,7 @@ bool TsanOnlineInstrument::runOnModule(Module &M) {
                                          "thread_local_ignore",
                                          /*InsertBefore*/0,
                                          /*ThreadLocal*/true);
-  LiteraceTid = new GlobalVariable(M,
+  LiteraceTid = new GlobalVariable(*ThisModule,
                                    PlatformInt,
                                    /*isConstant*/false,
                                    GlobalValue::ExternalWeakLinkage,
@@ -910,7 +903,7 @@ bool TsanOnlineInstrument::runOnModule(Module &M) {
                                    /*ThreadLocal*/true);
   TLEBTy = ArrayType::get(UIntPtr, kTLEBSize);
   TLEBPtrType = PointerType::get(UIntPtr, 0);
-  TLEB = new GlobalVariable(M,
+  TLEB = new GlobalVariable(*ThisModule,
                             TLEBTy,
                             /*isConstant*/true,
                             GlobalValue::ExternalWeakLinkage,
@@ -922,24 +915,25 @@ bool TsanOnlineInstrument::runOnModule(Module &M) {
   // void* bb_flush(next_mops)
   // TODO(glider): need another name, because we now flush superblocks, not
   // basic blocks.
-  BBFlushFn = M.getOrInsertFunction("bb_flush",
-                                    Void,
-                                    TraceInfoTypePtr, (Type*)0);
+  BBFlushFn = ThisModule->getOrInsertFunction("bb_flush",
+                                              Void,
+                                              TraceInfoTypePtr, (Type*)0);
   cast<Function>(BBFlushFn)->setLinkage(Function::ExternalWeakLinkage);
 
   // void* bb_flush_current(cur_mops)
   // TODO(glider): need another name, because we now flush superblocks, not
   // basic blocks.
-  BBFlushCurrentFn = M.getOrInsertFunction("bb_flush_current",
-                                           Void,
-                                           TraceInfoTypePtr, (Type*)0);
+  BBFlushCurrentFn = ThisModule->getOrInsertFunction("bb_flush_current",
+                                                     Void,
+                                                     TraceInfoTypePtr, (Type*)0);
   cast<Function>(BBFlushCurrentFn)->
       setLinkage(Function::ExternalWeakLinkage);
 
   // void* bb_flush_mop(cur_mop, addr)
-  BBFlushMop = M.getOrInsertFunction("bb_flush_mop",
-                                     Void,
-                                     TraceInfoTypePtr, UIntPtr, (Type*)0);
+  BBFlushMop =
+      ThisModule->getOrInsertFunction("bb_flush_mop",
+                                      Void,
+                                      TraceInfoTypePtr, UIntPtr, (Type*)0);
   cast<Function>(BBFlushCurrentFn)->
       setLinkage(Function::ExternalWeakLinkage);
 
@@ -947,27 +941,45 @@ bool TsanOnlineInstrument::runOnModule(Module &M) {
 
   // void rtn_call(void *addr)
   // TODO(glider): we should finally get rid of it at all.
-  RtnCallFn = M.getOrInsertFunction("rtn_call",
-                                    Void,
-                                    PlatformInt, (Type*)0);
+  RtnCallFn = ThisModule->getOrInsertFunction("rtn_call",
+                                              Void,
+                                              PlatformInt, (Type*)0);
 
   // void rtn_exit()
   // TODO(glider): we should finally get rid of it at all.
-  RtnExitFn = M.getOrInsertFunction("rtn_exit",
-                                    Void, (Type*)0);
+  RtnExitFn = ThisModule->getOrInsertFunction("rtn_exit",
+                                              Void, (Type*)0);
 
-  MemCpyFn = M.getOrInsertFunction("rtl_memcpy",
-                                   UIntPtr,
-                                   UIntPtr, UIntPtr, PlatformInt, (Type*)0);
+  MemCpyFn =
+      ThisModule->getOrInsertFunction("rtl_memcpy",
+                                      UIntPtr,
+                                      UIntPtr, UIntPtr, PlatformInt, (Type*)0);
   cast<Function>(MemCpyFn)->setLinkage(Function::ExternalWeakLinkage);
-  MemMoveFn = M.getOrInsertFunction("rtl_memmove",
-                                   UIntPtr,
-                                   UIntPtr, UIntPtr, PlatformInt, (Type*)0);
+  MemMoveFn =
+      ThisModule->getOrInsertFunction("rtl_memmove",
+                                      UIntPtr,
+                                      UIntPtr, UIntPtr, PlatformInt, (Type*)0);
   cast<Function>(MemMoveFn)->setLinkage(Function::ExternalWeakLinkage);
   const Type *Tys[] = { PlatformInt };
-  MemSetIntrinsicFn = Intrinsic::getDeclaration(&M,
+  MemSetIntrinsicFn = Intrinsic::getDeclaration(ThisModule,
                                                 Intrinsic::memset,
                                                 Tys, /*numTys*/1);
+
+}
+
+// virtual
+bool TsanOnlineInstrument::runOnModule(Module &M) {
+  if (DoNothing) return true;
+  InstrumentedTraceCount = 0;
+  ModuleFunctionCount = 0;
+  ModuleMopCount = 0;
+  ModuleID = getModuleID(M);
+  ThisModule = &M;
+  ThisModuleContext = &(M.getContext());
+  AA = &getAnalysis<AliasAnalysis>();
+  setupDataTypes();
+  setupRuntimeGlobals();
+
 
   // Split each basic block into smaller blocks containing no more than one
   // call instruction at the end.
@@ -1272,7 +1284,7 @@ void TsanOnlineInstrument::runOnTrace(Trace &trace,
   bool have_passport = makeTracePassport(trace);
   if (have_passport) {
     instrumentation_stats.newInstrumentedTrace();
-    if ((trace.to_instrument.size() > 1) || UseTlebForMinimalBlocks) {
+    if ((trace.mops_to_instrument.size() > 1) || UseTlebForMinimalBlocks) {
       // Instrument memory operations and function calls.
       for (BlockSet::iterator TI = trace.blocks.begin(),
                               TE = trace.blocks.end();
@@ -1453,7 +1465,7 @@ void TsanOnlineInstrument::markMopsToInstrument(Trace &trace) {
       if (isMop) {
         instrumentation_stats.newMop();
         if (InstrumentAll) {
-          trace.to_instrument.insert(BI);
+          trace.mops_to_instrument.insert(BI);
           continue;
         }
         if (ignoreInlinedMop(BI)) continue;
@@ -1491,8 +1503,8 @@ void TsanOnlineInstrument::markMopsToInstrument(Trace &trace) {
               // same memory location. We're a STORE, too, so drop it.
               //
               // The number of instrumented accesses won't change.
-              trace.to_instrument.erase(LI->second);
-              trace.to_instrument.insert(BI);
+              trace.mops_to_instrument.erase(LI->second);
+              trace.mops_to_instrument.insert(BI);
               // But the number of uninstrumented accesses will.
               instrumentation_stats.newMopUninstrumentedByAA();
 
@@ -1514,7 +1526,7 @@ void TsanOnlineInstrument::markMopsToInstrument(Trace &trace) {
                                                      location.second);
             if ((R == AliasAnalysis::MustAlias) &&
                 (size == location.second)) {
-              if (trace.to_instrument.erase(LI->second)) {
+              if (trace.mops_to_instrument.erase(LI->second)) {
                 instrumentation_stats.newMopUninstrumentedByAA();
               }
               // There cannot be other LOAD operations aliasing the
@@ -1524,7 +1536,7 @@ void TsanOnlineInstrument::markMopsToInstrument(Trace &trace) {
           }
           if (!has_alias) {
             store_map[make_pair(MopPtr, size)] = BI;
-            trace.to_instrument.insert(BI);
+            trace.mops_to_instrument.insert(BI);
           }
         } else {
           for (LocMap::iterator LI = store_map.begin(), LE = store_map.end();
@@ -1555,11 +1567,11 @@ void TsanOnlineInstrument::markMopsToInstrument(Trace &trace) {
           if ((R == AliasAnalysis::MustAlias) &&
               (size == location.second)) {
             // Drop the previous access.
-            if (trace.to_instrument.erase(LI->second)) {
+            if (trace.mops_to_instrument.erase(LI->second)) {
               instrumentation_stats.newMopUninstrumentedByAA();
             }
-            // It's ok to insert the same BI into to_instrument twice.
-            trace.to_instrument.insert(BI);
+            // It's ok to insert the same BI into mops_to_instrument twice.
+            trace.mops_to_instrument.insert(BI);
             load_map.erase(LI);
             if (!isStore) {
               load_map[make_pair(MopPtr, size)] = BI;
@@ -1576,12 +1588,12 @@ void TsanOnlineInstrument::markMopsToInstrument(Trace &trace) {
           if (!isStore) {
             load_map[make_pair(MopPtr, size)] = BI;
           }
-          trace.to_instrument.insert(BI);
+          trace.mops_to_instrument.insert(BI);
         }
       }
     }
   }
-  trace.num_mops = trace.to_instrument.size();
+  trace.num_mops = trace.mops_to_instrument.size();
 }
 
 bool TsanOnlineInstrument::makeTracePassport(Trace &trace) {
@@ -1610,7 +1622,7 @@ bool TsanOnlineInstrument::makeTracePassport(Trace &trace) {
         //assert(false);
       }
       if (isMop) {
-        if (trace.to_instrument.find(BI) == trace.to_instrument.end())
+        if (trace.mops_to_instrument.find(BI) == trace.mops_to_instrument.end())
           continue;
         TraceNumMops++;
         FunctionMopCount++;
@@ -1723,7 +1735,9 @@ bool TsanOnlineInstrument::instrumentMop(BasicBlock::iterator &BI,
                                          bool check_ident_store,
                                          Trace &trace,
                                          bool useTLEB) {
-  if (trace.to_instrument.find(BI) == trace.to_instrument.end()) return false;
+  if (trace.mops_to_instrument.find(BI) == trace.mops_to_instrument.end()) {
+    return false;
+  }
   if (!EnableMemoryInstrumentation) return false;
   instrumentation_stats.newInstrumentedMop();
   Value *MopAddr;
@@ -1818,6 +1832,7 @@ void TsanOnlineInstrument::instrumentMemTransfer(BasicBlock::iterator &BI) {
 void TsanOnlineInstrument::instrumentCall(BasicBlock::iterator &BI) {
   // TODO(glider): should we somehow distinguish the addresses of mops and
   // calls?
+  BI->dump();
   FunctionMopCount++;
   vector <Value*> end_idx;
   end_idx.push_back(ConstantInt::get(PlatformInt, 0));
