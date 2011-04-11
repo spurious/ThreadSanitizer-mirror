@@ -8,6 +8,9 @@
  * version. See http://www.gnu.org/licenses/
  */
 
+//TODO(dvyukov): handle inlining wrt ignore files:
+// for each mop check actual source location
+
 //TODO(dvyukov): create a makefile
 
 //TODO(dvyukov): collect per-function stats
@@ -20,9 +23,6 @@
 
 //TODO(dvyukov): move all shadow stack support code into callee function
 
-//TODO(dvyukov): check handling of races in dtors
-// TSAN_ARGS="--suppressions=racecheck_unittest.supp" ./bin/racecheck_unittest-linux-amd64-O1 --gtest_filter=*Dtor*
-
 //TODO(dvyukov): check induced reads/writes:
 // int g = 0;
 // for (int i = 0; i != N; i += 1)
@@ -31,10 +31,15 @@
 //TODO(dvyukov): if it's a call to a known function (malloc/free) ->
 // do not start new sblock
 
-//TODO(dvyukov): do not instrument reads of vtbl
-
 //TODO(dvyukov): do not instrument loads of const vars/members/params
 
+//TODO(dvyukov): try to not instrument first write to a local var:
+// int x = 1; // even if 'x' is addressable, initialization can't race
+
+
+//DONE:
+// + check handling of races in dtors
+// + do not instrument reads of vtbl
 
 
 #include <plugin.h>
@@ -117,8 +122,10 @@ int                     plugin_init         (struct plugin_name_args* info,
   for (int i = 0; i != info->argc; i += 1) {
     if (strcmp(info->argv[i].key, "pause") == 0)
       do_pause = 1;
+    else if (strcmp(info->argv[i].key, "stat") == 0)
+      g_ctx.opt_stat = 1;
     else if (strcmp(info->argv[i].key, "debug") == 0)
-      g_ctx.opt_debug = 1;
+      g_ctx.opt_debug = 1, g_ctx.opt_stat = 1;
     else if (strcmp(info->argv[i].key, "sblock-size") == 0
         && atoi(info->argv[i].value) > 0)
       g_ctx.opt_sblock_size = atoi(info->argv[i].value);
@@ -129,7 +136,8 @@ int                     plugin_init         (struct plugin_name_args* info,
   if (do_pause) {
     char buf [16];
     printf("attach a debugger and press ENTER");
-    scanf("%1c", buf);
+    int rv = scanf("%1c", buf);
+    (void)rv;
   }
 
   static struct gimple_opt_pass pass_instrumentation = {{
@@ -145,7 +153,7 @@ int                     plugin_init         (struct plugin_name_args* info,
     0,                                    /* properties_provided */
     0,                                    /* properties_destroyed */
     0,                                    /* todo_flags_start */
-    TODO_dump_cgraph | TODO_dump_func     /* todo_flags_finish */
+    TODO_dump_cgraph | TODO_dump_func | TODO_verify_all | TODO_update_ssa | TODO_update_address_taken    /* todo_flags_finish */
   }};
 
   struct register_pass_info pass;

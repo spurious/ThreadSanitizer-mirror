@@ -16,6 +16,7 @@
 
 typedef struct relite_context_t {
   int                   opt_debug;
+  int                   opt_stat;
   int                   opt_sblock_size;
   char const*           opt_ignore;
 
