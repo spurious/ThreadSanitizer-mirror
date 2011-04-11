@@ -163,7 +163,10 @@ def gcc(default_cc, fallback_cc):
         if len(pieces) == 2 and pieces[0] in ['wrap', 'undefined']:
           ld_args.append('-Wl,--' + pieces[0] + ',' + pieces[1])
       ld_args += [TSAN_RTL[platform]]
-      ld_args += ['-lpthread', '-lbfd']
+      ld_args += ['-lpthread']
+      # Ubuntu doesn't have a package containing 32-bit libbfd version.
+      if platform == P64:
+        ld_args += ['-lbfd']
     ld_args += ['-o', src_obj]
     #print_args(ld_args)
     retcode = subprocess.call(ld_args)
