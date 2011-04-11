@@ -144,12 +144,7 @@ inline T INTERNAL_ANNOTATE_UNPROTECTED_READ(const volatile T &x) {
   return res;
 }
 
-string PcToRtnNameWithStats(uintptr_t pc, bool demangle) {
-  G_stats->pc_to_rtn_name++;
-  return PcToRtnName(pc, demangle);
-}
-
-static string RemovePrefixFromString(string str) {
+static string RemoveFilePrefix(string str) {
   for (size_t i = 0; i < G_flags->file_prefix_to_cut.size(); i++) {
     string prefix_to_cut = G_flags->file_prefix_to_cut[i];
     size_t pos = str.find(prefix_to_cut);
@@ -171,9 +166,11 @@ string PcToRtnNameAndFilePos(uintptr_t pc) {
   int line_no = -1;
   PcToStrings(pc, G_flags->demangle, &img_name, &rtn_name,
               &file_name, &line_no);
-  file_name = RemovePrefixFromString(file_name);
+  if (G_flags->demangle && !G_flags->full_stack_frames)
+    rtn_name = NormalizeFunctionName(rtn_name);
+  file_name = RemoveFilePrefix(file_name);
   if (file_name == "") {
-    return rtn_name + " " + RemovePrefixFromString(img_name);
+    return rtn_name + " " + RemoveFilePrefix(img_name);
   }
   char buff[10];
   snprintf(buff, sizeof(buff), "%d", line_no);
@@ -552,7 +549,6 @@ class StackTrace {
     for (size_t i = 0; i < n; i++) {
       if (!emb_trace[i]) break;
       string rtn_and_file = PcToRtnNameAndFilePos(emb_trace[i]);
-      string rtn = PcToRtnName(emb_trace[i], true);
       if (rtn_and_file.find("(below main) ") == 0 ||
           rtn_and_file.find("ThreadSanitizerStartThread ") == 0)
         break;
@@ -576,6 +572,7 @@ class StackTrace {
         break;
       // ... and after some default functions (see ThreadSanitizerParseFlags())
       // and some more functions specified via command line flag.
+      string rtn = NormalizeFunctionName(PcToRtnName(emb_trace[i], true));
       if (CutStackBelowFunc(rtn))
         break;
     }
@@ -5074,7 +5071,7 @@ struct Thread {
     if (call_stack_->size() <= offset_from_top)
       return "";
     uintptr_t pc = (*call_stack_)[call_stack_->size() - offset_from_top - 1];
-    return PcToRtnNameWithStats(pc, false);
+    return PcToRtnName(pc, false);
   }
 
   string CallStackToStringRtnOnly(int len) {
@@ -5837,7 +5834,7 @@ class ReportStorage {
         break;
 
       funcs_mangled.push_back(rtn);
-      funcs_demangled.push_back(PcToRtnName(pc, true));
+      funcs_demangled.push_back(NormalizeFunctionName(PcToRtnName(pc, true)));
       objects.push_back(img);
 
       if (rtn == "main")
@@ -7931,6 +7928,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   FindBoolFlag("suggest_happens_before_arcs", true, args,
                &G_flags->suggest_happens_before_arcs);
   FindBoolFlag("show_pc", false, args, &G_flags->show_pc);
+  FindBoolFlag("full_stack_frames", false, args, &G_flags->full_stack_frames);
   FindBoolFlag("free_is_write", true, args, &G_flags->free_is_write);
   FindBoolFlag("exit_after_main", false, args, &G_flags->exit_after_main);
 
@@ -8055,6 +8053,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   if (G_flags->full_output) {
     G_flags->announce_threads = true;
     G_flags->show_pc = true;
+    G_flags->full_stack_frames = true;
     G_flags->show_states = true;
     G_flags->file_prefix_to_cut.clear();
   }
@@ -8280,7 +8279,7 @@ bool ThreadSanitizerWantToInstrumentSblock(uintptr_t pc) {
 
 bool ThreadSanitizerWantToCreateSegmentsOnSblockEntry(uintptr_t pc) {
   string rtn_name;
-  rtn_name = PcToRtnNameWithStats(pc, false);
+  rtn_name = PcToRtnName(pc, false);
   if (G_flags->keep_history == 0)
     return false;
   return !(TripleVectorMatchKnown(g_ignore_lists->ignores_hist,
@@ -8303,14 +8302,14 @@ bool NOINLINE ThreadSanitizerIgnoreAccessesBelowFunction(uintptr_t pc) {
       return i->second;
   }
 
-  string rtn_name = PcToRtnNameWithStats(pc, false);
+  string rtn_name = PcToRtnName(pc, false);
   bool ret =
       TripleVectorMatchKnown(g_ignore_lists->ignores_r, rtn_name, "", "");
 
   if (DEBUG_MODE) {
     // Heavy test for NormalizeFunctionName: test on all possible inputs in
     // debug mode. TODO(timurrrr): Remove when tested.
-    PcToRtnName(pc, true);
+    NormalizeFunctionName(PcToRtnName(pc, true));
   }
 
   // Grab the lock again

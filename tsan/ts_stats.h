@@ -117,7 +117,7 @@ struct Stats : private ThreadLocalStats {
     Printf("   Publish: set: %'ld; get: %'ld; clear: %'ld\n",
            publish_set, publish_get, publish_clear);
 
-    Printf("   PcTo: all: %'ld rtn: %'ld\n", pc_to_strings, pc_to_rtn_name);
+    Printf("   PcTo: all: %'ld\n", pc_to_strings);
 
     Printf("   StackTrace: create: %'ld; delete %'ld\n",
            stack_trace_create, stack_trace_delete);
@@ -276,7 +276,7 @@ struct Stats : private ThreadLocalStats {
 
   uintptr_t publish_set, publish_get, publish_clear;
 
-  uintptr_t pc_to_strings, pc_to_rtn_name;
+  uintptr_t pc_to_strings;
 
   uintptr_t stack_trace_create, stack_trace_delete;
 

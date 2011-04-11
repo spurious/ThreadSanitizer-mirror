@@ -85,6 +85,7 @@ struct FLAGS {
   bool        show_valgrind_context;  // debug-only
   bool        suggest_happens_before_arcs;
   bool        show_pc;
+  bool        full_stack_frames;
   bool        color;  // Colorify terminal output.
   bool        html;  // Output in html format.
   bool        show_pid;

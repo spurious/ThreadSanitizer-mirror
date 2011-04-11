@@ -97,7 +97,7 @@ static char g_buff2[kBuffSize+1];
 string PcToRtnName(uintptr_t pc, bool demangle) {
   if (demangle) {
     if(VG_(get_fnname)(pc, (Char*)g_buff1, kBuffSize)) {
-      return NormalizeFunctionName(g_buff1);
+      return g_buff1;
     }
   } else {
     if(VG_(get_fnname_no_cxx_demangle)(pc, (Char*)g_buff1, kBuffSize)) {

@@ -296,7 +296,7 @@ string PcToRtnName(uintptr_t pc, bool demangle) {
       RTN rtn = RTN_FindByAddress(pc);
       if (RTN_Valid(rtn)) {
         res = demangle
-            ? NormalizeFunctionName(Demangle(RTN_Name(rtn).c_str()))
+            ? Demangle(RTN_Name(rtn).c_str())
             : RTN_Name(rtn);
       }
     }
