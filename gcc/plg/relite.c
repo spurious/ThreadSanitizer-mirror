@@ -31,15 +31,17 @@
 //TODO(dvyukov): if it's a call to a known function (malloc/free) ->
 // do not start new sblock
 
-//TODO(dvyukov): do not instrument loads of const vars/members/params
-
 //TODO(dvyukov): try to not instrument first write to a local var:
 // int x = 1; // even if 'x' is addressable, initialization can't race
+// at least eliminate stores to const variables
+
+//TODO(dvyukov): handle instrumentation of ADDR_EXPR
 
 
 //DONE:
 // + check handling of races in dtors
 // + do not instrument reads of vtbl
+// + do not instrument loads of const vars/members/params
 
 
 #include <plugin.h>

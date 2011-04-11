@@ -395,6 +395,23 @@ static int              is_vtbl_read        (tree                   expr,
 }
 
 
+static int              is_load_of_const    (tree                   expr,
+                                             int                    is_store) {
+  if (is_store == 0) {
+    if (TREE_CODE(expr) == COMPONENT_REF) {
+      expr = expr->exp.operands[1];
+    }
+    if (TREE_CODE(expr) == VAR_DECL
+        || TREE_CODE(expr) == PARM_DECL
+        || TREE_CODE(expr) == FIELD_DECL) {
+      if (TREE_READONLY(expr))
+        return 1;
+    }
+  }
+  return 0;
+}
+
+
 static void             instrument_mop      (relite_context_t*      ctx,
                                              bb_data_t*             bbd,
                                              gimple                 stmt,
@@ -444,6 +461,8 @@ static void             instrument_mop      (relite_context_t*      ctx,
     reason = "function result";
   } else if (tcode == PARM_DECL) {
     reason = "function parameter";
+  } else if (is_load_of_const(expr, is_store)) {
+    reason = "load of a const variable/parameter/field";
   } else if (is_vtbl_read(expr, is_store)) {
     reason = "vtbl read";
   } else if (tcode == COMPONENT_REF) {
