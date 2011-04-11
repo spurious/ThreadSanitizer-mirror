@@ -33,6 +33,8 @@
 // under the BSD license.
 
 // Parts of runtime library that interact with libbfd.
+// At the moment libbfd is disabled for the 32-bit version of the RTL, because
+// Ubuntu (our main target) doesn't have a package with the 32-bit libbfd.
 
 #include "tsan_rtl_lbfd.h"
 
@@ -60,7 +62,9 @@ PcToStringMap* ReadGlobalsFromImage() {
   CHECK(IN_RTL);
   string fname = GetSelfFilename();
   PcToStringMap *global_symbols = new map<uintptr_t, string>;
-
+#ifdef TSAN_RTL_X86
+  return global_symbols;
+#else
   bfd_init();
   bfd* abfd = bfd_openr(fname.c_str(), 0);
   if (abfd == 0) {
@@ -112,9 +116,13 @@ PcToStringMap* ReadGlobalsFromImage() {
     p += size;
   }
   return global_symbols;
+#endif  // TSAN_RTL_X86
 }
 
 bool BfdInit() {
+#ifdef TSAN_RTL_X86
+  return false;
+#else
   if (bfd_data != 0)
     return true;
   FILE* cmdline = fopen("/proc/self/cmdline", "rb");
@@ -157,11 +165,13 @@ bool BfdInit() {
   bfd_data->abfd = abfd;
   bfd_data->syms = syms;
   return true;
+#endif  // TSAN_RTL_X86
 }
 
 static void BfdFindAddressCallback(bfd* abfd,
                                    asection* section,
                                    void* data) {
+#ifdef TSAN_RTL_X64
   bfd_vma vma;
   bfd_size_type size;
   BfdSymbol* psi = (BfdSymbol*)data;
@@ -184,6 +194,7 @@ static void BfdFindAddressCallback(bfd* abfd,
                                      bfd_data->syms, psi->pc - vma,
                                      &psi->filename, &psi->functionname,
                                      &psi->line);
+#endif  // TSAN_RTL_X64
 }
 
 static void BfdTranslateAddress(void* xaddr,
@@ -192,6 +203,7 @@ static void BfdTranslateAddress(void* xaddr,
                                 char* buf_file,
                                 size_t buf_file_len,
                                 int* line) {
+#ifdef TSAN_RTL_X64
   char addr [(CHAR_BIT/4) * (sizeof(void*)) + 2] = {0};
   sprintf(addr, "%p", xaddr);
   BfdSymbol si = {0};
@@ -242,9 +254,11 @@ static void BfdTranslateAddress(void* xaddr,
                                        &si.line);
     } while (si.found);
   }
+#endif  // TSAN_RTL_X64
 }
 
 string BfdPcToRtnName(pc_t pc, bool demangle) {
+#ifdef TSAN_RTL_X64
   if (BfdInit() == false)
     return string();
   char buf_func [PATH_MAX + 1];
@@ -252,11 +266,15 @@ string BfdPcToRtnName(pc_t pc, bool demangle) {
                       buf_func, sizeof(buf_func)/sizeof(buf_func[0]) - 1,
                       0, 0, 0);
   return buf_func;
+#else
+  return "";
+#endif  // TSAN_RTL_X64
 }
 
 void BfdPcToStrings(pc_t pc, bool demangle,
                     string *img_name, string *rtn_name,
                     string *file_name, int *line_no) {
+#ifdef TSAN_RTL_X64
   if (BfdInit() == false)
     return;
   char buf_func [PATH_MAX + 1];
@@ -267,6 +285,7 @@ void BfdPcToStrings(pc_t pc, bool demangle,
                       line_no);
   rtn_name->assign(buf_func);
   file_name->assign(buf_file);
+#endif  // TSAN_RTL_X64
 }
 
 } // namespace tsan_rtl_lbfd
