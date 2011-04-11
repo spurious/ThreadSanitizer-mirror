@@ -233,13 +233,19 @@ size_t GetVmSizeInMb() {
 }
 
 static string StripTemplatesFromFunctionName(const string &fname) {
+  // Returns "" in case of error.
+
   string ret;
   size_t read_pointer = 0, braces_depth = 0;
 
   while (read_pointer < fname.size()) {
     size_t next_brace = fname.find_first_of("<>", read_pointer);
     if (next_brace == fname.npos) {
-      CHECK(braces_depth == 0);
+      if (braces_depth > 0) {
+        // This can happen on Visual Studio if we reach the ~2000 char limit.
+        CHECK(fname.size() > 256);
+        return "";
+      }
       ret += (fname.c_str() + read_pointer);
       break;
     }
@@ -281,41 +287,27 @@ static string StripTemplatesFromFunctionName(const string &fname) {
       read_pointer = next_brace + 1;
     } else if (fname[next_brace] == '>') {
       if (braces_depth == 0) {
-        // This IS possible at least for this function on Windows:
+        // Going to `braces_depth == -1` IS possible at least for this function on Windows:
         // "std::operator<<char,std::char_traits<char>,std::allocator<char> >".
-        // Return an empty string and let the caller decide.
-        if (DEBUG_MODE)
-          Printf("PANIC: `%s`\n", fname.c_str());
+        // Oh, well... Return an empty string and let the caller decide.
         return "";
       }
-      CHECK(braces_depth > 0);
       braces_depth--;
       read_pointer = next_brace + 1;
     } else
       CHECK(0);
   }
-  CHECK(braces_depth == 0);
-  CHECK(ret != "");
+  if (braces_depth != 0) {
+    CHECK(fname.size() > 256);
+    return "";
+  }
   return ret;
 }
 
-string NormalizeFunctionName(const string &demangled) {
-  if (demangled[1] == '[' && strchr("+-=", demangled[0]) != NULL) {
-    // Objective-C function
-    return demangled;
-  }
+static string StripParametersFromFunctionName(const string &demangled) {
+  // Returns "" in case of error.
 
-  if (demangled.find_first_of("<>()") == demangled.npos) {
-    // C function or a well-formatted function name.
-    return demangled;
-  }
-
-  if (demangled == "(below main)" || demangled == "(no symbols)")
-    return demangled;
-
-  string fname = StripTemplatesFromFunctionName(demangled);
-  if (fname.size() == 0)
-    return "(malformed frame)";
+  string fname = demangled;
 
   // Strip stuff like "(***)" and "(anonymous namespace)" -> they are tricky.
   size_t found = fname.npos;
@@ -358,7 +350,10 @@ string NormalizeFunctionName(const string &demangled) {
   while (read_pointer < fname.size()) {
     size_t next_brace = fname.find_first_of("()", read_pointer);
     if (next_brace == fname.npos) {
-      CHECK(braces_depth == 0);
+      if (braces_depth != 0) {
+        // Overflow?
+        return "";
+      }
       size_t _const = fname.find(" const", read_pointer);
       if (_const == fname.npos) {
         ret += (fname.c_str() + read_pointer);
@@ -390,9 +385,8 @@ string NormalizeFunctionName(const string &demangled) {
     } else
       CHECK(0);
   }
-  CHECK(braces_depth == 0 || demangled.size() > 256);
   if (braces_depth != 0)
-    return "(malformed frame)";
+    return "";
 
   // Special case: on Linux, Valgrind prepends the return type for template
   // functions. And on Windows we may see `scalar deleting destructor'.
@@ -401,8 +395,7 @@ string NormalizeFunctionName(const string &demangled) {
   // name.
   // Oh, well...
   size_t space_or_tick;
-  CHECK(ret != "");
-  while (1) {
+  while (ret != "") {
     space_or_tick = ret.find_first_of("` ");
     if (space_or_tick != ret.npos && ret[space_or_tick] == ' ' &&
         ret.substr(0, space_or_tick).find("operator") == string::npos) {
@@ -413,8 +406,41 @@ string NormalizeFunctionName(const string &demangled) {
       break;
     }
   }
-  CHECK(ret != "");
   return ret;
+}
+
+string NormalizeFunctionName(const string &demangled) {
+  if (demangled[1] == '[' && strchr("+-=", demangled[0]) != NULL) {
+    // Objective-C function
+    return demangled;
+  }
+
+  if (demangled.find_first_of("<>()") == demangled.npos) {
+    // C function or a well-formatted function name.
+    return demangled;
+  }
+
+  if (demangled == "(below main)" || demangled == "(no symbols)")
+    return demangled;
+
+  const char MALFORMED[] = "(malformed frame)";
+
+  string fname = StripTemplatesFromFunctionName(demangled);
+  if (fname.size() == 0) {
+    if (DEBUG_MODE)
+      Printf("PANIC: `%s`\n", demangled.c_str());
+    return MALFORMED;
+  }
+
+  fname = StripParametersFromFunctionName(fname);
+  if (fname.size() == 0) {
+    CHECK(demangled.size() >= 256);
+    if (DEBUG_MODE)
+      Printf("PANIC: `%s`\n", demangled.c_str());
+    return MALFORMED;
+  }
+
+  return fname;
 }
 
 void OpenFileWriteStringAndClose(const string &file_name, const string &str) {
