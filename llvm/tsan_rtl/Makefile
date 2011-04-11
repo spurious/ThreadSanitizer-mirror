@@ -6,7 +6,8 @@ SRC=tsan_rtl.cc
 ERRORLVL=-Werror
 ERRORLVL=-Werror -Wno-deprecated -Wno-unused-function
 TSAN_PATH=../../tsan
-DEFINES=
+DEFINES32=-DTSAN_RTL_X86
+DEFINES64=-DTSAN_RTL_X64
 RTL_DEPS=
 
 OBJS32=x86-ts_util.o x86-suppressions.o \
@@ -29,7 +30,8 @@ DA_FLAGS=$(COMMON_FLAGS) -DDYNAMIC_ANNOTATIONS_PROVIDE_RUNNING_ON_VALGRIND=0
 
 ifeq ($(DEBUG), 1)
   D=-debug
-  DEFINES+=-DDEBUG=1
+  DEFINES32+=-DDEBUG=1
+  DEFINES64+=-DDEBUG=1
   DA_FLAGS+=-DDYNAMIC_ANNOTATIONS_ENABLED=1
   COMMON_FLAGS+=-fno-inline
 else
@@ -73,30 +75,30 @@ $(TSAN_PATH)/ts_event_names.h:
 	make -C $(TSAN_PATH) ts_event_names.h
 
 tsan_rtl32.o: $(SRC) tsan_rtl.h $(RTL_DEPS)
-	$(CXX) $(SRC) $(FLAGS) -m32 $(ERRORLVL) $(DA_FLAGS) -Wall -c -o $(RTL_32_O) $(DEFINES) -DTSAN_RTL_X86
+	$(CXX) $(SRC) $(FLAGS) -m32 $(ERRORLVL) $(DA_FLAGS) -Wall -c -o $(RTL_32_O) $(DEFINES32) -DTSAN_RTL_X86
 
 tsan_rtl64.o: $(SRC) tsan_rtl.h $(RTL_DEPS)
-	$(CXX) $(SRC) $(FLAGS) -m64 $(ERRORLVL) $(DA_FLAGS) -Wall -c -o $(RTL_64_O) $(DEFINES) -DTSAN_RTL_X64
+	$(CXX) $(SRC) $(FLAGS) -m64 $(ERRORLVL) $(DA_FLAGS) -Wall -c -o $(RTL_64_O) $(DEFINES64) -DTSAN_RTL_X64
 
 
 x86-%.o:	%.cc $(TS_HEADERS) $(FOREIGN_HEADERS)
-	$(CXX) -m32 -o $@ -c $< $(ERRORLVL) $(FLAGS) $(DEFINES)
+	$(CXX) -m32 -o $@ -c $< $(ERRORLVL) $(FLAGS) $(DEFINES32)
 
 x86-%.o:	$(TSAN_PATH)/%.cc $(TS_HEADERS) $(FOREIGN_HEADERS)
-	$(CXX) -m32 -o $@ -c $< $(ERRORLVL) $(DA_FLAGS) $(DEFINES)
+	$(CXX) -m32 -o $@ -c $< $(ERRORLVL) $(DA_FLAGS) $(DEFINES32)
 
 x86-dynamic_annotations.o:	$(TSAN_PATH)/../dynamic_annotations/dynamic_annotations.c $(TS_HEADERS) $(FOREIGN_HEADERS)
-	$(CC) -m32 -o $@ -c $< $(ERRORLVL) $(DA_FLAGS) $(DEFINES)
+	$(CC) -m32 -o $@ -c $< $(ERRORLVL) $(DA_FLAGS) $(DEFINES32)
 
 
 amd64-%.o:	%.cc $(TS_HEADERS) $(FOREIGN_HEADERS)
-	$(CXX) -m64 -o $@ -c $< $(ERRORLVL) $(FLAGS) $(DEFINES)
+	$(CXX) -m64 -o $@ -c $< $(ERRORLVL) $(FLAGS) $(DEFINES64)
 
 amd64-%.o:	$(TSAN_PATH)/%.cc $(TS_HEADERS) $(FOREIGN_HEADERS)
-	$(CXX) -m64 -o $@ -c $< $(ERRORLVL) $(DA_FLAGS) $(DEFINES)
+	$(CXX) -m64 -o $@ -c $< $(ERRORLVL) $(DA_FLAGS) $(DEFINES64)
 
 amd64-dynamic_annotations.o:	$(TSAN_PATH)/../dynamic_annotations/dynamic_annotations.c $(TS_HEADERS) $(FOREIGN_HEADERS)
-	$(CC) -m64 -o $@ -c $< $(ERRORLVL) $(DA_FLAGS) $(DEFINES)
+	$(CC) -m64 -o $@ -c $< $(ERRORLVL) $(DA_FLAGS) $(DEFINES64)
 
 clean:
 	rm -f *.o *.a
