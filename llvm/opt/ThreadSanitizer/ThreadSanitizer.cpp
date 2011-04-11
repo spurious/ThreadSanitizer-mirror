@@ -1647,7 +1647,7 @@ bool TsanOnlineInstrument::makeTracePassport(Trace &trace) {
         // instead of ThreadSanitizerHandleTrace. In this case we'll need to
         // set |create_sblock_| sometimes.
         Constant *mop_pc = getInstructionAddr(FunctionMopCount, BI,
-                                              Int64);
+                                              PlatformInt);
         // Manually fill the union fields.
         // TODO(glider): a packed structure should be better.
         Constant *mop =
