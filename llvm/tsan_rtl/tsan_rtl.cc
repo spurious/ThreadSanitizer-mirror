@@ -2736,6 +2736,12 @@ string GetSelfFilename() {
 void ReadElf() {
   string fname = GetSelfFilename();
   int fd = open(fname.c_str(), 0);
+  if (fd == -1) {
+    perror("open");
+    Printf("Could not open %s. Debug info will be unavailable.\n",
+           fname.c_str());
+    return;
+  }
   struct stat st;
   fstat(fd, &st);
   DDPrintf("Reading debug info from %s (%d bytes)\n", fname, st.st_size);
@@ -2743,7 +2749,7 @@ void ReadElf() {
                                  PROT_READ, MAP_PRIVATE, fd, 0);
   if (map == MAP_FAILED) {
     perror("mmap");
-    Printf("Could not map %s. Debug info will be unavailable.", fname.c_str());
+    Printf("Could not map %s. Debug info will be unavailable.\n", fname.c_str());
     return;
   }
 
