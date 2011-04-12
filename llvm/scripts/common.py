@@ -63,7 +63,7 @@ def gcc(default_cc, fallback_cc):
   source_extensions = re.compile(".*(\.cc$|\.cpp$|\.c$|\.S$|\.cxx$)")
   obj_extensions = re.compile(".*(\.a$|\.o$)")
   drop_args = ['-c', '-std=c++0x', '-Werror', '-finstrument-functions',
-  '-Wl,--gc-sections']
+  '-Wl,--gc-sections', '-Wheader-hygiene']
   drop_re = re.compile('^-Wno.*')
 
   from_asm = False
@@ -143,10 +143,13 @@ def gcc(default_cc, fallback_cc):
   filename = ""
   if src_file:
     filename = '.'.join(src_file.split('.')[:-1])
-  src_bitcode = filename + '.ll'
-  src_tmp = filename + '-tmp.ll'
-  src_instrumented = filename + '-instr.ll'
-  src_asm = filename + '.S'
+  p_suffix = '-' + platform
+  src_bitcode = filename + p_suffix +'.ll'  # filename-x86.ll
+  src_tmp = filename + '-tmp' + p_suffix + '.ll'  # filename-tmp-x86.ll
+  # filename-instr-x86.ll
+  src_instrumented = filename + '-instr' + p_suffix + '.ll'
+  # filename-x86.S
+  src_asm = filename + p_suffix + '.S'
   if src_obj is None:
     src_obj = os.path.basename(filename) + '.o'
   src_exe = filename
