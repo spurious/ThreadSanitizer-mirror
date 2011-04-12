@@ -146,7 +146,8 @@ __thread  sigset_t glob_sig_blocked, glob_sig_old;
 // We don't initialize these.
 struct sigaction signal_actions[NSIG];  // protected by GIL
 __thread siginfo_t pending_signals[NSIG];
-__thread bool pending_signal_flags[NSIG];
+typedef enum { PSF_NONE = 0, PSF_SIGNAL, PSF_SIGACTION } pending_signal_flag_t;
+__thread pending_signal_flag_t pending_signal_flags[NSIG];
 __thread bool have_pending_signals;
 
 // Stats {{{1
@@ -525,6 +526,7 @@ INLINE void init_debug() {
   if (dbg_info) {
     ReadDbgInfo(dbg_info);
   } else {
+    data_sections = new std::map<uintptr_t, uintptr_t>;
     ReadElf();
     AddWrappersDbgInfo();
   }
@@ -619,7 +621,7 @@ bool initialize() {
   }
 
   for (int sig = 0; sig < NSIG; sig++) {
-    pending_signal_flags[sig] = false;
+    pending_signal_flags[sig] = PSF_NONE;
   }
   have_pending_signals = false;
 
@@ -781,7 +783,7 @@ void *pthread_callback(void *arg) {
   }
 
   for (int sig = 0; sig < NSIG; sig++) {
-    pending_signal_flags[sig] = false;
+    pending_signal_flags[sig] = PSF_NONE;
   }
   have_pending_signals = false;
 
@@ -2312,10 +2314,10 @@ int __wrap_epoll_wait(int epfd, struct epoll_event *events,
 
 // Signal handling {{{1
 /* Initial support for signals. Each user signal handler is stored in
- signal_actions[] and RTLSignalHandler is installed instead. When a signal is
- received, it is put into a thread-local array of pending signals (see the
- comments in RTLSignalHandler). Each time we're about to release the global
- lock, we handle all the pending signals.
+ signal_actions[] and RTLSignalHandler/RTLSignalSigaction is installed instead.
+ When a signal is  received, it is put into a thread-local array of pending
+ signals (see the comments in RTLSignalHandler). Each time we're about to release
+ the global lock, we handle all the pending signals.
 */
 INLINE int unsafe_clear_pending_signals() {
   if (!have_pending_signals) return 0;
@@ -2325,8 +2327,13 @@ INLINE int unsafe_clear_pending_signals() {
       DDPrintf("[T%d] Pending signal: %d\n", GetTid(), sig);
       sigfillset(&glob_sig_blocked);
       pthread_sigmask(SIG_BLOCK, &glob_sig_blocked, &glob_sig_old);
-      pending_signal_flags[sig] = false;
-      signal_actions[sig].sa_sigaction(sig, &pending_signals[sig], NULL);
+      pending_signal_flag_t type = pending_signal_flags[sig];
+      pending_signal_flags[sig] = PSF_NONE;
+      if (type == PSF_SIGACTION) {
+        signal_actions[sig].sa_sigaction(sig, &pending_signals[sig], NULL);
+      } else {  // type == PSF_SIGNAL
+        signal_actions[sig].sa_handler(sig);
+      }
       pthread_sigmask(SIG_SETMASK, &glob_sig_old, &glob_sig_old);
       result++;
     }
@@ -2336,7 +2343,32 @@ INLINE int unsafe_clear_pending_signals() {
 }
 
 extern "C"
-void RTLSignalHandler(int sig, siginfo_t* info, void* context) {
+void RTLSignalHandler(int sig) {
+  /* TODO(glider): The code under "#if 0" assumes that it's legal to handle
+   * signals on the thread running client code. In fact ThreadSanitizer calls
+   * some non-reentrable routines, so if a signal is received when the client
+   * code is inside them a deadlock may happen. A temporal solution is to always
+   * enqueue the signals. In the future we can get rid of such calls within
+   * ThreadSanitzer. */
+#if 0
+  if (IN_RTL == 0) {
+#else
+  if (0) {
+#endif
+    // We're in the client code. Call the handler.
+    signal_actions[sig].sa_handler(sig);
+  } else {
+    // We're in TSan code. Let's enqueue the signal
+    if (!pending_signal_flags[sig]) {
+      // pending_signals[sig] is undefined.
+      pending_signal_flags[sig] = PSF_SIGNAL;
+      have_pending_signals = true;
+    }
+  }
+}
+
+extern "C"
+void RTLSignalSigaction(int sig, siginfo_t* info, void* context) {
   /* TODO(glider): The code under "#if 0" assumes that it's legal to handle
    * signals on the thread running client code. In fact ThreadSanitizer calls
    * some non-reentrable routines, so if a signal is received when the client
@@ -2354,7 +2386,7 @@ void RTLSignalHandler(int sig, siginfo_t* info, void* context) {
     // We're in TSan code. Let's enqueue the signal
     if (!pending_signal_flags[sig]) {
       pending_signals[sig] = *info;
-      pending_signal_flags[sig] = true;
+      pending_signal_flags[sig] = PSF_SIGACTION;
       have_pending_signals = true;
     }
   }
@@ -2373,7 +2405,11 @@ int __wrap_sigaction(int signum, const struct sigaction *act,
   } else {
     signal_actions[signum] = *act;
     struct sigaction new_act = *act;
-    new_act.sa_sigaction = RTLSignalHandler;
+    if (new_act.sa_flags & SA_SIGINFO) {
+      new_act.sa_sigaction = RTLSignalSigaction;
+    } else {
+      new_act.sa_handler = RTLSignalHandler;
+    }
     result = __real_sigaction(signum, &new_act, oldact);
   }
   RPut(RTN_EXIT, tid, pc, 0, 0);
@@ -2705,6 +2741,11 @@ void ReadElf() {
   DDPrintf("Reading debug info from %s (%d bytes)\n", fname, st.st_size);
   char* map = (char*)__real_mmap(NULL, st.st_size,
                                  PROT_READ, MAP_PRIVATE, fd, 0);
+  if (map == MAP_FAILED) {
+    perror("mmap");
+    Printf("Could not map %s. Debug info will be unavailable.", fname.c_str());
+    return;
+  }
 
 #ifdef TSAN_RTL_X86
   typedef Elf32_Ehdr Elf_Ehdr;
@@ -2731,7 +2772,6 @@ void ReadElf() {
   static_tls_size = 2048;
 
   ENTER_RTL();
-  data_sections = new std::map<uintptr_t, uintptr_t>;
   for (int i = 0; i < shnum; ++i) {
     Elf_Shdr* shdr = shdrs + i;
     Elf_Off off = shdr->sh_offset;
