@@ -168,6 +168,9 @@ static void             instr_mop           (struct relite_context_t* ctx,
   while (TREE_CODE(expr_type) == ARRAY_TYPE)
     expr_type = TREE_TYPE(expr_type);
   tree expr_size = TYPE_SIZE(expr_type);
+//!!! use:
+//#define TREE_INT_CST_LOW(NODE) (TREE_INT_CST (NODE).low)
+//#define TREE_INT_CST_HIGH(NODE) (TREE_INT_CST (NODE).high)
   double_int size = tree_to_double_int(expr_size);
   gcc_assert(size.high == 0 && size.low != 0);
   size.low = (size.low / __CHAR_BIT__);
@@ -286,24 +289,119 @@ static char const*      decl_name           (tree decl) {
 }
 
 
+static char const*      decl_name_as        (tree decl) {
+  if (decl != 0 && DECL_P(decl)) {
+    tree id = DECL_ASSEMBLER_NAME(decl);
+    if (id) {
+      char const* name = IDENTIFIER_POINTER(id);
+      if (name)
+        return name;
+    }
+  }
+  return "<unknown>";
+}
+
+
+static char*            str_append          (char*                  pos,
+                                             char const*            end,
+                                             char const*            str) {
+  while (pos != end && *str != 0) {
+    *pos = *str;
+    pos += 1;
+    str += 1;
+  }
+  return pos;
+}
+
+
+static char*            str_append_len      (char*                  pos,
+                                             char const*            end,
+                                             char const*            str,
+                                             char const*            str_end) {
+  while (pos != end && str != str_end) {
+    *pos = *str;
+    pos += 1;
+    str += 1;
+  }
+  return pos;
+}
+
+
+static char*            dump_tree_impl      (char*                  pos,
+                                             char const*            end,
+                                             const_tree             expr) {
+  if (TREE_CODE(expr) == SSA_NAME)
+    expr = expr->ssa_name.var;
+
+  if (DECL_P(expr)) {
+    tree id = DECL_NAME(expr);
+    if (id != 0) {
+      char const* name = IDENTIFIER_POINTER(id);
+      if (name != 0) {
+        char* dot = strrchr(name, '.');
+        if (dot == 0)
+          pos = str_append(pos, end, name);
+        else
+          pos = str_append_len(pos, end, name, dot);
+        return pos;
+      }
+    }
+    pos = str_append(pos, end, "tmp");
+  }
+
+  else if (TREE_CODE(expr) == COMPONENT_REF) {
+    const_tree comp =  expr->exp.operands[0];
+    if (TREE_CODE(comp) == INDIRECT_REF) {
+      pos = dump_tree_impl(pos, end, comp->exp.operands[0]);
+      pos = str_append(pos, end, "->");
+    } else {
+      pos = dump_tree_impl(pos, end, comp);
+      pos = str_append(pos, end, ".");
+    }
+    pos = dump_tree_impl(pos, end, expr->exp.operands[1]);
+  }
+
+  else if (TREE_CODE(expr) == INDIRECT_REF) {
+    pos = str_append(pos, end, "(*");
+    pos = dump_tree_impl(pos, end, expr->exp.operands[0]);
+    pos = str_append(pos, end, ")");
+  }
+
+  return pos;
+}
+
+
+static char const*      dump_tree           (tree expr) {
+  static char buf [1024];
+  char* pos = buf;
+  char* end = buf + sizeof(buf);
+  pos = dump_tree_impl(pos, end - 1, expr);
+  gcc_assert(pos < end);
+  pos[0] = 0;
+  return buf;
+}
+
+
 static void             dbg_dump_mop        (relite_context_t* ctx,
                                              char const* what,
                                              location_t loc,
                                              tree expr,
                                              tree expr_ssa,
                                              char const* reason) {
+  if (ctx->opt_debug == 0)
+    return;
   expanded_location eloc = expand_location(loc);
-  dbg(ctx, "%s:%d:%d: %s '%s' code=%s%s type=%s: %s %s",
-      eloc.file, eloc.line, eloc.column,
-      what, decl_name(expr),
+  printf("%s:%d:%d: %s '%s' code=%s type=%s: %s %s\n",
+      eloc.file, eloc.line, eloc.column, what,
+      dump_tree(expr),
       tree_code_name[TREE_CODE(expr)],
-      (expr_ssa ? "(ssa)" : ""),
       tree_code_name[TREE_CODE(TREE_TYPE(expr))],
       (reason == 0 ? "INSTRUMENTED" : "IGNORED"),
       reason ?: "");
 }
 
 
+/*
 static void             dump_instr_seq      (relite_context_t* ctx,
                                              char const* what,
                                              gimple_seq* seq,
@@ -317,6 +415,7 @@ static void             dump_instr_seq      (relite_context_t* ctx,
     dbg(ctx, "  gimple %s", gimple_code_name[gc]);
   }
 }
+*/
 
 
 static void             set_location        (gimple_seq seq,
@@ -412,6 +511,23 @@ static int              is_load_of_const    (tree                   expr,
 }
 
 
+static int              is_fake_mop         (const_tree expr) {
+  // various constant literals
+  if (TREE_CODE_CLASS(TREE_CODE(expr)) == tcc_constant)
+    return 1;
+
+  // compiler-emitted artificial variables
+  if (DECL_ARTIFICIAL(expr))
+    return 1;
+
+  // store to function result
+  if (TREE_CODE(expr) == RESULT_DECL)
+    return 1;
+
+  return 0;
+}
+
+
 static void             instrument_mop      (relite_context_t*      ctx,
                                              bb_data_t*             bbd,
                                              gimple                 stmt,
@@ -419,19 +535,22 @@ static void             instrument_mop      (relite_context_t*      ctx,
                                              location_t             loc,
                                              tree                   expr,
                                              int                    is_store) {
-  if (is_store)
-    ctx->stat_store_total += 1;
-  else
-    ctx->stat_load_total += 1;
-
-  char const* reason = 0;
-
   // map SSA name to real name
   tree expr_ssa = 0;
   if (TREE_CODE(expr) == SSA_NAME) {
     expr_ssa = expr;
     expr = SSA_NAME_VAR(expr);
   }
+
+  if (is_fake_mop(expr))
+    return;
+
+  if (is_store)
+    ctx->stat_store_total += 1;
+  else
+    ctx->stat_load_total += 1;
+
+  char const* reason = 0;
   enum tree_code const tcode = TREE_CODE(expr);
 
   // Below are things we do NOT want to instrument.
@@ -457,9 +576,8 @@ static void             instrument_mop      (relite_context_t*      ctx,
     // as of now crashes compilation
     //TODO(dvyukov): handle it correctly
     reason = "constructor expression";
-  } else if (tcode == RESULT_DECL) {
-    reason = "function result";
   } else if (tcode == PARM_DECL) {
+    //TODO(dvyukov): need to instrument it
     reason = "function parameter";
   } else if (is_load_of_const(expr, is_store)) {
     reason = "load of a const variable/parameter/field";
@@ -496,7 +614,7 @@ static void             instrument_mop      (relite_context_t*      ctx,
 
   tree const dtor_vptr_expr = is_dtor_vptr_store(stmt, expr, is_store);
 
-  dbg_dump_mop(ctx, dtor_vptr_expr ? "store to vptr in dtor" :
+  dbg_dump_mop(ctx, dtor_vptr_expr ? "write to vptr in dtor" :
       is_store ? "store to" : "load of",
       loc, expr, expr_ssa, reason);
 
@@ -543,9 +661,11 @@ static void             instrument_mop      (relite_context_t*      ctx,
     instr_vptr_store(ctx, expr, dtor_vptr_expr, loc,
                           is_sblock, &instr_seq);
   assert(instr_seq != 0);
+  /*
   dump_instr_seq(ctx,
                  (is_store ? "after store" : "after load"),
                  &instr_seq, loc);
+  */
   set_location(instr_seq, loc);
   if (is_gimple_call(stmt) && is_store == 1)
     gsi_insert_seq_after(gsi, instr_seq, GSI_NEW_STMT);
@@ -561,11 +681,12 @@ static void             handle_gimple       (relite_context_t* ctx,
   gimple stmt = gsi_stmt(*gsi);
   location_t loc = gimple_location(stmt);
   expanded_location eloc = expand_location(loc);
-  dbg(ctx, "%s:%d:%d: processing gimple %s",
+  dbg(ctx, "%s:%d:%d: processing %s",
       eloc.file, eloc.line, eloc.column, gimple_code_name[gimple_code(stmt)]);
 
   enum gimple_code const gcode = gimple_code(stmt);
   switch (gcode) {
+    //TODO(dvyukov): handle GIMPLE_COND
     case GIMPLE_CALL: {
       // Handle call arguments as loads
       for (int i = 0; i != gimple_call_num_args(stmt); i += 1) {
@@ -583,7 +704,7 @@ static void             handle_gimple       (relite_context_t* ctx,
       instr_call(ctx, fndecl, loc, &pre_call_gseq);
       if (pre_call_gseq != 0) {
         ctx->func_calls += 1;
-        dump_instr_seq(ctx, "before call", &pre_call_gseq, loc);
+        //dump_instr_seq(ctx, "before call", &pre_call_gseq, loc);
         set_location(pre_call_gseq, loc);
         gsi_insert_seq_before(gsi, pre_call_gseq, GSI_SAME_STMT);
       }
@@ -723,8 +844,8 @@ void                    relite_pass         (relite_context_t* ctx) {
   if (ctx->ignore_file != 0)
     return;
 
-  char const* func_name = decl_name(cfun->decl);
-  dbg(ctx, "\nPROCESSING FUNCTION '%s'", func_name);
+  char const* func_name = decl_name_as(cfun->decl);
+  dbg(ctx, "PROCESSING FUNCTION '%s'", func_name);
   ctx->stat_func_total += 1;
   ctx->func_calls = 0;
   ctx->func_mops = 0;
@@ -757,7 +878,7 @@ void                    relite_pass         (relite_context_t* ctx) {
       if (!gsi_end_p(first_gsi)) {
         gimple first_stmt = gsi_stmt(first_gsi);
         location_t loc = gimple_location(first_stmt);
-        dump_instr_seq(ctx, "at function start", &pre_func_seq, loc);
+        //dump_instr_seq(ctx, "at function start", &pre_func_seq, loc);
         set_location(pre_func_seq, loc);
       }
       entry_bb = split_edge(entry_edge);
@@ -780,7 +901,7 @@ void                    relite_pass         (relite_context_t* ctx) {
 
         if (gimple_code(stmt) == GIMPLE_RETURN) {
           if (post_func_seq != 0) {
-            dump_instr_seq(ctx, "at function end", &post_func_seq, loc);
+            //dump_instr_seq(ctx, "at function end", &post_func_seq, loc);
             set_location(post_func_seq, loc);
             gsi_insert_seq_before(&gsi, post_func_seq, GSI_SAME_STMT);
           }
@@ -788,6 +909,8 @@ void                    relite_pass         (relite_context_t* ctx) {
       }
     }
   }
+
+  dbg(ctx, " ");
 }
 
 
