@@ -50,6 +50,7 @@ typedef std::vector<test_desc_t> test_list_t;
 
 void                    read                (...) {}
 void                    addr                (void const volatile*) {}
+int                     init                () {return 0;}
 
 
 void                    frontend_mop_cb     (mop_desc_t const& mop) {
@@ -162,6 +163,7 @@ int main() {
   test_list_t test_list;
   parse_source("test_source.cc", test_list);
   
+  int failed_count = 0;
   for (size_t test_idx = 0; test_idx != test_list.size(); test_idx += 1) {
     test_desc_t& test = test_list[test_idx];
     int fill_len = 40 - test.name.length();
@@ -226,9 +228,13 @@ int main() {
     
     if (ec == 0)
       std::cout << "OK";
+    else 
+      failed_count += 1;
     std::cout << std::endl;
   }
  
+  std::cout << "failed/total " << failed_count << "/" << test_list.size() << std::endl;
+
   return 0;
 }
 

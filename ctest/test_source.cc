@@ -28,6 +28,7 @@ which can be repeated several times but optional"
 
 // Some helper functions for tests:
 void read(...); // as-if reads a variable
+int  init(); // generates some random value
 void addr(void const volatile*); // makes a var addressable
 
 
@@ -44,7 +45,7 @@ void test() {
 
 namespace local_addressable {
 void test() {
-  int var1;
+  int volatile var1;
   addr(&var1);
   var1 = 0;         //ST+(4)
   read(var1);       //LD-(4)
@@ -58,11 +59,12 @@ void test() {
 namespace vptr_load {
 void test() {
   struct X {
+    X() {}          //ST+(ptr)
     virtual void foo() {}
     virtual void bar() {}
   };
 
-  X* x = new X;     //ST+(ptr)
+  X* x = new X;
   x->foo();         //LD+(ptr)
   x->bar();         //LD+(ptr)
 }
@@ -107,6 +109,136 @@ void test() {
   (void)tmp;
 }
 }
+
+
+namespace tailcall {
+void tailcall() __attribute__((noinline));
+void tailcall() {
+  volatile int var = 0;
+}
+
+void test() {
+  tailcall();
+}
+}
+
+
+namespace constructor_expr {
+struct X {
+  int x;
+  int y;
+};
+
+void test() {
+  int x = init();   //ST
+  addr(&x);
+  int y = init();   //ST
+  addr(&y);
+  X xx = {x, y};    //LD //LD
+  read(xx.x, xx.y);
+}
+}
+
+
+namespace addressable_parameter {
+void foo(int p) {
+  addr(&p);
+  p = 1;            //ST
+}
+
+void test() {
+  foo(0);
+}
+}
+
+
+namespace mop_in_condition {
+void test() {
+  int var1;
+  int volatile var2;
+  addr(&var1);
+  if (var1)         //LD
+    var2 = 0;
+  else 
+    var2 = 1;
+}
+}
+
+
+namespace array_ref {
+void test() {
+  int arr [10];
+  addr(arr);
+  arr[1] = 1;       //ST
+  arr[2] = 2;       //ST
+}
+}
+
+
+namespace induced_store {
+void foo(int* arr, int count, int* var) {
+  for (int i = 0; i != count; i += 1) {
+    if (arr[i])
+      *var += 1;
+  }
+}
+
+void test() {
+  int arr [10];
+  addr(arr);
+  int var;
+  addr(&var);
+  foo(arr, init(), &var);
+}
+}
+
+
+namespace vptr_store_static {
+struct X {
+  X() {}            //ST+(ptr)
+  virtual void foo() {}
+  virtual void bar() {}
+  virtual ~X() {}   //ST+(ptr)
+};
+
+struct Y : X {
+  Y() {}            //ST+(ptr)
+  virtual ~Y() {}   //LD+(ptr)
+};
+
+void test() {
+  {Y y;}
+}
+}
+
+
+namespace vptr_store_dynamic {
+struct X {
+  X() {}            //ST+(ptr)
+  virtual void foo() {}
+  virtual void bar() {}
+  virtual ~X() {}   //ST+(ptr)
+};
+
+struct Y : X {
+  Y() {}            //ST+(ptr)
+  virtual ~Y() {}   //LD+(ptr)
+};
+
+void test() {
+  X* x = new Y;
+  delete x;         //LD+(ptr)
+}
+}
+
+
+
+
+
+
+
+
+
 
 
 

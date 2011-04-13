@@ -1,0 +1,1 @@
+/home/dvyukov/gcc-dehydra/installed/bin/g++ -c -g test_source.cc -fplugin=/home/dvyukov/tsan/gcc/plg/Debug/librelite.so -include/home/dvyukov/tsan/gcc/plg/relite_rt.h -O1 -fno-inline -fno-optimize-sibling-calls -fno-exceptions -fplugin-arg-librelite-debug
