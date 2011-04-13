@@ -37,6 +37,8 @@
 // Ubuntu (our main target) doesn't have a package with the 32-bit libbfd.
 
 #include "tsan_rtl_lbfd.h"
+#include <bfd.h>
+#include <unistd.h>
 
 namespace demangle { // name clash with 'basename' from <string.h>
 # include <demangle.h>
@@ -57,10 +59,20 @@ struct BfdSymbol {
   bfd_boolean                   found;
 };
 
+static string GetExecutableFileName() {
+  FILE* cmdline = fopen("/proc/self/cmdline", "rb");
+  if (cmdline == 0)
+    return string();
+  char buf [PATH_MAX + 1];
+  if (fread(buf, 1, sizeof(buf)/sizeof(buf[0]) - 1, cmdline) <= 0)
+    buf[0] = 0;
+  fclose(cmdline);
+  return buf;  
+}
+
 // TODO(glider): unify all code that operates BFD.
-PcToStringMap* ReadGlobalsFromImage() {
-  CHECK(IN_RTL);
-  string fname = GetSelfFilename();
+PcToStringMap* ReadGlobalsFromImage(bool(*IsAddrFromDataSections)(uintptr_t)) {
+  string fname = GetExecutableFileName();
   PcToStringMap *global_symbols = new map<uintptr_t, string>;
 #ifdef TSAN_RTL_X86
   return global_symbols;
@@ -107,7 +119,7 @@ PcToStringMap* ReadGlobalsFromImage() {
       // Some globals, e.g. rtl_debug_info* or _GLOBAL_OFFSET_TABLE_, are not
       // interesting for us, because they don't belong to the list of known data
       // sections.
-      if (IsAddrFromDataSections(addr)) {
+      if (IsAddrFromDataSections && IsAddrFromDataSections(addr)) {
         (*global_symbols)[addr] = bfd_asymbol_name(sym);
         DDPrintf("name: %s, value: %p\n",
                  bfd_asymbol_name(sym), addr);
@@ -125,16 +137,8 @@ bool BfdInit() {
 #else
   if (bfd_data != 0)
     return true;
-  FILE* cmdline = fopen("/proc/self/cmdline", "rb");
-  if (cmdline == 0)
-    return false;
-  char buf [PATH_MAX + 1];
-  if (fread(buf, 1, sizeof(buf)/sizeof(buf[0]) - 1, cmdline) <= 0) {
-    fclose(cmdline);
-    return false;
-  }
   bfd_init();
-  bfd* abfd = bfd_openr(buf, 0);
+  bfd* abfd = bfd_openr(GetExecutableFileName().c_str(), 0);
   if (abfd == 0)
     return false;
   if (bfd_check_format(abfd, bfd_archive)) {
@@ -283,9 +287,14 @@ void BfdPcToStrings(pc_t pc, bool demangle,
                       buf_func, sizeof(buf_func)/sizeof(buf_func[0]) - 1,
                       buf_file, sizeof(buf_file)/sizeof(buf_file[0]) - 1,
                       line_no);
-  rtn_name->assign(buf_func);
-  file_name->assign(buf_file);
+  if (rtn_name != 0)
+    rtn_name->assign(buf_func);
+  if (file_name != 0)
+    file_name->assign(buf_file);
 #endif  // TSAN_RTL_X64
 }
 
 } // namespace tsan_rtl_lbfd
+
+
+

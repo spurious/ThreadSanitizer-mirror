@@ -37,12 +37,9 @@
 
 #include "tsan_rtl.h"
 
-#include <bfd.h>
-#include <unistd.h>
-
 namespace tsan_rtl_lbfd {
 
-PcToStringMap* ReadGlobalsFromImage();
+PcToStringMap* ReadGlobalsFromImage(bool(*IsAddrFromDataSections)(uintptr_t));
 bool BfdInit();
 
 string BfdPcToRtnName(pc_t pc, bool demangle);

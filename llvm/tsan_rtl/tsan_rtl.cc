@@ -531,7 +531,8 @@ INLINE void init_debug() {
     AddWrappersDbgInfo();
   }
   ENTER_RTL();
-  global_symbols = tsan_rtl_lbfd::ReadGlobalsFromImage();
+  global_symbols = tsan_rtl_lbfd::ReadGlobalsFromImage(
+      IsAddrFromDataSections);
   CHECK(global_symbols);
   LEAVE_RTL();
   DBG_INIT = 1;
