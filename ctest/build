@@ -1,6 +1,6 @@
 g++ -c -g driver.cc
 g++ -c -g -I../tsan -I../dynamic_annotations gcc_frontend.cc
-g++ -c -g -I../tsan -I../dynamic_annotations ../llvm/tsan_rtl/tsan_rtl_lbfd.cc
+g++ -c -g -I../tsan -I../dynamic_annotations -DTSAN_RTL_X64 ../llvm/tsan_rtl/tsan_rtl_lbfd.cc
 /home/dvyukov/gcc-dehydra/installed/bin/g++ -c -g test_source.cc -fplugin=/home/dvyukov/tsan/gcc/plg/Debug/librelite.so -include/home/dvyukov/tsan/gcc/plg/relite_rt.h -fno-inline -fno-optimize-sibling-calls -fno-exceptions
 g++ -o ctest -export-dynamic driver.o gcc_frontend.o tsan_rtl_lbfd.o test_source.o -ldl -lbfd
 
