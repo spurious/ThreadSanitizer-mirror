@@ -423,7 +423,7 @@ string NormalizeFunctionName(const string &demangled) {
   if (demangled == "(below main)" || demangled == "(no symbols)")
     return demangled;
 
-  const char MALFORMED[] = "(malformed frame)";
+  const char* const MALFORMED = "(malformed frame)";
 
   string fname = StripTemplatesFromFunctionName(demangled);
   if (fname.size() == 0) {
