@@ -139,18 +139,23 @@ bool BfdInit() {
     return true;
   bfd_init();
   bfd* abfd = bfd_openr(GetExecutableFileName().c_str(), 0);
-  if (abfd == 0)
+  if (abfd == 0) {
+    bfd_perror("bfd_openr() failed");
     return false;
+  }
   if (bfd_check_format(abfd, bfd_archive)) {
+    bfd_perror("bfd_check_format() failed");
     bfd_close(abfd);
     return false;
   }
   char** matching = NULL;
   if (!bfd_check_format_matches(abfd, bfd_object, &matching)) {
+    bfd_perror("bfd_check_format_matches() failed");
     bfd_close(abfd);
     return false;
   }
   if ((bfd_get_file_flags(abfd) & HAS_SYMS) == 0) {
+    bfd_perror("bfd_get_file_flags() failed");
     bfd_close(abfd);
     return false;
   }
@@ -161,6 +166,7 @@ bool BfdInit() {
   if (symcount == 0)
     symcount = bfd_read_minisymbols(abfd, 1, (void**)&syms, &size);
   if (symcount < 0) {
+    bfd_perror("bfd_read_minisymbols() failed");
     bfd_close(abfd);
     return false;
   }
@@ -234,9 +240,7 @@ static void BfdTranslateAddress(void* xaddr,
           name = alloc;
       }
       if (buf_func != NULL) {
-        int name_len = strlen(name);
-        int has_paren = name_len != 0 && name[name_len - 1] == ')';
-        snprintf(buf_func, buf_func_len, (has_paren ? "%s" : "%s()"), name);
+        snprintf(buf_func, buf_func_len, "%s", name);
       }
       if (alloc != 0)
         free(alloc);
