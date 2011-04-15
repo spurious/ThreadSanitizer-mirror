@@ -2,7 +2,7 @@ CXX=g++
 DBGINFO=-g
 
 main:	main.o symbol_table.o
-	$(CXX) $^ -o main
+	$(CXX) $^ -o main -lpthread
 
 %.o:	%.cc %.h
 	$(CXX) $(DBGINFO) $< -c

@@ -39,15 +39,19 @@
 
 #include <assert.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
-SymbolTable::SymbolTable() {
+SymbolTable::SymbolTable(const char *binary) {
   gdb_in = -1;
   gdb_out = -1;
   finalized = false;
+  strncpy(binary_name, binary, sizeof(binary_name));
   OpenPipe();
+  MapBinary(binary, strlen(binary));
+  LoadProcMaps();
 }
 
 SymbolTable::~SymbolTable() {
@@ -144,24 +148,20 @@ int SymbolTable::OpenPipe() {
       if (!AfterForkChild()) _exit(4);
       // Start gdb in quiet mode.
       execlp(kGdbPath, kGdbPath, "-q", NULL);
-      //execlp(kGdbPath, "-q", "2>/dev/null", NULL);
       _exit(3);  // if execvp fails, it's bad news for us
     }
     default: {  // parent
       close(child_in[0]);   // child uses the 0's, parent uses the 1's
       close(child_out[0]);  // child uses the 0's, parent uses the 1's
       if (!AfterForkParent()) _exit(4);
-#ifdef HAVE_POLL_H
       // For maximum safety, we check to make sure the execlp
       // succeeded before trying to write.  (Otherwise we'll get a
-      // SIGPIPE.)  For systems without poll.h, we'll just skip this
-      // check, and trust that the user set PPROF_PATH correctly!
+      // SIGPIPE.)
       struct pollfd pfd = { child_in[1], POLLOUT, 0 };
       if (!poll(&pfd, 1, 0) || !(pfd.revents & POLLOUT) ||
           (pfd.revents & (POLLHUP|POLLERR))) {
         return 0;
       }
-#endif
       gdb_in = child_in[1];
       gdb_out = child_out[1];
       // Read the "(gdb) " prompt.
@@ -237,7 +237,7 @@ void SymbolTable::MapSharedLibrary(const char *path, int path_size,
 }
 
 bool SymbolTable::GetAddrInfoNocache(void *addr,
-                                     /*out*/char *symbol, int symbol_size,
+                                     /*out*/char *symbol, int symbol_buf_size,
                                      /*out*/char *file, int file_size,
                                      /*out*/int *line) {
   write(gdb_in, "info line *", 11);
@@ -246,8 +246,50 @@ bool SymbolTable::GetAddrInfoNocache(void *addr,
   char buf[1000];
   memset(buf, 0, sizeof(buf));
   ReadBuffer(buf, sizeof(buf));
-  printf("%s\n", buf);
   if (strstr(buf, "No line") == buf) {
+    *line = 0;
+    symbol[0] = '\0';
+    file[0] = '\0';
+    // We've got the response that may look like:
+    //   No line number information available for address 0x400d84 <foo>
+    // Let's extract the symbol name from it:
+    char *symbol_start, *symbol_end;
+    int symbol_len;
+    if (symbol_start = strchr(buf, '<')) {
+      symbol_start++;  // skip '<'.
+      if (symbol_end = strchr(symbol_start, '>')) {
+        symbol_len = symbol_end - symbol_start;
+        if (symbol_buf_size > symbol_len) {
+          memcpy(symbol, symbol_start, symbol_len);
+          symbol[symbol_len] = '\0';
+        }
+      }
+    }
+    // Fall back to "info symbol <addr>"
+    write(gdb_in, "info symbol ", 12);
+    WriteHexAddr((uintptr_t)addr);
+    write(gdb_in, "\n", 1);
+    memset(buf, 0, sizeof(buf));
+    ReadBuffer(buf, sizeof(buf));
+    if (strstr(buf, "No symbol") == buf) {
+      return false;
+    } else {
+      // We've got the line looking like:
+      //   GLOB in section .bss
+      // or:
+      //   malloc in section .text of /lib/libc-2.11.1.so
+      char *module_start, *module_end;
+      int module_len;
+      if (module_start = strstr(buf, " of ")) {
+        module_start += 4; // skip " of ".
+        module_end = strchr(module_start, '\n');
+        *module_end = '\0';
+        strncpy(file, module_start, file_size);
+      } else {
+        strncpy(file, binary_name, file_size);
+      }
+      return true;
+    }
     return false;
   } else {
     // Assuming that we've got the line in the following format:
@@ -264,7 +306,7 @@ bool SymbolTable::GetAddrInfoNocache(void *addr,
     }
     *line = tmp_line;
     assert(buf[index] == ' ');
-    char *start_file = &(buf[index+5]);  // consume " of \"".
+    char *start_file = &(buf[index+5]);  // skip " of \"".
     char *end_file = strstr(start_file, "\"");
     assert(end_file);
     int file_len = end_file - start_file;
@@ -276,12 +318,11 @@ bool SymbolTable::GetAddrInfoNocache(void *addr,
     }
     char *start_symbol = strstr(end_file, "<");
     assert(start_symbol);
-    start_symbol++;  // consume "<".
+    start_symbol++;  // skip "<".
     char *end_symbol = strstr(start_symbol, ">");
     assert(end_symbol);
-    printf("%s\n", start_symbol);
     int symbol_len = end_symbol - start_symbol;
-    if (symbol_size > symbol_len) {
+    if (symbol_buf_size > symbol_len) {
       strncpy(symbol, start_symbol, symbol_len);
       symbol[symbol_len] = '\0';
     } else {
@@ -295,10 +336,69 @@ bool SymbolTable::GetAddrInfoNocache(void *addr,
 //   7fb1c9d21000-7fb1c9d41000 r-xp 00000000 fc:00 1499148      /lib/ld-2.11.1.so
 // We need the first field (address) and the last.
 
-void SymbolTable::LoadSelfMaps() {
+void SymbolTable::ProcessProcMapsLine(char *line) {
+  int len = strlen(line);
+  assert(len);
+  assert(strchr(line, '\n') == NULL);
+  char *path_start = strchr(line, '/');
+  if (path_start) {
+    char *addr_end = strstr(line, "-");
+    *addr_end = '\0';
+    write(gdb_in, "add-symbol-file ", 16);
+    write(gdb_in, path_start, strlen(path_start));
+    write(gdb_in, " 0x", 3);
+    write(gdb_in, line, strlen(line));
+    write(gdb_in, "\n", 1);
+    ConsumeLines();
+  }
+}
+
+void SymbolTable::LoadProcMaps() {
   char maps_line[1000];
-  char read_buf[100];
+  memset(maps_line, 0, sizeof(maps_line));
+  int maps_line_index = 0;
+  int num_lines = 0;
+  char read_buf[201];
+  memset(read_buf, 0, sizeof(read_buf));
   int maps_fd = open("/proc/self/maps", 0);
+  while (true) {
+    if (num_lines == 4) break;
+    int num_read = read(maps_fd, read_buf, sizeof(read_buf) - 1);
+    read_buf[num_read] = '\0';
+    if (num_read < 0) {
+      return;
+    } else if (num_read == 0) {
+      close(maps_fd);
+      break;
+    } else {
+      int line_length = 0;
+      char *nl = NULL, *line_start = read_buf;
+      // There are two options:
+      //  -- either the buffer doesn't contain '\n' and is then appended to
+      //     |maps_line| as is
+      //  -- or there is a '\n', which we replace by '\0', append the head to
+      //     |maps_line|, process |maps_line|, clean up |maps_line|, set the
+      //     buffer start right after '\0', repeat.
+      while (nl = strchr(line_start, '\n')) {
+        *nl = '\0';
+        line_length = strlen(line_start);
+        strncpy(&(maps_line[maps_line_index]), line_start, line_length);
+        maps_line[maps_line_index + line_length] = '\0';
+        if (num_lines >= 3) ProcessProcMapsLine(maps_line);
+        num_lines++;
+        memset(maps_line, 0, sizeof(maps_line));
+        maps_line_index = 0;
+        line_start = nl + 1;  //skip the trailing '\n'
+      }
+      line_length = strlen(line_start);
+      if (line_length) {
+        memcpy(&(maps_line[maps_line_index]), line_start, line_length);
+        maps_line_index += line_length;
+        maps_line[maps_line_index] = '\0';
+        assert(maps_line_index == strlen(maps_line));
+      }
+    }
+  }
 
   close(maps_fd);
 }
