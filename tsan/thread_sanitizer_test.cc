@@ -377,6 +377,11 @@ TEST(ThreadSanitizer, NormalizeFunctionNameChangingTest) {
     "PositiveTests_HarmfulRaceInDtor::A::~A()",  // Valgrind, Linux
         "PositiveTests_HarmfulRaceInDtor::A::~A",
 
+    "X::foo(int*) const()",   // GCC, Linux
+        "X::foo",
+    "X::foo(int*) const volatile",
+        "X::foo",
+
     "base::(anonymous namespace)::ThreadFunc(void*)",
       "base::::ThreadFunc",  // TODO(timurrrr): keep "anonymous namespace"?
 

@@ -317,6 +317,11 @@ static string StripParametersFromFunctionName(const string &demangled) {
     fname.erase(found+2, 1);
   while ((found = fname.find("(*)")) != fname.npos)
     fname.erase(found, 3);
+  while ((found = fname.find("const()")) != fname.npos)
+    fname.erase(found+5, 2);
+  while ((found = fname.find("const volatile")) != fname.npos &&
+         found > 1 && found + 14 == fname.size())
+    fname.erase(found-1);
   while ((found = fname.find("(anonymous namespace)")) != fname.npos)
     fname.erase(found, 21);
 
