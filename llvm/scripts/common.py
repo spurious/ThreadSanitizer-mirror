@@ -150,6 +150,8 @@ def gcc(default_cc, fallback_cc):
   src_instrumented = filename + '-instr' + p_suffix + '.ll'
   # filename-x86.S
   src_asm = filename + p_suffix + '.S'
+  if from_asm:
+    src_asm = src_file
   if src_obj is None:
     src_obj = os.path.basename(filename) + '.o'
   src_exe = filename
