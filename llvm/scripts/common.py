@@ -45,6 +45,11 @@ if 'TSAN_IGNORE' in os.environ:
 TSAN_OPT_ARGS = ''
 if 'TSAN_OPT_ARGS' in os.environ:
   TSAN_OPT_ARGS = os.environ['TSAN_OPT_ARGS']
+# Instrument only files whose path starts with the prefix in TSAN_SRC_WHITELIST.
+# TODO(glider): this is less reliable than a regexp.
+TSAN_SRC_WHITELIST = ''
+if 'TSAN_SRC_WHITELIST' in os.environ:
+  TSAN_SRC_WHITELIST = os.environ['TSAN_SRC_WHITELIST']
 
 def print_args(args):
   print
@@ -185,6 +190,11 @@ def gcc(default_cc, fallback_cc):
     return
 
   if not from_asm:
+    if TSAN_SRC_WHITELIST:
+      if not src_file.startswith(TSAN_SRC_WHITELIST):
+        do_fallback(fallback_cc, args)
+        return
+
     llvm_gcc_args = [default_cc, '-emit-llvm', MARCH[platform], src_file,
         optimization] + debug_info_args + ['-c'] + DA_FLAGS + compiler_args + ['-o', src_bitcode]
     if compile_pic:
