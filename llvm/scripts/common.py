@@ -49,7 +49,7 @@ if 'TSAN_OPT_ARGS' in os.environ:
 # TODO(glider): this is less reliable than a regexp.
 TSAN_SRC_WHITELIST = ''
 if 'TSAN_SRC_WHITELIST' in os.environ:
-  TSAN_SRC_WHITELIST = os.environ['TSAN_SRC_WHITELIST']
+  TSAN_SRC_WHITELIST = os.environ['TSAN_SRC_WHITELIST'].split('|')
 
 def print_args(args):
   print
@@ -191,8 +191,12 @@ def gcc(default_cc, fallback_cc):
 
   if not from_asm:
     if TSAN_SRC_WHITELIST:
-      if not src_file.startswith(TSAN_SRC_WHITELIST):
-        do_fallback(fallback_cc, args)
+      whitelisted = False
+      for prefix in TSAN_SRC_WHITELIST:
+        if src_file.startswith(prefix):
+          whitelisted = True
+      if not whitelisted:
+        do_fallback(fallback_cc, args + DA_FLAGS)
         return
 
     llvm_gcc_args = [default_cc, '-emit-llvm', MARCH[platform], src_file,
