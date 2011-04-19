@@ -26,10 +26,11 @@
 // Author: Konstantin Serebryany <opensource@google.com>
 #include "test_utils.h"
 
-#ifdef RACECHECK_UNITTEST_WANT_ATTRIBUTE_WEAK
 const char *ThreadSanitizerQuery(const char *query) __attribute__((weak));
-#endif
 const char *ThreadSanitizerQuery(const char *query) {
   printf("Not running under ThreadSanitizer (query=%s)\n", query);
   return NULL;
 }
+
+
+

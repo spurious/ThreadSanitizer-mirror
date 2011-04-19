@@ -8070,5 +8070,73 @@ TEST(StressTests, FlushStateTest) {
 
 }  // namespace
 
+
+
+
+namespace NegativeTests_SemaphoreSync {  // {{{1
+
+sem_t g_sem;
+int g_data;
+
+void SignalerThread() {
+  g_data = 1;
+  sem_post(&g_sem);
+}
+
+void WaiterThread() {
+  sem_wait(&g_sem);
+  int tmp = g_data;
+  EXPECT_EQ(tmp, 1);
+}
+
+TEST(NegativeTests, SemaphoreSync) {
+  g_data = 0;
+  sem_init(&g_sem, 0, 0);
+
+  MyThreadArray t(SignalerThread, WaiterThread);
+  t.Start();
+  t.Join();
+}
+
+}  // namespace
+
+
+
+
+namespace NegativeTests_SemaphoreInverse {  // {{{1
+
+sem_t g_sem;
+int g_data;
+
+void SignalerThread() {
+  g_data = 1;
+  sem_wait(&g_sem);
+}
+
+void WaiterThread() {
+  for (;;) {
+    int val = -1;
+    sem_getvalue(&g_sem, &val);
+    if (val == 0)
+      break;
+    pthread_yield();
+  }
+  int tmp = g_data;
+  EXPECT_EQ(tmp, 1);
+}
+
+TEST(NegativeTests, SemaphoreInverse) {
+  g_data = 0;
+  sem_init(&g_sem, 0, 1);
+
+  MyThreadArray t(SignalerThread, WaiterThread);
+  t.Start();
+  t.Join();
+}
+
+}  // namespace
+
+
+
 // End {{{1
  // vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker
