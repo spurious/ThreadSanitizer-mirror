@@ -556,14 +556,9 @@ static void             instrument_mop      (relite_context_t*      ctx,
   // Below are things we do NOT want to instrument.
   if (ctx->func_ignore & (relite_ignore_mop | relite_ignore_rec)) {
     reason = "ignore file";
-  } else if (DECL_ARTIFICIAL(expr)/* || (expr_ssa && DECL_ARTIFICIAL(expr_ssa))*/) {
-    // artificial variable emitted by the compiler
-    reason = "artificial";
-  } else if (tcode == RESULT_DECL) {
-    reason = "result";
-  } else if (tcode == INTEGER_CST) {
-    reason = "constant";
-  } else if (tcode == VAR_DECL && TREE_ADDRESSABLE(expr) == 0) {
+  } else if (tcode == VAR_DECL
+      && TREE_ADDRESSABLE(expr) == 0
+      && TREE_STATIC(expr) == 0) {
     // the var does not live in memory -> no possibility of races
     reason = "non-addressable";
     /*
