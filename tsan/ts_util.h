@@ -54,15 +54,6 @@ extern unsigned long offline_line_n;
 # define CHECK assert
 #endif
 
-// __WORDSIZE is GLibC-specific. Get it from Valgrind if needed.
-#if defined(TS_VALGRIND) && !defined(__WORDSIZE)
-#if VG_WORDSIZE == 4
-#define __WORDSIZE 32
-#elif VG_WORDSIZE == 8
-#define __WORDSIZE 64
-#endif // VG_WORDSIZE
-#endif // TS_VALGRIND && !__WORDSIZE
-
 #if defined(TS_VALGRIND)
 # include "ts_valgrind.h"
 # define TS_USE_STLPORT
@@ -70,6 +61,15 @@ extern unsigned long offline_line_n;
 // This macro is explicitly undefined in glibc for ARM.
 #define _GLIBCXX_USE_C99 1
 #endif  // ARM
+
+// __WORDSIZE is GLibC-specific. Get it from Valgrind if needed.
+#if !defined(__WORDSIZE)
+#if VG_WORDSIZE == 4
+#define __WORDSIZE 32
+#elif VG_WORDSIZE == 8
+#define __WORDSIZE 64
+#endif // VG_WORDSIZE
+#endif // TS_VALGRIND && !__WORDSIZE
 
 #elif defined(TS_LLVM)
 # define TS_USE_STLPORT
