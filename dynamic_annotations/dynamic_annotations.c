@@ -47,8 +47,6 @@
 
 #if DYNAMIC_ANNOTATIONS_ENABLED == 1
 
-#define DYNAMIC_ANNOTATIONS_STRINGIFY(x) #x
-
 /* Identical code folding(-Wl,--icf=all) countermeasures.
    This makes all Annotate* functions different, which prevents the linker from folding them. */
 #ifdef __COUNTER__
