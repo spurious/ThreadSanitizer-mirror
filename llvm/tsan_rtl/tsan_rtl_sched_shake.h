@@ -34,9 +34,7 @@
 //#define TSAN_SCHED_SHAKE
 //#define TSAN_API_AMBUSH
 
-#if defined(TSAN_SCHED_SHAKE) || defined(TSAN_API_AMBUSH)
 unsigned tsan_rtl_rand();
-#endif
 
 #ifdef TSAN_SCHED_SHAKE
 #define SCHED_SHAKE(heavy) \
