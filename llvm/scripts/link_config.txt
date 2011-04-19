@@ -25,6 +25,7 @@ wrap pthread_spin_trylock
 wrap pthread_spin_unlock
 
 wrap pthread_cond_signal
+wrap pthread_cond_broadcast
 wrap pthread_cond_wait
 wrap pthread_cond_timedwait
 
@@ -37,6 +38,7 @@ wrap sem_open
 wrap sem_post
 wrap sem_wait
 wrap sem_trywait
+wrap sem_timedwait
 
 wrap atexit
 wrap exit

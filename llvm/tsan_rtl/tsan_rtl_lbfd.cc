@@ -39,6 +39,7 @@
 #include "tsan_rtl_lbfd.h"
 #include <bfd.h>
 #include <unistd.h>
+#include <cxxabi.h>
 
 namespace demangle { // name clash with 'basename' from <string.h>
 # include <demangle.h>
@@ -59,27 +60,16 @@ struct BfdSymbol {
   bfd_boolean                   found;
 };
 
-static string GetExecutableFileName() {
-  FILE* cmdline = fopen("/proc/self/cmdline", "rb");
-  if (cmdline == 0)
-    return string();
-  char buf [PATH_MAX + 1];
-  if (fread(buf, 1, sizeof(buf)/sizeof(buf[0]) - 1, cmdline) <= 0)
-    buf[0] = 0;
-  fclose(cmdline);
-  return buf;  
-}
-
 // TODO(glider): unify all code that operates BFD.
 PcToStringMap* ReadGlobalsFromImage(bool(*IsAddrFromDataSections)(uintptr_t)) {
-  string fname = GetExecutableFileName();
   PcToStringMap *global_symbols = new map<uintptr_t, string>;
 #ifdef TSAN_RTL_X86
   return global_symbols;
 #else
   bfd_init();
-  bfd* abfd = bfd_openr(fname.c_str(), 0);
+  bfd* abfd = bfd_openr("/proc/self/exe", 0);
   if (abfd == 0) {
+    bfd_perror("bfd_openr('/proc/self/exe') failed");
     delete global_symbols;
     return NULL;
   }
@@ -138,9 +128,9 @@ bool BfdInit() {
   if (bfd_data != 0)
     return true;
   bfd_init();
-  bfd* abfd = bfd_openr(GetExecutableFileName().c_str(), 0);
+  bfd* abfd = bfd_openr("/proc/self/exe", 0);
   if (abfd == 0) {
-    bfd_perror("bfd_openr() failed");
+    bfd_perror("bfd_openr('/proc/self/exe') failed");
     return false;
   }
   if (bfd_check_format(abfd, bfd_archive)) {
@@ -212,7 +202,8 @@ static void BfdTranslateAddress(void* xaddr,
                                 size_t buf_func_len,
                                 char* buf_file,
                                 size_t buf_file_len,
-                                int* line) {
+                                int* line,
+                                bool demangle) {
 #ifdef TSAN_RTL_X64
   char addr [(CHAR_BIT/4) * (sizeof(void*)) + 2] = {0};
   sprintf(addr, "%p", xaddr);
@@ -235,7 +226,10 @@ static void BfdTranslateAddress(void* xaddr,
       if (name == 0 || *name == '\0') {
         name = "??";
       } else {
-        alloc = bfd_demangle(bfd_data->abfd, name, DMGL_ANSI | DMGL_PARAMS);
+        if (demangle) {
+          int status = 0;
+          alloc = abi::__cxa_demangle(name, 0, 0, &status);
+        }
         if (alloc != NULL)
           name = alloc;
       }
@@ -272,7 +266,7 @@ string BfdPcToRtnName(pc_t pc, bool demangle) {
   char buf_func [PATH_MAX + 1];
   BfdTranslateAddress((void*)pc,
                       buf_func, sizeof(buf_func)/sizeof(buf_func[0]) - 1,
-                      0, 0, 0);
+                      0, 0, 0, demangle);
   return buf_func;
 #else
   return "";
@@ -290,7 +284,7 @@ void BfdPcToStrings(pc_t pc, bool demangle,
   BfdTranslateAddress((void*)pc,
                       buf_func, sizeof(buf_func)/sizeof(buf_func[0]) - 1,
                       buf_file, sizeof(buf_file)/sizeof(buf_file[0]) - 1,
-                      line_no);
+                      line_no, demangle);
   if (rtn_name != 0)
     rtn_name->assign(buf_func);
   if (file_name != 0)

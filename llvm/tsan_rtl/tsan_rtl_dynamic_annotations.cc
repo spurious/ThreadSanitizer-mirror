@@ -29,6 +29,7 @@
 #define DYNAMIC_ANNOTATIONS_PREFIX LLVM
 #include "dynamic_annotations.h"
 #include "tsan_rtl.h"
+#include "tsan_rtl_sched_shake.h"
 
 #undef DECLARE_TID_AND_PC
 #define DECLARE_TID_AND_PC() \
@@ -46,6 +47,7 @@ extern bool global_ignore;
 extern "C"
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateHappensBefore)(const char *file, int line,
                                                      const volatile void *cv) {
+  SCHED_SHAKE(0);
   DECLARE_TID_AND_PC();
   ExSPut(SIGNAL, tid, pc, (uintptr_t)cv, 0);
 }
@@ -55,6 +57,8 @@ void DYNAMIC_ANNOTATIONS_NAME(AnnotateHappensAfter)(const char *file, int line,
                                                     const volatile void *cv) {
   DECLARE_TID_AND_PC();
   ExSPut(WAIT, tid, pc, (uintptr_t)cv, 0);
+  //TODO(dvyukov): shake must be placed *before* the user's *action*
+  SCHED_SHAKE(0);
 }
 
 extern "C"
@@ -264,6 +268,7 @@ void DYNAMIC_ANNOTATIONS_NAME(AnnotateThreadName)(
 extern "C"
 void WTFAnnotateHappensBefore(const char *file, int line,
                               const volatile void *cv) {
+  SCHED_SHAKE(0);
   DECLARE_TID_AND_PC();
   ExSPut(SIGNAL, tid, pc, (uintptr_t)cv, 0);
 }
@@ -273,6 +278,8 @@ void WTFAnnotateHappensAfter(const char *file, int line,
                              const volatile void *cv) {
   DECLARE_TID_AND_PC();
   ExSPut(WAIT, tid, pc, (uintptr_t)cv, 0);
+  //TODO(dvyukov): shake must be placed *before* the user's *action*
+  SCHED_SHAKE(0);
 }
 
 extern "C"

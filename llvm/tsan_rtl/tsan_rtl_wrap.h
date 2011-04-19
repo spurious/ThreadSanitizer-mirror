@@ -63,6 +63,7 @@ int __real_pthread_spin_trylock(pthread_spinlock_t *lock);
 int __real_pthread_spin_unlock(pthread_spinlock_t *lock);
 
 int __real_pthread_cond_signal(pthread_cond_t *cond);
+int __real_pthread_cond_broadcast(pthread_cond_t *cond);
 int __real_pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex);
 int __real_pthread_cond_timedwait(pthread_cond_t *cond, pthread_mutex_t *mutex,
                                   const struct timespec *abstime);
@@ -75,6 +76,7 @@ sem_t *__real_sem_open(const char *name, int oflag,
 int __real_sem_wait(sem_t *sem);
 int __real_sem_trywait(sem_t *sem);
 int __real_sem_post(sem_t *sem);
+int __real_sem_timedwait(sem_t *sem, const struct timespec *abs_timeout);
 
 int __real___cxa_guard_acquire(int *guard);
 int __real___cxa_guard_release(int *guard);
