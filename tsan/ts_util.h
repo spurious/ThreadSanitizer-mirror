@@ -54,6 +54,15 @@ extern unsigned long offline_line_n;
 # define CHECK assert
 #endif
 
+// __WORDSIZE is GLibC-specific. Get it from Valgrind if needed.
+#if defined(TS_VALGRIND) && !defined(__WORDSIZE)
+#if VG_WORDSIZE == 4
+#define __WORDSIZE 32
+#elif VG_WORDSIZE == 8
+#define __WORDSIZE 64
+#endif // VG_WORDSIZE
+#endif // TS_VALGRIND && !__WORDSIZE
+
 #if defined(TS_VALGRIND)
 # include "ts_valgrind.h"
 # define TS_USE_STLPORT
@@ -355,9 +364,9 @@ bool LiteRaceSkipTrace(int tid, uint32_t trace_no, uint32_t sampling_rate);
 
 
 inline uintptr_t tsan_bswap(uintptr_t x) {
-#if defined(VGP_arm_linux) && VG_WORDSIZE == 8
+#if defined(VGP_arm_linux) && __WORDSIZE == 64
   return __builtin_bswap64(x);
-#elif defined(VGP_arm_linux) && VG_WORDSIZE == 4
+#elif defined(VGP_arm_linux) && __WORDSIZE == 32
   return __builtin_bswap32(x);
 #elif defined(__GNUC__) && __WORDSIZE == 64
   __asm__("bswapq %0" : "=r" (x) : "0" (x));
@@ -369,7 +378,7 @@ inline uintptr_t tsan_bswap(uintptr_t x) {
   return x;  // TODO(kcc)
 #else
 # error  "Unknown Configuration"
-#endif // __WORDSIZE
+#endif // arch && VG_WORDSIZE
 }
 
 #ifdef _MSC_VER
