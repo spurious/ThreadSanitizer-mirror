@@ -48,9 +48,13 @@ SymbolTable::SymbolTable(const char *binary) {
   gdb_in = -1;
   gdb_out = -1;
   finalized = false;
-  strncpy(binary_name, binary, sizeof(binary_name));
+  if (binary) {
+    strncpy(binary_name, binary, sizeof(binary_name));
+  } else {
+    readlink("/proc/self/exe", binary_name, sizeof(binary_name));
+  }
   OpenPipe();
-  MapBinary(binary, strlen(binary));
+  MapBinary(binary_name, strlen(binary_name));
   LoadProcMaps();
 }
 
