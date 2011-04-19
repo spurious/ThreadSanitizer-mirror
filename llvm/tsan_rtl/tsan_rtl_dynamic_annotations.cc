@@ -260,6 +260,32 @@ void DYNAMIC_ANNOTATIONS_NAME(AnnotateThreadName)(
   ExPut(SET_THREAD_NAME, tid, pc, (uintptr_t)thread_name, 0);
 }
 
+// WebKit WTF annotations {{{1
+extern "C"
+void WTFAnnotateHappensBefore(const char *file, int line,
+                              const volatile void *cv) {
+  DECLARE_TID_AND_PC();
+  ExSPut(SIGNAL, tid, pc, (uintptr_t)cv, 0);
+}
+
+extern "C"
+void WTFAnnotateHappensAfter(const char *file, int line,
+                             const volatile void *cv) {
+  DECLARE_TID_AND_PC();
+  ExSPut(WAIT, tid, pc, (uintptr_t)cv, 0);
+}
+
+extern "C"
+void WTFAnnotateBenignRaceSized(
+    const char *file, int line,
+    const volatile void *mem, long size, const char *description) {
+  DECLARE_TID();
+  ExSPut(BENIGN_RACE, tid, (uintptr_t)description,
+      (uintptr_t)mem, (uintptr_t)size);
+}
+
+// }}}
+
 // TODO(glider): we may need a flag to tune this.
 extern "C"
 int RunningOnValgrind(void) {
