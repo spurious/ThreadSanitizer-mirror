@@ -49,7 +49,7 @@ void tsan_rtl_sched_shake(bool heavy);
 #ifdef TSAN_API_AMBUSH
 #define API_AMBUSH() (G_flags->api_ambush)
 #else
-#define TSAN_API_AMBUSH() ((void)0,0)
+#define API_AMBUSH() ((void)0,0)
 #endif
 
 #endif
