@@ -171,6 +171,7 @@ void test() {
   addr(arr);
   arr[1] = 1;       //ST
   arr[2] = 2;       //ST
+  addr(arr);
 }
 }
 
@@ -231,6 +232,22 @@ void test() {
 }
 }
 
+
+namespace global_var {
+int g_var;
+
+void foo() {
+  g_var = 1;
+}
+
+void test() {
+  //addr(&g_var);
+  g_var = 1;        //ST+(4)
+  read();
+  int tmp = g_var;  //LD+(4)
+  read(tmp);
+}
+}
 
 
 

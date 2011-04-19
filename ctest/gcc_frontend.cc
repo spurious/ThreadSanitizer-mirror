@@ -20,7 +20,7 @@ void**                  shadow_stack_base;
 
 void                    frontend_init       () {
   if (false == tsan_rtl_lbfd::BfdInit())
-    printf("failed to initialize bfd\n"), exit(1);
+    printf("failed to initialize bfd\n");
   shadow_stack_base = new void* [1024]; 
 }
 
