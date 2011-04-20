@@ -47,7 +47,7 @@ extern bool global_ignore;
 extern "C"
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateHappensBefore)(const char *file, int line,
                                                      const volatile void *cv) {
-  SCHED_SHAKE(0);
+  tsan_rtl_sched_shake(shake_atomic_rmw, cv);
   DECLARE_TID_AND_PC();
   ExSPut(SIGNAL, tid, pc, (uintptr_t)cv, 0);
 }
@@ -55,10 +55,10 @@ void DYNAMIC_ANNOTATIONS_NAME(AnnotateHappensBefore)(const char *file, int line,
 extern "C"
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateHappensAfter)(const char *file, int line,
                                                     const volatile void *cv) {
+  //TODO(dvyukov): shake must be placed *before* the user's *action*
+  tsan_rtl_sched_shake(shake_atomic_rmw, cv);
   DECLARE_TID_AND_PC();
   ExSPut(WAIT, tid, pc, (uintptr_t)cv, 0);
-  //TODO(dvyukov): shake must be placed *before* the user's *action*
-  SCHED_SHAKE(0);
 }
 
 extern "C"
@@ -268,7 +268,7 @@ void DYNAMIC_ANNOTATIONS_NAME(AnnotateThreadName)(
 extern "C"
 void WTFAnnotateHappensBefore(const char *file, int line,
                               const volatile void *cv) {
-  SCHED_SHAKE(0);
+  tsan_rtl_sched_shake(shake_atomic_rmw, cv);
   DECLARE_TID_AND_PC();
   ExSPut(SIGNAL, tid, pc, (uintptr_t)cv, 0);
 }
@@ -276,10 +276,10 @@ void WTFAnnotateHappensBefore(const char *file, int line,
 extern "C"
 void WTFAnnotateHappensAfter(const char *file, int line,
                              const volatile void *cv) {
+  //TODO(dvyukov): shake must be placed *before* the user's *action*
+  tsan_rtl_sched_shake(shake_atomic_rmw, cv);
   DECLARE_TID_AND_PC();
   ExSPut(WAIT, tid, pc, (uintptr_t)cv, 0);
-  //TODO(dvyukov): shake must be placed *before* the user's *action*
-  SCHED_SHAKE(0);
 }
 
 extern "C"

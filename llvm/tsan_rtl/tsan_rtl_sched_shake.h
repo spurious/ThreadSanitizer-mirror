@@ -31,24 +31,39 @@
 
 #include "thread_sanitizer.h"
 
-//#define TSAN_SCHED_SHAKE
-//#define TSAN_API_AMBUSH
 
-unsigned tsan_rtl_rand();
+enum shake_event_e {
+  shake_none 		= 0, // used in static initialization
+  shake_thread_create   = 1 << 0,
+  shake_thread_start    = 1 << 1,
+  shake_sem_wait        = 1 << 2,
+  shake_sem_trywait     = 1 << 3,
+  shake_sem_timedwait   = 1 << 4,
+  shake_sem_post        = 1 << 5,
+  shake_mutex_lock      = 1 << 6,
+  shake_mutex_trylock   = 1 << 7,
+  shake_mutex_rdlock    = 1 << 8,
+  shake_mutex_tryrdlock = 1 << 9,
+  shake_mutex_unlock    = 1 << 10,
+  shake_cond_signal     = 1 << 11,
+  shake_cond_broadcast  = 1 << 12,
+  shake_cond_wait       = 1 << 13,
+  shake_cond_timedwait  = 1 << 14,
+  shake_atomic_load     = 1 << 15,
+  shake_atomic_store    = 1 << 16,
+  shake_atomic_rmw      = 1 << 17,
+};
 
-#ifdef TSAN_SCHED_SHAKE
-#define SCHED_SHAKE(heavy) \
-  do { if (G_flags->sched_shake) tsan_rtl_sched_shake(!!(heavy)); } while ((void)0, 0)
-void tsan_rtl_sched_shake(bool heavy);
-#else
-#define SCHED_SHAKE(...) (void)0
-#endif
 
-#ifdef TSAN_API_AMBUSH
-#define API_AMBUSH() (G_flags->api_ambush)
-#else
-#define API_AMBUSH() ((void)0,0)
-#endif
+unsigned                tsan_rtl_rand         ();
+void                    tsan_rtl_shake        (shake_event_e ev,
+                                               uintptr_t ctx);
+
+static __inline void    tsan_rtl_sched_shake  (shake_event_e ev,
+                                               void const volatile* ctx) {
+  if (G_flags->sched_shake)
+    tsan_rtl_shake(ev, (uintptr_t)ctx);
+}
 
 #endif
 

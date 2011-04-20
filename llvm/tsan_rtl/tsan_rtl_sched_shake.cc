@@ -30,12 +30,37 @@
 #include <time.h>
 #include <pthread.h>
 #include <unistd.h>
+#include <assert.h>
 
 //TODO(dvyukov): wrap pthread_yield()
+//TODO(dvyukov): wrap sched_yield()
 //TODO(dvyukov): wrap usleep()
+//TODO(dvyukov): wrap nanosleep()
 //TODO(dvyukov): sem_getvalue()
 //TODO(dvyukov): wrap nanosleep()
 //TODO(dvyukov): sem can be used in "inverse" mode
+//TODO(dvyukov): wrap atomics
+//TODO(dvyukov): improve mm modelling precision
+
+
+
+enum shake_strength_e {
+  strength_none,
+  strength_normal,
+  strength_above_normal,
+  strength_highest,
+};
+
+
+struct hist_event_t {
+  shake_event_e         ev;
+  uintptr_t             ctx;
+};
+
+
+size_t const hist_size = 4;
+static __thread hist_event_t hist [hist_size];
+static __thread size_t hist_pos;
 
 
 unsigned tsan_rtl_rand() {
@@ -50,31 +75,110 @@ unsigned tsan_rtl_rand() {
 }
 
 
-void tsan_rtl_sched_shake(bool heavy) {
-  unsigned rnd;
-  if (heavy == false)
-    rnd = tsan_rtl_rand() % 100;
-  else
-    rnd = 95 + tsan_rtl_rand() % 5;
-
-  if (rnd < 90) {
+static void shake_delay_impl(unsigned const nop_probability,
+                             unsigned const active_spin_probability,
+                             unsigned const passive_spin_probability,
+                             unsigned const sleep_probability) {
+  unsigned const total = nop_probability
+                       + active_spin_probability
+                       + passive_spin_probability
+                       + sleep_probability;
+  int rnd = tsan_rtl_rand() % total;
+  if ((rnd -= nop_probability) < 0) {
     // no delay
-  } else if (rnd < 95) {
-    // rnd = [90..94] -> active delay
-    for (unsigned i = 0; i != (rnd - 90 + 1) * 1000; i += 1) {
-      __asm__ __volatile__ ("pause");
-    }
-  } else if (rnd < 98) {
-    // rnd = [95..97] -> passive yield
-    for (unsigned i = 0; i != (rnd - 95 + 1); i += 1) {
-      pthread_yield();
-    }
-  } else /* if (rnd < 100) */ {
-    // rnd = [98..99] -> passive delay
-    for (unsigned i = 0; i != (rnd - 98 + 1); i += 1) {
-      usleep(10 * 1000);
+  }
+  else if ((rnd -= active_spin_probability) < 0) {
+    for (int i = 0; i != -rnd; i += 1) {
+      for (int j = 0; j != 1000; j += 1) {
+        __asm__ __volatile__ ("pause");
+      }
     }
   }
+  else if ((rnd -= passive_spin_probability) < 0) {
+    for (int i = 0; i != -rnd; i += 1) {
+      pthread_yield();
+    }
+  }
+  else if ((rnd -= sleep_probability) < 0) {
+    for (int i = 0; i != -rnd; i += 1) {
+      usleep(10 * 1000); // 10ms
+    }
+  } else {
+    assert(!"invalid delay probability calculation");
+  }
 }
+
+
+static void shake_delay(shake_strength_e const strength) {
+  if (strength == strength_none) {
+    // no delay
+  } else if (strength == strength_normal) {
+    shake_delay_impl(95, 2, 2, 1);
+  } else if (strength == strength_above_normal) {
+    shake_delay_impl(80, 10, 7, 3);
+  } else if (strength == strength_highest) {
+    shake_delay_impl(40, 20, 20, 20);
+  } else {
+    assert(!"invalid delay strength value");
+  }
+}
+
+
+static bool is_atomic(shake_event_e const ev) {
+  return ev & (shake_atomic_load | shake_atomic_store | shake_atomic_rmw);
+}
+
+
+static bool is_mutex_lock(shake_event_e const ev) {
+  return ev & (shake_mutex_lock | shake_mutex_trylock
+      | shake_mutex_rdlock | shake_mutex_tryrdlock);
+}
+
+
+static shake_strength_e calculate_strength(shake_event_e const ev,
+                                           uintptr_t const ctx) {
+  hist_event_t const& prev = hist[(hist_pos - 1) % hist_size];
+
+  if (is_atomic(ev)) {
+    if (prev.ctx == ctx)
+      return strength_highest;
+    else
+      return strength_above_normal;
+
+  } else if (ev == shake_mutex_unlock) {
+    return strength_none;
+
+  } else if (ev == shake_thread_create
+          || ev == shake_thread_start) {
+    return strength_highest;
+
+  } else if (is_mutex_lock(ev)) {
+    if (prev.ctx == ctx)
+      return strength_above_normal;
+    else
+      return strength_normal;
+
+  } else if (ev == shake_cond_wait
+      || ev == shake_cond_timedwait) {
+    return strength_above_normal;
+  }
+
+  return strength_normal;
+}
+
+
+void tsan_rtl_shake(shake_event_e const ev,
+                    uintptr_t const ctx) {
+  assert(ev != shake_none);
+  shake_strength_e strength = calculate_strength(ev, ctx);
+  shake_delay(strength);
+
+  hist_event_t& hev = hist[hist_pos % hist_size];
+  hev.ev = ev;
+  hev.ctx = ctx;
+  hist_pos += 1;
+}
+
+
 
 

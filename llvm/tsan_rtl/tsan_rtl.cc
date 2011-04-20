@@ -821,6 +821,8 @@ void *pthread_callback(void *arg) {
   LEAVE_RTL();
   GIL::Unlock();
 
+  tsan_rtl_sched_shake(shake_thread_start, (void*)routine);
+
   result = (*routine)(routine_arg);
 
   // We're about to stop the current thread. Block all the signals to prevent
@@ -868,7 +870,6 @@ void *pthread_callback(void *arg) {
   // TODO(glider): need to check whether it's 100% legal.
   ///LEAVE_RTL();
   GIL::Unlock();
-  SCHED_SHAKE(1);
   return result;
 }
 
@@ -955,7 +956,7 @@ int __wrap_pthread_create(pthread_t *thread,
   if (!result) SPut(THR_CREATE_AFTER, tid, 0, 0, child_tid);
   DDPrintf("pthread_create(%p)\n", *thread);
   RPut(RTN_EXIT, tid, pc, 0, 0);
-  SCHED_SHAKE(1);
+  tsan_rtl_sched_shake(shake_thread_create, (void*)start_routine);
   return result;
 }
 
@@ -1520,11 +1521,11 @@ sem_t *__wrap_sem_open(const char *name, int oflag,
 
 extern "C"
 int __wrap_sem_wait(sem_t *sem) {
-  if (API_AMBUSH()) {
+  if (G_flags->api_ambush) {
     if (tsan_rtl_rand() % 2)
       return EINTR;
   }
-  SCHED_SHAKE(0);
+  tsan_rtl_sched_shake(shake_sem_wait, sem);
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_sem_wait, 0);
   int result = __real_sem_wait(sem);
@@ -1537,7 +1538,7 @@ int __wrap_sem_wait(sem_t *sem) {
 
 extern "C"
 int __wrap_sem_timedwait(sem_t *sem, const struct timespec *abs_timeout) {
-  if (API_AMBUSH()) {
+  if (G_flags->api_ambush) {
     if (tsan_rtl_rand() % 2)
       return ETIMEDOUT;
     if (tsan_rtl_rand() % 2)
@@ -1549,7 +1550,7 @@ int __wrap_sem_timedwait(sem_t *sem, const struct timespec *abs_timeout) {
       ts.tv_nsec = (tsan_rtl_rand() % 1000) * 1000*1000;
     }
   }
-  SCHED_SHAKE(0);
+  tsan_rtl_sched_shake(shake_sem_timedwait, sem);
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_sem_timedwait, 0);
   int result = __real_sem_timedwait(sem, abs_timeout);
@@ -1564,14 +1565,15 @@ int __wrap_sem_timedwait(sem_t *sem, const struct timespec *abs_timeout) {
 
 extern "C"
 int __wrap_sem_trywait(sem_t *sem) {
-  if (API_AMBUSH()) {
+  if (G_flags->api_ambush) {
     if (tsan_rtl_rand() % 2)
       return EINTR;
   }
-  SCHED_SHAKE(0);
+  tsan_rtl_sched_shake(shake_sem_trywait, sem);
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_sem_wait, 0);
   //!!! strictly saying we need SIGNAL before sem_trywait()
+  //!!! need WAIT if result==EAGAIN as well
   int result = __real_sem_trywait(sem);
   if (result == 0) {
     SPut(WAIT, tid, pc, (uintptr_t)sem, 0);
@@ -1582,7 +1584,7 @@ int __wrap_sem_trywait(sem_t *sem) {
 
 extern "C"
 int __wrap_sem_post(sem_t *sem) {
-  SCHED_SHAKE(0);
+  tsan_rtl_sched_shake(shake_sem_post, sem);
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_sem_post, 0);
   SPut(SIGNAL, tid, pc, (uintptr_t)sem, 0);
@@ -1596,7 +1598,7 @@ int __wrap_sem_post(sem_t *sem) {
 // libpthread wrappers {{{1
 extern "C"
 int __wrap_pthread_mutex_lock(pthread_mutex_t *mutex) {
-  SCHED_SHAKE(0);
+  tsan_rtl_sched_shake(shake_mutex_lock, mutex);
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_mutex_lock, 0);
   ENTER_RTL();
@@ -1612,14 +1614,14 @@ int __wrap_pthread_mutex_lock(pthread_mutex_t *mutex) {
 
 extern "C"
 int __wrap_pthread_mutex_trylock(pthread_mutex_t *mutex) {
-  if (API_AMBUSH()) {
+  if (G_flags->api_ambush) {
     // Strictly saying that's incorrect according to POSIX
     // (trylock() on an unlocked mutex must not return EBUSY),
     // but it's a shame for a sane program to rely on that anyway :)
     if (tsan_rtl_rand() % 2)
       return EBUSY;
    }
-  SCHED_SHAKE(0);
+  tsan_rtl_sched_shake(shake_mutex_trylock, mutex);
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_mutex_trylock, 0);
   int result = __real_pthread_mutex_trylock(mutex);
@@ -1632,6 +1634,7 @@ int __wrap_pthread_mutex_trylock(pthread_mutex_t *mutex) {
 
 extern "C"
 int __wrap_pthread_mutex_unlock(pthread_mutex_t *mutex) {
+  tsan_rtl_sched_shake(shake_mutex_unlock, mutex);
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_mutex_unlock, 0);
   SPut(UNLOCK, tid, pc, (uintptr_t) mutex, 0);
@@ -1642,7 +1645,7 @@ int __wrap_pthread_mutex_unlock(pthread_mutex_t *mutex) {
 
 extern "C"
 int __wrap_pthread_cond_signal(pthread_cond_t *cond) {
-  SCHED_SHAKE(0);
+  tsan_rtl_sched_shake(shake_cond_signal, cond);
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_cond_signal, 0);
   int result = __real_pthread_cond_signal(cond);
@@ -1656,7 +1659,7 @@ int __wrap_pthread_cond_signal(pthread_cond_t *cond) {
 
 extern "C"
 int __wrap_pthread_cond_broadcast(pthread_cond_t *cond) {
-  SCHED_SHAKE(0);
+  tsan_rtl_sched_shake(shake_cond_broadcast, cond);
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_cond_broadcast, 0);
   int result = __real_pthread_cond_broadcast(cond);
@@ -1668,7 +1671,7 @@ int __wrap_pthread_cond_broadcast(pthread_cond_t *cond) {
 
 extern "C"
 int __wrap_pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex) {
-  if (API_AMBUSH()) {
+  if (G_flags->api_ambush) {
     if (tsan_rtl_rand() % 2)
       return EINTR;
   }
@@ -1682,7 +1685,7 @@ int __wrap_pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex) {
 #ifdef TSAN_SCHED_SHAKE
   if (G_flags->sched_shake) {
     __wrap_pthread_mutex_unlock(mutex);
-    SCHED_SHAKE(0);
+    tsan_rtl_sched_shake(shake_cond_wait, cond);
     __wrap_pthread_mutex_lock(mutex);
   }
 #endif
@@ -1692,7 +1695,7 @@ int __wrap_pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex) {
 extern "C"
 int __wrap_pthread_cond_timedwait(pthread_cond_t *cond, pthread_mutex_t *mutex,
                                   const struct timespec *abstime) {
-  if (API_AMBUSH()) {
+  if (G_flags->api_ambush) {
     if (tsan_rtl_rand() % 2)
       return ETIMEDOUT;
     if (tsan_rtl_rand() % 2)
@@ -1716,7 +1719,7 @@ int __wrap_pthread_cond_timedwait(pthread_cond_t *cond, pthread_mutex_t *mutex,
 #ifdef TSAN_SCHED_SHAKE
   if (G_flags->sched_shake) {
     __wrap_pthread_mutex_unlock(mutex);
-    SCHED_SHAKE(0);
+    tsan_rtl_sched_shake(shake_cond_timedwait, cond);
     __wrap_pthread_mutex_lock(mutex);
   }
 #endif
@@ -1780,7 +1783,7 @@ int __wrap_pthread_rwlock_destroy(pthread_rwlock_t *rwlock) {
 
 extern "C"
 int __wrap_pthread_rwlock_trywrlock(pthread_rwlock_t *rwlock) {
-  SCHED_SHAKE(0);
+  tsan_rtl_sched_shake(shake_mutex_trylock, rwlock);
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_rwlock_trywrlock, 0);
   int result = __real_pthread_rwlock_trywrlock(rwlock);
@@ -1793,7 +1796,7 @@ int __wrap_pthread_rwlock_trywrlock(pthread_rwlock_t *rwlock) {
 
 extern "C"
 int __wrap_pthread_rwlock_wrlock(pthread_rwlock_t *rwlock) {
-  SCHED_SHAKE(0);
+  tsan_rtl_sched_shake(shake_mutex_lock, rwlock);
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_rwlock_wrlock, 0);
   int result = __real_pthread_rwlock_wrlock(rwlock);
@@ -1806,7 +1809,7 @@ int __wrap_pthread_rwlock_wrlock(pthread_rwlock_t *rwlock) {
 
 extern "C"
 int __wrap_pthread_rwlock_tryrdlock(pthread_rwlock_t *rwlock) {
-  SCHED_SHAKE(0);
+  tsan_rtl_sched_shake(shake_mutex_tryrdlock, rwlock);
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_rwlock_tryrdlock, 0);
   int result = __real_pthread_rwlock_tryrdlock(rwlock);
@@ -1819,7 +1822,7 @@ int __wrap_pthread_rwlock_tryrdlock(pthread_rwlock_t *rwlock) {
 
 extern "C"
 int __wrap_pthread_rwlock_rdlock(pthread_rwlock_t *rwlock) {
-  SCHED_SHAKE(0);
+  tsan_rtl_sched_shake(shake_mutex_rdlock, rwlock);
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_rwlock_rdlock, 0);
   int result = __real_pthread_rwlock_rdlock(rwlock);
@@ -1832,6 +1835,7 @@ int __wrap_pthread_rwlock_rdlock(pthread_rwlock_t *rwlock) {
 
 extern "C"
 int __wrap_pthread_rwlock_unlock(pthread_rwlock_t *rwlock) {
+  tsan_rtl_sched_shake(shake_mutex_unlock, rwlock);
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_rwlock_unlock, 0);
   SPut(UNLOCK, tid, pc, (uintptr_t)rwlock, 0);
@@ -1952,7 +1956,7 @@ int __wrap_pthread_spin_destroy(pthread_spinlock_t *lock) {
 
 extern "C"
 int __wrap_pthread_spin_lock(pthread_spinlock_t *lock) {
-  SCHED_SHAKE(0);
+  tsan_rtl_sched_shake(shake_mutex_lock, lock);
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_spin_lock, 0);
   int result = __real_pthread_spin_lock(lock);
@@ -1965,14 +1969,14 @@ int __wrap_pthread_spin_lock(pthread_spinlock_t *lock) {
 
 extern "C"
 int __wrap_pthread_spin_trylock(pthread_spinlock_t *lock) {
-  if (API_AMBUSH()) {
+  if (G_flags->api_ambush) {
     // Strictly saying that's incorrect according to POSIX
     // (trylock() on an unlocked mutex must not return EBUSY),
     // but it's a shame for a sane program to rely on that anyway :)
     if (tsan_rtl_rand() % 2)
       return EBUSY;
   }
-  SCHED_SHAKE(0);
+  tsan_rtl_sched_shake(shake_mutex_trylock, lock);
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_spin_trylock, 0);
   int result = __real_pthread_spin_trylock(lock);
@@ -1985,6 +1989,7 @@ int __wrap_pthread_spin_trylock(pthread_spinlock_t *lock) {
 
 extern "C"
 int __wrap_pthread_spin_unlock(pthread_spinlock_t *lock) {
+  tsan_rtl_sched_shake(shake_mutex_unlock, lock);
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_spin_unlock, 0);
   SPut(UNLOCK, tid, pc, (uintptr_t)lock, 0);
@@ -2407,7 +2412,7 @@ int __wrap_epoll_ctl(int epfd, int op, int fd, struct epoll_event *event) {
 extern "C"
 int __wrap_epoll_wait(int epfd, struct epoll_event *events,
                       int maxevents, int timeout) {
-  if (API_AMBUSH()) {
+  if (G_flags->api_ambush) {
     if (tsan_rtl_rand() % 2)
       return EINTR;
     if ((timeout != 0) && (tsan_rtl_rand() % 2))
