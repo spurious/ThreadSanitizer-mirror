@@ -8071,6 +8071,9 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   FindBoolFlag("nacl_untrusted", false, args, &G_flags->nacl_untrusted);
   FindBoolFlag("threaded_analysis", false, args, &G_flags->threaded_analysis);
 
+  FindBoolFlag("sched_shake", false, args, &G_flags->sched_shake);
+  FindBoolFlag("api_ambush", false, args, &G_flags->api_ambush);
+
   if (!args->empty()) {
     ReportUnknownFlagAndExit(args->front());
   }

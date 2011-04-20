@@ -131,6 +131,9 @@ struct FLAGS {
   bool nacl_untrusted;
 
   bool threaded_analysis;
+
+  bool sched_shake;
+  bool api_ambush;
 };
 
 extern FLAGS *G_flags;
