@@ -141,25 +141,36 @@ static shake_strength_e calculate_strength(shake_event_e const ev,
 
   if (is_atomic(ev)) {
     if (prev.ctx == ctx)
+      // There are series of atomic operations,
+      // so do more shakes to stress it.
       return strength_highest;
     else
       return strength_above_normal;
 
   } else if (ev == shake_mutex_unlock) {
+    // No sense to do shake here.
     return strength_none;
 
   } else if (ev == shake_thread_create
           || ev == shake_thread_start) {
+    // We want to check both variants -
+    // when a parent thread starts first and when a child thread starts first.
     return strength_highest;
 
   } else if (is_mutex_lock(ev)) {
-    if (prev.ctx == ctx)
+    if (prev.ev == shake_cond_wait || prev.ev == shake_cond_timedwait)
+      // We've just done shake in cond wait
+      return strength_none;
+    else if (prev.ctx == ctx)
+      // Series of locks on the same mutex,
+      // that's suspicious.
       return strength_above_normal;
     else
       return strength_normal;
 
   } else if (ev == shake_cond_wait
       || ev == shake_cond_timedwait) {
+    // Presumably that's a subtle moment.
     return strength_above_normal;
   }
 

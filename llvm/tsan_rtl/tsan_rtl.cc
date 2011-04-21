@@ -1682,13 +1682,11 @@ int __wrap_pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex) {
   SPut(WAIT, tid, pc, (uintptr_t)cond, 0);
   SPut(WRITER_LOCK, tid, pc, (uintptr_t)mutex, 0);
   RPut(RTN_EXIT, tid, pc, 0, 0);
-#ifdef TSAN_SCHED_SHAKE
   if (G_flags->sched_shake) {
     __wrap_pthread_mutex_unlock(mutex);
     tsan_rtl_sched_shake(shake_cond_wait, cond);
     __wrap_pthread_mutex_lock(mutex);
   }
-#endif
   return result;
 }
 
@@ -1716,13 +1714,11 @@ int __wrap_pthread_cond_timedwait(pthread_cond_t *cond, pthread_mutex_t *mutex,
   }
   SPut(WRITER_LOCK, tid, pc, (uintptr_t)mutex, 0);
   RPut(RTN_EXIT, tid, pc, 0, 0);
-#ifdef TSAN_SCHED_SHAKE
   if (G_flags->sched_shake) {
     __wrap_pthread_mutex_unlock(mutex);
     tsan_rtl_sched_shake(shake_cond_timedwait, cond);
     __wrap_pthread_mutex_lock(mutex);
   }
-#endif
   return result;
 }
 
