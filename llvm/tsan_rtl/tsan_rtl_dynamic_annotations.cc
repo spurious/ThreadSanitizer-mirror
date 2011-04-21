@@ -28,6 +28,7 @@
 
 #define DYNAMIC_ANNOTATIONS_PREFIX LLVM
 #include "dynamic_annotations.h"
+#include "fake_annotations.h"
 #include "tsan_rtl.h"
 #include "tsan_rtl_sched_shake.h"
 
@@ -291,6 +292,18 @@ void WTFAnnotateBenignRaceSized(
       (uintptr_t)mem, (uintptr_t)size);
 }
 
+// }}}
+// Fake annotations (not from dynamic_annotations.h) {{{1
+extern "C"
+void FakeAnnotatePrintStackTrace(const char *file, int line) {
+  uintptr_t *pc = ShadowStack.end_;
+  Printf("T%d STACK\n", ExGetTid());
+  while (pc != ShadowStack.pcs_) {
+    Printf("    %p %s\n", *pc, PcToRtnName(*pc, true).c_str());
+    pc--;
+  }
+  Printf("\n");
+}
 // }}}
 
 // TODO(glider): we may need a flag to tune this.

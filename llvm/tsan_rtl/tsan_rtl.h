@@ -116,7 +116,7 @@ pc_t GetPc();
 extern FILE* G_out;
 // Reentrancy counter
 extern __thread int IN_RTL;
-
+extern __thread CallStackPod ShadowStack;
 
 void ReadElf();
 void AddWrappersDbgInfo();
