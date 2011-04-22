@@ -296,13 +296,7 @@ void WTFAnnotateBenignRaceSized(
 // Fake annotations (not from dynamic_annotations.h) {{{1
 extern "C"
 void FakeAnnotatePrintStackTrace(const char *file, int line) {
-  uintptr_t *pc = ShadowStack.end_;
-  Printf("T%d STACK\n", ExGetTid());
-  while (pc != ShadowStack.pcs_) {
-    Printf("    %p %s\n", *pc, PcToRtnName(*pc, true).c_str());
-    pc--;
-  }
-  Printf("\n");
+  PrintStackTrace();
 }
 // }}}
 

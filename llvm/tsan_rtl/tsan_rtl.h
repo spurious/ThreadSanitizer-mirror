@@ -87,7 +87,6 @@
 #endif
 
 
-
 int unsafe_clear_pending_signals();
 
 class GIL {
@@ -161,6 +160,7 @@ void IGNORE_ALL_ACCESSES_AND_SYNC_END(void);
 extern tid_t ExGetTid();
 extern pc_t ExGetPc();
 void set_global_ignore(bool new_value);
+void PrintStackTrace();
 
 
 #include "tsan_rtl_wrap.h"

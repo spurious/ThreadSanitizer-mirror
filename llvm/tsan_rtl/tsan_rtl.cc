@@ -891,7 +891,7 @@ void unsafe_forget_thread(tid_t tid, tid_t from) {
 //  -- add the __wrap_foo(bar) prototype to tsan_rtl_wrap.h
 //  -- implement __wrap_foo(bar) somewhere below using __real_foo(bar) as the
 //     original function name
-//  -- add foo to scripts/link_config.sh
+//  -- add foo to scripts/link_config.txt
 //
 // If you're wrapping a function that could potentially be called by
 // ThreadSanitizer itself and/or by a signal handler, make sure it won't cause
@@ -904,7 +904,7 @@ void unsafe_forget_thread(tid_t tid, tid_t from) {
 // RTN_CALL/RTN_EXIT events.
 //
 // Rule of thumb: __wrap_foo should never make a tail call to __real_foo,
-// because it normally should end with IN_RTL-- and RTN_EXIT.
+// because it normally should end with LEAVE_RTL() and RTN_EXIT.
 
 extern "C"
 void __wrap___libc_csu_init(void) {
@@ -2183,11 +2183,12 @@ char *__wrap_memcpy(char *dest, const char *src, size_t n) {
   if (IN_RTL) return __real_memcpy(dest, src, n);
   DECLARE_TID_AND_PC();
   ENTER_RTL();
+  //pc = (pc_t)__builtin_return_address(0);
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_memcpy, 0);
   pc = (pc_t)__wrap_memcpy;
   char *result = Replace_memcpy(tid, pc, dest, src, n);
-  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
+  LEAVE_RTL();
   return result;
 }
 
@@ -2677,10 +2678,10 @@ int __wrap_sigaction(int signum, const struct sigaction *act,
 extern "C"
 void rtn_call(void *addr) {
   DDPrintf("T%d: RTN_CALL [pc=%p; a=(nil); i=(nil)]\n", INFO.tid, addr);
-  *ShadowStack.end_ = (uintptr_t)addr;
   ShadowStack.end_++;
   DCHECK(ShadowStack.end_ > ShadowStack.pcs_);
   DCHECK((size_t)(ShadowStack.end_ - ShadowStack.pcs_) < kMaxCallStackSize);
+  *ShadowStack.end_ = (uintptr_t)addr;
 }
 
 extern "C"
@@ -2745,8 +2746,28 @@ void *rtl_memmove(char *dest, const char *src, size_t n) {
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
 }
+
+extern "C"
+void shadow_stack_check(uintptr_t old_v, uintptr_t new_v) {
+  if (old_v != new_v) {
+    Printf("Shadow stack corruption detected: %p != %p\n", old_v, new_v);
+    PrintStackTrace();
+    assert(old_v == new_v);  // die
+  } else {
+    Printf("ShadowStack ok: %p == %p\n", old_v, new_v);
+  }
+}
 // }}}
 
+void PrintStackTrace() {
+  uintptr_t *pc = ShadowStack.end_;
+  Printf("T%d STACK\n", ExGetTid());
+  while (pc != ShadowStack.pcs_) {
+    Printf("    %p %s\n", *pc, PcToRtnName(*pc, true).c_str());
+    pc--;
+  }
+  Printf("\n");
+}
 
 // Debug info routines {{{1
 struct PcInfo {
