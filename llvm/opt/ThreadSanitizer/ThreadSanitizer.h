@@ -151,8 +151,7 @@ struct TsanOnlineInstrument : public llvm::ModulePass { // {{{1
   llvm::GlobalVariable *LiteRaceStorageGlob;
   // Functions provided by the RTL.
   llvm::Constant *BBFlushFn, *BBFlushCurrentFn, *BBFlushMop;
-  // TODO(glider): get rid of rtn_call/rtn_exit at all.
-  llvm::Constant *RtnCallFn, *RtnExitFn;
+  llvm::Constant *RtnCallFn, *RtnExitFn, *ShadowStackCheckFn;
   llvm::Constant *MemCpyFn, *MemMoveFn, *MemSetIntrinsicFn;
   // Basic types.
   const llvm::PointerType *UIntPtr, *TraceInfoTypePtr, *Int8Ptr;

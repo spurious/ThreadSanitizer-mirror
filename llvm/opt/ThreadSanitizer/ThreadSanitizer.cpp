@@ -78,6 +78,12 @@ static cl::opt<bool>
                              cl::init(true));
 
 static cl::opt<bool>
+    CheckShadowStackConsistency("check-shadow-stack-consistency",
+        cl::desc("At the end of each function pass the initial and final values "
+                 "of ShadowStack.end_ to the runtime to compare them."),
+        cl::init(false));
+
+static cl::opt<bool>
     EnableMemoryInstrumentation("enable-memory-instrumentation",
                                 cl::desc("Instrument memory operations"),
                                 cl::init(true));
@@ -114,7 +120,7 @@ static cl::opt<bool>
 static cl::opt<bool>
     UseTlebForMinimalBlocks("use-tleb-for-minimal-blocks",
         cl::desc("Pass blocks containing a single mop via TLEB"),
-        cl::init(true));
+        cl::init(false));
 
 // }}}
 
@@ -608,9 +614,13 @@ TraceVector TsanOnlineInstrument::buildTraces(Function &F) {
 //   %2 = getelementptr inbounds i64* %1, i64 1
 //   store i64* %2, i64** getelementptr inbounds (%struct.CallStackPod* @ShadowStack, i64 0, i32 0), align 32
 //
-// Or, in C++:
+// TODO(glider): the comment above is totally obsolete and should be
+// rewritten. We insert the code that increments the stack top pointer,
+// so that there's an uninitialized value on the top.
+// This saves us an instruction and is acceptable, because further calls and/or
+// basic block flushes should update the stack top.
 //
-//   *ShadowStack.end_ = (uintptr_t)addr;
+// The effective C++ code for this is:
 //   ShadowStack.end_++;
 //
 void TsanOnlineInstrument::insertRtnCall(Constant *addr,
@@ -629,11 +639,6 @@ void TsanOnlineInstrument::insertRtnCall(Constant *addr,
                                   end_idx.begin(), end_idx.end(),
                                   "", Before);
     CurrentStackEnd = new LoadInst(StackEndPtr, "", Before);
-    // TODO(glider): this should be removed completely and the comment on top
-    // should be rewritten. We do not update the stack top (thus saving one
-    // instruction), because it'll be updated by the following call or basic
-    // block entry.
-    ///new StoreInst(addr, CurrentStackEnd, Before);
 
     vector <Value*> new_idx;
     new_idx.push_back(ConstantInt::get(Int32, 1));
@@ -667,8 +672,32 @@ void TsanOnlineInstrument::insertRtnExit(BasicBlock::iterator &Before) {
   ///                                              ConstantInt::get(PlatformInt, 1),
   ///                                              "", Before);
     // Restore the original shadow stack |end_| pointer.
-    assert(CurrentStackEnd);
-    new StoreInst(CurrentStackEnd, StackEndPtr, Before);
+    assert(CurrentStackEnd);  // this is the original value
+    if (CheckShadowStackConsistency) {
+      vector <Value*> end_idx;
+      end_idx.push_back(ConstantInt::get(PlatformInt, 0));
+      end_idx.push_back(ConstantInt::get(Int32, 0));
+      Value *StackEndPtr =
+          GetElementPtrInst::Create(ShadowStack,
+                                    end_idx.begin(), end_idx.end(),
+                                    "", Before);
+      Value *StackEnd = new LoadInst(StackEndPtr, "", Before);
+
+      vector <Value*> new_idx;
+      new_idx.push_back(ConstantInt::get(Int32, -1));
+      Value *NewStackEnd =
+          GetElementPtrInst::Create(StackEnd,
+                                    new_idx.begin(), new_idx.end(),
+                                    "", Before);
+      new StoreInst(NewStackEnd, StackEndPtr, Before);
+      vector <Value*> check;
+      check.push_back(CurrentStackEnd);
+      check.push_back(NewStackEnd);
+      CallInst::Create(ShadowStackCheckFn, check.begin(), check.end(),
+                       "", Before);
+    } else {
+      new StoreInst(CurrentStackEnd, StackEndPtr, Before);
+    }
   }
 }
 
@@ -881,7 +910,7 @@ void TsanOnlineInstrument::setupDataTypes() {
 void TsanOnlineInstrument::setupRuntimeGlobals() {
   ShadowStack = new GlobalVariable(*ThisModule,
                                    CallStackType,
-                                   /*isConstant*/true,
+                                   /*isConstant*/false,
                                    GlobalValue::ExternalWeakLinkage,
                                    /*Initializer*/0,
                                    "ShadowStack",
@@ -915,8 +944,7 @@ void TsanOnlineInstrument::setupRuntimeGlobals() {
                             /*ThreadLocal*/true);
 
   // void* bb_flush(next_mops)
-  // TODO(glider): need another name, because we now flush superblocks, not
-  // basic blocks.
+  // TODO(glider): need to stop supporting it. This has been broken for months.
   BBFlushFn = ThisModule->getOrInsertFunction("bb_flush",
                                               Void,
                                               TraceInfoTypePtr, (Type*)0);
@@ -942,15 +970,20 @@ void TsanOnlineInstrument::setupRuntimeGlobals() {
 
 
   // void rtn_call(void *addr)
-  // TODO(glider): we should finally get rid of it at all.
+  // We should keep this for debugging purpose.
   RtnCallFn = ThisModule->getOrInsertFunction("rtn_call",
                                               Void,
                                               PlatformInt, (Type*)0);
 
   // void rtn_exit()
-  // TODO(glider): we should finally get rid of it at all.
+  // We should keep this for debugging purpose.
   RtnExitFn = ThisModule->getOrInsertFunction("rtn_exit",
                                               Void, (Type*)0);
+
+  ShadowStackCheckFn = ThisModule->getOrInsertFunction("shadow_stack_check",
+                                                       Void,
+                                                       UIntPtr, UIntPtr,
+                                                       (Type*)0);
 
   MemCpyFn =
       ThisModule->getOrInsertFunction("rtl_memcpy",
@@ -1828,6 +1861,8 @@ void TsanOnlineInstrument::instrumentMemTransfer(BasicBlock::iterator &BI) {
   }
 }
 
+// Before each call/invoke instruction we update the shadow stack top with the
+// current program location (PC before the call).
 void TsanOnlineInstrument::instrumentCall(BasicBlock::iterator &BI) {
   // TODO(glider): should we somehow distinguish the addresses of mops and
   // calls?
@@ -1836,11 +1871,13 @@ void TsanOnlineInstrument::instrumentCall(BasicBlock::iterator &BI) {
   end_idx.push_back(ConstantInt::get(PlatformInt, 0));
   end_idx.push_back(ConstantInt::get(Int32, 0));
   // TODO(glider): can we avoid getting the element pointer twice?
+
   Value *StackEndPtr =
       GetElementPtrInst::Create(ShadowStack,
                                 end_idx.begin(), end_idx.end(),
                                 "", BI);
   Value *StackEnd = new LoadInst(StackEndPtr, "", BI);
+
   new StoreInst(getInstructionAddr(FunctionMopCount, BI, PlatformInt),
                 StackEnd, BI);
 }
