@@ -1637,6 +1637,17 @@ int __wrap_usleep(useconds_t usec) {
   return res;  
 }
 
+static int64_t timespec_to_int64(const struct timespec* ts) {
+  return (int64_t)ts->tv_sec * 1000*1000*1000 + ts->tv_nsec;
+}
+
+static struct timespec int64_to_timespec(int64_t t) {
+  struct timespec ts = {};
+  ts.tv_sec = (time_t)(t / (1000*1000*1000));
+  ts.tv_nsec = (long)(t % (1000*1000*1000));
+  return ts;
+}
+
 extern "C"
 int __wrap_nanosleep(const struct timespec *req, struct timespec *rem) {
   if (req == 0) {
@@ -1654,20 +1665,18 @@ int __wrap_nanosleep(const struct timespec *req, struct timespec *rem) {
       return -1;
     }
     if (tsan_rtl_rand() % 2) {
-      int64_t wait = (int64_t)req->tv_sec * 1000*1000*1000 + req->tv_nsec;
+      int64_t wait = timespec_to_int64(req);
       reserve = ((tsan_rtl_rand() % (wait / 100*1000)) - 1000) * 100*1000;
       wait -= reserve;
-      req2.tv_sec = (time_t)(wait / (1000*1000*1000));
-      req2.tv_nsec = (long)(wait % (1000*1000*1000));
+      req2 = int64_to_timespec(wait);
     }
   }
   int res = __real_nanosleep(&req2, rem);
   if (reserve != 0) {
     if (rem != 0) {
-      int64_t remain = (int64_t)rem->tv_sec * 1000*1000*1000 + rem->tv_nsec;
+      int64_t remain = timespec_to_int64(rem);
       remain += reserve;
-      rem->tv_sec = (time_t)(remain / (1000*1000*1000));
-      rem->tv_nsec = (long)(remain % (1000*1000*1000));
+      *rem = int64_to_timespec(remain);
     }
     errno = EINTR;
     return -1;
