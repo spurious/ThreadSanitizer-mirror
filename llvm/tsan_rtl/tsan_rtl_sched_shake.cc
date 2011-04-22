@@ -32,24 +32,9 @@
 #include <unistd.h>
 #include <assert.h>
 
-//TODO(dvyukov): wrap pthread_yield()
-//TODO(dvyukov): wrap sched_yield()
-//TODO(dvyukov): wrap usleep()
-//TODO(dvyukov): wrap nanosleep()
-//TODO(dvyukov): sem_getvalue()
-//TODO(dvyukov): wrap nanosleep()
 //TODO(dvyukov): sem can be used in "inverse" mode
 //TODO(dvyukov): wrap atomics
 //TODO(dvyukov): improve mm modelling precision
-
-    unsigned int sleep(unsigned int seconds); // remain seconds
-    int usleep(useconds_t usec); // EINTR
-      int nanosleep(const struct timespec *req, struct timespec *rem); //EINTR
-
-     int clock_nanosleep(clockid_t clock_id, int flags,
-                           const struct timespec *request,
-                           struct timespec *remain);
-
 
 
 enum shake_strength_e {
@@ -104,12 +89,12 @@ static void shake_delay_impl(unsigned const nop_probability,
   }
   else if ((rnd -= passive_spin_probability) < 0) {
     for (int i = 0; i != -rnd; i += 1) {
-      pthread_yield();
+      __real_pthread_yield();
     }
   }
   else if ((rnd -= sleep_probability) < 0) {
     for (int i = 0; i != -rnd; i += 1) {
-      usleep(10 * 1000); // 10ms
+      __real_usleep(10 * 1000); // 10ms
     }
   } else {
     assert(!"invalid delay probability calculation");
