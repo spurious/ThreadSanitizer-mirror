@@ -42,6 +42,14 @@
 //TODO(dvyukov): wrap atomics
 //TODO(dvyukov): improve mm modelling precision
 
+    unsigned int sleep(unsigned int seconds); // remain seconds
+    int usleep(useconds_t usec); // EINTR
+      int nanosleep(const struct timespec *req, struct timespec *rem); //EINTR
+
+     int clock_nanosleep(clockid_t clock_id, int flags,
+                           const struct timespec *request,
+                           struct timespec *remain);
+
 
 
 enum shake_strength_e {

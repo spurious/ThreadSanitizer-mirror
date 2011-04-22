@@ -39,6 +39,14 @@ wrap sem_post
 wrap sem_wait
 wrap sem_trywait
 wrap sem_timedwait
+wrap sem_getvalue
+
+wrap usleep
+wrap nanosleep
+wrap sleep
+wrap clock_nanosleep
+wrap sched_yield
+wrap pthread_yield
 
 wrap atexit
 wrap exit

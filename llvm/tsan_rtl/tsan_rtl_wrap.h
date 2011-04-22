@@ -77,6 +77,16 @@ int __real_sem_wait(sem_t *sem);
 int __real_sem_trywait(sem_t *sem);
 int __real_sem_post(sem_t *sem);
 int __real_sem_timedwait(sem_t *sem, const struct timespec *abs_timeout);
+int __real_sem_getvalue(sem_t *sem, int *value);
+
+int __real_usleep(useconds_t usec);
+int __real_nanosleep(const struct timespec *req, struct timespec *rem);
+unsigned int __real_sleep(unsigned int seconds);
+int __real_clock_nanosleep(clockid_t clock_id, int flags,
+                           const struct timespec *request,
+                           struct timespec *remain);
+int __real_sched_yield();
+int __real_pthread_yield();
 
 int __real___cxa_guard_acquire(int *guard);
 int __real___cxa_guard_release(int *guard);

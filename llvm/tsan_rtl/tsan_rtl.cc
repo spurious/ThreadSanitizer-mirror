@@ -1522,8 +1522,10 @@ sem_t *__wrap_sem_open(const char *name, int oflag,
 extern "C"
 int __wrap_sem_wait(sem_t *sem) {
   if (G_flags->api_ambush) {
-    if (tsan_rtl_rand() % 2)
-      return EINTR;
+    if (tsan_rtl_rand() % 2) {
+      errno = EINTR;
+      return -1;
+    }
   }
   tsan_rtl_sched_shake(shake_sem_wait, sem);
   DECLARE_TID_AND_PC();
@@ -1539,10 +1541,14 @@ int __wrap_sem_wait(sem_t *sem) {
 extern "C"
 int __wrap_sem_timedwait(sem_t *sem, const struct timespec *abs_timeout) {
   if (G_flags->api_ambush) {
-    if (tsan_rtl_rand() % 2)
-      return ETIMEDOUT;
-    if (tsan_rtl_rand() % 2)
-      return EINTR;
+    if (tsan_rtl_rand() % 2) {
+      errno = ETIMEDOUT;
+      return -1;
+    }
+    if (tsan_rtl_rand() % 2) {
+      errno = EINTR;
+      return -1;
+    }
     struct timespec ts;
     if ((abs_timeout != 0) && (tsan_rtl_rand() % 2)) {
       abs_timeout = &ts;
@@ -1566,8 +1572,10 @@ int __wrap_sem_timedwait(sem_t *sem, const struct timespec *abs_timeout) {
 extern "C"
 int __wrap_sem_trywait(sem_t *sem) {
   if (G_flags->api_ambush) {
-    if (tsan_rtl_rand() % 2)
-      return EINTR;
+    if (tsan_rtl_rand() % 2) {
+      errno = EINTR;
+      return -1;
+    }
   }
   tsan_rtl_sched_shake(shake_sem_trywait, sem);
   DECLARE_TID_AND_PC();
@@ -1591,6 +1599,125 @@ int __wrap_sem_post(sem_t *sem) {
   int result = __real_sem_post(sem);
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
+}
+
+extern "C"
+int __wrap_sem_getvalue(sem_t *sem, int *value) {
+  tsan_rtl_sched_shake(shake_sem_getvalue, sem);
+  DECLARE_TID_AND_PC();
+  RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_sem_getvalue, 0);
+  int result = __real_sem_getvalue(sem, value);
+  SPut(WAIT, tid, pc, (uintptr_t)sem, 0);
+  RPut(RTN_EXIT, tid, pc, 0, 0);
+  return result;
+}
+
+// }}}
+
+// libpthread wrappers {{{1
+
+extern "C"
+int __wrap_usleep(useconds_t usec) {
+  int reserve = 0;
+  if (G_flags->api_ambush) {
+    if (tsan_rtl_rand() % 2) {
+      errno = EINTR;
+      return -1;
+    }
+    if (tsan_rtl_rand() % 2) {
+      reserve = tsan_rtl_rand() % (usec + 1000) - 1000;
+      usec -= reserve;
+    }
+  }
+  int res = __real_usleep(usec);
+  if (res == 0 && reserve > 0) {
+    errno = EINTR;
+    return -1;
+  }
+  return res;  
+}
+
+extern "C"
+int __wrap_nanosleep(const struct timespec *req, struct timespec *rem) {
+  if (req == 0) {
+    errno = EINVAL;
+    return -1;
+  }
+
+  struct timespec req2 = *req;
+  int64_t reserve = 0;
+  if (G_flags->api_ambush) {
+    if (tsan_rtl_rand() % 2) {
+      errno = EINTR;
+      if (rem != 0)
+        *rem = *req;
+      return -1;
+    }
+    if (tsan_rtl_rand() % 2) {
+      int64_t wait = (int64_t)req->tv_sec * 1000*1000*1000 + req->tv_nsec;
+      reserve = ((tsan_rtl_rand() % (wait / 100*1000)) - 1000) * 100*1000;
+      wait -= reserve;
+      req2.tv_sec = (time_t)(wait / (1000*1000*1000));
+      req2.tv_nsec = (long)(wait % (1000*1000*1000));
+    }
+  }
+  int res = __real_nanosleep(&req2, rem);
+  if (reserve != 0) {
+    if (rem != 0) {
+      int64_t remain = (int64_t)rem->tv_sec * 1000*1000*1000 + rem->tv_nsec;
+      remain += reserve;
+      rem->tv_sec = (time_t)(remain / (1000*1000*1000));
+      rem->tv_nsec = (long)(remain % (1000*1000*1000));
+    }
+    errno = EINTR;
+    return -1;
+  }
+  return res;
+}
+
+extern "C"
+unsigned int __wrap_sleep(unsigned int seconds) {
+  int reserve = 0;
+  if (G_flags->api_ambush) {
+    if (seconds == 0 || tsan_rtl_rand() % 2)
+      return seconds;
+    reserve = rand() % seconds;
+    seconds -= reserve;
+  }
+  int res = __real_sleep(seconds);
+  res += reserve;
+  return res;
+}
+
+extern "C"
+int __wrap_clock_nanosleep(clockid_t clock_id, int flags,
+                           const struct timespec *request,
+                           struct timespec *remain) {
+  if (G_flags->api_ambush) {
+    if (tsan_rtl_rand() % 2) {
+      if (request != 0 && remain != 0)
+        *remain = *request;
+      errno = EINTR;
+      return -1;
+    }
+  }
+  int res = __real_clock_nanosleep(clock_id, flags, request, remain);
+  return res;
+}
+
+extern "C"
+int __wrap_sched_yield() {
+  if (G_flags->api_ambush) {
+    if (tsan_rtl_rand() % 2)
+      return 0;
+  }
+
+  return __real_sched_yield();
+}
+
+extern "C"
+int __wrap_pthread_yield() {
+  return __wrap_sched_yield();
 }
 
 // }}}
@@ -1618,9 +1745,11 @@ int __wrap_pthread_mutex_trylock(pthread_mutex_t *mutex) {
     // Strictly saying that's incorrect according to POSIX
     // (trylock() on an unlocked mutex must not return EBUSY),
     // but it's a shame for a sane program to rely on that anyway :)
-    if (tsan_rtl_rand() % 2)
-      return EBUSY;
-   }
+    if (tsan_rtl_rand() % 2) {
+      errno = EBUSY;
+      return -1;
+    }
+  }
   tsan_rtl_sched_shake(shake_mutex_trylock, mutex);
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_mutex_trylock, 0);
@@ -1672,8 +1801,10 @@ int __wrap_pthread_cond_broadcast(pthread_cond_t *cond) {
 extern "C"
 int __wrap_pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex) {
   if (G_flags->api_ambush) {
-    if (tsan_rtl_rand() % 2)
-      return EINTR;
+    if (tsan_rtl_rand() % 2) {
+      errno = EINTR;
+      return -1;
+    }
   }
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_cond_wait, 0);
@@ -1694,10 +1825,14 @@ extern "C"
 int __wrap_pthread_cond_timedwait(pthread_cond_t *cond, pthread_mutex_t *mutex,
                                   const struct timespec *abstime) {
   if (G_flags->api_ambush) {
-    if (tsan_rtl_rand() % 2)
-      return ETIMEDOUT;
-    if (tsan_rtl_rand() % 2)
-      return EINTR;
+    if (tsan_rtl_rand() % 2) {
+      errno = ETIMEDOUT;
+      return -1;
+    }
+    if (tsan_rtl_rand() % 2) {
+      errno = EINTR;
+      return -1;
+    }
     struct timespec ts;
     if ((abstime != 0) && (tsan_rtl_rand() % 2)) {
       abstime = &ts;
@@ -1969,8 +2104,10 @@ int __wrap_pthread_spin_trylock(pthread_spinlock_t *lock) {
     // Strictly saying that's incorrect according to POSIX
     // (trylock() on an unlocked mutex must not return EBUSY),
     // but it's a shame for a sane program to rely on that anyway :)
-    if (tsan_rtl_rand() % 2)
-      return EBUSY;
+    if (tsan_rtl_rand() % 2) {
+      errno = EBUSY;
+      return -1;
+    }
   }
   tsan_rtl_sched_shake(shake_mutex_trylock, lock);
   DECLARE_TID_AND_PC();
@@ -2409,10 +2546,12 @@ extern "C"
 int __wrap_epoll_wait(int epfd, struct epoll_event *events,
                       int maxevents, int timeout) {
   if (G_flags->api_ambush) {
+    if (tsan_rtl_rand() % 2) {
+      errno = EINTR;
+      return -1;
+    }
     if (tsan_rtl_rand() % 2)
-      return EINTR;
-    if ((timeout != 0) && (tsan_rtl_rand() % 2))
-      timeout = tsan_rtl_rand() % 1000;
+      timeout = tsan_rtl_rand() % (timeout + 100);
   }
   if (IN_RTL) return __real_epoll_wait(epfd, events, maxevents, timeout);
   DECLARE_TID_AND_PC();
@@ -2775,6 +2914,14 @@ void AddWrappersDbgInfo() {
   WRAPPER_DBG_INFO(__wrap_sem_wait);
   WRAPPER_DBG_INFO(__wrap_sem_trywait);
   WRAPPER_DBG_INFO(__wrap_sem_post);
+  WRAPPER_DBG_INFO(__wrap_sem_getvalue);
+
+  WRAPPER_DBG_INFO(__wrap_usleep);
+  WRAPPER_DBG_INFO(__wrap_nanosleep);
+  WRAPPER_DBG_INFO(__wrap_sleep);
+  WRAPPER_DBG_INFO(__wrap_clock_nanosleep);
+  WRAPPER_DBG_INFO(__wrap_sched_yield);
+  WRAPPER_DBG_INFO(__wrap_pthread_yield);
 
   WRAPPER_DBG_INFO(__wrap___cxa_guard_acquire);
   WRAPPER_DBG_INFO(__wrap___cxa_guard_release);
