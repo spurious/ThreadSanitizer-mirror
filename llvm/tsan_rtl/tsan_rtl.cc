@@ -2763,7 +2763,7 @@ void shadow_stack_check(uintptr_t old_v, uintptr_t new_v) {
     PrintStackTrace();
     assert(old_v == new_v);  // die
   } else {
-    Printf("ShadowStack ok: %p == %p\n", old_v, new_v);
+    DDPrintf("ShadowStack ok: %p == %p\n", old_v, new_v);
   }
 }
 // }}}
