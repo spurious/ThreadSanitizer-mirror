@@ -239,12 +239,6 @@ static void BfdTranslateAddress(void* xaddr,
       if (alloc != 0)
         free(alloc);
 
-      if (si.filename != 0) {
-        char const* h = strrchr(si.filename, '/');
-        if (h != 0)
-          si.filename = h + 1;
-      }
-
       if (buf_file != NULL)
         snprintf(buf_file, buf_file_len, "%s",
                 si.filename ? si.filename : "??");
