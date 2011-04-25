@@ -1716,7 +1716,7 @@ int __wrap_clock_nanosleep(clockid_t clock_id, int flags,
 
 extern "C"
 int __wrap_sched_yield() {
-  if (G_flags->api_ambush) {
+  if (!IN_RTL && G_flags->api_ambush) {
     if (tsan_rtl_rand() % 2)
       return 0;
   }
@@ -2388,9 +2388,9 @@ pid_t __wrap_fork() {
   ThreadSanitizerLockAcquire();
   pid_t result;
   ENTER_RTL();
-  Printf("Before fork() in process %d\n", getpid());
+  DDPrintf("Before fork() in process %d\n", getpid());
   result = __real_fork();
-  Printf("After fork() in process %d\n", getpid());
+  DDPrintf("After fork() in process %d\n", getpid());
   if (result == 0) {
     // Ignore all accesses in the child process. If someone is flushing the
     // TLEB in a thread under TSLock, and we're doing fork() in another thread,
