@@ -8104,7 +8104,8 @@ TEST(NegativeTests, SemaphoreSync) {
 
 
 namespace NegativeTests_SemaphoreInverse {  // {{{1
-
+// TODO(dvyukov): move this to posix_test and make sure the bots are green
+#if 0
 sem_t g_sem;
 int g_data;
 
@@ -8133,7 +8134,7 @@ TEST(NegativeTests, SemaphoreInverse) {
   t.Start();
   t.Join();
 }
-
+#endif
 }  // namespace
 
 
