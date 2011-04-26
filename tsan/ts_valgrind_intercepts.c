@@ -2161,22 +2161,20 @@ LIBC_FUNC(long, opendir$Za, void *path) {
   return opendir_WRK(path);
 }
 
-#ifndef ANDROID
-LIBC_FUNC(long, lockf, long fd, long cmd, OFF_T offset) {
-  // TODO: this doesn't support locking file subsections
-  const long offset_magic = 0xFEB0ACC0;
+#if defined(VGO_linux) && !defined(ANDROID)
+LIBC_FUNC(int, lockf, int fd, int cmd, OFF_T offset) {
   OrigFn fn;
+  void *o;
   long ret;
   VALGRIND_GET_ORIG_FN(fn);
-  if (cmd == F_ULOCK)
-    DO_CREQ_v_W(TSREQ_PTHREAD_RWLOCK_UNLOCK_PRE,
-                  long, fd ^ offset_magic);
+  o = SocketMagic(fd);
+  if (cmd == F_ULOCK) {
+    DO_CREQ_v_W(TSREQ_SIGNAL, void*, o);
+  }
   CALL_FN_W_2WO_T(ret, fn, fd, cmd, offset);
-  if (cmd == F_LOCK && ret == 0)
-    DO_CREQ_v_WW(TSREQ_PTHREAD_RWLOCK_LOCK_POST,
-                  long, fd ^ offset_magic,
-                  long, 1/*is_w*/);
-
+  if (cmd == F_LOCK && ret == 0) {
+    do_wait(o);
+  }
   return ret;
 }
 #endif
