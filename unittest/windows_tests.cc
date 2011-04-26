@@ -118,7 +118,7 @@ TEST(NegativeTests, HappensBeforeOnThreadJoinTidReuse) {  // {{{1
   int *var = new int;
   HANDLE t2 = ::CreateThread(0, 0,
                              (LPTHREAD_START_ROUTINE)WriteWorker, var, 0, 0);
-  printf("t1 = %d, t2 = %d\n");
+  printf("t1 = %d, t2 = %d\n", t1, t2);
   CHECK(t2 > 0);
   CHECK(WAIT_OBJECT_0 == ::WaitForSingleObject(t2, INFINITE));
   CHECK(*var == 42);
