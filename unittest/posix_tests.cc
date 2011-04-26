@@ -1052,7 +1052,7 @@ void Worker() {
   mu.Unlock();
 }
 
-TEST(NegativeTests,DISABLED_LockfTest) {
+TEST(NegativeTests, LockfTest) {
   mu.set_fd(1 /* stdout */);
   MyThreadArray mta(Worker, Worker);
   mta.Start();
