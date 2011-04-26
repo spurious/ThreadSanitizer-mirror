@@ -42,7 +42,7 @@ ifeq ($(TS_DIRECT_MAP), 1)
   COMMON_FLAGS+=-DTS_DIRECT_MAP=1
 endif
 
-FLAGS=$(COMMON_FLAGS) -DDYNAMIC_ANNOTATIONS_WANT_ATTRIBUTE_WEAK
+FLAGS=$(COMMON_FLAGS)
 
 FOREIGN_HEADERS=$(TSAN_PATH)/ts_lock.h $(TSAN_PATH)/ts_stats.h \
                 $(TSAN_PATH)/ts_heap_info.h $(TSAN_PATH)/ts_trace_info.h \
