@@ -13,15 +13,18 @@ RTL_DEPS=
 OBJS32=x86-ts_util.o x86-suppressions.o \
        x86-common_util.o x86-ignore.o x86-tsan_rtl_dynamic_annotations.o \
        x86-thread_sanitizer.o x86-dynamic_annotations.o \
-       x86-tsan_rtl_lbfd.o x86-tsan_rtl_sched_shake.o
+       x86-tsan_rtl_lbfd.o x86-tsan_rtl_sched_shake.o \
+       x86-earthquake_wrap.o x86-earthquake_core.o
 OBJS64=amd64-ts_util.o amd64-suppressions.o \
        amd64-common_util.o amd64-ignore.o \
        amd64-tsan_rtl_dynamic_annotations.o \
        amd64-thread_sanitizer.o amd64-dynamic_annotations.o \
-       amd64-tsan_rtl_lbfd.o amd64-tsan_rtl_sched_shake.o
+       amd64-tsan_rtl_lbfd.o amd64-tsan_rtl_sched_shake.o \
+       amd64-earthquake_wrap.o amd64-earthquake_core.o
 
 COMMON_FLAGS=-I. -Istlport -I../../third_party/stlport \
       -I$(TSAN_PATH) -I../../dynamic_annotations \
+      -I../../earthquake \
       -fno-exceptions -g -O2 \
       -D_STLP_NO_IOSTREAMS=1 -DTS_LLVM
 
@@ -87,6 +90,9 @@ x86-%.o:	%.cc $(TS_HEADERS) $(FOREIGN_HEADERS)
 x86-%.o:	$(TSAN_PATH)/%.cc $(TS_HEADERS) $(FOREIGN_HEADERS)
 	$(CXX) -m32 -o $@ -c $< $(ERRORLVL) $(DA_FLAGS) $(DEFINES32)
 
+x86-%.o:	../../earthquake/%.c
+	$(CC) -m32 -o $@ -c $< $(ERRORLVL) $(DA_FLAGS) $(DEFINES32)
+
 x86-dynamic_annotations.o:	$(TSAN_PATH)/../dynamic_annotations/dynamic_annotations.c $(TS_HEADERS) $(FOREIGN_HEADERS)
 	$(CC) -m32 -o $@ -c $< $(ERRORLVL) $(DA_FLAGS) $(DEFINES32)
 
@@ -96,6 +102,9 @@ amd64-%.o:	%.cc $(TS_HEADERS) $(FOREIGN_HEADERS)
 
 amd64-%.o:	$(TSAN_PATH)/%.cc $(TS_HEADERS) $(FOREIGN_HEADERS)
 	$(CXX) -m64 -o $@ -c $< $(ERRORLVL) $(DA_FLAGS) $(DEFINES64)
+
+amd64-%.o:	../../earthquake/%.c
+	$(CC) -m64 -o $@ -c $< $(ERRORLVL) $(DA_FLAGS) $(DEFINES64)
 
 amd64-dynamic_annotations.o:	$(TSAN_PATH)/../dynamic_annotations/dynamic_annotations.c $(TS_HEADERS) $(FOREIGN_HEADERS)
 	$(CC) -m64 -o $@ -c $< $(ERRORLVL) $(DA_FLAGS) $(DEFINES64)

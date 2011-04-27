@@ -27,7 +27,7 @@
 // Author: glider@google.com (Alexander Potapenko)
 
 #include "tsan_rtl.h"
-#include "tsan_rtl_sched_shake.h"
+#include "../../earthquake/earthquake_wrap.h"
 
 #include "ts_trace_info.h"
 #include "ts_lock.h"
@@ -677,6 +677,8 @@ INLINE void InitRTLAndTid0() {
   CHECK(RTL_INIT == 0);
   // Initialize ThreadSanitizer et. al.
   if (!initialize()) __real_exit(2);
+  eq_init(G_flags->sched_shake, G_flags->api_ambush,
+          __real_sched_yield, __real_usleep);
   RTL_INIT = 1;
   // Initialize thread #0.
   INFO.tid = 0;
@@ -821,8 +823,6 @@ void *pthread_callback(void *arg) {
   LEAVE_RTL();
   GIL::Unlock();
 
-  tsan_rtl_sched_shake(shake_thread_start, (void*)routine);
-
   result = (*routine)(routine_arg);
 
   // We're about to stop the current thread. Block all the signals to prevent
@@ -915,6 +915,10 @@ void __wrap___libc_csu_init(void) {
 extern "C"
 int __wrap_pthread_create(pthread_t *thread,
                           pthread_attr_t *attr,
+                          void *(*start_routine)(void*), void *arg);
+
+static int tsan_pthread_create(pthread_t *thread,
+                          pthread_attr_t *attr,
                           void *(*start_routine)(void*), void *arg) {
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_create, 0);
@@ -956,8 +960,14 @@ int __wrap_pthread_create(pthread_t *thread,
   if (!result) SPut(THR_CREATE_AFTER, tid, 0, 0, child_tid);
   DDPrintf("pthread_create(%p)\n", *thread);
   RPut(RTN_EXIT, tid, pc, 0, 0);
-  tsan_rtl_sched_shake(shake_thread_create, (void*)start_routine);
   return result;
+}
+
+int __wrap_pthread_create(pthread_t *thread,
+                          pthread_attr_t *attr,
+                          void *(*start_routine)(void*), void *arg) {
+  return eq_pthread_create((void*)tsan_pthread_create,
+                           thread, attr, start_routine, arg);
 }
 
 
@@ -1504,6 +1514,14 @@ void __wrap__ZdaPvRKSt9nothrow_t(void *ptr, std::nothrow_t &nt) {
 // Unnamed POSIX semaphores {{{1
 // TODO(glider): support AnnotateIgnoreSync here.
 
+extern "C" int __wrap_sem_wait(sem_t *sem);
+extern "C" int __wrap_sem_timedwait(sem_t *sem,
+                                    const struct timespec *abs_timeout);
+extern "C" int __wrap_sem_trywait(sem_t *sem);
+extern "C" int __wrap_sem_post(sem_t *sem);
+extern "C" int __wrap_sem_getvalue(sem_t *sem, int *value);
+
+
 extern "C"
 sem_t *__wrap_sem_open(const char *name, int oflag,
                 mode_t mode, unsigned int value) {
@@ -1519,15 +1537,7 @@ sem_t *__wrap_sem_open(const char *name, int oflag,
   return result;
 }
 
-extern "C"
-int __wrap_sem_wait(sem_t *sem) {
-  if (G_flags->api_ambush) {
-    if (tsan_rtl_rand() % 2) {
-      errno = EINTR;
-      return -1;
-    }
-  }
-  tsan_rtl_sched_shake(shake_sem_wait, sem);
+static int tsan_sem_wait(sem_t *sem) {
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_sem_wait, 0);
   int result = __real_sem_wait(sem);
@@ -1538,25 +1548,11 @@ int __wrap_sem_wait(sem_t *sem) {
   return result;
 }
 
-extern "C"
-int __wrap_sem_timedwait(sem_t *sem, const struct timespec *abs_timeout) {
-  if (G_flags->api_ambush) {
-    if (tsan_rtl_rand() % 2) {
-      errno = ETIMEDOUT;
-      return -1;
-    }
-    if (tsan_rtl_rand() % 2) {
-      errno = EINTR;
-      return -1;
-    }
-    struct timespec ts;
-    if ((abs_timeout != 0) && (tsan_rtl_rand() % 2)) {
-      abs_timeout = &ts;
-      ts.tv_sec = time(0);
-      ts.tv_nsec = (tsan_rtl_rand() % 1000) * 1000*1000;
-    }
-  }
-  tsan_rtl_sched_shake(shake_sem_timedwait, sem);
+int __wrap_sem_wait(sem_t *sem) {
+  return eq_sem_wait((void*)tsan_sem_wait, sem);
+}
+
+int tsan_sem_timedwait(sem_t *sem, const struct timespec *abs_timeout) {
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_sem_timedwait, 0);
   int result = __real_sem_timedwait(sem, abs_timeout);
@@ -1567,17 +1563,13 @@ int __wrap_sem_timedwait(sem_t *sem, const struct timespec *abs_timeout) {
   return result;
 }
 
+int __wrap_sem_timedwait(sem_t *sem, const struct timespec *abs_timeout) {
+  return eq_sem_timedwait((void*)tsan_sem_timedwait, sem, abs_timeout);
+}
+
 // We do not intercept sel_init and sem_destroy, as they're not interesting.
 
-extern "C"
-int __wrap_sem_trywait(sem_t *sem) {
-  if (G_flags->api_ambush) {
-    if (tsan_rtl_rand() % 2) {
-      errno = EINTR;
-      return -1;
-    }
-  }
-  tsan_rtl_sched_shake(shake_sem_trywait, sem);
+int tsan_sem_trywait(sem_t *sem) {
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_sem_wait, 0);
   //!!! strictly saying we need SIGNAL before sem_trywait()
@@ -1590,9 +1582,11 @@ int __wrap_sem_trywait(sem_t *sem) {
   return result;
 }
 
-extern "C"
-int __wrap_sem_post(sem_t *sem) {
-  tsan_rtl_sched_shake(shake_sem_post, sem);
+int __wrap_sem_trywait(sem_t *sem) {
+  return eq_sem_trywait((void*)tsan_sem_trywait, sem);
+}
+
+int tsan_sem_post(sem_t *sem) {
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_sem_post, 0);
   SPut(SIGNAL, tid, pc, (uintptr_t)sem, 0);
@@ -1601,15 +1595,20 @@ int __wrap_sem_post(sem_t *sem) {
   return result;
 }
 
-extern "C"
-int __wrap_sem_getvalue(sem_t *sem, int *value) {
-  tsan_rtl_sched_shake(shake_sem_getvalue, sem);
+int __wrap_sem_post(sem_t *sem) {
+  return eq_sem_post((void*)tsan_sem_post, sem);
+}
+
+static int tsan_sem_getvalue(sem_t *sem, int *value) {
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_sem_getvalue, 0);
   int result = __real_sem_getvalue(sem, value);
   SPut(WAIT, tid, pc, (uintptr_t)sem, 0);
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
+}
+int __wrap_sem_getvalue(sem_t *sem, int *value) {
+  return eq_sem_getvalue((void*)tsan_sem_getvalue, sem, value);
 }
 
 // }}}
@@ -1618,123 +1617,58 @@ int __wrap_sem_getvalue(sem_t *sem, int *value) {
 
 extern "C"
 int __wrap_usleep(useconds_t usec) {
-  int reserve = 0;
-  if (G_flags->api_ambush) {
-    if (tsan_rtl_rand() % 2) {
-      errno = EINTR;
-      return -1;
-    }
-    if (tsan_rtl_rand() % 2) {
-      reserve = tsan_rtl_rand() % (usec + 1000) - 1000;
-      usec -= reserve;
-    }
-  }
-  int res = __real_usleep(usec);
-  if (res == 0 && reserve > 0) {
-    errno = EINTR;
-    return -1;
-  }
-  return res;  
-}
-
-static int64_t timespec_to_int64(const struct timespec* ts) {
-  return (int64_t)ts->tv_sec * 1000*1000*1000 + ts->tv_nsec;
-}
-
-static struct timespec int64_to_timespec(int64_t t) {
-  struct timespec ts = {};
-  ts.tv_sec = (time_t)(t / (1000*1000*1000));
-  ts.tv_nsec = (long)(t % (1000*1000*1000));
-  return ts;
+  return eq_usleep((void*)__real_usleep, usec);
 }
 
 extern "C"
 int __wrap_nanosleep(const struct timespec *req, struct timespec *rem) {
-  if (req == 0) {
-    errno = EINVAL;
-    return -1;
-  }
-
-  struct timespec req2 = *req;
-  int64_t reserve = 0;
-  if (G_flags->api_ambush) {
-    if (tsan_rtl_rand() % 2) {
-      errno = EINTR;
-      if (rem != 0)
-        *rem = *req;
-      return -1;
-    }
-    if (tsan_rtl_rand() % 2) {
-      int64_t wait = timespec_to_int64(req);
-      reserve = ((tsan_rtl_rand() % (wait / 100*1000)) - 1000) * 100*1000;
-      wait -= reserve;
-      req2 = int64_to_timespec(wait);
-    }
-  }
-  int res = __real_nanosleep(&req2, rem);
-  if (reserve != 0) {
-    if (rem != 0) {
-      int64_t remain = timespec_to_int64(rem);
-      remain += reserve;
-      *rem = int64_to_timespec(remain);
-    }
-    errno = EINTR;
-    return -1;
-  }
-  return res;
+  return eq_nanosleep((void*)__real_nanosleep, req, rem);
 }
 
 extern "C"
 unsigned int __wrap_sleep(unsigned int seconds) {
-  int reserve = 0;
-  if (G_flags->api_ambush) {
-    if (seconds == 0 || tsan_rtl_rand() % 2)
-      return seconds;
-    reserve = rand() % seconds;
-    seconds -= reserve;
-  }
-  int res = __real_sleep(seconds);
-  res += reserve;
-  return res;
+  return eq_sleep((void*)__real_sleep, seconds);
 }
 
 extern "C"
 int __wrap_clock_nanosleep(clockid_t clock_id, int flags,
                            const struct timespec *request,
                            struct timespec *remain) {
-  if (G_flags->api_ambush) {
-    if (tsan_rtl_rand() % 2) {
-      if (request != 0 && remain != 0)
-        *remain = *request;
-      errno = EINTR;
-      return -1;
-    }
-  }
-  int res = __real_clock_nanosleep(clock_id, flags, request, remain);
-  return res;
+  return eq_clock_nanosleep((void*)__real_clock_nanosleep,
+                            clock_id, flags, request, remain);
 }
 
 extern "C"
 int __wrap_sched_yield() {
-  if (!IN_RTL && G_flags->api_ambush) {
-    if (tsan_rtl_rand() % 2)
-      return 0;
-  }
-
-  return __real_sched_yield();
+  if (IN_RTL)
+    __real_sched_yield();
+  return eq_sched_yield((void*)__real_sched_yield, 0);
 }
 
 extern "C"
 int __wrap_pthread_yield() {
-  return __wrap_sched_yield();
+  if (IN_RTL)
+    __real_pthread_yield();
+  return eq_pthread_yield((void*)__real_sched_yield, 0);
 }
 
 // }}}
 
 // libpthread wrappers {{{1
-extern "C"
-int __wrap_pthread_mutex_lock(pthread_mutex_t *mutex) {
-  tsan_rtl_sched_shake(shake_mutex_lock, mutex);
+
+extern "C" {
+int __wrap_pthread_mutex_lock(pthread_mutex_t *mutex);
+int __wrap_pthread_mutex_trylock(pthread_mutex_t *mutex);
+int __wrap_pthread_mutex_unlock(pthread_mutex_t *mutex);
+int __wrap_pthread_cond_signal(pthread_cond_t *cond);
+int __wrap_pthread_cond_broadcast(pthread_cond_t *cond);
+int __wrap_pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex);
+int __wrap_pthread_cond_timedwait(pthread_cond_t *cond,
+                                  pthread_mutex_t *mutex,
+                                  const struct timespec *abstime);
+}
+
+static int tsan_pthread_mutex_lock(pthread_mutex_t *mutex) {
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_mutex_lock, 0);
   ENTER_RTL();
@@ -1748,18 +1682,11 @@ int __wrap_pthread_mutex_lock(pthread_mutex_t *mutex) {
   return result;
 }
 
-extern "C"
-int __wrap_pthread_mutex_trylock(pthread_mutex_t *mutex) {
-  if (G_flags->api_ambush) {
-    // Strictly saying that's incorrect according to POSIX
-    // (trylock() on an unlocked mutex must not return EBUSY),
-    // but it's a shame for a sane program to rely on that anyway :)
-    if (tsan_rtl_rand() % 2) {
-      errno = EBUSY;
-      return -1;
-    }
-  }
-  tsan_rtl_sched_shake(shake_mutex_trylock, mutex);
+int __wrap_pthread_mutex_lock(pthread_mutex_t *mutex) {
+  return eq_pthread_mutex_lock((void*)tsan_pthread_mutex_lock, mutex);
+}
+
+static int tsan_pthread_mutex_trylock(pthread_mutex_t *mutex) {
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_mutex_trylock, 0);
   int result = __real_pthread_mutex_trylock(mutex);
@@ -1770,9 +1697,11 @@ int __wrap_pthread_mutex_trylock(pthread_mutex_t *mutex) {
   return result;
 }
 
-extern "C"
-int __wrap_pthread_mutex_unlock(pthread_mutex_t *mutex) {
-  tsan_rtl_sched_shake(shake_mutex_unlock, mutex);
+int __wrap_pthread_mutex_trylock(pthread_mutex_t *mutex) {
+  return eq_pthread_mutex_trylock((void*)tsan_pthread_mutex_trylock, mutex);
+}
+
+static int tsan_pthread_mutex_unlock(pthread_mutex_t *mutex) {
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_mutex_unlock, 0);
   SPut(UNLOCK, tid, pc, (uintptr_t) mutex, 0);
@@ -1781,9 +1710,11 @@ int __wrap_pthread_mutex_unlock(pthread_mutex_t *mutex) {
   return result;
 }
 
-extern "C"
-int __wrap_pthread_cond_signal(pthread_cond_t *cond) {
-  tsan_rtl_sched_shake(shake_cond_signal, cond);
+int __wrap_pthread_mutex_unlock(pthread_mutex_t *mutex) {
+  return eq_pthread_mutex_unlock((void*)tsan_pthread_mutex_unlock, mutex);
+}
+
+static int tsan_pthread_cond_signal(pthread_cond_t *cond) {
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_cond_signal, 0);
   int result = __real_pthread_cond_signal(cond);
@@ -1795,9 +1726,11 @@ int __wrap_pthread_cond_signal(pthread_cond_t *cond) {
   return result;
 }
 
-extern "C"
-int __wrap_pthread_cond_broadcast(pthread_cond_t *cond) {
-  tsan_rtl_sched_shake(shake_cond_broadcast, cond);
+int __wrap_pthread_cond_signal(pthread_cond_t *cond) {
+  return eq_pthread_cond_signal((void*)tsan_pthread_cond_signal, cond);
+}
+
+static int tsan_pthread_cond_broadcast(pthread_cond_t *cond) {
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_cond_broadcast, 0);
   int result = __real_pthread_cond_broadcast(cond);
@@ -1807,14 +1740,12 @@ int __wrap_pthread_cond_broadcast(pthread_cond_t *cond) {
   return result;
 }
 
-extern "C"
-int __wrap_pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex) {
-  if (G_flags->api_ambush) {
-    if (tsan_rtl_rand() % 2) {
-      errno = EINTR;
-      return -1;
-    }
-  }
+int __wrap_pthread_cond_broadcast(pthread_cond_t *cond) {
+  return eq_pthread_cond_broadcast((void*)tsan_pthread_cond_broadcast, cond);
+}
+
+static int tsan_pthread_cond_wait(pthread_cond_t *cond,
+                                  pthread_mutex_t *mutex) {
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_cond_wait, 0);
   SPut(UNLOCK, tid, pc, (uintptr_t)mutex, 0);
@@ -1822,33 +1753,16 @@ int __wrap_pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex) {
   SPut(WAIT, tid, pc, (uintptr_t)cond, 0);
   SPut(WRITER_LOCK, tid, pc, (uintptr_t)mutex, 0);
   RPut(RTN_EXIT, tid, pc, 0, 0);
-  if (G_flags->sched_shake) {
-    __wrap_pthread_mutex_unlock(mutex);
-    tsan_rtl_sched_shake(shake_cond_wait, cond);
-    __wrap_pthread_mutex_lock(mutex);
-  }
   return result;
 }
 
-extern "C"
-int __wrap_pthread_cond_timedwait(pthread_cond_t *cond, pthread_mutex_t *mutex,
-                                  const struct timespec *abstime) {
-  if (G_flags->api_ambush) {
-    if (tsan_rtl_rand() % 2) {
-      errno = ETIMEDOUT;
-      return -1;
-    }
-    if (tsan_rtl_rand() % 2) {
-      errno = EINTR;
-      return -1;
-    }
-    struct timespec ts;
-    if ((abstime != 0) && (tsan_rtl_rand() % 2)) {
-      abstime = &ts;
-      ts.tv_sec = time(0);
-      ts.tv_nsec = (tsan_rtl_rand() % 1000) * 1000*1000;
-    }
-  }
+int __wrap_pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex) {
+  return eq_pthread_cond_wait((void*)tsan_pthread_cond_wait, cond, mutex);
+}
+
+static int tsan_pthread_cond_timedwait(pthread_cond_t *cond,
+                                       pthread_mutex_t *mutex,
+                                       const struct timespec *abstime) {
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_cond_timedwait, 0);
   SPut(UNLOCK, tid, pc, (uintptr_t)mutex, 0);
@@ -1858,12 +1772,14 @@ int __wrap_pthread_cond_timedwait(pthread_cond_t *cond, pthread_mutex_t *mutex,
   }
   SPut(WRITER_LOCK, tid, pc, (uintptr_t)mutex, 0);
   RPut(RTN_EXIT, tid, pc, 0, 0);
-  if (G_flags->sched_shake) {
-    __wrap_pthread_mutex_unlock(mutex);
-    tsan_rtl_sched_shake(shake_cond_timedwait, cond);
-    __wrap_pthread_mutex_lock(mutex);
-  }
   return result;
+}
+
+int __wrap_pthread_cond_timedwait(pthread_cond_t *cond,
+                                  pthread_mutex_t *mutex,
+                                  const struct timespec *abstime) {
+  return eq_pthread_cond_timedwait((void*)tsan_pthread_cond_timedwait,
+                                   cond, mutex, abstime);
 }
 
 extern "C"
@@ -1897,6 +1813,14 @@ int __wrap_pthread_mutex_init(pthread_mutex_t *mutex,
   return result;
 }
 
+extern "C" {
+int __wrap_pthread_rwlock_trywrlock(pthread_rwlock_t *rwlock);
+int __wrap_pthread_rwlock_wrlock(pthread_rwlock_t *rwlock);
+int __wrap_pthread_rwlock_tryrdlock(pthread_rwlock_t *rwlock);
+int __wrap_pthread_rwlock_rdlock(pthread_rwlock_t *rwlock);
+int __wrap_pthread_rwlock_unlock(pthread_rwlock_t *rwlock);
+}
+
 extern "C"
 int __wrap_pthread_rwlock_init(pthread_rwlock_t *rwlock,
                                const pthread_rwlockattr_t *attr) {
@@ -1921,9 +1845,7 @@ int __wrap_pthread_rwlock_destroy(pthread_rwlock_t *rwlock) {
   return result;
 }
 
-extern "C"
-int __wrap_pthread_rwlock_trywrlock(pthread_rwlock_t *rwlock) {
-  tsan_rtl_sched_shake(shake_mutex_trylock, rwlock);
+static int tsan_pthread_rwlock_trywrlock(pthread_rwlock_t *rwlock) {
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_rwlock_trywrlock, 0);
   int result = __real_pthread_rwlock_trywrlock(rwlock);
@@ -1934,9 +1856,12 @@ int __wrap_pthread_rwlock_trywrlock(pthread_rwlock_t *rwlock) {
   return result;
 }
 
-extern "C"
-int __wrap_pthread_rwlock_wrlock(pthread_rwlock_t *rwlock) {
-  tsan_rtl_sched_shake(shake_mutex_lock, rwlock);
+int __wrap_pthread_rwlock_trywrlock(pthread_rwlock_t *rwlock) {
+  return eq_pthread_rwlock_trywrlock((void*)tsan_pthread_rwlock_trywrlock,
+                                     rwlock);
+}
+
+static int tsan_pthread_rwlock_wrlock(pthread_rwlock_t *rwlock) {
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_rwlock_wrlock, 0);
   int result = __real_pthread_rwlock_wrlock(rwlock);
@@ -1947,9 +1872,11 @@ int __wrap_pthread_rwlock_wrlock(pthread_rwlock_t *rwlock) {
   return result;
 }
 
-extern "C"
-int __wrap_pthread_rwlock_tryrdlock(pthread_rwlock_t *rwlock) {
-  tsan_rtl_sched_shake(shake_mutex_tryrdlock, rwlock);
+int __wrap_pthread_rwlock_wrlock(pthread_rwlock_t *rwlock) {
+  return eq_pthread_rwlock_wrlock((void*)tsan_pthread_rwlock_wrlock, rwlock);
+}
+
+static int tsan_pthread_rwlock_tryrdlock(pthread_rwlock_t *rwlock) {
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_rwlock_tryrdlock, 0);
   int result = __real_pthread_rwlock_tryrdlock(rwlock);
@@ -1960,9 +1887,11 @@ int __wrap_pthread_rwlock_tryrdlock(pthread_rwlock_t *rwlock) {
   return result;
 }
 
-extern "C"
-int __wrap_pthread_rwlock_rdlock(pthread_rwlock_t *rwlock) {
-  tsan_rtl_sched_shake(shake_mutex_rdlock, rwlock);
+int __wrap_pthread_rwlock_tryrdlock(pthread_rwlock_t *rwlock) {
+  return eq_pthread_rwlock_tryrdlock((void*)tsan_pthread_rwlock_tryrdlock, rwlock);
+}
+
+static int tsan_pthread_rwlock_rdlock(pthread_rwlock_t *rwlock) {
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_rwlock_rdlock, 0);
   int result = __real_pthread_rwlock_rdlock(rwlock);
@@ -1973,15 +1902,21 @@ int __wrap_pthread_rwlock_rdlock(pthread_rwlock_t *rwlock) {
   return result;
 }
 
-extern "C"
-int __wrap_pthread_rwlock_unlock(pthread_rwlock_t *rwlock) {
-  tsan_rtl_sched_shake(shake_mutex_unlock, rwlock);
+int __wrap_pthread_rwlock_rdlock(pthread_rwlock_t *rwlock) {
+  return eq_pthread_rwlock_rdlock((void*)tsan_pthread_rwlock_rdlock, rwlock);
+}
+
+static int tsan_pthread_rwlock_unlock(pthread_rwlock_t *rwlock) {
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_rwlock_unlock, 0);
   SPut(UNLOCK, tid, pc, (uintptr_t)rwlock, 0);
   int result = __real_pthread_rwlock_unlock(rwlock);
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
+}
+
+int __wrap_pthread_rwlock_unlock(pthread_rwlock_t *rwlock) {
+  return eq_pthread_rwlock_unlock((void*)tsan_pthread_rwlock_unlock, rwlock);
 }
 
 extern "C"
@@ -2093,10 +2028,13 @@ int __wrap_pthread_spin_destroy(pthread_spinlock_t *lock) {
   return result;
 }
 
+extern "C" {
+int __wrap_pthread_spin_lock(pthread_spinlock_t *lock);
+int __wrap_pthread_spin_trylock(pthread_spinlock_t *lock);
+int __wrap_pthread_spin_unlock(pthread_spinlock_t *lock);
+}
 
-extern "C"
-int __wrap_pthread_spin_lock(pthread_spinlock_t *lock) {
-  tsan_rtl_sched_shake(shake_mutex_lock, lock);
+static int tsan_pthread_spin_lock(pthread_spinlock_t *lock) {
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_spin_lock, 0);
   int result = __real_pthread_spin_lock(lock);
@@ -2107,18 +2045,11 @@ int __wrap_pthread_spin_lock(pthread_spinlock_t *lock) {
   return result;
 }
 
-extern "C"
-int __wrap_pthread_spin_trylock(pthread_spinlock_t *lock) {
-  if (G_flags->api_ambush) {
-    // Strictly saying that's incorrect according to POSIX
-    // (trylock() on an unlocked mutex must not return EBUSY),
-    // but it's a shame for a sane program to rely on that anyway :)
-    if (tsan_rtl_rand() % 2) {
-      errno = EBUSY;
-      return -1;
-    }
-  }
-  tsan_rtl_sched_shake(shake_mutex_trylock, lock);
+int __wrap_pthread_spin_lock(pthread_spinlock_t *lock) {
+  return eq_pthread_spin_lock((void*)tsan_pthread_spin_lock, lock);
+}
+
+static int tsan_pthread_spin_trylock(pthread_spinlock_t *lock) {
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_spin_trylock, 0);
   int result = __real_pthread_spin_trylock(lock);
@@ -2129,15 +2060,21 @@ int __wrap_pthread_spin_trylock(pthread_spinlock_t *lock) {
   return result;
 }
 
-extern "C"
-int __wrap_pthread_spin_unlock(pthread_spinlock_t *lock) {
-  tsan_rtl_sched_shake(shake_mutex_unlock, lock);
+int __wrap_pthread_spin_trylock(pthread_spinlock_t *lock) {
+  return eq_pthread_spin_trylock((void*)tsan_pthread_spin_trylock, lock);
+}
+
+static int tsan_pthread_spin_unlock(pthread_spinlock_t *lock) {
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_spin_unlock, 0);
   SPut(UNLOCK, tid, pc, (uintptr_t)lock, 0);
   int result = __real_pthread_spin_unlock(lock);
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
+}
+
+int __wrap_pthread_spin_unlock(pthread_spinlock_t *lock) {
+  return eq_pthread_spin_unlock((void*)tsan_pthread_spin_unlock, lock);
 }
 
 
@@ -2554,16 +2491,10 @@ int __wrap_epoll_ctl(int epfd, int op, int fd, struct epoll_event *event) {
 
 extern "C"
 int __wrap_epoll_wait(int epfd, struct epoll_event *events,
+                      int maxevents, int timeout);
+
+static int tsan_epoll_wait(int epfd, struct epoll_event *events,
                       int maxevents, int timeout) {
-  if (G_flags->api_ambush) {
-    if (tsan_rtl_rand() % 2) {
-      errno = EINTR;
-      return -1;
-    }
-    if (tsan_rtl_rand() % 2)
-      timeout = tsan_rtl_rand() % (timeout + 100);
-  }
-  if (IN_RTL) return __real_epoll_wait(epfd, events, maxevents, timeout);
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_epoll_wait, 0);
   ENTER_RTL();
@@ -2572,6 +2503,14 @@ int __wrap_epoll_wait(int epfd, struct epoll_event *events,
   LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
+}
+
+int __wrap_epoll_wait(int epfd, struct epoll_event *events,
+                      int maxevents, int timeout) {
+  if (IN_RTL)
+    return __real_epoll_wait(epfd, events, maxevents, timeout);
+  return eq_epoll_wait((void*)tsan_epoll_wait,
+                       epfd, events, maxevents, timeout);
 }
 
 

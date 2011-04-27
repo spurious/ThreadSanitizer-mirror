@@ -33,7 +33,7 @@
 
 
 enum shake_event_e {
-  shake_none 		= 0, // used in static initialization
+  shake_none            = 0, // used in static initialization
   shake_thread_create   = 1 << 0,
   shake_thread_start    = 1 << 1,
   shake_sem_wait        = 1 << 2,
