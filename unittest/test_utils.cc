@@ -26,11 +26,10 @@
 // Author: Konstantin Serebryany <opensource@google.com>
 #include "test_utils.h"
 
+#ifdef __GNUC__
 const char *ThreadSanitizerQuery(const char *query) __attribute__((weak));
+#endif
 const char *ThreadSanitizerQuery(const char *query) {
   printf("Not running under ThreadSanitizer (query=%s)\n", query);
   return NULL;
 }
-
-
-
