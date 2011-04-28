@@ -34,6 +34,13 @@
 #include <time.h>
 
 
+//TODO(dvyukov): intercept poll/select/recv/recvmsg/send
+
+//TODO(dvyukov): intercept lockf - it's used in some shmem communication
+
+//TODO(dvyukov): mock thread pool so that it creates thread per task
+
+
 static int64_t timespec_to_int64(const struct timespec* ts) {
   return (int64_t)ts->tv_sec * 1000*1000*1000 + ts->tv_nsec;
 }

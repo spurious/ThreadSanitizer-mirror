@@ -42,7 +42,7 @@
 /**/
 
 
-void constructor() __attribute__((constructor(101)));
+void constructor() __attribute__((constructor));
 void constructor() {
   eq_init(1, 1,
           dlsym(RTLD_NEXT, "sched_yield"),

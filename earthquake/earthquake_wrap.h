@@ -128,6 +128,11 @@ int   eq_epoll_wait               (void* func,
                                    int maxevents,
                                    int timeout);
 
+void  eq_shake                    (void* func,
+                                   int epfd,
+                                   struct epoll_event* events,
+                                   int maxevents,
+                                   int timeout);
 
 #ifdef __cplusplus
 }

@@ -91,9 +91,11 @@ void eq_init(int do_sched_shake,
   eq_do_api_ambush = do_api_ambush;
   eq_func_yield = yield;
   eq_func_usleep = usleep;
-  printf("EARTHQUAKE ACTIVATED"
-      "(sched_shake=%d, api_ambush=%d, yield=%p, usleep=%p)\n",
-      do_sched_shake, do_api_ambush, yield, usleep);
+  if (do_sched_shake != 0 || do_api_ambush != 0) {
+    fprintf(stderr, "EARTHQUAKE ACTIVATED"
+        " (sched_shake=%d, api_ambush=%d, yield=%p, usleep=%p)\n",
+        do_sched_shake, do_api_ambush, yield, usleep);
+  }
 }
 
 

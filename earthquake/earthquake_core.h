@@ -28,6 +28,10 @@
 
 #pragma once
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 
 enum shake_event_e {
   shake_none            = 0, // used in static initialization
@@ -50,6 +54,7 @@ enum shake_event_e {
   shake_atomic_load     = 1 << 16,
   shake_atomic_store    = 1 << 17,
   shake_atomic_rmw      = 1 << 18,
+  shake_atomic_fence    = 1 << 19,
 };
 
 
@@ -67,6 +72,11 @@ static __inline void    eq_sched_shake        (enum shake_event_e ev,
   if (eq_do_sched_shake)
     eq_sched_shake_impl(ev, (void*)ctx);
 }
+
+
+#ifdef __cplusplus
+}
+#endif
 
 
 
