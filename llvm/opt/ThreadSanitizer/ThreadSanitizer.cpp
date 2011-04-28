@@ -899,6 +899,9 @@ void TsanOnlineInstrument::setupDataTypes() {
   //   uintptr_t *end_;
   //   uintptr_t pcs_[kMaxCallStackSize];
   // };
+  //
+  // Note that |end_| points to the first invalid stack frame, i.e. the current
+  // stack frame is at *(end_ - 1).
   CallStackArrayType = ArrayType::get(PlatformInt, kMaxCallStackSize);
   CallStackType = StructType::get(*ThisModuleContext,
                                   UIntPtr,
@@ -1877,9 +1880,14 @@ void TsanOnlineInstrument::instrumentCall(BasicBlock::iterator &BI) {
                                 end_idx.begin(), end_idx.end(),
                                 "", BI);
   Value *StackEnd = new LoadInst(StackEndPtr, "", BI);
+  vector <Value*> back_idx;
+  back_idx.push_back(ConstantInt::get(PlatformInt, -1));
+  Value *StackBack = GetElementPtrInst::Create(StackEnd,
+                                               back_idx.begin(), back_idx.end(),
+                                               "", BI);
 
   new StoreInst(getInstructionAddr(FunctionMopCount, BI, PlatformInt),
-                StackEnd, BI);
+                StackBack, BI);
 }
 
 // This method is ran only for basic blocks belonging to traces that are to be
