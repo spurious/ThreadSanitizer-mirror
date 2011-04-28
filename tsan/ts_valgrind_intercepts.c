@@ -2161,7 +2161,7 @@ LIBC_FUNC(long, opendir$Za, void *path) {
   return opendir_WRK(path);
 }
 
-#if defined(VGO_linux) && !defined(ANDROID)
+#if !defined(ANDROID)
 LIBC_FUNC(int, lockf, int fd, int cmd, OFF_T offset) {
   OrigFn fn;
   void *o;
