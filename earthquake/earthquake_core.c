@@ -78,7 +78,7 @@ unsigned eq_rand() {
   }
   unsigned rnd = state * 1103515245 + 12345;
   state = rnd;
-  rnd = rnd << 16;
+  rnd = rnd >> 16;
   return rnd;
 }
 
