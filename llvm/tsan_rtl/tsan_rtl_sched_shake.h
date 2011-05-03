@@ -57,6 +57,7 @@ enum shake_event_e {
 
 
 unsigned                tsan_rtl_rand         ();
+extern "C"
 void                    tsan_rtl_shake        (shake_event_e ev,
                                                uintptr_t ctx);
 
@@ -67,5 +68,3 @@ static __inline void    tsan_rtl_sched_shake  (shake_event_e ev,
 }
 
 #endif
-
-
