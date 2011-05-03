@@ -3060,15 +3060,14 @@ void ReadDbgInfo(string filename) {
   }
 }
 
-// TODO(glider): make a flag to disable NormalizeFunctionName().
 string PcToRtnName(pc_t pc, bool demangle) {
   DbgInfoLock scoped;
   if (debug_info) {
     if (debug_info->find(pc) != debug_info->end()) {
       if (demangle) {
-        return NormalizeFunctionName((*debug_info)[pc].demangled_symbol);
+        return (*debug_info)[pc].demangled_symbol;
       } else {
-        return NormalizeFunctionName((*debug_info)[pc].symbol);
+        return (*debug_info)[pc].symbol;
       }
     } else {
       return string();
@@ -3136,7 +3135,6 @@ void PcToStrings(pc_t pc, bool demangle,
       } else {
         *rtn_name = (*debug_info)[pc].symbol;
       }
-      *rtn_name = NormalizeFunctionName(*rtn_name);
       *file_name = ((*debug_info)[pc].fullpath);
       *line_no = ((*debug_info)[pc].line);
     }
