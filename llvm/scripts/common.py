@@ -29,6 +29,7 @@ PASS_SO = SCRIPT_ROOT + '/../opt/ThreadSanitizer/ThreadSanitizer.so'
 DA_FLAGS=['-DDYNAMIC_ANNOTATIONS_WANT_ATTRIBUTE_WEAK',
           '-DRACECHECK_UNITTEST_WANT_ATTRIBUTE_WEAK',
           '-DDYNAMIC_ANNOTATIONS_PREFIX=LLVM',
+          '-DDYNAMIC_ANNOTATIONS_PROVIDE_RUNNING_ON_VALGRIND=1'
           '-D__clang__']
 
 P32='x86'
@@ -45,6 +46,15 @@ if 'TSAN_IGNORE' in os.environ:
 TSAN_OPT_ARGS = ''
 if 'TSAN_OPT_ARGS' in os.environ:
   TSAN_OPT_ARGS = os.environ['TSAN_OPT_ARGS']
+TSAN_TMP_PREFIX = ''
+if 'TSAN_TMP_PREFIX' in os.environ:
+  TSAN_TMP_PREFIX = os.environ['TSAN_TMP_PREFIX']
+  if not TSAN_TMP_PREFIX.endswith('/'):
+    TSAN_TMP_PREFIX += '/'
+  try:
+    os.makedirs(TSAN_TMP_PREFIX)
+  except OSError:
+    pass
 # Instrument only files whose path starts with the prefix in TSAN_SRC_WHITELIST.
 # TODO(glider): this is less reliable than a regexp.
 TSAN_SRC_WHITELIST = ''
@@ -149,12 +159,20 @@ def gcc(default_cc, fallback_cc):
   if src_file:
     filename = '.'.join(src_file.split('.')[:-1])
   p_suffix = '-' + platform
-  src_bitcode = filename + p_suffix +'.ll'  # filename-x86.ll
-  src_tmp = filename + '-tmp' + p_suffix + '.ll'  # filename-tmp-x86.ll
+  try:
+    dir_name = os.path.dirname(TSAN_TMP_PREFIX + filename)
+    os.makedirs(dir_name)
+    print "makedirs(%s)" % dir_name
+  except OSError:
+    pass
+  # filename-x86.ll
+  src_bitcode = TSAN_TMP_PREFIX + filename + p_suffix +'.ll'
+  # filename-tmp-x86.ll
+  src_tmp = TSAN_TMP_PREFIX + filename + '-tmp' + p_suffix + '.ll'
   # filename-instr-x86.ll
-  src_instrumented = filename + '-instr' + p_suffix + '.ll'
+  src_instrumented = TSAN_TMP_PREFIX + filename + '-instr' + p_suffix + '.ll'
   # filename-x86.S
-  src_asm = filename + p_suffix + '.S'
+  src_asm = TSAN_TMP_PREFIX + filename + p_suffix + '.S'
   if from_asm:
     src_asm = src_file
   if src_obj is None:
@@ -178,7 +196,7 @@ def gcc(default_cc, fallback_cc):
       if platform == P64:
         ld_args += ['-lbfd']
     ld_args += ['-o', src_obj]
-    #print_args(ld_args)
+    print_args(ld_args)
     retcode = subprocess.call(ld_args)
     if retcode != 0: sys.exit(retcode)
     return
@@ -203,7 +221,7 @@ def gcc(default_cc, fallback_cc):
         optimization] + debug_info_args + ['-c'] + DA_FLAGS + compiler_args + ['-o', src_bitcode]
     if compile_pic:
       llvm_gcc_args += [fpic]
-    print_args(llvm_gcc_args)
+    #print_args(llvm_gcc_args)
     retcode = subprocess.call(llvm_gcc_args)
     if retcode != 0:
       do_fallback(fallback_cc, args)
