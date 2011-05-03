@@ -912,11 +912,6 @@ void __wrap___libc_csu_init(void) {
   __real___libc_csu_init();
 }
 
-extern "C"
-int __wrap_pthread_create(pthread_t *thread,
-                          pthread_attr_t *attr,
-                          void *(*start_routine)(void*), void *arg);
-
 static int tsan_pthread_create(pthread_t *thread,
                           pthread_attr_t *attr,
                           void *(*start_routine)(void*), void *arg) {
@@ -963,8 +958,9 @@ static int tsan_pthread_create(pthread_t *thread,
   return result;
 }
 
+extern "C"
 int __wrap_pthread_create(pthread_t *thread,
-                          pthread_attr_t *attr,
+                          const pthread_attr_t *attr,
                           void *(*start_routine)(void*), void *arg) {
   return eq_pthread_create((void*)tsan_pthread_create,
                            thread, attr, start_routine, arg);
@@ -1315,7 +1311,7 @@ void *__wrap__Znwj(unsigned int size) {
 }
 
 extern "C"
-void *__wrap__ZnwjRKSt9nothrow_t(unsigned long size, std::nothrow_t &nt) {
+void *__wrap__ZnwjRKSt9nothrow_t(unsigned size, std::nothrow_t &nt) {
   if (IN_RTL) return __real__ZnwjRKSt9nothrow_t(size, nt);
   GIL scoped;
   RECORD_ALLOC(__wrap__ZnwjRKSt9nothrow_t);
@@ -1351,7 +1347,7 @@ void *__wrap__Znaj(unsigned int size) {
 }
 
 extern "C"
-void *__wrap__ZnajRKSt9nothrow_t(unsigned long size, std::nothrow_t &nt) {
+void *__wrap__ZnajRKSt9nothrow_t(unsigned size, std::nothrow_t &nt) {
   if (IN_RTL) return __real__ZnajRKSt9nothrow_t(size, nt);
   GIL scoped;
   RECORD_ALLOC(__wrap__ZnajRKSt9nothrow_t);
@@ -1514,14 +1510,6 @@ void __wrap__ZdaPvRKSt9nothrow_t(void *ptr, std::nothrow_t &nt) {
 // Unnamed POSIX semaphores {{{1
 // TODO(glider): support AnnotateIgnoreSync here.
 
-extern "C" int __wrap_sem_wait(sem_t *sem);
-extern "C" int __wrap_sem_timedwait(sem_t *sem,
-                                    const struct timespec *abs_timeout);
-extern "C" int __wrap_sem_trywait(sem_t *sem);
-extern "C" int __wrap_sem_post(sem_t *sem);
-extern "C" int __wrap_sem_getvalue(sem_t *sem, int *value);
-
-
 extern "C"
 sem_t *__wrap_sem_open(const char *name, int oflag,
                 mode_t mode, unsigned int value) {
@@ -1675,19 +1663,6 @@ int __wrap_pthread_yield() {
 // }}}
 
 // libpthread wrappers {{{1
-
-extern "C" {
-int __wrap_pthread_mutex_lock(pthread_mutex_t *mutex);
-int __wrap_pthread_mutex_trylock(pthread_mutex_t *mutex);
-int __wrap_pthread_mutex_unlock(pthread_mutex_t *mutex);
-int __wrap_pthread_cond_signal(pthread_cond_t *cond);
-int __wrap_pthread_cond_broadcast(pthread_cond_t *cond);
-int __wrap_pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex);
-int __wrap_pthread_cond_timedwait(pthread_cond_t *cond,
-                                  pthread_mutex_t *mutex,
-                                  const struct timespec *abstime);
-}
-
 static int tsan_pthread_mutex_lock(pthread_mutex_t *mutex) {
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_mutex_lock, 0);
@@ -1831,14 +1806,6 @@ int __wrap_pthread_mutex_init(pthread_mutex_t *mutex,
   }
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
-}
-
-extern "C" {
-int __wrap_pthread_rwlock_trywrlock(pthread_rwlock_t *rwlock);
-int __wrap_pthread_rwlock_wrlock(pthread_rwlock_t *rwlock);
-int __wrap_pthread_rwlock_tryrdlock(pthread_rwlock_t *rwlock);
-int __wrap_pthread_rwlock_rdlock(pthread_rwlock_t *rwlock);
-int __wrap_pthread_rwlock_unlock(pthread_rwlock_t *rwlock);
 }
 
 extern "C"
@@ -2048,12 +2015,6 @@ int __wrap_pthread_spin_destroy(pthread_spinlock_t *lock) {
   return result;
 }
 
-extern "C" {
-int __wrap_pthread_spin_lock(pthread_spinlock_t *lock);
-int __wrap_pthread_spin_trylock(pthread_spinlock_t *lock);
-int __wrap_pthread_spin_unlock(pthread_spinlock_t *lock);
-}
-
 static int tsan_pthread_spin_lock(pthread_spinlock_t *lock) {
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_spin_lock, 0);
@@ -2159,7 +2120,7 @@ char *__wrap_memcpy(char *dest, const char *src, size_t n) {
 }
 
 extern "C"
-void *__wrap_memmove(char *dest, const char *src, size_t n) {
+void *__wrap_memmove(void *dest, const void *src, size_t n) {
   if (IN_RTL) return __real_memmove(dest, src, n);
   DECLARE_TID_AND_PC();
   pc = (pc_t)__wrap_memmove;
@@ -2392,7 +2353,7 @@ uintptr_t FdMagic(int fd) {
 }
 
 extern "C"
-ssize_t __wrap_read(int fd, void *buf, size_t count) {
+ssize_t __wrap_read(int fd, const void *buf, size_t count) {
   ssize_t result = __real_read(fd, buf, count);
   if (IN_RTL) return result;
   ENTER_RTL();
@@ -3186,8 +3147,7 @@ void PcToStrings(pc_t pc, bool demangle,
   }
 }
 
-extern "C" void tsan_rtl_mop(void *addr, unsigned flags);
-
+extern "C"
 void tsan_rtl_mop(void *addr, unsigned flags) {
   ENTER_RTL();
   void* pc = __builtin_return_address(0);
