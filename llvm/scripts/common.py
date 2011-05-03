@@ -93,6 +93,7 @@ def gcc(default_cc, fallback_cc):
   llc_pic = ""
   debug_info_args = []
   compiler_args = []
+  cl_define_args = []
   platform = P64
   optimization = "-O0"
 
@@ -138,6 +139,8 @@ def gcc(default_cc, fallback_cc):
     if arg.startswith("-O"):
       optimization = arg
       continue
+    if arg.startswith("-D"):
+      cl_define_args += [arg]
     match = source_extensions.match(arg)
     if match:
       src_file = arg
@@ -200,13 +203,14 @@ def gcc(default_cc, fallback_cc):
       if platform == P64:
         ld_args += ['-lbfd']
     ld_args += ['-o', src_obj]
-    print_args(ld_args)
+    #print_args(ld_args)
     retcode = subprocess.call(ld_args)
     if retcode != 0: sys.exit(retcode)
     return
 
   if preprocess_only:
     exec_args = [fallback_cc] + args
+    #print_args(exec_args)
     retcode = subprocess.call(exec_args)
     if retcode != 0: sys.exit(retcode)
     return
@@ -254,7 +258,7 @@ def gcc(default_cc, fallback_cc):
       return
 
   cc_args = [default_cc, MARCH[platform], '-c', src_asm, optimization]
-  cc_args += debug_info_args + [ '-o', src_obj]
+  cc_args += debug_info_args + cl_define_args + [ '-o', src_obj]
   if compile_pic: cc_args += [fpic]
   #print_args(cc_args)
   retcode = subprocess.call(cc_args)
