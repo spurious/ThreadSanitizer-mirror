@@ -39,6 +39,9 @@ MARCH = { P32: '-m32', P64: '-m64' }
 XARCH = { P32: P32, P64: P64 }
 TSAN_RTL = {P32: SCRIPT_ROOT+'/../tsan_rtl/tsan_rtl32.a',
             P64: SCRIPT_ROOT+'/../tsan_rtl/tsan_rtl64.a' }
+TSAN_DA = {P32: SCRIPT_ROOT+'/../tsan_rtl/x86-tsan_rtl_dynamic_annotations.o',
+           P64: SCRIPT_ROOT+'/../tsan_rtl/amd64-tsan_rtl_dynamic_annotations.o'
+           }
 
 TSAN_IGNORE = ''
 if 'TSAN_IGNORE' in os.environ:
@@ -190,6 +193,7 @@ def gcc(default_cc, fallback_cc):
         pieces = line[:-1].split(" ")
         if len(pieces) == 2 and pieces[0] in ['wrap', 'undefined']:
           ld_args.append('-Wl,--' + pieces[0] + ',' + pieces[1])
+      ld_args += [TSAN_DA[platform]]
       ld_args += [TSAN_RTL[platform]]
       ld_args += ['-lpthread', '-lrt']
       # Ubuntu doesn't have a package containing 32-bit libbfd version.
