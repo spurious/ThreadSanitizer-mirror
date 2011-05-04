@@ -247,12 +247,14 @@ int getpid();
   #define DEBUG_MODE (0)
 #endif
 
-#if defined (__GNUC__)
-  #define ALWAYS_INLINE  inline __attribute__ ((always_inline))
-#elif defined(_MSC_VER)
-  #define ALWAYS_INLINE __forceinline
-#else
-  #error "Unknown Configuration"
+#ifndef ALWAYS_INLINE
+  #if defined (__GNUC__)
+    #define ALWAYS_INLINE  inline __attribute__ ((always_inline))
+  #elif defined(_MSC_VER)
+    #define ALWAYS_INLINE __forceinline
+  #else
+    #error "Unknown Configuration"
+  #endif
 #endif
 
 #if defined(DEBUG) && DEBUG >= 1
