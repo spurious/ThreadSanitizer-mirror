@@ -85,7 +85,6 @@ TEST_UTILS_O=$(BIN)test_utils-$(BUILD).$(OBJ)
 
 $(BIN)racecheck_unittest-$(BUILD)$(EXE): $(BIN)racecheck_unittest-$(BUILD).$(OBJ) \
 	                                 $(BIN)old_test_suite-$(BUILD).$(OBJ) \
-					 $(BIN)opt_tests-$(BUILD).$(OBJ) \
 					 $(BIN)atomicity_tests-$(BUILD).$(OBJ) \
 		$(TEST_UTILS_O) $(GTEST_LIB)  ${DYNAMIC_ANNOTATIONS_O} | bin
 	${LD} ${LDFLAGS} $^ $(LIBS) $(LINKO)$@
@@ -93,7 +92,8 @@ $(BIN)racecheck_unittest-$(BUILD)$(EXE): $(BIN)racecheck_unittest-$(BUILD).$(OBJ
 ifeq ($(OS), windows)
 $(BIN)racecheck_unittest-$(BUILD)$(EXE): $(BIN)windows_tests-$(BUILD).$(OBJ)
 else
-$(BIN)racecheck_unittest-$(BUILD)$(EXE): $(BIN)posix_tests-$(BUILD).$(OBJ)
+$(BIN)racecheck_unittest-$(BUILD)$(EXE): $(BIN)posix_tests-$(BUILD).$(OBJ) \
+                                         $(BIN)opt_tests-$(BUILD).$(OBJ)
 endif
 
 ifeq ($(OS), linux)
