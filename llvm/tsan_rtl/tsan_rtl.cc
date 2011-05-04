@@ -1305,8 +1305,8 @@ void *__wrap__Znwj(unsigned int size) {
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
   pc = (pc_t) __wrap__Znwj;
   SPut(MALLOC, tid, pc, (uintptr_t)result, size);
-  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
+  LEAVE_RTL();
   return result;
 }
 
@@ -2639,9 +2639,38 @@ int __wrap_sigaction(int signum, const struct sigaction *act,
 // }}}
 
 // instrumentation API {{{1
+#define DEBUG_SHADOW_STACK 0
+const uintptr_t kInvalidStackFrame = 0xdeadbeef;
+
+// Check that the shadow stack does not contain |addr|.
+// Usage:
+//  -- call validate_shadow_stack(kInvalidStackFrame) to check for
+//     uninitialized frames.
+//  -- call validate_shadow_stack(&__wrap_foo) to check for recursive wrappers
+//     (which is almost always an error, except for __wrap_pthread_once())
+static void validate_shadow_stack(uintptr_t addr) {
+  // If there's less than one valid frame, do nothing.
+  if (ShadowStack.end_ - ShadowStack.pcs_ < 1) return;
+  uintptr_t *frame = ShadowStack.end_ - 1;  // The last valid ShadowStack frame.
+  while (frame - ShadowStack.pcs_ > 1) {
+    if (*frame == addr) {
+      Printf("Shadow stack validation failed!\n");
+      PrintStackTrace();
+      CHECK(*frame != addr);
+    }
+    frame--;
+  }
+}
+
 extern "C"
 void rtn_call(void *addr) {
   DDPrintf("T%d: RTN_CALL [pc=%p; a=(nil); i=(nil)]\n", INFO.tid, addr);
+  if (DEBUG_SHADOW_STACK) {
+    validate_shadow_stack(kInvalidStackFrame);
+    if (addr != __wrap_pthread_once) {
+      validate_shadow_stack((uintptr_t)addr);
+    }
+  }
   *ShadowStack.end_ = (uintptr_t)addr;
   ShadowStack.end_++;
   DCHECK(ShadowStack.end_ > ShadowStack.pcs_);
@@ -2654,6 +2683,10 @@ void rtn_exit() {
   DCHECK(ShadowStack.end_ > ShadowStack.pcs_);
   DCHECK((size_t)(ShadowStack.end_ - ShadowStack.pcs_) < kMaxCallStackSize);
   ShadowStack.end_--;
+  if (DEBUG_SHADOW_STACK) {
+    *ShadowStack.end_ = kInvalidStackFrame;
+    validate_shadow_stack(kInvalidStackFrame);
+  }
 }
 
 // TODO(glider): bb_flush is deprecated.
@@ -2724,8 +2757,9 @@ void shadow_stack_check(uintptr_t old_v, uintptr_t new_v) {
 // }}}
 
 void PrintStackTrace() {
-  uintptr_t *pc = ShadowStack.end_;
+  uintptr_t *pc = ShadowStack.end_ - 1;  // Start from the last valid frame.
   Printf("T%d STACK\n", ExGetTid());
+  // ShadowStack.pcs_[0] is always 0.
   while (pc != ShadowStack.pcs_) {
     Printf("    %p %s\n", *pc, PcToRtnName(*pc, true).c_str());
     pc--;
