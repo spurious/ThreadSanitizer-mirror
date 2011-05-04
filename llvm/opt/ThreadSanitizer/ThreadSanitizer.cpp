@@ -784,9 +784,14 @@ void TsanOnlineInstrument::runOnFunction(Module::iterator &F) {
   }
 
 
-  // Instrument routine calls and exits.
+  // Instrument routine calls and exits. Also update the shadow stack every time
+  // we meet a call/invoke instruction, otherwise we'll get uninitialized frames
+  // in the middle of the stack.
+  //
   // insertRtnExit() uses the shadow stack size obtained by
   // insertRtnCall() and should be always executed after it.
+  // TODO(glider): most likely we don't need to reuse an expression,
+  // let the optimizer do its job.
   BasicBlock::iterator First = F->begin()->begin();
   insertRtnCall(getInstructionAddr(0, First, PlatformInt), First);
   if (ignore_recursively) insertIgnoreInc(First);
@@ -797,6 +802,10 @@ void TsanOnlineInstrument::runOnFunction(Module::iterator &F) {
       if (isa<ReturnInst>(BI)) {
         if (ignore_recursively) insertIgnoreDec(BI);
         insertRtnExit(BI);
+      }
+      if (ignore_recursively && isaCallOrInvoke(BI) &&
+          (calls_to_instrument.find(BI) != calls_to_instrument.end())) {
+        instrumentCall(BI);
       }
     }
   }
@@ -1007,7 +1016,7 @@ void TsanOnlineInstrument::setupRuntimeGlobals() {
 
 // virtual
 bool TsanOnlineInstrument::runOnModule(Module &M) {
-  if (DoNothing) return true;
+  if (DoNothing) return false;
   InstrumentedTraceCount = 0;
   ModuleFunctionCount = 0;
   ModuleMopCount = 0;
