@@ -271,7 +271,7 @@ bool isThreadLocalEvent(EventType type) {
     case IGNORE_READS_END:
     case IGNORE_WRITES_BEG:
     case IGNORE_READS_BEG:
-      return false;
+      return true;
     default:
       return false;
   }
@@ -1211,8 +1211,17 @@ void __wrap_free(void *ptr) {
   DECLARE_TID_AND_PC();
   ENTER_RTL();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_free, 0);
+  pc = (pc_t)__wrap_free;
+  // TODO(glider): do something to reduce the number of means to control
+  // ignores. Currently those are:
+  //  -- global_ignore (used by TSan, affects thread_local_ignore in a racey way)
+  //  -- thread_local_ignore (used only in RTL)
+  //  -- IGNORE_{READS,WRITES}_{BEG,END} -- used by TSan, should be issued by
+  //     the RTL and instrumented code instead of thread_local_ignore.
+  if (thread_local_ignore) SPut(IGNORE_WRITES_BEG, tid, pc, 0, 0);
   // Normally pc is equal to 0, but FREE asserts that it is not.
-  SPut(FREE, tid, (pc_t)__wrap_free, (uintptr_t)ptr, 0);
+  SPut(FREE, tid, pc, (uintptr_t)ptr, 0);
+  if (thread_local_ignore) SPut(IGNORE_WRITES_END, tid, pc, 0, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   __real_free(ptr);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
@@ -1242,8 +1251,11 @@ void free(void *ptr) {
   ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)free, 0);
+  pc = (pc_t)free;
+  if (thread_local_ignore) SPut(IGNORE_WRITES_BEG, tid, pc, 0, 0);
   // Normally pc is equal to 0, but FREE asserts that it is not.
-  SPut(FREE, tid, (pc_t)free, (uintptr_t)ptr, 0);
+  SPut(FREE, tid, pc, (uintptr_t)ptr, 0);
+  if (thread_local_ignore) SPut(IGNORE_WRITES_END, tid, pc, 0, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   __libc_free(ptr);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
@@ -1261,7 +1273,9 @@ void *__wrap_realloc(void *ptr, size_t size) {
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_realloc, 0);
   pc = (pc_t) __wrap_realloc;
+  if (thread_local_ignore) SPut(IGNORE_WRITES_BEG, tid, pc, 0, 0);
   SPut(FREE, tid, pc, (uintptr_t)ptr, 0);
+  if (thread_local_ignore) SPut(IGNORE_WRITES_END, tid, pc, 0, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   result = __real_realloc(ptr, size);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
@@ -1281,7 +1295,9 @@ void *realloc(void *ptr, size_t size) {
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)realloc, 0);
   pc = (pc_t) realloc;
+  if (thread_local_ignore) SPut(IGNORE_WRITES_BEG, tid, pc, 0, 0);
   SPut(FREE, tid, pc, (uintptr_t)ptr, 0);
+  if (thread_local_ignore) SPut(IGNORE_WRITES_END, tid, pc, 0, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   result = __libc_realloc(ptr, size);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
@@ -1449,7 +1465,10 @@ void __wrap__ZdlPv(void *ptr) {
   ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__ZdlPv, 0);
-  SPut(FREE, tid, (pc_t)__wrap__ZdlPv, (uintptr_t)ptr, 0);
+  pc = (pc_t)__wrap__ZdlPv;
+  if (thread_local_ignore) SPut(IGNORE_WRITES_BEG, tid, pc, 0, 0);
+  SPut(FREE, tid, pc, (uintptr_t)ptr, 0);
+  if (thread_local_ignore) SPut(IGNORE_WRITES_END, tid, pc, 0, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   //if (ptr) memset(ptr, 0, 4);
   __real__ZdlPv(ptr);
@@ -1466,7 +1485,10 @@ void __wrap__ZdlPvRKSt9nothrow_t(void *ptr, std::nothrow_t &nt) {
   ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__ZdlPvRKSt9nothrow_t, 0);
-  SPut(FREE, tid, (pc_t)__wrap__ZdlPvRKSt9nothrow_t, (uintptr_t)ptr, 0);
+  pc = (pc_t)__wrap__ZdlPvRKSt9nothrow_t;
+  if (thread_local_ignore) SPut(IGNORE_WRITES_BEG, tid, pc, 0, 0);
+  SPut(FREE, tid, pc, (uintptr_t)ptr, 0);
+  if (thread_local_ignore) SPut(IGNORE_WRITES_END, tid, pc, 0, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   __real__ZdlPvRKSt9nothrow_t(ptr, nt);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
@@ -1482,7 +1504,10 @@ void __wrap__ZdaPv(void *ptr) {
   ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__ZdaPv, 0);
-  SPut(FREE, tid, (pc_t)__wrap__ZdaPv, (uintptr_t)ptr, 0);
+  pc = (pc_t)__wrap__ZdaPv;
+  if (thread_local_ignore) SPut(IGNORE_WRITES_BEG, tid, pc, 0, 0);
+  SPut(FREE, tid, pc, (uintptr_t)ptr, 0);
+  if (thread_local_ignore) SPut(IGNORE_WRITES_END, tid, pc, 0, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   __real__ZdaPv(ptr);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
@@ -1498,7 +1523,10 @@ void __wrap__ZdaPvRKSt9nothrow_t(void *ptr, std::nothrow_t &nt) {
   ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__ZdaPvRKSt9nothrow_t, 0);
-  SPut(FREE, tid, (pc_t)__wrap__ZdaPvRKSt9nothrow_t, (uintptr_t)ptr, 0);
+  pc = (pc_t)__wrap__ZdaPvRKSt9nothrow_t;
+  if (thread_local_ignore) SPut(IGNORE_WRITES_BEG, tid, pc, 0, 0);
+  SPut(FREE, tid, pc, (uintptr_t)ptr, 0);
+  if (thread_local_ignore) SPut(IGNORE_WRITES_END, tid, pc, 0, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   __real__ZdaPvRKSt9nothrow_t(ptr, nt);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
