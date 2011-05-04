@@ -68,12 +68,6 @@ __thread bool thread_local_show_stats;
 __thread int thread_local_literace;
 PcToStringMap *global_symbols;
 
-struct ThreadInfo {
-  Thread *thread;
-  tid_t tid;
-  int *thread_local_ignore;
-};
-
 struct LLVMDebugInfo {
   LLVMDebugInfo()
     : pc(0), line(0) { }
@@ -678,6 +672,7 @@ INLINE void InitRTLAndTid0() {
   // Initialize ThreadSanitizer et. al.
   if (!initialize()) __real_exit(2);
   eq_init(G_flags->sched_shake, G_flags->api_ambush,
+          __real_malloc, __real_free,
           __real_sched_yield, __real_usleep);
   RTL_INIT = 1;
   // Initialize thread #0.

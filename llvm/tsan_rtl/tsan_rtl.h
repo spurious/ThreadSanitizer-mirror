@@ -110,12 +110,20 @@ class GIL {
 typedef uintptr_t pc_t;
 typedef uintptr_t tid_t;
 typedef map<pc_t, string> PcToStringMap;
+
+struct ThreadInfo {
+  Thread *thread;
+  tid_t tid;
+  int *thread_local_ignore;
+};
+
 tid_t GetTid();
 pc_t GetPc();
 extern FILE* G_out;
 // Reentrancy counter
 extern __thread int IN_RTL;
 extern __thread CallStackPod ShadowStack;
+extern __thread ThreadInfo INFO;
 
 void ReadElf();
 void AddWrappersDbgInfo();
