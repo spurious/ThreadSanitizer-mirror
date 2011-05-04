@@ -27,6 +27,7 @@
 // Author: Dmitry Vyukov (dvyukov@google.com)
 
 #pragma once
+#include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -60,6 +61,10 @@ enum shake_event_e {
 
 extern int              eq_do_sched_shake;
 extern int              eq_do_api_ambush;
+
+
+void*                   eq_malloc             (size_t sz);
+void                    eq_free               (void* p);
 
 
 unsigned                eq_rand               ();

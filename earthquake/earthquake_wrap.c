@@ -325,7 +325,7 @@ static void* thread_thunk(void* arg) {
     eq_sched_shake(shake_thread_start, (void*)ctx->start_routine);
   }
   void* rv = ctx->start_routine(ctx->arg);
-  free(ctx);
+  eq_free(ctx);
   return rv;
 }
 
@@ -337,7 +337,7 @@ int   eq_pthread_create           (void* func,
                                    void* arg) {
   int do_delay_create = (eq_rand() % 2);
   struct thread_arg_t* ctx = (struct thread_arg_t*)
-      malloc(sizeof(struct thread_arg_t));
+      eq_malloc(sizeof(struct thread_arg_t));
   ctx->start_routine = start_routine;
   ctx->arg = arg;
   ctx->do_delay_create = do_delay_create;
@@ -390,21 +390,32 @@ int   eq_nanosleep                (void* func,
     }
     if (eq_rand() % 2) {
       int64_t wait = timespec_to_int64(req);
-      reserve = ((eq_rand() % (wait / 100*1000)) - 1000) * 100*1000;
+      reserve = (((int64_t)eq_rand() % (wait / (100*1000) + 1000)) - 1000)
+          * 100*1000;
       wait -= reserve;
       req2 = int64_to_timespec(wait);
     }
   }
+
   int rv = ((int(*)(struct timespec const* req, struct timespec*))
       func)(&req2, rem);
+
   if (reserve != 0) {
-    if (rem != 0) {
-      int64_t remain = timespec_to_int64(rem);
-      remain += reserve;
-      *rem = int64_to_timespec(remain);
+    int64_t remain = 0;
+    if (rv != 0 && rem != 0)
+      remain = timespec_to_int64(rem);
+    remain += reserve;
+    if (remain > 0) {
+      if (rem != 0) {
+        *rem = int64_to_timespec(remain);
+        if (timespec_to_int64(rem) > timespec_to_int64(req))
+          *rem = *req;
+      }
+      errno = EINTR;
+      rv = -1;
+    } else {
+      rv = 0;
     }
-    errno = EINTR;
-    return -1;
   }
   return rv;
 }

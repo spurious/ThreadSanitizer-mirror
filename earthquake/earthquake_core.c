@@ -33,6 +33,8 @@
 
 int                     eq_do_sched_shake;
 int                     eq_do_api_ambush;
+void*                   (*eq_func_malloc)(size_t);
+void                    (*eq_func_free)(void*);
 int                     (*eq_func_yield)();
 int                     (*eq_func_usleep)(unsigned);
 
@@ -85,17 +87,32 @@ unsigned eq_rand() {
 
 void eq_init(int do_sched_shake,
              int do_api_ambush,
+             void* (*malloc)(size_t),
+             void (*free)(void*),
              int (*yield)(),
              int (*usleep)(unsigned)) {
   eq_do_sched_shake = do_sched_shake;
   eq_do_api_ambush = do_api_ambush;
+  eq_func_malloc = malloc;
+  eq_func_free = free;
   eq_func_yield = yield;
   eq_func_usleep = usleep;
   if (do_sched_shake != 0 || do_api_ambush != 0) {
     fprintf(stderr, "EARTHQUAKE ACTIVATED"
-        " (sched_shake=%d, api_ambush=%d, yield=%p, usleep=%p)\n",
-        do_sched_shake, do_api_ambush, yield, usleep);
+        " (sched_shake=%d, api_ambush=%d, malloc=%p, free=%p,"
+        " yield=%p, usleep=%p)\n",
+        do_sched_shake, do_api_ambush, malloc, free, yield, usleep);
   }
+}
+
+
+void*                   eq_malloc             (size_t sz) {
+  return eq_func_malloc(sz);
+}
+
+
+void                    eq_free               (void* p) {
+  eq_func_free(p);
 }
 
 
@@ -170,7 +187,7 @@ static enum shake_strength_e calculate_strength(enum shake_event_e const ev,
     if (prev->ctx == ctx)
       // There are series of atomic operations,
       // so do more shakes to stress it.
-      return strength_highest;
+      return strength_above_normal; //!!! strength_highest;
     else
       return strength_above_normal;
 

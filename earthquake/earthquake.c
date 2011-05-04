@@ -45,6 +45,8 @@
 void constructor() __attribute__((constructor));
 void constructor() {
   eq_init(1, 1,
+          dlsym(RTLD_NEXT, "malloc"),
+          dlsym(RTLD_NEXT, "free"),
           dlsym(RTLD_NEXT, "sched_yield"),
           dlsym(RTLD_NEXT, "usleep"));
 }

@@ -40,6 +40,8 @@ extern "C" {
 
 void  eq_init                     (int do_sched_shake,
                                    int do_api_ambush,
+                                   void* (*malloc)(size_t),
+                                   void (*free)(void*),
                                    int (*yield)(),
                                    int (*usleep)(unsigned));
 
