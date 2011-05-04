@@ -7214,7 +7214,8 @@ REGISTER_TEST2(Run, 503, MEMORY_USAGE | PRINT_STATS
 
 // test504: force massive cache fetch-wback (50% misses, mostly CacheLineZ) {{{1
 namespace test504 {
-#if !defined(WINE) and !defined(ANDROID) // Valgrind+wine hate large static objects
+#if !defined(WINE) and !defined(ANDROID)
+// Valgrind+wine hate large static objects
 const int N_THREADS = 2,
           HG_CACHELINE_COUNT = 1 << 16,
           HG_CACHELINE_SIZE  = 1 << 6,
@@ -7262,7 +7263,8 @@ REGISTER_TEST2(Run, 504, PERFORMANCE | PRINT_STATS | EXCLUDE_FROM_ALL)
 // modification of test504 - more threads, byte accesses and lots of mutexes
 // so it produces lots of CacheLineF misses (30-50% of CacheLineZ misses)
 namespace test505 {
-#if !defined(WINE) and !defined(ANDROID) // Valgrind+wine hate large static objects
+#if !defined(WINE) and !defined(ANDROID)
+// Valgrind+wine hate large static objects
 
 const int N_THREADS = 2,
           HG_CACHELINE_COUNT = 1 << 16,
