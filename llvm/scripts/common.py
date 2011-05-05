@@ -64,6 +64,10 @@ TSAN_SRC_WHITELIST = ''
 if 'TSAN_SRC_WHITELIST' in os.environ:
   TSAN_SRC_WHITELIST = os.environ['TSAN_SRC_WHITELIST'].split('|')
 
+TSAN_SRC_BLACKLIST = ''
+if 'TSAN_SRC_BLACKLIST' in os.environ:
+  TSAN_SRC_BLACKLIST = os.environ['TSAN_SRC_BLACKLIST'].split('|')
+
 def print_args(args):
   print
   for i in args[:-1]:
@@ -221,7 +225,18 @@ def gcc(default_cc, fallback_cc):
       for prefix in TSAN_SRC_WHITELIST:
         if src_file.startswith(prefix):
           whitelisted = True
+          break
       if not whitelisted:
+        do_fallback(fallback_cc, args + DA_FLAGS)
+        return
+
+    if TSAN_SRC_BLACKLIST:
+      blacklisted = False
+      for prefix in TSAN_SRC_BLACKLIST:
+        if src_file.startswith(prefix):
+          blacklisted = True
+          break
+      if blacklisted:
         do_fallback(fallback_cc, args + DA_FLAGS)
         return
 
