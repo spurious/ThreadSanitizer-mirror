@@ -1,6 +1,7 @@
 // Copyright 2011 Google Inc. All Rights Reserved.
 // Author: glider@google.com (Alexander Potapenko)
 
+#include "llvm/ADT/SmallSet.h"
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/DebugInfo.h"
 #include "llvm/Constants.h"
@@ -27,8 +28,8 @@ struct DebugPcInfo {
   uintptr_t line;
 };
 
-typedef std::set<llvm::Instruction*> InstSet;
-typedef std::set<llvm::BasicBlock*> BlockSet;
+typedef llvm::SmallSet<llvm::Instruction*, 32> InstSet;
+typedef llvm::SmallSet<llvm::BasicBlock*, 16> BlockSet;
 typedef std::vector<llvm::BasicBlock*> BlockVector;
 
 struct Trace {

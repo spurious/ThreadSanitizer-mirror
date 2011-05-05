@@ -2,7 +2,6 @@
 
 #include "ThreadSanitizer.h"
 
-#include "llvm/ADT/Statistic.h"
 #include "llvm/Analysis/DebugInfo.h"
 #include "llvm/CallingConv.h"
 #include "llvm/DerivedTypes.h"
@@ -335,12 +334,12 @@ BlockSet &TsanOnlineInstrument::getPredecessors(BasicBlock *bb) {
 bool TsanOnlineInstrument::visit(BasicBlock *node,
                                  Trace &trace,
                                  BlockSet &visited) {
-  if (visited.find(node) == visited.end()) {
+  if (!visited.count(node)) {
     visited.insert(node);
     TerminatorInst *BBTerm = node->getTerminator();
     for (int i = 0, e = BBTerm->getNumSuccessors(); i != e; ++i) {
       BasicBlock *child = BBTerm->getSuccessor(i);
-      if (trace.blocks.find(child) == trace.blocks.end()) continue;
+      if (!trace.blocks.count(child)) continue;
       if (!visit(child, trace, visited)) return false;
     }
     return false;  // we haven't visited |node| before
@@ -402,7 +401,7 @@ bool TsanOnlineInstrument::validateTrace(Trace &trace) {
 #ifdef DEBUG_TRACES
       errs() << "  " << (*I)->getName() << "->" << (*BB)->getName() << "\n";
 #endif
-      if (trace.blocks.find(*I) != trace.blocks.end()) {
+      if (trace.blocks.count(*I)) {
         num_edges++;
       } else {
         entries.insert(*BB);
@@ -438,8 +437,7 @@ bool TsanOnlineInstrument::validateTrace(Trace &trace) {
     // then no successors of that basic block should belong to the trace.
     if (BBTerm->getNumSuccessors() > 0) {
       BasicBlock *child = BBTerm->getSuccessor(0);
-      bool has_ext_successors =
-          (trace.blocks.find(child) == trace.blocks.end());
+      bool has_ext_successors = !trace.blocks.count(child);
       if (has_ext_successors) {
         trace.exits.insert(*BB);
       }
@@ -453,7 +451,7 @@ bool TsanOnlineInstrument::validateTrace(Trace &trace) {
 #endif
           return false;
         }
-        bool is_external = trace.blocks.find(child) == trace.blocks.end();
+        bool is_external = !trace.blocks.count(child);
         if (has_ext_successors != is_external) {
 #ifdef DEBUG_TRACES
   errs() << "  ERROR: CHILD HAVING BOTH EXT AND NON-EXT SUCCESSORS\n";
@@ -492,10 +490,10 @@ void TsanOnlineInstrument::buildClosureInner(Trace &trace, BlockSet &used) {
     TerminatorInst *BBTerm = (*SI)->getTerminator();
     for (int i = 0, e = BBTerm->getNumSuccessors(); i != e; ++i) {
       BasicBlock *child = BBTerm->getSuccessor(i);
-      if (trace.blocks.find(child) != trace.blocks.end()) continue;
+      if (trace.blocks.count(child)) continue;
       // If a child doesn't belong to this trace, we can't use it and thus
       // any other child of this node.
-      if (used.find(child) != used.end()) {
+      if (used.count(child)) {
         children.clear();
         break;
       }
@@ -579,7 +577,7 @@ TraceVector TsanOnlineInstrument::buildTraces(Function &F) {
   to_see.push_back(F.begin());
   for (int i = 0; i < to_see.size(); ++i) {
     BasicBlock *current_bb = to_see[i];
-    if (used_bbs.find(current_bb) == used_bbs.end()) {
+    if (!used_bbs.count(current_bb)) {
       assert(current_trace->blocks.size() == 0);
       current_trace->entry = current_bb;
       current_trace->blocks.insert(current_bb);
@@ -596,7 +594,7 @@ TraceVector TsanOnlineInstrument::buildTraces(Function &F) {
     TerminatorInst *BBTerm = current_bb->getTerminator();
     for (int ch = 0, e = BBTerm->getNumSuccessors(); ch != e; ++ch) {
       BasicBlock *child = BBTerm->getSuccessor(ch);
-      if (visited.find(child) == visited.end()) {
+      if (!visited.count(child)) {
         to_see.push_back(child);
         visited.insert(child);
       }
@@ -806,7 +804,7 @@ void TsanOnlineInstrument::runOnFunction(Module::iterator &F) {
         insertRtnExit(BI);
       }
       if (ignore_recursively && isaCallOrInvoke(BI) &&
-          (calls_to_instrument.find(BI) != calls_to_instrument.end())) {
+          calls_to_instrument.count(BI)) {
         instrumentCall(BI);
       }
     }
@@ -1043,7 +1041,7 @@ bool TsanOnlineInstrument::runOnModule(Module &M) {
   //  -- if it starts with a call, there is an empty basic block before it
   for (Module::iterator F = M.begin(), E = M.end(); F != E; ++F) {
     // We do not want to split on a call instruction more than once.
-    set<Instruction*> already_splitted;
+    SmallSet<Instruction*, 32> already_splitted;
     for (Function::iterator BB = F->begin(), E = F->end(); BB != E; ++BB) {
       bool need_split = false;
       BasicBlock::iterator OldBI = BB->end();
@@ -1077,8 +1075,7 @@ bool TsanOnlineInstrument::runOnModule(Module &M) {
         if (isaCallOrInvoke(BI)) {
           // Mark the CALL/INVOKE instruction as to be instrumented.
           calls_to_instrument.insert(BI);
-          if ((already_splitted.find(BI) ==
-               already_splitted.end()) && (need_split || BB!=F->begin())) {
+          if (!already_splitted.count(BI) && (need_split || BB!=F->begin())) {
             already_splitted.insert(BI);
             SplitBlock(BB, BI, this);
             need_split = false;
@@ -1088,7 +1085,7 @@ bool TsanOnlineInstrument::runOnModule(Module &M) {
         if (isa<MemTransferInst>(BI)) {
           instrumentMemTransfer(BI);
           if ((need_split || BI == BB->begin()) &&
-              already_splitted.find(BI) == already_splitted.end()) {
+              !already_splitted.count(BI)) {
             already_splitted.insert(BI);
             SplitBlock(BB, BI, this);
             need_split = false;
@@ -1374,8 +1371,7 @@ void TsanOnlineInstrument::runOnTrace(Trace &trace,
       for (BasicBlock::iterator BI = (*EI)->begin(), BE = (*EI)->end();
            BI != BE;
            ++BI) {
-        if (isaCallOrInvoke(BI) &&
-            (calls_to_instrument.find(BI) != calls_to_instrument.end())) {
+        if (isaCallOrInvoke(BI) && calls_to_instrument.count(BI)) {
           instrumentCall(BI);
         }
       }
@@ -1675,8 +1671,7 @@ bool TsanOnlineInstrument::makeTracePassport(Trace &trace) {
         //assert(false);
       }
       if (isMop) {
-        if (trace.mops_to_instrument.find(BI) == trace.mops_to_instrument.end())
-          continue;
+        if (!trace.mops_to_instrument.count(BI)) continue;
         TraceNumMops++;
         FunctionMopCount++;
         ModuleMopCount++;
@@ -1788,9 +1783,7 @@ bool TsanOnlineInstrument::instrumentMop(BasicBlock::iterator &BI,
                                          bool check_ident_store,
                                          Trace &trace,
                                          bool useTLEB) {
-  if (trace.mops_to_instrument.find(BI) == trace.mops_to_instrument.end()) {
-    return false;
-  }
+  if (!trace.mops_to_instrument.count(BI)) return false;
   if (!EnableMemoryInstrumentation) return false;
   instrumentation_stats.newInstrumentedMop();
   Value *MopAddr;
