@@ -714,6 +714,8 @@ int TsanOnlineInstrument::numMopsInFunction(Module::iterator &F) {
   }
 }
 
+// TsanOnlineInstrument is a module pass, so this is just a helper function, not
+// an interface implementation.
 void TsanOnlineInstrument::runOnFunction(Module::iterator &F) {
   ModuleFunctionCount++;
   FunctionMopCount = 0;
@@ -1024,6 +1026,9 @@ bool TsanOnlineInstrument::runOnModule(Module &M) {
   ThisModule = &M;
   ThisModuleContext = &(M.getContext());
   AA = &getAnalysis<AliasAnalysis>();
+  TD = getAnalysisIfAvailable<TargetData>();
+  // If TargetData is unavailable, do nothing.
+  if (!TD) return false;
   setupDataTypes();
   setupRuntimeGlobals();
 
@@ -1099,6 +1104,8 @@ bool TsanOnlineInstrument::runOnModule(Module &M) {
   }
   writeModuleDebugInfo(M);
   if (PrintStats) instrumentation_stats.printStats();
+  // We do insert some external declarations, so return true to determine
+  // that the pass has modified the IR.
   return true;
 }
 
@@ -1321,6 +1328,8 @@ void TsanOnlineInstrument::insertFlushCurrentCall(Trace &trace,
   }
 }
 
+// TsanOnlineInstrument is a module pass, so this is just a helper function, not
+// an interface implementation.
 void TsanOnlineInstrument::runOnTrace(Trace &trace,
                                       bool first_dtor_bb) {
   TLEBIndex = 0;
@@ -1431,7 +1440,7 @@ int TsanOnlineInstrument::getMopPtrSize(Value *mopPtr, bool isStore) {
   const Type *mop_type = mopPtr->getType();
   if (mop_type->isSized()) {
     if (cast<PointerType>(mop_type)->getElementType()->isSized()) {
-      result = getAnalysis<TargetData>().getTypeStoreSizeInBits(
+      result = TD->getTypeStoreSizeInBits(
           cast<PointerType>(mop_type)->getElementType());
     }
   }
@@ -1902,6 +1911,8 @@ void TsanOnlineInstrument::instrumentCall(BasicBlock::iterator &BI) {
 // This method is ran only for basic blocks belonging to traces that are to be
 // instrumented. Note that a single basic block shouldn't necessarily be
 // instrumented.
+// TsanOnlineInstrument is a module pass, so this is just a helper function, not
+// an interface implementation.
 void TsanOnlineInstrument::runOnBasicBlock(BasicBlock *BB,
                                            bool first_dtor_bb,
                                            Trace &trace,
@@ -1938,8 +1949,8 @@ void TsanOnlineInstrument::runOnBasicBlock(BasicBlock *BB,
   if (is_instrumented) instrumentation_stats.newInstrumentedBasicBlock();
 }
 
+// TODO(glider): we may need to require additional passes to run.
 void TsanOnlineInstrument::getAnalysisUsage(AnalysisUsage &AU) const {
-  AU.setPreservesAll();
   AU.addRequired<TargetData>();
   AU.addRequired<AliasAnalysis>();
 }

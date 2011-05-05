@@ -175,7 +175,10 @@ struct TsanOnlineInstrument : public llvm::ModulePass { // {{{1
   // Globals provided by the RTL.
   llvm::Value *ShadowStack, *CurrentStackEnd, *TLEB, *LiteraceTid;
   llvm::Value *ThreadLocalIgnore;
+
   llvm::AliasAnalysis *AA;
+  llvm::TargetData *TD;
+
   // Constants.
   static const int kTLEBSize = 100;
   // TODO(glider): hashing constants and BB addresses should be different on
