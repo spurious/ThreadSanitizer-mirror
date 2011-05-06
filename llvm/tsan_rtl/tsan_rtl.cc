@@ -966,14 +966,14 @@ int __wrap_pthread_create(pthread_t *thread,
 
 INLINE void IGNORE_ALL_ACCESSES_BEGIN() {
   DECLARE_TID_AND_PC();
-  Put(IGNORE_READS_BEG, tid, pc, 0, 0);
-  Put(IGNORE_WRITES_BEG, tid, pc, 0, 0);
+  SPut(IGNORE_READS_BEG, tid, pc, 0, 0);
+  SPut(IGNORE_WRITES_BEG, tid, pc, 0, 0);
 }
 
 INLINE void IGNORE_ALL_ACCESSES_END() {
   DECLARE_TID_AND_PC();
-  Put(IGNORE_READS_END, tid, pc, 0, 0);
-  Put(IGNORE_WRITES_END, tid, pc, 0, 0);
+  SPut(IGNORE_READS_END, tid, pc, 0, 0);
+  SPut(IGNORE_WRITES_END, tid, pc, 0, 0);
 }
 
 INLINE void IGNORE_ALL_SYNC_BEGIN(void) {
@@ -2747,12 +2747,12 @@ void *rtl_memcpy(char *dest, const char *src, size_t n) {
   // No need to check for IN_RTL -- this function is called from the client code
   // only.
   DECLARE_TID_AND_PC();
-  RPut(RTN_CALL, tid, pc, (uintptr_t)rtl_memcpy, 0);
   ENTER_RTL();
+  RPut(RTN_CALL, tid, pc, (uintptr_t)rtl_memcpy, 0);
   pc = (pc_t)rtl_memcpy;
   void *result = Replace_memcpy(tid, pc, dest, src, n);
-  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
+  LEAVE_RTL();
   return result;
 }
 
@@ -2761,14 +2761,14 @@ void *rtl_memmove(char *dest, const char *src, size_t n) {
   // No need to check for IN_RTL -- this function is called from the client code
   // only.
   DECLARE_TID_AND_PC();
-  RPut(RTN_CALL, tid, pc, (uintptr_t)rtl_memmove, 0);
   ENTER_RTL();
+  RPut(RTN_CALL, tid, pc, (uintptr_t)rtl_memmove, 0);
   void *result = __real_memmove(dest, src, n);
   pc = (pc_t)rtl_memmove;
   REPORT_READ_RANGE(src, n);
   REPORT_WRITE_RANGE(dest, n);
-  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
+  LEAVE_RTL();
   return result;
 }
 
@@ -2870,7 +2870,7 @@ void ReadDbgInfoFromSection(char* start, char* end) {
       // TODO(glider): generate more correct debug info.
       if ((*debug_info).find(pcs[i].pc) != (*debug_info).end()) {
         if ((*debug_info)[pcs[i].pc].symbol != symbols[pcs[i].symbol]) {
-          Printf("ERROR: conflicting symbols for pc %p:\n  %s\n  %s\n",
+          DPrintf("ERROR: conflicting symbols for pc %p:\n  %s\n  %s\n",
                  pcs[i].pc,
                  (*debug_info)[pcs[i].pc].symbol.c_str(),
                  symbols[pcs[i].symbol].c_str());

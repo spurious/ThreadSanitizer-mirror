@@ -219,28 +219,28 @@ extern "C"
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateIgnoreReadsBegin)(
     const char *file, int line) {
   DECLARE_TID_AND_PC();
-  ExPut(IGNORE_READS_BEG, tid, pc, 0, 0);
+  ExSPut(IGNORE_READS_BEG, tid, pc, 0, 0);
 }
 
 extern "C"
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateIgnoreReadsEnd)(
     const char *file, int line) {
   DECLARE_TID_AND_PC();
-  ExPut(IGNORE_READS_END, tid, pc, 0, 0);
+  ExSPut(IGNORE_READS_END, tid, pc, 0, 0);
 }
 
 extern "C"
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateIgnoreWritesBegin)(
     const char *file, int line) {
   DECLARE_TID_AND_PC();
-  ExPut(IGNORE_WRITES_BEG, tid, pc, 0, 0);
+  ExSPut(IGNORE_WRITES_BEG, tid, pc, 0, 0);
 }
 
 extern "C"
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateIgnoreWritesEnd)(
     const char *file, int line) {
   DECLARE_TID_AND_PC();
-  ExPut(IGNORE_WRITES_END, tid, pc, 0, 0);
+  ExSPut(IGNORE_WRITES_END, tid, pc, 0, 0);
 }
 
 extern "C"
