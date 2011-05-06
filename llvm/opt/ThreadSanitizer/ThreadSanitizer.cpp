@@ -1784,7 +1784,10 @@ bool TsanOnlineInstrument::instrumentMop(BasicBlock::iterator &BI,
                                          Trace &trace,
                                          bool useTLEB) {
   if (!trace.mops_to_instrument.count(BI)) return false;
-  if (!EnableMemoryInstrumentation) return false;
+  if (!EnableMemoryInstrumentation) {
+    instrumentation_stats.newMopUninstrumentedByFlag();
+    return false;
+  }
   instrumentation_stats.newInstrumentedMop();
   Value *MopAddr;
   llvm::Instruction &IN = *BI;
@@ -1992,6 +1995,7 @@ InstrumentationStats::InstrumentationStats() {
 
   num_uninst_mops = 0;
   num_uninst_mops_aa = 0;
+  num_uninst_mops_flag = 0;
   num_uninst_mops_ignored = 0;
   for (int i = 0; i < kNumStats; i++) {
     num_traces_with_n_inst_bbs[i] = 0;
@@ -2059,6 +2063,10 @@ void InstrumentationStats::newMopUninstrumentedByAA() {
   num_uninst_mops_aa++;
 }
 
+void InstrumentationStats::newMopUninstrumentedByFlag() {
+  num_uninst_mops++;
+  num_uninst_mops_flag++;
+}
 
 void InstrumentationStats::finalize() {
   if (num_inst_traces_in_function) {
@@ -2113,6 +2121,9 @@ void InstrumentationStats::printStats() {
          << num_uninst_mops_ignored << "\n";
   errs() << "  # of aliasing mops in the same trace: "
          << num_uninst_mops_aa << "\n";
+  errs() << "  # of mops ignored because of "
+            "-enable-memory-instrumentation=false: "
+         << num_uninst_mops_aa << "\n";
 
   // Buckets.
   errs() << "\n";
@@ -2124,7 +2135,8 @@ void InstrumentationStats::printStats() {
       num_inst_bbs_in_buckets += i * num_traces_with_n_inst_bbs[i];
   }
   assert(num_mops == num_inst_mops + num_uninst_mops);
-  assert(num_uninst_mops == num_uninst_mops_aa + num_uninst_mops_ignored);
+  assert(num_uninst_mops == num_uninst_mops_aa + num_uninst_mops_ignored
+                                               + num_uninst_mops_flag);
   assert(num_traces >= num_inst_traces);
   assert(num_traces == num_traces_in_buckets);
   assert(num_bbs >= num_inst_bbs);
