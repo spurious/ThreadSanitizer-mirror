@@ -24,6 +24,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include "relite_rt_atomic.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
