@@ -13,16 +13,6 @@
 
 #include "relite_ignore.h"
 
-#define RELITE_ATTR_IGNORE  "tsan_ignore"
-#define RELITE_ATTR_REPLACE "tsan_replace"
-
-
-typedef struct replace_t {
-  struct replace_t*     next;
-  char const*           name;
-  tree                  decl;
-} replace_t;
-
 
 typedef struct relite_context_t {
   int                   opt_debug;
@@ -39,7 +29,6 @@ typedef struct relite_context_t {
   int                   func_calls;
   int                   func_mops;
   relite_ignore_e       func_ignore;
-  replace_t*            replace_head;
 
   int                   stat_func_total;
   int                   stat_func_instrumented;
@@ -50,7 +39,6 @@ typedef struct relite_context_t {
   int                   stat_load_instrumented;
   int                   stat_sblock;
   int                   stat_bb_total;
-  int                   stat_replaced;
 } relite_context_t;
 
 

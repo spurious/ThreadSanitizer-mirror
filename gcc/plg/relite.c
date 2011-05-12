@@ -58,7 +58,7 @@
 #include "relite_pass.h"
 
 // required by gcc plugin machinery
-int plugin_is_GPL_compatible = 1;
+bool plugin_is_GPL_compatible = false;
 
 
 // global contest - there is no way to pass a context to compilation passes
@@ -81,7 +81,7 @@ static void             plugin_finish_unit  (void* event_data,
 }
 
 
-static tree             handle_attr         (tree* node,
+static tree             handle_ignore_attr  (tree* node,
                                              tree name,
                                              tree args,
                                              int flags,
@@ -93,16 +93,10 @@ static tree             handle_attr         (tree* node,
 static void             register_attributes (void* event_data,
                                              void* user_data) {
   static struct attribute_spec ignore_attr = {
-      RELITE_ATTR_IGNORE, 0, 0, 0, 0, 0, handle_attr
+      "relite_ignore", 0, 0, 0, 0, 0, handle_ignore_attr
   };
 
   register_attribute(&ignore_attr);
-
-  static struct attribute_spec replace_attr = {
-      RELITE_ATTR_REPLACE, 1, -1, 0, 0, 0, handle_attr
-  };
-
-  register_attribute(&replace_attr);
 }
 
 

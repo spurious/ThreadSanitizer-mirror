@@ -20,21 +20,18 @@
 #include <function.h>
 #include <tree-flow.h>
 #include <tree-pass.h>
-//#include <domwalk.h>
+#include <domwalk.h>
 #include <cfghooks.h>
-#include <cp/cp-tree.h>
+#include <diagnostic.h>
 #include <c-common.h>
 #include <c-pragma.h>
-#include <langhooks.h>
+#include <cp/cp-tree.h>
 #include <toplev.h>
-#include <diagnostic.h>
-
-#include "relite_pass.h"
-#include "relite_ignore.h"
-
 #include <assert.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include "relite_pass.h"
+#include "relite_ignore.h"
 
 
 #define                 MAX_MOP_BYTES       16
@@ -82,7 +79,6 @@ static void             build_stack_op      (relite_context_t* ctx,
   tree op_size = TYPE_SIZE(ptr_type_node);
   double_int op_size_cst = tree_to_double_int(op_size);
   unsigned size_val = op_size_cst.low / __CHAR_BIT__;
-  //TODO(dvyukov): perhaps the type should be long_unsigned_type_node
   op_size = build_int_cst_wide(long_long_unsigned_type_node, size_val, 0);
   tree op_expr = build2(op, long_long_unsigned_type_node,
                         ctx->rtl_stack, op_size);
@@ -243,7 +239,7 @@ static void             instr_call          (struct relite_context_t* ctx,
                                              gimple_seq* gseq) {
   // Build the following gimple sequence:
   // relite_unique_label:
-  // ShadowStack[-1] = &&relite_unique_label;
+  // ShadowStack[0] = &&relite_unique_label;
 
   if (func_decl != 0 && DECL_IS_BUILTIN(func_decl))
     return;
@@ -257,15 +253,8 @@ static void             instr_call          (struct relite_context_t* ctx,
   pc_addr = force_gimple_operand(pc_addr, &seq, true, NULL_TREE);
   gimple_seq_add_seq(gseq, seq);
 
-  tree op_size = TYPE_SIZE(ptr_type_node);
-  double_int op_size_cst = tree_to_double_int(op_size);
-  unsigned size_val = op_size_cst.low / __CHAR_BIT__;
-  op_size = build_int_cst_wide(long_unsigned_type_node, size_val, 0);
-  tree op_expr = build2(MINUS_EXPR, long_unsigned_type_node,
-                        ctx->rtl_stack, op_size);
-
   tree stack_op = build1(
-      INDIRECT_REF, ptr_type_node, op_expr);
+      INDIRECT_REF, build_pointer_type(ptr_type_node), ctx->rtl_stack);
   gimple assign = gimple_build_assign(stack_op, pc_addr);
   gimple_seq_add_stmt(gseq, assign);
 }
@@ -287,7 +276,7 @@ typedef struct bb_data_t {
 } bb_data_t;
 
 
-static char const*      decl_name           (tree                   decl) {
+static char const*      decl_name           (tree decl) {
   if (decl != 0 && DECL_P(decl)) {
     tree id = DECL_NAME(decl);
     if (id) {
@@ -300,7 +289,7 @@ static char const*      decl_name           (tree                   decl) {
 }
 
 
-static char const*      decl_name_as        (tree                   decl) {
+static char const*      decl_name_as        (tree decl) {
   if (decl != 0 && DECL_P(decl)) {
     tree id = DECL_ASSEMBLER_NAME(decl);
     if (id) {
@@ -349,7 +338,7 @@ static char*            dump_tree_impl      (char*                  pos,
     if (id != 0) {
       char const* name = IDENTIFIER_POINTER(id);
       if (name != 0) {
-        char const* dot = strrchr(name, '.');
+        char* dot = strrchr(name, '.');
         if (dot == 0)
           pos = str_append(pos, end, name);
         else
@@ -680,40 +669,6 @@ static void             instrument_mop      (relite_context_t*      ctx,
 }
 
 
-static char const*      format_fn_name      (tree fndecl) {
-  static char buf [4096];
-  int buf_size = sizeof(buf)/sizeof(buf[0]) - 1;
-  char* pos = buf;
-  pos[0] = 0;
-  pos[buf_size] = 0;
-
-  char const* fname = lang_hooks.decl_printable_name(fndecl, 1);
-  int sz = snprintf(pos, buf_size, "%s(", fname);
-  pos += sz;
-  buf_size -= sz;
-  tree arg = fndecl->function_decl.common.arguments;
-  for (; arg != 0; arg = arg->common.chain) {
-    tree typ = arg->parm_decl.common.common.initial;
-    char const* typname = 0;
-    if (TYPE_NAME(typ))
-    {
-      if (TREE_CODE(TYPE_NAME(typ)) == IDENTIFIER_NODE)
-        typname = IDENTIFIER_POINTER (TYPE_NAME (typ));
-      else if (TREE_CODE (TYPE_NAME (typ)) == TYPE_DECL
-          && DECL_NAME (TYPE_NAME (typ)))
-        typname = IDENTIFIER_POINTER (DECL_NAME (TYPE_NAME (typ)));
-    }
-    int sz = snprintf(pos, buf_size, "%s%s",
-                      (arg == fndecl->function_decl.common.arguments ?
-                          "" : ", "), typname);
-    pos += sz;
-    buf_size -= sz;
-  }
-  snprintf(pos, buf_size, ")");
-  return buf;
-}
-
-
 static void             handle_gimple       (relite_context_t* ctx,
                                              gimple_stmt_iterator* gsi,
                                              bb_data_t* bbd) {
@@ -729,7 +684,7 @@ static void             handle_gimple       (relite_context_t* ctx,
     //TODO(dvyukov): handle GIMPLE_COND
     case GIMPLE_CALL: {
       // Handle call arguments as loads
-      for (unsigned i = 0; i != gimple_call_num_args(stmt); i += 1) {
+      for (int i = 0; i != gimple_call_num_args(stmt); i += 1) {
         tree rhs = gimple_call_arg(stmt, i);
         instrument_mop(ctx, bbd, stmt, gsi, loc, rhs, 0);
       }
@@ -754,50 +709,6 @@ static void             handle_gimple       (relite_context_t* ctx,
       if (lhs != 0)
         instrument_mop(ctx, bbd, stmt, gsi, loc, lhs, 1);
 
-      //TODO(dvyukov): ideally, we also want to do replacements
-      // when function addresses are taken
-      if (fndecl != 0) {
-        int is_name_matched = 0;
-        char const* fname = lang_hooks.decl_printable_name(fndecl, 1);
-        dbg(ctx, "function name: '%s'", format_fn_name(fndecl));
-        replace_t* repl = ctx->replace_head;
-        while (repl != 0) {
-//          dbg(ctx, "matching with: '%s'->'%s'",
-//              repl->name, format_fn_name(repl->decl));
-          if (0 == strcmp(fname, repl->name)) {
-            is_name_matched = 1;
-            tree arg1 = fndecl->function_decl.common.arguments;
-            tree arg2 = repl->decl->function_decl.common.arguments;
-            while (arg1 != 0 && arg2 != 0) {
-              tree t1 = arg1->parm_decl.common.common.initial;
-              tree t2 = arg2->parm_decl.common.common.initial;
-//              printf("arg {\n");
-//              print_node(stdout, "orig", t1, 2);
-//              print_node(stdout, "repl", t2, 2);
-//              printf("}\n");
-              if (!same_type_p(t1, t2))
-                break;
-              arg1 = arg1->common.chain;
-              arg2 = arg2->common.chain;
-            }
-            if (arg1 == 0 && arg1 == 0) {
-              dbg(ctx, "substituting call '%s' -> '%s'",
-                  lang_hooks.decl_printable_name(fndecl, 2),
-                  lang_hooks.decl_printable_name(repl->decl, 2));
-              gimple_call_set_fndecl(stmt, repl->decl);
-              ctx->stat_replaced += 1;
-              break;
-            }
-          }
-          repl = repl->next;
-        }
-
-        if (is_name_matched != 0 && repl == 0) {
-          printf("relite: replace function is not found\n");
-          exit(1);
-        }
-      }
-
       break;
     }
 
@@ -807,7 +718,7 @@ static void             handle_gimple       (relite_context_t* ctx,
       instrument_mop(ctx, bbd, stmt, gsi, loc, lhs, 1);
 
       // Handle operands as loads
-      for (unsigned i = 1; i != gimple_num_ops(stmt); i += 1) {
+      for (int i = 1; i != gimple_num_ops(stmt); i += 1) {
         tree rhs = gimple_op(stmt, i);
         instrument_mop(ctx, bbd, stmt, gsi, loc, rhs, 0);
       }
@@ -844,7 +755,7 @@ static void             instrument_bblock   (relite_context_t* ctx,
 static void             instrument_function (relite_context_t* ctx) {
   int const bb_cnt = cfun->cfg->x_n_basic_blocks;
   dbg(ctx, "%d basic blocks", bb_cnt);
-  bb_data_t* bb_data = (bb_data_t*)xcalloc(bb_cnt, sizeof(bb_data_t));
+  bb_data_t* bb_data = xcalloc(bb_cnt, sizeof(bb_data_t));
   basic_block entry_bb = ENTRY_BLOCK_PTR;
   edge entry_edge = single_succ_edge(entry_bb);
   entry_bb = entry_edge->dest;
@@ -937,21 +848,8 @@ void                    relite_pass         (relite_context_t* ctx) {
   tree func_attr = DECL_ATTRIBUTES(cfun->decl);
   for (; func_attr != NULL_TREE; func_attr = TREE_CHAIN(func_attr)) {
     char const* attr_name = IDENTIFIER_POINTER(TREE_PURPOSE(func_attr));
-    if (strcmp(attr_name, RELITE_ATTR_IGNORE) == 0) {
-      dbg(ctx, "IGNORING due to " RELITE_ATTR_IGNORE " attribute");
-      dbg(ctx, " ");
-      return;
-    } else if (strcmp(attr_name, RELITE_ATTR_REPLACE) == 0) {
-      dbg(ctx, "IGNORING due to " RELITE_ATTR_REPLACE " attribute");
-      replace_t* repl = XNEW(replace_t);
-      repl->name = xstrdup(TREE_VALUE(TREE_VALUE(func_attr))->string.str);
-      repl->decl = cfun->decl;
-      repl->next = ctx->replace_head;
-      ctx->replace_head = repl;
-      dbg(ctx, "replace: %s->%s",
-          repl->name,
-          lang_hooks.decl_printable_name(repl->decl, 1));
-      dbg(ctx, " ");
+    if (strcmp(attr_name, "relite_ignore") == 0) {
+      dbg(ctx, "IGNORING due to relite_ignore attribute");
       return;
     }
   }
@@ -1049,8 +947,6 @@ void                    relite_finish       (relite_context_t* ctx) {
         ctx->stat_bb_total);
     printf("sblocks/mop: %d/%d\n",
         ctx->stat_sblock, mop_count);
-    printf("replaced: %d\n",
-        ctx->stat_replaced);
   }
 }
 
