@@ -48,7 +48,6 @@
 #define NOINLINE __attribute__ ((noinline))
 
 #include "ts_valgrind_client_requests.h"
-#include "ts_atomic.h"
 
 // When replacing a function in valgrind, the replacement code
 // is instrumented, so we just don't touch reads/writes in replacement
@@ -184,6 +183,8 @@ static inline int  VALGRIND_TS_SEGMENT_ID(void) {
                               (_creqF),                  \
                              _arg1,_arg2,_arg3,_arg4,0); \
    } while (0)
+
+
 
 #define DO_PthAPIerror(_fnnameF, _errF)                  \
    do {                                                  \
@@ -2798,201 +2799,6 @@ int I_WRAP_SONAME_FNNAME_ZZ(NONE, GioMemoryFileSnapshotCtor) (void *a, char *fil
   }
 
 WRAP_AND_IGNORE(NONE, getenv);
-
-//-------------- atomic ops support -------------- {{{1
-
-#define ATOMIC_WRAP(name, ret, ...) \
-ret VG_REPLACE_FUNCTION_ZU(NONE, name)(__VA_ARGS__); \
-ret VG_REPLACE_FUNCTION_ZU(NONE, name)(__VA_ARGS__)
-
-static Word atomic_op(tsan_atomic_op op,
-                      void* a,
-                      int size,
-                      Word v,
-                      Word cmp,
-                      tsan_memory_order mo,
-                      tsan_memory_order fail_mo) {
-  Word pack;
-  Word res;
-
-  assert((mo & (~((1 << 8) - 1))) == 0); // fits into 8 bits
-  assert((fail_mo & (~((1 << 8) - 1))) == 0); // fits into 8 bits
-  assert((size & (~((1 << 8) - 1))) == 0); // fits into 8 bits
-  pack = (Word)mo | ((Word)fail_mo << 8) | ((Word)size << 16);
-  res = 0;
-
-/*
-  fprintf(stderr, "atomic {{{ TSREQ_ATOMIC_OP=%d\n", (int)TSREQ_ATOMIC_OP);
-  fflush(stderr);
-*/
-
-  VALGRIND_DO_CLIENT_REQUEST(res, 0, TSREQ_ATOMIC_OP,
-      (Word)a, (Word)op, pack, v, cmp);
-
-/*
-  fprintf(stderr, "atomic >>> op=%d, mo=%d, mo2=%d, addr=%p,"
-                  " size=%d, v=%d, cmp=%d, res=%d\n",
-      op, mo, fail_mo,
-      a, (int)size,
-      (int)v, (int)cmp, (int)res);
-  fflush(stderr);
-*/
-
-  return res;
-}
-
-ATOMIC_WRAP(_ZN4base6subtle13MemoryBarrierEv, void, void) {
-  atomic_op(tsan_atomic_op_fence, 0, 1, 0, 0,
-      tsan_memory_order_invalid, tsan_memory_order_invalid);
-}
-
-ATOMIC_WRAP(_ZN4base6subtle24NoBarrier_CompareAndSwapEPViii, int,
-    void* a, int cmp, int xch) {
-  return atomic_op(tsan_atomic_op_compare_exchange_strong, a, sizeof(int),
-      xch, cmp, tsan_memory_order_relaxed, tsan_memory_order_relaxed);
-}
-
-ATOMIC_WRAP(_ZN4base6subtle22Acquire_CompareAndSwapEPViii, int,
-    void* a, int cmp, int xch) {
-  return atomic_op(tsan_atomic_op_compare_exchange_strong, a, sizeof(int),
-      xch, cmp, tsan_memory_order_acquire, tsan_memory_order_acquire);
-}
-
-ATOMIC_WRAP(_ZN4base6subtle22Release_CompareAndSwapEPViii, int,
-    void* a, int cmp, int xch) {
-  return atomic_op(tsan_atomic_op_compare_exchange_strong, a, sizeof(int),
-      xch, cmp, tsan_memory_order_release, tsan_memory_order_relaxed);
-}
-
-ATOMIC_WRAP(_ZN4base6subtle24NoBarrier_AtomicExchangeEPVii, int,
-    void* a, int xch) {
-  return atomic_op(tsan_atomic_op_exchange, a, sizeof(int),
-      xch, 0, tsan_memory_order_relaxed, tsan_memory_order_invalid);
-}
-
-ATOMIC_WRAP(_ZN4base6subtle25NoBarrier_AtomicIncrementEPVii, int,
-    void* a, int inc) {
-  return atomic_op(tsan_atomic_op_fetch_add, a, sizeof(int),
-      inc, 0, tsan_memory_order_relaxed, tsan_memory_order_invalid) + inc;
-}
-
-ATOMIC_WRAP(_ZN4base6subtle23Barrier_AtomicIncrementEPVii, int,
-    void* a, int inc) {
-  return atomic_op(tsan_atomic_op_fetch_add, a, sizeof(int),
-      inc, 0, tsan_memory_order_seq_cst, tsan_memory_order_invalid) + inc;
-}
-
-ATOMIC_WRAP(_ZN4base6subtle15NoBarrier_StoreEPVii, void,
-    void* a, int v) {
-  atomic_op(tsan_atomic_op_store, a, sizeof(int),
-      v, 0, tsan_memory_order_relaxed, tsan_memory_order_invalid);
-}
-
-ATOMIC_WRAP(_ZN4base6subtle13Acquire_StoreEPVii, void,
-    void* a, int v) {
-  atomic_op(tsan_atomic_op_store, a, sizeof(int),
-      v, 0, tsan_memory_order_seq_cst, tsan_memory_order_invalid);
-}
-
-ATOMIC_WRAP(_ZN4base6subtle13Release_StoreEPVii, void,
-    void* a, int v) {
-  atomic_op(tsan_atomic_op_store, a, sizeof(int),
-      v, 0, tsan_memory_order_release, tsan_memory_order_invalid);
-}
-
-ATOMIC_WRAP(_ZN4base6subtle14NoBarrier_LoadEPVKi, int,
-    void* a) {
-  return atomic_op(tsan_atomic_op_load, a, sizeof(int),
-      0, 0, tsan_memory_order_relaxed, tsan_memory_order_invalid);
-}
-
-ATOMIC_WRAP(_ZN4base6subtle12Acquire_LoadEPVKi, int,
-    void* a) {
-  return atomic_op(tsan_atomic_op_load, a, sizeof(int),
-      0, 0, tsan_memory_order_acquire, tsan_memory_order_invalid);
-}
-
-ATOMIC_WRAP(_ZN4base6subtle12Release_LoadEPVKi, int,
-    void* a) {
-  return atomic_op(tsan_atomic_op_load, a, sizeof(int),
-      0, 0, tsan_memory_order_seq_cst, tsan_memory_order_invalid);
-}
-
-#if VG_WORDSIZE == 8
-
-ATOMIC_WRAP(_ZN4base6subtle24NoBarrier_CompareAndSwapEPVlll, Word,
-    void* a, Word cmp, Word xch) {
-  return atomic_op(tsan_atomic_op_compare_exchange_strong, a, sizeof(Word),
-      xch, cmp, tsan_memory_order_relaxed, tsan_memory_order_relaxed);
-}
-
-ATOMIC_WRAP(_ZN4base6subtle22Acquire_CompareAndSwapEPVlll, Word,
-    void* a, Word cmp, Word xch) {
-  return atomic_op(tsan_atomic_op_compare_exchange_strong, a, sizeof(Word),
-      xch, cmp, tsan_memory_order_acquire, tsan_memory_order_acquire);
-}
-
-ATOMIC_WRAP(_ZN4base6subtle22Release_CompareAndSwapEPVlll, Word,
-    void* a, Word cmp, Word xch) {
-  return atomic_op(tsan_atomic_op_compare_exchange_strong, a, sizeof(Word),
-      xch, cmp, tsan_memory_order_release, tsan_memory_order_relaxed);
-}
-
-ATOMIC_WRAP(_ZN4base6subtle24NoBarrier_AtomicExchangeEPVll, Word,
-    void* a, Word xch) {
-  return atomic_op(tsan_atomic_op_exchange, a, sizeof(Word),
-      xch, 0, tsan_memory_order_relaxed, tsan_memory_order_invalid);
-}
-
-ATOMIC_WRAP(_ZN4base6subtle25NoBarrier_AtomicIncrementEPVll, Word,
-    void* a, Word inc) {
-  return atomic_op(tsan_atomic_op_fetch_add, a, sizeof(Word),
-      inc, 0, tsan_memory_order_relaxed, tsan_memory_order_invalid) + inc;
-}
-
-ATOMIC_WRAP(_ZN4base6subtle23Barrier_AtomicIncrementEPVll, Word,
-    void* a, Word inc) {
-  return atomic_op(tsan_atomic_op_fetch_add, a, sizeof(Word),
-      inc, 0, tsan_memory_order_seq_cst, tsan_memory_order_invalid) + inc;
-}
-
-ATOMIC_WRAP(_ZN4base6subtle15NoBarrier_StoreEPVll, void,
-    void* a, Word v) {
-  atomic_op(tsan_atomic_op_store, a, sizeof(Word),
-      v, 0, tsan_memory_order_relaxed, tsan_memory_order_invalid);
-}
-
-ATOMIC_WRAP(_ZN4base6subtle13Acquire_StoreEPVll, void,
-    void* a, Word v) {
-  atomic_op(tsan_atomic_op_store, a, sizeof(Word),
-      v, 0, tsan_memory_order_seq_cst, tsan_memory_order_invalid);
-}
-
-ATOMIC_WRAP(_ZN4base6subtle13Release_StoreEPVll, void,
-    void* a, Word v) {
-  atomic_op(tsan_atomic_op_store, a, sizeof(Word),
-      v, 0, tsan_memory_order_release, tsan_memory_order_invalid);
-}
-
-ATOMIC_WRAP(_ZN4base6subtle14NoBarrier_LoadEPVKl, Word,
-    void* a) {
-  return atomic_op(tsan_atomic_op_load, a, sizeof(Word),
-      0, 0, tsan_memory_order_relaxed, tsan_memory_order_invalid);
-}
-
-ATOMIC_WRAP(_ZN4base6subtle12Acquire_LoadEPVKl, Word,
-    void* a) {
-  return atomic_op(tsan_atomic_op_load, a, sizeof(Word),
-      0, 0, tsan_memory_order_acquire, tsan_memory_order_invalid);
-}
-
-ATOMIC_WRAP(_ZN4base6subtle12Release_LoadEPVKl, Word,
-    void* a) {
-  return atomic_op(tsan_atomic_op_load, a, sizeof(Word),
-      0, 0, tsan_memory_order_seq_cst, tsan_memory_order_invalid);
-}
-
-#endif // VG_WORDSIZE == 8
 
 // {{{1 end
 // vim:shiftwidth=2:softtabstop=2:expandtab

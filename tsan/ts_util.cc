@@ -750,24 +750,15 @@ int32_t NoBarrier_AtomicDecrement(int32_t* ptr) {
 #endif  // _MSC_VER && TS_SERIALIZED
 //--------------- YIELD ----------------- {{{1
 #if defined (_MSC_VER)
-#include <intrin.h>
 void YIELD() {
   WINDOWS::Sleep(0);
-}
-void PROCESSOR_YIELD() {
-  _mm_pause();
 }
 #elif defined(TS_VALGRIND)
 void YIELD() {
 }
-void PROCESSOR_YIELD() {
-}
 #elif defined(__GNUC__)
 void YIELD() {
   sched_yield();
-}
-void PROCESSOR_YIELD() {
-  __asm__ __volatile__ ("pause");
 }
 #else
 #error "Unknown config"

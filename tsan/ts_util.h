@@ -332,7 +332,6 @@ class ThreadSanitizerReport;
 // Time since some moment before the program start.
 extern size_t TimeInMilliSeconds();
 extern void YIELD();
-extern void PROCESSOR_YIELD();
 
 extern "C" long my_strtol(const char *str, char **end, int base);
 extern void Printf(const char *format, ...);
