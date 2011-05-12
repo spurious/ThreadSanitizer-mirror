@@ -139,8 +139,7 @@ int   eq_pthread_mutex_trylock    (void* func,
     // (trylock() on an unlocked mutex must not return EBUSY),
     // but it's a shame for a sane program to rely on that anyway :)
     if (eq_rand() % 2) {
-      errno = EBUSY;
-      return -1;
+      return EBUSY;
     }
   }
   eq_sched_shake(shake_mutex_trylock, mtx);
@@ -193,8 +192,7 @@ int   eq_pthread_cond_wait        (void* func,
                                    pthread_mutex_t* mtx) {
   if (eq_do_api_ambush) {
     if (eq_rand() % 2) {
-      errno = EINTR;
-      return -1;
+      return EINTR;
     }
   }
   int rv = ((int(*)(pthread_cond_t*, pthread_mutex_t*))func)(cv, mtx);
@@ -214,12 +212,10 @@ int   eq_pthread_cond_timedwait   (void* func,
                                    struct timespec const* abstime) {
   if (eq_do_api_ambush) {
     if (eq_rand() % 2) {
-      errno = ETIMEDOUT;
-      return -1;
+      return ETIMEDOUT;
     }
     if (eq_rand() % 2) {
-      errno = EINTR;
-      return -1;
+      return EINTR;
     }
     struct timespec ts;
     if ((abstime != 0) && (eq_rand() % 2)) {
@@ -294,8 +290,7 @@ int   eq_pthread_spin_trylock     (void* func,
     // (trylock() on an unlocked mutex must not return EBUSY),
     // but it's a shame for a sane program to rely on that anyway :)
     if (eq_rand() % 2) {
-      errno = EBUSY;
-      return -1;
+      return EBUSY;
     }
   }
   eq_sched_shake(shake_mutex_trylock, mtx);
