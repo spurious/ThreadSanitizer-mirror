@@ -30,7 +30,6 @@
 #include "dynamic_annotations.h"
 #include "fake_annotations.h"
 #include "tsan_rtl.h"
-#include "tsan_rtl_sched_shake.h"
 
 #undef DECLARE_TID_AND_PC
 #define DECLARE_TID_AND_PC() \
@@ -48,7 +47,8 @@ extern bool global_ignore;
 extern "C"
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateHappensBefore)(const char *file, int line,
                                                      const volatile void *cv) {
-  tsan_rtl_sched_shake(shake_atomic_rmw, cv);
+  if (G_flags->disable_signal_wait)
+    return;
   DECLARE_TID_AND_PC();
   ExSPut(SIGNAL, tid, pc, (uintptr_t)cv, 0);
 }
@@ -56,8 +56,8 @@ void DYNAMIC_ANNOTATIONS_NAME(AnnotateHappensBefore)(const char *file, int line,
 extern "C"
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateHappensAfter)(const char *file, int line,
                                                     const volatile void *cv) {
-  //TODO(dvyukov): shake must be placed *before* the user's *action*
-  tsan_rtl_sched_shake(shake_atomic_rmw, cv);
+  if (G_flags->disable_signal_wait)
+    return;
   DECLARE_TID_AND_PC();
   ExSPut(WAIT, tid, pc, (uintptr_t)cv, 0);
 }
@@ -65,6 +65,8 @@ void DYNAMIC_ANNOTATIONS_NAME(AnnotateHappensAfter)(const char *file, int line,
 extern "C"
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateCondVarSignal)(const char *file, int line,
                                                      const volatile void *cv) {
+  if (G_flags->disable_signal_wait)
+    return;
   DECLARE_TID_AND_PC();
   ExSPut(SIGNAL, tid, pc, (uintptr_t)cv, 0);
 }
@@ -80,6 +82,8 @@ extern "C"
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateCondVarWait)(const char *file, int line,
                                                    const volatile void *cv,
                                                    const volatile void *lock) {
+  if (G_flags->disable_signal_wait)
+    return;
   DECLARE_TID_AND_PC();
   ExSPut(WAIT, tid, pc, (uintptr_t)cv, 0);
 }
@@ -269,7 +273,8 @@ void DYNAMIC_ANNOTATIONS_NAME(AnnotateThreadName)(
 extern "C"
 void WTFAnnotateHappensBefore(const char *file, int line,
                               const volatile void *cv) {
-  tsan_rtl_sched_shake(shake_atomic_rmw, cv);
+  if (G_flags->disable_signal_wait)
+    return;
   DECLARE_TID_AND_PC();
   ExSPut(SIGNAL, tid, pc, (uintptr_t)cv, 0);
 }
@@ -277,8 +282,8 @@ void WTFAnnotateHappensBefore(const char *file, int line,
 extern "C"
 void WTFAnnotateHappensAfter(const char *file, int line,
                              const volatile void *cv) {
-  //TODO(dvyukov): shake must be placed *before* the user's *action*
-  tsan_rtl_sched_shake(shake_atomic_rmw, cv);
+  if (G_flags->disable_signal_wait)
+    return;
   DECLARE_TID_AND_PC();
   ExSPut(WAIT, tid, pc, (uintptr_t)cv, 0);
 }

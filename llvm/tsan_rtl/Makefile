@@ -13,13 +13,17 @@ RTL_DEPS=
 OBJS32=x86-ts_util.o x86-suppressions.o \
        x86-common_util.o x86-ignore.o x86-tsan_rtl_dynamic_annotations.o \
        x86-thread_sanitizer.o x86-dynamic_annotations.o \
+       x86-ts_atomic.o \
        x86-tsan_rtl_lbfd.o x86-tsan_rtl_sched_shake.o \
+       x86-tsan_rtl_atomic.o \
        x86-earthquake_wrap.o x86-earthquake_core.o
 OBJS64=amd64-ts_util.o amd64-suppressions.o \
        amd64-common_util.o amd64-ignore.o \
        amd64-tsan_rtl_dynamic_annotations.o \
        amd64-thread_sanitizer.o amd64-dynamic_annotations.o \
+       amd64-ts_atomic.o \
        amd64-tsan_rtl_lbfd.o amd64-tsan_rtl_sched_shake.o \
+       amd64-tsan_rtl_atomic.o \
        amd64-earthquake_wrap.o amd64-earthquake_core.o
 
 COMMON_FLAGS=-I. -Istlport -I../../third_party/stlport \
@@ -53,7 +57,9 @@ FOREIGN_HEADERS=$(TSAN_PATH)/ts_lock.h $(TSAN_PATH)/ts_stats.h \
                 $(TSAN_PATH)/ts_util.h $(TSAN_PATH)/ts_event_names.h \
                 $(TSAN_PATH)/ts_events.h $(TSAN_PATH)/suppressions.h \
                 $(TSAN_PATH)/ignore.h $(TSAN_PATH)/common_util.h \
-                $(TSAN_PATH)/thread_sanitizer.h
+                $(TSAN_PATH)/thread_sanitizer.h \
+                $(TSAN_PATH)/ts_atomic.h \
+                $(TSAN_PATH)/ts_atomic_int.h
 
 TS_HEADERS=
 

@@ -2420,7 +2420,7 @@ uintptr_t FdMagic(int fd) {
 
 extern "C"
 ssize_t __wrap_read(int fd, const void *buf, size_t count) {
-  CHECK(!IN_RTL);
+  if (IN_RTL) return __real_read(fd, buf, count);
   ssize_t result = __real_read(fd, buf, count);
   if (IN_RTL) return result;
   ENTER_RTL();
