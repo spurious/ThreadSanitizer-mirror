@@ -564,6 +564,10 @@ static inline Bool ignoring_sync(ThreadId vg_tid, uintptr_t addr) {
 }
 
 Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
+/*
+  Printf("CLIENT REQUEST %d TSREQ_ATOMIC_OP=%d\n", (int)args[0], (int)TSREQ_ATOMIC_OP);
+*/
+
   if (args[0] == VG_USERREQ__NACL_MEM_START) {
     // This will get truncated on x86-32, but we don't support it with NaCl
     // anyway.
@@ -773,6 +777,28 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
     case TSREQ_FLUSH_STATE:
       Put(FLUSH_STATE, ts_tid, pc, 0, 0);
       break;
+    case TSREQ_ATOMIC_OP:
+    {
+      tsan_memory_order mo = (tsan_memory_order)(args[3] & 0xff);
+      tsan_memory_order fail_mo = (tsan_memory_order)((args[3] >> 8) & 0xff);
+      size_t size = (size_t)((args[3] >> 16) & 0xff);
+      *ret = ThreadSanitizerHandleAtomicOp(ts_tid, pc,
+                                           (tsan_atomic_op)args[2],
+                                           mo,
+                                           fail_mo,
+                                           size,
+                                           (void volatile*)args[1],
+                                           (uint64_t)args[4],
+                                           (uint64_t)args[5]);
+/*
+      Printf("ATOMIC <<< op=%d, mo=%d, mo2=%d, addr=%p,"
+             " size=%d, v=%d, cmp=%d, res=%d\n",
+          (tsan_atomic_op)args[2], mo, fail_mo,
+          (void volatile*)args[1], (int)size,
+          (int)args[4], (int)args[5], (int)*ret);
+*/
+      break;
+    }
     default: CHECK(0);
   }
   return True;

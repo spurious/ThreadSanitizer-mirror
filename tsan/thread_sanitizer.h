@@ -31,9 +31,9 @@
 #define THREAD_SANITIZER_H_
 
 #include "ts_util.h"
+#include "ts_atomic.h"
 
 //--------- Utils ------------------- {{{1
-#include "ts_util.h"
 
 void Report(const char *format, ...);
 void PcToStrings(uintptr_t pc, bool demangle,
@@ -134,6 +134,7 @@ struct FLAGS {
 
   bool sched_shake;
   bool api_ambush;
+  bool disable_signal_wait;
 };
 
 extern FLAGS *G_flags;
@@ -218,6 +219,16 @@ extern void ThreadSanitizerParseFlags(vector<string>* args);
 extern bool ThreadSanitizerWantToInstrumentSblock(uintptr_t pc);
 extern bool ThreadSanitizerWantToCreateSegmentsOnSblockEntry(uintptr_t pc);
 extern bool ThreadSanitizerIgnoreAccessesBelowFunction(uintptr_t pc);
+
+extern uint64_t ThreadSanitizerHandleAtomicOp(int32_t tid,
+                                              uintptr_t pc,
+                                              tsan_atomic_op op,
+                                              tsan_memory_order mo,
+                                              tsan_memory_order fail_mo,
+                                              size_t size,
+                                              void volatile* a,
+                                              uint64_t v,
+                                              uint64_t cmp);
 
 enum IGNORE_BELOW_RTN {
   IGNORE_BELOW_RTN_UNKNOWN,

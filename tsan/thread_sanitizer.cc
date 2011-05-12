@@ -36,6 +36,7 @@
 #include "suppressions.h"
 #include "ignore.h"
 #include "ts_lock.h"
+#include "ts_atomic_int.h"
 #include "dense_multimap.h"
 #include <stdarg.h>
 // -------- Constants --------------- {{{1
@@ -91,6 +92,8 @@ bool debug_shadow_stack = false;
 bool debug_happens_before = false;
 bool debug_cache = false;
 bool debug_race_verifier = false;
+
+#define TSAN_ATOMIC
 
 // -------- TIL --------------- {{{1
 // ThreadSanitizer Internal lock (scoped).
@@ -1180,6 +1183,15 @@ class VTS {
     return this;
   }
 
+  int32_t clk(TID tid) const {
+    for (size_t i = 0; i < size_; i++) {
+      if (arr_[i].tid == tid.raw()) {
+        return arr_[i].clk;
+      }
+    }
+    return 0;
+  }
+
   static VTS *CopyAndTick(const VTS *vts, TID id_to_tick) {
     CHECK(vts->ref_count_);
     VTS *res = Create(vts->size());
@@ -1193,6 +1205,22 @@ class VTS {
     }
     CHECK(found);
     return res;
+  }
+
+  static VTS* Update(VTS* vts, TID tid, int32_t clk) {
+    if (vts == 0)
+      return CreateSingleton(tid, clk);
+    for (size_t i = 0; i != vts->size_; i += 1) {
+      if (vts->arr_[i].tid == tid.raw()) {
+        vts->arr_[i].clk = clk;
+        return vts;
+      }
+    }
+    VTS* vts2 = CreateSingleton(tid, clk);
+    VTS* vts3 = Join(vts, vts2);
+    Unref(vts);
+    Unref(vts2);
+    return vts3;
   }
 
   static VTS *Join(const VTS *vts_a, const VTS *vts_b) {
@@ -3316,14 +3344,20 @@ class Cache {
     CacheLine *line = NULL;
     int iter = 0;
     const int max_iter = 1 << 30;
-    do {
+    for (;;) {
       line = TryAcquireLine(thr, a, call_site);
+      if (line != kLineIsLocked())
+        break;
       iter++;
-      if ((iter % (1 << 12)) == 0) {
+      if ((iter % (1 << 6)) == 0) {
         YIELD();
         G_stats->try_acquire_line_spin++;
         if (((iter & (iter - 1)) == 0)) {
           Printf("T%d %s a=%p iter=%d\n", raw_tid(thr), __FUNCTION__, a, iter);
+        }
+      } else {
+        for (int active_spin = 0; active_spin != 10; active_spin += 1) {
+          PROCESSOR_YIELD();
         }
       }
       if (iter == max_iter) {
@@ -3331,7 +3365,7 @@ class Cache {
                raw_tid(thr), a, call_site);
         CHECK(iter < max_iter);
       }
-    } while (line == kLineIsLocked());
+    }
     DCHECK(lines_[ComputeCacheLineIndexInCache(a)] == TidMagic(raw_tid(thr)));
     return line;
   }
@@ -4295,10 +4329,12 @@ static void HandleAtomicityRegion(AtomicityRegion *atomicity_region) {
 struct Thread {
  public:
   ThreadLocalStats stats;
+  int report_suppression;
 
   Thread(TID tid, TID parent_tid, VTS *vts, StackTrace *creation_context,
          CallStack *call_stack)
-    : is_running_(true),
+    : report_suppression(),
+      is_running_(true),
       tid_(tid),
       sid_(0),
       parent_tid_(parent_tid),
@@ -4312,6 +4348,9 @@ struct Thread {
       announced_(false),
       rd_lockset_(0),
       wr_lockset_(0),
+      rand_state_(tid.raw() + (unsigned)(uintptr_t)vts
+                            + (unsigned)(uintptr_t)creation_context
+                            + (unsigned)(uintptr_t)call_stack),
       expensive_bits_(0),
       vts_at_exit_(NULL),
       call_stack_(call_stack),
@@ -4340,6 +4379,10 @@ struct Thread {
 
   TID tid() const { return tid_; }
   TID parent_tid() const { return parent_tid_; }
+
+  unsigned rand() {
+    return (rand_state_ = rand_state_ * 1103515245 + 12345) >> 16;
+  }
 
   void increment_n_mops_since_start() {
     n_mops_since_start_++;
@@ -4675,9 +4718,8 @@ struct Thread {
 
   // SIGNAL/WAIT events.
   void HandleWait(uintptr_t cv) {
-
     SignallerMap::iterator it = signaller_map_->find(cv);
-    if (it != signaller_map_->end()) {
+    if (it != signaller_map_->end() && it->second.vts != 0) {
       const VTS *signaller_vts = it->second.vts;
       NewSegmentForWait(signaller_vts);
     }
@@ -4692,7 +4734,6 @@ struct Thread {
       }
     }
   }
-
 
   void HandleSignal(uintptr_t cv) {
     Signaller *signaller = &(*signaller_map_)[cv];
@@ -4713,6 +4754,16 @@ struct Thread {
       }
     }
   }
+
+#ifdef TSAN_ATOMIC
+  void HandleAtomicWrite(uintptr_t a,
+                         uint64_t v,
+                         uint64_t prev,
+                         bool is_acquire,
+                         bool is_release,
+                         bool is_rmw);
+  uint64_t HandleAtomicRead(uintptr_t a, uint64_t v, bool is_acquire);
+#endif
 
   void INLINE NewSegmentWithoutUnrefingOld(const char *call_site,
                                            VTS *new_vts) {
@@ -5241,6 +5292,8 @@ struct Thread {
   LSID   rd_lockset_;
   LSID   wr_lockset_;
 
+  unsigned rand_state_;
+
   // These bits should be read in the hottest loop, so we combine them all
   // together.
   // bit 1 -- ignore reads.
@@ -5265,8 +5318,47 @@ struct Thread {
 
   map<TID, ThreadCreateInfo> child_tid_to_create_info_;
 
+#ifdef TSAN_ATOMIC
+  struct AtomicHistoryEntry {
+    uint64_t  val;
+    TID       tid;
+    int32_t   clk;
+    VTS*      vts;
+  };
+#endif
+
   struct Signaller {
     VTS *vts;
+#ifdef TSAN_ATOMIC
+    int32_t hist_pos;
+    AtomicHistoryEntry hist [4];
+    VTS* vts_seen;
+#endif
+
+    Signaller()
+      : vts() {
+#ifdef TSAN_ATOMIC
+      reset_hist(true);
+#endif
+    }
+
+#ifdef TSAN_ATOMIC
+    void reset_hist(bool init = false) {
+      hist_pos = sizeof(hist)/sizeof(hist[0]) + 1;
+      for (size_t i = 0; i != sizeof(hist)/sizeof(hist[0]); i += 1) {
+        hist[i].val = 0xBCEBC041;
+        hist[i].tid = TID(TID::kInvalidTID);
+        hist[i].clk = -1;
+        if (init == false && hist[i].vts != 0)
+          VTS::Unref(hist[i].vts);
+        hist[i].vts = 0;
+      }
+
+      if (init == false && vts_seen != 0)
+        VTS::Unref(vts_seen);
+      vts_seen = 0;
+    }
+#endif
   };
 
   class SignallerMap: public unordered_map<uintptr_t, Signaller> {
@@ -5278,6 +5370,10 @@ struct Thread {
        clear();
      }
   };
+
+#ifdef TSAN_ATOMIC
+  void AtomicFixHist(Signaller* signaller, uint64_t prev);
+#endif
 
   // All threads. The main thread has tid 0.
   static Thread **all_threads_;
@@ -7021,11 +7117,13 @@ class Detector {
 
       // Check for race.
       if (UNLIKELY(is_race)) {
-        if (G_flags->report_races && !cache_line->racey().Get(offset)) {
-          reports_.AddReport(thr, pc, is_w, addr, size,
-                             old_sval, *sval_p, is_published);
+        if (thr->report_suppression == 0) {
+          if (G_flags->report_races && !cache_line->racey().Get(offset)) {
+            reports_.AddReport(thr, pc, is_w, addr, size,
+                               old_sval, *sval_p, is_published);
+          }
+          cache_line->racey().SetRange(offset, offset + size);
         }
-        cache_line->racey().SetRange(offset, offset + size);
       }
 
       // Ref/Unref segments
@@ -8073,6 +8171,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
 
   FindBoolFlag("sched_shake", false, args, &G_flags->sched_shake);
   FindBoolFlag("api_ambush", false, args, &G_flags->api_ambush);
+  FindBoolFlag("disable_signal_wait", false, args, &G_flags->disable_signal_wait);
 
   if (!args->empty()) {
     ReportUnknownFlagAndExit(args->front());
@@ -8498,6 +8597,247 @@ void NOINLINE ThreadSanitizerHandleRtnExit(int32_t tid) {
 static bool ThreadSanitizerPrintReport(ThreadSanitizerReport *report) {
   return G_detector->reports_.PrintReport(report);
 }
+
+
+
+
+
+
+
+
+
+
+#ifdef TSAN_ATOMIC
+
+#if 0
+# define ATOMIC_PRINTF(...) Printf(__VA_ARGS__)
+#else
+# define ATOMIC_PRINTF(...)
+#endif
+
+
+
+static void atomic_handle_mop(Thread* thr,
+                              uintptr_t pc,
+                              tsan_atomic_op op,
+                              tsan_memory_order mo,
+                              size_t size,
+                              void volatile* a) {
+  if (op == tsan_atomic_op_fence)
+    return;
+  bool const is_store = (op != tsan_atomic_op_load);
+  CHECK(thr->report_suppression >= 0);
+  if (mo != tsan_memory_order_natomic)
+    thr->report_suppression += 1;
+  MopInfo mop (pc, size, is_store, true);
+  uintptr_t addr = (uintptr_t)a;
+  G_detector->HandleTrace(thr, &mop, 1, pc, &addr, false);
+  if (mo != tsan_memory_order_natomic)
+    thr->report_suppression -= 1;
+  CHECK(thr->report_suppression >= 0);
+}
+
+
+uint64_t ThreadSanitizerHandleAtomicOp      (int32_t tid,
+                                             uintptr_t pc,
+                                             tsan_atomic_op op,
+                                             tsan_memory_order mo,
+                                             tsan_memory_order fail_mo,
+                                             size_t size,
+                                             void volatile* a,
+                                             uint64_t v,
+                                             uint64_t cmp) {
+  uint64_t rv = 0;
+  Thread* thr = Thread::Get(TID(tid));
+  tsan_atomic_verify(op, mo, fail_mo, size, a);
+
+  {
+    TIL til(ts_lock, 0);
+    uint64_t newv = 0;
+    uint64_t prev = 0;
+    atomic_handle_mop(thr, pc, op, mo, size, a);
+    rv = tsan_atomic_do_op(op, mo, fail_mo, size, a, v, cmp, &newv, &prev);
+
+    ATOMIC_PRINTF("rv=%llu, newv=%llu, prev=%llu\n",
+                  (unsigned long long)rv,
+                  (unsigned long long)newv,
+                  (unsigned long long)prev);
+
+    if (op != tsan_atomic_op_fence) {
+      if (op == tsan_atomic_op_load) {
+        rv = thr->HandleAtomicRead((uintptr_t)a, rv,
+                                   tsan_atomic_is_acquire(mo));
+      } else if ((op == tsan_atomic_op_compare_exchange_weak
+          || op == tsan_atomic_op_compare_exchange_strong)
+          && cmp != rv) {
+        thr->HandleAtomicRead((uintptr_t)a, rv,
+                              tsan_atomic_is_acquire(fail_mo));
+      } else {
+        thr->HandleAtomicWrite((uintptr_t)a, newv, prev,
+                               tsan_atomic_is_acquire(mo),
+                               tsan_atomic_is_release(mo),
+                               tsan_atomic_is_rmw(op));
+      }
+    }
+  }
+
+  ATOMIC_PRINTF("ATOMIC: %s-%s %p (%llu,%llu)=%llu\n",
+                tsan_atomic_to_str(op),
+                tsan_atomic_to_str(mo),
+                a, (unsigned long long)v, (unsigned long long)cmp,
+                (unsigned long long)rv);
+
+  return rv;
+}
+
+
+void Thread::HandleAtomicWrite              (uintptr_t a,
+                                             uint64_t v,
+                                             uint64_t prev,
+                                             bool const is_acquire,
+                                             bool const is_release,
+                                             bool const is_rmw) {
+  ATOMIC_PRINTF("HIST(%p): store acquire=%u, release=%u, rmw=%u\n",
+                (void*)a, is_acquire, is_release, is_rmw);
+  Signaller* signaller = &(*signaller_map_)[a];
+  AtomicFixHist(signaller, prev);
+  size_t const hsize = sizeof(signaller->hist)/sizeof(signaller->hist[0]);
+  AtomicHistoryEntry& hprv = signaller->hist[(signaller->hist_pos - 1) % hsize];
+  AtomicHistoryEntry& hist = signaller->hist[signaller->hist_pos % hsize];
+  hist.val = v;
+  hist.tid = tid();
+  hist.clk = vts()->clk(tid());
+  if (hist.vts != 0) {
+    VTS::Unref(hist.vts);
+    hist.vts = 0;
+  }
+  signaller->hist_pos += 1;
+
+  if (is_rmw) {
+    if (is_release) {
+      if (hprv.vts != 0) {
+        hist.vts = VTS::Join(hprv.vts, vts());
+      } else {
+        hist.vts = vts()->Clone();
+      }
+    } else if (hprv.vts != 0) {
+      hist.vts = hprv.vts->Clone();
+    }
+    if (is_acquire && hprv.vts != 0) {
+      NewSegmentForWait(hprv.vts);
+    }
+  } else {
+    DCHECK(is_acquire == false);
+    if (is_release) {
+      hist.vts = vts()->Clone();
+    }
+  }
+
+  if (is_release) {
+    NewSegmentForSignal();
+    if (debug_happens_before) {
+      Printf("T%d: Signal: %p:\n    %s %s\n    %s\n", tid_.raw(), a,
+             vts()->ToString().c_str(), Segment::ToString(sid()).c_str(),
+             hist.vts->ToString().c_str());
+      if (G_flags->debug_level >= 1) {
+        ReportStackTrace();
+      }
+    }
+  }
+}
+
+
+uint64_t Thread::HandleAtomicRead           (uintptr_t a,
+                                             uint64_t v,
+                                             bool is_acquire) {
+  ATOMIC_PRINTF("HIST(%p): {\n", (void*)a);
+  Signaller* signaller = &(*signaller_map_)[a];
+  AtomicFixHist(signaller, v);
+  int32_t const hsize = sizeof(signaller->hist)/sizeof(signaller->hist[0]);
+  AtomicHistoryEntry* hist0 = 0;
+  int32_t seen_seq = 0;
+  int32_t seen_seq0 = 0;
+  if (signaller->vts_seen != 0)
+    seen_seq0 = signaller->vts_seen->clk(tid());
+  for (int32_t i = 0; i != hsize; i += 1) {
+    int32_t const idx = (signaller->hist_pos - i - 1);
+    CHECK(idx >= 0);
+    AtomicHistoryEntry& hist = signaller->hist[idx % hsize];
+    ATOMIC_PRINTF("HIST(%p):   #%u (tid=%u, clk=%u, val=%llu) vts=%u\n",
+           (void*)a, (unsigned)i, (unsigned)hist.tid.raw(),
+           (unsigned)hist.clk, (unsigned long long)hist.val,
+           (unsigned)vts()->clk(hist.tid));
+    if (hist.tid.raw() == TID::kInvalidTID) {
+      //TODO(dvyukov): how can we detect and report unitialized atomic reads?..
+      hist0 = 0;
+      break;
+    } else if ((i == hsize - 1)
+        || (seen_seq0 >= idx)
+        || (vts()->clk(hist.tid) >= hist.clk)
+        || (this->rand() % 2)) {
+      if (seen_seq0 >= idx)
+        ATOMIC_PRINTF("HIST(%p):   replaced: stability\n", (void*)a);
+      else if (vts()->clk(hist.tid) >= hist.clk)
+        ATOMIC_PRINTF("HIST(%p):   replaced: ordering\n", (void*)a);
+      else {
+        ATOMIC_PRINTF("HIST(%p):   replaced: coherence\n", (void*)a);
+        seen_seq = idx;
+      }
+      hist0 = &hist;
+      break;
+    } else {
+      ATOMIC_PRINTF("HIST(%p):   can be replaced but not\n", (void*)a);
+    }
+  }
+
+  if (hist0 != 0) {
+    v = hist0->val;
+    if (is_acquire) {
+      if (hist0->vts != 0) {
+        NewSegmentForWait(hist0->vts);
+      }
+
+      if (debug_happens_before) {
+        Printf("T%d: Wait: %p:\n    %s %s\n", tid_.raw(), a,
+               vts()->ToString().c_str(),
+               Segment::ToString(sid()).c_str());
+        if (G_flags->debug_level >= 1) {
+          ReportStackTrace();
+        }
+      }
+    }
+    if (seen_seq != 0) {
+      signaller->vts_seen = VTS::Update(signaller->vts_seen, tid(), seen_seq);
+    }
+  } else {
+    ATOMIC_PRINTF("HIST(%p): UNITIALIZED LOAD\n", (void*)a);
+    CHECK(!"should never happen as of now");
+    v = this->rand();
+  }
+  ATOMIC_PRINTF("HIST(%p): } -> %llu\n", (void*)a, (unsigned long long)v);
+  return v;
+}
+
+
+void Thread::AtomicFixHist(Signaller* signaller, uint64_t prev) {
+  size_t const hsize = sizeof(signaller->hist)/sizeof(signaller->hist[0]);
+  AtomicHistoryEntry& hprv = signaller->hist[(signaller->hist_pos - 1) % hsize];
+  if (prev != hprv.val) {
+    ATOMIC_PRINTF("HIST RESET\n");
+    signaller->reset_hist();
+    AtomicHistoryEntry& hist = signaller->hist[signaller->hist_pos % hsize];
+    hist.val = prev;
+    hist.tid = TID(0);
+    hist.clk = 0;
+    signaller->hist_pos += 1;
+  }
+}
+
+
+#endif // #ifdef TSAN_ATOMIC
+
+
+
 
 // -------- TODO -------------------------- {{{1
 // - Support configurable aliases for function names (is it doable in valgrind)?
