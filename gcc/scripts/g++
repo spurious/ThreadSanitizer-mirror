@@ -1,10 +1,34 @@
 #!/bin/bash
 if [ "$USE_RELITE" == "" ]
 then
-  #/usr/bin/g++ "$@"
-  /home/dvyukov/gcc-dehydra/installed/bin/g++ "$@"
+  /usr/bin/g++ "$@"
+  #/home/dvyukov/gcc-dehydra/installed/bin/g++ "$@"
 else
-  #echo RELITE: /home/dvyukov/gcc-dehydra/installed/bin/g++ -DDYNAMIC_ANNOTATIONS_WANT_ATTRIBUTE_WEAK -DDYNAMIC_ANNOTATIONS_PREFIX=LLVM -fplugin=/home/dvyukov/tsan/gcc/plg/Debug/librelite.so -fplugin-arg-librelite-ignore="$RELITE_IGNORE" -include/home/dvyukov/tsan/gcc/plg/relite_rt.h "$@" -O1 -fno-inline -fno-optimize-sibling-calls -fno-exceptions
-  /home/dvyukov/gcc-dehydra/installed/bin/g++ -DDYNAMIC_ANNOTATIONS_WANT_ATTRIBUTE_WEAK -DDYNAMIC_ANNOTATIONS_PREFIX=LLVM -fplugin=/home/dvyukov/tsan/gcc/plg/Debug/librelite.so -fplugin-arg-librelite-ignore="$RELITE_IGNORE" -include/home/dvyukov/tsan/gcc/plg/relite_rt.h "$@" -O1 -fno-inline -fno-optimize-sibling-calls -fno-exceptions
+  #echo ORIGINAL G++: "$@"
+  LINK=""
+  if grep -q -F lpthread <<<$@; then
+    LINK="1"
+  fi
+
+  if grep -q -F lrt <<<$@; then
+    LINK="1"
+  fi
+
+  if grep -q -F start-group <<<$@; then
+    LINK="1"
+  fi
+
+  #LINK="1"
+  if [ "$LINK" == "" ]
+  then
+    #echo RELITE: /home/dvyukov/gcc-dehydra/installed/bin/g++ -DDYNAMIC_ANNOTATIONS_WANT_ATTRIBUTE_WEAK -DDYNAMIC_ANNOTATIONS_PREFIX=LLVM -fplugin=/home/dvyukov/tsan/gcc/plg/Release/librelite.so -fplugin-arg-librelite-ignore="$RELITE_IGNORE" -include/home/dvyukov/tsan/gcc/plg/relite_rt.h "$@" -O1 -fno-inline -fno-optimize-sibling-calls -fno-exceptions
+    /home/dvyukov/gcc-dehydra/installed/bin/g++ -DDYNAMIC_ANNOTATIONS_WANT_ATTRIBUTE_WEAK -DDYNAMIC_ANNOTATIONS_PREFIX=LLVM -fplugin=/home/dvyukov/tsan/gcc/plg/Debug/librelite.so -fplugin-arg-librelite-ignore="$RELITE_IGNORE" -include/home/dvyukov/tsan/gcc/plg/relite_rt.h $RELITE_GCC_ARGS "$@" -O1 -fno-inline -fno-optimize-sibling-calls -fno-exceptions
+  else
+    echo FORWARDING TO /usr/bin/g++
+    #/usr/bin/g++ "$@"
+    /home/dvyukov/gcc-dehydra/installed/bin/g++ "$@"
+  fi
 fi
+
+
 
