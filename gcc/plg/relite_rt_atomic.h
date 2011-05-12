@@ -24,15 +24,34 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "relite_rt_atomic.h"
+#pragma once
+#include "../../tsan/ts_atomic.h"
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-extern __thread void**  ShadowStack;
-extern __thread int     thread_local_ignore;
-extern          void    tsan_rtl_mop    (void* addr, unsigned flags);
+void      tsan_atomic_fence                     (tsan_memory_order mo);
+uint64_t  tsan_atomic_load                      (void const volatile* a,
+                                                 int size,
+                                                 tsan_memory_order mo);
+void      tsan_atomic_store                     (void volatile* a,
+                                                 int size,
+                                                 uint64_t v,
+                                                 tsan_memory_order mo);
+uint64_t  tsan_atomic_fetch_op                  (void volatile* a,
+                                                 int size,
+                                                 uint64_t v,
+                                                 tsan_memory_op op,
+                                                 tsan_memory_order mo);
+uint64_t  tsan_atomic_compare_exchange          (void volatile* a,
+                                                 int size,
+                                                 int is_strong,
+                                                 uint64_t cmp,
+                                                 uint64_t xch,
+                                                 tsan_memory_order mo,
+                                                 tsan_memory_order fail_mo);
 
 #ifdef __cplusplus
 }
