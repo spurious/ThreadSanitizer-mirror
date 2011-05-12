@@ -16,7 +16,6 @@ else
   ARGS_MODIFIED=""
   INSERTED=""
   SHARED=""
-  M32=""
   source /home/dvyukov/tsan/llvm/scripts/link_config.txt
 
   until [ -z "$1" ]
@@ -26,22 +25,12 @@ else
       SHARED="1"
     fi
 
-    if [ "$1" == "elf_i386" ]
-    then
-      M32="1"
-    fi
-
     if [ `expr substr "$1" 1 2` == "-l" ]
     then
       if [ "$INSERTED" == "" ]
       then
         INSERTED="1"
-	if [ "$M32" == "1" ]
-	then
-		ARGS_MODIFIED+=" /home/dvyukov/tsan/llvm/tsan_rtl/tsan_rtl32.a -lrt -lpthread"
-	else
-        	ARGS_MODIFIED+=" /home/dvyukov/tsan/llvm/tsan_rtl/tsan_rtl64.a -lrt -lbfd -lpthread"
-	fi
+        ARGS_MODIFIED+=" /home/dvyukov/tsan/llvm/tsan_rtl/tsan_rtl64.a -lbfd -lpthread"
       fi
     fi
     ARGS+=" $1"
@@ -58,7 +47,5 @@ else
     /usr/bin/ld $ARGS_MODIFIED
   fi
 fi
-
-
 
 
