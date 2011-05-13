@@ -23,12 +23,26 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#pragma once
+#ifndef TS_ATOMIC_H_INCLUDED
+#define TS_ATOMIC_H_INCLUDED
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+
+/** These constants mostly mimic ones from C++0x standard draft.
+ *  The most recent version of the draft (as of now) can be found here:
+ *  http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2011/n3242.pdf
+ *  Check out fresh versions here:
+ *  http://www.open-std.org/jtc1/sc22/wg21/docs/papers/
+ *  Refer to sections 1.10 and 29.
+ *
+ *  tsan_memory_order_invalid has no meaning other than invalid enum value.
+ *  tsan_memory_order_natomic stands for "non atomic" and expresses
+ *  as if plain memory access that is not intended to race
+ *  with other accesses.
+ */
 typedef enum tsan_memory_order {
   tsan_memory_order_invalid               = 0,
   tsan_memory_order_natomic               = 1 << 0,
@@ -40,6 +54,14 @@ typedef enum tsan_memory_order {
   tsan_memory_order_seq_cst               = 1 << 6
 } tsan_memory_order;
 
+
+/** These constants express types of atomic memory operations
+ *  as defined by C++0x standard draft (section 29).
+ *
+ *  tsan_atomic_op_invalid has no meaning other than invalid enum value.
+ *  compare_exchange_weak differs from compare_exchange_strong in that
+ *  it can fail spuriously.
+ */
 typedef enum tsan_atomic_op {
   tsan_atomic_op_invalid                  = 0,
   tsan_atomic_op_fence                    = 1 << 0,
@@ -55,8 +77,11 @@ typedef enum tsan_atomic_op {
   tsan_atomic_op_compare_exchange_strong  = 1 << 10
 } tsan_atomic_op;
 
+
 #ifdef __cplusplus
 }
+#endif
+
 #endif
 
 
