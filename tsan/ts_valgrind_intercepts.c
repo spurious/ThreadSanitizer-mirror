@@ -2762,25 +2762,36 @@ ANN_FUNC(void, AnnotateSetVerbosity, char *file, int line, void *mem)
 //   a) nacl memory range
 //   b) nacl .nexe file
 #include "coregrind/pub_core_clreq.h"
-void I_WRAP_SONAME_FNNAME_ZZ(NONE, StopForDebuggerInit) (void *arg);
-void I_WRAP_SONAME_FNNAME_ZZ(NONE, StopForDebuggerInit) (void *arg) {
-  int res;
+
+void I_WRAP_SONAME_FNNAME_ZZ(NONE, NaClSandboxMemoryStartForValgrind) (void *mem_start);
+void I_WRAP_SONAME_FNNAME_ZZ(NONE, NaClSandboxMemoryStartForValgrind) (void *mem_start) {
   OrigFn fn;
   VALGRIND_GET_ORIG_FN(fn);
-  CALL_FN_v_W(fn, arg);
-  VALGRIND_DO_CLIENT_REQUEST(res, 0, VG_USERREQ__NACL_MEM_START, arg, 0, 0, 0, 0);
+  CALL_FN_v_W(fn, mem_start);
+  int res;
+  VALGRIND_DO_CLIENT_REQUEST(res, 0, VG_USERREQ__NACL_MEM_START, mem_start, 0, 0, 0, 0);
 }
 
-int I_WRAP_SONAME_FNNAME_ZZ(NONE, GioMemoryFileSnapshotCtor) (void *a, char *file);
-int I_WRAP_SONAME_FNNAME_ZZ(NONE, GioMemoryFileSnapshotCtor) (void *a, char *file) {
-  int res;
+int I_WRAP_SONAME_FNNAME_ZZ(NONE, NaClFileNameForValgrind) (char *file);
+int I_WRAP_SONAME_FNNAME_ZZ(NONE, NaClFileNameForValgrind) (char *file) {
   OrigFn fn;
   int ret;
   VALGRIND_GET_ORIG_FN(fn);
-  CALL_FN_W_WW(ret, fn, a, file);
+  CALL_FN_W_W(ret, fn, file);
+  int res;
   VALGRIND_DO_CLIENT_REQUEST(res, 0, VG_USERREQ__NACL_FILE, file, 0, 0, 0, 0);
   return ret;
 }
+
+void I_WRAP_SONAME_FNNAME_ZZ(NONE, NaClFileMappingForValgrind) (UWord vma, UWord size, UWord file_offset);
+void I_WRAP_SONAME_FNNAME_ZZ(NONE, NaClFileMappingForValgrind) (UWord vma, UWord size, UWord file_offset) {
+  OrigFn fn;
+  VALGRIND_GET_ORIG_FN(fn);
+  CALL_FN_v_WWW(fn, vma, size, file_offset);
+  int res;
+  VALGRIND_DO_CLIENT_REQUEST(res, 0, VG_USERREQ__NACL_MMAP, vma, size, file_offset, 0, 0);
+}
+
 
 //-------------- Functions to Ignore -------------- {{{1
 // For some functions we want to ignore everything that happens
