@@ -3316,14 +3316,20 @@ class Cache {
     CacheLine *line = NULL;
     int iter = 0;
     const int max_iter = 1 << 30;
-    do {
+    for (;;) {
       line = TryAcquireLine(thr, a, call_site);
+      if (line != kLineIsLocked())
+        break;
       iter++;
-      if ((iter % (1 << 12)) == 0) {
+      if ((iter % (1 << 6)) == 0) {
         YIELD();
         G_stats->try_acquire_line_spin++;
         if (((iter & (iter - 1)) == 0)) {
           Printf("T%d %s a=%p iter=%d\n", raw_tid(thr), __FUNCTION__, a, iter);
+        }
+      } else {
+        for (int active_spin = 0; active_spin != 10; active_spin += 1) {
+          PROCESSOR_YIELD();
         }
       }
       if (iter == max_iter) {
@@ -3331,7 +3337,7 @@ class Cache {
                raw_tid(thr), a, call_site);
         CHECK(iter < max_iter);
       }
-    } while (line == kLineIsLocked());
+    }
     DCHECK(lines_[ComputeCacheLineIndexInCache(a)] == TidMagic(raw_tid(thr)));
     return line;
   }

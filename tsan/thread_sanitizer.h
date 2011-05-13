@@ -31,9 +31,9 @@
 #define THREAD_SANITIZER_H_
 
 #include "ts_util.h"
+#include "ts_atomic.h"
 
 //--------- Utils ------------------- {{{1
-#include "ts_util.h"
 
 void Report(const char *format, ...);
 void PcToStrings(uintptr_t pc, bool demangle,
@@ -218,6 +218,33 @@ extern void ThreadSanitizerParseFlags(vector<string>* args);
 extern bool ThreadSanitizerWantToInstrumentSblock(uintptr_t pc);
 extern bool ThreadSanitizerWantToCreateSegmentsOnSblockEntry(uintptr_t pc);
 extern bool ThreadSanitizerIgnoreAccessesBelowFunction(uintptr_t pc);
+
+/** Atomic operation handler.
+ *  @param tid ID of a thread that issues the operation.
+ *  @param pc Program counter that should be associated with the operation.
+ *  @param op Type of the operation (load, store, etc).
+ *  @param mo Memory ordering associated with the operation
+ *      (relaxed, acquire, release, etc). NB there are some restrictions on
+ *      what memory orderings can be used with what types of operations.
+ *      E.g. a store can't have an acquire semantics
+ *      (see C++0x standard draft for details).
+ *  @param fail_mo Memory ordering the operation has if it fails,
+ *      applicable only to compare_exchange oprations.
+ *  @param size Size of the memory access in bytes (1, 2, 4 or 8).
+ *  @param a Address of the memory access.
+ *  @param v Operand for the operation (e.g. a value to store).
+ *  @param cmp Comparand for compare_exchange oprations.
+ *  @return Result of the operation (e.g. loaded value).
+ */
+uint64_t ThreadSanitizerHandleAtomicOp(int32_t tid,
+                                       uintptr_t pc,
+                                       tsan_atomic_op op,
+                                       tsan_memory_order mo,
+                                       tsan_memory_order fail_mo,
+                                       size_t size,
+                                       void volatile* a,
+                                       uint64_t v,
+                                       uint64_t cmp);
 
 enum IGNORE_BELOW_RTN {
   IGNORE_BELOW_RTN_UNKNOWN,
