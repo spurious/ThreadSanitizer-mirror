@@ -2276,15 +2276,15 @@ static uintptr_t WRAP_NAME(sem_trywait)(WRAP_PARAM4) {
 // etc
 #if defined(__GNUC__)
 uintptr_t WRAP_NAME(lockf)(WRAP_PARAM4) {
-  const long offset_magic = 0xFEB0ACC0;
-
-  if (arg1 == F_ULOCK)
-    DumpEvent(ctx, UNLOCK, tid, pc, arg0 ^ offset_magic, 0);
+  if (arg1 == F_ULOCK) {
+    DumpEvent(0, SIGNAL, tid, pc, kSocketMagic, 0);
+  }
 
   uintptr_t ret = CALL_ME_INSIDE_WRAPPER_4();
 
-  if (arg1 == F_LOCK && ret == 0)
-    DumpEvent(ctx, WRITER_LOCK, tid, pc, arg0 ^ offset_magic, 0);
+  if (arg1 == F_LOCK && ret == 0) {
+    DumpEvent(0, WAIT, tid, pc, kSocketMagic, 0);
+  }
 
   return ret;
 }
