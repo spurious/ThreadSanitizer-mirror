@@ -32,7 +32,6 @@ DA_FLAGS=$(COMMON_FLAGS) -DDYNAMIC_ANNOTATIONS_PROVIDE_RUNNING_ON_VALGRIND=0
 
 ifneq ($(BFD_PATH), )
 DEFINES32+=-DTSAN_USE_BFD -I$(BFD_PATH)/include
-BFD_LIBS=$(BFD_PATH)/lib/libbfd.a $(BFD_PATH)/lib32/libiberty.a
 endif
 
 ifeq ($(DEBUG), 1)
@@ -69,7 +68,14 @@ RTL_64_A=tsan_rtl64.a
 all:	$(RTL_32_A) $(RTL_64_A)
 
 $(RTL_32_A):	$(OBJS32) $(RTL_32_O)
-	$(AR) tsan_rtl32.a $(OBJS32) $(RTL_32_O) $(BFD_LIBS)
+ifneq ($(BFD_PATH), )
+	rm -Rf libbfd && mkdir libbfd && cd libbfd && ar x $(BFD_PATH)/lib/libbfd.a
+	rm -Rf libiberty && mkdir libiberty && cd libiberty && ar x $(BFD_PATH)/lib32/libiberty.a
+	rm -Rf libz && mkdir libz && cd libz && ar x /usr/lib32/libz.a
+	$(AR) tsan_rtl32.a $(OBJS32) $(RTL_32_O) ./libbfd/*.o ./libiberty/*.o ./libz/*.o
+else
+	$(AR) tsan_rtl32.a $(OBJS32) $(RTL_32_O)
+endif
 	$(RANLIB) tsan_rtl32.a
 
 $(RTL_64_A):	$(OBJS64) $(RTL_64_O)
@@ -115,6 +121,9 @@ amd64-dynamic_annotations.o:	$(TSAN_PATH)/../dynamic_annotations/dynamic_annotat
 
 clean:
 	rm -f *.o *.a
+	rm -Rf libbfd
+	rm -Rf libiberty
+	rm -Rf libz
 
 # These targets are currently unused.
 x86-stack_info.o:	stack_info.cc stack_info.h
@@ -128,3 +137,4 @@ amd64-stack_info.o:	stack_info.cc stack_info.h
 
 stack_info64:	stack_info.cc stack_info.h
 	$(CXX) -m64 -o $@ $< $(ERRORLVL) $(FLAGS) -DSTACKINFO_STANDALONE -lpthread
+
