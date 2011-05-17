@@ -23,7 +23,7 @@ typedef enum bfds_opts {
   // Include function parameters and return types when demangling.
   bfds_opt_func_params          = 1 << 1,
   // Include template arguments when demangling.
-  bfds_opt_templates            = 1 << 2,
+  bfds_opt_templates       = 1 << 2,
   // Do update map of dynamic libraries before address resolution.
   // If not specified map of dynamic libraries is updated
   // whenever an address is not resolved.
