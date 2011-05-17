@@ -7,7 +7,7 @@ ERRORLVL=-Werror
 ERRORLVL=-Werror -Wno-deprecated -Wno-unused-function
 TSAN_PATH=../../tsan
 DEFINES32=-DTSAN_RTL_X86
-DEFINES64=-DTSAN_RTL_X64
+DEFINES64=-DTSAN_RTL_X64 -DTSAN_USE_BFD
 RTL_DEPS=
 
 OBJS32=x86-ts_util.o x86-suppressions.o \
@@ -28,8 +28,12 @@ COMMON_FLAGS=-I. -Istlport -I../../third_party/stlport \
       -fno-exceptions -g -O2 \
       -D_STLP_NO_IOSTREAMS=1 -DTS_LLVM
 
-
 DA_FLAGS=$(COMMON_FLAGS) -DDYNAMIC_ANNOTATIONS_PROVIDE_RUNNING_ON_VALGRIND=0
+
+ifneq ($(BFD_PATH), )
+DEFINES32+=-DTSAN_USE_BFD -I$(BFD_PATH)/include
+BFD_LIBS=$(BFD_PATH)/lib/libbfd.a
+endif
 
 ifeq ($(DEBUG), 1)
   D=-debug
@@ -65,7 +69,7 @@ RTL_64_A=tsan_rtl64.a
 all:	$(RTL_32_A) $(RTL_64_A)
 
 $(RTL_32_A):	$(OBJS32) $(RTL_32_O)
-	$(AR) tsan_rtl32.a $(OBJS32) $(RTL_32_O)
+	$(AR) tsan_rtl32.a $(OBJS32) $(RTL_32_O) $(BFD_LIBS)
 	$(RANLIB) tsan_rtl32.a
 
 $(RTL_64_A):	$(OBJS64) $(RTL_64_O)

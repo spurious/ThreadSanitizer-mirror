@@ -40,6 +40,7 @@
 #include <bfd.h>
 #include <unistd.h>
 #include <cxxabi.h>
+#include <memory>
 
 namespace demangle { // name clash with 'basename' from <string.h>
 # include <demangle.h>
@@ -62,30 +63,29 @@ struct BfdSymbol {
 
 // TODO(glider): unify all code that operates BFD.
 PcToStringMap* ReadGlobalsFromImage(bool(*IsAddrFromDataSections)(uintptr_t)) {
-  PcToStringMap *global_symbols = new map<uintptr_t, string>;
-#ifdef TSAN_RTL_X86
-  return global_symbols;
-#else
+  std::auto_ptr<PcToStringMap> global_symbols (new map<uintptr_t, string>);
+#ifdef TSAN_USE_BFD
   bfd_init();
   bfd* abfd = bfd_openr("/proc/self/exe", 0);
   if (abfd == 0) {
     bfd_perror("bfd_openr('/proc/self/exe') failed");
-    delete global_symbols;
     return NULL;
   }
   if (bfd_check_format(abfd, bfd_archive)) {
+    bfd_perror("bfd_check_format() failed");
     bfd_close(abfd);
-    delete global_symbols;
     return NULL;
   }
   char** matching = NULL;
   if (!bfd_check_format_matches(abfd, bfd_object, &matching)) {
+    bfd_perror("bfd_check_format_matches() failed");
     bfd_close(abfd);
-    return false;
+    return 0;
   }
   if ((bfd_get_file_flags(abfd) & HAS_SYMS) == 0) {
+    bfd_perror("bfd_get_file_flags() failed");
     bfd_close(abfd);
-    return false;
+    return 0;
   }
 
   asymbol** syms = 0;
@@ -97,8 +97,9 @@ PcToStringMap* ReadGlobalsFromImage(bool(*IsAddrFromDataSections)(uintptr_t)) {
     symcount = bfd_read_minisymbols(abfd, dyn, (void**)&syms, &size);
   }
   if (symcount < 0) {
+    bfd_perror("bfd_read_minisymbols() failed");
     bfd_close(abfd);
-    return false;
+    return 0;
   }
 
   char * p = (char*)syms;
@@ -117,14 +118,12 @@ PcToStringMap* ReadGlobalsFromImage(bool(*IsAddrFromDataSections)(uintptr_t)) {
     }
     p += size;
   }
-  return global_symbols;
-#endif  // TSAN_RTL_X86
+#endif // TSAN_USE_BFD
+  return global_symbols.release();
 }
 
 bool BfdInit() {
-#ifdef TSAN_RTL_X86
-  return false;
-#else
+#ifdef TSAN_USE_BFD
   if (bfd_data != 0)
     return true;
   bfd_init();
@@ -165,13 +164,15 @@ bool BfdInit() {
   bfd_data->abfd = abfd;
   bfd_data->syms = syms;
   return true;
-#endif  // TSAN_RTL_X86
+#else
+  return false;
+#endif // TSAN_USE_BFD
 }
 
 static void BfdFindAddressCallback(bfd* abfd,
                                    asection* section,
                                    void* data) {
-#ifdef TSAN_RTL_X64
+#ifdef TSAN_USE_BFD
   bfd_vma vma;
   bfd_size_type size;
   BfdSymbol* psi = (BfdSymbol*)data;
@@ -194,7 +195,7 @@ static void BfdFindAddressCallback(bfd* abfd,
                                      bfd_data->syms, psi->pc - vma,
                                      &psi->filename, &psi->functionname,
                                      &psi->line);
-#endif  // TSAN_RTL_X64
+#endif // TSAN_USE_BFD
 }
 
 static void BfdTranslateAddress(void* xaddr,
@@ -204,7 +205,7 @@ static void BfdTranslateAddress(void* xaddr,
                                 size_t buf_file_len,
                                 int* line,
                                 bool demangle) {
-#ifdef TSAN_RTL_X64
+#ifdef TSAN_USE_BFD
   char addr [(CHAR_BIT/4) * (sizeof(void*)) + 2] = {0};
   sprintf(addr, "%p", xaddr);
   BfdSymbol si = {0};
@@ -250,11 +251,11 @@ static void BfdTranslateAddress(void* xaddr,
                                        &si.line);
     } while (si.found);
   }
-#endif  // TSAN_RTL_X64
+#endif // TSAN_USE_BFD
 }
 
 string BfdPcToRtnName(pc_t pc, bool demangle) {
-#ifdef TSAN_RTL_X64
+#ifdef TSAN_USE_BFD
   if (BfdInit() == false)
     return string();
   char buf_func [PATH_MAX + 1];
@@ -264,13 +265,13 @@ string BfdPcToRtnName(pc_t pc, bool demangle) {
   return buf_func;
 #else
   return "";
-#endif  // TSAN_RTL_X64
+#endif // TSAN_USE_BFD
 }
 
 void BfdPcToStrings(pc_t pc, bool demangle,
                     string *img_name, string *rtn_name,
                     string *file_name, int *line_no) {
-#ifdef TSAN_RTL_X64
+#ifdef TSAN_USE_BFD
   if (BfdInit() == false)
     return;
   char buf_func [PATH_MAX + 1];
@@ -283,7 +284,7 @@ void BfdPcToStrings(pc_t pc, bool demangle,
     rtn_name->assign(buf_func);
   if (file_name != 0)
     file_name->assign(buf_file);
-#endif  // TSAN_RTL_X64
+#endif // TSAN_USE_BFD
 }
 
 } // namespace tsan_rtl_lbfd
