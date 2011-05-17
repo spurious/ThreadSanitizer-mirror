@@ -32,7 +32,7 @@ DA_FLAGS=$(COMMON_FLAGS) -DDYNAMIC_ANNOTATIONS_PROVIDE_RUNNING_ON_VALGRIND=0
 
 ifneq ($(BFD_PATH), )
 DEFINES32+=-DTSAN_USE_BFD -I$(BFD_PATH)/include
-BFD_LIBS=$(BFD_PATH)/lib/libbfd.a
+BFD_LIBS=$(BFD_PATH)/lib/libbfd.a $(BFD_PATH)/lib32/libiberty.a
 endif
 
 ifeq ($(DEBUG), 1)
