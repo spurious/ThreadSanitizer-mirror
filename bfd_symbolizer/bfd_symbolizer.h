@@ -15,28 +15,32 @@ extern "C" {
 #endif
 
 
-typedef enum bfds_opts {
+typedef enum bfds_opts_e {
   // Nothing special (for readability).
   bfds_opt_none                 = 0,
-  // Do demangle symbol names.
-  bfds_opt_demangle             = 1 << 0,
-  // Include function parameters and return types when demangling.
-  bfds_opt_func_params          = 1 << 1,
-  // Include template arguments when demangling.
-  bfds_opt_templates       = 1 << 2,
   // Do update map of dynamic libraries before address resolution.
   // If not specified map of dynamic libraries is updated
   // whenever an address is not resolved.
   // You may not specify it at all, however it can produce incorrect
   // results if a dynamic library is unloaded and then another library
   // is loaded at the same address.
-  bfds_opt_update_libs          = 1 << 3
-} bfds_opts;
+  bfds_opt_update_libs          = 1 << 1,
+  // Resolve data symbol (variable) instead of code symbol (default).
+  bfds_opt_data                 = 1 << 2,
+  // Do demangle symbol names into a short form (that is, only function names).
+  // It includes function template arguments, though.
+  bfds_opt_demangle             = 1 << 3,
+  // Short form + function parameters.
+  bfds_opt_demangle_params      = 1 << 4,
+  // Do demangle symbol names into a verbose form
+  // (that includes more templates, return types, etc).
+  bfds_opt_demangle_verbose     = 1 << 5,
+} bfds_opts_e;
 
 
 /** Maps an address in the process' address space to symbolic information.
  *  All output parameters are optional, if a value is not requires pass in
- *  NULL pointer and/or zero size.
+ *  zero buffer size for strings or NULL pointer for integers.
  *
  *  @param addr          [in]  An address to resolve.
  *  @param opts          [in]  Various options (see bfds_opts description).
@@ -48,11 +52,10 @@ typedef enum bfds_opts {
  *  @param filename_size [in]  Size of the filename buffer.
  *  @param source_line   [out] Source line.
  *  @param symbol_offset [out] Address offset from a beginning of the symbol.
- *  @param is_function   [out] Determines as to symbol is a function or data.
  *  @return                    0 - success, any other value - error.
  */
 int   bfds_symbolize    (void*                  addr,
-                         bfds_opts              opts,
+                         bfds_opts_e            opts,
                          char*                  symbol,
                          int                    symbol_size,
                          char*                  module,
@@ -60,8 +63,7 @@ int   bfds_symbolize    (void*                  addr,
                          char*                  filename,
                          int                    filename_size,
                          int*                   source_line,
-                         int*                   symbol_offset,
-                         int*                   is_function);
+                         int*                   symbol_offset);
 
 
 #ifdef __cplusplus
