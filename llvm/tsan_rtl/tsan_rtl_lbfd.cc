@@ -64,7 +64,6 @@ struct BfdSymbol {
 // TODO(glider): unify all code that operates BFD.
 PcToStringMap* ReadGlobalsFromImage(bool(*IsAddrFromDataSections)(uintptr_t)) {
   std::auto_ptr<PcToStringMap> global_symbols (new map<uintptr_t, string>);
-#ifdef TSAN_USE_BFD
   bfd_init();
   bfd* abfd = bfd_openr("/proc/self/exe", 0);
   if (abfd == 0) {
@@ -118,12 +117,10 @@ PcToStringMap* ReadGlobalsFromImage(bool(*IsAddrFromDataSections)(uintptr_t)) {
     }
     p += size;
   }
-#endif // TSAN_USE_BFD
   return global_symbols.release();
 }
 
 bool BfdInit() {
-#ifdef TSAN_USE_BFD
   if (bfd_data != 0)
     return true;
   bfd_init();
@@ -164,15 +161,11 @@ bool BfdInit() {
   bfd_data->abfd = abfd;
   bfd_data->syms = syms;
   return true;
-#else
-  return false;
-#endif // TSAN_USE_BFD
 }
 
 static void BfdFindAddressCallback(bfd* abfd,
                                    asection* section,
                                    void* data) {
-#ifdef TSAN_USE_BFD
   bfd_vma vma;
   bfd_size_type size;
   BfdSymbol* psi = (BfdSymbol*)data;
@@ -195,7 +188,6 @@ static void BfdFindAddressCallback(bfd* abfd,
                                      bfd_data->syms, psi->pc - vma,
                                      &psi->filename, &psi->functionname,
                                      &psi->line);
-#endif // TSAN_USE_BFD
 }
 
 static void BfdTranslateAddress(void* xaddr,
@@ -205,7 +197,6 @@ static void BfdTranslateAddress(void* xaddr,
                                 size_t buf_file_len,
                                 int* line,
                                 bool demangle) {
-#ifdef TSAN_USE_BFD
   char addr [(CHAR_BIT/4) * (sizeof(void*)) + 2] = {0};
   sprintf(addr, "%p", xaddr);
   BfdSymbol si = {0};
@@ -251,11 +242,9 @@ static void BfdTranslateAddress(void* xaddr,
                                        &si.line);
     } while (si.found);
   }
-#endif // TSAN_USE_BFD
 }
 
 string BfdPcToRtnName(pc_t pc, bool demangle) {
-#ifdef TSAN_USE_BFD
   if (BfdInit() == false)
     return string();
   char buf_func [PATH_MAX + 1];
@@ -263,15 +252,11 @@ string BfdPcToRtnName(pc_t pc, bool demangle) {
                       buf_func, sizeof(buf_func)/sizeof(buf_func[0]) - 1,
                       0, 0, 0, demangle);
   return buf_func;
-#else
-  return "";
-#endif // TSAN_USE_BFD
 }
 
 void BfdPcToStrings(pc_t pc, bool demangle,
                     string *img_name, string *rtn_name,
                     string *file_name, int *line_no) {
-#ifdef TSAN_USE_BFD
   if (BfdInit() == false)
     return;
   char buf_func [PATH_MAX + 1];
@@ -284,10 +269,12 @@ void BfdPcToStrings(pc_t pc, bool demangle,
     rtn_name->assign(buf_func);
   if (file_name != 0)
     file_name->assign(buf_file);
-#endif // TSAN_USE_BFD
 }
 
 } // namespace tsan_rtl_lbfd
+
+
+
 
 
 
