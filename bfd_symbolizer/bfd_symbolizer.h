@@ -52,6 +52,7 @@ typedef enum bfds_opts_e {
  *  @param filename_size [in]  Size of the filename buffer.
  *  @param source_line   [out] Source line.
  *  @param symbol_offset [out] Address offset from a beginning of the symbol.
+ *                             As of now offset is not calculated for functions
  *  @return                    0 - success, any other value - error.
  */
 int   bfds_symbolize    (void*                  addr,

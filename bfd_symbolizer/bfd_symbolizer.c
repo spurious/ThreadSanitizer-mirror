@@ -136,7 +136,7 @@ static int parse_lib(char* pos, void** lbegin, void** lend, char** lname) {
   if (end[0] != ' ')
     return 1;
   pos = strchr(end, '/');
-  if (pos == 0)
+  if (pos == 0 && strchr(end, '[') != 0)
     return 1;
   *lname = pos;
   return 0;
@@ -181,7 +181,7 @@ static lib_t* update_lib(lib_t* prev, void* lbegin, void* lend, char const* lnam
   lib_t*                lib;
 
   DBG("found module '%s' at %p-%p\n", lname, lbegin, lend);
-  if (prev != 0 && strcmp(prev->name, lname) == 0) {
+  if (prev != 0 && (lname == 0 || strcmp(prev->name, lname) == 0)) {
     assert(lbegin >= prev->end);
     prev->end = lend;
     return prev;
@@ -396,7 +396,8 @@ static int init_lib(lib_t* lib) {
 
   lib->var_count = 0;
   for (i = 0; i != symcount; i += 1) {
-    if (lib->syms[i]->flags & BSF_OBJECT)
+    if ((lib->syms[i]->flags & BSF_OBJECT) != 0
+        && (lib->syms[i]->flags & BSF_THREAD_LOCAL) == 0)
       lib->var_count += 1;
   }
   lib->vars = (var_t*)malloc((lib->var_count + 1) * sizeof(var_t));
@@ -409,7 +410,8 @@ static int init_lib(lib_t* lib) {
   }
 
   for (i = 0, j = 0; i != symcount; i += 1) {
-    if (lib->syms[i]->flags & BSF_OBJECT) {
+    if ((lib->syms[i]->flags & BSF_OBJECT) != 0
+        && (lib->syms[i]->flags & BSF_THREAD_LOCAL) == 0) {
       lib->vars[j].addr = (void*)bfd_asymbol_value(lib->syms[i]);
       lib->vars[j].name = bfd_asymbol_name(lib->syms[i]);
       j += 1;
@@ -527,7 +529,6 @@ static int process_data(lib_t* lib, void* addr, char* symbol, int symbol_size, c
 
 
 static int process_code(lib_t* lib, void* xaddr, char* symbol, int symbol_size, char* filename, int filename_size, int* source_line, int* symbol_offset) {
-  //!!! offset is not calculated
   DBG("resolving address %p in module '%s'\n", xaddr, lib->name);
   if (lib->is_main_exec == 0) {
     xaddr = (char*)xaddr - (ptrdiff_t)lib->begin;
@@ -562,6 +563,8 @@ static int process_code(lib_t* lib, void* xaddr, char* symbol, int symbol_size, 
                                      &si.functionname,
                                      &si.line);
   } while (si.found);
+  if (symbol_offset != 0)
+    *symbol_offset = 0;
   return 0;
 }
 
@@ -599,7 +602,7 @@ static int process_demangle(char* symbol, int symbol_size, bfds_opts_e opts) {
 
 
 int   bfds_symbolize    (void*                  addr,
-                         bfds_opts_e              opts,
+                         bfds_opts_e            opts,
                          char*                  symbol,
                          int                    symbol_size,
                          char*                  module,
@@ -612,7 +615,7 @@ int   bfds_symbolize    (void*                  addr,
 
   pthread_mutex_lock(&ctx.mtx);
 
-  DBG("request for addr %p\n", addr);
+  DBG("request for addr %p (%s)\n", addr, (opts & bfds_opt_data ? "data" : "code"));
 
   if (process_lib(&lib, addr, opts & bfds_opt_update_libs, module, module_size)) {
     ERR("module for address %p is not found\n", addr);
@@ -632,12 +635,12 @@ int   bfds_symbolize    (void*                  addr,
       pthread_mutex_unlock(&ctx.mtx);
       return 1;
     }
+  }
 
-    if (process_demangle(symbol, symbol_size, opts)) {
-      ERR("demangling for address %p is failed\n", addr);
-      pthread_mutex_unlock(&ctx.mtx);
-      return 1;
-    }
+  if (process_demangle(symbol, symbol_size, opts)) {
+    ERR("demangling for address %p is failed\n", addr);
+    pthread_mutex_unlock(&ctx.mtx);
+    return 1;
   }
 
   DBG("addr %p: module='%s', symbol='%s', file='%s', line=%d, offset=%d\n",

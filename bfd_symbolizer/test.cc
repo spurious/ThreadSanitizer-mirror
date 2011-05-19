@@ -10,8 +10,14 @@
 int foo1_line = __LINE__; extern "C" void foo1(int, int) {}
 int foo2_line = __LINE__; void foo2() {}
 int foo3_line = __LINE__; void foo3(std::string const&, int) {}
-int foo4_line = __LINE__; extern "C" int foo4; int foo4 = 0;
 int foo5_line = __LINE__; template<typename, int> void foo5(int) {};
+
+extern "C" int foo4; int foo4 = 0;
+int foo6 = 0;
+static int foo8 = 0;
+namespace { int foo9 = 0; }
+namespace foo { int foo10 = 0; }
+int foo11 [4096];
 
 extern int dyn1_line; extern "C" void* dyn1(int, int);
 extern int dyn2_line; extern int dyn2; void* get_dyn2();
@@ -52,12 +58,10 @@ void check(void* addr, bfds_opts_e opts, char const* symbol, char const* module,
     exit(1);
   }
 
-/*
   if (offset != offset0) {
     printf("offset: %d/%d\n", offset, offset0);
     exit(1);
   }
-*/
 
   printf("OK\n");
 }
@@ -97,7 +101,20 @@ int main() {
   check((void*)&foo1,   bfds_opt_none, "foo1",          exename,      __FILE__,      foo1_line, 0);
   check((void*)&foo2,   bfds_opt_none, "_Z4foo2v",      exename,      __FILE__,      foo2_line, 0);
   check((void*)&foo3,   bfds_opt_none, "_Z4foo3RKSsi",  exename,      __FILE__,      foo3_line, 0);
+
   check((char*)&foo4,   bfds_opt_data, "foo4",          exename,      "",            0,         0);
+  check((char*)&foo6,   bfds_opt_data, "foo6",          exename,      "",            0,         0);
+  check((char*)&foo8,   bfds_opt_data, "_ZL4foo8",      exename,      "",            0,         0);
+  check((char*)&foo9,   bfds_opt_data, "_ZN12_GLOBAL__N_14foo9E",     exename,      "",            0,         0);
+  check((char*)&foo::foo10,  bfds_opt_data, "_ZN3foo5foo10E",         exename,      "",            0,         0);
+  check((char*)&foo11,  bfds_opt_data, "foo11",         exename,      "",            0,         0);
+
+  check((char*)&foo4,   (bfds_opts_e)(bfds_opt_data | bfds_opt_demangle), "foo4",          exename,      "",            0,         0);
+  check((char*)&foo6,   (bfds_opts_e)(bfds_opt_data | bfds_opt_demangle), "foo6",          exename,      "",            0,         0);
+  check((char*)&foo8,   (bfds_opts_e)(bfds_opt_data | bfds_opt_demangle), "foo8",      exename,      "",            0,         0);
+  check((char*)&foo9,   (bfds_opts_e)(bfds_opt_data | bfds_opt_demangle), "(anonymous namespace)::foo9",     exename,      "",            0,         0);
+  check((char*)&foo::foo10,  (bfds_opts_e)(bfds_opt_data | bfds_opt_demangle), "foo::foo10",         exename,      "",            0,         0);
+  check((char*)&foo11,  (bfds_opts_e)(bfds_opt_data | bfds_opt_demangle), "foo11",         exename,      "",            0,         0);
 
   check((char*)&foo4+1, bfds_opt_data, "foo4",          exename,      "",            0,         1);
   check((char*)&foo4+3, bfds_opt_data, "foo4",          exename,      "",            0,         3);
