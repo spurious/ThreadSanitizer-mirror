@@ -172,6 +172,5 @@ void PrintStackTrace();
 
 
 #include "tsan_rtl_wrap.h"
-#include "tsan_rtl_lbfd.h"
 
 #endif  // TSAN_RTL_H_

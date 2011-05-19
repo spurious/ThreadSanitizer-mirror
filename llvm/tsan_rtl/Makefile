@@ -14,13 +14,13 @@ RTL_DEPS=
 OBJS32=x86-ts_util.o x86-suppressions.o \
        x86-common_util.o x86-ignore.o x86-tsan_rtl_dynamic_annotations.o \
        x86-thread_sanitizer.o x86-dynamic_annotations.o \
-       x86-tsan_rtl_lbfd.o x86-tsan_rtl_sched_shake.o \
+       x86-tsan_rtl_sched_shake.o \
        x86-earthquake_wrap.o x86-earthquake_core.o
 OBJS64=amd64-ts_util.o amd64-suppressions.o \
        amd64-common_util.o amd64-ignore.o \
        amd64-tsan_rtl_dynamic_annotations.o \
        amd64-thread_sanitizer.o amd64-dynamic_annotations.o \
-       amd64-tsan_rtl_lbfd.o amd64-tsan_rtl_sched_shake.o \
+       amd64-tsan_rtl_sched_shake.o \
        amd64-earthquake_wrap.o amd64-earthquake_core.o
 
 COMMON_FLAGS=-I. -Istlport -I../../third_party/stlport \
@@ -84,7 +84,7 @@ tsan_rtl64.o: $(SRC) tsan_rtl.h $(RTL_DEPS)
 	$(CXX) $(SRC) $(FLAGS) -m64 $(ERRORLVL) $(DA_FLAGS) -Wall -c -o $(RTL_64_O) $(DEFINES64) -DTSAN_RTL_X64
 
 
-x86-%.o:	%.cc $(TS_HEADERS) $(FOREIGN_HEADERS) bfds
+x86-%.o:	%.cc $(TS_HEADERS) $(FOREIGN_HEADERS) $(BFDS_PATH)/bfds32.a $(BFDS_PATH)/bfds64.a
 	$(CXX) -m32 -o $@ -c $< $(ERRORLVL) $(FLAGS) $(DEFINES32)
 
 x86-%.o:	$(TSAN_PATH)/%.cc $(TS_HEADERS) $(FOREIGN_HEADERS)
@@ -97,7 +97,7 @@ x86-dynamic_annotations.o:	$(TSAN_PATH)/../dynamic_annotations/dynamic_annotatio
 	$(CC) -m32 -o $@ -c $< $(ERRORLVL) $(DA_FLAGS) $(DEFINES32)
 
 
-amd64-%.o:	%.cc $(TS_HEADERS) $(FOREIGN_HEADERS) bfds
+amd64-%.o:	%.cc $(TS_HEADERS) $(FOREIGN_HEADERS) $(BFDS_PATH)/bfds32.a $(BFDS_PATH)/bfds64.a
 	$(CXX) -m64 -o $@ -c $< $(ERRORLVL) $(FLAGS) $(DEFINES64)
 
 amd64-%.o:	$(TSAN_PATH)/%.cc $(TS_HEADERS) $(FOREIGN_HEADERS)
@@ -109,16 +109,13 @@ amd64-%.o:	../../earthquake/%.c
 amd64-dynamic_annotations.o:	$(TSAN_PATH)/../dynamic_annotations/dynamic_annotations.c $(TS_HEADERS) $(FOREIGN_HEADERS)
 	$(CC) -m64 -o $@ -c $< $(ERRORLVL) $(DA_FLAGS) $(DEFINES64)
 
-bfds: $(BFDS_PATH)/bfds32.a $(BFDS_PATH)/bfds64.a
-
 $(BFDS_PATH)/bfds32.a $(BFDS_PATH)/bfds64.a:
 	cd $(BFDS_PATH) && make
 
 clean:
 	rm -f *.o *.a
-	rm -Rf libbfd
-	rm -Rf libiberty
-	rm -Rf libz
+	rm -Rf bfds64
+	rm -Rf bfds32
 
 # These targets are currently unused.
 x86-stack_info.o:	stack_info.cc stack_info.h

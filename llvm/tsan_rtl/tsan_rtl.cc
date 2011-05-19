@@ -28,6 +28,7 @@
 
 #include "tsan_rtl.h"
 #include "../../earthquake/earthquake_wrap.h"
+#include "../../bfd_symbolizer/bfd_symbolizer.h"
 
 #include "ts_trace_info.h"
 #include "ts_lock.h"
@@ -66,7 +67,6 @@ bool FORKED_CHILD = false;  // if true, cannot access other threads' TLS
 __thread int thread_local_ignore;
 __thread bool thread_local_show_stats;
 __thread int thread_local_literace;
-PcToStringMap *global_symbols;
 
 struct LLVMDebugInfo {
   LLVMDebugInfo()
@@ -525,11 +525,6 @@ INLINE void init_debug() {
     ReadElf();
     AddWrappersDbgInfo();
   }
-  ENTER_RTL();
-  global_symbols = tsan_rtl_lbfd::ReadGlobalsFromImage(
-      IsAddrFromDataSections);
-  CHECK(global_symbols);
-  LEAVE_RTL();
   DBG_INIT = 1;
 }
 
@@ -2420,7 +2415,6 @@ uintptr_t FdMagic(int fd) {
 
 extern "C"
 ssize_t __wrap_read(int fd, const void *buf, size_t count) {
-  CHECK(!IN_RTL);
   ssize_t result = __real_read(fd, buf, count);
   if (IN_RTL) return result;
   ENTER_RTL();
@@ -3170,7 +3164,16 @@ string PcToRtnName(pc_t pc, bool demangle) {
       return string();
     }
   } else {
-    return tsan_rtl_lbfd::BfdPcToRtnName(pc, demangle);
+    char symbol [4096];
+    if (bfds_symbolize((void*)pc,
+                       demangle ? bfds_opt_demangle : bfds_opt_none,
+                       symbol, sizeof(symbol),
+                       0, 0, // module
+                       0, 0, // source file
+                       0,    // source line
+                       0))   // symbol offset
+      return std::string();
+    return symbol;
   }
 }
 
@@ -3195,24 +3198,23 @@ void DumpDataSections() {
 
 // GetNameAndOffsetOfGlobalObject(addr) returns true iff:
 //  -- |addr| belongs to .data, .bss or .rodata section
-//  -- there is a symbol with the address less than |addr| in |global_symbols|
-// TODO(glider): this may give false positives. Better to split |global_symbols|
-// by sections.
 bool GetNameAndOffsetOfGlobalObject(uintptr_t addr,
                                     string *name, uintptr_t *offset) {
-  DCHECK(global_symbols);
-  if (!IsAddrFromDataSections(addr)) return false;
-  map<uintptr_t, string>::iterator iter = global_symbols->lower_bound(addr);
-  if (iter == global_symbols->end()) return false;
-  if (iter->first == addr) {
-    // Exact match.
-    *name = iter->second;
-    *offset = 0;
-  } else {
-    --iter;
-    *name = iter->second;
-    *offset = addr - iter->first;
+  char symbol [4096];
+  int soffset = 0;
+  if (bfds_symbolize((void*)addr,
+                     bfds_opt_data,
+                     symbol, sizeof(symbol),
+                     0, 0, // module
+                     0, 0, // source file
+                     0,    // source line
+                     &soffset)) {
+    return false;
   }
+  if (name)
+    name->assign(symbol);
+  if (offset)
+    *offset = soffset;
   return true;
 }
 
@@ -3236,9 +3238,32 @@ void PcToStrings(pc_t pc, bool demangle,
       *line_no = ((*debug_info)[pc].line);
     }
   } else {
-    tsan_rtl_lbfd::BfdPcToStrings(pc, demangle,
-                                  img_name, rtn_name,
-                                  file_name, line_no);
+    char symbol [4096];
+    char module [4096];
+    char file   [4096];
+    if (bfds_symbolize((void*)pc,
+                       demangle ? bfds_opt_demangle : bfds_opt_none,
+                       symbol, sizeof(symbol),
+                       module, sizeof(module),
+                       file, sizeof(file),
+                       line_no,
+                       0)) { // symbol offset
+      if (img_name)
+        img_name->clear();
+      if (rtn_name)
+        rtn_name->clear();
+      if (file_name)
+        file_name->clear();
+      if (line_no)
+        *line_no = 0;
+      return;
+    }
+    if (img_name)
+      img_name->assign(module);
+    if (rtn_name)
+      rtn_name->assign(symbol);
+    if (file_name)
+      file_name->assign(file);
   }
 }
 
