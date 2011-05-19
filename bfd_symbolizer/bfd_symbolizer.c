@@ -27,10 +27,13 @@
 #include <demangle.h>
 #undef basename
 
-//#define ERR(...) fprintf(stderr, "BFD: " __VA_ARGS__)
-//#define DBG(...) fprintf(stderr, "DBG: " __VA_ARGS__)
-#define ERR(...)
-#define DBG(...)
+#ifdef _DEBUG
+# define ERR(...) fprintf(stderr, "BFD: " __VA_ARGS__)
+# define DBG(...) fprintf(stderr, "DBG: " __VA_ARGS__)
+#else
+# define ERR(...)
+# define DBG(...)
+#endif
 
 
 typedef struct var_t {
@@ -49,6 +52,7 @@ typedef struct lib_t {
   var_t*                vars;
   int                   var_count;
   int                   is_seen;
+  int                   is_main_exec;
 } lib_t;
 
 
@@ -157,6 +161,7 @@ static lib_t* lib_alloc(void* lbegin, void* lend, char const* lname) {
   lib->vars = 0;
   lib->var_count = 0;
   lib->is_seen = 1;
+  lib->is_main_exec = 0;
   lib->next = 0;
   return lib;
 }
@@ -191,6 +196,8 @@ static lib_t* update_lib(lib_t* prev, void* lbegin, void* lend, char const* lnam
     lib = lib_alloc(lbegin, lend, lname);
     if (lib == 0)
       return prev;
+    if (ctx.libs == 0)
+      lib->is_main_exec = 1;
     lib->next = ctx.libs;
     ctx.libs = lib;
   } else {
@@ -499,9 +506,10 @@ static int process_data(lib_t* lib, void* addr, char* symbol, int symbol_size, c
   var_t*                v;
   var_t                 v0;
 
-  if ((ptrdiff_t)lib->begin != 0x400000)
+  if (lib->is_main_exec == 0) {
     addr = (char*)addr - (ptrdiff_t)lib->begin;
-  DBG("shifting addr to %p\n", addr);
+    DBG("shifting addr to %p\n", addr);
+  }
   v0.addr = addr;
 
   v = (var_t*)bsearch(&v0, lib->vars, lib->var_count, sizeof(var_t), var_search_pred);
@@ -521,9 +529,10 @@ static int process_data(lib_t* lib, void* addr, char* symbol, int symbol_size, c
 static int process_code(lib_t* lib, void* xaddr, char* symbol, int symbol_size, char* filename, int filename_size, int* source_line, int* symbol_offset) {
   //!!! offset is not calculated
   DBG("resolving address %p in module '%s'\n", xaddr, lib->name);
-  if ((ptrdiff_t)lib->begin != 0x400000)
+  if (lib->is_main_exec == 0) {
     xaddr = (char*)xaddr - (ptrdiff_t)lib->begin;
-  DBG("shifting to %p\n", xaddr);
+    DBG("shifting to %p\n", xaddr);
+  }
   char addr [(CHAR_BIT/4) * (sizeof(void*)) + 2] = {0};
   sprintf(addr, "%p", xaddr);
   BfdSymbol si = {lib};

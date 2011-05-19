@@ -64,8 +64,15 @@ void check(void* addr, bfds_opts_e opts, char const* symbol, char const* module,
 
 
 int main() {
-  char exename [1024];
-  readlink("/proc/self/exe", exename, sizeof(exename));
+#ifdef __x86_64__
+  char const* exename = "/test64";
+  char const* staname = "/libsta64.so";
+  char const* dynname = "libdyn64.so";
+#else
+  char const* exename = "/test32";
+  char const* staname = "/libsta32.so";
+  char const* dynname = "libdyn32.so";
+#endif
 
   if (bfds_symbolize((void*)&foo1, bfds_opt_none, 0, 0, 0, 0, 0, 0, 0, 0)) {
     printf("bfds_symbolize(%d) failed\n", __LINE__);
@@ -112,13 +119,13 @@ int main() {
   check((void*)&foo2,   bfds_opt_none, "_",      "/",      "/",      foo2_line, 0, 2);
   check((void*)&foo2,   bfds_opt_demangle, "_",      "/",      "/",      foo2_line, 0, 2);
 
-  check(dyn1(0, 0),     bfds_opt_none, "dyn1",          "/libdyn.so", "test_dyn.cc", dyn1_line, 0);
-  check(get_dyn2(),     bfds_opt_data, "dyn2",          "/libdyn.so", "",            0,         0);
+  check(dyn1(0, 0),     bfds_opt_none, "dyn1",          staname, "test_dyn.cc", dyn1_line, 0);
+  check(get_dyn2(),     bfds_opt_data, "dyn2",          staname, "",            0,         0);
 
-  void* dl = dlopen("libdyn2.so", RTLD_LOCAL | RTLD_NOW);
+  void* dl = dlopen(dynname, RTLD_LOCAL | RTLD_NOW);
   void* dyn21 = dlsym(dl, "dyn21");
   void* dyn22 = dlsym(dl, "dyn22");
-  check(dyn21,     bfds_opt_none, "dyn21",          "/libdyn2.so", "test_dyn2.cc", 1, 0);
+  check(dyn21,     bfds_opt_none, "dyn21",          dynname, "test_dyn2.cc", 1, 0);
   check(dyn22,     bfds_opt_data, "dyn22",          "", "", 0, 0);
   dlclose(dl);
   if (bfds_symbolize(dyn21, bfds_opt_none, 0, 0, 0, 0, 0, 0, 0, 0)) {
