@@ -47,6 +47,7 @@ bfds32.a: bfd_symbolizer.c bfd_symbolizer.h ./binutils32/bin/lib/libbfd.a
 	cd ./binutils32/binutils-$(BINUTILS_VER) && make install
 
 ./binutils-$(BINUTILS_VER).tar.bz2:
+	sudo apt-get install lib32z1-dev
 	wget http://ftp.gnu.org/gnu/binutils/binutils-$(BINUTILS_VER).tar.bz2
 
 test64: bfds64.a bfd_symbolizer.h test.cc test_dyn.cc test_dyn2.cc
