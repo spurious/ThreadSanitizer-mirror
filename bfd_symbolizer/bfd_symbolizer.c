@@ -124,11 +124,11 @@ static uint32_t crc32(char const* data, int sz) {
 static int parse_lib(char* pos, void** lbegin, void** lend, char** lname) {
   char*                 end;
 
-  *lbegin = (void*)strtoull(pos, &end, 16);
+  *lbegin = (void*)(uintptr_t)strtoull(pos, &end, 16);
   if (end[0] != '-')
     return 1;
   pos = end + 1;
-  *lend = (void*)strtoull(pos, &end, 16);
+  *lend = (void*)(uintptr_t)strtoull(pos, &end, 16);
   if (end[0] != ' ')
     return 1;
   pos = strchr(end, '/');
@@ -260,7 +260,7 @@ static void update_libs() {
   lib_t*                lib;
 
   DBG("refreshing /proc/self/maps\n");
-  f = open("/proc/self/maps", O_RDONLY | O_NOATIME);
+  f = open("/proc/self/maps", O_RDONLY);
   if (f == -1) {
     ERR("open(\"/proc/self/maps\") failed (%s)\n",
         sys_errlist[errno]);
@@ -460,7 +460,7 @@ static int process_lib(lib_t** plib, void* addr, int do_update_libs, char* modul
 
 
 //!!! refactor
-struct BfdSymbol {
+typedef struct BfdSymbol {
   lib_t*                        lib;
   bfd_vma                       pc;
   const char*                   filename;
@@ -468,7 +468,7 @@ struct BfdSymbol {
   unsigned int                  line;
   int                           offset;
   bfd_boolean                   found;
-};
+} BfdSymbol;
 
 static void BfdFindAddressCallback(bfd* abfd,
                                    asection* section,
@@ -639,6 +639,11 @@ int   bfds_symbolize    (void*                  addr,
   pthread_mutex_unlock(&ctx.mtx);
   return 0;
 }
+
+
+
+
+
 
 
 
