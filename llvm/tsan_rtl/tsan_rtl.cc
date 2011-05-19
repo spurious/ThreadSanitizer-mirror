@@ -3203,7 +3203,7 @@ bool GetNameAndOffsetOfGlobalObject(uintptr_t addr,
   char symbol [4096];
   int soffset = 0;
   if (bfds_symbolize((void*)addr,
-                     bfds_opt_data,
+                     (bfds_opts_e)(bfds_opt_data | bfds_opt_demangle),
                      symbol, sizeof(symbol),
                      0, 0, // module
                      0, 0, // source file
