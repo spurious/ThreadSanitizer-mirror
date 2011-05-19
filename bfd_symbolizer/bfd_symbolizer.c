@@ -531,7 +531,6 @@ static int process_data(lib_t* lib, void* addr, char* symbol, int symbol_size, c
 
 
 static int process_code(lib_t* lib, void* addr, char* symbol, int symbol_size, char* filename, int filename_size, int* source_line, int* symbol_offset) {
-  char                  saddr [32];
   sym_t                 si;
   char*                 alloc;
   const char*           name;
@@ -544,8 +543,7 @@ static int process_code(lib_t* lib, void* addr, char* symbol, int symbol_size, c
 
   memset(&si, 0, sizeof(si));
   si.lib = lib;
-  sprintf(saddr, "%p", addr);
-  si.pc = bfd_scan_vma(saddr, 0, 16);
+  si.pc = (bfd_vma)addr;
   si.found = 0;
   bfd_map_over_sections(lib->bfd, bfd_search_callback, &si);
   if (si.found == 0)
