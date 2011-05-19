@@ -23,7 +23,7 @@ bfds64.a: bfd_symbolizer.c bfd_symbolizer.h ./binutils64/bin/lib/libbfd.a
 	ranlib bfds64.a
 
 bfds32.a: bfd_symbolizer.c bfd_symbolizer.h ./binutils32/bin/lib/libbfd.a
-	$(CC) -c bfd_symbolizer.c -o bfd_symbolizer32.o $(CFLAGS) -m32 -I./binutils32/bin/include -I./binutils64/binutils-$(BINUTILS_VER)/include
+	$(CC) -c bfd_symbolizer.c -o bfd_symbolizer32.o $(CFLAGS) -m32 -I./binutils32/bin/include -I./binutils32/binutils-$(BINUTILS_VER)/include
 	rm -Rf ./binutils32/libbfd && mkdir ./binutils32/libbfd && cd ./binutils32/libbfd && ar x ./../bin/lib/libbfd.a
 	rm -Rf ./binutils32/libiberty && mkdir ./binutils32/libiberty && cd ./binutils32/libiberty && ar x ./../bin/lib32/libiberty.a
 	rm -Rf ./binutils32/libz && mkdir ./binutils32/libz && cd ./binutils32/libz && ar x /usr/lib32/libz.a
