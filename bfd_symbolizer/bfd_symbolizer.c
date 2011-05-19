@@ -67,6 +67,17 @@ typedef struct ctx_t {
 } ctx_t;
 
 
+typedef struct sym_t {
+  lib_t*                lib;
+  bfd_vma               pc;
+  char const*           filename;
+  char const*           functionname;
+  unsigned int          line;
+  int                   offset;
+  bfd_boolean           found;
+} sym_t;
+
+
 static struct ctx_t ctx = {PTHREAD_MUTEX_INITIALIZER};
 
 
@@ -184,8 +195,11 @@ static lib_t* update_lib(lib_t* prev, void* lbegin, void* lend, char const* lnam
   if (prev != 0 && (lname == 0 || strcmp(prev->name, lname) == 0)) {
     assert(lbegin >= prev->end);
     prev->end = lend;
-    return prev;
+    return lname == 0 ? 0 : prev;
   }
+
+  if (lname == 0)
+    return 0;
 
   for (lib = ctx.libs; lib != 0; lib = lib->next) {
     if (strcmp(lib->name, lname) == 0)
@@ -227,6 +241,7 @@ static void update_libs_impl(char* data, int sz) {
     return;
   }
 
+  DBG("/proc/self/maps raw:\n%s\n", data);
   ctx.maps_crc = crc;
   for (lib = ctx.libs; lib != 0; lib = lib->next) {
     lib->is_seen = 0;
@@ -256,6 +271,12 @@ static void update_libs_impl(char* data, int sz) {
       lprev = &lib->next;
     }
   }
+
+  DBG("refresh completed\n");
+  DBG("module list:\n");
+  for (lib = ctx.libs; lib != 0; lib = lib->next) {
+    DBG("%p-%p %s\n", lib->begin, lib->end, lib->name);
+  }
 }
 
 
@@ -264,7 +285,6 @@ static void update_libs() {
   int                   fsz;
   off_t                 res;
   char*                 data;
-  lib_t*                lib;
 
   DBG("refreshing /proc/self/maps\n");
   f = open("/proc/self/maps", O_RDONLY);
@@ -306,15 +326,9 @@ static void update_libs() {
     }
   }
 
-  DBG("/proc/self/maps raw:\n%s\n", data);
   update_libs_impl(data, fsz);
   free(data);
   close(f);
-  DBG("refresh completed\n");
-  DBG("module list:\n");
-  for (lib = ctx.libs; lib != 0; lib = lib->next) {
-    DBG("%p-%p %s\n", lib->begin, lib->end, lib->name);
-  }
 }
 
 
@@ -456,7 +470,6 @@ static int process_lib(lib_t** plib, void* addr, int do_update_libs, char* modul
   if (lib == 0)
     return 1;
 
-  //!!! use separate flag
   if (lib->bfd == 0) {
     if (init_lib(lib))
       return 1;
@@ -468,24 +481,13 @@ static int process_lib(lib_t** plib, void* addr, int do_update_libs, char* modul
 }
 
 
-//!!! refactor
-typedef struct BfdSymbol {
-  lib_t*                        lib;
-  bfd_vma                       pc;
-  const char*                   filename;
-  const char*                   functionname;
-  unsigned int                  line;
-  int                           offset;
-  bfd_boolean                   found;
-} BfdSymbol;
+static void bfd_search_callback(bfd* abfd, asection* section, void* data) {
+  bfd_vma               vma;
+  bfd_size_type         size;
+  sym_t*                psi;
 
-static void BfdFindAddressCallback(bfd* abfd,
-                                   asection* section,
-                                   void* data) {
-  bfd_vma vma;
-  bfd_size_type size;
-  BfdSymbol* psi = (BfdSymbol*)data;
 
+  psi = (sym_t*)data;
   if (psi->found)
     return;
 
@@ -528,24 +530,30 @@ static int process_data(lib_t* lib, void* addr, char* symbol, int symbol_size, c
 }
 
 
-static int process_code(lib_t* lib, void* xaddr, char* symbol, int symbol_size, char* filename, int filename_size, int* source_line, int* symbol_offset) {
-  DBG("resolving address %p in module '%s'\n", xaddr, lib->name);
+static int process_code(lib_t* lib, void* addr, char* symbol, int symbol_size, char* filename, int filename_size, int* source_line, int* symbol_offset) {
+  char                  saddr [32];
+  sym_t                 si;
+  char*                 alloc;
+  const char*           name;
+
+  DBG("resolving address %p in module '%s'\n", addr, lib->name);
   if (lib->is_main_exec == 0) {
-    xaddr = (char*)xaddr - (ptrdiff_t)lib->begin;
-    DBG("shifting to %p\n", xaddr);
+    addr = (char*)addr - (ptrdiff_t)lib->begin;
+    DBG("shifting to %p\n", addr);
   }
-  char addr [(CHAR_BIT/4) * (sizeof(void*)) + 2] = {0};
-  sprintf(addr, "%p", xaddr);
-  BfdSymbol si = {lib};
-  si.pc = bfd_scan_vma (addr, NULL, 16);
-  si.found = FALSE;
-  bfd_map_over_sections(lib->bfd, BfdFindAddressCallback, &si);
+
+  memset(&si, 0, sizeof(si));
+  si.lib = lib;
+  sprintf(saddr, "%p", addr);
+  si.pc = bfd_scan_vma(saddr, 0, 16);
+  si.found = 0;
+  bfd_map_over_sections(lib->bfd, bfd_search_callback, &si);
   if (si.found == 0)
     return 1;
 
   do {
-    char* alloc = 0;
-    const char* name = si.functionname;
+    alloc = 0;
+    name = si.functionname;
     if (name == 0 || *name == '\0') {
       name = "??";
     } else {
