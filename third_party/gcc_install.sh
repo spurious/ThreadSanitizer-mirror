@@ -2,11 +2,12 @@
 
 #check configuration parameters
 if [ "$GCC_VER" == "" ]; then
-  echo usage: GCC_VER=4.5.2 MAKEFLAGS=-j8 $0
+  echo usage: GCC_VER=4.5.3 MAKEFLAGS=-j8 $0
   exit 1
 fi
 
 #install gcc prerequisites
+sudo apt-get install libc6-dev || exit 1
 sudo apt-get install libgmp3-dev || exit 1
 sudo apt-get install libmpfr-dev || exit 1
 sudo apt-get install libmpc-dev || exit 1
