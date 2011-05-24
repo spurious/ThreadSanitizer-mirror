@@ -12,6 +12,11 @@ endif
 
 all:    test32 test64
 
+# No targets should depend on this one, because it cannot be ran automatically.
+# Instead run it on the target machine manually.
+package_deps:
+	sudo apt-get install lib32z1-dev
+
 bfds64.a: bfd_symbolizer.c bfd_symbolizer.h ./binutils64/bin/lib/libbfd.a
 	$(CC) -c bfd_symbolizer.c -o bfd_symbolizer64.o $(CFLAGS) -m64 -I./binutils64/bin/include -I./binutils64/binutils-$(BINUTILS_VER)/include
 	rm -Rf ./binutils64/libbfd && mkdir ./binutils64/libbfd && cd ./binutils64/libbfd && ar x ./../bin/lib/libbfd.a
@@ -47,7 +52,6 @@ bfds32.a: bfd_symbolizer.c bfd_symbolizer.h ./binutils32/bin/lib/libbfd.a
 	cd ./binutils32/binutils-$(BINUTILS_VER) && make install
 
 ./binutils-$(BINUTILS_VER).tar.bz2:
-	sudo apt-get install lib32z1-dev
 	wget http://ftp.gnu.org/gnu/binutils/binutils-$(BINUTILS_VER).tar.bz2
 
 test64: bfds64.a bfd_symbolizer.h test.cc test_dyn.cc test_dyn2.cc
@@ -67,5 +71,3 @@ clean:
 	rm -f test64
 	rm -f *.so
 	rm -f *.o
-
-
