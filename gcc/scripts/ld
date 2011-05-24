@@ -10,8 +10,10 @@ undefined() {
 
 if [ "$USE_RELITE" == "" ]
 then
+  echo /usr/bin/ld "$@"
   /usr/bin/ld "$@"
 else
+  GCCTSAN_GCC_PATH="/home/dvyukov/gcc-dehydra/installed"
   ARGS=""
   ARGS_MODIFIED=""
   INSERTED=""
@@ -19,6 +21,13 @@ else
   M32=""
   source /home/dvyukov/tsan/llvm/scripts/link_config.txt
 
+  ARGS+=" -L$GCCTSAN_GCC_PATH/lib32"
+  ARGS_MODIFIED+=" -L$GCCTSAN_GCC_PATH/lib32"
+
+  #if [ "$GCCTSAN_BFD_LIB" == "" ]; then
+  #  GCCTSAN_BFD_LIB="bfd"
+  #fi
+  
   until [ -z "$1" ]
   do
     if [ "$1" == "-shared" ]
