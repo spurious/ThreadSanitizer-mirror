@@ -1,4 +1,9 @@
-VER=4.5.3
+ifeq ($(GCC_VER), )
+	VER=4.5.3
+else
+	VER=$(GCC_VER)
+endif
+
 OBJS=relite.o relite_pass.o relite_ignore.o common_util.o ignore.o ts_util.o
 INCLUDE_DIRS=-I../../dynamic_annotations -I../../tsan -I../../third_party/gcc-$(VER)/install/lib/gcc/x86_64-unknown-linux-gnu/$(VER)/plugin/include
 FLAGS=$(INCLUDE_DIRS) -fPIC -Wall
@@ -12,11 +17,11 @@ else
 endif
 
 all: $(OBJS)
-	 $(CXX) $(OBJS) -shared -o librelite-$(VER).so
+	 $(CXX) $(OBJS) -shared -o librelite_$(VER).so
 
 %.o: ../../tsan/%.cc
 	$(CXX) $(CXXFLAGS) $< -c
 
 clean:
 	rm -f *.o
-	rm -f librelite-$(VER).so
+	rm -f librelite_$(VER).so
