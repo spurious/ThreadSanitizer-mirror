@@ -4,7 +4,7 @@ ifeq ($(BINUTILS_VER), )
   BINUTILS_VER=2.21
 endif
 
-ifeq ($(DEBUG), )
+ifeq ($(BFDS_DEBUG), )
   CFLAGS+=-O3 -DNDEBUG
 else
   CFLAGS+=-g3 -D_DEBUG
