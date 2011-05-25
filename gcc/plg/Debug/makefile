@@ -44,7 +44,7 @@ all: librelite.so
 librelite.so: $(OBJS) $(USER_OBJS)
 	@echo 'Building target: $@'
 	@echo 'Invoking: GCC C++ Linker'
-	g++ -shared -o"librelite.so" $(OBJS) $(USER_OBJS) $(LIBS)
+	g++ -shared -o "librelite.so" $(OBJS) $(USER_OBJS) $(LIBS)
 	@echo 'Finished building target: $@'
 	@echo ' '
 

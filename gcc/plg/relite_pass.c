@@ -20,7 +20,6 @@
 #include <function.h>
 #include <tree-flow.h>
 #include <tree-pass.h>
-//#include <domwalk.h>
 #include <cfghooks.h>
 #include <cp/cp-tree.h>
 #include <c-common.h>
@@ -52,24 +51,6 @@ static void             dbg                 (relite_context_t* ctx,
   vprintf(format, argptr);
   va_end(argptr);
   printf("\n");
-}
-
-
-static gimple           build_label         (location_t loc, tree* label_ptr) {
-  // Builds unique label gimple
-
-  static unsigned label_seq = 0;
-  char label_name_buf [32];
-  sprintf(label_name_buf, "relite_label_%u", label_seq++);
-  tree pc_label_id = get_identifier(label_name_buf);
-  tree pc_label = build_decl(loc, LABEL_DECL, pc_label_id, void_type_node);
-  DECL_CONTEXT(pc_label) = current_function_decl;
-  DECL_MODE(pc_label) = VOIDmode;
-  C_DECLARED_LABEL_FLAG(pc_label) = 0;
-  DECL_SOURCE_LOCATION(pc_label) = loc;
-  SET_IDENTIFIER_LABEL_VALUE(pc_label_id, pc_label);
-  *label_ptr = pc_label;
-  return gimple_build_label(pc_label);
 }
 
 
@@ -110,6 +91,27 @@ static void             build_rec_ignore_op (relite_context_t* ctx,
 }
 
 
+static void             build_stack_assign  (struct relite_context_t* ctx,
+                                             gimple_seq* seq) {
+  // Build the following gimple sequence:
+  // ShadowStack[-1] = __builtin_return_address(0);
+
+  tree pc_addr = build_call_expr(ctx->rtl_retaddr, 1, integer_zero_node);
+
+  tree op_size = TYPE_SIZE(ptr_type_node);
+  double_int op_size_cst = tree_to_double_int(op_size);
+  unsigned size_val = op_size_cst.low / __CHAR_BIT__;
+  op_size = build_int_cst_wide(long_unsigned_type_node, size_val, 0);
+  tree op_expr = build2(MINUS_EXPR, long_unsigned_type_node,
+                        ctx->rtl_stack, op_size);
+
+  tree stack_op = build1(
+      INDIRECT_REF, ptr_type_node, op_expr);
+  tree assign = build2(MODIFY_EXPR, ptr_type_node, stack_op, pc_addr);
+  force_gimple_operand(assign, seq, true, NULL_TREE);
+}
+
+
 static void             instr_func          (struct relite_context_t* ctx,
                                              gimple_seq* pre,
                                              gimple_seq* post) {
@@ -117,6 +119,7 @@ static void             instr_func          (struct relite_context_t* ctx,
   if (ctx->func_calls == 0 && ctx->func_mops == 0)
     return;
 
+  build_stack_assign(ctx, pre);
   build_stack_op(ctx, pre, PLUS_EXPR);
   build_stack_op(ctx, post, MINUS_EXPR);
 
@@ -133,48 +136,21 @@ static void             instr_mop           (struct relite_context_t* ctx,
                                              int is_store,
                                              int is_sblock,
                                              gimple_seq* gseq) {
-  gcc_assert(gseq != 0 && *gseq == 0);
-  gcc_assert(is_gimple_addressable(expr));
   // Builds the following gimple sequence:
   // tsan_rtl_mop(&expr, (is_sblock | (is_store << 1) | ((sizeof(expr)-1) << 2)
 
-  /*
-  tree expr_ptr = build_addr(expr, current_function_decl);
-  tree addr_expr = force_gimple_operand(expr_ptr, post_gseq, true, NULL_TREE);
-
-  tree expr_type = TREE_TYPE(expr);
-  while (TREE_CODE(expr_type) == ARRAY_TYPE)
-    expr_type = TREE_TYPE(expr_type);
-  tree expr_size = TYPE_SIZE(expr_type);
-  double_int size = tree_to_double_int(expr_size);
-  gcc_assert(size.high == 0 && size.low != 0);
-  if (size.low > 128)
-    size.low = 128;
-  size.low = (size.low / 8) - 1;
-  unsigned flags = ((!!is_sblock << 0) + (!!is_store << 1) + (size.low << 2));
-  tree flags_expr = build_int_cst(unsigned_type_node, flags);
-
-  gimple_seq flags_seq = 0;
-  flags_expr = force_gimple_operand(flags_expr, &flags_seq, true, NULL_TREE);
-  gimple_seq_add_seq(post_gseq, flags_seq);
-
-  gimple collect = gimple_build_call(
-      ctx->rtl_mop, 2, addr_expr, flags_expr);
-
-  gimple_seq_add_stmt(post_gseq, collect);
-  */
+  gcc_assert(gseq != 0 && *gseq == 0);
+  gcc_assert(is_gimple_addressable(expr));
 
   tree addr_expr = build_addr(expr, current_function_decl);
-  //addr_expr = build1(SAVE_EXPR, ptr_type_node, addr_expr);
-
   tree expr_type = TREE_TYPE(expr);
   //TODO(dvyukov): try to remove that WTF, and see if compiler crashes w/o that
   while (TREE_CODE(expr_type) == ARRAY_TYPE)
     expr_type = TREE_TYPE(expr_type);
   tree expr_size = TYPE_SIZE(expr_type);
-//!!! use:
-//#define TREE_INT_CST_LOW(NODE) (TREE_INT_CST (NODE).low)
-//#define TREE_INT_CST_HIGH(NODE) (TREE_INT_CST (NODE).high)
+  //!!! use:
+  //#define TREE_INT_CST_LOW(NODE) (TREE_INT_CST (NODE).low)
+  //#define TREE_INT_CST_HIGH(NODE) (TREE_INT_CST (NODE).high)
   double_int size = tree_to_double_int(expr_size);
   gcc_assert(size.high == 0 && size.low != 0);
   size.low = (size.low / __CHAR_BIT__);
@@ -214,7 +190,6 @@ static void             instr_vptr_store    (struct relite_context_t* ctx,
   unsigned flags = ((!!is_sblock << 0) + (size.low << 2));
   tree flags_expr = build_int_cst(unsigned_type_node, flags);
 
-  //tree this_expr = build_c_cast(0, ptr_type_node, expr);
   tree is_store_expr = build2(NE_EXPR, integer_type_node,
                               build_c_cast(0, size_type_node, expr),
                               build_c_cast(0, size_type_node, rhs));
@@ -222,9 +197,6 @@ static void             instr_vptr_store    (struct relite_context_t* ctx,
                               is_store_expr, integer_one_node);
   flags_expr = build2(BIT_IOR_EXPR, integer_type_node,
                               is_store_expr, flags_expr);
-
-  //tree this_expr = build_c_cast(0, ptr_type_node, expr);
-  //flags_expr = build2(EQ_EXPR, integer_type_node, this_expr, rhs);
 
   gimple_seq flags_seq = 0;
   flags_expr = force_gimple_operand(flags_expr, &flags_seq, true, NULL_TREE);
@@ -234,40 +206,6 @@ static void             instr_vptr_store    (struct relite_context_t* ctx,
       ctx->rtl_mop, 2, addr_expr, flags_expr);
 
   gimple_seq_add_stmt(gseq, collect);
-}
-
-
-static void             instr_call          (struct relite_context_t* ctx,
-                                             tree func_decl,
-                                             location_t loc,
-                                             gimple_seq* gseq) {
-  // Build the following gimple sequence:
-  // relite_unique_label:
-  // ShadowStack[-1] = &&relite_unique_label;
-
-  if (func_decl != 0 && DECL_IS_BUILTIN(func_decl))
-    return;
-
-  tree pc_label = 0;
-  gimple pc_gimple = build_label(loc, &pc_label);
-  gimple_seq_add_stmt(gseq, pc_gimple);
-
-  tree pc_addr = build1(ADDR_EXPR, ptr_type_node, pc_label);
-  gimple_seq seq = 0;
-  pc_addr = force_gimple_operand(pc_addr, &seq, true, NULL_TREE);
-  gimple_seq_add_seq(gseq, seq);
-
-  tree op_size = TYPE_SIZE(ptr_type_node);
-  double_int op_size_cst = tree_to_double_int(op_size);
-  unsigned size_val = op_size_cst.low / __CHAR_BIT__;
-  op_size = build_int_cst_wide(long_unsigned_type_node, size_val, 0);
-  tree op_expr = build2(MINUS_EXPR, long_unsigned_type_node,
-                        ctx->rtl_stack, op_size);
-
-  tree stack_op = build1(
-      INDIRECT_REF, ptr_type_node, op_expr);
-  gimple assign = gimple_build_assign(stack_op, pc_addr);
-  gimple_seq_add_stmt(gseq, assign);
 }
 
 
@@ -410,23 +348,6 @@ static void             dbg_dump_mop        (relite_context_t* ctx,
       (reason == 0 ? "INSTRUMENTED" : "IGNORED"),
       reason ?: "");
 }
-
-
-/*
-static void             dump_instr_seq      (relite_context_t* ctx,
-                                             char const* what,
-                                             gimple_seq* seq,
-                                             location_t loc) {
-  expanded_location eloc = expand_location(loc);
-  dbg(ctx, "inserting %s at %s:%d:%d gimple seq:",
-      what, eloc.file, eloc.line, eloc.column);
-  gimple_seq_node n = gimple_seq_first(*seq);
-  for (; n != 0; n = n->next) {
-    enum gimple_code gc = gimple_code(n->stmt);
-    dbg(ctx, "  gimple %s", gimple_code_name[gc]);
-  }
-}
-*/
 
 
 static void             set_location        (gimple_seq seq,
@@ -572,12 +493,10 @@ static void             instrument_mop      (relite_context_t*      ctx,
       && TREE_STATIC(expr) == 0) {
     // the var does not live in memory -> no possibility of races
     reason = "non-addressable";
-    /*
-  } else if (TREE_CODE(TREE_TYPE(expr)) == RECORD_TYPE) {
-    // why don't I instrument records?.. perhaps it crashes compilation,
-    // and should be handled more carefully
-    reason = "record type";
-    */
+//  } else if (TREE_CODE(TREE_TYPE(expr)) == RECORD_TYPE) {
+//    // why don't I instrument records?.. perhaps it crashes compilation,
+//    // and should be handled more carefully
+//    reason = "record type";
   } else if (tcode == CONSTRUCTOR) {
     // as of now crashes compilation
     //TODO(dvyukov): handle it correctly
@@ -667,11 +586,6 @@ static void             instrument_mop      (relite_context_t*      ctx,
     instr_vptr_store(ctx, expr, dtor_vptr_expr, loc,
                           is_sblock, &instr_seq);
   assert(instr_seq != 0);
-  /*
-  dump_instr_seq(ctx,
-                 (is_store ? "after store" : "after load"),
-                 &instr_seq, loc);
-  */
   set_location(instr_seq, loc);
   if (is_gimple_call(stmt) && is_store == 1)
     gsi_insert_seq_after(gsi, instr_seq, GSI_NEW_STMT);
@@ -717,14 +631,19 @@ static char const*      format_fn_name      (tree fndecl) {
 static void             handle_gimple       (relite_context_t* ctx,
                                              gimple_stmt_iterator* gsi,
                                              bb_data_t* bbd) {
-  ctx->stat_gimple += 1;
   gimple stmt = gsi_stmt(*gsi);
+  enum gimple_code const gcode = gimple_code(stmt);
+  if (gcode >= LAST_AND_UNUSED_GIMPLE_CODE) {
+    dbg(ctx, "UNKNOWN GIMPLE with code %u", (unsigned)gcode);
+    return;
+  }
+
+  ctx->stat_gimple += 1;
   location_t loc = gimple_location(stmt);
   expanded_location eloc = expand_location(loc);
   dbg(ctx, "%s:%d:%d: processing %s",
       eloc.file, eloc.line, eloc.column, gimple_code_name[gimple_code(stmt)]);
 
-  enum gimple_code const gcode = gimple_code(stmt);
   switch (gcode) {
     //TODO(dvyukov): handle GIMPLE_COND
     case GIMPLE_CALL: {
@@ -740,14 +659,6 @@ static void             handle_gimple       (relite_context_t* ctx,
 
       tree fndecl = gimple_call_fndecl(stmt);
       gcc_assert(strcmp(decl_name(fndecl), "tsan_rtl_mop") != 0);
-      gimple_seq pre_call_gseq = 0;
-      instr_call(ctx, fndecl, loc, &pre_call_gseq);
-      if (pre_call_gseq != 0) {
-        ctx->func_calls += 1;
-        //dump_instr_seq(ctx, "before call", &pre_call_gseq, loc);
-        set_location(pre_call_gseq, loc);
-        gsi_insert_seq_before(gsi, pre_call_gseq, GSI_SAME_STMT);
-      }
 
       // Handle assignment lhs as store
       tree lhs = gimple_call_lhs(stmt);
@@ -825,6 +736,22 @@ static void             handle_gimple       (relite_context_t* ctx,
 }
 
 
+static void             check_func          (relite_context_t* ctx) {
+#ifdef _DEBUG
+  basic_block bb = 0;
+  FOR_EACH_BB(bb) {
+    gimple_stmt_iterator gsi = gsi_start_bb(bb);
+    for (; !gsi_end_p(gsi); gsi_next(&gsi)) {
+      gimple stmt = gsi_stmt(gsi);
+      if (gimple_code(stmt) >= LAST_AND_UNUSED_GIMPLE_CODE) {
+        gcc_assert(!"unknown gimple in function");
+      }
+    }
+  }
+#endif
+}
+
+
 static void             instrument_bblock   (relite_context_t* ctx,
                                              bb_data_t* bbd,
                                              basic_block bb) {
@@ -836,6 +763,7 @@ static void             instrument_bblock   (relite_context_t* ctx,
     gimple_stmt_iterator gsinext = gsi;
     gsi_next(&gsinext);
     handle_gimple(ctx, &gsi, bbd);
+    check_func(ctx);
     gsi = gsinext;
   }
 }
@@ -1026,6 +954,9 @@ void                    relite_prepass      (relite_context_t* ctx) {
   ctx->rtl_mop = lookup_name(get_identifier("tsan_rtl_mop"));
   if (ctx->rtl_mop == 0)
     printf("relite: can't find tsan_rtl_mop() rtl decl\n"), exit(1);
+  ctx->rtl_retaddr = lookup_name(get_identifier("__builtin_return_address"));
+  if (ctx->rtl_retaddr == 0)
+    printf("relite: can't find __builtin_return_address() rtl decl\n"), exit(1);
 
   relite_ignore_init(ctx->opt_ignore);
 

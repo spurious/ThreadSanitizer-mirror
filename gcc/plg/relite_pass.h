@@ -34,6 +34,7 @@ typedef struct relite_context_t {
   tree                  rtl_stack;  // thread local shadow stack
   tree                  rtl_ignore; // thread local recursive ignore
   tree                  rtl_mop;    // mop handling function
+  tree                  rtl_retaddr; // builtin __builtin_return_address
   int                   ignore_file;
 
   int                   func_calls;
