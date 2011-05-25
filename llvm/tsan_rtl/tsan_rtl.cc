@@ -2498,7 +2498,7 @@ ssize_t __wrap_recvmsg(int sockfd, struct msghdr *msg, int flags) {
 // }}}
 
 extern "C"
-int __wrap_lockf64(int fd, int cmd, off_t len) {
+int __wrap_lockf64(int fd, int cmd, off64_t len) {
   // TODO(glider): support len != 0
   if (IN_RTL || len) return __real_lockf64(fd, cmd, len);
   DECLARE_TID_AND_PC();

@@ -118,7 +118,7 @@ int __real_posix_memalign(void **memptr, size_t alignment, size_t size);
 
 ssize_t __real_write(int fd, const void *buf, size_t count);
 ssize_t __real_read(int fd, const void *buf, size_t count);
-int __real_lockf64(int fd, int cmd, off_t len);
+int __real_lockf64(int fd, int cmd, off64_t len);
 
 ssize_t __real_send(int sockfd, const void *buf, size_t len, int flags);
 ssize_t __real_recv(int sockfd, void *buf, size_t len, int flags);
@@ -247,7 +247,7 @@ int __wrap_posix_memalign(void **memptr, size_t alignment, size_t size);
 
 ssize_t __wrap_write(int fd, const void *buf, size_t count);
 ssize_t __wrap_read(int fd, const void *buf, size_t count);
-int __wrap_lockf64(int fd, int cmd, off_t len);
+int __wrap_lockf64(int fd, int cmd, off64_t len);
 
 ssize_t __wrap_send(int sockfd, const void *buf, size_t len, int flags);
 ssize_t __wrap_recv(int sockfd, void *buf, size_t len, int flags);
