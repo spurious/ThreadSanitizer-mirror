@@ -5,12 +5,12 @@ function printf() {
 }
 
 if [ "$GCCTSAN_GCC_DIR" == "" ]; then
-  echo set GCCTSAN_GCC_DIR before using the script (export GCCTSAN_GCC_DIR=/home/mrx/gcc-4.5.3/install)
+  echo "set GCCTSAN_GCC_DIR before using the script (export GCCTSAN_GCC_DIR=/home/mrx/gcc-4.5.3/install)"
   exit 1
 fi
 
 if [ "$GCCTSAN_GCC_VER" == "" ]; then
-  echo set GCCTSAN_GCC_VER before using the script (export GCCTSAN_GCC_VER=4.5.2)
+  echo "set GCCTSAN_GCC_VER before using the script (export GCCTSAN_GCC_VER=4.5.2)"
   exit 1
 fi
 
