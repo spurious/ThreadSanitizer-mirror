@@ -67,6 +67,22 @@ int   bfds_symbolize    (void*                  addr,
                          int*                   symbol_offset);
 
 
+/** Helpers for dynamic linking.
+ */
+#define BFDS_SYMBOLIZE_FUNC "bfds_symbolize"
+typedef int (*bfds_symbolize_t)
+                        (void*                  addr,
+                         bfds_opts_e            opts,
+                         char*                  symbol,
+                         int                    symbol_size,
+                         char*                  module,
+                         int                    module_size,
+                         char*                  filename,
+                         int                    filename_size,
+                         int*                   source_line,
+                         int*                   symbol_offset);
+
+
 #ifdef __cplusplus
 }
 #endif
