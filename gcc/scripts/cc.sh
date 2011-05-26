@@ -1,8 +1,24 @@
 #!/bin/bash
-echo RELITE: cc.sh "$@"
+function printf() {
+  #echo $@
+  printf_unused=""
+}
 
-VER=4.5.3
-GCC=`dirname $0`/../../third_party/gcc-$VER/install/bin/$1
+if [ "$GCCTSAN_GCC_DIR" == "" ]; then
+  echo set GCCTSAN_GCC_DIR before using the script (export GCCTSAN_GCC_DIR=/home/mrx/gcc-4.5.3/install)
+  exit 1
+fi
+
+if [ "$GCCTSAN_GCC_VER" == "" ]; then
+  echo set GCCTSAN_GCC_VER before using the script (export GCCTSAN_GCC_VER=4.5.2)
+  exit 1
+fi
+
+printf RELITE: cc.sh "$@"
+
+VER=$GCCTSAN_GCC_VER
+GCC=$GCCTSAN_GCC_DIR/bin/$1
+LIB_PATH=$GCCTSAN_GCC_DIR/lib32
 LNK=/usr/bin/$1
 RTH=`dirname $0`/../plg/relite_rt.h
 PLG_NAME=librelite_$VER
@@ -20,16 +36,17 @@ undefined() {
   ARGS_LD+=""
 }
 
-ARGS=""
-ARGS_CC=""
 ARGS_LD=""
 LIB_INSERTED=""
 SHARED=""
+PREPROCESS=""
 M32=""
 LINK=""
+ASM=""
 
 source $LNK_SCRIPT
 
+function parse_args() {
 until [ -z "$1" ]; do
   if [ "$1" == "-shared" ]; then
     SHARED="1"
@@ -37,17 +54,27 @@ until [ -z "$1" ]; do
   if [ "$1" == "-m32" ]; then
     M32="1"
   fi
-  if [ "$1" == "-lpthread" ]; then
-    LINK="1"
+  if [ "$1" == "-E" ]; then
+    PREPROCESS="1"
   fi
-  if [ "$1" == "-lrt" ]; then
-    LINK="1"
-  fi
-  if [ "$1" == "start-group" ]; then
-    LINK="1"
+  if [ "${1%.S}.S" == "$1" ]; then
+    ASM="1"
   fi
   if [ "${1%.a}.a" == "$1" ]; then
     LINK="1"
+  fi
+  if [ "${1%.o}.o" == "$1" ]; then
+    if [ `expr substr "$1" 1 2` != "-o" ]; then
+      if [ "$PREV_O" == "" ]; then
+        LINK="1"
+      fi
+    fi
+  fi
+
+  if [ "$1" == "-o" ]; then
+    PREV_O="1"
+  else 
+    PREV_O=""
   fi
 
   if [ `expr substr "$1" 1 2` == "-l" ]; then
@@ -60,8 +87,7 @@ until [ -z "$1" ]; do
       fi
     fi
   fi
-  ARGS+=" $1"
-  ARGS_CC+=" $1"
+
   ARGS_LD+=" $1"
   shift
 done
@@ -73,20 +99,33 @@ if [ "$LIB_INSERTED" == "" ]; then
     ARGS_LD+=" $RTL64 -lrt -lpthread"
   fi
 fi
+}
 
-if [ "$LINK" == "" ]; then
-  echo RELITE: $GCC -DDYNAMIC_ANNOTATIONS_WANT_ATTRIBUTE_WEAK -DDYNAMIC_ANNOTATIONS_PREFIX=LLVM -fplugin=$PLG -fplugin-arg-$PLG_NAME-ignore="$RELITE_IGNORE" -include$RTH $GCCTSAN_ARGS $ARGS_CC -O1 -fno-inline -fno-optimize-sibling-calls -fno-exceptions -g
-  $GCC -DDYNAMIC_ANNOTATIONS_WANT_ATTRIBUTE_WEAK -DDYNAMIC_ANNOTATIONS_PREFIX=LLVM -fplugin=$PLG -fplugin-arg-$PLG_NAME-ignore="$RELITE_IGNORE" -include$RTH $GCCTSAN_ARGS $ARGS_CC -O1 -fno-inline -fno-optimize-sibling-calls -fno-exceptions -g
-else
+parse_args "$@"
+
+printf SHARED="$SHARED" PREPROCESS="$PREPROCESS" M32="$M32" LINK="$LINK" ASM="$ASM"
+if [ "$LINK" != "" ]; then
   if [ "$SHARED" == "" ]; then
-    echo RELITE: $LNK $ARGS_LD
-    $LNK $ARGS_LD
+    printf RELITE: $LNK $ARGS_LD -L$LIB_PATH
+    $LNK $ARGS_LD -L$LIB_PATH
   else
-    echo RELITE: $LNK $ARGS
-    $LNK $ARGS
+    printf RELITE: $LNK "$@" -L$LIB_PATH
+    $LNK "$@" -L$LIB_PATH
+  fi
+else
+  if [ "$ASM" != "" ]; then
+    printf RELITE: $LNK "$@"
+    $LNK "$@"
+  else
+    if [ "$PREPROCESS" != "" ]; then
+      printf RELITE: $LNK "$@"
+      $LNK "$@"
+    else
+      printf RELITE: $GCC -DDYNAMIC_ANNOTATIONS_WANT_ATTRIBUTE_WEAK -DDYNAMIC_ANNOTATIONS_PREFIX=LLVM -fplugin=$PLG -fplugin-arg-$PLG_NAME-ignore="$RELITE_IGNORE" -include$RTH $GCCTSAN_ARGS "$@" -O1 -fno-inline -fno-optimize-sibling-calls -fno-exceptions -g -fvisibility=default -w
+      $GCC -DDYNAMIC_ANNOTATIONS_WANT_ATTRIBUTE_WEAK -DDYNAMIC_ANNOTATIONS_PREFIX=LLVM -fplugin=$PLG -fplugin-arg-$PLG_NAME-ignore="$RELITE_IGNORE" -include$RTH $GCCTSAN_ARGS "$@" -O1 -fno-inline -fno-optimize-sibling-calls -fno-exceptions -g -fvisibility=default -w
+    fi
   fi
 fi
-
 
 
 
