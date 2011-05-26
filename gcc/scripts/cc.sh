@@ -18,7 +18,8 @@ printf cc.sh "$@"
 
 VER=$GCCTSAN_GCC_VER
 GCC=$GCCTSAN_GCC_DIR/bin/$1
-LIB_PATH=$GCCTSAN_GCC_DIR/lib32
+LIB32_PATH=$GCCTSAN_GCC_DIR/lib32
+LIB64_PATH=$GCCTSAN_GCC_DIR/lib64
 LNK=/usr/bin/$1
 RTH=`dirname $0`/../plg/relite_rt.h
 PLG_NAME=librelite_$VER
@@ -99,6 +100,12 @@ if [ "$LIB_INSERTED" == "" ]; then
     ARGS_LD+=" $RTL64 -lrt -lpthread"
   fi
 fi
+
+if [ "$M32" == "1" ]; then
+  ARGS_LD+=" -L$LIB32_PATH"
+else
+  ARGS_LD+=" -L$LIB64_PATH"
+fi
 }
 
 parse_args "$@"
@@ -106,8 +113,8 @@ parse_args "$@"
 printf SHARED="$SHARED" PREPROCESS="$PREPROCESS" M32="$M32" LINK="$LINK" ASM="$ASM"
 if [ "$LINK" != "" ]; then
   if [ "$SHARED" == "" ]; then
-    printf $LNK $ARGS_LD -L$LIB_PATH
-    $LNK $ARGS_LD -L$LIB_PATH
+    printf $LNK $ARGS_LD
+    $LNK $ARGS_LD
   else
     printf $LNK "$@" -L$LIB_PATH
     $LNK "$@" -L$LIB_PATH
