@@ -116,8 +116,8 @@ if [ "$LINK" != "" ]; then
     printf $LNK $ARGS_LD
     $LNK $ARGS_LD
   else
-    printf $LNK "$@" -L$LIB_PATH
-    $LNK "$@" -L$LIB_PATH
+    printf $LNK "$@" -L$LIB32_PATH -L$LIB64_PATH
+    $LNK "$@" -L$LIB32_PATH -L$LIB64_PATH
   fi
 else
   if [ "$ASM" != "" ]; then
