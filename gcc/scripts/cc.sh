@@ -1,7 +1,7 @@
 #!/bin/bash
 function printf() {
-  #echo $@
   printf_unused=""
+  #echo GCCTSAN: $@
 }
 
 if [ "$GCCTSAN_GCC_DIR" == "" ]; then
@@ -14,7 +14,7 @@ if [ "$GCCTSAN_GCC_VER" == "" ]; then
   exit 1
 fi
 
-printf RELITE: cc.sh "$@"
+printf cc.sh "$@"
 
 VER=$GCCTSAN_GCC_VER
 GCC=$GCCTSAN_GCC_DIR/bin/$1
@@ -106,23 +106,23 @@ parse_args "$@"
 printf SHARED="$SHARED" PREPROCESS="$PREPROCESS" M32="$M32" LINK="$LINK" ASM="$ASM"
 if [ "$LINK" != "" ]; then
   if [ "$SHARED" == "" ]; then
-    printf RELITE: $LNK $ARGS_LD -L$LIB_PATH
+    printf $LNK $ARGS_LD -L$LIB_PATH
     $LNK $ARGS_LD -L$LIB_PATH
   else
-    printf RELITE: $LNK "$@" -L$LIB_PATH
+    printf $LNK "$@" -L$LIB_PATH
     $LNK "$@" -L$LIB_PATH
   fi
 else
   if [ "$ASM" != "" ]; then
-    printf RELITE: $LNK "$@"
+    printf $LNK "$@"
     $LNK "$@"
   else
     if [ "$PREPROCESS" != "" ]; then
-      printf RELITE: $LNK "$@"
+      printf $LNK "$@"
       $LNK "$@"
     else
-      printf RELITE: $GCC -DDYNAMIC_ANNOTATIONS_WANT_ATTRIBUTE_WEAK -DDYNAMIC_ANNOTATIONS_PREFIX=LLVM -fplugin=$PLG -fplugin-arg-$PLG_NAME-ignore="$RELITE_IGNORE" -include$RTH $GCCTSAN_ARGS "$@" -O1 -fno-inline -fno-optimize-sibling-calls -fno-exceptions -g -fvisibility=default -w
-      $GCC -DDYNAMIC_ANNOTATIONS_WANT_ATTRIBUTE_WEAK -DDYNAMIC_ANNOTATIONS_PREFIX=LLVM -fplugin=$PLG -fplugin-arg-$PLG_NAME-ignore="$RELITE_IGNORE" -include$RTH $GCCTSAN_ARGS "$@" -O1 -fno-inline -fno-optimize-sibling-calls -fno-exceptions -g -fvisibility=default -w
+      printf $GCC -DDYNAMIC_ANNOTATIONS_WANT_ATTRIBUTE_WEAK -DDYNAMIC_ANNOTATIONS_PREFIX=LLVM -fplugin=$PLG -fplugin-arg-$PLG_NAME-ignore="$GCCTSAN_IGNORE" -include$RTH $GCCTSAN_ARGS "$@" -O1 -fno-inline -fno-optimize-sibling-calls -fno-exceptions -g -fvisibility=default -w
+      $GCC -DDYNAMIC_ANNOTATIONS_WANT_ATTRIBUTE_WEAK -DDYNAMIC_ANNOTATIONS_PREFIX=LLVM -fplugin=$PLG -fplugin-arg-$PLG_NAME-ignore="$GCCTSAN_IGNORE" -include$RTH $GCCTSAN_ARGS "$@" -O1 -fno-inline -fno-optimize-sibling-calls -fno-exceptions -g -fvisibility=default -w
     fi
   fi
 fi
