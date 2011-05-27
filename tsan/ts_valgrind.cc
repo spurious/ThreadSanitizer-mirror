@@ -717,9 +717,13 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
     case TSREQ_PTH_API_ERROR:
       break;
     case TSREQ_PTHREAD_RWLOCK_CREATE_POST:
+      if (ignoring_sync(vg_tid, args[1]))
+        break;
       Put(LOCK_CREATE, ts_tid, pc, /*lock=*/args[1], 0);
       break;
     case TSREQ_PTHREAD_RWLOCK_DESTROY_PRE:
+      if (ignoring_sync(vg_tid, args[1]))
+        break;
       Put(LOCK_DESTROY, ts_tid, pc, /*lock=*/args[1], 0);
       break;
     case TSREQ_PTHREAD_RWLOCK_LOCK_POST:
