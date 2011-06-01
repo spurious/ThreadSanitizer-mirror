@@ -306,6 +306,11 @@ int RunningOnValgrind(void) {
   return 0;
 }
 
+// This function is used to force linking of the object file to an end program
+// by means of -Wl,--undefined=dynamic_annotations_enforce_linking
+// compiler flag.
+extern "C" void dynamic_annotations_enforce_linking() {}
+
 // }}}
 
 #undef DYNAMIC_ANNOTATIONS_PREFIX
