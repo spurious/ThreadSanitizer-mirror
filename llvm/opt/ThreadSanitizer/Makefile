@@ -27,9 +27,10 @@ CXX=g++
 
 TSAN_PATH=../../../tsan
 OPT=-O2
+FLAGS=-DBUILD_TSAN_FOR_OLD_LLVM
 
 ThreadSanitizer.so:	ThreadSanitizer.cpp ThreadSanitizer.h ignore.o common_util.o
-	$(CXX) -c $(OPT) -I$(TSAN_PATH) -fPIC -g ThreadSanitizer.cpp -o ThreadSanitizer.o -D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS
+	$(CXX) -c $(OPT) -I$(TSAN_PATH) $(FLAGS) -fPIC -g ThreadSanitizer.cpp -o ThreadSanitizer.o -D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS
 	$(CXX) -shared -g ThreadSanitizer.o ignore.o common_util.o -o ThreadSanitizer.so
 
 ignore.o:	$(TSAN_PATH)/ignore.cc $(TSAN_PATH)/ignore.h

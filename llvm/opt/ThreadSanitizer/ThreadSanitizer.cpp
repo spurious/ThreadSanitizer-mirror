@@ -148,7 +148,7 @@ void Report(const char *format, ...) {
 namespace {
 
 // TsanOnlineInstrument implementation {{{1
-TsanOnlineInstrument::TsanOnlineInstrument() : ModulePass(&ID) {
+TsanOnlineInstrument::TsanOnlineInstrument() : ModulePass(ID) {
   if (TargetArch == "x86-64") {
     ArchSize = 64;
   } else {
@@ -1387,7 +1387,11 @@ DILocation TsanOnlineInstrument::getTopInlinedLocation(
   DILocation Loc(BI->getMetadata("dbg"));
   while (true) {
     DILocation Orig(Loc.getOrigLocation());
+#ifdef BUILD_TSAN_FOR_OLD_LLVM
     if (Orig.getNode() != NULL) {
+#else
+    if (Orig.Verify()) {
+#endif
       Loc = Orig;
     } else {
       break;
@@ -1458,7 +1462,12 @@ bool TsanOnlineInstrument::ignoreInlinedMop(BasicBlock::iterator &BI) {
   bool first = true;
   while (true) {
     DILocation OldLoc = Loc;
+#ifdef BUILD_TSAN_FOR_OLD_LLVM
     DISubprogram Sub = getDISubprogram(Loc.getScope().getNode());
+#else
+    const MDNode *scope = (Loc.getScope());
+    DISubprogram Sub = getDISubprogram(scope);
+#endif
     string symbol = Sub.getLinkageName();
     string filename = Sub.getFilename();
 #ifdef DEBUG_IGNORE_MOPS
@@ -1476,7 +1485,11 @@ bool TsanOnlineInstrument::ignoreInlinedMop(BasicBlock::iterator &BI) {
     }
     first = false;
     DILocation Orig(Loc.getOrigLocation());
+#ifdef BUILD_TSAN_FOR_OLD_LLVM
     if (Orig.getNode() != NULL) {
+#else
+    if (Orig.Verify()) {
+#endif
       Loc = Orig;
     } else {
       break;
