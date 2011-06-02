@@ -29,7 +29,7 @@ PASS_SO = SCRIPT_ROOT + '/../opt/ThreadSanitizer/ThreadSanitizer.so'
 DA_FLAGS=['-DDYNAMIC_ANNOTATIONS_WANT_ATTRIBUTE_WEAK',
           '-DRACECHECK_UNITTEST_WANT_ATTRIBUTE_WEAK',
           '-DDYNAMIC_ANNOTATIONS_PREFIX=LLVM',
-          '-DDYNAMIC_ANNOTATIONS_PROVIDE_RUNNING_ON_VALGRIND=1'
+          '-DDYNAMIC_ANNOTATIONS_PROVIDE_RUNNING_ON_VALGRIND=1',
           '-D__clang__']
 
 P32='x86'
@@ -251,7 +251,7 @@ def gcc(default_cc, fallback_cc):
       return
 
     # TODO(glider): additional opt passes.
-    opt_args = [OPT, '-load', PASS_SO, '-online', '-arch=' + XARCH[platform]]
+    opt_args = [OPT, '-load', PASS_SO, '-tsan', '-arch=' + XARCH[platform]]
     if TSAN_IGNORE:
       opt_args += ['-ignore=' + TSAN_IGNORE]
     if TSAN_OPT_ARGS:

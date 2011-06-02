@@ -2162,7 +2162,7 @@ void InstrumentationStats::printStats() {
 // }}}
 
 char TsanOnlineInstrument::ID = 0;
-RegisterPass<TsanOnlineInstrument> X("online",
+RegisterPass<TsanOnlineInstrument> X("tsan",
     "Compile-time instrumentation for runtime "
     "data race detection with ThreadSanitizer");
 
@@ -2170,7 +2170,7 @@ RegisterPass<TsanOnlineInstrument> X("online",
 // TODO(glider): detect the version somehow (LLVM_MINOR_VERSION didn't exist
 // before 2.8)
 #if 0
-INITIALIZE_PASS(TsanOnlineInstrument, "online",
+INITIALIZE_PASS(TsanOnlineInstrument, "tsan",
                 "Compile-time instrumentation for runtime "
                 "data race detection with ThreadSanitizer",
                 false, false);
