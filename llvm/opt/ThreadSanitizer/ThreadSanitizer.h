@@ -14,7 +14,7 @@
 #include <string>
 #include <vector>
 
-#include "../../../tsan/ignore.h"
+#include "ignore.h"
 
 namespace {
 

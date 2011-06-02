@@ -16,7 +16,7 @@
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Type.h"
 
-#include "../../../tsan/common_util.h"
+#include "common_util.h"
 
 #include <stdint.h>
 #include <stdio.h>
