@@ -92,6 +92,7 @@ struct InstrumentationStats {
 struct TsanOnlineInstrument : public llvm::ModulePass { // {{{1
   TsanOnlineInstrument();
   virtual bool runOnModule(llvm::Module &M);
+  virtual const char *getPassName() const;
   void runOnFunction(llvm::Module::iterator &F);
   void runOnTrace(Trace &trace, bool first_dtor_bb);
   void runOnBasicBlock(llvm::BasicBlock *BB,

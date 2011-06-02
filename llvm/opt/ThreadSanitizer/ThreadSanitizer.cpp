@@ -38,7 +38,7 @@ using namespace std;
 
 // Command-line flags. {{{1
 static cl::opt<string>
-    TargetArch("arch",
+    TargetArch("target-arch",
                cl::desc("Target arch: x86 or x64"));
 static cl::opt<string>
     IgnoreFile("ignore",
@@ -94,9 +94,9 @@ static cl::opt<bool>
         cl::init(true));
 
 static cl::opt<bool>
-    DoNothing("do-nothing",
-              cl::desc("Do not modify the code, exit immediately"),
-              cl::init(false));
+    EnableTsan("enable-tsan",
+               cl::desc("Enable the TSan instrumentation"),
+               cl::init(false));
 
 static cl::opt<bool>
     IgnoreMopsByOrigin("ignore-mops-by-origin",
@@ -122,6 +122,16 @@ static cl::opt<bool>
         cl::init(false));
 
 // }}}
+
+
+// Required by the ignore machinery.
+void Printf(const char *format, ...) {
+  va_list args;
+  va_start(args, format);
+  vfprintf(stderr, format, args);
+  fflush(stderr);
+  va_end(args);
+}
 
 // Required by OpenFileReadOnly in common_util.h
 void Report(const char *format, ...) {
@@ -785,7 +795,6 @@ void TsanOnlineInstrument::runOnFunction(Module::iterator &F) {
     ignore_recursively = true;
   }
 
-
   // Instrument routine calls and exits. Also update the shadow stack every time
   // we meet a call/invoke instruction, otherwise we'll get uninitialized frames
   // in the middle of the stack.
@@ -1009,16 +1018,21 @@ void TsanOnlineInstrument::setupRuntimeGlobals() {
                                       UIntPtr,
                                       UIntPtr, UIntPtr, PlatformInt, (Type*)0);
   cast<Function>(MemMoveFn)->setLinkage(Function::ExternalWeakLinkage);
-  const Type *Tys[] = { PlatformInt };
+  const Type *Tys[] = { UIntPtr, PlatformInt };
   MemSetIntrinsicFn = Intrinsic::getDeclaration(ThisModule,
                                                 Intrinsic::memset,
-                                                Tys, /*numTys*/1);
+                                                Tys, /*numTys*/2);
 
 }
 
 // virtual
+const char *TsanOnlineInstrument::getPassName() const {
+  return "ThreadSanitizer";
+}
+
+// virtual
 bool TsanOnlineInstrument::runOnModule(Module &M) {
-  if (DoNothing) return false;
+  if (!EnableTsan) return false;
   InstrumentedTraceCount = 0;
   ModuleFunctionCount = 0;
   ModuleMopCount = 0;
@@ -1097,7 +1111,6 @@ bool TsanOnlineInstrument::runOnModule(Module &M) {
       }
     }
   }
-
   for (Module::iterator F = M.begin(), E = M.end(); F != E; ++F) {
     runOnFunction(F);
   }
@@ -2162,9 +2175,21 @@ void InstrumentationStats::printStats() {
 // }}}
 
 char TsanOnlineInstrument::ID = 0;
+#ifdef BUILD_TSAN_FOR_OLD_LLVM
 RegisterPass<TsanOnlineInstrument> X("tsan",
     "Compile-time instrumentation for runtime "
     "data race detection with ThreadSanitizer");
+#else
+INITIALIZE_PASS(TsanOnlineInstrument, "tsan",
+                "Compile-time instrumentation for runtime "
+                "data race detection with ThreadSanitizer",
+                false, false)
+namespace llvm {
+ModulePass *createTsanOnlineInstrumentPass() {
+  return new TsanOnlineInstrument();
+}
+}
+#endif
 
 // Old-style (pre-2.7) pass initialization.
 // TODO(glider): detect the version somehow (LLVM_MINOR_VERSION didn't exist
