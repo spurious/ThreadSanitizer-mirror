@@ -230,7 +230,7 @@ void TsanOnlineInstrument::writeModuleDebugInfo(Module &M) {
     files[*it] = files_count;
     files_count++;
     files_size += (it->size() + 1);
-    for (int i = 0; i < it->size(); i++) {
+    for (size_t i = 0; i < it->size(); i++) {
       files_raw.push_back(ConstantInt::get(Int8, it->c_str()[i]));
     }
     files_raw.push_back(ConstantInt::get(Int8, 0));
@@ -243,7 +243,7 @@ void TsanOnlineInstrument::writeModuleDebugInfo(Module &M) {
     paths[*it] = paths_count;
     paths_count++;
     paths_size += (it->size() + 1);
-    for (int i = 0; i < it->size(); i++) {
+    for (size_t i = 0; i < it->size(); i++) {
       paths_raw.push_back(ConstantInt::get(Int8, it->c_str()[i]));
     }
     paths_raw.push_back(ConstantInt::get(Int8, 0));
@@ -256,7 +256,7 @@ void TsanOnlineInstrument::writeModuleDebugInfo(Module &M) {
     symbols[*it] = symbols_count;
     symbols_count++;
     symbols_size += (it->size() + 1);
-    for (int i = 0; i < it->size(); i++) {
+    for (size_t i = 0; i < it->size(); i++) {
       symbols_raw.push_back(ConstantInt::get(Int8, it->c_str()[i]));
     }
     symbols_raw.push_back(ConstantInt::get(Int8, 0));
@@ -575,7 +575,7 @@ TraceVector TsanOnlineInstrument::buildTraces(Function &F) {
   cachePredecessors(F);
   Trace *current_trace = new Trace;
   to_see.push_back(F.begin());
-  for (int i = 0; i < to_see.size(); ++i) {
+  for (size_t i = 0; i < to_see.size(); ++i) {
     BasicBlock *current_bb = to_see[i];
     if (!used_bbs.count(current_bb)) {
       assert(current_trace->blocks.size() == 0);
@@ -699,6 +699,7 @@ void TsanOnlineInstrument::insertRtnExit(BasicBlock::iterator &Before) {
   }
 }
 
+// TODO(glider): do we need this function?
 int TsanOnlineInstrument::numMopsInFunction(Module::iterator &F) {
   int result = 0;
   for (Function::iterator BB = F->begin(), E = F->end(); BB != E; ++BB) {
@@ -710,6 +711,7 @@ int TsanOnlineInstrument::numMopsInFunction(Module::iterator &F) {
       }
     }
   }
+  return result;
 }
 
 // TsanOnlineInstrument is a module pass, so this is just a helper function, not
@@ -757,7 +759,7 @@ void TsanOnlineInstrument::runOnFunction(Module::iterator &F) {
     // Build the traces. Note that every basic block should belong to some
     // trace, even if it doesn't contain any memory operations.
     TraceVector traces(buildTraces(*F));
-    for (int i = 0; i < traces.size(); ++i) {
+    for (size_t i = 0; i < traces.size(); ++i) {
       assert(traces[i]->exits.size());
       markMopsToInstrument(*traces[i]);
       num_mops_in_traces += traces[i]->num_mops;
@@ -773,7 +775,7 @@ void TsanOnlineInstrument::runOnFunction(Module::iterator &F) {
     // SkipFunctionsWithoutMops first.
 
     // Instrument the traces.
-    for (int i = 0; i < traces.size(); ++i) {
+    for (size_t i = 0; i < traces.size(); ++i) {
       assert(traces[i]->exits.size());
       runOnTrace(*(traces[i]), first_dtor_bb);
       first_dtor_bb = false;
@@ -1188,12 +1190,12 @@ void TsanOnlineInstrument::insertFlushCurrentCall(Trace &trace,
     // In the case of a trace containing a single memory operation we don't use
     // the TLEB at all, so we don't need to clean it up.
     //
-    //       literace > 0 ?
-    //          /    \
-    //         /      \
-    //        /        \
-    //       /          \
-    //   yes, flush  no, cleanup
+    //      literace > 0 ?
+    //      |            |
+    //      |            |
+    //      |            |
+    //      |            |
+    //  yes, flush    no, cleanup
     //       \          /
     //        \        /
     //         \      /
@@ -1648,7 +1650,7 @@ void TsanOnlineInstrument::markMopsToInstrument(Trace &trace) {
 bool TsanOnlineInstrument::makeTracePassport(Trace &trace) {
   Passport passport;
   bool isStore, isMop;
-  int size, src_size, dest_size;
+  int size;
   TraceNumMops = 0;
   FunctionMopCountOnTrace = FunctionMopCount + 1;
   for (BlockSet::iterator TI = trace.blocks.begin(), TE = trace.blocks.end();
@@ -1918,7 +1920,6 @@ void TsanOnlineInstrument::runOnBasicBlock(BasicBlock *BB,
        BI != BE;
        ++BI) {
     if (isaCallOrInvoke(BI)) {
-      llvm::Instruction &IN = *BI;
       // Calls should be instrumented regardless of |useTLEB|.
       instrumentCall(BI);
     }
