@@ -1010,13 +1010,17 @@ void TsanOnlineInstrument::setupRuntimeGlobals() {
 
   MemCpyFn =
       ThisModule->getOrInsertFunction("rtl_memcpy",
-                                      UIntPtr,
-                                      UIntPtr, UIntPtr, PlatformInt, (Type*)0);
+                                      Void,
+                                      UIntPtr, UIntPtr,
+                                      PlatformInt,
+                                      (Type*)0);
   cast<Function>(MemCpyFn)->setLinkage(Function::ExternalWeakLinkage);
   MemMoveFn =
       ThisModule->getOrInsertFunction("rtl_memmove",
-                                      UIntPtr,
-                                      UIntPtr, UIntPtr, PlatformInt, (Type*)0);
+                                      Void,
+                                      UIntPtr, UIntPtr,
+                                      PlatformInt,
+                                      (Type*)0);
   cast<Function>(MemMoveFn)->setLinkage(Function::ExternalWeakLinkage);
   const Type *Tys[] = { Int8Ptr, PlatformInt };
   MemSetIntrinsicFn = Intrinsic::getDeclaration(ThisModule,
@@ -1896,9 +1900,10 @@ void TsanOnlineInstrument::instrumentMemTransfer(BasicBlock::iterator &BI) {
   }
   arg[2] = IN.getLength();
   if (isa<MemCpyInst>(BI)) {
+    Instruction *NewMemCpy =
+        CallInst::Create(MemCpyFn, arg.begin(), arg.end(), "");
     ReplaceInstWithInst(BI->getParent()->getInstList(), BI,
-                      CallInst::Create(MemCpyFn, arg.begin(), arg.end(),
-                                         ""));
+                        NewMemCpy);
                       }
   if (isa<MemMoveInst>(BI)) {
     ReplaceInstWithInst(BI->getParent()->getInstList(), BI,
