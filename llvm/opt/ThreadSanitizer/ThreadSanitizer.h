@@ -164,7 +164,7 @@ struct TsanOnlineInstrument : public llvm::ModulePass { // {{{1
   const llvm::Type *Void;
   // Compound types.
   const llvm::StructType *MopType, *TraceInfoType, *BBTraceInfoType;
-  const llvm::PointerType *MopType64;
+  const llvm::IntegerType *MopType64;
   const llvm::StructType *LiteRaceCountersType;
   const llvm::ArrayType *LiteRaceStorageType, *LiteRaceStorageLineType;
   const llvm::PointerType *LiteRaceStoragePtrType;

@@ -868,7 +868,7 @@ void TsanOnlineInstrument::setupDataTypes() {
   // };
   //
   // BUT we use a single 64-bit number instead.
-  MopType64 = Type::getInt64PtrTy(*ThisModuleContext);
+  MopType64 = Type::getInt64Ty(*ThisModuleContext);
 
   MopArrayType = ArrayType::get(MopType64, kTLEBSize);
   LiteRaceCountersArrayType = ArrayType::get(Int32, kLiteRaceNumTids);
@@ -1724,12 +1724,12 @@ bool TsanOnlineInstrument::makeTracePassport(Trace &trace) {
         // instead of ThreadSanitizerHandleTrace. In this case we'll need to
         // set |create_sblock_| sometimes.
         Constant *mop_pc = getInstructionAddr(FunctionMopCount, BI,
-                                              PlatformInt);
+                                              MopType64);
         // Manually fill the union fields.
         // TODO(glider): a packed structure should be better.
         Constant *mop =
             ConstantExpr::getAdd(
-                ConstantInt::get(Int64,
+                ConstantInt::get(MopType64,
                     ((((mop_size_minus1 << 1) + mop_is_write_) << 1) +
                      mop_create_sblock_)  << 58),
                 mop_pc);
@@ -1743,12 +1743,12 @@ bool TsanOnlineInstrument::makeTracePassport(Trace &trace) {
       vector <Constant*> counters;
       counters.push_back(ConstantInt::get(Int32, 0));
       counters.push_back(ConstantInt::get(Int32, 0));
+      Constant *StorageLine = ConstantArray::get(LiteRaceStorageLineType,
+          vector<Constant*>(kLiteRaceStorageSize,
+                            ConstantStruct::get(LiteRaceCountersType,
+                                                counters)));
       Constant *StorageArray = ConstantArray::get(LiteRaceStorageType,
-          vector<Constant*>(kLiteRaceNumTids,
-              ConstantArray::get(LiteRaceStorageLineType,
-                  vector<Constant*>(kLiteRaceStorageSize,
-                      ConstantStruct::get(LiteRaceCountersType,
-                                          counters)))));
+          vector<Constant*>(kLiteRaceNumTids, StorageLine));
       LiteRaceStorageGlob = new GlobalVariable(
         *ThisModule,
         LiteRaceStorageType,
