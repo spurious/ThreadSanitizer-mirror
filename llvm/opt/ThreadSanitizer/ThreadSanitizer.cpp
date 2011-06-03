@@ -1018,7 +1018,7 @@ void TsanOnlineInstrument::setupRuntimeGlobals() {
                                       UIntPtr,
                                       UIntPtr, UIntPtr, PlatformInt, (Type*)0);
   cast<Function>(MemMoveFn)->setLinkage(Function::ExternalWeakLinkage);
-  const Type *Tys[] = { UIntPtr, PlatformInt };
+  const Type *Tys[] = { Int8Ptr, PlatformInt };
   MemSetIntrinsicFn = Intrinsic::getDeclaration(ThisModule,
                                                 Intrinsic::memset,
                                                 Tys, /*numTys*/2);
@@ -1287,6 +1287,7 @@ void TsanOnlineInstrument::insertFlushCurrentCall(Trace &trace,
       MSArgs.push_back(ConstantInt::get(PlatformInt,
                                         trace.num_mops * ArchSize / 8));
       MSArgs.push_back(ConstantInt::get(Int32, 1));
+      MSArgs.push_back(ConstantInt::get(Int1, 0));
       CallInst::Create(MemSetIntrinsicFn,
                        MSArgs.begin(), MSArgs.end(),
                        "", CleanupTerm);
