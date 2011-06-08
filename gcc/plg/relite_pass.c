@@ -647,6 +647,7 @@ static void             handle_gimple       (relite_context_t* ctx,
   switch (gcode) {
     //TODO(dvyukov): handle GIMPLE_COND
     case GIMPLE_CALL: {
+      ctx->func_calls += 1;
       // Handle call arguments as loads
       for (unsigned i = 0; i != gimple_call_num_args(stmt); i += 1) {
         tree rhs = gimple_call_arg(stmt, i);
