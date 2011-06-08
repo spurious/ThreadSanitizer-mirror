@@ -58,7 +58,7 @@
     if (size) SPut(WRITE, tid, pc, (uintptr_t)(x), (size)); } while (0)
 #include "ts_replace.h"
 
-int static_tls_size;
+static int static_tls_size;
 // Reentrancy counter
 __thread int IN_RTL = 0;
 
@@ -68,7 +68,7 @@ void rtn_call(void *addr, void *pc);
 void rtn_exit();
 
 extern bool global_ignore;
-bool FORKED_CHILD = false;  // if true, cannot access other threads' TLS
+static bool FORKED_CHILD = false;  // if true, cannot access other threads' TLS
 __thread int thread_local_ignore;
 __thread bool thread_local_show_stats;
 __thread int thread_local_literace;
@@ -86,31 +86,19 @@ struct LLVMDebugInfo {
 };
 
 static bool is_llvm = false;
-map<pc_t, LLVMDebugInfo> *debug_info = NULL;
+static map<pc_t, LLVMDebugInfo> *debug_info = NULL;
 // end of section : start of section
-map<uintptr_t, uintptr_t> *data_sections = NULL;
-
-void SplitString(string &src, char delim, vector<string> *dest,
-                 bool want_empty) {
-  string curr_word;
-  for (size_t i = 0; i < src.size(); ++i) {
-    if (src[i] == delim) {
-      if ((curr_word != "") || want_empty) dest->push_back(curr_word);
-      curr_word = "";
-    } else {
-      curr_word += src[i];
-    }
-  }
-  if ((curr_word != "") || want_empty) dest->push_back(curr_word);
-}
+static map<uintptr_t, uintptr_t> *data_sections = NULL;
 
 __thread ThreadInfo INFO;
 __thread tid_t LTID;  // literace TID = TID % kLiteRaceNumTids
 __thread CallStackPod ShadowStack;
 static const size_t kTLEBSize = 2000;
 __thread uintptr_t TLEB[kTLEBSize];
-__thread int INIT = 0;
-__thread int events = 0;
+static __thread int INIT = 0;
+#if 0
+static __thread int events = 0;
+#endif
 typedef void (tsd_destructor)(void*);
 struct tsd_slot {
   pthread_key_t key;
@@ -120,51 +108,51 @@ struct tsd_slot {
 // TODO(glider): PTHREAD_KEYS_MAX
 // TODO(glider): there could be races if pthread_key_create is called from
 // concurrent threads. This is prohibited by POSIX, however.
-tsd_slot tsd_slots[100];
-int tsd_slot_index = -1;
+static tsd_slot tsd_slots[100];
+static int tsd_slot_index = -1;
 
-int RTL_INIT = 0;
-int PTH_INIT = 0;
-int DBG_INIT = 0;
-int HAVE_THREAD_0 = 0;
+static int RTL_INIT = 0;
+static int PTH_INIT = 0;
+static int DBG_INIT = 0;
+static int HAVE_THREAD_0 = 0;
 
-std::map<pthread_t, ThreadInfo*> ThreadInfoMap;
-std::map<pthread_t, tid_t> Tids;
-std::map<tid_t, pthread_t> PThreads;
-std::map<tid_t, bool> Finished;
+static std::map<pthread_t, ThreadInfo*> ThreadInfoMap;
+static std::map<pthread_t, tid_t> Tids;
+static std::map<tid_t, pthread_t> PThreads;
+static std::map<tid_t, bool> Finished;
 // TODO(glider): before spawning a new child thread its parent creates a
 // pthread barrier which is used to guarantee that the child has already
 // initialized before exiting pthread_create.
-std::map<tid_t, pthread_barrier_t*> ChildThreadStartBarriers;
+static std::map<tid_t, pthread_barrier_t*> ChildThreadStartBarriers;
 // TODO(glider): we shouldn't need InitConds (and maybe FinishConds).
 // How about using barriers here as well?
-std::map<pthread_t, pthread_cond_t*> InitConds;
-std::map<tid_t, pthread_cond_t*> FinishConds;
-tid_t max_tid;
+static std::map<pthread_t, pthread_cond_t*> InitConds;
+static std::map<tid_t, pthread_cond_t*> FinishConds;
+static tid_t max_tid;
 
-__thread  sigset_t glob_sig_blocked, glob_sig_old;
+static __thread  sigset_t glob_sig_blocked, glob_sig_old;
 
 // We don't initialize these.
-struct sigaction signal_actions[NSIG];  // protected by GIL
-__thread siginfo_t pending_signals[NSIG];
+static struct sigaction signal_actions[NSIG];  // protected by GIL
+static __thread siginfo_t pending_signals[NSIG];
 typedef enum { PSF_NONE = 0, PSF_SIGNAL, PSF_SIGACTION } pending_signal_flag_t;
-__thread pending_signal_flag_t pending_signal_flags[NSIG];
-__thread bool have_pending_signals;
+static __thread pending_signal_flag_t pending_signal_flags[NSIG];
+static __thread bool have_pending_signals;
 
 // Stats {{{1
 #undef ENABLE_STATS
 #ifdef ENABLE_STATS
-int stats_lock_taken = 0;
-int stats_events_processed = 0;
-int stats_cur_events = 0;
-int stats_non_local = 0;
+static int stats_lock_taken = 0;
+static int stats_events_processed = 0;
+static int stats_cur_events = 0;
+static int stats_non_local = 0;
 const int kNumBuckets = 11;
-int stats_event_buckets[kNumBuckets];
+static int stats_event_buckets[kNumBuckets];
 #endif
 // }}}
 
 
-pthread_mutex_t debug_info_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t debug_info_lock = PTHREAD_MUTEX_INITIALIZER;
 
 class DbgInfoLock {
  public:
@@ -182,13 +170,15 @@ class DbgInfoLock {
 // #define BLOCK_SIGNALS 1
 #undef BLOCK_SIGNALS
 
-pthread_mutex_t global_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t global_lock = PTHREAD_MUTEX_INITIALIZER;
 #define GIL_LOCK __real_pthread_mutex_lock
 #define GIL_UNLOCK __real_pthread_mutex_unlock
 #define GIL_TRYLOCK __real_pthread_mutex_trylock
 
-pthread_t gil_owner = 0;
-__thread int gil_depth = 0;
+#if (DEBUG)
+static pthread_t gil_owner = 0;
+#endif
+static __thread int gil_depth = 0;
 
 void GIL::Lock() {
 #if BLOCK_SIGNALS
@@ -523,14 +513,9 @@ void finalize() {
 
 INLINE void init_debug() {
   CHECK(DBG_INIT == 0);
-  char *dbg_info = getenv("TSAN_DBG_INFO");
-  if (dbg_info) {
-    ReadDbgInfo(dbg_info);
-  } else {
-    data_sections = new std::map<uintptr_t, uintptr_t>;
-    ReadElf();
-    AddWrappersDbgInfo();
-  }
+  data_sections = new std::map<uintptr_t, uintptr_t>;
+  ReadElf();
+  AddWrappersDbgInfo();
   DBG_INIT = 1;
 }
 
@@ -3125,29 +3110,6 @@ void ReadElf() {
   // Finalize.
   __real_munmap(map, st.st_size);
   close(fd);
-}
-
-void ReadDbgInfo(string filename) {
-  DbgInfoLock scoped;
-  debug_info = new map<pc_t, LLVMDebugInfo>;
-  string contents = ReadFileToString(filename, false);
-  vector<string> lines;
-  SplitString(contents, '\n', &lines, false);
-  for (size_t i = 0; i < lines.size(); ++i) {
-    vector<string> parts;
-    SplitString(lines[i], '|', &parts, true);
-    LLVMDebugInfo info;
-    info.pc = strtol(parts[0].c_str(), NULL, 16);  // TODO(glider): error code
-    if (parts[3] != "") {
-      info.line = strtol(parts[3].c_str(), NULL, 10);
-    } else {
-      info.line = 0;
-    }
-    info.symbol = parts[1];
-    info.file = parts[2];
-    info.path = parts[4];
-    (*debug_info)[info.pc] = info;
-  }
 }
 
 string PcToRtnName(pc_t pc, bool demangle) {
