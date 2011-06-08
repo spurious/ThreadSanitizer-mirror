@@ -118,7 +118,6 @@ struct ThreadInfo {
 };
 
 tid_t GetTid();
-pc_t GetPc();
 extern FILE* G_out;
 // Reentrancy counter
 extern __thread int IN_RTL;
@@ -136,16 +135,14 @@ bool IsAddrFromDataSections(uintptr_t addr);
 
 #define DECLARE_TID_AND_PC() \
   tid_t tid = GetTid(); \
-  pc_t pc = GetPc();
+  pc_t pc = (pc_t)__builtin_return_address(0);
 
 #define EX_DECLARE_TID_AND_PC() \
   tid_t tid = ExGetTid(); \
-  pc_t pc = ExGetPc();
+  pc_t pc = (pc_t)__builtin_return_address(0);
 
 void MaybeInitTid();
 void flush_tleb();
-extern "C" void rtn_call(void *addr);
-extern "C" void rtn_exit();
 
 inline void Put(EventType type, tid_t tid, pc_t pc,
                 uintptr_t a, uintptr_t info);
@@ -166,7 +163,6 @@ extern void ExRPut(EventType type, tid_t tid, pc_t pc,
 void IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN(void);
 void IGNORE_ALL_ACCESSES_AND_SYNC_END(void);
 extern tid_t ExGetTid();
-extern pc_t ExGetPc();
 void set_global_ignore(bool new_value);
 void PrintStackTrace();
 

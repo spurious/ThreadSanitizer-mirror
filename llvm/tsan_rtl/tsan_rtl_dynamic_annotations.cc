@@ -35,7 +35,7 @@
 #undef DECLARE_TID_AND_PC
 #define DECLARE_TID_AND_PC() \
   tid_t tid = ExGetTid(); \
-  pc_t pc = ExGetPc();
+  pc_t pc = (pc_t)__builtin_return_address(0);
 
 #undef DECLARE_TID
 #define DECLARE_TID() \

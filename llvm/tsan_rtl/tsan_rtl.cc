@@ -64,6 +64,9 @@ __thread int IN_RTL = 0;
 
 const size_t kCallStackReserve = 32;
 
+void rtn_call(void *addr, void *pc);
+void rtn_exit();
+
 extern bool global_ignore;
 bool FORKED_CHILD = false;  // if true, cannot access other threads' TLS
 __thread int thread_local_ignore;
@@ -82,6 +85,7 @@ struct LLVMDebugInfo {
   uintptr_t line;
 };
 
+static bool is_llvm = false;
 map<pc_t, LLVMDebugInfo> *debug_info = NULL;
 // end of section : start of section
 map<uintptr_t, uintptr_t> *data_sections = NULL;
@@ -485,7 +489,7 @@ INLINE void RPut(EventType type, tid_t tid, pc_t pc,
   DCHECK(HAVE_THREAD_0 || ((type == THR_START) && (tid == 0)));
   DCHECK(RTL_INIT == 1);
   if (type == RTN_CALL) {
-    rtn_call((void*)a);
+    rtn_call((void*)a, (void*)pc);
   } else {
     rtn_exit();
   }
@@ -639,15 +643,6 @@ bool initialize() {
   }
   unsafeMapTls(0, 0);
   return true;
-}
-
-// TODO(glider): GetPc should return valid PCs.
-INLINE pc_t GetPc() {
-  return 0;
-}
-
-extern pc_t ExGetPc() {
-  return GetPc();
 }
 
 // Should be called under the global lock.
@@ -2041,7 +2036,7 @@ int __wrap_pthread_join(pthread_t thread, void **value_ptr) {
   int result = __real_pthread_join(thread, value_ptr);
   {
     DCHECK(joined_tid > 0);
-    pc_t pc = GetPc();
+    pc_t pc = (pc_t)__builtin_return_address(0);
     SPut(THR_JOIN_AFTER, tid, pc, joined_tid, 0);
   }
   RPut(RTN_EXIT, tid, pc, 0, 0);
@@ -2171,7 +2166,6 @@ char *__wrap_memcpy(char *dest, const char *src, size_t n) {
   if (IN_RTL) return __real_memcpy(dest, src, n);
   DECLARE_TID_AND_PC();
   ENTER_RTL();
-  //pc = (pc_t)__builtin_return_address(0);
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_memcpy, 0);
   pc = (pc_t)__wrap_memcpy;
   char *result = Replace_memcpy(tid, pc, dest, src, n);
@@ -2688,8 +2682,7 @@ static void validate_shadow_stack(uintptr_t addr) {
   }
 }
 
-extern "C"
-void rtn_call(void *addr) {
+void rtn_call(void *addr, void *pc) {
   DDPrintf("T%d: RTN_CALL [pc=%p; a=(nil); i=(nil)]\n", INFO.tid, addr);
   if (DEBUG_SHADOW_STACK) {
     validate_shadow_stack(kInvalidStackFrame);
@@ -2697,13 +2690,14 @@ void rtn_call(void *addr) {
       validate_shadow_stack((uintptr_t)addr);
     }
   }
-  *ShadowStack.end_ = (uintptr_t)addr;
+  if (is_llvm == false)
+    ShadowStack.end_[-1] = (uintptr_t)pc;
+  ShadowStack.end_[0] = (uintptr_t)addr;
   ShadowStack.end_++;
   DCHECK(ShadowStack.end_ > ShadowStack.pcs_);
   DCHECK((size_t)(ShadowStack.end_ - ShadowStack.pcs_) < kMaxCallStackSize);
 }
 
-extern "C"
 void rtn_exit() {
   DDPrintf("T%d: RTN_EXIT [pc=(nil); a=(nil); i=(nil)]\n", INFO.tid);
   DCHECK(ShadowStack.end_ > ShadowStack.pcs_);
@@ -2806,6 +2800,7 @@ void ReadDbgInfoFromSection(char* start, char* end) {
   DCHECK(IN_RTL); // operator new and std::map are used below.
   static const int kDebugInfoMagicNumber = 0xdb914f0;
   char *p = start;
+  is_llvm = true;
   debug_info = new map<pc_t, LLVMDebugInfo>;
   while (p < end) {
     while ((p < end) && (*((int*)p) != kDebugInfoMagicNumber)) p++;
