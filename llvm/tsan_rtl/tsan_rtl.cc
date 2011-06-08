@@ -62,6 +62,8 @@ int static_tls_size;
 // Reentrancy counter
 __thread int IN_RTL = 0;
 
+const size_t kCallStackReserve = 32;
+
 extern bool global_ignore;
 bool FORKED_CHILD = false;  // if true, cannot access other threads' TLS
 __thread int thread_local_ignore;
@@ -596,8 +598,8 @@ bool initialize() {
   LEAVE_RTL();
   __real_atexit(finalize);
   RTL_INIT = 1;
-  ShadowStack.pcs_[0] = 0;
-  ShadowStack.end_ = ShadowStack.pcs_ + 1;
+  memset(ShadowStack.pcs_, 0, kCallStackReserve * sizeof(ShadowStack.pcs_[0]));
+  ShadowStack.end_ = ShadowStack.pcs_ + kCallStackReserve;
   in_initialize = false;
   // Get the stack size and stack top for the current thread.
   // TODO(glider): do something if pthread_getattr_np() is not supported.
@@ -782,7 +784,8 @@ void *pthread_callback(void *arg) {
   }
   have_pending_signals = false;
 
-  ShadowStack.end_ = ShadowStack.pcs_;
+  memset(ShadowStack.pcs_, 0, kCallStackReserve * sizeof(ShadowStack.pcs_[0]));
+  ShadowStack.end_ = ShadowStack.pcs_ + kCallStackReserve;
   SPut(THR_START, INFO.tid, (pc_t) &ShadowStack, 0, parent);
 
   INFO.thread = ThreadSanitizerGetThreadByTid(INFO.tid);
