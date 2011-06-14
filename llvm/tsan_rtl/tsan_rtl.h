@@ -87,7 +87,7 @@
 #endif
 
 
-int unsafe_clear_pending_signals();
+int clear_pending_signals();
 
 class GIL {
  public:

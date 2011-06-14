@@ -164,12 +164,6 @@ class DbgInfoLock {
   }
 };
 
-// BLOCK_SIGNALS macro enables blocking the signals any time the global lock
-// is taken. This brings huge overhead to the lock and looks unnecessary now,
-// because our signal handler can run even under the global lock.
-// #define BLOCK_SIGNALS 1
-#undef BLOCK_SIGNALS
-
 static pthread_mutex_t global_lock = PTHREAD_MUTEX_INITIALIZER;
 #define GIL_LOCK __real_pthread_mutex_lock
 #define GIL_UNLOCK __real_pthread_mutex_unlock
@@ -181,10 +175,6 @@ static pthread_t gil_owner = 0;
 static __thread int gil_depth = 0;
 
 void GIL::Lock() {
-#if BLOCK_SIGNALS
-  sigfillset(&glob_sig_blocked);
-  pthread_sigmask(SIG_BLOCK, &glob_sig_blocked, &glob_sig_old);
-#endif
   if (!gil_depth) {
     GIL_LOCK(&global_lock);
 #ifdef ENABLE_STATS
@@ -199,10 +189,6 @@ void GIL::Lock() {
 }
 
 bool GIL::TryLock() {
-#ifdef BLOCK_SIGNALS
-  sigfillset(&glob_sig_blocked);
-  pthread_sigmask(SIG_BLOCK, &glob_sig_blocked, &glob_sig_old);
-#endif
 #if (DEBUG)
   gil_owner = pthread_self();
 #endif
@@ -238,17 +224,9 @@ void GIL::Unlock() {
   } else {
     gil_depth--;
   }
-#ifdef BLOCK_SIGNALS
-  pthread_sigmask(SIG_SETMASK, &glob_sig_old, &glob_sig_old);
-  siginfo_t info;
-  struct timespec zero_timeout = {0, 0};
-  int sig = sigtimedwait(&glob_sig_old, &info, &zero_timeout);
-  if (sig > 0) {
-    // TODO(glider): signal_actions should be accessed under the global lock.
-    signal_actions[sig].sa_sigaction(sig, &info, NULL);
-  }
-#endif
+  clear_pending_signals();
 }
+
 #if (DEBUG)
 int GIL::GetDepth() {
   return gil_depth;
@@ -316,7 +294,6 @@ INLINE void SPut(EventType type, tid_t tid, pc_t pc,
     ThreadSanitizerHandleOneEvent(&event);
   }
   LEAVE_RTL();
-  unsafe_clear_pending_signals();
   if (type == THR_START) {
     if (tid == 0) HAVE_THREAD_0 = 1;
   }
@@ -394,7 +371,7 @@ void INLINE flush_trace(TraceInfoPOD *trace) {
     if (DEBUG) {
       for (size_t i = 0; i < trace->n_mops_; i++) DCHECK(TLEB[i] == 0);
     }
-    unsafe_clear_pending_signals();
+    clear_pending_signals();
   }
 }
 
@@ -462,7 +439,7 @@ void INLINE flush_single_mop(TraceInfoPOD *trace, uintptr_t addr) {
                                            addr);
       LEAVE_RTL();
     }
-    unsafe_clear_pending_signals();
+    clear_pending_signals();
   }
 }
 
@@ -483,7 +460,6 @@ INLINE void RPut(EventType type, tid_t tid, pc_t pc,
   } else {
     rtn_exit();
   }
-  unsafe_clear_pending_signals();
 }
 
 void finalize() {
@@ -2540,10 +2516,13 @@ int __wrap_epoll_wait(int epfd, struct epoll_event *events,
 /* Initial support for signals. Each user signal handler is stored in
  signal_actions[] and RTLSignalHandler/RTLSignalSigaction is installed instead.
  When a signal is  received, it is put into a thread-local array of pending
- signals (see the comments in RTLSignalHandler). Each time we're about to release
- the global lock, we handle all the pending signals.
+ signals (see the comments in RTLSignalHandler).
+ Each time we release the global lock, we handle all the pending signals.
+ Note that clear_pending_signals() shouldn't be called under GIL, because
+ the client code may call mmap() or any other function that takes GIL.
 */
-INLINE int unsafe_clear_pending_signals() {
+INLINE int clear_pending_signals() {
+  CHECK(!IN_RTL);
   if (!have_pending_signals) return 0;
   int result = 0;
   for (int sig = 0; sig < NSIG; sig++) {
