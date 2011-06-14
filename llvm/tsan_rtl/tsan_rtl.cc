@@ -221,10 +221,10 @@ void GIL::Unlock() {
 #endif
     GIL_UNLOCK(&global_lock);
     LEAVE_RTL();
+    clear_pending_signals();
   } else {
     gil_depth--;
   }
-  clear_pending_signals();
 }
 
 #if (DEBUG)
@@ -691,7 +691,6 @@ void set_global_ignore(bool new_value) {
 
 void *pthread_callback(void *arg) {
   GIL::Lock();
-  ENTER_RTL();
   void *result = NULL;
 
   CHECK((PTH_INIT == 1) && (RTL_INIT == 1));
@@ -770,7 +769,6 @@ void *pthread_callback(void *arg) {
 #endif
   // Wait for the parent.
   __real_pthread_barrier_wait(parent_barrier);
-  LEAVE_RTL();
   GIL::Unlock();
 
   result = (*routine)(routine_arg);
@@ -781,7 +779,6 @@ void *pthread_callback(void *arg) {
   pthread_sigmask(SIG_BLOCK, &glob_sig_blocked, &glob_sig_old);
 
   GIL::Lock();
-  ENTER_RTL();
   Finished[tid] = true;
 #if (DEBUG)
   dump_finished();
@@ -815,11 +812,12 @@ void *pthread_callback(void *arg) {
     DDPrintf("T%d (child of T%d): Not signaling, condvar not ready\n",
              tid, parent);
   }
-  // Note that we do not do LEAVE_RTL() here to avoid sending events from wrapped
+  GIL::Unlock();
+  // We do ENTER_RTL() here to avoid sending events from wrapped
   // functions (e.g. free()) after this thread has ended.
   // TODO(glider): need to check whether it's 100% legal.
-  ///LEAVE_RTL();
-  GIL::Unlock();
+  ENTER_RTL();
+
   return result;
 }
 
@@ -868,7 +866,6 @@ static int tsan_pthread_create(pthread_t *thread,
                           void *(*start_routine)(void*), void *arg) {
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_pthread_create, 0);
-  ENTER_RTL();
   callback_arg *cb_arg = new callback_arg;
   cb_arg->routine = start_routine;
   cb_arg->arg = arg;
@@ -885,7 +882,6 @@ static int tsan_pthread_create(pthread_t *thread,
     ChildThreadStartBarriers[tid] = barrier;
     DDPrintf("Setting ChildThreadStartBarriers[%d]\n", tid);
   }
-  LEAVE_RTL();
   int result = __real_pthread_create(thread, attr, pthread_callback, cb_arg);
   tid_t child_tid = 0;
   if (result == 0) {
@@ -1037,8 +1033,7 @@ void *__wrap_mmap(void *addr, size_t length, int prot, int flags,
     void *result = __real_mmap(addr, length, prot, flags, fd, offset);
     return result;
   }
-  GIL scoped; // TODO(glider): GIL should force ENTER_RTL.
-  ENTER_RTL();
+  GIL scoped;
   void *result;
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_mmap, 0);
@@ -1049,7 +1044,6 @@ void *__wrap_mmap(void *addr, size_t length, int prot, int flags,
     SPut(MMAP, tid, pc, (uintptr_t)result, (uintptr_t)length);
   }
   RPut(RTN_EXIT, tid, pc, 0, 0);
-  LEAVE_RTL();
   return result;
 }
 
@@ -1060,14 +1054,12 @@ int __wrap_munmap(void *addr, size_t length) {
   int result;
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_munmap, 0);
-  ENTER_RTL();
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   result = __real_munmap(addr, length);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
   if (result == 0) {
     SPut(MUNMAP, tid, pc, (uintptr_t)addr, (uintptr_t)length);
   }
-  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
 }
@@ -1089,13 +1081,11 @@ void *calloc(size_t nmemb, size_t size) {
   RECORD_ALLOC(calloc);
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)calloc, 0);
-  ENTER_RTL();
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   void *result = __libc_calloc(nmemb, size);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
   pc = (pc_t) calloc;
   SPut(MALLOC, tid, pc, (uintptr_t)result, nmemb * size);
-  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
 }
@@ -1107,13 +1097,11 @@ void *__wrap_calloc(size_t nmemb, size_t size) {
   RECORD_ALLOC(__wrap_calloc);
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_calloc, 0);
-  ENTER_RTL();
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   void *result = __real_calloc(nmemb, size);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
   pc = (pc_t) __wrap_calloc;
   SPut(MALLOC, tid, pc, (uintptr_t)result, nmemb * size);
-  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
 }
@@ -1123,7 +1111,6 @@ void *__wrap_malloc(size_t size) {
   if (IN_RTL) return __real_malloc(size);
   GIL scoped;
   RECORD_ALLOC(__wrap_malloc);
-  ENTER_RTL();
   void *result;
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_malloc, 0);
@@ -1133,7 +1120,6 @@ void *__wrap_malloc(size_t size) {
   pc = (pc_t) __wrap_malloc;
   SPut(MALLOC, tid, pc, (uintptr_t)result, size);
   RPut(RTN_EXIT, tid, pc, 0, 0);
-  LEAVE_RTL();
   return result;
 }
 
@@ -1144,7 +1130,6 @@ void *malloc(size_t size) {
   if (IN_RTL || !RTL_INIT || !INIT) return __libc_malloc(size);
   GIL scoped;
   RECORD_ALLOC(malloc);
-  ENTER_RTL();
   void *result;
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)malloc, 0);
@@ -1154,7 +1139,6 @@ void *malloc(size_t size) {
   pc = (pc_t) malloc;
   SPut(MALLOC, tid, pc, (uintptr_t)result, size);
   RPut(RTN_EXIT, tid, pc, 0, 0);
-  LEAVE_RTL();
   return result;
 }
 
@@ -1164,7 +1148,6 @@ void __wrap_free(void *ptr) {
   GIL scoped;
   RECORD_ALLOC(__wrap_free);
   DECLARE_TID_AND_PC();
-  ENTER_RTL();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_free, 0);
   pc = (pc_t)__wrap_free;
   // TODO(glider): do something to reduce the number of means to control
@@ -1181,20 +1164,17 @@ void __wrap_free(void *ptr) {
   __real_free(ptr);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
   RPut(RTN_EXIT, tid, pc, 0, 0);
-  LEAVE_RTL();
 }
 
 extern "C"
 int __wrap_posix_memalign(void **memptr, size_t alignment, size_t size) {
   if (IN_RTL) return __real_posix_memalign(memptr, alignment, size);
   GIL scoped;
-  ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_posix_memalign, 0);
   int result = __real_posix_memalign(memptr, alignment, size);
   if (result) SPut(MALLOC, tid, pc, (uintptr_t)(*memptr), 0);
   RPut(RTN_EXIT, tid, pc, 0, 0);
-  LEAVE_RTL();
   return result;
 }
 
@@ -1203,7 +1183,6 @@ void free(void *ptr) {
   if (IN_RTL || !RTL_INIT || !INIT) return __libc_free(ptr);
   GIL scoped;
   RECORD_ALLOC(free);
-  ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)free, 0);
   pc = (pc_t)free;
@@ -1215,7 +1194,6 @@ void free(void *ptr) {
   __libc_free(ptr);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
   RPut(RTN_EXIT, tid, pc, 0, 0);
-  LEAVE_RTL();
 }
 
 extern "C"
@@ -1224,7 +1202,6 @@ void *__wrap_realloc(void *ptr, size_t size) {
   GIL scoped;
   RECORD_ALLOC(__wrap_realloc);
   void *result;
-  ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap_realloc, 0);
   pc = (pc_t) __wrap_realloc;
@@ -1236,7 +1213,6 @@ void *__wrap_realloc(void *ptr, size_t size) {
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
   SPut(MALLOC, tid, pc, (uintptr_t)result, size);
   RPut(RTN_EXIT, tid, pc, 0, 0);
-  LEAVE_RTL();
   return result;
 }
 
@@ -1246,7 +1222,6 @@ void *realloc(void *ptr, size_t size) {
   GIL scoped;
   RECORD_ALLOC(realloc);
   void *result;
-  ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)realloc, 0);
   pc = (pc_t) realloc;
@@ -1258,7 +1233,6 @@ void *realloc(void *ptr, size_t size) {
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
   SPut(MALLOC, tid, pc, (uintptr_t)result, size);
   RPut(RTN_EXIT, tid, pc, 0, 0);
-  LEAVE_RTL();
   return result;
 }
 
@@ -1268,7 +1242,6 @@ void *__wrap__Znwj(unsigned int size) {
   if (IN_RTL) return __real__Znwj(size);
   GIL scoped;
   RECORD_ALLOC(__wrap__Znwj);
-  ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__Znwj, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
@@ -1277,7 +1250,6 @@ void *__wrap__Znwj(unsigned int size) {
   pc = (pc_t) __wrap__Znwj;
   SPut(MALLOC, tid, pc, (uintptr_t)result, size);
   RPut(RTN_EXIT, tid, pc, 0, 0);
-  LEAVE_RTL();
   return result;
 }
 
@@ -1286,7 +1258,6 @@ void *__wrap__ZnwjRKSt9nothrow_t(unsigned size, std::nothrow_t &nt) {
   if (IN_RTL) return __real__ZnwjRKSt9nothrow_t(size, nt);
   GIL scoped;
   RECORD_ALLOC(__wrap__ZnwjRKSt9nothrow_t);
-  ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__ZnwjRKSt9nothrow_t, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
@@ -1294,7 +1265,6 @@ void *__wrap__ZnwjRKSt9nothrow_t(unsigned size, std::nothrow_t &nt) {
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
   pc = (pc_t) __wrap__ZnwjRKSt9nothrow_t;
   SPut(MALLOC, tid, pc, (uintptr_t)result, size);
-  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
 }
@@ -1304,7 +1274,6 @@ void *__wrap__Znaj(unsigned int size) {
   if (IN_RTL) return __real__Znaj(size);
   GIL scoped;
   RECORD_ALLOC(__wrap__Znaj);
-  ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__Znaj, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
@@ -1312,7 +1281,6 @@ void *__wrap__Znaj(unsigned int size) {
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
   pc = (pc_t) __wrap__Znaj;
   SPut(MALLOC, tid, pc, (uintptr_t)result, size);
-  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
 }
@@ -1322,7 +1290,6 @@ void *__wrap__ZnajRKSt9nothrow_t(unsigned size, std::nothrow_t &nt) {
   if (IN_RTL) return __real__ZnajRKSt9nothrow_t(size, nt);
   GIL scoped;
   RECORD_ALLOC(__wrap__ZnajRKSt9nothrow_t);
-  ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__ZnajRKSt9nothrow_t, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
@@ -1330,7 +1297,6 @@ void *__wrap__ZnajRKSt9nothrow_t(unsigned size, std::nothrow_t &nt) {
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
   pc = (pc_t) __wrap__ZnajRKSt9nothrow_t;
   SPut(MALLOC, tid, pc, (uintptr_t)result, size);
-  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
 }
@@ -1342,7 +1308,6 @@ void *__wrap__Znwm(unsigned long size) {
   if (IN_RTL) return __real__Znwm(size);
   GIL scoped;
   RECORD_ALLOC(__wrap__Znwm);
-  ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__Znwm, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
@@ -1350,7 +1315,6 @@ void *__wrap__Znwm(unsigned long size) {
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
   pc = (pc_t) __wrap__Znwm;
   SPut(MALLOC, tid, pc, (uintptr_t)result, size);
-  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
 }
@@ -1360,7 +1324,6 @@ void *__wrap__ZnwmRKSt9nothrow_t(unsigned long size, std::nothrow_t &nt) {
   if (IN_RTL) return __real__ZnwmRKSt9nothrow_t(size, nt);
   GIL scoped;
   RECORD_ALLOC(__wrap__ZnwmRKSt9nothrow_t);
-  ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__ZnwmRKSt9nothrow_t, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
@@ -1368,7 +1331,6 @@ void *__wrap__ZnwmRKSt9nothrow_t(unsigned long size, std::nothrow_t &nt) {
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
   pc = (pc_t) __wrap__ZnwmRKSt9nothrow_t;
   SPut(MALLOC, tid, pc, (uintptr_t)result, size);
-  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
 }
@@ -1378,7 +1340,6 @@ void *__wrap__Znam(unsigned long size) {
   if (IN_RTL) return __real__Znam(size);
   GIL scoped;
   RECORD_ALLOC(__wrap__Znam);
-  ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__Znam, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
@@ -1386,7 +1347,6 @@ void *__wrap__Znam(unsigned long size) {
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
   pc = (pc_t) __wrap__Znam;
   SPut(MALLOC, tid, pc, (uintptr_t)result, size);
-  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
 }
@@ -1396,7 +1356,6 @@ void *__wrap__ZnamRKSt9nothrow_t(unsigned long size, std::nothrow_t &nt) {
   if (IN_RTL) return __real__ZnamRKSt9nothrow_t(size, nt);
   GIL scoped;
   RECORD_ALLOC(__wrap__ZnamRKSt9nothrow_t);
-  ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__ZnamRKSt9nothrow_t, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
@@ -1404,7 +1363,6 @@ void *__wrap__ZnamRKSt9nothrow_t(unsigned long size, std::nothrow_t &nt) {
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
   pc = (pc_t) __wrap__ZnamRKSt9nothrow_t;
   SPut(MALLOC, tid, pc, (uintptr_t)result, size);
-  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
 }
@@ -1417,7 +1375,6 @@ void __wrap__ZdlPv(void *ptr) {
   if (IN_RTL) return __real__ZdlPv(ptr);
   GIL scoped;
   RECORD_ALLOC(__wrap__ZdlPv);
-  ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__ZdlPv, 0);
   pc = (pc_t)__wrap__ZdlPv;
@@ -1428,7 +1385,6 @@ void __wrap__ZdlPv(void *ptr) {
   //if (ptr) memset(ptr, 0, 4);
   __real__ZdlPv(ptr);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
-  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
 }
 
@@ -1437,7 +1393,6 @@ void __wrap__ZdlPvRKSt9nothrow_t(void *ptr, std::nothrow_t &nt) {
   if (IN_RTL) return __real__ZdlPvRKSt9nothrow_t(ptr, nt);
   GIL scoped;
   RECORD_ALLOC(__wrap__ZdlPvRKSt9nothrow_t);
-  ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__ZdlPvRKSt9nothrow_t, 0);
   pc = (pc_t)__wrap__ZdlPvRKSt9nothrow_t;
@@ -1447,7 +1402,6 @@ void __wrap__ZdlPvRKSt9nothrow_t(void *ptr, std::nothrow_t &nt) {
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   __real__ZdlPvRKSt9nothrow_t(ptr, nt);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
-  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
 }
 
@@ -1456,7 +1410,6 @@ void __wrap__ZdaPv(void *ptr) {
   if (IN_RTL) return __real__ZdaPv(ptr);
   GIL scoped;
   RECORD_ALLOC(__wrap__ZdaPv);
-  ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__ZdaPv, 0);
   pc = (pc_t)__wrap__ZdaPv;
@@ -1466,7 +1419,6 @@ void __wrap__ZdaPv(void *ptr) {
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   __real__ZdaPv(ptr);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
-  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
 }
 
@@ -1475,7 +1427,6 @@ void __wrap__ZdaPvRKSt9nothrow_t(void *ptr, std::nothrow_t &nt) {
   if (IN_RTL) return __real__ZdaPvRKSt9nothrow_t(ptr, nt);
   GIL scoped;
   RECORD_ALLOC(__wrap__ZdaPvRKSt9nothrow_t);
-  ENTER_RTL();
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__wrap__ZdaPvRKSt9nothrow_t, 0);
   pc = (pc_t)__wrap__ZdaPvRKSt9nothrow_t;
@@ -1485,7 +1436,6 @@ void __wrap__ZdaPvRKSt9nothrow_t(void *ptr, std::nothrow_t &nt) {
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   __real__ZdaPvRKSt9nothrow_t(ptr, nt);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
-  LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
 }
 // }}}
@@ -1963,8 +1913,6 @@ int __wrap_pthread_join(pthread_t thread, void **value_ptr) {
   tid_t joined_tid = -1;
   {
     GIL scoped;
-    // TODO(glider): locking GIL should probably enforce IN_RTL++.
-    ENTER_RTL();
     if (Tids.find(thread) == Tids.end()) {
       InitConds[thread] = new pthread_cond_t;
       pthread_cond_init(InitConds[thread], NULL);
@@ -1991,7 +1939,6 @@ int __wrap_pthread_join(pthread_t thread, void **value_ptr) {
       __real_pthread_cond_wait(FinishConds[joined_tid], &global_lock);
     }
     unsafe_forget_thread(joined_tid, tid);  // TODO(glider): earlier?
-    LEAVE_RTL();
   }
 
   int result = __real_pthread_join(thread, value_ptr);
@@ -2522,7 +2469,7 @@ int __wrap_epoll_wait(int epfd, struct epoll_event *events,
  the client code may call mmap() or any other function that takes GIL.
 */
 INLINE int clear_pending_signals() {
-  CHECK(!IN_RTL);
+  CHECK(!IN_RTL);  // This is implied by the fact that GIL is not taken.
   if (!have_pending_signals) return 0;
   int result = 0;
   for (int sig = 0; sig < NSIG; sig++) {
@@ -3142,20 +3089,24 @@ bool GetNameAndOffsetOfGlobalObject(uintptr_t addr,
                                     string *name, uintptr_t *offset) {
   char symbol [4096];
   int soffset = 0;
-  if (bfds_symbolize((void*)addr,
-                     (bfds_opts_e)(bfds_opt_data | bfds_opt_demangle),
-                     symbol, sizeof(symbol),
-                     0, 0, // module
-                     0, 0, // source file
-                     0,    // source line
-                     &soffset)) {
+  if (debug_info) {
     return false;
+  } else {
+    if (bfds_symbolize((void*)addr,
+                       (bfds_opts_e)(bfds_opt_data | bfds_opt_demangle),
+                       symbol, sizeof(symbol),
+                       0, 0, // module
+                       0, 0, // source file
+                       0,    // source line
+                       &soffset)) {
+      return false;
+    }
+    if (name)
+      name->assign(symbol);
+    if (offset)
+      *offset = soffset;
+    return true;
   }
-  if (name)
-    name->assign(symbol);
-  if (offset)
-    *offset = soffset;
-  return true;
 }
 
 void PcToStrings(pc_t pc, bool demangle,
