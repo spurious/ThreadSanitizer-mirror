@@ -28,8 +28,8 @@
 #define TS_ATOMIC_INT_H_INCLUDED
 
 #include "ts_atomic.h"
+#include "ts_util.h"
 #include <stddef.h>
-#include <stdint.h>
 
 // Helper functions for atomic support
 
