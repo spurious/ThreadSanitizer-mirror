@@ -96,7 +96,7 @@ class Parser {
     if (!(cond)) {\
       SetError(desc);\
       return false;\
-    }} while (0)
+    }} while ((void)0, 0)
 
 void Parser::SetError(string desc) {
   error_ = true;

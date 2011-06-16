@@ -68,6 +68,10 @@ extern "C" void free(void *ptr) {
   VG_(free)(ptr);
 }
 
+extern "C" void* realloc(void *ptr, size_t size) {
+  return VG_(realloc)((HChar*)g_malloc_stack.Top(), ptr, size);
+}
+
 
 //---------------------- Utils ------------------- {{{1
 

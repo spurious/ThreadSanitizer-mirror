@@ -36,6 +36,7 @@
 #include "suppressions.h"
 #include "ignore.h"
 #include "ts_lock.h"
+#include "ts_atomic_int.h"
 #include "dense_multimap.h"
 #include <stdarg.h>
 // -------- Constants --------------- {{{1
@@ -91,6 +92,10 @@ bool debug_shadow_stack = false;
 bool debug_happens_before = false;
 bool debug_cache = false;
 bool debug_race_verifier = false;
+bool debug_atomic = false;
+
+#define PrintfIf(flag, ...) \
+  do { if ((flag)) Printf(__VA_ARGS__); } while ((void)0, 0)
 
 // -------- TIL --------------- {{{1
 // ThreadSanitizer Internal lock (scoped).
@@ -1242,6 +1247,17 @@ class VTS {
     return res;
   }
 
+  int32_t clk(TID tid) const {
+    // TODO(dvyukov): this function is sub-optimal,
+    // we only need thread's own clock.
+    for (size_t i = 0; i < size_; i++) {
+      if (arr_[i].tid == tid.raw()) {
+        return arr_[i].clk;
+      }
+    }
+    return 0;
+  }
+
   static INLINE void FlushHBCache() {
     hb_cache_->Flush();
   }
@@ -1439,6 +1455,54 @@ int32_t VTS::uniq_id_counter_;
 VTS::HBCache *VTS::hb_cache_;
 FreeList **VTS::free_lists_;
 
+
+// This class is somewhat similar to VTS,
+// but it's mutable, not reference counted and not sorted.
+class VectorClock {
+ public:
+  VectorClock()
+      : size_(),
+        clock_()
+  {
+  }
+
+  void reset() {
+    free(clock_);
+    size_ = 0;
+    clock_ = NULL;
+  }
+
+  int32_t clock(TID tid) const {
+    for (size_t i = 0; i != size_; i += 1) {
+      if (clock_[i].tid == tid.raw()) {
+        return clock_[i].clk;
+      }
+    }
+    return 0;
+  }
+
+  void update(TID tid, int32_t clk) {
+    for (size_t i = 0; i != size_; i += 1) {
+      if (clock_[i].tid == tid.raw()) {
+        clock_[i].clk = clk;
+        return;
+      }
+    }
+    size_ += 1;
+    clock_ = (TS*)realloc(clock_, size_ * sizeof(TS));
+    clock_[size_ - 1].tid = tid.raw();
+    clock_[size_ - 1].clk = clk;
+  }
+
+ private:
+  struct TS {
+    int32_t tid;
+    int32_t clk;
+  };
+
+  size_t    size_;
+  TS*       clock_;
+};
 
 
 // -------- Mask -------------------- {{{1
@@ -3773,73 +3837,6 @@ static void PublishRange(Thread *thr, uintptr_t a, uintptr_t b, VTS *vts) {
   }
 }
 
-// -------- Clear Memory State ------------------ {{{1
-static void INLINE UnrefSegmentsInMemoryRange(uintptr_t a, uintptr_t b,
-                                                Mask mask, CacheLine *line) {
-  while (!mask.Empty()) {
-    uintptr_t x = mask.GetSomeSetBit();
-    DCHECK(mask.Get(x));
-    mask.Clear(x);
-    line->GetValuePointer(x)->Unref("Detector::UnrefSegmentsInMemoryRange");
-  }
-}
-
-void INLINE ClearMemoryStateInOneLine(Thread *thr, uintptr_t addr,
-                                      uintptr_t beg, uintptr_t end) {
-  AssertTILHeld();
-  CacheLine *line = G_cache->GetLineIfExists(thr, addr, __LINE__);
-  // CacheLine *line = G_cache->GetLineOrCreateNew(addr, __LINE__);
-  if (line) {
-    DCHECK(beg < CacheLine::kLineSize);
-    DCHECK(end <= CacheLine::kLineSize);
-    DCHECK(beg < end);
-    Mask published = line->published();
-    if (UNLIKELY(!published.Empty())) {
-      Mask mask(published.GetRange(beg, end));
-      ClearPublishedAttribute(line, mask);
-    }
-    Mask old_used = line->ClearRangeAndReturnOldUsed(beg, end);
-    UnrefSegmentsInMemoryRange(beg, end, old_used, line);
-    G_cache->ReleaseLine(thr, addr, line, __LINE__);
-  }
-}
-
-// clear memory state for [a,b)
-void NOINLINE ClearMemoryState(Thread *thr, uintptr_t a, uintptr_t b) {
-  if (a == b) return;
-  CHECK(a < b);
-  uintptr_t line1_tag = 0, line2_tag = 0;
-  uintptr_t single_line_tag = GetCacheLinesForRange(a, b,
-                                                    &line1_tag, &line2_tag);
-  if (single_line_tag) {
-    ClearMemoryStateInOneLine(thr, a, a - single_line_tag,
-                              b - single_line_tag);
-    return;
-  }
-
-  uintptr_t a_tag = CacheLine::ComputeTag(a);
-  ClearMemoryStateInOneLine(thr, a, a - a_tag, CacheLine::kLineSize);
-
-  for (uintptr_t tag_i = line1_tag; tag_i < line2_tag;
-       tag_i += CacheLine::kLineSize) {
-    ClearMemoryStateInOneLine(thr, tag_i, 0, CacheLine::kLineSize);
-  }
-
-  if (b > line2_tag) {
-    ClearMemoryStateInOneLine(thr, line2_tag, 0, b - line2_tag);
-  }
-
-  if (DEBUG_MODE && G_flags->debug_level >= 2) {
-    // Check that we've cleared it. Slow!
-    for (uintptr_t x = a; x < b; x++) {
-      uintptr_t off = CacheLine::ComputeOffset(x);
-      CacheLine *line = G_cache->GetLineOrCreateNew(thr, x, __LINE__);
-      CHECK(!line->has_shadow_value().Get(off));
-      G_cache->ReleaseLine(thr, x, line, __LINE__);
-    }
-  }
-}
-
 // -------- ThreadSanitizerReport -------------- {{{1
 struct ThreadSanitizerReport {
   // Types of reports.
@@ -4086,7 +4083,7 @@ struct RecentSegmentsCache {
 
  private:
   void ShortenQueue(size_t flush_to_length) {
-    while(queue_.size() > flush_to_length) {
+    while (queue_.size() > flush_to_length) {
       SID sid = queue_.back();
       Segment::Unref(sid, "RecentSegmentsCache::ShortenQueue");
       queue_.pop_back();
@@ -4322,7 +4319,11 @@ struct Thread {
       vts_at_exit_(NULL),
       call_stack_(call_stack),
       lock_history_(128),
-      recent_segments_cache_(G_flags->recent_segments_cache_size) {
+      recent_segments_cache_(G_flags->recent_segments_cache_size),
+      inside_atomic_op_(),
+      rand_state_((unsigned)(tid.raw() + (uintptr_t)vts
+                      + (uintptr_t)creation_context
+                      + (uintptr_t)call_stack)) {
 
     NewSegmentWithoutUnrefingOld("Thread Creation", vts);
     ignore_depth_[0] = ignore_depth_[1] = 0;
@@ -4354,6 +4355,14 @@ struct Thread {
   // STACK
   uintptr_t max_sp() const { return max_sp_; }
   uintptr_t min_sp() const { return min_sp_; }
+
+  unsigned random() {
+    return tsan_prng(&rand_state_);
+  }
+
+  bool ShouldReportRaces() const {
+    return (inside_atomic_op_ == 0);
+  }
 
   void SetStack(uintptr_t stack_min, uintptr_t stack_max) {
     CHECK(stack_min < stack_max);
@@ -4658,6 +4667,13 @@ struct Thread {
     lock_era_access_set_[1].Clear();
   }
 
+  // Handles memory access with race reports suppressed.
+  void HandleAtomicMop(uintptr_t a,
+                       uintptr_t pc,
+                       tsan_atomic_op op,
+                       tsan_memory_order mo,
+                       size_t size);
+
   void HandleForgetSignaller(uintptr_t cv) {
     SignallerMap::iterator it = signaller_map_->find(cv);
     if (it != signaller_map_->end()) {
@@ -4698,7 +4714,6 @@ struct Thread {
       }
     }
   }
-
 
   void HandleSignal(uintptr_t cv) {
     Signaller *signaller = &(*signaller_map_)[cv];
@@ -5271,6 +5286,14 @@ struct Thread {
 
   map<TID, ThreadCreateInfo> child_tid_to_create_info_;
 
+  // This var is used to suppress race reports
+  // when handling atomic memory accesses.
+  // That is, an atomic memory access can't race with other accesses,
+  // however plain memory accesses can race with atomic memory accesses.
+  int inside_atomic_op_;
+
+  prng_t rand_state_;
+
   struct Signaller {
     VTS *vts;
   };
@@ -5304,6 +5327,148 @@ int                         Thread::n_threads_;
 Thread::SignallerMap       *Thread::signaller_map_;
 Thread::CyclicBarrierMap   *Thread::cyclic_barrier_map_;
 
+
+// -------- TsanAtomicCore ------------------ {{{1
+
+// Responsible for handling of atomic memory accesses.
+class TsanAtomicCore {
+ public:
+  TsanAtomicCore();
+
+  void HandleWrite(Thread* thr,
+                   uintptr_t a,
+                   uint64_t v,
+                   uint64_t prev,
+                   bool is_acquire,
+                   bool is_release,
+                   bool is_rmw);
+
+  uint64_t HandleRead(Thread* thr,
+                      uintptr_t a,
+                      uint64_t v,
+                      bool is_acquire);
+
+  void ClearMemoryState(uintptr_t a, uintptr_t b);
+
+ private:
+  // Represents one value in modification history
+  // of an atomic variable.
+  struct AtomicHistoryEntry {
+    // Actual value.
+    // (atomics of size more than uint64_t are not supported as of now)
+    uint64_t val;
+    // ID of a thread that did the modification.
+    TID tid;
+    // The thread's clock during the modification.
+    int32_t clk;
+    // Vector clock that is acquired by a thread
+    // that loads the value.
+    // Similar to Signaller::vts.
+    VTS* vts;
+  };
+
+  // Descriptor of an atomic variable.
+  struct Atomic {
+    // Number of stored entries in the modification order of the variable.
+    // This represents space-modelling preciseness trade-off.
+    // 4 values should be generally enough.
+    static int32_t const kHistSize = 4;
+    // Current position in the modification order.
+    int32_t hist_pos;
+    // Modification history organized as a circular buffer.
+    // That is, old values are discarded.
+    AtomicHistoryEntry hist [kHistSize];
+    // It's basically a tid->hist_pos map that tracks what threads
+    // had seen what values. It's required to meet the following requirement:
+    // even relaxed loads must not be reordered in a single thread.
+    VectorClock last_seen;
+
+    Atomic();
+    void reset(bool init = false);
+  };
+
+  typedef std::map<uintptr_t, Atomic> AtomicMap;
+  AtomicMap atomic_map_;
+
+  void AtomicFixHist(Atomic* atomic,
+                     uint64_t prev);
+
+  TsanAtomicCore(TsanAtomicCore const&);
+  void operator=(TsanAtomicCore const&);
+};
+
+
+static TsanAtomicCore* g_atomicCore;
+
+
+// -------- Clear Memory State ------------------ {{{1
+static void INLINE UnrefSegmentsInMemoryRange(uintptr_t a, uintptr_t b,
+                                                Mask mask, CacheLine *line) {
+  while (!mask.Empty()) {
+    uintptr_t x = mask.GetSomeSetBit();
+    DCHECK(mask.Get(x));
+    mask.Clear(x);
+    line->GetValuePointer(x)->Unref("Detector::UnrefSegmentsInMemoryRange");
+  }
+}
+
+void INLINE ClearMemoryStateInOneLine(Thread *thr, uintptr_t addr,
+                                      uintptr_t beg, uintptr_t end) {
+  AssertTILHeld();
+  CacheLine *line = G_cache->GetLineIfExists(thr, addr, __LINE__);
+  // CacheLine *line = G_cache->GetLineOrCreateNew(addr, __LINE__);
+  if (line) {
+    DCHECK(beg < CacheLine::kLineSize);
+    DCHECK(end <= CacheLine::kLineSize);
+    DCHECK(beg < end);
+    Mask published = line->published();
+    if (UNLIKELY(!published.Empty())) {
+      Mask mask(published.GetRange(beg, end));
+      ClearPublishedAttribute(line, mask);
+    }
+    Mask old_used = line->ClearRangeAndReturnOldUsed(beg, end);
+    UnrefSegmentsInMemoryRange(beg, end, old_used, line);
+    G_cache->ReleaseLine(thr, addr, line, __LINE__);
+  }
+}
+
+// clear memory state for [a,b)
+void NOINLINE ClearMemoryState(Thread *thr, uintptr_t a, uintptr_t b) {
+  if (a == b) return;
+  CHECK(a < b);
+  uintptr_t line1_tag = 0, line2_tag = 0;
+  uintptr_t single_line_tag = GetCacheLinesForRange(a, b,
+                                                    &line1_tag, &line2_tag);
+  if (single_line_tag) {
+    ClearMemoryStateInOneLine(thr, a, a - single_line_tag,
+                              b - single_line_tag);
+    return;
+  }
+
+  uintptr_t a_tag = CacheLine::ComputeTag(a);
+  ClearMemoryStateInOneLine(thr, a, a - a_tag, CacheLine::kLineSize);
+
+  for (uintptr_t tag_i = line1_tag; tag_i < line2_tag;
+       tag_i += CacheLine::kLineSize) {
+    ClearMemoryStateInOneLine(thr, tag_i, 0, CacheLine::kLineSize);
+  }
+
+  if (b > line2_tag) {
+    ClearMemoryStateInOneLine(thr, line2_tag, 0, b - line2_tag);
+  }
+
+  if (DEBUG_MODE && G_flags->debug_level >= 2) {
+    // Check that we've cleared it. Slow!
+    for (uintptr_t x = a; x < b; x++) {
+      uintptr_t off = CacheLine::ComputeOffset(x);
+      CacheLine *line = G_cache->GetLineOrCreateNew(thr, x, __LINE__);
+      CHECK(!line->has_shadow_value().Get(off));
+      G_cache->ReleaseLine(thr, x, line, __LINE__);
+    }
+  }
+
+  g_atomicCore->ClearMemoryState(a, b);
+}
 
 // -------- PCQ --------------------- {{{1
 struct PCQ {
@@ -6866,7 +7031,7 @@ class Detector {
                                            Thread *thr,
                                            ShadowValue *new_sval) {
 #define MSM_STAT(i) do { if (DEBUG_MODE) \
-  thr->stats.msm_branch_count[i]++; } while(0)
+  thr->stats.msm_branch_count[i]++; } while ((void)0, 0)
     SSID rd_ssid = old_sval.rd_ssid();
     SSID wr_ssid = old_sval.wr_ssid();
     SID cur_sid = thr->sid();
@@ -7027,11 +7192,13 @@ class Detector {
 
       // Check for race.
       if (UNLIKELY(is_race)) {
-        if (G_flags->report_races && !cache_line->racey().Get(offset)) {
-          reports_.AddReport(thr, pc, is_w, addr, size,
-                             old_sval, *sval_p, is_published);
+        if (thr->ShouldReportRaces()) {
+          if (G_flags->report_races && !cache_line->racey().Get(offset)) {
+            reports_.AddReport(thr, pc, is_w, addr, size,
+                               old_sval, *sval_p, is_published);
+          }
+          cache_line->racey().SetRange(offset, offset + size);
         }
-        cache_line->racey().SetRange(offset, offset + size);
       }
 
       // Ref/Unref segments
@@ -7288,7 +7455,8 @@ one_call:
                                          MopInfo *mop,
                                          bool has_expensive_flags,
                                          bool need_locking) {
-  #define INC_STAT(stat) do { if (has_expensive_flags) (stat)++; } while(0)
+#   define INC_STAT(stat) \
+        do { if (has_expensive_flags) (stat)++; } while ((void)0, 0)
     if (TS_ATOMICITY && G_flags->atomicity) {
       HandleMemoryAccessForAtomicityViolationDetector(thr, addr, mop);
       return false;
@@ -7677,6 +7845,26 @@ one_call:
 
 static Detector        *G_detector;
 
+
+void Thread::HandleAtomicMop(uintptr_t a,
+                             uintptr_t pc,
+                             tsan_atomic_op op,
+                             tsan_memory_order mo,
+                             size_t size) {
+  if (op == tsan_atomic_op_fence)
+    return;
+  bool const is_store = (op != tsan_atomic_op_load);
+  CHECK(inside_atomic_op_ >= 0);
+  if (mo != tsan_memory_order_natomic)
+    inside_atomic_op_ += 1;
+  MopInfo mop (pc, size, is_store, true);
+  G_detector->HandleTrace(this, &mop, 1, pc, &a, false);
+  if (mo != tsan_memory_order_natomic)
+    inside_atomic_op_ -= 1;
+  CHECK(inside_atomic_op_ >= 0);
+}
+
+
 // -------- Flags ------------------------- {{{1
 const char *usage_str =
 "Usage:\n"
@@ -7830,7 +8018,7 @@ static size_t GetMemoryLimitInMbFromProcSelfLimits() {
   size_t pos = proc_self_limits.find(max_addr_space);
   if (pos == string::npos) return 0;
   pos += strlen(max_addr_space);
-  while(proc_self_limits[pos] == ' ') pos++;
+  while (proc_self_limits[pos] == ' ') pos++;
   if (proc_self_limits[pos] == 'u')
     return 0;  // 'unlimited'.
   char *end;
@@ -8080,6 +8268,8 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   FindBoolFlag("sched_shake", false, args, &G_flags->sched_shake);
   FindBoolFlag("api_ambush", false, args, &G_flags->api_ambush);
 
+  FindBoolFlag("enable_atomic", false, args, &G_flags->enable_atomic);
+
   if (!args->empty()) {
     ReportUnknownFlagAndExit(args->front());
   }
@@ -8098,6 +8288,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   debug_happens_before = PhaseDebugIsOn("happens_before");
   debug_cache = PhaseDebugIsOn("cache");
   debug_race_verifier = PhaseDebugIsOn("race_verifier");
+  debug_atomic = PhaseDebugIsOn("atomic");
 }
 
 // -------- ThreadSanitizer ------------------ {{{1
@@ -8393,6 +8584,7 @@ extern void ThreadSanitizerInit() {
   g_publish_info_map = new PublishInfoMap;
   g_stack_trace_free_list = new StackTraceFreeList;
   g_pcq_map = new PCQMap;
+  g_atomicCore = new TsanAtomicCore();
 
 
   if (G_flags->html) {
@@ -8504,6 +8696,314 @@ void NOINLINE ThreadSanitizerHandleRtnExit(int32_t tid) {
 static bool ThreadSanitizerPrintReport(ThreadSanitizerReport *report) {
   return G_detector->reports_.PrintReport(report);
 }
+
+
+// -------- TsanAtomicImplementation ------------------ {{{1
+
+// Atomic operation handler.
+// The idea of atomic handling is as simple as follows.
+// * First, we handle it as normal memory access,
+//     however with race reporting suppressed. That is, we won't produce any
+//     race reports during atomic access, but we can produce race reports
+//     later during normal memory accesses that race with the access.
+// * Then, we do the actual atomic memory access.
+//     It's executed in an atomic fashion, because there can be simultaneous
+//     atomic accesses from non-instrumented code (FUTEX_OP is a notable
+//     example).
+// * Finally, we update simulated memory model state according to
+//     the access type and associated memory order as follows.
+//     For writes and RMWs we create a new entry in the modification order
+//     of the variable. For reads we scan the modification order starting
+//     from the latest entry and going back in time, during the scan we decide
+//     what entry the read returns. A separate VTS (happens-before edges)
+//     is associated with each entry in the modification order, so that a load
+//     acquires memory visibility from the exact release-sequence associated
+//     with the loaded value.
+// For details of memory modelling refer to sections 1.10 and 29
+//     of C++0x standard:
+// http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2011/n3242.pdf
+uint64_t ThreadSanitizerHandleAtomicOp(int32_t tid,
+                                       uintptr_t pc,
+                                       tsan_atomic_op op,
+                                       tsan_memory_order mo,
+                                       tsan_memory_order fail_mo,
+                                       size_t size,
+                                       void volatile* a,
+                                       uint64_t v,
+                                       uint64_t cmp) {
+  if (G_flags->enable_atomic == false) {
+    uint64_t newv = 0;
+    uint64_t prev = 0;
+    return tsan_atomic_do_op(op, mo, fail_mo, size, a, v, cmp, &newv, &prev);
+  } else {
+    uint64_t rv = 0;
+    Thread* thr = Thread::Get(TID(tid));
+    // Just a verification of the parameters.
+    tsan_atomic_verify(op, mo, fail_mo, size, a);
+
+    {
+      TIL til(ts_lock, 0);
+      uint64_t newv = 0;
+      uint64_t prev = 0;
+      // Handle it as a plain mop. Race reports are temporally suppressed,though.
+      thr->HandleAtomicMop((uintptr_t)a, pc, op, mo, size);
+      // Do the actual atomic operation. It's executed in an atomic fashion,
+      // because there can be simultaneous atomic accesses
+      // from non-instrumented code.
+      rv = tsan_atomic_do_op(op, mo, fail_mo, size, a, v, cmp, &newv, &prev);
+
+      PrintfIf(debug_atomic, "rv=%llu, newv=%llu, prev=%llu\n",
+               (unsigned long long)rv,
+               (unsigned long long)newv,
+               (unsigned long long)prev);
+
+      if (op != tsan_atomic_op_fence) {
+        if (op == tsan_atomic_op_load) {
+          // For reads it replaces the return value with a random value
+          // from visible sequence of side-effects in the modification order
+          // of the variable.
+          rv = g_atomicCore->HandleRead(thr, (uintptr_t)a, rv,
+                                        tsan_atomic_is_acquire(mo));
+        } else if ((op == tsan_atomic_op_compare_exchange_weak
+            || op == tsan_atomic_op_compare_exchange_strong)
+            && cmp != rv) {
+          // Failed compare_exchange is handled as read, because, well,
+          // it's indeed just a read (at least logically).
+          g_atomicCore->HandleRead(thr, (uintptr_t)a, rv,
+                                   tsan_atomic_is_acquire(fail_mo));
+        } else {
+          // For writes and RMW operations it updates modification order
+          // of the atomic variable.
+          g_atomicCore->HandleWrite(thr, (uintptr_t)a, newv, prev,
+                                    tsan_atomic_is_acquire(mo),
+                                    tsan_atomic_is_release(mo),
+                                    tsan_atomic_is_rmw(op));
+        }
+      }
+    }
+
+    PrintfIf(debug_atomic, "ATOMIC: %s-%s %p (%llu,%llu)=%llu\n",
+             tsan_atomic_to_str(op),
+             tsan_atomic_to_str(mo),
+             a, (unsigned long long)v, (unsigned long long)cmp,
+             (unsigned long long)rv);
+
+    return rv;
+  }
+}
+
+
+TsanAtomicCore::TsanAtomicCore() {
+}
+
+
+void TsanAtomicCore::HandleWrite(Thread* thr,
+                                 uintptr_t a,
+                                 uint64_t v,
+                                 uint64_t prev,
+                                 bool const is_acquire,
+                                 bool const is_release,
+                                 bool const is_rmw) {
+  PrintfIf(debug_atomic, "HIST(%p): store acquire=%u, release=%u, rmw=%u\n",
+           (void*)a, is_acquire, is_release, is_rmw);
+  Atomic* atomic = &atomic_map_[a];
+  // Fix modification history if there were untracked accesses.
+  AtomicFixHist(atomic, prev);
+  AtomicHistoryEntry& hprv = atomic->hist
+      [(atomic->hist_pos - 1) % Atomic::kHistSize];
+  AtomicHistoryEntry& hist = atomic->hist
+      [atomic->hist_pos % Atomic::kHistSize];
+  // Fill in new entry in the modification history.
+  hist.val = v;
+  hist.tid = thr->tid();
+  hist.clk = thr->vts()->clk(thr->tid());
+  if (hist.vts != 0) {
+    VTS::Unref(hist.vts);
+    hist.vts = 0;
+  }
+  atomic->hist_pos += 1;
+
+  // Update VTS according to memory access type and memory ordering.
+  if (is_rmw) {
+    if (is_release) {
+      if (hprv.vts != 0) {
+        hist.vts = VTS::Join(hprv.vts, thr->vts());
+      } else {
+        hist.vts = thr->vts()->Clone();
+      }
+    } else if (hprv.vts != 0) {
+      hist.vts = hprv.vts->Clone();
+    }
+    if (is_acquire && hprv.vts != 0) {
+      thr->NewSegmentForWait(hprv.vts);
+    }
+  } else {
+    DCHECK(is_acquire == false);
+    if (is_release) {
+      hist.vts = thr->vts()->Clone();
+    }
+  }
+
+  // Update the thread's VTS if it's relese memory access.
+  if (is_release) {
+    thr->NewSegmentForSignal();
+    if (debug_happens_before) {
+      Printf("T%d: Signal: %p:\n    %s %s\n    %s\n",
+             thr->tid().raw(), a,
+             thr->vts()->ToString().c_str(),
+             Segment::ToString(thr->sid()).c_str(),
+             hist.vts->ToString().c_str());
+      if (G_flags->debug_level >= 1) {
+        thr->ReportStackTrace();
+      }
+    }
+  }
+}
+
+
+uint64_t TsanAtomicCore::HandleRead(Thread* thr,
+                                    uintptr_t a,
+                                    uint64_t v,
+                                    bool is_acquire) {
+  PrintfIf(debug_atomic, "HIST(%p): {\n", (void*)a);
+
+  Atomic* atomic = &atomic_map_[a];
+  // Fix modification history if there were untracked accesses.
+  AtomicFixHist(atomic, v);
+  AtomicHistoryEntry* hist0 = 0;
+  int32_t seen_seq = 0;
+  int32_t const seen_seq0 = atomic->last_seen.clock(thr->tid());
+  // Scan modification order of the variable from the latest entry
+  // back in time. For each side-effect (write) we determine as to
+  // whether we have to yield the value or we can go back in time further.
+  for (int32_t i = 0; i != Atomic::kHistSize; i += 1) {
+    int32_t const idx = (atomic->hist_pos - i - 1);
+    CHECK(idx >= 0);
+    AtomicHistoryEntry& hist = atomic->hist[idx % Atomic::kHistSize];
+    PrintfIf(debug_atomic, "HIST(%p):   #%u (tid=%u, clk=%u,"
+           " val=%llu) vts=%u\n",
+           (void*)a, (unsigned)i, (unsigned)hist.tid.raw(),
+           (unsigned)hist.clk, (unsigned long long)hist.val,
+           (unsigned)thr->vts()->clk(hist.tid));
+    if (hist.tid.raw() == TID::kInvalidTID) {
+      // We hit an uninialized entry, that is, it's an access to an unitialized
+      // variable (potentially due to "race").
+      // Unfortunately, it should not happen as of now.
+      // TODO(dvyukov): how can we detect and report unitialized atomic reads?.
+      // .
+      hist0 = 0;
+      break;
+    } else if (i == Atomic::kHistSize - 1) {
+      // It's the last entry so we have to return it
+      // because we have to return something.
+      PrintfIf(debug_atomic, "HIST(%p):   replaced: last\n", (void*)a);
+      hist0 = &hist;
+      break;
+    } else if (seen_seq0 >= idx) {
+      // The thread had already seen the entry so we have to return
+      // at least it.
+      PrintfIf(debug_atomic, "HIST(%p):   replaced: stability\n", (void*)a);
+      hist0 = &hist;
+      break;
+    } else if (thr->vts()->clk(hist.tid) >= hist.clk) {
+      // The write happened-before the read, so we have to return it.
+      PrintfIf(debug_atomic, "HIST(%p):   replaced: ordering\n", (void*)a);
+      hist0 = &hist;
+      break;
+    } else if (thr->random() % 2) {
+      // We are not obliged to return the entry but we can (and decided to do).
+      PrintfIf(debug_atomic, "HIST(%p):   replaced: coherence\n", (void*)a);
+      seen_seq = idx;
+      hist0 = &hist;
+      break;
+    } else {
+      // Move on to the next (older) entry.
+      PrintfIf(debug_atomic, "HIST(%p):   can be replaced but not\n", (void*)a);
+    }
+  }
+
+  if (hist0 != 0) {
+    v = hist0->val;
+    // Acquire mamory visibility is needed.
+    if (is_acquire) {
+      if (hist0->vts != 0) {
+        thr->NewSegmentForWait(hist0->vts);
+      }
+
+      if (debug_happens_before) {
+        Printf("T%d: Wait: %p:\n    %s %s\n",
+               thr->tid().raw(), a,
+               thr->vts()->ToString().c_str(),
+               Segment::ToString(thr->sid()).c_str());
+        if (G_flags->debug_level >= 1) {
+          thr->ReportStackTrace();
+        }
+      }
+    }
+    if (seen_seq != 0) {
+      // Mark the entry as seen so we won't return any older entry later.
+      atomic->last_seen.update(thr->tid(), seen_seq);
+    }
+  } else {
+    CHECK(!"should never happen as of now");
+    PrintfIf(debug_atomic, "HIST(%p): UNITIALIZED LOAD\n", (void*)a);
+    v = thr->random();
+  }
+  PrintfIf(debug_atomic, "HIST(%p): } -> %llu\n",
+      (void*)a, (unsigned long long)v);
+  return v;
+}
+
+
+void TsanAtomicCore::ClearMemoryState(uintptr_t a, uintptr_t b) {
+  DCHECK(a <= b);
+  DCHECK(G_flags->enable_atomic || atomic_map_.empty());
+  AtomicMap::iterator begin (atomic_map_.lower_bound(a));
+  AtomicMap::iterator pos (begin);
+  for (; pos != atomic_map_.end() && pos->first <= b; ++pos) {
+    pos->second.reset();
+  }
+  atomic_map_.erase(begin, pos);
+}
+
+
+void TsanAtomicCore::AtomicFixHist(Atomic* atomic, uint64_t prev) {
+  AtomicHistoryEntry& hprv = atomic->hist
+      [(atomic->hist_pos - 1) % Atomic::kHistSize];
+  // In case we had missed an atomic access (that is, an access from 
+  // non-instrumented code), reset whole history and initialize it
+  // with a single entry that happened "before world creation".
+  if (prev != hprv.val) {
+    PrintfIf(debug_atomic, "HIST RESET\n");
+    atomic->reset();
+    AtomicHistoryEntry& hist = atomic->hist
+        [atomic->hist_pos % Atomic::kHistSize];
+    hist.val = prev;
+    hist.tid = TID(0);
+    hist.clk = 0;
+    atomic->hist_pos += 1;
+  }
+}
+
+
+TsanAtomicCore::Atomic::Atomic() {
+  reset(true);
+}
+
+
+void TsanAtomicCore::Atomic::reset(bool init) {
+  hist_pos = sizeof(hist)/sizeof(hist[0]) + 1;
+  for (size_t i = 0; i != sizeof(hist)/sizeof(hist[0]); i += 1) {
+    hist[i].val = 0xBCEBC041;
+    hist[i].tid = TID(TID::kInvalidTID);
+    hist[i].clk = -1;
+    if (init == false && hist[i].vts != 0)
+      VTS::Unref(hist[i].vts);
+    hist[i].vts = 0;
+  }
+  last_seen.reset();
+}
+
 
 // -------- TODO -------------------------- {{{1
 // - Support configurable aliases for function names (is it doable in valgrind)?

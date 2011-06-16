@@ -44,12 +44,12 @@ extern void ThreadSanitizerDumpAllStacks();
    Printf("Assertion failed: %s (%s:%d) %s\n", \
           __FUNCTION__, __FILE__, __LINE__, #x); \
    ThreadSanitizerDumpAllStacks(); \
-   exit(1); }} while (0)
+   exit(1); }} while ((void)0, 0)
 #elif defined(TS_OFFLINE)
 extern unsigned long offline_line_n;
 # define CHECK(x) do { if (!(x)) { \
     Printf("ASSERT on line %ld\n", offline_line_n); \
-     assert(x);}} while (0)
+     assert(x);}} while ((void)0, 0)
 #else
 # define CHECK assert
 #endif
@@ -243,7 +243,7 @@ int getpid();
   #define DCHECK(a) CHECK(a)
   #define DEBUG_MODE (1)
 #else
-  #define DCHECK(a) do { if (0) { if (a) {} } } while(0)
+  #define DCHECK(a) do { if (0) { if (a) {} } } while((void)0, 0)
   #define DEBUG_MODE (0)
 #endif
 
@@ -398,6 +398,13 @@ inline unsigned u32_log2(unsigned x) {
 }
 #endif
 
+typedef unsigned prng_t;
+
+/// Simple stand-alone pseudorandom number generator.
+/// Current algorithm is ANSI C linear congruential PRNG.
+inline unsigned tsan_prng(prng_t* state) {
+  return (*state = *state * 1103515245 + 12345) >> 16;
+}
 
 
 #endif  // TS_UTIL_H_

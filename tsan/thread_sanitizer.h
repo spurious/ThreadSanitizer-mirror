@@ -134,6 +134,8 @@ struct FLAGS {
 
   bool sched_shake;
   bool api_ambush;
+
+  bool enable_atomic;
 };
 
 extern FLAGS *G_flags;
