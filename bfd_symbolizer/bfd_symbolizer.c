@@ -49,6 +49,11 @@ typedef struct lib_t {
   void*                 end;
   struct bfd*           bfd;
   asymbol**             syms;
+	int                   symcount;
+	asymbol**             dynsyms;
+	int                   dynsymcount;
+	asymbol*              synsyms;
+	int                   synsymcount;
   var_t*                vars;
   int                   var_count;
   int                   is_seen;
@@ -169,6 +174,11 @@ static lib_t* lib_alloc(void* lbegin, void* lend, char const* lname) {
   lib->end = lend;
   lib->bfd = 0;
   lib->syms = 0;
+	lib->symcount = 0;
+	lib->dynsyms = 0;
+	lib->dynsymcount = 0;
+	lib->synsyms = 0;
+	lib->synsymcount = 0;
   lib->vars = 0;
   lib->var_count = 0;
   lib->is_seen = 1;
@@ -183,6 +193,8 @@ static void lib_free(lib_t* lib) {
     bfd_close(lib->bfd);
   free(lib->vars);
   free(lib->syms);
+	free(lib->dynsyms);
+	free(lib->synsyms);
   free(lib->name);
   free(lib);
 }
@@ -354,7 +366,6 @@ static lib_t* find_lib(void* addr) {
 static int init_lib(lib_t* lib) {
   char**                matching;
   unsigned              symsize;
-  long                  symcount;
   long                  i;
   long                  j;
 
@@ -397,19 +408,26 @@ static int init_lib(lib_t* lib) {
     return 1;
   }
 
-  symcount = bfd_read_minisymbols(lib->bfd, 0, (void**)&lib->syms, &symsize);
-  if (symcount == 0)
-    symcount = bfd_read_minisymbols(lib->bfd, 1, (void**)&lib->syms, &symsize);
-  if (symcount < 0) {
+  lib->symcount = bfd_read_minisymbols(lib->bfd, 0, (void**)&lib->syms, &symsize);
+	if (lib->symcount < 0)
+		lib->symcount = 0;
+  lib->dynsymcount = bfd_read_minisymbols(lib->bfd, 1, (void**)&lib->dynsyms, &symsize);
+	if (lib->dynsymcount < 0)
+		lib->dynsymcount = 0;
+  if (lib->symcount == 0 && lib->dynsymcount == 0) {
     ERR("bfd_read_minisymbols(%s) failed: %s\n",
         lib->name, bfd_errmsg(bfd_get_error()));
+		free(lib->syms);
+		free(lib->dynsyms);
+		lib->syms = 0;
+		lib->dynsyms = 0;
     bfd_close(lib->bfd);
     lib->bfd = 0;
     return 1;
   }
 
   lib->var_count = 0;
-  for (i = 0; i != symcount; i += 1) {
+  for (i = 0; i != lib->symcount; i += 1) {
     if ((lib->syms[i]->flags & BSF_OBJECT) != 0
         && (lib->syms[i]->flags & BSF_THREAD_LOCAL) == 0)
       lib->var_count += 1;
@@ -417,13 +435,15 @@ static int init_lib(lib_t* lib) {
   lib->vars = (var_t*)malloc((lib->var_count + 1) * sizeof(var_t));
   if (lib->vars == 0) {
     free(lib->syms);
+		free(lib->dynsyms);
     lib->syms = 0;
+		lib->dynsyms = 0;
     bfd_close(lib->bfd);
     lib->bfd = 0;
     return 1;
   }
 
-  for (i = 0, j = 0; i != symcount; i += 1) {
+  for (i = 0, j = 0; i != lib->symcount; i += 1) {
     if ((lib->syms[i]->flags & BSF_OBJECT) != 0
         && (lib->syms[i]->flags & BSF_THREAD_LOCAL) == 0) {
       lib->vars[j].addr = (void*)bfd_asymbol_value(lib->syms[i]);
@@ -435,13 +455,32 @@ static int init_lib(lib_t* lib) {
   lib->vars[j].name = "STUB";
   qsort(lib->vars, lib->var_count, sizeof(var_t), var_sort_pred);
 
+	lib->synsymcount = bfd_get_synthetic_symtab(lib->bfd,
+																							lib->symcount,
+																							lib->syms,
+																							lib->dynsymcount,
+																							lib->dynsyms,
+																							&lib->synsyms);
   DBG("symbols:\n");
-  for (i = 0; i != symcount; i += 1) {
-    DBG("\t%p: %s\n",
+  for (i = 0; i != lib->symcount; i += 1) {
+    DBG("\t%p: %s%s%s%s%s%s%s%s%s%s%s%s%s%s\n",
         (void*)bfd_asymbol_value(lib->syms[i]),
-        bfd_asymbol_name(lib->syms[i]));
+        bfd_asymbol_name(lib->syms[i]),
+        (lib->syms[i]->flags & BSF_LOCAL ? " LOCAL" : ""),
+        (lib->syms[i]->flags & BSF_GLOBAL ? " GLOBAL" : ""),
+        (lib->syms[i]->flags & BSF_DEBUGGING ? " DEBUG" : ""),
+        (lib->syms[i]->flags & BSF_FUNCTION ? " FUNC" : ""),
+        (lib->syms[i]->flags & BSF_WEAK ? " WEAK" : ""),
+        (lib->syms[i]->flags & BSF_SECTION_SYM ? " SECTION" : ""),
+        (lib->syms[i]->flags & BSF_CONSTRUCTOR ? " CONSTRUCTOR" : ""),
+        (lib->syms[i]->flags & BSF_INDIRECT ? " INDIRECT" : ""),
+        (lib->syms[i]->flags & BSF_FILE ? " FILE" : ""),
+        (lib->syms[i]->flags & BSF_DYNAMIC ? " DYNAMIC" : ""),
+        (lib->syms[i]->flags & BSF_OBJECT ? " OBJECT" : ""),
+        (lib->syms[i]->flags & BSF_DEBUGGING_RELOC ? " DEBUG_RELOC" : ""),
+        (lib->syms[i]->flags & BSF_THREAD_LOCAL ? " THREAD_LOCAL" : ""));
   }
-
+	
   DBG("vars:\n");
   for (i = 0; i != lib->var_count + 1; i += 1) {
     DBG("\t%p: %s\n",
@@ -449,6 +488,13 @@ static int init_lib(lib_t* lib) {
         lib->vars[i].name);
   }
 
+	DBG("synsyms:\n");
+	for (i = 0; i != lib->synsymcount; i += 1) {
+		DBG("\t%p: %s\n",
+				(void*)bfd_asymbol_value(&lib->synsyms[i]),
+        bfd_asymbol_name(&lib->synsyms[i]));
+	}
+	
   return 0;
 }
 
@@ -534,6 +580,7 @@ static int process_code(lib_t* lib, void* addr, char* symbol, int symbol_size, c
   sym_t                 si;
   char*                 alloc;
   const char*           name;
+	int                   i;
 
   DBG("resolving address %p in module '%s'\n", addr, lib->name);
   if (lib->is_main_exec == 0) {
@@ -546,8 +593,20 @@ static int process_code(lib_t* lib, void* addr, char* symbol, int symbol_size, c
   si.pc = (bfd_vma)addr;
   si.found = 0;
   bfd_map_over_sections(lib->bfd, bfd_search_callback, &si);
-  if (si.found == 0)
+  if (si.found == 0) {
+		for (i = 0; i != lib->synsymcount; i += 1) {
+			if (addr == (void*)bfd_asymbol_value(&lib->synsyms[i])) {
+				strcopy(symbol, symbol_size, bfd_asymbol_name(&lib->synsyms[i]));
+				strcopy(filename, filename_size, "");
+				if (source_line != 0)
+					*source_line = 0;
+				if (symbol_offset != 0)
+					*symbol_offset = 0;
+				return 0;
+			}
+		}
     return 1;
+	}
 
   do {
     alloc = 0;

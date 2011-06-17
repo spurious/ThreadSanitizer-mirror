@@ -120,7 +120,7 @@ int main() {
   check((char*)&foo4+3, bfds_opt_data, "foo4",          exename,      "",            0,         3);
 
   check((void*)&foo1,   bfds_opt_demangle, "foo1",      exename,      __FILE__,      foo1_line, 0);
-  check((void*)&foo2,   bfds_opt_demangle, "foo2",     exename,      __FILE__,      foo2_line, 0);
+  check((void*)&foo2,   bfds_opt_demangle, "foo2",      exename,      __FILE__,      foo2_line, 0);
   check((void*)&foo2,   bfds_opt_demangle_params,  "foo2()",     exename,      __FILE__,      foo2_line, 0);
   check((void*)&foo2,   bfds_opt_demangle_verbose, "foo2()",     exename,      __FILE__,      foo2_line, 0);
 
@@ -139,6 +139,8 @@ int main() {
   check(dyn1(0, 0),     bfds_opt_none, "dyn1",          staname, "test_dyn.cc", dyn1_line, 0);
   check(get_dyn2(),     bfds_opt_data, "dyn2",          staname, "",            0,         0);
 
+  check((void*)&dyn1,   bfds_opt_none, "dyn1@plt",      exename, "",            0, 0);
+	
   void* dl = dlopen(dynname, RTLD_LOCAL | RTLD_NOW);
   void* dyn21 = dlsym(dl, "dyn21");
   void* dyn22 = dlsym(dl, "dyn22");
