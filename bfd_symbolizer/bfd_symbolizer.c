@@ -290,7 +290,7 @@ static void update_libs() {
   f = open("/proc/self/maps", O_RDONLY);
   if (f == -1) {
     ERR("open(\"/proc/self/maps\") failed (%s)\n",
-        sys_errlist[errno]);
+        strerror(errno));
     return;
   }
 
@@ -302,7 +302,7 @@ static void update_libs() {
   for (;;) {
     if (data == 0) {
       ERR("malloc(%d) failed (%s)\n",
-          ctx.maps_size, sys_errlist[errno]);
+          ctx.maps_size, strerror(errno));
       close(f);
       return;
     }
@@ -310,7 +310,7 @@ static void update_libs() {
     DBG("read %u\n", (int)res);
     if (res == (off_t)-1) {
       ERR("read('/proc/self/maps') failed (%s)\n",
-          sys_errlist[errno]);
+          strerror(errno));
       free(data);
       close(f);
       return;
