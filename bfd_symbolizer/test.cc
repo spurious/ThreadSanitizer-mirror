@@ -140,7 +140,7 @@ int main() {
   check(get_dyn2(),     bfds_opt_data, "dyn2",          staname, "",            0,         0);
 
   check((void*)&dyn1,   bfds_opt_none, "dyn1@plt",      exename, "",            0, 0);
-	
+  
   void* dl = dlopen(dynname, RTLD_LOCAL | RTLD_NOW);
   void* dyn21 = dlsym(dl, "dyn21");
   void* dyn22 = dlsym(dl, "dyn22");
