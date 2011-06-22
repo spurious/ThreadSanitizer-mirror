@@ -131,15 +131,15 @@ string GetSelfFilename();
 bool IsAddrFromDataSections(uintptr_t addr);
 
 #define DECLARE_TID() \
-  tid_t tid = GetTid();
+  tid_t const tid = GetTid();
 
 #define DECLARE_TID_AND_PC() \
-  tid_t tid = GetTid(); \
-  pc_t pc = (pc_t)__builtin_return_address(0);
+  tid_t const tid = GetTid(); \
+  pc_t const pc = (pc_t)__builtin_return_address(0);
 
 #define EX_DECLARE_TID_AND_PC() \
-  tid_t tid = ExGetTid(); \
-  pc_t pc = (pc_t)__builtin_return_address(0);
+  tid_t const tid = ExGetTid(); \
+  pc_t const pc = (pc_t)__builtin_return_address(0);
 
 void MaybeInitTid();
 void flush_tleb();
