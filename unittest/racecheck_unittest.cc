@@ -3140,6 +3140,10 @@ void WorkerX() {
   EXPECT_TRUE(strrchr(str, 'X') == str+2);
   EXPECT_TRUE(strrchr(str, 'x') == str+3);
   EXPECT_TRUE(strrchr(str, 'Y') == NULL);
+
+  char tmp3[100] = "a//index.html";
+  EXPECT_TRUE(memmove(tmp3 + 7, tmp3 + 3, strlen(tmp3 + 3)) == tmp3 + 7);
+  EXPECT_EQ(0, strcmp(tmp3, "a//indeindex.html"));
 }
 void WorkerY() {
   str[5] = 'Y';
