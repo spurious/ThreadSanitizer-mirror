@@ -102,6 +102,7 @@ class GIL {
 
   static bool TryLock();
   static void Unlock();
+  static bool UnlockNoSignals();
 #if (DEBUG)
   static int GetDepth();
 #endif

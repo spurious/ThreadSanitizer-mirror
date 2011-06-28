@@ -205,26 +205,29 @@ bool GIL::TryLock() {
   }
 }
 
-void GIL::Unlock() {
-  if (gil_depth == 1) {
-    gil_depth--;
+bool GIL::UnlockNoSignals() {
+  gil_depth--;
+  if (gil_depth != 0)
+    return false;
 #if (DEBUG)
-    gil_owner = 0;
+  gil_owner = 0;
 #endif
 #ifdef ENABLE_STATS
-    if (UNLIKELY(G_flags->verbosity)) {
-      if (stats_cur_events < kNumBuckets) {
-        stats_event_buckets[stats_cur_events]++;
-      }
-      stats_cur_events = 0;
+  if (UNLIKELY(G_flags->verbosity)) {
+    if (stats_cur_events < kNumBuckets) {
+      stats_event_buckets[stats_cur_events]++;
     }
-#endif
-    GIL_UNLOCK(&global_lock);
-    LEAVE_RTL();
-    clear_pending_signals();
-  } else {
-    gil_depth--;
+    stats_cur_events = 0;
   }
+#endif
+  GIL_UNLOCK(&global_lock);
+  LEAVE_RTL();
+  return true;
+}
+
+void GIL::Unlock() {
+  if (UnlockNoSignals())
+    clear_pending_signals();
 }
 
 #if (DEBUG)
@@ -2210,9 +2213,13 @@ void push_atexit(atexit_worker *worker) {
 }
 
 atexit_worker* pop_atexit() {
-  GIL scoped;
+  GIL::Lock();
   CHECK(atexit_index > -1);
-  return atexit_stack[atexit_index--];
+  atexit_worker* f = atexit_stack[atexit_index--];
+  // We've entered RTL in __wrap_exit(),
+  // so we can't process signals here.
+  GIL::UnlockNoSignals();
+  return f;
 }
 
 void atexit_callback() {
@@ -2220,7 +2227,12 @@ void atexit_callback() {
   RPut(RTN_CALL, tid, pc, (uintptr_t)atexit_callback, 0);
   atexit_worker *worker = pop_atexit();
   SPut(WAIT, tid, pc, (uintptr_t)worker, 0);
+  // We've entered RTL in __wrap_exit(),
+  // but we want to process user callbacks outside of RTL.
+  LEAVE_RTL();
+  CHECK(!IN_RTL);
   (*worker)();
+  ENTER_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
 }
 
