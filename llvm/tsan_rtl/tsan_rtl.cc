@@ -2229,10 +2229,13 @@ void atexit_callback() {
   SPut(WAIT, tid, pc, (uintptr_t)worker, 0);
   // We've entered RTL in __wrap_exit(),
   // but we want to process user callbacks outside of RTL.
-  LEAVE_RTL();
-  CHECK(!IN_RTL);
+#if (DEBUG)
+  CHECK(GIL::GetDepth() == 0);
+#endif
+  int const rtl_val = IN_RTL;
+  IN_RTL = 0;
   (*worker)();
-  ENTER_RTL();
+  IN_RTL = rtl_val;
   RPut(RTN_EXIT, tid, pc, 0, 0);
 }
 
