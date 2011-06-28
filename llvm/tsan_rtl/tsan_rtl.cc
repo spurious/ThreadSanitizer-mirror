@@ -773,18 +773,6 @@ void *pthread_callback(void *arg) {
 
   result = (*routine)(routine_arg);
 
-  // We're about to stop the current thread. Block all the signals to prevent
-  // invoking the handlers after THR_END is sent to ThreadSanitizer.
-  sigfillset(&glob_sig_blocked);
-  pthread_sigmask(SIG_BLOCK, &glob_sig_blocked, &glob_sig_old);
-
-  GIL::Lock();
-  Finished[tid] = true;
-#if (DEBUG)
-  dump_finished();
-#endif
-  DDPrintf("After routine() in T%d\n", tid);
-
   // Call the TSD destructors set by pthread_key_create().
   int iter = PTHREAD_DESTRUCTOR_ITERATIONS;
   while (iter) {
@@ -803,6 +791,19 @@ void *pthread_callback(void *arg) {
     iter--;
     if (!dirty) iter = 0;
   }
+
+  // We're about to stop the current thread. Block all the signals to prevent
+  // invoking the handlers after THR_END is sent to ThreadSanitizer.
+  sigfillset(&glob_sig_blocked);
+  pthread_sigmask(SIG_BLOCK, &glob_sig_blocked, &glob_sig_old);
+
+  GIL::Lock();
+  Finished[tid] = true;
+#if (DEBUG)
+  dump_finished();
+#endif
+  DDPrintf("After routine() in T%d\n", tid);
+
   SPut(THR_END, tid, 0, 0, 0);
   if (FinishConds.find(tid) != FinishConds.end()) {
     DDPrintf("T%d (child of T%d): Signaling on %p\n",
