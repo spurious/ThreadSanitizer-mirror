@@ -1,7 +1,8 @@
 #!/bin/bash
 function printf() {
-  printf_unused=""
-  #echo GCCTSAN: $@
+  if [ "$GCCTSAN_DBG_SCRIPT" != "" ]; then
+    echo GCCTSAN: $@
+  fi
 }
 
 if [ "$GCCTSAN_GCC_DIR" == "" ]; then
@@ -21,12 +22,12 @@ GCC=$GCCTSAN_GCC_DIR/bin/$1
 LIB32_PATH=$GCCTSAN_GCC_DIR/lib32
 LIB64_PATH=$GCCTSAN_GCC_DIR/lib64
 LNK=/usr/bin/$1
-RTH=`dirname $0`/../plg/relite_rt.h
+RTH=`dirname $0`/../include/relite_rt.h
 PLG_NAME=librelite_$VER
-PLG=`dirname $0`/../bin/$PLG_NAME.so
-RTL32=`dirname $0`/../../llvm/tsan_rtl/tsan_rtl32.a
-RTL64=`dirname $0`/../../llvm/tsan_rtl/tsan_rtl64.a
-LNK_SCRIPT=`dirname $0`/../../llvm/scripts/link_config.txt
+PLG=`dirname $0`/../lib/$PLG_NAME.so
+RTL32=`dirname $0`/../../tsan_rtl/tsan_rtl32.a
+RTL64=`dirname $0`/../../tsan_rtl/tsan_rtl64.a
+LNK_SCRIPT=`dirname $0`/../../tsan_rtl/link_config.txt
 shift
 
 wrap () {
@@ -82,9 +83,9 @@ until [ -z "$1" ]; do
     if [ "$LIB_INSERTED" == "" ]; then
       LIB_INSERTED="1"
       if [ "$M32" == "1" ]; then
-        ARGS_LD+=" $RTL32 -lrt -lpthread"
+        ARGS_LD+=" -Wl,--undefined=dynamic_annotations_enforce_linking $RTL32 -lrt -lpthread"
       else
-        ARGS_LD+=" $RTL64 -lrt -lpthread"
+        ARGS_LD+=" -Wl,--undefined=dynamic_annotations_enforce_linking $RTL64 -lrt -lpthread"
       fi
     fi
   fi
@@ -95,9 +96,9 @@ done
 
 if [ "$LIB_INSERTED" == "" ]; then
   if [ "$M32" == "1" ]; then
-    ARGS_LD+=" $RTL32 -lrt -lpthread"
+    ARGS_LD+=" -Wl,--undefined=dynamic_annotations_enforce_linking $RTL32 -lrt -lpthread"
   else
-    ARGS_LD+=" $RTL64 -lrt -lpthread"
+    ARGS_LD+=" -Wl,--undefined=dynamic_annotations_enforce_linking $RTL64 -lrt -lpthread"
   fi
 fi
 
@@ -128,8 +129,8 @@ else
       printf $LNK "$@"
       $LNK "$@"
     else
-      printf $GCC -DDYNAMIC_ANNOTATIONS_WANT_ATTRIBUTE_WEAK -DDYNAMIC_ANNOTATIONS_PREFIX=LLVM -fplugin=$PLG -fplugin-arg-$PLG_NAME-ignore="$GCCTSAN_IGNORE" -include$RTH $GCCTSAN_ARGS "$@" -O1 -fno-inline -fno-optimize-sibling-calls -fno-exceptions -g -fvisibility=default -w
-      $GCC -DDYNAMIC_ANNOTATIONS_WANT_ATTRIBUTE_WEAK -DDYNAMIC_ANNOTATIONS_PREFIX=LLVM -fplugin=$PLG -fplugin-arg-$PLG_NAME-ignore="$GCCTSAN_IGNORE" -include$RTH $GCCTSAN_ARGS "$@" -O1 -fno-inline -fno-optimize-sibling-calls -fno-exceptions -g -fvisibility=default -w
+      printf $GCC -DDYNAMIC_ANNOTATIONS_WANT_ATTRIBUTE_WEAK -DDYNAMIC_ANNOTATIONS_PREFIX=LLVM -fplugin=$PLG -fplugin-arg-$PLG_NAME-ignore="$GCCTSAN_IGNORE" -include$RTH $GCCTSAN_ARGS "$@" -O1 -fno-builtin -fno-inline -fno-optimize-sibling-calls -fno-exceptions -g -fvisibility=default -w
+      $GCC -DDYNAMIC_ANNOTATIONS_WANT_ATTRIBUTE_WEAK -DDYNAMIC_ANNOTATIONS_PREFIX=LLVM -fplugin=$PLG -fplugin-arg-$PLG_NAME-ignore="$GCCTSAN_IGNORE" -include$RTH $GCCTSAN_ARGS "$@" -O1 -fno-builtin -fno-inline -fno-optimize-sibling-calls -fno-exceptions -g -fvisibility=default -w
     fi
   fi
 fi
