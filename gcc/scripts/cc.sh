@@ -83,9 +83,9 @@ until [ -z "$1" ]; do
     if [ "$LIB_INSERTED" == "" ]; then
       LIB_INSERTED="1"
       if [ "$M32" == "1" ]; then
-        ARGS_LD+=" -Wl,--undefined=dynamic_annotations_enforce_linking $RTL32 -lrt -lpthread"
+        ARGS_LD+=" -Wl,--undefined=dynamic_annotations_enforce_linking $RTL32 -lrt -lpthread -lz"
       else
-        ARGS_LD+=" -Wl,--undefined=dynamic_annotations_enforce_linking $RTL64 -lrt -lpthread"
+        ARGS_LD+=" -Wl,--undefined=dynamic_annotations_enforce_linking $RTL64 -lrt -lpthread -lz"
       fi
     fi
   fi
@@ -96,9 +96,9 @@ done
 
 if [ "$LIB_INSERTED" == "" ]; then
   if [ "$M32" == "1" ]; then
-    ARGS_LD+=" -Wl,--undefined=dynamic_annotations_enforce_linking $RTL32 -lrt -lpthread"
+    ARGS_LD+=" -Wl,--undefined=dynamic_annotations_enforce_linking $RTL32 -lrt -lpthread -lz"
   else
-    ARGS_LD+=" -Wl,--undefined=dynamic_annotations_enforce_linking $RTL64 -lrt -lpthread"
+    ARGS_LD+=" -Wl,--undefined=dynamic_annotations_enforce_linking $RTL64 -lrt -lpthread -lz"
   fi
 fi
 
