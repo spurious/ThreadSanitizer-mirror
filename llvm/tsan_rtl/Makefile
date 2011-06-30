@@ -27,7 +27,7 @@ COMMON_FLAGS=-I. -Istlport -I../../third_party/stlport \
       -I$(TSAN_PATH) -I../../dynamic_annotations \
       -I../../earthquake \
       -fno-exceptions -g -O2 \
-      -D_STLP_NO_IOSTREAMS=1 -DTS_LLVM
+      -D_STLP_NO_IOSTREAMS=1 -DTS_LLVM -fPIE
 
 DA_FLAGS=$(COMMON_FLAGS) -DDYNAMIC_ANNOTATIONS_PROVIDE_RUNNING_ON_VALGRIND=0
 
