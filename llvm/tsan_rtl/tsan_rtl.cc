@@ -1148,6 +1148,8 @@ void *malloc(size_t size) {
 
 extern "C"
 void __wrap_free(void *ptr) {
+  if (ptr == 0)
+    return;
   if (IN_RTL) return __real_free(ptr);
   GIL scoped;
   RECORD_ALLOC(__wrap_free);
@@ -3083,7 +3085,7 @@ string PcToRtnName(pc_t pc, bool demangle) {
   } else {
     char symbol [4096];
     if (bfds_symbolize((void*)pc,
-                       demangle ? bfds_opt_demangle : bfds_opt_none,
+                       demangle ? bfds_opt_demangle_verbose : bfds_opt_none,
                        symbol, sizeof(symbol),
                        0, 0, // module
                        0, 0, // source file
