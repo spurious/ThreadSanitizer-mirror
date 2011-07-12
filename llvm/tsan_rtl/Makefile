@@ -7,8 +7,13 @@ ERRORLVL=-Werror
 ERRORLVL=-Werror -Wno-deprecated -Wno-unused-function
 TSAN_PATH=../../tsan
 BFDS_PATH=../../bfd_symbolizer
+ifneq ($(NO_BFD), 1)
 DEFINES32=-DTSAN_RTL_X86 -I$(BFDS_PATH)/binutils32/bin/include
 DEFINES64=-DTSAN_RTL_X64 -I$(BFDS_PATH)/binutils64/bin/include
+else
+DEFINES32=-DTSAN_RTL_X86
+DEFINES64=-DTSAN_RTL_X64
+endif
 RTL_DEPS=
 
 OBJS32=x86-ts_util.o x86-suppressions.o \
@@ -65,13 +70,21 @@ RTL_64_A=tsan_rtl64.a
 all:	$(RTL_32_A) $(RTL_64_A)
 
 $(RTL_32_A):	$(OBJS32) $(RTL_32_O)
+ifneq ($(NO_BFD), 1)
 	rm -Rf bfds32 && mkdir bfds32 && cd bfds32 && ar x ../$(BFDS_PATH)/bfds32.a
 	$(AR) tsan_rtl32.a $(OBJS32) $(RTL_32_O) ./bfds32/*.o
+else
+	$(AR) tsan_rtl32.a $(OBJS32) $(RTL_32_O)
+endif
 	$(RANLIB) tsan_rtl32.a
 
 $(RTL_64_A):	$(OBJS64) $(RTL_64_O)
+ifneq ($(NO_BFD), 1)
 	rm -Rf bfds64 && mkdir bfds64 && cd bfds64 && ar x ../$(BFDS_PATH)/bfds64.a
 	$(AR) tsan_rtl64.a $(OBJS64) $(RTL_64_O) ./bfds64/*.o
+else
+	$(AR) tsan_rtl64.a $(OBJS64) $(RTL_64_O)
+endif
 	$(RANLIB) tsan_rtl64.a
 
 $(TSAN_PATH)/ts_event_names.h:
@@ -83,8 +96,11 @@ tsan_rtl32.o: $(SRC) tsan_rtl.h $(RTL_DEPS)
 tsan_rtl64.o: $(SRC) tsan_rtl.h $(RTL_DEPS)
 	$(CXX) $(SRC) $(FLAGS) -m64 $(ERRORLVL) $(DA_FLAGS) -Wall -c -o $(RTL_64_O) $(DEFINES64) -DTSAN_RTL_X64
 
+ifneq ($(NO_BFD), 1)
+BFDS_LIBS=$(BFDS_PATH)/bfds32.a $(BFDS_PATH)/bfds64.a
+endif
 
-x86-%.o:	%.cc $(TS_HEADERS) $(FOREIGN_HEADERS) $(BFDS_PATH)/bfds32.a $(BFDS_PATH)/bfds64.a
+x86-%.o:	%.cc $(TS_HEADERS) $(FOREIGN_HEADERS) $(BFDS_LIBS)
 	$(CXX) -m32 -o $@ -c $< $(ERRORLVL) $(FLAGS) $(DEFINES32)
 
 x86-%.o:	$(TSAN_PATH)/%.cc $(TS_HEADERS) $(FOREIGN_HEADERS)
@@ -97,7 +113,7 @@ x86-dynamic_annotations.o:	$(TSAN_PATH)/../dynamic_annotations/dynamic_annotatio
 	$(CC) -m32 -o $@ -c $< $(ERRORLVL) $(DA_FLAGS) $(DEFINES32)
 
 
-amd64-%.o:	%.cc $(TS_HEADERS) $(FOREIGN_HEADERS) $(BFDS_PATH)/bfds32.a $(BFDS_PATH)/bfds64.a
+amd64-%.o:	%.cc $(TS_HEADERS) $(FOREIGN_HEADERS) $(BFDS_LIBS)
 	$(CXX) -m64 -o $@ -c $< $(ERRORLVL) $(FLAGS) $(DEFINES64)
 
 amd64-%.o:	$(TSAN_PATH)/%.cc $(TS_HEADERS) $(FOREIGN_HEADERS)
@@ -109,7 +125,7 @@ amd64-%.o:	../../earthquake/%.c
 amd64-dynamic_annotations.o:	$(TSAN_PATH)/../dynamic_annotations/dynamic_annotations.c $(TS_HEADERS) $(FOREIGN_HEADERS)
 	$(CC) -m64 -o $@ -c $< $(ERRORLVL) $(DA_FLAGS) $(DEFINES64)
 
-$(BFDS_PATH)/bfds32.a $(BFDS_PATH)/bfds64.a:
+$(BFDS_LIBS):
 	cd $(BFDS_PATH) && make
 
 clean:
