@@ -14,13 +14,11 @@ RTL_DEPS=
 OBJS32=x86-ts_util.o x86-suppressions.o \
        x86-common_util.o x86-ignore.o x86-tsan_rtl_dynamic_annotations.o \
        x86-thread_sanitizer.o x86-ts_atomic.o x86-dynamic_annotations.o \
-       x86-tsan_rtl_sched_shake.o \
        x86-earthquake_wrap.o x86-earthquake_core.o
 OBJS64=amd64-ts_util.o amd64-suppressions.o \
        amd64-common_util.o amd64-ignore.o \
        amd64-tsan_rtl_dynamic_annotations.o \
        amd64-thread_sanitizer.o amd64-ts_atomic.o amd64-dynamic_annotations.o \
-       amd64-tsan_rtl_sched_shake.o \
        amd64-earthquake_wrap.o amd64-earthquake_core.o
 
 COMMON_FLAGS=-I. -Istlport -I../../third_party/stlport \
@@ -131,4 +129,3 @@ amd64-stack_info.o:	stack_info.cc stack_info.h
 
 stack_info64:	stack_info.cc stack_info.h
 	$(CXX) -m64 -o $@ $< $(ERRORLVL) $(FLAGS) -DSTACKINFO_STANDALONE -lpthread
-
