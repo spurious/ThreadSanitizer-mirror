@@ -251,7 +251,7 @@ def gcc(default_cc, fallback_cc):
       return
 
     # TODO(glider): additional opt passes.
-    opt_args = [OPT, '-load', PASS_SO, '-tsan', '-arch=' + XARCH[platform]]
+    opt_args = [OPT, '-load', PASS_SO, '-tsan', '-target-arch=' + XARCH[platform]]
     if TSAN_IGNORE:
       opt_args += ['-ignore=' + TSAN_IGNORE]
     if TSAN_OPT_ARGS:
