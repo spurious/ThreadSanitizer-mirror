@@ -28,7 +28,9 @@
 
 #include "tsan_rtl.h"
 #include "../../earthquake/earthquake_wrap.h"
+#ifndef TSAN_NO_BFD
 #include "../../bfd_symbolizer/bfd_symbolizer.h"
+#endif
 
 #include "ts_trace_info.h"
 #include "ts_lock.h"
@@ -3083,6 +3085,7 @@ string PcToRtnName(pc_t pc, bool demangle) {
       return string();
     }
   } else {
+#ifndef TSAN_NO_BFD
     char symbol [4096];
     if (bfds_symbolize((void*)pc,
                        demangle ? bfds_opt_demangle_verbose : bfds_opt_none,
@@ -3093,6 +3096,9 @@ string PcToRtnName(pc_t pc, bool demangle) {
                        0))   // symbol offset
       return std::string();
     return symbol;
+#else
+    return std::string();
+#endif
   }
 }
 
@@ -3119,11 +3125,12 @@ void DumpDataSections() {
 //  -- |addr| belongs to .data, .bss or .rodata section
 bool GetNameAndOffsetOfGlobalObject(uintptr_t addr,
                                     string *name, uintptr_t *offset) {
-  char symbol [4096];
-  int soffset = 0;
   if (debug_info) {
     return false;
   } else {
+#ifndef TSAN_NO_BFD
+    char symbol [4096];
+    int soffset = 0;
     if (bfds_symbolize((void*)addr,
                        (bfds_opts_e)(bfds_opt_data | bfds_opt_demangle),
                        symbol, sizeof(symbol),
@@ -3137,6 +3144,7 @@ bool GetNameAndOffsetOfGlobalObject(uintptr_t addr,
       name->assign(symbol);
     if (offset)
       *offset = soffset;
+#endif
     return true;
   }
 }
@@ -3161,6 +3169,7 @@ void PcToStrings(pc_t pc, bool demangle,
       *line_no = ((*debug_info)[pc].line);
     }
   } else {
+#ifndef TSAN_NO_BFD
     char symbol [4096];
     char module [4096];
     char file   [4096];
@@ -3187,6 +3196,7 @@ void PcToStrings(pc_t pc, bool demangle,
       rtn_name->assign(symbol);
     if (file_name)
       file_name->assign(file);
+#endif  // TSAN_NO_BFD
   }
 }
 
