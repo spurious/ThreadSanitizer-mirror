@@ -8,6 +8,7 @@ fi
 
 #install gcc prerequisites
 sudo apt-get install libc6-dev || exit 1
+sudo apt-get install libc6-dev-i386 || exit 1
 sudo apt-get install libgmp3-dev || exit 1
 sudo apt-get install libmpfr-dev || exit 1
 sudo apt-get install libmpc-dev || exit 1
@@ -29,7 +30,7 @@ tar -jxvf gcc-$GCC_VER.tar.bz2 || exit 1
 #configure and build gcc
 mkdir $GCC_OBJ
 cd $GCC_OBJ || exit 1
-$GCC_SRC/configure --enable-languages=c,c++ --disable-bootstrap --enable-checking=no --prefix=$GCC_INS || exit 1
+$GCC_SRC/configure --enable-languages=c,c++ --disable-bootstrap --enable-checking=no --with-gnu-as --with-gnu-ld --with-ld=/usr/bin/ld.bfd --prefix=$GCC_INS || exit 1
 make || exit 1
 make install || exit 1
 
