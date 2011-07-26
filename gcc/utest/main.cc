@@ -1,7 +1,7 @@
 /* Relite
  * Copyright (c) 2011, Google Inc.
  * All rights reserved.
- * Author: Dmitry Vyukov (dvyukov@google.com)
+ * Author: Dmitry Vyukov (dvyukov)
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -38,6 +38,8 @@
 #include <utility>
 #include <typeinfo>
 #include <vector>
+
+#include "../rt/relite_rt.h"
 
 //#define SINGLE_TEST
 #define RELITE_IGNORE __attribute__((relite_ignore))
@@ -230,13 +232,8 @@ struct test_load_load_norace : test_base {
   }
 
   virtual void thread(int tid) {
-    if (tid == 0) {
-      int r = var;
-      (void)r;
-    } else {
-      int r = var;
-      (void)r;
-    }
+    int r = var;
+    (void)r;
   }
 };
 
@@ -270,11 +267,7 @@ struct test_store_store_race : test_base {
   }
 
   virtual void thread(int tid) {
-    if (tid == 0) {
-      var = 1;
-    } else {
-      var = 2;
-    }
+    var = tid;
   }
 };
 
@@ -671,6 +664,11 @@ int main()
     if (success)
       printf("OK\n");
   }
+
+  char buf [16];
+  printf("attach a debugger and press ENTER");
+  scanf("%1c", buf);
+
   return 0;
 }
 
@@ -678,81 +676,22 @@ int main()
 
 #else
 
+#include <stdlib.h>
+
+struct QWER {
+  int ttt;
+  QWER() {
+    ttt = rand();
+  }
+};
+
+QWER qwerty;
+
 int main() {
 }
 
 #endif
 
-
-
-
-
-
-
-
-
-
-
-
-
-/*
-struct relite_call_desc_t {
-  char const*                   func;
-  char const*                   file;
-  int                           line;
-  int                           pos;
-};
-
-
-struct relite_mop_desc_t {
-  char const*                   var;
-  char const*                   file;
-  int                           line;
-  int                           pos;
-};
-
-
-struct relite_func_desc_t {
-  int                               call_count;
-  struct relite_call_desc_t const*  calls;
-  int                               mop_count;
-  struct relite_mop_desc_t const*   mops;
-};
-
-static relite_call_desc_t relite_calls [] = {
-    {"x", "aaaaa", 1, 1},
-    {"y", "bbbbb", 2, 2},
-};
-
-static relite_mop_desc_t relite_mops [] = {
-    {"ccccc", 1, 1},
-    {"ddddd", 2, 2},
-};
-
-static relite_func_desc_t relite_func_desc = {
-    888, relite_calls, 999, relite_mops
-};
-*/
-
-/*
-
-void bar() {
-
-}
-
-void foo(int* x) {
-  *x += 1;
-  bar();
-  memset(x, 0, sizeof(*x));
-}
-
-
-int main() {
-  int x = 0;
-  foo(&x);
-  //printf("%d/%d", qweqweqwe.call_count, qweqweqwe.mop_count);
-}
-*/
 
 
 
