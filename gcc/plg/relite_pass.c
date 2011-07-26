@@ -460,13 +460,27 @@ static int              is_fake_mop         (const_tree expr) {
 }
 
 
+typedef struct mop_desc_t {
+  int                   is_call;
+  gimple_stmt_iterator  gsi;
+  tree                  expr;
+  tree                  dtor_vptr_expr;
+  int                   is_store;
+} mop_desc_t;
+
+
+DEF_VEC_O(mop_desc_t);
+DEF_VEC_ALLOC_O(mop_desc_t, heap);
+
+
 static void             instrument_mop      (relite_context_t*      ctx,
-                                             bb_data_t*             bbd,
+//                                           bb_data_t*             bbd_unused,
                                              gimple                 stmt,
                                              gimple_stmt_iterator*  gsi,
                                              location_t             loc,
                                              tree                   expr,
-                                             int                    is_store) {
+                                             int                    is_store,
+                                             VEC(mop_desc_t, heap)** mop_list) {
   // map SSA name to real name
   tree expr_ssa = 0;
   if (TREE_CODE(expr) == SSA_NAME) {
@@ -546,6 +560,10 @@ static void             instrument_mop      (relite_context_t*      ctx,
   if (reason != 0)
     return;
 
+  mop_desc_t mop = {0, *gsi, expr, dtor_vptr_expr, is_store};
+  VEC_safe_push(mop_desc_t, heap, *mop_list, &mop);
+
+#if 0
   ctx->func_mops += 1;
 
   if (is_store)
@@ -591,6 +609,7 @@ static void             instrument_mop      (relite_context_t*      ctx,
     gsi_insert_seq_after(gsi, instr_seq, GSI_NEW_STMT);
   else // dtor_vptr_expr != 0
     gsi_insert_seq_before(gsi, instr_seq, GSI_SAME_STMT);
+#endif
 }
 
 
@@ -630,7 +649,8 @@ static char const*      format_fn_name      (tree fndecl) {
 
 static void             handle_gimple       (relite_context_t* ctx,
                                              gimple_stmt_iterator* gsi,
-                                             bb_data_t* bbd) {
+//                                             bb_data_t* bbd_unused,
+                                             VEC(mop_desc_t, heap)** mop_list) {
   gimple stmt = gsi_stmt(*gsi);
   enum gimple_code const gcode = gimple_code(stmt);
   if (gcode >= LAST_AND_UNUSED_GIMPLE_CODE) {
@@ -651,12 +671,14 @@ static void             handle_gimple       (relite_context_t* ctx,
       // Handle call arguments as loads
       for (unsigned i = 0; i != gimple_call_num_args(stmt); i += 1) {
         tree rhs = gimple_call_arg(stmt, i);
-        instrument_mop(ctx, bbd, stmt, gsi, loc, rhs, 0);
+        instrument_mop(ctx, /*bbd,*/ stmt, gsi, loc, rhs, 0, mop_list);
       }
 
       // After a function call we must start a brand new sblock,
       // because the call can contain synchronization or whatever.
-      bbd->has_sb = 0;
+      //bbd->has_sb = 0;
+      mop_desc_t mop = {1};
+      VEC_safe_push(mop_desc_t, heap, *mop_list, &mop);
 
       tree fndecl = gimple_call_fndecl(stmt);
       gcc_assert(strcmp(decl_name(fndecl), "tsan_rtl_mop") != 0);
@@ -664,7 +686,7 @@ static void             handle_gimple       (relite_context_t* ctx,
       // Handle assignment lhs as store
       tree lhs = gimple_call_lhs(stmt);
       if (lhs != 0)
-        instrument_mop(ctx, bbd, stmt, gsi, loc, lhs, 1);
+        instrument_mop(ctx, /*bbd,*/ stmt, gsi, loc, lhs, 1, mop_list);
 
       //TODO(dvyukov): ideally, we also want to do replacements
       // when function addresses are taken
@@ -716,12 +738,12 @@ static void             handle_gimple       (relite_context_t* ctx,
     case GIMPLE_ASSIGN: {
       // Handle assignment lhs as store
       tree lhs = gimple_assign_lhs(stmt);
-      instrument_mop(ctx, bbd, stmt, gsi, loc, lhs, 1);
+      instrument_mop(ctx, /*bbd,*/ stmt, gsi, loc, lhs, 1, mop_list);
 
       // Handle operands as loads
       for (unsigned i = 1; i != gimple_num_ops(stmt); i += 1) {
         tree rhs = gimple_op(stmt, i);
-        instrument_mop(ctx, bbd, stmt, gsi, loc, rhs, 0);
+        instrument_mop(ctx, /*bbd,*/ stmt, gsi, loc, rhs, 0, mop_list);
       }
       break;
     }
@@ -756,6 +778,9 @@ static void             check_func          (relite_context_t* ctx) {
 static void             instrument_bblock   (relite_context_t* ctx,
                                              bb_data_t* bbd,
                                              basic_block bb) {
+  static VEC(mop_desc_t, heap)* mop_list;
+  VEC_free(mop_desc_t, heap, mop_list);
+
   ctx->stat_bb_total += 1;
   gimple_stmt_iterator gsi = gsi_start_bb(bb);
   for (;;) {
@@ -763,10 +788,74 @@ static void             instrument_bblock   (relite_context_t* ctx,
       break;
     gimple_stmt_iterator gsinext = gsi;
     gsi_next(&gsinext);
-    handle_gimple(ctx, &gsi, bbd);
+    handle_gimple(ctx, &gsi, &mop_list);
     check_func(ctx);
     gsi = gsinext;
   }
+
+#if 1
+  dbg(ctx, "instrumenting %d mops", VEC_length(mop_desc_t, mop_list));
+  mop_desc_t* mop = 0;
+  for (int ix = 0; VEC_iterate(mop_desc_t, mop_list, ix, mop); ix += 1) {
+    if (mop->is_call != 0) {
+      dbg(ctx, "call -> reset sblock info");
+      bbd->has_sb = 0;
+      continue;
+    }
+
+    ctx->func_mops += 1;
+    if (mop->is_store)
+      ctx->stat_store_instrumented += 1;
+    else
+      ctx->stat_load_instrumented += 1;
+
+    gimple stmt = gsi_stmt(mop->gsi);
+    location_t loc = gimple_location(stmt);
+    expanded_location eloc = expand_location(loc);
+
+    dbg_dump_mop(ctx, mop->dtor_vptr_expr ? "write to vptr in dtor" :
+        mop->is_store ? "store to" : "load of",
+        loc, mop->expr, 0, 0);
+
+    int is_sblock = (bbd->has_sb == 0
+        || !(eloc.file != 0
+            && bbd->sb_file != 0
+            && strcmp(eloc.file, bbd->sb_file) == 0
+            && eloc.line >= bbd->sb_line_min
+            && eloc.line <= bbd->sb_line_max));
+
+    if (is_sblock == 1 && ctx->func_ignore == relite_ignore_hist) {
+      dbg(ctx, "resetting sblock due to ignore_hist");
+      is_sblock = 0;
+    }
+
+    dbg(ctx, "sblock: %s (%d/%s:%d-%d)->(%d/%s:%d-%d)",
+        (is_sblock ? "YES" : "NO"),
+        bbd->has_sb, bbd->sb_file, bbd->sb_line_min, bbd->sb_line_max,
+        is_sblock, eloc.file, eloc.line, eloc.line + ctx->opt_sblock_size);
+
+    if (is_sblock) {
+      ctx->stat_sblock += 1;
+      bbd->has_sb = 1;
+      bbd->sb_file = eloc.file;
+      bbd->sb_line_min = eloc.line;
+      bbd->sb_line_max = eloc.line + ctx->opt_sblock_size;
+    }
+
+    gimple_seq instr_seq = 0;
+    if (mop->dtor_vptr_expr == 0)
+      instr_mop(ctx, mop->expr, loc, mop->is_store, is_sblock, &instr_seq);
+    else
+      instr_vptr_store(ctx, mop->expr, mop->dtor_vptr_expr, loc,
+                            is_sblock, &instr_seq);
+    assert(instr_seq != 0);
+    set_location(instr_seq, loc);
+    if (is_gimple_call(stmt) && mop->is_store == 1)
+      gsi_insert_seq_after(&mop->gsi, instr_seq, GSI_NEW_STMT);
+    else // dtor_vptr_expr != 0
+      gsi_insert_seq_before(&mop->gsi, instr_seq, GSI_SAME_STMT);
+  }
+#endif
 }
 
 
