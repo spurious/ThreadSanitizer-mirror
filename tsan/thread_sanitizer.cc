@@ -3005,7 +3005,7 @@ class CacheLine {
   uintptr_t tag() { return tag_; }
 
   void DebugTrace(uintptr_t off, const char *where_str, int where_int) {
-    if (DEBUG_MODE && tag() == G_flags->trace_addr) {
+    if (0 && DEBUG_MODE && tag() == G_flags->trace_addr) {
       uintptr_t off8 = off & ~7;
       Printf("CacheLine %p, off=%ld off8=%ld gr=%d "
              "has_sval: %d%d%d%d%d%d%d%d (%s:%d)\n",
