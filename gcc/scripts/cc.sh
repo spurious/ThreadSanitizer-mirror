@@ -22,12 +22,12 @@ GCC=$GCCTSAN_GCC_DIR/bin/$1
 LIB32_PATH=$GCCTSAN_GCC_DIR/lib32
 LIB64_PATH=$GCCTSAN_GCC_DIR/lib64
 LNK=/usr/bin/$1
-RTH=`dirname $0`/../include/relite_rt.h
 PLG_NAME=librelite_$VER
+RTH=`dirname $0`/../include/relite_rt.h
 PLG=`dirname $0`/../lib/$PLG_NAME.so
-RTL32=`dirname $0`/../../tsan_rtl/tsan_rtl32.a
-RTL64=`dirname $0`/../../tsan_rtl/tsan_rtl64.a
-LNK_SCRIPT=`dirname $0`/../../tsan_rtl/link_config.txt
+RTL32=`dirname $0`/../../tsan_rtl/lib/tsan_rtl32.a
+RTL64=`dirname $0`/../../tsan_rtl/lib/tsan_rtl64.a
+LNK_SCRIPT=`dirname $0`/../../tsan_rtl/scripts/link_config.txt
 shift
 
 wrap () {
