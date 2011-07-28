@@ -26,7 +26,7 @@ OBJS64=amd64-ts_util.o amd64-suppressions.o \
        amd64-thread_sanitizer.o amd64-ts_atomic.o amd64-dynamic_annotations.o \
        amd64-earthquake_wrap.o amd64-earthquake_core.o
 
-COMMON_FLAGS=-I. -Istlport -I../third_party/stlport \
+COMMON_FLAGS=-I. -I../third_party/stlport \
       -I$(TSAN_PATH) -I../dynamic_annotations \
       -I../earthquake \
       -fno-exceptions -g -O2 \
