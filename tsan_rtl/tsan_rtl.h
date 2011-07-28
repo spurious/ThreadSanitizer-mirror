@@ -143,7 +143,16 @@ bool IsAddrFromDataSections(uintptr_t addr);
   pc_t const pc = (pc_t)__builtin_return_address(0);
 
 void MaybeInitTid();
+
+// Interface exposed to the instrumented program
+extern "C" {
 void flush_tleb();
+void bb_flush_current(TraceInfoPOD *curr_mops);
+void bb_flush_mop(TraceInfoPOD *curr_mop, uintptr_t addr);
+void shadow_stack_check(uintptr_t old_v, uintptr_t new_v);
+void *rtl_memcpy(char *dest, const char *src, size_t n);
+void *rtl_memmove(char *dest, const char *src, size_t n);
+}
 
 inline void Put(EventType type, tid_t tid, pc_t pc,
                 uintptr_t a, uintptr_t info);

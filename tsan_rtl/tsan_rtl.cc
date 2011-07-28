@@ -97,6 +97,7 @@ __thread tid_t LTID;  // literace TID = TID % kLiteRaceNumTids
 __thread CallStackPod ShadowStack;
 static const size_t kTLEBSize = 2000;
 __thread uintptr_t TLEB[kTLEBSize];
+__thread uintptr_t *TLEBTop;
 static __thread int INIT = 0;
 #if 0
 static __thread int events = 0;
@@ -656,6 +657,7 @@ INLINE void InitTid() {
   Tids[pt] = INFO.tid;
   PThreads[INFO.tid] = pt;
   ThreadInfoMap[pt] = &INFO;
+  TLEBTop = TLEB;
 }
 
 INLINE tid_t GetTid() {
@@ -2673,6 +2675,11 @@ void bb_flush_current(TraceInfoPOD *curr_mops) {
 extern "C"
 void bb_flush_mop(TraceInfoPOD *curr_mop, uintptr_t addr) {
   flush_single_mop(curr_mop, addr);
+}
+
+extern "C"
+void flush_tleb() {
+  return;
 }
 
 extern "C"
