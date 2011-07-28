@@ -3212,7 +3212,7 @@ void tsan_rtl_mop(void *addr, unsigned flags) {
   if (thread_local_ignore == 0) {
     ENTER_RTL();
     void* pc = __builtin_return_address(0);
-    uint64_t mop = (uint64_t)pc | ((uint64_t)flags) << 58;
+    uint64_t mop = (uint64_t)(uintptr_t)pc | ((uint64_t)flags) << 58;
     MopInfo mop2;
     memcpy(&mop2, &mop, sizeof(mop));
     ThreadSanitizerHandleOneMemoryAccess(INFO.thread,
