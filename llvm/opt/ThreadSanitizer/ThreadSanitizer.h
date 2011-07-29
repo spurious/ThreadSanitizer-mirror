@@ -131,6 +131,9 @@ struct TsanOnlineInstrument : public llvm::ModulePass { // {{{1
   void insertRtnCall(llvm::Constant *addr,
                      llvm::BasicBlock::iterator &Before);
   void insertRtnExit(llvm::BasicBlock::iterator &Before);
+  void writeRtnExitToTleb(llvm::BasicBlock::iterator &Before);
+  void writeRtnCallToTleb(llvm::BasicBlock::iterator &Before);
+  void writeSblockEnterToTleb(llvm::BasicBlock::iterator &Before);
   void insertIgnoreInc(llvm::BasicBlock::iterator &Before);
   void insertIgnoreDec(llvm::BasicBlock::iterator &Before);
   void insertFlushCall(Trace &trace, llvm::Instruction *Before);
@@ -172,12 +175,12 @@ struct TsanOnlineInstrument : public llvm::ModulePass { // {{{1
   const llvm::ArrayType *LiteRaceCountersArrayType, *LiteRaceSkipArrayType;
   const llvm::ArrayType *TracePassportType, *TraceExtPassportType;
   const llvm::Type *TLEBTy;
-  const llvm::PointerType *TLEBPtrType;
+  const llvm::PointerType *TLEBPtrTy;
   const llvm::StructType *CallStackType;
   const llvm::ArrayType *CallStackArrayType;
 
   // Globals provided by the RTL.
-  llvm::Value *ShadowStack, *CurrentStackEnd, *TLEB, *LiteraceTid;
+  llvm::Value *ShadowStack, *CurrentStackEnd, *TLEB, *TLEBTop, *LiteraceTid;
   llvm::Value *ThreadLocalIgnore;
 
   llvm::AliasAnalysis *AA;

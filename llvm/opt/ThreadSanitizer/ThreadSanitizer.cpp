@@ -110,6 +110,17 @@ static cl::opt<bool>
                              cl::desc("Do not instrument functions "
                                       "containing no memory operations"),
                              cl::init(false));
+static cl::opt<int>
+    MaxTlebSize("max-tleb-size",
+                cl::desc("The maximum size of TLEB "
+                         "(if -fill-tleb-completely is on)"),
+                cl::init(2000));  // kTLEBSize in tsan_rtl.cc
+
+static cl::opt<bool>
+    FillTlebCompletely("fill-tleb-completely",
+                      cl::desc("Do not flush the TLEB after each block, "
+                               "fill it up to the end"),
+                      cl::init(false));
 
 static cl::opt<bool>
     BasicBlocksAreTraces("basic-blocks-are-traces",
@@ -658,6 +669,15 @@ void TsanOnlineInstrument::insertRtnCall(Constant *addr,
   }
 }
 
+void TsanOnlineInstrument::writeRtnExitToTleb(BasicBlock::iterator &Before) {
+  // Insert the code that writes the RTN_EXIT event to the TLEB.
+  //
+  // We'll do the following:
+  //  -- read the TLEBTop into a temp
+  //  -- write RTN_EXIT to *TLEBTop
+  //  -- TLEBTop++
+}
+
 // Insert the code that pops a stack frame from the shadow stack.
 void TsanOnlineInstrument::insertRtnExit(BasicBlock::iterator &Before) {
   if (!EnableFunctionInstrumentation) return;
@@ -665,6 +685,10 @@ void TsanOnlineInstrument::insertRtnExit(BasicBlock::iterator &Before) {
     vector<Value*> inst(0);
     CallInst::Create(RtnExitFn, inst.begin(), inst.end(), "", Before);
   } else {
+    if (FillTlebCompletely) {
+      writeRtnExitToTleb(Before);
+      return;
+    }
     vector <Value*> end_idx;
     end_idx.push_back(ConstantInt::get(PlatformInt, 0));
     end_idx.push_back(ConstantInt::get(Int32, 0));
@@ -956,7 +980,7 @@ void TsanOnlineInstrument::setupRuntimeGlobals() {
                                    /*InsertBefore*/0,
                                    /*ThreadLocal*/true);
   TLEBTy = ArrayType::get(UIntPtr, kTLEBSize);
-  TLEBPtrType = PointerType::get(UIntPtr, 0);
+  TLEBPtrTy = PointerType::get(UIntPtr, 0);
   TLEB = new GlobalVariable(*ThisModule,
                             TLEBTy,
                             /*isConstant*/true,
@@ -965,6 +989,14 @@ void TsanOnlineInstrument::setupRuntimeGlobals() {
                             "TLEB",
                             /*InsertBefore*/0,
                             /*ThreadLocal*/true);
+  TLEBTop = new GlobalVariable(*ThisModule,
+                               TLEBPtrTy,
+                               /*isConstant*/false,
+                               GlobalValue::ExternalWeakLinkage,
+                               /*Initializer*/0,
+                               "TLEBTop",
+                               /*InsertBefore*/0,
+                               /*ThreadLocal*/true);
 
   // void* bb_flush(next_mops)
   // TODO(glider): need to stop supporting it. This has been broken for months.
@@ -1022,11 +1054,10 @@ void TsanOnlineInstrument::setupRuntimeGlobals() {
                                       PlatformInt,
                                       (Type*)0);
   cast<Function>(MemMoveFn)->setLinkage(Function::ExternalWeakLinkage);
-  const Type *Tys[] = { Int8Ptr, PlatformInt };
+  const Type *Tys[] = { PlatformInt };
   MemSetIntrinsicFn = Intrinsic::getDeclaration(ThisModule,
                                                 Intrinsic::memset,
-                                                Tys, /*numTys*/2);
-
+                                                Tys, /*numTys*/1);
 }
 
 // virtual
@@ -1291,7 +1322,16 @@ void TsanOnlineInstrument::insertFlushCurrentCall(Trace &trace,
       MSArgs.push_back(ConstantInt::get(PlatformInt,
                                         trace.num_mops * ArchSize / 8));
       MSArgs.push_back(ConstantInt::get(Int32, 1));
-      MSArgs.push_back(ConstantInt::get(Int1, 0));
+
+      const FunctionType *MemSetFnType =
+          cast<Function>(MemSetIntrinsicFn)->getFunctionType();
+      if (MemSetFnType->getNumParams() > 4) {
+        // TODO(glider): sometimes MemSetIntrinsicFn has four parameters:
+        //   void @llvm.memset.p0i8.i64(i8* nocapture, i8, i8*, i32)
+        // However the Language Reference states there is the fifth parameter,
+        // |isvolatile|.
+        MSArgs.push_back(ConstantInt::get(Int1, /*isvolatile*/0));
+      }
       CallInst::Create(MemSetIntrinsicFn,
                        MSArgs.begin(), MSArgs.end(),
                        "", CleanupTerm);
@@ -2156,7 +2196,7 @@ void InstrumentationStats::printStats() {
          << num_uninst_mops_aa << "\n";
   errs() << "  # of mops ignored because of "
             "-enable-memory-instrumentation=false: "
-         << num_uninst_mops_aa << "\n";
+         << num_uninst_mops_flag << "\n";
 
   // Buckets.
   errs() << "\n";
@@ -2180,7 +2220,8 @@ void InstrumentationStats::printStats() {
 
 // }}}
 
-char TsanOnlineInstrument::ID = 0;
+// For some reason ID = 0 hits an assertion in opt.
+char TsanOnlineInstrument::ID = 1;
 #ifdef BUILD_TSAN_FOR_OLD_LLVM
 RegisterPass<TsanOnlineInstrument> X("tsan",
     "Compile-time instrumentation for runtime "
