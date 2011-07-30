@@ -110,6 +110,13 @@ static cl::opt<bool>
                              cl::desc("Do not instrument functions "
                                       "containing no memory operations"),
                              cl::init(false));
+// TODO(glider): the runtime needs to distinguish whether the code was built
+// with static or dynamic TLEB. A good idea is to store the build options
+// somewhere in the executable.
+static cl::opt<bool>
+    UseDynamicTleb("use-dynamic-tleb",
+                   cl::desc("TODO(glider)"),
+                   cl::init(false));
 static cl::opt<int>
     MaxTlebSize("max-tleb-size",
                 cl::desc("The maximum size of TLEB "
@@ -130,7 +137,7 @@ static cl::opt<bool>
 static cl::opt<bool>
     UseTlebForMinimalBlocks("use-tleb-for-minimal-blocks",
         cl::desc("Pass blocks containing a single mop via TLEB"),
-        cl::init(false));
+        cl::init(true));
 
 // }}}
 
@@ -846,6 +853,15 @@ void TsanOnlineInstrument::runOnFunction(Module::iterator &F) {
   }
 }
 
+// Some flags may override other flags.
+// TODO(glider): this should be documented well.
+void TsanOnlineInstrument::setupFlags() {
+  if (UseDynamicTleb) {
+    UseTlebForMinimalBlocks = true;
+    EnableLiteRaceSampling = false;  // TODO(glider): allow sampling
+  }
+}
+
 void TsanOnlineInstrument::setupDataTypes() {
   // Arch size dependent types.
   if (ArchSize == 64) {
@@ -981,23 +997,36 @@ void TsanOnlineInstrument::setupRuntimeGlobals() {
                                    /*ThreadLocal*/true);
   TLEBTy = ArrayType::get(UIntPtr, kTLEBSize);
   TLEBPtrTy = PointerType::get(UIntPtr, 0);
-  TLEB = new GlobalVariable(*ThisModule,
-                            TLEBTy,
-                            /*isConstant*/true,
-                            GlobalValue::ExternalWeakLinkage,
-                            /*Initializer*/0,
-                            "TLEB",
-                            /*InsertBefore*/0,
-                            /*ThreadLocal*/true);
-  TLEBTop = new GlobalVariable(*ThisModule,
+  if (UseDynamicTleb) {
+    DTLEB = new GlobalVariable(*ThisModule,
                                TLEBPtrTy,
                                /*isConstant*/false,
                                GlobalValue::ExternalWeakLinkage,
                                /*Initializer*/0,
-                               "TLEBTop",
+                               "DTLEB",
                                /*InsertBefore*/0,
                                /*ThreadLocal*/true);
+    DTlebTop = new GlobalVariable(*ThisModule,
+                                  TLEBPtrTy,
+                                  /*isConstant*/false,
+                                  GlobalValue::ExternalWeakLinkage,
+                                  /*Initializer*/0,
+                                  "DTlebTop",
+                                 /*InsertBefore*/0,
+                                 /*ThreadLocal*/true);
 
+    TLEB = NULL;
+  } else {
+    TLEB = new GlobalVariable(*ThisModule,
+                              TLEBTy,
+                              /*isConstant*/true,
+                              GlobalValue::ExternalWeakLinkage,
+                              /*Initializer*/0,
+                              "TLEB",
+                              /*InsertBefore*/0,
+                              /*ThreadLocal*/true);
+    DTLEB = NULL;
+  }
   // void* bb_flush(next_mops)
   // TODO(glider): need to stop supporting it. This has been broken for months.
   BBFlushFn = ThisModule->getOrInsertFunction("bb_flush",
@@ -1078,6 +1107,7 @@ bool TsanOnlineInstrument::runOnModule(Module &M) {
   TD = getAnalysisIfAvailable<TargetData>();
   // If TargetData is unavailable, do nothing.
   if (!TD) return false;
+  setupFlags();
   setupDataTypes();
   setupRuntimeGlobals();
 
@@ -1179,6 +1209,8 @@ void TsanOnlineInstrument::insertIgnoreDec(
 
 }
 
+#if 0
+// bb_flush should be deleted.
 // TODO(glider): either allow the user to use bb_flush() and implement the
 // sampling instrumentation, or delete this.
 void TsanOnlineInstrument::insertFlushCall(Trace &trace, Instruction *Before) {
@@ -1202,6 +1234,12 @@ void TsanOnlineInstrument::insertFlushCall(Trace &trace, Instruction *Before) {
   } else {
     // TODO(glider): unimplemented
   }
+}
+#endif
+
+void TsanOnlineInstrument::insertMaybeFlushTleb(Trace &trace,
+                                                Instruction *Before) {
+  UNIMPLEMENTED();
 }
 
 // |MopAddr| is ignored iff |useTLEB| == true.
@@ -1408,8 +1446,12 @@ void TsanOnlineInstrument::runOnTrace(Trace &trace,
       for (BlockSet::iterator EI = trace.exits.begin(),
                               EE = trace.exits.end();
            EI != EE; ++EI) {
-        insertFlushCurrentCall(trace, (*EI)->getTerminator(),
-                               /*useTLEB*/true, NULL);
+        if (!UseDynamicTleb) {
+          insertFlushCurrentCall(trace, (*EI)->getTerminator(),
+                                 /*useTLEB*/true, NULL);
+        } else {
+          insertMaybeFlushTleb(trace, (*EI)->getTerminator());
+        }
       }
     } else {
       // The trace contains a single memory operation -- just instrument it with
@@ -1906,18 +1948,40 @@ bool TsanOnlineInstrument::instrumentMop(BasicBlock::iterator &BI,
 
   // MopAddr is calculated regardless of |useTLEB| value.
   if (useTLEB) {
-    // Store the pointer into TLEB[TLEBIndex].
-    vector <Value*> idx;
-    idx.push_back(ConstantInt::get(Int32, 0));
-    idx.push_back(ConstantInt::get(PlatformInt, TLEBIndex));
-    Value *TLEBPtr =
-        GetElementPtrInst::Create(TLEB,
-                                  idx.begin(),
-                                  idx.end(),
-                                  "",
-                                  BI);
-    new StoreInst(MopAddr, TLEBPtr, BI);
-    TLEBIndex++;
+    if (!UseDynamicTleb) {
+      // Store the pointer into TLEB[TLEBIndex].
+      vector <Value*> idx;
+      idx.push_back(ConstantInt::get(Int32, 0));
+      idx.push_back(ConstantInt::get(PlatformInt, TLEBIndex));
+      Value *TLEBPtr =
+          GetElementPtrInst::Create(TLEB,
+                                    idx.begin(),
+                                    idx.end(),
+                                    "",
+                                    BI);
+      new StoreInst(MopAddr, TLEBPtr, BI);
+      TLEBIndex++;
+    } else {
+      // Store the pointer into *TLEBTop.
+      vector <Value*> end_idx;
+      end_idx.push_back(ConstantInt::get(Int32, 0));
+      DTlebTop->dump();
+      Value *TlebTopPtr =
+          GetElementPtrInst::Create(DTlebTop,
+                                    end_idx.begin(), end_idx.end(),
+                                    "", BI);
+      Value *CurrentTlebTop = new LoadInst(TlebTopPtr, "", BI);
+      TlebTopPtr->dump();
+      CurrentTlebTop->dump();
+      new StoreInst(MopAddr, CurrentTlebTop, BI);
+      vector <Value*> new_idx;
+      new_idx.push_back(ConstantInt::get(Int32, 1));
+      Value *NewTlebTop =
+          GetElementPtrInst::Create(CurrentTlebTop,
+                                    new_idx.begin(), new_idx.end(),
+                                    "", BI);
+      new StoreInst(NewTlebTop, TlebTopPtr, BI);
+    }
   } else {
     // Call bb_flush_mop() instead of TLEB magic.
     insertFlushCurrentCall(trace, BI, /*useTLEB*/false, MopAddr);

@@ -16,6 +16,8 @@
 
 #include "ignore.h"
 
+#define UNIMPLEMENTED() CHECK(0 && "UNIMPLEMENTED" && __FILE__ && __LINE__)
+
 namespace {
 
 typedef std::vector <llvm::Constant*> Passport;
@@ -107,6 +109,7 @@ struct TsanOnlineInstrument : public llvm::ModulePass { // {{{1
   void dumpInstructionDebugInfo(llvm::Constant *addr,
                                 const llvm::BasicBlock::iterator BI);
   uintptr_t getModuleID(llvm::Module &M);
+  void setupFlags();
   void setupDataTypes();
   void setupRuntimeGlobals();
   bool isDtor(const std::string &mangled_name);
@@ -136,9 +139,11 @@ struct TsanOnlineInstrument : public llvm::ModulePass { // {{{1
   void writeSblockEnterToTleb(llvm::BasicBlock::iterator &Before);
   void insertIgnoreInc(llvm::BasicBlock::iterator &Before);
   void insertIgnoreDec(llvm::BasicBlock::iterator &Before);
-  void insertFlushCall(Trace &trace, llvm::Instruction *Before);
+  // TODO(glider): deprecate and delete.
+  //void insertFlushCall(Trace &trace, llvm::Instruction *Before);
   void insertFlushCurrentCall(Trace &trace, llvm::Instruction *Before,
                               bool useTLEB, llvm::Value *MopAddr);
+  void insertMaybeFlushTleb(Trace &trace, llvm::Instruction *Before);
   bool instrumentMop(llvm::BasicBlock::iterator &BI,
                      bool isStore,
                      bool check_ident_store,
@@ -180,7 +185,7 @@ struct TsanOnlineInstrument : public llvm::ModulePass { // {{{1
   const llvm::ArrayType *CallStackArrayType;
 
   // Globals provided by the RTL.
-  llvm::Value *ShadowStack, *CurrentStackEnd, *TLEB, *TLEBTop, *LiteraceTid;
+  llvm::Value *ShadowStack, *CurrentStackEnd, *TLEB, *DTLEB, *DTlebTop, *LiteraceTid;
   llvm::Value *ThreadLocalIgnore;
 
   llvm::AliasAnalysis *AA;
