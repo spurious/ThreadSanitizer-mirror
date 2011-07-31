@@ -95,9 +95,16 @@ static map<uintptr_t, uintptr_t> *data_sections = NULL;
 __thread ThreadInfo INFO;
 __thread tid_t LTID;  // literace TID = TID % kLiteRaceNumTids
 __thread CallStackPod ShadowStack;
-static const size_t kTLEBSize = 2000;
+// TODO(glider): these two should be used consistently.
+// kDTLEBSize should also be a multiple of 4096 (page size).
+// The static TLEB is allocated in TLS, so kTLEBSize should not be very big.
+static const size_t kTLEBSize = 2048;
+static const size_t kDTLEBSize = 4096;
+static const size_t kDTLEBMemory = kDTLEBSize * 2 * sizeof(uintptr_t);
+
+// TODO(glider): we set USE_DYNAMIC_TLEB via -D now.
 //#define USE_DYNAMIC_TLEB 1
-#undef USE_DYNAMIC_TLEB
+//#undef USE_DYNAMIC_TLEB
 
 #ifdef USE_DYNAMIC_TLEB
 __thread uintptr_t *DTLEB;
@@ -622,11 +629,11 @@ bool initialize() {
 INLINE void UnsafeInitTidCommon() {
   ENTER_RTL();
 #ifdef USE_DYNAMIC_TLEB
-  DTLEB = (uintptr_t*)__real_mmap(0, 2 * kTLEBSize,
+  DTLEB = (uintptr_t*)__real_mmap(0, kDTLEBMemory,
                                 PROT_READ | PROT_WRITE,
                                 MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-  DTlebTop = DTLEB;
-  memset(DTLEB, 0, kTLEBSize);
+  DTlebIndex = 0;
+  memset(DTLEB, 0, kDTLEBMemory);
 #endif
   memset(TLEB, 0, kTLEBSize);
   INFO.thread_local_ignore = &thread_local_ignore;
@@ -721,11 +728,11 @@ void *pthread_callback(void *arg) {
   CHECK(INFO.tid != 0);
 
 #ifdef USE_DYNAMIC_TLEB
-  DTLEB = (uintptr_t*)__real_mmap(0, 2 * kTLEBSize,
+  DTLEB = (uintptr_t*)__real_mmap(0, kDTLEBMemory,
                                 PROT_READ | PROT_WRITE,
                                 MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-  DTlebTop = DTLEB;
-  memset(DTLEB, '\0', kTLEBSize);
+  DTlebIndex = 0;
+  memset(DTLEB, '\0', kDTLEBMemory);
 #endif
   memset(TLEB, '\0', kTLEBSize);
 
