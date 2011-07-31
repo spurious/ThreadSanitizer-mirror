@@ -134,16 +134,19 @@ struct TsanOnlineInstrument : public llvm::ModulePass { // {{{1
   void insertRtnCall(llvm::Constant *addr,
                      llvm::BasicBlock::iterator &Before);
   void insertRtnExit(llvm::BasicBlock::iterator &Before);
+  void writeRtnCallToTleb(llvm::Constant *Addr,
+                          llvm::BasicBlock::iterator &Before);
   void writeRtnExitToTleb(llvm::BasicBlock::iterator &Before);
-  void writeRtnCallToTleb(llvm::BasicBlock::iterator &Before);
   void writeSblockEnterToTleb(llvm::BasicBlock::iterator &Before);
+  void writeSblockEnterForTrace(Trace &trace);
   void insertIgnoreInc(llvm::BasicBlock::iterator &Before);
   void insertIgnoreDec(llvm::BasicBlock::iterator &Before);
-  // TODO(glider): deprecate and delete.
-  //void insertFlushCall(Trace &trace, llvm::Instruction *Before);
   void insertFlushCurrentCall(Trace &trace, llvm::Instruction *Before,
                               bool useTLEB, llvm::Value *MopAddr);
-  void insertMaybeFlushTleb(Trace &trace, llvm::Instruction *Before);
+  void insertMaybeFlushTleb(llvm::Instruction *Before);
+  void writeValueIntoTleb(llvm::Value *EventValue,
+                          llvm::BasicBlock::iterator &Before);
+
   bool instrumentMop(llvm::BasicBlock::iterator &BI,
                      bool isStore,
                      bool check_ident_store,
@@ -162,7 +165,7 @@ struct TsanOnlineInstrument : public llvm::ModulePass { // {{{1
   llvm::Value *TracePassportGlob;
   llvm::GlobalVariable *LiteRaceStorageGlob;
   // Functions provided by the RTL.
-  llvm::Constant *BBFlushCurrentFn, *BBFlushMop;
+  llvm::Constant *BBFlushCurrentFn, *BBFlushMop, *FlushTlebFn;
   llvm::Constant *RtnCallFn, *RtnExitFn, *ShadowStackCheckFn;
   llvm::Constant *MemCpyFn, *MemMoveFn, *MemSetIntrinsicFn;
   // Basic types.
@@ -185,14 +188,14 @@ struct TsanOnlineInstrument : public llvm::ModulePass { // {{{1
   const llvm::ArrayType *CallStackArrayType;
 
   // Globals provided by the RTL.
-  llvm::Value *ShadowStack, *CurrentStackEnd, *TLEB, *DTLEB, *DTlebTop, *LiteraceTid;
+  llvm::Value *ShadowStack, *CurrentStackEnd;
+  llvm::Value *TLEB, *DTLEB, *DTlebIndex, *LiteraceTid;
   llvm::Value *ThreadLocalIgnore;
 
   llvm::AliasAnalysis *AA;
   llvm::TargetData *TD;
 
   // Constants.
-  static const int kTLEBSize = 100;
   // TODO(glider): hashing constants and BB addresses should be different on
   // x86 and x86-64.
   static const int kBBHiAddr = 2048, kBBLoAddr = 128;
@@ -206,6 +209,10 @@ struct TsanOnlineInstrument : public llvm::ModulePass { // {{{1
   static const int kLiteRaceNumTids = 8;
   static const int kLiteRaceStorageSize = 8;
   static const size_t kMaxCallStackSize = 1 << 12;
+  static const uintptr_t kRtnMask32 = 1L<<31;
+  static const uintptr_t kRtnMask64 = 1L<<63;
+  static const uintptr_t kSblockMask32 = 1L<<30;
+  static const uintptr_t kSblockMask64 = 1L<<62;
   // Debug info.
   InstrumentationStats instrumentation_stats;
   std::set<std::string> debug_symbol_set;

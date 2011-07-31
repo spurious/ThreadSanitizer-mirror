@@ -116,12 +116,18 @@ static cl::opt<bool>
 static cl::opt<bool>
     UseDynamicTleb("use-dynamic-tleb",
                    cl::desc("TODO(glider)"),
-                   cl::init(false));
+                   cl::init(true));
 static cl::opt<int>
-    MaxTlebSize("max-tleb-size",
-                cl::desc("The maximum size of TLEB "
-                         "(if -fill-tleb-completely is on)"),
-                cl::init(2000));  // kTLEBSize in tsan_rtl.cc
+    TlebSize("tleb-size",
+             cl::desc("The size of TLEB "
+                      "(if -fill-tleb-completely is on)"),
+             cl::init(2048));  // kTLEBSize in tsan_rtl.cc
+static cl::opt<int>
+    DTlebSize("dynamic-tleb-size",
+              cl::desc("The size of DTLEB (dynamic TLEB), "
+                       "should be a multiple of page size "),
+              cl::init(4096));  // kDTLEBSize in tsan_rtl.cc
+
 
 // TODO(glider): a silly name for an option. Maybe -use-dynamic-tleb is enough?
 static cl::opt<bool>
@@ -665,6 +671,10 @@ void TsanOnlineInstrument::insertRtnCall(Constant *addr,
     inst[0] = addr;
     CallInst::Create(RtnCallFn, inst.begin(), inst.end(), "", Before);
   } else {
+    if (UseDynamicTleb) {
+      writeRtnCallToTleb(addr, Before);
+      return;
+    }
     vector <Value*> end_idx;
     end_idx.push_back(ConstantInt::get(PlatformInt, 0));
     end_idx.push_back(ConstantInt::get(Int32, 0));
@@ -692,7 +702,7 @@ void TsanOnlineInstrument::insertRtnExit(BasicBlock::iterator &Before) {
     vector<Value*> inst(0);
     CallInst::Create(RtnExitFn, inst.begin(), inst.end(), "", Before);
   } else {
-    if (FillTlebCompletely) {
+    if (UseDynamicTleb) {
       writeRtnExitToTleb(Before);
       return;
     }
@@ -837,17 +847,62 @@ void TsanOnlineInstrument::runOnFunction(Module::iterator &F) {
   BasicBlock::iterator First = F->begin()->begin();
   insertRtnCall(getInstructionAddr(0, First, PlatformInt), First);
   if (ignore_recursively) insertIgnoreInc(First);
+  BlockVector to_see;
+  BlockSet visited;
+  InstSet instr_seen;
+  InstSet instrument_call_return; // delete
   for (Function::iterator BB = F->begin(), E = F->end(); BB != E; ++BB) {
     for (BasicBlock::iterator BI = BB->begin(), BE = BB->end();
          BI != BE;
          ++BI) {
       if (isa<ReturnInst>(BI)) {
+    errs() << "adding block to to_see()\n";
+    BB->dump();
+        to_see.push_back(BB);
+        instrument_call_return.insert(BI);
+      }
+      if (ignore_recursively && isaCallOrInvoke(BI) &&
+          calls_to_instrument.count(BI)) {
+    errs() << "adding block to to_see()\n";
+    BB->dump();
+        to_see.push_back(BB);
+        instrument_call_return.insert(BI);
+      }
+    }
+  }
+  errs() << "Size of to_see: " << to_see.size() << "\n";
+  for (size_t i = 0; i < to_see.size(); i++) {
+    BasicBlock *current_bb = to_see[i];
+    visited.insert(current_bb);
+    for (BasicBlock::iterator BI = current_bb->begin(), BE = current_bb->end();
+         BI != BE;
+         ++BI) {
+      if (instr_seen.count(BI)) continue;
+      TerminatorInst *old_term = current_bb->getTerminator();
+      if (isa<ReturnInst>(BI)) {
         if (ignore_recursively) insertIgnoreDec(BI);
+        errs() << "Before insertRtnExit\n";
         insertRtnExit(BI);
+        instr_seen.insert(BI);
       }
       if (ignore_recursively && isaCallOrInvoke(BI) &&
           calls_to_instrument.count(BI)) {
         instrumentCall(BI);
+        instr_seen.insert(BI);
+      }
+      TerminatorInst *new_term = current_bb->getTerminator();
+      errs() << "old_term: " << old_term << "  new_term: " << new_term << "\n";
+      if (new_term != old_term) {
+        // The current block was split. Add its successors to |to_see| and
+        // break because the iterator is already invalid.
+        for (int ch = 0, e = new_term->getNumSuccessors(); ch != e; ++ch) {
+          BasicBlock *child = new_term->getSuccessor(ch);
+          if (!visited.count(child)) {
+            to_see.push_back(child);
+            visited.insert(child);
+          }
+        }
+        break;
       }
     }
   }
@@ -910,7 +965,7 @@ void TsanOnlineInstrument::setupDataTypes() {
   // BUT we use a single 64-bit number instead.
   MopType64 = Type::getInt64Ty(*ThisModuleContext);
 
-  MopArrayType = ArrayType::get(MopType64, kTLEBSize);
+  MopArrayType = ArrayType::get(MopType64, TlebSize);
   LiteRaceCountersArrayType = ArrayType::get(Int32, kLiteRaceNumTids);
   LiteRaceSkipArrayType = ArrayType::get(Int32, kLiteRaceNumTids);
 
@@ -995,7 +1050,9 @@ void TsanOnlineInstrument::setupRuntimeGlobals() {
                                    "LTID",
                                    /*InsertBefore*/0,
                                    /*ThreadLocal*/true);
-  TLEBTy = ArrayType::get(UIntPtr, kTLEBSize);
+  // TODO(glider): I'm tired of jumping between i64 (PlatformInt)
+  // and *i64 (UIntPtr). Let us finally switch to i64, as it's anyway the same.
+  TLEBTy = ArrayType::get(UIntPtr, TlebSize);
   TLEBPtrTy = PointerType::get(UIntPtr, 0);
   if (UseDynamicTleb) {
     DTLEB = new GlobalVariable(*ThisModule,
@@ -1006,15 +1063,14 @@ void TsanOnlineInstrument::setupRuntimeGlobals() {
                                "DTLEB",
                                /*InsertBefore*/0,
                                /*ThreadLocal*/true);
-    DTlebTop = new GlobalVariable(*ThisModule,
-                                  TLEBPtrTy,
-                                  /*isConstant*/false,
-                                  GlobalValue::ExternalWeakLinkage,
-                                  /*Initializer*/0,
-                                  "DTlebTop",
-                                 /*InsertBefore*/0,
-                                 /*ThreadLocal*/true);
-
+    DTlebIndex = new GlobalVariable(*ThisModule,
+                                    PlatformInt,
+                                    /*isConstant*/false,
+                                    GlobalValue::ExternalWeakLinkage,
+                                    /*Initializer*/0,
+                                    "DTlebIndex",
+                                    /*InsertBefore*/0,
+                                    /*ThreadLocal*/true);
     TLEB = NULL;
   } else {
     TLEB = new GlobalVariable(*ThisModule,
@@ -1026,6 +1082,7 @@ void TsanOnlineInstrument::setupRuntimeGlobals() {
                               /*InsertBefore*/0,
                               /*ThreadLocal*/true);
     DTLEB = NULL;
+    DTlebIndex = NULL;
   }
   // void* bb_flush_current(cur_mops)
   // TODO(glider): need another name, because we now flush superblocks, not
@@ -1044,7 +1101,10 @@ void TsanOnlineInstrument::setupRuntimeGlobals() {
   cast<Function>(BBFlushCurrentFn)->
       setLinkage(Function::ExternalWeakLinkage);
 
-
+  // void flush_tleb()
+  FlushTlebFn = ThisModule->getOrInsertFunction("flush_tleb",
+                                                Void, (Type*)0);
+  // TODO(glider): do we at all need the linkage tricks?
 
   // void rtn_call(void *addr)
   // We should keep this for debugging purpose.
@@ -1113,6 +1173,9 @@ bool TsanOnlineInstrument::runOnModule(Module &M) {
   //     able to insert a flush before such a call)
   //  -- it doesn't branch to itself
   //  -- if it starts with a call, there is an empty basic block before it
+  //
+  //  TODO(glider): split blocks that have more than kTLEBSize/kDTLEBSize
+  //  memory operations. Now we'll just assert the blocks are not too big.
   for (Module::iterator F = M.begin(), E = M.end(); F != E; ++F) {
     // We do not want to split on a call instruction more than once.
     SmallSet<Instruction*, 32> already_splitted;
@@ -1174,6 +1237,8 @@ bool TsanOnlineInstrument::runOnModule(Module &M) {
   }
   writeModuleDebugInfo(M);
   if (PrintStats) instrumentation_stats.printStats();
+  ///M.dump();
+
   // We do insert some external declarations, so return true to determine
   // that the pass has modified the IR.
   return true;
@@ -1256,29 +1321,164 @@ void TsanOnlineInstrument::insertIgnoreDec(
 // each CALL/INVOKE instruction. We'll need to insert additional phi nodes to
 // join the values of TlebIndex in the callgraph.
 
-void TsanOnlineInstrument::insertMaybeFlushTleb(Trace &trace,
-                                                Instruction *Before) {
-  // If the user chose to flush using SEGV, we do not need to insert any code
-  // here.
+// TODO(glider): when we split a block after the traces have been built, need
+// to make sure that both parts still belong to the same trace.
+void TsanOnlineInstrument::insertMaybeFlushTleb(Instruction *Before) {
+  // If the user chose to flush using SEGV, we do not need to insert any code.
   if (FlushUsingSegv) return;
-  UNIMPLEMENTED();
+  if (EnableLiteRaceSampling) {
+    // If LiteRace sampling is enabled, the check should look like this:
+    //  if (literace == 0) {
+    //    memset(DTLEB[DTlebIndex - BB.size], 0, BB.size)
+    //  }
+    //  if (<flush condition>) {
+    //    flush_tleb()
+    //  }
+    //
+    //  Note that flush_tleb should update the literace counters for all the
+    //  blocks in the TLEB.
+    //
+    // TODO(glider): implement.
+    UNIMPLEMENTED();
+  }
+  BasicBlock *BB = Before->getParent();
+  errs() << "Before  ";
+  BB->dump();
+  BasicBlock *FinishBB = SplitBlock(BB, Before, this);
+  TerminatorInst *BBOldTerm = BB->getTerminator();
+  LLVMContext &Context = BB->getContext();
+  BasicBlock *FlushBB =
+      BasicBlock::Create(Context, "flush_tleb", BB->getParent());
+  Value *IndexValue = new LoadInst(DTlebIndex, "", BBOldTerm);
+  Value *FlushCond = new ICmpInst(BBOldTerm,
+                                  ICmpInst::ICMP_SGT,
+                                  IndexValue,
+                                  ConstantInt::get(PlatformInt, DTlebSize),
+                                  "");
+  BranchInst *BBNewTerm = BranchInst::Create(/*ifTrue*/FlushBB,
+                                             /*ifFalse*/FinishBB,
+                                             FlushCond);
+  ReplaceInstWithInst(BBOldTerm, BBNewTerm);
+
+  // Set up the flush block. It should contain:
+  //  -- flush_tleb()
+  //  -- branch to the original block end.
+
+  // This is the final branch.
+  BranchInst *FlushTerm = BranchInst::Create(FinishBB, FlushBB);
+  // This is the call.
+  vector<Value*> inst(0);
+  CallInst::Create(FlushTlebFn, inst.begin(), inst.end(), "", FlushTerm);
+  errs() << "After  ";
+  BB->dump();
+  errs() << "And  ";
+  FlushBB->dump();
+  errs() << "Landing at  ";
+  FinishBB->dump();
+  errs() << "========================================\n";
 }
 
-void TsanOnlineInstrument::writeValueIntoTleb(Value *Value,
+void TsanOnlineInstrument::writeValueIntoTleb(Value *EventValue,
                                               BasicBlock::iterator &Before) {
-  UNIMPLEMENTED();
+  // Store the value into the dynamic TLEB:
+  //   DTLEB[DTlebIndex] = EventValue;
+  //   DTlebIndex = (DTlebIndex + 1) % (2 * kDTLEBSize)
+  Value *IndexValue = new LoadInst(DTlebIndex, "", Before);
+
+  vector <Value*> end_idx;
+  end_idx.push_back(IndexValue);
+
+  // OMG no! I don't want to load DTLEB each time!
+  // TODO(glider): need to cache this.
+  Value *DTLEBPtr = new LoadInst(DTLEB, "", Before);
+  Value *CurrentTlebTop =
+      GetElementPtrInst::Create(DTLEBPtr,
+                                end_idx.begin(), end_idx.end(),
+                                "", Before);
+  new StoreInst(EventValue, CurrentTlebTop, Before);
+  Value *One = ConstantInt::get(PlatformInt, 1);
+  Value *DoubleTlebSize = ConstantInt::get(PlatformInt, 2 * DTlebSize);
+  Value *NextValue =
+      BinaryOperator::Create(Instruction::Add, IndexValue, One, "", Before);
+  Value *NewIndexValue =
+      BinaryOperator::Create(Instruction::URem, NextValue, DoubleTlebSize,
+                             "", Before);
+  new StoreInst(NewIndexValue, DTlebIndex, Before);
 }
 
-void TsanOnlineInstrument::writeRtnCallToTleb(BasicBlock::iterator &Before) {
+void TsanOnlineInstrument::writeRtnCallToTleb(Constant *Addr,
+                                              BasicBlock::iterator &Before) {
   // writeValueIntoTleb(RTN_CALL | &function)
   // insertMaybeFlushTleb()
-  UNIMPLEMENTED();
+  Value *MaskInt;
+  if (ArchSize == 64) {
+    MaskInt = ConstantInt::get(PlatformInt, kRtnMask64);
+  } else {
+    MaskInt = ConstantInt::get(PlatformInt, kRtnMask32);
+    // TODO(glider): we can't reliably use the high address bits on x86.
+    // Instead we need to put additional events into the TLEB.
+    UNIMPLEMENTED();
+  }
+  Value *CallInt = BinaryOperator::Create(Instruction::Or, MaskInt, Addr,
+                                          "", Before);
+  Value *Call = new IntToPtrInst(CallInt, UIntPtr, "", Before);
+  writeValueIntoTleb(Call, Before);
+  insertMaybeFlushTleb(Before);
 }
 
 void TsanOnlineInstrument::writeRtnExitToTleb(BasicBlock::iterator &Before) {
   // writeValueIntoTleb(RTN_EXIT)
   // insertMaybeFlushTleb()
-  UNIMPLEMENTED();
+  Value *ExitInt;
+  if (ArchSize == 64) {
+    ExitInt = ConstantInt::get(PlatformInt, kRtnMask64);
+  } else {
+    ExitInt = ConstantInt::get(PlatformInt, kRtnMask32);
+  }
+  Value *Exit = new IntToPtrInst(ExitInt, UIntPtr, "", Before);
+  writeValueIntoTleb(Exit, Before);
+  insertMaybeFlushTleb(Before);
+}
+
+void TsanOnlineInstrument::writeSblockEnterForTrace(Trace &trace) {
+  // Input: TracePassportGlob contains the current passport address.
+  Value *MaskInt;
+  BasicBlock *BB = trace.entry;
+  BasicBlock::iterator Before = BB->begin();
+  for (BasicBlock::iterator BI = BB->begin(), BE = BB->end();
+       BI != BE; ++BI) {
+    if (isa<LoadInst>(BI) || isa<StoreInst>(BI)) {
+      Before = BI;
+      break;
+    }
+  }
+  if (ArchSize == 64) {
+    MaskInt = ConstantInt::get(PlatformInt, kSblockMask64);
+  } else {
+    MaskInt = ConstantInt::get(PlatformInt, kSblockMask32);
+    // TODO(glider): we can't reliably use the high address bits on x86.
+    // Instead we need to put additional events into the TLEB.
+    UNIMPLEMENTED();
+  }
+  vector <Value*> idx;
+  idx.push_back(ConstantInt::get(PlatformInt, 0));
+  Value *PassportPtr =
+      GetElementPtrInst::Create(TracePassportGlob,
+                                idx.begin(),
+                                idx.end(),
+                                "",
+                                Before);
+  Value *PassportInt =
+      BitCastInst::CreatePointerCast(PassportPtr, PlatformInt,
+                                     "", Before);
+
+  Value *SBInt = BinaryOperator::Create(Instruction::Or,
+                                        MaskInt, PassportInt,
+                                        "", Before);
+  Value *SbEnter = new IntToPtrInst(SBInt, UIntPtr, "", Before);
+  writeValueIntoTleb(SbEnter, Before);
+  // TODO(glider): this is a hack
+  //insertMaybeFlushTleb(Before);
 }
 // }}}
 
@@ -1475,6 +1675,11 @@ void TsanOnlineInstrument::runOnTrace(Trace &trace,
   if (have_passport) {
     instrumentation_stats.newInstrumentedTrace();
     if ((trace.mops_to_instrument.size() > 1) || UseTlebForMinimalBlocks) {
+      if (UseDynamicTleb) {
+        // Hack: we put the superblock address into the TLEB, but do not check
+        // for overflow, because we'll anyway do this at the end of the block.
+        writeSblockEnterForTrace(trace);
+      }
       // Instrument memory operations and function calls.
       for (BlockSet::iterator TI = trace.blocks.begin(),
                               TE = trace.blocks.end();
@@ -1492,7 +1697,8 @@ void TsanOnlineInstrument::runOnTrace(Trace &trace,
           insertFlushCurrentCall(trace, (*EI)->getTerminator(),
                                  /*useTLEB*/true, NULL);
         } else {
-          insertMaybeFlushTleb(trace, (*EI)->getTerminator());
+          errs() << "Putting a check before the trace exit\n";
+          insertMaybeFlushTleb((*EI)->getTerminator());
         }
       }
     } else {
@@ -1800,6 +2006,8 @@ void TsanOnlineInstrument::markMopsToInstrument(Trace &trace) {
     }
   }
   trace.num_mops = trace.mops_to_instrument.size();
+  assert(trace.num_mops < TlebSize);
+  assert(trace.num_mops < DTlebSize);
 }
 
 bool TsanOnlineInstrument::makeTracePassport(Trace &trace) {
@@ -1918,6 +2126,7 @@ bool TsanOnlineInstrument::makeTracePassport(Trace &trace) {
     // mops_
     trace_info.push_back(ConstantArray::get(TracePassportType, passport));
 
+    // TODO(glider): we've got a memory leak here.
     TracePassportGlob = new GlobalVariable(
         *ThisModule,
         BBTraceInfoType,
@@ -2004,25 +2213,7 @@ bool TsanOnlineInstrument::instrumentMop(BasicBlock::iterator &BI,
       new StoreInst(MopAddr, TLEBPtr, BI);
       TLEBIndex++;
     } else {
-      // Store the pointer into *TLEBTop.
-      vector <Value*> end_idx;
-      end_idx.push_back(ConstantInt::get(Int32, 0));
-      DTlebTop->dump();
-      Value *TlebTopPtr =
-          GetElementPtrInst::Create(DTlebTop,
-                                    end_idx.begin(), end_idx.end(),
-                                    "", BI);
-      Value *CurrentTlebTop = new LoadInst(TlebTopPtr, "", BI);
-      TlebTopPtr->dump();
-      CurrentTlebTop->dump();
-      new StoreInst(MopAddr, CurrentTlebTop, BI);
-      vector <Value*> new_idx;
-      new_idx.push_back(ConstantInt::get(Int32, 1));
-      Value *NewTlebTop =
-          GetElementPtrInst::Create(CurrentTlebTop,
-                                    new_idx.begin(), new_idx.end(),
-                                    "", BI);
-      new StoreInst(NewTlebTop, TlebTopPtr, BI);
+      writeValueIntoTleb(MopAddr, BI);
     }
   } else {
     // Call bb_flush_mop() instead of TLEB magic.
