@@ -123,11 +123,19 @@ static cl::opt<int>
                          "(if -fill-tleb-completely is on)"),
                 cl::init(2000));  // kTLEBSize in tsan_rtl.cc
 
+// TODO(glider): a silly name for an option. Maybe -use-dynamic-tleb is enough?
 static cl::opt<bool>
     FillTlebCompletely("fill-tleb-completely",
-                      cl::desc("Do not flush the TLEB after each block, "
-                               "fill it up to the end"),
-                      cl::init(false));
+                       cl::desc("Do not flush the TLEB after each block, "
+                                "fill it up to the end"),
+                       cl::init(false));
+
+static cl::opt<bool>
+    FlushUsingSegv("flush-using-segv",
+                   cl::desc("Do not check for buffer overflow, but instead "
+                            "mprotect its upper bound and flush the buffer "
+                            "when SIGSEGV occurs."),
+                   cl::init(false));
 
 static cl::opt<bool>
     BasicBlocksAreTraces("basic-blocks-are-traces",
@@ -1204,6 +1212,9 @@ void TsanOnlineInstrument::insertIgnoreDec(
 
 void TsanOnlineInstrument::insertMaybeFlushTleb(Trace &trace,
                                                 Instruction *Before) {
+  // If the user chose to flush using SEGV, we do not need to insert any code
+  // here.
+  if (FlushUsingSegv) return;
   UNIMPLEMENTED();
 }
 
