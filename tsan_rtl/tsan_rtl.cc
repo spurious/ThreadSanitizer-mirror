@@ -96,11 +96,12 @@ __thread ThreadInfo INFO;
 __thread tid_t LTID;  // literace TID = TID % kLiteRaceNumTids
 __thread CallStackPod ShadowStack;
 static const size_t kTLEBSize = 2000;
+//#define USE_DYNAMIC_TLEB 1
 #undef USE_DYNAMIC_TLEB
-#define USE_DYNAMIC_TLEB 1
+
 #ifdef USE_DYNAMIC_TLEB
 __thread uintptr_t *DTLEB;
-__thread uintptr_t *DTlebTop;
+__thread uintptr_t DTlebIndex;
 #endif
 __thread uintptr_t TLEB[kTLEBSize];
 static __thread int INIT = 0;
