@@ -684,14 +684,6 @@ void TsanOnlineInstrument::insertRtnCall(Constant *addr,
   }
 }
 
-void TsanOnlineInstrument::writeRtnExitToTleb(BasicBlock::iterator &Before) {
-  // Insert the code that writes the RTN_EXIT event to the TLEB.
-  //
-  // We'll do the following:
-  //  -- read the TLEBTop into a temp
-  //  -- write RTN_EXIT to *TLEBTop
-  //  -- TLEBTop++
-}
 
 // Insert the code that pops a stack frame from the shadow stack.
 void TsanOnlineInstrument::insertRtnExit(BasicBlock::iterator &Before) {
@@ -1210,6 +1202,60 @@ void TsanOnlineInstrument::insertIgnoreDec(
 
 }
 
+// Code for contiguous TLEB usage {{{1
+// Instead of flushing each basic block independently, we write the following
+// events:
+//  -- READ
+//  -- WRITE
+//  -- SBLOCK_ENTER
+//  -- RTN_CALL
+//  -- RTN_EXIT
+// into the TLEB and flush it in one of the two cases:
+//  -- when it is full;
+//  -- when a wrapped function needs to emit a synchronization or memory
+//  allocation event and we want the contents of the buffer to go before;
+//  -- when a user signal handler is executed.
+//
+// To flush the TLEB two techniques are possible.
+//
+// 1. Overflow checks. We should check whether the buffer is close to be
+// overflowed, and flush it proactively. We still want the flushing code to be
+// placed at the end of a B/S-block (to simplify the sampling implementation),
+// so we need to limit the size of a block and insert the following check:
+//   if (TlebIndex > kTLEBSize - kBBSize) flush_tleb()
+//
+// Notes:
+//  -- we can flush before the block starts (if we're brave enough to write
+//  the sampling code):
+//   if (TlebIndex + BB.size > kTLEBSize) flush_tleb()
+//  -- we can allocate a double-sized buffer (we'll anyway need it for the
+//  SEGV-based flushing) and make kBBSize = kTLEBSize, so the code will look
+//  like:
+//   if (TlebIndex > kTLEBSize) flush_tleb()
+//
+// 2. Signal-based flushing. No checks need to be inserted here. Instead we
+// allocate a double-sized TLEB using mmap() and prohibit the access to its
+// upper part. When the buffer overflows, a SIGSEGV occurs, so we set up a
+// handler that flushes the buffer for us. Because a signal may occur in the
+// middle of a basic block, it may be not easy to jump to the beginning of the
+// buffer (that would require the instrumentation code to reload TlebIndex too
+// often), that's why we just switch the buffer halves. In order to return
+// back to the first half after the second one is full, we take the TLEB index
+// modulo 2*kTLEBSize. Because of it we can't keep a pointer to the top of the
+// TLEB and need to use the index.
+//
+// Notes:
+//  -- the preliminary evaluation shows that the overhead of handling a signal
+//  and doing two mprotect() calls is about 9000 (3000 + 6000) CPU cycles.
+//
+// Loading and storing the TLEB index might be a problem. The naive
+// implementation is going to read and write it on each access to TLEB, relying
+// on the optimizer to eliminate the redundant reads and writes. A more
+// efficient approach would be to load the index once at the beginning of the
+// instrumented function and update (store and load) its value before and after
+// each CALL/INVOKE instruction. We'll need to insert additional phi nodes to
+// join the values of TlebIndex in the callgraph.
+
 void TsanOnlineInstrument::insertMaybeFlushTleb(Trace &trace,
                                                 Instruction *Before) {
   // If the user chose to flush using SEGV, we do not need to insert any code
@@ -1217,6 +1263,25 @@ void TsanOnlineInstrument::insertMaybeFlushTleb(Trace &trace,
   if (FlushUsingSegv) return;
   UNIMPLEMENTED();
 }
+
+void TsanOnlineInstrument::writeValueIntoTleb(Value *Value,
+                                              BasicBlock::iterator &Before) {
+  UNIMPLEMENTED();
+}
+
+void TsanOnlineInstrument::writeRtnCallToTleb(BasicBlock::iterator &Before) {
+  // writeValueIntoTleb(RTN_CALL | &function)
+  // insertMaybeFlushTleb()
+  UNIMPLEMENTED();
+}
+
+void TsanOnlineInstrument::writeRtnExitToTleb(BasicBlock::iterator &Before) {
+  // writeValueIntoTleb(RTN_EXIT)
+  // insertMaybeFlushTleb()
+  UNIMPLEMENTED();
+}
+// }}}
+
 
 // |MopAddr| is ignored iff |useTLEB| == true.
 void TsanOnlineInstrument::insertFlushCurrentCall(Trace &trace,
