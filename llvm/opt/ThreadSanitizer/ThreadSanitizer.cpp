@@ -856,21 +856,21 @@ void TsanOnlineInstrument::runOnFunction(Module::iterator &F) {
          BI != BE;
          ++BI) {
       if (isa<ReturnInst>(BI)) {
-    errs() << "adding block to to_see()\n";
-    BB->dump();
+  ///  errs() << "adding block to to_see()\n";
+  ///  BB->dump();
         to_see.push_back(BB);
         instrument_call_return.insert(BI);
       }
       if (ignore_recursively && isaCallOrInvoke(BI) &&
           calls_to_instrument.count(BI)) {
-    errs() << "adding block to to_see()\n";
-    BB->dump();
+  ///  errs() << "adding block to to_see()\n";
+  ///  BB->dump();
         to_see.push_back(BB);
         instrument_call_return.insert(BI);
       }
     }
   }
-  errs() << "Size of to_see: " << to_see.size() << "\n";
+  ///errs() << "Size of to_see: " << to_see.size() << "\n";
   for (size_t i = 0; i < to_see.size(); i++) {
     BasicBlock *current_bb = to_see[i];
     visited.insert(current_bb);
@@ -881,7 +881,7 @@ void TsanOnlineInstrument::runOnFunction(Module::iterator &F) {
       TerminatorInst *old_term = current_bb->getTerminator();
       if (isa<ReturnInst>(BI)) {
         if (ignore_recursively) insertIgnoreDec(BI);
-        errs() << "Before insertRtnExit\n";
+        ///errs() << "Before insertRtnExit\n";
         insertRtnExit(BI);
         instr_seen.insert(BI);
       }
@@ -891,7 +891,7 @@ void TsanOnlineInstrument::runOnFunction(Module::iterator &F) {
         instr_seen.insert(BI);
       }
       TerminatorInst *new_term = current_bb->getTerminator();
-      errs() << "old_term: " << old_term << "  new_term: " << new_term << "\n";
+      ///errs() << "old_term: " << old_term << "  new_term: " << new_term << "\n";
       if (new_term != old_term) {
         // The current block was split. Add its successors to |to_see| and
         // break because the iterator is already invalid.
@@ -1342,8 +1342,10 @@ void TsanOnlineInstrument::insertMaybeFlushTleb(Instruction *Before) {
     UNIMPLEMENTED();
   }
   BasicBlock *BB = Before->getParent();
+#if 0
   errs() << "Before  ";
   BB->dump();
+#endif
   BasicBlock *FinishBB = SplitBlock(BB, Before, this);
   TerminatorInst *BBOldTerm = BB->getTerminator();
   LLVMContext &Context = BB->getContext();
@@ -1369,6 +1371,7 @@ void TsanOnlineInstrument::insertMaybeFlushTleb(Instruction *Before) {
   // This is the call.
   vector<Value*> inst(0);
   CallInst::Create(FlushTlebFn, inst.begin(), inst.end(), "", FlushTerm);
+#if 0
   errs() << "After  ";
   BB->dump();
   errs() << "And  ";
@@ -1376,6 +1379,7 @@ void TsanOnlineInstrument::insertMaybeFlushTleb(Instruction *Before) {
   errs() << "Landing at  ";
   FinishBB->dump();
   errs() << "========================================\n";
+#endif
 }
 
 void TsanOnlineInstrument::writeValueIntoTleb(Value *EventValue,
@@ -1445,12 +1449,23 @@ void TsanOnlineInstrument::writeSblockEnterForTrace(Trace &trace) {
   Value *MaskInt;
   BasicBlock *BB = trace.entry;
   BasicBlock::iterator Before = BB->begin();
+  BasicBlock::iterator Last = BB->begin();
+  bool known_before = false;
+  // We need to place the instrumentation code before the first memory access,
+  // but after the last phi node. If there are no memory accesses in the basic
+  // block, we can safely take the last instruction, because it can't be a phi
+  // node.
   for (BasicBlock::iterator BI = BB->begin(), BE = BB->end();
        BI != BE; ++BI) {
+    Last = BI;
     if (isa<LoadInst>(BI) || isa<StoreInst>(BI)) {
       Before = BI;
+      known_before = true;
       break;
     }
+  }
+  if (!known_before) {
+    Before = Last;
   }
   if (ArchSize == 64) {
     MaskInt = ConstantInt::get(PlatformInt, kSblockMask64);
@@ -1697,7 +1712,7 @@ void TsanOnlineInstrument::runOnTrace(Trace &trace,
           insertFlushCurrentCall(trace, (*EI)->getTerminator(),
                                  /*useTLEB*/true, NULL);
         } else {
-          errs() << "Putting a check before the trace exit\n";
+///          errs() << "Putting a check before the trace exit\n";
           insertMaybeFlushTleb((*EI)->getTerminator());
         }
       }
