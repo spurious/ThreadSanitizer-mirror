@@ -96,8 +96,13 @@ __thread ThreadInfo INFO;
 __thread tid_t LTID;  // literace TID = TID % kLiteRaceNumTids
 __thread CallStackPod ShadowStack;
 static const size_t kTLEBSize = 2000;
+#undef USE_DYNAMIC_TLEB
+#define USE_DYNAMIC_TLEB 1
+#ifdef USE_DYNAMIC_TLEB
+__thread uintptr_t *DTLEB;
+__thread uintptr_t *DTlebTop;
+#endif
 __thread uintptr_t TLEB[kTLEBSize];
-__thread uintptr_t *TLEBTop;
 static __thread int INIT = 0;
 #if 0
 static __thread int events = 0;
@@ -423,7 +428,7 @@ void INLINE flush_single_mop(TraceInfoPOD *trace, uintptr_t addr) {
       ENTER_RTL();
       Event sblock(SBLOCK_ENTER, tid, trace->pc_, 0, trace->n_mops_);
       //sblock.Print();
-      Printf(">>SBLOCK_ENTER [pc=%p, a=(nil), i=0x1]\n", trace->pc_);
+      Printf("SBLOCK_ENTER [pc=%p, a=(nil), i=0x1]\n", trace->pc_);
       if (trace->mops_[0].is_write()) {
         Event event(WRITE,
                     tid, trace->mops_[0].pc(),
@@ -615,6 +620,13 @@ bool initialize() {
 // Should be called under the global lock.
 INLINE void UnsafeInitTidCommon() {
   ENTER_RTL();
+#ifdef USE_DYNAMIC_TLEB
+  DTLEB = (uintptr_t*)__real_mmap(0, 2 * kTLEBSize,
+                                PROT_READ | PROT_WRITE,
+                                MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+  DTlebTop = DTLEB;
+  memset(DTLEB, 0, kTLEBSize);
+#endif
   memset(TLEB, 0, kTLEBSize);
   INFO.thread_local_ignore = &thread_local_ignore;
   thread_local_ignore = !!global_ignore;
@@ -657,7 +669,6 @@ INLINE void InitTid() {
   Tids[pt] = INFO.tid;
   PThreads[INFO.tid] = pt;
   ThreadInfoMap[pt] = &INFO;
-  TLEBTop = TLEB;
 }
 
 INLINE tid_t GetTid() {
@@ -708,7 +719,14 @@ void *pthread_callback(void *arg) {
   DCHECK(tid != 0);
   CHECK(INFO.tid != 0);
 
-  memset(TLEB, '\0', sizeof(TLEB));
+#ifdef USE_DYNAMIC_TLEB
+  DTLEB = (uintptr_t*)__real_mmap(0, 2 * kTLEBSize,
+                                PROT_READ | PROT_WRITE,
+                                MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+  DTlebTop = DTLEB;
+  memset(DTLEB, '\0', kTLEBSize);
+#endif
+  memset(TLEB, '\0', kTLEBSize);
 
   callback_arg *cb_arg = (callback_arg*)arg;
   pthread_worker *routine = cb_arg->routine;
@@ -825,6 +843,9 @@ void *pthread_callback(void *arg) {
   // functions (e.g. free()) after this thread has ended.
   // TODO(glider): need to check whether it's 100% legal.
   ENTER_RTL();
+#ifdef USE_DYNAMIC_TLEB
+  __real_munmap(DTLEB, kTLEBSize * 2);
+#endif
 
   return result;
 }
@@ -2652,21 +2673,6 @@ void rtn_exit() {
   }
 }
 
-// TODO(glider): bb_flush is deprecated.
-#if 0
-// TODO(glider): we may want the basic block address to differ from the PC
-// of the first MOP in that basic block.
-extern "C"
-void bb_flush(TraceInfoPOD *next_mops) {
-  DCHECK(INIT);
-  if (INFO.trace_info) {
-    // This is not a function entry block
-    flush_trace();
-  }
-  INFO.trace_info = next_mops;
-}
-#endif
-
 extern "C"
 void bb_flush_current(TraceInfoPOD *curr_mops) {
   flush_trace(curr_mops);
@@ -2677,6 +2683,7 @@ void bb_flush_mop(TraceInfoPOD *curr_mop, uintptr_t addr) {
   flush_single_mop(curr_mop, addr);
 }
 
+// Flush the dynamic TLEB.
 extern "C"
 void flush_tleb() {
   return;

@@ -1027,13 +1027,6 @@ void TsanOnlineInstrument::setupRuntimeGlobals() {
                               /*ThreadLocal*/true);
     DTLEB = NULL;
   }
-  // void* bb_flush(next_mops)
-  // TODO(glider): need to stop supporting it. This has been broken for months.
-  BBFlushFn = ThisModule->getOrInsertFunction("bb_flush",
-                                              Void,
-                                              TraceInfoTypePtr, (Type*)0);
-  cast<Function>(BBFlushFn)->setLinkage(Function::ExternalWeakLinkage);
-
   // void* bb_flush_current(cur_mops)
   // TODO(glider): need another name, because we now flush superblocks, not
   // basic blocks.
@@ -1209,34 +1202,6 @@ void TsanOnlineInstrument::insertIgnoreDec(
 
 }
 
-#if 0
-// bb_flush should be deleted.
-// TODO(glider): either allow the user to use bb_flush() and implement the
-// sampling instrumentation, or delete this.
-void TsanOnlineInstrument::insertFlushCall(Trace &trace, Instruction *Before) {
-  assert(Before);
-  if (!EnableLiteRaceSampling) {
-    // Sampling is off -- just insert an unconditional call to bb_flush().
-    vector <Value*> Args(1);
-    vector <Value*> idx;
-    idx.push_back(ConstantInt::get(PlatformInt, 0));
-    Value *PassportPtr =
-        GetElementPtrInst::Create(TracePassportGlob,
-                                  idx.begin(),
-                                  idx.end(),
-                                  "",
-                                  Before);
-    Args[0] = BitCastInst::CreatePointerCast(PassportPtr,
-                                             TraceInfoTypePtr,
-                                             "",
-                                             Before);
-    CallInst::Create(BBFlushFn, Args.begin(), Args.end(), "", Before);
-  } else {
-    // TODO(glider): unimplemented
-  }
-}
-#endif
-
 void TsanOnlineInstrument::insertMaybeFlushTleb(Trace &trace,
                                                 Instruction *Before) {
   UNIMPLEMENTED();
@@ -1249,7 +1214,8 @@ void TsanOnlineInstrument::insertFlushCurrentCall(Trace &trace,
                                                   Value *MopAddr) {
   assert(Before);
   if (!EnableLiteRaceSampling) {
-    // Sampling is off -- just insert an unconditional call to bb_flush().
+    // Sampling is off -- just insert an unconditional call
+    // to bb_flush_current().
     vector <Value*> Args(1);
     vector <Value*> idx;
     idx.push_back(ConstantInt::get(PlatformInt, 0));

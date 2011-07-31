@@ -162,7 +162,7 @@ struct TsanOnlineInstrument : public llvm::ModulePass { // {{{1
   llvm::Value *TracePassportGlob;
   llvm::GlobalVariable *LiteRaceStorageGlob;
   // Functions provided by the RTL.
-  llvm::Constant *BBFlushFn, *BBFlushCurrentFn, *BBFlushMop;
+  llvm::Constant *BBFlushCurrentFn, *BBFlushMop;
   llvm::Constant *RtnCallFn, *RtnExitFn, *ShadowStackCheckFn;
   llvm::Constant *MemCpyFn, *MemMoveFn, *MemSetIntrinsicFn;
   // Basic types.
