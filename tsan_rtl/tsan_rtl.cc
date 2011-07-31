@@ -102,13 +102,18 @@ static const size_t kTLEBSize = 2048;
 static const size_t kDTLEBSize = 4096;
 static const size_t kDTLEBMemory = kDTLEBSize * 2 * sizeof(uintptr_t);
 
+#ifdef TSAN_RTL_X64
+static const uintptr_t kRtnMask = 1L << 63;
+static const uintptr_t kSBlockMask = 1L << 62;
+#endif
+
 // TODO(glider): we set USE_DYNAMIC_TLEB via -D now.
 //#define USE_DYNAMIC_TLEB 1
 //#undef USE_DYNAMIC_TLEB
 
 #ifdef USE_DYNAMIC_TLEB
 __thread uintptr_t *DTLEB;
-__thread uintptr_t DTlebIndex;
+__thread int DTlebIndex;
 #endif
 __thread uintptr_t TLEB[kTLEBSize];
 static __thread int INIT = 0;
@@ -2694,6 +2699,27 @@ void bb_flush_mop(TraceInfoPOD *curr_mop, uintptr_t addr) {
 // Flush the dynamic TLEB.
 extern "C"
 void flush_tleb() {
+#ifdef TSAN_RTL_X64
+  printf("flush_tleb(), DTlebIndex: %d\n", DTlebIndex);
+  for (int i = 0; i < DTlebIndex; i++) {
+    if (DTLEB[i] & kRtnMask) {
+      if (DTLEB[i] == kRtnMask) {
+        printf("DTLEB[%d] = RTN_EXIT\n", i);
+      } else {
+        uintptr_t addr = DTLEB[i] & (~kRtnMask);
+        printf("DTLEB[%d] = RTN_CALL(%p)\n", i, (void*)addr);
+      }
+      continue;
+    }
+    if (DTLEB[i] & kSBlockMask) {
+      uintptr_t addr = DTLEB[i] & (~kSBlockMask);
+      printf("DTLEB[%d] = SBLOCK_ENTER(%p)\n", i, (void*)addr);
+      continue;
+    }
+    printf("DTLEB[%d] = MOP(%p)\n", i, (void*)DTLEB[i]);
+  }
+#endif
+  DTlebIndex = 0;
   return;
 }
 
