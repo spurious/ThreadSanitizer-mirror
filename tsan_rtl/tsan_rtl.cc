@@ -2688,18 +2688,25 @@ void rtn_exit() {
 
 extern "C"
 void bb_flush_current(TraceInfoPOD *curr_mops) {
+#ifdef DISABLE_RACE_DETECTION
+  return;
+#endif
   flush_trace(curr_mops);
 }
 
 extern "C"
 void bb_flush_mop(TraceInfoPOD *curr_mop, uintptr_t addr) {
+#ifdef DISABLE_RACE_DETECTION
+  return;
+#endif
   flush_single_mop(curr_mop, addr);
 }
 
 // Flush the dynamic TLEB.
 extern "C"
 void flush_tleb() {
-#ifdef TSAN_RTL_X64
+#if 0
+//#ifdef TSAN_RTL_X64
   printf("flush_tleb(), DTlebIndex: %d\n", DTlebIndex);
   for (int i = 0; i < DTlebIndex; i++) {
     if (DTLEB[i] & kRtnMask) {
@@ -2719,7 +2726,9 @@ void flush_tleb() {
     printf("DTLEB[%d] = MOP(%p)\n", i, (void*)DTLEB[i]);
   }
 #endif
+#ifdef USE_DYNAMIC_TLEB
   DTlebIndex = 0;
+#endif
   return;
 }
 
