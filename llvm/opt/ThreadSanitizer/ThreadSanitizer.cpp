@@ -51,8 +51,13 @@ static cl::opt<bool>
                   cl::init(false));
 static cl::opt<bool>
     PrintStats("print-stats",
-                  cl::desc("Print the instrumentation stats"),
-                  cl::init(true));
+               cl::desc("Print the instrumentation stats"),
+               cl::init(true));
+
+static cl::opt<bool>
+    DumpModule("dump-module",
+               cl::desc("Dump the module after instrumentation"),
+               cl::init(false));
 
 static cl::opt<bool>
     WorkaroundVptrRace("workaround-vptr-race",
@@ -116,7 +121,7 @@ static cl::opt<bool>
 static cl::opt<bool>
     UseDynamicTleb("use-dynamic-tleb",
                    cl::desc("TODO(glider)"),
-                   cl::init(true));
+                   cl::init(false));
 static cl::opt<int>
     TlebSize("tleb-size",
              cl::desc("The size of TLEB "
@@ -1237,7 +1242,7 @@ bool TsanOnlineInstrument::runOnModule(Module &M) {
   }
   writeModuleDebugInfo(M);
   if (PrintStats) instrumentation_stats.printStats();
-  ///M.dump();
+  if (DumpModule) M.dump();
 
   // We do insert some external declarations, so return true to determine
   // that the pass has modified the IR.
