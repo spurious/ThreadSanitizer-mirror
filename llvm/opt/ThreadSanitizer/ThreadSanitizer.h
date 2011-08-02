@@ -203,7 +203,8 @@ struct TsanOnlineInstrument : public llvm::ModulePass { // {{{1
   //static const int kFNV1aPrime = 6733, kFNV1aModulo = 2048;
   // TODO(glider): these numbers are in fact unfair, see
   // http://isthe.com/chongo/tech/comp/fnv/index.html
-  static const int kFNV1aPrime = 104729, kFNV1aModulo = 65536;
+  //static const int kFNV1aPrime = 104729, kFNV1aModulo = 65536;
+  static const int kFNV1aPrime = 1299827, kFNV1aModulo = 2097152;
   static const int kMaxAddr = 1 << 30;
   static const int kDebugInfoMagicNumber = 0xdb914f0;
   // TODO(glider): must be in sync with ts_trace_info.h
