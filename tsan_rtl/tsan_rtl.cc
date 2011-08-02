@@ -110,6 +110,9 @@ static const uintptr_t kSBlockMask = 1L << 62;
 // TODO(glider): we set USE_DYNAMIC_TLEB via -D now.
 //#define USE_DYNAMIC_TLEB 1
 //#undef USE_DYNAMIC_TLEB
+#ifdef FLUSH_WITH_SEGV
+#define USE_DYNAMIC_TLEB 1
+#endif
 
 #ifdef USE_DYNAMIC_TLEB
 __thread uintptr_t *DTLEB;
@@ -554,6 +557,7 @@ void unsafeMapTls(tid_t tid, pc_t pc) {
 int tleb_half = 0;  // 0 or 1
 #endif
 
+#ifdef FLUSH_WITH_SEGV
 void swapTlebHalves() {
   const int kHalf = kDTLEBMemory / 2;
   char *oaddr = (char*)DTLEB + tleb_half * kHalf;
@@ -574,6 +578,7 @@ void initSegvFlush() {
   // TODO(glider): need to make sure nobody installs his own SEGV handler.
   __real_sigaction(SIGSEGV, &sigact, NULL);
 }
+#endif
 
 bool initialize() {
   if (in_initialize) return false;
@@ -2823,6 +2828,9 @@ struct PcInfo {
 };
 
 void ReadDbgInfoFromSection(char* start, char* end) {
+  if (G_flags->verbosity >= 1) {
+    Printf("ReadDbgInfoFromSection: %p to %p\n", start, end);
+  }
   DCHECK(IN_RTL); // operator new and std::map are used below.
   static const int kDebugInfoMagicNumber = 0xdb914f0;
   char *p = start;
