@@ -550,6 +550,31 @@ void unsafeMapTls(tid_t tid, pc_t pc) {
 #endif
 }
 
+#ifdef FLUSH_WITH_SEGV
+int tleb_half = 0;  // 0 or 1
+#endif
+
+void swapTlebHalves() {
+  const int kHalf = kDTLEBMemory / 2;
+  char *oaddr = (char*)DTLEB + tleb_half * kHalf;
+  char *caddr = (char*)DTLEB + (1 - tleb_half) * kHalf;
+  mprotect(oaddr, kHalf, PROT_READ | PROT_WRITE);
+  mprotect(caddr, kHalf, PROT_NONE);
+  tleb_half = 1 - tleb_half;
+}
+
+void segvFlushHandler(int signo, siginfo_t *siginfo, void *context) {
+  swapTlebHalves();
+}
+
+void initSegvFlush() {
+  struct sigaction sigact;
+  sigact.sa_sigaction = segvFlushHandler;
+  sigact.sa_flags = SA_SIGINFO | SA_ONSTACK;
+  // TODO(glider): need to make sure nobody installs his own SEGV handler.
+  __real_sigaction(SIGSEGV, &sigact, NULL);
+}
+
 bool initialize() {
   if (in_initialize) return false;
   if (RTL_INIT == 1) return true;
@@ -627,6 +652,9 @@ bool initialize() {
     SPut(THR_STACK_TOP, 0, 0, (uintptr_t)&stack_size, stack_size);
   }
   unsafeMapTls(0, 0);
+#ifdef FLUSH_WITH_SEGV
+  initSegvFlush();
+#endif
   return true;
 }
 
