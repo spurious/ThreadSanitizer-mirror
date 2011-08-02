@@ -1,0 +1,33 @@
+#!/bin/bash
+
+if [ "$1" == "" ]; then
+  echo "usage: $0 PATH_TO_CHROMIUM_REPO_WITH_SRC"
+  exit 1
+fi
+
+TSANROOT=$PWD/../..
+CHROMIUMROOT=$1/third_party/compiler-tsan
+
+[ -f "$CHROMIUMROOT/README.chromium" ] || (echo "$1 seems to be not a proper chromium repo" && exit 1)
+
+cd $TSANROOT/gcc/plg
+echo Building gcc plugin...
+make
+echo
+
+cd $TSANROOT/tsan_rtl
+echo Building tsan rtl...
+make
+echo
+
+echo Copying files...
+cp $TSANROOT/gcc/scripts/cc.sh $CHROMIUMROOT/gcc-tsan/scripts/
+cp $TSANROOT/gcc/scripts/gcc   $CHROMIUMROOT/gcc-tsan/scripts/
+cp $TSANROOT/gcc/scripts/g++   $CHROMIUMROOT/gcc-tsan/scripts/
+cp $TSANROOT/gcc/scripts/ld    $CHROMIUMROOT/gcc-tsan/scripts/
+cp $TSANROOT/gcc/lib/librelite_4.5.3.so $CHROMIUMROOT/gcc-tsan/lib/
+cp $TSANROOT/gcc/include/relite_rt.h $CHROMIUMROOT/gcc-tsan/include/
+cp $TSANROOT/tsan_rtl/scripts/link_config.txt $CHROMIUMROOT/tsan_rtl/scripts/
+cp $TSANROOT/tsan_rtl/lib/tsan_rtl32.a $CHROMIUMROOT/tsan_rtl/lib/
+cp $TSANROOT/tsan_rtl/lib/tsan_rtl64.a $CHROMIUMROOT/tsan_rtl/lib/
+
