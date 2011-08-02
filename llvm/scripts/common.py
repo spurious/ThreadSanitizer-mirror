@@ -24,12 +24,13 @@ OPT="/usr/bin/opt"
 LLC="/usr/bin/llc"
 SCRIPT_ROOT = os.path.dirname(os.path.realpath(sys.argv[0]))
 LD = "/usr/bin/g++"
-LINK_CONFIG = SCRIPT_ROOT + '/link_config.txt'
+LINK_CONFIG = SCRIPT_ROOT + '/../../tsan_rtl/scripts/link_config.txt'
 PASS_SO = SCRIPT_ROOT + '/../opt/ThreadSanitizer/ThreadSanitizer.so'
 DA_FLAGS=['-DDYNAMIC_ANNOTATIONS_WANT_ATTRIBUTE_WEAK',
           '-DRACECHECK_UNITTEST_WANT_ATTRIBUTE_WEAK',
           '-DDYNAMIC_ANNOTATIONS_PREFIX=LLVM',
           '-DDYNAMIC_ANNOTATIONS_PROVIDE_RUNNING_ON_VALGRIND=1',
+          '-DADDRESS_SANITIZER=1',
           '-D__clang__']
 
 P32='x86'
@@ -37,8 +38,8 @@ P64='x86-64'
 PLATFORM = {'-m32': P32, '-m64': P64 }
 MARCH = { P32: '-m32', P64: '-m64' }
 XARCH = { P32: P32, P64: P64 }
-TSAN_RTL = {P32: SCRIPT_ROOT+'/../tsan_rtl/tsan_rtl32.a',
-            P64: SCRIPT_ROOT+'/../tsan_rtl/tsan_rtl64.a' }
+TSAN_RTL = {P32: SCRIPT_ROOT+'/../../tsan_rtl/lib/tsan_rtl32.a',
+            P64: SCRIPT_ROOT+'/../../tsan_rtl/lib/tsan_rtl64.a' }
 TSAN_DA = {P32: SCRIPT_ROOT+'/../tsan_rtl/x86-tsan_rtl_dynamic_annotations.o',
            P64: SCRIPT_ROOT+'/../tsan_rtl/amd64-tsan_rtl_dynamic_annotations.o'
            }
@@ -75,6 +76,7 @@ def print_args(args):
   print "    ", args[-1]
 
 def do_fallback(fallback_cc, args):
+  #sys.exit(1) # debugging only
   fallback_args = [fallback_cc] + args
   fallback_args += ['-c']
   #print_args(fallback_args)
@@ -200,7 +202,7 @@ def gcc(default_cc, fallback_cc):
         pieces = line[:-1].split(" ")
         if len(pieces) == 2 and pieces[0] in ['wrap', 'undefined']:
           ld_args.append('-Wl,--' + pieces[0] + ',' + pieces[1])
-      ld_args += [TSAN_DA[platform]]
+#      ld_args += [TSAN_DA[platform]]
       ld_args += [TSAN_RTL[platform]]
       ld_args += ['-lpthread', '-lrt']
       # Ubuntu doesn't have a package containing 32-bit libbfd version.
@@ -244,20 +246,21 @@ def gcc(default_cc, fallback_cc):
         optimization] + debug_info_args + ['-c'] + DA_FLAGS + compiler_args + ['-o', src_bitcode]
     if compile_pic:
       llvm_gcc_args += [fpic]
-    #print_args(llvm_gcc_args)
+    print_args(llvm_gcc_args)
     retcode = subprocess.call(llvm_gcc_args)
     if retcode != 0:
       do_fallback(fallback_cc, args)
       return
 
     # TODO(glider): additional opt passes.
-    opt_args = [OPT, '-load', PASS_SO, '-tsan', '-target-arch=' + XARCH[platform]]
+    opt_args = [OPT, '-load', PASS_SO, '-tsan']
+    opt_args += ['-enable-tsan', '-target-arch=' + XARCH[platform]]
     if TSAN_IGNORE:
       opt_args += ['-ignore=' + TSAN_IGNORE]
     if TSAN_OPT_ARGS:
       opt_args += [TSAN_OPT_ARGS]
     opt_args += [src_bitcode, '-o', src_instrumented]
-    #print_args(opt_args)
+    print_args(opt_args)
     retcode = subprocess.call(opt_args, stderr=file(src_file+".instrumentation.log", 'w'))
     if retcode != 0:
       do_fallback(fallback_cc, args)
