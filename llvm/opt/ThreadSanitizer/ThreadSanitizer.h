@@ -109,6 +109,7 @@ struct TsanOnlineInstrument : public llvm::ModulePass { // {{{1
   void dumpInstructionDebugInfo(llvm::Constant *addr,
                                 const llvm::BasicBlock::iterator BI);
   uintptr_t getModuleID(llvm::Module &M);
+  string getModuleLetters(llvm::Module &M);
   void setupFlags();
   void setupDataTypes();
   void setupRuntimeGlobals();
@@ -159,6 +160,7 @@ struct TsanOnlineInstrument : public llvm::ModulePass { // {{{1
   IgnoreLists Ignores;
   int ArchSize;
   int ModuleID;
+  string ModuleLetters;
   int ModuleFunctionCount, ModuleMopCount, FunctionMopCount, TLEBIndex,
       FunctionMopCountOnTrace;
   int TraceNumMops, InstrumentedTraceCount;

@@ -226,6 +226,19 @@ Constant *TsanOnlineInstrument::getInstructionAddr(
   return result;
 }
 
+// TODO(glider): this is a hack to make the debug info variables more unique.
+// It'll be more reliable to make them hidden again.
+string TsanOnlineInstrument::getModuleLetters(Module &M) {
+  string name = M.getModuleIdentifier();
+  string res;
+  for (int i = 0; i < name.size(); ++i) {
+    if ((name[i] >= 'a') && (name[i] <= 'z')) res += name[i];
+    if ((name[i] >= 'A') && (name[i] <= 'Z')) res += name[i];
+    if ((name[i] == '_') || (name[i] < '/')) res += '_';
+  }
+  return res;
+}
+
 uintptr_t TsanOnlineInstrument::getModuleID(Module &M) {
   uintptr_t result = 0;
   char tmp;
@@ -388,7 +401,8 @@ void TsanOnlineInstrument::writeModuleDebugInfo(Module &M) {
   Constant *DebugInfo = ConstantStruct::get(DebugInfoType, debug_info);
 
   char var_id_str[50];
-  snprintf(var_id_str, sizeof(var_id_str), "rtl_debug_info%d", ModuleID);
+  snprintf(var_id_str, sizeof(var_id_str), "rtl_debug_info%d%s",
+           ModuleID, ModuleLetters.c_str());
 
   GlobalValue *GV = new GlobalVariable(
       M,
@@ -1241,6 +1255,7 @@ bool TsanOnlineInstrument::runOnModule(Module &M) {
   ModuleFunctionCount = 0;
   ModuleMopCount = 0;
   ModuleID = getModuleID(M);
+  ModuleLetters = getModuleLetters(M);
   ThisModule = &M;
   ThisModuleContext = &(M.getContext());
   AA = &getAnalysis<AliasAnalysis>();
