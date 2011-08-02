@@ -169,22 +169,23 @@ struct TsanOnlineInstrument : public llvm::ModulePass { // {{{1
   llvm::Constant *RtnCallFn, *RtnExitFn, *ShadowStackCheckFn;
   llvm::Constant *MemCpyFn, *MemMoveFn, *MemSetIntrinsicFn;
   // Basic types.
-  const llvm::PointerType *UIntPtr, *TraceInfoTypePtr, *Int8Ptr;
-  const llvm::IntegerType *PlatformInt, *PlatformPc, *ArithmeticPtr, *Int64;
-  const llvm::Type *Int1, *Int4, *Int8, *Int32;
-  const llvm::Type *Void;
+  llvm::PointerType *UIntPtr, *Int8Ptr;
+  llvm::IntegerType *PlatformPc, *ArithmeticPtr, *Int64;
+  llvm::IntegerType *Int1, *Int4;
+  llvm::IntegerType *PlatformInt, *Int8, *Int32;
+  llvm::Type *Void;
   // Compound types.
-  const llvm::StructType *MopType, *TraceInfoType, *BBTraceInfoType;
-  const llvm::IntegerType *MopType64;
-  const llvm::StructType *LiteRaceCountersType;
-  const llvm::ArrayType *LiteRaceStorageType, *LiteRaceStorageLineType;
-  const llvm::PointerType *LiteRaceStoragePtrType;
+  llvm::StructType *MopType, *TraceInfoType, *BBTraceInfoType;
+  llvm::IntegerType *MopType64;
+  llvm::StructType *LiteRaceCountersType;
+  llvm::ArrayType *LiteRaceStorageType, *LiteRaceStorageLineType;
+  llvm::PointerType *LiteRaceStorageTypePtr, *TraceInfoTypePtr;
   const llvm::ArrayType *MopArrayType;
   const llvm::ArrayType *LiteRaceCountersArrayType, *LiteRaceSkipArrayType;
-  const llvm::ArrayType *TracePassportType, *TraceExtPassportType;
-  const llvm::Type *TLEBTy;
-  const llvm::PointerType *TLEBPtrTy;
-  const llvm::StructType *CallStackType;
+  llvm::ArrayType *TracePassportType, *TraceExtPassportType;
+  llvm::Type *TLEBTy;
+  llvm::PointerType *TLEBPtrTy;
+  llvm::StructType *CallStackType;
   const llvm::ArrayType *CallStackArrayType;
 
   // Globals provided by the RTL.

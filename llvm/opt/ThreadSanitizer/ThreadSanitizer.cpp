@@ -3,6 +3,9 @@
 #include "ThreadSanitizer.h"
 
 #include "llvm/Analysis/DebugInfo.h"
+#ifndef BUILD_TSAN_FOR_OLD_LLVM
+# include "llvm/ADT/ArrayRef.h"
+#endif
 #include "llvm/CallingConv.h"
 #include "llvm/DerivedTypes.h"
 #include "llvm/Function.h"
@@ -212,10 +215,12 @@ Constant *TsanOnlineInstrument::getInstructionAddr(
     int mop_index, BasicBlock::iterator &cur_inst,
     const IntegerType *ResultType) {
   Value *cur_fun = cur_inst->getParent()->getParent();
-  Constant *c_offset = ConstantInt::get(ResultType, mop_index);
+  Constant *c_offset = ConstantInt::get(const_cast<IntegerType*>(ResultType),
+                                        mop_index, /*isSigned*/false);
   Constant *result =
       ConstantExpr::getAdd(
-          ConstantExpr::getPtrToInt(cast<Constant>(cur_fun), ResultType),
+          ConstantExpr::getPtrToInt(cast<Constant>(cur_fun),
+                                    const_cast<IntegerType*>(ResultType)),
           c_offset);
   dumpInstructionDebugInfo(result, cur_inst);
   return result;
@@ -260,9 +265,12 @@ void TsanOnlineInstrument::writeModuleDebugInfo(Module &M) {
   // The debug info is stored in a per-module global structure named
   // "rtl_debug_info${ModuleID}".
   // TODO(glider): this may lead to name collisions.
+#ifdef BUILD_TSAN_FOR_OLD_LLVM
   LLVMContext &Context = M.getContext();
+#endif
   vector<Constant*> dummy;
-  dummy.push_back(ConstantInt::get(PlatformInt, ModuleID));
+  dummy.push_back(ConstantInt::get(const_cast<IntegerType*>(PlatformInt),
+                                   ModuleID));
   map<string, size_t> files;
   map<string, size_t> paths;
   map<string, size_t> symbols;
@@ -278,7 +286,8 @@ void TsanOnlineInstrument::writeModuleDebugInfo(Module &M) {
     files_count++;
     files_size += (it->size() + 1);
     for (size_t i = 0; i < it->size(); i++) {
-      files_raw.push_back(ConstantInt::get(Int8, it->c_str()[i]));
+      files_raw.push_back(ConstantInt::get(Int8,
+                                           it->c_str()[i]));
     }
     files_raw.push_back(ConstantInt::get(Int8, 0));
   }
@@ -291,7 +300,8 @@ void TsanOnlineInstrument::writeModuleDebugInfo(Module &M) {
     paths_count++;
     paths_size += (it->size() + 1);
     for (size_t i = 0; i < it->size(); i++) {
-      paths_raw.push_back(ConstantInt::get(Int8, it->c_str()[i]));
+      paths_raw.push_back(ConstantInt::get(Int8,
+                                           it->c_str()[i]));
     }
     paths_raw.push_back(ConstantInt::get(Int8, 0));
   }
@@ -304,18 +314,26 @@ void TsanOnlineInstrument::writeModuleDebugInfo(Module &M) {
     symbols_count++;
     symbols_size += (it->size() + 1);
     for (size_t i = 0; i < it->size(); i++) {
-      symbols_raw.push_back(ConstantInt::get(Int8, it->c_str()[i]));
+      symbols_raw.push_back(ConstantInt::get(Int8,
+                                             it->c_str()[i]));
     }
     symbols_raw.push_back(ConstantInt::get(Int8, 0));
   }
   vector<Constant*> pcs;
 
   // pc, symbol, path, file, line
+#ifdef BUILD_TSAN_FOR_OLD_LLVM
   StructType *PcInfo = StructType::get(Context,
                                        PlatformInt, PlatformInt,
                                        PlatformInt,
                                        PlatformInt, PlatformInt,
                                        NULL);
+#else
+  StructType *PcInfo = StructType::get(PlatformInt, PlatformInt,
+                                       PlatformInt,
+                                       PlatformInt, PlatformInt,
+                                       NULL);
+#endif
   for (map<Constant*, DebugPcInfo>::iterator it = debug_pc_map.begin();
        it != debug_pc_map.end();
        ++it) {
@@ -332,6 +350,7 @@ void TsanOnlineInstrument::writeModuleDebugInfo(Module &M) {
   // magic,
   // paths_size, files_size, symbols_size, pcs_size,
   // paths[], files[], symbols[], pcs[]
+#ifdef BUILD_TSAN_FOR_OLD_LLVM
   StructType *DebugInfoType = StructType::get(Context,
       Int32,
       PlatformInt, PlatformInt, PlatformInt, PlatformInt,
@@ -340,6 +359,16 @@ void TsanOnlineInstrument::writeModuleDebugInfo(Module &M) {
       ArrayType::get(Int8, symbols_size),
       ArrayType::get(PcInfo, pcs_size),
       NULL);
+#else
+  StructType *DebugInfoType = StructType::get(
+      Int32,
+      PlatformInt, PlatformInt, PlatformInt, PlatformInt,
+      ArrayType::get(Int8, paths_size),
+      ArrayType::get(Int8, files_size),
+      ArrayType::get(Int8, symbols_size),
+      ArrayType::get(PcInfo, pcs_size),
+      NULL);
+#endif
 
   vector<Constant*> debug_info;
   debug_info.push_back(ConstantInt::get(Int32, kDebugInfoMagicNumber));
@@ -674,7 +703,11 @@ void TsanOnlineInstrument::insertRtnCall(Constant *addr,
   if (!InlineShadowStackUpdates) {
     vector<Value*> inst(1);
     inst[0] = addr;
+#ifdef BUILD_TSAN_FOR_OLD_LLVM
     CallInst::Create(RtnCallFn, inst.begin(), inst.end(), "", Before);
+#else
+    CallInst::Create(RtnCallFn, inst, "", Before);
+#endif
   } else {
     if (UseDynamicTleb) {
       writeRtnCallToTleb(addr, Before);
@@ -705,7 +738,11 @@ void TsanOnlineInstrument::insertRtnExit(BasicBlock::iterator &Before) {
   if (!EnableFunctionInstrumentation) return;
   if (!InlineShadowStackUpdates) {
     vector<Value*> inst(0);
+#ifdef BUILD_TSAN_FOR_OLD_LLVM
     CallInst::Create(RtnExitFn, inst.begin(), inst.end(), "", Before);
+#else
+    CallInst::Create(RtnExitFn, inst, "", Before);
+#endif
   } else {
     if (UseDynamicTleb) {
       writeRtnExitToTleb(Before);
@@ -747,8 +784,13 @@ void TsanOnlineInstrument::insertRtnExit(BasicBlock::iterator &Before) {
       vector <Value*> check;
       check.push_back(CurrentStackEnd);
       check.push_back(NewStackEnd);
+#ifdef BUILD_TSAN_FOR_OLD_LLVM
       CallInst::Create(ShadowStackCheckFn, check.begin(), check.end(),
                        "", Before);
+#else
+      CallInst::Create(ShadowStackCheckFn, check, "", Before);
+#endif
+
     } else {
       new StoreInst(CurrentStackEnd, StackEndPtr, Before);
     }
@@ -925,24 +967,31 @@ void TsanOnlineInstrument::setupFlags() {
 void TsanOnlineInstrument::setupDataTypes() {
   // Arch size dependent types.
   if (ArchSize == 64) {
-    UIntPtr = Type::getInt64PtrTy(*ThisModuleContext);
-    PlatformInt = Type::getInt64Ty(*ThisModuleContext);
-    ArithmeticPtr = Type::getInt64Ty(*ThisModuleContext);
-    PlatformPc = IntegerType::get(*ThisModuleContext, 48);
+    UIntPtr =
+        const_cast<PointerType*>(Type::getInt64PtrTy(*ThisModuleContext));
+    PlatformInt =
+        const_cast<IntegerType*>(Type::getInt64Ty(*ThisModuleContext));
+    ArithmeticPtr =
+        const_cast<IntegerType*>(Type::getInt64Ty(*ThisModuleContext));
+    PlatformPc =
+        const_cast<IntegerType*>(IntegerType::get(*ThisModuleContext, 48));
   } else {
-    UIntPtr = Type::getInt32PtrTy(*ThisModuleContext);
-    PlatformInt = Type::getInt32Ty(*ThisModuleContext);
-    ArithmeticPtr = Type::getInt32Ty(*ThisModuleContext);
-    PlatformPc = IntegerType::get(*ThisModuleContext, 32);
+    UIntPtr = const_cast<PointerType*>(Type::getInt32PtrTy(*ThisModuleContext));
+    PlatformInt =
+        const_cast<IntegerType*>(Type::getInt32Ty(*ThisModuleContext));
+    ArithmeticPtr =
+        const_cast<IntegerType*>(Type::getInt32Ty(*ThisModuleContext));
+    PlatformPc =
+        const_cast<IntegerType*>(IntegerType::get(*ThisModuleContext, 32));
   }
 
-  Int1 = Type::getInt1Ty(*ThisModuleContext);
-  Int4 = IntegerType::get(*ThisModuleContext, 4);
-  Int8 = Type::getInt8Ty(*ThisModuleContext);
-  Int8Ptr = Type::getInt8PtrTy(*ThisModuleContext);
-  Int32 = Type::getInt32Ty(*ThisModuleContext);
-  Int64 = Type::getInt64Ty(*ThisModuleContext);
-  Void = Type::getVoidTy(*ThisModuleContext);
+  Int1 = const_cast<IntegerType*>(Type::getInt1Ty(*ThisModuleContext));
+  Int4 = const_cast<IntegerType*>(IntegerType::get(*ThisModuleContext, 4));
+  Int8 = const_cast<IntegerType*>(Type::getInt8Ty(*ThisModuleContext));
+  Int8Ptr = const_cast<PointerType*>(Type::getInt8PtrTy(*ThisModuleContext));
+  Int32 = const_cast<IntegerType*>(Type::getInt32Ty(*ThisModuleContext));
+  Int64 = const_cast<IntegerType*>(Type::getInt64Ty(*ThisModuleContext));
+  Void = const_cast<Type*>(Type::getVoidTy(*ThisModuleContext));
 
   // MopType represents the following class declared in ts_trace_info.h:
   // struct MopInfo {
@@ -951,7 +1000,11 @@ void TsanOnlineInstrument::setupDataTypes() {
   //   bool      is_write;
   // };
   // TODO(glider): the old MopInfo layout is deprecated and should be removed.
+#ifdef BUILD_TSAN_FOR_OLD_LLVM
   MopType = StructType::get(*ThisModuleContext, PlatformInt, Int32, Int8, NULL);
+#else
+  MopType = StructType::get(PlatformInt, Int32, Int8, NULL);
+#endif
 
   // MopType64 represents a 64-bit union of the following layout:
   // struct MopInfo {
@@ -968,7 +1021,7 @@ void TsanOnlineInstrument::setupDataTypes() {
   // };
   //
   // BUT we use a single 64-bit number instead.
-  MopType64 = Type::getInt64Ty(*ThisModuleContext);
+  MopType64 = const_cast<IntegerType*>(Type::getInt64Ty(*ThisModuleContext));
 
   MopArrayType = ArrayType::get(MopType64, TlebSize);
   LiteRaceCountersArrayType = ArrayType::get(Int32, kLiteRaceNumTids);
@@ -978,8 +1031,13 @@ void TsanOnlineInstrument::setupDataTypes() {
   //   uint32_t counter;
   //   int32_t num_to_skip;
   // };
+#ifdef BUILD_TSAN_FOR_OLD_LLVM
   LiteRaceCountersType = StructType::get(*ThisModuleContext,
                                          Int32, Int32, NULL);
+#else
+  LiteRaceCountersType = StructType::get(Int32, Int32, NULL);
+#endif
+
   LiteRaceStorageLineType =
       ArrayType::get(LiteRaceCountersType,
                      kLiteRaceStorageSize);
@@ -987,7 +1045,7 @@ void TsanOnlineInstrument::setupDataTypes() {
       ArrayType::get(LiteRaceStorageLineType,
                      kLiteRaceNumTids);
 
-  LiteRaceStoragePtrType = PointerType::get(LiteRaceStorageType, 0);
+  LiteRaceStorageTypePtr = PointerType::get(LiteRaceStorageType, 0);
 
   // TraceInfoType represents the following class declared in
   // ts_trace_info.h:
@@ -1003,12 +1061,20 @@ void TsanOnlineInstrument::setupDataTypes() {
   //  int32_t storage_index;
   //  MopInfo mops_[1];
   // };
+#ifdef BUILD_TSAN_FOR_OLD_LLVM
   TraceInfoType = StructType::get(*ThisModuleContext,
-                                PlatformInt, PlatformInt, PlatformInt,
-                                LiteRaceStoragePtrType,
-                                Int32,
-                                MopArrayType,
-                                NULL);
+                                  PlatformInt, PlatformInt, PlatformInt,
+                                  LiteRaceStorageTypePtr,
+                                  Int32,
+                                  MopArrayType,
+                                  NULL);
+#else
+  TraceInfoType = StructType::get(PlatformInt, PlatformInt, PlatformInt,
+                                  LiteRaceStorageTypePtr,
+                                  Int32,
+                                  MopArrayType,
+                                  NULL);
+#endif
   TraceInfoTypePtr = PointerType::get(TraceInfoType, 0);
 
   // CallStackType represents the following class declared in
@@ -1023,10 +1089,16 @@ void TsanOnlineInstrument::setupDataTypes() {
   // Note that |end_| points to the first invalid stack frame, i.e. the current
   // stack frame is at *(end_ - 1).
   CallStackArrayType = ArrayType::get(PlatformInt, kMaxCallStackSize);
+#ifdef BUILD_TSAN_FOR_OLD_LLVM
   CallStackType = StructType::get(*ThisModuleContext,
                                   UIntPtr,
                                   CallStackArrayType,
                                   NULL);
+#else
+  CallStackType = StructType::get(UIntPtr,
+                                  CallStackArrayType,
+                                  NULL);
+#endif
 
 }
 
@@ -1141,10 +1213,18 @@ void TsanOnlineInstrument::setupRuntimeGlobals() {
                                       PlatformInt,
                                       (Type*)0);
   cast<Function>(MemMoveFn)->setLinkage(Function::ExternalWeakLinkage);
+#ifdef BUILD_TSAN_FOR_OLD_LLVM
   const Type *Tys[] = { PlatformInt };
   MemSetIntrinsicFn = Intrinsic::getDeclaration(ThisModule,
                                                 Intrinsic::memset,
                                                 Tys, /*numTys*/1);
+#else
+  vector <Type*> tys;
+  tys.push_back(PlatformInt);
+  MemSetIntrinsicFn = Intrinsic::getDeclaration(ThisModule,
+                                                Intrinsic::memset,
+                                                tys);
+#endif
 }
 
 // virtual
@@ -1375,7 +1455,11 @@ void TsanOnlineInstrument::insertMaybeFlushTleb(Instruction *Before) {
   BranchInst *FlushTerm = BranchInst::Create(FinishBB, FlushBB);
   // This is the call.
   vector<Value*> inst(0);
+#ifdef BUILD_TSAN_FOR_OLD_LLVM
   CallInst::Create(FlushTlebFn, inst.begin(), inst.end(), "", FlushTerm);
+#else
+  CallInst::Create(FlushTlebFn, inst, "", FlushTerm);
+#endif
 #if 0
   errs() << "After  ";
   BB->dump();
@@ -1525,8 +1609,13 @@ void TsanOnlineInstrument::insertFlushCurrentCall(Trace &trace,
                                              "",
                                              Before);
     if (EnableTraceFlushing) {
+#ifdef BUILD_TSAN_FOR_OLD_LLVM
       CallInst::Create(BBFlushCurrentFn,
                        Args.begin(), Args.end(), "", Before);
+#else
+      CallInst::Create(BBFlushCurrentFn,
+                       Args, "", Before);
+#endif
     }
   } else {
     // Sampling is on -- each trace should be instrumented with the code
@@ -1632,9 +1721,15 @@ void TsanOnlineInstrument::insertFlushCurrentCall(Trace &trace,
         // |isvolatile|.
         MSArgs.push_back(ConstantInt::get(Int1, /*isvolatile*/0));
       }
+#ifdef BUILD_TSAN_FOR_OLD_LLVM
       CallInst::Create(MemSetIntrinsicFn,
                        MSArgs.begin(), MSArgs.end(),
                        "", CleanupTerm);
+#else
+      CallInst::Create(MemSetIntrinsicFn,
+                       MSArgs,
+                       "", CleanupTerm);
+#endif
     }
 
     // Set up the flush block. It should contain:
@@ -1662,9 +1757,15 @@ void TsanOnlineInstrument::insertFlushCurrentCall(Trace &trace,
                                                FlushTerm);
       // TODO(glider): We'll get a mess if
       // EnableLiteRaceSampling == true and EnableTraceFlushing == false
+#ifdef BUILD_TSAN_FOR_OLD_LLVM
       CallInst::Create(BBFlushCurrentFn,
                        Args.begin(), Args.end(),
                        "", FlushTerm);
+#else
+      CallInst::Create(BBFlushCurrentFn,
+                       Args,
+                       "", FlushTerm);
+#endif
     } else {
       // Call bb_flush_mop(current_mop, addr).
       vector <Value*> Args(2);
@@ -1680,7 +1781,11 @@ void TsanOnlineInstrument::insertFlushCurrentCall(Trace &trace,
                                                "",
                                                FlushTerm);
       Args[1] = MopAddr;
+#ifdef BUILD_TSAN_FOR_OLD_LLVM
       CallInst::Create(BBFlushMop, Args.begin(), Args.end(), "", FlushTerm);
+#else
+      CallInst::Create(BBFlushMop, Args, "", FlushTerm);
+#endif
     }
   }
 }
@@ -1867,7 +1972,7 @@ bool TsanOnlineInstrument::ignoreInlinedMop(BasicBlock::iterator &BI) {
 }
 
 void TsanOnlineInstrument::markMopsToInstrument(Trace &trace) {
-  bool isStore, isMop;
+  bool isStore = false, isMop = false;
   int size;
   // Map from AA location into access size.
   typedef map<pair<Value*, int>, Instruction*> LocMap;
@@ -2121,12 +2226,20 @@ bool TsanOnlineInstrument::makeTracePassport(Trace &trace) {
     }
 
     TracePassportType = ArrayType::get(MopType64, TraceNumMops);
+#ifdef BUILD_TSAN_FOR_OLD_LLVM
     BBTraceInfoType = StructType::get(*ThisModuleContext,
-                                PlatformInt, PlatformInt, PlatformInt,
-                                LiteRaceStoragePtrType,
-                                Int32,
-                                TracePassportType,
-                                NULL);
+                                       PlatformInt, PlatformInt, PlatformInt,
+                                       LiteRaceStorageTypePtr,
+                                       Int32,
+                                       TracePassportType,
+                                       NULL);
+#else
+    BBTraceInfoType = StructType::get(PlatformInt, PlatformInt, PlatformInt,
+                                      LiteRaceStorageTypePtr,
+                                      Int32,
+                                      TracePassportType,
+                                      NULL);
+#endif
 
     vector<Constant*> trace_info;
     // num_mops_
@@ -2257,15 +2370,25 @@ void TsanOnlineInstrument::instrumentMemTransfer(BasicBlock::iterator &BI) {
   }
   arg[2] = IN.getLength();
   if (isa<MemCpyInst>(BI)) {
+#ifdef BUILD_TSAN_FOR_OLD_LLVM
     Instruction *NewMemCpy =
         CallInst::Create(MemCpyFn, arg.begin(), arg.end(), "");
+#else
+    Instruction *NewMemCpy =
+        CallInst::Create(MemCpyFn, arg, "");
+#endif
     ReplaceInstWithInst(BI->getParent()->getInstList(), BI,
                         NewMemCpy);
                       }
   if (isa<MemMoveInst>(BI)) {
-    ReplaceInstWithInst(BI->getParent()->getInstList(), BI,
-                      CallInst::Create(MemMoveFn, arg.begin(), arg.end(),
-                                         ""));
+#ifdef BUILD_TSAN_FOR_OLD_LLVM
+    Instruction *NewMemMove =
+        CallInst::Create(MemMoveFn, arg.begin(), arg.end(), "");
+#else
+    Instruction *NewMemMove =
+        CallInst::Create(MemMoveFn, arg, "");
+#endif
+    ReplaceInstWithInst(BI->getParent()->getInstList(), BI, NewMemMove);
   }
 }
 
@@ -2286,7 +2409,7 @@ void TsanOnlineInstrument::instrumentCall(BasicBlock::iterator &BI) {
                                 "", BI);
   Value *StackEnd = new LoadInst(StackEndPtr, "", BI);
   vector <Value*> back_idx;
-  back_idx.push_back(ConstantInt::get(PlatformInt, -1));
+  back_idx.push_back(ConstantInt::getSigned(PlatformInt, -1));
   Value *StackBack = GetElementPtrInst::Create(StackEnd,
                                                back_idx.begin(), back_idx.end(),
                                                "", BI);
