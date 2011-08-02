@@ -394,7 +394,7 @@ void TsanOnlineInstrument::writeModuleDebugInfo(Module &M) {
       M,
       DebugInfoType,
       /*isConstant*/true,
-      GlobalValue::InternalLinkage,
+      GlobalValue::ExternalLinkage,
       DebugInfo,
       var_id_str,
       /*ThreadLocal*/false,
@@ -1219,7 +1219,9 @@ void TsanOnlineInstrument::setupRuntimeGlobals() {
                                                 Intrinsic::memset,
                                                 Tys, /*numTys*/1);
 #else
-  vector <Type*> tys;
+  // Note that newer LLVM versions require two types for llvm.memset.
+  vector<Type*> tys;
+  tys.push_back(Int8Ptr);
   tys.push_back(PlatformInt);
   MemSetIntrinsicFn = Intrinsic::getDeclaration(ThisModule,
                                                 Intrinsic::memset,
