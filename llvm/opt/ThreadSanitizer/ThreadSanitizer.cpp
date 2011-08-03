@@ -159,7 +159,7 @@ static cl::opt<bool>
 static cl::opt<bool>
     UseTlebForMinimalBlocks("use-tleb-for-minimal-blocks",
         cl::desc("Pass blocks containing a single mop via TLEB"),
-        cl::init(true));
+        cl::init(false));
 
 // }}}
 
@@ -231,7 +231,7 @@ Constant *TsanOnlineInstrument::getInstructionAddr(
 string TsanOnlineInstrument::getModuleLetters(Module &M) {
   string name = M.getModuleIdentifier();
   string res;
-  for (int i = 0; i < name.size(); ++i) {
+  for (int i = name.size() - 1; i > 0; --i) {
     if ((name[i] >= 'a') && (name[i] <= 'z')) res += name[i];
     if ((name[i] >= 'A') && (name[i] <= 'Z')) res += name[i];
     if ((name[i] == '_') || (name[i] < '/')) res += '_';
@@ -972,6 +972,9 @@ void TsanOnlineInstrument::runOnFunction(Module::iterator &F) {
 // Some flags may override other flags.
 // TODO(glider): this should be documented well.
 void TsanOnlineInstrument::setupFlags() {
+  if (FlushUsingSegv) {
+    UseDynamicTleb = true;
+  }
   if (UseDynamicTleb) {
     UseTlebForMinimalBlocks = true;
     EnableLiteRaceSampling = false;  // TODO(glider): allow sampling
