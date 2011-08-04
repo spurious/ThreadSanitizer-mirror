@@ -37,8 +37,8 @@ void DummyWorker() {
 }
 
 void LongWorker() {
-  Sleep(5);
-  volatile int i = 1 << 20;
+  Sleep(10);
+  volatile int i = 1 << 21;
   while(i--);
 }
 
