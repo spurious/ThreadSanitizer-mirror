@@ -5632,6 +5632,13 @@ static const char default_suppressions[] =
 "  fun:*~basic_string*                                               \n"
 "}                                                                   \n"
 
+"{                                                                   \n"
+"  False reports on std::string internals. See TSan issue #40.       \n"
+"  ThreadSanitizer:Race                                              \n"
+"  ...                                                               \n"
+"  fun:*basic_string*_M_destroy                                      \n"
+"}                                                                   \n"
+
 #else
 "{                                                                   \n"
 "  False lock report inside ntdll.dll                                \n"
@@ -8240,7 +8247,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   G_flags->cut_stack_below.push_back("BaseThreadInitThunk");
   FindStringFlag("cut_stack_below", args, &G_flags->cut_stack_below);
 
-  FindIntFlag("num_callers", 12, args, &G_flags->num_callers);
+  FindIntFlag("num_callers", 16, args, &G_flags->num_callers);
 
   G_flags->max_n_threads        = 100000;
 
