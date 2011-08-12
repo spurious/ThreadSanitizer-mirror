@@ -130,7 +130,7 @@ else
       $LNK "$@"
     else
       printf $GCC -DDYNAMIC_ANNOTATIONS_WANT_ATTRIBUTE_WEAK -DDYNAMIC_ANNOTATIONS_PREFIX=LLVM -fplugin=$PLG -fplugin-arg-$PLG_NAME-ignore="$GCCTSAN_IGNORE" -include$RTH $GCCTSAN_ARGS "$@" -O1 -fno-builtin -fno-inline -fno-optimize-sibling-calls -fno-exceptions -g -fvisibility=default -w
-      $GCC -DDYNAMIC_ANNOTATIONS_WANT_ATTRIBUTE_WEAK -DDYNAMIC_ANNOTATIONS_PREFIX=LLVM -fplugin=$PLG -fplugin-arg-$PLG_NAME-ignore="$GCCTSAN_IGNORE" -include$RTH $GCCTSAN_ARGS "$@" -O1 -fno-builtin -fno-inline -fno-optimize-sibling-calls -fno-exceptions -g -fvisibility=default -w
+             $GCC -DDYNAMIC_ANNOTATIONS_WANT_ATTRIBUTE_WEAK -DDYNAMIC_ANNOTATIONS_PREFIX=LLVM -fplugin=$PLG -fplugin-arg-$PLG_NAME-ignore="$GCCTSAN_IGNORE" -include$RTH $GCCTSAN_ARGS "$@" -O1 -fno-builtin -fno-inline -fno-optimize-sibling-calls -fno-exceptions -g -fvisibility=default -w
     fi
   fi
 fi

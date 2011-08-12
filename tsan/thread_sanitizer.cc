@@ -5770,6 +5770,17 @@ class ReportStorage {
     if (is_expected && !G_flags->show_expected_races) return false;
 
     StackTrace *stack_trace = thr->CreateStackTrace(pc);
+    if (unwind_cb_) {
+      int const maxcnt = 256;
+      uintptr_t cur_stack [maxcnt];
+      int cnt = unwind_cb_(cur_stack, maxcnt, pc);
+      if (cnt > 0 && cnt <= maxcnt) {
+        cnt = min<int>(cnt, stack_trace->capacity());
+        stack_trace->set_size(cnt);
+        for (int i = 0; i < cnt; i++)
+          stack_trace->Set(i, cur_stack[i]);
+      }
+    }
     int n_reports_for_this_context = reported_stacks_[stack_trace]++;
 
     if (n_reports_for_this_context > 0) {
@@ -6203,6 +6214,10 @@ class ReportStorage {
     return "";
   }
 
+  void SetUnwindCallback(ThreadSanitizerUnwindCallback cb) {
+    unwind_cb_ = cb;
+  }
+
  private:
   map<StackTrace *, int, StackTrace::Less> reported_stacks_;
   int n_reports;
@@ -6210,6 +6225,7 @@ class ReportStorage {
   bool program_finished_;
   Suppressions suppressions_;
   map<string, int> used_suppressions_;
+  ThreadSanitizerUnwindCallback unwind_cb_;
 };
 
 // -------- Event Sampling ---------------- {{{1
@@ -7845,9 +7861,14 @@ one_call:
              child_tid.raw(), parent_thr->vts()->ToString().c_str());
     }
   }
+
  public:
   // TODO(kcc): merge this into Detector class. (?)
   ReportStorage reports_;
+
+  void SetUnwindCallback(ThreadSanitizerUnwindCallback cb) {
+    reports_.SetUnwindCallback(cb);
+  }
 };
 
 static Detector        *G_detector;
@@ -8429,6 +8450,10 @@ static void SetupIgnore() {
     string str = ReadFileToString(file_name, true);
     ReadIgnoresFromString(str, g_white_lists);
   }
+}
+
+void ThreadSanitizerSetUnwindCallback(ThreadSanitizerUnwindCallback cb) {
+  G_detector->SetUnwindCallback(cb);
 }
 
 void ThreadSanitizerNaclUntrustedRegion(uintptr_t mem_start, uintptr_t mem_end) {

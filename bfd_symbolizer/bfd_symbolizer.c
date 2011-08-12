@@ -23,6 +23,10 @@
 #include <limits.h>
 #include <bfd.h>
 
+#ifdef BFDS_UNWIND
+#include <libunwind.h>
+#endif
+
 #define basename basename2
 #include <demangle.h>
 #undef basename
@@ -718,10 +722,42 @@ int   bfds_symbolize    (void*                  addr,
 }
 
 
+#ifdef BFDS_UNWIND
+int   bfds_unwind       (void**                 stack,
+                         int                    count,
+                         int                    skip) {
+  unw_context_t         uc;
+  unw_cursor_t          cursor;
+  int                   rv;
+  int                   cnt;
 
+  rv = unw_getcontext(&uc);
+  if (rv != 0) {
+    ERR("unw_getcontext() failed (%d)\n", rv);
+    return -1;
+  }
 
+  rv = unw_init_local(&cursor, &uc);
+  if (rv != 0) {
+    ERR("unw_init_local() failed (%d)\n", rv);
+    return -1;
+  }
 
+  for (cnt = 0; cnt != skip + 1; cnt += 1) {
+    if (unw_get_reg(&cursor, UNW_REG_IP, (unw_word_t*) &stack[cnt]) < 0)
+      return 0;
+    if (unw_step(&cursor) <= 0)
+      return 0;
+  }
 
+  for (cnt = 0; cnt != count; cnt += 1) {
+    if (unw_get_reg(&cursor, UNW_REG_IP, (unw_word_t*) &stack[cnt]) < 0)
+      break;
+    if (unw_step(&cursor) <= 0)
+      break;
+  }
 
-
+  return cnt;
+}
+#endif
 

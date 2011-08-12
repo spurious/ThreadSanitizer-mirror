@@ -102,10 +102,10 @@ $(TSAN_PATH)/ts_event_names.h:
 	make -C $(TSAN_PATH) ts_event_names.h
 
 tsan_rtl32.o: $(SRC) tsan_rtl.h $(RTL_DEPS)
-	$(CXX) $(SRC) $(FLAGS) -m32 $(ERRORLVL) $(DA_FLAGS) -Wall -c -o $(RTL_32_O) $(DEFINES32) -DTSAN_RTL_X86
+	$(CXX) $(SRC) $(FLAGS) -m32 $(ERRORLVL) $(DA_FLAGS) -Wall -c -o $(RTL_32_O) $(DEFINES32)
 
 tsan_rtl64.o: $(SRC) tsan_rtl.h $(RTL_DEPS)
-	$(CXX) $(SRC) $(FLAGS) -m64 $(ERRORLVL) $(DA_FLAGS) -Wall -c -o $(RTL_64_O) $(DEFINES64) -DTSAN_RTL_X64
+	$(CXX) $(SRC) $(FLAGS) -m64 $(ERRORLVL) $(DA_FLAGS) -Wall -c -o $(RTL_64_O) $(DEFINES64)
 
 ifneq ($(NO_BFD), 1)
 BFDS_LIBS=$(BFDS_PATH)/bfds32.a $(BFDS_PATH)/bfds64.a

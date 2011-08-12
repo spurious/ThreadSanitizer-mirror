@@ -489,6 +489,24 @@ INLINE void RPut(EventType type, tid_t tid, pc_t pc,
   }
 }
 
+#ifndef TSAN_NO_BFD
+int UnwindCallback(uintptr_t* stack, int count, uintptr_t pc) {
+  int res = bfds_unwind((void**)stack, count, 0);
+  if (res <= 0 || res > count)
+    return -1;
+  for (int i = 1; i < res; i++) {
+    if (stack[i] == pc) {
+      for (int j = i; j < res; j++) {
+        stack[j-i] = stack[j];
+      }
+      res -= i;
+      break;
+    }
+  }
+  return res;
+}
+#endif
+
 void finalize() {
   ENTER_RTL();
   // atexit hooks are ran from a single thread.
@@ -609,6 +627,9 @@ bool initialize() {
 
   ThreadSanitizerParseFlags(&args);
   ThreadSanitizerInit();
+#ifndef TSAN_NO_BFD
+  ThreadSanitizerSetUnwindCallback(UnwindCallback);
+#endif
   init_debug();
   if (G_flags->dry_run) {
     Printf("WARNING: the --dry_run flag is not supported anymore. "

@@ -83,6 +83,18 @@ typedef int (*bfds_symbolize_t)
                          int*                   symbol_offset);
 
 
+/** Unwinds current call stack.
+ *
+ *  @param stack         [in/out] An array where to put the call stack.
+ *  @param count         [in]     Number of entries in the stack array.
+ *  @param count         [in]     Number of entries to skip from the stack top.
+ *  @return                       Number of filled entries in the stack array,
+ *                                Negative value means an error.
+ */
+int   bfds_unwind       (void**                 stack,
+                         int                    count,
+                         int                    skip);
+
 #ifdef __cplusplus
 }
 #endif

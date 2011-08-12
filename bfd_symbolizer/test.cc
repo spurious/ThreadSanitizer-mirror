@@ -66,6 +66,40 @@ void check(void* addr, bfds_opts_e opts, char const* symbol, char const* module,
   printf("OK\n");
 }
 
+int barbaz(void** stack, int size) {
+  return bfds_unwind(stack, size, 0);
+}
+
+int foobar(void** stack, int size) {
+  return barbaz(stack, size);
+}
+
+void test_stack_unwind() {
+  printf("%-40s...", "unwind");
+  void* stack [64];
+  int sz = foobar(stack, 64);
+
+  char const* exp[] = {"barbaz", "foobar", "test_stack_unwind", "main"};
+  int const cnt = sizeof(exp)/sizeof(*exp);
+  if (sz < cnt) {
+    printf("not enough stack entries: %d/%d\n", sz, cnt);
+    exit(1);
+  }
+
+  for (int i = 0; i < cnt; i++) {
+    char buf [1024];
+    if (bfds_symbolize(stack[i], bfds_opt_demangle, buf, sizeof(buf), 0, 0, 0, 0, 0, 0)) {
+      printf("symbolize failed: %d\n", i);
+      exit(1);
+    }
+    if (strcmp(buf, exp[i])) {
+      printf("invalid stack entry: %s/%s\n", buf, exp[i]);
+      exit(1);
+    }
+  }
+  printf("OK\n");
+}
+
 
 int main() {
 #ifdef __x86_64__
@@ -165,6 +199,7 @@ int main() {
     exit(1);
   }
  
+  test_stack_unwind();
  
   printf("OK\n");
   return 0;

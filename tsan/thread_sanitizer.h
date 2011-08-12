@@ -201,25 +201,28 @@ struct CallStack: public CallStackPod {
 #include "ts_trace_info.h"
 
 struct Thread;
-extern void ThreadSanitizerInit();
-extern void ThreadSanitizerFini();
+void ThreadSanitizerInit();
+void ThreadSanitizerFini();
 // TODO(glider): this is a temporary solution to avoid deadlocks after fork().
 #ifdef TS_LLVM
-extern void ThreadSanitizerLockAcquire();
-extern void ThreadSanitizerLockRelease();
+void ThreadSanitizerLockAcquire();
+void ThreadSanitizerLockRelease();
 #endif
-extern void ThreadSanitizerHandleOneEvent(Event *event);
-extern Thread *ThreadSanitizerGetThreadByTid(int32_t tid);
-extern void ThreadSanitizerHandleTrace(int32_t tid, TraceInfo *trace_info,
+void ThreadSanitizerHandleOneEvent(Event *event);
+Thread *ThreadSanitizerGetThreadByTid(int32_t tid);
+void ThreadSanitizerHandleTrace(int32_t tid, TraceInfo *trace_info,
                                        uintptr_t *tleb);
-extern void ThreadSanitizerHandleTrace(Thread *thr, TraceInfo *trace_info,
+void ThreadSanitizerHandleTrace(Thread *thr, TraceInfo *trace_info,
                                        uintptr_t *tleb);
-extern void ThreadSanitizerHandleOneMemoryAccess(Thread *thr, MopInfo mop,
+void ThreadSanitizerHandleOneMemoryAccess(Thread *thr, MopInfo mop,
                                                  uintptr_t addr);
-extern void ThreadSanitizerParseFlags(vector<string>* args);
-extern bool ThreadSanitizerWantToInstrumentSblock(uintptr_t pc);
-extern bool ThreadSanitizerWantToCreateSegmentsOnSblockEntry(uintptr_t pc);
-extern bool ThreadSanitizerIgnoreAccessesBelowFunction(uintptr_t pc);
+void ThreadSanitizerParseFlags(vector<string>* args);
+bool ThreadSanitizerWantToInstrumentSblock(uintptr_t pc);
+bool ThreadSanitizerWantToCreateSegmentsOnSblockEntry(uintptr_t pc);
+bool ThreadSanitizerIgnoreAccessesBelowFunction(uintptr_t pc);
+
+typedef int (*ThreadSanitizerUnwindCallback)(uintptr_t* stack, int size, uintptr_t pc);
+void ThreadSanitizerSetUnwindCallback(ThreadSanitizerUnwindCallback cb);
 
 /** Atomic operation handler.
  *  @param tid ID of a thread that issues the operation.
@@ -254,15 +257,15 @@ enum IGNORE_BELOW_RTN {
   IGNORE_BELOW_RTN_YES
 };
 
-extern void ThreadSanitizerHandleRtnCall(int32_t tid, uintptr_t call_pc,
+void ThreadSanitizerHandleRtnCall(int32_t tid, uintptr_t call_pc,
                                          uintptr_t target_pc,
                                          IGNORE_BELOW_RTN ignore_below);
 
-extern void ThreadSanitizerHandleRtnExit(int32_t tid);
+void ThreadSanitizerHandleRtnExit(int32_t tid);
 
-extern void ThreadSanitizerPrintUsage();
+void ThreadSanitizerPrintUsage();
 extern "C" const char *ThreadSanitizerQuery(const char *query);
-extern bool PhaseDebugIsOn(const char *phase_name);
+bool PhaseDebugIsOn(const char *phase_name);
 
 extern bool g_has_entered_main;
 extern bool g_has_exited_main;
