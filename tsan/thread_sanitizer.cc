@@ -5691,7 +5691,8 @@ class ReportStorage {
   ReportStorage()
    : n_reports(0),
      n_race_reports(0),
-     program_finished_(0) {
+     program_finished_(0),
+     unwind_cb_(0) {
     if (G_flags->generate_suppressions) {
       Report("INFO: generate_suppressions = true\n");
     }
