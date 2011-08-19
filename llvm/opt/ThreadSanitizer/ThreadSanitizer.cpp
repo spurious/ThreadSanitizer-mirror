@@ -47,6 +47,7 @@ static cl::opt<string>
     IgnoreFile("ignore",
                cl::desc("File containing the list of functions to ignore "
                         "during instrumentation"));
+// TODO(glider): rename this flag.
 static cl::opt<bool>
     InstrumentAll("instrument-all",
                   cl::desc("Do not optimize the instrumentation "
@@ -118,6 +119,16 @@ static cl::opt<bool>
                              cl::desc("Do not instrument functions "
                                       "containing no memory operations"),
                              cl::init(false));
+
+// TODO(glider): descriptions.
+static cl::opt<bool>
+    UseTleb("use-tleb",
+            cl::desc("Use a thread-local buffer to store the memory operations. "
+                     "If false, each memory operation is flushed using a "
+                     "function call (this is poorly supported because is not "
+                     "that efficient)"),
+            cl::init(true));
+
 // TODO(glider): the runtime needs to distinguish whether the code was built
 // with static or dynamic TLEB. A good idea is to store the build options
 // somewhere in the executable.
@@ -1829,7 +1840,8 @@ void TsanOnlineInstrument::runOnTrace(Trace &trace,
       for (BlockSet::iterator TI = trace.blocks.begin(),
                               TE = trace.blocks.end();
            TI != TE; ++TI) {
-        runOnBasicBlock(*TI, first_dtor_bb, trace, /*useTLEB*/true);
+        runOnBasicBlock(*TI, first_dtor_bb, trace,
+                        /*useTLEB*/UseTleb);
         first_dtor_bb = false;
       }
       // If a trace has a passport, we should be able to insert a flush call
@@ -1838,6 +1850,8 @@ void TsanOnlineInstrument::runOnTrace(Trace &trace,
       for (BlockSet::iterator EI = trace.exits.begin(),
                               EE = trace.exits.end();
            EI != EE; ++EI) {
+        // No need to flush -- each mop is flushed by a separate call.
+        if (!UseTleb) continue;
         if (!UseDynamicTleb) {
           insertFlushCurrentCall(trace, (*EI)->getTerminator(),
                                  /*useTLEB*/true, NULL);
@@ -2443,6 +2457,8 @@ void TsanOnlineInstrument::instrumentCall(BasicBlock::iterator &BI) {
 // instrumented.
 // TsanOnlineInstrument is a module pass, so this is just a helper function, not
 // an interface implementation.
+//
+// TODO(glider): better name for useTLEB.
 void TsanOnlineInstrument::runOnBasicBlock(BasicBlock *BB,
                                            bool first_dtor_bb,
                                            Trace &trace,
@@ -2667,6 +2683,7 @@ void InstrumentationStats::printStats() {
       num_traces_in_buckets += num_traces_with_n_inst_bbs[i];
       num_inst_bbs_in_buckets += i * num_traces_with_n_inst_bbs[i];
   }
+  if (!UseTleb) return;  // TODO(glider) the assertions below are broken.
   assert(num_mops == num_inst_mops + num_uninst_mops);
   assert(num_uninst_mops == num_uninst_mops_aa + num_uninst_mops_ignored
                                                + num_uninst_mops_flag);
