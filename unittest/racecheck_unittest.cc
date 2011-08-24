@@ -8144,6 +8144,30 @@ TEST(NegativeTests, SemaphoreInverse) {
 }  // namespace
 
 
+namespace NegativeTests_FlushVsJoin {  // {{{1
+int GLOB;
+StealthNotification *n;
+
+void Worker() {
+  GLOB = 1;
+  n->signal();
+}
+
+TEST(NegativeTests, DISABLED_FlushVsJoin) {
+  n = new StealthNotification;
+  {
+    MyThread t(Worker);
+    t.Start();
+    n->wait();
+    usleep(200000);
+    ANNOTATE_FLUSH_STATE();
+    t.Join();
+  }
+  delete n;
+  GLOB = 2;
+}
+}  // namespace
+
 
 // End {{{1
  // vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker
