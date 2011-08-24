@@ -1052,7 +1052,9 @@ void Worker() {
   mu.Unlock();
 }
 
-TEST(NegativeTests, LockfTest) {
+// This test is broken because lockf semantics were not understood correctly.
+// See http://code.google.com/p/chromium/issues/detail?id=45083
+TEST(NegativeTests, DISABLED_LockfTest) {
   mu.set_fd(1 /* stdout */);
   MyThreadArray mta(Worker, Worker);
   mta.Start();
