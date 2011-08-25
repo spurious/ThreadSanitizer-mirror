@@ -8153,7 +8153,7 @@ void Worker() {
   n->signal();
 }
 
-TEST(NegativeTests, DISABLED_FlushVsJoin) {
+TEST(NegativeTests, FlushVsJoin) {
   n = new StealthNotification;
   {
     MyThread t(Worker);
@@ -8168,20 +8168,18 @@ TEST(NegativeTests, DISABLED_FlushVsJoin) {
 }
 }  // namespace
 
-namespace NegativeTests_FlushVsThreadStart {  // {{{1
+namespace PositiveTests_FlushVsThreadStart {  // {{{1
 int GLOB;
 
 void FlushWorker() {
   usleep(100000);
   // this FLUSH would race with thread creation if you add
-  // usleep(1*1000000); into ts_pin's HandleThreadCreateBefore after DumpEvent.
+  // usleep(1000000); into ts_pin's HandleThreadCreateBefore after DumpEvent.
   ANNOTATE_FLUSH_STATE();
-  ANNOTATE_TRACE_MEMORY(&GLOB);
   GLOB = 1;
 }
 
 void WriterWorker() {
-  ANNOTATE_TRACE_MEMORY(&GLOB);
   GLOB = 2;
 }
 
@@ -8192,7 +8190,8 @@ void StarterWorker() {
   t.Join();
 }
 
-TEST(NegativeTests, DISABLED_FlushVsThreadStart) {
+TEST(PositiveTests, FlushVsThreadStart) {
+  ANNOTATE_EXPECT_RACE(&GLOB, "Expected race in FlushVsThreadStart test");
   MyThreadArray mta(StarterWorker, FlushWorker);
   mta.Start();
   mta.Join();

@@ -5158,12 +5158,18 @@ struct Thread {
     // G_flags->debug_level = 2;
     for (int i = 0; i < Thread::NumberOfThreads(); i++) {
       Thread *thr = Get(TID(i));
-      if (!thr->is_running()) continue;
-      thr->child_tid_to_create_info_.clear();
       thr->recent_segments_cache_.ForgetAllState();
       thr->sid_ = SID();  // Reset the old SID so we don't try to read its VTS.
       VTS *singleton_vts = VTS::CreateSingleton(TID(i), 2);
       thr->NewSegmentWithoutUnrefingOld("ForgetAllState", singleton_vts);
+      for (map<TID, ThreadCreateInfo>::iterator j =
+               thr->child_tid_to_create_info_.begin();
+           j != thr->child_tid_to_create_info_.end(); ++j) {
+        ThreadCreateInfo &info = j->second;
+        VTS::Unref(info.vts);
+        // The parent's VTS should neither happen-before nor equal the child's.
+        info.vts = VTS::CreateSingleton(TID(i), 1);
+      }
       if (thr->vts_at_exit_) {
         VTS::Unref(thr->vts_at_exit_);
         thr->vts_at_exit_ = singleton_vts->Clone();
