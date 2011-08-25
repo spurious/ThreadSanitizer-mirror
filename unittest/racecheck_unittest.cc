@@ -8168,6 +8168,36 @@ TEST(NegativeTests, DISABLED_FlushVsJoin) {
 }
 }  // namespace
 
+namespace NegativeTests_FlushVsThreadStart {  // {{{1
+int GLOB;
+
+void FlushWorker() {
+  usleep(100000);
+  // this FLUSH would race with thread creation if you add
+  // usleep(1*1000000); into ts_pin's HandleThreadCreateBefore after DumpEvent.
+  ANNOTATE_FLUSH_STATE();
+  ANNOTATE_TRACE_MEMORY(&GLOB);
+  GLOB = 1;
+}
+
+void WriterWorker() {
+  ANNOTATE_TRACE_MEMORY(&GLOB);
+  GLOB = 2;
+}
+
+void StarterWorker() {
+  usleep(200000);
+  MyThread t(WriterWorker);
+  t.Start();
+  t.Join();
+}
+
+TEST(NegativeTests, DISABLED_FlushVsThreadStart) {
+  MyThreadArray mta(StarterWorker, FlushWorker);
+  mta.Start();
+  mta.Join();
+}
+}  // namespace
 
 // End {{{1
  // vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker
