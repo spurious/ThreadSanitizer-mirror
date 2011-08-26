@@ -3388,7 +3388,7 @@ class Cache {
       if ((iter % (1 << 6)) == 0) {
         YIELD();
         G_stats->try_acquire_line_spin++;
-        if (((iter & (iter - 1)) == 0)) {
+        if (DEBUG_MODE && debug_cache && ((iter & (iter - 1)) == 0)) {
           Printf("T%d %s a=%p iter=%d\n", raw_tid(thr), __FUNCTION__, a, iter);
         }
       } else {
@@ -3396,7 +3396,7 @@ class Cache {
           PROCESSOR_YIELD();
         }
       }
-      if (iter == max_iter) {
+      if (DEBUG_MODE && debug_cache && iter == max_iter) {
         Printf("Failed to acquire a cache line: T%d a=%p site=%d\n",
                raw_tid(thr), a, call_site);
         CHECK(iter < max_iter);
