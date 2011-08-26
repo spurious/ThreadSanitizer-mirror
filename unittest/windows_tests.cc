@@ -49,7 +49,7 @@ void WriteWorker(int *var) {
 
 void VeryLongWriteWorker(int *var) {
   Sleep(1000);
-  *var = 42;
+  WriteWorker(var);
 }
 
 TEST(NegativeTests, WindowsCreateThreadFailureTest) {  // {{{1
