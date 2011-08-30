@@ -4484,6 +4484,7 @@ struct Thread {
     CHECK(vts_at_exit_);
     FlushDeadSids();
     ReleaseFreshSids();
+    call_stack_ = NULL;
   }
 
   // Return the TID of the joined child and it's vts
@@ -5161,7 +5162,9 @@ struct Thread {
       thr->recent_segments_cache_.ForgetAllState();
       thr->sid_ = SID();  // Reset the old SID so we don't try to read its VTS.
       VTS *singleton_vts = VTS::CreateSingleton(TID(i), 2);
-      thr->NewSegmentWithoutUnrefingOld("ForgetAllState", singleton_vts);
+      if (thr->is_running()) {
+        thr->NewSegmentWithoutUnrefingOld("ForgetAllState", singleton_vts);
+      }
       for (map<TID, ThreadCreateInfo>::iterator j =
                thr->child_tid_to_create_info_.begin();
            j != thr->child_tid_to_create_info_.end(); ++j) {
