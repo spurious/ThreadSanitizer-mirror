@@ -2121,6 +2121,7 @@ class SegmentSet {
   }
 
   static void INLINE Ref(SSID ssid, const char *where) {
+    AssertTILHeld(); // The reference counting logic below is not thread-safe
     DCHECK(ssid.valid());
     if (ssid.IsSingleton()) {
       Segment::Ref(ssid.GetSingleton(), where);
@@ -2133,6 +2134,7 @@ class SegmentSet {
   }
 
   static void INLINE Unref(SSID ssid, const char *where) {
+    AssertTILHeld(); // The reference counting logic below is not thread-safe
     DCHECK(ssid.valid());
     if (ssid.IsSingleton()) {
       Segment::Unref(ssid.GetSingleton(), where);
@@ -7283,6 +7285,9 @@ class Detector {
     uint16_t *granularity_mask = cache_line->granularity_mask(off);
     uint16_t gr = *granularity_mask;
 
+    // Can't do split/join on the fast path, bacause it involves segment set
+    // reference count manipulation that is not thread-safe.
+
     if        (size == 8 && (off & 7) == 0) {
       if (!gr) {
         *granularity_mask = gr = 1;  // 0000000000000001
@@ -7292,6 +7297,7 @@ class Detector {
         cache_line->DebugTrace(off, __FUNCTION__, __LINE__);
         goto one_call;
       } else {
+        if (fast_path_only) return false;
         if (has_expensive_flags) thr->stats.n_slow_access8++;
         cache_line->Join_1_to_2(off);
         cache_line->Join_1_to_2(off + 2);
@@ -7311,6 +7317,7 @@ class Detector {
         cache_line->DebugTrace(off, __FUNCTION__, __LINE__);
         goto one_call;
       } else {
+        if (fast_path_only) return false;
         if (has_expensive_flags) thr->stats.n_slow_access4++;
         cache_line->Split_8_to_4(off);
         cache_line->Join_1_to_2(off);
@@ -7327,6 +7334,7 @@ class Detector {
         cache_line->DebugTrace(off, __FUNCTION__, __LINE__);
         goto one_call;
       } else {
+        if (fast_path_only) return false;
         if (has_expensive_flags) thr->stats.n_slow_access2++;
         cache_line->Split_8_to_4(off);
         cache_line->Split_4_to_2(off);
@@ -7342,6 +7350,7 @@ class Detector {
         cache_line->DebugTrace(off, __FUNCTION__, __LINE__);
         goto one_call;
       } else {
+        if (fast_path_only) return false;
         if (has_expensive_flags) thr->stats.n_slow_access1++;
         cache_line->Split_8_to_4(off);
         cache_line->Split_4_to_2(off);
