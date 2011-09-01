@@ -6508,17 +6508,17 @@ TEST(PositiveTests, RaceInStrcpy) {
   RunThreads(Write0, DoStrcpy, mem);
 }
 
-#ifndef WIN32
 TEST(PositiveTests, RaceInStrchr) {
   static char mem[4];
   RunThreads(Write0, DoStrchr, mem);
 }
-#endif
 
+#ifndef WIN32
 TEST(PositiveTests, RaceInStrchrnul) {
   static char mem[4];
   RunThreads(Write0, DoStrchrnul, mem);
 }
+#endif
 
 TEST(PositiveTests, RaceInMemchr) {
   static char mem[4];
