@@ -3099,50 +3099,53 @@ void WorkerX() {
   usleep(100000);
   ASSERT_TRUE(strlen(str) == 4);
 #ifndef WIN32
-  EXPECT_TRUE(index(str, 'X') == str);
-  EXPECT_TRUE(index(str, 'x') == str+1);
-  EXPECT_TRUE(index(str, 'Y') == NULL);
+  EXPECT_EQ(str, index(str, 'X'));
+  EXPECT_EQ(str+1, index(str, 'x'));
+  EXPECT_EQ(NULL, index(str, 'Y'));
 #ifndef ANDROID
-  EXPECT_TRUE(rindex(str, 'X') == str+2);
-  EXPECT_TRUE(rindex(str, 'x') == str+3);
-  EXPECT_TRUE(rindex(str, 'Y') == NULL);
+  EXPECT_EQ(str+2, rindex(str, 'X'));
+  EXPECT_EQ(str+3, rindex(str, 'x'));
+  EXPECT_EQ(NULL, rindex(str, 'Y'));
 #endif
 #else
-  EXPECT_TRUE(lstrlenA(NULL) == 0);
-  EXPECT_TRUE(lstrlenW(NULL) == 0);
+  EXPECT_EQ(0, lstrlenA(NULL));
+  EXPECT_EQ(0, lstrlenW(NULL));
 #endif
-  EXPECT_TRUE(strchr(str, 'X') == str);
-  EXPECT_TRUE(strchr(str, 'x') == str+1);
-  EXPECT_TRUE(strchr(str, 'Y') == NULL);
-  EXPECT_TRUE(memchr(str, 'X', 8) == str);
-  EXPECT_TRUE(memchr(str, 'x', 8) == str+1);
+  EXPECT_EQ(str, strchr(str, 'X'));
+  EXPECT_EQ(str+1, strchr(str, 'x'));
+  EXPECT_EQ(NULL, strchr(str, 'Y'));
+  EXPECT_EQ(str, strchrnul(str, 'X'));
+  EXPECT_EQ(str+1, strchrnul(str, 'x'));
+  EXPECT_EQ(str+4, strchrnul(str, 'Y'));
+  EXPECT_EQ(str, memchr(str, 'X', 8));
+  EXPECT_EQ(str+1, memchr(str, 'x', 8));
   char tmp[100] = "Zzz";
-  EXPECT_TRUE(memmove(tmp, str, strlen(str) + 1) == tmp);
-  EXPECT_TRUE(strcmp(tmp,str) == 0);
-  EXPECT_TRUE(strncmp(tmp,str, 4) == 0);
-  EXPECT_TRUE(memmove(str, tmp, strlen(tmp) + 1) == str);
+  EXPECT_EQ(tmp, memmove(tmp, str, strlen(str) + 1));
+  EXPECT_EQ(0, strcmp(tmp,str));
+  EXPECT_EQ(0, strncmp(tmp,str, 4));
+  EXPECT_EQ(str, memmove(str, tmp, strlen(tmp) + 1));
 #ifndef WIN32
 #ifndef ANDROID
-  EXPECT_TRUE(stpcpy(tmp2, str) == tmp2+4);
+  EXPECT_EQ(tmp2+4, stpcpy(tmp2, str));
 #endif
-  EXPECT_TRUE(strcpy(tmp2, str) == tmp2);
-  EXPECT_TRUE(strncpy(tmp, str, 4) == tmp);
+  EXPECT_EQ(tmp2, strcpy(tmp2, str));
+  EXPECT_EQ(tmp, strncpy(tmp, str, 4));
 
   tmp[0] = 'a'; tmp[1] = 0;
-  EXPECT_TRUE(strcat(tmp, str) == tmp);
+  EXPECT_EQ(tmp, strcat(tmp, str));
   tmp[0] = 'a'; tmp[1] = 0;
-  EXPECT_TRUE(strncat(tmp, str, 3) == tmp);
+  EXPECT_EQ(tmp, strncat(tmp, str, 3));
   // These may not be properly intercepted since gcc -O1 may inline
   // strcpy/stpcpy in presence of a statically sized array. Damn.
-  // EXPECT_TRUE(stpcpy(tmp, str) == tmp+4);
-  // EXPECT_TRUE(strcpy(tmp, str) == tmp);
+  // EXPECT_EQ(tmp+4, stpcpy(tmp, str), tmp+4);
+  // EXPECT_EQ(tmp, strcpy(tmp, str), tmp);
 #endif
-  EXPECT_TRUE(strrchr(str, 'X') == str+2);
-  EXPECT_TRUE(strrchr(str, 'x') == str+3);
-  EXPECT_TRUE(strrchr(str, 'Y') == NULL);
+  EXPECT_EQ(str+2, strrchr(str, 'X'));
+  EXPECT_EQ(str+3, strrchr(str, 'x'));
+  EXPECT_EQ(NULL, strrchr(str, 'Y'));
 
   char tmp3[100] = "a//index.html";
-  EXPECT_TRUE(memmove(tmp3 + 7, tmp3 + 3, strlen(tmp3 + 3)) == tmp3 + 7);
+  EXPECT_EQ(tmp3 + 7, memmove(tmp3 + 7, tmp3 + 3, strlen(tmp3 + 3)));
   EXPECT_EQ(0, strcmp(tmp3, "a//indeindex.html"));
 }
 void WorkerY() {
@@ -3169,19 +3172,27 @@ TEST(NegativeTests, StrlenAndFriends) {
   ASSERT_STREQ("YY", str+5);
 
   char foo[8] = {10, 20, 127, (char)128, (char)250, -50, 0};
-  EXPECT_TRUE(strchr(foo, 10) != 0);
-  EXPECT_TRUE(strchr(foo, 127) != 0);
-  EXPECT_TRUE(strchr(foo, 128) != 0);
-  EXPECT_TRUE(strchr(foo, 250) != 0);
-  EXPECT_TRUE(strchr(foo, -50) != 0);
-  EXPECT_TRUE(strchr(foo, -60) == 0);
-  EXPECT_TRUE(strchr(foo, 0) != 0);
-  EXPECT_TRUE(strchr(foo, 0) == foo + strlen(foo));
-  EXPECT_TRUE(strrchr(foo, 10) != 0);
-  EXPECT_TRUE(strrchr(foo, 0) != 0);
-  EXPECT_TRUE(strrchr(foo, 0) == foo + strlen(foo));
-  EXPECT_TRUE(strrchr(foo, 250) != 0);
-  EXPECT_TRUE(strrchr(foo, -60) == 0);
+  EXPECT_TRUE(strchr(foo, 10) != NULL);
+  EXPECT_TRUE(strchr(foo, 127) != NULL);
+  EXPECT_TRUE(strchr(foo, 128) != NULL);
+  EXPECT_TRUE(strchr(foo, 250) != NULL);
+  EXPECT_TRUE(strchr(foo, -50) != NULL);
+  EXPECT_EQ(NULL, strchr(foo, -60));
+  EXPECT_EQ(foo + strlen(foo), strchr(foo, 0));
+
+  EXPECT_EQ(foo, strchrnul(foo, 10));
+  EXPECT_EQ(foo + 2, strchrnul(foo, 127));
+  EXPECT_EQ(foo + 3, strchrnul(foo, 128));
+  EXPECT_EQ(foo + 4, strchrnul(foo, 250));
+  EXPECT_EQ(foo + 5, strchrnul(foo, -50));
+  EXPECT_EQ(foo + strlen(foo), strchrnul(foo, -60));
+  EXPECT_EQ(foo + strlen(foo), strchrnul(foo, 0));
+
+  EXPECT_TRUE(strrchr(foo, 10) != NULL);
+  EXPECT_TRUE(strrchr(foo, NULL) != NULL);
+  EXPECT_EQ(foo + strlen(foo), strrchr(foo, 0));
+  EXPECT_TRUE(strrchr(foo, 250) != NULL);
+  EXPECT_EQ(NULL, strrchr(foo, -60));
   delete [] str;
   delete [] tmp2;
   // TODO(kcc): add more tests to check that interceptors are correct.
@@ -6436,6 +6447,10 @@ void DoStrchr() {
   CHECK(strchr(GLOB, 'o') == (GLOB + 1));
 }
 
+void DoStrchrnul() {
+  CHECK(strchrnul(GLOB, 'o') == (GLOB + 1));
+}
+
 void DoMemchr() {
   CHECK(memchr(GLOB, 'o', 4) == (GLOB + 1));
 }
@@ -6490,6 +6505,11 @@ TEST(PositiveTests, RaceInStrcpy) {
 TEST(PositiveTests, RaceInStrchr) {
   static char mem[4];
   RunThreads(Write0, DoStrchr, mem);
+}
+
+TEST(PositiveTests, RaceInStrchrnul) {
+  static char mem[4];
+  RunThreads(Write0, DoStrchrnul, mem);
 }
 
 TEST(PositiveTests, RaceInMemchr) {

@@ -8362,6 +8362,7 @@ static void SetupIgnore() {
   g_ignore_lists->ignores_hist.push_back(IgnoreFun("Replace_memchr"));
   g_ignore_lists->ignores_hist.push_back(IgnoreFun("Replace_strcpy"));
   g_ignore_lists->ignores_hist.push_back(IgnoreFun("Replace_strchr"));
+  g_ignore_lists->ignores_hist.push_back(IgnoreFun("Replace_strchrnul"));
   g_ignore_lists->ignores_hist.push_back(IgnoreFun("Replace_strrchr"));
   g_ignore_lists->ignores_hist.push_back(IgnoreFun("Replace_strlen"));
   g_ignore_lists->ignores_hist.push_back(IgnoreFun("Replace_strcmp"));

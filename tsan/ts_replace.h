@@ -66,7 +66,25 @@ static NOINLINE char *Replace_strchr(EXTRA_REPLACE_PARAMS const char *s,
     }
     if (s[i] == 0) break;
   }
+  // TODO(samsonov): seems the correct line should be:
+  // REPORT_READ_RANGE(s, i + 1);
+  // should write a test and check it on PIN somehow
+  // Also, check other str* functions and test them too
   REPORT_READ_RANGE(s, ret ? i + 1 : i);
+  return ret;
+}
+
+static NOINLINE char *Replace_strchrnul(EXTRA_REPLACE_PARAMS const char *s,
+                                        int c) {
+  size_t i;
+  char *ret;
+  for (i = 0; ; i++) {
+    if (s[i] == (char)c || s[i] == 0) {
+      ret = (char*)(&s[i]);
+      break;
+    }
+  }
+  REPORT_READ_RANGE(s, i + 1);
   return ret;
 }
 

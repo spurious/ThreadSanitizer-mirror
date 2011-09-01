@@ -2325,6 +2325,19 @@ STRCHR(NONE,             index)
 STRCHR(VG_Z_LIBC_SONAME, __GI_strchr)
 #endif
 
+// --- STRCHRNUL --------------------------------------------------
+//
+#define STRCHRNUL(soname, fnname) \
+   char* VG_REPLACE_FUNCTION_ZU(soname,fnname) ( const char* s, int c ); \
+   char* VG_REPLACE_FUNCTION_ZU(soname,fnname) ( const char* s, int c ) \
+   { return Replace_strchrnul(s, c); }
+
+STRCHRNUL(VG_Z_LIBC_SONAME, strchrnul)
+STRCHRNUL(NONE,             strchrnul)
+#if defined(VGO_linux)
+STRCHRNUL(VG_Z_LIBC_SONAME, __GI_strchrnul)
+#endif
+
 // --- STRRCHR RINDEX -----------------------------------------------------
 //
 #define STRRCHR(soname, fnname) \
@@ -2332,6 +2345,7 @@ STRCHR(VG_Z_LIBC_SONAME, __GI_strchr)
    char* VG_REPLACE_FUNCTION_ZU(soname,fnname)( const char* str, int c ) \
    { return Replace_strrchr(str, c); }
 
+// Apparently rindex() is the same thing as strrchr()
 STRRCHR(VG_Z_LIBC_SONAME, strrchr)
 STRRCHR(VG_Z_LIBC_SONAME, rindex)
 STRRCHR(NONE,             strrchr)

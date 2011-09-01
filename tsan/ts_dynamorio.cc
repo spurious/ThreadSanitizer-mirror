@@ -488,6 +488,7 @@ DR_EXPORT void dr_init(client_id_t id) {
   ReplaceFunc3(img, rtn, "memchr", (AFUNPTR)Replace_memchr);
   ReplaceFunc3(img, rtn, "strchr", (AFUNPTR)Replace_strchr);
   ReplaceFunc3(img, rtn, "index", (AFUNPTR)Replace_strchr);
+  ReplaceFunc3(img, rtn, "strchrnul", (AFUNPTR)Replace_strchrnul);
   ReplaceFunc3(img, rtn, "strrchr", (AFUNPTR)Replace_strrchr);
   ReplaceFunc3(img, rtn, "rindex", (AFUNPTR)Replace_strrchr);
   ReplaceFunc3(img, rtn, "strlen", (AFUNPTR)Replace_strlen);
