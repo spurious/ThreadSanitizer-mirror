@@ -2148,6 +2148,19 @@ char *__wrap_strchr(const char *s, int c) {
 }
 
 extern "C"
+char *__wrap_strchrnul(const char *s, int c) {
+  if (IN_RTL) return __real_strchrnul(s, c);
+  DECLARE_TID_AND_PC();
+  pc_t const mypc = (pc_t)__real_strchrnul;
+  RPut(RTN_CALL, tid, pc, mypc, 0);
+  ENTER_RTL();
+  char *result = Replace_strchrnul(tid, mypc, s, c);
+  LEAVE_RTL();
+  RPut(RTN_EXIT, tid, pc, 0, 0);
+  return result;
+}
+
+extern "C"
 char *__wrap_strrchr(const char *s, int c) {
   if (IN_RTL) return __real_strrchr(s, c);
   DECLARE_TID_AND_PC();

@@ -98,6 +98,7 @@ wrap _ZdaPvRKSt9nothrow_t
 wrap memcpy
 wrap memmove
 wrap strchr
+wrap strchrnul
 wrap strrchr
 wrap memchr
 wrap strncmp
