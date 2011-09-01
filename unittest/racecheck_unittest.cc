@@ -3114,7 +3114,7 @@ void WorkerX() {
   EXPECT_EQ(str, strchr(str, 'X'));
   EXPECT_EQ(str+1, strchr(str, 'x'));
   EXPECT_EQ(NULL, strchr(str, 'Y'));
-#ifndef WIN32
+#if !defined(WIN32) && !defined(__MACH__)
   EXPECT_EQ(str, strchrnul(str, 'X'));
   EXPECT_EQ(str+1, strchrnul(str, 'x'));
   EXPECT_EQ(str+4, strchrnul(str, 'Y'));
@@ -3182,7 +3182,7 @@ TEST(NegativeTests, StrlenAndFriends) {
   EXPECT_EQ(NULL, strchr(foo, -60));
   EXPECT_EQ(foo + strlen(foo), strchr(foo, 0));
 
-#ifndef WIN32
+#if !defined(WIN32) && !defined(__MACH__)
   EXPECT_EQ(foo, strchrnul(foo, 10));
   EXPECT_EQ(foo + 2, strchrnul(foo, 127));
   EXPECT_EQ(foo + 3, strchrnul(foo, 128));
@@ -6451,7 +6451,7 @@ void DoStrchr() {
   CHECK(strchr(GLOB, 'o') == (GLOB + 1));
 }
 
-#ifndef WIN32
+#if !defined(WIN32) && !defined(__MACH__)
 void DoStrchrnul() {
   CHECK(strchrnul(GLOB, 'o') == (GLOB + 1));
 }
@@ -6513,7 +6513,7 @@ TEST(PositiveTests, RaceInStrchr) {
   RunThreads(Write0, DoStrchr, mem);
 }
 
-#ifndef WIN32
+#if !defined(WIN32) && !defined(__MACH__)
 TEST(PositiveTests, RaceInStrchrnul) {
   static char mem[4];
   RunThreads(Write0, DoStrchrnul, mem);
