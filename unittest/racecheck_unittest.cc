@@ -3114,9 +3114,11 @@ void WorkerX() {
   EXPECT_EQ(str, strchr(str, 'X'));
   EXPECT_EQ(str+1, strchr(str, 'x'));
   EXPECT_EQ(NULL, strchr(str, 'Y'));
+#ifndef WIN32
   EXPECT_EQ(str, strchrnul(str, 'X'));
   EXPECT_EQ(str+1, strchrnul(str, 'x'));
   EXPECT_EQ(str+4, strchrnul(str, 'Y'));
+#endif
   EXPECT_EQ(str, memchr(str, 'X', 8));
   EXPECT_EQ(str+1, memchr(str, 'x', 8));
   char tmp[100] = "Zzz";
@@ -3180,6 +3182,7 @@ TEST(NegativeTests, StrlenAndFriends) {
   EXPECT_EQ(NULL, strchr(foo, -60));
   EXPECT_EQ(foo + strlen(foo), strchr(foo, 0));
 
+#ifndef WIN32
   EXPECT_EQ(foo, strchrnul(foo, 10));
   EXPECT_EQ(foo + 2, strchrnul(foo, 127));
   EXPECT_EQ(foo + 3, strchrnul(foo, 128));
@@ -3187,6 +3190,7 @@ TEST(NegativeTests, StrlenAndFriends) {
   EXPECT_EQ(foo + 5, strchrnul(foo, -50));
   EXPECT_EQ(foo + strlen(foo), strchrnul(foo, -60));
   EXPECT_EQ(foo + strlen(foo), strchrnul(foo, 0));
+#endif
 
   EXPECT_TRUE(strrchr(foo, 10) != NULL);
   EXPECT_TRUE(strrchr(foo, NULL) != NULL);
@@ -6447,9 +6451,11 @@ void DoStrchr() {
   CHECK(strchr(GLOB, 'o') == (GLOB + 1));
 }
 
+#ifndef WIN32
 void DoStrchrnul() {
   CHECK(strchrnul(GLOB, 'o') == (GLOB + 1));
 }
+#endif
 
 void DoMemchr() {
   CHECK(memchr(GLOB, 'o', 4) == (GLOB + 1));
@@ -6502,10 +6508,12 @@ TEST(PositiveTests, RaceInStrcpy) {
   RunThreads(Write0, DoStrcpy, mem);
 }
 
+#ifndef WIN32
 TEST(PositiveTests, RaceInStrchr) {
   static char mem[4];
   RunThreads(Write0, DoStrchr, mem);
 }
+#endif
 
 TEST(PositiveTests, RaceInStrchrnul) {
   static char mem[4];
