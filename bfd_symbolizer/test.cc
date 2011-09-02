@@ -100,6 +100,18 @@ void test_stack_unwind() {
   printf("OK\n");
 }
 
+namespace bar {
+struct Foo {
+  Foo() {
+    rand();
+    ll:
+    p = &&ll; l = __LINE__;
+    rand();
+  }
+  void* p;
+  int l;
+};
+}
 
 int main() {
 #ifdef __x86_64__
@@ -174,6 +186,9 @@ int main() {
   check(get_dyn2(),     bfds_opt_data, "dyn2",          staname, "",            0,         0);
 
   check((void*)&dyn1,   bfds_opt_none, "dyn1@plt",      exename, "",            0, 0);
+
+  bar::Foo f;
+  check(f.p, bfds_opt_demangle, "bar::Foo::Foo", exename, __FILE__, f.l, 0);
   
   void* dl = dlopen(dynname, RTLD_LOCAL | RTLD_NOW);
   void* dyn21 = dlsym(dl, "dyn21");

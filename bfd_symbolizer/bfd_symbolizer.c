@@ -367,6 +367,17 @@ static lib_t* find_lib(void* addr) {
 }
 
 
+static void bfd_dump_line_callback(bfd* abfd, asection* section, void* data) {
+  unsigned i;
+
+  for (i = 0; i != section->lineno_count; i += 1) {
+    DBG("\t%d '%s'\n",
+	section->lineno[i].line_number,
+        bfd_asymbol_name(section->lineno[i].u.sym));
+  }
+}
+
+
 static int init_lib(lib_t* lib) {
   char**                matching;
   unsigned              symsize;
@@ -498,6 +509,9 @@ static int init_lib(lib_t* lib) {
         (void*)bfd_asymbol_value(&lib->synsyms[i]),
         bfd_asymbol_name(&lib->synsyms[i]));
   }
+
+  DBG("line info:\n");
+  bfd_map_over_sections(lib->bfd, bfd_dump_line_callback, 0);
   
   return 0;
 }
@@ -535,7 +549,10 @@ static void bfd_search_callback(bfd* abfd, asection* section, void* data) {
   bfd_vma               vma;
   bfd_size_type         size;
   sym_t*                psi;
-
+  asymbol*              sym;
+  ptrdiff_t             mindiff;
+  ptrdiff_t             d;
+  int                   i;
 
   psi = (sym_t*)data;
   if (psi->found)
@@ -553,6 +570,21 @@ static void bfd_search_callback(bfd* abfd, asection* section, void* data) {
                                      psi->lib->syms, psi->pc - vma,
                                      &psi->filename, &psi->functionname,
                                      &psi->line);
+
+  if (psi->found && psi->functionname && psi->functionname[0] != '_') {
+    mindiff = 1<<30;
+    sym = 0;
+    for (i = 0; i != psi->lib->symcount; i += 1) {
+      d = (void*)psi->pc - (void*)bfd_asymbol_value(psi->lib->syms[i]);
+      if (d >= 0 && d < mindiff) {
+        mindiff = d;
+        sym = psi->lib->syms[i];
+      }
+    }
+    if (sym != 0 && bfd_asymbol_name(sym)[0] == '_') {
+      psi->functionname = bfd_asymbol_name(sym);
+    }
+  }
 }
 
 
@@ -582,8 +614,6 @@ static int process_data(lib_t* lib, void* addr, char* symbol, int symbol_size, c
 
 static int process_code(lib_t* lib, void* addr, char* symbol, int symbol_size, char* filename, int filename_size, int* source_line, int* symbol_offset) {
   sym_t                 si;
-  char*                 alloc;
-  const char*           name;
   int                   i;
 
   DBG("resolving address %p in module '%s'\n", addr, lib->name);
@@ -598,6 +628,7 @@ static int process_code(lib_t* lib, void* addr, char* symbol, int symbol_size, c
   si.found = 0;
   bfd_map_over_sections(lib->bfd, bfd_search_callback, &si);
   if (si.found == 0) {
+    DBG("not found in main symbols, looking at synthetic symbols\n");
     for (i = 0; i != lib->synsymcount; i += 1) {
       if (addr == (void*)bfd_asymbol_value(&lib->synsyms[i])) {
         strcopy(symbol, symbol_size, bfd_asymbol_name(&lib->synsyms[i]));
@@ -613,17 +644,8 @@ static int process_code(lib_t* lib, void* addr, char* symbol, int symbol_size, c
   }
 
   do {
-    alloc = 0;
-    name = si.functionname;
-    if (name == 0 || *name == '\0') {
-      name = "??";
-    } else {
-      if (alloc != NULL)
-        name = alloc;
-    }
-    strcopy(symbol, symbol_size, name);
-    if (alloc != 0)
-      free(alloc);
+    DBG("symbol '%s': resolving inliner info\n", si.functionname);
+    strcopy(symbol, symbol_size, si.functionname ?: "?");
     strcopy(filename, filename_size, si.filename ?: "?");
     if (source_line != 0)
       *source_line = si.line;
