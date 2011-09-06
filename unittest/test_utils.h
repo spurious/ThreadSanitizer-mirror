@@ -148,6 +148,12 @@ class StealthNotification {
     }
   }
 
+  // reset is not thread-safe and must not be called
+  // concurrently with any other methods of the object.
+  void reset() {
+    flag_ = 0;
+  }
+
  private:
   volatile int flag_;
 };

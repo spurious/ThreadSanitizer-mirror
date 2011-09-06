@@ -710,6 +710,7 @@ void Worker() {
 void Run() {
 //  ANNOTATE_EXPECT_RACE(&GLOB, "test16. FP. Fixed by MSMProp1 + Barrier support.");
   COND = 2;
+  GLOB = 0;
   printf("test16: negative\n");
   MyThreadArray t(Worker, Worker);
   t.Start();
@@ -743,6 +744,7 @@ void Worker() {
 
 void Run() {
   COND = 3;
+  GLOB = 0;
   printf("test17: negative\n");
   MyThreadArray t(Worker, Worker, Worker);
   t.Start();
@@ -959,6 +961,7 @@ void Worker_Lock() {
 
 void Run() {
   printf("test23: negative\n");
+  GLOB = 0;
   MyThreadArray t(Worker_TryLock,
                   Worker_ReaderTryLock,
                   Worker_ReaderLock,
@@ -1079,6 +1082,7 @@ void Worker() {
 
 void Run() {
   printf("test27: negative\n");
+  GLOB = 0;
   MyThreadArray t(Worker, Worker, Worker, Worker);
   t.Start();
   t.Join();
@@ -1125,6 +1129,7 @@ void Getter() {
 
 void Run() {
   printf("test28: negative\n");
+  GLOB = 0;
   MyThreadArray t(Getter, Putter, Putter);
   t.Start();
   t.Join();
@@ -1168,6 +1173,7 @@ void Getter() {
 
 void Run() {
   printf("test29: negative\n");
+  GLOB = 0;
   Q1 = new ProducerConsumerQueue(INT_MAX);
   Q2 = new ProducerConsumerQueue(INT_MAX);
   MyThreadArray t(Getter, Getter, Putter1, Putter2);
@@ -1233,6 +1239,9 @@ void Reader() {
 }
 
 void Run() {
+  BOUNDARY = 0;
+  for (int i = 0; i < N; i++)
+    GLOB[i] = 0;
   ANNOTATE_EXPECT_RACE((void*)(&BOUNDARY), "test30. Sync via 'safe' race.");
   printf("test30: negative\n");
   MyThreadArray t(Writer, Reader, Reader, Reader);
@@ -1287,6 +1296,9 @@ void Writer2() {
 }
 
 void Run() {
+  BOUNDARY = 0;
+  for (int i = 0; i < N; i++)
+    GLOB[i] = 0;
   ANNOTATE_EXPECT_RACE((void*)(&BOUNDARY), "test31. Sync via 'safe' race.");
   printf("test31: negative\n");
   MyThreadArray t(Writer1, Writer2);
@@ -1388,6 +1400,9 @@ void Worker() {
 void Run() {
   printf("test33:\n");
 
+  GLOB = 0;
+  for (int i = 0; i < N; i++)
+    ARR[i] = 0;
   std::vector<MyThread*> vec(Nlog);
 
   for (int j = 0; j < N_iter; j++) {
@@ -1432,6 +1447,9 @@ void Worker() {
 }
 
 TEST(StressTests, ManyLockSetsTest) {
+  GLOB = 0;
+  for (int i = 0; i < N; i++)
+    ARR[i] = 0;
   ANNOTATE_FLUSH_STATE();
   for (int iter = 0; iter < N_iter; iter++) {
     for (int i = 0; i < Nlog; i++) {
@@ -1449,6 +1467,9 @@ TEST(StressTests, ManyLockSetsTest) {
 }
 
 TEST(StressTests, EvenMoreLockSetsTest) {
+  GLOB = 0;
+  for (int i = 0; i < N; i++)
+    ARR[i] = 0;
   ANNOTATE_FLUSH_STATE();
   int nlog = 16;
   int n = 1 << nlog;
@@ -1558,6 +1579,7 @@ void Getter() {
 
 void Run() {
   printf("test36: negative \n");
+  GLOB = 0;
   MyThreadArray t(Getter, Putter, Putter);
   t.Start();
   t.Join();
@@ -1663,6 +1685,7 @@ void Getter() {
 
 void Run() {
   printf("test38: negative\n");
+  GLOB = 0;
   Q1 = new ProducerConsumerQueue(INT_MAX);
   Q2 = new ProducerConsumerQueue(INT_MAX);
   MyThreadArray t(Getter, Getter, Putter1, Putter2);
@@ -1692,6 +1715,7 @@ void Worker() {
 }
 
 TEST(NegativeTests, Barrier) {
+  GLOB = 0;
   ANNOTATE_TRACE_MEMORY(&GLOB);
   {
     ThreadPool pool(N_threads);
@@ -1767,6 +1791,7 @@ void Getter() {
 void Run() {
 //  ANNOTATE_EXPECT_RACE(&GLOB, "test40. FP. Fixed by MSMProp1. Complex Stuff.");
   printf("test40: negative\n");
+  GLOB = 0;
   Q1 = new ProducerConsumerQueue(INT_MAX);
   Q2 = new ProducerConsumerQueue(INT_MAX);
   MyThreadArray t(Getter, Getter, Putter1, Putter2);
@@ -1839,6 +1864,7 @@ void Worker2() {
 void Run() {
 //  ANNOTATE_EXPECT_RACE(&GLOB, "test42. TN. debugging.");
   printf("test42: negative\n");
+  COND = 0;
   MyThreadArray t(Worker1, Worker2);
   t.Start();
   t.Join();
@@ -1871,6 +1897,7 @@ void Getter() {
 }
 void Run() {
   printf("test43: negative\n");
+  GLOB = 0;
   MyThreadArray t(Putter, Getter);
   t.Start();
   t.Join();
@@ -1912,6 +1939,7 @@ void Getter() {
 void Run() {
 //  ANNOTATE_EXPECT_RACE(&GLOB, "test44. FP. Fixed by MSMProp1.");
   printf("test44: negative\n");
+  GLOB = 0;
   MyThreadArray t(Putter, Getter);
   t.Start();
   t.Join();
@@ -1952,6 +1980,7 @@ void Getter() {
 }
 void Run() {
   printf("test45: negative\n");
+  GLOB = 0;
   MyThreadArray t(Putter, Getter);
   t.Start();
   t.Join();
@@ -1994,6 +2023,7 @@ void Second() {
   MU.Unlock();
 }
 void Run() {
+  GLOB = 0;
   ANNOTATE_TRACE_MEMORY(&GLOB);
   MyThreadArray t(First, Second);
   t.Start();
@@ -2032,6 +2062,7 @@ void Run() {
   if (!Tsan_PureHappensBefore())
     ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test47. TP. Not detected by pure HB.");
   printf("test47: positive\n");
+  GLOB = 0;
   MyThreadArray t(First, Second);
   t.Start();
   t.Join();
@@ -2239,6 +2270,9 @@ void Waiter() {
   n2.signal(); // Ready to miss the second signal.
 }
 void Run() {
+  COND = 0;
+  n1.reset();
+  n2.reset();
   ANNOTATE_EXPECT_RACE(&GLOB, "test51. TP.");
   printf("test51: positive\n");
   MyThreadArray t(Waiter, Waker);
@@ -2311,6 +2345,9 @@ void Waiter() {
 }
 void Run() {
   printf("test52: positive\n");
+  COND = 0;
+  n1.reset();
+  n2.reset();
   ANNOTATE_EXPECT_RACE(&GLOB, "test52. TP.");
   MyThreadArray t(Waker, Waiter);
   t.Start();
@@ -2372,6 +2409,8 @@ void User() {
 }
 
 void Run() {
+  GLOB = 0;
+  FLAG = false;
   if (!Tsan_PureHappensBefore())
     ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test53. FP. Implicit semaphore");
   printf("test53: FP. false positive, Implicit semaphore\n");
@@ -2417,6 +2456,8 @@ void User() {
 }
 
 void Run() {
+  GLOB = 0;
+  FLAG = false;
   printf("test54: negative\n");
   MyThreadArray t(Initializer, User, User);
   t.Start();
@@ -2479,6 +2520,7 @@ void Worker() {
 }
 
 void Run() {
+  GLOB = 0;
   ANNOTATE_BENIGN_RACE(&GLOB, "test56. Use of ANNOTATE_BENIGN_RACE.");
   ANNOTATE_BENIGN_RACE(&GLOB2, "No race. The tool should be silent");
   printf("test56: positive\n");
@@ -2504,6 +2546,7 @@ void Reader() {
   while (GLOB < 20) usleep(1000);
 }
 void Run() {
+  GLOB = 0;
   printf("test57: negative\n");
   MyThreadArray t(Writer, Writer, Reader, Reader);
   t.Start();
@@ -2517,10 +2560,10 @@ REGISTER_TEST(Run, 57)
 
 // test58: TN. User defined synchronization. {{{1
 namespace test58 {
-int     GLOB1 = 1;
-int     GLOB2 = 2;
-int     FLAG1 = 0;
-int     FLAG2 = 0;
+int     GLOB1;
+int     GLOB2;
+int     FLAG1;
+int     FLAG2;
 
 // Correctly synchronized test, but the common lockset is empty.
 // The variables FLAG1 and FLAG2 used for synchronization and as
@@ -2544,6 +2587,10 @@ void Worker1() {
 }
 
 void Run() {
+  GLOB1 = 1;
+  GLOB2 = 2;
+  FLAG1 = 0;
+  FLAG2 = 0;
   printf("test58:\n");
   MyThreadArray t(Worker1, Worker2);
   t.Start();
@@ -2558,12 +2605,12 @@ REGISTER_TEST2(Run, 58, FEATURE|EXCLUDE_FROM_ALL)
 
 // test59: TN. User defined synchronization. Annotated {{{1
 namespace test59 {
-int     COND1 = 0;
-int     COND2 = 0;
-int     GLOB1 = 1;
-int     GLOB2 = 2;
-int     FLAG1 = 0;
-int     FLAG2 = 0;
+int     COND1;
+int     COND2;
+int     GLOB1;
+int     GLOB2;
+int     FLAG1;
+int     FLAG2;
 // same as test 58 but annotated
 
 void Worker2() {
@@ -2583,6 +2630,12 @@ void Worker1() {
 }
 
 void Run() {
+  COND1 = 0;
+  COND2 = 0;
+  GLOB1 = 1;
+  GLOB2 = 2;
+  FLAG1 = 0;
+  FLAG2 = 0;
   printf("test59: negative\n");
   ANNOTATE_BENIGN_RACE(&FLAG1, "synchronization via 'safe' race");
   ANNOTATE_BENIGN_RACE(&FLAG2, "synchronization via 'safe' race");
@@ -2598,12 +2651,12 @@ REGISTER_TEST2(Run, 59, FEATURE|NEEDS_ANNOTATIONS)
 
 // test60: TN. Correct synchronization using signal-wait {{{1
 namespace test60 {
-int     COND1 = 0;
-int     COND2 = 0;
-int     GLOB1 = 1;
-int     GLOB2 = 2;
-int     FLAG2 = 0;
-int     FLAG1 = 0;
+int     COND1;
+int     COND2;
+int     GLOB1;
+int     GLOB2;
+int     FLAG2;
+int     FLAG1;
 Mutex   MU;
 // same as test 59 but synchronized with signal-wait.
 
@@ -2642,6 +2695,12 @@ void Worker1() {
 }
 
 void Run() {
+  COND1 = 0;
+  COND2 = 0;
+  GLOB1 = 1;
+  GLOB2 = 2;
+  FLAG2 = 0;
+  FLAG1 = 0;
   printf("test60: negative\n");
   MyThreadArray t(Worker1, Worker2);
   t.Start();
@@ -3240,6 +3299,8 @@ void MemmoveThread() {
 }
 
 TEST(NegativeTests, MemmoveTest) {
+  count = -1;
+  chunks.clear();
   // fill in the chunks
   size_t total_size = 0;
   while (total_size < kMemmoveBufSize) {
@@ -4713,6 +4774,9 @@ void Reader() {
 }
 
 TEST(PositiveTests, FalseNegativeOfFastModeTest) {
+  *GLOB = 0;
+  n1.reset();
+  n2.reset();
   MyThreadArray t(Reader);
   ANNOTATE_TRACE_MEMORY(GLOB);
   ANNOTATE_EXPECT_RACE_FOR_TSAN(GLOB, __FUNCTION__);
@@ -6294,6 +6358,8 @@ void Writer2() {
   GLOB++;
 }
 TEST(PositiveTests, RaceDetectedAfterJoin) {
+  GLOB = 0;
+  n.reset();
   ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "real race");
   MyThread t1(Writer1);
   MyThread t2(Writer2);
@@ -6872,6 +6938,7 @@ void Free() {
 }
 
 TEST(PositiveTests, ReadVsFree) {
+  n.reset();
   p = (int*)malloc(100 * sizeof(int));
   p[kIdx] = 777;
   ANNOTATE_EXPECT_RACE(&p[kIdx], "race: read vs free");
@@ -6896,6 +6963,7 @@ void Read() {
 }
 
 TEST(PositiveTests, FreeVsRead) {
+  n.reset();
   p = (int*)malloc(100 * sizeof(int));
   p[kIdx] = 777;
   ANNOTATE_EXPECT_RACE(&p[kIdx], "race: free vs read");
@@ -7804,6 +7872,7 @@ void WaitThread() {
 }
 
 TEST(MutexNotPhbTests, MutexNotPhbTest) {
+  n.reset();
   ANNOTATE_NOT_HAPPENS_BEFORE_MUTEX(&mu);
   ANNOTATE_EXPECT_RACE(&GLOB, "MutexNotPhbTest. TP.");
   MyThreadArray mta(SignalThread, WaitThread);
@@ -7847,6 +7916,7 @@ void Worker2() {
 }
 
 TEST(RaceVerifierTests, Unverifiable) {
+  n.reset();
   ANNOTATE_EXPECT_RACE(&GLOB, "SimpleRace. UNVERIFIABLE.");
   MyThreadArray t(Worker1, Worker2);
   t.Start();
@@ -7869,6 +7939,7 @@ void Worker2() {
 }
 
 TEST(RaceVerifierTests, ManyRacesInOneTrace) {
+  n.reset();
   ANNOTATE_EXPECT_RACE(array + 0, "RaceVerifierTests_ManyRacesInOneTrace: race 1.");
   ANNOTATE_EXPECT_RACE(array + 1, "RaceVerifierTests_ManyRacesInOneTrace: race 2.");
   MyThreadArray t(Worker1, Worker2);

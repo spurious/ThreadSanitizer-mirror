@@ -286,6 +286,8 @@ void Worker() {
 }
 TEST(PositiveTests, test110) {
   printf("test110: positive (race on a stack object)\n");
+  GLOB = 0;
+  STATIC = 0;
 
   char x = 0;
   STACK = &x;
@@ -302,7 +304,6 @@ TEST(PositiveTests, test110) {
 
   NEW     = new int;
   NEW_ARR = new int[10];
-
 
   ANNOTATE_EXPECT_RACE(STACK, "real race on stack object");
   ANNOTATE_EXPECT_RACE(&GLOB, "real race on global object");
@@ -384,6 +385,8 @@ void Worker() {
  * create new ones. */
 TEST(NegativeTests, test115) {
   printf("test115: stab (sem_open())\n");
+  tid = 0;
+  GLOB = 0;
 
   // just check that sem_open is not completely broken
   sem_unlink(kSemName);
@@ -715,6 +718,15 @@ void Worker3() {
 }
 
 TEST(PositiveTests, test146) {
+  GLOB1 = 0;
+  GLOB2 = 0;
+  GLOB3 = 0;
+  GLOB4 = 0;
+  n1.reset();
+  n2.reset();
+  n3.reset();
+  n4.reset();
+  n5.reset();
   ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB1, "test146. TP: a data race on GLOB1.");
   ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB3, "test146. TP: a data race on GLOB3.");
   ANNOTATE_TRACE_MEMORY(&GLOB1);
@@ -1087,6 +1099,9 @@ void Worker2() {
 }
 
 TEST(PositiveTests, LockThenNoLock) {
+  GLOB = 0;
+  n1.reset();
+  n2.reset();
   pthread_mutex_init(&mu, NULL);
   ANNOTATE_TRACE_MEMORY(&GLOB);
   ANNOTATE_EXPECT_RACE(&GLOB, "race");
@@ -1152,6 +1167,8 @@ void Thread2() {
 }
 
 TEST(PositiveTests, RWLockVsRWLockTest) {
+  GLOB = 0;
+  n.reset();
   ANNOTATE_PURE_HAPPENS_BEFORE_MUTEX(&mu);
   ANNOTATE_EXPECT_RACE(&GLOB, "rwunlock/rwlock is not a hb-arc");
   MyThreadArray t(Thread1, Thread2);
