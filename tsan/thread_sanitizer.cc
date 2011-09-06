@@ -5758,9 +5758,7 @@ class ReportStorage {
       Printf("Checking expected race for %lx; exp_race=%p\n",
              addr, expected_race);
       if (expected_race) {
-        Printf("  ptr=0x%lx size=0x%lx end=0x%lx\n",
-               expected_race->ptr, expected_race->size,
-               expected_race->ptr + expected_race->size);
+        Printf("  FOUND\n");
       }
     }
 
@@ -6625,8 +6623,7 @@ class Detector {
 
 
       case EXPECT_RACE :
-        HandleExpectRace(e->a(), e->info(),
-                         (const char*)e->pc(), TID(e->tid()));
+        HandleExpectRace(e->a(), (const char*)e->pc(), TID(e->tid()));
         break;
       case BENIGN_RACE :
         HandleBenignRace(e->a(), e->info(),
@@ -6793,11 +6790,10 @@ class Detector {
   }
 
   // EXPECT_RACE
-  void HandleExpectRace(uintptr_t ptr, uintptr_t size,
-                        const char *descr, TID tid) {
+  void HandleExpectRace(uintptr_t ptr, const char *descr, TID tid) {
     ExpectedRace expected_race;
     expected_race.ptr = ptr;
-    expected_race.size = size;
+    expected_race.size = 1;
     expected_race.count = 0;
     expected_race.is_verifiable = !descr ||
         (string(descr).find("UNVERIFIABLE") == string::npos);
@@ -6814,16 +6810,23 @@ class Detector {
     Thread *thread = Thread::Get(tid);
     expected_race.pc = thread->GetCallstackEntry(1);
     G_expected_races_map->InsertInfo(ptr, expected_race);
+
+    // Flush 'racey' flag for the address
+    CacheLine *cache_line = G_cache->GetLineIfExists(thread, ptr, __LINE__);
+    if (cache_line != NULL) {
+      uintptr_t offset = CacheLine::ComputeOffset(ptr);
+      cache_line->racey().ClearRange(offset, offset + 1);
+      G_cache->ReleaseLine(thread, ptr, cache_line, __LINE__);
+    }
+
     if (debug_expected_races) {
-      Printf("T%d: EXPECT_RACE: ptr=%p size=%ld descr='%s'\n",
-             tid.raw(), ptr, size, descr);
+      Printf("T%d: EXPECT_RACE: ptr=%p descr='%s'\n", tid.raw(), ptr, descr);
       thread->ReportStackTrace(ptr);
       int i = 0;
       for (ExpectedRacesMap::iterator it = G_expected_races_map->begin();
            it != G_expected_races_map->end(); ++it) {
         ExpectedRace &x = it->second;
-        Printf("  [%d] %p [0x%lx,0x%lx) size=0x%lx\n",
-               i, &x, x.ptr, x.ptr + x.size, x.size);
+        Printf("  [%d] %p [0x%lx]\n", i, &x, x.ptr);
         i++;
       }
     }

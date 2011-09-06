@@ -2278,7 +2278,7 @@ static void On_AnnotateBenignRaceSized(THREADID tid, ADDRINT pc,
 static void On_AnnotateExpectRace(THREADID tid, ADDRINT pc,
                                   ADDRINT file, ADDRINT line,
                                   ADDRINT a, ADDRINT descr) {
-  DumpEvent(0, EXPECT_RACE, tid, descr, a, 1);
+  DumpEvent(0, EXPECT_RACE, tid, descr, a, 0);
 }
 
 static void On_AnnotateFlushExpectedRaces(THREADID tid, ADDRINT pc,

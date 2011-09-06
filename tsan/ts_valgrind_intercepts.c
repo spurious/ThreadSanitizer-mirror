@@ -2615,7 +2615,7 @@ ANN_FUNC(void, AnnotateExpectRace, const char *file, int line, void *mem, char *
 {
   const char *name = "AnnotateExpectRace";
   ANN_TRACE("--#%d %s[%p] %s:%d\n", tid, name, mem, file, line);
-  DO_CREQ_v_WWW(TSREQ_EXPECT_RACE, void*,mem, long, 1, char*,description);
+  DO_CREQ_v_WW(TSREQ_EXPECT_RACE, void*,mem, char*,description);
 }
 
 ANN_FUNC(void, AnnotateFlushExpectedRaces, const char *file, int line)

@@ -583,8 +583,8 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
   // Ignore almost everything in race verifier mode.
   if (g_race_verifier_active) {
     if (args[0] == TSREQ_EXPECT_RACE) {
-      Put(EXPECT_RACE, ts_tid, /*descr=*/args[3],
-          /*p=*/args[1], /*size*/args[2]);
+      Put(EXPECT_RACE, ts_tid, /*descr=*/args[2],
+          /*p=*/args[1], 0);
     }
     *ret = 0;
     return True;
@@ -642,8 +642,7 @@ Bool ts_handle_client_request(ThreadId vg_tid, UWord* args, UWord* ret) {
           /*p=*/args[1], /*size=*/args[2]);
       break;
     case TSREQ_EXPECT_RACE:
-      Put(EXPECT_RACE, ts_tid, /*descr=*/args[3],
-          /*p=*/args[1], /*size*/args[2]);
+      Put(EXPECT_RACE, ts_tid, /*descr=*/args[2], /*p=*/args[1], 0);
       break;
     case TSREQ_FLUSH_EXPECTED_RACES:
       Put(FLUSH_EXPECTED_RACES, ts_tid, 0, 0, 0);

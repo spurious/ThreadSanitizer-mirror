@@ -195,7 +195,7 @@ void DYNAMIC_ANNOTATIONS_NAME(AnnotateExpectRace)(
     const char *file, int line,
     const volatile void *mem, const char *description) {
   tid_t tid = ExGetTid();
-  ExSPut(EXPECT_RACE, tid, (uintptr_t)description, (uintptr_t)mem, 1);
+  ExSPut(EXPECT_RACE, tid, (uintptr_t)description, (uintptr_t)mem, 0);
 }
 
 extern "C"
