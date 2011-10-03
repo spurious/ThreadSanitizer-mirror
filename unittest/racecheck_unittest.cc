@@ -8360,10 +8360,12 @@ void CheckStrcpyResult() {
   WriteC();
 }
 
+#if !defined(WIN32) && !defined(ANDROID)
 void CheckStpcpyResult() {
   EXPECT_EQ(GLOB + 2, stpcpy(GLOB, GLOB2));
   WriteC();
 }
+#endif
 
 void CheckStrncpyResult() {
   EXPECT_EQ(GLOB, strncpy(GLOB, GLOB2, 3));
@@ -8419,7 +8421,9 @@ TEST(NegativeTests, LibcStringFunctions) {
 
   // Copy "ab\0" from "ab\0def" to "abcdef" (+ restore "c"), and overwrite "d"
   RunThreads(WriteD, CheckStrcpyResult, NULL);
+#if !defined(WIN32) && !defined(ANDROID)
   RunThreads(WriteD, CheckStpcpyResult, NULL);
+#endif
   RunThreads(WriteD, CheckStrncpyResult, NULL);
 }
 
@@ -8448,7 +8452,9 @@ TEST(PositiveTests, LibcStringFunctions) {
 
   // Copy "ab\0" from "ab\0def" to "abcdef" (+ restore "c"), and overwrite "c"
   RunThreads(WriteC, CheckStrcpyResult, GLOB + 2);
+#if !defined(WIN32) && !defined(ANDROID)
   RunThreads(WriteC, CheckStpcpyResult, GLOB + 2);
+#endif
   RunThreads(WriteC, CheckStrncpyResult, GLOB + 2);
 }
 
