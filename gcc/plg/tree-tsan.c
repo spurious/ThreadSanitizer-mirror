@@ -24,16 +24,19 @@
 #include "langhooks.h"
 #include "toplev.h"
 #include "output.h"
+#include "options.h"
 #include "diagnostic.h"
-#include "tree-tsan.h"
-
-static enum tsan_ignore_e func_ignore;
-static int func_calls;
-static int func_mops;
-static int ignore_file = -1;
 
 #define SBLOCK_SIZE 5
 #define MAX_MOP_BYTES 16
+
+enum tsan_ignore_e
+{
+  tsan_ignore_none  = 1 << 0,
+  tsan_ignore_mop   = 1 << 1,
+  tsan_ignore_rec   = 1 << 2,
+  tsan_ignore_hist  = 1 << 3
+};
 
 enum bb_state_e
 {
@@ -64,6 +67,10 @@ typedef struct mop_desc_t mop_desc_t;
 DEF_VEC_O(mop_desc_t);
 DEF_VEC_ALLOC_O(mop_desc_t, heap);
 static VEC(mop_desc_t, heap) *mop_list;
+static enum tsan_ignore_e func_ignore;
+static int func_calls;
+static int func_mops;
+static int ignore_file = -1;
 
 static tree
 shadow_stack_def (void)
@@ -123,6 +130,20 @@ rtl_mop_def (void)
   DECL_ATTRIBUTES (def) = tree_cons (get_identifier ("leaf"), NULL, DECL_ATTRIBUTES (def));
   DECL_ASSEMBLER_NAME (def);
   return def;
+}
+
+static bool
+tsan_ignore_file (char const *file)
+{
+  (void)file;
+  return false;
+}
+
+static enum tsan_ignore_e
+tsan_ignore_func (char const *func)
+{
+  (void)func;
+  return tsan_ignore_none;
 }
 
 static void
@@ -300,8 +321,8 @@ instr_vptr_store (tree expr, tree rhs, location_t loc, int is_sblock, gimple_seq
   flags_expr = build_int_cst(unsigned_type_node, flags);
 
   is_store_expr = build2(NE_EXPR, integer_type_node,
-                              build_c_cast(0, size_type_node, expr),
-                              build_c_cast(0, size_type_node, rhs));
+                              build1(VIEW_CONVERT_EXPR, size_type_node, expr),
+                              build1(VIEW_CONVERT_EXPR, size_type_node, rhs));
   is_store_expr = build2(LSHIFT_EXPR, integer_type_node,
                               is_store_expr, integer_one_node);
   flags_expr = build2(BIT_IOR_EXPR, integer_type_node,
@@ -772,7 +793,7 @@ instrument_function (void)
 }
 
 static unsigned
-tsan_pass_func (void)
+tsan_pass (void)
 {
   char const *asm_name;
   location_t loc;
@@ -787,6 +808,9 @@ tsan_pass_func (void)
   gimple_stmt_iterator gsi2;
   gimple first_stmt;
   gimple stmt;
+
+  if (errorcount != 0 || sorrycount != 0)
+    return 0;
 
   /* Check as to whether we need to completely ignore the file or not */
   if (ignore_file == -1)
@@ -844,11 +868,17 @@ tsan_pass_func (void)
   return 0;
 }
 
-struct gimple_opt_pass tsan_pass = {{
+static bool
+tsan_gate (void)
+{
+  return flag_tsan != 0;
+}
+
+struct gimple_opt_pass pass_tsan = {{
   GIMPLE_PASS,
   "tsan",                               /* name */
   tsan_gate,                            /* gate */
-  tsan_pass_func,                       /* execute */
+  tsan_pass,                            /* execute */
   NULL,                                 /* sub */
   NULL,                                 /* next */
   0,                                    /* static_pass_number */

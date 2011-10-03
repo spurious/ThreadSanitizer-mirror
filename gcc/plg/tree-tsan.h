@@ -11,6 +11,7 @@
 #ifndef GCC_TREE_TSAN_H
 #define GCC_TREE_TSAN_H 1
 
+/*
 extern struct gimple_opt_pass tsan_pass;
 
 enum tsan_ignore_e {
@@ -23,5 +24,6 @@ enum tsan_ignore_e {
 bool tsan_gate (void);
 bool tsan_ignore_file (char const *file);
 enum tsan_ignore_e tsan_ignore_func (char const *func);
+*/
 
 #endif /* GCC_TREE_TSAN_H */
