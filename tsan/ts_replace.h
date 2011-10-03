@@ -142,7 +142,6 @@ static NOINLINE int Replace_memcmp(EXTRA_REPLACE_PARAMS const unsigned char *s1,
   for (i = 0; i < len; i++) {
     if (s1[i] != s2[i]) {
       res = (int)s1[i] - (int)s2[i];
-      i++;
       break;
     }
   }
