@@ -21,7 +21,7 @@ enum tsan_ignore_e {
 };
 
 bool tsan_gate (void);
-int tsan_ignore_file (char const *file);
+bool tsan_ignore_file (char const *file);
 enum tsan_ignore_e tsan_ignore_func (char const *func);
 
 #endif /* GCC_TREE_TSAN_H */
