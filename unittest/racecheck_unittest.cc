@@ -8297,5 +8297,162 @@ TEST(PositiveTests, FlushVsThreadStart) {
 }
 }  // namespace
 
+namespace LibcStringFuncitonsTests {  // {{{1
+char GLOB[10]; //[a, b, c, d, e, f, \0]
+char GLOB2[10]; //[a, b, \0, d, e, f, \0]
+
+void WriteB() {
+  GLOB[1] = 'b';
+}
+
+void WriteC() {
+  GLOB[2] = 'c';
+}
+
+void WriteD() {
+  GLOB[3]='d';
+}
+
+void Write0() {
+  GLOB2[2] = 0;
+}
+
+void WriteD2() {
+  GLOB2[3] = 'd';
+}
+
+void CheckMemchrResult() {
+  EXPECT_EQ(GLOB + 2, (char*)memchr(GLOB, 'c', 6));
+}
+
+void CheckStrchrResult() {
+  EXPECT_EQ(GLOB + 2, strchr(GLOB, 'c'));
+}
+
+#if !defined(WIN32) && !defined(__MACH__)
+void CheckStrchrnulResult() {
+  EXPECT_EQ(GLOB + 2, strchrnul(GLOB, 'c'));
+}
+#endif
+
+void CheckStrrchrResult() {
+  EXPECT_EQ(NULL, strrchr(GLOB2, 'c'));
+}
+
+void CheckStrlenResult() {
+  EXPECT_EQ(2, strlen(GLOB2));
+}
+
+void CheckMemcpyResult() {
+  EXPECT_EQ(GLOB, memcpy(GLOB, GLOB2, 2));
+}
+
+void CheckMemmoveResult() {
+  EXPECT_EQ(GLOB, memmove(GLOB, GLOB2, 2));
+}
+
+void CheckMemcmpResult() {
+  EXPECT_LT(memcmp(GLOB2, GLOB, 6), 0);
+}
+
+void CheckStrcpyResult() {
+  EXPECT_EQ(GLOB, strcpy(GLOB, GLOB2));
+  WriteC();
+}
+
+void CheckStpcpyResult() {
+  EXPECT_EQ(GLOB + 2, stpcpy(GLOB, GLOB2));
+  WriteC();
+}
+
+void CheckStrncpyResult() {
+  EXPECT_EQ(GLOB, strncpy(GLOB, GLOB2, 3));
+  WriteC();
+}
+
+void CheckStrcmpResult() {
+  EXPECT_LT(strcmp(GLOB2, GLOB), 0);
+}
+
+void CheckStrncmpResult() {
+  EXPECT_LT(strncmp(GLOB2, GLOB, 6), 0);
+}
+
+void RunThreads(void (*f1)(void), void (*f2)(void), void *address) {
+  strcpy(GLOB, "abcdef");
+  strcpy(GLOB2, "abcdef");
+  GLOB2[2] = 0;
+
+  if (address != NULL) {
+    ANNOTATE_EXPECT_RACE_FOR_TSAN(address, "expected race");
+  }
+  MyThreadArray t(f1, f2);
+  t.Start();
+  t.Join();
+  if (address != NULL) {
+    ANNOTATE_FLUSH_EXPECTED_RACES();
+  }
+}
+
+TEST(NegativeTests, LibcStringFunctions) {
+  // in "abcdef" look for "c", and overwrite "d"
+  RunThreads(WriteD, CheckMemchrResult, NULL);
+  RunThreads(WriteD, CheckStrchrResult, NULL);
+#if !defined(WIN32) && !defined(__MACH__)
+  RunThreads(WriteD, CheckStrchrnulResult, NULL);
+#endif
+
+  // In "ab\0def" look for "c" in "ab", and overwrite "d"
+  RunThreads(WriteD2, CheckStrrchrResult, NULL);
+
+  // In "ab\0def" look for length of "ab", and overwrite "d"
+  RunThreads(WriteD2, CheckStrlenResult, NULL);
+
+  // Copy "ab" from "ab\0def" to "ab" in "abcdef", and overwrite "c"
+  RunThreads(WriteC, CheckMemcpyResult, NULL);
+  RunThreads(WriteC, CheckMemmoveResult, NULL);
+
+  // Compare "ab\0def" and "abcdef", and overwrite "d"
+  RunThreads(WriteD, CheckMemcmpResult, NULL);
+  RunThreads(WriteD, CheckStrcmpResult, NULL);
+  RunThreads(WriteD, CheckStrncmpResult, NULL);
+
+  // Copy "ab\0" from "ab\0def" to "abcdef" (+ restore "c"), and overwrite "d"
+  RunThreads(WriteD, CheckStrcpyResult, NULL);
+  RunThreads(WriteD, CheckStpcpyResult, NULL);
+  RunThreads(WriteD, CheckStrncpyResult, NULL);
+}
+
+TEST(PositiveTests, LibcStringFunctions) {
+  // in "abcdef" look for "c", and overwrite "c"
+  RunThreads(WriteC, CheckMemchrResult, GLOB + 2);
+  RunThreads(WriteC, CheckStrchrResult, GLOB + 2);
+#if !defined(WIN32) && !defined(__MACH__)
+  RunThreads(WriteC, CheckStrchrnulResult, GLOB + 2);
+#endif
+
+  // In "ab\0def" look for "c" in "ab", and overwrite "\0"
+  RunThreads(Write0, CheckStrrchrResult, GLOB2 + 2);
+
+  // In "ab\0def" look for length of "ab", and overwrite "\0"
+  RunThreads(Write0, CheckStrlenResult, GLOB2 + 2);
+
+  // Copy "ab" from "ab\0def" to "ab" in "abcdef", and overwrite "b"
+  RunThreads(WriteB, CheckMemcpyResult, GLOB + 1);
+  RunThreads(WriteB, CheckMemmoveResult, GLOB + 1);
+
+  // Compare "ab\0def" and "abcdef", and overwrite "\0"
+  RunThreads(Write0, CheckMemcmpResult, GLOB2 + 2);
+  RunThreads(Write0, CheckStrcmpResult, GLOB2 + 2);
+  RunThreads(Write0, CheckStrncmpResult, GLOB2 + 2);
+
+  // Copy "ab\0" from "ab\0def" to "abcdef" (+ restore "c"), and overwrite "c"
+  RunThreads(WriteC, CheckStrcpyResult, GLOB + 2);
+  RunThreads(WriteC, CheckStpcpyResult, GLOB + 2);
+  RunThreads(WriteC, CheckStrncpyResult, GLOB + 2);
+}
+
+}  // namespace
+
 // End {{{1
  // vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker
