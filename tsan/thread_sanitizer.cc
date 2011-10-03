@@ -8283,13 +8283,19 @@ static void SetupIgnore() {
 
   // do not create segments in our Replace_* functions
   g_ignore_lists->ignores_hist.push_back(IgnoreFun("Replace_memcpy"));
+  g_ignore_lists->ignores_hist.push_back(IgnoreFun("Replace_memmove"));
+  g_ignore_lists->ignores_hist.push_back(IgnoreFun("Replace_memcmp"));
   g_ignore_lists->ignores_hist.push_back(IgnoreFun("Replace_memchr"));
   g_ignore_lists->ignores_hist.push_back(IgnoreFun("Replace_strcpy"));
+  g_ignore_lists->ignores_hist.push_back(IgnoreFun("Replace_strncpy"));
+  g_ignore_lists->ignores_hist.push_back(IgnoreFun("Replace_stpcpy"));
   g_ignore_lists->ignores_hist.push_back(IgnoreFun("Replace_strchr"));
   g_ignore_lists->ignores_hist.push_back(IgnoreFun("Replace_strchrnul"));
   g_ignore_lists->ignores_hist.push_back(IgnoreFun("Replace_strrchr"));
   g_ignore_lists->ignores_hist.push_back(IgnoreFun("Replace_strlen"));
   g_ignore_lists->ignores_hist.push_back(IgnoreFun("Replace_strcmp"));
+  g_ignore_lists->ignores_hist.push_back(IgnoreFun("Replace_strncmp"));
+  g_ignore_lists->ignores_hist.push_back(IgnoreFun("Replace_strcat"));
 
   // Ignore everything in our own file.
   g_ignore_lists->ignores.push_back(IgnoreFile("*ts_valgrind_intercepts.c"));
