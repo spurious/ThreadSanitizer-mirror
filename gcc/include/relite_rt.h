@@ -28,9 +28,9 @@
 extern "C" {
 #endif
 
-extern __thread void**  ShadowStack;
-extern __thread int     thread_local_ignore;
-extern          void    tsan_rtl_mop    (void* addr, unsigned flags);
+extern __thread char**  __tsan_shadow_stack; // ShadowStack;
+extern __thread int     __tsan_thread_ignore; // thread_local_ignore;
+extern          void    __tsan_handle_mop /*tsan_rtl_mop*/    (void* addr, unsigned flags);
 extern          void*   __builtin_return_address (unsigned int level);
 
 #ifdef __cplusplus

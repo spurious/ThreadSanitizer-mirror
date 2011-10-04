@@ -1136,7 +1136,7 @@ void TsanOnlineInstrument::setupRuntimeGlobals() {
                                    /*isConstant*/false,
                                    GlobalValue::ExternalWeakLinkage,
                                    /*Initializer*/0,
-                                   "ShadowStack",
+                                   "__tsan_shadow_stack",
                                    /*InsertBefore*/0,
                                    /*ThreadLocal*/true);
   ThreadLocalIgnore = new GlobalVariable(*ThisModule,
@@ -1144,7 +1144,7 @@ void TsanOnlineInstrument::setupRuntimeGlobals() {
                                          /*isConstant*/false,
                                          GlobalValue::ExternalWeakLinkage,
                                          /*Initializer*/0,
-                                         "thread_local_ignore",
+                                         "__tsan_thread_ignore",
                                          /*InsertBefore*/0,
                                          /*ThreadLocal*/true);
   LiteraceTid = new GlobalVariable(*ThisModule,

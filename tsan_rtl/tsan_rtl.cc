@@ -71,7 +71,7 @@ void rtn_exit();
 
 extern bool global_ignore;
 static bool FORKED_CHILD = false;  // if true, cannot access other threads' TLS
-__thread int thread_local_ignore;
+__thread int __tsan_thread_ignore;
 __thread bool thread_local_show_stats;
 __thread int thread_local_literace;
 
@@ -94,7 +94,7 @@ static map<uintptr_t, uintptr_t> *data_sections = NULL;
 
 __thread ThreadInfo INFO;
 __thread tid_t LTID;  // literace TID = TID % kLiteRaceNumTids
-__thread CallStackPod ShadowStack;
+__thread CallStackPod __tsan_shadow_stack;
 // TODO(glider): these two should be used consistently.
 // kDTLEBSize should also be a multiple of 4096 (page size).
 // The static TLEB is allocated in TLS, so kTLEBSize should not be very big.
@@ -327,10 +327,10 @@ INLINE void SPut(EventType type, tid_t tid, pc_t pc,
 }
 
 void INLINE flush_trace(TraceInfoPOD *trace) {
-  DCHECK((size_t)(ShadowStack.end_ - ShadowStack.pcs_) > 0);
-  DCHECK((size_t)(ShadowStack.end_ - ShadowStack.pcs_) < kMaxCallStackSize);
+  DCHECK((size_t)(__tsan_shadow_stack.end_ - __tsan_shadow_stack.pcs_) > 0);
+  DCHECK((size_t)(__tsan_shadow_stack.end_ - __tsan_shadow_stack.pcs_) < kMaxCallStackSize);
   DCHECK(RTL_INIT == 1);
-  if (!thread_local_ignore) {
+  if (!__tsan_thread_ignore) {
     tid_t tid = INFO.tid;
     DCHECK(trace);
 #if 0
@@ -383,7 +383,7 @@ void INLINE flush_trace(TraceInfoPOD *trace) {
     }
     {
       ENTER_RTL();
-      DCHECK(ShadowStack.pcs_ <= ShadowStack.end_);
+      DCHECK(__tsan_shadow_stack.pcs_ <= __tsan_shadow_stack.end_);
       ThreadSanitizerHandleTrace(tid,
                                  trace_info,
                                  TLEB);
@@ -405,11 +405,11 @@ void INLINE flush_trace(TraceInfoPOD *trace) {
 // A single-memory-access version of flush_trace. This could be possibly sped up
 // a bit.
 void INLINE flush_single_mop(TraceInfoPOD *trace, uintptr_t addr) {
-  DCHECK((size_t)(ShadowStack.end_ - ShadowStack.pcs_) > 0);
-  DCHECK((size_t)(ShadowStack.end_ - ShadowStack.pcs_) < kMaxCallStackSize);
+  DCHECK((size_t)(__tsan_shadow_stack.end_ - __tsan_shadow_stack.pcs_) > 0);
+  DCHECK((size_t)(__tsan_shadow_stack.end_ - __tsan_shadow_stack.pcs_) < kMaxCallStackSize);
   DCHECK(trace->n_mops_ == 1);
   DCHECK(RTL_INIT == 1);
-  if (!thread_local_ignore) {
+  if (!__tsan_thread_ignore) {
     tid_t tid = INFO.tid;
     DCHECK(trace);
 #if 0
@@ -460,7 +460,7 @@ void INLINE flush_single_mop(TraceInfoPOD *trace, uintptr_t addr) {
     }
     {
       ENTER_RTL();
-      DCHECK(ShadowStack.pcs_ <= ShadowStack.end_);
+      DCHECK(__tsan_shadow_stack.pcs_ <= __tsan_shadow_stack.end_);
       ThreadSanitizerHandleOneMemoryAccess(INFO.thread,
                                            trace_info->mops_[0],
                                            addr);
@@ -638,8 +638,8 @@ bool initialize() {
   LEAVE_RTL();
   __real_atexit(finalize);
   RTL_INIT = 1;
-  memset(ShadowStack.pcs_, 0, kCallStackReserve * sizeof(ShadowStack.pcs_[0]));
-  ShadowStack.end_ = ShadowStack.pcs_ + kCallStackReserve;
+  memset(__tsan_shadow_stack.pcs_, 0, kCallStackReserve * sizeof(__tsan_shadow_stack.pcs_[0]));
+  __tsan_shadow_stack.end_ = __tsan_shadow_stack.pcs_ + kCallStackReserve;
   in_initialize = false;
   // Get the stack size and stack top for the current thread.
   // TODO(glider): do something if pthread_getattr_np() is not supported.
@@ -659,7 +659,7 @@ bool initialize() {
   }
   have_pending_signals = false;
 
-  SPut(THR_START, 0, (pc_t) &ShadowStack, 0, 0);
+  SPut(THR_START, 0, (pc_t) &__tsan_shadow_stack, 0, 0);
 
   ENTER_RTL();
   INFO.thread = ThreadSanitizerGetThreadByTid(0);
@@ -695,8 +695,8 @@ INLINE void UnsafeInitTidCommon() {
   memset(DTLEB, 0, kDTLEBMemory);
 #endif
   memset(TLEB, 0, kTLEBSize);
-  INFO.thread_local_ignore = &thread_local_ignore;
-  thread_local_ignore = !!global_ignore;
+  INFO.thread_local_ignore = &__tsan_thread_ignore;
+  __tsan_thread_ignore = !!global_ignore;
   thread_local_show_stats = G_flags->show_stats;
   thread_local_literace = G_flags->literace_sampling;
   LTID = (INFO.tid % TraceInfoPOD::kLiteRaceNumTids);
@@ -831,9 +831,9 @@ void *pthread_callback(void *arg) {
   }
   have_pending_signals = false;
 
-  memset(ShadowStack.pcs_, 0, kCallStackReserve * sizeof(ShadowStack.pcs_[0]));
-  ShadowStack.end_ = ShadowStack.pcs_ + kCallStackReserve;
-  SPut(THR_START, INFO.tid, (pc_t) &ShadowStack, 0, parent);
+  memset(__tsan_shadow_stack.pcs_, 0, kCallStackReserve * sizeof(__tsan_shadow_stack.pcs_[0]));
+  __tsan_shadow_stack.end_ = __tsan_shadow_stack.pcs_ + kCallStackReserve;
+  SPut(THR_START, INFO.tid, (pc_t) &__tsan_shadow_stack, 0, parent);
 
   INFO.thread = ThreadSanitizerGetThreadByTid(INFO.tid);
   delete cb_arg;
@@ -1254,10 +1254,10 @@ void __wrap_free(void *ptr) {
   //  -- thread_local_ignore (used only in RTL)
   //  -- IGNORE_{READS,WRITES}_{BEG,END} -- used by TSan, should be issued by
   //     the RTL and instrumented code instead of thread_local_ignore.
-  if (thread_local_ignore) SPut(IGNORE_WRITES_BEG, tid, mypc, 0, 0);
+  if (__tsan_thread_ignore) SPut(IGNORE_WRITES_BEG, tid, mypc, 0, 0);
   // Normally pc is equal to 0, but FREE asserts that it is not.
   SPut(FREE, tid, mypc, (uintptr_t)ptr, 0);
-  if (thread_local_ignore) SPut(IGNORE_WRITES_END, tid, mypc, 0, 0);
+  if (__tsan_thread_ignore) SPut(IGNORE_WRITES_END, tid, mypc, 0, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   __real_free(ptr);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
@@ -1284,10 +1284,10 @@ void free(void *ptr) {
   DECLARE_TID_AND_PC();
   pc_t const mypc = (pc_t)free;
   RPut(RTN_CALL, tid, pc, mypc, 0);
-  if (thread_local_ignore) SPut(IGNORE_WRITES_BEG, tid, mypc, 0, 0);
+  if (__tsan_thread_ignore) SPut(IGNORE_WRITES_BEG, tid, mypc, 0, 0);
   // Normally pc is equal to 0, but FREE asserts that it is not.
   SPut(FREE, tid, mypc, (uintptr_t)ptr, 0);
-  if (thread_local_ignore) SPut(IGNORE_WRITES_END, tid, mypc, 0, 0);
+  if (__tsan_thread_ignore) SPut(IGNORE_WRITES_END, tid, mypc, 0, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   __libc_free(ptr);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
@@ -1303,9 +1303,9 @@ void *__wrap_realloc(void *ptr, size_t size) {
   DECLARE_TID_AND_PC();
   pc_t const mypc = (pc_t)__real_realloc;
   RPut(RTN_CALL, tid, pc, mypc, 0);
-  if (thread_local_ignore) SPut(IGNORE_WRITES_BEG, tid, mypc, 0, 0);
+  if (__tsan_thread_ignore) SPut(IGNORE_WRITES_BEG, tid, mypc, 0, 0);
   SPut(FREE, tid, mypc, (uintptr_t)ptr, 0);
-  if (thread_local_ignore) SPut(IGNORE_WRITES_END, tid, mypc, 0, 0);
+  if (__tsan_thread_ignore) SPut(IGNORE_WRITES_END, tid, mypc, 0, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   result = __real_realloc(ptr, size);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
@@ -1323,9 +1323,9 @@ void *realloc(void *ptr, size_t size) {
   DECLARE_TID_AND_PC();
   pc_t const mypc = (pc_t)realloc;
   RPut(RTN_CALL, tid, pc, mypc, 0);
-  if (thread_local_ignore) SPut(IGNORE_WRITES_BEG, tid, mypc, 0, 0);
+  if (__tsan_thread_ignore) SPut(IGNORE_WRITES_BEG, tid, mypc, 0, 0);
   SPut(FREE, tid, mypc, (uintptr_t)ptr, 0);
-  if (thread_local_ignore) SPut(IGNORE_WRITES_END, tid, mypc, 0, 0);
+  if (__tsan_thread_ignore) SPut(IGNORE_WRITES_END, tid, mypc, 0, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   result = __libc_realloc(ptr, size);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
@@ -1476,9 +1476,9 @@ void __wrap__ZdlPv(void *ptr) {
   DECLARE_TID_AND_PC();
   pc_t const mypc = (pc_t)__real__ZdlPv;
   RPut(RTN_CALL, tid, pc, mypc, 0);
-  if (thread_local_ignore) SPut(IGNORE_WRITES_BEG, tid, mypc, 0, 0);
+  if (__tsan_thread_ignore) SPut(IGNORE_WRITES_BEG, tid, mypc, 0, 0);
   SPut(FREE, tid, mypc, (uintptr_t)ptr, 0);
-  if (thread_local_ignore) SPut(IGNORE_WRITES_END, tid, mypc, 0, 0);
+  if (__tsan_thread_ignore) SPut(IGNORE_WRITES_END, tid, mypc, 0, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   __real__ZdlPv(ptr);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
@@ -1493,9 +1493,9 @@ void __wrap__ZdlPvRKSt9nothrow_t(void *ptr, std::nothrow_t &nt) {
   DECLARE_TID_AND_PC();
   pc_t const mypc = (pc_t)__real__ZdlPvRKSt9nothrow_t;
   RPut(RTN_CALL, tid, pc, mypc, 0);
-  if (thread_local_ignore) SPut(IGNORE_WRITES_BEG, tid, mypc, 0, 0);
+  if (__tsan_thread_ignore) SPut(IGNORE_WRITES_BEG, tid, mypc, 0, 0);
   SPut(FREE, tid, mypc, (uintptr_t)ptr, 0);
-  if (thread_local_ignore) SPut(IGNORE_WRITES_END, tid, mypc, 0, 0);
+  if (__tsan_thread_ignore) SPut(IGNORE_WRITES_END, tid, mypc, 0, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   __real__ZdlPvRKSt9nothrow_t(ptr, nt);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
@@ -1510,9 +1510,9 @@ void __wrap__ZdaPv(void *ptr) {
   DECLARE_TID_AND_PC();
   pc_t const mypc = (pc_t)__real__ZdaPv;
   RPut(RTN_CALL, tid, pc, mypc, 0);
-  if (thread_local_ignore) SPut(IGNORE_WRITES_BEG, tid, mypc, 0, 0);
+  if (__tsan_thread_ignore) SPut(IGNORE_WRITES_BEG, tid, mypc, 0, 0);
   SPut(FREE, tid, mypc, (uintptr_t)ptr, 0);
-  if (thread_local_ignore) SPut(IGNORE_WRITES_END, tid, mypc, 0, 0);
+  if (__tsan_thread_ignore) SPut(IGNORE_WRITES_END, tid, mypc, 0, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   __real__ZdaPv(ptr);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
@@ -1527,9 +1527,9 @@ void __wrap__ZdaPvRKSt9nothrow_t(void *ptr, std::nothrow_t &nt) {
   DECLARE_TID_AND_PC();
   pc_t const mypc = (pc_t)__real__ZdaPvRKSt9nothrow_t;
   RPut(RTN_CALL, tid, pc, mypc, 0);
-  if (thread_local_ignore) SPut(IGNORE_WRITES_BEG, tid, mypc, 0, 0);
+  if (__tsan_thread_ignore) SPut(IGNORE_WRITES_BEG, tid, mypc, 0, 0);
   SPut(FREE, tid, mypc, (uintptr_t)ptr, 0);
-  if (thread_local_ignore) SPut(IGNORE_WRITES_END, tid, mypc, 0, 0);
+  if (__tsan_thread_ignore) SPut(IGNORE_WRITES_END, tid, mypc, 0, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
   __real__ZdaPvRKSt9nothrow_t(ptr, nt);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
@@ -2714,9 +2714,9 @@ const uintptr_t kInvalidStackFrame = 0xdeadbeef;
 //     (which is almost always an error, except for __wrap_pthread_once())
 static void validate_shadow_stack(uintptr_t addr) {
   // If there's less than one valid frame, do nothing.
-  if (ShadowStack.end_ - ShadowStack.pcs_ < 1) return;
-  uintptr_t *frame = ShadowStack.end_ - 1;  // The last valid ShadowStack frame.
-  while (frame - ShadowStack.pcs_ > 1) {
+  if (__tsan_shadow_stack.end_ - __tsan_shadow_stack.pcs_ < 1) return;
+  uintptr_t *frame = __tsan_shadow_stack.end_ - 1;  // The last valid __tsan_shadow_stack frame.
+  while (frame - __tsan_shadow_stack.pcs_ > 1) {
     if (*frame == addr) {
       Printf("Shadow stack validation failed!\n");
       PrintStackTrace();
@@ -2735,20 +2735,20 @@ void rtn_call(void *addr, void *pc) {
     }
   }
   if (is_llvm == false)
-    ShadowStack.end_[-1] = (uintptr_t)pc;
-  ShadowStack.end_[0] = (uintptr_t)addr;
-  ShadowStack.end_++;
-  DCHECK(ShadowStack.end_ > ShadowStack.pcs_);
-  DCHECK((size_t)(ShadowStack.end_ - ShadowStack.pcs_) < kMaxCallStackSize);
+    __tsan_shadow_stack.end_[-1] = (uintptr_t)pc;
+  __tsan_shadow_stack.end_[0] = (uintptr_t)addr;
+  __tsan_shadow_stack.end_++;
+  DCHECK(__tsan_shadow_stack.end_ > __tsan_shadow_stack.pcs_);
+  DCHECK((size_t)(__tsan_shadow_stack.end_ - __tsan_shadow_stack.pcs_) < kMaxCallStackSize);
 }
 
 void rtn_exit() {
   DDPrintf("T%d: RTN_EXIT [pc=(nil); a=(nil); i=(nil)]\n", INFO.tid);
-  DCHECK(ShadowStack.end_ > ShadowStack.pcs_);
-  DCHECK((size_t)(ShadowStack.end_ - ShadowStack.pcs_) < kMaxCallStackSize);
-  ShadowStack.end_--;
+  DCHECK(__tsan_shadow_stack.end_ > __tsan_shadow_stack.pcs_);
+  DCHECK((size_t)(__tsan_shadow_stack.end_ - __tsan_shadow_stack.pcs_) < kMaxCallStackSize);
+  __tsan_shadow_stack.end_--;
   if (DEBUG_SHADOW_STACK) {
-    *ShadowStack.end_ = kInvalidStackFrame;
+    *__tsan_shadow_stack.end_ = kInvalidStackFrame;
     validate_shadow_stack(kInvalidStackFrame);
   }
 }
@@ -2836,16 +2836,16 @@ void shadow_stack_check(uintptr_t old_v, uintptr_t new_v) {
     PrintStackTrace();
     assert(old_v == new_v);  // die
   } else {
-    DDPrintf("ShadowStack ok: %p == %p\n", old_v, new_v);
+    DDPrintf("__tsan_shadow_stack ok: %p == %p\n", old_v, new_v);
   }
 }
 // }}}
 
 void PrintStackTrace() {
-  uintptr_t *pc = ShadowStack.end_ - 1;  // Start from the last valid frame.
+  uintptr_t *pc = __tsan_shadow_stack.end_ - 1;  // Start from the last valid frame.
   Printf("T%d STACK\n", ExGetTid());
-  // ShadowStack.pcs_[0] is always 0.
-  while (pc != ShadowStack.pcs_) {
+  // __tsan_shadow_stack.pcs_[0] is always 0.
+  while (pc != __tsan_shadow_stack.pcs_) {
     Printf("    %p %s\n", *pc, PcToRtnName(*pc, true).c_str());
     pc--;
   }
@@ -3328,8 +3328,8 @@ void PcToStrings(pc_t pc, bool demangle,
 }
 
 extern "C"
-void tsan_rtl_mop(void *addr, unsigned flags) {
-  if (thread_local_ignore == 0) {
+void __tsan_handle_mop(void *addr, unsigned flags) {
+  if (__tsan_thread_ignore == 0) {
     ENTER_RTL();
     void* pc = __builtin_return_address(0);
     uint64_t mop = (uint64_t)(uintptr_t)pc | ((uint64_t)flags) << 58;

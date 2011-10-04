@@ -1035,15 +1035,15 @@ void                    relite_prepass      (relite_context_t* ctx) {
     return;
 
   // Find required RTL definitions
-  ctx->rtl_stack = lookup_name(get_identifier("ShadowStack"));
+  ctx->rtl_stack = lookup_name(get_identifier("__tsan_shadow_stack"));
   if (ctx->rtl_stack == 0)
-    printf("relite: can't find ShadowStack rtl decl\n"), exit(1);
-  ctx->rtl_ignore = lookup_name(get_identifier("thread_local_ignore"));
+    printf("relite: can't find __tsan_shadow_stack rtl decl\n"), exit(1);
+  ctx->rtl_ignore = lookup_name(get_identifier("__tsan_thread_ignore"));
   if (ctx->rtl_ignore == 0)
-    printf("relite: can't find thread_local_ignore rtl decl\n"), exit(1);
-  ctx->rtl_mop = lookup_name(get_identifier("tsan_rtl_mop"));
+    printf("relite: can't find __tsan_thread_ignore rtl decl\n"), exit(1);
+  ctx->rtl_mop = lookup_name(get_identifier("__tsan_handle_mop"));
   if (ctx->rtl_mop == 0)
-    printf("relite: can't find tsan_rtl_mop() rtl decl\n"), exit(1);
+    printf("relite: can't find __tsan_handle_mop() rtl decl\n"), exit(1);
   ctx->rtl_retaddr = lookup_name(get_identifier("__builtin_return_address"));
   if (ctx->rtl_retaddr == 0)
     printf("relite: can't find __builtin_return_address() rtl decl\n"), exit(1);

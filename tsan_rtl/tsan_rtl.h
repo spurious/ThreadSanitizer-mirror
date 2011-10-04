@@ -122,7 +122,7 @@ tid_t GetTid();
 extern FILE* G_out;
 // Reentrancy counter
 extern __thread int IN_RTL;
-extern __thread CallStackPod ShadowStack;
+extern __thread CallStackPod __tsan_shadow_stack;
 extern __thread ThreadInfo INFO;
 
 void ReadElf();
