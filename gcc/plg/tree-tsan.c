@@ -20,7 +20,6 @@
 #include "tree-flow.h"
 #include "tree-pass.h"
 #include "cfghooks.h"
-#include "cp/cp-tree.h"
 #include "langhooks.h"
 #include "toplev.h"
 #include "output.h"
@@ -473,7 +472,6 @@ static void
 instrument_mop(gimple stmt, gimple_stmt_iterator *gsi, location_t loc,
                tree expr, int is_store, VEC(mop_desc_t, heap) **mop_list)
 {
-  tree expr_ssa;
   char const* reason;
   enum tree_code tcode;
   unsigned fld_off;
@@ -484,11 +482,8 @@ instrument_mop(gimple stmt, gimple_stmt_iterator *gsi, location_t loc,
   (void)loc;
 
   /* map SSA name to real name */
-  expr_ssa = 0;
-  if (TREE_CODE(expr) == SSA_NAME) {
-    expr_ssa = expr;
+  if (TREE_CODE(expr) == SSA_NAME)
     expr = SSA_NAME_VAR(expr);
-  }
 
   if (is_fake_mop(expr))
     return;
