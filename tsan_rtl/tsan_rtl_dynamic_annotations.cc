@@ -30,7 +30,7 @@
 #include "dynamic_annotations.h"
 #include "fake_annotations.h"
 #include "tsan_rtl.h"
-#include "../../earthquake/earthquake_core.h"
+#include "earthquake_core.h"
 
 #undef DECLARE_TID_AND_PC
 #define DECLARE_TID_AND_PC() \

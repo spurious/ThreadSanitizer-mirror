@@ -50,7 +50,7 @@ OBJS64=amd64-ts_util.o amd64-suppressions.o \
 
 COMMON_FLAGS=-I. -I../third_party/stlport \
       -I$(TSAN_PATH) -I../dynamic_annotations \
-      -I../earthquake \
+      -I../earthquake -I$(BFDS_PATH) \
       -fno-exceptions -g -O2 \
       -D_STLP_NO_IOSTREAMS=1 -DTS_LLVM -fPIE
 

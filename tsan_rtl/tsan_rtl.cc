@@ -27,9 +27,9 @@
 // Author: glider@google.com (Alexander Potapenko)
 
 #include "tsan_rtl.h"
-#include "../../earthquake/earthquake_wrap.h"
+#include "earthquake_wrap.h"
 #ifndef TSAN_NO_BFD
-#include "../../bfd_symbolizer/bfd_symbolizer.h"
+#include "bfd_symbolizer.h"
 #endif
 
 #include "ts_trace_info.h"
