@@ -1947,10 +1947,12 @@ class Segment {
     const VTS *vts_a = seg_a->vts();
     const VTS *vts_b = seg_b->vts();
     res = VTS::HappensBeforeCached(vts_a, vts_b);
-    if (0 && DEBUG_MODE) {
+#if 0
+    if (DEBUG_MODE) {
       Printf("HB = %d\n  %s\n  %s\n", res,
            vts_a->ToString().c_str(), vts_b->ToString().c_str());
     }
+#endif
     return res;
   }
 
@@ -3007,7 +3009,11 @@ class CacheLine {
   uintptr_t tag() { return tag_; }
 
   void DebugTrace(uintptr_t off, const char *where_str, int where_int) {
-    if (0 && DEBUG_MODE && tag() == G_flags->trace_addr) {
+    (void)off;
+    (void)where_str;
+    (void)where_int;
+#if 0
+    if (DEBUG_MODE && tag() == G_flags->trace_addr) {
       uintptr_t off8 = off & ~7;
       Printf("CacheLine %p, off=%ld off8=%ld gr=%d "
              "has_sval: %d%d%d%d%d%d%d%d (%s:%d)\n",
@@ -3024,6 +3030,7 @@ class CacheLine {
              where_str, where_int
              );
     }
+#endif
   }
 
   // Add a new shadow value to a place where there was no shadow value before.
