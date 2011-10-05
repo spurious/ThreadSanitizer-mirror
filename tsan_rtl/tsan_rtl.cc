@@ -3166,7 +3166,7 @@ void ReadElf() {
       debug_info_size = size;
       continue;
     }
-    if (flags && SHF_TLS) {
+    if (flags & SHF_TLS) {
       if ((strcmp(hdr_strings + name, ".tbss") == 0) ||
           (strcmp(hdr_strings + name, ".tdata") == 0)) {
         static_tls_size += size;
@@ -3176,7 +3176,7 @@ void ReadElf() {
         continue;
       }
     }
-    if (flags && SHF_ALLOC) {
+    if (flags & SHF_ALLOC) {
       // TODO(glider): does any other section contain globals?
       if ((strcmp(hdr_strings + name, ".bss") == 0) ||
           (strcmp(hdr_strings + name, ".rodata") == 0) ||
