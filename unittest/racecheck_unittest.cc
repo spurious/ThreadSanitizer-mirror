@@ -77,6 +77,16 @@
 static CondVar CV;
 static int     COND = 0;
 
+static bool RunningOnPinLinux() {
+#ifndef WIN32
+  char *framework = getenv("INSTRUMENTATION_FRAMEWORK");
+  if (framework != NULL) {
+    return strcmp(framework, "PIN_LINUX") == 0;
+  }
+#endif
+  return false;
+}
+
 // test00: {{{1
 namespace test00 {
 int     GLOB = 0;
@@ -8397,6 +8407,12 @@ void RunThreads(void (*f1)(void), void (*f2)(void), void *address) {
 }
 
 TEST(NegativeTests, LibcStringFunctions) {
+  // We've got some problems with TSan-PIN on Linux:
+  // http://code.google.com/p/data-race-test/issues/detail?id=76
+  if (RunningOnPinLinux()) {
+    return;
+  }
+
   // in "abcdef" look for "c", and overwrite "d"
   RunThreads(WriteD, CheckMemchrResult, NULL);
   RunThreads(WriteD, CheckStrchrResult, NULL);
@@ -8428,6 +8444,12 @@ TEST(NegativeTests, LibcStringFunctions) {
 }
 
 TEST(PositiveTests, LibcStringFunctions) {
+  // We've got some problems with TSan-PIN on Linux:
+  // http://code.google.com/p/data-race-test/issues/detail?id=76
+  if (RunningOnPinLinux()) {
+    return;
+  }
+
   // in "abcdef" look for "c", and overwrite "c"
   RunThreads(WriteC, CheckMemchrResult, GLOB + 2);
   RunThreads(WriteC, CheckStrchrResult, GLOB + 2);
