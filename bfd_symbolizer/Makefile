@@ -1,7 +1,7 @@
 CFLAGS+=-Wall -fPIC
 
 ifeq ($(BINUTILS_VER), )
-  BINUTILS_VER=2.21
+  BINUTILS_VER=2.21.1
 endif
 
 ifeq ($(LIBUNWIND_VER), )
@@ -79,7 +79,7 @@ libbfds64.so: bfd_symbolizer.c bfd_symbolizer.h ./binutils64so/bin/lib/libbfd.a
 	wget http://ftp.gnu.org/gnu/binutils/binutils-$(BINUTILS_VER).tar.bz2
 
 ./libunwind-$(LIBUNWIND_VER).tar.gz:
-	wget http://download.savannah.gnu.org/releases/libunwind/libunwind-$(BINUTILS_VER).tar.gz
+	wget http://download.savannah.gnu.org/releases/libunwind/libunwind-$(LIBUNWIND_VER).tar.gz
 
 ./libunwind64/lib/libunwind.a: ./libunwind-$(LIBUNWIND_VER).tar.gz
 	rm -Rf ./libunwind64 && mkdir ./libunwind64
