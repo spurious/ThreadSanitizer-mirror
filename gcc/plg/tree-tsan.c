@@ -79,13 +79,23 @@ struct mop_desc_t
   int                   is_store;
 };
 
+struct tsan_ignore_desc_t
+{
+  struct tsan_ignore_desc_t *next;
+  enum tsan_ignore_e         type;
+  char                      *name;
+};
+
 typedef struct mop_desc_t mop_desc_t;
-DEF_VEC_O(mop_desc_t);
-DEF_VEC_ALLOC_O(mop_desc_t, heap);
-static VEC(mop_desc_t, heap) *mop_list;
+DEF_VEC_O (mop_desc_t);
+DEF_VEC_ALLOC_O (mop_desc_t, heap);
+static VEC (mop_desc_t, heap) *mop_list;
 static enum tsan_ignore_e func_ignore;
 static int func_calls;
 static int func_mops;
+static int ignore_init = 0;
+static int ignore_file = 0;
+static struct tsan_ignore_desc_t *ignore_head;
 
 static tree
 shadow_stack_def (void)
@@ -95,13 +105,13 @@ shadow_stack_def (void)
   if (def != NULL)
     return def;
 
-  def = lookup_name(get_identifier("__tsan_shadow_stack"));
+  def = lookup_name (get_identifier ("__tsan_shadow_stack"));
   if (def != NULL)
     return def;
 
   def = build_decl (UNKNOWN_LOCATION, VAR_DECL, 
 		    get_identifier ("__tsan_shadow_stack"), 
-		    build_pointer_type(ptr_type_node));
+		    build_pointer_type (ptr_type_node));
   TREE_STATIC (def) = 1;
   TREE_PUBLIC (def) = 0;
   DECL_INITIAL (def) = NULL;
@@ -120,7 +130,7 @@ thread_ignore_def (void)
   if (def != NULL)
     return def;
 
-  def = lookup_name(get_identifier("__tsan_thread_ignore"));
+  def = lookup_name (get_identifier ("__tsan_thread_ignore"));
   if (def != NULL)
     return def;
 
@@ -147,7 +157,7 @@ rtl_mop_def (void)
   if (def != NULL)
     return def;
 
-  def = lookup_name(get_identifier("__tsan_handle_mop"));
+  def = lookup_name (get_identifier ("__tsan_handle_mop"));
   if (def != NULL)
     return def;
 
@@ -159,24 +169,14 @@ rtl_mop_def (void)
   return def;
 }
 
-struct tsan_ignore_desc_t {
-  struct tsan_ignore_desc_t *next;
-  enum tsan_ignore_e type;
-  char *name;
-};
-
-static int ignore_init = 0;
-static int ignore_file = 0;
-static struct tsan_ignore_desc_t *ignore_head;
-
 static void
 ignore_append (enum tsan_ignore_e type, char *name)
 {
   struct tsan_ignore_desc_t *desc;
 
-  desc = (struct tsan_ignore_desc_t*)xmalloc(sizeof(*desc));
+  desc = (struct tsan_ignore_desc_t*)xmalloc (sizeof (*desc));
   desc->type = type;
-  desc->name = xstrdup(name);
+  desc->name = xstrdup (name);
   desc->next = ignore_head;
   ignore_head = desc;
 }
@@ -187,23 +187,23 @@ ignore_match (char *templ, const char *str)
   char *tpos;
   const char *spos;
 
-  while (templ[0])
+  while (templ [0])
     {
-      if (templ[0] == '*')
+      if (templ [0] == '*')
         {
           templ++;
           continue;
         }
-      if (str[0] == 0)
+      if (str [0] == 0)
         return 0;
       tpos = strchr (templ, '*');
       if (tpos != NULL)
-        tpos[0] = 0;
+        tpos [0] = 0;
       spos = strstr (str, templ);
       str = spos + strlen (templ);
       templ = tpos;
       if (tpos != NULL)
-        tpos[0] = '*';
+        tpos [0] = '*';
       if (spos == NULL)
         return 0;
     }
@@ -218,14 +218,14 @@ ignore_load (void)
   size_t linesz;
   ssize_t sz;
 
-  if (flag_tsan_ignore == NULL || flag_tsan_ignore[0] == 0)
+  if (flag_tsan_ignore == NULL || flag_tsan_ignore [0] == 0)
     return;
-printf("opening ignore file '%s'\n", flag_tsan_ignore);
+printf ("opening ignore file '%s'\n", flag_tsan_ignore);
   f = fopen (flag_tsan_ignore, "r");
   if (f == NULL)
     {
-      printf("failed to open ignore file '%s' (errno=%d)\n", flag_tsan_ignore, errno);
-      exit(1);
+      printf ("failed to open ignore file '%s' (errno=%d)\n", flag_tsan_ignore, errno);
+      exit (1);
     }
 
   line = 0;
@@ -235,27 +235,27 @@ printf("opening ignore file '%s'\n", flag_tsan_ignore);
       if (sz == 0)
         continue;
       /* strip line terminator */
-      line[sz-1] = 0;
-      if (strncmp (line, "src:", sizeof("src:")-1) == 0)
+      line [sz-1] = 0;
+      if (strncmp (line, "src:", sizeof ("src:")-1) == 0)
         {
-          if (ignore_match (line + sizeof("src:")-1, main_input_filename))
+          if (ignore_match (line + sizeof ("src:")-1, main_input_filename))
             {
               /* don't care about anything else */
               ignore_file = 1;
               break;
             }
         }
-      else if (strncmp (line, "fun:", sizeof("fun:")-1) == 0)
-        ignore_append (tsan_ignore_mop, line + sizeof("fun:")-1);
-      else if (strncmp (line, "fun_r:", sizeof("fun_r:")-1) == 0)
-        ignore_append (tsan_ignore_mop, line + sizeof("fun_r:")-1);
-      else if (strncmp (line, "fun_hist:", sizeof("fun_hist:")-1) == 0)
-        ignore_append (tsan_ignore_mop, line + sizeof("fun_hist:")-1);
+      else if (strncmp (line, "fun:", sizeof ("fun:")-1) == 0)
+        ignore_append (tsan_ignore_mop, line + sizeof ("fun:")-1);
+      else if (strncmp (line, "fun_r:", sizeof ("fun_r:")-1) == 0)
+        ignore_append (tsan_ignore_mop, line + sizeof ("fun_r:")-1);
+      else if (strncmp (line, "fun_hist:", sizeof ("fun_hist:")-1) == 0)
+        ignore_append (tsan_ignore_mop, line + sizeof ("fun_hist:")-1);
       /* other lines are not interesting */
     }
 
-  free(line);
-  fclose(f);
+  free (line);
+  fclose (f);
 }
 
 static enum tsan_ignore_e
@@ -266,14 +266,14 @@ tsan_ignore (void)
 
   if (ignore_init == 0)
     {
-      ignore_load();
+      ignore_load ();
       ignore_init = 1;
     }
 
   if (ignore_file)
     return tsan_ignore_func;
 
-  func_name = IDENTIFIER_POINTER(DECL_ASSEMBLER_NAME(cfun->decl));
+  func_name = IDENTIFIER_POINTER (DECL_ASSEMBLER_NAME (cfun->decl));
   if (strncmp (func_name, "__tsan_", sizeof ("__tsan_") - 1) == 0)
     return tsan_ignore_func;
 
@@ -300,9 +300,9 @@ build_stack_op (gimple_seq *seq, bool do_dec)
   tree rtl_stack;
   gimple_seq s;
 
-  op_size = TYPE_SIZE(ptr_type_node);
-  op_size_cst = tree_to_double_int(op_size);
-  /* TODO(dvyukov): use target arch byte size */
+  op_size = TYPE_SIZE (ptr_type_node);
+  op_size_cst = tree_to_double_int (op_size);
+  /* TODO (dvyukov): use target arch byte size */
   size_val = op_size_cst.low / __CHAR_BIT__;
   size_valhi = 0;
   if (do_dec)
@@ -312,7 +312,7 @@ build_stack_op (gimple_seq *seq, bool do_dec)
     }
   op_size = build_int_cst_wide (sizetype, size_val, size_valhi);
   rtl_stack = shadow_stack_def ();
-  op_expr = build2( POINTER_PLUS_EXPR, ptr_type_node, rtl_stack, op_size);
+  op_expr = build2 (POINTER_PLUS_EXPR, ptr_type_node, rtl_stack, op_size);
   assign = build2 (MODIFY_EXPR, ptr_type_node, rtl_stack, op_expr);
   s = NULL;
   force_gimple_operand (assign, &s, true, NULL_TREE);
@@ -331,19 +331,19 @@ build_rec_ignore_op (gimple_seq *seq, enum tree_code op)
   tree rtl_ignore;
 
   rtl_ignore = thread_ignore_def ();
-  rec_expr = build2(op, integer_type_node, rtl_ignore, integer_one_node);
+  rec_expr = build2 (op, integer_type_node, rtl_ignore, integer_one_node);
   rec_inc = NULL;
-  rec_expr = force_gimple_operand(rec_expr, &rec_inc, true, NULL_TREE);
-  rec_assign = gimple_build_assign(rtl_ignore, rec_expr);
-  gimple_seq_add_seq(seq, rec_inc);
-  gimple_seq_add_stmt(seq, rec_assign);
+  rec_expr = force_gimple_operand (rec_expr, &rec_inc, true, NULL_TREE);
+  rec_assign = gimple_build_assign (rtl_ignore, rec_expr);
+  gimple_seq_add_seq (seq, rec_inc);
+  gimple_seq_add_stmt (seq, rec_assign);
 }
 
 static void
 build_stack_assign (gimple_seq *seq)
 {
   /* Build the following gimple sequence:
-     ShadowStack[-1] = __builtin_return_address(0); */
+     ShadowStack [-1] = __builtin_return_address (0); */
 
   tree pc_addr;
   tree op_size;
@@ -354,8 +354,8 @@ build_stack_assign (gimple_seq *seq)
   tree assign;
   tree rtl_retaddr;
 
-  rtl_retaddr = implicit_built_in_decls[BUILT_IN_RETURN_ADDRESS];
-  pc_addr = build_call_expr(rtl_retaddr, 1, integer_zero_node);
+  rtl_retaddr = implicit_built_in_decls [BUILT_IN_RETURN_ADDRESS];
+  pc_addr = build_call_expr (rtl_retaddr, 1, integer_zero_node);
 
   op_size = TYPE_SIZE (ptr_type_node);
   op_size_cst = tree_to_double_int (op_size);
@@ -366,7 +366,7 @@ build_stack_assign (gimple_seq *seq)
 
   stack_op = build1 (INDIRECT_REF, ptr_type_node, op_expr);
   assign = build2 (MODIFY_EXPR, ptr_type_node, stack_op, pc_addr);
-  force_gimple_operand(assign, seq, true, NULL_TREE);
+  force_gimple_operand (assign, seq, true, NULL_TREE);
 }
 
 static void
@@ -376,14 +376,14 @@ instr_func (gimple_seq *pre, gimple_seq *post)
   if (func_calls == 0 && func_mops == 0)
     return;
 
-  build_stack_assign(pre);
-  build_stack_op(pre, false);
-  build_stack_op(post, true);
+  build_stack_assign (pre);
+  build_stack_op (pre, false);
+  build_stack_op (post, true);
 
   if (func_ignore == tsan_ignore_rec && func_calls != 0)
     {
-      build_rec_ignore_op(pre, PLUS_EXPR);
-      build_rec_ignore_op(post, MINUS_EXPR);
+      build_rec_ignore_op (pre, PLUS_EXPR);
+      build_rec_ignore_op (post, MINUS_EXPR);
     }
 }
 
@@ -391,7 +391,7 @@ static void
 instr_mop (tree expr, location_t loc, int is_store, int is_sblock, gimple_seq *gseq)
 {
   /* Builds the following gimple sequence:
-     tsan_rtl_mop(&expr, (is_sblock | (is_store << 1) | ((sizeof(expr)-1) << 2) */
+     tsan_rtl_mop (&expr, (is_sblock | (is_store << 1) | ((sizeof (expr)-1) << 2) */
 
   tree addr_expr;
   tree expr_type;
@@ -403,29 +403,29 @@ instr_mop (tree expr, location_t loc, int is_store, int is_sblock, gimple_seq *g
 
   (void)loc;
 
-  gcc_assert(gseq != 0 && *gseq == 0);
-  gcc_assert(is_gimple_addressable(expr));
+  gcc_assert (gseq != 0 && *gseq == 0);
+  gcc_assert (is_gimple_addressable (expr));
 
-  addr_expr = build_addr(expr, current_function_decl);
-  expr_type = TREE_TYPE(expr);
-  /* TODO(dvyukov): try to remove that WTF, and see if compiler crashes w/o that */
-  while (TREE_CODE(expr_type) == ARRAY_TYPE)
-    expr_type = TREE_TYPE(expr_type);
-  expr_size = TYPE_SIZE(expr_type);
+  addr_expr = build_addr (expr, current_function_decl);
+  expr_type = TREE_TYPE (expr);
+  /* TODO (dvyukov): try to remove that WTF, and see if compiler crashes w/o that */
+  while (TREE_CODE (expr_type) == ARRAY_TYPE)
+    expr_type = TREE_TYPE (expr_type);
+  expr_size = TYPE_SIZE (expr_type);
   /*!!! use:
-  //#define TREE_INT_CST_LOW(NODE) (TREE_INT_CST (NODE).low)
-  //#define TREE_INT_CST_HIGH(NODE) (TREE_INT_CST (NODE).high) */
-  size = tree_to_double_int(expr_size);
-  gcc_assert(size.high == 0 && size.low != 0);
+  //#define TREE_INT_CST_LOW (NODE) (TREE_INT_CST (NODE).low)
+  //#define TREE_INT_CST_HIGH (NODE) (TREE_INT_CST (NODE).high) */
+  size = tree_to_double_int (expr_size);
+  gcc_assert (size.high == 0 && size.low != 0);
   size.low = (size.low / __CHAR_BIT__);
   if (size.low > MAX_MOP_BYTES)
     size.low = MAX_MOP_BYTES;
   size.low = size.low - 1;
   flags = ((!!is_sblock << 0) + (!!is_store << 1) + (size.low << 2));
-  flags_expr = build_int_cst(unsigned_type_node, flags);
+  flags_expr = build_int_cst (unsigned_type_node, flags);
 
-  call_expr = build_call_expr(rtl_mop_def (), 2, addr_expr, flags_expr);
-  force_gimple_operand(call_expr, gseq, true, 0);
+  call_expr = build_call_expr (rtl_mop_def (), 2, addr_expr, flags_expr);
+  force_gimple_operand (call_expr, gseq, true, 0);
 }
 
 
@@ -434,7 +434,7 @@ instr_vptr_store (tree expr, tree rhs, location_t loc, int is_sblock, gimple_seq
 {
   /* Builds the following gimple sequence:
      int is_store = (expr != rhs);
-     tsan_rtl_mop(&expr, (is_sblock | (is_store << 1) | ((sizeof(expr)-1) << 2) */
+     tsan_rtl_mop (&expr, (is_sblock | (is_store << 1) | ((sizeof (expr)-1) << 2) */
 
   tree expr_ptr;
   tree addr_expr;
@@ -449,37 +449,37 @@ instr_vptr_store (tree expr, tree rhs, location_t loc, int is_sblock, gimple_seq
 
   (void)loc;
 
-  expr_ptr = build_addr(expr, current_function_decl);
-  addr_expr = force_gimple_operand(expr_ptr, gseq, true, NULL_TREE);
+  expr_ptr = build_addr (expr, current_function_decl);
+  addr_expr = force_gimple_operand (expr_ptr, gseq, true, NULL_TREE);
 
-  expr_type = TREE_TYPE(expr);
-  while (TREE_CODE(expr_type) == ARRAY_TYPE)
-    expr_type = TREE_TYPE(expr_type);
-  expr_size = TYPE_SIZE(expr_type);
-  size = tree_to_double_int(expr_size);
-  gcc_assert(size.high == 0 && size.low != 0);
+  expr_type = TREE_TYPE (expr);
+  while (TREE_CODE (expr_type) == ARRAY_TYPE)
+    expr_type = TREE_TYPE (expr_type);
+  expr_size = TYPE_SIZE (expr_type);
+  size = tree_to_double_int (expr_size);
+  gcc_assert (size.high == 0 && size.low != 0);
   if (size.low > 128)
     size.low = 128;
   size.low = (size.low / 8) - 1;
   flags = ((!!is_sblock << 0) + (size.low << 2));
-  flags_expr = build_int_cst(unsigned_type_node, flags);
+  flags_expr = build_int_cst (unsigned_type_node, flags);
 
-  is_store_expr = build2(NE_EXPR, integer_type_node,
-                              build1(VIEW_CONVERT_EXPR, size_type_node, expr),
-                              build1(VIEW_CONVERT_EXPR, size_type_node, rhs));
-  is_store_expr = build2(LSHIFT_EXPR, integer_type_node,
+  is_store_expr = build2 (NE_EXPR, integer_type_node,
+                              build1 (VIEW_CONVERT_EXPR, size_type_node, expr),
+                              build1 (VIEW_CONVERT_EXPR, size_type_node, rhs));
+  is_store_expr = build2 (LSHIFT_EXPR, integer_type_node,
                               is_store_expr, integer_one_node);
-  flags_expr = build2(BIT_IOR_EXPR, integer_type_node,
+  flags_expr = build2 (BIT_IOR_EXPR, integer_type_node,
                               is_store_expr, flags_expr);
 
   flags_seq = 0;
-  flags_expr = force_gimple_operand(flags_expr, &flags_seq, true, NULL_TREE);
-  gimple_seq_add_seq(gseq, flags_seq);
+  flags_expr = force_gimple_operand (flags_expr, &flags_seq, true, NULL_TREE);
+  gimple_seq_add_seq (gseq, flags_seq);
 
-  collect = gimple_build_call(
+  collect = gimple_build_call (
       rtl_mop_def (), 2, addr_expr, flags_expr);
 
-  gimple_seq_add_stmt(gseq, collect);
+  gimple_seq_add_stmt (gseq, collect);
 }
 
 static char const *
@@ -488,12 +488,12 @@ decl_name (tree decl)
   tree id;
   char const *name;
 
-  if (decl != 0 && DECL_P(decl))
+  if (decl != 0 && DECL_P (decl))
     {
-      id = DECL_NAME(decl);
+      id = DECL_NAME (decl);
       if (id != NULL)
         {
-          name = IDENTIFIER_POINTER(id);
+          name = IDENTIFIER_POINTER (id);
           if (name != NULL)
             return name;
         }
@@ -505,32 +505,32 @@ static void
 set_location (gimple_seq seq, location_t loc)
 {
   gimple_seq_node n;
-  for (n = gimple_seq_first(seq); n != NULL; n = n->next)
-    gimple_set_location(n->stmt, loc);
+  for (n = gimple_seq_first (seq); n != NULL; n = n->next)
+    gimple_set_location (n->stmt, loc);
 }
 
 static tree
 is_dtor_vptr_store (gimple stmt, tree expr, int is_store)
 {
   if (is_store == 1
-      && TREE_CODE(expr) == COMPONENT_REF
-      && gimple_assign_single_p(stmt)
-      && strcmp(decl_name(cfun->decl), "__base_dtor ") == 0)
+      && TREE_CODE (expr) == COMPONENT_REF
+      && gimple_assign_single_p (stmt)
+      && strcmp (decl_name (cfun->decl), "__base_dtor ") == 0)
     {
-      tree comp = expr->exp.operands[0];
-      while (TREE_CODE(comp) == COMPONENT_REF)
-        comp = comp->exp.operands[0];
-      if (TREE_CODE(comp) == INDIRECT_REF || TREE_CODE(comp) == MEM_REF)
+      tree comp = expr->exp.operands [0];
+      while (TREE_CODE (comp) == COMPONENT_REF)
+        comp = comp->exp.operands [0];
+      if (TREE_CODE (comp) == INDIRECT_REF || TREE_CODE (comp) == MEM_REF)
         {
-          comp = comp->exp.operands[0];
-          if (TREE_CODE(comp) == SSA_NAME)
-            comp = SSA_NAME_VAR(comp);
-          if (strcmp(decl_name(comp), "this") == 0)
+          comp = comp->exp.operands [0];
+          if (TREE_CODE (comp) == SSA_NAME)
+            comp = SSA_NAME_VAR (comp);
+          if (strcmp (decl_name (comp), "this") == 0)
             {
-              tree field = expr->exp.operands[1];
-              if (TREE_CODE(field) == FIELD_DECL
-                  && strncmp(decl_name(field), "_vptr.", sizeof("_vptr.") - 1) == 0)
-                return gimple_assign_rhs1(stmt);
+              tree field = expr->exp.operands [1];
+              if (TREE_CODE (field) == FIELD_DECL
+                  && strncmp (decl_name (field), "_vptr.", sizeof ("_vptr.") - 1) == 0)
+                return gimple_assign_rhs1 (stmt);
             }
         }
     }
@@ -550,28 +550,28 @@ is_vtbl_read (tree expr, int is_store)
        gimple_assign <indirect_ref, D.2136, *D.2135, NULL> */
 
   if (is_store == 0
-      && TREE_CODE(expr) == INDIRECT_REF)
+      && TREE_CODE (expr) == INDIRECT_REF)
     {
-      tree ref_target = expr->exp.operands[0];
-      if (TREE_CODE(ref_target) == SSA_NAME)
+      tree ref_target = expr->exp.operands [0];
+      if (TREE_CODE (ref_target) == SSA_NAME)
         {
           gimple ref_stmt = ref_target->ssa_name.def_stmt;
-          if (gimple_code(ref_stmt) == GIMPLE_ASSIGN)
+          if (gimple_code (ref_stmt) == GIMPLE_ASSIGN)
             {
-              if (gimple_expr_code(ref_stmt) == POINTER_PLUS_EXPR)
+              if (gimple_expr_code (ref_stmt) == POINTER_PLUS_EXPR)
                 {
-                  tree tmp = ref_stmt->gsmem.op[1];
-                  if (TREE_CODE(tmp) == SSA_NAME
-                      && gimple_code(tmp->ssa_name.def_stmt) == GIMPLE_ASSIGN)
+                  tree tmp = ref_stmt->gsmem.op [1];
+                  if (TREE_CODE (tmp) == SSA_NAME
+                      && gimple_code (tmp->ssa_name.def_stmt) == GIMPLE_ASSIGN)
                     ref_stmt = tmp->ssa_name.def_stmt;
                 }
-              if (gimple_expr_code(ref_stmt) == COMPONENT_REF
-                    && gimple_assign_single_p(ref_stmt))
+              if (gimple_expr_code (ref_stmt) == COMPONENT_REF
+                    && gimple_assign_single_p (ref_stmt))
                 {
-                  tree comp_expr = ref_stmt->gsmem.op[1];
-                  tree field_expr = comp_expr->exp.operands[1];
-                  if (TREE_CODE(field_expr) == FIELD_DECL
-                      && strncmp(decl_name(field_expr), "_vptr.", sizeof("_vptr.") - 1) == 0)
+                  tree comp_expr = ref_stmt->gsmem.op [1];
+                  tree field_expr = comp_expr->exp.operands [1];
+                  if (TREE_CODE (field_expr) == FIELD_DECL
+                      && strncmp (decl_name (field_expr), "_vptr.", sizeof ("_vptr.") - 1) == 0)
                     return 1;
                 }
             }
@@ -586,13 +586,13 @@ is_load_of_const (tree expr, int is_store)
 {
   if (is_store == 0)
     {
-      if (TREE_CODE(expr) == COMPONENT_REF)
-        expr = expr->exp.operands[1];
-      if (TREE_CODE(expr) == VAR_DECL
-          || TREE_CODE(expr) == PARM_DECL
-          || TREE_CODE(expr) == FIELD_DECL)
+      if (TREE_CODE (expr) == COMPONENT_REF)
+        expr = expr->exp.operands [1];
+      if (TREE_CODE (expr) == VAR_DECL
+          || TREE_CODE (expr) == PARM_DECL
+          || TREE_CODE (expr) == FIELD_DECL)
         {
-          if (TREE_READONLY(expr))
+          if (TREE_READONLY (expr))
             return 1;
         }
     }
@@ -603,24 +603,24 @@ static int
 is_fake_mop (const_tree expr)
 {
   /* various constant literals */
-  if (TREE_CODE_CLASS(TREE_CODE(expr)) == tcc_constant)
+  if (TREE_CODE_CLASS (TREE_CODE (expr)) == tcc_constant)
     return 1;
 
   /* compiler-emitted artificial variables */
-  if (TREE_CODE_CLASS(TREE_CODE(expr)) == tcc_declaration
-      && DECL_ARTIFICIAL(expr))
+  if (TREE_CODE_CLASS (TREE_CODE (expr)) == tcc_declaration
+      && DECL_ARTIFICIAL (expr))
     return 1;
 
   /* store to function result */
-  if (TREE_CODE(expr) == RESULT_DECL)
+  if (TREE_CODE (expr) == RESULT_DECL)
     return 1;
 
   return 0;
 }
 
 static void
-instrument_mop(gimple stmt, gimple_stmt_iterator *gsi, location_t loc,
-               tree expr, int is_store, VEC(mop_desc_t, heap) **mop_list)
+instrument_mop (gimple stmt, gimple_stmt_iterator *gsi, location_t loc,
+                tree expr, int is_store, VEC (mop_desc_t, heap) **mop_list)
 {
   char const* reason;
   enum tree_code tcode;
@@ -632,27 +632,27 @@ instrument_mop(gimple stmt, gimple_stmt_iterator *gsi, location_t loc,
   (void)loc;
 
   /* map SSA name to real name */
-  if (TREE_CODE(expr) == SSA_NAME)
-    expr = SSA_NAME_VAR(expr);
+  if (TREE_CODE (expr) == SSA_NAME)
+    expr = SSA_NAME_VAR (expr);
 
-  if (is_fake_mop(expr))
+  if (is_fake_mop (expr))
     return;
 
   reason = 0;
-  tcode = TREE_CODE(expr);
+  tcode = TREE_CODE (expr);
 
   /* Below are things we do NOT want to instrument. */
   if (func_ignore & (tsan_ignore_mop | tsan_ignore_rec))
     reason = "ignore file";
   else if (tcode == VAR_DECL
-      && TREE_ADDRESSABLE(expr) == 0
-      && TREE_STATIC(expr) == 0)
+      && TREE_ADDRESSABLE (expr) == 0
+      && TREE_STATIC (expr) == 0)
     {
       /* the var does not live in memory -> no possibility of races */
       reason = "non-addressable";
     }
 /*
-  else if (TREE_CODE(TREE_TYPE(expr)) == RECORD_TYPE)
+  else if (TREE_CODE (TREE_TYPE (expr)) == RECORD_TYPE)
     {
       // why don't I instrument records?.. perhaps it crashes compilation,
       // and should be handled more carefully
@@ -662,26 +662,26 @@ instrument_mop(gimple stmt, gimple_stmt_iterator *gsi, location_t loc,
   else if (tcode == CONSTRUCTOR)
     {
       /* as of now crashes compilation
-         TODO(dvyukov): handle it correctly */
+         TODO (dvyukov): handle it correctly */
       reason = "constructor expression";
     }
   else if (tcode == PARM_DECL)
     {
-      /* TODO(dvyukov): need to instrument it */
+      /* TODO (dvyukov): need to instrument it */
       reason = "function parameter";
     }
-  else if (is_load_of_const(expr, is_store))
+  else if (is_load_of_const (expr, is_store))
     {
       reason = "load of a const variable/parameter/field";
     }
-  else if (is_vtbl_read(expr, is_store))
+  else if (is_vtbl_read (expr, is_store))
     {
       reason = "vtbl read";
     }
   else if (tcode == COMPONENT_REF)
     {
-      tree field = expr->exp.operands[1];
-      if (TREE_CODE(field) == FIELD_DECL)
+      tree field = expr->exp.operands [1];
+      if (TREE_CODE (field) == FIELD_DECL)
         {
           fld_off = field->field_decl.bit_offset->int_cst.int_cst.low;
           fld_size = field->decl_common.size->int_cst.int_cst.low;
@@ -689,13 +689,13 @@ instrument_mop(gimple stmt, gimple_stmt_iterator *gsi, location_t loc,
               || ((fld_size % __CHAR_BIT__) != 0))
             {
               /* as of now it crashes compilation
-                 TODO(dvyukov): handle bit-fields -> as if touching the whole field */
+                 TODO (dvyukov): handle bit-fields -> as if touching the whole field */
               reason = "weird bit field";
             }
         }
     }
 
-  /* TODO(dvyukov): handle those cases
+  /* TODO (dvyukov): handle those cases
   //&& tcode != FIELD_DECL
   //&& tcode != MEM_REF
   //&& tcode != ARRAY_RANGE_REF
@@ -708,7 +708,7 @@ instrument_mop(gimple stmt, gimple_stmt_iterator *gsi, location_t loc,
       && tcode != MEM_REF)
     reason = "unknown type";
 
-  dtor_vptr_expr = is_dtor_vptr_store(stmt, expr, is_store);
+  dtor_vptr_expr = is_dtor_vptr_store (stmt, expr, is_store);
 
   if (reason != 0)
     return;
@@ -718,11 +718,11 @@ instrument_mop(gimple stmt, gimple_stmt_iterator *gsi, location_t loc,
   mop.expr = expr;
   mop.dtor_vptr_expr = dtor_vptr_expr;
   mop.is_store = is_store;
-  VEC_safe_push(mop_desc_t, heap, *mop_list, &mop);
+  VEC_safe_push (mop_desc_t, heap, *mop_list, &mop);
 }
 
 static void
-handle_gimple (gimple_stmt_iterator *gsi, VEC(mop_desc_t, heap) **mop_list)
+handle_gimple (gimple_stmt_iterator *gsi, VEC (mop_desc_t, heap) **mop_list)
 {
   unsigned i;
   struct mop_desc_t mop;
@@ -733,37 +733,37 @@ handle_gimple (gimple_stmt_iterator *gsi, VEC(mop_desc_t, heap) **mop_list)
   tree lhs;
   tree fndecl;
 
-  stmt = gsi_stmt(*gsi);
-  gcode = gimple_code(stmt);
+  stmt = gsi_stmt (*gsi);
+  gcode = gimple_code (stmt);
   if (gcode >= LAST_AND_UNUSED_GIMPLE_CODE)
     return;
 
-  loc = gimple_location(stmt);
+  loc = gimple_location (stmt);
 
   switch (gcode)
     {
-      /* TODO(dvyukov): handle GIMPLE_COND */
+      /* TODO (dvyukov): handle GIMPLE_COND */
       case GIMPLE_CALL:
         {
           func_calls += 1;
           /* Handle call arguments as loads */
-          for (i = 0; i < gimple_call_num_args(stmt); i++)
+          for (i = 0; i < gimple_call_num_args (stmt); i++)
             {
-              rhs = gimple_call_arg(stmt, i);
-              instrument_mop(stmt, gsi, loc, rhs, 0, mop_list);
+              rhs = gimple_call_arg (stmt, i);
+              instrument_mop (stmt, gsi, loc, rhs, 0, mop_list);
             }
 
-          memset(&mop, 0, sizeof(mop));
+          memset (&mop, 0, sizeof (mop));
           mop.is_call = 1;
-          VEC_safe_push(mop_desc_t, heap, *mop_list, &mop);
+          VEC_safe_push (mop_desc_t, heap, *mop_list, &mop);
 
-          fndecl = gimple_call_fndecl(stmt);
-          gcc_assert(strcmp(decl_name(fndecl), "__tsan_handle_mop") != 0);
+          fndecl = gimple_call_fndecl (stmt);
+          gcc_assert (strcmp (decl_name (fndecl), "__tsan_handle_mop") != 0);
 
           /* Handle assignment lhs as store */
-          lhs = gimple_call_lhs(stmt);
+          lhs = gimple_call_lhs (stmt);
           if (lhs != 0)
-            instrument_mop(stmt, gsi, loc, lhs, 1, mop_list);
+            instrument_mop (stmt, gsi, loc, lhs, 1, mop_list);
 
           break;
         }
@@ -771,21 +771,21 @@ handle_gimple (gimple_stmt_iterator *gsi, VEC(mop_desc_t, heap) **mop_list)
       case GIMPLE_ASSIGN:
         {
           /* Handle assignment lhs as store */
-          lhs = gimple_assign_lhs(stmt);
-          instrument_mop(stmt, gsi, loc, lhs, 1, mop_list);
+          lhs = gimple_assign_lhs (stmt);
+          instrument_mop (stmt, gsi, loc, lhs, 1, mop_list);
 
           /* Handle operands as loads */
-          for (i = 1; i < gimple_num_ops(stmt); i++)
+          for (i = 1; i < gimple_num_ops (stmt); i++)
             {
-              rhs = gimple_op(stmt, i);
-              instrument_mop(stmt, gsi, loc, rhs, 0, mop_list);
+              rhs = gimple_op (stmt, i);
+              instrument_mop (stmt, gsi, loc, rhs, 0, mop_list);
             }
           break;
         }
 
       case GIMPLE_BIND:
         {
-          gcc_assert(!"there should be no GIMPLE_BIND on this level");
+          gcc_assert (!"there should be no GIMPLE_BIND on this level");
           break;
         }
 
@@ -807,21 +807,21 @@ instrument_bblock (struct bb_data_t *bbd, basic_block bb)
   expanded_location eloc;
   gimple_seq instr_seq;
 
-  VEC_free(mop_desc_t, heap, mop_list);
+  VEC_free (mop_desc_t, heap, mop_list);
 
-  gsi = gsi_start_bb(bb);
+  gsi = gsi_start_bb (bb);
   for (; ; )
     {
-      if (gsi_end_p(gsi))
+      if (gsi_end_p (gsi))
         break;
       gsinext = gsi;
-      gsi_next(&gsinext);
-      handle_gimple(&gsi, &mop_list);
+      gsi_next (&gsinext);
+      handle_gimple (&gsi, &mop_list);
       gsi = gsinext;
     }
 
   mop = 0;
-  for (ix = 0; VEC_iterate(mop_desc_t, mop_list, ix, mop); ix += 1)
+  for (ix = 0; VEC_iterate (mop_desc_t, mop_list, ix, mop); ix += 1)
     {
       if (mop->is_call != 0)
         {
@@ -832,14 +832,14 @@ instrument_bblock (struct bb_data_t *bbd, basic_block bb)
         }
 
       func_mops += 1;
-      stmt = gsi_stmt(mop->gsi);
-      loc = gimple_location(stmt);
-      eloc = expand_location(loc);
+      stmt = gsi_stmt (mop->gsi);
+      loc = gimple_location (stmt);
+      eloc = expand_location (loc);
 
       is_sblock = (bbd->has_sb == 0
           || !(eloc.file != 0
               && bbd->sb_file != 0
-              && strcmp(eloc.file, bbd->sb_file) == 0
+              && strcmp (eloc.file, bbd->sb_file) == 0
               && eloc.line >= bbd->sb_line_min
               && eloc.line <= bbd->sb_line_max));
 
@@ -856,16 +856,16 @@ instrument_bblock (struct bb_data_t *bbd, basic_block bb)
 
       instr_seq = 0;
       if (mop->dtor_vptr_expr == 0)
-        instr_mop(mop->expr, loc, mop->is_store, is_sblock, &instr_seq);
+        instr_mop (mop->expr, loc, mop->is_store, is_sblock, &instr_seq);
       else
-        instr_vptr_store(mop->expr, mop->dtor_vptr_expr, loc,
+        instr_vptr_store (mop->expr, mop->dtor_vptr_expr, loc,
                            is_sblock, &instr_seq);
-      gcc_assert(instr_seq != 0);
-      set_location(instr_seq, loc);
-      if (is_gimple_call(stmt) && mop->is_store == 1)
-        gsi_insert_seq_after(&mop->gsi, instr_seq, GSI_NEW_STMT);
+      gcc_assert (instr_seq != 0);
+      set_location (instr_seq, loc);
+      if (is_gimple_call (stmt) && mop->is_store == 1)
+        gsi_insert_seq_after (&mop->gsi, instr_seq, GSI_NEW_STMT);
       else /* dtor_vptr_expr != 0 */
-        gsi_insert_seq_before(&mop->gsi, instr_seq, GSI_SAME_STMT);
+        gsi_insert_seq_before (&mop->gsi, instr_seq, GSI_SAME_STMT);
     }
 }
 
@@ -887,31 +887,31 @@ instrument_function (void)
   edge e;
 
   bb_cnt = cfun->cfg->x_n_basic_blocks;
-  bb_data = (struct bb_data_t*)xcalloc(bb_cnt, sizeof(struct bb_data_t));
+  bb_data = (struct bb_data_t*) xcalloc (bb_cnt, sizeof (struct bb_data_t));
   entry_bb = ENTRY_BLOCK_PTR;
-  entry_edge = single_succ_edge(entry_bb);
+  entry_edge = single_succ_edge (entry_bb);
   entry_bb = entry_edge->dest;
   bb = 0;
-  FOR_EACH_BB(bb)
+  FOR_EACH_BB (bb)
     {
-      bb_data[bb->index].state = (bb == entry_bb) ? bb_candidate : bb_not_visited;
+      bb_data [bb->index].state = (bb == entry_bb) ? bb_candidate : bb_not_visited;
     }
 
   for (; ; )
     {
       cur_bb = 0;
       any_bb = 0;
-      FOR_EACH_BB(bb)
+      FOR_EACH_BB (bb)
         {
-          bbd = &bb_data[bb->index];
+          bbd = &bb_data [bb->index];
           if (bbd->state == bb_candidate)
             {
               cur_bb = bb;
               any_bb = bb;
               e = 0;
-              for (eidx = 0; VEC_iterate(edge, bb->preds, eidx, e); eidx++)
+              for (eidx = 0; VEC_iterate (edge, bb->preds, eidx, e); eidx++)
                 {
-                  pred = &bb_data[e->src->index];
+                  pred = &bb_data [e->src->index];
                   if (pred->state != bb_visited)
                     {
                       cur_bb = 0;
@@ -925,14 +925,14 @@ instrument_function (void)
       if (any_bb == 0)
         break;
       cur_bb = cur_bb ? cur_bb : any_bb;
-      bbd = &bb_data[cur_bb->index];
-      gcc_assert(bbd->state == bb_candidate);
+      bbd = &bb_data [cur_bb->index];
+      gcc_assert (bbd->state == bb_candidate);
       bbd->state = bb_visited;
 
       e = 0;
-      for (eidx = 0; VEC_iterate(edge, cur_bb->preds, eidx, e); eidx++)
+      for (eidx = 0; VEC_iterate (edge, cur_bb->preds, eidx, e); eidx++)
         {
-          pred = &bb_data[e->src->index];
+          pred = &bb_data [e->src->index];
           if ((pred->state != bb_visited)
               || (pred->has_sb == 0)
               || (pred == bbd))
@@ -952,10 +952,10 @@ instrument_function (void)
               bbd->has_sb = 0;
               if (bbd->sb_file != 0
                   && pred->sb_file != 0
-                  && strcmp(bbd->sb_file, pred->sb_file) == 0)
+                  && strcmp (bbd->sb_file, pred->sb_file) == 0)
                 {
-                  sb_line_min = MAX(bbd->sb_line_min, pred->sb_line_min);
-                  sb_line_max = MIN(bbd->sb_line_max, pred->sb_line_max);
+                  sb_line_min = MAX (bbd->sb_line_min, pred->sb_line_min);
+                  sb_line_max = MIN (bbd->sb_line_max, pred->sb_line_max);
                   if (sb_line_min <= sb_line_max)
                     {
                       bbd->has_sb = 1;
@@ -966,11 +966,11 @@ instrument_function (void)
             }
         }
 
-      instrument_bblock(bbd, cur_bb);
+      instrument_bblock (bbd, cur_bb);
 
-      for (eidx = 0; VEC_iterate(edge, cur_bb->succs, eidx, e); eidx++)
+      for (eidx = 0; VEC_iterate (edge, cur_bb->succs, eidx, e); eidx++)
         {
-          pred = &bb_data[e->dest->index];
+          pred = &bb_data [e->dest->index];
           if (pred->state == bb_not_visited)
             pred->state = bb_candidate;
         }
@@ -1000,19 +1000,19 @@ tsan_pass (void)
   if (func_ignore == tsan_ignore_func)
     return 0;
 
-  instrument_function();
+  instrument_function ();
 
   pre_func_seq = 0;
   post_func_seq = 0;
-  instr_func(&pre_func_seq, &post_func_seq);
+  instr_func (&pre_func_seq, &post_func_seq);
   if (pre_func_seq != 0 || post_func_seq != 0)
     {
       if (pre_func_seq != 0)
         {
           entry_bb = ENTRY_BLOCK_PTR;
-          entry_edge = single_succ_edge(entry_bb);
+          entry_edge = single_succ_edge (entry_bb);
           first_bb = entry_edge->dest;
-          first_gsi = gsi_start_bb(first_bb);
+          first_gsi = gsi_start_bb (first_bb);
           if (!gsi_end_p (first_gsi))
             {
               first_stmt = gsi_stmt (first_gsi);
@@ -1030,19 +1030,19 @@ tsan_pass (void)
           for (; ; )
             {
               gsi = gsi2;
-              if (gsi_end_p(gsi))
+              if (gsi_end_p (gsi))
                 break;
-              gsi_next(&gsi2);
+              gsi_next (&gsi2);
 
-              stmt = gsi_stmt(gsi);
-              loc = gimple_location(stmt);
+              stmt = gsi_stmt (gsi);
+              loc = gimple_location (stmt);
 
               if (gimple_code (stmt) == GIMPLE_RETURN)
                 {
                   if (post_func_seq != 0)
                     {
-                      set_location(post_func_seq, loc);
-                      gsi_insert_seq_before(&gsi, post_func_seq, GSI_SAME_STMT);
+                      set_location (post_func_seq, loc);
+                      gsi_insert_seq_before (&gsi, post_func_seq, GSI_SAME_STMT);
                     }
                 }
             }
