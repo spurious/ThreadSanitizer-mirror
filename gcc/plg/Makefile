@@ -7,7 +7,7 @@ ifeq ($(GCC_DIR), )
 endif
 
 OBJS=tsan.o tree-tsan.o
-CFLAGS+=-I$(GCC_DIR) -DIN_GCC=1 -fPIC -Wall -std=gnu89
+CFLAGS+=-I$(GCC_DIR) -DIN_GCC=1 -DGCC_PLG=1 -fPIC -Wall -std=gnu89
 OUT=../lib/libtsan_$(GCC_VER).so
 
 ifeq ($(DEBUG), )

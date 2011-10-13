@@ -33,10 +33,16 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree-pass.h"
 #include "cfghooks.h"
 #include "langhooks.h"
-#include "c-family/c-common.h"
 #include "toplev.h"
 #include "output.h"
 #include "options.h"
+
+#ifdef GCC_PLG
+# include "c-common.h"
+#else
+# include "c-family/c-common.h"
+#endif
+
 #include "diagnostic.h"
 
 #include <stdlib.h>
