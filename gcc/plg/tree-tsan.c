@@ -1,12 +1,24 @@
-/* Relite: GCC instrumentation plugin for ThreadSanitizer
- * Copyright (c) 2011, Google Inc. All rights reserved.
- * Author: Dmitry Vyukov (dvyukov)
- *
- * Relite is free software; you can redistribute it and/or modify it under
- * the terms of the GNU General Public License as published by the Free
- * Software Foundation; either version 3, or (at your option) any later
- * version. See http://www.gnu.org/licenses/
- */
+/* ThreadSanitizer instrumentation pass.
+   http://code.google.com/p/data-race-test
+   Copyright (C) 2011
+   Free Software Foundation, Inc.
+   Contributed by Dmitry Vyukov <dvyukov@google.com>
+
+This file is part of GCC.
+
+GCC is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3, or (at your option)
+any later version.
+
+GCC is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with GCC; see the file COPYING3.  If not see
+<http://www.gnu.org/licenses/>.  */
 
 #include "config.h"
 #include "system.h"
@@ -26,15 +38,19 @@
 #include "options.h"
 #include "diagnostic.h"
 
+#include <stdlib.h>
+#include <stdio.h>
+
 #define SBLOCK_SIZE 5
 #define MAX_MOP_BYTES 16
 
 enum tsan_ignore_e
 {
   tsan_ignore_none  = 1 << 0,
-  tsan_ignore_mop   = 1 << 1,
-  tsan_ignore_rec   = 1 << 2,
-  tsan_ignore_hist  = 1 << 3
+  tsan_ignore_func  = 1 << 1,
+  tsan_ignore_mop   = 1 << 2,
+  tsan_ignore_rec   = 1 << 3,
+  tsan_ignore_hist  = 1 << 4
 };
 
 enum bb_state_e
@@ -69,7 +85,6 @@ static VEC(mop_desc_t, heap) *mop_list;
 static enum tsan_ignore_e func_ignore;
 static int func_calls;
 static int func_mops;
-static int ignore_file = -1;
 
 static tree
 shadow_stack_def (void)
@@ -131,17 +146,129 @@ rtl_mop_def (void)
   return def;
 }
 
-static bool
-tsan_ignore_file (char const *file)
+struct tsan_ignore_desc_t {
+  struct tsan_ignore_desc_t *next;
+  enum tsan_ignore_e type;
+  char *name;
+};
+
+static int ignore_init = 0;
+static int ignore_file = 0;
+static struct tsan_ignore_desc_t *ignore_head;
+
+static void
+ignore_append (enum tsan_ignore_e type, char *name)
 {
-  (void)file;
-  return false;
+  struct tsan_ignore_desc_t *desc;
+
+  desc = (struct tsan_ignore_desc_t*)xmalloc(sizeof(*desc));
+  desc->type = type;
+  desc->name = xstrdup(name);
+  desc->next = ignore_head;
+  ignore_head = desc;
+}
+
+static int
+ignore_match (char *templ, const char *str)
+{
+  char *tpos;
+  const char *spos;
+
+  while (templ[0])
+    {
+      if (templ[0] == '*')
+        {
+          templ++;
+          continue;
+        }
+      if (str[0] == 0)
+        return 0;
+      tpos = strchr (templ, '*');
+      if (tpos != NULL)
+        tpos[0] = 0;
+      spos = strstr (str, templ);
+      str = spos + strlen (templ);
+      templ = tpos;
+      if (tpos != NULL)
+        tpos[0] = '*';
+      if (spos == NULL)
+        return 0;
+    }
+  return 1;
+}
+
+static void
+ignore_load (void)
+{
+  FILE *f;
+  char *line;
+  size_t linesz;
+  ssize_t sz;
+
+  if (flag_tsan_ignore == NULL || flag_tsan_ignore[0] == 0)
+    return;
+printf("opening ignore file '%s'\n", flag_tsan_ignore);
+  f = fopen (flag_tsan_ignore, "r");
+  if (f == NULL)
+    {
+      printf("failed to open ignore file '%s' (errno=%d)\n", flag_tsan_ignore, errno);
+      exit(1);
+    }
+
+  line = 0;
+  linesz = 0;
+  while ((sz = getline (&line, &linesz, f)) != -1)
+    {
+      if (sz == 0)
+        continue;
+      /* strip line terminator */
+      line[sz-1] = 0;
+      if (strncmp (line, "src:", sizeof("src:")-1) == 0)
+        {
+          if (ignore_match (line + sizeof("src:")-1, main_input_filename))
+            {
+              /* don't care about anything else */
+              ignore_file = 1;
+              break;
+            }
+        }
+      else if (strncmp (line, "fun:", sizeof("fun:")-1) == 0)
+        ignore_append (tsan_ignore_mop, line + sizeof("fun:")-1);
+      else if (strncmp (line, "fun_r:", sizeof("fun_r:")-1) == 0)
+        ignore_append (tsan_ignore_mop, line + sizeof("fun_r:")-1);
+      else if (strncmp (line, "fun_hist:", sizeof("fun_hist:")-1) == 0)
+        ignore_append (tsan_ignore_mop, line + sizeof("fun_hist:")-1);
+      /* other lines are not interesting */
+    }
+
+  free(line);
+  fclose(f);
 }
 
 static enum tsan_ignore_e
-tsan_ignore_func (char const *func)
+tsan_ignore (void)
 {
-  (void)func;
+  const char *func_name;
+  struct tsan_ignore_desc_t *desc;
+
+  if (ignore_init == 0)
+    {
+      ignore_load();
+      ignore_init = 1;
+    }
+
+  if (ignore_file)
+    return tsan_ignore_func;
+
+  func_name = IDENTIFIER_POINTER(DECL_ASSEMBLER_NAME(cfun->decl));
+  for (desc = ignore_head; desc; desc = desc->next)
+    {
+      if (ignore_match (desc->name, func_name))
+{
+/*printf("MATCHED SUPPRESSION: %s/%s (%d)\n", desc->name, func_name, desc->type);*/
+       return desc->type;
+}
+    }
   return tsan_ignore_none;
 }
 
@@ -790,7 +917,6 @@ instrument_function (void)
 static unsigned
 tsan_pass (void)
 {
-  char const *asm_name;
   location_t loc;
   gimple_seq pre_func_seq;
   gimple_seq post_func_seq;
@@ -807,16 +933,9 @@ tsan_pass (void)
   if (errorcount != 0 || sorrycount != 0)
     return 0;
 
-  /* Check as to whether we need to completely ignore the file or not */
-  if (ignore_file == -1)
-    ignore_file = tsan_ignore_file (main_input_filename);
-  if (ignore_file)
+  func_ignore = tsan_ignore ();
+  if (func_ignore == tsan_ignore_func)
     return 0;
-
-  asm_name = IDENTIFIER_POINTER(DECL_ASSEMBLER_NAME(cfun->decl));
-  func_ignore = tsan_ignore_func(asm_name);
-  func_calls = 0;
-  func_mops = 0;
 
   instrument_function();
 
