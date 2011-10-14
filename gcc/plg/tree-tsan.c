@@ -33,7 +33,6 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree-pass.h"
 #include "cfghooks.h"
 #include "langhooks.h"
-#include "toplev.h"
 #include "output.h"
 #include "options.h"
 
@@ -50,14 +49,18 @@ along with GCC; see the file COPYING3.  If not see
 
 #define SBLOCK_SIZE 5
 #define MAX_MOP_BYTES 16
+#define RTL_IGNORE "__tsan_thread_ignore"
+#define RTL_STACK "__tsan_shadow_stack"
+#define RTL_MOP "__tsan_handle_mop"
+#define RTL_PERFIX "__tsan_"
 
 enum tsan_ignore_e
 {
-  tsan_ignore_none  = 1 << 0,
-  tsan_ignore_func  = 1 << 1,
-  tsan_ignore_mop   = 1 << 2,
-  tsan_ignore_rec   = 1 << 3,
-  tsan_ignore_hist  = 1 << 4
+  tsan_ignore_none  = 1 << 0, /* do not ignore */
+  tsan_ignore_func  = 1 << 1, /* completely ignore the whole func */
+  tsan_ignore_mop   = 1 << 2, /* do not instrument memory accesses */
+  tsan_ignore_rec   = 1 << 3, /* do not instrument memory accesses recursively */
+  tsan_ignore_hist  = 1 << 4  /* do not create superblocks */
 };
 
 enum bb_state_e
@@ -71,7 +74,7 @@ struct bb_data_t
 {
   enum bb_state_e       state;
   int                   has_sb;
-  char const           *sb_file;
+  const char           *sb_file;
   int                   sb_line_min;
   int                   sb_line_max;
 };
@@ -103,6 +106,14 @@ static int ignore_init = 0;
 static int ignore_file = 0;
 static struct tsan_ignore_desc_t *ignore_head;
 
+tree __attribute__((weak)) lookup_name (tree t)
+{
+  (void)t;
+  return NULL_TREE;
+}
+
+/* Builds the following decl
+   extern __thread void **__tsan_shadow_stack; */
 static tree
 shadow_stack_def (void)
 {
@@ -111,12 +122,13 @@ shadow_stack_def (void)
   if (def != NULL)
     return def;
 
-  def = lookup_name (get_identifier ("__tsan_shadow_stack"));
+  /* Check if a user has defined it for testing */
+  def = lookup_name (get_identifier (RTL_STACK));
   if (def != NULL)
     return def;
 
   def = build_decl (UNKNOWN_LOCATION, VAR_DECL, 
-		    get_identifier ("__tsan_shadow_stack"), 
+		    get_identifier (RTL_STACK), 
 		    build_pointer_type (ptr_type_node));
   TREE_STATIC (def) = 1;
   TREE_PUBLIC (def) = 0;
@@ -128,6 +140,8 @@ shadow_stack_def (void)
   return def;
 }
 
+/* Builds the following decl
+   extern __thread int __tsan_thread_ignore; */
 static tree
 thread_ignore_def (void)
 {
@@ -136,12 +150,13 @@ thread_ignore_def (void)
   if (def != NULL)
     return def;
 
-  def = lookup_name (get_identifier ("__tsan_thread_ignore"));
+  /* Check if a user has defined it for testing */
+  def = lookup_name (get_identifier (RTL_IGNORE));
   if (def != NULL)
     return def;
 
   def = build_decl (UNKNOWN_LOCATION, VAR_DECL, 
-		    get_identifier ("__tsan_thread_ignore"), 
+		    get_identifier (RTL_IGNORE), 
 		    integer_type_node);
   TREE_STATIC (def) = 1;
   TREE_PUBLIC (def) = 0;
@@ -153,6 +168,8 @@ thread_ignore_def (void)
   return def;
 }
 
+/* Builds the following decl
+   void __tsan_handle_mop (void *addr, unsigned flags); */
 static tree
 rtl_mop_def (void)
 {
@@ -163,18 +180,20 @@ rtl_mop_def (void)
   if (def != NULL)
     return def;
 
-  def = lookup_name (get_identifier ("__tsan_handle_mop"));
+  /* Check if a user has defined it for testing */
+  def = lookup_name (get_identifier (RTL_MOP));
   if (def != NULL)
     return def;
 
   fn_type = build_function_type_list (void_type_node, ptr_type_node, integer_type_node , NULL_TREE);
-  def = build_fn_decl ("__tsan_handle_mop", fn_type);
+  def = build_fn_decl (RTL_MOP, fn_type);
   TREE_NOTHROW (def) = 1;
   DECL_ATTRIBUTES (def) = tree_cons (get_identifier ("leaf"), NULL, DECL_ATTRIBUTES (def));
   DECL_ASSEMBLER_NAME (def);
   return def;
 }
 
+/* Adds new ignore definition */
 static void
 ignore_append (enum tsan_ignore_e type, char *name)
 {
@@ -187,6 +206,8 @@ ignore_append (enum tsan_ignore_e type, char *name)
   ignore_head = desc;
 }
 
+/* Checks as to whether identifier 'str' matches template 'templ'.
+   Templates can only contain '*', e.g. 'std*string*insert' */
 static int
 ignore_match (char *templ, const char *str)
 {
@@ -216,6 +237,29 @@ ignore_match (char *templ, const char *str)
   return 1;
 }
 
+/* Loads ignore definitions from the file specified by -ftsan-ignore=filename.
+   Ignore files have the following format:
+
+# This is a comment - ignored
+
+# The below line says to not instrument memory accesses
+# in all functions that match 'std*string*insert'
+fun:std*string*insert
+
+# The below line says to not instrument memory accesses
+# in the function called 'foobar' *and* in all functions
+# that it calls recursively
+fun_r:foobar
+
+# The below line says to not create superblocks
+# in the function called 'barbaz'
+fun_hist:barbaz
+
+# Ignore all functions in the source file
+src:*atomic.c
+
+# Everything else is uninteresting for us (e.g. obj:)
+*/
 static void
 ignore_load (void)
 {
@@ -224,8 +268,14 @@ ignore_load (void)
   size_t linesz;
   ssize_t sz;
 
+char** e;
+
   if (flag_tsan_ignore == NULL || flag_tsan_ignore [0] == 0)
     return;
+
+printf ("ENVIRON:\n");
+for (e = environ; *e; e++)
+  printf ("    %s\n", *e);
 printf ("opening ignore file '%s'\n", flag_tsan_ignore);
   f = fopen (flag_tsan_ignore, "r");
   if (f == NULL)
@@ -264,6 +314,7 @@ printf ("opening ignore file '%s'\n", flag_tsan_ignore);
   fclose (f);
 }
 
+/* Returns ignore status for the current function */
 static enum tsan_ignore_e
 tsan_ignore (void)
 {
@@ -280,7 +331,8 @@ tsan_ignore (void)
     return tsan_ignore_func;
 
   func_name = IDENTIFIER_POINTER (DECL_ASSEMBLER_NAME (cfun->decl));
-  if (strncmp (func_name, "__tsan_", sizeof ("__tsan_") - 1) == 0)
+  /* Ignore all functions starting with __tsan_ - intended for testing */
+  if (strncmp (func_name, RTL_PERFIX, sizeof (RTL_PERFIX) - 1) == 0)
     return tsan_ignore_func;
 
   for (desc = ignore_head; desc; desc = desc->next)
@@ -291,12 +343,30 @@ tsan_ignore (void)
   return tsan_ignore_none;
 }
 
+static const char *
+decl_name (tree decl)
+{
+  tree id;
+  const char *name;
+
+  if (decl != 0 && DECL_P (decl))
+    {
+      id = DECL_NAME (decl);
+      if (id != NULL)
+        {
+          name = IDENTIFIER_POINTER (id);
+          if (name != NULL)
+            return name;
+        }
+    }
+  return "<unknown>";
+}
+
+/* Builds either (__tsan_shadow_stack += 1) or (__tsan_shadow_stack -= 1) expression 
+   depending on 'do_dec' parameter. Appends the result to seq. */
 static void
 build_stack_op (gimple_seq *seq, bool do_dec)
 {
-  /* Builds either (ShadowStack += 1) or (ShadowStack -= 1) expression
-     depending on 'do_dec' parameter */
-
   tree op_size;
   double_int op_size_cst;
   unsigned long long size_val;
@@ -308,8 +378,7 @@ build_stack_op (gimple_seq *seq, bool do_dec)
 
   op_size = TYPE_SIZE (ptr_type_node);
   op_size_cst = tree_to_double_int (op_size);
-  /* TODO (dvyukov): use target arch byte size */
-  size_val = op_size_cst.low / __CHAR_BIT__;
+  size_val = op_size_cst.low / BITS_PER_UNIT;
   size_valhi = 0;
   if (do_dec)
     {
@@ -325,12 +394,11 @@ build_stack_op (gimple_seq *seq, bool do_dec)
   gimple_seq_add_seq (seq, s);
 }
 
+/* Builds either (__tsan_thread_ignore += 1) or (thread_local_ignore -= 1) expression
+   depending on op parameter. Stores the result in seq. */
 static void
 build_rec_ignore_op (gimple_seq *seq, enum tree_code op)
 {
-  /* Builds either (thread_local_ignore += 1)
-     or (thread_local_ignore -= 1) expression depending on 'op' parameter */
-
   tree rec_expr;
   gimple_seq rec_inc;
   gimple rec_assign;
@@ -345,16 +413,14 @@ build_rec_ignore_op (gimple_seq *seq, enum tree_code op)
   gimple_seq_add_stmt (seq, rec_assign);
 }
 
+/* Build the following gimple sequence:
+   __tsan_shadow_stack [-1] = __builtin_return_address (0);
+   Stores the result in seq. */
 static void
 build_stack_assign (gimple_seq *seq)
 {
-  /* Build the following gimple sequence:
-     ShadowStack [-1] = __builtin_return_address (0); */
-
   tree pc_addr;
   tree op_size;
-  double_int op_size_cst;
-  unsigned long long size_val;
   tree op_expr;
   tree stack_op;
   tree assign;
@@ -362,14 +428,9 @@ build_stack_assign (gimple_seq *seq)
 
   rtl_retaddr = implicit_built_in_decls [BUILT_IN_RETURN_ADDRESS];
   pc_addr = build_call_expr (rtl_retaddr, 1, integer_zero_node);
-
-  op_size = TYPE_SIZE (ptr_type_node);
-  op_size_cst = tree_to_double_int (op_size);
-  size_val = op_size_cst.low / __CHAR_BIT__;
-  op_size = build_int_cst_wide (sizetype, -size_val, -1);
+  op_size = build_int_cst_wide (sizetype, -(POINTER_SIZE / BITS_PER_UNIT), -1);
   op_expr = build2 (POINTER_PLUS_EXPR, ptr_type_node,
                         shadow_stack_def (), op_size);
-
   stack_op = build1 (INDIRECT_REF, ptr_type_node, op_expr);
   assign = build2 (MODIFY_EXPR, ptr_type_node, stack_op, pc_addr);
   force_gimple_operand (assign, seq, true, NULL_TREE);
@@ -401,8 +462,7 @@ instr_mop (tree expr, location_t loc, int is_store, int is_sblock, gimple_seq *g
 
   tree addr_expr;
   tree expr_type;
-  tree expr_size;
-  double_int size;
+  unsigned size;
   unsigned flags;
   tree flags_expr;
   tree call_expr;
@@ -414,22 +474,15 @@ instr_mop (tree expr, location_t loc, int is_store, int is_sblock, gimple_seq *g
 
   addr_expr = build_addr (expr, current_function_decl);
   expr_type = TREE_TYPE (expr);
-  /* TODO (dvyukov): try to remove that WTF, and see if compiler crashes w/o that */
   while (TREE_CODE (expr_type) == ARRAY_TYPE)
     expr_type = TREE_TYPE (expr_type);
-  expr_size = TYPE_SIZE (expr_type);
-  /*!!! use:
-  //#define TREE_INT_CST_LOW (NODE) (TREE_INT_CST (NODE).low)
-  //#define TREE_INT_CST_HIGH (NODE) (TREE_INT_CST (NODE).high) */
-  size = tree_to_double_int (expr_size);
-  gcc_assert (size.high == 0 && size.low != 0);
-  size.low = (size.low / __CHAR_BIT__);
-  if (size.low > MAX_MOP_BYTES)
-    size.low = MAX_MOP_BYTES;
-  size.low = size.low - 1;
-  flags = ((!!is_sblock << 0) + (!!is_store << 1) + (size.low << 2));
+  size = TREE_INT_CST_LOW (TYPE_SIZE (expr_type));
+  size = size / BITS_PER_UNIT;
+  if (size > MAX_MOP_BYTES)
+    size = MAX_MOP_BYTES;
+  size -= 1;
+  flags = ((!!is_sblock << 0) + (!!is_store << 1) + (size << 2));
   flags_expr = build_int_cst (unsigned_type_node, flags);
-
   call_expr = build_call_expr (rtl_mop_def (), 2, addr_expr, flags_expr);
   force_gimple_operand (call_expr, gseq, true, 0);
 }
@@ -488,33 +541,17 @@ instr_vptr_store (tree expr, tree rhs, location_t loc, int is_sblock, gimple_seq
   gimple_seq_add_stmt (gseq, collect);
 }
 
-static char const *
-decl_name (tree decl)
-{
-  tree id;
-  char const *name;
-
-  if (decl != 0 && DECL_P (decl))
-    {
-      id = DECL_NAME (decl);
-      if (id != NULL)
-        {
-          name = IDENTIFIER_POINTER (id);
-          if (name != NULL)
-            return name;
-        }
-    }
-  return "<unknown>";
-}
-
+/* Sets location for all gimples in the seq. */
 static void
 set_location (gimple_seq seq, location_t loc)
 {
   gimple_seq_node n;
+
   for (n = gimple_seq_first (seq); n != NULL; n = n->next)
     gimple_set_location (n->stmt, loc);
 }
 
+/* Check as to whether expr refers to a store to vptr. */
 static tree
 is_dtor_vptr_store (gimple stmt, tree expr, int is_store)
 {
@@ -543,6 +580,8 @@ is_dtor_vptr_store (gimple stmt, tree expr, int is_store)
   return 0;
 }
 
+/* Checks as to whether expr refers to a read from vtlb.
+   Vtlbs are immutable, so don't bother to instrument them. */
 static int
 is_vtbl_read (tree expr, int is_store)
 {
@@ -587,6 +626,8 @@ is_vtbl_read (tree expr, int is_store)
   return 0;
 }
 
+/* Checks as to whether expr refers to constant var/field/param.
+   Don't bother to instrument them. */
 static int
 is_load_of_const (tree expr, int is_store)
 {
@@ -628,7 +669,6 @@ static void
 instrument_mop (gimple stmt, gimple_stmt_iterator *gsi, location_t loc,
                 tree expr, int is_store, VEC (mop_desc_t, heap) **mop_list)
 {
-  char const* reason;
   enum tree_code tcode;
   unsigned fld_off;
   unsigned fld_size;
@@ -644,45 +684,44 @@ instrument_mop (gimple stmt, gimple_stmt_iterator *gsi, location_t loc,
   if (is_fake_mop (expr))
     return;
 
-  reason = 0;
   tcode = TREE_CODE (expr);
 
   /* Below are things we do NOT want to instrument. */
   if (func_ignore & (tsan_ignore_mop | tsan_ignore_rec))
-    reason = "ignore file";
+    {
+      return;
+    }
   else if (tcode == VAR_DECL
       && TREE_ADDRESSABLE (expr) == 0
       && TREE_STATIC (expr) == 0)
     {
       /* the var does not live in memory -> no possibility of races */
-      reason = "non-addressable";
+      return;
     }
-/*
   else if (TREE_CODE (TREE_TYPE (expr)) == RECORD_TYPE)
     {
-      // why don't I instrument records?.. perhaps it crashes compilation,
-      // and should be handled more carefully
-      reason = "record type";
+      /* TODO (dvyukov): implement me */
+      return;
     }
-*/
   else if (tcode == CONSTRUCTOR)
     {
-      /* as of now crashes compilation
-         TODO (dvyukov): handle it correctly */
-      reason = "constructor expression";
+      /* TODO (dvyukov): implement me */
+      return;
     }
   else if (tcode == PARM_DECL)
     {
       /* TODO (dvyukov): need to instrument it */
-      reason = "function parameter";
+      return;
     }
   else if (is_load_of_const (expr, is_store))
     {
-      reason = "load of a const variable/parameter/field";
+      /* load of a const variable/parameter/field */
+      return;
     }
   else if (is_vtbl_read (expr, is_store))
     {
-      reason = "vtbl read";
+      /* vtbl read */
+      return;
     }
   else if (tcode == COMPONENT_REF)
     {
@@ -691,12 +730,12 @@ instrument_mop (gimple stmt, gimple_stmt_iterator *gsi, location_t loc,
         {
           fld_off = field->field_decl.bit_offset->int_cst.int_cst.low;
           fld_size = field->decl_common.size->int_cst.int_cst.low;
-          if (((fld_off % __CHAR_BIT__) != 0)
-              || ((fld_size % __CHAR_BIT__) != 0))
+          if (((fld_off % BITS_PER_UNIT) != 0)
+              || ((fld_size % BITS_PER_UNIT) != 0))
             {
               /* as of now it crashes compilation
                  TODO (dvyukov): handle bit-fields -> as if touching the whole field */
-              reason = "weird bit field";
+              return;
             }
         }
     }
@@ -712,12 +751,9 @@ instrument_mop (gimple stmt, gimple_stmt_iterator *gsi, location_t loc,
       && tcode != COMPONENT_REF
       && tcode != INDIRECT_REF /*?*/
       && tcode != MEM_REF)
-    reason = "unknown type";
+    return;
 
   dtor_vptr_expr = is_dtor_vptr_store (stmt, expr, is_store);
-
-  if (reason != 0)
-    return;
 
   mop.is_call = 0;
   mop.gsi = *gsi;
@@ -737,7 +773,6 @@ handle_gimple (gimple_stmt_iterator *gsi, VEC (mop_desc_t, heap) **mop_list)
   location_t loc;
   tree rhs;
   tree lhs;
-  tree fndecl;
 
   stmt = gsi_stmt (*gsi);
   gcode = gimple_code (stmt);
@@ -748,7 +783,7 @@ handle_gimple (gimple_stmt_iterator *gsi, VEC (mop_desc_t, heap) **mop_list)
 
   switch (gcode)
     {
-      /* TODO (dvyukov): handle GIMPLE_COND */
+      /* TODO (dvyukov): handle GIMPLE_COND (can it access memmory?) */
       case GIMPLE_CALL:
         {
           func_calls += 1;
@@ -762,9 +797,6 @@ handle_gimple (gimple_stmt_iterator *gsi, VEC (mop_desc_t, heap) **mop_list)
           memset (&mop, 0, sizeof (mop));
           mop.is_call = 1;
           VEC_safe_push (mop_desc_t, heap, *mop_list, &mop);
-
-          fndecl = gimple_call_fndecl (stmt);
-          gcc_assert (strcmp (decl_name (fndecl), "__tsan_handle_mop") != 0);
 
           /* Handle assignment lhs as store */
           lhs = gimple_call_lhs (stmt);
@@ -832,7 +864,7 @@ instrument_bblock (struct bb_data_t *bbd, basic_block bb)
       if (mop->is_call != 0)
         {
           /* After a function call we must start a brand new sblock,
-             because the call can contain synchronization or whatever. */
+             because the function can contain synchronization. */
           bbd->has_sb = 0;
           continue;
         }
