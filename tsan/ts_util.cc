@@ -263,7 +263,7 @@ static string StripTemplatesFromFunctionName(const string &fname) {
                           "<", ">"};
 
       bool operator_name = false;
-      for (size_t i = 0; i < sizeof(OP)/sizeof(*OP); i++) {
+      for (size_t i = 0; i < ARRAY_SIZE(OP); i++) {
         size_t op_offset = ((string)OP[i]).find(fname[next_brace]);
         if (op_offset == string::npos)
           continue;

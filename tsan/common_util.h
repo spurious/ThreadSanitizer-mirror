@@ -29,6 +29,8 @@
 
 #include "ts_util.h"
 
+#define ARRAY_SIZE(a) (sizeof(a)/sizeof(*a))
+
 #if defined(__GNUC__)
   typedef int TS_FILE;
   #define TS_FILE_INVALID (-1)

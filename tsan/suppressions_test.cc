@@ -332,6 +332,33 @@ TEST_F(BaseSuppressionsTest, ObjectiveC) {
   ASSERT_TRUE(IsSuppressed(VEC(m), VEC(d), VEC(o)));
 }
 
+TEST_F(BaseSuppressionsTest, ComparisonAndShiftOperators) {
+  const string data =
+      "{\n"
+      "  name\n"
+      "  test_tool:test_warning_type\n"
+      "  fun:operator<\n"
+      "  fun:operator>\n"
+      "  fun:operator<=\n"
+      "  fun:operator>=\n"
+      "  fun:operator<<\n"
+      "  fun:operator>>\n"
+      "  fun:operator<<=\n"
+      "  fun:operator>>=\n"
+      "  fun:operator->\n"
+      "  fun:operator->*\n"
+      "}";
+  printf("BOO!\n");
+  EXPECT_GT(supp_.ReadFromString(data), 0);
+  printf("BOO! %d\n", supp_.GetErrorLineNo());
+  string m[] = {"operator<", "operator>", "operator<=", "operator>=",
+                "operator<<", "operator>>", "operator<<=", "operator>>=",
+                "operator->", "operator->*"};
+  string d[] = {"bbbxxwz", "aaa", "ddd", "ccc"};
+  string o[] = {"object2", "objt1", "object3", "object4"};
+  ASSERT_TRUE(IsSuppressed(VEC(m), VEC(d), VEC(o)));
+}
+
 
 class FailingSuppressionsTest : public ::testing::Test {
  protected:
