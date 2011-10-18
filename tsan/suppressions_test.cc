@@ -348,9 +348,7 @@ TEST_F(BaseSuppressionsTest, ComparisonAndShiftOperators) {
       "  fun:operator->\n"
       "  fun:operator->*\n"
       "}";
-  printf("BOO!\n");
-  EXPECT_GT(supp_.ReadFromString(data), 0);
-  printf("BOO! %d\n", supp_.GetErrorLineNo());
+  ASSERT_GT(supp_.ReadFromString(data), 0);
   string m[] = {"operator<", "operator>", "operator<=", "operator>=",
                 "operator<<", "operator>>", "operator<<=", "operator>>=",
                 "operator->", "operator->*"};
