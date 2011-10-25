@@ -43,6 +43,7 @@ along with GCC; see the file COPYING3.  If not see
 #endif
 
 #include "diagnostic.h"
+#include "incpath.h"
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -53,6 +54,12 @@ along with GCC; see the file COPYING3.  If not see
 #define RTL_STACK "__tsan_shadow_stack"
 #define RTL_MOP "__tsan_handle_mop"
 #define RTL_PERFIX "__tsan_"
+
+#if 0
+# define DBG(...) printf (__VA_ARGS__)
+#else
+# define DBG(...) ((void)0)
+#endif
 
 enum tsan_ignore_e
 {
@@ -131,12 +138,14 @@ shadow_stack_def (void)
 		    get_identifier (RTL_STACK), 
 		    build_pointer_type (ptr_type_node));
   TREE_STATIC (def) = 1;
-  TREE_PUBLIC (def) = 0;
-  DECL_INITIAL (def) = NULL;
+  TREE_PUBLIC (def) = 1;
+  DECL_EXTERNAL (def) = 1;
   DECL_TLS_MODEL (def) = decl_default_tls_model (def);
-  DECL_ARTIFICIAL (def) = 1;
-  varpool_finalize_decl (def);
-  varpool_mark_needed_node (varpool_node (def));
+TREE_USED (def) = 1;
+TREE_THIS_VOLATILE (def) = 1;
+SET_DECL_ASSEMBLER_NAME (def, get_identifier (RTL_STACK));
+  /*varpool_finalize_decl (def);
+  varpool_mark_needed_node (varpool_node (def));*/
   return def;
 }
 
@@ -159,12 +168,14 @@ thread_ignore_def (void)
 		    get_identifier (RTL_IGNORE), 
 		    integer_type_node);
   TREE_STATIC (def) = 1;
-  TREE_PUBLIC (def) = 0;
-  DECL_INITIAL (def) = NULL;
+  TREE_PUBLIC (def) = 1;
+  DECL_EXTERNAL (def) = 1;
   DECL_TLS_MODEL (def) = decl_default_tls_model (def);
-  DECL_ARTIFICIAL (def) = 1;
-  varpool_finalize_decl (def);
-  varpool_mark_needed_node (varpool_node (def));
+TREE_USED (def) = 1;
+TREE_THIS_VOLATILE (def) = 1;
+SET_DECL_ASSEMBLER_NAME (def, get_identifier (RTL_IGNORE));
+  /*varpool_finalize_decl (def);
+  varpool_mark_needed_node (varpool_node (def));*/
   return def;
 }
 
@@ -214,7 +225,8 @@ ignore_match (char *templ, const char *str)
   char *tpos;
   const char *spos;
 
-  while (templ [0])
+DBG ("matching '%s' against '%s': ", str, templ);
+  while (templ && templ [0])
     {
       if (templ [0] == '*')
         {
@@ -222,7 +234,10 @@ ignore_match (char *templ, const char *str)
           continue;
         }
       if (str [0] == 0)
+{
+DBG ("str [0] == 0\n");
         return 0;
+}
       tpos = strchr (templ, '*');
       if (tpos != NULL)
         tpos [0] = 0;
@@ -232,8 +247,12 @@ ignore_match (char *templ, const char *str)
       if (tpos != NULL)
         tpos [0] = '*';
       if (spos == NULL)
+{
+DBG ("spos == NULL\n");
         return 0;
+}
     }
+DBG ("matched\n");
   return 1;
 }
 
@@ -267,22 +286,55 @@ ignore_load (void)
   char *line;
   size_t linesz;
   ssize_t sz;
+  char buf [1024];
+  cpp_dir *pdir1;
+  cpp_dir *pdir2;
 
-char** e;
+  if (getenv ("TSAN_PAUSE"))
+    {
+      printf ("Attach a debugger and press any key.");
+      scanf ("\n");
+    }
 
   if (flag_tsan_ignore == NULL || flag_tsan_ignore [0] == 0)
     return;
 
-printf ("ENVIRON:\n");
-for (e = environ; *e; e++)
-  printf ("    %s\n", *e);
-printf ("opening ignore file '%s'\n", flag_tsan_ignore);
+  snprintf (buf, sizeof (buf), "%s", flag_tsan_ignore);
+DBG ("opening ignore file '%s'\n", flag_tsan_ignore);
   f = fopen (flag_tsan_ignore, "r");
-  if (f == NULL)
+  if (f != NULL)
+    goto opened;
+
+  strcpy (buf, main_input_filename);
+  line = strrchr (buf, '/');
+  if (line != NULL)
     {
-      printf ("failed to open ignore file '%s' (errno=%d)\n", flag_tsan_ignore, errno);
-      exit (1);
+      strcpy (line + 1, flag_tsan_ignore);
+DBG ("opening ignore file '%s'\n", buf);
+      f = fopen (buf, "r");
+      if (f != NULL)
+        goto opened;
     }
+  get_include_chains (&pdir1, &pdir2);
+  for (; ; )
+    {
+      for (; pdir1; pdir1 = pdir1->next)
+        {
+          snprintf (buf, sizeof (buf), "%s/%s", pdir1->name, flag_tsan_ignore);
+DBG ("opening ignore file '%s'\n", buf);
+          f = fopen (buf, "r");
+          if (f != NULL)
+            goto opened;
+        }
+      if (pdir2 == NULL)
+        break;
+      pdir1 = pdir2;
+      pdir2 = NULL;
+    }
+system ("find .");
+  printf ("failed to open ignore file '%s'\n", flag_tsan_ignore);
+  exit (1);
+opened:
 
   line = 0;
   linesz = 0;
@@ -291,23 +343,30 @@ printf ("opening ignore file '%s'\n", flag_tsan_ignore);
       if (sz == 0)
         continue;
       /* strip line terminator */
-      line [sz-1] = 0;
+      if (line [sz-1] == '\r' || line [sz-1] == '\n')
+        line [sz-1] = 0;
+DBG ("parsing line '%s': ", line);
       if (strncmp (line, "src:", sizeof ("src:")-1) == 0)
         {
           if (ignore_match (line + sizeof ("src:")-1, main_input_filename))
             {
               /* don't care about anything else */
               ignore_file = 1;
+DBG ("source ignore - break\n");
               break;
             }
         }
       else if (strncmp (line, "fun:", sizeof ("fun:")-1) == 0)
+DBG ("fun\n"),
         ignore_append (tsan_ignore_mop, line + sizeof ("fun:")-1);
       else if (strncmp (line, "fun_r:", sizeof ("fun_r:")-1) == 0)
-        ignore_append (tsan_ignore_mop, line + sizeof ("fun_r:")-1);
+DBG ("fun_r\n"),
+        ignore_append (tsan_ignore_rec, line + sizeof ("fun_r:")-1);
       else if (strncmp (line, "fun_hist:", sizeof ("fun_hist:")-1) == 0)
-        ignore_append (tsan_ignore_mop, line + sizeof ("fun_hist:")-1);
+DBG ("fun_hist\n"),
+        ignore_append (tsan_ignore_hist, line + sizeof ("fun_hist:")-1);
       /* other lines are not interesting */
+else DBG ("ignoring\n");
     }
 
   free (line);
@@ -439,13 +498,17 @@ build_stack_assign (gimple_seq *seq)
 static void
 instr_func (gimple_seq *pre, gimple_seq *post)
 {
+DBG("instr_func: %d/%d/%d\n", func_calls, func_mops, func_ignore);
   /* In this case we need no instrumentation for the function */
   if (func_calls == 0 && func_mops == 0)
     return;
 
-  build_stack_assign (pre);
-  build_stack_op (pre, false);
-  build_stack_op (post, true);
+  if (func_ignore != tsan_ignore_rec)
+    {
+      build_stack_assign (pre);
+      build_stack_op (pre, false);
+      build_stack_op (post, true);
+    }
 
   if (func_ignore == tsan_ignore_rec && func_calls != 0)
     {
@@ -1037,6 +1100,9 @@ tsan_pass (void)
   func_ignore = tsan_ignore ();
   if (func_ignore == tsan_ignore_func)
     return 0;
+
+  func_calls = 0;
+  func_mops = 0;
 
   instrument_function ();
 
