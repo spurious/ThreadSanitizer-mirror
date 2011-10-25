@@ -110,7 +110,6 @@ static enum tsan_ignore_e func_ignore;
 static int func_calls;
 static int func_mops;
 static int ignore_init = 0;
-static int ignore_file = 0;
 static struct tsan_ignore_desc_t *ignore_head;
 
 tree __attribute__((weak)) lookup_name (tree t)
@@ -141,11 +140,9 @@ shadow_stack_def (void)
   TREE_PUBLIC (def) = 1;
   DECL_EXTERNAL (def) = 1;
   DECL_TLS_MODEL (def) = decl_default_tls_model (def);
-TREE_USED (def) = 1;
-TREE_THIS_VOLATILE (def) = 1;
-SET_DECL_ASSEMBLER_NAME (def, get_identifier (RTL_STACK));
-  /*varpool_finalize_decl (def);
-  varpool_mark_needed_node (varpool_node (def));*/
+  TREE_USED (def) = 1;
+  TREE_THIS_VOLATILE (def) = 1;
+  SET_DECL_ASSEMBLER_NAME (def, get_identifier (RTL_STACK));
   return def;
 }
 
@@ -171,11 +168,9 @@ thread_ignore_def (void)
   TREE_PUBLIC (def) = 1;
   DECL_EXTERNAL (def) = 1;
   DECL_TLS_MODEL (def) = decl_default_tls_model (def);
-TREE_USED (def) = 1;
-TREE_THIS_VOLATILE (def) = 1;
-SET_DECL_ASSEMBLER_NAME (def, get_identifier (RTL_IGNORE));
-  /*varpool_finalize_decl (def);
-  varpool_mark_needed_node (varpool_node (def));*/
+  TREE_USED (def) = 1;
+  TREE_THIS_VOLATILE (def) = 1;
+  SET_DECL_ASSEMBLER_NAME (def, get_identifier (RTL_IGNORE));
   return def;
 }
 
@@ -293,7 +288,8 @@ ignore_load (void)
   if (getenv ("TSAN_PAUSE"))
     {
       printf ("Attach a debugger and press any key.");
-      scanf ("\n");
+      sz = scanf ("\n");
+      (void)sz;
     }
 
   if (flag_tsan_ignore == NULL || flag_tsan_ignore [0] == 0)
@@ -331,7 +327,6 @@ DBG ("opening ignore file '%s'\n", buf);
       pdir1 = pdir2;
       pdir2 = NULL;
     }
-system ("find .");
   printf ("failed to open ignore file '%s'\n", flag_tsan_ignore);
   exit (1);
 opened:
@@ -347,15 +342,8 @@ opened:
         line [sz-1] = 0;
 DBG ("parsing line '%s': ", line);
       if (strncmp (line, "src:", sizeof ("src:")-1) == 0)
-        {
-          if (ignore_match (line + sizeof ("src:")-1, main_input_filename))
-            {
-              /* don't care about anything else */
-              ignore_file = 1;
-DBG ("source ignore - break\n");
-              break;
-            }
-        }
+DBG ("src\n"),
+        ignore_append (tsan_ignore_func, line + sizeof ("src:")-1);
       else if (strncmp (line, "fun:", sizeof ("fun:")-1) == 0)
 DBG ("fun\n"),
         ignore_append (tsan_ignore_mop, line + sizeof ("fun:")-1);
@@ -366,7 +354,8 @@ DBG ("fun_r\n"),
 DBG ("fun_hist\n"),
         ignore_append (tsan_ignore_hist, line + sizeof ("fun_hist:")-1);
       /* other lines are not interesting */
-else DBG ("ignoring\n");
+else
+DBG ("ignoring\n");
     }
 
   free (line);
@@ -378,6 +367,7 @@ static enum tsan_ignore_e
 tsan_ignore (void)
 {
   const char *func_name;
+  const char *src_name;
   struct tsan_ignore_desc_t *desc;
 
   if (ignore_init == 0)
@@ -386,8 +376,9 @@ tsan_ignore (void)
       ignore_init = 1;
     }
 
-  if (ignore_file)
-    return tsan_ignore_func;
+  src_name = expand_location(cfun->function_start_locus).file;
+  if (src_name == NULL)
+    src_name = "";
 
   func_name = IDENTIFIER_POINTER (DECL_ASSEMBLER_NAME (cfun->decl));
   /* Ignore all functions starting with __tsan_ - intended for testing */
@@ -396,7 +387,12 @@ tsan_ignore (void)
 
   for (desc = ignore_head; desc; desc = desc->next)
     {
-      if (ignore_match (desc->name, func_name))
+      if (desc->type == tsan_ignore_func)
+        {
+          if (ignore_match (desc->name, src_name))
+           return desc->type;
+        }
+      else if (ignore_match (desc->name, func_name))
        return desc->type;
     }
   return tsan_ignore_none;
