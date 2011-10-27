@@ -43,7 +43,6 @@ along with GCC; see the file COPYING3.  If not see
 #endif
 
 #include "diagnostic.h"
-#include "incpath.h"
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -55,19 +54,13 @@ along with GCC; see the file COPYING3.  If not see
 #define RTL_MOP "__tsan_handle_mop"
 #define RTL_PERFIX "__tsan_"
 
-#if 0
-# define DBG(...) printf (__VA_ARGS__)
-#else
-# define DBG(...) ((void)0)
-#endif
-
 enum tsan_ignore_e
 {
-  tsan_ignore_none  = 1 << 0, /* do not ignore */
-  tsan_ignore_func  = 1 << 1, /* completely ignore the whole func */
-  tsan_ignore_mop   = 1 << 2, /* do not instrument memory accesses */
-  tsan_ignore_rec   = 1 << 3, /* do not instrument memory accesses recursively */
-  tsan_ignore_hist  = 1 << 4  /* do not create superblocks */
+  tsan_ignore_none  = 1 << 0, /* Do not ignore. */
+  tsan_ignore_func  = 1 << 1, /* Completely ignore the whole func. */
+  tsan_ignore_mop   = 1 << 2, /* Do not instrument memory accesses. */
+  tsan_ignore_rec   = 1 << 3, /* Do not instrument memory accesses recursively. */
+  tsan_ignore_hist  = 1 << 4  /* Do not create superblocks. */
 };
 
 enum bb_state_e
@@ -102,17 +95,24 @@ struct tsan_ignore_desc_t
   char                      *name;
 };
 
+/* Number of instrumented memory accesses in the current function. */
+static int func_mops;
+/* Number of function calls in the current function. */
+static int func_calls;
+/* Ignore status for the current function (see tsan_ignore_e). */
+static enum tsan_ignore_e func_ignore;
+
+static int ignore_init = 0;
+static struct tsan_ignore_desc_t *ignore_head;
+
 typedef struct mop_desc_t mop_desc_t;
 DEF_VEC_O (mop_desc_t);
 DEF_VEC_ALLOC_O (mop_desc_t, heap);
 static VEC (mop_desc_t, heap) *mop_list;
-static enum tsan_ignore_e func_ignore;
-static int func_calls;
-static int func_mops;
-static int ignore_init = 0;
-static struct tsan_ignore_desc_t *ignore_head;
 
-tree __attribute__((weak)) lookup_name (tree t)
+/* The function is not available in some modules. */
+tree __attribute__((weak))
+lookup_name (tree t)
 {
   (void)t;
   return NULL_TREE;
@@ -199,7 +199,7 @@ rtl_mop_def (void)
   return def;
 }
 
-/* Adds new ignore definition */
+/* Adds new ignore definition to the global list */
 static void
 ignore_append (enum tsan_ignore_e type, char *name)
 {
@@ -213,14 +213,15 @@ ignore_append (enum tsan_ignore_e type, char *name)
 }
 
 /* Checks as to whether identifier 'str' matches template 'templ'.
-   Templates can only contain '*', e.g. 'std*string*insert' */
+   Templates can only contain '*', e.g. 'std*string*insert'.
+   Templates implicitly start and end with '*'
+   since they are matched against mangled names. */
 static int
 ignore_match (char *templ, const char *str)
 {
   char *tpos;
   const char *spos;
 
-DBG ("matching '%s' against '%s': ", str, templ);
   while (templ && templ [0])
     {
       if (templ [0] == '*')
@@ -229,10 +230,7 @@ DBG ("matching '%s' against '%s': ", str, templ);
           continue;
         }
       if (str [0] == 0)
-{
-DBG ("str [0] == 0\n");
         return 0;
-}
       tpos = strchr (templ, '*');
       if (tpos != NULL)
         tpos [0] = 0;
@@ -242,12 +240,8 @@ DBG ("str [0] == 0\n");
       if (tpos != NULL)
         tpos [0] = '*';
       if (spos == NULL)
-{
-DBG ("spos == NULL\n");
         return 0;
-}
     }
-DBG ("matched\n");
   return 1;
 }
 
@@ -270,7 +264,7 @@ fun_r:foobar
 fun_hist:barbaz
 
 # Ignore all functions in the source file
-src:*atomic.c
+src:atomic.c
 
 # Everything else is uninteresting for us (e.g. obj:)
 */
@@ -281,55 +275,31 @@ ignore_load (void)
   char *line;
   size_t linesz;
   ssize_t sz;
-  char buf [1024];
-  cpp_dir *pdir1;
-  cpp_dir *pdir2;
-
-  if (getenv ("TSAN_PAUSE"))
-    {
-      printf ("Attach a debugger and press any key.");
-      sz = scanf ("\n");
-      (void)sz;
-    }
+  char buf [PATH_MAX];
 
   if (flag_tsan_ignore == NULL || flag_tsan_ignore [0] == 0)
     return;
 
-  snprintf (buf, sizeof (buf), "%s", flag_tsan_ignore);
-DBG ("opening ignore file '%s'\n", flag_tsan_ignore);
   f = fopen (flag_tsan_ignore, "r");
-  if (f != NULL)
-    goto opened;
-
-  strcpy (buf, main_input_filename);
-  line = strrchr (buf, '/');
-  if (line != NULL)
+  if (f == NULL)
     {
-      strcpy (line + 1, flag_tsan_ignore);
-DBG ("opening ignore file '%s'\n", buf);
-      f = fopen (buf, "r");
-      if (f != NULL)
-        goto opened;
-    }
-  get_include_chains (&pdir1, &pdir2);
-  for (; ; )
-    {
-      for (; pdir1; pdir1 = pdir1->next)
+      /* Try to open it relative to main_input_filename. */
+      strncpy (buf, main_input_filename, sizeof (buf));
+      buf [sizeof (buf) - 1] = 0;
+      line = strrchr (buf, '/');
+      if (line != NULL)
         {
-          snprintf (buf, sizeof (buf), "%s/%s", pdir1->name, flag_tsan_ignore);
-DBG ("opening ignore file '%s'\n", buf);
+          line++;
+          strncpy (line, flag_tsan_ignore, sizeof (buf) - (line - buf));
+          buf [sizeof (buf) - 1] = 0;
           f = fopen (buf, "r");
-          if (f != NULL)
-            goto opened;
         }
-      if (pdir2 == NULL)
-        break;
-      pdir1 = pdir2;
-      pdir2 = NULL;
     }
-  printf ("failed to open ignore file '%s'\n", flag_tsan_ignore);
-  exit (1);
-opened:
+  if (f == NULL)
+    {
+      printf ("failed to open ignore file '%s'\n", flag_tsan_ignore);
+      exit (1);
+    }
 
   line = 0;
   linesz = 0;
@@ -340,22 +310,15 @@ opened:
       /* strip line terminator */
       if (line [sz-1] == '\r' || line [sz-1] == '\n')
         line [sz-1] = 0;
-DBG ("parsing line '%s': ", line);
       if (strncmp (line, "src:", sizeof ("src:")-1) == 0)
-DBG ("src\n"),
         ignore_append (tsan_ignore_func, line + sizeof ("src:")-1);
       else if (strncmp (line, "fun:", sizeof ("fun:")-1) == 0)
-DBG ("fun\n"),
         ignore_append (tsan_ignore_mop, line + sizeof ("fun:")-1);
       else if (strncmp (line, "fun_r:", sizeof ("fun_r:")-1) == 0)
-DBG ("fun_r\n"),
         ignore_append (tsan_ignore_rec, line + sizeof ("fun_r:")-1);
       else if (strncmp (line, "fun_hist:", sizeof ("fun_hist:")-1) == 0)
-DBG ("fun_hist\n"),
         ignore_append (tsan_ignore_hist, line + sizeof ("fun_hist:")-1);
       /* other lines are not interesting */
-else
-DBG ("ignoring\n");
     }
 
   free (line);
@@ -491,42 +454,18 @@ build_stack_assign (gimple_seq *seq)
   force_gimple_operand (assign, seq, true, NULL_TREE);
 }
 
+/* Builds the following gimple sequence:
+   __tsan_handle_mop (&expr, (is_sblock | (is_store << 1) | ((sizeof (expr)-1) << 2)
+   The result is stored in gseq. */
 static void
-instr_func (gimple_seq *pre, gimple_seq *post)
+instr_mop (tree expr, int is_store, int is_sblock, gimple_seq *gseq)
 {
-DBG("instr_func: %d/%d/%d\n", func_calls, func_mops, func_ignore);
-  /* In this case we need no instrumentation for the function */
-  if (func_calls == 0 && func_mops == 0)
-    return;
-
-  if (func_ignore != tsan_ignore_rec)
-    {
-      build_stack_assign (pre);
-      build_stack_op (pre, false);
-      build_stack_op (post, true);
-    }
-
-  if (func_ignore == tsan_ignore_rec && func_calls != 0)
-    {
-      build_rec_ignore_op (pre, PLUS_EXPR);
-      build_rec_ignore_op (post, MINUS_EXPR);
-    }
-}
-
-static void
-instr_mop (tree expr, location_t loc, int is_store, int is_sblock, gimple_seq *gseq)
-{
-  /* Builds the following gimple sequence:
-     tsan_rtl_mop (&expr, (is_sblock | (is_store << 1) | ((sizeof (expr)-1) << 2) */
-
   tree addr_expr;
   tree expr_type;
   unsigned size;
   unsigned flags;
   tree flags_expr;
   tree call_expr;
-
-  (void)loc;
 
   gcc_assert (gseq != 0 && *gseq == 0);
   gcc_assert (is_gimple_addressable (expr));
@@ -546,14 +485,13 @@ instr_mop (tree expr, location_t loc, int is_store, int is_sblock, gimple_seq *g
   force_gimple_operand (call_expr, gseq, true, 0);
 }
 
-
+/* Builds the following gimple sequence:
+   int is_store = (expr != rhs);
+   tsan_rtl_mop (&expr, (is_sblock | (is_store << 1) | ((sizeof (expr)-1) << 2)
+   The result is stored in gseq. */
 static void
-instr_vptr_store (tree expr, tree rhs, location_t loc, int is_sblock, gimple_seq *gseq)
+instr_vptr_store (tree expr, tree rhs, int is_sblock, gimple_seq *gseq)
 {
-  /* Builds the following gimple sequence:
-     int is_store = (expr != rhs);
-     tsan_rtl_mop (&expr, (is_sblock | (is_store << 1) | ((sizeof (expr)-1) << 2) */
-
   tree expr_ptr;
   tree addr_expr;
   tree expr_type;
@@ -565,11 +503,8 @@ instr_vptr_store (tree expr, tree rhs, location_t loc, int is_sblock, gimple_seq
   gimple collect;
   tree is_store_expr;
 
-  (void)loc;
-
   expr_ptr = build_addr (expr, current_function_decl);
   addr_expr = force_gimple_operand (expr_ptr, gseq, true, NULL_TREE);
-
   expr_type = TREE_TYPE (expr);
   while (TREE_CODE (expr_type) == ARRAY_TYPE)
     expr_type = TREE_TYPE (expr_type);
@@ -581,7 +516,6 @@ instr_vptr_store (tree expr, tree rhs, location_t loc, int is_sblock, gimple_seq
   size.low = (size.low / 8) - 1;
   flags = ((!!is_sblock << 0) + (size.low << 2));
   flags_expr = build_int_cst (unsigned_type_node, flags);
-
   is_store_expr = build2 (NE_EXPR, integer_type_node,
                               build1 (VIEW_CONVERT_EXPR, size_type_node, expr),
                               build1 (VIEW_CONVERT_EXPR, size_type_node, rhs));
@@ -589,15 +523,35 @@ instr_vptr_store (tree expr, tree rhs, location_t loc, int is_sblock, gimple_seq
                               is_store_expr, integer_one_node);
   flags_expr = build2 (BIT_IOR_EXPR, integer_type_node,
                               is_store_expr, flags_expr);
-
   flags_seq = 0;
   flags_expr = force_gimple_operand (flags_expr, &flags_seq, true, NULL_TREE);
   gimple_seq_add_seq (gseq, flags_seq);
-
   collect = gimple_build_call (
       rtl_mop_def (), 2, addr_expr, flags_expr);
-
   gimple_seq_add_stmt (gseq, collect);
+}
+
+/* Builds gimple sequences that must be inserted at function entry (pre)
+   and before function exit (post). */
+static void
+instr_func (gimple_seq *pre, gimple_seq *post)
+{
+  /* In this case we need no instrumentation for the function */
+  if (func_calls == 0 && func_mops == 0)
+    return;
+
+  if (func_ignore != tsan_ignore_rec)
+    {
+      build_stack_assign (pre);
+      build_stack_op (pre, false);
+      build_stack_op (post, true);
+    }
+
+  if (func_ignore == tsan_ignore_rec && func_calls != 0)
+    {
+      build_rec_ignore_op (pre, PLUS_EXPR);
+      build_rec_ignore_op (post, MINUS_EXPR);
+    }
 }
 
 /* Sets location for all gimples in the seq. */
@@ -705,49 +659,40 @@ is_load_of_const (tree expr, int is_store)
   return 0;
 }
 
-static int
-is_fake_mop (const_tree expr)
-{
-  /* various constant literals */
-  if (TREE_CODE_CLASS (TREE_CODE (expr)) == tcc_constant)
-    return 1;
-
-  /* compiler-emitted artificial variables */
-  if (TREE_CODE_CLASS (TREE_CODE (expr)) == tcc_declaration
-      && DECL_ARTIFICIAL (expr))
-    return 1;
-
-  /* store to function result */
-  if (TREE_CODE (expr) == RESULT_DECL)
-    return 1;
-
-  return 0;
-}
-
 static void
-instrument_mop (gimple stmt, gimple_stmt_iterator *gsi, location_t loc,
-                tree expr, int is_store, VEC (mop_desc_t, heap) **mop_list)
+handle_expr (gimple stmt, gimple_stmt_iterator gsi,
+             tree expr, int is_store, VEC (mop_desc_t, heap) **mop_list)
 {
   enum tree_code tcode;
+  struct mop_desc_t mop;
   unsigned fld_off;
   unsigned fld_size;
-  tree dtor_vptr_expr;
-  struct mop_desc_t mop;
-
-  (void)loc;
 
   /* map SSA name to real name */
   if (TREE_CODE (expr) == SSA_NAME)
     expr = SSA_NAME_VAR (expr);
-
-  if (is_fake_mop (expr))
-    return;
 
   tcode = TREE_CODE (expr);
 
   /* Below are things we do NOT want to instrument. */
   if (func_ignore & (tsan_ignore_mop | tsan_ignore_rec))
     {
+      return;
+    }
+  else if (TREE_CODE_CLASS (tcode) == tcc_constant)
+    {
+      /* various constant literals */
+      return;
+    }
+  else if (TREE_CODE_CLASS (tcode) == tcc_declaration
+      && DECL_ARTIFICIAL (expr))
+    {
+      /* compiler-emitted artificial variables */
+      return;
+    }
+  if (tcode == RESULT_DECL)
+    {
+      /* store to function result */
       return;
     }
   else if (tcode == VAR_DECL
@@ -769,7 +714,7 @@ instrument_mop (gimple stmt, gimple_stmt_iterator *gsi, location_t loc,
     }
   else if (tcode == PARM_DECL)
     {
-      /* TODO (dvyukov): need to instrument it */
+      /* TODO (dvyukov): implement me */
       return;
     }
   else if (is_load_of_const (expr, is_store))
@@ -799,31 +744,25 @@ instrument_mop (gimple stmt, gimple_stmt_iterator *gsi, location_t loc,
         }
     }
 
-  /* TODO (dvyukov): handle those cases
-  //&& tcode != FIELD_DECL
-  //&& tcode != MEM_REF
-  //&& tcode != ARRAY_RANGE_REF
-  //&& tcode != TARGET_MEM_REF
-  //&& tcode != ADDR_EXPR */
-  if (tcode != ARRAY_REF /*?*/
+  /* TODO (dvyukov): handle other cases
+     (FIELD_DECL, MEM_REF, ARRAY_RANGE_REF, TARGET_MEM_REF, ADDR_EXPR) */
+  if (tcode != ARRAY_REF
       && tcode != VAR_DECL
       && tcode != COMPONENT_REF
-      && tcode != INDIRECT_REF /*?*/
+      && tcode != INDIRECT_REF
       && tcode != MEM_REF)
     return;
 
-  dtor_vptr_expr = is_dtor_vptr_store (stmt, expr, is_store);
-
   mop.is_call = 0;
-  mop.gsi = *gsi;
+  mop.gsi = gsi;
   mop.expr = expr;
-  mop.dtor_vptr_expr = dtor_vptr_expr;
+  mop.dtor_vptr_expr = is_dtor_vptr_store (stmt, expr, is_store);
   mop.is_store = is_store;
   VEC_safe_push (mop_desc_t, heap, *mop_list, &mop);
 }
 
 static void
-handle_gimple (gimple_stmt_iterator *gsi, VEC (mop_desc_t, heap) **mop_list)
+handle_gimple (gimple_stmt_iterator gsi, VEC (mop_desc_t, heap) **mop_list)
 {
   unsigned i;
   struct mop_desc_t mop;
@@ -833,7 +772,7 @@ handle_gimple (gimple_stmt_iterator *gsi, VEC (mop_desc_t, heap) **mop_list)
   tree rhs;
   tree lhs;
 
-  stmt = gsi_stmt (*gsi);
+  stmt = gsi_stmt (gsi);
   gcode = gimple_code (stmt);
   if (gcode >= LAST_AND_UNUSED_GIMPLE_CODE)
     return;
@@ -850,7 +789,7 @@ handle_gimple (gimple_stmt_iterator *gsi, VEC (mop_desc_t, heap) **mop_list)
           for (i = 0; i < gimple_call_num_args (stmt); i++)
             {
               rhs = gimple_call_arg (stmt, i);
-              instrument_mop (stmt, gsi, loc, rhs, 0, mop_list);
+              handle_expr (stmt, gsi, rhs, 0, mop_list);
             }
 
           memset (&mop, 0, sizeof (mop));
@@ -860,7 +799,7 @@ handle_gimple (gimple_stmt_iterator *gsi, VEC (mop_desc_t, heap) **mop_list)
           /* Handle assignment lhs as store */
           lhs = gimple_call_lhs (stmt);
           if (lhs != 0)
-            instrument_mop (stmt, gsi, loc, lhs, 1, mop_list);
+            handle_expr (stmt, gsi, lhs, 1, mop_list);
 
           break;
         }
@@ -869,13 +808,13 @@ handle_gimple (gimple_stmt_iterator *gsi, VEC (mop_desc_t, heap) **mop_list)
         {
           /* Handle assignment lhs as store */
           lhs = gimple_assign_lhs (stmt);
-          instrument_mop (stmt, gsi, loc, lhs, 1, mop_list);
+          handle_expr (stmt, gsi, lhs, 1, mop_list);
 
           /* Handle operands as loads */
           for (i = 1; i < gimple_num_ops (stmt); i++)
             {
               rhs = gimple_op (stmt, i);
-              instrument_mop (stmt, gsi, loc, rhs, 0, mop_list);
+              handle_expr (stmt, gsi, rhs, 0, mop_list);
             }
           break;
         }
@@ -891,30 +830,24 @@ handle_gimple (gimple_stmt_iterator *gsi, VEC (mop_desc_t, heap) **mop_list)
     }
 }
 
+/* Instruments single basic block. */
 static void
 instrument_bblock (struct bb_data_t *bbd, basic_block bb)
 {
   int ix;
   int is_sblock;
   gimple_stmt_iterator gsi;
-  gimple_stmt_iterator gsinext;
   struct mop_desc_t *mop;
   gimple stmt;
   location_t loc;
   expanded_location eloc;
   gimple_seq instr_seq;
 
+  /* Iterate over all gimples and collect interesting mops into mop_list. */
   VEC_free (mop_desc_t, heap, mop_list);
-
-  gsi = gsi_start_bb (bb);
-  for (; ; )
+  for (gsi = gsi_start_bb (bb); !gsi_end_p (gsi); gsi_next (&gsi))
     {
-      if (gsi_end_p (gsi))
-        break;
-      gsinext = gsi;
-      gsi_next (&gsinext);
-      handle_gimple (&gsi, &mop_list);
-      gsi = gsinext;
+      handle_gimple (gsi, &mop_list);
     }
 
   mop = 0;
@@ -933,6 +866,8 @@ instrument_bblock (struct bb_data_t *bbd, basic_block bb)
       loc = gimple_location (stmt);
       eloc = expand_location (loc);
 
+      /* Check as to whether we may not set sblock flag
+         for the access */
       is_sblock = (bbd->has_sb == 0
           || !(eloc.file != 0
               && bbd->sb_file != 0
@@ -940,11 +875,12 @@ instrument_bblock (struct bb_data_t *bbd, basic_block bb)
               && eloc.line >= bbd->sb_line_min
               && eloc.line <= bbd->sb_line_max));
 
-      if (is_sblock == 1 && func_ignore == tsan_ignore_hist)
+      if (func_ignore == tsan_ignore_hist)
         is_sblock = 0;
 
       if (is_sblock)
         {
+          /* Start new sblock with new source info. */
           bbd->has_sb = 1;
           bbd->sb_file = eloc.file;
           bbd->sb_line_min = eloc.line;
@@ -953,21 +889,25 @@ instrument_bblock (struct bb_data_t *bbd, basic_block bb)
 
       instr_seq = 0;
       if (mop->dtor_vptr_expr == 0)
-        instr_mop (mop->expr, loc, mop->is_store, is_sblock, &instr_seq);
+        instr_mop (mop->expr, mop->is_store, is_sblock, &instr_seq);
       else
-        instr_vptr_store (mop->expr, mop->dtor_vptr_expr, loc,
-                           is_sblock, &instr_seq);
+        instr_vptr_store (mop->expr, mop->dtor_vptr_expr, is_sblock, &instr_seq);
       gcc_assert (instr_seq != 0);
       set_location (instr_seq, loc);
+      /* Instrumentation for assignment of a function result
+         must be inserted after the call. Instrumentation for
+         reads of function arguments must be inserted before the call.
+         That's because the call can contain synchronization. */
       if (is_gimple_call (stmt) && mop->is_store == 1)
         gsi_insert_seq_after (&mop->gsi, instr_seq, GSI_NEW_STMT);
-      else /* dtor_vptr_expr != 0 */
+      else
         gsi_insert_seq_before (&mop->gsi, instr_seq, GSI_SAME_STMT);
     }
 }
 
+/* Instruments all interesting memory accesses in the function */
 static void
-instrument_function (void)
+instrument_mops (void)
 {
   int sb_line_min;
   int sb_line_max;
@@ -978,11 +918,24 @@ instrument_function (void)
   basic_block cur_bb;
   basic_block any_bb;
   struct bb_data_t *pred;
+  struct bb_data_t *succ;
   struct bb_data_t *bb_data;
   struct bb_data_t *bbd;
   edge entry_edge;
   edge e;
 
+  /* The function does breadth-first traversal of CFG.
+     BB is visited preferably if all its predecessors are visited.
+     Such order is required to properly mark super-blocks.
+     The idea behind super-blocks is as follows.
+     If several memory acccesses happen within SBLOCK_SIZE source code lines
+     from each other, then we only mark the first access as SBLOCK.
+     This allows runtime library to memorize stack trace
+     only for the first access and do not memorize for others.
+     This significantly reduces memory consumption in exchange for slightly
+     imprecise stack traces for previous accesses. */
+
+  /* First, mark all blocks as not visited, and entry block as candidate. */
   bb_cnt = cfun->cfg->x_n_basic_blocks;
   bb_data = (struct bb_data_t*) xcalloc (bb_cnt, sizeof (struct bb_data_t));
   entry_bb = ENTRY_BLOCK_PTR;
@@ -994,10 +947,12 @@ instrument_function (void)
       bb_data [bb->index].state = (bb == entry_bb) ? bb_candidate : bb_not_visited;
     }
 
+  /* Until all blocks are visited. */
   for (; ; )
     {
       cur_bb = 0;
       any_bb = 0;
+      /* Look for a candidate with all visited predecessors. */
       FOR_EACH_BB (bb)
         {
           bbd = &bb_data [bb->index];
@@ -1019,13 +974,17 @@ instrument_function (void)
           if (cur_bb != 0)
             break;
         }
+      /* All blocks are visited. */
       if (any_bb == 0)
         break;
+      /* If no blocks with all visited predecessors, choose any candidate.
+         Must be a loop. */
       cur_bb = cur_bb ? cur_bb : any_bb;
       bbd = &bb_data [cur_bb->index];
       gcc_assert (bbd->state == bb_candidate);
       bbd->state = bb_visited;
 
+      /* Iterate over all predecessors and merge their sblock info. */
       e = 0;
       for (eidx = 0; VEC_iterate (edge, cur_bb->preds, eidx, e); eidx++)
         {
@@ -1034,11 +993,16 @@ instrument_function (void)
               || (pred->has_sb == 0)
               || (pred == bbd))
             {
+              /* If there is a not visited predecessor,
+                 or a predecessor with no active sblock info,
+                 or a self-loop, then we will have to start
+                 a brand new sblock on next memory access. */
               bbd->has_sb = 0;
               break;
             }
           else if (bbd->has_sb == 0)
             {
+              /* If it's a first predecessor, just copy the info. */
               bbd->has_sb = 1;
               bbd->sb_file = pred->sb_file;
               bbd->sb_line_min = pred->sb_line_min;
@@ -1046,9 +1010,10 @@ instrument_function (void)
             }
           else
             {
+              /* Otherwise, find the interception
+                 between two sblock descriptors. */
               bbd->has_sb = 0;
-              if (bbd->sb_file != 0
-                  && pred->sb_file != 0
+              if (bbd->sb_file != 0 && pred->sb_file != 0
                   && strcmp (bbd->sb_file, pred->sb_file) == 0)
                 {
                   sb_line_min = MAX (bbd->sb_line_min, pred->sb_line_min);
@@ -1060,22 +1025,28 @@ instrument_function (void)
                       bbd->sb_line_max = sb_line_max;
                     }
                 }
+              /* No interception, have to start new sblock. */
+              if (bbd->has_sb == 0)
+                break;
             }
         }
 
+      /* Finally, instrument the block. */
       instrument_bblock (bbd, cur_bb);
 
+      /* Mark all successors as candidates. */
       for (eidx = 0; VEC_iterate (edge, cur_bb->succs, eidx, e); eidx++)
         {
-          pred = &bb_data [e->dest->index];
-          if (pred->state == bb_not_visited)
-            pred->state = bb_candidate;
+          succ = &bb_data [e->dest->index];
+          if (succ->state == bb_not_visited)
+            succ->state = bb_candidate;
         }
     }
 }
 
-static unsigned
-tsan_pass (void)
+/* Instruments function entry and exit, if necessary. */
+static void
+instrument_function (void)
 {
   location_t loc;
   gimple_seq pre_func_seq;
@@ -1090,40 +1061,31 @@ tsan_pass (void)
   gimple first_stmt;
   gimple stmt;
 
-  if (errorcount != 0 || sorrycount != 0)
-    return 0;
-
-  func_ignore = tsan_ignore ();
-  if (func_ignore == tsan_ignore_func)
-    return 0;
-
-  func_calls = 0;
-  func_mops = 0;
-
-  instrument_function ();
-
   pre_func_seq = 0;
   post_func_seq = 0;
   instr_func (&pre_func_seq, &post_func_seq);
-  if (pre_func_seq != 0 || post_func_seq != 0)
-    {
-      if (pre_func_seq != 0)
-        {
-          entry_bb = ENTRY_BLOCK_PTR;
-          entry_edge = single_succ_edge (entry_bb);
-          first_bb = entry_edge->dest;
-          first_gsi = gsi_start_bb (first_bb);
-          if (!gsi_end_p (first_gsi))
-            {
-              first_stmt = gsi_stmt (first_gsi);
-              loc = gimple_location (first_stmt);
-              set_location (pre_func_seq, loc);
-            }
-          entry_bb = split_edge (entry_edge);
-          gsi = gsi_start_bb (entry_bb);
-          gsi_insert_seq_after (&gsi, pre_func_seq, GSI_NEW_STMT);
-        }
 
+  if (pre_func_seq != 0)
+    {
+      /* Insert new BB before the first BB. */
+      entry_bb = ENTRY_BLOCK_PTR;
+      entry_edge = single_succ_edge (entry_bb);
+      first_bb = entry_edge->dest;
+      first_gsi = gsi_start_bb (first_bb);
+      if (!gsi_end_p (first_gsi))
+        {
+          first_stmt = gsi_stmt (first_gsi);
+          loc = gimple_location (first_stmt);
+          set_location (pre_func_seq, loc);
+        }
+      entry_bb = split_edge (entry_edge);
+      gsi = gsi_start_bb (entry_bb);
+      gsi_insert_seq_after (&gsi, pre_func_seq, GSI_NEW_STMT);
+    }
+
+  if (post_func_seq != 0)
+    {
+      /* Find all function exits. */
       FOR_EACH_BB (bb)
         {
           gsi2 = gsi_start_bb (bb);
@@ -1139,15 +1101,29 @@ tsan_pass (void)
 
               if (gimple_code (stmt) == GIMPLE_RETURN)
                 {
-                  if (post_func_seq != 0)
-                    {
-                      set_location (post_func_seq, loc);
-                      gsi_insert_seq_before (&gsi, post_func_seq, GSI_SAME_STMT);
-                    }
+                  set_location (post_func_seq, loc);
+                  gsi_insert_seq_before (&gsi, post_func_seq, GSI_SAME_STMT);
                 }
             }
         }
     }
+}
+
+static unsigned
+tsan_pass (void)
+{
+  if (errorcount != 0 || sorrycount != 0)
+    return 0;
+
+  func_ignore = tsan_ignore ();
+  if (func_ignore == tsan_ignore_func)
+    return 0;
+
+  func_calls = 0;
+  func_mops = 0;
+
+  instrument_mops ();
+  instrument_function ();
 
   return 0;
 }
