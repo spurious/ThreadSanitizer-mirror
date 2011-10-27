@@ -63,6 +63,7 @@ enum tsan_ignore_e
   tsan_ignore_hist  = 1 << 4  /* Do not create superblocks. */
 };
 
+/* Basic block state during CFG traversal. */
 enum bb_state_e
 {
   bb_not_visited,
@@ -70,6 +71,8 @@ enum bb_state_e
   bb_visited
 };
 
+/* Info associated with each basic block.
+   Used to determine super-blocks (see instrument_mops ()). */
 struct bb_data_t
 {
   enum bb_state_e       state;
@@ -79,6 +82,7 @@ struct bb_data_t
   int                   sb_line_max;
 };
 
+/* Memory access descriptor. */
 struct mop_desc_t
 {
   int                   is_call;
