@@ -2684,7 +2684,7 @@ int __wrap_sigaction(int signum, const struct sigaction *act,
   int result;
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__real_sigaction, 0);
-  if ((act->sa_handler == SIG_IGN) || (act->sa_handler == SIG_DFL)) {
+  if (act == 0 || (act->sa_handler == SIG_IGN) || (act->sa_handler == SIG_DFL)) {
     result = __real_sigaction(signum, act, oldact);
   } else {
     signal_actions[signum] = *act;
