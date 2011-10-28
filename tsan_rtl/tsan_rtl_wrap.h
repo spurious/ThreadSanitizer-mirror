@@ -32,6 +32,13 @@
 #include <pthread.h>
 #include <semaphore.h>
 
+namespace __tsan {
+void WrapInit();
+
+typedef void *(*memchr_ft)(const char *s, int c, size_t n);
+extern memchr_ft real_memchr;
+}
+
 // Real function prototypes {{{1
 extern "C" {
 void __real___libc_csu_init(void);
@@ -99,7 +106,6 @@ pid_t __real_fork();
 
 size_t __real_strlen(const char *s);
 int __real_strcmp(const char *s1, const char *s2);
-void *__real_memchr(const char *s, int c, size_t n);
 char *__real_memcpy(char *dest, const char *src, size_t n);
 void *__real_memmove(void *dest, const void *src, size_t n);
 char *__real_strchr(const char *s, int c);

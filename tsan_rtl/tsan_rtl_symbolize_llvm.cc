@@ -37,6 +37,8 @@
 # include <cxxabi.h>  // __cxa_demangle
 #endif
 
+using namespace __tsan;
+
 static int DBG_INIT = 0;
 
 static pthread_mutex_t debug_info_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -258,7 +260,7 @@ void AddWrappersDbgInfo() {
 
   WRAPPER_DBG_INFO(__real_strlen);
   WRAPPER_DBG_INFO(__real_strcmp);
-  WRAPPER_DBG_INFO(__real_memchr);
+  WRAPPER_DBG_INFO(real_memchr);
   WRAPPER_DBG_INFO(__real_memcpy);
   WRAPPER_DBG_INFO(__real_memmove);
   WRAPPER_DBG_INFO(__real_strchr);

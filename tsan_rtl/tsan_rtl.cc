@@ -706,6 +706,7 @@ INLINE void InitRTLAndTid0() {
   CHECK(INIT == 0);
   GIL scoped;
   CHECK(RTL_INIT == 0);
+  WrapInit();
   // Initialize ThreadSanitizer et. al.
   if (!initialize()) __real_exit(2);
   eq_init(G_flags->sched_shake, G_flags->api_ambush,
@@ -2243,10 +2244,10 @@ char *__wrap_strcpy(char *dest, const char *src) {
 }
 
 extern "C"
-void *__wrap_memchr(const char *s, int c, size_t n) {
-  if (IN_RTL) return __real_memchr(s, c, n);
+void *memchr(const char *s, int c, size_t n) {
+  if (IN_RTL) return real_memchr(s, c, n);
   DECLARE_TID_AND_PC();
-  pc_t const mypc = (pc_t)__real_memchr;
+  pc_t const mypc = (pc_t)real_memchr;
   RPut(RTN_CALL, tid, pc, mypc, 0);
   ENTER_RTL();
   void *result = Replace_memchr(tid, mypc, s, c, n);
@@ -2254,34 +2255,6 @@ void *__wrap_memchr(const char *s, int c, size_t n) {
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
 }
-
-#ifdef TSAN_RTL_X86
-extern
-void *memchr(void *s, int c, unsigned int n) {
-  DECLARE_TID_AND_PC();
-  pc_t const mypc = (pc_t)__real_memchr;
-  ENTER_RTL();
-  RPut(RTN_CALL, tid, pc, mypc, 0);
-  void *result = Replace_memchr(tid, mypc, (char*)s, c, n);
-  RPut(RTN_EXIT, tid, pc, 0, 0);
-  LEAVE_RTL();
-  return result;
-}
-#endif
-
-#ifdef TSAN_RTL_X64
-extern
-void *memchr(void *s, int c, unsigned long n) {
-  DECLARE_TID_AND_PC();
-  pc_t const mypc = (pc_t)__real_memchr;
-  RPut(RTN_CALL, tid, pc, mypc, 0);
-  ENTER_RTL();
-  void *result = Replace_memchr(tid, mypc, (char*)s, c, n);
-  LEAVE_RTL();
-  RPut(RTN_EXIT, tid, pc, 0, 0);
-  return result;
-}
-#endif
 
 extern "C"
 int __wrap_strcmp(const char *s1, const char *s2) {
