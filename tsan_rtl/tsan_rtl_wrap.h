@@ -143,22 +143,22 @@ int __real_sigaction(int signum, const struct sigaction *act,
 
 // operator new(unsigned int)
 void *__real__Znwj(unsigned int size);
-void *__real__ZnwjRKSt9nothrow_t(unsigned int size, std::nothrow_t &nt);
+void *__real__ZnwjRKSt9nothrow_t(unsigned int size, nothrow_t &nt);
 // operator new[](unsigned int)
 void *__real__Znaj(unsigned int size);
-void *__real__ZnajRKSt9nothrow_t(unsigned int size, std::nothrow_t &nt);
+void *__real__ZnajRKSt9nothrow_t(unsigned int size, nothrow_t &nt);
 // operator new(unsigned long)
 void *__real__Znwm(unsigned long size);
-void *__real__ZnwmRKSt9nothrow_t(unsigned long size, std::nothrow_t &nt);
+void *__real__ZnwmRKSt9nothrow_t(unsigned long size, nothrow_t &nt);
 // operator new[](unsigned long)
 void *__real__Znam(unsigned long size);
-void *__real__ZnamRKSt9nothrow_t(unsigned long size, std::nothrow_t &nt);
+void *__real__ZnamRKSt9nothrow_t(unsigned long size, nothrow_t &nt);
 // operator delete(void*)
 void __real__ZdlPv(void *ptr);
-void __real__ZdlPvRKSt9nothrow_t(void *ptr, std::nothrow_t &nt);
+void __real__ZdlPvRKSt9nothrow_t(void *ptr, nothrow_t &nt);
 // operator delete[](void*)
 void __real__ZdaPv(void *ptr);
-void __real__ZdaPvRKSt9nothrow_t(void *ptr, std::nothrow_t &nt);
+void __real__ZdaPvRKSt9nothrow_t(void *ptr, nothrow_t &nt);
 }
 // }}}
 
@@ -273,22 +273,22 @@ int __wrap_sigaction(int signum, const struct sigaction *act,
 
 // operator new(unsigned int)
 void *__wrap__Znwj(unsigned int size);
-void *__wrap__ZnwjRKSt9nothrow_t(unsigned int size, std::nothrow_t &nt);
+void *__wrap__ZnwjRKSt9nothrow_t(unsigned int size, nothrow_t &nt);
 // operator new[](unsigned int)
 void *__wrap__Znaj(unsigned int size);
-void *__wrap__ZnajRKSt9nothrow_t(unsigned int size, std::nothrow_t &nt);
+void *__wrap__ZnajRKSt9nothrow_t(unsigned int size, nothrow_t &nt);
 // operator new(unsigned long)
 void *__wrap__Znwm(unsigned long size);
-void *__wrap__ZnwmRKSt9nothrow_t(unsigned long size, std::nothrow_t &nt);
+void *__wrap__ZnwmRKSt9nothrow_t(unsigned long size, nothrow_t &nt);
 // operator new[](unsigned long)
 void *__wrap__Znam(unsigned long size);
-void *__wrap__ZnamRKSt9nothrow_t(unsigned long size, std::nothrow_t &nt);
+void *__wrap__ZnamRKSt9nothrow_t(unsigned long size, nothrow_t &nt);
 // operator delete(void*)
 void __wrap__ZdlPv(void *ptr);
-void __wrap__ZdlPvRKSt9nothrow_t(void *ptr, std::nothrow_t &nt);
+void __wrap__ZdlPvRKSt9nothrow_t(void *ptr, nothrow_t &nt);
 // operator delete[](void*)
 void __wrap__ZdaPv(void *ptr);
-void __wrap__ZdaPvRKSt9nothrow_t(void *ptr, std::nothrow_t &nt);
+void __wrap__ZdaPvRKSt9nothrow_t(void *ptr, nothrow_t &nt);
 }
 // }}}
 #endif  // LLVM_SRC_MOP_IMPL_MOP_WRAP_H_

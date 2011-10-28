@@ -140,18 +140,18 @@ static int PTH_INIT = 0;
 static int DBG_INIT = 0;
 static int HAVE_THREAD_0 = 0;
 
-static std::map<pthread_t, ThreadInfo*> ThreadInfoMap;
-static std::map<pthread_t, tid_t> Tids;
-static std::map<tid_t, pthread_t> PThreads;
-static std::map<tid_t, bool> Finished;
+static map<pthread_t, ThreadInfo*> ThreadInfoMap;
+static map<pthread_t, tid_t> Tids;
+static map<tid_t, pthread_t> PThreads;
+static map<tid_t, bool> Finished;
 // TODO(glider): before spawning a new child thread its parent creates a
 // pthread barrier which is used to guarantee that the child has already
 // initialized before exiting pthread_create.
-static std::map<tid_t, pthread_barrier_t*> ChildThreadStartBarriers;
+static map<tid_t, pthread_barrier_t*> ChildThreadStartBarriers;
 // TODO(glider): we shouldn't need InitConds (and maybe FinishConds).
 // How about using barriers here as well?
-static std::map<pthread_t, pthread_cond_t*> InitConds;
-static std::map<tid_t, pthread_cond_t*> FinishConds;
+static map<pthread_t, pthread_cond_t*> InitConds;
+static map<tid_t, pthread_cond_t*> FinishConds;
 static tid_t max_tid;
 
 static __thread  sigset_t glob_sig_blocked, glob_sig_old;
@@ -534,7 +534,7 @@ void finalize() {
 
 INLINE void init_debug() {
   CHECK(DBG_INIT == 0);
-  data_sections = new std::map<uintptr_t, uintptr_t>;
+  data_sections = new map<uintptr_t, uintptr_t>;
   ReadElf();
   AddWrappersDbgInfo();
   DBG_INIT = 1;
@@ -1352,7 +1352,7 @@ void *__wrap__Znwj(unsigned int size) {
 }
 
 extern "C"
-void *__wrap__ZnwjRKSt9nothrow_t(unsigned size, std::nothrow_t &nt) {
+void *__wrap__ZnwjRKSt9nothrow_t(unsigned size, nothrow_t &nt) {
   if (IN_RTL) return __real__ZnwjRKSt9nothrow_t(size, nt);
   GIL scoped;
   RECORD_ALLOC(__wrap__ZnwjRKSt9nothrow_t);
@@ -1384,7 +1384,7 @@ void *__wrap__Znaj(unsigned int size) {
 }
 
 extern "C"
-void *__wrap__ZnajRKSt9nothrow_t(unsigned size, std::nothrow_t &nt) {
+void *__wrap__ZnajRKSt9nothrow_t(unsigned size, nothrow_t &nt) {
   if (IN_RTL) return __real__ZnajRKSt9nothrow_t(size, nt);
   GIL scoped;
   RECORD_ALLOC(__wrap__ZnajRKSt9nothrow_t);
@@ -1418,7 +1418,7 @@ void *__wrap__Znwm(unsigned long size) {
 }
 
 extern "C"
-void *__wrap__ZnwmRKSt9nothrow_t(unsigned long size, std::nothrow_t &nt) {
+void *__wrap__ZnwmRKSt9nothrow_t(unsigned long size, nothrow_t &nt) {
   if (IN_RTL) return __real__ZnwmRKSt9nothrow_t(size, nt);
   GIL scoped;
   RECORD_ALLOC(__wrap__ZnwmRKSt9nothrow_t);
@@ -1450,7 +1450,7 @@ void *__wrap__Znam(unsigned long size) {
 }
 
 extern "C"
-void *__wrap__ZnamRKSt9nothrow_t(unsigned long size, std::nothrow_t &nt) {
+void *__wrap__ZnamRKSt9nothrow_t(unsigned long size, nothrow_t &nt) {
   if (IN_RTL) return __real__ZnamRKSt9nothrow_t(size, nt);
   GIL scoped;
   RECORD_ALLOC(__wrap__ZnamRKSt9nothrow_t);
@@ -1486,7 +1486,7 @@ void __wrap__ZdlPv(void *ptr) {
 }
 
 extern "C"
-void __wrap__ZdlPvRKSt9nothrow_t(void *ptr, std::nothrow_t &nt) {
+void __wrap__ZdlPvRKSt9nothrow_t(void *ptr, nothrow_t &nt) {
   if (IN_RTL) return __real__ZdlPvRKSt9nothrow_t(ptr, nt);
   GIL scoped;
   RECORD_ALLOC(__wrap__ZdlPvRKSt9nothrow_t);
@@ -1520,7 +1520,7 @@ void __wrap__ZdaPv(void *ptr) {
 }
 
 extern "C"
-void __wrap__ZdaPvRKSt9nothrow_t(void *ptr, std::nothrow_t &nt) {
+void __wrap__ZdaPvRKSt9nothrow_t(void *ptr, nothrow_t &nt) {
   if (IN_RTL) return __real__ZdaPvRKSt9nothrow_t(ptr, nt);
   GIL scoped;
   RECORD_ALLOC(__wrap__ZdaPvRKSt9nothrow_t);
@@ -2865,7 +2865,7 @@ void ReadDbgInfoFromSection(char* start, char* end) {
   if (G_flags->verbosity >= 1) {
     Printf("ReadDbgInfoFromSection: %p to %p\n", start, end);
   }
-  DCHECK(IN_RTL); // operator new and std::map are used below.
+  DCHECK(IN_RTL); // operator new and map are used below.
   static const int kDebugInfoMagicNumber = 0xdb914f0;
   char *p = start;
   is_llvm = true;
@@ -3221,10 +3221,10 @@ string PcToRtnName(pc_t pc, bool demangle) {
                        0, 0, // source file
                        0,    // source line
                        0))   // symbol offset
-      return std::string();
+      return string();
     return symbol;
 #else
-    return std::string();
+    return string();
 #endif
   }
 }

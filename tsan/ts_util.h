@@ -54,6 +54,13 @@ extern unsigned long offline_line_n;
 # define CHECK assert
 #endif
 
+// support for stlport in stlp_std:: namespace (or other custom ns)
+#ifdef TS_STL_NS
+# define STD TS_STL_NS 
+#else
+# define STD std
+#endif
+
 #if defined(TS_VALGRIND)
 # include "ts_valgrind.h"
 # define TS_USE_STLPORT
@@ -72,7 +79,7 @@ extern unsigned long offline_line_n;
 #endif // TS_VALGRIND && !__WORDSIZE
 
 #elif defined(TS_LLVM)
-# define TS_USE_STLPORT
+#  define TS_USE_STLPORT
 # include <assert.h>
 # include <fcntl.h>
 # include <time.h>
@@ -108,7 +115,8 @@ extern unsigned long offline_line_n;
 #include <algorithm>
 #include <string>
 #include <bitset>
-#include "ext/algorithm"
+#include <new>
+#include <ext/algorithm>
 
 #ifdef __APPLE__
 // Apple's unordered_map in gcc 4.0 does not support -fno-exceptions.
@@ -119,8 +127,8 @@ extern unsigned long offline_line_n;
 #else
 #include "tr1/unordered_map"
 #include "tr1/unordered_set"
-using std::tr1::unordered_map;
-using std::tr1::unordered_set;
+using STD::tr1::unordered_map;
+using STD::tr1::unordered_set;
 #endif
 
 #elif defined(TS_USE_STLPORT)  // ------------- STLport ----------
@@ -135,11 +143,12 @@ using std::tr1::unordered_set;
 #include "string"
 #include "bitset"
 #include "algorithm"
+#include "new"
 
 #include "unordered_map"
 #include "unordered_set"
-using std::tr1::unordered_map;
-using std::tr1::unordered_set;
+using STD::tr1::unordered_map;
+using STD::tr1::unordered_set;
 
 #elif defined(TS_USE_WIN_STL)  // ------------- MSVC STL ---------
 #include <string.h>
@@ -152,6 +161,7 @@ using std::tr1::unordered_set;
 #include <algorithm>
 #include <string>
 #include <bitset>
+#include <new>
 
 // No such thing in VC 2005
 //#include <unordered_map>
@@ -167,22 +177,29 @@ using std::tr1::unordered_set;
 # error "Unknown STL"
 #endif  // TS_USE_STANDARD_STL
 
-using std::set;
-using std::multiset;
-using std::multimap;
-using std::map;
-using std::deque;
-using std::stack;
-using std::string;
-using std::vector;
-using std::bitset;
+using STD::string;
+using STD::set;
+using STD::multiset;
+using STD::multimap;
+using STD::map;
+using STD::deque;
+using STD::stack;
+using STD::vector;
+using STD::bitset;
+using STD::nothrow_t;
+using STD::nothrow;
 
-using std::min;
-using std::max;
-using std::sort;
-using std::pair;
-using std::make_pair;
-using std::unique_copy;
+using STD::min;
+using STD::max;
+using STD::sort;
+using STD::pair;
+using STD::make_pair;
+using STD::unique_copy;
+using STD::count;
+using STD::set_intersection;
+using STD::lower_bound;
+using STD::copy;
+using STD::binary_search;
 
 #ifdef TS_LLVM
 # include "tsan_rtl_wrap.h"

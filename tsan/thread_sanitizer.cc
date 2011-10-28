@@ -949,7 +949,7 @@ class LockSet {
     const LSSet &set2 = Get(lsid2);
 
     FixedArray<LID> intersection(min(set1.size(), set2.size()));
-    LID *end = std::set_intersection(set1.begin(), set1.end(),
+    LID *end = set_intersection(set1.begin(), set1.end(),
                             set2.begin(), set2.end(),
                             intersection.begin());
     DCHECK(!cache_hit || (ret == (end == intersection.begin())));
@@ -5329,7 +5329,7 @@ class TsanAtomicCore {
     void reset(bool init = false);
   };
 
-  typedef std::map<uintptr_t, Atomic> AtomicMap;
+  typedef map<uintptr_t, Atomic> AtomicMap;
   AtomicMap atomic_map_;
 
   void AtomicFixHist(Atomic* atomic,

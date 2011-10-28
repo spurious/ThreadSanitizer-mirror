@@ -327,8 +327,8 @@ static string StripParametersFromFunctionName(const string &demangled) {
 
   if (fname.find_first_of("(") == fname.npos)
     return fname;
-  DCHECK(std::count(fname.begin(), fname.end(), '(') ==
-         std::count(fname.begin(), fname.end(), ')'));
+  DCHECK(count(fname.begin(), fname.end(), '(') ==
+         count(fname.begin(), fname.end(), ')'));
 
   string ret;
   bool returns_fun_ptr = false;
