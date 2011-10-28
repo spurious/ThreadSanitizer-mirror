@@ -8,14 +8,6 @@ ERRORLVL=-Werror -Wno-deprecated -Wno-unused-function
 TSAN_PATH=../tsan
 BFDS_PATH=../bfd_symbolizer
 
-ifneq ($(NO_BFD), 1)
-BFD_DEFINES32=-I$(BFDS_PATH)/binutils32/bin/include
-BFD_DEFINES64=-I$(BFDS_PATH)/binutils64/bin/include
-else
-BFD_DEFINES32=-DTSAN_NO_BFD
-BFD_DEFINES64=-DTSAN_NO_BFD
-endif
-
 ifeq ($(USE_DTLEB), 1)
 DTLEB_DEFINES=-DUSE_DYNAMIC_TLEB
 else
@@ -35,8 +27,7 @@ DEFINES32+= -DDISABLE_RACE_DETECTION
 DEFINES64+= -DDISABLE_RACE_DETECTION
 endif
 
-
-RTL_DEPS=
+RTL_DEPS=tsan_rtl.h tsan_rtl_wrap.h tsan_rtl_symbolize.h
 
 OBJS32=x86-ts_util.o x86-suppressions.o \
        x86-common_util.o x86-ignore.o x86-tsan_rtl_dynamic_annotations.o \
@@ -47,6 +38,16 @@ OBJS64=amd64-ts_util.o amd64-suppressions.o \
        amd64-tsan_rtl_dynamic_annotations.o \
        amd64-thread_sanitizer.o amd64-ts_atomic.o amd64-dynamic_annotations.o \
        amd64-earthquake_wrap.o amd64-earthquake_core.o
+
+ifeq ($(GCC), 1)
+DEFINES32+=-I$(BFDS_PATH)/binutils32/bin/include -DGCC
+DEFINES64+=-I$(BFDS_PATH)/binutils64/bin/include -DGCC
+OBJS32+= x86-tsan_rtl_symbolize_bfd.o
+OBJS64+= amd64-tsan_rtl_symbolize_bfd.o
+else
+OBJS32+= x86-tsan_rtl_symbolize_llvm.o
+OBJS64+= amd64-tsan_rtl_symbolize_llvm.o
+endif
 
 COMMON_FLAGS=-I. -I../third_party/stlport \
       -I$(TSAN_PATH) -I../dynamic_annotations \
@@ -92,7 +93,7 @@ RTL_64_A=lib/tsan_rtl64.a
 all:	$(RTL_32_A) $(RTL_64_A)
 
 $(RTL_32_A):	$(OBJS32) $(RTL_32_O)
-ifneq ($(NO_BFD), 1)
+ifeq ($(GCC), 1)
 	rm -Rf bfds32 && mkdir bfds32 && cd bfds32 && ar x ../$(BFDS_PATH)/bfds32.a
 	$(AR) $(RTL_32_A) $(OBJS32) $(RTL_32_O) ./bfds32/*.o
 else
@@ -101,7 +102,7 @@ endif
 	$(RANLIB) $(RTL_32_A)
 
 $(RTL_64_A):	$(OBJS64) $(RTL_64_O)
-ifneq ($(NO_BFD), 1)
+ifeq ($(GCC), 1)
 	rm -Rf bfds64 && mkdir bfds64 && cd bfds64 && ar x ../$(BFDS_PATH)/bfds64.a
 	$(AR) $(RTL_64_A) $(OBJS64) $(RTL_64_O) ./bfds64/*.o
 else
@@ -112,17 +113,17 @@ endif
 $(TSAN_PATH)/ts_event_names.h:
 	make -C $(TSAN_PATH) ts_event_names.h
 
-tsan_rtl32.o: $(SRC) tsan_rtl.h $(RTL_DEPS)
+tsan_rtl32.o: $(SRC) $(RTL_DEPS)
 	$(CXX) $(SRC) $(FLAGS) -m32 $(ERRORLVL) $(DA_FLAGS) -Wall -c -o $(RTL_32_O) $(DEFINES32)
 
-tsan_rtl64.o: $(SRC) tsan_rtl.h $(RTL_DEPS)
+tsan_rtl64.o: $(SRC) $(RTL_DEPS)
 	$(CXX) $(SRC) $(FLAGS) -m64 $(ERRORLVL) $(DA_FLAGS) -Wall -c -o $(RTL_64_O) $(DEFINES64)
 
-ifneq ($(NO_BFD), 1)
+ifeq ($(GCC), 1)
 BFDS_LIBS=$(BFDS_PATH)/bfds32.a $(BFDS_PATH)/bfds64.a
 endif
 
-x86-%.o:	%.cc $(TS_HEADERS) $(FOREIGN_HEADERS) $(BFDS_LIBS)
+x86-%.o:	%.cc $(TS_HEADERS) $(FOREIGN_HEADERS) $(BFDS_LIBS) $(RTL_DEPS)
 	$(CXX) -m32 -o $@ -c $< $(ERRORLVL) $(FLAGS) $(DEFINES32)
 
 x86-%.o:	$(TSAN_PATH)/%.cc $(TS_HEADERS) $(FOREIGN_HEADERS)
@@ -135,7 +136,7 @@ x86-dynamic_annotations.o:	$(TSAN_PATH)/../dynamic_annotations/dynamic_annotatio
 	$(CC) -m32 -o $@ -c $< $(ERRORLVL) $(DA_FLAGS) $(DEFINES32)
 
 
-amd64-%.o:	%.cc $(TS_HEADERS) $(FOREIGN_HEADERS) $(BFDS_LIBS)
+amd64-%.o:	%.cc $(TS_HEADERS) $(FOREIGN_HEADERS) $(BFDS_LIBS) $(RTL_DEPS)
 	$(CXX) -m64 -o $@ -c $< $(ERRORLVL) $(FLAGS) $(DEFINES64)
 
 amd64-%.o:	$(TSAN_PATH)/%.cc $(TS_HEADERS) $(FOREIGN_HEADERS)
