@@ -129,7 +129,6 @@ void ReadElf();
 void AddWrappersDbgInfo();
 void ReadDbgInfo(string filename);
 string GetSelfFilename();
-bool IsAddrFromDataSections(uintptr_t addr);
 
 #define DECLARE_TID() \
   tid_t const tid = GetTid();

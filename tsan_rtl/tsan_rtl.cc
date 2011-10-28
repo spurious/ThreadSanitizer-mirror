@@ -3231,16 +3231,6 @@ string PcToRtnName(pc_t pc, bool demangle) {
   }
 }
 
-bool IsAddrFromDataSections(uintptr_t addr) {
-  map<uintptr_t, uintptr_t>::iterator iter = data_sections->lower_bound(addr);
-  if (iter == data_sections->end()) return false;  // lookup failed.
-  if ((iter->first >= addr) && (iter->second <= addr)) {
-    return true;
-  } else {
-    return false;
-  }
-}
-
 void DumpDataSections() {
   map<uintptr_t, uintptr_t>::iterator iter = data_sections->begin();
   Printf("Data sections:\n");
