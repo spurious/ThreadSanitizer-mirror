@@ -118,7 +118,6 @@ TEST(NegativeTests, HappensBeforeOnThreadJoinTidReuse) {  // {{{1
   int *var = new int;
   HANDLE t2 = ::CreateThread(0, 0,
                              (LPTHREAD_START_ROUTINE)WriteWorker, var, 0, 0);
-  printf("t1 = %d, t2 = %d\n", t1, t2);
   CHECK(t2 > 0);
   CHECK(WAIT_OBJECT_0 == ::WaitForSingleObject(t2, INFINITE));
   CHECK(*var == 42);
@@ -202,14 +201,12 @@ TEST(NegativeTests, WindowsRegisterWaitForSingleObjectTest) {  // {{{1
     HANDLE wait_object = NULL;
 
     monitored_object = ::CreateEvent(NULL, false, false, NULL);
-    printf("monitored_object = %p\n", monitored_object);
     MyThread mt(SignalStealthNotification);
     mt.Start();
     ANNOTATE_TRACE_MEMORY(obj);
     CHECK(0 != ::RegisterWaitForSingleObject(&wait_object, monitored_object,
                                              DoneWaiting, obj, INFINITE,
                                              WT_EXECUTEINWAITTHREAD | WT_EXECUTEONLYONCE));
-    printf("wait_object      = %p\n", wait_object);
     n->signal();
     mt.Join();
     Sleep(1000);
