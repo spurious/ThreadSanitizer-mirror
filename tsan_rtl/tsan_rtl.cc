@@ -960,6 +960,17 @@ static int tsan_pthread_create(pthread_t *thread,
                           void *(*start_routine)(void*), void *arg) {
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__real_pthread_create, 0);
+  // Ensure minimum stack size.
+  if (attr) {
+    size_t const min_stack_size = 1024*1024;
+    size_t ssize = 0;
+    if (pthread_attr_getstacksize(attr, &ssize) == 0) {
+      if (ssize < min_stack_size) {
+        // Modify user passed attr object since we can't do deep copy of it.
+        pthread_attr_setstacksize(attr, min_stack_size);
+      }
+    }
+  }
   callback_arg *cb_arg = new callback_arg;
   cb_arg->routine = start_routine;
   cb_arg->arg = arg;
