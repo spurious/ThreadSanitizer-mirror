@@ -26,7 +26,7 @@
 
 // Author: glider@google.com (Alexander Potapenko)
 
-#define DYNAMIC_ANNOTATIONS_PREFIX LLVM
+//#define DYNAMIC_ANNOTATIONS_PREFIX LLVM
 #include "dynamic_annotations.h"
 #include "fake_annotations.h"
 #include "tsan_rtl.h"
@@ -34,12 +34,10 @@
 
 #undef DECLARE_TID_AND_PC
 #define DECLARE_TID_AND_PC() \
+  if(IN_RTL) return; \
   tid_t tid = ExGetTid(); \
-  pc_t pc = (pc_t)__builtin_return_address(0);
-
-#undef DECLARE_TID
-#define DECLARE_TID() \
-  tid_t tid = ExGetTid();
+  pc_t pc = (pc_t)__builtin_return_address(0); \
+  (void)tid; (void)pc;
 
 extern bool global_ignore;
 
@@ -48,23 +46,30 @@ extern bool global_ignore;
 extern "C"
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateHappensBefore)(const char *file, int line,
                                                      const volatile void *cv) {
-  eq_sched_shake(shake_atomic_rmw, cv);
   DECLARE_TID_AND_PC();
+  eq_sched_shake(shake_atomic_rmw, cv);
   ExSPut(SIGNAL, tid, pc, (uintptr_t)cv, 0);
 }
 
 extern "C"
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateHappensAfter)(const char *file, int line,
                                                     const volatile void *cv) {
+  DECLARE_TID_AND_PC();
   //TODO(dvyukov): shake must be placed *before* the user's *action*
   eq_sched_shake(shake_atomic_rmw, cv);
-  DECLARE_TID_AND_PC();
   ExSPut(WAIT, tid, pc, (uintptr_t)cv, 0);
 }
 
 extern "C"
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateCondVarSignal)(const char *file, int line,
                                                      const volatile void *cv) {
+  DECLARE_TID_AND_PC();
+  ExSPut(SIGNAL, tid, pc, (uintptr_t)cv, 0);
+}
+
+extern "C"
+void DYNAMIC_ANNOTATIONS_NAME(AnnotateCondVarSignalAll)(const char *file, int line,
+                                                        const volatile void *cv) {
   DECLARE_TID_AND_PC();
   ExSPut(SIGNAL, tid, pc, (uintptr_t)cv, 0);
 }
@@ -194,7 +199,7 @@ extern "C"
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateExpectRace)(
     const char *file, int line,
     const volatile void *mem, const char *description) {
-  tid_t tid = ExGetTid();
+  DECLARE_TID_AND_PC();
   ExSPut(EXPECT_RACE, tid, (uintptr_t)description, (uintptr_t)mem, 0);
 }
 
@@ -202,7 +207,7 @@ extern "C"
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateBenignRace)(
     const char *file, int line,
     const volatile void *mem, const char *description) {
-  DECLARE_TID();
+  DECLARE_TID_AND_PC();
   ExSPut(BENIGN_RACE, tid, (uintptr_t)description, (uintptr_t)mem, 1);
 }
 
@@ -210,7 +215,7 @@ extern "C"
 void DYNAMIC_ANNOTATIONS_NAME(AnnotateBenignRaceSized)(
     const char *file, int line,
     const volatile void *mem, long size, const char *description) {
-  DECLARE_TID();
+  DECLARE_TID_AND_PC();
   ExSPut(BENIGN_RACE, tid, (uintptr_t)description,
       (uintptr_t)mem, (uintptr_t)size);
 }
@@ -287,7 +292,7 @@ extern "C"
 void WTFAnnotateBenignRaceSized(
     const char *file, int line,
     const volatile void *mem, long size, const char *description) {
-  DECLARE_TID();
+  DECLARE_TID_AND_PC();
   ExSPut(BENIGN_RACE, tid, (uintptr_t)description,
       (uintptr_t)mem, (uintptr_t)size);
 }
