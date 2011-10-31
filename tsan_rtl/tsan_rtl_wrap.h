@@ -35,7 +35,7 @@
 namespace __tsan {
 void WrapInit();
 
-typedef void *(*memchr_ft)(const char *s, int c, size_t n);
+typedef void *(*memchr_ft)(void *s, int c, size_t n);
 extern memchr_ft real_memchr;
 }
 

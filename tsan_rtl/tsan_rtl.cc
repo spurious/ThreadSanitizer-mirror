@@ -2243,14 +2243,13 @@ char *__wrap_strcpy(char *dest, const char *src) {
   return result;
 }
 
-extern "C"
-void *memchr(const char *s, int c, size_t n) {
+void *memchr(void *s, int c, size_t n) {
   if (IN_RTL) return real_memchr(s, c, n);
   DECLARE_TID_AND_PC();
   pc_t const mypc = (pc_t)real_memchr;
   RPut(RTN_CALL, tid, pc, mypc, 0);
   ENTER_RTL();
-  void *result = Replace_memchr(tid, mypc, s, c, n);
+  void *result = Replace_memchr(tid, mypc, (char*)s, c, n);
   LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
