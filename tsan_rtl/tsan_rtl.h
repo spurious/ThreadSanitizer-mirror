@@ -36,9 +36,6 @@
 #include <stdio.h>
 #include <pthread.h>
 
-#include <stdio.h>
-#include "string"
-
 #include "thread_sanitizer.h"
 #include "suppressions.h"
 #include "ts_util.h"
