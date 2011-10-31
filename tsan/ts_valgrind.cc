@@ -202,7 +202,7 @@ const size_t kMaxMopsPerTrace = 2048;
 
 struct ValgrindThread {
   int32_t zero_based_uniq_tid;
-  Thread *ts_thread;
+  TSanThread *ts_thread;
   uint32_t literace_sampling;
   vector<CallStackRecord> call_stack;
 
