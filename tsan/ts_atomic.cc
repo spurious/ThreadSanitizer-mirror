@@ -25,8 +25,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "ts_atomic_int.h"
 #include "ts_util.h"
+#include "ts_atomic_int.h"
 
 
 char const* tsan_atomic_to_str(tsan_memory_order mo) {
