@@ -200,7 +200,7 @@ struct CallStack: public CallStackPod {
 #include "ts_events.h"
 #include "ts_trace_info.h"
 
-struct Thread;
+struct TSanThread;
 void ThreadSanitizerInit();
 void ThreadSanitizerFini();
 // TODO(glider): this is a temporary solution to avoid deadlocks after fork().
@@ -209,12 +209,12 @@ void ThreadSanitizerLockAcquire();
 void ThreadSanitizerLockRelease();
 #endif
 void ThreadSanitizerHandleOneEvent(Event *event);
-Thread *ThreadSanitizerGetThreadByTid(int32_t tid);
+TSanThread *ThreadSanitizerGetThreadByTid(int32_t tid);
 void ThreadSanitizerHandleTrace(int32_t tid, TraceInfo *trace_info,
                                        uintptr_t *tleb);
-void ThreadSanitizerHandleTrace(Thread *thr, TraceInfo *trace_info,
+void ThreadSanitizerHandleTrace(TSanThread *thr, TraceInfo *trace_info,
                                        uintptr_t *tleb);
-void ThreadSanitizerHandleOneMemoryAccess(Thread *thr, MopInfo mop,
+void ThreadSanitizerHandleOneMemoryAccess(TSanThread *thr, MopInfo mop,
                                                  uintptr_t addr);
 void ThreadSanitizerParseFlags(vector<string>* args);
 bool ThreadSanitizerWantToInstrumentSblock(uintptr_t pc);

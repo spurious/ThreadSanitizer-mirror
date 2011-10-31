@@ -110,7 +110,7 @@ typedef uintptr_t tid_t;
 typedef map<pc_t, string> PcToStringMap;
 
 struct ThreadInfo {
-  Thread *thread;
+  TSanThread *thread;
   tid_t tid;
   int *thread_local_ignore;
 };
