@@ -223,7 +223,7 @@ bool Parser::ParseStackTraceLine(StackTraceTemplate* trace, string line) {
             break;
           }
 
-          for (size_t i = 0; i < ARRAY_SIZE(OP); i++) {
+          for (size_t i = 0; i < TS_ARRAY_SIZE(OP); i++) {
             size_t op_offset = ((string)OP[i]).find(s2[next]);
             if (op_offset == string::npos)
               continue;
