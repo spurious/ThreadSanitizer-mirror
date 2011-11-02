@@ -9,7 +9,8 @@ OBJS64=amd64-ts_util.o amd64-suppressions.o \
        amd64-thread_sanitizer.o amd64-ts_atomic.o
 
 FLAGS=-I$(TSAN_PATH) -I../dynamic_annotations \
-      -fno-exceptions -fPIC
+      -fno-exceptions -fPIC \
+      -DTS_GO
 
 ifeq ($(DEBUG), 1)
   FLAGS+=-fno-inline -g -D_DEBUG
@@ -29,8 +30,8 @@ FOREIGN_HEADERS=$(TSAN_PATH)/ts_lock.h $(TSAN_PATH)/ts_stats.h \
 
 RTL_32_O=tsan_go32.o
 RTL_64_O=tsan_go64.o
-RTL_32_SO=tsan_go32.so
-RTL_64_SO=tsan_go64.so
+RTL_32_SO=libtsan_go32.so
+RTL_64_SO=libtsan_go64.so
 
 all:	$(RTL_32_SO) $(RTL_64_SO)
 
