@@ -13,19 +13,56 @@
 
 
 bool in_initialize = false;
+typedef uintptr_t pc_t;
+
+
+const size_t kCallStackReserve = 32;
+
+/*
+static struct sigaction signal_actions[NSIG];  // protected by GIL
+static __thread siginfo_t pending_signals[NSIG];
+typedef enum { PSF_NONE = 0, PSF_SIGNAL, PSF_SIGACTION } pending_signal_flag_t;
+static __thread pending_signal_flag_t pending_signal_flags[NSIG];
+static __thread bool have_pending_signals;
+*/
+
+extern "C" void goCallback(void* p);
+extern "C" char* goCallbackPcToRtnName(uintptr_t pc);
+extern "C" void goCallbackCommentPc(uintptr_t pc, char **img, char **rtn, char **file, int *line);
+
+extern "C"
+void SPut(EventType type, int32_t tid, uintptr_t pc,
+          uintptr_t a, uintptr_t info) {
+  if (type == THR_START) {
+    CallStackPod *__tsan_shadow_stack = new CallStackPod;
+    __tsan_shadow_stack->end_ = __tsan_shadow_stack->pcs_ + 32;
+    pc = (uintptr_t)__tsan_shadow_stack;
+  }
+  Event event(type, tid, pc, a, info);
+  ThreadSanitizerHandleOneEvent(&event);
+}
 
 
 void PcToStrings(uintptr_t pc, bool demangle,
                  string *img_name, string *rtn_name,
                  string *file_name, int *line_no) {
+  char *img, *rtn, *file;
+
+  goCallbackCommentPc(pc, &img, &rtn, &file, line_no);
+  *img_name = string(img);
+  *rtn_name = string(rtn);
+  *file_name = string(file);
+  free(img);
+  free(rtn);
+  free(file);
 }
 
 string PcToRtnName(uintptr_t pc, bool demangle) {
-
+  char* ret = goCallbackPcToRtnName(pc); // TODO: demangle is dropped, is it ok?
+  return string(ret);
 }
 
-extern "C" {
-
+extern "C"
 bool initialize() {
   if (in_initialize) return false;
   in_initialize = true;
@@ -48,31 +85,43 @@ bool initialize() {
   ThreadSanitizerParseFlags(&args);
   ThreadSanitizerInit();
 
+  SPut(THR_START, 0, 0, 0, 0);
+
+
+  /*
+
+  if (G_flags->dry_run) {
+    Printf("WARNING: the --dry_run flag is not supported anymore. "
+           "Ignoring.\n");
+  }
+
+  //  static_tls_size = GetTlsSize();
+  memset(__tsan_shadow_stack.pcs_, 0, kCallStackReserve * sizeof(__tsan_shadow_stack.pcs_[0]));
+  __tsan_shadow_stack.end_ = __tsan_shadow_stack.pcs_ + kCallStackReserve;
+  in_initialize = false;
+
+  // Get the stack size and stack top for the current thread.
+  // TODO(glider): do something if pthread_getattr_np() is not supported.
+  pthread_attr_t attr;
+  size_t stack_size = 8 << 20;  // 8M
+  void *stack_bottom = NULL;
+
+  for (int sig = 0; sig < NSIG; sig++) {
+    pending_signal_flags[sig] = PSF_NONE;
+  }
+
+  SPut(THR_START, 0, (pc_t) &__tsan_shadow_stack, 0, 0);
+  //SPut(THR_STACK_TOP, 0, 0, (uintptr_t)&stack_size, stack_size);
+
+*/
   return true;
 }
 
-}
-
-
-extern "C" {
-
+extern "C"
 void finalize() {
   ThreadSanitizerFini();
   if (G_flags->error_exitcode && GetNumberOfFoundErrors() > 0) {
     // This is the last atexit hook, so it's ok to terminate the program.
     _exit(G_flags->error_exitcode);
   }
-}
-
-}
-
-
-extern "C" {
-
-void SPut(EventType type, int32_t tid, uintptr_t pc,
-          uintptr_t a, uintptr_t info) {
-  Event event(type, tid, pc, a, info);
-  ThreadSanitizerHandleOneEvent(&event);
-}
-
 }

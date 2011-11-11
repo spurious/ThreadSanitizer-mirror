@@ -10,7 +10,7 @@ OBJS64=amd64-ts_util.o amd64-suppressions.o \
 
 FLAGS=-I$(TSAN_PATH) -I../dynamic_annotations \
       -fno-exceptions -fPIC \
-      -DTS_GO
+      -DTS_GO -Wall
 
 ifeq ($(DEBUG), 1)
   FLAGS+=-fno-inline -g -D_DEBUG
