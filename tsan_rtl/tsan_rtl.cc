@@ -599,7 +599,7 @@ void initSegvFlush() {
 
 static bool in_initialize = false;
 
-bool initialize() {
+static bool initialize() {
   if (in_initialize) return false;
   if (RTL_INIT == 1) return true;
   in_initialize = true;
@@ -702,7 +702,7 @@ INLINE void UnsafeInitTidCommon() {
   INIT = 1;
 }
 
-INLINE void InitRTLAndTid0() {
+static void InitRTLAndTid0() {
   CHECK(INIT == 0);
   GIL scoped;
   CHECK(RTL_INIT == 0);
@@ -717,6 +717,14 @@ INLINE void InitRTLAndTid0() {
   INFO.tid = 0;
   max_tid = 1;
   UnsafeInitTidCommon();
+}
+
+extern "C" void __tsan_init() {
+  static bool initialized = false;
+  if (initialized)
+    return;
+  initialized = true;
+  InitRTLAndTid0();
 }
 
 INLINE void InitTid() {
