@@ -8928,7 +8928,7 @@ uint64_t TsanAtomicCore::HandleRead(TSanThread* thr,
       atomic->last_seen.update(thr->tid(), seen_seq);
     }
   } else {
-    CHECK(!"should never happen as of now");
+    CHECK("should never happen as of now" == 0);
     PrintfIf(debug_atomic, "HIST(%p): UNITIALIZED LOAD\n", (void*)a);
     v = thr->random();
   }

@@ -131,7 +131,7 @@ void tsan_atomic_verify(tsan_atomic_op op,
         | tsan_memory_order_acq_rel
         | tsan_memory_order_seq_cst));
   } else {
-    CHECK(!"unknown tsan_atomic_op");
+    CHECK("unknown tsan_atomic_op" == 0);
   }
 }
 
@@ -401,7 +401,7 @@ uint64_t tsan_atomic_do_op(tsan_atomic_op op,
     return 0;
   }
 
-  CHECK(!"unknown atomic operation");
+  CHECK("unknown atomic operation" == 0);
   return 0;
 }
 
@@ -416,7 +416,7 @@ uint64_t tsan_atomic_do_op(tsan_atomic_op op,
                            uint64_t cmp,
                            uint64_t* newv,
                            uint64_t* prev) {
-  CHECK(!"IMPLEMENTED");
+  CHECK(!"IMPLEMENTED" == 0);
   return 0;
 }
 
