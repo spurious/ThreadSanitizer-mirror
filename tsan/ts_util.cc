@@ -728,6 +728,64 @@ void TSLock::AssertHeld() {
 }
 #endif
 
+// Same as above to compile Go's rtl
+// No annotations in this version: it should be simple as possible.
+#if defined(TS_LOCK_FUTEX) && defined(__GNUC__) && \
+  (defined (TS_GO))
+#include <linux/futex.h> // TODO(mpimenov): portability?
+#include <sys/time.h>
+#include <syscall.h>
+
+// Simple futex-based lock.
+// The idea is taken from "Futexes Are Tricky" by Ulrich Drepper
+
+TSLock::TSLock() {
+  rep_ = 0;
+}
+TSLock::~TSLock() {
+  DCHECK(rep_ == 0);
+}
+void TSLock::Lock() {
+  int *p = (int*)&rep_;
+  const int kSpinCount = 100;
+  DCHECK(kSpinCount > 0);
+  int c;
+  for (int i = 0; i < kSpinCount; i++) {
+    c = __sync_val_compare_and_swap(p, 0, 1);
+    if (c == 0) break;
+  }
+  if (c == 0) {
+    // The mutex was unlocked. Now it's ours. Done.
+    return;
+  }
+  DCHECK(c == 1 || c == 2);
+  // We are going to block on this lock. Make sure others know that.
+  if (c != 2) {
+    c = __sync_lock_test_and_set(p, 2);
+  }
+  // Block.
+  int n_waits = 0;
+  while (c != 0) {
+    syscall(SYS_futex, p, FUTEX_WAIT, 2, 0, 0, 0);
+    n_waits++;
+    c = __sync_lock_test_and_set(p, 2);
+  }
+  G_stats->futex_wait += n_waits;
+}
+void TSLock::Unlock() {
+  int *p = (int*)&rep_;
+  DCHECK(*p == 1 || *p == 2);
+  int c = __sync_sub_and_fetch(p, 1);
+  DCHECK(c == 0 || c == 1);
+  if (c == 1) {
+    *p = 0;
+    syscall(SYS_futex, p, FUTEX_WAKE, 1, 0, 0, 0);
+  }
+}
+void TSLock::AssertHeld() {
+  DCHECK(rep_);
+}
+#endif // (TS_LOCK_FUTEX) (__GNUC__) && (TS_GO)
 
 //--------------- Atomics ----------------- {{{1
 #if defined (_MSC_VER) && TS_SERIALIZED == 0

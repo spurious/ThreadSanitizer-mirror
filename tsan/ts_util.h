@@ -300,6 +300,8 @@ int getpid();
 # define TS_SERIALIZED 1
 #elif defined(TS_LLVM)
 # define TS_SERIALIZED 0
+#elif defined(TS_GO)
+# define TS_SERIALIZED 0
 #else
 # define TS_SERIALIZED 1
 #endif
