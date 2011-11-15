@@ -7663,6 +7663,8 @@ one_call:
     // that may carve the existing mappings or split them into two parts.
     // It should also be possible to munmap() several mappings at a time.
     uintptr_t a = e->a();
+    if (a == 0)
+      return;
     HeapInfo *h_info = G_heap_map->GetInfo(a);
     uintptr_t size = e->info();
     if (h_info && h_info->ptr == a && h_info->size == size) {
