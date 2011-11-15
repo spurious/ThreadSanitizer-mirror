@@ -495,7 +495,7 @@ static int GetTlsSize() {
   }
   struct stat st;
   fstat(fd, &st);
-  char* map = (char*)__real_mmap(NULL, st.st_size,
+  char* map = (char*)real_mmap(NULL, st.st_size,
                                  PROT_READ, MAP_PRIVATE, fd, 0);
   if (map == MAP_FAILED) {
     Printf("Could not mmap /proc/self/exe\n");
@@ -536,7 +536,7 @@ static int GetTlsSize() {
   }
   LEAVE_RTL();
 
-  __real_munmap(map, st.st_size);
+  real_munmap(map, st.st_size);
   close(fd);
   return tls_size;
 }
@@ -628,6 +628,7 @@ static bool initialize() {
 
   ThreadSanitizerParseFlags(&args);
   ThreadSanitizerInit();
+  __tsan::SymbolizeInit();
   if (G_flags->dry_run) {
     Printf("WARNING: the --dry_run flag is not supported anymore. "
            "Ignoring.\n");
@@ -686,7 +687,7 @@ static bool initialize() {
 INLINE void UnsafeInitTidCommon() {
   ENTER_RTL();
 #ifdef USE_DYNAMIC_TLEB
-  DTLEB = (uintptr_t*)__real_mmap(0, kDTLEBMemory,
+  DTLEB = (uintptr_t*)real_mmap(0, kDTLEBMemory,
                                 PROT_READ | PROT_WRITE,
                                 MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
   DTlebIndex = 0;
@@ -794,7 +795,7 @@ void *pthread_callback(void *arg) {
   CHECK(INFO.tid != 0);
 
 #ifdef USE_DYNAMIC_TLEB
-  DTLEB = (uintptr_t*)__real_mmap(0, kDTLEBMemory,
+  DTLEB = (uintptr_t*)real_mmap(0, kDTLEBMemory,
                                 PROT_READ | PROT_WRITE,
                                 MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
   DTlebIndex = 0;
@@ -918,7 +919,7 @@ void *pthread_callback(void *arg) {
   // TODO(glider): need to check whether it's 100% legal.
   ENTER_RTL();
 #ifdef USE_DYNAMIC_TLEB
-  __real_munmap(DTLEB, kTLEBSize * 2);
+  real_munmap(DTLEB, kTLEBSize * 2);
 #endif
 
   return result;
@@ -957,6 +958,9 @@ void unsafe_forget_thread(tid_t tid, tid_t from) {
 // Rule of thumb: __wrap_foo should never make a tail call to __real_foo,
 // because it normally should end with LEAVE_RTL() and RTN_EXIT.
 
+extern "C" void __attribute__((weak)) __real___libc_csu_init() {
+}
+
 extern "C"
 void __wrap___libc_csu_init(void) {
   CHECK(!IN_RTL);
@@ -968,7 +972,7 @@ static int tsan_pthread_create(pthread_t *thread,
                           pthread_attr_t *attr,
                           void *(*start_routine)(void*), void *arg) {
   DECLARE_TID_AND_PC();
-  RPut(RTN_CALL, tid, pc, (uintptr_t)__real_pthread_create, 0);
+  RPut(RTN_CALL, tid, pc, (uintptr_t)real_pthread_create, 0);
   // Ensure minimum stack size.
   if (attr) {
     size_t const min_stack_size = 1024*1024;
@@ -996,7 +1000,7 @@ static int tsan_pthread_create(pthread_t *thread,
     ChildThreadStartBarriers[tid] = barrier;
     DDPrintf("Setting ChildThreadStartBarriers[%d]\n", tid);
   }
-  int result = __real_pthread_create(thread, attr, pthread_callback, cb_arg);
+  int result = real_pthread_create(thread, attr, pthread_callback, cb_arg);
   tid_t child_tid = 0;
   if (result == 0) {
     __real_pthread_barrier_wait(barrier);
@@ -1020,9 +1024,9 @@ static int tsan_pthread_create(pthread_t *thread,
 }
 
 extern "C"
-int __wrap_pthread_create(pthread_t *thread,
-                          const pthread_attr_t *attr,
-                          void *(*start_routine)(void*), void *arg) {
+int pthread_create(pthread_t *thread,
+                   const pthread_attr_t *attr,
+                   void *(*start_routine)(void*), void *arg) {
   CHECK(!IN_RTL);
   return eq_pthread_create((void*)tsan_pthread_create,
                            thread, attr, start_routine, arg);
@@ -1141,18 +1145,15 @@ DECLARE_ALLOC_STATS(__wrap__ZdaPv);
 DECLARE_ALLOC_STATS(__wrap__ZdaPvRKSt9nothrow_t);
 
 extern "C"
-void *__wrap_mmap(void *addr, size_t length, int prot, int flags,
+void *mmap(void *addr, size_t length, int prot, int flags,
                   int fd, off_t offset) {
-  if (IN_RTL) {
-    void *result = __real_mmap(addr, length, prot, flags, fd, offset);
-    return result;
-  }
+  if (IN_RTL) return real_mmap(addr, length, prot, flags, fd, offset);
   GIL scoped;
   void *result;
   DECLARE_TID_AND_PC();
-  RPut(RTN_CALL, tid, pc, (uintptr_t)__real_mmap, 0);
+  RPut(RTN_CALL, tid, pc, (uintptr_t)real_mmap, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
-  result = __real_mmap(addr, length, prot, flags, fd, offset);
+  result = real_mmap(addr, length, prot, flags, fd, offset);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
   if (result != (void*) -1) {
     SPut(MMAP, tid, pc, (uintptr_t)result, (uintptr_t)length);
@@ -1162,14 +1163,32 @@ void *__wrap_mmap(void *addr, size_t length, int prot, int flags,
 }
 
 extern "C"
-int __wrap_munmap(void *addr, size_t length) {
-  if (IN_RTL) return __real_munmap(addr, length);
+void *mmap64(void *addr, size_t length, int prot, int flags,
+             int fd, __off64_t offset) {
+  if (IN_RTL) return real_mmap64(addr, length, prot, flags, fd, offset);
+  GIL scoped;
+  void *result;
+  DECLARE_TID_AND_PC();
+  RPut(RTN_CALL, tid, pc, (uintptr_t)real_mmap64, 0);
+  IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
+  result = real_mmap64(addr, length, prot, flags, fd, offset);
+  IGNORE_ALL_ACCESSES_AND_SYNC_END();
+  if (result != (void*) -1) {
+    SPut(MMAP, tid, pc, (uintptr_t)result, (uintptr_t)length);
+  }
+  RPut(RTN_EXIT, tid, pc, 0, 0);
+  return result;
+}
+
+extern "C"
+int munmap(void *addr, size_t length) {
+  if (IN_RTL) return real_munmap(addr, length);
   GIL scoped;
   int result;
   DECLARE_TID_AND_PC();
-  RPut(RTN_CALL, tid, pc, (uintptr_t)__real_munmap, 0);
+  RPut(RTN_CALL, tid, pc, (uintptr_t)real_munmap, 0);
   IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
-  result = __real_munmap(addr, length);
+  result = real_munmap(addr, length);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
   if (result == 0) {
     SPut(MUNMAP, tid, pc, (uintptr_t)addr, (uintptr_t)length);
@@ -1260,7 +1279,7 @@ extern "C"
 void __wrap_free(void *ptr) {
   if (ptr == 0)
     return;
-  if (IN_RTL) return __real_free(ptr);
+  if (IN_RTL || INFO.thread == NULL) return __real_free(ptr);
   GIL scoped;
   RECORD_ALLOC(__wrap_free);
   DECLARE_TID_AND_PC();
@@ -2869,7 +2888,7 @@ void PcToStrings(pc_t pc, bool demangle,
 
 extern "C"
 void __tsan_handle_mop(void *addr, unsigned flags) {
-  if (__tsan_thread_ignore == 0) {
+  if (IN_RTL + __tsan_thread_ignore == 0) {
     ENTER_RTL();
     void* pc = __builtin_return_address(0);
     uint64_t mop = (uint64_t)(uintptr_t)pc | ((uint64_t)flags) << 58;

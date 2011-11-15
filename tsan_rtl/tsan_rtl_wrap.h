@@ -35,9 +35,23 @@
 namespace __tsan {
 void WrapInit();
 
-typedef void *(*memchr_ft)(void *s, int c, size_t n);
+typedef void *(*memchr_ft)(void*, int, size_t);
 extern memchr_ft real_memchr;
-}
+
+typedef void *(*mmap_ft)(void*, size_t, int, int, int, off_t);
+extern mmap_ft real_mmap;
+
+typedef void *(*mmap64_ft)(void*, size_t, int, int, int, __off64_t);
+extern mmap64_ft real_mmap64;
+
+typedef int (*munmap_ft)(void*, size_t);
+extern munmap_ft real_munmap;
+
+typedef int (*pthread_create_ft)(pthread_t*, const pthread_attr_t*,
+                                 void *(*)(void*), void*);
+extern pthread_create_ft real_pthread_create;
+
+} // namespace __tsan
 
 // Real function prototypes {{{1
 extern "C" {
@@ -114,9 +128,6 @@ char *__real_strrchr(const char *s, int c);
 int __real_strncmp(const char *s1, const char *s2, size_t n);
 char *__real_strcpy(char *dest, const char *src);
 
-void *__real_mmap(void *addr, size_t length, int prot, int flags,
-                  int fd, off_t offset);
-int __real_munmap(void *addr, size_t length);
 void *__real_calloc(size_t nmemb, size_t size);
 void *__real_malloc(size_t size);
 void *__real_realloc(void *ptr, size_t size);
@@ -244,9 +255,6 @@ char *__wrap_strrchr(const char *s, int c);
 int __wrap_strncmp(const char *s1, const char *s2, size_t n);
 char *__wrap_strcpy(char *dest, const char *src);
 
-void *__wrap_mmap(void *addr, size_t length, int prot, int flags,
-                  int fd, off_t offset);
-int __wrap_munmap(void *addr, size_t length);
 void *__wrap_calloc(size_t nmemb, size_t size);
 void *__wrap_malloc(size_t size);
 void *__wrap_realloc(void *ptr, size_t size);
