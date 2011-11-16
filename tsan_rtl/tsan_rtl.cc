@@ -628,7 +628,6 @@ static bool initialize() {
 
   ThreadSanitizerParseFlags(&args);
   ThreadSanitizerInit();
-  __tsan::SymbolizeInit();
   if (G_flags->dry_run) {
     Printf("WARNING: the --dry_run flag is not supported anymore. "
            "Ignoring.\n");
@@ -718,6 +717,7 @@ static void InitRTLAndTid0() {
   INFO.tid = 0;
   max_tid = 1;
   UnsafeInitTidCommon();
+  __tsan::SymbolizeInit();
 }
 
 extern "C" void __tsan_init() {
@@ -2864,11 +2864,9 @@ void PrintStackTrace() {
 }
 
 string PcToRtnName(pc_t pc, bool demangle) {
-  string module;
-  string symbol;
-  string file;
-  int line = 0;
-  __tsan::SymbolizeCode(pc, demangle, &module, &symbol, &file, &line);
+  char symbol[4096];
+  SymbolizeCode((void*)pc, demangle, NULL, 0, symbol, sizeof(symbol),
+                NULL, 0, 0);
   return symbol;
 }
 
@@ -2876,14 +2874,46 @@ string PcToRtnName(pc_t pc, bool demangle) {
 //  -- |addr| belongs to .data, .bss or .rodata section
 bool GetNameAndOffsetOfGlobalObject(uintptr_t addr,
                                     string *name, uintptr_t *offset) {
-
-  return SymbolizeData(addr, name, offset);
+  char namebuf [4096];
+  bool res = SymbolizeData((void*)addr, namebuf, sizeof(namebuf), offset);
+  if (name) {
+    if (res)
+      *name = namebuf;
+    else
+      name->clear();
+  }
+  return res;
 }
 
 void PcToStrings(pc_t pc, bool demangle,
-                 string *img_name, string *rtn_name,
-                 string *file_name, int *line_no) {
-  __tsan::SymbolizeCode(pc, demangle, img_name, rtn_name, file_name, line_no);
+                 string *module, string *symbol,
+                 string *file, int *line) {
+  char modulebuf[4096];
+  char symbolbuf[4096];
+  char filebuf[4096];
+  bool res = SymbolizeCode((void*)pc, demangle,
+                           modulebuf, sizeof(modulebuf),
+                           symbolbuf, sizeof(symbolbuf),
+                           filebuf, sizeof(filebuf),
+                           line);
+  if (module) {
+    if (res)
+      *module = modulebuf;
+    else
+      module->clear();
+  }
+  if (symbol) {
+    if (res)
+      *symbol = symbolbuf;
+    else
+      symbol->clear();
+  }
+  if (file) {
+    if (res)
+      *file = filebuf;
+    else
+      file->clear();
+  }
 }
 
 extern "C"

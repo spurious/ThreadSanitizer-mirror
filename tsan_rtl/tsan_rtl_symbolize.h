@@ -34,9 +34,12 @@
 namespace __tsan {
 
 void SymbolizeInit();
-bool SymbolizeData(uintptr_t addr, string *symbol, uintptr_t *offset);
-bool SymbolizeCode(uintptr_t pc, bool demangle, string *module,
-                   string *symbol, string *file, int *line);
+bool SymbolizeData(void* addr, char *symbol, int symbol_sz, uintptr_t *offset);
+bool SymbolizeCode(void* pc, bool demangle,
+                   char *module, int module_sz,
+                   char *symbol, int symbol_sz,
+                   char *file, int file_sz,
+                   int *line);
 
 }
 

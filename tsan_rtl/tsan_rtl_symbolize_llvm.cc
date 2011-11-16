@@ -266,8 +266,9 @@ void AddWrappersDbgInfo() {
   WRAPPER_DBG_INFO(__real_strchr);
   WRAPPER_DBG_INFO(__real_strrchr);
 
-  WRAPPER_DBG_INFO(__real_mmap);
-  WRAPPER_DBG_INFO(__real_munmap);
+  WRAPPER_DBG_INFO(real_mmap);
+  WRAPPER_DBG_INFO(real_mmap64);
+  WRAPPER_DBG_INFO(real_munmap);
   WRAPPER_DBG_INFO(__real_calloc);
   WRAPPER_DBG_INFO(__real_malloc);
   WRAPPER_DBG_INFO(__real_realloc);
@@ -337,7 +338,7 @@ void ReadElf() {
   struct stat st;
   fstat(fd, &st);
   DDPrintf("Reading debug info from %s (%d bytes)\n", fname, st.st_size);
-  char* map = (char*)__real_mmap(NULL, st.st_size,
+  char* map = (char*)real_mmap(NULL, st.st_size,
                                  PROT_READ, MAP_PRIVATE, fd, 0);
   if (map == MAP_FAILED) {
     perror("mmap");
@@ -399,7 +400,7 @@ void ReadElf() {
   }
   LEAVE_RTL();
   // Finalize.
-  __real_munmap(map, st.st_size);
+  real_munmap(map, st.st_size);
   close(fd);
 }
 
@@ -430,30 +431,34 @@ void __tsan::SymbolizeInit() {
   DBG_INIT = 1;
 }
 
-bool __tsan::SymbolizeData(uintptr_t addr, string *symbol, uintptr_t *offset) {
+bool __tsan::SymbolizeData(void *addr, char *symbol,
+                           int symbol_sz, uintptr_t *offset) {
   (void)addr;
   (void)symbol;
+  (void)symbol_sz;
   (void)offset;
   return false;
 }
 
-bool __tsan::SymbolizeCode(uintptr_t pc, bool demangle, string *module,
-                           string *symbol, string *file, int *line) {
+bool __tsan::SymbolizeCode(void *pc, bool demangle,
+                           char *module, int module_sz,
+                           char *symbol, int symbol_sz,
+                           char *file, int file_sz,
+                           int *line) {
   DbgInfoLock scoped;
-  module->clear();
-  symbol->clear();
-  file->clear();
+  module[0] = 0;
+  symbol[0] = 0;
+  file[0] = 0;
   line[0] = 0;
   if (debug_info) {
-    if (debug_info->find(pc) != debug_info->end()) {
-      module = NULL;
+    if (debug_info->find((uintptr_t)pc) != debug_info->end()) {
       if (demangle) {
-        *symbol = (*debug_info)[pc].demangled_symbol;
+        strncpy(symbol, (*debug_info)[(uintptr_t)pc].demangled_symbol.c_str(), symbol_sz);
       } else {
-        *symbol = (*debug_info)[pc].symbol;
+        strncpy(symbol, (*debug_info)[(uintptr_t)pc].symbol.c_str(), symbol_sz);
       }
-      *file = ((*debug_info)[pc].fullpath);
-      *line = ((*debug_info)[pc].line);
+      strncpy(file, (*debug_info)[(uintptr_t)pc].fullpath.c_str(), file_sz);
+      *line = ((*debug_info)[(uintptr_t)pc].line);
     }
   }
   return true;

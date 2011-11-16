@@ -50,13 +50,12 @@ void __tsan::SymbolizeInit() {
   ThreadSanitizerSetUnwindCallback(UnwindCallback);
 }
 
-bool __tsan::SymbolizeData(uintptr_t addr, string *symbol, uintptr_t *offset) {
-  char symbolbuf [4096];
+bool __tsan::SymbolizeData(void *addr, char *symbol,
+                           int symbol_sz, uintptr_t *offset) {
   int soffset = 0;
-
-  if (bfds_symbolize((void*)addr,
+  if (bfds_symbolize(addr,
                      (bfds_opts_e)(bfds_opt_data | bfds_opt_demangle),
-                     symbolbuf, sizeof(symbolbuf),
+                     symbol, symbol_sz,
                      0, 0, // module
                      0, 0, // source file
                      0,    // source line
@@ -64,43 +63,34 @@ bool __tsan::SymbolizeData(uintptr_t addr, string *symbol, uintptr_t *offset) {
     return false;
   }
 
-  if (symbol)
-      symbol->assign(symbolbuf);
   if (offset)
     *offset = soffset;
   return true;
 }
 
-bool __tsan::SymbolizeCode(uintptr_t pc, bool demangle, string *module,
-                           string *symbol, string *file, int *line) {
-  char symbolbuf [4096];
-  char modulebuf [4096];
-  char filebuf   [4096];
-
+bool __tsan::SymbolizeCode(void *pc, bool demangle,
+                           char *module, int module_sz,
+                           char *symbol, int symbol_sz,
+                           char *file, int file_sz,
+                           int *line) {
   if (bfds_symbolize((void*)pc,
                      demangle ? bfds_opt_demangle : bfds_opt_none,
-                     symbolbuf, sizeof(symbolbuf),
-                     modulebuf, sizeof(modulebuf),
-                     filebuf, sizeof(filebuf),
+                     symbol, symbol_sz,
+                     module, module_sz,
+                     file, file_sz,
                      line,
                      0)) { // symbol offset
-    if (module)
-      module->clear();
-    if (symbol)
-      symbol->clear();
-    if (file)
-      file->clear();
+    if (module && module_sz)
+      module[0] = 0;
+    if (symbol && symbol_sz)
+      symbol[0] = 0;
+    if (file && file_sz)
+      file[0] = 0;
     if (line)
-      *line = 0;
+      line[0] = 0;
     return false;
   }
 
-  if (module)
-    module->assign(modulebuf);
-  if (symbol)
-    symbol->assign(symbolbuf);
-  if (file)
-    file->assign(filebuf);
   return true;
 }
 
