@@ -52,19 +52,19 @@ endif
 COMMON_FLAGS=-I. -I../third_party/stlport \
       -I$(TSAN_PATH) -I../dynamic_annotations \
       -I../earthquake -I$(BFDS_PATH) \
-      -fno-exceptions -g -O2 \
-      -D_STLP_NO_IOSTREAMS=1 -DTS_LLVM -fPIE
+      -fno-exceptions -g \
+      -D_STLP_NO_IOSTREAMS=1 -DTS_LLVM -fPIE \
+      -DDYNAMIC_ANNOTATIONS_PREFIX=LLVM
 
 DA_FLAGS=$(COMMON_FLAGS) -DDYNAMIC_ANNOTATIONS_PROVIDE_RUNNING_ON_VALGRIND=0
 
 ifeq ($(DEBUG), 1)
-  D=-debug
   DEFINES32+=-DDEBUG=1
   DEFINES64+=-DDEBUG=1
   DA_FLAGS+=-DDYNAMIC_ANNOTATIONS_ENABLED=1
   COMMON_FLAGS+=-fno-inline
 else
-  D=
+  COMMON_FLAGS+=-O2
 endif
 
 ifeq ($(TS_DIRECT_MAP), 1)

@@ -56,6 +56,22 @@ extern struct gimple_opt_pass pass_tsan;
 int flag_tsan;
 const char *flag_tsan_ignore;
 
+#if 1
+static void
+finish_unit (void *gcc_data, void *user_data)
+{
+  static int finished;
+
+  (void) gcc_data;
+  (void) user_data;
+
+  if (finished++)
+    return;
+  extern void tsan_finish_file (void);
+  tsan_finish_file ();
+}
+#endif
+
 int
 plugin_init (struct plugin_name_args* info, struct plugin_gcc_version* ver)
 {
@@ -63,23 +79,25 @@ plugin_init (struct plugin_name_args* info, struct plugin_gcc_version* ver)
   int i;
 
   if (strcmp (ver->basever, gcc_version.basever) != 0)
-  {
-    printf("tsan: invalid gcc version (expected/actual: %s/%s)\n",
-      gcc_version.basever, ver->basever);
-    exit(1);
-  }
+    {
+      printf ("tsan: invalid gcc version (expected/actual: %s/%s)\n",
+             gcc_version.basever, ver->basever);
+      exit(1);
+    }
 
   flag_tsan = 1;
-  for (i = 0; i < info->argc; i++) {
-    if (strcmp (info->argv[i].key, "ignore") == 0)
-      flag_tsan_ignore = xstrdup(info->argv[i].value);
-  }
+  for (i = 0; i < info->argc; i++)
+    {
+      if (strcmp (info->argv[i].key, "ignore") == 0)
+        flag_tsan_ignore = xstrdup (info->argv[i].value);
+    }
 
   pass.pass = &pass_tsan.pass;
-  pass.reference_pass_name = "optimized";
+  pass.reference_pass_name = "loop";
   pass.ref_pass_instance_number = 1;
-  pass.pos_op = PASS_POS_INSERT_AFTER;
+  pass.pos_op = PASS_POS_INSERT_BEFORE;
   register_callback(info->base_name, PLUGIN_PASS_MANAGER_SETUP, NULL, &pass);
+  register_callback(info->base_name, PLUGIN_ALL_PASSES_END, finish_unit, NULL);
   return 0;
 }
 
