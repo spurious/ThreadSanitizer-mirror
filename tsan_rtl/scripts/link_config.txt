@@ -1,7 +1,6 @@
 wrap __cxa_guard_acquire
 wrap __cxa_guard_release
 
-wrap pthread_create
 wrap pthread_join
 
 wrap pthread_mutex_init
@@ -55,8 +54,6 @@ wrap fork
 wrap strlen
 wrap strcmp
 
-wrap mmap
-wrap munmap
 wrap calloc
 wrap malloc
 wrap realloc
@@ -100,11 +97,8 @@ wrap memmove
 wrap strchr
 wrap strchrnul
 wrap strrchr
-wrap memchr
 wrap strncmp
 wrap strcpy
-
-wrap __libc_csu_init
 
 wrap epoll_wait
 wrap epoll_ctl

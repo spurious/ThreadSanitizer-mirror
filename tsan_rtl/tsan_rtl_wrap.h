@@ -38,15 +38,6 @@ void WrapInit();
 typedef void *(*memchr_ft)(void*, int, size_t);
 extern memchr_ft real_memchr;
 
-typedef void *(*mmap_ft)(void*, size_t, int, int, int, off_t);
-extern mmap_ft real_mmap;
-
-typedef void *(*mmap64_ft)(void*, size_t, int, int, int, __off64_t);
-extern mmap64_ft real_mmap64;
-
-typedef int (*munmap_ft)(void*, size_t);
-extern munmap_ft real_munmap;
-
 typedef int (*pthread_create_ft)(pthread_t*, const pthread_attr_t*,
                                  void *(*)(void*), void*);
 extern pthread_create_ft real_pthread_create;

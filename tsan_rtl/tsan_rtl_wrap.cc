@@ -33,16 +33,10 @@
 namespace __tsan {
 
 memchr_ft               real_memchr;
-mmap_ft                 real_mmap;
-mmap64_ft               real_mmap64;
-munmap_ft               real_munmap;
 pthread_create_ft       real_pthread_create;
 
 void WrapInit() {
   real_memchr = (memchr_ft)dlsym(RTLD_NEXT, "memchr");
-  real_mmap = (mmap_ft)dlsym(RTLD_NEXT, "mmap");
-  real_mmap64 = (mmap64_ft)dlsym(RTLD_NEXT, "mmap64");
-  real_munmap = (munmap_ft)dlsym(RTLD_NEXT, "munmap");
   real_pthread_create = (pthread_create_ft)dlsym(RTLD_NEXT, "pthread_create");
 }
 
