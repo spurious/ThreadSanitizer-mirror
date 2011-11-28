@@ -19,7 +19,10 @@
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Type.h"
 
+#if 0
+// TODO(glider): clang integration.
 #include "common_util.h"
+#endif
 
 #include <stdint.h>
 #include <stdio.h>
@@ -56,7 +59,7 @@ static cl::opt<bool>
 static cl::opt<bool>
     PrintStats("print-stats",
                cl::desc("Print the instrumentation stats"),
-               cl::init(true));
+               cl::init(false));
 
 static cl::opt<bool>
     DumpModule("dump-module",
@@ -105,7 +108,7 @@ static cl::opt<bool>
 static cl::opt<bool>
     EnableTsan("enable-tsan",
                cl::desc("Enable the TSan instrumentation"),
-               cl::init(false));
+               cl::init(true));
 
 static cl::opt<bool>
     IgnoreMopsByOrigin("ignore-mops-by-origin",
@@ -188,7 +191,7 @@ void Printf(const char *format, ...) {
 void Report(const char *format, ...) {
   int buff_size = 1024*16;
   char *buff = new char[buff_size];
-  CHECK(buff);
+  assert(buff);
 
   va_list args;
 
@@ -200,7 +203,7 @@ void Report(const char *format, ...) {
     delete [] buff;
     buff_size *= 2;
     buff = new char[buff_size];
-    CHECK(buff);
+    assert(buff);
     // Printf("Resized buff: %d\n", buff_size);
   }
   errs() << buff;
@@ -208,13 +211,17 @@ void Report(const char *format, ...) {
 
 namespace {
 
-// TsanOnlineInstrument implementation {{{1
-TsanOnlineInstrument::TsanOnlineInstrument() : ModulePass(ID) {
-  if (TargetArch == "x86-64") {
-    ArchSize = 64;
-  } else {
+// ThreadSanitizer implementation {{{1
+ThreadSanitizer::ThreadSanitizer() : ModulePass(ID) {
+  ArchSize = 64;
+#if 0
+  // TODO(glider): choose ArchSize depending on the triple.
+  if (TargetArch != "x86-64") {
     ArchSize = 32;
+  } else {
+    ArchSize = 64;
   }
+#endif
   if (IgnoreFile.size()) {
     parseIgnoreFile(IgnoreFile);
   }
@@ -222,7 +229,7 @@ TsanOnlineInstrument::TsanOnlineInstrument() : ModulePass(ID) {
 
 // instruction_address = function_address + c_offset
 // (number of mops is always less or equal to the function size)
-Constant *TsanOnlineInstrument::getInstructionAddr(
+Constant *ThreadSanitizer::getInstructionAddr(
     int mop_index, BasicBlock::iterator &cur_inst,
     const IntegerType *ResultType) {
   Value *cur_fun = cur_inst->getParent()->getParent();
@@ -239,7 +246,7 @@ Constant *TsanOnlineInstrument::getInstructionAddr(
 
 // TODO(glider): this is a hack to make the debug info variables more unique.
 // It'll be more reliable to make them hidden again.
-string TsanOnlineInstrument::getModuleLetters(Module &M) {
+string ThreadSanitizer::getModuleLetters(Module &M) {
   string name = M.getModuleIdentifier();
   string res;
   for (int i = name.size() - 1; i > 0; --i) {
@@ -250,7 +257,7 @@ string TsanOnlineInstrument::getModuleLetters(Module &M) {
   return res;
 }
 
-uintptr_t TsanOnlineInstrument::getModuleID(Module &M) {
+uintptr_t ThreadSanitizer::getModuleID(Module &M) {
   uintptr_t result = 0;
   char tmp;
   string name = M.getModuleIdentifier();
@@ -262,7 +269,7 @@ uintptr_t TsanOnlineInstrument::getModuleID(Module &M) {
   return result;
 }
 
-bool TsanOnlineInstrument::isDtor(const string &mangled_name) {
+bool ThreadSanitizer::isDtor(const string &mangled_name) {
   int status;
   char *demangled = NULL;
 #if defined(__GNUC__)
@@ -285,7 +292,7 @@ bool TsanOnlineInstrument::isDtor(const string &mangled_name) {
   return false;
 }
 
-void TsanOnlineInstrument::writeModuleDebugInfo(Module &M) {
+void ThreadSanitizer::writeModuleDebugInfo(Module &M) {
   // The debug info is stored in a per-module global structure named
   // "rtl_debug_info${ModuleID}".
   // TODO(glider): this may lead to name collisions.
@@ -428,11 +435,11 @@ void TsanOnlineInstrument::writeModuleDebugInfo(Module &M) {
   GV->setSection("tsan_rtl_debug_info");
 }
 
-BlockSet &TsanOnlineInstrument::getPredecessors(BasicBlock *bb) {
+BlockSet &ThreadSanitizer::getPredecessors(BasicBlock *bb) {
   return predecessors[bb];
 }
 
-bool TsanOnlineInstrument::visit(BasicBlock *node,
+bool ThreadSanitizer::visit(BasicBlock *node,
                                  Trace &trace,
                                  BlockSet &visited) {
   if (!visited.count(node)) {
@@ -450,7 +457,7 @@ bool TsanOnlineInstrument::visit(BasicBlock *node,
 }
 
 // Sort the trace topologically to check whether there are cycles.
-bool TsanOnlineInstrument::traceHasCycles(Trace &trace) {
+bool ThreadSanitizer::traceHasCycles(Trace &trace) {
 #ifdef DEBUG_CYCLES
     errs() << "LOOKING FOR CYCLES: [ ";
     for (BlockSet::iterator I = trace.blocks.begin(),
@@ -469,7 +476,7 @@ bool TsanOnlineInstrument::traceHasCycles(Trace &trace) {
 //  -- it has a single entry point
 //  -- it contains no loops
 // TODO(glider): may want to handle indirectbr.
-bool TsanOnlineInstrument::validateTrace(Trace &trace) {
+bool ThreadSanitizer::validateTrace(Trace &trace) {
   BlockSet entries;
   BlockSet accessible;
   int num_edges = 0;
@@ -583,7 +590,7 @@ bool TsanOnlineInstrument::validateTrace(Trace &trace) {
 //  -- for each basic blocks P, C1, C2 such as
 //          (P in T1) and (P->C1) and (P->C2):
 //     (C1 in T2) if and only if (C2 in T2)
-void TsanOnlineInstrument::buildClosureInner(Trace &trace, BlockSet &used) {
+void ThreadSanitizer::buildClosureInner(Trace &trace, BlockSet &used) {
   BlockSet children;
   for (BlockSet::iterator SI = trace.blocks.begin(),
                           SE = trace.blocks.end();
@@ -638,7 +645,7 @@ void TsanOnlineInstrument::buildClosureInner(Trace &trace, BlockSet &used) {
   }
 }
 
-void TsanOnlineInstrument::buildClosure(Trace &trace, BlockSet &used) {
+void ThreadSanitizer::buildClosure(Trace &trace, BlockSet &used) {
 #ifdef DEBUG_TRACES
   errs() << "buildClosure(" << (*trace.blocks.begin())->getName() << ")\n";
 #endif
@@ -658,7 +665,7 @@ void TsanOnlineInstrument::buildClosure(Trace &trace, BlockSet &used) {
 }
 
 // Cache the predecessors for each basic block within a function.
-void TsanOnlineInstrument::cachePredecessors(Function &F) {
+void ThreadSanitizer::cachePredecessors(Function &F) {
   for (Function::iterator BB = F.begin(), E = F.end(); BB != E; ++BB) {
     TerminatorInst *BBTerm = BB->getTerminator();
     for (int i = 0, e = BBTerm->getNumSuccessors(); i != e; ++i) {
@@ -668,7 +675,7 @@ void TsanOnlineInstrument::cachePredecessors(Function &F) {
   }
 }
 
-TraceVector TsanOnlineInstrument::buildTraces(Function &F) {
+TraceVector ThreadSanitizer::buildTraces(Function &F) {
   TraceVector traces;
   BlockSet used_bbs;
   BlockVector to_see;
@@ -722,7 +729,7 @@ TraceVector TsanOnlineInstrument::buildTraces(Function &F) {
 // The effective C++ code for this is:
 //   ShadowStack.end_++;
 //
-void TsanOnlineInstrument::insertRtnCall(Constant *addr,
+void ThreadSanitizer::insertRtnCall(Constant *addr,
                                          BasicBlock::iterator &Before) {
   if (!EnableFunctionInstrumentation) return;
   if (!InlineShadowStackUpdates) {
@@ -741,25 +748,34 @@ void TsanOnlineInstrument::insertRtnCall(Constant *addr,
     vector <Value*> end_idx;
     end_idx.push_back(ConstantInt::get(PlatformInt, 0));
     end_idx.push_back(ConstantInt::get(Int32, 0));
+///    Value *StackEndPtr =
+///        GetElementPtrInst::Create(ShadowStack,
+///                                  end_idx.begin(), end_idx.end(),
+///                                  "", Before);
     Value *StackEndPtr =
         GetElementPtrInst::Create(ShadowStack,
-                                  end_idx.begin(), end_idx.end(),
+                                  end_idx,
                                   "", Before);
     CurrentStackEnd = new LoadInst(StackEndPtr, "", Before);
 
     vector <Value*> new_idx;
     new_idx.push_back(ConstantInt::get(Int32, 1));
+///    Value *NewStackEnd =
+///        GetElementPtrInst::Create(CurrentStackEnd,
+///                                  new_idx.begin(), new_idx.end(),
+///                                  "", Before);
     Value *NewStackEnd =
         GetElementPtrInst::Create(CurrentStackEnd,
-                                  new_idx.begin(), new_idx.end(),
+                                  new_idx,
                                   "", Before);
+
     new StoreInst(NewStackEnd, StackEndPtr, Before);
   }
 }
 
 
 // Insert the code that pops a stack frame from the shadow stack.
-void TsanOnlineInstrument::insertRtnExit(BasicBlock::iterator &Before) {
+void ThreadSanitizer::insertRtnExit(BasicBlock::iterator &Before) {
   if (!EnableFunctionInstrumentation) return;
   if (!InlineShadowStackUpdates) {
     vector<Value*> inst(0);
@@ -776,9 +792,13 @@ void TsanOnlineInstrument::insertRtnExit(BasicBlock::iterator &Before) {
     vector <Value*> end_idx;
     end_idx.push_back(ConstantInt::get(PlatformInt, 0));
     end_idx.push_back(ConstantInt::get(Int32, 0));
+///    Value *StackEndPtr =
+///        GetElementPtrInst::Create(ShadowStack,
+///                                  end_idx.begin(), end_idx.end(),
+///                                  "", Before);
     Value *StackEndPtr =
         GetElementPtrInst::Create(ShadowStack,
-                                  end_idx.begin(), end_idx.end(),
+                                  end_idx,
                                   "", Before);
     // TODO(glider): the following lines may introduce an error if no
     // dependence analysis is done after the instrumentation.
@@ -793,17 +813,25 @@ void TsanOnlineInstrument::insertRtnExit(BasicBlock::iterator &Before) {
       vector <Value*> end_idx;
       end_idx.push_back(ConstantInt::get(PlatformInt, 0));
       end_idx.push_back(ConstantInt::get(Int32, 0));
+///      Value *StackEndPtr =
+///          GetElementPtrInst::Create(ShadowStack,
+///                                    end_idx.begin(), end_idx.end(),
+///                                    "", Before);
       Value *StackEndPtr =
           GetElementPtrInst::Create(ShadowStack,
-                                    end_idx.begin(), end_idx.end(),
+                                    end_idx,
                                     "", Before);
       Value *StackEnd = new LoadInst(StackEndPtr, "", Before);
 
       vector <Value*> new_idx;
       new_idx.push_back(ConstantInt::get(Int32, -1));
+///      Value *NewStackEnd =
+///          GetElementPtrInst::Create(StackEnd,
+///                                    new_idx.begin(), new_idx.end(),
+///                                    "", Before);
       Value *NewStackEnd =
           GetElementPtrInst::Create(StackEnd,
-                                    new_idx.begin(), new_idx.end(),
+                                    new_idx,
                                     "", Before);
       new StoreInst(NewStackEnd, StackEndPtr, Before);
       vector <Value*> check;
@@ -823,7 +851,7 @@ void TsanOnlineInstrument::insertRtnExit(BasicBlock::iterator &Before) {
 }
 
 // TODO(glider): do we need this function?
-int TsanOnlineInstrument::numMopsInFunction(Module::iterator &F) {
+int ThreadSanitizer::numMopsInFunction(Module::iterator &F) {
   int result = 0;
   for (Function::iterator BB = F->begin(), E = F->end(); BB != E; ++BB) {
     for (BasicBlock::iterator BI = BB->begin(), BE = BB->end();
@@ -837,9 +865,9 @@ int TsanOnlineInstrument::numMopsInFunction(Module::iterator &F) {
   return result;
 }
 
-// TsanOnlineInstrument is a module pass, so this is just a helper function, not
+// ThreadSanitizer is a module pass, so this is just a helper function, not
 // an interface implementation.
-void TsanOnlineInstrument::runOnFunction(Module::iterator &F) {
+void ThreadSanitizer::runOnFunction(Module::iterator &F) {
   ModuleFunctionCount++;
   FunctionMopCount = 0;
   int num_mops_in_traces = 0;
@@ -870,7 +898,7 @@ void TsanOnlineInstrument::runOnFunction(Module::iterator &F) {
       return;
     }
     // TODO(glider): rely on the vtable mangled name instead of first_dtor_bb.
-    if (isDtor(F->getNameStr())) first_dtor_bb = WorkaroundVptrRace;
+    if (isDtor(F->getName().str())) first_dtor_bb = WorkaroundVptrRace;
 
     instrumentation_stats.newFunction();
     instrumentation_stats.newBasicBlocks(F->size());
@@ -982,7 +1010,7 @@ void TsanOnlineInstrument::runOnFunction(Module::iterator &F) {
 
 // Some flags may override other flags.
 // TODO(glider): this should be documented well.
-void TsanOnlineInstrument::setupFlags() {
+void ThreadSanitizer::setupFlags() {
   if (FlushUsingSegv) {
     UseDynamicTleb = true;
   }
@@ -992,7 +1020,7 @@ void TsanOnlineInstrument::setupFlags() {
   }
 }
 
-void TsanOnlineInstrument::setupDataTypes() {
+void ThreadSanitizer::setupDataTypes() {
   // Arch size dependent types.
   if (ArchSize == 64) {
     UIntPtr =
@@ -1130,7 +1158,7 @@ void TsanOnlineInstrument::setupDataTypes() {
 
 }
 
-void TsanOnlineInstrument::setupRuntimeGlobals() {
+void ThreadSanitizer::setupRuntimeGlobals() {
   ShadowStack = new GlobalVariable(*ThisModule,
                                    CallStackType,
                                    /*isConstant*/false,
@@ -1258,12 +1286,12 @@ void TsanOnlineInstrument::setupRuntimeGlobals() {
 }
 
 // virtual
-const char *TsanOnlineInstrument::getPassName() const {
+const char *ThreadSanitizer::getPassName() const {
   return "ThreadSanitizer";
 }
 
 // virtual
-bool TsanOnlineInstrument::runOnModule(Module &M) {
+bool ThreadSanitizer::runOnModule(Module &M) {
   if (!EnableTsan) return false;
   InstrumentedTraceCount = 0;
   ModuleFunctionCount = 0;
@@ -1360,7 +1388,7 @@ bool TsanOnlineInstrument::runOnModule(Module &M) {
   return true;
 }
 
-void TsanOnlineInstrument::insertIgnoreInc(
+void ThreadSanitizer::insertIgnoreInc(
     llvm::BasicBlock::iterator &Before) {
   Value *Old = new LoadInst(ThreadLocalIgnore, "", Before);
   Value *New =
@@ -1371,7 +1399,7 @@ void TsanOnlineInstrument::insertIgnoreInc(
   new StoreInst(New, ThreadLocalIgnore, Before);
 }
 
-void TsanOnlineInstrument::insertIgnoreDec(
+void ThreadSanitizer::insertIgnoreDec(
     llvm::BasicBlock::iterator &Before) {
   Value *Old = new LoadInst(ThreadLocalIgnore, "", Before);
   Value *New =
@@ -1439,7 +1467,7 @@ void TsanOnlineInstrument::insertIgnoreDec(
 
 // TODO(glider): when we split a block after the traces have been built, need
 // to make sure that both parts still belong to the same trace.
-void TsanOnlineInstrument::insertMaybeFlushTleb(Instruction *Before) {
+void ThreadSanitizer::insertMaybeFlushTleb(Instruction *Before) {
   // If the user chose to flush using SEGV, we do not need to insert any code.
   if (FlushUsingSegv) return;
   if (EnableLiteRaceSampling) {
@@ -1502,7 +1530,7 @@ void TsanOnlineInstrument::insertMaybeFlushTleb(Instruction *Before) {
 #endif
 }
 
-void TsanOnlineInstrument::writeValueIntoTleb(Value *EventValue,
+void ThreadSanitizer::writeValueIntoTleb(Value *EventValue,
                                               BasicBlock::iterator &Before) {
   // Store the value into the dynamic TLEB:
   //   DTLEB[DTlebIndex] = EventValue;
@@ -1515,9 +1543,13 @@ void TsanOnlineInstrument::writeValueIntoTleb(Value *EventValue,
   // OMG no! I don't want to load DTLEB each time!
   // TODO(glider): need to cache this.
   Value *DTLEBPtr = new LoadInst(DTLEB, "", Before);
+///  Value *CurrentTlebTop =
+///      GetElementPtrInst::Create(DTLEBPtr,
+///                                end_idx.begin(), end_idx.end(),
+///                                "", Before);
   Value *CurrentTlebTop =
       GetElementPtrInst::Create(DTLEBPtr,
-                                end_idx.begin(), end_idx.end(),
+                                end_idx,
                                 "", Before);
   new StoreInst(EventValue, CurrentTlebTop, Before);
   Value *One = ConstantInt::get(PlatformInt, 1);
@@ -1530,7 +1562,7 @@ void TsanOnlineInstrument::writeValueIntoTleb(Value *EventValue,
   new StoreInst(NewIndexValue, DTlebIndex, Before);
 }
 
-void TsanOnlineInstrument::writeRtnCallToTleb(Constant *Addr,
+void ThreadSanitizer::writeRtnCallToTleb(Constant *Addr,
                                               BasicBlock::iterator &Before) {
   // writeValueIntoTleb(RTN_CALL | &function)
   // insertMaybeFlushTleb()
@@ -1550,7 +1582,7 @@ void TsanOnlineInstrument::writeRtnCallToTleb(Constant *Addr,
   insertMaybeFlushTleb(Before);
 }
 
-void TsanOnlineInstrument::writeRtnExitToTleb(BasicBlock::iterator &Before) {
+void ThreadSanitizer::writeRtnExitToTleb(BasicBlock::iterator &Before) {
   // writeValueIntoTleb(RTN_EXIT)
   // insertMaybeFlushTleb()
   Value *ExitInt;
@@ -1564,7 +1596,7 @@ void TsanOnlineInstrument::writeRtnExitToTleb(BasicBlock::iterator &Before) {
   insertMaybeFlushTleb(Before);
 }
 
-void TsanOnlineInstrument::writeSblockEnterForTrace(Trace &trace) {
+void ThreadSanitizer::writeSblockEnterForTrace(Trace &trace) {
   // Input: TracePassportGlob contains the current passport address.
   Value *MaskInt;
   BasicBlock *BB = trace.entry;
@@ -1597,10 +1629,15 @@ void TsanOnlineInstrument::writeSblockEnterForTrace(Trace &trace) {
   }
   vector <Value*> idx;
   idx.push_back(ConstantInt::get(PlatformInt, 0));
+///  Value *PassportPtr =
+///      GetElementPtrInst::Create(TracePassportGlob,
+///                                idx.begin(),
+///                                idx.end(),
+///                                "",
+///                                Before);
   Value *PassportPtr =
       GetElementPtrInst::Create(TracePassportGlob,
-                                idx.begin(),
-                                idx.end(),
+                                idx,
                                 "",
                                 Before);
   Value *PassportInt =
@@ -1619,7 +1656,7 @@ void TsanOnlineInstrument::writeSblockEnterForTrace(Trace &trace) {
 
 
 // |MopAddr| is ignored iff |useTLEB| == true.
-void TsanOnlineInstrument::insertFlushCurrentCall(Trace &trace,
+void ThreadSanitizer::insertFlushCurrentCall(Trace &trace,
                                                   Instruction *Before,
                                                   bool useTLEB,
                                                   Value *MopAddr) {
@@ -1630,10 +1667,15 @@ void TsanOnlineInstrument::insertFlushCurrentCall(Trace &trace,
     vector <Value*> Args(1);
     vector <Value*> idx;
     idx.push_back(ConstantInt::get(PlatformInt, 0));
+///    Value *PassportPtr =
+///        GetElementPtrInst::Create(TracePassportGlob,
+///                                  idx.begin(),
+///                                  idx.end(),
+///                                  "",
+///                                  Before);
     Value *PassportPtr =
         GetElementPtrInst::Create(TracePassportGlob,
-                                  idx.begin(),
-                                  idx.end(),
+                                  idx,
                                   "",
                                   Before);
     Args[0] = BitCastInst::CreatePointerCast(PassportPtr, TraceInfoTypePtr,
@@ -1699,10 +1741,15 @@ void TsanOnlineInstrument::insertFlushCurrentCall(Trace &trace,
         Int32, (InstrumentedTraceCount-1) % kLiteRaceStorageSize));
     num_to_skip.push_back(ConstantInt::get(Int32, 1));
 
+///    Value *NumToSkipSlot =
+///        GetElementPtrInst::Create(LiteRaceStorageGlob,
+///                                  num_to_skip.begin(),
+///                                  num_to_skip.end(),
+///                                  "",
+///                                  BBOldTerm);
     Value *NumToSkipSlot =
         GetElementPtrInst::Create(LiteRaceStorageGlob,
-                                  num_to_skip.begin(),
-                                  num_to_skip.end(),
+                                  num_to_skip,
                                   "",
                                   BBOldTerm);
 
@@ -1776,10 +1823,15 @@ void TsanOnlineInstrument::insertFlushCurrentCall(Trace &trace,
       vector <Value*> Args(1);
       vector <Value*> idx;
       idx.push_back(ConstantInt::get(PlatformInt, 0));
+///      Args[0] =
+///          GetElementPtrInst::Create(TracePassportGlob,
+///                                    idx.begin(),
+///                                    idx.end(),
+///                                    "",
+///                                    FlushTerm);
       Args[0] =
           GetElementPtrInst::Create(TracePassportGlob,
-                                    idx.begin(),
-                                    idx.end(),
+                                    idx,
                                     "",
                                     FlushTerm);
       Args[0] = BitCastInst::CreatePointerCast(Args[0],
@@ -1802,12 +1854,18 @@ void TsanOnlineInstrument::insertFlushCurrentCall(Trace &trace,
       vector <Value*> Args(2);
       vector <Value*> idx;
       idx.push_back(ConstantInt::get(PlatformInt, 0));
+///      Value *PassportPtr =
+///          GetElementPtrInst::Create(TracePassportGlob,
+///                                    idx.begin(),
+///                                    idx.end(),
+///                                    "",
+///                                    FlushTerm);
       Value *PassportPtr =
           GetElementPtrInst::Create(TracePassportGlob,
-                                    idx.begin(),
-                                    idx.end(),
+                                    idx,
                                     "",
                                     FlushTerm);
+
       Args[0] = BitCastInst::CreatePointerCast(PassportPtr, TraceInfoTypePtr,
                                                "",
                                                FlushTerm);
@@ -1821,9 +1879,9 @@ void TsanOnlineInstrument::insertFlushCurrentCall(Trace &trace,
   }
 }
 
-// TsanOnlineInstrument is a module pass, so this is just a helper function, not
+// ThreadSanitizer is a module pass, so this is just a helper function, not
 // an interface implementation.
-void TsanOnlineInstrument::runOnTrace(Trace &trace,
+void ThreadSanitizer::runOnTrace(Trace &trace,
                                       bool first_dtor_bb) {
   TLEBIndex = 0;
   instrumentation_stats.newTrace();
@@ -1889,7 +1947,7 @@ void TsanOnlineInstrument::runOnTrace(Trace &trace,
 }
 
 // Find the topmost location of the instruction in the inline stack.
-DILocation TsanOnlineInstrument::getTopInlinedLocation(
+DILocation ThreadSanitizer::getTopInlinedLocation(
     BasicBlock::iterator &BI) {
   DILocation Loc(BI->getMetadata("dbg"));
   while (true) {
@@ -1908,7 +1966,7 @@ DILocation TsanOnlineInstrument::getTopInlinedLocation(
 }
 
 // Note that BI is copied, not referenced.
-void TsanOnlineInstrument::dumpInstructionDebugInfo(Constant *addr,
+void ThreadSanitizer::dumpInstructionDebugInfo(Constant *addr,
                                                     BasicBlock::iterator BI) {
   DILocation Loc = getTopInlinedLocation(BI);
   BasicBlock::iterator OldBI = BI;
@@ -1926,7 +1984,7 @@ void TsanOnlineInstrument::dumpInstructionDebugInfo(Constant *addr,
 
   string file = Loc.getFilename();
   string dir = Loc.getDirectory();
-  string symbol = BI->getParent()->getParent()->getNameStr();
+  string symbol = BI->getParent()->getParent()->getName().str();
   uintptr_t line = Loc.getLineNumber();
 
   debug_path_set.insert(dir);
@@ -1939,12 +1997,12 @@ void TsanOnlineInstrument::dumpInstructionDebugInfo(Constant *addr,
 #endif
 }
 
-bool TsanOnlineInstrument::isaCallOrInvoke(BasicBlock::iterator &BI) {
+bool ThreadSanitizer::isaCallOrInvoke(BasicBlock::iterator &BI) {
   return ((isa<CallInst>(BI) && (!isa<DbgDeclareInst>(BI))) ||
           isa<InvokeInst>(BI));
 }
 
-int TsanOnlineInstrument::getMopPtrSize(Value *mopPtr, bool isStore) {
+int ThreadSanitizer::getMopPtrSize(Value *mopPtr, bool isStore) {
   int result = ArchSize;
   const Type *mop_type = mopPtr->getType();
   if (mop_type->isSized()) {
@@ -1959,7 +2017,7 @@ int TsanOnlineInstrument::getMopPtrSize(Value *mopPtr, bool isStore) {
 // True if any function that was inlined at this place is to be ignored
 // recursively.
 // TODO(glider): this seems to be too aggressive, need to check.
-bool TsanOnlineInstrument::ignoreInlinedMop(BasicBlock::iterator &BI) {
+bool ThreadSanitizer::ignoreInlinedMop(BasicBlock::iterator &BI) {
   if (!IgnoreMopsByOrigin) return false;
 #ifdef DEBUG_IGNORE_MOPS
   errs() << "ignoreInlinedMop: ";
@@ -1981,9 +2039,14 @@ bool TsanOnlineInstrument::ignoreInlinedMop(BasicBlock::iterator &BI) {
     errs() << "    " << Sub.getLinkageName() << "  "
         <<  Sub.getFilename() << ":" << Sub.getLineNumber() << "\n";
 #endif
+#if 0
+    // TODO(glider): clang integration.
     if ((first &&
          TripleVectorMatchKnown(Ignores.ignores, symbol, "", filename)) ||
         TripleVectorMatchKnown(Ignores.ignores_r, symbol, "", filename)) {
+#else
+    if (0) {
+#endif
 #ifdef DEBUG_IGNORE_MOPS
       errs() << "    IGNORED\n";
 #endif
@@ -2005,7 +2068,7 @@ bool TsanOnlineInstrument::ignoreInlinedMop(BasicBlock::iterator &BI) {
   return false;
 }
 
-void TsanOnlineInstrument::markMopsToInstrument(Trace &trace) {
+void ThreadSanitizer::markMopsToInstrument(Trace &trace) {
   bool isStore = false, isMop = false;
   int size;
   // Map from AA location into access size.
@@ -2169,9 +2232,9 @@ void TsanOnlineInstrument::markMopsToInstrument(Trace &trace) {
   assert(trace.num_mops < DTlebSize);
 }
 
-bool TsanOnlineInstrument::makeTracePassport(Trace &trace) {
+bool ThreadSanitizer::makeTracePassport(Trace &trace) {
   Passport passport;
-  bool isStore, isMop;
+  bool isStore = false, isMop;
   int size;
   TraceNumMops = 0;
   FunctionMopCountOnTrace = FunctionMopCount + 1;
@@ -2219,6 +2282,9 @@ bool TsanOnlineInstrument::makeTracePassport(Trace &trace) {
         // TODO(glider): may want to call ThreadSanitizerHandleMemoryAccess
         // instead of ThreadSanitizerHandleTrace. In this case we'll need to
         // set |create_sblock_| sometimes.
+        // TODO(glider): the following getInstructionAddr call breaks x86
+        // support. Disable it for now.
+        assert(ArchSize == 64);
         Constant *mop_pc = getInstructionAddr(FunctionMopCount, BI,
                                               MopType64);
         // Manually fill the union fields.
@@ -2311,7 +2377,7 @@ bool TsanOnlineInstrument::makeTracePassport(Trace &trace) {
   return false;
 }
 
-bool TsanOnlineInstrument::instrumentMop(BasicBlock::iterator &BI,
+bool ThreadSanitizer::instrumentMop(BasicBlock::iterator &BI,
                                          bool isStore,
                                          bool check_ident_store,
                                          Trace &trace,
@@ -2371,12 +2437,18 @@ bool TsanOnlineInstrument::instrumentMop(BasicBlock::iterator &BI,
       vector <Value*> idx;
       idx.push_back(ConstantInt::get(Int32, 0));
       idx.push_back(ConstantInt::get(PlatformInt, TLEBIndex));
+///      Value *TLEBPtr =
+///          GetElementPtrInst::Create(TLEB,
+///                                    idx.begin(),
+///                                    idx.end(),
+///                                    "",
+///                                    BI);
       Value *TLEBPtr =
           GetElementPtrInst::Create(TLEB,
-                                    idx.begin(),
-                                    idx.end(),
+                                    idx,
                                     "",
                                     BI);
+
       new StoreInst(MopAddr, TLEBPtr, BI);
       TLEBIndex++;
     } else {
@@ -2390,7 +2462,7 @@ bool TsanOnlineInstrument::instrumentMop(BasicBlock::iterator &BI,
 }
 
 // Instrument llvm.memcpy and llvm.memmove.
-void TsanOnlineInstrument::instrumentMemTransfer(BasicBlock::iterator &BI) {
+void ThreadSanitizer::instrumentMemTransfer(BasicBlock::iterator &BI) {
   if (!EnableMemoryInstrumentation) return;
   MemTransferInst &IN = static_cast<MemTransferInst&>(*BI);
   vector <Value*> arg(3);
@@ -2428,7 +2500,7 @@ void TsanOnlineInstrument::instrumentMemTransfer(BasicBlock::iterator &BI) {
 
 // Before each call/invoke instruction we update the shadow stack top with the
 // current program location (PC before the call).
-void TsanOnlineInstrument::instrumentCall(BasicBlock::iterator &BI) {
+void ThreadSanitizer::instrumentCall(BasicBlock::iterator &BI) {
   // TODO(glider): should we somehow distinguish the addresses of mops and
   // calls?
   FunctionMopCount++;
@@ -2437,16 +2509,24 @@ void TsanOnlineInstrument::instrumentCall(BasicBlock::iterator &BI) {
   end_idx.push_back(ConstantInt::get(Int32, 0));
   // TODO(glider): can we avoid getting the element pointer twice?
 
+///  Value *StackEndPtr =
+///      GetElementPtrInst::Create(ShadowStack,
+///                                end_idx.begin(), end_idx.end(),
+///                                "", BI);
   Value *StackEndPtr =
       GetElementPtrInst::Create(ShadowStack,
-                                end_idx.begin(), end_idx.end(),
+                                end_idx,
                                 "", BI);
   Value *StackEnd = new LoadInst(StackEndPtr, "", BI);
   vector <Value*> back_idx;
   back_idx.push_back(ConstantInt::getSigned(PlatformInt, -1));
+///  Value *StackBack = GetElementPtrInst::Create(StackEnd,
+///                                               back_idx.begin(), back_idx.end(),
+///                                               "", BI);
   Value *StackBack = GetElementPtrInst::Create(StackEnd,
-                                               back_idx.begin(), back_idx.end(),
+                                               back_idx,
                                                "", BI);
+
 
   new StoreInst(getInstructionAddr(FunctionMopCount, BI, PlatformInt),
                 StackBack, BI);
@@ -2455,11 +2535,11 @@ void TsanOnlineInstrument::instrumentCall(BasicBlock::iterator &BI) {
 // This method is ran only for basic blocks belonging to traces that are to be
 // instrumented. Note that a single basic block shouldn't necessarily be
 // instrumented.
-// TsanOnlineInstrument is a module pass, so this is just a helper function, not
+// ThreadSanitizer is a module pass, so this is just a helper function, not
 // an interface implementation.
 //
 // TODO(glider): better name for useTLEB.
-void TsanOnlineInstrument::runOnBasicBlock(BasicBlock *BB,
+void ThreadSanitizer::runOnBasicBlock(BasicBlock *BB,
                                            bool first_dtor_bb,
                                            Trace &trace,
                                            bool useTLEB) {
@@ -2495,28 +2575,41 @@ void TsanOnlineInstrument::runOnBasicBlock(BasicBlock *BB,
 }
 
 // TODO(glider): we may need to require additional passes to run.
-void TsanOnlineInstrument::getAnalysisUsage(AnalysisUsage &AU) const {
+void ThreadSanitizer::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addRequired<TargetData>();
   AU.addRequired<AliasAnalysis>();
 }
 
-void TsanOnlineInstrument::parseIgnoreFile(string &file) {
+void ThreadSanitizer::parseIgnoreFile(string &file) {
+#if 0
+  // TODO(glider): integrate ignores with Clang.
   string ignore_contents = ReadFileToString(file, /*die_if_failed*/true);
   ReadIgnoresFromString(ignore_contents, &Ignores);
+#endif
 }
 
-bool TsanOnlineInstrument::shouldIgnoreFunction(Function &F) {
+bool ThreadSanitizer::shouldIgnoreFunction(Function &F) {
+#if 0
+  // TODO(glider): clang integration.
   DILocation Loc(F.begin()->begin()->getMetadata("dbg"));
   string filename = Loc.getFilename();
   string symbol = F.getNameStr();
   return TripleVectorMatchKnown(Ignores.ignores, symbol, "", filename);
+#else
+  return false;
+#endif
 }
 
-bool TsanOnlineInstrument::shouldIgnoreFunctionRecursively(Function &F) {
+bool ThreadSanitizer::shouldIgnoreFunctionRecursively(Function &F) {
+#if 0
+  // TODO(glider): clang integration.
   DILocation Loc(F.begin()->begin()->getMetadata("dbg"));
   string filename = Loc.getFilename();
   string symbol = F.getNameStr();
   return TripleVectorMatchKnown(Ignores.ignores_r, symbol, "", filename);
+#else
+  return false;
+#endif
 }
 
 // }}}
@@ -2698,19 +2791,19 @@ void InstrumentationStats::printStats() {
 // }}}
 
 // For some reason ID = 0 hits an assertion in opt.
-char TsanOnlineInstrument::ID = 1;
+char ThreadSanitizer::ID = 1;
 #ifdef BUILD_TSAN_FOR_OLD_LLVM
-RegisterPass<TsanOnlineInstrument> X("tsan",
+RegisterPass<ThreadSanitizer> X("tsan",
     "Compile-time instrumentation for runtime "
     "data race detection with ThreadSanitizer");
 #else
-INITIALIZE_PASS(TsanOnlineInstrument, "tsan",
+INITIALIZE_PASS(ThreadSanitizer, "tsan",
                 "Compile-time instrumentation for runtime "
                 "data race detection with ThreadSanitizer",
                 false, false)
 namespace llvm {
-ModulePass *createTsanOnlineInstrumentPass() {
-  return new TsanOnlineInstrument();
+ModulePass *createThreadSanitizerPass() {
+  return new ThreadSanitizer();
 }
 }
 #endif
@@ -2719,7 +2812,7 @@ ModulePass *createTsanOnlineInstrumentPass() {
 // TODO(glider): detect the version somehow (LLVM_MINOR_VERSION didn't exist
 // before 2.8)
 #if 0
-INITIALIZE_PASS(TsanOnlineInstrument, "tsan",
+INITIALIZE_PASS(ThreadSanitizer, "tsan",
                 "Compile-time instrumentation for runtime "
                 "data race detection with ThreadSanitizer",
                 false, false);
