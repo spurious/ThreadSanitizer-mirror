@@ -14,9 +14,12 @@
 #include <string>
 #include <vector>
 
+#if 0
+// TODO(glider): clang integration.
 #include "ignore.h"
+#endif
 
-#define UNIMPLEMENTED() CHECK(0 && "UNIMPLEMENTED" && __FILE__ && __LINE__)
+#define UNIMPLEMENTED() assert(0 && "UNIMPLEMENTED" && __FILE__ && __LINE__)
 
 namespace {
 
@@ -91,8 +94,8 @@ struct InstrumentationStats {
   int max_trace_size_mops;
 };
 
-struct TsanOnlineInstrument : public llvm::ModulePass { // {{{1
-  TsanOnlineInstrument();
+struct ThreadSanitizer : public llvm::ModulePass { // {{{1
+  ThreadSanitizer();
   virtual bool runOnModule(llvm::Module &M);
   virtual const char *getPassName() const;
   void runOnFunction(llvm::Module::iterator &F);
@@ -109,7 +112,7 @@ struct TsanOnlineInstrument : public llvm::ModulePass { // {{{1
   void dumpInstructionDebugInfo(llvm::Constant *addr,
                                 const llvm::BasicBlock::iterator BI);
   uintptr_t getModuleID(llvm::Module &M);
-  string getModuleLetters(llvm::Module &M);
+  std::string getModuleLetters(llvm::Module &M);
   void setupFlags();
   void setupDataTypes();
   void setupRuntimeGlobals();
@@ -157,10 +160,13 @@ struct TsanOnlineInstrument : public llvm::ModulePass { // {{{1
   void instrumentCall(llvm::BasicBlock::iterator &BI);
 
   static char ID; // Pass identification, replacement for typeid
+#if 0
+  // TODO(glider): clang integration.
   IgnoreLists Ignores;
+#endif
   int ArchSize;
   int ModuleID;
-  string ModuleLetters;
+  std::string ModuleLetters;
   int ModuleFunctionCount, ModuleMopCount, FunctionMopCount, TLEBIndex,
       FunctionMopCountOnTrace;
   int TraceNumMops, InstrumentedTraceCount;
