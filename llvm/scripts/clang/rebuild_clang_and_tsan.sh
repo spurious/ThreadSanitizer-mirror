@@ -1,4 +1,10 @@
 #!/bin/bash
-(cd clang_build/lib/Transforms/Instrumentation/ && make -j16 ENABLE_OPTIMIZED=1) && \
-(cd clang_build/tools/clang/ && make -j16 ENABLE_OPTIMIZED=1)
-
+OS=`uname`
+DIR=clang_build_$OS
+JOBS=-j16
+if [ "$OS" == "Darwin" ]
+then
+  JOBS=-j`sysctl -n hw.logicalcpu`
+fi
+(cd $DIR/lib/Transforms/Instrumentation/ && make $JOBS ENABLE_OPTIMIZED=1) && \
+(cd $DIR/tools/clang/ && make $JOBS ENABLE_OPTIMIZED=1)
