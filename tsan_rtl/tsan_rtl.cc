@@ -679,6 +679,31 @@ void initSegvFlush() {
 }
 #endif
 
+static void SetupLogFile(vector<string> const& args) {
+  extern FILE* G_out;
+  G_out = stderr;
+  for (size_t i = 0; i < args.size(); i++) {
+    char const* log_arg = "--log-file=";
+    if (strncmp(args[i].c_str(), log_arg, strlen(log_arg)) == 0) {
+      string fname = args[i].c_str() + strlen(log_arg);
+      char pid [32] = {};
+      sprintf(pid, "%u", (unsigned)getpid());
+      for (;;) {
+        size_t pos = fname.find("%p");
+        if (pos == string::npos)
+          pos = fname.find("%P");
+        if (pos == string::npos)
+          break;
+        fname.replace(pos, 2, pid, strlen(pid));
+      }
+      FILE* f = fopen(fname.c_str(), "w");
+      if (f != NULL)
+        G_out = f;
+      break;
+    }
+  }
+}
+
 static bool in_initialize = false;
 
 static bool initialize() {
@@ -689,7 +714,6 @@ static bool initialize() {
   ENTER_RTL();
   // Only one thread exists at this moment.
   G_flags = new FLAGS;
-  G_out = stderr;
   vector<string> args;
   char *env = getenv("TSAN_ARGS");
   if (env) {
@@ -708,6 +732,7 @@ static bool initialize() {
   }
 #endif
 
+  SetupLogFile(args);
   ThreadSanitizerParseFlags(&args);
   ThreadSanitizerInit();
   if (G_flags->dry_run) {
