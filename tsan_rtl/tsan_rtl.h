@@ -171,6 +171,9 @@ extern tid_t ExGetTid();
 void set_global_ignore(bool new_value);
 void PrintStackTrace();
 
+void *sys_mmap(void *addr, size_t length, int prot, int flags,
+               int fd, off_t offset);
+int sys_munmap(void *addr, size_t length);
 
 #include "tsan_rtl_wrap.h"
 

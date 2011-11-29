@@ -266,9 +266,12 @@ void AddWrappersDbgInfo() {
   WRAPPER_DBG_INFO(__real_strchr);
   WRAPPER_DBG_INFO(__real_strrchr);
 
+#if 0
+  // TODO(glider): we can't reliably intercept mmap yet.
   WRAPPER_DBG_INFO(real_mmap);
   WRAPPER_DBG_INFO(real_mmap64);
   WRAPPER_DBG_INFO(real_munmap);
+#endif
   WRAPPER_DBG_INFO(__real_calloc);
   WRAPPER_DBG_INFO(__real_malloc);
   WRAPPER_DBG_INFO(__real_realloc);
@@ -338,8 +341,8 @@ void ReadElf() {
   struct stat st;
   fstat(fd, &st);
   DDPrintf("Reading debug info from %s (%d bytes)\n", fname, st.st_size);
-  char* map = (char*)real_mmap(NULL, st.st_size,
-                                 PROT_READ, MAP_PRIVATE, fd, 0);
+  char* map = (char*)sys_mmap(NULL, st.st_size,
+                              PROT_READ, MAP_PRIVATE, fd, 0);
   if (map == MAP_FAILED) {
     perror("mmap");
     Printf("Could not map %s. Debug info will be unavailable.\n", fname.c_str());
@@ -400,7 +403,7 @@ void ReadElf() {
   }
   LEAVE_RTL();
   // Finalize.
-  real_munmap(map, st.st_size);
+  sys_munmap(map, st.st_size);
   close(fd);
 }
 
@@ -463,4 +466,3 @@ bool __tsan::SymbolizeCode(void *pc, bool demangle,
   }
   return true;
 }
-

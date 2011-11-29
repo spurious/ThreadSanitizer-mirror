@@ -229,6 +229,8 @@ int GIL::GetDepth() {
 }
 #endif
 
+#if 0
+// TODO(dvyukov): remove this.
 #define LSS_RETURN(type, res)                                                 \
     do {                                                                      \
       if ((unsigned long)(res) >= (unsigned long)(-4095)) {                   \
@@ -310,6 +312,16 @@ int GIL::GetDepth() {
 static _syscall6(void*, mmap, void*, s, size_t, l, int, p, int, f,
                  int, d, __off64_t, o)
 static _syscall2(int, munmap, void*, s, size_t, l);
+#endif  // if 0
+
+void *sys_mmap(void *addr, size_t length, int prot, int flags,
+               int fd, off_t offset) {
+  return (void*)syscall(SYS_mmap, addr, length, prot, flags, fd, offset);
+}
+
+int sys_munmap(void *addr, size_t length) {
+  return syscall(SYS_munmap, addr, length);
+}
 
 static bool isThreadLocalEvent(EventType type) {
   switch (type) {
