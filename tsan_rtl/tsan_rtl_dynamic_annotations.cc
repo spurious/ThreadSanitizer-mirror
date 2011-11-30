@@ -308,7 +308,7 @@ void FakeAnnotatePrintStackTrace(const char *file, int line) {
 // TODO(glider): we may need a flag to tune this.
 extern "C"
 int RunningOnValgrind(void) {
-  return 0;
+  return 1;
 }
 
 // This function is used to force linking of the object file to an end program
