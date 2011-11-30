@@ -724,6 +724,9 @@ static bool initialize() {
   in_initialize = true;
 
   ENTER_RTL();
+  memset(__tsan_shadow_stack.pcs_, 0,
+      kCallStackReserve * sizeof(__tsan_shadow_stack.pcs_[0]));
+  __tsan_shadow_stack.end_ = __tsan_shadow_stack.pcs_ + kCallStackReserve;
   // Only one thread exists at this moment.
   G_flags = new FLAGS;
   vector<string> args;
@@ -755,8 +758,6 @@ static bool initialize() {
   LEAVE_RTL();
   __real_atexit(finalize);
   RTL_INIT = 1;
-  memset(__tsan_shadow_stack.pcs_, 0, kCallStackReserve * sizeof(__tsan_shadow_stack.pcs_[0]));
-  __tsan_shadow_stack.end_ = __tsan_shadow_stack.pcs_ + kCallStackReserve;
   in_initialize = false;
   // Get the stack size and stack top for the current thread.
   // TODO(glider): do something if pthread_getattr_np() is not supported.
