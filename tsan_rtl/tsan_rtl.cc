@@ -2638,8 +2638,8 @@ int __wrap_epoll_ctl(int epfd, int op, int fd, struct epoll_event *event) {
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__real_epoll_ctl, 0);
   ENTER_RTL();
-  int result = __real_epoll_ctl(epfd, op, fd, event);
   SPut(SIGNAL, tid, pc, FdMagic(epfd), 0);
+  int result = __real_epoll_ctl(epfd, op, fd, event);
   LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
