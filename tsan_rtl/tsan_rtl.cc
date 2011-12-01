@@ -1343,6 +1343,42 @@ void *malloc(size_t size) {
 }
 
 extern "C"
+int posix_memalign(void **memptr, size_t alignment, size_t size) {
+  if (IN_RTL) return real_posix_memalign(memptr, alignment, size);
+  GIL scoped;
+  DECLARE_TID_AND_PC();
+  RPut(RTN_CALL, tid, pc, (uintptr_t)real_posix_memalign, 0);
+  int result = real_posix_memalign(memptr, alignment, size);
+  if (result == 0) SPut(MALLOC, tid, pc, (uintptr_t)(*memptr), size);
+  RPut(RTN_EXIT, tid, pc, 0, 0);
+  return result;
+}
+
+extern "C"
+void* valloc(size_t size) {
+  if (IN_RTL) return real_valloc(size);
+  GIL scoped;
+  DECLARE_TID_AND_PC();
+  RPut(RTN_CALL, tid, pc, (uintptr_t)real_valloc, 0);
+  void* result = real_valloc(size);
+  if (result) SPut(MALLOC, tid, pc, (uintptr_t)result, size);
+  RPut(RTN_EXIT, tid, pc, 0, 0);
+  return result;
+}
+
+extern "C"
+void* memalign(size_t boundary, size_t size) {
+  if (IN_RTL) return real_memalign(boundary, size);
+  GIL scoped;
+  DECLARE_TID_AND_PC();
+  RPut(RTN_CALL, tid, pc, (uintptr_t)real_memalign, 0);
+  void* result = real_memalign(boundary, size);
+  if (result) SPut(MALLOC, tid, pc, (uintptr_t)result, size);
+  RPut(RTN_EXIT, tid, pc, 0, 0);
+  return result;
+}
+
+extern "C"
 void __wrap_free(void *ptr) {
   if (ptr == 0)
     return;
@@ -1366,18 +1402,6 @@ void __wrap_free(void *ptr) {
   __real_free(ptr);
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
   RPut(RTN_EXIT, tid, pc, 0, 0);
-}
-
-extern "C"
-int __wrap_posix_memalign(void **memptr, size_t alignment, size_t size) {
-  if (IN_RTL) return __real_posix_memalign(memptr, alignment, size);
-  GIL scoped;
-  DECLARE_TID_AND_PC();
-  RPut(RTN_CALL, tid, pc, (uintptr_t)__real_posix_memalign, 0);
-  int result = __real_posix_memalign(memptr, alignment, size);
-  if (result) SPut(MALLOC, tid, pc, (uintptr_t)(*memptr), 0);
-  RPut(RTN_EXIT, tid, pc, 0, 0);
-  return result;
 }
 
 extern "C"
@@ -2517,14 +2541,9 @@ pid_t __wrap_fork() {
   return result;
 }
 // Happens-before arc between read() and write() {{{1
-const uintptr_t kFdMagicConst = 0xf11ede5c;
 uintptr_t FdMagic(int fd) {
-  uintptr_t result = kFdMagicConst;
-  struct stat stat_b;
-  fstat(fd, &stat_b);
-  if (stat_b.st_dev) result = (uintptr_t)stat_b.st_dev;
-  if (S_TYPEISSHM(&stat_b)) result = fd;
-  return result;
+  static char tab[53];
+  return &tab[fd % sizeof(tab)];
 }
 
 extern "C"

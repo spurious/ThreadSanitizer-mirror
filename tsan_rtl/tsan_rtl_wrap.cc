@@ -34,10 +34,16 @@ namespace __tsan {
 
 memchr_ft               real_memchr;
 pthread_create_ft       real_pthread_create;
+posix_memalign_ft       real_posix_memalign;
+valloc_ft               real_valloc;
+memalign_ft             real_memalign;
 
 void WrapInit() {
   real_memchr = (memchr_ft)dlsym(RTLD_NEXT, "memchr");
   real_pthread_create = (pthread_create_ft)dlsym(RTLD_NEXT, "pthread_create");
+  real_posix_memalign = (posix_memalign_ft)dlsym(RTLD_NEXT, "posix_memalign");
+  real_valloc = (valloc_ft)dlsym(RTLD_NEXT, "valloc");
+  real_memalign = (memalign_ft)dlsym(RTLD_NEXT, "memalign");
 }
 
 } // namespace __tsan

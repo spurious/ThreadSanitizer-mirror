@@ -33,6 +33,7 @@
 #include <semaphore.h>
 
 namespace __tsan {
+
 void WrapInit();
 
 typedef void *(*memchr_ft)(void*, int, size_t);
@@ -41,6 +42,15 @@ extern memchr_ft real_memchr;
 typedef int (*pthread_create_ft)(pthread_t*, const pthread_attr_t*,
                                  void *(*)(void*), void*);
 extern pthread_create_ft real_pthread_create;
+
+typedef int (*posix_memalign_ft)(void **memptr, size_t alignment, size_t size);
+extern posix_memalign_ft real_posix_memalign;
+
+typedef void* (*valloc_ft)(size_t size);
+extern valloc_ft real_valloc;
+
+typedef void* (*memalign_ft)(size_t boundary, size_t size);
+extern memalign_ft real_memalign;
 
 } // namespace __tsan
 
