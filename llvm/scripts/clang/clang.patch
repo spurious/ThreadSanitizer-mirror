@@ -1,6 +1,6 @@
 Index: include/llvm/Transforms/Instrumentation.h
 ===================================================================
---- include/llvm/Transforms/Instrumentation.h	(revision 144800)
+--- include/llvm/Transforms/Instrumentation.h	(revision 145532)
 +++ include/llvm/Transforms/Instrumentation.h	(working copy)
 @@ -34,6 +34,9 @@
  // Insert AddressSanitizer (address sanity checking) instrumentation
@@ -14,7 +14,7 @@ Index: include/llvm/Transforms/Instrumentation.h
  #endif
 Index: include/llvm/InitializePasses.h
 ===================================================================
---- include/llvm/InitializePasses.h	(revision 144800)
+--- include/llvm/InitializePasses.h	(revision 145532)
 +++ include/llvm/InitializePasses.h	(working copy)
 @@ -97,6 +97,7 @@
  void initializePathProfilerPass(PassRegistry&);
@@ -26,7 +26,7 @@ Index: include/llvm/InitializePasses.h
  void initializeFindUsedTypesPass(PassRegistry&);
 Index: lib/Transforms/Instrumentation/CMakeLists.txt
 ===================================================================
---- lib/Transforms/Instrumentation/CMakeLists.txt	(revision 144800)
+--- lib/Transforms/Instrumentation/CMakeLists.txt	(revision 145532)
 +++ lib/Transforms/Instrumentation/CMakeLists.txt	(working copy)
 @@ -1,5 +1,6 @@
  add_llvm_library(LLVMInstrumentation
@@ -37,27 +37,27 @@ Index: lib/Transforms/Instrumentation/CMakeLists.txt
    Instrumentation.cpp
 Index: tools/clang/include/clang/Frontend/CodeGenOptions.h
 ===================================================================
---- tools/clang/include/clang/Frontend/CodeGenOptions.h	(revision 144800)
+--- tools/clang/include/clang/Frontend/CodeGenOptions.h	(revision 145532)
 +++ tools/clang/include/clang/Frontend/CodeGenOptions.h	(working copy)
-@@ -36,6 +36,7 @@
+@@ -35,6 +35,7 @@
+     Mixed = 2
    };
  
-   unsigned AddressSanitizer  : 1; /// Enable AddressSanitizer.
 +  unsigned ThreadSanitizer  : 1; /// Enable ThreadSanitizer.
    unsigned AsmVerbose        : 1; /// -dA, -fverbose-asm.
    unsigned ObjCAutoRefCountExceptions : 1; /// Whether ARC should be EH-safe.
    unsigned CUDAIsDevice      : 1; /// Set when compiling for CUDA device.
-@@ -153,6 +154,7 @@
+@@ -151,6 +152,7 @@
+ 
  public:
    CodeGenOptions() {
-     AddressSanitizer = 0;
 +    ThreadSanitizer = 0;
      AsmVerbose = 0;
      CUDAIsDevice = 0;
      CXAAtExit = 1;
 Index: tools/clang/include/clang/Driver/CC1Options.td
 ===================================================================
---- tools/clang/include/clang/Driver/CC1Options.td	(revision 144800)
+--- tools/clang/include/clang/Driver/CC1Options.td	(revision 145532)
 +++ tools/clang/include/clang/Driver/CC1Options.td	(working copy)
 @@ -116,6 +116,8 @@
    HelpText<"The string to embed in the Dwarf debug flags record.">;
@@ -70,7 +70,7 @@ Index: tools/clang/include/clang/Driver/CC1Options.td
  def g : Flag<"-g">, HelpText<"Generate source level debug information">;
 Index: tools/clang/include/clang/Driver/Options.td
 ===================================================================
---- tools/clang/include/clang/Driver/Options.td	(revision 144800)
+--- tools/clang/include/clang/Driver/Options.td	(revision 145532)
 +++ tools/clang/include/clang/Driver/Options.td	(working copy)
 @@ -264,6 +264,8 @@
  def fapple_pragma_pack : Flag<"-fapple-pragma-pack">, Group<f_Group>;
@@ -83,83 +83,42 @@ Index: tools/clang/include/clang/Driver/Options.td
  def fasm_blocks : Flag<"-fasm-blocks">, Group<f_Group>;
 Index: tools/clang/lib/Frontend/CompilerInvocation.cpp
 ===================================================================
---- tools/clang/lib/Frontend/CompilerInvocation.cpp	(revision 144800)
+--- tools/clang/lib/Frontend/CompilerInvocation.cpp	(revision 145532)
 +++ tools/clang/lib/Frontend/CompilerInvocation.cpp	(working copy)
-@@ -141,6 +141,8 @@
+@@ -154,6 +154,8 @@
+     Res.push_back("-dwarf-debug-flags");
+     Res.push_back(Opts.DwarfDebugFlags);
    }
-   if (Opts.AddressSanitizer)
-     Res.push_back("-faddress-sanitizer");
 +  if (Opts.ThreadSanitizer)
 +    Res.push_back("-fthread-sanitizer");
    if (Opts.ObjCRuntimeHasARC)
      Res.push_back("-fobjc-runtime-has-arc");
    if (Opts.ObjCRuntimeHasTerminate)
-@@ -1052,6 +1054,7 @@
+@@ -1069,6 +1071,7 @@
+   Opts.UnrollLoops = Args.hasArg(OPT_funroll_loops) ||
                       (Opts.OptimizationLevel > 1 && !Opts.OptimizeSize);
  
-   Opts.AddressSanitizer = Args.hasArg(OPT_faddress_sanitizer);
 +  Opts.ThreadSanitizer = Args.hasArg(OPT_fthread_sanitizer);
    Opts.AsmVerbose = Args.hasArg(OPT_masm_verbose);
    Opts.ObjCAutoRefCountExceptions = Args.hasArg(OPT_fobjc_arc_exceptions);
    Opts.ObjCRuntimeHasARC = Args.hasArg(OPT_fobjc_runtime_has_arc);
 Index: tools/clang/lib/Driver/Tools.cpp
 ===================================================================
---- tools/clang/lib/Driver/Tools.cpp	(revision 144800)
+--- tools/clang/lib/Driver/Tools.cpp	(revision 145532)
 +++ tools/clang/lib/Driver/Tools.cpp	(working copy)
-@@ -1112,6 +1112,10 @@
-   // FIXME: Implement custom jobs for internal actions.
-   CmdArgs.push_back("-cc1");
- 
-+  if (Args.hasArg(options::OPT_faddress_sanitizer)) {
-+    CmdArgs.push_back("-DADDRESS_SANITIZER=1");
-+  }
-+
-   // Add the "effective" target triple.
-   CmdArgs.push_back("-triple");
-   std::string TripleStr = getToolChain().ComputeEffectiveClangTriple(Args);
-@@ -1704,7 +1708,11 @@
-   if (Args.hasFlag(options::OPT_faddress_sanitizer,
-                    options::OPT_fno_address_sanitizer, false))
-     CmdArgs.push_back("-faddress-sanitizer");
-+  if (Args.hasFlag(options::OPT_fthread_sanitizer,
-+                   options::OPT_fno_thread_sanitizer, false))
-+    CmdArgs.push_back("-fthread-sanitizer");
- 
-+
-   // -flax-vector-conversions is default.
-   if (!Args.hasFlag(options::OPT_flax_vector_conversions,
-                     options::OPT_fno_lax_vector_conversions))
-@@ -2303,6 +2311,137 @@
-   Args.ClaimAllArgs(options::OPT_emit_llvm);
+@@ -1121,6 +1121,44 @@
+   TC.AddCXXStdlibLibArgs(Args, CmdArgs);
  }
  
-+static void addLibasan(const ToolChain &TC, const ArgList &Args,
-+                       ArgStringList &CmdArgs) {
-+  const char *libasan_from_env = getenv("ASAN_LIB");  // temporary
-+  std::string libasan;
-+  if (libasan_from_env) {
-+    libasan = libasan_from_env;
-+  } else {
-+    libasan = TC.getDriver().Dir + "/../lib/libasan";
-+    switch(TC.getArch()) {
-+      case llvm::Triple::x86:
-+        libasan += "32.a";
-+        break;
-+      case llvm::Triple::x86_64:
-+        libasan += "64.a";
-+        break;
-+      case llvm::Triple::arm:
-+        libasan += "_arm.a";
-+        break;
-+      default:
-+        libasan += "_arch_unsupported.a";
-+    }
-+  }
-+  CmdArgs.push_back(Args.MakeArgString(libasan));
-+}
-+
-+static void addLibtsanAndConfig(const ToolChain &TC, const ArgList &Args,
-+                                ArgStringList &CmdArgs) {
++/// If ThreadSanitizer is enabled, add appropriate linker flags (Linux).
++/// This needs to be called before we add the C run-time (malloc, etc).
++static void addTsanRTLinux(const ToolChain &TC, const ArgList &Args,
++                           ArgStringList &CmdArgs) {
++  // Add TSan linker flags when linking an executable, but not a shared object.
++  if (Args.hasArg(options::OPT_shared) ||
++      !Args.hasFlag(options::OPT_fthread_sanitizer,
++                    options::OPT_fno_thread_sanitizer, false))
++    return;
 +  const char *libtsan_from_env = getenv("TSAN_LIB");  // temporary
 +  std::string libtsan, link_config;
 +  if (libtsan_from_env) {
@@ -183,177 +142,53 @@ Index: tools/clang/lib/Driver/Tools.cpp
 +  CmdArgs.push_back(Args.MakeArgString(libtsan));
 +  link_config = "@" + TC.getDriver().Dir + "/../lib/link_config.txt";
 +  CmdArgs.push_back(Args.MakeArgString(link_config));
-+}
-+
-+static void addAsanForLinux(const ToolChain &TC, const ArgList &Args,
-+                            ArgStringList &CmdArgs) {
-+  addLibasan(TC, Args, CmdArgs);
 +  CmdArgs.push_back("-lpthread");
 +  CmdArgs.push_back("-ldl");
 +  CmdArgs.push_back("-export-dynamic");
 +  TC.AddCXXStdlibLibArgs(Args, CmdArgs);
 +}
 +
-+static void addTsanForLinux(const ToolChain &TC, const ArgList &Args,
-+                            ArgStringList &CmdArgs) {
-+  addLibtsanAndConfig(TC, Args, CmdArgs);
-+  CmdArgs.push_back("-lpthread");
-+  CmdArgs.push_back("-ldl");
-+  CmdArgs.push_back("-lrt");
-+  CmdArgs.push_back("-export-dynamic");
-+  TC.AddCXXStdlibLibArgs(Args, CmdArgs);
-+}
-+
-+const char *AsanIfaceFns[12] = {
-+  "___asan_report_load1",
-+  "___asan_report_load2",
-+  "___asan_report_load4",
-+  "___asan_report_load8",
-+  "___asan_report_load16",
-+  "___asan_report_store1",
-+  "___asan_report_store2",
-+  "___asan_report_store4",
-+  "___asan_report_store8",
-+  "___asan_report_store16",
-+  "___asan_register_global",
-+  "___asan_register_globals",
-+};
-+
-+const int AsanIfaceFnsSize = sizeof(AsanIfaceFns) / sizeof(char*);
-+
-+const char *AsanDarwinDeps[7] = {
-+  "_malloc_default_purgeable_zone",
-+  "_malloc_zone_memalign",
-+  "_dispatch_async_f",
-+  "_dispatch_sync_f",
-+  "_dispatch_group_async_f",
-+  "_dispatch_barrier_async_f",
-+  "_dispatch_after_f",
-+};
-+
-+const int AsanDarwinDepsSize = sizeof(AsanDarwinDeps) / sizeof(char*);
-+
-+static void addAsanForDarwinExe(const ToolChain &TC, const ArgList &Args,
-+                                ArgStringList &CmdArgs) {
-+    addLibasan(TC, Args, CmdArgs);
-+    CmdArgs.push_back("-lpthread");
-+    CmdArgs.push_back("-ldl");
-+    // TODO(glider): do we need to always depend on Foundation?
-+    CmdArgs.push_back("-framework");
-+    CmdArgs.push_back("Foundation");
-+    int index;
-+    for (index = 0; index < AsanDarwinDepsSize; ++index) {
-+      CmdArgs.push_back("-U");
-+      CmdArgs.push_back(Args.MakeArgString(AsanDarwinDeps[index]));
-+    }
-+    for (index = 0; index < AsanIfaceFnsSize; ++index) {
-+      CmdArgs.push_back("-u");
-+      CmdArgs.push_back(Args.MakeArgString(AsanIfaceFns[index]));
-+    }
-+    TC.AddCXXStdlibLibArgs(Args, CmdArgs);
-+}
-+
-+static void addAsanForDarwinDynamicLib(const ToolChain &unused_TC,
-+                                       const ArgList &Args,
-+                                       ArgStringList &CmdArgs) {
-+  CmdArgs.push_back("-U");
-+  CmdArgs.push_back("___asan_init");
-+  for (int index = 0; index < AsanIfaceFnsSize; ++index) {
-+    CmdArgs.push_back("-U");
-+    CmdArgs.push_back(Args.MakeArgString(AsanIfaceFns[index]));
-+  }
-+}
-+
- void ClangAs::ConstructJob(Compilation &C, const JobAction &JA,
-                            const InputInfo &Output,
-                            const InputInfoList &Inputs,
-@@ -2464,6 +2603,22 @@
-     }
-   }
+ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
+                          const InputInfo &Output,
+                          const InputInfoList &Inputs,
+@@ -1736,6 +1774,9 @@
+   if (Args.hasFlag(options::OPT_faddress_sanitizer,
+                    options::OPT_fno_address_sanitizer, false))
+     CmdArgs.push_back("-faddress-sanitizer");
++  if (Args.hasFlag(options::OPT_fthread_sanitizer,
++                   options::OPT_fno_thread_sanitizer, false))
++    CmdArgs.push_back("-fthread-sanitizer");
  
-+  // AddressSanitizer support.
-+  if (isa<LinkJobAction>(JA)) {
-+    if (Args.hasArg(options::OPT_faddress_sanitizer) &&
-+        !Args.hasArg(options::OPT_shared)) {
-+      addAsanForLinux(getToolChain(), Args, CmdArgs);
-+    }
-+  }
-+
-+  // AddressSanitizer support.
-+  if (isa<LinkJobAction>(JA)) {
-+    if (Args.hasArg(options::OPT_fthread_sanitizer) &&
-+        !Args.hasArg(options::OPT_shared)) {
-+      addTsanForLinux(getToolChain(), Args, CmdArgs);
-+    }
-+  }
-+
-   const std::string customGCCName = D.getCCCGenericGCCName();
-   const char *GCCName;
-   if (!customGCCName.empty())
-@@ -3545,6 +3700,17 @@
+   // -flax-vector-conversions is default.
+   if (!Args.hasFlag(options::OPT_flax_vector_conversions,
+@@ -4491,6 +4532,7 @@
  
-   Args.AddAllArgs(CmdArgs, options::OPT_L);
+   // Call this before we add the C run-time.
+   addAsanRTLinux(getToolChain(), Args, CmdArgs);
++  addTsanRTLinux(getToolChain(), Args, CmdArgs);
  
-+  // AddressSanitizer support.
-+  if (Args.hasArg(options::OPT_faddress_sanitizer)) {
-+    if (!Args.hasArg(options::OPT_dynamiclib) &&
-+        !Args.hasArg(options::OPT_bundle)) {
-+      addAsanForDarwinExe(getToolChain(), Args, CmdArgs);
-+    }
-+    if (Args.hasArg(options::OPT_dynamiclib) ||
-+        Args.hasArg(options::OPT_bundle)) {
-+      addAsanForDarwinDynamicLib(getToolChain(), Args, CmdArgs);
-+    }
-+  }
-   if (Args.hasArg(options::OPT_fopenmp))
-     // This is more complicated in gcc...
-     CmdArgs.push_back("-lgomp");
-@@ -3583,6 +3749,8 @@
-     getDarwinToolChain().AddLinkRuntimeLibArgs(Args, CmdArgs);
-   }
- 
-+
-+
-   if (!Args.hasArg(options::OPT_A) &&
-       !Args.hasArg(options::OPT_nostdlib) &&
-       !Args.hasArg(options::OPT_nostartfiles)) {
-@@ -4425,6 +4593,18 @@
- 
-   AddLinkerInputs(ToolChain, Inputs, Args, CmdArgs);
- 
-+  // AddressSanitizer support.
-+  if (Args.hasArg(options::OPT_faddress_sanitizer) &&
-+      !Args.hasArg(options::OPT_shared)) {
-+    addAsanForLinux(getToolChain(), Args, CmdArgs);
-+  }
-+
-+  // ThreadSanitizer support.
-+  if (Args.hasArg(options::OPT_fthread_sanitizer) &&
-+      !Args.hasArg(options::OPT_shared)) {
-+    addTsanForLinux(getToolChain(), Args, CmdArgs);
-+  }
-+
-   if (D.CCCIsCXX && !Args.hasArg(options::OPT_nostdlib)) {
-     bool OnlyLibstdcxxStatic = Args.hasArg(options::OPT_static_libstdcxx) &&
-       !Args.hasArg(options::OPT_static);
+   if (!Args.hasArg(options::OPT_nostdlib)) {
+     if (Args.hasArg(options::OPT_static))
 Index: tools/clang/lib/CodeGen/CodeGenFunction.cpp
 ===================================================================
---- tools/clang/lib/CodeGen/CodeGenFunction.cpp	(revision 144800)
+--- tools/clang/lib/CodeGen/CodeGenFunction.cpp	(revision 145532)
 +++ tools/clang/lib/CodeGen/CodeGenFunction.cpp	(working copy)
-@@ -265,7 +265,7 @@
+@@ -265,7 +265,10 @@
    FnRetTy = RetTy;
    CurFn = Fn;
    CurFnInfo = &FnInfo;
--  assert(CurFn->isDeclaration() && "Function already has body?");
-+  //assert(CurFn->isDeclaration() && "Function already has body?");
++  // See http://llvm.org/bugs/show_bug.cgi?id=10657 
++#if 0
+   assert(CurFn->isDeclaration() && "Function already has body?");
++#endif
  
    // Pass inline keyword to optimizer if it appears explicitly on any
    // declaration.
 Index: tools/clang/lib/CodeGen/BackendUtil.cpp
 ===================================================================
---- tools/clang/lib/CodeGen/BackendUtil.cpp	(revision 144800)
+--- tools/clang/lib/CodeGen/BackendUtil.cpp	(revision 145532)
 +++ tools/clang/lib/CodeGen/BackendUtil.cpp	(working copy)
-@@ -120,6 +120,12 @@
+@@ -120,6 +120,11 @@
    PM.add(createAddressSanitizerPass());
  }
  
@@ -362,19 +197,21 @@ Index: tools/clang/lib/CodeGen/BackendUtil.cpp
 +  PM.add(createThreadSanitizerPass());
 +}
 +
-+
  void EmitAssemblyHelper::CreatePasses() {
    unsigned OptLevel = CodeGenOpts.OptimizationLevel;
    CodeGenOptions::InliningMethod Inlining = CodeGenOpts.Inlining;
-@@ -151,6 +157,11 @@
-     PMBuilder.addExtension(PassManagerBuilder::EP_ScalarOptimizerLate,
+@@ -153,7 +158,13 @@
+     PMBuilder.addExtension(PassManagerBuilder::EP_EnabledOnOptLevel0,
                             addAddressSanitizerPass);
    }
+-  
 +  if (CodeGenOpts.ThreadSanitizer) {
 +    PMBuilder.addExtension(PassManagerBuilder::EP_ScalarOptimizerLate,
 +                           addThreadSanitizerPass);
++    PMBuilder.addExtension(PassManagerBuilder::EP_EnabledOnOptLevel0,
++                           addThreadSanitizerPass);
 +  }
 +
-   
    // Figure out TargetLibraryInfo.
    Triple TargetTriple(TheModule->getTargetTriple());
+   PMBuilder.LibraryInfo = new TargetLibraryInfo(TargetTriple);
