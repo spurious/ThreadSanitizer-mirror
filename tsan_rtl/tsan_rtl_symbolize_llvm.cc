@@ -211,7 +211,10 @@ void AddOneWrapperDbgInfo(pc_t pc, const char *symbol) {
 #define WRAPPER_DBG_INFO(fun) AddOneWrapperDbgInfo((pc_t)fun, #fun)
 
 void AddWrappersDbgInfo() {
+#if 0
+  // TODO(glider): this is wrapped no more?
   WRAPPER_DBG_INFO(__real_pthread_create);
+#endif
   WRAPPER_DBG_INFO(__real_pthread_join);
   WRAPPER_DBG_INFO(__real_pthread_mutex_init);
   WRAPPER_DBG_INFO(__real_pthread_mutex_lock);
