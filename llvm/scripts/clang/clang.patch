@@ -129,7 +129,7 @@ Index: tools/clang/lib/Driver/Tools.cpp
    // -flax-vector-conversions is default.
    if (!Args.hasFlag(options::OPT_flax_vector_conversions,
                      options::OPT_fno_lax_vector_conversions))
-@@ -2303,6 +2311,134 @@
+@@ -2303,6 +2311,137 @@
    Args.ClaimAllArgs(options::OPT_emit_llvm);
  }
  
@@ -158,10 +158,10 @@ Index: tools/clang/lib/Driver/Tools.cpp
 +  CmdArgs.push_back(Args.MakeArgString(libasan));
 +}
 +
-+static void addLibtsan(const ToolChain &TC, const ArgList &Args,
-+                       ArgStringList &CmdArgs) {
++static void addLibtsanAndConfig(const ToolChain &TC, const ArgList &Args,
++                                ArgStringList &CmdArgs) {
 +  const char *libtsan_from_env = getenv("TSAN_LIB");  // temporary
-+  std::string libtsan;
++  std::string libtsan, link_config;
 +  if (libtsan_from_env) {
 +    libtsan = libtsan_from_env;
 +  } else {
@@ -181,6 +181,8 @@ Index: tools/clang/lib/Driver/Tools.cpp
 +    }
 +  }
 +  CmdArgs.push_back(Args.MakeArgString(libtsan));
++  link_config = "@" + TC.getDriver().Dir + "/../lib/link_config.txt";
++  CmdArgs.push_back(Args.MakeArgString(link_config));
 +}
 +
 +static void addAsanForLinux(const ToolChain &TC, const ArgList &Args,
@@ -194,9 +196,10 @@ Index: tools/clang/lib/Driver/Tools.cpp
 +
 +static void addTsanForLinux(const ToolChain &TC, const ArgList &Args,
 +                            ArgStringList &CmdArgs) {
-+  addLibtsan(TC, Args, CmdArgs);
++  addLibtsanAndConfig(TC, Args, CmdArgs);
 +  CmdArgs.push_back("-lpthread");
 +  CmdArgs.push_back("-ldl");
++  CmdArgs.push_back("-lrt");
 +  CmdArgs.push_back("-export-dynamic");
 +  TC.AddCXXStdlibLibArgs(Args, CmdArgs);
 +}
@@ -264,7 +267,7 @@ Index: tools/clang/lib/Driver/Tools.cpp
  void ClangAs::ConstructJob(Compilation &C, const JobAction &JA,
                             const InputInfo &Output,
                             const InputInfoList &Inputs,
-@@ -2464,6 +2600,22 @@
+@@ -2464,6 +2603,22 @@
      }
    }
  
@@ -287,7 +290,7 @@ Index: tools/clang/lib/Driver/Tools.cpp
    const std::string customGCCName = D.getCCCGenericGCCName();
    const char *GCCName;
    if (!customGCCName.empty())
-@@ -3545,6 +3697,17 @@
+@@ -3545,6 +3700,17 @@
  
    Args.AddAllArgs(CmdArgs, options::OPT_L);
  
@@ -305,7 +308,7 @@ Index: tools/clang/lib/Driver/Tools.cpp
    if (Args.hasArg(options::OPT_fopenmp))
      // This is more complicated in gcc...
      CmdArgs.push_back("-lgomp");
-@@ -3583,6 +3746,8 @@
+@@ -3583,6 +3749,8 @@
      getDarwinToolChain().AddLinkRuntimeLibArgs(Args, CmdArgs);
    }
  
@@ -314,7 +317,7 @@ Index: tools/clang/lib/Driver/Tools.cpp
    if (!Args.hasArg(options::OPT_A) &&
        !Args.hasArg(options::OPT_nostdlib) &&
        !Args.hasArg(options::OPT_nostartfiles)) {
-@@ -4425,6 +4590,18 @@
+@@ -4425,6 +4593,18 @@
  
    AddLinkerInputs(ToolChain, Inputs, Args, CmdArgs);
  
@@ -333,6 +336,19 @@ Index: tools/clang/lib/Driver/Tools.cpp
    if (D.CCCIsCXX && !Args.hasArg(options::OPT_nostdlib)) {
      bool OnlyLibstdcxxStatic = Args.hasArg(options::OPT_static_libstdcxx) &&
        !Args.hasArg(options::OPT_static);
+Index: tools/clang/lib/CodeGen/CodeGenFunction.cpp
+===================================================================
+--- tools/clang/lib/CodeGen/CodeGenFunction.cpp	(revision 144800)
++++ tools/clang/lib/CodeGen/CodeGenFunction.cpp	(working copy)
+@@ -265,7 +265,7 @@
+   FnRetTy = RetTy;
+   CurFn = Fn;
+   CurFnInfo = &FnInfo;
+-  assert(CurFn->isDeclaration() && "Function already has body?");
++  //assert(CurFn->isDeclaration() && "Function already has body?");
+ 
+   // Pass inline keyword to optimizer if it appears explicitly on any
+   // declaration.
 Index: tools/clang/lib/CodeGen/BackendUtil.cpp
 ===================================================================
 --- tools/clang/lib/CodeGen/BackendUtil.cpp	(revision 144800)
