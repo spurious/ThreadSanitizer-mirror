@@ -437,6 +437,10 @@ void __tsan::SymbolizeInit() {
   DBG_INIT = 1;
 }
 
+void __tsan::SymbolizeFini(int nerror) {
+  (void)nerror;
+}
+
 bool __tsan::SymbolizeData(void *addr, char *symbol,
                            int symbol_sz, uintptr_t *offset) {
   (void)addr;

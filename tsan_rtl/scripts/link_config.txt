@@ -58,7 +58,6 @@ wrap calloc
 wrap malloc
 wrap realloc
 wrap free
-wrap posix_memalign
 
 wrap read
 wrap write

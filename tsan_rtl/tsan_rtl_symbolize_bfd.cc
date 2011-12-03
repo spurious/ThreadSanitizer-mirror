@@ -50,6 +50,10 @@ void __tsan::SymbolizeInit() {
   ThreadSanitizerSetUnwindCallback(UnwindCallback);
 }
 
+void __tsan::SymbolizeFini(int nerror) {
+  (void)nerror;
+}
+
 bool __tsan::SymbolizeData(void *addr, char *symbol,
                            int symbol_sz, uintptr_t *offset) {
   int soffset = 0;
