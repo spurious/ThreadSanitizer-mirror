@@ -229,91 +229,6 @@ int GIL::GetDepth() {
 }
 #endif
 
-#if 0
-// TODO(dvyukov): remove this.
-#define LSS_RETURN(type, res)                                                 \
-    do {                                                                      \
-      if ((unsigned long)(res) >= (unsigned long)(-4095)) {                   \
-        errno = -(res);                                                       \
-        res = -1;                                                             \
-      }                                                                       \
-      return (type) (res);                                                    \
-    } while (0)
-#ifdef TSAN_RTL_X64
-    #define LSS_BODY(type,name, ...)                                          \
-          long __res;                                                         \
-          __asm__ __volatile__("syscall" : "=a" (__res) : "0" (__NR_##name),  \
-            ##__VA_ARGS__ : "r11", "rcx", "memory");                          \
-          LSS_RETURN(type, __res)
-    #define _syscall2(type,name,type1,arg1,type2,arg2)                        \
-      type sys_##name(type1 arg1, type2 arg2) {                               \
-        LSS_BODY(type, name, "D" ((long)(arg1)), "S" ((long)(arg2)));         \
-      }
-    #define _syscall6(type,name,type1,arg1,type2,arg2,type3,arg3,type4,arg4,  \
-                   type5,arg5,type6,arg6)                                     \
-      type sys_##name(type1 arg1, type2 arg2, type3 arg3, type4 arg4,         \
-                          type5 arg5, type6 arg6) {                           \
-          long __res;                                                         \
-          __asm__ __volatile__("movq %5,%%r10; movq %6,%%r8; movq %7,%%r9;"   \
-                               "syscall" :                                    \
-            "=a" (__res) : "0" (__NR_##name),                                 \
-            "D" ((long)(arg1)), "S" ((long)(arg2)), "d" ((long)(arg3)),       \
-            "r" ((long)(arg4)), "r" ((long)(arg5)), "r" ((long)(arg6)) :      \
-            "r8", "r9", "r10", "r11", "rcx", "memory");                       \
-          LSS_RETURN(type, __res);                                            \
-      }
-#else
-    #if defined(NO_FRAME_POINTER) && (100 * __GNUC__ + __GNUC_MINOR__ >= 404)
-      #define CFI_ADJUST_CFA_OFFSET(adjust)                                   \
-                  ".cfi_adjust_cfa_offset " #adjust "\n"
-    #else
-      #define CFI_ADJUST_CFA_OFFSET(adjust)
-    #endif
-    #define LSS_BODY(type,args...)                                            \
-      long __res;                                                             \
-      __asm__ __volatile__("push %%ebx\n"                                     \
-                           CFI_ADJUST_CFA_OFFSET(4)                           \
-                           "movl %2,%%ebx\n"                                  \
-                           "int $0x80\n"                                      \
-                           "pop %%ebx\n"                                      \
-                           CFI_ADJUST_CFA_OFFSET(-4)                          \
-                           args                                               \
-                           : "esp", "memory");                                \
-      LSS_RETURN(type,__res)
-    #define _syscall2(type,name,type1,arg1,type2,arg2)                        \
-      type sys_##name(type1 arg1,type2 arg2) {                                \
-        LSS_BODY(type,                                                        \
-             : "=a" (__res)                                                   \
-             : "0" (__NR_##name),"ri" ((long)(arg1)), "c" ((long)(arg2)));    \
-      }
-    #define _syscall6(type,name,type1,arg1,type2,arg2,type3,arg3,type4,arg4,  \
-                   type5,arg5,type6,arg6)                                     \
-      type sys_##name(type1 arg1, type2 arg2, type3 arg3, type4 arg4,         \
-                          type5 arg5, type6 arg6) {                           \
-        long __res;                                                           \
-        struct { long __a1; long __a6; } __s = { (long)arg1, (long) arg6 };   \
-        __asm__ __volatile__("push %%ebp\n"                                   \
-                             "push %%ebx\n"                                   \
-                             "movl 4(%2),%%ebp\n"                             \
-                             "movl 0(%2), %%ebx\n"                            \
-                             "movl %1,%%eax\n"                                \
-                             "int  $0x80\n"                                   \
-                             "pop  %%ebx\n"                                   \
-                             "pop  %%ebp"                                     \
-                             : "=a" (__res)                                   \
-                             : "i" (__NR_##name),  "0" ((long)(&__s)),        \
-                               "c" ((long)(arg2)), "d" ((long)(arg3)),        \
-                               "S" ((long)(arg4)), "D" ((long)(arg5))         \
-                             : "esp", "memory");                              \
-          LSS_RETURN(type, __res);                                            \
-        }
-#endif
-
-static _syscall6(void*, mmap, void*, s, size_t, l, int, p, int, f,
-                 int, d, __off64_t, o)
-static _syscall2(int, munmap, void*, s, size_t, l);
-#endif  // if 0
-
 void *sys_mmap(void *addr, size_t length, int prot, int flags,
                int fd, off_t offset) {
   return (void*)syscall(SYS_mmap, addr, length, prot, flags, fd, offset);
@@ -556,6 +471,7 @@ void finalize() {
   ENTER_RTL();
   // atexit hooks are ran from a single thread.
   ThreadSanitizerFini();
+  SymbolizeFini(GetNumberOfFoundErrors());
   LEAVE_RTL();
 #if ENABLE_STATS
   Printf("Locks: %d\nEvents: %d\n",
@@ -2543,7 +2459,7 @@ pid_t __wrap_fork() {
 // Happens-before arc between read() and write() {{{1
 uintptr_t FdMagic(int fd) {
   static char tab[53];
-  return &tab[fd % sizeof(tab)];
+  return (uintptr_t)&tab[fd % sizeof(tab)];
 }
 
 extern "C"

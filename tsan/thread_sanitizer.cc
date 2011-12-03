@@ -3523,6 +3523,7 @@ class Cache {
     ScopedMallocCostCenter cc("Cache::WriteBackAndFetch");
     CacheLine *res;
     size_t old_storage_size = storage_.size();
+    (void)old_storage_size;
     CacheLine **line_for_this_tag = NULL;
     if (create_new_if_need) {
       line_for_this_tag = &storage_[tag];
@@ -5403,6 +5404,7 @@ void NOINLINE ClearMemoryState(TSanThread *thr, uintptr_t a, uintptr_t b) {
     // Check that we've cleared it. Slow!
     for (uintptr_t x = a; x < b; x++) {
       uintptr_t off = CacheLine::ComputeOffset(x);
+      (void)off;
       CacheLine *line = G_cache->GetLineOrCreateNew(thr, x, __LINE__);
       CHECK(!line->has_shadow_value().Get(off));
       G_cache->ReleaseLine(thr, x, line, __LINE__);
@@ -5750,6 +5752,7 @@ class ReportStorage {
     race_report->last_acces_lsid[true] = thr->lsid(true);
 
     Segment *seg = Segment::Get(thr->sid());
+    (void)seg;
     CHECK(thr->lsid(false) == seg->lsid(false));
     CHECK(thr->lsid(true) == seg->lsid(true));
 
@@ -7189,6 +7192,7 @@ class Detector {
           // singleton segment should have ref count > 0.
           SID sid = ssid.GetSingleton();
           Segment *seg = Segment::Get(sid);
+          (void)seg;
           CHECK(seg->ref_count() > 0);
           if (sid == thr->sid()) {
             // if this is the current seg, ref count should be > 1.
@@ -7196,6 +7200,7 @@ class Detector {
           }
         } else {
           SegmentSet *sset = SegmentSet::Get(ssid);
+          (void)sset;
           CHECK(sset->ref_count() > 0);
         }
       }
