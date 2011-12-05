@@ -24,6 +24,18 @@ Index: include/llvm/InitializePasses.h
  void initializeEarlyCSEPass(PassRegistry&);
  void initializeExpandISelPseudosPass(PassRegistry&);
  void initializeFindUsedTypesPass(PassRegistry&);
+Index: lib/Transforms/Instrumentation/Instrumentation.cpp
+===================================================================
+--- lib/Transforms/Instrumentation/Instrumentation.cpp	(revision 145532)
++++ lib/Transforms/Instrumentation/Instrumentation.cpp	(working copy)
+@@ -25,6 +25,7 @@
+   initializePathProfilerPass(Registry);
+   initializeGCOVProfilerPass(Registry);
+   initializeAddressSanitizerPass(Registry);
++  initializeThreadSanitizerPass(Registry);
+ }
+ 
+ /// LLVMInitializeInstrumentation - C binding for
 Index: lib/Transforms/Instrumentation/CMakeLists.txt
 ===================================================================
 --- lib/Transforms/Instrumentation/CMakeLists.txt	(revision 145532)
@@ -55,6 +67,18 @@ Index: tools/clang/include/clang/Frontend/CodeGenOptions.h
      AsmVerbose = 0;
      CUDAIsDevice = 0;
      CXAAtExit = 1;
+Index: tools/clang/include/clang/Basic/LangOptions.def
+===================================================================
+--- tools/clang/include/clang/Basic/LangOptions.def	(revision 145532)
++++ tools/clang/include/clang/Basic/LangOptions.def	(working copy)
+@@ -122,6 +122,7 @@
+ BENIGN_LANGOPT(ParseUnknownAnytype, 1, 0, "__unknown_anytype")
+ BENIGN_LANGOPT(DebuggerSupport , 1, 0, "debugger support")
+ BENIGN_LANGOPT(AddressSanitizer , 1, 0, "AddressSanitizer enabled")
++BENIGN_LANGOPT(ThreadSanitizer , 1, 0, "ThreadSanitizer enabled")
+ 
+ BENIGN_LANGOPT(SpellChecking , 1, 1, "spell-checking")
+ LANGOPT(SinglePrecisionConstants , 1, 0, "treating double-precision floating point constants as single precision constants")
 Index: tools/clang/include/clang/Driver/CC1Options.td
 ===================================================================
 --- tools/clang/include/clang/Driver/CC1Options.td	(revision 145532)
@@ -85,28 +109,28 @@ Index: tools/clang/lib/Frontend/CompilerInvocation.cpp
 ===================================================================
 --- tools/clang/lib/Frontend/CompilerInvocation.cpp	(revision 145532)
 +++ tools/clang/lib/Frontend/CompilerInvocation.cpp	(working copy)
-@@ -154,6 +154,8 @@
-     Res.push_back("-dwarf-debug-flags");
-     Res.push_back(Opts.DwarfDebugFlags);
-   }
+@@ -669,6 +669,8 @@
+     Res.push_back("-fcatch-undefined-behavior");
+   if (Opts.AddressSanitizer)
+     Res.push_back("-faddress-sanitizer");
 +  if (Opts.ThreadSanitizer)
 +    Res.push_back("-fthread-sanitizer");
-   if (Opts.ObjCRuntimeHasARC)
-     Res.push_back("-fobjc-runtime-has-arc");
-   if (Opts.ObjCRuntimeHasTerminate)
-@@ -1069,6 +1071,7 @@
-   Opts.UnrollLoops = Args.hasArg(OPT_funroll_loops) ||
-                      (Opts.OptimizationLevel > 1 && !Opts.OptimizeSize);
- 
+   if (Opts.WritableStrings)
+     Res.push_back("-fwritable-strings");
+   if (Opts.ConstStrings)
+@@ -1809,6 +1811,7 @@
+   Opts.ParseUnknownAnytype = Args.hasArg(OPT_funknown_anytype);
+   Opts.DebuggerSupport = Args.hasArg(OPT_fdebugger_support);
+   Opts.AddressSanitizer = Args.hasArg(OPT_faddress_sanitizer);
 +  Opts.ThreadSanitizer = Args.hasArg(OPT_fthread_sanitizer);
-   Opts.AsmVerbose = Args.hasArg(OPT_masm_verbose);
-   Opts.ObjCAutoRefCountExceptions = Args.hasArg(OPT_fobjc_arc_exceptions);
-   Opts.ObjCRuntimeHasARC = Args.hasArg(OPT_fobjc_runtime_has_arc);
+   Opts.ApplePragmaPack = Args.hasArg(OPT_fapple_pragma_pack);
+   Opts.CurrentModule = Args.getLastArgValue(OPT_fmodule_name);
+ 
 Index: tools/clang/lib/Driver/Tools.cpp
 ===================================================================
 --- tools/clang/lib/Driver/Tools.cpp	(revision 145532)
 +++ tools/clang/lib/Driver/Tools.cpp	(working copy)
-@@ -1121,6 +1121,44 @@
+@@ -1121,6 +1121,45 @@
    TC.AddCXXStdlibLibArgs(Args, CmdArgs);
  }
  
@@ -144,6 +168,7 @@ Index: tools/clang/lib/Driver/Tools.cpp
 +  CmdArgs.push_back(Args.MakeArgString(link_config));
 +  CmdArgs.push_back("-lpthread");
 +  CmdArgs.push_back("-ldl");
++  CmdArgs.push_back("-lrt");
 +  CmdArgs.push_back("-export-dynamic");
 +  TC.AddCXXStdlibLibArgs(Args, CmdArgs);
 +}
@@ -151,7 +176,7 @@ Index: tools/clang/lib/Driver/Tools.cpp
  void Clang::ConstructJob(Compilation &C, const JobAction &JA,
                           const InputInfo &Output,
                           const InputInfoList &Inputs,
-@@ -1736,6 +1774,9 @@
+@@ -1736,6 +1775,9 @@
    if (Args.hasFlag(options::OPT_faddress_sanitizer,
                     options::OPT_fno_address_sanitizer, false))
      CmdArgs.push_back("-faddress-sanitizer");
@@ -161,7 +186,7 @@ Index: tools/clang/lib/Driver/Tools.cpp
  
    // -flax-vector-conversions is default.
    if (!Args.hasFlag(options::OPT_flax_vector_conversions,
-@@ -4491,6 +4532,7 @@
+@@ -4491,6 +4533,7 @@
  
    // Call this before we add the C run-time.
    addAsanRTLinux(getToolChain(), Args, CmdArgs);
