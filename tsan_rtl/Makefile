@@ -7,6 +7,7 @@ ERRORLVL=-Werror
 ERRORLVL=-Werror -Wno-deprecated -Wno-unused-function
 TSAN_PATH=../tsan
 BFDS_PATH=../bfd_symbolizer
+INSTALL_PATH=../clang_build_Linux/Release+Asserts/
 
 ifeq ($(USE_DTLEB), 1)
 DTLEB_DEFINES=-DUSE_DYNAMIC_TLEB
@@ -91,6 +92,12 @@ RTL_32_A=lib/tsan_rtl32.a
 RTL_64_A=lib/tsan_rtl64.a
 
 all:	$(RTL_32_A) $(RTL_64_A)
+
+install:	all
+	cat scripts/link_config.txt | grep -v "^$$\|#" | sed "s/^/--/" > $(INSTALL_PATH)/lib/link_config.txt
+	echo "--wrap __libc_csu_init" >> $(INSTALL_PATH)/lib/link_config.txt
+	cp $(RTL_32_A) $(INSTALL_PATH)/lib
+	cp $(RTL_64_A) $(INSTALL_PATH)/lib
 
 $(RTL_32_A):	$(OBJS32) $(RTL_32_O)
 ifeq ($(GCC), 1)
