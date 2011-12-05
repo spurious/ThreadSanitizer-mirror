@@ -28,7 +28,9 @@ static __thread bool have_pending_signals;
 
 extern "C" void goCallback(void* p);
 extern "C" char* goCallbackPcToRtnName(uintptr_t pc);
-extern "C" void goCallbackCommentPc(uintptr_t pc, char **img, char **rtn, char **file, int *line);
+extern "C" int goCallbackCommentPc(uintptr_t pc, char **img, char **rtn, char **file, int *line);
+int numEventsRead = 0; // need some estimation
+int eventsCount[100000];
 
 extern "C"
 void SPut(EventType type, int32_t tid, uintptr_t pc,
@@ -38,17 +40,19 @@ void SPut(EventType type, int32_t tid, uintptr_t pc,
     __tsan_shadow_stack->end_ = __tsan_shadow_stack->pcs_ + 32;
     pc = (uintptr_t)__tsan_shadow_stack;
   }
+  ++eventsCount[type];
   Event event(type, tid, pc, a, info);
   ThreadSanitizerHandleOneEvent(&event);
+  ++numEventsRead;
 }
-
 
 void PcToStrings(uintptr_t pc, bool demangle,
                  string *img_name, string *rtn_name,
                  string *file_name, int *line_no) {
   char *img, *rtn, *file;
 
-  goCallbackCommentPc(pc, &img, &rtn, &file, line_no);
+  int ok = goCallbackCommentPc(pc, &img, &rtn, &file, line_no);
+  if (!ok) return;
   *img_name = string(img);
   *rtn_name = string(rtn);
   *file_name = string(file);
@@ -58,8 +62,10 @@ void PcToStrings(uintptr_t pc, bool demangle,
 }
 
 string PcToRtnName(uintptr_t pc, bool demangle) {
-  char* ret = goCallbackPcToRtnName(pc); // TODO: demangle is dropped, is it ok?
+  /*  char* ret = goCallbackPcToRtnName(pc); // TODO: demangle is dropped, is it ok?
   return string(ret);
+  */
+  return "";
 }
 
 extern "C"
@@ -86,6 +92,7 @@ bool initialize() {
   ThreadSanitizerInit();
 
   SPut(THR_START, 0, 0, 0, 0);
+  //  SPut(RTN_CALL, 0, 0, 0, 0);
 
 
   /*
@@ -119,6 +126,16 @@ bool initialize() {
 
 extern "C"
 void finalize() {
+  Printf("\nThreadSanitizer has received %d events\n", numEventsRead);
+  Printf("%d READs\n", eventsCount[READ]);
+  Printf("%d WRITEs\n", eventsCount[WRITE]);
+  Printf("%d SIGNALs\n", eventsCount[SIGNAL]);
+  Printf("%d WAITs\n", eventsCount[WAIT]);
+  Printf("%d RTN_CALLs\n", eventsCount[RTN_CALL]);
+  Printf("%d RTN_EXITs\n", eventsCount[RTN_EXIT]);
+  Printf("\n\n");
+  //  G_stats->PrintStats();
+
   ThreadSanitizerFini();
   if (G_flags->error_exitcode && GetNumberOfFoundErrors() > 0) {
     // This is the last atexit hook, so it's ok to terminate the program.

@@ -13,7 +13,7 @@ FLAGS=-I$(TSAN_PATH) -I../dynamic_annotations \
       -DTS_GO -Wall
 
 ifeq ($(DEBUG), 1)
-  FLAGS+=-fno-inline -g -D_DEBUG
+  FLAGS+=-fno-inline -g -D_DEBUG -DDEBUG
 else
   FLAGS+=-O3 -DNDEBUG
 endif
