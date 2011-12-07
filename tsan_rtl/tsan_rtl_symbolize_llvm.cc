@@ -456,19 +456,27 @@ bool __tsan::SymbolizeCode(void *pc, bool demangle,
                            char *file, int file_sz,
                            int *line) {
   DbgInfoLock scoped;
-  module[0] = 0;
-  symbol[0] = 0;
-  file[0] = 0;
-  line[0] = 0;
+  if (module && module_sz) module[0] = 0;
+  if (symbol && symbol_sz) symbol[0] = 0;
+  if (file && file_sz) file[0] = 0;
+  if (line) *line = 0;
   if (debug_info) {
     if (debug_info->find((uintptr_t)pc) != debug_info->end()) {
-      if (demangle) {
-        strncpy(symbol, (*debug_info)[(uintptr_t)pc].demangled_symbol.c_str(), symbol_sz);
-      } else {
-        strncpy(symbol, (*debug_info)[(uintptr_t)pc].symbol.c_str(), symbol_sz);
+      if (symbol) {
+        if (demangle) {
+          strncpy(symbol,
+                  (*debug_info)[(uintptr_t)pc].demangled_symbol.c_str(),
+                  symbol_sz);
+        } else {
+          strncpy(symbol,
+                  (*debug_info)[(uintptr_t)pc].symbol.c_str(),
+                  symbol_sz);
+        }
       }
-      strncpy(file, (*debug_info)[(uintptr_t)pc].fullpath.c_str(), file_sz);
-      *line = ((*debug_info)[(uintptr_t)pc].line);
+      if (file) strncpy(file,
+                        (*debug_info)[(uintptr_t)pc].fullpath.c_str(),
+                        file_sz);
+      if (line) *line = ((*debug_info)[(uintptr_t)pc].line);
     }
   }
   return true;
