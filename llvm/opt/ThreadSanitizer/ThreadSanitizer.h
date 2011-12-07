@@ -235,9 +235,9 @@ struct ThreadSanitizer : public llvm::ModulePass { // {{{1
   std::map<llvm::BasicBlock*, BlockSet> predecessors;
   llvm::Module *ThisModule;
   llvm::LLVMContext *ThisModuleContext;
-private:
   virtual void getAnalysisUsage(llvm::AnalysisUsage &AU) const;
 
+private:
   InstSet calls_to_instrument;
 };  // }}}
 

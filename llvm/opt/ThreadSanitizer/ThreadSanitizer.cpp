@@ -2,10 +2,8 @@
 
 #include "ThreadSanitizer.h"
 
+#include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/DebugInfo.h"
-#ifndef BUILD_TSAN_FOR_OLD_LLVM
-# include "llvm/ADT/ArrayRef.h"
-#endif
 #include "llvm/CallingConv.h"
 #include "llvm/DerivedTypes.h"
 #include "llvm/Function.h"
@@ -16,6 +14,7 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetData.h"
 #include "llvm/Target/TargetMachine.h"
+#include "llvm/Transforms/Instrumentation.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Type.h"
 
@@ -296,9 +295,6 @@ void ThreadSanitizer::writeModuleDebugInfo(Module &M) {
   // The debug info is stored in a per-module global structure named
   // "rtl_debug_info${ModuleID}".
   // TODO(glider): this may lead to name collisions.
-#ifdef BUILD_TSAN_FOR_OLD_LLVM
-  LLVMContext &Context = M.getContext();
-#endif
   vector<Constant*> dummy;
   dummy.push_back(ConstantInt::get(const_cast<IntegerType*>(PlatformInt),
                                    ModuleID));
@@ -353,18 +349,10 @@ void ThreadSanitizer::writeModuleDebugInfo(Module &M) {
   vector<Constant*> pcs;
 
   // pc, symbol, path, file, line
-#ifdef BUILD_TSAN_FOR_OLD_LLVM
-  StructType *PcInfo = StructType::get(Context,
-                                       PlatformInt, PlatformInt,
-                                       PlatformInt,
-                                       PlatformInt, PlatformInt,
-                                       NULL);
-#else
   StructType *PcInfo = StructType::get(PlatformInt, PlatformInt,
                                        PlatformInt,
                                        PlatformInt, PlatformInt,
                                        NULL);
-#endif
   for (map<Constant*, DebugPcInfo>::iterator it = debug_pc_map.begin();
        it != debug_pc_map.end();
        ++it) {
@@ -381,16 +369,6 @@ void ThreadSanitizer::writeModuleDebugInfo(Module &M) {
   // magic,
   // paths_size, files_size, symbols_size, pcs_size,
   // paths[], files[], symbols[], pcs[]
-#ifdef BUILD_TSAN_FOR_OLD_LLVM
-  StructType *DebugInfoType = StructType::get(Context,
-      Int32,
-      PlatformInt, PlatformInt, PlatformInt, PlatformInt,
-      ArrayType::get(Int8, paths_size),
-      ArrayType::get(Int8, files_size),
-      ArrayType::get(Int8, symbols_size),
-      ArrayType::get(PcInfo, pcs_size),
-      NULL);
-#else
   StructType *DebugInfoType = StructType::get(
       Int32,
       PlatformInt, PlatformInt, PlatformInt, PlatformInt,
@@ -399,7 +377,6 @@ void ThreadSanitizer::writeModuleDebugInfo(Module &M) {
       ArrayType::get(Int8, symbols_size),
       ArrayType::get(PcInfo, pcs_size),
       NULL);
-#endif
 
   vector<Constant*> debug_info;
   debug_info.push_back(ConstantInt::get(Int32, kDebugInfoMagicNumber));
@@ -735,11 +712,7 @@ void ThreadSanitizer::insertRtnCall(Constant *addr,
   if (!InlineShadowStackUpdates) {
     vector<Value*> inst(1);
     inst[0] = addr;
-#ifdef BUILD_TSAN_FOR_OLD_LLVM
-    CallInst::Create(RtnCallFn, inst.begin(), inst.end(), "", Before);
-#else
     CallInst::Create(RtnCallFn, inst, "", Before);
-#endif
   } else {
     if (UseDynamicTleb) {
       writeRtnCallToTleb(addr, Before);
@@ -779,11 +752,7 @@ void ThreadSanitizer::insertRtnExit(BasicBlock::iterator &Before) {
   if (!EnableFunctionInstrumentation) return;
   if (!InlineShadowStackUpdates) {
     vector<Value*> inst(0);
-#ifdef BUILD_TSAN_FOR_OLD_LLVM
-    CallInst::Create(RtnExitFn, inst.begin(), inst.end(), "", Before);
-#else
     CallInst::Create(RtnExitFn, inst, "", Before);
-#endif
   } else {
     if (UseDynamicTleb) {
       writeRtnExitToTleb(Before);
@@ -837,12 +806,7 @@ void ThreadSanitizer::insertRtnExit(BasicBlock::iterator &Before) {
       vector <Value*> check;
       check.push_back(CurrentStackEnd);
       check.push_back(NewStackEnd);
-#ifdef BUILD_TSAN_FOR_OLD_LLVM
-      CallInst::Create(ShadowStackCheckFn, check.begin(), check.end(),
-                       "", Before);
-#else
       CallInst::Create(ShadowStackCheckFn, check, "", Before);
-#endif
 
     } else {
       new StoreInst(CurrentStackEnd, StackEndPtr, Before);
@@ -1056,11 +1020,7 @@ void ThreadSanitizer::setupDataTypes() {
   //   bool      is_write;
   // };
   // TODO(glider): the old MopInfo layout is deprecated and should be removed.
-#ifdef BUILD_TSAN_FOR_OLD_LLVM
-  MopType = StructType::get(*ThisModuleContext, PlatformInt, Int32, Int8, NULL);
-#else
   MopType = StructType::get(PlatformInt, Int32, Int8, NULL);
-#endif
 
   // MopType64 represents a 64-bit union of the following layout:
   // struct MopInfo {
@@ -1087,12 +1047,7 @@ void ThreadSanitizer::setupDataTypes() {
   //   uint32_t counter;
   //   int32_t num_to_skip;
   // };
-#ifdef BUILD_TSAN_FOR_OLD_LLVM
-  LiteRaceCountersType = StructType::get(*ThisModuleContext,
-                                         Int32, Int32, NULL);
-#else
   LiteRaceCountersType = StructType::get(Int32, Int32, NULL);
-#endif
 
   LiteRaceStorageLineType =
       ArrayType::get(LiteRaceCountersType,
@@ -1117,20 +1072,11 @@ void ThreadSanitizer::setupDataTypes() {
   //  int32_t storage_index;
   //  MopInfo mops_[1];
   // };
-#ifdef BUILD_TSAN_FOR_OLD_LLVM
-  TraceInfoType = StructType::get(*ThisModuleContext,
-                                  PlatformInt, PlatformInt, PlatformInt,
-                                  LiteRaceStorageTypePtr,
-                                  Int32,
-                                  MopArrayType,
-                                  NULL);
-#else
   TraceInfoType = StructType::get(PlatformInt, PlatformInt, PlatformInt,
                                   LiteRaceStorageTypePtr,
                                   Int32,
                                   MopArrayType,
                                   NULL);
-#endif
   TraceInfoTypePtr = PointerType::get(TraceInfoType, 0);
 
   // CallStackType represents the following class declared in
@@ -1145,17 +1091,9 @@ void ThreadSanitizer::setupDataTypes() {
   // Note that |end_| points to the first invalid stack frame, i.e. the current
   // stack frame is at *(end_ - 1).
   CallStackArrayType = ArrayType::get(PlatformInt, kMaxCallStackSize);
-#ifdef BUILD_TSAN_FOR_OLD_LLVM
-  CallStackType = StructType::get(*ThisModuleContext,
-                                  UIntPtr,
-                                  CallStackArrayType,
-                                  NULL);
-#else
   CallStackType = StructType::get(UIntPtr,
                                   CallStackArrayType,
                                   NULL);
-#endif
-
 }
 
 void ThreadSanitizer::setupRuntimeGlobals() {
@@ -1269,12 +1207,6 @@ void ThreadSanitizer::setupRuntimeGlobals() {
                                       PlatformInt,
                                       (Type*)0);
   cast<Function>(MemMoveFn)->setLinkage(Function::ExternalWeakLinkage);
-#ifdef BUILD_TSAN_FOR_OLD_LLVM
-  const Type *Tys[] = { PlatformInt };
-  MemSetIntrinsicFn = Intrinsic::getDeclaration(ThisModule,
-                                                Intrinsic::memset,
-                                                Tys, /*numTys*/1);
-#else
   // Note that newer LLVM versions require two types for llvm.memset.
   vector<Type*> tys;
   tys.push_back(Int8Ptr);
@@ -1282,7 +1214,6 @@ void ThreadSanitizer::setupRuntimeGlobals() {
   MemSetIntrinsicFn = Intrinsic::getDeclaration(ThisModule,
                                                 Intrinsic::memset,
                                                 tys);
-#endif
 }
 
 // virtual
@@ -1514,11 +1445,7 @@ void ThreadSanitizer::insertMaybeFlushTleb(Instruction *Before) {
   BranchInst *FlushTerm = BranchInst::Create(FinishBB, FlushBB);
   // This is the call.
   vector<Value*> inst(0);
-#ifdef BUILD_TSAN_FOR_OLD_LLVM
-  CallInst::Create(FlushTlebFn, inst.begin(), inst.end(), "", FlushTerm);
-#else
   CallInst::Create(FlushTlebFn, inst, "", FlushTerm);
-#endif
 #if 0
   errs() << "After  ";
   BB->dump();
@@ -1682,13 +1609,8 @@ void ThreadSanitizer::insertFlushCurrentCall(Trace &trace,
                                              "",
                                              Before);
     if (EnableTraceFlushing) {
-#ifdef BUILD_TSAN_FOR_OLD_LLVM
-      CallInst::Create(BBFlushCurrentFn,
-                       Args.begin(), Args.end(), "", Before);
-#else
       CallInst::Create(BBFlushCurrentFn,
                        Args, "", Before);
-#endif
     }
   } else {
     // Sampling is on -- each trace should be instrumented with the code
@@ -1799,15 +1721,9 @@ void ThreadSanitizer::insertFlushCurrentCall(Trace &trace,
         // |isvolatile|.
         MSArgs.push_back(ConstantInt::get(Int1, /*isvolatile*/0));
       }
-#ifdef BUILD_TSAN_FOR_OLD_LLVM
-      CallInst::Create(MemSetIntrinsicFn,
-                       MSArgs.begin(), MSArgs.end(),
-                       "", CleanupTerm);
-#else
       CallInst::Create(MemSetIntrinsicFn,
                        MSArgs,
                        "", CleanupTerm);
-#endif
     }
 
     // Set up the flush block. It should contain:
@@ -1840,15 +1756,9 @@ void ThreadSanitizer::insertFlushCurrentCall(Trace &trace,
                                                FlushTerm);
       // TODO(glider): We'll get a mess if
       // EnableLiteRaceSampling == true and EnableTraceFlushing == false
-#ifdef BUILD_TSAN_FOR_OLD_LLVM
-      CallInst::Create(BBFlushCurrentFn,
-                       Args.begin(), Args.end(),
-                       "", FlushTerm);
-#else
       CallInst::Create(BBFlushCurrentFn,
                        Args,
                        "", FlushTerm);
-#endif
     } else {
       // Call bb_flush_mop(current_mop, addr).
       vector <Value*> Args(2);
@@ -1870,11 +1780,7 @@ void ThreadSanitizer::insertFlushCurrentCall(Trace &trace,
                                                "",
                                                FlushTerm);
       Args[1] = MopAddr;
-#ifdef BUILD_TSAN_FOR_OLD_LLVM
-      CallInst::Create(BBFlushMop, Args.begin(), Args.end(), "", FlushTerm);
-#else
       CallInst::Create(BBFlushMop, Args, "", FlushTerm);
-#endif
     }
   }
 }
@@ -1952,11 +1858,7 @@ DILocation ThreadSanitizer::getTopInlinedLocation(
   DILocation Loc(BI->getMetadata("dbg"));
   while (true) {
     DILocation Orig(Loc.getOrigLocation());
-#ifdef BUILD_TSAN_FOR_OLD_LLVM
-    if (Orig.getNode() != NULL) {
-#else
     if (Orig.Verify()) {
-#endif
       Loc = Orig;
     } else {
       break;
@@ -2027,12 +1929,8 @@ bool ThreadSanitizer::ignoreInlinedMop(BasicBlock::iterator &BI) {
   bool first = true;
   while (true) {
     DILocation OldLoc = Loc;
-#ifdef BUILD_TSAN_FOR_OLD_LLVM
-    DISubprogram Sub = getDISubprogram(Loc.getScope().getNode());
-#else
     const MDNode *scope = (Loc.getScope());
     DISubprogram Sub = getDISubprogram(scope);
-#endif
     string symbol = Sub.getLinkageName();
     string filename = Sub.getFilename();
 #ifdef DEBUG_IGNORE_MOPS
@@ -2055,11 +1953,7 @@ bool ThreadSanitizer::ignoreInlinedMop(BasicBlock::iterator &BI) {
     }
     first = false;
     DILocation Orig(Loc.getOrigLocation());
-#ifdef BUILD_TSAN_FOR_OLD_LLVM
-    if (Orig.getNode() != NULL) {
-#else
     if (Orig.Verify()) {
-#endif
       Loc = Orig;
     } else {
       break;
@@ -2326,20 +2220,11 @@ bool ThreadSanitizer::makeTracePassport(Trace &trace) {
     }
 
     TracePassportType = ArrayType::get(MopType64, TraceNumMops);
-#ifdef BUILD_TSAN_FOR_OLD_LLVM
-    BBTraceInfoType = StructType::get(*ThisModuleContext,
-                                       PlatformInt, PlatformInt, PlatformInt,
-                                       LiteRaceStorageTypePtr,
-                                       Int32,
-                                       TracePassportType,
-                                       NULL);
-#else
     BBTraceInfoType = StructType::get(PlatformInt, PlatformInt, PlatformInt,
                                       LiteRaceStorageTypePtr,
                                       Int32,
                                       TracePassportType,
                                       NULL);
-#endif
 
     vector<Constant*> trace_info;
     // num_mops_
@@ -2476,24 +2361,14 @@ void ThreadSanitizer::instrumentMemTransfer(BasicBlock::iterator &BI) {
   }
   arg[2] = IN.getLength();
   if (isa<MemCpyInst>(BI)) {
-#ifdef BUILD_TSAN_FOR_OLD_LLVM
-    Instruction *NewMemCpy =
-        CallInst::Create(MemCpyFn, arg.begin(), arg.end(), "");
-#else
     Instruction *NewMemCpy =
         CallInst::Create(MemCpyFn, arg, "");
-#endif
     ReplaceInstWithInst(BI->getParent()->getInstList(), BI,
                         NewMemCpy);
                       }
   if (isa<MemMoveInst>(BI)) {
-#ifdef BUILD_TSAN_FOR_OLD_LLVM
-    Instruction *NewMemMove =
-        CallInst::Create(MemMoveFn, arg.begin(), arg.end(), "");
-#else
     Instruction *NewMemMove =
         CallInst::Create(MemMoveFn, arg, "");
-#endif
     ReplaceInstWithInst(BI->getParent()->getInstList(), BI, NewMemMove);
   }
 }
@@ -2576,7 +2451,7 @@ void ThreadSanitizer::runOnBasicBlock(BasicBlock *BB,
 
 // TODO(glider): we may need to require additional passes to run.
 void ThreadSanitizer::getAnalysisUsage(AnalysisUsage &AU) const {
-  AU.addRequired<TargetData>();
+//  AU.addRequired<TargetData>();
   AU.addRequired<AliasAnalysis>();
 }
 
@@ -2790,30 +2665,20 @@ void InstrumentationStats::printStats() {
 
 // }}}
 
-// For some reason ID = 0 hits an assertion in opt.
-char ThreadSanitizer::ID = 1;
-#ifdef BUILD_TSAN_FOR_OLD_LLVM
-RegisterPass<ThreadSanitizer> X("tsan",
-    "Compile-time instrumentation for runtime "
-    "data race detection with ThreadSanitizer");
-#else
-INITIALIZE_PASS(ThreadSanitizer, "tsan",
-                "Compile-time instrumentation for runtime "
-                "data race detection with ThreadSanitizer",
-                false, false)
-namespace llvm {
-ModulePass *createThreadSanitizerPass() {
+char ThreadSanitizer::ID = 0;
+INITIALIZE_PASS_BEGIN(ThreadSanitizer, "tsan",
+                      "Compile-time instrumentation for runtime "
+                      "data race detection with ThreadSanitizer",
+                      false, false)
+//INITIALIZE_PASS_DEPENDENCY(TargetData)
+INITIALIZE_AG_DEPENDENCY(AliasAnalysis)
+INITIALIZE_PASS_END(ThreadSanitizer, "tsan",
+                    "Compile-time instrumentation for runtime "
+                    "data race detection with ThreadSanitizer",
+                    false, false)
+
+ModulePass *llvm::createThreadSanitizerPass() {
+  PassRegistry &Registry = *PassRegistry::getPassRegistry();
+  initializeAnalysis(Registry);
   return new ThreadSanitizer();
 }
-}
-#endif
-
-// Old-style (pre-2.7) pass initialization.
-// TODO(glider): detect the version somehow (LLVM_MINOR_VERSION didn't exist
-// before 2.8)
-#if 0
-INITIALIZE_PASS(ThreadSanitizer, "tsan",
-                "Compile-time instrumentation for runtime "
-                "data race detection with ThreadSanitizer",
-                false, false);
-#endif
