@@ -47,26 +47,6 @@ Index: lib/Transforms/Instrumentation/CMakeLists.txt
    EdgeProfiling.cpp
    GCOVProfiling.cpp
    Instrumentation.cpp
-Index: tools/clang/include/clang/Frontend/CodeGenOptions.h
-===================================================================
---- tools/clang/include/clang/Frontend/CodeGenOptions.h	(revision 145532)
-+++ tools/clang/include/clang/Frontend/CodeGenOptions.h	(working copy)
-@@ -35,6 +35,7 @@
-     Mixed = 2
-   };
- 
-+  unsigned ThreadSanitizer  : 1; /// Enable ThreadSanitizer.
-   unsigned AsmVerbose        : 1; /// -dA, -fverbose-asm.
-   unsigned ObjCAutoRefCountExceptions : 1; /// Whether ARC should be EH-safe.
-   unsigned CUDAIsDevice      : 1; /// Set when compiling for CUDA device.
-@@ -151,6 +152,7 @@
- 
- public:
-   CodeGenOptions() {
-+    ThreadSanitizer = 0;
-     AsmVerbose = 0;
-     CUDAIsDevice = 0;
-     CXAAtExit = 1;
 Index: tools/clang/include/clang/Basic/LangOptions.def
 ===================================================================
 --- tools/clang/include/clang/Basic/LangOptions.def	(revision 145532)
@@ -126,6 +106,18 @@ Index: tools/clang/lib/Frontend/CompilerInvocation.cpp
    Opts.ApplePragmaPack = Args.hasArg(OPT_fapple_pragma_pack);
    Opts.CurrentModule = Args.getLastArgValue(OPT_fmodule_name);
  
+Index: tools/clang/lib/Lex/PPMacroExpansion.cpp
+===================================================================
+--- tools/clang/lib/Lex/PPMacroExpansion.cpp	(revision 145532)
++++ tools/clang/lib/Lex/PPMacroExpansion.cpp	(working copy)
+@@ -603,6 +603,7 @@
+            .Case("cxx_exceptions", LangOpts.Exceptions)
+            .Case("cxx_rtti", LangOpts.RTTI)
+            .Case("enumerator_attributes", true)
++           .Case("thread_sanitizer", LangOpts.ThreadSanitizer)
+            // Objective-C features
+            .Case("objc_arr", LangOpts.ObjCAutoRefCount) // FIXME: REMOVE?
+            .Case("objc_arc", LangOpts.ObjCAutoRefCount)
 Index: tools/clang/lib/Driver/Tools.cpp
 ===================================================================
 --- tools/clang/lib/Driver/Tools.cpp	(revision 145532)
@@ -230,7 +222,7 @@ Index: tools/clang/lib/CodeGen/BackendUtil.cpp
                             addAddressSanitizerPass);
    }
 -  
-+  if (CodeGenOpts.ThreadSanitizer) {
++  if (LangOpts.ThreadSanitizer) {
 +    PMBuilder.addExtension(PassManagerBuilder::EP_ScalarOptimizerLate,
 +                           addThreadSanitizerPass);
 +    PMBuilder.addExtension(PassManagerBuilder::EP_EnabledOnOptLevel0,
