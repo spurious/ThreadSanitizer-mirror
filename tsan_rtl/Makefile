@@ -93,7 +93,7 @@ RTL_64_A=lib/tsan_rtl64.a
 
 all:	$(RTL_32_A) $(RTL_64_A)
 
-install:	all
+install_llvm:	all
 	cat scripts/link_config.txt | grep -v "^$$\|#" | sed "s/^/--/" > $(INSTALL_PATH)/lib/link_config.txt
 	echo "--wrap __libc_csu_init" >> $(INSTALL_PATH)/lib/link_config.txt
 	cp $(RTL_32_A) $(INSTALL_PATH)/lib
