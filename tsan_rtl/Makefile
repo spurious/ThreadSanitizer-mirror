@@ -8,6 +8,7 @@ ERRORLVL=-Werror -Wno-deprecated -Wno-unused-function
 TSAN_PATH=../tsan
 BFDS_PATH=../bfd_symbolizer
 INSTALL_PATH=../clang_build_Linux/Release+Asserts/
+RTL_SUFFIX=
 
 ifeq ($(USE_DTLEB), 1)
 DTLEB_DEFINES=-DUSE_DYNAMIC_TLEB
@@ -26,6 +27,7 @@ endif
 ifeq ($(NO_DRD), 1)
 DEFINES32+= -DDISABLE_RACE_DETECTION
 DEFINES64+= -DDISABLE_RACE_DETECTION
+RTL_SUFFIX=_no_drd
 endif
 
 RTL_DEPS=tsan_rtl.h tsan_rtl_wrap.h tsan_rtl_symbolize.h
@@ -88,8 +90,8 @@ TS_HEADERS=
 
 RTL_32_O=tsan_rtl32.o
 RTL_64_O=tsan_rtl64.o
-RTL_32_A=lib/tsan_rtl32.a
-RTL_64_A=lib/tsan_rtl64.a
+RTL_32_A=lib/tsan_rtl$(RTL_SUFFIX)32.a
+RTL_64_A=lib/tsan_rtl$(RTL_SUFFIX)64.a
 
 all:	$(RTL_32_A) $(RTL_64_A)
 

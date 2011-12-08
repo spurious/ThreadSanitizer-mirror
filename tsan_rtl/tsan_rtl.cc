@@ -305,6 +305,9 @@ INLINE void SPut(EventType type, tid_t tid, pc_t pc,
 }
 
 void INLINE flush_trace(TraceInfoPOD *trace) {
+#ifdef DISABLE_RACE_DETECTION
+  return;
+#endif
   DCHECK((size_t)(__tsan_shadow_stack.end_ - __tsan_shadow_stack.pcs_) > 0);
   DCHECK((size_t)(__tsan_shadow_stack.end_ - __tsan_shadow_stack.pcs_) < kMaxCallStackSize);
   DCHECK(RTL_INIT == 1);
@@ -383,6 +386,9 @@ void INLINE flush_trace(TraceInfoPOD *trace) {
 // A single-memory-access version of flush_trace. This could be possibly sped up
 // a bit.
 void INLINE flush_single_mop(TraceInfoPOD *trace, uintptr_t addr) {
+#ifdef DISABLE_RACE_DETECTION
+  return;
+#endif
   DCHECK((size_t)(__tsan_shadow_stack.end_ - __tsan_shadow_stack.pcs_) > 0);
   DCHECK((size_t)(__tsan_shadow_stack.end_ - __tsan_shadow_stack.pcs_) < kMaxCallStackSize);
   DCHECK(trace->n_mops_ == 1);
@@ -2806,7 +2812,7 @@ void flush_tleb() {
     printf("DTLEB[%d] = MOP(%p)\n", i, (void*)DTLEB[i]);
   }
 #endif
-#ifdef USE_DYNAMIC_TLEB
+#if defined(USE_DYNAMIC_TLEB) && defined(DISABLE_RACE_DETECTION)
   DTlebIndex = 0;
 #endif
   return;
