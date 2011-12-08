@@ -279,7 +279,8 @@ void AddWrappersDbgInfo() {
   WRAPPER_DBG_INFO(__real_malloc);
   WRAPPER_DBG_INFO(__real_realloc);
   WRAPPER_DBG_INFO(__real_free);
-  WRAPPER_DBG_INFO(__real_posix_memalign);
+  // TODO(glider): wipe out the needless wrappers.
+  ///WRAPPER_DBG_INFO(__real_posix_memalign);
 
   WRAPPER_DBG_INFO(malloc);
   WRAPPER_DBG_INFO(free);
