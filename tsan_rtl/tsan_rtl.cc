@@ -81,7 +81,7 @@ __thread CallStackPod __attribute__((visibility("default")))
 // TODO(glider): these two should be used consistently.
 // kDTLEBSize should also be a multiple of 4096 (page size).
 // The static TLEB is allocated in TLS, so kTLEBSize should not be very big.
-static const size_t kTLEBSize = 2048;
+static const size_t kTLEBSize = 4096;
 static const size_t kDTLEBSize = 4096;
 static const size_t kDTLEBMemory = kDTLEBSize * 2 * sizeof(uintptr_t);
 
