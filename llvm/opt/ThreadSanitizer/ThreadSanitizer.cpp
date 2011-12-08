@@ -142,7 +142,7 @@ static cl::opt<int>
     TlebSize("tleb-size",
              cl::desc("The size of TLEB "
                       "(if -fill-tleb-completely is on)"),
-             cl::init(2048));  // kTLEBSize in tsan_rtl.cc
+             cl::init(4096));  // kTLEBSize in tsan_rtl.cc
 static cl::opt<int>
     DTlebSize("dynamic-tleb-size",
               cl::desc("The size of DTLEB (dynamic TLEB), "
@@ -547,7 +547,13 @@ bool ThreadSanitizer::validateTrace(Trace &trace) {
     }
     // Treat the UNREACHABLE instruction as a trace exit. This won't hurt
     // because its instrumentation will be unreachable too.
-    if (isa<UnreachableInst>(BBTerm) || isa<ReturnInst>(BBTerm)) {
+    // Treat the RESUME instruction as a trace exit, too. As per
+    // http://llvm.org/docs/LangRef.html, "The 'resume' instruction is a
+    // terminator instruction that has no successors."
+    // TODO(glider): we'll also need to unwind the shadow stack on 'resume'.
+    if (isa<UnreachableInst>(BBTerm) ||
+        isa<ReturnInst>(BBTerm) ||
+        isa<ResumeInst>(BBTerm)) {
       trace.exits.insert(*BB);
     }
   }
