@@ -154,6 +154,7 @@ static int stats_cur_events = 0;
 static int stats_non_local = 0;
 const int kNumBuckets = 11;
 static int stats_event_buckets[kNumBuckets];
+static int stats_num_segv = 0;
 #endif
 // }}}
 
@@ -273,7 +274,9 @@ INLINE void SPut(EventType type, tid_t tid, pc_t pc,
                  uintptr_t a, uintptr_t info) {
   DCHECK(HAVE_THREAD_0 || ((type == THR_START) && (tid == 0)));
   DCHECK(RTL_INIT == 1);
-
+#ifdef USE_DYNAMIC_TLEB
+  flush_tleb();
+#endif
   Event event(type, tid, pc, a, info);
   if (G_flags->verbosity) {
     if ((G_flags->verbosity >= 2) ||
@@ -464,6 +467,9 @@ INLINE void Put(EventType type, tid_t tid, pc_t pc,
 // RPut is strictly for putting RTN_CALL and RTN_EXIT events.
 INLINE void RPut(EventType type, tid_t tid, pc_t pc,
                  uintptr_t a, uintptr_t info) {
+#ifdef USE_DYNAMIC_TLEB
+  flush_tleb();
+#endif
   DCHECK(HAVE_THREAD_0 || ((type == THR_START) && (tid == 0)));
   DCHECK(RTL_INIT == 1);
   if (type == RTN_CALL) {
@@ -480,6 +486,9 @@ void finalize() {
   SymbolizeFini(GetNumberOfFoundErrors());
   LEAVE_RTL();
 #if ENABLE_STATS
+#ifdef FLUSH_WITH_SEGV
+  Printf("Number of SIGSEGVs: %d\n", stats_num_segv);
+#endif
   Printf("Locks: %d\nEvents: %d\n",
          stats_lock_taken, stats_events_processed);
   Printf("Non-bufferable events: %d\n", stats_non_local);
@@ -587,7 +596,7 @@ void unsafeMapTls(tid_t tid, pc_t pc) {
 }
 
 #ifdef FLUSH_WITH_SEGV
-int tleb_half = 0;  // 0 or 1
+int tleb_half = 1;  // 0 or 1, should be 0 after the initial swapTlebHalves.
 #endif
 
 #ifdef FLUSH_WITH_SEGV
@@ -598,6 +607,9 @@ void swapTlebHalves() {
   mprotect(oaddr, kHalf, PROT_READ | PROT_WRITE);
   mprotect(caddr, kHalf, PROT_NONE);
   tleb_half = 1 - tleb_half;
+#ifdef ENABLE_STATS
+  stats_num_segv++;
+#endif
 }
 
 void segvFlushHandler(int signo, siginfo_t *siginfo, void *context) {
@@ -733,6 +745,9 @@ INLINE void UnsafeInitTidCommon() {
                                 MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
   DTlebIndex = 0;
   memset(DTLEB, 0, kDTLEBMemory);
+#ifdef FLUSH_WITH_SEGV
+  swapTlebHalves();
+#endif  // FLUSH_WITH_SEGV
 #endif
   memset(TLEB, 0, kTLEBSize);
   INFO.thread_local_ignore = &__tsan_thread_ignore;
@@ -843,6 +858,9 @@ void *pthread_callback(void *arg) {
                                 MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
   DTlebIndex = 0;
   memset(DTLEB, '\0', kDTLEBMemory);
+#ifdef FLUSH_WITH_SEGV
+  swapTlebHalves();
+#endif  // FLUSH_WITH_SEGV
 #endif
   memset(TLEB, '\0', kTLEBSize);
 
