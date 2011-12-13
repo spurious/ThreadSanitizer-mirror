@@ -142,6 +142,8 @@ void MaybeInitTid();
 // Interface exposed to the instrumented program
 extern "C" {
 void flush_tleb();
+void flush_dtleb_segv();
+void flush_dtleb_nosegv();
 void bb_flush_current(TraceInfoPOD *curr_mops);
 void bb_flush_mop(TraceInfoPOD *curr_mop, uintptr_t addr);
 void shadow_stack_check(uintptr_t old_v, uintptr_t new_v);

@@ -83,7 +83,8 @@ __thread CallStackPod __attribute__((visibility("default")))
 // The static TLEB is allocated in TLS, so kTLEBSize should not be very big.
 static const size_t kTLEBSize = 4096;
 static const size_t kDTLEBSize = 4096;
-static const size_t kDTLEBMemory = kDTLEBSize * 2 * sizeof(uintptr_t);
+static const size_t kDoubleDTLEBSize = kDTLEBSize * 2;
+static const size_t kDTLEBMemory = kDoubleDTLEBSize * sizeof(uintptr_t);
 
 #ifdef TSAN_RTL_X64
 static const uintptr_t kRtnMask = 1L << 63;
@@ -99,7 +100,8 @@ static const uintptr_t kSBlockMask = 1L << 62;
 
 #ifdef USE_DYNAMIC_TLEB
 __thread uintptr_t *DTLEB;
-__thread int DTlebIndex;
+__thread intptr_t DTlebIndex;
+__thread intptr_t OldDTlebIndex;
 #endif
 __thread uintptr_t TLEB[kTLEBSize];
 static __thread int INIT = 0;
@@ -275,7 +277,7 @@ INLINE void SPut(EventType type, tid_t tid, pc_t pc,
   DCHECK(HAVE_THREAD_0 || ((type == THR_START) && (tid == 0)));
   DCHECK(RTL_INIT == 1);
 #ifdef USE_DYNAMIC_TLEB
-  flush_tleb();
+  flush_dtleb_nosegv();
 #endif
   Event event(type, tid, pc, a, info);
   if (G_flags->verbosity) {
@@ -468,7 +470,7 @@ INLINE void Put(EventType type, tid_t tid, pc_t pc,
 INLINE void RPut(EventType type, tid_t tid, pc_t pc,
                  uintptr_t a, uintptr_t info) {
 #ifdef USE_DYNAMIC_TLEB
-  flush_tleb();
+  flush_dtleb_nosegv();
 #endif
   DCHECK(HAVE_THREAD_0 || ((type == THR_START) && (tid == 0)));
   DCHECK(RTL_INIT == 1);
@@ -601,19 +603,23 @@ int tleb_half = 1;  // 0 or 1, should be 0 after the initial swapTlebHalves.
 
 #ifdef FLUSH_WITH_SEGV
 void swapTlebHalves() {
+  tleb_half = 1 - tleb_half;
   const int kHalf = kDTLEBMemory / 2;
   char *oaddr = (char*)DTLEB + tleb_half * kHalf;
   char *caddr = (char*)DTLEB + (1 - tleb_half) * kHalf;
   mprotect(oaddr, kHalf, PROT_READ | PROT_WRITE);
-  mprotect(caddr, kHalf, PROT_NONE);
-  tleb_half = 1 - tleb_half;
+  // We may need to read from the protected part of the buffer.
+  mprotect(caddr, kHalf, PROT_READ);
 #ifdef ENABLE_STATS
   stats_num_segv++;
 #endif
 }
 
 void segvFlushHandler(int signo, siginfo_t *siginfo, void *context) {
+  ENTER_RTL();
+  flush_dtleb_segv();
   swapTlebHalves();
+  LEAVE_RTL();
 }
 
 void initSegvFlush() {
@@ -744,6 +750,8 @@ INLINE void UnsafeInitTidCommon() {
                                 PROT_READ | PROT_WRITE,
                                 MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
   DTlebIndex = 0;
+  OldDTlebIndex = 0;
+  //fprintf(stderr, "Setting OldDTlebIndex to 0 @%d\n", __LINE__);
   memset(DTLEB, 0, kDTLEBMemory);
 #ifdef FLUSH_WITH_SEGV
   swapTlebHalves();
@@ -857,6 +865,8 @@ void *pthread_callback(void *arg) {
                                 PROT_READ | PROT_WRITE,
                                 MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
   DTlebIndex = 0;
+  OldDTlebIndex = 0;
+  //fprintf(stderr, "Setting OldDTlebIndex to 0 @%d\n", __LINE__);
   memset(DTLEB, '\0', kDTLEBMemory);
 #ifdef FLUSH_WITH_SEGV
   swapTlebHalves();
@@ -2668,7 +2678,7 @@ void RTLSignalHandler(int sig) {
    * some non-reentrable routines, so if a signal is received when the client
    * code is inside them a deadlock may happen. A temporal solution is to always
    * enqueue the signals. In the future we can get rid of such calls within
-   * ThreadSanitzer. */
+   * ThreadSanitizer. */
 #if 0
   if (IN_RTL == 0) {
 #else
@@ -2693,7 +2703,7 @@ void RTLSignalSigaction(int sig, siginfo_t* info, void* context) {
    * some non-reentrable routines, so if a signal is received when the client
    * code is inside them a deadlock may happen. A temporal solution is to always
    * enqueue the signals. In the future we can get rid of such calls within
-   * ThreadSanitzer. */
+   * ThreadSanitizer. */
 #if 0
   if (IN_RTL == 0) {
 #else
@@ -2781,7 +2791,7 @@ void rtn_call(void *addr, void *pc) {
 
 void rtn_exit() {
   DDPrintf("T%d: RTN_EXIT [pc=(nil); a=(nil); i=(nil)]\n", INFO.tid);
-  DCHECK(__tsan_shadow_stack.end_ > __tsan_shadow_stack.pcs_);
+  CHECK(__tsan_shadow_stack.end_ > __tsan_shadow_stack.pcs_);
   DCHECK((size_t)(__tsan_shadow_stack.end_ - __tsan_shadow_stack.pcs_) < kMaxCallStackSize);
   __tsan_shadow_stack.end_--;
   if (DEBUG_SHADOW_STACK) {
@@ -2806,34 +2816,132 @@ void bb_flush_mop(TraceInfoPOD *curr_mop, uintptr_t addr) {
   flush_single_mop(curr_mop, addr);
 }
 
-// Flush the dynamic TLEB.
 extern "C"
 void flush_tleb() {
-#if 0
-//#ifdef TSAN_RTL_X64
-  printf("flush_tleb(), DTlebIndex: %d\n", DTlebIndex);
-  for (int i = 0; i < DTlebIndex; i++) {
-    if (DTLEB[i] & kRtnMask) {
-      if (DTLEB[i] == kRtnMask) {
-        printf("DTLEB[%d] = RTN_EXIT\n", i);
+  // Nothing here yet.
+#ifdef DISABLE_RACE_DETECTION
+  DTlebIndex = 0;
+  return;
+#endif
+  CHECK(0);
+}
+
+void process_dtleb_events(int start, int end) {
+#ifdef TSAN_RTL_X64
+  if (start == end) return;
+   if (end < start) {
+    end += kDoubleDTLEBSize;
+  }
+  TraceInfoPOD *current_passport = NULL;
+  bool is_split = false;
+  int current_mop = -1, current_size = 0;
+
+  for (int i = start; i < end; ++i) {
+    int iter = i % kDoubleDTLEBSize;
+    if (DTLEB[iter] & kRtnMask) {
+      if (DTLEB[iter] == kRtnMask) {
+        //fprintf(stderr, "DTLEB[%d] = RTN_EXIT\n", iter);
+        rtn_exit();
       } else {
-        uintptr_t addr = DTLEB[i] & (~kRtnMask);
-        printf("DTLEB[%d] = RTN_CALL(%p)\n", i, (void*)addr);
+        uintptr_t addr = DTLEB[iter] & (~kRtnMask);
+        //fprintf(stderr, "DTLEB[%d] = RTN_CALL(%p)\n", iter, (void*)addr);
+        rtn_call((void*)addr, NULL);  // TODO(glider): should pc be NULL?
+      }
+      current_passport = NULL;
+      is_split = false;
+      continue;
+    }
+    if (DTLEB[iter] & kSBlockMask) {
+      uintptr_t addr = DTLEB[iter] & (~kSBlockMask);
+      //fprintf(stderr, "DTLEB[%d] = SBLOCK_ENTER(%p)\n", iter, (void*)addr);
+      current_passport = (TraceInfoPOD*)addr;
+      current_size = current_passport->n_mops_;
+      //fprintf(stderr, "current_size: %d, end: %d\n", current_size, end);
+      if (end - i <= current_size) {
+        // Unfinished block. Let's process it next time.
+        OldDTlebIndex = iter;
+        return;
+      }
+      if (iter + current_size > (int)kDoubleDTLEBSize) {
+        // This block is split into two parts. We can't pass it at once, so loop
+        // over the mops.
+        is_split = true;
+        current_mop = 0;
+      } else {
+        // The mops are consequent in the buffer, pass them to TSan.
+        ///fprintf(stderr, "ThreadSanitizerHandleTrace(tid=%d, passport=%p, DTLEB=%p, iter=%d\n",
+        ///        (int)INFO.tid, current_passport, &(DTLEB[iter+1]), iter);
+        ThreadSanitizerHandleTrace(
+            INFO.tid, reinterpret_cast<TraceInfo*>(current_passport),
+            &(DTLEB[iter+1]));
+        current_passport = NULL;
       }
       continue;
     }
-    if (DTLEB[i] & kSBlockMask) {
-      uintptr_t addr = DTLEB[i] & (~kSBlockMask);
-      printf("DTLEB[%d] = SBLOCK_ENTER(%p)\n", i, (void*)addr);
-      continue;
+    ///fprintf(stderr, "DTLEB[%d] = MOP(%p), &DTLEB[%d]=%p \n",
+    ///       iter, (void*)DTLEB[iter], iter, &(DTLEB[iter]));
+
+    // If the block is split, pass the mops one by one.
+    // TODO(glider): while-loop here.
+    if (is_split) {
+      ThreadSanitizerHandleOneMemoryAccess(INFO.thread,
+                                           current_passport->mops_[current_mop],
+                                           DTLEB[iter]);
+      current_mop++;
+      CHECK(current_mop < current_size);
     }
-    printf("DTLEB[%d] = MOP(%p)\n", i, (void*)DTLEB[i]);
   }
 #endif
-#if defined(USE_DYNAMIC_TLEB) && defined(DISABLE_RACE_DETECTION)
-  DTlebIndex = 0;
-#endif
+}
+
+// Flush the dynamic TLEB in the SEGV mode. This is to be called from the runtime
+// only.
+// We must analyze everything from the current (writable) half of the buffer,
+// plus the rest of the protected half, which was not considered yet.
+// The value of DTlebIndex may be invalid here, because the signal may be raised
+// before the value is written.
+extern "C"
+void flush_dtleb_segv() {
+#if defined(USE_DYNAMIC_TLEB)
+#if defined(DISABLE_RACE_DETECTION)
   return;
+#endif  // DISABLE_RACE_DETECTION
+
+  if (!DTLEB) return;
+
+#ifdef TSAN_RTL_X64
+  intptr_t actual_index;  // instead of DTlebIndex.
+  if (tleb_half == 1) {
+    actual_index = kDoubleDTLEBSize;
+  } else {
+    actual_index = kDTLEBSize;
+  }
+
+  //fprintf(stderr, "flush_dtleb_segv(), actual_index: %ld, OldDTlebIndex: %ld, "
+  //       "tleb_half: %d\n",
+  //        actual_index, OldDTlebIndex, tleb_half);
+  if (actual_index == OldDTlebIndex) return;
+  intptr_t start = OldDTlebIndex, end = actual_index;
+  //fprintf(stderr, "start=%ld, end=%ld\n", start, end);
+  process_dtleb_events(start, end);
+  OldDTlebIndex = end % kDoubleDTLEBSize;
+  //fprintf(stderr, "leaving flush_dtleb_segv(): OldDTlebIndex=%ld, actual_index=%ld\n",
+  //       OldDTlebIndex, actual_index);
+  return;
+#else
+  CHECK(0 && "DTLEB not supported for 32-bit targets!");
+#endif  // TSAN_RTL_X64
+#endif  // USE_DYNAMIC_TLEB
+}
+
+// Flush the dynamic TLEB from the runtime library.
+// Here DTlebIndex and OldDTlebIndex are valid.
+extern "C"
+void flush_dtleb_nosegv() {
+  if (!DTLEB) return;
+  process_dtleb_events(OldDTlebIndex, DTlebIndex);
+  OldDTlebIndex = DTlebIndex;
+  //fprintf(stderr, "Setting OldDTlebIndex to %ld @%d\n", (long unsigned) DTlebIndex, __LINE__);
 }
 
 extern "C"
