@@ -24,7 +24,10 @@ BUILD=${OS}-${ARCH}-${OX}${S}${EXTRA_BUILD_SUFFIX}
 BIN=bin/
 
 ifeq ($(OS), linux)
-  OS_CXXFLAGS=-Wall -Werror -Wno-sign-compare -Wshadow -Wno-unused-function -std=c++0x
+  OS_CXXFLAGS=-Wall -Werror -Wno-sign-compare -Wshadow -Wno-unused-function
+ifndef OMIT_CPP0X
+  OS_CXXFLAGS+=-std=c++0x
+endif
   OS_CFLAGS=-Wall -Werror -Wno-sign-compare -Wshadow -Wno-unused-function -std=c89
   LIBS=-lpthread -lrt
 else ifeq ($(OS), darwin)
