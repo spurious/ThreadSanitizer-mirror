@@ -151,11 +151,11 @@ static cl::opt<int>
 
 
 // TODO(glider): a silly name for an option. Maybe -use-dynamic-tleb is enough?
-static cl::opt<bool>
-    FillTlebCompletely("fill-tleb-completely",
-                       cl::desc("Do not flush the TLEB after each block, "
-                                "fill it up to the end"),
-                       cl::init(false));
+//static cl::opt<bool>
+//    FillTlebCompletely("fill-tleb-completely",
+//                       cl::desc("Do not flush the TLEB after each block, "
+//                                "fill it up to the end"),
+//                       cl::init(false));
 
 static cl::opt<bool>
     FlushUsingSegv("flush-using-segv",
@@ -987,6 +987,10 @@ void ThreadSanitizer::setupFlags() {
   if (UseDynamicTleb) {
     UseTlebForMinimalBlocks = true;
     EnableLiteRaceSampling = false;  // TODO(glider): allow sampling
+    InlineShadowStackUpdates = true;
+    // TODO(glider): if we want to operate traces, we'll need to write the
+    // addresses to fixed positions at TLEB.
+    BasicBlocksAreTraces = true;
   }
 }
 
@@ -2382,35 +2386,33 @@ void ThreadSanitizer::instrumentMemTransfer(BasicBlock::iterator &BI) {
 // Before each call/invoke instruction we update the shadow stack top with the
 // current program location (PC before the call).
 void ThreadSanitizer::instrumentCall(BasicBlock::iterator &BI) {
-  // TODO(glider): should we somehow distinguish the addresses of mops and
-  // calls?
-  FunctionMopCount++;
-  vector <Value*> end_idx;
-  end_idx.push_back(ConstantInt::get(PlatformInt, 0));
-  end_idx.push_back(ConstantInt::get(Int32, 0));
-  // TODO(glider): can we avoid getting the element pointer twice?
+  if (!UseDynamicTleb) {
+    // TODO(glider): should we somehow distinguish the addresses of mops and
+    // calls?
+    FunctionMopCount++;
+    vector <Value*> end_idx;
+    end_idx.push_back(ConstantInt::get(PlatformInt, 0));
+    end_idx.push_back(ConstantInt::get(Int32, 0));
+    // TODO(glider): can we avoid getting the element pointer twice?
 
-///  Value *StackEndPtr =
-///      GetElementPtrInst::Create(ShadowStack,
-///                                end_idx.begin(), end_idx.end(),
-///                                "", BI);
-  Value *StackEndPtr =
-      GetElementPtrInst::Create(ShadowStack,
-                                end_idx,
-                                "", BI);
-  Value *StackEnd = new LoadInst(StackEndPtr, "", BI);
-  vector <Value*> back_idx;
-  back_idx.push_back(ConstantInt::getSigned(PlatformInt, -1));
-///  Value *StackBack = GetElementPtrInst::Create(StackEnd,
-///                                               back_idx.begin(), back_idx.end(),
-///                                               "", BI);
-  Value *StackBack = GetElementPtrInst::Create(StackEnd,
-                                               back_idx,
-                                               "", BI);
+    Value *StackEndPtr =
+        GetElementPtrInst::Create(ShadowStack,
+                                  end_idx,
+                                  "", BI);
+    Value *StackEnd = new LoadInst(StackEndPtr, "", BI);
+    vector <Value*> back_idx;
+    back_idx.push_back(ConstantInt::getSigned(PlatformInt, -1));
+    Value *StackBack = GetElementPtrInst::Create(StackEnd,
+                                                 back_idx,
+                                                 "", BI);
 
 
-  new StoreInst(getInstructionAddr(FunctionMopCount, BI, PlatformInt),
-                StackBack, BI);
+    new StoreInst(getInstructionAddr(FunctionMopCount, BI, PlatformInt),
+                  StackBack, BI);
+  } else {
+    // If UseDynamicTleb == 1, do nothing.
+    // TODO(glider): emit an event that updates the stack top.
+  }
 }
 
 // This method is ran only for basic blocks belonging to traces that are to be
