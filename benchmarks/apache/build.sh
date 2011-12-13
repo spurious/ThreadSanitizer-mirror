@@ -3,9 +3,11 @@
 # extracted apache (see get.sh).
 # Configure apache with mpm=worker so that it runs in multiple threads.
 # Also, define USE_ATOMICS_GENERIC so that pthread mutexes are used.
+set -e
+set -x
 mkdir build && cd build
 CFLAGS="-O0 -g -DUSE_ATOMICS_GENERIC=1 " \
-  ../httpd-2.2.14/configure  --prefix=`pwd`/inst --with-mpm=worker
+  ../httpd-2.2.21/configure  --prefix=`pwd`/inst --with-mpm=worker
 make -j && make install
 
 # set a port that does not require you to be root.
