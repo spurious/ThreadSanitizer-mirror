@@ -2946,7 +2946,7 @@ void flush_tleb() {
   CHECK(0);
 }
 
-#ifndef GCC
+#ifdef USE_DYNAMIC_TLEB
 void process_dtleb_events(int start, int end) {
 #ifdef TSAN_RTL_X64
   if (start == end) return;
@@ -3014,6 +3014,7 @@ void process_dtleb_events(int start, int end) {
   }
 #endif
 }
+#endif  // defined(USE_DYNAMIC_TLEB)
 
 // Flush the dynamic TLEB in the SEGV mode. This is to be called from the runtime
 // only.
@@ -3055,6 +3056,7 @@ void flush_dtleb_segv() {
 #endif  // USE_DYNAMIC_TLEB
 }
 
+#ifdef USE_DYNAMIC_TLEB
 // Flush the dynamic TLEB from the runtime library.
 // Here DTlebIndex and OldDTlebIndex are valid.
 extern "C"
@@ -3064,7 +3066,7 @@ void flush_dtleb_nosegv() {
   OldDTlebIndex = DTlebIndex;
   //fprintf(stderr, "Setting OldDTlebIndex to %ld @%d\n", (long unsigned) DTlebIndex, __LINE__);
 }
-#endif
+#endif  // defined(USE_DYNAMIC_TLEB)
 
 extern "C"
 void *rtl_memcpy(char *dest, const char *src, size_t n) {
