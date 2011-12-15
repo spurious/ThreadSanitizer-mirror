@@ -60,7 +60,16 @@ wrap realloc
 wrap free
 
 wrap read
+wrap pread
+wrap pread64
+wrap readv
+wrap preadv64
 wrap write
+wrap pwrite
+wrap pwrite64
+wrap writev
+wrap pwritev64
+wrap lockf
 wrap lockf64
 
 wrap send

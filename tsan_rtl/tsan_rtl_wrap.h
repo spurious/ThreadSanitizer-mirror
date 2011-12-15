@@ -135,8 +135,19 @@ void *__real_realloc(void *ptr, size_t size);
 void __real_free(void *ptr);
 int __real_posix_memalign(void **memptr, size_t alignment, size_t size);
 
-ssize_t __real_write(int fd, const void *buf, size_t count);
 ssize_t __real_read(int fd, const void *buf, size_t count);
+ssize_t __real_pread(int fd, void *buf, size_t count, off_t offset);
+ssize_t __real_pread64(int fd, void *buf, size_t count, off64_t offset);
+ssize_t __real_readv(int fd, const struct iovec* vector, int count);
+ssize_t __real_preadv64(int fd, const struct iovec* vector, int count,
+                        off64_t offset);
+ssize_t __real_write(int fd, const void *buf, size_t count);
+ssize_t __real_pwrite(int fd, const void *buf, size_t count, off_t offset);
+ssize_t __real_pwrite64(int fd, const void *buf, size_t count, off64_t offset);
+ssize_t __real_writev(int fd, const struct iovec* vector, int count);
+ssize_t __real_pwritev64(int fd, const struct iovec* vector, int count,
+                         off64_t offset);
+int __real_lockf(int fd, int cmd, off_t len);
 int __real_lockf64(int fd, int cmd, off64_t len);
 
 ssize_t __real_send(int sockfd, const void *buf, size_t len, int flags);
@@ -262,8 +273,20 @@ void *__wrap_realloc(void *ptr, size_t size);
 void __wrap_free(void *ptr);
 int __wrap_posix_memalign(void **memptr, size_t alignment, size_t size);
 
-ssize_t __wrap_write(int fd, const void *buf, size_t count);
 ssize_t __wrap_read(int fd, const void *buf, size_t count);
+ssize_t __wrap_pread(int fd, void *buf, size_t count, off_t offset);
+ssize_t __wrap_pread64(int fd, void *buf, size_t count, __off64_t offset);
+ssize_t __wrap_readv(int fd, const struct iovec* vector, int count);
+ssize_t __wrap_preadv64(int fd, const struct iovec* vector, int count,
+                        __off64_t offset);
+ssize_t __wrap_write(int fd, const void *buf, size_t count);
+ssize_t __wrap_pwrite(int fd, const void *buf, size_t count, off_t offset);
+ssize_t __wrap_pwrite64(int fd, const void *buf, size_t count,
+                        __off64_t offset);
+ssize_t __wrap_writev(int fd, const struct iovec* vector, int count);
+ssize_t __wrap_pwritev64(int fd, const struct iovec* vector, int count,
+                         __off64_t offset);
+int __wrap_lockf(int fd, int cmd, off_t len);
 int __wrap_lockf64(int fd, int cmd, off64_t len);
 
 ssize_t __wrap_send(int sockfd, const void *buf, size_t len, int flags);

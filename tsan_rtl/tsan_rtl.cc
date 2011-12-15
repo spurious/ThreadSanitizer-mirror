@@ -2512,6 +2512,63 @@ ssize_t __wrap_read(int fd, const void *buf, size_t count) {
 }
 
 extern "C"
+ssize_t __wrap_pread(int fd, void *buf, size_t count, off_t offset) {
+  ssize_t result = __real_pread(fd, buf, count, offset);
+  if (IN_RTL) return result;
+  ENTER_RTL();
+  DECLARE_TID_AND_PC();
+  RPut(RTN_CALL, tid, pc, (uintptr_t)__real_pread, 0);
+  if (result > 0)
+    SPut(WAIT, tid, pc, FdMagic(fd), 0);
+  LEAVE_RTL();
+  RPut(RTN_EXIT, tid, pc, 0, 0);
+  return result;
+}
+
+extern "C"
+ssize_t __wrap_pread64(int fd, void *buf, size_t count, off64_t offset) {
+  ssize_t result = __real_pread64(fd, buf, count, offset);
+  if (IN_RTL) return result;
+  ENTER_RTL();
+  DECLARE_TID_AND_PC();
+  RPut(RTN_CALL, tid, pc, (uintptr_t)__real_pread64, 0);
+  if (result > 0)
+    SPut(WAIT, tid, pc, FdMagic(fd), 0);
+  LEAVE_RTL();
+  RPut(RTN_EXIT, tid, pc, 0, 0);
+  return result;
+}
+
+extern "C"
+ssize_t __wrap_readv(int fd, const struct iovec* vector, int count) {
+  ssize_t result = __real_readv(fd, vector, count);
+  if (IN_RTL) return result;
+  ENTER_RTL();
+  DECLARE_TID_AND_PC();
+  RPut(RTN_CALL, tid, pc, (uintptr_t)__real_readv, 0);
+  if (result > 0)
+    SPut(WAIT, tid, pc, FdMagic(fd), 0);
+  LEAVE_RTL();
+  RPut(RTN_EXIT, tid, pc, 0, 0);
+  return result;
+}
+
+extern "C"
+ssize_t __wrap_preadv64(int fd, const struct iovec* vector, int count,
+                        off64_t offset) {
+  ssize_t result = __real_preadv64(fd, vector, count, offset);
+  if (IN_RTL) return result;
+  ENTER_RTL();
+  DECLARE_TID_AND_PC();
+  RPut(RTN_CALL, tid, pc, (uintptr_t)__real_preadv64, 0);
+  if (result > 0)
+    SPut(WAIT, tid, pc, FdMagic(fd), 0);
+  LEAVE_RTL();
+  RPut(RTN_EXIT, tid, pc, 0, 0);
+  return result;
+}
+
+extern "C"
 ssize_t __wrap_write(int fd, const void *buf, size_t count) {
   if (IN_RTL) return __real_write(fd, buf, count);
   DECLARE_TID_AND_PC();
@@ -2519,6 +2576,60 @@ ssize_t __wrap_write(int fd, const void *buf, size_t count) {
   ENTER_RTL();
   SPut(SIGNAL, tid, pc, FdMagic(fd), 0);
   ssize_t result = __real_write(fd, buf, count);
+  LEAVE_RTL();
+  RPut(RTN_EXIT, tid, pc, 0, 0);
+  return result;
+}
+
+extern "C"
+ssize_t __wrap_pwrite(int fd, const void *buf, size_t count, off_t offset) {
+  if (IN_RTL) return __real_pwrite(fd, buf, count, offset);
+  DECLARE_TID_AND_PC();
+  RPut(RTN_CALL, tid, pc, (uintptr_t)__real_pwrite, 0);
+  ENTER_RTL();
+  SPut(SIGNAL, tid, pc, FdMagic(fd), 0);
+  ssize_t result = __real_pwrite(fd, buf, count, offset);
+  LEAVE_RTL();
+  RPut(RTN_EXIT, tid, pc, 0, 0);
+  return result;
+}
+
+extern "C"
+ssize_t __wrap_pwrite64(int fd, const void *buf, size_t count,
+                        off64_t offset) {
+  if (IN_RTL) return __real_pwrite64(fd, buf, count, offset);
+  DECLARE_TID_AND_PC();
+  RPut(RTN_CALL, tid, pc, (uintptr_t)__real_pwrite64, 0);
+  ENTER_RTL();
+  SPut(SIGNAL, tid, pc, FdMagic(fd), 0);
+  ssize_t result = __real_pwrite64(fd, buf, count, offset);
+  LEAVE_RTL();
+  RPut(RTN_EXIT, tid, pc, 0, 0);
+  return result;
+}
+
+extern "C"
+ssize_t __wrap_writev(int fd, const struct iovec* vector, int count) {
+  if (IN_RTL) return __real_writev(fd, vector, count);
+  DECLARE_TID_AND_PC();
+  RPut(RTN_CALL, tid, pc, (uintptr_t)__real_writev, 0);
+  ENTER_RTL();
+  SPut(SIGNAL, tid, pc, FdMagic(fd), 0);
+  ssize_t result = __real_writev(fd, vector, count);
+  LEAVE_RTL();
+  RPut(RTN_EXIT, tid, pc, 0, 0);
+  return result;
+}
+
+extern "C"
+ssize_t __wrap_pwritev64(int fd, const struct iovec* vector, int count,
+                         off64_t offset) {
+  if (IN_RTL) return __real_pwritev64(fd, vector, count, offset);
+  DECLARE_TID_AND_PC();
+  RPut(RTN_CALL, tid, pc, (uintptr_t)__real_pwritev64, 0);
+  ENTER_RTL();
+  SPut(SIGNAL, tid, pc, FdMagic(fd), 0);
+  ssize_t result = __real_pwritev64(fd, vector, count, offset);
   LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
@@ -2577,6 +2688,22 @@ ssize_t __wrap_recvmsg(int sockfd, struct msghdr *msg, int flags) {
 }
 
 // }}}
+
+extern "C"
+int __wrap_lockf(int fd, int cmd, off_t len) {
+  if (IN_RTL) return __real_lockf(fd, cmd, len);
+  DECLARE_TID_AND_PC();
+  RPut(RTN_CALL, tid, pc, (uintptr_t)__real_lockf, 0);
+  ENTER_RTL();
+  if (cmd == F_ULOCK)
+    SPut(SIGNAL, tid, pc, FdMagic(fd), 0);
+  int result = __real_lockf(fd, cmd, len);
+  if (result == 0 && cmd == F_LOCK)
+    SPut(WAIT, tid, pc, FdMagic(fd), 0);
+  LEAVE_RTL();
+  RPut(RTN_EXIT, tid, pc, 0, 0);
+  return result;
+}
 
 extern "C"
 int __wrap_lockf64(int fd, int cmd, off64_t len) {

@@ -288,7 +288,17 @@ void AddWrappersDbgInfo() {
   WRAPPER_DBG_INFO(calloc);
 
   WRAPPER_DBG_INFO(__real_read);
+  WRAPPER_DBG_INFO(__real_pread);
+  WRAPPER_DBG_INFO(__real_pread64);
+  WRAPPER_DBG_INFO(__real_readv);
+  WRAPPER_DBG_INFO(__real_preadv64);
   WRAPPER_DBG_INFO(__real_write);
+  WRAPPER_DBG_INFO(__real_pwrite);
+  WRAPPER_DBG_INFO(__real_pwrite64);
+  WRAPPER_DBG_INFO(__real_writev);
+  WRAPPER_DBG_INFO(__real_pwritev64);
+  WRAPPER_DBG_INFO(__real_lockf);
+  WRAPPER_DBG_INFO(__real_lockf64);
 
   WRAPPER_DBG_INFO(__real_epoll_ctl);
   WRAPPER_DBG_INFO(__real_epoll_wait);
