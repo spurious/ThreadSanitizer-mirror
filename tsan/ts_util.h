@@ -50,9 +50,11 @@ extern unsigned long offline_line_n;
 # define CHECK(x) do { if (!(x)) { \
     Printf("ASSERT on line %ld\n", offline_line_n); \
      assert(x);}} while ((void)0, 0)
-#else
+#elif defined(__GNUC__)
 # define CHECK(x) ((x) ? (void)0 : \
   __assert_fail(#x, __FILE__, __LINE__, __PRETTY_FUNCTION__))
+#else
+# define CHECK assert
 #endif
 
 // support for stlport in stlp_std:: namespace (or other custom ns)
