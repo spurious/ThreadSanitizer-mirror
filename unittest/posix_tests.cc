@@ -42,6 +42,7 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/uio.h>
 #include <unistd.h>
 
 #include <queue>
@@ -157,67 +158,108 @@ TEST(NegativeTests, test75) {
 }  // namespace test75
 
 
-// test98: Synchronization via read/write (or send/recv). {{{1
-namespace test98 {
-// The synchronization here is done by a pair of read/write calls
-// that create a happens-before arc. Same may be done with send/recv.
+// TODO(samsonov): same test can be made for send/recv.
+// ReadWriteSynchronization: Synchronization via read/write
+// (or readv/writev). {{{1
+namespace ReadWriteSynchronization {
+// The synchronization here is done by a pair of read/write (or readv/writev)
+// calls that create a happens-before arc.
 // Such synchronization is quite unusual in real programs
-// (why would one synchronizae via a file or socket?), but
+// (why would one synchronize via a file?), but
 // quite possible in unittests where one threads runs for producer
 // and one for consumer.
 //
 // A race detector has to create a happens-before arcs for
-// {read,send}->{write,recv} even if the file descriptors are different.
-//
-int     GLOB = 0;
-int fd_out = -1;
-int fd_in  = -1;
+// {read,readv}->{write,writev} even if the file descriptors are different.
 
-void Writer() {
+int GLOB;
+int fd_out;
+int fd_in;
+
+void DoWrite() {
   usleep(1000);
   GLOB = 1;
-  const char *str = "Hey there!\n";
-  const int size = strlen(str) + 1;
+  const char *str = "Hello, world!";
+  const size_t size = strlen(str) + 1;
   CHECK(size == write(fd_out, str, size));
 }
 
-void Reader() {
+void DoRead() {
   char buff[100];
   while (read(fd_in, buff, 100) == 0)
-    sleep(1);
-  printf("read: %s\n", buff);
+    usleep(1000);
+  // printf("read: %s\n", buff);
   GLOB = 2;
 }
 
-#ifndef __APPLE__
-// Tsan for Mac OS is missing the unlink() syscall handler.
-// TODO(glider): add the syscall handler to Valgrind.
-TEST(NegativeTests, test98) {
-  printf("test98: negative, synchronization via I/O\n");
+void DoWritev() {
+  usleep(1000);
+  GLOB = 1;
+  iovec vec_to_write[2];
+  const char *str1 = "Hello, ";
+  const char *str2 = "world!";
+  vec_to_write[0].iov_base = (void*)str1;
+  vec_to_write[0].iov_len = strlen(str1);
+  vec_to_write[1].iov_base = (void*)str2;
+  vec_to_write[1].iov_len = strlen(str2) + 1;
+  size_t total_length = strlen(str1) + strlen(str2) + 1;
+  CHECK(total_length == writev(fd_out, vec_to_write, 2));
+}
+
+void DoReadv() {
+  char buff1[100];
+  char buff2[100];
+  iovec vec_to_read[2];
+  vec_to_read[0].iov_base = (void*)buff1;
+  vec_to_read[0].iov_len = 5;
+  vec_to_read[1].iov_base = (void*)buff2;
+  vec_to_read[1].iov_len = 95;
+  while (readv(fd_in, vec_to_read, 2) == 0)
+    usleep(1000);
+  strncpy(buff1 + 5, buff2, 95);
+  // printf("readv: %s\n", buff1);
+  GLOB = 2;
+}
+
+void SetupAndRun(void (*writer_func)(), void (*reader_func)()) {
+  // Clear descriptors and global variable.
+  GLOB = 0;
+  fd_in = -1;
+  fd_out = -1;
+  // Open two files, one for reading and one for writing,
+  // the files are actually the same (symlinked).
   char in_name[100];
   char out_name[100];
-  // we open two files, on for reading and one for writing,
-  // but the files are actually the same (symlinked).
   sprintf(in_name,  "/tmp/racecheck_unittest_in.%d", getpid());
   sprintf(out_name, "/tmp/racecheck_unittest_out.%d", getpid());
   fd_out = creat(out_name, O_WRONLY | S_IRWXU);
   CHECK(0 == symlink(out_name, in_name));
   fd_in  = open(in_name, 0, O_RDONLY);
   CHECK(fd_out >= 0);
-  CHECK(fd_in  >= 0);
-  MyThreadArray t(Writer, Reader);
+  CHECK(fd_in >= 0);
+
+  MyThreadArray t(writer_func, reader_func);
   t.Start();
   t.Join();
-  printf("\tGLOB=%d\n", GLOB);
-  // cleanup
+  // printf("\tGLOB=%d\n", GLOB);
+
+  // Cleanup.
   close(fd_in);
   close(fd_out);
   unlink(in_name);
   unlink(out_name);
 }
+
+#ifndef __APPLE__
+// Tsan for Mac OS is missing the unlink() syscall handler.
+// TODO(glider): add the syscall handler to Valgrind.
+TEST(NegativeTests, ReadWriteSynchronization) {
+  printf("ReadWriteSynchro: negative, synchronization via I/O\n");
+  SetupAndRun(DoRead, DoWrite);
+  SetupAndRun(DoReadv, DoWritev);
+}
 #endif  // __APPLE__
 }  // namespace test98
-
 
 namespace NegativeTests_PthreadOnce {  // {{{1
 int     *GLOB = NULL;

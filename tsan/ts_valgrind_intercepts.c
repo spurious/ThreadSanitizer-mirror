@@ -2093,6 +2093,34 @@ PTH_FUNC(long, write, int s, void *a2, long a3) {
    return ret;
 }
 
+LIBC_FUNC(long, readv, int fd, const void *iov, int iovcnt) {
+   OrigFn fn;
+   long ret;
+   void *o;
+   VALGRIND_GET_ORIG_FN(fn);
+   CALL_FN_W_WWW(ret, fn, fd, iov, iovcnt);
+//   fprintf(stderr, "T%d socket readv: %d %ld\n",
+//           VALGRIND_TS_THREAD_ID(), fd, ret);
+   o = SocketMagic(fd);
+   if (ret >= 0) {
+      // Do client request only if we read something or the EOF was reached.
+      do_wait(o);
+   }
+   return ret;
+}
+
+LIBC_FUNC(long, writev, int fd, const void *iov, int iovcnt) {
+   OrigFn fn;
+   long ret;
+   void *o;
+   VALGRIND_GET_ORIG_FN(fn);
+//   fprintf(stderr, "T%d socket writev: %d\n", VALGRIND_TS_THREAD_ID(), fd);
+   o = SocketMagic(fd);
+   DO_CREQ_v_W(TSREQ_SIGNAL, void*, o);
+   CALL_FN_W_WWW(ret, fn, fd, iov, iovcnt);
+   return ret;
+}
+
 /* Linux: unlink
  * Darwin: unlink */
 LIBC_FUNC(long, unlink, void *path) {
