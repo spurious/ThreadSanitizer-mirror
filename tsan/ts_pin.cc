@@ -3372,9 +3372,12 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
 
   // I/O
   INSERT_BEFORE_0("write", Before_SignallingIOCall);
+  INSERT_BEFORE_0("writev", Before_SignallingIOCall);
   INSERT_BEFORE_0("unlink", Before_SignallingIOCall);
   INSERT_BEFORE_0("rmdir", Before_SignallingIOCall);
 //  INSERT_BEFORE_0("send", Before_SignallingIOCall);
+  INSERT_AFTER_0("read", After_WaitingIOCall);
+  INSERT_AFTER_0("readv", After_WaitingIOCall);
   INSERT_AFTER_0("__read_nocancel", After_WaitingIOCall);
   INSERT_AFTER_0("fopen", After_WaitingIOCall);
   INSERT_AFTER_0("__fopen_internal", After_WaitingIOCall);
