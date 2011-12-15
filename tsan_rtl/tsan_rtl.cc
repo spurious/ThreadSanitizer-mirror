@@ -2580,20 +2580,15 @@ ssize_t __wrap_recvmsg(int sockfd, struct msghdr *msg, int flags) {
 
 extern "C"
 int __wrap_lockf64(int fd, int cmd, off64_t len) {
-  // TODO(glider): support len != 0
-  if (IN_RTL || len) return __real_lockf64(fd, cmd, len);
+  if (IN_RTL) return __real_lockf64(fd, cmd, len);
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__real_lockf64, 0);
   ENTER_RTL();
+  if (cmd == F_ULOCK)
+    SPut(SIGNAL, tid, pc, FdMagic(fd), 0);
   int result = __real_lockf64(fd, cmd, len);
-  if (result == 0) {
-    if (cmd == F_LOCK) {
-      SPut(WAIT, tid, pc, FdMagic(fd), 0);
-    }
-    if (cmd == F_ULOCK) {
-      SPut(SIGNAL, tid, pc, FdMagic(fd), 0);
-    }
-  }
+  if (result == 0 && cmd == F_LOCK)
+    SPut(WAIT, tid, pc, FdMagic(fd), 0);
   LEAVE_RTL();
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
