@@ -672,6 +672,7 @@ set_location (gimple_seq seq, location_t loc)
 
   for (n = gimple_seq_first (seq); n != NULL; n = n->next)
     gimple_set_location (n->stmt, loc);
+  verify_gimple_in_seq (seq);
 }
 
 /* Check as to whether EXPR refers to a store to vptr.  */
@@ -725,13 +726,20 @@ handle_expr (gimple_stmt_iterator gsi, tree expr, int is_store,
   struct mop_desc mop;
   unsigned fld_off;
   unsigned fld_size;
+  tree base;
+
+
+  base = get_base_address (expr);
+  if (base == NULL_TREE
+      || TREE_CODE (base) == SSA_NAME
+      || TREE_CODE (base) == STRING_CST)
+    return;
 
   tcode = TREE_CODE (expr);
 
   /* Below are things we do not instrument
      (no possibility of races or not implemented yet).  */
   if ((func_ignore & (tsan_ignore_mop | tsan_ignore_rec))
-      || get_base_address (expr) == NULL
       /* Compiler-emitted artificial variables.  */
       || (DECL_P (expr) && DECL_ARTIFICIAL (expr))
       /* The var does not live in memory -> no possibility of races.  */
@@ -1103,7 +1111,7 @@ struct gimple_opt_pass pass_tsan = {{
   NULL,                                 /* next  */
   0,                                    /* static_pass_number  */
   TV_NONE,                              /* tv_id  */
-  PROP_trees | PROP_cfg,                /* properties_required  */
+  PROP_ssa | PROP_cfg,                  /* properties_required  */
   0,                                    /* properties_provided  */
   0,                                    /* properties_destroyed  */
   0,                                    /* todo_flags_start  */
