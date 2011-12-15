@@ -1834,11 +1834,9 @@ int __wrap_pthread_mutex_unlock(pthread_mutex_t *mutex) {
 static int tsan_pthread_cond_signal(pthread_cond_t *cond) {
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__real_pthread_cond_signal, 0);
+  if (!G_flags->pure_happens_before)
+    SPut(SIGNAL, tid, pc, (uintptr_t)cond, 0);
   int result = __real_pthread_cond_signal(cond);
-  //!!! shouldn't it be *before* actual signaling???
-  //!!! actually, I'm not sure that we need this signal at all
-  //!!! condvars do not do any synchronization
-  SPut(SIGNAL, tid, pc, (uintptr_t)cond, 0);
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
 }
@@ -1851,9 +1849,9 @@ int __wrap_pthread_cond_signal(pthread_cond_t *cond) {
 static int tsan_pthread_cond_broadcast(pthread_cond_t *cond) {
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__real_pthread_cond_broadcast, 0);
+  if (!G_flags->pure_happens_before)
+    SPut(SIGNAL, tid, pc, (uintptr_t)cond, 0);
   int result = __real_pthread_cond_broadcast(cond);
-  //!!! shouldn't it be *before* actual signaling???
-  SPut(SIGNAL, tid, pc, (uintptr_t)cond, 0);
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
 }
@@ -1869,7 +1867,8 @@ static int tsan_pthread_cond_wait(pthread_cond_t *cond,
   RPut(RTN_CALL, tid, pc, (uintptr_t)__real_pthread_cond_wait, 0);
   SPut(UNLOCK, tid, pc, (uintptr_t)mutex, 0);
   int result = __real_pthread_cond_wait(cond, mutex);
-  SPut(WAIT, tid, pc, (uintptr_t)cond, 0);
+  if (result == 0 && !G_flags->pure_happens_before)
+    SPut(WAIT, tid, pc, (uintptr_t)cond, 0);
   SPut(WRITER_LOCK, tid, pc, (uintptr_t)mutex, 0);
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
@@ -1887,9 +1886,8 @@ static int tsan_pthread_cond_timedwait(pthread_cond_t *cond,
   RPut(RTN_CALL, tid, pc, (uintptr_t)__real_pthread_cond_timedwait, 0);
   SPut(UNLOCK, tid, pc, (uintptr_t)mutex, 0);
   int result = __real_pthread_cond_timedwait(cond, mutex, abstime);
-  if (result == 0) {
+  if (result == 0 && !G_flags->pure_happens_before)
     SPut(WAIT, tid, pc, (uintptr_t)cond, 0);
-  }
   SPut(WRITER_LOCK, tid, pc, (uintptr_t)mutex, 0);
   RPut(RTN_EXIT, tid, pc, 0, 0);
   return result;
@@ -2826,6 +2824,7 @@ void flush_tleb() {
   CHECK(0);
 }
 
+#ifndef GCC
 void process_dtleb_events(int start, int end) {
 #ifdef TSAN_RTL_X64
   if (start == end) return;
@@ -2943,6 +2942,7 @@ void flush_dtleb_nosegv() {
   OldDTlebIndex = DTlebIndex;
   //fprintf(stderr, "Setting OldDTlebIndex to %ld @%d\n", (long unsigned) DTlebIndex, __LINE__);
 }
+#endif
 
 extern "C"
 void *rtl_memcpy(char *dest, const char *src, size_t n) {
