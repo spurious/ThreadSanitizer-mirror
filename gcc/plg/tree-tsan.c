@@ -672,7 +672,6 @@ set_location (gimple_seq seq, location_t loc)
 
   for (n = gimple_seq_first (seq); n != NULL; n = n->next)
     gimple_set_location (n->stmt, loc);
-  verify_gimple_in_seq (seq);
 }
 
 /* Check as to whether EXPR refers to a store to vptr.  */
