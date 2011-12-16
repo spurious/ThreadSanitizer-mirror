@@ -3375,7 +3375,8 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_BEFORE_0("writev", Before_SignallingIOCall);
   INSERT_BEFORE_0("unlink", Before_SignallingIOCall);
   INSERT_BEFORE_0("rmdir", Before_SignallingIOCall);
-//  INSERT_BEFORE_0("send", Before_SignallingIOCall);
+  INSERT_BEFORE_0("send", Before_SignallingIOCall);
+
   INSERT_AFTER_0("read", After_WaitingIOCall);
   INSERT_AFTER_0("readv", After_WaitingIOCall);
   INSERT_AFTER_0("__read_nocancel", After_WaitingIOCall);
@@ -3383,7 +3384,7 @@ static void MaybeInstrumentOneRoutine(IMG img, RTN rtn) {
   INSERT_AFTER_0("__fopen_internal", After_WaitingIOCall);
   INSERT_AFTER_0("open", After_WaitingIOCall);
   INSERT_AFTER_0("opendir", After_WaitingIOCall);
-//  INSERT_AFTER_0("recv", After_WaitingIOCall);
+  INSERT_AFTER_0("recv", After_WaitingIOCall);
 
   // strlen and friends.
   // These wrappers will generate memory access events.
