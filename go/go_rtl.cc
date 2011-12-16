@@ -91,8 +91,10 @@ bool initialize() {
   ThreadSanitizerParseFlags(&args);
   ThreadSanitizerInit();
 
+  // Depends on when initialize() is called: before goroutine 0 was created or not
+  // In current implementation we start before everything, so
+  // comment out this line for now
   // SPut(THR_START, 0, 0, 0, 0);
-  //  SPut(RTN_CALL, 0, 0, 0, 0);
 
 
   /*
