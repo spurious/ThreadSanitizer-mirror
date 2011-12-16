@@ -968,6 +968,10 @@ void *pthread_callback(void *arg) {
   sigfillset(&glob_sig_blocked);
   pthread_sigmask(SIG_BLOCK, &glob_sig_blocked, &glob_sig_old);
 
+  // last chance to process pending signals
+  GIL::Lock();
+  GIL::Unlock();
+
   GIL::Lock();
   Finished[tid] = true;
 #if (DEBUG)
@@ -984,7 +988,9 @@ void *pthread_callback(void *arg) {
     DDPrintf("T%d (child of T%d): Not signaling, condvar not ready\n",
              tid, parent);
   }
-  GIL::Unlock();
+  // can't process signals after THR_END
+  GIL::UnlockNoSignals();
+
   // We do ENTER_RTL() here to avoid sending events from wrapped
   // functions (e.g. free()) after this thread has ended.
   // TODO(glider): need to check whether it's 100% legal.
