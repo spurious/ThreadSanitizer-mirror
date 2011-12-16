@@ -119,6 +119,7 @@ struct tsd_slot {
 // concurrent threads. This is prohibited by POSIX, however.
 static tsd_slot tsd_slots[100];
 static int tsd_slot_index = -1;
+static pthread_mutex_t tsd_mtx;
 
 static int RTL_INIT = 0;
 static int PTH_INIT = 0;
@@ -948,7 +949,10 @@ void *pthread_callback(void *arg) {
   int iter = PTHREAD_DESTRUCTOR_ITERATIONS;
   while (iter) {
     bool dirty = false;
-    for (int i = 0; i < tsd_slot_index + 1; ++i) {
+    __real_pthread_mutex_lock(&tsd_mtx);
+    int cnt = tsd_slot_index;
+    __real_pthread_mutex_unlock(&tsd_mtx);
+    for (int i = 0; i < cnt; ++i) {
       // TODO(glider): we may want to delete keys associated with NULL values
       // from the map
       void *value = pthread_getspecific(tsd_slots[i].key);
@@ -2082,11 +2086,13 @@ int __wrap_pthread_key_create(pthread_key_t *key,
   // We don't want libpthread to know about the destructors.
   int result = __real_pthread_key_create(key, NULL);
   if (destr_function && (result == 0)) {
-    tsd_slot_index++;
+    __real_pthread_mutex_lock(&tsd_mtx);
+    int const idx = tsd_slot_index++;
     // TODO(glider): we should delete TSD slots on pthread_key_delete.
-    DCHECK(tsd_slot_index < (int)(sizeof(tsd_slots) / sizeof(tsd_slot)));
-    tsd_slots[tsd_slot_index].key = *key;
-    tsd_slots[tsd_slot_index].dtor = destr_function;
+    CHECK(idx < (int)(sizeof(tsd_slots) / sizeof(tsd_slot)));
+    tsd_slots[idx].key = *key;
+    tsd_slots[idx].dtor = destr_function;
+    __real_pthread_mutex_unlock(&tsd_mtx);
   }
   return result;
 }
