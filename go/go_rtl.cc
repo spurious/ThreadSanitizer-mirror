@@ -91,7 +91,7 @@ bool initialize() {
   ThreadSanitizerParseFlags(&args);
   ThreadSanitizerInit();
 
-  SPut(THR_START, 0, 0, 0, 0);
+  // SPut(THR_START, 0, 0, 0, 0);
   //  SPut(RTN_CALL, 0, 0, 0, 0);
 
 
@@ -126,6 +126,7 @@ bool initialize() {
 
 extern "C"
 void finalize() {
+  // TODO(mpimenov): use G_stats->PrintStats() or something like that
   Printf("\nThreadSanitizer has received %d events\n", numEventsRead);
   Printf("%d READs\n", eventsCount[READ]);
   Printf("%d WRITEs\n", eventsCount[WRITE]);
@@ -134,9 +135,9 @@ void finalize() {
   Printf("%d RTN_CALLs\n", eventsCount[RTN_CALL]);
   Printf("%d RTN_EXITs\n", eventsCount[RTN_EXIT]);
   Printf("\n\n");
-  //  G_stats->PrintStats();
 
   ThreadSanitizerFini();
+
   if (G_flags->error_exitcode && GetNumberOfFoundErrors() > 0) {
     // This is the last atexit hook, so it's ok to terminate the program.
     _exit(G_flags->error_exitcode);
