@@ -43,6 +43,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
+#include <sys/un.h>
 #include <unistd.h>
 
 #include <queue>
@@ -158,21 +159,19 @@ TEST(NegativeTests, test75) {
 }  // namespace test75
 
 
-// TODO(samsonov): same test can be made for send/recv.
-// ReadWriteSynchronization: Synchronization via read/write
-// (or readv/writev). {{{1
-namespace ReadWriteSynchronization {
-// The synchronization here is done by a pair of read/write (or readv/writev)
-// calls that create a happens-before arc.
-// Such synchronization is quite unusual in real programs
-// (why would one synchronize via a file?), but
-// quite possible in unittests where one threads runs for producer
-// and one for consumer.
+// IOSynchronization: Synchronization via read/write (send/recv) operations
+// on files/sockets. {{{1
+namespace IOSynchronization {
+// The synchronization here is done by a pair of
+// {read,readv,send}/{write,writev,recv} calls that create a happens-before
+// arc. Such synchronization is quite unusual in real programs (why would
+// one synchronize via a file or socket?), but quite possible in unittests
+// where one thread runs for producer and one for consumer.
 //
 // A race detector has to create a happens-before arcs for
 // {read,readv}->{write,writev} even if the file descriptors are different.
 
-int GLOB;
+int GLOB;  // Global, modified by both threads.
 int fd_out;
 int fd_in;
 
@@ -221,7 +220,23 @@ void DoReadv() {
   GLOB = 2;
 }
 
-void SetupAndRun(void (*writer_func)(), void (*reader_func)()) {
+void DoSend() {
+  usleep(1000);
+  GLOB = 1;
+  const char *str = "Hello, world!";
+  const size_t size = strlen(str) + 1;
+  CHECK(size == send(fd_out, str, size, 0));
+}
+
+void DoRecv() {
+  char buff[100];
+  while (recv(fd_in, buff, 100, 0) == 0)
+    usleep(1000);
+  // printf("recv: %s\n", buff);
+  GLOB = 2;
+}
+
+void RunFileTest(void (*writer_func)(), void (*reader_func)()) {
   // Clear descriptors and global variable.
   GLOB = 0;
   fd_in = -1;
@@ -250,16 +265,43 @@ void SetupAndRun(void (*writer_func)(), void (*reader_func)()) {
   unlink(out_name);
 }
 
+void RunSocketTest(void (*send_func)(), void (*recv_func)()) {
+  // Clear global variable and socket descriptors.
+  GLOB = 0;
+  fd_in = -1;
+  fd_out = -1;
+  // Create a pair of connected sockets.
+  int sockets[2];
+  CHECK(0 == socketpair(AF_UNIX, SOCK_STREAM, 0, sockets));
+  fd_in = sockets[0];
+  fd_out = sockets[1];
+  CHECK(fd_in >= 0);
+  CHECK(fd_out >= 0);
+
+  MyThreadArray t(send_func, recv_func);
+  t.Start();
+  t.Join();
+  // printf("\tGLOB=%d\n", GLOB);
+
+  // Cleanup.
+  close(fd_in);
+  close(fd_out);
+}
+
 #ifndef __APPLE__
 // Tsan for Mac OS is missing the unlink() syscall handler.
 // TODO(glider): add the syscall handler to Valgrind.
-TEST(NegativeTests, ReadWriteSynchronization) {
-  printf("ReadWriteSynchro: negative, synchronization via I/O\n");
-  SetupAndRun(DoRead, DoWrite);
-  SetupAndRun(DoReadv, DoWritev);
+TEST(NegativeTests, FileIOSynchronization) {
+  RunFileTest(DoWrite, DoRead);
+  RunFileTest(DoWritev, DoReadv);
 }
 #endif  // __APPLE__
-}  // namespace test98
+
+TEST(NegativeTests, SocketIOSynchronization) {
+  RunSocketTest(DoWrite, DoRead);
+  RunSocketTest(DoSend, DoRecv);
+}
+}  // namespace IOSynchronization
 
 namespace NegativeTests_PthreadOnce {  // {{{1
 int     *GLOB = NULL;

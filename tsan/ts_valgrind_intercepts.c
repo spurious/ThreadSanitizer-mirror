@@ -1980,7 +1980,8 @@ LIBC_FUNC(void, exit, int x) EXIT_BODY
 NONE_FUNC(void, exit, int x) EXIT_BODY
 
 // socket/file IO that creates happens-before arcs.
-static void *SocketMagic(long s) {
+// h-b arcs are created even if the socket/file descriptors are different.
+static void *SocketMagic(void) {
   return (void*)0xDEADFBAD;
 }
 
@@ -1991,7 +1992,7 @@ LIBC_FUNC(int, epoll_wait, int epfd, void * events, int maxevents, int timeout) 
    VALGRIND_GET_ORIG_FN(fn);
 //   fprintf(stderr, "T%d socket epoll_wait: %d\n", VALGRIND_TS_THREAD_ID(), epfd);
    CALL_FN_W_WWWW(ret, fn, epfd, events, maxevents, timeout);
-   o = SocketMagic(epfd);
+   o = SocketMagic();
    do_wait(o);
    return ret;
 }
@@ -2002,96 +2003,122 @@ LIBC_FUNC(int, epoll_ctl, int epfd, int op, int fd, void *event) {
    void *o;
    VALGRIND_GET_ORIG_FN(fn);
 //   fprintf(stderr, "T%d socket epoll_ctl: %d\n", VALGRIND_TS_THREAD_ID(), epfd);
-   o = SocketMagic(epfd);
+   o = SocketMagic();
    DO_CREQ_v_W(TSREQ_SIGNAL, void*, o);
    CALL_FN_W_WWWW(ret, fn, epfd, op, fd, event);
    return ret;
 }
 
-PTH_FUNC(long, send, int s, void *buf, long len, int flags) {
-   OrigFn fn;
-   long    ret;
-   void *o;
-   VALGRIND_GET_ORIG_FN(fn);
-//   fprintf(stderr, "T%d socket send: %d %ld\n", VALGRIND_TS_THREAD_ID(), s, len);
-   o = SocketMagic(s);
-   DO_CREQ_v_W(TSREQ_SIGNAL, void*, o);
-   CALL_FN_W_WWWW(ret, fn, s, buf, len, flags);
-   return ret;
-}
+#define SEND_BODY { \
+   OrigFn fn; \
+   long ret; \
+   void *o; \
+   VALGRIND_GET_ORIG_FN(fn); \
+   if (0) { \
+      fprintf(stderr, "T%d socket send: %d\n", VALGRIND_TS_THREAD_ID(), s); \
+   } \
+   o = SocketMagic(); \
+   DO_CREQ_v_W(TSREQ_SIGNAL, void*, o); \
+   CALL_FN_W_WWWW(ret, fn, s, buf, len, flags); \
+   return ret; \
+} \
 
-PTH_FUNC(long, sendmsg, int s, void *msg, int flags) {
-   OrigFn fn;
-   long    ret;
-   void *o;
-   VALGRIND_GET_ORIG_FN(fn);
-   o = SocketMagic(s);
-   DO_CREQ_v_W(TSREQ_SIGNAL, void*, o);
-   CALL_FN_W_WWW(ret, fn, s, msg, flags);
-   return ret;
-}
+PTH_FUNC(long, send, int s, void *buf, long len, int flags) SEND_BODY
+LIBC_FUNC(long, send, int s, void *buf, long len, int flags) SEND_BODY
+
+#define SENDMSG_BODY { \
+   OrigFn fn; \
+   long ret; \
+   void *o; \
+   VALGRIND_GET_ORIG_FN(fn); \
+   o = SocketMagic(); \
+   DO_CREQ_v_W(TSREQ_SIGNAL, void*, o); \
+   CALL_FN_W_WWW(ret, fn, s, msg, flags); \
+   return ret; \
+} \
+
+PTH_FUNC(long, sendmsg, int s, void *msg, int flags) SENDMSG_BODY
+LIBC_FUNC(long, sendmsg, int s, void *msg, int flags) SENDMSG_BODY
 
 // TODO(timurrrr): sendto
 
-PTH_FUNC(long, recv, int s, void *buf, long len, int flags) {
-   OrigFn fn;
-   long    ret;
-   void *o;
-   VALGRIND_GET_ORIG_FN(fn);
-   CALL_FN_W_WWWW(ret, fn, s, buf, len, flags);
-//   fprintf(stderr, "T%d socket recv: %d %ld %ld\n", VALGRIND_TS_THREAD_ID(), s, len, ret);
-   o = SocketMagic(s);
-   if (ret >= 0) {
-      // Do client request only if we received something
-      // or the connection was closed.
-      do_wait(o);
-   }
-   return ret;
-}
+#define RECV_BODY { \
+   OrigFn fn; \
+   long ret; \
+   void *o; \
+   VALGRIND_GET_ORIG_FN(fn); \
+   CALL_FN_W_WWWW(ret, fn, s, buf, len, flags); \
+   if (0) { \
+      fprintf(stderr, "T%d socket recv: %d\n", VALGRIND_TS_THREAD_ID(), s); \
+   } \
+   o = SocketMagic(); \
+   if (ret >= 0) { \
+      /* Do client request only if we received something */ \
+      /* or the connection was closed. */ \
+      do_wait(o); \
+   } \
+   return ret; \
+} \
 
-PTH_FUNC(long, recvmsg, int s, void *msg, int flags) {
-   OrigFn fn;
-   long    ret;
-   void *o;
-   VALGRIND_GET_ORIG_FN(fn);
-   CALL_FN_W_WWW(ret, fn, s, msg, flags);
-   o = SocketMagic(s);
-   if (ret >= 0) {
-      // Do client request only if we received something
-      // or the connection was closed.
-      do_wait(o);
-   }
-   return ret;
-}
+PTH_FUNC(long, recv, int s, void *buf, long len, int flags) RECV_BODY
+LIBC_FUNC(long, recv, int s, void *buf, long len, int flags) RECV_BODY
+
+#define RECVMSG_BODY { \
+   OrigFn fn; \
+   long ret; \
+   void *o; \
+   VALGRIND_GET_ORIG_FN(fn); \
+   CALL_FN_W_WWW(ret, fn, s, msg, flags); \
+   o = SocketMagic(); \
+   if (ret >= 0) { \
+      /* Do client request only if we received something */ \
+      /* or the connection was closed. */ \
+      do_wait(o); \
+   } \
+   return ret; \
+} \
+
+PTH_FUNC(long, recvmsg, int s, void *msg, int flags) RECVMSG_BODY
+LIBC_FUNC(long, recvmsg, int s, void *msg, int flags) RECVMSG_BODY
 
 // TODO(timurrrr): recvfrom
 
-PTH_FUNC(long, read, int s, void *a2, long count) {
-   OrigFn fn;
-   long    ret;
-   void *o;
-   VALGRIND_GET_ORIG_FN(fn);
-   CALL_FN_W_WWW(ret, fn, s, a2, count);
-//   fprintf(stderr, "T%d socket read: %d %ld %ld\n", VALGRIND_TS_THREAD_ID(), s, count, ret);
-   o = SocketMagic(s);
-   if (ret >= 0) {
-      // Do client request only if we read something or the EOF was reached.
-      do_wait(o);
-   }
-   return ret;
-}
+#define READ_BODY { \
+   OrigFn fn; \
+   long ret; \
+   void *o; \
+   VALGRIND_GET_ORIG_FN(fn); \
+   CALL_FN_W_WWW(ret, fn, s, a2, count); \
+   if (0) { \
+      fprintf(stderr, "T%d socket read: %d\n", VALGRIND_TS_THREAD_ID(), s); \
+   } \
+   o = SocketMagic(); \
+   if (ret >= 0) { \
+      /* Do client request only if we read something */ \
+      /* or the EOF was reached. */ \
+      do_wait(o); \
+   } \
+   return ret; \
+} \
 
-PTH_FUNC(long, write, int s, void *a2, long a3) {
-   OrigFn fn;
-   long    ret;
-   void *o;
-   VALGRIND_GET_ORIG_FN(fn);
-//   fprintf(stderr, "T%d socket write: %d\n", VALGRIND_TS_THREAD_ID(), s);
-   o = SocketMagic(s);
-   DO_CREQ_v_W(TSREQ_SIGNAL, void*, o);
-   CALL_FN_W_WWW(ret, fn, s, a2, a3);
-   return ret;
-}
+PTH_FUNC(long, read, int s, void *a2, long count) READ_BODY
+LIBC_FUNC(long, read, int s, void *a2, long count) READ_BODY
+
+// Avoid using debug fprintf in "write" wrapper, as fprintf will call write,
+// and we'll end in an infinite loop.
+#define WRITE_BODY { \
+   OrigFn fn; \
+   long ret; \
+   void *o; \
+   VALGRIND_GET_ORIG_FN(fn); \
+   o = SocketMagic(); \
+   DO_CREQ_v_W(TSREQ_SIGNAL, void*, o); \
+   CALL_FN_W_WWW(ret, fn, s, a2, a3); \
+   return ret; \
+} \
+
+PTH_FUNC(long, write, int s, void *a2, long a3) WRITE_BODY
+LIBC_FUNC(long, write, int s, void *a2, long a3) WRITE_BODY
 
 LIBC_FUNC(long, readv, int fd, const void *iov, int iovcnt) {
    OrigFn fn;
@@ -2099,9 +2126,8 @@ LIBC_FUNC(long, readv, int fd, const void *iov, int iovcnt) {
    void *o;
    VALGRIND_GET_ORIG_FN(fn);
    CALL_FN_W_WWW(ret, fn, fd, iov, iovcnt);
-//   fprintf(stderr, "T%d socket readv: %d %ld\n",
-//           VALGRIND_TS_THREAD_ID(), fd, ret);
-   o = SocketMagic(fd);
+//   fprintf(stderr, "T%d socket readv: %d\n", VALGRIND_TS_THREAD_ID(), fd);
+   o = SocketMagic();
    if (ret >= 0) {
       // Do client request only if we read something or the EOF was reached.
       do_wait(o);
@@ -2115,7 +2141,7 @@ LIBC_FUNC(long, writev, int fd, const void *iov, int iovcnt) {
    void *o;
    VALGRIND_GET_ORIG_FN(fn);
 //   fprintf(stderr, "T%d socket writev: %d\n", VALGRIND_TS_THREAD_ID(), fd);
-   o = SocketMagic(fd);
+   o = SocketMagic();
    DO_CREQ_v_W(TSREQ_SIGNAL, void*, o);
    CALL_FN_W_WWW(ret, fn, fd, iov, iovcnt);
    return ret;
@@ -2128,7 +2154,7 @@ LIBC_FUNC(long, unlink, void *path) {
    long    ret;
    void *o;
    VALGRIND_GET_ORIG_FN(fn);
-   o = SocketMagic((long)path);
+   o = SocketMagic();
    DO_CREQ_v_W(TSREQ_SIGNAL, void*, o);
    CALL_FN_W_W(ret, fn, path);
    return ret;
@@ -2141,7 +2167,7 @@ static int open_WRK(void *path, int flags, int mode) {
    long    ret;
    void *o;
    VALGRIND_GET_ORIG_FN(fn);
-   o = SocketMagic((long)path);
+   o = SocketMagic();
    DO_CREQ_v_W(TSREQ_SIGNAL, void*, o);
    CALL_FN_W_WWW(ret, fn, path, flags, mode);
    do_wait(o);
@@ -2162,7 +2188,7 @@ LIBC_FUNC(int, rmdir, void *path) {
    long    ret;
    void *o;
    VALGRIND_GET_ORIG_FN(fn);
-   o = SocketMagic((long)path);
+   o = SocketMagic();
    DO_CREQ_v_W(TSREQ_SIGNAL, void*, o);
    CALL_FN_W_W(ret, fn, path);
    return ret;
@@ -2176,7 +2202,7 @@ static long opendir_WRK(void *path) {
    void *o;
    VALGRIND_GET_ORIG_FN(fn);
    CALL_FN_W_W(ret, fn, path);
-   o = SocketMagic((long)path);
+   o = SocketMagic();
    do_wait(o);
    return ret;
 }
@@ -2195,7 +2221,7 @@ LIBC_FUNC(int, lockf, int fd, int cmd, OFF_T offset) {
   void *o;
   long ret;
   VALGRIND_GET_ORIG_FN(fn);
-  o = SocketMagic(fd);
+  o = SocketMagic();
   if (cmd == F_ULOCK) {
     DO_CREQ_v_W(TSREQ_SIGNAL, void*, o);
   }
