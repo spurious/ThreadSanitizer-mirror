@@ -59,5 +59,5 @@ amd64-%.o:	$(TSAN_PATH)/%.cc $(TS_HEADERS) $(FOREIGN_HEADERS)
 clean:
 	rm -f *.o *.so
 
-#install: all
-#	cp $(RTL_64_SO) /usr/lib64
+install: all
+	cp $(RTL_64_SO) /usr/lib64

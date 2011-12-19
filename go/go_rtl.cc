@@ -94,7 +94,7 @@ bool initialize() {
   // Depends on when initialize() is called: before goroutine 0 was created or not
   // In current implementation we start before everything, so
   // comment out this line for now
-  // SPut(THR_START, 0, 0, 0, 0);
+  //  SPut(THR_START, 0, 0, 0, 0);
 
 
   /*
@@ -140,8 +140,7 @@ void finalize() {
 
   ThreadSanitizerFini();
 
-  if (G_flags->error_exitcode && GetNumberOfFoundErrors() > 0) {
-    // This is the last atexit hook, so it's ok to terminate the program.
-    _exit(G_flags->error_exitcode);
+  if (GetNumberOfFoundErrors() > 0) {
+    _exit(1);
   }
 }
