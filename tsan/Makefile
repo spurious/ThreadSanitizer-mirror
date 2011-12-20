@@ -4,7 +4,7 @@ OPT=1
 include ../common.mk
 
 OUTDIR=bin
-VALGRIND_ROOT=../third_party/valgrind
+VALGRIND_ROOT=`pwd`/../third_party/valgrind
 VALGRIND_INST_ROOT=../tsan_inst
 STLPORT_ROOT=../third_party/stlport
 GTEST_ROOT=../third_party/googletest
