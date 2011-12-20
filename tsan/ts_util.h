@@ -50,7 +50,7 @@ extern unsigned long offline_line_n;
 # define CHECK(x) do { if (!(x)) { \
     Printf("ASSERT on line %ld\n", offline_line_n); \
      assert(x);}} while ((void)0, 0)
-#elif defined(__GNUC__)
+#elif defined(__GNUC__) && !defined(__APPLE__)
 # define CHECK(x) ((x) ? (void)0 : \
   __assert_fail(#x, __FILE__, __LINE__, __PRETTY_FUNCTION__))
 #else
