@@ -2024,7 +2024,7 @@ LIBC_FUNC(int, epoll_ctl, int epfd, int op, int fd, void *event) {
 } \
 
 PTH_FUNC(long, send, int s, void *buf, long len, int flags) SEND_BODY
-#ifdef VGO_darwin
+#ifndef VGO_darwin
 LIBC_FUNC(long, send, int s, void *buf, long len, int flags) SEND_BODY
 #endif
 
@@ -2040,7 +2040,7 @@ LIBC_FUNC(long, send, int s, void *buf, long len, int flags) SEND_BODY
 } \
 
 PTH_FUNC(long, sendmsg, int s, void *msg, int flags) SENDMSG_BODY
-#ifdef VGO_darwin
+#ifndef VGO_darwin
 LIBC_FUNC(long, sendmsg, int s, void *msg, int flags) SENDMSG_BODY
 #endif
 
@@ -2065,7 +2065,7 @@ LIBC_FUNC(long, sendmsg, int s, void *msg, int flags) SENDMSG_BODY
 } \
 
 PTH_FUNC(long, recv, int s, void *buf, long len, int flags) RECV_BODY
-#ifdef VGO_darwin
+#ifndef VGO_darwin
 LIBC_FUNC(long, recv, int s, void *buf, long len, int flags) RECV_BODY
 #endif
 
@@ -2085,7 +2085,7 @@ LIBC_FUNC(long, recv, int s, void *buf, long len, int flags) RECV_BODY
 } \
 
 PTH_FUNC(long, recvmsg, int s, void *msg, int flags) RECVMSG_BODY
-#ifdef VGO_darwin
+#ifndef VGO_darwin
 LIBC_FUNC(long, recvmsg, int s, void *msg, int flags) RECVMSG_BODY
 #endif
 
@@ -2110,7 +2110,7 @@ LIBC_FUNC(long, recvmsg, int s, void *msg, int flags) RECVMSG_BODY
 } \
 
 PTH_FUNC(long, read, int s, void *a2, long count) READ_BODY
-#ifdef VGO_darwin
+#ifndef VGO_darwin
 LIBC_FUNC(long, read, int s, void *a2, long count) READ_BODY
 #endif
 
@@ -2128,7 +2128,7 @@ LIBC_FUNC(long, read, int s, void *a2, long count) READ_BODY
 } \
 
 PTH_FUNC(long, write, int s, void *a2, long a3) WRITE_BODY
-#ifdef VGO_darwin
+#ifndef VGO_darwin
 LIBC_FUNC(long, write, int s, void *a2, long a3) WRITE_BODY
 #endif
 
