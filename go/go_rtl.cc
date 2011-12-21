@@ -15,16 +15,7 @@
 bool in_initialize = false;
 typedef uintptr_t pc_t;
 
-
 const size_t kCallStackReserve = 32;
-
-/*
-static struct sigaction signal_actions[NSIG];  // protected by GIL
-static __thread siginfo_t pending_signals[NSIG];
-typedef enum { PSF_NONE = 0, PSF_SIGNAL, PSF_SIGACTION } pending_signal_flag_t;
-static __thread pending_signal_flag_t pending_signal_flags[NSIG];
-static __thread bool have_pending_signals;
-*/
 
 extern "C" void goCallback(void* p);
 extern "C" char* goCallbackPcToRtnName(uintptr_t pc);
@@ -62,9 +53,10 @@ void PcToStrings(uintptr_t pc, bool demangle,
 }
 
 string PcToRtnName(uintptr_t pc, bool demangle) {
-  /*  char* ret = goCallbackPcToRtnName(pc); // TODO: demangle is dropped, is it ok?
-  return string(ret);
-  */
+  // TODO: demangle is dropped, is it ok?
+  // TODO: turn it on when the Go part works
+  //  char* ret = goCallbackPcToRtnName(pc);
+  //  return string(ret);
   return "";
 }
 
@@ -95,34 +87,6 @@ bool initialize() {
   // In current implementation we start before everything, so
   // comment out this line for now
   //  SPut(THR_START, 0, 0, 0, 0);
-
-
-  /*
-
-  if (G_flags->dry_run) {
-    Printf("WARNING: the --dry_run flag is not supported anymore. "
-           "Ignoring.\n");
-  }
-
-  //  static_tls_size = GetTlsSize();
-  memset(__tsan_shadow_stack.pcs_, 0, kCallStackReserve * sizeof(__tsan_shadow_stack.pcs_[0]));
-  __tsan_shadow_stack.end_ = __tsan_shadow_stack.pcs_ + kCallStackReserve;
-  in_initialize = false;
-
-  // Get the stack size and stack top for the current thread.
-  // TODO(glider): do something if pthread_getattr_np() is not supported.
-  pthread_attr_t attr;
-  size_t stack_size = 8 << 20;  // 8M
-  void *stack_bottom = NULL;
-
-  for (int sig = 0; sig < NSIG; sig++) {
-    pending_signal_flags[sig] = PSF_NONE;
-  }
-
-  SPut(THR_START, 0, (pc_t) &__tsan_shadow_stack, 0, 0);
-  //SPut(THR_STACK_TOP, 0, 0, (uintptr_t)&stack_size, stack_size);
-
-*/
   return true;
 }
 
