@@ -19,7 +19,9 @@ const size_t kCallStackReserve = 32;
 
 extern "C" void goCallback(void* p);
 extern "C" char* goCallbackPcToRtnName(uintptr_t pc);
-extern "C" int goCallbackCommentPc(uintptr_t pc, char **img, char **rtn, char **file, int *line);
+extern "C" int goCallbackCommentPc(uintptr_t pc, char **img,
+                                   char **rtn, char **file, int *line);
+
 int numEventsRead = 0; // need some estimation
 int eventsCount[100000];
 
@@ -83,7 +85,8 @@ bool initialize() {
   ThreadSanitizerParseFlags(&args);
   ThreadSanitizerInit();
 
-  // Depends on when initialize() is called: before goroutine 0 was created or not
+  // Depends on when initialize() is called: before goroutine 0
+  // was created or after.
   // In current implementation we start before everything, so
   // comment out this line for now
   //  SPut(THR_START, 0, 0, 0, 0);
