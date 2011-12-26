@@ -8115,7 +8115,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   FindBoolFlag("trace_profile", false, args, &G_flags->trace_profile);
   FindBoolFlag("color", false, args, &G_flags->color);
   FindBoolFlag("html", false, args, &G_flags->html);
-#ifdef TS_OFFLINE
+#if defined(TS_OFFLINE) || defined(TS_GO)
   bool show_pid_default = false;
 #else
   bool show_pid_default = true;
