@@ -1,7 +1,7 @@
 #!/bin/bash
 
 VG_REPO=http://valgrind-variant.googlecode.com/svn/trunk/valgrind
-VG_REV=129
+VG_REV=131
 VG_DIR=$(dirname "${0}")
 VG_DIR=$(cd "${VG_DIR}" && /bin/pwd)/valgrind
 
