@@ -8096,8 +8096,12 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   FindBoolFlag("show_expected_races", false, args,
                &G_flags->show_expected_races);
   FindBoolFlag("demangle", true, args, &G_flags->demangle);
-
-  FindBoolFlag("announce_threads", false, args, &G_flags->announce_threads);
+#if defined(TS_GO) && DEBUG_MODE
+  bool announce_threads_default = true;
+#else
+  bool announce_threads_default = false;
+#endif
+  FindBoolFlag("announce_threads", announce_threads_default, args, &G_flags->announce_threads);
   FindBoolFlag("full_output", false, args, &G_flags->full_output);
   FindBoolFlag("show_states", false, args, &G_flags->show_states);
   FindBoolFlag("show_proc_self_status", false, args,
