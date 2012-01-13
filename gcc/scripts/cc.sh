@@ -21,7 +21,7 @@ VER=$GCCTSAN_GCC_VER
 GCC=$GCCTSAN_GCC_DIR/bin/$1
 LIB32_PATH=$GCCTSAN_GCC_DIR/lib32
 LIB64_PATH=$GCCTSAN_GCC_DIR/lib64
-LNK=$GCCTSAN_GCC_DIR/bin/$1
+SYSGCC=/usr/bin/$1
 PLG_NAME=libtsan_$VER
 PLG=`dirname $0`/../lib/$PLG_NAME.so
 RTL32=`dirname $0`/../../tsan_rtl/lib/tsan_rtl32.a
@@ -113,26 +113,24 @@ parse_args "$@"
 printf SHARED="$SHARED" PREPROCESS="$PREPROCESS" M32="$M32" LINK="$LINK" ASM="$ASM"
 if [ "$LINK" != "" ]; then
   if [ "$SHARED" == "" ]; then
-    printf $LNK $ARGS_LD -rdynamic
-    $LNK $ARGS_LD -rdynamic
+    printf $GCC $ARGS_LD -rdynamic
+           $GCC $ARGS_LD -rdynamic
   else
-    printf $LNK "$@" -L$LIB32_PATH -L$LIB64_PATH
-    $LNK "$@" -L$LIB32_PATH -L$LIB64_PATH
+    printf $GCC "$@" -L$LIB32_PATH -L$LIB64_PATH
+           $GCC "$@" -L$LIB32_PATH -L$LIB64_PATH
   fi
 else
   if [ "$ASM" != "" ]; then
-    printf $LNK "$@"
-    $LNK "$@"
+    printf $SYSGCC "$@"
+           $SYSGCC "$@"
   else
     if [ "$PREPROCESS" != "" ]; then
-      printf $LNK "$@"
-      $LNK "$@"
+      printf $SYSGCC "$@"
+             $SYSGCC "$@"
     else
       printf $GCC -DDYNAMIC_ANNOTATIONS_WANT_ATTRIBUTE_WEAK -DDYNAMIC_ANNOTATIONS_PREFIX=LLVM -fplugin=$PLG -fplugin-arg-$PLG_NAME-ignore="$GCCTSAN_IGNORE" $GCCTSAN_ARGS "$@" -O1 -fno-builtin -fno-inline -fno-optimize-sibling-calls -fno-exceptions -g -fvisibility=default -w
              $GCC -DDYNAMIC_ANNOTATIONS_WANT_ATTRIBUTE_WEAK -DDYNAMIC_ANNOTATIONS_PREFIX=LLVM -fplugin=$PLG -fplugin-arg-$PLG_NAME-ignore="$GCCTSAN_IGNORE" $GCCTSAN_ARGS "$@" -O1 -fno-builtin -fno-inline -fno-optimize-sibling-calls -fno-exceptions -g -fvisibility=default -w
     fi
   fi
 fi
-
-
 
