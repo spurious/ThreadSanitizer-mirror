@@ -5942,10 +5942,14 @@ class ReportStorage {
       }
     }
 
+#ifdef TS_GO
+    Report("}}}\n");
+#else
     string raceInfoString = RaceInfoString(race->stack_trace->Get(0),
         concurrent_sids);
     Report("   %s", raceInfoString.c_str());
     Report("}}}\n");
+#endif
   }
 
   bool PrintReport(ThreadSanitizerReport *report) {
