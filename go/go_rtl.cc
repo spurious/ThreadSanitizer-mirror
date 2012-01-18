@@ -30,9 +30,11 @@ void SPut(EventType type, int32_t tid, uintptr_t pc,
           uintptr_t a, uintptr_t info) {
   if (type == THR_START) {
     CallStackPod *__tsan_shadow_stack = new CallStackPod;
-    __tsan_shadow_stack->end_ = __tsan_shadow_stack->pcs_ + 32;
+    __tsan_shadow_stack->end_ = __tsan_shadow_stack->pcs_ + kCallStackReserve;
+    memset(__tsan_shadow_stack->pcs_, 0, kCallStackReserve * sizeof(__tsan_shadow_stack->pcs_[0]));
     pc = (uintptr_t)__tsan_shadow_stack;
   }
+
   ++eventsCount[type];
   Event event(type, tid, pc, a, info);
   ThreadSanitizerHandleOneEvent(&event);
@@ -103,11 +105,14 @@ void finalize() {
   Printf("%d WAITs\n", eventsCount[WAIT]);
   Printf("%d RTN_CALLs\n", eventsCount[RTN_CALL]);
   Printf("%d RTN_EXITs\n", eventsCount[RTN_EXIT]);
+  Printf("%d MALLOCs\n", eventsCount[MALLOC]);
+  Printf("%d FREEs\n", eventsCount[FREE]);
   Printf("\n\n");
 
   ThreadSanitizerFini();
 
   if (GetNumberOfFoundErrors() > 0) {
-    _exit(1);
+    //    _exit(1);
+        _exit(0);
   }
 }
