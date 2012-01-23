@@ -188,6 +188,10 @@ void __real__ZdlPvRKSt9nothrow_t(void *ptr, nothrow_t &nt);
 // operator delete[](void*)
 void __real__ZdaPv(void *ptr);
 void __real__ZdaPvRKSt9nothrow_t(void *ptr, nothrow_t &nt);
+
+void *__real_mmap(void*, size_t, int, int, int, off_t);
+void *__real_mmap64(void*, size_t, int, int, int, __off64_t);
+int __real_munmap(void*, size_t);
 }
 // }}}
 
@@ -327,6 +331,10 @@ void __wrap__ZdlPvRKSt9nothrow_t(void *ptr, nothrow_t &nt);
 // operator delete[](void*)
 void __wrap__ZdaPv(void *ptr);
 void __wrap__ZdaPvRKSt9nothrow_t(void *ptr, nothrow_t &nt);
+
+void *__wrap_mmap(void*, size_t, int, int, int, off_t);
+void *__wrap_mmap64(void*, size_t, int, int, int, __off64_t);
+int __wrap_munmap(void*, size_t);
 }
 // }}}
 #endif  // LLVM_SRC_MOP_IMPL_MOP_WRAP_H_

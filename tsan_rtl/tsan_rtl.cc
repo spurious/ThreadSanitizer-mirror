@@ -1623,6 +1623,53 @@ void __wrap__ZdaPvRKSt9nothrow_t(void *ptr, nothrow_t &nt) {
   IGNORE_ALL_ACCESSES_AND_SYNC_END();
   RPut(RTN_EXIT, tid, pc, 0, 0);
 }
+
+extern "C"
+void *__wrap_mmap(void *addr, size_t length, int prot, int flags,
+                  int fd, off_t offset) {
+  if (IN_RTL) return __real_mmap(addr, length, prot, flags, fd, offset);
+  GIL scoped;
+  DECLARE_TID_AND_PC();
+  RPut(RTN_CALL, tid, pc, (uintptr_t)__real_mmap, 0);
+  IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
+  void *result = __real_mmap(addr, length, prot, flags, fd, offset);
+  IGNORE_ALL_ACCESSES_AND_SYNC_END();
+  if (result != (void*) -1)
+    SPut(MMAP, tid, pc, (uintptr_t)result, (uintptr_t)length);
+  RPut(RTN_EXIT, tid, pc, 0, 0);
+  return result;
+}
+
+extern "C"
+void *__wrap_mmap64(void *addr, size_t length, int prot, int flags,
+                    int fd, __off64_t offset) {
+  if (IN_RTL) return __real_mmap64(addr, length, prot, flags, fd, offset);
+  GIL scoped;
+  DECLARE_TID_AND_PC();
+  RPut(RTN_CALL, tid, pc, (uintptr_t)__real_mmap64, 0);
+  IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
+  void *result = __real_mmap64(addr, length, prot, flags, fd, offset);
+  IGNORE_ALL_ACCESSES_AND_SYNC_END();
+  if (result != (void*) -1)
+    SPut(MMAP, tid, pc, (uintptr_t)result, (uintptr_t)length);
+  RPut(RTN_EXIT, tid, pc, 0, 0);
+  return result;
+}
+
+extern "C"
+int __wrap_munmap(void *addr, size_t length) {
+  if (IN_RTL) return __real_munmap(addr, length);
+  GIL scoped;
+  DECLARE_TID_AND_PC();
+  RPut(RTN_CALL, tid, pc, (uintptr_t)__real_munmap, 0);
+  IGNORE_ALL_ACCESSES_AND_SYNC_BEGIN();
+  int result = __real_munmap(addr, length);
+  IGNORE_ALL_ACCESSES_AND_SYNC_END();
+  if (result == 0)
+    SPut(MUNMAP, tid, pc, (uintptr_t)addr, (uintptr_t)length);
+  RPut(RTN_EXIT, tid, pc, 0, 0);
+  return result;
+}
 // }}}
 
 // Unnamed POSIX semaphores {{{1

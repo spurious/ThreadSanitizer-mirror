@@ -269,12 +269,10 @@ void AddWrappersDbgInfo() {
   WRAPPER_DBG_INFO(__real_strchr);
   WRAPPER_DBG_INFO(__real_strrchr);
 
-#if 0
-  // TODO(glider): we can't reliably intercept mmap yet.
-  WRAPPER_DBG_INFO(real_mmap);
-  WRAPPER_DBG_INFO(real_mmap64);
-  WRAPPER_DBG_INFO(real_munmap);
-#endif
+  WRAPPER_DBG_INFO(__real_mmap);
+  WRAPPER_DBG_INFO(__real_mmap64);
+  WRAPPER_DBG_INFO(__real_munmap);
+
   WRAPPER_DBG_INFO(__real_calloc);
   WRAPPER_DBG_INFO(__real_malloc);
   WRAPPER_DBG_INFO(__real_realloc);
