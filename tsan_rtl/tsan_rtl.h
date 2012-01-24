@@ -40,6 +40,12 @@
 #include "suppressions.h"
 #include "ts_util.h"
 
+#ifdef __x86_64__
+# define TSAN_RTL_X64
+#else
+# define TSAN_RTL_X86
+#endif
+
 #ifndef DEBUG
 #define DEBUG 0
 #endif
