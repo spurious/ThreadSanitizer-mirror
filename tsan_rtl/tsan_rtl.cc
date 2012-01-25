@@ -36,6 +36,7 @@
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <elf.h>
+#include <ucontext.h>
 
 #ifdef TSAN_RTL_X64
 #include <asm/prctl.h>
@@ -147,6 +148,7 @@ static __thread siginfo_t pending_signals[NSIG];
 typedef enum { PSF_NONE = 0, PSF_SIGNAL, PSF_SIGACTION } pending_signal_flag_t;
 static __thread pending_signal_flag_t pending_signal_flags[NSIG];
 static __thread bool have_pending_signals;
+static void clear_pending_signals();
 
 // Stats {{{1
 #undef ENABLE_STATS
@@ -2826,9 +2828,11 @@ int __wrap_epoll_wait(int epfd, struct epoll_event *events,
  Note that clear_pending_signals() shouldn't be called under GIL, because
  the client code may call mmap() or any other function that takes GIL.
 */
-INLINE int clear_pending_signals() {
+void clear_pending_signals() {
   CHECK(!IN_RTL);  // This is implied by the fact that GIL is not taken.
   if (!have_pending_signals) return 0;
+  ucontext_t uctx;
+  getcontext(&uctx);
   int result = 0;
   for (int sig = 0; sig < NSIG; sig++) {
     if (pending_signal_flags[sig]) {
@@ -2838,7 +2842,7 @@ INLINE int clear_pending_signals() {
       pending_signal_flag_t type = pending_signal_flags[sig];
       pending_signal_flags[sig] = PSF_NONE;
       if (type == PSF_SIGACTION) {
-        signal_actions[sig].sa_sigaction(sig, &pending_signals[sig], NULL);
+        signal_actions[sig].sa_sigaction(sig, &pending_signals[sig], &uctx);
       } else {  // type == PSF_SIGNAL
         signal_actions[sig].sa_handler(sig);
       }

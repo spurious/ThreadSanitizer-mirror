@@ -89,9 +89,6 @@
 # define DEBUG_DO(code)
 #endif
 
-
-int clear_pending_signals();
-
 class GIL {
  public:
   GIL() {
