@@ -670,6 +670,7 @@ void TSLock::AssertHeld() {
 #include <linux/futex.h>
 #include <sys/time.h>
 #include <syscall.h>
+#include <errno.h>
 
 // Simple futex-based lock.
 // The idea is taken from "Futexes Are Tricky" by Ulrich Drepper
@@ -705,7 +706,9 @@ void TSLock::Lock() {
   // Block.
   int n_waits = 0;
   while (c != 0) {
+    int e = errno;
     syscall(SYS_futex, p, FUTEX_WAIT, 2, 0, 0, 0);
+    errno = e;
     n_waits++;
     c = __sync_lock_test_and_set(p, 2);
   }
@@ -720,7 +723,9 @@ void TSLock::Unlock() {
   DCHECK(c == 0 || c == 1);
   if (c == 1) {
     *p = 0;
+    int e = errno;
     syscall(SYS_futex, p, FUTEX_WAKE, 1, 0, 0, 0);
+    errno = e;
   }
 }
 void TSLock::AssertHeld() {

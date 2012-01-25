@@ -2830,10 +2830,9 @@ int __wrap_epoll_wait(int epfd, struct epoll_event *events,
 */
 void clear_pending_signals() {
   CHECK(!IN_RTL);  // This is implied by the fact that GIL is not taken.
-  if (!have_pending_signals) return 0;
+  if (!have_pending_signals) return;
   ucontext_t uctx;
   getcontext(&uctx);
-  int result = 0;
   for (int sig = 0; sig < NSIG; sig++) {
     if (pending_signal_flags[sig]) {
       DDPrintf("[T%d] Pending signal: %d\n", GetTid(), sig);
@@ -2847,11 +2846,9 @@ void clear_pending_signals() {
         signal_actions[sig].sa_handler(sig);
       }
       pthread_sigmask(SIG_SETMASK, &glob_sig_old, &glob_sig_old);
-      result++;
     }
   }
   have_pending_signals = false;
-  return result;
 }
 
 extern "C"
