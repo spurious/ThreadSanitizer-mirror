@@ -9,9 +9,14 @@ GTEST_LIB=$(GTEST_BUILD_DIR)/gtest-all.o
 
 INCLUDES=-I.. $(GTEST_INCLUDE)
 
+TEST_OBJ=tsan_test.o \
+	 tsan_test_util_linux.o
 
-tsan_test: tsan_test.cc $(LIBTSAN) $(GTEST_LIB)
-	$(CXX) $(CXXFLAGS) $(INCLUDES) $< $(LIBTSAN) $(GTEST_LIB) -o $@
+%.o: %.cc
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $<
+
+tsan_test: $(TEST_OBJ) $(LIBTSAN) $(GTEST_LIB)
+	$(CXX) $(TEST_OBJ) $(LIBTSAN) $(GTEST_LIB) -o $@ -lpthread
 
 $(GTEST_LIB):
 	mkdir -p $(GTEST_BUILD_DIR) && \
@@ -19,4 +24,4 @@ $(GTEST_LIB):
 	$(MAKE) -f ../make/Makefile
 
 clean:
-	rm -f tsan_test
+	rm -f tsan_test *.o

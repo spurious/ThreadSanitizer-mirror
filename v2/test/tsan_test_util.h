@@ -1,4 +1,4 @@
-//===-- tsan_test.cc --------------------------------------------*- C++ -*-===//
+//===-- tsan_test_util.h ----------------------------------------*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -9,19 +9,14 @@
 //
 // This file is a part of ThreadSanitizer (TSan), a race detector.
 //
+// Test utils.
 //===----------------------------------------------------------------------===//
-#include "tsan_interface.h"
-#include "tsan_test_util.h"
-#include "gtest/gtest.h"
 
-TEST(ThreadSanitizer, ThreadTest) {
-  ScopedThread t;
-}
-
-
-int main(int argc, char **argv) {
-  __tsan_init();
-  testing::InitGoogleTest(&argc, argv);
-  return RUN_ALL_TESTS();
-  return 0;
-}
+class ScopedThread {
+ public:
+  ScopedThread();
+  ~ScopedThread();
+ private:
+  struct Impl;
+  Impl *impl_;
+};
