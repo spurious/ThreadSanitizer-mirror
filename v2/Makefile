@@ -7,6 +7,8 @@ LIBTSAN_OBJ=tsan_rtl.o \
 %.o: %.cc
 	$(CXX) $(CXXFLAGS) -c $<
 
+all: libtsan.a lint
+
 libtsan.a: $(LIBTSAN_OBJ)
 	ar ru $@ $(LIBTSAN_OBJ)
 
