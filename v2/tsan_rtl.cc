@@ -23,7 +23,8 @@ static void Initialize() {
 
 ALWAYS_INLINE
 static void OnMemoryAccess(void *addr, int size, bool is_write) {
-  Printf("tsan::OnMemoryAccess: %p size=%d is_write=%d\n", addr, size, is_write);
+  Printf("tsan::OnMemoryAccess: %p size=%d is_write=%d\n", addr,
+         size, is_write);
 }
 
 ALWAYS_INLINE
@@ -38,7 +39,7 @@ static void FuncExit() {
 
 }  // namespace __tsan
 
-//===------------- Interface functions    --------------------------------{{{1
+// ----------------- Interface functions    --------------------------------{{{1
 void __tsan_init() { __tsan::Initialize(); }
 
 void __tsan_read1(void *addr) { __tsan::OnMemoryAccess(addr, 1, false); }
