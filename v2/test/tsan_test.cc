@@ -16,6 +16,8 @@
 
 TEST(ThreadSanitizer, ThreadTest) {
   ScopedThread t;
+  MemLoc l1, l2;
+  t.Read<1>(l1);
 }
 
 
