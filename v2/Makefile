@@ -2,7 +2,8 @@ CXX=g++
 CXXFLAGS=-O2 -g
 
 LIBTSAN_OBJ=tsan_rtl.o \
-	    tsan_linux.o
+	    tsan_linux.o \
+            tsan_interceptors.o 
 
 %.o: %.cc
 	$(CXX) $(CXXFLAGS) -c $<

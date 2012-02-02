@@ -23,23 +23,36 @@ class MemLoc {
 };
 
 // A thread is started in CTOR and joined in DTOR.
+// The events (like Read, Write, etc) are passed to ScopedThread via a global
+// queue, so that the order of the events observed by different threads is
+// fixed.
 class ScopedThread {
  public:
   ScopedThread();
   ~ScopedThread();
   void Access(const MemLoc &ml, bool is_write, int size, bool expect_race);
-  void Read(const MemLoc &ml, int size, bool expect_race) {
+  void Read(const MemLoc &ml, int size, bool expect_race = false) {
     Access(ml, false, size, expect_race);
   }
-  void Write(const MemLoc &ml, int size, bool expect_race) {
+  void Write(const MemLoc &ml, int size, bool expect_race = false) {
     Access(ml, true, size, expect_race);
   }
-  template <int size> void Read(const MemLoc &ml, bool expect_race = false) {
-    Read(ml, size, expect_race);
-  }
-  template <int size> void Write(const MemLoc &ml, bool expect_race = false) {
-    Write(ml, size, expect_race);
-  }
+  void Read1(const MemLoc &ml, bool expect_race = false) {
+    Read(ml, 1, expect_race); }
+  void Read2(const MemLoc &ml, bool expect_race = false) {
+    Read(ml, 2, expect_race); }
+  void Read4(const MemLoc &ml, bool expect_race = false) {
+    Read(ml, 4, expect_race); }
+  void Read8(const MemLoc &ml, bool expect_race = false) {
+    Read(ml, 8, expect_race); }
+  void Write1(const MemLoc &ml, bool expect_race = false) {
+    Write(ml, 1, expect_race); }
+  void Write2(const MemLoc &ml, bool expect_race = false) {
+    Write(ml, 2, expect_race); }
+  void Write4(const MemLoc &ml, bool expect_race = false) {
+    Write(ml, 4, expect_race); }
+  void Write8(const MemLoc &ml, bool expect_race = false) {
+    Write(ml, 8, expect_race); }
  private:
   struct Impl;
   Impl *impl_;

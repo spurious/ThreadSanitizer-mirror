@@ -31,6 +31,20 @@
 
 namespace __tsan {
 
+typedef unsigned long long u64;  // NOLINT
+
+// This struct is stored in TLS.
+struct ThreadState {
+  u64 tid              : 16;
+  u64 epoch            : 40;
+  u64 ignoring_reads   : 1;
+  u64 ignoring_writes  : 1;
+};
+
+ThreadState GetThreadState();
+void SetThreadState(ThreadState thread_state);
+
+
 void Printf(const char *format, ...);
 
 }  // namespace __tsan

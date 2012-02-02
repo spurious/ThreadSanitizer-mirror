@@ -62,3 +62,23 @@ void __tsan_write16(void *addr) {
 
 void __tsan_func_entry(void *call_pc) { __tsan::FuncEntry(call_pc); }
 void __tsan_func_exit() { __tsan::FuncExit(); }
+
+// ----------------- ifdef clatter --------------------------------{{{1
+// We tolerate a bit of ifdef/include clatter at the very bottom of this file
+// in order to have performance-critical code inlined.
+#ifdef __linux__
+namespace __tsan {
+static __thread ThreadState tls_thread_state;
+ALWAYS_INLINE
+ThreadState GetThreadState() {
+  return tls_thread_state;
+}
+ALWAYS_INLINE
+void SetThreadState(ThreadState thread_state) {
+  tls_thread_state = thread_state;
+}
+}  // namespace __tsan
+#else
+# error "This platform is unsupported yet"
+#endif
+
