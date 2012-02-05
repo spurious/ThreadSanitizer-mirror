@@ -32,6 +32,16 @@
 namespace __tsan {
 
 typedef unsigned long long u64;  // NOLINT
+typedef unsigned long uptr;  // NOLINT
+
+const uptr kPageSize = 4096;
+
+#define CHECK(cond) \
+  do { if (!cond) CheckFailed(__FILE__, __LINE__, #cond); \
+  } while (false)
+
+void CheckFailed(const char *file, int line, const char *cond);
+
 
 // This struct is stored in TLS.
 struct ThreadState {
@@ -41,11 +51,16 @@ struct ThreadState {
   u64 ignoring_writes  : 1;
 };
 
+
+void InitializeShadowMemory();
+void Printf(const char *format, ...);
+void Report(const char *format, ...);
+void Die();
+
+// Extremely performance critical stuff. Must be inlined.
 ThreadState GetThreadState();
 void SetThreadState(ThreadState thread_state);
-
-
-void Printf(const char *format, ...);
+uptr GetShadowAddress(uptr application_address);
 
 }  // namespace __tsan
 

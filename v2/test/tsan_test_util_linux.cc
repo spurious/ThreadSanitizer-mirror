@@ -12,6 +12,7 @@
 // Test utils, linux implementation.
 //===----------------------------------------------------------------------===//
 
+#include "tsan_interface.h"
 #include "tsan_test_util.h"
 
 #include <pthread.h>
@@ -52,7 +53,8 @@ class ScopedHiddenLock {
 };
 
 MemLoc::MemLoc(int offset_from_aligned) {
-  static uintptr_t uniq = 0x20000;  // something far enough from 0 and 8-aligned
+  static uintptr_t foo;
+  static uintptr_t uniq = (uintptr_t)&foo;  // Some real address.
   loc_  = (void*)(__sync_fetch_and_add(&uniq, 8) + offset_from_aligned);
   fprintf(stderr, "MemLoc: %p\n", loc_);
 }
@@ -85,11 +87,8 @@ struct ScopedThread::Impl {
 
 void *ScopedThread::Impl::ScopedThreadCallback(void *arg) {
   Impl *impl = (Impl*)arg;
-  ScopedThread *t = impl->t;
-  fprintf(stderr, "ScopedThreadCallback: %p\n", t);
   while (true) {
     Event event;
-    bool queue_is_empty;
     {
       ScopedHiddenLock lock(&event_queue_lock);
       if (event_queue.empty()) {
@@ -100,9 +99,27 @@ void *ScopedThread::Impl::ScopedThreadCallback(void *arg) {
       if (event.t != impl->t) continue;
       event_queue.pop();
     }
-    fprintf(stderr, "T%p Event: %d %p %d %d\n", t,
-        event.type, event.ptr,
-        event.arg1, event.arg2);
+    switch (event.type) {
+    case Event::READ:
+      switch (event.arg1 /*size*/) {
+        case 1: __tsan_read1(event.ptr); break;
+        case 2: __tsan_read2(event.ptr); break;
+        case 4: __tsan_read4(event.ptr); break;
+        case 8: __tsan_read8(event.ptr); break;
+        case 16: __tsan_read16(event.ptr); break;
+      }
+      break;
+    case Event::WRITE:
+      switch (event.arg1 /*size*/) {
+        case 1: __tsan_write1(event.ptr); break;
+        case 2: __tsan_write2(event.ptr); break;
+        case 4: __tsan_write4(event.ptr); break;
+        case 8: __tsan_write8(event.ptr); break;
+        case 16: __tsan_write16(event.ptr); break;
+      }
+      break;
+    default: assert(0);
+    }
   }
   return NULL;
 }

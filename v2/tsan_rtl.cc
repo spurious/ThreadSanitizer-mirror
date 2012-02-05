@@ -13,18 +13,33 @@
 //===----------------------------------------------------------------------===//
 
 #include "tsan_interface.h"
+#include "tsan_linux.h"
 #include "tsan_rtl.h"
 
 namespace __tsan {
 
+void CheckFailed(const char *file, int line, const char *cond) {
+  Report("FATAL: ThreadSanitizer CHECK failed: %s:%d \"%s\"\n",
+      file, line, cond);
+}
+
 static void Initialize() {
   Printf("tsan::Initialize\n");
+  InitializeShadowMemory();
 }
 
 ALWAYS_INLINE
 static void OnMemoryAccess(void *addr, int size, bool is_write) {
-  Printf("tsan::OnMemoryAccess: %p size=%d is_write=%d\n", addr,
-         size, is_write);
+  uptr app_mem = (uptr)addr;
+  uptr shadow_mem = MemToShadow(app_mem);
+  Printf("tsan::OnMemoryAccess: %p size=%d is_write=%d shadow_mem=%p\n",
+      app_mem, size, is_write, shadow_mem);
+  CHECK(IsAppMem(app_mem));
+  CHECK(IsShadowMem(shadow_mem));
+//  for (uptr i = 0; i < TSAN_SHADOW_STATE_LENGTH; i++) {
+//    u64 shadow = shadow_array[i];
+//    Printf("  [%ld] %llx\n", i, shadow);
+//  }
 }
 
 ALWAYS_INLINE

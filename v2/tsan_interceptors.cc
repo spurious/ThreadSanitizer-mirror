@@ -16,8 +16,17 @@
 #include "tsan_interceptors.h"
 #include "tsan_rtl.h"
 
-// extern "C"
-// void WRAP(pthread_create)(void *t, void *attr, void *callback, void *param) {
-//  __tsan::Printf("pthread_create %p\n", t);
-//  ORIG(pthread_create)(t, attr, callback, param);
-// }
+// FIXME: This is temporary. We need to factor out the interception machinery
+// from AddressSanitizer.
+#include <dlfcn.h>
+
+extern "C"
+int WRAP(pthread_create)(void *t, void *attr, void *callback, void *param) {
+  // __tsan::Printf("pthread_create %p\n", t);
+  typedef int (*pthread_create_f)(void*, void*, void*, void*);
+  pthread_create_f orig_pthread_create =
+    (pthread_create_f) dlsym(RTLD_NEXT, "pthread_create");
+
+  int res = ORIG(pthread_create)(t, attr, callback, param);
+  return res;
+}

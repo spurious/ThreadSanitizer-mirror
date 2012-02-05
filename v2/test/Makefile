@@ -1,5 +1,6 @@
 CXX=g++
-CXXFLAGS=-g -O2
+CXXFLAGS=-g -O2 -fPIE -Wall -Werror
+LINKFLAGS=-ldl -lpthread -pie
 
 LIBTSAN=../libtsan.a
 GTEST_ROOT=../third_party/googletest
@@ -16,12 +17,12 @@ TEST_OBJ=tsan_test.o \
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $<
 
 tsan_test: $(TEST_OBJ) $(LIBTSAN) $(GTEST_LIB)
-	$(CXX) $(TEST_OBJ) $(LIBTSAN) $(GTEST_LIB) -o $@ -lpthread
+	$(CXX) $(TEST_OBJ) $(LIBTSAN) $(GTEST_LIB) -o $@ $(LINKFLAGS)
 
 $(GTEST_LIB):
 	mkdir -p $(GTEST_BUILD_DIR) && \
 	cd $(GTEST_BUILD_DIR) && \
-	$(MAKE) -f ../make/Makefile
+	$(MAKE) -f ../make/Makefile CXXFLAGS="$(CXXFLAGS)"
 
 clean:
 	rm -f tsan_test *.o

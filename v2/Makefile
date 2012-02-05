@@ -1,11 +1,17 @@
 CXX=g++
-CXXFLAGS=-O2 -g
+CXXFLAGS=-O2 -g -Wall -Werror -fPIE
+
+LIBTSAN_HEADERS=tsan_interceptors.h \
+                tsan_interface.h \
+                tsan_linux.h \
+                tsan_rtl.h
+
 
 LIBTSAN_OBJ=tsan_rtl.o \
 	    tsan_linux.o \
             tsan_interceptors.o 
 
-%.o: %.cc
+%.o: %.cc Makefile $(LIBTSAN_HEADERS)
 	$(CXX) $(CXXFLAGS) -c $<
 
 all: libtsan.a lint
