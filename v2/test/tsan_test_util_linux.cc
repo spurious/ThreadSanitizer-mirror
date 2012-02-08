@@ -67,9 +67,10 @@ class ScopedHiddenLock {
 };
 
 MemLoc::MemLoc(int offset_from_aligned) {
+  assert(offset_from_aligned >= 0 && offset_from_aligned < 16);
   static uintptr_t foo;
   static atomic_uintptr_t uniq = {(uintptr_t)&foo};  // Some real address.
-  loc_  = (void*)(atomic_fetch_add(&uniq, 8, memory_order_relaxed)
+  loc_  = (void*)(atomic_fetch_add(&uniq, 32, memory_order_relaxed)
       + offset_from_aligned);
   fprintf(stderr, "MemLoc: %p\n", loc_);
 }
