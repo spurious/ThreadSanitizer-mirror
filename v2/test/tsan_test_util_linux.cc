@@ -14,6 +14,7 @@
 
 #include "tsan_interface.h"
 #include "tsan_test_util.h"
+#include "tsan_atomic.h"
 
 #include <pthread.h>
 #include <stdio.h>
@@ -55,8 +56,8 @@ class ScopedHiddenLock {
 
 MemLoc::MemLoc(int offset_from_aligned) {
   static uintptr_t foo;
-  static uintptr_t uniq = (uintptr_t)&foo;  // Some real address.
-  loc_  = (void*)(__sync_fetch_and_add(&uniq, 8) + offset_from_aligned);
+  static atomic_uintptr_t uniq = {(uintptr_t)&foo};  // Some real address.
+  loc_  = (void*)(__tsan::atomic_fetch_add(&uniq, 8) + offset_from_aligned);
   fprintf(stderr, "MemLoc: %p\n", loc_);
 }
 
