@@ -36,16 +36,16 @@ void Report(const char *format, ...) {
   va_end(args);
 }
 
-void Die() {
+void __attribute__((noreturn)) Die() {
   _exit(1);
 }
 
 static void *my_mmap(void *addr, size_t length, int prot, int flags,
                     int fd, u64 offset) {
 # if __WORDSIZE == 64
-    return (void *)syscall(__NR_mmap, addr, length, prot, flags, fd, offset);
+  return (void *)syscall(__NR_mmap, addr, length, prot, flags, fd, offset);
 # else
-    return (void *)syscall(__NR_mmap2, addr, length, prot, flags, fd, offset);
+  return (void *)syscall(__NR_mmap2, addr, length, prot, flags, fd, offset);
 # endif
 }
 

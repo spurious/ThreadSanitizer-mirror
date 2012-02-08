@@ -21,7 +21,6 @@ TEST(ThreadSanitizer, SimpleWriteWriteRace) {
   t2.Write1(l2);
 }
 
-
 int main(int argc, char **argv) {
   __tsan_init();
   testing::InitGoogleTest(&argc, argv);

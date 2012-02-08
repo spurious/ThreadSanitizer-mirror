@@ -54,6 +54,7 @@ class ScopedThread {
   void Write8(const MemLoc &ml, bool expect_race = false) {
     Write(ml, 8, expect_race); }
  private:
-  struct Impl;
-  Impl *impl_;
+  struct Impl *impl_;
+  ScopedThread(const ScopedThread&);  // Not implemented.
+  void operator = (const ScopedThread&);  // Not implemented.
 };

@@ -23,7 +23,7 @@ LIBTSAN_OBJ=tsan_rtl.o \
 %.o: llvm/%.cc Makefile $(LIBTSAN_HEADERS)
 	$(CXX) $(CXXFLAGS) -c $<
 
-all: libtsan.a lint
+all: libtsan.a lint test
 
 libtsan.a: $(LIBTSAN_OBJ)
 	ar ru $@ $(LIBTSAN_OBJ)
@@ -45,7 +45,6 @@ get_third_party:
 
 test: libtsan.a
 	$(MAKE) -C test
-	test/tsan_test
 
 clean:
 	rm -f *.o *.a
