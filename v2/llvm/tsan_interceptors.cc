@@ -14,7 +14,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "tsan_interceptors.h"
-#include "tsan_rtl.h"
 
 // FIXME: This is temporary. We need to factor out the interception machinery
 // from AddressSanitizer.

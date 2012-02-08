@@ -8,7 +8,7 @@ GTEST_INCLUDE=-I$(GTEST_ROOT)/include
 GTEST_BUILD_DIR=$(GTEST_ROOT)/build
 GTEST_LIB=$(GTEST_BUILD_DIR)/gtest-all.o
 
-INCLUDES=-I.. $(GTEST_INCLUDE)
+INCLUDES=-I../llvm $(GTEST_INCLUDE)
 
 TEST_OBJ=tsan_test.o \
 	 tsan_test_util_linux.o

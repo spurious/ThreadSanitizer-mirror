@@ -37,6 +37,7 @@ class HiddenLock {
     assert(lock_ == 1);
     int res =__sync_val_compare_and_swap(&lock_, 1, 0);
     assert(res == 1);
+    (void)res;
   }
  private:
   int lock_;

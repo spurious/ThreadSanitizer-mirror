@@ -12,9 +12,9 @@
 // Main file (entry points) for the TSan run-time.
 //===----------------------------------------------------------------------===//
 
-#include "tsan_interface.h"
 #include "tsan_linux.h"
 #include "tsan_rtl.h"
+#include "../llvm/tsan_interface.h"
 
 namespace __tsan {
 

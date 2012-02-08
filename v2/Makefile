@@ -1,17 +1,20 @@
 CXX=g++
 CXXFLAGS=-O2 -g -Wall -Werror -fPIE
 
-LIBTSAN_HEADERS=tsan_interceptors.h \
-                tsan_interface.h \
-                tsan_linux.h \
-                tsan_rtl.h
+LIBTSAN_HEADERS=llvm/tsan_interceptors.h \
+                llvm/tsan_interface.h \
+                tsan/tsan_linux.h \
+                tsan/tsan_rtl.h
 
 
 LIBTSAN_OBJ=tsan_rtl.o \
 	    tsan_linux.o \
             tsan_interceptors.o 
 
-%.o: %.cc Makefile $(LIBTSAN_HEADERS)
+%.o: tsan/%.cc Makefile $(LIBTSAN_HEADERS)
+	$(CXX) $(CXXFLAGS) -c $<
+
+%.o: llvm/%.cc Makefile $(LIBTSAN_HEADERS)
 	$(CXX) $(CXXFLAGS) -c $<
 
 all: libtsan.a lint
@@ -24,7 +27,7 @@ RTL_LINT_FITLER=-legal/copyright,-build/include,-readability/casting,-build/head
 lint:
 	third_party/cpplint/cpplint.py \
 		--filter=$(RTL_LINT_FITLER) \
-		*.cc *.h test/*.cc test/*.h
+		tsan/*.cc tsan/*.h llvm/*.cc llvm/*.h test/*.cc test/*.h
 
 get_third_party:
 	rm -rf third_party
@@ -33,6 +36,10 @@ get_third_party:
 	svn co -r375        http://googletest.googlecode.com/svn/trunk googletest && \
 	svn co -r69 http://google-styleguide.googlecode.com/svn/trunk/cpplint cpplint \
         )
+
+test: libtsan.a
+	$(MAKE) -C test
+	test/tsan_test
 
 clean:
 	rm -f *.o *.a
