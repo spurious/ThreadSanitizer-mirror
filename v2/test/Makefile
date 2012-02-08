@@ -1,6 +1,12 @@
 CXX=g++
-CXXFLAGS=-g -O2 -fPIE -Wall -Werror
+CXXFLAGS=-fPIE -Wall -Werror
 LINKFLAGS=-ldl -lpthread -pie
+
+ifeq ($(DEBUG), )
+	CXXFLAGS+=-O2 -DNDEBUG
+else
+	CXXFLAGS+=-g -D_DEBUG
+endif
 
 LIBTSAN=../libtsan.a
 GTEST_ROOT=../third_party/googletest

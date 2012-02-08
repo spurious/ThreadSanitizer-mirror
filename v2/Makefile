@@ -1,5 +1,11 @@
 CXX=g++
-CXXFLAGS=-O2 -g -Wall -Werror -fPIE
+CXXFLAGS=-Wall -Werror -fPIE
+
+ifeq ($(DEBUG), )
+	CXXFLAGS+=-O2 -DNDEBUG
+else
+	CXXFLAGS+=-g -D_DEBUG
+endif
 
 LIBTSAN_HEADERS=llvm/tsan_interceptors.h \
                 llvm/tsan_interface.h \
