@@ -19,7 +19,10 @@
 // This header should NOT include any other headers.
 // All functions in this header are extern "C" and start with __tsan_.
 
+#ifdef __cplusplus
 extern "C" {
+#endif
+
   // This function should be called at the very beginning of the process,
   // before any instrumented code is executed and before any call to malloc.
   void __tsan_init();
@@ -38,6 +41,9 @@ extern "C" {
 
   void __tsan_func_entry(void *call_pc);
   void __tsan_func_exit();
+
+#ifdef __cplusplus
 }  // extern "C"
+#endif
 
 #endif  // TSAN_INTERFACE_H
