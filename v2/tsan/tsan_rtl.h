@@ -26,8 +26,7 @@
 #ifndef TSAN_RTL_H
 #define TSAN_RTL_H
 
-#define ALWAYS_INLINE  inline __attribute__ ((always_inline))
-#define NOINLINE __attribute__ ((noinline))
+#include "tsan_compiler.h"
 
 namespace __tsan {
 

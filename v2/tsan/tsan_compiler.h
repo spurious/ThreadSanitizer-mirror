@@ -1,0 +1,26 @@
+//===-- tsan_rtl.h ----------------------------------------------*- C++ -*-===//
+//
+//                     The LLVM Compiler Infrastructure
+//
+// This file is distributed under the University of Illinois Open Source
+// License. See LICENSE.TXT for details.
+//
+//===----------------------------------------------------------------------===//
+//
+// This file is a part of ThreadSanitizer (TSan), a race detector.
+//
+// Compiler-specific definitions.
+//===----------------------------------------------------------------------===//
+
+#ifndef TSAN_COMPILER_H
+#define TSAN_COMPILER_H
+
+#define INLINE        static inline
+#define NOINLINE      __attribute__((noinline))
+#define ALWAYS_INLINE __attribute__((always_inline))
+#define FLATTEN       __attribute__((flatten))
+#define LIKELY(x)     __builtin_expect(!!(x), 1)
+#define UNLIKELY(x)   __builtin_expect(!!(x), 0)
+#define THREADLOCAL   __thread
+
+#endif  // TSAN_COMPILER_H
