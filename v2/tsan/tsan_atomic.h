@@ -16,6 +16,7 @@
 #define TSAN_ATOMIC_H
 
 #include "tsan_rtl.h"
+#include <assert.h>
 
 namespace __tsan {
 
@@ -49,9 +50,9 @@ INLINE u64 atomic_load(const volatile atomic_uint64_t *a, memory_order mo) {
   assert(mo & (memory_order_relaxed | memory_order_consume
       | memory_order_acquire | memory_order_seq_cst));
   assert(((uptr)a % sizeof(*a)) == 0);
-  atomic_signal_fence();
-  uint64_t v = a->val_dont_use;
-  atomic_signal_fence();
+  atomic_signal_fence(memory_order_seq_cst);
+  u64 v = a->val_dont_use;
+  atomic_signal_fence(memory_order_seq_cst);
   return v;
 }
 
@@ -60,9 +61,9 @@ INLINE uptr atomic_load(const volatile atomic_uintptr_t *a, memory_order mo) {
   assert(mo & (memory_order_relaxed | memory_order_consume
       | memory_order_acquire | memory_order_seq_cst));
   assert(((uptr)a % sizeof(*a)) == 0);
-  atomic_signal_fence();
+  atomic_signal_fence(memory_order_seq_cst);
   uptr v = a->val_dont_use;
-  atomic_signal_fence();
+  atomic_signal_fence(memory_order_seq_cst);
   return v;
 }
 
@@ -71,9 +72,9 @@ INLINE void atomic_store(volatile atomic_uint64_t *a, u64 v, memory_order mo) {
   assert(mo & (memory_order_relaxed | memory_order_release
       | memory_order_seq_cst));
   assert(((uptr)a % sizeof(*a)) == 0);
-  atomic_signal_fence();
+  atomic_signal_fence(memory_order_seq_cst);
   a->val_dont_use = v;
-  atomic_signal_fence();
+  atomic_signal_fence(memory_order_seq_cst);
   if (mo == memory_order_seq_cst)
     atomic_thread_fence(memory_order_seq_cst);
 }
@@ -84,9 +85,9 @@ INLINE void atomic_store(volatile atomic_uintptr_t *a, uptr v,
   assert(mo & (memory_order_relaxed | memory_order_release
       | memory_order_seq_cst));
   assert(((uptr)a % sizeof(*a)) == 0);
-  atomic_signal_fence();
+  atomic_signal_fence(memory_order_seq_cst);
   a->val_dont_use = v;
-  atomic_signal_fence();
+  atomic_signal_fence(memory_order_seq_cst);
   if (mo == memory_order_seq_cst)
     atomic_thread_fence(memory_order_seq_cst);
 }

@@ -9,9 +9,10 @@ endif
 
 LIBTSAN_HEADERS=llvm/tsan_interceptors.h \
                 llvm/tsan_interface.h \
+                tsan/tsan_atomic.h \
+                tsan/tsan_compiler.h \
                 tsan/tsan_linux.h \
                 tsan/tsan_rtl.h
-
 
 LIBTSAN_OBJ=tsan_rtl.o \
 	    tsan_linux.o \

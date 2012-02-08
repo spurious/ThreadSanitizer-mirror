@@ -14,12 +14,16 @@ GTEST_INCLUDE=-I$(GTEST_ROOT)/include
 GTEST_BUILD_DIR=$(GTEST_ROOT)/build
 GTEST_LIB=$(GTEST_BUILD_DIR)/gtest-all.o
 
-INCLUDES=-I../llvm $(GTEST_INCLUDE)
+INCLUDES=-I../llvm -I../tsan $(GTEST_INCLUDE)
+
+LIBTSAN_HEADERS=tsan_test_util.h \
+                ../tsan/tsan_atomic.h \
+                ../tsan/tsan_compiler.h
 
 TEST_OBJ=tsan_test.o \
 	 tsan_test_util_linux.o
 
-%.o: %.cc
+%.o: %.cc $(LIBTSAN_HEADERS)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $<
 
 tsan_test: $(TEST_OBJ) $(LIBTSAN) $(GTEST_LIB)
