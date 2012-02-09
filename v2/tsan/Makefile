@@ -1,6 +1,8 @@
 include ../Makefile.inc
 
 INCLUDES= -I../
+EXTRA_CXXFLAGS=-fno-exceptions
+CXXFLAGS+=$(EXTRA_CXXFLAGS)
 
 all: libtsan.a
 
