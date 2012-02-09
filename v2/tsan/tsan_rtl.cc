@@ -19,7 +19,6 @@
 #include "tsan_suppressions.h"
 #include "tsan_sync.h"
 #include "tsan_report.h"
-#include <string.h>  // FIXME: remove me (for memcpy, memset)
 
 namespace __tsan {
 
@@ -69,13 +68,13 @@ int ThreadCreate(ThreadState *thr) {
 }
 
 void ThreadStart(ThreadState *thr, int tid) {
-  memset(thr, 0, sizeof(*thr));
+  internal_memset(thr, 0, sizeof(*thr));
   thr->id = tid;
   thr->clockslab = new SlabCache(ctx.clockslab);
   thr->clock.tick(tid);
   thr->epoch = 1;
   thr->trace = new TraceSet;
-  memset(thr->trace, 0, sizeof(*thr->trace));
+  internal_memset(thr->trace, 0, sizeof(*thr->trace));
 }
 
 void MutexCreate(ThreadState *thr, uptr addr, bool is_rw) {
@@ -163,7 +162,7 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
   // descriptor of the memory access
   Shadow s0 = {thr->id, thr->epoch, addr&7, min((addr&7)+size-1, 7), is_write};
   u64 s0v;
-  memcpy(&s0v, &s0, sizeof(s0v));
+  internal_memcpy(&s0v, &s0, sizeof(s0v));
   // is the descriptor already stored somewhere?
   bool replaced = false;
   // racy memory accesses
@@ -189,7 +188,7 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
       continue;
     }
     Shadow s;
-    memcpy(&s, &sv, sizeof(s));
+    internal_memcpy(&s, &sv, sizeof(s));
     // is the memory access equal to the previous?
     if (s0.addr0 == s.addr0 && s0.addr1 == s.addr1) {
       // same thread?
@@ -267,4 +266,3 @@ void FuncExit(ThreadState *thr) {
 }
 
 }  // namespace __tsan
-

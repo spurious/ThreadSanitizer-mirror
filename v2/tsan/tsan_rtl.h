@@ -66,6 +66,7 @@ void FuncEntry(ThreadState *thr, uptr pc);
 void FuncExit(ThreadState *thr);
 
 void internal_memset(void *ptr, int c, uptr size);
+void internal_memcpy(void *dst, const void *src, uptr size);
 
 }  // namespace __tsan
 
