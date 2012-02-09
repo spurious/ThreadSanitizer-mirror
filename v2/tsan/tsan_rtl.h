@@ -44,7 +44,7 @@ void CheckFailed(const char *file, int line, const char *cond);
 
 // This struct is stored in TLS.
 struct ThreadState {
-  u64 tid              : 16;
+  u64 id               : 16;
   u64 epoch            : 40;
   u64 ignoring_reads   : 1;
   u64 ignoring_writes  : 1;
@@ -61,6 +61,13 @@ void Die();
 ThreadState GetThreadState();
 void SetThreadState(ThreadState thread_state);
 uptr GetShadowAddress(uptr application_address);
+
+void Initialize();
+// FIXME: Should be inlinable later (when things are settled down).
+void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
+                  int size, bool is_write);
+void FuncEntry(ThreadState *thr, uptr pc);
+void FuncExit(ThreadState *thr);
 
 }  // namespace __tsan
 

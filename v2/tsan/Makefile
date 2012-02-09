@@ -15,14 +15,15 @@ LIBTSAN_HEADERS=tsan_interface.h \
 LIBTSAN_OBJ=tsan_rtl.o \
             tsan_linux.o \
             tsan_interceptors.o \
+            tsan_interface.o \
             tsan_thread.o \
-            interception_linux.o
+#            interception_linux.o
 
 %.o: %.cc Makefile $(LIBTSAN_HEADERS)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $<
 
-interception_linux.o: ../interception/interception_linux.cc
-	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
+#interception_linux.o: ../interception/interception_linux.cc
+#	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
 
 libtsan.a: $(LIBTSAN_OBJ)
 	ar ru $@ $(LIBTSAN_OBJ)

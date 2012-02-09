@@ -4,7 +4,7 @@ all: lint lib test
 lib:
 	$(MAKE) -C tsan
 
-test:
+test: lib
 	$(MAKE) -C tests
 
 run: all
