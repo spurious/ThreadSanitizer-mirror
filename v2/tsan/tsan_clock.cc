@@ -11,7 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 #include "tsan_clock.h"
-#include <string.h>  // memset
+#include "tsan_rtl.h"
 
 namespace __tsan {
 
@@ -56,10 +56,10 @@ void VectorClock::release(ChunkedClock *dst, SlabCache *slab) const {
   ChunkedClock::Chunk** cp = &dst->chunk_;
   ChunkedClock::Chunk* c = *cp;
   for (int si = 0; si < this->nclk_;) {
-    if (c == NULL) {
+    if (!c) {
       c = (ChunkedClock::Chunk*)slab->alloc();
-      c->next_ = NULL;
-      memset(c->clk_, 0, sizeof(c->clk_));
+      c->next_ = 0;
+      internal_memset(c->clk_, 0, sizeof(c->clk_));
       *cp = c;
     }
     for (int di = 0; di < ChunkedClock::kChunkSize && si < this->nclk_;

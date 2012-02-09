@@ -15,6 +15,7 @@
 #include "tsan_linux.h"
 
 #include <stdio.h>
+#include <string.h>
 #include <stdarg.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>
@@ -34,6 +35,10 @@ void Report(const char *format, ...) {
   va_start(args, format);
   vfprintf(stderr, format, args);
   va_end(args);
+}
+
+void internal_memset(void *ptr, int c, uptr size) {
+  memset(ptr, c, size);  // FIXME: use REAL(memset) or a custom implementation.
 }
 
 void Die() {
@@ -91,4 +96,3 @@ void InitializeShadowMemory() {
 }
 
 }  // namespace __tsan
-

@@ -65,6 +65,8 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
 void FuncEntry(ThreadState *thr, uptr pc);
 void FuncExit(ThreadState *thr);
 
+void internal_memset(void *ptr, int c, uptr size);
+
 }  // namespace __tsan
 
 #endif  // TSAN_RTL_H
