@@ -91,6 +91,7 @@ struct Event {
 struct ScopedThread::Impl {
   pthread_t thread;
   atomic_uintptr_t event;  // Event*
+  int tid;
 
   static void *ScopedThreadCallback(void *arg);
   void send(Event *ev);
@@ -98,6 +99,7 @@ struct ScopedThread::Impl {
 
 void *ScopedThread::Impl::ScopedThreadCallback(void *arg) {
   Impl *impl = (Impl*)arg;
+  __tsan_thread_start(impl->tid);
   for (;;) {
     Event* ev = (Event*)atomic_load(&impl->event, memory_order_acquire);
     if (ev == NULL) {
@@ -143,6 +145,7 @@ void ScopedThread::Impl::send(Event *e) {
 
 ScopedThread::ScopedThread() {
   impl_ = new Impl;
+  impl_->tid = __tsan_thread_create();
   atomic_store(&impl_->event, 0, memory_order_relaxed);
   pthread_create(&impl_->thread, NULL,
       ScopedThread::Impl::ScopedThreadCallback, impl_);

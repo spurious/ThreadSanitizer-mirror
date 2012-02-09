@@ -15,20 +15,26 @@
 #include "tsan_linux.h"
 #include "tsan_rtl.h"
 #include "tsan_interface.h"
+#include "tsan_atomic.h"
 #include <string.h>  // FIXME: remove me (for memcpy)
 
-int const TID_BITS = 16;
-const int CLK_BITS = 40;
+const int kTidBits = 16;
+const int kMaxTid = 1 << kTidBits;
+const int kClkBits = 40;
 
 namespace __tsan {
 
 struct Shadow {
-  u64 tid   : TID_BITS;
-  u64 epoch : CLK_BITS;
+  u64 tid   : kTidBits;
+  u64 epoch : kClkBits;
   u64 addr0 : 3;
   u64 addr1 : 3;
   u64 write : 1;
 };
+
+static struct {
+  int thread_seq;
+} ctx;
 
 u64 min(u64 a, u64 b) {
   return a < b ? a : b;
@@ -44,13 +50,30 @@ static unsigned fastrand(ThreadState *thr) {
 
 void CheckFailed(const char *file, int line, const char *cond) {
   Report("FATAL: ThreadSanitizer CHECK failed: %s:%d \"%s\"\n",
-      file, line, cond);
+         file, line, cond);
 }
 
 void Initialize() {
   Printf("tsan::Initialize\n");
   InitializeShadowMemory();
   // InitializeInterceptors();
+}
+
+int ThreadCreate(ThreadState *thr) {
+  return ++ctx.thread_seq;
+}
+
+void ThreadStart(ThreadState *thr, int tid) {
+  thr->id = tid;
+  thr->epoch = 1;
+}
+
+static void ReportRace(ThreadState *thr, uptr addr,
+                       Shadow s0, Shadow *s, int nrace) {
+  (void)s0;
+  (void)s;
+  (void)nrace;
+  Printf("#%d: RACE %p\n", thr->id, addr);
 }
 
 void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
@@ -147,8 +170,8 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
   }
 
   // find some races?
-  // if (nrace != 0)
-  //  report_race(sp, s0, races, nrace);
+  if (nrace != 0)
+    ReportRace(thr, addr, s0, races, nrace);
   // we did not find any races and had already stored
   // the current access info, so we are done
   if (replaced)

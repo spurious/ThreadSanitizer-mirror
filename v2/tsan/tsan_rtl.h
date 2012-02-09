@@ -59,12 +59,10 @@ void Printf(const char *format, ...);
 void Report(const char *format, ...);
 void Die();
 
-// Extremely performance critical stuff. Must be inlined.
-ThreadState GetThreadState();
-void SetThreadState(ThreadState thread_state);
-uptr GetShadowAddress(uptr application_address);
-
 void Initialize();
+int ThreadCreate(ThreadState *thr);
+void ThreadStart(ThreadState *thr, int tid);
+
 // FIXME: Should be inlinable later (when things are settled down).
 void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
                   int size, bool is_write);

@@ -71,3 +71,11 @@ void __tsan_func_entry(void *pc) {
 void __tsan_func_exit() {
   __tsan::FuncExit(&thr);
 }
+
+int  __tsan_thread_create() {
+  return __tsan::ThreadCreate(&thr);
+}
+
+void __tsan_thread_start(int tid) {
+  __tsan::ThreadStart(&thr, tid);
+}
