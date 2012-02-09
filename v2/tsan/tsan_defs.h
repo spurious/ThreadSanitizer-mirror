@@ -28,6 +28,12 @@ const int kTidBits = 8;
 const int kMaxTid = 1 << kTidBits;
 const int kClkBits = 40;
 
+#ifdef TSAN_SHADOW_STATE_LENGTH
+const int kShadowCnt = TSAN_SHADOW_STATE_LENGTH;
+#else
+const int kShadowCnt = 8;
+#endif
+
 #define CHECK(cond) \
   do { if (!(cond)) ::__tsan::CheckFailed(__FILE__, __LINE__, #cond); \
   } while (false)

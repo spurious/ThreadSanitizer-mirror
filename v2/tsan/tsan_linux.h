@@ -27,12 +27,6 @@ static inline bool IsAppMem(uptr mem) {
   return mem >= kLinuxAppMemBeg && mem <= kLinuxAppMemEnd;
 }
 
-#ifdef TSAN_SHADOW_STATE_LENGTH
-const int kShadowCnt = TSAN_SHADOW_STATE_LENGTH;
-#else
-const int kShadowCnt = 8;
-#endif
-
 INLINE uptr MemToShadow(uptr addr) {
   return ((addr) & (~0x7c0000000003ULL)) * kShadowCnt;
 }

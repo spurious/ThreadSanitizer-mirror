@@ -16,7 +16,9 @@
 #include "tsan_rtl.h"
 #include "tsan_interface.h"
 #include "tsan_atomic.h"
+#include "tsan_suppressions.h"
 #include "tsan_sync.h"
+#include "tsan_report.h"
 #include <string.h>  // FIXME: remove me (for memcpy, memset)
 
 namespace __tsan {
@@ -59,6 +61,7 @@ void Initialize() {
   ctx.clockslab = new SlabAlloc(ChunkedClock::kChunkSize);
   ctx.synctab = new SyncTab;
   InitializeInterceptors();
+  InitializeSuppressions();
 }
 
 int ThreadCreate(ThreadState *thr) {
@@ -109,12 +112,41 @@ void MutexUnlock(ThreadState *thr, uptr addr) {
   m->mtx.Unlock();
 }
 
-static void ReportRace(ThreadState *thr, uptr addr,
-                       Shadow s0, Shadow *s, int nrace) {
+template<typename T>
+static T* alloc(ReportDesc *rep, int n, int *pos) {
+  T* p = (T*)(rep->alloc + *pos);
+  *pos += n * sizeof(T);
+  CHECK(*pos <= (int)sizeof(rep->alloc));
+  return p;
+}
+
+static void NOINLINE ReportRace(ThreadState *thr, uptr addr,
+                                Shadow s0, Shadow *s, int nrace) {
   (void)s0;
   (void)s;
   (void)nrace;
   Printf("#%d: RACE %p\n", thr->id, addr);
+
+  int alloc_pos = 0;
+  ReportDesc rep;
+  rep.typ = ReportTypeRace;
+  rep.nmop = nrace + 1;
+  rep.mop = alloc<ReportMop>(&rep, rep.nmop, &alloc_pos);
+  for (int i = 0; i < rep.nmop; i++) {
+    ReportMop *mop = &rep.mop[i];
+    Shadow *s1 = (i ? &s[i - 1] : &s0);
+    mop->tid = s1->tid;
+    mop->addr = addr + s1->addr0;
+    mop->size = s1->addr1 - s1->addr0 + 1;
+    mop->write = s1->write;
+    mop->nmutex = 0;
+    mop->stack.cnt = 0;
+  }
+  rep.nthread = 0;
+  rep.nmutex = 0;
+  if (IsSuppressed(ReportTypeRace, &rep.mop[0].stack))
+    return;
+  PrintReport(&rep);
 }
 
 void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
