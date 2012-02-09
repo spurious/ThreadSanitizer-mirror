@@ -15,6 +15,7 @@
 #include "tsan_linux.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
 #include <sys/mman.h>
@@ -43,6 +44,15 @@ void internal_memset(void *ptr, int c, uptr size) {
 
 void internal_memcpy(void *dst, const void *src, uptr size) {
   memcpy(dst, src, size);  // FIXME: use REAL(memcpy) or a custom one.
+}
+
+// FIXME: should not use libc.
+void *LowLevelAllocator::Allocate(uptr size) {
+  return malloc(size);
+}
+
+void LowLevelAllocator::Deallocate(void *ptr, uptr size) {
+  free(ptr);
 }
 
 

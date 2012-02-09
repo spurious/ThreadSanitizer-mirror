@@ -68,6 +68,14 @@ void FuncExit(ThreadState *thr);
 void internal_memset(void *ptr, int c, uptr size);
 void internal_memcpy(void *dst, const void *src, uptr size);
 
+class LowLevelAllocator {
+ public:
+  void *Allocate(uptr size);
+  void Deallocate(void *ptr, uptr size);
+ private:
+  // FIXME: should not use libc or static construction.
+};
+
 }  // namespace __tsan
 
 #endif  // TSAN_RTL_H

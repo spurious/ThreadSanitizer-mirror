@@ -10,21 +10,24 @@
 // This file is a part of ThreadSanitizer (TSan), a race detector.
 //
 //===----------------------------------------------------------------------===//
+#include "tsan_rtl.h"
 #include "tsan_slab.h"
-#include <stdlib.h>  // malloc
 
 namespace __tsan {
+
+static LowLevelAllocator allocator;
 
 SlabAlloc::SlabAlloc(size_t size)
   : size_(size) {
 }
 
 void* SlabAlloc::alloc() {
-  return malloc(size_);
+  return allocator.Allocate(size_);
 }
 
 void SlabAlloc::free(void* p) {
-  free(p);
+  CHECK(0);
+  // FIXME: use LowLevelAllocator
 }
 
 size_t SlabAlloc::size() const {
