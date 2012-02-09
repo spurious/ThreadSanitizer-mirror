@@ -17,17 +17,17 @@
 #include "tsan_rtl.h"
 #include "tsan_thread.h"
 
-using __tsan::TsanThread;
+using __tsan::Thread;
 
 static void *tsan_thread_start(void *arg) {
-  TsanThread *t = (TsanThread*)arg;
+  Thread *t = (Thread*)arg;
   return t->ThreadStart();
 }
 
 INTERCEPTOR(int, pthread_create,
     void *th, void *attr, void *callback, void *param) {
   // __tsan::Printf("pthread_create %p\n", t);
-  TsanThread *t = TsanThread::Create(callback, param);
+  Thread *t = Thread::Create(callback, param);
   int res = REAL(pthread_create)(th, attr, (void*)tsan_thread_start, t);
   return res;
 }

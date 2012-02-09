@@ -9,7 +9,7 @@
 //
 // This file is a part of ThreadSanitizer (TSan), a race detector.
 //
-// TsanThread.
+// Thread.
 //===----------------------------------------------------------------------===//
 
 #ifndef TSAN_THREAD_H
@@ -19,12 +19,12 @@
 
 namespace __tsan {
 
-class TsanThread {
+class Thread {
  public:
-  static TsanThread *Create(void *callback, void *param);
+  static Thread *Create(void *callback, void *param);
   void *ThreadStart();
  private:
-  TsanThread() { }
+  Thread() { }
   void *callback_;
   void *param_;
 };

@@ -9,7 +9,7 @@
 //
 // This file is a part of ThreadSanitizer (TSan), a race detector.
 //
-// TsanThread.
+// Thread.
 //===----------------------------------------------------------------------===//
 
 #include "tsan_thread.h"
@@ -18,14 +18,14 @@
 
 namespace __tsan {
 
-TsanThread *TsanThread::Create(void *callback, void *param) {
-  TsanThread *t = new TsanThread;  // FIXME: we probably don't want 'new'.
+Thread *Thread::Create(void *callback, void *param) {
+  Thread *t = new Thread;  // FIXME: we probably don't want 'new'.
   t->callback_ = callback;
   t->param_ = param;
   return t;
 }
 
-void *TsanThread::ThreadStart() {
+void *Thread::ThreadStart() {
   Printf("ThreadStart: %p\n", this);
   typedef void *(*callback_t)(void *param);
   callback_t c = (callback_t)callback_;
@@ -33,4 +33,3 @@ void *TsanThread::ThreadStart() {
 }
 
 }  // namespace __tsan
-
