@@ -1,6 +1,6 @@
 include ../Makefile.inc
 
-CXXFLAGS+= -I../
+INCLUDES= -I../
 
 all: libtsan.a
 
@@ -14,10 +14,10 @@ LIBTSAN_HEADERS=tsan_atomic.h \
                 tsan_report.h \
                 tsan_rtl.h \
 		tsan_slab.h \
-		tsan_suppresions.h \
+		tsan_suppressions.h \
 		tsan_sync.h \
 		tsan_trace.h \
-		tsan_tread.h
+		tsan_thread.h
 
 LIBTSAN_OBJ=tsan_clock.o \
             tsan_linux.o \
@@ -34,10 +34,10 @@ LIBTSAN_OBJ=tsan_clock.o \
             interception_linux.o
 
 %.o: %.cc Makefile $(LIBTSAN_HEADERS)
-	$(CXX) $(CXXFLAGS) -c $<
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $<
 
 %.o: ../interception/%.cc
-	$(CXX) $(CXXFLAGS) -c $< -o $@
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
 
 libtsan.a: $(LIBTSAN_OBJ)
 	ar ru $@ $(LIBTSAN_OBJ)
