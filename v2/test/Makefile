@@ -8,7 +8,7 @@ else
 	CXXFLAGS+=-g -D_DEBUG
 endif
 
-LIBTSAN=../libtsan.a
+LIBTSAN=../tsan/libtsan.a
 GTEST_ROOT=../third_party/googletest
 GTEST_INCLUDE=-I$(GTEST_ROOT)/include
 GTEST_BUILD_DIR=$(GTEST_ROOT)/build
