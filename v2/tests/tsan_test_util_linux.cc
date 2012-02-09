@@ -81,11 +81,20 @@ struct Event {
   enum Type {
     SHUTDOWN,
     READ,
-    WRITE
+    WRITE,
+    CALL,
+    RETURN,
   };
   Type type;
   void *ptr;
   int arg1, arg2;
+
+  Event(Type type, void *ptr = NULL, int arg1 = 0, int arg2 = 0)
+    : type(type)
+    , ptr(ptr)
+    , arg1(arg1)
+    , arg2(arg2) {
+  }
 };
 
 struct ScopedThread::Impl {
@@ -129,6 +138,12 @@ void *ScopedThread::Impl::ScopedThreadCallback(void *arg) {
         case 16: __tsan_write16(ev->ptr); break;
       }
       break;
+    case Event::CALL:
+      __tsan_func_entry(ev->ptr);
+      break;
+    case Event::RETURN:
+      __tsan_func_exit();
+      break;
     default: assert(0);
     }
     atomic_store(&impl->event, 0, memory_order_release);
@@ -152,8 +167,7 @@ ScopedThread::ScopedThread() {
 }
 
 ScopedThread::~ScopedThread() {
-  Event event;
-  event.type = Event::SHUTDOWN;
+  Event event(Event::SHUTDOWN);
   impl_->send(&event);
   pthread_join(impl_->thread, NULL);
   delete impl_;
@@ -161,10 +175,17 @@ ScopedThread::~ScopedThread() {
 
 void ScopedThread::Access(const MemLoc &ml, bool is_write,
                           int size, bool expect_race) {
-  Event event;
-  event.type = is_write ? Event::WRITE : Event::READ;
-  event.ptr = ml.loc();
-  event.arg1 = size;
-  event.arg2 = (int)expect_race;
+  (void)expect_race;
+  Event event(is_write ? Event::WRITE : Event::READ, ml.loc(), size);
+  impl_->send(&event);
+}
+
+void ScopedThread::Call(void(*pc)()) {
+  Event event(Event::CALL, (void*)pc);
+  impl_->send(&event);
+}
+
+void ScopedThread::Return() {
+  Event event(Event::RETURN);
   impl_->send(&event);
 }

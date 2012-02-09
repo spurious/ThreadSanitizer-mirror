@@ -53,6 +53,9 @@ class ScopedThread {
     Write(ml, 4, expect_race); }
   void Write8(const MemLoc &ml, bool expect_race = false) {
     Write(ml, 8, expect_race); }
+
+  void Call(void(*pc)());
+  void Return();
  private:
   struct Impl;
   Impl *impl_;

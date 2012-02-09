@@ -14,6 +14,9 @@
 #include "tsan_test_util.h"
 #include "gtest/gtest.h"
 
+static void foo() {}
+static void bar() {}
+
 TEST(ThreadSanitizer, SimpleWriteWrite) {
   ScopedThread t1, t2;
   MemLoc l1, l2;
@@ -25,7 +28,18 @@ TEST(ThreadSanitizer, SimpleWriteWriteRace) {
   ScopedThread t1, t2;
   MemLoc l;
   t1.Write1(l);
-  t2.Write1(l);
+  t2.Write1(l, true);
+}
+
+TEST(ThreadSanitizer, FuncCall) {
+  ScopedThread t1, t2;
+  MemLoc l;
+  t1.Write1(l);
+  t2.Call(foo);
+  t2.Call(bar);
+  t2.Write1(l, true);
+  t2.Return();
+  t2.Return();
 }
 
 int main(int argc, char **argv) {
