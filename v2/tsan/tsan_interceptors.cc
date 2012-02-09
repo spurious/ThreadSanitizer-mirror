@@ -15,11 +15,20 @@
 
 #include "interception/interception.h"
 #include "tsan_rtl.h"
+#include "tsan_thread.h"
+
+using __tsan::TsanThread;
+
+static void *tsan_thread_start(void *arg) {
+  TsanThread *t = (TsanThread*)arg;
+  return t->ThreadStart();
+}
 
 INTERCEPTOR(int, pthread_create,
-    void *t, void *attr, void *callback, void *param) {
+    void *th, void *attr, void *callback, void *param) {
   // __tsan::Printf("pthread_create %p\n", t);
-  int res = REAL(pthread_create)(t, attr, callback, param);
+  TsanThread *t = TsanThread::Create(callback, param);
+  int res = REAL(pthread_create)(th, attr, (void*)tsan_thread_start, t);
   return res;
 }
 
