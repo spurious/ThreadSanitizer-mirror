@@ -1,5 +1,11 @@
 
-all: lint
+all: lint lib test
+
+lib:
+	$(MAKE) -C tsan
+
+test:
+	$(MAKE) -C tests
 
 RTL_LINT_FITLER=-legal/copyright,-build/include,-readability/casting,-build/header_guard
 
