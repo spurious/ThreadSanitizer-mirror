@@ -16,7 +16,7 @@
 #include "tsan_defs.h"
 #include "tsan_clock.h"
 #include "tsan_mutex.h"
-#include <map>  // FIXME: remove me
+#include "tsan_rtl.h"
 
 namespace __tsan {
 
@@ -46,7 +46,7 @@ class SyncTab {
 
  private:
   Mutex mtx_;
-  typedef std::map<uptr, SyncVar*> tab_t;
+  typedef Map<uptr, SyncVar*> tab_t;
   tab_t tab_;
 
   SyncTab(const SyncTab&);  // Not implemented.

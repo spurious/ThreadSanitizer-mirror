@@ -1,7 +1,8 @@
 include ../Makefile.inc
 
-INCLUDES= -I../
+INCLUDES= -I../ -I../third_party/stlport
 EXTRA_CXXFLAGS=-fno-exceptions
+NO_SYSROOT=--sysroot=
 CXXFLAGS+=$(EXTRA_CXXFLAGS)
 
 all: libtsan.a
@@ -35,8 +36,11 @@ LIBTSAN_OBJ=tsan_clock.o \
             tsan_thread.o \
             interception_linux.o
 
-%.o: %.cc Makefile $(LIBTSAN_HEADERS)
+%_linux.o: %_linux.cc Makefile $(LIBTSAN_HEADERS)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $<
+
+%.o: %.cc Makefile $(LIBTSAN_HEADERS)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(NO_SYSROOT) -c $<
 
 %.o: ../interception/%.cc
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@

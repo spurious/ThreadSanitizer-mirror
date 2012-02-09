@@ -28,19 +28,20 @@ SyncTab::SyncTab() {
 }
 
 void SyncTab::insert(SyncVar *var) {
-  CHECK(tab_.insert(std::make_pair(var->addr, var)).second);
+  CHECK(tab_.Insert(var->addr, var));
 }
 
 void SyncTab::remove(SyncVar *var) {
-  CHECK(tab_.erase(var->addr));
+  CHECK(tab_.Erase(var->addr));
 }
 
 SyncVar* SyncTab::get_and_lock(uptr addr) {
   Lock l(&mtx_);
-  tab_t::iterator i = tab_.lower_bound(addr);
-  CHECK(i != tab_.end() && i->first == addr);
-  i->second->mtx.Lock();
-  return i->second;
+  SyncVar *res;
+  tab_.Get(addr, &res);
+  CHECK(res);
+  res->mtx.Lock();
+  return res;
 }
 
 }  // namespace __tsan

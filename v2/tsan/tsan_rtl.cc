@@ -85,7 +85,7 @@ void MutexCreate(ThreadState *thr, uptr addr, bool is_rw) {
 void MutexDestroy(ThreadState *thr, uptr addr) {
   Printf("#%d: MutexDestroy %p\n", thr->id, addr);
   SyncVar *s = ctx.synctab->get_and_lock(addr);
-  CHECK(s != NULL && s->type == SyncVar::Mtx);
+  CHECK(s && s->type == SyncVar::Mtx);
   ctx.synctab->remove(s);
   s->mtx.Unlock();
   delete s;
@@ -95,7 +95,7 @@ void MutexLock(ThreadState *thr, uptr addr) {
   Printf("#%d: MutexLock %p\n", thr->id, addr);
   thr->trace->AddEvent(EventTypeLock, addr);
   SyncVar *s = ctx.synctab->get_and_lock(addr);
-  CHECK(s != NULL && s->type == SyncVar::Mtx);
+  CHECK(s && s->type == SyncVar::Mtx);
   MutexVar *m = static_cast<MutexVar*>(s);
   thr->clock.acquire(&m->clock);
   m->mtx.Unlock();
@@ -105,7 +105,7 @@ void MutexUnlock(ThreadState *thr, uptr addr) {
   Printf("#%d: MutexUnlock %p\n", thr->id, addr);
   thr->trace->AddEvent(EventTypeUnlock, addr);
   SyncVar *s = ctx.synctab->get_and_lock(addr);
-  CHECK(s != NULL && s->type == SyncVar::Mtx);
+  CHECK(s && s->type == SyncVar::Mtx);
   MutexVar *m = static_cast<MutexVar*>(s);
   thr->clock.release(&m->clock, thr->clockslab);
   m->mtx.Unlock();

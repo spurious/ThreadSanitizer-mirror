@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "tsan_linux.h"
+#include "tsan_rtl.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,6 +22,8 @@
 #include <sys/mman.h>
 #include <sys/syscall.h>
 #include <unistd.h>
+
+#include <map>
 
 namespace __tsan {
 
@@ -54,6 +57,28 @@ void *LowLevelAllocator::Allocate(uptr size) {
 void LowLevelAllocator::Deallocate(void *ptr, uptr size) {
   free(ptr);
 }
+
+// FIXME: PoorMansMap should not use STL.
+struct PoorMansMap::Impl {
+  std::map<uptr, uptr> m;
+};
+
+PoorMansMap::PoorMansMap() { impl_ = new Impl; }
+PoorMansMap::~PoorMansMap() { delete impl_; }
+bool PoorMansMap::Insert(uptr key, uptr value) {
+  return impl_->m.insert(std::make_pair(key, value)).second;
+}
+bool PoorMansMap::Erase(uptr key) {
+  return impl_->m.erase(key);
+}
+bool PoorMansMap::Get(uptr key, uptr *value) {
+  std::map<uptr, uptr>::iterator it = impl_->m.lower_bound(key);
+  if (it == impl_->m.end()) return false;
+  CHECK(it->first == key);
+  *value = it->second;
+  return true;
+}
+
 
 
 void Die() {
