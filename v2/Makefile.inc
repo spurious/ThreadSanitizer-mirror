@@ -1,4 +1,5 @@
 CXX=g++
+CC=gcc
 CXXFLAGS=-Wall -Werror -fPIE
 
 ifeq ($(DEBUG), )

@@ -8,7 +8,7 @@ test: lib
 	$(MAKE) -C tests
 
 run: all
-	(ulimit -s 8192; tests/tsan_test)
+	(ulimit -s 8192; tests/tsan_c_test && tests/tsan_test)
 
 RTL_LINT_FITLER=-legal/copyright,-build/include,-readability/casting,-build/header_guard
 
@@ -30,4 +30,3 @@ get_interception:
 clean:
 	cd tsan && $(MAKE) clean
 	cd tests && $(MAKE) clean
-

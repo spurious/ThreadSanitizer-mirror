@@ -17,11 +17,20 @@ LIBTSAN_HEADERS=tsan_test_util.h \
 TEST_OBJ=tsan_test.o \
 	 tsan_test_util_linux.o
 
+all: tsan_test tsan_c_test
+
+
 %.o: %.cc $(LIBTSAN_HEADERS)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $<
 
+%.o: %.c $(LIBTSAN_HEADERS)
+	$(CC) $(CXXFLAGS) $(INCLUDES) -c $<
+
 tsan_test: $(TEST_OBJ) $(LIBTSAN) $(GTEST_LIB)
 	$(CXX) $(TEST_OBJ) $(LIBTSAN) $(GTEST_LIB) -o $@ $(LINKFLAGS)
+
+tsan_c_test: tsan_c_test.o $(LIBTSAN)
+	$(CXX) $< -o $@ $(LIBTSAN) -o $@ $(LINKFLAGS)
 
 $(GTEST_LIB):
 	mkdir -p $(GTEST_BUILD_DIR) && \
