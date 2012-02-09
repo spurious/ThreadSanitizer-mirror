@@ -1,12 +1,6 @@
-CXX=g++
-CXXFLAGS=-fPIE -Wall -Werror
-LINKFLAGS=-ldl -lpthread -pie
+include ../Makefile.inc
 
-ifeq ($(DEBUG), )
-	CXXFLAGS+=-O2 -DNDEBUG
-else
-	CXXFLAGS+=-g -D_DEBUG
-endif
+LINKFLAGS=-ldl -lpthread -pie
 
 LIBTSAN=../tsan/libtsan.a
 GTEST_ROOT=../third_party/googletest
@@ -35,4 +29,4 @@ $(GTEST_LIB):
 	$(MAKE) -f ../make/Makefile CXXFLAGS="$(CXXFLAGS)"
 
 clean:
-	rm -f tsan_test *.o
+	rm -f *.o tsan_test 
