@@ -4,8 +4,7 @@ INCLUDES=-I../
 
 all: libtsan.a
 
-LIBTSAN_HEADERS=tsan_interceptors.h \
-                tsan_interface.h \
+LIBTSAN_HEADERS=tsan_interface.h \
                 tsan_atomic.h \
                 tsan_compiler.h \
                 tsan_linux.h \
