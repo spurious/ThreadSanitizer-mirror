@@ -36,7 +36,7 @@ void Report(const char *format, ...) {
   va_end(args);
 }
 
-void __attribute__((noreturn)) Die() {
+void Die() {
   _exit(1);
 }
 

@@ -49,7 +49,7 @@ void InitializeShadowMemory();
 void InitializeInterceptors();
 void Printf(const char *format, ...);
 void Report(const char *format, ...);
-void Die();
+void Die() NORETURN;
 
 void Initialize();
 int ThreadCreate(ThreadState *thr);
