@@ -14,7 +14,7 @@ GTEST_INCLUDE=-I$(GTEST_ROOT)/include
 GTEST_BUILD_DIR=$(GTEST_ROOT)/build
 GTEST_LIB=$(GTEST_BUILD_DIR)/gtest-all.o
 
-INCLUDES=-I../llvm -I../tsan $(GTEST_INCLUDE)
+INCLUDES=-I../tsan $(GTEST_INCLUDE)
 
 LIBTSAN_HEADERS=tsan_test_util.h \
                 ../tsan/tsan_atomic.h \
