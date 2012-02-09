@@ -36,10 +36,11 @@ static void OnMemoryAccess(void *addr, int size, bool is_write) {
       app_mem, size, is_write, shadow_mem);
   CHECK(IsAppMem(app_mem));
   CHECK(IsShadowMem(shadow_mem));
-//  for (uptr i = 0; i < TSAN_SHADOW_STATE_LENGTH; i++) {
-//    u64 shadow = shadow_array[i];
-//    Printf("  [%ld] %llx\n", i, shadow);
-//  }
+  u64 *shadow_array = (u64*)shadow_mem;
+  for (uptr i = 0; i < TSAN_SHADOW_STATE_LENGTH; i++) {
+    u64 shadow = shadow_array[i];
+    Printf("  [%ld] %llx\n", i, shadow);
+  }
 }
 
 ALWAYS_INLINE
