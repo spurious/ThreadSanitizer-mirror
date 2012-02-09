@@ -17,7 +17,7 @@
 #include "tsan_interface.h"
 #include "tsan_atomic.h"
 #include "tsan_sync.h"
-#include <string.h>  // FIXME: remove me (for memcpy)
+#include <string.h>  // FIXME: remove me (for memcpy, memset)
 
 namespace __tsan {
 
@@ -66,10 +66,13 @@ int ThreadCreate(ThreadState *thr) {
 }
 
 void ThreadStart(ThreadState *thr, int tid) {
+  memset(thr, 0, sizeof(*thr));
   thr->id = tid;
   thr->clockslab = new SlabCache(ctx.clockslab);
   thr->clock.tick(tid);
   thr->epoch = 1;
+  thr->trace = new TraceSet;
+  memset(thr->trace, 0, sizeof(*thr->trace));
 }
 
 void MutexCreate(ThreadState *thr, uptr addr, bool is_rw) {
@@ -88,6 +91,7 @@ void MutexDestroy(ThreadState *thr, uptr addr) {
 
 void MutexLock(ThreadState *thr, uptr addr) {
   Printf("#%d: MutexLock %p\n", thr->id, addr);
+  thr->trace->AddEvent(EventTypeLock, addr);
   SyncVar *s = ctx.synctab->get_and_lock(addr);
   CHECK(s != NULL && s->type == SyncVar::Mtx);
   MutexVar *m = static_cast<MutexVar*>(s);
@@ -97,6 +101,7 @@ void MutexLock(ThreadState *thr, uptr addr) {
 
 void MutexUnlock(ThreadState *thr, uptr addr) {
   Printf("#%d: MutexUnlock %p\n", thr->id, addr);
+  thr->trace->AddEvent(EventTypeUnlock, addr);
   SyncVar *s = ctx.synctab->get_and_lock(addr);
   CHECK(s != NULL && s->type == SyncVar::Mtx);
   MutexVar *m = static_cast<MutexVar*>(s);
@@ -120,6 +125,8 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
          (int)thr->id, (void*)pc, (void*)addr, size, is_write, shadow_mem);
   CHECK(IsAppMem(addr));
   CHECK(IsShadowMem((uptr)shadow_mem));
+
+  thr->trace->AddEvent(EventTypeMop, pc);
 
   // descriptor of the memory access
   Shadow s0 = {thr->id, thr->epoch, addr&7, min((addr&7)+size-1, 7), is_write};
@@ -183,8 +190,6 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
         } else if (!s.write && !is_write) {
           continue;
         } else {
-Printf("R: s.tid=%llu clock=%llu s.epoch=%llu", s.tid, thr->clock.get(s.tid),
-       s.epoch);
           races[nrace++] = s;
           continue;
         }
@@ -221,10 +226,12 @@ Printf("R: s.tid=%llu clock=%llu s.epoch=%llu", s.tid, thr->clock.get(s.tid),
 
 void FuncEntry(ThreadState *thr, uptr pc) {
   Printf("#%d: tsan::FuncEntry %p\n", (int)thr->id, (void*)pc);
+  thr->trace->AddEvent(EventTypeFuncEnter, pc);
 }
 
 void FuncExit(ThreadState *thr) {
   Printf("#%d: tsan::FuncExit\n", (int)thr->id);
+  thr->trace->AddEvent(EventTypeFuncExit, 0);
 }
 
 }  // namespace __tsan

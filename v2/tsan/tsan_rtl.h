@@ -29,6 +29,7 @@
 #include "tsan_clock.h"
 #include "tsan_defs.h"
 #include "tsan_slab.h"
+#include "tsan_trace.h"
 
 namespace __tsan {
 
@@ -39,10 +40,10 @@ struct ThreadState {
   u64 ignoring_reads   : 1;
   u64 ignoring_writes  : 1;
   unsigned rand;
+  TraceSet* trace;
   SlabCache* clockslab;
   VectorClock clock;
 };
-
 
 void InitializeShadowMemory();
 void InitializeInterceptors();

@@ -14,7 +14,8 @@ LIBTSAN_HEADERS=tsan_interface.h \
                 tsan_rtl.h \
 		tsan_slab.h \
 		tsan_sync.h \
-                tsan_thread.h
+		tsan_trace.h \
+		tsan_tread.h
 
 LIBTSAN_OBJ=tsan_rtl.o \
             tsan_clock.o \
@@ -24,6 +25,7 @@ LIBTSAN_OBJ=tsan_rtl.o \
             tsan_interface.o \
             tsan_slab.o \
             tsan_sync.o \
+            tsan_trace.o \
             tsan_thread.o \
             interception_linux.o
 
