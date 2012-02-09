@@ -266,3 +266,6 @@ void FuncExit(ThreadState *thr) {
 }
 
 }  // namespace __tsan
+
+// Must be included in this file to make sure everything is inlined.
+#include "tsan_interface_inl.h"
