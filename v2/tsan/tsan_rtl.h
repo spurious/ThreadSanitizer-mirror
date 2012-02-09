@@ -48,6 +48,8 @@ struct ThreadState {
   u64 epoch            : 40;
   u64 ignoring_reads   : 1;
   u64 ignoring_writes  : 1;
+  u64 clock[100];
+  unsigned rand;
 };
 
 

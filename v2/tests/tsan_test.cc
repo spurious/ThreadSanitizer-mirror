@@ -14,11 +14,18 @@
 #include "tsan_test_util.h"
 #include "gtest/gtest.h"
 
-TEST(ThreadSanitizer, SimpleWriteWriteRace) {
+TEST(ThreadSanitizer, SimpleWriteWrite) {
   ScopedThread t1, t2;
   MemLoc l1, l2;
   t1.Write1(l1);
   t2.Write1(l2);
+}
+
+TEST(ThreadSanitizer, SimpleWriteWriteRace) {
+  ScopedThread t1, t2;
+  MemLoc l;
+  t1.Write1(l);
+  t2.Write1(l);
 }
 
 int main(int argc, char **argv) {
