@@ -58,7 +58,7 @@ void Initialize() {
   InitializeShadowMemory();
   ctx.clockslab = new SlabAlloc(ChunkedClock::kChunkSize);
   ctx.synctab = new SyncTab;
-  // InitializeInterceptors();
+  InitializeInterceptors();
 }
 
 int ThreadCreate(ThreadState *thr) {

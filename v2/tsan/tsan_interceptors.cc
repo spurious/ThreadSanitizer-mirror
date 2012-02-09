@@ -13,7 +13,6 @@
 // Do not put any platform-specific includes/ifdefs here.
 //===----------------------------------------------------------------------===//
 
-/*
 #include "interception/interception.h"
 #include "tsan_rtl.h"
 #include "tsan_thread.h"
@@ -38,5 +37,3 @@ void InitializeInterceptors() {
   INTERCEPT_FUNCTION(pthread_create);
 }
 }  // namespace __tsan
-*/
-
