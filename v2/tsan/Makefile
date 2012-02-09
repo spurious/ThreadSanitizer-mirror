@@ -1,5 +1,7 @@
 include ../Makefile.inc
 
+INCLUDES=-I../
+
 all: libtsan.a
 
 LIBTSAN_HEADERS=tsan_interceptors.h \
@@ -11,10 +13,14 @@ LIBTSAN_HEADERS=tsan_interceptors.h \
 
 LIBTSAN_OBJ=tsan_rtl.o \
             tsan_linux.o \
-            tsan_interceptors.o
+            tsan_interceptors.o \
+            interception_linux.o
 
 %.o: %.cc Makefile $(LIBTSAN_HEADERS)
-	$(CXX) $(CXXFLAGS) -c $<
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $<
+
+%.o: ../interception/%.cc Makefile $(LIBTSAN_HEADERS)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $<
 
 
 libtsan.a: $(LIBTSAN_OBJ)

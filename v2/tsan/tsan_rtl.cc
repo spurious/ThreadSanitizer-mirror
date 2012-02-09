@@ -26,6 +26,7 @@ void CheckFailed(const char *file, int line, const char *cond) {
 static void Initialize() {
   Printf("tsan::Initialize\n");
   InitializeShadowMemory();
+  InitializeInterceptors();
 }
 
 ALWAYS_INLINE

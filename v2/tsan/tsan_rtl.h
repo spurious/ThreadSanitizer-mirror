@@ -52,6 +52,7 @@ struct ThreadState {
 
 
 void InitializeShadowMemory();
+void InitializeInterceptors();
 void Printf(const char *format, ...);
 void Report(const char *format, ...);
 void Die();
