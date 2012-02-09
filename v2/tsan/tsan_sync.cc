@@ -36,10 +36,10 @@ void SyncTab::remove(SyncVar *var) {
 }
 
 SyncVar* SyncTab::get_and_lock(uptr addr) {
-  // ScopedLock lock(mtx_);
+  Lock l(&mtx_);
   tab_t::iterator i = tab_.lower_bound(addr);
   CHECK(i != tab_.end() && i->first == addr);
-  // i->second->mtx.lock();
+  i->second->mtx.Lock();
   return i->second;
 }
 

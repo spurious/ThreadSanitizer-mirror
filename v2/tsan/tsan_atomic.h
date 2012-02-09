@@ -15,8 +15,7 @@
 #ifndef TSAN_ATOMIC_H
 #define TSAN_ATOMIC_H
 
-#include "tsan_rtl.h"
-#include <assert.h>
+#include "tsan_defs.h"
 
 namespace __tsan {
 
@@ -47,9 +46,9 @@ INLINE void atomic_thread_fence(memory_order) {
 
 INLINE u64 atomic_load(const volatile atomic_uint64_t *a, memory_order mo) {
   (void)mo;
-  assert(mo & (memory_order_relaxed | memory_order_consume
+  DCHECK(mo & (memory_order_relaxed | memory_order_consume
       | memory_order_acquire | memory_order_seq_cst));
-  assert(((uptr)a % sizeof(*a)) == 0);
+  DCHECK(!((uptr)a % sizeof(*a)));
   atomic_signal_fence(memory_order_seq_cst);
   u64 v = a->val_dont_use;
   atomic_signal_fence(memory_order_seq_cst);
@@ -58,9 +57,9 @@ INLINE u64 atomic_load(const volatile atomic_uint64_t *a, memory_order mo) {
 
 INLINE uptr atomic_load(const volatile atomic_uintptr_t *a, memory_order mo) {
   (void)mo;
-  assert(mo & (memory_order_relaxed | memory_order_consume
+  DCHECK(mo & (memory_order_relaxed | memory_order_consume
       | memory_order_acquire | memory_order_seq_cst));
-  assert(((uptr)a % sizeof(*a)) == 0);
+  DCHECK(!((uptr)a % sizeof(*a)));
   atomic_signal_fence(memory_order_seq_cst);
   uptr v = a->val_dont_use;
   atomic_signal_fence(memory_order_seq_cst);
@@ -69,9 +68,9 @@ INLINE uptr atomic_load(const volatile atomic_uintptr_t *a, memory_order mo) {
 
 INLINE void atomic_store(volatile atomic_uint64_t *a, u64 v, memory_order mo) {
   (void)mo;
-  assert(mo & (memory_order_relaxed | memory_order_release
+  DCHECK(mo & (memory_order_relaxed | memory_order_release
       | memory_order_seq_cst));
-  assert(((uptr)a % sizeof(*a)) == 0);
+  DCHECK(!((uptr)a % sizeof(*a)));
   atomic_signal_fence(memory_order_seq_cst);
   a->val_dont_use = v;
   atomic_signal_fence(memory_order_seq_cst);
@@ -82,9 +81,9 @@ INLINE void atomic_store(volatile atomic_uint64_t *a, u64 v, memory_order mo) {
 INLINE void atomic_store(volatile atomic_uintptr_t *a, uptr v,
                          memory_order mo) {
   (void)mo;
-  assert(mo & (memory_order_relaxed | memory_order_release
+  DCHECK(mo & (memory_order_relaxed | memory_order_release
       | memory_order_seq_cst));
-  assert(((uptr)a % sizeof(*a)) == 0);
+  DCHECK(!((uptr)a % sizeof(*a)));
   atomic_signal_fence(memory_order_seq_cst);
   a->val_dont_use = v;
   atomic_signal_fence(memory_order_seq_cst);
@@ -95,15 +94,28 @@ INLINE void atomic_store(volatile atomic_uintptr_t *a, uptr v,
 INLINE u64 atomic_fetch_add(volatile atomic_uint64_t *a, u64 v,
                             memory_order mo) {
   (void)mo;
-  assert(((uptr)a % sizeof(*a)) == 0);
+  DCHECK(!((uptr)a % sizeof(*a)));
   return __sync_fetch_and_add(&a->val_dont_use, v);
 }
 
 INLINE uptr atomic_fetch_add(volatile atomic_uintptr_t *a, uptr v,
                              memory_order mo) {
   (void)mo;
-  assert(((uptr)a % sizeof(*a)) == 0);
+  DCHECK(!((uptr)a % sizeof(*a)));
   return __sync_fetch_and_add(&a->val_dont_use, v);
+}
+
+INLINE uptr atomic_exchange(volatile atomic_uintptr_t *a, uptr v,
+                            memory_order mo) {
+  (void)mo;
+  DCHECK(!((uptr)a % sizeof(*a)));
+  uptr old = a->val_dont_use;
+  for (;;) {
+    uptr old2 = __sync_val_compare_and_swap(&a->val_dont_use, old, v);
+    if (old == old2)
+      return old;
+    old = old2;
+  }
 }
 
 }  // namespace __tsan

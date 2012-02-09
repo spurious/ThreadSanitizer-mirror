@@ -14,6 +14,8 @@
 #ifndef TSAN_DEFS_H
 #define TSAN_DEFS_H
 
+#include "tsan_compiler.h"
+
 namespace __tsan {
 
 typedef unsigned long long u64;  // NOLINT

@@ -82,7 +82,8 @@ void MutexDestroy(ThreadState *thr, uptr addr) {
   SyncVar *s = ctx.synctab->get_and_lock(addr);
   CHECK(s != NULL && s->type == SyncVar::Mtx);
   ctx.synctab->remove(s);
-  // s->mtx.unlock();
+  s->mtx.Unlock();
+  delete s;
 }
 
 void MutexLock(ThreadState *thr, uptr addr) {
@@ -91,7 +92,7 @@ void MutexLock(ThreadState *thr, uptr addr) {
   CHECK(s != NULL && s->type == SyncVar::Mtx);
   MutexVar *m = static_cast<MutexVar*>(s);
   thr->clock.acquire(&m->clock);
-  // m->mtx.unlock();
+  m->mtx.Unlock();
 }
 
 void MutexUnlock(ThreadState *thr, uptr addr) {
@@ -100,7 +101,7 @@ void MutexUnlock(ThreadState *thr, uptr addr) {
   CHECK(s != NULL && s->type == SyncVar::Mtx);
   MutexVar *m = static_cast<MutexVar*>(s);
   thr->clock.release(&m->clock, thr->clockslab);
-  // m->mtx.unlock();
+  m->mtx.Unlock();
 }
 
 static void ReportRace(ThreadState *thr, uptr addr,

@@ -15,6 +15,7 @@
 
 #include "tsan_defs.h"
 #include "tsan_clock.h"
+#include "tsan_mutex.h"
 #include <map>  // FIXME: remove me
 
 namespace __tsan {
@@ -26,7 +27,7 @@ struct SyncVar {
 
   const Type type;
   const uptr addr;
-  // Mutex mtx;
+  Mutex mtx;
   ChunkedClock clock;
 };
 
@@ -44,7 +45,7 @@ class SyncTab {
   SyncVar* get_and_lock(uptr addr);
 
  private:
-  // Mutex mtx_;
+  Mutex mtx_;
   typedef std::map<uptr, SyncVar*> tab_t;
   tab_t tab_;
 

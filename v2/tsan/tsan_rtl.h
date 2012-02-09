@@ -26,7 +26,6 @@
 #ifndef TSAN_RTL_H
 #define TSAN_RTL_H
 
-#include "tsan_compiler.h"
 #include "tsan_clock.h"
 #include "tsan_defs.h"
 #include "tsan_slab.h"

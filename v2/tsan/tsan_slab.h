@@ -14,6 +14,7 @@
 #define TSAN_SLAB_H
 
 #include "tsan_defs.h"
+#include "tsan_mutex.h"
 
 namespace __tsan {
 
@@ -26,7 +27,7 @@ class SlabAlloc {
   size_t size() const;
 
  private:
-  // Mutex mtx_;
+  Mutex mtx_;
   size_t const size_;
 
   SlabAlloc(const SlabAlloc&);
