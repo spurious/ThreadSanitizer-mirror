@@ -19,7 +19,19 @@ class MemLoc {
   ~MemLoc();
   void *loc() const { return loc_; }
  private:
-  void *loc_;
+  void *const loc_;
+  MemLoc(const MemLoc&);
+  void operator = (const MemLoc&);
+};
+
+class Mutex {
+ public:
+  Mutex();
+  ~Mutex();
+  mutable void * addr;
+ private:
+  Mutex(const Mutex&);
+  void operator = (const Mutex&);
 };
 
 // A thread is started in CTOR and joined in DTOR.
@@ -56,6 +68,11 @@ class ScopedThread {
 
   void Call(void(*pc)());
   void Return();
+
+  void Create(const Mutex &m);
+  void Destroy(const Mutex &m);
+  void Lock(const Mutex &m);
+  void Unlock(const Mutex &m);
  private:
   struct Impl;
   Impl *impl_;

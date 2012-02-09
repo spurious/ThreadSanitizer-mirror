@@ -7,15 +7,22 @@ all: libtsan.a
 
 LIBTSAN_HEADERS=tsan_interface.h \
                 tsan_atomic.h \
+                tsan_clock.h \
                 tsan_compiler.h \
+                tsan_defs.h \
                 tsan_linux.h \
                 tsan_rtl.h \
+		tsan_slab.h \
+		tsan_sync.h \
                 tsan_tread.h
 
 LIBTSAN_OBJ=tsan_rtl.o \
+            tsan_clock.o \
             tsan_linux.o \
             tsan_interceptors.o \
             tsan_interface.o \
+            tsan_slab.o \
+            tsan_sync.o \
             tsan_thread.o \
 #            interception_linux.o
 

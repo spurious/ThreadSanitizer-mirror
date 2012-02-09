@@ -27,20 +27,11 @@
 #define TSAN_RTL_H
 
 #include "tsan_compiler.h"
+#include "tsan_clock.h"
+#include "tsan_defs.h"
+#include "tsan_slab.h"
 
 namespace __tsan {
-
-typedef unsigned long long u64;  // NOLINT
-typedef unsigned long uptr;  // NOLINT
-
-const uptr kPageSize = 4096;
-
-#define CHECK(cond) \
-  do { if (!cond) CheckFailed(__FILE__, __LINE__, #cond); \
-  } while (false)
-
-void CheckFailed(const char *file, int line, const char *cond);
-
 
 // This struct is stored in TLS.
 struct ThreadState {
@@ -48,8 +39,9 @@ struct ThreadState {
   u64 epoch            : 40;
   u64 ignoring_reads   : 1;
   u64 ignoring_writes  : 1;
-  u64 clock[100];
   unsigned rand;
+  SlabCache* clockslab;
+  VectorClock clock;
 };
 
 
@@ -62,6 +54,10 @@ void Die();
 void Initialize();
 int ThreadCreate(ThreadState *thr);
 void ThreadStart(ThreadState *thr, int tid);
+void MutexCreate(ThreadState *thr, uptr addr, bool is_rw);
+void MutexDestroy(ThreadState *thr, uptr addr);
+void MutexLock(ThreadState *thr, uptr addr);
+void MutexUnlock(ThreadState *thr, uptr addr);
 
 // FIXME: Should be inlinable later (when things are settled down).
 void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,

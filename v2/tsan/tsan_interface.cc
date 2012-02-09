@@ -79,3 +79,19 @@ int  __tsan_thread_create() {
 void __tsan_thread_start(int tid) {
   __tsan::ThreadStart(&thr, tid);
 }
+
+void __tsan_mutex_create(void *addr, int is_rw) {
+  __tsan::MutexCreate(&thr, (uptr)addr, !!is_rw);
+}
+
+void __tsan_mutex_destroy(void *addr) {
+  __tsan::MutexDestroy(&thr, (uptr)addr);
+}
+
+void __tsan_mutex_lock(void *addr) {
+  __tsan::MutexLock(&thr, (uptr)addr);
+}
+
+void __tsan_mutex_unlock(void *addr) {
+  __tsan::MutexUnlock(&thr, (uptr)addr);
+}

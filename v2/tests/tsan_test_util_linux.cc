@@ -20,10 +20,7 @@
 #include <pthread.h>
 #include <stdio.h>
 #include <stdint.h>
-#include <assert.h>
 #include <unistd.h>
-
-#include <queue>
 
 using __tsan::memory_order_relaxed;
 using __tsan::memory_order_consume;
@@ -40,16 +37,16 @@ using __tsan::atomic_fetch_add;
 class HiddenLock {
  public:
   HiddenLock() : lock_(0) { }
-  ~HiddenLock() { assert(lock_ == 0); }
+  ~HiddenLock() { CHECK_EQ(lock_, 0); }
   void Lock() {
     while (__sync_val_compare_and_swap(&lock_, 0, 1) != 0)
       usleep(0);
-    assert(lock_ == 1);
+    CHECK_EQ(lock_, 1);
   }
   void Unlock() {
-    assert(lock_ == 1);
+    CHECK_EQ(lock_, 1);
     int res =__sync_val_compare_and_swap(&lock_, 1, 0);
-    assert(res == 1);
+    CHECK_EQ(res, 1);
     (void)res;
   }
  private:
@@ -66,16 +63,26 @@ class ScopedHiddenLock {
   HiddenLock *lock_;
 };
 
-MemLoc::MemLoc(int offset_from_aligned) {
-  assert(offset_from_aligned >= 0 && offset_from_aligned < 16);
+static void* allocate_addr(int offset_from_aligned = 0) {
   static uintptr_t foo;
   static atomic_uintptr_t uniq = {(uintptr_t)&foo};  // Some real address.
-  loc_  = (void*)(atomic_fetch_add(&uniq, 32, memory_order_relaxed)
+  return (void*)(atomic_fetch_add(&uniq, 32, memory_order_relaxed)
       + offset_from_aligned);
-  fprintf(stderr, "MemLoc: %p\n", loc_);
+}
+
+MemLoc::MemLoc(int offset_from_aligned)
+  : loc_(allocate_addr(offset_from_aligned)) {
 }
 
 MemLoc::~MemLoc() { }
+
+Mutex::Mutex()
+  : addr(NULL) {
+}
+
+Mutex::~Mutex() {
+  CHECK_EQ(addr, NULL);
+}
 
 struct Event {
   enum Type {
@@ -84,16 +91,19 @@ struct Event {
     WRITE,
     CALL,
     RETURN,
+    MUTEX_CREATE,
+    MUTEX_DESTROY,
+    MUTEX_LOCK,
+    MUTEX_UNLOCK,
   };
   Type type;
   void *ptr;
-  int arg1, arg2;
+  int arg;
 
-  Event(Type type, void *ptr = NULL, int arg1 = 0, int arg2 = 0)
+  Event(Type type, void *ptr = NULL, int arg = 0)
     : type(type)
     , ptr(ptr)
-    , arg1(arg1)
-    , arg2(arg2) {
+    , arg(arg) {
   }
 };
 
@@ -121,7 +131,7 @@ void *ScopedThread::Impl::ScopedThreadCallback(void *arg) {
     }
     switch (ev->type) {
     case Event::READ:
-      switch (ev->arg1 /*size*/) {
+      switch (ev->arg /*size*/) {
         case 1: __tsan_read1(ev->ptr); break;
         case 2: __tsan_read2(ev->ptr); break;
         case 4: __tsan_read4(ev->ptr); break;
@@ -130,7 +140,7 @@ void *ScopedThread::Impl::ScopedThreadCallback(void *arg) {
       }
       break;
     case Event::WRITE:
-      switch (ev->arg1 /*size*/) {
+      switch (ev->arg /*size*/) {
         case 1: __tsan_write1(ev->ptr); break;
         case 2: __tsan_write2(ev->ptr); break;
         case 4: __tsan_write4(ev->ptr); break;
@@ -144,7 +154,19 @@ void *ScopedThread::Impl::ScopedThreadCallback(void *arg) {
     case Event::RETURN:
       __tsan_func_exit();
       break;
-    default: assert(0);
+    case Event::MUTEX_CREATE:
+      __tsan_mutex_create(ev->ptr, 0);
+      break;
+    case Event::MUTEX_DESTROY:
+      __tsan_mutex_destroy(ev->ptr);
+      break;
+    case Event::MUTEX_LOCK:
+      __tsan_mutex_lock(ev->ptr);
+      break;
+    case Event::MUTEX_UNLOCK:
+      __tsan_mutex_unlock(ev->ptr);
+      break;
+    default: CHECK(0);
     }
     atomic_store(&impl->event, 0, memory_order_release);
   }
@@ -152,7 +174,7 @@ void *ScopedThread::Impl::ScopedThreadCallback(void *arg) {
 }
 
 void ScopedThread::Impl::send(Event *e) {
-  assert(atomic_load(&event, memory_order_relaxed) == 0);
+  CHECK_EQ(atomic_load(&event, memory_order_relaxed), 0);
   atomic_store(&event, (uintptr_t)e, memory_order_release);
   while (atomic_load(&event, memory_order_acquire) != 0)
     pthread_yield();
@@ -187,5 +209,31 @@ void ScopedThread::Call(void(*pc)()) {
 
 void ScopedThread::Return() {
   Event event(Event::RETURN);
+  impl_->send(&event);
+}
+
+void ScopedThread::Create(const Mutex &m) {
+  CHECK_EQ(m.addr, NULL);
+  m.addr = allocate_addr();
+  Event event(Event::MUTEX_CREATE, m.addr);
+  impl_->send(&event);
+}
+
+void ScopedThread::Destroy(const Mutex &m) {
+  CHECK_NE(m.addr, NULL);
+  Event event(Event::MUTEX_DESTROY, m.addr);
+  impl_->send(&event);
+  m.addr = NULL;
+}
+
+void ScopedThread::Lock(const Mutex &m) {
+  CHECK_NE(m.addr, NULL);
+  Event event(Event::MUTEX_LOCK, m.addr);
+  impl_->send(&event);
+}
+
+void ScopedThread::Unlock(const Mutex &m) {
+  CHECK_NE(m.addr, NULL);
+  Event event(Event::MUTEX_UNLOCK, m.addr);
   impl_->send(&event);
 }

@@ -16,11 +16,8 @@
 #include "tsan_rtl.h"
 #include "tsan_interface.h"
 #include "tsan_atomic.h"
+#include "tsan_sync.h"
 #include <string.h>  // FIXME: remove me (for memcpy)
-
-const int kTidBits = 16;
-const int kMaxTid = 1 << kTidBits;
-const int kClkBits = 40;
 
 namespace __tsan {
 
@@ -34,6 +31,8 @@ struct Shadow {
 
 static struct {
   int thread_seq;
+  SlabAlloc* clockslab;
+  SyncTab *synctab;
 } ctx;
 
 u64 min(u64 a, u64 b) {
@@ -51,11 +50,14 @@ static unsigned fastrand(ThreadState *thr) {
 void CheckFailed(const char *file, int line, const char *cond) {
   Report("FATAL: ThreadSanitizer CHECK failed: %s:%d \"%s\"\n",
          file, line, cond);
+  Die();
 }
 
 void Initialize() {
   Printf("tsan::Initialize\n");
   InitializeShadowMemory();
+  ctx.clockslab = new SlabAlloc(ChunkedClock::kChunkSize);
+  ctx.synctab = new SyncTab;
   // InitializeInterceptors();
 }
 
@@ -65,7 +67,40 @@ int ThreadCreate(ThreadState *thr) {
 
 void ThreadStart(ThreadState *thr, int tid) {
   thr->id = tid;
+  thr->clockslab = new SlabCache(ctx.clockslab);
+  thr->clock.tick(tid);
   thr->epoch = 1;
+}
+
+void MutexCreate(ThreadState *thr, uptr addr, bool is_rw) {
+  Printf("#%d: MutexCreate %p\n", thr->id, addr);
+  ctx.synctab->insert(new MutexVar(addr, is_rw));
+}
+
+void MutexDestroy(ThreadState *thr, uptr addr) {
+  Printf("#%d: MutexDestroy %p\n", thr->id, addr);
+  SyncVar *s = ctx.synctab->get_and_lock(addr);
+  CHECK(s != NULL && s->type == SyncVar::Mtx);
+  ctx.synctab->remove(s);
+  // s->mtx.unlock();
+}
+
+void MutexLock(ThreadState *thr, uptr addr) {
+  Printf("#%d: MutexLock %p\n", thr->id, addr);
+  SyncVar *s = ctx.synctab->get_and_lock(addr);
+  CHECK(s != NULL && s->type == SyncVar::Mtx);
+  MutexVar *m = static_cast<MutexVar*>(s);
+  thr->clock.acquire(&m->clock);
+  // m->mtx.unlock();
+}
+
+void MutexUnlock(ThreadState *thr, uptr addr) {
+  Printf("#%d: MutexUnlock %p\n", thr->id, addr);
+  SyncVar *s = ctx.synctab->get_and_lock(addr);
+  CHECK(s != NULL && s->type == SyncVar::Mtx);
+  MutexVar *m = static_cast<MutexVar*>(s);
+  thr->clock.release(&m->clock, thr->clockslab);
+  // m->mtx.unlock();
 }
 
 static void ReportRace(ThreadState *thr, uptr addr,
@@ -140,13 +175,15 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
         }
       } else {
         // happens before?
-        if (thr->clock[s.tid] >= s.epoch) {
+        if (thr->clock.get(s.tid) >= s.epoch) {
           atomic_store(sp, replaced ? 0ull : s0v, memory_order_relaxed);
           replaced = true;
           continue;
         } else if (!s.write && !is_write) {
           continue;
         } else {
+Printf("R: s.tid=%llu clock=%llu s.epoch=%llu", s.tid, thr->clock.get(s.tid),
+       s.epoch);
           races[nrace++] = s;
           continue;
         }
@@ -156,7 +193,7 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
       if (s.tid == thr->id)
         continue;
       // happens before?
-      if (thr->clock[s.tid] >= s.epoch) {
+      if (thr->clock.get(s.tid) >= s.epoch) {
         continue;
       } else if (!s.write && !is_write) {
         continue;
