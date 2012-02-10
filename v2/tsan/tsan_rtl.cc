@@ -258,7 +258,7 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
         continue;
       }
     }
-    // the accesses do not intercept
+    // the accesses do not intersect
     continue;
   }
 
