@@ -74,7 +74,7 @@ int ThreadCreate() {
 
 void ThreadStart(ThreadState *thr, int tid) {
   internal_memset(thr, 0, sizeof(*thr));
-  thr->fast.id = tid;
+  thr->fast.tid = tid;
   thr->clockslab = new SlabCache(ctx.clockslab);
   thr->clock.tick(tid);
   thr->fast.epoch = 1;
@@ -87,12 +87,12 @@ void ThreadStart(int tid) {
 }
 
 void MutexCreate(ThreadState *thr, uptr addr, bool is_rw) {
-  Printf("#%d: MutexCreate %p\n", thr->fast.id, addr);
+  Printf("#%d: MutexCreate %p\n", thr->fast.tid, addr);
   ctx.synctab->insert(new MutexVar(addr, is_rw));
 }
 
 void MutexDestroy(ThreadState *thr, uptr addr) {
-  Printf("#%d: MutexDestroy %p\n", thr->fast.id, addr);
+  Printf("#%d: MutexDestroy %p\n", thr->fast.tid, addr);
   SyncVar *s = ctx.synctab->get_and_lock(addr);
   CHECK(s && s->type == SyncVar::Mtx);
   ctx.synctab->remove(s);
@@ -101,7 +101,7 @@ void MutexDestroy(ThreadState *thr, uptr addr) {
 }
 
 void MutexLock(ThreadState *thr, uptr addr) {
-  Printf("#%d: MutexLock %p\n", thr->fast.id, addr);
+  Printf("#%d: MutexLock %p\n", thr->fast.tid, addr);
   thr->trace->AddEvent(EventTypeLock, addr);
   SyncVar *s = ctx.synctab->get_and_lock(addr);
   CHECK(s && s->type == SyncVar::Mtx);
@@ -111,7 +111,7 @@ void MutexLock(ThreadState *thr, uptr addr) {
 }
 
 void MutexUnlock(ThreadState *thr, uptr addr) {
-  Printf("#%d: MutexUnlock %p\n", thr->fast.id, addr);
+  Printf("#%d: MutexUnlock %p\n", thr->fast.tid, addr);
   thr->trace->AddEvent(EventTypeUnlock, addr);
   SyncVar *s = ctx.synctab->get_and_lock(addr);
   CHECK(s && s->type == SyncVar::Mtx);
@@ -133,7 +133,7 @@ static void NOINLINE ReportRace(ThreadState *thr, uptr addr,
   (void)s0;
   (void)s;
   (void)nrace;
-  Printf("#%d: ================= RACE ============= %p\n", thr->fast.id, addr);
+  Printf("#%d: ================= RACE ============= %p\n", thr->fast.tid, addr);
 
   int alloc_pos = 0;
   ReportDesc rep;
@@ -172,7 +172,8 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
   u64 *shadow_mem = (u64*)MemToShadow(addr);
   Printf("#%d: tsan::OnMemoryAccess: @%p %p size=%d"
          " is_write=%d shadow_mem=%p\n",
-         (int)thr->fast.id, (void*)pc, (void*)addr, size, is_write, shadow_mem);
+         (int)thr->fast.tid, (void*)pc, (void*)addr,
+         size, is_write, shadow_mem);
   DCHECK(IsAppMem(addr));
   DCHECK(IsShadowMem((uptr)shadow_mem));
 
@@ -182,7 +183,7 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
   ThreadState::Fast fast_state = thr->fast;  // Copy.
 
   // descriptor of the memory access
-  Shadow s0 = { {fast_state.id, fast_state.epoch,
+  Shadow s0 = { {fast_state.tid, fast_state.epoch,
                addr&7, min((addr&7)+size-1, 7), is_write} };  // NOLINT
   // is the descriptor already stored somewhere?
   bool replaced = false;
@@ -193,7 +194,7 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
   // scan all the shadow values and dispatch to 4 categories:
   // same, replace, candidate and race (see comments below).
   // we consider only 3 cases regarding access sizes:
-  // equal, intercept and not intercept. initially I considered
+  // equal, intersect and not intersect. initially I considered
   // larger and smaller as well, it allowed to replace some
   // 'candidates' with 'same' or 'replace', but I think
   // it's just not worth it (performance- and complexity-wise).
@@ -211,7 +212,7 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
     // is the memory access equal to the previous?
     if (s0.addr0 == s.addr0 && s0.addr1 == s.addr1) {
       // same thread?
-      if (s.tid == fast_state.id) {
+      if (s.tid == fast_state.tid) {
         if (s.epoch >= fast_state.epoch) {
           if (s.write || !is_write) {
             // found a slot that holds effectively the same info
@@ -244,9 +245,9 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
           continue;
         }
       }
-    // do the memory access intercept?
+    // do the memory access intersect?
     } else if (min(s0.addr1, s.addr1) >= max(s0.addr0, s.addr0)) {
-      if (s.tid == fast_state.id)
+      if (s.tid == fast_state.tid)
         continue;
       // happens before?
       if (thr->clock.get(s.tid) >= s.epoch) {
@@ -275,12 +276,12 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
 }
 
 void FuncEntry(ThreadState *thr, uptr pc) {
-  Printf("#%d: tsan::FuncEntry %p\n", (int)thr->fast.id, (void*)pc);
+  Printf("#%d: tsan::FuncEntry %p\n", (int)thr->fast.tid, (void*)pc);
   thr->trace->AddEvent(EventTypeFuncEnter, pc);
 }
 
 void FuncExit(ThreadState *thr) {
-  Printf("#%d: tsan::FuncExit\n", (int)thr->fast.id);
+  Printf("#%d: tsan::FuncExit\n", (int)thr->fast.tid);
   thr->trace->AddEvent(EventTypeFuncExit, 0);
 }
 
