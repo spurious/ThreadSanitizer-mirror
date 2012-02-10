@@ -52,7 +52,8 @@ void Report(const char *format, ...);
 void Die() NORETURN;
 
 void Initialize();
-int ThreadCreate(ThreadState *thr);
+int ThreadCreate();
+void ThreadStart(int tid);
 void ThreadStart(ThreadState *thr, int tid);
 void MutexCreate(ThreadState *thr, uptr addr, bool is_rw);
 void MutexDestroy(ThreadState *thr, uptr addr);

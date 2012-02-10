@@ -22,11 +22,13 @@ Thread *Thread::Create(void *callback, void *param) {
   Thread *t = new Thread;  // FIXME: we probably don't want 'new'.
   t->callback_ = callback;
   t->param_ = param;
+  t->tid_ = __tsan::ThreadCreate();
   return t;
 }
 
 void *Thread::ThreadStart() {
   Printf("ThreadStart: %p\n", this);
+  __tsan::ThreadStart(tid_);
   typedef void *(*callback_t)(void *param);
   callback_t c = (callback_t)callback_;
   return c(param_);

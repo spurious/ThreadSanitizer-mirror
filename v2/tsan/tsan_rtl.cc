@@ -22,6 +22,8 @@
 
 namespace __tsan {
 
+static __thread __tsan::ThreadState cur_thread;
+
 struct Shadow {
   u64 tid   : kTidBits;
   u64 epoch : kClkBits;
@@ -63,7 +65,7 @@ void Initialize() {
   InitializeSuppressions();
 }
 
-int ThreadCreate(ThreadState *thr) {
+int ThreadCreate() {
   return ++ctx.thread_seq;
 }
 
@@ -75,6 +77,10 @@ void ThreadStart(ThreadState *thr, int tid) {
   thr->epoch = 1;
   thr->trace = new TraceSet;
   internal_memset(thr->trace, 0, sizeof(*thr->trace));
+}
+
+void ThreadStart(int tid) {
+  ThreadStart(&cur_thread, tid);
 }
 
 void MutexCreate(ThreadState *thr, uptr addr, bool is_rw) {

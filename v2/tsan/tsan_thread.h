@@ -27,6 +27,7 @@ class Thread {
   Thread() { }
   void *callback_;
   void *param_;
+  int tid_;
 };
 
 }  // namespace __tsan

@@ -42,9 +42,6 @@ void __tsan_write16(void *addr);
 void __tsan_func_entry(void *call_pc);
 void __tsan_func_exit();
 
-// temporal, until we have interceptors
-int  __tsan_thread_create();
-void __tsan_thread_start(int tid);
 void __tsan_mutex_create(void *addr, int is_rw);
 void __tsan_mutex_destroy(void *addr);
 void __tsan_mutex_lock(void *addr);
