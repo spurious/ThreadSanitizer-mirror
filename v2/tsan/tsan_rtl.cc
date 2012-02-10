@@ -71,10 +71,10 @@ int ThreadCreate() {
 
 void ThreadStart(ThreadState *thr, int tid) {
   internal_memset(thr, 0, sizeof(*thr));
-  thr->id = tid;
+  thr->fast.id = tid;
   thr->clockslab = new SlabCache(ctx.clockslab);
   thr->clock.tick(tid);
-  thr->epoch = 1;
+  thr->fast.epoch = 1;
   thr->trace = new TraceSet;
   internal_memset(thr->trace, 0, sizeof(*thr->trace));
 }
@@ -84,12 +84,12 @@ void ThreadStart(int tid) {
 }
 
 void MutexCreate(ThreadState *thr, uptr addr, bool is_rw) {
-  Printf("#%d: MutexCreate %p\n", thr->id, addr);
+  Printf("#%d: MutexCreate %p\n", thr->fast.id, addr);
   ctx.synctab->insert(new MutexVar(addr, is_rw));
 }
 
 void MutexDestroy(ThreadState *thr, uptr addr) {
-  Printf("#%d: MutexDestroy %p\n", thr->id, addr);
+  Printf("#%d: MutexDestroy %p\n", thr->fast.id, addr);
   SyncVar *s = ctx.synctab->get_and_lock(addr);
   CHECK(s && s->type == SyncVar::Mtx);
   ctx.synctab->remove(s);
@@ -98,7 +98,7 @@ void MutexDestroy(ThreadState *thr, uptr addr) {
 }
 
 void MutexLock(ThreadState *thr, uptr addr) {
-  Printf("#%d: MutexLock %p\n", thr->id, addr);
+  Printf("#%d: MutexLock %p\n", thr->fast.id, addr);
   thr->trace->AddEvent(EventTypeLock, addr);
   SyncVar *s = ctx.synctab->get_and_lock(addr);
   CHECK(s && s->type == SyncVar::Mtx);
@@ -108,7 +108,7 @@ void MutexLock(ThreadState *thr, uptr addr) {
 }
 
 void MutexUnlock(ThreadState *thr, uptr addr) {
-  Printf("#%d: MutexUnlock %p\n", thr->id, addr);
+  Printf("#%d: MutexUnlock %p\n", thr->fast.id, addr);
   thr->trace->AddEvent(EventTypeUnlock, addr);
   SyncVar *s = ctx.synctab->get_and_lock(addr);
   CHECK(s && s->type == SyncVar::Mtx);
@@ -130,7 +130,7 @@ static void NOINLINE ReportRace(ThreadState *thr, uptr addr,
   (void)s0;
   (void)s;
   (void)nrace;
-  Printf("#%d: RACE %p\n", thr->id, addr);
+  Printf("#%d: RACE %p\n", thr->fast.id, addr);
 
   int alloc_pos = 0;
   ReportDesc rep;
@@ -159,14 +159,17 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
   atomic_uint64_t *shadow_mem = (atomic_uint64_t*)MemToShadow(addr);
   Printf("#%d: tsan::OnMemoryAccess: @%p %p size=%d"
          " is_write=%d shadow_mem=%p\n",
-         (int)thr->id, (void*)pc, (void*)addr, size, is_write, shadow_mem);
+         (int)thr->fast.id, (void*)pc, (void*)addr, size, is_write, shadow_mem);
   CHECK(IsAppMem(addr));
   CHECK(IsShadowMem((uptr)shadow_mem));
 
   thr->trace->AddEvent(EventTypeMop, pc);
 
+  ThreadState::Fast fast_state = thr->fast;  // Copy.
+
   // descriptor of the memory access
-  Shadow s0 = {thr->id, thr->epoch, addr&7, min((addr&7)+size-1, 7), is_write};
+  Shadow s0 = {fast_state.id, fast_state.epoch,
+               addr&7, min((addr&7)+size-1, 7), is_write};  // NOLINT
   u64 s0v;
   internal_memcpy(&s0v, &s0, sizeof(s0v));
   // is the descriptor already stored somewhere?
@@ -198,8 +201,8 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
     // is the memory access equal to the previous?
     if (s0.addr0 == s.addr0 && s0.addr1 == s.addr1) {
       // same thread?
-      if (s.tid == thr->id) {
-        if (s.epoch >= thr->epoch) {
+      if (s.tid == fast_state.id) {
+        if (s.epoch >= fast_state.epoch) {
           if (s.write || !is_write) {
             // found a slot that holds effectively the same info
             // (that is, same tid, same sync epoch and same size)
@@ -233,7 +236,7 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
       }
     // do the memory access intercept?
     } else if (min(s0.addr1, s.addr1) >= max(s0.addr0, s.addr0)) {
-      if (s.tid == thr->id)
+      if (s.tid == fast_state.id)
         continue;
       // happens before?
       if (thr->clock.get(s.tid) >= s.epoch) {
@@ -262,12 +265,12 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
 }
 
 void FuncEntry(ThreadState *thr, uptr pc) {
-  Printf("#%d: tsan::FuncEntry %p\n", (int)thr->id, (void*)pc);
+  Printf("#%d: tsan::FuncEntry %p\n", (int)thr->fast.id, (void*)pc);
   thr->trace->AddEvent(EventTypeFuncEnter, pc);
 }
 
 void FuncExit(ThreadState *thr) {
-  Printf("#%d: tsan::FuncExit\n", (int)thr->id);
+  Printf("#%d: tsan::FuncExit\n", (int)thr->fast.id);
   thr->trace->AddEvent(EventTypeFuncExit, 0);
 }
 

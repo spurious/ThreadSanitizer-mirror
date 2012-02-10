@@ -21,14 +21,14 @@ using __tsan::Thread;
 
 static void *tsan_thread_start(void *arg) {
   Thread *t = (Thread*)arg;
-  __tsan::Printf("tsan_thread_start %p\n", t);
+  // __tsan::Printf("tsan_thread_start %p\n", t);
   return t->ThreadStart();
 }
 
 INTERCEPTOR(int, pthread_create,
     void *th, void *attr, void *callback, void *param) {
   Thread *t = Thread::Create(callback, param);
-  __tsan::Printf("pthread_create %p\n", t);
+  // __tsan::Printf("pthread_create %p\n", t);
   int res = REAL(pthread_create)(th, attr, (void*)tsan_thread_start, t);
   return res;
 }

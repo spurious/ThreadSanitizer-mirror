@@ -27,7 +27,7 @@ Thread *Thread::Create(void *callback, void *param) {
 }
 
 void *Thread::ThreadStart() {
-  Printf("ThreadStart: %p\n", this);
+  // Printf("ThreadStart: %p\n", this);
   __tsan::ThreadStart(tid_);
   typedef void *(*callback_t)(void *param);
   callback_t c = (callback_t)callback_;
