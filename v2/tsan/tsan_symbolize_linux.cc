@@ -26,22 +26,22 @@ bool SymbolizeCode(uptr pc, char *func, int func_size,
   FILE *f = fopen("/proc/self/cmdline", "rb");
   if (f) {
     char exe[1024];
-    fread(exe, sizeof(exe), 1, f);
+    CHECK_LT(0, fread(exe, 1, sizeof(exe), f));
     char cmd[1024];
     snprintf(cmd, sizeof(cmd), "nm %s|grep SymbolizeCode > tsan.tmp", exe);
-    system(cmd);
+    CHECK_EQ(0, system(cmd));
     FILE* f2 = fopen("tsan.tmp", "rb");
     if (f2) {
       char tmp[1024];
-      fread(tmp, sizeof(tmp), 1, f2);
+      CHECK_LT(0, fread(tmp, 1, sizeof(tmp), f2));
       uptr addr = (uptr)strtoll(tmp, 0, 16);
       uptr base = (uptr)&SymbolizeCode - addr;
       snprintf(cmd, sizeof(cmd),
           "addr2line -C -s -f -e %s %p > tsan.tmp2", exe, (void*)(pc - base));
-      system(cmd);
+      CHECK_EQ(0, system(cmd));
       FILE* f3 = fopen("tsan.tmp2", "rb");
       if (f3) {
-        fread(tmp, sizeof(tmp), 1, f3);
+        CHECK_LT(0, fread(tmp, 1, sizeof(tmp), f3));
         char *pos = strchr(tmp, '\n');
         if (pos) {
           internal_memcpy(func, tmp, pos - tmp);

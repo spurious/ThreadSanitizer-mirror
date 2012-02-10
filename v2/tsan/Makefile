@@ -36,7 +36,7 @@ LIBTSAN_OBJ=tsan_clock.o \
             tsan_rtl.o \
             tsan_slab.o \
             tsan_suppressions.o \
-	    tsan_symbolize.o \
+	    tsan_symbolize_linux.o \
             tsan_sync.o \
             tsan_trace.o \
             tsan_thread.o \

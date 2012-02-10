@@ -10,6 +10,10 @@ test: lib
 run: all
 	(ulimit -s 8192; tests/tsan_c_test && tests/tsan_test)
 
+presubmit:
+	$(MAKE) clean run DEBUG=0
+	$(MAKE) clean run DEBUG=1
+
 RTL_LINT_FITLER=-legal/copyright,-build/include,-readability/casting,-build/header_guard
 
 lint:
