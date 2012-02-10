@@ -27,7 +27,7 @@ class ChunkedClock {
   int nclk_;
   struct Chunk;
   Chunk* chunk_;
-  friend class VectorClock;
+  friend struct VectorClock;
 };
 
 // Has to be POD because lives in TLS.

@@ -1,10 +1,10 @@
-CXX=g++
-CC=gcc
-CXXFLAGS=-Wall -Werror -fPIE
+CXX=clang++
+CC=clang
+CXXFLAGS=-Wall -fPIE
 
 ifeq ($(DEBUG), )
-	CXXFLAGS+=-O2 -DNDEBUG
+	CXXFLAGS+=-O2
 else
-	CXXFLAGS+=-g -D_DEBUG
+	CXXFLAGS+=-g -DTSAN_DEBUG=1
 endif
 

@@ -16,6 +16,10 @@
 
 #include "tsan_compiler.h"
 
+#ifndef TSAN_DEBUG
+#define TSAN_DEBUG 0
+#endif  // TSAN_DEBUG
+
 namespace __tsan {
 
 typedef unsigned long long u64;  // NOLINT
@@ -41,10 +45,10 @@ const int kShadowCnt = 8;
 #define CHECK_EQ(a, b) CHECK((a) == (b))
 #define CHECK_NE(a, b) CHECK((a) != (b))
 
-#ifdef NDEBUG
-# define DCHECK(cond)
-#else
+#if TSAN_DEBUG
 # define DCHECK(cond) CHECK(cond)
+#else
+# define DCHECK(cond)
 #endif
 
 void CheckFailed(const char *file, int line, const char *cond);
