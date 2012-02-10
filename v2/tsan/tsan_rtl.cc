@@ -25,11 +25,14 @@ namespace __tsan {
 static __thread __tsan::ThreadState cur_thread;
 
 struct Shadow {
-  u64 tid   : kTidBits;
-  u64 epoch : kClkBits;
-  u64 addr0 : 3;
-  u64 addr1 : 3;
-  u64 write : 1;
+  struct {
+    u64 tid   : kTidBits;
+    u64 epoch : kClkBits;
+    u64 addr0 : 3;
+    u64 addr1 : 3;
+    u64 write : 1;
+  };
+  u64 raw;
 };
 
 static struct {
@@ -168,10 +171,8 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
   ThreadState::Fast fast_state = thr->fast;  // Copy.
 
   // descriptor of the memory access
-  Shadow s0 = {fast_state.id, fast_state.epoch,
-               addr&7, min((addr&7)+size-1, 7), is_write};  // NOLINT
-  u64 s0v;
-  internal_memcpy(&s0v, &s0, sizeof(s0v));
+  Shadow s0 = { {fast_state.id, fast_state.epoch,
+               addr&7, min((addr&7)+size-1, 7), is_write} };  // NOLINT
   // is the descriptor already stored somewhere?
   bool replaced = false;
   // racy memory accesses
@@ -191,7 +192,7 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
     Printf("  [%d] %llx\n", i, sv);
     if (sv == 0) {
       if (replaced == false) {
-        atomic_store(sp, s0v, memory_order_relaxed);
+        atomic_store(sp, s0.raw, memory_order_relaxed);
         replaced = true;
       }
       continue;
@@ -208,13 +209,13 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
             // (that is, same tid, same sync epoch and same size)
             return;
           } else {
-            atomic_store(sp, replaced ? 0ull : s0v, memory_order_relaxed);
+            atomic_store(sp, replaced ? 0ull : s0.raw, memory_order_relaxed);
             replaced = true;
             continue;
           }
         } else {
           if (!s.write || is_write) {
-            atomic_store(sp, replaced ? 0ull : s0v, memory_order_relaxed);
+            atomic_store(sp, replaced ? 0ull : s0.raw, memory_order_relaxed);
             replaced = true;
             continue;
           } else {
@@ -224,7 +225,7 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
       } else {
         // happens before?
         if (thr->clock.get(s.tid) >= s.epoch) {
-          atomic_store(sp, replaced ? 0ull : s0v, memory_order_relaxed);
+          atomic_store(sp, replaced ? 0ull : s0.raw, memory_order_relaxed);
           replaced = true;
           continue;
         } else if (!s.write && !is_write) {
@@ -261,7 +262,7 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
     return;
   // choose a random candidate slot and replace it
   unsigned i = fastrand(thr) % kShadowCnt;
-  atomic_store(shadow_mem+i, s0v, memory_order_relaxed);
+  atomic_store(shadow_mem+i, s0.raw, memory_order_relaxed);
 }
 
 void FuncEntry(ThreadState *thr, uptr pc) {

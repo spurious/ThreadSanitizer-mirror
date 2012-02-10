@@ -1,6 +1,6 @@
 CXX=clang++
 CC=clang
-CXXFLAGS=-Wall -fPIE
+CXXFLAGS=-Wall -fPIE -Werror
 
 ifeq ($(DEBUG), )
 	CXXFLAGS+=-O2
