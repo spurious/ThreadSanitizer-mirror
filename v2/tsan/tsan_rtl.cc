@@ -262,6 +262,7 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
   DCHECK(IsShadowMem((uptr)shadow_mem));
 
   // FIXME. We should not be doing this on every access.
+  // QUESTION: How many memory accesses is this?
   TraceAddEvent(thr, EventTypeMop, pc);
 
   ThreadState::Fast fast_state;
@@ -356,6 +357,8 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
   if (replaced)
     return;
   // choose a random candidate slot and replace it
+  // QUESTION: this is one load and one store.
+  // Can we make it store-/load-free? Maybe fast_state.epoch % kShadowCnt?
   unsigned i = fastrand(thr) % kShadowCnt;
   StoreShadow(shadow_mem+i, s0.raw);
 }
