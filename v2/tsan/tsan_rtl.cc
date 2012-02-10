@@ -269,7 +269,7 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
   }
 
   // find some races?
-  if (nrace != 0)
+  if (UNLIKELY(nrace != 0))
     ReportRace(thr, addr, s0, races, nrace);
   // we did not find any races and had already stored
   // the current access info, so we are done
