@@ -189,17 +189,16 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
   // it's just not worth it (performance- and complexity-wise).
   for (int i = 0; i < kShadowCnt; i++) {
     atomic_uint64_t *sp = &shadow_mem[i];
-    u64 sv = atomic_load(sp, memory_order_relaxed);
-    // Printf("  [%d] %llx\n", i, sv);
-    if (sv == 0) {
+    Shadow s;
+    s.raw = atomic_load(sp, memory_order_relaxed);
+    // Printf("  [%d] %llx\n", i, s.raw);
+    if (s.raw == 0) {
       if (replaced == false) {
         atomic_store(sp, s0.raw, memory_order_relaxed);
         replaced = true;
       }
       continue;
     }
-    Shadow s;
-    internal_memcpy(&s, &sv, sizeof(s));
     // is the memory access equal to the previous?
     if (s0.addr0 == s.addr0 && s0.addr1 == s.addr1) {
       // same thread?
