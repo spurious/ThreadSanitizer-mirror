@@ -17,6 +17,7 @@
 #include "tsan_interface.h"
 #include "tsan_atomic.h"
 #include "tsan_suppressions.h"
+#include "tsan_symbolize.h"
 #include "tsan_sync.h"
 #include "tsan_report.h"
 #include <stddef.h>  // NULL
@@ -201,9 +202,13 @@ static void NOINLINE ReportRace(ThreadState *thr, uptr addr,
       for (int i = 0; i < mop->stack.cnt; i++) {
         ReportStackEntry *ent = &mop->stack.entry[i];
         ent->pc = stack[i];
-        ent->func = 0;
-        ent->file = 0;
+        ent->pc = stack[i];
+        ent->func = alloc<char>(&rep, 1024, &alloc_pos);
+        ent->func[0] = 0;
+        ent->file = alloc<char>(&rep, 1024, &alloc_pos);
+        ent->file[0] = 0;
         ent->line = 0;
+        SymbolizeCode(ent->pc, ent->func, 1024, ent->file, 1024, &ent->line);
       }
     }
   }

@@ -23,6 +23,7 @@ LIBTSAN_HEADERS=tsan_atomic.h \
                 tsan_rtl.h \
 		tsan_slab.h \
 		tsan_suppressions.h \
+		tsan_symbolize.h \
 		tsan_sync.h \
 		tsan_trace.h \
 		tsan_thread.h
@@ -35,6 +36,7 @@ LIBTSAN_OBJ=tsan_clock.o \
             tsan_rtl.o \
             tsan_slab.o \
             tsan_suppressions.o \
+	    tsan_symbolize.o \
             tsan_sync.o \
             tsan_trace.o \
             tsan_thread.o \
