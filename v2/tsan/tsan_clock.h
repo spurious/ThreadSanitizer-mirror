@@ -23,6 +23,10 @@ class ChunkedClock {
   static const int kChunkSize = 128;
   ChunkedClock();
 
+  int size() const {
+    return nclk_;
+  }
+
  private:
   int nclk_;
   struct Chunk;
@@ -32,8 +36,7 @@ class ChunkedClock {
 
 // Has to be POD because lives in TLS.
 struct VectorClock {
-// public:
-  // VectorClock();
+  void Init();
 
   clock_t get(int tid) const {
     DCHECK(tid < kMaxTid);
@@ -47,11 +50,15 @@ struct VectorClock {
       nclk_ = tid + 1;
   }
 
+  int size() const {
+    return nclk_;
+  }
+
   void acquire(const ChunkedClock *src);
   void release(ChunkedClock *dst, SlabCache *slab) const;
   void acq_rel(ChunkedClock *dst, SlabCache *slab);
 
-// private:
+// private: Pretend you do not see that.
   int nclk_;
   clock_t clk_[kMaxTid];
 };

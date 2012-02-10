@@ -20,12 +20,9 @@ struct ChunkedClock::Chunk {
   clock_t clk_[ChunkedClock::kChunkSize / sizeof(clock_t) - 1];
 };
 
-/*
-VectorClock::VectorClock()
-  : nclk_() {
-    memset(clk_, 0, sizeof(clk_));
+void VectorClock::Init() {
+  internal_memset(this, 0, sizeof(*this));
 }
-*/
 
 void VectorClock::acquire(const ChunkedClock *src) {
   DCHECK(this->nclk_ <= kMaxTid);

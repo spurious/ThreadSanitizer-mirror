@@ -17,8 +17,15 @@ LIBTSAN_HEADERS=tsan_test_util.h \
 TEST_OBJ=tsan_test.o \
 	 tsan_test_util_linux.o
 
+UTEST_SRC=$(wildcard ../tsan/*_test.cc)
+UTEST_OBJ=$(patsubst %.cc,%.o,$(UTEST_SRC))
+UTEST_HDR=$(wildcard ../tsan/*.h)
+
 all: tsan_test tsan_c_test
 
+
+../tsan/%_test.o: ../tsan/%_test.cc $(UTEST_HDR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ -c $<
 
 %.o: %.cc $(LIBTSAN_HEADERS)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $<
@@ -26,8 +33,8 @@ all: tsan_test tsan_c_test
 %.o: %.c $(LIBTSAN_HEADERS)
 	$(CC) $(CXXFLAGS) $(INCLUDES) -c $<
 
-tsan_test: $(TEST_OBJ) $(LIBTSAN) $(GTEST_LIB)
-	$(CXX) $(TEST_OBJ) $(LIBTSAN) $(GTEST_LIB) -o $@ $(LINKFLAGS)
+tsan_test: $(TEST_OBJ) $(UTEST_OBJ) $(LIBTSAN) $(GTEST_LIB)
+	$(CXX) $(TEST_OBJ) $(UTEST_OBJ) $(LIBTSAN) $(GTEST_LIB) -o $@ $(LINKFLAGS)
 
 tsan_c_test: tsan_c_test.o $(LIBTSAN)
 	$(CXX) $< -o $@ $(LIBTSAN) -o $@ $(LINKFLAGS)
