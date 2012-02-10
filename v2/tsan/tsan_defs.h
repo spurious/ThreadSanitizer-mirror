@@ -38,6 +38,12 @@ const int kShadowCnt = TSAN_SHADOW_STATE_LENGTH;
 const int kShadowCnt = 8;
 #endif
 
+#if defined(TSAN_COLLECT_STATS) && TSAN_COLLECT_STATS
+const bool kCollectStats = true;
+#else
+const bool kCollectStats = false;
+#endif
+
 #define CHECK(cond) \
   do { if (!(cond)) ::__tsan::CheckFailed(__FILE__, __LINE__, #cond); \
   } while (false)

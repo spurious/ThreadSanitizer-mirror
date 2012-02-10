@@ -33,6 +33,13 @@
 
 namespace __tsan {
 
+enum StatType {
+  StatMop,
+  StatFuncEnter,
+  StatFuncExit,
+  StatCnt,
+};
+
 // This struct is stored in TLS.
 struct ThreadState {
   // The most performance-critical fields should fit into the
@@ -54,7 +61,13 @@ struct ThreadState {
   TraceSet* trace;
   SlabCache* clockslab;
   VectorClock clock;
+  u64 stat[StatCnt];
 };
+
+void ALWAYS_INLINE INLINE StatInc(ThreadState *thr, StatType typ, u64 n = 1) {
+  if (kCollectStats)
+    thr->stat[typ] += n;
+}
 
 void InitializeShadowMemory();
 void InitializeInterceptors();

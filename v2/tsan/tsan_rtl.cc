@@ -251,6 +251,7 @@ static void StoreShadow(u64 *p, u64 raw) {
 ALWAYS_INLINE
 void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
                   int size, bool is_write) {
+  StatInc(thr, StatMop);
   u64 *shadow_mem = (u64*)MemToShadow(addr);
   if (TSAN_DEBUG)
     Printf("#%d: tsan::OnMemoryAccess: @%p %p size=%d"
@@ -360,12 +361,14 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
 }
 
 void FuncEntry(ThreadState *thr, uptr pc) {
+  StatInc(thr, StatFuncEnter);
   if (TSAN_DEBUG)
     Printf("#%d: tsan::FuncEntry %p\n", (int)thr->fast.tid, (void*)pc);
   TraceAddEvent(thr, EventTypeFuncEnter, pc);
 }
 
 void FuncExit(ThreadState *thr) {
+  StatInc(thr, StatFuncExit);
   if (TSAN_DEBUG)
     Printf("#%d: tsan::FuncExit\n", (int)thr->fast.tid);
   TraceAddEvent(thr, EventTypeFuncExit, 0);
