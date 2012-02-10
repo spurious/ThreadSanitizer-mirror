@@ -130,10 +130,9 @@ void MutexCreate(ThreadState *thr, uptr addr, bool is_rw) {
 
 void MutexDestroy(ThreadState *thr, uptr addr) {
   Printf("#%d: MutexDestroy %p\n", thr->fast.tid, addr);
-  SyncVar *s = ctx->synctab->get_and_lock(addr);
+  SyncVar *s = ctx->synctab->get_and_remove(addr);
   CHECK(s && s->type == SyncVar::Mtx);
-  ctx->synctab->remove(s);
-  s->mtx.Unlock();
+  s->clock.Free(thr->clockslab);
   delete s;
 }
 

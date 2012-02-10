@@ -22,6 +22,9 @@ class ChunkedClock {
  public:
   static const int kChunkSize = 128;
   ChunkedClock();
+  ~ChunkedClock();
+
+  void Free(SlabCache *slab);
 
   int size() const {
     return nclk_;

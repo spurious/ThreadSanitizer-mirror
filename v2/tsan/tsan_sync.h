@@ -41,8 +41,8 @@ class SyncTab {
   SyncTab();
 
   void insert(SyncVar *var);
-  void remove(SyncVar *var);
   SyncVar* get_and_lock(uptr addr);
+  SyncVar* get_and_remove(uptr addr);
 
  private:
   Mutex mtx_;

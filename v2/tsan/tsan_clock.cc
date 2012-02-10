@@ -15,9 +15,11 @@
 
 namespace __tsan {
 
+const int kChunkCapacity = ChunkedClock::kChunkSize / sizeof(u64) - 1;
+
 struct ChunkedClock::Chunk {
   Chunk* next_;
-  u64 clk_[ChunkedClock::kChunkSize / sizeof(u64) - 1];
+  u64 clk_[kChunkCapacity];
 };
 
 void VectorClock::Init() {
@@ -34,7 +36,7 @@ void VectorClock::acquire(const ChunkedClock *src) {
     this->nclk_ = src->nclk_;
   ChunkedClock::Chunk *c = src->chunk_;
   for (int di = 0; di < this->nclk_;) {
-    for (int si = 0; si < ChunkedClock::kChunkSize && di < this->nclk_;
+    for (int si = 0; si < kChunkCapacity && di < this->nclk_;
         si++, di++) {
       if (this->clk_[di] < c->clk_[si])
         this->clk_[di] = c->clk_[si];
@@ -59,7 +61,7 @@ void VectorClock::release(ChunkedClock *dst, SlabCache *slab) const {
       internal_memset(c->clk_, 0, sizeof(c->clk_));
       *cp = c;
     }
-    for (int di = 0; di < ChunkedClock::kChunkSize && si < this->nclk_;
+    for (int di = 0; di < kChunkCapacity && si < this->nclk_;
         si++, di++) {
       if (c->clk_[di] < this->clk_[si])
         c->clk_[di] = this->clk_[si];
@@ -78,6 +80,20 @@ ChunkedClock::ChunkedClock()
   : nclk_()
   , chunk_() {
   typedef char static_assert_chunk_size[sizeof(Chunk) == kChunkSize ? 1 : -1];
+}
+
+ChunkedClock::~ChunkedClock() {
+  CHECK_EQ(nclk_, 0);
+  CHECK_EQ(chunk_, NULL);
+}
+
+void ChunkedClock::Free(SlabCache *slab) {
+  while (chunk_) {
+    Chunk* tmp = chunk_;
+    chunk_ = tmp->next_;
+    slab->Free(tmp);
+  }
+  nclk_ =  0;
 }
 
 }  // namespace __tsan

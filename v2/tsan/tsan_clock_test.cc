@@ -49,6 +49,7 @@ TEST(Clock, ChunkedBasic) {
   vector.acq_rel(&chunked, &slab);
   CHECK_EQ(vector.size(), 0);
   CHECK_EQ(chunked.size(), 0);
+  chunked.Free(&slab);
 }
 
 TEST(Clock, AcquireRelease) {
@@ -56,16 +57,19 @@ TEST(Clock, AcquireRelease) {
   SlabCache slab(&alloc);
   VectorClock vector1;
   vector1.Init();
-  vector1.tick(5);
+  vector1.tick(100);
   ChunkedClock chunked;
   vector1.release(&chunked, &slab);
-  CHECK_EQ(chunked.size(), 6);
+  CHECK_EQ(chunked.size(), 101);
   VectorClock vector2;
   vector2.Init();
   vector2.acquire(&chunked);
-  CHECK_EQ(vector2.size(), 6);
+  CHECK_EQ(vector2.size(), 101);
   CHECK_EQ(vector2.get(0), 0);
-  CHECK_EQ(vector2.get(5), 1);
+  CHECK_EQ(vector2.get(1), 0);
+  CHECK_EQ(vector2.get(99), 0);
+  CHECK_EQ(vector2.get(100), 1);
+  chunked.Free(&slab);
 }
 
 }  // namespace __tsan

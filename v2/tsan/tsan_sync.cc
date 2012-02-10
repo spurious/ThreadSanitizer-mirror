@@ -31,16 +31,21 @@ void SyncTab::insert(SyncVar *var) {
   CHECK(tab_.Insert(var->addr, var));
 }
 
-void SyncTab::remove(SyncVar *var) {
-  CHECK(tab_.Erase(var->addr));
-}
-
 SyncVar* SyncTab::get_and_lock(uptr addr) {
   Lock l(&mtx_);
   SyncVar *res;
   tab_.Get(addr, &res);
   CHECK(res);
   res->mtx.Lock();
+  return res;
+}
+
+SyncVar* SyncTab::get_and_remove(uptr addr) {
+  Lock l(&mtx_);
+  SyncVar *res;
+  tab_.Get(addr, &res);
+  CHECK(res);
+  CHECK(tab_.Erase(addr));
   return res;
 }
 

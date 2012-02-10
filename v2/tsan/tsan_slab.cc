@@ -16,8 +16,8 @@
 
 namespace __tsan {
 
-int const kBatch = 32;
-int const kAllocSize = 1024*1024;
+uptr const kBatch = 32;
+uptr const kAllocSize = 1024*1024;
 
 SlabAlloc::SlabAlloc(size_t size)
   : size_(size >= sizeof(head_) ? size : sizeof(head_))
@@ -69,7 +69,7 @@ void* SlabAlloc::Alloc(uptr *n) {
 
   // Count off kBatch blocks and return them.
   void **p = head_;
-  for (int i = 0; i < kBatch-1 && p; i++)
+  for (uptr i = 0; i < kBatch-1 && p; i++)
     p = (void**)*p;
   void **next = (void**)*p;
   *p = NULL;
@@ -140,7 +140,7 @@ void NOINLINE SlabCache::Drain() {
   CHECK_EQ(count_, 2*kBatch);
   CHECK_NE(head_, NULL);
   void **p = head_;
-  for (int i = 0; i < kBatch-1; i++)
+  for (uptr i = 0; i < kBatch-1; i++)
     p = (void**)*p;
   void **next = (void**)*p;
   parent_->Free(head_, p, kBatch);
