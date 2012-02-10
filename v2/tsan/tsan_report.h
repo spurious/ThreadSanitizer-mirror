@@ -43,6 +43,21 @@ struct ReportMop {
   ReportStack stack;
 };
 
+enum ReportLocationType {
+  ReportLocationGlobal,
+  ReportLocationHeap,
+  ReportLocationStack,
+};
+
+struct ReportLocation {
+  ReportLocationType type;
+  uptr addr;
+  int size;
+  int tid;
+  char *name;
+  ReportStack stack;
+};
+
 struct ReportThread {
   int id;
   char *name;
@@ -58,6 +73,7 @@ struct ReportDesc {
   ReportType typ;
   int nmop;
   ReportMop *mop;
+  ReportLocation *loc;
   int nthread;
   ReportThread *thread;
   int nmutex;

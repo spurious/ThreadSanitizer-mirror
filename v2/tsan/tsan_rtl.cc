@@ -130,13 +130,10 @@ static T* alloc(ReportDesc *rep, int n, int *pos) {
 
 static void NOINLINE ReportRace(ThreadState *thr, uptr addr,
                                 Shadow s0, Shadow s1) {
-  int nrace = 1;
-  Printf("#%d: ================= RACE ============= %p\n", thr->fast.tid, addr);
-
   int alloc_pos = 0;
   ReportDesc rep;
   rep.typ = ReportTypeRace;
-  rep.nmop = nrace + 1;
+  rep.nmop = 2;
   rep.mop = alloc<ReportMop>(&rep, rep.nmop, &alloc_pos);
   for (int i = 0; i < rep.nmop; i++) {
     ReportMop *mop = &rep.mop[i];
@@ -148,6 +145,7 @@ static void NOINLINE ReportRace(ThreadState *thr, uptr addr,
     mop->nmutex = 0;
     mop->stack.cnt = 0;
   }
+  rep.loc = 0;
   rep.nthread = 0;
   rep.nmutex = 0;
   if (IsSuppressed(ReportTypeRace, &rep.mop[0].stack))
