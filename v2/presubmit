@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+
+function fail() {
+  echo
+  echo === $1 FAILED ===
+  exit 1
+}
+
+make clean
+make DEBUG=1 || fail "debug build"
+tests/tsan_test || fail "debug tests"
+
+make clean
+make || fail "release build"
+tests/tsan_test || fail "release tests"
+
+echo
+echo OK
