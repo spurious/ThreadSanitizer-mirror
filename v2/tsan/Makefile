@@ -43,7 +43,7 @@ LIBTSAN_OBJ=tsan_clock.o \
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(NO_SYSROOT) -c $<
 
 %.o: ../interception/%.cc
-	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@ 
 
 libtsan.a: $(LIBTSAN_OBJ)
 	ar ru $@ $(LIBTSAN_OBJ)

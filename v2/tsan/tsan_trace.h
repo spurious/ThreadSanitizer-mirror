@@ -48,11 +48,23 @@ struct TraceSet {
   int tracepos;
   Trace traces[kTraceCnt];
 
-  void AddEvent(EventType typ, uptr addr);
-
+  void AddEvent(EventType typ, uptr addr) {
+    if (tracepos == kTraceSize)
+      Switch();
+    Event &ev = traces[pos].events[tracepos];
+    ev.typ = typ;
+    ev.addr = addr;
+    tracepos++;
+  }
  private:
-  void Switch();
+  void Switch() {
+    pos = (pos+1) % kTraceCnt;
+    tracepos = 0;
+  }
 };
+
+
+
 
 }  // namespace __tsan
 
