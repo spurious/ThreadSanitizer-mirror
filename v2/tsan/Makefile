@@ -4,6 +4,10 @@ INCLUDES= -I../ -I../third_party/stlport
 EXTRA_CXXFLAGS=-fno-exceptions
 NO_SYSROOT=--sysroot=
 CXXFLAGS+=$(EXTRA_CXXFLAGS)
+ifeq ($(DEBUG), 0)
+  CXXFLAGS+=-fomit-frame-pointer
+endif
+
 
 all: libtsan.a
 

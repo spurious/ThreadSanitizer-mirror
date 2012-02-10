@@ -129,10 +129,8 @@ static T* alloc(ReportDesc *rep, int n, int *pos) {
 }
 
 static void NOINLINE ReportRace(ThreadState *thr, uptr addr,
-                                Shadow s0, Shadow *s, int nrace) {
-  (void)s0;
-  (void)s;
-  (void)nrace;
+                                Shadow s0, Shadow s1) {
+  int nrace = 1;
   Printf("#%d: ================= RACE ============= %p\n", thr->fast.tid, addr);
 
   int alloc_pos = 0;
@@ -142,11 +140,11 @@ static void NOINLINE ReportRace(ThreadState *thr, uptr addr,
   rep.mop = alloc<ReportMop>(&rep, rep.nmop, &alloc_pos);
   for (int i = 0; i < rep.nmop; i++) {
     ReportMop *mop = &rep.mop[i];
-    Shadow *s1 = (i ? &s[i - 1] : &s0);
-    mop->tid = s1->tid;
-    mop->addr = addr + s1->addr0;
-    mop->size = s1->addr1 - s1->addr0 + 1;
-    mop->write = s1->write;
+    Shadow *s = (i ? &s1 : &s0);
+    mop->tid = s->tid;
+    mop->addr = addr + s->addr0;
+    mop->size = s->addr1 - s->addr0 + 1;
+    mop->write = s->write;
     mop->nmutex = 0;
     mop->stack.cnt = 0;
   }
@@ -190,11 +188,11 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
   // descriptor of the memory access
   Shadow s0 = { {fast_state.tid, fast_state.epoch,
                addr&7, min((addr&7)+size-1, 7), is_write} };  // NOLINT
-  // is the descriptor already stored somewhere?
+  // Is the descriptor already stored somewhere?
   bool replaced = false;
-  // racy memory accesses
-  Shadow races[kShadowCnt];
-  int nrace = 0;
+  // Racy memory access. Zero if none.
+  Shadow racy_access;
+  racy_access.raw = 0;
 
   // scan all the shadow values and dispatch to 4 categories:
   // same, replace, candidate and race (see comments below).
@@ -246,7 +244,7 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
         } else if (!s.write && !is_write) {
           continue;
         } else {
-          races[nrace++] = s;
+          racy_access = s;
           continue;
         }
       }
@@ -260,7 +258,7 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
       } else if (!s.write && !is_write) {
         continue;
       } else {
-        races[nrace++] = s;
+        racy_access = s;
         continue;
       }
     }
@@ -269,8 +267,8 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
   }
 
   // find some races?
-  if (UNLIKELY(nrace != 0))
-    ReportRace(thr, addr, s0, races, nrace);
+  if (UNLIKELY(racy_access.raw != 0))
+    ReportRace(thr, addr, s0, racy_access);
   // we did not find any races and had already stored
   // the current access info, so we are done
   if (replaced)
