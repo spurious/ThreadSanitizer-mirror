@@ -25,7 +25,6 @@ namespace __tsan {
 typedef unsigned long long u64;  // NOLINT
 typedef unsigned long uptr;  // NOLINT
 typedef unsigned long size_t;  // NOLINT
-typedef u64 clock_t;
 
 const uptr kPageSize = 4096;
 const int kTidBits = 8;

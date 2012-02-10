@@ -14,6 +14,7 @@
 #define TSAN_TRACE_H
 
 #include "tsan_defs.h"
+#include "tsan_mutex.h"
 
 namespace __tsan {
 
@@ -43,6 +44,7 @@ struct Trace {
 };
 
 struct TraceSet {
+  Mutex mtx;
   int curtrace;
   Trace traces[kTraceCnt];
 };

@@ -28,7 +28,8 @@ void PrintReport(const ReportDesc *rep) {
   Printf("WARNING: Data race\n");
   for (int i = 0; i < rep->nmop; i++) {
     const ReportMop *mop = &rep->mop[i];
-    Printf("  %s of size %d at %p by thread %d:\n",
+    Printf("  %s%s of size %d at %p by thread %d:\n",
+           (i ? "Previous " : ""),
            (mop->write ? "Write" : "Read"),
            mop->size, (void*)mop->addr, mop->tid);
     PrintStack(&mop->stack);

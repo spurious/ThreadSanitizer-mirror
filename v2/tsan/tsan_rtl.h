@@ -51,7 +51,7 @@ struct ThreadState {
   Event *fast_trace_pos;
   Event *fast_trace_end;
   unsigned rand;
-  TraceSet trace;
+  TraceSet* trace;
   SlabCache* clockslab;
   VectorClock clock;
 };

@@ -17,7 +17,7 @@ namespace __tsan {
 
 struct ChunkedClock::Chunk {
   Chunk* next_;
-  clock_t clk_[ChunkedClock::kChunkSize / sizeof(clock_t) - 1];
+  u64 clk_[ChunkedClock::kChunkSize / sizeof(u64) - 1];
 };
 
 void VectorClock::Init() {

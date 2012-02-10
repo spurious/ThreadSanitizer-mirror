@@ -38,7 +38,7 @@ class ChunkedClock {
 struct VectorClock {
   void Init();
 
-  clock_t get(int tid) const {
+  u64 get(int tid) const {
     DCHECK(tid < kMaxTid);
     return clk_[tid];
   }
@@ -60,7 +60,7 @@ struct VectorClock {
 
 // private: Pretend you do not see that.
   int nclk_;
-  clock_t clk_[kMaxTid];
+  u64 clk_[kMaxTid];
 };
 
 }  // namespace __tsan

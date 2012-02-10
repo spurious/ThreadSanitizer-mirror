@@ -19,6 +19,7 @@
 #include "tsan_suppressions.h"
 #include "tsan_sync.h"
 #include "tsan_report.h"
+#include <stddef.h>  // NULL
 
 namespace __tsan {
 
@@ -35,11 +36,15 @@ union Shadow {
   u64 raw;
 };
 
-static struct {
+struct Context {
+  Mutex mtx;
   int thread_seq;
   SlabAlloc* clockslab;
   SyncTab *synctab;
-} ctx;
+  ThreadState *threads[kMaxTid];
+};
+
+static Context *ctx;
 
 u64 min(u64 a, u64 b) {
   return a < b ? a : b;
@@ -60,16 +65,20 @@ void CheckFailed(const char *file, int line, const char *cond) {
 }
 
 static void TraceInit(ThreadState *thr) {
-  internal_memset(&thr->trace, 0, sizeof(thr->trace));
-  thr->trace.curtrace = 0;
-  thr->fast_trace_pos = &thr->trace.traces[thr->trace.curtrace].events[0];
+  thr->trace = new TraceSet;
+  internal_memset(thr->trace, 0, sizeof(TraceSet));
+  thr->trace->curtrace = 0;
+  thr->fast_trace_pos = &thr->trace->traces[thr->trace->curtrace].events[0];
   thr->fast_trace_end = thr->fast_trace_pos + kTraceSize;
+  thr->fast_trace_pos += 2;
 }
 
 static void NOINLINE TraceSwitch(ThreadState *thr) {
-  thr->trace.curtrace = (thr->trace.curtrace + 1) % kTraceCnt;
-  thr->fast_trace_pos = &thr->trace.traces[thr->trace.curtrace].events[0];
+  Lock l(&thr->trace->mtx);
+  thr->trace->curtrace = (thr->trace->curtrace + 1) % kTraceCnt;
+  thr->fast_trace_pos = &thr->trace->traces[thr->trace->curtrace].events[0];
   thr->fast_trace_end = thr->fast_trace_pos + kTraceSize;
+  thr->trace->traces[thr->trace->curtrace].epoch0 = thr->fast.epoch;
 }
 
 static void ALWAYS_INLINE TraceAddEvent(ThreadState *thr,
@@ -78,31 +87,35 @@ static void ALWAYS_INLINE TraceAddEvent(ThreadState *thr,
     TraceSwitch(thr);
   *thr->fast_trace_pos = (u64)addr | ((u64)typ << 61);
   thr->fast_trace_pos++;
+  thr->fast.epoch++;
 }
 
 void Initialize() {
   Printf("tsan::Initialize\n");
   InitializeShadowMemory();
-  ctx.clockslab = new SlabAlloc(ChunkedClock::kChunkSize);
-  ctx.synctab = new SyncTab;
+  ctx = new Context;
+  ctx->clockslab = new SlabAlloc(ChunkedClock::kChunkSize);
+  ctx->synctab = new SyncTab;
   InitializeInterceptors();
   InitializeSuppressions();
 
   // Initialize thread 0.
-  ThreadStart(ThreadCreate());
+  ThreadStart(0);
 }
 
 int ThreadCreate() {
-  return ++ctx.thread_seq;
+  Lock l(&ctx->mtx);
+  return ++ctx->thread_seq;
 }
 
 void ThreadStart(ThreadState *thr, int tid) {
   internal_memset(thr, 0, sizeof(*thr));
   thr->fast.tid = tid;
-  thr->clockslab = new SlabCache(ctx.clockslab);
+  thr->clockslab = new SlabCache(ctx->clockslab);
   thr->clock.tick(tid);
   thr->fast.epoch = 1;
   TraceInit(thr);
+  ctx->threads[tid] = thr;
 }
 
 void ThreadStart(int tid) {
@@ -111,14 +124,14 @@ void ThreadStart(int tid) {
 
 void MutexCreate(ThreadState *thr, uptr addr, bool is_rw) {
   Printf("#%d: MutexCreate %p\n", thr->fast.tid, addr);
-  ctx.synctab->insert(new MutexVar(addr, is_rw));
+  ctx->synctab->insert(new MutexVar(addr, is_rw));
 }
 
 void MutexDestroy(ThreadState *thr, uptr addr) {
   Printf("#%d: MutexDestroy %p\n", thr->fast.tid, addr);
-  SyncVar *s = ctx.synctab->get_and_lock(addr);
+  SyncVar *s = ctx->synctab->get_and_lock(addr);
   CHECK(s && s->type == SyncVar::Mtx);
-  ctx.synctab->remove(s);
+  ctx->synctab->remove(s);
   s->mtx.Unlock();
   delete s;
 }
@@ -126,7 +139,7 @@ void MutexDestroy(ThreadState *thr, uptr addr) {
 void MutexLock(ThreadState *thr, uptr addr) {
   Printf("#%d: MutexLock %p\n", thr->fast.tid, addr);
   TraceAddEvent(thr, EventTypeLock, addr);
-  SyncVar *s = ctx.synctab->get_and_lock(addr);
+  SyncVar *s = ctx->synctab->get_and_lock(addr);
   CHECK(s && s->type == SyncVar::Mtx);
   MutexVar *m = static_cast<MutexVar*>(s);
   thr->clock.acquire(&m->clock);
@@ -136,7 +149,7 @@ void MutexLock(ThreadState *thr, uptr addr) {
 void MutexUnlock(ThreadState *thr, uptr addr) {
   Printf("#%d: MutexUnlock %p\n", thr->fast.tid, addr);
   TraceAddEvent(thr, EventTypeUnlock, addr);
-  SyncVar *s = ctx.synctab->get_and_lock(addr);
+  SyncVar *s = ctx->synctab->get_and_lock(addr);
   CHECK(s && s->type == SyncVar::Mtx);
   MutexVar *m = static_cast<MutexVar*>(s);
   thr->clock.release(&m->clock, thr->clockslab);
@@ -151,8 +164,21 @@ static T* alloc(ReportDesc *rep, int n, int *pos) {
   return p;
 }
 
+static int RestoreStack(int tid, u64 epoch, uptr *stack, int n) {
+  ThreadState *thr = ctx->threads[tid];
+  Lock l(&thr->trace->mtx);
+  Trace* trace = &thr->trace->traces[(epoch / kTraceSize) % kTraceCnt];
+  if (epoch < trace->epoch0)
+    return 0;
+  epoch %= kTraceSize;
+  Event ev = trace->events[epoch];
+  stack[0] = ev & 0xffffffffffffull;
+  return 1;
+}
+
 static void NOINLINE ReportRace(ThreadState *thr, uptr addr,
                                 Shadow s0, Shadow s1) {
+  addr &= ~7;
   int alloc_pos = 0;
   ReportDesc rep;
   rep.typ = ReportTypeRace;
@@ -166,7 +192,20 @@ static void NOINLINE ReportRace(ThreadState *thr, uptr addr,
     mop->size = s->addr1 - s->addr0 + 1;
     mop->write = s->write;
     mop->nmutex = 0;
-    mop->stack.cnt = 0;
+    uptr stack[64];
+    mop->stack.cnt = RestoreStack(s->tid, s->epoch, stack,
+                                  sizeof(stack)/sizeof(stack[0]));
+    if (mop->stack.cnt != 0) {
+      mop->stack.entry = alloc<ReportStackEntry>(&rep, mop->stack.cnt,
+                                                   &alloc_pos);
+      for (int i = 0; i < mop->stack.cnt; i++) {
+        ReportStackEntry *ent = &mop->stack.entry[i];
+        ent->pc = stack[i];
+        ent->func = 0;
+        ent->file = 0;
+        ent->line = 0;
+      }
+    }
   }
   rep.loc = 0;
   rep.nthread = 0;

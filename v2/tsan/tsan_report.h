@@ -23,8 +23,8 @@ enum ReportType {
 
 struct ReportStackEntry {
   uptr pc;
-  const char* func;
-  const char* file;
+  char* func;
+  char* file;
   int line;
 };
 
