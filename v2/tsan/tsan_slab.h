@@ -20,15 +20,20 @@ namespace __tsan {
 
 class SlabAlloc {
  public:
-  explicit SlabAlloc(size_t size);
+  explicit SlabAlloc(uptr size);
+  ~SlabAlloc();
 
-  void* alloc();
-  void free(void *p);
-  size_t size() const;
+  void* Alloc(uptr *n);
+  void Free(void *first, void *last, uptr n);
+  uptr Size() const;
 
  private:
   Mutex mtx_;
-  size_t const size_;
+  uptr const size_;
+  uptr count_;
+  uptr allocated_;
+  void **head_;
+  void **superblocks_;
 
   SlabAlloc(const SlabAlloc&);
   void operator = (const SlabAlloc&);
@@ -37,13 +42,19 @@ class SlabAlloc {
 class SlabCache {
  public:
   explicit SlabCache(SlabAlloc *parent);
+  ~SlabCache();
 
-  void* alloc();
-  void free(void *p);
-  size_t size() const;
+  void* Alloc();
+  void Free(void *p);
+  uptr Size() const;
 
  private:
   SlabAlloc *parent_;
+  void **head_;
+  uptr count_;
+
+  void* AllocSlow();
+  void Drain();
 
   SlabCache(const SlabCache&);
   void operator = (const SlabCache&);

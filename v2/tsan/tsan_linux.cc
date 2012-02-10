@@ -49,15 +49,6 @@ void internal_memcpy(void *dst, const void *src, uptr size) {
   memcpy(dst, src, size);  // FIXME: use REAL(memcpy) or a custom one.
 }
 
-// FIXME: should not use libc.
-void *LowLevelAllocator::Allocate(uptr size) {
-  return malloc(size);
-}
-
-void LowLevelAllocator::Deallocate(void *ptr, uptr size) {
-  free(ptr);
-}
-
 // FIXME: PoorMansMap should not use STL.
 struct PoorMansMap::Impl {
   std::map<uptr, uptr> m;
@@ -94,11 +85,28 @@ static void *my_mmap(void *addr, size_t length, int prot, int flags,
 # endif
 }
 
+void *virtual_alloc(uptr size) {
+  void *p = my_mmap(NULL, size, PROT_READ|PROT_WRITE,
+      MAP_PRIVATE | MAP_ANON, -1, 0);
+  if (p == MAP_FAILED) {
+    Report("FATAL: ThreadSanitizer can not allocate %lu MB\n", size<<20);
+    Die();
+  }
+  return p;
+}
+
+void virtual_free(void *p, uptr size) {
+  if (munmap(p, size)) {
+    Report("FATAL: ThreadSanitizer munmap failed\n");
+    Die();
+  }
+}
+
 static void ProtectRange(uptr beg, uptr end) {
   if (beg != (uptr)my_mmap((void*)(beg), end - beg,
       PROT_NONE,
       MAP_PRIVATE | MAP_ANON | MAP_FIXED | MAP_NORESERVE,
-      0, 0)) {
+      -1, 0)) {
     Report("FATAL: ThreadSanitizer can not protect [%p,%p]\n", beg, end);
     Report("FATAL: Make sure you are not using unlimited stack\n");
     Die();

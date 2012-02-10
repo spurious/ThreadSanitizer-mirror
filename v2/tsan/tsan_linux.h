@@ -39,6 +39,9 @@ static inline bool IsShadowMem(uptr mem) {
   return mem >= kLinuxShadowBeg && mem <= kLinuxShadowEnd;
 }
 
+void *virtual_alloc(uptr size);
+void virtual_free(void *p, uptr size);
+
 }  // namespace __tsan
 
 #else  // __LP64__

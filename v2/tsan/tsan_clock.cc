@@ -44,7 +44,7 @@ void VectorClock::acquire(const ChunkedClock *src) {
 }
 
 void VectorClock::release(ChunkedClock *dst, SlabCache *slab) const {
-  DCHECK((int)slab->size() == ChunkedClock::kChunkSize);
+  DCHECK((int)slab->Size() == ChunkedClock::kChunkSize);
   DCHECK(dst->nclk_ <= kMaxTid);
   DCHECK(this->nclk_ <= kMaxTid);
 
@@ -54,7 +54,7 @@ void VectorClock::release(ChunkedClock *dst, SlabCache *slab) const {
   ChunkedClock::Chunk* c = *cp;
   for (int si = 0; si < this->nclk_;) {
     if (!c) {
-      c = (ChunkedClock::Chunk*)slab->alloc();
+      c = (ChunkedClock::Chunk*)slab->Alloc();
       c->next_ = 0;
       internal_memset(c->clk_, 0, sizeof(c->clk_));
       *cp = c;

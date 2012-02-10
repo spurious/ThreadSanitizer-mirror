@@ -74,14 +74,6 @@ void MutexUnlock(ThreadState *thr, uptr addr);
 void internal_memset(void *ptr, int c, uptr size);
 void internal_memcpy(void *dst, const void *src, uptr size);
 
-class LowLevelAllocator {
- public:
-  void *Allocate(uptr size);
-  void Deallocate(void *ptr, uptr size);
- private:
-  // FIXME: should not use libc or static construction.
-};
-
 class PoorMansMap {
  public:
   PoorMansMap();

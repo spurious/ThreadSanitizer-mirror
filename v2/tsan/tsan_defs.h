@@ -15,6 +15,7 @@
 #define TSAN_DEFS_H
 
 #include "tsan_compiler.h"
+#include <stddef.h>  // NULL
 
 #ifndef TSAN_DEBUG
 #define TSAN_DEBUG 0
