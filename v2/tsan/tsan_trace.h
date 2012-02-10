@@ -43,21 +43,8 @@ struct Trace {
 };
 
 struct TraceSet {
-  Event *pos;
-  Event *end;
   int curtrace;
   Trace traces[kTraceCnt];
-
-  TraceSet();
-
-  void AddEvent(EventType typ, uptr addr) {
-    if (pos == end)
-      Switch();
-    *pos = (u64)addr | ((u64)typ << 61);
-    pos++;
-  }
- private:
-  void Switch() NOINLINE;
 };
 
 }  // namespace __tsan

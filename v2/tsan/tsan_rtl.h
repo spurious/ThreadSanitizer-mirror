@@ -48,8 +48,10 @@ struct ThreadState {
   };
 
   Fast fast;  // Should be the first field.
+  Event *fast_trace_pos;
+  Event *fast_trace_end;
   unsigned rand;
-  TraceSet* trace;
+  TraceSet trace;
   SlabCache* clockslab;
   VectorClock clock;
 };

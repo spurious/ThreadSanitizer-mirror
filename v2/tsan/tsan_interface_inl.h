@@ -22,53 +22,53 @@ void __tsan_init() {
   __tsan::Initialize();
 }
 
-void __tsan_read1(void *addr) {
+void FLATTEN __tsan_read1(void *addr) {
   __tsan::MemoryAccess(&cur_thread, CALLERPC, (uptr)addr, 1, false);
 }
 
-void __tsan_read2(void *addr) {
+void FLATTEN __tsan_read2(void *addr) {
   __tsan::MemoryAccess(&cur_thread, CALLERPC, (uptr)addr, 2, false);
 }
 
-void __tsan_read4(void *addr) {
+void FLATTEN __tsan_read4(void *addr) {
   __tsan::MemoryAccess(&cur_thread, CALLERPC, (uptr)addr, 4, false);
 }
 
-void __tsan_read8(void *addr) {
+void FLATTEN __tsan_read8(void *addr) {
   __tsan::MemoryAccess(&cur_thread, CALLERPC, (uptr)addr, 8, false);
 }
 
-void __tsan_read16(void *addr) {
+void FLATTEN __tsan_read16(void *addr) {
   __tsan::MemoryAccess(&cur_thread, CALLERPC, (uptr)addr, 8, false);
   __tsan::MemoryAccess(&cur_thread, CALLERPC, (uptr)addr + 8, 8, false);
 }
 
-void __tsan_write1(void *addr) {
+void FLATTEN __tsan_write1(void *addr) {
   __tsan::MemoryAccess(&cur_thread, CALLERPC, (uptr)addr, 1, true);
 }
 
-void __tsan_write2(void *addr) {
+void FLATTEN __tsan_write2(void *addr) {
   __tsan::MemoryAccess(&cur_thread, CALLERPC, (uptr)addr, 2, true);
 }
 
-void __tsan_write4(void *addr) {
+void FLATTEN __tsan_write4(void *addr) {
   __tsan::MemoryAccess(&cur_thread, CALLERPC, (uptr)addr, 4, true);
 }
 
-void __tsan_write8(void *addr) {
+void FLATTEN __tsan_write8(void *addr) {
   __tsan::MemoryAccess(&cur_thread, CALLERPC, (uptr)addr, 8, true);
 }
 
-void __tsan_write16(void *addr) {
+void FLATTEN __tsan_write16(void *addr) {
   __tsan::MemoryAccess(&cur_thread, CALLERPC, (uptr)addr, 8, true);
   __tsan::MemoryAccess(&cur_thread, CALLERPC, (uptr)addr + 8, 8, true);
 }
 
-void __tsan_func_entry(void *pc) {
+void FLATTEN __tsan_func_entry(void *pc) {
   __tsan::FuncEntry(&cur_thread, (uptr)pc);
 }
 
-void __tsan_func_exit() {
+void FLATTEN __tsan_func_exit() {
   __tsan::FuncExit(&cur_thread);
 }
 

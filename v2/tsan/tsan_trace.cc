@@ -15,17 +15,4 @@
 
 namespace __tsan {
 
-TraceSet::TraceSet() {
-  internal_memset(this, 0, sizeof(*this));
-  curtrace = 0;
-  pos = &traces[curtrace].events[0];
-  end = pos + kTraceSize;
-}
-
-void TraceSet::Switch() {
-  curtrace = (curtrace + 1) % kTraceCnt;
-  pos = &traces[curtrace].events[0];
-  end = pos + kTraceSize;
-}
-
 }  // namespace __tsan

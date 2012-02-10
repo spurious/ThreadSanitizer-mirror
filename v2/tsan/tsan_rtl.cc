@@ -59,6 +59,27 @@ void CheckFailed(const char *file, int line, const char *cond) {
   Die();
 }
 
+static void TraceInit(ThreadState *thr) {
+  internal_memset(&thr->trace, 0, sizeof(thr->trace));
+  thr->trace.curtrace = 0;
+  thr->fast_trace_pos = &thr->trace.traces[thr->trace.curtrace].events[0];
+  thr->fast_trace_end = thr->fast_trace_pos + kTraceSize;
+}
+
+static void NOINLINE TraceSwitch(ThreadState *thr) {
+  thr->trace.curtrace = (thr->trace.curtrace + 1) % kTraceCnt;
+  thr->fast_trace_pos = &thr->trace.traces[thr->trace.curtrace].events[0];
+  thr->fast_trace_end = thr->fast_trace_pos + kTraceSize;
+}
+
+static void ALWAYS_INLINE TraceAddEvent(ThreadState *thr,
+                                        EventType typ, uptr addr) {
+  if (UNLIKELY(thr->fast_trace_pos == thr->fast_trace_end))
+    TraceSwitch(thr);
+  *thr->fast_trace_pos = (u64)addr | ((u64)typ << 61);
+  thr->fast_trace_pos++;
+}
+
 void Initialize() {
   Printf("tsan::Initialize\n");
   InitializeShadowMemory();
@@ -81,7 +102,7 @@ void ThreadStart(ThreadState *thr, int tid) {
   thr->clockslab = new SlabCache(ctx.clockslab);
   thr->clock.tick(tid);
   thr->fast.epoch = 1;
-  thr->trace = new TraceSet;
+  TraceInit(thr);
 }
 
 void ThreadStart(int tid) {
@@ -104,7 +125,7 @@ void MutexDestroy(ThreadState *thr, uptr addr) {
 
 void MutexLock(ThreadState *thr, uptr addr) {
   Printf("#%d: MutexLock %p\n", thr->fast.tid, addr);
-  thr->trace->AddEvent(EventTypeLock, addr);
+  TraceAddEvent(thr, EventTypeLock, addr);
   SyncVar *s = ctx.synctab->get_and_lock(addr);
   CHECK(s && s->type == SyncVar::Mtx);
   MutexVar *m = static_cast<MutexVar*>(s);
@@ -114,7 +135,7 @@ void MutexLock(ThreadState *thr, uptr addr) {
 
 void MutexUnlock(ThreadState *thr, uptr addr) {
   Printf("#%d: MutexUnlock %p\n", thr->fast.tid, addr);
-  thr->trace->AddEvent(EventTypeUnlock, addr);
+  TraceAddEvent(thr, EventTypeUnlock, addr);
   SyncVar *s = ctx.synctab->get_and_lock(addr);
   CHECK(s && s->type == SyncVar::Mtx);
   MutexVar *m = static_cast<MutexVar*>(s);
@@ -180,7 +201,7 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
   DCHECK(IsShadowMem((uptr)shadow_mem));
 
   // FIXME. We should not be doing this on every access.
-  thr->trace->AddEvent(EventTypeMop, pc);
+  TraceAddEvent(thr, EventTypeMop, pc);
 
   ThreadState::Fast fast_state;
   fast_state.raw = thr->fast.raw;  // Copy.
@@ -279,13 +300,15 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
 }
 
 void FuncEntry(ThreadState *thr, uptr pc) {
-  Printf("#%d: tsan::FuncEntry %p\n", (int)thr->fast.tid, (void*)pc);
-  thr->trace->AddEvent(EventTypeFuncEnter, pc);
+  if (TSAN_DEBUG)
+    Printf("#%d: tsan::FuncEntry %p\n", (int)thr->fast.tid, (void*)pc);
+  TraceAddEvent(thr, EventTypeFuncEnter, pc);
 }
 
 void FuncExit(ThreadState *thr) {
-  Printf("#%d: tsan::FuncExit\n", (int)thr->fast.tid);
-  thr->trace->AddEvent(EventTypeFuncExit, 0);
+  if (TSAN_DEBUG)
+    Printf("#%d: tsan::FuncExit\n", (int)thr->fast.tid);
+  TraceAddEvent(thr, EventTypeFuncExit, 0);
 }
 
 }  // namespace __tsan

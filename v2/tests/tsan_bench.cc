@@ -15,7 +15,7 @@
 #include <stdint.h>
 
 volatile int kSize = 1024;
-volatile int kRepeat = 128*1024;
+volatile int kRepeat = 256*1024;
 
 TEST(Bench, Write8NonInstrumented) {
   volatile uint64_t data[kSize];
