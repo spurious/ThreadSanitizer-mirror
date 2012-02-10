@@ -157,9 +157,19 @@ static void NOINLINE ReportRace(ThreadState *thr, uptr addr,
   PrintReport(&rep);
 }
 
+static Shadow LoadShadow(u64 *p) {
+  Shadow s;
+  s.raw = atomic_load((atomic_uint64_t*)p, memory_order_relaxed);
+  return s;
+}
+
+static void StoreShadow(u64 *p, u64 raw) {
+  atomic_store((atomic_uint64_t*)p, raw, memory_order_relaxed);
+}
+
 void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
                   int size, bool is_write) {
-  atomic_uint64_t *shadow_mem = (atomic_uint64_t*)MemToShadow(addr);
+  u64 *shadow_mem = (u64*)MemToShadow(addr);
   Printf("#%d: tsan::OnMemoryAccess: @%p %p size=%d"
          " is_write=%d shadow_mem=%p\n",
          (int)thr->fast.id, (void*)pc, (void*)addr, size, is_write, shadow_mem);
@@ -188,13 +198,12 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
   // 'candidates' with 'same' or 'replace', but I think
   // it's just not worth it (performance- and complexity-wise).
   for (int i = 0; i < kShadowCnt; i++) {
-    atomic_uint64_t *sp = &shadow_mem[i];
-    Shadow s;
-    s.raw = atomic_load(sp, memory_order_relaxed);
+    u64 *sp = &shadow_mem[i];
+    Shadow s = LoadShadow(sp);
     // Printf("  [%d] %llx\n", i, s.raw);
     if (s.raw == 0) {
       if (replaced == false) {
-        atomic_store(sp, s0.raw, memory_order_relaxed);
+        StoreShadow(sp, s0.raw);
         replaced = true;
       }
       continue;
@@ -209,13 +218,13 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
             // (that is, same tid, same sync epoch and same size)
             return;
           } else {
-            atomic_store(sp, replaced ? 0ull : s0.raw, memory_order_relaxed);
+            StoreShadow(sp, replaced ? 0ull : s0.raw);
             replaced = true;
             continue;
           }
         } else {
           if (!s.write || is_write) {
-            atomic_store(sp, replaced ? 0ull : s0.raw, memory_order_relaxed);
+            StoreShadow(sp, replaced ? 0ull : s0.raw);
             replaced = true;
             continue;
           } else {
@@ -225,7 +234,7 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
       } else {
         // happens before?
         if (thr->clock.get(s.tid) >= s.epoch) {
-          atomic_store(sp, replaced ? 0ull : s0.raw, memory_order_relaxed);
+          StoreShadow(sp, replaced ? 0ull : s0.raw);
           replaced = true;
           continue;
         } else if (!s.write && !is_write) {
@@ -262,7 +271,7 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
     return;
   // choose a random candidate slot and replace it
   unsigned i = fastrand(thr) % kShadowCnt;
-  atomic_store(shadow_mem+i, s0.raw, memory_order_relaxed);
+  StoreShadow(shadow_mem+i, s0.raw);
 }
 
 void FuncEntry(ThreadState *thr, uptr pc) {
