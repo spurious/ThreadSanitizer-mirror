@@ -63,9 +63,6 @@ struct TraceSet {
   }
 };
 
-
-
-
 }  // namespace __tsan
 
 #endif  // TSAN_TRACE_H

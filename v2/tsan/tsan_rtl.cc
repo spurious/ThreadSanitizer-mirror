@@ -66,6 +66,9 @@ void Initialize() {
   ctx.synctab = new SyncTab;
   InitializeInterceptors();
   InitializeSuppressions();
+
+  // Initialize thread 0.
+  ThreadStart(ThreadCreate());
 }
 
 int ThreadCreate() {
@@ -173,7 +176,7 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
     Printf("#%d: tsan::OnMemoryAccess: @%p %p size=%d"
            " is_write=%d shadow_mem=%p\n",
            (int)thr->fast.tid, (void*)pc, (void*)addr,
-           size, is_write, shadow_mem);
+           (int)size, is_write, shadow_mem);
   DCHECK(IsAppMem(addr));
   DCHECK(IsShadowMem((uptr)shadow_mem));
 

@@ -11,7 +11,7 @@ make DEBUG=1 || fail "debug build"
 tests/tsan_test || fail "debug tests"
 
 make clean
-make || fail "release build"
+make DEBUG=0 || fail "release build"
 tests/tsan_test || fail "release tests"
 
 echo

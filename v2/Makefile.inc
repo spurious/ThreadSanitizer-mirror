@@ -1,11 +1,11 @@
 CXX=clang++
 CC=clang
-CXXFLAGS=-Wall -fPIE -Werror
+CXXFLAGS=-Wall -fPIE -Werror -g
 DEBUG=1
 
 ifeq ($(DEBUG), 0)
-	CXXFLAGS+=-O2
+	CXXFLAGS+=-DTSAN_DEBUG=0 -O2
 else
-	CXXFLAGS+=-g -DTSAN_DEBUG=1
+	CXXFLAGS+=-DTSAN_DEBUG=1
 endif
 
