@@ -24,7 +24,7 @@ namespace __tsan {
 
 static __thread __tsan::ThreadState cur_thread;
 
-struct Shadow {
+union Shadow {
   struct {
     u64 tid   : kTidBits;
     u64 epoch : kClkBits;
