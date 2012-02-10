@@ -66,12 +66,6 @@ void MutexDestroy(ThreadState *thr, uptr addr);
 void MutexLock(ThreadState *thr, uptr addr);
 void MutexUnlock(ThreadState *thr, uptr addr);
 
-// FIXME: Should be inlinable later (when things are settled down).
-void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
-                  int size, bool is_write);
-void FuncEntry(ThreadState *thr, uptr pc);
-void FuncExit(ThreadState *thr);
-
 void internal_memset(void *ptr, int c, uptr size);
 void internal_memcpy(void *dst, const void *src, uptr size);
 

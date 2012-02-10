@@ -157,23 +157,27 @@ static void NOINLINE ReportRace(ThreadState *thr, uptr addr,
   PrintReport(&rep);
 }
 
+ALWAYS_INLINE
 static Shadow LoadShadow(u64 *p) {
   Shadow s;
   s.raw = atomic_load((atomic_uint64_t*)p, memory_order_relaxed);
   return s;
 }
 
+ALWAYS_INLINE
 static void StoreShadow(u64 *p, u64 raw) {
   atomic_store((atomic_uint64_t*)p, raw, memory_order_relaxed);
 }
 
+ALWAYS_INLINE
 void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
                   int size, bool is_write) {
   u64 *shadow_mem = (u64*)MemToShadow(addr);
-  Printf("#%d: tsan::OnMemoryAccess: @%p %p size=%d"
-         " is_write=%d shadow_mem=%p\n",
-         (int)thr->fast.tid, (void*)pc, (void*)addr,
-         size, is_write, shadow_mem);
+  if (TSAN_DEBUG)
+    Printf("#%d: tsan::OnMemoryAccess: @%p %p size=%d"
+           " is_write=%d shadow_mem=%p\n",
+           (int)thr->fast.tid, (void*)pc, (void*)addr,
+           size, is_write, shadow_mem);
   DCHECK(IsAppMem(addr));
   DCHECK(IsShadowMem((uptr)shadow_mem));
 
