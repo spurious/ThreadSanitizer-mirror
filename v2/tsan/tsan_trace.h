@@ -32,10 +32,9 @@ enum EventType {
 };
 
 // Represents a thread event.
-struct Event {
-  u64 addr : 61;  // Associated pc.
-  u64 typ  : 3;   // EventType.
-};
+// u64 addr : 61;  // Associated pc.
+// u64 typ  : 3;   // EventType.
+typedef u64 Event;
 
 struct Trace {
   uptr  stack0[32];  // Start stack for the trace.
@@ -44,23 +43,21 @@ struct Trace {
 };
 
 struct TraceSet {
-  int pos;
-  int tracepos;
+  Event *pos;
+  Event *end;
+  int curtrace;
   Trace traces[kTraceCnt];
 
+  TraceSet();
+
   void AddEvent(EventType typ, uptr addr) {
-    if (tracepos == kTraceSize)
+    if (pos == end)
       Switch();
-    Event &ev = traces[pos].events[tracepos];
-    ev.typ = typ;
-    ev.addr = addr;
-    tracepos++;
+    *pos = (u64)addr | ((u64)typ << 61);
+    pos++;
   }
  private:
-  void Switch() {
-    pos = (pos+1) % kTraceCnt;
-    tracepos = 0;
-  }
+  void Switch() NOINLINE;
 };
 
 }  // namespace __tsan

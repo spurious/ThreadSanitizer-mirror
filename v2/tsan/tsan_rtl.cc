@@ -82,7 +82,6 @@ void ThreadStart(ThreadState *thr, int tid) {
   thr->clock.tick(tid);
   thr->fast.epoch = 1;
   thr->trace = new TraceSet;
-  internal_memset(thr->trace, 0, sizeof(*thr->trace));
 }
 
 void ThreadStart(int tid) {
