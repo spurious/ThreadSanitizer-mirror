@@ -48,15 +48,15 @@ void __tsan_write1(void *addr) {
 }
 
 void __tsan_write2(void *addr) {
-  __tsan::MemoryAccess(&cur_thread, CALLERPC, (uptr)addr, 1, true);
+  __tsan::MemoryAccess(&cur_thread, CALLERPC, (uptr)addr, 2, true);
 }
 
 void __tsan_write4(void *addr) {
-  __tsan::MemoryAccess(&cur_thread, CALLERPC, (uptr)addr, 1, true);
+  __tsan::MemoryAccess(&cur_thread, CALLERPC, (uptr)addr, 4, true);
 }
 
 void __tsan_write8(void *addr) {
-  __tsan::MemoryAccess(&cur_thread, CALLERPC, (uptr)addr, 1, true);
+  __tsan::MemoryAccess(&cur_thread, CALLERPC, (uptr)addr, 8, true);
 }
 
 void __tsan_write16(void *addr) {
