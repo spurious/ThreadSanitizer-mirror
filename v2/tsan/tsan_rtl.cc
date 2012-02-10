@@ -133,7 +133,7 @@ static void NOINLINE ReportRace(ThreadState *thr, uptr addr,
   (void)s0;
   (void)s;
   (void)nrace;
-  Printf("#%d: RACE %p\n", thr->fast.id, addr);
+  Printf("#%d: ================= RACE ============= %p\n", thr->fast.id, addr);
 
   int alloc_pos = 0;
   ReportDesc rep;
@@ -163,9 +163,10 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
   Printf("#%d: tsan::OnMemoryAccess: @%p %p size=%d"
          " is_write=%d shadow_mem=%p\n",
          (int)thr->fast.id, (void*)pc, (void*)addr, size, is_write, shadow_mem);
-  CHECK(IsAppMem(addr));
-  CHECK(IsShadowMem((uptr)shadow_mem));
+  DCHECK(IsAppMem(addr));
+  DCHECK(IsShadowMem((uptr)shadow_mem));
 
+  // FIXME. We should not be doing this on every access.
   thr->trace->AddEvent(EventTypeMop, pc);
 
   ThreadState::Fast fast_state = thr->fast;  // Copy.
@@ -189,7 +190,7 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
   for (int i = 0; i < kShadowCnt; i++) {
     atomic_uint64_t *sp = &shadow_mem[i];
     u64 sv = atomic_load(sp, memory_order_relaxed);
-    Printf("  [%d] %llx\n", i, sv);
+    // Printf("  [%d] %llx\n", i, sv);
     if (sv == 0) {
       if (replaced == false) {
         atomic_store(sp, s0.raw, memory_order_relaxed);
