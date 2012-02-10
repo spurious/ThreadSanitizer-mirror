@@ -171,9 +171,26 @@ static int RestoreStack(int tid, u64 epoch, uptr *stack, int n) {
   if (epoch < trace->epoch0)
     return 0;
   epoch %= kTraceSize;
-  Event ev = trace->events[epoch];
-  stack[0] = ev & 0xffffffffffffull;
-  return 1;
+  u64 pos = 0;
+  for (u64 i = 0; i <= epoch; i++) {
+    Event ev = trace->events[i];
+    EventType typ = (EventType)(ev >> 61);
+    uptr pc = (uptr)(ev & 0xffffffffffffull);
+    if (typ == EventTypeMop) {
+      stack[pos] = pc;
+    } else if (typ == EventTypeFuncEnter) {
+      stack[pos++] = pc;
+    } else if (typ == EventTypeFuncExit) {
+      pos--;
+    }
+  }
+  pos++;
+  for (u64 i = 0; i <= pos / 2; i++) {
+    uptr pc = stack[i];
+    stack[i] = stack[pos - i - 1];
+    stack[pos - i - 1] = pc;
+  }
+  return pos;
 }
 
 static void NOINLINE ReportRace(ThreadState *thr, uptr addr,
