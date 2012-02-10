@@ -184,7 +184,8 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
   // FIXME. We should not be doing this on every access.
   thr->trace->AddEvent(EventTypeMop, pc);
 
-  ThreadState::Fast fast_state = thr->fast;  // Copy.
+  ThreadState::Fast fast_state;
+  fast_state.raw = thr->fast.raw;  // Copy.
 
   // descriptor of the memory access
   Shadow s0 = { {fast_state.tid, fast_state.epoch,

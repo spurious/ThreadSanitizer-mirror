@@ -37,11 +37,14 @@ namespace __tsan {
 struct ThreadState {
   // The most performance-critical fields should fit into the
   // first 64 bit.
-  struct Fast {
-    u64 tid              : 16;
-    u64 epoch            : 40;
-    u64 ignoring_reads   : 1;
-    u64 ignoring_writes  : 1;
+  union Fast {
+    struct {
+      u64 tid              : 16;
+      u64 epoch            : 40;
+      u64 ignoring_reads   : 1;
+      u64 ignoring_writes  : 1;
+    };
+    u64 raw;
   };
 
   Fast fast;  // Should be the first field.
