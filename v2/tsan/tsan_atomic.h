@@ -29,11 +29,13 @@ enum memory_order {
 };
 
 struct atomic_uint64_t {
-  volatile u64 val_dont_use;
+  typedef u64 Type;
+  volatile Type val_dont_use;
 };
 
 struct atomic_uintptr_t {
-  volatile uptr val_dont_use;
+  typedef uptr Type;
+  volatile Type val_dont_use;
 };
 
 INLINE void atomic_signal_fence(memory_order) {
@@ -44,49 +46,35 @@ INLINE void atomic_thread_fence(memory_order) {
   __asm__ __volatile__("mfence" ::: "memory");
 }
 
-INLINE u64 atomic_load(const volatile atomic_uint64_t *a, memory_order mo) {
-  (void)mo;
+template<typename T>
+INLINE typename T::Type atomic_load(
+    const volatile T *a, memory_order mo) {
   DCHECK(mo & (memory_order_relaxed | memory_order_consume
       | memory_order_acquire | memory_order_seq_cst));
   DCHECK(!((uptr)a % sizeof(*a)));
-  atomic_signal_fence(memory_order_seq_cst);
-  u64 v = a->val_dont_use;
-  atomic_signal_fence(memory_order_seq_cst);
+  typename T::Type v;
+  if (mo == memory_order_relaxed) {
+    v = a->val_dont_use;
+  } else {
+    atomic_signal_fence(memory_order_seq_cst);
+    v = a->val_dont_use;
+    atomic_signal_fence(memory_order_seq_cst);
+  }
   return v;
 }
 
-INLINE uptr atomic_load(const volatile atomic_uintptr_t *a, memory_order mo) {
-  (void)mo;
-  DCHECK(mo & (memory_order_relaxed | memory_order_consume
-      | memory_order_acquire | memory_order_seq_cst));
-  DCHECK(!((uptr)a % sizeof(*a)));
-  atomic_signal_fence(memory_order_seq_cst);
-  uptr v = a->val_dont_use;
-  atomic_signal_fence(memory_order_seq_cst);
-  return v;
-}
-
-INLINE void atomic_store(volatile atomic_uint64_t *a, u64 v, memory_order mo) {
-  (void)mo;
+template<typename T>
+INLINE void atomic_store(volatile T *a, typename T::Type v, memory_order mo) {
   DCHECK(mo & (memory_order_relaxed | memory_order_release
       | memory_order_seq_cst));
   DCHECK(!((uptr)a % sizeof(*a)));
-  atomic_signal_fence(memory_order_seq_cst);
-  a->val_dont_use = v;
-  atomic_signal_fence(memory_order_seq_cst);
-  if (mo == memory_order_seq_cst)
-    atomic_thread_fence(memory_order_seq_cst);
-}
-
-INLINE void atomic_store(volatile atomic_uintptr_t *a, uptr v,
-                         memory_order mo) {
-  (void)mo;
-  DCHECK(mo & (memory_order_relaxed | memory_order_release
-      | memory_order_seq_cst));
-  DCHECK(!((uptr)a % sizeof(*a)));
-  atomic_signal_fence(memory_order_seq_cst);
-  a->val_dont_use = v;
-  atomic_signal_fence(memory_order_seq_cst);
+  if (mo == memory_order_relaxed) {
+    a->val_dont_use = v;
+  } else {
+    atomic_signal_fence(memory_order_seq_cst);
+    a->val_dont_use = v;
+    atomic_signal_fence(memory_order_seq_cst);
+  }
   if (mo == memory_order_seq_cst)
     atomic_thread_fence(memory_order_seq_cst);
 }
