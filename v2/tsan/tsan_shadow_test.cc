@@ -32,10 +32,8 @@ TEST(Shadow, Mapping) {
 
 TEST(Shadow, Celling) {
   const int kShadowSize = 8;
-  union {
-    char data[32];
-    u64 aligner;
-  };
+  u64 aligned_data[4];
+  char *data = (char*)aligned_data;
   CHECK_EQ((uptr)data % kShadowSize, 0);
   uptr s0 = MemToShadow((uptr)&data[0]);
   CHECK_EQ(s0 % kShadowSize, 0);
