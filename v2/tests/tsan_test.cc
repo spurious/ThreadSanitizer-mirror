@@ -30,11 +30,32 @@ TEST(ThreadSanitizer, SimpleWriteWrite) {
   t2.Write1(l2);
 }
 
-TEST(ThreadSanitizer, SimpleWriteWriteRace) {
+TEST(ThreadSanitizer, WriteWriteRace) {
   ScopedThread t1, t2;
   MemLoc l;
   t1.Write1(l);
   t2.Write1(l, true);
+}
+
+TEST(ThreadSanitizer, ReadWriteRace) {
+  ScopedThread t1, t2;
+  MemLoc l;
+  t1.Read1(l);
+  t2.Write1(l, true);
+}
+
+TEST(ThreadSanitizer, WriteReadRace) {
+  ScopedThread t1, t2;
+  MemLoc l;
+  t1.Write1(l);
+  t2.Read1(l, true);
+}
+
+TEST(ThreadSanitizer, ReadReadNoRace) {
+  ScopedThread t1, t2;
+  MemLoc l;
+  t1.Read1(l);
+  t2.Read1(l);
 }
 
 TEST(ThreadSanitizer, FuncCall) {
