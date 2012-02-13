@@ -55,6 +55,7 @@ struct ThreadState {
   };
 
   Fast fast;  // Should be the first field.
+  u64 fast_synch_epoch;
   Trace trace;
   SlabCache* clockslab;
   VectorClock clock;

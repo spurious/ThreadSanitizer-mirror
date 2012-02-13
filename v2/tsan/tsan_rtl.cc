@@ -104,6 +104,7 @@ void ThreadStart(ThreadState *thr, int tid) {
   thr->clockslab = new SlabCache(ctx->clockslab);
   thr->clock.tick(tid);
   thr->fast.epoch = 1;
+  thr->fast_synch_epoch = 1;
   TraceInit(thr);
   ctx->threads[tid] = thr;
 }
@@ -148,6 +149,7 @@ void MutexUnlock(ThreadState *thr, uptr addr) {
   CHECK(s && s->type == SyncVar::Mtx);
   MutexVar *m = static_cast<MutexVar*>(s);
   thr->clock.release(&m->clock, thr->clockslab);
+  thr->fast_synch_epoch = thr->fast.epoch;
   m->mtx.Unlock();
 }
 
@@ -279,6 +281,7 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
   // larger and smaller as well, it allowed to replace some
   // 'candidates' with 'same' or 'replace', but I think
   // it's just not worth it (performance- and complexity-wise).
+  const u64 synch_epoch = thr->fast_synch_epoch;
   for (int i = 0; i < kShadowCnt; i++) {
     u64 *sp = &shadow_mem[i];
     Shadow s = LoadShadow(sp);
@@ -294,7 +297,7 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
     if (s0.addr0 == s.addr0 && s0.addr1 == s.addr1) {
       // same thread?
       if (s.tid == fast_state.tid) {
-        if (s.epoch >= fast_state.epoch) {
+        if (s.epoch >= synch_epoch) {
           if (s.write || !is_write) {
             // found a slot that holds effectively the same info
             // (that is, same tid, same sync epoch and same size)
