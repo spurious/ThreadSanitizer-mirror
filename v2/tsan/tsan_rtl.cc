@@ -84,7 +84,7 @@ static void ALWAYS_INLINE TraceAddEvent(ThreadState *thr, u64 epoch,
 
 void Initialize() {
   static bool initialized = 0;
-  if (initialized) return;  
+  if (initialized) return;
   // Thread safe because done before all threads exist.
   initialized = true;
   if (TSAN_DEBUG)
