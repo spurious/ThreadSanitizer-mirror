@@ -43,6 +43,7 @@ struct Context {
   SlabAlloc* clockslab;
   SyncTab *synctab;
   ThreadState *threads[kMaxTid];
+  ReportDesc rep;
 };
 
 static Context *ctx;
@@ -198,7 +199,7 @@ static void NOINLINE ReportRace(ThreadState *thr, uptr addr,
                                 Shadow s0, Shadow s1) {
   addr &= ~7;
   int alloc_pos = 0;
-  ReportDesc rep;
+  ReportDesc &rep = ctx->rep;
   rep.typ = ReportTypeRace;
   rep.nmop = 2;
   rep.mop = alloc<ReportMop>(&rep, rep.nmop, &alloc_pos);

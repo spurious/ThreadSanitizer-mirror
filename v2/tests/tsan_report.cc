@@ -52,20 +52,25 @@ TEST(ThreadSanitizer, ReportBasic) {
   CHECK_EQ(rep->nmutex, 0);
 }
 
+static void foo() {}; static int foo_line = __LINE__;  // NOLINT
+static void bar() {}; static int bar_line = __LINE__;  // NOLINT
+
 static uintptr_t NOINLINE get_pc() {
   return (uintptr_t)__builtin_return_address(0);
 }
 
-static void foo() {}; static int foo_line = __LINE__;
-static void bar() {}; static int bar_line = __LINE__;
+static int NOINLINE mop_no_inline(void *addr, uintptr_t *pc) {
+  *pc = get_pc();
+  __tsan_write1(addr); int line = __LINE__;  // NOLINT
+  return line;
+}
 
 TEST(ThreadSanitizer, ReportStack) {
   ScopedThread t1;
   MemLoc l;
-  const char *func = __FUNCTION__;
+  uintptr_t pc = 0;
+  int line = mop_no_inline(l.loc(), &pc);
   const char *file = __FILE__;
-  uintptr_t pc = get_pc();
-  __tsan_write1(l.loc()); int line = __LINE__;
   t1.Call(&foo);
   t1.Call(&bar);
   const ReportDesc *rep = t1.Write1(l, true);
@@ -91,9 +96,8 @@ TEST(ThreadSanitizer, ReportStack) {
   CHECK_EQ(rep->mop[1].stack.cnt, 1);
   CHECK_GT(rep->mop[1].stack.entry[0].pc, pc - 64);
   CHECK_LT(rep->mop[1].stack.entry[0].pc, pc + 64);
-  CHECK(strstr(rep->mop[1].stack.entry[0].func, func));
+  CHECK(strstr(rep->mop[1].stack.entry[0].func, "mop_no_inline"));
   CHECK(strstr(rep->mop[1].stack.entry[0].file, file));
-  CHECK_EQ(rep->mop[1].stack.entry[0].line, line);
-  (void)foo_line;
-  (void)bar_line;
+  CHECK_GT(rep->mop[1].stack.entry[0].line, line - 3);
+  CHECK_LT(rep->mop[1].stack.entry[0].line, line + 3);
 }
