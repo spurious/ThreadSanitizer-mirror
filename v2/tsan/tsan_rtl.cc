@@ -248,6 +248,72 @@ static void StoreShadow(u64 *p, u64 raw) {
 }
 
 ALWAYS_INLINE
+static bool MemoryAccess1(ThreadState *thr, ThreadState::Fast fast_state,
+                          u64 synch_epoch, Shadow s0, u64 *sp, bool is_write,
+                          bool &replaced, Shadow &racy_access) {
+  Shadow s = LoadShadow(sp);
+  if (s.raw == 0) {
+    if (replaced == false) {
+      StoreShadow(sp, s0.raw);
+      replaced = true;
+    }
+    return false;
+  }
+  // is the memory access equal to the previous?
+  if (s0.addr0 == s.addr0 && s0.addr1 == s.addr1) {
+    // same thread?
+    if (s.tid == fast_state.tid) {
+      if (s.epoch >= synch_epoch) {
+        if (s.write || !is_write) {
+          // found a slot that holds effectively the same info
+          // (that is, same tid, same sync epoch and same size)
+          return true;
+        } else {
+          StoreShadow(sp, replaced ? 0ull : s0.raw);
+          replaced = true;
+          return false;
+        }
+      } else {
+        if (!s.write || is_write) {
+          StoreShadow(sp, replaced ? 0ull : s0.raw);
+          replaced = true;
+          return false;
+        } else {
+          return false;
+        }
+      }
+    } else {
+      // happens before?
+      if (thr->clock.get(s.tid) >= s.epoch) {
+        StoreShadow(sp, replaced ? 0ull : s0.raw);
+        replaced = true;
+        return false;
+      } else if (!s.write && !is_write) {
+        return false;
+      } else {
+        racy_access = s;
+        return false;
+      }
+    }
+  // do the memory access intersect?
+  } else if (min(s0.addr1, s.addr1) >= max(s0.addr0, s.addr0)) {
+    if (s.tid == fast_state.tid)
+      return false;
+    // happens before?
+    if (thr->clock.get(s.tid) >= s.epoch) {
+      return false;
+    } else if (!s.write && !is_write) {
+      return false;
+    } else {
+      racy_access = s;
+      return false;
+    }
+  }
+  // the accesses do not intersect
+  return false;
+}
+
+ALWAYS_INLINE
 void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
                   int size, bool is_write) {
   StatInc(thr, StatMop);
@@ -283,69 +349,19 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
   // 'candidates' with 'same' or 'replace', but I think
   // it's just not worth it (performance- and complexity-wise).
   const u64 synch_epoch = thr->fast_synch_epoch;
+  int off = 0;
+  if (size == 1)
+    off = addr & 7;
+  else if (size == 2)
+    off = addr & 6;
+  else if (size == 4)
+    off = addr & 4;
+  shadow_mem += off;
   for (int i = 0; i < kShadowCnt; i++) {
-    u64 *sp = &shadow_mem[i];
-    Shadow s = LoadShadow(sp);
-    // Printf("  [%d] %llx\n", i, s.raw);
-    if (s.raw == 0) {
-      if (replaced == false) {
-        StoreShadow(sp, s0.raw);
-        replaced = true;
-      }
-      continue;
-    }
-    // is the memory access equal to the previous?
-    if (s0.addr0 == s.addr0 && s0.addr1 == s.addr1) {
-      // same thread?
-      if (s.tid == fast_state.tid) {
-        if (s.epoch >= synch_epoch) {
-          if (s.write || !is_write) {
-            // found a slot that holds effectively the same info
-            // (that is, same tid, same sync epoch and same size)
-            return;
-          } else {
-            StoreShadow(sp, replaced ? 0ull : s0.raw);
-            replaced = true;
-            continue;
-          }
-        } else {
-          if (!s.write || is_write) {
-            StoreShadow(sp, replaced ? 0ull : s0.raw);
-            replaced = true;
-            continue;
-          } else {
-            continue;
-          }
-        }
-      } else {
-        // happens before?
-        if (thr->clock.get(s.tid) >= s.epoch) {
-          StoreShadow(sp, replaced ? 0ull : s0.raw);
-          replaced = true;
-          continue;
-        } else if (!s.write && !is_write) {
-          continue;
-        } else {
-          racy_access = s;
-          continue;
-        }
-      }
-    // do the memory access intersect?
-    } else if (min(s0.addr1, s.addr1) >= max(s0.addr0, s.addr0)) {
-      if (s.tid == fast_state.tid)
-        continue;
-      // happens before?
-      if (thr->clock.get(s.tid) >= s.epoch) {
-        continue;
-      } else if (!s.write && !is_write) {
-        continue;
-      } else {
-        racy_access = s;
-        continue;
-      }
-    }
-    // the accesses do not intersect
-    continue;
+    u64 *sp = &shadow_mem[(i + off) % kShadowCnt];
+    if (MemoryAccess1(thr, fast_state, synch_epoch, s0, sp, is_write,
+                      replaced, racy_access))
+      return;
   }
 
   // find some races?
