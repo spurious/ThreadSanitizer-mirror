@@ -12,8 +12,10 @@ run: all
 
 presubmit:
 	$(MAKE) lint
-	$(MAKE) clean run DEBUG=0
+	# Debug build with clang.
 	$(MAKE) clean run DEBUG=1
+	# Release build gcc (ensure that vanilla gcc is able to build it).
+	$(MAKE) clean run DEBUG=0 CC=/usr/bin/gcc CXX=/usr/bin/g++
 
 RTL_LINT_FITLER=-legal/copyright,-build/include,-readability/casting,-build/header_guard
 
