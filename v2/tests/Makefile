@@ -15,6 +15,7 @@ LIBTSAN_HEADERS=tsan_test_util.h \
                 ../tsan/tsan_compiler.h
 
 TEST_OBJ=tsan_bench.o \
+	 tsan_mop.o \
 	 tsan_report.o \
 	 tsan_test.o \
 	 tsan_test_util_linux.o
