@@ -21,11 +21,11 @@ namespace __tsan {
 
 class Thread {
  public:
-  static Thread *Create(void *callback, void *param);
+  static Thread *Create(void *(*callback)(void *param), void *param);
   void *ThreadStart();
  private:
   Thread() { }
-  void *callback_;
+  void *(*callback_)(void* param);
   void *param_;
   int tid_;
 };
