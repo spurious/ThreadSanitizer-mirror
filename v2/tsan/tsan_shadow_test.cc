@@ -31,19 +31,20 @@ TEST(Shadow, Mapping) {
 }
 
 TEST(Shadow, Celling) {
+  const int kShadowSize = 8;
   union {
     char data[32];
     u64 aligner;
   };
-  CHECK_EQ((uptr)data % 8, 0);
+  CHECK_EQ((uptr)data % kShadowSize, 0);
   uptr s0 = MemToShadow((uptr)&data[0]);
-  CHECK_EQ(s0 % 8, 0);
-  for (int i = 1; i < 8; i++)
+  CHECK_EQ(s0 % kShadowSize, 0);
+  for (int i = 1; i < kShadowCnt; i++)
     CHECK_EQ(s0, MemToShadow((uptr)&data[i]));
-  for (int i = 8; i < 16; i++)
-    CHECK_EQ(s0 + 8*kShadowCnt, MemToShadow((uptr)&data[i]));
-  for (int i = 16; i < 32; i++)
-    CHECK_EQ(s0 + 2*8*kShadowCnt, MemToShadow((uptr)&data[i]));
+  for (int i = kShadowCnt; i < 2*kShadowCnt; i++)
+    CHECK_EQ(s0 + kShadowSize*kShadowCnt, MemToShadow((uptr)&data[i]));
+  for (int i = 2*kShadowCnt; i < 3*kShadowCnt; i++)
+    CHECK_EQ(s0 + 2*kShadowSize*kShadowCnt, MemToShadow((uptr)&data[i]));
 }
 
 }  // namespace __tsan
