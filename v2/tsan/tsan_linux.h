@@ -27,9 +27,8 @@ static inline bool IsAppMem(uptr mem) {
   return mem >= kLinuxAppMemBeg && mem <= kLinuxAppMemEnd;
 }
 
-INLINE uptr MemToShadow(uptr addr) {
-  return ((addr) & (~0x7c0000000007ULL)) * kShadowCnt;
-}
+// This has to be a macro to allow constant initialization of constants below.
+#define MemToShadow(addr) (((addr) & (~0x7c0000000007ULL)) * kShadowCnt)
 
 static const uptr kLinuxShadowBeg = MemToShadow(kLinuxAppMemBeg);
 static const uptr kLinuxShadowEnd =
