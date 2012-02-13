@@ -20,6 +20,7 @@
 #define ALWAYS_INLINE __attribute__((always_inline))
 #define FLATTEN       __attribute__((flatten))
 #define NORETURN      __attribute__((noreturn))
+#define WEAK          __attribute__((weak))
 #define LIKELY(x)     __builtin_expect(!!(x), 1)
 #define UNLIKELY(x)   __builtin_expect(!!(x), 0)
 #define THREADLOCAL   __thread

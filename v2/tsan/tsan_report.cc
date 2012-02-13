@@ -50,4 +50,9 @@ void PrintReport(const ReportDesc *rep) {
   Printf("==================\n");
 }
 
+bool OnReport(const ReportDesc *rep, bool suppressed) {
+  (void)rep;
+  return suppressed;
+}
+
 }  // namespace __tsan

@@ -232,7 +232,9 @@ static void NOINLINE ReportRace(ThreadState *thr, uptr addr,
   rep.loc = 0;
   rep.nthread = 0;
   rep.nmutex = 0;
-  if (IsSuppressed(ReportTypeRace, &rep.mop[0].stack))
+  bool suppressed = IsSuppressed(ReportTypeRace, &rep.mop[0].stack);
+  suppressed = OnReport(&rep, suppressed);
+  if (suppressed)
     return;
   PrintReport(&rep);
 }

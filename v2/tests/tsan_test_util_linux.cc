@@ -15,6 +15,7 @@
 #include "tsan_interface.h"
 #include "tsan_test_util.h"
 #include "tsan_atomic.h"
+#include "tsan_report.h"
 
 #include <assert.h>
 #include <pthread.h>
@@ -32,6 +33,17 @@ using __tsan::atomic_uintptr_t;
 using __tsan::atomic_load;
 using __tsan::atomic_store;
 using __tsan::atomic_fetch_add;
+
+static __thread bool g_waiting_for_report;
+static __thread const ReportDesc *g_report;
+
+namespace __tsan {
+bool OnReport(const ReportDesc *rep, bool suppressed) {
+  CHECK(g_waiting_for_report);
+  g_report = rep;
+  return true;
+}
+}
 
 // A lock which is not observed by the race detector.
 class HiddenLock {
@@ -122,11 +134,13 @@ struct Event {
   Type type;
   void *ptr;
   int arg;
+  const ReportDesc *rep;
 
   Event(Type type, const void *ptr = NULL, int arg = 0)
     : type(type)
     , ptr(const_cast<void*>(ptr))
-    , arg(arg) {
+    , arg(arg)
+    , rep() {
   }
 };
 
@@ -150,25 +164,36 @@ void *ScopedThread::Impl::ScopedThreadCallback(void *arg) {
       atomic_store(&impl->event, 0, memory_order_release);
       break;
     }
+
+    CHECK_EQ(g_report, NULL);
+    CHECK(!g_waiting_for_report);
+    g_waiting_for_report = true;
+
     switch (ev->type) {
     case Event::READ:
-      switch (ev->arg /*size*/) {
-        case 1: __tsan_read1(ev->ptr); break;
-        case 2: __tsan_read2(ev->ptr); break;
-        case 4: __tsan_read4(ev->ptr); break;
-        case 8: __tsan_read8(ev->ptr); break;
-        case 16: __tsan_read16(ev->ptr); break;
+    case Event::WRITE: {
+      void (*tsan_mop)(void *addr) = NULL;
+      if (ev->type == Event::READ) {
+        switch (ev->arg /*size*/) {
+          case 1: tsan_mop = __tsan_read1; break;
+          case 2: tsan_mop = __tsan_read2; break;
+          case 4: tsan_mop = __tsan_read4; break;
+          case 8: tsan_mop = __tsan_read8; break;
+          case 16: tsan_mop = __tsan_read16; break;
+        }
+      } else {
+        switch (ev->arg /*size*/) {
+          case 1: tsan_mop = __tsan_write1; break;
+          case 2: tsan_mop = __tsan_write2; break;
+          case 4: tsan_mop = __tsan_write4; break;
+          case 8: tsan_mop = __tsan_write8; break;
+          case 16: tsan_mop = __tsan_write16; break;
+        }
       }
+      CHECK_NE(tsan_mop, NULL);
+      tsan_mop(ev->ptr);
       break;
-    case Event::WRITE:
-      switch (ev->arg /*size*/) {
-        case 1: __tsan_write1(ev->ptr); break;
-        case 2: __tsan_write2(ev->ptr); break;
-        case 4: __tsan_write4(ev->ptr); break;
-        case 8: __tsan_write8(ev->ptr); break;
-        case 16: __tsan_write16(ev->ptr); break;
-      }
-      break;
+    }
     case Event::CALL:
       __tsan_func_entry(ev->ptr);
       break;
@@ -189,6 +214,9 @@ void *ScopedThread::Impl::ScopedThreadCallback(void *arg) {
       break;
     default: CHECK(0);
     }
+    g_waiting_for_report = false;
+    ev->rep = g_report;
+    g_report = NULL;
     atomic_store(&impl->event, 0, memory_order_release);
   }
   return NULL;
@@ -215,11 +243,18 @@ ScopedThread::~ScopedThread() {
   delete impl_;
 }
 
-void ScopedThread::Access(const MemLoc &ml, bool is_write,
-                          int size, bool expect_race) {
+const ReportDesc *ScopedThread::Access(const MemLoc &ml, bool is_write,
+                                       int size, bool expect_race) {
   (void)expect_race;
   Event event(is_write ? Event::WRITE : Event::READ, ml.loc(), size);
   impl_->send(&event);
+  if (expect_race) {
+    CHECK_NE(event.rep, NULL);
+    CHECK_EQ(event.rep->typ, __tsan::ReportTypeRace);
+  } else {
+    CHECK_EQ(event.rep, NULL);
+  }
+  return event.rep;
 }
 
 void ScopedThread::Call(void(*pc)()) {

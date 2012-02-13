@@ -82,6 +82,7 @@ struct ReportDesc {
 };
 
 void PrintReport(const ReportDesc *rep);
+bool OnReport(const ReportDesc *rep, bool suppressed) WEAK;
 
 }  // namespace __tsan
 
