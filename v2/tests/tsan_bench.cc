@@ -81,4 +81,13 @@ TEST(DISABLED_Bench, Mop8Write) {
   Benchmark<uint64_t, __tsan_write8>();
 }
 
-#endif
+TEST(DISABLED_Bench, FuncCall) {
+  for (int i = 0; i < kRepeat; i++) {
+    for (int j = 0; j < kSize; j++)
+      __tsan_func_entry((void*)(uintptr_t)j);
+    for (int j = 0; j < kSize; j++)
+      __tsan_func_exit();
+  }
+}
+
+#endif  // TSAN_DEBUG == 0
