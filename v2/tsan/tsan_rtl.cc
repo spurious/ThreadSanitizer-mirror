@@ -20,7 +20,6 @@
 #include "tsan_symbolize.h"
 #include "tsan_sync.h"
 #include "tsan_report.h"
-#include <stddef.h>  // NULL
 
 namespace __tsan {
 

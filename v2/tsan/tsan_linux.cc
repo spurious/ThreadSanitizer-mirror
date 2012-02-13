@@ -86,7 +86,7 @@ static void *my_mmap(void *addr, size_t length, int prot, int flags,
 }
 
 void *virtual_alloc(uptr size) {
-  void *p = my_mmap(NULL, size, PROT_READ|PROT_WRITE,
+  void *p = my_mmap(0, size, PROT_READ|PROT_WRITE,
       MAP_PRIVATE | MAP_ANON, -1, 0);
   if (p == MAP_FAILED) {
     Report("FATAL: ThreadSanitizer can not allocate %lu MB\n", size<<20);

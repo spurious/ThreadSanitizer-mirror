@@ -84,7 +84,7 @@ ChunkedClock::ChunkedClock()
 
 ChunkedClock::~ChunkedClock() {
   CHECK_EQ(nclk_, 0);
-  CHECK_EQ(chunk_, NULL);
+  CHECK_EQ(chunk_, 0);
 }
 
 void ChunkedClock::Free(SlabCache *slab) {

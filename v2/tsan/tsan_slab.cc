@@ -43,7 +43,7 @@ void* SlabAlloc::Alloc(uptr *n) {
   Lock l(&mtx_);
   // If we are out of block, allocate a superblock from system.
   if (count_ == 0) {
-    CHECK_EQ(head_, NULL);
+    CHECK_EQ(head_, 0);
     char *mem = (char*)virtual_alloc(kAllocSize);
     char *end = mem + kAllocSize;
     // Take one block to maintain superblock list.
@@ -63,7 +63,7 @@ void* SlabAlloc::Alloc(uptr *n) {
     allocated_  += count_;
     count_ = 0;
     void **p = head_;
-    head_ = NULL;
+    head_ = 0;
     return p;
   }
 
@@ -72,7 +72,7 @@ void* SlabAlloc::Alloc(uptr *n) {
   for (uptr i = 0; i < kBatch-1 && p; i++)
     p = (void**)*p;
   void **next = (void**)*p;
-  *p = NULL;
+  *p = 0;
   p = head_;
   head_ = next;
   *n += kBatch;
@@ -121,10 +121,10 @@ void* SlabCache::Alloc() {
 
 void* NOINLINE SlabCache::AllocSlow() {
   CHECK_EQ(count_, 0);
-  CHECK_EQ(head_, NULL);
+  CHECK_EQ(head_, 0);
   head_ = (void**)parent_->Alloc(&count_);
   CHECK_NE(count_, 0);
-  CHECK_NE(head_, NULL);
+  CHECK_NE(head_, 0);
   return Alloc();
 }
 
@@ -138,7 +138,7 @@ void SlabCache::Free(void* p) {
 
 void NOINLINE SlabCache::Drain() {
   CHECK_EQ(count_, 2*kBatch);
-  CHECK_NE(head_, NULL);
+  CHECK_NE(head_, 0);
   void **p = head_;
   for (uptr i = 0; i < kBatch-1; i++)
     p = (void**)*p;
