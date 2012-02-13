@@ -44,6 +44,7 @@ struct Context {
   SyncTab *synctab;
   ThreadState *threads[kMaxTid];
   ReportDesc rep;
+  Mutex report_mtx;
 };
 
 static Context *ctx;
@@ -197,6 +198,7 @@ static int RestoreStack(int tid, u64 epoch, uptr *stack, int n) {
 
 static void NOINLINE ReportRace(ThreadState *thr, uptr addr,
                                 Shadow s0, Shadow s1) {
+  Lock l(&ctx->report_mtx);
   addr &= ~7;
   int alloc_pos = 0;
   ReportDesc &rep = ctx->rep;
