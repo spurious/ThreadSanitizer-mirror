@@ -55,10 +55,8 @@ struct ThreadState {
   };
 
   Fast fast;  // Should be the first field.
-  Event *fast_trace_pos;
-  Event *fast_trace_end;
   unsigned rand;
-  TraceSet* trace;
+  Trace trace;
   SlabCache* clockslab;
   VectorClock clock;
   u64 stat[StatCnt];

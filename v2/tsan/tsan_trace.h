@@ -18,7 +18,7 @@
 
 namespace __tsan {
 
-const int kTraceCnt = 8;
+const int kTraceParts = 8;
 const int kTraceSize = 1024;
 
 // Must fit into 3 bits.
@@ -37,16 +37,15 @@ enum EventType {
 // u64 typ  : 3;   // EventType.
 typedef u64 Event;
 
-struct Trace {
+struct TraceHeader {
   uptr  stack0[32];  // Start stack for the trace.
   u64   epoch0;      // Start epoch for the trace.
-  Event events[kTraceSize];
 };
 
-struct TraceSet {
-  Mutex mtx;
-  int curtrace;
-  Trace traces[kTraceCnt];
+struct Trace {
+  Event events[kTraceSize];
+  TraceHeader headers[kTraceParts];
+  Mutex *mtx;
 };
 
 }  // namespace __tsan

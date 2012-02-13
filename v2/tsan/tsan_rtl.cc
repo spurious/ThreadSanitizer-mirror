@@ -66,29 +66,22 @@ void CheckFailed(const char *file, int line, const char *cond) {
 }
 
 static void TraceInit(ThreadState *thr) {
-  thr->trace = new TraceSet;
-  internal_memset(thr->trace, 0, sizeof(TraceSet));
-  thr->trace->curtrace = 0;
-  thr->fast_trace_pos = &thr->trace->traces[thr->trace->curtrace].events[0];
-  thr->fast_trace_end = thr->fast_trace_pos + kTraceSize;
-  thr->fast_trace_pos += 2;
+  thr->trace.mtx = new Mutex;
 }
 
 static void NOINLINE TraceSwitch(ThreadState *thr) {
-  Lock l(&thr->trace->mtx);
-  thr->trace->curtrace = (thr->trace->curtrace + 1) % kTraceCnt;
-  thr->fast_trace_pos = &thr->trace->traces[thr->trace->curtrace].events[0];
-  thr->fast_trace_end = thr->fast_trace_pos + kTraceSize;
-  thr->trace->traces[thr->trace->curtrace].epoch0 = thr->fast.epoch;
+  Lock l(thr->trace.mtx);
+  int trace = (thr->fast.epoch / (kTraceSize / kTraceParts)) % kTraceParts;
+  thr->trace.headers[trace].epoch0 = thr->fast.epoch;
 }
 
-static void ALWAYS_INLINE TraceAddEvent(ThreadState *thr,
+static void ALWAYS_INLINE TraceAddEvent(ThreadState *thr, u64 epoch,
                                         EventType typ, uptr addr) {
-  if (UNLIKELY(thr->fast_trace_pos == thr->fast_trace_end))
+  if (UNLIKELY((epoch % (kTraceSize / kTraceParts)) == 0))
     TraceSwitch(thr);
-  *thr->fast_trace_pos = (u64)addr | ((u64)typ << 61);
-  thr->fast_trace_pos++;
-  thr->fast.epoch++;
+  Event *evp = &thr->trace.events[epoch % kTraceSize];
+  Event ev = (u64)addr | ((u64)typ << 61);
+  *evp = ev;
 }
 
 void Initialize() {
@@ -124,12 +117,14 @@ void ThreadStart(int tid) {
 }
 
 void MutexCreate(ThreadState *thr, uptr addr, bool is_rw) {
-  Printf("#%d: MutexCreate %p\n", thr->fast.tid, addr);
+  if (TSAN_DEBUG)
+    Printf("#%d: MutexCreate %p\n", thr->fast.tid, addr);
   ctx->synctab->insert(new MutexVar(addr, is_rw));
 }
 
 void MutexDestroy(ThreadState *thr, uptr addr) {
-  Printf("#%d: MutexDestroy %p\n", thr->fast.tid, addr);
+  if (TSAN_DEBUG)
+    Printf("#%d: MutexDestroy %p\n", thr->fast.tid, addr);
   SyncVar *s = ctx->synctab->get_and_remove(addr);
   CHECK(s && s->type == SyncVar::Mtx);
   s->clock.Free(thr->clockslab);
@@ -137,8 +132,10 @@ void MutexDestroy(ThreadState *thr, uptr addr) {
 }
 
 void MutexLock(ThreadState *thr, uptr addr) {
-  Printf("#%d: MutexLock %p\n", thr->fast.tid, addr);
-  TraceAddEvent(thr, EventTypeLock, addr);
+  if (TSAN_DEBUG)
+    Printf("#%d: MutexLock %p\n", thr->fast.tid, addr);
+  thr->fast.epoch++;
+  TraceAddEvent(thr, thr->fast.epoch, EventTypeLock, addr);
   SyncVar *s = ctx->synctab->get_and_lock(addr);
   CHECK(s && s->type == SyncVar::Mtx);
   MutexVar *m = static_cast<MutexVar*>(s);
@@ -147,8 +144,10 @@ void MutexLock(ThreadState *thr, uptr addr) {
 }
 
 void MutexUnlock(ThreadState *thr, uptr addr) {
-  Printf("#%d: MutexUnlock %p\n", thr->fast.tid, addr);
-  TraceAddEvent(thr, EventTypeUnlock, addr);
+  if (TSAN_DEBUG)
+    Printf("#%d: MutexUnlock %p\n", thr->fast.tid, addr);
+  thr->fast.epoch++;
+  TraceAddEvent(thr, thr->fast.epoch, EventTypeUnlock, addr);
   SyncVar *s = ctx->synctab->get_and_lock(addr);
   CHECK(s && s->type == SyncVar::Mtx);
   MutexVar *m = static_cast<MutexVar*>(s);
@@ -166,14 +165,15 @@ static T* alloc(ReportDesc *rep, int n, int *pos) {
 
 static int RestoreStack(int tid, u64 epoch, uptr *stack, int n) {
   ThreadState *thr = ctx->threads[tid];
-  Lock l(&thr->trace->mtx);
-  Trace* trace = &thr->trace->traces[(epoch / kTraceSize) % kTraceCnt];
+  Lock l(thr->trace.mtx);
+  TraceHeader* trace = &thr->trace.headers[
+      (epoch / (kTraceSize / kTraceParts)) % kTraceParts];
   if (epoch < trace->epoch0)
     return 0;
-  epoch %= kTraceSize;
+  epoch %= (kTraceSize / kTraceParts);
   u64 pos = 0;
   for (u64 i = 0; i <= epoch; i++) {
-    Event ev = trace->events[i];
+    Event ev = thr->trace.events[i];
     EventType typ = (EventType)(ev >> 61);
     uptr pc = (uptr)(ev & 0xffffffffffffull);
     if (typ == EventTypeMop) {
@@ -261,12 +261,11 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
   DCHECK(IsAppMem(addr));
   DCHECK(IsShadowMem((uptr)shadow_mem));
 
-  // FIXME. We should not be doing this on every access.
-  // QUESTION: How many memory accesses is this?
-  TraceAddEvent(thr, EventTypeMop, pc);
-
   ThreadState::Fast fast_state;
   fast_state.raw = thr->fast.raw;  // Copy.
+  fast_state.epoch++;
+  thr->fast.raw = fast_state.raw;
+  TraceAddEvent(thr, fast_state.epoch, EventTypeMop, pc);
 
   // descriptor of the memory access
   Shadow s0 = { {fast_state.tid, fast_state.epoch,
@@ -354,12 +353,11 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
     ReportRace(thr, addr, s0, racy_access);
   // we did not find any races and had already stored
   // the current access info, so we are done
-  if (replaced)
+  if (LIKELY(replaced))
     return;
   // choose a random candidate slot and replace it
-  // QUESTION: this is one load and one store.
-  // Can we make it store-/load-free? Maybe fast_state.epoch % kShadowCnt?
   unsigned i = fastrand(thr) % kShadowCnt;
+  // unsigned i = fast_state.epoch % kShadowCnt;
   StoreShadow(shadow_mem+i, s0.raw);
 }
 
@@ -367,14 +365,16 @@ void FuncEntry(ThreadState *thr, uptr pc) {
   StatInc(thr, StatFuncEnter);
   if (TSAN_DEBUG)
     Printf("#%d: tsan::FuncEntry %p\n", (int)thr->fast.tid, (void*)pc);
-  TraceAddEvent(thr, EventTypeFuncEnter, pc);
+  thr->fast.epoch++;
+  TraceAddEvent(thr, thr->fast.epoch, EventTypeFuncEnter, pc);
 }
 
 void FuncExit(ThreadState *thr) {
   StatInc(thr, StatFuncExit);
   if (TSAN_DEBUG)
     Printf("#%d: tsan::FuncExit\n", (int)thr->fast.tid);
-  TraceAddEvent(thr, EventTypeFuncExit, 0);
+  thr->fast.epoch++;
+  TraceAddEvent(thr, thr->fast.epoch, EventTypeFuncExit, 0);
 }
 
 }  // namespace __tsan
