@@ -45,36 +45,6 @@ bool OnReport(const ReportDesc *rep, bool suppressed) {
 }
 }
 
-// A lock which is not observed by the race detector.
-class HiddenLock {
- public:
-  HiddenLock() : lock_(0) { }
-  ~HiddenLock() { CHECK_EQ(lock_, 0); }
-  void Lock() {
-    while (__sync_val_compare_and_swap(&lock_, 0, 1) != 0)
-      usleep(0);
-    CHECK_EQ(lock_, 1);
-  }
-  void Unlock() {
-    CHECK_EQ(lock_, 1);
-    int res =__sync_val_compare_and_swap(&lock_, 1, 0);
-    CHECK_EQ(res, 1);
-    (void)res;
-  }
- private:
-  int lock_;
-};
-
-class ScopedHiddenLock {
- public:
-  explicit ScopedHiddenLock(HiddenLock *lock) : lock_(lock) {
-    lock_->Lock();
-  }
-  ~ScopedHiddenLock() { lock_->Unlock(); }
- private:
-  HiddenLock *lock_;
-};
-
 static void* allocate_addr(int offset_from_aligned = 0) {
   static uintptr_t foo;
   static atomic_uintptr_t uniq = {(uintptr_t)&foo};  // Some real address.
