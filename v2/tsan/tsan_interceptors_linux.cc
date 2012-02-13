@@ -15,7 +15,6 @@
 #include "tsan_rtl.h"
 #include "tsan_interface.h"
 #include "tsan_thread.h"
-#include <pthread.h>
 
 using __tsan::Thread;
 using __tsan::cur_thread;
@@ -28,8 +27,8 @@ static void *tsan_thread_start(void *arg) {
 }
 
 INTERCEPTOR(int, pthread_create,
-    pthread_t *__restrict th, const pthread_attr_t *__restrict attr,
-    void *(*callback)(void*), void *__restrict param) {
+    void *th, void *attr,
+    void *(*callback)(void*), void * param) {
   __tsan_init();
   Thread *t = Thread::Create(callback, param);
   // __tsan::Printf("pthread_create %p\n", t);
@@ -38,7 +37,7 @@ INTERCEPTOR(int, pthread_create,
 }
 
 INTERCEPTOR(int, pthread_mutex_init,
-            pthread_mutex_t *m, const pthread_mutexattr_t *a) {
+            void *m, const void *a) {
   __tsan_init();
   int res = REAL(pthread_mutex_init)(m, a);
   if (res == 0) {
@@ -48,7 +47,7 @@ INTERCEPTOR(int, pthread_mutex_init,
 }
 
 INTERCEPTOR(int, pthread_mutex_destroy,
-            pthread_mutex_t *m) {
+            void *m) {
   int res = REAL(pthread_mutex_destroy)(m);
   if (res == 0) {
     MutexDestroy(&cur_thread, (uptr)m);
@@ -57,7 +56,7 @@ INTERCEPTOR(int, pthread_mutex_destroy,
 }
 
 INTERCEPTOR(int, pthread_mutex_lock,
-            pthread_mutex_t *m) {
+            void *m) {
   __tsan_init();
   int res = REAL(pthread_mutex_lock)(m);
   if (res == 0) {
@@ -67,7 +66,7 @@ INTERCEPTOR(int, pthread_mutex_lock,
 }
 
 INTERCEPTOR(int, pthread_mutex_unlock,
-            pthread_mutex_t *m) {
+            void *m) {
   MutexUnlock(&cur_thread, (uptr)m);
   int res = REAL(pthread_mutex_unlock)(m);
   return res;
