@@ -48,4 +48,4 @@ $(GTEST_LIB):
 	$(MAKE) -f ../make/Makefile CXXFLAGS="$(CXXFLAGS)"
 
 clean:
-	rm -f *.o tsan_test 
+	rm -f *.o tsan_test  tsan_c_test
