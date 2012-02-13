@@ -129,7 +129,7 @@ void MutexCreate(ThreadState *thr, uptr addr, bool is_rw) {
 void MutexDestroy(ThreadState *thr, uptr addr) {
   if (TSAN_DEBUG)
     Printf("#%d: MutexDestroy %p\n", thr->fast.tid, addr);
-  SyncVar *s = ctx->synctab->get_and_remove(addr);
+  SyncVar *s = ctx->synctab->GetAndRemoveIfExists(addr);
   CHECK(s && s->type == SyncVar::Mtx);
   s->clock.Free(thr->clockslab);
   delete s;
@@ -140,7 +140,7 @@ void MutexLock(ThreadState *thr, uptr addr) {
     Printf("#%d: MutexLock %p\n", thr->fast.tid, addr);
   thr->fast.epoch++;
   TraceAddEvent(thr, thr->fast.epoch, EventTypeLock, addr);
-  SyncVar *s = ctx->synctab->get_and_lock(addr);
+  SyncVar *s = ctx->synctab->GetAndLockIfExists(addr);
   CHECK(s && s->type == SyncVar::Mtx);
   MutexVar *m = static_cast<MutexVar*>(s);
   thr->clock.set(thr->fast.tid, thr->fast.epoch);
@@ -153,7 +153,7 @@ void MutexUnlock(ThreadState *thr, uptr addr) {
     Printf("#%d: MutexUnlock %p\n", thr->fast.tid, addr);
   thr->fast.epoch++;
   TraceAddEvent(thr, thr->fast.epoch, EventTypeUnlock, addr);
-  SyncVar *s = ctx->synctab->get_and_lock(addr);
+  SyncVar *s = ctx->synctab->GetAndLockIfExists(addr);
   CHECK(s && s->type == SyncVar::Mtx);
   MutexVar *m = static_cast<MutexVar*>(s);
   thr->clock.set(thr->fast.tid, thr->fast.epoch);
