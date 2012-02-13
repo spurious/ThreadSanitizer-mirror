@@ -57,14 +57,14 @@ class ScopedThread {
   ScopedThread();
   ~ScopedThread();
 
-  const ReportDesc *Access(const MemLoc &ml, bool is_write, int size,
+  const ReportDesc *Access(void *addr, bool is_write, int size,
                            bool expect_race);
   const ReportDesc *Read(const MemLoc &ml, int size, bool expect_race = false) {
-    return Access(ml, false, size, expect_race);
+    return Access(ml.loc(), false, size, expect_race);
   }
   const ReportDesc *Write(const MemLoc &ml, int size,
                           bool expect_race = false) {
-    return Access(ml, true, size, expect_race);
+    return Access(ml.loc(), true, size, expect_race);
   }
   const ReportDesc *Read1(const MemLoc &ml, bool expect_race = false) {
     return Read(ml, 1, expect_race); }

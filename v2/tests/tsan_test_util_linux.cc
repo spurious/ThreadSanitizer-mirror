@@ -243,16 +243,19 @@ ScopedThread::~ScopedThread() {
   delete impl_;
 }
 
-const ReportDesc *ScopedThread::Access(const MemLoc &ml, bool is_write,
+const ReportDesc *ScopedThread::Access(void *addr, bool is_write,
                                        int size, bool expect_race) {
   (void)expect_race;
-  Event event(is_write ? Event::WRITE : Event::READ, ml.loc(), size);
+  Event event(is_write ? Event::WRITE : Event::READ, addr, size);
   impl_->send(&event);
   if (expect_race) {
-    CHECK_NE(event.rep, NULL);
-    CHECK_EQ(event.rep->typ, __tsan::ReportTypeRace);
+    if (event.rep == NULL)
+      CHECK(!"Missed expected race");
+    if (event.rep->typ != __tsan::ReportTypeRace)
+      CHECK(!"Wrong report type for expected race");
   } else {
-    CHECK_EQ(event.rep, NULL);
+    if (event.rep)
+      CHECK(!"Unexpected race");
   }
   return event.rep;
 }

@@ -54,3 +54,52 @@ TEST(ThreadSanitizer, ReadReadNoRace) {
   t1.Read1(l);
   t2.Read1(l);
 }
+
+TEST(ThreadSanitizer, RaceWithOffset) {
+  ScopedThread t1, t2;
+  {
+    MemLoc l;
+    t1.Access(l.loc(), true, 8, false);
+    t2.Access((char*)l.loc() + 4, true, 4, true);
+  }
+  {
+    MemLoc l;
+    t1.Access(l.loc(), true, 8, false);
+    t2.Access((char*)l.loc() + 7, true, 1, true);
+  }
+  {
+    MemLoc l;
+    t1.Access((char*)l.loc() + 4, true, 4, false);
+    t2.Access((char*)l.loc() + 4, true, 2, true);
+  }
+  {
+    MemLoc l;
+    t1.Access((char*)l.loc() + 4, true, 4, false);
+    t2.Access((char*)l.loc() + 6, true, 2, true);
+  }
+  {
+    MemLoc l;
+    t1.Access((char*)l.loc() + 3, true, 2, false);
+    t2.Access((char*)l.loc() + 4, true, 1, true);
+  }
+  {
+    MemLoc l;
+    t1.Access((char*)l.loc() + 1, true, 8, false);
+    t2.Access((char*)l.loc() + 3, true, 1, true);
+  }
+}
+
+TEST(ThreadSanitizer, NoRaceWithOffset) {
+  ScopedThread t1, t2;
+  {
+    MemLoc l;
+    t1.Access(l.loc(), true, 4, false);
+    t2.Access((char*)l.loc() + 4, true, 4, false);
+  }
+  {
+    MemLoc l;
+    t1.Access((char*)l.loc() + 3, true, 2, false);
+    t2.Access((char*)l.loc() + 1, true, 2, false);
+    t2.Access((char*)l.loc() + 5, true, 2, false);
+  }
+}
