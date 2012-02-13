@@ -14,7 +14,7 @@
 #include "tsan_interface.h"
 #include "tsan_rtl.h"
 
-#define CALLERPC ((uptr)__builtin_return_address(1))
+#define CALLERPC ((uptr)__builtin_return_address(0))
 using __tsan::uptr;
 using __tsan::cur_thread;
 
