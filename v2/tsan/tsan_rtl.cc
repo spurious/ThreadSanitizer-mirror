@@ -140,6 +140,12 @@ void MutexLock(ThreadState *thr, uptr addr) {
   thr->fast.epoch++;
   TraceAddEvent(thr, thr->fast.epoch, EventTypeLock, addr);
   SyncVar *s = ctx->synctab->GetAndLockIfExists(addr);
+  if (!s) {
+    // Locking a mutex before if was created (e.g. for linked-inited mutexes.
+    // FIXME: is that right?
+    MutexCreate(thr, addr, true);
+    s = ctx->synctab->GetAndLockIfExists(addr);
+  }
   CHECK(s && s->type == SyncVar::Mtx);
   MutexVar *m = static_cast<MutexVar*>(s);
   thr->clock.set(thr->fast.tid, thr->fast.epoch);
