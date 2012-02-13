@@ -62,6 +62,8 @@ struct ThreadState {
   u64 stat[StatCnt];
 };
 
+extern __thread ThreadState cur_thread;
+
 void ALWAYS_INLINE INLINE StatInc(ThreadState *thr, StatType typ, u64 n = 1) {
   if (kCollectStats)
     thr->stat[typ] += n;

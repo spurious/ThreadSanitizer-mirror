@@ -46,6 +46,14 @@ struct VectorClock {
     return clk_[tid];
   }
 
+  void set(int tid, u64 v) {
+    DCHECK(tid < kMaxTid);
+    DCHECK(v >= clk_[tid]);
+    clk_[tid] = v;
+    if (nclk_ <= tid)
+      nclk_ = tid + 1;
+  }
+
   void tick(int tid) {
     DCHECK(tid < kMaxTid);
     clk_[tid]++;

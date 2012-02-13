@@ -31,7 +31,7 @@ LIBTSAN_HEADERS=tsan_atomic.h \
 LIBTSAN_OBJ=tsan_clock.o \
             tsan_linux.o \
             tsan_mutex.o \
-            tsan_interceptors.o \
+            tsan_interceptors_linux.o \
             tsan_report.o \
             tsan_rtl.o \
             tsan_slab.o \

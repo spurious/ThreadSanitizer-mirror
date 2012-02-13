@@ -1,4 +1,4 @@
-//===-- tsan_interceptors.cc ------------------------------------*- C++ -*-===//
+//===-- tsan_interceptors_linux.cc ------------------------------*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -9,8 +9,6 @@
 //
 // This file is a part of ThreadSanitizer (TSan), a race detector.
 //
-// Platform-independent code for interceptors.
-// Do not put any platform-specific includes/ifdefs here.
 //===----------------------------------------------------------------------===//
 
 #include "interception/interception.h"
@@ -19,6 +17,8 @@
 #include <pthread.h>
 
 using __tsan::Thread;
+using __tsan::cur_thread;
+using __tsan::uptr;
 
 static void *tsan_thread_start(void *arg) {
   Thread *t = (Thread*)arg;
@@ -35,8 +35,48 @@ INTERCEPTOR(int, pthread_create,
   return res;
 }
 
+INTERCEPTOR(int, pthread_mutex_init,
+            pthread_mutex_t *m, const pthread_mutexattr_t *a) {
+  int res = REAL(pthread_mutex_init)(m, a);
+  if (res == 0) {
+    MutexCreate(&cur_thread, (uptr)m, false);
+  }
+  return res;
+}
+
+INTERCEPTOR(int, pthread_mutex_destroy,
+            pthread_mutex_t *m) {
+  int res = REAL(pthread_mutex_destroy)(m);
+  if (res == 0) {
+    MutexDestroy(&cur_thread, (uptr)m);
+  }
+  return res;
+}
+
+INTERCEPTOR(int, pthread_mutex_lock,
+            pthread_mutex_t *m) {
+  int res = REAL(pthread_mutex_lock)(m);
+  if (res == 0) {
+    MutexLock(&cur_thread, (uptr)m);
+  }
+  return res;
+}
+
+INTERCEPTOR(int, pthread_mutex_unlock,
+            pthread_mutex_t *m) {
+  MutexUnlock(&cur_thread, (uptr)m);
+  int res = REAL(pthread_mutex_unlock)(m);
+  return res;
+}
+
 namespace __tsan {
+
 void InitializeInterceptors() {
   INTERCEPT_FUNCTION(pthread_create);
+  INTERCEPT_FUNCTION(pthread_mutex_init);
+  INTERCEPT_FUNCTION(pthread_mutex_destroy);
+  INTERCEPT_FUNCTION(pthread_mutex_lock);
+  INTERCEPT_FUNCTION(pthread_mutex_unlock);
 }
+
 }  // namespace __tsan

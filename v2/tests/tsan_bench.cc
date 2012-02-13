@@ -98,8 +98,8 @@ TEST(DISABLED_Bench, MutexLocal) {
     t.Unlock(m);
   }
   for (int i = 0; i < 16*1024*1024; i++) {
-    __tsan_mutex_lock(m.addr);
-    __tsan_mutex_unlock(m.addr);
+    m.Lock();
+    m.Unlock();
   }
   ScopedThread().Destroy(m);
 }

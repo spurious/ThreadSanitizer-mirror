@@ -103,7 +103,7 @@ void ThreadStart(ThreadState *thr, int tid) {
   internal_memset(thr, 0, sizeof(*thr));
   thr->fast.tid = tid;
   thr->clockslab = new SlabCache(ctx->clockslab);
-  thr->clock.tick(tid);
+  thr->clock.set(tid, 1);
   thr->fast.epoch = 1;
   thr->fast_synch_epoch = 1;
   TraceInit(thr);
@@ -137,6 +137,7 @@ void MutexLock(ThreadState *thr, uptr addr) {
   SyncVar *s = ctx->synctab->get_and_lock(addr);
   CHECK(s && s->type == SyncVar::Mtx);
   MutexVar *m = static_cast<MutexVar*>(s);
+  thr->clock.set(thr->fast.tid, thr->fast.epoch);
   thr->clock.acquire(&m->clock);
   m->mtx.Unlock();
 }
@@ -149,8 +150,9 @@ void MutexUnlock(ThreadState *thr, uptr addr) {
   SyncVar *s = ctx->synctab->get_and_lock(addr);
   CHECK(s && s->type == SyncVar::Mtx);
   MutexVar *m = static_cast<MutexVar*>(s);
-  thr->clock.release(&m->clock, thr->clockslab);
+  thr->clock.set(thr->fast.tid, thr->fast.epoch);
   thr->fast_synch_epoch = thr->fast.epoch;
+  thr->clock.release(&m->clock, thr->clockslab);
   m->mtx.Unlock();
 }
 

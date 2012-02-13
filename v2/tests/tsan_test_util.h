@@ -28,8 +28,17 @@ class Mutex {
  public:
   Mutex();
   ~Mutex();
-  mutable void * addr;
+
+  void Init();
+  void Destroy();
+  void Lock();
+  void Unlock();
+
  private:
+  // Placeholder for pthread_mutex_t, CRITICAL_SECTION or whatever.
+  mutable void *mtx_[128];
+  mutable bool alive_;
+
   Mutex(const Mutex&);
   void operator = (const Mutex&);
 };

@@ -74,14 +74,37 @@ MemLoc::MemLoc(int offset_from_aligned)
   : loc_(allocate_addr(offset_from_aligned)) {
 }
 
-MemLoc::~MemLoc() { }
+MemLoc::~MemLoc() {
+}
 
 Mutex::Mutex()
-  : addr(NULL) {
+  : alive_() {
 }
 
 Mutex::~Mutex() {
-  CHECK_EQ(addr, NULL);
+  CHECK(!alive_);
+}
+
+void Mutex::Init() {
+  CHECK(!alive_);
+  alive_ = true;
+  CHECK_EQ(pthread_mutex_init((pthread_mutex_t*)mtx_, NULL), 0);
+}
+
+void Mutex::Destroy() {
+  CHECK(alive_);
+  alive_ = false;
+  CHECK_EQ(pthread_mutex_destroy((pthread_mutex_t*)mtx_), 0);
+}
+
+void Mutex::Lock() {
+  CHECK(alive_);
+  CHECK_EQ(pthread_mutex_lock((pthread_mutex_t*)mtx_), 0);
+}
+
+void Mutex::Unlock() {
+  CHECK(alive_);
+  CHECK_EQ(pthread_mutex_unlock((pthread_mutex_t*)mtx_), 0);
 }
 
 struct Event {
@@ -100,9 +123,9 @@ struct Event {
   void *ptr;
   int arg;
 
-  Event(Type type, void *ptr = NULL, int arg = 0)
+  Event(Type type, const void *ptr = NULL, int arg = 0)
     : type(type)
-    , ptr(ptr)
+    , ptr(const_cast<void*>(ptr))
     , arg(arg) {
   }
 };
@@ -153,16 +176,16 @@ void *ScopedThread::Impl::ScopedThreadCallback(void *arg) {
       __tsan_func_exit();
       break;
     case Event::MUTEX_CREATE:
-      __tsan_mutex_create(ev->ptr, 0);
+      static_cast<Mutex*>(ev->ptr)->Init();
       break;
     case Event::MUTEX_DESTROY:
-      __tsan_mutex_destroy(ev->ptr);
+      static_cast<Mutex*>(ev->ptr)->Destroy();
       break;
     case Event::MUTEX_LOCK:
-      __tsan_mutex_lock(ev->ptr);
+      static_cast<Mutex*>(ev->ptr)->Lock();
       break;
     case Event::MUTEX_UNLOCK:
-      __tsan_mutex_unlock(ev->ptr);
+      static_cast<Mutex*>(ev->ptr)->Unlock();
       break;
     default: CHECK(0);
     }
@@ -210,27 +233,21 @@ void ScopedThread::Return() {
 }
 
 void ScopedThread::Create(const Mutex &m) {
-  CHECK_EQ(m.addr, NULL);
-  m.addr = allocate_addr();
-  Event event(Event::MUTEX_CREATE, m.addr);
+  Event event(Event::MUTEX_CREATE, &m);
   impl_->send(&event);
 }
 
 void ScopedThread::Destroy(const Mutex &m) {
-  CHECK_NE(m.addr, NULL);
-  Event event(Event::MUTEX_DESTROY, m.addr);
+  Event event(Event::MUTEX_DESTROY, &m);
   impl_->send(&event);
-  m.addr = NULL;
 }
 
 void ScopedThread::Lock(const Mutex &m) {
-  CHECK_NE(m.addr, NULL);
-  Event event(Event::MUTEX_LOCK, m.addr);
+  Event event(Event::MUTEX_LOCK, &m);
   impl_->send(&event);
 }
 
 void ScopedThread::Unlock(const Mutex &m) {
-  CHECK_NE(m.addr, NULL);
-  Event event(Event::MUTEX_UNLOCK, m.addr);
+  Event event(Event::MUTEX_UNLOCK, &m);
   impl_->send(&event);
 }
