@@ -55,7 +55,6 @@ struct ThreadState {
   };
 
   Fast fast;  // Should be the first field.
-  unsigned rand;
   Trace trace;
   SlabCache* clockslab;
   VectorClock clock;

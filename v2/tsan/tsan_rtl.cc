@@ -55,10 +55,6 @@ u64 max(u64 a, u64 b) {
   return a > b ? a : b;
 }
 
-static unsigned fastrand(ThreadState *thr) {
-  return thr->rand = thr->rand * 1103515245 + 12345;
-}
-
 void CheckFailed(const char *file, int line, const char *cond) {
   Report("FATAL: ThreadSanitizer CHECK failed: %s:%d \"%s\"\n",
          file, line, cond);
@@ -356,8 +352,7 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
   if (LIKELY(replaced))
     return;
   // choose a random candidate slot and replace it
-  unsigned i = fastrand(thr) % kShadowCnt;
-  // unsigned i = fast_state.epoch % kShadowCnt;
+  unsigned i = fast_state.epoch % kShadowCnt;
   StoreShadow(shadow_mem+i, s0.raw);
 }
 
