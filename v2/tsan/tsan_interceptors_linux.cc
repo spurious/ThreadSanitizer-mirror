@@ -13,6 +13,7 @@
 
 #include "interception/interception.h"
 #include "tsan_rtl.h"
+#include "tsan_interface.h"
 #include "tsan_thread.h"
 #include <pthread.h>
 
@@ -29,6 +30,7 @@ static void *tsan_thread_start(void *arg) {
 INTERCEPTOR(int, pthread_create,
     pthread_t *__restrict th, const pthread_attr_t *__restrict attr,
     void *(*callback)(void*), void *__restrict param) {
+  __tsan_init();
   Thread *t = Thread::Create(callback, param);
   // __tsan::Printf("pthread_create %p\n", t);
   int res = REAL(pthread_create)(th, attr, tsan_thread_start, t);
@@ -37,6 +39,7 @@ INTERCEPTOR(int, pthread_create,
 
 INTERCEPTOR(int, pthread_mutex_init,
             pthread_mutex_t *m, const pthread_mutexattr_t *a) {
+  __tsan_init();
   int res = REAL(pthread_mutex_init)(m, a);
   if (res == 0) {
     MutexCreate(&cur_thread, (uptr)m, false);
@@ -55,6 +58,7 @@ INTERCEPTOR(int, pthread_mutex_destroy,
 
 INTERCEPTOR(int, pthread_mutex_lock,
             pthread_mutex_t *m) {
+  __tsan_init();
   int res = REAL(pthread_mutex_lock)(m);
   if (res == 0) {
     MutexLock(&cur_thread, (uptr)m);
