@@ -28,7 +28,7 @@ static inline bool IsAppMem(uptr mem) {
 }
 
 INLINE uptr MemToShadow(uptr addr) {
-  return ((addr) & (~0x7c0000000003ULL)) * kShadowCnt;
+  return ((addr) & (~0x7c0000000007ULL)) * kShadowCnt;
 }
 
 static const uptr kLinuxShadowBeg = MemToShadow(kLinuxAppMemBeg);
