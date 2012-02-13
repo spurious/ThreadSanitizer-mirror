@@ -11,31 +11,74 @@
 //
 //===----------------------------------------------------------------------===//
 #include "tsan_interface.h"
+#include "tsan_defs.h"
 #include "gtest/gtest.h"
 #include <stdint.h>
 
-volatile int kSize = 1024;
-volatile int kRepeat = 256*1024;
+int kSize = 128;
+int kRepeat = 2*1024*1024;
 
-TEST(Bench, Write8NonInstrumented) {
-  volatile uint64_t data[kSize];
+void noinstr(void *p) {}
+
+template<typename T, void(*__tsan_mop)(void *p)>
+static void Benchmark() {
+  volatile T data[kSize];
   for (int i = 0; i < kRepeat; i++) {
     for (int j = 0; j < kSize; j++) {
+      __tsan_mop((void*)&data[j]);
       data[j]++;
     }
   }
 }
 
-TEST(Bench, Write8Instrumented) {
-  if (TSAN_DEBUG) {
-    printf("Debug build will produce enormous debug output. Skipping.\n");
-    return;
-  }
-  volatile uint64_t data[kSize];
-  for (int i = 0; i < kRepeat; i++) {
-    for (int j = 0; j < kSize; j++) {
-      __tsan_write8((void*)&data[j]);
-      data[j]++;
-    }
-  }
+#if TSAN_DEBUG == 0
+
+TEST(DISABLED_Bench, Mop1) {
+  Benchmark<uint8_t, noinstr>();
 }
+
+TEST(DISABLED_Bench, Mop1Read) {
+  Benchmark<uint8_t, __tsan_read1>();
+}
+
+TEST(DISABLED_Bench, Mop1Write) {
+  Benchmark<uint8_t, __tsan_write1>();
+}
+
+TEST(DISABLED_Bench, Mop2) {
+  Benchmark<uint16_t, noinstr>();
+}
+
+TEST(DISABLED_Bench, Mop2Read) {
+  Benchmark<uint16_t, __tsan_read2>();
+}
+
+TEST(DISABLED_Bench, Mop2Write) {
+  Benchmark<uint16_t, __tsan_write2>();
+}
+
+TEST(DISABLED_Bench, Mop4) {
+  Benchmark<uint32_t, noinstr>();
+}
+
+TEST(DISABLED_Bench, Mop4Read) {
+  Benchmark<uint32_t, __tsan_read4>();
+}
+
+TEST(DISABLED_Bench, Mop4Write) {
+  Benchmark<uint32_t, __tsan_write4>();
+}
+
+TEST(DISABLED_Bench, Mop8) {
+  Benchmark<uint8_t, noinstr>();
+}
+
+TEST(DISABLED_Bench, Mop8Read) {
+  Benchmark<uint64_t, __tsan_read8>();
+}
+
+TEST(DISABLED_Bench, Mop8Write) {
+  Benchmark<uint64_t, __tsan_write8>();
+}
+
+#endif
