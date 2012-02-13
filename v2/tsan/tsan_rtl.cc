@@ -81,7 +81,8 @@ static void ALWAYS_INLINE TraceAddEvent(ThreadState *thr, u64 epoch,
 }
 
 void Initialize() {
-  Printf("tsan::Initialize\n");
+  if (TSAN_DEBUG)
+    Printf("tsan::Initialize\n");
   InitializeShadowMemory();
   ctx = new Context;
   ctx->clockslab = new SlabAlloc(ChunkedClock::kChunkSize);
