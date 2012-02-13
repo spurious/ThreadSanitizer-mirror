@@ -27,7 +27,7 @@ lint: $(LINT_OUT)
 
 %.linted: %
 	$(LINT_CMD) $<
-	echo done > $@
+	@echo done > $@
 
 get_third_party:
 	rm -rf third_party
@@ -42,4 +42,6 @@ get_interception:
 clean:
 	cd tsan && $(MAKE) clean
 	cd tests && $(MAKE) clean
+
+clean_lint:
 	rm -f tsan/*.linted tests/*.linted
