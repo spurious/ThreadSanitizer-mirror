@@ -10,6 +10,7 @@
 // This file is a part of ThreadSanitizer (TSan), a race detector.
 //
 //===----------------------------------------------------------------------===//
+#include "tsan_test_util.h"
 #include "tsan_interface.h"
 #include "tsan_defs.h"
 #include "gtest/gtest.h"
@@ -30,8 +31,6 @@ static void Benchmark() {
     }
   }
 }
-
-#if TSAN_DEBUG == 0
 
 TEST(DISABLED_Bench, Mop1) {
   Benchmark<uint8_t, noinstr>();
@@ -90,4 +89,17 @@ TEST(DISABLED_Bench, FuncCall) {
   }
 }
 
-#endif  // TSAN_DEBUG == 0
+TEST(DISABLED_Bench, MutexLocal) {
+  Mutex m;
+  ScopedThread().Create(m);
+  for (int i = 0; i < 50; i++) {
+    ScopedThread t;
+    t.Lock(m);
+    t.Unlock(m);
+  }
+  for (int i = 0; i < 16*1024*1024; i++) {
+    __tsan_mutex_lock(m.addr);
+    __tsan_mutex_unlock(m.addr);
+  }
+  ScopedThread().Destroy(m);
+}
