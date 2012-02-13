@@ -11,6 +11,7 @@ run: all
 	(ulimit -s 8192; tests/tsan_c_test && tests/tsan_test)
 
 presubmit:
+	$(MAKE) clean_lint
 	$(MAKE) clean run DEBUG=0
 	$(MAKE) clean run DEBUG=1
 
