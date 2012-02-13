@@ -72,4 +72,69 @@ TEST(Clock, AcquireRelease) {
   chunked.Free(&slab);
 }
 
+TEST(Clock, ManyThreads) {
+  SlabAlloc alloc(ChunkedClock::kChunkSize);
+  SlabCache slab(&alloc);
+  ChunkedClock chunked;
+  for (int i = 0; i < 100; i++) {
+    VectorClock vector;
+    vector.Init();
+    vector.tick(i);
+    vector.release(&chunked, &slab);
+    CHECK_EQ(chunked.size(), i + 1);
+    vector.acquire(&chunked);
+    CHECK_EQ(vector.size(), i + 1);
+  }
+  VectorClock vector;
+  vector.Init();
+  vector.acquire(&chunked);
+  CHECK_EQ(vector.size(), 100);
+  for (int i = 0; i < 100; i++)
+    CHECK_EQ(vector.get(i), 1);
+  chunked.Free(&slab);
+}
+
+TEST(Clock, DifferentSizes) {
+  SlabAlloc alloc(ChunkedClock::kChunkSize);
+  SlabCache slab(&alloc);
+  {
+    VectorClock vector1;
+    vector1.Init();
+    vector1.tick(10);
+    VectorClock vector2;
+    vector2.Init();
+    vector2.tick(20);
+    {
+      ChunkedClock chunked;
+      vector1.release(&chunked, &slab);
+      CHECK_EQ(chunked.size(), 11);
+      vector2.release(&chunked, &slab);
+      CHECK_EQ(chunked.size(), 21);
+      chunked.Free(&slab);
+    }
+    {
+      ChunkedClock chunked;
+      vector2.release(&chunked, &slab);
+      CHECK_EQ(chunked.size(), 21);
+      vector1.release(&chunked, &slab);
+      CHECK_EQ(chunked.size(), 21);
+      chunked.Free(&slab);
+    }
+    {
+      ChunkedClock chunked;
+      vector1.release(&chunked, &slab);
+      vector2.acquire(&chunked);
+      CHECK_EQ(vector2.size(), 21);
+      chunked.Free(&slab);
+    }
+    {
+      ChunkedClock chunked;
+      vector2.release(&chunked, &slab);
+      vector1.acquire(&chunked);
+      CHECK_EQ(vector1.size(), 21);
+      chunked.Free(&slab);
+    }
+  }
+}
+
 }  // namespace __tsan

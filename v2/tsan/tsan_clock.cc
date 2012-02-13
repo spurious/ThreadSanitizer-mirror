@@ -35,7 +35,7 @@ void VectorClock::acquire(const ChunkedClock *src) {
   if (this->nclk_ < src->nclk_)
     this->nclk_ = src->nclk_;
   ChunkedClock::Chunk *c = src->chunk_;
-  for (int di = 0; di < this->nclk_;) {
+  for (int di = 0; c;) {
     for (int si = 0; si < kChunkCapacity && di < this->nclk_;
         si++, di++) {
       if (this->clk_[di] < c->clk_[si])
