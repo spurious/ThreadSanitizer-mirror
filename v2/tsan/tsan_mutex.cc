@@ -23,7 +23,7 @@ Mutex::~Mutex() {
 }
 
 void Mutex::Lock() {
-  while (atomic_exchange(&state_, 1, memory_order_acquire) == 0) {
+  while (atomic_exchange(&state_, 1, memory_order_acquire)) {
   }
 }
 
