@@ -55,6 +55,13 @@ struct ThreadState {
   };
 
   Fast fast;  // Should be the first field.
+  // Synch epoch represents the threads's epoch before the last synchronization
+  // action. It allows to reduce number of shadow state updates.
+  // For example, fast_synch_epoch=100, last write to addr X was at epoch=150,
+  // if we are processing write to X from the same thread at epoch=200,
+  // we do nothing, because both writes happen in the same 'synch epoch'.
+  // That is, if another memory access does not race with the former write,
+  // it does not race with the latter as well.
   u64 fast_synch_epoch;
   Trace trace;
   SlabCache* clockslab;
