@@ -27,7 +27,7 @@ typedef unsigned long uptr;  // NOLINT
 typedef unsigned long size_t;  // NOLINT
 
 const uptr kPageSize = 4096;
-const int kTidBits = 8;
+const int kTidBits = 16;
 const int kMaxTid = 1 << kTidBits;
 const int kClkBits = 40;
 

@@ -69,6 +69,9 @@ void Initialize(ThreadState *thr) {
   ctx = new Context;
   ctx->clockslab = new SlabAlloc(ChunkedClock::kChunkSize);
   ctx->synctab = new SyncTab;
+  ctx->dead_list_size = 0;
+  ctx->dead_list_head = 0;
+  ctx->dead_list_tail = 0;
   InitializeInterceptors();
   InitializeSuppressions();
 

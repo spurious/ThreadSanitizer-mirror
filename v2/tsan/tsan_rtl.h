@@ -81,6 +81,13 @@ enum ThreadStatus {
   ThreadStatusCreated,   // Created but not yet running.
   ThreadStatusRunning,   // The thread is currently running.
   ThreadStatusFinished,  // Joinable thread is finished but not yet joined.
+  ThreadStatusDead,      // Joined, but some info (trace) is still alive.
+};
+
+// An info about a thread that is hold for some time after its termination.
+struct ThreadDeadInfo {
+  VectorClock clock;
+  Trace trace;
 };
 
 struct ThreadContext {
@@ -88,7 +95,14 @@ struct ThreadContext {
   ThreadStatus status;
   uptr uid;  // Some opaque user thread id.
   bool detached;
+  int reuse_count;
   ChunkedClock sync;
+  // Epoch at which the thread had started.
+  // If we see an event from the thread stamped by an older epoch,
+  // the event is from a dead thread that shared tid with this thread.
+  u64 epoch0;
+  ThreadDeadInfo *dead_info;
+  ThreadContext* dead_next;  // In dead thread list.
 
   ThreadContext()
     : thr()
@@ -107,6 +121,9 @@ struct Context {
   Mutex thread_mtx;
   int thread_seq;
   ThreadContext threads[kMaxTid];
+  int dead_list_size;
+  ThreadContext* dead_list_head;
+  ThreadContext* dead_list_tail;
 };
 
 extern Context *ctx;

@@ -37,24 +37,23 @@ TEST(ThreadSanitizer, ThreadDetach2) {
   t1.Detach();
 }
 
-TEST(DISABLED_ThreadSanitizer, ThreadALot) {
-  const int kThreads = 50000;
-  for (int i = 0; i < kThreads; i++) {
-    ScopedThread thread;
-    (void)thread;
-  }
+static void *thread_alot_func(void *arg) {
+  (void)arg;
+  int usleep(unsigned);
+  usleep(50);
+  return 0;
 }
 
-TEST(DISABLED_ThreadSanitizer, ThreadALot2) {
-  const int kThreads = 50000;
+TEST(DISABLED_SLOW_ThreadSanitizer, ThreadALot) {
+  const int kThreads = 70000;
   const int kAlive = 1000;
-  ScopedThread *threads[kAlive] = {};
+  pthread_t threads[kAlive] = {};
   for (int i = 0; i < kThreads; i++) {
     if (threads[i % kAlive])
-      delete threads[i % kAlive];
-    threads[i % kAlive] = new ScopedThread;
+      pthread_join(threads[i % kAlive], 0);
+    pthread_create(&threads[i % kAlive], 0, thread_alot_func, 0);
   }
   for (int i = 0; i < kAlive; i++) {
-    delete threads[i];
+    pthread_join(threads[i], 0);
   }
 }

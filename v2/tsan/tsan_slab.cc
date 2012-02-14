@@ -107,6 +107,7 @@ SlabCache::~SlabCache() {
       last = (void**)*last;
     parent_->Free(head_, last, count_);
   }
+  head_ = (void**)0xdeadbeef;
 }
 
 void* SlabCache::Alloc() {
