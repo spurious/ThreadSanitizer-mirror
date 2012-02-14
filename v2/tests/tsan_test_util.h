@@ -57,8 +57,9 @@ class Mutex {
 // fixed.
 class ScopedThread {
  public:
-  explicit ScopedThread(bool main = false);
+  explicit ScopedThread(bool detached = false, bool main = false);
   ~ScopedThread();
+  void Detach();
 
   const ReportDesc *Access(void *addr, bool is_write, int size,
                            bool expect_race);
@@ -103,6 +104,6 @@ class ScopedThread {
 class MainThread : public ScopedThread {
  public:
   MainThread()
-    : ScopedThread(true) {
+    : ScopedThread(false, true) {
   }
 };

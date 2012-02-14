@@ -153,6 +153,7 @@ struct Event {
 struct ScopedThread::Impl {
   pthread_t thread;
   bool main;
+  bool detached;
   atomic_uintptr_t event;  // Event*
 
   static void *ScopedThreadCallback(void *arg);
@@ -256,9 +257,10 @@ void ScopedThread::Impl::send(Event *e) {
   }
 }
 
-ScopedThread::ScopedThread(bool main) {
+ScopedThread::ScopedThread(bool detached, bool main) {
   impl_ = new Impl;
   impl_->main = main;
+  impl_->detached = detached;
   atomic_store(&impl_->event, 0, memory_order_relaxed);
   if (!main) {
     pthread_create(&impl_->thread, NULL,
@@ -270,9 +272,17 @@ ScopedThread::~ScopedThread() {
   if (!impl_->main) {
     Event event(Event::SHUTDOWN);
     impl_->send(&event);
-    pthread_join(impl_->thread, NULL);
+    if (!impl_->detached)
+      pthread_join(impl_->thread, NULL);
   }
   delete impl_;
+}
+
+void ScopedThread::Detach() {
+  CHECK(!impl_->main);
+  CHECK(!impl_->detached);
+  impl_->detached = true;
+  pthread_detach(impl_->thread);
 }
 
 const ReportDesc *ScopedThread::Access(void *addr, bool is_write,

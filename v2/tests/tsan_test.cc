@@ -28,6 +28,30 @@ TEST(ThreadSanitizer, FuncCall) {
   t2.Return();
 }
 
+TEST(ThreadSanitizer, ThreadSync) {
+  MainThread t0;
+  MemLoc l;
+  t0.Write1(l);
+  {
+    ScopedThread t1;
+    t1.Write1(l);
+  }
+  t0.Write1(l);
+}
+
+TEST(ThreadSanitizer, ThreadDetach1) {
+  ScopedThread t1(true);
+  MemLoc l;
+  t1.Write1(l);
+}
+
+TEST(ThreadSanitizer, ThreadDetach2) {
+  ScopedThread t1;
+  MemLoc l;
+  t1.Write1(l);
+  t1.Detach();
+}
+
 int main(int argc, char **argv) {
   TestMutexBeforeInit();  // Mutexes must be usable before __tsan_init();
   __tsan_init();
