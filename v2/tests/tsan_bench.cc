@@ -16,8 +16,8 @@
 #include "gtest/gtest.h"
 #include <stdint.h>
 
-int kSize = 128;
-int kRepeat = 2*1024*1024;
+const int kSize = 128;
+const int kRepeat = 2*1024*1024;
 
 void noinstr(void *p) {}
 
