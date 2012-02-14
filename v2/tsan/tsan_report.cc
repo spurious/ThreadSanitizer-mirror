@@ -25,7 +25,7 @@ static void PrintStack(const ReportStack *stack) {
 
 void PrintReport(const ReportDesc *rep) {
   Printf("==================\n");
-  Printf("WARNING: Data race\n");
+  Printf("WARNING: ThreadSanitizer: data race\n");
   for (int i = 0; i < rep->nmop; i++) {
     const ReportMop *mop = &rep->mop[i];
     Printf("  %s%s of size %d at %p by thread %d:\n",
