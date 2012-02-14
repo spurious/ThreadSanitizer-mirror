@@ -13,41 +13,14 @@
 #ifndef TSAN_SYNC_H
 #define TSAN_SYNC_H
 
-#include "tsan_defs.h"
+#include "tsan_atomic.h"
 #include "tsan_clock.h"
+#include "tsan_defs.h"
 #include "tsan_mutex.h"
-// #include "tsan_rtl.h"
 
 namespace __tsan {
 
 struct ThreadState;
-
-class PoorMansMap {
- public:
-  PoorMansMap();
-  ~PoorMansMap();
-  bool Insert(uptr key, uptr value);
-  bool Erase(uptr key);
-  bool Get(uptr key, uptr *value);
- private:
-  struct Impl;
-  Impl *impl_;
-};
-
-// Both K and V are pointer-sized PODs.
-template <class K, class V>
-class Map : private PoorMansMap {
- public:
-  bool Insert(K key, V value) {
-    return PoorMansMap::Insert((uptr)(key), (uptr)(value));
-  }
-  bool Erase(K key) {
-    return PoorMansMap::Erase((uptr)(key));
-  }
-  bool Get(K key, V *value) {
-    return PoorMansMap::Get((uptr)(key), (uptr*)(value));
-  }
-};
 
 struct SyncVar {
   enum Type { Atomic, Mtx, Sem };
@@ -63,6 +36,7 @@ struct SyncVar {
   const uptr addr;
   Mutex mtx;
   ChunkedClock clock;
+  SyncVar *next;  // In SyncTab hashtable.
 };
 
 struct MutexVar : SyncVar {
@@ -79,9 +53,17 @@ class SyncTab {
   SyncVar* GetAndRemoveIfExists(uptr addr);
 
  private:
-  Mutex mtx_;
-  typedef Map<uptr, SyncVar*> tab_t;
-  tab_t tab_;
+  struct Part {
+    Mutex mtx;
+    SyncVar *val;
+    char pad[kCacheLineSize - sizeof(Mutex) - sizeof(SyncVar*)];  // NOLINT
+    Part();
+  };
+
+  static const int kPartCount = 1009;
+  Part tab_[kPartCount];
+
+  int PartIdx(uptr addr);
 
   SyncTab(const SyncTab&);  // Not implemented.
   void operator = (const SyncTab&);  // Not implemented.

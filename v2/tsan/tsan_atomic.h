@@ -19,6 +19,8 @@
 
 namespace __tsan {
 
+const int kCacheLineSize = 64;
+
 enum memory_order {
   memory_order_relaxed = 1 << 0,
   memory_order_consume = 1 << 1,

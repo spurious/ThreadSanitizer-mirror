@@ -33,31 +33,49 @@ MutexVar::MutexVar(uptr addr, bool is_rw)
   , is_rw(is_rw) {
 }
 
+SyncTab::Part::Part()
+  : val() {
+}
+
 SyncTab::SyncTab() {
 }
 
 void SyncTab::insert(SyncVar *var) {
-  CHECK(tab_.Insert(var->addr, var));
+  Part *p = &tab_[PartIdx(var->addr)];
+  Lock l(&p->mtx);
+  var->next = p->val;
+  p->val = var;
 }
 
 SyncVar* SyncTab::GetAndLockIfExists(uptr addr) {
-  Lock l(&mtx_);
-  SyncVar *res;
-  if (!tab_.Get(addr, &res))
-    return 0;
-  CHECK(res);
-  res->mtx.Lock();
-  return res;
+  Part *p = &tab_[PartIdx(addr)];
+  Lock l(&p->mtx);
+  for (SyncVar *res = p->val; res; res = res->next) {
+    if (res->addr == addr) {
+      res->mtx.Lock();
+      return res;
+    }
+  }
+  return 0;
 }
 
 SyncVar* SyncTab::GetAndRemoveIfExists(uptr addr) {
-  Lock l(&mtx_);
-  SyncVar *res;
-  if (!tab_.Get(addr, &res))
-    return 0;
-  CHECK(res);
-  CHECK(tab_.Erase(addr));
-  return res;
+  Part *p = &tab_[PartIdx(addr)];
+  Lock l(&p->mtx);
+  SyncVar **prev = &p->val;
+  SyncVar *res = *prev;
+  while (res) {
+    if (res->addr == addr) {
+      *prev = res->next;
+      return res;
+    }
+    prev = &res->next;
+  }
+  return 0;
+}
+
+int SyncTab::PartIdx(uptr addr) {
+  return (addr >> 3) % kPartCount;
 }
 
 }  // namespace __tsan

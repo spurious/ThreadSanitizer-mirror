@@ -24,8 +24,6 @@
 #include <unistd.h>
 #include <errno.h>
 
-#include <map>
-
 namespace __tsan {
 
 struct ScopedErrno {
@@ -60,27 +58,6 @@ void internal_memset(void *ptr, int c, uptr size) {
 
 void internal_memcpy(void *dst, const void *src, uptr size) {
   memcpy(dst, src, size);  // FIXME: use REAL(memcpy) or a custom one.
-}
-
-// FIXME: PoorMansMap should not use STL.
-struct PoorMansMap::Impl {
-  std::map<uptr, uptr> m;
-};
-
-PoorMansMap::PoorMansMap() { impl_ = new Impl; }
-PoorMansMap::~PoorMansMap() { delete impl_; }
-bool PoorMansMap::Insert(uptr key, uptr value) {
-  return impl_->m.insert(std::make_pair(key, value)).second;
-}
-bool PoorMansMap::Erase(uptr key) {
-  return impl_->m.erase(key);
-}
-bool PoorMansMap::Get(uptr key, uptr *value) {
-  std::map<uptr, uptr>::iterator it = impl_->m.lower_bound(key);
-  if (it == impl_->m.end()) return false;
-  CHECK(it->first == key);
-  *value = it->second;
-  return true;
 }
 
 void Die() {
