@@ -71,19 +71,3 @@ void FLATTEN __tsan_func_entry(void *pc) {
 void FLATTEN __tsan_func_exit() {
   __tsan::FuncExit(&cur_thread);
 }
-
-void __tsan_mutex_create(void *addr, int is_rw) {
-  __tsan::MutexCreate(&cur_thread, (uptr)addr, !!is_rw);
-}
-
-void __tsan_mutex_destroy(void *addr) {
-  __tsan::MutexDestroy(&cur_thread, (uptr)addr);
-}
-
-void __tsan_mutex_lock(void *addr) {
-  __tsan::MutexLock(&cur_thread, (uptr)addr);
-}
-
-void __tsan_mutex_unlock(void *addr) {
-  __tsan::MutexUnlock(&cur_thread, (uptr)addr);
-}

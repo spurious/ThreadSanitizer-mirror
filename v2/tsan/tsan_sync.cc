@@ -11,12 +11,21 @@
 //
 //===----------------------------------------------------------------------===//
 #include "tsan_sync.h"
+#include "tsan_rtl.h"
 
 namespace __tsan {
 
 SyncVar::SyncVar(SyncVar::Type type, uptr addr)
   : type(type)
   , addr(addr) {
+}
+
+void SyncVar::Read(ThreadState *thr, uptr pc) {
+  MemoryAccess(thr, pc, addr, 1, false);
+}
+
+void SyncVar::Write(ThreadState *thr, uptr pc) {
+  MemoryAccess(thr, pc, addr, 1, true);
 }
 
 MutexVar::MutexVar(uptr addr, bool is_rw)

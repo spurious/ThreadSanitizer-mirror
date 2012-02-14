@@ -17,6 +17,8 @@
 #include "tsan_atomic.h"
 #include "tsan_report.h"
 
+#include "gtest/gtest.h"
+
 #include <assert.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -35,7 +37,6 @@ using __tsan::atomic_load;
 using __tsan::atomic_store;
 using __tsan::atomic_fetch_add;
 
-static __thread bool g_waiting_for_report;
 static __thread const ReportDesc *g_report;
 
 static void *BeforeInitThread(void *param) {
@@ -56,7 +57,6 @@ void TestMutexBeforeInit() {
 
 namespace __tsan {
 bool OnReport(const ReportDesc *rep, bool suppressed) {
-  CHECK(g_waiting_for_report);
   g_report = rep;
   return true;
 }
@@ -128,13 +128,22 @@ struct Event {
   Type type;
   void *ptr;
   int arg;
+  bool expect_report;
+  __tsan::ReportType report_type;
   const ReportDesc *rep;
 
   Event(Type type, const void *ptr = NULL, int arg = 0)
     : type(type)
     , ptr(const_cast<void*>(ptr))
     , arg(arg)
+    , expect_report()
+    , report_type()
     , rep() {
+  }
+
+  void ExpectReport(__tsan::ReportType type) {
+    expect_report = true;
+    report_type = type;
   }
 };
 
@@ -158,11 +167,7 @@ void *ScopedThread::Impl::ScopedThreadCallback(void *arg) {
       atomic_store(&impl->event, 0, memory_order_release);
       break;
     }
-
     CHECK_EQ(g_report, NULL);
-    CHECK(!g_waiting_for_report);
-    g_waiting_for_report = true;
-
     switch (ev->type) {
     case Event::READ:
     case Event::WRITE: {
@@ -208,9 +213,24 @@ void *ScopedThread::Impl::ScopedThreadCallback(void *arg) {
       break;
     default: CHECK(0);
     }
-    g_waiting_for_report = false;
     ev->rep = g_report;
     g_report = NULL;
+    if (ev->expect_report) {
+      if (ev->rep == NULL) {
+        printf("Missed expected report of type %d\n", (int)ev->report_type);
+        EXPECT_FALSE("Missed expected race");
+      }
+      if (ev->rep->typ != ev->report_type) {
+        printf("Expected report of type %d, got type %d\n",
+               (int)ev->report_type, (int)ev->rep->typ);
+        EXPECT_FALSE("Wrong report type");
+      }
+    } else {
+      if (ev->rep) {
+        __tsan::PrintReport(ev->rep);
+        EXPECT_FALSE("Unexpected report");
+      }
+    }
     atomic_store(&impl->event, 0, memory_order_release);
   }
   return NULL;
@@ -241,16 +261,9 @@ const ReportDesc *ScopedThread::Access(void *addr, bool is_write,
                                        int size, bool expect_race) {
   (void)expect_race;
   Event event(is_write ? Event::WRITE : Event::READ, addr, size);
+  if (expect_race)
+    event.ExpectReport(__tsan::ReportTypeRace);
   impl_->send(&event);
-  if (expect_race) {
-    if (event.rep == NULL)
-      CHECK(!"Missed expected race");
-    if (event.rep->typ != __tsan::ReportTypeRace)
-      CHECK(!"Wrong report type for expected race");
-  } else {
-    if (event.rep)
-      CHECK(!"Unexpected race");
-  }
   return event.rep;
 }
 

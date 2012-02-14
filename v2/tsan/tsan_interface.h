@@ -42,11 +42,6 @@ void __tsan_write16(void *addr);
 void __tsan_func_entry(void *call_pc);
 void __tsan_func_exit();
 
-void __tsan_mutex_create(void *addr, int is_rw);
-void __tsan_mutex_destroy(void *addr);
-void __tsan_mutex_lock(void *addr);
-void __tsan_mutex_unlock(void *addr);
-
 #ifdef __cplusplus
 }  // extern "C"
 #endif

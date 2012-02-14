@@ -16,6 +16,8 @@
 #include "tsan_interface.h"
 #include "tsan_thread.h"
 
+#define CALLERPC ((__tsan::uptr)__builtin_return_address(0))
+
 using __tsan::Thread;
 using __tsan::cur_thread;
 using __tsan::uptr;
@@ -41,7 +43,7 @@ INTERCEPTOR(int, pthread_mutex_init,
   __tsan_init();
   int res = REAL(pthread_mutex_init)(m, a);
   if (res == 0) {
-    MutexCreate(&cur_thread, (uptr)m, false);
+    MutexCreate(&cur_thread, CALLERPC, (uptr)m, false);
   }
   return res;
 }
@@ -50,7 +52,7 @@ INTERCEPTOR(int, pthread_mutex_destroy,
             void *m) {
   int res = REAL(pthread_mutex_destroy)(m);
   if (res == 0) {
-    MutexDestroy(&cur_thread, (uptr)m);
+    MutexDestroy(&cur_thread, CALLERPC, (uptr)m);
   }
   return res;
 }
@@ -60,14 +62,14 @@ INTERCEPTOR(int, pthread_mutex_lock,
   __tsan_init();
   int res = REAL(pthread_mutex_lock)(m);
   if (res == 0) {
-    MutexLock(&cur_thread, (uptr)m);
+    MutexLock(&cur_thread, CALLERPC, (uptr)m);
   }
   return res;
 }
 
 INTERCEPTOR(int, pthread_mutex_unlock,
             void *m) {
-  MutexUnlock(&cur_thread, (uptr)m);
+  MutexUnlock(&cur_thread, CALLERPC, (uptr)m);
   int res = REAL(pthread_mutex_unlock)(m);
   return res;
 }

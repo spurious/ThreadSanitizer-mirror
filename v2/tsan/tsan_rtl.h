@@ -77,12 +77,14 @@ void Die() NORETURN;
 
 void Initialize();
 int ThreadCreate();
+void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
+                  int size, bool is_write);
 void ThreadStart(int tid);
 void ThreadStart(ThreadState *thr, int tid);
-void MutexCreate(ThreadState *thr, uptr addr, bool is_rw);
-void MutexDestroy(ThreadState *thr, uptr addr);
-void MutexLock(ThreadState *thr, uptr addr);
-void MutexUnlock(ThreadState *thr, uptr addr);
+void MutexCreate(ThreadState *thr, uptr pc, uptr addr, bool is_rw);
+void MutexDestroy(ThreadState *thr, uptr pc, uptr addr);
+void MutexLock(ThreadState *thr, uptr pc, uptr addr);
+void MutexUnlock(ThreadState *thr, uptr pc, uptr addr);
 
 void internal_memset(void *ptr, int c, uptr size);
 void internal_memcpy(void *dst, const void *src, uptr size);

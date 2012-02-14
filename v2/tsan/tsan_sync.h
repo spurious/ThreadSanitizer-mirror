@@ -25,6 +25,11 @@ struct SyncVar {
 
   SyncVar(Type type, uptr addr);
 
+  // The following functions emulate read/write on the mutex address.
+  // That is used to detect races between e.g. mutex create/lock.
+  void Read(ThreadState *thr, uptr pc);
+  void Write(ThreadState *thr, uptr pc);
+
   const Type type;
   const uptr addr;
   Mutex mtx;

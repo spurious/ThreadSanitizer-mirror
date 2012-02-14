@@ -119,22 +119,25 @@ void ThreadStart(int tid) {
   ThreadStart(&cur_thread, tid);
 }
 
-void MutexCreate(ThreadState *thr, uptr addr, bool is_rw) {
+void MutexCreate(ThreadState *thr, uptr pc, uptr addr, bool is_rw) {
   if (TSAN_DEBUG)
     Printf("#%d: MutexCreate %p\n", thr->fast.tid, addr);
-  ctx->synctab->insert(new MutexVar(addr, is_rw));
+  SyncVar *s = new MutexVar(addr, is_rw);
+  ctx->synctab->insert(s);
+  s->Write(thr, pc);
 }
 
-void MutexDestroy(ThreadState *thr, uptr addr) {
+void MutexDestroy(ThreadState *thr, uptr pc, uptr addr) {
   if (TSAN_DEBUG)
     Printf("#%d: MutexDestroy %p\n", thr->fast.tid, addr);
   SyncVar *s = ctx->synctab->GetAndRemoveIfExists(addr);
   CHECK(s && s->type == SyncVar::Mtx);
+  s->Write(thr, pc);
   s->clock.Free(thr->clockslab);
   delete s;
 }
 
-void MutexLock(ThreadState *thr, uptr addr) {
+void MutexLock(ThreadState *thr, uptr pc, uptr addr) {
   if (TSAN_DEBUG)
     Printf("#%d: MutexLock %p\n", thr->fast.tid, addr);
   thr->fast.epoch++;
@@ -143,9 +146,10 @@ void MutexLock(ThreadState *thr, uptr addr) {
   if (!s) {
     // Locking a mutex before if was created (e.g. for linked-inited mutexes.
     // FIXME: is that right?
-    MutexCreate(thr, addr, true);
+    MutexCreate(thr, pc, addr, true);
     s = ctx->synctab->GetAndLockIfExists(addr);
   }
+  s->Read(thr, pc);
   CHECK(s && s->type == SyncVar::Mtx);
   MutexVar *m = static_cast<MutexVar*>(s);
   thr->clock.set(thr->fast.tid, thr->fast.epoch);
@@ -153,13 +157,14 @@ void MutexLock(ThreadState *thr, uptr addr) {
   m->mtx.Unlock();
 }
 
-void MutexUnlock(ThreadState *thr, uptr addr) {
+void MutexUnlock(ThreadState *thr, uptr pc, uptr addr) {
   if (TSAN_DEBUG)
     Printf("#%d: MutexUnlock %p\n", thr->fast.tid, addr);
   thr->fast.epoch++;
   TraceAddEvent(thr, thr->fast.epoch, EventTypeUnlock, addr);
   SyncVar *s = ctx->synctab->GetAndLockIfExists(addr);
   CHECK(s && s->type == SyncVar::Mtx);
+  s->Read(thr, pc);
   MutexVar *m = static_cast<MutexVar*>(s);
   thr->clock.set(thr->fast.tid, thr->fast.epoch);
   thr->fast_synch_epoch = thr->fast.epoch;
