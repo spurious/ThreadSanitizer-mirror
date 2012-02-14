@@ -14,30 +14,65 @@
 #include "interception/interception.h"
 #include "tsan_rtl.h"
 #include "tsan_interface.h"
-#include "tsan_thread.h"
+#include "tsan_atomic.h"
 
 #define CALLERPC ((__tsan::uptr)__builtin_return_address(0))
 
-using __tsan::Thread;
 using __tsan::cur_thread;
 using __tsan::uptr;
+using __tsan::atomic_uintptr_t;
+using __tsan::atomic_store;
+using __tsan::atomic_load;
+using __tsan::memory_order_relaxed;
+using __tsan::memory_order_release;
+using __tsan::memory_order_acquire;
+using __tsan::ThreadCreate;
+using __tsan::ThreadStart;
+using __tsan::ThreadFinish;
+using __tsan::ThreadDetach;
+using __tsan::ThreadJoin;
 
 extern "C" int pthread_attr_getdetachstate(void *attr, int *v);
+extern "C" int pthread_yield();
+
+struct ThreadParam {
+  void* (*callback)(void *arg);
+  void *param;
+  atomic_uintptr_t tid;
+};
 
 static void *tsan_thread_start(void *arg) {
-  Thread *t = (Thread*)arg;
-  return t->Start();
+  ThreadParam *p = (ThreadParam*)arg;
+  void* (*callback)(void *arg) = p->callback;
+  void *param = p->param;
+  int tid = 0;
+  while ((tid = atomic_load(&p->tid, memory_order_acquire)) == 0)
+    pthread_yield();
+  atomic_store(&p->tid, 0, memory_order_release);
+  ThreadStart(&cur_thread, tid);
+  void *res = callback(param);
+  ThreadFinish(&cur_thread);
+  return res;
 }
 
 INTERCEPTOR(int, pthread_create,
-    void *th, void *attr,
-    void *(*callback)(void*), void * param) {
+    void *th, void *attr, void *(*callback)(void*), void * param) {
   __tsan_init();
   int detached = 0;
   if (attr)
     pthread_attr_getdetachstate(attr, &detached);
-  Thread *t = Thread::Create(callback, param, *(uptr*)th, detached);
-  int res = REAL(pthread_create)(th, attr, tsan_thread_start, t);
+  ThreadParam p;
+  p.callback = callback;
+  p.param = param;
+  atomic_store(&p.tid, 0, memory_order_relaxed);
+  int res = REAL(pthread_create)(th, attr, tsan_thread_start, &p);
+  if (res == 0) {
+    int tid = ThreadCreate(&cur_thread, *(uptr*)th, detached);
+    CHECK_NE(tid, 0);
+    atomic_store(&p.tid, tid, memory_order_release);
+    while (atomic_load(&p.tid, memory_order_acquire) != 0)
+      pthread_yield();
+  }
   return res;
 }
 

@@ -36,14 +36,37 @@ union Shadow {
   u64 raw;
 };
 
+enum ThreadStatus {
+  ThreadStatusInvalid,   // Non-existent thread, data is invalid.
+  ThreadStatusCreated,   // Created but not yet running.
+  ThreadStatusRunning,   // The thread is currently running.
+  ThreadStatusFinished,  // Joinable thread is finished but not yet joined.
+};
+
+struct ThreadContext {
+  ThreadState *thr;
+  ThreadStatus status;
+  uptr uid;  // Some opaque user thread id.
+  bool detached;
+  ChunkedClock sync;
+
+  ThreadContext()
+    : thr()
+    , status(ThreadStatusInvalid)
+    , uid()
+    , detached() {
+  }
+};
+
 struct Context {
-  Mutex mtx;
-  int thread_seq;
   SlabAlloc* clockslab;
   SyncTab *synctab;
-  ThreadState *threads[kMaxTid];
   ReportDesc rep;
   Mutex report_mtx;
+
+  Mutex thread_mtx;
+  int thread_seq;
+  ThreadContext threads[kMaxTid];
 };
 
 static Context *ctx;
@@ -96,14 +119,40 @@ void Initialize(ThreadState *thr) {
   InitializeSuppressions();
 
   // Initialize thread 0.
-  ThreadStart(thr, 0);
+  ctx->thread_seq = 0;
+  int tid = ThreadCreate(thr, 0, true);
+  CHECK_EQ(tid, 0);
+  ThreadStart(thr, tid);
+}
+
+static void ThreadFree(ThreadState *thr, ThreadContext *tctx) {
+  CHECK(tctx->status == ThreadStatusRunning
+      || tctx->status == ThreadStatusFinished);
+  if (TSAN_DEBUG)
+    Printf("#%d: ThreadFree uid=%lu\n", (int)thr->fast.tid, tctx->uid);
+  tctx->status = ThreadStatusInvalid;
+  tctx->uid = 0;
+  tctx->sync.Free(thr->clockslab);
 }
 
 int ThreadCreate(ThreadState *thr, uptr uid, bool detached) {
-  Lock l(&ctx->mtx);
-  (void)uid;
-  (void)detached;
-  return ++ctx->thread_seq;
+  Lock l(&ctx->thread_mtx);
+  const int tid = ctx->thread_seq++;
+  if (TSAN_DEBUG)
+    Printf("#%d: ThreadCreate tid=%d uid=%lu\n",
+           (int)thr->fast.tid, tid, uid);
+  ThreadContext *tctx = &ctx->threads[tid];
+  CHECK(tctx->status == ThreadStatusInvalid);
+  tctx->status = ThreadStatusCreated;
+  tctx->thr = 0;
+  tctx->uid = uid;
+  tctx->detached = detached;
+  if (tid) {
+    thr->clock.set(thr->fast.tid, thr->fast.epoch);
+    thr->fast_synch_epoch = thr->fast.epoch;
+    thr->clock.release(&tctx->sync, thr->clockslab);
+  }
+  return tid;
 }
 
 void ThreadStart(ThreadState *thr, int tid) {
@@ -114,17 +163,74 @@ void ThreadStart(ThreadState *thr, int tid) {
   thr->fast.epoch = 1;
   thr->fast_synch_epoch = 1;
   TraceInit(thr);
-  ctx->threads[tid] = thr;
+
+  {
+    Lock l(&ctx->thread_mtx);
+    ThreadContext *tctx = &ctx->threads[tid];
+    CHECK(tctx->status == ThreadStatusCreated);
+    tctx->status = ThreadStatusRunning;
+    tctx->thr = thr;
+    thr->clock.acquire(&tctx->sync);
+  }
 }
 
 void ThreadFinish(ThreadState *thr) {
-  (void)thr;
+  Lock l(&ctx->thread_mtx);
+  ThreadContext *tctx = &ctx->threads[thr->fast.tid];
+  CHECK(tctx->status == ThreadStatusRunning);
+  if (tctx->detached) {
+    ThreadFree(thr, tctx);
+  } else {
+    thr->clock.set(thr->fast.tid, thr->fast.epoch);
+    thr->fast_synch_epoch = thr->fast.epoch;
+    thr->clock.release(&tctx->sync, thr->clockslab);
+    tctx->status = ThreadStatusFinished;
+  }
+  tctx->thr = 0;
 }
 
 void ThreadJoin(ThreadState *thr, uptr uid) {
+  if (TSAN_DEBUG)
+    Printf("#%d: ThreadJoin uid=%lu\n",
+           (int)thr->fast.tid, uid);
+  Lock l(&ctx->thread_mtx);
+  ThreadContext *tctx = 0;
+  int tid = 0;
+  for (; tid < kMaxTid; tid++) {
+    if (ctx->threads[tid].uid == uid
+        && ctx->threads[tid].status != ThreadStatusInvalid) {
+      tctx = &ctx->threads[tid];
+      break;
+    }
+  }
+  if (tctx == 0 || tctx->status == ThreadStatusInvalid) {
+    Printf("ThreadSanitizer: join of non-existent thread\n");
+    return;
+  }
+  CHECK(tctx->detached == false);
+  CHECK(tctx->status == ThreadStatusFinished);
+  thr->clock.acquire(&tctx->sync);
+  ThreadFree(thr, tctx);
 }
 
 void ThreadDetach(ThreadState *thr, uptr uid) {
+  Lock l(&ctx->thread_mtx);
+  ThreadContext *tctx = 0;
+  for (int tid = 0; tid < kMaxTid; tid++) {
+    if (ctx->threads[tid].uid == uid) {
+      tctx = &ctx->threads[tid];
+      break;
+    }
+  }
+  if (tctx == 0 || tctx->status == ThreadStatusInvalid) {
+    Printf("ThreadSanitizer: detach of non-existent thread\n");
+    return;
+  }
+  if (tctx->status == ThreadStatusFinished) {
+    ThreadFree(thr, tctx);
+  } else {
+    tctx->detached = true;
+  }
 }
 
 void MutexCreate(ThreadState *thr, uptr pc, uptr addr, bool is_rw) {
@@ -189,7 +295,10 @@ static T* alloc(ReportDesc *rep, int n, int *pos) {
 }
 
 static int RestoreStack(int tid, u64 epoch, uptr *stack, int n) {
-  ThreadState *thr = ctx->threads[tid];
+  Lock l0(&ctx->thread_mtx);
+  if (ctx->threads[tid].status != ThreadStatusRunning)
+    return 0;
+  ThreadState *thr = ctx->threads[tid].thr;
   Lock l(thr->trace.mtx);
   TraceHeader* trace = &thr->trace.headers[
       (epoch / (kTraceSize / kTraceParts)) % kTraceParts];

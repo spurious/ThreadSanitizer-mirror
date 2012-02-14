@@ -19,18 +19,6 @@
 
 namespace __tsan {
 
-class Thread {
- public:
-  static Thread *Create(void *(*callback)(void *param), void *param,
-                        uptr uid, bool detached);
-  void *Start();
- private:
-  Thread() { }
-  void *(*callback_)(void* param);
-  void *param_;
-  int tid_;
-};
-
 }  // namespace __tsan
 
 #endif  // TSAN_THREAD_H
