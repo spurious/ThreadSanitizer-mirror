@@ -146,8 +146,8 @@ void MutexLock(ThreadState *thr, uptr pc, uptr addr) {
   if (!s) {
     // Locking a mutex before if was created (e.g. for linked-inited mutexes.
     // FIXME: is that right?
-    MutexCreate(thr, pc, addr, true);
-    s = ctx->synctab->GetAndLockIfExists(addr);
+    s = new MutexVar(addr, true);
+    ctx->synctab->insert(s);
   }
   s->Read(thr, pc);
   CHECK(s && s->type == SyncVar::Mtx);

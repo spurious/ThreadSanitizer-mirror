@@ -149,11 +149,80 @@ struct Event {
 
 struct ScopedThread::Impl {
   pthread_t thread;
+  bool main;
   atomic_uintptr_t event;  // Event*
 
   static void *ScopedThreadCallback(void *arg);
   void send(Event *ev);
+  void HandleEvent(Event *ev);
 };
+
+void ScopedThread::Impl::HandleEvent(Event *ev) {
+  CHECK_EQ(g_report, NULL);
+  switch (ev->type) {
+  case Event::READ:
+  case Event::WRITE: {
+    void (*tsan_mop)(void *addr) = NULL;
+    if (ev->type == Event::READ) {
+      switch (ev->arg /*size*/) {
+        case 1: tsan_mop = __tsan_read1; break;
+        case 2: tsan_mop = __tsan_read2; break;
+        case 4: tsan_mop = __tsan_read4; break;
+        case 8: tsan_mop = __tsan_read8; break;
+        case 16: tsan_mop = __tsan_read16; break;
+      }
+    } else {
+      switch (ev->arg /*size*/) {
+        case 1: tsan_mop = __tsan_write1; break;
+        case 2: tsan_mop = __tsan_write2; break;
+        case 4: tsan_mop = __tsan_write4; break;
+        case 8: tsan_mop = __tsan_write8; break;
+        case 16: tsan_mop = __tsan_write16; break;
+      }
+    }
+    CHECK_NE(tsan_mop, NULL);
+    tsan_mop(ev->ptr);
+    break;
+  }
+  case Event::CALL:
+    __tsan_func_entry(ev->ptr);
+    break;
+  case Event::RETURN:
+    __tsan_func_exit();
+    break;
+  case Event::MUTEX_CREATE:
+    static_cast<Mutex*>(ev->ptr)->Init();
+    break;
+  case Event::MUTEX_DESTROY:
+    static_cast<Mutex*>(ev->ptr)->Destroy();
+    break;
+  case Event::MUTEX_LOCK:
+    static_cast<Mutex*>(ev->ptr)->Lock();
+    break;
+  case Event::MUTEX_UNLOCK:
+    static_cast<Mutex*>(ev->ptr)->Unlock();
+    break;
+  default: CHECK(0);
+  }
+  ev->rep = g_report;
+  g_report = NULL;
+  if (ev->expect_report) {
+    if (ev->rep == NULL) {
+      printf("Missed expected report of type %d\n", (int)ev->report_type);
+      EXPECT_FALSE("Missed expected race");
+    }
+    if (ev->rep->typ != ev->report_type) {
+      printf("Expected report of type %d, got type %d\n",
+             (int)ev->report_type, (int)ev->rep->typ);
+      EXPECT_FALSE("Wrong report type");
+    }
+  } else {
+    if (ev->rep) {
+      __tsan::PrintReport(ev->rep);
+      EXPECT_FALSE("Unexpected report");
+    }
+  }
+}
 
 void *ScopedThread::Impl::ScopedThreadCallback(void *arg) {
   Impl *impl = (Impl*)arg;
@@ -167,93 +236,39 @@ void *ScopedThread::Impl::ScopedThreadCallback(void *arg) {
       atomic_store(&impl->event, 0, memory_order_release);
       break;
     }
-    CHECK_EQ(g_report, NULL);
-    switch (ev->type) {
-    case Event::READ:
-    case Event::WRITE: {
-      void (*tsan_mop)(void *addr) = NULL;
-      if (ev->type == Event::READ) {
-        switch (ev->arg /*size*/) {
-          case 1: tsan_mop = __tsan_read1; break;
-          case 2: tsan_mop = __tsan_read2; break;
-          case 4: tsan_mop = __tsan_read4; break;
-          case 8: tsan_mop = __tsan_read8; break;
-          case 16: tsan_mop = __tsan_read16; break;
-        }
-      } else {
-        switch (ev->arg /*size*/) {
-          case 1: tsan_mop = __tsan_write1; break;
-          case 2: tsan_mop = __tsan_write2; break;
-          case 4: tsan_mop = __tsan_write4; break;
-          case 8: tsan_mop = __tsan_write8; break;
-          case 16: tsan_mop = __tsan_write16; break;
-        }
-      }
-      CHECK_NE(tsan_mop, NULL);
-      tsan_mop(ev->ptr);
-      break;
-    }
-    case Event::CALL:
-      __tsan_func_entry(ev->ptr);
-      break;
-    case Event::RETURN:
-      __tsan_func_exit();
-      break;
-    case Event::MUTEX_CREATE:
-      static_cast<Mutex*>(ev->ptr)->Init();
-      break;
-    case Event::MUTEX_DESTROY:
-      static_cast<Mutex*>(ev->ptr)->Destroy();
-      break;
-    case Event::MUTEX_LOCK:
-      static_cast<Mutex*>(ev->ptr)->Lock();
-      break;
-    case Event::MUTEX_UNLOCK:
-      static_cast<Mutex*>(ev->ptr)->Unlock();
-      break;
-    default: CHECK(0);
-    }
-    ev->rep = g_report;
-    g_report = NULL;
-    if (ev->expect_report) {
-      if (ev->rep == NULL) {
-        printf("Missed expected report of type %d\n", (int)ev->report_type);
-        EXPECT_FALSE("Missed expected race");
-      }
-      if (ev->rep->typ != ev->report_type) {
-        printf("Expected report of type %d, got type %d\n",
-               (int)ev->report_type, (int)ev->rep->typ);
-        EXPECT_FALSE("Wrong report type");
-      }
-    } else {
-      if (ev->rep) {
-        __tsan::PrintReport(ev->rep);
-        EXPECT_FALSE("Unexpected report");
-      }
-    }
+    impl->HandleEvent(ev);
     atomic_store(&impl->event, 0, memory_order_release);
   }
   return NULL;
 }
 
 void ScopedThread::Impl::send(Event *e) {
-  CHECK_EQ(atomic_load(&event, memory_order_relaxed), 0);
-  atomic_store(&event, (uintptr_t)e, memory_order_release);
-  while (atomic_load(&event, memory_order_acquire) != 0)
-    pthread_yield();
+  if (main) {
+    HandleEvent(e);
+  } else {
+    CHECK_EQ(atomic_load(&event, memory_order_relaxed), 0);
+    atomic_store(&event, (uintptr_t)e, memory_order_release);
+    while (atomic_load(&event, memory_order_acquire) != 0)
+      pthread_yield();
+  }
 }
 
-ScopedThread::ScopedThread() {
+ScopedThread::ScopedThread(bool main) {
   impl_ = new Impl;
+  impl_->main = main;
   atomic_store(&impl_->event, 0, memory_order_relaxed);
-  pthread_create(&impl_->thread, NULL,
-      ScopedThread::Impl::ScopedThreadCallback, impl_);
+  if (!main) {
+    pthread_create(&impl_->thread, NULL,
+        ScopedThread::Impl::ScopedThreadCallback, impl_);
+  }
 }
 
 ScopedThread::~ScopedThread() {
-  Event event(Event::SHUTDOWN);
-  impl_->send(&event);
-  pthread_join(impl_->thread, NULL);
+  if (!impl_->main) {
+    Event event(Event::SHUTDOWN);
+    impl_->send(&event);
+    pthread_join(impl_->thread, NULL);
+  }
   delete impl_;
 }
 

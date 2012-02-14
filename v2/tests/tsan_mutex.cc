@@ -24,10 +24,12 @@ TEST(ThreadSanitizer, SimpleMutex) {
 }
 
 TEST(ThreadSanitizer, Mutex) {
+  Mutex m;
+  MainThread t0;
+  t0.Create(m);
+
   ScopedThread t1, t2;
   MemLoc l;
-  Mutex m;
-  t1.Create(m);
   t1.Lock(m);
   t1.Write1(l);
   t1.Unlock(m);
@@ -39,12 +41,14 @@ TEST(ThreadSanitizer, Mutex) {
 
 TEST(ThreadSanitizer, StaticMutex) {
   // Emulates statically initialized mutex.
-  ScopedThread t1, t2;
   Mutex m;
   m.StaticInit();
-  t1.Lock(m);
-  t1.Unlock(m);
-  t2.Lock(m);
-  t2.Unlock(m);
-  t2.Destroy(m);
+  {
+    ScopedThread t1, t2;
+    t1.Lock(m);
+    t1.Unlock(m);
+    t2.Lock(m);
+    t2.Unlock(m);
+  }
+  MainThread().Destroy(m);
 }

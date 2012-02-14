@@ -57,7 +57,7 @@ class Mutex {
 // fixed.
 class ScopedThread {
  public:
-  ScopedThread();
+  explicit ScopedThread(bool main = false);
   ~ScopedThread();
 
   const ReportDesc *Access(void *addr, bool is_write, int size,
@@ -98,4 +98,11 @@ class ScopedThread {
   Impl *impl_;
   ScopedThread(const ScopedThread&);  // Not implemented.
   void operator = (const ScopedThread&);  // Not implemented.
+};
+
+class MainThread : public ScopedThread {
+ public:
+  MainThread()
+    : ScopedThread(true) {
+  }
 };
