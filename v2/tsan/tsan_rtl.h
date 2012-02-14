@@ -65,6 +65,10 @@ struct ThreadState {
   // we do nothing, because both writes happen in the same 'synch epoch'.
   // That is, if another memory access does not race with the former write,
   // it does not race with the latter as well.
+  // QUESTION: can we can squeeze this into ThreadState::Fast?
+  // E.g. ThreadState::Fast is a 44-bit, 32 are taken by synch_epoch and 12 are
+  // taken by epoch between synchs.
+  // This way we can save one load from tls.
   u64 fast_synch_epoch;
   Trace trace;
   SlabCache* clockslab;
