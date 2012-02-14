@@ -81,7 +81,7 @@ static void ALWAYS_INLINE TraceAddEvent(ThreadState *thr, u64 epoch,
   *evp = ev;
 }
 
-void Initialize() {
+void Initialize(ThreadState *thr) {
   static bool initialized = 0;
   if (initialized) return;
   // Thread safe because done before all threads exist.
@@ -96,11 +96,13 @@ void Initialize() {
   InitializeSuppressions();
 
   // Initialize thread 0.
-  ThreadStart(0);
+  ThreadStart(thr, 0);
 }
 
-int ThreadCreate() {
+int ThreadCreate(ThreadState *thr, uptr uid, bool detached) {
   Lock l(&ctx->mtx);
+  (void)uid;
+  (void)detached;
   return ++ctx->thread_seq;
 }
 
@@ -115,8 +117,14 @@ void ThreadStart(ThreadState *thr, int tid) {
   ctx->threads[tid] = thr;
 }
 
-void ThreadStart(int tid) {
-  ThreadStart(&cur_thread, tid);
+void ThreadFinish(ThreadState *thr) {
+  (void)thr;
+}
+
+void ThreadJoin(ThreadState *thr, uptr uid) {
+}
+
+void ThreadDetach(ThreadState *thr, uptr uid) {
 }
 
 void MutexCreate(ThreadState *thr, uptr pc, uptr addr, bool is_rw) {

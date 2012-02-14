@@ -75,12 +75,17 @@ void Printf(const char *format, ...);
 void Report(const char *format, ...);
 void Die() NORETURN;
 
-void Initialize();
-int ThreadCreate();
+void Initialize(ThreadState *thr);
+
 void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
                   int size, bool is_write);
-void ThreadStart(int tid);
+
+int ThreadCreate(ThreadState *thr, uptr uid, bool detached);
 void ThreadStart(ThreadState *thr, int tid);
+void ThreadFinish(ThreadState *thr);
+void ThreadJoin(ThreadState *thr, uptr uid);
+void ThreadDetach(ThreadState *thr, uptr uid);
+
 void MutexCreate(ThreadState *thr, uptr pc, uptr addr, bool is_rw);
 void MutexDestroy(ThreadState *thr, uptr pc, uptr addr);
 void MutexLock(ThreadState *thr, uptr pc, uptr addr);

@@ -18,18 +18,21 @@
 
 namespace __tsan {
 
-Thread *Thread::Create(void *(*callback)(void *param), void *param) {
+Thread *Thread::Create(void *(*callback)(void *param), void *param,
+                       uptr uid, bool detached) {
   Thread *t = new Thread;  // FIXME: we probably don't want 'new'.
   t->callback_ = callback;
   t->param_ = param;
-  t->tid_ = __tsan::ThreadCreate();
+  t->tid_ = ThreadCreate(&cur_thread, uid, detached);
   return t;
 }
 
-void *Thread::ThreadStart() {
+void *Thread::Start() {
   // Printf("ThreadStart: %p\n", this);
-  __tsan::ThreadStart(tid_);
-  return callback_(param_);
+  ThreadStart(&cur_thread, tid_);
+  void *res = callback_(param_);
+  ThreadFinish(&cur_thread);
+  return res;
 }
 
 }  // namespace __tsan

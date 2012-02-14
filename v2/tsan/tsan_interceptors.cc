@@ -22,19 +22,40 @@ using __tsan::Thread;
 using __tsan::cur_thread;
 using __tsan::uptr;
 
+extern "C" int pthread_attr_getdetachstate(void *attr, int *v);
+
 static void *tsan_thread_start(void *arg) {
   Thread *t = (Thread*)arg;
-  // __tsan::Printf("tsan_thread_start %p\n", t);
-  return t->ThreadStart();
+  return t->Start();
 }
 
 INTERCEPTOR(int, pthread_create,
     void *th, void *attr,
     void *(*callback)(void*), void * param) {
   __tsan_init();
-  Thread *t = Thread::Create(callback, param);
-  // __tsan::Printf("pthread_create %p\n", t);
+  int detached = 0;
+  if (attr)
+    pthread_attr_getdetachstate(attr, &detached);
+  Thread *t = Thread::Create(callback, param, *(uptr*)th, detached);
   int res = REAL(pthread_create)(th, attr, tsan_thread_start, t);
+  return res;
+}
+
+INTERCEPTOR(int, pthread_join, void *th, void **ret) {
+  __tsan_init();
+  int res = REAL(pthread_join)(th, ret);
+  if (res == 0) {
+    ThreadJoin(&cur_thread, (uptr)th);
+  }
+  return res;
+}
+
+INTERCEPTOR(int, pthread_detach, void *th) {
+  __tsan_init();
+  int res = REAL(pthread_detach)(th);
+  if (res == 0) {
+    ThreadDetach(&cur_thread, (uptr)th);
+  }
   return res;
 }
 
@@ -78,6 +99,8 @@ namespace __tsan {
 
 void InitializeInterceptors() {
   INTERCEPT_FUNCTION(pthread_create);
+  INTERCEPT_FUNCTION(pthread_join);
+  INTERCEPT_FUNCTION(pthread_detach);
   INTERCEPT_FUNCTION(pthread_mutex_init);
   INTERCEPT_FUNCTION(pthread_mutex_destroy);
   INTERCEPT_FUNCTION(pthread_mutex_lock);

@@ -19,7 +19,7 @@ using __tsan::uptr;
 using __tsan::cur_thread;
 
 void __tsan_init() {
-  __tsan::Initialize();
+  __tsan::Initialize(&cur_thread);
 }
 
 void FLATTEN __tsan_read1(void *addr) {
