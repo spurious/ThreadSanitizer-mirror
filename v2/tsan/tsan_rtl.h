@@ -29,6 +29,7 @@
 #include "tsan_clock.h"
 #include "tsan_defs.h"
 #include "tsan_slab.h"
+#include "tsan_sync.h"
 #include "tsan_trace.h"
 
 namespace __tsan {
@@ -39,6 +40,8 @@ enum StatType {
   StatFuncExit,
   StatCnt,
 };
+
+struct ReportDesc;
 
 // This struct is stored in TLS.
 struct ThreadState {
@@ -69,6 +72,40 @@ struct ThreadState {
   u64 stat[StatCnt];
 };
 
+enum ThreadStatus {
+  ThreadStatusInvalid,   // Non-existent thread, data is invalid.
+  ThreadStatusCreated,   // Created but not yet running.
+  ThreadStatusRunning,   // The thread is currently running.
+  ThreadStatusFinished,  // Joinable thread is finished but not yet joined.
+};
+
+struct ThreadContext {
+  ThreadState *thr;
+  ThreadStatus status;
+  uptr uid;  // Some opaque user thread id.
+  bool detached;
+  ChunkedClock sync;
+
+  ThreadContext()
+    : thr()
+    , status(ThreadStatusInvalid)
+    , uid()
+    , detached() {
+  }
+};
+
+struct Context {
+  SlabAlloc* clockslab;
+  SyncTab *synctab;
+  ReportDesc *rep;
+  Mutex report_mtx;
+
+  Mutex thread_mtx;
+  int thread_seq;
+  ThreadContext threads[kMaxTid];
+};
+
+extern Context *ctx;
 extern __thread ThreadState cur_thread;
 
 void ALWAYS_INLINE INLINE StatInc(ThreadState *thr, StatType typ, u64 n = 1) {
@@ -101,33 +138,15 @@ void MutexUnlock(ThreadState *thr, uptr pc, uptr addr);
 void internal_memset(void *ptr, int c, uptr size);
 void internal_memcpy(void *dst, const void *src, uptr size);
 
-class PoorMansMap {
- public:
-  PoorMansMap();
-  ~PoorMansMap();
-  bool Insert(uptr key, uptr value);
-  bool Erase(uptr key);
-  bool Get(uptr key, uptr *value);
- private:
-  struct Impl;
-  Impl *impl_;
-};
-
-// Both K and V are pointer-sized PODs.
-template <class K, class V>
-class Map : private PoorMansMap {
- public:
-  bool Insert(K key, V value) {
-    return PoorMansMap::Insert((uptr)(key), (uptr)(value));
-  }
-  bool Erase(K key) {
-    return PoorMansMap::Erase((uptr)(key));
-  }
-  bool Get(K key, V *value) {
-    return PoorMansMap::Get((uptr)(key), (uptr*)(value));
-  }
-};
-
+void TraceSwitch(ThreadState *thr) NOINLINE;
+void ALWAYS_INLINE INLINE TraceAddEvent(ThreadState *thr, u64 epoch,
+                                        EventType typ, uptr addr) {
+  if (UNLIKELY((epoch % (kTraceSize / kTraceParts)) == 0))
+    TraceSwitch(thr);
+  Event *evp = &thr->trace.events[epoch % kTraceSize];
+  Event ev = (u64)addr | ((u64)typ << 61);
+  *evp = ev;
+}
 
 }  // namespace __tsan
 

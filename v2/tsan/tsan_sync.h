@@ -16,9 +16,38 @@
 #include "tsan_defs.h"
 #include "tsan_clock.h"
 #include "tsan_mutex.h"
-#include "tsan_rtl.h"
+// #include "tsan_rtl.h"
 
 namespace __tsan {
+
+struct ThreadState;
+
+class PoorMansMap {
+ public:
+  PoorMansMap();
+  ~PoorMansMap();
+  bool Insert(uptr key, uptr value);
+  bool Erase(uptr key);
+  bool Get(uptr key, uptr *value);
+ private:
+  struct Impl;
+  Impl *impl_;
+};
+
+// Both K and V are pointer-sized PODs.
+template <class K, class V>
+class Map : private PoorMansMap {
+ public:
+  bool Insert(K key, V value) {
+    return PoorMansMap::Insert((uptr)(key), (uptr)(value));
+  }
+  bool Erase(K key) {
+    return PoorMansMap::Erase((uptr)(key));
+  }
+  bool Get(K key, V *value) {
+    return PoorMansMap::Get((uptr)(key), (uptr*)(value));
+  }
+};
 
 struct SyncVar {
   enum Type { Atomic, Mtx, Sem };
