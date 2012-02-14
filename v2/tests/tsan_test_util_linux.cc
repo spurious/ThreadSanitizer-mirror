@@ -37,6 +37,22 @@ using __tsan::atomic_fetch_add;
 static __thread bool g_waiting_for_report;
 static __thread const ReportDesc *g_report;
 
+static void *BeforeInitThread(void *param) {
+  (void)param;
+  return 0;
+}
+
+void TestMutexBeforeInit() {
+  // Mutexes must be usable before __tsan_init();
+  pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
+  pthread_mutex_lock(&mtx);
+  pthread_mutex_unlock(&mtx);
+  pthread_mutex_destroy(&mtx);
+  pthread_t thr;
+  pthread_create(&thr, 0, BeforeInitThread, 0);
+  pthread_join(thr, 0);
+}
+
 namespace __tsan {
 bool OnReport(const ReportDesc *rep, bool suppressed) {
   CHECK(g_waiting_for_report);

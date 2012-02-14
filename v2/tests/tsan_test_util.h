@@ -17,6 +17,8 @@ struct ReportDesc;
 };
 using __tsan::ReportDesc;
 
+void TestMutexBeforeInit();
+
 // A location of memory on which a race may be detected.
 class MemLoc {
  public:
