@@ -23,7 +23,7 @@ TEST(ThreadSanitizer, SimpleMutex) {
   t.Destroy(m);
 }
 
-TEST(ThreadSanitizer, Mutex) {
+TEST(DISABLED_ThreadSanitizer, Mutex) {
   Mutex m;
   MainThread t0;
   t0.Create(m);
@@ -39,7 +39,7 @@ TEST(ThreadSanitizer, Mutex) {
   t2.Destroy(m);
 }
 
-TEST(ThreadSanitizer, StaticMutex) {
+TEST(DISABLED_ThreadSanitizer, StaticMutex) {
   // Emulates statically initialized mutex.
   Mutex m;
   m.StaticInit();
