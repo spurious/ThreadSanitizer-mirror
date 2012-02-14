@@ -11,14 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-// #include "tsan_linux.h"
 #include "tsan_rtl.h"
-// #include "tsan_interface.h"
-// #include "tsan_atomic.h"
-// #include "tsan_suppressions.h"
-// #include "tsan_symbolize.h"
 #include "tsan_sync.h"
-// #include "tsan_report.h"
 
 namespace __tsan {
 
