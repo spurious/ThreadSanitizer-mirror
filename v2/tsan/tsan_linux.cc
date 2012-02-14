@@ -22,12 +22,24 @@
 #include <sys/mman.h>
 #include <sys/syscall.h>
 #include <unistd.h>
+#include <errno.h>
 
 #include <map>
 
 namespace __tsan {
 
+struct ScopedErrno {
+  int err;
+  ScopedErrno() {
+    this->err = errno;
+  }
+  ~ScopedErrno() {
+    errno = this->err;
+  }
+};
+
 void Printf(const char *format, ...) {
+  ScopedErrno se;
   va_list args;
   va_start(args, format);
   vfprintf(stderr, format, args);
@@ -35,6 +47,7 @@ void Printf(const char *format, ...) {
 }
 
 void Report(const char *format, ...) {
+  ScopedErrno se;
   va_list args;
   va_start(args, format);
   vfprintf(stderr, format, args);
@@ -70,14 +83,13 @@ bool PoorMansMap::Get(uptr key, uptr *value) {
   return true;
 }
 
-
-
 void Die() {
   _exit(1);
 }
 
 static void *my_mmap(void *addr, size_t length, int prot, int flags,
                     int fd, u64 offset) {
+  ScopedErrno se;
 # if __WORDSIZE == 64
   return (void *)syscall(__NR_mmap, addr, length, prot, flags, fd, offset);
 # else
@@ -96,6 +108,7 @@ void *virtual_alloc(uptr size) {
 }
 
 void virtual_free(void *p, uptr size) {
+  ScopedErrno se;
   if (munmap(p, size)) {
     Report("FATAL: ThreadSanitizer munmap failed\n");
     Die();
@@ -103,6 +116,7 @@ void virtual_free(void *p, uptr size) {
 }
 
 static void ProtectRange(uptr beg, uptr end) {
+  ScopedErrno se;
   if (beg != (uptr)my_mmap((void*)(beg), end - beg,
       PROT_NONE,
       MAP_PRIVATE | MAP_ANON | MAP_FIXED | MAP_NORESERVE,
