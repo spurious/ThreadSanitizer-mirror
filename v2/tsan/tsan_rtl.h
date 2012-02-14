@@ -140,6 +140,12 @@ void Printf(const char *format, ...);
 void Report(const char *format, ...);
 void Die() NORETURN;
 
+#ifdef TSAN_DEBUG_OUTPUT
+# define DPrintf Printf
+#else
+# define DPrintf(...)
+#endif
+
 void Initialize(ThreadState *thr);
 
 void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,

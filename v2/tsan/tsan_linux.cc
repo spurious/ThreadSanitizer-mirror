@@ -128,7 +128,6 @@ static void ProtectRange(uptr beg, uptr end) {
 }
 
 void InitializeShadowMemory() {
-  int stack;
   const uptr kClosedLowBeg  = 0x200000;
   const uptr kClosedLowEnd  = kLinuxShadowBeg - 1;
   const uptr kClosedHighBeg = kLinuxShadowEnd + 1;
@@ -145,18 +144,16 @@ void InitializeShadowMemory() {
   }
   ProtectRange(kClosedLowBeg, kClosedLowEnd);
   ProtectRange(kClosedHighBeg, kClosedHighEnd);
-  if (TSAN_DEBUG) {
-    Printf("kClosedLowBeg   %p\n", kClosedLowBeg);
-    Printf("kClosedLowEnd   %p\n", kClosedLowEnd);
-    Printf("kLinuxShadowBeg %p\n", kLinuxShadowBeg);
-    Printf("kLinuxShadowEnd %p\n", kLinuxShadowEnd);
-    Printf("kClosedHighBeg  %p\n", kClosedHighBeg);
-    Printf("kClosedHighEnd  %p\n", kClosedHighEnd);
-    Printf("kLinuxAppMemBeg %p\n", kLinuxAppMemBeg);
-    Printf("kLinuxAppMemEnd %p\n", kLinuxAppMemEnd);
-    Printf("stack           %p\n", &stack);
-    Printf("InitializeShadowMemory: %p %p\n", shadow);
-  }
+  DPrintf("kClosedLowBeg   %p\n", kClosedLowBeg);
+  DPrintf("kClosedLowEnd   %p\n", kClosedLowEnd);
+  DPrintf("kLinuxShadowBeg %p\n", kLinuxShadowBeg);
+  DPrintf("kLinuxShadowEnd %p\n", kLinuxShadowEnd);
+  DPrintf("kClosedHighBeg  %p\n", kClosedHighBeg);
+  DPrintf("kClosedHighEnd  %p\n", kClosedHighEnd);
+  DPrintf("kLinuxAppMemBeg %p\n", kLinuxAppMemBeg);
+  DPrintf("kLinuxAppMemEnd %p\n", kLinuxAppMemEnd);
+  DPrintf("stack           %p\n", &shadow);
+  DPrintf("InitializeShadowMemory: %p %p\n", shadow);
 }
 
 }  // namespace __tsan

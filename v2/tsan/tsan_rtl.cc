@@ -63,8 +63,7 @@ void Initialize(ThreadState *thr) {
   if (initialized) return;
   // Thread safe because done before all threads exist.
   initialized = true;
-  if (TSAN_DEBUG)
-    Printf("tsan::Initialize\n");
+  DPrintf("tsan::Initialize\n");
   InitializeShadowMemory();
   ctx = new Context;
   ctx->clockslab = new SlabAlloc(ChunkedClock::kChunkSize);
@@ -254,11 +253,10 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
                   int size, bool is_write) {
   StatInc(thr, StatMop);
   u64 *shadow_mem = (u64*)MemToShadow(addr);
-  if (TSAN_DEBUG)
-    Printf("#%d: tsan::OnMemoryAccess: @%p %p size=%d"
-           " is_write=%d shadow_mem=%p\n",
-           (int)thr->fast.tid, (void*)pc, (void*)addr,
-           (int)size, is_write, shadow_mem);
+  DPrintf("#%d: tsan::OnMemoryAccess: @%p %p size=%d"
+          " is_write=%d shadow_mem=%p\n",
+          (int)thr->fast.tid, (void*)pc, (void*)addr,
+          (int)size, is_write, shadow_mem);
   DCHECK(IsAppMem(addr));
   DCHECK(IsShadowMem((uptr)shadow_mem));
 
@@ -328,16 +326,14 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
 
 void FuncEntry(ThreadState *thr, uptr pc) {
   StatInc(thr, StatFuncEnter);
-  if (TSAN_DEBUG)
-    Printf("#%d: tsan::FuncEntry %p\n", (int)thr->fast.tid, (void*)pc);
+  DPrintf("#%d: tsan::FuncEntry %p\n", (int)thr->fast.tid, (void*)pc);
   thr->fast.epoch++;
   TraceAddEvent(thr, thr->fast.epoch, EventTypeFuncEnter, pc);
 }
 
 void FuncExit(ThreadState *thr) {
   StatInc(thr, StatFuncExit);
-  if (TSAN_DEBUG)
-    Printf("#%d: tsan::FuncExit\n", (int)thr->fast.tid);
+  DPrintf("#%d: tsan::FuncExit\n", (int)thr->fast.tid);
   thr->fast.epoch++;
   TraceAddEvent(thr, thr->fast.epoch, EventTypeFuncExit, 0);
 }

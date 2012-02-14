@@ -21,8 +21,7 @@ const int kThreadQuarantineSize = 100;
 static void ThreadDead(ThreadState *thr, ThreadContext *tctx) {
   CHECK(tctx->status == ThreadStatusRunning
       || tctx->status == ThreadStatusFinished);
-  if (TSAN_DEBUG)
-    Printf("#%d: ThreadDead uid=%lu\n", (int)thr->fast.tid, tctx->uid);
+  DPrintf("#%d: ThreadDead uid=%lu\n", (int)thr->fast.tid, tctx->uid);
   tctx->status = ThreadStatusDead;
   tctx->uid = 0;
   tctx->sync.Free(thr->clockslab);
@@ -64,9 +63,8 @@ int ThreadCreate(ThreadState *thr, uptr uid, bool detached) {
     tctx->reuse_count = 0;
   }
   CHECK(tctx != 0 && tid >= 0 && tid < kMaxTid);
-  if (TSAN_DEBUG)
-    Printf("#%d: ThreadCreate tid=%d uid=%lu\n",
-           (int)thr->fast.tid, tid, uid);
+  DPrintf("#%d: ThreadCreate tid=%d uid=%lu\n",
+          (int)thr->fast.tid, tid, uid);
   CHECK(tctx->status == ThreadStatusInvalid);
   tctx->status = ThreadStatusCreated;
   tctx->thr = 0;
@@ -133,9 +131,8 @@ void ThreadFinish(ThreadState *thr) {
 }
 
 void ThreadJoin(ThreadState *thr, uptr uid) {
-  if (TSAN_DEBUG)
-    Printf("#%d: ThreadJoin uid=%lu\n",
-           (int)thr->fast.tid, uid);
+  DPrintf("#%d: ThreadJoin uid=%lu\n",
+          (int)thr->fast.tid, uid);
   Lock l(&ctx->thread_mtx);
   ThreadContext *tctx = 0;
   int tid = 0;
