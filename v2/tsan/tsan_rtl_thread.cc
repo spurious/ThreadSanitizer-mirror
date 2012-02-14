@@ -29,6 +29,7 @@ static void ThreadFree(ThreadState *thr, ThreadContext *tctx) {
 int ThreadCreate(ThreadState *thr, uptr uid, bool detached) {
   Lock l(&ctx->thread_mtx);
   const int tid = ctx->thread_seq++;
+  CHECK(tid < kMaxTid);
   if (TSAN_DEBUG)
     Printf("#%d: ThreadCreate tid=%d uid=%lu\n",
            (int)thr->fast.tid, tid, uid);
