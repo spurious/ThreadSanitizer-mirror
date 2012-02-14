@@ -103,3 +103,10 @@ TEST(ThreadSanitizer, NoRaceWithOffset) {
     t2.Access((char*)l.loc() + 5, true, 2, false);
   }
 }
+
+TEST(ThreadSanitizer, RaceWithDeadThread) {
+  MemLoc l;
+  ScopedThread t;
+  ScopedThread().Write1(l);
+  t.Write1(l, true);
+}
