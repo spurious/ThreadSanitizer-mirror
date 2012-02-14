@@ -62,15 +62,18 @@ bool OnReport(const ReportDesc *rep, bool suppressed) {
 }
 }
 
-static void* allocate_addr(int offset_from_aligned = 0) {
+static void* allocate_addr(int size, int offset_from_aligned = 0) {
   static uintptr_t foo;
   static atomic_uintptr_t uniq = {(uintptr_t)&foo};  // Some real address.
-  return (void*)(atomic_fetch_add(&uniq, 32, memory_order_relaxed)
-      + offset_from_aligned);
+  const int kAlign = 16;
+  CHECK(offset_from_aligned < kAlign);
+  size = (size + 2 * kAlign) & ~(kAlign - 1);
+  uintptr_t addr = atomic_fetch_add(&uniq, size, memory_order_relaxed);
+  return (void*)(addr + offset_from_aligned);
 }
 
 MemLoc::MemLoc(int offset_from_aligned)
-  : loc_(allocate_addr(offset_from_aligned)) {
+  : loc_(allocate_addr(16, offset_from_aligned)) {
 }
 
 MemLoc::~MemLoc() {

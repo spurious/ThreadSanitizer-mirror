@@ -44,8 +44,8 @@ class Mutex {
 
  private:
   // Placeholder for pthread_mutex_t, CRITICAL_SECTION or whatever.
-  mutable void *mtx_[128];
-  mutable bool alive_;
+  void *mtx_[128];
+  bool alive_;
 
   Mutex(const Mutex&);
   void operator = (const Mutex&);
