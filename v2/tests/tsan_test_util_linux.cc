@@ -21,6 +21,7 @@
 #include <pthread.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <string.h>
 #include <unistd.h>
 
 using __tsan::memory_order_relaxed;
@@ -87,6 +88,13 @@ void Mutex::Init() {
   CHECK(!alive_);
   alive_ = true;
   CHECK_EQ(pthread_mutex_init((pthread_mutex_t*)mtx_, NULL), 0);
+}
+
+void Mutex::StaticInit() {
+  CHECK(!alive_);
+  alive_ = true;
+  pthread_mutex_t tmp = PTHREAD_MUTEX_INITIALIZER;
+  memcpy(mtx_, &tmp, sizeof(tmp));
 }
 
 void Mutex::Destroy() {
