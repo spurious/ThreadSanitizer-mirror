@@ -42,6 +42,7 @@ enum StatType {
 };
 
 struct ReportDesc;
+struct Context;
 
 // This struct is stored in TLS.
 struct ThreadState {
@@ -71,10 +72,20 @@ struct ThreadState {
   // This way we can save one load from tls.
   u64 fast_synch_epoch;
   Trace trace;
-  SlabCache* clockslab;
+  SlabCache clockslab;
+  SlabCache syncslab;
   ThreadClock clock;
   u64 stat[StatCnt];
+
+  explicit ThreadState(Context *ctx);
 };
+
+extern Context *ctx;
+extern __thread char cur_thread_placeholder[];
+
+INLINE ThreadState *cur_thread() {
+  return reinterpret_cast<ThreadState *>(&cur_thread_placeholder);
+}
 
 enum ThreadStatus {
   ThreadStatusInvalid,   // Non-existent thread, data is invalid.
@@ -91,6 +102,7 @@ struct ThreadDeadInfo {
 };
 
 struct ThreadContext {
+  int tid;
   ThreadState *thr;
   ThreadStatus status;
   uptr uid;  // Some opaque user thread id.
@@ -101,33 +113,27 @@ struct ThreadContext {
   // If we see an event from the thread stamped by an older epoch,
   // the event is from a dead thread that shared tid with this thread.
   u64 epoch0;
-  ThreadDeadInfo *dead_info;
+  ThreadDeadInfo dead_info;
   ThreadContext* dead_next;  // In dead thread list.
 
-  ThreadContext()
-    : thr()
-    , status(ThreadStatusInvalid)
-    , uid()
-    , detached() {
-  }
+  ThreadContext();
 };
 
 struct Context {
-  SlabAlloc* clockslab;
-  SyncTab *synctab;
-  ReportDesc *rep;
+  Context();
+
+  SlabAlloc clockslab;
+  SlabAlloc syncslab;
+  SyncTab synctab;
   Mutex report_mtx;
 
   Mutex thread_mtx;
   int thread_seq;
-  ThreadContext threads[kMaxTid];
+  ThreadContext *threads[kMaxTid];
   int dead_list_size;
   ThreadContext* dead_list_head;
   ThreadContext* dead_list_tail;
 };
-
-extern Context *ctx;
-extern __thread ThreadState cur_thread;
 
 void ALWAYS_INLINE INLINE StatInc(ThreadState *thr, StatType typ, u64 n = 1) {
   if (kCollectStats)

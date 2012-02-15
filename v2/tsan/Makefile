@@ -21,6 +21,7 @@ LIBTSAN_HEADERS=tsan_atomic.h \
                 tsan_platform.h \
                 tsan_mutex.h \
                 tsan_report.h \
+		tsan_placement_new.h \
                 tsan_rtl.h \
 		tsan_slab.h \
 		tsan_suppressions.h \

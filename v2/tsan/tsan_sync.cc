@@ -11,6 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 #include "tsan_sync.h"
+#include "tsan_placement_new.h"
 #include "tsan_rtl.h"
 
 namespace __tsan {
@@ -26,7 +27,7 @@ SyncTab::Part::Part()
 SyncTab::SyncTab() {
 }
 
-SyncVar* SyncTab::GetAndLock(uptr addr, bool write_lock) {
+SyncVar* SyncTab::GetAndLock(ThreadState *thr, uptr addr, bool write_lock) {
   Part *p = &tab_[PartIdx(addr)];
   {
     ReadLock l(&p->mtx);
@@ -48,7 +49,7 @@ SyncVar* SyncTab::GetAndLock(uptr addr, bool write_lock) {
         break;
     }
     if (res == 0) {
-      res = new SyncVar(addr);
+      res = new(thr->syncslab.Alloc()) SyncVar(addr);
       res->next = p->val;
       p->val = res;
     }

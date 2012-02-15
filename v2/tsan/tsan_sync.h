@@ -36,7 +36,7 @@ class SyncTab {
   SyncTab();
 
   // If the SyncVar does not exist yet, it is created.
-  SyncVar* GetAndLock(uptr addr, bool write_lock);
+  SyncVar* GetAndLock(ThreadState *thr, uptr addr, bool write_lock);
 
   // If the SyncVar does not exist, returns 0.
   SyncVar* GetAndRemove(uptr addr);

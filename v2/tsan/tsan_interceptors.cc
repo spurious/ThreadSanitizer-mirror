@@ -49,9 +49,9 @@ static void *tsan_thread_start(void *arg) {
   while ((tid = atomic_load(&p->tid, memory_order_acquire)) == 0)
     pthread_yield();
   atomic_store(&p->tid, 0, memory_order_release);
-  ThreadStart(&cur_thread, tid);
+  ThreadStart(cur_thread(), tid);
   void *res = callback(param);
-  ThreadFinish(&cur_thread);
+  ThreadFinish(cur_thread());
   return res;
 }
 
@@ -67,7 +67,7 @@ INTERCEPTOR(int, pthread_create,
   atomic_store(&p.tid, 0, memory_order_relaxed);
   int res = REAL(pthread_create)(th, attr, tsan_thread_start, &p);
   if (res == 0) {
-    int tid = ThreadCreate(&cur_thread, *(uptr*)th, detached);
+    int tid = ThreadCreate(cur_thread(), *(uptr*)th, detached);
     CHECK_NE(tid, 0);
     atomic_store(&p.tid, tid, memory_order_release);
     while (atomic_load(&p.tid, memory_order_acquire) != 0)
@@ -80,7 +80,7 @@ INTERCEPTOR(int, pthread_join, void *th, void **ret) {
   __tsan_init();
   int res = REAL(pthread_join)(th, ret);
   if (res == 0) {
-    ThreadJoin(&cur_thread, (uptr)th);
+    ThreadJoin(cur_thread(), (uptr)th);
   }
   return res;
 }
@@ -89,7 +89,7 @@ INTERCEPTOR(int, pthread_detach, void *th) {
   __tsan_init();
   int res = REAL(pthread_detach)(th);
   if (res == 0) {
-    ThreadDetach(&cur_thread, (uptr)th);
+    ThreadDetach(cur_thread(), (uptr)th);
   }
   return res;
 }
@@ -99,7 +99,7 @@ INTERCEPTOR(int, pthread_mutex_init,
   __tsan_init();
   int res = REAL(pthread_mutex_init)(m, a);
   if (res == 0) {
-    MutexCreate(&cur_thread, CALLERPC, (uptr)m, false);
+    MutexCreate(cur_thread(), CALLERPC, (uptr)m, false);
   }
   return res;
 }
@@ -108,7 +108,7 @@ INTERCEPTOR(int, pthread_mutex_destroy,
             void *m) {
   int res = REAL(pthread_mutex_destroy)(m);
   if (res == 0) {
-    MutexDestroy(&cur_thread, CALLERPC, (uptr)m);
+    MutexDestroy(cur_thread(), CALLERPC, (uptr)m);
   }
   return res;
 }
@@ -118,14 +118,14 @@ INTERCEPTOR(int, pthread_mutex_lock,
   __tsan_init();
   int res = REAL(pthread_mutex_lock)(m);
   if (res == 0) {
-    MutexLock(&cur_thread, CALLERPC, (uptr)m);
+    MutexLock(cur_thread(), CALLERPC, (uptr)m);
   }
   return res;
 }
 
 INTERCEPTOR(int, pthread_mutex_unlock,
             void *m) {
-  MutexUnlock(&cur_thread, CALLERPC, (uptr)m);
+  MutexUnlock(cur_thread(), CALLERPC, (uptr)m);
   int res = REAL(pthread_mutex_unlock)(m);
   return res;
 }

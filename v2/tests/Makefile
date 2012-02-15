@@ -42,7 +42,7 @@ tsan_test: $(TEST_OBJ) $(UTEST_OBJ) $(LIBTSAN) $(GTEST_LIB)
 	$(CXX) $(TEST_OBJ) $(UTEST_OBJ) $(LIBTSAN) $(GTEST_LIB) -o $@ $(LINKFLAGS)
 
 tsan_c_test: tsan_c_test.o $(LIBTSAN)
-	$(CXX) $< -o $@ $(LIBTSAN) -o $@ $(LINKFLAGS)
+	$(CC) $< -o $@ $(LIBTSAN) -o $@ $(LINKFLAGS)
 
 $(GTEST_LIB):
 	mkdir -p $(GTEST_BUILD_DIR) && \

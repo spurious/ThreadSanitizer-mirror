@@ -12,6 +12,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "tsan_rtl.h"
+#include "tsan_placement_new.h"
+#include "tsan_platform.h"
 #include "tsan_sync.h"
 
 namespace __tsan {
@@ -24,7 +26,7 @@ static void ThreadDead(ThreadState *thr, ThreadContext *tctx) {
   DPrintf("#%d: ThreadDead uid=%lu\n", (int)thr->fast.tid, tctx->uid);
   tctx->status = ThreadStatusDead;
   tctx->uid = 0;
-  tctx->sync.Free(thr->clockslab);
+  tctx->sync.Free(&thr->clockslab);
 
   // Put to dead list.
   tctx->dead_next = 0;
@@ -56,10 +58,12 @@ int ThreadCreate(ThreadState *thr, uptr uid, bool detached) {
     CHECK(tctx->status == ThreadStatusDead);
     tctx->status = ThreadStatusInvalid;
     tctx->reuse_count++;
-    tid = tctx - ctx->threads;
+    tid = tctx->tid;
   } else {
     tid = ctx->thread_seq++;
-    tctx = &ctx->threads[tid];
+    tctx = new(virtual_alloc(sizeof(ThreadContext))) ThreadContext;
+    ctx->threads[tid] = tctx;
+    tctx->tid = tid;
     tctx->reuse_count = 0;
   }
   CHECK(tctx != 0 && tid >= 0 && tid < kMaxTid);
@@ -73,21 +77,19 @@ int ThreadCreate(ThreadState *thr, uptr uid, bool detached) {
   if (tid) {
     thr->clock.set(thr->fast.tid, thr->fast.epoch);
     thr->fast_synch_epoch = thr->fast.epoch;
-    thr->clock.release(&tctx->sync, thr->clockslab);
+    thr->clock.release(&tctx->sync, &thr->clockslab);
   }
   return tid;
 }
 
 void ThreadStart(ThreadState *thr, int tid) {
   Lock l(&ctx->thread_mtx);
-  ThreadContext *tctx = &ctx->threads[tid];
-  CHECK(tctx->status == ThreadStatusCreated);
+  ThreadContext *tctx = ctx->threads[tid];
+  CHECK(tctx && tctx->status == ThreadStatusCreated);
   tctx->status = ThreadStatusRunning;
+  new(thr) ThreadState(ctx);
   tctx->thr = thr;
-  internal_memset(thr, 0, sizeof(*thr));
   thr->fast.tid = tid;
-  thr->clockslab = new SlabCache(ctx->clockslab);
-  thr->trace.mtx = new Mutex;
   if (tctx->reuse_count == 0) {
     thr->fast.epoch = 1;
     thr->fast_synch_epoch = 1;
@@ -96,9 +98,9 @@ void ThreadStart(ThreadState *thr, int tid) {
   } else {
     // Since we reuse the tid, we need to reuse the same clock
     // (the clock can't tick back).
-    internal_memcpy(&thr->clock, &tctx->dead_info->clock, sizeof(thr->clock));
-    delete tctx->dead_info;
-    tctx->dead_info = 0;
+    internal_memcpy(&thr->clock, &tctx->dead_info.clock, sizeof(thr->clock));
+    // The point to reclain dead_info.
+    // delete tctx->dead_info;
     thr->clock.tick(tid);
     thr->fast.epoch = thr->clock.get(tid);
     thr->fast_synch_epoch = thr->clock.get(tid);
@@ -109,24 +111,25 @@ void ThreadStart(ThreadState *thr, int tid) {
 
 void ThreadFinish(ThreadState *thr) {
   Lock l(&ctx->thread_mtx);
-  ThreadContext *tctx = &ctx->threads[thr->fast.tid];
-  CHECK(tctx->status == ThreadStatusRunning);
+  ThreadContext *tctx = ctx->threads[thr->fast.tid];
+  CHECK(tctx && tctx->status == ThreadStatusRunning);
   if (tctx->detached) {
     ThreadDead(thr, tctx);
   } else {
     thr->clock.set(thr->fast.tid, thr->fast.epoch);
     thr->fast_synch_epoch = thr->fast.epoch;
-    thr->clock.release(&tctx->sync, thr->clockslab);
+    thr->clock.release(&tctx->sync, &thr->clockslab);
     tctx->status = ThreadStatusFinished;
   }
 
   // Save from info about the thread.
-  tctx->dead_info = new ThreadDeadInfo;
-  internal_memcpy(&tctx->dead_info->clock, &thr->clock, sizeof(thr->clock));
-  internal_memcpy(&tctx->dead_info->trace, &thr->trace, sizeof(thr->trace));
+  // If dead_info will become dynamically allocated again,
+  // it is the point to allocate it.
+  // tctx->dead_info = new ThreadDeadInfo;
+  internal_memcpy(&tctx->dead_info.clock, &thr->clock, sizeof(thr->clock));
+  internal_memcpy(&tctx->dead_info.trace, &thr->trace, sizeof(thr->trace));
 
-  delete thr->clockslab;
-  thr->clockslab = 0;
+  thr->~ThreadState();
   tctx->thr = 0;
 }
 
@@ -137,9 +140,10 @@ void ThreadJoin(ThreadState *thr, uptr uid) {
   ThreadContext *tctx = 0;
   int tid = 0;
   for (; tid < kMaxTid; tid++) {
-    if (ctx->threads[tid].uid == uid
-        && ctx->threads[tid].status != ThreadStatusInvalid) {
-      tctx = &ctx->threads[tid];
+    if (ctx->threads[tid] != 0
+        && ctx->threads[tid]->uid == uid
+        && ctx->threads[tid]->status != ThreadStatusInvalid) {
+      tctx = ctx->threads[tid];
       break;
     }
   }
@@ -157,8 +161,10 @@ void ThreadDetach(ThreadState *thr, uptr uid) {
   Lock l(&ctx->thread_mtx);
   ThreadContext *tctx = 0;
   for (int tid = 0; tid < kMaxTid; tid++) {
-    if (ctx->threads[tid].uid == uid) {
-      tctx = &ctx->threads[tid];
+    if (ctx->threads[tid] != 0
+        && ctx->threads[tid]->uid == uid
+        && ctx->threads[tid]->status != ThreadStatusInvalid) {
+      tctx = ctx->threads[tid];
       break;
     }
   }

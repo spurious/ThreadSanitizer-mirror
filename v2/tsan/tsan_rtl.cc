@@ -16,6 +16,7 @@
 #include "tsan_rtl.h"
 #include "tsan_interface.h"
 #include "tsan_atomic.h"
+#include "tsan_placement_new.h"
 #include "tsan_suppressions.h"
 #include "tsan_symbolize.h"
 #include "tsan_sync.h"
@@ -23,7 +24,9 @@
 
 namespace __tsan {
 
-__thread __tsan::ThreadState cur_thread;
+__thread char cur_thread_placeholder[sizeof(ThreadState)] ALIGN(64);
+static char ctx_placeholder[sizeof(Context)] ALIGN(64);
+static ReportDesc g_report;
 
 union Shadow {
   struct {
@@ -53,21 +56,36 @@ void CheckFailed(const char *file, int line, const char *cond) {
 }
 
 void TraceSwitch(ThreadState *thr) {
-  Lock l(thr->trace.mtx);
+  Lock l(&thr->trace.mtx);
   int trace = (thr->fast.epoch / (kTraceSize / kTraceParts)) % kTraceParts;
   thr->trace.headers[trace].epoch0 = thr->fast.epoch;
 }
 
+Context::Context()
+  : clockslab(SyncClock::kChunkSize)
+  , syncslab(sizeof(SyncVar)) {
+}
+
+ThreadState::ThreadState(Context *ctx)
+  : clockslab(&ctx->clockslab)
+  , syncslab(&ctx->syncslab) {
+}
+
+ThreadContext::ThreadContext()
+  : thr()
+  , status(ThreadStatusInvalid)
+  , uid()
+  , detached()
+  , reuse_count() {
+}
+
 void Initialize(ThreadState *thr) {
-  static bool initialized = 0;
-  if (initialized) return;
   // Thread safe because done before all threads exist.
-  initialized = true;
+  if (ctx)
+    return;
   DPrintf("tsan::Initialize\n");
+  ctx = new(ctx_placeholder) Context;
   InitializeShadowMemory();
-  ctx = new Context;
-  ctx->clockslab = new SlabAlloc(SyncClock::kChunkSize);
-  ctx->synctab = new SyncTab;
   ctx->dead_list_size = 0;
   ctx->dead_list_head = 0;
   ctx->dead_list_tail = 0;
@@ -91,10 +109,11 @@ static T* alloc(ReportDesc *rep, int n, int *pos) {
 
 static int RestoreStack(int tid, u64 epoch, uptr *stack, int n) {
   Lock l0(&ctx->thread_mtx);
-  if (ctx->threads[tid].status != ThreadStatusRunning)
+  ThreadContext *tctx = ctx->threads[tid];
+  if (tctx == 0 || tctx->status != ThreadStatusRunning)
     return 0;
-  ThreadState *thr = ctx->threads[tid].thr;
-  Lock l(thr->trace.mtx);
+  ThreadState *thr = tctx->thr;
+  Lock l(&thr->trace.mtx);
   TraceHeader* trace = &thr->trace.headers[
       (epoch / (kTraceSize / kTraceParts)) % kTraceParts];
   if (epoch < trace->epoch0)
@@ -127,9 +146,7 @@ static void NOINLINE ReportRace(ThreadState *thr, uptr addr,
   Lock l(&ctx->report_mtx);
   addr &= ~7;
   int alloc_pos = 0;
-  if (ctx->rep == 0)
-    ctx->rep = new ReportDesc;
-  ReportDesc &rep = *ctx->rep;
+  ReportDesc &rep = g_report;
   rep.typ = ReportTypeRace;
   rep.nmop = 2;
   rep.mop = alloc<ReportMop>(&rep, rep.nmop, &alloc_pos);
