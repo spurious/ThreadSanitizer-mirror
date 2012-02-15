@@ -104,6 +104,7 @@ INTERCEPTOR(int, pthread_mutex_init, void *m, const void *a) {
 }
 
 INTERCEPTOR(int, pthread_mutex_destroy, void *m) {
+  __tsan_init();
   int res = REAL(pthread_mutex_destroy)(m);
   if (res == 0) {
     MutexDestroy(cur_thread(), CALLERPC, (uptr)m);
@@ -129,11 +130,14 @@ INTERCEPTOR(int, pthread_mutex_trylock, void *m) {
   return res;
 }
 
-/*
-extern int pthread_mutex_timedlock(pthread_mutex_t *__restrict __mutex,
-                                    __const struct timespec *__restrict
-                                    __abstime);
-*/
+INTERCEPTOR(int, pthread_mutex_timedlock, void *m, void *abstime) {
+  __tsan_init();
+  int res = REAL(pthread_mutex_timedlock)(m, abstime);
+  if (res == 0) {
+    MutexLock(cur_thread(), CALLERPC, (uptr)m);
+  }
+  return res;
+}
 
 INTERCEPTOR(int, pthread_mutex_unlock, void *m) {
   MutexUnlock(cur_thread(), CALLERPC, (uptr)m);
@@ -151,6 +155,7 @@ INTERCEPTOR(int, pthread_spin_init, void *m, int pshared) {
 }
 
 INTERCEPTOR(int, pthread_spin_destroy, void *m) {
+  __tsan_init();
   int res = REAL(pthread_spin_destroy)(m);
   if (res == 0) {
     MutexDestroy(cur_thread(), CALLERPC, (uptr)m);
@@ -177,49 +182,90 @@ INTERCEPTOR(int, pthread_spin_trylock, void *m) {
 }
 
 INTERCEPTOR(int, pthread_spin_unlock, void *m) {
+  __tsan_init();
   MutexUnlock(cur_thread(), CALLERPC, (uptr)m);
   int res = REAL(pthread_spin_unlock)(m);
   return res;
 }
 
-#if 0
+INTERCEPTOR(int, pthread_rwlock_init, void *m, void *a) {
+  __tsan_init();
+  int res = REAL(pthread_rwlock_init)(m, a);
+  if (res == 0) {
+    MutexCreate(cur_thread(), CALLERPC, (uptr)m);
+  }
+  return res;
+}
 
-/* Initialize read-write lock RWLOCK using attributes ATTR, or use
-   the default values if later is NULL.  */
-extern int pthread_rwlock_init(pthread_rwlock_t *__restrict __rwlock,
-        __const pthread_rwlockattr_t *__restrict
-        __attr);
+INTERCEPTOR(int, pthread_rwlock_destroy, void *m) {
+  __tsan_init();
+  int res = REAL(pthread_rwlock_destroy)(m);
+  if (res == 0) {
+    MutexDestroy(cur_thread(), CALLERPC, (uptr)m);
+  }
+  return res;
+}
 
-/* Destroy read-write lock RWLOCK.  */
-extern int pthread_rwlock_destroy(pthread_rwlock_t *__rwlock);
+INTERCEPTOR(int, pthread_rwlock_rdlock, void *m) {
+  __tsan_init();
+  int res = REAL(pthread_rwlock_rdlock)(m);
+  if (res == 0) {
+    MutexReadLock(cur_thread(), CALLERPC, (uptr)m);
+  }
+  return res;
+}
 
-/* Acquire read lock for RWLOCK.  */
-extern int pthread_rwlock_rdlock(pthread_rwlock_t *__rwlock);
+INTERCEPTOR(int, pthread_rwlock_tryrdlock, void *m) {
+  __tsan_init();
+  int res = REAL(pthread_rwlock_tryrdlock)(m);
+  if (res == 0) {
+    MutexReadLock(cur_thread(), CALLERPC, (uptr)m);
+  }
+  return res;
+}
 
-/* Try to acquire read lock for RWLOCK.  */
-extern int pthread_rwlock_tryrdlock(pthread_rwlock_t *__rwlock);
+INTERCEPTOR(int, pthread_rwlock_timedrdlock, void *m, void *abstime) {
+  __tsan_init();
+  int res = REAL(pthread_rwlock_timedrdlock)(m, abstime);
+  if (res == 0) {
+    MutexReadLock(cur_thread(), CALLERPC, (uptr)m);
+  }
+  return res;
+}
 
-# ifdef __USE_XOPEN2K
-/* Try to acquire read lock for RWLOCK or return after specfied time.  */
-extern int pthread_rwlock_timedrdlock(pthread_rwlock_t *__restrict __rwlock,
-               __const struct timespec *__restrict
-               __abstime);
-# endif
+INTERCEPTOR(int, pthread_rwlock_wrlock, void *m) {
+  __tsan_init();
+  int res = REAL(pthread_rwlock_wrlock)(m);
+  if (res == 0) {
+    MutexLock(cur_thread(), CALLERPC, (uptr)m);
+  }
+  return res;
+}
 
-/* Acquire write lock for RWLOCK.  */
-extern int pthread_rwlock_wrlock(pthread_rwlock_t *__rwlock);
+INTERCEPTOR(int, pthread_rwlock_trywrlock, void *m) {
+  __tsan_init();
+  int res = REAL(pthread_rwlock_trywrlock)(m);
+  if (res == 0) {
+    MutexLock(cur_thread(), CALLERPC, (uptr)m);
+  }
+  return res;
+}
 
-/* Try to acquire write lock for RWLOCK.  */
-extern int pthread_rwlock_trywrlock(pthread_rwlock_t *__rwlock);
+INTERCEPTOR(int, pthread_rwlock_timedwrlock, void *m, void *abstime) {
+  __tsan_init();
+  int res = REAL(pthread_rwlock_timedwrlock)(m, abstime);
+  if (res == 0) {
+    MutexLock(cur_thread(), CALLERPC, (uptr)m);
+  }
+  return res;
+}
 
-# ifdef __USE_XOPEN2K
-/* Try to acquire write lock for RWLOCK or return after specfied time.  */
-extern int pthread_rwlock_timedwrlock(pthread_rwlock_t *__restrict __rwlock,
-               __const struct timespec *__restrict
-               __abstime);
-# endif
-
-#endif
+INTERCEPTOR(int, pthread_rwlock_unlock, void *m) {
+  __tsan_init();
+  MutexReadOrWriteUnlock(cur_thread(), CALLERPC, (uptr)m);
+  int res = REAL(pthread_rwlock_unlock)(m);
+  return res;
+}
 
 namespace __tsan {
 
@@ -227,16 +273,29 @@ void InitializeInterceptors() {
   INTERCEPT_FUNCTION(pthread_create);
   INTERCEPT_FUNCTION(pthread_join);
   INTERCEPT_FUNCTION(pthread_detach);
+
   INTERCEPT_FUNCTION(pthread_mutex_init);
   INTERCEPT_FUNCTION(pthread_mutex_destroy);
   INTERCEPT_FUNCTION(pthread_mutex_lock);
   INTERCEPT_FUNCTION(pthread_mutex_trylock);
+  INTERCEPT_FUNCTION(pthread_mutex_timedlock);
   INTERCEPT_FUNCTION(pthread_mutex_unlock);
+
   INTERCEPT_FUNCTION(pthread_spin_init);
   INTERCEPT_FUNCTION(pthread_spin_destroy);
   INTERCEPT_FUNCTION(pthread_spin_lock);
   INTERCEPT_FUNCTION(pthread_spin_trylock);
   INTERCEPT_FUNCTION(pthread_spin_unlock);
+
+  INTERCEPT_FUNCTION(pthread_rwlock_init);
+  INTERCEPT_FUNCTION(pthread_rwlock_destroy);
+  INTERCEPT_FUNCTION(pthread_rwlock_rdlock);
+  INTERCEPT_FUNCTION(pthread_rwlock_tryrdlock);
+  INTERCEPT_FUNCTION(pthread_rwlock_timedrdlock);
+  INTERCEPT_FUNCTION(pthread_rwlock_wrlock);
+  INTERCEPT_FUNCTION(pthread_rwlock_trywrlock);
+  INTERCEPT_FUNCTION(pthread_rwlock_timedwrlock);
+  INTERCEPT_FUNCTION(pthread_rwlock_unlock);
 }
 
 }  // namespace __tsan
