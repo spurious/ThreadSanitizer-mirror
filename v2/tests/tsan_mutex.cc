@@ -10,9 +10,14 @@
 // This file is a part of ThreadSanitizer (TSan), a race detector.
 //
 //===----------------------------------------------------------------------===//
+#include "tsan_atomic.h"
 #include "tsan_interface.h"
+#include "tsan_interface_ann.h"
 #include "tsan_test_util.h"
 #include "gtest/gtest.h"
+#include <stdint.h>
+
+namespace __tsan {
 
 TEST(ThreadSanitizer, SimpleMutex) {
   ScopedThread t;
@@ -52,3 +57,39 @@ TEST(ThreadSanitizer, StaticMutex) {
   }
   MainThread().Destroy(m);
 }
+
+static void *singleton_thread(void *param) {
+  atomic_uintptr_t *singleton = (atomic_uintptr_t *)param;
+  for (int i = 0; i < 1024*1024; i++) {
+    int *val = (int *)atomic_load(singleton, memory_order_acquire);
+    __tsan_acquire(singleton);
+    __tsan_read4(val);
+    CHECK_EQ(*val, 42);
+  }
+  return 0;
+}
+
+TEST(DISABLED_BENCH_ThreadSanitizer, Singleton) {
+  const int kClockSize = 100;
+  const int kThreadCount = 8;
+
+  // Puff off thread's clock.
+  for (int i = 0; i < kClockSize; i++) {
+    ScopedThread t1;
+    (void)t1;
+  }
+  // Create the singleton.
+  int val = 42;
+  __tsan_write4(&val);
+  atomic_uintptr_t singleton;
+  __tsan_release(&singleton);
+  atomic_store(&singleton, (uintptr_t)&val, memory_order_release);
+  // Create reader threads.
+  pthread_t threads[kThreadCount];
+  for (int t = 0; t < kThreadCount; t++)
+    pthread_create(&threads[t], 0, singleton_thread, &singleton);
+  for (int t = 0; t < kThreadCount; t++)
+    pthread_join(threads[t], 0);
+}
+
+}  // namespace __tsan
