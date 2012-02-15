@@ -25,6 +25,9 @@ class Mutex {
   void Lock();
   void Unlock();
 
+  void ReadLock();
+  void ReadUnlock();
+
  private:
   atomic_uintptr_t state_;
 
@@ -42,6 +45,18 @@ class Lock {
 
   Lock(const Lock&);
   void operator = (const Lock&);
+};
+
+class ReadLock {
+ public:
+  explicit ReadLock(Mutex *m);
+  ~ReadLock();
+
+ private:
+  Mutex *m_;
+
+  ReadLock(const ReadLock&);
+  void operator = (const ReadLock&);
 };
 
 }  // namespace __tsan

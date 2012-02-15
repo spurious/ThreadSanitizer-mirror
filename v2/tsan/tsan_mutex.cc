@@ -41,6 +41,14 @@ void Mutex::Unlock() {
   atomic_store(&state_, 0, memory_order_release);
 }
 
+void Mutex::ReadLock() {
+  Lock();
+}
+
+void Mutex::ReadUnlock() {
+  Unlock();
+}
+
 Lock::Lock(Mutex *m)
   : m_(m) {
   m_->Lock();
@@ -48,6 +56,15 @@ Lock::Lock(Mutex *m)
 
 Lock::~Lock() {
   m_->Unlock();
+}
+
+ReadLock::ReadLock(Mutex *m)
+  : m_(m) {
+  m_->ReadLock();
+}
+
+ReadLock::~ReadLock() {
+  m_->ReadUnlock();
 }
 
 }  // namespace __tsan
