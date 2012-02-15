@@ -18,11 +18,12 @@
 
 namespace __tsan {
 
-class ChunkedClock {
+// The clock that lives in sync variables (mutexes, atomics, etc).
+class SyncClock {
  public:
   static const int kChunkSize = 128;
-  ChunkedClock();
-  ~ChunkedClock();
+  SyncClock();
+  ~SyncClock();
 
   void Free(SlabCache *slab);
 
@@ -34,11 +35,12 @@ class ChunkedClock {
   int nclk_;
   struct Chunk;
   Chunk* chunk_;
-  friend struct VectorClock;
+  friend struct ThreadClock;
 };
 
+// The clock that lives in threads.
 // Has to be POD because lives in TLS.
-struct VectorClock {
+struct ThreadClock {
   void Init();
 
   u64 get(int tid) const {
@@ -65,9 +67,9 @@ struct VectorClock {
     return nclk_;
   }
 
-  void acquire(const ChunkedClock *src);
-  void release(ChunkedClock *dst, SlabCache *slab) const;
-  void acq_rel(ChunkedClock *dst, SlabCache *slab);
+  void acquire(const SyncClock *src);
+  void release(SyncClock *dst, SlabCache *slab) const;
+  void acq_rel(SyncClock *dst, SlabCache *slab);
 
 // private: Pretend you do not see that.
   int nclk_;

@@ -15,18 +15,18 @@
 
 namespace __tsan {
 
-const int kChunkCapacity = ChunkedClock::kChunkSize / sizeof(u64) - 1;
+const int kChunkCapacity = SyncClock::kChunkSize / sizeof(u64) - 1;
 
-struct ChunkedClock::Chunk {
+struct SyncClock::Chunk {
   Chunk* next_;
   u64 clk_[kChunkCapacity];
 };
 
-void VectorClock::Init() {
+void ThreadClock::Init() {
   internal_memset(this, 0, sizeof(*this));
 }
 
-void VectorClock::acquire(const ChunkedClock *src) {
+void ThreadClock::acquire(const SyncClock *src) {
   DCHECK(this->nclk_ <= kMaxTid);
   DCHECK(src->nclk_ <= kMaxTid);
 
@@ -34,7 +34,7 @@ void VectorClock::acquire(const ChunkedClock *src) {
     return;
   if (this->nclk_ < src->nclk_)
     this->nclk_ = src->nclk_;
-  ChunkedClock::Chunk *c = src->chunk_;
+  SyncClock::Chunk *c = src->chunk_;
   for (int di = 0; c;) {
     for (int si = 0; si < kChunkCapacity && di < this->nclk_;
         si++, di++) {
@@ -45,18 +45,18 @@ void VectorClock::acquire(const ChunkedClock *src) {
   }
 }
 
-void VectorClock::release(ChunkedClock *dst, SlabCache *slab) const {
-  DCHECK((int)slab->Size() == ChunkedClock::kChunkSize);
+void ThreadClock::release(SyncClock *dst, SlabCache *slab) const {
+  DCHECK((int)slab->Size() == SyncClock::kChunkSize);
   DCHECK(dst->nclk_ <= kMaxTid);
   DCHECK(this->nclk_ <= kMaxTid);
 
   if (dst->nclk_ < this->nclk_)
     dst->nclk_ = this->nclk_;
-  ChunkedClock::Chunk** cp = &dst->chunk_;
-  ChunkedClock::Chunk* c = *cp;
+  SyncClock::Chunk** cp = &dst->chunk_;
+  SyncClock::Chunk* c = *cp;
   for (int si = 0; si < this->nclk_;) {
     if (!c) {
-      c = (ChunkedClock::Chunk*)slab->Alloc();
+      c = (SyncClock::Chunk*)slab->Alloc();
       c->next_ = 0;
       internal_memset(c->clk_, 0, sizeof(c->clk_));
       *cp = c;
@@ -71,23 +71,23 @@ void VectorClock::release(ChunkedClock *dst, SlabCache *slab) const {
   }
 }
 
-void VectorClock::acq_rel(ChunkedClock *dst, SlabCache *slab) {
+void ThreadClock::acq_rel(SyncClock *dst, SlabCache *slab) {
   acquire(dst);
   release(dst, slab);
 }
 
-ChunkedClock::ChunkedClock()
+SyncClock::SyncClock()
   : nclk_()
   , chunk_() {
   typedef char static_assert_chunk_size[sizeof(Chunk) == kChunkSize ? 1 : -1];
 }
 
-ChunkedClock::~ChunkedClock() {
+SyncClock::~SyncClock() {
   CHECK_EQ(nclk_, 0);
   CHECK_EQ(chunk_, 0);
 }
 
-void ChunkedClock::Free(SlabCache *slab) {
+void SyncClock::Free(SlabCache *slab) {
   while (chunk_) {
     Chunk* tmp = chunk_;
     chunk_ = tmp->next_;

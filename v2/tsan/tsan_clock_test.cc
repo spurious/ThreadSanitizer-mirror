@@ -16,7 +16,7 @@
 namespace __tsan {
 
 TEST(Clock, VectorBasic) {
-  VectorClock clk;
+  ThreadClock clk;
   clk.Init();
   CHECK_EQ(clk.size(), 0);
   clk.tick(0);
@@ -33,11 +33,11 @@ TEST(Clock, VectorBasic) {
 }
 
 TEST(Clock, ChunkedBasic) {
-  SlabAlloc alloc(ChunkedClock::kChunkSize);
+  SlabAlloc alloc(SyncClock::kChunkSize);
   SlabCache slab(&alloc);
-  VectorClock vector;
+  ThreadClock vector;
   vector.Init();
-  ChunkedClock chunked;
+  SyncClock chunked;
   CHECK_EQ(vector.size(), 0);
   CHECK_EQ(chunked.size(), 0);
   vector.acquire(&chunked);
@@ -53,15 +53,15 @@ TEST(Clock, ChunkedBasic) {
 }
 
 TEST(Clock, AcquireRelease) {
-  SlabAlloc alloc(ChunkedClock::kChunkSize);
+  SlabAlloc alloc(SyncClock::kChunkSize);
   SlabCache slab(&alloc);
-  VectorClock vector1;
+  ThreadClock vector1;
   vector1.Init();
   vector1.tick(100);
-  ChunkedClock chunked;
+  SyncClock chunked;
   vector1.release(&chunked, &slab);
   CHECK_EQ(chunked.size(), 101);
-  VectorClock vector2;
+  ThreadClock vector2;
   vector2.Init();
   vector2.acquire(&chunked);
   CHECK_EQ(vector2.size(), 101);
@@ -73,11 +73,11 @@ TEST(Clock, AcquireRelease) {
 }
 
 TEST(Clock, ManyThreads) {
-  SlabAlloc alloc(ChunkedClock::kChunkSize);
+  SlabAlloc alloc(SyncClock::kChunkSize);
   SlabCache slab(&alloc);
-  ChunkedClock chunked;
+  SyncClock chunked;
   for (int i = 0; i < 100; i++) {
-    VectorClock vector;
+    ThreadClock vector;
     vector.Init();
     vector.tick(i);
     vector.release(&chunked, &slab);
@@ -85,7 +85,7 @@ TEST(Clock, ManyThreads) {
     vector.acquire(&chunked);
     CHECK_EQ(vector.size(), i + 1);
   }
-  VectorClock vector;
+  ThreadClock vector;
   vector.Init();
   vector.acquire(&chunked);
   CHECK_EQ(vector.size(), 100);
@@ -95,17 +95,17 @@ TEST(Clock, ManyThreads) {
 }
 
 TEST(Clock, DifferentSizes) {
-  SlabAlloc alloc(ChunkedClock::kChunkSize);
+  SlabAlloc alloc(SyncClock::kChunkSize);
   SlabCache slab(&alloc);
   {
-    VectorClock vector1;
+    ThreadClock vector1;
     vector1.Init();
     vector1.tick(10);
-    VectorClock vector2;
+    ThreadClock vector2;
     vector2.Init();
     vector2.tick(20);
     {
-      ChunkedClock chunked;
+      SyncClock chunked;
       vector1.release(&chunked, &slab);
       CHECK_EQ(chunked.size(), 11);
       vector2.release(&chunked, &slab);
@@ -113,7 +113,7 @@ TEST(Clock, DifferentSizes) {
       chunked.Free(&slab);
     }
     {
-      ChunkedClock chunked;
+      SyncClock chunked;
       vector2.release(&chunked, &slab);
       CHECK_EQ(chunked.size(), 21);
       vector1.release(&chunked, &slab);
@@ -121,14 +121,14 @@ TEST(Clock, DifferentSizes) {
       chunked.Free(&slab);
     }
     {
-      ChunkedClock chunked;
+      SyncClock chunked;
       vector1.release(&chunked, &slab);
       vector2.acquire(&chunked);
       CHECK_EQ(vector2.size(), 21);
       chunked.Free(&slab);
     }
     {
-      ChunkedClock chunked;
+      SyncClock chunked;
       vector2.release(&chunked, &slab);
       vector1.acquire(&chunked);
       CHECK_EQ(vector1.size(), 21);

@@ -72,7 +72,7 @@ struct ThreadState {
   u64 fast_synch_epoch;
   Trace trace;
   SlabCache* clockslab;
-  VectorClock clock;
+  ThreadClock clock;
   u64 stat[StatCnt];
 };
 
@@ -86,7 +86,7 @@ enum ThreadStatus {
 
 // An info about a thread that is hold for some time after its termination.
 struct ThreadDeadInfo {
-  VectorClock clock;
+  ThreadClock clock;
   Trace trace;
 };
 
@@ -96,7 +96,7 @@ struct ThreadContext {
   uptr uid;  // Some opaque user thread id.
   bool detached;
   int reuse_count;
-  ChunkedClock sync;
+  SyncClock sync;
   // Epoch at which the thread had started.
   // If we see an event from the thread stamped by an older epoch,
   // the event is from a dead thread that shared tid with this thread.

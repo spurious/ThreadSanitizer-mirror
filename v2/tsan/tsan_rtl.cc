@@ -66,7 +66,7 @@ void Initialize(ThreadState *thr) {
   DPrintf("tsan::Initialize\n");
   InitializeShadowMemory();
   ctx = new Context;
-  ctx->clockslab = new SlabAlloc(ChunkedClock::kChunkSize);
+  ctx->clockslab = new SlabAlloc(SyncClock::kChunkSize);
   ctx->synctab = new SyncTab;
   ctx->dead_list_size = 0;
   ctx->dead_list_head = 0;

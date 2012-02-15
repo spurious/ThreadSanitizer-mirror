@@ -27,7 +27,7 @@ struct SyncVar {
 
   Mutex mtx;
   const uptr addr;
-  ChunkedClock clock;
+  SyncClock clock;
   SyncVar *next;  // In SyncTab hashtable.
 };
 
