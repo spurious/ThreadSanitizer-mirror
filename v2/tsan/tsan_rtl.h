@@ -162,10 +162,13 @@ void ThreadFinish(ThreadState *thr);
 void ThreadJoin(ThreadState *thr, uptr uid);
 void ThreadDetach(ThreadState *thr, uptr uid);
 
-void MutexCreate(ThreadState *thr, uptr pc, uptr addr, bool is_rw);
+void MutexCreate(ThreadState *thr, uptr pc, uptr addr);
 void MutexDestroy(ThreadState *thr, uptr pc, uptr addr);
 void MutexLock(ThreadState *thr, uptr pc, uptr addr);
 void MutexUnlock(ThreadState *thr, uptr pc, uptr addr);
+void MutexReadLock(ThreadState *thr, uptr pc, uptr addr);
+void MutexReadUnlock(ThreadState *thr, uptr pc, uptr addr);
+void MutexReadOrWriteUnlock(ThreadState *thr, uptr pc, uptr addr);
 
 void Acquire(ThreadState *thr, uptr pc, uptr addr);
 void Release(ThreadState *thr, uptr pc, uptr addr);

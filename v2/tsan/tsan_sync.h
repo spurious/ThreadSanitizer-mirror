@@ -28,6 +28,8 @@ struct SyncVar {
   Mutex mtx;
   const uptr addr;
   SyncClock clock;
+  SyncClock read_clock;  // Used for rw mutexes only.
+  int owner_tid;  // Set only by exclusive owners.
   SyncVar *next;  // In SyncTab hashtable.
 };
 

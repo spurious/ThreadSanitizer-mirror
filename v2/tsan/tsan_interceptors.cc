@@ -98,7 +98,7 @@ INTERCEPTOR(int, pthread_mutex_init, void *m, const void *a) {
   __tsan_init();
   int res = REAL(pthread_mutex_init)(m, a);
   if (res == 0) {
-    MutexCreate(cur_thread(), CALLERPC, (uptr)m, false);
+    MutexCreate(cur_thread(), CALLERPC, (uptr)m);
   }
   return res;
 }
@@ -129,6 +129,12 @@ INTERCEPTOR(int, pthread_mutex_trylock, void *m) {
   return res;
 }
 
+/*
+extern int pthread_mutex_timedlock(pthread_mutex_t *__restrict __mutex,
+                                    __const struct timespec *__restrict
+                                    __abstime);
+*/
+
 INTERCEPTOR(int, pthread_mutex_unlock, void *m) {
   MutexUnlock(cur_thread(), CALLERPC, (uptr)m);
   int res = REAL(pthread_mutex_unlock)(m);
@@ -139,7 +145,7 @@ INTERCEPTOR(int, pthread_spin_init, void *m, int pshared) {
   __tsan_init();
   int res = REAL(pthread_spin_init)(m, pshared);
   if (res == 0) {
-    MutexCreate(cur_thread(), CALLERPC, (uptr)m, false);
+    MutexCreate(cur_thread(), CALLERPC, (uptr)m);
   }
   return res;
 }
@@ -175,6 +181,45 @@ INTERCEPTOR(int, pthread_spin_unlock, void *m) {
   int res = REAL(pthread_spin_unlock)(m);
   return res;
 }
+
+#if 0
+
+/* Initialize read-write lock RWLOCK using attributes ATTR, or use
+   the default values if later is NULL.  */
+extern int pthread_rwlock_init(pthread_rwlock_t *__restrict __rwlock,
+        __const pthread_rwlockattr_t *__restrict
+        __attr);
+
+/* Destroy read-write lock RWLOCK.  */
+extern int pthread_rwlock_destroy(pthread_rwlock_t *__rwlock);
+
+/* Acquire read lock for RWLOCK.  */
+extern int pthread_rwlock_rdlock(pthread_rwlock_t *__rwlock);
+
+/* Try to acquire read lock for RWLOCK.  */
+extern int pthread_rwlock_tryrdlock(pthread_rwlock_t *__rwlock);
+
+# ifdef __USE_XOPEN2K
+/* Try to acquire read lock for RWLOCK or return after specfied time.  */
+extern int pthread_rwlock_timedrdlock(pthread_rwlock_t *__restrict __rwlock,
+               __const struct timespec *__restrict
+               __abstime);
+# endif
+
+/* Acquire write lock for RWLOCK.  */
+extern int pthread_rwlock_wrlock(pthread_rwlock_t *__rwlock);
+
+/* Try to acquire write lock for RWLOCK.  */
+extern int pthread_rwlock_trywrlock(pthread_rwlock_t *__rwlock);
+
+# ifdef __USE_XOPEN2K
+/* Try to acquire write lock for RWLOCK or return after specfied time.  */
+extern int pthread_rwlock_timedwrlock(pthread_rwlock_t *__restrict __rwlock,
+               __const struct timespec *__restrict
+               __abstime);
+# endif
+
+#endif
 
 namespace __tsan {
 

@@ -1,4 +1,4 @@
-CXXFLAGS=-Wall -fPIE -Werror -g
+CXXFLAGS=-Wall -fPIE -Werror -g $(CFLAGS)
 DEBUG=1
 
 ifeq ($(DEBUG), 0)

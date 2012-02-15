@@ -17,7 +17,8 @@
 namespace __tsan {
 
 SyncVar::SyncVar(uptr addr)
-  : addr(addr) {
+  : addr(addr)
+  , owner_tid(-1) {
 }
 
 SyncTab::Part::Part()
