@@ -84,6 +84,7 @@ void Release(ThreadState *thr, uptr pc, uptr addr) {
   SyncVar *s = ctx->synctab->GetAndLockIfExists(addr);
   if (!s) {
     s = new SyncVar(SyncVar::Atomic, addr);
+    s->mtx.Lock();
     ctx->synctab->insert(s);
   }
   thr->clock.set(thr->fast.tid, thr->fast.epoch);
