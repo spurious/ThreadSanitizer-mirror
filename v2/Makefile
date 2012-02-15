@@ -13,9 +13,11 @@ run: all
 presubmit:
 	$(MAKE) lint
 	# Debug build with clang.
-	$(MAKE) clean run DEBUG=1
+	$(MAKE) clean
+	$(MAKE) run DEBUG=1 -j 16
 	# Release build gcc (ensure that vanilla gcc is able to build it).
-	$(MAKE) clean run DEBUG=0 CC=/usr/bin/gcc CXX=/usr/bin/g++
+	$(MAKE) clean
+	$(MAKE) run DEBUG=0 -j 16 CC=/usr/bin/gcc CXX=/usr/bin/g++
 
 RTL_LINT_FITLER=-legal/copyright,-build/include,-readability/casting,-build/header_guard
 
@@ -34,5 +36,5 @@ get_interception:
 	svn co  http://llvm.org/svn/llvm-project/compiler-rt/trunk/lib/asan/interception
       
 clean:
-	cd tsan && $(MAKE) clean
-	cd tests && $(MAKE) clean
+	$(MAKE) clean -C tsan
+	$(MAKE) clean -C tests
