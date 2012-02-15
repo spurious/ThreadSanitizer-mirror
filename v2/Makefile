@@ -11,7 +11,7 @@ run: all
 	(ulimit -s 8192; tests/tsan_c_test && tests/tsan_test)
 
 presubmit:
-	$(MAKE) lint
+	$(MAKE) lint -j 4
 	# Debug build with clang.
 	$(MAKE) clean
 	$(MAKE) run DEBUG=1 -j 16
@@ -21,9 +21,11 @@ presubmit:
 
 RTL_LINT_FITLER=-legal/copyright,-build/include,-readability/casting,-build/header_guard
 
-lint:
-	third_party/cpplint/cpplint.py --filter=$(RTL_LINT_FITLER) \
-	tsan/*.cc tsan/*.h tests/*.cc tests/*.h
+lint: lint_tsan lint_tests
+lint_tsan:
+	third_party/cpplint/cpplint.py --filter=$(RTL_LINT_FITLER) tsan/*.{cc,h}
+lint_tests:
+	third_party/cpplint/cpplint.py --filter=$(RTL_LINT_FITLER) tests/*.{cc,h}
 
 get_third_party:
 	rm -rf third_party
