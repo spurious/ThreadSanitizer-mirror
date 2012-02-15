@@ -102,3 +102,17 @@ TEST(ThreadSanitizer, DISABLED_ReportStack) {
   CHECK_GT(rep->mop[1].stack.entry[0].line, line - 3);
   CHECK_LT(rep->mop[1].stack.entry[0].line, line + 3);
 }
+
+TEST(ThreadSanitizer, ReportDeadThread) {
+  // Ensure that we can restore a stack of a finished thread.
+  MemLoc l;
+  ScopedThread t1;
+  {
+    ScopedThread t2;
+    t2.Call(&foo);
+    t2.Call(&bar);
+    t2.Write1(l);
+  }
+  const ReportDesc *rep = t1.Write1(l, true);
+  CHECK_EQ(rep->mop[1].stack.cnt, 3);
+}

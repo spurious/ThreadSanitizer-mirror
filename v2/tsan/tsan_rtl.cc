@@ -113,18 +113,27 @@ static T* alloc(ReportDesc *rep, int n, int *pos) {
 static int RestoreStack(int tid, u64 epoch, uptr *stack, int n) {
   Lock l0(&ctx->thread_mtx);
   ThreadContext *tctx = ctx->threads[tid];
-  if (tctx == 0 || tctx->status != ThreadStatusRunning)
+  if (tctx == 0)
     return 0;
-  ThreadState *thr = tctx->thr;
-  Lock l(&thr->trace.mtx);
-  TraceHeader* trace = &thr->trace.headers[
+  Trace* trace = 0;
+  if (tctx->status == ThreadStatusRunning) {
+    CHECK(tctx->thr);
+    trace = &tctx->thr->trace; 
+  } else if (tctx->status == ThreadStatusFinished
+      || tctx->status == ThreadStatusDead) {
+    trace = &tctx->dead_info.trace; 
+  } else {
+    return 0;
+  }
+  Lock l(&trace->mtx);
+  TraceHeader* hdr = &trace->headers[
       (epoch / (kTraceSize / kTraceParts)) % kTraceParts];
-  if (epoch < trace->epoch0)
+  if (epoch < hdr->epoch0)
     return 0;
   epoch %= (kTraceSize / kTraceParts);
   u64 pos = 0;
   for (u64 i = 0; i <= epoch; i++) {
-    Event ev = thr->trace.events[i];
+    Event ev = trace->events[i];
     EventType typ = (EventType)(ev >> 61);
     uptr pc = (uptr)(ev & 0xffffffffffffull);
     if (typ == EventTypeMop) {
