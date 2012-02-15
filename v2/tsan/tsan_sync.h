@@ -23,34 +23,23 @@ namespace __tsan {
 struct ThreadState;
 
 struct SyncVar {
-  enum Type { Atomic, Mtx, Sem };
+  explicit SyncVar(uptr addr);
 
-  SyncVar(Type type, uptr addr);
-
-  // The following functions emulate read/write on the mutex address.
-  // That is used to detect races between e.g. mutex create/lock.
-  void Read(ThreadState *thr, uptr pc);
-  void Write(ThreadState *thr, uptr pc);
-
-  const Type type;
-  const uptr addr;
   Mutex mtx;
+  const uptr addr;
   ChunkedClock clock;
   SyncVar *next;  // In SyncTab hashtable.
-};
-
-struct MutexVar : SyncVar {
-  MutexVar(uptr addr, bool is_rw);
-  const bool is_rw;
 };
 
 class SyncTab {
  public:
   SyncTab();
 
-  void insert(SyncVar *var);
-  SyncVar* GetAndLockIfExists(uptr addr);
-  SyncVar* GetAndRemoveIfExists(uptr addr);
+  // If the SyncVar does not exist yet, it is created.
+  SyncVar* GetAndLock(uptr addr, bool write_lock);
+
+  // If the SyncVar does not exist, returns 0.
+  SyncVar* GetAndRemove(uptr addr);
 
  private:
   struct Part {

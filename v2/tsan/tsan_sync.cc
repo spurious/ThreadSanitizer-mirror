@@ -15,22 +15,8 @@
 
 namespace __tsan {
 
-SyncVar::SyncVar(SyncVar::Type type, uptr addr)
-  : type(type)
-  , addr(addr) {
-}
-
-void SyncVar::Read(ThreadState *thr, uptr pc) {
-  MemoryAccess(thr, pc, addr, 1, false);
-}
-
-void SyncVar::Write(ThreadState *thr, uptr pc) {
-  MemoryAccess(thr, pc, addr, 1, true);
-}
-
-MutexVar::MutexVar(uptr addr, bool is_rw)
-  : SyncVar(SyncVar::Mtx, addr)
-  , is_rw(is_rw) {
+SyncVar::SyncVar(uptr addr)
+  : addr(addr) {
 }
 
 SyncTab::Part::Part()
@@ -40,38 +26,61 @@ SyncTab::Part::Part()
 SyncTab::SyncTab() {
 }
 
-void SyncTab::insert(SyncVar *var) {
-  Part *p = &tab_[PartIdx(var->addr)];
-  Lock l(&p->mtx);
-  var->next = p->val;
-  p->val = var;
-}
-
-SyncVar* SyncTab::GetAndLockIfExists(uptr addr) {
+SyncVar* SyncTab::GetAndLock(uptr addr, bool write_lock) {
   Part *p = &tab_[PartIdx(addr)];
-  Lock l(&p->mtx);
-  for (SyncVar *res = p->val; res; res = res->next) {
-    if (res->addr == addr) {
+  {
+    ReadLock l(&p->mtx);
+    for (SyncVar *res = p->val; res; res = res->next) {
+      if (res->addr == addr) {
+        if (write_lock)
+          res->mtx.Lock();
+        else
+          res->mtx.ReadLock();
+        return res;
+      }
+    }
+  }
+  {
+    Lock l(&p->mtx);
+    SyncVar *res = p->val;
+    for (; res; res = res->next) {
+      if (res->addr == addr)
+        break;
+    }
+    if (res == 0) {
+      res = new SyncVar(addr);
+      res->next = p->val;
+      p->val = res;
+    }
+    if (write_lock)
       res->mtx.Lock();
-      return res;
-    }
+    else
+      res->mtx.ReadLock();
+    return res;
   }
-  return 0;
 }
 
-SyncVar* SyncTab::GetAndRemoveIfExists(uptr addr) {
+SyncVar* SyncTab::GetAndRemove(uptr addr) {
   Part *p = &tab_[PartIdx(addr)];
-  Lock l(&p->mtx);
-  SyncVar **prev = &p->val;
-  SyncVar *res = *prev;
-  while (res) {
-    if (res->addr == addr) {
-      *prev = res->next;
-      return res;
+  SyncVar *res = 0;
+  {
+    Lock l(&p->mtx);
+    SyncVar **prev = &p->val;
+    res = *prev;
+    while (res) {
+      if (res->addr == addr) {
+        *prev = res->next;
+        break;
+      }
+      prev = &res->next;
+      res = *prev;
     }
-    prev = &res->next;
   }
-  return 0;
+  if (res) {
+    res->mtx.Lock();
+    res->mtx.Unlock();
+  }
+  return res;
 }
 
 int SyncTab::PartIdx(uptr addr) {
