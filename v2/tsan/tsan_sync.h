@@ -49,6 +49,7 @@ class SyncTab {
     Part();
   };
 
+  // FIXME: Implement something more sane.
   static const int kPartCount = 1009;
   Part tab_[kPartCount];
 
