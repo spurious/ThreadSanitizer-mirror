@@ -122,7 +122,7 @@ INTERCEPTOR(int, pthread_mutex_lock, void *m) {
 
 INTERCEPTOR(int, pthread_mutex_trylock, void *m) {
   __tsan_init();
-  int res = REAL(pthread_mutex_lock)(m);
+  int res = REAL(pthread_mutex_trylock)(m);
   if (res == 0) {
     MutexLock(cur_thread(), CALLERPC, (uptr)m);
   }

@@ -19,11 +19,30 @@
 
 namespace __tsan {
 
-TEST(ThreadSanitizer, SimpleMutex) {
+TEST(ThreadSanitizer, BasicMutex) {
   ScopedThread t;
   Mutex m;
   t.Create(m);
   t.Lock(m);
+  t.Unlock(m);
+  CHECK(t.TryLock(m));
+  t.Unlock(m);
+  t.Lock(m);
+  CHECK(!t.TryLock(m));
+  t.Unlock(m);
+  t.Destroy(m);
+}
+
+TEST(ThreadSanitizer, BasicSpinMutex) {
+  ScopedThread t;
+  Mutex m(Mutex::Spin);
+  t.Create(m);
+  t.Lock(m);
+  t.Unlock(m);
+  CHECK(t.TryLock(m));
+  t.Unlock(m);
+  t.Lock(m);
+  CHECK(!t.TryLock(m));
   t.Unlock(m);
   t.Destroy(m);
 }

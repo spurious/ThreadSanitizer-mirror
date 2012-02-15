@@ -79,8 +79,9 @@ MemLoc::MemLoc(int offset_from_aligned)
 MemLoc::~MemLoc() {
 }
 
-Mutex::Mutex()
-  : alive_() {
+Mutex::Mutex(Type type)
+  : alive_()
+  , type_(type) {
 }
 
 Mutex::~Mutex() {
@@ -90,11 +91,17 @@ Mutex::~Mutex() {
 void Mutex::Init() {
   CHECK(!alive_);
   alive_ = true;
-  CHECK_EQ(pthread_mutex_init((pthread_mutex_t*)mtx_, NULL), 0);
+  if (type_ == Normal)
+    CHECK_EQ(pthread_mutex_init((pthread_mutex_t*)mtx_, NULL), 0);
+  else if (type_ == Spin)
+    CHECK_EQ(pthread_spin_init((pthread_spinlock_t*)mtx_, 0), 0);
+  else
+    CHECK(0);
 }
 
 void Mutex::StaticInit() {
   CHECK(!alive_);
+  CHECK(type_ == Normal);
   alive_ = true;
   pthread_mutex_t tmp = PTHREAD_MUTEX_INITIALIZER;
   memcpy(mtx_, &tmp, sizeof(tmp));
@@ -103,17 +110,35 @@ void Mutex::StaticInit() {
 void Mutex::Destroy() {
   CHECK(alive_);
   alive_ = false;
-  CHECK_EQ(pthread_mutex_destroy((pthread_mutex_t*)mtx_), 0);
+  if (type_ == Normal)
+    CHECK_EQ(pthread_mutex_destroy((pthread_mutex_t*)mtx_), 0);
+  else if (type_ == Spin)
+    CHECK_EQ(pthread_spin_destroy((pthread_spinlock_t*)mtx_), 0);
 }
 
 void Mutex::Lock() {
   CHECK(alive_);
-  CHECK_EQ(pthread_mutex_lock((pthread_mutex_t*)mtx_), 0);
+  if (type_ == Normal)
+    CHECK_EQ(pthread_mutex_lock((pthread_mutex_t*)mtx_), 0);
+  else if (type_ == Spin)
+    CHECK_EQ(pthread_spin_lock((pthread_spinlock_t*)mtx_), 0);
+}
+
+bool Mutex::TryLock() {
+  CHECK(alive_);
+  if (type_ == Normal)
+    return pthread_mutex_trylock((pthread_mutex_t*)mtx_) == 0;
+  else if (type_ == Spin)
+    return pthread_spin_trylock((pthread_spinlock_t*)mtx_) == 0;
+  return false;
 }
 
 void Mutex::Unlock() {
   CHECK(alive_);
-  CHECK_EQ(pthread_mutex_unlock((pthread_mutex_t*)mtx_), 0);
+  if (type_ == Normal)
+    CHECK_EQ(pthread_mutex_unlock((pthread_mutex_t*)mtx_), 0);
+  else if (type_ == Spin)
+    CHECK_EQ(pthread_spin_unlock((pthread_spinlock_t*)mtx_), 0);
 }
 
 struct Event {
@@ -126,11 +151,13 @@ struct Event {
     MUTEX_CREATE,
     MUTEX_DESTROY,
     MUTEX_LOCK,
+    MUTEX_TRYLOCK,
     MUTEX_UNLOCK,
   };
   Type type;
   void *ptr;
   int arg;
+  bool res;
   bool expect_report;
   __tsan::ReportType report_type;
   const ReportDesc *rep;
@@ -139,6 +166,7 @@ struct Event {
     : type(type)
     , ptr(const_cast<void*>(ptr))
     , arg(arg)
+    , res()
     , expect_report()
     , report_type()
     , rep() {
@@ -202,6 +230,9 @@ void ScopedThread::Impl::HandleEvent(Event *ev) {
     break;
   case Event::MUTEX_LOCK:
     static_cast<Mutex*>(ev->ptr)->Lock();
+    break;
+  case Event::MUTEX_TRYLOCK:
+    ev->res = static_cast<Mutex*>(ev->ptr)->TryLock();
     break;
   case Event::MUTEX_UNLOCK:
     static_cast<Mutex*>(ev->ptr)->Unlock();
@@ -318,6 +349,12 @@ void ScopedThread::Destroy(const Mutex &m) {
 void ScopedThread::Lock(const Mutex &m) {
   Event event(Event::MUTEX_LOCK, &m);
   impl_->send(&event);
+}
+
+bool ScopedThread::TryLock(const Mutex &m) {
+  Event event(Event::MUTEX_TRYLOCK, &m);
+  impl_->send(&event);
+  return event.res;
 }
 
 void ScopedThread::Unlock(const Mutex &m) {

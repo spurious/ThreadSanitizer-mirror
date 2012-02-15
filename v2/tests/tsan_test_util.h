@@ -33,19 +33,23 @@ class MemLoc {
 
 class Mutex {
  public:
-  Mutex();
+  enum Type { Normal, Spin };
+
+  explicit Mutex(Type type = Normal);
   ~Mutex();
 
   void Init();
   void StaticInit();  // Emulates static initalization (tsan invisible).
   void Destroy();
   void Lock();
+  bool TryLock();
   void Unlock();
 
  private:
   // Placeholder for pthread_mutex_t, CRITICAL_SECTION or whatever.
   void *mtx_[128];
   bool alive_;
+  const Type type_;
 
   Mutex(const Mutex&);
   void operator = (const Mutex&);
@@ -93,6 +97,7 @@ class ScopedThread {
   void Create(const Mutex &m);
   void Destroy(const Mutex &m);
   void Lock(const Mutex &m);
+  bool TryLock(const Mutex &m);
   void Unlock(const Mutex &m);
  private:
   struct Impl;
