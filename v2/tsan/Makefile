@@ -16,6 +16,7 @@ LIBTSAN_HEADERS=tsan_atomic.h \
                 tsan_compiler.h \
                 tsan_defs.h \
 		tsan_interface.h \
+		tsan_interface_ann.h \
 		tsan_interface_inl.h \
                 tsan_linux.h \
                 tsan_mutex.h \

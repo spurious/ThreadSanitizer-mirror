@@ -1,4 +1,4 @@
-//===-- tsan_interface.cc ---------------------------------------*- C++ -*-===//
+//===-- tsan_interface_inl.h ------------------------------------*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "tsan_interface.h"
+#include "tsan_interface_ann.h"
 #include "tsan_rtl.h"
 
 #define CALLERPC ((uptr)__builtin_return_address(0))
@@ -70,4 +71,12 @@ void FLATTEN __tsan_func_entry(void *pc) {
 
 void FLATTEN __tsan_func_exit() {
   __tsan::FuncExit(&cur_thread);
+}
+
+void __tsan_acquire(void *addr) {
+  __tsan::Acquire(&cur_thread, CALLERPC, (uptr)addr);
+}
+
+void __tsan_release(void *addr) {
+  __tsan::Release(&cur_thread, CALLERPC, (uptr)addr);
 }

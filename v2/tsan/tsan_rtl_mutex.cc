@@ -65,4 +65,28 @@ void MutexUnlock(ThreadState *thr, uptr pc, uptr addr) {
   m->mtx.Unlock();
 }
 
+void Acquire(ThreadState *thr, uptr pc, uptr addr) {
+  DPrintf("#%d: Acquire %p\n", thr->fast.tid, addr);
+  SyncVar *s = ctx->synctab->GetAndLockIfExists(addr);
+  if (!s) {
+    s = new SyncVar(SyncVar::Atomic, addr);
+    ctx->synctab->insert(s);
+  }
+  thr->clock.set(thr->fast.tid, thr->fast.epoch);
+  thr->clock.acquire(&s->clock);
+  s->mtx.Unlock();
+}
+
+void Release(ThreadState *thr, uptr pc, uptr addr) {
+  DPrintf("#%d: Release %p\n", thr->fast.tid, addr);
+  SyncVar *s = ctx->synctab->GetAndLockIfExists(addr);
+  if (!s) {
+    s = new SyncVar(SyncVar::Atomic, addr);
+    ctx->synctab->insert(s);
+  }
+  thr->clock.set(thr->fast.tid, thr->fast.epoch);
+  thr->clock.release(&s->clock, thr->clockslab);
+  s->mtx.Unlock();
+}
+
 }  // namespace __tsan

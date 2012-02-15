@@ -162,6 +162,9 @@ void MutexDestroy(ThreadState *thr, uptr pc, uptr addr);
 void MutexLock(ThreadState *thr, uptr pc, uptr addr);
 void MutexUnlock(ThreadState *thr, uptr pc, uptr addr);
 
+void Acquire(ThreadState *thr, uptr pc, uptr addr);
+void Release(ThreadState *thr, uptr pc, uptr addr);
+
 void internal_memset(void *ptr, int c, uptr size);
 void internal_memcpy(void *dst, const void *src, uptr size);
 
