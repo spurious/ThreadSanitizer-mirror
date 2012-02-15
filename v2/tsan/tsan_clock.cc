@@ -24,7 +24,7 @@ struct SyncClock::Chunk {
 
 ThreadClock::ThreadClock() {
   nclk_ = 0;
-  for (uptr i = 0; i < kMaxTid; i++)
+  for (uptr i = 0; i < (uptr)kMaxTid; i++)
     clk_[i] = 0;
 }
 

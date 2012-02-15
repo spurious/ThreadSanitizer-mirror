@@ -15,21 +15,22 @@
 #include "gtest/gtest.h"
 
 #include <stdlib.h>
+#include <stdint.h>
 #include <map>
 
 namespace __tsan {
 
 TEST(Sync, Table) {
-  const int kIters = 512*1024;
-  const int kRange = 10000;
+  const uintptr_t kIters = 512*1024;
+  const uintptr_t kRange = 10000;
 
   SlabAlloc alloc(sizeof(SyncVar));
   SlabCache slab(&alloc);
   SyncTab tab;
   SyncVar *golden[kRange] = {};
   unsigned seed = 0;
-  for (int i = 0; i < kIters; i++) {
-    int addr = rand_r(&seed) % (kRange - 1) + 1;
+  for (uintptr_t i = 0; i < kIters; i++) {
+    uintptr_t addr = rand_r(&seed) % (kRange - 1) + 1;
     if (rand_r(&seed) % 2) {
       // Get or add.
       SyncVar *v = tab.GetAndLock(&slab, addr, true);
@@ -49,7 +50,7 @@ TEST(Sync, Table) {
       }
     }
   }
-  for (int addr = 0; addr < kRange; addr++) {
+  for (uintptr_t addr = 0; addr < kRange; addr++) {
     if (golden[addr] == 0)
       continue;
     SyncVar *v = tab.GetAndRemove(addr);
