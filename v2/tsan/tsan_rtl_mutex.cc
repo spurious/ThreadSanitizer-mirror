@@ -19,7 +19,7 @@ namespace __tsan {
 void MutexCreate(ThreadState *thr, uptr pc, uptr addr, bool is_rw) {
   DPrintf("#%d: MutexCreate %p\n", thr->fast.tid, addr);
   MemoryAccess(thr, pc, addr, 1, true);
-  SyncVar *s = ctx->synctab.GetAndLock(thr, addr, true);
+  SyncVar *s = ctx->synctab.GetAndLock(&thr->syncslab, addr, true);
   s->mtx.Unlock();
 }
 
@@ -39,7 +39,7 @@ void MutexLock(ThreadState *thr, uptr pc, uptr addr) {
   MemoryAccess(thr, pc, addr, 1, false);
   thr->fast.epoch++;
   TraceAddEvent(thr, thr->fast.epoch, EventTypeLock, addr);
-  SyncVar *s = ctx->synctab.GetAndLock(thr, addr, false);
+  SyncVar *s = ctx->synctab.GetAndLock(&thr->syncslab, addr, false);
   thr->clock.set(thr->fast.tid, thr->fast.epoch);
   thr->clock.acquire(&s->clock);
   s->mtx.ReadUnlock();
@@ -50,7 +50,7 @@ void MutexUnlock(ThreadState *thr, uptr pc, uptr addr) {
   MemoryAccess(thr, pc, addr, 1, false);
   thr->fast.epoch++;
   TraceAddEvent(thr, thr->fast.epoch, EventTypeUnlock, addr);
-  SyncVar *s = ctx->synctab.GetAndLock(thr, addr, true);
+  SyncVar *s = ctx->synctab.GetAndLock(&thr->syncslab, addr, true);
   thr->clock.set(thr->fast.tid, thr->fast.epoch);
   thr->fast_synch_epoch = thr->fast.epoch;
   thr->clock.release(&s->clock, &thr->clockslab);
@@ -59,7 +59,7 @@ void MutexUnlock(ThreadState *thr, uptr pc, uptr addr) {
 
 void Acquire(ThreadState *thr, uptr pc, uptr addr) {
   DPrintf("#%d: Acquire %p\n", thr->fast.tid, addr);
-  SyncVar *s = ctx->synctab.GetAndLock(thr, addr, false);
+  SyncVar *s = ctx->synctab.GetAndLock(&thr->syncslab, addr, false);
   thr->clock.set(thr->fast.tid, thr->fast.epoch);
   thr->clock.acquire(&s->clock);
   s->mtx.ReadUnlock();
@@ -67,7 +67,7 @@ void Acquire(ThreadState *thr, uptr pc, uptr addr) {
 
 void Release(ThreadState *thr, uptr pc, uptr addr) {
   DPrintf("#%d: Release %p\n", thr->fast.tid, addr);
-  SyncVar *s = ctx->synctab.GetAndLock(thr, addr, true);
+  SyncVar *s = ctx->synctab.GetAndLock(&thr->syncslab, addr, true);
   thr->clock.set(thr->fast.tid, thr->fast.epoch);
   thr->clock.release(&s->clock, &thr->clockslab);
   s->mtx.Unlock();

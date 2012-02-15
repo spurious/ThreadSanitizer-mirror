@@ -20,7 +20,7 @@
 
 namespace __tsan {
 
-struct ThreadState;
+class SlabCache;
 
 struct SyncVar {
   explicit SyncVar(uptr addr);
@@ -36,7 +36,7 @@ class SyncTab {
   SyncTab();
 
   // If the SyncVar does not exist yet, it is created.
-  SyncVar* GetAndLock(ThreadState *thr, uptr addr, bool write_lock);
+  SyncVar* GetAndLock(SlabCache *slab, uptr addr, bool write_lock);
 
   // If the SyncVar does not exist, returns 0.
   SyncVar* GetAndRemove(uptr addr);

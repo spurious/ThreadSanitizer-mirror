@@ -27,7 +27,8 @@ SyncTab::Part::Part()
 SyncTab::SyncTab() {
 }
 
-SyncVar* SyncTab::GetAndLock(ThreadState *thr, uptr addr, bool write_lock) {
+SyncVar* SyncTab::GetAndLock(SlabCache *slab, uptr addr, bool write_lock) {
+  DCHECK(slab->Size() == sizeof(SyncVar));
   Part *p = &tab_[PartIdx(addr)];
   {
     ReadLock l(&p->mtx);
@@ -49,7 +50,7 @@ SyncVar* SyncTab::GetAndLock(ThreadState *thr, uptr addr, bool write_lock) {
         break;
     }
     if (res == 0) {
-      res = new(thr->syncslab.Alloc()) SyncVar(addr);
+      res = new(slab->Alloc()) SyncVar(addr);
       res->next = p->val;
       p->val = res;
     }

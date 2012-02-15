@@ -17,7 +17,7 @@
 
 namespace __tsan {
 
-uptr const kBatch = 32;
+uptr const kBatch = 64;
 uptr const kAllocSize = 1024*1024;
 
 SlabAlloc::SlabAlloc(uptr size)
