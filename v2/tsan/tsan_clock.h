@@ -39,9 +39,9 @@ class SyncClock {
 };
 
 // The clock that lives in threads.
-// Has to be POD because lives in TLS.
 struct ThreadClock {
-  void Init();
+ public:
+  ThreadClock();
 
   u64 get(int tid) const {
     DCHECK(tid < kMaxTid);
@@ -71,7 +71,7 @@ struct ThreadClock {
   void release(SyncClock *dst, SlabCache *slab) const;
   void acq_rel(SyncClock *dst, SlabCache *slab);
 
-// private: Pretend you do not see that.
+ private:
   int nclk_;
   u64 clk_[kMaxTid];
 };

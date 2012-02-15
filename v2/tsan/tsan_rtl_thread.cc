@@ -59,12 +59,12 @@ int ThreadCreate(ThreadState *thr, uptr uid, bool detached) {
     tctx->status = ThreadStatusInvalid;
     tctx->reuse_count++;
     tid = tctx->tid;
+    // The point to reclain dead_info.
+    // delete tctx->dead_info;
   } else {
     tid = ctx->thread_seq++;
-    tctx = new(virtual_alloc(sizeof(ThreadContext))) ThreadContext;
+    tctx = new(virtual_alloc(sizeof(ThreadContext))) ThreadContext(tid);
     ctx->threads[tid] = tctx;
-    tctx->tid = tid;
-    tctx->reuse_count = 0;
   }
   CHECK(tctx != 0 && tid >= 0 && tid < kMaxTid);
   DPrintf("#%d: ThreadCreate tid=%d uid=%lu\n",
@@ -90,22 +90,10 @@ void ThreadStart(ThreadState *thr, int tid) {
   new(thr) ThreadState(ctx);
   tctx->thr = thr;
   thr->fast.tid = tid;
-  if (tctx->reuse_count == 0) {
-    thr->fast.epoch = 1;
-    thr->fast_synch_epoch = 1;
-    tctx->epoch0 = 1;
-    thr->clock.set(tid, 1);
-  } else {
-    // Since we reuse the tid, we need to reuse the same clock
-    // (the clock can't tick back).
-    internal_memcpy(&thr->clock, &tctx->dead_info.clock, sizeof(thr->clock));
-    // The point to reclain dead_info.
-    // delete tctx->dead_info;
-    thr->clock.tick(tid);
-    thr->fast.epoch = thr->clock.get(tid);
-    thr->fast_synch_epoch = thr->clock.get(tid);
-    tctx->epoch0 = thr->clock.get(tid);
-  }
+  tctx->epoch0++;
+  thr->fast.epoch = tctx->epoch0;
+  thr->fast_synch_epoch = tctx->epoch0;
+  thr->clock.set(tid, tctx->epoch0);
   thr->clock.acquire(&tctx->sync);
 }
 
@@ -126,8 +114,8 @@ void ThreadFinish(ThreadState *thr) {
   // If dead_info will become dynamically allocated again,
   // it is the point to allocate it.
   // tctx->dead_info = new ThreadDeadInfo;
-  internal_memcpy(&tctx->dead_info.clock, &thr->clock, sizeof(thr->clock));
   internal_memcpy(&tctx->dead_info.trace, &thr->trace, sizeof(thr->trace));
+  tctx->epoch0 = thr->clock.get(tctx->tid);
 
   thr->~ThreadState();
   tctx->thr = 0;

@@ -22,8 +22,10 @@ struct SyncClock::Chunk {
   u64 clk_[kChunkCapacity];
 };
 
-void ThreadClock::Init() {
-  internal_memset(this, 0, sizeof(*this));
+ThreadClock::ThreadClock() {
+  nclk_ = 0;
+  for (uptr i = 0; i < kMaxTid; i++)
+    clk_[i] = 0;
 }
 
 void ThreadClock::acquire(const SyncClock *src) {

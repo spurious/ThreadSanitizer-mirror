@@ -71,12 +71,15 @@ ThreadState::ThreadState(Context *ctx)
   , syncslab(&ctx->syncslab) {
 }
 
-ThreadContext::ThreadContext()
-  : thr()
+ThreadContext::ThreadContext(int tid)
+  : tid(tid)
+  , thr()
   , status(ThreadStatusInvalid)
   , uid()
   , detached()
-  , reuse_count() {
+  , reuse_count()
+  , epoch0()
+  , dead_next() {
 }
 
 void Initialize(ThreadState *thr) {

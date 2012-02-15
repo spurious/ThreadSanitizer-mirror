@@ -17,7 +17,6 @@ namespace __tsan {
 
 TEST(Clock, VectorBasic) {
   ThreadClock clk;
-  clk.Init();
   CHECK_EQ(clk.size(), 0);
   clk.tick(0);
   CHECK_EQ(clk.size(), 1);
@@ -36,7 +35,6 @@ TEST(Clock, ChunkedBasic) {
   SlabAlloc alloc(SyncClock::kChunkSize);
   SlabCache slab(&alloc);
   ThreadClock vector;
-  vector.Init();
   SyncClock chunked;
   CHECK_EQ(vector.size(), 0);
   CHECK_EQ(chunked.size(), 0);
@@ -56,13 +54,11 @@ TEST(Clock, AcquireRelease) {
   SlabAlloc alloc(SyncClock::kChunkSize);
   SlabCache slab(&alloc);
   ThreadClock vector1;
-  vector1.Init();
   vector1.tick(100);
   SyncClock chunked;
   vector1.release(&chunked, &slab);
   CHECK_EQ(chunked.size(), 101);
   ThreadClock vector2;
-  vector2.Init();
   vector2.acquire(&chunked);
   CHECK_EQ(vector2.size(), 101);
   CHECK_EQ(vector2.get(0), 0);
@@ -78,7 +74,6 @@ TEST(Clock, ManyThreads) {
   SyncClock chunked;
   for (int i = 0; i < 100; i++) {
     ThreadClock vector;
-    vector.Init();
     vector.tick(i);
     vector.release(&chunked, &slab);
     CHECK_EQ(chunked.size(), i + 1);
@@ -86,7 +81,6 @@ TEST(Clock, ManyThreads) {
     CHECK_EQ(vector.size(), i + 1);
   }
   ThreadClock vector;
-  vector.Init();
   vector.acquire(&chunked);
   CHECK_EQ(vector.size(), 100);
   for (int i = 0; i < 100; i++)
@@ -99,10 +93,8 @@ TEST(Clock, DifferentSizes) {
   SlabCache slab(&alloc);
   {
     ThreadClock vector1;
-    vector1.Init();
     vector1.tick(10);
     ThreadClock vector2;
-    vector2.Init();
     vector2.tick(20);
     {
       SyncClock chunked;

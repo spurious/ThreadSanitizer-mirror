@@ -97,12 +97,11 @@ enum ThreadStatus {
 
 // An info about a thread that is hold for some time after its termination.
 struct ThreadDeadInfo {
-  ThreadClock clock;
   Trace trace;
 };
 
 struct ThreadContext {
-  int tid;
+  const int tid;
   ThreadState *thr;
   ThreadStatus status;
   uptr uid;  // Some opaque user thread id.
@@ -116,7 +115,7 @@ struct ThreadContext {
   ThreadDeadInfo dead_info;
   ThreadContext* dead_next;  // In dead thread list.
 
-  ThreadContext();
+  explicit ThreadContext(int tid);
 };
 
 struct Context {
