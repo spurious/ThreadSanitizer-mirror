@@ -20,7 +20,8 @@
 
 namespace __tsan {
 
-char exe[1024];
+static char exe[1024];
+static uptr base;
 
 void SymbolizeImageBaseMark() {
 }
@@ -49,7 +50,8 @@ static uptr GetImageBase() {
 
 bool SymbolizeCode(uptr pc, char *func, int func_size,
                    char *file, int file_size, int *line) {
-  static uptr base = GetImageBase();
+  if (base == 0)
+    base = GetImageBase();
   bool res = false;
   char cmd[1024];
   snprintf(cmd, sizeof(cmd),
