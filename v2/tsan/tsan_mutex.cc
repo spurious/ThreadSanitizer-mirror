@@ -15,38 +15,76 @@
 
 namespace __tsan {
 
+// Simple reader-writer spin-mutex. Optimized for not-so-contended case.
+// Readers have preference, can possibly starvate writers.
+
+const uptr kUnlocked = 0;
+const uptr kWriteLock = 1;
+const uptr kReadLock = 2;
+
+class Backoff {
+ public:
+  Backoff()
+    : iter_() {
+  }
+  bool Do() {
+    if (iter_++ < kActiveSpinIters)
+      proc_yield(kActiveSpinCnt);
+    else
+      sched_yield();
+    return true;
+  }
+ private:
+  int iter_;
+  static const int kActiveSpinIters = 10;
+  static const int kActiveSpinCnt = 20;
+};
+
 Mutex::Mutex() {
-  atomic_store(&state_, 0, memory_order_relaxed);
+  atomic_store(&state_, kUnlocked, memory_order_relaxed);
 }
 
 Mutex::~Mutex() {
-  CHECK_EQ(atomic_load(&state_, memory_order_relaxed), 0);
+  CHECK_EQ(atomic_load(&state_, memory_order_relaxed), kUnlocked);
 }
 
 void Mutex::Lock() {
-  if (atomic_exchange(&state_, 1, memory_order_acquire) == 0)
+  uptr cmp = kUnlocked;
+  if (atomic_compare_exchange_strong(&state_, &cmp, kWriteLock,
+                                     memory_order_acquire))
     return;
-  for (int i = 0;; i++) {
-    if (i < 10)
-      proc_yield(20);
-    else
-      sched_yield();
-    if (atomic_load(&state_, memory_order_relaxed) == 0)
-      if (atomic_exchange(&state_, 1, memory_order_acquire) == 0)
+  for (Backoff backoff; backoff.Do();) {
+    if (atomic_load(&state_, memory_order_relaxed) == kUnlocked) {
+      cmp = kUnlocked;
+      if (atomic_compare_exchange_weak(&state_, &cmp, kWriteLock,
+                                       memory_order_acquire))
         return;
+    }
   }
 }
 
 void Mutex::Unlock() {
-  atomic_store(&state_, 0, memory_order_release);
+  uptr prev = atomic_fetch_sub(&state_, kWriteLock, memory_order_release);
+  (void)prev;
+  DCHECK_NE(prev & kWriteLock, 0);
 }
 
 void Mutex::ReadLock() {
-  Lock();
+  uptr prev = atomic_fetch_add(&state_, kReadLock, memory_order_acquire);
+  if ((prev & kWriteLock) == 0)
+    return;
+  for (Backoff backoff; backoff.Do();) {
+    prev = atomic_load(&state_, memory_order_acquire);
+    if ((prev & kWriteLock) == 0)
+      return;
+  }
 }
 
 void Mutex::ReadUnlock() {
-  Unlock();
+  uptr prev = atomic_fetch_sub(&state_, kReadLock, memory_order_release);
+  (void)prev;
+  DCHECK_EQ(prev & kWriteLock, 0);
+  DCHECK_GT(prev & ~kWriteLock, 0);
 }
 
 Lock::Lock(Mutex *m)

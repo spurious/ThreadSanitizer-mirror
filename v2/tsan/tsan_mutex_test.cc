@@ -10,6 +10,7 @@
 // This file is a part of ThreadSanitizer (TSan), a race detector.
 //
 //===----------------------------------------------------------------------===//
+#include "tsan_atomic.h"
 #include "tsan_mutex.h"
 #include "gtest/gtest.h"
 
@@ -40,10 +41,11 @@ class TestData {
   }
 
  private:
-  static const int kSize = 16;
+  static const int kSize = 64;
   typedef u64 T;
-  T data_[kSize];
   Mutex mtx_;
+  char pad_[kCacheLineSize];
+  T data_[kSize];
 };
 
 const int kThreads = 8;
@@ -56,18 +58,23 @@ const int kIters = 512*1024;
 
 static void *write_mutex_thread(void *param) {
   TestData *data = (TestData *)param;
-  for (int i = 0; i < kIters; i++)
+  TestData local;
+  for (int i = 0; i < kIters; i++) {
     data->Write();
+    local.Write();
+  }
   return 0;
 }
 
 static void *read_mutex_thread(void *param) {
   TestData *data = (TestData *)param;
+  TestData local;
   for (int i = 0; i < kIters; i++) {
     if ((i % kWriteRate) == 0)
       data->Write();
     else
       data->Read();
+    local.Write();
   }
   return 0;
 }

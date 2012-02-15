@@ -88,24 +88,43 @@ INLINE void atomic_store(volatile T *a, typename T::Type v, memory_order mo) {
     atomic_thread_fence(memory_order_seq_cst);
 }
 
-INLINE u64 atomic_fetch_add(volatile atomic_uint64_t *a, u64 v,
-                            memory_order mo) {
+template<typename T>
+INLINE typename T::Type atomic_fetch_add(volatile T *a,
+    typename T::Type v, memory_order mo) {
   (void)mo;
   DCHECK(!((uptr)a % sizeof(*a)));
   return __sync_fetch_and_add(&a->val_dont_use, v);
 }
 
-INLINE uptr atomic_fetch_add(volatile atomic_uintptr_t *a, uptr v,
-                             memory_order mo) {
+template<typename T>
+INLINE typename T::Type atomic_fetch_sub(volatile T *a,
+    typename T::Type v, memory_order mo) {
   (void)mo;
   DCHECK(!((uptr)a % sizeof(*a)));
-  return __sync_fetch_and_add(&a->val_dont_use, v);
+  return __sync_fetch_and_add(&a->val_dont_use, -v);
 }
 
 INLINE uptr atomic_exchange(volatile atomic_uintptr_t *a, uptr v,
                             memory_order mo) {
   __asm__ __volatile__("xchg %1, %0" : "+r"(v), "+m"(*a) : : "memory", "cc");
   return v;
+}
+
+INLINE bool atomic_compare_exchange_strong(volatile atomic_uintptr_t *a,
+                                           uptr *cmp, uptr xchg,
+                                           memory_order mo) {
+  uptr cmpv = *cmp;
+  uptr prev = __sync_val_compare_and_swap(&a->val_dont_use, cmpv, xchg);
+  if (prev == cmpv)
+    return true;
+  *cmp = prev;
+  return false;
+}
+
+INLINE bool atomic_compare_exchange_weak(volatile atomic_uintptr_t *a,
+                                         uptr *cmp, uptr xchg,
+                                         memory_order mo) {
+  return atomic_compare_exchange_strong(a, cmp, xchg, mo);
 }
 
 }  // namespace __tsan

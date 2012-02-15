@@ -60,6 +60,13 @@ const bool kCollectStats = false;
 # define DCHECK(cond)
 #endif
 
+#define DCHECK_EQ(a, b) DCHECK((a) == (b))
+#define DCHECK_NE(a, b) DCHECK((a) != (b))
+#define DCHECK_LT(a, b) DCHECK((a) < (b))
+#define DCHECK_LE(a, b) DCHECK((a) <= (b))
+#define DCHECK_GT(a, b) DCHECK((a) > (b))
+#define DCHECK_GE(a, b) DCHECK((a) >= (b))
+
 void CheckFailed(const char *file, int line, const char *cond);
 
 }  // namespace __tsan

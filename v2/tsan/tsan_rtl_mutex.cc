@@ -41,6 +41,7 @@ void MutexLock(ThreadState *thr, uptr pc, uptr addr) {
     // Locking a mutex before if was created (e.g. for linked-inited mutexes.
     // FIXME: is that right?
     s = new MutexVar(addr, true);
+    s->mtx.Lock();
     ctx->synctab->insert(s);
   }
   s->Read(thr, pc);
@@ -70,6 +71,7 @@ void Acquire(ThreadState *thr, uptr pc, uptr addr) {
   SyncVar *s = ctx->synctab->GetAndLockIfExists(addr);
   if (!s) {
     s = new SyncVar(SyncVar::Atomic, addr);
+    s->mtx.Lock();
     ctx->synctab->insert(s);
   }
   thr->clock.set(thr->fast.tid, thr->fast.epoch);
