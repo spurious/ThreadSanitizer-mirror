@@ -48,6 +48,13 @@ INLINE void atomic_thread_fence(memory_order) {
   __asm__ __volatile__("mfence" ::: "memory");
 }
 
+INLINE void proc_yield(int cnt) {
+  __asm__ __volatile__("" ::: "memory");
+  for (int i = 0; i < cnt; i++)
+    __asm__ __volatile__("pause");
+  __asm__ __volatile__("" ::: "memory");
+}
+
 template<typename T>
 INLINE typename T::Type atomic_load(
     const volatile T *a, memory_order mo) {
@@ -97,15 +104,8 @@ INLINE uptr atomic_fetch_add(volatile atomic_uintptr_t *a, uptr v,
 
 INLINE uptr atomic_exchange(volatile atomic_uintptr_t *a, uptr v,
                             memory_order mo) {
-  (void)mo;
-  DCHECK(!((uptr)a % sizeof(*a)));
-  uptr old = a->val_dont_use;
-  for (;;) {
-    uptr old2 = __sync_val_compare_and_swap(&a->val_dont_use, old, v);
-    if (old == old2)
-      return old;
-    old = old2;
-  }
+  __asm__ __volatile__("xchg %1, %0" : "+r"(v), "+m"(*a) : : "memory", "cc");
+  return v;
 }
 
 }  // namespace __tsan

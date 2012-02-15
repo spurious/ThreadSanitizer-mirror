@@ -40,6 +40,7 @@ static inline bool IsShadowMem(uptr mem) {
 
 void *virtual_alloc(uptr size);
 void virtual_free(void *p, uptr size);
+void sched_yield();
 
 }  // namespace __tsan
 

@@ -11,6 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 #include "tsan_mutex.h"
+#include "tsan_platform.h"
 
 namespace __tsan {
 
@@ -23,7 +24,16 @@ Mutex::~Mutex() {
 }
 
 void Mutex::Lock() {
-  while (atomic_exchange(&state_, 1, memory_order_acquire)) {
+  if (atomic_exchange(&state_, 1, memory_order_acquire) == 0)
+    return;
+  for (int i = 0;; i++) {
+    if (i < 10)
+      proc_yield(20);
+    else
+      sched_yield();
+    if (atomic_load(&state_, memory_order_relaxed) == 0)
+      if (atomic_exchange(&state_, 1, memory_order_acquire) == 0)
+        return;
   }
 }
 

@@ -23,6 +23,7 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include <errno.h>
+#include <sched.h>
 
 namespace __tsan {
 
@@ -90,6 +91,11 @@ void virtual_free(void *p, uptr size) {
     Report("FATAL: ThreadSanitizer munmap failed\n");
     Die();
   }
+}
+
+void sched_yield() {
+  ScopedErrno se;
+  syscall(__NR_sched_yield);
 }
 
 static void ProtectRange(uptr beg, uptr end) {
