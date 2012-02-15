@@ -60,7 +60,7 @@ TEST(ThreadSanitizer, StaticMutex) {
 
 static void *singleton_thread(void *param) {
   atomic_uintptr_t *singleton = (atomic_uintptr_t *)param;
-  for (int i = 0; i < 1024*1024; i++) {
+  for (int i = 0; i < 4*1024*1024; i++) {
     int *val = (int *)atomic_load(singleton, memory_order_acquire);
     __tsan_acquire(singleton);
     __tsan_read4(val);
@@ -90,6 +90,27 @@ TEST(DISABLED_BENCH_ThreadSanitizer, Singleton) {
     pthread_create(&threads[t], 0, singleton_thread, &singleton);
   for (int t = 0; t < kThreadCount; t++)
     pthread_join(threads[t], 0);
+}
+
+TEST(DISABLED_BENCH_ThreadSanitizer, StopFlag) {
+  const int kClockSize = 100;
+  const int kIters = 16*1024*1024;
+
+  // Puff off thread's clock.
+  for (int i = 0; i < kClockSize; i++) {
+    ScopedThread t1;
+    (void)t1;
+  }
+  // Create the stop flag.
+  atomic_uintptr_t flag;
+  __tsan_release(&flag);
+  atomic_store(&flag, 0, memory_order_release);
+  // Read it a lot.
+  for (int i = 0; i < kIters; i++) {
+    uptr v = atomic_load(&flag, memory_order_acquire);
+    __tsan_acquire(&flag);
+    CHECK_EQ(v, 0);
+  }
 }
 
 }  // namespace __tsan
