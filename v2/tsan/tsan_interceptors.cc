@@ -94,8 +94,7 @@ INTERCEPTOR(int, pthread_detach, void *th) {
   return res;
 }
 
-INTERCEPTOR(int, pthread_mutex_init,
-            void *m, const void *a) {
+INTERCEPTOR(int, pthread_mutex_init, void *m, const void *a) {
   __tsan_init();
   int res = REAL(pthread_mutex_init)(m, a);
   if (res == 0) {
@@ -104,8 +103,7 @@ INTERCEPTOR(int, pthread_mutex_init,
   return res;
 }
 
-INTERCEPTOR(int, pthread_mutex_destroy,
-            void *m) {
+INTERCEPTOR(int, pthread_mutex_destroy, void *m) {
   int res = REAL(pthread_mutex_destroy)(m);
   if (res == 0) {
     MutexDestroy(cur_thread(), CALLERPC, (uptr)m);
@@ -113,8 +111,7 @@ INTERCEPTOR(int, pthread_mutex_destroy,
   return res;
 }
 
-INTERCEPTOR(int, pthread_mutex_lock,
-            void *m) {
+INTERCEPTOR(int, pthread_mutex_lock, void *m) {
   __tsan_init();
   int res = REAL(pthread_mutex_lock)(m);
   if (res == 0) {
@@ -123,10 +120,59 @@ INTERCEPTOR(int, pthread_mutex_lock,
   return res;
 }
 
-INTERCEPTOR(int, pthread_mutex_unlock,
-            void *m) {
+INTERCEPTOR(int, pthread_mutex_trylock, void *m) {
+  __tsan_init();
+  int res = REAL(pthread_mutex_lock)(m);
+  if (res == 0) {
+    MutexLock(cur_thread(), CALLERPC, (uptr)m);
+  }
+  return res;
+}
+
+INTERCEPTOR(int, pthread_mutex_unlock, void *m) {
   MutexUnlock(cur_thread(), CALLERPC, (uptr)m);
   int res = REAL(pthread_mutex_unlock)(m);
+  return res;
+}
+
+INTERCEPTOR(int, pthread_spin_init, void *m, int pshared) {
+  __tsan_init();
+  int res = REAL(pthread_spin_init)(m, pshared);
+  if (res == 0) {
+    MutexCreate(cur_thread(), CALLERPC, (uptr)m, false);
+  }
+  return res;
+}
+
+INTERCEPTOR(int, pthread_spin_destroy, void *m) {
+  int res = REAL(pthread_spin_destroy)(m);
+  if (res == 0) {
+    MutexDestroy(cur_thread(), CALLERPC, (uptr)m);
+  }
+  return res;
+}
+
+INTERCEPTOR(int, pthread_spin_lock, void *m) {
+  __tsan_init();
+  int res = REAL(pthread_spin_lock)(m);
+  if (res == 0) {
+    MutexLock(cur_thread(), CALLERPC, (uptr)m);
+  }
+  return res;
+}
+
+INTERCEPTOR(int, pthread_spin_trylock, void *m) {
+  __tsan_init();
+  int res = REAL(pthread_spin_trylock)(m);
+  if (res == 0) {
+    MutexLock(cur_thread(), CALLERPC, (uptr)m);
+  }
+  return res;
+}
+
+INTERCEPTOR(int, pthread_spin_unlock, void *m) {
+  MutexUnlock(cur_thread(), CALLERPC, (uptr)m);
+  int res = REAL(pthread_spin_unlock)(m);
   return res;
 }
 
@@ -139,7 +185,13 @@ void InitializeInterceptors() {
   INTERCEPT_FUNCTION(pthread_mutex_init);
   INTERCEPT_FUNCTION(pthread_mutex_destroy);
   INTERCEPT_FUNCTION(pthread_mutex_lock);
+  INTERCEPT_FUNCTION(pthread_mutex_trylock);
   INTERCEPT_FUNCTION(pthread_mutex_unlock);
+  INTERCEPT_FUNCTION(pthread_spin_init);
+  INTERCEPT_FUNCTION(pthread_spin_destroy);
+  INTERCEPT_FUNCTION(pthread_spin_lock);
+  INTERCEPT_FUNCTION(pthread_spin_trylock);
+  INTERCEPT_FUNCTION(pthread_spin_unlock);
 }
 
 }  // namespace __tsan
