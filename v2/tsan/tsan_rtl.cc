@@ -118,10 +118,10 @@ static int RestoreStack(int tid, u64 epoch, uptr *stack, int n) {
   Trace* trace = 0;
   if (tctx->status == ThreadStatusRunning) {
     CHECK(tctx->thr);
-    trace = &tctx->thr->trace; 
+    trace = &tctx->thr->trace;
   } else if (tctx->status == ThreadStatusFinished
       || tctx->status == ThreadStatusDead) {
-    trace = &tctx->dead_info.trace; 
+    trace = &tctx->dead_info.trace;
   } else {
     return 0;
   }

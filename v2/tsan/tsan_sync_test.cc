@@ -27,9 +27,10 @@ TEST(Sync, Table) {
   SlabCache slab(&alloc);
   SyncTab tab;
   SyncVar *golden[kRange] = {};
+  unsigned seed = 0;
   for (int i = 0; i < kIters; i++) {
-    int addr = rand() % (kRange - 1) + 1;
-    if (rand() % 2) {
+    int addr = rand_r(&seed) % (kRange - 1) + 1;
+    if (rand_r(&seed) % 2) {
       // Get or add.
       SyncVar *v = tab.GetAndLock(&slab, addr, true);
       CHECK(golden[addr] == 0 || golden[addr] == v);
