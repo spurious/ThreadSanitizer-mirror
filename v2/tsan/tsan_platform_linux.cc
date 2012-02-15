@@ -1,4 +1,4 @@
-//===-- tsan_linux.cc -------------------------------------------*- C++ -*-===//
+//===-- tsan_platform_linux.cc ----------------------------------*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -12,7 +12,7 @@
 // Linux-specific code.
 //===----------------------------------------------------------------------===//
 
-#include "tsan_linux.h"
+#include "tsan_platform.h"
 #include "tsan_rtl.h"
 
 #include <stdio.h>

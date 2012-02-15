@@ -18,7 +18,7 @@ LIBTSAN_HEADERS=tsan_atomic.h \
 		tsan_interface.h \
 		tsan_interface_ann.h \
 		tsan_interface_inl.h \
-                tsan_linux.h \
+                tsan_platform.h \
                 tsan_mutex.h \
                 tsan_report.h \
                 tsan_rtl.h \
@@ -30,9 +30,9 @@ LIBTSAN_HEADERS=tsan_atomic.h \
 		tsan_thread.h
 
 LIBTSAN_OBJ=tsan_clock.o \
-            tsan_linux.o \
             tsan_mutex.o \
             tsan_interceptors.o \
+	    tsan_platform_linux.o \
             tsan_report.o \
             tsan_rtl.o \
             tsan_rtl_mutex.o \

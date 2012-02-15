@@ -1,4 +1,4 @@
-//===-- tsan_linux.h --------------------------------------------*- C++ -*-===//
+//===-- tsan_platform.h -----------------------------------------*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -9,7 +9,7 @@
 //
 // This file is a part of ThreadSanitizer (TSan), a race detector.
 //
-// Linux-specific code.
+// Platform-specific code.
 //===----------------------------------------------------------------------===//
 
 #ifndef TSAN_LINUX_H

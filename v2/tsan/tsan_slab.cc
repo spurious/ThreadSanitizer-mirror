@@ -11,7 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 #include "tsan_slab.h"
-#include "tsan_linux.h"
+
+#include "tsan_platform.h"
 #include "tsan_rtl.h"
 
 namespace __tsan {

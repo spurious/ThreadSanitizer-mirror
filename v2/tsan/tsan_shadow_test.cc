@@ -10,7 +10,7 @@
 // This file is a part of ThreadSanitizer (TSan), a race detector.
 //
 //===----------------------------------------------------------------------===//
-#include "tsan_linux.h"
+#include "tsan_platform.h"
 #include "gtest/gtest.h"
 
 namespace __tsan {

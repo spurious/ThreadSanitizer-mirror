@@ -12,7 +12,7 @@
 // Main file (entry points) for the TSan run-time.
 //===----------------------------------------------------------------------===//
 
-#include "tsan_linux.h"
+#include "tsan_platform.h"
 #include "tsan_rtl.h"
 #include "tsan_interface.h"
 #include "tsan_atomic.h"
