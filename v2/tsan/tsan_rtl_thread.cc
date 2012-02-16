@@ -117,6 +117,11 @@ void ThreadFinish(ThreadState *thr) {
   internal_memcpy(&tctx->dead_info.trace, &thr->trace, sizeof(thr->trace));
   tctx->epoch0 = thr->clock.get(tctx->tid);
 
+  if (kCollectStats) {
+    for (int i = 0; i < StatCnt; i++)
+      ctx->stat[i] += thr->stat[i];
+  }
+
   thr->~ThreadState();
   tctx->thr = 0;
 }

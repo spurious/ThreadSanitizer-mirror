@@ -55,4 +55,15 @@ bool OnReport(const ReportDesc *rep, bool suppressed) {
   return suppressed;
 }
 
+void PrintStats(u64 *stat) {
+  const char *name[StatCnt] = {};
+  name[StatMop] = "Memory accesses";
+  name[StatFuncEnter] = "Function entries";
+  name[StatFuncExit] = "Function exits";
+
+  Printf("Statistics:\n");
+  for (int i = 0; i < StatCnt; i++)
+    Printf("%-30s: %llu\n", name[i], stat[i]);
+}
+
 }  // namespace __tsan

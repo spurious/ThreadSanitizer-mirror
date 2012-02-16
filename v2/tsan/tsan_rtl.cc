@@ -106,6 +106,13 @@ void Initialize(ThreadState *thr) {
 int Finalize(ThreadState *thr) {
   Printf("ThreadSanitizer summary: reported %d warnings%s\n",
          ctx->nreported, ctx->nreported ? "" : ". Keep it up!");
+
+  if (kCollectStats) {
+    for (int i = 0; i < StatCnt; i++)
+      ctx->stat[i] += thr->stat[i];
+    PrintStats(ctx->stat);
+  }
+
   return ctx->nreported ? 66 : 0;
 }
 

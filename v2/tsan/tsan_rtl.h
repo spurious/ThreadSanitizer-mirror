@@ -134,6 +134,8 @@ struct Context {
   int dead_list_size;
   ThreadContext* dead_list_head;
   ThreadContext* dead_list_tail;
+
+  u64 stat[StatCnt];
 };
 
 void ALWAYS_INLINE INLINE StatInc(ThreadState *thr, StatType typ, u64 n = 1) {
