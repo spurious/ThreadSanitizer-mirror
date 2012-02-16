@@ -32,6 +32,7 @@ void MutexDestroy(ThreadState *thr, uptr pc, uptr addr) {
   if (s->owner_tid != -1)
     Printf("ThreadSanitizer WARNING: destroy of a locked mutex\n");
   s->clock.Free(&thr->clockslab);
+  s->read_clock.Free(&thr->clockslab);
   s->~SyncVar();
   thr->syncslab.Free(s);
 }
@@ -107,6 +108,7 @@ void MutexReadOrWriteUnlock(ThreadState *thr, uptr pc, uptr addr) {
     thr->clock.release(&s->read_clock, &thr->clockslab);
   } else if (s->owner_tid == thr->fast.tid) {
     // Seems to be write unlock.
+    s->owner_tid = -1;
     thr->fast.epoch++;
     TraceAddEvent(thr, thr->fast.epoch, EventTypeUnlock, addr);
     thr->clock.set(thr->fast.tid, thr->fast.epoch);

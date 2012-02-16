@@ -23,13 +23,17 @@ TEST(ThreadSanitizer, BasicMutex) {
   ScopedThread t;
   Mutex m;
   t.Create(m);
+
   t.Lock(m);
   t.Unlock(m);
+
   CHECK(t.TryLock(m));
   t.Unlock(m);
+
   t.Lock(m);
   CHECK(!t.TryLock(m));
   t.Unlock(m);
+
   t.Destroy(m);
 }
 
@@ -37,13 +41,54 @@ TEST(ThreadSanitizer, BasicSpinMutex) {
   ScopedThread t;
   Mutex m(Mutex::Spin);
   t.Create(m);
+
   t.Lock(m);
   t.Unlock(m);
+
   CHECK(t.TryLock(m));
   t.Unlock(m);
+
   t.Lock(m);
   CHECK(!t.TryLock(m));
   t.Unlock(m);
+
+  t.Destroy(m);
+}
+
+TEST(ThreadSanitizer, BasicRwMutex) {
+  ScopedThread t;
+  Mutex m(Mutex::RW);
+  t.Create(m);
+
+  t.Lock(m);
+  t.Unlock(m);
+
+  CHECK(t.TryLock(m));
+  t.Unlock(m);
+
+  t.Lock(m);
+  CHECK(!t.TryLock(m));
+  t.Unlock(m);
+
+  t.ReadLock(m);
+  t.ReadUnlock(m);
+
+  CHECK(t.TryReadLock(m));
+  t.ReadUnlock(m);
+
+  t.Lock(m);
+  CHECK(!t.TryReadLock(m));
+  t.Unlock(m);
+
+  t.ReadLock(m);
+  CHECK(!t.TryLock(m));
+  t.ReadUnlock(m);
+
+  t.ReadLock(m);
+  CHECK(t.TryReadLock(m));
+  t.ReadUnlock(m);
+  t.ReadUnlock(m);
+
   t.Destroy(m);
 }
 

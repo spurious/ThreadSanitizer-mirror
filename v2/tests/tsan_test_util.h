@@ -33,7 +33,7 @@ class MemLoc {
 
 class Mutex {
  public:
-  enum Type { Normal, Spin };
+  enum Type { Normal, Spin, RW };
 
   explicit Mutex(Type type = Normal);
   ~Mutex();
@@ -44,6 +44,9 @@ class Mutex {
   void Lock();
   bool TryLock();
   void Unlock();
+  void ReadLock();
+  bool TryReadLock();
+  void ReadUnlock();
 
  private:
   // Placeholder for pthread_mutex_t, CRITICAL_SECTION or whatever.
@@ -56,9 +59,6 @@ class Mutex {
 };
 
 // A thread is started in CTOR and joined in DTOR.
-// The events (like Read, Write, etc) are passed to ScopedThread via a global
-// queue, so that the order of the events observed by different threads is
-// fixed.
 class ScopedThread {
  public:
   explicit ScopedThread(bool detached = false, bool main = false);
@@ -99,6 +99,9 @@ class ScopedThread {
   void Lock(const Mutex &m);
   bool TryLock(const Mutex &m);
   void Unlock(const Mutex &m);
+  void ReadLock(const Mutex &m);
+  bool TryReadLock(const Mutex &m);
+  void ReadUnlock(const Mutex &m);
  private:
   struct Impl;
   Impl *impl_;
