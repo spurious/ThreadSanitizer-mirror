@@ -53,14 +53,6 @@ void Report(const char *format, ...) {
   va_end(args);
 }
 
-void internal_memset(void *ptr, int c, uptr size) {
-  memset(ptr, c, size);  // FIXME: use REAL(memset) or a custom one.
-}
-
-void internal_memcpy(void *dst, const void *src, uptr size) {
-  memcpy(dst, src, size);  // FIXME: use REAL(memcpy) or a custom one.
-}
-
 void Die() {
   _exit(1);
 }

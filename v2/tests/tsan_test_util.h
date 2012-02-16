@@ -104,6 +104,11 @@ class ScopedThread {
   void ReadLock(const Mutex &m);
   bool TryReadLock(const Mutex &m);
   void ReadUnlock(const Mutex &m);
+
+  const ReportDesc *Memcpy(void *dst, const void *src, int size,
+                           bool expect_race = false);
+  const ReportDesc *Memset(void *dst, int val, int size,
+                           bool expect_race = false);
  private:
   struct Impl;
   Impl *impl_;

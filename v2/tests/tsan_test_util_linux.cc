@@ -26,18 +26,9 @@
 #include <string.h>
 #include <unistd.h>
 
-using __tsan::memory_order_relaxed;
-using __tsan::memory_order_consume;
-using __tsan::memory_order_acquire;
-using __tsan::memory_order_release;
-using __tsan::memory_order_acq_rel;
-using __tsan::memory_order_seq_cst;
-using __tsan::atomic_uintptr_t;
-using __tsan::atomic_load;
-using __tsan::atomic_store;
-using __tsan::atomic_fetch_add;
+using namespace __tsan;  // NOLINT
 
-static __thread const ReportDesc *g_report;
+static __thread const ReportDesc *g_report = 0;
 
 static void *BeforeInitThread(void *param) {
   (void)param;
@@ -191,19 +182,23 @@ struct Event {
     MUTEX_READLOCK,
     MUTEX_TRYREADLOCK,
     MUTEX_READUNLOCK,
+    MEMCPY,
+    MEMSET
   };
   Type type;
   void *ptr;
-  int arg;
+  uptr arg;
+  uptr arg2;
   bool res;
   bool expect_report;
   __tsan::ReportType report_type;
   const ReportDesc *rep;
 
-  Event(Type type, const void *ptr = 0, int arg = 0)
+  Event(Type type, const void *ptr = 0, uptr arg = 0, uptr arg2 = 0)
     : type(type)
     , ptr(const_cast<void*>(ptr))
     , arg(arg)
+    , arg2(arg2)
     , res()
     , expect_report()
     , report_type()
@@ -283,6 +278,12 @@ void ScopedThread::Impl::HandleEvent(Event *ev) {
     break;
   case Event::MUTEX_READUNLOCK:
     static_cast<Mutex*>(ev->ptr)->ReadUnlock();
+    break;
+  case Event::MEMCPY:
+    memcpy(ev->ptr, (void*)ev->arg, ev->arg2);
+    break;
+  case Event::MEMSET:
+    memset(ev->ptr, ev->arg, ev->arg2);
     break;
   default: CHECK(0);
   }
@@ -365,7 +366,6 @@ void ScopedThread::Detach() {
 
 const ReportDesc *ScopedThread::Access(void *addr, bool is_write,
                                        int size, bool expect_race) {
-  (void)expect_race;
   Event event(is_write ? Event::WRITE : Event::READ, addr, size);
   if (expect_race)
     event.ExpectReport(__tsan::ReportTypeRace);
@@ -423,4 +423,23 @@ bool ScopedThread::TryReadLock(const Mutex &m) {
 void ScopedThread::ReadUnlock(const Mutex &m) {
   Event event(Event::MUTEX_READUNLOCK, &m);
   impl_->send(&event);
+}
+
+const ReportDesc *ScopedThread::Memcpy(void *dst, const void *src, int size,
+                                       bool expect_race) {
+  Event event(Event::MEMCPY, dst, (uptr)src, size);
+
+  if (expect_race)
+    event.ExpectReport(__tsan::ReportTypeRace);
+  impl_->send(&event);
+  return event.rep;
+}
+
+const ReportDesc *ScopedThread::Memset(void *dst, int val, int size,
+                                       bool expect_race) {
+  Event event(Event::MEMSET, dst, val, size);
+  if (expect_race)
+    event.ExpectReport(__tsan::ReportTypeRace);
+  impl_->send(&event);
+  return event.rep;
 }

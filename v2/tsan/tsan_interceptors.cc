@@ -48,32 +48,43 @@ static void finalize() {
     _exit(status);
 }
 
-extern "C" void *malloc(uptr size) {
+INTERCEPTOR(void*, malloc, uptr size) {
   ScopedInterceptor si;
   void *p = __libc_malloc(size);
   return p;
 }
 
-extern "C" void *calloc(uptr size, uptr n) {
+INTERCEPTOR(void*, calloc, uptr size, uptr n) {
   ScopedInterceptor si;
   void *p = __libc_calloc(size, n);
   return p;
 }
 
-extern "C" void *realloc(void *p, uptr size) {
+INTERCEPTOR(void*, realloc, void *p, uptr size) {
   ScopedInterceptor si;
   void *p2 = __libc_realloc(p, size);
   return p2;
 }
 
-extern "C" void free(void *p) {
+INTERCEPTOR(void, free, void *p) {
   ScopedInterceptor si;
   __libc_free(p);
 }
 
-extern "C" void cfree(void *p) {
+INTERCEPTOR(void, cfree, void *p) {
   ScopedInterceptor si;
   __libc_free(p);
+}
+
+INTERCEPTOR(void*, memset, void *dst, int v, uptr size) {
+  MemoryAccessRange(cur_thread(), CALLERPC, (uptr)dst, size, true);
+  return REAL(memset)(dst, v, size);
+}
+
+INTERCEPTOR(void*, memcpy, void *dst, const void *src, uptr size) {
+  MemoryAccessRange(cur_thread(), CALLERPC, (uptr)dst, size, true);
+  MemoryAccessRange(cur_thread(), CALLERPC, (uptr)src, size, false);
+  return REAL(memcpy)(dst, src, size);
 }
 
 // int posix_memalign(void **memptr, size_t alignment, size_t size);
@@ -344,6 +355,15 @@ void InitializeInterceptors() {
     Die();
   }
 
+  INTERCEPT_FUNCTION(malloc);
+  INTERCEPT_FUNCTION(calloc);
+  INTERCEPT_FUNCTION(realloc);
+  INTERCEPT_FUNCTION(free);
+  INTERCEPT_FUNCTION(cfree);
+
+  INTERCEPT_FUNCTION(memset);
+  INTERCEPT_FUNCTION(memcpy);
+
   INTERCEPT_FUNCTION(pthread_create);
   INTERCEPT_FUNCTION(pthread_join);
   INTERCEPT_FUNCTION(pthread_detach);
@@ -370,6 +390,14 @@ void InitializeInterceptors() {
   INTERCEPT_FUNCTION(pthread_rwlock_trywrlock);
   INTERCEPT_FUNCTION(pthread_rwlock_timedwrlock);
   INTERCEPT_FUNCTION(pthread_rwlock_unlock);
+}
+
+void internal_memset(void *ptr, int c, uptr size) {
+  REAL(memset)(ptr, c, size);
+}
+
+void internal_memcpy(void *dst, const void *src, uptr size) {
+  REAL(memcpy)(dst, src, size);
 }
 
 }  // namespace __tsan

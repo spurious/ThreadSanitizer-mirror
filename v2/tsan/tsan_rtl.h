@@ -173,8 +173,11 @@ void Die() NORETURN;
 void Initialize(ThreadState *thr);
 int Finalize(ThreadState *thr);
 
-void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
+bool MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
                   int size, bool is_write);
+
+void MemoryAccessRange(ThreadState *thr, uptr pc, uptr addr,
+                       uptr size, bool is_write);
 
 int ThreadCreate(ThreadState *thr, uptr uid, bool detached);
 void ThreadStart(ThreadState *thr, int tid);

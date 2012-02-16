@@ -303,7 +303,7 @@ static bool MemoryAccess1(ThreadState *thr, ThreadState::Fast fast_state,
 }
 
 ALWAYS_INLINE
-void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
+bool MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
                   int size, bool is_write) {
   StatInc(thr, StatMop);
   u64 *shadow_mem = (u64*)MemToShadow(addr);
@@ -368,7 +368,7 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
     u64 *sp = &shadow_mem[(i + off) % kShadowCnt];
     if (MemoryAccess1(thr, fast_state, synch_epoch, s0, sp, is_write,
                       replaced, racy_access))
-      return;
+      return false;
   }
 
   // find some races?
@@ -377,11 +377,31 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
   // we did not find any races and had already stored
   // the current access info, so we are done
   if (LIKELY(replaced))
-    return;
+    return racy_access.raw != 0;
   // choose a random candidate slot and replace it
   unsigned i = fast_state.epoch % kShadowCnt;
   StoreShadow(shadow_mem+i, s0.raw);
   StatInc(thr, StatShadowReplace);
+  return racy_access.raw != 0;
+}
+
+void MemoryAccessRange(ThreadState *thr, uptr pc, uptr addr,
+                       uptr size, bool is_write) {
+  // Handle unaligned beginning, if any.
+  for (; addr % 8 && size; addr++, size--) {
+    if (MemoryAccess(thr, pc, addr, 1, is_write))
+      return;
+  }
+  // Handle middle part, if any.
+  for (; size >= 8; addr += 8, size -= 8) {
+    if (MemoryAccess(thr, pc, addr, 8, is_write))
+      return;
+  }
+  // Handle ending, if any.
+  for (; size; addr++, size--) {
+    if (MemoryAccess(thr, pc, addr, 1, is_write))
+      return;
+  }
 }
 
 void FuncEntry(ThreadState *thr, uptr pc) {
