@@ -31,9 +31,27 @@ using __tsan::ThreadStart;
 using __tsan::ThreadFinish;
 using __tsan::ThreadDetach;
 using __tsan::ThreadJoin;
+using __tsan::Printf;
+using __tsan::Die;
 
 extern "C" int pthread_attr_getdetachstate(void *attr, int *v);
+extern "C" int pthread_key_create(unsigned *key, void (*destructor)(void* v));
+extern "C" int pthread_setspecific(unsigned key, const void *v);
 extern "C" int pthread_yield();
+
+static unsigned g_thread_finalize_key;
+
+static void thread_finalize(void *v) {
+  uptr iter = (uptr)v;
+  if (iter > 1) {
+    if (pthread_setspecific(g_thread_finalize_key, (void*)(iter - 1))) {
+      Printf("ThreadSanitizer: failed to set thread key\n");
+      Die();
+    }
+    return;
+  }
+  ThreadFinish(cur_thread());
+}
 
 struct ThreadParam {
   void* (*callback)(void *arg);
@@ -46,12 +64,15 @@ static void *tsan_thread_start(void *arg) {
   void* (*callback)(void *arg) = p->callback;
   void *param = p->param;
   int tid = 0;
+  if (pthread_setspecific(g_thread_finalize_key, (void*)4)) {
+    Printf("ThreadSanitizer: failed to set thread key\n");
+    Die();
+  }
   while ((tid = atomic_load(&p->tid, memory_order_acquire)) == 0)
     pthread_yield();
   atomic_store(&p->tid, 0, memory_order_release);
   ThreadStart(cur_thread(), tid);
   void *res = callback(param);
-  ThreadFinish(cur_thread());
   return res;
 }
 
@@ -270,6 +291,11 @@ INTERCEPTOR(int, pthread_rwlock_unlock, void *m) {
 namespace __tsan {
 
 void InitializeInterceptors() {
+  if (pthread_key_create(&g_thread_finalize_key, &thread_finalize)) {
+    Printf("ThreadSanitizer: failed to create thread key\n");
+    Die();
+  }
+
   INTERCEPT_FUNCTION(pthread_create);
   INTERCEPT_FUNCTION(pthread_join);
   INTERCEPT_FUNCTION(pthread_detach);

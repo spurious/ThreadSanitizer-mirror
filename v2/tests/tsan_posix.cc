@@ -30,7 +30,7 @@ struct thread_key {
 static void thread_secific_dtor(void *v) {
   thread_key *k = (thread_key *)v;
   EXPECT_EQ(pthread_mutex_lock(k->mtx), 0);
-  k->cnt++;
+  (*k->cnt)++;
   __tsan_write4(&k->cnt);
   EXPECT_EQ(pthread_mutex_unlock(k->mtx), 0);
   if (k->val == 42) {
@@ -45,7 +45,7 @@ static void thread_secific_dtor(void *v) {
 
 static void *dtors_thread(void *p) {
   thread_key *k = (thread_key *)p;
-  pthread_setspecific(k->key, k);
+  EXPECT_EQ(pthread_setspecific(k->key, k), 0);
   return 0;
 }
 
@@ -67,5 +67,5 @@ TEST(Posix, ThreadSpecificDtors) {
   EXPECT_EQ(pthread_join(th[1], 0), 0);
   EXPECT_EQ(pthread_join(th[2], 0), 0);
   EXPECT_EQ(pthread_key_delete(key), 0);
-  EXPECT_EQ(cnt, 6);
+  EXPECT_EQ(6, cnt);
 }
