@@ -18,28 +18,54 @@
 
 #define CALLERPC ((__tsan::uptr)__builtin_return_address(0))
 
-using __tsan::cur_thread;
-using __tsan::uptr;
-using __tsan::atomic_uintptr_t;
-using __tsan::atomic_store;
-using __tsan::atomic_load;
-using __tsan::memory_order_relaxed;
-using __tsan::memory_order_release;
-using __tsan::memory_order_acquire;
-using __tsan::ThreadCreate;
-using __tsan::ThreadStart;
-using __tsan::ThreadFinish;
-using __tsan::ThreadDetach;
-using __tsan::ThreadJoin;
-using __tsan::Printf;
-using __tsan::Die;
+using namespace __tsan;  // NOLINT
 
 extern "C" int pthread_attr_getdetachstate(void *attr, int *v);
 extern "C" int pthread_key_create(unsigned *key, void (*destructor)(void* v));
 extern "C" int pthread_setspecific(unsigned key, const void *v);
 extern "C" int pthread_yield();
+extern "C" void *__libc_malloc(uptr size);
+extern "C" void *__libc_calloc(uptr nmemb, uptr size);
+extern "C" void __libc_free(void *ptr);
+extern "C" void *__libc_realloc(void *ptr, uptr size);
 
 static unsigned g_thread_finalize_key;
+
+struct ScopedInterceptor {
+  ScopedInterceptor() {
+    __tsan_init();
+  }
+
+  ~ScopedInterceptor() {
+  }
+};
+
+void *malloc(uptr size) {
+  ScopedInterceptor si;
+  void *p = __libc_malloc(size);
+  return p;
+}
+
+INTERCEPTOR(void*, calloc, uptr size, uptr n) {
+  ScopedInterceptor si;
+  void *p = __libc_calloc(size, n);
+  return p;
+}
+
+INTERCEPTOR(void*, realloc, void *p, uptr size) {
+  ScopedInterceptor si;
+  void *p2 = __libc_realloc(p, size);
+  return p2;
+}
+
+INTERCEPTOR(void, free, void *p) {
+  ScopedInterceptor si;
+  __libc_free(p);
+}
+
+// int posix_memalign(void **memptr, size_t alignment, size_t size);
+// void *valloc(size_t size);
+// void *memalign(size_t boundary, size_t size);
 
 static void thread_finalize(void *v) {
   uptr iter = (uptr)v;
@@ -78,7 +104,7 @@ static void *tsan_thread_start(void *arg) {
 
 INTERCEPTOR(int, pthread_create,
     void *th, void *attr, void *(*callback)(void*), void * param) {
-  __tsan_init();
+  ScopedInterceptor si;
   int detached = 0;
   if (attr)
     pthread_attr_getdetachstate(attr, &detached);
@@ -98,7 +124,7 @@ INTERCEPTOR(int, pthread_create,
 }
 
 INTERCEPTOR(int, pthread_join, void *th, void **ret) {
-  __tsan_init();
+  ScopedInterceptor si;
   int res = REAL(pthread_join)(th, ret);
   if (res == 0) {
     ThreadJoin(cur_thread(), (uptr)th);
@@ -107,7 +133,7 @@ INTERCEPTOR(int, pthread_join, void *th, void **ret) {
 }
 
 INTERCEPTOR(int, pthread_detach, void *th) {
-  __tsan_init();
+  ScopedInterceptor si;
   int res = REAL(pthread_detach)(th);
   if (res == 0) {
     ThreadDetach(cur_thread(), (uptr)th);
@@ -116,7 +142,7 @@ INTERCEPTOR(int, pthread_detach, void *th) {
 }
 
 INTERCEPTOR(int, pthread_mutex_init, void *m, const void *a) {
-  __tsan_init();
+  ScopedInterceptor si;
   int res = REAL(pthread_mutex_init)(m, a);
   if (res == 0) {
     MutexCreate(cur_thread(), CALLERPC, (uptr)m);
@@ -125,7 +151,7 @@ INTERCEPTOR(int, pthread_mutex_init, void *m, const void *a) {
 }
 
 INTERCEPTOR(int, pthread_mutex_destroy, void *m) {
-  __tsan_init();
+  ScopedInterceptor si;
   int res = REAL(pthread_mutex_destroy)(m);
   if (res == 0) {
     MutexDestroy(cur_thread(), CALLERPC, (uptr)m);
@@ -134,7 +160,7 @@ INTERCEPTOR(int, pthread_mutex_destroy, void *m) {
 }
 
 INTERCEPTOR(int, pthread_mutex_lock, void *m) {
-  __tsan_init();
+  ScopedInterceptor si;
   int res = REAL(pthread_mutex_lock)(m);
   if (res == 0) {
     MutexLock(cur_thread(), CALLERPC, (uptr)m);
@@ -143,7 +169,7 @@ INTERCEPTOR(int, pthread_mutex_lock, void *m) {
 }
 
 INTERCEPTOR(int, pthread_mutex_trylock, void *m) {
-  __tsan_init();
+  ScopedInterceptor si;
   int res = REAL(pthread_mutex_trylock)(m);
   if (res == 0) {
     MutexLock(cur_thread(), CALLERPC, (uptr)m);
@@ -152,7 +178,7 @@ INTERCEPTOR(int, pthread_mutex_trylock, void *m) {
 }
 
 INTERCEPTOR(int, pthread_mutex_timedlock, void *m, void *abstime) {
-  __tsan_init();
+  ScopedInterceptor si;
   int res = REAL(pthread_mutex_timedlock)(m, abstime);
   if (res == 0) {
     MutexLock(cur_thread(), CALLERPC, (uptr)m);
@@ -161,13 +187,14 @@ INTERCEPTOR(int, pthread_mutex_timedlock, void *m, void *abstime) {
 }
 
 INTERCEPTOR(int, pthread_mutex_unlock, void *m) {
+  ScopedInterceptor si;
   MutexUnlock(cur_thread(), CALLERPC, (uptr)m);
   int res = REAL(pthread_mutex_unlock)(m);
   return res;
 }
 
 INTERCEPTOR(int, pthread_spin_init, void *m, int pshared) {
-  __tsan_init();
+  ScopedInterceptor si;
   int res = REAL(pthread_spin_init)(m, pshared);
   if (res == 0) {
     MutexCreate(cur_thread(), CALLERPC, (uptr)m);
@@ -176,7 +203,7 @@ INTERCEPTOR(int, pthread_spin_init, void *m, int pshared) {
 }
 
 INTERCEPTOR(int, pthread_spin_destroy, void *m) {
-  __tsan_init();
+  ScopedInterceptor si;
   int res = REAL(pthread_spin_destroy)(m);
   if (res == 0) {
     MutexDestroy(cur_thread(), CALLERPC, (uptr)m);
@@ -185,7 +212,7 @@ INTERCEPTOR(int, pthread_spin_destroy, void *m) {
 }
 
 INTERCEPTOR(int, pthread_spin_lock, void *m) {
-  __tsan_init();
+  ScopedInterceptor si;
   int res = REAL(pthread_spin_lock)(m);
   if (res == 0) {
     MutexLock(cur_thread(), CALLERPC, (uptr)m);
@@ -194,7 +221,7 @@ INTERCEPTOR(int, pthread_spin_lock, void *m) {
 }
 
 INTERCEPTOR(int, pthread_spin_trylock, void *m) {
-  __tsan_init();
+  ScopedInterceptor si;
   int res = REAL(pthread_spin_trylock)(m);
   if (res == 0) {
     MutexLock(cur_thread(), CALLERPC, (uptr)m);
@@ -203,14 +230,14 @@ INTERCEPTOR(int, pthread_spin_trylock, void *m) {
 }
 
 INTERCEPTOR(int, pthread_spin_unlock, void *m) {
-  __tsan_init();
+  ScopedInterceptor si;
   MutexUnlock(cur_thread(), CALLERPC, (uptr)m);
   int res = REAL(pthread_spin_unlock)(m);
   return res;
 }
 
 INTERCEPTOR(int, pthread_rwlock_init, void *m, void *a) {
-  __tsan_init();
+  ScopedInterceptor si;
   int res = REAL(pthread_rwlock_init)(m, a);
   if (res == 0) {
     MutexCreate(cur_thread(), CALLERPC, (uptr)m);
@@ -219,7 +246,7 @@ INTERCEPTOR(int, pthread_rwlock_init, void *m, void *a) {
 }
 
 INTERCEPTOR(int, pthread_rwlock_destroy, void *m) {
-  __tsan_init();
+  ScopedInterceptor si;
   int res = REAL(pthread_rwlock_destroy)(m);
   if (res == 0) {
     MutexDestroy(cur_thread(), CALLERPC, (uptr)m);
@@ -228,7 +255,7 @@ INTERCEPTOR(int, pthread_rwlock_destroy, void *m) {
 }
 
 INTERCEPTOR(int, pthread_rwlock_rdlock, void *m) {
-  __tsan_init();
+  ScopedInterceptor si;
   int res = REAL(pthread_rwlock_rdlock)(m);
   if (res == 0) {
     MutexReadLock(cur_thread(), CALLERPC, (uptr)m);
@@ -237,7 +264,7 @@ INTERCEPTOR(int, pthread_rwlock_rdlock, void *m) {
 }
 
 INTERCEPTOR(int, pthread_rwlock_tryrdlock, void *m) {
-  __tsan_init();
+  ScopedInterceptor si;
   int res = REAL(pthread_rwlock_tryrdlock)(m);
   if (res == 0) {
     MutexReadLock(cur_thread(), CALLERPC, (uptr)m);
@@ -246,7 +273,7 @@ INTERCEPTOR(int, pthread_rwlock_tryrdlock, void *m) {
 }
 
 INTERCEPTOR(int, pthread_rwlock_timedrdlock, void *m, void *abstime) {
-  __tsan_init();
+  ScopedInterceptor si;
   int res = REAL(pthread_rwlock_timedrdlock)(m, abstime);
   if (res == 0) {
     MutexReadLock(cur_thread(), CALLERPC, (uptr)m);
@@ -255,7 +282,7 @@ INTERCEPTOR(int, pthread_rwlock_timedrdlock, void *m, void *abstime) {
 }
 
 INTERCEPTOR(int, pthread_rwlock_wrlock, void *m) {
-  __tsan_init();
+  ScopedInterceptor si;
   int res = REAL(pthread_rwlock_wrlock)(m);
   if (res == 0) {
     MutexLock(cur_thread(), CALLERPC, (uptr)m);
@@ -264,7 +291,7 @@ INTERCEPTOR(int, pthread_rwlock_wrlock, void *m) {
 }
 
 INTERCEPTOR(int, pthread_rwlock_trywrlock, void *m) {
-  __tsan_init();
+  ScopedInterceptor si;
   int res = REAL(pthread_rwlock_trywrlock)(m);
   if (res == 0) {
     MutexLock(cur_thread(), CALLERPC, (uptr)m);
@@ -273,7 +300,7 @@ INTERCEPTOR(int, pthread_rwlock_trywrlock, void *m) {
 }
 
 INTERCEPTOR(int, pthread_rwlock_timedwrlock, void *m, void *abstime) {
-  __tsan_init();
+  ScopedInterceptor si;
   int res = REAL(pthread_rwlock_timedwrlock)(m, abstime);
   if (res == 0) {
     MutexLock(cur_thread(), CALLERPC, (uptr)m);
@@ -282,7 +309,7 @@ INTERCEPTOR(int, pthread_rwlock_timedwrlock, void *m, void *abstime) {
 }
 
 INTERCEPTOR(int, pthread_rwlock_unlock, void *m) {
-  __tsan_init();
+  ScopedInterceptor si;
   MutexReadOrWriteUnlock(cur_thread(), CALLERPC, (uptr)m);
   int res = REAL(pthread_rwlock_unlock)(m);
   return res;
