@@ -99,7 +99,7 @@ void Initialize(ThreadState *thr) {
 
   // Initialize thread 0.
   ctx->thread_seq = 0;
-  int tid = ThreadCreate(thr, 0, true);
+  int tid = ThreadCreate(thr, 0, 0, true);
   CHECK_EQ(tid, 0);
   ThreadStart(thr, tid);
 }
@@ -160,7 +160,7 @@ static int RestoreStack(int tid, u64 epoch, uptr *stack, int n) {
     }
   }
   pos++;
-  for (u64 i = 0; i <= pos / 2; i++) {
+  for (u64 i = 0; i < pos / 2; i++) {
     uptr pc = stack[i];
     stack[i] = stack[pos - i - 1];
     stack[pos - i - 1] = pc;

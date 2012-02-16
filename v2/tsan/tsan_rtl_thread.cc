@@ -38,7 +38,7 @@ static void ThreadDead(ThreadState *thr, ThreadContext *tctx) {
   ctx->dead_list_size++;
 }
 
-int ThreadCreate(ThreadState *thr, uptr uid, bool detached) {
+int ThreadCreate(ThreadState *thr, uptr pc, uptr uid, bool detached) {
   Lock l(&ctx->thread_mtx);
   int tid = -1;
   ThreadContext *tctx = 0;
@@ -125,7 +125,7 @@ void ThreadFinish(ThreadState *thr) {
   tctx->thr = 0;
 }
 
-void ThreadJoin(ThreadState *thr, uptr uid) {
+void ThreadJoin(ThreadState *thr, uptr pc, uptr uid) {
   DPrintf("#%d: ThreadJoin uid=%lu\n",
           (int)thr->tid, uid);
   Lock l(&ctx->thread_mtx);
@@ -149,7 +149,7 @@ void ThreadJoin(ThreadState *thr, uptr uid) {
   ThreadDead(thr, tctx);
 }
 
-void ThreadDetach(ThreadState *thr, uptr uid) {
+void ThreadDetach(ThreadState *thr, uptr pc, uptr uid) {
   Lock l(&ctx->thread_mtx);
   ThreadContext *tctx = 0;
   for (int tid = 0; tid < kMaxTid; tid++) {

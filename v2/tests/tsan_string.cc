@@ -67,6 +67,17 @@ TEST(ThreadSanitizer, MemcpyRace3) {
   t2.Memcpy(data1, data2, 10, true);
 }
 
+TEST(ThreadSanitizer, MemcpyStack) {
+  char data[10] = {};
+  char data1[10] = {};
+  ScopedThread t1, t2;
+  t1.Memcpy(data, data1, 10);
+  const ReportDesc *rep = t2.Memcpy(data, data1, 10, true);
+  EXPECT_EQ(rep->mop[0].addr, (uptr)data);
+  EXPECT_EQ(rep->mop[0].stack.cnt, 2);
+  EXPECT_EQ(rep->mop[0].stack.entry[0].pc, (uptr)memcpy);
+}
+
 TEST(ThreadSanitizer, MemsetRace1) {
   char data[10] = {};
   ScopedThread t1, t2;

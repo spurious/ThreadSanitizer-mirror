@@ -164,15 +164,17 @@ int Finalize(ThreadState *thr);
 
 bool MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
                   int size, bool is_write);
-
 void MemoryAccessRange(ThreadState *thr, uptr pc, uptr addr,
                        uptr size, bool is_write);
 
-int ThreadCreate(ThreadState *thr, uptr uid, bool detached);
+void FuncEntry(ThreadState *thr, uptr pc);
+void FuncExit(ThreadState *thr);
+
+int ThreadCreate(ThreadState *thr, uptr pc, uptr uid, bool detached);
 void ThreadStart(ThreadState *thr, int tid);
 void ThreadFinish(ThreadState *thr);
-void ThreadJoin(ThreadState *thr, uptr uid);
-void ThreadDetach(ThreadState *thr, uptr uid);
+void ThreadJoin(ThreadState *thr, uptr pc, uptr uid);
+void ThreadDetach(ThreadState *thr, uptr pc, uptr uid);
 
 void MutexCreate(ThreadState *thr, uptr pc, uptr addr);
 void MutexDestroy(ThreadState *thr, uptr pc, uptr addr);
