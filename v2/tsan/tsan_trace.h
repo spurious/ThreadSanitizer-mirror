@@ -19,7 +19,7 @@
 namespace __tsan {
 
 const int kTraceParts = 8;
-const int kTraceSize = 1024;
+const int kTraceSize = 16*1024;
 
 // Must fit into 3 bits.
 enum EventType {

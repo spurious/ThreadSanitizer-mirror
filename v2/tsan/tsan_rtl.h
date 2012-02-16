@@ -61,19 +61,8 @@ struct Context;
 
 // This struct is stored in TLS.
 struct ThreadState {
-  // The most performance-critical fields should fit into the
-  // first 64 bit.
-  union Fast {
-    struct {
-      u64 tid              : 16;
-      u64 epoch            : 40;
-      u64 ignoring_reads   : 1;
-      u64 ignoring_writes  : 1;
-    };
-    u64 raw;
-  };
-
-  Fast fast;  // Should be the first field.
+  const int tid;
+  u64 epoch;
   // Synch epoch represents the threads's epoch before the last synchronization
   // action. It allows to reduce number of shadow state updates.
   // For example, fast_synch_epoch=100, last write to addr X was at epoch=150,
@@ -92,7 +81,7 @@ struct ThreadState {
   ThreadClock clock;
   u64 stat[StatCnt];
 
-  explicit ThreadState(Context *ctx);
+  explicit ThreadState(Context *ctx, int tid);
 };
 
 extern Context *ctx;

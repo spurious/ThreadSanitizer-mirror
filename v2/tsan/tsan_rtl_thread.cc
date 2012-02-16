@@ -23,7 +23,7 @@ const int kThreadQuarantineSize = 100;
 static void ThreadDead(ThreadState *thr, ThreadContext *tctx) {
   CHECK(tctx->status == ThreadStatusRunning
       || tctx->status == ThreadStatusFinished);
-  DPrintf("#%d: ThreadDead uid=%lu\n", (int)thr->fast.tid, tctx->uid);
+  DPrintf("#%d: ThreadDead uid=%lu\n", (int)thr->tid, tctx->uid);
   tctx->status = ThreadStatusDead;
   tctx->uid = 0;
   tctx->sync.Free(&thr->clockslab);
@@ -68,15 +68,15 @@ int ThreadCreate(ThreadState *thr, uptr uid, bool detached) {
   }
   CHECK(tctx != 0 && tid >= 0 && tid < kMaxTid);
   DPrintf("#%d: ThreadCreate tid=%d uid=%lu\n",
-          (int)thr->fast.tid, tid, uid);
+          (int)thr->tid, tid, uid);
   CHECK(tctx->status == ThreadStatusInvalid);
   tctx->status = ThreadStatusCreated;
   tctx->thr = 0;
   tctx->uid = uid;
   tctx->detached = detached;
   if (tid) {
-    thr->clock.set(thr->fast.tid, thr->fast.epoch);
-    thr->fast_synch_epoch = thr->fast.epoch;
+    thr->clock.set(thr->tid, thr->epoch);
+    thr->fast_synch_epoch = thr->epoch;
     thr->clock.release(&tctx->sync, &thr->clockslab);
   }
   return tid;
@@ -87,11 +87,10 @@ void ThreadStart(ThreadState *thr, int tid) {
   ThreadContext *tctx = ctx->threads[tid];
   CHECK(tctx && tctx->status == ThreadStatusCreated);
   tctx->status = ThreadStatusRunning;
-  new(thr) ThreadState(ctx);
+  new(thr) ThreadState(ctx, tid);
   tctx->thr = thr;
-  thr->fast.tid = tid;
   tctx->epoch0++;
-  thr->fast.epoch = tctx->epoch0;
+  thr->epoch = tctx->epoch0;
   thr->fast_synch_epoch = tctx->epoch0;
   thr->clock.set(tid, tctx->epoch0);
   thr->clock.acquire(&tctx->sync);
@@ -99,13 +98,13 @@ void ThreadStart(ThreadState *thr, int tid) {
 
 void ThreadFinish(ThreadState *thr) {
   Lock l(&ctx->thread_mtx);
-  ThreadContext *tctx = ctx->threads[thr->fast.tid];
+  ThreadContext *tctx = ctx->threads[thr->tid];
   CHECK(tctx && tctx->status == ThreadStatusRunning);
   if (tctx->detached) {
     ThreadDead(thr, tctx);
   } else {
-    thr->clock.set(thr->fast.tid, thr->fast.epoch);
-    thr->fast_synch_epoch = thr->fast.epoch;
+    thr->clock.set(thr->tid, thr->epoch);
+    thr->fast_synch_epoch = thr->epoch;
     thr->clock.release(&tctx->sync, &thr->clockslab);
     tctx->status = ThreadStatusFinished;
   }
@@ -128,7 +127,7 @@ void ThreadFinish(ThreadState *thr) {
 
 void ThreadJoin(ThreadState *thr, uptr uid) {
   DPrintf("#%d: ThreadJoin uid=%lu\n",
-          (int)thr->fast.tid, uid);
+          (int)thr->tid, uid);
   Lock l(&ctx->thread_mtx);
   ThreadContext *tctx = 0;
   int tid = 0;

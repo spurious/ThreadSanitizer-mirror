@@ -57,8 +57,8 @@ void CheckFailed(const char *file, int line, const char *cond) {
 
 void TraceSwitch(ThreadState *thr) {
   Lock l(&thr->trace.mtx);
-  int trace = (thr->fast.epoch / (kTraceSize / kTraceParts)) % kTraceParts;
-  thr->trace.headers[trace].epoch0 = thr->fast.epoch;
+  int trace = (thr->epoch / (kTraceSize / kTraceParts)) % kTraceParts;
+  thr->trace.headers[trace].epoch0 = thr->epoch;
 }
 
 Context::Context()
@@ -67,8 +67,9 @@ Context::Context()
   , nreported() {
 }
 
-ThreadState::ThreadState(Context *ctx)
-  : clockslab(&ctx->clockslab)
+ThreadState::ThreadState(Context *ctx, int tid)
+  : tid(tid)
+  , clockslab(&ctx->clockslab)
   , syncslab(&ctx->syncslab) {
 }
 
@@ -227,7 +228,7 @@ static void StoreShadow(u64 *p, u64 raw) {
 }
 
 ALWAYS_INLINE
-static bool MemoryAccess1(ThreadState *thr, ThreadState::Fast fast_state,
+static bool MemoryAccess1(ThreadState *thr, int tid, u64 epoch,
                           u64 synch_epoch, Shadow s0, u64 *sp, bool is_write,
                           bool &replaced, Shadow &racy_access) {
   Shadow s = LoadShadow(sp);
@@ -243,7 +244,7 @@ static bool MemoryAccess1(ThreadState *thr, ThreadState::Fast fast_state,
   if (s0.addr0 == s.addr0 && s0.addr1 == s.addr1) {
     StatInc(thr, StatShadowSameSize);
     // same thread?
-    if (s.tid == fast_state.tid) {
+    if (s.tid == tid) {
       StatInc(thr, StatShadowSameThread);
       if (s.epoch >= synch_epoch) {
         if (s.write || !is_write) {
@@ -281,7 +282,7 @@ static bool MemoryAccess1(ThreadState *thr, ThreadState::Fast fast_state,
   // Do the memory access intersect?
   } else if (min(s0.addr1, s.addr1) >= max(s0.addr0, s.addr0)) {
     StatInc(thr, StatShadowIntersect);
-    if (s.tid == fast_state.tid) {
+    if (s.tid == tid) {
       StatInc(thr, StatShadowSameThread);
       return false;
     }
@@ -309,23 +310,22 @@ bool MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
   u64 *shadow_mem = (u64*)MemToShadow(addr);
   DPrintf("#%d: tsan::OnMemoryAccess: @%p %p size=%d"
           " is_write=%d shadow_mem=%p\n",
-          (int)thr->fast.tid, (void*)pc, (void*)addr,
+          (int)thr->tid, (void*)pc, (void*)addr,
           (int)size, is_write, shadow_mem);
   DCHECK(IsAppMem(addr));
   DCHECK(IsShadowMem((uptr)shadow_mem));
 
-  ThreadState::Fast fast_state;
-  fast_state.raw = thr->fast.raw;  // Copy.
-  fast_state.epoch++;
-  thr->fast.raw = fast_state.raw;
-  TraceAddEvent(thr, fast_state.epoch, EventTypeMop, pc);
+  int tid = thr->tid;
+  u64 epoch = thr->epoch + 1;
+  thr->epoch = epoch;
+  TraceAddEvent(thr, epoch, EventTypeMop, pc);
 
   StatInc(thr, is_write ? StatMopWrite : StatMopRead);
   StatInc(thr, size == 1 ? StatMop1 : size == 2 ? StatMop2
           : size == 4 ? StatMop4 : StatMop8);
 
   // descriptor of the memory access
-  Shadow s0 = { {fast_state.tid, fast_state.epoch,
+  Shadow s0 = { {tid, epoch,
                addr&7, min((addr&7)+size-1, 7), is_write} };  // NOLINT
   // Is the descriptor already stored somewhere?
   bool replaced = false;
@@ -366,7 +366,7 @@ bool MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
   for (int i = 0; i < kShadowCnt; i++) {
     StatInc(thr, StatShadowProcessed);
     u64 *sp = &shadow_mem[(i + off) % kShadowCnt];
-    if (MemoryAccess1(thr, fast_state, synch_epoch, s0, sp, is_write,
+    if (MemoryAccess1(thr, tid, epoch, synch_epoch, s0, sp, is_write,
                       replaced, racy_access))
       return false;
   }
@@ -379,7 +379,7 @@ bool MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
   if (LIKELY(replaced))
     return racy_access.raw != 0;
   // choose a random candidate slot and replace it
-  unsigned i = fast_state.epoch % kShadowCnt;
+  unsigned i = epoch % kShadowCnt;
   StoreShadow(shadow_mem+i, s0.raw);
   StatInc(thr, StatShadowReplace);
   return racy_access.raw != 0;
@@ -406,16 +406,16 @@ void MemoryAccessRange(ThreadState *thr, uptr pc, uptr addr,
 
 void FuncEntry(ThreadState *thr, uptr pc) {
   StatInc(thr, StatFuncEnter);
-  DPrintf("#%d: tsan::FuncEntry %p\n", (int)thr->fast.tid, (void*)pc);
-  thr->fast.epoch++;
-  TraceAddEvent(thr, thr->fast.epoch, EventTypeFuncEnter, pc);
+  DPrintf("#%d: tsan::FuncEntry %p\n", (int)thr->tid, (void*)pc);
+  thr->epoch++;
+  TraceAddEvent(thr, thr->epoch, EventTypeFuncEnter, pc);
 }
 
 void FuncExit(ThreadState *thr) {
   StatInc(thr, StatFuncExit);
-  DPrintf("#%d: tsan::FuncExit\n", (int)thr->fast.tid);
-  thr->fast.epoch++;
-  TraceAddEvent(thr, thr->fast.epoch, EventTypeFuncExit, 0);
+  DPrintf("#%d: tsan::FuncExit\n", (int)thr->tid);
+  thr->epoch++;
+  TraceAddEvent(thr, thr->epoch, EventTypeFuncExit, 0);
 }
 
 }  // namespace __tsan
