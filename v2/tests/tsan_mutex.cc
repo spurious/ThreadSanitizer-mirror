@@ -108,6 +108,47 @@ TEST(ThreadSanitizer, Mutex) {
   t2.Destroy(m);
 }
 
+TEST(ThreadSanitizer, SpinMutex) {
+  Mutex m(Mutex::Spin);
+  MainThread t0;
+  t0.Create(m);
+
+  ScopedThread t1, t2;
+  MemLoc l;
+  t1.Lock(m);
+  t1.Write1(l);
+  t1.Unlock(m);
+  t2.Lock(m);
+  t2.Write1(l);
+  t2.Unlock(m);
+  t2.Destroy(m);
+}
+
+TEST(ThreadSanitizer, RwMutex) {
+  Mutex m(Mutex::RW);
+  MainThread t0;
+  t0.Create(m);
+
+  ScopedThread t1, t2, t3;
+  MemLoc l;
+  t1.Lock(m);
+  t1.Write1(l);
+  t1.Unlock(m);
+  t2.Lock(m);
+  t2.Write1(l);
+  t2.Unlock(m);
+  t1.ReadLock(m);
+  t3.ReadLock(m);
+  t1.Read1(l);
+  t3.Read1(l);
+  t1.ReadUnlock(m);
+  t3.ReadUnlock(m);
+  t2.Lock(m);
+  t2.Write1(l);
+  t2.Unlock(m);
+  t2.Destroy(m);
+}
+
 TEST(ThreadSanitizer, StaticMutex) {
   // Emulates statically initialized mutex.
   Mutex m;
