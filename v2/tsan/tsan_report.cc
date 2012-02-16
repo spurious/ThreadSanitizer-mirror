@@ -57,9 +57,24 @@ bool OnReport(const ReportDesc *rep, bool suppressed) {
 
 void PrintStats(u64 *stat) {
   const char *name[StatCnt] = {};
-  name[StatMop] = "Memory accesses";
-  name[StatFuncEnter] = "Function entries";
-  name[StatFuncExit] = "Function exits";
+  name[StatMop]                 = "Memory accesses";
+  name[StatMopRead]             = "  Including reads";
+  name[StatMopWrite]            = "            writes";
+  name[StatMop1]                = "  Including size 1";
+  name[StatMop2]                = "            size 2";
+  name[StatMop4]                = "            size 4";
+  name[StatMop8]                = "            size 8";
+  name[StatShadowProcessed]     = "Shadow processed";
+  name[StatShadowZero]          = "  Including empty";
+  name[StatShadowSameSize]      = "  Including same size";
+  name[StatShadowIntersect]     = "            intersect";
+  name[StatShadowNotIntersect]  = "            not intersect";
+  name[StatShadowSameThread]    = "  Including same thread";
+  name[StatShadowAnotherThread] = "            another thread";
+  name[StatShadowReplace]       = "  Including evicted";
+  name[StatFuncEnter]           = "Function entries";
+  name[StatFuncExit]            = "Function exits";
+  name[StatEvents]              = "Events collected";
 
   Printf("Statistics:\n");
   for (int i = 0; i < StatCnt; i++)

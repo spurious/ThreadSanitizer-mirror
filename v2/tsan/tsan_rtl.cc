@@ -232,6 +232,7 @@ static bool MemoryAccess1(ThreadState *thr, ThreadState::Fast fast_state,
                           bool &replaced, Shadow &racy_access) {
   Shadow s = LoadShadow(sp);
   if (s.raw == 0) {
+    StatInc(thr, StatShadowZero);
     if (replaced == false) {
       StoreShadow(sp, s0.raw);
       replaced = true;
@@ -240,8 +241,10 @@ static bool MemoryAccess1(ThreadState *thr, ThreadState::Fast fast_state,
   }
   // is the memory access equal to the previous?
   if (s0.addr0 == s.addr0 && s0.addr1 == s.addr1) {
+    StatInc(thr, StatShadowSameSize);
     // same thread?
     if (s.tid == fast_state.tid) {
+      StatInc(thr, StatShadowSameThread);
       if (s.epoch >= synch_epoch) {
         if (s.write || !is_write) {
           // found a slot that holds effectively the same info
@@ -262,6 +265,7 @@ static bool MemoryAccess1(ThreadState *thr, ThreadState::Fast fast_state,
         }
       }
     } else {
+      StatInc(thr, StatShadowAnotherThread);
       // happens before?
       if (thr->clock.get(s.tid) >= s.epoch) {
         StoreShadow(sp, replaced ? 0ull : s0.raw);
@@ -274,10 +278,14 @@ static bool MemoryAccess1(ThreadState *thr, ThreadState::Fast fast_state,
         return false;
       }
     }
-  // do the memory access intersect?
+  // Do the memory access intersect?
   } else if (min(s0.addr1, s.addr1) >= max(s0.addr0, s.addr0)) {
-    if (s.tid == fast_state.tid)
+    StatInc(thr, StatShadowIntersect);
+    if (s.tid == fast_state.tid) {
+      StatInc(thr, StatShadowSameThread);
       return false;
+    }
+    StatInc(thr, StatShadowAnotherThread);
     // happens before?
     if (thr->clock.get(s.tid) >= s.epoch) {
       return false;
@@ -287,8 +295,10 @@ static bool MemoryAccess1(ThreadState *thr, ThreadState::Fast fast_state,
       racy_access = s;
       return false;
     }
+  // The accesses do not intersect.
+  } else {
+    StatInc(thr, StatShadowNotIntersect);
   }
-  // the accesses do not intersect
   return false;
 }
 
@@ -309,6 +319,10 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
   fast_state.epoch++;
   thr->fast.raw = fast_state.raw;
   TraceAddEvent(thr, fast_state.epoch, EventTypeMop, pc);
+
+  StatInc(thr, is_write ? StatMopWrite : StatMopRead);
+  StatInc(thr, size == 1 ? StatMop1 : size == 2 ? StatMop2
+          : size == 4 ? StatMop4 : StatMop8);
 
   // descriptor of the memory access
   Shadow s0 = { {fast_state.tid, fast_state.epoch,
@@ -350,6 +364,7 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
     off = addr & 4;
 
   for (int i = 0; i < kShadowCnt; i++) {
+    StatInc(thr, StatShadowProcessed);
     u64 *sp = &shadow_mem[(i + off) % kShadowCnt];
     if (MemoryAccess1(thr, fast_state, synch_epoch, s0, sp, is_write,
                       replaced, racy_access))
@@ -366,6 +381,7 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
   // choose a random candidate slot and replace it
   unsigned i = fast_state.epoch % kShadowCnt;
   StoreShadow(shadow_mem+i, s0.raw);
+  StatInc(thr, StatShadowReplace);
 }
 
 void FuncEntry(ThreadState *thr, uptr pc) {

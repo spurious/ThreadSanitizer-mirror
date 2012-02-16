@@ -36,8 +36,23 @@ namespace __tsan {
 
 enum StatType {
   StatMop,
+  StatMopRead,
+  StatMopWrite,
+  StatMop1,
+  StatMop2,
+  StatMop4,
+  StatMop8,
+  StatShadowProcessed,
+  StatShadowZero,
+  StatShadowSameSize,
+  StatShadowIntersect,
+  StatShadowNotIntersect,
+  StatShadowSameThread,
+  StatShadowAnotherThread,
+  StatShadowReplace,
   StatFuncEnter,
   StatFuncExit,
+  StatEvents,
   StatCnt,
 };
 
@@ -184,6 +199,7 @@ void internal_memcpy(void *dst, const void *src, uptr size);
 void TraceSwitch(ThreadState *thr) NOINLINE;
 void ALWAYS_INLINE INLINE TraceAddEvent(ThreadState *thr, u64 epoch,
                                         EventType typ, uptr addr) {
+  StatInc(thr, StatEvents);
   if (UNLIKELY((epoch % (kTraceSize / kTraceParts)) == 0))
     TraceSwitch(thr);
   Event *evp = &thr->trace.events[epoch % kTraceSize];
