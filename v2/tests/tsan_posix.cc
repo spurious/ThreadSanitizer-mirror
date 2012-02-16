@@ -11,6 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 #include "tsan_interface.h"
+#include "tsan_test_util.h"
 #include "gtest/gtest.h"
 #include <pthread.h>
 
@@ -68,4 +69,27 @@ TEST(Posix, ThreadSpecificDtors) {
   EXPECT_EQ(pthread_join(th[2], 0), 0);
   EXPECT_EQ(pthread_key_delete(key), 0);
   EXPECT_EQ(6, cnt);
+}
+
+static __thread int local_var;
+
+static void *local_thread(void *p) {
+  __tsan_write1(&local_var);
+  EXPECT_EQ(GetLastReport(), (ReportDesc*)0);
+  __tsan_write1(&p);
+  EXPECT_EQ(GetLastReport(), (ReportDesc*)0);
+  if (p == 0)
+    return 0;
+  const int kThreads = 4;
+  pthread_t th[kThreads];
+  for (int i = 0; i < kThreads; i++)
+    EXPECT_EQ(pthread_create(&th[i], 0, local_thread,
+              (void*)((long)p - 1)), 0);  // NOLINT
+  for (int i = 0; i < kThreads; i++)
+    EXPECT_EQ(pthread_join(th[i], 0), 0);
+  return 0;
+}
+
+TEST(DISABLED_FAILS_Posix, ThreadLocalAccesses) {
+  local_thread((void*)2);
 }

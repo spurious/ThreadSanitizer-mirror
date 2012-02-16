@@ -11,6 +11,8 @@
 //
 // Test utils.
 //===----------------------------------------------------------------------===//
+#ifndef TSAN_TEST_UTIL_H
+#define TSAN_TEST_UTIL_H
 
 namespace __tsan {
 struct ReportDesc;
@@ -115,3 +117,7 @@ class MainThread : public ScopedThread {
     : ScopedThread(false, true) {
   }
 };
+
+const ReportDesc *GetLastReport();
+
+#endif  // #ifndef TSAN_TEST_UTIL_H

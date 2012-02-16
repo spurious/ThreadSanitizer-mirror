@@ -57,9 +57,16 @@ void TestMutexBeforeInit() {
 
 namespace __tsan {
 bool OnReport(const ReportDesc *rep, bool suppressed) {
+  CHECK_EQ(g_report, 0);
   g_report = rep;
   return true;
 }
+}
+
+const ReportDesc *GetLastReport() {
+  const ReportDesc *rep = g_report;
+  g_report = 0;
+  return rep;
 }
 
 static void* allocate_addr(int size, int offset_from_aligned = 0) {
@@ -92,7 +99,7 @@ void Mutex::Init() {
   CHECK(!alive_);
   alive_ = true;
   if (type_ == Normal)
-    CHECK_EQ(pthread_mutex_init((pthread_mutex_t*)mtx_, NULL), 0);
+    CHECK_EQ(pthread_mutex_init((pthread_mutex_t*)mtx_, 0), 0);
   else if (type_ == Spin)
     CHECK_EQ(pthread_spin_init((pthread_spinlock_t*)mtx_, 0), 0);
   else if (type_ == RW)
@@ -193,7 +200,7 @@ struct Event {
   __tsan::ReportType report_type;
   const ReportDesc *rep;
 
-  Event(Type type, const void *ptr = NULL, int arg = 0)
+  Event(Type type, const void *ptr = 0, int arg = 0)
     : type(type)
     , ptr(const_cast<void*>(ptr))
     , arg(arg)
@@ -221,11 +228,11 @@ struct ScopedThread::Impl {
 };
 
 void ScopedThread::Impl::HandleEvent(Event *ev) {
-  CHECK_EQ(g_report, NULL);
+  CHECK_EQ(g_report, 0);
   switch (ev->type) {
   case Event::READ:
   case Event::WRITE: {
-    void (*tsan_mop)(void *addr) = NULL;
+    void (*tsan_mop)(void *addr) = 0;
     if (ev->type == Event::READ) {
       switch (ev->arg /*size*/) {
         case 1: tsan_mop = __tsan_read1; break;
@@ -243,7 +250,7 @@ void ScopedThread::Impl::HandleEvent(Event *ev) {
         case 16: tsan_mop = __tsan_write16; break;
       }
     }
-    CHECK_NE(tsan_mop, NULL);
+    CHECK_NE(tsan_mop, 0);
     tsan_mop(ev->ptr);
     break;
   }
@@ -280,9 +287,9 @@ void ScopedThread::Impl::HandleEvent(Event *ev) {
   default: CHECK(0);
   }
   ev->rep = g_report;
-  g_report = NULL;
+  g_report = 0;
   if (ev->expect_report) {
-    if (ev->rep == NULL) {
+    if (ev->rep == 0) {
       printf("Missed expected report of type %d\n", (int)ev->report_type);
       EXPECT_FALSE("Missed expected race");
     }
@@ -303,7 +310,7 @@ void *ScopedThread::Impl::ScopedThreadCallback(void *arg) {
   Impl *impl = (Impl*)arg;
   for (;;) {
     Event* ev = (Event*)atomic_load(&impl->event, memory_order_acquire);
-    if (ev == NULL) {
+    if (ev == 0) {
       pthread_yield();
       continue;
     }
@@ -314,7 +321,7 @@ void *ScopedThread::Impl::ScopedThreadCallback(void *arg) {
     impl->HandleEvent(ev);
     atomic_store(&impl->event, 0, memory_order_release);
   }
-  return NULL;
+  return 0;
 }
 
 void ScopedThread::Impl::send(Event *e) {
@@ -334,7 +341,7 @@ ScopedThread::ScopedThread(bool detached, bool main) {
   impl_->detached = detached;
   atomic_store(&impl_->event, 0, memory_order_relaxed);
   if (!main) {
-    pthread_create(&impl_->thread, NULL,
+    pthread_create(&impl_->thread, 0,
         ScopedThread::Impl::ScopedThreadCallback, impl_);
   }
 }
@@ -344,7 +351,7 @@ ScopedThread::~ScopedThread() {
     Event event(Event::SHUTDOWN);
     impl_->send(&event);
     if (!impl_->detached)
-      pthread_join(impl_->thread, NULL);
+      pthread_join(impl_->thread, 0);
   }
   delete impl_;
 }

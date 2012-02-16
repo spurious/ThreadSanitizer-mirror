@@ -30,15 +30,18 @@ static uptr GetImageBase() {
   uptr base = 0;
   FILE *f = fopen("/proc/self/cmdline", "rb");
   if (f) {
-    CHECK_LT(0, fread(exe, 1, sizeof(exe), f));
+    if (fread(exe, 1, sizeof(exe), f) <= 0)
+      return 0;
     char cmd[1024];
     snprintf(cmd, sizeof(cmd), "nm %s|grep SymbolizeImageBaseMark > tsan.tmp",
              exe);
-    CHECK_EQ(0, system(cmd));
+    if (system(cmd))
+      return 0;
     FILE* f2 = fopen("tsan.tmp", "rb");
     if (f2) {
       char tmp[1024];
-      CHECK_LT(0, fread(tmp, 1, sizeof(tmp), f2));
+      if (fread(tmp, 1, sizeof(tmp), f2) <= 0)
+        return 0;
       uptr addr = (uptr)strtoll(tmp, 0, 16);
       base = (uptr)&SymbolizeImageBaseMark - addr;
       fclose(f2);
@@ -56,11 +59,13 @@ bool SymbolizeCode(uptr pc, char *func, int func_size,
   char cmd[1024];
   snprintf(cmd, sizeof(cmd),
            "addr2line -C -s -f -e %s %p > tsan.tmp2", exe, (void*)(pc - base));
-  CHECK_EQ(0, system(cmd));
+  if (system(cmd))
+    return 0;
   FILE* f3 = fopen("tsan.tmp2", "rb");
   if (f3) {
     char tmp[1024];
-    CHECK_LT(0, fread(tmp, 1, sizeof(tmp), f3));
+    if (fread(tmp, 1, sizeof(tmp), f3) <= 0)
+      return 0;
     char *pos = strchr(tmp, '\n');
     if (pos) {
       res = true;

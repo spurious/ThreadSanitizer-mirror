@@ -40,31 +40,39 @@ struct ScopedInterceptor {
   }
 };
 
-void *malloc(uptr size) {
+extern "C" void *malloc(uptr size) {
   ScopedInterceptor si;
   void *p = __libc_malloc(size);
   return p;
 }
 
-INTERCEPTOR(void*, calloc, uptr size, uptr n) {
+extern "C" void *calloc(uptr size, uptr n) {
   ScopedInterceptor si;
   void *p = __libc_calloc(size, n);
   return p;
 }
 
-INTERCEPTOR(void*, realloc, void *p, uptr size) {
+extern "C" void *realloc(void *p, uptr size) {
   ScopedInterceptor si;
   void *p2 = __libc_realloc(p, size);
   return p2;
 }
 
-INTERCEPTOR(void, free, void *p) {
+extern "C" void free(void *p) {
+  ScopedInterceptor si;
+  __libc_free(p);
+}
+
+extern "C" void cfree(void *p) {
   ScopedInterceptor si;
   __libc_free(p);
 }
 
 // int posix_memalign(void **memptr, size_t alignment, size_t size);
 // void *valloc(size_t size);
+// Equivalent to valloc(minimum-page-that-holds(n)), that is, round up
+// __size to nearest pagesize.
+// extern void * pvalloc(size_t __size)
 // void *memalign(size_t boundary, size_t size);
 
 static void thread_finalize(void *v) {

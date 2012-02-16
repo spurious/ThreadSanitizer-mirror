@@ -32,55 +32,55 @@ static void Benchmark() {
   }
 }
 
-TEST(DISABLED_Bench, Mop1) {
+TEST(DISABLED_BENCH, Mop1) {
   Benchmark<uint8_t, noinstr>();
 }
 
-TEST(DISABLED_Bench, Mop1Read) {
+TEST(DISABLED_BENCH, Mop1Read) {
   Benchmark<uint8_t, __tsan_read1>();
 }
 
-TEST(DISABLED_Bench, Mop1Write) {
+TEST(DISABLED_BENCH, Mop1Write) {
   Benchmark<uint8_t, __tsan_write1>();
 }
 
-TEST(DISABLED_Bench, Mop2) {
+TEST(DISABLED_BENCH, Mop2) {
   Benchmark<uint16_t, noinstr>();
 }
 
-TEST(DISABLED_Bench, Mop2Read) {
+TEST(DISABLED_BENCH, Mop2Read) {
   Benchmark<uint16_t, __tsan_read2>();
 }
 
-TEST(DISABLED_Bench, Mop2Write) {
+TEST(DISABLED_BENCH, Mop2Write) {
   Benchmark<uint16_t, __tsan_write2>();
 }
 
-TEST(DISABLED_Bench, Mop4) {
+TEST(DISABLED_BENCH, Mop4) {
   Benchmark<uint32_t, noinstr>();
 }
 
-TEST(DISABLED_Bench, Mop4Read) {
+TEST(DISABLED_BENCH, Mop4Read) {
   Benchmark<uint32_t, __tsan_read4>();
 }
 
-TEST(DISABLED_Bench, Mop4Write) {
+TEST(DISABLED_BENCH, Mop4Write) {
   Benchmark<uint32_t, __tsan_write4>();
 }
 
-TEST(DISABLED_Bench, Mop8) {
+TEST(DISABLED_BENCH, Mop8) {
   Benchmark<uint8_t, noinstr>();
 }
 
-TEST(DISABLED_Bench, Mop8Read) {
+TEST(DISABLED_BENCH, Mop8Read) {
   Benchmark<uint64_t, __tsan_read8>();
 }
 
-TEST(DISABLED_Bench, Mop8Write) {
+TEST(DISABLED_BENCH, Mop8Write) {
   Benchmark<uint64_t, __tsan_write8>();
 }
 
-TEST(DISABLED_Bench, FuncCall) {
+TEST(DISABLED_BENCH, FuncCall) {
   for (int i = 0; i < kRepeat; i++) {
     for (int j = 0; j < kSize; j++)
       __tsan_func_entry((void*)(uintptr_t)j);
@@ -89,7 +89,7 @@ TEST(DISABLED_Bench, FuncCall) {
   }
 }
 
-TEST(DISABLED_Bench, MutexLocal) {
+TEST(DISABLED_BENCH, MutexLocal) {
   Mutex m;
   ScopedThread().Create(m);
   for (int i = 0; i < 50; i++) {
