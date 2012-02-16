@@ -28,6 +28,8 @@ extern "C" void *__libc_malloc(uptr size);
 extern "C" void *__libc_calloc(uptr nmemb, uptr size);
 extern "C" void __libc_free(void *ptr);
 extern "C" void *__libc_realloc(void *ptr, uptr size);
+extern "C" int atexit(void (*function)());
+extern "C" void _exit(int status);
 
 static unsigned g_thread_finalize_key;
 
@@ -39,6 +41,12 @@ struct ScopedInterceptor {
   ~ScopedInterceptor() {
   }
 };
+
+static void finalize() {
+  int status = Finalize(cur_thread());
+  if (status)
+    _exit(status);
+}
 
 extern "C" void *malloc(uptr size) {
   ScopedInterceptor si;
@@ -326,6 +334,11 @@ INTERCEPTOR(int, pthread_rwlock_unlock, void *m) {
 namespace __tsan {
 
 void InitializeInterceptors() {
+  if (atexit(&finalize)) {
+    Printf("ThreadSanitizer: failed to setup atexit callback\n");
+    Die();
+  }
+
   if (pthread_key_create(&g_thread_finalize_key, &thread_finalize)) {
     Printf("ThreadSanitizer: failed to create thread key\n");
     Die();

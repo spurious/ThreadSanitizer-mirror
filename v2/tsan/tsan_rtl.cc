@@ -63,7 +63,8 @@ void TraceSwitch(ThreadState *thr) {
 
 Context::Context()
   : clockslab(SyncClock::kChunkSize)
-  , syncslab(sizeof(SyncVar)) {
+  , syncslab(sizeof(SyncVar))
+  , nreported() {
 }
 
 ThreadState::ThreadState(Context *ctx)
@@ -86,7 +87,7 @@ void Initialize(ThreadState *thr) {
   // Thread safe because done before all threads exist.
   if (ctx)
     return;
-  DPrintf("tsan::Initialize\n");
+  Printf("***** Running under ThreadSanitizer v2 *****\n");
   ctx = new(ctx_placeholder) Context;
   InitializeShadowMemory();
   ctx->dead_list_size = 0;
@@ -100,6 +101,12 @@ void Initialize(ThreadState *thr) {
   int tid = ThreadCreate(thr, 0, true);
   CHECK_EQ(tid, 0);
   ThreadStart(thr, tid);
+}
+
+int Finalize(ThreadState *thr) {
+  Printf("ThreadSanitizer summary: reported %d warnings%s\n",
+         ctx->nreported, ctx->nreported ? "" : ". Keep it up!");
+  return ctx->nreported ? 66 : 0;
 }
 
 template<typename T>
@@ -197,6 +204,7 @@ static void NOINLINE ReportRace(ThreadState *thr, uptr addr,
   if (suppressed)
     return;
   PrintReport(&rep);
+  ctx->nreported++;
 }
 
 ALWAYS_INLINE

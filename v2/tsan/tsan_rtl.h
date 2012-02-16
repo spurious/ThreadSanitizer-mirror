@@ -124,7 +124,9 @@ struct Context {
   SlabAlloc clockslab;
   SlabAlloc syncslab;
   SyncTab synctab;
+
   Mutex report_mtx;
+  int nreported;
 
   Mutex thread_mtx;
   int thread_seq;
@@ -152,6 +154,7 @@ void Die() NORETURN;
 #endif
 
 void Initialize(ThreadState *thr);
+int Finalize(ThreadState *thr);
 
 void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
                   int size, bool is_write);
