@@ -117,14 +117,6 @@ int Finalize(ThreadState *thr) {
   return ctx->nreported ? 66 : 0;
 }
 
-template<typename T>
-static T* alloc(ReportDesc *rep, int n, int *pos) {
-  T* p = (T*)(rep->alloc + *pos);
-  *pos += n * sizeof(T);
-  CHECK(*pos <= (int)sizeof(rep->alloc));
-  return p;
-}
-
 static int RestoreStack(int tid, u64 epoch, uptr *stack, int n) {
   Lock l0(&ctx->thread_mtx);
   ThreadContext *tctx = ctx->threads[tid];
@@ -170,13 +162,15 @@ static int RestoreStack(int tid, u64 epoch, uptr *stack, int n) {
 
 static void NOINLINE ReportRace(ThreadState *thr, uptr addr,
                                 Shadow s0, Shadow s1) {
+  const int kStackMax = 64;
+
   Lock l(&ctx->report_mtx);
   addr &= ~7;
-  int alloc_pos = 0;
+  RegionAlloc alloc(g_report.alloc, sizeof(g_report.alloc));
   ReportDesc &rep = g_report;
   rep.typ = ReportTypeRace;
   rep.nmop = 2;
-  rep.mop = alloc<ReportMop>(&rep, rep.nmop, &alloc_pos);
+  rep.mop = alloc.Alloc<ReportMop>(rep.nmop);
   for (int i = 0; i < rep.nmop; i++) {
     ReportMop *mop = &rep.mop[i];
     Shadow *s = (i ? &s1 : &s0);
@@ -185,22 +179,21 @@ static void NOINLINE ReportRace(ThreadState *thr, uptr addr,
     mop->size = s->addr1 - s->addr0 + 1;
     mop->write = s->write;
     mop->nmutex = 0;
-    uptr stack[64];
-    mop->stack.cnt = RestoreStack(s->tid, s->epoch, stack,
-                                  sizeof(stack)/sizeof(stack[0]));
-    if (mop->stack.cnt != 0) {
-      mop->stack.entry = alloc<ReportStackEntry>(&rep, mop->stack.cnt,
-                                                   &alloc_pos);
-      for (int i = 0; i < mop->stack.cnt; i++) {
-        ReportStackEntry *ent = &mop->stack.entry[i];
-        ent->pc = stack[i];
-        ent->pc = stack[i];
-        ent->func = alloc<char>(&rep, 1024, &alloc_pos);
-        ent->func[0] = 0;
-        ent->file = alloc<char>(&rep, 1024, &alloc_pos);
-        ent->file[0] = 0;
-        ent->line = 0;
-        SymbolizeCode(ent->pc, ent->func, 1024, ent->file, 1024, &ent->line);
+    mop->stack.cnt = 0;
+    uptr stack[kStackMax];
+    int stackcnt = RestoreStack(s->tid, s->epoch, stack, kStackMax);
+    if (stackcnt != 0) {
+      mop->stack.entry = alloc.Alloc<ReportStackEntry>(kStackMax);
+      for (int si = 0; si < stackcnt; si++) {
+        Symbol symb[kStackMax];
+        int framecnt = SymbolizeCode(&alloc, stack[si], symb, kStackMax);
+        for (int fi = 0; fi < framecnt && mop->stack.cnt < kStackMax; fi++) {
+          ReportStackEntry *ent = &mop->stack.entry[mop->stack.cnt++];
+          ent->pc = stack[si];
+          ent->func = symb[fi].name;
+          ent->file = symb[fi].file;
+          ent->line = symb[fi].line;
+        }
       }
     }
   }

@@ -65,6 +65,11 @@ class RegionAlloc {
   RegionAlloc(void *mem, uptr size);
   void *Alloc(uptr size);
 
+  template<typename T>
+  T *Alloc(uptr cnt) {
+    return (T*)this->Alloc(cnt * sizeof(T));
+  }
+
  private:
   char *mem_;
   char *end_;

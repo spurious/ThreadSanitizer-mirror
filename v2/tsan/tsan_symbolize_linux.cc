@@ -51,14 +51,14 @@ static uptr GetImageBase() {
   return base;
 }
 
-bool SymbolizeCode(uptr pc, char *func, int func_size,
-                   char *file, int file_size, int *line) {
+int SymbolizeCode(RegionAlloc *alloc, uptr addr, Symbol *symb, int cnt) {
   if (base == 0)
     base = GetImageBase();
-  bool res = false;
+  int res = 0;
   char cmd[1024];
   snprintf(cmd, sizeof(cmd),
-           "addr2line -C -s -f -e %s %p > tsan.tmp2", exe, (void*)(pc - base));
+           "addr2line -C -s -f -e %s %p > tsan.tmp2", exe,
+           (void*)(addr - base));
   if (system(cmd))
     return 0;
   FILE* f3 = fopen("tsan.tmp2", "rb");
@@ -68,19 +68,28 @@ bool SymbolizeCode(uptr pc, char *func, int func_size,
       return 0;
     char *pos = strchr(tmp, '\n');
     if (pos) {
-      res = true;
-      internal_memcpy(func, tmp, pos - tmp);
-      func[pos - tmp] = 0;
+      res = 1;
+      symb[0].name = alloc->Alloc<char>(pos - tmp + 1);
+      internal_memcpy(symb[0].name, tmp, pos - tmp);
+      symb[0].name[pos - tmp] = 0;
       char *pos2 = strchr(pos, ':');
       if (pos2) {
-        internal_memcpy(file, pos + 1, pos2 - pos - 1);
-        file[pos2 - pos - 1] = 0;
-        *line = atoi(pos2 + 1);
+        symb[0].file = alloc->Alloc<char>(pos2 - pos - 1 + 1);
+        internal_memcpy(symb[0].file, pos + 1, pos2 - pos - 1);
+        symb[0].file[pos2 - pos - 1] = 0;
+        symb[0].line = atoi(pos2 + 1);
       }
     }
     fclose(f3);
   }
   return res;
+}
+
+int SymbolizeData(RegionAlloc *alloc, uptr addr, Symbol *symb) {
+  (void)alloc;
+  (void)addr;
+  (void)symb;
+  return 0;
 }
 
 }  // namespace __tsan

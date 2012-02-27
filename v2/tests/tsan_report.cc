@@ -116,3 +116,17 @@ TEST(ThreadSanitizer, ReportDeadThread) {
   const ReportDesc *rep = t1.Write1(l, true);
   CHECK_EQ(rep->mop[1].stack.cnt, 3);
 }
+
+struct ClassWithStatic {
+  static int Data[4];
+};
+
+int ClassWithStatic::Data[4];
+
+TEST(DISABLED_FAILS_ThreadSanitizer, ReportRace) {
+  ScopedThread t1;
+  MainThread().Access(&ClassWithStatic::Data, true, 4, false);
+  t1.Call(&foo);
+  t1.Call(&bar);
+  t1.Access(&ClassWithStatic::Data, true, 2, false);
+}

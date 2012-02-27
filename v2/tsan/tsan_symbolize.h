@@ -14,11 +14,19 @@
 #define TSAN_SYMBOLIZE_H
 
 #include "tsan_defs.h"
+#include "tsan_report.h"
+#include "tsan_slab.h"
 
 namespace __tsan {
 
-bool SymbolizeCode(uptr pc, char *func, int func_size,
-                   char *file, int file_size, int *line);
+struct Symbol {
+  char* name;
+  char* file;
+  int line;
+};
+
+int SymbolizeCode(RegionAlloc *alloc, uptr addr, Symbol *symb, int cnt);
+int SymbolizeData(RegionAlloc *alloc, uptr addr, Symbol *symb);
 
 }  // namespace __tsan
 
