@@ -148,7 +148,8 @@ static int RestoreStack(int tid, u64 epoch, uptr *stack, int n) {
     } else if (typ == EventTypeFuncEnter) {
       stack[pos++] = pc;
     } else if (typ == EventTypeFuncExit) {
-      pos--;
+      if (pos > 0)
+        pos--;
     }
   }
   pos++;

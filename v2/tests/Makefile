@@ -41,10 +41,10 @@ all: tsan_test tsan_c_test
 	$(CC) $(CXXFLAGS) $(INCLUDES) -c $<
 
 tsan_test: $(TEST_OBJ) $(UTEST_OBJ) $(LIBTSAN) $(GTEST_LIB)
-	$(CXX) $(TEST_OBJ) $(UTEST_OBJ) $(LIBTSAN) $(GTEST_LIB) -o $@ $(LINKFLAGS)
+	$(CXX) $(TEST_OBJ) $(UTEST_OBJ) $(LIBTSAN) $(GTEST_LIB) -o $@ $(LINKFLAGS) $(LDFLAGS)
 
 tsan_c_test: tsan_c_test.o $(LIBTSAN)
-	$(CC) $< -o $@ $(LIBTSAN) -o $@ $(LINKFLAGS)
+	$(CC) $< -o $@ $(LIBTSAN) -o $@ $(LINKFLAGS) $(LDFLAGS)
 
 $(GTEST_LIB):
 	mkdir -p $(GTEST_BUILD_DIR) && \

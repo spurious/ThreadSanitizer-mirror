@@ -98,6 +98,30 @@ INTERCEPTOR(void*, memcpy, void *dst, const void *src, uptr size) {
   return REAL(memcpy)(dst, src, size);
 }
 
+/*
+void *operator new(unsigned long size) {
+  SCOPED_INTERCEPTOR(malloc);
+  void *p = __libc_malloc(size);
+  return p;
+}
+
+void *operator new[](unsigned long size) {
+  SCOPED_INTERCEPTOR(malloc);
+  void *p = __libc_malloc(size);
+  return p;
+}
+
+void operator delete(void *p) {
+  SCOPED_INTERCEPTOR(free);
+  __libc_free(p);
+}
+
+void operator delete[](void *p) {
+  SCOPED_INTERCEPTOR(free);
+  __libc_free(p);
+}
+*/
+
 // int posix_memalign(void **memptr, size_t alignment, size_t size);
 // void *valloc(size_t size);
 // Equivalent to valloc(minimum-page-that-holds(n)), that is, round up

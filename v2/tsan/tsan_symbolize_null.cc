@@ -1,4 +1,4 @@
- //===-- tsan_symbolize_null.cc ---------------------------------*- C++ -*-===//
+//===-- tsan_symbolize_null.cc ----------------------------------*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //

@@ -50,7 +50,7 @@ LIBTSAN_OBJ=tsan_clock.o \
 
 ifneq ($(TSAN_SYMB_NULL), )
   LIBTSAN_OBJ+=tsan_symbolize_null.o
-else ifneq ($(TSAN_USE_LLDB), )
+else ifneq ($(TSAN_SYMB_LLDB), )
   LIBTSAN_OBJ+=tsan_symbolize_lldb_linux.o
 else
   LIBTSAN_OBJ+=tsan_symbolize_addr2line_linux.o

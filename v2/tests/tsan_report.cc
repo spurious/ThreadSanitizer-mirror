@@ -18,38 +18,40 @@
 #include <stddef.h>
 #include <stdint.h>
 
+using namespace __tsan;  // NOLINT
+
 TEST(ThreadSanitizer, ReportBasic) {
   ScopedThread t1, t2;
   MemLoc l;
   t1.Read2(l);
   const ReportDesc *rep = t2.Write4(l, true);
-  CHECK_NE(rep, NULL);
-  CHECK_EQ(rep->typ, __tsan::ReportTypeRace);
-  CHECK_EQ(rep->nmop, 2);
-  CHECK_NE(rep->mop[0].tid, 0);
-  CHECK_EQ(rep->mop[0].addr, (uintptr_t)l.loc());
-  CHECK_EQ(rep->mop[0].size, 4);
-  CHECK_EQ(rep->mop[0].write, true);
-  CHECK_EQ(rep->mop[0].nmutex, 0);
-  CHECK_EQ(rep->mop[0].stack.cnt, 1);
-  CHECK_NE(rep->mop[0].stack.entry[0].pc, 0);
-  CHECK_NE(rep->mop[0].stack.entry[0].func, NULL);
-  CHECK_NE(rep->mop[0].stack.entry[0].file, NULL);
-  CHECK_NE(rep->mop[0].stack.entry[0].line, 0);
-  CHECK_NE(rep->mop[1].tid, 0);
-  CHECK_NE(rep->mop[1].tid, rep->mop[0].tid);
-  CHECK_EQ(rep->mop[1].addr, (uintptr_t)l.loc());
-  CHECK_EQ(rep->mop[1].size, 2);
-  CHECK_EQ(rep->mop[1].write, false);
-  CHECK_EQ(rep->mop[1].nmutex, 0);
-  CHECK_EQ(rep->mop[1].stack.cnt, 1);
-  CHECK_NE(rep->mop[1].stack.entry[0].pc, 0);
-  CHECK_NE(rep->mop[1].stack.entry[0].func, NULL);
-  CHECK_NE(rep->mop[1].stack.entry[0].file, NULL);
-  CHECK_NE(rep->mop[1].stack.entry[0].line, 0);
-  CHECK_EQ(rep->loc, NULL);
-  CHECK_EQ(rep->nthread, 0);
-  CHECK_EQ(rep->nmutex, 0);
+  EXPECT_NE(rep, (void*)0);
+  EXPECT_EQ(rep->typ, __tsan::ReportTypeRace);
+  EXPECT_EQ(rep->nmop, 2);
+  EXPECT_NE(rep->mop[0].tid, 0);
+  EXPECT_EQ(rep->mop[0].addr, (uintptr_t)l.loc());
+  EXPECT_EQ(rep->mop[0].size, 4);
+  EXPECT_EQ(rep->mop[0].write, true);
+  EXPECT_EQ(rep->mop[0].nmutex, 0);
+  EXPECT_EQ(rep->mop[0].stack.cnt, 1);
+  EXPECT_NE(rep->mop[0].stack.entry[0].pc, (uptr)0);
+  EXPECT_NE(rep->mop[0].stack.entry[0].func, (void*)0);
+  EXPECT_NE(rep->mop[0].stack.entry[0].file, (void*)0);
+  EXPECT_NE(rep->mop[0].stack.entry[0].line, 0);
+  EXPECT_NE(rep->mop[1].tid, 0);
+  EXPECT_NE(rep->mop[1].tid, rep->mop[0].tid);
+  EXPECT_EQ(rep->mop[1].addr, (uintptr_t)l.loc());
+  EXPECT_EQ(rep->mop[1].size, 2);
+  EXPECT_EQ(rep->mop[1].write, false);
+  EXPECT_EQ(rep->mop[1].nmutex, 0);
+  EXPECT_EQ(rep->mop[1].stack.cnt, 1);
+  EXPECT_NE(rep->mop[1].stack.entry[0].pc, (uptr)0);
+  EXPECT_NE(rep->mop[1].stack.entry[0].func, (void*)0);
+  EXPECT_NE(rep->mop[1].stack.entry[0].file, (void*)0);
+  EXPECT_NE(rep->mop[1].stack.entry[0].line, 0);
+  EXPECT_EQ(rep->loc, (void*)0);
+  EXPECT_EQ(rep->nthread, 0);
+  EXPECT_EQ(rep->nmutex, 0);
 }
 
 static void foo() {}; static int foo_line = __LINE__;  // NOLINT
@@ -75,32 +77,32 @@ TEST(DISABLED_FAILS_ThreadSanitizer, ReportStack) {
   t1.Call(&foo);
   t1.Call(&bar);
   const ReportDesc *rep = t1.Write1(l, true);
-  CHECK_EQ(rep->typ, __tsan::ReportTypeRace);
-  CHECK_EQ(rep->nmop, 2);
-  CHECK_NE(rep->mop[0].tid, 0);
-  CHECK_EQ(rep->mop[0].addr, (uintptr_t)l.loc());
-  CHECK_EQ(rep->mop[0].size, 1);
-  CHECK_EQ(rep->mop[0].write, true);
-  CHECK_EQ(rep->mop[0].stack.cnt, 3);
-  CHECK_EQ(rep->mop[0].stack.entry[1].pc, (uintptr_t)(void*)&bar);
-  CHECK(strstr(rep->mop[0].stack.entry[1].func, "bar"));
-  CHECK(strstr(rep->mop[0].stack.entry[1].file, file));
-  CHECK_EQ(rep->mop[0].stack.entry[1].line, bar_line);
-  CHECK_EQ(rep->mop[0].stack.entry[2].pc, (uintptr_t)(void*)&foo);
-  CHECK(strstr(rep->mop[0].stack.entry[2].func, "foo"));
-  CHECK(strstr(rep->mop[0].stack.entry[2].file, file));
-  CHECK_EQ(rep->mop[0].stack.entry[2].line, foo_line);
-  CHECK_EQ(rep->mop[1].tid, 0);
-  CHECK_EQ(rep->mop[1].addr, (uintptr_t)l.loc());
-  CHECK_EQ(rep->mop[1].size, 1);
-  CHECK_EQ(rep->mop[1].write, true);
-  CHECK_EQ(rep->mop[1].stack.cnt, 1);
-  CHECK_GT(rep->mop[1].stack.entry[0].pc, pc - 64);
-  CHECK_LT(rep->mop[1].stack.entry[0].pc, pc + 64);
-  CHECK(strstr(rep->mop[1].stack.entry[0].func, "mop_no_inline"));
-  CHECK(strstr(rep->mop[1].stack.entry[0].file, file));
-  CHECK_GT(rep->mop[1].stack.entry[0].line, line - 3);
-  CHECK_LT(rep->mop[1].stack.entry[0].line, line + 3);
+  EXPECT_EQ(rep->typ, __tsan::ReportTypeRace);
+  EXPECT_EQ(rep->nmop, 2);
+  EXPECT_NE(rep->mop[0].tid, 0);
+  EXPECT_EQ(rep->mop[0].addr, (uintptr_t)l.loc());
+  EXPECT_EQ(rep->mop[0].size, 1);
+  EXPECT_EQ(rep->mop[0].write, true);
+  EXPECT_EQ(rep->mop[0].stack.cnt, 3);
+  EXPECT_EQ(rep->mop[0].stack.entry[1].pc, (uintptr_t)(void*)&bar);
+  EXPECT_NE(strstr(rep->mop[0].stack.entry[1].func, "bar"), (void*)0);
+  EXPECT_NE(strstr(rep->mop[0].stack.entry[1].file, file), (void*)0);
+  EXPECT_EQ(rep->mop[0].stack.entry[1].line, bar_line);
+  EXPECT_EQ(rep->mop[0].stack.entry[2].pc, (uintptr_t)(void*)&foo);
+  EXPECT_NE(strstr(rep->mop[0].stack.entry[2].func, "foo"), (void*)0);
+  EXPECT_NE(strstr(rep->mop[0].stack.entry[2].file, file), (void*)0);
+  EXPECT_EQ(rep->mop[0].stack.entry[2].line, foo_line);
+  EXPECT_EQ(rep->mop[1].tid, 0);
+  EXPECT_EQ(rep->mop[1].addr, (uintptr_t)l.loc());
+  EXPECT_EQ(rep->mop[1].size, 1);
+  EXPECT_EQ(rep->mop[1].write, true);
+  EXPECT_EQ(rep->mop[1].stack.cnt, 1);
+  EXPECT_GT(rep->mop[1].stack.entry[0].pc, pc - 64);
+  EXPECT_LT(rep->mop[1].stack.entry[0].pc, pc + 64);
+  EXPECT_NE(strstr(rep->mop[1].stack.entry[0].func, "mop_no_inline"), (void*)0);
+  EXPECT_NE(strstr(rep->mop[1].stack.entry[0].file, file), (void*)0);
+  EXPECT_GT(rep->mop[1].stack.entry[0].line, line - 3);
+  EXPECT_LT(rep->mop[1].stack.entry[0].line, line + 3);
 }
 
 TEST(ThreadSanitizer, ReportDeadThread) {
@@ -114,7 +116,7 @@ TEST(ThreadSanitizer, ReportDeadThread) {
     t2.Write1(l);
   }
   const ReportDesc *rep = t1.Write1(l, true);
-  CHECK_EQ(rep->mop[1].stack.cnt, 3);
+  EXPECT_EQ(rep->mop[1].stack.cnt, 3);
 }
 
 struct ClassWithStatic {
@@ -123,10 +125,12 @@ struct ClassWithStatic {
 
 int ClassWithStatic::Data[4];
 
+static void foobarbaz() {}
+
 TEST(DISABLED_FAILS_ThreadSanitizer, ReportRace) {
   ScopedThread t1;
   MainThread().Access(&ClassWithStatic::Data, true, 4, false);
-  t1.Call(&foo);
-  t1.Call(&bar);
+  t1.Call(&foobarbaz);
   t1.Access(&ClassWithStatic::Data, true, 2, false);
+  t1.Return();
 }
