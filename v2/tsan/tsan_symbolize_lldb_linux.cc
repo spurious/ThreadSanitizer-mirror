@@ -29,10 +29,21 @@
 
 #include <link.h>
 #include <string.h>
+#include <errno.h>
 
 using namespace lldb;  // NOLINT
 
 namespace __tsan {
+
+struct ScopedErrno {
+  int err;
+  ScopedErrno() {
+    this->err = errno;
+  }
+  ~ScopedErrno() {
+    errno = this->err;
+  }
+};
 
 struct LldbContext {
   bool is_valid;
@@ -86,6 +97,7 @@ static LldbContext *GetContext() {
 }
 
 int SymbolizeCode(RegionAlloc *alloc, uptr addr, Symbol *symb, int cnt) {
+  ScopedErrno se;
   LldbContext *ctx = GetContext();
   if (ctx == 0)
     return 0;
@@ -131,6 +143,7 @@ int SymbolizeCode(RegionAlloc *alloc, uptr addr, Symbol *symb, int cnt) {
 }
 
 int SymbolizeData(RegionAlloc *alloc, uptr addr, Symbol *symb) {
+  ScopedErrno se;
   LldbContext *ctx = GetContext();
   if (ctx == 0)
     return 0;

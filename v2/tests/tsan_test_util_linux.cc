@@ -25,6 +25,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <unistd.h>
+#include <errno.h>
 
 using namespace __tsan;  // NOLINT
 
@@ -246,7 +247,9 @@ void ScopedThread::Impl::HandleEvent(Event *ev) {
       }
     }
     CHECK_NE(tsan_mop, 0);
+    errno = ECHRNG;
     tsan_mop(ev->ptr);
+    CHECK_EQ(errno, ECHRNG);  // In no case must errno be changed.
     break;
   }
   case Event::CALL:

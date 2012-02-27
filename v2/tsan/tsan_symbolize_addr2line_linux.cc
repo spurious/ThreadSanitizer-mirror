@@ -17,8 +17,19 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <errno.h>
 
 namespace __tsan {
+
+struct ScopedErrno {
+  int err;
+  ScopedErrno() {
+    this->err = errno;
+  }
+  ~ScopedErrno() {
+    errno = this->err;
+  }
+};
 
 static char exe[1024];
 static uptr base;
@@ -52,6 +63,7 @@ static uptr GetImageBase() {
 }
 
 int SymbolizeCode(RegionAlloc *alloc, uptr addr, Symbol *symb, int cnt) {
+  ScopedErrno se;
   if (base == 0)
     base = GetImageBase();
   int res = 0;
@@ -86,6 +98,7 @@ int SymbolizeCode(RegionAlloc *alloc, uptr addr, Symbol *symb, int cnt) {
 }
 
 int SymbolizeData(RegionAlloc *alloc, uptr addr, Symbol *symb) {
+  ScopedErrno se;
   (void)alloc;
   (void)addr;
   (void)symb;
