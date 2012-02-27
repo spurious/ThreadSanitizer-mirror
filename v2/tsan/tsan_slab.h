@@ -60,6 +60,19 @@ class SlabCache {
   void operator = (const SlabCache&);
 };
 
+class RegionAlloc {
+ public:
+  RegionAlloc(void *mem, uptr size);
+  void *Alloc(uptr size);
+
+ private:
+  char *mem_;
+  char *end_;
+
+  RegionAlloc(const RegionAlloc&);  // Not implemented.
+  void operator = (const RegionAlloc&);  // Not implemented.
+};
+
 }  // namespace __tsan
 
 #endif  // TSAN_SLAB_H

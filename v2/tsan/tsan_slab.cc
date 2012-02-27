@@ -154,4 +154,19 @@ uptr SlabCache::Size() const {
   return parent_->Size();
 }
 
+RegionAlloc::RegionAlloc(void *mem, uptr size)
+  : mem_((char*)mem)
+  , end_((char*)mem + size) {
+  CHECK_NE(mem, 0);
+  CHECK_GT(size, 0);
+}
+
+void *RegionAlloc::Alloc(uptr size) {
+  char *p = mem_;
+  if (p + size > end_)
+    return 0;
+  mem_ += size;
+  return p;
+}
+
 }  // namespace __tsan
