@@ -176,7 +176,7 @@ void ThreadFinish(ThreadState *thr);
 void ThreadJoin(ThreadState *thr, uptr pc, uptr uid);
 void ThreadDetach(ThreadState *thr, uptr pc, uptr uid);
 
-void MutexCreate(ThreadState *thr, uptr pc, uptr addr);
+void MutexCreate(ThreadState *thr, uptr pc, uptr addr, bool rw, bool recursive);
 void MutexDestroy(ThreadState *thr, uptr pc, uptr addr);
 void MutexLock(ThreadState *thr, uptr pc, uptr addr);
 void MutexUnlock(ThreadState *thr, uptr pc, uptr addr);

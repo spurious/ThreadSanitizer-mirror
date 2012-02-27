@@ -16,10 +16,13 @@
 
 namespace __tsan {
 
-void MutexCreate(ThreadState *thr, uptr pc, uptr addr) {
+void MutexCreate(ThreadState *thr, uptr pc, uptr addr,
+                 bool rw, bool recursive) {
   DPrintf("#%d: MutexCreate %p\n", thr->tid, addr);
   MemoryAccess(thr, pc, addr, 1, true);
   SyncVar *s = ctx->synctab.GetAndLock(&thr->syncslab, addr, true);
+  s->is_rw = rw;
+  s->is_recursive = recursive;
   s->mtx.Unlock();
 }
 
@@ -42,14 +45,24 @@ void MutexLock(ThreadState *thr, uptr pc, uptr addr) {
   MemoryAccess(thr, pc, addr, 1, false);
   thr->epoch++;
   TraceAddEvent(thr, thr->epoch, EventTypeLock, addr);
-  SyncVar *s = ctx->synctab.GetAndLock(&thr->syncslab, addr, false);
-  if (s->owner_tid != -1 && s->owner_tid != thr->tid)
+  SyncVar *s = ctx->synctab.GetAndLock(&thr->syncslab, addr, true);
+  if (s->owner_tid == -1) {
+    CHECK_EQ(s->recursion, 0);
+    s->owner_tid = thr->tid;
+  } else if (s->owner_tid == thr->tid) {
+    CHECK_GT(s->recursion, 0);
+  } else {
     Printf("ThreadSanitizer WARNING: double lock\n");
-  s->owner_tid = thr->tid;
-  thr->clock.set(thr->tid, thr->epoch);
-  thr->clock.acquire(&s->clock);
-  thr->clock.acquire(&s->read_clock);
-  s->mtx.ReadUnlock();
+  }
+  if (s->recursion == 0) {
+    thr->clock.set(thr->tid, thr->epoch);
+    thr->clock.acquire(&s->clock);
+    thr->clock.acquire(&s->read_clock);
+  } else if (!s->is_recursive) {
+    Printf("ThreadSanitizer WARNING: recursive lock\n");
+  }
+  s->recursion++;
+  s->mtx.Unlock();
 }
 
 void MutexUnlock(ThreadState *thr, uptr pc, uptr addr) {
@@ -60,11 +73,14 @@ void MutexUnlock(ThreadState *thr, uptr pc, uptr addr) {
   SyncVar *s = ctx->synctab.GetAndLock(&thr->syncslab, addr, true);
   if (s->owner_tid != thr->tid)
     Printf("ThreadSanitizer WARNING: mutex unlock by another thread\n");
-  // FIXME: incorrect for recursive mutexes.
-  s->owner_tid = -1;
-  thr->clock.set(thr->tid, thr->epoch);
-  thr->fast_synch_epoch = thr->epoch;
-  thr->clock.release(&s->clock, &thr->clockslab);
+  CHECK_GT(s->recursion, 0);
+  s->recursion--;
+  if (s->recursion == 0) {
+    s->owner_tid = -1;
+    thr->clock.set(thr->tid, thr->epoch);
+    thr->fast_synch_epoch = thr->epoch;
+    thr->clock.release(&s->clock, &thr->clockslab);
+  }
   s->mtx.Unlock();
 }
 
@@ -108,12 +124,16 @@ void MutexReadOrWriteUnlock(ThreadState *thr, uptr pc, uptr addr) {
     thr->clock.release(&s->read_clock, &thr->clockslab);
   } else if (s->owner_tid == thr->tid) {
     // Seems to be write unlock.
-    s->owner_tid = -1;
-    thr->epoch++;
-    TraceAddEvent(thr, thr->epoch, EventTypeUnlock, addr);
-    thr->clock.set(thr->tid, thr->epoch);
-    thr->fast_synch_epoch = thr->epoch;
-    thr->clock.release(&s->clock, &thr->clockslab);
+    CHECK_GT(s->recursion, 0);
+    s->recursion--;
+    if (s->recursion == 0) {
+      s->owner_tid = -1;
+      thr->epoch++;
+      TraceAddEvent(thr, thr->epoch, EventTypeUnlock, addr);
+      thr->clock.set(thr->tid, thr->epoch);
+      thr->fast_synch_epoch = thr->epoch;
+      thr->clock.release(&s->clock, &thr->clockslab);
+    }
   } else {
     Printf("ThreadSanitizer WARNING: mutex unlock by another thread\n");
   }

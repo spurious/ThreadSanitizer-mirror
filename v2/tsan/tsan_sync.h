@@ -30,6 +30,9 @@ struct SyncVar {
   SyncClock clock;
   SyncClock read_clock;  // Used for rw mutexes only.
   int owner_tid;  // Set only by exclusive owners.
+  int recursion;
+  bool is_rw;
+  bool is_recursive;
   SyncVar *next;  // In SyncTab hashtable.
 };
 

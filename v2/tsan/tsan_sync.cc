@@ -18,7 +18,10 @@ namespace __tsan {
 
 SyncVar::SyncVar(uptr addr)
   : addr(addr)
-  , owner_tid(-1) {
+  , owner_tid(-1)
+  , recursion()
+  , is_rw()
+  , is_recursive() {
 }
 
 SyncTab::Part::Part()

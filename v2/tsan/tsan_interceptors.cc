@@ -21,6 +21,7 @@ using namespace __tsan;  // NOLINT
 extern "C" int pthread_attr_getdetachstate(void *attr, int *v);
 extern "C" int pthread_key_create(unsigned *key, void (*destructor)(void* v));
 extern "C" int pthread_setspecific(unsigned key, const void *v);
+extern "C" int pthread_mutexattr_gettype(void *a, int *type);
 extern "C" int pthread_yield();
 extern "C" void *__libc_malloc(uptr size);
 extern "C" void *__libc_calloc(uptr nmemb, uptr size);
@@ -28,6 +29,8 @@ extern "C" void __libc_free(void *ptr);
 extern "C" void *__libc_realloc(void *ptr, uptr size);
 extern "C" int atexit(void (*function)());
 extern "C" void _exit(int status);
+const int PTHREAD_MUTEX_RECURSIVE = 1;
+const int PTHREAD_MUTEX_RECURSIVE_NP = 1;
 
 static unsigned g_thread_finalize_key;
 
@@ -203,11 +206,18 @@ INTERCEPTOR(int, pthread_detach, void *th) {
   return res;
 }
 
-INTERCEPTOR(int, pthread_mutex_init, void *m, const void *a) {
+INTERCEPTOR(int, pthread_mutex_init, void *m, void *a) {
   SCOPED_INTERCEPTOR(pthread_mutex_init);
   int res = REAL(pthread_mutex_init)(m, a);
   if (res == 0) {
-    MutexCreate(cur_thread(), pc, (uptr)m);
+    bool recursive = false;
+    if (a) {
+      int type = 0;
+      if (pthread_mutexattr_gettype(a, &type) == 0)
+        recursive = (type == PTHREAD_MUTEX_RECURSIVE
+            || type == PTHREAD_MUTEX_RECURSIVE_NP);
+    }
+    MutexCreate(cur_thread(), pc, (uptr)m, false, recursive);
   }
   return res;
 }
@@ -259,7 +269,7 @@ INTERCEPTOR(int, pthread_spin_init, void *m, int pshared) {
   SCOPED_INTERCEPTOR(pthread_spin_init);
   int res = REAL(pthread_spin_init)(m, pshared);
   if (res == 0) {
-    MutexCreate(cur_thread(), pc, (uptr)m);
+    MutexCreate(cur_thread(), pc, (uptr)m, false, false);
   }
   return res;
 }
@@ -302,7 +312,7 @@ INTERCEPTOR(int, pthread_rwlock_init, void *m, void *a) {
   SCOPED_INTERCEPTOR(pthread_rwlock_init);
   int res = REAL(pthread_rwlock_init)(m, a);
   if (res == 0) {
-    MutexCreate(cur_thread(), pc, (uptr)m);
+    MutexCreate(cur_thread(), pc, (uptr)m, true, false);
   }
   return res;
 }
