@@ -187,12 +187,20 @@ static void NOINLINE ReportRace(ThreadState *thr, uptr addr,
       for (int si = 0; si < stackcnt; si++) {
         Symbol symb[kStackMax];
         int framecnt = SymbolizeCode(&alloc, stack[si], symb, kStackMax);
-        for (int fi = 0; fi < framecnt && mop->stack.cnt < kStackMax; fi++) {
+        if (framecnt) {
+          for (int fi = 0; fi < framecnt && mop->stack.cnt < kStackMax; fi++) {
+            ReportStackEntry *ent = &mop->stack.entry[mop->stack.cnt++];
+            ent->pc = stack[si];
+            ent->func = symb[fi].name;
+            ent->file = symb[fi].file;
+            ent->line = symb[fi].line;
+          }
+        } else if (mop->stack.cnt < kStackMax) {
           ReportStackEntry *ent = &mop->stack.entry[mop->stack.cnt++];
           ent->pc = stack[si];
-          ent->func = symb[fi].name;
-          ent->file = symb[fi].file;
-          ent->line = symb[fi].line;
+          ent->func = 0;
+          ent->file = 0;
+          ent->line = 0;
         }
       }
     }
