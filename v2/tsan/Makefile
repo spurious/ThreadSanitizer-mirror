@@ -6,9 +6,10 @@ NO_SYSROOT=--sysroot=.
 CXXFLAGS+=$(EXTRA_CXXFLAGS)
 ifeq ($(DEBUG), 0)
   CXXFLAGS+=-fomit-frame-pointer
-else
+endif
+ifeq ($(CXX), clang++)
   # Global constructors are banned.
-  # CXXFLAGS+=-Wglobal-constructors
+  CXXFLAGS+=-Wglobal-constructors
 endif
 
 
