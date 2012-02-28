@@ -31,7 +31,7 @@
  with any other library that supports threads, locks, cond vars, etc.
 
 */
-#ifdef WIN32
+#ifdef _WIN32
 #error "Don't build this file on Windows!"
 #endif
 

@@ -53,7 +53,7 @@ using namespace std;
 # error "Pleeease, do not define NDEBUG"
 #endif
 
-#ifdef WIN32
+#ifdef _WIN32
 # define CHECK(x) do { if (!(x)) { \
    fprintf(stderr, "Assertion failed: %s (%s:%d) %s\n", \
           __FUNCTION__, __FILE__, __LINE__, #x); \
@@ -90,7 +90,7 @@ class Mutex;
 //}}}
 
 // Include platform-specific header with declaraions.
-#ifndef WIN32
+#ifndef _WIN32
 // Include pthread primitives (Linux, Mac)
 #include "thread_wrappers_pthread.h"
 #else

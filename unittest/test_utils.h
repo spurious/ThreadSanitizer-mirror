@@ -140,7 +140,7 @@ class StealthNotification {
 
   void wait() {
     while (!flag_) {
-#ifdef WIN32
+#ifdef _WIN32
       usleep(1000);
 #else
       sched_yield();

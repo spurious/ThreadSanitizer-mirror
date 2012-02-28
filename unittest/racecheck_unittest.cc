@@ -78,7 +78,7 @@ static CondVar CV;
 static int     COND = 0;
 
 static bool RunningOnPinLinux() {
-#ifndef WIN32
+#ifndef _WIN32
   char *framework = getenv("INSTRUMENTATION_FRAMEWORK");
   if (framework != NULL) {
     return strcmp(framework, "PIN_LINUX") == 0;
@@ -3167,7 +3167,7 @@ char    *tmp2;
 void WorkerX() {
   usleep(100000);
   ASSERT_TRUE(strlen(str) == 4);
-#ifndef WIN32
+#ifndef _WIN32
   EXPECT_EQ(str, index(str, 'X'));
   EXPECT_EQ(str+1, index(str, 'x'));
   EXPECT_EQ(NULL, index(str, 'Y'));
@@ -3183,7 +3183,7 @@ void WorkerX() {
   EXPECT_EQ(str, strchr(str, 'X'));
   EXPECT_EQ(str+1, strchr(str, 'x'));
   EXPECT_EQ(NULL, strchr(str, 'Y'));
-#if !defined(WIN32) && !defined(__MACH__)
+#if !defined(_WIN32) && !defined(__MACH__)
   EXPECT_EQ(str, strchrnul(str, 'X'));
   EXPECT_EQ(str+1, strchrnul(str, 'x'));
   EXPECT_EQ(str+4, strchrnul(str, 'Y'));
@@ -3195,7 +3195,7 @@ void WorkerX() {
   EXPECT_EQ(0, strcmp(tmp,str));
   EXPECT_EQ(0, strncmp(tmp,str, 4));
   EXPECT_EQ(str, memmove(str, tmp, strlen(tmp) + 1));
-#ifndef WIN32
+#ifndef _WIN32
 #ifndef ANDROID
   EXPECT_EQ(tmp2+4, stpcpy(tmp2, str));
 #endif
@@ -3251,7 +3251,7 @@ TEST(NegativeTests, StrlenAndFriends) {
   EXPECT_EQ(NULL, strchr(foo, -60));
   EXPECT_EQ(foo + strlen(foo), strchr(foo, 0));
 
-#if !defined(WIN32) && !defined(__MACH__)
+#if !defined(_WIN32) && !defined(__MACH__)
   EXPECT_EQ(foo, strchrnul(foo, 10));
   EXPECT_EQ(foo + 2, strchrnul(foo, 127));
   EXPECT_EQ(foo + 3, strchrnul(foo, 128));
@@ -5413,7 +5413,7 @@ void Run() {
   }
   for (int i  = 0; i < N; i++) delete t[i];
 }
-#ifndef WIN32
+#ifndef _WIN32
 // This is racey on Windows!
 REGISTER_TEST(Run, 117)
 #endif
@@ -5858,7 +5858,7 @@ void Worker1() { usleep(100000); Worker(); }
 void Worker2() { usleep(200000); Worker(); }
 void Worker3() { usleep(300000); Worker(); }
 
-#ifdef WIN32
+#ifdef _WIN32
 TEST(NegativeTests, DISABLED_PerThreadTest) {  // issue #23
 #else
 TEST(NegativeTests, PerThreadTest) {
@@ -6165,7 +6165,7 @@ void Getter() {
     }
     usleep(1000);
   }
-#ifndef WIN32
+#ifndef _WIN32
 #ifdef OS_darwin
   printf("T=%p: non_zero_received=%d\n",
          (void*)pthread_self(), non_zero_received);
@@ -6527,7 +6527,7 @@ void DoStrchr() {
   CHECK(strchr(GLOB, 'o') == (GLOB + 1));
 }
 
-#if !defined(WIN32) && !defined(__MACH__)
+#if !defined(_WIN32) && !defined(__MACH__)
 void DoStrchrnul() {
   CHECK(strchrnul(GLOB, 'o') == (GLOB + 1));
 }
@@ -6589,7 +6589,7 @@ TEST(PositiveTests, RaceInStrchr) {
   RunThreads(Write0, DoStrchr, mem);
 }
 
-#if !defined(WIN32) && !defined(__MACH__)
+#if !defined(_WIN32) && !defined(__MACH__)
 TEST(PositiveTests, RaceInStrchrnul) {
   static char mem[4];
   RunThreads(Write0, DoStrchrnul, mem);
@@ -7734,7 +7734,7 @@ TEST(RegTests, ThreadChainTest) {
 
 #ifndef ANDROID // GTest does not support ASSERT_DEBUG_DEATH.
 namespace SimpleDeathTest {  // {{{1 Make sure that the tool handles death tests correctly
-#ifdef WIN32
+#ifdef _WIN32
 TEST(DeathTests, DISABLED_SimpleDeathTest) {
 #else
 TEST(DeathTests, SimpleDeathTest) {
@@ -8043,7 +8043,7 @@ TEST(PrintfTests, DISABLED_RaceOnPrintfArgument) {
 }  // namespace
 
 // Apparently, %n is not supported in windows
-#ifndef WIN32
+#ifndef _WIN32
 namespace PrintfTests_RaceOnOutputArgument {
 
 volatile char s[] = "abracadabra";
@@ -8339,7 +8339,7 @@ void CheckStrchrResult() {
   EXPECT_EQ(GLOB + 2, strchr(GLOB, 'c'));
 }
 
-#if !defined(WIN32) && !defined(__MACH__)
+#if !defined(_WIN32) && !defined(__MACH__)
 void CheckStrchrnulResult() {
   EXPECT_EQ(GLOB + 2, strchrnul(GLOB, 'c'));
 }
@@ -8370,7 +8370,7 @@ void CheckStrcpyResult() {
   WriteC();
 }
 
-#if !defined(WIN32) && !defined(ANDROID)
+#if !defined(_WIN32) && !defined(ANDROID)
 void CheckStpcpyResult() {
   EXPECT_EQ(GLOB + 2, stpcpy(GLOB, GLOB2));
   WriteC();
@@ -8416,7 +8416,7 @@ TEST(NegativeTests, LibcStringFunctions) {
   // in "abcdef" look for "c", and overwrite "d"
   RunThreads(WriteD, CheckMemchrResult, NULL);
   RunThreads(WriteD, CheckStrchrResult, NULL);
-#if !defined(WIN32) && !defined(__MACH__)
+#if !defined(_WIN32) && !defined(__MACH__)
   RunThreads(WriteD, CheckStrchrnulResult, NULL);
 #endif
 
@@ -8437,7 +8437,7 @@ TEST(NegativeTests, LibcStringFunctions) {
 
   // Copy "ab\0" from "ab\0def" to "abcdef" (+ restore "c"), and overwrite "d"
   RunThreads(WriteD, CheckStrcpyResult, NULL);
-#if !defined(WIN32) && !defined(ANDROID)
+#if !defined(_WIN32) && !defined(ANDROID)
   RunThreads(WriteD, CheckStpcpyResult, NULL);
 #endif
   RunThreads(WriteD, CheckStrncpyResult, NULL);
@@ -8453,7 +8453,7 @@ TEST(PositiveTests, LibcStringFunctions) {
   // in "abcdef" look for "c", and overwrite "c"
   RunThreads(WriteC, CheckMemchrResult, GLOB + 2);
   RunThreads(WriteC, CheckStrchrResult, GLOB + 2);
-#if !defined(WIN32) && !defined(__MACH__)
+#if !defined(_WIN32) && !defined(__MACH__)
   RunThreads(WriteC, CheckStrchrnulResult, GLOB + 2);
 #endif
 
@@ -8474,7 +8474,7 @@ TEST(PositiveTests, LibcStringFunctions) {
 
   // Copy "ab\0" from "ab\0def" to "abcdef" (+ restore "c"), and overwrite "c"
   RunThreads(WriteC, CheckStrcpyResult, GLOB + 2);
-#if !defined(WIN32) && !defined(ANDROID)
+#if !defined(_WIN32) && !defined(ANDROID)
   RunThreads(WriteC, CheckStpcpyResult, GLOB + 2);
 #endif
   RunThreads(WriteC, CheckStrncpyResult, GLOB + 2);

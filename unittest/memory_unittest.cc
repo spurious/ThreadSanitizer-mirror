@@ -34,7 +34,7 @@
 
 #include <gtest/gtest.h>
 
-#ifdef WIN32
+#ifdef _WIN32
 #include <Wbemidl.h>
 
 #pragma comment(lib, "Wbemuuid.lib")
@@ -68,7 +68,7 @@ TEST(Wrappers, StrchrTest) {
   EXPECT_TRUE(strrchr(foo, 250) != 0);
   EXPECT_TRUE(strrchr(foo, -60) == 0);
 
-#ifdef WIN32
+#ifdef _WIN32
   EXPECT_TRUE(lstrlenA(NULL) == 0);
   EXPECT_TRUE(lstrlenW(NULL) == 0);
 #endif
@@ -101,7 +101,7 @@ TEST(HeapTest, ReallocInHeapObjectTest) {
 }
 
 
-#ifdef WIN32
+#ifdef _WIN32
 TEST(SyscallTests, OutputDebugStringTest) {
   // DrMemory bug http://code.google.com/p/dynamorio/issues/detail?id=281
   OutputDebugString("Hello!\n");

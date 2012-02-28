@@ -52,7 +52,7 @@ enum TEST_FLAG {
 
 // Put everything into stderr.
 extern Mutex printf_mu;
-#ifndef WIN32
+#ifndef _WIN32
 #define printf(args...) \
     do{ \
       printf_mu.Lock();\
