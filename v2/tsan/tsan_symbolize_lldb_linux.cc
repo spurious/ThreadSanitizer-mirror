@@ -63,16 +63,7 @@ static int dl_iterate_phdr_cb(dl_phdr_info *info, size_t size, void *ctx0) {
   SBModule module = ctx->target.AddModule(info->dlpi_name, 0, 0);
   if (!module.IsValid())
     return 0;
-  for (size_t i = 0; i < module.GetNumSections(); i++) {
-    SBSection sect = module.GetSectionAtIndex(i);
-    SectionType type = sect.GetSectionType();
-    if (type == eSectionTypeCode
-        || type == eSectionTypeData
-        || type == eSectionTypeZeroFill) {
-      addr_t start = (addr_t)info->dlpi_addr + sect.GetFileAddress();
-      ctx->target.SetSectionLoadAddress(sect, start);
-    }
-  }
+  ctx->target.SetModuleLoadAddress(module, (addr_t)info->dlpi_addr);
   return 0;
 }
 
