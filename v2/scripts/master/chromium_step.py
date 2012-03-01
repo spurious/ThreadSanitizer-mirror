@@ -155,7 +155,7 @@ class ProcessLogShellStep(shell.ShellCommand):
     # construct class that will have no-arg constructor.
     log_processor_class = chromium_utils.PartiallyInitialize(
         process_log.GraphingPageCyclerLogProcessor,
-        report_link='http://host:8010/report.html,
+        report_link='http://host:8033/report.html,
         output_dir='~/www')
     # We are partially constructing Step because the step final
     # initialization is done by BuildBot.

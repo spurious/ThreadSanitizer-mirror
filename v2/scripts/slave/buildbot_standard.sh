@@ -4,10 +4,9 @@ set -x
 set -e
 set -u
 
-
 if [ "$BUILDBOT_CLOBBER" != "" ]; then
   echo @@@BUILD_STEP clobber@@@
-  rm -rf llvm
+  rm -rf v2
 fi
 
 echo @@@BUILD_STEP update@@@
@@ -18,47 +17,36 @@ fi
 
 MAKE_JOBS=${MAX_MAKE_JOBS:-16}
 
-if [ -d llvm ]; then
-  svn up llvm $REV_ARG
-  if [ "$REV_ARG" == "" ]; then
-    REV_ARG="-r"$(svn info llvm | grep '^Revision:' | awk '{print $2}')
-  fi
-  svn up llvm/tools/clang $REV_ARG
-  svn up llvm/projects/compiler-rt $REV_ARG
+if [ -d v2 ]; then
+  cd v2
+  svn up $REV_ARG
 else
-  svn co http://llvm.org/svn/llvm-project/llvm/trunk llvm $REV_ARG
-  if [ "$REV_ARG" == "" ]; then
-    REV_ARG="-r"$(svn info llvm | grep '^Revision:' | awk '{print $2}')
-  fi
-  svn co http://llvm.org/svn/llvm-project/cfe/trunk llvm/tools/clang $REV_ARG
-  svn co http://llvm.org/svn/llvm-project/compiler-rt/trunk llvm/projects/compiler-rt $REV_ARG
+  svn co http://data-race-test.googlecode.com/svn/trunk/v2 v2 $REV_ARG
+  cd v2
+  make get_third_party
+  make get_interception
 fi
 
-echo @@@BUILD_STEP build llvm@@@
-rm -rf llvm-build
-mkdir llvm-build
-cd llvm-build
-../llvm/configure --enable-optimized
-make -j$MAKE_JOBS
+echo @@@BUILD_STEP LINT@@@
+make lint
 
-echo @@@BUILD_STEP test llvm@@@
-make check-all || echo @@@STEP_WARNINGS@@@
+echo @@@BUILD_STEP BUILD DEBUG-GCC@@@
+make clean
+make DEBUG=1 CC=gcc CXX=g++
 
-echo @@@BUILD_STEP prepare for building asan@@@
-CLANG_BUILD=`pwd`/Release+Asserts
-cd ../llvm/projects/compiler-rt/lib/asan/
-make -f Makefile.old CLANG_BUILD=$CLANG_BUILD get_third_party
-echo @@@BUILD_STEP lint@@@
-make -f Makefile.old CLANG_BUILD=$CLANG_BUILD lint
+echo @@@BUILD_STEP TEST DEBUG-GCC@@@
+./tests/tsan_test
+./tests/tsan_c_test
 
-echo @@@BUILD_STEP build asan@@@
-make -f Makefile.old CLANG_BUILD=$CLANG_BUILD -j$MAKE_JOBS
+echo @@@BUILD_STEP BUILD RELEASE-CLANG@@@
+make clean
+CLANG_DIR=../../../../../clang
+CFLAGS=-Wno-null-dereference LD_LIBRARY_PATH=$CLANG_DIR/bin make CC=$CLANG_DIR/bin/clang CXX=$CLANG_DIR/bin/clang++
 
-echo @@@BUILD_STEP asan test32@@@
-make -f Makefile.old CLANG_BUILD=$CLANG_BUILD t32  || echo @@@STEP_FAILURE@@@
+echo @@@BUILD_STEP TEST RELEASE-CLANG@@@
+./tests/tsan_test
+./tests/tsan_c_test
 
-echo @@@BUILD_STEP asan test64@@@
-make -f Makefile.old CLANG_BUILD=$CLANG_BUILD t64  || echo @@@STEP_FAILURE@@@
-
-echo @@@BUILD_STEP asan output_tests@@@
-make -f Makefile.old CLANG_BUILD=$CLANG_BUILD output_tests  || echo @@@STEP_FAILURE@@@
+echo @@@BUILD_STEP OUTPUT TESTS@@@
+cd output_tests
+PATH=$CLANG_DIR/bin:$PATH ./test_output.sh
