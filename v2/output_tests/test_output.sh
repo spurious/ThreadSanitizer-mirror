@@ -6,20 +6,25 @@ set -e # fail on any error
 CC=clang
 CXX=clang++
 
-CCFLAGS="-fthread-sanitizer -fPIE"
-LDFLAGS="-pie -lpthread -ldl -lstdc++ ../tsan/libtsan.a"
+CFLAGS="-fthread-sanitizer -fPIE"
+LDFLAGS="-pie -lpthread -ldl ../tsan/libtsan.a"
 
 test_file() {
-  COMPILER=$2
   SRC=$1
-  $COMPILER $SRC $CCFLAGS $LDFLAGS
-  ./a.out 2> test.out
-  FileCheck < test.out $SRC
+  COMPILER=$2
+  echo ----- TESTING $1
+  $COMPILER $SRC $CFLAGS $LDFLAGS
+  ./a.out 2> test.out || echo
   cat test.out
+  FileCheck < test.out $SRC
   rm -f a.out test.out *.tmp *.tmp2
+  echo
 }
-
 
 for c in *.c; do
   test_file $c $CC
+done
+
+for c in *.cc; do
+  test_file $c $CXX
 done
