@@ -508,6 +508,28 @@ INTERCEPTOR(int, sem_getvalue, void *s, int *sval) {
   return res;
 }
 
+static uptr fd2addr(int fd) {
+  (void)fd;
+  static int fdaddr;
+  return (uptr)&fdaddr;
+}
+
+INTERCEPTOR(long, read, int fd, void *buf, long sz) {
+  SCOPED_INTERCEPTOR(read, fd, buf, sz);
+  int res = REAL(read)(fd, buf, sz);
+  if (res >= 0) {
+    Acquire(cur_thread(), pc, fd2addr(fd));
+  }
+  return res;
+}
+
+INTERCEPTOR(long, write, int fd, void *buf, long sz) {
+  SCOPED_INTERCEPTOR(write, fd, buf, sz);
+  Release(cur_thread(), pc, fd2addr(fd));
+  int res = REAL(write)(fd, buf, sz);
+  return res;
+}
+
 namespace __tsan {
 
 void InitializeInterceptors() {
@@ -571,6 +593,9 @@ void InitializeInterceptors() {
   INTERCEPT_FUNCTION(sem_timedwait);
   INTERCEPT_FUNCTION(sem_post);
   INTERCEPT_FUNCTION(sem_getvalue);
+
+  INTERCEPT_FUNCTION(read);
+  INTERCEPT_FUNCTION(write);
 }
 
 void internal_memset(void *ptr, int c, uptr size) {
