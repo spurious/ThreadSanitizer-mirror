@@ -453,6 +453,61 @@ INTERCEPTOR(int, pthread_cond_timedwait, void *c, void *m, void *abstime) {
   return res;
 }
 
+INTERCEPTOR(int, sem_init, void *s, int pshared, unsigned value) {
+  SCOPED_INTERCEPTOR(sem_init, s, pshared, value);
+  int res = REAL(sem_init)(s, pshared, value);
+  return res;
+}
+
+INTERCEPTOR(int, sem_destroy, void *s) {
+  SCOPED_INTERCEPTOR(sem_destroy, s);
+  int res = REAL(sem_destroy)(s);
+  return res;
+}
+
+INTERCEPTOR(int, sem_wait, void *s) {
+  SCOPED_INTERCEPTOR(sem_wait, s);
+  int res = REAL(sem_wait)(s);
+  if (res == 0) {
+    Acquire(cur_thread(), pc, (uptr)s);
+  }
+  return res;
+}
+
+INTERCEPTOR(int, sem_trywait, void *s) {
+  SCOPED_INTERCEPTOR(sem_trywait, s);
+  int res = REAL(sem_trywait)(s);
+  if (res == 0) {
+    Acquire(cur_thread(), pc, (uptr)s);
+  }
+  return res;
+}
+
+INTERCEPTOR(int, sem_timedwait, void *s, void *abstime) {
+  SCOPED_INTERCEPTOR(sem_timedwait, s, abstime);
+  int res = REAL(sem_timedwait)(s, abstime);
+  if (res == 0) {
+    Acquire(cur_thread(), pc, (uptr)s);
+  }
+  return res;
+}
+
+INTERCEPTOR(int, sem_post, void *s) {
+  SCOPED_INTERCEPTOR(sem_post, s);
+  Release(cur_thread(), pc, (uptr)s);
+  int res = REAL(sem_post)(s);
+  return res;
+}
+
+INTERCEPTOR(int, sem_getvalue, void *s, int *sval) {
+  SCOPED_INTERCEPTOR(sem_getvalue, s, sval);
+  int res = REAL(sem_getvalue)(s, sval);
+  if (res == 0) {
+    Acquire(cur_thread(), pc, (uptr)s);
+  }
+  return res;
+}
+
 namespace __tsan {
 
 void InitializeInterceptors() {
@@ -508,6 +563,14 @@ void InitializeInterceptors() {
   INTERCEPT_FUNCTION(pthread_cond_broadcast);
   INTERCEPT_FUNCTION(pthread_cond_wait);
   INTERCEPT_FUNCTION(pthread_cond_timedwait);
+
+  INTERCEPT_FUNCTION(sem_init);
+  INTERCEPT_FUNCTION(sem_destroy);
+  INTERCEPT_FUNCTION(sem_wait);
+  INTERCEPT_FUNCTION(sem_trywait);
+  INTERCEPT_FUNCTION(sem_timedwait);
+  INTERCEPT_FUNCTION(sem_post);
+  INTERCEPT_FUNCTION(sem_getvalue);
 }
 
 void internal_memset(void *ptr, int c, uptr size) {
