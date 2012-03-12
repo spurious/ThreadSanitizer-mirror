@@ -15,6 +15,7 @@
 #include "tsan_rtl.h"
 #include "tsan_interface.h"
 #include "tsan_atomic.h"
+#include "tsan_platform.h"
 
 using namespace __tsan;  // NOLINT
 
@@ -29,10 +30,12 @@ extern "C" void __libc_free(void *ptr);
 extern "C" void *__libc_realloc(void *ptr, uptr size);
 extern "C" int atexit(void (*function)());
 extern "C" void _exit(int status);
+extern "C" int *__errno_location();
 const int PTHREAD_MUTEX_RECURSIVE = 1;
 const int PTHREAD_MUTEX_RECURSIVE_NP = 1;
 const int EINVAL = 22;
-const void *MAP_FAILED = (void*)-1;
+void *const MAP_FAILED = (void*)-1;
+const int MAP_FIXED = 0x10;
 typedef long long_t;  // NOLINT
 
 static unsigned g_thread_finalize_key;
@@ -77,6 +80,24 @@ static void finalize() {
   int status = Finalize(cur_thread());
   if (status)
     _exit(status);
+}
+
+static uptr fd2addr(int fd) {
+  (void)fd;
+  static int addr;
+  return (uptr)&addr;
+}
+
+static uptr file2addr(char *path) {
+  (void)path;
+  static int addr;
+  return (uptr)&addr;
+}
+
+static uptr dir2addr(char *path) {
+  (void)path;
+  static int addr;
+  return (uptr)&addr;
 }
 
 INTERCEPTOR(void*, malloc, uptr size) {
@@ -139,9 +160,25 @@ INTERCEPTOR(void*, memcpy, void *dst, const void *src, uptr size) {
   return REAL(memcpy)(dst, src, size);
 }
 
+static bool fix_mmap_addr(void **addr, long_t sz, int flags) {
+  if (*addr) {
+    if (!IsAppMem((uptr)*addr) || !IsAppMem((uptr)*addr + sz - 1)) {
+      if (flags & MAP_FIXED) {
+        *__errno_location() = EINVAL;
+        return false;
+      } else {
+        *addr = 0;
+      }
+    }
+  }
+  return true;
+}
+
 INTERCEPTOR(void*, mmap, void *addr, long_t sz, int prot,
                          int flags, int fd, unsigned off) {
   SCOPED_INTERCEPTOR(mmap, addr, sz, prot, flags, fd, off);
+  if (!fix_mmap_addr(&addr, sz, flags))
+    return MAP_FAILED;
   void *res = REAL(mmap)(addr, sz, prot, flags, fd, off);
   if (res != MAP_FAILED) {
     MemoryResetRange(cur_thread(), pc, (uptr)res, sz);
@@ -152,6 +189,8 @@ INTERCEPTOR(void*, mmap, void *addr, long_t sz, int prot,
 INTERCEPTOR(void*, mmap64, void *addr, long_t sz, int prot,
                            int flags, int fd, u64 off) {
   SCOPED_INTERCEPTOR(mmap64, addr, sz, prot, flags, fd, off);
+  if (!fix_mmap_addr(&addr, sz, flags))
+    return MAP_FAILED;
   void *res = REAL(mmap64)(addr, sz, prot, flags, fd, off);
   if (res != MAP_FAILED) {
     MemoryResetRange(cur_thread(), pc, (uptr)res, sz);
@@ -567,12 +606,6 @@ INTERCEPTOR(int, sem_getvalue, void *s, int *sval) {
   return res;
 }
 
-static uptr fd2addr(int fd) {
-  (void)fd;
-  static int fdaddr;
-  return (uptr)&fdaddr;
-}
-
 INTERCEPTOR(long_t, read, int fd, void *buf, long_t sz) {
   SCOPED_INTERCEPTOR(read, fd, buf, sz);
   int res = REAL(read)(fd, buf, sz);
@@ -685,6 +718,34 @@ INTERCEPTOR(long_t, recvmsg, int fd, void *msg, int flags) {
   return res;
 }
 
+INTERCEPTOR(int, unlink, char *path) {
+  SCOPED_INTERCEPTOR(unlink, path);
+  Release(cur_thread(), pc, file2addr(path));
+  int res = REAL(unlink)(path);
+  return res;
+}
+
+INTERCEPTOR(void*, fopen, char *path, char *mode) {
+  SCOPED_INTERCEPTOR(fopen, path, mode);
+  void *res = REAL(fopen)(path, mode);
+  Acquire(cur_thread(), pc, file2addr(path));
+  return res;
+}
+
+INTERCEPTOR(int, rmdir, char *path) {
+  SCOPED_INTERCEPTOR(rmdir, path);
+  Release(cur_thread(), pc, dir2addr(path));
+  int res = REAL(rmdir)(path);
+  return res;
+}
+
+INTERCEPTOR(void*, opendir, char *path) {
+  SCOPED_INTERCEPTOR(opendir, path);
+  void *res = REAL(opendir)(path);
+  Acquire(cur_thread(), pc, dir2addr(path));
+  return res;
+}
+
 namespace __tsan {
 
 void InitializeInterceptors() {
@@ -768,6 +829,11 @@ void InitializeInterceptors() {
   INTERCEPT_FUNCTION(sendmsg);
   INTERCEPT_FUNCTION(recv);
   INTERCEPT_FUNCTION(recvmsg);
+
+  INTERCEPT_FUNCTION(unlink);
+  INTERCEPT_FUNCTION(fopen);
+  INTERCEPT_FUNCTION(rmdir);
+  INTERCEPT_FUNCTION(opendir);
 }
 
 void internal_memset(void *ptr, int c, uptr size) {

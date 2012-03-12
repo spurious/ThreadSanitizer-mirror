@@ -134,7 +134,8 @@ void InitializeShadowMemory() {
 }
 
 void InitializePlatform() {
-  if (sizeof(void*) == 8) {
+  void *p = 0;
+  if (sizeof(p) == 8) {
     // Disable core dumps, dumping of 16TB usually takes a bit long.
     rlimit lim = {0, 0};
     setrlimit(RLIMIT_CORE, &lim);
