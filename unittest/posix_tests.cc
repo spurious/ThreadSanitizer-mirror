@@ -425,6 +425,8 @@ TEST(PositiveTests, test110) {
 }  // namespace test110
 
 
+// dvyukov: the test is incorrect and the intent is lost...
+#if 0
 // test115: TN. sem_open. {{{1
 namespace    test115 {
 int tid = 0;
@@ -488,6 +490,7 @@ TEST(NegativeTests, test115) {
 }
 #endif  // __APPLE__
 }  // namespace test115
+#endif
 
 
 // test122 TP: Simple test with RWLock {{{1
