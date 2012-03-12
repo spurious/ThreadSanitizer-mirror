@@ -93,3 +93,56 @@ static void *local_thread(void *p) {
 TEST(DISABLED_FAILS_Posix, ThreadLocalAccesses) {
   local_thread((void*)2);
 }
+
+struct CondContext {
+  pthread_mutex_t m;
+  pthread_cond_t c;
+  int data;
+};
+
+static void *cond_thread(void *p) {
+  CondContext &ctx = *static_cast<CondContext*>(p);
+
+  EXPECT_EQ(pthread_mutex_lock(&ctx.m), 0);
+  EXPECT_EQ(ctx.data, 0);
+  ctx.data = 1;
+  EXPECT_EQ(pthread_cond_signal(&ctx.c), 0);
+  EXPECT_EQ(pthread_mutex_unlock(&ctx.m), 0);
+
+  EXPECT_EQ(pthread_mutex_lock(&ctx.m), 0);
+  while (ctx.data != 2)
+    EXPECT_EQ(pthread_cond_wait(&ctx.c, &ctx.m), 0);
+  EXPECT_EQ(pthread_mutex_unlock(&ctx.m), 0);
+
+  EXPECT_EQ(pthread_mutex_lock(&ctx.m), 0);
+  ctx.data = 3;
+  EXPECT_EQ(pthread_cond_broadcast(&ctx.c), 0);
+  EXPECT_EQ(pthread_mutex_unlock(&ctx.m), 0);
+
+  return 0;
+}
+
+TEST(Posix, CondBasic) {
+  CondContext ctx;
+  EXPECT_EQ(pthread_mutex_init(&ctx.m, 0), 0);
+  EXPECT_EQ(pthread_cond_init(&ctx.c, 0), 0);
+  ctx.data = 0;
+  pthread_t th;
+  EXPECT_EQ(pthread_create(&th, 0, cond_thread, &ctx), 0);
+
+  EXPECT_EQ(pthread_mutex_lock(&ctx.m), 0);
+  while (ctx.data != 1)
+    EXPECT_EQ(pthread_cond_wait(&ctx.c, &ctx.m), 0);
+  ctx.data = 2;
+  EXPECT_EQ(pthread_mutex_unlock(&ctx.m), 0);
+  EXPECT_EQ(pthread_cond_broadcast(&ctx.c), 0);
+
+  EXPECT_EQ(pthread_mutex_lock(&ctx.m), 0);
+  while (ctx.data != 3)
+    EXPECT_EQ(pthread_cond_wait(&ctx.c, &ctx.m), 0);
+  EXPECT_EQ(pthread_mutex_unlock(&ctx.m), 0);
+  
+  EXPECT_EQ(pthread_join(th, 0), 0);
+  EXPECT_EQ(pthread_cond_destroy(&ctx.c), 0);
+  EXPECT_EQ(pthread_mutex_destroy(&ctx.m), 0);
+}

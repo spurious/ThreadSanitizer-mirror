@@ -439,13 +439,17 @@ INTERCEPTOR(int, pthread_cond_broadcast, void *c) {
 
 INTERCEPTOR(int, pthread_cond_wait, void *c, void *m) {
   SCOPED_INTERCEPTOR(pthread_cond_wait, c, m);
+  MutexUnlock(cur_thread(), pc, (uptr)m);
   int res = pthread_cond_wait(c, m);
+  MutexLock(cur_thread(), pc, (uptr)m);
   return res;
 }
 
 INTERCEPTOR(int, pthread_cond_timedwait, void *c, void *m, void *abstime) {
   SCOPED_INTERCEPTOR(pthread_cond_timedwait, c, m, abstime);
+  MutexUnlock(cur_thread(), pc, (uptr)m);
   int res = pthread_cond_timedwait(c, m, abstime);
+  MutexLock(cur_thread(), pc, (uptr)m);
   return res;
 }
 
