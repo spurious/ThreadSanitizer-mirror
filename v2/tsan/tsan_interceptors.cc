@@ -523,10 +523,74 @@ INTERCEPTOR(long, read, int fd, void *buf, long sz) {
   return res;
 }
 
+INTERCEPTOR(long, pread, int fd, void *buf, long sz, unsigned off) {
+  SCOPED_INTERCEPTOR(pread, fd, buf, sz, off);
+  int res = REAL(pread)(fd, buf, sz, off);
+  if (res >= 0) {
+    Acquire(cur_thread(), pc, fd2addr(fd));
+  }
+  return res;
+}
+
+INTERCEPTOR(long, pread64, int fd, void *buf, long sz, u64 off) {
+  SCOPED_INTERCEPTOR(pread64, fd, buf, sz, off);
+  int res = REAL(pread64)(fd, buf, sz, off);
+  if (res >= 0) {
+    Acquire(cur_thread(), pc, fd2addr(fd));
+  }
+  return res;
+}
+
+INTERCEPTOR(long, readv, int fd, void *vec, int cnt) {
+  SCOPED_INTERCEPTOR(readv, fd, vec, cnt);
+  int res = REAL(readv)(fd, vec, cnt);
+  if (res >= 0) {
+    Acquire(cur_thread(), pc, fd2addr(fd));
+  }
+  return res;
+}
+
+INTERCEPTOR(long, preadv64, int fd, void *vec, int cnt, u64 off) {
+  SCOPED_INTERCEPTOR(preadv64, fd, vec, cnt, off);
+  int res = REAL(preadv64)(fd, vec, cnt, off);
+  if (res >= 0) {
+    Acquire(cur_thread(), pc, fd2addr(fd));
+  }
+  return res;
+}
+
 INTERCEPTOR(long, write, int fd, void *buf, long sz) {
   SCOPED_INTERCEPTOR(write, fd, buf, sz);
   Release(cur_thread(), pc, fd2addr(fd));
   int res = REAL(write)(fd, buf, sz);
+  return res;
+}
+
+INTERCEPTOR(long, pwrite, int fd, void *buf, long sz, unsigned off) {
+  SCOPED_INTERCEPTOR(pwrite, fd, buf, sz, off);
+  Release(cur_thread(), pc, fd2addr(fd));
+  int res = REAL(pwrite)(fd, buf, sz, off);
+  return res;
+}
+
+INTERCEPTOR(long, pwrite64, int fd, void *buf, long sz, unsigned off) {
+  SCOPED_INTERCEPTOR(pwrite64, fd, buf, sz, off);
+  Release(cur_thread(), pc, fd2addr(fd));
+  int res = REAL(pwrite64)(fd, buf, sz, off);
+  return res;
+}
+
+INTERCEPTOR(long, writev, int fd, void *vec, int cnt) {
+  SCOPED_INTERCEPTOR(writev, fd, vec, cnt);
+  Release(cur_thread(), pc, fd2addr(fd));
+  int res = REAL(writev)(fd, vec, cnt);
+  return res;
+}
+
+INTERCEPTOR(long, pwritev64, int fd, void *vec, int cnt, u64 off) {
+  SCOPED_INTERCEPTOR(pwritev64, fd, vec, cnt, off);
+  Release(cur_thread(), pc, fd2addr(fd));
+  int res = REAL(pwritev64)(fd, vec, cnt, off);
   return res;
 }
 
@@ -595,7 +659,15 @@ void InitializeInterceptors() {
   INTERCEPT_FUNCTION(sem_getvalue);
 
   INTERCEPT_FUNCTION(read);
+  INTERCEPT_FUNCTION(pread);
+  INTERCEPT_FUNCTION(pread64);
+  INTERCEPT_FUNCTION(readv);
+  INTERCEPT_FUNCTION(preadv64);
   INTERCEPT_FUNCTION(write);
+  INTERCEPT_FUNCTION(pwrite);
+  INTERCEPT_FUNCTION(pwrite64);
+  INTERCEPT_FUNCTION(writev);
+  INTERCEPT_FUNCTION(pwritev64);
 }
 
 void internal_memset(void *ptr, int c, uptr size) {
