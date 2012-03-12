@@ -411,6 +411,12 @@ void MemoryResetRange(ThreadState *thr, uptr pc, uptr addr, uptr size) {
   CHECK_EQ(addr % 8, 0);
   (void)thr;
   (void)pc;
+  // Some programs mmap like hundreds of GBs but actually used a small part.
+  // So, it's better to report a false positive on the memory
+  // then to hang here senselessly.
+  const uptr kMaxResetSize = 1024*1024*1024;
+  if (size > kMaxResetSize)
+    size = kMaxResetSize;
   u64 *p = (u64*)MemToShadow(addr);
   // TODO(dvyukov): may overwrite a part outside the region
   for (uptr i = 0; i * 8 < size; i++)
