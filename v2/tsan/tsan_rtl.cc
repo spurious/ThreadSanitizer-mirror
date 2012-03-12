@@ -89,6 +89,7 @@ void Initialize(ThreadState *thr) {
   if (ctx)
     return;
   InitializeInterceptors();
+  InitializePlatform();
   Printf("***** Running under ThreadSanitizer v2 *****\n");
   ctx = new(ctx_placeholder) Context;
   InitializeShadowMemory();

@@ -21,6 +21,8 @@
 #include <stdarg.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>
+#include <sys/time.h>
+#include <sys/resource.h>
 #include <unistd.h>
 #include <errno.h>
 #include <sched.h>
@@ -129,6 +131,14 @@ void InitializeShadowMemory() {
   DPrintf("kLinuxAppMemEnd %p\n", kLinuxAppMemEnd);
   DPrintf("stack           %p\n", &shadow);
   DPrintf("InitializeShadowMemory: %p %p\n", shadow);
+}
+
+void InitializePlatform() {
+  if (sizeof(void*) == 8) {
+    // Disable core dumps, dumping of 16TB usually takes a bit long.
+    rlimit lim = {0, 0};
+    setrlimit(RLIMIT_CORE, &lim);
+  }
 }
 
 }  // namespace __tsan
