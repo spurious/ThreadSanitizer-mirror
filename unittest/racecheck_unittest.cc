@@ -5639,11 +5639,10 @@ void RunTwoThreads(size_t size1, size_t offset1, size_t size2, size_t offset2) {
   long beg2 = offset2 * size2;
   long end2 = beg2 + size2;
   bool have_intersection = TwoRangesIntersect(beg1, end1, beg2, end2);
-  char descr[1024];
   MEM = &arr[arr_index++];
+  char descr[1024];
   sprintf(descr, "Testing: [%ld, %ld) vs [%ld, %ld] (%s intersection); p=%p",
           beg1, end1, beg2, end2, have_intersection ? "have" : "no", MEM);
-  fprintf(stderr, "%s\n", descr);
   char *racey_addr_beg = (char*)MEM + max(beg1, beg2);
   char *racey_addr_end = (char*)MEM + min(end1, end2);
   if (have_intersection) {
@@ -5652,8 +5651,9 @@ void RunTwoThreads(size_t size1, size_t offset1, size_t size2, size_t offset2) {
       // We expect a race on the first racey byte, but we may also see some
       // races in other bytes (e.g. if a 8-byte store is implemented via two
       // 4-byte stores on a 32-bit arch). Ignore these extra races.
-      ANNOTATE_BENIGN_RACE_SIZED(racey_addr_beg+1, racey_addr_end - racey_addr_beg - 1,
-                           "race");
+      ANNOTATE_BENIGN_RACE_SIZED(racey_addr_beg+1,
+                                 racey_addr_end - racey_addr_beg - 1,
+                                 descr);
     }
   }
   MyThreadArray t1(Thread1, Thread2);
