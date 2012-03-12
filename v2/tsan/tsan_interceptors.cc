@@ -413,6 +413,42 @@ INTERCEPTOR(int, pthread_rwlock_unlock, void *m) {
   return res;
 }
 
+INTERCEPTOR(int, pthread_cond_init, void *c, void *a) {
+  SCOPED_INTERCEPTOR(pthread_cond_init, c, a);
+  int res = pthread_cond_init(c, a);
+  return res;
+}
+
+INTERCEPTOR(int, pthread_cond_destroy, void *c) {
+  SCOPED_INTERCEPTOR(pthread_cond_destroy, c);
+  int res = pthread_cond_destroy(c);
+  return res;
+}
+
+INTERCEPTOR(int, pthread_cond_signal, void *c) {
+  SCOPED_INTERCEPTOR(pthread_cond_signal, c);
+  int res = pthread_cond_signal(c);
+  return res;
+}
+
+INTERCEPTOR(int, pthread_cond_broadcast, void *c) {
+  SCOPED_INTERCEPTOR(pthread_cond_broadcast, c);
+  int res = pthread_cond_broadcast(c);
+  return res;
+}
+
+INTERCEPTOR(int, pthread_cond_wait, void *c, void *m) {
+  SCOPED_INTERCEPTOR(pthread_cond_wait, c, m);
+  int res = pthread_cond_wait(c, m);
+  return res;
+}
+
+INTERCEPTOR(int, pthread_cond_timedwait, void *c, void *m, void *abstime) {
+  SCOPED_INTERCEPTOR(pthread_cond_timedwait, c, m, abstime);
+  int res = pthread_cond_timedwait(c, m, abstime);
+  return res;
+}
+
 namespace __tsan {
 
 void InitializeInterceptors() {
@@ -461,6 +497,13 @@ void InitializeInterceptors() {
   INTERCEPT_FUNCTION(pthread_rwlock_trywrlock);
   INTERCEPT_FUNCTION(pthread_rwlock_timedwrlock);
   INTERCEPT_FUNCTION(pthread_rwlock_unlock);
+
+  INTERCEPT_FUNCTION(pthread_cond_init);
+  INTERCEPT_FUNCTION(pthread_cond_destroy);
+  INTERCEPT_FUNCTION(pthread_cond_signal);
+  INTERCEPT_FUNCTION(pthread_cond_broadcast);
+  INTERCEPT_FUNCTION(pthread_cond_wait);
+  INTERCEPT_FUNCTION(pthread_cond_timedwait);
 }
 
 void internal_memset(void *ptr, int c, uptr size) {
