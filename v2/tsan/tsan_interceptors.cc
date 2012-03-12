@@ -31,6 +31,7 @@ extern "C" int atexit(void (*function)());
 extern "C" void _exit(int status);
 const int PTHREAD_MUTEX_RECURSIVE = 1;
 const int PTHREAD_MUTEX_RECURSIVE_NP = 1;
+const int EINVAL = 22;
 typedef long long_t;  // NOLINT
 
 static unsigned g_thread_finalize_key;
@@ -454,6 +455,27 @@ INTERCEPTOR(int, pthread_cond_timedwait, void *c, void *m, void *abstime) {
   return res;
 }
 
+INTERCEPTOR(int, pthread_once, void *o, void (*f)()) {
+  SCOPED_INTERCEPTOR(pthread_once, o, f);
+  if (o == 0 || f == 0)
+    return EINVAL;
+  atomic_uint32_t *a = static_cast<atomic_uint32_t*>(o);
+  u32 v = atomic_load(a, memory_order_acquire);
+  if (v == 0 && atomic_compare_exchange_strong(a, &v, 1,
+                                               memory_order_relaxed)) {
+    (*f)();
+    Release(cur_thread(), pc, (uptr)o);
+    atomic_store(a, 2, memory_order_release);
+  } else {
+    while (v != 2) {
+      pthread_yield();
+      v = atomic_load(a, memory_order_acquire);
+    }
+    Acquire(cur_thread(), pc, (uptr)o);
+  }
+  return 0;
+}
+
 INTERCEPTOR(int, sem_init, void *s, int pshared, unsigned value) {
   SCOPED_INTERCEPTOR(sem_init, s, pshared, value);
   int res = REAL(sem_init)(s, pshared, value);
@@ -682,6 +704,8 @@ void InitializeInterceptors() {
   INTERCEPT_FUNCTION(pthread_cond_broadcast);
   INTERCEPT_FUNCTION(pthread_cond_wait);
   INTERCEPT_FUNCTION(pthread_cond_timedwait);
+
+  INTERCEPT_FUNCTION(pthread_once);
 
   INTERCEPT_FUNCTION(sem_init);
   INTERCEPT_FUNCTION(sem_destroy);

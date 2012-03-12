@@ -30,6 +30,11 @@ enum memory_order {
   memory_order_seq_cst = 1 << 5,
 };
 
+struct atomic_uint32_t {
+  typedef u32 Type;
+  volatile Type val_dont_use;
+};
+
 struct atomic_uint64_t {
   typedef u64 Type;
   volatile Type val_dont_use;
@@ -110,11 +115,14 @@ INLINE uptr atomic_exchange(volatile atomic_uintptr_t *a, uptr v,
   return v;
 }
 
-INLINE bool atomic_compare_exchange_strong(volatile atomic_uintptr_t *a,
-                                           uptr *cmp, uptr xchg,
+template<typename T>
+INLINE bool atomic_compare_exchange_strong(volatile T *a,
+                                           typename T::Type *cmp,
+                                           typename T::Type xchg,
                                            memory_order mo) {
-  uptr cmpv = *cmp;
-  uptr prev = __sync_val_compare_and_swap(&a->val_dont_use, cmpv, xchg);
+  typedef typename T::Type Type;
+  Type cmpv = *cmp;
+  Type prev = __sync_val_compare_and_swap(&a->val_dont_use, cmpv, xchg);
   if (prev == cmpv)
     return true;
   *cmp = prev;

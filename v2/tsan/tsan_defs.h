@@ -22,6 +22,7 @@
 
 namespace __tsan {
 
+typedef unsigned u32;  // NOLINT
 typedef unsigned long long u64;  // NOLINT
 typedef unsigned long uptr;  // NOLINT
 
