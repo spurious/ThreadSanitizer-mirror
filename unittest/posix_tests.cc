@@ -636,12 +636,11 @@ namespace MmapRegressionTest {  // {{{1
 const int kMmapSize =  65536;
 const uintptr_t kStartAddress = 0x10000;
 
-StealthNotification n1;
-
 void Worker() {
     int *ptr = (int*)mmap((void*)kStartAddress, kMmapSize,
                           PROT_READ | PROT_WRITE,
                           MAP_PRIVATE | MAP_ANON, -1, 0);
+    CHECK(ptr != MAP_FAILED);
     *ptr = 42;
     munmap(ptr, kMmapSize);
 }
