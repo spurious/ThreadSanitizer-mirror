@@ -746,6 +746,22 @@ INTERCEPTOR(void*, opendir, char *path) {
   return res;
 }
 
+INTERCEPTOR(int, epoll_ctl, int epfd, int op, int fd, void *ev) {
+  SCOPED_INTERCEPTOR(epoll_ctl, epfd, op, fd, ev);
+  Release(cur_thread(), pc, fd2addr(epfd));
+  int res = REAL(epoll_ctl)(epfd, op, fd, ev);
+  return res;
+}
+
+INTERCEPTOR(int, epoll_wait, int epfd, void *ev, int cnt, int timeout) {
+  SCOPED_INTERCEPTOR(epoll_wait, epfd, ev, cnt, timeout);
+  int res = REAL(epoll_wait)(epfd, ev, cnt, timeout);
+  if (res > 0) {
+    Acquire(cur_thread(), pc, fd2addr(epfd));
+  }
+  return res;
+}
+
 namespace __tsan {
 
 void InitializeInterceptors() {
@@ -834,6 +850,9 @@ void InitializeInterceptors() {
   INTERCEPT_FUNCTION(fopen);
   INTERCEPT_FUNCTION(rmdir);
   INTERCEPT_FUNCTION(opendir);
+
+  INTERCEPT_FUNCTION(epoll_ctl);
+  INTERCEPT_FUNCTION(epoll_wait);
 }
 
 void internal_memset(void *ptr, int c, uptr size) {
