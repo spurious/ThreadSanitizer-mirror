@@ -141,7 +141,7 @@ TEST(Posix, CondBasic) {
   while (ctx.data != 3)
     EXPECT_EQ(pthread_cond_wait(&ctx.c, &ctx.m), 0);
   EXPECT_EQ(pthread_mutex_unlock(&ctx.m), 0);
-  
+
   EXPECT_EQ(pthread_join(th, 0), 0);
   EXPECT_EQ(pthread_cond_destroy(&ctx.c), 0);
   EXPECT_EQ(pthread_mutex_destroy(&ctx.m), 0);

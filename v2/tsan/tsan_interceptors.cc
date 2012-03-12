@@ -31,6 +31,7 @@ extern "C" int atexit(void (*function)());
 extern "C" void _exit(int status);
 const int PTHREAD_MUTEX_RECURSIVE = 1;
 const int PTHREAD_MUTEX_RECURSIVE_NP = 1;
+typedef long long_t;  // NOLINT
 
 static unsigned g_thread_finalize_key;
 
@@ -514,7 +515,7 @@ static uptr fd2addr(int fd) {
   return (uptr)&fdaddr;
 }
 
-INTERCEPTOR(long, read, int fd, void *buf, long sz) {
+INTERCEPTOR(long_t, read, int fd, void *buf, long_t sz) {
   SCOPED_INTERCEPTOR(read, fd, buf, sz);
   int res = REAL(read)(fd, buf, sz);
   if (res >= 0) {
@@ -523,7 +524,7 @@ INTERCEPTOR(long, read, int fd, void *buf, long sz) {
   return res;
 }
 
-INTERCEPTOR(long, pread, int fd, void *buf, long sz, unsigned off) {
+INTERCEPTOR(long_t, pread, int fd, void *buf, long_t sz, unsigned off) {
   SCOPED_INTERCEPTOR(pread, fd, buf, sz, off);
   int res = REAL(pread)(fd, buf, sz, off);
   if (res >= 0) {
@@ -532,7 +533,7 @@ INTERCEPTOR(long, pread, int fd, void *buf, long sz, unsigned off) {
   return res;
 }
 
-INTERCEPTOR(long, pread64, int fd, void *buf, long sz, u64 off) {
+INTERCEPTOR(long_t, pread64, int fd, void *buf, long_t sz, u64 off) {
   SCOPED_INTERCEPTOR(pread64, fd, buf, sz, off);
   int res = REAL(pread64)(fd, buf, sz, off);
   if (res >= 0) {
@@ -541,7 +542,7 @@ INTERCEPTOR(long, pread64, int fd, void *buf, long sz, u64 off) {
   return res;
 }
 
-INTERCEPTOR(long, readv, int fd, void *vec, int cnt) {
+INTERCEPTOR(long_t, readv, int fd, void *vec, int cnt) {
   SCOPED_INTERCEPTOR(readv, fd, vec, cnt);
   int res = REAL(readv)(fd, vec, cnt);
   if (res >= 0) {
@@ -550,7 +551,7 @@ INTERCEPTOR(long, readv, int fd, void *vec, int cnt) {
   return res;
 }
 
-INTERCEPTOR(long, preadv64, int fd, void *vec, int cnt, u64 off) {
+INTERCEPTOR(long_t, preadv64, int fd, void *vec, int cnt, u64 off) {
   SCOPED_INTERCEPTOR(preadv64, fd, vec, cnt, off);
   int res = REAL(preadv64)(fd, vec, cnt, off);
   if (res >= 0) {
@@ -559,56 +560,56 @@ INTERCEPTOR(long, preadv64, int fd, void *vec, int cnt, u64 off) {
   return res;
 }
 
-INTERCEPTOR(long, write, int fd, void *buf, long sz) {
+INTERCEPTOR(long_t, write, int fd, void *buf, long_t sz) {
   SCOPED_INTERCEPTOR(write, fd, buf, sz);
   Release(cur_thread(), pc, fd2addr(fd));
   int res = REAL(write)(fd, buf, sz);
   return res;
 }
 
-INTERCEPTOR(long, pwrite, int fd, void *buf, long sz, unsigned off) {
+INTERCEPTOR(long_t, pwrite, int fd, void *buf, long_t sz, unsigned off) {
   SCOPED_INTERCEPTOR(pwrite, fd, buf, sz, off);
   Release(cur_thread(), pc, fd2addr(fd));
   int res = REAL(pwrite)(fd, buf, sz, off);
   return res;
 }
 
-INTERCEPTOR(long, pwrite64, int fd, void *buf, long sz, unsigned off) {
+INTERCEPTOR(long_t, pwrite64, int fd, void *buf, long_t sz, unsigned off) {
   SCOPED_INTERCEPTOR(pwrite64, fd, buf, sz, off);
   Release(cur_thread(), pc, fd2addr(fd));
   int res = REAL(pwrite64)(fd, buf, sz, off);
   return res;
 }
 
-INTERCEPTOR(long, writev, int fd, void *vec, int cnt) {
+INTERCEPTOR(long_t, writev, int fd, void *vec, int cnt) {
   SCOPED_INTERCEPTOR(writev, fd, vec, cnt);
   Release(cur_thread(), pc, fd2addr(fd));
   int res = REAL(writev)(fd, vec, cnt);
   return res;
 }
 
-INTERCEPTOR(long, pwritev64, int fd, void *vec, int cnt, u64 off) {
+INTERCEPTOR(long_t, pwritev64, int fd, void *vec, int cnt, u64 off) {
   SCOPED_INTERCEPTOR(pwritev64, fd, vec, cnt, off);
   Release(cur_thread(), pc, fd2addr(fd));
   int res = REAL(pwritev64)(fd, vec, cnt, off);
   return res;
 }
 
-INTERCEPTOR(long, send, int fd, void *buf, long len, int flags) {
+INTERCEPTOR(long_t, send, int fd, void *buf, long_t len, int flags) {
   SCOPED_INTERCEPTOR(send, fd, buf, len, flags);
   Release(cur_thread(), pc, fd2addr(fd));
   int res = REAL(send)(fd, buf, len, flags);
   return res;
 }
 
-INTERCEPTOR(long, sendmsg, int fd, void *msg, int flags) {
+INTERCEPTOR(long_t, sendmsg, int fd, void *msg, int flags) {
   SCOPED_INTERCEPTOR(sendmsg, fd, msg, flags);
   Release(cur_thread(), pc, fd2addr(fd));
   int res = REAL(sendmsg)(fd, msg, flags);
   return res;
 }
 
-INTERCEPTOR(long, recv, int fd, void *buf, long len, int flags) {
+INTERCEPTOR(long_t, recv, int fd, void *buf, long_t len, int flags) {
   SCOPED_INTERCEPTOR(recv, fd, buf, len, flags);
   int res = REAL(recv)(fd, buf, len, flags);
   if (res >= 0) {
@@ -617,7 +618,7 @@ INTERCEPTOR(long, recv, int fd, void *buf, long len, int flags) {
   return res;
 }
 
-INTERCEPTOR(long, recvmsg, int fd, void *msg, int flags) {
+INTERCEPTOR(long_t, recvmsg, int fd, void *msg, int flags) {
   SCOPED_INTERCEPTOR(recvmsg, fd, msg, flags);
   int res = REAL(recvmsg)(fd, msg, flags);
   if (res >= 0) {
