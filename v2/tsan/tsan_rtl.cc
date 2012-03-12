@@ -88,13 +88,13 @@ void Initialize(ThreadState *thr) {
   // Thread safe because done before all threads exist.
   if (ctx)
     return;
+  InitializeInterceptors();
   Printf("***** Running under ThreadSanitizer v2 *****\n");
   ctx = new(ctx_placeholder) Context;
   InitializeShadowMemory();
   ctx->dead_list_size = 0;
   ctx->dead_list_head = 0;
   ctx->dead_list_tail = 0;
-  InitializeInterceptors();
   InitializeSuppressions();
 
   // Initialize thread 0.

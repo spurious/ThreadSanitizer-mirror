@@ -2,12 +2,14 @@
 
 set -e # fail on any error
 
+ROOTDIR=`dirname $0`/..
+
 # Assuming clang is in path.
 CC=clang
 CXX=clang++
 
 CFLAGS="-fthread-sanitizer -fPIE"
-LDFLAGS="-pie -lpthread -ldl ../tsan/libtsan.a"
+LDFLAGS="-pie -lpthread -ldl $ROOTDIR/tsan/libtsan.a"
 
 test_file() {
   SRC=$1
@@ -21,10 +23,10 @@ test_file() {
   echo
 }
 
-for c in *.c; do
+for c in $ROOTDIR/output_tests/*.c; do
   test_file $c $CC
 done
 
-for c in *.cc; do
+for c in $ROOTDIR/output_tests/*.cc; do
   test_file $c $CXX
 done

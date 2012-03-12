@@ -34,25 +34,41 @@ const int PTHREAD_MUTEX_RECURSIVE_NP = 1;
 
 static unsigned g_thread_finalize_key;
 
+static __thread int thread_in_rtl;
+
 class ScopedInterceptor {
  public:
   ScopedInterceptor(ThreadState *thr, uptr pc)
     : thr_(thr) {
-    Initialize(thr);
-    FuncEntry(thr, pc);
+    thread_in_rtl++;
+    if (thread_in_rtl == 1) {
+      Initialize(thr);
+      FuncEntry(thr, pc);
+    }
   }
 
   ~ScopedInterceptor() {
-    FuncExit(thr_);
+    if (thread_in_rtl == 1) {
+      FuncExit(thr_);
+    }
+    thread_in_rtl--;
   }
  private:
   ThreadState *const thr_;
 };
 
-#define SCOPED_INTERCEPTOR(func) ScopedInterceptor si(cur_thread(), \
+#define SCOPED_INTERCEPTOR_RAW(func, ...) \
+    ScopedInterceptor si(cur_thread(), \
     (__tsan::uptr)__builtin_return_address(0)); \
     const uptr pc = (uptr)func; \
-    (void)pc;
+    (void)pc; \
+/**/
+
+#define SCOPED_INTERCEPTOR(func, ...) \
+    SCOPED_INTERCEPTOR_RAW(func, __VA_ARGS__); \
+    if (thread_in_rtl > 1) \
+      return REAL(func)(__VA_ARGS__); \
+/**/
 
 static void finalize() {
   int status = Finalize(cur_thread());
@@ -61,41 +77,51 @@ static void finalize() {
 }
 
 INTERCEPTOR(void*, malloc, uptr size) {
-  SCOPED_INTERCEPTOR(malloc);
+  SCOPED_INTERCEPTOR_RAW(malloc, size);
+  if (thread_in_rtl > 1)
+    return __libc_malloc(size);
   void *p = __libc_malloc(size);
   return p;
 }
 
 INTERCEPTOR(void*, calloc, uptr size, uptr n) {
-  SCOPED_INTERCEPTOR(calloc);
+  SCOPED_INTERCEPTOR_RAW(calloc, size, n);
+  if (thread_in_rtl > 1)
+    __libc_calloc(size, n);
   void *p = __libc_calloc(size, n);
   return p;
 }
 
 INTERCEPTOR(void*, realloc, void *p, uptr size) {
-  SCOPED_INTERCEPTOR(realloc);
+  SCOPED_INTERCEPTOR_RAW(realloc, p, size);
+  if (thread_in_rtl > 1)
+    return __libc_realloc(p, size);
   void *p2 = __libc_realloc(p, size);
   return p2;
 }
 
 INTERCEPTOR(void, free, void *p) {
-  SCOPED_INTERCEPTOR(free);
+  SCOPED_INTERCEPTOR_RAW(free, p);
+  if (thread_in_rtl > 1)
+    return __libc_free(p);
   __libc_free(p);
 }
 
 INTERCEPTOR(void, cfree, void *p) {
-  SCOPED_INTERCEPTOR(cfree);
+  SCOPED_INTERCEPTOR_RAW(cfree, p);
+  if (thread_in_rtl > 1)
+    return __libc_free(p);
   __libc_free(p);
 }
 
 INTERCEPTOR(void*, memset, void *dst, int v, uptr size) {
-  SCOPED_INTERCEPTOR(memset);
+  SCOPED_INTERCEPTOR(memset, dst, v, size);
   MemoryAccessRange(cur_thread(), pc, (uptr)dst, size, true);
   return REAL(memset)(dst, v, size);
 }
 
 INTERCEPTOR(void*, memcpy, void *dst, const void *src, uptr size) {
-  SCOPED_INTERCEPTOR(memcpy);
+  SCOPED_INTERCEPTOR(memcpy, dst, src, size);
   MemoryAccessRange(cur_thread(), pc, (uptr)dst, size, true);
   MemoryAccessRange(cur_thread(), pc, (uptr)src, size, false);
   return REAL(memcpy)(dst, src, size);
@@ -169,7 +195,7 @@ static void *tsan_thread_start(void *arg) {
 
 INTERCEPTOR(int, pthread_create,
     void *th, void *attr, void *(*callback)(void*), void * param) {
-  SCOPED_INTERCEPTOR(pthread_create);
+  SCOPED_INTERCEPTOR(pthread_create, th, attr, callback, param);
   int detached = 0;
   if (attr)
     pthread_attr_getdetachstate(attr, &detached);
@@ -189,7 +215,7 @@ INTERCEPTOR(int, pthread_create,
 }
 
 INTERCEPTOR(int, pthread_join, void *th, void **ret) {
-  SCOPED_INTERCEPTOR(pthread_join);
+  SCOPED_INTERCEPTOR(pthread_join, th, ret);
   int res = REAL(pthread_join)(th, ret);
   if (res == 0) {
     ThreadJoin(cur_thread(), pc, (uptr)th);
@@ -198,7 +224,7 @@ INTERCEPTOR(int, pthread_join, void *th, void **ret) {
 }
 
 INTERCEPTOR(int, pthread_detach, void *th) {
-  SCOPED_INTERCEPTOR(pthread_detach);
+  SCOPED_INTERCEPTOR(pthread_detach, th);
   int res = REAL(pthread_detach)(th);
   if (res == 0) {
     ThreadDetach(cur_thread(), pc, (uptr)th);
@@ -207,7 +233,7 @@ INTERCEPTOR(int, pthread_detach, void *th) {
 }
 
 INTERCEPTOR(int, pthread_mutex_init, void *m, void *a) {
-  SCOPED_INTERCEPTOR(pthread_mutex_init);
+  SCOPED_INTERCEPTOR(pthread_mutex_init, m, a);
   int res = REAL(pthread_mutex_init)(m, a);
   if (res == 0) {
     bool recursive = false;
@@ -223,7 +249,7 @@ INTERCEPTOR(int, pthread_mutex_init, void *m, void *a) {
 }
 
 INTERCEPTOR(int, pthread_mutex_destroy, void *m) {
-  SCOPED_INTERCEPTOR(pthread_mutex_destroy);
+  SCOPED_INTERCEPTOR(pthread_mutex_destroy, m);
   int res = REAL(pthread_mutex_destroy)(m);
   if (res == 0) {
     MutexDestroy(cur_thread(), pc, (uptr)m);
@@ -232,7 +258,7 @@ INTERCEPTOR(int, pthread_mutex_destroy, void *m) {
 }
 
 INTERCEPTOR(int, pthread_mutex_lock, void *m) {
-  SCOPED_INTERCEPTOR(pthread_mutex_lock);
+  SCOPED_INTERCEPTOR(pthread_mutex_lock, m);
   int res = REAL(pthread_mutex_lock)(m);
   if (res == 0) {
     MutexLock(cur_thread(), pc, (uptr)m);
@@ -241,7 +267,7 @@ INTERCEPTOR(int, pthread_mutex_lock, void *m) {
 }
 
 INTERCEPTOR(int, pthread_mutex_trylock, void *m) {
-  SCOPED_INTERCEPTOR(pthread_mutex_trylock);
+  SCOPED_INTERCEPTOR(pthread_mutex_trylock, m);
   int res = REAL(pthread_mutex_trylock)(m);
   if (res == 0) {
     MutexLock(cur_thread(), pc, (uptr)m);
@@ -250,7 +276,7 @@ INTERCEPTOR(int, pthread_mutex_trylock, void *m) {
 }
 
 INTERCEPTOR(int, pthread_mutex_timedlock, void *m, void *abstime) {
-  SCOPED_INTERCEPTOR(pthread_mutex_timedlock);
+  SCOPED_INTERCEPTOR(pthread_mutex_timedlock, m, abstime);
   int res = REAL(pthread_mutex_timedlock)(m, abstime);
   if (res == 0) {
     MutexLock(cur_thread(), pc, (uptr)m);
@@ -259,14 +285,14 @@ INTERCEPTOR(int, pthread_mutex_timedlock, void *m, void *abstime) {
 }
 
 INTERCEPTOR(int, pthread_mutex_unlock, void *m) {
-  SCOPED_INTERCEPTOR(pthread_mutex_unlock);
+  SCOPED_INTERCEPTOR(pthread_mutex_unlock, m);
   MutexUnlock(cur_thread(), pc, (uptr)m);
   int res = REAL(pthread_mutex_unlock)(m);
   return res;
 }
 
 INTERCEPTOR(int, pthread_spin_init, void *m, int pshared) {
-  SCOPED_INTERCEPTOR(pthread_spin_init);
+  SCOPED_INTERCEPTOR(pthread_spin_init, m, pshared);
   int res = REAL(pthread_spin_init)(m, pshared);
   if (res == 0) {
     MutexCreate(cur_thread(), pc, (uptr)m, false, false);
@@ -275,7 +301,7 @@ INTERCEPTOR(int, pthread_spin_init, void *m, int pshared) {
 }
 
 INTERCEPTOR(int, pthread_spin_destroy, void *m) {
-  SCOPED_INTERCEPTOR(pthread_spin_destroy);
+  SCOPED_INTERCEPTOR(pthread_spin_destroy, m);
   int res = REAL(pthread_spin_destroy)(m);
   if (res == 0) {
     MutexDestroy(cur_thread(), pc, (uptr)m);
@@ -284,7 +310,7 @@ INTERCEPTOR(int, pthread_spin_destroy, void *m) {
 }
 
 INTERCEPTOR(int, pthread_spin_lock, void *m) {
-  SCOPED_INTERCEPTOR(pthread_spin_lock);
+  SCOPED_INTERCEPTOR(pthread_spin_lock, m);
   int res = REAL(pthread_spin_lock)(m);
   if (res == 0) {
     MutexLock(cur_thread(), pc, (uptr)m);
@@ -293,7 +319,7 @@ INTERCEPTOR(int, pthread_spin_lock, void *m) {
 }
 
 INTERCEPTOR(int, pthread_spin_trylock, void *m) {
-  SCOPED_INTERCEPTOR(pthread_spin_trylock);
+  SCOPED_INTERCEPTOR(pthread_spin_trylock, m);
   int res = REAL(pthread_spin_trylock)(m);
   if (res == 0) {
     MutexLock(cur_thread(), pc, (uptr)m);
@@ -302,14 +328,14 @@ INTERCEPTOR(int, pthread_spin_trylock, void *m) {
 }
 
 INTERCEPTOR(int, pthread_spin_unlock, void *m) {
-  SCOPED_INTERCEPTOR(pthread_spin_unlock);
+  SCOPED_INTERCEPTOR(pthread_spin_unlock, m);
   MutexUnlock(cur_thread(), pc, (uptr)m);
   int res = REAL(pthread_spin_unlock)(m);
   return res;
 }
 
 INTERCEPTOR(int, pthread_rwlock_init, void *m, void *a) {
-  SCOPED_INTERCEPTOR(pthread_rwlock_init);
+  SCOPED_INTERCEPTOR(pthread_rwlock_init, m, a);
   int res = REAL(pthread_rwlock_init)(m, a);
   if (res == 0) {
     MutexCreate(cur_thread(), pc, (uptr)m, true, false);
@@ -318,7 +344,7 @@ INTERCEPTOR(int, pthread_rwlock_init, void *m, void *a) {
 }
 
 INTERCEPTOR(int, pthread_rwlock_destroy, void *m) {
-  SCOPED_INTERCEPTOR(pthread_rwlock_destroy);
+  SCOPED_INTERCEPTOR(pthread_rwlock_destroy, m);
   int res = REAL(pthread_rwlock_destroy)(m);
   if (res == 0) {
     MutexDestroy(cur_thread(), pc, (uptr)m);
@@ -327,7 +353,7 @@ INTERCEPTOR(int, pthread_rwlock_destroy, void *m) {
 }
 
 INTERCEPTOR(int, pthread_rwlock_rdlock, void *m) {
-  SCOPED_INTERCEPTOR(pthread_rwlock_rdlock);
+  SCOPED_INTERCEPTOR(pthread_rwlock_rdlock, m);
   int res = REAL(pthread_rwlock_rdlock)(m);
   if (res == 0) {
     MutexReadLock(cur_thread(), pc, (uptr)m);
@@ -336,7 +362,7 @@ INTERCEPTOR(int, pthread_rwlock_rdlock, void *m) {
 }
 
 INTERCEPTOR(int, pthread_rwlock_tryrdlock, void *m) {
-  SCOPED_INTERCEPTOR(pthread_rwlock_tryrdlock);
+  SCOPED_INTERCEPTOR(pthread_rwlock_tryrdlock, m);
   int res = REAL(pthread_rwlock_tryrdlock)(m);
   if (res == 0) {
     MutexReadLock(cur_thread(), pc, (uptr)m);
@@ -345,7 +371,7 @@ INTERCEPTOR(int, pthread_rwlock_tryrdlock, void *m) {
 }
 
 INTERCEPTOR(int, pthread_rwlock_timedrdlock, void *m, void *abstime) {
-  SCOPED_INTERCEPTOR(pthread_rwlock_timedrdlock);
+  SCOPED_INTERCEPTOR(pthread_rwlock_timedrdlock, m, abstime);
   int res = REAL(pthread_rwlock_timedrdlock)(m, abstime);
   if (res == 0) {
     MutexReadLock(cur_thread(), pc, (uptr)m);
@@ -354,7 +380,7 @@ INTERCEPTOR(int, pthread_rwlock_timedrdlock, void *m, void *abstime) {
 }
 
 INTERCEPTOR(int, pthread_rwlock_wrlock, void *m) {
-  SCOPED_INTERCEPTOR(pthread_rwlock_wrlock);
+  SCOPED_INTERCEPTOR(pthread_rwlock_wrlock, m);
   int res = REAL(pthread_rwlock_wrlock)(m);
   if (res == 0) {
     MutexLock(cur_thread(), pc, (uptr)m);
@@ -363,7 +389,7 @@ INTERCEPTOR(int, pthread_rwlock_wrlock, void *m) {
 }
 
 INTERCEPTOR(int, pthread_rwlock_trywrlock, void *m) {
-  SCOPED_INTERCEPTOR(pthread_rwlock_trywrlock);
+  SCOPED_INTERCEPTOR(pthread_rwlock_trywrlock, m);
   int res = REAL(pthread_rwlock_trywrlock)(m);
   if (res == 0) {
     MutexLock(cur_thread(), pc, (uptr)m);
@@ -372,7 +398,7 @@ INTERCEPTOR(int, pthread_rwlock_trywrlock, void *m) {
 }
 
 INTERCEPTOR(int, pthread_rwlock_timedwrlock, void *m, void *abstime) {
-  SCOPED_INTERCEPTOR(pthread_rwlock_timedwrlock);
+  SCOPED_INTERCEPTOR(pthread_rwlock_timedwrlock, m, abstime);
   int res = REAL(pthread_rwlock_timedwrlock)(m, abstime);
   if (res == 0) {
     MutexLock(cur_thread(), pc, (uptr)m);
@@ -381,7 +407,7 @@ INTERCEPTOR(int, pthread_rwlock_timedwrlock, void *m, void *abstime) {
 }
 
 INTERCEPTOR(int, pthread_rwlock_unlock, void *m) {
-  SCOPED_INTERCEPTOR(pthread_rwlock_unlock);
+  SCOPED_INTERCEPTOR(pthread_rwlock_unlock, m);
   MutexReadOrWriteUnlock(cur_thread(), pc, (uptr)m);
   int res = REAL(pthread_rwlock_unlock)(m);
   return res;
