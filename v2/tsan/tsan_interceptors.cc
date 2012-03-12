@@ -32,6 +32,7 @@ extern "C" void _exit(int status);
 const int PTHREAD_MUTEX_RECURSIVE = 1;
 const int PTHREAD_MUTEX_RECURSIVE_NP = 1;
 const int EINVAL = 22;
+const void *MAP_FAILED = (void*)-1;
 typedef long long_t;  // NOLINT
 
 static unsigned g_thread_finalize_key;
@@ -83,14 +84,20 @@ INTERCEPTOR(void*, malloc, uptr size) {
   if (thread_in_rtl > 1)
     return __libc_malloc(size);
   void *p = __libc_malloc(size);
+  if (p != 0) {
+    MemoryResetRange(cur_thread(), pc, (uptr)p, size);
+  }
   return p;
 }
 
 INTERCEPTOR(void*, calloc, uptr size, uptr n) {
   SCOPED_INTERCEPTOR_RAW(calloc, size, n);
   if (thread_in_rtl > 1)
-    __libc_calloc(size, n);
+    return __libc_calloc(size, n);
   void *p = __libc_calloc(size, n);
+  if (p != 0) {
+    MemoryResetRange(cur_thread(), pc, (uptr)p, n * size);
+  }
   return p;
 }
 
@@ -99,6 +106,9 @@ INTERCEPTOR(void*, realloc, void *p, uptr size) {
   if (thread_in_rtl > 1)
     return __libc_realloc(p, size);
   void *p2 = __libc_realloc(p, size);
+  if (p2 != 0 && size != 0) {
+    MemoryResetRange(cur_thread(), pc, (uptr)p2, size);
+  }
   return p2;
 }
 
@@ -127,6 +137,32 @@ INTERCEPTOR(void*, memcpy, void *dst, const void *src, uptr size) {
   MemoryAccessRange(cur_thread(), pc, (uptr)dst, size, true);
   MemoryAccessRange(cur_thread(), pc, (uptr)src, size, false);
   return REAL(memcpy)(dst, src, size);
+}
+
+INTERCEPTOR(void*, mmap, void *addr, long_t sz, int prot,
+                         int flags, int fd, unsigned off) {
+  SCOPED_INTERCEPTOR(mmap, addr, sz, prot, flags, fd, off);
+  void *res = REAL(mmap)(addr, sz, prot, flags, fd, off);
+  if (res != MAP_FAILED) {
+    MemoryResetRange(cur_thread(), pc, (uptr)res, sz);
+  }
+  return res;
+}
+
+INTERCEPTOR(void*, mmap64, void *addr, long_t sz, int prot,
+                           int flags, int fd, u64 off) {
+  SCOPED_INTERCEPTOR(mmap64, addr, sz, prot, flags, fd, off);
+  void *res = REAL(mmap64)(addr, sz, prot, flags, fd, off);
+  if (res != MAP_FAILED) {
+    MemoryResetRange(cur_thread(), pc, (uptr)res, sz);
+  }
+  return res;
+}
+
+INTERCEPTOR(int, munmap, void *addr, long_t sz) {
+  SCOPED_INTERCEPTOR(munmap, addr, sz);
+  int res = REAL(munmap)(addr, sz);
+  return res;
 }
 
 /*
@@ -667,6 +703,9 @@ void InitializeInterceptors() {
   INTERCEPT_FUNCTION(realloc);
   INTERCEPT_FUNCTION(free);
   INTERCEPT_FUNCTION(cfree);
+  INTERCEPT_FUNCTION(mmap);
+  INTERCEPT_FUNCTION(mmap64);
+  INTERCEPT_FUNCTION(munmap);
 
   INTERCEPT_FUNCTION(memset);
   INTERCEPT_FUNCTION(memcpy);

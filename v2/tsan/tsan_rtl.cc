@@ -406,6 +406,16 @@ void MemoryAccessRange(ThreadState *thr, uptr pc, uptr addr,
   }
 }
 
+void MemoryResetRange(ThreadState *thr, uptr pc, uptr addr, uptr size) {
+  CHECK_EQ(addr % 8, 0);
+  (void)thr;
+  (void)pc;
+  u64 *p = (u64*)MemToShadow(addr);
+  // TODO(dvyukov): may overwrite a part outside the region
+  for (uptr i = 0; i * 8 < size; i++)
+    p[i] = 0;
+}
+
 void FuncEntry(ThreadState *thr, uptr pc) {
   StatInc(thr, StatFuncEnter);
   DPrintf("#%d: tsan::FuncEntry %p\n", (int)thr->tid, (void*)pc);
