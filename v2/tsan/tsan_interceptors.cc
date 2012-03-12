@@ -594,6 +594,38 @@ INTERCEPTOR(long, pwritev64, int fd, void *vec, int cnt, u64 off) {
   return res;
 }
 
+INTERCEPTOR(long, send, int fd, void *buf, long len, int flags) {
+  SCOPED_INTERCEPTOR(send, fd, buf, len, flags);
+  Release(cur_thread(), pc, fd2addr(fd));
+  int res = REAL(send)(fd, buf, len, flags);
+  return res;
+}
+
+INTERCEPTOR(long, sendmsg, int fd, void *msg, int flags) {
+  SCOPED_INTERCEPTOR(sendmsg, fd, msg, flags);
+  Release(cur_thread(), pc, fd2addr(fd));
+  int res = REAL(sendmsg)(fd, msg, flags);
+  return res;
+}
+
+INTERCEPTOR(long, recv, int fd, void *buf, long len, int flags) {
+  SCOPED_INTERCEPTOR(recv, fd, buf, len, flags);
+  int res = REAL(recv)(fd, buf, len, flags);
+  if (res >= 0) {
+    Acquire(cur_thread(), pc, fd2addr(fd));
+  }
+  return res;
+}
+
+INTERCEPTOR(long, recvmsg, int fd, void *msg, int flags) {
+  SCOPED_INTERCEPTOR(recvmsg, fd, msg, flags);
+  int res = REAL(recvmsg)(fd, msg, flags);
+  if (res >= 0) {
+    Acquire(cur_thread(), pc, fd2addr(fd));
+  }
+  return res;
+}
+
 namespace __tsan {
 
 void InitializeInterceptors() {
@@ -668,6 +700,10 @@ void InitializeInterceptors() {
   INTERCEPT_FUNCTION(pwrite64);
   INTERCEPT_FUNCTION(writev);
   INTERCEPT_FUNCTION(pwritev64);
+  INTERCEPT_FUNCTION(send);
+  INTERCEPT_FUNCTION(sendmsg);
+  INTERCEPT_FUNCTION(recv);
+  INTERCEPT_FUNCTION(recvmsg);
 }
 
 void internal_memset(void *ptr, int c, uptr size) {
