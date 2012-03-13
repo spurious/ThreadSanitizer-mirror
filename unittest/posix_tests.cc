@@ -1087,25 +1087,38 @@ TEST(WeirdSizesTests, FegetenvTest) {
 namespace NegativeTests_epoll {  // {{{1
 #ifdef OS_linux
 int GLOB;
+int epfd = -1;
 
-// Currently, ThreadSanitizer should create hb arcs between 
-// epoll_ctl and epoll_wait regardless of the parameters. Check that.
+// ThreadSanitizer should create hb arc between 
+// epoll_ctl(EPOLL_CTL_ADD) and epoll_wait() regardless of the parameters.
 
 void Worker1() {
-  GLOB++;
+  int sockets[2];
+  CHECK(0 == socketpair(AF_UNIX, SOCK_STREAM, 0, sockets));
+  CHECK(2 == send(sockets[1], "Hi", 2, 0));
+  close(sockets[1]);
   struct epoll_event event;
-  epoll_ctl(0, 0, 0, &event);
+  event.data.fd = sockets[0];
+  GLOB++;
+  int res = epoll_ctl(epfd, EPOLL_CTL_ADD, sockets[0], &event);
+  CHECK(res == 0);
 }
 void Worker2() {
   struct epoll_event event;
-  epoll_wait(0, &event, 0, 0);
+  int res = epoll_wait(epfd, &event, 1, -1);
+  CHECK(res == 1);
   GLOB++;
+  close(event.data.fd);
 }
 
 TEST(NegativeTests,epollTest) {
+  epfd = epoll_create(10);
+  CHECK(epfd != -1);
   MyThreadArray mta(Worker1, Worker2);
   mta.Start();
   mta.Join();
+  close(epfd);
+  epfd = -1;
 }
 #endif  // OS_linux
 }
