@@ -36,6 +36,7 @@ const int PTHREAD_MUTEX_RECURSIVE_NP = 1;
 const int EINVAL = 22;
 const int EPOLL_CTL_ADD = 1;
 void *const MAP_FAILED = (void*)-1;
+const int PTHREAD_BARRIER_SERIAL_THREAD = -1;
 const int MAP_FIXED = 0x10;
 typedef long long_t;  // NOLINT
 
@@ -499,32 +500,32 @@ INTERCEPTOR(int, pthread_rwlock_unlock, void *m) {
 
 INTERCEPTOR(int, pthread_cond_init, void *c, void *a) {
   SCOPED_INTERCEPTOR(pthread_cond_init, c, a);
-  int res = pthread_cond_init(c, a);
+  int res = REAL(pthread_cond_init)(c, a);
   return res;
 }
 
 INTERCEPTOR(int, pthread_cond_destroy, void *c) {
   SCOPED_INTERCEPTOR(pthread_cond_destroy, c);
-  int res = pthread_cond_destroy(c);
+  int res = REAL(pthread_cond_destroy)(c);
   return res;
 }
 
 INTERCEPTOR(int, pthread_cond_signal, void *c) {
   SCOPED_INTERCEPTOR(pthread_cond_signal, c);
-  int res = pthread_cond_signal(c);
+  int res = REAL(pthread_cond_signal)(c);
   return res;
 }
 
 INTERCEPTOR(int, pthread_cond_broadcast, void *c) {
   SCOPED_INTERCEPTOR(pthread_cond_broadcast, c);
-  int res = pthread_cond_broadcast(c);
+  int res = REAL(pthread_cond_broadcast)(c);
   return res;
 }
 
 INTERCEPTOR(int, pthread_cond_wait, void *c, void *m) {
   SCOPED_INTERCEPTOR(pthread_cond_wait, c, m);
   MutexUnlock(cur_thread(), pc, (uptr)m);
-  int res = pthread_cond_wait(c, m);
+  int res = REAL(pthread_cond_wait)(c, m);
   MutexLock(cur_thread(), pc, (uptr)m);
   return res;
 }
@@ -532,8 +533,30 @@ INTERCEPTOR(int, pthread_cond_wait, void *c, void *m) {
 INTERCEPTOR(int, pthread_cond_timedwait, void *c, void *m, void *abstime) {
   SCOPED_INTERCEPTOR(pthread_cond_timedwait, c, m, abstime);
   MutexUnlock(cur_thread(), pc, (uptr)m);
-  int res = pthread_cond_timedwait(c, m, abstime);
+  int res = REAL(pthread_cond_timedwait)(c, m, abstime);
   MutexLock(cur_thread(), pc, (uptr)m);
+  return res;
+}
+
+INTERCEPTOR(int, pthread_barrier_init, void *b, void *a, unsigned count) {
+  SCOPED_INTERCEPTOR(pthread_barrier_init, b, a, count);
+  int res = REAL(pthread_barrier_init)(b, a, count);
+  return res;
+}
+
+INTERCEPTOR(int, pthread_barrier_destroy, void *b) {
+  SCOPED_INTERCEPTOR(pthread_barrier_destroy, b);
+  int res = REAL(pthread_barrier_destroy)(b);
+  return res;
+}
+
+INTERCEPTOR(int, pthread_barrier_wait, void *b) {
+  SCOPED_INTERCEPTOR(pthread_barrier_wait, b);
+  Release(cur_thread(), pc, (uptr)b);
+  int res = REAL(pthread_barrier_wait)(b);
+  if (res == 0 || res == PTHREAD_BARRIER_SERIAL_THREAD) {
+    Acquire(cur_thread(), pc, (uptr)b);
+  }
   return res;
 }
 
@@ -829,6 +852,10 @@ void InitializeInterceptors() {
   INTERCEPT_FUNCTION(pthread_cond_broadcast);
   INTERCEPT_FUNCTION(pthread_cond_wait);
   INTERCEPT_FUNCTION(pthread_cond_timedwait);
+
+  INTERCEPT_FUNCTION(pthread_barrier_init);
+  INTERCEPT_FUNCTION(pthread_barrier_destroy);
+  INTERCEPT_FUNCTION(pthread_barrier_wait);
 
   INTERCEPT_FUNCTION(pthread_once);
 
