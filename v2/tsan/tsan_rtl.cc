@@ -90,6 +90,7 @@ void Initialize(ThreadState *thr) {
     return;
   InitializeInterceptors();
   InitializePlatform();
+  InitializeDynamicAnnotations();
   Printf("***** Running under ThreadSanitizer v2 *****\n");
   ctx = new(ctx_placeholder) Context;
   InitializeShadowMemory();
@@ -165,6 +166,9 @@ static int RestoreStack(int tid, u64 epoch, uptr *stack, int n) {
 static void NOINLINE ReportRace(ThreadState *thr, uptr addr,
                                 Shadow s0, Shadow s1) {
   const int kStackMax = 64;
+
+  if (IsExceptReport(addr))
+    return;
 
   Lock l(&ctx->report_mtx);
   addr &= ~7;
