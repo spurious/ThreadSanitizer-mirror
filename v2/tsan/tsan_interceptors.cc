@@ -34,6 +34,7 @@ extern "C" int *__errno_location();
 const int PTHREAD_MUTEX_RECURSIVE = 1;
 const int PTHREAD_MUTEX_RECURSIVE_NP = 1;
 const int EINVAL = 22;
+const int EPOLL_CTL_ADD = 1;
 void *const MAP_FAILED = (void*)-1;
 const int MAP_FIXED = 0x10;
 typedef long long_t;  // NOLINT
@@ -84,19 +85,25 @@ static void finalize() {
 
 static uptr fd2addr(int fd) {
   (void)fd;
-  static int addr;
+  static u64 addr;
+  return (uptr)&addr;
+}
+
+static uptr epollfd2addr(int fd) {
+  (void)fd;
+  static u64 addr;
   return (uptr)&addr;
 }
 
 static uptr file2addr(char *path) {
   (void)path;
-  static int addr;
+  static u64 addr;
   return (uptr)&addr;
 }
 
 static uptr dir2addr(char *path) {
   (void)path;
-  static int addr;
+  static u64 addr;
   return (uptr)&addr;
 }
 
@@ -748,7 +755,9 @@ INTERCEPTOR(void*, opendir, char *path) {
 
 INTERCEPTOR(int, epoll_ctl, int epfd, int op, int fd, void *ev) {
   SCOPED_INTERCEPTOR(epoll_ctl, epfd, op, fd, ev);
-  Release(cur_thread(), pc, fd2addr(epfd));
+  if (op == EPOLL_CTL_ADD) {
+    Release(cur_thread(), pc, epollfd2addr(epfd));
+  }
   int res = REAL(epoll_ctl)(epfd, op, fd, ev);
   return res;
 }
@@ -757,7 +766,7 @@ INTERCEPTOR(int, epoll_wait, int epfd, void *ev, int cnt, int timeout) {
   SCOPED_INTERCEPTOR(epoll_wait, epfd, ev, cnt, timeout);
   int res = REAL(epoll_wait)(epfd, ev, cnt, timeout);
   if (res > 0) {
-    Acquire(cur_thread(), pc, fd2addr(epfd));
+    Acquire(cur_thread(), pc, epollfd2addr(epfd));
   }
   return res;
 }
