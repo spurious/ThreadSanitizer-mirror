@@ -173,6 +173,7 @@ struct Event {
     SHUTDOWN,
     READ,
     WRITE,
+    VPTR_UPDATE,
     CALL,
     RETURN,
     MUTEX_CREATE,
@@ -252,6 +253,9 @@ void ScopedThread::Impl::HandleEvent(Event *ev) {
     CHECK_EQ(errno, ECHRNG);  // In no case must errno be changed.
     break;
   }
+  case Event::VPTR_UPDATE:
+    __tsan_vptr_update((void**)ev->ptr, (void*)ev->arg);
+    break;
   case Event::CALL:
     __tsan_func_entry(ev->ptr);
     break;
@@ -370,6 +374,16 @@ void ScopedThread::Detach() {
 const ReportDesc *ScopedThread::Access(void *addr, bool is_write,
                                        int size, bool expect_race) {
   Event event(is_write ? Event::WRITE : Event::READ, addr, size);
+  if (expect_race)
+    event.ExpectReport(__tsan::ReportTypeRace);
+  impl_->send(&event);
+  return event.rep;
+}
+
+const ReportDesc *ScopedThread::VptrUpdate(const MemLoc &vptr,
+                                           const MemLoc &new_val,
+                                           bool expect_race) {
+  Event event(Event::VPTR_UPDATE, vptr.loc(), (uptr)new_val.loc());
   if (expect_race)
     event.ExpectReport(__tsan::ReportTypeRace);
   impl_->send(&event);

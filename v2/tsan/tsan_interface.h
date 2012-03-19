@@ -39,6 +39,8 @@ void __tsan_write4(void *addr);
 void __tsan_write8(void *addr);
 void __tsan_write16(void *addr);
 
+void __tsan_vptr_update(void **vptr_p, void *new_val);
+
 void __tsan_func_entry(void *call_pc);
 void __tsan_func_exit();
 

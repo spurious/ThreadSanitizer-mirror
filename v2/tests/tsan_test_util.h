@@ -25,6 +25,7 @@ void TestMutexBeforeInit();
 class MemLoc {
  public:
   explicit MemLoc(int offset_from_aligned = 0);
+  explicit MemLoc(void *const real_addr) : loc_(real_addr) { }
   ~MemLoc();
   void *loc() const { return loc_; }
  private:
@@ -92,6 +93,9 @@ class ScopedThread {
     return Write(ml, 4, expect_race); }
   const ReportDesc *Write8(const MemLoc &ml, bool expect_race = false) {
     return Write(ml, 8, expect_race); }
+
+  const ReportDesc *VptrUpdate(const MemLoc &vptr, const MemLoc &new_val,
+                              bool expect_race = false);
 
   void Call(void(*pc)());
   void Return();

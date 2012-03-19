@@ -110,3 +110,30 @@ TEST(ThreadSanitizer, RaceWithDeadThread) {
   ScopedThread().Write1(l);
   t.Write1(l, true);
 }
+
+TEST(ThreadSanitizer, DISABLED_HappensBeforeArcBetweenChildThreads) {
+  MemLoc l;
+  ScopedThread t1;
+  t1.Write1(l);
+  ScopedThread t2;
+  t2.Write1(l);
+  // Should be no race here, but currently we report one.
+}
+
+TEST(ThreadSanitizer, BenignRaceOnVptr) {
+  void *vptr_storage;
+  MemLoc vptr(&vptr_storage), val;
+  vptr_storage = val.loc();
+  ScopedThread t1, t2;
+  t1.VptrUpdate(vptr, val);
+  t2.Read8(vptr);
+}
+
+TEST(ThreadSanitizer, HarmfulRaceOnVptr) {
+  void *vptr_storage;
+  MemLoc vptr(&vptr_storage), val1, val2;
+  vptr_storage = val1.loc();
+  ScopedThread t1, t2;
+  t1.VptrUpdate(vptr, val2);
+  t2.Read8(vptr, true);
+}

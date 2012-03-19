@@ -50,6 +50,12 @@ void FLATTEN __tsan_write8(void *addr) {
   __tsan::MemoryAccess(cur_thread(), CALLERPC, (uptr)addr, 8, true);
 }
 
+void FLATTEN __tsan_vptr_update(void **vptr_p, void *new_val) {
+  if (*vptr_p != new_val)
+    __tsan::MemoryAccess(cur_thread(), CALLERPC, (uptr)vptr_p,
+                         sizeof(*vptr_p), true);
+}
+
 void FLATTEN __tsan_func_entry(void *pc) {
   __tsan::FuncEntry(cur_thread(), (uptr)pc);
 }
