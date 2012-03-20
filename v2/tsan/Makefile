@@ -13,7 +13,7 @@ ifeq ($(CXX), clang++)
 endif
 
 
-all: libtsan.a
+all: libtsan.a libtsan_dummy.a
 
 LIBTSAN_HEADERS=tsan_atomic.h \
                 tsan_clock.h \
@@ -71,6 +71,9 @@ endif
 
 libtsan.a: $(LIBTSAN_OBJ)
 	ar ru $@ $(LIBTSAN_OBJ)
+
+libtsan_dummy.a: tsan_dummy_rtl.o
+	ar ru $@ $<
 
 clean:
 	rm -f *.o *.a
