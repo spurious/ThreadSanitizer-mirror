@@ -91,7 +91,6 @@ void Initialize(ThreadState *thr) {
   InitializeInterceptors();
   InitializePlatform();
   InitializeDynamicAnnotations();
-  Printf("***** Running under ThreadSanitizer v2 *****\n");
   ctx = new(ctx_placeholder) Context;
   InitializeShadowMemory();
   ctx->dead_list_size = 0;
@@ -107,8 +106,8 @@ void Initialize(ThreadState *thr) {
 }
 
 int Finalize(ThreadState *thr) {
-  Printf("ThreadSanitizer summary: reported %d warnings%s\n",
-         ctx->nreported, ctx->nreported ? "" : ". Keep it up!");
+  if (ctx->nreported)
+    Printf("ThreadSanitizer summary: reported %d warnings\n", ctx->nreported);
 
   if (kCollectStats) {
     for (int i = 0; i < StatCnt; i++)
