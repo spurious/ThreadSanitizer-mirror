@@ -1,5 +1,6 @@
 #!/bin/bash
 
+ulimit -s 8192;
 set -e # fail on any error
 
 ROOTDIR=`dirname $0`/..
@@ -17,11 +18,11 @@ test_file() {
   COMPILER=$2
   echo ----- TESTING $1
   $COMPILER $SRC $CFLAGS $LDFLAGS
-  ./a.out 2> test.out || echo
-  cat test.out
+  ./a.out 2> test.out || echo -n
+  # cat test.out
   FileCheck < test.out $SRC
   rm -f a.out test.out *.tmp *.tmp2
-  echo
+  # echo
 }
 
 for c in $ROOTDIR/output_tests/*.c; do

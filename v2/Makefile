@@ -15,9 +15,12 @@ presubmit:
 	# Debug build with clang.
 	$(MAKE) clean
 	$(MAKE) run DEBUG=1 -j 16
+	./output_tests/test_output.sh
 	# Release build gcc (ensure that vanilla gcc is able to build it).
 	$(MAKE) clean
 	$(MAKE) run DEBUG=0 -j 16 CC=/usr/bin/gcc CXX=/usr/bin/g++
+	./output_tests/test_output.sh
+	@ echo PRESUBMIT PASSED
 
 RTL_LINT_FITLER=-legal/copyright,-build/include,-readability/casting,-build/header_guard
 
