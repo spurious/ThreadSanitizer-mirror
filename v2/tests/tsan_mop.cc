@@ -111,15 +111,6 @@ TEST(ThreadSanitizer, RaceWithDeadThread) {
   t.Write1(l, true);
 }
 
-TEST(ThreadSanitizer, DISABLED_HappensBeforeArcBetweenChildThreads) {
-  MemLoc l;
-  ScopedThread t1;
-  t1.Write1(l);
-  ScopedThread t2;
-  t2.Write1(l);
-  // Should be no race here, but currently we report one.
-}
-
 TEST(ThreadSanitizer, BenignRaceOnVptr) {
   void *vptr_storage;
   MemLoc vptr(&vptr_storage), val;
