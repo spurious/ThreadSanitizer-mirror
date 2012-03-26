@@ -164,8 +164,8 @@ void Die() NORETURN;
 void Initialize(ThreadState *thr);
 int Finalize(ThreadState *thr);
 
-bool MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
-                  int size, bool is_write);
+void MemoryRead1Byte(ThreadState *thr, uptr pc, uptr addr);
+void MemoryWrite1Byte(ThreadState *thr, uptr pc, uptr addr);
 void MemoryAccessRange(ThreadState *thr, uptr pc, uptr addr,
                        uptr size, bool is_write);
 void MemoryResetRange(ThreadState *thr, uptr pc, uptr addr, uptr size);

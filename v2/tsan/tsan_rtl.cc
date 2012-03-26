@@ -233,9 +233,10 @@ static void StoreShadow(u64 *p, u64 raw) {
   atomic_store((atomic_uint64_t*)p, raw, memory_order_relaxed);
 }
 
+template<int kAccessSizeLog, int kAccessIsWrite>
 ALWAYS_INLINE
 static bool MemoryAccess1(ThreadState *thr, int tid, u64 epoch,
-                          u64 synch_epoch, Shadow s0, u64 *sp, bool is_write,
+                          u64 synch_epoch, Shadow s0, u64 *sp,
                           bool &replaced, Shadow &racy_access) {
   Shadow s = LoadShadow(sp);
   if (s.raw == 0) {
@@ -253,7 +254,7 @@ static bool MemoryAccess1(ThreadState *thr, int tid, u64 epoch,
     if (s.tid == tid) {
       StatInc(thr, StatShadowSameThread);
       if (s.epoch >= synch_epoch) {
-        if (s.write || !is_write) {
+        if (s.write || !kAccessIsWrite) {
           // found a slot that holds effectively the same info
           // (that is, same tid, same sync epoch and same size)
           return true;
@@ -263,7 +264,7 @@ static bool MemoryAccess1(ThreadState *thr, int tid, u64 epoch,
           return false;
         }
       } else {
-        if (!s.write || is_write) {
+        if (!s.write || kAccessIsWrite) {
           StoreShadow(sp, replaced ? 0ull : s0.raw);
           replaced = true;
           return false;
@@ -278,7 +279,7 @@ static bool MemoryAccess1(ThreadState *thr, int tid, u64 epoch,
         StoreShadow(sp, replaced ? 0ull : s0.raw);
         replaced = true;
         return false;
-      } else if (!s.write && !is_write) {
+      } else if (!s.write && !kAccessIsWrite) {
         return false;
       } else {
         racy_access = s;
@@ -296,7 +297,7 @@ static bool MemoryAccess1(ThreadState *thr, int tid, u64 epoch,
     // happens before?
     if (thr->clock.get(s.tid) >= s.epoch) {
       return false;
-    } else if (!s.write && !is_write) {
+    } else if (!s.write && !kAccessIsWrite) {
       return false;
     } else {
       racy_access = s;
@@ -309,15 +310,18 @@ static bool MemoryAccess1(ThreadState *thr, int tid, u64 epoch,
   return false;
 }
 
+template<u64 kAccessSizeLog, u64 kAccessIsWrite>
 ALWAYS_INLINE
-bool MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
-                  int size, bool is_write) {
+bool MemoryAccess(ThreadState *thr, uptr pc, uptr addr) {
+  CHECK_LE(kAccessIsWrite, 1);
+  CHECK_LE(kAccessSizeLog, 3);
+  int kAccessSize = 1 << kAccessSizeLog;
   StatInc(thr, StatMop);
   u64 *shadow_mem = (u64*)MemToShadow(addr);
   DPrintf("#%d: tsan::OnMemoryAccess: @%p %p size=%d"
           " is_write=%d shadow_mem=%p\n",
           (int)thr->tid, (void*)pc, (void*)addr,
-          (int)size, is_write, shadow_mem);
+          (int)kAccessSize, kAccessIsWrite, shadow_mem);
   DCHECK(IsAppMem(addr));
   DCHECK(IsShadowMem((uptr)shadow_mem));
 
@@ -326,13 +330,14 @@ bool MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
   thr->epoch = epoch;
   TraceAddEvent(thr, epoch, EventTypeMop, pc);
 
-  StatInc(thr, is_write ? StatMopWrite : StatMopRead);
-  StatInc(thr, size == 1 ? StatMop1 : size == 2 ? StatMop2
-          : size == 4 ? StatMop4 : StatMop8);
+  StatInc(thr, kAccessIsWrite ? StatMopWrite : StatMopRead);
+  StatInc(thr, kAccessSize == 1 ? StatMop1 : kAccessSize == 2 ? StatMop2
+          : kAccessSize == 4 ? StatMop4 : StatMop8);
 
   // descriptor of the memory access
   Shadow s0 = { {tid, epoch,
-               addr&7, min((addr&7)+size-1, 7), is_write} };  // NOLINT
+               addr&7, min((addr&7)+kAccessSize-1, 7), // NOLINT
+               kAccessIsWrite} };  // NOLINT
   // Is the descriptor already stored somewhere?
   bool replaced = false;
   // Racy memory access. Zero if none.
@@ -362,18 +367,19 @@ bool MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
   // offsetted to 0, short - 4, 1st char - 6, 2nd char - 7. Hopefully, accesses
   // from a single thread won't need to scan all 8 shadow values.
   int off = 0;
-  if (size == 1)
+  if (kAccessSize == 1)
     off = addr & 7;
-  else if (size == 2)
+  else if (kAccessSize == 2)
     off = addr & 6;
-  else if (size == 4)
+  else if (kAccessSize == 4)
     off = addr & 4;
 
   for (int i = 0; i < kShadowCnt; i++) {
     StatInc(thr, StatShadowProcessed);
     u64 *sp = &shadow_mem[(i + off) % kShadowCnt];
-    if (MemoryAccess1(thr, tid, epoch, synch_epoch, s0, sp, is_write,
-                      replaced, racy_access))
+    if (MemoryAccess1<kAccessSizeLog, kAccessIsWrite>(thr, tid, epoch,
+                                                      synch_epoch, s0, sp,
+                                                      replaced, racy_access))
       return false;
   }
 
@@ -391,23 +397,40 @@ bool MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
   return racy_access.raw != 0;
 }
 
-void MemoryAccessRange(ThreadState *thr, uptr pc, uptr addr,
-                       uptr size, bool is_write) {
+template<int kAccessIsWrite>
+static void MemoryAccessRange(ThreadState *thr, uptr pc, uptr addr,
+                              uptr size) {
   // Handle unaligned beginning, if any.
   for (; addr % 8 && size; addr++, size--) {
-    if (MemoryAccess(thr, pc, addr, 1, is_write))
+    if (MemoryAccess<0, kAccessIsWrite>(thr, pc, addr))
       return;
   }
   // Handle middle part, if any.
   for (; size >= 8; addr += 8, size -= 8) {
-    if (MemoryAccess(thr, pc, addr, 8, is_write))
+    if (MemoryAccess<2, kAccessIsWrite>(thr, pc, addr))
       return;
   }
   // Handle ending, if any.
   for (; size; addr++, size--) {
-    if (MemoryAccess(thr, pc, addr, 1, is_write))
+    if (MemoryAccess<0, kAccessIsWrite>(thr, pc, addr))
       return;
   }
+}
+
+void MemoryAccessRange(ThreadState *thr, uptr pc, uptr addr,
+                       uptr size, bool is_write) {
+  if (is_write)
+    MemoryAccessRange<1>(thr, pc, addr, size);
+  else
+    MemoryAccessRange<0>(thr, pc, addr, size);
+}
+
+void MemoryRead1Byte(ThreadState *thr, uptr pc, uptr addr) {
+  MemoryAccess<0, 0>(thr, pc, addr);
+}
+
+void MemoryWrite1Byte(ThreadState *thr, uptr pc, uptr addr) {
+  MemoryAccess<0, 1>(thr, pc, addr);
 }
 
 void MemoryResetRange(ThreadState *thr, uptr pc, uptr addr, uptr size) {

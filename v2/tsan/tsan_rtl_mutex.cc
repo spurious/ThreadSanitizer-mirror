@@ -19,7 +19,7 @@ namespace __tsan {
 void MutexCreate(ThreadState *thr, uptr pc, uptr addr,
                  bool rw, bool recursive) {
   DPrintf("#%d: MutexCreate %p\n", thr->tid, addr);
-  MemoryAccess(thr, pc, addr, 1, true);
+  MemoryWrite1Byte(thr, pc, addr);
   SyncVar *s = ctx->synctab.GetAndLock(&thr->syncslab, addr, true);
   s->is_rw = rw;
   s->is_recursive = recursive;
@@ -28,7 +28,7 @@ void MutexCreate(ThreadState *thr, uptr pc, uptr addr,
 
 void MutexDestroy(ThreadState *thr, uptr pc, uptr addr) {
   DPrintf("#%d: MutexDestroy %p\n", thr->tid, addr);
-  MemoryAccess(thr, pc, addr, 1, true);
+  MemoryWrite1Byte(thr, pc, addr);
   SyncVar *s = ctx->synctab.GetAndRemove(addr);
   if (s == 0)
     return;
@@ -42,7 +42,7 @@ void MutexDestroy(ThreadState *thr, uptr pc, uptr addr) {
 
 void MutexLock(ThreadState *thr, uptr pc, uptr addr) {
   DPrintf("#%d: MutexLock %p\n", thr->tid, addr);
-  MemoryAccess(thr, pc, addr, 1, false);
+  MemoryRead1Byte(thr, pc, addr);
   thr->epoch++;
   TraceAddEvent(thr, thr->epoch, EventTypeLock, addr);
   SyncVar *s = ctx->synctab.GetAndLock(&thr->syncslab, addr, true);
@@ -67,7 +67,7 @@ void MutexLock(ThreadState *thr, uptr pc, uptr addr) {
 
 void MutexUnlock(ThreadState *thr, uptr pc, uptr addr) {
   DPrintf("#%d: MutexUnlock %p\n", thr->tid, addr);
-  MemoryAccess(thr, pc, addr, 1, false);
+  MemoryRead1Byte(thr, pc, addr);
   thr->epoch++;
   TraceAddEvent(thr, thr->epoch, EventTypeUnlock, addr);
   SyncVar *s = ctx->synctab.GetAndLock(&thr->syncslab, addr, true);
@@ -86,7 +86,7 @@ void MutexUnlock(ThreadState *thr, uptr pc, uptr addr) {
 
 void MutexReadLock(ThreadState *thr, uptr pc, uptr addr) {
   DPrintf("#%d: MutexReadLock %p\n", thr->tid, addr);
-  MemoryAccess(thr, pc, addr, 1, false);
+  MemoryRead1Byte(thr, pc, addr);
   thr->epoch++;
   TraceAddEvent(thr, thr->epoch, EventTypeRLock, addr);
   SyncVar *s = ctx->synctab.GetAndLock(&thr->syncslab, addr, false);
@@ -99,7 +99,7 @@ void MutexReadLock(ThreadState *thr, uptr pc, uptr addr) {
 
 void MutexReadUnlock(ThreadState *thr, uptr pc, uptr addr) {
   DPrintf("#%d: MutexReadUnlock %p\n", thr->tid, addr);
-  MemoryAccess(thr, pc, addr, 1, false);
+  MemoryRead1Byte(thr, pc, addr);
   thr->epoch++;
   TraceAddEvent(thr, thr->epoch, EventTypeRUnlock, addr);
   SyncVar *s = ctx->synctab.GetAndLock(&thr->syncslab, addr, true);
@@ -113,7 +113,7 @@ void MutexReadUnlock(ThreadState *thr, uptr pc, uptr addr) {
 
 void MutexReadOrWriteUnlock(ThreadState *thr, uptr pc, uptr addr) {
   DPrintf("#%d: MutexReadOrWriteUnlock %p\n", thr->tid, addr);
-  MemoryAccess(thr, pc, addr, 1, false);
+  MemoryRead1Byte(thr, pc, addr);
   SyncVar *s = ctx->synctab.GetAndLock(&thr->syncslab, addr, true);
   if (s->owner_tid == -1) {
     // Seems to be read unlock.
