@@ -34,6 +34,8 @@
 
 namespace __tsan {
 
+void Printf(const char *format, ...);
+
 enum StatType {
   StatMop,
   StatMopRead,
@@ -59,10 +61,45 @@ enum StatType {
 struct ReportDesc;
 struct Context;
 
+// ThreadState:
+//   tid             : kTidBits
+//   epoch           : kClkBits
+//   unused          :
+// ShadowState:
+//   tid             : kTidBits
+//   epoch           : kClkBits
+//   is_write        : 1
+//   addr            : 3
+//   size_log        : 2
+class FastState {
+ public:
+  FastState(u64 tid, u64 epoch) {
+    x_ = tid << (64 - kTidBits);
+    x_ |= epoch << (64 - kTidBits - kClkBits);
+    CHECK(tid == this->tid());
+    CHECK(epoch == this->epoch());
+  }
+
+  u64 tid() const {
+    u64 res = x_ >> (64 - kTidBits);
+    return res;
+  }
+  u64 epoch() const {
+    u64 res = (x_ << kTidBits) >> (64 - kClkBits);
+    return res;
+  };
+  void IncrementEpoch() {
+    // u64 old_epoch = epoch();
+    x_ += 1 << (64 - kTidBits - kClkBits);
+    // CHECK(old_epoch + 1 == epoch());
+  }
+ private:
+  u64 x_;
+};
+
 // This struct is stored in TLS.
 struct ThreadState {
-  const int tid;
-  u64 epoch;
+  FastState fast_state;
   // Synch epoch represents the threads's epoch before the last synchronization
   // action. It allows to reduce number of shadow state updates.
   // For example, fast_synch_epoch=100, last write to addr X was at epoch=150,
@@ -81,10 +118,10 @@ struct ThreadState {
   ThreadClock clock;
   u64 stat[StatCnt];
 
-  explicit ThreadState(Context *ctx, int tid);
+  explicit ThreadState(Context *ctx, int tid, u64 epoch);
 };
 
-extern Context *ctx;
+extern Context *CTX();
 extern __thread char cur_thread_placeholder[];
 
 INLINE ThreadState *cur_thread() {
@@ -151,7 +188,6 @@ void InitializeShadowMemory();
 void InitializeInterceptors();
 void InitializePlatform();
 void InitializeDynamicAnnotations();
-void Printf(const char *format, ...);
 void Report(const char *format, ...);
 void Die() NORETURN;
 

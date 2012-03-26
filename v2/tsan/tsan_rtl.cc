@@ -47,7 +47,8 @@ u64 max(u64 a, u64 b) {
   return a > b ? a : b;
 }
 
-Context *ctx;
+static Context *ctx;
+Context *CTX() { return ctx; }
 
 void CheckFailed(const char *file, int line, const char *cond) {
   Report("FATAL: ThreadSanitizer CHECK failed: %s:%d \"%s\"\n",
@@ -57,8 +58,9 @@ void CheckFailed(const char *file, int line, const char *cond) {
 
 void TraceSwitch(ThreadState *thr) {
   Lock l(&thr->trace.mtx);
-  int trace = (thr->epoch / (kTraceSize / kTraceParts)) % kTraceParts;
-  thr->trace.headers[trace].epoch0 = thr->epoch;
+  unsigned trace = (thr->fast_state.epoch() / (kTraceSize / kTraceParts))
+      % kTraceParts;
+  thr->trace.headers[trace].epoch0 = thr->fast_state.epoch();
 }
 
 Context::Context()
@@ -67,8 +69,8 @@ Context::Context()
   , nreported() {
 }
 
-ThreadState::ThreadState(Context *ctx, int tid)
-  : tid(tid)
+ThreadState::ThreadState(Context *ctx, int tid, u64 epoch)
+  : fast_state(tid, epoch)
   , clockslab(&ctx->clockslab)
   , syncslab(&ctx->syncslab) {
 }
@@ -325,9 +327,9 @@ bool MemoryAccess(ThreadState *thr, uptr pc, uptr addr) {
   DCHECK(IsAppMem(addr));
   DCHECK(IsShadowMem((uptr)shadow_mem));
 
-  int tid = thr->tid;
-  u64 epoch = thr->epoch + 1;
-  thr->epoch = epoch;
+  u64 tid = thr->fast_state.tid();
+  u64 epoch = thr->fast_state.epoch();
+  thr->fast_state.IncrementEpoch();
   TraceAddEvent(thr, epoch, EventTypeMop, pc);
 
   StatInc(thr, kAccessIsWrite ? StatMopWrite : StatMopRead);
@@ -452,15 +454,15 @@ void MemoryResetRange(ThreadState *thr, uptr pc, uptr addr, uptr size) {
 void FuncEntry(ThreadState *thr, uptr pc) {
   StatInc(thr, StatFuncEnter);
   DPrintf("#%d: tsan::FuncEntry %p\n", (int)thr->tid, (void*)pc);
-  thr->epoch++;
-  TraceAddEvent(thr, thr->epoch, EventTypeFuncEnter, pc);
+  thr->fast_state.IncrementEpoch();
+  TraceAddEvent(thr, thr->fast_state.epoch(), EventTypeFuncEnter, pc);
 }
 
 void FuncExit(ThreadState *thr) {
   StatInc(thr, StatFuncExit);
   DPrintf("#%d: tsan::FuncExit\n", (int)thr->tid);
-  thr->epoch++;
-  TraceAddEvent(thr, thr->epoch, EventTypeFuncExit, 0);
+  thr->fast_state.IncrementEpoch();
+  TraceAddEvent(thr, thr->fast_state.epoch(), EventTypeFuncExit, 0);
 }
 
 }  // namespace __tsan

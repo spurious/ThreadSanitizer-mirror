@@ -25,11 +25,13 @@ class SlabCache;
 struct SyncVar {
   explicit SyncVar(uptr addr);
 
+  static const unsigned kInvalidTid = -1;
+
   Mutex mtx;
   const uptr addr;
   SyncClock clock;
   SyncClock read_clock;  // Used for rw mutexes only.
-  int owner_tid;  // Set only by exclusive owners.
+  unsigned owner_tid;  // Set only by exclusive owners.
   int recursion;
   bool is_rw;
   bool is_recursive;

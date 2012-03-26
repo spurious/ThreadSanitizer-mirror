@@ -23,37 +23,37 @@ const int kThreadQuarantineSize = 100;
 static void ThreadDead(ThreadState *thr, ThreadContext *tctx) {
   CHECK(tctx->status == ThreadStatusRunning
       || tctx->status == ThreadStatusFinished);
-  DPrintf("#%d: ThreadDead uid=%lu\n", (int)thr->tid, tctx->uid);
+  DPrintf("#%d: ThreadDead uid=%lu\n", (int)thr->fast_state.tid(), tctx->uid);
   tctx->status = ThreadStatusDead;
   tctx->uid = 0;
   tctx->sync.Free(&thr->clockslab);
 
   // Put to dead list.
   tctx->dead_next = 0;
-  if (ctx->dead_list_size == 0)
-    ctx->dead_list_head = tctx;
+  if (CTX()->dead_list_size == 0)
+    CTX()->dead_list_head = tctx;
   else
-    ctx->dead_list_tail->dead_next = tctx;
-  ctx->dead_list_tail = tctx;
-  ctx->dead_list_size++;
+    CTX()->dead_list_tail->dead_next = tctx;
+  CTX()->dead_list_tail = tctx;
+  CTX()->dead_list_size++;
 }
 
 int ThreadCreate(ThreadState *thr, uptr pc, uptr uid, bool detached) {
-  Lock l(&ctx->thread_mtx);
+  Lock l(&CTX()->thread_mtx);
   int tid = -1;
   ThreadContext *tctx = 0;
-  if (ctx->dead_list_size > kThreadQuarantineSize
-      || ctx->thread_seq >= kMaxTid) {
-    if (ctx->dead_list_size == 0) {
+  if (CTX()->dead_list_size > kThreadQuarantineSize
+      || CTX()->thread_seq >= kMaxTid) {
+    if (CTX()->dead_list_size == 0) {
       Printf("ThreadSanitizer: %d thread limit exceeded. Dying.\n", kMaxTid);
       Die();
     }
-    tctx = ctx->dead_list_head;
-    ctx->dead_list_head = tctx->dead_next;
-    ctx->dead_list_size--;
-    if (ctx->dead_list_size == 0) {
+    tctx = CTX()->dead_list_head;
+    CTX()->dead_list_head = tctx->dead_next;
+    CTX()->dead_list_size--;
+    if (CTX()->dead_list_size == 0) {
       CHECK_EQ(tctx->dead_next, 0);
-      ctx->dead_list_head = 0;
+      CTX()->dead_list_head = 0;
     }
     CHECK(tctx->status == ThreadStatusDead);
     tctx->status = ThreadStatusInvalid;
@@ -62,49 +62,48 @@ int ThreadCreate(ThreadState *thr, uptr pc, uptr uid, bool detached) {
     // The point to reclain dead_info.
     // delete tctx->dead_info;
   } else {
-    tid = ctx->thread_seq++;
+    tid = CTX()->thread_seq++;
     tctx = new(virtual_alloc(sizeof(ThreadContext))) ThreadContext(tid);
-    ctx->threads[tid] = tctx;
+    CTX()->threads[tid] = tctx;
   }
   CHECK(tctx != 0 && tid >= 0 && tid < kMaxTid);
   DPrintf("#%d: ThreadCreate tid=%d uid=%lu\n",
-          (int)thr->tid, tid, uid);
+          (int)thr->fast_state.tid(), tid, uid);
   CHECK(tctx->status == ThreadStatusInvalid);
   tctx->status = ThreadStatusCreated;
   tctx->thr = 0;
   tctx->uid = uid;
   tctx->detached = detached;
   if (tid) {
-    thr->clock.set(thr->tid, thr->epoch);
-    thr->fast_synch_epoch = thr->epoch;
+    thr->clock.set(thr->fast_state.tid(), thr->fast_state.epoch());
+    thr->fast_synch_epoch = thr->fast_state.epoch();
     thr->clock.release(&tctx->sync, &thr->clockslab);
   }
   return tid;
 }
 
 void ThreadStart(ThreadState *thr, int tid) {
-  Lock l(&ctx->thread_mtx);
-  ThreadContext *tctx = ctx->threads[tid];
+  Lock l(&CTX()->thread_mtx);
+  ThreadContext *tctx = CTX()->threads[tid];
   CHECK(tctx && tctx->status == ThreadStatusCreated);
   tctx->status = ThreadStatusRunning;
-  new(thr) ThreadState(ctx, tid);
-  tctx->thr = thr;
   tctx->epoch0++;
-  thr->epoch = tctx->epoch0;
+  new(thr) ThreadState(CTX(), tid, tctx->epoch0);
+  tctx->thr = thr;
   thr->fast_synch_epoch = tctx->epoch0;
   thr->clock.set(tid, tctx->epoch0);
   thr->clock.acquire(&tctx->sync);
 }
 
 void ThreadFinish(ThreadState *thr) {
-  Lock l(&ctx->thread_mtx);
-  ThreadContext *tctx = ctx->threads[thr->tid];
+  Lock l(&CTX()->thread_mtx);
+  ThreadContext *tctx = CTX()->threads[thr->fast_state.tid()];
   CHECK(tctx && tctx->status == ThreadStatusRunning);
   if (tctx->detached) {
     ThreadDead(thr, tctx);
   } else {
-    thr->clock.set(thr->tid, thr->epoch);
-    thr->fast_synch_epoch = thr->epoch;
+    thr->clock.set(thr->fast_state.tid(), thr->fast_state.epoch());
+    thr->fast_synch_epoch = thr->fast_state.epoch();
     thr->clock.release(&tctx->sync, &thr->clockslab);
     tctx->status = ThreadStatusFinished;
   }
@@ -118,7 +117,7 @@ void ThreadFinish(ThreadState *thr) {
 
   if (kCollectStats) {
     for (int i = 0; i < StatCnt; i++)
-      ctx->stat[i] += thr->stat[i];
+      CTX()->stat[i] += thr->stat[i];
   }
 
   thr->~ThreadState();
@@ -127,15 +126,15 @@ void ThreadFinish(ThreadState *thr) {
 
 void ThreadJoin(ThreadState *thr, uptr pc, uptr uid) {
   DPrintf("#%d: ThreadJoin uid=%lu\n",
-          (int)thr->tid, uid);
-  Lock l(&ctx->thread_mtx);
+          (int)thr->fast_state.tid(), uid);
+  Lock l(&CTX()->thread_mtx);
   ThreadContext *tctx = 0;
   int tid = 0;
   for (; tid < kMaxTid; tid++) {
-    if (ctx->threads[tid] != 0
-        && ctx->threads[tid]->uid == uid
-        && ctx->threads[tid]->status != ThreadStatusInvalid) {
-      tctx = ctx->threads[tid];
+    if (CTX()->threads[tid] != 0
+        && CTX()->threads[tid]->uid == uid
+        && CTX()->threads[tid]->status != ThreadStatusInvalid) {
+      tctx = CTX()->threads[tid];
       break;
     }
   }
@@ -150,13 +149,13 @@ void ThreadJoin(ThreadState *thr, uptr pc, uptr uid) {
 }
 
 void ThreadDetach(ThreadState *thr, uptr pc, uptr uid) {
-  Lock l(&ctx->thread_mtx);
+  Lock l(&CTX()->thread_mtx);
   ThreadContext *tctx = 0;
   for (int tid = 0; tid < kMaxTid; tid++) {
-    if (ctx->threads[tid] != 0
-        && ctx->threads[tid]->uid == uid
-        && ctx->threads[tid]->status != ThreadStatusInvalid) {
-      tctx = ctx->threads[tid];
+    if (CTX()->threads[tid] != 0
+        && CTX()->threads[tid]->uid == uid
+        && CTX()->threads[tid]->status != ThreadStatusInvalid) {
+      tctx = CTX()->threads[tid];
       break;
     }
   }
