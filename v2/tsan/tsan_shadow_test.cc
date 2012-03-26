@@ -37,11 +37,11 @@ TEST(Shadow, Celling) {
   CHECK_EQ((uptr)data % kShadowSize, 0);
   uptr s0 = MemToShadow((uptr)&data[0]);
   CHECK_EQ(s0 % kShadowSize, 0);
-  for (int i = 1; i < kShadowCnt; i++)
+  for (unsigned i = 1; i < kShadowCnt; i++)
     CHECK_EQ(s0, MemToShadow((uptr)&data[i]));
-  for (int i = kShadowCnt; i < 2*kShadowCnt; i++)
+  for (unsigned i = kShadowCnt; i < 2*kShadowCnt; i++)
     CHECK_EQ(s0 + kShadowSize*kShadowCnt, MemToShadow((uptr)&data[i]));
-  for (int i = 2*kShadowCnt; i < 3*kShadowCnt; i++)
+  for (unsigned i = 2*kShadowCnt; i < 3*kShadowCnt; i++)
     CHECK_EQ(s0 + 2*kShadowSize*kShadowCnt, MemToShadow((uptr)&data[i]));
 }
 

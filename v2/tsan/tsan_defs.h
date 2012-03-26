@@ -32,9 +32,9 @@ const int kMaxTid = 1 << kTidBits;
 const int kClkBits = 40;
 
 #ifdef TSAN_SHADOW_STATE_LENGTH
-const int kShadowCnt = TSAN_SHADOW_STATE_LENGTH;
+const unsigned kShadowCnt = TSAN_SHADOW_STATE_LENGTH;
 #else
-const int kShadowCnt = 8;
+const unsigned kShadowCnt = 8;
 #endif
 
 #if defined(TSAN_COLLECT_STATS) && TSAN_COLLECT_STATS

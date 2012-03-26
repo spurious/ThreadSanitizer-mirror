@@ -366,7 +366,7 @@ bool MemoryAccess(ThreadState *thr, uptr pc, uptr addr) {
   // if user data is {int, short, char, char}, then accesses to the int are
   // offsetted to 0, short - 4, 1st char - 6, 2nd char - 7. Hopefully, accesses
   // from a single thread won't need to scan all 8 shadow values.
-  int off = 0;
+  unsigned off = 0;
   if (kAccessSize == 1)
     off = addr & 7;
   else if (kAccessSize == 2)
@@ -374,7 +374,7 @@ bool MemoryAccess(ThreadState *thr, uptr pc, uptr addr) {
   else if (kAccessSize == 4)
     off = addr & 4;
 
-  for (int i = 0; i < kShadowCnt; i++) {
+  for (unsigned i = 0; i < kShadowCnt; i++) {
     StatInc(thr, StatShadowProcessed);
     u64 *sp = &shadow_mem[(i + off) % kShadowCnt];
     if (MemoryAccess1<kAccessSizeLog, kAccessIsWrite>(thr, tid, epoch,
