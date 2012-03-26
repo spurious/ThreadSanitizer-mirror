@@ -8,7 +8,8 @@ ROOTDIR=`dirname $0`/..
 CC=clang
 CXX=clang++
 
-CFLAGS="-fthread-sanitizer -fPIE"
+# TODO: add testing for all of -O0...-O3
+CFLAGS="-fthread-sanitizer -fPIE -O1"
 LDFLAGS="-pie -lpthread -ldl $ROOTDIR/tsan/libtsan.a"
 
 test_file() {
