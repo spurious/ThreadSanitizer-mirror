@@ -33,18 +33,21 @@ union Shadow {
     u64 tid   : kTidBits;
     u64 epoch : kClkBits;
     u64 addr0 : 3;
-    u64 addr1 : 3;
+    u64 size_log : 2;
     u64 write : 1;
   };
   u64 raw;
 };
 
-u64 min(u64 a, u64 b) {
-  return a < b ? a : b;
-}
-
-u64 max(u64 a, u64 b) {
-  return a > b ? a : b;
+// This is temporary (slow).
+template<unsigned kS2AccessSize>
+inline
+bool TwoRangesIntersect(Shadow s1, Shadow s2) {
+  if (s1.addr0 == s2.addr0) return true;
+  return s1.addr0 < s2.addr0
+      ? (s1.addr0 + (1 << s1.size_log) > s2.addr0)
+      // s2.addr0 < s1.addr0
+      : (s2.addr0 + kS2AccessSize > s1.addr0);
 }
 
 static Context *ctx;
@@ -183,7 +186,7 @@ static void NOINLINE ReportRace(ThreadState *thr, uptr addr,
     Shadow *s = (i ? &old : &cur);
     mop->tid = s->tid;
     mop->addr = addr + s->addr0;
-    mop->size = s->addr1 - s->addr0 + 1;
+    mop->size = 1 << s->size_log;
     mop->write = s->write;
     mop->nmutex = 0;
     mop->stack.cnt = 0;
@@ -240,6 +243,7 @@ ALWAYS_INLINE
 static bool MemoryAccess1(ThreadState *thr, int tid, u64 epoch,
                           u64 synch_epoch, Shadow cur, u64 *sp,
                           bool &replaced, Shadow &racy_access) {
+  const unsigned kAccessSize = 1 << kAccessSizeLog;
   Shadow old = LoadShadow(sp);
   if (old.raw == 0) {
     StatInc(thr, StatShadowZero);
@@ -250,7 +254,7 @@ static bool MemoryAccess1(ThreadState *thr, int tid, u64 epoch,
     return false;
   }
   // is the memory access equal to the previous?
-  if (cur.addr0 == old.addr0 && cur.addr1 == old.addr1) {
+  if (cur.addr0 == old.addr0 && cur.size_log == old.size_log) {
     StatInc(thr, StatShadowSameSize);
     // same thread?
     if (old.tid == tid) {
@@ -289,7 +293,7 @@ static bool MemoryAccess1(ThreadState *thr, int tid, u64 epoch,
       }
     }
   // Do the memory access intersect?
-  } else if (min(cur.addr1, old.addr1) >= max(cur.addr0, old.addr0)) {
+  } else if (TwoRangesIntersect<kAccessSize>(old, cur)) {
     StatInc(thr, StatShadowIntersect);
     if (old.tid == tid) {
       StatInc(thr, StatShadowSameThread);
@@ -314,10 +318,10 @@ static bool MemoryAccess1(ThreadState *thr, int tid, u64 epoch,
 
 template<u64 kAccessSizeLog, u64 kAccessIsWrite>
 ALWAYS_INLINE
-bool MemoryAccess(ThreadState *thr, uptr pc, uptr addr) {
+void MemoryAccess(ThreadState *thr, uptr pc, uptr addr) {
   CHECK_LE(kAccessIsWrite, 1);
   CHECK_LE(kAccessSizeLog, 3);
-  int kAccessSize = 1 << kAccessSizeLog;
+  const unsigned kAccessSize = 1 << kAccessSizeLog;
   StatInc(thr, StatMop);
   u64 *shadow_mem = (u64*)MemToShadow(addr);
   DPrintf("#%d: tsan::OnMemoryAccess: @%p %p size=%d"
@@ -338,7 +342,7 @@ bool MemoryAccess(ThreadState *thr, uptr pc, uptr addr) {
 
   // descriptor of the memory access
   Shadow cur = { {tid, epoch,
-               addr&7, min((addr&7)+kAccessSize-1, 7), // NOLINT
+               addr&7, kAccessSizeLog,
                kAccessIsWrite} };  // NOLINT
   // Is the descriptor already stored somewhere?
   bool replaced = false;
@@ -382,7 +386,7 @@ bool MemoryAccess(ThreadState *thr, uptr pc, uptr addr) {
     if (MemoryAccess1<kAccessSizeLog, kAccessIsWrite>(thr, tid, epoch,
                                                       synch_epoch, cur, sp,
                                                       replaced, racy_access))
-      return false;
+      return;
   }
 
   // find some races?
@@ -391,12 +395,11 @@ bool MemoryAccess(ThreadState *thr, uptr pc, uptr addr) {
   // we did not find any races and had already stored
   // the current access info, so we are done
   if (LIKELY(replaced))
-    return racy_access.raw != 0;
+    return;
   // choose a random candidate slot and replace it
   unsigned i = epoch % kShadowCnt;
   StoreShadow(shadow_mem+i, cur.raw);
   StatInc(thr, StatShadowReplace);
-  return racy_access.raw != 0;
 }
 
 template<int kAccessIsWrite>
@@ -404,18 +407,15 @@ static void MemoryAccessRange(ThreadState *thr, uptr pc, uptr addr,
                               uptr size) {
   // Handle unaligned beginning, if any.
   for (; addr % 8 && size; addr++, size--) {
-    if (MemoryAccess<0, kAccessIsWrite>(thr, pc, addr))
-      return;
+    MemoryAccess<0, kAccessIsWrite>(thr, pc, addr);
   }
   // Handle middle part, if any.
   for (; size >= 8; addr += 8, size -= 8) {
-    if (MemoryAccess<2, kAccessIsWrite>(thr, pc, addr))
-      return;
+    MemoryAccess<2, kAccessIsWrite>(thr, pc, addr);
   }
   // Handle ending, if any.
   for (; size; addr++, size--) {
-    if (MemoryAccess<0, kAccessIsWrite>(thr, pc, addr))
-      return;
+    MemoryAccess<0, kAccessIsWrite>(thr, pc, addr);
   }
 }
 

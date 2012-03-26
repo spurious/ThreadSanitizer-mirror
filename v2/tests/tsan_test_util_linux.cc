@@ -49,7 +49,6 @@ void TestMutexBeforeInit() {
 
 namespace __tsan {
 bool OnReport(const ReportDesc *rep, bool suppressed) {
-  CHECK_EQ(g_report, 0);
   g_report = rep;
   return true;
 }

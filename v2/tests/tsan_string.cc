@@ -45,7 +45,8 @@ TEST(ThreadSanitizer, MemcpyRace1) {
   ScopedThread t1, t2;
   t1.Memcpy(data, data1, 10);
   const ReportDesc *rep = t2.Memcpy(data, data2, 10, true);
-  EXPECT_EQ(rep->mop[0].addr, (uptr)data);
+  EXPECT_GE(rep->mop[0].addr, (uptr)data);
+  EXPECT_LT(rep->mop[0].addr, (uptr)data + 10);
 }
 
 TEST(ThreadSanitizer, MemcpyRace2) {
@@ -73,7 +74,8 @@ TEST(ThreadSanitizer, MemcpyStack) {
   ScopedThread t1, t2;
   t1.Memcpy(data, data1, 10);
   const ReportDesc *rep = t2.Memcpy(data, data1, 10, true);
-  EXPECT_EQ(rep->mop[0].addr, (uptr)data);
+  EXPECT_GE(rep->mop[0].addr, (uptr)data);
+  EXPECT_LT(rep->mop[0].addr, (uptr)data + 10);
   // TODO(kcc, dvyukov): Dima, why did you have stack.cnt == 2 here?
   EXPECT_GE(rep->mop[0].stack.cnt, 1);
   EXPECT_EQ(rep->mop[0].stack.entry[0].pc, (uptr)memcpy);
