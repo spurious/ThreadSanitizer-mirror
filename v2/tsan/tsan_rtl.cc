@@ -165,7 +165,7 @@ static int RestoreStack(int tid, u64 epoch, uptr *stack, int n) {
 }
 
 static void NOINLINE ReportRace(ThreadState *thr, uptr addr,
-                                Shadow s0, Shadow s1) {
+                                Shadow cur, Shadow old) {
   const int kStackMax = 64;
 
   if (IsExceptReport(addr))
@@ -180,7 +180,7 @@ static void NOINLINE ReportRace(ThreadState *thr, uptr addr,
   rep.mop = alloc.Alloc<ReportMop>(rep.nmop);
   for (int i = 0; i < rep.nmop; i++) {
     ReportMop *mop = &rep.mop[i];
-    Shadow *s = (i ? &s1 : &s0);
+    Shadow *s = (i ? &old : &cur);
     mop->tid = s->tid;
     mop->addr = addr + s->addr0;
     mop->size = s->addr1 - s->addr0 + 1;
@@ -238,36 +238,36 @@ static void StoreShadow(u64 *p, u64 raw) {
 template<int kAccessSizeLog, int kAccessIsWrite>
 ALWAYS_INLINE
 static bool MemoryAccess1(ThreadState *thr, int tid, u64 epoch,
-                          u64 synch_epoch, Shadow s0, u64 *sp,
+                          u64 synch_epoch, Shadow cur, u64 *sp,
                           bool &replaced, Shadow &racy_access) {
-  Shadow s = LoadShadow(sp);
-  if (s.raw == 0) {
+  Shadow old = LoadShadow(sp);
+  if (old.raw == 0) {
     StatInc(thr, StatShadowZero);
     if (replaced == false) {
-      StoreShadow(sp, s0.raw);
+      StoreShadow(sp, cur.raw);
       replaced = true;
     }
     return false;
   }
   // is the memory access equal to the previous?
-  if (s0.addr0 == s.addr0 && s0.addr1 == s.addr1) {
+  if (cur.addr0 == old.addr0 && cur.addr1 == old.addr1) {
     StatInc(thr, StatShadowSameSize);
     // same thread?
-    if (s.tid == tid) {
+    if (old.tid == tid) {
       StatInc(thr, StatShadowSameThread);
-      if (s.epoch >= synch_epoch) {
-        if (s.write || !kAccessIsWrite) {
+      if (old.epoch >= synch_epoch) {
+        if (old.write || !kAccessIsWrite) {
           // found a slot that holds effectively the same info
           // (that is, same tid, same sync epoch and same size)
           return true;
         } else {
-          StoreShadow(sp, replaced ? 0ull : s0.raw);
+          StoreShadow(sp, replaced ? 0ull : cur.raw);
           replaced = true;
           return false;
         }
       } else {
-        if (!s.write || kAccessIsWrite) {
-          StoreShadow(sp, replaced ? 0ull : s0.raw);
+        if (!old.write || kAccessIsWrite) {
+          StoreShadow(sp, replaced ? 0ull : cur.raw);
           replaced = true;
           return false;
         } else {
@@ -277,32 +277,32 @@ static bool MemoryAccess1(ThreadState *thr, int tid, u64 epoch,
     } else {
       StatInc(thr, StatShadowAnotherThread);
       // happens before?
-      if (thr->clock.get(s.tid) >= s.epoch) {
-        StoreShadow(sp, replaced ? 0ull : s0.raw);
+      if (thr->clock.get(old.tid) >= old.epoch) {
+        StoreShadow(sp, replaced ? 0ull : cur.raw);
         replaced = true;
         return false;
-      } else if (!s.write && !kAccessIsWrite) {
+      } else if (!old.write && !kAccessIsWrite) {
         return false;
       } else {
-        racy_access = s;
+        racy_access = old;
         return false;
       }
     }
   // Do the memory access intersect?
-  } else if (min(s0.addr1, s.addr1) >= max(s0.addr0, s.addr0)) {
+  } else if (min(cur.addr1, old.addr1) >= max(cur.addr0, old.addr0)) {
     StatInc(thr, StatShadowIntersect);
-    if (s.tid == tid) {
+    if (old.tid == tid) {
       StatInc(thr, StatShadowSameThread);
       return false;
     }
     StatInc(thr, StatShadowAnotherThread);
     // happens before?
-    if (thr->clock.get(s.tid) >= s.epoch) {
+    if (thr->clock.get(old.tid) >= old.epoch) {
       return false;
-    } else if (!s.write && !kAccessIsWrite) {
+    } else if (!old.write && !kAccessIsWrite) {
       return false;
     } else {
-      racy_access = s;
+      racy_access = old;
       return false;
     }
   // The accesses do not intersect.
@@ -337,7 +337,7 @@ bool MemoryAccess(ThreadState *thr, uptr pc, uptr addr) {
           : kAccessSize == 4 ? StatMop4 : StatMop8);
 
   // descriptor of the memory access
-  Shadow s0 = { {tid, epoch,
+  Shadow cur = { {tid, epoch,
                addr&7, min((addr&7)+kAccessSize-1, 7), // NOLINT
                kAccessIsWrite} };  // NOLINT
   // Is the descriptor already stored somewhere?
@@ -380,21 +380,21 @@ bool MemoryAccess(ThreadState *thr, uptr pc, uptr addr) {
     StatInc(thr, StatShadowProcessed);
     u64 *sp = &shadow_mem[(i + off) % kShadowCnt];
     if (MemoryAccess1<kAccessSizeLog, kAccessIsWrite>(thr, tid, epoch,
-                                                      synch_epoch, s0, sp,
+                                                      synch_epoch, cur, sp,
                                                       replaced, racy_access))
       return false;
   }
 
   // find some races?
   if (UNLIKELY(racy_access.raw != 0))
-    ReportRace(thr, addr, s0, racy_access);
+    ReportRace(thr, addr, cur, racy_access);
   // we did not find any races and had already stored
   // the current access info, so we are done
   if (LIKELY(replaced))
     return racy_access.raw != 0;
   // choose a random candidate slot and replace it
   unsigned i = epoch % kShadowCnt;
-  StoreShadow(shadow_mem+i, s0.raw);
+  StoreShadow(shadow_mem+i, cur.raw);
   StatInc(thr, StatShadowReplace);
   return racy_access.raw != 0;
 }
