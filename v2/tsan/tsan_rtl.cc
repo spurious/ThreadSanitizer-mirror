@@ -333,7 +333,7 @@ static inline void HandleRace(ThreadState *thr,
 template<int kAccessSizeLog, int kAccessIsWrite>
 ALWAYS_INLINE
 static bool MemoryAccess1(ThreadState *thr,
-                          u64 synch_epoch, Shadow cur, u64 *sp,
+                          Shadow cur, u64 *sp,
                           bool &replaced) {
   const unsigned kAccessSize = 1 << kAccessSizeLog;
   Shadow old = LoadShadow(sp);
@@ -350,7 +350,7 @@ static bool MemoryAccess1(ThreadState *thr,
     // same thread?
     if (Shadow::TidsAreEqual(old, cur)) {
       StatInc(thr, StatShadowSameThread);
-      if (old.epoch() >= synch_epoch) {
+      if (old.epoch() >= thr->fast_synch_epoch) {
         if (old.is_write() || !kAccessIsWrite) {
           // found a slot that holds effectively the same info
           // (that is, same tid, same sync epoch and same size)
@@ -440,16 +440,13 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr) {
   // larger and smaller as well, it allowed to replace some
   // 'candidates' with 'same' or 'replace', but I think
   // it's just not worth it (performance- and complexity-wise).
-  const u64 synch_epoch = thr->fast_synch_epoch;
 
   unsigned off = cur.ComputeSearchOffset<kAccessSize>();
 
   for (unsigned i = 0; i < kShadowCnt; i++) {
     StatInc(thr, StatShadowProcessed);
     u64 *sp = &shadow_mem[(i + off) % kShadowCnt];
-    if (MemoryAccess1<kAccessSizeLog, kAccessIsWrite>(thr,
-                                                      synch_epoch, cur, sp,
-                                                      replaced))
+    if (MemoryAccess1<kAccessSizeLog, kAccessIsWrite>(thr, cur, sp, replaced))
       return;
   }
 
