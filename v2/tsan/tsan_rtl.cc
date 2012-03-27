@@ -87,6 +87,30 @@ class Shadow: public FastState {
     }
     return false;
   }
+
+  // The idea behind the offset is as follows.
+  // Consider that we have 8 bool's contained within a single 8-byte block
+  // (mapped to a single shadow "cell"). Now consider that we write to the bools
+  // from a single thread (which we consider the common case).
+  // W/o offsetting each access will have to scan 4 shadow values at average
+  // to find the corresponding shadow value for the bool.
+  // With offsetting we start scanning shadow with the offset so that
+  // each access hits necessary shadow straight off (at least in an expected
+  // optimistic case).
+  // This logic works seamlessly for any layout of user data. For example,
+  // if user data is {int, short, char, char}, then accesses to the int are
+  // offsetted to 0, short - 4, 1st char - 6, 2nd char - 7. Hopefully, accesses
+  // from a single thread won't need to scan all 8 shadow values.
+  template<unsigned kAccessSize>
+  unsigned ComputeSearchOffset() {
+    CHECK(kAccessSize == 1 || kAccessSize == 2 ||
+          kAccessSize == 4 || kAccessSize == 8);
+    // size = 8: 0
+    // size = 4: addr & 4
+    // size = 2: addr & 6
+    // size = 1: addr & 7
+    return x_ & (8 - kAccessSize);
+  }
 };
 
 static Context *ctx;
@@ -418,26 +442,7 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr) {
   // it's just not worth it (performance- and complexity-wise).
   const u64 synch_epoch = thr->fast_synch_epoch;
 
-  // The idea behind the offset is as follows.
-  // Consider that we have 8 bool's contained within a single 8-byte block
-  // (mapped to a single shadow "cell"). Now consider that we write to the bools
-  // from a single thread (which we consider the common case).
-  // W/o offsetting each access will have to scan 4 shadow values at average
-  // to find the corresponding shadow value for the bool.
-  // With offsetting we start scanning shadow with the offset so that
-  // each access hits necessary shadow straight off (at least in an expected
-  // optimistic case).
-  // This logic works seamlessly for any layout of user data. For example,
-  // if user data is {int, short, char, char}, then accesses to the int are
-  // offsetted to 0, short - 4, 1st char - 6, 2nd char - 7. Hopefully, accesses
-  // from a single thread won't need to scan all 8 shadow values.
-  unsigned off = 0;
-  if (kAccessSize == 1)
-    off = addr & 7;
-  else if (kAccessSize == 2)
-    off = addr & 6;
-  else if (kAccessSize == 4)
-    off = addr & 4;
+  unsigned off = cur.ComputeSearchOffset<kAccessSize>();
 
   for (unsigned i = 0; i < kShadowCnt; i++) {
     StatInc(thr, StatShadowProcessed);
