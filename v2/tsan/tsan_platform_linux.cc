@@ -137,8 +137,11 @@ void InitializePlatform() {
   void *p = 0;
   if (sizeof(p) == 8) {
     // Disable core dumps, dumping of 16TB usually takes a bit long.
-    rlimit lim = {0, 0};
-    setrlimit(RLIMIT_CORE, &lim);
+    // The following magic is to prevent clang from replacing it with memset.
+    volatile rlimit lim;
+    lim.rlim_cur = 0;
+    lim.rlim_max = 0;
+    setrlimit(RLIMIT_CORE, (rlimit*)&lim);
   }
 }
 

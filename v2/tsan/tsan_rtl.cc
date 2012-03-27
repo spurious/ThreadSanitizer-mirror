@@ -130,8 +130,10 @@ ThreadContext::ThreadContext(int tid)
 
 void Initialize(ThreadState *thr) {
   // Thread safe because done before all threads exist.
-  if (ctx)
+  static bool is_initialized = false;
+  if (is_initialized)
     return;
+  is_initialized = true;
   InitializeInterceptors();
   InitializePlatform();
   InitializeDynamicAnnotations();

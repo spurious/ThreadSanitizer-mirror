@@ -797,6 +797,8 @@ INTERCEPTOR(int, epoll_wait, int epfd, void *ev, int cnt, int timeout) {
 namespace __tsan {
 
 void InitializeInterceptors() {
+  thread_in_rtl++;
+
   if (atexit(&finalize)) {
     Printf("ThreadSanitizer: failed to setup atexit callback\n");
     Die();
@@ -889,6 +891,8 @@ void InitializeInterceptors() {
 
   INTERCEPT_FUNCTION(epoll_ctl);
   INTERCEPT_FUNCTION(epoll_wait);
+
+  thread_in_rtl--;
 }
 
 void internal_memset(void *ptr, int c, uptr size) {
