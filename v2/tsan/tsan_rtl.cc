@@ -66,7 +66,7 @@ class Shadow: public FastState {
 
   static inline bool TidsAreEqual(Shadow s1, Shadow s2) {
     u64 shifted_xor = (s1.x_ ^ s2.x_) >> (64 - kTidBits);
-    DCHECK((shifted_xor == 0) == (s1.tid() == s2.tid()));
+    DCHECK((shifted_xor == 0) == (s1.tid() == s2.tid()));  // NOLINT
     return shifted_xor == 0;
   }
   static inline bool Addr0AndSizeAreEqual(Shadow s1, Shadow s2) {
@@ -274,9 +274,9 @@ static void StoreShadow(u64 *p, Shadow s) {
 }
 
 ALWAYS_INLINE
-static void StoreIfNotYetStored(u64 *sp, Shadow s, bool &stored) {
-  StoreShadow(sp, stored ? Shadow(0) : s);
-  stored = true;
+static void StoreIfNotYetStored(u64 *sp, Shadow s, bool *stored) {
+  StoreShadow(sp, *stored ? Shadow(0) : s);
+  *stored = true;
 }
 
 template<int kAccessSizeLog, int kAccessIsWrite>
@@ -289,7 +289,7 @@ static bool MemoryAccess1(ThreadState *thr,
   if (old.IsZero()) {
     StatInc(thr, StatShadowZero);
     if (replaced == false) {
-      StoreIfNotYetStored(sp, cur, replaced);
+      StoreIfNotYetStored(sp, cur, &replaced);
     }
     return false;
   }
@@ -305,12 +305,12 @@ static bool MemoryAccess1(ThreadState *thr,
           // (that is, same tid, same sync epoch and same size)
           return true;
         } else {
-          StoreIfNotYetStored(sp, cur, replaced);
+          StoreIfNotYetStored(sp, cur, &replaced);
           return false;
         }
       } else {
         if (!old.is_write() || kAccessIsWrite) {
-          StoreIfNotYetStored(sp, cur, replaced);
+          StoreIfNotYetStored(sp, cur, &replaced);
           return false;
         } else {
           return false;
@@ -320,7 +320,7 @@ static bool MemoryAccess1(ThreadState *thr,
       StatInc(thr, StatShadowAnotherThread);
       // happens before?
       if (thr->clock.get(old.tid()) >= old.epoch()) {
-        StoreIfNotYetStored(sp, cur, replaced);
+        StoreIfNotYetStored(sp, cur, &replaced);
         return false;
       } else if (!old.is_write() && !kAccessIsWrite) {
         return false;
