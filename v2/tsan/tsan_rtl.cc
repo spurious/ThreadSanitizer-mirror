@@ -208,10 +208,10 @@ static int RestoreStack(int tid, u64 epoch, uptr *stack, int n) {
   return pos;
 }
 
-static void NOINLINE ReportRace(ThreadState *thr, uptr addr,
-                                Shadow cur, Shadow old) {
+static void NOINLINE ReportRace(ThreadState *thr) {
   const int kStackMax = 64;
 
+  u64 addr = thr->racy_addr;
   if (IsExceptReport(addr))
     return;
 
@@ -224,15 +224,15 @@ static void NOINLINE ReportRace(ThreadState *thr, uptr addr,
   rep.mop = alloc.Alloc<ReportMop>(rep.nmop);
   for (int i = 0; i < rep.nmop; i++) {
     ReportMop *mop = &rep.mop[i];
-    Shadow *s = (i ? &old : &cur);
-    mop->tid = s->tid();
-    mop->addr = addr + s->addr0();
-    mop->size = 1 << s->size_log();
-    mop->write = s->is_write();
+    Shadow s(thr->racy_state[i]);
+    mop->tid = s.tid();
+    mop->addr = addr + s.addr0();
+    mop->size = 1 << s.size_log();
+    mop->write = s.is_write();
     mop->nmutex = 0;
     mop->stack.cnt = 0;
     uptr stack[kStackMax];
-    int stackcnt = RestoreStack(s->tid(), s->epoch(), stack, kStackMax);
+    int stackcnt = RestoreStack(s.tid(), s.epoch(), stack, kStackMax);
     if (stackcnt != 0) {
       mop->stack.entry = alloc.Alloc<ReportStackEntry>(kStackMax);
       for (int si = 0; si < stackcnt; si++) {
@@ -265,6 +265,10 @@ static void NOINLINE ReportRace(ThreadState *thr, uptr addr,
     return;
   PrintReport(&rep);
   ctx->nreported++;
+}
+
+void ReportRaceFromSignalHandler() {
+  ReportRace(cur_thread());
 }
 
 ALWAYS_INLINE
@@ -358,6 +362,21 @@ static bool MemoryAccess1(ThreadState *thr,
   return false;
 }
 
+static inline void HandleRace(ThreadState *thr, uptr addr,
+                              Shadow cur, Shadow old) {
+    thr->racy_addr = addr;
+    thr->racy_state[0] = cur.raw();
+    thr->racy_state[1] = old.raw();
+#if 1
+    // Raise a SIGILL. It will be intercepted, race reported and PC moved.
+    // FIXME: is there any compiler-independent way to say this (w/o using asm)?
+    __asm__("ud2");
+#else
+    // Just  a function call. Slower than the signal magic.
+    ReportRace(thr);
+#endif
+}
+
 template<u64 kAccessSizeLog, u64 kAccessIsWrite>
 ALWAYS_INLINE
 void MemoryAccess(ThreadState *thr, uptr pc, uptr addr) {
@@ -429,8 +448,9 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr) {
   }
 
   // find some races?
-  if (UNLIKELY(!racy_access.IsZero()))
-    ReportRace(thr, addr, cur, racy_access);
+  if (UNLIKELY(!racy_access.IsZero())) {
+    HandleRace(thr, addr, cur, racy_access);
+  }
   // we did not find any races and had already stored
   // the current access info, so we are done
   if (LIKELY(replaced))

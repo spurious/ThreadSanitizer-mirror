@@ -15,6 +15,7 @@
 #include "tsan_platform.h"
 #include "tsan_rtl.h"
 
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -133,6 +134,22 @@ void InitializeShadowMemory() {
   DPrintf("InitializeShadowMemory: %p %p\n", shadow);
 }
 
+static void OnSIGILL(int, siginfo_t *siginfo, void *context) {
+  // Report the race.
+  ReportRaceFromSignalHandler();
+  // Move the PC.
+  ucontext_t *ucontext = (ucontext_t*)context;
+  ucontext->uc_mcontext.gregs[REG_RIP] += 2;
+}
+
+static void InstallSIGILLHandler() {
+  struct sigaction sigact;
+  internal_memset(&sigact, 0, sizeof(sigact));
+  sigact.sa_sigaction = OnSIGILL;
+  sigact.sa_flags = SA_SIGINFO;
+  CHECK_EQ(0, sigaction(SIGILL, &sigact, 0));
+}
+
 void InitializePlatform() {
   void *p = 0;
   if (sizeof(p) == 8) {
@@ -143,6 +160,8 @@ void InitializePlatform() {
     lim.rlim_max = 0;
     setrlimit(RLIMIT_CORE, (rlimit*)&lim);
   }
+
+  InstallSIGILLHandler();
 }
 
 }  // namespace __tsan

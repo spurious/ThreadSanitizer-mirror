@@ -108,6 +108,8 @@ struct ThreadState {
   // taken by epoch between synchs.
   // This way we can save one load from tls.
   u64 fast_synch_epoch;
+  u64 racy_addr;
+  u64 racy_state[2];
   Trace trace;
   SlabCache clockslab;
   SlabCache syncslab;
@@ -196,6 +198,7 @@ void Die() NORETURN;
 void Initialize(ThreadState *thr);
 int Finalize(ThreadState *thr);
 
+void ReportRaceFromSignalHandler();
 void MemoryRead1Byte(ThreadState *thr, uptr pc, uptr addr);
 void MemoryWrite1Byte(ThreadState *thr, uptr pc, uptr addr);
 void MemoryAccessRange(ThreadState *thr, uptr pc, uptr addr,
