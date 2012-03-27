@@ -69,6 +69,10 @@ class Shadow: public FastState {
     DCHECK((shifted_xor == 0) == (s1.tid() == s2.tid()));
     return shifted_xor == 0;
   }
+  static inline bool Addr0AndSizeAreEqual(Shadow s1, Shadow s2) {
+    u64 masked_xor = (s1.x_ ^ s2.x_) & 31;
+    return masked_xor == 0;
+  }
 };
 
 // This is temporary (slow).
@@ -285,7 +289,7 @@ static bool MemoryAccess1(ThreadState *thr,
     return false;
   }
   // is the memory access equal to the previous?
-  if (cur.addr0() == old.addr0() && cur.size_log() == old.size_log()) {
+  if (Shadow::Addr0AndSizeAreEqual(cur, old)) {
     StatInc(thr, StatShadowSameSize);
     // same thread?
     if (Shadow::TidsAreEqual(old, cur)) {
