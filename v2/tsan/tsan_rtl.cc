@@ -211,7 +211,9 @@ static int RestoreStack(int tid, u64 epoch, uptr *stack, int n) {
 static void NOINLINE ReportRace(ThreadState *thr) {
   const int kStackMax = 64;
 
-  u64 addr = thr->racy_addr;
+  Shadow old = Shadow(*thr->racy_access_prev);
+  Shadow cur(thr->racy_access_cur);
+  uptr addr = ShadowToMem((uptr)thr->racy_access_prev);
   if (IsExceptReport(addr))
     return;
 
@@ -224,7 +226,7 @@ static void NOINLINE ReportRace(ThreadState *thr) {
   rep.mop = alloc.Alloc<ReportMop>(rep.nmop);
   for (int i = 0; i < rep.nmop; i++) {
     ReportMop *mop = &rep.mop[i];
-    Shadow s(thr->racy_state[i]);
+    Shadow s(i == 0 ? cur : old);
     mop->tid = s.tid();
     mop->addr = addr + s.addr0();
     mop->size = 1 << s.size_log();
@@ -288,11 +290,27 @@ static void StoreIfNotYetStored(u64 *sp, Shadow s, bool *stored) {
   *stored = true;
 }
 
+// We don't pass the racy address anywere, instead we derive it from
+// the address of shadow memory.
+static inline void HandleRace(ThreadState *thr,
+                              Shadow cur, u64 *prev) {
+    thr->racy_access_cur = cur.raw();
+    thr->racy_access_prev = prev;
+#if 1
+    // Raise a SIGILL. It will be intercepted, race reported and PC moved.
+    // FIXME: is there any compiler-independent way to say this (w/o using asm)?
+    __asm__("ud2");
+#else
+    // Just  a function call. Slower than the signal magic.
+    ReportRace(thr);
+#endif
+}
+
 template<int kAccessSizeLog, int kAccessIsWrite>
 ALWAYS_INLINE
 static bool MemoryAccess1(ThreadState *thr,
                           u64 synch_epoch, Shadow cur, u64 *sp,
-                          bool &replaced, Shadow &racy_access) {
+                          bool &replaced) {
   const unsigned kAccessSize = 1 << kAccessSizeLog;
   Shadow old = LoadShadow(sp);
   if (old.IsZero()) {
@@ -334,8 +352,8 @@ static bool MemoryAccess1(ThreadState *thr,
       } else if (!old.is_write() && !kAccessIsWrite) {
         return false;
       } else {
-        racy_access = old;
-        return false;
+        HandleRace(thr, cur, sp);
+        return true;
       }
     }
   // Do the memory access intersect?
@@ -352,29 +370,14 @@ static bool MemoryAccess1(ThreadState *thr,
     } else if (!old.is_write() && !kAccessIsWrite) {
       return false;
     } else {
-      racy_access = old;
-      return false;
+      HandleRace(thr, cur, sp);
+      return true;
     }
   // The accesses do not intersect.
   } else {
     StatInc(thr, StatShadowNotIntersect);
   }
   return false;
-}
-
-static inline void HandleRace(ThreadState *thr, uptr addr,
-                              Shadow cur, Shadow old) {
-    thr->racy_addr = addr;
-    thr->racy_state[0] = cur.raw();
-    thr->racy_state[1] = old.raw();
-#if 1
-    // Raise a SIGILL. It will be intercepted, race reported and PC moved.
-    // FIXME: is there any compiler-independent way to say this (w/o using asm)?
-    __asm__("ud2");
-#else
-    // Just  a function call. Slower than the signal magic.
-    ReportRace(thr);
-#endif
 }
 
 template<u64 kAccessSizeLog, u64 kAccessIsWrite>
@@ -405,8 +408,6 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr) {
 
   // Is the descriptor already stored somewhere?
   bool replaced = false;
-  // Racy memory access. Zero if none.
-  Shadow racy_access(0);
 
   // scan all the shadow values and dispatch to 4 categories:
   // same, replace, candidate and race (see comments below).
@@ -443,14 +444,10 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr) {
     u64 *sp = &shadow_mem[(i + off) % kShadowCnt];
     if (MemoryAccess1<kAccessSizeLog, kAccessIsWrite>(thr,
                                                       synch_epoch, cur, sp,
-                                                      replaced, racy_access))
+                                                      replaced))
       return;
   }
 
-  // find some races?
-  if (UNLIKELY(!racy_access.IsZero())) {
-    HandleRace(thr, addr, cur, racy_access);
-  }
   // we did not find any races and had already stored
   // the current access info, so we are done
   if (LIKELY(replaced))

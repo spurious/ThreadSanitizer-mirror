@@ -38,6 +38,13 @@ static inline bool IsShadowMem(uptr mem) {
   return mem >= kLinuxShadowBeg && mem <= kLinuxShadowEnd;
 }
 
+static inline uptr ShadowToMem(uptr shadow) {
+  CHECK(IsShadowMem(shadow));
+  shadow /= kShadowCnt;
+  shadow |= 0x7c0000000000;
+  return shadow;
+}
+
 void *virtual_alloc(uptr size);
 void virtual_free(void *p, uptr size);
 void sched_yield();

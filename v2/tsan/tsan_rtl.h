@@ -108,8 +108,8 @@ struct ThreadState {
   // taken by epoch between synchs.
   // This way we can save one load from tls.
   u64 fast_synch_epoch;
-  u64 racy_addr;
-  u64 racy_state[2];
+  u64 racy_access_cur;  // Shadow
+  u64 *racy_access_prev;  // Shadow *
   Trace trace;
   SlabCache clockslab;
   SlabCache syncslab;
