@@ -65,12 +65,6 @@ struct Context;
 //   tid             : kTidBits
 //   epoch           : kClkBits
 //   unused          :
-// ShadowState:
-//   tid             : kTidBits
-//   epoch           : kClkBits
-//   is_write        : 1
-//   addr            : 3
-//   size_log        : 2
 class FastState {
  public:
   FastState(u64 tid, u64 epoch) {
@@ -94,6 +88,8 @@ class FastState {
     // CHECK(old_epoch + 1 == epoch());
   }
  private:
+  friend class Shadow;
+  explicit FastState(u64 x) : x_(x) { }
   u64 x_;
 };
 
