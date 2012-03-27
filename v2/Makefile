@@ -41,5 +41,6 @@ get_interception:
 	svn co  http://llvm.org/svn/llvm-project/compiler-rt/trunk/lib/asan/interception
       
 clean:
+	rm -f *.s
 	$(MAKE) clean -C tsan
 	$(MAKE) clean -C tests
