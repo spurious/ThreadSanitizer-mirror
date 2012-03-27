@@ -273,6 +273,12 @@ static void StoreShadow(u64 *p, Shadow s) {
   atomic_store((atomic_uint64_t*)p, s.raw(), memory_order_relaxed);
 }
 
+ALWAYS_INLINE
+static void StoreIfNotYetStored(u64 *sp, Shadow s, bool &stored) {
+  StoreShadow(sp, stored ? Shadow(0) : s);
+  stored = true;
+}
+
 template<int kAccessSizeLog, int kAccessIsWrite>
 ALWAYS_INLINE
 static bool MemoryAccess1(ThreadState *thr,
@@ -283,8 +289,7 @@ static bool MemoryAccess1(ThreadState *thr,
   if (old.IsZero()) {
     StatInc(thr, StatShadowZero);
     if (replaced == false) {
-      StoreShadow(sp, cur);
-      replaced = true;
+      StoreIfNotYetStored(sp, cur, replaced);
     }
     return false;
   }
@@ -300,14 +305,12 @@ static bool MemoryAccess1(ThreadState *thr,
           // (that is, same tid, same sync epoch and same size)
           return true;
         } else {
-          StoreShadow(sp, replaced ? Shadow(0ull) : cur);
-          replaced = true;
+          StoreIfNotYetStored(sp, cur, replaced);
           return false;
         }
       } else {
         if (!old.is_write() || kAccessIsWrite) {
-          StoreShadow(sp, replaced ? Shadow(0ull) : cur);
-          replaced = true;
+          StoreIfNotYetStored(sp, cur, replaced);
           return false;
         } else {
           return false;
@@ -317,8 +320,7 @@ static bool MemoryAccess1(ThreadState *thr,
       StatInc(thr, StatShadowAnotherThread);
       // happens before?
       if (thr->clock.get(old.tid()) >= old.epoch()) {
-        StoreShadow(sp, replaced ? Shadow(0ull) : cur);
-        replaced = true;
+        StoreIfNotYetStored(sp, cur, replaced);
         return false;
       } else if (!old.is_write() && !kAccessIsWrite) {
         return false;
