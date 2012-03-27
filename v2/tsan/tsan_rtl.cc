@@ -63,6 +63,10 @@ class Shadow: public FastState {
   bool is_write() const { return x_ & 32; }
   bool IsZero() const { return x_ == 0; }
   u64 raw() const { return x_; }
+
+  static inline bool TidsAreEqual(Shadow s1, Shadow s2) {
+    return s1.tid() == s2.tid();
+  }
 };
 
 // This is temporary (slow).
@@ -265,7 +269,7 @@ static void StoreShadow(u64 *p, Shadow s) {
 
 template<int kAccessSizeLog, int kAccessIsWrite>
 ALWAYS_INLINE
-static bool MemoryAccess1(ThreadState *thr, u64 tid,
+static bool MemoryAccess1(ThreadState *thr,
                           u64 synch_epoch, Shadow cur, u64 *sp,
                           bool &replaced, Shadow &racy_access) {
   const unsigned kAccessSize = 1 << kAccessSizeLog;
@@ -282,7 +286,7 @@ static bool MemoryAccess1(ThreadState *thr, u64 tid,
   if (cur.addr0() == old.addr0() && cur.size_log() == old.size_log()) {
     StatInc(thr, StatShadowSameSize);
     // same thread?
-    if (old.tid() == tid) {
+    if (Shadow::TidsAreEqual(old, cur)) {
       StatInc(thr, StatShadowSameThread);
       if (old.epoch() >= synch_epoch) {
         if (old.is_write() || !kAccessIsWrite) {
@@ -320,7 +324,7 @@ static bool MemoryAccess1(ThreadState *thr, u64 tid,
   // Do the memory access intersect?
   } else if (TwoRangesIntersect<kAccessSize>(old, cur)) {
     StatInc(thr, StatShadowIntersect);
-    if (old.tid() == tid) {
+    if (Shadow::TidsAreEqual(old, cur)) {
       StatInc(thr, StatShadowSameThread);
       return false;
     }
@@ -356,7 +360,6 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr) {
   DCHECK(IsAppMem(addr));
   DCHECK(IsShadowMem((uptr)shadow_mem));
 
-  u64 tid = thr->fast_state.tid();
   TraceAddEvent(thr, thr->fast_state.epoch(), EventTypeMop, pc);
 
   StatInc(thr, kAccessIsWrite ? StatMopWrite : StatMopRead);
@@ -406,7 +409,7 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr) {
   for (unsigned i = 0; i < kShadowCnt; i++) {
     StatInc(thr, StatShadowProcessed);
     u64 *sp = &shadow_mem[(i + off) % kShadowCnt];
-    if (MemoryAccess1<kAccessSizeLog, kAccessIsWrite>(thr, tid,
+    if (MemoryAccess1<kAccessSizeLog, kAccessIsWrite>(thr,
                                                       synch_epoch, cur, sp,
                                                       replaced, racy_access))
       return;
