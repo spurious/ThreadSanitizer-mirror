@@ -1,18 +1,18 @@
 #!/bin/bash
 
 get_asm() {
-  objdump -d tsan/libtsan.a | grep $1.: -A 10000 | \
+  objdump -d tsan/libtsan.a | grep tsan_$1.: -A 10000 | \
     awk "/[^:]$/ {print;} />:/ {c++; if (c == 2) {exit}}"
 }
 
-list="tsan_write1 \
-      tsan_write2 \
-      tsan_write4 \
-      tsan_write8 \
-      tsan_read1 \
-      tsan_read2 \
-      tsan_read4 \
-      tsan_read8"
+list="write1 \
+      write2 \
+      write4 \
+      write8 \
+      read1 \
+      read2 \
+      read4 \
+      read8"
 
 
 for f in $list; do
@@ -20,5 +20,11 @@ for f in $list; do
   get_asm $f > $file
   tot=$(wc -l < $file)
   rsp=$(grep '(%rsp)' $file | wc -l)
-  printf "%11s total %d rsp %d\n" $f $tot $rsp;
+  call=$(grep 'call' $file | wc -l)
+  mov=$(grep 'mov' $file | wc -l)
+  ud2=$(grep 'ud2' $file | wc -l)
+  sh=$(grep 'shr\|shl' $file | wc -l)
+  cmp=$(grep 'cmp\|test' $file | wc -l)
+  printf "%6s tot %d rsp %2d call %d sh %3d mov %d ud2 %d cmp %d\n" \
+    $f $tot $rsp $call $sh $mov $ud2 $cmp;
 done
