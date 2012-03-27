@@ -73,18 +73,21 @@ class Shadow: public FastState {
     u64 masked_xor = (s1.x_ ^ s2.x_) & 31;
     return masked_xor == 0;
   }
-};
 
-// This is temporary (slow).
-template<unsigned kS2AccessSize>
-inline
-bool TwoRangesIntersect(Shadow s1, Shadow s2) {
-  if (s1.addr0() == s2.addr0()) return true;
-  return s1.addr0() < s2.addr0()
-      ? (s1.addr0() + (1 << s1.size_log()) > s2.addr0())
-      // s2.addr0 < s1.addr0
-      : (s2.addr0() + kS2AccessSize > s1.addr0());
-}
+  template<unsigned kS2AccessSize>
+  static inline bool TwoRangesIntersect(Shadow s1, Shadow s2) {
+    u64 diff = s1.addr0() - s2.addr0();
+    if (diff >= 8) {  // s1.addr0 < s2.addr0
+      u64 size1 = 1U << s1.size_log();
+      // if (s1.addr0() + size1) > s2.addr0()) return true;
+      if (size1 > -diff)  return true;
+    } else {
+      // if (s2.addr0() + kS2AccessSize > s1.addr0()) return true;
+      if (kS2AccessSize > diff) return true;
+    }
+    return false;
+  }
+};
 
 static Context *ctx;
 Context *CTX() { return ctx; }
@@ -330,7 +333,7 @@ static bool MemoryAccess1(ThreadState *thr,
       }
     }
   // Do the memory access intersect?
-  } else if (TwoRangesIntersect<kAccessSize>(old, cur)) {
+  } else if (Shadow::TwoRangesIntersect<kAccessSize>(old, cur)) {
     StatInc(thr, StatShadowIntersect);
     if (Shadow::TidsAreEqual(old, cur)) {
       StatInc(thr, StatShadowSameThread);
