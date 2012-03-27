@@ -65,7 +65,9 @@ class Shadow: public FastState {
   u64 raw() const { return x_; }
 
   static inline bool TidsAreEqual(Shadow s1, Shadow s2) {
-    return s1.tid() == s2.tid();
+    u64 shifted_xor = (s1.x_ ^ s2.x_) >> (64 - kTidBits);
+    DCHECK((shifted_xor == 0) == (s1.tid() == s2.tid()));
+    return shifted_xor == 0;
   }
 };
 
