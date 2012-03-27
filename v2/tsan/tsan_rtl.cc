@@ -333,9 +333,12 @@ static inline void HandleRace(ThreadState *thr,
 template<int kAccessSizeLog, int kAccessIsWrite>
 ALWAYS_INLINE
 static bool MemoryAccess1(ThreadState *thr,
-                          Shadow cur, u64 *sp,
+                          Shadow cur, u64 *shadow_mem, unsigned i,
                           bool &replaced) {
+  StatInc(thr, StatShadowProcessed);
   const unsigned kAccessSize = 1 << kAccessSizeLog;
+  unsigned off = cur.ComputeSearchOffset<kAccessSize>();
+  u64 *sp = &shadow_mem[(i + off) % kShadowCnt];
   Shadow old = LoadShadow(sp);
   if (old.IsZero()) {
     StatInc(thr, StatShadowZero);
@@ -431,6 +434,7 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr) {
   cur.SetWrite<kAccessIsWrite>();
 
   // Is the descriptor already stored somewhere?
+  // FIXME: this bit occupies a whole register. Can we keep save that register?
   bool replaced = false;
 
   // scan all the shadow values and dispatch to 4 categories:
@@ -441,14 +445,24 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr) {
   // 'candidates' with 'same' or 'replace', but I think
   // it's just not worth it (performance- and complexity-wise).
 
-  unsigned off = cur.ComputeSearchOffset<kAccessSize>();
-
-  for (unsigned i = 0; i < kShadowCnt; i++) {
-    StatInc(thr, StatShadowProcessed);
-    u64 *sp = &shadow_mem[(i + off) % kShadowCnt];
-    if (MemoryAccess1<kAccessSizeLog, kAccessIsWrite>(thr, cur, sp, replaced))
-      return;
+#define MEM_ACCESS_ITER(i) \
+    if (MemoryAccess1<kAccessSizeLog, kAccessIsWrite>( \
+        thr, cur, shadow_mem, i, replaced)) return;
+  if (kShadowCnt == 8) {
+    MEM_ACCESS_ITER(0);
+    MEM_ACCESS_ITER(1);
+    MEM_ACCESS_ITER(2);
+    MEM_ACCESS_ITER(3);
+    MEM_ACCESS_ITER(4);
+    MEM_ACCESS_ITER(5);
+    MEM_ACCESS_ITER(6);
+    MEM_ACCESS_ITER(7);
+  } else {
+    for (unsigned i = 0; i < kShadowCnt; i++) {
+      MEM_ACCESS_ITER(i);
+    }
   }
+#undef MEM_ACCESS_ITER
 
   // we did not find any races and had already stored
   // the current access info, so we are done
