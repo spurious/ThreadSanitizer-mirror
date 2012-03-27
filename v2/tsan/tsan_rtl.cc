@@ -77,7 +77,7 @@ class Shadow: public FastState {
   template<unsigned kS2AccessSize>
   static inline bool TwoRangesIntersect(Shadow s1, Shadow s2) {
     u64 diff = s1.addr0() - s2.addr0();
-    if (diff >= 8) {  // s1.addr0 < s2.addr0
+    if ((s64)diff < 0) {  // s1.addr0 < s2.addr0  // NOLINT
       u64 size1 = 1U << s1.size_log();
       // if (s1.addr0() + size1) > s2.addr0()) return true;
       if (size1 > -diff)  return true;
