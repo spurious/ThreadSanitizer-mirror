@@ -357,8 +357,7 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr) {
   DCHECK(IsShadowMem((uptr)shadow_mem));
 
   u64 tid = thr->fast_state.tid();
-  u64 epoch = thr->fast_state.epoch();
-  TraceAddEvent(thr, epoch, EventTypeMop, pc);
+  TraceAddEvent(thr, thr->fast_state.epoch(), EventTypeMop, pc);
 
   StatInc(thr, kAccessIsWrite ? StatMopWrite : StatMopRead);
   StatInc(thr, kAccessSize == 1 ? StatMop1 : kAccessSize == 2 ? StatMop2
@@ -421,7 +420,7 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr) {
   if (LIKELY(replaced))
     return;
   // choose a random candidate slot and replace it
-  unsigned i = epoch % kShadowCnt;
+  unsigned i = cur.epoch() % kShadowCnt;
   StoreShadow(shadow_mem+i, cur);
   StatInc(thr, StatShadowReplace);
 }
