@@ -265,7 +265,7 @@ static void StoreShadow(u64 *p, Shadow s) {
 
 template<int kAccessSizeLog, int kAccessIsWrite>
 ALWAYS_INLINE
-static bool MemoryAccess1(ThreadState *thr, u64 tid, u64 epoch,
+static bool MemoryAccess1(ThreadState *thr, u64 tid,
                           u64 synch_epoch, Shadow cur, u64 *sp,
                           bool &replaced, Shadow &racy_access) {
   const unsigned kAccessSize = 1 << kAccessSizeLog;
@@ -407,7 +407,7 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr) {
   for (unsigned i = 0; i < kShadowCnt; i++) {
     StatInc(thr, StatShadowProcessed);
     u64 *sp = &shadow_mem[(i + off) % kShadowCnt];
-    if (MemoryAccess1<kAccessSizeLog, kAccessIsWrite>(thr, tid, epoch,
+    if (MemoryAccess1<kAccessSizeLog, kAccessIsWrite>(thr, tid,
                                                       synch_epoch, cur, sp,
                                                       replaced, racy_access))
       return;
