@@ -33,18 +33,20 @@
 
 namespace __tsan {
 
-struct ScopedErrno {
-  int err;
-  ScopedErrno() {
-    this->err = errno;
-  }
-  ~ScopedErrno() {
-    errno = this->err;
-  }
-};
+
+ScopedInRrl::ScopedInRrl()
+    : thr_(cur_thread()) {
+  thr_->in_rtl++;
+  errno_ = errno;
+}
+
+ScopedInRrl::~ScopedInRrl() {
+  thr_->in_rtl--;
+  errno = errno_;
+}
 
 void Printf(const char *format, ...) {
-  ScopedErrno se;
+  ScopedInRrl in_rtl;
   va_list args;
   va_start(args, format);
   vfprintf(stderr, format, args);
@@ -52,7 +54,7 @@ void Printf(const char *format, ...) {
 }
 
 void Report(const char *format, ...) {
-  ScopedErrno se;
+  ScopedInRrl in_rtl;
   va_list args;
   va_start(args, format);
   vfprintf(stderr, format, args);
@@ -65,7 +67,7 @@ void Die() {
 
 static void *my_mmap(void *addr, size_t length, int prot, int flags,
                     int fd, u64 offset) {
-  ScopedErrno se;
+  ScopedInRrl in_rtl;
 # if __WORDSIZE == 64
   return (void *)syscall(__NR_mmap, addr, length, prot, flags, fd, offset);
 # else
@@ -84,7 +86,7 @@ void *virtual_alloc(uptr size) {
 }
 
 void virtual_free(void *p, uptr size) {
-  ScopedErrno se;
+  ScopedInRrl in_rtl;
   if (munmap(p, size)) {
     Report("FATAL: ThreadSanitizer munmap failed\n");
     Die();
@@ -92,12 +94,12 @@ void virtual_free(void *p, uptr size) {
 }
 
 void sched_yield() {
-  ScopedErrno se;
+  ScopedInRrl in_rtl;
   syscall(__NR_sched_yield);
 }
 
 static void ProtectRange(uptr beg, uptr end) {
-  ScopedErrno se;
+  ScopedInRrl in_rtl;
   if (beg != (uptr)my_mmap((void*)(beg), end - beg,
       PROT_NONE,
       MAP_PRIVATE | MAP_ANON | MAP_FIXED | MAP_NORESERVE,

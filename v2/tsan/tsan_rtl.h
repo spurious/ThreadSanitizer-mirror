@@ -178,6 +178,15 @@ struct Context {
   u64 stat[StatCnt];
 };
 
+class ScopedInRrl {
+ public:
+  ScopedInRrl();
+  ~ScopedInRrl();
+ private:
+  ThreadState *thr_;
+  int errno_;
+};
+
 void ALWAYS_INLINE INLINE StatInc(ThreadState *thr, StatType typ, u64 n = 1) {
   if (kCollectStats)
     thr->stat[typ] += n;

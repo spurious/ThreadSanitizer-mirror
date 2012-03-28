@@ -159,7 +159,7 @@ void Initialize(ThreadState *thr) {
   if (is_initialized)
     return;
   is_initialized = true;
-  thr->in_rtl++;
+  ScopedInRrl in_rtl;
   InitializeInterceptors();
   InitializePlatform();
   InitializeDynamicAnnotations();
@@ -238,6 +238,7 @@ static int RestoreStack(int tid, u64 epoch, uptr *stack, int n) {
 static void NOINLINE ReportRace(ThreadState *thr) {
   const int kStackMax = 64;
 
+  ScopedInRrl in_rtl;
   Shadow old = Shadow(*thr->racy_access_prev);
   Shadow cur(thr->racy_access_cur);
   uptr addr = ShadowToMem((uptr)thr->racy_access_prev);
@@ -420,7 +421,7 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr) {
   u64 *shadow_mem = (u64*)MemToShadow(addr);
   DPrintf("#%d: tsan::OnMemoryAccess: @%p %p size=%d"
           " is_write=%d shadow_mem=%p\n",
-          (int)thr->tid, (void*)pc, (void*)addr,
+          (int)thr->fast_state.tid(), (void*)pc, (void*)addr,
           (int)kAccessSize, kAccessIsWrite, shadow_mem);
   DCHECK(IsAppMem(addr));
   DCHECK(IsShadowMem((uptr)shadow_mem));
@@ -528,14 +529,14 @@ void MemoryResetRange(ThreadState *thr, uptr pc, uptr addr, uptr size) {
 
 void FuncEntry(ThreadState *thr, uptr pc) {
   StatInc(thr, StatFuncEnter);
-  DPrintf("#%d: tsan::FuncEntry %p\n", (int)thr->tid, (void*)pc);
+  DPrintf("#%d: tsan::FuncEntry %p\n", (int)thr->fast_state.tid(), (void*)pc);
   thr->fast_state.IncrementEpoch();
   TraceAddEvent(thr, thr->fast_state.epoch(), EventTypeFuncEnter, pc);
 }
 
 void FuncExit(ThreadState *thr) {
   StatInc(thr, StatFuncExit);
-  DPrintf("#%d: tsan::FuncExit\n", (int)thr->tid);
+  DPrintf("#%d: tsan::FuncExit\n", (int)thr->fast_state.tid());
   thr->fast_state.IncrementEpoch();
   TraceAddEvent(thr, thr->fast_state.epoch(), EventTypeFuncExit, 0);
 }
