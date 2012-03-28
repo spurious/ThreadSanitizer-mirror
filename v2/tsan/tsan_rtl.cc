@@ -103,13 +103,7 @@ class Shadow: public FastState {
   // from a single thread won't need to scan all 8 shadow values.
   template<unsigned kAccessSize>
   unsigned ComputeSearchOffset() {
-    CHECK(kAccessSize == 1 || kAccessSize == 2 ||
-          kAccessSize == 4 || kAccessSize == 8);
-    // size = 8: 0
-    // size = 4: addr & 4
-    // size = 2: addr & 6
-    // size = 1: addr & 7
-    return x_ & (8 - kAccessSize);
+    return x_ & 7;
   }
 };
 
