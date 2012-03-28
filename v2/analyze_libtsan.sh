@@ -19,8 +19,9 @@ list="write1 \
       func_entry \
       func_exit"
 
-objdump -d tsan/libtsan.a > libtsan.objdump
-nm -S tsan/libtsan.a | grep "__tsan_" > libtsan.nm
+BIN=`dirname $0`/tests/tsan_test
+objdump -d $BIN  > libtsan.objdump
+nm -S $BIN | grep "__tsan_" > libtsan.nm
 
 for f in $list; do
   file=asm_$f.s
