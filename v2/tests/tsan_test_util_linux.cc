@@ -314,6 +314,7 @@ void ScopedThread::Impl::HandleEvent(Event *ev) {
 }
 
 void *ScopedThread::Impl::ScopedThreadCallback(void *arg) {
+  __tsan_func_entry(__builtin_return_address(0));
   Impl *impl = (Impl*)arg;
   for (;;) {
     Event* ev = (Event*)atomic_load(&impl->event, memory_order_acquire);
@@ -328,6 +329,7 @@ void *ScopedThread::Impl::ScopedThreadCallback(void *arg) {
     impl->HandleEvent(ev);
     atomic_store(&impl->event, 0, memory_order_release);
   }
+  __tsan_func_exit();
   return 0;
 }
 

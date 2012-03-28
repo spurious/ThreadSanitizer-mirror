@@ -263,6 +263,8 @@ static void NOINLINE ReportRace(ThreadState *thr) {
     mop->stack.cnt = 0;
     uptr stack[kStackMax];
     int stackcnt = RestoreStack(s.tid(), s.epoch(), stack, kStackMax);
+    // Ensure that we have at least something for the current thread.
+    CHECK(i != 0 || stackcnt != 0);
     if (stackcnt != 0) {
       mop->stack.entry = alloc.Alloc<ReportStackEntry>(kStackMax);
       for (int si = 0; si < stackcnt; si++) {
@@ -283,6 +285,22 @@ static void NOINLINE ReportRace(ThreadState *thr) {
           ent->file = 0;
           ent->line = 0;
         }
+      }
+      // Strip frame above 'main'
+      if (mop->stack.cnt >= 2 && internal_strcmp(
+          mop->stack.entry[mop->stack.cnt - 2].func, "main") == 0) {
+        mop->stack.cnt--;
+      // Strip our internal thread start routine.
+      } else if (mop->stack.cnt >= 2 && internal_strcmp(
+          mop->stack.entry[mop->stack.cnt - 1].func,
+          "__tsan_thread_start_func") == 0) {
+        mop->stack.cnt--;
+      } else {
+        // Ensure that we recovered stack completely. Trimmed stack
+        // can actually happen if we do not instrument some code,
+        // so it's only a DCHECK. However we must try hard to not miss it
+        // due to our fault.
+        Printf("Top stack frame (main or __tsan::ThreadStartFunc) missed\n");
       }
     }
   }

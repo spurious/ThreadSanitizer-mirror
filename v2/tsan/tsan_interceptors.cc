@@ -167,6 +167,13 @@ INTERCEPTOR(void*, memcpy, void *dst, const void *src, uptr size) {
   return REAL(memcpy)(dst, src, size);
 }
 
+INTERCEPTOR(int, strcmp, void *s1, void *s2) {
+  SCOPED_INTERCEPTOR(strcmp, s1, s2);
+  MemoryAccessRange(cur_thread(), pc, (uptr)s1, 1, false);
+  MemoryAccessRange(cur_thread(), pc, (uptr)s2, 1, false);
+  return REAL(strcmp)(s1, s2);
+}
+
 static bool fix_mmap_addr(void **addr, long_t sz, int flags) {
   if (*addr) {
     if (!IsAppMem((uptr)*addr) || !IsAppMem((uptr)*addr + sz - 1)) {
@@ -260,7 +267,7 @@ struct ThreadParam {
   atomic_uintptr_t tid;
 };
 
-static void *tsan_thread_start(void *arg) {
+extern "C" void *__tsan_thread_start_func(void *arg) {
   ThreadParam *p = (ThreadParam*)arg;
   void* (*callback)(void *arg) = p->callback;
   void *param = p->param;
@@ -274,6 +281,10 @@ static void *tsan_thread_start(void *arg) {
   atomic_store(&p->tid, 0, memory_order_release);
   ThreadStart(cur_thread(), tid);
   void *res = callback(param);
+  // Prevent the callback from being tail called,
+  // it mixes up stack traces.
+  volatile int foo = 42;
+  foo++;
   return res;
 }
 
@@ -287,7 +298,7 @@ INTERCEPTOR(int, pthread_create,
   p.callback = callback;
   p.param = param;
   atomic_store(&p.tid, 0, memory_order_relaxed);
-  int res = REAL(pthread_create)(th, attr, tsan_thread_start, &p);
+  int res = REAL(pthread_create)(th, attr, __tsan_thread_start_func, &p);
   if (res == 0) {
     int tid = ThreadCreate(cur_thread(), pc, *(uptr*)th, detached);
     CHECK_NE(tid, 0);
@@ -817,6 +828,7 @@ void InitializeInterceptors() {
 
   INTERCEPT_FUNCTION(memset);
   INTERCEPT_FUNCTION(memcpy);
+  INTERCEPT_FUNCTION(strcmp);
 
   INTERCEPT_FUNCTION(pthread_create);
   INTERCEPT_FUNCTION(pthread_join);
@@ -896,6 +908,10 @@ void internal_memset(void *ptr, int c, uptr size) {
 
 void internal_memcpy(void *dst, const void *src, uptr size) {
   REAL(memcpy)(dst, src, size);
+}
+
+int internal_strcmp(const char *s1, const char *s2) {
+  return REAL(strcmp)((void*)s1, (void*)s2);
 }
 
 }  // namespace __tsan

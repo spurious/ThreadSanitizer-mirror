@@ -237,6 +237,7 @@ void Release(ThreadState *thr, uptr pc, uptr addr);
 
 void internal_memset(void *ptr, int c, uptr size);
 void internal_memcpy(void *dst, const void *src, uptr size);
+int internal_strcmp(const char *s1, const char *s2);
 
 void TraceSwitch(ThreadState *thr) NOINLINE;
 void ALWAYS_INLINE INLINE TraceAddEvent(ThreadState *thr, u64 epoch,
