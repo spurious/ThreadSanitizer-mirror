@@ -42,39 +42,38 @@ typedef long long_t;  // NOLINT
 
 static unsigned g_thread_finalize_key;
 
-static __thread int thread_in_rtl;
-
 class ScopedInterceptor {
  public:
   ScopedInterceptor(ThreadState *thr, uptr pc)
     : thr_(thr) {
-    thread_in_rtl++;
-    if (thread_in_rtl == 1) {
+    thr_->in_rtl++;
+    if (thr_->in_rtl == 1) {
       Initialize(thr);
       FuncEntry(thr, pc);
     }
   }
 
   ~ScopedInterceptor() {
-    if (thread_in_rtl == 1) {
+    if (thr_->in_rtl == 1) {
       FuncExit(thr_);
     }
-    thread_in_rtl--;
+    thr_->in_rtl--;
   }
  private:
   ThreadState *const thr_;
 };
 
 #define SCOPED_INTERCEPTOR_RAW(func, ...) \
-    ScopedInterceptor si(cur_thread(), \
-    (__tsan::uptr)__builtin_return_address(0)); \
+    ThreadState *thr = cur_thread(); \
+    ScopedInterceptor si(thr, \
+        (__tsan::uptr)__builtin_return_address(0)); \
     const uptr pc = (uptr)func; \
     (void)pc; \
 /**/
 
 #define SCOPED_INTERCEPTOR(func, ...) \
     SCOPED_INTERCEPTOR_RAW(func, __VA_ARGS__); \
-    if (thread_in_rtl > 1) \
+    if (thr->in_rtl > 1) \
       return REAL(func)(__VA_ARGS__); \
 /**/
 
@@ -110,7 +109,7 @@ static uptr dir2addr(char *path) {
 
 INTERCEPTOR(void*, malloc, uptr size) {
   SCOPED_INTERCEPTOR_RAW(malloc, size);
-  if (thread_in_rtl > 1)
+  if (thr->in_rtl > 1)
     return __libc_malloc(size);
   void *p = __libc_malloc(size);
   if (p != 0) {
@@ -121,7 +120,7 @@ INTERCEPTOR(void*, malloc, uptr size) {
 
 INTERCEPTOR(void*, calloc, uptr size, uptr n) {
   SCOPED_INTERCEPTOR_RAW(calloc, size, n);
-  if (thread_in_rtl > 1)
+  if (thr->in_rtl > 1)
     return __libc_calloc(size, n);
   void *p = __libc_calloc(size, n);
   if (p != 0) {
@@ -132,7 +131,7 @@ INTERCEPTOR(void*, calloc, uptr size, uptr n) {
 
 INTERCEPTOR(void*, realloc, void *p, uptr size) {
   SCOPED_INTERCEPTOR_RAW(realloc, p, size);
-  if (thread_in_rtl > 1)
+  if (thr->in_rtl > 1)
     return __libc_realloc(p, size);
   void *p2 = __libc_realloc(p, size);
   if (p2 != 0 && size != 0) {
@@ -143,14 +142,14 @@ INTERCEPTOR(void*, realloc, void *p, uptr size) {
 
 INTERCEPTOR(void, free, void *p) {
   SCOPED_INTERCEPTOR_RAW(free, p);
-  if (thread_in_rtl > 1)
+  if (thr->in_rtl > 1)
     return __libc_free(p);
   __libc_free(p);
 }
 
 INTERCEPTOR(void, cfree, void *p) {
   SCOPED_INTERCEPTOR_RAW(cfree, p);
-  if (thread_in_rtl > 1)
+  if (thr->in_rtl > 1)
     return __libc_free(p);
   __libc_free(p);
 }
@@ -797,8 +796,6 @@ INTERCEPTOR(int, epoll_wait, int epfd, void *ev, int cnt, int timeout) {
 namespace __tsan {
 
 void InitializeInterceptors() {
-  thread_in_rtl++;
-
   if (atexit(&finalize)) {
     Printf("ThreadSanitizer: failed to setup atexit callback\n");
     Die();
@@ -891,8 +888,6 @@ void InitializeInterceptors() {
 
   INTERCEPT_FUNCTION(epoll_ctl);
   INTERCEPT_FUNCTION(epoll_wait);
-
-  thread_in_rtl--;
 }
 
 void internal_memset(void *ptr, int c, uptr size) {

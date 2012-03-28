@@ -115,6 +115,7 @@ struct ThreadState {
   SlabCache syncslab;
   ThreadClock clock;
   u64 stat[StatCnt];
+  int in_rtl;
 
   explicit ThreadState(Context *ctx, int tid, u64 epoch);
 };

@@ -138,7 +138,8 @@ Context::Context()
 ThreadState::ThreadState(Context *ctx, int tid, u64 epoch)
   : fast_state(tid, epoch)
   , clockslab(&ctx->clockslab)
-  , syncslab(&ctx->syncslab) {
+  , syncslab(&ctx->syncslab)
+  , in_rtl() {
 }
 
 ThreadContext::ThreadContext(int tid)
@@ -158,6 +159,7 @@ void Initialize(ThreadState *thr) {
   if (is_initialized)
     return;
   is_initialized = true;
+  thr->in_rtl++;
   InitializeInterceptors();
   InitializePlatform();
   InitializeDynamicAnnotations();
@@ -173,6 +175,7 @@ void Initialize(ThreadState *thr) {
   int tid = ThreadCreate(thr, 0, 0, true);
   CHECK_EQ(tid, 0);
   ThreadStart(thr, tid);
+  thr->in_rtl--;
 }
 
 int Finalize(ThreadState *thr) {

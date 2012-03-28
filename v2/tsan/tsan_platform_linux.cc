@@ -15,6 +15,7 @@
 #include "tsan_platform.h"
 #include "tsan_rtl.h"
 
+#include <fcntl.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -23,7 +24,9 @@
 #include <sys/mman.h>
 #include <sys/syscall.h>
 #include <sys/time.h>
+#include <sys/types.h>
 #include <sys/resource.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <errno.h>
 #include <sched.h>
@@ -150,6 +153,26 @@ static void InstallSIGILLHandler() {
   CHECK_EQ(0, sigaction(SIGILL, &sigact, 0));
 }
 
+static void CheckPIE() {
+  // Ensure that the binary is indeed compiled with -pie.
+  int fmaps = open("/proc/self/maps", O_RDONLY);
+  if (fmaps != -1) {
+    char buf[20];
+    if (read(fmaps, buf, sizeof(buf)) == sizeof(buf)) {
+      buf[sizeof(buf) - 1] = 0;
+      u64 addr = strtoll(buf, 0, 16);
+      if ((u64)addr < 0x7f0000000000) {
+        Report("FATAL: ThreadSanitizer can not mmap the shadow memory ("
+               "something is mapped at 0x%p)\n", addr);
+        Report("FATAL: Make shoure to compile with -fPIE"
+               " and to link with -pie.\n");
+        Die();
+      }
+    }
+    close(fmaps);
+  }
+}
+
 void InitializePlatform() {
   void *p = 0;
   if (sizeof(p) == 8) {
@@ -161,6 +184,7 @@ void InitializePlatform() {
     setrlimit(RLIMIT_CORE, (rlimit*)&lim);
   }
 
+  CheckPIE();
   InstallSIGILLHandler();
 }
 
