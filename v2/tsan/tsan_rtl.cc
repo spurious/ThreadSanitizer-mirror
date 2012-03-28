@@ -426,16 +426,16 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr) {
   DCHECK(IsAppMem(addr));
   DCHECK(IsShadowMem((uptr)shadow_mem));
 
-  TraceAddEvent(thr, thr->fast_state.epoch(), EventTypeMop, pc);
-
   StatInc(thr, kAccessIsWrite ? StatMopWrite : StatMopRead);
   StatInc(thr, kAccessSize == 1 ? StatMop1 : kAccessSize == 2 ? StatMop2
           : kAccessSize == 4 ? StatMop4 : StatMop8);
 
-  Shadow cur(thr->fast_state);
   thr->fast_state.IncrementEpoch();
+  Shadow cur(thr->fast_state);
   cur.SetAddr0AndSizeLog<kAccessSizeLog>(addr & 7);
   cur.SetWrite<kAccessIsWrite>();
+
+  TraceAddEvent(thr, thr->fast_state.epoch(), EventTypeMop, pc);
 
   // Is the descriptor already stored somewhere?
   // FIXME: this bit occupies a whole register. Can we keep save that register?
