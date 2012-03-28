@@ -21,11 +21,13 @@ for f in $list; do
   tot=$(wc -l < $file)
   rsp=$(grep '(%rsp)' $file | wc -l)
   call=$(grep 'call' $file | wc -l)
+  load=$(egrep 'mov .*\,.*\(.*\)|cmp .*\,.*\(.*\)' $file | wc -l)
+  store=$(egrep 'mov .*\(.*\),' $file | wc -l)
   mov=$(grep 'mov' $file | wc -l)
   lea=$(grep 'lea' $file | wc -l)
   ud2=$(grep 'ud2' $file | wc -l)
   sh=$(grep 'shr\|shl' $file | wc -l)
   cmp=$(grep 'cmp\|test' $file | wc -l)
-  printf "%6s tot %d rsp %2d call %d sh %3d mov %d lea %d ud2 %d cmp %d\n" \
-    $f $tot $rsp $call $sh $mov $lea $ud2 $cmp;
+  printf "%6s tot %d rsp %2d call %d load %d store %d sh %3d mov %d lea %d ud2 %d cmp %d\n" \
+    $f $tot $rsp $call $load $store $sh $mov $lea $ud2 $cmp;
 done
