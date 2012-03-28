@@ -4,12 +4,12 @@
 int Global;
 
 void *Thread1(void *x) {
-  Global++;
+  Global = 42;
   return NULL;
 }
 
 void *Thread2(void *x) {
-  Global--;
+  Global = 43;
   return NULL;
 }
 
