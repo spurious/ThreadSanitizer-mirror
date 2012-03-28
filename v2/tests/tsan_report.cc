@@ -113,12 +113,10 @@ TEST(ThreadSanitizer, ReportDeadThread) {
     ScopedThread t2;
     t2.Call(&foo);
     t2.Call(&bar);
-    t2.Call(&foo);
-    t2.Call(&bar);
     t2.Write1(l);
   }
   const ReportDesc *rep = t1.Write1(l, true);
-  EXPECT_GE(rep->mop[1].stack.cnt, 4);
+  EXPECT_EQ(rep->mop[1].stack.cnt, 3);
 }
 
 struct ClassWithStatic {
