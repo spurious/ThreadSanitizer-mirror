@@ -15,7 +15,9 @@ list="write1 \
       read1 \
       read2 \
       read4 \
-      read8"
+      read8 \
+      func_entry \
+      func_exit"
 
 objdump -d tsan/libtsan.a > libtsan.objdump
 nm -S tsan/libtsan.a | grep "__tsan_" > libtsan.nm
@@ -34,6 +36,6 @@ for f in $list; do
   ud2=$(grep 'ud2' $file | wc -l)
   sh=$(grep 'shr\|shl' $file | wc -l)
   cmp=$(grep 'cmp\|test' $file | wc -l)
-  printf "%6s tot %d size %d rsp %2d call %d load %d store %d sh %3d mov %d lea %d ud2 %d cmp %d\n" \
+  printf "%10s tot %3d size %4d rsp %2d call %2d load %2d store %2d sh %3d mov %3d lea %3d ud2 %2d cmp %3d\n" \
     $f $tot $size $rsp $call $load $store $sh $mov $lea $ud2 $cmp;
 done
