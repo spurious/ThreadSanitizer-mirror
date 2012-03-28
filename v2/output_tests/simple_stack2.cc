@@ -14,7 +14,7 @@ void __attribute__((noinline)) bar1() {
 }
 
 void __attribute__((noinline)) foo2() {
-  Global = 43;
+  volatile int v = Global; (void)v;
 }
 
 void __attribute__((noinline)) bar2() {
@@ -23,7 +23,7 @@ void __attribute__((noinline)) bar2() {
 }
 
 void *Thread1(void *x) {
-  usleep(10000);
+  usleep(50000);
   bar1();
   return NULL;
 }
@@ -40,7 +40,7 @@ int main() {
 // CHECK-NEXT:     #0 {{.*}}: foo1() simple_stack2.cc:8
 // CHECK-NEXT:     #1 {{.*}}: bar1() simple_stack2.cc:14
 // CHECK-NEXT:     #2 {{.*}}: Thread1(void*) simple_stack2.cc:28
-// CHECK-NEXT:   Previous Write of size 4 at {{.*}} by thread 0:
+// CHECK-NEXT:   Previous Read of size 4 at {{.*}} by thread 0:
 // CHECK-NEXT:     #0 {{.*}}: foo2() simple_stack2.cc:17
 // CHECK-NEXT:     #1 {{.*}}: bar2() simple_stack2.cc:23
 // CHECK-NEXT:     #2 {{.*}}: main simple_stack2.cc:35
