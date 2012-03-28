@@ -233,9 +233,7 @@ static void NOINLINE ReportRace(ThreadState *thr) {
   const int kStackMax = 64;
 
   ScopedInRrl in_rtl;
-  Shadow old = Shadow(*thr->racy_access_prev);
-  Shadow cur(thr->racy_access_cur);
-  uptr addr = ShadowToMem((uptr)thr->racy_access_prev);
+  uptr addr = thr->racy_addr;
   if (IsExceptReport(addr))
     return;
 
@@ -248,7 +246,7 @@ static void NOINLINE ReportRace(ThreadState *thr) {
   rep.mop = alloc.Alloc<ReportMop>(rep.nmop);
   for (int i = 0; i < rep.nmop; i++) {
     ReportMop *mop = &rep.mop[i];
-    Shadow s(i == 0 ? cur : old);
+    Shadow s(thr->racy_state[i]);
     mop->tid = s.tid();
     mop->addr = addr + s.addr0();
     mop->size = 1 << s.size_log();
@@ -332,10 +330,11 @@ static void StoreIfNotYetStored(u64 *sp, Shadow s, bool *stored) {
 
 // We don't pass the racy address anywere, instead we derive it from
 // the address of shadow memory.
-static inline void HandleRace(ThreadState *thr,
-                              Shadow cur, u64 *prev) {
-    thr->racy_access_cur = cur.raw();
-    thr->racy_access_prev = prev;
+static inline void HandleRace(ThreadState *thr, uptr addr,
+                              Shadow cur, Shadow old) {
+    thr->racy_state[0] = cur.raw();
+    thr->racy_state[1] = old.raw();
+    thr->racy_addr     = addr;
 #if 1
     // Raise a SIGILL. It will be intercepted, race reported and PC moved.
     // FIXME: is there any compiler-independent way to say this (w/o using asm)?
@@ -348,7 +347,7 @@ static inline void HandleRace(ThreadState *thr,
 
 template<int kAccessSizeLog, int kAccessIsWrite>
 ALWAYS_INLINE
-static bool MemoryAccess1(ThreadState *thr,
+static bool MemoryAccess1(ThreadState *thr, uptr addr,
                           Shadow cur, u64 *shadow_mem, unsigned i,
                           bool &replaced) {
   StatInc(thr, StatShadowProcessed);
@@ -395,7 +394,7 @@ static bool MemoryAccess1(ThreadState *thr,
       } else if (!old.is_write() && !kAccessIsWrite) {
         return false;
       } else {
-        HandleRace(thr, cur, sp);
+        HandleRace(thr, addr, cur, old);
         return true;
       }
     }
@@ -413,7 +412,7 @@ static bool MemoryAccess1(ThreadState *thr,
     } else if (!old.is_write() && !kAccessIsWrite) {
       return false;
     } else {
-      HandleRace(thr, cur, sp);
+      HandleRace(thr, addr, cur, old);
       return true;
     }
   // The accesses do not intersect.
@@ -463,7 +462,7 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr) {
 
 #define MEM_ACCESS_ITER(i) \
     if (MemoryAccess1<kAccessSizeLog, kAccessIsWrite>( \
-        thr, cur, shadow_mem, i, replaced)) return;
+        thr, addr, cur, shadow_mem, i, replaced)) return;
   if (kShadowCnt == 8) {
     MEM_ACCESS_ITER(0);
     MEM_ACCESS_ITER(1);
