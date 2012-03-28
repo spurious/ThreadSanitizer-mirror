@@ -4,7 +4,7 @@ set -e
 set -u
 
 get_asm() {
-  objdump -d tsan/libtsan.a | grep tsan_$1.: -A 10000 | \
+  grep tsan_$1.: -A 10000 libtsan.objdump | \
     awk "/[^:]$/ {print;} />:/ {c++; if (c == 2) {exit}}"
 }
 
@@ -17,6 +17,7 @@ list="write1 \
       read4 \
       read8"
 
+objdump -d tsan/libtsan.a > libtsan.objdump
 nm -S tsan/libtsan.a | grep "__tsan_" > libtsan.nm
 
 for f in $list; do
