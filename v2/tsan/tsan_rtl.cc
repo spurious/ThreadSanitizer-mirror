@@ -322,14 +322,14 @@ static Shadow LoadShadow(u64 *p) {
 }
 
 ALWAYS_INLINE
-static void StoreShadow(u64 *p, Shadow s) {
-  atomic_store((atomic_uint64_t*)p, s.raw(), memory_order_relaxed);
+static void StoreShadow(u64 *sp, u64 s) {
+  atomic_store((atomic_uint64_t*)sp, s, memory_order_relaxed);
 }
 
 ALWAYS_INLINE
-static void StoreIfNotYetStored(u64 *sp, Shadow s, bool *stored) {
-  StoreShadow(sp, *stored ? Shadow(0) : s);
-  *stored = true;
+static void StoreIfNotYetStored(u64 *sp, u64 *s) {
+  StoreShadow(sp, *s);
+  *s = 0;
 }
 
 static inline void HandleRace(ThreadState *thr, uptr addr,
@@ -344,7 +344,7 @@ template<int kAccessSizeLog, int kAccessIsWrite>
 ALWAYS_INLINE
 static bool MemoryAccess1(ThreadState *thr, uptr addr,
                           Shadow cur, u64 *shadow_mem, unsigned i,
-                          bool &replaced) {
+                          u64 &store_state) {
   StatInc(thr, StatShadowProcessed);
   const unsigned kAccessSize = 1 << kAccessSizeLog;
   unsigned off = cur.ComputeSearchOffset<kAccessSize>();
@@ -352,9 +352,8 @@ static bool MemoryAccess1(ThreadState *thr, uptr addr,
   Shadow old = LoadShadow(sp);
   if (old.IsZero()) {
     StatInc(thr, StatShadowZero);
-    if (replaced == false) {
-      StoreIfNotYetStored(sp, cur, &replaced);
-    }
+    if (store_state)
+      StoreIfNotYetStored(sp, &store_state);
     return false;
   }
   // is the memory access equal to the previous?
@@ -370,12 +369,12 @@ static bool MemoryAccess1(ThreadState *thr, uptr addr,
           StatInc(thr, StatMopSame);
           return true;
         } else {
-          StoreIfNotYetStored(sp, cur, &replaced);
+          StoreIfNotYetStored(sp, &store_state);
           return false;
         }
       } else {
         if (!old.is_write() || kAccessIsWrite) {
-          StoreIfNotYetStored(sp, cur, &replaced);
+          StoreIfNotYetStored(sp, &store_state);
           return false;
         } else {
           return false;
@@ -385,7 +384,7 @@ static bool MemoryAccess1(ThreadState *thr, uptr addr,
       StatInc(thr, StatShadowAnotherThread);
       // happens before?
       if (thr->clock.get(old.tid()) >= old.epoch()) {
-        StoreIfNotYetStored(sp, cur, &replaced);
+        StoreIfNotYetStored(sp, &store_state);
         return false;
       } else if (!old.is_write() && !kAccessIsWrite) {
         return false;
@@ -438,12 +437,9 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr) {
   Shadow cur(thr->fast_state);
   cur.SetAddr0AndSizeLog<kAccessSizeLog>(addr & 7);
   cur.SetWrite<kAccessIsWrite>();
+  u64 store_state = cur.raw();
 
   TraceAddEvent(thr, thr->fast_state.epoch(), EventTypeMop, pc);
-
-  // Is the descriptor already stored somewhere?
-  // FIXME: this bit occupies a whole register. Can we keep save that register?
-  bool replaced = false;
 
   // scan all the shadow values and dispatch to 4 categories:
   // same, replace, candidate and race (see comments below).
@@ -455,7 +451,7 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr) {
 
 #define MEM_ACCESS_ITER(i) \
     if (MemoryAccess1<kAccessSizeLog, kAccessIsWrite>( \
-        thr, addr, cur, shadow_mem, i, replaced)) \
+        thr, addr, cur, shadow_mem, i, store_state)) \
       return;
   if (kShadowCnt == 1) {
     MEM_ACCESS_ITER(0);
@@ -483,11 +479,11 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr) {
 
   // we did not find any races and had already stored
   // the current access info, so we are done
-  if (LIKELY(replaced))
+  if (LIKELY(store_state == 0))
     return;
   // choose a random candidate slot and replace it
   unsigned i = cur.epoch() % kShadowCnt;
-  StoreShadow(shadow_mem+i, cur);
+  StoreShadow(shadow_mem+i, store_state);
   StatInc(thr, StatShadowReplace);
 }
 
