@@ -29,6 +29,8 @@ for f in $list; do
   tot=$(wc -l < $file)
   size=$(grep $f$ libtsan.nm | awk --non-decimal-data '{print ("0x"$2)+0}')
   rsp=$(grep '(%rsp)' $file | wc -l)
+  push=$(grep 'push' $file | wc -l)
+  pop=$(grep 'pop' $file | wc -l)
   call=$(grep 'call' $file | wc -l)
   load=$(egrep 'mov .*\,.*\(.*\)|cmp .*\,.*\(.*\)' $file | wc -l)
   store=$(egrep 'mov .*\(.*\),' $file | wc -l)
@@ -36,6 +38,6 @@ for f in $list; do
   lea=$(grep 'lea' $file | wc -l)
   sh=$(grep 'shr\|shl' $file | wc -l)
   cmp=$(grep 'cmp\|test' $file | wc -l)
-  printf "%10s tot %3d size %4d rsp %2d call %2d load %2d store %2d sh %3d mov %3d lea %3d cmp %3d\n" \
-    $f $tot $size $rsp $call $load $store $sh $mov $lea $cmp;
+  printf "%10s tot %3d size %4d rsp %2d push %2d pop %2d call %2d load %2d store %2d sh %3d mov %3d lea %3d cmp %3d\n" \
+    $f $tot $size $rsp $push $pop $call $load $store $sh $mov $lea $cmp;
 done
