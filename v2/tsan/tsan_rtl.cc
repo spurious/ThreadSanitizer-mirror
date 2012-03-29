@@ -495,7 +495,7 @@ static void MemoryAccessRange(ThreadState *thr, uptr pc, uptr addr,
   // Handle middle part, if any.
   for (; size >= 8; addr += 8, size -= 8) {
     StatInc(thr, StatMopRange);
-    MemoryAccess<2, kAccessIsWrite>(thr, pc, addr);
+    MemoryAccess<3, kAccessIsWrite>(thr, pc, addr);
   }
   // Handle ending, if any.
   for (; size; addr++, size--) {
