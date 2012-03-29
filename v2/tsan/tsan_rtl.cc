@@ -367,6 +367,7 @@ static bool MemoryAccess1(ThreadState *thr, uptr addr,
         if (old.is_write() || !kAccessIsWrite) {
           // found a slot that holds effectively the same info
           // (that is, same tid, same sync epoch and same size)
+          StatInc(thr, StatMopSame);
           return true;
         } else {
           StoreIfNotYetStored(sp, cur, &replaced);
@@ -493,6 +494,7 @@ static void MemoryAccessRange(ThreadState *thr, uptr pc, uptr addr,
   }
   // Handle middle part, if any.
   for (; size >= 8; addr += 8, size -= 8) {
+    StatInc(thr, StatMopRange);
     MemoryAccess<2, kAccessIsWrite>(thr, pc, addr);
   }
   // Handle ending, if any.

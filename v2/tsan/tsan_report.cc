@@ -56,6 +56,8 @@ bool OnReport(const ReportDesc *rep, bool suppressed) {
 }
 
 void PrintStats(u64 *stat) {
+  stat[StatShadowNonZero] = stat[StatShadowProcessed] - stat[StatShadowZero];
+
   const char *name[StatCnt] = {};
   name[StatMop]                 = "Memory accesses";
   name[StatMopRead]             = "  Including reads";
@@ -64,8 +66,11 @@ void PrintStats(u64 *stat) {
   name[StatMop2]                = "            size 2";
   name[StatMop4]                = "            size 4";
   name[StatMop8]                = "            size 8";
+  name[StatMopSame]             = "  Including same";
+  name[StatMopRange]            = "  Including range";
   name[StatShadowProcessed]     = "Shadow processed";
   name[StatShadowZero]          = "  Including empty";
+  name[StatShadowNonZero]       = "  Including non empty";
   name[StatShadowSameSize]      = "  Including same size";
   name[StatShadowIntersect]     = "            intersect";
   name[StatShadowNotIntersect]  = "            not intersect";
