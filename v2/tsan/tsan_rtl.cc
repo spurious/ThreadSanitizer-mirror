@@ -538,6 +538,16 @@ void FuncEntry(ThreadState *thr, uptr pc) {
   DPrintf("#%d: tsan::FuncEntry %p\n", (int)thr->fast_state.tid(), (void*)pc);
   thr->fast_state.IncrementEpoch();
   TraceAddEvent(thr, thr->fast_state.epoch(), EventTypeFuncEnter, pc);
+
+#if 1
+  // While we are testing on single-threaded benchmarks,
+  // emulate some synchronization activity.
+  // FIXME: remove me later.
+  if (((++thr->func_call_count) % 1000) == 0) {
+    thr->clock.set(thr->fast_state.tid(), thr->fast_state.epoch());
+    thr->fast_synch_epoch = thr->fast_state.epoch();
+  }
+#endif
 }
 
 void FuncExit(ThreadState *thr) {

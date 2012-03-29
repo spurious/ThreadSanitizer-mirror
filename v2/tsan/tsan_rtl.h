@@ -116,6 +116,7 @@ struct ThreadState {
   ThreadClock clock;
   u64 stat[StatCnt];
   int in_rtl;
+  int func_call_count;
 
   explicit ThreadState(Context *ctx, int tid, u64 epoch);
 };
