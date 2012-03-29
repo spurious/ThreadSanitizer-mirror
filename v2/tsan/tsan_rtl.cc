@@ -418,24 +418,21 @@ static bool MemoryAccess1(ThreadState *thr, uptr addr,
   return false;
 }
 
-template<u64 kAccessSizeLog, u64 kAccessIsWrite>
+template<u64 kAccessSizeLog, bool kAccessIsWrite>
 ALWAYS_INLINE
 void MemoryAccess(ThreadState *thr, uptr pc, uptr addr) {
   CHECK_LE(kAccessIsWrite, 1);
-  CHECK_LE(kAccessSizeLog, 3);
-  const unsigned kAccessSize = 1 << kAccessSizeLog;
-  StatInc(thr, StatMop);
   u64 *shadow_mem = (u64*)MemToShadow(addr);
   DPrintf("#%d: tsan::OnMemoryAccess: @%p %p size=%d"
           " is_write=%d shadow_mem=%p\n",
           (int)thr->fast_state.tid(), (void*)pc, (void*)addr,
-          (int)kAccessSize, kAccessIsWrite, shadow_mem);
+          (int)(1 << kAccessSizeLog), kAccessIsWrite, shadow_mem);
   DCHECK(IsAppMem(addr));
   DCHECK(IsShadowMem((uptr)shadow_mem));
 
+  StatInc(thr, StatMop);
   StatInc(thr, kAccessIsWrite ? StatMopWrite : StatMopRead);
-  StatInc(thr, kAccessSize == 1 ? StatMop1 : kAccessSize == 2 ? StatMop2
-          : kAccessSize == 4 ? StatMop4 : StatMop8);
+  StatInc(thr, (StatType)(StatMop1 + kAccessSizeLog));
 
   thr->fast_state.IncrementEpoch();
   Shadow cur(thr->fast_state);
@@ -458,8 +455,19 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr) {
 
 #define MEM_ACCESS_ITER(i) \
     if (MemoryAccess1<kAccessSizeLog, kAccessIsWrite>( \
-        thr, addr, cur, shadow_mem, i, replaced)) return;
-  if (kShadowCnt == 8) {
+        thr, addr, cur, shadow_mem, i, replaced)) \
+      return;
+  if (kShadowCnt == 1) {
+    MEM_ACCESS_ITER(0);
+  } else if (kShadowCnt == 2) {
+    MEM_ACCESS_ITER(0);
+    MEM_ACCESS_ITER(1);
+  } else if (kShadowCnt == 4) {
+    MEM_ACCESS_ITER(0);
+    MEM_ACCESS_ITER(1);
+    MEM_ACCESS_ITER(2);
+    MEM_ACCESS_ITER(3);
+  } else if (kShadowCnt == 8) {
     MEM_ACCESS_ITER(0);
     MEM_ACCESS_ITER(1);
     MEM_ACCESS_ITER(2);
@@ -469,9 +477,7 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr) {
     MEM_ACCESS_ITER(6);
     MEM_ACCESS_ITER(7);
   } else {
-    for (unsigned i = 0; i < kShadowCnt; i++) {
-      MEM_ACCESS_ITER(i);
-    }
+    CHECK(false);
   }
 #undef MEM_ACCESS_ITER
 

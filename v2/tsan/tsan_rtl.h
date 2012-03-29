@@ -40,7 +40,7 @@ enum StatType {
   StatMop,
   StatMopRead,
   StatMopWrite,
-  StatMop1,
+  StatMop1,  // These must be consequtive.
   StatMop2,
   StatMop4,
   StatMop8,
@@ -48,7 +48,7 @@ enum StatType {
   StatMopRange,
   StatShadowProcessed,
   StatShadowZero,
-  StatShadowNonZero,
+  StatShadowNonZero,  // Derived.
   StatShadowSameSize,
   StatShadowIntersect,
   StatShadowNotIntersect,
