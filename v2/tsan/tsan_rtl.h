@@ -208,7 +208,6 @@ void Die() NORETURN;
 void Initialize(ThreadState *thr);
 int Finalize(ThreadState *thr);
 
-void ReportRaceFromSignalHandler();
 void MemoryRead1Byte(ThreadState *thr, uptr pc, uptr addr);
 void MemoryWrite1Byte(ThreadState *thr, uptr pc, uptr addr);
 void MemoryAccessRange(ThreadState *thr, uptr pc, uptr addr,
@@ -239,12 +238,21 @@ void internal_memset(void *ptr, int c, uptr size);
 void internal_memcpy(void *dst, const void *src, uptr size);
 int internal_strcmp(const char *s1, const char *s2);
 
-void TraceSwitch(ThreadState *thr) NOINLINE;
+// The hacky call uses custom calling conversion and an assembly thunk.
+// It is considerably faster that a normal call for the caller
+// if it is not executed (it is intended for slow paths from hot functions).
+// The trick is that the call preserves all registers and the compiler
+// does not treat it as a call.
+// If it does not work for you, uncomment the definition below.
+#define HACKY_CALL(f) __asm__ __volatile__("call " #f "_thunk" ::: "memory");
+// #define HACKY_CALL(f) f()
+
+extern "C" void __tsan_trace_switch();
 void ALWAYS_INLINE INLINE TraceAddEvent(ThreadState *thr, u64 epoch,
                                         EventType typ, uptr addr) {
   StatInc(thr, StatEvents);
   if (UNLIKELY((epoch % (kTraceSize / kTraceParts)) == 0))
-    TraceSwitch(thr);
+    HACKY_CALL(__tsan_trace_switch);
   Event *evp = &thr->trace.events[epoch % kTraceSize];
   Event ev = (u64)addr | ((u64)typ << 61);
   *evp = ev;

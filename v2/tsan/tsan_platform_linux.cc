@@ -139,22 +139,6 @@ void InitializeShadowMemory() {
   DPrintf("InitializeShadowMemory: %p %p\n", shadow);
 }
 
-static void OnSIGILL(int, siginfo_t *siginfo, void *context) {
-  // Report the race.
-  ReportRaceFromSignalHandler();
-  // Move the PC.
-  ucontext_t *ucontext = (ucontext_t*)context;
-  ucontext->uc_mcontext.gregs[REG_RIP] += 2;
-}
-
-static void InstallSIGILLHandler() {
-  struct sigaction sigact;
-  internal_memset(&sigact, 0, sizeof(sigact));
-  sigact.sa_sigaction = OnSIGILL;
-  sigact.sa_flags = SA_SIGINFO;
-  CHECK_EQ(0, sigaction(SIGILL, &sigact, 0));
-}
-
 static void CheckPIE() {
   // Ensure that the binary is indeed compiled with -pie.
   int fmaps = open("/proc/self/maps", O_RDONLY);
@@ -187,7 +171,6 @@ void InitializePlatform() {
   }
 
   CheckPIE();
-  InstallSIGILLHandler();
 }
 
 }  // namespace __tsan

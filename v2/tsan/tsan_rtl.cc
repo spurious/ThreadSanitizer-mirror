@@ -116,11 +116,15 @@ void CheckFailed(const char *file, int line, const char *cond) {
   Die();
 }
 
-void TraceSwitch(ThreadState *thr) {
+static void TraceSwitch(ThreadState *thr) {
   Lock l(&thr->trace.mtx);
   unsigned trace = (thr->fast_state.epoch() / (kTraceSize / kTraceParts))
       % kTraceParts;
   thr->trace.headers[trace].epoch0 = thr->fast_state.epoch();
+}
+
+extern "C" void __tsan_trace_switch() {
+  TraceSwitch(cur_thread());
 }
 
 Context::Context()
@@ -307,7 +311,7 @@ static void NOINLINE ReportRace(ThreadState *thr) {
   ctx->nreported++;
 }
 
-void ReportRaceFromSignalHandler() {
+extern "C" void __tsan_report_race() {
   ReportRace(cur_thread());
 }
 
@@ -328,21 +332,12 @@ static void StoreIfNotYetStored(u64 *sp, Shadow s, bool *stored) {
   *stored = true;
 }
 
-// We don't pass the racy address anywere, instead we derive it from
-// the address of shadow memory.
 static inline void HandleRace(ThreadState *thr, uptr addr,
                               Shadow cur, Shadow old) {
-    thr->racy_state[0] = cur.raw();
-    thr->racy_state[1] = old.raw();
-    thr->racy_addr     = addr;
-#if 1
-    // Raise a SIGILL. It will be intercepted, race reported and PC moved.
-    // FIXME: is there any compiler-independent way to say this (w/o using asm)?
-    __asm__("ud2");
-#else
-    // Just  a function call. Slower than the signal magic.
-    ReportRace(thr);
-#endif
+  thr->racy_state[0] = cur.raw();
+  thr->racy_state[1] = old.raw();
+  thr->racy_addr     = addr;
+  HACKY_CALL(__tsan_report_race);
 }
 
 template<int kAccessSizeLog, int kAccessIsWrite>
