@@ -248,8 +248,11 @@ int internal_strcmp(const char *s1, const char *s2);
 // The trick is that the call preserves all registers and the compiler
 // does not treat it as a call.
 // If it does not work for you, uncomment the definition below.
-#define HACKY_CALL(f) __asm__ __volatile__("call " #f "_thunk" ::: "memory");
 // #define HACKY_CALL(f) f()
+#define HACKY_CALL(f) \
+  __asm__ __volatile__("sub $0x1000, %%rsp;" \
+                       "call " #f "_thunk;" \
+                       "add $0x1000, %%rsp;" ::: "memory");
 
 extern "C" void __tsan_trace_switch();
 void ALWAYS_INLINE INLINE TraceAddEvent(ThreadState *thr, u64 epoch,
