@@ -437,8 +437,11 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr) {
   Shadow cur(thr->fast_state);
   cur.SetAddr0AndSizeLog<kAccessSizeLog>(addr & 7);
   cur.SetWrite<kAccessIsWrite>();
+  // This potentially can live in an MMX/SSE scratch register.
   u64 store_state = cur.raw();
 
+  // We must not store to the trace if we do not store to the shadow.
+  // That is, this call must be moved somewhere below.
   TraceAddEvent(thr, thr->fast_state.epoch(), EventTypeMop, pc);
 
   // scan all the shadow values and dispatch to 4 categories:
