@@ -439,7 +439,7 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr) {
   cur.SetWrite<kAccessIsWrite>();
   u64 store_state = cur.raw();
 
-  TraceAddEvent(thr, thr->fast_state.epoch(), EventTypeMop, pc);
+  TraceAddEvent(thr, cur.epoch(), EventTypeMop, pc);
 
   // scan all the shadow values and dispatch to 4 categories:
   // same, replace, candidate and race (see comments below).
