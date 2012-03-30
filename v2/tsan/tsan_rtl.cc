@@ -470,6 +470,9 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr) {
   cur.SetAddr0AndSizeLog<kAccessSizeLog>(addr & 7);
   cur.SetWrite<kAccessIsWrite>();
   // This potentially can live in an MMX/SSE scratch register.
+  // The required intrinsics are:
+  // __m128i _mm_move_epi64(__m128i*);
+  // _mm_storel_epi64(u64*, __m128i);
   u64 store_state = cur.raw();
 
   // We must not store to the trace if we do not store to the shadow.
