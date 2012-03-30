@@ -76,6 +76,8 @@ TEST(ThreadSanitizer, ReportStack) {
   t1.Call(&foo);
   t1.Call(&bar);
   const ReportDesc *rep = t1.Write1(l, true);
+  t1.Return();
+  t1.Return();
   EXPECT_EQ(rep->typ, __tsan::ReportTypeRace);
   EXPECT_EQ(rep->nmop, 2);
   EXPECT_NE(rep->mop[0].tid, 0);
@@ -127,10 +129,11 @@ int ClassWithStatic::Data[4];
 
 static void foobarbaz() {}
 
-TEST(DISABLED_FAILS_ThreadSanitizer, ReportRace) {
+TEST(ThreadSanitizer, ReportRace) {
   ScopedThread t1;
   MainThread().Access(&ClassWithStatic::Data, true, 4, false);
   t1.Call(&foobarbaz);
-  t1.Access(&ClassWithStatic::Data, true, 2, false);
+  const ReportDesc *rep = t1.Access(&ClassWithStatic::Data, true, 2, true);
   t1.Return();
+  EXPECT_NE(rep, (ReportDesc*)0);
 }
