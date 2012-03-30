@@ -31,6 +31,7 @@ static ReportDesc g_report;
 // Race detection for such memory disabled (e.g. annotated as benign race).
 // As if 8-byte write by thread 0xff..f at epoch 0xff..f, races with everything.
 const u64 kShadowDisabled = 0xfffffffffffffff8ull;
+const u64 kShadowFreed = kShadowDisabled - (1 << (64 - kTidBits - kClkBits));
 
 // Shadow:
 //   tid             : kTidBits
@@ -271,6 +272,8 @@ static void NOINLINE ReportRace(ThreadState *thr) {
   ReportDesc &rep = g_report;
   rep.typ = ReportTypeRace;
   rep.nmop = 2;
+  if (thr->racy_state[1] == kShadowFreed)
+    rep.nmop = 1;
   rep.mop = alloc.Alloc<ReportMop>(rep.nmop);
   for (int i = 0; i < rep.nmop; i++) {
     ReportMop *mop = &rep.mop[i];
@@ -553,7 +556,8 @@ void MemoryWrite1Byte(ThreadState *thr, uptr pc, uptr addr) {
   MemoryAccess<0, 1>(thr, pc, addr);
 }
 
-void MemoryResetRange(ThreadState *thr, uptr pc, uptr addr, uptr size) {
+static void MemoryRangeSet(ThreadState *thr, uptr pc, uptr addr, uptr size,
+                           u64 val) {
   CHECK_EQ(addr % 8, 0);
   (void)thr;
   (void)pc;
@@ -563,10 +567,19 @@ void MemoryResetRange(ThreadState *thr, uptr pc, uptr addr, uptr size) {
   const uptr kMaxResetSize = 1024*1024*1024;
   if (size > kMaxResetSize)
     size = kMaxResetSize;
+  size = (size + 7) & ~7;
   u64 *p = (u64*)MemToShadow(addr);
-  // TODO(dvyukov): may overwrite a part outside the region
+  // FIXME: may overwrite a part outside the region
   for (uptr i = 0; i < size; i++)
-    p[i] = 0;
+    p[i] = val;
+}
+
+void MemoryResetRange(ThreadState *thr, uptr pc, uptr addr, uptr size) {
+  MemoryRangeSet(thr, pc, addr, size, 0);
+}
+
+void MemoryRangeFreed(ThreadState *thr, uptr pc, uptr addr, uptr size) {
+  MemoryRangeSet(thr, pc, addr, size, kShadowFreed);
 }
 
 void MemoryRangeDisable(uptr addr, uptr size) {

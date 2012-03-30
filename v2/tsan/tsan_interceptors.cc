@@ -146,16 +146,24 @@ INTERCEPTOR(void*, realloc, void *p, uptr size) {
 }
 
 INTERCEPTOR(void, free, void *p) {
+  if (p == 0)
+    return;
   SCOPED_INTERCEPTOR_RAW(free, p);
   if (thr->in_rtl > 1)
     return __libc_free(p);
+  uptr size = 8;  // FIXME: Use real size.
+  MemoryRangeFreed(thr, pc, (uptr)p, size);
   __libc_free(p);
 }
 
 INTERCEPTOR(void, cfree, void *p) {
+  if (p == 0)
+    return;
   SCOPED_INTERCEPTOR_RAW(cfree, p);
   if (thr->in_rtl > 1)
     return __libc_free(p);
+  uptr size = 8;  // FIXME: Use real size.
+  MemoryRangeFreed(thr, pc, (uptr)p, size);
   __libc_free(p);
 }
 
@@ -219,6 +227,7 @@ INTERCEPTOR(void*, mmap64, void *addr, long_t sz, int prot,
 
 INTERCEPTOR(int, munmap, void *addr, long_t sz) {
   SCOPED_INTERCEPTOR(munmap, addr, sz);
+  MemoryRangeFreed(thr, pc, (uptr)addr, sz);
   int res = REAL(munmap)(addr, sz);
   return res;
 }
@@ -265,17 +274,41 @@ INTERCEPTOR(void*, _ZnamRKSt9nothrow_t, uptr sz) {
 #error "Not implemented"
 #endif
 
-/*
-void operator delete(void *p) {
-  SCOPED_INTERCEPTOR(free);
-  __libc_free(p);
+INTERCEPTOR(void, _ZdlPv, void *p) {
+  if (p == 0)
+    return;
+  SCOPED_INTERCEPTOR(_ZdlPv, p);
+  uptr size = 8;  // FIXME: Use real size.
+  MemoryRangeFreed(thr, pc, (uptr)p, size);
+  REAL(_ZdlPv)(p);
 }
 
-void operator delete[](void *p) {
-  SCOPED_INTERCEPTOR(free);
-  __libc_free(p);
+INTERCEPTOR(void, _ZdlPvRKSt9nothrow_t, void *p) {
+  if (p == 0)
+    return;
+  SCOPED_INTERCEPTOR(_ZdlPvRKSt9nothrow_t, p);
+  uptr size = 8;  // FIXME: Use real size.
+  MemoryRangeFreed(thr, pc, (uptr)p, size);
+  REAL(_ZdlPvRKSt9nothrow_t)(p);
 }
-*/
+
+INTERCEPTOR(void, _ZdaPv, void *p) {
+  if (p == 0)
+    return;
+  SCOPED_INTERCEPTOR(_ZdaPv, p);
+  uptr size = 8;  // FIXME: Use real size.
+  MemoryRangeFreed(thr, pc, (uptr)p, size);
+  REAL(_ZdaPv)(p);
+}
+
+INTERCEPTOR(void, _ZdaPvRKSt9nothrow_t, void *p) {
+  if (p == 0)
+    return;
+  SCOPED_INTERCEPTOR(_ZdaPvRKSt9nothrow_t, p);
+  uptr size = 8;  // FIXME: Use real size.
+  MemoryRangeFreed(thr, pc, (uptr)p, size);
+  REAL(_ZdaPvRKSt9nothrow_t)(p);
+}
 
 // int posix_memalign(void **memptr, size_t alignment, size_t size);
 // void *valloc(size_t size);
@@ -871,6 +904,10 @@ void InitializeInterceptors() {
   INTERCEPT_FUNCTION(_ZnwmRKSt9nothrow_t);
   INTERCEPT_FUNCTION(_Znam);
   INTERCEPT_FUNCTION(_ZnamRKSt9nothrow_t);
+  INTERCEPT_FUNCTION(_ZdlPv);
+  INTERCEPT_FUNCTION(_ZdlPvRKSt9nothrow_t);
+  INTERCEPT_FUNCTION(_ZdaPv);
+  INTERCEPT_FUNCTION(_ZdaPvRKSt9nothrow_t);
 
   INTERCEPT_FUNCTION(memset);
   INTERCEPT_FUNCTION(memcpy);
