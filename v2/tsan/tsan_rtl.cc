@@ -64,7 +64,7 @@ class Shadow: public FastState {
   }
 
   u64 addr0() const { return x_ & 7; }
-  u64 size_log() const { return (x_ >> 3) & 3; }
+  u64 size() const { return 1ull << size_log(); }
   bool is_write() const { return x_ & 32; }
   bool IsZero() const { return x_ == 0; }
   u64 raw() const { return x_; }
@@ -83,9 +83,8 @@ class Shadow: public FastState {
   static inline bool TwoRangesIntersect(Shadow s1, Shadow s2) {
     u64 diff = s1.addr0() - s2.addr0();
     if ((s64)diff < 0) {  // s1.addr0 < s2.addr0  // NOLINT
-      u64 size1 = 1U << s1.size_log();
       // if (s1.addr0() + size1) > s2.addr0()) return true;
-      if (size1 > -diff)  return true;
+      if (s1.size() > -diff)  return true;
     } else {
       // if (s2.addr0() + kS2AccessSize > s1.addr0()) return true;
       if (kS2AccessSize > diff) return true;
@@ -110,6 +109,9 @@ class Shadow: public FastState {
   unsigned ComputeSearchOffset() {
     return x_ & 7;
   }
+
+ private:
+  u64 size_log() const { return (x_ >> 3) & 3; }
 };
 
 static Context *ctx;
@@ -263,7 +265,7 @@ static void NOINLINE ReportRace(ThreadState *thr) {
 
   ScopedInRrl in_rtl;
   uptr addr = thr->racy_addr;
-  if (IsExpectReport(addr, 1 << Shadow(thr->racy_state[0]).size_log()))
+  if (IsExpectReport(addr, Shadow(thr->racy_state[0]).size()))
     return;
 
   Lock l(&ctx->report_mtx);
@@ -280,7 +282,7 @@ static void NOINLINE ReportRace(ThreadState *thr) {
     Shadow s(thr->racy_state[i]);
     mop->tid = s.tid();
     mop->addr = addr + s.addr0();
-    mop->size = 1 << s.size_log();
+    mop->size = s.size();
     mop->write = s.is_write();
     mop->nmutex = 0;
     mop->stack.cnt = 0;
