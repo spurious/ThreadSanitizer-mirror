@@ -12,7 +12,12 @@
 //===----------------------------------------------------------------------===//
 #include "tsan_interface.h"
 #include "tsan_test_util.h"
+#include "tsan_report.h"
 #include "gtest/gtest.h"
+#include <stddef.h>
+#include <stdint.h>
+
+using namespace __tsan;  // NOLINT
 
 TEST(ThreadSanitizer, SimpleWrite) {
   ScopedThread t;
@@ -86,6 +91,28 @@ TEST(ThreadSanitizer, RaceWithOffset) {
     MemLoc l;
     t1.Access((char*)l.loc() + 1, true, 8, false);
     t2.Access((char*)l.loc() + 3, true, 1, true);
+  }
+}
+
+TEST(ThreadSanitizer, RaceWithOffset2) {
+  ScopedThread t1, t2;
+  {
+    MemLoc l;
+    t1.Access((char*)l.loc(), true, 4, false);
+    const ReportDesc *rep = t2.Access((char*)l.loc() + 2, true, 1, true);
+    EXPECT_EQ(rep->mop[0].addr, (uintptr_t)l.loc() + 2);
+    EXPECT_EQ(rep->mop[0].size, 1);
+    EXPECT_EQ(rep->mop[1].addr, (uintptr_t)l.loc());
+    EXPECT_EQ(rep->mop[1].size, 4);
+  }
+  {
+    MemLoc l;
+    t1.Access((char*)l.loc() + 2, true, 1, false);
+    const ReportDesc *rep = t2.Access((char*)l.loc(), true, 4, true);
+    EXPECT_EQ(rep->mop[0].addr, (uintptr_t)l.loc());
+    EXPECT_EQ(rep->mop[0].size, 4);
+    EXPECT_EQ(rep->mop[1].addr, (uintptr_t)l.loc() + 2);
+    EXPECT_EQ(rep->mop[1].size, 1);
   }
 }
 
