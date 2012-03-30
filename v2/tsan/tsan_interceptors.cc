@@ -19,11 +19,20 @@
 
 using namespace __tsan;  // NOLINT
 
+typedef union {
+  char size[56];
+  uptr align;
+} pthread_attr_t;
+
 extern "C" int pthread_attr_getdetachstate(void *attr, int *v);
 extern "C" int pthread_key_create(unsigned *key, void (*destructor)(void* v));
 extern "C" int pthread_setspecific(unsigned key, const void *v);
 extern "C" int pthread_mutexattr_gettype(void *a, int *type);
+extern "C" int pthread_getattr_np(void *th, void *attr);
+extern "C" int pthread_attr_destroy(void *attr);
+extern "C" int pthread_attr_getstack(void *attr, uptr *top, uptr* siz);
 extern "C" int pthread_yield();
+extern "C" void *pthread_self();
 extern "C" void *__libc_malloc(uptr size);
 extern "C" void *__libc_calloc(uptr nmemb, uptr size);
 extern "C" void __libc_free(void *ptr);
@@ -261,6 +270,16 @@ static void thread_finalize(void *v) {
   ThreadFinish(cur_thread());
 }
 
+void __tsan::GetCurrentStack(uptr *stk_top, uptr *stk_siz) {
+  *stk_top = 0;
+  *stk_siz = 0;
+  pthread_attr_t attr;
+  if (pthread_getattr_np(pthread_self(), &attr) == 0) {
+    pthread_attr_getstack(&attr, stk_top, stk_siz);
+    pthread_attr_destroy(&attr);
+  }
+}
+
 struct ThreadParam {
   void* (*callback)(void *arg);
   void *param;
@@ -271,15 +290,23 @@ extern "C" void *__tsan_thread_start_func(void *arg) {
   ThreadParam *p = (ThreadParam*)arg;
   void* (*callback)(void *arg) = p->callback;
   void *param = p->param;
-  int tid = 0;
-  if (pthread_setspecific(g_thread_finalize_key, (void*)4)) {
-    Printf("ThreadSanitizer: failed to set thread key\n");
-    Die();
+  {
+    ThreadState *thr = cur_thread();
+    thr->in_rtl++;
+    int tid = 0;
+    if (pthread_setspecific(g_thread_finalize_key, (void*)4)) {
+      Printf("ThreadSanitizer: failed to set thread key\n");
+      Die();
+    }
+    while ((tid = atomic_load(&p->tid, memory_order_acquire)) == 0)
+      pthread_yield();
+    atomic_store(&p->tid, 0, memory_order_release);
+    uptr stk_top = 0;
+    uptr stk_siz = 0;
+    GetCurrentStack(&stk_top, &stk_siz);
+    ThreadStart(thr, tid, stk_top, stk_siz);
+    CHECK_EQ(thr->in_rtl, 0);  // ThreadStart() resets it to zero.
   }
-  while ((tid = atomic_load(&p->tid, memory_order_acquire)) == 0)
-    pthread_yield();
-  atomic_store(&p->tid, 0, memory_order_release);
-  ThreadStart(cur_thread(), tid);
   void *res = callback(param);
   // Prevent the callback from being tail called,
   // it mixes up stack traces.

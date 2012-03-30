@@ -120,8 +120,11 @@ struct ThreadState {
   u64 stat[StatCnt];
   int in_rtl;
   int func_call_count;
+  const uptr stk_top;
+  const uptr stk_siz;
 
-  explicit ThreadState(Context *ctx, int tid, u64 epoch);
+  explicit ThreadState(Context *ctx, int tid, u64 epoch,
+                       uptr stk_top, uptr stk_siz);
 };
 
 extern Context *CTX();
@@ -222,7 +225,7 @@ void FuncEntry(ThreadState *thr, uptr pc);
 void FuncExit(ThreadState *thr);
 
 int ThreadCreate(ThreadState *thr, uptr pc, uptr uid, bool detached);
-void ThreadStart(ThreadState *thr, int tid);
+void ThreadStart(ThreadState *thr, int tid, uptr stk_top, uptr stk_siz);
 void ThreadFinish(ThreadState *thr);
 void ThreadJoin(ThreadState *thr, uptr pc, uptr uid);
 void ThreadDetach(ThreadState *thr, uptr pc, uptr uid);

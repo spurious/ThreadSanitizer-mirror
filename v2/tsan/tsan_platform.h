@@ -49,6 +49,8 @@ void *virtual_alloc(uptr size);
 void virtual_free(void *p, uptr size);
 void sched_yield();
 
+void GetCurrentStack(uptr *stk_top, uptr *stk_siz);
+
 }  // namespace __tsan
 
 #else  // __LP64__

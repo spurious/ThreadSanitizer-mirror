@@ -82,13 +82,15 @@ int ThreadCreate(ThreadState *thr, uptr pc, uptr uid, bool detached) {
   return tid;
 }
 
-void ThreadStart(ThreadState *thr, int tid) {
+void ThreadStart(ThreadState *thr, int tid, uptr stk_top, uptr stk_siz) {
+  if (stk_top && stk_siz)
+    MemoryResetRange(thr, /*pc=*/ 0, stk_top, stk_siz);
   Lock l(&CTX()->thread_mtx);
   ThreadContext *tctx = CTX()->threads[tid];
   CHECK(tctx && tctx->status == ThreadStatusCreated);
   tctx->status = ThreadStatusRunning;
   tctx->epoch0++;
-  new(thr) ThreadState(CTX(), tid, tctx->epoch0);
+  new(thr) ThreadState(CTX(), tid, tctx->epoch0, stk_top, stk_siz);
   tctx->thr = thr;
   thr->fast_synch_epoch = tctx->epoch0;
   thr->clock.set(tid, tctx->epoch0);
@@ -96,6 +98,9 @@ void ThreadStart(ThreadState *thr, int tid) {
 }
 
 void ThreadFinish(ThreadState *thr) {
+  // FIXME: Treat it as write.
+  if (thr->stk_top && thr->stk_siz)
+    MemoryResetRange(thr, /*pc=*/ 0, thr->stk_top, thr->stk_siz);
   Lock l(&CTX()->thread_mtx);
   ThreadContext *tctx = CTX()->threads[thr->fast_state.tid()];
   CHECK(tctx && tctx->status == ThreadStatusRunning);

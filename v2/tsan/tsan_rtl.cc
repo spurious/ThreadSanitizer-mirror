@@ -133,11 +133,15 @@ Context::Context()
   , nreported() {
 }
 
-ThreadState::ThreadState(Context *ctx, int tid, u64 epoch)
+ThreadState::ThreadState(Context *ctx, int tid, u64 epoch,
+                         uptr stk_top, uptr stk_siz)
   : fast_state(tid, epoch)
   , clockslab(&ctx->clockslab)
   , syncslab(&ctx->syncslab)
-  , in_rtl() {
+  , in_rtl()
+  , func_call_count()
+  , stk_top(stk_top)
+  , stk_siz(stk_siz) {
 }
 
 ThreadContext::ThreadContext(int tid)
@@ -172,7 +176,10 @@ void Initialize(ThreadState *thr) {
   ctx->thread_seq = 0;
   int tid = ThreadCreate(thr, 0, 0, true);
   CHECK_EQ(tid, 0);
-  ThreadStart(thr, tid);
+  uptr stk_top = 0;
+  uptr stk_siz = 0;
+  GetCurrentStack(&stk_top, &stk_siz);
+  ThreadStart(thr, tid, stk_top, stk_siz);
   thr->in_rtl--;
 }
 
