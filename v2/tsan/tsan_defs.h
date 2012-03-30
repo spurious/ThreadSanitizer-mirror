@@ -70,6 +70,16 @@ const bool kCollectStats = false;
 
 void CheckFailed(const char *file, int line, const char *cond);
 
+template<typename T>
+T min(T a, T b) {
+  return a < b ? a : b;
+}
+
+template<typename T>
+T max(T a, T b) {
+  return a > b ? a : b;
+}
+
 }  // namespace __tsan
 
 #endif  // TSAN_DEFS_H

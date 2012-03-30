@@ -43,11 +43,6 @@ typedef long long_t;  // NOLINT
 
 static unsigned g_thread_finalize_key;
 
-template<typename T>
-T min(T a, T b) {
-  return a < b ? a : b;
-}
-
 class ScopedInterceptor {
  public:
   ScopedInterceptor(ThreadState *thr, const char *fname, uptr pc)

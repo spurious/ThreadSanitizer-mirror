@@ -28,10 +28,9 @@ __thread char cur_thread_placeholder[sizeof(ThreadState)] ALIGN(64);
 static char ctx_placeholder[sizeof(Context)] ALIGN(64);
 static ReportDesc g_report;
 
-// Race detection for such memory disabled (e.g. annotated as benign race).
+// Freed memory.
 // As if 8-byte write by thread 0xff..f at epoch 0xff..f, races with everything.
-const u64 kShadowDisabled = 0xfffffffffffffff8ull;
-const u64 kShadowFreed = kShadowDisabled - (1 << (64 - kTidBits - kClkBits));
+const u64 kShadowFreed = 0xfffffffffffffff8ull;
 
 // Shadow:
 //   tid             : kTidBits
@@ -260,9 +259,6 @@ static int RestoreStack(int tid, const u64 epoch, uptr *stack, int n) {
 static void NOINLINE ReportRace(ThreadState *thr) {
   const int kStackMax = 64;
 
-  if (thr->racy_state[1] == kShadowDisabled)
-    return;
-
   ScopedInRrl in_rtl;
   uptr addr = thr->racy_addr & ~7;
   {
@@ -270,8 +266,8 @@ static void NOINLINE ReportRace(ThreadState *thr) {
     uptr a1 = addr + Shadow(thr->racy_state[1]).addr0();
     uptr e0 = a0 + Shadow(thr->racy_state[0]).size();
     uptr e1 = a1 + Shadow(thr->racy_state[1]).size();
-    uptr minaddr = a0 < a1 ? a0 : a1;
-    uptr maxaddr = e0 > e1 ? e0 : e1;
+    uptr minaddr = min(a0, a1);
+    uptr maxaddr = max(e0, e1);
     if (IsExpectReport(minaddr, maxaddr - minaddr))
       return;
   }
@@ -592,13 +588,6 @@ void MemoryResetRange(ThreadState *thr, uptr pc, uptr addr, uptr size) {
 
 void MemoryRangeFreed(ThreadState *thr, uptr pc, uptr addr, uptr size) {
   MemoryRangeSet(thr, pc, addr, size, kShadowFreed);
-}
-
-void MemoryRangeDisable(uptr addr, uptr size) {
-  u64 *p = (u64*)MemToShadow(addr);
-  // TODO(dvyukov): may overwrite a part outside the region
-  for (uptr i = 0; i < size; i++)
-    p[i] = kShadowDisabled;
 }
 
 void FuncEntry(ThreadState *thr, uptr pc) {

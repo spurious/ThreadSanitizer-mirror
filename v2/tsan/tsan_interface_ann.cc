@@ -26,6 +26,7 @@ struct ExpectRace {
   ExpectRace *prev;
   int hitcount;
   uptr addr;
+  uptr size;
   char *file;
   int line;
   char desc[kMaxDescLen];
@@ -36,6 +37,7 @@ struct DynamicAnnContext {
   SlabAlloc expect_alloc;
   SlabCache expect_slab;
   ExpectRace expect;
+  ExpectRace benign;
 
   DynamicAnnContext()
     : expect_alloc(sizeof(ExpectRace))
@@ -46,23 +48,58 @@ struct DynamicAnnContext {
 static DynamicAnnContext *dyn_ann_ctx;
 static char dyn_ann_ctx_placeholder[sizeof(DynamicAnnContext)] ALIGN(64);
 
-void InitializeDynamicAnnotations() {
-  dyn_ann_ctx = new(dyn_ann_ctx_placeholder) DynamicAnnContext;
-  dyn_ann_ctx->expect.next = &dyn_ann_ctx->expect;
-  dyn_ann_ctx->expect.prev = &dyn_ann_ctx->expect;
+static void AddExpectRace(SlabCache *alloc, ExpectRace *list,
+    char *f, int l, uptr mem, uptr size, char *desc) {
+  ExpectRace *race = (ExpectRace*)alloc->Alloc();
+  race->hitcount = 0;
+  race->addr = mem;
+  race->size = size;
+  race->file = f;
+  race->line = l;
+  race->desc[0] = 0;
+  if (desc) {
+    int i = 0;
+    for (; i < kMaxDescLen - 1 && desc[i]; i++)
+      race->desc[i] = desc[i];
+    race->desc[i] = 0;
+  }
+  race->prev = list;
+  race->next = list->next;
+  race->next->prev = race;
+  list->next = race;
 }
 
-bool IsExpectReport(uptr addr, uptr size) {
-  Lock lock(&dyn_ann_ctx->mtx);
-  for (ExpectRace *race = dyn_ann_ctx->expect.next;
-      race != &dyn_ann_ctx->expect; race = race->next) {
-    if (race->addr >= addr && race->addr < addr + size) {
-      DPrintf("Hit expected race: %s addr=%p %s:%d\n",
-          race->desc, race->addr, race->file, race->line);
+static bool CheckContains(ExpectRace *list, uptr addr, uptr size) {
+  for (ExpectRace *race = list->next; race != list; race = race->next) {
+    uptr maxbegin = max(race->addr, addr);
+    uptr minend = min(race->addr + race->size, addr + size);
+    if (maxbegin < minend) {
+      DPrintf("Hit expected/benign race: %s addr=%p:%d %s:%d\n",
+          race->desc, race->addr, (int)race->size, race->file, race->line);
       race->hitcount++;
       return true;
     }
   }
+  return false;
+}
+
+static void InitList(ExpectRace *list) {
+  list->next = list;
+  list->prev = list;
+}
+
+void InitializeDynamicAnnotations() {
+  dyn_ann_ctx = new(dyn_ann_ctx_placeholder) DynamicAnnContext;
+  InitList(&dyn_ann_ctx->expect);
+  InitList(&dyn_ann_ctx->benign);
+}
+
+bool IsExpectReport(uptr addr, uptr size) {
+  Lock lock(&dyn_ann_ctx->mtx);
+  if (CheckContains(&dyn_ann_ctx->expect, addr, size))
+    return true;
+  if (CheckContains(&dyn_ann_ctx->benign, addr, size))
+    return true;
   return false;
 }
 
@@ -154,32 +191,17 @@ void AnnotatePCQCreate(char *f, int l, uptr pcq) {
 
 void AnnotateExpectRace(char *f, int l, uptr mem, char *desc) {
   Lock lock(&dyn_ann_ctx->mtx);
-  ExpectRace *race = (ExpectRace*)dyn_ann_ctx->expect_slab.Alloc();
-  race->hitcount = 0;
-  race->addr = mem;
-  race->file = f;
-  race->line = l;
-  race->desc[0] = 0;
-  if (desc) {
-    int i = 0;
-    for (; i < kMaxDescLen - 1 && desc[i]; i++)
-      race->desc[i] = desc[i];
-    race->desc[i] = 0;
-  }
-  race->prev = &dyn_ann_ctx->expect;
-  race->next = dyn_ann_ctx->expect.next;
-  race->next->prev = race;
-  dyn_ann_ctx->expect.next = race;
-  DPrintf("Add expected race: %s addr=%p %s:%d\n",
-      race->desc, race->addr, race->file, race->line);
+  AddExpectRace(&dyn_ann_ctx->expect_slab, &dyn_ann_ctx->expect,
+                f, l, mem, 1, desc);
+  DPrintf("Add expected race: %s addr=%p %s:%d\n", desc, mem, f, l);
 }
 
 // FIXME: Turn it off later. WTF is benign race?1?? Go talk to Hans Boehm.
 void AnnotateBenignRaceSized(char *f, int l, uptr mem, uptr size, char *desc) {
-  (void)f;
-  (void)l;
-  (void)desc;
-  MemoryRangeDisable(mem, size + 16);
+  Lock lock(&dyn_ann_ctx->mtx);
+  AddExpectRace(&dyn_ann_ctx->expect_slab, &dyn_ann_ctx->benign,
+                f, l, mem, size, desc);
+  DPrintf("Add benign race: %s addr=%p %s:%d\n", desc, mem, f, l);
 }
 
 void AnnotateBenignRace(char *f, int l, uptr mem, char *desc) {
