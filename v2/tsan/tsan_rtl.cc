@@ -28,6 +28,10 @@ __thread char cur_thread_placeholder[sizeof(ThreadState)] ALIGN(64);
 static char ctx_placeholder[sizeof(Context)] ALIGN(64);
 static ReportDesc g_report;
 
+// Race detection for such memory disabled (e.g. annotated as benign race).
+// As if 8-byte write by thread 0xff..f at epoch 0xff..f, races with everything.
+const u64 kShadowDisabled = 0xfffffffffffffff8ull;
+
 // Shadow:
 //   tid             : kTidBits
 //   epoch           : kClkBits
@@ -245,6 +249,9 @@ static int RestoreStack(int tid, const u64 epoch, uptr *stack, int n) {
 
 static void NOINLINE ReportRace(ThreadState *thr) {
   const int kStackMax = 64;
+
+  if (thr->racy_state[1] == kShadowDisabled)
+    return;
 
   ScopedInRrl in_rtl;
   uptr addr = thr->racy_addr;
@@ -549,6 +556,14 @@ void MemoryResetRange(ThreadState *thr, uptr pc, uptr addr, uptr size) {
   // TODO(dvyukov): may overwrite a part outside the region
   for (uptr i = 0; i < size; i++)
     p[i] = 0;
+}
+
+void MemoryRangeDisable(uptr addr, uptr size) {
+  u64 *p = (u64*)MemToShadow(addr);
+  // TODO(dvyukov): may overwrite a part outside the region
+Printf("MemoryRangeDisable: %p-%p\n", addr, addr + size);
+  for (uptr i = 0; i < size; i++)
+    p[i] = kShadowDisabled;
 }
 
 void FuncEntry(ThreadState *thr, uptr pc) {

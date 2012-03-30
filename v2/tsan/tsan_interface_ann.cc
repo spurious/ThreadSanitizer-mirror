@@ -134,6 +134,7 @@ void AnnotateFlushExpectedRaces(char *f, int l) {
 }
 
 void AnnotateEnableRaceDetection(char *f, int l, int enable) {
+  // FIXME: Reconsider this functionality later. It may be irrelevant.
 }
 
 void AnnotateMutexIsUsedAsCondVar(char *f, int l, uptr mu) {
@@ -173,10 +174,16 @@ void AnnotateExpectRace(char *f, int l, uptr mem, char *desc) {
       race->desc, race->addr, race->file, race->line);
 }
 
-void AnnotateBenignRace(char *f, int l, uptr mem, char *desc) {
+// FIXME: Turn it off later. WTF is benign race?1?? Go talk to Hans Boehm.
+void AnnotateBenignRaceSized(char *f, int l, uptr mem, uptr size, char *desc) {
+  (void)f;
+  (void)l;
+  (void)desc;
+  MemoryRangeDisable(mem, size + 16);
 }
 
-void AnnotateBenignRaceSized(char *f, int l, uptr mem, uptr size, char *desc) {
+void AnnotateBenignRace(char *f, int l, uptr mem, char *desc) {
+  AnnotateBenignRaceSized(f, l, mem, 1, desc);
 }
 
 void AnnotateIgnoreReadsBegin(char *f, int l) {

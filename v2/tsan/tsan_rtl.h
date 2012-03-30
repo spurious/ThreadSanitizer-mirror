@@ -224,6 +224,7 @@ void MemoryWrite1Byte(ThreadState *thr, uptr pc, uptr addr);
 void MemoryAccessRange(ThreadState *thr, uptr pc, uptr addr,
                        uptr size, bool is_write);
 void MemoryResetRange(ThreadState *thr, uptr pc, uptr addr, uptr size);
+void MemoryRangeDisable(uptr addr, uptr size);
 
 void FuncEntry(ThreadState *thr, uptr pc);
 void FuncExit(ThreadState *thr);
