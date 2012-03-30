@@ -43,6 +43,7 @@ static uptr g_tls_size;
 
 ScopedInRrl::ScopedInRrl()
     : thr_(cur_thread()) {
+  in_rtl_ = thr_->in_rtl;
   thr_->in_rtl++;
   errno_ = errno;
 }
@@ -50,6 +51,7 @@ ScopedInRrl::ScopedInRrl()
 ScopedInRrl::~ScopedInRrl() {
   thr_->in_rtl--;
   errno = errno_;
+  CHECK_EQ(in_rtl_, thr_->in_rtl);
 }
 
 void Printf(const char *format, ...) {

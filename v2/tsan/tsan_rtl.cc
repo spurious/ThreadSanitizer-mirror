@@ -174,7 +174,7 @@ void Initialize(ThreadState *thr) {
   int tid = ThreadCreate(thr, 0, 0, true);
   CHECK_EQ(tid, 0);
   ThreadStart(thr, tid);
-  thr->in_rtl--;
+  thr->in_rtl++;  // ThreadStart() resets it to zero.
 }
 
 int Finalize(ThreadState *thr) {
@@ -221,12 +221,15 @@ static int RestoreStack(int tid, const u64 epoch, uptr *stack, int n) {
   if (epoch < hdr->epoch0)
     return 0;
   u64 pos = 0;
-  const u64 ebegin = epoch / kTracePartSize * kTracePartSize;
   const u64 eend = epoch % kTraceSize;
+  const u64 ebegin = eend / kTracePartSize * kTracePartSize;
+  DPrintf("#%d: RestoreStack epoch=%llu ebegin=%llu eend=%llu partidx=%d\n",
+      tid, epoch, ebegin, eend, partidx);
   for (u64 i = ebegin; i <= eend; i++) {
     Event ev = trace->events[i];
     EventType typ = (EventType)(ev >> 61);
     uptr pc = (uptr)(ev & 0xffffffffffffull);
+    DPrintf("  %04llu typ=%d pc=%p\n", i, typ, pc);
     if (typ == EventTypeMop) {
       stack[pos] = pc;
     } else if (typ == EventTypeFuncEnter) {
@@ -274,7 +277,7 @@ static void NOINLINE ReportRace(ThreadState *thr) {
     mop->write = s.is_write();
     mop->nmutex = 0;
     mop->stack.cnt = 0;
-    uptr stack[kStackMax];
+    uptr stack[kStackMax] = {};
     int stackcnt = RestoreStack(s.tid(), s.epoch(), stack, kStackMax);
     // Ensure that we have at least something for the current thread.
     CHECK(i != 0 || stackcnt != 0);
@@ -561,12 +564,12 @@ void MemoryResetRange(ThreadState *thr, uptr pc, uptr addr, uptr size) {
 void MemoryRangeDisable(uptr addr, uptr size) {
   u64 *p = (u64*)MemToShadow(addr);
   // TODO(dvyukov): may overwrite a part outside the region
-Printf("MemoryRangeDisable: %p-%p\n", addr, addr + size);
   for (uptr i = 0; i < size; i++)
     p[i] = kShadowDisabled;
 }
 
 void FuncEntry(ThreadState *thr, uptr pc) {
+  DCHECK_EQ(thr->in_rtl, 0);
   StatInc(thr, StatFuncEnter);
   DPrintf("#%d: tsan::FuncEntry %p\n", (int)thr->fast_state.tid(), (void*)pc);
   thr->fast_state.IncrementEpoch();
@@ -584,6 +587,7 @@ void FuncEntry(ThreadState *thr, uptr pc) {
 }
 
 void FuncExit(ThreadState *thr) {
+  DCHECK_EQ(thr->in_rtl, 0);
   StatInc(thr, StatFuncExit);
   DPrintf("#%d: tsan::FuncExit\n", (int)thr->fast_state.tid());
   thr->fast_state.IncrementEpoch();

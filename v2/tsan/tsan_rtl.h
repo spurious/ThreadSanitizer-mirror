@@ -194,7 +194,8 @@ class ScopedInRrl {
   ScopedInRrl();
   ~ScopedInRrl();
  private:
-  ThreadState *thr_;
+  ThreadState*thr_;
+  int in_rtl_;
   int errno_;
 };
 

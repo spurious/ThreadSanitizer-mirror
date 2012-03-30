@@ -45,30 +45,32 @@ static unsigned g_thread_finalize_key;
 
 class ScopedInterceptor {
  public:
-  ScopedInterceptor(ThreadState *thr, uptr pc)
-    : thr_(thr) {
-    thr_->in_rtl++;
-    if (thr_->in_rtl == 1) {
+  ScopedInterceptor(ThreadState *thr, const char *fname, uptr pc)
+      : thr_(thr)
+      , in_rtl_(thr->in_rtl) {
+    if (thr_->in_rtl == 0) {
       Initialize(thr);
+      DPrintf("#%d: %s\n", thr_->tid, fname);
       FuncEntry(thr, pc);
     }
+    thr_->in_rtl++;
   }
 
   ~ScopedInterceptor() {
-    if (thr_->in_rtl == 1) {
+    thr_->in_rtl--;
+    if (thr_->in_rtl == 0) {
       FuncExit(thr_);
     }
-    thr_->in_rtl--;
+    CHECK_EQ(in_rtl_, thr_->in_rtl);
   }
  private:
   ThreadState *const thr_;
+  const int in_rtl_;
 };
 
 #define SCOPED_INTERCEPTOR_RAW(func, ...) \
     ThreadState *thr = cur_thread(); \
-    if (thr->in_rtl == 0) \
-      DPrintf("#%d: " #func "\n"); \
-    ScopedInterceptor si(thr, \
+    ScopedInterceptor si(thr, #func, \
         (__tsan::uptr)__builtin_return_address(0)); \
     const uptr pc = (uptr)func; \
     (void)pc; \
