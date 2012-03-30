@@ -90,7 +90,7 @@ static void *local_thread(void *p) {
   return 0;
 }
 
-TEST(DISABLED_FAILS_Posix, ThreadLocalAccesses) {
+TEST(Posix, ThreadLocalAccesses) {
   local_thread((void*)2);
 }
 
