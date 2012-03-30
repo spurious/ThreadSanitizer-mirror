@@ -223,4 +223,12 @@ void WTFAnnotateBenignRaceSized(char *f, int l, uptr mem, uptr sz, char *desc) {
 int RunningOnValgrind() {
   return 1;
 }
+
+const char *ThreadSanitizerQuery(const char *query) {
+  if (internal_strcmp(query, "pure_happens_before") == 0)
+    return "1";
+  else
+    return "0";
+}
+
 }  // extern "C"
