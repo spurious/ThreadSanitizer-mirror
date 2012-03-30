@@ -230,5 +230,4 @@ const char *ThreadSanitizerQuery(const char *query) {
   else
     return "0";
 }
-
 }  // extern "C"
