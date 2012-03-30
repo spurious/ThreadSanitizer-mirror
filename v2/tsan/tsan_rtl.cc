@@ -318,7 +318,8 @@ static void NOINLINE ReportRace(ThreadState *thr) {
         // can actually happen if we do not instrument some code,
         // so it's only a DCHECK. However we must try hard to not miss it
         // due to our fault.
-        Printf("Top stack frame (main or __tsan::ThreadStartFunc) missed\n");
+        Printf("Top stack frame (main or __tsan::ThreadStartFunc) missed %d\n",
+            i);
       }
     }
   }

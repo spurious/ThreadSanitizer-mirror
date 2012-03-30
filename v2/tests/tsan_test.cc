@@ -31,6 +31,7 @@ TEST(ThreadSanitizer, FuncCall) {
 int main(int argc, char **argv) {
   TestMutexBeforeInit();  // Mutexes must be usable before __tsan_init();
   __tsan_init();
+  __tsan_func_entry((char*)&main + 1);
   testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }

@@ -67,8 +67,7 @@ static int NOINLINE mop_no_inline(void *addr, uintptr_t *pc) {
   return line;
 }
 
-// FIXME: enable this back.
-TEST(DISABLED_FAILS_ThreadSanitizer, ReportStack) {
+TEST(ThreadSanitizer, ReportStack) {
   ScopedThread t1;
   MemLoc l;
   uintptr_t pc = 0;
@@ -96,13 +95,14 @@ TEST(DISABLED_FAILS_ThreadSanitizer, ReportStack) {
   EXPECT_EQ(rep->mop[1].addr, (uintptr_t)l.loc());
   EXPECT_EQ(rep->mop[1].size, 1);
   EXPECT_EQ(rep->mop[1].write, true);
-  EXPECT_EQ(rep->mop[1].stack.cnt, 1);
+  EXPECT_GE(rep->mop[1].stack.cnt, 1);
   EXPECT_GT(rep->mop[1].stack.entry[0].pc, pc - 64);
   EXPECT_LT(rep->mop[1].stack.entry[0].pc, pc + 64);
   EXPECT_NE(strstr(rep->mop[1].stack.entry[0].func, "mop_no_inline"), (void*)0);
   EXPECT_NE(strstr(rep->mop[1].stack.entry[0].file, file), (void*)0);
   EXPECT_GT(rep->mop[1].stack.entry[0].line, line - 3);
   EXPECT_LT(rep->mop[1].stack.entry[0].line, line + 3);
+  // EXPECT_NE(strstr(rep->mop[1].stack.entry[1].func, "main"), (void*)0);
 }
 
 TEST(ThreadSanitizer, ReportDeadThread) {
