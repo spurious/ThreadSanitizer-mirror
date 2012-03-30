@@ -116,17 +116,6 @@ void CheckFailed(const char *file, int line, const char *cond) {
   Die();
 }
 
-static void TraceSwitch(ThreadState *thr) {
-  Lock l(&thr->trace.mtx);
-  unsigned trace = (thr->fast_state.epoch() / (kTraceSize / kTraceParts))
-      % kTraceParts;
-  thr->trace.headers[trace].epoch0 = thr->fast_state.epoch();
-}
-
-extern "C" void __tsan_trace_switch() {
-  TraceSwitch(cur_thread());
-}
-
 Context::Context()
   : clockslab(SyncClock::kChunkSize)
   , syncslab(sizeof(SyncVar))
@@ -134,14 +123,18 @@ Context::Context()
 }
 
 ThreadState::ThreadState(Context *ctx, int tid, u64 epoch,
-                         uptr stk_top, uptr stk_siz)
+                         uptr stk_addr, uptr stk_size,
+                         uptr tls_addr, uptr tls_size)
   : fast_state(tid, epoch)
   , clockslab(&ctx->clockslab)
   , syncslab(&ctx->syncslab)
+  , tid(tid)
   , in_rtl()
   , func_call_count()
-  , stk_top(stk_top)
-  , stk_siz(stk_siz) {
+  , stk_addr(stk_addr)
+  , stk_size(stk_size)
+  , tls_addr(tls_addr)
+  , tls_size(tls_size) {
 }
 
 ThreadContext::ThreadContext(int tid)
@@ -176,10 +169,7 @@ void Initialize(ThreadState *thr) {
   ctx->thread_seq = 0;
   int tid = ThreadCreate(thr, 0, 0, true);
   CHECK_EQ(tid, 0);
-  uptr stk_top = 0;
-  uptr stk_siz = 0;
-  GetCurrentStack(&stk_top, &stk_siz);
-  ThreadStart(thr, tid, stk_top, stk_siz);
+  ThreadStart(thr, tid);
   thr->in_rtl--;
 }
 
@@ -196,7 +186,17 @@ int Finalize(ThreadState *thr) {
   return ctx->nreported ? 66 : 0;
 }
 
-static int RestoreStack(int tid, u64 epoch, uptr *stack, int n) {
+static void TraceSwitch(ThreadState *thr) {
+  Lock l(&thr->trace.mtx);
+  unsigned trace = (thr->fast_state.epoch() / kTracePartSize) % kTraceParts;
+  thr->trace.headers[trace].epoch0 = thr->fast_state.epoch();
+}
+
+extern "C" void __tsan_trace_switch() {
+  TraceSwitch(cur_thread());
+}
+
+static int RestoreStack(int tid, const u64 epoch, uptr *stack, int n) {
   Lock l0(&ctx->thread_mtx);
   ThreadContext *tctx = ctx->threads[tid];
   if (tctx == 0)
@@ -212,13 +212,14 @@ static int RestoreStack(int tid, u64 epoch, uptr *stack, int n) {
     return 0;
   }
   Lock l(&trace->mtx);
-  TraceHeader* hdr = &trace->headers[
-      (epoch / (kTraceSize / kTraceParts)) % kTraceParts];
+  const int partidx = (epoch / (kTraceSize / kTraceParts)) % kTraceParts;
+  TraceHeader* hdr = &trace->headers[partidx];
   if (epoch < hdr->epoch0)
     return 0;
-  epoch %= (kTraceSize / kTraceParts);
   u64 pos = 0;
-  for (u64 i = 0; i <= epoch; i++) {
+  const u64 ebegin = epoch / kTracePartSize * kTracePartSize;
+  const u64 eend = epoch % kTraceSize;
+  for (u64 i = ebegin; i <= eend; i++) {
     Event ev = trace->events[i];
     EventType typ = (EventType)(ev >> 61);
     uptr pc = (uptr)(ev & 0xffffffffffffull);
@@ -231,6 +232,8 @@ static int RestoreStack(int tid, u64 epoch, uptr *stack, int n) {
         pos--;
     }
   }
+  if (pos == 0 && stack[0] == 0)
+    return 0;
   pos++;
   for (u64 i = 0; i < pos / 2; i++) {
     uptr pc = stack[i];
@@ -245,7 +248,7 @@ static void NOINLINE ReportRace(ThreadState *thr) {
 
   ScopedInRrl in_rtl;
   uptr addr = thr->racy_addr;
-  if (IsExceptReport(addr))
+  if (IsExpectReport(addr))
     return;
 
   Lock l(&ctx->report_mtx);
@@ -430,9 +433,10 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr) {
   CHECK_LE(kAccessIsWrite, 1);
   u64 *shadow_mem = (u64*)MemToShadow(addr);
   DPrintf("#%d: tsan::OnMemoryAccess: @%p %p size=%d"
-          " is_write=%d shadow_mem=%p\n",
+          " is_write=%d shadow_mem=%p {%p, %p, %p, %p}\n",
           (int)thr->fast_state.tid(), (void*)pc, (void*)addr,
-          (int)(1 << kAccessSizeLog), kAccessIsWrite, shadow_mem);
+          (int)(1 << kAccessSizeLog), kAccessIsWrite, shadow_mem,
+          shadow_mem[0], shadow_mem[1], shadow_mem[2], shadow_mem[3]);
   DCHECK(IsAppMem(addr));
   DCHECK(IsShadowMem((uptr)shadow_mem));
 
@@ -543,7 +547,7 @@ void MemoryResetRange(ThreadState *thr, uptr pc, uptr addr, uptr size) {
     size = kMaxResetSize;
   u64 *p = (u64*)MemToShadow(addr);
   // TODO(dvyukov): may overwrite a part outside the region
-  for (uptr i = 0; i * 8 < size; i++)
+  for (uptr i = 0; i < size; i++)
     p[i] = 0;
 }
 

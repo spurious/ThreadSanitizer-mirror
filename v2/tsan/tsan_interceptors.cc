@@ -19,18 +19,10 @@
 
 using namespace __tsan;  // NOLINT
 
-typedef union {
-  char size[56];
-  uptr align;
-} pthread_attr_t;
-
 extern "C" int pthread_attr_getdetachstate(void *attr, int *v);
 extern "C" int pthread_key_create(unsigned *key, void (*destructor)(void* v));
 extern "C" int pthread_setspecific(unsigned key, const void *v);
 extern "C" int pthread_mutexattr_gettype(void *a, int *type);
-extern "C" int pthread_getattr_np(void *th, void *attr);
-extern "C" int pthread_attr_destroy(void *attr);
-extern "C" int pthread_attr_getstack(void *attr, uptr *top, uptr* siz);
 extern "C" int pthread_yield();
 extern "C" void *pthread_self();
 extern "C" void *__libc_malloc(uptr size);
@@ -74,6 +66,8 @@ class ScopedInterceptor {
 
 #define SCOPED_INTERCEPTOR_RAW(func, ...) \
     ThreadState *thr = cur_thread(); \
+    if (thr->in_rtl == 0) \
+      DPrintf("#%d: " #func "\n"); \
     ScopedInterceptor si(thr, \
         (__tsan::uptr)__builtin_return_address(0)); \
     const uptr pc = (uptr)func; \
@@ -122,7 +116,7 @@ INTERCEPTOR(void*, malloc, uptr size) {
     return __libc_malloc(size);
   void *p = __libc_malloc(size);
   if (p != 0) {
-    MemoryResetRange(cur_thread(), pc, (uptr)p, size);
+    MemoryResetRange(thr, pc, (uptr)p, size);
   }
   return p;
 }
@@ -133,7 +127,7 @@ INTERCEPTOR(void*, calloc, uptr size, uptr n) {
     return __libc_calloc(size, n);
   void *p = __libc_calloc(size, n);
   if (p != 0) {
-    MemoryResetRange(cur_thread(), pc, (uptr)p, n * size);
+    MemoryResetRange(thr, pc, (uptr)p, n * size);
   }
   return p;
 }
@@ -144,7 +138,7 @@ INTERCEPTOR(void*, realloc, void *p, uptr size) {
     return __libc_realloc(p, size);
   void *p2 = __libc_realloc(p, size);
   if (p2 != 0 && size != 0) {
-    MemoryResetRange(cur_thread(), pc, (uptr)p2, size);
+    MemoryResetRange(thr, pc, (uptr)p2, size);
   }
   return p2;
 }
@@ -204,7 +198,7 @@ INTERCEPTOR(void*, mmap, void *addr, long_t sz, int prot,
     return MAP_FAILED;
   void *res = REAL(mmap)(addr, sz, prot, flags, fd, off);
   if (res != MAP_FAILED) {
-    MemoryResetRange(cur_thread(), pc, (uptr)res, sz);
+    MemoryResetRange(thr, pc, (uptr)res, sz);
   }
   return res;
 }
@@ -216,7 +210,7 @@ INTERCEPTOR(void*, mmap64, void *addr, long_t sz, int prot,
     return MAP_FAILED;
   void *res = REAL(mmap64)(addr, sz, prot, flags, fd, off);
   if (res != MAP_FAILED) {
-    MemoryResetRange(cur_thread(), pc, (uptr)res, sz);
+    MemoryResetRange(thr, pc, (uptr)res, sz);
   }
   return res;
 }
@@ -227,19 +221,49 @@ INTERCEPTOR(int, munmap, void *addr, long_t sz) {
   return res;
 }
 
+#ifdef __LP64__
+
+INTERCEPTOR(void*, _Znwm, uptr sz) {
+  SCOPED_INTERCEPTOR(_Znwm, sz);
+  void *res = REAL(_Znwm)(sz);
+  if (res != 0) {
+    MemoryResetRange(thr, pc, (uptr)res, sz);
+  }
+  return res;
+}
+
+INTERCEPTOR(void*, _ZnwmRKSt9nothrow_t, uptr sz) {
+  SCOPED_INTERCEPTOR(_ZnwmRKSt9nothrow_t, sz);
+  void *res = REAL(_ZnwmRKSt9nothrow_t)(sz);
+  if (res != 0) {
+    MemoryResetRange(thr, pc, (uptr)res, sz);
+  }
+  return res;
+}
+
+INTERCEPTOR(void*, _Znam, uptr sz) {
+  SCOPED_INTERCEPTOR(_Znam, sz);
+  void *res = REAL(_Znam)(sz);
+  if (res != 0) {
+    MemoryResetRange(thr, pc, (uptr)res, sz);
+  }
+  return res;
+}
+
+INTERCEPTOR(void*, _ZnamRKSt9nothrow_t, uptr sz) {
+  SCOPED_INTERCEPTOR(_ZnamRKSt9nothrow_t, sz);
+  void *res = REAL(_ZnamRKSt9nothrow_t)(sz);
+  if (res != 0) {
+    MemoryResetRange(thr, pc, (uptr)res, sz);
+  }
+  return res;
+}
+
+#else
+#error "Not implemented"
+#endif
+
 /*
-void *operator new(unsigned long size) {
-  SCOPED_INTERCEPTOR(malloc);
-  void *p = __libc_malloc(size);
-  return p;
-}
-
-void *operator new[](unsigned long size) {
-  SCOPED_INTERCEPTOR(malloc);
-  void *p = __libc_malloc(size);
-  return p;
-}
-
 void operator delete(void *p) {
   SCOPED_INTERCEPTOR(free);
   __libc_free(p);
@@ -270,15 +294,6 @@ static void thread_finalize(void *v) {
   ThreadFinish(cur_thread());
 }
 
-void __tsan::GetCurrentStack(uptr *stk_top, uptr *stk_siz) {
-  *stk_top = 0;
-  *stk_siz = 0;
-  pthread_attr_t attr;
-  if (pthread_getattr_np(pthread_self(), &attr) == 0) {
-    pthread_attr_getstack(&attr, stk_top, stk_siz);
-    pthread_attr_destroy(&attr);
-  }
-}
 
 struct ThreadParam {
   void* (*callback)(void *arg);
@@ -290,10 +305,10 @@ extern "C" void *__tsan_thread_start_func(void *arg) {
   ThreadParam *p = (ThreadParam*)arg;
   void* (*callback)(void *arg) = p->callback;
   void *param = p->param;
+  int tid = 0;
   {
     ThreadState *thr = cur_thread();
     thr->in_rtl++;
-    int tid = 0;
     if (pthread_setspecific(g_thread_finalize_key, (void*)4)) {
       Printf("ThreadSanitizer: failed to set thread key\n");
       Die();
@@ -301,10 +316,7 @@ extern "C" void *__tsan_thread_start_func(void *arg) {
     while ((tid = atomic_load(&p->tid, memory_order_acquire)) == 0)
       pthread_yield();
     atomic_store(&p->tid, 0, memory_order_release);
-    uptr stk_top = 0;
-    uptr stk_siz = 0;
-    GetCurrentStack(&stk_top, &stk_siz);
-    ThreadStart(thr, tid, stk_top, stk_siz);
+    ThreadStart(thr, tid);
     CHECK_EQ(thr->in_rtl, 0);  // ThreadStart() resets it to zero.
   }
   void *res = callback(param);
@@ -852,6 +864,11 @@ void InitializeInterceptors() {
   INTERCEPT_FUNCTION(mmap);
   INTERCEPT_FUNCTION(mmap64);
   INTERCEPT_FUNCTION(munmap);
+
+  INTERCEPT_FUNCTION(_Znwm);
+  INTERCEPT_FUNCTION(_ZnwmRKSt9nothrow_t);
+  INTERCEPT_FUNCTION(_Znam);
+  INTERCEPT_FUNCTION(_ZnamRKSt9nothrow_t);
 
   INTERCEPT_FUNCTION(memset);
   INTERCEPT_FUNCTION(memcpy);

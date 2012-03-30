@@ -75,6 +75,7 @@ int ThreadCreate(ThreadState *thr, uptr pc, uptr uid, bool detached) {
   tctx->uid = uid;
   tctx->detached = detached;
   if (tid) {
+    thr->fast_state.IncrementEpoch();
     thr->clock.set(thr->fast_state.tid(), thr->fast_state.epoch());
     thr->fast_synch_epoch = thr->fast_state.epoch();
     thr->clock.release(&tctx->sync, &thr->clockslab);
@@ -82,31 +83,46 @@ int ThreadCreate(ThreadState *thr, uptr pc, uptr uid, bool detached) {
   return tid;
 }
 
-void ThreadStart(ThreadState *thr, int tid, uptr stk_top, uptr stk_siz) {
-  if (stk_top && stk_siz)
-    MemoryResetRange(thr, /*pc=*/ 0, stk_top, stk_siz);
+void ThreadStart(ThreadState *thr, int tid) {
+  uptr stk_addr = 0;
+  uptr stk_size = 0;
+  uptr tls_addr = 0;
+  uptr tls_size = 0;
+  GetThreadStackAndTls(&stk_addr, &stk_size, &tls_addr, &tls_size);
+  if (stk_addr && stk_size)
+    MemoryResetRange(thr, /*pc=*/ 1, stk_addr, stk_size);
+  // FIXME: tls seems to be pointing to same memory as stack.
+  if (tls_addr && tls_size)
+    MemoryResetRange(thr, /*pc=*/ 2, tls_addr, tls_size);
   Lock l(&CTX()->thread_mtx);
   ThreadContext *tctx = CTX()->threads[tid];
   CHECK(tctx && tctx->status == ThreadStatusCreated);
   tctx->status = ThreadStatusRunning;
   tctx->epoch0++;
-  new(thr) ThreadState(CTX(), tid, tctx->epoch0, stk_top, stk_siz);
+  new(thr) ThreadState(CTX(), tid, tctx->epoch0, stk_addr, stk_size,
+                       tls_addr, tls_size);
   tctx->thr = thr;
   thr->fast_synch_epoch = tctx->epoch0;
   thr->clock.set(tid, tctx->epoch0);
   thr->clock.acquire(&tctx->sync);
+  DPrintf("#%d: ThreadStart epoch=%llu stk_addr=%p stk_size=%p "
+      "tls_addr=%p tls_size=%p\n",
+      tid, tctx->epoch0, stk_addr, stk_size, tls_addr, tls_size);
 }
 
 void ThreadFinish(ThreadState *thr) {
   // FIXME: Treat it as write.
-  if (thr->stk_top && thr->stk_siz)
-    MemoryResetRange(thr, /*pc=*/ 0, thr->stk_top, thr->stk_siz);
+  if (thr->stk_addr && thr->stk_size)
+    MemoryResetRange(thr, /*pc=*/ 3, thr->stk_addr, thr->stk_size);
+  if (thr->tls_addr && thr->tls_size)
+    MemoryResetRange(thr, /*pc=*/ 4, thr->tls_addr, thr->tls_size);
   Lock l(&CTX()->thread_mtx);
   ThreadContext *tctx = CTX()->threads[thr->fast_state.tid()];
   CHECK(tctx && tctx->status == ThreadStatusRunning);
   if (tctx->detached) {
     ThreadDead(thr, tctx);
   } else {
+    thr->fast_state.IncrementEpoch();
     thr->clock.set(thr->fast_state.tid(), thr->fast_state.epoch());
     thr->fast_synch_epoch = thr->fast_state.epoch();
     thr->clock.release(&tctx->sync, &thr->clockslab);

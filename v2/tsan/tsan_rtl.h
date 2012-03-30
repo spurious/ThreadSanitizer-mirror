@@ -118,13 +118,17 @@ struct ThreadState {
   SlabCache syncslab;
   ThreadClock clock;
   u64 stat[StatCnt];
+  const int tid;
   int in_rtl;
   int func_call_count;
-  const uptr stk_top;
-  const uptr stk_siz;
+  const uptr stk_addr;
+  const uptr stk_size;
+  const uptr tls_addr;
+  const uptr tls_size;
 
   explicit ThreadState(Context *ctx, int tid, u64 epoch,
-                       uptr stk_top, uptr stk_siz);
+                       uptr stk_addr, uptr stk_size,
+                       uptr tls_addr, uptr tls_size);
 };
 
 extern Context *CTX();
@@ -225,7 +229,7 @@ void FuncEntry(ThreadState *thr, uptr pc);
 void FuncExit(ThreadState *thr);
 
 int ThreadCreate(ThreadState *thr, uptr pc, uptr uid, bool detached);
-void ThreadStart(ThreadState *thr, int tid, uptr stk_top, uptr stk_siz);
+void ThreadStart(ThreadState *thr, int tid);
 void ThreadFinish(ThreadState *thr);
 void ThreadJoin(ThreadState *thr, uptr pc, uptr uid);
 void ThreadDetach(ThreadState *thr, uptr pc, uptr uid);
@@ -250,18 +254,21 @@ int internal_strcmp(const char *s1, const char *s2);
 // if it is not executed (it is intended for slow paths from hot functions).
 // The trick is that the call preserves all registers and the compiler
 // does not treat it as a call.
-// If it does not work for you, uncomment the definition below.
-// #define HACKY_CALL(f) f()
+// If it does not work for you, use normal call.
+#ifndef TSAN_DEBUG
 #define HACKY_CALL(f) \
   __asm__ __volatile__("sub $0x1000, %%rsp;" \
                        "call " #f "_thunk;" \
                        "add $0x1000, %%rsp;" ::: "memory");
+#else
+#define HACKY_CALL(f) f()
+#endif
 
 extern "C" void __tsan_trace_switch();
 void ALWAYS_INLINE INLINE TraceAddEvent(ThreadState *thr, u64 epoch,
                                         EventType typ, uptr addr) {
   StatInc(thr, StatEvents);
-  if (UNLIKELY((epoch % (kTraceSize / kTraceParts)) == 0))
+  if (UNLIKELY((epoch % kTracePartSize) == 0))
     HACKY_CALL(__tsan_trace_switch);
   Event *evp = &thr->trace.events[epoch % kTraceSize];
   Event ev = (u64)addr | ((u64)typ << 61);

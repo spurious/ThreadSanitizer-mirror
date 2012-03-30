@@ -52,7 +52,7 @@ void InitializeDynamicAnnotations() {
   dyn_ann_ctx->expect.prev = &dyn_ann_ctx->expect;
 }
 
-bool IsExceptReport(uptr addr) {
+bool IsExpectReport(uptr addr) {
   Lock lock(&dyn_ann_ctx->mtx);
   for (ExpectRace *race = dyn_ann_ctx->expect.next;
       race != &dyn_ann_ctx->expect; race = race->next) {

@@ -49,7 +49,8 @@ void *virtual_alloc(uptr size);
 void virtual_free(void *p, uptr size);
 void sched_yield();
 
-void GetCurrentStack(uptr *stk_top, uptr *stk_siz);
+void GetThreadStackAndTls(uptr *stk_addr, uptr *stk_size,
+                          uptr *tls_addr, uptr *tls_size);
 
 }  // namespace __tsan
 
