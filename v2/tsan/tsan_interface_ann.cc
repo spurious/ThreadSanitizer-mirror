@@ -187,15 +187,19 @@ void AnnotateBenignRace(char *f, int l, uptr mem, char *desc) {
 }
 
 void AnnotateIgnoreReadsBegin(char *f, int l) {
+  IgnoreCtl(false, true);
 }
 
 void AnnotateIgnoreReadsEnd(char *f, int l) {
+  IgnoreCtl(false, false);
 }
 
 void AnnotateIgnoreWritesBegin(char *f, int l) {
+  IgnoreCtl(true, true);
 }
 
 void AnnotateIgnoreWritesEnd(char *f, int l) {
+  IgnoreCtl(true, false);
 }
 
 void AnnotatePublishMemoryRange(char *f, int l, uptr addr, uptr size) {

@@ -111,6 +111,8 @@ struct ThreadState {
   // taken by epoch between synchs.
   // This way we can save one load from tls.
   u64 fast_synch_epoch;
+  int fast_ignore_reads;
+  int fast_ignore_writes;
   uptr racy_addr;
   u64 racy_state[2];
   Trace trace;
@@ -226,6 +228,7 @@ void MemoryAccessRange(ThreadState *thr, uptr pc, uptr addr,
                        uptr size, bool is_write);
 void MemoryResetRange(ThreadState *thr, uptr pc, uptr addr, uptr size);
 void MemoryRangeDisable(uptr addr, uptr size);
+void IgnoreCtl(bool write, bool begin);
 
 void FuncEntry(ThreadState *thr, uptr pc);
 void FuncExit(ThreadState *thr);

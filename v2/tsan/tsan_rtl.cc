@@ -130,6 +130,8 @@ ThreadState::ThreadState(Context *ctx, int tid, u64 epoch,
                          uptr stk_addr, uptr stk_size,
                          uptr tls_addr, uptr tls_size)
   : fast_state(tid, epoch)
+  , fast_ignore_reads()
+  , fast_ignore_writes()
   , clockslab(&ctx->clockslab)
   , syncslab(&ctx->syncslab)
   , tid(tid)
@@ -444,6 +446,9 @@ template<u64 kAccessSizeLog, bool kAccessIsWrite>
 ALWAYS_INLINE
 void MemoryAccess(ThreadState *thr, uptr pc, uptr addr) {
   CHECK_LE(kAccessIsWrite, 1);
+  if ((kAccessIsWrite && thr->fast_ignore_writes)
+      || (!kAccessIsWrite && thr->fast_ignore_reads))
+    return;
   u64 *shadow_mem = (u64*)MemToShadow(addr);
   DPrintf("#%d: tsan::OnMemoryAccess: @%p %p size=%d"
           " is_write=%d shadow_mem=%p {%p, %p, %p, %p}\n",
@@ -595,6 +600,13 @@ void FuncExit(ThreadState *thr) {
   DPrintf("#%d: tsan::FuncExit\n", (int)thr->fast_state.tid());
   thr->fast_state.IncrementEpoch();
   TraceAddEvent(thr, thr->fast_state.epoch(), EventTypeFuncExit, 0);
+}
+
+void IgnoreCtl(bool write, bool begin) {
+  ThreadState *thr = cur_thread();
+  int* p = write ? &thr->fast_ignore_writes : &thr->fast_ignore_reads;
+  *p += begin ? 1 : -1;
+  CHECK_GE(*p, 0);
 }
 
 }  // namespace __tsan
