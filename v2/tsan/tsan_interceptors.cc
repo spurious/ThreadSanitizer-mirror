@@ -43,6 +43,11 @@ typedef long long_t;  // NOLINT
 
 static unsigned g_thread_finalize_key;
 
+template<typename T>
+T min(T a, T b) {
+  return a < b ? a : b;
+}
+
 class ScopedInterceptor {
  public:
   ScopedInterceptor(ThreadState *thr, const char *fname, uptr pc)
@@ -167,24 +172,98 @@ INTERCEPTOR(void, cfree, void *p) {
   __libc_free(p);
 }
 
+INTERCEPTOR(uptr, strlen, void *s) {
+  SCOPED_INTERCEPTOR(strlen, s);
+  uptr len = REAL(strlen)(s);
+  MemoryAccessRange(thr, pc, (uptr)s, len, false);
+  return len;
+}
+
 INTERCEPTOR(void*, memset, void *dst, int v, uptr size) {
   SCOPED_INTERCEPTOR(memset, dst, v, size);
-  MemoryAccessRange(cur_thread(), pc, (uptr)dst, size, true);
+  MemoryAccessRange(thr, pc, (uptr)dst, size, true);
   return REAL(memset)(dst, v, size);
 }
 
 INTERCEPTOR(void*, memcpy, void *dst, const void *src, uptr size) {
   SCOPED_INTERCEPTOR(memcpy, dst, src, size);
-  MemoryAccessRange(cur_thread(), pc, (uptr)dst, size, true);
-  MemoryAccessRange(cur_thread(), pc, (uptr)src, size, false);
+  MemoryAccessRange(thr, pc, (uptr)dst, size, true);
+  MemoryAccessRange(thr, pc, (uptr)src, size, false);
   return REAL(memcpy)(dst, src, size);
 }
 
 INTERCEPTOR(int, strcmp, void *s1, void *s2) {
   SCOPED_INTERCEPTOR(strcmp, s1, s2);
-  MemoryAccessRange(cur_thread(), pc, (uptr)s1, 1, false);
-  MemoryAccessRange(cur_thread(), pc, (uptr)s2, 1, false);
+  MemoryAccessRange(thr, pc, (uptr)s1, REAL(strlen)(s1), false);
+  MemoryAccessRange(thr, pc, (uptr)s2, REAL(strlen)(s2), false);
   return REAL(strcmp)(s1, s2);
+}
+
+INTERCEPTOR(void*, memchr, void *s, int c, uptr n) {
+  SCOPED_INTERCEPTOR(memchr, s, c, n);
+  MemoryAccessRange(thr, pc, (uptr)s, n, false);
+  return REAL(memchr)(s, c, n);
+}
+
+INTERCEPTOR(void*, memrchr, char *s, int c, uptr n) {
+  SCOPED_INTERCEPTOR(memrchr, s, c, n);
+  MemoryAccessRange(thr, pc, (uptr)s, n, false);
+  return REAL(memrchr)(s, c, n);
+}
+
+INTERCEPTOR(void*, memmove, void *dst, void *src, uptr n) {
+  SCOPED_INTERCEPTOR(memmove, dst, src, n);
+  MemoryAccessRange(thr, pc, (uptr)dst, n, true);
+  MemoryAccessRange(thr, pc, (uptr)src, n, false);
+  return REAL(memmove)(dst, src, n);
+}
+
+INTERCEPTOR(int, memcmp, void *s1, void *s2, uptr n) {
+  SCOPED_INTERCEPTOR(memcmp, s1, s2, n);
+  MemoryAccessRange(thr, pc, (uptr)s1, n, false);
+  MemoryAccessRange(thr, pc, (uptr)s2, n, false);
+  return REAL(memcmp)(s1, s2, n);
+}
+
+INTERCEPTOR(void*, strchr, void *s, int c) {
+  SCOPED_INTERCEPTOR(strchr, s, c);
+  MemoryAccessRange(thr, pc, (uptr)s, REAL(strlen)(s), false);
+  return REAL(strchr)(s, c);
+}
+
+INTERCEPTOR(void*, strchrnul, void *s, int c) {
+  SCOPED_INTERCEPTOR(strchrnul, s, c);
+  MemoryAccessRange(thr, pc, (uptr)s, REAL(strlen)(s), false);
+  return REAL(strchrnul)(s, c);
+}
+
+INTERCEPTOR(void*, strrchr, void *s, int c) {
+  SCOPED_INTERCEPTOR(strrchr, s, c);
+  MemoryAccessRange(thr, pc, (uptr)s, REAL(strlen)(s), false);
+  return REAL(strrchr)(s, c);
+}
+
+INTERCEPTOR(int, strncmp, void *s1, void *s2, uptr n) {
+  SCOPED_INTERCEPTOR(strncmp, s1, s2, n);
+  MemoryAccessRange(thr, pc, (uptr)s1, min(REAL(strlen)(s1), n), false);
+  MemoryAccessRange(thr, pc, (uptr)s2, min(REAL(strlen)(s2), n), false);
+  return REAL(strncmp)(s1, s2, n);
+}
+
+INTERCEPTOR(void*, strcpy, void *dst, void *src) {  // NOLINT
+  SCOPED_INTERCEPTOR(strcpy, dst, src);  // NOLINT
+  uptr srclen = REAL(strlen)(src);
+  MemoryAccessRange(thr, pc, (uptr)dst, srclen, true);
+  MemoryAccessRange(thr, pc, (uptr)src, srclen, false);
+  return REAL(strcpy)(dst, src);  // NOLINT
+}
+
+INTERCEPTOR(void*, strncpy, void *dst, void *src, uptr n) {
+  SCOPED_INTERCEPTOR(strncpy, dst, src, n);
+  uptr srclen = REAL(strlen)(src);
+  MemoryAccessRange(thr, pc, (uptr)dst, n, true);
+  MemoryAccessRange(thr, pc, (uptr)src, min(srclen, n), false);
+  return REAL(strncpy)(dst, src, n);
 }
 
 static bool fix_mmap_addr(void **addr, long_t sz, int flags) {
@@ -909,9 +988,20 @@ void InitializeInterceptors() {
   INTERCEPT_FUNCTION(_ZdaPv);
   INTERCEPT_FUNCTION(_ZdaPvRKSt9nothrow_t);
 
+  INTERCEPT_FUNCTION(strlen);
   INTERCEPT_FUNCTION(memset);
   INTERCEPT_FUNCTION(memcpy);
   INTERCEPT_FUNCTION(strcmp);
+  INTERCEPT_FUNCTION(memchr);
+  INTERCEPT_FUNCTION(memrchr);
+  INTERCEPT_FUNCTION(memmove);
+  INTERCEPT_FUNCTION(memcmp);
+  INTERCEPT_FUNCTION(strchr);
+  INTERCEPT_FUNCTION(strchrnul);
+  INTERCEPT_FUNCTION(strrchr);
+  INTERCEPT_FUNCTION(strncmp);
+  INTERCEPT_FUNCTION(strcpy);  // NOLINT
+  INTERCEPT_FUNCTION(strncpy);
 
   INTERCEPT_FUNCTION(pthread_create);
   INTERCEPT_FUNCTION(pthread_join);
