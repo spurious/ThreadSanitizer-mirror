@@ -753,7 +753,11 @@ INTERCEPTOR(int, pthread_once, void *o, void (*f)()) {
   u32 v = atomic_load(a, memory_order_acquire);
   if (v == 0 && atomic_compare_exchange_strong(a, &v, 1,
                                                memory_order_relaxed)) {
+    const int old_in_rtl = thr->in_rtl;
+    thr->in_rtl = 0;
     (*f)();
+    CHECK_EQ(thr->in_rtl, 0);
+    thr->in_rtl = old_in_rtl;
     Release(cur_thread(), pc, (uptr)o);
     atomic_store(a, 2, memory_order_release);
   } else {

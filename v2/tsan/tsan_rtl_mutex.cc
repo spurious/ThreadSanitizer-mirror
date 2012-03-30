@@ -71,15 +71,18 @@ void MutexUnlock(ThreadState *thr, uptr pc, uptr addr) {
   thr->fast_state.IncrementEpoch();
   TraceAddEvent(thr, thr->fast_state.epoch(), EventTypeUnlock, addr);
   SyncVar *s = CTX()->synctab.GetAndLock(&thr->syncslab, addr, true);
-  if (s->owner_tid != thr->fast_state.tid())
-    Printf("ThreadSanitizer WARNING: mutex unlock by another thread\n");
-  CHECK_GT(s->recursion, 0);
-  s->recursion--;
   if (s->recursion == 0) {
-    s->owner_tid = SyncVar::kInvalidTid;
-    thr->clock.set(thr->fast_state.tid(), thr->fast_state.epoch());
-    thr->fast_synch_epoch = thr->fast_state.epoch();
-    thr->clock.release(&s->clock, &thr->clockslab);
+    Printf("ThreadSanitizer WARNING: unlock of unlocked mutex\n");
+  } else if (s->owner_tid != thr->fast_state.tid()) {
+    Printf("ThreadSanitizer WARNING: mutex unlock by another thread\n");
+  } else {
+    s->recursion--;
+    if (s->recursion == 0) {
+      s->owner_tid = SyncVar::kInvalidTid;
+      thr->clock.set(thr->fast_state.tid(), thr->fast_state.epoch());
+      thr->fast_synch_epoch = thr->fast_state.epoch();
+      thr->clock.release(&s->clock, &thr->clockslab);
+    }
   }
   s->mtx.Unlock();
 }
