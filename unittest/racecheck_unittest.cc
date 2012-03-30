@@ -3262,7 +3262,7 @@ TEST(NegativeTests, StrlenAndFriends) {
 #endif
 
   EXPECT_TRUE(strrchr(foo, 10) != NULL);
-  EXPECT_TRUE(strrchr(foo, NULL) != NULL);
+  EXPECT_TRUE(strrchr(foo, 0) != NULL);
   EXPECT_EQ(foo + strlen(foo), strrchr(foo, 0));
   EXPECT_TRUE(strrchr(foo, 250) != NULL);
   EXPECT_EQ(NULL, strrchr(foo, -60));
@@ -5875,7 +5875,7 @@ namespace NegativeTests_StackReuseTest {  // {{{1
 // Same as PerThreadTest, but for stack.
 
 void RealWorker() {  // Touch stack.
-  int stack_var = 0;
+  volatile int stack_var = 0;
   stack_var++;
 }
 
