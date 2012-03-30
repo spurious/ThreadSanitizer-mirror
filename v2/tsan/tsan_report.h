@@ -83,7 +83,7 @@ struct ReportDesc {
 
 void PrintReport(const ReportDesc *rep);
 bool OnReport(const ReportDesc *rep, bool suppressed) WEAK;
-bool IsExpectReport(uptr addr);
+bool IsExpectReport(uptr addr, uptr size);
 void PrintStats(u64 *stat);
 
 }  // namespace __tsan

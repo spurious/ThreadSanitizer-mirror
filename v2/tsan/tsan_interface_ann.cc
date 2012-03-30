@@ -52,11 +52,11 @@ void InitializeDynamicAnnotations() {
   dyn_ann_ctx->expect.prev = &dyn_ann_ctx->expect;
 }
 
-bool IsExpectReport(uptr addr) {
+bool IsExpectReport(uptr addr, uptr size) {
   Lock lock(&dyn_ann_ctx->mtx);
   for (ExpectRace *race = dyn_ann_ctx->expect.next;
       race != &dyn_ann_ctx->expect; race = race->next) {
-    if (race->addr == addr) {
+    if (race->addr >= addr && race->addr < addr + size) {
       DPrintf("Hit expected race: %s addr=%p %s:%d\n",
           race->desc, race->addr, race->file, race->line);
       race->hitcount++;

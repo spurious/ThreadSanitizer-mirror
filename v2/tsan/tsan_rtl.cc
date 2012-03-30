@@ -263,7 +263,7 @@ static void NOINLINE ReportRace(ThreadState *thr) {
 
   ScopedInRrl in_rtl;
   uptr addr = thr->racy_addr;
-  if (IsExpectReport(addr))
+  if (IsExpectReport(addr, 1 << Shadow(thr->racy_state[0]).size_log()))
     return;
 
   Lock l(&ctx->report_mtx);
