@@ -192,17 +192,36 @@ INTERCEPTOR(void*, memcpy, void *dst, const void *src, uptr size) {
   return REAL(memcpy)(dst, src, size);
 }
 
-INTERCEPTOR(int, strcmp, void *s1, void *s2) {
+INTERCEPTOR(int, strcmp, signed char *s1, signed char *s2) {
   SCOPED_INTERCEPTOR(strcmp, s1, s2);
-  MemoryAccessRange(thr, pc, (uptr)s1, REAL(strlen)(s1) + 1, false);
-  MemoryAccessRange(thr, pc, (uptr)s2, REAL(strlen)(s2) + 1, false);
-  return REAL(strcmp)(s1, s2);
+  uptr len = 0;
+  for (; s1[len] && s2[len]; len++) {
+    if (s1[len] != s2[len])
+      break;
+  }
+  MemoryAccessRange(thr, pc, (uptr)s1, len + 1, false);
+  MemoryAccessRange(thr, pc, (uptr)s2, len + 1, false);
+  return s1[len] - s2[len];
+}
+
+INTERCEPTOR(int, strncmp, signed char *s1, signed char *s2, uptr n) {
+  SCOPED_INTERCEPTOR(strncmp, s1, s2, n);
+  uptr len = 0;
+  for (; s1[len] && s2[len] && len < n; len++) {
+    if (s1[len] != s2[len])
+      break;
+  }
+  MemoryAccessRange(thr, pc, (uptr)s1, len + 1, false);
+  MemoryAccessRange(thr, pc, (uptr)s2, len + 1, false);
+  return s1[len] - s2[len];
 }
 
 INTERCEPTOR(void*, memchr, void *s, int c, uptr n) {
   SCOPED_INTERCEPTOR(memchr, s, c, n);
-  MemoryAccessRange(thr, pc, (uptr)s, n, false);
-  return REAL(memchr)(s, c, n);
+  void *res = REAL(memchr)(s, c, n);
+  uptr len = res ? (char*)res - (char*)s + 1 : n;
+  MemoryAccessRange(thr, pc, (uptr)s, len, false);
+  return res;
 }
 
 INTERCEPTOR(void*, memrchr, char *s, int c, uptr n) {
@@ -220,34 +239,37 @@ INTERCEPTOR(void*, memmove, void *dst, void *src, uptr n) {
 
 INTERCEPTOR(int, memcmp, void *s1, void *s2, uptr n) {
   SCOPED_INTERCEPTOR(memcmp, s1, s2, n);
-  MemoryAccessRange(thr, pc, (uptr)s1, n, false);
-  MemoryAccessRange(thr, pc, (uptr)s2, n, false);
-  return REAL(memcmp)(s1, s2, n);
+  int res = 0;
+  uptr len = 0;
+  for (; len < n; len++) {
+    if ((res = ((signed char*)s1)[len] - ((signed char*)s2)[len]))
+      break;
+  }
+  MemoryAccessRange(thr, pc, (uptr)s1, len + 1, false);
+  MemoryAccessRange(thr, pc, (uptr)s2, len + 1, false);
+  return res;
 }
 
 INTERCEPTOR(void*, strchr, void *s, int c) {
   SCOPED_INTERCEPTOR(strchr, s, c);
-  MemoryAccessRange(thr, pc, (uptr)s, REAL(strlen)(s) + 1, false);
-  return REAL(strchr)(s, c);
+  void *res = REAL(strchr)(s, c);
+  uptr len = res ? (char*)res - (char*)s + 1 : REAL(strlen)(s) + 1;
+  MemoryAccessRange(thr, pc, (uptr)s, len, false);
+  return res;
 }
 
 INTERCEPTOR(void*, strchrnul, void *s, int c) {
   SCOPED_INTERCEPTOR(strchrnul, s, c);
-  MemoryAccessRange(thr, pc, (uptr)s, REAL(strlen)(s) + 1, false);
-  return REAL(strchrnul)(s, c);
+  void *res = REAL(strchrnul)(s, c);
+  uptr len = (char*)res - (char*)s + 1;
+  MemoryAccessRange(thr, pc, (uptr)s, len, false);
+  return res;
 }
 
 INTERCEPTOR(void*, strrchr, void *s, int c) {
   SCOPED_INTERCEPTOR(strrchr, s, c);
   MemoryAccessRange(thr, pc, (uptr)s, REAL(strlen)(s) + 1, false);
   return REAL(strrchr)(s, c);
-}
-
-INTERCEPTOR(int, strncmp, void *s1, void *s2, uptr n) {
-  SCOPED_INTERCEPTOR(strncmp, s1, s2, n);
-  MemoryAccessRange(thr, pc, (uptr)s1, min(REAL(strlen)(s1) + 1, n), false);
-  MemoryAccessRange(thr, pc, (uptr)s2, min(REAL(strlen)(s2) + 1, n), false);
-  return REAL(strncmp)(s1, s2, n);
 }
 
 INTERCEPTOR(void*, strcpy, void *dst, void *src) {  // NOLINT
@@ -1084,7 +1106,7 @@ void internal_memcpy(void *dst, const void *src, uptr size) {
 }
 
 int internal_strcmp(const char *s1, const char *s2) {
-  return REAL(strcmp)((void*)s1, (void*)s2);
+  return REAL(strcmp)((signed char*)s1, (signed char*)s2);
 }
 
 }  // namespace __tsan
