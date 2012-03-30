@@ -264,12 +264,19 @@ static void NOINLINE ReportRace(ThreadState *thr) {
     return;
 
   ScopedInRrl in_rtl;
-  uptr addr = thr->racy_addr;
-  if (IsExpectReport(addr, Shadow(thr->racy_state[0]).size()))
-    return;
+  uptr addr = thr->racy_addr & ~7;
+  {
+    uptr a0 = addr + Shadow(thr->racy_state[0]).addr0();
+    uptr a1 = addr + Shadow(thr->racy_state[1]).addr0();
+    uptr e0 = a0 + Shadow(thr->racy_state[0]).size();
+    uptr e1 = a1 + Shadow(thr->racy_state[1]).size();
+    uptr minaddr = a0 < a1 ? a0 : a1;
+    uptr maxaddr = e0 > e1 ? e0 : e1;
+    if (IsExpectReport(minaddr, maxaddr - minaddr))
+      return;
+  }
 
   Lock l(&ctx->report_mtx);
-  addr &= ~7;
   RegionAlloc alloc(g_report.alloc, sizeof(g_report.alloc));
   ReportDesc &rep = g_report;
   rep.typ = ReportTypeRace;
