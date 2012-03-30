@@ -38,11 +38,11 @@ int main() {
 // CHECK:      WARNING: ThreadSanitizer: data race
 // CHECK-NEXT:   Write of size 4 at {{.*}} by thread 1:
 // CHECK-NEXT:     #0 {{.*}}: foo1() simple_stack2.cc:8
-// CHECK-NEXT:     #1 {{.*}}: bar1() simple_stack2.cc:14
-// CHECK-NEXT:     #2 {{.*}}: Thread1(void*) simple_stack2.cc:28
+// CHECK-NEXT:     #1 {{.*}}: bar1() simple_stack2.cc:13
+// CHECK-NEXT:     #2 {{.*}}: Thread1(void*) simple_stack2.cc:27
 // CHECK-NEXT:   Previous Read of size 4 at {{.*}} by thread 0:
 // CHECK-NEXT:     #0 {{.*}}: foo2() simple_stack2.cc:17
-// CHECK-NEXT:     #1 {{.*}}: bar2() simple_stack2.cc:23
-// CHECK-NEXT:     #2 {{.*}}: main simple_stack2.cc:35
+// CHECK-NEXT:     #1 {{.*}}: bar2() simple_stack2.cc:22
+// CHECK-NEXT:     #2 {{.*}}: main simple_stack2.cc:34
 
 

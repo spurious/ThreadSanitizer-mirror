@@ -233,7 +233,9 @@ static int RestoreStack(int tid, const u64 epoch, uptr *stack, int n) {
     if (typ == EventTypeMop) {
       stack[pos] = pc;
     } else if (typ == EventTypeFuncEnter) {
-      stack[pos++] = pc;
+      // We obtain the return address, that is, address of the next instruction,
+      // so offset it by 1 byte.
+      stack[pos++] = pc - 1;
     } else if (typ == EventTypeFuncExit) {
       if (pos > 0)
         pos--;
