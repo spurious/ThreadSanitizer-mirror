@@ -208,7 +208,7 @@ INTERCEPTOR(int, strncmp, signed char *s1, signed char *s2, uptr n) {
   }
   MemoryAccessRange(thr, pc, (uptr)s1, len + 1, false);
   MemoryAccessRange(thr, pc, (uptr)s2, len + 1, false);
-  return s1[len] - s2[len];
+  return len == n ? 0 : s1[len] - s2[len];
 }
 
 INTERCEPTOR(void*, memchr, void *s, int c, uptr n) {
