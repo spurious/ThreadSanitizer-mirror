@@ -33,6 +33,7 @@ void Free(void *p) {
   CHECK_NE(p, (char*)0);
   p = (char*)p - sizeof(u64);
   CHECK_EQ(((u64*)p)[0], kBlockMagic);
+  ((u64*)p)[0] = 0;
   __libc_free(p);
 }
 

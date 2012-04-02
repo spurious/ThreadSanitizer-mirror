@@ -166,10 +166,10 @@ struct Context {
   u64 stat[StatCnt];
 };
 
-class ScopedInRrl {
+class ScopedInRtl {
  public:
-  ScopedInRrl();
-  ~ScopedInRrl();
+  ScopedInRtl();
+  ~ScopedInRtl();
  private:
   ThreadState*thr_;
   int in_rtl_;

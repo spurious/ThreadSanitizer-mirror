@@ -164,7 +164,7 @@ void Initialize(ThreadState *thr) {
   if (is_initialized)
     return;
   is_initialized = true;
-  ScopedInRrl in_rtl;
+  ScopedInRtl in_rtl;
   InitializeInterceptors();
   InitializePlatform();
   InitializeDynamicAnnotations();
@@ -263,7 +263,7 @@ static int RestoreStack(int tid, const u64 epoch, uptr *stack, int n) {
 static void NOINLINE ReportRace(ThreadState *thr) {
   const int kStackMax = 64;
 
-  ScopedInRrl in_rtl;
+  ScopedInRtl in_rtl;
   uptr addr = thr->racy_addr & ~7;
   {
     uptr a0 = addr + Shadow(thr->racy_state[0]).addr0();

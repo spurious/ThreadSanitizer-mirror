@@ -26,10 +26,6 @@ extern "C" int pthread_setspecific(unsigned key, const void *v);
 extern "C" int pthread_mutexattr_gettype(void *a, int *type);
 extern "C" int pthread_yield();
 extern "C" void *pthread_self();
-extern "C" void *__libc_malloc(uptr size);
-extern "C" void *__libc_calloc(uptr nmemb, uptr size);
-extern "C" void __libc_free(void *ptr);
-extern "C" void *__libc_realloc(void *ptr, uptr size);
 extern "C" int atexit(void (*function)());
 extern "C" void _exit(int status);
 extern "C" int *__errno_location();
@@ -367,12 +363,27 @@ INTERCEPTOR(void, _ZdaPvRKSt9nothrow_t, void *p) {
   user_free(thr, pc, p);
 }
 
-// int posix_memalign(void **memptr, size_t alignment, size_t size);
-// void *valloc(size_t size);
-// Equivalent to valloc(minimum-page-that-holds(n)), that is, round up
-// __size to nearest pagesize.
-// extern void * pvalloc(size_t __size)
-// void *memalign(size_t boundary, size_t size);
+INTERCEPTOR(void*, memalign, uptr align, uptr sz) {
+  SCOPED_INTERCEPTOR(memalign, align, sz);
+  return user_alloc_aligned(thr, pc, sz, align);
+}
+
+INTERCEPTOR(void*, valloc, uptr sz) {
+  SCOPED_INTERCEPTOR(valloc, sz);
+  return user_alloc_aligned(thr, pc, sz, kPageSize);
+}
+
+INTERCEPTOR(void*, pvalloc, uptr sz) {
+  SCOPED_INTERCEPTOR(pvalloc, sz);
+  sz = (sz + kPageSize - 1) & ~(kPageSize - 1);
+  return user_alloc_aligned(thr, pc, sz, kPageSize);
+}
+
+INTERCEPTOR(int, posix_memalign, void **memptr, uptr align, uptr sz) {
+  SCOPED_INTERCEPTOR(posix_memalign, memptr, align, sz);
+  *memptr = user_alloc_aligned(thr, pc, sz, align);
+  return 0;
+}
 
 static void thread_finalize(void *v) {
   uptr iter = (uptr)v;
@@ -978,6 +989,10 @@ void InitializeInterceptors() {
   INTERCEPT_FUNCTION(mmap);
   INTERCEPT_FUNCTION(mmap64);
   INTERCEPT_FUNCTION(munmap);
+  INTERCEPT_FUNCTION(memalign);
+  INTERCEPT_FUNCTION(valloc);
+  INTERCEPT_FUNCTION(pvalloc);
+  INTERCEPT_FUNCTION(posix_memalign);
 
   INTERCEPT_FUNCTION(_Znwm);
   INTERCEPT_FUNCTION(_ZnwmRKSt9nothrow_t);

@@ -17,6 +17,7 @@
 namespace __tsan {
 
 TEST(Mman, Internal) {
+  ScopedInRtl in_rtl;
   ThreadState *thr = cur_thread();
   char *p = (char*)internal_alloc(thr, 10);
   EXPECT_NE(p, (char*)0);
@@ -34,6 +35,7 @@ TEST(Mman, Internal) {
 }
 
 TEST(Mman, User) {
+  ScopedInRtl in_rtl;
   ThreadState *thr = cur_thread();
   uptr pc = 0;
   char *p = (char*)user_alloc(thr, pc, 10);
