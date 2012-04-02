@@ -23,15 +23,16 @@ struct MBlock {
 };
 
 // For user allocations.
-void *user_alloc(uptr sz);
-void user_free(void *p);  // Does not accept NULL.
+void *user_alloc(ThreadState *thr, uptr pc, uptr sz);
+void user_free(ThreadState *thr, uptr pc, void *p);  // Does not accept NULL.
+void *user_realloc(ThreadState *thr, uptr pc, void *p, uptr sz);
 // Given the pointer p into a valid allocated block,
 // returns the descriptor of the block.
-MBlock *user_mblock(void *p);
+MBlock *user_mblock(ThreadState *thr, void *p);
 
 // For internal data structures.
-void *internal_alloc(uptr sz);
-void internal_free(void *p);
+void *internal_alloc(ThreadState *thr, uptr sz);
+void internal_free(ThreadState *thr, void *p);
 
 }  // namespace __tsan
 

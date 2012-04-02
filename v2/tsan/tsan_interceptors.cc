@@ -16,6 +16,7 @@
 #include "tsan_interface.h"
 #include "tsan_atomic.h"
 #include "tsan_platform.h"
+#include "tsan_mman.h"
 
 using namespace __tsan;  // NOLINT
 
@@ -114,57 +115,33 @@ static uptr dir2addr(char *path) {
 
 INTERCEPTOR(void*, malloc, uptr size) {
   SCOPED_INTERCEPTOR_RAW(malloc, size);
-  if (thr->in_rtl > 1)
-    return __libc_malloc(size);
-  void *p = __libc_malloc(size);
-  if (p != 0) {
-    MemoryResetRange(thr, pc, (uptr)p, size);
-  }
-  return p;
+  return user_alloc(thr, pc, size);
 }
 
 INTERCEPTOR(void*, calloc, uptr size, uptr n) {
   SCOPED_INTERCEPTOR_RAW(calloc, size, n);
-  if (thr->in_rtl > 1)
-    return __libc_calloc(size, n);
-  void *p = __libc_calloc(size, n);
-  if (p != 0) {
-    MemoryResetRange(thr, pc, (uptr)p, n * size);
-  }
+  void *p = user_alloc(thr, pc, n * size);
+  internal_memset(p, 0, n * size);
   return p;
 }
 
 INTERCEPTOR(void*, realloc, void *p, uptr size) {
   SCOPED_INTERCEPTOR_RAW(realloc, p, size);
-  if (thr->in_rtl > 1)
-    return __libc_realloc(p, size);
-  void *p2 = __libc_realloc(p, size);
-  if (p2 != 0 && size != 0) {
-    MemoryResetRange(thr, pc, (uptr)p2, size);
-  }
-  return p2;
+  return user_realloc(thr, pc, p, size);
 }
 
 INTERCEPTOR(void, free, void *p) {
   if (p == 0)
     return;
   SCOPED_INTERCEPTOR_RAW(free, p);
-  if (thr->in_rtl > 1)
-    return __libc_free(p);
-  uptr size = 8;  // FIXME: Use real size.
-  MemoryRangeFreed(thr, pc, (uptr)p, size);
-  __libc_free(p);
+  user_free(thr, pc, p);
 }
 
 INTERCEPTOR(void, cfree, void *p) {
   if (p == 0)
     return;
   SCOPED_INTERCEPTOR_RAW(cfree, p);
-  if (thr->in_rtl > 1)
-    return __libc_free(p);
-  uptr size = 8;  // FIXME: Use real size.
-  MemoryRangeFreed(thr, pc, (uptr)p, size);
-  __libc_free(p);
+  user_free(thr, pc, p);
 }
 
 INTERCEPTOR(uptr, strlen, void *s) {
@@ -330,80 +307,64 @@ INTERCEPTOR(int, munmap, void *addr, long_t sz) {
 
 #ifdef __LP64__
 
+// void *operator new(size_t)
 INTERCEPTOR(void*, _Znwm, uptr sz) {
   SCOPED_INTERCEPTOR(_Znwm, sz);
-  void *res = REAL(_Znwm)(sz);
-  if (res != 0) {
-    MemoryResetRange(thr, pc, (uptr)res, sz);
-  }
-  return res;
+  return user_alloc(thr, pc, sz);
 }
 
+// void *operator new(size_t, nothrow_t)
 INTERCEPTOR(void*, _ZnwmRKSt9nothrow_t, uptr sz) {
   SCOPED_INTERCEPTOR(_ZnwmRKSt9nothrow_t, sz);
-  void *res = REAL(_ZnwmRKSt9nothrow_t)(sz);
-  if (res != 0) {
-    MemoryResetRange(thr, pc, (uptr)res, sz);
-  }
-  return res;
+  return user_alloc(thr, pc, sz);
 }
 
+// void *operator new[](size_t)
 INTERCEPTOR(void*, _Znam, uptr sz) {
   SCOPED_INTERCEPTOR(_Znam, sz);
-  void *res = REAL(_Znam)(sz);
-  if (res != 0) {
-    MemoryResetRange(thr, pc, (uptr)res, sz);
-  }
-  return res;
+  return user_alloc(thr, pc, sz);
 }
 
+// void *operator new[](size_t, nothrow_t)
 INTERCEPTOR(void*, _ZnamRKSt9nothrow_t, uptr sz) {
   SCOPED_INTERCEPTOR(_ZnamRKSt9nothrow_t, sz);
-  void *res = REAL(_ZnamRKSt9nothrow_t)(sz);
-  if (res != 0) {
-    MemoryResetRange(thr, pc, (uptr)res, sz);
-  }
-  return res;
+  return user_alloc(thr, pc, sz);
 }
 
 #else
 #error "Not implemented"
 #endif
 
+// void operator delete(void*)
 INTERCEPTOR(void, _ZdlPv, void *p) {
   if (p == 0)
     return;
   SCOPED_INTERCEPTOR(_ZdlPv, p);
-  uptr size = 8;  // FIXME: Use real size.
-  MemoryRangeFreed(thr, pc, (uptr)p, size);
-  REAL(_ZdlPv)(p);
+  user_free(thr, pc, p);
 }
 
+// void operator delete(void*, nothrow_t)
 INTERCEPTOR(void, _ZdlPvRKSt9nothrow_t, void *p) {
   if (p == 0)
     return;
   SCOPED_INTERCEPTOR(_ZdlPvRKSt9nothrow_t, p);
-  uptr size = 8;  // FIXME: Use real size.
-  MemoryRangeFreed(thr, pc, (uptr)p, size);
-  REAL(_ZdlPvRKSt9nothrow_t)(p);
+  user_free(thr, pc, p);
 }
 
+// void operator delete[](void*)
 INTERCEPTOR(void, _ZdaPv, void *p) {
   if (p == 0)
     return;
   SCOPED_INTERCEPTOR(_ZdaPv, p);
-  uptr size = 8;  // FIXME: Use real size.
-  MemoryRangeFreed(thr, pc, (uptr)p, size);
-  REAL(_ZdaPv)(p);
+  user_free(thr, pc, p);
 }
 
+// void operator delete[](void*, nothrow_t)
 INTERCEPTOR(void, _ZdaPvRKSt9nothrow_t, void *p) {
   if (p == 0)
     return;
   SCOPED_INTERCEPTOR(_ZdaPvRKSt9nothrow_t, p);
-  uptr size = 8;  // FIXME: Use real size.
-  MemoryRangeFreed(thr, pc, (uptr)p, size);
-  REAL(_ZdaPvRKSt9nothrow_t)(p);
+  user_free(thr, pc, p);
 }
 
 // int posix_memalign(void **memptr, size_t alignment, size_t size);
@@ -980,7 +941,25 @@ INTERCEPTOR(int, epoll_wait, int epfd, void *ev, int cnt, int timeout) {
 
 namespace __tsan {
 
+// Used until we obtain real efficient functions.
+static void* poormans_memset(void *dst, int v, uptr size) {
+  for (uptr i = 0; i < size; i++)
+    ((char*)dst)[i] = (char)v;
+  return dst;
+}
+
+static void* poormans_memcpy(void *dst, const void *src, uptr size) {
+  for (uptr i = 0; i < size; i++)
+    ((char*)dst)[i] = ((char*)src)[i];
+  return dst;
+}
+
 void InitializeInterceptors() {
+  // We need to setup it early, because functions like dlsym(), atexit(), etc
+  // can call it.
+  REAL(memset) = poormans_memset;
+  REAL(memcpy) = poormans_memcpy;
+
   if (atexit(&finalize)) {
     Printf("ThreadSanitizer: failed to setup atexit callback\n");
     Die();

@@ -113,6 +113,10 @@ enum StatType {
   StatCnt,
 };
 
+struct ThreadState;
+struct ThreadContext;
+struct Context;
+
 }  // namespace __tsan
 
 #endif  // TSAN_DEFS_H
