@@ -24,6 +24,7 @@ LIBTSAN_HEADERS=tsan_alloc.h \
 		tsan_interface.h \
 		tsan_interface_ann.h \
 		tsan_interface_inl.h \
+	        tsan_mman.h \
                 tsan_platform.h \
                 tsan_mutex.h \
                 tsan_report.h \
@@ -43,6 +44,7 @@ LIBTSAN_OBJ=tsan_alloc.o \
             tsan_interceptors.o \
             tsan_interface.o \
             tsan_interface_ann.o \
+            tsan_mman.o \
 	    tsan_platform_linux.o \
             tsan_report.o \
             tsan_rtl.o \
