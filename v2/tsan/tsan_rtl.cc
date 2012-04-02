@@ -462,11 +462,11 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr) {
       || (!kAccessIsWrite && thr->fast_ignore_reads))
     return;
   u64 *shadow_mem = (u64*)MemToShadow(addr);
-  DPrintf("#%d: tsan::OnMemoryAccess: @%p %p size=%d"
-          " is_write=%d shadow_mem=%p {%p, %p, %p, %p}\n",
-          (int)thr->fast_state.tid(), (void*)pc, (void*)addr,
-          (int)(1 << kAccessSizeLog), kAccessIsWrite, shadow_mem,
-          shadow_mem[0], shadow_mem[1], shadow_mem[2], shadow_mem[3]);
+  DPrintf2("#%d: tsan::OnMemoryAccess: @%p %p size=%d"
+      " is_write=%d shadow_mem=%p {%p, %p, %p, %p}\n",
+      (int)thr->fast_state.tid(), (void*)pc, (void*)addr,
+      (int)(1 << kAccessSizeLog), kAccessIsWrite, shadow_mem,
+      shadow_mem[0], shadow_mem[1], shadow_mem[2], shadow_mem[3]);
   DCHECK(IsAppMem(addr));
   DCHECK(IsShadowMem((uptr)shadow_mem));
 
@@ -597,7 +597,7 @@ void MemoryRangeFreed(ThreadState *thr, uptr pc, uptr addr, uptr size) {
 void FuncEntry(ThreadState *thr, uptr pc) {
   DCHECK_EQ(thr->in_rtl, 0);
   StatInc(thr, StatFuncEnter);
-  DPrintf("#%d: tsan::FuncEntry %p\n", (int)thr->fast_state.tid(), (void*)pc);
+  DPrintf2("#%d: tsan::FuncEntry %p\n", (int)thr->fast_state.tid(), (void*)pc);
   thr->fast_state.IncrementEpoch();
   TraceAddEvent(thr, thr->fast_state.epoch(), EventTypeFuncEnter, pc);
 
@@ -615,7 +615,7 @@ void FuncEntry(ThreadState *thr, uptr pc) {
 void FuncExit(ThreadState *thr) {
   DCHECK_EQ(thr->in_rtl, 0);
   StatInc(thr, StatFuncExit);
-  DPrintf("#%d: tsan::FuncExit\n", (int)thr->fast_state.tid());
+  DPrintf2("#%d: tsan::FuncExit\n", (int)thr->fast_state.tid());
   thr->fast_state.IncrementEpoch();
   TraceAddEvent(thr, thr->fast_state.epoch(), EventTypeFuncExit, 0);
 }

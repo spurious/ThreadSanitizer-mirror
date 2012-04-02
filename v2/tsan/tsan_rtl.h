@@ -188,10 +188,16 @@ void InitializeDynamicAnnotations();
 void Report(const char *format, ...);
 void Die() NORETURN;
 
-#ifdef TSAN_DEBUG_OUTPUT
+#if defined(TSAN_DEBUG_OUTPUT) && TSAN_DEBUG_OUTPUT >= 1
 # define DPrintf Printf
 #else
 # define DPrintf(...)
+#endif
+
+#if defined(TSAN_DEBUG_OUTPUT) && TSAN_DEBUG_OUTPUT >= 2
+# define DPrintf2 Printf
+#else
+# define DPrintf2(...)
 #endif
 
 void Initialize(ThreadState *thr);
