@@ -17,6 +17,10 @@
 #include "tsan_rtl.h"
 #include "tsan_slab.h"
 
+#define CALLERPC ((uptr)__builtin_return_address(0))
+
+using namespace __tsan;  // NOLINT
+
 namespace __tsan {
 
 static const int kMaxDescLen = 128;
@@ -108,10 +112,12 @@ bool IsExpectReport(uptr addr, uptr size) {
 using namespace __tsan;  // NOLINT
 
 extern "C" {
-void AnnotateHappensBefore(char *f, int l, uptr *addr) {
+void AnnotateHappensBefore(char *f, int l, uptr addr) {
+  Release(cur_thread(), CALLERPC, addr);
 }
 
-void AnnotateHappensAfter(char *f, int l, uptr cv) {
+void AnnotateHappensAfter(char *f, int l, uptr addr) {
+  Acquire(cur_thread(), CALLERPC, addr);
 }
 
 void AnnotateCondVarSignal(char *f, int l, uptr cv) {
