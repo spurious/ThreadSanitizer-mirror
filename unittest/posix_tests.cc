@@ -830,6 +830,34 @@ TEST(PositiveTests, test146) {
 }
 } // namespace test146
 
+#ifndef NO_BARRIER
+namespace NegativeTests_CyclicBarrierTest {
+
+pthread_barrier_t B;
+int state[2];
+
+void Worker() {
+  for (int i = 0; i < 10; i++) {
+    if (pthread_barrier_wait(&B) ==  PTHREAD_BARRIER_SERIAL_THREAD) {
+      state[(i + 1) % 2] = i + 1;
+    }
+    CHECK(state[i % 2] == i);
+  }
+}
+
+TEST(NegativeTests, CyclicBarrierTest) {
+  state[0] = 0;
+  state[1] = 42;
+  pthread_barrier_init(&B, NULL, 3);
+  MyThreadArray t(Worker, Worker, Worker);
+  t.Start();
+  t.Join();
+  pthread_barrier_destroy(&B);
+}
+}
+#endif
+
+
 namespace PositiveTests_CyclicBarrierTest {  // {{{1
 #ifndef NO_BARRIER
 // regression test for correct support of cyclic barrier.
