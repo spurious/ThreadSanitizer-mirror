@@ -125,7 +125,9 @@ void CheckFailed(const char *file, int line, const char *cond) {
 Context::Context()
   : clockslab(SyncClock::kChunkSize)
   , syncslab(sizeof(SyncVar))
-  , nreported() {
+  , report_mtx(StatMtxReport)
+  , nreported()
+  , thread_mtx(StatMtxThreads) {
 }
 
 ThreadState::ThreadState(Context *ctx, int tid, u64 epoch,
@@ -182,6 +184,8 @@ void Initialize(ThreadState *thr) {
 }
 
 int Finalize(ThreadState *thr) {
+  // FIXME: Output leaked (non-joined, non-detached) threads.
+
   if (ctx->nreported)
     Printf("ThreadSanitizer summary: reported %d warnings\n", ctx->nreported);
 

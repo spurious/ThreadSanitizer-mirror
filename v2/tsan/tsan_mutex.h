@@ -14,12 +14,13 @@
 #define TSAN_MUTEX_H
 
 #include "tsan_atomic.h"
+#include "tsan_defs.h"
 
 namespace __tsan {
 
 class Mutex {
  public:
-  Mutex();
+  explicit Mutex(StatType stat_type);
   ~Mutex();
 
   void Lock();
@@ -30,6 +31,9 @@ class Mutex {
 
  private:
   atomic_uintptr_t state_;
+#ifdef TSAN_COLLECT_STATS
+  StatType stat_type_;
+#endif
 
   Mutex(const Mutex&);
   void operator = (const Mutex&);

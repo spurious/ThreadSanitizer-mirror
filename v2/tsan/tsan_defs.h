@@ -80,6 +80,39 @@ T max(T a, T b) {
   return a > b ? a : b;
 }
 
+enum StatType {
+  StatMop,
+  StatMopRead,
+  StatMopWrite,
+  StatMop1,  // These must be consequtive.
+  StatMop2,
+  StatMop4,
+  StatMop8,
+  StatMopSame,
+  StatMopRange,
+  StatShadowProcessed,
+  StatShadowZero,
+  StatShadowNonZero,  // Derived.
+  StatShadowSameSize,
+  StatShadowIntersect,
+  StatShadowNotIntersect,
+  StatShadowSameThread,
+  StatShadowAnotherThread,
+  StatShadowReplace,
+  StatFuncEnter,
+  StatFuncExit,
+  StatEvents,
+  StatMtxTotal,
+  StatMtxTrace,
+  StatMtxThreads,
+  StatMtxReport,
+  StatMtxSyncVar,
+  StatMtxSyncTab,
+  StatMtxSlab,
+  StatMtxAnnotations,
+  StatCnt,
+};
+
 }  // namespace __tsan
 
 #endif  // TSAN_DEFS_H

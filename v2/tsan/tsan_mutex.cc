@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 #include "tsan_mutex.h"
 #include "tsan_platform.h"
+#include "tsan_rtl.h"
 
 namespace __tsan {
 
@@ -27,6 +28,7 @@ class Backoff {
   Backoff()
     : iter_() {
   }
+
   bool Do() {
     if (iter_++ < kActiveSpinIters)
       proc_yield(kActiveSpinCnt);
@@ -34,13 +36,23 @@ class Backoff {
       sched_yield();
     return true;
   }
+
+  u64 Contention() const {
+    u64 active = iter_ % kActiveSpinIters;
+    u64 passive = iter_ - active;
+    return active + 10 * passive;
+  }
+
  private:
   int iter_;
   static const int kActiveSpinIters = 10;
   static const int kActiveSpinCnt = 20;
 };
 
-Mutex::Mutex() {
+Mutex::Mutex(StatType stat_type) {
+#ifdef TSAN_COLLECT_STATS
+  stat_type_ = stat_type;
+#endif
   atomic_store(&state_, kUnlocked, memory_order_relaxed);
 }
 
@@ -57,8 +69,12 @@ void Mutex::Lock() {
     if (atomic_load(&state_, memory_order_relaxed) == kUnlocked) {
       cmp = kUnlocked;
       if (atomic_compare_exchange_weak(&state_, &cmp, kWriteLock,
-                                       memory_order_acquire))
+                                       memory_order_acquire)) {
+#ifdef TSAN_COLLECT_STATS
+        StatInc(cur_thread(), stat_type_, backoff.Contention());
+#endif
         return;
+      }
     }
   }
 }
@@ -75,8 +91,12 @@ void Mutex::ReadLock() {
     return;
   for (Backoff backoff; backoff.Do();) {
     prev = atomic_load(&state_, memory_order_acquire);
-    if ((prev & kWriteLock) == 0)
+    if ((prev & kWriteLock) == 0) {
+#ifdef TSAN_COLLECT_STATS
+      StatInc(cur_thread(), stat_type_, backoff.Contention());
+#endif
       return;
+    }
   }
 }
 

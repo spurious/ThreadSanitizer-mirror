@@ -80,6 +80,14 @@ void PrintStats(u64 *stat) {
   name[StatFuncEnter]           = "Function entries";
   name[StatFuncExit]            = "Function exits";
   name[StatEvents]              = "Events collected";
+  name[StatMtxTotal]            = "Contentionz";
+  name[StatMtxTrace]            = "  Trace";
+  name[StatMtxThreads]          = "  Threads";
+  name[StatMtxReport]           = "  Report";
+  name[StatMtxSyncVar]          = "  SyncVar";
+  name[StatMtxSyncTab]          = "  SyncTab";
+  name[StatMtxSlab]             = "  Slab";
+  name[StatMtxAnnotations]      = "  Annotations";
 
   Printf("Statistics:\n");
   for (int i = 0; i < StatCnt; i++)

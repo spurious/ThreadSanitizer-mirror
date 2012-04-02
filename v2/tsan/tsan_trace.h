@@ -47,6 +47,10 @@ struct Trace {
   Event events[kTraceSize];
   TraceHeader headers[kTraceParts];
   Mutex mtx;
+
+  Trace()
+    : mtx(StatMtxTrace) {
+  }
 };
 
 }  // namespace __tsan

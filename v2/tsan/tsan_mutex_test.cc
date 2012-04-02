@@ -18,7 +18,8 @@ namespace __tsan {
 
 class TestData {
  public:
-  TestData() {
+  TestData()
+    : mtx_(StatMtxAnnotations) {
     for (int i = 0; i < kSize; i++)
       data_[i] = 0;
   }

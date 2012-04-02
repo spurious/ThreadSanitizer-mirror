@@ -36,31 +36,6 @@ namespace __tsan {
 
 void Printf(const char *format, ...);
 
-enum StatType {
-  StatMop,
-  StatMopRead,
-  StatMopWrite,
-  StatMop1,  // These must be consequtive.
-  StatMop2,
-  StatMop4,
-  StatMop8,
-  StatMopSame,
-  StatMopRange,
-  StatShadowProcessed,
-  StatShadowZero,
-  StatShadowNonZero,  // Derived.
-  StatShadowSameSize,
-  StatShadowIntersect,
-  StatShadowNotIntersect,
-  StatShadowSameThread,
-  StatShadowAnotherThread,
-  StatShadowReplace,
-  StatFuncEnter,
-  StatFuncExit,
-  StatEvents,
-  StatCnt,
-};
-
 struct ReportDesc;
 struct Context;
 

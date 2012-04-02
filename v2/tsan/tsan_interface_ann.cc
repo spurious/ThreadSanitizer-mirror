@@ -44,7 +44,8 @@ struct DynamicAnnContext {
   ExpectRace benign;
 
   DynamicAnnContext()
-    : expect_alloc(sizeof(ExpectRace))
+    : mtx(StatMtxAnnotations)
+    , expect_alloc(sizeof(ExpectRace))
     , expect_slab(&expect_alloc) {
   }
 };

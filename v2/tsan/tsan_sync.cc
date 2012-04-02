@@ -17,7 +17,8 @@
 namespace __tsan {
 
 SyncVar::SyncVar(uptr addr)
-  : addr(addr)
+  : mtx(StatMtxSyncVar)
+  , addr(addr)
   , owner_tid(-1)
   , recursion()
   , is_rw()
@@ -25,7 +26,8 @@ SyncVar::SyncVar(uptr addr)
 }
 
 SyncTab::Part::Part()
-  : val() {
+  : mtx(StatMtxSyncTab)
+  , val() {
 }
 
 SyncTab::SyncTab() {
