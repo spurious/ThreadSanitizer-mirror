@@ -17,6 +17,7 @@
 #include "tsan_atomic.h"
 #include "tsan_platform.h"
 #include "tsan_mman.h"
+#include "tsan_placement_new.h"
 
 using namespace __tsan;  // NOLINT
 
@@ -36,9 +37,9 @@ extern "C" int pthread_yield();
 extern "C" int pthread_sigmask(int how, const sigset_t *set, sigset_t *oldset);
 extern "C" int sigfillset(sigset_t *set);
 extern "C" void *pthread_self();
-extern "C" int atexit(void (*function)());
 extern "C" int getcontext(ucontext_t *ucp);
 extern "C" void _exit(int status);
+extern "C" int __cxa_atexit(void (*func)(void *arg), void *arg, void *dso);
 extern "C" int *__errno_location();
 const int PTHREAD_MUTEX_RECURSIVE = 1;
 const int PTHREAD_MUTEX_RECURSIVE_NP = 1;
@@ -112,10 +113,68 @@ class ScopedInterceptor {
       return REAL(func)(__VA_ARGS__); \
 /**/
 
-static void finalize() {
+class AtExitContext {
+ public:
+  AtExitContext()
+    : mtx_(StatMtxAtExit)
+    , pos_() {
+  }
+
+  typedef void(*atexit_t)();
+
+  int atexit(ThreadState *thr, uptr pc, atexit_t f) {
+    Lock l(&mtx_);
+    if (pos_ == kMaxAtExit)
+      return 1;
+    Release(thr, pc, (uptr)this);
+    stack_[pos_] = f;
+    pos_++;
+    return 0;
+  }
+
+  void exit(ThreadState *thr, uptr pc) {
+    CHECK_EQ(thr->in_rtl, 0);
+    for (;;) {
+      atexit_t f = 0;
+      {
+        Lock l(&mtx_);
+        if (pos_) {
+          pos_--;
+          f = stack_[pos_];
+          Acquire(thr, pc, (uptr)this);
+        }
+      }
+      if (f == 0)
+        break;
+      DPrintf("#%d: executing atexit func %p\n", f);
+      CHECK_EQ(thr->in_rtl, 0);
+      f();
+    }
+  }
+
+ private:
+  static const int kMaxAtExit = 128;
+  Mutex mtx_;
+  atexit_t stack_[kMaxAtExit];
+  int pos_;
+};
+
+static AtExitContext *atexit_ctx;
+
+static void finalize(void *arg) {
+  ThreadState * thr = cur_thread();
+  uptr pc = 0;
+  atexit_ctx->exit(thr, pc);
+
   int status = Finalize(cur_thread());
   if (status)
     _exit(status);
+}
+
+INTERCEPTOR(int, atexit, void (*f)()) {
+  SCOPED_INTERCEPTOR(atexit, f);
+  return atexit_ctx->atexit(thr, pc, f);
+  return 0;
 }
 
 static uptr fd2addr(int fd) {
@@ -1086,20 +1145,9 @@ static void* poormans_memcpy(void *dst, const void *src, uptr size) {
 }
 
 void InitializeInterceptors() {
-  // We need to setup it early, because functions like dlsym(), atexit(), etc
-  // can call it.
+  // We need to setup it early, because functions like dlsym() can call it.
   REAL(memset) = poormans_memset;
   REAL(memcpy) = poormans_memcpy;
-
-  if (atexit(&finalize)) {
-    Printf("ThreadSanitizer: failed to setup atexit callback\n");
-    Die();
-  }
-
-  if (pthread_key_create(&g_thread_finalize_key, &thread_finalize)) {
-    Printf("ThreadSanitizer: failed to create thread key\n");
-    Die();
-  }
 
   INTERCEPT_FUNCTION(malloc);
   INTERCEPT_FUNCTION(calloc);
@@ -1213,6 +1261,19 @@ void InitializeInterceptors() {
   INTERCEPT_FUNCTION(epoll_wait);
 
   INTERCEPT_FUNCTION(sigaction);
+
+  atexit_ctx = new(internal_alloc(cur_thread(), sizeof(AtExitContext)))
+      AtExitContext();
+
+  if (__cxa_atexit(&finalize, 0, 0)) {
+    Printf("ThreadSanitizer: failed to setup atexit callback\n");
+    Die();
+  }
+
+  if (pthread_key_create(&g_thread_finalize_key, &thread_finalize)) {
+    Printf("ThreadSanitizer: failed to create thread key\n");
+    Die();
+  }
 }
 
 void internal_memset(void *ptr, int c, uptr size) {

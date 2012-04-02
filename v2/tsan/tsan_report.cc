@@ -87,6 +87,7 @@ void PrintStats(u64 *stat) {
   name[StatMtxSyncVar]          = "  SyncVar";
   name[StatMtxSyncTab]          = "  SyncTab";
   name[StatMtxSlab]             = "  Slab";
+  name[StatMtxAtExit]           = "  Atexit";
   name[StatMtxAnnotations]      = "  Annotations";
 
   Printf("Statistics:\n");

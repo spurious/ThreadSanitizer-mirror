@@ -110,6 +110,7 @@ enum StatType {
   StatMtxSyncTab,
   StatMtxSlab,
   StatMtxAnnotations,
+  StatMtxAtExit,
   StatCnt,
 };
 
