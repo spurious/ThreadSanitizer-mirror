@@ -21,7 +21,7 @@
 #if __LP64__
 namespace __tsan {
 
-static const uptr kLinuxAppMemBeg = 0x7f0000000000ULL;
+static const uptr kLinuxAppMemBeg = 0x7ef000000000ULL;
 static const uptr kLinuxAppMemEnd = 0x7fffffffffffULL;
 static inline bool IsAppMem(uptr mem) {
   return mem >= kLinuxAppMemBeg && mem <= kLinuxAppMemEnd;

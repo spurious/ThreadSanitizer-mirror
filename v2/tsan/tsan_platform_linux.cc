@@ -156,7 +156,7 @@ static void CheckPIE() {
     if (read(fmaps, buf, sizeof(buf)) == sizeof(buf)) {
       buf[sizeof(buf) - 1] = 0;
       u64 addr = strtoll(buf, 0, 16);
-      if ((u64)addr < 0x7ef000000000) {
+      if ((u64)addr < kLinuxAppMemBeg) {
         Report("FATAL: ThreadSanitizer can not mmap the shadow memory ("
                "something is mapped at 0x%p)\n", addr);
         Report("FATAL: Make shoure to compile with -fPIE"
