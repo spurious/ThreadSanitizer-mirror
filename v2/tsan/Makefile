@@ -15,7 +15,9 @@ endif
 
 all: libtsan.a libtsan_dummy.a
 
-LIBTSAN_HEADERS=tsan_atomic.h \
+LIBTSAN_HEADERS=tsan_alloc.h \
+                tsan_allocator.h \
+                tsan_atomic.h \
                 tsan_clock.h \
                 tsan_compiler.h \
                 tsan_defs.h \
@@ -35,6 +37,7 @@ LIBTSAN_HEADERS=tsan_atomic.h \
 		tsan_thread.h
 
 LIBTSAN_OBJ=tsan_alloc.o \
+            tsan_allocator.o \
             tsan_clock.o \
             tsan_mutex.o \
             tsan_interceptors.o \
