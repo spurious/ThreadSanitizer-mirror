@@ -123,7 +123,8 @@ void CheckFailed(const char *file, int line, const char *cond) {
 }
 
 Context::Context()
-  : clockslab(SyncClock::kChunkSize)
+  : initialized()
+  , clockslab(SyncClock::kChunkSize)
   , syncslab(sizeof(SyncVar))
   , report_mtx(StatMtxReport)
   , nreported()
@@ -181,6 +182,7 @@ void Initialize(ThreadState *thr) {
   CHECK_EQ(tid, 0);
   ThreadStart(thr, tid);
   thr->in_rtl++;  // ThreadStart() resets it to zero.
+  ctx->initialized = true;
 }
 
 int Finalize(ThreadState *thr) {
@@ -237,7 +239,7 @@ static int RestoreStack(int tid, const u64 epoch, uptr *stack, int n) {
     Event ev = trace->events[i];
     EventType typ = (EventType)(ev >> 61);
     uptr pc = (uptr)(ev & 0xffffffffffffull);
-    DPrintf("  %04llu typ=%d pc=%p\n", i, typ, pc);
+    DPrintf2("  %04llu typ=%d pc=%p\n", i, typ, pc);
     if (typ == EventTypeMop) {
       stack[pos] = pc;
     } else if (typ == EventTypeFuncEnter) {
@@ -591,6 +593,7 @@ void MemoryResetRange(ThreadState *thr, uptr pc, uptr addr, uptr size) {
 }
 
 void MemoryRangeFreed(ThreadState *thr, uptr pc, uptr addr, uptr size) {
+  MemoryAccessRange(thr, pc, addr, size, true);
   MemoryRangeSet(thr, pc, addr, size, kShadowFreed);
 }
 

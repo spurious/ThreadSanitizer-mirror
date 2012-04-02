@@ -149,6 +149,8 @@ struct ThreadContext {
 struct Context {
   Context();
 
+  bool initialized;
+
   SlabAlloc clockslab;
   SlabAlloc syncslab;
   SyncTab synctab;

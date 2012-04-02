@@ -16,6 +16,7 @@
 namespace __tsan {
 
 TEST(Platform, VirtualAlloc) {
+  ScopedInRtl in_rtl;
   void *p1 = virtual_alloc(1);
   void *p2 = virtual_alloc(1);
   EXPECT_NE(p1, (void*)0);
@@ -32,6 +33,7 @@ TEST(Platform, VirtualAlloc) {
 }
 
 TEST(Platform, ThreadInfo) {
+  ScopedInRtl in_rtl;
   uptr stk_addr = 0;
   uptr stk_size = 0;
   uptr tls_addr = 0;

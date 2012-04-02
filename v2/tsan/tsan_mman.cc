@@ -17,12 +17,11 @@
 namespace __tsan {
 
 void *user_alloc(ThreadState *thr, uptr pc, uptr sz) {
-  // May be called from inside rtl.
   CHECK_GT(thr->in_rtl, 0);
   MBlock *b = (MBlock*)Alloc(sz + sizeof(MBlock));
   b->size = sz;
   void *p = b + 1;
-  if (thr->in_rtl == 1) {
+  if (CTX() && CTX()->initialized) {
     MemoryResetRange(thr, pc, (uptr)p, sz);
   }
   return p;
@@ -32,7 +31,8 @@ void user_free(ThreadState *thr, uptr pc, void *p) {
   CHECK_GT(thr->in_rtl, 0);
   CHECK_NE(p, (void*)0);
   MBlock *b = user_mblock(thr, p);
-  if (thr->in_rtl == 1) {
+  p = b + 1;
+  if (CTX() && CTX()->initialized) {
     MemoryRangeFreed(thr, pc, (uptr)p, b->size);
   }
   Free(b);
@@ -66,8 +66,12 @@ MBlock *user_mblock(ThreadState *thr, void *p) {
   CHECK_NE(p, (void*)0);
   MBlock *b = (MBlock*)AllocBlock(p);
   // FIXME: Output a warning, it's a user error.
-  CHECK_GE(p, (char*)(b + 1));
-  CHECK_LE(p, (char*)(b + 1) + b->size);
+  if (p < (char*)(b + 1) || p > (char*)(b + 1) + b->size) {
+    Printf("user_mblock p=%p b=%p size=%lu beg=%p end=%p\n",
+        p, b, b->size, (char*)(b + 1), (char*)(b + 1) + b->size);
+    CHECK_GE(p, (char*)(b + 1));
+    CHECK_LE(p, (char*)(b + 1) + b->size);
+  }
   return b;
 }
 
