@@ -135,8 +135,10 @@ ThreadState::ThreadState(Context *ctx, int tid, u64 epoch,
                          uptr stk_addr, uptr stk_size,
                          uptr tls_addr, uptr tls_size)
   : fast_state(tid, epoch)
-  , fast_ignore_reads()
-  , fast_ignore_writes()
+  // Do not touch these, rely on zero initialization,
+  // they may be accessed before the ctor.
+  // , fast_ignore_reads()
+  // , fast_ignore_writes()
   , clockslab(&ctx->clockslab)
   , syncslab(&ctx->syncslab)
   , tid(tid)
@@ -623,8 +625,8 @@ void FuncExit(ThreadState *thr) {
   TraceAddEvent(thr, thr->fast_state.epoch(), EventTypeFuncExit, 0);
 }
 
-void IgnoreCtl(bool write, bool begin) {
-  ThreadState *thr = cur_thread();
+void IgnoreCtl(ThreadState *thr, bool write, bool begin) {
+  DPrintf("#%d: IgnoreCtl(%d, %d)\n", thr->tid, write, begin);
   int* p = write ? &thr->fast_ignore_writes : &thr->fast_ignore_reads;
   *p += begin ? 1 : -1;
   CHECK_GE(*p, 0);

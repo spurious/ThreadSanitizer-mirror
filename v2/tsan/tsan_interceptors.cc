@@ -385,6 +385,28 @@ INTERCEPTOR(int, posix_memalign, void **memptr, uptr align, uptr sz) {
   return 0;
 }
 
+// Used in thread-safe function static initialization.
+INTERCEPTOR(int, __cxa_guard_acquire, int *m) {
+  SCOPED_INTERCEPTOR(__cxa_guard_acquire, m);
+  int res = REAL(__cxa_guard_acquire)(m);
+  if (res) {
+    // FIXME: This is somewhat awkward and incorrect.
+    // The problem is that we do not see the fast-path (that is, the lock-free
+    // read of the guard, well, actually we do see it but as a plain read).
+    IgnoreCtl(thr, true, true);
+    IgnoreCtl(thr, false, true);
+  }
+  return res;
+}
+
+INTERCEPTOR(int, __cxa_guard_release, int *m) {
+  SCOPED_INTERCEPTOR(__cxa_guard_release, m);
+  IgnoreCtl(thr, true, false);
+  IgnoreCtl(thr, false, false);
+  int res = REAL(__cxa_guard_release)(m);
+  return res;
+}
+
 static void thread_finalize(void *v) {
   uptr iter = (uptr)v;
   if (iter > 1) {
@@ -1017,6 +1039,9 @@ void InitializeInterceptors() {
   INTERCEPT_FUNCTION(strncmp);
   INTERCEPT_FUNCTION(strcpy);  // NOLINT
   INTERCEPT_FUNCTION(strncpy);
+
+  INTERCEPT_FUNCTION(__cxa_guard_acquire);
+  INTERCEPT_FUNCTION(__cxa_guard_release);
 
   INTERCEPT_FUNCTION(pthread_create);
   INTERCEPT_FUNCTION(pthread_join);
