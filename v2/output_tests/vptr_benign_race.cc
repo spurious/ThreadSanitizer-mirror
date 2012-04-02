@@ -7,7 +7,6 @@ struct A {
     sem_init(&sem_, 0, 0);
   }
   virtual void F() {
-    printf("A::F\n");
   }
   void Done() {
     sem_post(&sem_);
@@ -19,7 +18,6 @@ struct A {
 
 struct B : A {
   virtual void F() {
-    printf("B::F\n");
   }
   virtual ~B() {
     sem_wait(&sem_);

@@ -714,12 +714,14 @@ INTERCEPTOR(int, pthread_cond_timedwait, void *c, void *m, void *abstime) {
 
 INTERCEPTOR(int, pthread_barrier_init, void *b, void *a, unsigned count) {
   SCOPED_INTERCEPTOR(pthread_barrier_init, b, a, count);
+  MemoryWrite1Byte(thr, pc, (uptr)b);
   int res = REAL(pthread_barrier_init)(b, a, count);
   return res;
 }
 
 INTERCEPTOR(int, pthread_barrier_destroy, void *b) {
   SCOPED_INTERCEPTOR(pthread_barrier_destroy, b);
+  MemoryWrite1Byte(thr, pc, (uptr)b);
   int res = REAL(pthread_barrier_destroy)(b);
   return res;
 }
@@ -727,7 +729,9 @@ INTERCEPTOR(int, pthread_barrier_destroy, void *b) {
 INTERCEPTOR(int, pthread_barrier_wait, void *b) {
   SCOPED_INTERCEPTOR(pthread_barrier_wait, b);
   Release(cur_thread(), pc, (uptr)b);
+  MemoryRead1Byte(thr, pc, (uptr)b);
   int res = REAL(pthread_barrier_wait)(b);
+  MemoryRead1Byte(thr, pc, (uptr)b);
   if (res == 0 || res == PTHREAD_BARRIER_SERIAL_THREAD) {
     Acquire(cur_thread(), pc, (uptr)b);
   }
