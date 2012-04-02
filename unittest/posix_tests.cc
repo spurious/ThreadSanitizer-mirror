@@ -1009,8 +1009,9 @@ static void DisableSigprof() {
 
 void MallocTestWorker() {
   for (int i = 0; i < 100000; i++) {
-    void *x = malloc((i % 64) + 1);
-    free (x);
+    volatile int *x = (volatile int*)malloc((i % 64) + sizeof(int));
+    x[0] = 42;
+    free((void*)x);
   }
 }
 
@@ -1029,12 +1030,14 @@ void SignalHandlerWithMutex(int, siginfo_t*, void*) {
 }
 
 TEST(Signals, SignalsAndMallocTestWithMutex) {
+  GLOB = 0;
   EnableSigprof(SignalHandlerWithMutex);
   MyThreadArray t(MallocTestWorker, MallocTestWorker, MallocTestWorker);
   t.Start();
   t.Join();
-  printf("\tGLOB=%d\n", GLOB);
   DisableSigprof();
+  printf("\tGLOB=%d\n", GLOB);
+  CHECK(GLOB > 1);
 }
 #endif
 
@@ -1054,7 +1057,6 @@ TEST(Signals, DISABLED_SignalsAndMallocTestWithSpinlock) {
   MyThreadArray t(MallocTestWorker, MallocTestWorker, MallocTestWorker);
   t.Start();
   t.Join();
-  printf("\tGLOB=%d\n", GLOB);
   DisableSigprof();
 }
 
