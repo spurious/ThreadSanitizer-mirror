@@ -30,17 +30,16 @@ lint_tsan:
 lint_tests:
 	third_party/cpplint/cpplint.py --filter=$(RTL_LINT_FITLER) tests/*.{cc,h}
 
-get_third_party:
+install_deps:
+	svn co  http://llvm.org/svn/llvm-project/compiler-rt/trunk/lib/asan/interception
 	rm -rf third_party
 	mkdir third_party
 	(cd third_party && \
 	svn co -r375        http://googletest.googlecode.com/svn/trunk googletest && \
 	svn co -r69 http://google-styleguide.googlecode.com/svn/trunk/cpplint cpplint \
         )
-get_interception:
-	svn co  http://llvm.org/svn/llvm-project/compiler-rt/trunk/lib/asan/interception
-      
+
 clean:
-	rm -f *.s
+	rm -f asm_*.s libtsan.nm libtsan.objdump
 	$(MAKE) clean -C tsan
 	$(MAKE) clean -C tests
