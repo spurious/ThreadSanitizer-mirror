@@ -20,13 +20,24 @@
 
 using namespace __tsan;  // NOLINT
 
+struct sigset_t {
+  u64 val[kSigCount / 8 / sizeof(u64)];
+};
+
+struct ucontext_t {
+  u64 opaque[1024];
+};
+
 extern "C" int pthread_attr_getdetachstate(void *attr, int *v);
 extern "C" int pthread_key_create(unsigned *key, void (*destructor)(void* v));
 extern "C" int pthread_setspecific(unsigned key, const void *v);
 extern "C" int pthread_mutexattr_gettype(void *a, int *type);
 extern "C" int pthread_yield();
+extern "C" int pthread_sigmask(int how, const sigset_t *set, sigset_t *oldset);
+extern "C" int sigfillset(sigset_t *set);
 extern "C" void *pthread_self();
 extern "C" int atexit(void (*function)());
+extern "C" int getcontext(ucontext_t *ucp);
 extern "C" void _exit(int status);
 extern "C" int *__errno_location();
 const int PTHREAD_MUTEX_RECURSIVE = 1;
@@ -38,7 +49,28 @@ const int PTHREAD_BARRIER_SERIAL_THREAD = -1;
 const int MAP_FIXED = 0x10;
 typedef long long_t;  // NOLINT
 
+typedef void (*sighandler_t)(int sig);
+
+struct sigaction_t {
+  union {
+    sighandler_t sa_handler;
+    void (*sa_sigaction)(int sig, my_siginfo_t *siginfo, void *uctx);
+  };
+  sigset_t sa_mask;
+  int sa_flags;
+  void (*sa_restorer)();
+};
+
+const sighandler_t SIG_DFL = (sighandler_t)0;
+const sighandler_t SIG_IGN = (sighandler_t)1;
+const int SA_SIGINFO = 4;
+const int SIG_SETMASK = 2;
+
+static sigaction_t sigactions[kSigCount];
+
 static unsigned g_thread_finalize_key;
+
+static void process_pending_signals(ThreadState *thr);
 
 class ScopedInterceptor {
  public:
@@ -47,7 +79,7 @@ class ScopedInterceptor {
       , in_rtl_(thr->in_rtl) {
     if (thr_->in_rtl == 0) {
       Initialize(thr);
-      DPrintf("#%d: %s\n", thr_->tid, fname);
+      DPrintf("#%d: intercept %s()\n", thr_->tid, fname);
       FuncEntry(thr, pc);
     }
     thr_->in_rtl++;
@@ -57,6 +89,7 @@ class ScopedInterceptor {
     thr_->in_rtl--;
     if (thr_->in_rtl == 0) {
       FuncExit(thr_);
+      process_pending_signals(thr_);
     }
     CHECK_EQ(in_rtl_, thr_->in_rtl);
   }
@@ -976,6 +1009,67 @@ INTERCEPTOR(int, epoll_wait, int epfd, void *ev, int cnt, int timeout) {
   return res;
 }
 
+static void rtl_sighandler(int sig) {
+  ThreadState *thr = cur_thread();
+  SignalDesc *signal = &thr->pending_signals[sig];
+  if (signal->armed == false) {
+    signal->armed = true;
+    signal->sigaction = false;
+    thr->pending_signal_count++;
+  }
+}
+
+static void rtl_sigaction(int sig, my_siginfo_t *info, void *ctx) {
+  ThreadState *thr = cur_thread();
+  SignalDesc *signal = &thr->pending_signals[sig];
+  if (signal->armed == false) {
+    signal->armed = true;
+    signal->sigaction = true;
+    signal->siginfo = *info;
+    thr->pending_signal_count++;
+  }
+}
+
+INTERCEPTOR(int, sigaction, int sig, sigaction_t *act, sigaction_t *old) {
+  SCOPED_INTERCEPTOR(sigaction, sig, act, old);
+  int res = 0;
+  if (act == 0 || act->sa_handler == SIG_IGN || act->sa_handler == SIG_DFL) {
+    res = REAL(sigaction)(sig, act, old);
+  } else {
+    sigactions[sig] = *act;
+    sigaction_t newact = *act;
+    if (newact.sa_flags & SA_SIGINFO)
+      newact.sa_sigaction = rtl_sigaction;
+    else
+      newact.sa_handler = rtl_sighandler;
+    res = REAL(sigaction)(sig, &newact, old);
+  }
+  return res;
+}
+
+static void process_pending_signals(ThreadState *thr) {
+  CHECK_EQ(thr->in_rtl, 0);
+  if (thr->pending_signal_count == 0)
+    return;
+  ucontext_t uctx;
+  getcontext(&uctx);
+  sigset_t emptyset, oldset;
+  sigfillset(&emptyset);
+  pthread_sigmask(SIG_SETMASK, &emptyset, &oldset);
+  for (int sig = 0; sig < kSigCount; sig++) {
+    SignalDesc *signal = &thr->pending_signals[sig];
+    if (signal->armed) {
+      signal->armed = false;
+      if (signal->sigaction)
+        sigactions[sig].sa_sigaction(sig, &signal->siginfo, &uctx);
+      else
+        sigactions[sig].sa_handler(sig);
+    }
+  }
+  thr->pending_signal_count = 0;
+  pthread_sigmask(SIG_SETMASK, &oldset, 0);
+}
+
 namespace __tsan {
 
 // Used until we obtain real efficient functions.
@@ -1117,6 +1211,8 @@ void InitializeInterceptors() {
 
   INTERCEPT_FUNCTION(epoll_ctl);
   INTERCEPT_FUNCTION(epoll_wait);
+
+  INTERCEPT_FUNCTION(sigaction);
 }
 
 void internal_memset(void *ptr, int c, uptr size) {

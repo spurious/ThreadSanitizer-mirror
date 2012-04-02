@@ -24,12 +24,14 @@ void *user_alloc(ThreadState *thr, uptr pc, uptr sz) {
   if (CTX() && CTX()->initialized) {
     MemoryResetRange(thr, pc, (uptr)p, sz);
   }
+  DPrintf("#%d: alloc(%lu) = %p\n", thr->tid, sz, p);
   return p;
 }
 
 void user_free(ThreadState *thr, uptr pc, void *p) {
   CHECK_GT(thr->in_rtl, 0);
   CHECK_NE(p, (void*)0);
+  DPrintf("#%d: free(%p)\n", thr->tid, p);
   MBlock *b = user_mblock(thr, p);
   p = b + 1;
   if (CTX() && CTX()->initialized) {

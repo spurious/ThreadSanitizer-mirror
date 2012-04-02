@@ -71,6 +71,18 @@ class FastState {
   u64 x_;
 };
 
+const int kSigCount = 1024;
+
+struct my_siginfo_t {
+  int opaque[128];
+};
+
+struct SignalDesc {
+  bool armed;
+  bool sigaction;
+  my_siginfo_t siginfo;
+};
+
 // This struct is stored in TLS.
 struct ThreadState {
   FastState fast_state;
@@ -102,6 +114,9 @@ struct ThreadState {
   const uptr stk_size;
   const uptr tls_addr;
   const uptr tls_size;
+
+  int pending_signal_count;
+  SignalDesc pending_signals[kSigCount];
 
   explicit ThreadState(Context *ctx, int tid, u64 epoch,
                        uptr stk_addr, uptr stk_size,
