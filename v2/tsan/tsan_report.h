@@ -19,6 +19,7 @@ namespace __tsan {
 
 enum ReportType {
   ReportTypeRace,
+  ReportTypeThreadLeak,
 };
 
 struct ReportStackEntry {
@@ -60,6 +61,7 @@ struct ReportLocation {
 
 struct ReportThread {
   int id;
+  bool running;
   char *name;
   ReportStack stack;
 };

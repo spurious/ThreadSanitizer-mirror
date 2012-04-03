@@ -19,6 +19,7 @@ test_file() {
   echo ----- TESTING $1
   $COMPILER $SRC $CFLAGS $LDFLAGS
   ./a.out 2> test.out || echo -n
+  echo >>test.out  # FileCheck fails on empty files
   # cat test.out
   FileCheck < test.out $SRC
   rm -f a.out test.out *.tmp *.tmp2

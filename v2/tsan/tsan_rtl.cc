@@ -188,7 +188,7 @@ void Initialize(ThreadState *thr) {
 }
 
 int Finalize(ThreadState *thr) {
-  // FIXME: Output leaked (non-joined, non-detached) threads.
+  ThreadFinalize();
 
   if (ctx->nreported)
     Printf("ThreadSanitizer summary: reported %d warnings\n", ctx->nreported);

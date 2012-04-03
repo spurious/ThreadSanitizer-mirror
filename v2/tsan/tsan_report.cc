@@ -25,7 +25,10 @@ static void PrintStack(const ReportStack *stack) {
 
 void PrintReport(const ReportDesc *rep) {
   Printf("==================\n");
-  Printf("WARNING: ThreadSanitizer: data race\n");
+  if (rep->typ == ReportTypeRace)
+    Printf("WARNING: ThreadSanitizer: data race\n");
+  else if (rep->typ == ReportTypeThreadLeak)
+    Printf("WARNING: ThreadSanitizer: thread leak\n");
   for (int i = 0; i < rep->nmop; i++) {
     const ReportMop *mop = &rep->mop[i];
     Printf("  %s%s of size %d at %p by thread %d:\n",
@@ -46,6 +49,17 @@ void PrintReport(const ReportDesc *rep) {
     } else if (loc->type == ReportLocationStack) {
       Printf("  Location is stack of thread %d:\n", loc->tid);
     }
+  }
+  for (int i = 0; i < rep->nthread; i++) {
+    ReportThread *rt = &rep->thread[i];
+    Printf("  Thread %d", rt->id);
+    if (rt->name)
+      Printf(" '%s'", rt->name);
+    Printf(" (%s)", rt->running ? "running" : "finished");
+    if (rt->stack.cnt)
+      Printf(" created at:");
+    Printf("\n");
+    PrintStack(&rt->stack);
   }
   Printf("==================\n");
 }

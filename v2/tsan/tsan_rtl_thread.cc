@@ -14,11 +14,38 @@
 #include "tsan_rtl.h"
 #include "tsan_placement_new.h"
 #include "tsan_platform.h"
+#include "tsan_report.h"
 #include "tsan_sync.h"
 
 namespace __tsan {
 
 const int kThreadQuarantineSize = 100;
+
+void ThreadFinalize() {
+  Context *ctx = CTX();
+  Lock l(&ctx->thread_mtx);
+  for (int i = 0; i < kMaxTid; i++) {
+    ThreadContext *tctx = ctx->threads[i];
+    if (tctx == 0)
+      continue;
+    if (tctx->detached)
+      continue;
+    if (tctx->status != ThreadStatusCreated
+        && tctx->status != ThreadStatusRunning
+        && tctx->status != ThreadStatusFinished)
+      continue;
+    ReportDesc rep;
+    internal_memset(&rep, 0, sizeof(rep));
+    RegionAlloc alloc(rep.alloc, sizeof(rep.alloc));
+    rep.typ = ReportTypeThreadLeak;
+    rep.nthread = 1;
+    rep.thread = alloc.Alloc<ReportThread>(1);
+    rep.thread->id = tctx->tid;
+    rep.thread->running = (tctx->status != ThreadStatusFinished);
+    rep.thread->stack.cnt = 0;
+    PrintReport(&rep);
+  }
+}
 
 static void ThreadDead(ThreadState *thr, ThreadContext *tctx) {
   CHECK(tctx->status == ThreadStatusRunning
