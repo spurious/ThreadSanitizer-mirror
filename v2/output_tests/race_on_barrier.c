@@ -13,7 +13,7 @@ void *Thread1(void *x) {
 }
 
 void *Thread2(void *x) {
-  usleep(100000);
+  usleep(1000000);
   pthread_barrier_wait(&B);
   return NULL;
 }

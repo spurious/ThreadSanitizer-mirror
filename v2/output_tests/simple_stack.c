@@ -23,7 +23,7 @@ void __attribute__((noinline)) bar2() {
 }
 
 void *Thread1(void *x) {
-  usleep(50000);
+  usleep(1000000);
   bar1();
   return NULL;
 }

@@ -178,7 +178,8 @@ void MutexReadOrWriteUnlock(ThreadState *thr, uptr pc, uptr addr) {
       thr->fast_synch_epoch = thr->fast_state.epoch();
       thr->clock.release(&s->clock, &thr->clockslab);
     }
-  } else {
+  } else if (!s->is_broken) {
+    s->is_broken = true;
     Printf("ThreadSanitizer WARNING: mutex unlock by another thread\n");
   }
   s->mtx.Unlock();
