@@ -80,10 +80,12 @@ class ScopedInterceptor {
       , in_rtl_(thr->in_rtl) {
     if (thr_->in_rtl == 0) {
       Initialize(thr);
-      DPrintf("#%d: intercept %s()\n", thr_->tid, fname);
       FuncEntry(thr, pc);
+      thr_->in_rtl++;
+      DPrintf("#%d: intercept %s()\n", thr_->tid, fname);
+    } else {
+      thr_->in_rtl++;
     }
-    thr_->in_rtl++;
   }
 
   ~ScopedInterceptor() {
@@ -508,7 +510,10 @@ static void thread_finalize(void *v) {
     }
     return;
   }
-  ThreadFinish(cur_thread());
+  {
+    ScopedInRtl in_rtl;
+    ThreadFinish(cur_thread());
+  }
 }
 
 

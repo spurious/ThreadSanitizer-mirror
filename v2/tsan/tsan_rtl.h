@@ -237,7 +237,7 @@ void ThreadStart(ThreadState *thr, int tid);
 void ThreadFinish(ThreadState *thr);
 void ThreadJoin(ThreadState *thr, uptr pc, uptr uid);
 void ThreadDetach(ThreadState *thr, uptr pc, uptr uid);
-void ThreadFinalize();
+void ThreadFinalize(ThreadState *thr);
 
 void MutexCreate(ThreadState *thr, uptr pc, uptr addr, bool rw, bool recursive);
 void MutexDestroy(ThreadState *thr, uptr pc, uptr addr);

@@ -21,7 +21,8 @@ namespace __tsan {
 
 const int kThreadQuarantineSize = 100;
 
-void ThreadFinalize() {
+void ThreadFinalize(ThreadState *thr) {
+  CHECK_GT(thr->in_rtl, 0);
   Context *ctx = CTX();
   Lock l(&ctx->thread_mtx);
   for (int i = 0; i < kMaxTid; i++) {
@@ -50,6 +51,7 @@ void ThreadFinalize() {
 }
 
 static void ThreadDead(ThreadState *thr, ThreadContext *tctx) {
+  CHECK_GT(thr->in_rtl, 0);
   CHECK(tctx->status == ThreadStatusRunning
       || tctx->status == ThreadStatusFinished);
   DPrintf("#%d: ThreadDead uid=%lu\n", (int)thr->fast_state.tid(), tctx->uid);
@@ -68,6 +70,7 @@ static void ThreadDead(ThreadState *thr, ThreadContext *tctx) {
 }
 
 int ThreadCreate(ThreadState *thr, uptr pc, uptr uid, bool detached) {
+  CHECK_GT(thr->in_rtl, 0);
   Lock l(&CTX()->thread_mtx);
   int tid = -1;
   ThreadContext *tctx = 0;
@@ -113,6 +116,7 @@ int ThreadCreate(ThreadState *thr, uptr pc, uptr uid, bool detached) {
 }
 
 void ThreadStart(ThreadState *thr, int tid) {
+  CHECK_GT(thr->in_rtl, 0);
   uptr stk_addr = 0;
   uptr stk_size = 0;
   uptr tls_addr = 0;
@@ -140,6 +144,7 @@ void ThreadStart(ThreadState *thr, int tid) {
 }
 
 void ThreadFinish(ThreadState *thr) {
+  CHECK_GT(thr->in_rtl, 0);
   // FIXME: Treat it as write.
   if (thr->stk_addr && thr->stk_size)
     MemoryResetRange(thr, /*pc=*/ 3, thr->stk_addr, thr->stk_size);
@@ -175,6 +180,7 @@ void ThreadFinish(ThreadState *thr) {
 }
 
 void ThreadJoin(ThreadState *thr, uptr pc, uptr uid) {
+  CHECK_GT(thr->in_rtl, 0);
   DPrintf("#%d: ThreadJoin uid=%lu\n",
           (int)thr->fast_state.tid(), uid);
   Lock l(&CTX()->thread_mtx);
@@ -199,6 +205,7 @@ void ThreadJoin(ThreadState *thr, uptr pc, uptr uid) {
 }
 
 void ThreadDetach(ThreadState *thr, uptr pc, uptr uid) {
+  CHECK_GT(thr->in_rtl, 0);
   Lock l(&CTX()->thread_mtx);
   ThreadContext *tctx = 0;
   for (int tid = 0; tid < kMaxTid; tid++) {

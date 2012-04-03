@@ -18,6 +18,7 @@ namespace __tsan {
 
 void MutexCreate(ThreadState *thr, uptr pc, uptr addr,
                  bool rw, bool recursive) {
+  CHECK_GT(thr->in_rtl, 0);
   DPrintf("#%d: MutexCreate %p\n", thr->fast_state.tid(), addr);
   MemoryWrite1Byte(thr, pc, addr);
   SyncVar *s = CTX()->synctab.GetAndLock(&thr->syncslab, addr, true);
@@ -27,6 +28,7 @@ void MutexCreate(ThreadState *thr, uptr pc, uptr addr,
 }
 
 void MutexDestroy(ThreadState *thr, uptr pc, uptr addr) {
+  CHECK_GT(thr->in_rtl, 0);
   DPrintf("#%d: MutexDestroy %p\n", thr->fast_state.tid(), addr);
   MemoryWrite1Byte(thr, pc, addr);
   SyncVar *s = CTX()->synctab.GetAndRemove(addr);
@@ -41,6 +43,7 @@ void MutexDestroy(ThreadState *thr, uptr pc, uptr addr) {
 }
 
 void MutexLock(ThreadState *thr, uptr pc, uptr addr) {
+  CHECK_GT(thr->in_rtl, 0);
   DPrintf("#%d: MutexLock %p\n", thr->fast_state.tid(), addr);
   MemoryRead1Byte(thr, pc, addr);
   thr->fast_state.IncrementEpoch();
@@ -66,6 +69,7 @@ void MutexLock(ThreadState *thr, uptr pc, uptr addr) {
 }
 
 void MutexUnlock(ThreadState *thr, uptr pc, uptr addr) {
+  CHECK_GT(thr->in_rtl, 0);
   DPrintf("#%d: MutexUnlock %p\n", thr->fast_state.tid(), addr);
   MemoryRead1Byte(thr, pc, addr);
   thr->fast_state.IncrementEpoch();
@@ -88,6 +92,7 @@ void MutexUnlock(ThreadState *thr, uptr pc, uptr addr) {
 }
 
 void MutexReadLock(ThreadState *thr, uptr pc, uptr addr) {
+  CHECK_GT(thr->in_rtl, 0);
   DPrintf("#%d: MutexReadLock %p\n", thr->fast_state.tid(), addr);
   MemoryRead1Byte(thr, pc, addr);
   thr->fast_state.IncrementEpoch();
@@ -101,6 +106,7 @@ void MutexReadLock(ThreadState *thr, uptr pc, uptr addr) {
 }
 
 void MutexReadUnlock(ThreadState *thr, uptr pc, uptr addr) {
+  CHECK_GT(thr->in_rtl, 0);
   DPrintf("#%d: MutexReadUnlock %p\n", thr->fast_state.tid(), addr);
   MemoryRead1Byte(thr, pc, addr);
   thr->fast_state.IncrementEpoch();
@@ -115,6 +121,7 @@ void MutexReadUnlock(ThreadState *thr, uptr pc, uptr addr) {
 }
 
 void MutexReadOrWriteUnlock(ThreadState *thr, uptr pc, uptr addr) {
+  CHECK_GT(thr->in_rtl, 0);
   DPrintf("#%d: MutexReadOrWriteUnlock %p\n", thr->fast_state.tid(), addr);
   MemoryRead1Byte(thr, pc, addr);
   SyncVar *s = CTX()->synctab.GetAndLock(&thr->syncslab, addr, true);
@@ -144,6 +151,7 @@ void MutexReadOrWriteUnlock(ThreadState *thr, uptr pc, uptr addr) {
 }
 
 void Acquire(ThreadState *thr, uptr pc, uptr addr) {
+  CHECK_GT(thr->in_rtl, 0);
   DPrintf("#%d: Acquire %p\n", thr->fast_state.tid(), addr);
   SyncVar *s = CTX()->synctab.GetAndLock(&thr->syncslab, addr, false);
   thr->clock.set(thr->fast_state.tid(), thr->fast_state.epoch());
@@ -152,6 +160,7 @@ void Acquire(ThreadState *thr, uptr pc, uptr addr) {
 }
 
 void Release(ThreadState *thr, uptr pc, uptr addr) {
+  CHECK_GT(thr->in_rtl, 0);
   DPrintf("#%d: Release %p\n", thr->fast_state.tid(), addr);
   SyncVar *s = CTX()->synctab.GetAndLock(&thr->syncslab, addr, true);
   thr->clock.set(thr->fast_state.tid(), thr->fast_state.epoch());

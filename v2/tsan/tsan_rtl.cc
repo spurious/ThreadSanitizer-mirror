@@ -189,9 +189,10 @@ void Initialize(ThreadState *thr) {
 }
 
 int Finalize(ThreadState *thr) {
+  ScopedInRtl in_rtl;
   bool failed = false;
 
-  ThreadFinalize();
+  ThreadFinalize(thr);
 
   if (ctx->nreported) {
     failed = true;
