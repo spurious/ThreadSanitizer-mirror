@@ -334,10 +334,11 @@ class MyThread {
     arg_ = NULL;
   }
 
-  void Start() {
+  void Start(bool detached = false) {
     pthread_attr_t attr;
     CHECK(0 == pthread_attr_init(&attr));
     CHECK(0 == pthread_attr_setstacksize(&attr, 2*1024*1024));
+    CHECK(0 == pthread_attr_setdetachstate(&attr, detached));
     CHECK(0 == pthread_create(&t_, &attr, (worker_t)ThreadBody, this));
     CHECK(0 == pthread_attr_destroy(&attr));
   }

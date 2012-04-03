@@ -6427,7 +6427,7 @@ void AtExitThread() {
 
 TEST(NegativeTests, AtExitTest) {
   t = new MyThread(AtExitThread);
-  t->Start(); // We don't join it.
+  t->Start(true); // We don't join it.
 }
 }  // namespace test152
 

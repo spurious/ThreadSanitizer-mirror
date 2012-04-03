@@ -205,7 +205,7 @@ class MyThread {
     CloseHandle(t_);
     t_ = NULL;
   }
-  void Start() {
+  void Start(bool detached = false) {
     DWORD thr_id;
     t_ = ::CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)ThreadBody, this, 0, &thr_id);
     CHECK(t_ > 0);
