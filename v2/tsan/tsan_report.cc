@@ -42,8 +42,8 @@ void PrintReport(const ReportDesc *rep) {
   if (rep->loc) {
     const ReportLocation *loc = rep->loc;
     if (loc->type == ReportLocationGlobal) {
-      Printf("  Location is global %s of size %d at %p\n",
-             loc->name, loc->size, loc->addr);
+      Printf("  Location is global '%s' of size %d at %p %s:%d\n",
+             loc->name, loc->size, loc->addr, loc->file, loc->line);
     } else if (loc->type == ReportLocationHeap) {
       Printf("  Location is heap of size %d at %p allocated by thread %d:\n",
              loc->size, loc->addr, loc->tid);

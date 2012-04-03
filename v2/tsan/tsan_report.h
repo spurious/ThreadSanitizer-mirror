@@ -57,6 +57,8 @@ struct ReportLocation {
   int size;
   int tid;
   char *name;
+  char *file;
+  int line;
   ReportStack stack;
 };
 

@@ -22,7 +22,8 @@ SyncVar::SyncVar(uptr addr)
   , owner_tid(kInvalidTid)
   , recursion()
   , is_rw()
-  , is_recursive() {
+  , is_recursive()
+  , is_broken() {
 }
 
 SyncTab::Part::Part()

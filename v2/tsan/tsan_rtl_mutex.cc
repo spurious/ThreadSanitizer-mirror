@@ -14,6 +14,7 @@
 #include "tsan_rtl.h"
 #include "tsan_sync.h"
 #include "tsan_report.h"
+#include "tsan_symbolize.h"
 
 namespace __tsan {
 
@@ -35,7 +36,8 @@ void MutexDestroy(ThreadState *thr, uptr pc, uptr addr) {
   SyncVar *s = CTX()->synctab.GetAndRemove(addr);
   if (s == 0)
     return;
-  if (s->owner_tid != SyncVar::kInvalidTid) {
+  if (s->owner_tid != SyncVar::kInvalidTid && !s->is_broken) {
+    s->is_broken = true;
     Lock l(&CTX()->report_mtx);
     ReportDesc rep;
     internal_memset(&rep, 0, sizeof(rep));
@@ -46,6 +48,18 @@ void MutexDestroy(ThreadState *thr, uptr pc, uptr addr) {
     rep.mutex->id = 42;
     SymbolizeStack(&alloc, &rep.mutex->stack,
         s->creation_stack.Begin(), s->creation_stack.Size());
+    Symbol symb;
+    if (SymbolizeData(&alloc, s->addr, &symb)) {
+      rep.loc = alloc.Alloc<ReportLocation>(1);
+      rep.loc->type = ReportLocationGlobal;
+      rep.loc->addr = s->addr;
+      rep.loc->size = 1;
+      rep.loc->tid = 0;
+      rep.loc->name = symb.name;
+      rep.loc->file = symb.file;
+      rep.loc->line = symb.line;
+      rep.loc->stack.cnt = 0;
+    }
     PrintReport(&rep);
     CTX()->nreported++;
   }
@@ -90,9 +104,15 @@ void MutexUnlock(ThreadState *thr, uptr pc, uptr addr) {
   TraceAddEvent(thr, thr->fast_state.epoch(), EventTypeUnlock, addr);
   SyncVar *s = CTX()->synctab.GetAndLock(thr, pc, &thr->syncslab, addr, true);
   if (s->recursion == 0) {
-    Printf("ThreadSanitizer WARNING: unlock of unlocked mutex\n");
+    if (!s->is_broken) {
+      s->is_broken = true;
+      Printf("ThreadSanitizer WARNING: unlock of unlocked mutex\n");
+    }
   } else if (s->owner_tid != thr->fast_state.tid()) {
-    Printf("ThreadSanitizer WARNING: mutex unlock by another thread\n");
+    if (!s->is_broken) {
+      s->is_broken = true;
+      Printf("ThreadSanitizer WARNING: mutex unlock by another thread\n");
+    }
   } else {
     s->recursion--;
     if (s->recursion == 0) {

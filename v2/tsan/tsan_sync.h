@@ -55,6 +55,7 @@ struct SyncVar {
   int recursion;
   bool is_rw;
   bool is_recursive;
+  bool is_broken;
   SyncVar *next;  // In SyncTab hashtable.
 };
 

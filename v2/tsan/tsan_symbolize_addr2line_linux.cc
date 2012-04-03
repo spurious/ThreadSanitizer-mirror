@@ -79,11 +79,13 @@ int SymbolizeCode(RegionAlloc *alloc, uptr addr, Symbol *symb, int cnt) {
     if (fread(tmp, 1, sizeof(tmp), f3) <= 0)
       return 0;
     char *pos = strchr(tmp, '\n');
-    if (pos) {
+    if (pos && tmp[0] != '?') {
       res = 1;
       symb[0].name = alloc->Alloc<char>(pos - tmp + 1);
       internal_memcpy(symb[0].name, tmp, pos - tmp);
       symb[0].name[pos - tmp] = 0;
+      symb[0].file = 0;
+      symb[0].line = 0;
       char *pos2 = strchr(pos, ':');
       if (pos2) {
         symb[0].file = alloc->Alloc<char>(pos2 - pos - 1 + 1);
@@ -104,8 +106,8 @@ int SymbolizeData(RegionAlloc *alloc, uptr addr, Symbol *symb) {
   int res = 0;
   char cmd[1024];
   snprintf(cmd, sizeof(cmd),
-           "addr2line -C -s -f -e %s %p > tsan.tmp2", exe,
-           (void*)(addr - base));
+  "nm -alsC %s|grep \"%lx\"|awk '{printf(\"%%s\\n%%s\", $3, $4)}' > tsan.tmp2",
+    exe, (addr - base));
   if (system(cmd))
     return 0;
   FILE* f3 = fopen("tsan.tmp2", "rb");
@@ -114,11 +116,13 @@ int SymbolizeData(RegionAlloc *alloc, uptr addr, Symbol *symb) {
     if (fread(tmp, 1, sizeof(tmp), f3) <= 0)
       return 0;
     char *pos = strchr(tmp, '\n');
-    if (pos) {
+    if (pos && tmp[0] != '?') {
       res = 1;
       symb[0].name = alloc->Alloc<char>(pos - tmp + 1);
       internal_memcpy(symb[0].name, tmp, pos - tmp);
       symb[0].name[pos - tmp] = 0;
+      symb[0].file = 0;
+      symb[0].line = 0;
       char *pos2 = strchr(pos, ':');
       if (pos2) {
         symb[0].file = alloc->Alloc<char>(pos2 - pos - 1 + 1);
