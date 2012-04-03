@@ -20,6 +20,7 @@ namespace __tsan {
 enum ReportType {
   ReportTypeRace,
   ReportTypeThreadLeak,
+  ReportTypeMutexDestroyLocked,
 };
 
 struct ReportStackEntry {

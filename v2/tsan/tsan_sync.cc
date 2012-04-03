@@ -33,7 +33,8 @@ SyncTab::Part::Part()
 SyncTab::SyncTab() {
 }
 
-SyncVar* SyncTab::GetAndLock(SlabCache *slab, uptr addr, bool write_lock) {
+SyncVar* SyncTab::GetAndLock(ThreadState *thr, uptr pc,
+                             SlabCache *slab, uptr addr, bool write_lock) {
   DCHECK(slab->Size() == sizeof(SyncVar));
   Part *p = &tab_[PartIdx(addr)];
   {
@@ -57,6 +58,7 @@ SyncVar* SyncTab::GetAndLock(SlabCache *slab, uptr addr, bool write_lock) {
     }
     if (res == 0) {
       res = new(slab->Alloc()) SyncVar(addr);
+      res->creation_stack.ObtainCurrent(thr, pc);
       res->next = p->val;
       p->val = res;
     }

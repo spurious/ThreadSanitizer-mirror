@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 #include "tsan_sync.h"
 #include "tsan_slab.h"
+#include "tsan_rtl.h"
 #include "gtest/gtest.h"
 
 #include <stdlib.h>
@@ -24,6 +25,10 @@ TEST(Sync, Table) {
   const uintptr_t kIters = 512*1024;
   const uintptr_t kRange = 10000;
 
+  ScopedInRtl in_rtl;
+  ThreadState *thr = cur_thread();
+  uptr pc = 0;
+
   SlabAlloc alloc(sizeof(SyncVar));
   SlabCache slab(&alloc);
   SyncTab tab;
@@ -33,7 +38,7 @@ TEST(Sync, Table) {
     uintptr_t addr = rand_r(&seed) % (kRange - 1) + 1;
     if (rand_r(&seed) % 2) {
       // Get or add.
-      SyncVar *v = tab.GetAndLock(&slab, addr, true);
+      SyncVar *v = tab.GetAndLock(thr, pc, &slab, addr, true);
       CHECK(golden[addr] == 0 || golden[addr] == v);
       CHECK(v->addr == addr);
       golden[addr] = v;
@@ -45,6 +50,7 @@ TEST(Sync, Table) {
       if (v) {
         CHECK(v->addr == addr);
         golden[addr] = 0;
+        v->creation_stack.Free(thr);
         v->~SyncVar();
         slab.Free(v);
       }
@@ -56,6 +62,7 @@ TEST(Sync, Table) {
     SyncVar *v = tab.GetAndRemove(addr);
     CHECK(v == golden[addr]);
     CHECK(v->addr == addr);
+    v->creation_stack.Free(thr);
     v->~SyncVar();
     slab.Free(v);
   }

@@ -29,6 +29,8 @@ void PrintReport(const ReportDesc *rep) {
     Printf("WARNING: ThreadSanitizer: data race\n");
   else if (rep->typ == ReportTypeThreadLeak)
     Printf("WARNING: ThreadSanitizer: thread leak\n");
+  else if (rep->typ == ReportTypeMutexDestroyLocked)
+    Printf("WARNING: ThreadSanitizer: destroy of a locked mutex\n");
   for (int i = 0; i < rep->nmop; i++) {
     const ReportMop *mop = &rep->mop[i];
     Printf("  %s%s of size %d at %p by thread %d:\n",
@@ -49,6 +51,13 @@ void PrintReport(const ReportDesc *rep) {
     } else if (loc->type == ReportLocationStack) {
       Printf("  Location is stack of thread %d:\n", loc->tid);
     }
+  }
+  for (int i = 0; i < rep->nmutex; i++) {
+    ReportMutex *rm = &rep->mutex[i];
+    if (rm->stack.cnt == 0)
+      continue;
+    Printf("  Mutex %d created at:\n", rm->id);
+    PrintStack(&rm->stack);
   }
   for (int i = 0; i < rep->nthread; i++) {
     ReportThread *rt = &rep->thread[i];

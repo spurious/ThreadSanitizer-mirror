@@ -22,6 +22,25 @@ namespace __tsan {
 
 class SlabCache;
 
+class StackTrace {
+ public:
+  StackTrace();
+  ~StackTrace();
+
+  void ObtainCurrent(ThreadState *thr, uptr toppc);
+  void Free(ThreadState *thr);
+  uptr Size() const;
+  uptr Get(uptr i) const;
+  const uptr *Begin() const;
+
+ private:
+  uptr n_;
+  uptr *s_;
+
+  StackTrace(const StackTrace&);
+  void operator = (const StackTrace&);
+};
+
 struct SyncVar {
   explicit SyncVar(uptr addr);
 
@@ -30,6 +49,7 @@ struct SyncVar {
   Mutex mtx;
   const uptr addr;
   SyncClock clock;
+  StackTrace creation_stack;
   SyncClock read_clock;  // Used for rw mutexes only.
   unsigned owner_tid;  // Set only by exclusive owners.
   int recursion;
@@ -43,7 +63,8 @@ class SyncTab {
   SyncTab();
 
   // If the SyncVar does not exist yet, it is created.
-  SyncVar* GetAndLock(SlabCache *slab, uptr addr, bool write_lock);
+  SyncVar* GetAndLock(ThreadState *thr, uptr pc,
+                      SlabCache *slab, uptr addr, bool write_lock);
 
   // If the SyncVar does not exist, returns 0.
   SyncVar* GetAndRemove(uptr addr);

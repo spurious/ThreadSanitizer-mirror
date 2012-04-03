@@ -71,25 +71,6 @@ class FastState {
   u64 x_;
 };
 
-class StackTrace {
- public:
-  StackTrace();
-  ~StackTrace();
-
-  void ObtainCurrent(ThreadState *thr, uptr toppc);
-  void Free(ThreadState *thr);
-  uptr Size() const;
-  uptr Get(uptr i) const;
-  const uptr *Begin() const;
-
- private:
-  uptr n_;
-  uptr *s_;
-
-  StackTrace(const StackTrace&);
-  void operator = (const StackTrace&);
-};
-
 const int kSigCount = 1024;
 const int kShadowStackSize = 1024;
 
