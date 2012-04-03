@@ -169,8 +169,10 @@ void AnnotateFlushExpectedRaces(char *f, int l) {
   Lock lock(&dyn_ann_ctx->mtx);
   while (dyn_ann_ctx->expect.next != &dyn_ann_ctx->expect) {
     ExpectRace *race = dyn_ann_ctx->expect.next;
-    if (race->hitcount == 0)
+    if (race->hitcount == 0) {
+      CTX()->nmissed_expected++;
       ReportMissedExpectedRace(race);
+    }
     race->prev->next = race->next;
     race->next->prev = race->prev;
     dyn_ann_ctx->expect_slab.Free(race);

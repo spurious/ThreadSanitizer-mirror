@@ -172,6 +172,7 @@ struct Context {
 
   Mutex report_mtx;
   int nreported;
+  int nmissed_expected;
 
   Mutex thread_mtx;
   int thread_seq;

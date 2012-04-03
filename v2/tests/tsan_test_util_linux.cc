@@ -350,7 +350,10 @@ ScopedThread::ScopedThread(bool detached, bool main) {
   impl_->detached = detached;
   atomic_store(&impl_->event, 0, memory_order_relaxed);
   if (!main) {
-    pthread_create(&impl_->thread, 0,
+    pthread_attr_t attr;
+    pthread_attr_init(&attr);
+    pthread_attr_setdetachstate(&attr, detached);
+    pthread_create(&impl_->thread, &attr,
         ScopedThread::Impl::ScopedThreadCallback, impl_);
   }
 }

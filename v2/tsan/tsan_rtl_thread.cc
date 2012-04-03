@@ -34,6 +34,7 @@ void ThreadFinalize() {
         && tctx->status != ThreadStatusRunning
         && tctx->status != ThreadStatusFinished)
       continue;
+    Lock l(&ctx->report_mtx);
     ReportDesc rep;
     internal_memset(&rep, 0, sizeof(rep));
     RegionAlloc alloc(rep.alloc, sizeof(rep.alloc));
@@ -44,6 +45,7 @@ void ThreadFinalize() {
     rep.thread->running = (tctx->status != ThreadStatusFinished);
     rep.thread->stack.cnt = 0;
     PrintReport(&rep);
+    ctx->nreported++;
   }
 }
 

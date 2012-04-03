@@ -128,6 +128,7 @@ Context::Context()
   , syncslab(sizeof(SyncVar))
   , report_mtx(StatMtxReport)
   , nreported()
+  , nmissed_expected()
   , thread_mtx(StatMtxThreads) {
 }
 
@@ -188,10 +189,20 @@ void Initialize(ThreadState *thr) {
 }
 
 int Finalize(ThreadState *thr) {
+  bool failed = false;
+
   ThreadFinalize();
 
-  if (ctx->nreported)
-    Printf("ThreadSanitizer summary: reported %d warnings\n", ctx->nreported);
+  if (ctx->nreported) {
+    failed = true;
+    Printf("ThreadSanitizer: reported %d warnings\n", ctx->nreported);
+  }
+
+  if (ctx->nmissed_expected) {
+    failed = true;
+    Printf("ThreadSanitizer: missed %d expected races\n",
+        ctx->nmissed_expected);
+  }
 
   if (kCollectStats) {
     for (int i = 0; i < StatCnt; i++)
@@ -199,7 +210,7 @@ int Finalize(ThreadState *thr) {
     PrintStats(ctx->stat);
   }
 
-  return ctx->nreported ? 66 : 0;
+  return failed ? 66 : 0;
 }
 
 static void TraceSwitch(ThreadState *thr) {
