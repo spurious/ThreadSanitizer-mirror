@@ -124,6 +124,7 @@ endif
 
 # GTEST_*
 GTEST_ROOT=$(SVN_ROOT)/third_party/googletest
+GTEST_CXXFLAGS=$(CXXFLAGS) $(ARCHFLAGS)
 ifeq ($(OS), windows)
   ifeq ($(OPT), 1)
     GTEST_BUILD=Release
@@ -144,7 +145,7 @@ else
 $(GTEST_LIB):
 	mkdir -p $(GTEST_MAKE_DIR) && \
 	cd $(GTEST_MAKE_DIR) && \
-	$(MAKE) -f ../make/Makefile CXXFLAGS="$(ARCHFLAGS)"
+	$(MAKE) -f ../make/Makefile CXXFLAGS="$(GTEST_CXXFLAGS)"
 endif
 
 .PHONY: GTEST_CLEAN
