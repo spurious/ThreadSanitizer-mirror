@@ -143,6 +143,7 @@ class AtExitContext {
         if (pos_) {
           pos_--;
           f = stack_[pos_];
+          ScopedInRtl in_rtl;
           Acquire(thr, pc, (uptr)this);
         }
       }
