@@ -73,8 +73,8 @@ TEST(ThreadSanitizer, ReportStack) {
   uintptr_t pc = 0;
   int line = mop_no_inline(l.loc(), &pc);
   const char *file = __FILE__;
-  t1.Call(&foo);
-  t1.Call(&bar);
+  t1.Call((void(*)())((uintptr_t)(void*)&foo + 1));
+  t1.Call((void(*)())((uintptr_t)(void*)&bar + 1));
   const ReportDesc *rep = t1.Write1(l, true);
   t1.Return();
   t1.Return();
@@ -85,11 +85,11 @@ TEST(ThreadSanitizer, ReportStack) {
   EXPECT_EQ(rep->mop[0].size, 1);
   EXPECT_EQ(rep->mop[0].write, true);
   EXPECT_EQ(rep->mop[0].stack.cnt, 3);
-  EXPECT_EQ(rep->mop[0].stack.entry[1].pc, (uintptr_t)(void*)&bar);
+  EXPECT_EQ(rep->mop[0].stack.entry[1].pc, (uintptr_t)(void*)&bar + 1);
   EXPECT_NE(strstr(rep->mop[0].stack.entry[1].func, "bar"), (void*)0);
   EXPECT_NE(strstr(rep->mop[0].stack.entry[1].file, file), (void*)0);
   EXPECT_EQ(rep->mop[0].stack.entry[1].line, bar_line);
-  EXPECT_EQ(rep->mop[0].stack.entry[2].pc, (uintptr_t)(void*)&foo);
+  EXPECT_EQ(rep->mop[0].stack.entry[2].pc, (uintptr_t)(void*)&foo + 1);
   EXPECT_NE(strstr(rep->mop[0].stack.entry[2].func, "foo"), (void*)0);
   EXPECT_NE(strstr(rep->mop[0].stack.entry[2].file, file), (void*)0);
   EXPECT_EQ(rep->mop[0].stack.entry[2].line, foo_line);

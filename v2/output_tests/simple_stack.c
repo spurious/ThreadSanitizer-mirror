@@ -33,10 +33,14 @@ void *Thread2(void *x) {
   return NULL;
 }
 
+void StartThread(pthread_t *t, void *(*f)()) {
+  pthread_create(t, NULL, f, NULL);
+}
+
 int main() {
   pthread_t t[2];
-  pthread_create(&t[0], NULL, Thread1, NULL);
-  pthread_create(&t[1], NULL, Thread2, NULL);
+  StartThread(&t[0], Thread1);
+  StartThread(&t[1], Thread2);
   pthread_join(t[0], NULL);
   pthread_join(t[1], NULL);
 }
@@ -46,8 +50,16 @@ int main() {
 // CHECK-NEXT:     #0 {{.*}}: foo1 simple_stack.c:8
 // CHECK-NEXT:     #1 {{.*}}: bar1 simple_stack.c:13
 // CHECK-NEXT:     #2 {{.*}}: Thread1 simple_stack.c:27
-// CHECK:        Previous Read of size 4 at {{.*}} by thread 2:
+// CHECK-NEXT:   Previous Read of size 4 at {{.*}} by thread 2:
 // CHECK-NEXT:     #0 {{.*}}: foo2 simple_stack.c:17
 // CHECK-NEXT:     #1 {{.*}}: bar2 simple_stack.c:22
 // CHECK-NEXT:     #2 {{.*}}: Thread2 simple_stack.c:32
+// CHECK-NEXT:   Thread 1 (running) created at:
+// CHECK-NEXT:     #0 {{.*}}: pthread_create {{.*}}
+// CHECK-NEXT:     #1 {{.*}}: StartThread simple_stack.c:37
+// CHECK-NEXT:     #2 {{.*}}: main simple_stack.c:42
+// CHECK-NEXT:   Thread 2 ({{.*}}) created at:
+// CHECK-NEXT:     #0 {{.*}}: pthread_create {{.*}}
+// CHECK-NEXT:     #1 {{.*}}: StartThread simple_stack.c:37
+// CHECK-NEXT:     #2 {{.*}}: main simple_stack.c:43
 

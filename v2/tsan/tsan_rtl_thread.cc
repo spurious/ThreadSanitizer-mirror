@@ -45,7 +45,8 @@ void ThreadFinalize(ThreadState *thr) {
     rep.thread = alloc.Alloc<ReportThread>(1);
     rep.thread->id = tctx->tid;
     rep.thread->running = (tctx->status != ThreadStatusFinished);
-    rep.thread->stack.cnt = 0;
+    SymbolizeStack(&alloc, &rep.thread->stack,
+        tctx->creation_stack.Begin(), tctx->creation_stack.Size());
     PrintReport(&rep);
     ctx->nreported++;
   }
@@ -268,4 +269,7 @@ uptr StackTrace::Get(uptr i) const {
   return s_[i];
 }
 
+const uptr *StackTrace::Begin() const {
+  return s_;
+}
 }  // namespace __tsan

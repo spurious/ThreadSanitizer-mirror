@@ -258,9 +258,7 @@ static int RestoreStack(int tid, const u64 epoch, uptr *stack, int n) {
     if (typ == EventTypeMop) {
       stack[pos] = pc;
     } else if (typ == EventTypeFuncEnter) {
-      // We obtain the return address, that is, address of the next instruction,
-      // so offset it by 1 byte.
-      stack[pos++] = pc - 1;
+      stack[pos++] = pc;
     } else if (typ == EventTypeFuncExit) {
       if (pos > 0)
         pos--;
@@ -269,12 +267,65 @@ static int RestoreStack(int tid, const u64 epoch, uptr *stack, int n) {
   if (pos == 0 && stack[0] == 0)
     return 0;
   pos++;
-  for (u64 i = 0; i < pos / 2; i++) {
-    uptr pc = stack[i];
-    stack[i] = stack[pos - i - 1];
-    stack[pos - i - 1] = pc;
-  }
   return pos;
+}
+
+void SymbolizeStack(RegionAlloc *alloc, ReportStack *stack,
+                    const uptr *pcs0, int cnt) {
+  const int kStackMax = 128;
+
+  stack->cnt = 0;
+  stack->entry = 0;
+  if (cnt == 0 || cnt > kStackMax)
+    return;
+  uptr pcs[kStackMax];
+  for (int i = 0; i < cnt; i++) {
+    pcs[i] = pcs0[i];
+  }
+  for (int i = 0; i < cnt / 2; i++) {
+    uptr pc = pcs[i];
+    pcs[i] = pcs[cnt - i - 1];
+    pcs[cnt - i - 1] = pc;
+  }
+  stack->entry = alloc->Alloc<ReportStackEntry>(kStackMax);
+  for (int si = 0; si < cnt; si++) {
+    Symbol symb[kStackMax];
+    // We obtain the return address, that is, address of the next instruction,
+    // so offset it by 1 byte.
+    int framecnt = SymbolizeCode(alloc, pcs[si] - !!si, symb, kStackMax);
+    if (framecnt) {
+      for (int fi = 0; fi < framecnt && stack->cnt < kStackMax; fi++) {
+        ReportStackEntry *ent = &stack->entry[stack->cnt++];
+        ent->pc = pcs[si];
+        ent->func = symb[fi].name;
+        ent->file = symb[fi].file;
+        ent->line = symb[fi].line;
+      }
+    } else if (stack->cnt < kStackMax) {
+      ReportStackEntry *ent = &stack->entry[stack->cnt++];
+      ent->pc = pcs[si];
+      ent->func = 0;
+      ent->file = 0;
+      ent->line = 0;
+    }
+  }
+
+  // Strip frame above 'main'
+  if (stack->cnt >= 2 && internal_strcmp(
+      stack->entry[stack->cnt - 2].func, "main") == 0) {
+    stack->cnt--;
+  // Strip our internal thread start routine.
+  } else if (stack->cnt >= 2 && internal_strcmp(
+      stack->entry[stack->cnt - 1].func,
+      "__tsan_thread_start_func") == 0) {
+    stack->cnt--;
+  } else {
+    // Ensure that we recovered stack completely. Trimmed stack
+    // can actually happen if we do not instrument some code,
+    // so it's only a DCHECK. However we must try hard to not miss it
+    // due to our fault.
+    Printf("Top stack frame (main or __tsan_thread_start_func) missed\n");
+  }
 }
 
 static void NOINLINE ReportRace(ThreadState *thr) {
@@ -316,45 +367,7 @@ static void NOINLINE ReportRace(ThreadState *thr) {
     int stackcnt = RestoreStack(s.tid(), s.epoch(), stack, kStackMax);
     // Ensure that we have at least something for the current thread.
     CHECK(i != 0 || stackcnt != 0);
-    if (stackcnt != 0) {
-      mop->stack.entry = alloc.Alloc<ReportStackEntry>(kStackMax);
-      for (int si = 0; si < stackcnt; si++) {
-        Symbol symb[kStackMax];
-        int framecnt = SymbolizeCode(&alloc, stack[si], symb, kStackMax);
-        if (framecnt) {
-          for (int fi = 0; fi < framecnt && mop->stack.cnt < kStackMax; fi++) {
-            ReportStackEntry *ent = &mop->stack.entry[mop->stack.cnt++];
-            ent->pc = stack[si];
-            ent->func = symb[fi].name;
-            ent->file = symb[fi].file;
-            ent->line = symb[fi].line;
-          }
-        } else if (mop->stack.cnt < kStackMax) {
-          ReportStackEntry *ent = &mop->stack.entry[mop->stack.cnt++];
-          ent->pc = stack[si];
-          ent->func = 0;
-          ent->file = 0;
-          ent->line = 0;
-        }
-      }
-      // Strip frame above 'main'
-      if (mop->stack.cnt >= 2 && internal_strcmp(
-          mop->stack.entry[mop->stack.cnt - 2].func, "main") == 0) {
-        mop->stack.cnt--;
-      // Strip our internal thread start routine.
-      } else if (mop->stack.cnt >= 2 && internal_strcmp(
-          mop->stack.entry[mop->stack.cnt - 1].func,
-          "__tsan_thread_start_func") == 0) {
-        mop->stack.cnt--;
-      } else {
-        // Ensure that we recovered stack completely. Trimmed stack
-        // can actually happen if we do not instrument some code,
-        // so it's only a DCHECK. However we must try hard to not miss it
-        // due to our fault.
-        Printf("Top stack frame (main or __tsan::ThreadStartFunc) missed %d\n",
-            i);
-      }
-    }
+    SymbolizeStack(&alloc, &mop->stack, stack, stackcnt);
   }
   rep.loc = 0;
   rep.nthread = 2;
@@ -373,15 +386,8 @@ static void NOINLINE ReportRace(ThreadState *thr) {
     if (s.epoch() < tctx->epoch0 || s.epoch() > tctx->epoch1)
       continue;
     rt->running = (tctx->status == ThreadStatusRunning);
-    rt->stack.cnt = tctx->creation_stack.Size();
-    rt->stack.entry = alloc.Alloc<ReportStackEntry>(rt->stack.cnt);
-    for (int si = 0; si < rt->stack.cnt; si++) {
-      ReportStackEntry *ent = &rt->stack.entry[si];
-      ent->pc = tctx->creation_stack.Get(si);
-      ent->func = 0;
-      ent->file = 0;
-      ent->line = 0;
-    }
+    SymbolizeStack(&alloc, &rt->stack,
+        tctx->creation_stack.Begin(), tctx->creation_stack.Size());
   }
   rep.nmutex = 0;
   bool suppressed = IsSuppressed(ReportTypeRace, &rep.mop[0].stack);

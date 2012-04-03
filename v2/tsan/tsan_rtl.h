@@ -80,6 +80,7 @@ class StackTrace {
   void Free(ThreadState *thr);
   uptr Size() const;
   uptr Get(uptr i) const;
+  const uptr *Begin() const;
 
  private:
   uptr n_;

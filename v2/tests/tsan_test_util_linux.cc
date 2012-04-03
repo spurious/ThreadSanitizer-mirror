@@ -256,7 +256,7 @@ void ScopedThread::Impl::HandleEvent(Event *ev) {
     __tsan_vptr_update((void**)ev->ptr, (void*)ev->arg);
     break;
   case Event::CALL:
-    __tsan_func_entry((void*)((uptr)ev->ptr + 1));
+    __tsan_func_entry((void*)((uptr)ev->ptr));
     break;
   case Event::RETURN:
     __tsan_func_exit();
