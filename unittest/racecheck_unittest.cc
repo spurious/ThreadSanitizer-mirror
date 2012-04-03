@@ -2926,6 +2926,8 @@ REGISTER_TEST(Run, 65)
 }  // namespace test65
 
 
+// Windows does not provide CondVar::SignalAll()
+#ifndef _WIN32
 // test66: TN. Two separate pairs of signaller/waiter using the same CV. {{{1
 namespace test66 {
 int     GLOB1 = 0;
@@ -2977,7 +2979,7 @@ void Run() {
 }
 REGISTER_TEST2(Run, 66, FEATURE|NEEDS_ANNOTATIONS)
 }  // namespace test66
-
+#endif
 
 // test67: FN. Race between Signaller1 and Waiter2 {{{1
 namespace test67 {

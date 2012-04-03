@@ -104,10 +104,7 @@ void Parent() {
 }
 
 TEST(NegativeTests, test11) {
-//  ANNOTATE_EXPECT_RACE(&GLOB, "test11. FP. Fixed by MSMProp1.");
-  printf("test11: negative\n");
   Parent();
-  printf("\tGLOB=%d\n", GLOB);
 }
 }  // namespace test11
 
