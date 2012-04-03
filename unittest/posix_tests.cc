@@ -1036,7 +1036,6 @@ TEST(Signals, SignalsAndMallocTestWithMutex) {
   t.Start();
   t.Join();
   DisableSigprof();
-  printf("\tGLOB=%d\n", GLOB);
   CHECK(GLOB > 1);
 }
 #endif
