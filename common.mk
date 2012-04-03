@@ -145,7 +145,7 @@ else
 $(GTEST_LIB):
 	mkdir -p $(GTEST_MAKE_DIR) && \
 	cd $(GTEST_MAKE_DIR) && \
-	$(MAKE) -f ../make/Makefile CXXFLAGS="$(GTEST_CXXFLAGS)"
+	$(MAKE) -f ../make/Makefile gtest_main.a CXXFLAGS="$(GTEST_CXXFLAGS)" LDFLAGS=$(GTEST_LDFLAGS)
 endif
 
 .PHONY: GTEST_CLEAN
