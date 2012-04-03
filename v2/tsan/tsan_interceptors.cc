@@ -1041,6 +1041,18 @@ INTERCEPTOR(void*, fopen, char *path, char *mode) {
   return res;
 }
 
+INTERCEPTOR(uptr, fread, void *ptr, uptr size, uptr nmemb, void *f) {
+  SCOPED_INTERCEPTOR(fread, ptr, size, nmemb, f);
+  MemoryAccessRange(thr, pc, (uptr)ptr, size * nmemb, true);
+  return REAL(fread)(ptr, size, nmemb, f);
+}
+
+INTERCEPTOR(uptr, fwrite, const void *ptr, uptr size, uptr nmemb, void *f) {
+  SCOPED_INTERCEPTOR(fwrite, ptr, size, nmemb, f);
+  MemoryAccessRange(thr, pc, (uptr)ptr, size * nmemb, false);
+  return REAL(fwrite)(ptr, size, nmemb, f);
+}
+
 INTERCEPTOR(int, rmdir, char *path) {
   SCOPED_INTERCEPTOR(rmdir, path);
   Release(cur_thread(), pc, dir2addr(path));
@@ -1259,6 +1271,8 @@ void InitializeInterceptors() {
 
   INTERCEPT_FUNCTION(unlink);
   INTERCEPT_FUNCTION(fopen);
+  INTERCEPT_FUNCTION(fread);
+  INTERCEPT_FUNCTION(fwrite);
   INTERCEPT_FUNCTION(rmdir);
   INTERCEPT_FUNCTION(opendir);
 
