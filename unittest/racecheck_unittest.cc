@@ -2860,12 +2860,13 @@ void T3() {
 
 
 void Run() {
-  ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test64: TP.");
   printf("test64: positive\n");
+  ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "test64: TP.");
+  GLOB = 0;
   MyThreadArray t(T1, T2, T3);
   t.Start();
   t.Join();
-  printf("\tGLOB=%d\n", GLOB);
+  CHECK(GLOB == 1);
 }
 REGISTER_TEST(Run, 64)
 }  // namespace test64
