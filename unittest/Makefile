@@ -29,11 +29,11 @@ ifndef OMIT_CPP0X
   OS_CXXFLAGS+=-std=c++0x
 endif
   OS_CFLAGS=-Wall -Werror -Wno-sign-compare -Wshadow -Wno-unused-function -std=c89
-  LIBS=-lpthread -lrt
+  LIBS+=-lpthread -lrt
 else ifeq ($(OS), darwin)
   OS_CXXFLAGS=-Wall -Werror -Wno-sign-compare -Wshadow -Wno-unused-function
   OS_CFLAGS=-Wall -Werror -Wno-sign-compare -Wshadow -Wno-unused-function -std=c89
-  LIBS=-lpthread
+  LIBS+=-lpthread
 else ifeq ($(OS), windows)
   OS_CXXFLAGS=/EHs- /EHa- /wd4530 /D_CRT_SECURE_NO_DEPRECATE /D_SECURE_SCL=0 /D_HAS_ITERATOR_DEBUGGING=0 /nologo /Gy
   OS_CFLAGS=/EHs- /EHa- /wd4530 /D_CRT_SECURE_NO_DEPRECATE /D_SECURE_SCL=0 /D_HAS_ITERATOR_DEBUGGING=0 /nologo /Gy
