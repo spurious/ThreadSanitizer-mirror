@@ -2938,7 +2938,7 @@ void Signaller1() {
   GLOB1 = 1;
   MU.Lock();
   C1 = 1;
-  CV.Signal();
+  CV.SignalAll();
   MU.Unlock();
 }
 
@@ -2947,7 +2947,7 @@ void Signaller2() {
   usleep(100000);
   MU.Lock();
   C2 = 1;
-  CV.Signal();
+  CV.SignalAll();
   MU.Unlock();
 }
 
@@ -2969,10 +2969,11 @@ void Waiter2() {
 
 void Run() {
   printf("test66: negative\n");
+  C1 = C2 = GLOB1 = GLOB2 = 0;
   MyThreadArray t(Signaller1, Signaller2, Waiter1, Waiter2);
   t.Start();
   t.Join();
-  printf("\tGLOB=%d/%d\n", GLOB1, GLOB2);
+  CHECK(GLOB1 == 2 && GLOB2 == 2);
 }
 REGISTER_TEST2(Run, 66, FEATURE|NEEDS_ANNOTATIONS)
 }  // namespace test66
