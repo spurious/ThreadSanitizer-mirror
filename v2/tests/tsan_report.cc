@@ -50,7 +50,7 @@ TEST(ThreadSanitizer, ReportBasic) {
   EXPECT_NE(rep->mop[1].stack.entry[0].file, (void*)0);
   EXPECT_NE(rep->mop[1].stack.entry[0].line, 0);
   EXPECT_EQ(rep->loc, (void*)0);
-  EXPECT_EQ(rep->nthread, 0);
+  EXPECT_EQ(rep->nthread, 2);
   EXPECT_EQ(rep->nmutex, 0);
 }
 

@@ -71,7 +71,26 @@ class FastState {
   u64 x_;
 };
 
+class StackTrace {
+ public:
+  StackTrace();
+  ~StackTrace();
+
+  void ObtainCurrent(ThreadState *thr, uptr toppc);
+  void Free(ThreadState *thr);
+  uptr Size() const;
+  uptr Get(uptr i) const;
+
+ private:
+  uptr n_;
+  uptr *s_;
+
+  StackTrace(const StackTrace&);
+  void operator = (const StackTrace&);
+};
+
 const int kSigCount = 1024;
+const int kShadowStackSize = 1024;
 
 struct my_siginfo_t {
   int opaque[128];
@@ -100,9 +119,11 @@ struct ThreadState {
   u64 fast_synch_epoch;
   int fast_ignore_reads;
   int fast_ignore_writes;
+  uptr *shadow_stack_pos;
   uptr racy_addr;
   u64 racy_state[2];
   Trace trace;
+  uptr shadow_stack[kShadowStackSize];
   SlabCache clockslab;
   SlabCache syncslab;
   ThreadClock clock;
@@ -155,6 +176,8 @@ struct ThreadContext {
   // If we see an event from the thread stamped by an older epoch,
   // the event is from a dead thread that shared tid with this thread.
   u64 epoch0;
+  u64 epoch1;
+  StackTrace creation_stack;
   ThreadDeadInfo dead_info;
   ThreadContext* dead_next;  // In dead thread list.
 

@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "tsan_rtl.h"
+#include "tsan_mman.h"
 #include "tsan_placement_new.h"
 #include "tsan_platform.h"
 #include "tsan_report.h"
@@ -111,6 +112,8 @@ int ThreadCreate(ThreadState *thr, uptr pc, uptr uid, bool detached) {
     thr->clock.set(thr->fast_state.tid(), thr->fast_state.epoch());
     thr->fast_synch_epoch = thr->fast_state.epoch();
     thr->clock.release(&tctx->sync, &thr->clockslab);
+
+    tctx->creation_stack.ObtainCurrent(thr, pc);
   }
   return tid;
 }
@@ -131,7 +134,8 @@ void ThreadStart(ThreadState *thr, int tid) {
   ThreadContext *tctx = CTX()->threads[tid];
   CHECK(tctx && tctx->status == ThreadStatusCreated);
   tctx->status = ThreadStatusRunning;
-  tctx->epoch0++;
+  tctx->epoch0 = tctx->epoch1 + 1;
+  tctx->epoch1 = (u64)-1;
   new(thr) ThreadState(CTX(), tid, tctx->epoch0, stk_addr, stk_size,
                        tls_addr, tls_size);
   tctx->thr = thr;
@@ -168,7 +172,7 @@ void ThreadFinish(ThreadState *thr) {
   // it is the point to allocate it.
   // tctx->dead_info = new ThreadDeadInfo;
   internal_memcpy(&tctx->dead_info.trace, &thr->trace, sizeof(thr->trace));
-  tctx->epoch0 = thr->clock.get(tctx->tid);
+  tctx->epoch1 = thr->clock.get(tctx->tid);
 
   if (kCollectStats) {
     for (int i = 0; i < StatCnt; i++)
@@ -225,6 +229,43 @@ void ThreadDetach(ThreadState *thr, uptr pc, uptr uid) {
   } else {
     tctx->detached = true;
   }
+}
+
+StackTrace::StackTrace()
+    : n_()
+    , s_() {
+}
+
+StackTrace::~StackTrace() {
+  CHECK_EQ(n_, 0);
+  CHECK_EQ(s_, 0);
+}
+
+void StackTrace::ObtainCurrent(ThreadState *thr, uptr toppc) {
+  Free(thr);
+  n_ = thr->shadow_stack_pos - &thr->shadow_stack[0] + 1;
+  s_ = (uptr*)internal_alloc(thr, n_ * sizeof(s_[0]));
+  for (uptr i = 0; i < n_ - 1; i++)
+    s_[i] = thr->shadow_stack[i];
+  s_[n_ - 1] = toppc;
+}
+
+void StackTrace::Free(ThreadState *thr) {
+  if (s_) {
+    CHECK_NE(n_, 0);
+    internal_free(thr, s_);
+    s_ = 0;
+    n_ = 0;
+  }
+}
+
+uptr StackTrace::Size() const {
+  return n_;
+}
+
+uptr StackTrace::Get(uptr i) const {
+  CHECK_LT(i, n_);
+  return s_[i];
 }
 
 }  // namespace __tsan

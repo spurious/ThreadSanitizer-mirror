@@ -140,6 +140,7 @@ ThreadState::ThreadState(Context *ctx, int tid, u64 epoch,
   // they may be accessed before the ctor.
   // , fast_ignore_reads()
   // , fast_ignore_writes()
+  , shadow_stack_pos(&shadow_stack[0])
   , clockslab(&ctx->clockslab)
   , syncslab(&ctx->syncslab)
   , tid(tid)
@@ -159,6 +160,7 @@ ThreadContext::ThreadContext(int tid)
   , detached()
   , reuse_count()
   , epoch0()
+  , epoch1()
   , dead_next() {
 }
 
@@ -225,7 +227,6 @@ extern "C" void __tsan_trace_switch() {
 }
 
 static int RestoreStack(int tid, const u64 epoch, uptr *stack, int n) {
-  Lock l0(&ctx->thread_mtx);
   ThreadContext *tctx = ctx->threads[tid];
   if (tctx == 0)
     return 0;
@@ -292,7 +293,9 @@ static void NOINLINE ReportRace(ThreadState *thr) {
       return;
   }
 
-  Lock l(&ctx->report_mtx);
+  Lock l0(&ctx->thread_mtx);
+  Lock l1(&ctx->report_mtx);
+
   RegionAlloc alloc(g_report.alloc, sizeof(g_report.alloc));
   ReportDesc &rep = g_report;
   rep.typ = ReportTypeRace;
@@ -354,7 +357,32 @@ static void NOINLINE ReportRace(ThreadState *thr) {
     }
   }
   rep.loc = 0;
-  rep.nthread = 0;
+  rep.nthread = 2;
+  rep.thread = alloc.Alloc<ReportThread>(rep.nthread);
+  for (int i = 0; i < rep.nthread; i++) {
+    Shadow s(thr->racy_state[i]);
+    ReportThread *rt = &rep.thread[i];
+    rt->id = s.tid();
+    rt->running = false;
+    rt->name = 0;
+    rt->stack.cnt = 0;
+    if (thr->racy_state[i] == kShadowFreed)
+      continue;
+    ThreadContext *tctx = CTX()->threads[s.tid()];
+    CHECK_NE(tctx, (ThreadContext*)0);
+    if (s.epoch() < tctx->epoch0 || s.epoch() > tctx->epoch1)
+      continue;
+    rt->running = (tctx->status == ThreadStatusRunning);
+    rt->stack.cnt = tctx->creation_stack.Size();
+    rt->stack.entry = alloc.Alloc<ReportStackEntry>(rt->stack.cnt);
+    for (int si = 0; si < rt->stack.cnt; si++) {
+      ReportStackEntry *ent = &rt->stack.entry[si];
+      ent->pc = tctx->creation_stack.Get(si);
+      ent->func = 0;
+      ent->file = 0;
+      ent->line = 0;
+    }
+  }
   rep.nmutex = 0;
   bool suppressed = IsSuppressed(ReportTypeRace, &rep.mop[0].stack);
   suppressed = OnReport(&rep, suppressed);
@@ -615,6 +643,10 @@ void FuncEntry(ThreadState *thr, uptr pc) {
   DCHECK_EQ(thr->in_rtl, 0);
   StatInc(thr, StatFuncEnter);
   DPrintf2("#%d: tsan::FuncEntry %p\n", (int)thr->fast_state.tid(), (void*)pc);
+  DCHECK(thr->shadow_stack_pos >= &thr->shadow_stack[0]);
+  DCHECK(thr->shadow_stack_pos < &thr->shadow_stack[kShadowStackSize]);
+  thr->shadow_stack_pos[0] = pc;
+  thr->shadow_stack_pos++;
   thr->fast_state.IncrementEpoch();
   TraceAddEvent(thr, thr->fast_state.epoch(), EventTypeFuncEnter, pc);
 
@@ -633,6 +665,9 @@ void FuncExit(ThreadState *thr) {
   DCHECK_EQ(thr->in_rtl, 0);
   StatInc(thr, StatFuncExit);
   DPrintf2("#%d: tsan::FuncExit\n", (int)thr->fast_state.tid());
+  DCHECK(thr->shadow_stack_pos > &thr->shadow_stack[0]);
+  DCHECK(thr->shadow_stack_pos < &thr->shadow_stack[kShadowStackSize]);
+  thr->shadow_stack_pos--;
   thr->fast_state.IncrementEpoch();
   TraceAddEvent(thr, thr->fast_state.epoch(), EventTypeFuncExit, 0);
 }
