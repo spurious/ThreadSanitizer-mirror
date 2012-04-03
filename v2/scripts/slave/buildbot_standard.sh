@@ -23,8 +23,7 @@ if [ -d v2 ]; then
 else
   svn co http://data-race-test.googlecode.com/svn/trunk/v2 v2 $REV_ARG
   cd v2
-  make get_third_party
-  make get_interception
+  make install_deps
 fi
 
 echo @@@BUILD_STEP LINT@@@
