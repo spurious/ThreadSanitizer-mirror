@@ -44,6 +44,7 @@ extern "C" int *__errno_location();
 const int PTHREAD_MUTEX_RECURSIVE = 1;
 const int PTHREAD_MUTEX_RECURSIVE_NP = 1;
 const int EINVAL = 22;
+const int EBUSY = 16;
 const int EPOLL_CTL_ADD = 1;
 void *const MAP_FAILED = (void*)-1;
 const int PTHREAD_BARRIER_SERIAL_THREAD = -1;
@@ -608,7 +609,7 @@ INTERCEPTOR(int, pthread_mutex_init, void *m, void *a) {
 INTERCEPTOR(int, pthread_mutex_destroy, void *m) {
   SCOPED_INTERCEPTOR(pthread_mutex_destroy, m);
   int res = REAL(pthread_mutex_destroy)(m);
-  if (res == 0) {
+  if (res == 0 || res == EBUSY) {
     MutexDestroy(cur_thread(), pc, (uptr)m);
   }
   return res;

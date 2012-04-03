@@ -99,10 +99,37 @@ int SymbolizeCode(RegionAlloc *alloc, uptr addr, Symbol *symb, int cnt) {
 
 int SymbolizeData(RegionAlloc *alloc, uptr addr, Symbol *symb) {
   ScopedErrno se;
-  (void)alloc;
-  (void)addr;
-  (void)symb;
-  return 0;
+  if (base == 0)
+    base = GetImageBase();
+  int res = 0;
+  char cmd[1024];
+  snprintf(cmd, sizeof(cmd),
+           "addr2line -C -s -f -e %s %p > tsan.tmp2", exe,
+           (void*)(addr - base));
+  if (system(cmd))
+    return 0;
+  FILE* f3 = fopen("tsan.tmp2", "rb");
+  if (f3) {
+    char tmp[1024];
+    if (fread(tmp, 1, sizeof(tmp), f3) <= 0)
+      return 0;
+    char *pos = strchr(tmp, '\n');
+    if (pos) {
+      res = 1;
+      symb[0].name = alloc->Alloc<char>(pos - tmp + 1);
+      internal_memcpy(symb[0].name, tmp, pos - tmp);
+      symb[0].name[pos - tmp] = 0;
+      char *pos2 = strchr(pos, ':');
+      if (pos2) {
+        symb[0].file = alloc->Alloc<char>(pos2 - pos - 1 + 1);
+        internal_memcpy(symb[0].file, pos + 1, pos2 - pos - 1);
+        symb[0].file[pos2 - pos - 1] = 0;
+        symb[0].line = atoi(pos2 + 1);
+      }
+    }
+    fclose(f3);
+  }
+  return res;
 }
 
 }  // namespace __tsan

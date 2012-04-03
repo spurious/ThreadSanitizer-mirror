@@ -19,7 +19,7 @@ namespace __tsan {
 SyncVar::SyncVar(uptr addr)
   : mtx(StatMtxSyncVar)
   , addr(addr)
-  , owner_tid(-1)
+  , owner_tid(kInvalidTid)
   , recursion()
   , is_rw()
   , is_recursive() {

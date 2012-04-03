@@ -319,6 +319,11 @@ void SymbolizeStack(RegionAlloc *alloc, ReportStack *stack,
       stack->entry[stack->cnt - 1].func,
       "__tsan_thread_start_func") == 0) {
     stack->cnt--;
+  // Strip global ctors init.
+  } else if (stack->cnt >= 2 && internal_strcmp(
+      stack->entry[stack->cnt - 1].func,
+      "__do_global_ctors_aux") == 0) {
+    stack->cnt--;
   } else {
     // Ensure that we recovered stack completely. Trimmed stack
     // can actually happen if we do not instrument some code,
