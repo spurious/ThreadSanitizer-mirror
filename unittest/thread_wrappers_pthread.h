@@ -329,10 +329,27 @@ class MyThread {
   MyThread(void (*worker)(void *), void *arg = NULL, const char *name = NULL)
       :w_(reinterpret_cast<worker_t>(worker)), arg_(arg), name_(name) {}
 
-  ~MyThread(){ w_ = NULL; arg_ = NULL;}
-  void Start() { CHECK(0 == pthread_create(&t_, NULL, (worker_t)ThreadBody, this));}
-  void Join()  { CHECK(0 == pthread_join(t_, NULL));}
-  pthread_t tid() const { return t_; }
+  ~MyThread() {
+    w_ = NULL;
+    arg_ = NULL;
+  }
+
+  void Start() {
+    pthread_attr_t attr;
+    CHECK(0 == pthread_attr_init(&attr));
+    CHECK(0 == pthread_attr_setstacksize(&attr, 2*1024*1024));
+    CHECK(0 == pthread_create(&t_, &attr, (worker_t)ThreadBody, this));
+    CHECK(0 == pthread_attr_destroy(&attr));
+  }
+
+  void Join() {
+    CHECK(0 == pthread_join(t_, NULL));
+  }
+
+  pthread_t tid() const {
+    return t_;
+  }
+
  private:
   static void ThreadBody(MyThread *my_thread) {
     if (my_thread->name_) {
