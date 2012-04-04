@@ -4457,10 +4457,10 @@ void Reader() {
   n1.wait();
   while (true) {
     MU.Lock();
-    int *p = &GLOB[42];
+    int *p = GLOB;
     MU.Unlock();
     if (p) {
-      CHECK(*p == 777);  // Race is reported here.
+      CHECK(p[42] == 777);  // Race is reported here.
       break;
     }
   }
@@ -4502,12 +4502,12 @@ void Accessor() {
   usleep(10000);
   while (true) {
     MU1.Lock();
-    int *p = &GLOB[42];
+    int *p = GLOB;
     MU1.Unlock();
     if (p) {
       MU2.Lock();
-      (*p)++;  // Race is reported here.
-      CHECK(*p >  777);
+      p[42]++;  // Race is reported here.
+      CHECK(p[42] >  777);
       MU2.Unlock();
       break;
     }
