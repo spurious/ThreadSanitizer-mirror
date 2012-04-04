@@ -975,7 +975,7 @@ static void EnableSigprof(Sigaction SignalHandler) {
   }
   struct itimerval timer;
   timer.it_interval.tv_sec = 0;
-  timer.it_interval.tv_usec = 1000000 / 10000;
+  timer.it_interval.tv_usec = 1;
   timer.it_value = timer.it_interval;
   if (setitimer(ITIMER_PROF, &timer, 0) != 0) {
     perror("setitimer");
@@ -1005,7 +1005,7 @@ static void DisableSigprof() {
 }
 
 void MallocTestWorker() {
-  for (int i = 0; i < 100000; i++) {
+  for (int i = 0; i < 1000000; i++) {
     volatile int *x = (volatile int*)malloc((i % 64) + sizeof(int));
     x[0] = 42;
     free((void*)x);
