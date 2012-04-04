@@ -8159,7 +8159,7 @@ TEST(NegativeTests, BenignRaceTest) {
 namespace StressTests_FlushStateTest {  // {{{1
 // Stress test for FlushState which happens in parallel with some work.
 const int N = 1000;
-int array[N];
+volatile int array[N];
 
 void Flusher() {
   for (int i = 0; i < 10; i++) {
@@ -8170,8 +8170,8 @@ void Flusher() {
 
 void Write1(int i) { array[i]++; }
 void Write2(int i) { array[i]--; }
-int Read1(int i) { volatile int z = array[i]; return z; }
-int Read2(int i) { volatile int z = array[i]; return z; }
+int Read1(int i) { return array[i]; }
+int Read2(int i) { return array[i]; }
 
 void Worker() {
   for (int iter = 0; iter < 10; iter++) {
