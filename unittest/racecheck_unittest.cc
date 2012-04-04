@@ -4423,8 +4423,8 @@ REGISTER_TEST2(Run, 89, FEATURE|EXCLUDE_FROM_ALL)
 }  // namespace test89
 
 
-// test90: FP. Test for a safely-published pointer (read-only). {{{1
-namespace test90 {
+// FP. Test for a safely-published pointer (read-only). {{{1
+namespace NegativeTests_PublisherReader {
 // The Publisher creates an object and safely publishes it under a mutex.
 // Readers access the object read-only.
 // See also test91.
@@ -4466,20 +4466,19 @@ void Reader() {
   }
 }
 
-void Run() {
-  printf("test90: false positive (safely published pointer).\n");
-  n1.reset();
+TEST(NegativeTests, PublisherReader) {
   MyThreadArray t(Publisher, Reader, Reader, Reader);
   t.Start();
   t.Join();
   free(GLOB);
+  GLOB = 0;
+  n1.reset();
 }
-REGISTER_TEST(Run, 90)
-}  // namespace test90
+}
 
 
-// test91: FP. Test for a safely-published pointer (read-write). {{{1
-namespace test91 {
+// FP. Test for a safely-published pointer (read-write). {{{1
+namespace NegativeTests_PublisherAccessor {
 // Similar to test90.
 // The Publisher creates an object and safely publishes it under a mutex MU1.
 // Accessors get the object under MU1 and access it (read/write) under MU2.
@@ -4487,7 +4486,7 @@ namespace test91 {
 // Without annotations Helgrind will issue a false positive in Accessor().
 //
 
-int     *GLOB = 0;
+int     *GLOB;
 Mutex   MU, MU1, MU2;
 
 void Publisher() {
@@ -4495,7 +4494,7 @@ void Publisher() {
   GLOB = (int*)malloc(128 * sizeof(int));
   GLOB[42] = 777;
   if (!Tsan_PureHappensBefore())
-    ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB[42], "test91. FP. This is a false positve");
+    ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB[42], "FP. This is a false positve");
   MU1.Unlock();
 }
 
@@ -4515,15 +4514,14 @@ void Accessor() {
   }
 }
 
-void Run() {
-  printf("test91: false positive (safely published pointer, read/write).\n");
+TEST(NegativeTests, PublisherAccessor) {
   MyThreadArray t(Publisher, Accessor, Accessor, Accessor);
   t.Start();
   t.Join();
   free(GLOB);
+  GLOB = 0;
 }
-REGISTER_TEST(Run, 91)
-}  // namespace test91
+}
 
 
 // test92: TN. Test for a safely-published pointer (read-write), annotated. {{{1
