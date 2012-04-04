@@ -4,6 +4,12 @@ set -x
 set -e
 set -u
 
+SCRIPT_DIR="$( cd "$( dirname "$0" )" && pwd )"
+CLANG_DIR=$SCRIPT_DIR/../../clang
+echo $SCRIPT_DIR
+echo $CLANG_DIR
+ls -l $CLANG_DIR
+
 if [ "$BUILDBOT_CLOBBER" != "" ]; then
   echo @@@BUILD_STEP clobber@@@
   rm -rf v2
@@ -17,12 +23,12 @@ fi
 
 MAKE_JOBS=${MAX_MAKE_JOBS:-16}
 
-if [ -d v2 ]; then
-  cd v2
+if [ -d tsanv2 ]; then
+  cd tsanv2/v2
   svn up $REV_ARG
 else
-  svn co http://data-race-test.googlecode.com/svn/trunk/v2 v2 $REV_ARG
-  cd v2
+  svn co http://data-race-test.googlecode.com/svn/trunk/ tsanv2 $REV_ARG
+  cd tsanv2/v2
   make install_deps
 fi
 
@@ -35,17 +41,31 @@ make DEBUG=1 CC=gcc CXX=g++
 
 echo @@@BUILD_STEP TEST DEBUG-GCC@@@
 ./tests/tsan_test
-./tests/tsan_c_test
 
 echo @@@BUILD_STEP BUILD RELEASE-CLANG@@@
 make clean
-CLANG_DIR=../../../../../clang
 CFLAGS=-Wno-null-dereference LD_LIBRARY_PATH=$CLANG_DIR/bin make CC=$CLANG_DIR/bin/clang CXX=$CLANG_DIR/bin/clang++
 
 echo @@@BUILD_STEP TEST RELEASE-CLANG@@@
 ./tests/tsan_test
-./tests/tsan_c_test
 
 echo @@@BUILD_STEP OUTPUT TESTS@@@
-cd output_tests
-PATH=$CLANG_DIR/bin:$PATH ./test_output.sh
+(cd output_tests && PATH=$CLANG_DIR/bin:$PATH ./test_output.sh)
+
+echo
+echo @@@BUILD_STEP RACECHECK UNITTEST@@@
+(cd ../unittest && \
+rm -f bin/racecheck_unittest-linux-amd64-O0 && \
+PATH=$CLANG_DIR/bin:$PATH OMIT_DYNAMIC_ANNOTATIONS_IMPL=1 LIBS=../v2/tsan/libtsan.a make l64 -j16 CC=clang CXX=clang++ LDOPT="-pie -ldl ../v2/tsan/libtsan.a" OMIT_CPP0X=1 EXTRA_CFLAGS="-fthread-sanitizer -fPIC -g -O2 -Wno-format-security -Wno-null-dereference -Wno-format-security -Wno-null-dereference" EXTRA_CXXFLAGS="-fthread-sanitizer -fPIC -g -O2 -Wno-format-security -Wno-null-dereference -Wno-format-security -Wno-null-dereference" && \
+bin/racecheck_unittest-linux-amd64-O0 --gtest_filter=-*Ignore*:*Suppress*:*EnableRaceDetectionTest*:*Rep*Test*:*NotPhb*:*Barrier*:*Death*:*PositiveTests_RaceInSignal*:StressTests.FlushStateTest:NegativeTests.BenignRaceInDtor)
+#Ignore: ignores do not work yet
+#Suppress: suppressions do not work yet
+#EnableRaceDetectionTest: the annotation is not supported
+#Rep*Test: uses inline assembly
+#NotPhb: not-phb is not supported
+#Barrier: pthread_barrier_t is not fully supported yet
+#Death: there is some flakyness
+#PositiveTests_RaceInSignal: signal() is not intercepted yet
+#StressTests.FlushStateTest: uses suppressions
+#NegativeTests.BenignRaceInDtor: the bot uses old clang w/o dtor support
+
