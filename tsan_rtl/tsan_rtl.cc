@@ -119,7 +119,7 @@ struct tsd_slot {
 // TODO(glider): there could be races if pthread_key_create is called from
 // concurrent threads. This is prohibited by POSIX, however.
 static tsd_slot tsd_slots[100];
-static int tsd_slot_index = -1;
+static int tsd_slot_index = 0;
 static pthread_mutex_t tsd_mtx;
 
 static int RTL_INIT = 0;
@@ -1976,15 +1976,9 @@ extern "C"
 int __wrap_pthread_mutex_init(pthread_mutex_t *mutex,
                               const pthread_mutexattr_t *attr) {
   if (IN_RTL) return __real_pthread_mutex_init(mutex, attr);
-  int result, mbRec;
+  int result;
   DECLARE_TID_AND_PC();
   RPut(RTN_CALL, tid, pc, (uintptr_t)__real_pthread_mutex_init, 0);
-  mbRec = 0;  // TODO(glider): unused so far.
-  if (attr) {
-    int ty, zzz;
-    zzz = pthread_mutexattr_gettype(attr, &ty);
-    if (zzz == 0 && ty == PTHREAD_MUTEX_RECURSIVE) mbRec = 1;
-  }
   result = __real_pthread_mutex_init(mutex, attr);
   if (result == 0) {
     SPut(LOCK_CREATE, tid, pc, (uintptr_t)mutex, 0);
