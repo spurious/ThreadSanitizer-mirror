@@ -55,8 +55,7 @@ class Shadow: public FastState {
 
   explicit Shadow(const FastState &s) : FastState(s.x_) { }
 
-  template<unsigned kAccessSizeLog>
-  void SetAddr0AndSizeLog(u64 addr0) {
+  void SetAddr0AndSizeLog(u64 addr0, unsigned kAccessSizeLog) {
     DCHECK((x_ & 31) == 0);  // NOLINT
     DCHECK(addr0 <= 7);  // NOLINT
     DCHECK(kAccessSizeLog <= 3);  // NOLINT
@@ -65,8 +64,7 @@ class Shadow: public FastState {
     DCHECK(addr0 == this->addr0());  // NOLINT
   }
 
-  template<unsigned kAccessIsWrite>
-  void SetWrite() {
+  void SetWrite(unsigned kAccessIsWrite) {
     DCHECK((x_ & 32) == 0);  // NOLINT
     if (kAccessIsWrite)
       x_ |= 32;
@@ -89,8 +87,8 @@ class Shadow: public FastState {
     return masked_xor == 0;
   }
 
-  template<unsigned kS2AccessSize>
-  static inline bool TwoRangesIntersect(Shadow s1, Shadow s2) {
+  static inline bool TwoRangesIntersect(Shadow s1, Shadow s2,
+      unsigned kS2AccessSize) {
     u64 diff = s1.addr0() - s2.addr0();
     if ((s64)diff < 0) {  // s1.addr0 < s2.addr0  // NOLINT
       // if (s1.addr0() + size1) > s2.addr0()) return true;
@@ -115,8 +113,7 @@ class Shadow: public FastState {
   // if user data is {int, short, char, char}, then accesses to the int are
   // offsetted to 0, short - 4, 1st char - 6, 2nd char - 7. Hopefully, accesses
   // from a single thread won't need to scan all 8 shadow values.
-  template<unsigned kAccessSize>
-  unsigned ComputeSearchOffset() {
+  unsigned ComputeSearchOffset(unsigned kAccessSize) {
     return x_ & 7;
   }
 
@@ -452,14 +449,14 @@ static inline void HandleRace(ThreadState *thr, uptr addr,
   HACKY_CALL(__tsan_report_race);
 }
 
-template<int kAccessSizeLog, int kAccessIsWrite>
 ALWAYS_INLINE
 static bool MemoryAccess1(ThreadState *thr, uptr addr,
                           Shadow cur, u64 *shadow_mem, unsigned i,
-                          u64 &store_state) {
+                          u64 &store_state,
+                          int kAccessSizeLog, int kAccessIsWrite) {
   StatInc(thr, StatShadowProcessed);
   const unsigned kAccessSize = 1 << kAccessSizeLog;
-  unsigned off = cur.ComputeSearchOffset<kAccessSize>();
+  unsigned off = cur.ComputeSearchOffset(kAccessSize);
   u64 *sp = &shadow_mem[(i + off) % kShadowCnt];
   Shadow old = LoadShadow(sp);
   if (old.IsZero()) {
@@ -506,7 +503,7 @@ static bool MemoryAccess1(ThreadState *thr, uptr addr,
       }
     }
   // Do the memory access intersect?
-  } else if (Shadow::TwoRangesIntersect<kAccessSize>(old, cur)) {
+  } else if (Shadow::TwoRangesIntersect(old, cur, kAccessSize)) {
     StatInc(thr, StatShadowIntersect);
     if (Shadow::TidsAreEqual(old, cur)) {
       StatInc(thr, StatShadowSameThread);
@@ -529,10 +526,10 @@ static bool MemoryAccess1(ThreadState *thr, uptr addr,
   return false;
 }
 
-template<u64 kAccessSizeLog, bool kAccessIsWrite>
 ALWAYS_INLINE
-void MemoryAccess(ThreadState *thr, uptr pc, uptr addr) {
-  CHECK_LE(kAccessIsWrite, 1);
+void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
+    int kAccessSizeLog, bool kAccessIsWrite) {
+  DCHECK_LE(kAccessIsWrite, 1);
   if ((kAccessIsWrite && thr->fast_ignore_writes)
       || (!kAccessIsWrite && thr->fast_ignore_reads))
     return;
@@ -551,8 +548,8 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr) {
 
   thr->fast_state.IncrementEpoch();
   Shadow cur(thr->fast_state);
-  cur.SetAddr0AndSizeLog<kAccessSizeLog>(addr & 7);
-  cur.SetWrite<kAccessIsWrite>();
+  cur.SetAddr0AndSizeLog(addr & 7, kAccessSizeLog);
+  cur.SetWrite(kAccessIsWrite);
   // This potentially can live in an MMX/SSE scratch register.
   // The required intrinsics are:
   // __m128i _mm_move_epi64(__m128i*);
@@ -572,8 +569,8 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr) {
   // it's just not worth it (performance- and complexity-wise).
 
 #define MEM_ACCESS_ITER(i) \
-    if (MemoryAccess1<kAccessSizeLog, kAccessIsWrite>( \
-        thr, addr, cur, shadow_mem, i, store_state)) \
+    if (MemoryAccess1(thr, addr, cur, shadow_mem, i, store_state, \
+        kAccessSizeLog, kAccessIsWrite)) \
       return;
   if (kShadowCnt == 1) {
     MEM_ACCESS_ITER(0);
@@ -607,40 +604,6 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr) {
   unsigned i = cur.epoch() % kShadowCnt;
   StoreShadow(shadow_mem+i, store_state);
   StatInc(thr, StatShadowReplace);
-}
-
-template<int kAccessIsWrite>
-static void MemoryAccessRange(ThreadState *thr, uptr pc, uptr addr,
-                              uptr size) {
-  // Handle unaligned beginning, if any.
-  for (; addr % 8 && size; addr++, size--) {
-    MemoryAccess<0, kAccessIsWrite>(thr, pc, addr);
-  }
-  // Handle middle part, if any.
-  for (; size >= 8; addr += 8, size -= 8) {
-    StatInc(thr, StatMopRange);
-    MemoryAccess<3, kAccessIsWrite>(thr, pc, addr);
-  }
-  // Handle ending, if any.
-  for (; size; addr++, size--) {
-    MemoryAccess<0, kAccessIsWrite>(thr, pc, addr);
-  }
-}
-
-void MemoryAccessRange(ThreadState *thr, uptr pc, uptr addr,
-                       uptr size, bool is_write) {
-  if (is_write)
-    MemoryAccessRange<1>(thr, pc, addr, size);
-  else
-    MemoryAccessRange<0>(thr, pc, addr, size);
-}
-
-void MemoryRead1Byte(ThreadState *thr, uptr pc, uptr addr) {
-  MemoryAccess<0, 0>(thr, pc, addr);
-}
-
-void MemoryWrite1Byte(ThreadState *thr, uptr pc, uptr addr) {
-  MemoryAccess<0, 1>(thr, pc, addr);
 }
 
 static void MemoryRangeSet(ThreadState *thr, uptr pc, uptr addr, uptr size,

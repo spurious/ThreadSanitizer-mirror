@@ -272,4 +272,37 @@ uptr StackTrace::Get(uptr i) const {
 const uptr *StackTrace::Begin() const {
   return s_;
 }
+
+void MemoryAccessRange(ThreadState *thr, uptr pc, uptr addr,
+                       uptr size, bool is_write) {
+  // Handle unaligned beginning, if any.
+  for (; addr % 8 && size; addr++, size--) {
+    MemoryAccess(thr, pc, addr, 0, is_write);
+  }
+  // Handle middle part, if any.
+  for (; size >= 8; addr += 8, size -= 8) {
+    StatInc(thr, StatMopRange);
+    MemoryAccess(thr, pc, addr, 3, is_write);
+  }
+  // Handle ending, if any.
+  for (; size; addr++, size--) {
+    MemoryAccess(thr, pc, addr, 0, is_write);
+  }
+}
+
+void MemoryRead1Byte(ThreadState *thr, uptr pc, uptr addr) {
+  MemoryAccess(thr, pc, addr, 0, 0);
+}
+
+void MemoryWrite1Byte(ThreadState *thr, uptr pc, uptr addr) {
+  MemoryAccess(thr, pc, addr, 0, 1);
+}
+
+void MemoryRead8Byte(ThreadState *thr, uptr pc, uptr addr) {
+  MemoryAccess(thr, pc, addr, 3, 0);
+}
+
+void MemoryWrite8Byte(ThreadState *thr, uptr pc, uptr addr) {
+  MemoryAccess(thr, pc, addr, 3, 1);
+}
 }  // namespace __tsan

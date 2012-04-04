@@ -224,8 +224,12 @@ void Die() NORETURN;
 void Initialize(ThreadState *thr);
 int Finalize(ThreadState *thr);
 
+void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
+    int kAccessSizeLog, bool kAccessIsWrite);
 void MemoryRead1Byte(ThreadState *thr, uptr pc, uptr addr);
 void MemoryWrite1Byte(ThreadState *thr, uptr pc, uptr addr);
+void MemoryRead8Byte(ThreadState *thr, uptr pc, uptr addr);
+void MemoryWrite8Byte(ThreadState *thr, uptr pc, uptr addr);
 void MemoryAccessRange(ThreadState *thr, uptr pc, uptr addr,
                        uptr size, bool is_write);
 void MemoryResetRange(ThreadState *thr, uptr pc, uptr addr, uptr size);

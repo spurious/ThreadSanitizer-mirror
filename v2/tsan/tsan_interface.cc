@@ -16,17 +16,27 @@
 #include "tsan_rtl.h"
 
 #define CALLERPC ((uptr)__builtin_return_address(0))
-using __tsan::uptr;
-using __tsan::cur_thread;
+
+using namespace __tsan;  // NOLINT
 
 void __tsan_init() {
-  __tsan::Initialize(cur_thread());
+  Initialize(cur_thread());
+}
+
+void __tsan_read16(void *addr) {
+  MemoryRead8Byte(cur_thread(), CALLERPC, (uptr)addr);
+  MemoryRead8Byte(cur_thread(), CALLERPC, (uptr)addr + 8);
+}
+
+void __tsan_write16(void *addr) {
+  MemoryWrite8Byte(cur_thread(), CALLERPC, (uptr)addr);
+  MemoryWrite8Byte(cur_thread(), CALLERPC, (uptr)addr + 8);
 }
 
 void __tsan_acquire(void *addr) {
-  __tsan::Acquire(cur_thread(), CALLERPC, (uptr)addr);
+  Acquire(cur_thread(), CALLERPC, (uptr)addr);
 }
 
 void __tsan_release(void *addr) {
-  __tsan::Release(cur_thread(), CALLERPC, (uptr)addr);
+  Release(cur_thread(), CALLERPC, (uptr)addr);
 }
