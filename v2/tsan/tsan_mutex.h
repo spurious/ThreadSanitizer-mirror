@@ -18,9 +18,16 @@
 
 namespace __tsan {
 
+enum MutexType {
+  MutexTypeInvalid,
+  MutexTypeReport,
+  MutexTypeThread,
+  MutexTypeCount
+};
+
 class Mutex {
  public:
-  explicit Mutex(StatType stat_type);
+  explicit Mutex(/*MutexType type,*/ StatType stat_type);
   ~Mutex();
 
   void Lock();
@@ -31,7 +38,10 @@ class Mutex {
 
  private:
   atomic_uintptr_t state_;
-#ifdef TSAN_COLLECT_STATS
+#if TSAN_DEBUG
+  MutexType type_;
+#endif
+#if TSAN_COLLECT_STATS
   StatType stat_type_;
 #endif
 

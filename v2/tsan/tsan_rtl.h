@@ -267,7 +267,7 @@ int internal_strcmp(const char *s1, const char *s2);
 // The trick is that the call preserves all registers and the compiler
 // does not treat it as a call.
 // If it does not work for you, use normal call.
-#if TSAN_DEBUG==0
+#if TSAN_DEBUG == 0
 #define HACKY_CALL(f) \
   __asm__ __volatile__("sub $0x1000, %%rsp;" \
                        "call " #f "_thunk;" \

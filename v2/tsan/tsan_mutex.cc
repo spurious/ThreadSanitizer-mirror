@@ -19,6 +19,14 @@ namespace __tsan {
 // Simple reader-writer spin-mutex. Optimized for not-so-contended case.
 // Readers have preference, can possibly starvate writers.
 
+#if 0
+static MutexType CanLockTab[MutexTypeCount][MutexTypeCount] = {
+  /*MutexTypeInvalid*/ {},
+  /*MutexTypeReport*/ {},
+  /*MutexTypeThread*/ {},
+};
+#endif
+
 const uptr kUnlocked = 0;
 const uptr kWriteLock = 1;
 const uptr kReadLock = 2;
@@ -49,8 +57,13 @@ class Backoff {
   static const int kActiveSpinCnt = 20;
 };
 
-Mutex::Mutex(StatType stat_type) {
-#ifdef TSAN_COLLECT_STATS
+Mutex::Mutex(/*MutexType type,*/ StatType stat_type) {
+  // CHECK_GT(type, MutexTypeInvalid);
+  // CHECK_LT(type, MutexTypeCount);
+#if TSAN_DEBUG
+  // type_ = type;
+#endif
+#if TSAN_COLLECT_STATS
   stat_type_ = stat_type;
 #endif
   atomic_store(&state_, kUnlocked, memory_order_relaxed);
@@ -70,7 +83,7 @@ void Mutex::Lock() {
       cmp = kUnlocked;
       if (atomic_compare_exchange_weak(&state_, &cmp, kWriteLock,
                                        memory_order_acquire)) {
-#ifdef TSAN_COLLECT_STATS
+#if TSAN_COLLECT_STATS
         StatInc(cur_thread(), stat_type_, backoff.Contention());
 #endif
         return;
@@ -92,7 +105,7 @@ void Mutex::ReadLock() {
   for (Backoff backoff; backoff.Do();) {
     prev = atomic_load(&state_, memory_order_acquire);
     if ((prev & kWriteLock) == 0) {
-#ifdef TSAN_COLLECT_STATS
+#if TSAN_COLLECT_STATS
       StatInc(cur_thread(), stat_type_, backoff.Contention());
 #endif
       return;
