@@ -6567,6 +6567,7 @@ void RunThreads(void (*f1)(void), void (*f2)(void), char *mem) {
   MyThreadArray t(f1, f2);
   t.Start();
   t.Join();
+  ANNOTATE_FLUSH_EXPECTED_RACES();
 }
 
 TEST(PositiveTests, RaceInMemcpy) {
