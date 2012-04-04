@@ -34,7 +34,7 @@ static MutexType CanLockTab[MutexTypeCount][MutexTypeCount] = {
   /*5 MutexTypeSyncTab*/     {MutexTypeSyncVar},
   /*6 MutexTypeSlab*/        {MutexTypeLeaf},
   /*7 MutexTypeAnnotations*/ {},
-  /*8 MutexTypeAtExit*/      {MutexTypeSyncTab, MutexTypeSyncVar},
+  /*8 MutexTypeAtExit*/      {MutexTypeSyncTab},
 };
 
 static bool CanLockAdj[MutexTypeCount][MutexTypeCount];
@@ -123,19 +123,33 @@ DeadlockDetector::DeadlockDetector() {
 }
 
 void DeadlockDetector::Lock(MutexType t) {
+  // Printf("LOCK %d @%llu\n", t, seq_ + 1);
+  u64 max_seq = 0;
+  u64 max_idx = MutexTypeInvalid;
   for (int i = 0; i != MutexTypeCount; i++) {
-    if (locked_[i] && !CanLockAdj[i][t]) {
-      Printf("ThreadSanitizer: internal deadlock detected\n");
-      Printf("ThreadSanitizer: can't lock %d while under %d\n", t, i);
-      Die();
+    if (locked_[i] == 0)
+      continue;
+    CHECK(locked_[i] != max_seq);
+    if (max_seq < locked_[i]) {
+      max_seq = locked_[i];
+      max_idx = i;
     }
   }
-  locked_[t] = true;
+  locked_[t] = ++seq_;
+  if (max_idx == MutexTypeInvalid)
+    return;
+  // Printf("  last %d @%llu\n", max_idx, max_seq);
+  if (!CanLockAdj[max_idx][t]) {
+    Printf("ThreadSanitizer: internal deadlock detected\n");
+    Printf("ThreadSanitizer: can't lock %d while under %d\n", t, max_idx);
+    Die();
+  }
 }
 
 void DeadlockDetector::Unlock(MutexType t) {
+  // Printf("UNLO %d @%llu #%llu\n", t, seq_, locked_[t]);
   CHECK(locked_[t]);
-  locked_[t] = false;
+  locked_[t] = 0;
 }
 
 const uptr kUnlocked = 0;

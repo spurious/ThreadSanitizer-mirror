@@ -85,7 +85,8 @@ class DeadlockDetector {
   void Lock(MutexType t);
   void Unlock(MutexType t);
  private:
-  bool locked_[MutexTypeCount];
+  u64 seq_;
+  u64 locked_[MutexTypeCount];
 };
 
 void InitializeMutex();

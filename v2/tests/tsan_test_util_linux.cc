@@ -36,6 +36,9 @@ static void *BeforeInitThread(void *param) {
   return 0;
 }
 
+static void AtExit() {
+}
+
 void TestMutexBeforeInit() {
   // Mutexes must be usable before __tsan_init();
   pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
@@ -45,6 +48,7 @@ void TestMutexBeforeInit() {
   pthread_t thr;
   pthread_create(&thr, 0, BeforeInitThread, 0);
   pthread_join(thr, 0);
+  atexit(AtExit);
 }
 
 namespace __tsan {
