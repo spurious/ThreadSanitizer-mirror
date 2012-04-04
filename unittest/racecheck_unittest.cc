@@ -4468,6 +4468,7 @@ void Reader() {
 
 void Run() {
   printf("test90: false positive (safely published pointer).\n");
+  n1.reset();
   MyThreadArray t(Publisher, Reader, Reader, Reader);
   t.Start();
   t.Join();
