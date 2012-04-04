@@ -531,9 +531,6 @@ ALWAYS_INLINE
 void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
     int kAccessSizeLog, bool kAccessIsWrite) {
   DCHECK_LE(kAccessIsWrite, 1);
-  if ((kAccessIsWrite && thr->fast_ignore_writes)
-      || (!kAccessIsWrite && thr->fast_ignore_reads))
-    return;
   u64 *shadow_mem = (u64*)MemToShadow(addr);
   DPrintf2("#%d: tsan::OnMemoryAccess: @%p %p size=%d"
       " is_write=%d shadow_mem=%p {%p, %p, %p, %p}\n",
@@ -548,7 +545,9 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
   StatInc(thr, (StatType)(StatMop1 + kAccessSizeLog));
 
   thr->fast_state.IncrementEpoch();
-  Shadow cur(thr->fast_state);
+  FastState fast_state = thr->fast_state;
+  if (fast_state.GetIgnoreBit()) return;
+  Shadow cur(fast_state);
   cur.SetAddr0AndSizeLog(addr & 7, kAccessSizeLog);
   cur.SetWrite(kAccessIsWrite);
   // This potentially can live in an MMX/SSE scratch register.
@@ -669,9 +668,12 @@ void FuncExit(ThreadState *thr) {
 
 void IgnoreCtl(ThreadState *thr, bool write, bool begin) {
   DPrintf("#%d: IgnoreCtl(%d, %d)\n", thr->tid, write, begin);
-  int* p = write ? &thr->fast_ignore_writes : &thr->fast_ignore_reads;
-  *p += begin ? 1 : -1;
-  CHECK_GE(*p, 0);
+  thr->ignore_reads_and_writes += begin ? 1 : -1;
+  CHECK_GE(thr->ignore_reads_and_writes, 0);
+  if (thr->ignore_reads_and_writes)
+    thr->fast_state.SetIgnoreBit();
+  else
+    thr->fast_state.ClearIgnoreBit();
 }
 
 }  // namespace __tsan

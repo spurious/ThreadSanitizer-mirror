@@ -40,6 +40,7 @@ void Printf(const char *format, ...);
 //   tid             : kTidBits
 //   epoch           : kClkBits
 //   unused          :
+//   ignore_bit      : 1
 class FastState {
  public:
   FastState(u64 tid, u64 epoch) {
@@ -62,6 +63,9 @@ class FastState {
     x_ += 1 << (64 - kTidBits - kClkBits);
     // CHECK(old_epoch + 1 == epoch());
   }
+  void SetIgnoreBit() { x_ |= 1; }
+  void ClearIgnoreBit() { x_ &= ~(u64)1; }
+  bool GetIgnoreBit() { return x_ & 1; }
  private:
   friend class Shadow;
   explicit FastState(u64 x) : x_(x) { }
@@ -96,8 +100,10 @@ struct ThreadState {
   // taken by epoch between synchs.
   // This way we can save one load from tls.
   u64 fast_synch_epoch;
-  int fast_ignore_reads;
-  int fast_ignore_writes;
+  // This is a slow path flag. On fast path, fast_state.GetIgnoreBit() is read.
+  // We do not distinguish beteween ignoring reads and writes
+  // for better performance.
+  int ignore_reads_and_writes;
   uptr *shadow_stack_pos;
   uptr racy_addr;
   u64 racy_state[2];
