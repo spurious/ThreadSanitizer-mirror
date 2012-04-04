@@ -35,18 +35,18 @@ fi
 echo @@@BUILD_STEP LINT@@@
 make lint
 
-echo @@@BUILD_STEP BUILD DEBUG-GCC@@@
+echo @@@BUILD_STEP BUILD DEBUG-CLANG@@@
 make clean
-make DEBUG=1 CC=gcc CXX=g++
+PATH=$CLANG_DIR/bin:$PATH make DEBUG=1 CC=clang CXX=clang++
 
-echo @@@BUILD_STEP TEST DEBUG-GCC@@@
+echo @@@BUILD_STEP TEST DEBUG-CLANG@@@
 ./tests/tsan_test
 
-echo @@@BUILD_STEP BUILD RELEASE-CLANG@@@
+echo @@@BUILD_STEP BUILD RELEASE-GCC@@@
 make clean
-CFLAGS=-Wno-null-dereference LD_LIBRARY_PATH=$CLANG_DIR/bin make CC=$CLANG_DIR/bin/clang CXX=$CLANG_DIR/bin/clang++
+make DEBUG=0 CC=gcc CXX=g++
 
-echo @@@BUILD_STEP TEST RELEASE-CLANG@@@
+echo @@@BUILD_STEP TEST RELEASE-GCC@@@
 ./tests/tsan_test
 
 echo @@@BUILD_STEP OUTPUT TESTS@@@
