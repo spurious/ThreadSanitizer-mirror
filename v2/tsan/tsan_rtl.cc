@@ -22,6 +22,12 @@
 #include "tsan_sync.h"
 #include "tsan_report.h"
 
+volatile int __tsan_stop = 0;
+
+extern "C" void __tsan_resume() {
+  __tsan_stop = 0;
+}
+
 namespace __tsan {
 
 __thread char cur_thread_placeholder[sizeof(ThreadState)] ALIGN(64);
@@ -188,6 +194,11 @@ void Initialize(ThreadState *thr) {
   ThreadStart(thr, tid);
   thr->in_rtl++;  // ThreadStart() resets it to zero.
   ctx->initialized = true;
+
+  if (__tsan_stop) {
+    Printf("ThreadSanitizer is suspended at startup.\n");
+    while (__tsan_stop);
+  }
 }
 
 int Finalize(ThreadState *thr) {
@@ -270,6 +281,31 @@ static int RestoreStack(int tid, const u64 epoch, uptr *stack, int n) {
   return pos;
 }
 
+static void StackStripMain(ReportStack *stack) {
+  if (stack->cnt < 2)
+    return;
+  const char *last = stack->entry[stack->cnt - 1].func;
+  const char *last2 = stack->entry[stack->cnt - 2].func;
+  if (last == 0 || last2 == 0)
+    return;
+  // Strip frame above 'main'
+  if (0 == internal_strcmp(last2, "main")) {
+    stack->cnt--;
+  // Strip our internal thread start routine.
+  } else if (0 == internal_strcmp(last, "__tsan_thread_start_func")) {
+    stack->cnt--;
+  // Strip global ctors init.
+  } else if (0 == internal_strcmp(last, "__do_global_ctors_aux")) {
+    stack->cnt--;
+  } else {
+    // Ensure that we recovered stack completely. Trimmed stack
+    // can actually happen if we do not instrument some code,
+    // so it's only a DCHECK. However we must try hard to not miss it
+    // due to our fault.
+    Printf("Top stack frame (main or __tsan_thread_start_func) missed\n");
+  }
+}
+
 void SymbolizeStack(RegionAlloc *alloc, ReportStack *stack,
                     const uptr *pcs0, int cnt) {
   const int kStackMax = 128;
@@ -310,27 +346,7 @@ void SymbolizeStack(RegionAlloc *alloc, ReportStack *stack,
     }
   }
 
-  // Strip frame above 'main'
-  if (stack->cnt >= 2 && internal_strcmp(
-      stack->entry[stack->cnt - 2].func, "main") == 0) {
-    stack->cnt--;
-  // Strip our internal thread start routine.
-  } else if (stack->cnt >= 2 && internal_strcmp(
-      stack->entry[stack->cnt - 1].func,
-      "__tsan_thread_start_func") == 0) {
-    stack->cnt--;
-  // Strip global ctors init.
-  } else if (stack->cnt >= 2 && internal_strcmp(
-      stack->entry[stack->cnt - 1].func,
-      "__do_global_ctors_aux") == 0) {
-    stack->cnt--;
-  } else {
-    // Ensure that we recovered stack completely. Trimmed stack
-    // can actually happen if we do not instrument some code,
-    // so it's only a DCHECK. However we must try hard to not miss it
-    // due to our fault.
-    Printf("Top stack frame (main or __tsan_thread_start_func) missed\n");
-  }
+  StackStripMain(stack);
 }
 
 static void NOINLINE ReportRace(ThreadState *thr) {
