@@ -28,8 +28,7 @@ UTEST_SRC=$(wildcard ../tsan/*_test.cc)
 UTEST_OBJ=$(patsubst %.cc,%.o,$(UTEST_SRC))
 UTEST_HDR=$(wildcard ../tsan/*.h)
 
-all: tsan_test tsan_c_test
-
+all: tsan_test
 
 ../tsan/%_test.o: ../tsan/%_test.cc $(UTEST_HDR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ -c $<
@@ -43,13 +42,10 @@ all: tsan_test tsan_c_test
 tsan_test: $(TEST_OBJ) $(UTEST_OBJ) $(LIBTSAN) $(GTEST_LIB)
 	$(CXX) $(TEST_OBJ) $(UTEST_OBJ) $(LIBTSAN) $(GTEST_LIB) -o $@ $(LINKFLAGS) $(LDFLAGS)
 
-tsan_c_test: tsan_c_test.o $(LIBTSAN)
-	$(CC) $< -o $@ $(LIBTSAN) -o $@ $(LINKFLAGS) $(LDFLAGS)
-
 $(GTEST_LIB):
 	mkdir -p $(GTEST_BUILD_DIR) && \
 	cd $(GTEST_BUILD_DIR) && \
 	$(MAKE) -f ../make/Makefile CXXFLAGS="$(CXXFLAGS)"
 
 clean:
-	rm -f *.o tsan_test  tsan_c_test
+	rm -f *.o tsan_test

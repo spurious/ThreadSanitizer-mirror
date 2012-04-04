@@ -8,7 +8,7 @@ test: lib
 	$(MAKE) -C tests
 
 run: all
-	(ulimit -s 8192; tests/tsan_c_test && tests/tsan_test)
+	(ulimit -s 8192; tests/tsan_test)
 
 presubmit:
 	$(MAKE) lint -j 4

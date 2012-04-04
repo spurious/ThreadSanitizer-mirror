@@ -13,7 +13,7 @@ ifeq ($(CXX), clang++)
 endif
 
 
-all: libtsan.a libtsan_dummy.a
+all: libtsan.a
 
 LIBTSAN_HEADERS=tsan_alloc.h \
                 tsan_allocator.h \
