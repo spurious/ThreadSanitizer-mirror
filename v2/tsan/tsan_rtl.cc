@@ -286,18 +286,17 @@ static void StackStripMain(ReportStack *stack) {
     return;
   const char *last = stack->entry[stack->cnt - 1].func;
   const char *last2 = stack->entry[stack->cnt - 2].func;
-  if (last == 0 || last2 == 0)
-    return;
   // Strip frame above 'main'
-  if (0 == internal_strcmp(last2, "main")) {
+  if (last2 && 0 == internal_strcmp(last2, "main")) {
     stack->cnt--;
   // Strip our internal thread start routine.
-  } else if (0 == internal_strcmp(last, "__tsan_thread_start_func")) {
+  } else if (last && 0 == internal_strcmp(last, "__tsan_thread_start_func")) {
     stack->cnt--;
   // Strip global ctors init.
-  } else if (0 == internal_strcmp(last, "__do_global_ctors_aux")) {
+  } else if (last && 0 == internal_strcmp(last, "__do_global_ctors_aux")) {
     stack->cnt--;
-  } else {
+  // If both are 0, then we probably just failed to symbolize.
+  } else if (last || last2) {
     // Ensure that we recovered stack completely. Trimmed stack
     // can actually happen if we do not instrument some code,
     // so it's only a DCHECK. However we must try hard to not miss it
