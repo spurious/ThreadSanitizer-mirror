@@ -355,7 +355,7 @@ static void NOINLINE ReportRace(ThreadState *thr) {
   const int kStackMax = 64;
 
   ScopedInRtl in_rtl;
-  uptr addr = thr->racy_addr & ~7;
+  uptr addr = ShadowToMem((uptr)thr->racy_shadow_addr);
   {
     uptr a0 = addr + Shadow(thr->racy_state[0]).addr0();
     uptr a1 = addr + Shadow(thr->racy_state[1]).addr0();
@@ -442,16 +442,16 @@ static void StoreIfNotYetStored(u64 *sp, u64 *s) {
   *s = 0;
 }
 
-static inline void HandleRace(ThreadState *thr, uptr addr,
+static inline void HandleRace(ThreadState *thr, u64 *shadow_mem,
                               Shadow cur, Shadow old) {
   thr->racy_state[0] = cur.raw();
   thr->racy_state[1] = old.raw();
-  thr->racy_addr     = addr;
+  thr->racy_shadow_addr = shadow_mem;
   HACKY_CALL(__tsan_report_race);
 }
 
 ALWAYS_INLINE
-static bool MemoryAccess1(ThreadState *thr, uptr addr,
+static bool MemoryAccess1(ThreadState *thr,
                           Shadow cur, u64 *shadow_mem, unsigned i,
                           u64 &store_state,
                           int kAccessSizeLog, int kAccessIsWrite) {
@@ -499,7 +499,7 @@ static bool MemoryAccess1(ThreadState *thr, uptr addr,
       } else if (!old.is_write() && !kAccessIsWrite) {
         return false;
       } else {
-        HandleRace(thr, addr, cur, old);
+        HandleRace(thr, shadow_mem, cur, old);
         return true;
       }
     }
@@ -517,7 +517,7 @@ static bool MemoryAccess1(ThreadState *thr, uptr addr,
     } else if (!old.is_write() && !kAccessIsWrite) {
       return false;
     } else {
-      HandleRace(thr, addr, cur, old);
+      HandleRace(thr, shadow_mem, cur, old);
       return true;
     }
   // The accesses do not intersect.
@@ -569,7 +569,7 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
   // it's just not worth it (performance- and complexity-wise).
 
 #define MEM_ACCESS_ITER(i) \
-    if (MemoryAccess1(thr, addr, cur, shadow_mem, i, store_state, \
+    if (MemoryAccess1(thr, cur, shadow_mem, i, store_state, \
         kAccessSizeLog, kAccessIsWrite)) \
       return;
   if (kShadowCnt == 1) {

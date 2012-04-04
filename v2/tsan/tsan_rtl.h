@@ -105,7 +105,7 @@ struct ThreadState {
   // for better performance.
   int ignore_reads_and_writes;
   uptr *shadow_stack_pos;
-  uptr racy_addr;
+  u64 *racy_shadow_addr;
   u64 racy_state[2];
   Trace trace;
   uptr shadow_stack[kShadowStackSize];
