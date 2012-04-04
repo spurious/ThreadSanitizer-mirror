@@ -56,8 +56,8 @@ void __tsan_read16(void *addr) {
 }
 
 void __tsan_write16(void *addr) {
-  __tsan::MemoryAccess<3, 0>(cur_thread(), CALLERPC, (uptr)addr);
-  __tsan::MemoryAccess<3, 0>(cur_thread(), CALLERPC, (uptr)addr + 8);
+  __tsan::MemoryAccess<3, 1>(cur_thread(), CALLERPC, (uptr)addr);
+  __tsan::MemoryAccess<3, 1>(cur_thread(), CALLERPC, (uptr)addr + 8);
 }
 
 void FLATTEN __tsan_vptr_update(void **vptr_p, void *new_val) {
