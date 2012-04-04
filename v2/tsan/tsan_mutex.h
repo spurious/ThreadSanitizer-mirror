@@ -20,14 +20,20 @@ namespace __tsan {
 
 enum MutexType {
   MutexTypeInvalid,
+  MutexTypeTrace,
+  MutexTypeThreads,
   MutexTypeReport,
-  MutexTypeThread,
+  MutexTypeSyncVar,
+  MutexTypeSyncTab,
+  MutexTypeSlab,
+  MutexTypeAnnotations,
+  MutexTypeAtExit,
   MutexTypeCount
 };
 
 class Mutex {
  public:
-  explicit Mutex(/*MutexType type,*/ StatType stat_type);
+  explicit Mutex(MutexType type, StatType stat_type);
   ~Mutex();
 
   void Lock();
@@ -72,6 +78,17 @@ class ReadLock {
   ReadLock(const ReadLock&);
   void operator = (const ReadLock&);
 };
+
+class DeadlockDetector {
+ public:
+  DeadlockDetector();
+  void Lock(MutexType t);
+  void Unlock(MutexType t);
+ private:
+  bool locked_[MutexTypeCount];
+};
+
+void InitializeMutex();
 
 }  // namespace __tsan
 

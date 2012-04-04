@@ -115,6 +115,8 @@ struct ThreadState {
   const uptr tls_addr;
   const uptr tls_size;
 
+  DeadlockDetector deadlock_detector;
+
   int pending_signal_count;
   SignalDesc pending_signals[kSigCount];
 

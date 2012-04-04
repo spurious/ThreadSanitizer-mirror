@@ -134,10 +134,10 @@ Context::Context()
   : initialized()
   , clockslab(SyncClock::kChunkSize)
   , syncslab(sizeof(SyncVar))
-  , report_mtx(StatMtxReport)
+  , report_mtx(MutexTypeReport, StatMtxReport)
   , nreported()
   , nmissed_expected()
-  , thread_mtx(StatMtxThreads) {
+  , thread_mtx(MutexTypeThreads, StatMtxThreads) {
 }
 
 ThreadState::ThreadState(Context *ctx, int tid, u64 epoch,
@@ -181,6 +181,7 @@ void Initialize(ThreadState *thr) {
   ScopedInRtl in_rtl;
   InitializeInterceptors();
   InitializePlatform();
+  InitializeMutex();
   InitializeDynamicAnnotations();
   ctx = new(ctx_placeholder) Context;
   InitializeShadowMemory();

@@ -49,7 +49,7 @@ struct Trace {
   Mutex mtx;
 
   Trace()
-    : mtx(StatMtxTrace) {
+    : mtx(MutexTypeTrace, StatMtxTrace) {
   }
 };
 

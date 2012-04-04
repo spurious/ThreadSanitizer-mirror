@@ -70,7 +70,7 @@ struct DynamicAnnContext {
   ExpectRace benign;
 
   DynamicAnnContext()
-    : mtx(StatMtxAnnotations)
+    : mtx(MutexTypeAnnotations, StatMtxAnnotations)
     , expect_alloc(sizeof(ExpectRace))
     , expect_slab(&expect_alloc) {
   }

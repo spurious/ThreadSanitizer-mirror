@@ -21,7 +21,7 @@ uptr const kBatch = 64;
 uptr const kAllocSize = 1024*1024;
 
 SlabAlloc::SlabAlloc(uptr size)
-  : mtx_(StatMtxSlab)
+  : mtx_(MutexTypeSlab, StatMtxSlab)
   , size_(size >= sizeof(head_) ? size : sizeof(head_))
   , count_()
   , allocated_()

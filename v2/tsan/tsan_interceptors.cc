@@ -119,7 +119,7 @@ class ScopedInterceptor {
 class AtExitContext {
  public:
   AtExitContext()
-    : mtx_(StatMtxAtExit)
+    : mtx_(MutexTypeAtExit, StatMtxAtExit)
     , pos_() {
   }
 

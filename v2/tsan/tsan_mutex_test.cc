@@ -19,7 +19,7 @@ namespace __tsan {
 class TestData {
  public:
   TestData()
-    : mtx_(StatMtxAnnotations) {
+    : mtx_(MutexTypeAnnotations, StatMtxAnnotations) {
     for (int i = 0; i < kSize; i++)
       data_[i] = 0;
   }
