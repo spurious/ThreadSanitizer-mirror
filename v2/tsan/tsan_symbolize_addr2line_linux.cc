@@ -11,6 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 #include "tsan_symbolize.h"
+#include "tsan_mman.h"
 #include "tsan_rtl.h"
 
 #include <dlfcn.h>
@@ -43,15 +44,15 @@ static uptr GetImageBase() {
   if (f) {
     if (fread(exe, 1, sizeof(exe), f) <= 0)
       return 0;
-    char cmd[1024];
-    snprintf(cmd, sizeof(cmd), "nm %s|grep SymbolizeImageBaseMark > tsan.tmp",
-             exe);
+    InternalScopedBuf<char> cmd(1024);
+    snprintf(cmd, cmd.Size(),
+        "nm %s|grep SymbolizeImageBaseMark > tsan.tmp", exe);
     if (system(cmd))
       return 0;
     FILE* f2 = fopen("tsan.tmp", "rb");
     if (f2) {
-      char tmp[1024];
-      if (fread(tmp, 1, sizeof(tmp), f2) <= 0)
+      InternalScopedBuf<char> tmp(1024);
+      if (fread(tmp, 1, tmp.Size(), f2) <= 0)
         return 0;
       uptr addr = (uptr)strtoll(tmp, 0, 16);
       base = (uptr)&SymbolizeImageBaseMark - addr;
@@ -67,16 +68,16 @@ int SymbolizeCode(RegionAlloc *alloc, uptr addr, Symbol *symb, int cnt) {
   if (base == 0)
     base = GetImageBase();
   int res = 0;
-  char cmd[1024];
-  snprintf(cmd, sizeof(cmd),
+  InternalScopedBuf<char> cmd(1024);
+  snprintf(cmd, cmd.Size(),
            "addr2line -C -s -f -e %s %p > tsan.tmp2", exe,
            (void*)(addr - base));
   if (system(cmd))
     return 0;
   FILE* f3 = fopen("tsan.tmp2", "rb");
   if (f3) {
-    char tmp[1024];
-    if (fread(tmp, 1, sizeof(tmp), f3) <= 0)
+    InternalScopedBuf<char> tmp(1024);
+    if (fread(tmp, 1, tmp.Size(), f3) <= 0)
       return 0;
     char *pos = strchr(tmp, '\n');
     if (pos && tmp[0] != '?') {
@@ -104,16 +105,16 @@ int SymbolizeData(RegionAlloc *alloc, uptr addr, Symbol *symb) {
   if (base == 0)
     base = GetImageBase();
   int res = 0;
-  char cmd[1024];
-  snprintf(cmd, sizeof(cmd),
+  InternalScopedBuf<char> cmd(1024);
+  snprintf(cmd, cmd.Size(),
   "nm -alsC %s|grep \"%lx\"|awk '{printf(\"%%s\\n%%s\", $3, $4)}' > tsan.tmp2",
     exe, (addr - base));
   if (system(cmd))
     return 0;
   FILE* f3 = fopen("tsan.tmp2", "rb");
   if (f3) {
-    char tmp[1024];
-    if (fread(tmp, 1, sizeof(tmp), f3) <= 0)
+    InternalScopedBuf<char> tmp(1024);
+    if (fread(tmp, 1, tmp.Size(), f3) <= 0)
       return 0;
     char *pos = strchr(tmp, '\n');
     if (pos && tmp[0] != '?') {

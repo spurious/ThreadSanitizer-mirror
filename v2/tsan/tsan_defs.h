@@ -117,6 +117,7 @@ enum StatType {
 struct ThreadState;
 struct ThreadContext;
 struct Context;
+struct ReportDesc;
 class RegionAlloc;
 
 }  // namespace __tsan

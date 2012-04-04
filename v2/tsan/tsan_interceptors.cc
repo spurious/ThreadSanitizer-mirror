@@ -1135,9 +1135,10 @@ static void process_pending_signals(ThreadState *thr) {
   CHECK_EQ(thr->in_rtl, 0);
   if (thr->pending_signal_count == 0)
     return;
-  ucontext_t uctx;
+  // These are too big for stack.
+  static __thread ucontext_t uctx;
+  static __thread sigset_t emptyset, oldset;
   getcontext(&uctx);
-  sigset_t emptyset, oldset;
   sigfillset(&emptyset);
   pthread_sigmask(SIG_SETMASK, &emptyset, &oldset);
   for (int sig = 0; sig < kSigCount; sig++) {
@@ -1290,7 +1291,7 @@ void InitializeInterceptors() {
 
   INTERCEPT_FUNCTION(sigaction);
 
-  atexit_ctx = new(internal_alloc(cur_thread(), sizeof(AtExitContext)))
+  atexit_ctx = new(internal_alloc(sizeof(AtExitContext)))
       AtExitContext();
 
   if (__cxa_atexit(&finalize, 0, 0)) {

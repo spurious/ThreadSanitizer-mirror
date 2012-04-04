@@ -33,8 +33,48 @@ void *user_alloc_aligned(ThreadState *thr, uptr pc, uptr sz, uptr align);
 MBlock *user_mblock(ThreadState *thr, void *p);
 
 // For internal data structures.
-void *internal_alloc(ThreadState *thr, uptr sz);
-void internal_free(ThreadState *thr, void *p);
+void *internal_alloc(uptr sz);
+void internal_free(void *p);
+
+template<typename T>
+class InternalScopedBuf {
+ public:
+  explicit InternalScopedBuf(uptr cnt) {
+    cnt_ = cnt;
+    ptr_ = (T*)internal_alloc(cnt * sizeof(T));
+  }
+
+  ~InternalScopedBuf() {
+    internal_free(ptr_);
+  }
+
+  operator T *() {
+    return ptr_;
+  }
+
+  T &operator[](uptr i) {
+    return ptr_[i];
+  }
+
+  T *Ptr() {
+    return ptr_;
+  }
+
+  uptr Count() {
+    return cnt_;
+  }
+
+  uptr Size() {
+    return cnt_ * sizeof(T);
+  }
+
+ private:
+  T *ptr_;
+  uptr cnt_;
+
+  InternalScopedBuf(const InternalScopedBuf&);
+  void operator = (const InternalScopedBuf&);
+};
 
 }  // namespace __tsan
 

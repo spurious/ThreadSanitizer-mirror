@@ -77,12 +77,14 @@ MBlock *user_mblock(ThreadState *thr, void *p) {
   return b;
 }
 
-void *internal_alloc(ThreadState *thr, uptr sz) {
+void *internal_alloc(uptr sz) {
+  ThreadState *thr = cur_thread();
   CHECK_GT(thr->in_rtl, 0);
   return Alloc(sz);
 }
 
-void internal_free(ThreadState *thr, void *p) {
+void internal_free(void *p) {
+  ThreadState *thr = cur_thread();
   CHECK_GT(thr->in_rtl, 0);
   Free(p);
 }

@@ -10,6 +10,8 @@ endif
 ifeq ($(CXX), clang++)
   # Global constructors are banned.
   CXXFLAGS+=-Wglobal-constructors
+else
+  CXXFLAGS+=-Wframe-larger-than=256
 endif
 
 

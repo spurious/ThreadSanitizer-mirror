@@ -18,10 +18,9 @@ namespace __tsan {
 
 TEST(Mman, Internal) {
   ScopedInRtl in_rtl;
-  ThreadState *thr = cur_thread();
-  char *p = (char*)internal_alloc(thr, 10);
+  char *p = (char*)internal_alloc(10);
   EXPECT_NE(p, (char*)0);
-  char *p2 = (char*)internal_alloc(thr, 20);
+  char *p2 = (char*)internal_alloc(20);
   EXPECT_NE(p2, (char*)0);
   EXPECT_NE(p2, p);
   for (int i = 0; i < 10; i++) {
@@ -30,8 +29,8 @@ TEST(Mman, Internal) {
   for (int i = 0; i < 20; i++) {
     ((char*)p2)[i] = 42;
   }
-  internal_free(thr, p);
-  internal_free(thr, p2);
+  internal_free(p);
+  internal_free(p2);
 }
 
 TEST(Mman, User) {

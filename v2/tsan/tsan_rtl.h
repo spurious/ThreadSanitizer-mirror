@@ -36,9 +36,6 @@ namespace __tsan {
 
 void Printf(const char *format, ...);
 
-struct ReportDesc;
-struct Context;
-
 // ThreadState:
 //   tid             : kTidBits
 //   epoch           : kClkBits
@@ -126,7 +123,8 @@ struct ThreadState {
                        uptr tls_addr, uptr tls_size);
 };
 
-extern Context *CTX();
+Context *CTX();
+ReportDesc *GetGlobalReport();
 extern __thread char cur_thread_placeholder[];
 
 INLINE ThreadState *cur_thread() {

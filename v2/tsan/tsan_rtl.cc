@@ -16,6 +16,7 @@
 #include "tsan_rtl.h"
 #include "tsan_interface.h"
 #include "tsan_atomic.h"
+#include "tsan_mman.h"
 #include "tsan_placement_new.h"
 #include "tsan_suppressions.h"
 #include "tsan_symbolize.h"
@@ -32,7 +33,11 @@ namespace __tsan {
 
 __thread char cur_thread_placeholder[sizeof(ThreadState)] ALIGN(64);
 static char ctx_placeholder[sizeof(Context)] ALIGN(64);
-static ReportDesc g_report;
+
+ReportDesc *GetGlobalReport() {
+  static ReportDesc report;
+  return &report;
+}
 
 // Freed memory.
 // As if 8-byte write by thread 0xff..f at epoch 0xff..f, races with everything.
@@ -313,7 +318,7 @@ void SymbolizeStack(RegionAlloc *alloc, ReportStack *stack,
   stack->entry = 0;
   if (cnt == 0 || cnt > kStackMax)
     return;
-  uptr pcs[kStackMax];
+  InternalScopedBuf<uptr> pcs(kStackMax);
   for (int i = 0; i < cnt; i++) {
     pcs[i] = pcs0[i];
   }
@@ -324,7 +329,7 @@ void SymbolizeStack(RegionAlloc *alloc, ReportStack *stack,
   }
   stack->entry = alloc->Alloc<ReportStackEntry>(kStackMax);
   for (int si = 0; si < cnt; si++) {
-    Symbol symb[kStackMax];
+    InternalScopedBuf<Symbol> symb(kStackMax);
     // We obtain the return address, that is, address of the next instruction,
     // so offset it by 1 byte.
     int framecnt = SymbolizeCode(alloc, pcs[si] - !!si, symb, kStackMax);
@@ -367,8 +372,8 @@ static void NOINLINE ReportRace(ThreadState *thr) {
   Lock l0(&ctx->thread_mtx);
   Lock l1(&ctx->report_mtx);
 
-  RegionAlloc alloc(g_report.alloc, sizeof(g_report.alloc));
-  ReportDesc &rep = g_report;
+  ReportDesc &rep = *GetGlobalReport();
+  RegionAlloc alloc(rep.alloc, sizeof(rep.alloc));
   rep.typ = ReportTypeRace;
   rep.nmop = 2;
   if (thr->racy_state[1] == kShadowFreed)
@@ -383,8 +388,8 @@ static void NOINLINE ReportRace(ThreadState *thr) {
     mop->write = s.is_write();
     mop->nmutex = 0;
     mop->stack.cnt = 0;
-    uptr stack[kStackMax] = {};
-    int stackcnt = RestoreStack(s.tid(), s.epoch(), stack, kStackMax);
+    InternalScopedBuf<uptr> stack(kStackMax);
+    int stackcnt = RestoreStack(s.tid(), s.epoch(), stack, stack.Count());
     // Ensure that we have at least something for the current thread.
     CHECK(i != 0 || stackcnt != 0);
     SymbolizeStack(&alloc, &mop->stack, stack, stackcnt);

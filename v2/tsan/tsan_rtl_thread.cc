@@ -37,7 +37,7 @@ void ThreadFinalize(ThreadState *thr) {
         && tctx->status != ThreadStatusFinished)
       continue;
     Lock l(&ctx->report_mtx);
-    ReportDesc rep;
+    ReportDesc &rep = *GetGlobalReport();
     internal_memset(&rep, 0, sizeof(rep));
     RegionAlloc alloc(rep.alloc, sizeof(rep.alloc));
     rep.typ = ReportTypeThreadLeak;
@@ -245,7 +245,7 @@ StackTrace::~StackTrace() {
 void StackTrace::ObtainCurrent(ThreadState *thr, uptr toppc) {
   Free(thr);
   n_ = thr->shadow_stack_pos - &thr->shadow_stack[0] + 1;
-  s_ = (uptr*)internal_alloc(thr, n_ * sizeof(s_[0]));
+  s_ = (uptr*)internal_alloc(n_ * sizeof(s_[0]));
   for (uptr i = 0; i < n_ - 1; i++)
     s_[i] = thr->shadow_stack[i];
   s_[n_ - 1] = toppc;
@@ -254,7 +254,7 @@ void StackTrace::ObtainCurrent(ThreadState *thr, uptr toppc) {
 void StackTrace::Free(ThreadState *thr) {
   if (s_) {
     CHECK_NE(n_, 0);
-    internal_free(thr, s_);
+    internal_free(s_);
     s_ = 0;
     n_ = 0;
   }

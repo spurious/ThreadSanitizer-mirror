@@ -39,7 +39,7 @@ void MutexDestroy(ThreadState *thr, uptr pc, uptr addr) {
   if (s->owner_tid != SyncVar::kInvalidTid && !s->is_broken) {
     s->is_broken = true;
     Lock l(&CTX()->report_mtx);
-    ReportDesc rep;
+    ReportDesc &rep = *GetGlobalReport();
     internal_memset(&rep, 0, sizeof(rep));
     RegionAlloc alloc(rep.alloc, sizeof(rep.alloc));
     rep.typ = ReportTypeMutexDestroyLocked;

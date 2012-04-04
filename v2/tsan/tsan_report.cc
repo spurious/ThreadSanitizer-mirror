@@ -81,7 +81,7 @@ bool OnReport(const ReportDesc *rep, bool suppressed) {
 void PrintStats(u64 *stat) {
   stat[StatShadowNonZero] = stat[StatShadowProcessed] - stat[StatShadowZero];
 
-  const char *name[StatCnt] = {};
+  static const char *name[StatCnt] = {};
   name[StatMop]                 = "Memory accesses";
   name[StatMopRead]             = "  Including reads";
   name[StatMopWrite]            = "            writes";
