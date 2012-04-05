@@ -5,10 +5,13 @@ set -e
 set -u
 
 SCRIPT_DIR="$( cd "$( dirname "$0" )" && pwd )"
-CLANG_DIR=$SCRIPT_DIR/../../clang
-echo $SCRIPT_DIR
-echo $CLANG_DIR
-ls -l $CLANG_DIR
+CLANG_DIR=$SCRIPT_DIR/../../llvm
+GCC_DIR=$SCRIPT_DIR/../../gcc
+export PATH=$CLANG_DIR/bin:$GCC_DIR/bin:$PATH
+export LD_LIBRARY_PATH=$GCC_DIR/lib64
+export MAKEFLAGS=-j4
+clang -v
+gcc -v
 
 if [ "$BUILDBOT_CLOBBER" != "" ]; then
   echo @@@BUILD_STEP clobber@@@
@@ -37,7 +40,7 @@ make lint
 
 echo @@@BUILD_STEP BUILD DEBUG-CLANG@@@
 make clean
-PATH=$CLANG_DIR/bin:$PATH make DEBUG=1 CC=clang CXX=clang++
+make DEBUG=1 CC=clang CXX=clang++
 
 echo @@@BUILD_STEP TEST DEBUG-CLANG@@@
 ./tests/tsan_test
@@ -50,14 +53,14 @@ echo @@@BUILD_STEP TEST RELEASE-GCC@@@
 ./tests/tsan_test
 
 echo @@@BUILD_STEP OUTPUT TESTS@@@
-(cd output_tests && PATH=$CLANG_DIR/bin:$PATH ./test_output.sh)
+(cd output_tests && ./test_output.sh)
 
 echo
 echo @@@BUILD_STEP RACECHECK UNITTEST@@@
 (cd ../unittest && \
 rm -f bin/racecheck_unittest-linux-amd64-O0 && \
-PATH=$CLANG_DIR/bin:$PATH OMIT_DYNAMIC_ANNOTATIONS_IMPL=1 LIBS=../v2/tsan/libtsan.a make l64 -j16 CC=clang CXX=clang++ LDOPT="-pie -ldl ../v2/tsan/libtsan.a" OMIT_CPP0X=1 EXTRA_CFLAGS="-fthread-sanitizer -fPIC -g -O2 -Wno-format-security -Wno-null-dereference -Wno-format-security -Wno-null-dereference" EXTRA_CXXFLAGS="-fthread-sanitizer -fPIC -g -O2 -Wno-format-security -Wno-null-dereference -Wno-format-security -Wno-null-dereference" && \
-bin/racecheck_unittest-linux-amd64-O0 --gtest_filter=-*Ignore*:*Suppress*:*EnableRaceDetectionTest*:*Rep*Test*:*NotPhb*:*Barrier*:*Death*:*PositiveTests_RaceInSignal*:StressTests.FlushStateTest:NegativeTests.BenignRaceInDtor)
+OMIT_DYNAMIC_ANNOTATIONS_IMPL=1 LIBS=../v2/tsan/libtsan.a make l64 -j16 CC=clang CXX=clang++ LDOPT="-pie -ldl ../v2/tsan/libtsan.a" OMIT_CPP0X=1 EXTRA_CFLAGS="-fthread-sanitizer -fPIC -g -O2 -Wno-format-security -Wno-null-dereference -Wno-format-security -Wno-null-dereference" EXTRA_CXXFLAGS="-fthread-sanitizer -fPIC -g -O2 -Wno-format-security -Wno-null-dereference -Wno-format-security -Wno-null-dereference" && \
+bin/racecheck_unittest-linux-amd64-O0 --gtest_filter=-*Ignore*:*Suppress*:*EnableRaceDetectionTest*:*Rep*Test*:*NotPhb*:*Barrier*:*Death*:*PositiveTests_RaceInSignal*:StressTests.FlushStateTest)
 #Ignore: ignores do not work yet
 #Suppress: suppressions do not work yet
 #EnableRaceDetectionTest: the annotation is not supported
@@ -67,5 +70,4 @@ bin/racecheck_unittest-linux-amd64-O0 --gtest_filter=-*Ignore*:*Suppress*:*Enabl
 #Death: there is some flakyness
 #PositiveTests_RaceInSignal: signal() is not intercepted yet
 #StressTests.FlushStateTest: uses suppressions
-#NegativeTests.BenignRaceInDtor: the bot uses old clang w/o dtor support
 
