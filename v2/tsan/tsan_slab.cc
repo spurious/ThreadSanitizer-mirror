@@ -28,7 +28,7 @@ SlabAlloc::SlabAlloc(uptr size)
   , head_()
   , superblocks_() {
   CHECK_EQ(size_ % sizeof(head_), 0);
-  CHECK(size_ <= kAllocSize / kBatch);
+  CHECK_LE(size_, kAllocSize / kBatch);
 }
 
 SlabAlloc::~SlabAlloc() {
@@ -85,7 +85,7 @@ void* SlabAlloc::Alloc(uptr *n) {
 
 void SlabAlloc::Free(void *first, void *last, uptr n) {
   Lock l(&mtx_);
-  CHECK(n <= allocated_);
+  CHECK_LE(n, allocated_);
   count_ += n;
   allocated_ -= n;
   *(void**)last = head_;

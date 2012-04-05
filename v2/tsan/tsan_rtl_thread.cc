@@ -89,7 +89,7 @@ int ThreadCreate(ThreadState *thr, uptr pc, uptr uid, bool detached) {
       CHECK_EQ(tctx->dead_next, 0);
       CTX()->dead_list_head = 0;
     }
-    CHECK(tctx->status == ThreadStatusDead);
+    CHECK_EQ(tctx->status, ThreadStatusDead);
     tctx->status = ThreadStatusInvalid;
     tctx->reuse_count++;
     tid = tctx->tid;
@@ -100,10 +100,12 @@ int ThreadCreate(ThreadState *thr, uptr pc, uptr uid, bool detached) {
     tctx = new(virtual_alloc(sizeof(ThreadContext))) ThreadContext(tid);
     CTX()->threads[tid] = tctx;
   }
-  CHECK(tctx != 0 && tid >= 0 && tid < kMaxTid);
+  CHECK_NE(tctx, 0);
+  CHECK_GE(tid, 0);
+  CHECK_LT(tid, kMaxTid);
   DPrintf("#%d: ThreadCreate tid=%d uid=%lu\n",
           (int)thr->fast_state.tid(), tid, uid);
-  CHECK(tctx->status == ThreadStatusInvalid);
+  CHECK_EQ(tctx->status, ThreadStatusInvalid);
   tctx->status = ThreadStatusCreated;
   tctx->thr = 0;
   tctx->uid = uid;
@@ -133,7 +135,8 @@ void ThreadStart(ThreadState *thr, int tid) {
     MemoryResetRange(thr, /*pc=*/ 2, tls_addr, tls_size);
   Lock l(&CTX()->thread_mtx);
   ThreadContext *tctx = CTX()->threads[tid];
-  CHECK(tctx && tctx->status == ThreadStatusCreated);
+  CHECK_NE(tctx, 0);
+  CHECK_EQ(tctx->status, ThreadStatusCreated);
   tctx->status = ThreadStatusRunning;
   tctx->epoch0 = tctx->epoch1 + 1;
   tctx->epoch1 = (u64)-1;
@@ -157,7 +160,8 @@ void ThreadFinish(ThreadState *thr) {
     MemoryResetRange(thr, /*pc=*/ 4, thr->tls_addr, thr->tls_size);
   Lock l(&CTX()->thread_mtx);
   ThreadContext *tctx = CTX()->threads[thr->fast_state.tid()];
-  CHECK(tctx && tctx->status == ThreadStatusRunning);
+  CHECK_NE(tctx, 0);
+  CHECK_EQ(tctx->status, ThreadStatusRunning);
   if (tctx->detached) {
     ThreadDead(thr, tctx);
   } else {
@@ -203,8 +207,8 @@ void ThreadJoin(ThreadState *thr, uptr pc, uptr uid) {
     Printf("ThreadSanitizer: join of non-existent thread\n");
     return;
   }
-  CHECK(tctx->detached == false);
-  CHECK(tctx->status == ThreadStatusFinished);
+  CHECK_EQ(tctx->detached, false);
+  CHECK_EQ(tctx->status, ThreadStatusFinished);
   thr->clock.acquire(&tctx->sync);
   ThreadDead(thr, tctx);
 }

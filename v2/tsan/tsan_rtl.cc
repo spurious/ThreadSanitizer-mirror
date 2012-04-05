@@ -56,19 +56,19 @@ class Shadow: public FastState {
   explicit Shadow(const FastState &s) : FastState(s.x_) { }
 
   void SetAddr0AndSizeLog(u64 addr0, unsigned kAccessSizeLog) {
-    DCHECK((x_ & 31) == 0);  // NOLINT
-    DCHECK(addr0 <= 7);  // NOLINT
-    DCHECK(kAccessSizeLog <= 3);  // NOLINT
+    DCHECK_EQ(x_ & 31, 0);
+    DCHECK_LE(addr0, 7);
+    DCHECK_LE(kAccessSizeLog, 3);
     x_ |= (kAccessSizeLog << 3) | addr0;
-    DCHECK(kAccessSizeLog == size_log());  // NOLINT
-    DCHECK(addr0 == this->addr0());  // NOLINT
+    DCHECK_EQ(kAccessSizeLog, size_log());
+    DCHECK_EQ(addr0, this->addr0());
   }
 
   void SetWrite(unsigned kAccessIsWrite) {
-    DCHECK((x_ & 32) == 0);  // NOLINT
+    DCHECK_EQ(x_ & 32, 0);
     if (kAccessIsWrite)
       x_ |= 32;
-    DCHECK(kAccessIsWrite == is_write());
+    DCHECK_EQ(kAccessIsWrite, is_write());
   }
 
   u64 addr0() const { return x_ & 7; }
@@ -79,7 +79,7 @@ class Shadow: public FastState {
 
   static inline bool TidsAreEqual(Shadow s1, Shadow s2) {
     u64 shifted_xor = (s1.x_ ^ s2.x_) >> (64 - kTidBits);
-    DCHECK((shifted_xor == 0) == (s1.tid() == s2.tid()));  // NOLINT
+    DCHECK_EQ(shifted_xor == 0, s1.tid() == s2.tid());
     return shifted_xor == 0;
   }
   static inline bool Addr0AndSizeAreEqual(Shadow s1, Shadow s2) {

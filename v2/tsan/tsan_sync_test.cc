@@ -39,16 +39,16 @@ TEST(Sync, Table) {
     if (rand_r(&seed) % 2) {
       // Get or add.
       SyncVar *v = tab.GetAndLock(thr, pc, &slab, addr, true);
-      CHECK(golden[addr] == 0 || golden[addr] == v);
-      CHECK(v->addr == addr);
+      EXPECT_TRUE(golden[addr] == 0 || golden[addr] == v);
+      EXPECT_EQ(v->addr, addr);
       golden[addr] = v;
       v->mtx.Unlock();
     } else {
       // Remove.
       SyncVar *v = tab.GetAndRemove(addr);
-      CHECK(golden[addr] == v);
+      EXPECT_EQ(golden[addr], v);
       if (v) {
-        CHECK(v->addr == addr);
+        EXPECT_EQ(v->addr, addr);
         golden[addr] = 0;
         v->creation_stack.Free(thr);
         v->~SyncVar();
@@ -60,8 +60,8 @@ TEST(Sync, Table) {
     if (golden[addr] == 0)
       continue;
     SyncVar *v = tab.GetAndRemove(addr);
-    CHECK(v == golden[addr]);
-    CHECK(v->addr == addr);
+    EXPECT_EQ(v, golden[addr]);
+    EXPECT_EQ(v->addr, addr);
     v->creation_stack.Free(thr);
     v->~SyncVar();
     slab.Free(v);

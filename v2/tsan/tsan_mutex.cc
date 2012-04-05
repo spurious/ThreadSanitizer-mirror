@@ -129,7 +129,7 @@ void DeadlockDetector::Lock(MutexType t) {
   for (int i = 0; i != MutexTypeCount; i++) {
     if (locked_[i] == 0)
       continue;
-    CHECK(locked_[i] != max_seq);
+    CHECK_NE(locked_[i], max_seq);
     if (max_seq < locked_[i]) {
       max_seq = locked_[i];
       max_idx = i;

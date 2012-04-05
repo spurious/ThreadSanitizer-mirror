@@ -36,7 +36,7 @@ SyncTab::SyncTab() {
 
 SyncVar* SyncTab::GetAndLock(ThreadState *thr, uptr pc,
                              SlabCache *slab, uptr addr, bool write_lock) {
-  DCHECK(slab->Size() == sizeof(SyncVar));
+  DCHECK_EQ(slab->Size(), sizeof(SyncVar));
   Part *p = &tab_[PartIdx(addr)];
   {
     ReadLock l(&p->mtx);
