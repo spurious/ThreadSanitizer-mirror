@@ -87,6 +87,7 @@ struct ReportDesc {
 };
 
 void PrintReport(const ReportDesc *rep);
+void PrintStack(const ReportStack *stack);
 void SymbolizeStack(RegionAlloc *alloc, ReportStack *stack,
                     const uptr *pcs, int cnt);
 bool OnReport(const ReportDesc *rep, bool suppressed) WEAK;

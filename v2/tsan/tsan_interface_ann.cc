@@ -25,10 +25,12 @@ namespace __tsan {
 
 class ScopedAnnotation {
  public:
-  ScopedAnnotation(ThreadState *thr, const char *aname, const char *f, int l)
+  ScopedAnnotation(ThreadState *thr, const char *aname, const char *f, int l,
+                   uptr pc)
       : thr_(thr)
       , in_rtl_(thr->in_rtl) {
     CHECK_EQ(thr_->in_rtl, 0);
+    FuncEntry(thr_, pc);
     thr_->in_rtl++;
     DPrintf("#%d: annotation %s() %s:%d\n", thr_->tid, aname, f, l);
   }
@@ -36,16 +38,18 @@ class ScopedAnnotation {
   ~ScopedAnnotation() {
     thr_->in_rtl--;
     CHECK_EQ(in_rtl_, thr_->in_rtl);
+    FuncExit(thr_);
   }
  private:
   ThreadState *const thr_;
   const int in_rtl_;
 };
 
-#define SCOPED_ANNOTATION(name) \
+#define SCOPED_ANNOTATION() \
     ThreadState *thr = cur_thread(); \
-    ScopedAnnotation sa(thr, __FUNCTION__, f, l); \
-    const uptr pc = (uptr)__builtin_return_address(0); \
+    ScopedAnnotation sa(thr, __FUNCTION__, f, l, \
+        (uptr)__builtin_return_address(0)); \
+    const uptr pc = (uptr)&__FUNCTION__; \
     (void)pc; \
 /**/
 
@@ -163,6 +167,7 @@ void AnnotateMutexIsNotPHB(char *f, int l, uptr mu) {
 
 void AnnotateCondVarWait(char *f, int l, uptr cv, uptr lock) {
   SCOPED_ANNOTATION();
+CHECK_EQ(thr->in_rtl, 42);
 }
 
 void AnnotateRWLockCreate(char *f, int l, uptr lock) {

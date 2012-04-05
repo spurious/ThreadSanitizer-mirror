@@ -124,9 +124,25 @@ class Shadow: public FastState {
 static Context *ctx;
 Context *CTX() { return ctx; }
 
-void CheckFailed(const char *file, int line, const char *cond) {
-  Report("FATAL: ThreadSanitizer CHECK failed: %s:%d \"%s\"\n",
-         file, line, cond);
+void CheckFailed(const char *file, int line, const char *cond, u64 v1, u64 v2) {
+  ScopedInRtl in_rtl;
+  Report("FATAL: ThreadSanitizer CHECK failed: %s:%d \"%s\" (%llu, %llu)\n",
+         file, line, cond, v1, v2);
+  ThreadState *thr = cur_thread();
+  InternalScopedBuf<char> buf(1024*1024);
+  RegionAlloc alloc(buf, buf.Size());
+  StackTrace stack;
+  stack.ObtainCurrent(thr, 0);
+  ReportStack rstack;
+  SymbolizeStack(&alloc, &rstack, stack.Begin(), stack.Size());
+  PrintStack(&rstack);
+  Printf("Thread %d\n", thr->tid);
+  ThreadContext *tctx = CTX()->threads[thr->tid];
+  if (tctx) {
+    SymbolizeStack(&alloc, &rstack,
+      tctx->creation_stack.Begin(), tctx->creation_stack.Size());
+    PrintStack(&rstack);
+  }
   Die();
 }
 

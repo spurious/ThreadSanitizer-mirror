@@ -244,11 +244,14 @@ StackTrace::~StackTrace() {
 
 void StackTrace::ObtainCurrent(ThreadState *thr, uptr toppc) {
   Free(thr);
-  n_ = thr->shadow_stack_pos - &thr->shadow_stack[0] + 1;
-  s_ = (uptr*)internal_alloc(n_ * sizeof(s_[0]));
-  for (uptr i = 0; i < n_ - 1; i++)
+  n_ = thr->shadow_stack_pos - &thr->shadow_stack[0];
+  s_ = (uptr*)internal_alloc((n_ + !!toppc) * sizeof(s_[0]));
+  for (uptr i = 0; i < n_; i++)
     s_[i] = thr->shadow_stack[i];
-  s_[n_ - 1] = toppc;
+  if (toppc) {
+    s_[n_] = toppc;
+    n_++;
+  }
 }
 
 void StackTrace::Free(ThreadState *thr) {

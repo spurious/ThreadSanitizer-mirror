@@ -15,7 +15,7 @@
 
 namespace __tsan {
 
-static void PrintStack(const ReportStack *stack) {
+void PrintStack(const ReportStack *stack) {
   for (int i = 0; i < stack->cnt; i++) {
     const ReportStackEntry *ent = &stack->entry[i];
     Printf("    #%d %p: %s %s:%d\n", i,
