@@ -16,9 +16,10 @@ presubmit:
 	$(MAKE) clean
 	$(MAKE) run DEBUG=1 -j 16
 	./output_tests/test_output.sh
-	# Release build gcc (ensure that vanilla gcc is able to build it).
+	# Release build gcc
 	$(MAKE) clean
-	$(MAKE) run DEBUG=0 -j 16 CC=/usr/bin/gcc CXX=/usr/bin/g++
+	$(MAKE) run DEBUG=0 -j 16
+	./check_analyze.sh
 	./output_tests/test_output.sh
 	@ echo PRESUBMIT PASSED
 
