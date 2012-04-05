@@ -167,7 +167,6 @@ void AnnotateMutexIsNotPHB(char *f, int l, uptr mu) {
 
 void AnnotateCondVarWait(char *f, int l, uptr cv, uptr lock) {
   SCOPED_ANNOTATION();
-CHECK_EQ(thr->in_rtl, 42);
 }
 
 void AnnotateRWLockCreate(char *f, int l, uptr lock) {
