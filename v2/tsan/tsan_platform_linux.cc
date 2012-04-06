@@ -84,6 +84,11 @@ static void *my_mmap(void *addr, size_t length, int prot, int flags,
 # endif
 }
 
+static int my_munmap(void *addr, size_t length) {
+  ScopedInRtl in_rtl;
+  return syscall(__NR_munmap, addr, length);
+}
+
 void *virtual_alloc(uptr size) {
   void *p = my_mmap(0, size, PROT_READ|PROT_WRITE,
       MAP_PRIVATE | MAP_ANON, -1, 0);
@@ -96,7 +101,7 @@ void *virtual_alloc(uptr size) {
 
 void virtual_free(void *p, uptr size) {
   ScopedInRtl in_rtl;
-  if (munmap(p, size)) {
+  if (my_munmap(p, size)) {
     Report("FATAL: ThreadSanitizer munmap failed\n");
     Die();
   }
@@ -217,7 +222,7 @@ static int GetTlsSize() {
     }
   }
 
-  munmap(map, st.st_size);
+  my_munmap(map, st.st_size);
   close(fd);
   return tls_size;
 }
