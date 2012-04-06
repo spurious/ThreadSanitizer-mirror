@@ -27,8 +27,9 @@ fi
 MAKE_JOBS=${MAX_MAKE_JOBS:-16}
 
 if [ -d tsanv2 ]; then
-  cd tsanv2/v2
-  svn up $REV_ARG
+  cd tsanv2
+  svn up --ignore-externals $REV_ARG
+  cd v2
 else
   svn co http://data-race-test.googlecode.com/svn/trunk/ tsanv2 $REV_ARG
   cd tsanv2/v2
