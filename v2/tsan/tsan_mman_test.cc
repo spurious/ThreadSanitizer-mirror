@@ -60,4 +60,50 @@ TEST(Mman, User) {
   user_free(thr, pc, p2);
 }
 
+TEST(Mman, UserRealloc) {
+  ScopedInRtl in_rtl;
+  ThreadState *thr = cur_thread();
+  uptr pc = 0;
+  {
+    void *p = user_realloc(thr, pc, 0, 0);
+    // Strictly saying this is incorrect, realloc(NULL, N) is equivalent to
+    // malloc(N), thus must return non-NULL pointer.
+    EXPECT_EQ(p, (void*)0);
+  }
+  {
+    void *p = user_realloc(thr, pc, 0, 100);
+    EXPECT_NE(p, (void*)0);
+    memset(p, 0xde, 100);
+    user_free(thr, pc, p);
+  }
+  {
+    void *p = user_alloc(thr, pc, 100);
+    EXPECT_NE(p, (void*)0);
+    memset(p, 0xde, 100);
+    void *p2 = user_realloc(thr, pc, p, 0);
+    EXPECT_EQ(p2, (void*)0);
+  }
+  {
+    void *p = user_realloc(thr, pc, 0, 100);
+    EXPECT_NE(p, (void*)0);
+    memset(p, 0xde, 100);
+    void *p2 = user_realloc(thr, pc, p, 10000);
+    EXPECT_NE(p2, (void*)0);
+    for (int i = 0; i < 100; i++)
+      EXPECT_EQ(((char*)p2)[i], (char)0xde);
+    memset(p2, 0xde, 10000);
+    user_free(thr, pc, p2);
+  }
+  {
+    void *p = user_realloc(thr, pc, 0, 10000);
+    EXPECT_NE(p, (void*)0);
+    memset(p, 0xde, 10000);
+    void *p2 = user_realloc(thr, pc, p, 10);
+    EXPECT_NE(p2, (void*)0);
+    for (int i = 0; i < 10; i++)
+      EXPECT_EQ(((char*)p2)[i], (char)0xde);
+    user_free(thr, pc, p2);
+  }
+}
+
 }  // namespace __tsan

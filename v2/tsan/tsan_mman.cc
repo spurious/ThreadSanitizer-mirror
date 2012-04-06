@@ -43,11 +43,13 @@ void user_free(ThreadState *thr, uptr pc, void *p) {
 void *user_realloc(ThreadState *thr, uptr pc, void *p, uptr sz) {
   CHECK_GT(thr->in_rtl, 0);
   void *p2 = 0;
+  // FIXME: Handle "shrinking" more efficiently,
+  // it seems that some software actually does this.
   if (sz) {
     p2 = user_alloc(thr, pc, sz);
     if (p) {
       MBlock *b = user_mblock(thr, p);
-      internal_memcpy(p2, p, b->size);
+      internal_memcpy(p2, p, min(b->size, sz));
     }
   }
   if (p) {
@@ -59,8 +61,9 @@ void *user_realloc(ThreadState *thr, uptr pc, void *p, uptr sz) {
 void *user_alloc_aligned(ThreadState *thr, uptr pc, uptr sz, uptr align) {
   CHECK_GT(thr->in_rtl, 0);
   void *p = user_alloc(thr, pc, sz + align);
-  p = (void*)(((uptr)p + align - 1) & ~(align - 1));
-  return p;
+  void *pa = (void*)(((uptr)p + align - 1) & ~(align - 1));
+  DCHECK_LE((uptr)pa + sz, (uptr)p + sz + align);
+  return pa;
 }
 
 MBlock *user_mblock(ThreadState *thr, void *p) {
