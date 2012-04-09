@@ -54,10 +54,9 @@ struct LldbContext {
 
 static int dl_iterate_phdr_cb(dl_phdr_info *info, size_t size, void *ctx0) {
   LldbContext *ctx = (LldbContext*)ctx0;
-  const bool is_first = ctx->is_first;
-  ctx->is_first = false;
-  if (is_first)
+  if (ctx->is_first)
     info->dlpi_name = "/proc/self/exe";
+  ctx->is_first = false;
   if (info->dlpi_name == 0)
     return 0;
   SBModule module = ctx->target.AddModule(info->dlpi_name, 0, 0);
