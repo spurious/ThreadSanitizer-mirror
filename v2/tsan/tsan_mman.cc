@@ -34,7 +34,7 @@ void user_free(ThreadState *thr, uptr pc, void *p) {
   DPrintf("#%d: free(%p)\n", thr->tid, p);
   MBlock *b = user_mblock(thr, p);
   p = b + 1;
-  if (CTX() && CTX()->initialized) {
+  if (CTX() && CTX()->initialized && thr->in_rtl == 1) {
     MemoryRangeFreed(thr, pc, (uptr)p, b->size);
   }
   Free(b);
