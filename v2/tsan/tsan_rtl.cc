@@ -87,17 +87,29 @@ class Shadow: public FastState {
     return masked_xor == 0;
   }
 
+  static bool TwoRangesIntersectSLOW(Shadow s1, Shadow s2) {
+    if (s1.addr0() == s2.addr0()) return true;
+    if (s1.addr0() < s2.addr0() && s1.addr0() + s1.size() > s2.addr0())
+      return true;
+    if (s2.addr0() < s1.addr0() && s2.addr0() + s2.size() > s1.addr0())
+      return true;
+    return false;
+  }
+
   static inline bool TwoRangesIntersect(Shadow s1, Shadow s2,
       unsigned kS2AccessSize) {
+    bool res = false;
     u64 diff = s1.addr0() - s2.addr0();
     if ((s64)diff < 0) {  // s1.addr0 < s2.addr0  // NOLINT
       // if (s1.addr0() + size1) > s2.addr0()) return true;
-      if (s1.size() > -diff)  return true;
+      if (s1.size() > -diff)  res = true;
     } else {
       // if (s2.addr0() + kS2AccessSize > s1.addr0()) return true;
-      if (kS2AccessSize > diff) return true;
+      if (kS2AccessSize > diff) res = true;
     }
-    return false;
+    DCHECK_EQ(res, TwoRangesIntersectSLOW(s1, s2));
+    DCHECK_EQ(res, TwoRangesIntersectSLOW(s2, s1));
+    return res;
   }
 
   // The idea behind the offset is as follows.
