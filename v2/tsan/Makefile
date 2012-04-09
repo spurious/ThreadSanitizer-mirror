@@ -11,7 +11,7 @@ ifeq ($(CXX), clang++)
   # Global constructors are banned.
   CXXFLAGS+=-Wglobal-constructors
 else
-  CXXFLAGS+=-Wframe-larger-than=256
+  CXXFLAGS+=-Wframe-larger-than=512
 endif
 
 
