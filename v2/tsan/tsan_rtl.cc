@@ -113,7 +113,7 @@ class Shadow: public FastState {
   // if user data is {int, short, char, char}, then accesses to the int are
   // offsetted to 0, short - 4, 1st char - 6, 2nd char - 7. Hopefully, accesses
   // from a single thread won't need to scan all 8 shadow values.
-  unsigned ComputeSearchOffset(unsigned kAccessSize) {
+  unsigned ComputeSearchOffset() {
     return x_ & 7;
   }
 
@@ -473,7 +473,7 @@ static bool MemoryAccess1(ThreadState *thr,
                           int kAccessSizeLog, int kAccessIsWrite) {
   StatInc(thr, StatShadowProcessed);
   const unsigned kAccessSize = 1 << kAccessSizeLog;
-  unsigned off = cur.ComputeSearchOffset(kAccessSize);
+  unsigned off = cur.ComputeSearchOffset();
   u64 *sp = &shadow_mem[(i + off) % kShadowCnt];
   Shadow old = LoadShadow(sp);
   if (old.IsZero()) {
