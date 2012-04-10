@@ -237,18 +237,55 @@ void ThreadDetach(ThreadState *thr, uptr pc, uptr uid) {
 
 void MemoryAccessRange(ThreadState *thr, uptr pc, uptr addr,
                        uptr size, bool is_write) {
+  u64 *shadow_mem = (u64*)MemToShadow(addr);
+  DPrintf2("#%d: MemoryAccessRange: @%p %p size=%d is_write=%d\n",
+      (int)thr->fast_state.tid(), (void*)pc, (void*)addr,
+      (int)size, is_write);
+  DCHECK(IsAppMem(addr));
+  DCHECK(IsShadowMem((uptr)shadow_mem));
+
+  StatInc(thr, StatMopRange);
+
+  thr->fast_state.IncrementEpoch();
+  FastState fast_state = thr->fast_state;
+  // We must not store to the trace if we do not store to the shadow.
+  // That is, this call must be moved somewhere below.
+  TraceAddEvent(thr, fast_state.epoch(), EventTypeMop, pc);
+  // FIXME: If the access is ignored, then we must not increment the epoch.
+  if (fast_state.GetIgnoreBit())
+    return;
+
+  bool unaligned = (addr % 8) != 0;
+
   // Handle unaligned beginning, if any.
   for (; addr % 8 && size; addr++, size--) {
-    MemoryAccess(thr, pc, addr, 0, is_write);
+    int const kAccessSizeLog = 0;
+    Shadow cur(fast_state);
+    cur.SetWrite(is_write);
+    cur.SetAddr0AndSizeLog(addr & 7, kAccessSizeLog);
+    MemoryAccessImpl(thr, addr, kAccessSizeLog, is_write, fast_state,
+        shadow_mem, cur);
   }
+  if (unaligned)
+    shadow_mem += kShadowCnt;
   // Handle middle part, if any.
   for (; size >= 8; addr += 8, size -= 8) {
-    StatInc(thr, StatMopRange);
-    MemoryAccess(thr, pc, addr, 3, is_write);
+    int const kAccessSizeLog = 3;
+    Shadow cur(fast_state);
+    cur.SetWrite(is_write);
+    cur.SetAddr0AndSizeLog(0, kAccessSizeLog);
+    MemoryAccessImpl(thr, addr, kAccessSizeLog, is_write, fast_state,
+        shadow_mem, cur);
+    shadow_mem += kShadowCnt;
   }
   // Handle ending, if any.
   for (; size; addr++, size--) {
-    MemoryAccess(thr, pc, addr, 0, is_write);
+    int const kAccessSizeLog = 0;
+    Shadow cur(fast_state);
+    cur.SetWrite(is_write);
+    cur.SetAddr0AndSizeLog(addr & 7, kAccessSizeLog);
+    MemoryAccessImpl(thr, addr, kAccessSizeLog, is_write, fast_state,
+        shadow_mem, cur);
   }
 }
 

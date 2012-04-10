@@ -31,90 +31,6 @@ namespace __tsan {
 __thread char cur_thread_placeholder[sizeof(ThreadState)] ALIGN(64);
 static char ctx_placeholder[sizeof(Context)] ALIGN(64);
 
-// Shadow:
-//   tid             : kTidBits
-//   epoch           : kClkBits
-//   is_write        : 1
-//   size_log        : 2
-//   addr0           : 3
-class Shadow: public FastState {
- public:
-  explicit Shadow(u64 x) : FastState(x) { }
-
-  explicit Shadow(const FastState &s) : FastState(s.x_) { }
-
-  void SetAddr0AndSizeLog(u64 addr0, unsigned kAccessSizeLog) {
-    DCHECK_EQ(x_ & 31, 0);
-    DCHECK_LE(addr0, 7);
-    DCHECK_LE(kAccessSizeLog, 3);
-    x_ |= (kAccessSizeLog << 3) | addr0;
-    DCHECK_EQ(kAccessSizeLog, size_log());
-    DCHECK_EQ(addr0, this->addr0());
-  }
-
-  void SetWrite(unsigned kAccessIsWrite) {
-    DCHECK_EQ(x_ & 32, 0);
-    if (kAccessIsWrite)
-      x_ |= 32;
-    DCHECK_EQ(kAccessIsWrite, is_write());
-  }
-
-  bool IsZero() const { return x_ == 0; }
-  u64 raw() const { return x_; }
-
-  static inline bool TidsAreEqual(Shadow s1, Shadow s2) {
-    u64 shifted_xor = (s1.x_ ^ s2.x_) >> (64 - kTidBits);
-    DCHECK_EQ(shifted_xor == 0, s1.tid() == s2.tid());
-    return shifted_xor == 0;
-  }
-  static inline bool Addr0AndSizeAreEqual(Shadow s1, Shadow s2) {
-    u64 masked_xor = (s1.x_ ^ s2.x_) & 31;
-    return masked_xor == 0;
-  }
-
-  static bool TwoRangesIntersectSLOW(Shadow s1, Shadow s2) {
-    if (s1.addr0() == s2.addr0()) return true;
-    if (s1.addr0() < s2.addr0() && s1.addr0() + s1.size() > s2.addr0())
-      return true;
-    if (s2.addr0() < s1.addr0() && s2.addr0() + s2.size() > s1.addr0())
-      return true;
-    return false;
-  }
-
-  static inline bool TwoRangesIntersect(Shadow s1, Shadow s2,
-      unsigned kS2AccessSize) {
-    bool res = false;
-    u64 diff = s1.addr0() - s2.addr0();
-    if ((s64)diff < 0) {  // s1.addr0 < s2.addr0  // NOLINT
-      // if (s1.addr0() + size1) > s2.addr0()) return true;
-      if (s1.size() > -diff)  res = true;
-    } else {
-      // if (s2.addr0() + kS2AccessSize > s1.addr0()) return true;
-      if (kS2AccessSize > diff) res = true;
-    }
-    DCHECK_EQ(res, TwoRangesIntersectSLOW(s1, s2));
-    DCHECK_EQ(res, TwoRangesIntersectSLOW(s2, s1));
-    return res;
-  }
-
-  // The idea behind the offset is as follows.
-  // Consider that we have 8 bool's contained within a single 8-byte block
-  // (mapped to a single shadow "cell"). Now consider that we write to the bools
-  // from a single thread (which we consider the common case).
-  // W/o offsetting each access will have to scan 4 shadow values at average
-  // to find the corresponding shadow value for the bool.
-  // With offsetting we start scanning shadow with the offset so that
-  // each access hits necessary shadow straight off (at least in an expected
-  // optimistic case).
-  // This logic works seamlessly for any layout of user data. For example,
-  // if user data is {int, short, char, char}, then accesses to the int are
-  // offsetted to 0, short - 4, 1st char - 6, 2nd char - 7. Hopefully, accesses
-  // from a single thread won't need to scan all 8 shadow values.
-  unsigned ComputeSearchOffset() {
-    return x_ & 7;
-  }
-};
-
 static Context *ctx;
 Context *CTX() { return ctx; }
 
@@ -335,37 +251,18 @@ static bool MemoryAccess1(ThreadState *thr,
 }
 
 ALWAYS_INLINE
-void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
-    int kAccessSizeLog, bool kAccessIsWrite) {
-  DCHECK_LE(kAccessIsWrite, 1);
-  u64 *shadow_mem = (u64*)MemToShadow(addr);
-  DPrintf2("#%d: tsan::OnMemoryAccess: @%p %p size=%d"
-      " is_write=%d shadow_mem=%p {%p, %p, %p, %p}\n",
-      (int)thr->fast_state.tid(), (void*)pc, (void*)addr,
-      (int)(1 << kAccessSizeLog), kAccessIsWrite, shadow_mem,
-      shadow_mem[0], shadow_mem[1], shadow_mem[2], shadow_mem[3]);
-  DCHECK(IsAppMem(addr));
-  DCHECK(IsShadowMem((uptr)shadow_mem));
-
+void MemoryAccessImpl(ThreadState *thr, uptr addr,
+    int kAccessSizeLog, bool kAccessIsWrite, FastState fast_state,
+    u64 *shadow_mem, Shadow cur) {
   StatInc(thr, StatMop);
   StatInc(thr, kAccessIsWrite ? StatMopWrite : StatMopRead);
   StatInc(thr, (StatType)(StatMop1 + kAccessSizeLog));
 
-  thr->fast_state.IncrementEpoch();
-  FastState fast_state = thr->fast_state;
-  if (fast_state.GetIgnoreBit()) return;
-  Shadow cur(fast_state);
-  cur.SetAddr0AndSizeLog(addr & 7, kAccessSizeLog);
-  cur.SetWrite(kAccessIsWrite);
   // This potentially can live in an MMX/SSE scratch register.
   // The required intrinsics are:
   // __m128i _mm_move_epi64(__m128i*);
   // _mm_storel_epi64(u64*, __m128i);
   u64 store_state = cur.raw();
-
-  // We must not store to the trace if we do not store to the shadow.
-  // That is, this call must be moved somewhere below.
-  TraceAddEvent(thr, thr->fast_state.epoch(), EventTypeMop, pc);
 
   // scan all the shadow values and dispatch to 4 categories:
   // same, replace, candidate and race (see comments below).
@@ -411,6 +308,34 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
   unsigned i = cur.epoch() % kShadowCnt;
   StoreShadow(shadow_mem+i, store_state);
   StatInc(thr, StatShadowReplace);
+}
+
+ALWAYS_INLINE
+void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
+    int kAccessSizeLog, bool kAccessIsWrite) {
+  u64 *shadow_mem = (u64*)MemToShadow(addr);
+  DPrintf2("#%d: tsan::OnMemoryAccess: @%p %p size=%d"
+      " is_write=%d shadow_mem=%p {%p, %p, %p, %p}\n",
+      (int)thr->fast_state.tid(), (void*)pc, (void*)addr,
+      (int)(1 << kAccessSizeLog), kAccessIsWrite, shadow_mem,
+      shadow_mem[0], shadow_mem[1], shadow_mem[2], shadow_mem[3]);
+  DCHECK(IsAppMem(addr));
+  DCHECK(IsShadowMem((uptr)shadow_mem));
+
+  thr->fast_state.IncrementEpoch();
+  FastState fast_state = thr->fast_state;
+  // We must not store to the trace if we do not store to the shadow.
+  // That is, this call must be moved somewhere below.
+  TraceAddEvent(thr, fast_state.epoch(), EventTypeMop, pc);
+  // FIXME: If the access is ignored, then we must not increment the epoch.
+  if (fast_state.GetIgnoreBit())
+    return;
+  Shadow cur(fast_state);
+  cur.SetAddr0AndSizeLog(addr & 7, kAccessSizeLog);
+  cur.SetWrite(kAccessIsWrite);
+
+  MemoryAccessImpl(thr, addr, kAccessSizeLog, kAccessIsWrite, fast_state,
+      shadow_mem, cur);
 }
 
 static void MemoryRangeSet(ThreadState *thr, uptr pc, uptr addr, uptr size,

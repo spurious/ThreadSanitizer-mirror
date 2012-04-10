@@ -113,7 +113,8 @@ TEST(ThreadSanitizer, ReportStack) {
   EXPECT_EQ(rep->mop[1].write, true);
   stack = rep->mop[1].stack;
   EXPECT_NE(stack, (ReportStack*)0);
-  EXPECT_EQ(stack->next, (ReportStack*)0);
+  EXPECT_NE(stack->next, (ReportStack*)0);
+  EXPECT_EQ(stack->next->next, (ReportStack*)0);
   EXPECT_GT(stack->pc, pc - 64);
   EXPECT_LT(stack->pc, pc + 64);
   EXPECT_TRUE(contains(stack->func, "mop_no_inline"));
