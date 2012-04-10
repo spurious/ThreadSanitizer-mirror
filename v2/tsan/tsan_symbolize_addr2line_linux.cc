@@ -119,6 +119,8 @@ int SymbolizeData(RegionAlloc *alloc, uptr addr, Symbol *symb) {
     char *pos = strchr(tmp, '\n');
     if (pos && tmp[0] != '?') {
       res = 1;
+      symb[0].module = 0;
+      symb[0].offset = addr;
       symb[0].name = alloc->Alloc<char>(pos - tmp + 1);
       internal_memcpy(symb[0].name, tmp, pos - tmp);
       symb[0].name[pos - tmp] = 0;

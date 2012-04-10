@@ -170,4 +170,15 @@ void *RegionAlloc::Alloc(uptr size) {
   return p;
 }
 
+char *RegionAlloc::Strdup(const char *str) {
+  if (str == 0)
+    return 0;
+  uptr len = internal_strlen(str) + 1;
+  char *p = (char*)Alloc(len);
+  if (p == 0)
+    return 0;
+  internal_memcpy(p, str, len);
+  return p;
+}
+
 }  // namespace __tsan

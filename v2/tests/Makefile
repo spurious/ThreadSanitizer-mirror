@@ -45,7 +45,7 @@ tsan_test: $(TEST_OBJ) $(UTEST_OBJ) $(LIBTSAN) $(GTEST_LIB)
 $(GTEST_LIB):
 	mkdir -p $(GTEST_BUILD_DIR) && \
 	cd $(GTEST_BUILD_DIR) && \
-	$(MAKE) -f ../make/Makefile CXXFLAGS="$(CXXFLAGS)"
+	$(MAKE) -f ../make/Makefile CXXFLAGS="$(CXXFLAGS)" CFLAGS="$(CFLAGS)" CC=$(CC) CXX=$(CXX)
 
 clean:
 	rm -f *.o tsan_test

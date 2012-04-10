@@ -97,9 +97,14 @@ int SymbolizeCode(RegionAlloc *alloc, uptr addr, Symbol *symb, int cnt) {
   if (!saddr.IsValid())
     return 0;
   SBSymbolContext sctx(ctx->target.ResolveSymbolContextForAddress(saddr,
-      eSymbolContextFunction|eSymbolContextBlock|eSymbolContextLineEntry));
+      eSymbolContextFunction|eSymbolContextBlock|eSymbolContextLineEntry
+      |eSymbolContextModule));
   if (!sctx.IsValid())
     return 0;
+
+  // Extract module+offset.
+  symb[0].module = alloc->Strdup(sctx.GetModule().GetFileSpec().GetFilename());
+  symb[0].offset = (uptr)saddr.GetFileAddress();
 
   // Extract function name.
   const char* fname = 0;

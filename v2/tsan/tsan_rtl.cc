@@ -362,6 +362,8 @@ void SymbolizeStack(RegionAlloc *alloc, ReportStack *stack,
     if (framecnt) {
       for (int fi = 0; fi < framecnt && stack->cnt < kStackMax; fi++) {
         ReportStackEntry *ent = &stack->entry[stack->cnt++];
+        ent->module = symb[fi].module;
+        ent->offset = symb[fi].offset;
         ent->pc = pcs[si];
         ent->func = symb[fi].name;
         ent->file = symb[fi].file;
@@ -369,6 +371,8 @@ void SymbolizeStack(RegionAlloc *alloc, ReportStack *stack,
       }
     } else if (stack->cnt < kStackMax) {
       ReportStackEntry *ent = &stack->entry[stack->cnt++];
+      ent->module = 0;
+      ent->offset = 0;
       ent->pc = pcs[si];
       ent->func = 0;
       ent->file = 0;

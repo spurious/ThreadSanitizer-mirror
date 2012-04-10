@@ -18,8 +18,11 @@ namespace __tsan {
 void PrintStack(const ReportStack *stack) {
   for (int i = 0; i < stack->cnt; i++) {
     const ReportStackEntry *ent = &stack->entry[i];
-    Printf("    #%d %p: %s %s:%d\n", i,
-           (void*)ent->pc, ent->func, ent->file, ent->line);
+    Printf("    #%d %s %s:%d ", i, ent->func, ent->file, ent->line);
+    if (ent->module && ent->offset)
+      Printf("(%s+%p)\n", ent->module, (void*)ent->offset);
+    else
+      Printf("(%p)\n", (void*)ent->pc);
   }
 }
 

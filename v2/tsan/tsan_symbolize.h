@@ -20,8 +20,10 @@
 namespace __tsan {
 
 struct Symbol {
-  char* name;
-  char* file;
+  char *module;
+  uptr offset;
+  char *name;
+  char *file;
   int line;
 };
 

@@ -64,6 +64,7 @@ class RegionAlloc {
  public:
   RegionAlloc(void *mem, uptr size);
   void *Alloc(uptr size);
+  char *Strdup(const char *str);
 
   template<typename T>
   T *Alloc(uptr cnt) {

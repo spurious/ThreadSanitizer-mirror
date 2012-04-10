@@ -24,6 +24,8 @@ enum ReportType {
 };
 
 struct ReportStackEntry {
+  char* module;
+  uptr offset;
   uptr pc;
   char* func;
   char* file;

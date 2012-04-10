@@ -1317,4 +1317,8 @@ int internal_strcmp(const char *s1, const char *s2) {
   return REAL(strcmp)((signed char*)s1, (signed char*)s2);
 }
 
+uptr internal_strlen(const char *s) {
+  return REAL(strlen)(s);
+}
+
 }  // namespace __tsan
