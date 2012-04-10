@@ -12,13 +12,16 @@ CXX=clang++
 # TODO: add testing for all of -O0...-O3
 CFLAGS="-fthread-sanitizer -fPIE -O1 -g"
 LDFLAGS="-pie -lpthread -ldl $ROOTDIR/tsan/libtsan.a"
+if [ "$LLDB" != "" ]; then
+  LDFLAGS+=" -L$LLDB -llldb"
+fi
 
 test_file() {
   SRC=$1
   COMPILER=$2
   echo ----- TESTING $1
   $COMPILER $SRC $CFLAGS $LDFLAGS
-  ./a.out 2> test.out || echo -n
+  LD_LIBRARY_PATH=$LLDB ./a.out 2> test.out || echo -n
   echo >>test.out  # FileCheck fails on empty files
   # cat test.out
   FileCheck < test.out $SRC
