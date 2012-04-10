@@ -50,6 +50,10 @@ class FastState {
     CHECK(epoch == this->epoch());
   }
 
+  explicit FastState(u64 x)
+      : x_(x) {
+  }
+
   u64 tid() const {
     u64 res = x_ >> (64 - kTidBits);
     return res;
@@ -63,14 +67,21 @@ class FastState {
     x_ += 1 << (64 - kTidBits - kClkBits);
     // CHECK(old_epoch + 1 == epoch());
   }
+  u64 addr0() const { return x_ & 7; }
+  u64 size() const { return 1ull << size_log(); }
+  bool is_write() const { return x_ & 32; }
   void SetIgnoreBit() { x_ |= 1; }
   void ClearIgnoreBit() { x_ &= ~(u64)1; }
   bool GetIgnoreBit() { return x_ & 1; }
  private:
   friend class Shadow;
-  explicit FastState(u64 x) : x_(x) { }
+  u64 size_log() const { return (x_ >> 3) & 3; }
   u64 x_;
 };
+
+// Freed memory.
+// As if 8-byte write by thread 0xff..f at epoch 0xff..f, races with everything.
+const u64 kShadowFreed = 0xfffffffffffffff8ull;
 
 const int kSigCount = 1024;
 const int kShadowStackSize = 1024;
@@ -216,6 +227,8 @@ void InitializePlatform();
 void InitializeDynamicAnnotations();
 void Report(const char *format, ...);
 void Die() NORETURN;
+
+void ReportRace(ThreadState *thr);
 
 #if defined(TSAN_DEBUG_OUTPUT) && TSAN_DEBUG_OUTPUT >= 1
 # define DPrintf Printf
