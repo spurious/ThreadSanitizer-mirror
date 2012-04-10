@@ -35,16 +35,6 @@ using namespace lldb;  // NOLINT
 
 namespace __tsan {
 
-struct ScopedErrno {
-  int err;
-  ScopedErrno() {
-    this->err = errno;
-  }
-  ~ScopedErrno() {
-    errno = this->err;
-  }
-};
-
 struct LldbContext {
   bool is_valid;
   bool is_first;
@@ -86,8 +76,11 @@ static LldbContext *GetContext() {
   return ctx;
 }
 
-int SymbolizeCode(RegionAlloc *alloc, uptr addr, Symbol *symb, int cnt) {
-  ScopedErrno se;
+ReportStack *SymbolizeCode(RegionAlloc *alloc, uptr addr) {
+  ReportStack *ent = alloc->Alloc<ReportStack>(1);
+  internal_memset(ent, 0, sizeof(*ent));
+  ent->pc = addr;
+
   LldbContext *ctx = GetContext();
   if (ctx == 0)
     return 0;
@@ -97,14 +90,14 @@ int SymbolizeCode(RegionAlloc *alloc, uptr addr, Symbol *symb, int cnt) {
   if (!saddr.IsValid())
     return 0;
   SBSymbolContext sctx(ctx->target.ResolveSymbolContextForAddress(saddr,
-      eSymbolContextFunction|eSymbolContextBlock|eSymbolContextLineEntry
-      |eSymbolContextModule));
+      eSymbolContextFunction|eSymbolContextBlock
+      |eSymbolContextLineEntry|eSymbolContextModule));
   if (!sctx.IsValid())
     return 0;
 
   // Extract module+offset.
-  symb[0].module = alloc->Strdup(sctx.GetModule().GetFileSpec().GetFilename());
-  symb[0].offset = (uptr)saddr.GetFileAddress();
+  ent->module = alloc->Strdup(sctx.GetModule().GetFileSpec().GetFilename());
+  ent->offset = (uptr)saddr.GetFileAddress();
 
   // Extract function name.
   const char* fname = 0;
@@ -112,12 +105,7 @@ int SymbolizeCode(RegionAlloc *alloc, uptr addr, Symbol *symb, int cnt) {
     fname = sctx.GetBlock().GetInlinedName();
   if (!fname && sctx.GetFunction().IsValid())
     fname = sctx.GetFunction().GetName();
-  symb[0].name = 0;
-  if (fname) {
-    int fnamesz = strlen(fname);
-    symb[0].name = alloc->Alloc<char>(fnamesz + 1);
-    strcpy(symb[0].name, fname);  // NOLINT
-  }
+  ent->func = alloc->Strdup(fname);
 
   // Extract file:line.
   if (sctx.GetLineEntry().IsValid()) {
@@ -126,19 +114,17 @@ int SymbolizeCode(RegionAlloc *alloc, uptr addr, Symbol *symb, int cnt) {
       const char *dir = sctx.GetLineEntry().GetFileSpec().GetDirectory();
       int filesz = strlen(file);
       int dirsz = strlen(dir);
-      symb[0].file = alloc->Alloc<char>(filesz + dirsz + 2);
-      strcpy(symb[0].file, dir);  // NOLINT
-      symb[0].file[dirsz] = '/';
-      strcpy(symb[0].file + dirsz + 1, file);  // NOLINT
+      ent->file = alloc->Alloc<char>(filesz + dirsz + 2);
+      internal_strcpy(ent->file, dir);  // NOLINT
+      ent->file[dirsz] = '/';
+      internal_strcpy(ent->file + dirsz + 1, file);  // NOLINT
     }
-    symb[0].line = sctx.GetLineEntry().GetLine();
+    ent->line = sctx.GetLineEntry().GetLine();
   }
-  (void)cnt;
-  return 1;
+  return ent;
 }
 
 int SymbolizeData(RegionAlloc *alloc, uptr addr, Symbol *symb) {
-  ScopedErrno se;
   LldbContext *ctx = GetContext();
   if (ctx == 0)
     return 0;

@@ -25,9 +25,10 @@ struct Symbol {
   char *name;
   char *file;
   int line;
+  int col;
 };
 
-int SymbolizeCode(RegionAlloc *alloc, uptr addr, Symbol *symb, int cnt);
+ReportStack *SymbolizeCode(RegionAlloc *alloc, uptr addr);
 int SymbolizeData(RegionAlloc *alloc, uptr addr, Symbol *symb);
 
 }  // namespace __tsan

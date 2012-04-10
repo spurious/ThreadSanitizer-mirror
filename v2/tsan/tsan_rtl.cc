@@ -145,15 +145,14 @@ void CheckFailed(const char *file, int line, const char *cond, u64 v1, u64 v2) {
   RegionAlloc alloc(buf, buf.Size());
   StackTrace stack;
   stack.ObtainCurrent(thr, 0);
-  ReportStack rstack;
-  SymbolizeStack(&alloc, &rstack, stack.Begin(), stack.Size());
-  PrintStack(&rstack);
+  ReportStack *rstack = SymbolizeStack(&alloc, stack.Begin(), stack.Size());
+  PrintStack(rstack);
   Printf("Thread %d\n", thr->tid);
   ThreadContext *tctx = CTX()->threads[thr->tid];
   if (tctx) {
-    SymbolizeStack(&alloc, &rstack,
+    rstack = SymbolizeStack(&alloc,
       tctx->creation_stack.Begin(), tctx->creation_stack.Size());
-    PrintStack(&rstack);
+    PrintStack(rstack);
   }
   Die();
 }
@@ -313,19 +312,26 @@ static int RestoreStack(int tid, const u64 epoch, uptr *stack, int n) {
 }
 
 static void StackStripMain(ReportStack *stack) {
-  if (stack->cnt < 2)
+  ReportStack *last_frame = 0;
+  ReportStack *last_frame2 = 0;
+  for (ReportStack *ent = stack; ent; ent = ent->next) {
+    last_frame2 = last_frame;
+    last_frame = ent;
+  }
+
+  if (last_frame2 == 0)
     return;
-  const char *last = stack->entry[stack->cnt - 1].func;
-  const char *last2 = stack->entry[stack->cnt - 2].func;
+  const char *last = last_frame->func;
+  const char *last2 = last_frame2->func;
   // Strip frame above 'main'
   if (last2 && 0 == internal_strcmp(last2, "main")) {
-    stack->cnt--;
+    last_frame2->next = 0;
   // Strip our internal thread start routine.
   } else if (last && 0 == internal_strcmp(last, "__tsan_thread_start_func")) {
-    stack->cnt--;
+    last_frame2->next = 0;
   // Strip global ctors init.
   } else if (last && 0 == internal_strcmp(last, "__do_global_ctors_aux")) {
-    stack->cnt--;
+    last_frame2->next = 0;
   // If both are 0, then we probably just failed to symbolize.
   } else if (last || last2) {
     // Ensure that we recovered stack completely. Trimmed stack
@@ -336,51 +342,27 @@ static void StackStripMain(ReportStack *stack) {
   }
 }
 
-void SymbolizeStack(RegionAlloc *alloc, ReportStack *stack,
-                    const uptr *pcs0, int cnt) {
-  const int kStackMax = 128;
-
-  stack->cnt = 0;
-  stack->entry = 0;
-  if (cnt == 0 || cnt > kStackMax)
-    return;
-  InternalScopedBuf<uptr> pcs(kStackMax);
-  for (int i = 0; i < cnt; i++) {
-    pcs[i] = pcs0[i];
-  }
-  for (int i = 0; i < cnt / 2; i++) {
-    uptr pc = pcs[i];
-    pcs[i] = pcs[cnt - i - 1];
-    pcs[cnt - i - 1] = pc;
-  }
-  stack->entry = alloc->Alloc<ReportStackEntry>(kStackMax);
+ReportStack *SymbolizeStack(RegionAlloc *alloc, const uptr *pcs, int cnt) {
+  if (cnt == 0)
+    return 0;
+  ReportStack *stack = 0;
   for (int si = 0; si < cnt; si++) {
-    InternalScopedBuf<Symbol> symb(kStackMax);
     // We obtain the return address, that is, address of the next instruction,
     // so offset it by 1 byte.
-    int framecnt = SymbolizeCode(alloc, pcs[si] - !!si, symb, kStackMax);
-    if (framecnt) {
-      for (int fi = 0; fi < framecnt && stack->cnt < kStackMax; fi++) {
-        ReportStackEntry *ent = &stack->entry[stack->cnt++];
-        ent->module = symb[fi].module;
-        ent->offset = symb[fi].offset;
-        ent->pc = pcs[si];
-        ent->func = symb[fi].name;
-        ent->file = symb[fi].file;
-        ent->line = symb[fi].line;
-      }
-    } else if (stack->cnt < kStackMax) {
-      ReportStackEntry *ent = &stack->entry[stack->cnt++];
-      ent->module = 0;
-      ent->offset = 0;
-      ent->pc = pcs[si];
-      ent->func = 0;
-      ent->file = 0;
-      ent->line = 0;
+    bool is_last = (si == cnt - 1);
+    ReportStack *ent = SymbolizeCode(alloc, pcs[si] - !is_last);
+    CHECK_NE(ent, 0);
+    ReportStack *last = ent;
+    while (last->next) {
+      last->pc += !is_last;
+      last = last->next;
     }
+    last->pc += !is_last;
+    last->next = stack;
+    stack = ent;
   }
-
   StackStripMain(stack);
+  return stack;
 }
 
 static void NOINLINE ReportRace(ThreadState *thr) {
@@ -417,12 +399,11 @@ static void NOINLINE ReportRace(ThreadState *thr) {
     mop->size = s.size();
     mop->write = s.is_write();
     mop->nmutex = 0;
-    mop->stack.cnt = 0;
     InternalScopedBuf<uptr> stack(kStackMax);
     int stackcnt = RestoreStack(s.tid(), s.epoch(), stack, stack.Count());
     // Ensure that we have at least something for the current thread.
     CHECK(i != 0 || stackcnt != 0);
-    SymbolizeStack(&alloc, &mop->stack, stack, stackcnt);
+    mop->stack = SymbolizeStack(&alloc, stack, stackcnt);
   }
   rep.loc = 0;
   rep.nthread = 2;
@@ -433,7 +414,7 @@ static void NOINLINE ReportRace(ThreadState *thr) {
     rt->id = s.tid();
     rt->running = false;
     rt->name = 0;
-    rt->stack.cnt = 0;
+    rt->stack = 0;
     if (thr->racy_state[i] == kShadowFreed)
       continue;
     ThreadContext *tctx = CTX()->threads[s.tid()];
@@ -441,11 +422,11 @@ static void NOINLINE ReportRace(ThreadState *thr) {
     if (s.epoch() < tctx->epoch0 || s.epoch() > tctx->epoch1)
       continue;
     rt->running = (tctx->status == ThreadStatusRunning);
-    SymbolizeStack(&alloc, &rt->stack,
+    rt->stack = SymbolizeStack(&alloc,
         tctx->creation_stack.Begin(), tctx->creation_stack.Size());
   }
   rep.nmutex = 0;
-  bool suppressed = IsSuppressed(ReportTypeRace, &rep.mop[0].stack);
+  bool suppressed = IsSuppressed(ReportTypeRace, rep.mop[0].stack);
   suppressed = OnReport(&rep, suppressed);
   if (suppressed)
     return;

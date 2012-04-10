@@ -15,9 +15,8 @@
 
 namespace __tsan {
 
-void PrintStack(const ReportStack *stack) {
-  for (int i = 0; i < stack->cnt; i++) {
-    const ReportStackEntry *ent = &stack->entry[i];
+void PrintStack(const ReportStack *ent) {
+  for (int i = 0; ent; ent = ent->next, i++) {
     Printf("    #%d %s %s:%d ", i, ent->func, ent->file, ent->line);
     if (ent->module && ent->offset)
       Printf("(%s+%p)\n", ent->module, (void*)ent->offset);
@@ -40,7 +39,7 @@ void PrintReport(const ReportDesc *rep) {
            (i ? "Previous " : ""),
            (mop->write ? "Write" : "Read"),
            mop->size, (void*)mop->addr, mop->tid);
-    PrintStack(&mop->stack);
+    PrintStack(mop->stack);
   }
   if (rep->loc) {
     const ReportLocation *loc = rep->loc;
@@ -50,17 +49,17 @@ void PrintReport(const ReportDesc *rep) {
     } else if (loc->type == ReportLocationHeap) {
       Printf("  Location is heap of size %d at %p allocated by thread %d:\n",
              loc->size, loc->addr, loc->tid);
-      PrintStack(&loc->stack);
+      PrintStack(loc->stack);
     } else if (loc->type == ReportLocationStack) {
       Printf("  Location is stack of thread %d:\n", loc->tid);
     }
   }
   for (int i = 0; i < rep->nmutex; i++) {
     ReportMutex *rm = &rep->mutex[i];
-    if (rm->stack.cnt == 0)
+    if (rm->stack == 0)
       continue;
     Printf("  Mutex %d created at:\n", rm->id);
-    PrintStack(&rm->stack);
+    PrintStack(rm->stack);
   }
   for (int i = 0; i < rep->nthread; i++) {
     ReportThread *rt = &rep->thread[i];
@@ -68,10 +67,10 @@ void PrintReport(const ReportDesc *rep) {
     if (rt->name)
       Printf(" '%s'", rt->name);
     Printf(" (%s)", rt->running ? "running" : "finished");
-    if (rt->stack.cnt)
+    if (rt->stack)
       Printf(" created at:");
     Printf("\n");
-    PrintStack(&rt->stack);
+    PrintStack(rt->stack);
   }
   Printf("==================\n");
 }

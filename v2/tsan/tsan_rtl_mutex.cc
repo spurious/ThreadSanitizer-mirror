@@ -46,7 +46,7 @@ void MutexDestroy(ThreadState *thr, uptr pc, uptr addr) {
     rep.nmutex = 1;
     rep.mutex = alloc.Alloc<ReportMutex>(1);
     rep.mutex->id = 42;
-    SymbolizeStack(&alloc, &rep.mutex->stack,
+    rep.mutex->stack = SymbolizeStack(&alloc,
         s->creation_stack.Begin(), s->creation_stack.Size());
     Symbol symb;
     if (SymbolizeData(&alloc, s->addr, &symb)) {
@@ -58,7 +58,7 @@ void MutexDestroy(ThreadState *thr, uptr pc, uptr addr) {
       rep.loc->name = symb.name;
       rep.loc->file = symb.file;
       rep.loc->line = symb.line;
-      rep.loc->stack.cnt = 0;
+      rep.loc->stack = 0;
     }
     PrintReport(&rep);
     CTX()->nreported++;

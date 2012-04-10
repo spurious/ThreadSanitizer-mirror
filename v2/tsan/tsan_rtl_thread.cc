@@ -45,7 +45,7 @@ void ThreadFinalize(ThreadState *thr) {
     rep.thread = alloc.Alloc<ReportThread>(1);
     rep.thread->id = tctx->tid;
     rep.thread->running = (tctx->status != ThreadStatusFinished);
-    SymbolizeStack(&alloc, &rep.thread->stack,
+    rep.thread->stack = SymbolizeStack(&alloc,
         tctx->creation_stack.Begin(), tctx->creation_stack.Size());
     PrintReport(&rep);
     ctx->nreported++;

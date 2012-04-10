@@ -23,18 +23,14 @@ enum ReportType {
   ReportTypeMutexDestroyLocked,
 };
 
-struct ReportStackEntry {
-  char* module;
+struct ReportStack {
+  ReportStack *next;
+  char *module;
   uptr offset;
   uptr pc;
-  char* func;
-  char* file;
+  char *func;
+  char *file;
   int line;
-};
-
-struct ReportStack {
-  int cnt;
-  ReportStackEntry *entry;
 };
 
 struct ReportMop {
@@ -44,7 +40,7 @@ struct ReportMop {
   bool write;
   int nmutex;
   int *mutex;
-  ReportStack stack;
+  ReportStack *stack;
 };
 
 enum ReportLocationType {
@@ -61,19 +57,19 @@ struct ReportLocation {
   char *name;
   char *file;
   int line;
-  ReportStack stack;
+  ReportStack *stack;
 };
 
 struct ReportThread {
   int id;
   bool running;
   char *name;
-  ReportStack stack;
+  ReportStack *stack;
 };
 
 struct ReportMutex {
   int id;
-  ReportStack stack;
+  ReportStack *stack;
 };
 
 struct ReportDesc {
@@ -90,8 +86,7 @@ struct ReportDesc {
 
 void PrintReport(const ReportDesc *rep);
 void PrintStack(const ReportStack *stack);
-void SymbolizeStack(RegionAlloc *alloc, ReportStack *stack,
-                    const uptr *pcs, int cnt);
+ReportStack *SymbolizeStack(RegionAlloc *alloc, const uptr *pcs, int cnt);
 bool OnReport(const ReportDesc *rep, bool suppressed) WEAK;
 bool IsExpectReport(uptr addr, uptr size);
 void PrintStats(u64 *stat);

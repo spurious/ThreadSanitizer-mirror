@@ -11,15 +11,15 @@
 //
 //===----------------------------------------------------------------------===//
 #include "tsan_symbolize.h"
+#include "tsan_rtl.h"
 
 namespace __tsan {
 
-int SymbolizeCode(RegionAlloc *alloc, uptr addr, Symbol *symb, int cnt) {
-  (void)alloc;
-  (void)addr;
-  (void)symb;
-  (void)cnt;
-  return 0;
+ReportStack *SymbolizeCode(RegionAlloc *alloc, uptr addr) {
+  ReportStack *stack = alloc->Alloc<ReportStack>(1);
+  internal_memset(stack, 0, sizeof(*stack));
+  stack->pc = addr;
+  return stack;
 }
 
 int SymbolizeData(RegionAlloc *alloc, uptr addr, Symbol *symb) {

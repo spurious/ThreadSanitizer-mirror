@@ -22,16 +22,6 @@
 
 namespace __tsan {
 
-struct ScopedErrno {
-  int err;
-  ScopedErrno() {
-    this->err = errno;
-  }
-  ~ScopedErrno() {
-    errno = this->err;
-  }
-};
-
 static char exe[1024];
 static uptr base;
 
@@ -63,36 +53,34 @@ static uptr GetImageBase() {
   return base;
 }
 
-int SymbolizeCode(RegionAlloc *alloc, uptr addr, Symbol *symb, int cnt) {
-  ScopedErrno se;
+ReportStack *SymbolizeCode(RegionAlloc *alloc, uptr addr) {
   if (base == 0)
     base = GetImageBase();
-  int res = 0;
+  ReportStack *res = alloc->Alloc<ReportStack>(1);
+  internal_memset(res, 0, sizeof(*res));
+  res->pc = addr;
   InternalScopedBuf<char> cmd(1024);
   snprintf(cmd, cmd.Size(),
            "addr2line -C -s -f -e %s %p > tsan.tmp2", exe,
            (void*)(addr - base));
   if (system(cmd))
-    return 0;
+    return res;
   FILE* f3 = fopen("tsan.tmp2", "rb");
   if (f3) {
     InternalScopedBuf<char> tmp(1024);
     if (fread(tmp, 1, tmp.Size(), f3) <= 0)
-      return 0;
+      return res;
     char *pos = strchr(tmp, '\n');
     if (pos && tmp[0] != '?') {
-      res = 1;
-      symb[0].name = alloc->Alloc<char>(pos - tmp + 1);
-      internal_memcpy(symb[0].name, tmp, pos - tmp);
-      symb[0].name[pos - tmp] = 0;
-      symb[0].file = 0;
-      symb[0].line = 0;
+      res->func = alloc->Alloc<char>(pos - tmp + 1);
+      internal_memcpy(res->func, tmp, pos - tmp);
+      res->func[pos - tmp] = 0;
       char *pos2 = strchr(pos, ':');
       if (pos2) {
-        symb[0].file = alloc->Alloc<char>(pos2 - pos - 1 + 1);
-        internal_memcpy(symb[0].file, pos + 1, pos2 - pos - 1);
-        symb[0].file[pos2 - pos - 1] = 0;
-        symb[0].line = atoi(pos2 + 1);
+        res->file = alloc->Alloc<char>(pos2 - pos - 1 + 1);
+        internal_memcpy(res->file, pos + 1, pos2 - pos - 1);
+        res->file[pos2 - pos - 1] = 0;
+        res->line = atoi(pos2 + 1);
       }
     }
     fclose(f3);
@@ -101,7 +89,6 @@ int SymbolizeCode(RegionAlloc *alloc, uptr addr, Symbol *symb, int cnt) {
 }
 
 int SymbolizeData(RegionAlloc *alloc, uptr addr, Symbol *symb) {
-  ScopedErrno se;
   if (base == 0)
     base = GetImageBase();
   int res = 0;

@@ -336,7 +336,7 @@ INTERCEPTOR(void*, strrchr, void *s, int c) {
   return REAL(strrchr)(s, c);
 }
 
-INTERCEPTOR(void*, strcpy, void *dst, void *src) {  // NOLINT
+INTERCEPTOR(void*, strcpy, void *dst, const void *src) {  // NOLINT
   SCOPED_INTERCEPTOR(strcpy, dst, src);  // NOLINT
   uptr srclen = REAL(strlen)(src);
   MemoryAccessRange(thr, pc, (uptr)dst, srclen + 1, true);
@@ -1315,6 +1315,10 @@ void internal_memcpy(void *dst, const void *src, uptr size) {
 
 int internal_strcmp(const char *s1, const char *s2) {
   return REAL(strcmp)((signed char*)s1, (signed char*)s2);
+}
+
+void internal_strcpy(char *s1, const char *s2) {
+  REAL(strcpy)(s1, s2);  // NOLINT
 }
 
 uptr internal_strlen(const char *s) {

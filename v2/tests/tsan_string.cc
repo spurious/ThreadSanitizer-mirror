@@ -76,8 +76,10 @@ TEST(ThreadSanitizer, MemcpyStack) {
   const ReportDesc *rep = t2.Memcpy(data, data1, 10, true);
   EXPECT_GE(rep->mop[0].addr, (uptr)data);
   EXPECT_LT(rep->mop[0].addr, (uptr)data + 10);
-  EXPECT_EQ(rep->mop[0].stack.cnt, 2);
-  EXPECT_EQ(rep->mop[0].stack.entry[0].pc, (uptr)memcpy);
+  EXPECT_NE(rep->mop[0].stack, (ReportStack*)0);
+  EXPECT_NE(rep->mop[0].stack->next, (ReportStack*)0);
+  EXPECT_EQ(rep->mop[0].stack->next->next, (ReportStack*)0);
+  EXPECT_EQ(rep->mop[0].stack->pc, (uptr)memcpy);
 }
 
 TEST(ThreadSanitizer, MemsetRace1) {
