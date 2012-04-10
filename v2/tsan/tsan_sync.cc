@@ -13,6 +13,7 @@
 #include "tsan_sync.h"
 #include "tsan_placement_new.h"
 #include "tsan_rtl.h"
+#include "tsan_mman.h"
 
 namespace __tsan {
 
@@ -96,6 +97,63 @@ SyncVar* SyncTab::GetAndRemove(uptr addr) {
 
 int SyncTab::PartIdx(uptr addr) {
   return (addr >> 3) % kPartCount;
+}
+
+StackTrace::StackTrace()
+    : n_()
+    , s_() {
+}
+
+StackTrace::~StackTrace() {
+  CHECK_EQ(n_, 0);
+  CHECK_EQ(s_, 0);
+}
+
+void StackTrace::Init(ThreadState *thr, uptr *pcs, uptr cnt) {
+  Free(thr);
+  if (cnt == 0)
+    return;
+  n_ = cnt;
+  s_ = (uptr*)internal_alloc((n_) * sizeof(s_[0]));
+  internal_memcpy(s_, pcs, n_ * sizeof(s_[0]));
+}
+
+void StackTrace::ObtainCurrent(ThreadState *thr, uptr toppc) {
+  Free(thr);
+  n_ = thr->shadow_stack_pos - &thr->shadow_stack[0];
+  s_ = (uptr*)internal_alloc((n_ + !!toppc) * sizeof(s_[0]));
+  for (uptr i = 0; i < n_; i++)
+    s_[i] = thr->shadow_stack[i];
+  if (toppc) {
+    s_[n_] = toppc;
+    n_++;
+  }
+}
+
+void StackTrace::Free(ThreadState *thr) {
+  if (s_) {
+    CHECK_NE(n_, 0);
+    internal_free(s_);
+    s_ = 0;
+    n_ = 0;
+  }
+}
+
+bool StackTrace::IsEmpty() const {
+  return n_ == 0;
+}
+
+uptr StackTrace::Size() const {
+  return n_;
+}
+
+uptr StackTrace::Get(uptr i) const {
+  CHECK_LT(i, n_);
+  return s_[i];
+}
+
+const uptr *StackTrace::Begin() const {
+  return s_;
 }
 
 }  // namespace __tsan

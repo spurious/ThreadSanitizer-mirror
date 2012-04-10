@@ -130,7 +130,9 @@ struct ThreadState;
 struct ThreadContext;
 struct Context;
 struct ReportDesc;
+struct ReportStack;
 class RegionAlloc;
+class StackTrace;
 
 }  // namespace __tsan
 

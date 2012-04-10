@@ -46,8 +46,7 @@ void MutexDestroy(ThreadState *thr, uptr pc, uptr addr) {
     rep.nmutex = 1;
     rep.mutex = alloc.Alloc<ReportMutex>(1);
     rep.mutex->id = 42;
-    rep.mutex->stack = SymbolizeStack(&alloc,
-        s->creation_stack.Begin(), s->creation_stack.Size());
+    rep.mutex->stack = SymbolizeStack(&alloc, s->creation_stack);
     Symbol symb;
     if (SymbolizeData(&alloc, s->addr, &symb)) {
       rep.loc = alloc.Alloc<ReportLocation>(1);

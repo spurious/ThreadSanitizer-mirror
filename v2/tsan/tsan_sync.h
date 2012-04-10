@@ -27,8 +27,10 @@ class StackTrace {
   StackTrace();
   ~StackTrace();
 
+  void Init(ThreadState *thr, uptr *pcs, uptr cnt);
   void ObtainCurrent(ThreadState *thr, uptr toppc);
   void Free(ThreadState *thr);
+  bool IsEmpty() const;
   uptr Size() const;
   uptr Get(uptr i) const;
   const uptr *Begin() const;

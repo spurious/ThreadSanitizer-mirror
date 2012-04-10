@@ -203,6 +203,10 @@ struct Context {
   ThreadContext* dead_list_head;
   ThreadContext* dead_list_tail;
 
+  uptr *racy_accesses;
+  uptr racy_siz;
+  uptr racy_cap;
+
   u64 stat[StatCnt];
 };
 
@@ -229,6 +233,7 @@ void Report(const char *format, ...);
 void Die() NORETURN;
 
 void ReportRace(ThreadState *thr);
+ReportStack *SymbolizeStack(RegionAlloc *alloc, const StackTrace& trace);
 
 #if defined(TSAN_DEBUG_OUTPUT) && TSAN_DEBUG_OUTPUT >= 1
 # define DPrintf Printf

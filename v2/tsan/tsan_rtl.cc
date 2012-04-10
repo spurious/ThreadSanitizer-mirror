@@ -20,12 +20,6 @@
 #include "tsan_placement_new.h"
 #include "tsan_suppressions.h"
 
-/*
-#include "tsan_symbolize.h"
-#include "tsan_sync.h"
-#include "tsan_report.h"
-*/
-
 volatile int __tsan_stop = 0;
 
 extern "C" void __tsan_resume() {

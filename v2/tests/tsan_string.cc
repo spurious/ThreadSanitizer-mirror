@@ -39,9 +39,9 @@ TEST(ThreadSanitizer, Memcpy) {
 }
 
 TEST(ThreadSanitizer, MemcpyRace1) {
-  char data[10] = {};
-  char data1[10] = {};
-  char data2[10] = {};
+  char *data = new char[10];
+  char *data1 = new char[10];
+  char *data2 = new char[10];
   ScopedThread t1, t2;
   t1.Memcpy(data, data1, 10);
   const ReportDesc *rep = t2.Memcpy(data, data2, 10, true);
@@ -50,9 +50,9 @@ TEST(ThreadSanitizer, MemcpyRace1) {
 }
 
 TEST(ThreadSanitizer, MemcpyRace2) {
-  char data[10] = {};
-  char data1[10] = {};
-  char data2[10] = {};
+  char *data = new char[10];
+  char *data1 = new char[10];
+  char *data2 = new char[10];
   ScopedThread t1, t2;
   t1.Memcpy(data+5, data1, 1);
   const ReportDesc *rep = t2.Memcpy(data+3, data2, 4, true);
@@ -60,17 +60,17 @@ TEST(ThreadSanitizer, MemcpyRace2) {
 }
 
 TEST(ThreadSanitizer, MemcpyRace3) {
-  char data[10] = {};
-  char data1[10] = {};
-  char data2[10] = {};
+  char *data = new char[10];
+  char *data1 = new char[10];
+  char *data2 = new char[10];
   ScopedThread t1, t2;
   t1.Memcpy(data, data1, 10);
   t2.Memcpy(data1, data2, 10, true);
 }
 
 TEST(ThreadSanitizer, MemcpyStack) {
-  char data[10] = {};
-  char data1[10] = {};
+  char *data = new char[10];
+  char *data1 = new char[10];
   ScopedThread t1, t2;
   t1.Memcpy(data, data1, 10);
   const ReportDesc *rep = t2.Memcpy(data, data1, 10, true);
@@ -83,7 +83,7 @@ TEST(ThreadSanitizer, MemcpyStack) {
 }
 
 TEST(ThreadSanitizer, MemsetRace1) {
-  char data[10] = {};
+  char *data = new char[10];
   ScopedThread t1, t2;
   t1.Memset(data, 1, 10);
   t2.Memset(data, 2, 10, true);
