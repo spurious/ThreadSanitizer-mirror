@@ -76,52 +76,108 @@ static LldbContext *GetContext() {
   return ctx;
 }
 
-ReportStack *SymbolizeCode(RegionAlloc *alloc, uptr addr) {
+static ReportStack *NewFrame(RegionAlloc *alloc, uptr addr) {
   ReportStack *ent = alloc->Alloc<ReportStack>(1);
   internal_memset(ent, 0, sizeof(*ent));
   ent->pc = addr;
+  return ent;
+}
 
+static char *BuildFilename(RegionAlloc *alloc, SBFileSpec f) {
+  if (!f.IsValid())
+    return 0;
+  const char *file = f.GetFilename();
+  const char *dir = f.GetDirectory();
+  int filesz = strlen(file);
+  int dirsz = strlen(dir);
+  char *fstr = alloc->Alloc<char>(filesz + dirsz + 2);
+  internal_strcpy(fstr, dir);  // NOLINT
+  fstr[dirsz] = '/';
+  internal_strcpy(fstr + dirsz + 1, file);  // NOLINT
+  return fstr;
+}
+
+ReportStack *SymbolizeCode(RegionAlloc *alloc, uptr addr) {
   LldbContext *ctx = GetContext();
   if (ctx == 0)
-    return 0;
+    return NewFrame(alloc, addr);
 
   // Resolve the address.
   SBAddress saddr = ctx->target.ResolveLoadAddress((addr_t)addr);
   if (!saddr.IsValid())
-    return 0;
+    return NewFrame(alloc, addr);
   SBSymbolContext sctx(ctx->target.ResolveSymbolContextForAddress(saddr,
       eSymbolContextFunction|eSymbolContextBlock
       |eSymbolContextLineEntry|eSymbolContextModule));
   if (!sctx.IsValid())
-    return 0;
+    return NewFrame(alloc, addr);
 
   // Extract module+offset.
-  ent->module = alloc->Strdup(sctx.GetModule().GetFileSpec().GetFilename());
-  ent->offset = (uptr)saddr.GetFileAddress();
+  char *module = 0;
+  uptr offset = 0;
+  if (sctx.GetModule().IsValid() && sctx.GetModule().GetFileSpec().IsValid()) {
+    module = alloc->Strdup(sctx.GetModule().GetFileSpec().GetFilename());
+    offset = (uptr)saddr.GetFileAddress();
+  }
+
+  ReportStack *head = 0;
+  ReportStack *tail = 0;
+  SBBlock block = sctx.GetBlock();
+  SBBlock pblock;
+  for (; block.IsValid(); block = block.GetParent()) {
+    if (!block.IsInlined())
+      continue;
+    ReportStack *ent = NewFrame(alloc, addr);
+    ent->module = module;
+    ent->offset = offset;
+    ent->func = alloc->Strdup(block.GetInlinedName());
+    if (pblock.IsValid()) {
+      ent->file = BuildFilename(alloc, pblock.GetInlinedCallSiteFile());
+      ent->line = pblock.GetInlinedCallSiteLine();
+      ent->col = pblock.GetInlinedCallSiteColumn();
+    } else {
+      ent->file = BuildFilename(alloc, sctx.GetLineEntry().GetFileSpec());
+      ent->line = sctx.GetLineEntry().GetLine();
+      ent->col = sctx.GetLineEntry().GetColumn();
+    }
+    if (head == 0)
+      head = ent;
+    else
+      tail->next = ent;
+    tail = ent;
+    pblock = block;
+  }
+
+  ReportStack *ent = NewFrame(alloc, addr);
+  ent->module = module;
+  ent->offset = offset;
 
   // Extract function name.
   const char* fname = 0;
-  if (sctx.GetBlock().IsValid())
-    fname = sctx.GetBlock().GetInlinedName();
-  if (!fname && sctx.GetFunction().IsValid())
+  if (sctx.GetFunction().IsValid())
     fname = sctx.GetFunction().GetName();
+  if (!fname && sctx.GetBlock().IsValid())
+    fname = sctx.GetBlock().GetInlinedName();
   ent->func = alloc->Strdup(fname);
 
   // Extract file:line.
   if (sctx.GetLineEntry().IsValid()) {
-    if (sctx.GetLineEntry().GetFileSpec().IsValid()) {
-      const char *file = sctx.GetLineEntry().GetFileSpec().GetFilename();
-      const char *dir = sctx.GetLineEntry().GetFileSpec().GetDirectory();
-      int filesz = strlen(file);
-      int dirsz = strlen(dir);
-      ent->file = alloc->Alloc<char>(filesz + dirsz + 2);
-      internal_strcpy(ent->file, dir);  // NOLINT
-      ent->file[dirsz] = '/';
-      internal_strcpy(ent->file + dirsz + 1, file);  // NOLINT
+    if (pblock.IsValid()) {
+      ent->file = BuildFilename(alloc, pblock.GetInlinedCallSiteFile());
+      ent->line = pblock.GetInlinedCallSiteLine();
+      ent->col = pblock.GetInlinedCallSiteColumn();
+    } else {
+      ent->file = BuildFilename(alloc, sctx.GetLineEntry().GetFileSpec());
+      ent->line = sctx.GetLineEntry().GetLine();
+      ent->col = sctx.GetLineEntry().GetColumn();
     }
-    ent->line = sctx.GetLineEntry().GetLine();
   }
-  return ent;
+  if (head == 0)
+    head = ent;
+  else
+    tail->next = ent;
+  tail = ent;
+  return head;
 }
 
 int SymbolizeData(RegionAlloc *alloc, uptr addr, Symbol *symb) {

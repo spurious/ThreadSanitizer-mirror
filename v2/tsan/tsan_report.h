@@ -31,6 +31,7 @@ struct ReportStack {
   char *func;
   char *file;
   int line;
+  int col;
 };
 
 struct ReportMop {
