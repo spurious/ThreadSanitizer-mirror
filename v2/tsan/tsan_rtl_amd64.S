@@ -2,6 +2,7 @@
 
 .globl __tsan_trace_switch_thunk
 __tsan_trace_switch_thunk:
+  # Save scratch registers.
   push %rax
   push %rcx
   push %rdx
@@ -11,7 +12,18 @@ __tsan_trace_switch_thunk:
   push %r9
   push %r10
   push %r11
+  # Align stack frame.
+  push %rbx  # non-scratch
+  mov %rsp, %rbx  # save current rsp
+  shr $4, %rsp  # clear 4 lsb, align to 16
+  shl $4, %rsp
+
   call __tsan_trace_switch
+
+  # Unalign stack frame back.
+  mov %rbx, %rsp  # restore the original rsp
+  pop %rbx
+  # Restore scratch registers.
   pop %r11
   pop %r10
   pop %r9
@@ -25,6 +37,7 @@ __tsan_trace_switch_thunk:
 
 .globl __tsan_report_race_thunk
 __tsan_report_race_thunk:
+  # Save scratch registers.
   push %rax
   push %rcx
   push %rdx
@@ -34,7 +47,18 @@ __tsan_report_race_thunk:
   push %r9
   push %r10
   push %r11
+  # Align stack frame.
+  push %rbx  # non-scratch
+  mov %rsp, %rbx  # save current rsp
+  shr $4, %rsp  # clear 4 lsb, align to 16
+  shl $4, %rsp
+
   call __tsan_report_race
+
+  # Unalign stack frame back.
+  mov %rbx, %rsp  # restore the original rsp
+  pop %rbx
+  # Restore scratch registers.
   pop %r11
   pop %r10
   pop %r9
@@ -45,4 +69,3 @@ __tsan_report_race_thunk:
   pop %rcx
   pop %rax
   ret
-

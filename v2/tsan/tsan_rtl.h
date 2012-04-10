@@ -276,10 +276,12 @@ int internal_strcmp(const char *s1, const char *s2);
 // does not treat it as a call.
 // If it does not work for you, use normal call.
 #if TSAN_DEBUG == 0
+// The caller may not create the stack frame for itself at all,
+// so we create a reserve stack frame for it (1024b must be enough).
 #define HACKY_CALL(f) \
-  __asm__ __volatile__("sub $0x1000, %%rsp;" \
+  __asm__ __volatile__("sub $0x400, %%rsp;" \
                        "call " #f "_thunk;" \
-                       "add $0x1000, %%rsp;" ::: "memory");
+                       "add $0x400, %%rsp;" ::: "memory");
 #else
 #define HACKY_CALL(f) f()
 #endif
