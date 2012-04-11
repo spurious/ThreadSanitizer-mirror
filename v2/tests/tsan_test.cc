@@ -11,6 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 #include "tsan_interface.h"
+#include "tsan_flags.h"
 #include "tsan_test_util.h"
 #include "gtest/gtest.h"
 
@@ -33,6 +34,15 @@ int main(int argc, char **argv) {
   __tsan_init();
   __tsan_func_entry(__builtin_return_address(0));
   __tsan_func_entry((char*)&main + 1);
+
+  // The tests produce a lot of races with equal fake stacks,
+  // so we have to turn it off.
+  __tsan::flags()->suppress_equal_stacks = false;
+
   testing::InitGoogleTest(&argc, argv);
-  return RUN_ALL_TESTS();
+  int res = RUN_ALL_TESTS();
+
+  __tsan_func_exit();
+  __tsan_func_exit();
+  return res;
 }

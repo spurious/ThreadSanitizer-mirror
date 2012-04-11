@@ -19,6 +19,7 @@
 #include "tsan_report.h"
 #include "tsan_sync.h"
 #include "tsan_mman.h"
+#include "tsan_flags.h"
 
 namespace __tsan {
 
@@ -136,24 +137,20 @@ ReportStack *SymbolizeStack(RegionAlloc *alloc, const StackTrace& trace) {
   return stack;
 }
 
-static bool HandleRacy(ThreadState *thr, uptr addr) {
+static bool HandleRacyStacks(ThreadState *thr, const StackTrace (&traces)[2]) {
+  if (flags()->suppress_equal_stacks == false)
+    return false;
   Context *ctx = CTX();
-  for (uptr i = 0; i < ctx->racy_siz; i++) {
-    if (ctx->racy_accesses[i] == addr)
+  RacyStacks hash;
+  hash.hash[0] = md5_hash(traces[0].Begin(), traces[0].Size() * sizeof(uptr));
+  hash.hash[1] = md5_hash(traces[1].Begin(), traces[1].Size() * sizeof(uptr));
+  for (uptr i = 0; i < ctx->racy_stacks.Size(); i++) {
+    if (hash == ctx->racy_stacks[i]) {
+      DPrintf("ThreadSanitizer: suppressing race report as doubled\n");
       return true;
-  }
-  if (ctx->racy_siz == ctx->racy_cap) {
-    ctx->racy_cap *= 2;
-    if (ctx->racy_cap == 0)
-      ctx->racy_cap = 32;
-    uptr *racy = (uptr*)internal_alloc(ctx->racy_cap * sizeof(*racy));
-    if (ctx->racy_accesses) {
-      internal_memcpy(racy, ctx->racy_accesses, ctx->racy_siz * sizeof(*racy));
-      internal_free(ctx->racy_accesses);
     }
-    ctx->racy_accesses = racy;
   }
-  ctx->racy_accesses[ctx->racy_siz++] = addr;
+  ctx->racy_stacks.PushBack(hash);
   return false;
 }
 
@@ -174,9 +171,6 @@ void ReportRace(ThreadState *thr) {
   Lock l0(&CTX()->thread_mtx);
   Lock l1(&CTX()->report_mtx);
 
-  if (HandleRacy(thr, addr + FastState(thr->racy_state[0]).addr0()))
-    return;
-
   ReportDesc &rep = *GetGlobalReport();
   RegionAlloc alloc(rep.alloc, sizeof(rep.alloc));
   rep.typ = ReportTypeRace;
@@ -184,20 +178,28 @@ void ReportRace(ThreadState *thr) {
   if (thr->racy_state[1] == kShadowFreed)
     rep.nmop = 1;
   rep.mop = alloc.Alloc<ReportMop>(rep.nmop);
+  StackTrace traces[2];
   for (int i = 0; i < rep.nmop; i++) {
-    ReportMop *mop = &rep.mop[i];
     FastState s(thr->racy_state[i]);
+    ReportMop *mop = &rep.mop[i];
     mop->tid = s.tid();
     mop->addr = addr + s.addr0();
     mop->size = s.size();
     mop->write = s.is_write();
     mop->nmutex = 0;
-    StackTrace trace;
-    RestoreStack(thr, s.tid(), s.epoch(), &trace);
+    RestoreStack(thr, s.tid(), s.epoch(), &traces[i]);
     // Ensure that we have at least something for the current thread.
-    CHECK(i != 0 || !trace.IsEmpty());
-    mop->stack = SymbolizeStack(&alloc, trace);
-    trace.Free(thr);
+    CHECK(i != 0 || !traces[i].IsEmpty());
+  }
+
+  if (HandleRacyStacks(thr, traces))
+    return;
+
+  for (int i = 0; i < rep.nmop; i++) {
+    FastState s(thr->racy_state[i]);
+    ReportMop *mop = &rep.mop[i];
+    mop->stack = SymbolizeStack(&alloc, traces[i]);
+    traces[i].Free(thr);
   }
   rep.loc = 0;
   rep.nthread = 2;

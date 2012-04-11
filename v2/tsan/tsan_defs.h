@@ -98,6 +98,15 @@ int internal_strcmp(const char *s1, const char *s2);
 void internal_strcpy(char *s1, const char *s2);
 uptr internal_strlen(const char *s);
 
+struct MD5Hash {
+  u64 hash[2];
+  bool operator==(const MD5Hash &other) const {
+    return hash[0] == other.hash[0] && hash[1] == other.hash[1];
+  }
+};
+
+MD5Hash md5_hash(const void *data, uptr size);
+
 enum StatType {
   StatMop,
   StatMopRead,

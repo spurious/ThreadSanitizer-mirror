@@ -28,9 +28,11 @@
 
 #include "tsan_clock.h"
 #include "tsan_defs.h"
+#include "tsan_flags.h"
 #include "tsan_slab.h"
 #include "tsan_sync.h"
 #include "tsan_trace.h"
+#include "tsan_vector.h"
 
 namespace __tsan {
 
@@ -272,6 +274,17 @@ struct ThreadContext {
   explicit ThreadContext(int tid);
 };
 
+struct RacyStacks {
+  MD5Hash hash[2];
+  bool operator==(const RacyStacks &other) const {
+    if (hash[0] == other.hash[0] && hash[1] == other.hash[1])
+      return true;
+    if (hash[0] == other.hash[1] && hash[1] == other.hash[0])
+      return true;
+    return false;
+  }
+};
+
 struct Context {
   Context();
 
@@ -292,9 +305,9 @@ struct Context {
   ThreadContext* dead_list_head;
   ThreadContext* dead_list_tail;
 
-  uptr *racy_accesses;
-  uptr racy_siz;
-  uptr racy_cap;
+  Vector<RacyStacks> racy_stacks;
+
+  Flags flags;
 
   u64 stat[StatCnt];
 };

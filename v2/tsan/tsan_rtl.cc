@@ -93,6 +93,7 @@ void Initialize(ThreadState *thr) {
   ctx->dead_list_head = 0;
   ctx->dead_list_tail = 0;
   InitializeSuppressions();
+  FlagsInit(&ctx->flags);
 
   // Initialize thread 0.
   ctx->thread_seq = 0;

@@ -42,10 +42,12 @@ LIBTSAN_HEADERS=tsan_alloc.h \
 LIBTSAN_OBJ=tsan_alloc.o \
             tsan_allocator.o \
             tsan_clock.o \
+            tsan_flags.o \
             tsan_mutex.o \
             tsan_interceptors.o \
             tsan_interface.o \
             tsan_interface_ann.o \
+            tsan_md5.o \
             tsan_mman.o \
 	    tsan_platform_linux.o \
             tsan_report.o \
