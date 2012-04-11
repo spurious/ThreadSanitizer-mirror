@@ -105,8 +105,7 @@ StackTrace::StackTrace()
 }
 
 StackTrace::~StackTrace() {
-  CHECK_EQ(n_, 0);
-  CHECK_EQ(s_, 0);
+  Free(0);
 }
 
 void StackTrace::Init(ThreadState *thr, const uptr *pcs, uptr cnt) {

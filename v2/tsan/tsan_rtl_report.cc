@@ -110,7 +110,6 @@ static void StackStripMain(ReportStack *stack) {
     // so it's only a DCHECK. However we must try hard to not miss it
     // due to our fault.
     Printf("Bottom stack frame of stack %p is missed\n", stack->pc);
-    DCHECK(0);
   }
 }
 

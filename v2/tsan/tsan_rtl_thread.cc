@@ -245,12 +245,24 @@ void ThreadDetach(ThreadState *thr, uptr pc, uptr uid) {
 
 void MemoryAccessRange(ThreadState *thr, uptr pc, uptr addr,
                        uptr size, bool is_write) {
+  if (size == 0)
+    return;
+
   u64 *shadow_mem = (u64*)MemToShadow(addr);
   DPrintf2("#%d: MemoryAccessRange: @%p %p size=%d is_write=%d\n",
       (int)thr->fast_state.tid(), (void*)pc, (void*)addr,
       (int)size, is_write);
-  DCHECK(IsAppMem(addr));
-  DCHECK(IsShadowMem((uptr)shadow_mem));
+
+#if TSAN_DEBUG
+  if (!IsAppMem(addr)) {
+    Printf("Access to non app mem %p\n", addr);
+    DCHECK(IsAppMem(addr));
+  }
+  if (!IsShadowMem((uptr)shadow_mem)) {
+    Printf("Bad shadow addr %p (%p)\n", shadow_mem, addr);
+    DCHECK(IsShadowMem((uptr)shadow_mem));
+  }
+#endif
 
   StatInc(thr, StatMopRange);
 

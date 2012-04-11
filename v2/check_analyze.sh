@@ -36,4 +36,4 @@ for f in $func; do
   check $f call 1  # TraceSwitch()
 done
 
-echo looks fine
+echo LGTM
