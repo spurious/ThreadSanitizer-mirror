@@ -375,12 +375,6 @@ void MutexReadOrWriteUnlock(ThreadState *thr, uptr pc, uptr addr);
 void Acquire(ThreadState *thr, uptr pc, uptr addr);
 void Release(ThreadState *thr, uptr pc, uptr addr);
 
-void internal_memset(void *ptr, int c, uptr size);
-void internal_memcpy(void *dst, const void *src, uptr size);
-int internal_strcmp(const char *s1, const char *s2);
-void internal_strcpy(char *s1, const char *s2);
-uptr internal_strlen(const char *s);
-
 // The hacky call uses custom calling conversion and an assembly thunk.
 // It is considerably faster that a normal call for the caller
 // if it is not executed (it is intended for slow paths from hot functions).
