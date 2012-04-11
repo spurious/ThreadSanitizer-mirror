@@ -15,6 +15,7 @@
 
 #include "tsan_defs.h"
 #include "tsan_mutex.h"
+#include "tsan_sync.h"
 
 namespace __tsan {
 
@@ -39,8 +40,8 @@ enum EventType {
 typedef u64 Event;
 
 struct TraceHeader {
-  uptr  stack0[32];  // Start stack for the trace.
-  u64   epoch0;      // Start epoch for the trace.
+  StackTrace stack0;  // Start stack for the trace.
+  u64   epoch0;       // Start epoch for the trace.
 };
 
 struct Trace {

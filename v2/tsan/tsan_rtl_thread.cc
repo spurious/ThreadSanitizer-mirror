@@ -111,6 +111,8 @@ int ThreadCreate(ThreadState *thr, uptr pc, uptr uid, bool detached) {
   tctx->detached = detached;
   if (tid) {
     thr->fast_state.IncrementEpoch();
+    // Can't increment epoch w/o writing to the trace as well.
+    TraceAddEvent(thr, thr->fast_state.epoch(), EventTypeMop, 0);
     thr->clock.set(thr->fast_state.tid(), thr->fast_state.epoch());
     thr->fast_synch_epoch = thr->fast_state.epoch();
     thr->clock.release(&tctx->sync, &thr->clockslab);
@@ -165,6 +167,8 @@ void ThreadFinish(ThreadState *thr) {
     ThreadDead(thr, tctx);
   } else {
     thr->fast_state.IncrementEpoch();
+    // Can't increment epoch w/o writing to the trace as well.
+    TraceAddEvent(thr, thr->fast_state.epoch(), EventTypeMop, 0);
     thr->clock.set(thr->fast_state.tid(), thr->fast_state.epoch());
     thr->fast_synch_epoch = thr->fast_state.epoch();
     thr->clock.release(&tctx->sync, &thr->clockslab);
@@ -175,7 +179,11 @@ void ThreadFinish(ThreadState *thr) {
   // If dead_info will become dynamically allocated again,
   // it is the point to allocate it.
   // tctx->dead_info = new ThreadDeadInfo;
-  internal_memcpy(&tctx->dead_info.trace, &thr->trace, sizeof(thr->trace));
+  internal_memcpy(&tctx->dead_info.trace.events[0],
+      &thr->trace.events[0], sizeof(thr->trace.events));
+  for (int i = 0; i < kTraceParts; i++)
+    tctx->dead_info.trace.headers[i].stack0.CopyFrom(thr,
+        thr->trace.headers[i].stack0);
   tctx->epoch1 = thr->clock.get(tctx->tid);
 
   if (kCollectStats) {

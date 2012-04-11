@@ -171,6 +171,10 @@ void MutexReadOrWriteUnlock(ThreadState *thr, uptr pc, uptr addr) {
     s->recursion--;
     if (s->recursion == 0) {
       s->owner_tid = SyncVar::kInvalidTid;
+      // FIXME: Refactor me, plz.
+      // The sequence of events is quite tricky and doubled in several places.
+      // First, it's a bug to increment the epoch w/o writing to the trace.
+      // Then, the acquire/release logic can be factored out as well.
       thr->fast_state.IncrementEpoch();
       TraceAddEvent(thr, thr->fast_state.epoch(), EventTypeUnlock, addr);
       thr->clock.set(thr->fast_state.tid(), thr->fast_state.epoch());

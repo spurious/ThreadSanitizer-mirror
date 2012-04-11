@@ -36,6 +36,11 @@ namespace __tsan {
 
 void Printf(const char *format, ...);
 
+inline void __attribute__((noinline)) breakhere() {
+  volatile int x = 42;
+  (void)x;
+}
+
 // ThreadState:
 //   tid             : kTidBits
 //   epoch           : kClkBits

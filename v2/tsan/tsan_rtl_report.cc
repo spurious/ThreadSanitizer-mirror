@@ -48,13 +48,17 @@ static void RestoreStack(ThreadState *thr, int tid,
   TraceHeader* hdr = &trace->headers[partidx];
   if (epoch < hdr->epoch0)
     return;
-  u64 pos = 0;
   const u64 eend = epoch % kTraceSize;
   const u64 ebegin = eend / kTracePartSize * kTracePartSize;
   DPrintf("#%d: RestoreStack epoch=%llu ebegin=%llu eend=%llu partidx=%d\n",
       tid, epoch, ebegin, eend, partidx);
-  InternalScopedBuf<uptr> stack(128);
-  for (u64 i = ebegin; i <= eend; i++) {
+  InternalScopedBuf<uptr> stack(1024);  // FIXME: de-hardcode 1024
+  for (uptr i = 0; i < hdr->stack0.Size(); i++) {
+    stack[i] = hdr->stack0.Get(i);
+    DPrintf2("  #%02d: pc=%p\n", i, stack[i]);
+  }
+  uptr pos = hdr->stack0.Size();
+  for (uptr i = ebegin; i <= eend; i++) {
     Event ev = trace->events[i];
     EventType typ = (EventType)(ev >> 61);
     uptr pc = (uptr)(ev & 0xffffffffffffull);
@@ -64,9 +68,13 @@ static void RestoreStack(ThreadState *thr, int tid,
     } else if (typ == EventTypeFuncEnter) {
       stack[pos++] = pc;
     } else if (typ == EventTypeFuncExit) {
+      // Since we have full stacks, this should never happen.
+      DCHECK_GT(pos, 0);
       if (pos > 0)
         pos--;
     }
+    for (uptr j = 0; j <= pos; j++)
+      DPrintf2("      #%d: %p\n", j, stack[j]);
   }
   if (pos == 0 && stack[0] == 0)
     return;
@@ -101,7 +109,8 @@ static void StackStripMain(ReportStack *stack) {
     // can actually happen if we do not instrument some code,
     // so it's only a DCHECK. However we must try hard to not miss it
     // due to our fault.
-    Printf("Top stack frame (main or __tsan_thread_start_func) missed\n");
+    Printf("Bottom stack frame of stack %p is missed\n", stack->pc);
+    DCHECK(0);
   }
 }
 

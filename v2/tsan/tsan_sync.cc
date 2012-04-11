@@ -109,18 +109,20 @@ StackTrace::~StackTrace() {
   CHECK_EQ(s_, 0);
 }
 
-void StackTrace::Init(ThreadState *thr, uptr *pcs, uptr cnt) {
+void StackTrace::Init(ThreadState *thr, const uptr *pcs, uptr cnt) {
   Free(thr);
   if (cnt == 0)
     return;
   n_ = cnt;
-  s_ = (uptr*)internal_alloc((n_) * sizeof(s_[0]));
-  internal_memcpy(s_, pcs, n_ * sizeof(s_[0]));
+  s_ = (uptr*)internal_alloc(cnt * sizeof(s_[0]));
+  internal_memcpy(s_, pcs, cnt * sizeof(s_[0]));
 }
 
 void StackTrace::ObtainCurrent(ThreadState *thr, uptr toppc) {
   Free(thr);
   n_ = thr->shadow_stack_pos - &thr->shadow_stack[0];
+  if (n_ + !!toppc == 0)
+    return;
   s_ = (uptr*)internal_alloc((n_ + !!toppc) * sizeof(s_[0]));
   for (uptr i = 0; i < n_; i++)
     s_[i] = thr->shadow_stack[i];
@@ -137,6 +139,11 @@ void StackTrace::Free(ThreadState *thr) {
     s_ = 0;
     n_ = 0;
   }
+}
+
+void StackTrace::CopyFrom(ThreadState *thr, const StackTrace& other) {
+  Free(thr);
+  Init(thr, other.Begin(), other.Size());
 }
 
 bool StackTrace::IsEmpty() const {

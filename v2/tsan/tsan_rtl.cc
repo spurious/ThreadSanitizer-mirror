@@ -135,9 +135,12 @@ int Finalize(ThreadState *thr) {
 }
 
 static void TraceSwitch(ThreadState *thr) {
+  ScopedInRtl in_rtl;
   Lock l(&thr->trace.mtx);
   unsigned trace = (thr->fast_state.epoch() / kTracePartSize) % kTraceParts;
-  thr->trace.headers[trace].epoch0 = thr->fast_state.epoch();
+  TraceHeader *hdr = &thr->trace.headers[trace];
+  hdr->epoch0 = thr->fast_state.epoch();
+  hdr->stack0.ObtainCurrent(thr, 0);
 }
 
 extern "C" void __tsan_trace_switch() {
@@ -324,15 +327,17 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
 
   thr->fast_state.IncrementEpoch();
   FastState fast_state = thr->fast_state;
-  // We must not store to the trace if we do not store to the shadow.
-  // That is, this call must be moved somewhere below.
-  TraceAddEvent(thr, fast_state.epoch(), EventTypeMop, pc);
-  // FIXME: If the access is ignored, then we must not increment the epoch.
+  // FIXME: If the access is ignored, then we absolutely
+  // must not increment the epoch.
   if (fast_state.GetIgnoreBit())
     return;
   Shadow cur(fast_state);
   cur.SetAddr0AndSizeLog(addr & 7, kAccessSizeLog);
   cur.SetWrite(kAccessIsWrite);
+
+  // We must not store to the trace if we do not store to the shadow.
+  // That is, this call must be moved somewhere below.
+  TraceAddEvent(thr, fast_state.epoch(), EventTypeMop, pc);
 
   MemoryAccessImpl(thr, addr, kAccessSizeLog, kAccessIsWrite, fast_state,
       shadow_mem, cur);
@@ -369,12 +374,15 @@ void FuncEntry(ThreadState *thr, uptr pc) {
   DCHECK_EQ(thr->in_rtl, 0);
   StatInc(thr, StatFuncEnter);
   DPrintf2("#%d: tsan::FuncEntry %p\n", (int)thr->fast_state.tid(), (void*)pc);
+  thr->fast_state.IncrementEpoch();
+  TraceAddEvent(thr, thr->fast_state.epoch(), EventTypeFuncEnter, pc);
+
+  // Shadow stack maintenance can be replaced with
+  // stack unwinding during trace switch (which presumably must be faster).
   DCHECK(thr->shadow_stack_pos >= &thr->shadow_stack[0]);
   DCHECK(thr->shadow_stack_pos < &thr->shadow_stack[kShadowStackSize]);
   thr->shadow_stack_pos[0] = pc;
   thr->shadow_stack_pos++;
-  thr->fast_state.IncrementEpoch();
-  TraceAddEvent(thr, thr->fast_state.epoch(), EventTypeFuncEnter, pc);
 
 #if 1
   // While we are testing on single-threaded benchmarks,
@@ -391,11 +399,12 @@ void FuncExit(ThreadState *thr) {
   DCHECK_EQ(thr->in_rtl, 0);
   StatInc(thr, StatFuncExit);
   DPrintf2("#%d: tsan::FuncExit\n", (int)thr->fast_state.tid());
+  thr->fast_state.IncrementEpoch();
+  TraceAddEvent(thr, thr->fast_state.epoch(), EventTypeFuncExit, 0);
+
   DCHECK(thr->shadow_stack_pos > &thr->shadow_stack[0]);
   DCHECK(thr->shadow_stack_pos < &thr->shadow_stack[kShadowStackSize]);
   thr->shadow_stack_pos--;
-  thr->fast_state.IncrementEpoch();
-  TraceAddEvent(thr, thr->fast_state.epoch(), EventTypeFuncExit, 0);
 }
 
 void IgnoreCtl(ThreadState *thr, bool write, bool begin) {
