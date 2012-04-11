@@ -50,7 +50,7 @@ int main() {
 // CHECK-NEXT:     #0 foo1 {{.*}}simple_stack.c:8 ({{.*}})
 // CHECK-NEXT:     #1 bar1 {{.*}}simple_stack.c:13 ({{.*}})
 // CHECK-NEXT:     #2 Thread1 {{.*}}simple_stack.c:27 ({{.*}})
-// CHECK-NEXT:   Previous Read of size 4 at {{.*}} by thread 2:
+// CHECK-NEXT:   Previous read of size 4 at {{.*}} by thread 2:
 // CHECK-NEXT:     #0 foo2 {{.*}}simple_stack.c:17 ({{.*}})
 // CHECK-NEXT:     #1 bar2 {{.*}}simple_stack.c:22 ({{.*}})
 // CHECK-NEXT:     #2 Thread2 {{.*}}simple_stack.c:32 ({{.*}})

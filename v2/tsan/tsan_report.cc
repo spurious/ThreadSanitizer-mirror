@@ -27,18 +27,23 @@ void PrintStack(const ReportStack *ent) {
 
 void PrintReport(const ReportDesc *rep) {
   Printf("==================\n");
+  Printf("WARNING: ThreadSanitizer: ");
   if (rep->typ == ReportTypeRace)
-    Printf("WARNING: ThreadSanitizer: data race\n");
+    Printf("data race\n");
   else if (rep->typ == ReportTypeThreadLeak)
-    Printf("WARNING: ThreadSanitizer: thread leak\n");
+    Printf("thread leak\n");
   else if (rep->typ == ReportTypeMutexDestroyLocked)
-    Printf("WARNING: ThreadSanitizer: destroy of a locked mutex\n");
+    Printf("destroy of a locked mutex\n");
   for (int i = 0; i < rep->nmop; i++) {
     const ReportMop *mop = &rep->mop[i];
-    Printf("  %s%s of size %d at %p by thread %d:\n",
-           (i ? "Previous " : ""),
-           (mop->write ? "Write" : "Read"),
-           mop->size, (void*)mop->addr, mop->tid);
+    Printf("  %s of size %d at %p",
+        (i == 0 ? (mop->write ? "Write" : "Read")
+                : (mop->write ? "Previous write" : "Previous read")),
+        mop->size, (void*)mop->addr);
+    if (mop->tid == 0)
+      Printf(" by main thread:\n");
+    else
+      Printf(" by thread %d:\n", mop->tid);
     PrintStack(mop->stack);
   }
   if (rep->loc) {
@@ -63,6 +68,8 @@ void PrintReport(const ReportDesc *rep) {
   }
   for (int i = 0; i < rep->nthread; i++) {
     ReportThread *rt = &rep->thread[i];
+    if (rt->id == 0)  // Little sense in describing the main thread.
+      continue;
     Printf("  Thread %d", rt->id);
     if (rt->name)
       Printf(" '%s'", rt->name);
