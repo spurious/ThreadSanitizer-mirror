@@ -61,7 +61,7 @@ ReportStack *SymbolizeCode(RegionAlloc *alloc, uptr addr) {
   res->pc = addr;
   InternalScopedBuf<char> cmd(1024);
   snprintf(cmd, cmd.Size(),
-           "addr2line -C -s -f -e %s %p > tsan.tmp2", exe,
+           "addr2line -Cfe %s %p > tsan.tmp2", exe,
            (void*)(addr - base));
   if (system(cmd))
     return res;
@@ -94,7 +94,7 @@ int SymbolizeData(RegionAlloc *alloc, uptr addr, Symbol *symb) {
   int res = 0;
   InternalScopedBuf<char> cmd(1024);
   snprintf(cmd, cmd.Size(),
-  "nm -alsC %s|grep \"%lx\"|awk '{printf(\"%%s\\n%%s\", $3, $4)}' > tsan.tmp2",
+  "nm -alC %s|grep \"%lx\"|awk '{printf(\"%%s\\n%%s\", $3, $4)}' > tsan.tmp2",
     exe, (addr - base));
   if (system(cmd))
     return 0;
