@@ -17,11 +17,13 @@ namespace __tsan {
 
 void PrintStack(const ReportStack *ent) {
   for (int i = 0; ent; ent = ent->next, i++) {
-    Printf("    #%d %s %s:%d ", i, ent->func, ent->file, ent->line);
+    Printf("    #%d %s %s:%d", i, ent->func, ent->file, ent->line);
+    if (ent->col)
+      Printf(":%d", ent->col);
     if (ent->module && ent->offset)
-      Printf("(%s+%p)\n", ent->module, (void*)ent->offset);
+      Printf(" (%s+%p)\n", ent->module, (void*)ent->offset);
     else
-      Printf("(%p)\n", (void*)ent->pc);
+      Printf(" (%p)\n", (void*)ent->pc);
   }
 }
 
