@@ -334,12 +334,11 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
   }
 #endif
 
-  thr->fast_state.IncrementEpoch();
   FastState fast_state = thr->fast_state;
-  // FIXME: If the access is ignored, then we absolutely
-  // must not increment the epoch.
   if (fast_state.GetIgnoreBit())
     return;
+  fast_state.IncrementEpoch();
+  thr->fast_state = fast_state;
   Shadow cur(fast_state);
   cur.SetAddr0AndSizeLog(addr & 7, kAccessSizeLog);
   cur.SetWrite(kAccessIsWrite);
