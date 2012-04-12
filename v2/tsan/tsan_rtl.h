@@ -285,6 +285,11 @@ struct RacyStacks {
   }
 };
 
+struct RacyAddress {
+  uptr addr_min;
+  uptr addr_max;
+};
+
 struct Context {
   Context();
 
@@ -306,6 +311,7 @@ struct Context {
   ThreadContext* dead_list_tail;
 
   Vector<RacyStacks> racy_stacks;
+  Vector<RacyAddress> racy_addresses;
 
   Flags flags;
 

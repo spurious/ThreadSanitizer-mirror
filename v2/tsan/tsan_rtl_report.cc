@@ -137,21 +137,41 @@ ReportStack *SymbolizeStack(RegionAlloc *alloc, const StackTrace& trace) {
   return stack;
 }
 
-static bool HandleRacyStacks(ThreadState *thr, const StackTrace (&traces)[2]) {
-  if (flags()->suppress_equal_stacks == false)
-    return false;
+static bool HandleRacyStacks(ThreadState *thr, const StackTrace (&traces)[2],
+    uptr addr_min, uptr addr_max) {
   Context *ctx = CTX();
-  RacyStacks hash;
-  hash.hash[0] = md5_hash(traces[0].Begin(), traces[0].Size() * sizeof(uptr));
-  hash.hash[1] = md5_hash(traces[1].Begin(), traces[1].Size() * sizeof(uptr));
-  for (uptr i = 0; i < ctx->racy_stacks.Size(); i++) {
-    if (hash == ctx->racy_stacks[i]) {
-      DPrintf("ThreadSanitizer: suppressing race report as doubled\n");
-      return true;
+  bool equal_stack = false;
+  if (flags()->suppress_equal_stacks) {
+    RacyStacks hash;
+    hash.hash[0] = md5_hash(traces[0].Begin(), traces[0].Size() * sizeof(uptr));
+    hash.hash[1] = md5_hash(traces[1].Begin(), traces[1].Size() * sizeof(uptr));
+    for (uptr i = 0; i < ctx->racy_stacks.Size(); i++) {
+      if (hash == ctx->racy_stacks[i]) {
+        DPrintf("ThreadSanitizer: suppressing report as doubled (stack)\n");
+        equal_stack = true;
+        break;
+      }
     }
+    if (!equal_stack)
+      ctx->racy_stacks.PushBack(hash);
   }
-  ctx->racy_stacks.PushBack(hash);
-  return false;
+  bool equal_address = false;
+  if (flags()->suppress_equal_addresses) {
+    RacyAddress ra0 = {addr_min, addr_max};
+    for (uptr i = 0; i < ctx->racy_addresses.Size(); i++) {
+      RacyAddress ra2 = ctx->racy_addresses[i];
+      uptr maxbeg = max(ra0.addr_min, ra2.addr_min);
+      uptr minend = min(ra0.addr_max, ra2.addr_max);
+      if (maxbeg < minend) {
+        DPrintf("ThreadSanitizer: suppressing report as doubled (addr)\n");
+        equal_address = true;
+        break;
+      }
+    }
+    if (!equal_address)
+      ctx->racy_addresses.PushBack(ra0);
+  }
+  return equal_stack || equal_address;
 }
 
 void ReportRace(ThreadState *thr) {
@@ -179,6 +199,8 @@ void ReportRace(ThreadState *thr) {
     rep.nmop = 1;
   rep.mop = alloc.Alloc<ReportMop>(rep.nmop);
   StackTrace traces[2];
+  uptr addr_min = (uptr)-1;
+  uptr addr_max = 0;
   for (int i = 0; i < rep.nmop; i++) {
     FastState s(thr->racy_state[i]);
     ReportMop *mop = &rep.mop[i];
@@ -190,9 +212,13 @@ void ReportRace(ThreadState *thr) {
     RestoreStack(thr, s.tid(), s.epoch(), &traces[i]);
     // Ensure that we have at least something for the current thread.
     CHECK(i != 0 || !traces[i].IsEmpty());
+    if (addr_min > mop->addr)
+      addr_min = mop->addr;
+    if (addr_max < mop->addr + mop->size)
+      addr_max = mop->addr + mop->size;
   }
 
-  if (HandleRacyStacks(thr, traces))
+  if (HandleRacyStacks(thr, traces, addr_min, addr_max))
     return;
 
   for (int i = 0; i < rep.nmop; i++) {

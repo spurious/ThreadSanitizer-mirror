@@ -22,5 +22,6 @@ Flags *flags() {
 
 void FlagsInit(Flags *flags) {
   flags->suppress_equal_stacks = true;
+  flags->suppress_equal_addresses = true;
 }
 }

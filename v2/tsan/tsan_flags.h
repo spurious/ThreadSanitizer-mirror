@@ -22,6 +22,9 @@ struct Flags {
   // Supress a race reports if we've already output another race report
   // with the same stacks.
   bool suppress_equal_stacks;
+  // Supress a race reports if we've already output another race report
+  // on the same address.
+  bool suppress_equal_addresses;
 };
 
 Flags *flags();
