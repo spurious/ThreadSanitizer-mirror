@@ -46,6 +46,24 @@ make DEBUG=1 CC=clang CXX=clang++
 echo @@@BUILD_STEP TEST DEBUG-CLANG@@@
 ./tests/tsan_test
 
+echo @@@BUILD_STEP BUILD STATS/OUTPUT@@@
+make clean
+make DEBUG=1 CC=clang CXX=clang++ CFLAGS="-DTSAN_COLLECT_STATS=1 -DTSAN_DEBUG_OUTPUT=2"
+
+echo @@@BUILD_STEP BUILD SHADOW_COUNT=4@@@
+make clean
+make DEBUG=1 CC=clang CXX=clang++ CFLAGS=-DTSAN_SHADOW_COUNT=4
+
+echo @@@BUILD_STEP TEST SHADOW_COUNT=4@@@
+./tests/tsan_test
+
+echo @@@BUILD_STEP BUILD SHADOW_COUNT=2@@@
+make clean
+make DEBUG=1 CC=clang CXX=clang++ CFLAGS=-DTSAN_SHADOW_COUNT=2
+
+echo @@@BUILD_STEP TEST SHADOW_COUNT=2@@@
+./tests/tsan_test
+
 echo @@@BUILD_STEP BUILD RELEASE-GCC@@@
 make clean
 make DEBUG=0 CC=gcc CXX=g++
@@ -59,7 +77,6 @@ echo @@@BUILD_STEP OUTPUT TESTS@@@
 echo @@@BUILD_STEP ANALYZE@@@
 ./check_analyze.sh
 
-echo
 echo @@@BUILD_STEP RACECHECK UNITTEST@@@
 (cd ../unittest && \
 rm -f bin/racecheck_unittest-linux-amd64-O0 && \
