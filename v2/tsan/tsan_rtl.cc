@@ -354,6 +354,8 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
 static void MemoryRangeSet(ThreadState *thr, uptr pc, uptr addr, uptr size,
                            u64 val) {
   CHECK_EQ(addr % 8, 0);
+  CHECK(IsAppMem(addr));
+  CHECK(IsAppMem(addr + size - 1));
   (void)thr;
   (void)pc;
   // Some programs mmap like hundreds of GBs but actually used a small part.
@@ -364,8 +366,10 @@ static void MemoryRangeSet(ThreadState *thr, uptr pc, uptr addr, uptr size,
     size = kMaxResetSize;
   size = (size + 7) & ~7;
   u64 *p = (u64*)MemToShadow(addr);
+  CHECK(IsShadowMem((uptr)p));
+  CHECK(IsShadowMem((uptr)(p + size * kShadowCnt / kShadowCell - 1)));
   // FIXME: may overwrite a part outside the region
-  for (uptr i = 0; i < size; i++)
+  for (uptr i = 0; i < size * kShadowCnt / kShadowCell; i++)
     p[i] = val;
 }
 

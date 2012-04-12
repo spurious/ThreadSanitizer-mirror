@@ -32,11 +32,18 @@ const int kTidBits = 16;
 const int kMaxTid = 1 << kTidBits;
 const int kClkBits = 40;
 
-#ifdef TSAN_SHADOW_STATE_LENGTH
-const unsigned kShadowCnt = TSAN_SHADOW_STATE_LENGTH;
+#ifdef TSAN_SHADOW_COUNT
+# if TSAN_SHADOW_COUNT == 2 \
+  || TSAN_SHADOW_COUNT == 4 || TSAN_SHADOW_COUNT == 8
+const unsigned kShadowCnt = TSAN_SHADOW_COUNT;
+# else
+#   error "TSAN_SHADOW_COUNT must be one of 2,4,8"
+# endif
 #else
 const unsigned kShadowCnt = 8;
 #endif
+
+const unsigned kShadowCell = 8;
 
 #if defined(TSAN_COLLECT_STATS) && TSAN_COLLECT_STATS
 const bool kCollectStats = true;

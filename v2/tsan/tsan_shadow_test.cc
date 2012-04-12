@@ -31,17 +31,17 @@ TEST(Shadow, Mapping) {
 }
 
 TEST(Shadow, Celling) {
-  const int kShadowSize = 8;
+  const int kShadowSize = sizeof(u64);
   u64 aligned_data[4];
   char *data = (char*)aligned_data;
   CHECK_EQ((uptr)data % kShadowSize, 0);
   uptr s0 = MemToShadow((uptr)&data[0]);
   CHECK_EQ(s0 % kShadowSize, 0);
-  for (unsigned i = 1; i < kShadowCnt; i++)
+  for (unsigned i = 1; i < kShadowCell; i++)
     CHECK_EQ(s0, MemToShadow((uptr)&data[i]));
-  for (unsigned i = kShadowCnt; i < 2*kShadowCnt; i++)
+  for (unsigned i = kShadowCell; i < 2*kShadowCell; i++)
     CHECK_EQ(s0 + kShadowSize*kShadowCnt, MemToShadow((uptr)&data[i]));
-  for (unsigned i = 2*kShadowCnt; i < 3*kShadowCnt; i++)
+  for (unsigned i = 2*kShadowCell; i < 3*kShadowCell; i++)
     CHECK_EQ(s0 + 2*kShadowSize*kShadowCnt, MemToShadow((uptr)&data[i]));
 }
 

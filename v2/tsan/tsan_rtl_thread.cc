@@ -258,38 +258,46 @@ void MemoryAccessRange(ThreadState *thr, uptr pc, uptr addr,
     Printf("Access to non app mem %p\n", addr);
     DCHECK(IsAppMem(addr));
   }
+  if (!IsAppMem(addr + size - 1)) {
+    Printf("Access to non app mem %p\n", addr + size - 1);
+    DCHECK(IsAppMem(addr + size - 1));
+  }
   if (!IsShadowMem((uptr)shadow_mem)) {
     Printf("Bad shadow addr %p (%p)\n", shadow_mem, addr);
     DCHECK(IsShadowMem((uptr)shadow_mem));
+  }
+  if (!IsShadowMem((uptr)(shadow_mem + size * kShadowCnt / 8 - 1))) {
+    Printf("Bad shadow addr %p (%p)\n",
+        shadow_mem + size * kShadowCnt / 8 - 1, addr + size - 1);
+    DCHECK(IsShadowMem((uptr)(shadow_mem + size * kShadowCnt / 8 - 1)));
   }
 #endif
 
   StatInc(thr, StatMopRange);
 
-  thr->fast_state.IncrementEpoch();
   FastState fast_state = thr->fast_state;
-  // We must not store to the trace if we do not store to the shadow.
-  // That is, this call must be moved somewhere below.
-  TraceAddEvent(thr, fast_state.epoch(), EventTypeMop, pc);
-  // FIXME: If the access is ignored, then we must not increment the epoch.
   if (fast_state.GetIgnoreBit())
     return;
 
-  bool unaligned = (addr % 8) != 0;
+  fast_state.IncrementEpoch();
+  thr->fast_state = fast_state;
+  TraceAddEvent(thr, fast_state.epoch(), EventTypeMop, pc);
+
+  bool unaligned = (addr % kShadowCell) != 0;
 
   // Handle unaligned beginning, if any.
-  for (; addr % 8 && size; addr++, size--) {
+  for (; addr % kShadowCell && size; addr++, size--) {
     int const kAccessSizeLog = 0;
     Shadow cur(fast_state);
     cur.SetWrite(is_write);
-    cur.SetAddr0AndSizeLog(addr & 7, kAccessSizeLog);
+    cur.SetAddr0AndSizeLog(addr & (kShadowCell - 1), kAccessSizeLog);
     MemoryAccessImpl(thr, addr, kAccessSizeLog, is_write, fast_state,
         shadow_mem, cur);
   }
   if (unaligned)
     shadow_mem += kShadowCnt;
   // Handle middle part, if any.
-  for (; size >= 8; addr += 8, size -= 8) {
+  for (; size >= kShadowCell; addr += kShadowCell, size -= kShadowCell) {
     int const kAccessSizeLog = 3;
     Shadow cur(fast_state);
     cur.SetWrite(is_write);
@@ -303,7 +311,7 @@ void MemoryAccessRange(ThreadState *thr, uptr pc, uptr addr,
     int const kAccessSizeLog = 0;
     Shadow cur(fast_state);
     cur.SetWrite(is_write);
-    cur.SetAddr0AndSizeLog(addr & 7, kAccessSizeLog);
+    cur.SetAddr0AndSizeLog(addr & (kShadowCell - 1), kAccessSizeLog);
     MemoryAccessImpl(thr, addr, kAccessSizeLog, is_write, fast_state,
         shadow_mem, cur);
   }
