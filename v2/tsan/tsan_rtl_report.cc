@@ -86,7 +86,11 @@ static void RestoreStack(ThreadState *thr, int tid,
 static void StackStripMain(ReportStack *stack) {
   ReportStack *last_frame = 0;
   ReportStack *last_frame2 = 0;
+  const char *prefix = "interception_wrap_";
+  uptr prefix_len = internal_strlen(prefix);
   for (ReportStack *ent = stack; ent; ent = ent->next) {
+    if (ent->func && 0 == internal_strncmp(ent->func, prefix, prefix_len))
+      ent->func += prefix_len;
     last_frame2 = last_frame;
     last_frame = ent;
   }

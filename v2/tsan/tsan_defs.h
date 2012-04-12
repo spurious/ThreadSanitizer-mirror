@@ -102,6 +102,7 @@ T max(T a, T b) {
 void internal_memset(void *ptr, int c, uptr size);
 void internal_memcpy(void *dst, const void *src, uptr size);
 int internal_strcmp(const char *s1, const char *s2);
+int internal_strncmp(const char *s1, const char *s2, uptr size);
 void internal_strcpy(char *s1, const char *s2);
 uptr internal_strlen(const char *s);
 

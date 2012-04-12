@@ -95,6 +95,8 @@ void Initialize(ThreadState *thr) {
   InitializeSuppressions();
   FlagsInit(&ctx->flags);
 
+  Printf("***** Running under ThreadSanitizer v2 *****\n");
+
   // Initialize thread 0.
   ctx->thread_seq = 0;
   int tid = ThreadCreate(thr, 0, 0, true);
