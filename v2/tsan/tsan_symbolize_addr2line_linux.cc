@@ -49,9 +49,10 @@ static bool GetSymbolizerFd(int *infdp, int *outfdp) {
       InternalScopedBuf<char> exe(PATH_MAX);
       ssize_t len = readlink("/proc/self/exe", exe, exe.Size() - 1);
       exe.Ptr()[len] = 0;
-      InternalScopedBuf<char> cmd(PATH_MAX + 128);
-      snprintf(cmd, cmd.Size(), "addr2line -Cfe %s", exe.Ptr());
-      system(cmd);
+      //InternalScopedBuf<char> cmd(PATH_MAX + 128);
+      //snprintf(cmd, cmd.Size(), "addr2line -Cfe %s", exe.Ptr());
+      //system(cmd);
+      execl("/usr/bin/addr2line", "/usr/bin/addr2line", "-Cfe", exe.Ptr(), 0);
       _exit(0);
     } else if (pid < 0) {
       Printf("ThreadSanitizer: failed to fork symbolizer\n");
