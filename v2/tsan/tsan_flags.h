@@ -27,6 +27,7 @@ struct Flags {
   // Supress a race reports if we've already output another race report
   // on the same address.
   bool suppress_equal_addresses;
+  bool report_thread_leaks;
 };
 
 Flags *flags();

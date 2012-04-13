@@ -24,6 +24,8 @@ const int kThreadQuarantineSize = 100;
 
 void ThreadFinalize(ThreadState *thr) {
   CHECK_GT(thr->in_rtl, 0);
+  if (!flags()->report_thread_leaks)
+    return;
   Context *ctx = CTX();
   Lock l(&ctx->thread_mtx);
   for (int i = 0; i < kMaxTid; i++) {

@@ -24,5 +24,6 @@ void FlagsInit(Flags *flags) {
   flags->enable_annotations = true;
   flags->suppress_equal_stacks = true;
   flags->suppress_equal_addresses = true;
+  flags->report_thread_leaks = true;
 }
 }
