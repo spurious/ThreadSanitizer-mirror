@@ -355,6 +355,17 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
 
 static void MemoryRangeSet(ThreadState *thr, uptr pc, uptr addr, uptr size,
                            u64 val) {
+  if (size == 0)
+    return;
+  // FIXME: fix me.
+  uptr offset = addr % kShadowCell;
+  if (offset) {
+    offset = kShadowCell - offset;
+    if (size <= offset)
+      return;
+    addr += offset;
+    size -= offset;
+  }
   CHECK_EQ(addr % 8, 0);
   CHECK(IsAppMem(addr));
   CHECK(IsAppMem(addr + size - 1));
