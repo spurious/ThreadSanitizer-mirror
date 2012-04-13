@@ -14,81 +14,119 @@
 #include "tsan_mman.h"
 #include "tsan_rtl.h"
 
+#include <unistd.h>
 #include <dlfcn.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
+#include <link.h>
+#include <linux/limits.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 
 namespace __tsan {
 
-static char exe[1024];
-static uptr base;
+static bool GetSymbolizerFd(int *infdp, int *outfdp) {
+  static int outfd[2];
+  static int infd[2];
+  static int pid = -1;
+  static int inited = 0;
+  if (inited == 0) {
+    inited = -1;
+    pipe(outfd);
+    pipe(infd);
+    pid = fork();
+    if (pid == 0) {
+      close(STDOUT_FILENO);
+      close(STDIN_FILENO);
+      dup2(outfd[0], STDIN_FILENO);
+      dup2(infd[1], STDOUT_FILENO);
+      close(outfd[0]);
+      close(outfd[1]);
+      close(infd[0]);
+      close(infd[1]);
+      InternalScopedBuf<char> exe(PATH_MAX);
+      ssize_t len = readlink("/proc/self/exe", exe, exe.Size() - 1);
+      exe.Ptr()[len] = 0;
+      InternalScopedBuf<char> cmd(PATH_MAX + 128);
+      snprintf(cmd, cmd.Size(), "addr2line -Cfe %s", exe.Ptr());
+      system(cmd);
+      _exit(0);
+    } else if (pid < 0) {
+      Printf("ThreadSanitizer: failed to fork symbolizer\n");
+      Die();
+    }
+    close(outfd[0]);
+    close(infd[1]);
+    inited = 1;
+  } else if (inited > 0) {
+    int status = 0;
+    if (pid == waitpid(pid, &status, WNOHANG)) {
+      Printf("ThreadSanitizer: symbolizer died with status %d\n",
+          WEXITSTATUS(status));
+      Die();
+    }
+  }
+  *infdp = infd[0];
+  *outfdp = outfd[1];
+  return inited > 0;
+}
 
-void SymbolizeImageBaseMark() {
+static int dl_iterate_phdr_cb(dl_phdr_info *info, size_t size, void *ctx) {
+  *(uptr*)ctx = (uptr)info->dlpi_addr;
+  return 1;
 }
 
 static uptr GetImageBase() {
-  uptr base = 0;
-  FILE *f = fopen("/proc/self/cmdline", "rb");
-  if (f) {
-    if (fread(exe, 1, sizeof(exe), f) <= 0)
-      return 0;
-    InternalScopedBuf<char> cmd(1024);
-    snprintf(cmd, cmd.Size(),
-        "nm %s|grep SymbolizeImageBaseMark > tsan.tmp", exe);
-    if (system(cmd))
-      return 0;
-    FILE* f2 = fopen("tsan.tmp", "rb");
-    if (f2) {
-      InternalScopedBuf<char> tmp(1024);
-      if (fread(tmp, 1, tmp.Size(), f2) <= 0)
-        return 0;
-      uptr addr = (uptr)strtoll(tmp, 0, 16);
-      base = (uptr)&SymbolizeImageBaseMark - addr;
-      fclose(f2);
-    }
-    fclose(f);
-  }
+  static uptr base = 0;
+  if (base == 0)
+    dl_iterate_phdr(dl_iterate_phdr_cb, &base);
   return base;
 }
 
 ReportStack *SymbolizeCode(RegionAlloc *alloc, uptr addr) {
-  if (base == 0)
-    base = GetImageBase();
+  uptr base = GetImageBase();
+  uptr offset = addr - base;
+  int infd = -1;
+  int outfd = -1;
+  if (!GetSymbolizerFd(&infd, &outfd))
+    return 0;
+  char addrstr[32];
+  snprintf(addrstr, sizeof(addrstr), "%p\n", (void*)offset);
+  write(outfd, addrstr, internal_strlen(addrstr));
+  InternalScopedBuf<char> func(1024);
+  ssize_t len = read(infd, func, func.Size() - 1);
+  if (len <= 0) {
+    Printf("ThreadSanitizer: can't read from symbolizer\n");
+    Die();
+  }
+  func.Ptr()[len] = 0;
   ReportStack *res = alloc->Alloc<ReportStack>(1);
   internal_memset(res, 0, sizeof(*res));
+  res->module = alloc->Strdup("exe");
+  res->offset = offset;
   res->pc = addr;
-  InternalScopedBuf<char> cmd(1024);
-  snprintf(cmd, cmd.Size(),
-           "addr2line -Cfe %s %p > tsan.tmp2", exe,
-           (void*)(addr - base));
-  if (system(cmd))
-    return res;
-  FILE* f3 = fopen("tsan.tmp2", "rb");
-  if (f3) {
-    InternalScopedBuf<char> tmp(1024);
-    if (fread(tmp, 1, tmp.Size(), f3) <= 0)
-      return res;
-    char *pos = strchr(tmp, '\n');
-    if (pos && tmp[0] != '?') {
-      res->func = alloc->Alloc<char>(pos - tmp + 1);
-      internal_memcpy(res->func, tmp, pos - tmp);
-      res->func[pos - tmp] = 0;
-      char *pos2 = strchr(pos, ':');
-      if (pos2) {
-        res->file = alloc->Alloc<char>(pos2 - pos - 1 + 1);
-        internal_memcpy(res->file, pos + 1, pos2 - pos - 1);
-        res->file[pos2 - pos - 1] = 0;
-        res->line = atoi(pos2 + 1);
-      }
-    }
-    fclose(f3);
+
+  char *pos = strchr(func, '\n');
+  if (pos && func[0] != '?') {
+    res->func = alloc->Alloc<char>(pos - func + 1);
+    internal_memcpy(res->func, func, pos - func);
+    res->func[pos - func] = 0;
+    char *pos2 = strchr(pos, ':');
+    if (pos2) {
+      res->file = alloc->Alloc<char>(pos2 - pos - 1 + 1);
+      internal_memcpy(res->file, pos + 1, pos2 - pos - 1);
+      res->file[pos2 - pos - 1] = 0;
+      res->line = atoi(pos2 + 1);
+     }
   }
   return res;
 }
 
 int SymbolizeData(RegionAlloc *alloc, uptr addr, Symbol *symb) {
+  return 0;
+  /*
   if (base == 0)
     base = GetImageBase();
   int res = 0;
@@ -124,6 +162,7 @@ int SymbolizeData(RegionAlloc *alloc, uptr addr, Symbol *symb) {
     fclose(f3);
   }
   return res;
+  */
 }
 
 }  // namespace __tsan
