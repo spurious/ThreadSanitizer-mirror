@@ -19,6 +19,8 @@
 namespace __tsan {
 
 struct Flags {
+  // Enable dynamic annotations, otherwise they are no-ops.
+  bool enable_annotations;
   // Supress a race reports if we've already output another race report
   // with the same stacks.
   bool suppress_equal_stacks;

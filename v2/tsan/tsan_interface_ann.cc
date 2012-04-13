@@ -16,6 +16,7 @@
 #include "tsan_report.h"
 #include "tsan_rtl.h"
 #include "tsan_slab.h"
+#include "tsan_flags.h"
 
 #define CALLERPC ((uptr)__builtin_return_address(0))
 
@@ -46,6 +47,8 @@ class ScopedAnnotation {
 };
 
 #define SCOPED_ANNOTATION() \
+    if (!flags()->enable_annotations) \
+      return; \
     ThreadState *thr = cur_thread(); \
     ScopedAnnotation sa(thr, __FUNCTION__, f, l, \
         (uptr)__builtin_return_address(0)); \
