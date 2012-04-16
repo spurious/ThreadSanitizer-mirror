@@ -36,7 +36,8 @@
 
 namespace __tsan {
 
-void Printf(const char *format, ...);
+void Printf(const char *format, ...) FORMAT(1, 2);
+uptr Snprintf(char *buffer, uptr length, const char *format, ...)  FORMAT(3, 4);
 
 inline void __attribute__((noinline)) breakhere() {
   volatile int x = 42;
@@ -337,7 +338,6 @@ void InitializeShadowMemory();
 void InitializeInterceptors();
 void InitializePlatform();
 void InitializeDynamicAnnotations();
-void Report(const char *format, ...);
 void Die() NORETURN;
 
 void ReportRace(ThreadState *thr);

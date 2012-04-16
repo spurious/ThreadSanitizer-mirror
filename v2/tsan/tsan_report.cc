@@ -51,10 +51,10 @@ void PrintReport(const ReportDesc *rep) {
   if (rep->loc) {
     const ReportLocation *loc = rep->loc;
     if (loc->type == ReportLocationGlobal) {
-      Printf("  Location is global '%s' of size %d at %p %s:%d\n",
+      Printf("  Location is global '%s' of size %lu at %lx %s:%d\n",
              loc->name, loc->size, loc->addr, loc->file, loc->line);
     } else if (loc->type == ReportLocationHeap) {
-      Printf("  Location is heap of size %d at %p allocated by thread %d:\n",
+      Printf("  Location is heap of size %lu at %lx allocated by thread %d:\n",
              loc->size, loc->addr, loc->tid);
       PrintStack(loc->stack);
     } else if (loc->type == ReportLocationStack) {
@@ -93,40 +93,40 @@ void PrintStats(u64 *stat) {
   stat[StatShadowNonZero] = stat[StatShadowProcessed] - stat[StatShadowZero];
 
   static const char *name[StatCnt] = {};
-  name[StatMop]                 = "Memory accesses";
-  name[StatMopRead]             = "  Including reads";
-  name[StatMopWrite]            = "            writes";
-  name[StatMop1]                = "  Including size 1";
-  name[StatMop2]                = "            size 2";
-  name[StatMop4]                = "            size 4";
-  name[StatMop8]                = "            size 8";
-  name[StatMopSame]             = "  Including same";
-  name[StatMopRange]            = "  Including range";
-  name[StatShadowProcessed]     = "Shadow processed";
-  name[StatShadowZero]          = "  Including empty";
-  name[StatShadowNonZero]       = "  Including non empty";
-  name[StatShadowSameSize]      = "  Including same size";
-  name[StatShadowIntersect]     = "            intersect";
-  name[StatShadowNotIntersect]  = "            not intersect";
-  name[StatShadowSameThread]    = "  Including same thread";
-  name[StatShadowAnotherThread] = "            another thread";
-  name[StatShadowReplace]       = "  Including evicted";
-  name[StatFuncEnter]           = "Function entries";
-  name[StatFuncExit]            = "Function exits";
-  name[StatEvents]              = "Events collected";
-  name[StatMtxTotal]            = "Contentionz";
-  name[StatMtxTrace]            = "  Trace";
-  name[StatMtxThreads]          = "  Threads";
-  name[StatMtxReport]           = "  Report";
-  name[StatMtxSyncVar]          = "  SyncVar";
-  name[StatMtxSyncTab]          = "  SyncTab";
-  name[StatMtxSlab]             = "  Slab";
-  name[StatMtxAtExit]           = "  Atexit";
-  name[StatMtxAnnotations]      = "  Annotations";
+  name[StatMop]                 = "Memory accesses                   ";
+  name[StatMopRead]             = "  Including reads                 ";
+  name[StatMopWrite]            = "            writes                ";
+  name[StatMop1]                = "  Including size 1                ";
+  name[StatMop2]                = "            size 2                ";
+  name[StatMop4]                = "            size 4                ";
+  name[StatMop8]                = "            size 8                ";
+  name[StatMopSame]             = "  Including same                  ";
+  name[StatMopRange]            = "  Including range                 ";
+  name[StatShadowProcessed]     = "Shadow processed                  ";
+  name[StatShadowZero]          = "  Including empty                 ";
+  name[StatShadowNonZero]       = "  Including non empty             ";
+  name[StatShadowSameSize]      = "  Including same size             ";
+  name[StatShadowIntersect]     = "            intersect             ";
+  name[StatShadowNotIntersect]  = "            not intersect         ";
+  name[StatShadowSameThread]    = "  Including same thread           ";
+  name[StatShadowAnotherThread] = "            another thread        ";
+  name[StatShadowReplace]       = "  Including evicted               ";
+  name[StatFuncEnter]           = "Function entries                  ";
+  name[StatFuncExit]            = "Function exits                    ";
+  name[StatEvents]              = "Events collected                  ";
+  name[StatMtxTotal]            = "Contentionz                       ";
+  name[StatMtxTrace]            = "  Trace                           ";
+  name[StatMtxThreads]          = "  Threads                         ";
+  name[StatMtxReport]           = "  Report                          ";
+  name[StatMtxSyncVar]          = "  SyncVar                         ";
+  name[StatMtxSyncTab]          = "  SyncTab                         ";
+  name[StatMtxSlab]             = "  Slab                            ";
+  name[StatMtxAtExit]           = "  Atexit                          ";
+  name[StatMtxAnnotations]      = "  Annotations                     ";
 
   Printf("Statistics:\n");
   for (int i = 0; i < StatCnt; i++)
-    Printf("%-30s: %llu\n", name[i], stat[i]);
+    Printf("%s: %llu\n", name[i], stat[i]);
 }
 
 }  // namespace __tsan

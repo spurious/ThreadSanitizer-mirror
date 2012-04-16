@@ -207,7 +207,7 @@ void AnnotateNoOp(char *f, int l, uptr mem) {
 static void ReportMissedExpectedRace(ExpectRace *race) {
   Printf("==================\n");
   Printf("WARNING: ThreadSanitizer: missed expected data race\n");
-  Printf("  %s addr=%p %s:%d\n",
+  Printf("  %s addr=%lx %s:%d\n",
       race->desc, race->addr, race->file, race->line);
   Printf("==================\n");
 }

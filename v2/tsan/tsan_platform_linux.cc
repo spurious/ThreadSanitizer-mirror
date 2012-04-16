@@ -54,22 +54,6 @@ ScopedInRtl::~ScopedInRtl() {
   CHECK_EQ(in_rtl_, thr_->in_rtl);
 }
 
-void Printf(const char *format, ...) {
-  ScopedInRtl in_rtl;
-  va_list args;
-  va_start(args, format);
-  vfprintf(stderr, format, args);
-  va_end(args);
-}
-
-void Report(const char *format, ...) {
-  ScopedInRtl in_rtl;
-  va_list args;
-  va_start(args, format);
-  vfprintf(stderr, format, args);
-  va_end(args);
-}
-
 void Die() {
   _exit(1);
 }
@@ -93,7 +77,7 @@ void *virtual_alloc(uptr size) {
   void *p = my_mmap(0, size, PROT_READ|PROT_WRITE,
       MAP_PRIVATE | MAP_ANON, -1, 0);
   if (p == MAP_FAILED) {
-    Report("FATAL: ThreadSanitizer can not allocate %lu MB\n", size<<20);
+    Printf("FATAL: ThreadSanitizer can not allocate %lu MB\n", size<<20);
     Die();
   }
   return p;
@@ -102,7 +86,7 @@ void *virtual_alloc(uptr size) {
 void virtual_free(void *p, uptr size) {
   ScopedInRtl in_rtl;
   if (my_munmap(p, size)) {
-    Report("FATAL: ThreadSanitizer munmap failed\n");
+    Printf("FATAL: ThreadSanitizer munmap failed\n");
     Die();
   }
 }
@@ -112,14 +96,18 @@ void sched_yield() {
   syscall(__NR_sched_yield);
 }
 
+void stderr_write(const void *p, uptr size) {
+  syscall(__NR_write, STDERR_FILENO, p, size);
+}
+
 static void ProtectRange(uptr beg, uptr end) {
   ScopedInRtl in_rtl;
   if (beg != (uptr)my_mmap((void*)(beg), end - beg,
       PROT_NONE,
       MAP_PRIVATE | MAP_ANON | MAP_FIXED | MAP_NORESERVE,
       -1, 0)) {
-    Report("FATAL: ThreadSanitizer can not protect [%p,%p]\n", beg, end);
-    Report("FATAL: Make sure you are not using unlimited stack\n");
+    Printf("FATAL: ThreadSanitizer can not protect [%lx,%lx]\n", beg, end);
+    Printf("FATAL: Make sure you are not using unlimited stack\n");
     Die();
   }
 }
@@ -135,8 +123,8 @@ void InitializeShadowMemory() {
       MAP_PRIVATE | MAP_ANON | MAP_FIXED | MAP_NORESERVE,
       0, 0);
   if (shadow != kLinuxShadowBeg) {
-    Report("FATAL: ThreadSanitizer can not mmap the shadow memory\n");
-    Report("FATAL: Make shoure to compile with -fPIE and to link with -pie.\n");
+    Printf("FATAL: ThreadSanitizer can not mmap the shadow memory\n");
+    Printf("FATAL: Make sure to compile with -fPIE and to link with -pie.\n");
     Die();
   }
   ProtectRange(kClosedLowBeg, kClosedLowEnd);
@@ -162,9 +150,9 @@ static void CheckPIE() {
       buf[sizeof(buf) - 1] = 0;
       u64 addr = strtoll(buf, 0, 16);
       if ((u64)addr < kLinuxAppMemBeg) {
-        Report("FATAL: ThreadSanitizer can not mmap the shadow memory ("
-               "something is mapped at 0x%p)\n", addr);
-        Report("FATAL: Make shoure to compile with -fPIE"
+        Printf("FATAL: ThreadSanitizer can not mmap the shadow memory ("
+               "something is mapped at 0x%llx)\n", addr);
+        Printf("FATAL: Make sure to compile with -fPIE"
                " and to link with -pie.\n");
         Die();
       }

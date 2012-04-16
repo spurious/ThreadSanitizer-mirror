@@ -98,7 +98,7 @@ ReportStack *SymbolizeCode(RegionAlloc *alloc, uptr addr) {
   if (!GetSymbolizerFd(&infd, &outfd))
     return 0;
   char addrstr[32];
-  snprintf(addrstr, sizeof(addrstr), "%p\n", (void*)offset);
+  Snprintf(addrstr, sizeof(addrstr), "%p\n", (void*)offset);
   if (0 >= write(outfd, addrstr, internal_strlen(addrstr))) {
     Printf("ThreadSanitizer: can't write from symbolizer\n");
     Die();
@@ -139,7 +139,7 @@ int SymbolizeData(RegionAlloc *alloc, uptr addr, Symbol *symb) {
     base = GetImageBase();
   int res = 0;
   InternalScopedBuf<char> cmd(1024);
-  snprintf(cmd, cmd.Size(),
+  Snprintf(cmd, cmd.Size(),
   "nm -alC %s|grep \"%lx\"|awk '{printf(\"%%s\\n%%s\", $3, $4)}' > tsan.tmp2",
     exe, (addr - base));
   if (system(cmd))

@@ -48,6 +48,7 @@ static inline uptr ShadowToMem(uptr shadow) {
 void *virtual_alloc(uptr size);
 void virtual_free(void *p, uptr size);
 void sched_yield();
+void stderr_write(const void *p, uptr size);
 
 void GetThreadStackAndTls(uptr *stk_addr, uptr *stk_size,
                           uptr *tls_addr, uptr *tls_size);

@@ -327,11 +327,11 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
       shadow_mem[0], shadow_mem[1], shadow_mem[2], shadow_mem[3]);
 #if TSAN_DEBUG
   if (!IsAppMem(addr)) {
-    Printf("Access to non app mem %p\n", addr);
+    Printf("Access to non app mem %lx\n", addr);
     DCHECK(IsAppMem(addr));
   }
   if (!IsShadowMem((uptr)shadow_mem)) {
-    Printf("Bad shadow addr %p (%p)\n", shadow_mem, addr);
+    Printf("Bad shadow addr %p (%lx)\n", shadow_mem, addr);
     DCHECK(IsShadowMem((uptr)shadow_mem));
   }
 #endif

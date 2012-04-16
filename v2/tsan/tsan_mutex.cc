@@ -141,7 +141,7 @@ void DeadlockDetector::Lock(MutexType t) {
   // Printf("  last %d @%llu\n", max_idx, max_seq);
   if (!CanLockAdj[max_idx][t]) {
     Printf("ThreadSanitizer: internal deadlock detected\n");
-    Printf("ThreadSanitizer: can't lock %d while under %d\n", t, max_idx);
+    Printf("ThreadSanitizer: can't lock %d while under %llu\n", t, max_idx);
     Die();
   }
 }

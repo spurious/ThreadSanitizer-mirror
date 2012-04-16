@@ -25,5 +25,6 @@
 #define LIKELY(x)     __builtin_expect(!!(x), 1)
 #define UNLIKELY(x)   __builtin_expect(!!(x), 0)
 #define THREADLOCAL   __thread
+#define FORMAT(f, a)  __attribute__((format(printf, f, a)))
 
 #endif  // TSAN_COMPILER_H

@@ -53,7 +53,7 @@ enum ReportLocationType {
 struct ReportLocation {
   ReportLocationType type;
   uptr addr;
-  int size;
+  uptr size;
   int tid;
   char *name;
   char *file;

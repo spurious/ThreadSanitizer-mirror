@@ -257,19 +257,19 @@ void MemoryAccessRange(ThreadState *thr, uptr pc, uptr addr,
 
 #if TSAN_DEBUG
   if (!IsAppMem(addr)) {
-    Printf("Access to non app mem %p\n", addr);
+    Printf("Access to non app mem %lx\n", addr);
     DCHECK(IsAppMem(addr));
   }
   if (!IsAppMem(addr + size - 1)) {
-    Printf("Access to non app mem %p\n", addr + size - 1);
+    Printf("Access to non app mem %lx\n", addr + size - 1);
     DCHECK(IsAppMem(addr + size - 1));
   }
   if (!IsShadowMem((uptr)shadow_mem)) {
-    Printf("Bad shadow addr %p (%p)\n", shadow_mem, addr);
+    Printf("Bad shadow addr %p (%lx)\n", shadow_mem, addr);
     DCHECK(IsShadowMem((uptr)shadow_mem));
   }
   if (!IsShadowMem((uptr)(shadow_mem + size * kShadowCnt / 8 - 1))) {
-    Printf("Bad shadow addr %p (%p)\n",
+    Printf("Bad shadow addr %p (%lx)\n",
         shadow_mem + size * kShadowCnt / 8 - 1, addr + size - 1);
     DCHECK(IsShadowMem((uptr)(shadow_mem + size * kShadowCnt / 8 - 1)));
   }

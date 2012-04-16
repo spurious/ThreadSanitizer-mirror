@@ -16,6 +16,11 @@ if [ "$LLDB" != "" ]; then
   LDFLAGS+=" -L$LLDB -llldb"
 fi
 
+strip() {
+  grep -v "$1" test.out > test.out2
+  mv -f test.out2 test.out
+}
+
 test_file() {
   SRC=$1
   COMPILER=$2
@@ -23,10 +28,11 @@ test_file() {
   $COMPILER $SRC $CFLAGS $LDFLAGS
   LD_LIBRARY_PATH=$LLDB ./a.out 2> test.out || echo -n
   echo >>test.out  # FileCheck fails on empty files
-  # cat test.out
+  strip "failed to intercept"
+  strip "Running under ThreadSanitizer"
+  strip "========="
   FileCheck < test.out $SRC
   rm -f a.out test.out *.tmp *.tmp2
-  # echo
 }
 
 for c in $ROOTDIR/output_tests/*.c; do

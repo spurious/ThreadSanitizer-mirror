@@ -52,6 +52,7 @@ LIBTSAN_OBJ=tsan_alloc.o \
             tsan_mman.o \
 	    tsan_platform_linux.o \
             tsan_report.o \
+            tsan_printf.o \
             tsan_rtl.o \
             tsan_rtl_amd64.o \
             tsan_rtl_mutex.o \
