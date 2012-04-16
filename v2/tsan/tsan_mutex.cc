@@ -81,14 +81,11 @@ void InitializeMutex() {
       CanLockAdj2[i][j] = CanLockAdj[i][j];
     }
   }
-  for (int z = 0; z < N; z++) {
+  for (int k = 0; k < N; k++) {
     for (int i = 0; i < N; i++) {
       for (int j = 0; j < N; j++) {
-        if (CanLockAdj2[i][j]) {
-          for (int k = 0; k < N; k++) {
-            if (CanLockAdj2[j][k])
-              CanLockAdj2[i][k] = true;
-          }
+        if (CanLockAdj2[i][k] && CanLockAdj2[k][j]) {
+          CanLockAdj2[i][j] = true;
         }
       }
     }
