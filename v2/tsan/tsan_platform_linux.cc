@@ -141,16 +141,16 @@ void InitializeShadowMemory() {
   }
   ProtectRange(kClosedLowBeg, kClosedLowEnd);
   ProtectRange(kClosedHighBeg, kClosedHighEnd);
-  DPrintf("kClosedLowBeg   %p\n", kClosedLowBeg);
-  DPrintf("kClosedLowEnd   %p\n", kClosedLowEnd);
-  DPrintf("kLinuxShadowBeg %p\n", kLinuxShadowBeg);
-  DPrintf("kLinuxShadowEnd %p\n", kLinuxShadowEnd);
-  DPrintf("kClosedHighBeg  %p\n", kClosedHighBeg);
-  DPrintf("kClosedHighEnd  %p\n", kClosedHighEnd);
-  DPrintf("kLinuxAppMemBeg %p\n", kLinuxAppMemBeg);
-  DPrintf("kLinuxAppMemEnd %p\n", kLinuxAppMemEnd);
-  DPrintf("stack           %p\n", &shadow);
-  DPrintf("InitializeShadowMemory: %p %p\n", shadow);
+  DPrintf("kClosedLow   %p-%p (%p)\n",
+      kClosedLowBeg, kClosedLowEnd, kClosedLowEnd - kClosedLowBeg);
+  DPrintf("kLinuxShadow %p-%p (%p)\n",
+      kLinuxShadowBeg, kLinuxShadowEnd, kLinuxShadowEnd - kLinuxShadowBeg);
+  DPrintf("kClosedHigh  %p-%p (%p)\n",
+      kClosedHighBeg, kClosedHighEnd, kClosedHighEnd - kClosedHighBeg);
+  DPrintf("kLinuxAppMem %p-%p (%p)\n",
+      kLinuxAppMemBeg, kLinuxAppMemEnd, kLinuxAppMemEnd - kLinuxAppMemBeg);
+  DPrintf("stack        %p\n", &shadow);
+  DPrintf("shadow:      %p\n", shadow);
 }
 
 static void CheckPIE() {
