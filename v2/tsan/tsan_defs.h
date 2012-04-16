@@ -99,6 +99,18 @@ T max(T a, T b) {
   return a > b ? a : b;
 }
 
+template<typename T>
+T RoundUp(T p, int align) {
+  DCHECK_EQ(align & (align - 1), 0);
+  return (T)(((u64)p + align - 1) & ~(align - 1));
+}
+
+template<typename T>
+T RoundDown(T p, int align) {
+  DCHECK_EQ(align & (align - 1), 0);
+  return (T)((u64)p & ~(align - 1));
+}
+
 void internal_memset(void *ptr, int c, uptr size);
 void internal_memcpy(void *dst, const void *src, uptr size);
 int internal_strcmp(const char *s1, const char *s2);

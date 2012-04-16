@@ -212,6 +212,19 @@ void GetThreadStackAndTls(uptr *stk_addr, uptr *stk_size,
   arch_prctl(ARCH_GET_FS, tls_addr);
   *tls_addr -= g_tls_size;
   *tls_size = g_tls_size;
+
+  // If stack and tls intersect, make them non-intersecting.
+  if (*tls_addr > *stk_addr && *tls_addr < *stk_addr + *stk_size) {
+    CHECK_GT(*tls_addr + *tls_size, *stk_addr);
+    CHECK_LE(*tls_addr + *tls_size, *stk_addr + *stk_size);
+    *stk_size = *tls_addr - *stk_addr;
+    *stk_size = RoundUp(*stk_size, kPageSize);
+    uptr stk_end = *stk_addr + *stk_size;
+    if (stk_end > *tls_addr) {
+      tls_size -= *tls_addr - stk_end;
+      *tls_addr = stk_end;
+    }
+  }
 }
 
 }  // namespace __tsan
