@@ -291,8 +291,8 @@ TSAN_INTERCEPTOR(int, strncmp, const char *s1, const char *s2, uptr n) {
     if (s1[len] != s2[len])
       break;
   }
-  MemoryAccessRange(thr, pc, (uptr)s1, len + 1, false);
-  MemoryAccessRange(thr, pc, (uptr)s2, len + 1, false);
+  MemoryAccessRange(thr, pc, (uptr)s1, len < n ? len + 1 : n, false);
+  MemoryAccessRange(thr, pc, (uptr)s2, len < n ? len + 1 : n, false);
   return len == n ? 0 : s1[len] - s2[len];
 }
 
@@ -325,8 +325,8 @@ TSAN_INTERCEPTOR(int, memcmp, void *s1, void *s2, uptr n) {
     if ((res = ((unsigned char*)s1)[len] - ((unsigned char*)s2)[len]))
       break;
   }
-  MemoryAccessRange(thr, pc, (uptr)s1, len + 1, false);
-  MemoryAccessRange(thr, pc, (uptr)s2, len + 1, false);
+  MemoryAccessRange(thr, pc, (uptr)s1, len < n ? len + 1 : n, false);
+  MemoryAccessRange(thr, pc, (uptr)s2, len < n ? len + 1 : n, false);
   return res;
 }
 
