@@ -34,8 +34,14 @@ static bool GetSymbolizerFd(int *infdp, int *outfdp) {
   static int inited = 0;
   if (inited == 0) {
     inited = -1;
-    pipe(outfd);
-    pipe(infd);
+    if (pipe(outfd)) {
+      Printf("ThreadSanitizer: pipe() failed (%d)\n", errno);
+      Die();
+    }
+    if (pipe(infd)) {
+      Printf("ThreadSanitizer: pipe() failed (%d)\n", errno);
+      Die();
+    }
     pid = fork();
     if (pid == 0) {
       close(STDOUT_FILENO);
@@ -93,7 +99,10 @@ ReportStack *SymbolizeCode(RegionAlloc *alloc, uptr addr) {
     return 0;
   char addrstr[32];
   snprintf(addrstr, sizeof(addrstr), "%p\n", (void*)offset);
-  write(outfd, addrstr, internal_strlen(addrstr));
+  if (0 >= write(outfd, addrstr, internal_strlen(addrstr))) {
+    Printf("ThreadSanitizer: can't write from symbolizer\n");
+    Die();
+  }
   InternalScopedBuf<char> func(1024);
   ssize_t len = read(infd, func, func.Size() - 1);
   if (len <= 0) {

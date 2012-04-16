@@ -21,17 +21,15 @@ class ScopedAtomic {
  public:
   ScopedAtomic(ThreadState *thr, uptr pc, const char *func)
       : thr_(thr) {
-    CHECK_EQ(thr_->in_rtl, 0);
-    new(&in_rtl_buf_[0]) ScopedInRtl;
+    CHECK_EQ(thr_->in_rtl, 1);  // 1 due to our own ScopedInRtl member.
     DPrintf("#%d: %s\n", thr_->tid, func);
   }
   ~ScopedAtomic() {
-    ((ScopedInRtl*)&in_rtl_buf_[0])->~ScopedInRtl();
-    CHECK_EQ(thr_->in_rtl, 0);
+    CHECK_EQ(thr_->in_rtl, 1);
   }
  private:
   ThreadState *thr_;
-  u64 in_rtl_buf_[sizeof(ScopedInRtl) / sizeof(u64) + 1];
+  ScopedInRtl in_rtl_;
 };
 
 #define SCOPED_ATOMIC(func, ...) \
