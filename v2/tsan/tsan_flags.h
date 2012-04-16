@@ -28,6 +28,9 @@ struct Flags {
   // on the same address.
   bool suppress_equal_addresses;
   bool report_thread_leaks;
+  // If set, all atomics are effectively sequentially consistent (seq_sct)
+  // regardless of what a user actually specified.
+  bool force_seq_cst_atomics;
 };
 
 Flags *flags();

@@ -13,6 +13,7 @@
 
 #include "tsan_interface_atomic.h"
 #include "tsan_placement_new.h"
+#include "tsan_flags.h"
 #include "tsan_rtl.h"
 
 using namespace __tsan;  // NOLINT
@@ -32,13 +33,6 @@ class ScopedAtomic {
   ScopedInRtl in_rtl_;
 };
 
-#define SCOPED_ATOMIC(func, ...) \
-    ThreadState *const thr = cur_thread(); \
-    const uptr pc = (uptr)__builtin_return_address(0); \
-    ScopedAtomic sa(thr, pc, __FUNCTION__); \
-    return atomic_ ## func(thr, pc, __VA_ARGS__); \
-/**/
-
 // Some shortcuts.
 typedef __tsan_memory_order morder;
 typedef __tsan_atomic32 a32;
@@ -49,6 +43,14 @@ const int mo_acquire = __tsan_memory_order_acquire;
 const int mo_release = __tsan_memory_order_release;
 const int mo_acq_rel = __tsan_memory_order_acq_rel;
 const int mo_seq_cst = __tsan_memory_order_seq_cst;
+
+#define SCOPED_ATOMIC(func, ...) \
+    mo = flags()->force_seq_cst_atomics ? (morder)mo_seq_cst : mo; \
+    ThreadState *const thr = cur_thread(); \
+    const uptr pc = (uptr)__builtin_return_address(0); \
+    ScopedAtomic sa(thr, pc, __FUNCTION__); \
+    return atomic_ ## func(thr, pc, __VA_ARGS__); \
+/**/
 
 template<typename T>
 static T atomic_load(ThreadState *thr, uptr pc, const volatile T *a,
