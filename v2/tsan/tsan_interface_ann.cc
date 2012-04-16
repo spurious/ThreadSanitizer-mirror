@@ -323,7 +323,7 @@ void WTFAnnotateBenignRaceSized(char *f, int l, uptr mem, uptr sz, char *desc) {
 }
 
 int RunningOnValgrind() {
-  return 1;
+  return 0;
 }
 
 const char *ThreadSanitizerQuery(const char *query) {
