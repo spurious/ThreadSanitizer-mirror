@@ -29,7 +29,11 @@ struct ucontext_t {
   u64 opaque[1024];
 };
 
+extern "C" int pthread_attr_init(void *attr);
+extern "C" int pthread_attr_destroy(void *attr);
 extern "C" int pthread_attr_getdetachstate(void *attr, int *v);
+extern "C" int pthread_attr_setstacksize(void *attr, uptr stacksize);
+extern "C" int pthread_attr_getstacksize(void *attr, uptr *stacksize);
 extern "C" int pthread_key_create(unsigned *key, void (*destructor)(void* v));
 extern "C" int pthread_setspecific(unsigned key, const void *v);
 extern "C" int pthread_mutexattr_gettype(void *a, int *type);
@@ -43,6 +47,7 @@ extern "C" int __cxa_atexit(void (*func)(void *arg), void *arg, void *dso);
 extern "C" int *__errno_location();
 const int PTHREAD_MUTEX_RECURSIVE = 1;
 const int PTHREAD_MUTEX_RECURSIVE_NP = 1;
+const int kPthreadAttrSize = 56;
 const int EINVAL = 22;
 const int EBUSY = 16;
 const int EPOLL_CTL_ADD = 1;
@@ -52,6 +57,11 @@ const int MAP_FIXED = 0x10;
 typedef long long_t;  // NOLINT
 
 typedef void (*sighandler_t)(int sig);
+
+union pthread_attr_t {
+  char size[kPthreadAttrSize];
+  void *align;
+};
 
 struct sigaction_t {
   union {
@@ -560,9 +570,21 @@ extern "C" void *__tsan_thread_start_func(void *arg) {
 TSAN_INTERCEPTOR(int, pthread_create,
     void *th, void *attr, void *(*callback)(void*), void * param) {
   SCOPED_TSAN_INTERCEPTOR(pthread_create, th, attr, callback, param);
+  pthread_attr_t myattr;
+  if (attr == 0) {
+    pthread_attr_init(&myattr);
+    attr = &myattr;
+  }
   int detached = 0;
-  if (attr)
-    pthread_attr_getdetachstate(attr, &detached);
+  pthread_attr_getdetachstate(attr, &detached);
+  uptr stacksize = 0;
+  pthread_attr_getstacksize(attr, &stacksize);
+  // We place the huge ThreadState object into TLS, account for that.
+  const uptr minstacksize = GetTlsSize() + 64*1024;
+  if (stacksize < minstacksize) {
+    DPrintf("ThreadSanitizer: stacksize %lu->%lu\n", stacksize, minstacksize);
+    pthread_attr_setstacksize(attr, minstacksize);
+  }
   ThreadParam p;
   p.callback = callback;
   p.param = param;
@@ -575,6 +597,8 @@ TSAN_INTERCEPTOR(int, pthread_create,
     while (atomic_load(&p.tid, memory_order_acquire) != 0)
       pthread_yield();
   }
+  if (attr == &myattr)
+    pthread_attr_destroy(&myattr);
   return res;
 }
 

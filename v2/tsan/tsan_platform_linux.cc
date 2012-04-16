@@ -169,7 +169,7 @@ static void CheckPIE() {
 extern "C" void _dl_get_tls_static_info(size_t*, size_t*)
     __attribute__((weak)) INTERNAL_FUNCTION;
 
-static int GetTlsSize() {
+static int InitTlsSize() {
   typedef void (*get_tls_func)(size_t*, size_t*) INTERNAL_FUNCTION;
   get_tls_func get_tls = &_dl_get_tls_static_info;
   if (get_tls == 0)
@@ -193,7 +193,11 @@ void InitializePlatform() {
   }
 
   CheckPIE();
-  g_tls_size = (uptr)GetTlsSize();
+  g_tls_size = (uptr)InitTlsSize();
+}
+
+uptr GetTlsSize() {
+  return g_tls_size;
 }
 
 void GetThreadStackAndTls(uptr *stk_addr, uptr *stk_size,
