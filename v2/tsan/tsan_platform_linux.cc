@@ -16,7 +16,6 @@
 #include "tsan_rtl.h"
 
 #include <asm/prctl.h>
-#include <elf.h>
 #include <fcntl.h>
 #include <pthread.h>
 #include <signal.h>
@@ -34,6 +33,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <sched.h>
+#include <dlfcn.h>
 
 extern "C" int arch_prctl(int code, __tsan::uptr *addr);
 
@@ -161,57 +161,23 @@ static void CheckPIE() {
   }
 }
 
-static int GetTlsSize() {
-  // As per csu/libc-tls.c, static TLS block has some surplus bytes beyond the
-  // size of .tdata and .tbss.
-  int tls_size = 2048;
-
-  int fd = open("/proc/self/exe", 0);
-  if (fd == -1) {
-    Printf("FATAL: ThreadSanitizer failed to open /proc/self/exe\n");
-    Die();
-  }
-  struct stat st;
-  fstat(fd, &st);
-  char* map = (char*)my_mmap(0, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
-  if (map == MAP_FAILED) {
-    Printf("FATAL: ThreadSanitizer failed to mmap /proc/self/exe\n");
-    Die();
-  }
-
-#ifdef __LP64__
-  typedef Elf64_Ehdr Elf_Ehdr;
-  typedef Elf64_Shdr Elf_Shdr;
-  typedef Elf64_Off Elf_Off;
-  typedef Elf64_Word Elf_Word;
-  typedef Elf64_Addr Elf_Addr;
+#ifdef __i386__
+# define INTERNAL_FUNCTION __attribute__((regparm(3), stdcall))
 #else
-  typedef Elf32_Ehdr Elf_Ehdr;
-  typedef Elf32_Shdr Elf_Shdr;
-  typedef Elf32_Off Elf_Off;
-  typedef Elf32_Word Elf_Word;
-  typedef Elf32_Addr Elf_Addr;
+# define INTERNAL_FUNCTION
 #endif
-  Elf_Ehdr* ehdr = (Elf_Ehdr*)map;
-  Elf_Shdr* shdrs = (Elf_Shdr*)(map + ehdr->e_shoff);
-  char *hdr_strings = map + shdrs[ehdr->e_shstrndx].sh_offset;
-  int shnum = ehdr->e_shnum;
+extern "C" void _dl_get_tls_static_info(size_t*, size_t*)
+    __attribute__((weak)) INTERNAL_FUNCTION;
 
-  for (int i = 0; i < shnum; ++i) {
-    Elf_Shdr* shdr = shdrs + i;
-    Elf_Word name = shdr->sh_name;
-    Elf_Word size = shdr->sh_size;
-    Elf_Word flags = shdr->sh_flags;
-    if (flags & SHF_TLS) {
-      if ((strcmp(hdr_strings + name, ".tbss") == 0) ||
-          (strcmp(hdr_strings + name, ".tdata") == 0)) {
-        tls_size += size;
-      }
-    }
-  }
-
-  my_munmap(map, st.st_size);
-  close(fd);
+static int GetTlsSize() {
+  typedef void (*get_tls_func)(size_t*, size_t*) INTERNAL_FUNCTION;
+  get_tls_func get_tls = &_dl_get_tls_static_info;
+  if (get_tls == 0)
+    get_tls = (get_tls_func)dlsym(RTLD_NEXT, "_dl_get_tls_static_info");
+  CHECK_NE(get_tls, 0);
+  size_t tls_size = 0;
+  size_t tls_align = 0;
+  get_tls(&tls_size, &tls_align);
   return tls_size;
 }
 
