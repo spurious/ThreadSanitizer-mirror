@@ -548,7 +548,7 @@ extern "C" void *__tsan_thread_start_func(void *arg) {
   int tid = 0;
   {
     ThreadState *thr = cur_thread();
-    thr->in_rtl++;
+    ScopedInRtl in_rtl;
     if (pthread_setspecific(g_thread_finalize_key, (void*)4)) {
       Printf("ThreadSanitizer: failed to set thread key\n");
       Die();
@@ -557,7 +557,7 @@ extern "C" void *__tsan_thread_start_func(void *arg) {
       pthread_yield();
     atomic_store(&p->tid, 0, memory_order_release);
     ThreadStart(thr, tid);
-    CHECK_EQ(thr->in_rtl, 0);  // ThreadStart() resets it to zero.
+    CHECK_EQ(thr->in_rtl, 1);
   }
   void *res = callback(param);
   // Prevent the callback from being tail called,
@@ -1201,6 +1201,8 @@ static void* poormans_memcpy(void *dst, const void *src, uptr size) {
 }
 
 void InitializeInterceptors() {
+  CHECK_GT(cur_thread()->in_rtl, 0);
+
   // We need to setup it early, because functions like dlsym() can call it.
   REAL(memset) = poormans_memset;
   REAL(memcpy) = poormans_memcpy;

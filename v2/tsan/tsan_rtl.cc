@@ -52,11 +52,11 @@ ThreadState::ThreadState(Context *ctx, int tid, u64 epoch,
   // they may be accessed before the ctor.
   // , fast_ignore_reads()
   // , fast_ignore_writes()
+  // , in_rtl()
   , shadow_stack_pos(&shadow_stack[0])
   , clockslab(&ctx->clockslab)
   , syncslab(&ctx->syncslab)
   , tid(tid)
-  , in_rtl()
   , func_call_count()
   , stk_addr(stk_addr)
   , stk_size(stk_size)
@@ -102,7 +102,7 @@ void Initialize(ThreadState *thr) {
   int tid = ThreadCreate(thr, 0, 0, true);
   CHECK_EQ(tid, 0);
   ThreadStart(thr, tid);
-  thr->in_rtl++;  // ThreadStart() resets it to zero.
+  CHECK_EQ(thr->in_rtl, 1);
   ctx->initialized = true;
 
   if (__tsan_stop) {
