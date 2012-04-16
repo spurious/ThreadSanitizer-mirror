@@ -149,8 +149,8 @@ void ThreadStart(ThreadState *thr, int tid) {
   thr->fast_synch_epoch = tctx->epoch0;
   thr->clock.set(tid, tctx->epoch0);
   thr->clock.acquire(&tctx->sync);
-  DPrintf("#%d: ThreadStart epoch=%llu stk_addr=%p stk_size=%p "
-      "tls_addr=%p tls_size=%p\n",
+  DPrintf("#%d: ThreadStart epoch=%llu stk_addr=%lx stk_size=%lx "
+      "tls_addr=%lx tls_size=%lx\n",
       tid, tctx->epoch0, stk_addr, stk_size, tls_addr, tls_size);
 }
 

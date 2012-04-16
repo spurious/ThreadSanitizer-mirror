@@ -56,14 +56,14 @@ static void RestoreStack(ThreadState *thr, int tid,
   InternalScopedBuf<uptr> stack(1024);  // FIXME: de-hardcode 1024
   for (uptr i = 0; i < hdr->stack0.Size(); i++) {
     stack[i] = hdr->stack0.Get(i);
-    DPrintf2("  #%02d: pc=%p\n", i, stack[i]);
+    DPrintf2("  #%02lu: pc=%lx\n", i, stack[i]);
   }
   uptr pos = hdr->stack0.Size();
   for (uptr i = ebegin; i <= eend; i++) {
     Event ev = trace->events[i];
     EventType typ = (EventType)(ev >> 61);
     uptr pc = (uptr)(ev & 0xffffffffffffull);
-    DPrintf2("  %04llu typ=%d pc=%p\n", i, typ, pc);
+    DPrintf2("  %04lu typ=%d pc=%lx\n", i, typ, pc);
     if (typ == EventTypeMop) {
       stack[pos] = pc;
     } else if (typ == EventTypeFuncEnter) {
@@ -75,7 +75,7 @@ static void RestoreStack(ThreadState *thr, int tid,
         pos--;
     }
     for (uptr j = 0; j <= pos; j++)
-      DPrintf2("      #%d: %p\n", j, stack[j]);
+      DPrintf2("      #%lu: %lx\n", j, stack[j]);
   }
   if (pos == 0 && stack[0] == 0)
     return;

@@ -129,16 +129,16 @@ void InitializeShadowMemory() {
   }
   ProtectRange(kClosedLowBeg, kClosedLowEnd);
   ProtectRange(kClosedHighBeg, kClosedHighEnd);
-  DPrintf("kClosedLow   %p-%p (%p)\n",
+  DPrintf("kClosedLow   %lx-%lx (%lx)\n",
       kClosedLowBeg, kClosedLowEnd, kClosedLowEnd - kClosedLowBeg);
-  DPrintf("kLinuxShadow %p-%p (%p)\n",
+  DPrintf("kLinuxShadow %lx-%lx (%lx)\n",
       kLinuxShadowBeg, kLinuxShadowEnd, kLinuxShadowEnd - kLinuxShadowBeg);
-  DPrintf("kClosedHigh  %p-%p (%p)\n",
+  DPrintf("kClosedHigh  %lx-%lx (%lx)\n",
       kClosedHighBeg, kClosedHighEnd, kClosedHighEnd - kClosedHighBeg);
-  DPrintf("kLinuxAppMem %p-%p (%p)\n",
+  DPrintf("kLinuxAppMem %lx-%lx (%lx)\n",
       kLinuxAppMemBeg, kLinuxAppMemEnd, kLinuxAppMemEnd - kLinuxAppMemBeg);
-  DPrintf("stack        %p\n", &shadow);
-  DPrintf("shadow:      %p\n", shadow);
+  DPrintf("stack        %lx\n", (uptr)&shadow);
+  DPrintf("shadow:      %lx\n", shadow);
 }
 
 static void CheckPIE() {

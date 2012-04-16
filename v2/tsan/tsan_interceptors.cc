@@ -156,7 +156,7 @@ class AtExitContext {
       }
       if (f == 0)
         break;
-      DPrintf("#%d: executing atexit func %p\n", f);
+      DPrintf("#%d: executing atexit func %p\n", thr->tid, f);
       CHECK_EQ(thr->in_rtl, 0);
       f();
     }

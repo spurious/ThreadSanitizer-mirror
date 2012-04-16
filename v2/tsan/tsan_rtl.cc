@@ -321,7 +321,7 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
     int kAccessSizeLog, bool kAccessIsWrite) {
   u64 *shadow_mem = (u64*)MemToShadow(addr);
   DPrintf2("#%d: tsan::OnMemoryAccess: @%p %p size=%d"
-      " is_write=%d shadow_mem=%p {%p, %p, %p, %p}\n",
+      " is_write=%d shadow_mem=%p {%llx, %llx, %llx, %llx}\n",
       (int)thr->fast_state.tid(), (void*)pc, (void*)addr,
       (int)(1 << kAccessSizeLog), kAccessIsWrite, shadow_mem,
       shadow_mem[0], shadow_mem[1], shadow_mem[2], shadow_mem[3]);
