@@ -47,6 +47,7 @@ LIBTSAN_OBJ=tsan_alloc.o \
             tsan_interceptors.o \
             tsan_interface.o \
             tsan_interface_ann.o \
+            tsan_interface_atomic.o \
             tsan_md5.o \
             tsan_mman.o \
 	    tsan_platform_linux.o \
