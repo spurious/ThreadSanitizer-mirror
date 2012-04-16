@@ -487,7 +487,7 @@ TSAN_INTERCEPTOR(void*, valloc, uptr sz) {
 
 TSAN_INTERCEPTOR(void*, pvalloc, uptr sz) {
   SCOPED_TSAN_INTERCEPTOR(pvalloc, sz);
-  sz = (sz + kPageSize - 1) & ~(kPageSize - 1);
+  sz = RoundUp(sz, kPageSize);
   return user_alloc_aligned(thr, pc, sz, kPageSize);
 }
 

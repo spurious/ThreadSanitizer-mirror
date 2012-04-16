@@ -61,7 +61,7 @@ void *user_realloc(ThreadState *thr, uptr pc, void *p, uptr sz) {
 void *user_alloc_aligned(ThreadState *thr, uptr pc, uptr sz, uptr align) {
   CHECK_GT(thr->in_rtl, 0);
   void *p = user_alloc(thr, pc, sz + align);
-  void *pa = (void*)(((uptr)p + align - 1) & ~(align - 1));
+  void *pa = RoundUp(p, align);
   DCHECK_LE((uptr)pa + sz, (uptr)p + sz + align);
   return pa;
 }
