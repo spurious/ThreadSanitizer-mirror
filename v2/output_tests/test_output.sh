@@ -27,6 +27,9 @@ test_file() {
   echo ----- TESTING $1
   $COMPILER $SRC $CFLAGS $LDFLAGS
   LD_LIBRARY_PATH=$LLDB ./a.out 2> test.out || echo -n
+  if [ "$3" != "" ]; then
+    cat test.out
+  fi
   echo >>test.out  # FileCheck fails on empty files
   strip "failed to intercept"
   strip "Running under ThreadSanitizer"
@@ -35,10 +38,13 @@ test_file() {
   rm -f a.out test.out *.tmp *.tmp2
 }
 
-for c in $ROOTDIR/output_tests/*.c; do
-  test_file $c $CC
-done
-
-for c in $ROOTDIR/output_tests/*.cc; do
-  test_file $c $CXX
-done
+if [ "$1" == "" ]; then
+  for c in $ROOTDIR/output_tests/*.c; do
+    test_file $c $CC
+  done
+  for c in $ROOTDIR/output_tests/*.cc; do
+    test_file $c $CXX
+  done
+else
+  test_file $ROOTDIR/output_tests/$1 $CXX "DUMP"
+fi

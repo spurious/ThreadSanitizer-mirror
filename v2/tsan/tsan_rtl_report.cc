@@ -271,9 +271,17 @@ void ReportRace(ThreadState *thr) {
   suppressed = OnReport(&rep, suppressed);
   if (suppressed)
     return;
+
   PrintReport(&rep);
   CTX()->nreported++;
   AddRacyStacks(thr, traces, addr_min, addr_max);
+
+  // Bump the thread's clock a bit.
+  // This avoids series of similar reports between the same threads
+  // that happen close to each other (e.g. accessing several fields
+  // of the same object).
+  FastState s(thr->racy_state[1]);
+  thr->clock.set(s.tid(), s.epoch() + 100);
 }
 
 void CheckFailed(const char *file, int line, const char *cond, u64 v1, u64 v2) {
