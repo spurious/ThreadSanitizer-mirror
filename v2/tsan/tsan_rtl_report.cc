@@ -145,8 +145,8 @@ static bool HandleRacyStacks(ThreadState *thr, const StackTrace (&traces)[2],
     uptr addr_min, uptr addr_max) {
   Context *ctx = CTX();
   bool equal_stack = false;
+  RacyStacks hash;
   if (flags()->suppress_equal_stacks) {
-    RacyStacks hash;
     hash.hash[0] = md5_hash(traces[0].Begin(), traces[0].Size() * sizeof(uptr));
     hash.hash[1] = md5_hash(traces[1].Begin(), traces[1].Size() * sizeof(uptr));
     for (uptr i = 0; i < ctx->racy_stacks.Size(); i++) {
@@ -156,12 +156,10 @@ static bool HandleRacyStacks(ThreadState *thr, const StackTrace (&traces)[2],
         break;
       }
     }
-    if (!equal_stack)
-      ctx->racy_stacks.PushBack(hash);
   }
   bool equal_address = false;
+  RacyAddress ra0 = {addr_min, addr_max};
   if (flags()->suppress_equal_addresses) {
-    RacyAddress ra0 = {addr_min, addr_max};
     for (uptr i = 0; i < ctx->racy_addresses.Size(); i++) {
       RacyAddress ra2 = ctx->racy_addresses[i];
       uptr maxbeg = max(ra0.addr_min, ra2.addr_min);
@@ -172,10 +170,30 @@ static bool HandleRacyStacks(ThreadState *thr, const StackTrace (&traces)[2],
         break;
       }
     }
+  }
+  if (equal_stack || equal_address) {
+    if (!equal_stack)
+      ctx->racy_stacks.PushBack(hash);
     if (!equal_address)
       ctx->racy_addresses.PushBack(ra0);
+    return true;
   }
-  return equal_stack || equal_address;
+  return false;
+}
+
+static void AddRacyStacks(ThreadState *thr, const StackTrace (&traces)[2],
+    uptr addr_min, uptr addr_max) {
+  Context *ctx = CTX();
+  if (flags()->suppress_equal_stacks) {
+    RacyStacks hash;
+    hash.hash[0] = md5_hash(traces[0].Begin(), traces[0].Size() * sizeof(uptr));
+    hash.hash[1] = md5_hash(traces[1].Begin(), traces[1].Size() * sizeof(uptr));
+    ctx->racy_stacks.PushBack(hash);
+  }
+  if (flags()->suppress_equal_addresses) {
+    RacyAddress ra0 = {addr_min, addr_max};
+    ctx->racy_addresses.PushBack(ra0);
+  }
 }
 
 void ReportRace(ThreadState *thr) {
@@ -226,10 +244,8 @@ void ReportRace(ThreadState *thr) {
     return;
 
   for (int i = 0; i < rep.nmop; i++) {
-    FastState s(thr->racy_state[i]);
     ReportMop *mop = &rep.mop[i];
     mop->stack = SymbolizeStack(&alloc, traces[i]);
-    traces[i].Free(thr);
   }
   rep.loc = 0;
   rep.nthread = 2;
@@ -257,6 +273,7 @@ void ReportRace(ThreadState *thr) {
     return;
   PrintReport(&rep);
   CTX()->nreported++;
+  AddRacyStacks(thr, traces, addr_min, addr_max);
 }
 
 void CheckFailed(const char *file, int line, const char *cond, u64 v1, u64 v2) {
