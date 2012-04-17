@@ -84,7 +84,7 @@ void Initialize(ThreadState *thr) {
   is_initialized = true;
   ScopedInRtl in_rtl;
   InitializeInterceptors();
-  InitializePlatform();
+  const char *env = InitializePlatform();
   InitializeMutex();
   InitializeDynamicAnnotations();
   ctx = new(ctx_placeholder) Context;
@@ -92,8 +92,8 @@ void Initialize(ThreadState *thr) {
   ctx->dead_list_size = 0;
   ctx->dead_list_head = 0;
   ctx->dead_list_tail = 0;
+  InitializeFlags(&ctx->flags, env);
   InitializeSuppressions();
-  FlagsInit(&ctx->flags);
 
   Printf("***** Running under ThreadSanitizer v2 *****\n");
 

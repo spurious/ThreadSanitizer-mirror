@@ -336,7 +336,6 @@ void ALWAYS_INLINE INLINE StatInc(ThreadState *thr, StatType typ, u64 n = 1) {
 
 void InitializeShadowMemory();
 void InitializeInterceptors();
-void InitializePlatform();
 void InitializeDynamicAnnotations();
 void Die() NORETURN;
 

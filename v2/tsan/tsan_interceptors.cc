@@ -368,6 +368,16 @@ TSAN_INTERCEPTOR(void*, strncpy, void *dst, void *src, uptr n) {
   return REAL(strncpy)(dst, src, n);
 }
 
+TSAN_INTERCEPTOR(const char*, strstr, const char *s1, const char *s2) {
+  SCOPED_TSAN_INTERCEPTOR(strstr, s1, s2);
+  const char *res = REAL(strstr)(s1, s2);
+  uptr len1 = REAL(strlen)(s1);
+  uptr len2 = REAL(strlen)(s2);
+  MemoryAccessRange(thr, pc, (uptr)s1, len1 + 1, false);
+  MemoryAccessRange(thr, pc, (uptr)s2, len2 + 1, false);
+  return res;
+}
+
 static bool fix_mmap_addr(void **addr, long_t sz, int flags) {
   if (*addr) {
     if (!IsAppMem((uptr)*addr) || !IsAppMem((uptr)*addr + sz - 1)) {
@@ -1243,6 +1253,7 @@ void InitializeInterceptors() {
   TSAN_INTERCEPT(strncmp);
   TSAN_INTERCEPT(strcpy);  // NOLINT
   TSAN_INTERCEPT(strncpy);
+  TSAN_INTERCEPT(strstr);
 
   TSAN_INTERCEPT(__cxa_guard_acquire);
   TSAN_INTERCEPT(__cxa_guard_release);
@@ -1359,6 +1370,14 @@ void internal_strcpy(char *s1, const char *s2) {
 
 uptr internal_strlen(const char *s) {
   return REAL(strlen)(s);
+}
+
+const char *internal_strstr(const char *where, const char *what) {
+  return REAL(strstr)(where, what);
+}
+
+const char *internal_strchr(const char *where, char what) {
+  return (const char*)REAL(strchr)((void*)where, what);
 }
 
 }  // namespace __tsan

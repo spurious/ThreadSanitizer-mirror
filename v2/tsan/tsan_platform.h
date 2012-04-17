@@ -45,6 +45,8 @@ static inline uptr ShadowToMem(uptr shadow) {
   return shadow;
 }
 
+const char *InitializePlatform();
+
 void *virtual_alloc(uptr size);
 void virtual_free(void *p, uptr size);
 void sched_yield();

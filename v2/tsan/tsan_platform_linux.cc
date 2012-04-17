@@ -181,7 +181,7 @@ static int InitTlsSize() {
   return tls_size;
 }
 
-void InitializePlatform() {
+const char *InitializePlatform() {
   void *p = 0;
   if (sizeof(p) == 8) {
     // Disable core dumps, dumping of 16TB usually takes a bit long.
@@ -194,6 +194,7 @@ void InitializePlatform() {
 
   CheckPIE();
   g_tls_size = (uptr)InitTlsSize();
+  return getenv("TSAN_ARGS");
 }
 
 uptr GetTlsSize() {

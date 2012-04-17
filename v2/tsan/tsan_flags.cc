@@ -16,15 +16,61 @@
 
 namespace __tsan {
 
+static void Flag(const char *env, bool *flag, const char *name, bool def);
+
 Flags *flags() {
   return &CTX()->flags;
 }
 
-void FlagsInit(Flags *flags) {
-  flags->enable_annotations = true;
-  flags->suppress_equal_stacks = true;
-  flags->suppress_equal_addresses = true;
-  flags->report_thread_leaks = true;
-  flags->force_seq_cst_atomics = false;
+void InitializeFlags(Flags *f, const char *env) {
+  Flag(env, &f->enable_annotations, "enable_annotations", true);
+  Flag(env, &f->suppress_equal_stacks, "suppress_equal_stacks", true);
+  Flag(env, &f->suppress_equal_addresses, "suppress_equal_addresses", true);
+  Flag(env, &f->report_thread_leaks, "report_thread_leaks", true);
+  Flag(env, &f->force_seq_cst_atomics, "force_seq_cst_atomics", false);
+}
+
+static const char *GetFlagValue(const char *env, const char *name,
+                                const char **end) {
+  if (env == 0)
+    return *end = 0;
+  const char *pos = internal_strstr(env, name);
+  if (pos == 0)
+    return *end = 0;
+  pos += internal_strlen(name);
+  if (pos[0] != '=')
+    return *end = pos;
+  pos += 1;
+  if (pos[0] == '"') {
+    pos += 1;
+    *end = internal_strchr(pos, '"');
+    if (*end == 0)
+      *end = pos + internal_strlen(pos);
+    return pos;
+  }
+  if (pos[0] == '\'') {
+    pos += 1;
+    *end = internal_strchr(pos, '\'');
+    if (*end == 0)
+      *end = pos + internal_strlen(pos);
+    return pos;
+  }
+  *end = internal_strchr(pos, ' ');
+  if (*end == 0)
+    *end = pos + internal_strlen(pos);
+  return pos;
+}
+
+static void Flag(const char *env, bool *flag, const char *name, bool def) {
+  *flag = def;
+  const char *end = 0;
+  const char *val = GetFlagValue(env, name, &end);
+  if (val == 0)
+    return;
+  int len = end - val;
+  if (len == 1 && val[0] == '0')
+    *flag = false;
+  else if (len == 1 && val[0] == '0')
+    *flag = true;
 }
 }

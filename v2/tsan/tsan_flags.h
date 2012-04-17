@@ -27,6 +27,7 @@ struct Flags {
   // Supress a race reports if we've already output another race report
   // on the same address.
   bool suppress_equal_addresses;
+  // Report thread leaks at exit?
   bool report_thread_leaks;
   // If set, all atomics are effectively sequentially consistent (seq_sct)
   // regardless of what a user actually specified.
@@ -34,7 +35,7 @@ struct Flags {
 };
 
 Flags *flags();
-void FlagsInit(Flags *flags);
+void InitializeFlags(Flags *flags, const char *env);
 }
 
 #endif  // #ifndef TSAN_FLAGS_H
