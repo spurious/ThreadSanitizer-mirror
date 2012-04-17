@@ -96,6 +96,8 @@ static void StackStripMain(ReportStack *stack) {
     if (ent->file && 0 == internal_strncmp(ent->file, path_prefix,
                                            path_prefix_len))
       ent->file += path_prefix_len;
+    if (ent->file && ent->file[0] == '.' && ent->file[1] == '/')
+      ent->file += 2;
     last_frame2 = last_frame;
     last_frame = ent;
   }
