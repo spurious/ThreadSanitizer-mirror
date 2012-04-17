@@ -11,6 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 #include "tsan_flags.h"
+#include "tsan_rtl.h"
 #include "gtest/gtest.h"
 
 namespace __tsan {
@@ -22,7 +23,8 @@ TEST(Flags, Basic) {
   InitializeFlags(&f, "");
 }
 
-TEST(Flags, Parse) {
+TEST(Flags, ParseBool) {
+  ScopedInRtl in_rtl;
   Flags f = {};
 
   f.enable_annotations = false;
@@ -44,6 +46,29 @@ TEST(Flags, Parse) {
   f.enable_annotations = true;
   InitializeFlags(&f, "--enable_annotations=0");
   EXPECT_EQ(f.enable_annotations, false);
+}
+
+TEST(Flags, ParseStr) {
+  ScopedInRtl in_rtl;
+  Flags f = {};
+
+  InitializeFlags(&f, 0);
+  EXPECT_EQ(0, strcmp(f.strip_path_prefix, ""));
+
+  InitializeFlags(&f, "strip_path_prefix");
+  EXPECT_EQ(0, strcmp(f.strip_path_prefix, ""));
+
+  InitializeFlags(&f, "--strip_path_prefix=");
+  EXPECT_EQ(0, strcmp(f.strip_path_prefix, ""));
+
+  InitializeFlags(&f, "--strip_path_prefix=abc");
+  EXPECT_EQ(0, strcmp(f.strip_path_prefix, "abc"));
+
+  InitializeFlags(&f, "--strip_path_prefix='abc zxc'");
+  EXPECT_EQ(0, strcmp(f.strip_path_prefix, "abc zxc"));
+
+  InitializeFlags(&f, "--strip_path_prefix=\"abc zxc\"");
+  EXPECT_EQ(0, strcmp(f.strip_path_prefix, "abc zxc"));
 }
 
 }  // namespace __tsan

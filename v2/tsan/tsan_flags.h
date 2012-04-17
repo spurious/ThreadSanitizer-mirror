@@ -32,6 +32,8 @@ struct Flags {
   // If set, all atomics are effectively sequentially consistent (seq_sct)
   // regardless of what a user actually specified.
   bool force_seq_cst_atomics;
+  // Strip that prefix from file paths in reports.
+  const char *strip_path_prefix;
 };
 
 Flags *flags();

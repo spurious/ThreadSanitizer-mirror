@@ -13,10 +13,13 @@
 
 #include "tsan_flags.h"
 #include "tsan_rtl.h"
+#include "tsan_mman.h"
 
 namespace __tsan {
 
 static void Flag(const char *env, bool *flag, const char *name, bool def);
+static void Flag(const char *env, const char **flag, const char *name,
+                 const char *def);
 
 Flags *flags() {
   return &CTX()->flags;
@@ -28,6 +31,7 @@ void InitializeFlags(Flags *f, const char *env) {
   Flag(env, &f->suppress_equal_addresses, "suppress_equal_addresses", true);
   Flag(env, &f->report_thread_leaks, "report_thread_leaks", true);
   Flag(env, &f->force_seq_cst_atomics, "force_seq_cst_atomics", false);
+  Flag(env, &f->strip_path_prefix, "strip_path_prefix", "");
 }
 
 static const char *GetFlagValue(const char *env, const char *name,
@@ -72,5 +76,18 @@ static void Flag(const char *env, bool *flag, const char *name, bool def) {
     *flag = false;
   else if (len == 1 && val[0] == '0')
     *flag = true;
+}
+
+static void Flag(const char *env, const char **flag, const char *name,
+                 const char *def) {
+  *flag = def;
+  const char *end = 0;
+  const char *val = GetFlagValue(env, name, &end);
+  if (val == 0)
+    return;
+  char *f = (char*)internal_alloc(end - val + 1);
+  internal_memcpy(f, val, end - val);
+  f[end - val] = 0;
+  *flag = f;
 }
 }

@@ -88,9 +88,14 @@ static void StackStripMain(ReportStack *stack) {
   ReportStack *last_frame2 = 0;
   const char *prefix = "interception_wrap_";
   uptr prefix_len = internal_strlen(prefix);
+  const char *path_prefix = flags()->strip_path_prefix;
+  uptr path_prefix_len = internal_strlen(path_prefix);
   for (ReportStack *ent = stack; ent; ent = ent->next) {
     if (ent->func && 0 == internal_strncmp(ent->func, prefix, prefix_len))
       ent->func += prefix_len;
+    if (ent->file && 0 == internal_strncmp(ent->file, path_prefix,
+                                           path_prefix_len))
+      ent->file += path_prefix_len;
     last_frame2 = last_frame;
     last_frame = ent;
   }
