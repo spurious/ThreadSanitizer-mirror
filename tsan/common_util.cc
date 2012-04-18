@@ -26,7 +26,7 @@
 
 #include "common_util.h"
 
-bool StringMatch(const string& wildcard, const string& text) {
+bool ThreadSanitizerStringMatch(const string& wildcard, const string& text) {
   const char* c_text = text.c_str();
   const char* c_wildcard = wildcard.c_str();
   // Start of the current look-ahead. Everything before these positions is a
@@ -79,7 +79,7 @@ bool StringMatch(const string& wildcard, const string& text) {
   return !*c_wildcard;
 }
 
-string ConvertToPlatformIndependentPath(const string &s) {
+string ThreadSanitizerConvertToPlatformIndependentPath(const string &s) {
   string ret = s;
 #ifdef _MSC_VER
   // TODO(timurrrr): do we need anything apart from s/\\///g?
@@ -91,7 +91,7 @@ string ConvertToPlatformIndependentPath(const string &s) {
   return ret;
 }
 
-TS_FILE OpenFileReadOnly(const string &file_name, bool die_if_failed) {
+TS_FILE ThreadSanitizerOpenFileReadOnly(const string &file_name, bool die_if_failed) {
   TS_FILE ret = TS_FILE_INVALID;
 #ifdef TS_VALGRIND
   SysRes sres = VG_(open)((const Char*)file_name.c_str(), VKI_O_RDONLY, 0);
@@ -110,8 +110,8 @@ TS_FILE OpenFileReadOnly(const string &file_name, bool die_if_failed) {
 }
 
 // Read the contents of a file to string. Valgrind version.
-string ReadFileToString(const string &file_name, bool die_if_failed) {
-  TS_FILE fd = OpenFileReadOnly(file_name, die_if_failed);
+string ThreadSanitizerReadFileToString(const string &file_name, bool die_if_failed) {
+  TS_FILE fd = ThreadSanitizerOpenFileReadOnly(file_name, die_if_failed);
   if (fd == TS_FILE_INVALID) {
     return string();
   }

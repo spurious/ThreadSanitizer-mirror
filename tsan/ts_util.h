@@ -364,7 +364,7 @@ extern void Printf(const char *format, ...);
 // Strip (.*) and <.*>, also handle "function returns a function pointer" case.
 string NormalizeFunctionName(const string &mangled_fname);
 
-string ReadFileToString(const string &file_name, bool die_if_failed);
+string ThreadSanitizerReadFileToString(const string &file_name, bool die_if_failed);
 
 // Get the current memory footprint of myself (parse /proc/self/status).
 size_t GetVmSizeInMb();

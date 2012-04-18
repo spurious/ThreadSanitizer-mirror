@@ -396,7 +396,7 @@ static dr_emit_flags_t OnEvent_BB(void* drcontext, void *tag, instrlist_t *bb,
     instrlist_clear(drcontext, bb);
     instrlist_append(bb, INSTR_XL8(INSTR_CREATE_jmp(drcontext, opnd_create_pc(target_fun)), pc));
   } else {
-    if (StringMatch("*foo_to_wrap*", symbol_name)) {
+    if (ThreadSanitizerStringMatch("*foo_to_wrap*", symbol_name)) {
       const module_data_t *info = dr_lookup_module(pc);
       dr_printf(" 'foo_to_wrap' entry point: bb %p, %s / %s\n", pc, dr_module_preferred_name(info), info->full_path);
       wrap::orig_foo = (int (*)(int,int,int))(void*)pc;
@@ -456,7 +456,7 @@ void ReadSymbolsTableFromFile(const char *filename) {
 
 void ReplaceFunc3(void *img, void *rtn, string filter, void *fun_ptr) {
   for (SymbolsTable::iterator i = sym_tab->begin(); i != sym_tab->end(); i++) {
-    if (StringMatch(filter, i->second))
+    if (ThreadSanitizerStringMatch(filter, i->second))
       (*fun_replace_map)[(intptr_t)i->first] = fun_ptr;
   }
 }

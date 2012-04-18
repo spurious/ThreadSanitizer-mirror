@@ -11,8 +11,8 @@ struct IgnoreTriple {
   string file;
 
   IgnoreTriple(string ifun, string iobj, string ifile) : fun(ifun) {
-    obj = ConvertToPlatformIndependentPath(iobj);
-    file = ConvertToPlatformIndependentPath(ifile);
+    obj = ThreadSanitizerConvertToPlatformIndependentPath(iobj);
+    file = ThreadSanitizerConvertToPlatformIndependentPath(ifile);
     CHECK(!((ifun == "*") && (iobj == "*") && (ifile == "*")));
   }
 };

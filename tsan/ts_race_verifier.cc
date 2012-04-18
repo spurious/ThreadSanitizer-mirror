@@ -358,7 +358,7 @@ class StringStream {
 static void RaceVerifierParseFile(const string& fileName) {
   Printf("Reading race data from %s\n", fileName.c_str());
   const string RACEINFO_MARKER = "Race verifier data: ";
-  string log = ReadFileToString(fileName, true /* die_if_failed */);
+  string log = ThreadSanitizerReadFileToString(fileName, true /* die_if_failed */);
   StringStream ss(log);
   string* desc = NULL;
   int count = 0;

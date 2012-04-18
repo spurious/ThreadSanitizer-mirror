@@ -532,75 +532,75 @@ TEST_F(FailingSuppressionsTest, StacktraceWithAngleBraces) {
 
 
 TEST(WildcardTest, Simple) {
-  EXPECT_TRUE(StringMatch("abc", "abc"));
-  EXPECT_FALSE(StringMatch("abcd", "abc"));
-  EXPECT_FALSE(StringMatch("dabc", "abc"));
-  EXPECT_FALSE(StringMatch("ab", "abc"));
-  EXPECT_FALSE(StringMatch("", "abc"));
-  EXPECT_FALSE(StringMatch("abc", ""));
-  EXPECT_TRUE(StringMatch("", ""));
+  EXPECT_TRUE(ThreadSanitizerStringMatch("abc", "abc"));
+  EXPECT_FALSE(ThreadSanitizerStringMatch("abcd", "abc"));
+  EXPECT_FALSE(ThreadSanitizerStringMatch("dabc", "abc"));
+  EXPECT_FALSE(ThreadSanitizerStringMatch("ab", "abc"));
+  EXPECT_FALSE(ThreadSanitizerStringMatch("", "abc"));
+  EXPECT_FALSE(ThreadSanitizerStringMatch("abc", ""));
+  EXPECT_TRUE(ThreadSanitizerStringMatch("", ""));
 }
 
 TEST(WildcardTest, SingleCharacterWildcard) {
-  EXPECT_TRUE(StringMatch("a?c", "abc"));
-  EXPECT_TRUE(StringMatch("?bc", "abc"));
-  EXPECT_TRUE(StringMatch("ab?", "abc"));
-  EXPECT_TRUE(StringMatch("a??", "abc"));
-  EXPECT_TRUE(StringMatch("???", "abc"));
-  EXPECT_TRUE(StringMatch("?", "a"));
-  EXPECT_FALSE(StringMatch("?zc", "abc"));
-  EXPECT_FALSE(StringMatch("?bz", "abc"));
-  EXPECT_FALSE(StringMatch("b?c", "abc"));
-  EXPECT_FALSE(StringMatch("az?", "abc"));
-  EXPECT_FALSE(StringMatch("abc?", "abc"));
-  EXPECT_FALSE(StringMatch("?abc", "abc"));
-  EXPECT_FALSE(StringMatch("?", ""));
-  EXPECT_FALSE(StringMatch("??", ""));
+  EXPECT_TRUE(ThreadSanitizerStringMatch("a?c", "abc"));
+  EXPECT_TRUE(ThreadSanitizerStringMatch("?bc", "abc"));
+  EXPECT_TRUE(ThreadSanitizerStringMatch("ab?", "abc"));
+  EXPECT_TRUE(ThreadSanitizerStringMatch("a??", "abc"));
+  EXPECT_TRUE(ThreadSanitizerStringMatch("???", "abc"));
+  EXPECT_TRUE(ThreadSanitizerStringMatch("?", "a"));
+  EXPECT_FALSE(ThreadSanitizerStringMatch("?zc", "abc"));
+  EXPECT_FALSE(ThreadSanitizerStringMatch("?bz", "abc"));
+  EXPECT_FALSE(ThreadSanitizerStringMatch("b?c", "abc"));
+  EXPECT_FALSE(ThreadSanitizerStringMatch("az?", "abc"));
+  EXPECT_FALSE(ThreadSanitizerStringMatch("abc?", "abc"));
+  EXPECT_FALSE(ThreadSanitizerStringMatch("?abc", "abc"));
+  EXPECT_FALSE(ThreadSanitizerStringMatch("?", ""));
+  EXPECT_FALSE(ThreadSanitizerStringMatch("??", ""));
 }
 
 TEST(WildcardTest, MultiCharacterWildcard) {
-  EXPECT_TRUE(StringMatch("*x", "x"));
-  EXPECT_TRUE(StringMatch("x*", "x"));
-  EXPECT_TRUE(StringMatch("*x*", "x"));
+  EXPECT_TRUE(ThreadSanitizerStringMatch("*x", "x"));
+  EXPECT_TRUE(ThreadSanitizerStringMatch("x*", "x"));
+  EXPECT_TRUE(ThreadSanitizerStringMatch("*x*", "x"));
 
-  EXPECT_TRUE(StringMatch("a*d", "abcd"));
-  EXPECT_TRUE(StringMatch("ab*d", "abcd"));
-  EXPECT_TRUE(StringMatch("*cd", "abcd"));
-  EXPECT_TRUE(StringMatch("*d", "abcd"));
-  EXPECT_TRUE(StringMatch("ab*", "abcd"));
-  EXPECT_TRUE(StringMatch("a*", "abcd"));
-  EXPECT_TRUE(StringMatch("*", "abcd"));
-  EXPECT_TRUE(StringMatch("ab*cd", "abcd"));
+  EXPECT_TRUE(ThreadSanitizerStringMatch("a*d", "abcd"));
+  EXPECT_TRUE(ThreadSanitizerStringMatch("ab*d", "abcd"));
+  EXPECT_TRUE(ThreadSanitizerStringMatch("*cd", "abcd"));
+  EXPECT_TRUE(ThreadSanitizerStringMatch("*d", "abcd"));
+  EXPECT_TRUE(ThreadSanitizerStringMatch("ab*", "abcd"));
+  EXPECT_TRUE(ThreadSanitizerStringMatch("a*", "abcd"));
+  EXPECT_TRUE(ThreadSanitizerStringMatch("*", "abcd"));
+  EXPECT_TRUE(ThreadSanitizerStringMatch("ab*cd", "abcd"));
 
-  EXPECT_TRUE(StringMatch("ab**", "abcd"));
-  EXPECT_TRUE(StringMatch("**", "abcd"));
-  EXPECT_TRUE(StringMatch("***", "abcd"));
-  EXPECT_TRUE(StringMatch("**d", "abcd"));
-  EXPECT_TRUE(StringMatch("*c*", "abcd"));
-  EXPECT_TRUE(StringMatch("a*c*d*f", "abcdef"));
-  EXPECT_TRUE(StringMatch("a*c*e*", "abcdef"));
-  EXPECT_TRUE(StringMatch("*a*b*f", "abcdef"));
-  EXPECT_TRUE(StringMatch("*b*d*", "abcdef"));
+  EXPECT_TRUE(ThreadSanitizerStringMatch("ab**", "abcd"));
+  EXPECT_TRUE(ThreadSanitizerStringMatch("**", "abcd"));
+  EXPECT_TRUE(ThreadSanitizerStringMatch("***", "abcd"));
+  EXPECT_TRUE(ThreadSanitizerStringMatch("**d", "abcd"));
+  EXPECT_TRUE(ThreadSanitizerStringMatch("*c*", "abcd"));
+  EXPECT_TRUE(ThreadSanitizerStringMatch("a*c*d*f", "abcdef"));
+  EXPECT_TRUE(ThreadSanitizerStringMatch("a*c*e*", "abcdef"));
+  EXPECT_TRUE(ThreadSanitizerStringMatch("*a*b*f", "abcdef"));
+  EXPECT_TRUE(ThreadSanitizerStringMatch("*b*d*", "abcdef"));
 
-  EXPECT_FALSE(StringMatch("b*", "abcd"));
-  EXPECT_FALSE(StringMatch("*c", "abcd"));
-  EXPECT_FALSE(StringMatch("*a", "abcd"));
+  EXPECT_FALSE(ThreadSanitizerStringMatch("b*", "abcd"));
+  EXPECT_FALSE(ThreadSanitizerStringMatch("*c", "abcd"));
+  EXPECT_FALSE(ThreadSanitizerStringMatch("*a", "abcd"));
 }
 
 TEST(WildcardTest, WildcardCharactersInText) {
-  EXPECT_TRUE(StringMatch("?", "?"));
-  EXPECT_FALSE(StringMatch("a", "?"));
-  EXPECT_FALSE(StringMatch("ab", "a?"));
-  EXPECT_FALSE(StringMatch("ab", "?b"));
-  EXPECT_TRUE(StringMatch("a?", "a?"));
-  EXPECT_TRUE(StringMatch("?b", "?b"));
+  EXPECT_TRUE(ThreadSanitizerStringMatch("?", "?"));
+  EXPECT_FALSE(ThreadSanitizerStringMatch("a", "?"));
+  EXPECT_FALSE(ThreadSanitizerStringMatch("ab", "a?"));
+  EXPECT_FALSE(ThreadSanitizerStringMatch("ab", "?b"));
+  EXPECT_TRUE(ThreadSanitizerStringMatch("a?", "a?"));
+  EXPECT_TRUE(ThreadSanitizerStringMatch("?b", "?b"));
 
-  EXPECT_TRUE(StringMatch("*", "*"));
-  EXPECT_FALSE(StringMatch("a", "*"));
-  EXPECT_FALSE(StringMatch("ab", "a*"));
-  EXPECT_FALSE(StringMatch("ab", "*b"));
-  EXPECT_TRUE(StringMatch("a*", "a*"));
-  EXPECT_TRUE(StringMatch("*b", "*b"));
+  EXPECT_TRUE(ThreadSanitizerStringMatch("*", "*"));
+  EXPECT_FALSE(ThreadSanitizerStringMatch("a", "*"));
+  EXPECT_FALSE(ThreadSanitizerStringMatch("ab", "a*"));
+  EXPECT_FALSE(ThreadSanitizerStringMatch("ab", "*b"));
+  EXPECT_TRUE(ThreadSanitizerStringMatch("a*", "a*"));
+  EXPECT_TRUE(ThreadSanitizerStringMatch("*b", "*b"));
 }
 
 int main(int argc, char **argv) {

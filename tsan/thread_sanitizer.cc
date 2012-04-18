@@ -539,7 +539,7 @@ class StackTrace {
 
   static bool CutStackBelowFunc(const string func_name) {
     for (size_t i = 0; i < G_flags->cut_stack_below.size(); i++) {
-      if (StringMatch(G_flags->cut_stack_below[i], func_name)) {
+      if (ThreadSanitizerStringMatch(G_flags->cut_stack_below[i], func_name)) {
         return true;
       }
     }
@@ -5653,7 +5653,7 @@ class ReportStorage {
     for (size_t i = 0; i < G_flags->suppressions.size(); i++) {
       const string &supp_path = G_flags->suppressions[i];
       Report("INFO: reading suppressions file %s\n", supp_path.c_str());
-      int n = suppressions_.ReadFromString(ReadFileToString(supp_path, true));
+      int n = suppressions_.ReadFromString(ThreadSanitizerReadFileToString(supp_path, true));
       if (n == -1) {
         Report("Error at line %d: %s\n",
             suppressions_.GetErrorLineNo(),
@@ -5674,13 +5674,13 @@ class ReportStorage {
       uintptr_t offset;
       string symbol_descr;
       if (GetNameAndOffsetOfGlobalObject(addr, &symbol_descr, &offset)) {
-        if (StringMatch("*empty_rep_storage*", symbol_descr))
+        if (ThreadSanitizerStringMatch("*empty_rep_storage*", symbol_descr))
           return false;
-        if (StringMatch("_IO_stdfile_*_lock", symbol_descr))
+        if (ThreadSanitizerStringMatch("_IO_stdfile_*_lock", symbol_descr))
           return false;
-        if (StringMatch("_IO_*_stdout_", symbol_descr))
+        if (ThreadSanitizerStringMatch("_IO_*_stdout_", symbol_descr))
           return false;
-        if (StringMatch("_IO_*_stderr_", symbol_descr))
+        if (ThreadSanitizerStringMatch("_IO_*_stderr_", symbol_descr))
           return false;
       }
     }
@@ -6621,7 +6621,7 @@ class Detector {
  private:
   void ShowProcSelfStatus() {
     if (G_flags->show_proc_self_status) {
-      string str = ReadFileToString("/proc/self/status", false);
+      string str = ThreadSanitizerReadFileToString("/proc/self/status", false);
       if (!str.empty()) {
         Printf("%s", str.c_str());
       }
@@ -8002,7 +8002,7 @@ void FindStringFlag(const char *name, vector<string> *args,
 static size_t GetMemoryLimitInMbFromProcSelfLimits() {
 #ifdef VGO_linux
   // Parse the memory limit section of /proc/self/limits.
-  string proc_self_limits = ReadFileToString("/proc/self/limits", false);
+  string proc_self_limits = ThreadSanitizerReadFileToString("/proc/self/limits", false);
   const char *max_addr_space = "Max address space";
   size_t pos = proc_self_limits.find(max_addr_space);
   if (pos == string::npos) return 0;
@@ -8156,7 +8156,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   FindStringFlag("file_prefix_to_cut", args, &G_flags->file_prefix_to_cut);
   for (size_t i = 0; i < G_flags->file_prefix_to_cut.size(); i++) {
     G_flags->file_prefix_to_cut[i] =
-        ConvertToPlatformIndependentPath(G_flags->file_prefix_to_cut[i]);
+        ThreadSanitizerConvertToPlatformIndependentPath(G_flags->file_prefix_to_cut[i]);
   }
 
   FindStringFlag("ignore", args, &G_flags->ignore);
@@ -8407,13 +8407,13 @@ static void SetupIgnore() {
   for (size_t i = 0; i < G_flags->ignore.size(); i++) {
     string file_name = G_flags->ignore[i];
     Report("INFO: Reading ignore file: %s\n", file_name.c_str());
-    string str = ReadFileToString(file_name, true);
+    string str = ThreadSanitizerReadFileToString(file_name, true);
     ReadIgnoresFromString(str, g_ignore_lists);
   }
   for (size_t i = 0; i < G_flags->whitelist.size(); i++) {
     string file_name = G_flags->whitelist[i];
     Report("INFO: Reading whitelist file: %s\n", file_name.c_str());
-    string str = ReadFileToString(file_name, true);
+    string str = ThreadSanitizerReadFileToString(file_name, true);
     ReadIgnoresFromString(str, g_white_lists);
   }
 }

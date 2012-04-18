@@ -80,9 +80,9 @@ bool TripleVectorMatchKnown(const vector<IgnoreTriple>& v,
                        const string& obj,
                        const string& file) {
   for (size_t i = 0; i < v.size(); i++) {
-    if ((fun.size() == 0 || StringMatch(v[i].fun, fun)) &&
-        (obj.size() == 0 || StringMatch(v[i].obj, obj)) &&
-        (file.size() == 0 || StringMatch(v[i].file, file))) {
+    if ((fun.size() == 0 || ThreadSanitizerStringMatch(v[i].fun, fun)) &&
+        (obj.size() == 0 || ThreadSanitizerStringMatch(v[i].obj, obj)) &&
+        (file.size() == 0 || ThreadSanitizerStringMatch(v[i].file, file))) {
       if ((fun.size() == 0 || v[i].fun == "*") &&
           (obj.size() == 0 || v[i].obj == "*") &&
           (file.size() == 0 || v[i].file == "*")) {
@@ -101,7 +101,7 @@ bool TripleVectorMatchKnown(const vector<IgnoreTriple>& v,
 
 bool StringVectorMatch(const vector<string>& v, const string& obj) {
   for (size_t i = 0; i < v.size(); i++)
-    if (StringMatch(v[i], obj))
+    if (ThreadSanitizerStringMatch(v[i], obj))
       return true;
   return false;
 }

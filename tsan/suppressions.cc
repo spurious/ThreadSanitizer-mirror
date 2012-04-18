@@ -391,12 +391,12 @@ static bool MatchStackTraceRecursive(MatcherContext ctx, int trace_index,
     } else {
       bool match = false;
       if (location.type == LT_OBJ) {
-        match = StringMatch(location.name, ctx.object_names[trace_index]);
+        match = ThreadSanitizerStringMatch(location.name, ctx.object_names[trace_index]);
       } else {
         CHECK(location.type == LT_FUN);
         match =
-          StringMatch(location.name, ctx.function_names_mangled[trace_index]) ||
-          StringMatch(location.name, ctx.function_names_demangled[trace_index]);
+          ThreadSanitizerStringMatch(location.name, ctx.function_names_mangled[trace_index]) ||
+          ThreadSanitizerStringMatch(location.name, ctx.function_names_demangled[trace_index]);
       }
       if (match) {
         ++trace_index;

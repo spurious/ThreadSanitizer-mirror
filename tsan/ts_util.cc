@@ -226,7 +226,7 @@ size_t GetVmSizeInMb() {
   uintptr_t counter = G_stats->read_proc_self_stats++;
   if (counter >= 1024 && ((counter & (counter - 1)) == 0))
     Report("INFO: reading %s for %ld'th time\n", path, counter);
-  int  fd = OpenFileReadOnly(path, false);
+  int  fd = ThreadSanitizerOpenFileReadOnly(path, false);
   if (fd < 0) return 0;
   char buff[128];
   int n_read = read(fd, buff, sizeof(buff) - 1);

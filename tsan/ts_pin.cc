@@ -276,7 +276,7 @@ void PcToStrings(uintptr_t pc, bool demangle,
     ScopedReentrantClientLock lock(__LINE__);
     // ClientLock must be held.
     PIN_GetSourceLocation(pc, NULL, line_no, file_name);
-    *file_name = ConvertToPlatformIndependentPath(*file_name);
+    *file_name = ThreadSanitizerConvertToPlatformIndependentPath(*file_name);
     rtn = RTN_FindByAddress(pc);
     string name;
     if (RTN_Valid(rtn)) {

@@ -42,9 +42,11 @@
   #define close fclose
 #endif
 
-bool StringMatch(const string& wildcard, const string& text);
-string ConvertToPlatformIndependentPath(const string &s);
-TS_FILE OpenFileReadOnly(const string &file_name, bool die_if_failed);
-string ReadFileToString(const string &file_name, bool die_if_failed);
+bool ThreadSanitizerStringMatch(const string& wildcard, const string& text);
+string ThreadSanitizerConvertToPlatformIndependentPath(const string &s);
+TS_FILE ThreadSanitizerOpenFileReadOnly(const string &file_name,
+    bool die_if_failed);
+string ThreadSanitizerReadFileToString(const string &file_name,
+    bool die_if_failed);
 
 #endif

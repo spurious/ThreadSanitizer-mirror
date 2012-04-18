@@ -42,7 +42,7 @@
 #include "coregrind/pub_core_basics.h"
 #include "coregrind/pub_core_machine.h"
 #include "coregrind/pub_core_clreq.h"
-#include "pub_tool_libcsetjmp.h"
+// #include "pub_tool_libcsetjmp.h"
 #include "coregrind/pub_core_threadstate.h"
 #include "pub_tool_libcproc.h"
 
@@ -129,7 +129,7 @@ void PcToStrings(uintptr_t pc, bool demangle,
       *file_name = g_buff1;
     }
   }
-  *file_name = ConvertToPlatformIndependentPath(*file_name);
+  *file_name = ThreadSanitizerConvertToPlatformIndependentPath(*file_name);
 
   *rtn_name = PcToRtnName(pc, demangle);
 
@@ -1269,7 +1269,7 @@ static IRSB* ts_instrument ( VgCallbackClosure* closure,
 
   char objname[kBuffSize];
   if (VG_(get_objname)(pc, (Char*)objname, kBuffSize)) {
-    if (StringMatch("*/ld-2*", objname)) {
+    if (ThreadSanitizerStringMatch("*/ld-2*", objname)) {
       // we want to completely ignore ld-so.
       return bbIn;
     }
