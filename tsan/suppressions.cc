@@ -337,17 +337,21 @@ ThreadSanitizerSuppressions::~ThreadSanitizerSuppressions() {
 
 int ThreadSanitizerSuppressions::ReadFromString(const string &str) {
   int sizeBefore = rep_->suppressions.size();
-  ThreadSanitizerParser parser(str);
-  Suppression supp;
-  while (parser.NextSuppression(&supp)) {
-    rep_->suppressions.push_back(supp);
+  ThreadSanitizerParser* parser = new ThreadSanitizerParser(str);
+  Suppression *supp = new Suppression();
+  while (parser->NextSuppression(supp)) {
+    rep_->suppressions.push_back(*supp);
   }
-  if (parser.GetError()) {
-    rep_->error_string_ = parser.GetErrorString();
-    rep_->error_line_no_ = parser.GetLineNo();
-    return -1;
+  int res = -1;
+  if (parser->GetError()) {
+    rep_->error_string_ = parser->GetErrorString();
+    rep_->error_line_no_ = parser->GetLineNo();
+  } else {
+    res = rep_->suppressions.size() - sizeBefore;
   }
-  return rep_->suppressions.size() - sizeBefore;
+  delete supp;
+  delete parser;
+  return res;
 }
 
 string ThreadSanitizerSuppressions::GetErrorString() {
