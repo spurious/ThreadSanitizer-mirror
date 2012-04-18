@@ -17,7 +17,6 @@
 
 #include <stdarg.h>  // va_list
 
-const int __WORDSIZE = 64;
 typedef long long i64;  // NOLINT
 typedef long iptr;  // NOLINT
 
@@ -72,7 +71,7 @@ static int AppendPointer(char **buff, const char *buff_end, u64 ptr_value) {
   int result = 0;
   result += AppendString(buff, buff_end, "0x");
   result += AppendUnsigned(buff, buff_end, ptr_value, 16,
-                           (__WORDSIZE == 64) ? 12 : 8);
+      (sizeof(void*) == 8) ? 12 : 8);  // NOLINT
   return result;
 }
 
