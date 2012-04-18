@@ -14,6 +14,7 @@
 
 #include "tsan_platform.h"
 #include "tsan_rtl.h"
+#include "tsan_flags.h"
 
 #include <asm/prctl.h>
 #include <fcntl.h>
@@ -97,7 +98,8 @@ void sched_yield() {
 }
 
 void stderr_write(const void *p, uptr size) {
-  syscall(__NR_write, STDERR_FILENO, p, size);
+  ScopedInRtl in_rtl;
+  syscall(__NR_write, flags()->log_fileno, p, size);
 }
 
 static void ProtectRange(uptr beg, uptr end) {

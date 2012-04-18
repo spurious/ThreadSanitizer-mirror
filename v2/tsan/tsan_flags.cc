@@ -35,6 +35,7 @@ void InitializeFlags(Flags *f, const char *env) {
   Flag(env, &f->strip_path_prefix, "strip_path_prefix", "");
   Flag(env, &f->suppressions, "suppressions", "");
   Flag(env, &f->exit_status, "exit_status", 66);
+  Flag(env, &f->log_fileno, "log_fileno", 2);
 }
 
 static const char *GetFlagValue(const char *env, const char *name,

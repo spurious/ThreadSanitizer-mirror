@@ -38,6 +38,8 @@ struct Flags {
   const char *suppressions;
   // Override exit status if something was reported.
   int exit_status;
+  // Log fileno (1 - stdout, 2 - stderr).
+  int log_fileno;
 };
 
 Flags *flags();
