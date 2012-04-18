@@ -47,6 +47,10 @@ void ThreadSanitizerPrintf(const char *format, ...) {
   va_end(args);
 }
 
+extern "C" ssize_t __real_read(int fd, const void *buf, size_t count) {
+  return read(fd, buf, count);
+}
+
 namespace __tsan {
 
 static ThreadSanitizerSuppressions *g_suppressions;
