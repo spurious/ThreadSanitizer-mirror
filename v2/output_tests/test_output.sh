@@ -35,7 +35,9 @@ test_file() {
   strip "Running under ThreadSanitizer"
   strip "========="
   FileCheck < test.out $SRC
-  rm -f a.out test.out *.tmp *.tmp2
+  if [ "$3" == "" ]; then
+    rm -f a.out test.out *.tmp *.tmp2
+  fi
 }
 
 if [ "$1" == "" ]; then
