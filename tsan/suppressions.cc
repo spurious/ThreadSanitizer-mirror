@@ -59,9 +59,9 @@ struct Suppression {
   vector<StackTraceTemplate> templates;
 };
 
-class Parser {
+class ThreadSanitizerParser {
  public:
-  explicit Parser(const string &str)
+  explicit ThreadSanitizerParser(const string &str)
       : buffer_(str), next_(buffer_.c_str()),
         end_(buffer_.c_str() + buffer_.size()), line_no_(0), error_(false) {}
 
@@ -98,24 +98,24 @@ class Parser {
       return false;\
     }} while ((void)0, 0)
 
-void Parser::SetError(string desc) {
+void ThreadSanitizerParser::SetError(string desc) {
   error_ = true;
   error_string_ = desc;
 }
 
-bool Parser::GetError() {
+bool ThreadSanitizerParser::GetError() {
   return error_;
 }
 
-string Parser::GetErrorString() {
+string ThreadSanitizerParser::GetErrorString() {
   return error_string_;
 }
 
-int Parser::GetLineNo() {
+int ThreadSanitizerParser::GetLineNo() {
   return line_no_;
 }
 
-string Parser::NextLine() {
+string ThreadSanitizerParser::NextLine() {
   const char* first = next_;
   while (!Eof() && *next_ != '\n') {
     ++next_;
@@ -128,7 +128,7 @@ string Parser::NextLine() {
   return line;
 }
 
-string Parser::NextLineSkipComments() {
+string ThreadSanitizerParser::NextLineSkipComments() {
   string line;
   if (!put_back_stack_.empty()) {
     line = put_back_stack_.top();
@@ -158,11 +158,11 @@ string Parser::NextLineSkipComments() {
   return "";
 }
 
-void Parser::PutBackSkipComments(string line) {
+void ThreadSanitizerParser::PutBackSkipComments(string line) {
   put_back_stack_.push(line);
 }
 
-bool Parser::ParseSuppressionToolsLine(Suppression* supp, string line) {
+bool ThreadSanitizerParser::ParseSuppressionToolsLine(Suppression* supp, string line) {
   size_t idx = line.find(':');
   PARSER_CHECK(idx != string::npos, "expected ':' in tools line");
   string s1 = line.substr(0, idx);
@@ -179,7 +179,7 @@ bool Parser::ParseSuppressionToolsLine(Suppression* supp, string line) {
   return true;
 }
 
-bool Parser::ParseStackTraceLine(StackTraceTemplate* trace, string line) {
+bool ThreadSanitizerParser::ParseStackTraceLine(StackTraceTemplate* trace, string line) {
   if (line == "...") {
     Location location = {LT_STAR, ""};
     trace->locations.push_back(location);
@@ -249,9 +249,9 @@ bool Parser::ParseStackTraceLine(StackTraceTemplate* trace, string line) {
   }
 }
 
-// Checks if this line can not be parsed by Parser::NextStackTraceTemplate
+// Checks if this line can not be parsed by ThreadSanitizerParser::NextStackTraceTemplate
 // and, therefore, is an extra information for the suppression.
-bool Parser::IsExtraLine(string line) {
+bool ThreadSanitizerParser::IsExtraLine(string line) {
   if (line == "..." || line == "{" || line == "}")
     return false;
   if (line.size() < 4)
@@ -260,7 +260,7 @@ bool Parser::IsExtraLine(string line) {
   return !(prefix == "obj:" || prefix == "fun:");
 }
 
-bool Parser::NextStackTraceTemplate(StackTraceTemplate* trace,
+bool ThreadSanitizerParser::NextStackTraceTemplate(StackTraceTemplate* trace,
     bool* last_stack_trace) {
   string line = NextLineSkipComments();
   if (line == "}") {  // No more stack traces in multi-trace syntax
@@ -284,7 +284,7 @@ bool Parser::NextStackTraceTemplate(StackTraceTemplate* trace,
   return true;
 }
 
-bool Parser::NextSuppression(Suppression* supp) {
+bool ThreadSanitizerParser::NextSuppression(Suppression* supp) {
   string line;
   line = NextLineSkipComments();
   if (line.empty())
@@ -337,7 +337,7 @@ ThreadSanitizerSuppressions::~ThreadSanitizerSuppressions() {
 
 int ThreadSanitizerSuppressions::ReadFromString(const string &str) {
   int sizeBefore = rep_->suppressions.size();
-  Parser parser(str);
+  ThreadSanitizerParser parser(str);
   Suppression supp;
   while (parser.NextSuppression(&supp)) {
     rep_->suppressions.push_back(supp);
