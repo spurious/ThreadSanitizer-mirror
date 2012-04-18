@@ -48,7 +48,7 @@ void ThreadSanitizerPrintf(const char *format, ...) {
 }
 
 extern "C" ssize_t __real_read(int fd, const void *buf, size_t count) {
-  return read(fd, buf, count);
+  return read(fd, (void*)buf, count);
 }
 
 namespace __tsan {

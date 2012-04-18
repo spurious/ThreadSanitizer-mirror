@@ -36,6 +36,8 @@ struct Flags {
   const char *strip_path_prefix;
   // Suppressions filename.
   const char *suppressions;
+  // Override exit status if something was reported.
+  int exit_status;
 };
 
 Flags *flags();

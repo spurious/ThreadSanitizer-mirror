@@ -134,7 +134,7 @@ int Finalize(ThreadState *thr) {
     PrintStats(ctx->stat);
   }
 
-  return failed ? 66 : 0;
+  return failed ? flags()->exit_status : 0;
 }
 
 static void TraceSwitch(ThreadState *thr) {

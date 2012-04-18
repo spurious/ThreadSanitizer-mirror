@@ -18,6 +18,7 @@
 namespace __tsan {
 
 static void Flag(const char *env, bool *flag, const char *name, bool def);
+static void Flag(const char *env, int *flag, const char *name, int def);
 static void Flag(const char *env, const char **flag, const char *name,
                  const char *def);
 
@@ -33,6 +34,7 @@ void InitializeFlags(Flags *f, const char *env) {
   Flag(env, &f->force_seq_cst_atomics, "force_seq_cst_atomics", false);
   Flag(env, &f->strip_path_prefix, "strip_path_prefix", "");
   Flag(env, &f->suppressions, "suppressions", "");
+  Flag(env, &f->exit_status, "exit_status", 66);
 }
 
 static const char *GetFlagValue(const char *env, const char *name,
@@ -77,6 +79,28 @@ static void Flag(const char *env, bool *flag, const char *name, bool def) {
     *flag = false;
   else if (len == 1 && val[0] == '0')
     *flag = true;
+}
+
+static void Flag(const char *env, int *flag, const char *name, int def) {
+  *flag = def;
+  const char *end = 0;
+  const char *val = GetFlagValue(env, name, &end);
+  if (val == 0)
+    return;
+  bool minus = false;
+  if (val != end && val[0] == '-') {
+    minus = true;
+    val += 1;
+  }
+  int v = 0;
+  for (; val != end; val++) {
+    if (val[0] < '0' || val[0] > '9')
+      break;
+    v = v * 10 + val[0] - '0';
+  }
+  if (minus)
+    v = -v;
+  *flag = v;
 }
 
 static void Flag(const char *env, const char **flag, const char *name,

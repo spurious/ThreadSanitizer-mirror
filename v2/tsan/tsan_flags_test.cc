@@ -40,12 +40,33 @@ TEST(Flags, ParseBool) {
   EXPECT_EQ(f.enable_annotations, true);
 
   f.enable_annotations = true;
-  InitializeFlags(&f, "enable_annotations=0");
+  InitializeFlags(&f, "asdas enable_annotations=0 asdasd");
   EXPECT_EQ(f.enable_annotations, false);
 
   f.enable_annotations = true;
-  InitializeFlags(&f, "--enable_annotations=0");
+  InitializeFlags(&f, "   --enable_annotations=0   ");
   EXPECT_EQ(f.enable_annotations, false);
+}
+
+TEST(Flags, ParseInt) {
+  ScopedInRtl in_rtl;
+  Flags f = {};
+
+  f.exit_status = -11;
+  InitializeFlags(&f, "exit_status");
+  EXPECT_EQ(f.exit_status, 0);
+
+  f.exit_status = -11;
+  InitializeFlags(&f, "--exit_status=");
+  EXPECT_EQ(f.exit_status, 0);
+
+  f.exit_status = -11;
+  InitializeFlags(&f, "--exit_status=42");
+  EXPECT_EQ(f.exit_status, 42);
+
+  f.exit_status = -11;
+  InitializeFlags(&f, "--exit_status=-42");
+  EXPECT_EQ(f.exit_status, -42);
 }
 
 TEST(Flags, ParseStr) {
