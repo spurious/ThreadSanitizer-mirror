@@ -34,6 +34,8 @@
 #ifndef TS_UTIL_H_
 #define TS_UTIL_H_
 
+void ThreadSanitizerPrintf(const char *format, ...);
+
 //--------- Head ------------------- {{{1
 #if defined(TS_VALGRIND)
 # define CHECK tl_assert

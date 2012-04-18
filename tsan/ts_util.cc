@@ -137,19 +137,27 @@ static string RemoveUnsupportedFormat(const char *str) {
 #endif
 }
 
-void Printf(const char *format, ...) {
+static void PrintfImpl(const char *format, va_list args) {
 #ifdef TS_VALGRIND
-  va_list args;
-  va_start(args, format);
   VG_(vprintf)(format, args);
-  va_end(args);
 #else
-  va_list args;
-  va_start(args, format);
   vfprintf(G_out, RemoveUnsupportedFormat(format).c_str(), args);
   fflush(G_out);
-  va_end(args);
 #endif
+}
+
+void Printf(const char *format, ...) {
+  va_list args;
+  va_start(args, format);
+  PrintfImpl(format, args);
+  va_end(args);
+}
+
+void ThreadSanitizerPrintf(const char *format, ...) {
+  va_list args;
+  va_start(args, format);
+  PrintfImpl(format, args);
+  va_end(args);
 }
 
 // Like Print(), but prepend each line with ==XXXXX==,
