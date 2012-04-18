@@ -1,6 +1,6 @@
 include ../Makefile.inc
 
-INCLUDES= -I../ -I../third_party/stlport
+INCLUDES= -I../ -I../../tsan -I../third_party/stlport
 EXTRA_CXXFLAGS=-fno-exceptions
 NO_SYSROOT=--sysroot=.
 CXXFLAGS+=$(EXTRA_CXXFLAGS)
@@ -60,10 +60,13 @@ LIBTSAN_OBJ=tsan_alloc.o \
             tsan_rtl_thread.o \
             tsan_slab.o \
             tsan_suppressions.o \
+            tsan_suppressions_linux.o \
             tsan_sync.o \
             tsan_trace.o \
             tsan_thread.o \
-            interception_linux.o
+            interception_linux.o \
+            suppressions.o \
+            common_util.o
 
 ifneq ($(TSAN_SYMB_NULL), )
   LIBTSAN_OBJ+=tsan_symbolize_null.o
@@ -81,6 +84,9 @@ endif
 
 %.o: ../interception/%.cc
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@ 
+
+%.o: ../../tsan/%.cc
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
 
 libtsan.a: $(LIBTSAN_OBJ)
 	ar ru $@ $(LIBTSAN_OBJ)

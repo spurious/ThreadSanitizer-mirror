@@ -25,7 +25,9 @@ test_file() {
   SRC=$1
   COMPILER=$2
   echo ----- TESTING $1
-  $COMPILER $SRC $CFLAGS $LDFLAGS
+  $COMPILER $SRC $CFLAGS -c -o output_test.o
+  # Link with CXX, because lldb and suppressions require C++.
+  $CXX output_test.o $LDFLAGS
   LD_LIBRARY_PATH=$LLDB ./a.out 2> test.out || echo -n
   if [ "$3" != "" ]; then
     cat test.out

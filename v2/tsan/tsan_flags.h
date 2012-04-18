@@ -34,6 +34,8 @@ struct Flags {
   bool force_seq_cst_atomics;
   // Strip that prefix from file paths in reports.
   const char *strip_path_prefix;
+  // Suppressions filename.
+  const char *suppressions;
 };
 
 Flags *flags();

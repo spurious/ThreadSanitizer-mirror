@@ -14,13 +14,4 @@
 
 namespace __tsan {
 
-void InitializeSuppressions() {
-}
-
-bool IsSuppressed(ReportType typ, const ReportStack *stack) {
-  (void)typ;
-  (void)stack;
-  return false;
-}
-
 }  // namespace __tsan
