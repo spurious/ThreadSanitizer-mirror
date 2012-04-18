@@ -321,19 +321,21 @@ bool Parser::NextSuppression(Suppression* supp) {
   return true;
 }
 
-struct Suppressions::SuppressionsRep {
+struct ThreadSanitizerSuppressions::SuppressionsRep {
   vector<Suppression> suppressions;
   string error_string_;
   int error_line_no_;
 };
 
-Suppressions::Suppressions() : rep_(new SuppressionsRep) {}
+ThreadSanitizerSuppressions::ThreadSanitizerSuppressions()
+  : rep_(new SuppressionsRep) {
+}
 
-Suppressions::~Suppressions() {
+ThreadSanitizerSuppressions::~ThreadSanitizerSuppressions() {
   delete rep_;
 }
 
-int Suppressions::ReadFromString(const string &str) {
+int ThreadSanitizerSuppressions::ReadFromString(const string &str) {
   int sizeBefore = rep_->suppressions.size();
   Parser parser(str);
   Suppression supp;
@@ -348,11 +350,11 @@ int Suppressions::ReadFromString(const string &str) {
   return rep_->suppressions.size() - sizeBefore;
 }
 
-string Suppressions::GetErrorString() {
+string ThreadSanitizerSuppressions::GetErrorString() {
   return rep_->error_string_;
 }
 
-int Suppressions::GetErrorLineNo() {
+int ThreadSanitizerSuppressions::GetErrorLineNo() {
   return rep_->error_line_no_;
 }
 
@@ -407,7 +409,7 @@ static bool MatchStackTraceRecursive(MatcherContext ctx, int trace_index,
   return tmpl_index == tmpl_size;
 }
 
-bool Suppressions::StackTraceSuppressed(const string& tool_name,
+bool ThreadSanitizerSuppressions::StackTraceSuppressed(const string& tool_name,
     const string& warning_name,
     const vector<string>& function_names_mangled,
     const vector<string>& function_names_demangled,

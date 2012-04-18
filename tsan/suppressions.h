@@ -36,10 +36,10 @@
 
 #include "common_util.h"
 
-class Suppressions {
+class ThreadSanitizerSuppressions {
  public:
-  Suppressions();
-  ~Suppressions();
+  ThreadSanitizerSuppressions();
+  ~ThreadSanitizerSuppressions();
 
   // Read suppressions file from string. May be called several times.
   // Return the number of parsed suppressions or -1 if an error occured.

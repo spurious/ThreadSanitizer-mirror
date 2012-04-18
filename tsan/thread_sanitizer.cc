@@ -6171,7 +6171,7 @@ class ReportStorage {
   int n_reports;
   int n_race_reports;
   bool program_finished_;
-  Suppressions suppressions_;
+  ThreadSanitizerSuppressions suppressions_;
   map<string, int> used_suppressions_;
   ThreadSanitizerUnwindCallback unwind_cb_;
 };

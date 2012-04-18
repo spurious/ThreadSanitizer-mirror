@@ -49,7 +49,7 @@ class BaseSuppressionsTest : public ::testing::Test {
     return IsSuppressed("test_tool", "test_warning_type", f_m, f_d, o);
   }
 
-  Suppressions supp_;
+  ThreadSanitizerSuppressions supp_;
 };
 
 class SuppressionsTest : public BaseSuppressionsTest {
@@ -368,7 +368,7 @@ class FailingSuppressionsTest : public ::testing::Test {
       return supp_.GetErrorLineNo();
   }
 
-  Suppressions supp_;
+  ThreadSanitizerSuppressions supp_;
 };
 
 TEST_F(FailingSuppressionsTest, NoOpeningBrace) {
