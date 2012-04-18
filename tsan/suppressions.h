@@ -53,7 +53,7 @@ class Suppressions {
   int GetErrorLineNo();
 
   // Checks if a given stack trace is suppressed.
-  bool StackTraceSuppressed(string tool_name, string warning_name,
+  bool StackTraceSuppressed(const string& tool_name, const string& warning_name,
       const vector<string>& function_names_mangled,
       const vector<string>& function_names_demangled,
       const vector<string>& object_names,
