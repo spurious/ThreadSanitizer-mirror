@@ -40,10 +40,15 @@ const unsigned kShadowCnt = TSAN_SHADOW_COUNT;
 #   error "TSAN_SHADOW_COUNT must be one of 2,4,8"
 # endif
 #else
+// Count of shadow values in a shadow cell.
 const unsigned kShadowCnt = 8;
 #endif
 
+// That many user bytes are mapped onto a single shadow cell.
 const unsigned kShadowCell = 8;
+
+// Size of a single shadow value (u64).
+const unsigned kShadowSize = 8;
 
 #if defined(TSAN_COLLECT_STATS) && TSAN_COLLECT_STATS
 const bool kCollectStats = true;

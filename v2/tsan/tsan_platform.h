@@ -21,18 +21,34 @@
 #if __LP64__
 namespace __tsan {
 
+// TSAN_COMPAT_SHADOW is intended for COMPAT virtual memory layout,
+// when memory addresses are of the 0x2axxxxxxxxxx form.
+// The option is enabled with 'setarch x86_64 -L'.
+#if defined(TSAN_COMPAT_SHADOW) && TSAN_COMPAT_SHADOW
+
+static const uptr kLinuxAppMemBeg = 0x2a0000000000ULL;
+static const uptr kLinuxAppMemEnd = 0x7fffffffffffULL;
+
+#else
+
 static const uptr kLinuxAppMemBeg = 0x7ef000000000ULL;
 static const uptr kLinuxAppMemEnd = 0x7fffffffffffULL;
-static inline bool IsAppMem(uptr mem) {
-  return mem >= kLinuxAppMemBeg && mem <= kLinuxAppMemEnd;
-}
+
+#endif
+
+static const uptr kLinuxAppMemMsk = 0x7c0000000000ULL;
 
 // This has to be a macro to allow constant initialization of constants below.
-#define MemToShadow(addr) (((addr) & (~0x7c0000000007ULL)) * kShadowCnt)
+#define MemToShadow(addr) \
+    (((addr) & ~(kLinuxAppMemMsk | (kShadowCell - 1))) * kShadowCnt)
 
 static const uptr kLinuxShadowBeg = MemToShadow(kLinuxAppMemBeg);
 static const uptr kLinuxShadowEnd =
   MemToShadow(kLinuxAppMemEnd) | (kPageSize - 1);
+
+static inline bool IsAppMem(uptr mem) {
+  return mem >= kLinuxAppMemBeg && mem <= kLinuxAppMemEnd;
+}
 
 static inline bool IsShadowMem(uptr mem) {
   return mem >= kLinuxShadowBeg && mem <= kLinuxShadowEnd;
@@ -41,7 +57,7 @@ static inline bool IsShadowMem(uptr mem) {
 static inline uptr ShadowToMem(uptr shadow) {
   CHECK(IsShadowMem(shadow));
   shadow /= kShadowCnt;
-  shadow |= 0x7c0000000000;
+  shadow |= kLinuxAppMemMsk;
   return shadow;
 }
 

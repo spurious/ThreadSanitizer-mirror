@@ -102,6 +102,9 @@ void stderr_write(const void *p, uptr size) {
 
 static void ProtectRange(uptr beg, uptr end) {
   ScopedInRtl in_rtl;
+  CHECK_LE(beg, end);
+  if (beg == end)
+    return;
   if (beg != (uptr)my_mmap((void*)(beg), end - beg,
       PROT_NONE,
       MAP_PRIVATE | MAP_ANON | MAP_FIXED | MAP_NORESERVE,
@@ -115,8 +118,8 @@ static void ProtectRange(uptr beg, uptr end) {
 void InitializeShadowMemory() {
   const uptr kClosedLowBeg  = 0x200000;
   const uptr kClosedLowEnd  = kLinuxShadowBeg - 1;
-  const uptr kClosedHighBeg = kLinuxShadowEnd + 1;
-  const uptr kClosedHighEnd = kLinuxAppMemBeg - 1;
+  const uptr kClosedMidBeg = kLinuxShadowEnd + 1;
+  const uptr kClosedMidEnd = kLinuxAppMemBeg - 1;
   uptr shadow = (uptr)my_mmap((void*)kLinuxShadowBeg,
       kLinuxShadowEnd - kLinuxShadowBeg,
       PROT_READ | PROT_WRITE,
@@ -128,17 +131,18 @@ void InitializeShadowMemory() {
     Die();
   }
   ProtectRange(kClosedLowBeg, kClosedLowEnd);
-  ProtectRange(kClosedHighBeg, kClosedHighEnd);
-  DPrintf("kClosedLow   %lx-%lx (%lx)\n",
-      kClosedLowBeg, kClosedLowEnd, kClosedLowEnd - kClosedLowBeg);
-  DPrintf("kLinuxShadow %lx-%lx (%lx)\n",
-      kLinuxShadowBeg, kLinuxShadowEnd, kLinuxShadowEnd - kLinuxShadowBeg);
-  DPrintf("kClosedHigh  %lx-%lx (%lx)\n",
-      kClosedHighBeg, kClosedHighEnd, kClosedHighEnd - kClosedHighBeg);
-  DPrintf("kLinuxAppMem %lx-%lx (%lx)\n",
-      kLinuxAppMemBeg, kLinuxAppMemEnd, kLinuxAppMemEnd - kLinuxAppMemBeg);
+  ProtectRange(kClosedMidBeg, kClosedMidEnd);
+  DPrintf("kClosedLow   %lx-%lx (%luGB)\n",
+      kClosedLowBeg, kClosedLowEnd, (kClosedLowEnd - kClosedLowBeg) >> 30);
+  DPrintf("kLinuxShadow %lx-%lx (%luGB)\n",
+      kLinuxShadowBeg, kLinuxShadowEnd,
+      (kLinuxShadowEnd - kLinuxShadowBeg) >> 30);
+  DPrintf("kClosedMid   %lx-%lx (%luGB)\n",
+      kClosedMidBeg, kClosedMidEnd, (kClosedMidEnd - kClosedMidBeg) >> 30);
+  DPrintf("kLinuxAppMem %lx-%lx (%luGB)\n",
+      kLinuxAppMemBeg, kLinuxAppMemEnd,
+      (kLinuxAppMemEnd - kLinuxAppMemBeg) >> 30);
   DPrintf("stack        %lx\n", (uptr)&shadow);
-  DPrintf("shadow:      %lx\n", shadow);
 }
 
 static void CheckPIE() {
@@ -151,7 +155,8 @@ static void CheckPIE() {
       u64 addr = strtoll(buf, 0, 16);
       if ((u64)addr < kLinuxAppMemBeg) {
         Printf("FATAL: ThreadSanitizer can not mmap the shadow memory ("
-               "something is mapped at 0x%llx)\n", addr);
+               "something is mapped at 0x%llx < 0x%lx)\n",
+               addr, kLinuxAppMemBeg);
         Printf("FATAL: Make sure to compile with -fPIE"
                " and to link with -pie.\n");
         Die();
