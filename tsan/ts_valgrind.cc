@@ -42,7 +42,7 @@
 #include "coregrind/pub_core_basics.h"
 #include "coregrind/pub_core_machine.h"
 #include "coregrind/pub_core_clreq.h"
-// #include "pub_tool_libcsetjmp.h"
+#include "pub_tool_libcsetjmp.h"
 #include "coregrind/pub_core_threadstate.h"
 #include "pub_tool_libcproc.h"
 
