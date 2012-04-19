@@ -43,6 +43,9 @@ struct Flags {
   int exit_status;
   // Log fileno (1 - stdout, 2 - stderr).
   int log_fileno;
+  // Sleep in main thread before exiting for that many ms
+  // (useful to catch "at exit" races).
+  int atexit_sleep_ms;
 };
 
 Flags *flags();

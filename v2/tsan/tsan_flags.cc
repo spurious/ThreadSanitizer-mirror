@@ -37,6 +37,7 @@ void InitializeFlags(Flags *f, const char *env) {
   Flag(env, &f->suppressions, "suppressions", "");
   Flag(env, &f->exit_status, "exit_status", 66);
   Flag(env, &f->log_fileno, "log_fileno", 2);
+  Flag(env, &f->atexit_sleep_ms, "atexit_sleep_ms", 1000);
 }
 
 static const char *GetFlagValue(const char *env, const char *name,

@@ -45,6 +45,7 @@ extern "C" int getcontext(ucontext_t *ucp);
 extern "C" void _exit(int status);
 extern "C" int __cxa_atexit(void (*func)(void *arg), void *arg, void *dso);
 extern "C" int *__errno_location();
+extern "C" int usleep(unsigned usec);
 const int PTHREAD_MUTEX_RECURSIVE = 1;
 const int PTHREAD_MUTEX_RECURSIVE_NP = 1;
 const int kPthreadAttrSize = 56;
@@ -185,7 +186,7 @@ static void finalize(void *arg) {
   ThreadState * thr = cur_thread();
   uptr pc = 0;
   atexit_ctx->exit(thr, pc);
-
+  usleep(flags()->atexit_sleep_ms * 1000);
   int status = Finalize(cur_thread());
   if (status)
     _exit(status);
