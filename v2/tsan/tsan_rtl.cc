@@ -44,6 +44,7 @@ Context::Context()
   , thread_mtx(MutexTypeThreads, StatMtxThreads) {
 }
 
+// The objects are allocated in TLS, so one may rely on zero-initialization.
 ThreadState::ThreadState(Context *ctx, int tid, u64 epoch,
                          uptr stk_addr, uptr stk_size,
                          uptr tls_addr, uptr tls_size)

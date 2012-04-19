@@ -1173,8 +1173,10 @@ TSAN_INTERCEPTOR(int, sigaction, int sig, sigaction_t *act, sigaction_t *old) {
 
 static void process_pending_signals(ThreadState *thr) {
   CHECK_EQ(thr->in_rtl, 0);
-  if (thr->pending_signal_count == 0)
+  if (thr->pending_signal_count == 0 || thr->in_signal_handler)
     return;
+  thr->in_signal_handler = true;
+  thr->pending_signal_count = 0;
   // These are too big for stack.
   static __thread ucontext_t uctx;
   static __thread sigset_t emptyset, oldset;
@@ -1191,8 +1193,9 @@ static void process_pending_signals(ThreadState *thr) {
         sigactions[sig].sa_handler(sig);
     }
   }
-  thr->pending_signal_count = 0;
   pthread_sigmask(SIG_SETMASK, &oldset, 0);
+  CHECK_EQ(thr->in_signal_handler, true);
+  thr->in_signal_handler = false;
 }
 
 namespace __tsan {
