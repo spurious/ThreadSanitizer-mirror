@@ -38,6 +38,15 @@ void MutexDestroy(ThreadState *thr, uptr pc, uptr addr) {
     return;
   if (s->owner_tid != SyncVar::kInvalidTid && !s->is_broken) {
     s->is_broken = true;
+
+/*
+    ScopedReport rep(ReportTypeMutexDestroyLocked);
+    rep.AddMutex(s);
+    rep.AddLocation(s->addr);
+    PrintReport(&rep);
+*/
+
+
     Lock l(&CTX()->report_mtx);
     ReportDesc &rep = *GetGlobalReport();
     internal_memset(&rep, 0, sizeof(rep));

@@ -132,7 +132,7 @@ void InitializeDynamicAnnotations() {
   InitList(&dyn_ann_ctx->benign);
 }
 
-bool IsExpectReport(uptr addr, uptr size) {
+bool IsExpectedReport(uptr addr, uptr size) {
   Lock lock(&dyn_ann_ctx->mtx);
   if (CheckContains(&dyn_ann_ctx->expect, addr, size))
     return true;

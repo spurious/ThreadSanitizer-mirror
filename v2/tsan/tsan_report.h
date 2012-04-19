@@ -85,10 +85,10 @@ struct ReportDesc {
   char alloc[128*1024];
 };
 
+// Format and output the report to the console/log. No additional logic.
 void PrintReport(const ReportDesc *rep);
-void PrintStack(const ReportStack *stack);
-bool OnReport(const ReportDesc *rep, bool suppressed) WEAK;
-bool IsExpectReport(uptr addr, uptr size);
+
+// Format and output internal stats.
 void PrintStats(u64 *stat);
 
 }  // namespace __tsan

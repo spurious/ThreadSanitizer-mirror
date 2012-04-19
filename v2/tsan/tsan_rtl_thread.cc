@@ -38,6 +38,12 @@ void ThreadFinalize(ThreadState *thr) {
         && tctx->status != ThreadStatusRunning
         && tctx->status != ThreadStatusFinished)
       continue;
+/*
+    ScopedReport rep(ReportTypeThreadLeak);
+    rep.AddThread(tctx->tid);
+    PrintReport(&rep);
+*/
+
     Lock l(&ctx->report_mtx);
     ReportDesc &rep = *GetGlobalReport();
     internal_memset(&rep, 0, sizeof(rep));

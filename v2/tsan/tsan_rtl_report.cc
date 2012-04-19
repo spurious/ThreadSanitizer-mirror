@@ -23,6 +23,12 @@
 
 namespace __tsan {
 
+// Can be overriden by an application/test to intercept reports.
+bool WEAK OnReport(const ReportDesc *rep, bool suppressed) {
+  (void)rep;
+  return suppressed;
+}
+
 ReportDesc *GetGlobalReport() {
   static ReportDesc report;
   return &report;
@@ -213,7 +219,7 @@ void ReportRace(ThreadState *thr) {
     uptr e1 = a1 + FastState(thr->racy_state[1]).size();
     uptr minaddr = min(a0, a1);
     uptr maxaddr = max(e0, e1);
-    if (IsExpectReport(minaddr, maxaddr - minaddr))
+    if (IsExpectedReport(minaddr, maxaddr - minaddr))
       return;
   }
 
@@ -295,22 +301,6 @@ void CheckFailed(const char *file, int line, const char *cond, u64 v1, u64 v2) {
   ScopedInRtl in_rtl;
   Printf("FATAL: ThreadSanitizer CHECK failed: %s:%d \"%s\" (%llx, %llx)\n",
          file, line, cond, v1, v2);
-  /*
-  ThreadState *thr = cur_thread();
-  InternalScopedBuf<char> buf(1024*1024);
-  RegionAlloc alloc(buf, buf.Size());
-  StackTrace stack;
-  stack.ObtainCurrent(thr, 0);
-  ReportStack *rstack = SymbolizeStack(&alloc, stack);
-  stack.Free(thr);
-  PrintStack(rstack);
-  Printf("Thread %d\n", thr->tid);
-  ThreadContext *tctx = CTX()->threads[thr->tid];
-  if (tctx) {
-    rstack = SymbolizeStack(&alloc, tctx->creation_stack);
-    PrintStack(rstack);
-  }
-  */
   Die();
 }
 

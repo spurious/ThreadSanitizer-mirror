@@ -342,6 +342,7 @@ void Die() NORETURN;
 
 void ReportRace(ThreadState *thr);
 ReportStack *SymbolizeStack(RegionAlloc *alloc, const StackTrace& trace);
+bool IsExpectedReport(uptr addr, uptr size);
 
 #if defined(TSAN_DEBUG_OUTPUT) && TSAN_DEBUG_OUTPUT >= 1
 # define DPrintf Printf

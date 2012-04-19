@@ -15,7 +15,7 @@
 
 namespace __tsan {
 
-void PrintStack(const ReportStack *ent) {
+static void PrintStack(const ReportStack *ent) {
   for (int i = 0; ent; ent = ent->next, i++) {
     Printf("    #%d %s %s:%d", i, ent->func, ent->file, ent->line);
     if (ent->col)
@@ -82,11 +82,6 @@ void PrintReport(const ReportDesc *rep) {
     PrintStack(rt->stack);
   }
   Printf("==================\n");
-}
-
-bool OnReport(const ReportDesc *rep, bool suppressed) {
-  (void)rep;
-  return suppressed;
 }
 
 void PrintStats(u64 *stat) {
