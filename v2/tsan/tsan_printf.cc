@@ -60,6 +60,8 @@ static int AppendSignedDecimal(char **buff, const char *buff_end, i64 num) {
 }
 
 static int AppendString(char **buff, const char *buff_end, const char *s) {
+  if (s == 0)
+    s = "<null>";
   int result = 0;
   for (; *s; s++) {
     result += AppendChar(buff, buff_end, *s);

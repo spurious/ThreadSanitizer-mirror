@@ -21,6 +21,7 @@ enum ReportType {
   ReportTypeRace,
   ReportTypeThreadLeak,
   ReportTypeMutexDestroyLocked,
+  ReportTypeSignalUnsafe,
 };
 
 struct ReportStack {
@@ -75,6 +76,7 @@ struct ReportMutex {
 
 struct ReportDesc {
   ReportType typ;
+  ReportStack *stack;
   int nmop;
   ReportMop *mop;
   ReportLocation *loc;

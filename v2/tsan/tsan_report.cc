@@ -36,6 +36,12 @@ void PrintReport(const ReportDesc *rep) {
     Printf("thread leak\n");
   else if (rep->typ == ReportTypeMutexDestroyLocked)
     Printf("destroy of a locked mutex\n");
+  else if (rep->typ == ReportTypeSignalUnsafe)
+    Printf("signal-unsafe call inside of a signal\n");
+
+  if (rep->stack)
+    PrintStack(rep->stack);
+
   for (int i = 0; i < rep->nmop; i++) {
     const ReportMop *mop = &rep->mop[i];
     Printf("  %s of size %d at %p",
@@ -48,6 +54,7 @@ void PrintReport(const ReportDesc *rep) {
       Printf(" by thread %d:\n", mop->tid);
     PrintStack(mop->stack);
   }
+
   if (rep->loc) {
     const ReportLocation *loc = rep->loc;
     if (loc->type == ReportLocationGlobal) {
@@ -61,6 +68,7 @@ void PrintReport(const ReportDesc *rep) {
       Printf("  Location is stack of thread %d:\n", loc->tid);
     }
   }
+
   for (int i = 0; i < rep->nmutex; i++) {
     ReportMutex *rm = &rep->mutex[i];
     if (rm->stack == 0)
@@ -68,6 +76,7 @@ void PrintReport(const ReportDesc *rep) {
     Printf("  Mutex %d created at:\n", rm->id);
     PrintStack(rm->stack);
   }
+
   for (int i = 0; i < rep->nthread; i++) {
     ReportThread *rt = &rep->thread[i];
     if (rt->id == 0)  // Little sense in describing the main thread.

@@ -29,6 +29,9 @@ struct Flags {
   bool suppress_equal_addresses;
   // Report thread leaks at exit?
   bool report_thread_leaks;
+  // Report violations of async signal-safety
+  // (e.g. malloc() call from a signal handler).
+  bool report_signal_unsafe;
   // If set, all atomics are effectively sequentially consistent (seq_sct)
   // regardless of what a user actually specified.
   bool force_seq_cst_atomics;

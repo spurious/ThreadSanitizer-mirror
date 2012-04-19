@@ -31,6 +31,7 @@ void InitializeFlags(Flags *f, const char *env) {
   Flag(env, &f->suppress_equal_stacks, "suppress_equal_stacks", true);
   Flag(env, &f->suppress_equal_addresses, "suppress_equal_addresses", true);
   Flag(env, &f->report_thread_leaks, "report_thread_leaks", true);
+  Flag(env, &f->report_signal_unsafe, "report_signal_unsafe", true);
   Flag(env, &f->force_seq_cst_atomics, "force_seq_cst_atomics", false);
   Flag(env, &f->strip_path_prefix, "strip_path_prefix", "");
   Flag(env, &f->suppressions, "suppressions", "");

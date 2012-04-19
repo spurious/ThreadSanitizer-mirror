@@ -13,8 +13,26 @@
 #include "tsan_mman.h"
 #include "tsan_allocator.h"
 #include "tsan_rtl.h"
+#include "tsan_report.h"
+#include "tsan_flags.h"
 
 namespace __tsan {
+
+static void SignalUnsafeCall(ThreadState *thr, uptr pc) {
+  if (!thr->in_signal_handler || !flags()->report_signal_unsafe)
+    return;
+  Context *ctx = CTX();
+  Lock l(&ctx->report_mtx);
+  ReportDesc &rep = *GetGlobalReport();
+  internal_memset(&rep, 0, sizeof(rep));
+  RegionAlloc alloc(rep.alloc, sizeof(rep.alloc));
+  rep.typ = ReportTypeSignalUnsafe;
+  StackTrace stack;
+  stack.ObtainCurrent(thr, pc);
+  rep.stack = SymbolizeStack(&alloc, stack);
+  PrintReport(&rep);
+  ctx->nreported++;
+}
 
 void *user_alloc(ThreadState *thr, uptr pc, uptr sz) {
   CHECK_GT(thr->in_rtl, 0);
@@ -25,6 +43,7 @@ void *user_alloc(ThreadState *thr, uptr pc, uptr sz) {
     MemoryResetRange(thr, pc, (uptr)p, sz);
   }
   DPrintf("#%d: alloc(%lu) = %p\n", thr->tid, sz, p);
+  SignalUnsafeCall(thr, pc);
   return p;
 }
 
@@ -38,6 +57,7 @@ void user_free(ThreadState *thr, uptr pc, void *p) {
     MemoryRangeFreed(thr, pc, (uptr)p, b->size);
   }
   Free(b);
+  SignalUnsafeCall(thr, pc);
 }
 
 void *user_realloc(ThreadState *thr, uptr pc, void *p, uptr sz) {
