@@ -56,9 +56,12 @@ static inline bool IsShadowMem(uptr mem) {
 
 static inline uptr ShadowToMem(uptr shadow) {
   CHECK(IsShadowMem(shadow));
-  shadow /= kShadowCnt;
-  shadow |= kLinuxAppMemMsk;
-  return shadow;
+#if defined(TSAN_COMPAT_SHADOW) && TSAN_COMPAT_SHADOW
+  // COMPAT mapping is not quite one-to-one.
+  return (shadow / kShadowCnt) | 0x280000000000ULL;
+#else
+  return (shadow / kShadowCnt) | kLinuxAppMemMsk;
+#endif
 }
 
 const char *InitializePlatform();
