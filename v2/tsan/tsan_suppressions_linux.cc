@@ -30,11 +30,13 @@
 #include "tsan_flags.h"
 #include "tsan_mman.h"
 
+#include <linux/limits.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <stdarg.h>
+#include <stdlib.h>
 
 namespace __tsan {
 void Printf(const char *format, va_list args);
@@ -47,8 +49,11 @@ void ThreadSanitizerPrintf(const char *format, ...) {
   va_end(args);
 }
 
+extern "C" ssize_t interception_wrap_read(int fd, const void *buf,
+                                          size_t count);
+
 extern "C" ssize_t __real_read(int fd, const void *buf, size_t count) {
-  return read(fd, (void*)buf, count);
+  return interception_wrap_read(fd, (void*)buf, count);
 }
 
 namespace __tsan {
@@ -58,16 +63,21 @@ static ThreadSanitizerSuppressions *g_suppressions;
 static char *ReadFile(const char *filename) {
   if (filename == 0 || filename[0] == 0)
     return 0;
-  int fd = open(filename, O_RDONLY);
+  InternalScopedBuf<char> tmp(PATH_MAX);
+  if (filename[0] == '/')
+    Snprintf(tmp, tmp.Size(), "%s", filename);
+  else
+    Snprintf(tmp, tmp.Size(), "%s/%s", getenv("PWD"), filename);
+  int fd = open(tmp, O_RDONLY);
   if (fd == -1) {
     Printf("ThreadSanitizer: failed to open suppressions file '%s'\n",
-        filename);
+        tmp.Ptr());
     Die();
   }
   struct stat st;
   if (fstat(fd, &st)) {
     Printf("ThreadSanitizer: failed to stat suppressions file '%s'\n",
-        filename);
+        tmp.Ptr());
     Die();
   }
   if (st.st_size == 0) {
@@ -75,9 +85,9 @@ static char *ReadFile(const char *filename) {
     return 0;
   }
   char *buf = (char*)internal_alloc(st.st_size + 1);
-  if (st.st_size != read(fd, buf, st.st_size)) {
+  if (st.st_size != interception_wrap_read(fd, buf, st.st_size)) {
     Printf("ThreadSanitizer: failed to read suppressions file '%s'\n",
-        filename);
+        tmp.Ptr());
     Die();
   }
   close(fd);
@@ -91,7 +101,8 @@ void InitializeSuppressions() {
     return;
   void *mem = internal_alloc(sizeof(ThreadSanitizerSuppressions));
   g_suppressions = new(mem) ThreadSanitizerSuppressions;
-  if (g_suppressions->ReadFromString(supp) < 0) {
+  int cnt = g_suppressions->ReadFromString(supp);
+  if (cnt < 0) {
     Printf("ThreadSanitizer: failed to parse suppressions file: %s:%d\n",
         g_suppressions->GetErrorString().c_str(),
         g_suppressions->GetErrorLineNo());
@@ -119,13 +130,13 @@ bool IsSuppressed(ReportType typ, const ReportStack *stack) {
     function_names_demangled.push_back(string((const char*)frame->func, end));
   }
   vector<string> function_names_mangled(function_names_demangled.size());
-  vector<string> object_names;
+  vector<string> object_names(function_names_demangled.size());
   string suppression;
   bool res = g_suppressions->StackTraceSuppressed("ThreadSanitizer", "Race",
       function_names_mangled, function_names_demangled, object_names,
       &suppression);
   if (res)
-    Printf("Matched suppression '%s'\n", suppression.c_str());
+    DPrintf("ThreadSanitizer: matched suppression '%s'\n", suppression.c_str());
   return res;
 }
 }  // namespace __tsan
