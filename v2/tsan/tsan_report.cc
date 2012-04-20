@@ -138,6 +138,40 @@ void PrintStats(u64 *stat) {
   name[StatMutexReadLock]       = "  read lock                       ";
   name[StatMutexReadUnlock]     = "  read unlock                     ";
 
+  name[StatAnnotation]                   = "Dynamic annotations               ";
+  name[StatAnnotateHappensBefore]        = "  HappensBefore                   ";
+  name[StatAnnotateHappensAfter]         = "  HappensAfter                    ";
+  name[StatAnnotateCondVarSignal]        = "  CondVarSignal                   ";
+  name[StatAnnotateCondVarSignalAll]     = "  CondVarSignalAll                ";
+  name[StatAnnotateMutexIsNotPHB]        = "  MutexIsNotPHB                   ";
+  name[StatAnnotateCondVarWait]          = "  CondVarWait                     ";
+  name[StatAnnotateRWLockCreate]         = "  RWLockCreate                    ";
+  name[StatAnnotateRWLockDestroy]        = "  RWLockDestroy                   ";
+  name[StatAnnotateRWLockAcquired]       = "  RWLockAcquired                  ";
+  name[StatAnnotateRWLockReleased]       = "  RWLockReleased                  ";
+  name[StatAnnotateTraceMemory]          = "  TraceMemory                     ";
+  name[StatAnnotateFlushState]           = "  FlushState                      ";
+  name[StatAnnotateNewMemory]            = "  NewMemory                       ";
+  name[StatAnnotateNoOp]                 = "  NoOp                            ";
+  name[StatAnnotateFlushExpectedRaces]   = "  FlushExpectedRaces              ";
+  name[StatAnnotateEnableRaceDetection]  = "  EnableRaceDetection             ";
+  name[StatAnnotateMutexIsUsedAsCondVar] = "  MutexIsUsedAsCondVar            ";
+  name[StatAnnotatePCQGet]               = "  PCQGet                          ";
+  name[StatAnnotatePCQPut]               = "  PCQPut                          ";
+  name[StatAnnotatePCQDestroy]           = "  PCQDestroy                      ";
+  name[StatAnnotatePCQCreate]            = "  PCQCreate                       ";
+  name[StatAnnotateExpectRace]           = "  ExpectRace                      ";
+  name[StatAnnotateBenignRaceSized]      = "  BenignRaceSized                 ";
+  name[StatAnnotateBenignRace]           = "  BenignRace                      ";
+  name[StatAnnotateIgnoreReadsBegin]     = "  IgnoreReadsBegin                ";
+  name[StatAnnotateIgnoreReadsEnd]       = "  IgnoreReadsEnd                  ";
+  name[StatAnnotateIgnoreWritesBegin]    = "  IgnoreWritesBegin               ";
+  name[StatAnnotateIgnoreWritesEnd]      = "  IgnoreWritesEnd                 ";
+  name[StatAnnotatePublishMemoryRange]   = "  PublishMemoryRange              ";
+  name[StatAnnotateUnpublishMemoryRange] = "  UnpublishMe
+moryRange            ";
+  name[StatAnnotateThreadName]           = "  ThreadName                      ";
+
   name[StatMtxTotal]            = "Contentionz                       ";
   name[StatMtxTrace]            = "  Trace                           ";
   name[StatMtxThreads]          = "  Threads                         ";
