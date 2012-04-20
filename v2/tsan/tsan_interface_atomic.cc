@@ -63,7 +63,7 @@ static void AtomicStatInc(ThreadState *thr, uptr size, morder mo, StatType t) {
     mo = flags()->force_seq_cst_atomics ? (morder)mo_seq_cst : mo; \
     ThreadState *const thr = cur_thread(); \
     const uptr pc = (uptr)__builtin_return_address(0); \
-    AtomicStatInc(thr, sizeof(a), mo, StatAtomic##func); \
+    AtomicStatInc(thr, sizeof(*a), mo, StatAtomic##func); \
     ScopedAtomic sa(thr, pc, __FUNCTION__); \
     return Atomic##func(thr, pc, __VA_ARGS__); \
 /**/
