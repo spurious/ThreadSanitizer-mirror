@@ -258,9 +258,10 @@ struct ThreadDeadInfo {
 
 struct ThreadContext {
   const int tid;
+  int unique_id;  // Non-rolling thread id.
+  uptr user_id;  // Some opaque user thread id (e.g. pthread_t).
   ThreadState *thr;
   ThreadStatus status;
-  uptr uid;  // Some opaque user thread id.
   bool detached;
   int reuse_count;
   SyncClock sync;
@@ -307,6 +308,7 @@ struct Context {
 
   Mutex thread_mtx;
   int thread_seq;
+  int unique_thread_seq;
   ThreadContext *threads[kMaxTid];
   int dead_list_size;
   ThreadContext* dead_list_head;

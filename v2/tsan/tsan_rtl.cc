@@ -67,9 +67,10 @@ ThreadState::ThreadState(Context *ctx, int tid, u64 epoch,
 
 ThreadContext::ThreadContext(int tid)
   : tid(tid)
+  , unique_id()
+  , user_id()
   , thr()
   , status(ThreadStatusInvalid)
-  , uid()
   , detached()
   , reuse_count()
   , epoch0()

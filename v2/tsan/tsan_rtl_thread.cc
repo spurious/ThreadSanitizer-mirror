@@ -63,9 +63,9 @@ static void ThreadDead(ThreadState *thr, ThreadContext *tctx) {
   CHECK_GT(thr->in_rtl, 0);
   CHECK(tctx->status == ThreadStatusRunning
       || tctx->status == ThreadStatusFinished);
-  DPrintf("#%d: ThreadDead uid=%lu\n", (int)thr->fast_state.tid(), tctx->uid);
+  DPrintf("#%d: ThreadDead uid=%lu\n", thr->tid, tctx->user_id);
   tctx->status = ThreadStatusDead;
-  tctx->uid = 0;
+  tctx->user_id = 0;
   tctx->sync.Free(&thr->clockslab);
 
   // Put to dead list.
@@ -80,21 +80,22 @@ static void ThreadDead(ThreadState *thr, ThreadContext *tctx) {
 
 int ThreadCreate(ThreadState *thr, uptr pc, uptr uid, bool detached) {
   CHECK_GT(thr->in_rtl, 0);
-  Lock l(&CTX()->thread_mtx);
+  Context *ctx = CTX();
+  Lock l(&ctx->thread_mtx);
   int tid = -1;
   ThreadContext *tctx = 0;
-  if (CTX()->dead_list_size > kThreadQuarantineSize
-      || CTX()->thread_seq >= kMaxTid) {
-    if (CTX()->dead_list_size == 0) {
+  if (ctx->dead_list_size > kThreadQuarantineSize
+      || ctx->thread_seq >= kMaxTid) {
+    if (ctx->dead_list_size == 0) {
       Printf("ThreadSanitizer: %d thread limit exceeded. Dying.\n", kMaxTid);
       Die();
     }
-    tctx = CTX()->dead_list_head;
-    CTX()->dead_list_head = tctx->dead_next;
-    CTX()->dead_list_size--;
-    if (CTX()->dead_list_size == 0) {
+    tctx = ctx->dead_list_head;
+    ctx->dead_list_head = tctx->dead_next;
+    ctx->dead_list_size--;
+    if (ctx->dead_list_size == 0) {
       CHECK_EQ(tctx->dead_next, 0);
-      CTX()->dead_list_head = 0;
+      ctx->dead_list_head = 0;
     }
     CHECK_EQ(tctx->status, ThreadStatusDead);
     tctx->status = ThreadStatusInvalid;
@@ -103,25 +104,25 @@ int ThreadCreate(ThreadState *thr, uptr pc, uptr uid, bool detached) {
     // The point to reclain dead_info.
     // delete tctx->dead_info;
   } else {
-    tid = CTX()->thread_seq++;
+    tid = ctx->thread_seq++;
     tctx = new(virtual_alloc(sizeof(ThreadContext))) ThreadContext(tid);
-    CTX()->threads[tid] = tctx;
+    ctx->threads[tid] = tctx;
   }
   CHECK_NE(tctx, 0);
   CHECK_GE(tid, 0);
   CHECK_LT(tid, kMaxTid);
-  DPrintf("#%d: ThreadCreate tid=%d uid=%lu\n",
-          (int)thr->fast_state.tid(), tid, uid);
+  DPrintf("#%d: ThreadCreate tid=%d uid=%lu\n", thr->tid, tid, uid);
   CHECK_EQ(tctx->status, ThreadStatusInvalid);
   tctx->status = ThreadStatusCreated;
   tctx->thr = 0;
-  tctx->uid = uid;
+  tctx->user_id = uid;
+  tctx->unique_id = ctx->unique_thread_seq++;
   tctx->detached = detached;
   if (tid) {
     thr->fast_state.IncrementEpoch();
     // Can't increment epoch w/o writing to the trace as well.
     TraceAddEvent(thr, thr->fast_state.epoch(), EventTypeMop, 0);
-    thr->clock.set(thr->fast_state.tid(), thr->fast_state.epoch());
+    thr->clock.set(thr->tid, thr->fast_state.epoch());
     thr->fast_synch_epoch = thr->fast_state.epoch();
     thr->clock.release(&tctx->sync, &thr->clockslab);
 
@@ -177,7 +178,7 @@ void ThreadFinish(ThreadState *thr) {
   if (thr->tls_addr && thr->tls_size)
     MemoryResetRange(thr, /*pc=*/ 4, thr->tls_addr, thr->tls_size);
   Lock l(&CTX()->thread_mtx);
-  ThreadContext *tctx = CTX()->threads[thr->fast_state.tid()];
+  ThreadContext *tctx = CTX()->threads[thr->tid];
   CHECK_NE(tctx, 0);
   CHECK_EQ(tctx->status, ThreadStatusRunning);
   if (tctx->detached) {
@@ -186,7 +187,7 @@ void ThreadFinish(ThreadState *thr) {
     thr->fast_state.IncrementEpoch();
     // Can't increment epoch w/o writing to the trace as well.
     TraceAddEvent(thr, thr->fast_state.epoch(), EventTypeMop, 0);
-    thr->clock.set(thr->fast_state.tid(), thr->fast_state.epoch());
+    thr->clock.set(thr->tid, thr->fast_state.epoch());
     thr->fast_synch_epoch = thr->fast_state.epoch();
     thr->clock.release(&tctx->sync, &thr->clockslab);
     tctx->status = ThreadStatusFinished;
@@ -214,14 +215,13 @@ void ThreadFinish(ThreadState *thr) {
 
 void ThreadJoin(ThreadState *thr, uptr pc, uptr uid) {
   CHECK_GT(thr->in_rtl, 0);
-  DPrintf("#%d: ThreadJoin uid=%lu\n",
-          (int)thr->fast_state.tid(), uid);
+  DPrintf("#%d: ThreadJoin uid=%lu\n", thr->tid, uid);
   Lock l(&CTX()->thread_mtx);
   ThreadContext *tctx = 0;
   int tid = 0;
   for (; tid < kMaxTid; tid++) {
     if (CTX()->threads[tid] != 0
-        && CTX()->threads[tid]->uid == uid
+        && CTX()->threads[tid]->user_id == uid
         && CTX()->threads[tid]->status != ThreadStatusInvalid) {
       tctx = CTX()->threads[tid];
       break;
@@ -243,7 +243,7 @@ void ThreadDetach(ThreadState *thr, uptr pc, uptr uid) {
   ThreadContext *tctx = 0;
   for (int tid = 0; tid < kMaxTid; tid++) {
     if (CTX()->threads[tid] != 0
-        && CTX()->threads[tid]->uid == uid
+        && CTX()->threads[tid]->user_id == uid
         && CTX()->threads[tid]->status != ThreadStatusInvalid) {
       tctx = CTX()->threads[tid];
       break;
@@ -267,7 +267,7 @@ void MemoryAccessRange(ThreadState *thr, uptr pc, uptr addr,
 
   u64 *shadow_mem = (u64*)MemToShadow(addr);
   DPrintf2("#%d: MemoryAccessRange: @%p %p size=%d is_write=%d\n",
-      (int)thr->fast_state.tid(), (void*)pc, (void*)addr,
+      thr->tid, (void*)pc, (void*)addr,
       (int)size, is_write);
 
 #if TSAN_DEBUG
