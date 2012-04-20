@@ -115,6 +115,8 @@ class ScopedInterceptor {
 
 #define SCOPED_INTERCEPTOR_RAW(func, ...) \
     ThreadState *thr = cur_thread(); \
+    StatInc(thr, StatInterceptor); \
+    StatInc(thr, StatInt_##func); \
     ScopedInterceptor si(thr, #func, \
         (__tsan::uptr)__builtin_return_address(0)); \
     const uptr pc = (uptr)&func; \

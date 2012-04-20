@@ -46,15 +46,12 @@ class ScopedAnnotation {
   const int in_rtl_;
 };
 
-#define CAT1(x, y) x ## y
-#define CAT(x, y) CAT1(x, y)
-
 #define SCOPED_ANNOTATION(typ) \
     if (!flags()->enable_annotations) \
       return; \
     ThreadState *thr = cur_thread(); \
     StatInc(thr, StatAnnotation); \
-    StatInc(thr, CAT(Stat, typ)); \
+    StatInc(thr, Stat##typ); \
     ScopedAnnotation sa(thr, __FUNCTION__, f, l, \
         (uptr)__builtin_return_address(0)); \
     const uptr pc = (uptr)&__FUNCTION__; \
