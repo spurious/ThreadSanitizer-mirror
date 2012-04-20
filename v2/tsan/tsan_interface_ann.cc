@@ -86,9 +86,22 @@ struct DynamicAnnContext {
 static DynamicAnnContext *dyn_ann_ctx;
 static char dyn_ann_ctx_placeholder[sizeof(DynamicAnnContext)] ALIGN(64);
 
+static ExpectRace *FindRace(ExpectRace *list, uptr addr, uptr size) {
+  for (ExpectRace *race = list->next; race != list; race = race->next) {
+    uptr maxbegin = max(race->addr, addr);
+    uptr minend = min(race->addr + race->size, addr + size);
+    if (maxbegin < minend)
+      return race;
+  }
+  return 0;
+}
+
 static void AddExpectRace(SlabCache *alloc, ExpectRace *list,
     char *f, int l, uptr mem, uptr size, char *desc) {
-  ExpectRace *race = (ExpectRace*)alloc->Alloc();
+  ExpectRace *race = FindRace(list, mem, size);
+  if (race != 0)
+    return;
+  race = (ExpectRace*)alloc->Alloc();
   race->hitcount = 0;
   race->addr = mem;
   race->size = size;
@@ -108,17 +121,13 @@ static void AddExpectRace(SlabCache *alloc, ExpectRace *list,
 }
 
 static bool CheckContains(ExpectRace *list, uptr addr, uptr size) {
-  for (ExpectRace *race = list->next; race != list; race = race->next) {
-    uptr maxbegin = max(race->addr, addr);
-    uptr minend = min(race->addr + race->size, addr + size);
-    if (maxbegin < minend) {
-      DPrintf("Hit expected/benign race: %s addr=%lx:%d %s:%d\n",
-          race->desc, race->addr, (int)race->size, race->file, race->line);
-      race->hitcount++;
-      return true;
-    }
-  }
-  return false;
+  ExpectRace *race = FindRace(list, addr, size);
+  if (race == 0)
+    return false;
+  DPrintf("Hit expected/benign race: %s addr=%lx:%d %s:%d\n",
+      race->desc, race->addr, (int)race->size, race->file, race->line);
+  race->hitcount++;
+  return true;
 }
 
 static void InitList(ExpectRace *list) {
