@@ -163,6 +163,16 @@ enum StatType {
   StatThreadMaxTid,
   StatThreadMaxAlive,
 
+  // Mutexes.
+  StatMutexCreate,
+  StatMutexDestroy,
+  StatMutexLock,
+  StatMutexUnlock,
+  StatMutexRecLock,
+  StatMutexRecUnlock,
+  StatMutexReadLock,
+  StatMutexReadUnlock,
+
   // Internal mutex contentionz.
   StatMtxTotal,
   StatMtxTrace,

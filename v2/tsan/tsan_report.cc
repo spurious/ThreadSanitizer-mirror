@@ -129,6 +129,15 @@ void PrintStats(u64 *stat) {
   name[StatThreadMaxTid]        = "  max tid                         ";
   name[StatThreadMaxAlive]      = "  max alive threads               ";
 
+  name[StatMutexCreate]         = "Mutexes created                   ";
+  name[StatMutexDestroy]        = "  destroyed                       ";
+  name[StatMutexLock]           = "  lock                            ";
+  name[StatMutexUnlock]         = "  unlock                          ";
+  name[StatMutexRecLock]        = "  recursive lock                  ";
+  name[StatMutexRecUnlock]      = "  recursive unlock                ";
+  name[StatMutexReadLock]       = "  read lock                       ";
+  name[StatMutexReadUnlock]     = "  read unlock                     ";
+
   name[StatMtxTotal]            = "Contentionz                       ";
   name[StatMtxTrace]            = "  Trace                           ";
   name[StatMtxThreads]          = "  Threads                         ";

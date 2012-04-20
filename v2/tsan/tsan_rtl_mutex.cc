@@ -22,6 +22,7 @@ void MutexCreate(ThreadState *thr, uptr pc, uptr addr,
                  bool rw, bool recursive) {
   CHECK_GT(thr->in_rtl, 0);
   DPrintf("#%d: MutexCreate %lx\n", thr->tid, addr);
+  StatInc(thr, StatMutexCreate);
   MemoryWrite1Byte(thr, pc, addr);
   SyncVar *s = CTX()->synctab.GetAndLock(thr, pc, &thr->syncslab, addr, true);
   s->is_rw = rw;
@@ -32,6 +33,7 @@ void MutexCreate(ThreadState *thr, uptr pc, uptr addr,
 void MutexDestroy(ThreadState *thr, uptr pc, uptr addr) {
   CHECK_GT(thr->in_rtl, 0);
   DPrintf("#%d: MutexDestroy %lx\n", thr->tid, addr);
+  StatInc(thr, StatMutexDestroy);
   MemoryWrite1Byte(thr, pc, addr);
   SyncVar *s = CTX()->synctab.GetAndRemove(addr);
   if (s == 0)
@@ -94,11 +96,12 @@ void MutexLock(ThreadState *thr, uptr pc, uptr addr) {
     Printf("ThreadSanitizer WARNING: double lock\n");
   }
   if (s->recursion == 0) {
+    StatInc(thr, StatMutexLock);
     thr->clock.set(thr->tid, thr->fast_state.epoch());
     thr->clock.acquire(&s->clock);
     thr->clock.acquire(&s->read_clock);
   } else if (!s->is_recursive) {
-    Printf("ThreadSanitizer WARNING: recursive lock\n");
+    StatInc(thr, StatMutexRecLock);
   }
   s->recursion++;
   s->mtx.Unlock();
@@ -124,10 +127,13 @@ void MutexUnlock(ThreadState *thr, uptr pc, uptr addr) {
   } else {
     s->recursion--;
     if (s->recursion == 0) {
+      StatInc(thr, StatMutexUnlock);
       s->owner_tid = SyncVar::kInvalidTid;
       thr->clock.set(thr->tid, thr->fast_state.epoch());
       thr->fast_synch_epoch = thr->fast_state.epoch();
       thr->clock.release(&s->clock, &thr->clockslab);
+    } else {
+      StatInc(thr, StatMutexRecUnlock);
     }
   }
   s->mtx.Unlock();
@@ -136,6 +142,7 @@ void MutexUnlock(ThreadState *thr, uptr pc, uptr addr) {
 void MutexReadLock(ThreadState *thr, uptr pc, uptr addr) {
   CHECK_GT(thr->in_rtl, 0);
   DPrintf("#%d: MutexReadLock %lx\n", thr->tid, addr);
+  StatInc(thr, StatMutexReadLock);
   MemoryRead1Byte(thr, pc, addr);
   thr->fast_state.IncrementEpoch();
   TraceAddEvent(thr, thr->fast_state.epoch(), EventTypeRLock, addr);
@@ -150,6 +157,7 @@ void MutexReadLock(ThreadState *thr, uptr pc, uptr addr) {
 void MutexReadUnlock(ThreadState *thr, uptr pc, uptr addr) {
   CHECK_GT(thr->in_rtl, 0);
   DPrintf("#%d: MutexReadUnlock %lx\n", thr->tid, addr);
+  StatInc(thr, StatMutexReadUnlock);
   MemoryRead1Byte(thr, pc, addr);
   thr->fast_state.IncrementEpoch();
   TraceAddEvent(thr, thr->fast_state.epoch(), EventTypeRUnlock, addr);
@@ -169,6 +177,7 @@ void MutexReadOrWriteUnlock(ThreadState *thr, uptr pc, uptr addr) {
   SyncVar *s = CTX()->synctab.GetAndLock(thr, pc, &thr->syncslab, addr, true);
   if (s->owner_tid == SyncVar::kInvalidTid) {
     // Seems to be read unlock.
+    StatInc(thr, StatMutexReadUnlock);
     thr->fast_state.IncrementEpoch();
     TraceAddEvent(thr, thr->fast_state.epoch(), EventTypeRUnlock, addr);
     thr->clock.set(thr->tid, thr->fast_state.epoch());
@@ -179,6 +188,7 @@ void MutexReadOrWriteUnlock(ThreadState *thr, uptr pc, uptr addr) {
     CHECK_GT(s->recursion, 0);
     s->recursion--;
     if (s->recursion == 0) {
+      StatInc(thr, StatMutexUnlock);
       s->owner_tid = SyncVar::kInvalidTid;
       // FIXME: Refactor me, plz.
       // The sequence of events is quite tricky and doubled in several places.
@@ -189,6 +199,8 @@ void MutexReadOrWriteUnlock(ThreadState *thr, uptr pc, uptr addr) {
       thr->clock.set(thr->tid, thr->fast_state.epoch());
       thr->fast_synch_epoch = thr->fast_state.epoch();
       thr->clock.release(&s->clock, &thr->clockslab);
+    } else {
+      StatInc(thr, StatMutexRecUnlock);
     }
   } else if (!s->is_broken) {
     s->is_broken = true;
