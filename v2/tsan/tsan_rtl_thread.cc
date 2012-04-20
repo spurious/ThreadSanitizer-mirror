@@ -82,6 +82,7 @@ int ThreadCreate(ThreadState *thr, uptr pc, uptr uid, bool detached) {
   CHECK_GT(thr->in_rtl, 0);
   Context *ctx = CTX();
   Lock l(&ctx->thread_mtx);
+  StatInc(thr, StatThreadCreate);
   int tid = -1;
   ThreadContext *tctx = 0;
   if (ctx->dead_list_size > kThreadQuarantineSize
@@ -90,6 +91,7 @@ int ThreadCreate(ThreadState *thr, uptr pc, uptr uid, bool detached) {
       Printf("ThreadSanitizer: %d thread limit exceeded. Dying.\n", kMaxTid);
       Die();
     }
+    StatInc(thr, StatThreadReuse);
     tctx = ctx->dead_list_head;
     ctx->dead_list_head = tctx->dead_next;
     ctx->dead_list_size--;
@@ -104,6 +106,7 @@ int ThreadCreate(ThreadState *thr, uptr pc, uptr uid, bool detached) {
     // The point to reclain dead_info.
     // delete tctx->dead_info;
   } else {
+    StatInc(thr, StatThreadMaxTid);
     tid = ctx->thread_seq++;
     tctx = new(virtual_alloc(sizeof(ThreadContext))) ThreadContext(tid);
     ctx->threads[tid] = tctx;
@@ -113,6 +116,12 @@ int ThreadCreate(ThreadState *thr, uptr pc, uptr uid, bool detached) {
   CHECK_LT(tid, kMaxTid);
   DPrintf("#%d: ThreadCreate tid=%d uid=%lu\n", thr->tid, tid, uid);
   CHECK_EQ(tctx->status, ThreadStatusInvalid);
+  ctx->alive_threads++;
+  if (ctx->max_alive_threads < ctx->alive_threads) {
+    ctx->max_alive_threads++;
+    CHECK_EQ(ctx->max_alive_threads, ctx->alive_threads);
+    StatInc(thr, StatThreadMaxAlive);
+  }
   tctx->status = ThreadStatusCreated;
   tctx->thr = 0;
   tctx->user_id = uid;
@@ -172,15 +181,19 @@ void ThreadStart(ThreadState *thr, int tid) {
 
 void ThreadFinish(ThreadState *thr) {
   CHECK_GT(thr->in_rtl, 0);
+  StatInc(thr, StatThreadFinish);
   // FIXME: Treat it as write.
   if (thr->stk_addr && thr->stk_size)
     MemoryResetRange(thr, /*pc=*/ 3, thr->stk_addr, thr->stk_size);
   if (thr->tls_addr && thr->tls_size)
     MemoryResetRange(thr, /*pc=*/ 4, thr->tls_addr, thr->tls_size);
-  Lock l(&CTX()->thread_mtx);
-  ThreadContext *tctx = CTX()->threads[thr->tid];
+  Context *ctx = CTX();
+  Lock l(&ctx->thread_mtx);
+  ThreadContext *tctx = ctx->threads[thr->tid];
   CHECK_NE(tctx, 0);
   CHECK_EQ(tctx->status, ThreadStatusRunning);
+  CHECK_GT(ctx->alive_threads, 0);
+  ctx->alive_threads--;
   if (tctx->detached) {
     ThreadDead(thr, tctx);
   } else {
@@ -206,7 +219,7 @@ void ThreadFinish(ThreadState *thr) {
 
   if (kCollectStats) {
     for (int i = 0; i < StatCnt; i++)
-      CTX()->stat[i] += thr->stat[i];
+      ctx->stat[i] += thr->stat[i];
   }
 
   thr->~ThreadState();

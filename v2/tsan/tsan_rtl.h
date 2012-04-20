@@ -309,6 +309,8 @@ struct Context {
   Mutex thread_mtx;
   int thread_seq;
   int unique_thread_seq;
+  int alive_threads;
+  int max_alive_threads;
   ThreadContext *threads[kMaxTid];
   int dead_list_size;
   ThreadContext* dead_list_head;

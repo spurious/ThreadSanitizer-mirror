@@ -129,6 +129,7 @@ struct MD5Hash {
 MD5Hash md5_hash(const void *data, uptr size);
 
 enum StatType {
+  // Memory access processing related stuff.
   StatMop,
   StatMopRead,
   StatMopWrite,
@@ -147,9 +148,22 @@ enum StatType {
   StatShadowSameThread,
   StatShadowAnotherThread,
   StatShadowReplace,
+
+  // Func processing.
   StatFuncEnter,
   StatFuncExit,
+
+  // Trace processing.
   StatEvents,
+
+  // Threads.
+  StatThreadCreate,
+  StatThreadFinish,
+  StatThreadReuse,
+  StatThreadMaxTid,
+  StatThreadMaxAlive,
+
+  // Internal mutex contentionz.
   StatMtxTotal,
   StatMtxTrace,
   StatMtxThreads,
@@ -159,6 +173,8 @@ enum StatType {
   StatMtxSlab,
   StatMtxAnnotations,
   StatMtxAtExit,
+
+  // This must be last.
   StatCnt,
 };
 

@@ -118,9 +118,17 @@ void PrintStats(u64 *stat) {
   name[StatShadowSameThread]    = "  Including same thread           ";
   name[StatShadowAnotherThread] = "            another thread        ";
   name[StatShadowReplace]       = "  Including evicted               ";
+
   name[StatFuncEnter]           = "Function entries                  ";
   name[StatFuncExit]            = "Function exits                    ";
   name[StatEvents]              = "Events collected                  ";
+
+  name[StatThreadCreate]        = "Total threads created             ";
+  name[StatThreadFinish]        = "  threads finished                ";
+  name[StatThreadReuse]         = "  threads reused                  ";
+  name[StatThreadMaxTid]        = "  max tid                         ";
+  name[StatThreadMaxAlive]      = "  max alive threads               ";
+
   name[StatMtxTotal]            = "Contentionz                       ";
   name[StatMtxTrace]            = "  Trace                           ";
   name[StatMtxThreads]          = "  Threads                         ";
