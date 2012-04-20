@@ -11,6 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 #include "tsan_report.h"
+#include "tsan_platform.h"
 #include "tsan_rtl.h"
 
 namespace __tsan {
@@ -31,13 +32,15 @@ void PrintReport(const ReportDesc *rep) {
   Printf("==================\n");
   Printf("WARNING: ThreadSanitizer: ");
   if (rep->typ == ReportTypeRace)
-    Printf("data race\n");
+    Printf("data race");
   else if (rep->typ == ReportTypeThreadLeak)
-    Printf("thread leak\n");
+    Printf("thread leak");
   else if (rep->typ == ReportTypeMutexDestroyLocked)
-    Printf("destroy of a locked mutex\n");
+    Printf("destroy of a locked mutex");
   else if (rep->typ == ReportTypeSignalUnsafe)
-    Printf("signal-unsafe call inside of a signal\n");
+    Printf("signal-unsafe call inside of a signal");
+
+  Printf(" (pid=%d)\n", GetPid());
 
   if (rep->stack)
     PrintStack(rep->stack);
