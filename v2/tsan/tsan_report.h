@@ -90,9 +90,6 @@ struct ReportDesc {
 // Format and output the report to the console/log. No additional logic.
 void PrintReport(const ReportDesc *rep);
 
-// Format and output internal stats.
-void PrintStats(u64 *stat);
-
 }  // namespace __tsan
 
 #endif  // TSAN_REPORT_H

@@ -59,6 +59,7 @@ LIBTSAN_OBJ=tsan_alloc.o \
             tsan_rtl_report.o \
             tsan_rtl_thread.o \
             tsan_slab.o \
+            tsan_stat.o \
             tsan_suppressions.o \
             tsan_suppressions_linux.o \
             tsan_sync.o \

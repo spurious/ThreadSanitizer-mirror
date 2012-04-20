@@ -220,10 +220,7 @@ void ThreadFinish(ThreadState *thr) {
         thr->trace.headers[i].stack0);
   tctx->epoch1 = thr->clock.get(tctx->tid);
 
-  if (kCollectStats) {
-    for (int i = 0; i < StatCnt; i++)
-      ctx->stat[i] += thr->stat[i];
-  }
+  StatAggregate(ctx->stat, thr->stat);
 
   thr->~ThreadState();
   tctx->thr = 0;

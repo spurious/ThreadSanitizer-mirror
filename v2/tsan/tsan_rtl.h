@@ -334,6 +334,8 @@ class ScopedInRtl {
   int errno_;
 };
 
+void StatAggregate(u64 *dst, u64 *src);
+void StatOutput(u64 *stat);
 void ALWAYS_INLINE INLINE StatInc(ThreadState *thr, StatType typ, u64 n = 1) {
   if (kCollectStats)
     thr->stat[typ] += n;

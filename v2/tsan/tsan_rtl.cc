@@ -130,11 +130,8 @@ int Finalize(ThreadState *thr) {
         ctx->nmissed_expected);
   }
 
-  if (kCollectStats) {
-    for (int i = 0; i < StatCnt; i++)
-      ctx->stat[i] += thr->stat[i];
-    PrintStats(ctx->stat);
-  }
+  StatAggregate(ctx->stat, thr->stat);
+  StatOutput(ctx->stat);
 
   return failed ? flags()->exit_status : 0;
 }
