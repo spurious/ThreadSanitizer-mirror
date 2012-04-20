@@ -44,16 +44,32 @@ const int mo_release = __tsan_memory_order_release;
 const int mo_acq_rel = __tsan_memory_order_acq_rel;
 const int mo_seq_cst = __tsan_memory_order_seq_cst;
 
+static void AtomicStatInc(ThreadState *thr, uptr size, morder mo, StatType t) {
+  StatInc(thr, StatAtomic);
+  StatInc(thr, t);
+  StatInc(thr, size == 1 ? StatAtomic1
+             : size == 2 ? StatAtomic2
+             : size == 4 ? StatAtomic4
+             :             StatAtomic8);
+  StatInc(thr, mo == mo_relaxed ? StatAtomicRelaxed
+             : mo == mo_consume ? StatAtomicConsume
+             : mo == mo_acquire ? StatAtomicAcquire
+             : mo == mo_release ? StatAtomicRelease
+             : mo == mo_acq_rel ? StatAtomicAcq_Rel
+             :                    StatAtomicSeq_Cst);
+}
+
 #define SCOPED_ATOMIC(func, ...) \
     mo = flags()->force_seq_cst_atomics ? (morder)mo_seq_cst : mo; \
     ThreadState *const thr = cur_thread(); \
     const uptr pc = (uptr)__builtin_return_address(0); \
+    AtomicStatInc(thr, sizeof(a), mo, StatAtomic##func); \
     ScopedAtomic sa(thr, pc, __FUNCTION__); \
-    return atomic_ ## func(thr, pc, __VA_ARGS__); \
+    return Atomic##func(thr, pc, __VA_ARGS__); \
 /**/
 
 template<typename T>
-static T atomic_load(ThreadState *thr, uptr pc, const volatile T *a,
+static T AtomicLoad(ThreadState *thr, uptr pc, const volatile T *a,
     morder mo) {
   CHECK(mo & (mo_relaxed | mo_consume | mo_acquire | mo_seq_cst));
   T v = *a;
@@ -63,7 +79,7 @@ static T atomic_load(ThreadState *thr, uptr pc, const volatile T *a,
 }
 
 template<typename T>
-static void atomic_store(ThreadState *thr, uptr pc, volatile T *a, T v,
+static void AtomicStore(ThreadState *thr, uptr pc, volatile T *a, T v,
     morder mo) {
   CHECK(mo & (mo_relaxed | mo_release | mo_seq_cst));
   if (mo & (mo_release | mo_seq_cst))
@@ -72,7 +88,7 @@ static void atomic_store(ThreadState *thr, uptr pc, volatile T *a, T v,
 }
 
 template<typename T>
-static T atomic_exchange(ThreadState *thr, uptr pc, volatile T *a, T v,
+static T AtomicExchange(ThreadState *thr, uptr pc, volatile T *a, T v,
     morder mo) {
   if (mo & (mo_release | mo_acq_rel | mo_seq_cst))
     Release(thr, pc, (uptr)a);
@@ -83,7 +99,7 @@ static T atomic_exchange(ThreadState *thr, uptr pc, volatile T *a, T v,
 }
 
 template<typename T>
-static T atomic_fetch_add(ThreadState *thr, uptr pc, volatile T *a, T v,
+static T AtomicFetchAdd(ThreadState *thr, uptr pc, volatile T *a, T v,
     morder mo) {
   if (mo & (mo_release | mo_acq_rel | mo_seq_cst))
     Release(thr, pc, (uptr)a);
@@ -94,7 +110,7 @@ static T atomic_fetch_add(ThreadState *thr, uptr pc, volatile T *a, T v,
 }
 
 template<typename T>
-static bool atomic_compare_exchange_strong(ThreadState *thr, uptr pc,
+static bool AtomicCAS(ThreadState *thr, uptr pc,
     volatile T *a, T *c, T v, morder mo) {
   if (mo & (mo_release | mo_acq_rel | mo_seq_cst))
     Release(thr, pc, (uptr)a);
@@ -108,51 +124,53 @@ static bool atomic_compare_exchange_strong(ThreadState *thr, uptr pc,
   return false;
 }
 
-static void atomic_thread_fence(ThreadState *thr, uptr pc, int unused) {
+static void AtomicFence(ThreadState *thr, uptr pc, morder mo) {
+  __sync_synchronize();
 }
 
 a32 __tsan_atomic32_load(const volatile a32 *a, morder mo) {
-  SCOPED_ATOMIC(load, a, mo);
+  SCOPED_ATOMIC(Load, a, mo);
 }
 
 a64 __tsan_atomic64_load(const volatile a64 *a, morder mo) {
-  SCOPED_ATOMIC(load, a, mo);
+  SCOPED_ATOMIC(Load, a, mo);
 }
 
 void __tsan_atomic32_store(volatile a32 *a, a32 v, morder mo) {
-  SCOPED_ATOMIC(store, a, v, mo);
+  SCOPED_ATOMIC(Store, a, v, mo);
 }
 
 void __tsan_atomic64_store(volatile a64 *a, a64 v, morder mo) {
-  SCOPED_ATOMIC(store, a, v, mo);
+  SCOPED_ATOMIC(Store, a, v, mo);
 }
 
 a32 __tsan_atomic32_exchange(volatile a32 *a, a32 v, morder mo) {
-  SCOPED_ATOMIC(exchange, a, v, mo);
+  SCOPED_ATOMIC(Exchange, a, v, mo);
 }
 
 a64 __tsan_atomic64_exchange(volatile a64 *a, a64 v, morder mo) {
-  SCOPED_ATOMIC(exchange, a, v, mo);
+  SCOPED_ATOMIC(Exchange, a, v, mo);
 }
 
 a32 __tsan_atomic32_fetch_add(volatile a32 *a, a32 v, morder mo) {
-  SCOPED_ATOMIC(fetch_add, a, v, mo);
+  SCOPED_ATOMIC(FetchAdd, a, v, mo);
 }
 
 a64 __tsan_atomic64_fetch_add(volatile a64 *a, a64 v, morder mo) {
-  SCOPED_ATOMIC(fetch_add, a, v, mo);
+  SCOPED_ATOMIC(FetchAdd, a, v, mo);
 }
 
 int __tsan_atomic32_compare_exchange_strong(volatile a32 *a, a32 *c, a32 v,
     morder mo) {
-  SCOPED_ATOMIC(compare_exchange_strong, a, c, v, mo);
+  SCOPED_ATOMIC(CAS, a, c, v, mo);
 }
 
 int __tsan_atomic64_compare_exchange_strong(volatile a64 *a, a64 *c, a64 v,
     morder mo) {
-  SCOPED_ATOMIC(compare_exchange_strong, a, c, v, mo);
+  SCOPED_ATOMIC(CAS, a, c, v, mo);
 }
 
 void __tsan_atomic_thread_fence(morder mo) {
-  SCOPED_ATOMIC(thread_fence, 0);
+  char* a;
+  SCOPED_ATOMIC(Fence, mo);
 }

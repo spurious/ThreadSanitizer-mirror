@@ -134,6 +134,7 @@ int ThreadCreate(ThreadState *thr, uptr pc, uptr uid, bool detached) {
     thr->clock.set(thr->tid, thr->fast_state.epoch());
     thr->fast_synch_epoch = thr->fast_state.epoch();
     thr->clock.release(&tctx->sync, &thr->clockslab);
+    StatInc(thr, StatSyncRelease);
 
     tctx->creation_stack.ObtainCurrent(thr, pc);
   }
@@ -174,6 +175,7 @@ void ThreadStart(ThreadState *thr, int tid) {
   thr->fast_synch_epoch = tctx->epoch0;
   thr->clock.set(tid, tctx->epoch0);
   thr->clock.acquire(&tctx->sync);
+  StatInc(thr, StatSyncAcquire);
   DPrintf("#%d: ThreadStart epoch=%llu stk_addr=%lx stk_size=%lx "
       "tls_addr=%lx tls_size=%lx\n",
       tid, tctx->epoch0, stk_addr, stk_size, tls_addr, tls_size);
@@ -203,6 +205,7 @@ void ThreadFinish(ThreadState *thr) {
     thr->clock.set(thr->tid, thr->fast_state.epoch());
     thr->fast_synch_epoch = thr->fast_state.epoch();
     thr->clock.release(&tctx->sync, &thr->clockslab);
+    StatInc(thr, StatSyncRelease);
     tctx->status = ThreadStatusFinished;
   }
 
@@ -247,6 +250,7 @@ void ThreadJoin(ThreadState *thr, uptr pc, uptr uid) {
   CHECK_EQ(tctx->detached, false);
   CHECK_EQ(tctx->status, ThreadStatusFinished);
   thr->clock.acquire(&tctx->sync);
+  StatInc(thr, StatSyncAcquire);
   ThreadDead(thr, tctx);
 }
 

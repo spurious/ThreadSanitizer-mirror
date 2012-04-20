@@ -45,7 +45,7 @@ TEST(Sync, Table) {
       v->mtx.Unlock();
     } else {
       // Remove.
-      SyncVar *v = tab.GetAndRemove(addr);
+      SyncVar *v = tab.GetAndRemove(thr, pc, addr);
       EXPECT_EQ(golden[addr], v);
       if (v) {
         EXPECT_EQ(v->addr, addr);
@@ -59,7 +59,7 @@ TEST(Sync, Table) {
   for (uintptr_t addr = 0; addr < kRange; addr++) {
     if (golden[addr] == 0)
       continue;
-    SyncVar *v = tab.GetAndRemove(addr);
+    SyncVar *v = tab.GetAndRemove(thr, pc, addr);
     EXPECT_EQ(v, golden[addr]);
     EXPECT_EQ(v->addr, addr);
     v->creation_stack.Free(thr);

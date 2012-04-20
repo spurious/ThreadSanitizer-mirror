@@ -173,6 +173,31 @@ enum StatType {
   StatMutexReadLock,
   StatMutexReadUnlock,
 
+  // Synchronization.
+  StatSyncCreated,
+  StatSyncDestroyed,
+  StatSyncAcquire,
+  StatSyncRelease,
+
+  // Atomics.
+  StatAtomic,
+  StatAtomicLoad,
+  StatAtomicStore,
+  StatAtomicExchange,
+  StatAtomicFetchAdd,
+  StatAtomicCAS,
+  StatAtomicFence,
+  StatAtomicRelaxed,
+  StatAtomicConsume,
+  StatAtomicAcquire,
+  StatAtomicRelease,
+  StatAtomicAcq_Rel,
+  StatAtomicSeq_Cst,
+  StatAtomic1,
+  StatAtomic2,
+  StatAtomic4,
+  StatAtomic8,
+
   // Interceptors.
   StatInterceptor,
   StatInt_malloc,

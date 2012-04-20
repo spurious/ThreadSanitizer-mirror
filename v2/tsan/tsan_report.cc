@@ -138,6 +138,29 @@ void PrintStats(u64 *stat) {
   name[StatMutexReadLock]                = "  read lock                       ";
   name[StatMutexReadUnlock]              = "  read unlock                     ";
 
+  name[StatSyncCreated]                  = "Sync objects created              ";
+  name[StatSyncDestroyed]                = "             destroyed            ";
+  name[StatSyncAcquire]                  = "             acquired             ";
+  name[StatSyncRelease]                  = "             released             ";
+
+  name[StatAtomic]                       = "Atomic operations                 ";
+  name[StatAtomicLoad]                   = "  Including load                  ";
+  name[StatAtomicStore]                  = "            store                 ";
+  name[StatAtomicExchange]               = "            exchange              ";
+  name[StatAtomicFetchAdd]               = "            fetch_add             ";
+  name[StatAtomicCAS]                    = "            compare_exchange      ";
+  name[StatAtomicFence]                  = "            fence                 ";
+  name[StatAtomicRelaxed]                = "  Including relaxed               ";
+  name[StatAtomicConsume]                = "            consume               ";
+  name[StatAtomicAcquire]                = "            acquire               ";
+  name[StatAtomicRelease]                = "            release               ";
+  name[StatAtomicAcq_Rel]                = "            acq_rel               ";
+  name[StatAtomicSeq_Cst]                = "            seq_cst               ";
+  name[StatAtomic1]                      = "  Including size 1                ";
+  name[StatAtomic2]                      = "            size 2                ";
+  name[StatAtomic4]                      = "            size 4                ";
+  name[StatAtomic8]                      = "            size 8                ";
+
   name[StatInterceptor]                  = "Interceptors                      ";
   name[StatInt_malloc]                   = "  malloc                          ";
   name[StatInt_calloc]                   = "  calloc                          ";

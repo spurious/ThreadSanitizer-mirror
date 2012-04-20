@@ -71,7 +71,7 @@ class SyncTab {
                       SlabCache *slab, uptr addr, bool write_lock);
 
   // If the SyncVar does not exist, returns 0.
-  SyncVar* GetAndRemove(uptr addr);
+  SyncVar* GetAndRemove(ThreadState *thr, uptr pc, uptr addr);
 
  private:
   struct Part {

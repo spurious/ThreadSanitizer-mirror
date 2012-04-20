@@ -59,6 +59,7 @@ SyncVar* SyncTab::GetAndLock(ThreadState *thr, uptr pc,
         break;
     }
     if (res == 0) {
+      StatInc(thr, StatSyncCreated);
       res = new(slab->Alloc()) SyncVar(addr);
       res->creation_stack.ObtainCurrent(thr, pc);
       res->next = p->val;
@@ -72,7 +73,7 @@ SyncVar* SyncTab::GetAndLock(ThreadState *thr, uptr pc,
   }
 }
 
-SyncVar* SyncTab::GetAndRemove(uptr addr) {
+SyncVar* SyncTab::GetAndRemove(ThreadState *thr, uptr pc, uptr addr) {
   Part *p = &tab_[PartIdx(addr)];
   SyncVar *res = 0;
   {
@@ -89,6 +90,7 @@ SyncVar* SyncTab::GetAndRemove(uptr addr) {
     }
   }
   if (res) {
+    StatInc(thr, StatSyncDestroyed);
     res->mtx.Lock();
     res->mtx.Unlock();
   }
