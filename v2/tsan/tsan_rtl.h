@@ -212,10 +212,10 @@ struct ThreadState {
   u64 racy_state[2];
   Trace trace;
   uptr shadow_stack[kShadowStackSize];
-  SlabCache clockslab;
-  SlabCache syncslab;
   ThreadClock clock;
   u64 stat[StatCnt];
+  u64 int_alloc_cnt[MBlockTypeCount];
+  u64 int_alloc_siz[MBlockTypeCount];
   const int tid;
   int in_rtl;
   int func_call_count;
@@ -298,8 +298,6 @@ struct Context {
 
   bool initialized;
 
-  SlabAlloc clockslab;
-  SlabAlloc syncslab;
   SyncTab synctab;
 
   Mutex report_mtx;
@@ -322,6 +320,8 @@ struct Context {
   Flags flags;
 
   u64 stat[StatCnt];
+  u64 int_alloc_cnt[MBlockTypeCount];
+  u64 int_alloc_siz[MBlockTypeCount];
 };
 
 class ScopedInRtl {

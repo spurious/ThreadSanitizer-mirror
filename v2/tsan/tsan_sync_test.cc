@@ -11,8 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 #include "tsan_sync.h"
-#include "tsan_slab.h"
 #include "tsan_rtl.h"
+#include "tsan_mman.h"
 #include "gtest/gtest.h"
 
 #include <stdlib.h>
@@ -29,8 +29,6 @@ TEST(Sync, Table) {
   ThreadState *thr = cur_thread();
   uptr pc = 0;
 
-  SlabAlloc alloc(sizeof(SyncVar));
-  SlabCache slab(&alloc);
   SyncTab tab;
   SyncVar *golden[kRange] = {};
   unsigned seed = 0;
@@ -38,7 +36,7 @@ TEST(Sync, Table) {
     uintptr_t addr = rand_r(&seed) % (kRange - 1) + 1;
     if (rand_r(&seed) % 2) {
       // Get or add.
-      SyncVar *v = tab.GetAndLock(thr, pc, &slab, addr, true);
+      SyncVar *v = tab.GetAndLock(thr, pc, addr, true);
       EXPECT_TRUE(golden[addr] == 0 || golden[addr] == v);
       EXPECT_EQ(v->addr, addr);
       golden[addr] = v;
@@ -50,9 +48,7 @@ TEST(Sync, Table) {
       if (v) {
         EXPECT_EQ(v->addr, addr);
         golden[addr] = 0;
-        v->creation_stack.Free(thr);
-        v->~SyncVar();
-        slab.Free(v);
+        DestroyAndFree(v);
       }
     }
   }
@@ -62,9 +58,7 @@ TEST(Sync, Table) {
     SyncVar *v = tab.GetAndRemove(thr, pc, addr);
     EXPECT_EQ(v, golden[addr]);
     EXPECT_EQ(v->addr, addr);
-    v->creation_stack.Free(thr);
-    v->~SyncVar();
-    slab.Free(v);
+    DestroyAndFree(v);
   }
 }
 

@@ -116,6 +116,8 @@ void *internal_alloc(MBlockType typ, uptr sz) {
   b->magic = InternalMBlock::kMagic;
   b->typ = typ;
   b->sz = sz;
+  thr->int_alloc_cnt[typ] += 1;
+  thr->int_alloc_siz[typ] += sz;
   void *p = b + 1;
   return p;
 #else
@@ -129,6 +131,8 @@ void internal_free(void *p) {
 #if TSAN_DEBUG
   InternalMBlock *b = (InternalMBlock*)p - 1;
   CHECK_EQ(b->magic, InternalMBlock::kMagic);
+  thr->int_alloc_cnt[b->typ] -= 1;
+  thr->int_alloc_siz[b->typ] -= b->sz;
   Free(b);
 #else
   Free(p);

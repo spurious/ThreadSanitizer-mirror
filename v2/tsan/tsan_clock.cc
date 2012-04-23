@@ -56,13 +56,6 @@
 
 namespace __tsan {
 
-const int kChunkCapacity = SyncClock::kChunkSize / sizeof(u64) - 1;
-
-struct SyncClock::Chunk {
-  Chunk* next_;
-  u64 clk_[kChunkCapacity];
-};
-
 ThreadClock::ThreadClock() {
   nclk_ = 0;
   for (uptr i = 0; i < (uptr)kMaxTid; i++)
@@ -70,73 +63,37 @@ ThreadClock::ThreadClock() {
 }
 
 void ThreadClock::acquire(const SyncClock *src) {
-  DCHECK(this->nclk_ <= kMaxTid);
-  DCHECK(src->nclk_ <= kMaxTid);
+  DCHECK(nclk_ <= kMaxTid);
+  DCHECK(src->clk_.Size() <= kMaxTid);
 
-  if (src->nclk_ == 0)
+  const uptr nclk = src->clk_.Size();
+  if (nclk == 0)
     return;
-  if (this->nclk_ < src->nclk_)
-    this->nclk_ = src->nclk_;
-  SyncClock::Chunk *c = src->chunk_;
-  for (int di = 0; c;) {
-    for (int si = 0; si < kChunkCapacity && di < this->nclk_;
-        si++, di++) {
-      if (this->clk_[di] < c->clk_[si])
-        this->clk_[di] = c->clk_[si];
-    }
-    c = c->next_;
+  nclk_ = max(nclk_, nclk);
+  for (uptr i = 0; i < nclk; i++) {
+    if (clk_[i] < src->clk_[i])
+      clk_[i] = src->clk_[i];
   }
 }
 
-void ThreadClock::release(SyncClock *dst, SlabCache *slab) const {
-  DCHECK((int)slab->Size() == SyncClock::kChunkSize);
-  DCHECK(dst->nclk_ <= kMaxTid);
-  DCHECK(this->nclk_ <= kMaxTid);
+void ThreadClock::release(SyncClock *dst) const {
+  DCHECK(nclk_ <= kMaxTid);
+  DCHECK(dst->clk_.Size() <= kMaxTid);
 
-  if (dst->nclk_ < this->nclk_)
-    dst->nclk_ = this->nclk_;
-  SyncClock::Chunk** cp = &dst->chunk_;
-  SyncClock::Chunk* c = *cp;
-  for (int si = 0; si < this->nclk_;) {
-    if (!c) {
-      c = (SyncClock::Chunk*)slab->Alloc();
-      c->next_ = 0;
-      internal_memset(c->clk_, 0, sizeof(c->clk_));
-      *cp = c;
-    }
-    for (int di = 0; di < kChunkCapacity && si < this->nclk_;
-        si++, di++) {
-      if (c->clk_[di] < this->clk_[si])
-        c->clk_[di] = this->clk_[si];
-    }
-    cp = &c->next_;
-    c = *cp;
+  if (dst->clk_.Size() < nclk_)
+    dst->clk_.Resize(nclk_);
+  for (uptr i = 0; i < nclk_; i++) {
+    if (dst->clk_[i] < clk_[i])
+      dst->clk_[i] = clk_[i];
   }
 }
 
-void ThreadClock::acq_rel(SyncClock *dst, SlabCache *slab) {
+void ThreadClock::acq_rel(SyncClock *dst) {
   acquire(dst);
-  release(dst, slab);
+  release(dst);
 }
 
 SyncClock::SyncClock()
-  : nclk_()
-  , chunk_() {
-  typedef char static_assert_chunk_size[sizeof(Chunk) == kChunkSize ? 1 : -1];
+  : clk_(MBlockClock) {
 }
-
-SyncClock::~SyncClock() {
-  CHECK_EQ(nclk_, 0);
-  CHECK_EQ(chunk_, 0);
-}
-
-void SyncClock::Free(SlabCache *slab) {
-  while (chunk_) {
-    Chunk* tmp = chunk_;
-    chunk_ = tmp->next_;
-    slab->Free(tmp);
-  }
-  nclk_ =  0;
-}
-
 }  // namespace __tsan

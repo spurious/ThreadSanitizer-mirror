@@ -36,7 +36,6 @@ ReportDesc *GetGlobalReport() {
 
 static void RestoreStack(ThreadState *thr, int tid,
                         const u64 epoch, StackTrace *stk) {
-  stk->Free(thr);
   ThreadContext *tctx = CTX()->threads[tid];
   if (tctx == 0)
     return;

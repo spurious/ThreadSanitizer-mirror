@@ -35,9 +35,18 @@ SyncTab::Part::Part()
 SyncTab::SyncTab() {
 }
 
+SyncTab::~SyncTab() {
+  for (int i = 0; i < kPartCount; i++) {
+    while (tab_[i].val) {
+      SyncVar *tmp = tab_[i].val;
+      tab_[i].val = tmp->next;
+      DestroyAndFree(tmp);
+    }
+  }
+}
+
 SyncVar* SyncTab::GetAndLock(ThreadState *thr, uptr pc,
-                             SlabCache *slab, uptr addr, bool write_lock) {
-  DCHECK_EQ(slab->Size(), sizeof(SyncVar));
+                             uptr addr, bool write_lock) {
   Part *p = &tab_[PartIdx(addr)];
   {
     ReadLock l(&p->mtx);
@@ -60,7 +69,8 @@ SyncVar* SyncTab::GetAndLock(ThreadState *thr, uptr pc,
     }
     if (res == 0) {
       StatInc(thr, StatSyncCreated);
-      res = new(slab->Alloc()) SyncVar(addr);
+      void *mem = internal_alloc(MBlockSync, sizeof(SyncVar));
+      res = new(mem) SyncVar(addr);
       res->creation_stack.ObtainCurrent(thr, pc);
       res->next = p->val;
       p->val = res;
@@ -107,11 +117,20 @@ StackTrace::StackTrace()
 }
 
 StackTrace::~StackTrace() {
-  Free(0);
+  Reset();
+}
+
+void StackTrace::Reset() {
+  if (s_) {
+    CHECK_NE(n_, 0);
+    internal_free(s_);
+    s_ = 0;
+    n_ = 0;
+  }
 }
 
 void StackTrace::Init(ThreadState *thr, const uptr *pcs, uptr cnt) {
-  Free(thr);
+  Reset();
   if (cnt == 0)
     return;
   n_ = cnt;
@@ -120,7 +139,7 @@ void StackTrace::Init(ThreadState *thr, const uptr *pcs, uptr cnt) {
 }
 
 void StackTrace::ObtainCurrent(ThreadState *thr, uptr toppc) {
-  Free(thr);
+  Reset();
   n_ = thr->shadow_stack_pos - &thr->shadow_stack[0];
   if (n_ + !!toppc == 0)
     return;
@@ -133,17 +152,8 @@ void StackTrace::ObtainCurrent(ThreadState *thr, uptr toppc) {
   }
 }
 
-void StackTrace::Free(ThreadState *thr) {
-  if (s_) {
-    CHECK_NE(n_, 0);
-    internal_free(s_);
-    s_ = 0;
-    n_ = 0;
-  }
-}
-
 void StackTrace::CopyFrom(ThreadState *thr, const StackTrace& other) {
-  Free(thr);
+  Reset();
   Init(thr, other.Begin(), other.Size());
 }
 

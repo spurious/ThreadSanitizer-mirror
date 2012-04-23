@@ -26,10 +26,10 @@ class StackTrace {
  public:
   StackTrace();
   ~StackTrace();
+  void Reset();
 
   void Init(ThreadState *thr, const uptr *pcs, uptr cnt);
   void ObtainCurrent(ThreadState *thr, uptr toppc);
-  void Free(ThreadState *thr);
   bool IsEmpty() const;
   uptr Size() const;
   uptr Get(uptr i) const;
@@ -65,10 +65,11 @@ struct SyncVar {
 class SyncTab {
  public:
   SyncTab();
+  ~SyncTab();
 
   // If the SyncVar does not exist yet, it is created.
   SyncVar* GetAndLock(ThreadState *thr, uptr pc,
-                      SlabCache *slab, uptr addr, bool write_lock);
+                      uptr addr, bool write_lock);
 
   // If the SyncVar does not exist, returns 0.
   SyncVar* GetAndRemove(ThreadState *thr, uptr pc, uptr addr);

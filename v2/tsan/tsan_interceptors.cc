@@ -190,8 +190,7 @@ static void finalize(void *arg) {
   atexit_ctx->exit(thr, pc);
   usleep(flags()->atexit_sleep_ms * 1000);
   int status = Finalize(cur_thread());
-  if (status)
-    _exit(status);
+  _exit(status);
 }
 
 TSAN_INTERCEPTOR(int, atexit, void (*f)()) {

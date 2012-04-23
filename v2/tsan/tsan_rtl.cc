@@ -38,8 +38,6 @@ Context *CTX() {
 
 Context::Context()
   : initialized()
-  , clockslab(SyncClock::kChunkSize)
-  , syncslab(sizeof(SyncVar))
   , report_mtx(MutexTypeReport, StatMtxReport)
   , nreported()
   , nmissed_expected()
@@ -59,8 +57,6 @@ ThreadState::ThreadState(Context *ctx, int tid, u64 epoch,
   // , fast_ignore_writes()
   // , in_rtl()
   , shadow_stack_pos(&shadow_stack[0])
-  , clockslab(&ctx->clockslab)
-  , syncslab(&ctx->syncslab)
   , tid(tid)
   , func_call_count()
   , stk_addr(stk_addr)
@@ -119,8 +115,12 @@ void Initialize(ThreadState *thr) {
 
 int Finalize(ThreadState *thr) {
   ScopedInRtl in_rtl;
+  Context *ctx = __tsan::ctx;
   bool failed = false;
 
+  // Be very careful beyond that point.
+  // All bets are off. Everything is destroyed.
+  ThreadFinish(thr);
   ThreadFinalize(thr);
 
   if (ctx->nreported) {
@@ -134,10 +134,21 @@ int Finalize(ThreadState *thr) {
         ctx->nmissed_expected);
   }
 
-  StatAggregate(ctx->stat, thr->stat);
+  int exit_status = failed ? flags()->exit_status : 0;
+  __tsan::ctx->~Context();
+  __tsan::ctx = 0;
+
+  for (int i = 0; i < (int)MBlockTypeCount; i++) {
+    if (ctx->int_alloc_cnt[i] == 0)
+      continue;
+    Printf("ThreadSanitizer: Internal memory leak: "
+        "type=%d count=%lld size=%lld\n",
+        (int)i, ctx->int_alloc_cnt[i], ctx->int_alloc_siz[i]);
+  }
+
   StatOutput(ctx->stat);
 
-  return failed ? flags()->exit_status : 0;
+  return exit_status;
 }
 
 static void TraceSwitch(ThreadState *thr) {

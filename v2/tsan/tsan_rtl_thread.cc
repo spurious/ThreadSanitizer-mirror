@@ -22,6 +22,33 @@ namespace __tsan {
 
 const int kThreadQuarantineSize = 100;
 
+static void MaybeReportThreadLeak(ThreadContext *tctx) {
+  if (tctx->detached)
+    return;
+  if (tctx->status != ThreadStatusCreated
+      && tctx->status != ThreadStatusRunning
+      && tctx->status != ThreadStatusFinished)
+    return;
+/*
+    ScopedReport rep(ReportTypeThreadLeak);
+    rep.AddThread(tctx->tid);
+    OutputReport(&rep);
+*/
+
+  Context *ctx = CTX();
+  Lock l(&ctx->report_mtx);
+  ReportDesc &rep = *GetGlobalReport();
+  internal_memset(&rep, 0, sizeof(rep));
+  RegionAlloc alloc(rep.alloc, sizeof(rep.alloc));
+  rep.typ = ReportTypeThreadLeak;
+  rep.nthread = 1;
+  rep.thread = alloc.Alloc<ReportThread>(1);
+  rep.thread->id = tctx->tid;
+  rep.thread->running = (tctx->status != ThreadStatusFinished);
+  rep.thread->stack = SymbolizeStack(&alloc, tctx->creation_stack);
+  OutputReport(&rep);
+}
+
 void ThreadFinalize(ThreadState *thr) {
   CHECK_GT(thr->in_rtl, 0);
   if (!flags()->report_thread_leaks)
@@ -32,49 +59,30 @@ void ThreadFinalize(ThreadState *thr) {
     ThreadContext *tctx = ctx->threads[i];
     if (tctx == 0)
       continue;
-    if (tctx->detached)
-      continue;
-    if (tctx->status != ThreadStatusCreated
-        && tctx->status != ThreadStatusRunning
-        && tctx->status != ThreadStatusFinished)
-      continue;
-/*
-    ScopedReport rep(ReportTypeThreadLeak);
-    rep.AddThread(tctx->tid);
-    OutputReport(&rep);
-*/
-
-    Lock l(&ctx->report_mtx);
-    ReportDesc &rep = *GetGlobalReport();
-    internal_memset(&rep, 0, sizeof(rep));
-    RegionAlloc alloc(rep.alloc, sizeof(rep.alloc));
-    rep.typ = ReportTypeThreadLeak;
-    rep.nthread = 1;
-    rep.thread = alloc.Alloc<ReportThread>(1);
-    rep.thread->id = tctx->tid;
-    rep.thread->running = (tctx->status != ThreadStatusFinished);
-    rep.thread->stack = SymbolizeStack(&alloc, tctx->creation_stack);
-    OutputReport(&rep);
+    MaybeReportThreadLeak(tctx);
+    DestroyAndFree(tctx);
+    ctx->threads[i] = 0;
   }
 }
 
 static void ThreadDead(ThreadState *thr, ThreadContext *tctx) {
+  Context *ctx = CTX();
   CHECK_GT(thr->in_rtl, 0);
   CHECK(tctx->status == ThreadStatusRunning
       || tctx->status == ThreadStatusFinished);
   DPrintf("#%d: ThreadDead uid=%lu\n", thr->tid, tctx->user_id);
   tctx->status = ThreadStatusDead;
   tctx->user_id = 0;
-  tctx->sync.Free(&thr->clockslab);
+  tctx->sync.Reset();
 
   // Put to dead list.
   tctx->dead_next = 0;
-  if (CTX()->dead_list_size == 0)
-    CTX()->dead_list_head = tctx;
+  if (ctx->dead_list_size == 0)
+    ctx->dead_list_head = tctx;
   else
-    CTX()->dead_list_tail->dead_next = tctx;
-  CTX()->dead_list_tail = tctx;
-  CTX()->dead_list_size++;
+    ctx->dead_list_tail->dead_next = tctx;
+  ctx->dead_list_tail = tctx;
+  ctx->dead_list_size++;
 }
 
 int ThreadCreate(ThreadState *thr, uptr pc, uptr uid, bool detached) {
@@ -107,7 +115,8 @@ int ThreadCreate(ThreadState *thr, uptr pc, uptr uid, bool detached) {
   } else {
     StatInc(thr, StatThreadMaxTid);
     tid = ctx->thread_seq++;
-    tctx = new(virtual_alloc(sizeof(ThreadContext))) ThreadContext(tid);
+    void *mem = internal_alloc(MBlockThreadContex, sizeof(ThreadContext));
+    tctx = new(mem) ThreadContext(tid);
     ctx->threads[tid] = tctx;
   }
   CHECK_NE(tctx, 0);
@@ -132,7 +141,7 @@ int ThreadCreate(ThreadState *thr, uptr pc, uptr uid, bool detached) {
     TraceAddEvent(thr, thr->fast_state.epoch(), EventTypeMop, 0);
     thr->clock.set(thr->tid, thr->fast_state.epoch());
     thr->fast_synch_epoch = thr->fast_state.epoch();
-    thr->clock.release(&tctx->sync, &thr->clockslab);
+    thr->clock.release(&tctx->sync);
     StatInc(thr, StatSyncRelease);
 
     tctx->creation_stack.ObtainCurrent(thr, pc);
@@ -203,7 +212,7 @@ void ThreadFinish(ThreadState *thr) {
     TraceAddEvent(thr, thr->fast_state.epoch(), EventTypeMop, 0);
     thr->clock.set(thr->tid, thr->fast_state.epoch());
     thr->fast_synch_epoch = thr->fast_state.epoch();
-    thr->clock.release(&tctx->sync, &thr->clockslab);
+    thr->clock.release(&tctx->sync);
     StatInc(thr, StatSyncRelease);
     tctx->status = ThreadStatusFinished;
   }
@@ -219,9 +228,12 @@ void ThreadFinish(ThreadState *thr) {
         thr->trace.headers[i].stack0);
   tctx->epoch1 = thr->clock.get(tctx->tid);
 
-  StatAggregate(ctx->stat, thr->stat);
-
   thr->~ThreadState();
+  StatAggregate(ctx->stat, thr->stat);
+  for (int i = 0; i < (int)MBlockTypeCount; i++) {
+    ctx->int_alloc_cnt[i] += thr->int_alloc_cnt[i];
+    ctx->int_alloc_siz[i] += thr->int_alloc_siz[i];
+  }
   tctx->thr = 0;
 }
 

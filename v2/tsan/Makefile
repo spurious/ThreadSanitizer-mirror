@@ -37,7 +37,8 @@ LIBTSAN_HEADERS=tsan_alloc.h \
 		tsan_symbolize.h \
 		tsan_sync.h \
 		tsan_trace.h \
-		tsan_thread.h
+		tsan_thread.h \
+                tsan_vector.h
 
 LIBTSAN_OBJ=tsan_alloc.o \
             tsan_allocator.o \

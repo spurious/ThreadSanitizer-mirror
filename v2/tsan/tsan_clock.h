@@ -14,27 +14,25 @@
 #define TSAN_CLOCK_H
 
 #include "tsan_defs.h"
-#include "tsan_slab.h"
+#include "tsan_vector.h"
 
 namespace __tsan {
 
 // The clock that lives in sync variables (mutexes, atomics, etc).
 class SyncClock {
  public:
-  static const int kChunkSize = 128;
   SyncClock();
-  ~SyncClock();
 
-  void Free(SlabCache *slab);
+  uptr size() const {
+    return clk_.Size();
+  }
 
-  int size() const {
-    return nclk_;
+  void Reset() {
+    clk_.Reset();
   }
 
  private:
-  int nclk_;
-  struct Chunk;
-  Chunk* chunk_;
+  Vector<u64> clk_;
   friend struct ThreadClock;
 };
 
@@ -52,27 +50,27 @@ struct ThreadClock {
     DCHECK(tid < kMaxTid);
     DCHECK(v >= clk_[tid]);
     clk_[tid] = v;
-    if (nclk_ <= tid)
+    if ((int)nclk_ <= tid)
       nclk_ = tid + 1;
   }
 
   void tick(int tid) {
     DCHECK(tid < kMaxTid);
     clk_[tid]++;
-    if (nclk_ <= tid)
+    if ((int)nclk_ <= tid)
       nclk_ = tid + 1;
   }
 
-  int size() const {
+  uptr size() const {
     return nclk_;
   }
 
   void acquire(const SyncClock *src);
-  void release(SyncClock *dst, SlabCache *slab) const;
-  void acq_rel(SyncClock *dst, SlabCache *slab);
+  void release(SyncClock *dst) const;
+  void acq_rel(SyncClock *dst);
 
  private:
-  int nclk_;
+  uptr nclk_;
   u64 clk_[kMaxTid];
 };
 

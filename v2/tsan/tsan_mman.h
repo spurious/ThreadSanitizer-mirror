@@ -35,16 +35,26 @@ MBlock *user_mblock(ThreadState *thr, void *p);
 enum MBlockType {
   MBlockScopedBuf,
   MBlockStackTrace,
+  MBlockSync,
+  MBlockClock,
+  MBlockThreadContex,
   MBlockTypeRacyStacks,
   MBlockTypeRacyAddresses,
   MBlockAtExit,
   MBlockFlag,
   MBlockSuppression,
+  MBlockTypeCount
 };
 
 // For internal data structures.
 void *internal_alloc(MBlockType typ, uptr sz);
 void internal_free(void *p);
+
+template<typename T>
+void DestroyAndFree(T *p) {
+  p->~T();
+  internal_free(p);
+}
 
 template<typename T>
 class InternalScopedBuf {
