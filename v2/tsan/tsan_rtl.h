@@ -387,8 +387,9 @@ void FuncExit(ThreadState *thr);
 int ThreadCreate(ThreadState *thr, uptr pc, uptr uid, bool detached);
 void ThreadStart(ThreadState *thr, int tid);
 void ThreadFinish(ThreadState *thr);
-void ThreadJoin(ThreadState *thr, uptr pc, uptr uid);
-void ThreadDetach(ThreadState *thr, uptr pc, uptr uid);
+int ThreadTid(ThreadState *thr, uptr pc, uptr uid);
+void ThreadJoin(ThreadState *thr, uptr pc, int tid);
+void ThreadDetach(ThreadState *thr, uptr pc, int tid);
 void ThreadFinalize(ThreadState *thr);
 
 void MutexCreate(ThreadState *thr, uptr pc, uptr addr, bool rw, bool recursive);

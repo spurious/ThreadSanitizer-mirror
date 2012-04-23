@@ -225,21 +225,28 @@ void ThreadFinish(ThreadState *thr) {
   tctx->thr = 0;
 }
 
-void ThreadJoin(ThreadState *thr, uptr pc, uptr uid) {
+int ThreadTid(ThreadState *thr, uptr pc, uptr uid) {
   CHECK_GT(thr->in_rtl, 0);
-  DPrintf("#%d: ThreadJoin uid=%lu\n", thr->tid, uid);
+  DPrintf("#%d: ThreadTid uid=%lu\n", thr->tid, uid);
   Lock l(&CTX()->thread_mtx);
-  ThreadContext *tctx = 0;
-  int tid = 0;
-  for (; tid < kMaxTid; tid++) {
+  for (int tid = 0; tid < kMaxTid; tid++) {
     if (CTX()->threads[tid] != 0
         && CTX()->threads[tid]->user_id == uid
-        && CTX()->threads[tid]->status != ThreadStatusInvalid) {
-      tctx = CTX()->threads[tid];
-      break;
-    }
+        && CTX()->threads[tid]->status != ThreadStatusInvalid)
+      return tid;
   }
-  if (tctx == 0 || tctx->status == ThreadStatusInvalid) {
+  return -1;
+}
+
+void ThreadJoin(ThreadState *thr, uptr pc, int tid) {
+  CHECK_GT(thr->in_rtl, 0);
+  CHECK_GT(tid, 0);
+  CHECK_LT(tid, kMaxTid);
+  DPrintf("#%d: ThreadJoin tid=%d\n", thr->tid, tid);
+  Context *ctx = CTX();
+  Lock l(&ctx->thread_mtx);
+  ThreadContext *tctx = ctx->threads[tid];
+  if (tctx->status == ThreadStatusInvalid) {
     Printf("ThreadSanitizer: join of non-existent thread\n");
     return;
   }
@@ -250,19 +257,14 @@ void ThreadJoin(ThreadState *thr, uptr pc, uptr uid) {
   ThreadDead(thr, tctx);
 }
 
-void ThreadDetach(ThreadState *thr, uptr pc, uptr uid) {
+void ThreadDetach(ThreadState *thr, uptr pc, int tid) {
   CHECK_GT(thr->in_rtl, 0);
-  Lock l(&CTX()->thread_mtx);
-  ThreadContext *tctx = 0;
-  for (int tid = 0; tid < kMaxTid; tid++) {
-    if (CTX()->threads[tid] != 0
-        && CTX()->threads[tid]->user_id == uid
-        && CTX()->threads[tid]->status != ThreadStatusInvalid) {
-      tctx = CTX()->threads[tid];
-      break;
-    }
-  }
-  if (tctx == 0 || tctx->status == ThreadStatusInvalid) {
+  CHECK_GT(tid, 0);
+  CHECK_LT(tid, kMaxTid);
+  Context *ctx = CTX();
+  Lock l(&ctx->thread_mtx);
+  ThreadContext *tctx = ctx->threads[tid];
+  if (tctx->status == ThreadStatusInvalid) {
     Printf("ThreadSanitizer: detach of non-existent thread\n");
     return;
   }
