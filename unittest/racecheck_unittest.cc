@@ -4140,13 +4140,11 @@ Mutex mu;
 
 ProducerConsumerQueue Q(INT_MAX);  // Used to pass A* between threads.
 
-struct A {
+struct ALIGNED(64) A {
   A()  { printf("A::A()\n"); }
   virtual ~A() { printf("A::~A()\n"); }
   virtual void f() { }
-
-  uintptr_t padding[15];
-} ALIGNED(64);
+};
 
 struct B: A {
   B()  { printf("B::B()\n"); }
@@ -6235,9 +6233,9 @@ REGISTER_TEST(Run, 143);
 
 // test144: Unit-test for a bug in fast-mode {{{1
 namespace test144 {
-struct Foo {
+struct ALIGNED(64) Foo {
   int a, b;
-} ALIGNED(64);
+};
 
 struct Foo GLOB;
 int &RACEY = GLOB.a;
@@ -6266,9 +6264,9 @@ REGISTER_TEST(Run, 144);
 namespace test145 {
 // A variation of test144 for dynamic memory.
 
-struct Foo {
+struct ALIGNED(64) Foo {
   int a, b;
-} ALIGNED(64);
+};
 
 struct Foo *GLOB;
 int *RACEY = NULL;
