@@ -619,6 +619,9 @@ TSAN_INTERCEPTOR(int, pthread_join, void *th, void **ret) {
   SCOPED_TSAN_INTERCEPTOR(pthread_join, th, ret);
   int res = REAL(pthread_join)(th, ret);
   if (res == 0) {
+    // FIXME: It's incorrect to use pthread_t value as thread id
+    // after pthread_join() returns - it can be reused at this point;
+    // and we actually see such cases on tests.
     ThreadJoin(cur_thread(), pc, (uptr)th);
   }
   return res;

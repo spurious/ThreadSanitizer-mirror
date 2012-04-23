@@ -30,8 +30,7 @@ static void SignalUnsafeCall(ThreadState *thr, uptr pc) {
   StackTrace stack;
   stack.ObtainCurrent(thr, pc);
   rep.stack = SymbolizeStack(&alloc, stack);
-  PrintReport(&rep);
-  ctx->nreported++;
+  OutputReport(&rep);
 }
 
 void *user_alloc(ThreadState *thr, uptr pc, uptr sz) {

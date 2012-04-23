@@ -347,6 +347,7 @@ void InitializeDynamicAnnotations();
 void Die() NORETURN;
 
 void ReportRace(ThreadState *thr);
+bool OutputReport(ReportDesc *rep, ReportStack *suppress_stack = 0);
 ReportStack *SymbolizeStack(RegionAlloc *alloc, const StackTrace& trace);
 bool IsExpectedReport(uptr addr, uptr size);
 

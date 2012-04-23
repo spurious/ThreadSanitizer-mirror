@@ -45,7 +45,7 @@ void MutexDestroy(ThreadState *thr, uptr pc, uptr addr) {
     ScopedReport rep(ReportTypeMutexDestroyLocked);
     rep.AddMutex(s);
     rep.AddLocation(s->addr);
-    PrintReport(&rep);
+    OutputReport(&rep);
 */
 
 
@@ -70,8 +70,7 @@ void MutexDestroy(ThreadState *thr, uptr pc, uptr addr) {
       rep.loc->line = symb.line;
       rep.loc->stack = 0;
     }
-    PrintReport(&rep);
-    CTX()->nreported++;
+    OutputReport(&rep);
   }
   s->clock.Free(&thr->clockslab);
   s->read_clock.Free(&thr->clockslab);

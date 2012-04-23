@@ -209,6 +209,16 @@ static void AddRacyStacks(ThreadState *thr, const StackTrace (&traces)[2],
   }
 }
 
+bool OutputReport(ReportDesc *rep, ReportStack *suppress_stack) {
+  bool suppressed = IsSuppressed(rep->typ, suppress_stack);
+  suppressed = OnReport(rep, suppressed);
+  if (suppressed)
+    return false;
+  PrintReport(rep);
+  CTX()->nreported++;
+  return true;
+}
+
 void ReportRace(ThreadState *thr) {
   ScopedInRtl in_rtl;
   uptr addr = ShadowToMem((uptr)thr->racy_shadow_addr);
@@ -280,13 +290,10 @@ void ReportRace(ThreadState *thr) {
     rt->stack = SymbolizeStack(&alloc, tctx->creation_stack);
   }
   rep.nmutex = 0;
-  bool suppressed = IsSuppressed(ReportTypeRace, rep.mop[0].stack);
-  suppressed = OnReport(&rep, suppressed);
-  if (suppressed)
+
+  if (!OutputReport(&rep, rep.mop[0].stack))
     return;
 
-  PrintReport(&rep);
-  CTX()->nreported++;
   AddRacyStacks(thr, traces, addr_min, addr_max);
 
   // Bump the thread's clock a bit.

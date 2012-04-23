@@ -41,7 +41,7 @@ void ThreadFinalize(ThreadState *thr) {
 /*
     ScopedReport rep(ReportTypeThreadLeak);
     rep.AddThread(tctx->tid);
-    PrintReport(&rep);
+    OutputReport(&rep);
 */
 
     Lock l(&ctx->report_mtx);
@@ -54,8 +54,7 @@ void ThreadFinalize(ThreadState *thr) {
     rep.thread->id = tctx->tid;
     rep.thread->running = (tctx->status != ThreadStatusFinished);
     rep.thread->stack = SymbolizeStack(&alloc, tctx->creation_stack);
-    PrintReport(&rep);
-    ctx->nreported++;
+    OutputReport(&rep);
   }
 }
 
