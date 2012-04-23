@@ -54,6 +54,20 @@ TEST(Suppressions, Parse2) {
   EXPECT_EQ((Suppression*)0, supp);
 }
 
+TEST(Suppressions, Parse3) {
+  ScopedInRtl in_rtl;
+  Suppression *supp = SuppressionParse(
+    "# last suppression w/o line-feed\n"
+    "foo\n"
+    "bar"
+  );  // NOLINT
+  EXPECT_EQ(0, strcmp(supp->func, "bar"));
+  supp = supp->next;
+  EXPECT_EQ(0, strcmp(supp->func, "foo"));
+  supp = supp->next;
+  EXPECT_EQ((Suppression*)0, supp);
+}
+
 static bool MyMatch(const char *templ, const char *func) {
   char tmp[1024];
   strcpy(tmp, templ);  // NOLINT
