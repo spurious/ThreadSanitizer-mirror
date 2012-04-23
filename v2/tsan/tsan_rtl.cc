@@ -134,10 +134,6 @@ int Finalize(ThreadState *thr) {
         ctx->nmissed_expected);
   }
 
-  int exit_status = failed ? flags()->exit_status : 0;
-  __tsan::ctx->~Context();
-  __tsan::ctx = 0;
-
   for (int i = 0; i < (int)MBlockTypeCount; i++) {
     if (ctx->int_alloc_cnt[i] == 0)
       continue;
@@ -147,6 +143,10 @@ int Finalize(ThreadState *thr) {
   }
 
   StatOutput(ctx->stat);
+
+  int exit_status = failed ? flags()->exit_status : 0;
+  __tsan::ctx->~Context();
+  __tsan::ctx = 0;
 
   return exit_status;
 }

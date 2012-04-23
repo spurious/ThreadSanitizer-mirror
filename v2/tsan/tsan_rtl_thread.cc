@@ -233,6 +233,8 @@ void ThreadFinish(ThreadState *thr) {
   for (int i = 0; i < (int)MBlockTypeCount; i++) {
     ctx->int_alloc_cnt[i] += thr->int_alloc_cnt[i];
     ctx->int_alloc_siz[i] += thr->int_alloc_siz[i];
+    thr->int_alloc_cnt[i] = 0;
+    thr->int_alloc_siz[i] = 0;
   }
   tctx->thr = 0;
 }
