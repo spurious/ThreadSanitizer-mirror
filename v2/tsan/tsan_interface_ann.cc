@@ -88,24 +88,16 @@ struct DynamicAnnContext {
 static DynamicAnnContext *dyn_ann_ctx;
 static char dyn_ann_ctx_placeholder[sizeof(DynamicAnnContext)] ALIGN(64);
 
-static ExpectRace *FindRace(ExpectRace *list, uptr addr, uptr size) {
-  for (ExpectRace *race = list->next; race != list; race = race->next) {
-    uptr maxbegin = max(race->addr, addr);
-    uptr minend = min(race->addr + race->size, addr + size);
-    if (maxbegin < minend)
-      return race;
-  }
-  return 0;
-}
-
 static void AddExpectRace(SlabCache *alloc, ExpectRace *list,
-    char *f, int l, uptr mem, uptr size, char *desc) {
-  ExpectRace *race = FindRace(list, mem, size);
-  if (race != 0)
-    return;
+    char *f, int l, uptr addr, uptr size, char *desc) {
+  ExpectRace *race = list->next;
+  for (; race != list; race = race->next) {
+    if (race->addr == addr && race->size == size)
+      return;
+  }
   race = (ExpectRace*)alloc->Alloc();
   race->hitcount = 0;
-  race->addr = mem;
+  race->addr = addr;
   race->size = size;
   race->file = f;
   race->line = l;
@@ -120,6 +112,16 @@ static void AddExpectRace(SlabCache *alloc, ExpectRace *list,
   race->next = list->next;
   race->next->prev = race;
   list->next = race;
+}
+
+static ExpectRace *FindRace(ExpectRace *list, uptr addr, uptr size) {
+  for (ExpectRace *race = list->next; race != list; race = race->next) {
+    uptr maxbegin = max(race->addr, addr);
+    uptr minend = min(race->addr + race->size, addr + size);
+    if (maxbegin < minend)
+      return race;
+  }
+  return 0;
 }
 
 static bool CheckContains(ExpectRace *list, uptr addr, uptr size) {

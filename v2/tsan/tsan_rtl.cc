@@ -32,7 +32,9 @@ __thread char cur_thread_placeholder[sizeof(ThreadState)] ALIGN(64);
 static char ctx_placeholder[sizeof(Context)] ALIGN(64);
 
 static Context *ctx;
-Context *CTX() { return ctx; }
+Context *CTX() {
+  return ctx;
+}
 
 Context::Context()
   : initialized()

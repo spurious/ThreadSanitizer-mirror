@@ -99,6 +99,8 @@ void sched_yield() {
 
 void stderr_write(const void *p, uptr size) {
   ScopedInRtl in_rtl;
+  if (CTX() == 0)
+    return;
   syscall(__NR_write, flags()->log_fileno, p, size);
 }
 
