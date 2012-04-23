@@ -51,7 +51,7 @@ static char *ReadFile(const char *filename) {
     close(fd);
     return 0;
   }
-  char *buf = (char*)internal_alloc(st.st_size + 1);
+  char *buf = (char*)internal_alloc(MBlockSuppression, st.st_size + 1);
   if (st.st_size != read(fd, buf, st.st_size)) {
     Printf("ThreadSanitizer: failed to read suppressions file '%s'\n",
         tmp.Ptr());
@@ -99,10 +99,11 @@ Suppression *SuppressionParse(const char* supp) {
       const char *end2 = end;
       while (line != end2 && (end2[-1] == ' ' || end2[-1] == '\t'))
         end2--;
-      Suppression *s = (Suppression*)internal_alloc(sizeof(Suppression));
+      Suppression *s = (Suppression*)internal_alloc(MBlockSuppression,
+          sizeof(Suppression));
       s->next = head;
       head = s;
-      s->func = (char*)internal_alloc(end2 - line + 1);
+      s->func = (char*)internal_alloc(MBlockSuppression, end2 - line + 1);
       internal_memcpy(s->func, line, end2 - line);
       s->func[end2 - line] = 0;
     }

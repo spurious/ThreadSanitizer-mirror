@@ -24,8 +24,9 @@ namespace __tsan {
 template<typename T>
 class Vector {
  public:
-  Vector()
-      : begin_()
+  explicit Vector(MBlockType typ)
+      : typ_(typ)
+      , begin_()
       , end_()
       , last_() {
   }
@@ -55,7 +56,7 @@ class Vector {
       uptr cap = 2 * cap0;
       if (cap == 0)
         cap = 16;
-      T *p = (T*)internal_alloc(cap * sizeof(T));
+      T *p = (T*)internal_alloc(typ_, cap * sizeof(T));
       if (cap0) {
         internal_memcpy(p, begin_, cap0 * sizeof(T));
         internal_free(begin_);
@@ -69,6 +70,7 @@ class Vector {
   }
 
  private:
+  const MBlockType typ_;
   T *begin_;
   T *end_;
   T *last_;

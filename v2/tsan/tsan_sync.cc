@@ -115,7 +115,7 @@ void StackTrace::Init(ThreadState *thr, const uptr *pcs, uptr cnt) {
   if (cnt == 0)
     return;
   n_ = cnt;
-  s_ = (uptr*)internal_alloc(cnt * sizeof(s_[0]));
+  s_ = (uptr*)internal_alloc(MBlockStackTrace, cnt * sizeof(s_[0]));
   internal_memcpy(s_, pcs, cnt * sizeof(s_[0]));
 }
 
@@ -124,7 +124,7 @@ void StackTrace::ObtainCurrent(ThreadState *thr, uptr toppc) {
   n_ = thr->shadow_stack_pos - &thr->shadow_stack[0];
   if (n_ + !!toppc == 0)
     return;
-  s_ = (uptr*)internal_alloc((n_ + !!toppc) * sizeof(s_[0]));
+  s_ = (uptr*)internal_alloc(MBlockStackTrace, (n_ + !!toppc) * sizeof(s_[0]));
   for (uptr i = 0; i < n_; i++)
     s_[i] = thr->shadow_stack[i];
   if (toppc) {

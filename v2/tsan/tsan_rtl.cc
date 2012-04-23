@@ -43,7 +43,9 @@ Context::Context()
   , report_mtx(MutexTypeReport, StatMtxReport)
   , nreported()
   , nmissed_expected()
-  , thread_mtx(MutexTypeThreads, StatMtxThreads) {
+  , thread_mtx(MutexTypeThreads, StatMtxThreads)
+  , racy_stacks(MBlockTypeRacyStacks)
+  , racy_addresses(MBlockTypeRacyAddresses) {
 }
 
 // The objects are allocated in TLS, so one may rely on zero-initialization.

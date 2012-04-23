@@ -32,8 +32,18 @@ void *user_alloc_aligned(ThreadState *thr, uptr pc, uptr sz, uptr align);
 // returns the descriptor of the block.
 MBlock *user_mblock(ThreadState *thr, void *p);
 
+enum MBlockType {
+  MBlockScopedBuf,
+  MBlockStackTrace,
+  MBlockTypeRacyStacks,
+  MBlockTypeRacyAddresses,
+  MBlockAtExit,
+  MBlockFlag,
+  MBlockSuppression,
+};
+
 // For internal data structures.
-void *internal_alloc(uptr sz);
+void *internal_alloc(MBlockType typ, uptr sz);
 void internal_free(void *p);
 
 template<typename T>
@@ -41,7 +51,7 @@ class InternalScopedBuf {
  public:
   explicit InternalScopedBuf(uptr cnt) {
     cnt_ = cnt;
-    ptr_ = (T*)internal_alloc(cnt * sizeof(T));
+    ptr_ = (T*)internal_alloc(MBlockScopedBuf, cnt * sizeof(T));
   }
 
   ~InternalScopedBuf() {
@@ -77,5 +87,4 @@ class InternalScopedBuf {
 };
 
 }  // namespace __tsan
-
 #endif  // TSAN_MMAN_H

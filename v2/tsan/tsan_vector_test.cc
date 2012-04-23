@@ -18,7 +18,7 @@ namespace __tsan {
 
 TEST(Vector, Basic) {
   ScopedInRtl in_rtl;
-  Vector<int> v;
+  Vector<int> v(MBlockScopedBuf);
   EXPECT_EQ(v.Size(), (uptr)0);
   v.PushBack(42);
   EXPECT_EQ(v.Size(), (uptr)1);
@@ -31,7 +31,7 @@ TEST(Vector, Basic) {
 
 TEST(Vector, Stride) {
   ScopedInRtl in_rtl;
-  Vector<int> v;
+  Vector<int> v(MBlockScopedBuf);
   for (int i = 0; i < 1000; i++) {
     v.PushBack(i);
     EXPECT_EQ(v.Size(), (uptr)(i + 1));

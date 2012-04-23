@@ -1342,7 +1342,7 @@ void InitializeInterceptors() {
 
   TSAN_INTERCEPT(sigaction);
 
-  atexit_ctx = new(internal_alloc(sizeof(AtExitContext)))
+  atexit_ctx = new(internal_alloc(MBlockAtExit, sizeof(AtExitContext)))
       AtExitContext();
 
   if (__cxa_atexit(&finalize, 0, 0)) {
