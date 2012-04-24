@@ -68,7 +68,7 @@ static void RestoreStack(ThreadState *thr, int tid,
     Event ev = trace->events[i];
     EventType typ = (EventType)(ev >> 61);
     uptr pc = (uptr)(ev & 0xffffffffffffull);
-    DPrintf2("  %04lu typ=%d pc=%lx\n", i, typ, pc);
+    DPrintf2("  %lu typ=%d pc=%lx\n", i, typ, pc);
     if (typ == EventTypeMop) {
       stack[pos] = pc;
     } else if (typ == EventTypeFuncEnter) {
