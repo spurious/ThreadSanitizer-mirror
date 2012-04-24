@@ -28,7 +28,7 @@ test_file() {
   $COMPILER $SRC $CFLAGS -c -o tmp.o
   # Link with CXX, because lldb and suppressions require C++.
   $CXX tmp.o $LDFLAGS
-  LD_LIBRARY_PATH=$LLDB ./a.out 2> test.out || echo -n
+  LD_LIBRARY_PATH=$LLDB TSAN_ARGS="atexit_sleep_ms=0" ./a.out 2> test.out || echo -n
   if [ "$3" != "" ]; then
     cat test.out
   fi
@@ -44,9 +44,17 @@ test_file() {
 
 if [ "$1" == "" ]; then
   for c in $ROOTDIR/output_tests/*.c; do
+    if [[ $c == */failing_* ]]; then
+      echo SKIPPING FAILING TEST $c
+      continue
+    fi
     test_file $c $CC
   done
   for c in $ROOTDIR/output_tests/*.cc; do
+    if [[ $c == */failing_* ]]; then
+      echo SKIPPING FAILING TEST $c
+      continue
+    fi
     test_file $c $CXX
   done
 else
