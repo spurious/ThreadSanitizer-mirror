@@ -11,19 +11,20 @@
 #include "thread_sanitizer.h"
 #include "ts_util.h"
 
-
-bool in_initialize = false;
 typedef uintptr_t pc_t;
 
 const size_t kCallStackReserve = 32;
+bool g_initialized = false;
 
-extern "C" void goCallback(void* p);
 extern "C" char* goCallbackPcToRtnName(uintptr_t pc);
 extern "C" int goCallbackCommentPc(uintptr_t pc, char **img,
                                    char **rtn, char **file, int *line);
 
-int numEventsRead = 0; // need some estimation
-int eventsCount[100000];
+// We need some estimation of the number of events
+// that we receive for Go.
+const int kNumEvents = sizeof(kEventNames)/sizeof(kEventNames[0]);
+int g_numEventsRead = 0;
+int g_eventsCount[kNumEvents];
 
 extern "C"
 void SPut(EventType type, int32_t tid, uintptr_t pc,
@@ -35,10 +36,10 @@ void SPut(EventType type, int32_t tid, uintptr_t pc,
     pc = (uintptr_t)__tsan_shadow_stack;
   }
 
-  ++eventsCount[type];
+  ++g_eventsCount[type];
+  ++g_numEventsRead;
   Event event(type, tid, pc, a, info);
   ThreadSanitizerHandleOneEvent(&event);
-  ++numEventsRead;
 }
 
 void PcToStrings(uintptr_t pc, bool demangle,
@@ -59,15 +60,15 @@ void PcToStrings(uintptr_t pc, bool demangle,
 string PcToRtnName(uintptr_t pc, bool demangle) {
   // TODO: demangle is dropped, is it ok?
   // TODO: turn it on when the Go part works
-  //  char* ret = goCallbackPcToRtnName(pc);
-  //  return string(ret);
+  //char* ret = goCallbackPcToRtnName(pc);
+  // return string(ret);
   return "";
 }
 
 extern "C"
 bool initialize() {
-  if (in_initialize) return false;
-  in_initialize = true;
+  if (g_initialized) return false;
+  g_initialized = true;
 
   G_flags = new FLAGS;
   vector<string> args;
@@ -97,22 +98,43 @@ bool initialize() {
 
 extern "C"
 void finalize() {
-  // TODO(mpimenov): use G_stats->PrintStats() or something like that
-  Printf("\nThreadSanitizer has received %d events\n", numEventsRead);
-  Printf("%d READs\n", eventsCount[READ]);
-  Printf("%d WRITEs\n", eventsCount[WRITE]);
-  Printf("%d SIGNALs\n", eventsCount[SIGNAL]);
-  Printf("%d WAITs\n", eventsCount[WAIT]);
-  Printf("%d RTN_CALLs\n", eventsCount[RTN_CALL]);
-  Printf("%d RTN_EXITs\n", eventsCount[RTN_EXIT]);
-  Printf("%d MALLOCs\n", eventsCount[MALLOC]);
-  Printf("%d FREEs\n", eventsCount[FREE]);
+  /*
+  TODO(mpimenov): think about using G_stats->PrintStats()
+  Possible snippet for the number of reads (doesn't work because thread_sanitizer.h
+  does not list all TSanThread's methods)
+
+  int cnt = 0;
+  for (int i = 0; i < TSanThread::NumberOfThreads(); i++) {
+    TSanThread *t = TSanThread::Get(TID(i));
+    cnt += t->stats.events[READ];
+  }
+  Printf("-- %d\n", cnt);
+  */
+
+  EventType interesting[] = {
+    THR_START,
+    READ,
+    WRITE,
+    SIGNAL,
+    WAIT,
+    RTN_CALL,
+    RTN_EXIT,
+    MALLOC,
+    FREE,
+  };
+  Printf("\nThreadSanitizer has received %d events\n", g_numEventsRead);
+  int numInteresting = sizeof(interesting)/sizeof(interesting[0]);
+  for (int i = 0; i < numInteresting; i++) {
+    EventType e = interesting[i];
+    Printf("%d %ss\n", g_eventsCount[e], kEventNames[e]);
+  }
   Printf("\n\n");
 
   ThreadSanitizerFini();
 
   if (GetNumberOfFoundErrors() > 0) {
-    //    _exit(1);
-        _exit(0);
+    // TODO(mpimenov): replace with _exit(1)
+    // after all src/pkg tests have passed
+    _exit(0);
   }
 }
