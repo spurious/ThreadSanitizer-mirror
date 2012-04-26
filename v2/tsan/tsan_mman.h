@@ -51,9 +51,10 @@ void *internal_alloc(MBlockType typ, uptr sz);
 void internal_free(void *p);
 
 template<typename T>
-void DestroyAndFree(T *p) {
+void DestroyAndFree(T *&p) {
   p->~T();
   internal_free(p);
+  p = 0;
 }
 
 template<typename T>

@@ -122,6 +122,7 @@ int Finalize(ThreadState *thr) {
   // All bets are off. Everything is destroyed.
   ThreadFinish(thr);
   ThreadFinalize(thr);
+  FinalizeFlags(&ctx->flags);
 
   if (ctx->nreported) {
     failed = true;

@@ -17,6 +17,8 @@
 
 namespace __tsan {
 
+static const char *const empty_str = "";
+
 static void Flag(const char *env, bool *flag, const char *name, bool def);
 static void Flag(const char *env, int *flag, const char *name, int def);
 static void Flag(const char *env, const char **flag, const char *name,
@@ -33,11 +35,18 @@ void InitializeFlags(Flags *f, const char *env) {
   Flag(env, &f->report_thread_leaks, "report_thread_leaks", true);
   Flag(env, &f->report_signal_unsafe, "report_signal_unsafe", true);
   Flag(env, &f->force_seq_cst_atomics, "force_seq_cst_atomics", false);
-  Flag(env, &f->strip_path_prefix, "strip_path_prefix", "");
-  Flag(env, &f->suppressions, "suppressions", "");
+  Flag(env, &f->strip_path_prefix, "strip_path_prefix", empty_str);
+  Flag(env, &f->suppressions, "suppressions", empty_str);
   Flag(env, &f->exit_status, "exit_status", 66);
   Flag(env, &f->log_fileno, "log_fileno", 2);
   Flag(env, &f->atexit_sleep_ms, "atexit_sleep_ms", 1000);
+}
+
+void FinalizeFlags(Flags *flags) {
+  if (flags->strip_path_prefix != empty_str)
+    internal_free((void*)flags->strip_path_prefix);
+  if (flags->suppressions != empty_str)
+    internal_free((void*)flags->suppressions);
 }
 
 static const char *GetFlagValue(const char *env, const char *name,

@@ -1,6 +1,6 @@
 include ../Makefile.inc
 
-INCLUDES= -I../ -I../third_party/stlport
+INCLUDES= -I..
 EXTRA_CXXFLAGS=-fno-exceptions
 NO_SYSROOT=--sysroot=.
 CXXFLAGS+=$(EXTRA_CXXFLAGS)

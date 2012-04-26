@@ -188,7 +188,11 @@ static void finalize(void *arg) {
   ThreadState * thr = cur_thread();
   uptr pc = 0;
   atexit_ctx->exit(thr, pc);
-  usleep(flags()->atexit_sleep_ms * 1000);
+  {
+    ScopedInRtl in_rtl;
+    DestroyAndFree(atexit_ctx);
+    usleep(flags()->atexit_sleep_ms * 1000);
+  }
   int status = Finalize(cur_thread());
   _exit(status);
 }
