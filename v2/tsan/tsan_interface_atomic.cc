@@ -35,6 +35,8 @@ class ScopedAtomic {
 
 // Some shortcuts.
 typedef __tsan_memory_order morder;
+typedef __tsan_atomic8 a8;
+typedef __tsan_atomic16 a16;
 typedef __tsan_atomic32 a32;
 typedef __tsan_atomic64 a64;
 const int mo_relaxed = __tsan_memory_order_relaxed;
@@ -128,12 +130,28 @@ static void AtomicFence(ThreadState *thr, uptr pc, morder mo) {
   __sync_synchronize();
 }
 
+a8 __tsan_atomic8_load(const volatile a8 *a, morder mo) {
+  SCOPED_ATOMIC(Load, a, mo);
+}
+
+a16 __tsan_atomic16_load(const volatile a16 *a, morder mo) {
+  SCOPED_ATOMIC(Load, a, mo);
+}
+
 a32 __tsan_atomic32_load(const volatile a32 *a, morder mo) {
   SCOPED_ATOMIC(Load, a, mo);
 }
 
 a64 __tsan_atomic64_load(const volatile a64 *a, morder mo) {
   SCOPED_ATOMIC(Load, a, mo);
+}
+
+void __tsan_atomic8_store(volatile a8 *a, a8 v, morder mo) {
+  SCOPED_ATOMIC(Store, a, v, mo);
+}
+
+void __tsan_atomic16_store(volatile a16 *a, a16 v, morder mo) {
+  SCOPED_ATOMIC(Store, a, v, mo);
 }
 
 void __tsan_atomic32_store(volatile a32 *a, a32 v, morder mo) {

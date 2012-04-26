@@ -510,25 +510,21 @@ TSAN_INTERCEPTOR(int, posix_memalign, void **memptr, uptr align, uptr sz) {
 }
 
 // Used in thread-safe function static initialization.
-TSAN_INTERCEPTOR(int, __cxa_guard_acquire, int *m) {
+TSAN_INTERCEPTOR(int, __cxa_guard_acquire, char *m) {
   SCOPED_TSAN_INTERCEPTOR(__cxa_guard_acquire, m);
   int res = REAL(__cxa_guard_acquire)(m);
   if (res) {
-    // FIXME: This is somewhat awkward and incorrect.
-    // The problem is that we do not see the fast-path (that is, the lock-free
-    // read of the guard, well, actually we do see it but as a plain read).
-    IgnoreCtl(thr, true, true);
-    IgnoreCtl(thr, false, true);
+    // This thread does the init.
+  } else {
+    Acquire(thr, pc, (uptr)m);
   }
   return res;
 }
 
-TSAN_INTERCEPTOR(int, __cxa_guard_release, int *m) {
+TSAN_INTERCEPTOR(void, __cxa_guard_release, char *m) {
   SCOPED_TSAN_INTERCEPTOR(__cxa_guard_release, m);
-  IgnoreCtl(thr, true, false);
-  IgnoreCtl(thr, false, false);
-  int res = REAL(__cxa_guard_release)(m);
-  return res;
+  Release(thr, pc, (uptr)m);
+  REAL(__cxa_guard_release)(m);
 }
 
 static void thread_finalize(void *v) {

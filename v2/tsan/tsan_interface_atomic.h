@@ -17,8 +17,10 @@
 extern "C" {
 #endif
 
-typedef int __tsan_atomic32;
-typedef long __tsan_atomic64;  // NOLINT
+typedef char  __tsan_atomic8;
+typedef short __tsan_atomic16;
+typedef int   __tsan_atomic32;
+typedef long  __tsan_atomic64;  // NOLINT
 
 typedef enum {
   __tsan_memory_order_relaxed = 1 << 0,
@@ -29,11 +31,19 @@ typedef enum {
   __tsan_memory_order_seq_cst = 1 << 5,
 } __tsan_memory_order;
 
+__tsan_atomic8 __tsan_atomic8_load(const volatile __tsan_atomic8 *a,
+    __tsan_memory_order mo);
+__tsan_atomic16 __tsan_atomic16_load(const volatile __tsan_atomic16 *a,
+    __tsan_memory_order mo);
 __tsan_atomic32 __tsan_atomic32_load(const volatile __tsan_atomic32 *a,
     __tsan_memory_order mo);
 __tsan_atomic64 __tsan_atomic64_load(const volatile __tsan_atomic64 *a,
     __tsan_memory_order mo);
 
+void __tsan_atomic8_store(volatile __tsan_atomic8 *a, __tsan_atomic8 v,
+    __tsan_memory_order mo);
+void __tsan_atomic16_store(volatile __tsan_atomic16 *a, __tsan_atomic16 v,
+    __tsan_memory_order mo);
 void __tsan_atomic32_store(volatile __tsan_atomic32 *a, __tsan_atomic32 v,
     __tsan_memory_order mo);
 void __tsan_atomic64_store(volatile __tsan_atomic64 *a, __tsan_atomic64 v,
