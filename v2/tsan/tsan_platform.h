@@ -70,7 +70,7 @@ int GetPid();
 void *virtual_alloc(uptr size);
 void virtual_free(void *p, uptr size);
 void sched_yield();
-void stderr_write(const void *p, uptr size);
+void internal_write(int fd, const void *p, uptr size);
 
 uptr GetTlsSize();
 void GetThreadStackAndTls(uptr *stk_addr, uptr *stk_size,

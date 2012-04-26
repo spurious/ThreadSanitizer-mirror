@@ -133,15 +133,8 @@ void Printf(const char *format, ...) {
   va_start(args, format);
   uptr len = VSNPrintf(buffer, buffer.Size(), format, args);
   va_end(args);
-  stderr_write(buffer, len < buffer.Size() ? len : buffer.Size() - 1);
-}
-
-void Printf(const char *format, va_list args) {
-  ScopedInRtl in_rtl;
-  const uptr kMaxLen = 16 * 1024;
-  InternalScopedBuf<char> buffer(kMaxLen);
-  uptr len = VSNPrintf(buffer, buffer.Size(), format, args);
-  stderr_write(buffer, len < buffer.Size() ? len : buffer.Size() - 1);
+  internal_write(CTX() ? flags()->log_fileno : 2,
+      buffer, len < buffer.Size() ? len : buffer.Size() - 1);
 }
 
 uptr Snprintf(char *buffer, uptr length, const char *format, ...) {

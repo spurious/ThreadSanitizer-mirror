@@ -134,19 +134,29 @@ int Finalize(ThreadState *thr) {
         ctx->nmissed_expected);
   }
 
-  for (int i = 0; i < (int)MBlockTypeCount; i++) {
-    if (ctx->int_alloc_cnt[i] == 0)
-      continue;
-    Printf("ThreadSanitizer: Internal memory leak: "
-        "type=%d count=%lld size=%lld\n",
-        (int)i, ctx->int_alloc_cnt[i], ctx->int_alloc_siz[i]);
-  }
-
   StatOutput(ctx->stat);
 
-  int exit_status = failed ? flags()->exit_status : 0;
+  const int exit_status = failed ? flags()->exit_status : 0;
+  const int log_fileno = flags()->log_fileno;
   __tsan::ctx->~Context();
   __tsan::ctx = 0;
+
+  for (int i = 0; i < (int)MBlockTypeCount; i++) {
+    ctx->int_alloc_cnt[i] += thr->int_alloc_cnt[i];
+    ctx->int_alloc_siz[i] += thr->int_alloc_siz[i];
+    thr->int_alloc_cnt[i] = 0;
+    thr->int_alloc_siz[i] = 0;
+  }
+
+  for (int i = 0; i < (int)MBlockTypeCount; i++) {
+    if (ctx->int_alloc_cnt[i] == 0 && ctx->int_alloc_siz[i] == 0)
+      continue;
+    InternalScopedBuf<char> tmp(1024);
+    Snprintf(tmp, tmp.Size(), "ThreadSanitizer: Internal memory leak: "
+        "type=%d count=%lld size=%lld\n",
+        (int)i, ctx->int_alloc_cnt[i], ctx->int_alloc_siz[i]);
+    internal_write(log_fileno, tmp, internal_strlen(tmp));
+  }
 
   return exit_status;
 }

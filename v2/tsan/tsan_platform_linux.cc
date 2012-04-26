@@ -97,11 +97,9 @@ void sched_yield() {
   syscall(__NR_sched_yield);
 }
 
-void stderr_write(const void *p, uptr size) {
+void internal_write(int fd, const void *p, uptr size) {
   ScopedInRtl in_rtl;
-  if (CTX() == 0)
-    return;
-  syscall(__NR_write, flags()->log_fileno, p, size);
+  syscall(__NR_write, fd, p, size);
 }
 
 static void ProtectRange(uptr beg, uptr end) {
