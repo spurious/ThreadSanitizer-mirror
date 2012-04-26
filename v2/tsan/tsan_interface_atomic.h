@@ -18,7 +18,7 @@ extern "C" {
 #endif
 
 typedef char  __tsan_atomic8;
-typedef short __tsan_atomic16;
+typedef short __tsan_atomic16;  // NOLINT
 typedef int   __tsan_atomic32;
 typedef long  __tsan_atomic64;  // NOLINT
 
