@@ -97,7 +97,8 @@ void Initialize(ThreadState *thr) {
   InitializeFlags(&ctx->flags, env);
   InitializeSuppressions();
 
-  Printf("***** Running under ThreadSanitizer v2 (pid=%d) *****\n", GetPid());
+  if (ctx->flags.verbosity)
+    Printf("***** Running under ThreadSanitizer v2 (pid=%d) *****\n", GetPid());
 
   // Initialize thread 0.
   ctx->thread_seq = 0;

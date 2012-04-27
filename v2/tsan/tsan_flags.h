@@ -46,6 +46,8 @@ struct Flags {
   // Sleep in main thread before exiting for that many ms
   // (useful to catch "at exit" races).
   int atexit_sleep_ms;
+  // Verbosity level (0 - silent, 1 - a bit of output, 2+ - more output).
+  int verbosity;
 };
 
 Flags *flags();
