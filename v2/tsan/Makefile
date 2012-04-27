@@ -17,8 +17,7 @@ endif
 
 all: libtsan.a
 
-LIBTSAN_HEADERS=tsan_alloc.h \
-                tsan_allocator.h \
+LIBTSAN_HEADERS=tsan_allocator.h \
                 tsan_atomic.h \
                 tsan_clock.h \
                 tsan_compiler.h \
@@ -37,11 +36,9 @@ LIBTSAN_HEADERS=tsan_alloc.h \
 		tsan_symbolize.h \
 		tsan_sync.h \
 		tsan_trace.h \
-		tsan_thread.h \
                 tsan_vector.h
 
-LIBTSAN_OBJ=tsan_alloc.o \
-            tsan_allocator.o \
+LIBTSAN_OBJ=tsan_allocator.o \
             tsan_clock.o \
             tsan_flags.o \
             tsan_mutex.o \
@@ -65,7 +62,6 @@ LIBTSAN_OBJ=tsan_alloc.o \
             tsan_suppressions_linux.o \
             tsan_sync.o \
             tsan_trace.o \
-            tsan_thread.o \
             interception_linux.o
 
 ifneq ($(TSAN_SYMB_NULL), )
