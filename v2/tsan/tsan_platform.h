@@ -65,6 +65,7 @@ static inline uptr ShadowToMem(uptr shadow) {
 }
 
 const char *InitializePlatform();
+void FinalizePlatform();
 int GetPid();
 
 void *virtual_alloc(uptr size);

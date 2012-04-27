@@ -204,6 +204,10 @@ const char *InitializePlatform() {
   return getenv("TSAN_OPTIONS");
 }
 
+void FinalizePlatform() {
+  fflush(0);
+}
+
 uptr GetTlsSize() {
   return g_tls_size;
 }
