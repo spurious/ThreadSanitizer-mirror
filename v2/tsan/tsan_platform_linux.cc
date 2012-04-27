@@ -201,7 +201,7 @@ const char *InitializePlatform() {
 
   CheckPIE();
   g_tls_size = (uptr)InitTlsSize();
-  return getenv("TSAN_ARGS");
+  return getenv("TSAN_OPTIONS");
 }
 
 uptr GetTlsSize() {
