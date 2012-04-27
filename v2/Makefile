@@ -5,10 +5,10 @@ lib:
 	$(MAKE) -C tsan
 
 test: lib
-	$(MAKE) -C tests
+	$(MAKE) -C rtl_tests
 
 run: all
-	(ulimit -s 8192; tests/tsan_test)
+	(ulimit -s 8192; rtl_tests/tsan_test)
 
 presubmit:
 	$(MAKE) lint -j 4
@@ -29,7 +29,7 @@ lint: lint_tsan lint_tests
 lint_tsan:
 	third_party/cpplint/cpplint.py --filter=$(RTL_LINT_FITLER) tsan/*.{cc,h}
 lint_tests:
-	third_party/cpplint/cpplint.py --filter=$(RTL_LINT_FITLER) tests/*.{cc,h}
+	third_party/cpplint/cpplint.py --filter=$(RTL_LINT_FITLER) rtl_tests/*.{cc,h}
 
 install_deps:
 	svn co  http://llvm.org/svn/llvm-project/compiler-rt/trunk/lib/asan/interception
@@ -43,4 +43,4 @@ install_deps:
 clean:
 	rm -f asm_*.s libtsan.nm libtsan.objdump
 	$(MAKE) clean -C tsan
-	$(MAKE) clean -C tests
+	$(MAKE) clean -C rtl_tests

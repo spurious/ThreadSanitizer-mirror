@@ -19,7 +19,7 @@ list="write1 \
       func_entry \
       func_exit"
 
-BIN=`dirname $0`/tests/tsan_test
+BIN=`dirname $0`/rtl_tests/tsan_test
 objdump -d $BIN  > libtsan.objdump
 nm -S $BIN | grep "__tsan_" > libtsan.nm
 
