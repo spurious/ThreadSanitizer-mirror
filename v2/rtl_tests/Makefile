@@ -24,13 +24,13 @@ TEST_OBJ=tsan_bench.o \
 	 tsan_thread.o \
 	 tsan_test_util_linux.o
 
-UTEST_SRC=$(wildcard ../tsan/*_test.cc)
+UTEST_SRC=$(wildcard ../unit_tests/*_test.cc)
 UTEST_OBJ=$(patsubst %.cc,%.o,$(UTEST_SRC))
 UTEST_HDR=$(wildcard ../tsan/*.h)
 
 all: tsan_test
 
-../tsan/%_test.o: ../tsan/%_test.cc $(UTEST_HDR)
+../unit_tests/%_test.o: ../unit_tests/%_test.cc $(UTEST_HDR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ -c $<
 
 %.o: %.cc $(LIBTSAN_HEADERS)

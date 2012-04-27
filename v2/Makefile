@@ -44,3 +44,4 @@ clean:
 	rm -f asm_*.s libtsan.nm libtsan.objdump
 	$(MAKE) clean -C tsan
 	$(MAKE) clean -C rtl_tests
+	$(MAKE) clean -C unit_tests
