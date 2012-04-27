@@ -25,10 +25,12 @@ test_file() {
   SRC=$1
   COMPILER=$2
   echo ----- TESTING $1
-  $COMPILER $SRC $CFLAGS -c -o tmp.o
+  OBJ=$SRC.o
+  EXE=$SRC.exe
+  $COMPILER $SRC $CFLAGS -c -o $OBJ
   # Link with CXX, because lldb and suppressions require C++.
-  $CXX tmp.o $LDFLAGS
-  LD_LIBRARY_PATH=$LLDB TSAN_OPTIONS="atexit_sleep_ms=0" ./a.out 2> test.out || echo -n
+  $CXX $OBJ $LDFLAGS -o $EXE
+  LD_LIBRARY_PATH=$LLDB TSAN_OPTIONS="atexit_sleep_ms=0" $EXE 2> test.out || echo -n
   if [ "$3" != "" ]; then
     cat test.out
   fi
@@ -38,7 +40,7 @@ test_file() {
   strip "========="
   FileCheck < test.out $SRC
   if [ "$3" == "" ]; then
-    rm -f a.out test.out *.tmp *.tmp2
+    rm -f $EXE $OBJ test.out *.tmp *.tmp2
   fi
 }
 
