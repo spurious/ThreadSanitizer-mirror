@@ -22,8 +22,16 @@ void FinalizeSuppressions();
 bool IsSuppressed(ReportType typ, const ReportStack *stack);
 
 // Exposed for testing.
+enum SuppressionType {
+  SuppressionRace,
+  SuppressionMutex,
+  SuppressionThread,
+  SuppressionSignal,
+};
+
 struct Suppression {
   Suppression *next;
+  SuppressionType type;
   char *func;
 };
 Suppression *SuppressionParse(const char* supp);

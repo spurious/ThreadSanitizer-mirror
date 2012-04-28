@@ -95,6 +95,56 @@ const bool kCollectStats = false;
 
 void CheckFailed(const char *file, int line, const char *cond, u64 v1, u64 v2);
 
+// The following "build consistency" machinery ensures that all source files
+// are build in the same configuration. Inconsistent builds lead to
+// hard to debug crashes.
+#if TSAN_DEBUG
+void build_consistency_debug();
+#else
+void build_consistency_release();
+#endif
+
+#if TSAN_COLLECT_STATS
+void build_consistency_stats();
+#else
+void build_consistency_nostats();
+#endif
+
+#if TSAN_SHADOW_COUNT==1
+void build_consistency_shadow1();
+#elif TSAN_SHADOW_COUNT==2
+void build_consistency_shadow2();
+#elif TSAN_SHADOW_COUNT==4
+void build_consistency_shadow4();
+#else
+void build_consistency_shadow8();
+#endif
+
+static inline void USED build_consistency() {
+#if TSAN_DEBUG
+  void(*volatile cfg)() = &build_consistency_debug;
+#else
+  void(*volatile cfg)() = &build_consistency_release;
+#endif
+#if TSAN_COLLECT_STATS
+  void(*volatile stats)() = &build_consistency_stats;
+#else
+  void(*volatile stats)() = &build_consistency_nostats;
+#endif
+#if TSAN_SHADOW_COUNT==1
+  void(*volatile shadow)() = &build_consistency_shadow1;
+#elif TSAN_SHADOW_COUNT==2
+  void(*volatile shadow)() = &build_consistency_shadow2;
+#elif TSAN_SHADOW_COUNT==4
+  void(*volatile shadow)() = &build_consistency_shadow4;
+#else
+  void(*volatile shadow)() = &build_consistency_shadow8;
+#endif
+  (void)cfg;
+  (void)stats;
+  (void)shadow;
+}
+
 template<typename T>
 T min(T a, T b) {
   return a < b ? a : b;

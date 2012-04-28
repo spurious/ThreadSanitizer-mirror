@@ -470,6 +470,28 @@ void IgnoreCtl(ThreadState *thr, bool write, bool begin) {
     thr->fast_state.ClearIgnoreBit();
 }
 
+#if TSAN_DEBUG
+void build_consistency_debug() {}
+#else
+void build_consistency_release() {}
+#endif
+
+#if TSAN_COLLECT_STATS
+void build_consistency_stats() {}
+#else
+void build_consistency_nostats() {}
+#endif
+
+#if TSAN_SHADOW_COUNT==1
+void build_consistency_shadow1() {}
+#elif TSAN_SHADOW_COUNT==2
+void build_consistency_shadow2() {}
+#elif TSAN_SHADOW_COUNT==4
+void build_consistency_shadow4() {}
+#else
+void build_consistency_shadow8() {}
+#endif
+
 }  // namespace __tsan
 
 // Must be included in this file to make sure everything is inlined.
