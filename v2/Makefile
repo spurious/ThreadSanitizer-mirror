@@ -36,8 +36,8 @@ install_deps:
 	rm -rf third_party
 	mkdir third_party
 	(cd third_party && \
-	svn co -r375        http://googletest.googlecode.com/svn/trunk googletest && \
-	svn co -r69 http://google-styleguide.googlecode.com/svn/trunk/cpplint cpplint \
+	svn co -r613 http://googletest.googlecode.com/svn/trunk googletest && \
+	svn co -r82 http://google-styleguide.googlecode.com/svn/trunk/cpplint cpplint \
         )
 
 clean:

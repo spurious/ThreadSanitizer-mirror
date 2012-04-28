@@ -113,6 +113,7 @@ class ScopedThread {
                            bool expect_race = false);
   const ReportDesc *Memset(void *dst, int val, int size,
                            bool expect_race = false);
+
  private:
   struct Impl;
   Impl *impl_;

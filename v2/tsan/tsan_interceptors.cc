@@ -108,6 +108,7 @@ class ScopedInterceptor {
     }
     CHECK_EQ(in_rtl_, thr_->in_rtl);
   }
+
  private:
   ThreadState *const thr_;
   const int in_rtl_;

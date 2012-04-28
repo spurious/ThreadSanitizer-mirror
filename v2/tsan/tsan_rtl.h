@@ -81,6 +81,7 @@ class FastState {
   void SetIgnoreBit() { x_ |= 1; }
   void ClearIgnoreBit() { x_ &= ~(u64)1; }
   bool GetIgnoreBit() { return x_ & 1; }
+
  private:
   friend class Shadow;
   u64 size_log() const { return (x_ >> 3) & 3; }
