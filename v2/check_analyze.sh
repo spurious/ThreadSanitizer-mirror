@@ -1,8 +1,12 @@
 #!/bin/bash
 set -u
 
-./analyze_libtsan.sh >analyze.res
-cat analyze.res
+RES=$(./analyze_libtsan.sh)
+PrintRes() {
+  printf "%s\n" "$RES"
+}
+
+PrintRes
 
 mops="write1 \
       write2 \
@@ -16,7 +20,7 @@ func="func_entry \
       func_exit"
 
 check() {
-  res=$(egrep "$1 .* $2 $3; " analyze.res)
+  res=$(PrintRes | egrep "$1 .* $2 $3; ")
   if [ "$res" == "" ]; then
     echo FAILED $1 must contain $2 $3
     exit 1
