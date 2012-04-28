@@ -20,13 +20,14 @@ namespace __tsan {
 
 TEST(Suppressions, Parse) {
   ScopedInRtl in_rtl;
-  Suppression *supp = SuppressionParse(
+  Suppression *supp0 = SuppressionParse(
     "foo\n"
     " 	bar\n"  // NOLINT
     "baz	 \n"  // NOLINT
     "# a comment\n"
     "quz\n"
   );  // NOLINT
+  Suppression *supp = supp0;
   EXPECT_EQ(0, strcmp(supp->func, "quz"));
   supp = supp->next;
   EXPECT_EQ(0, strcmp(supp->func, "baz"));
@@ -36,36 +37,41 @@ TEST(Suppressions, Parse) {
   EXPECT_EQ(0, strcmp(supp->func, "foo"));
   supp = supp->next;
   EXPECT_EQ((Suppression*)0, supp);
+  SuppressionFree(supp0);
 }
 
 TEST(Suppressions, Parse2) {
   ScopedInRtl in_rtl;
-  Suppression *supp = SuppressionParse(
+  Suppression *supp0 = SuppressionParse(
     "  	# first line comment\n"  // NOLINT
     " 	bar 	\n"  // NOLINT
     "baz* *baz\n"
     "# a comment\n"
     "# last line comment\n"
   );  // NOLINT
+  Suppression *supp = supp0;
   EXPECT_EQ(0, strcmp(supp->func, "baz* *baz"));
   supp = supp->next;
   EXPECT_EQ(0, strcmp(supp->func, "bar"));
   supp = supp->next;
   EXPECT_EQ((Suppression*)0, supp);
+  SuppressionFree(supp0);
 }
 
 TEST(Suppressions, Parse3) {
   ScopedInRtl in_rtl;
-  Suppression *supp = SuppressionParse(
+  Suppression *supp0 = SuppressionParse(
     "# last suppression w/o line-feed\n"
     "foo\n"
     "bar"
   );  // NOLINT
+  Suppression *supp = supp0;
   EXPECT_EQ(0, strcmp(supp->func, "bar"));
   supp = supp->next;
   EXPECT_EQ(0, strcmp(supp->func, "foo"));
   supp = supp->next;
   EXPECT_EQ((Suppression*)0, supp);
+  SuppressionFree(supp0);
 }
 
 static bool MyMatch(const char *templ, const char *func) {

@@ -137,6 +137,7 @@ int Finalize(ThreadState *thr) {
   }
 
   StatOutput(ctx->stat);
+  FinalizeSuppressions();
   FinalizePlatform();
 
   const int exit_status = failed ? flags()->exit_status : 0;

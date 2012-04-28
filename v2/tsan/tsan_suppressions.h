@@ -18,6 +18,7 @@
 namespace __tsan {
 
 void InitializeSuppressions();
+void FinalizeSuppressions();
 bool IsSuppressed(ReportType typ, const ReportStack *stack);
 
 // Exposed for testing.
@@ -27,6 +28,7 @@ struct Suppression {
 };
 Suppression *SuppressionParse(const char* supp);
 bool SuppressionMatch(char *templ, const char *str);
+void SuppressionFree(Suppression *supp);
 
 }  // namespace __tsan
 
