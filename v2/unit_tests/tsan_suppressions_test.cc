@@ -21,19 +21,23 @@ namespace __tsan {
 TEST(Suppressions, Parse) {
   ScopedInRtl in_rtl;
   Suppression *supp0 = SuppressionParse(
-    "foo\n"
-    " 	bar\n"  // NOLINT
-    "baz	 \n"  // NOLINT
+    "race:foo\n"
+    " 	race:bar\n"  // NOLINT
+    "race:baz	 \n"  // NOLINT
     "# a comment\n"
-    "quz\n"
+    "race:quz\n"
   );  // NOLINT
   Suppression *supp = supp0;
+  EXPECT_EQ(supp->type, SuppressionRace);
   EXPECT_EQ(0, strcmp(supp->func, "quz"));
   supp = supp->next;
+  EXPECT_EQ(supp->type, SuppressionRace);
   EXPECT_EQ(0, strcmp(supp->func, "baz"));
   supp = supp->next;
+  EXPECT_EQ(supp->type, SuppressionRace);
   EXPECT_EQ(0, strcmp(supp->func, "bar"));
   supp = supp->next;
+  EXPECT_EQ(supp->type, SuppressionRace);
   EXPECT_EQ(0, strcmp(supp->func, "foo"));
   supp = supp->next;
   EXPECT_EQ((Suppression*)0, supp);
@@ -44,14 +48,16 @@ TEST(Suppressions, Parse2) {
   ScopedInRtl in_rtl;
   Suppression *supp0 = SuppressionParse(
     "  	# first line comment\n"  // NOLINT
-    " 	bar 	\n"  // NOLINT
-    "baz* *baz\n"
+    " 	race:bar 	\n"  // NOLINT
+    "race:baz* *baz\n"
     "# a comment\n"
     "# last line comment\n"
   );  // NOLINT
   Suppression *supp = supp0;
+  EXPECT_EQ(supp->type, SuppressionRace);
   EXPECT_EQ(0, strcmp(supp->func, "baz* *baz"));
   supp = supp->next;
+  EXPECT_EQ(supp->type, SuppressionRace);
   EXPECT_EQ(0, strcmp(supp->func, "bar"));
   supp = supp->next;
   EXPECT_EQ((Suppression*)0, supp);
@@ -62,12 +68,39 @@ TEST(Suppressions, Parse3) {
   ScopedInRtl in_rtl;
   Suppression *supp0 = SuppressionParse(
     "# last suppression w/o line-feed\n"
-    "foo\n"
-    "bar"
+    "race:foo\n"
+    "race:bar"
   );  // NOLINT
   Suppression *supp = supp0;
+  EXPECT_EQ(supp->type, SuppressionRace);
   EXPECT_EQ(0, strcmp(supp->func, "bar"));
   supp = supp->next;
+  EXPECT_EQ(supp->type, SuppressionRace);
+  EXPECT_EQ(0, strcmp(supp->func, "foo"));
+  supp = supp->next;
+  EXPECT_EQ((Suppression*)0, supp);
+  SuppressionFree(supp0);
+}
+
+TEST(Suppressions, ParseType) {
+  ScopedInRtl in_rtl;
+  Suppression *supp0 = SuppressionParse(
+    "race:foo\n"
+    "thread:bar\n"
+    "mutex:baz\n"
+    "signal:quz\n"
+  );  // NOLINT
+  Suppression *supp = supp0;
+  EXPECT_EQ(supp->type, SuppressionSignal);
+  EXPECT_EQ(0, strcmp(supp->func, "quz"));
+  supp = supp->next;
+  EXPECT_EQ(supp->type, SuppressionMutex);
+  EXPECT_EQ(0, strcmp(supp->func, "baz"));
+  supp = supp->next;
+  EXPECT_EQ(supp->type, SuppressionThread);
+  EXPECT_EQ(0, strcmp(supp->func, "bar"));
+  supp = supp->next;
+  EXPECT_EQ(supp->type, SuppressionRace);
   EXPECT_EQ(0, strcmp(supp->func, "foo"));
   supp = supp->next;
   EXPECT_EQ((Suppression*)0, supp);
