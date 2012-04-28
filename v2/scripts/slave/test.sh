@@ -12,7 +12,7 @@ make clean
 make DEBUG=1 CC=clang CXX=clang++
 
 echo @@@BUILD_STEP TEST DEBUG-CLANG@@@
-./tests/tsan_test
+./rtl_tests/tsan_test
 
 echo @@@BUILD_STEP BUILD STATS/OUTPUT@@@
 make clean
