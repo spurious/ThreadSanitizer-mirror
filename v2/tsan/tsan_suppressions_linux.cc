@@ -120,7 +120,7 @@ void SuppressionFree(Suppression *supp) {
     supp = tmp->next;
     internal_free(tmp->func);
     internal_free(tmp);
-  }  
+  }
 }
 
 void InitializeSuppressions() {

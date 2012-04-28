@@ -40,7 +40,7 @@ struct Flags {
   // Suppressions filename.
   const char *suppressions;
   // Override exit status if something was reported.
-  int exit_status;
+  int exitcode;
   // Log fileno (1 - stdout, 2 - stderr).
   int log_fileno;
   // Sleep in main thread before exiting for that many ms

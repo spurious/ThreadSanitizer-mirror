@@ -140,7 +140,7 @@ int Finalize(ThreadState *thr) {
   FinalizeSuppressions();
   FinalizePlatform();
 
-  const int exit_status = failed ? flags()->exit_status : 0;
+  const int exitcode = failed ? flags()->exitcode : 0;
   const int log_fileno = flags()->log_fileno;
   __tsan::ctx->~Context();
   __tsan::ctx = 0;
@@ -162,7 +162,7 @@ int Finalize(ThreadState *thr) {
     internal_write(log_fileno, tmp, internal_strlen(tmp));
   }
 
-  return exit_status;
+  return exitcode;
 }
 
 static void TraceSwitch(ThreadState *thr) {

@@ -52,21 +52,21 @@ TEST(Flags, ParseInt) {
   ScopedInRtl in_rtl;
   Flags f = {};
 
-  f.exit_status = -11;
-  InitializeFlags(&f, "exit_status");
-  EXPECT_EQ(f.exit_status, 0);
+  f.exitcode = -11;
+  InitializeFlags(&f, "exitcode");
+  EXPECT_EQ(f.exitcode, 0);
 
-  f.exit_status = -11;
-  InitializeFlags(&f, "--exit_status=");
-  EXPECT_EQ(f.exit_status, 0);
+  f.exitcode = -11;
+  InitializeFlags(&f, "--exitcode=");
+  EXPECT_EQ(f.exitcode, 0);
 
-  f.exit_status = -11;
-  InitializeFlags(&f, "--exit_status=42");
-  EXPECT_EQ(f.exit_status, 42);
+  f.exitcode = -11;
+  InitializeFlags(&f, "--exitcode=42");
+  EXPECT_EQ(f.exitcode, 42);
 
-  f.exit_status = -11;
-  InitializeFlags(&f, "--exit_status=-42");
-  EXPECT_EQ(f.exit_status, -42);
+  f.exitcode = -11;
+  InitializeFlags(&f, "--exitcode=-42");
+  EXPECT_EQ(f.exitcode, -42);
 }
 
 TEST(Flags, ParseStr) {
