@@ -23,21 +23,21 @@ make clean
 make DEBUG=1 CC=clang CXX=clang++ CFLAGS=-DTSAN_SHADOW_COUNT=4
 
 echo @@@BUILD_STEP TEST SHADOW_COUNT=4@@@
-./tests/tsan_test
+./rtl_tests/tsan_test
 
 echo @@@BUILD_STEP BUILD SHADOW_COUNT=2@@@
 make clean
 make DEBUG=1 CC=clang CXX=clang++ CFLAGS=-DTSAN_SHADOW_COUNT=2
 
 echo @@@BUILD_STEP TEST SHADOW_COUNT=2@@@
-./tests/tsan_test
+./rtl_tests/tsan_test
 
 echo @@@BUILD_STEP BUILD RELEASE-GCC@@@
 make clean
 make DEBUG=0 CC=gcc CXX=g++
 
 echo @@@BUILD_STEP TEST RELEASE-GCC@@@
-./tests/tsan_test
+./rtl_tests/tsan_test
 
 echo @@@BUILD_STEP OUTPUT TESTS@@@
 (cd output_tests && ./test_output.sh)
