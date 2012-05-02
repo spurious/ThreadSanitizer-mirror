@@ -27,9 +27,9 @@ RTL_LINT_FITLER=-legal/copyright,-build/include,-readability/casting,-build/head
 
 lint: lint_tsan lint_tests
 lint_tsan:
-	third_party/cpplint/cpplint.py --filter=$(RTL_LINT_FITLER) tsan/*.{cc,h} 2>&1 | grep -v "Done processing"
+	third_party/cpplint/cpplint.py --filter=$(RTL_LINT_FITLER) tsan/*.{cc,h}
 lint_tests:
-	third_party/cpplint/cpplint.py --filter=$(RTL_LINT_FITLER) rtl_tests/*.{cc,h} 2>&1 | grep -v "Done processing"
+	third_party/cpplint/cpplint.py --filter=$(RTL_LINT_FITLER) rtl_tests/*.{cc,h}
 
 install_deps:
 	svn co  http://llvm.org/svn/llvm-project/compiler-rt/trunk/lib/asan/interception

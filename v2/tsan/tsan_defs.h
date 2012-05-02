@@ -110,11 +110,11 @@ void build_consistency_stats();
 void build_consistency_nostats();
 #endif
 
-#if TSAN_SHADOW_COUNT==1
+#if TSAN_SHADOW_COUNT == 1
 void build_consistency_shadow1();
-#elif TSAN_SHADOW_COUNT==2
+#elif TSAN_SHADOW_COUNT == 2
 void build_consistency_shadow2();
-#elif TSAN_SHADOW_COUNT==4
+#elif TSAN_SHADOW_COUNT == 4
 void build_consistency_shadow4();
 #else
 void build_consistency_shadow8();
@@ -131,11 +131,11 @@ static inline void USED build_consistency() {
 #else
   void(*volatile stats)() = &build_consistency_nostats;
 #endif
-#if TSAN_SHADOW_COUNT==1
+#if TSAN_SHADOW_COUNT == 1
   void(*volatile shadow)() = &build_consistency_shadow1;
-#elif TSAN_SHADOW_COUNT==2
+#elif TSAN_SHADOW_COUNT == 2
   void(*volatile shadow)() = &build_consistency_shadow2;
-#elif TSAN_SHADOW_COUNT==4
+#elif TSAN_SHADOW_COUNT == 4
   void(*volatile shadow)() = &build_consistency_shadow4;
 #else
   void(*volatile shadow)() = &build_consistency_shadow8;
