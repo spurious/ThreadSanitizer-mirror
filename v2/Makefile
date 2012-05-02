@@ -40,6 +40,10 @@ install_deps:
 	svn co -r82 http://google-styleguide.googlecode.com/svn/trunk/cpplint cpplint \
         )
 
+# Remove verbose printf from lint. Not strictly necessary.
+hack_cpplint:
+	sed -i "s/  sys.stderr.write('Done processing.*//g" third_party/cpplint/cpplint.py
+
 clean:
 	rm -f asm_*.s libtsan.nm libtsan.objdump
 	$(MAKE) clean -C tsan
