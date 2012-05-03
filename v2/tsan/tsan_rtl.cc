@@ -224,77 +224,6 @@ static inline bool HappensBefore(Shadow old, ThreadState *thr) {
 }
 
 ALWAYS_INLINE
-static bool UpdateOneShadowWord(ThreadState *thr,
-                                Shadow cur, u64 *shadow_mem, unsigned i,
-                                u64 &store_word,
-                                int kAccessSizeLog, int kAccessIsWrite) {
-  StatInc(thr, StatShadowProcessed);
-  const unsigned kAccessSize = 1 << kAccessSizeLog;
-  unsigned off = cur.ComputeSearchOffset();
-  u64 *sp = &shadow_mem[(i + off) % kShadowCnt];
-  Shadow old = LoadShadow(sp);
-  if (old.IsZero()) {
-    StatInc(thr, StatShadowZero);
-    if (store_word)
-      StoreIfNotYetStored(sp, &store_word);
-    // The above StoreIfNotYetStored could be done unconditionally
-    // and it even shows 4% gain on synthetic benchmarks (r4307).
-    return false;
-  }
-  // is the memory access equal to the previous?
-  if (Shadow::Addr0AndSizeAreEqual(cur, old)) {
-    StatInc(thr, StatShadowSameSize);
-    // same thread?
-    if (Shadow::TidsAreEqual(old, cur)) {
-      StatInc(thr, StatShadowSameThread);
-      if (OldIsInSameSynchEpoch(old, thr)) {
-        if (OldIsRWStronger(old, kAccessIsWrite)) {
-          // found a slot that holds effectively the same info
-          // (that is, same tid, same sync epoch and same size)
-          StatInc(thr, StatMopSame);
-          return true;
-        }
-        StoreIfNotYetStored(sp, &store_word);
-        return false;
-      }
-      if (OldIsRWWeaker(old, kAccessIsWrite))
-        StoreIfNotYetStored(sp, &store_word);
-      return false;
-    }
-    StatInc(thr, StatShadowAnotherThread);
-    if (HappensBefore(old, thr)) {
-      StoreIfNotYetStored(sp, &store_word);
-      return false;
-    }
-    if (BothReads(old, kAccessIsWrite))
-      return false;
-    HandleRace(thr, shadow_mem, cur, old);
-    return true;
-  }
-
-  // Do the memory access intersect?
-  if (Shadow::TwoRangesIntersect(old, cur, kAccessSize)) {
-    StatInc(thr, StatShadowIntersect);
-    if (Shadow::TidsAreEqual(old, cur)) {
-      StatInc(thr, StatShadowSameThread);
-      return false;
-    }
-    StatInc(thr, StatShadowAnotherThread);
-    if (HappensBefore(old, thr))
-      return false;
-
-    if (BothReads(old, kAccessIsWrite))
-      return false;
-
-    HandleRace(thr, shadow_mem, cur, old);
-    return true;
-  }
-  // The accesses do not intersect.
-  StatInc(thr, StatShadowNotIntersect);
-  return false;
-}
-
-ALWAYS_INLINE
 void MemoryAccessImpl(ThreadState *thr, uptr addr,
     int kAccessSizeLog, bool kAccessIsWrite, FastState fast_state,
     u64 *shadow_mem, Shadow cur) {
@@ -316,42 +245,56 @@ void MemoryAccessImpl(ThreadState *thr, uptr addr,
   // 'candidates' with 'same' or 'replace', but I think
   // it's just not worth it (performance- and complexity-wise).
 
-#define MEM_ACCESS_ITER(i) \
-    if (UpdateOneShadowWord(thr, cur, shadow_mem, i, store_word, \
-        kAccessSizeLog, kAccessIsWrite)) \
-      return;
+  Shadow old(0);
   if (kShadowCnt == 1) {
-    MEM_ACCESS_ITER(0);
+    int idx = 0;
+#include "tsan_update_shadow_word_inl.h"
   } else if (kShadowCnt == 2) {
-    MEM_ACCESS_ITER(0);
-    MEM_ACCESS_ITER(1);
+    int idx = 0;
+#include "tsan_update_shadow_word_inl.h"
+    idx = 1;
+#include "tsan_update_shadow_word_inl.h"
   } else if (kShadowCnt == 4) {
-    MEM_ACCESS_ITER(0);
-    MEM_ACCESS_ITER(1);
-    MEM_ACCESS_ITER(2);
-    MEM_ACCESS_ITER(3);
+    int idx = 0;
+#include "tsan_update_shadow_word_inl.h"
+    idx = 1;
+#include "tsan_update_shadow_word_inl.h"
+    idx = 2;
+#include "tsan_update_shadow_word_inl.h"
+    idx = 3;
+#include "tsan_update_shadow_word_inl.h"
   } else if (kShadowCnt == 8) {
-    MEM_ACCESS_ITER(0);
-    MEM_ACCESS_ITER(1);
-    MEM_ACCESS_ITER(2);
-    MEM_ACCESS_ITER(3);
-    MEM_ACCESS_ITER(4);
-    MEM_ACCESS_ITER(5);
-    MEM_ACCESS_ITER(6);
-    MEM_ACCESS_ITER(7);
+    int idx = 0;
+#include "tsan_update_shadow_word_inl.h"
+    idx = 1;
+#include "tsan_update_shadow_word_inl.h"
+    idx = 2;
+#include "tsan_update_shadow_word_inl.h"
+    idx = 3;
+#include "tsan_update_shadow_word_inl.h"
+    idx = 4;
+#include "tsan_update_shadow_word_inl.h"
+    idx = 5;
+#include "tsan_update_shadow_word_inl.h"
+    idx = 6;
+#include "tsan_update_shadow_word_inl.h"
+    idx = 7;
+#include "tsan_update_shadow_word_inl.h"
   } else {
     CHECK(false);
   }
-#undef MEM_ACCESS_ITER
 
   // we did not find any races and had already stored
   // the current access info, so we are done
   if (LIKELY(store_word == 0))
     return;
   // choose a random candidate slot and replace it
-  unsigned i = cur.epoch() % kShadowCnt;
-  StoreShadow(shadow_mem+i, store_word);
+  StoreShadow(shadow_mem + (cur.epoch() % kShadowCnt), store_word);
   StatInc(thr, StatShadowReplace);
+  return;
+ RACE:
+  HandleRace(thr, shadow_mem, cur, old);
+  return;
 }
 
 ALWAYS_INLINE
