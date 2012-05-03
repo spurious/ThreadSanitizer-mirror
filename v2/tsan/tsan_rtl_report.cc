@@ -9,7 +9,6 @@
 //
 // This file is a part of ThreadSanitizer (TSan), a race detector.
 //
-// Main file (entry points) for the TSan run-time.
 //===----------------------------------------------------------------------===//
 
 #include "tsan_platform.h"
