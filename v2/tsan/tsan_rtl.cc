@@ -220,6 +220,10 @@ static inline bool OldIsRWWeaker(Shadow old, int kAccessIsWrite) {
   return !old.is_write() || kAccessIsWrite;
 }
 
+static inline bool HappensBefore(Shadow old, ThreadState *thr) {
+  return thr->clock.get(old.tid()) >= old.epoch();
+}
+
 ALWAYS_INLINE
 static bool UpdateOneShadowWord(ThreadState *thr,
                                 Shadow cur, u64 *shadow_mem, unsigned i,
@@ -259,8 +263,7 @@ static bool UpdateOneShadowWord(ThreadState *thr,
       return false;
     }
     StatInc(thr, StatShadowAnotherThread);
-    // happens before?
-    if (thr->clock.get(old.tid()) >= old.epoch()) {
+    if (HappensBefore(old, thr)) {
       StoreIfNotYetStored(sp, &store_word);
       return false;
     }
@@ -278,8 +281,7 @@ static bool UpdateOneShadowWord(ThreadState *thr,
       return false;
     }
     StatInc(thr, StatShadowAnotherThread);
-    // happens before?
-    if (thr->clock.get(old.tid()) >= old.epoch())
+    if (HappensBefore(old, thr))
       return false;
 
     if (BothReads(old, kAccessIsWrite))
