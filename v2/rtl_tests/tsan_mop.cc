@@ -74,6 +74,7 @@ TEST(ThreadSanitizer, WriteThenLockedRead) {
     ScopedThread t1, t2;
 
     t1.Write8(l);
+
     t1.Lock(m);
     t1.Read8(l);
     t1.Unlock(m);
@@ -82,6 +83,26 @@ TEST(ThreadSanitizer, WriteThenLockedRead) {
   }
   t0.Destroy(m);
 }
+
+TEST(ThreadSanitizer, LockedWriteThenRead) {
+  Mutex m(Mutex::RW);
+  MainThread t0;
+  t0.Create(m);
+  MemLoc l;
+  {
+    ScopedThread t1, t2;
+
+    t1.Lock(m);
+    t1.Write8(l);
+    t1.Unlock(m);
+
+    t1.Read8(l);
+
+    t2.Read8(l, true);
+  }
+  t0.Destroy(m);
+}
+
 
 TEST(ThreadSanitizer, RaceWithOffset) {
   ScopedThread t1, t2;
