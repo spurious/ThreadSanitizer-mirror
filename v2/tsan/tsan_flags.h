@@ -21,10 +21,10 @@ namespace __tsan {
 struct Flags {
   // Enable dynamic annotations, otherwise they are no-ops.
   bool enable_annotations;
-  // Supress a race reports if we've already output another race report
-  // with the same stacks.
+  // Supress a race report if we've already output another race report
+  // with the same stack.
   bool suppress_equal_stacks;
-  // Supress a race reports if we've already output another race report
+  // Supress a race report if we've already output another race report
   // on the same address.
   bool suppress_equal_addresses;
   // Report thread leaks at exit?
@@ -32,8 +32,8 @@ struct Flags {
   // Report violations of async signal-safety
   // (e.g. malloc() call from a signal handler).
   bool report_signal_unsafe;
-  // If set, all atomics are effectively sequentially consistent (seq_sct)
-  // regardless of what a user actually specified.
+  // If set, all atomics are effectively sequentially consistent (seq_cst),
+  // regardless of what user actually specified.
   bool force_seq_cst_atomics;
   // Strip that prefix from file paths in reports.
   const char *strip_path_prefix;
@@ -55,4 +55,4 @@ void InitializeFlags(Flags *flags, const char *env);
 void FinalizeFlags(Flags *flags);
 }
 
-#endif  // #ifndef TSAN_FLAGS_H
+#endif  // TSAN_FLAGS_H
