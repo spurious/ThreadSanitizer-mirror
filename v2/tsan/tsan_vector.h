@@ -58,9 +58,10 @@ class Vector {
     return begin_[i];
   }
 
-  void PushBack(T v) {
+  T *PushBack(T v = T()) {
     EnsureSize(Size() + 1);
     end_[-1] = v;
+    return &end_[-1];
   }
 
   void Resize(uptr size) {

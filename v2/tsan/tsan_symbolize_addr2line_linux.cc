@@ -90,7 +90,7 @@ static uptr GetImageBase() {
   return base;
 }
 
-ReportStack *SymbolizeCode(RegionAlloc *alloc, uptr addr) {
+ReportStack *SymbolizeCode(uptr addr) {
   uptr base = GetImageBase();
   uptr offset = addr - base;
   int infd = -1;
@@ -110,20 +110,22 @@ ReportStack *SymbolizeCode(RegionAlloc *alloc, uptr addr) {
     Die();
   }
   func.Ptr()[len] = 0;
-  ReportStack *res = alloc->Alloc<ReportStack>(1);
+  ReportStack *res = (ReportStack*)internal_alloc(MBlockReportStack,
+                                                  sizeof(ReportStack));
   internal_memset(res, 0, sizeof(*res));
-  res->module = alloc->Strdup("exe");
+  res->module = (char*)internal_alloc(MBlockReportStack, 4);
+  internal_memcpy(res->module, "exe", 4);
   res->offset = offset;
   res->pc = addr;
 
   char *pos = strchr(func, '\n');
   if (pos && func[0] != '?') {
-    res->func = alloc->Alloc<char>(pos - func + 1);
+    res->func = (char*)internal_alloc(MBlockReportStack, pos - func + 1);
     internal_memcpy(res->func, func, pos - func);
     res->func[pos - func] = 0;
     char *pos2 = strchr(pos, ':');
     if (pos2) {
-      res->file = alloc->Alloc<char>(pos2 - pos - 1 + 1);
+      res->file = (char*)internal_alloc(MBlockReportStack, pos2 - pos - 1 + 1);
       internal_memcpy(res->file, pos + 1, pos2 - pos - 1);
       res->file[pos2 - pos - 1] = 0;
       res->line = atoi(pos2 + 1);
@@ -132,7 +134,7 @@ ReportStack *SymbolizeCode(RegionAlloc *alloc, uptr addr) {
   return res;
 }
 
-int SymbolizeData(RegionAlloc *alloc, uptr addr, Symbol *symb) {
+ReportStack *SymbolizeData(uptr addr) {
   return 0;
   /*
   if (base == 0)

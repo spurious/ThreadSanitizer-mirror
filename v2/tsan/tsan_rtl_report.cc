@@ -19,6 +19,7 @@
 #include "tsan_sync.h"
 #include "tsan_mman.h"
 #include "tsan_flags.h"
+#include "tsan_placement_new.h"
 
 namespace __tsan {
 
@@ -28,13 +29,143 @@ bool WEAK OnReport(const ReportDesc *rep, bool suppressed) {
   return suppressed;
 }
 
-ReportDesc *GetGlobalReport() {
-  static ReportDesc report;
-  return &report;
+static void StackStripMain(ReportStack *stack) {
+  ReportStack *last_frame = 0;
+  ReportStack *last_frame2 = 0;
+  const char *prefix = "interception_wrap_";
+  uptr prefix_len = internal_strlen(prefix);
+  const char *path_prefix = flags()->strip_path_prefix;
+  uptr path_prefix_len = internal_strlen(path_prefix);
+  for (ReportStack *ent = stack; ent; ent = ent->next) {
+    if (ent->func && 0 == internal_strncmp(ent->func, prefix, prefix_len))
+      ent->func += prefix_len;
+    if (ent->file && 0 == internal_strncmp(ent->file, path_prefix,
+                                           path_prefix_len))
+      ent->file += path_prefix_len;
+    if (ent->file && ent->file[0] == '.' && ent->file[1] == '/')
+      ent->file += 2;
+    last_frame2 = last_frame;
+    last_frame = ent;
+  }
+
+  if (last_frame2 == 0)
+    return;
+  const char *last = last_frame->func;
+  const char *last2 = last_frame2->func;
+  // Strip frame above 'main'
+  if (last2 && 0 == internal_strcmp(last2, "main")) {
+    last_frame2->next = 0;
+  // Strip our internal thread start routine.
+  } else if (last && 0 == internal_strcmp(last, "__tsan_thread_start_func")) {
+    last_frame2->next = 0;
+  // Strip global ctors init.
+  } else if (last && 0 == internal_strcmp(last, "__do_global_ctors_aux")) {
+    last_frame2->next = 0;
+  // If both are 0, then we probably just failed to symbolize.
+  } else if (last || last2) {
+    // Ensure that we recovered stack completely. Trimmed stack
+    // can actually happen if we do not instrument some code,
+    // so it's only a DCHECK. However we must try hard to not miss it
+    // due to our fault.
+    Printf("Bottom stack frame of stack %lx is missed\n", stack->pc);
+  }
 }
 
-static void RestoreStack(ThreadState *thr, int tid,
-                        const u64 epoch, StackTrace *stk) {
+static ReportStack *SymbolizeStack(const StackTrace& trace) {
+  if (trace.IsEmpty())
+    return 0;
+  ReportStack *stack = 0;
+  for (uptr si = 0; si < trace.Size(); si++) {
+    // We obtain the return address, that is, address of the next instruction,
+    // so offset it by 1 byte.
+    bool is_last = (si == trace.Size() - 1);
+    ReportStack *ent = SymbolizeCode(trace.Get(si) - !is_last);
+    CHECK_NE(ent, 0);
+    ReportStack *last = ent;
+    while (last->next) {
+      last->pc += !is_last;
+      last = last->next;
+    }
+    last->pc += !is_last;
+    last->next = stack;
+    stack = ent;
+  }
+  StackStripMain(stack);
+  return stack;
+}
+
+ScopedReport::ScopedReport(ReportType typ) {
+  ctx_ = CTX();
+  void *mem = internal_alloc(MBlockReport, sizeof(ReportDesc));
+  rep_ = new(mem) ReportDesc;
+  rep_->typ = typ;
+  ctx_->report_mtx.Lock();
+}
+
+ScopedReport::~ScopedReport() {
+  ctx_->report_mtx.Unlock();
+  rep_->~ReportDesc();
+  internal_free(rep_);
+}
+
+void ScopedReport::AddStack(const StackTrace *stack) {
+  ReportStack **rs = rep_->stacks.PushBack();
+  *rs = SymbolizeStack(*stack);
+}
+
+void ScopedReport::AddMemoryAccess(uptr addr, Shadow s,
+                                   const StackTrace *stack) {
+  void *mem = internal_alloc(MBlockReportMop, sizeof(ReportMop));
+  ReportMop *mop = new(mem) ReportMop;
+  rep_->mops.PushBack(mop);
+  mop->tid = s.tid();
+  mop->addr = addr + s.addr0();
+  mop->size = s.size();
+  mop->write = s.is_write();
+  mop->nmutex = 0;
+  mop->stack = SymbolizeStack(*stack);
+}
+
+void ScopedReport::AddThread(const ThreadContext *tctx) {
+  void *mem = internal_alloc(MBlockReportThread, sizeof(ReportThread));
+  ReportThread *rt = new(mem) ReportThread();
+  rep_->threads.PushBack(rt);
+  rt->id = tctx->tid;
+  rt->running = (tctx->status == ThreadStatusRunning);
+  rt->stack = SymbolizeStack(tctx->creation_stack);
+}
+
+void ScopedReport::AddMutex(const SyncVar *s) {
+  void *mem = internal_alloc(MBlockReportMutex, sizeof(ReportMutex));
+  ReportMutex *rm = new(mem) ReportMutex();
+  rep_->mutexes.PushBack(rm);
+  rm->id = 42;
+  rm->stack = SymbolizeStack(s->creation_stack);
+}
+
+void ScopedReport::AddLocation(uptr addr, uptr size) {
+  ReportStack *symb = SymbolizeData(addr);
+  if (symb) {
+    void *mem = internal_alloc(MBlockReportLoc, sizeof(ReportLocation));
+    ReportLocation *loc = new(mem) ReportLocation();
+    rep_->locs.PushBack(loc);
+    loc->type = ReportLocationGlobal;
+    loc->addr = addr;
+    loc->size = size;
+    loc->tid = 0;
+    loc->name = symb->func;
+    loc->file = symb->file;
+    loc->line = symb->line;
+    loc->stack = 0;
+    internal_free(symb);
+  }
+}
+
+const ReportDesc *ScopedReport::GetReport() const {
+  return rep_;
+}
+
+static void RestoreStack(int tid, const u64 epoch, StackTrace *stk) {
   ThreadContext *tctx = CTX()->threads[tid];
   if (tctx == 0)
     return;
@@ -84,72 +215,7 @@ static void RestoreStack(ThreadState *thr, int tid,
   if (pos == 0 && stack[0] == 0)
     return;
   pos++;
-  stk->Init(thr, stack, pos);
-}
-
-static void StackStripMain(ReportStack *stack) {
-  ReportStack *last_frame = 0;
-  ReportStack *last_frame2 = 0;
-  const char *prefix = "interception_wrap_";
-  uptr prefix_len = internal_strlen(prefix);
-  const char *path_prefix = flags()->strip_path_prefix;
-  uptr path_prefix_len = internal_strlen(path_prefix);
-  for (ReportStack *ent = stack; ent; ent = ent->next) {
-    if (ent->func && 0 == internal_strncmp(ent->func, prefix, prefix_len))
-      ent->func += prefix_len;
-    if (ent->file && 0 == internal_strncmp(ent->file, path_prefix,
-                                           path_prefix_len))
-      ent->file += path_prefix_len;
-    if (ent->file && ent->file[0] == '.' && ent->file[1] == '/')
-      ent->file += 2;
-    last_frame2 = last_frame;
-    last_frame = ent;
-  }
-
-  if (last_frame2 == 0)
-    return;
-  const char *last = last_frame->func;
-  const char *last2 = last_frame2->func;
-  // Strip frame above 'main'
-  if (last2 && 0 == internal_strcmp(last2, "main")) {
-    last_frame2->next = 0;
-  // Strip our internal thread start routine.
-  } else if (last && 0 == internal_strcmp(last, "__tsan_thread_start_func")) {
-    last_frame2->next = 0;
-  // Strip global ctors init.
-  } else if (last && 0 == internal_strcmp(last, "__do_global_ctors_aux")) {
-    last_frame2->next = 0;
-  // If both are 0, then we probably just failed to symbolize.
-  } else if (last || last2) {
-    // Ensure that we recovered stack completely. Trimmed stack
-    // can actually happen if we do not instrument some code,
-    // so it's only a DCHECK. However we must try hard to not miss it
-    // due to our fault.
-    Printf("Bottom stack frame of stack %lx is missed\n", stack->pc);
-  }
-}
-
-ReportStack *SymbolizeStack(RegionAlloc *alloc, const StackTrace& trace) {
-  if (trace.IsEmpty())
-    return 0;
-  ReportStack *stack = 0;
-  for (uptr si = 0; si < trace.Size(); si++) {
-    // We obtain the return address, that is, address of the next instruction,
-    // so offset it by 1 byte.
-    bool is_last = (si == trace.Size() - 1);
-    ReportStack *ent = SymbolizeCode(alloc, trace.Get(si) - !is_last);
-    CHECK_NE(ent, 0);
-    ReportStack *last = ent;
-    while (last->next) {
-      last->pc += !is_last;
-      last = last->next;
-    }
-    last->pc += !is_last;
-    last->next = stack;
-    stack = ent;
-  }
-  StackStripMain(stack);
-  return stack;
+  stk->Init(stack, pos);
 }
 
 static bool HandleRacyStacks(ThreadState *thr, const StackTrace (&traces)[2],
@@ -207,7 +273,8 @@ static void AddRacyStacks(ThreadState *thr, const StackTrace (&traces)[2],
   }
 }
 
-bool OutputReport(ReportDesc *rep, ReportStack *suppress_stack) {
+bool OutputReport(const ScopedReport &srep, ReportStack *suppress_stack) {
+  const ReportDesc *rep = srep.GetReport();
   bool suppressed = IsSuppressed(rep->typ, suppress_stack);
   suppressed = OnReport(rep, suppressed);
   if (suppressed)
@@ -220,76 +287,51 @@ bool OutputReport(ReportDesc *rep, ReportStack *suppress_stack) {
 void ReportRace(ThreadState *thr) {
   ScopedInRtl in_rtl;
   uptr addr = ShadowToMem((uptr)thr->racy_shadow_addr);
+  uptr addr_min = 0;
+  uptr addr_max = 0;
   {
     uptr a0 = addr + Shadow(thr->racy_state[0]).addr0();
     uptr a1 = addr + Shadow(thr->racy_state[1]).addr0();
     uptr e0 = a0 + Shadow(thr->racy_state[0]).size();
     uptr e1 = a1 + Shadow(thr->racy_state[1]).size();
-    uptr minaddr = min(a0, a1);
-    uptr maxaddr = max(e0, e1);
-    if (IsExpectedReport(minaddr, maxaddr - minaddr))
+    addr_min = min(a0, a1);
+    addr_max = max(e0, e1);
+    if (IsExpectedReport(addr_min, addr_max - addr_min))
       return;
   }
 
-  Lock l0(&CTX()->thread_mtx);
-  Lock l1(&CTX()->report_mtx);
+  Context *ctx = CTX();
+  Lock l0(&ctx->thread_mtx);
 
-  ReportDesc &rep = *GetGlobalReport();
-  RegionAlloc alloc(rep.alloc, sizeof(rep.alloc));
-  rep.typ = ReportTypeRace;
-  rep.nmop = 2;
-  if (thr->racy_state[1] == kShadowFreed)
-    rep.nmop = 1;
-  rep.mop = alloc.Alloc<ReportMop>(rep.nmop);
+  ScopedReport rep(ReportTypeRace);
+  const uptr nmop = thr->racy_state[1] == kShadowFreed ? 1 : 2;
+
   StackTrace traces[2];
-  uptr addr_min = (uptr)-1;
-  uptr addr_max = 0;
-  for (int i = 0; i < rep.nmop; i++) {
+  for (uptr i = 0; i < nmop; i++) {
     Shadow s(thr->racy_state[i]);
-    ReportMop *mop = &rep.mop[i];
-    mop->tid = s.tid();
-    mop->addr = addr + s.addr0();
-    mop->size = s.size();
-    mop->write = s.is_write();
-    mop->nmutex = 0;
-    RestoreStack(thr, s.tid(), s.epoch(), &traces[i]);
-    // Ensure that we have at least something for the current thread.
-    CHECK(i != 0 || !traces[i].IsEmpty());
-    if (addr_min > mop->addr)
-      addr_min = mop->addr;
-    if (addr_max < mop->addr + mop->size)
-      addr_max = mop->addr + mop->size;
+    RestoreStack(s.tid(), s.epoch(), &traces[i]);
   }
 
   if (HandleRacyStacks(thr, traces, addr_min, addr_max))
     return;
 
-  for (int i = 0; i < rep.nmop; i++) {
-    ReportMop *mop = &rep.mop[i];
-    mop->stack = SymbolizeStack(&alloc, traces[i]);
+  for (uptr i = 0; i < nmop; i++) {
+    Shadow s(thr->racy_state[i]);
+    rep.AddMemoryAccess(addr, s, &traces[i]);
   }
-  rep.loc = 0;
-  rep.nthread = 2;
-  rep.thread = alloc.Alloc<ReportThread>(rep.nthread);
-  for (int i = 0; i < rep.nthread; i++) {
+
+  // Ensure that we have at least something for the current thread.
+  CHECK_EQ(traces[0].IsEmpty(), false);
+
+  for (uptr i = 0; i < nmop; i++) {
     FastState s(thr->racy_state[i]);
-    ReportThread *rt = &rep.thread[i];
-    rt->id = s.tid();
-    rt->running = false;
-    rt->name = 0;
-    rt->stack = 0;
-    if (thr->racy_state[i] == kShadowFreed)
-      continue;
-    ThreadContext *tctx = CTX()->threads[s.tid()];
-    CHECK_NE(tctx, (ThreadContext*)0);
+    ThreadContext *tctx = ctx->threads[s.tid()];
     if (s.epoch() < tctx->epoch0 || s.epoch() > tctx->epoch1)
       continue;
-    rt->running = (tctx->status == ThreadStatusRunning);
-    rt->stack = SymbolizeStack(&alloc, tctx->creation_stack);
+    rep.AddThread(tctx);
   }
-  rep.nmutex = 0;
 
-  if (!OutputReport(&rep, rep.mop[0].stack))
+  if (!OutputReport(rep, rep.GetReport()->mops[0]->stack))
     return;
 
   AddRacyStacks(thr, traces, addr_min, addr_max);

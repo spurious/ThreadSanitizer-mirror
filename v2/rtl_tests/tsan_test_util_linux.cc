@@ -29,7 +29,9 @@
 
 using namespace __tsan;  // NOLINT
 
-static __thread const ReportDesc *g_report = 0;
+static __thread bool expect_report;
+static __thread bool expect_report_reported;
+static __thread ReportType expect_report_type;
 
 static void *BeforeInitThread(void *param) {
   (void)param;
@@ -53,15 +55,20 @@ void TestMutexBeforeInit() {
 
 namespace __tsan {
 bool OnReport(const ReportDesc *rep, bool suppressed) {
-  g_report = rep;
+  if (expect_report) {
+    if (rep->typ != expect_report_type) {
+      printf("Expected report of type %d, got type %d\n",
+             (int)expect_report_type, (int)rep->typ);
+      EXPECT_FALSE("Wrong report type");
+      return false;
+    }
+  } else {
+    EXPECT_FALSE("Unexpected report");
+    return false;
+  }
+  expect_report_reported = true;
   return true;
 }
-}
-
-bool CheckLastReport() {
-  const ReportDesc *rep = g_report;
-  g_report = 0;
-  return rep != 0;
 }
 
 static void* allocate_addr(int size, int offset_from_aligned = 0) {
@@ -196,7 +203,7 @@ struct Event {
   uptr arg2;
   bool res;
   bool expect_report;
-  __tsan::ReportType report_type;
+  ReportType report_type;
 
   Event(Type type, const void *ptr = 0, uptr arg = 0, uptr arg2 = 0)
     : type(type)
@@ -208,7 +215,7 @@ struct Event {
     , report_type() {
   }
 
-  void ExpectReport(__tsan::ReportType type) {
+  void ExpectReport(ReportType type) {
     expect_report = true;
     report_type = type;
   }
@@ -226,7 +233,10 @@ struct ScopedThread::Impl {
 };
 
 void ScopedThread::Impl::HandleEvent(Event *ev) {
-  CHECK_EQ(g_report, 0);
+  CHECK_EQ(expect_report, false);
+  expect_report = ev->expect_report;
+  expect_report_reported = false;
+  expect_report_type = ev->report_type;
   switch (ev->type) {
   case Event::READ:
   case Event::WRITE: {
@@ -295,23 +305,11 @@ void ScopedThread::Impl::HandleEvent(Event *ev) {
     break;
   default: CHECK(0);
   }
-  if (ev->expect_report) {
-    if (g_report == 0) {
-      printf("Missed expected report of type %d\n", (int)ev->report_type);
-      EXPECT_FALSE("Missed expected race");
-    }
-    if (g_report->typ != ev->report_type) {
-      printf("Expected report of type %d, got type %d\n",
-             (int)ev->report_type, (int)g_report->typ);
-      EXPECT_FALSE("Wrong report type");
-    }
-  } else {
-    if (g_report) {
-      __tsan::PrintReport(g_report);
-      EXPECT_FALSE("Unexpected report");
-    }
+  if (expect_report && !expect_report_reported) {
+    printf("Missed expected report of type %d\n", (int)ev->report_type);
+    EXPECT_FALSE("Missed expected race");
   }
-  g_report = 0;
+  expect_report = false;
 }
 
 void *ScopedThread::Impl::ScopedThreadCallback(void *arg) {
@@ -380,7 +378,7 @@ void ScopedThread::Access(void *addr, bool is_write,
                           int size, bool expect_race) {
   Event event(is_write ? Event::WRITE : Event::READ, addr, size);
   if (expect_race)
-    event.ExpectReport(__tsan::ReportTypeRace);
+    event.ExpectReport(ReportTypeRace);
   impl_->send(&event);
 }
 
@@ -389,7 +387,7 @@ void ScopedThread::VptrUpdate(const MemLoc &vptr,
                               bool expect_race) {
   Event event(Event::VPTR_UPDATE, vptr.loc(), (uptr)new_val.loc());
   if (expect_race)
-    event.ExpectReport(__tsan::ReportTypeRace);
+    event.ExpectReport(ReportTypeRace);
   impl_->send(&event);
 }
 
@@ -449,7 +447,7 @@ void ScopedThread::Memcpy(void *dst, const void *src, int size,
                           bool expect_race) {
   Event event(Event::MEMCPY, dst, (uptr)src, size);
   if (expect_race)
-    event.ExpectReport(__tsan::ReportTypeRace);
+    event.ExpectReport(ReportTypeRace);
   impl_->send(&event);
 }
 
@@ -457,6 +455,6 @@ void ScopedThread::Memset(void *dst, int val, int size,
                           bool expect_race) {
   Event event(Event::MEMSET, dst, val, size);
   if (expect_race)
-    event.ExpectReport(__tsan::ReportTypeRace);
+    event.ExpectReport(ReportTypeRace);
   impl_->send(&event);
 }

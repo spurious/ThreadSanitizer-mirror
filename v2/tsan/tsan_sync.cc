@@ -129,7 +129,7 @@ void StackTrace::Reset() {
   }
 }
 
-void StackTrace::Init(ThreadState *thr, const uptr *pcs, uptr cnt) {
+void StackTrace::Init(const uptr *pcs, uptr cnt) {
   Reset();
   if (cnt == 0)
     return;
@@ -152,9 +152,9 @@ void StackTrace::ObtainCurrent(ThreadState *thr, uptr toppc) {
   }
 }
 
-void StackTrace::CopyFrom(ThreadState *thr, const StackTrace& other) {
+void StackTrace::CopyFrom(const StackTrace& other) {
   Reset();
-  Init(thr, other.Begin(), other.Size());
+  Init(other.Begin(), other.Size());
 }
 
 bool StackTrace::IsEmpty() const {

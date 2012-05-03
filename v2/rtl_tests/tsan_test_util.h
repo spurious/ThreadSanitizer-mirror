@@ -119,6 +119,4 @@ class MainThread : public ScopedThread {
   }
 };
 
-bool CheckLastReport();
-
 #endif  // #ifndef TSAN_TEST_UTIL_H

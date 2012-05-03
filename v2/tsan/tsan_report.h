@@ -14,6 +14,7 @@
 #define TSAN_REPORT_H
 
 #include "tsan_defs.h"
+#include "tsan_vector.h"
 
 namespace __tsan {
 
@@ -74,40 +75,25 @@ struct ReportMutex {
   ReportStack *stack;
 };
 
-struct ReportDesc {
+class ReportDesc {
+ public:
   ReportType typ;
-  ReportStack *stack;
-  int nmop;
-  ReportMop *mop;
-  ReportLocation *loc;
-  int nthread;
-  ReportThread *thread;
-  int nmutex;
-  ReportMutex *mutex;
-  char alloc[128*1024];
+  Vector<ReportStack*> stacks;
+  Vector<ReportMop*> mops;
+  Vector<ReportLocation*> locs;
+  Vector<ReportMutex*> mutexes;
+  Vector<ReportThread*> threads;
+
+  ReportDesc();
+  ~ReportDesc();
+
+ private:
+  ReportDesc(const ReportDesc&);
+  void operator = (const ReportDesc&);
 };
 
 // Format and output the report to the console/log. No additional logic.
 void PrintReport(const ReportDesc *rep);
-
-class RegionAlloc {
- public:
-  RegionAlloc(void *mem, uptr size);
-  void *Alloc(uptr size);
-  char *Strdup(const char *str);
-
-  template<typename T>
-  T *Alloc(uptr cnt) {
-    return (T*)this->Alloc(cnt * sizeof(T));
-  }
-
- private:
-  char *mem_;
-  char *end_;
-
-  RegionAlloc(const RegionAlloc&);  // Not implemented.
-  void operator = (const RegionAlloc&);  // Not implemented.
-};
 
 }  // namespace __tsan
 

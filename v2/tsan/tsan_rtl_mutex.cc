@@ -42,37 +42,10 @@ void MutexDestroy(ThreadState *thr, uptr pc, uptr addr) {
     return;
   if (s->owner_tid != SyncVar::kInvalidTid && !s->is_broken) {
     s->is_broken = true;
-
-/*
     ScopedReport rep(ReportTypeMutexDestroyLocked);
     rep.AddMutex(s);
-    rep.AddLocation(s->addr);
-    OutputReport(&rep);
-*/
-
-
-    Lock l(&CTX()->report_mtx);
-    ReportDesc &rep = *GetGlobalReport();
-    internal_memset(&rep, 0, sizeof(rep));
-    RegionAlloc alloc(rep.alloc, sizeof(rep.alloc));
-    rep.typ = ReportTypeMutexDestroyLocked;
-    rep.nmutex = 1;
-    rep.mutex = alloc.Alloc<ReportMutex>(1);
-    rep.mutex->id = 42;
-    rep.mutex->stack = SymbolizeStack(&alloc, s->creation_stack);
-    Symbol symb;
-    if (SymbolizeData(&alloc, s->addr, &symb)) {
-      rep.loc = alloc.Alloc<ReportLocation>(1);
-      rep.loc->type = ReportLocationGlobal;
-      rep.loc->addr = s->addr;
-      rep.loc->size = 1;
-      rep.loc->tid = 0;
-      rep.loc->name = symb.name;
-      rep.loc->file = symb.file;
-      rep.loc->line = symb.line;
-      rep.loc->stack = 0;
-    }
-    OutputReport(&rep);
+    rep.AddLocation(s->addr, 1);
+    OutputReport(rep);
   }
   DestroyAndFree(s);
 }

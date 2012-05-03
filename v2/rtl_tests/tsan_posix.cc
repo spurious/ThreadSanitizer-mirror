@@ -75,9 +75,7 @@ static __thread int local_var;
 
 static void *local_thread(void *p) {
   __tsan_write1(&local_var);
-  EXPECT_FALSE(CheckLastReport());
   __tsan_write1(&p);
-  EXPECT_FALSE(CheckLastReport());
   if (p == 0)
     return 0;
   const int kThreads = 4;

@@ -182,8 +182,8 @@ MD5Hash md5_hash(const void *data, uptr size);
 struct ThreadState;
 struct ThreadContext;
 struct Context;
-struct ReportDesc;
 struct ReportStack;
+class ReportDesc;
 class RegionAlloc;
 class StackTrace;
 

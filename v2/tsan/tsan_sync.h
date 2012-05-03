@@ -28,13 +28,13 @@ class StackTrace {
   ~StackTrace();
   void Reset();
 
-  void Init(ThreadState *thr, const uptr *pcs, uptr cnt);
+  void Init(const uptr *pcs, uptr cnt);
   void ObtainCurrent(ThreadState *thr, uptr toppc);
   bool IsEmpty() const;
   uptr Size() const;
   uptr Get(uptr i) const;
   const uptr *Begin() const;
-  void CopyFrom(ThreadState *thr, const StackTrace& other);
+  void CopyFrom(const StackTrace& other);
 
  private:
   uptr n_;

@@ -21,16 +21,11 @@ namespace __tsan {
 static void SignalUnsafeCall(ThreadState *thr, uptr pc) {
   if (!thr->in_signal_handler || !flags()->report_signal_unsafe)
     return;
-  Context *ctx = CTX();
-  Lock l(&ctx->report_mtx);
-  ReportDesc &rep = *GetGlobalReport();
-  internal_memset(&rep, 0, sizeof(rep));
-  RegionAlloc alloc(rep.alloc, sizeof(rep.alloc));
-  rep.typ = ReportTypeSignalUnsafe;
   StackTrace stack;
   stack.ObtainCurrent(thr, pc);
-  rep.stack = SymbolizeStack(&alloc, stack);
-  OutputReport(&rep);
+  ScopedReport rep(ReportTypeSignalUnsafe);
+  rep.AddStack(&stack);
+  OutputReport(rep);
 }
 
 void *user_alloc(ThreadState *thr, uptr pc, uptr sz) {

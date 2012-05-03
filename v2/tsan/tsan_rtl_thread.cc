@@ -29,24 +29,9 @@ static void MaybeReportThreadLeak(ThreadContext *tctx) {
       && tctx->status != ThreadStatusRunning
       && tctx->status != ThreadStatusFinished)
     return;
-/*
-    ScopedReport rep(ReportTypeThreadLeak);
-    rep.AddThread(tctx->tid);
-    OutputReport(&rep);
-*/
-
-  Context *ctx = CTX();
-  Lock l(&ctx->report_mtx);
-  ReportDesc &rep = *GetGlobalReport();
-  internal_memset(&rep, 0, sizeof(rep));
-  RegionAlloc alloc(rep.alloc, sizeof(rep.alloc));
-  rep.typ = ReportTypeThreadLeak;
-  rep.nthread = 1;
-  rep.thread = alloc.Alloc<ReportThread>(1);
-  rep.thread->id = tctx->tid;
-  rep.thread->running = (tctx->status != ThreadStatusFinished);
-  rep.thread->stack = SymbolizeStack(&alloc, tctx->creation_stack);
-  OutputReport(&rep);
+  ScopedReport rep(ReportTypeThreadLeak);
+  rep.AddThread(tctx);
+  OutputReport(rep);
 }
 
 void ThreadFinalize(ThreadState *thr) {
@@ -223,9 +208,10 @@ void ThreadFinish(ThreadState *thr) {
   // tctx->dead_info = new ThreadDeadInfo;
   internal_memcpy(&tctx->dead_info.trace.events[0],
       &thr->trace.events[0], sizeof(thr->trace.events));
-  for (int i = 0; i < kTraceParts; i++)
-    tctx->dead_info.trace.headers[i].stack0.CopyFrom(thr,
+  for (int i = 0; i < kTraceParts; i++) {
+    tctx->dead_info.trace.headers[i].stack0.CopyFrom(
         thr->trace.headers[i].stack0);
+  }
   tctx->epoch1 = thr->clock.get(tctx->tid);
 
   thr->~ThreadState();

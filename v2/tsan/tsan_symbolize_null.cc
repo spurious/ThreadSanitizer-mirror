@@ -15,17 +15,16 @@
 
 namespace __tsan {
 
-ReportStack *SymbolizeCode(RegionAlloc *alloc, uptr addr) {
-  ReportStack *stack = alloc->Alloc<ReportStack>(1);
+ReportStack *SymbolizeCode(uptr addr) {
+  ReportStack *stack = (ReportStack*)internal_alloc(MBlockTypeStack,
+                                                    sizeof(ReportStack));
   internal_memset(stack, 0, sizeof(*stack));
   stack->pc = addr;
   return stack;
 }
 
-int SymbolizeData(RegionAlloc *alloc, uptr addr, Symbol *symb) {
-  (void)alloc;
+ReportStack *SymbolizeData(uptr addr) {
   (void)addr;
-  (void)symb;
   return 0;
 }
 

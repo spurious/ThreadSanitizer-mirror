@@ -18,17 +18,8 @@
 
 namespace __tsan {
 
-struct Symbol {
-  char *module;
-  uptr offset;
-  char *name;
-  char *file;
-  int line;
-  int col;
-};
-
-ReportStack *SymbolizeCode(RegionAlloc *alloc, uptr addr);
-int SymbolizeData(RegionAlloc *alloc, uptr addr, Symbol *symb);
+ReportStack *SymbolizeCode(uptr addr);
+ReportStack *SymbolizeData(uptr addr);
 
 }  // namespace __tsan
 

@@ -32,6 +32,7 @@
 #include "tsan_sync.h"
 #include "tsan_trace.h"
 #include "tsan_vector.h"
+#include "tsan_report.h"
 
 namespace __tsan {
 
@@ -238,7 +239,6 @@ struct ThreadState {
 };
 
 Context *CTX();
-ReportDesc *GetGlobalReport();
 extern THREADLOCAL char cur_thread_placeholder[];
 
 INLINE ThreadState *cur_thread() {
@@ -336,8 +336,28 @@ class ScopedInRtl {
   int errno_;
 };
 
-void InternalAllocStatAggregate(Context *ctx, ThreadState *thr);
+class ScopedReport {
+ public:
+  explicit ScopedReport(ReportType typ);
+  ~ScopedReport();
 
+  void AddStack(const StackTrace *stack);
+  void AddMemoryAccess(uptr addr, Shadow s, const StackTrace *stack);
+  void AddThread(const ThreadContext *tctx);
+  void AddMutex(const SyncVar *s);
+  void AddLocation(uptr addr, uptr size);
+
+  const ReportDesc *GetReport() const;
+
+ private:
+  Context *ctx_;
+  ReportDesc *rep_;
+
+  ScopedReport(const ScopedReport&);
+  void operator = (const ScopedReport&);
+};
+
+void InternalAllocStatAggregate(Context *ctx, ThreadState *thr);
 void StatAggregate(u64 *dst, u64 *src);
 void StatOutput(u64 *stat);
 void ALWAYS_INLINE INLINE StatInc(ThreadState *thr, StatType typ, u64 n = 1) {
@@ -351,8 +371,7 @@ void InitializeDynamicAnnotations();
 void Die() NORETURN;
 
 void ReportRace(ThreadState *thr);
-bool OutputReport(ReportDesc *rep, ReportStack *suppress_stack = 0);
-ReportStack *SymbolizeStack(RegionAlloc *alloc, const StackTrace& trace);
+bool OutputReport(const ScopedReport &srep, ReportStack *suppress_stack = 0);
 bool IsExpectedReport(uptr addr, uptr size);
 
 #if defined(TSAN_DEBUG_OUTPUT) && TSAN_DEBUG_OUTPUT >= 1
