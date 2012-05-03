@@ -18,7 +18,6 @@
 #define INLINE        static inline
 #define NOINLINE      __attribute__((noinline))
 #define ALWAYS_INLINE __attribute__((always_inline))
-#define FLATTEN       __attribute__((flatten))
 #define NORETURN      __attribute__((noreturn))
 #define WEAK          __attribute__((weak))
 #define ALIGN(n)      __attribute__((aligned(n)))

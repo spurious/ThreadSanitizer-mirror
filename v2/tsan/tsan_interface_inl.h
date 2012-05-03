@@ -18,48 +18,48 @@
 
 using namespace __tsan;  // NOLINT
 
-void FLATTEN __tsan_read1(void *addr) {
+void __tsan_read1(void *addr) {
   MemoryAccess(cur_thread(), CALLERPC, (uptr)addr, 0, 0);
 }
 
-void FLATTEN __tsan_read2(void *addr) {
+void __tsan_read2(void *addr) {
   MemoryAccess(cur_thread(), CALLERPC, (uptr)addr, 1, 0);
 }
 
-void FLATTEN __tsan_read4(void *addr) {
+void __tsan_read4(void *addr) {
   MemoryAccess(cur_thread(), CALLERPC, (uptr)addr, 2, 0);
 }
 
-void FLATTEN __tsan_read8(void *addr) {
+void __tsan_read8(void *addr) {
   MemoryAccess(cur_thread(), CALLERPC, (uptr)addr, 3, 0);
 }
 
-void FLATTEN __tsan_write1(void *addr) {
+void __tsan_write1(void *addr) {
   MemoryAccess(cur_thread(), CALLERPC, (uptr)addr, 0, 1);
 }
 
-void FLATTEN __tsan_write2(void *addr) {
+void __tsan_write2(void *addr) {
   MemoryAccess(cur_thread(), CALLERPC, (uptr)addr, 1, 1);
 }
 
-void FLATTEN __tsan_write4(void *addr) {
+void __tsan_write4(void *addr) {
   MemoryAccess(cur_thread(), CALLERPC, (uptr)addr, 2, 1);
 }
 
-void FLATTEN __tsan_write8(void *addr) {
+void __tsan_write8(void *addr) {
   MemoryAccess(cur_thread(), CALLERPC, (uptr)addr, 3, 1);
 }
 
-void FLATTEN __tsan_vptr_update(void **vptr_p, void *new_val) {
+void __tsan_vptr_update(void **vptr_p, void *new_val) {
   CHECK_EQ(sizeof(vptr_p), 8);
   if (*vptr_p != new_val)
     MemoryAccess(cur_thread(), CALLERPC, (uptr)vptr_p, 3, 1);
 }
 
-void FLATTEN __tsan_func_entry(void *pc) {
+void __tsan_func_entry(void *pc) {
   FuncEntry(cur_thread(), (uptr)pc);
 }
 
-void FLATTEN __tsan_func_exit() {
+void __tsan_func_exit() {
   FuncExit(cur_thread());
 }
