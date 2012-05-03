@@ -31,7 +31,6 @@ LIBTSAN_HEADERS=tsan_allocator.h \
                 tsan_report.h \
 		tsan_placement_new.h \
                 tsan_rtl.h \
-		tsan_slab.h \
 		tsan_suppressions.h \
 		tsan_symbolize.h \
 		tsan_sync.h \
@@ -56,7 +55,6 @@ LIBTSAN_OBJ=tsan_allocator.o \
             tsan_rtl_mutex.o \
             tsan_rtl_report.o \
             tsan_rtl_thread.o \
-            tsan_slab.o \
             tsan_stat.o \
             tsan_suppressions.o \
             tsan_suppressions_linux.o \

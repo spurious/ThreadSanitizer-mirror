@@ -90,6 +90,25 @@ struct ReportDesc {
 // Format and output the report to the console/log. No additional logic.
 void PrintReport(const ReportDesc *rep);
 
+class RegionAlloc {
+ public:
+  RegionAlloc(void *mem, uptr size);
+  void *Alloc(uptr size);
+  char *Strdup(const char *str);
+
+  template<typename T>
+  T *Alloc(uptr cnt) {
+    return (T*)this->Alloc(cnt * sizeof(T));
+  }
+
+ private:
+  char *mem_;
+  char *end_;
+
+  RegionAlloc(const RegionAlloc&);  // Not implemented.
+  void operator = (const RegionAlloc&);  // Not implemented.
+};
+
 }  // namespace __tsan
 
 #endif  // TSAN_REPORT_H

@@ -96,4 +96,30 @@ void PrintReport(const ReportDesc *rep) {
   Printf("==================\n");
 }
 
+RegionAlloc::RegionAlloc(void *mem, uptr size)
+  : mem_((char*)mem)
+  , end_((char*)mem + size) {
+  CHECK_NE(mem, 0);
+  CHECK_GT(size, 0);
+}
+
+void *RegionAlloc::Alloc(uptr size) {
+  char *p = mem_;
+  if (p + size > end_)
+    return 0;
+  mem_ += size;
+  return p;
+}
+
+char *RegionAlloc::Strdup(const char *str) {
+  if (str == 0)
+    return 0;
+  uptr len = internal_strlen(str) + 1;
+  char *p = (char*)Alloc(len);
+  if (p == 0)
+    return 0;
+  internal_memcpy(p, str, len);
+  return p;
+}
+
 }  // namespace __tsan

@@ -15,7 +15,6 @@
 
 #include "tsan_defs.h"
 #include "tsan_report.h"
-#include "tsan_slab.h"
 
 namespace __tsan {
 

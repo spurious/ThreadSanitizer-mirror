@@ -29,7 +29,6 @@
 #include "tsan_clock.h"
 #include "tsan_defs.h"
 #include "tsan_flags.h"
-#include "tsan_slab.h"
 #include "tsan_sync.h"
 #include "tsan_trace.h"
 #include "tsan_vector.h"
