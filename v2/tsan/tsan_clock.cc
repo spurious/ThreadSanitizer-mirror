@@ -16,7 +16,7 @@
 // It's possible to optimize clock operations for some important cases
 // so that they are O(1). The cases include singletons, once's, local mutexes.
 // First, SyncClock must be re-implemented to allow indexing by tid.
-// It is not necessary must be a full vector clock, though. For example it may
+// It must not necessarily be a full vector clock, though. For example it may
 // be a multi-level table.
 // Then, each slot in SyncClock must contain a dirty bit (it's united with
 // the clock value, so no space increase). The acquire algorithm looks
@@ -40,7 +40,7 @@
 //     sync_clock[tid].clock = thr->epoch;
 //     if (sync_clock.dirty_count == sync_clock.cnt
 //         || (sync_clock.dirty_count == sync_clock.cnt - 1
-//           && sync_clock[tid].dirty == false)
+//           && sync_clock[tid].dirty == false))
 //       // All dirty flags are set, bail out.
 //       return;
 //     set all dirty bits, but preserve the thread's bit.  // O(N)

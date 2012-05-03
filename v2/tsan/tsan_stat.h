@@ -236,7 +236,7 @@ enum StatType {
   StatMtxAnnotations,
   StatMtxAtExit,
 
-  // This must be last.
+  // This must be the last.
   StatCnt,
 };
 

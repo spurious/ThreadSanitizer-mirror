@@ -45,8 +45,8 @@ enum MBlockType {
   MBlockSuppression,
   MBlockExpectRace,
 
-  // This must be last.
-  MBlockTypeCount
+  // This must be the last.
+  MBlockTypeCount,
 };
 
 // For internal data structures.

@@ -96,7 +96,7 @@ const bool kCollectStats = false;
 void CheckFailed(const char *file, int line, const char *cond, u64 v1, u64 v2);
 
 // The following "build consistency" machinery ensures that all source files
-// are build in the same configuration. Inconsistent builds lead to
+// are built in the same configuration. Inconsistent builds lead to
 // hard to debug crashes.
 #if TSAN_DEBUG
 void build_consistency_debug();
