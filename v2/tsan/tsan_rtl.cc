@@ -146,12 +146,7 @@ int Finalize(ThreadState *thr) {
   __tsan::ctx->~Context();
   __tsan::ctx = 0;
 
-  for (int i = 0; i < (int)MBlockTypeCount; i++) {
-    ctx->int_alloc_cnt[i] += thr->int_alloc_cnt[i];
-    ctx->int_alloc_siz[i] += thr->int_alloc_siz[i];
-    thr->int_alloc_cnt[i] = 0;
-    thr->int_alloc_siz[i] = 0;
-  }
+  InternalAllocStatAggregate(ctx, thr);
 
   for (int i = 0; i < (int)MBlockTypeCount; i++) {
     if (ctx->int_alloc_cnt[i] == 0 && ctx->int_alloc_siz[i] == 0)
@@ -483,6 +478,15 @@ void IgnoreCtl(ThreadState *thr, bool write, bool begin) {
     thr->fast_state.SetIgnoreBit();
   else
     thr->fast_state.ClearIgnoreBit();
+}
+
+void InternalAllocStatAggregate(Context *ctx, ThreadState *thr) {
+  for (int i = 0; i < (int)MBlockTypeCount; i++) {
+    ctx->int_alloc_cnt[i] += thr->int_alloc_cnt[i];
+    ctx->int_alloc_siz[i] += thr->int_alloc_siz[i];
+    thr->int_alloc_cnt[i] = 0;
+    thr->int_alloc_siz[i] = 0;
+  }
 }
 
 #if TSAN_DEBUG
