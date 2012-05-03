@@ -250,33 +250,29 @@ static bool UpdateOneShadowWord(ThreadState *thr,
           // (that is, same tid, same sync epoch and same size)
           StatInc(thr, StatMopSame);
           return true;
-        } else {
-          StoreIfNotYetStored(sp, &store_word);
-          return false;
         }
-      } else {
-        if (OldIsRWWeaker(old, kAccessIsWrite)) {
-          StoreIfNotYetStored(sp, &store_word);
-          return false;
-        } else {
-          return false;
-        }
-      }
-    } else {
-      StatInc(thr, StatShadowAnotherThread);
-      // happens before?
-      if (thr->clock.get(old.tid()) >= old.epoch()) {
         StoreIfNotYetStored(sp, &store_word);
         return false;
-      } else if (BothReads(old, kAccessIsWrite)) {
-        return false;
-      } else {
-        HandleRace(thr, shadow_mem, cur, old);
-        return true;
       }
+      if (OldIsRWWeaker(old, kAccessIsWrite))
+        StoreIfNotYetStored(sp, &store_word);
+      return false;
+      DCHECK(0);
     }
+    StatInc(thr, StatShadowAnotherThread);
+    // happens before?
+    if (thr->clock.get(old.tid()) >= old.epoch()) {
+      StoreIfNotYetStored(sp, &store_word);
+      return false;
+    }
+    if (BothReads(old, kAccessIsWrite))
+      return false;
+    HandleRace(thr, shadow_mem, cur, old);
+    return true;
+  }
+
   // Do the memory access intersect?
-  } else if (Shadow::TwoRangesIntersect(old, cur, kAccessSize)) {
+  if (Shadow::TwoRangesIntersect(old, cur, kAccessSize)) {
     StatInc(thr, StatShadowIntersect);
     if (Shadow::TidsAreEqual(old, cur)) {
       StatInc(thr, StatShadowSameThread);
@@ -292,10 +288,10 @@ static bool UpdateOneShadowWord(ThreadState *thr,
       HandleRace(thr, shadow_mem, cur, old);
       return true;
     }
-  // The accesses do not intersect.
-  } else {
-    StatInc(thr, StatShadowNotIntersect);
+    DCHECK(0);
   }
+  // The accesses do not intersect.
+  StatInc(thr, StatShadowNotIntersect);
   return false;
 }
 
