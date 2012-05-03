@@ -8,8 +8,3 @@ else
 	CC=clang
 	CXXFLAGS+=-DTSAN_DEBUG=1
 endif
-
-ifneq ($(CXX), g++)
-	# clang does not understand flatten
-	CXXFLAGS+=-Wno-attributes
-endif
