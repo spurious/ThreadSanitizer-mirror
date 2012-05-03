@@ -18,7 +18,6 @@ TEST_OBJ=tsan_bench.o \
 	 tsan_mop.o \
 	 tsan_mutex.o \
 	 tsan_posix.o \
-	 tsan_report.o \
 	 tsan_string.o \
 	 tsan_test.o \
 	 tsan_thread.o \

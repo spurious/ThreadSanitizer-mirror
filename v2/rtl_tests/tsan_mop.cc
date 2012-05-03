@@ -16,8 +16,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-using namespace __tsan;  // NOLINT
-
 TEST(ThreadSanitizer, SimpleWrite) {
   ScopedThread t;
   MemLoc l;
@@ -145,4 +143,42 @@ TEST(ThreadSanitizer, HarmfulRaceOnVptr) {
   ScopedThread t1, t2;
   t1.VptrUpdate(vptr, val2);
   t2.Read8(vptr, true);
+}
+
+static void foo() {
+  volatile int x = 42;
+  (void)x;
+}
+
+static void bar() {
+  volatile int x = 43;
+  (void)x;
+}
+
+TEST(ThreadSanitizer, ReportDeadThread) {
+  MemLoc l;
+  ScopedThread t1;
+  {
+    ScopedThread t2;
+    t2.Call(&foo);
+    t2.Call(&bar);
+    t2.Write1(l);
+  }
+  t1.Write1(l, true);
+}
+
+struct ClassWithStatic {
+  static int Data[4];
+};
+
+int ClassWithStatic::Data[4];
+
+static void foobarbaz() {}
+
+TEST(ThreadSanitizer, ReportRace) {
+  ScopedThread t1;
+  MainThread().Access(&ClassWithStatic::Data, true, 4, false);
+  t1.Call(&foobarbaz);
+  t1.Access(&ClassWithStatic::Data, true, 2, true);
+  t1.Return();
 }
