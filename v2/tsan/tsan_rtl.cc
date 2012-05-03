@@ -209,10 +209,10 @@ static inline void HandleRace(ThreadState *thr, u64 *shadow_mem,
 }
 
 ALWAYS_INLINE
-static bool MemoryAccess1(ThreadState *thr,
-                          Shadow cur, u64 *shadow_mem, unsigned i,
-                          u64 &store_state,
-                          int kAccessSizeLog, int kAccessIsWrite) {
+static bool UpdateOneShadowWord(ThreadState *thr,
+                                Shadow cur, u64 *shadow_mem, unsigned i,
+                                u64 &store_word,
+                                int kAccessSizeLog, int kAccessIsWrite) {
   StatInc(thr, StatShadowProcessed);
   const unsigned kAccessSize = 1 << kAccessSizeLog;
   unsigned off = cur.ComputeSearchOffset();
@@ -220,8 +220,8 @@ static bool MemoryAccess1(ThreadState *thr,
   Shadow old = LoadShadow(sp);
   if (old.IsZero()) {
     StatInc(thr, StatShadowZero);
-    if (store_state)
-      StoreIfNotYetStored(sp, &store_state);
+    if (store_word)
+      StoreIfNotYetStored(sp, &store_word);
     // The above StoreIfNotYetStored could be done unconditionally
     // and it even shows 4% gain on synthetic benchmarks (r4307).
     return false;
@@ -239,12 +239,12 @@ static bool MemoryAccess1(ThreadState *thr,
           StatInc(thr, StatMopSame);
           return true;
         } else {
-          StoreIfNotYetStored(sp, &store_state);
+          StoreIfNotYetStored(sp, &store_word);
           return false;
         }
       } else {
         if (!old.is_write() || kAccessIsWrite) {
-          StoreIfNotYetStored(sp, &store_state);
+          StoreIfNotYetStored(sp, &store_word);
           return false;
         } else {
           return false;
@@ -254,7 +254,7 @@ static bool MemoryAccess1(ThreadState *thr,
       StatInc(thr, StatShadowAnotherThread);
       // happens before?
       if (thr->clock.get(old.tid()) >= old.epoch()) {
-        StoreIfNotYetStored(sp, &store_state);
+        StoreIfNotYetStored(sp, &store_word);
         return false;
       } else if (!old.is_write() && !kAccessIsWrite) {
         return false;
@@ -299,7 +299,7 @@ void MemoryAccessImpl(ThreadState *thr, uptr addr,
   // The required intrinsics are:
   // __m128i _mm_move_epi64(__m128i*);
   // _mm_storel_epi64(u64*, __m128i);
-  u64 store_state = cur.raw();
+  u64 store_word = cur.raw();
 
   // scan all the shadow values and dispatch to 4 categories:
   // same, replace, candidate and race (see comments below).
@@ -310,7 +310,7 @@ void MemoryAccessImpl(ThreadState *thr, uptr addr,
   // it's just not worth it (performance- and complexity-wise).
 
 #define MEM_ACCESS_ITER(i) \
-    if (MemoryAccess1(thr, cur, shadow_mem, i, store_state, \
+    if (UpdateOneShadowWord(thr, cur, shadow_mem, i, store_word, \
         kAccessSizeLog, kAccessIsWrite)) \
       return;
   if (kShadowCnt == 1) {
@@ -339,11 +339,11 @@ void MemoryAccessImpl(ThreadState *thr, uptr addr,
 
   // we did not find any races and had already stored
   // the current access info, so we are done
-  if (LIKELY(store_state == 0))
+  if (LIKELY(store_word == 0))
     return;
   // choose a random candidate slot and replace it
   unsigned i = cur.epoch() % kShadowCnt;
-  StoreShadow(shadow_mem+i, store_state);
+  StoreShadow(shadow_mem+i, store_word);
   StatInc(thr, StatShadowReplace);
 }
 
