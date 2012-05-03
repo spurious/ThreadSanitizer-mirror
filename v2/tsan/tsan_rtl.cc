@@ -208,6 +208,18 @@ static inline void HandleRace(ThreadState *thr, u64 *shadow_mem,
   HACKY_CALL(__tsan_report_race);
 }
 
+static inline bool BothReads(Shadow s, int kAccessIsWrite) {
+  return !kAccessIsWrite && !s.is_write();
+}
+
+static inline bool OldIsRWStronger(Shadow old, int kAccessIsWrite) {
+  return old.is_write() || !kAccessIsWrite;
+}
+
+static inline bool OldIsRWWeaker(Shadow old, int kAccessIsWrite) {
+  return !old.is_write() || kAccessIsWrite;
+}
+
 ALWAYS_INLINE
 static bool UpdateOneShadowWord(ThreadState *thr,
                                 Shadow cur, u64 *shadow_mem, unsigned i,
@@ -233,7 +245,7 @@ static bool UpdateOneShadowWord(ThreadState *thr,
     if (Shadow::TidsAreEqual(old, cur)) {
       StatInc(thr, StatShadowSameThread);
       if (old.epoch() >= thr->fast_synch_epoch) {
-        if (old.is_write() || !kAccessIsWrite) {
+        if (OldIsRWStronger(old, kAccessIsWrite)) {
           // found a slot that holds effectively the same info
           // (that is, same tid, same sync epoch and same size)
           StatInc(thr, StatMopSame);
@@ -243,7 +255,7 @@ static bool UpdateOneShadowWord(ThreadState *thr,
           return false;
         }
       } else {
-        if (!old.is_write() || kAccessIsWrite) {
+        if (OldIsRWWeaker(old, kAccessIsWrite)) {
           StoreIfNotYetStored(sp, &store_word);
           return false;
         } else {
@@ -256,7 +268,7 @@ static bool UpdateOneShadowWord(ThreadState *thr,
       if (thr->clock.get(old.tid()) >= old.epoch()) {
         StoreIfNotYetStored(sp, &store_word);
         return false;
-      } else if (!old.is_write() && !kAccessIsWrite) {
+      } else if (BothReads(old, kAccessIsWrite)) {
         return false;
       } else {
         HandleRace(thr, shadow_mem, cur, old);
@@ -274,7 +286,7 @@ static bool UpdateOneShadowWord(ThreadState *thr,
     // happens before?
     if (thr->clock.get(old.tid()) >= old.epoch()) {
       return false;
-    } else if (!old.is_write() && !kAccessIsWrite) {
+    } else if (BothReads(old, kAccessIsWrite)) {
       return false;
     } else {
       HandleRace(thr, shadow_mem, cur, old);
