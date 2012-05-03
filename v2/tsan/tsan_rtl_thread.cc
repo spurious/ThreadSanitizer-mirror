@@ -180,8 +180,14 @@ void ThreadFinish(ThreadState *thr) {
   // FIXME: Treat it as write.
   if (thr->stk_addr && thr->stk_size)
     MemoryResetRange(thr, /*pc=*/ 3, thr->stk_addr, thr->stk_size);
-  if (thr->tls_addr && thr->tls_size)
-    MemoryResetRange(thr, /*pc=*/ 4, thr->tls_addr, thr->tls_size);
+  if (thr->tls_addr && thr->tls_size) {
+    const uptr thr_beg = (uptr)thr;
+    const uptr thr_end = (uptr)thr + sizeof(*thr);
+    // Since the thr object is huge, skip it.
+    MemoryResetRange(thr, /*pc=*/ 4, thr->tls_addr, thr_beg - thr->tls_addr);
+    MemoryResetRange(thr, /*pc=*/ 5,
+        thr_end, thr->tls_addr + thr->tls_size - thr_end);
+  }
   Context *ctx = CTX();
   Lock l(&ctx->thread_mtx);
   ThreadContext *tctx = ctx->threads[thr->tid];
