@@ -1,4 +1,4 @@
-CXXFLAGS=-Wall -fPIE -Werror -g $(CFLAGS)
+CXXFLAGS=-Wall -fPIE -Werror -g $(CFLAGS) -fno-builtin
 DEBUG=1
 
 ifeq ($(DEBUG), 0)
