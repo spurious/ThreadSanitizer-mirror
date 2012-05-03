@@ -12,7 +12,6 @@
 //===----------------------------------------------------------------------===//
 #include "tsan_interface.h"
 #include "tsan_test_util.h"
-#include "tsan_report.h"
 #include "gtest/gtest.h"
 #include <stddef.h>
 #include <stdint.h>
@@ -91,6 +90,20 @@ TEST(ThreadSanitizer, RaceWithOffset) {
     MemLoc l;
     t1.Access((char*)l.loc() + 1, true, 8, false);
     t2.Access((char*)l.loc() + 3, true, 1, true);
+  }
+}
+
+TEST(ThreadSanitizer, RaceWithOffset2) {
+  ScopedThread t1, t2;
+  {
+    MemLoc l;
+    t1.Access((char*)l.loc(), true, 4, false);
+    t2.Access((char*)l.loc() + 2, true, 1, true);
+  }
+  {
+    MemLoc l;
+    t1.Access((char*)l.loc() + 2, true, 1, false);
+    t2.Access((char*)l.loc(), true, 4, true);
   }
 }
 
