@@ -402,7 +402,7 @@ inline uintptr_t tsan_bswap(uintptr_t x) {
   __asm__("bswapl %0" : "=r" (x) : "0" (x));
   return x;
 #elif defined(_WIN32)
-  return x;  // TODO(kcc)
+  return _byteswap_ulong(x);
 #else
 # error  "Unknown Configuration"
 #endif // arch && VG_WORDSIZE
