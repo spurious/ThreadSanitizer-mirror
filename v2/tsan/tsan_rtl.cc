@@ -222,6 +222,8 @@ static bool MemoryAccess1(ThreadState *thr,
     StatInc(thr, StatShadowZero);
     if (store_state)
       StoreIfNotYetStored(sp, &store_state);
+    // The above StoreIfNotYetStored could be done unconditionally
+    // and it even shows 4% gain on synthetic benchmarks (r4307).
     return false;
   }
   // is the memory access equal to the previous?
