@@ -233,7 +233,7 @@ void GetThreadStackAndTls(uptr *stk_addr, uptr *stk_size,
     *stk_size = RoundUp(*stk_size, kPageSize);
     uptr stk_end = *stk_addr + *stk_size;
     if (stk_end > *tls_addr) {
-      tls_size -= *tls_addr - stk_end;
+      *tls_size -= *tls_addr - stk_end;
       *tls_addr = stk_end;
     }
   }
