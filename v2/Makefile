@@ -1,6 +1,15 @@
 
 all: lib test
 
+help:
+	@ echo "A little help is always welcome!"
+	@ echo "The most useful targets are:"
+	@ echo "  make install_deps  # Install third-party dependencies required for building"
+	@ echo "  make presubmit     # Run it every time before committing"
+	@ echo "  make lint          # Run the style checker"
+	@ echo
+	@ echo "For more info, see http://code.google.com/p/data-race-test/wiki/ThreadSanitizer2"
+
 lib:
 	$(MAKE) -C tsan
 
