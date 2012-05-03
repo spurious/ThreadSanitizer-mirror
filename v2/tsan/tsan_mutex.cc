@@ -74,22 +74,6 @@ void InitializeMutex() {
       CanLockAdj[j][i] = true;
     }
   }
-  // Build the transitive closure.
-  bool CanLockAdj2[MutexTypeCount][MutexTypeCount];
-  for (int i = 0; i < N; i++) {
-    for (int j = 0; j < N; j++) {
-      CanLockAdj2[i][j] = CanLockAdj[i][j];
-    }
-  }
-  for (int k = 0; k < N; k++) {
-    for (int i = 0; i < N; i++) {
-      for (int j = 0; j < N; j++) {
-        if (CanLockAdj2[i][k] && CanLockAdj2[k][j]) {
-          CanLockAdj2[i][j] = true;
-        }
-      }
-    }
-  }
 #if 0
   Printf("Can lock graph:\n");
   for (int i = 0; i < N; i++) {
@@ -98,17 +82,29 @@ void InitializeMutex() {
     }
     Printf("\n");
   }
+#endif
+  // Build the transitive closure.
+  for (int k = 0; k < N; k++) {
+    for (int i = 0; i < N; i++) {
+      for (int j = 0; j < N; j++) {
+        if (CanLockAdj[i][k] && CanLockAdj[k][j]) {
+          CanLockAdj[i][j] = true;
+        }
+      }
+    }
+  }
+#if 0
   Printf("Can lock graph closure:\n");
   for (int i = 0; i < N; i++) {
     for (int j = 0; j < N; j++) {
-      Printf("%d ", CanLockAdj2[i][j]);
+      Printf("%d ", CanLockAdj[i][j]);
     }
     Printf("\n");
   }
 #endif
   // Verify that the graph is acyclic.
   for (int i = 0; i < N; i++) {
-    if (CanLockAdj2[i][i]) {
+    if (CanLockAdj[i][i]) {
       Printf("Mutex %d participates in a cycle\n", i);
       Die();
     }
