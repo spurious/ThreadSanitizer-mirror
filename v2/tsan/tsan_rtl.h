@@ -404,7 +404,7 @@ void MutexReadOrWriteUnlock(ThreadState *thr, uptr pc, uptr addr);
 void Acquire(ThreadState *thr, uptr pc, uptr addr);
 void Release(ThreadState *thr, uptr pc, uptr addr);
 
-// The hacky call uses custom calling conversion and an assembly thunk.
+// The hacky call uses custom calling convention and an assembly thunk.
 // It is considerably faster that a normal call for the caller
 // if it is not executed (it is intended for slow paths from hot functions).
 // The trick is that the call preserves all registers and the compiler
