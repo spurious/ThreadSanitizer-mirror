@@ -38,7 +38,7 @@ namespace __tsan {
 void Printf(const char *format, ...) FORMAT(1, 2);
 uptr Snprintf(char *buffer, uptr length, const char *format, ...)  FORMAT(3, 4);
 
-inline void __attribute__((noinline)) breakhere() {
+inline void NOINLINE breakhere() {
   volatile int x = 42;
   (void)x;
 }
