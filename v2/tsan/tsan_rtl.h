@@ -74,16 +74,12 @@ class FastState {
     x_ += 1 << (64 - kTidBits - kClkBits);
     // CHECK(old_epoch + 1 == epoch());
   }
-  u64 addr0() const { return x_ & 7; }
-  u64 size() const { return 1ull << size_log(); }
-  bool is_write() const { return x_ & 32; }
   void SetIgnoreBit() { x_ |= 1; }
   void ClearIgnoreBit() { x_ &= ~(u64)1; }
   bool GetIgnoreBit() { return x_ & 1; }
 
  private:
   friend class Shadow;
-  u64 size_log() const { return (x_ >> 3) & 3; }
   u64 x_;
 };
 
@@ -169,6 +165,12 @@ class Shadow: public FastState {
   unsigned ComputeSearchOffset() {
     return x_ & 7;
   }
+  u64 addr0() const { return x_ & 7; }
+  u64 size() const { return 1ull << size_log(); }
+  bool is_write() const { return x_ & 32; }
+
+ private:
+  u64 size_log() const { return (x_ >> 3) & 3; }
 };
 
 // Freed memory.

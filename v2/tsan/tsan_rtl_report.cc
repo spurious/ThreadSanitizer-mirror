@@ -221,10 +221,10 @@ void ReportRace(ThreadState *thr) {
   ScopedInRtl in_rtl;
   uptr addr = ShadowToMem((uptr)thr->racy_shadow_addr);
   {
-    uptr a0 = addr + FastState(thr->racy_state[0]).addr0();
-    uptr a1 = addr + FastState(thr->racy_state[1]).addr0();
-    uptr e0 = a0 + FastState(thr->racy_state[0]).size();
-    uptr e1 = a1 + FastState(thr->racy_state[1]).size();
+    uptr a0 = addr + Shadow(thr->racy_state[0]).addr0();
+    uptr a1 = addr + Shadow(thr->racy_state[1]).addr0();
+    uptr e0 = a0 + Shadow(thr->racy_state[0]).size();
+    uptr e1 = a1 + Shadow(thr->racy_state[1]).size();
     uptr minaddr = min(a0, a1);
     uptr maxaddr = max(e0, e1);
     if (IsExpectedReport(minaddr, maxaddr - minaddr))
@@ -245,7 +245,7 @@ void ReportRace(ThreadState *thr) {
   uptr addr_min = (uptr)-1;
   uptr addr_max = 0;
   for (int i = 0; i < rep.nmop; i++) {
-    FastState s(thr->racy_state[i]);
+    Shadow s(thr->racy_state[i]);
     ReportMop *mop = &rep.mop[i];
     mop->tid = s.tid();
     mop->addr = addr + s.addr0();
