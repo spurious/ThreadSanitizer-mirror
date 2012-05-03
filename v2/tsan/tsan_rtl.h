@@ -44,7 +44,7 @@ inline void __attribute__((noinline)) breakhere() {
   (void)x;
 }
 
-// ThreadState:
+// FastState:
 //   tid             : kTidBits
 //   epoch           : kClkBits
 //   unused          :
