@@ -43,7 +43,7 @@ inline void NOINLINE breakhere() {
   (void)x;
 }
 
-// FastState:
+// FastState (from most significant bit):
 //   tid             : kTidBits
 //   epoch           : kClkBits
 //   unused          :
@@ -83,7 +83,7 @@ class FastState {
   u64 x_;
 };
 
-// Shadow:
+// Shadow (from most significant bit):
 //   tid             : kTidBits
 //   epoch           : kClkBits
 //   is_write        : 1

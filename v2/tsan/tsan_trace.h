@@ -34,9 +34,9 @@ enum EventType {
   EventTypeRUnlock,
 };
 
-// Represents a thread event.
-// u64 addr : 61;  // Associated pc.
+// Represents a thread event (from most significant bit):
 // u64 typ  : 3;   // EventType.
+// u64 addr : 61;  // Associated pc.
 typedef u64 Event;
 
 struct TraceHeader {
