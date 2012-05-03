@@ -28,6 +28,8 @@ enum MutexType {
   MutexTypeSlab,
   MutexTypeAnnotations,
   MutexTypeAtExit,
+
+  // This must be last.
   MutexTypeCount
 };
 
