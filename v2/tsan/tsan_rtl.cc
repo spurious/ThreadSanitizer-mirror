@@ -220,6 +220,10 @@ static inline bool OldIsRWWeaker(Shadow old, int kAccessIsWrite) {
   return !old.is_write() || kAccessIsWrite;
 }
 
+static inline bool OldIsInSameSynchEpoch(Shadow old, ThreadState *thr) {
+  return old.epoch() >= thr->fast_synch_epoch;
+}
+
 static inline bool HappensBefore(Shadow old, ThreadState *thr) {
   return thr->clock.get(old.tid()) >= old.epoch();
 }
@@ -248,7 +252,7 @@ static bool UpdateOneShadowWord(ThreadState *thr,
     // same thread?
     if (Shadow::TidsAreEqual(old, cur)) {
       StatInc(thr, StatShadowSameThread);
-      if (old.epoch() >= thr->fast_synch_epoch) {
+      if (OldIsInSameSynchEpoch(old, thr)) {
         if (OldIsRWStronger(old, kAccessIsWrite)) {
           // found a slot that holds effectively the same info
           // (that is, same tid, same sync epoch and same size)
