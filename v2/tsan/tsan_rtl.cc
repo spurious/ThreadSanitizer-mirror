@@ -12,6 +12,7 @@
 // Main file (entry points) for the TSan run-time.
 //===----------------------------------------------------------------------===//
 
+#include "tsan_defs.h"
 #include "tsan_platform.h"
 #include "tsan_rtl.h"
 #include "tsan_interface.h"
@@ -28,7 +29,7 @@ extern "C" void __tsan_resume() {
 
 namespace __tsan {
 
-__thread char cur_thread_placeholder[sizeof(ThreadState)] ALIGN(64);
+THREADLOCAL char cur_thread_placeholder[sizeof(ThreadState)] ALIGN(64);
 static char ctx_placeholder[sizeof(Context)] ALIGN(64);
 
 static Context *ctx;

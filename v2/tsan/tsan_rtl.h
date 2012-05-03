@@ -237,7 +237,7 @@ struct ThreadState {
 
 Context *CTX();
 ReportDesc *GetGlobalReport();
-extern __thread char cur_thread_placeholder[];
+extern THREADLOCAL char cur_thread_placeholder[];
 
 INLINE ThreadState *cur_thread() {
   return reinterpret_cast<ThreadState *>(&cur_thread_placeholder);

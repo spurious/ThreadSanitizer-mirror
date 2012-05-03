@@ -1183,8 +1183,8 @@ static void process_pending_signals(ThreadState *thr) {
   thr->in_signal_handler = true;
   thr->pending_signal_count = 0;
   // These are too big for stack.
-  static __thread ucontext_t uctx;
-  static __thread sigset_t emptyset, oldset;
+  static THREADLOCAL ucontext_t uctx;
+  static THREADLOCAL sigset_t emptyset, oldset;
   getcontext(&uctx);
   sigfillset(&emptyset);
   pthread_sigmask(SIG_SETMASK, &emptyset, &oldset);
