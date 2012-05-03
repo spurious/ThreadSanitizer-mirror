@@ -128,6 +128,6 @@ class MainThread : public ScopedThread {
   }
 };
 
-const ReportDesc *GetLastReport();
+bool CheckLastReport();
 
 #endif  // #ifndef TSAN_TEST_UTIL_H

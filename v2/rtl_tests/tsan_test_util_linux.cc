@@ -58,10 +58,10 @@ bool OnReport(const ReportDesc *rep, bool suppressed) {
 }
 }
 
-const ReportDesc *GetLastReport() {
+bool CheckLastReport() {
   const ReportDesc *rep = g_report;
   g_report = 0;
-  return rep;
+  return rep != 0;
 }
 
 static void* allocate_addr(int size, int offset_from_aligned = 0) {
