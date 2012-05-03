@@ -257,7 +257,6 @@ static bool UpdateOneShadowWord(ThreadState *thr,
       if (OldIsRWWeaker(old, kAccessIsWrite))
         StoreIfNotYetStored(sp, &store_word);
       return false;
-      DCHECK(0);
     }
     StatInc(thr, StatShadowAnotherThread);
     // happens before?
@@ -280,15 +279,14 @@ static bool UpdateOneShadowWord(ThreadState *thr,
     }
     StatInc(thr, StatShadowAnotherThread);
     // happens before?
-    if (thr->clock.get(old.tid()) >= old.epoch()) {
+    if (thr->clock.get(old.tid()) >= old.epoch())
       return false;
-    } else if (BothReads(old, kAccessIsWrite)) {
+
+    if (BothReads(old, kAccessIsWrite))
       return false;
-    } else {
-      HandleRace(thr, shadow_mem, cur, old);
-      return true;
-    }
-    DCHECK(0);
+
+    HandleRace(thr, shadow_mem, cur, old);
+    return true;
   }
   // The accesses do not intersect.
   StatInc(thr, StatShadowNotIntersect);
