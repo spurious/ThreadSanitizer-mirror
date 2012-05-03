@@ -43,6 +43,7 @@ enum MBlockType {
   MBlockAtExit,
   MBlockFlag,
   MBlockSuppression,
+  MBlockExpectRace,
   MBlockTypeCount
 };
 

@@ -15,7 +15,7 @@
 #include "tsan_placement_new.h"
 #include "tsan_report.h"
 #include "tsan_rtl.h"
-#include "tsan_slab.h"
+#include "tsan_mman.h"
 #include "tsan_flags.h"
 
 #define CALLERPC ((uptr)__builtin_return_address(0))
@@ -73,29 +73,25 @@ struct ExpectRace {
 
 struct DynamicAnnContext {
   Mutex mtx;
-  SlabAlloc expect_alloc;
-  SlabCache expect_slab;
   ExpectRace expect;
   ExpectRace benign;
 
   DynamicAnnContext()
-    : mtx(MutexTypeAnnotations, StatMtxAnnotations)
-    , expect_alloc(sizeof(ExpectRace))
-    , expect_slab(&expect_alloc) {
+    : mtx(MutexTypeAnnotations, StatMtxAnnotations) {
   }
 };
 
 static DynamicAnnContext *dyn_ann_ctx;
 static char dyn_ann_ctx_placeholder[sizeof(DynamicAnnContext)] ALIGN(64);
 
-static void AddExpectRace(SlabCache *alloc, ExpectRace *list,
+static void AddExpectRace(ExpectRace *list,
     char *f, int l, uptr addr, uptr size, char *desc) {
   ExpectRace *race = list->next;
   for (; race != list; race = race->next) {
     if (race->addr == addr && race->size == size)
       return;
   }
-  race = (ExpectRace*)alloc->Alloc();
+  race = (ExpectRace*)internal_alloc(MBlockExpectRace, sizeof(ExpectRace));
   race->hitcount = 0;
   race->addr = addr;
   race->size = size;
@@ -236,7 +232,7 @@ void AnnotateFlushExpectedRaces(char *f, int l) {
     }
     race->prev->next = race->next;
     race->next->prev = race->prev;
-    dyn_ann_ctx->expect_slab.Free(race);
+    internal_free(race);
   }
 }
 
@@ -268,14 +264,14 @@ void AnnotatePCQCreate(char *f, int l, uptr pcq) {
 void AnnotateExpectRace(char *f, int l, uptr mem, char *desc) {
   SCOPED_ANNOTATION(AnnotateExpectRace);
   Lock lock(&dyn_ann_ctx->mtx);
-  AddExpectRace(&dyn_ann_ctx->expect_slab, &dyn_ann_ctx->expect,
+  AddExpectRace(&dyn_ann_ctx->expect,
                 f, l, mem, 1, desc);
   DPrintf("Add expected race: %s addr=%lx %s:%d\n", desc, mem, f, l);
 }
 
 static void BenignRaceImpl(char *f, int l, uptr mem, uptr size, char *desc) {
   Lock lock(&dyn_ann_ctx->mtx);
-  AddExpectRace(&dyn_ann_ctx->expect_slab, &dyn_ann_ctx->benign,
+  AddExpectRace(&dyn_ann_ctx->benign,
                 f, l, mem, size, desc);
   DPrintf("Add benign race: %s addr=%lx %s:%d\n", desc, mem, f, l);
 }
