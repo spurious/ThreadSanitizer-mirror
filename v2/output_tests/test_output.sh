@@ -10,7 +10,7 @@ CC=clang
 CXX=clang++
 
 # TODO: add testing for all of -O0...-O3
-CFLAGS="-fthread-sanitizer -fPIE -O1 -g"
+CFLAGS="-fthread-sanitizer -fPIE -O1 -g -fno-builtin"
 LDFLAGS="-pie -lpthread -ldl $ROOTDIR/tsan/libtsan.a"
 if [ "$LLDB" != "" ]; then
   LDFLAGS+=" -L$LLDB -llldb"

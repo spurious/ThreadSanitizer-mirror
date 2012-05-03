@@ -11,7 +11,6 @@
 //
 //===----------------------------------------------------------------------===//
 #include "tsan_test_util.h"
-#include "tsan_report.h"
 #include "gtest/gtest.h"
 #include <string.h>
 
@@ -44,9 +43,7 @@ TEST(ThreadSanitizer, MemcpyRace1) {
   char *data2 = new char[10];
   ScopedThread t1, t2;
   t1.Memcpy(data, data1, 10);
-  const ReportDesc *rep = t2.Memcpy(data, data2, 10, true);
-  EXPECT_GE(rep->mop[0].addr, (uptr)data);
-  EXPECT_LT(rep->mop[0].addr, (uptr)data + 10);
+  t2.Memcpy(data, data2, 10, true);
 }
 
 TEST(ThreadSanitizer, MemcpyRace2) {
@@ -55,8 +52,7 @@ TEST(ThreadSanitizer, MemcpyRace2) {
   char *data2 = new char[10];
   ScopedThread t1, t2;
   t1.Memcpy(data+5, data1, 1);
-  const ReportDesc *rep = t2.Memcpy(data+3, data2, 4, true);
-  EXPECT_EQ(rep->mop[0].addr, (uptr)data+5);
+  t2.Memcpy(data+3, data2, 4, true);
 }
 
 TEST(ThreadSanitizer, MemcpyRace3) {
@@ -73,13 +69,7 @@ TEST(ThreadSanitizer, MemcpyStack) {
   char *data1 = new char[10];
   ScopedThread t1, t2;
   t1.Memcpy(data, data1, 10);
-  const ReportDesc *rep = t2.Memcpy(data, data1, 10, true);
-  EXPECT_GE(rep->mop[0].addr, (uptr)data);
-  EXPECT_LT(rep->mop[0].addr, (uptr)data + 10);
-  EXPECT_NE(rep->mop[0].stack, (ReportStack*)0);
-  EXPECT_NE(rep->mop[0].stack->next, (ReportStack*)0);
-  EXPECT_EQ(rep->mop[0].stack->next->next, (ReportStack*)0);
-  EXPECT_EQ(rep->mop[0].stack->pc, (uptr)memcpy);
+  t2.Memcpy(data, data1, 10, true);
 }
 
 TEST(ThreadSanitizer, MemsetRace1) {
