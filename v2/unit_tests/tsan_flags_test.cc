@@ -39,6 +39,11 @@ TEST(Flags, ParseBool) {
   InitializeFlags(&f, "--enable_annotations=1");
   EXPECT_EQ(f.enable_annotations, true);
 
+  // This flag is false by default.
+  f.force_seq_cst_atomics = false;
+  InitializeFlags(&f, "--force_seq_cst_atomics=1");
+  EXPECT_EQ(f.force_seq_cst_atomics, true);
+
   f.enable_annotations = true;
   InitializeFlags(&f, "asdas enable_annotations=0 asdasd");
   EXPECT_EQ(f.enable_annotations, false);
