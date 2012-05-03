@@ -64,18 +64,12 @@ static const char *GetFlagValue(const char *env, const char *name,
   if (pos[0] == '"') {
     pos += 1;
     *end = internal_strchr(pos, '"');
-    if (*end == 0)
-      *end = pos + internal_strlen(pos);
-    return pos;
-  }
-  if (pos[0] == '\'') {
+  } else if (pos[0] == '\'') {
     pos += 1;
     *end = internal_strchr(pos, '\'');
-    if (*end == 0)
-      *end = pos + internal_strlen(pos);
-    return pos;
+  } else {
+    *end = internal_strchr(pos, ' ');
   }
-  *end = internal_strchr(pos, ' ');
   if (*end == 0)
     *end = pos + internal_strlen(pos);
   return pos;
@@ -90,7 +84,7 @@ static void Flag(const char *env, bool *flag, const char *name, bool def) {
   int len = end - val;
   if (len == 1 && val[0] == '0')
     *flag = false;
-  else if (len == 1 && val[0] == '0')
+  else if (len == 1 && val[0] == '1')
     *flag = true;
 }
 
@@ -123,9 +117,11 @@ static void Flag(const char *env, const char **flag, const char *name,
   const char *val = GetFlagValue(env, name, &end);
   if (val == 0)
     return;
-  char *f = (char*)internal_alloc(MBlockFlag, end - val + 1);
-  internal_memcpy(f, val, end - val);
-  f[end - val] = 0;
+  int len = end - val;
+  char *f = (char*)internal_alloc(MBlockFlag, len + 1);
+  internal_memcpy(f, val, len);
+  f[len] = 0;
   *flag = f;
 }
-}
+
+}  // namespace __tsan
