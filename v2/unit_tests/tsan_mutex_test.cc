@@ -52,9 +52,9 @@ class TestData {
 const int kThreads = 8;
 const int kWriteRate = 1024;
 #if TSAN_DEBUG
-const int kIters = 128*1024;
+const int kIters = 16*1024;
 #else
-const int kIters = 512*1024;
+const int kIters = 64*1024;
 #endif
 
 static void *write_mutex_thread(void *param) {
