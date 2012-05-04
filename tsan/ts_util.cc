@@ -235,6 +235,34 @@ size_t GetVmSizeInMb() {
   char *end;
   size_t vm_size_in_pages = my_strtol(buff, &end, 10);
   return vm_size_in_pages >> 8;
+#elif defined(_WIN32)
+  WINDOWS::MEMORYSTATUS ms;
+  WINDOWS::GlobalMemoryStatus(&ms);
+  return (ms.dwTotalVirtual - ms.dwAvailVirtual) >> 20;
+#else
+  return 0;
+#endif
+}
+
+size_t GetMemoryLimitInMbFromProcSelfLimits() {
+#ifdef VGO_linux
+  // Parse the memory limit section of /proc/self/limits.
+  string proc_self_limits = ThreadSanitizerReadFileToString("/proc/self/limits", false);
+  const char *max_addr_space = "Max address space";
+  size_t pos = proc_self_limits.find(max_addr_space);
+  if (pos == string::npos) return 0;
+  pos += strlen(max_addr_space);
+  while (proc_self_limits[pos] == ' ') pos++;
+  if (proc_self_limits[pos] == 'u')
+    return 0;  // 'unlimited'.
+  char *end;
+  size_t result = my_strtol(proc_self_limits.c_str() + pos, &end, 0);
+  result >>= 20;
+  return result;
+#elif defined(_WIN32)
+  WINDOWS::MEMORYSTATUS ms;
+  WINDOWS::GlobalMemoryStatus(&ms);
+  return ms.dwTotalVirtual >> 20;
 #else
   return 0;
 #endif

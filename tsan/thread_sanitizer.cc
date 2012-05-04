@@ -6420,7 +6420,9 @@ class Detector {
 
   void FlushIfNeeded(TSanThread *thr) {
     // Are we out of segment IDs?
-#ifdef TS_VALGRIND  // GetVmSizeInMb() works only with valgrind any way.
+#if defined(TS_VALGRIND) || defined(_WIN32)
+    // GetVmSizeInMb() is only available on Valgrind and Win32 anyway.
+
     static int counter;
     counter++;  // ATTENTION: don't do this in multi-threaded code -- too slow.
     CHECK(TS_SERIALIZED == 1);
@@ -8003,26 +8005,6 @@ void FindStringFlag(const char *name, vector<string> *args,
   if (tmp.size() > 0) {
     *retval = tmp.back();
   }
-}
-
-static size_t GetMemoryLimitInMbFromProcSelfLimits() {
-#ifdef VGO_linux
-  // Parse the memory limit section of /proc/self/limits.
-  string proc_self_limits = ThreadSanitizerReadFileToString("/proc/self/limits", false);
-  const char *max_addr_space = "Max address space";
-  size_t pos = proc_self_limits.find(max_addr_space);
-  if (pos == string::npos) return 0;
-  pos += strlen(max_addr_space);
-  while (proc_self_limits[pos] == ' ') pos++;
-  if (proc_self_limits[pos] == 'u')
-    return 0;  // 'unlimited'.
-  char *end;
-  size_t result = my_strtol(proc_self_limits.c_str() + pos, &end, 0);
-  result >>= 20;
-  return result;
-#else
-  return 0;
-#endif
 }
 
 static size_t GetMemoryLimitInMb() {

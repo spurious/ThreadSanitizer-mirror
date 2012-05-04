@@ -368,6 +368,7 @@ string ThreadSanitizerReadFileToString(const string &file_name, bool die_if_fail
 
 // Get the current memory footprint of myself (parse /proc/self/status).
 size_t GetVmSizeInMb();
+size_t GetMemoryLimitInMbFromProcSelfLimits();
 
 // Sets the contents of the file 'file_name' to 'str'.
 void OpenFileWriteStringAndClose(const string &file_name, const string &str);
