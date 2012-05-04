@@ -8198,7 +8198,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
     G_flags->log_file = log_file_tmp.back();
   }
 
-  G_flags->tsan_program_name = "valgrind --tool=tsan";
+  G_flags->tsan_program_name = "valgrind --tool=tsan";  // TODO(timurrrr): Windows?
   FindStringFlag("tsan_program_name", args, &G_flags->tsan_program_name);
 
   G_flags->tsan_url = "http://code.google.com/p/data-race-test";

@@ -41,22 +41,26 @@ echo Building ThreadSanitizer for $OS $VG_ARCH
 echo ------------------------------------------------
 sleep 1
 
-# Build Valgind.
-cd $TOPDIR/third_party || exit 1
-./update_valgrind.sh || exit 1
-./build_and_install_valgrind.sh $VALGRIND_INST_ROOT || exit 1
+set -e  # Interrupt on failure.
 
-cd $TOPDIR/tsan || exit 1
-make -s -j4 OFFLINE= GTEST_ROOT= PIN_ROOT= VALGRIND_INST_ROOT=$VALGRIND_INST_ROOT || exit 1
-# Build the self contained binaries.
-make self-contained OS=$VG_OS ARCH=$VG_ARCH VALGRIND_INST_ROOT=$VALGRIND_INST_ROOT || exit 1
+# Build Valgind.
+(cd $TOPDIR/third_party &&
+ ./update_valgrind.sh &&
+ ./build_and_install_valgrind.sh $VALGRIND_INST_ROOT )
+
+(cd $TOPDIR/tsan &&
+ make -s -j4 OFFLINE= GTEST_ROOT= PIN_ROOT= VALGRIND_INST_ROOT=$VALGRIND_INST_ROOT &&
+ # Build the self contained binaries.
+ make self-contained OS=$VG_OS ARCH=$VG_ARCH VALGRIND_INST_ROOT=$VALGRIND_INST_ROOT )
 
 TSAN=$TOPDIR/tsan/bin/tsan-$VG_ARCH-$VG_OS-self-contained.sh
 
 # Test
-cd $TOPDIR/unittest || exit 1
-make all -s -j4 OS=${VG_OS} ARCH=${VG_ARCH} OPT=1 STATIC=0 || exit 1
-$TSAN --color bin/demo_tests-${VG_OS}-${VG_ARCH}-O1 --gtest_filter="DemoTests.RaceReportDemoTest" || exit 1
+(cd $TOPDIR/unittest &&
+ make all -s -j4 OS=${VG_OS} ARCH=${VG_ARCH} OPT=1 STATIC=0 &&
+ echo "Should run TSan demo now..." &&
+ $TSAN --color bin/demo_tests-${VG_OS}-${VG_ARCH}-O1 --gtest_filter="DemoTests.RaceReportDemoTest" )
 
 # Done
 echo "ThreadSanitizer is built: $TSAN"
+echo "SUCCESS!"
