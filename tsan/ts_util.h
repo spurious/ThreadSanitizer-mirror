@@ -391,7 +391,6 @@ bool LiteRaceSkipTrace(int tid, uint32_t trace_no, uint32_t sampling_rate);
 
 
 inline uintptr_t tsan_bswap(uintptr_t x) {
-  // FIXME! r1246, r1463, r3157, r3360 vs HAS_BUILTIN_BSWAP64, HAS_BUILTIN_BSWAP32
 #if defined(VGP_arm_linux) && __WORDSIZE == 64
   return __builtin_bswap64(x);
 #elif defined(VGP_arm_linux) && __WORDSIZE == 32
