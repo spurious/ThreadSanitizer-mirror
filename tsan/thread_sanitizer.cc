@@ -4420,6 +4420,7 @@ struct TSanThread {
     CHECK(vts_at_exit_);
     FlushDeadSids();
     ReleaseFreshSids();
+    delete call_stack_;
     call_stack_ = NULL;
   }
 
@@ -7693,6 +7694,7 @@ one_call:
   }
 
   void HandleThreadStart(TID child_tid, TID parent_tid, CallStack *call_stack) {
+    ScopedMallocCostCenter malloc_cc(__FUNCTION__);
     // Printf("HandleThreadStart: tid=%d parent_tid=%d pc=%lx pid=%d\n",
     //         child_tid.raw(), parent_tid.raw(), pc, getpid());
     VTS *vts = NULL;
