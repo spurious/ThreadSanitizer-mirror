@@ -1978,12 +1978,14 @@ class Segment {
   static void InitClassMembers() {
     if (G_flags->keep_history == 0)
       kSizeOfHistoryStackTrace = 0;
-    Report("INFO: Allocating %ldMb (%ld * %ldM) for Segments.\n",
-           (sizeof(Segment) * kMaxSID) >> 20,
-           sizeof(Segment), kMaxSID >> 20);
-    if (kSizeOfHistoryStackTrace) {
-      Report("INFO: Will allocate up to %ldMb for 'previous' stack traces.\n",
-             (kSizeOfHistoryStackTrace * sizeof(uintptr_t) * kMaxSID) >> 20);
+    if (G_flags->verbosity >= 0) {
+      Report("INFO: Allocating %ldMb (%ld * %ldM) for Segments.\n",
+          (sizeof(Segment) * kMaxSID) >> 20,
+          sizeof(Segment), kMaxSID >> 20);
+      if (kSizeOfHistoryStackTrace) {
+        Report("INFO: Will allocate up to %ldMb for 'previous' stack traces.\n",
+            (kSizeOfHistoryStackTrace * sizeof(uintptr_t) * kMaxSID) >> 20);
+      }
     }
 
     all_segments_  = new Segment[kMaxSID];
@@ -5652,7 +5654,8 @@ class ReportStorage {
     // Read user-supplied suppressions.
     for (size_t i = 0; i < G_flags->suppressions.size(); i++) {
       const string &supp_path = G_flags->suppressions[i];
-      Report("INFO: reading suppressions file %s\n", supp_path.c_str());
+      if (G_flags->verbosity >= 0)
+        Report("INFO: Reading suppressions file %s\n", supp_path.c_str());
       int n = suppressions_.ReadFromString(ThreadSanitizerReadFileToString(supp_path, true));
       if (n == -1) {
         Report("Error at line %d: %s\n",
@@ -5660,8 +5663,9 @@ class ReportStorage {
             suppressions_.GetErrorString().c_str());
         exit(1);
       }
-      Report("INFO: %6d suppression(s) read from file %s\n",
-             n, supp_path.c_str());
+      if (G_flags->verbosity >= 0)
+        Report("INFO: %6d suppression(s) read from file %s\n",
+               n, supp_path.c_str());
     }
   }
 
@@ -7857,7 +7861,7 @@ void TSanThread::HandleAtomicMop(uintptr_t a,
 // -------- Flags ------------------------- {{{1
 const char *usage_str =
 "Usage:\n"
-"  %s [options] program_to_test [program's options]\n"
+"  %s [options] -- program_to_test [program's options]\n"
 "See %s for details\n";
 
 void ThreadSanitizerPrintUsage() {
@@ -8068,6 +8072,16 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   // Check this first.
   FindIntFlag("v", 0, args, &G_flags->verbosity);
 
+  bool quiet;
+  FindBoolFlag("q", false, args, &quiet);
+  if (quiet) {
+    if (G_flags->verbosity > 0) {
+      Printf("Error: can't be verbose and quiet at the same time! Exiting\n");
+      exit(1);
+    }
+    G_flags->verbosity = -1;
+  }
+
   FindBoolFlag("ignore_stack", false, args, &G_flags->ignore_stack);
   FindIntFlag("keep_history", 1, args, &G_flags->keep_history);
   FindUIntFlag("segment_set_recycle_queue_size", DEBUG_MODE ? 10 : 10000, args,
@@ -8198,7 +8212,11 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
     G_flags->log_file = log_file_tmp.back();
   }
 
-  G_flags->tsan_program_name = "valgrind --tool=tsan";  // TODO(timurrrr): Windows?
+#if defined(_WIN32)
+  G_flags->tsan_program_name = "tsan.bat";
+#else
+  G_flags->tsan_program_name = "valgrind --tool=tsan";
+#endif
   FindStringFlag("tsan_program_name", args, &G_flags->tsan_program_name);
 
   G_flags->tsan_url = "http://code.google.com/p/data-race-test";
@@ -8406,13 +8424,15 @@ static void SetupIgnore() {
   // Now read the ignore/whitelist files.
   for (size_t i = 0; i < G_flags->ignore.size(); i++) {
     string file_name = G_flags->ignore[i];
-    Report("INFO: Reading ignore file: %s\n", file_name.c_str());
+    if (G_flags->verbosity >= 0)
+      Report("INFO: Reading ignore file: %s\n", file_name.c_str());
     string str = ThreadSanitizerReadFileToString(file_name, true);
     ReadIgnoresFromString(str, g_ignore_lists);
   }
   for (size_t i = 0; i < G_flags->whitelist.size(); i++) {
     string file_name = G_flags->whitelist[i];
-    Report("INFO: Reading whitelist file: %s\n", file_name.c_str());
+    if (G_flags->verbosity >= 0)
+      Report("INFO: Reading whitelist file: %s\n", file_name.c_str());
     string str = ThreadSanitizerReadFileToString(file_name, true);
     ReadIgnoresFromString(str, g_white_lists);
   }
