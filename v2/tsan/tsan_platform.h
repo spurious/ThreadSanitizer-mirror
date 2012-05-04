@@ -72,7 +72,7 @@ void sched_yield();
 
 typedef int fd_t;
 const fd_t kInvalidFd = -1;
-fd_t internal_open(const char *name);  // Only for reading now.
+fd_t internal_open(const char *name, bool write);
 void internal_close(fd_t fd);
 uptr internal_filesize(fd_t fd);  // -1 on error.
 uptr internal_read(fd_t fd, void *p, uptr size);

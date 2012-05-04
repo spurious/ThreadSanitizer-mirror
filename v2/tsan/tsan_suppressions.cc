@@ -29,7 +29,7 @@ static char *ReadFile(const char *filename) {
     Snprintf(tmp, tmp.Size(), "%s", filename);
   else
     Snprintf(tmp, tmp.Size(), "%s/%s", internal_getpwd(), filename);
-  fd_t fd = internal_open(tmp);
+  fd_t fd = internal_open(tmp, false);
   if (fd == kInvalidFd) {
     Printf("ThreadSanitizer: failed to open suppressions file '%s'\n",
         tmp.Ptr());

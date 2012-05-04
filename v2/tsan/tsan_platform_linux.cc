@@ -74,9 +74,10 @@ void sched_yield() {
   syscall(__NR_sched_yield);
 }
 
-fd_t internal_open(const char *name) {
+fd_t internal_open(const char *name, bool write) {
   ScopedInRtl in_rtl;
-  return syscall(__NR_open, name, O_RDONLY);
+  return syscall(__NR_open, name,
+      write ? O_WRONLY | O_CREAT | O_CLOEXEC : O_RDONLY, 0660);
 }
 
 void internal_close(fd_t fd) {
@@ -85,15 +86,15 @@ void internal_close(fd_t fd) {
 }
 
 uptr internal_filesize(fd_t fd) {
-  struct stat st;
-  if (fstat(fd, &st))
+  struct stat st = {};
+  if (syscall(__NR_fstat, fd, &st))
     return -1;
   return (uptr)st.st_size;
 }
 
 uptr internal_read(fd_t fd, void *p, uptr size) {
   ScopedInRtl in_rtl;
-  return syscall(__NR_read, p, size);
+  return syscall(__NR_read, fd, p, size);
 }
 
 uptr internal_write(fd_t fd, const void *p, uptr size) {
@@ -152,7 +153,7 @@ void InitializeShadowMemory() {
 
 static void CheckPIE() {
   // Ensure that the binary is indeed compiled with -pie.
-  fd_t fmaps = internal_open("/proc/self/maps");
+  fd_t fmaps = internal_open("/proc/self/maps", false);
   if (fmaps == kInvalidFd)
     return;
   char buf[20];

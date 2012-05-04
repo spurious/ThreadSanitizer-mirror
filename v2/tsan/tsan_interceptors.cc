@@ -324,7 +324,7 @@ TSAN_INTERCEPTOR(void*, memmove, void *dst, void *src, uptr n) {
   return REAL(memmove)(dst, src, n);
 }
 
-TSAN_INTERCEPTOR(int, memcmp, void *s1, void *s2, uptr n) {
+TSAN_INTERCEPTOR(int, memcmp, const void *s1, const void *s2, uptr n) {
   SCOPED_TSAN_INTERCEPTOR(memcmp, s1, s2, n);
   int res = 0;
   uptr len = 0;
@@ -1361,6 +1361,10 @@ void internal_memset(void *ptr, int c, uptr size) {
 
 void internal_memcpy(void *dst, const void *src, uptr size) {
   REAL(memcpy)(dst, src, size);
+}
+
+int internal_memcmp(const void *s1, const void *s2, uptr size) {
+  return REAL(memcmp)(s1, s2, size);
 }
 
 int internal_strcmp(const char *s1, const char *s2) {
