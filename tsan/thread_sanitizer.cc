@@ -6420,12 +6420,15 @@ class Detector {
 
   void FlushIfNeeded(TSanThread *thr) {
     // Are we out of segment IDs?
-#if defined(TS_VALGRIND) || defined(_WIN32)
+#if defined(TS_VALGRIND) || (defined(_WIN32) && TS_SERIALIZED == 1)
     // GetVmSizeInMb() is only available on Valgrind and Win32 anyway.
 
     static int counter;
-    counter++;  // ATTENTION: don't do this in multi-threaded code -- too slow.
-    CHECK(TS_SERIALIZED == 1);
+#if TS_SERIALIZED == 1
+    counter++;
+#else
+# error The multi-threaded version of FlushIfNeeded is not implemented.
+#endif
 
     // Are we out of memory?
     if (G_flags->max_mem_in_mb > 0) {
