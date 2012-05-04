@@ -1,13 +1,13 @@
 // Mini-benchmark for creating a lot of threads.
 //
 // Some facts:
-// a) clang -O1 takes <10ms to start N=200 threads,
-//    consuming ~1.5MB more RAM than N=1.
-// b) clang -O1 -ftsan takes ~7.5s to start N=200 threads,
-//    consuming 2GB more RAM than N=1 (which is expected)
-//    but then it consumes ~17GB of memory when the threads shut down!
+// a) clang -O1 takes <15ms to start N=500 threads,
+//    consuming ~4MB more RAM than N=1.
+// b) clang -O1 -ftsan takes ~26s to start N=500 threads,
+//    eats 5GB more RAM than N=1 (which is somewhat expected but still a lot)
+//    but then it consumes ~4GB of extra memory when the threads shut down!
 //        (definitely not in the barrier_wait interceptor)
-//    Also, it takes 7.5s to run with N=200 and 1.1s to run with N=1.
+//    Also, it takes 26s to run with N=500 vs just 1.1s to run with N=1.
 #include <assert.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -40,11 +40,12 @@ int main(int argc, char **argv) {
     int status = pthread_create(&t[i], 0, Thread, (void*)i);
     assert(status == 0);
   }
-  //sleep(5);  // FIXME: simplify measuring the memory usage.
+  // sleep(5);  // FIXME: simplify measuring the memory usage.
   pthread_barrier_wait(&all_threads_ready);
   for (int i = 0; i < n_threads; i++) {
     pthread_join(t[i], 0);
   }
+  // sleep(5);  // FIXME: simplify measuring the memory usage.
   delete [] t;
 
   return 0;
