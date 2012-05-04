@@ -15,13 +15,7 @@
 #include "tsan_rtl.h"
 #include "tsan_flags.h"
 #include "tsan_mman.h"
-
-#include <linux/limits.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <stdlib.h>
+#include "tsan_platform.h"
 
 namespace __tsan {
 
@@ -30,35 +24,31 @@ static Suppression *g_suppressions;
 static char *ReadFile(const char *filename) {
   if (filename == 0 || filename[0] == 0)
     return 0;
-  InternalScopedBuf<char> tmp(PATH_MAX);
+  InternalScopedBuf<char> tmp(4*1024);
   if (filename[0] == '/')
     Snprintf(tmp, tmp.Size(), "%s", filename);
   else
-    Snprintf(tmp, tmp.Size(), "%s/%s", getenv("PWD"), filename);
-  int fd = open(tmp, O_RDONLY);
-  if (fd == -1) {
+    Snprintf(tmp, tmp.Size(), "%s/%s", internal_getpwd(), filename);
+  fd_t fd = internal_open(tmp);
+  if (fd == kInvalidFd) {
     Printf("ThreadSanitizer: failed to open suppressions file '%s'\n",
         tmp.Ptr());
     Die();
   }
-  struct stat st;
-  if (fstat(fd, &st)) {
+  const uptr fsize = internal_filesize(fd);
+  if (fsize == (uptr)-1) {
     Printf("ThreadSanitizer: failed to stat suppressions file '%s'\n",
         tmp.Ptr());
     Die();
   }
-  if (st.st_size == 0) {
-    close(fd);
-    return 0;
-  }
-  char *buf = (char*)internal_alloc(MBlockSuppression, st.st_size + 1);
-  if (st.st_size != read(fd, buf, st.st_size)) {
+  char *buf = (char*)internal_alloc(MBlockSuppression, fsize + 1);
+  if (fsize != internal_read(fd, buf, fsize)) {
     Printf("ThreadSanitizer: failed to read suppressions file '%s'\n",
         tmp.Ptr());
     Die();
   }
-  close(fd);
-  buf[st.st_size] = 0;
+  internal_close(fd);
+  buf[fsize] = 0;
   return buf;
 }
 

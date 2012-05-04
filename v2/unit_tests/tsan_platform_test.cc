@@ -15,23 +15,6 @@
 
 namespace __tsan {
 
-TEST(Platform, VirtualAlloc) {
-  ScopedInRtl in_rtl;
-  void *p1 = virtual_alloc(1);
-  void *p2 = virtual_alloc(1);
-  EXPECT_NE(p1, (void*)0);
-  EXPECT_NE(p2, (void*)0);
-  EXPECT_NE(p1, p2);
-  virtual_free(p1, 1);
-  virtual_free(p2, 1);
-
-  for (int i = 0; i < 1000; i++) {
-    void *p = virtual_alloc(16*1024);
-    EXPECT_NE(p, (void*)0);
-    virtual_free(p, 16*1024);
-  }
-}
-
 static void *TestThreadInfo(void *arg) {
   ScopedInRtl in_rtl;
   uptr stk_addr = 0;

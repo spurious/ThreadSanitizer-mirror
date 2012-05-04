@@ -68,10 +68,16 @@ const char *InitializePlatform();
 void FinalizePlatform();
 int GetPid();
 
-void *virtual_alloc(uptr size);
-void virtual_free(void *p, uptr size);
 void sched_yield();
-void internal_write(int fd, const void *p, uptr size);
+
+typedef int fd_t;
+const fd_t kInvalidFd = -1;
+fd_t internal_open(const char *name);  // Only for reading now.
+void internal_close(fd_t fd);
+uptr internal_filesize(fd_t fd);  // -1 on error.
+uptr internal_read(fd_t fd, void *p, uptr size);
+uptr internal_write(fd_t fd, const void *p, uptr size);
+const char *internal_getpwd();
 
 uptr GetTlsSize();
 void GetThreadStackAndTls(uptr *stk_addr, uptr *stk_size,

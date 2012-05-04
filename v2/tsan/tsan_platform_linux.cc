@@ -69,37 +69,40 @@ static void *my_mmap(void *addr, size_t length, int prot, int flags,
 # endif
 }
 
-static int my_munmap(void *addr, size_t length) {
-  ScopedInRtl in_rtl;
-  return syscall(__NR_munmap, addr, length);
-}
-
-void *virtual_alloc(uptr size) {
-  void *p = my_mmap(0, size, PROT_READ|PROT_WRITE,
-      MAP_PRIVATE | MAP_ANON, -1, 0);
-  if (p == MAP_FAILED) {
-    Printf("FATAL: ThreadSanitizer can not allocate %lu MB\n", size<<20);
-    Die();
-  }
-  return p;
-}
-
-void virtual_free(void *p, uptr size) {
-  ScopedInRtl in_rtl;
-  if (my_munmap(p, size)) {
-    Printf("FATAL: ThreadSanitizer munmap failed\n");
-    Die();
-  }
-}
-
 void sched_yield() {
   ScopedInRtl in_rtl;
   syscall(__NR_sched_yield);
 }
 
-void internal_write(int fd, const void *p, uptr size) {
+fd_t internal_open(const char *name) {
   ScopedInRtl in_rtl;
-  syscall(__NR_write, fd, p, size);
+  return syscall(__NR_open, name, O_RDONLY);
+}
+
+void internal_close(fd_t fd) {
+  ScopedInRtl in_rtl;
+  syscall(__NR_close, fd);
+}
+
+uptr internal_filesize(fd_t fd) {
+  struct stat st;
+  if (fstat(fd, &st))
+    return -1;
+  return (uptr)st.st_size;
+}
+
+uptr internal_read(fd_t fd, void *p, uptr size) {
+  ScopedInRtl in_rtl;
+  return syscall(__NR_read, p, size);
+}
+
+uptr internal_write(fd_t fd, const void *p, uptr size) {
+  ScopedInRtl in_rtl;
+  return syscall(__NR_write, fd, p, size);
+}
+
+const char *internal_getpwd() {
+  return getenv("PWD");
 }
 
 static void ProtectRange(uptr beg, uptr end) {
@@ -149,23 +152,23 @@ void InitializeShadowMemory() {
 
 static void CheckPIE() {
   // Ensure that the binary is indeed compiled with -pie.
-  int fmaps = open("/proc/self/maps", O_RDONLY);
-  if (fmaps != -1) {
-    char buf[20];
-    if (read(fmaps, buf, sizeof(buf)) == sizeof(buf)) {
-      buf[sizeof(buf) - 1] = 0;
-      u64 addr = strtoll(buf, 0, 16);
-      if ((u64)addr < kLinuxAppMemBeg) {
-        Printf("FATAL: ThreadSanitizer can not mmap the shadow memory ("
-               "something is mapped at 0x%llx < 0x%lx)\n",
-               addr, kLinuxAppMemBeg);
-        Printf("FATAL: Make sure to compile with -fPIE"
-               " and to link with -pie.\n");
-        Die();
-      }
+  fd_t fmaps = internal_open("/proc/self/maps");
+  if (fmaps == kInvalidFd)
+    return;
+  char buf[20];
+  if (internal_read(fmaps, buf, sizeof(buf)) == sizeof(buf)) {
+    buf[sizeof(buf) - 1] = 0;
+    u64 addr = strtoll(buf, 0, 16);
+    if ((u64)addr < kLinuxAppMemBeg) {
+      Printf("FATAL: ThreadSanitizer can not mmap the shadow memory ("
+             "something is mapped at 0x%llx < 0x%lx)\n",
+             addr, kLinuxAppMemBeg);
+      Printf("FATAL: Make sure to compile with -fPIE"
+             " and to link with -pie.\n");
+      Die();
     }
-    close(fmaps);
   }
+  internal_close(fmaps);
 }
 
 #ifdef __i386__
