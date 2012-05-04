@@ -136,6 +136,12 @@ struct FLAGS {
   bool api_ambush;
 
   bool enable_atomic;
+
+  FLAGS() {
+    // Force default verbosity to 0 as we have to carefully work around
+    // different -q/--q/-v/--v flags when using Valgrind.
+    verbosity = 0;
+  }
 };
 
 extern FLAGS *G_flags;

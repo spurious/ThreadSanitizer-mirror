@@ -8069,8 +8069,10 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   }
 #endif
 
-  // Check this first.
-  FindIntFlag("v", 0, args, &G_flags->verbosity);
+  // Check verbosity first.
+  // NOTE: it may already be initialized to -1 by ts_valgrind.cc
+  CHECK(G_flags->verbosity == 0 || G_flags->verbosity == -1);
+  FindIntFlag("v", G_flags->verbosity, args, &G_flags->verbosity);
 
   bool quiet;
   FindBoolFlag("q", false, args, &quiet);

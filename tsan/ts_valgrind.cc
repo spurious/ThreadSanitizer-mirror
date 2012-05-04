@@ -303,6 +303,7 @@ void ts_post_clo_init(void) {
   extern Char* VG_(clo_suppressions)[];
   extern Int   VG_(clo_n_fullpath_after);
   extern Char* VG_(clo_fullpath_after)[];
+  extern Int   VG_(clo_verbosity);
   // get the suppressions from Valgrind
   for (int i = 0; i < VG_(clo_n_suppressions); i++) {
     G_flags->suppressions.push_back((char*)VG_(clo_suppressions)[i]);
@@ -319,15 +320,22 @@ void ts_post_clo_init(void) {
            "<br id=race0>"
            "<a href=\"#race1\">Go to first race report</a>\n");
   }
-  Report("ThreadSanitizerValgrind r%s: %s\n",
-         TS_VERSION,
-         G_flags->pure_happens_before ? "hybrid=no" : "hybrid=yes");
-  if (DEBUG_MODE) {
-    Report("INFO: Debug build\n");
+
+  if (VG_(clo_verbosity) == 0) {
+    G_flags->verbosity = -1;
   }
-  if (G_flags->max_mem_in_mb) {
-    Report("INFO: ThreadSanitizer memory limit: %dMB\n",
-           (int)G_flags->max_mem_in_mb);
+
+  if (G_flags->verbosity >= 0) {
+    Report("ThreadSanitizerValgrind r%s: %s\n",
+           TS_VERSION,
+           G_flags->pure_happens_before ? "hybrid=no" : "hybrid=yes");
+    if (DEBUG_MODE) {
+      Report("INFO: Debug build\n");
+    }
+    if (G_flags->max_mem_in_mb) {
+      Report("INFO: ThreadSanitizer memory limit: %dMB\n",
+             (int)G_flags->max_mem_in_mb);
+    }
   }
   ThreadSanitizerInit();
 
