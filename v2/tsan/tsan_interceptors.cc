@@ -425,7 +425,6 @@ TSAN_INTERCEPTOR(void*, mmap64, void *addr, long_t sz, int prot,
 
 TSAN_INTERCEPTOR(int, munmap, void *addr, long_t sz) {
   SCOPED_TSAN_INTERCEPTOR(munmap, addr, sz);
-  MemoryRangeFreed(thr, pc, (uptr)addr, sz);
   int res = REAL(munmap)(addr, sz);
   return res;
 }
@@ -1378,6 +1377,14 @@ void internal_strcpy(char *s1, const char *s2) {
 
 uptr internal_strlen(const char *s) {
   return REAL(strlen)(s);
+}
+
+char* internal_strdup(const char *s) {
+  uptr len = internal_strlen(s);
+  char *s2 = (char*)internal_alloc(MBlockString, len + 1);
+  internal_memcpy(s2, s, len);
+  s2[len] = 0;
+  return s2;
 }
 
 const char *internal_strstr(const char *where, const char *what) {

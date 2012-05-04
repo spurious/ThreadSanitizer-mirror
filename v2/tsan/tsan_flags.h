@@ -14,8 +14,6 @@
 #ifndef TSAN_FLAGS_H
 #define TSAN_FLAGS_H
 
-#include "tsan_defs.h"
-
 namespace __tsan {
 
 struct Flags {

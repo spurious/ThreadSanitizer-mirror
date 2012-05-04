@@ -34,6 +34,7 @@ MBlock *user_mblock(ThreadState *thr, void *p);
 
 enum MBlockType {
   MBlockScopedBuf,
+  MBlockString,
   MBlockStackTrace,
   MBlockSync,
   MBlockClock,

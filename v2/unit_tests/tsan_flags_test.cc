@@ -17,6 +17,7 @@
 namespace __tsan {
 
 TEST(Flags, Basic) {
+  ScopedInRtl in_rtl;
   // At least should not crash.
   Flags f = {};
   InitializeFlags(&f, 0);

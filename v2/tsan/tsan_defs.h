@@ -167,6 +167,7 @@ int internal_strcmp(const char *s1, const char *s2);
 int internal_strncmp(const char *s1, const char *s2, uptr size);
 void internal_strcpy(char *s1, const char *s2);
 uptr internal_strlen(const char *s);
+char* internal_strdup(const char *s);
 const char *internal_strstr(const char *where, const char *what);
 const char *internal_strchr(const char *where, char what);
 
