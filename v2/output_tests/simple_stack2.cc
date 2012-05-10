@@ -9,7 +9,7 @@ void __attribute__((noinline)) foo1() {
 }
 
 void __attribute__((noinline)) bar1() {
-  volatile int tmp = 42;
+  volatile int tmp = 42; (void)tmp;
   foo1();
 }
 
@@ -18,7 +18,7 @@ void __attribute__((noinline)) foo2() {
 }
 
 void __attribute__((noinline)) bar2() {
-  volatile int tmp = 42;
+  volatile int tmp = 42; (void)tmp;
   foo2();
 }
 

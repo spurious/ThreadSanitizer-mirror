@@ -2,7 +2,6 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <sched.h>
-#include "../tsan/tsan_interface_atomic.h"
 
 struct Cache {
   int x;

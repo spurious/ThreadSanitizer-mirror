@@ -10,7 +10,7 @@ CC=clang
 CXX=clang++
 
 # TODO: add testing for all of -O0...-O3
-CFLAGS="-fthread-sanitizer -fPIE -O1 -g -fno-builtin"
+CFLAGS="-fthread-sanitizer -fPIE -O1 -g -fno-builtin -Wall -Werror=return-type"
 LDFLAGS="-pie -lpthread -ldl $ROOTDIR/tsan/libtsan.a"
 if [ "$LLDB" != "" ]; then
   LDFLAGS+=" -L$LLDB -llldb"
@@ -35,9 +35,6 @@ test_file() {
     cat test.out
   fi
   echo >>test.out  # FileCheck fails on empty files
-  strip "failed to intercept"
-  strip "Running under ThreadSanitizer"
-  strip "========="
   FileCheck < test.out $SRC
   if [ "$3" == "" ]; then
     rm -f $EXE $OBJ test.out *.tmp *.tmp2

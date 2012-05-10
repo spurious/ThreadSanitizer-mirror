@@ -24,7 +24,7 @@ int main() {
   pthread_create(&t, NULL, Thread1, NULL);
   Thread2(0);
   pthread_join(t, NULL);
+  return 0;
 }
 
 // CHECK:      WARNING: ThreadSanitizer: data race
-

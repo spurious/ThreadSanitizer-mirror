@@ -8,6 +8,7 @@ int main() {
   pthread_t t;
   pthread_create(&t, 0, Thread, 0);
   pthread_detach(t);
+  return 0;
 }
 
 // CHECK-NOT: WARNING: ThreadSanitizer: thread leak

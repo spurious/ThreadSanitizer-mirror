@@ -9,7 +9,7 @@ void __attribute__((noinline)) foo1() {
 }
 
 void __attribute__((noinline)) bar1() {
-  volatile int tmp = 42;
+  volatile int tmp = 42; (void)tmp;
   foo1();
 }
 
@@ -18,7 +18,7 @@ void __attribute__((noinline)) foo2() {
 }
 
 void __attribute__((noinline)) bar2() {
-  volatile int tmp = 42;
+  volatile int tmp = 42; (void)tmp;
   foo2();
 }
 
@@ -43,6 +43,7 @@ int main() {
   StartThread(&t[1], Thread2);
   pthread_join(t[0], NULL);
   pthread_join(t[1], NULL);
+  return 0;
 }
 
 // CHECK:      WARNING: ThreadSanitizer: data race

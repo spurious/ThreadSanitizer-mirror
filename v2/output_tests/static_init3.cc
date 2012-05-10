@@ -2,7 +2,6 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <sched.h>
-#include "../tsan/tsan_interface_atomic.h"
 
 struct Cache {
   int x;
@@ -15,18 +14,18 @@ Cache *CreateCache() {
   return &g_cache;
 }
 
-__tsan_atomic64 queue;
+_Atomic(Cache*) queue;
 
 void *Thread1(void *x) {
   static Cache *c = CreateCache();
-  __tsan_atomic64_store(&queue, (__tsan_atomic64)c, __tsan_memory_order_relaxed);
+  __c11_atomic_store(&queue, c, 0);
   return 0;
 }
 
 void *Thread2(void *x) {
   Cache *c = 0;
   for (;;) {
-    c = (Cache*)__tsan_atomic64_load(&queue, __tsan_memory_order_relaxed);
+    c = __c11_atomic_load(&queue, 0);
     if (c)
       break;
     sched_yield();

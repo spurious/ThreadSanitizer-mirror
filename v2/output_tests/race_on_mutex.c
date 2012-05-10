@@ -29,6 +29,7 @@ int main() {
   pthread_join(t[0], NULL);
   pthread_join(t[1], NULL);
   pthread_mutex_destroy(&Mtx);
+  return 0;
 }
 
 // CHECK:      WARNING: ThreadSanitizer: data race
