@@ -1,3 +1,5 @@
+The source has moved to LLVM svn and will soon be removed from here.
+
 CXXFLAGS=-Wall -fPIE -Werror -g $(CFLAGS) -fno-builtin
 DEBUG=1
 
