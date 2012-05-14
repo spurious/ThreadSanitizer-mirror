@@ -16,6 +16,7 @@ clang -v 2>tmp && grep "version" tmp
 if [ "$BUILDBOT_CLOBBER" != "" ]; then
   echo @@@BUILD_STEP clobber@@@
   rm -rf tsanv2
+  rm -rf compiler-rt
 fi
 
 echo @@@BUILD_STEP update@@@
@@ -24,14 +25,14 @@ if [ "$BUILDBOT_REVISION" != "" ]; then
   REV_ARG="-r$BUILDBOT_REVISION"
 fi
 
-if [ -d tsanv2 ]; then
-  cd tsanv2
-  svn up --ignore-externals $REV_ARG
-  cd v2
+if [ -d compiler-rt ]; then
+  (cd tsanv2 && svn up --ignore-externals)
+  (cd compiler-rt && svn up $REV_ARG)
 else
-  svn co http://data-race-test.googlecode.com/svn/trunk/ tsanv2 $REV_ARG
-  cd tsanv2/v2
-  make install_deps
+  svn co http://data-race-test.googlecode.com/svn/trunk/ tsanv2
+  svn co $REV_ARG http://llvm.org/svn/llvm-project/compiler-rt/trunk/ compiler-rt
+  (cd compiler-rt/lib/tsan && make -f Makefile.old install_deps)
 fi
 
-./scripts/slave/test.sh
+cp tsanv2/v2/scripts/slave/test.sh compiler-rt/lib/tsan
+(cd compiler-rt/lib/tsan && ./test.sh)

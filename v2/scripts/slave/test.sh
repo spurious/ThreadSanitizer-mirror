@@ -46,9 +46,9 @@ echo @@@BUILD_STEP ANALYZE@@@
 ./check_analyze.sh
 
 echo @@@BUILD_STEP RACECHECK UNITTEST@@@
-(cd ../unittest && \
+(cd ../../../tsanv2/unittest && \
 rm -f bin/racecheck_unittest-linux-amd64-O0 && \
-OMIT_DYNAMIC_ANNOTATIONS_IMPL=1 LIBS=../v2/tsan/libtsan.a make l64 -j16 CC=clang CXX=clang++ LDOPT="-pie -ldl ../v2/tsan/libtsan.a" OMIT_CPP0X=1 EXTRA_CFLAGS="-fthread-sanitizer -fPIC -g -O2 -Wno-format-security -Wno-null-dereference -Wno-format-security -Wno-null-dereference" EXTRA_CXXFLAGS="-fthread-sanitizer -fPIC -g -O2 -Wno-format-security -Wno-null-dereference -Wno-format-security -Wno-null-dereference" && \
+OMIT_DYNAMIC_ANNOTATIONS_IMPL=1 LIBS=../../compiler-rt/lib/tsan/rtl/libtsan.a make l64 -j16 CC=clang CXX=clang++ LDOPT="-pie -ldl ../../compiler-rt/lib/tsan/rtl/libtsan.a" OMIT_CPP0X=1 EXTRA_CFLAGS="-fthread-sanitizer -fPIC -g -O2 -Wno-format-security -Wno-null-dereference -Wno-format-security -Wno-null-dereference" EXTRA_CXXFLAGS="-fthread-sanitizer -fPIC -g -O2 -Wno-format-security -Wno-null-dereference -Wno-format-security -Wno-null-dereference" && \
 bin/racecheck_unittest-linux-amd64-O0 --gtest_filter=-*Ignore*:*Suppress*:*EnableRaceDetectionTest*:*Rep*Test*:*NotPhb*:*Barrier*:*Death*:*PositiveTests_RaceInSignal*:StressTests.FlushStateTest:*Mmap84GTest )
 
 #Ignore: ignores do not work yet
