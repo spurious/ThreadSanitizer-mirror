@@ -5,39 +5,39 @@ set -e
 set -u
 
 echo @@@BUILD_STEP LINT@@@
-make lint
+make -f Makefile.old lint
 
 echo @@@BUILD_STEP BUILD DEBUG-CLANG@@@
-make clean
-make DEBUG=1 CC=clang CXX=clang++
+make -f Makefile.old clean
+make -f Makefile.old DEBUG=1 CC=clang CXX=clang++
 
 echo @@@BUILD_STEP TEST DEBUG-CLANG@@@
-./rtl_tests/tsan_test
+./tsan_test
 
 echo @@@BUILD_STEP BUILD STATS/OUTPUT@@@
-make clean
-make DEBUG=1 CC=clang CXX=clang++ CFLAGS="-DTSAN_COLLECT_STATS=1 -DTSAN_DEBUG_OUTPUT=2"
+make -f Makefile.old clean
+make -f Makefile.old DEBUG=1 CC=clang CXX=clang++ CFLAGS="-DTSAN_COLLECT_STATS=1 -DTSAN_DEBUG_OUTPUT=2"
 
 echo @@@BUILD_STEP BUILD SHADOW_COUNT=4@@@
-make clean
-make DEBUG=1 CC=clang CXX=clang++ CFLAGS=-DTSAN_SHADOW_COUNT=4
+make -f Makefile.old clean
+make -f Makefile.old DEBUG=1 CC=clang CXX=clang++ CFLAGS=-DTSAN_SHADOW_COUNT=4
 
 echo @@@BUILD_STEP TEST SHADOW_COUNT=4@@@
-./rtl_tests/tsan_test
+./tsan_test
 
 echo @@@BUILD_STEP BUILD SHADOW_COUNT=2@@@
-make clean
-make DEBUG=1 CC=clang CXX=clang++ CFLAGS=-DTSAN_SHADOW_COUNT=2
+make -f Makefile.old clean
+make -f Makefile.old DEBUG=1 CC=clang CXX=clang++ CFLAGS=-DTSAN_SHADOW_COUNT=2
 
 echo @@@BUILD_STEP TEST SHADOW_COUNT=2@@@
-./rtl_tests/tsan_test
+./tsan_test
 
 echo @@@BUILD_STEP BUILD RELEASE-GCC@@@
-make clean
-make DEBUG=0 CC=gcc CXX=g++
+make -f Makefile.old clean
+make -f Makefile.old DEBUG=0 CC=gcc CXX=g++
 
 echo @@@BUILD_STEP TEST RELEASE-GCC@@@
-./rtl_tests/tsan_test
+./tsan_test
 
 echo @@@BUILD_STEP OUTPUT TESTS@@@
 (cd output_tests && ./test_output.sh)
