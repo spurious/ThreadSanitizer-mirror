@@ -111,6 +111,7 @@ void finalize() {
   Printf("-- %d\n", cnt);
   */
 
+#ifdef DEBUG
   EventType interesting[] = {
     THR_START,
     READ,
@@ -122,6 +123,7 @@ void finalize() {
     MALLOC,
     FREE,
   };
+
   Printf("\nThreadSanitizer has received %d events\n", g_numEventsRead);
   int numInteresting = sizeof(interesting)/sizeof(interesting[0]);
   for (int i = 0; i < numInteresting; i++) {
@@ -129,6 +131,7 @@ void finalize() {
     Printf("%d %ss\n", g_eventsCount[e], kEventNames[e]);
   }
   Printf("\n\n");
+#endif
 
   ThreadSanitizerFini();
 
