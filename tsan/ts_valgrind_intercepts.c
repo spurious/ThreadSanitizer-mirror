@@ -738,6 +738,9 @@ static int pthread_join_WRK(pthread_t thread, void** value_pointer)
    int ret;
    OrigFn fn;
    VALGRIND_GET_ORIG_FN(fn);
+
+   pthread_lib_enter();
+
    if (TRACE_PTH_FNS) {
       fprintf(stderr, "<< pthread_join wrapper"); fflush(stderr);
    }
@@ -756,6 +759,9 @@ static int pthread_join_WRK(pthread_t thread, void** value_pointer)
    if (TRACE_PTH_FNS) {
       fprintf(stderr, " :: pth_join -> %d >>\n", ret);
    }
+
+   pthread_lib_exit();
+
    return ret;
 }
 
@@ -1031,15 +1037,19 @@ PTH_FUNC(int, pthreadZumutexZuunlock, // pthread_mutex_unlock
               pthread_mutex_t *mutex)
 {
    int    ret;
+   int    is_outermost;
    OrigFn fn;
    VALGRIND_GET_ORIG_FN(fn);
+
+   is_outermost = pthread_lib_enter();
 
    if (TRACE_PTH_FNS) {
       fprintf(stderr, "<< pthread_mxunlk %p", mutex); fflush(stderr);
    }
 
-   DO_CREQ_v_W(TSREQ_PTHREAD_RWLOCK_UNLOCK_PRE,
-               pthread_mutex_t*,mutex);
+   if (is_outermost)
+      DO_CREQ_v_W(TSREQ_PTHREAD_RWLOCK_UNLOCK_PRE,
+                  pthread_mutex_t*,mutex);
 
    CALL_FN_W_W(ret, fn, mutex);
 
@@ -1050,6 +1060,9 @@ PTH_FUNC(int, pthreadZumutexZuunlock, // pthread_mutex_unlock
    if (TRACE_PTH_FNS) {
       fprintf(stderr, " mxunlk -> %d >>\n", ret);
    }
+
+   pthread_lib_exit();
+
    return ret;
 }
 
@@ -1202,6 +1215,12 @@ PTH_FUNC(int, pthreadZucondZuwaitZAZa, // pthread_cond_wait@*
   return pthread_cond_wait_WRK(cond, mutex);
 }
 
+PTH_FUNC(int, pthreadZucondZuwait, // pthread_cond_wait
+              pthread_cond_t* cond, pthread_mutex_t* mutex)
+{
+  return pthread_cond_wait_WRK(cond, mutex);
+}
+
 PTH_FUNC(int, pthreadZucondZuwait$Za, // pthread_cond_wait$*
               pthread_cond_t* cond, pthread_mutex_t* mutex)
 {
@@ -1263,6 +1282,13 @@ PTH_FUNC(int, pthreadZucondZutimedwaitZAZa, // pthread_cond_timedwait@*
 }
 
 PTH_FUNC(int, pthreadZucondZutimedwait$Za, // pthread_cond_timedwait$*
+         pthread_cond_t* cond, pthread_mutex_t* mutex,
+         struct timespec* abstime)
+{
+  return pthread_cond_timedwait_WRK(cond, mutex, abstime);
+}
+
+PTH_FUNC(int, pthreadZucondZutimedwait, // pthread_cond_timedwait
          pthread_cond_t* cond, pthread_mutex_t* mutex,
          struct timespec* abstime)
 {

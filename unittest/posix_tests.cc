@@ -1012,31 +1012,6 @@ void MallocTestWorker() {
   }
 }
 
-// Regression test for
-// http://code.google.com/p/data-race-test/issues/detail?id=13 .
-// Make sure that locking events are handled in signal handlers.
-//
-// For some reason, invoking the signal handlers causes deadlocks on Mac OS.
-#ifndef __APPLE__
-Mutex mu;
-
-void SignalHandlerWithMutex(int, siginfo_t*, void*) {
-  mu.Lock();
-  GLOB++;
-  mu.Unlock();
-}
-
-TEST(Signals, SignalsAndMallocTestWithMutex) {
-  GLOB = 0;
-  EnableSigprof(SignalHandlerWithMutex);
-  MyThreadArray t(MallocTestWorker, MallocTestWorker, MallocTestWorker);
-  t.Start();
-  t.Join();
-  DisableSigprof();
-  CHECK(GLOB > 1);
-}
-#endif
-
 // Another regression test for
 // http://code.google.com/p/data-race-test/issues/detail?id=13 .
 // Make sure that locking events are handled in signal handlers.
