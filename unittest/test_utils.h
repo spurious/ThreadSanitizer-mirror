@@ -33,6 +33,10 @@
 #ifndef TEST_UTILS_H__
 #define TEST_UTILS_H__
 
+#ifndef __has_feature
+# define __has_feature(x) 0
+#endif
+
 // This test must not include any other file specific to threading library,
 // everything should be inside THREAD_WRAPPERS.
 #ifndef THREAD_WRAPPERS
