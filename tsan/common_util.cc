@@ -115,7 +115,8 @@ string ThreadSanitizerReadFileToString(const string &file_name, bool die_if_fail
   if (fd == TS_FILE_INVALID) {
     return string();
   }
-  char buff[257] = {0};
+  char buff[257];
+  memset(buff, 0, 257);
   int n_read;
   string res;
   while ((n_read = read(fd, buff, sizeof(buff) - 1)) > 0) {
