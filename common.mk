@@ -68,15 +68,15 @@ endif
   O=-o
   LINKO=-Wl,-o,
 else ifeq ($(OS), windows)
-  CXX=cl
-  CC=cl
-  LD=link
+  CXX=cl -nologo
+  CC=cl -nologo
+  LD=link -nologo
   SO=dll
   OBJ=obj
   EXE=.exe
-  O=/Fo
-  LINKO=/OUT:
-  LDOPT=/DEBUG /INCREMENTAL:NO
+  O=-Fo
+  LINKO=-out:
+  LDOPT=-debug -incremental:no
 else
   OS=UNKNOWN_OS
 endif

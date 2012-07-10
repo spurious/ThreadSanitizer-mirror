@@ -101,10 +101,10 @@ endif
   VG_CXXFLAGS+=-fno-weak -bind_at_load -fno-PIC
 else ifeq ($(OS), windows)
   VALGRIND_ROOT= # no valgrind on windows :(
-  CXXFLAGS=/c /Zi /MT /EHs- /EHa- /wd4530 /D_CRT_SECURE_NO_DEPRECATE /D_SECURE_SCL=0 /D_HAS_ITERATOR_DEBUGGING=0 /nologo /Gy /Ox /GL
+  CXXFLAGS=-c -Zi -MT -EHs- -EHa- -wd4530 -D_CRT_SECURE_NO_DEPRECATE -D_SECURE_SCL=0 -D_HAS_ITERATOR_DEBUGGING=0 -Gy -Ox -GL
   PIN_DEFINES=/DTARGET_WINDOWS /DBIGARRAY_MULTIPLIER=1 /DUSING_XED /DTARGET_IA32 /DHOST_IA32a /D_SECURE_SCL=0 -DTS_PIN=1
   PIN_INCLUDES=/I$(PIN_ROOT)/source/include /I$(PIN_ROOT)/source/include/gen /I$(PIN_ROOT)/extras/xed2-ia32/include
-  PIN_LDFLAGS=/LTCG /DEBUG /DLL /EXPORT:main /NODEFAULTLIB /NOLOGO /INCREMENTAL:NO /OPT:REF /MACHINE:x86 /ENTRY:Ptrace_DllMainCRTStartup@12 /BASE:0x55000000
+  PIN_LDFLAGS=/LTCG /DEBUG /DLL /EXPORT:main /NODEFAULTLIB /INCREMENTAL:NO /OPT:REF /MACHINE:x86 /ENTRY:Ptrace_DllMainCRTStartup@12 /BASE:0x55000000
   LDFLAGS=/LTCG
   PIN_LIBPATHS= /LIBPATH:$(PIN_ROOT)/ia32/lib /LIBPATH:$(PIN_ROOT)/ia32/lib-ext /LIBPATH:$(PIN_ROOT)/extras/xed2-ia32/lib
   PIN_LIBS=pin.lib libxed.lib libcpmt.lib libcmt.lib pinvm.lib kernel32.lib ntdll-32.lib winmm.lib
