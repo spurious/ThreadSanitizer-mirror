@@ -351,7 +351,7 @@ class ScopedMallocCostCenter {
 };
 
 //--------- Forward decls ------------------- {{{1
-class ThreadSanitizerReport;
+struct ThreadSanitizerReport;
 
 // Time since some moment before the program start.
 extern size_t TimeInMilliSeconds();
@@ -402,26 +402,14 @@ inline uintptr_t tsan_bswap(uintptr_t x) {
 #elif defined(__GNUC__) && __WORDSIZE == 32
   __asm__("bswapl %0" : "=r" (x) : "0" (x));
   return x;
+#elif defined(_WIN64)
+  return _byteswap_uint64(x);
 #elif defined(_WIN32)
   return _byteswap_ulong(x);
 #else
 # error  "Unknown Configuration"
 #endif // arch && VG_WORDSIZE
 }
-
-#ifdef _MSC_VER
-inline unsigned u32_log2(unsigned x) {
-  unsigned long y;
-  _BitScanReverse(&y, x);
-  return y;
-}
-#endif
-
-#ifdef __GNUC__
-inline unsigned u32_log2(unsigned x) {
-  return 31 - __builtin_clz(x);
-}
-#endif
 
 typedef unsigned prng_t;
 

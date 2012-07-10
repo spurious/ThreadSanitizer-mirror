@@ -406,6 +406,24 @@ static INLINE bool WantToIgnoreEvent(PinThread &t, uintptr_t event) {
   return false;
 }
 
+#if defined(_WIN64)
+inline size_t ulog2(unsigned __int64 x) {
+  unsigned long y;
+  _BitScanReverse64(&y, x);
+  return y;
+}
+#elif defined(_WIN32)
+inline size_t ulog2(unsigned x) {
+  unsigned long y;
+  _BitScanReverse(&y, x);
+  return y;
+}
+#elif defined(__GNUC__)
+inline size_t ulog2(unsigned x) {
+  return 31 - __builtin_clz(x);
+}
+#endif
+
 static INLINE void TLEBFlushUnlocked(ThreadLocalEventBuffer &tleb) {
   if (tleb.size == 0) return;
   PinThread &t = *tleb.t;
@@ -419,7 +437,7 @@ static INLINE void TLEBFlushUnlocked(ThreadLocalEventBuffer &tleb) {
 
   if (TS_SERIALIZED == 1 || DEBUG_MODE) {
     size_t max_idx = TS_ARRAY_SIZE(G_stats->tleb_flush);
-    size_t idx = min((size_t)u32_log2(tleb.size), max_idx - 1);
+    size_t idx = min(ulog2(tleb.size), max_idx - 1);
     CHECK(idx < max_idx);
     G_stats->tleb_flush[idx]++;
   }

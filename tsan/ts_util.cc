@@ -188,9 +188,9 @@ void Report(const char *format, ...) {
 
   string res;
 #ifndef TS_LLVM
-  int len = strlen(buff);
+  size_t len = strlen(buff);
 #else
-  int len = __real_strlen(buff);
+  size_t len = __real_strlen(buff);
 #endif
   bool last_was_new_line = true;
   for (int i = 0; i < len; i++) {

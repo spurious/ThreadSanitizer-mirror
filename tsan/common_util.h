@@ -33,11 +33,13 @@
   typedef int TS_FILE;
   #define TS_FILE_INVALID (-1)
 #ifdef TS_LLVM
+  #define read_ret_t ssize_t
   #define read(fd, buf, size) __real_read(fd, buf, size)
 #endif
 #elif defined(_MSC_VER)
   typedef FILE *TS_FILE;
   #define TS_FILE_INVALID (NULL)
+  #define read_ret_t size_t
   #define read(fd, buf, size) fread(buf, 1, size, fd)
   #define close fclose
 #endif

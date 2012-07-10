@@ -379,10 +379,11 @@ struct MatcherContext {
   StackTraceTemplate* tmpl;
 };
 
-static bool MatchStackTraceRecursive(MatcherContext ctx, int trace_index,
-    int tmpl_index) {
-  const int trace_size = ctx.function_names_mangled.size();
-  const int tmpl_size = ctx.tmpl->locations.size();
+static bool MatchStackTraceRecursive(MatcherContext ctx,
+                                     size_t trace_index,
+                                     size_t tmpl_index) {
+  const size_t trace_size = ctx.function_names_mangled.size();
+  const size_t tmpl_size = ctx.tmpl->locations.size();
   while (trace_index < trace_size && tmpl_index < tmpl_size) {
     Location& location = ctx.tmpl->locations[tmpl_index];
     if (location.type == LT_STAR) {

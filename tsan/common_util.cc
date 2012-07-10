@@ -109,7 +109,7 @@ TS_FILE ThreadSanitizerOpenFileReadOnly(const string &file_name, bool die_if_fai
   return ret;
 }
 
-// Read the contents of a file to string. Valgrind version.
+// Read the contents of a file to string.
 string ThreadSanitizerReadFileToString(const string &file_name, bool die_if_failed) {
   TS_FILE fd = ThreadSanitizerOpenFileReadOnly(file_name, die_if_failed);
   if (fd == TS_FILE_INVALID) {
@@ -117,7 +117,7 @@ string ThreadSanitizerReadFileToString(const string &file_name, bool die_if_fail
   }
   char buff[257];
   memset(buff, 0, 257);
-  int n_read;
+  read_ret_t n_read;
   string res;
   while ((n_read = read(fd, buff, sizeof(buff) - 1)) > 0) {
     buff[n_read] = 0;
