@@ -193,7 +193,7 @@ void Report(const char *format, ...) {
   size_t len = __real_strlen(buff);
 #endif
   bool last_was_new_line = true;
-  for (int i = 0; i < len; i++) {
+  for (size_t i = 0; i < len; i++) {
     if (G_flags->show_pid && last_was_new_line)
       res += pid_buff;
     last_was_new_line = (buff[i] == '\n');
