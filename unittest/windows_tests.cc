@@ -388,7 +388,7 @@ TEST(NegativeTests, WindowsConditionVariableSRWTest) {
 namespace WindowsInterlockedListTest {  // {{{1
 SLIST_HEADER list;
 
-struct Item {
+struct ALIGNED(MEMORY_ALLOCATION_ALIGNMENT) Item {
   SLIST_ENTRY entry;
   int foo;
 };
@@ -396,7 +396,7 @@ struct Item {
 void Push() {
   Item *item = new Item;
   item->foo = 42;
-  InterlockedPushEntrySList(&list, (PSINGLE_LIST_ENTRY)item);
+  InterlockedPushEntrySList(&list, &item->entry);
 }
 
 void Pop() {
