@@ -107,10 +107,10 @@ endif
 ifeq ($(OS), windows)
   ifeq ($(OPT), 1)
     OX=O1
-    OPTFLAGS=/Zi /MT /O1 /Ob0
+    OPTFLAGS=-Zi -MT -O1 -Ob0
   else
     OX=O0
-    OPTFLAGS=/Od /Zi /MTd
+    OPTFLAGS=-Zi -MTd -Od
   endif
 else
   ifeq ($(OPT), 1)
@@ -125,22 +125,23 @@ endif
 # GTEST_*
 GTEST_ROOT=$(SVN_ROOT)/third_party/googletest
 GTEST_CXXFLAGS=$(CXXFLAGS) $(ARCHFLAGS)
+GTEST_MAKE_DIR=$(GTEST_ROOT)/make-$(OS)-$(ARCH)$(EXTRA_BUILD_SUFFIX)
 ifeq ($(OS), windows)
   ifeq ($(OPT), 1)
-    GTEST_BUILD=Release
-    GTEST_LIB=$(GTEST_ROOT)/msvc/gtest/$(GTEST_BUILD)/gtest.lib
+    GTEST_LIB=$(GTEST_MAKE_DIR)/gtest.lib
   else
-    GTEST_BUILD=Debug
-    GTEST_LIB=$(GTEST_ROOT)/msvc/gtest/$(GTEST_BUILD)/gtestd.lib
+    GTEST_LIB=$(GTEST_MAKE_DIR)/gtestd.lib
   endif
 else
-  GTEST_MAKE_DIR=$(GTEST_ROOT)/make-$(OS)-$(ARCH)$(EXTRA_BUILD_SUFFIX)
   GTEST_LIB=$(GTEST_MAKE_DIR)/gtest_main.a
 endif
 
 ifeq ($(OS), windows)
+# TODO(timurrrr): should be possible to unify this with the non-Windows part.
 $(GTEST_LIB):
-	cd $(GTEST_ROOT)/msvc && devenv /upgrade gtest.sln && devenv /build $(GTEST_BUILD) /project gtest gtest.sln
+	mkdir -p $(GTEST_MAKE_DIR)
+	$(CXX) $(CXXFLAGS) -c $O$(GTEST_LIB).$(OBJ) -I$(GTEST_ROOT)/include -I$(GTEST_ROOT) $(GTEST_ROOT)/src/gtest-all.cc
+	lib -nologo -OUT:$(GTEST_LIB) $(GTEST_LIB).$(OBJ)
 else
 $(GTEST_LIB):
 	mkdir -p $(GTEST_MAKE_DIR) && \
@@ -150,6 +151,4 @@ endif
 
 .PHONY: GTEST_CLEAN
 GTEST_CLEAN:
-	rm -rf ${GTEST_ROOT}/msvc/gtest/Debug
-	rm -rf ${GTEST_ROOT}/msvc/gtest/Release
 	rm -rf ${GTEST_ROOT}/make-*
