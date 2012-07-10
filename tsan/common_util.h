@@ -32,8 +32,8 @@
 #if defined(__GNUC__)
   typedef int TS_FILE;
   #define TS_FILE_INVALID (-1)
-#ifdef TS_LLVM
   #define read_ret_t ssize_t
+#ifdef TS_LLVM
   #define read(fd, buf, size) __real_read(fd, buf, size)
 #endif
 #elif defined(_MSC_VER)
