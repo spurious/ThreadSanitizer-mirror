@@ -8058,7 +8058,7 @@ volatile char s[] = "abracadabra";
 volatile int a = 0;
 
 void Worker1() {
-  fprintf(stdout, "printing a string: %s%n\n", s, &a);
+  fprintf(stdout, "printing a string: %s%n\n", s, (int*)&a);
 }
 
 void Worker2() {
