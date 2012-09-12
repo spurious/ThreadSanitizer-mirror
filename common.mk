@@ -22,6 +22,9 @@ endif
 ifeq ($(MAJOR_V), 10)
 default: m64 m32
 endif
+ifeq ($(MAJOR_V), 11)
+default: m64 m32
+endif
 DARWIN_VERSION=darwin_$(MAJOR_V)
 endif
 
