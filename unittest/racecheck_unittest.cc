@@ -4065,6 +4065,8 @@ REGISTER_TEST2(Run, 83, FEATURE|EXCLUDE_FROM_ALL)
 }  // namespace test83
 
 
+// This test pretends it has the data race, but it does not.
+#if __has_feature(thread_sanitizer)
 // test84: TP. True race (regression test for a bug related to atomics){{{1
 namespace test84 {
 // Helgrind should not create HB arcs for the bus lock even when
@@ -4100,7 +4102,7 @@ void Run() {
 }
 REGISTER_TEST(Run, 84)
 }  // namespace test84
-
+#endif
 
 // Test for RunningOnValgrind(). {{{1
 TEST(NegativeTests, RunningOnValgrindTest) {
