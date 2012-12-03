@@ -94,7 +94,7 @@ string ThreadSanitizerConvertToPlatformIndependentPath(const string &s) {
 TS_FILE ThreadSanitizerOpenFileReadOnly(const string &file_name, bool die_if_failed) {
   TS_FILE ret = TS_FILE_INVALID;
 #ifdef TS_VALGRIND
-  SysRes sres = VG_(open)((const Char*)file_name.c_str(), VKI_O_RDONLY, 0);
+  SysRes sres = VG_(open)((const HChar*)file_name.c_str(), VKI_O_RDONLY, 0);
   if (!sr_isError(sres))
     ret = sr_Res(sres);
 #elif defined(_MSC_VER)

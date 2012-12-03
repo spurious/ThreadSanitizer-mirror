@@ -101,7 +101,7 @@ static char g_buff2[kBuffSize+1];
 
 string PcToRtnName(uintptr_t pc, bool demangle) {
   if (demangle) {
-    if(VG_(get_fnname)(pc, (Char*)g_buff1, kBuffSize)) {
+    if(VG_(get_fnname)(pc, (HChar*)g_buff1, kBuffSize)) {
       return g_buff1;
     }
   } else {
@@ -119,13 +119,13 @@ void PcToStrings(uintptr_t pc, bool demangle,
   Bool has_dirname = False;
 
   if (VG_(get_filename_linenum)
-      (pc, (Char*)g_buff1, kBuffSize, (Char*)g_buff2, kBuffSize,
+      (pc, (HChar*)g_buff1, kBuffSize, (HChar*)g_buff2, kBuffSize,
        &has_dirname, (UInt*)line_no) &&
       has_dirname) {
     *file_name = string(g_buff2) + "/" + g_buff1;
   } else {
     VG_(get_linenum)(pc, (UInt *)line_no);
-    if (VG_(get_filename)(pc, (Char*)g_buff1, kBuffSize)) {
+    if (VG_(get_filename)(pc, (HChar*)g_buff1, kBuffSize)) {
       *file_name = g_buff1;
     }
   }
@@ -133,7 +133,7 @@ void PcToStrings(uintptr_t pc, bool demangle,
 
   *rtn_name = PcToRtnName(pc, demangle);
 
-  if (VG_(get_objname)(pc, (Char*)g_buff1, kBuffSize)) {
+  if (VG_(get_objname)(pc, (HChar*)g_buff1, kBuffSize)) {
     *img_name = g_buff1;
   }
 }
@@ -146,7 +146,7 @@ string Demangle(const char *str) {
 
 extern "C"
 size_t strlen(const char *s) {
-  return VG_(strlen)((const Char*)s);
+  return VG_(strlen)((const HChar*)s);
 }
 
 static inline ThreadId GetVgTid() {
@@ -269,7 +269,7 @@ static void InitCommandLineOptions() {
   }
 }
 
-Bool ts_process_cmd_line_option (Char* arg) {
+Bool ts_process_cmd_line_option (const HChar* arg) {
   InitCommandLineOptions();
   g_command_line_options->push_back((char*)arg);
   return True;
@@ -957,7 +957,7 @@ static void ts_instrument_trace_entry_verify(IRSB *bbOut,
    IRConst* exit_dst = layout->sizeof_IP == 8 ?
        IRConst_U64(cur_pc) : IRConst_U32(cur_pc);
    IRStmt* exit_stmt = IRStmt_Exit(IRExpr_RdTmp(need_sleep_i1),
-       Ijk_YieldNoRedir, exit_dst);
+       Ijk_YieldNoRedir, exit_dst, layout->offset_IP);
    addStmtToIRSB(bbOut, exit_stmt);
 
    hName = (HChar*)"OnTraceVerify2";
@@ -1269,6 +1269,7 @@ static IRSB* ts_instrument ( VgCallbackClosure* closure,
                              IRSB* bbIn,
                              VexGuestLayout* layout,
                              VexGuestExtents* vge,
+                             VexArchInfo* archInfo, 
                              IRType gWordTy, IRType hWordTy) {
   if (G_flags->dry_run >= 2) return bbIn;
   Int   i;
@@ -1276,7 +1277,7 @@ static IRSB* ts_instrument ( VgCallbackClosure* closure,
   uintptr_t pc = closure->readdr;
 
   char objname[kBuffSize];
-  if (VG_(get_objname)(pc, (Char*)objname, kBuffSize)) {
+  if (VG_(get_objname)(pc, (HChar*)objname, kBuffSize)) {
     if (ThreadSanitizerStringMatch("*/ld-2*", objname)) {
       // we want to completely ignore ld-so.
       return bbIn;
@@ -1287,7 +1288,7 @@ static IRSB* ts_instrument ( VgCallbackClosure* closure,
 
   if (gWordTy != hWordTy) {
     /* We don't currently support this case. */
-    VG_(tool_panic)((Char*)"host/guest word size mismatch");
+    VG_(tool_panic)((HChar*)"host/guest word size mismatch");
   }
 
   /* Set up BB */
@@ -1314,9 +1315,9 @@ static IRSB* ts_instrument ( VgCallbackClosure* closure,
   // If we have "::~" and don't have "+", this SB is the first in this dtor.
   // We do all this stuff to avoid benign races on vptr:
   // http://code.google.com/p/data-race-test/wiki/PopularDataRaces#Data_race_on_vptr
-  if (VG_(get_fnname_w_offset)(pc, (Char*)buff, sizeof(buff)) &&
-      VG_(strstr)((Char*)buff, (Char*)"::~") != NULL) {
-    char *offset_str = (char*)VG_(strchr)((Char*)buff, '+');
+  if (VG_(get_fnname_w_offset)(pc, (HChar*)buff, sizeof(buff)) &&
+      VG_(strstr)((HChar*)buff, (HChar*)"::~") != NULL) {
+    char *offset_str = (char*)VG_(strchr)((HChar*)buff, '+');
     if (offset_str == NULL) {
       // we are in the first BB of DTOR.
       dtor_head = true;
@@ -1403,12 +1404,12 @@ static IRSB* ts_instrument ( VgCallbackClosure* closure,
 
 extern "C"
 void ts_pre_clo_init(void) {
-  VG_(details_name)            ((Char*)"ThreadSanitizer");
-  VG_(details_version)         ((Char*)NULL);
-  VG_(details_description)     ((Char*)"a data race detector");
+  VG_(details_name)            ((HChar*)"ThreadSanitizer");
+  VG_(details_version)         ((HChar*)NULL);
+  VG_(details_description)     ((HChar*)"a data race detector");
   VG_(details_copyright_author)(
-      (Char*)"Copyright (C) 2008-2010, and GNU GPL'd, by Google Inc.");
-  VG_(details_bug_reports_to)  ((Char*)"data-race-test@googlegroups.com");
+      (HChar*)"Copyright (C) 2008-2010, and GNU GPL'd, by Google Inc.");
+  VG_(details_bug_reports_to)  ((HChar*)"data-race-test@googlegroups.com");
 
   VG_(basic_tool_funcs)        (ts_post_clo_init,
                                 ts_instrument,
