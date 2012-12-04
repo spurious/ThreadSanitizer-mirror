@@ -77,7 +77,7 @@ bool GetNameAndOffsetOfGlobalObject(uintptr_t addr,
     const int kBufLen = 1023;
     char buff[kBufLen+1];
     PtrdiffT off;
-    if (VG_(get_datasym_and_offset)(addr, reinterpret_cast<HChar*>(buff),
+    if (VG_(get_datasym_and_offset)(addr, reinterpret_cast<Char*>(buff),
                                     kBufLen, &off)) {
       *name = buff;
       *offset = off;
@@ -208,9 +208,9 @@ void Report(const char *format, ...) {
 long my_strtol(const char *str, char **end, int base) {
 #ifdef TS_VALGRIND
   if (base == 16 || (base == 0 && str && str[0] == '0' && str[1] == 'x')) {
-    return VG_(strtoll16)((HChar*)str, (HChar**)end);
+    return VG_(strtoll16)((Char*)str, (Char**)end);
   }
-  return VG_(strtoll10)((HChar*)str, (HChar**)end);
+  return VG_(strtoll10)((Char*)str, (Char**)end);
 #else
   return strtoll(str, end, base);
 #endif
@@ -486,7 +486,7 @@ string NormalizeFunctionName(const string &demangled) {
 
 void OpenFileWriteStringAndClose(const string &file_name, const string &str) {
 #ifdef TS_VALGRIND
-  SysRes sres = VG_(open)((const HChar*)file_name.c_str(),
+  SysRes sres = VG_(open)((const Char*)file_name.c_str(),
                           VKI_O_WRONLY|VKI_O_CREAT|VKI_O_TRUNC,
                           VKI_S_IRUSR|VKI_S_IWUSR);
   if (sr_isError(sres)) {

@@ -213,14 +213,14 @@ using STD::binary_search;
 //--------- defines ------------------- {{{1
 #ifdef TS_VALGRIND
 // TODO(kcc) get rid of these macros.
-#define sprintf(arg1, arg2...) VG_(sprintf)((HChar*)arg1, (HChar*)arg2)
-#define vsnprintf(a1, a2, a3, a4) VG_(vsnprintf)((HChar*)a1, a2, a3, a4)
+#define sprintf(arg1, arg2...) VG_(sprintf)((Char*)arg1, (HChar*)arg2)
+#define vsnprintf(a1, a2, a3, a4) VG_(vsnprintf)((Char*)a1, a2, a3, a4)
 #define getpid VG_(getpid)
-#define strchr(a,b)    VG_(strchr)((HChar*)a,b)
-#define strdup(a) (char*)VG_(strdup)((HChar*)"strdup", (const HChar*)a)
-#define snprintf(a,b,c...)     VG_(snprintf)((HChar*)a,b,c)
+#define strchr(a,b)    VG_(strchr)((Char*)a,b)
+#define strdup(a) (char*)VG_(strdup)((HChar*)"strdup", (const Char*)a)
+#define snprintf(a,b,c...)     VG_(snprintf)((Char*)a,b,c)
 #define read VG_(read)
-#define getenv(x) VG_(getenv)((HChar*)x)
+#define getenv(x) VG_(getenv)((Char*)x)
 #define close VG_(close)
 #define write VG_(write)
 #define usleep(a) /*nothing. TODO.*/
