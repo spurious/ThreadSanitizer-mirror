@@ -329,7 +329,7 @@ void ts_post_clo_init(void) {
     Report("ThreadSanitizerValgrind r%s: %s\n",
            TS_VERSION,
            G_flags->pure_happens_before ? "hybrid=no" : "hybrid=yes");
-    if (DEBUG_MODE) {
+    if (TSAN_DEBUG) {
       Report("INFO: Debug build\n");
     }
     if (G_flags->max_mem_in_mb) {
@@ -437,7 +437,7 @@ static void OnTrace(TraceInfo *trace_info) {
 
 static inline void Put(EventType type, int32_t tid, uintptr_t pc,
                        uintptr_t a, uintptr_t info) {
-  if (DEBUG_MODE && G_flags->dry_run >= 1) return;
+  if (TSAN_DEBUG && G_flags->dry_run >= 1) return;
   Event event(type, tid, pc, a, info);
   ThreadSanitizerHandleOneEvent(&event);
 }

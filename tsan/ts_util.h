@@ -263,10 +263,10 @@ int getpid();
 
 #if defined(DEBUG) && DEBUG >= 1
   #define DCHECK(a) CHECK(a)
-  #define DEBUG_MODE (1)
+  const int TSAN_DEBUG = 1;
 #else
   #define DCHECK(a) do { if (0) { if (a) {} } } while((void)0, 0)
-  #define DEBUG_MODE (0)
+  const int TSAN_DEBUG = 0;
 #endif
 
 #ifndef ALWAYS_INLINE

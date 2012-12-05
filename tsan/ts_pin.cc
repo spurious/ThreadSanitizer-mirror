@@ -430,12 +430,12 @@ static INLINE void TLEBFlushUnlocked(ThreadLocalEventBuffer &tleb) {
   // global_ignore should be always on with race verifier
   DCHECK(!g_race_verifier_active || global_ignore);
   DCHECK(tleb.size <= kThreadLocalEventBufferSize);
-  if (DEBUG_MODE && t.thread_done) {
+  if (TSAN_DEBUG && t.thread_done) {
     Printf("ACHTUNG!!! an event from a dead thread T%d\n", t.tid);
   }
   DCHECK(!t.thread_done);
 
-  if (TS_SERIALIZED == 1 || DEBUG_MODE) {
+  if (TS_SERIALIZED == 1 || TSAN_DEBUG) {
     size_t max_idx = TS_ARRAY_SIZE(G_stats->tleb_flush);
     size_t idx = min(ulog2(tleb.size), max_idx - 1);
     CHECK(idx < max_idx);
@@ -477,7 +477,7 @@ static INLINE void TLEBFlushUnlocked(ThreadLocalEventBuffer &tleb) {
 
       size_t n = trace_info->n_mops();
       if (do_this_trace) {
-        if (DEBUG_MODE && !G_flags->dump_events.empty()) {
+        if (TSAN_DEBUG && !G_flags->dump_events.empty()) {
           DumpEventPlainText(SBLOCK_ENTER, t.uniq_tid, trace_info->pc(), 0, 0);
           for (size_t j = 0; j < n; j++) {
             MopInfo *mop = trace_info->GetMop(j);
@@ -522,7 +522,7 @@ static INLINE void TLEBFlushUnlocked(ThreadLocalEventBuffer &tleb) {
   }
   DCHECK(i == tleb.size);
   tleb.size = 0;
-  if (DEBUG_MODE) { // for sanity checking.
+  if (TSAN_DEBUG) { // for sanity checking.
     memset(tleb.events, 0xf0, sizeof(tleb.events));
   }
 }
@@ -1920,7 +1920,7 @@ void InsertBeforeEvent_Call(THREADID tid, ADDRINT pc, ADDRINT target,
   if (DEB_PR) {
     PrintShadowStack(t);
   }
-  if (DEBUG_MODE && debug_rtn) {
+  if (TSAN_DEBUG && debug_rtn) {
     ShowPcAndSp("CALL: ", t.tid, target, sp);
   }
 
@@ -1961,7 +1961,7 @@ static void OnTraceParallel(uintptr_t *tls_reg, ADDRINT sp, TraceInfo *trace_inf
   UpdateCallStack(t, sp);
 
 
-  if (DEBUG_MODE && G_flags->show_stats)  // this stat may be racey; avoid ping-pong.
+  if (TSAN_DEBUG && G_flags->show_stats)  // this stat may be racey; avoid ping-pong.
     trace_info->counter()++;
   TLEBAddTrace(t);
 }
@@ -2027,7 +2027,7 @@ static void OnTraceVerify(THREADID tid, ADDRINT sp, TraceInfo *trace_info,
 // In opt mode this is just one instruction! Something like this:
 // mov %rcx,(%rdi,%rdx,8)
 static void OnMop(uintptr_t *addr, THREADID tid, ADDRINT idx, ADDRINT a) {
-  if (DEBUG_MODE) {
+  if (TSAN_DEBUG) {
     PinThread &t= g_pin_threads[tid];
     CHECK(idx < kMaxMopsPerTrace);
     CHECK(idx < t.trace_info->n_mops());
@@ -3449,7 +3449,7 @@ static void CallbackForIMG(IMG img, void *v) {
       MaybeInstrumentOneRoutine(img, rtn);
     }
   }
-  // In DEBUG_MODE check that we have the debug symbols in the Windows guts.
+  // In TSAN_DEBUG check that we have the debug symbols in the Windows guts.
   // We should work w/o them too.
   // TODO(timurrrr): I doubt the problem is the missing symbols.
   // I have a strong gut feeling that this syscall was added
@@ -3457,7 +3457,7 @@ static void CallbackForIMG(IMG img, void *v) {
   // (found on W7) but the Vista build was fine for months.
   // Also, we wrap RtlReleaseSRWLock*, so our TSan assertions would have been
   // broken if RtlTryAcquireSRWLock* wasn't wrapped - and we haven't see this.
-  if (DEBUG_MODE && img_name.find("ntdll.dll") != string::npos) {
+  if (TSAN_DEBUG && img_name.find("ntdll.dll") != string::npos) {
     if (g_wrapped_functions.count("RtlTryAcquireSRWLockExclusive") == 0) {
       Printf("WARNING: Debug symbols for ntdll.dll not found.\n");
     }
@@ -3476,7 +3476,7 @@ static BOOL CallbackForExec(CHILD_PROCESS childProcess, VOID *val) {
   CHECK(argc > 0);
   CHECK(argv);
   bool follow = G_flags->trace_children;
-  if (DEBUG_MODE) {
+  if (TSAN_DEBUG) {
     Printf("CallbackForExec: follow=%d: ", follow);
     for (int i = 0; i < argc; i++) {
       Printf("%s ", argv[i]);
@@ -3659,7 +3659,7 @@ int main(INT32 argc, CHAR **argv) {
            TS_VERSION, PIN_BUILD_NUMBER,
            G_flags->pure_happens_before ? "hybrid=no" : "hybrid=yes");
   }
-  if (DEBUG_MODE) {
+  if (TSAN_DEBUG) {
     Report("INFO: Debug build\n");
   }
 

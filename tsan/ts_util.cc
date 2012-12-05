@@ -468,7 +468,7 @@ string NormalizeFunctionName(const string &demangled) {
 
   string fname = StripTemplatesFromFunctionName(demangled);
   if (fname.size() == 0) {
-    if (DEBUG_MODE)
+    if (TSAN_DEBUG)
       Printf("PANIC: `%s`\n", demangled.c_str());
     return MALFORMED;
   }
@@ -476,7 +476,7 @@ string NormalizeFunctionName(const string &demangled) {
   fname = StripParametersFromFunctionName(fname);
   if (fname.size() == 0) {
     CHECK(demangled.size() >= 256);
-    if (DEBUG_MODE)
+    if (TSAN_DEBUG)
       Printf("PANIC: `%s`\n", demangled.c_str());
     return MALFORMED;
   }

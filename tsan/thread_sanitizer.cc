@@ -133,7 +133,7 @@ void ThreadSanitizerLockRelease() {
 #endif
 
 static INLINE void AssertTILHeld() {
-  if (TS_SERIALIZED == 0 && DEBUG_MODE) {
+  if (TS_SERIALIZED == 0 && TSAN_DEBUG) {
     ts_lock->AssertHeld();
   }
 }
@@ -440,7 +440,7 @@ class FreeList {
   }
 
   void Deallocate(void *ptr) {
-    if (DEBUG_MODE) {
+    if (TSAN_DEBUG) {
       memset(ptr, 0xac, obj_size_);
     }
     List *new_head = reinterpret_cast<List*>(ptr);
@@ -452,7 +452,7 @@ class FreeList {
   void AllocateNewChunk() {
     CHECK(list_ == NULL);
     uint8_t *new_mem = new uint8_t[obj_size_ * chunk_size_];
-    if (DEBUG_MODE) {
+    if (TSAN_DEBUG) {
       memset(new_mem, 0xab, obj_size_ * chunk_size_);
     }
     for (int i = 0; i < chunk_size_; i++) {
@@ -941,7 +941,7 @@ class LockSet {
          cache_hit = false;
     DCHECK(lsid2.raw() < 0);
     if (ls_intersection_cache_->Lookup(lsid1.raw(), -lsid2.raw(), &ret)) {
-      if (!DEBUG_MODE)
+      if (!TSAN_DEBUG)
         return ret;
       cache_hit = true;
     }
@@ -1830,7 +1830,7 @@ class Segment {
   }
 
   static void AssertLive(SID sid, int line) {
-    if (DEBUG_MODE) {
+    if (TSAN_DEBUG) {
       if (!(sid.raw() < INTERNAL_ANNOTATE_UNPROTECTED_READ(n_segments_))) {
         Printf("Segment::AssertLive: failed on sid=%d n_segments = %dline=%d\n",
                sid.raw(), n_segments_, line);
@@ -1948,7 +1948,7 @@ class Segment {
     const VTS *vts_b = seg_b->vts();
     res = VTS::HappensBeforeCached(vts_a, vts_b);
 #if 0
-    if (DEBUG_MODE) {
+    if (TSAN_DEBUG) {
       Printf("HB = %d\n  %s\n  %s\n", res,
            vts_a->ToString().c_str(), vts_b->ToString().c_str());
     }
@@ -2034,7 +2034,7 @@ class Segment {
   // so that for small tests we do not require too much RAM.
   // We don't use vector<> or another resizable array to avoid expensive 
   // resizing.
-  enum { kChunkSizeForStacks = DEBUG_MODE ? 512 : 1 * 1024 * 1024 };
+  enum { kChunkSizeForStacks = TSAN_DEBUG ? 512 : 1 * 1024 * 1024 };
   static uintptr_t **all_stacks_;
   static size_t      n_stack_chunks_;
 
@@ -2067,7 +2067,7 @@ class SegmentSet {
 
   static void AssertLive(SSID ssid, int line) {
     DCHECK(ssid.valid());
-    if (DEBUG_MODE) {
+    if (TSAN_DEBUG) {
       if (ssid.IsSingleton()) {
         Segment::AssertLive(ssid.GetSingleton(), line);
       } else {
@@ -2304,7 +2304,7 @@ class SegmentSet {
   SegmentSet()  // Private CTOR
     : ref_count_(0) {
     // sids_ are filled with zeroes due to SID default CTOR.
-    if (DEBUG_MODE) {
+    if (TSAN_DEBUG) {
       for (int i = 0; i < kMaxSegmentSetSize; i++)
         CHECK_EQ(sids_[i].raw(), 0);
     }
@@ -2360,7 +2360,7 @@ class SegmentSet {
   }
 
   static NOINLINE SSID FindExistingOrAlocateAndCopy(SegmentSet *ss) {
-    if (DEBUG_MODE) {
+    if (TSAN_DEBUG) {
       int size = ss->size();
       if (size == 2) G_stats->ss_size_2++;
       if (size == 3) G_stats->ss_size_3++;
@@ -2657,10 +2657,10 @@ SSID SegmentSet::RemoveSegmentFromTupleSS(SSID ssid, SID sid_to_remove) {
   if (new_size == 0) return SSID(0);
   if (new_size == 1) return SSID(tmp_sids[0]);
 
-  if (DEBUG_MODE) tmp.Validate(__LINE__);
+  if (TSAN_DEBUG) tmp.Validate(__LINE__);
 
   SSID res = FindExistingOrAlocateAndCopy(&tmp);
-  if (DEBUG_MODE) Get(res)->Validate(__LINE__);
+  if (TSAN_DEBUG) Get(res)->Validate(__LINE__);
   return res;
 }
 
@@ -2759,10 +2759,10 @@ SSID SegmentSet::AddSegmentToTupleSS(SSID ssid, SID new_sid) {
   SegmentSet tmp;
   for (int i = 0; i < new_size; i++)
     tmp.sids_[i] = tmp_sids[i];  // TODO(timurrrr): avoid copying?
-  if (DEBUG_MODE) tmp.Validate(__LINE__);
+  if (TSAN_DEBUG) tmp.Validate(__LINE__);
 
   SSID res = FindExistingOrAlocateAndCopy(&tmp);
-  if (DEBUG_MODE) Get(res)->Validate(__LINE__);
+  if (TSAN_DEBUG) Get(res)->Validate(__LINE__);
   return res;
 }
 
@@ -2875,7 +2875,7 @@ void SegmentSet::Test() {
 class ShadowValue {
  public:
   ShadowValue() {
-    if (DEBUG_MODE) {
+    if (TSAN_DEBUG) {
       rd_ssid_ = 0xDEADBEEF;
       wr_ssid_ = 0xDEADBEEF;
     }
@@ -3015,7 +3015,7 @@ class CacheLine {
     (void)where_str;
     (void)where_int;
 #if 0
-    if (DEBUG_MODE && tag() == G_flags->trace_addr) {
+    if (TSAN_DEBUG && tag() == G_flags->trace_addr) {
       uintptr_t off8 = off & ~7;
       Printf("CacheLine %p, off=%ld off8=%ld gr=%d "
              "has_sval: %d%d%d%d%d%d%d%d (%s:%d)\n",
@@ -3232,7 +3232,7 @@ class CacheLine {
   }
 
   static void InitClassMembers() {
-    if (DEBUG_MODE) {
+    if (TSAN_DEBUG) {
       Printf("sizeof(CacheLine) = %ld\n", sizeof(CacheLine));
     }
     free_list_ = new FreeList(sizeof(CacheLine), 1024);
@@ -3308,7 +3308,7 @@ class Cache {
     CacheLine **addr = &lines_[cli];
     CacheLine *res = (CacheLine*)AtomicExchange(
            (uintptr_t*)addr, (uintptr_t)kLineIsLocked());
-    if (DEBUG_MODE && debug_cache) {
+    if (TSAN_DEBUG && debug_cache) {
       uintptr_t tag = CacheLine::ComputeTag(a);
       if (res && res != kLineIsLocked())
         Printf("TryAcquire %p empty=%d tag=%lx cli=%lx site=%d\n",
@@ -3334,7 +3334,7 @@ class Cache {
       if ((iter % (1 << 6)) == 0) {
         YIELD();
         G_stats->try_acquire_line_spin++;
-        if (DEBUG_MODE && debug_cache && ((iter & (iter - 1)) == 0)) {
+        if (TSAN_DEBUG && debug_cache && ((iter & (iter - 1)) == 0)) {
           Printf("T%d %s a=%p iter=%d\n", raw_tid(thr), __FUNCTION__, a, iter);
         }
       } else {
@@ -3342,7 +3342,7 @@ class Cache {
           PROCESSOR_YIELD();
         }
       }
-      if (DEBUG_MODE && debug_cache && iter == max_iter) {
+      if (TSAN_DEBUG && debug_cache && iter == max_iter) {
         Printf("Failed to acquire a cache line: T%d a=%p site=%d\n",
                raw_tid(thr), a, call_site);
         CHECK(iter < max_iter);
@@ -3363,7 +3363,7 @@ class Cache {
     DCHECK(*addr == TidMagic(raw_tid(thr)));
     ReleaseStore((uintptr_t*)addr, (uintptr_t)line);
     ANNOTATE_HAPPENS_BEFORE((void*)cli);
-    if (DEBUG_MODE && debug_cache) {
+    if (TSAN_DEBUG && debug_cache) {
       uintptr_t tag = CacheLine::ComputeTag(a);
       if (line)
         Printf("Release %p empty=%d tag=%lx cli=%lx site=%d\n",
@@ -3418,7 +3418,7 @@ class Cache {
         ReleaseLine(thr, a, line, call_site);
       }
     }
-    if (DEBUG_MODE && debug_cache) {
+    if (TSAN_DEBUG && debug_cache) {
       if (res)
         Printf("GetLine %p empty=%d tag=%lx\n", res, res->Empty(), res->tag());
       else
@@ -3532,7 +3532,7 @@ class Cache {
     } else {
       Map::iterator it = storage_.find(tag);
       if (it == storage_.end()) {
-        if (DEBUG_MODE && debug_cache) {
+        if (TSAN_DEBUG && debug_cache) {
           Printf("WriteBackAndFetch: old_line=%ld tag=%lx cli=%ld\n",
                  old_line, tag, cli);
         }
@@ -3546,7 +3546,7 @@ class Cache {
       // creating a new cache line
       CHECK(storage_.size() == old_storage_size + 1);
       res = CacheLine::CreateNewCacheLine(tag);
-      if (DEBUG_MODE && debug_cache) {
+      if (TSAN_DEBUG && debug_cache) {
         Printf("%s %d new line %p cli=%lx\n", __FUNCTION__, __LINE__, res, cli);
       }
       *line_for_this_tag = res;
@@ -3554,7 +3554,7 @@ class Cache {
     } else {
       // taking an existing cache line from storage.
       res = *line_for_this_tag;
-      if (DEBUG_MODE && debug_cache) {
+      if (TSAN_DEBUG && debug_cache) {
         Printf("%s %d exi line %p tag=%lx old=%p empty=%d cli=%lx\n",
              __FUNCTION__, __LINE__, res, res->tag(), old_line,
              res->Empty(), cli);
@@ -3570,7 +3570,7 @@ class Cache {
     }
 
     if (old_line) {
-      if (DEBUG_MODE && debug_cache) {
+      if (TSAN_DEBUG && debug_cache) {
         Printf("%s %d old line %p empty=%d\n", __FUNCTION__, __LINE__,
                old_line, old_line->Empty());
       }
@@ -3616,7 +3616,7 @@ class Cache {
     }
   }
 
-  static const int kNumLines = 1 << (DEBUG_MODE ? 14 : 21);
+  static const int kNumLines = 1 << (TSAN_DEBUG ? 14 : 21);
   CacheLine *lines_[kNumLines];
 
   // tag => CacheLine
@@ -3663,7 +3663,7 @@ static const VTS *GetPublisherVTS(uintptr_t a) {
 }
 
 static bool CheckSanityOfPublishedMemory(uintptr_t tag, int line) {
-  if (!DEBUG_MODE) return true;
+  if (!TSAN_DEBUG) return true;
   if (kDebugPublish)
     Printf("CheckSanityOfPublishedMemory: line=%d\n", line);
   typedef PublishInfoMap::iterator Iter;
@@ -4130,7 +4130,7 @@ void TraceInfo::PrintTraceProfile() {
 
 // TS_ATOMICITY is on in debug mode or if we enabled it at the build time.
 #ifndef TS_ATOMICITY
-# define TS_ATOMICITY DEBUG_MODE
+# define TS_ATOMICITY TSAN_DEBUG
 #endif
 
 
@@ -5403,7 +5403,7 @@ void NOINLINE ClearMemoryState(TSanThread *thr, uintptr_t a, uintptr_t b) {
     ClearMemoryStateInOneLine(thr, line2_tag, 0, b - line2_tag);
   }
 
-  if (DEBUG_MODE && G_flags->debug_level >= 2) {
+  if (TSAN_DEBUG && G_flags->debug_level >= 2) {
     // Check that we've cleared it. Slow!
     for (uintptr_t x = a; x < b; x++) {
       uintptr_t off = CacheLine::ComputeOffset(x);
@@ -5504,7 +5504,7 @@ static void ForgetAllStateAndStartOver(TSanThread *thr, const char *reason) {
   G_cache->ForgetAllState(thr);
 
   size_t stop_time = TimeInMilliSeconds();
-  if (DEBUG_MODE || (stop_time - start_time > 0)) {
+  if (TSAN_DEBUG || (stop_time - start_time > 0)) {
     Report("T%d INFO: Flush took %ld ms\n", raw_tid(thr),
            stop_time - start_time);
   }
@@ -5513,7 +5513,7 @@ static void ForgetAllStateAndStartOver(TSanThread *thr, const char *reason) {
 static INLINE void FlushStateIfOutOfSegments(TSanThread *thr) {
   if (Segment::NumberOfSegments() > kMaxSIDBeforeFlush) {
     // too few sids left -- flush state.
-    if (DEBUG_MODE) {
+    if (TSAN_DEBUG) {
       G_cache->PrintStorageStats();
       Segment::ShowSegmentStats();
     }
@@ -6328,7 +6328,7 @@ class Detector {
   void ShowUnfreedHeap() {
     // check if there is not deleted memory
     // (for debugging free() interceptors, not for leak detection)
-    if (DEBUG_MODE && G_flags->debug_level >= 1) {
+    if (TSAN_DEBUG && G_flags->debug_level >= 1) {
       for (HeapMap<HeapInfo>::iterator it = G_heap_map->begin();
            it != G_heap_map->end(); ++it) {
         HeapInfo &info = it->second;
@@ -7016,7 +7016,7 @@ class Detector {
   INLINE bool MemoryStateMachineSameThread(bool is_w, ShadowValue old_sval,
                                            TSanThread *thr,
                                            ShadowValue *new_sval) {
-#define MSM_STAT(i) do { if (DEBUG_MODE) \
+#define MSM_STAT(i) do { if (TSAN_DEBUG) \
   thr->stats.msm_branch_count[i]++; } while ((void)0, 0)
     SSID rd_ssid = old_sval.rd_ssid();
     SSID wr_ssid = old_sval.wr_ssid();
@@ -7196,7 +7196,7 @@ class Detector {
     }
 
 
-    if (DEBUG_MODE && !fast_path_only) {
+    if (TSAN_DEBUG && !fast_path_only) {
       // check that the SSIDs/SIDs in the new sval have sane ref counters.
       CHECK(!sval_p->wr_ssid().IsEmpty() || !sval_p->rd_ssid().IsEmpty());
       for (int i = 0; i < 2; i++) {
@@ -8073,7 +8073,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
 
   FindBoolFlag("ignore_stack", false, args, &G_flags->ignore_stack);
   FindIntFlag("keep_history", 1, args, &G_flags->keep_history);
-  FindUIntFlag("segment_set_recycle_queue_size", DEBUG_MODE ? 10 : 10000, args,
+  FindUIntFlag("segment_set_recycle_queue_size", TSAN_DEBUG ? 10 : 10000, args,
                &G_flags->segment_set_recycle_queue_size);
   FindUIntFlag("recent_segments_cache_size", 10, args,
                &G_flags->recent_segments_cache_size);
@@ -8103,7 +8103,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   FindBoolFlag("show_expected_races", false, args,
                &G_flags->show_expected_races);
   FindBoolFlag("demangle", true, args, &G_flags->demangle);
-#if defined(TS_GO) && DEBUG_MODE
+#if defined(TS_GO) && TSAN_DEBUG
   bool announce_threads_default = true;
 #else
   bool announce_threads_default = false;
@@ -8132,7 +8132,7 @@ void ThreadSanitizerParseFlags(vector<string> *args) {
   bool show_pid_default = true;
 #endif
   FindBoolFlag("show_pid", show_pid_default, args, &G_flags->show_pid);
-  FindBoolFlag("save_ignore_context", DEBUG_MODE ? true : false, args,
+  FindBoolFlag("save_ignore_context", TSAN_DEBUG ? true : false, args,
                &G_flags->save_ignore_context);
 
   FindIntFlag("dry_run", 0, args, &G_flags->dry_run);
@@ -8513,7 +8513,7 @@ bool NOINLINE ThreadSanitizerIgnoreAccessesBelowFunction(uintptr_t pc) {
   bool ret =
       TripleVectorMatchKnown(g_ignore_lists->ignores_r, rtn_name, "", "");
 
-  if (DEBUG_MODE) {
+  if (TSAN_DEBUG) {
     // Heavy test for NormalizeFunctionName: test on all possible inputs in
     // debug mode. TODO(timurrrr): Remove when tested.
     NormalizeFunctionName(PcToRtnName(pc, true));
@@ -8543,7 +8543,7 @@ extern "C" const char *ThreadSanitizerQuery(const char *query) {
   if (str == "race_verifier" && g_race_verifier_active == true) {
     ret = "1";
   }
-  if (DEBUG_MODE && G_flags->debug_level >= 2) {
+  if (TSAN_DEBUG && G_flags->debug_level >= 2) {
     Printf("ThreadSanitizerQuery(\"%s\") = \"%s\"\n", query, ret);
   }
   if (str == "trace-level=0") {
