@@ -8318,8 +8318,14 @@ TEST(PositiveTests, FlushVsThreadStart) {
 }  // namespace
 
 namespace LibcStringFuncitonsTests {  // {{{1
-char GLOB[10] ALIGNED(8); //[a, b, c, d, e, f, \0]
-char GLOB2[10] ALIGNED(8); //[a, b, \0, d, e, f, \0]
+static union {
+char GLOB[10]; //[a, b, c, d, e, f, \0]
+int64_t aligner;
+};
+static union {
+char GLOB2[10]; //[a, b, \0, d, e, f, \0]
+int64_t aligner;
+};
 
 void WriteB() {
   GLOB[1] = 'b';
