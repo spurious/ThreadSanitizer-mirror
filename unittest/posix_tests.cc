@@ -716,7 +716,7 @@ void Waiter2() {
 
 TEST(NegativeTests, test141) {
   printf("test141: FP. unlink/fopen, rmdir/opendir.\n");
-#if __has_feature(thread_sanitizer)
+#ifdef THREAD_SANITIZER
   printf("Skipping under tsan2. Such sync is intentionally not supported\n");
   return;
 #endif
@@ -1021,7 +1021,7 @@ void MallocTestWorker() {
 // Make sure that locking events are handled in signal handlers.
 //
 // For some reason, invoking the signal handlers causes deadlocks on Mac OS.
-#if !defined(__APPLE__) && __has_feature(thread_sanitizer)
+#if !defined(__APPLE__) && !defined(THREAD_SANITIZER)
 Mutex mu;
 
 void SignalHandlerWithMutex(int, siginfo_t*, void*) {

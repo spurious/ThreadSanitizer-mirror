@@ -4066,7 +4066,7 @@ REGISTER_TEST2(Run, 83, FEATURE|EXCLUDE_FROM_ALL)
 
 
 // This test pretends it has the data race, but it does not.
-#if __has_feature(thread_sanitizer)
+#ifndef THREAD_SANITIZER
 // test84: TP. True race (regression test for a bug related to atomics){{{1
 namespace test84 {
 // Helgrind should not create HB arcs for the bus lock even when
