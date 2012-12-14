@@ -716,6 +716,10 @@ void Waiter2() {
 
 TEST(NegativeTests, test141) {
   printf("test141: FP. unlink/fopen, rmdir/opendir.\n");
+#if __has_feature(thread_sanitizer)
+  printf("Skipping under tsan2. Such sync is intentionally not supported\n");
+  return;
+#endif
 
   dir_name = strdup("/tmp/tsan-XXXXXX");
   CHECK(mkdtemp(dir_name) != 0);
