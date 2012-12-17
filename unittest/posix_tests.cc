@@ -1021,7 +1021,9 @@ void MallocTestWorker() {
 // Make sure that locking events are handled in signal handlers.
 //
 // For some reason, invoking the signal handlers causes deadlocks on Mac OS.
-#if !defined(__APPLE__) && !defined(THREAD_SANITIZER)
+#ifndef __APPLE__
+// Old tsan produces race report on this test.
+#ifdef THREAD_SANITIZER
 Mutex mu;
 
 void SignalHandlerWithMutex(int, siginfo_t*, void*) {
@@ -1039,11 +1041,15 @@ TEST(Signals, SignalsAndMallocTestWithMutex) {
   DisableSigprof();
   CHECK(GLOB > 1);
 }
-#endif
+#endif  // #ifdef THREAD_SANITIZER
+#endif  // #ifndef __APPLE__
 
 // Another regression test for
 // http://code.google.com/p/data-race-test/issues/detail?id=13 .
 // Make sure that locking events are handled in signal handlers.
+
+// The test was disabled under old tsan, seems to pass under new.
+#ifdef THREAD_SANITIZER
 SpinLock sl;
 
 void SignalHandlerWithSpinlock(int, siginfo_t*, void*) {
@@ -1052,13 +1058,14 @@ void SignalHandlerWithSpinlock(int, siginfo_t*, void*) {
   sl.Unlock();
 }
 
-TEST(Signals, DISABLED_SignalsAndMallocTestWithSpinlock) {
+TEST(Signals, SignalsAndMallocTestWithSpinlock) {
   EnableSigprof(SignalHandlerWithSpinlock);
   MyThreadArray t(MallocTestWorker, MallocTestWorker, MallocTestWorker);
   t.Start();
   t.Join();
   DisableSigprof();
 }
+#endif  // #ifdef THREAD_SANITIZER
 
 // Regression test for
 // http://code.google.com/p/data-race-test/issues/detail?id=14.
