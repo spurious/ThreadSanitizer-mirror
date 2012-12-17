@@ -108,7 +108,7 @@ else ifeq ($(OS), windows)
                /I$(PIN_ROOT)/extras/components/include
   PIN_LDFLAGS=/LTCG /DEBUG /DLL /EXPORT:main /NODEFAULTLIB /INCREMENTAL:NO /OPT:REF /MACHINE:x86 /ENTRY:Ptrace_DllMainCRTStartup@12 /BASE:0x55000000
   LDFLAGS=/LTCG
-  PIN_LIBPATHS= /LIBPATH:$(PIN_ROOT)/ia32/lib /LIBPATH:$(PIN_ROOT)/ia32/lib-ext /LIBPATH:$(PIN_ROOT)/extras/xed2-ia32/lib
+  PIN_LIBPATHS=/LIBPATH:$(PIN_ROOT)/ia32/lib /LIBPATH:$(PIN_ROOT)/ia32/lib-ext /LIBPATH:$(PIN_ROOT)/extras/xed2-ia32/lib
   PIN_LIBS=pin.lib libxed.lib libcpmt.lib libcmt.lib pinvm.lib kernel32.lib ntdll-32.lib winmm.lib
   DR_OS=WINDOWS
 else
@@ -145,7 +145,6 @@ w32: w32o w32d
 
 w32d:
 	$(MAKE) all OS=windows ARCH=x86 DEBUG=1
-
 w32o:
 	$(MAKE) all OS=windows ARCH=x86 DEBUG=0
 
