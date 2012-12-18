@@ -8096,6 +8096,8 @@ TEST(PrintfTests, DISABLED_Fflush) {
 }
 }  // namespace
 
+// TSan2 is flaky on this test due to it's eviction policy.
+#if !defined(__has_feature) || !__has_feature(thread_sanitizer)
 namespace BenignRaceTest {  // {{{1
 const int kArrayLen = 97;
 char X[kArrayLen];
@@ -8155,6 +8157,7 @@ TEST(NegativeTests, BenignRaceTest) {
   }
 }
 }
+#endif  // #if !defined(__has_feature) || !__has_feature(thread_sanitizer)
 
 namespace StressTests_FlushStateTest {  // {{{1
 // Stress test for FlushState which happens in parallel with some work.
