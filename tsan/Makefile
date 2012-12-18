@@ -71,12 +71,22 @@ endif
 ifeq ($(ARCH), x86)
   PIN_ARCH=ia32
   PIN_ARCH2=IA32
+  PIN_HOST=HOST_IA32
+  PIN_TARGET=TARGET_IA32
   DR_ARCH=X86_32
+  LINK_ARCH=x86
+  NTDLL=ntdll-32
+  ENTRY=Ptrace_DllMainCRTStartup@12
 else ifeq ($(ARCH), amd64)
   PIN_ARCH=intel64
   PIN_ARCH2=IA32E
+  PIN_HOST=HOST_IA32E
+  PIN_TARGET=TARGET_IA32E
   DR_ARCH=X86_64
   DR_LD_SCRIPT=-Xlinker -T -Xlinker ./dr64_ldscript # TODO(kcc) this is too hackish...
+  LINK_ARCH=x64
+  NTDLL=ntdll-64
+  ENTRY=Ptrace_DllMainCRTStartup
 endif
 
 ifeq ($(OS), linux)
@@ -101,15 +111,19 @@ endif
   VG_CXXFLAGS+=-fno-weak -bind_at_load -fno-PIC
 else ifeq ($(OS), windows)
   VALGRIND_ROOT= # no valgrind on windows :(
-  CXXFLAGS=-c -Zi -MT -EHs- -EHa- -wd4530 -D_CRT_SECURE_NO_DEPRECATE -D_SECURE_SCL=0 -D_HAS_ITERATOR_DEBUGGING=0 -Gy -Ox -GL
+  CXXFLAGS=-c -Zi -MT -EHs- -EHa- -wd4530 -D_CRT_SECURE_NO_DEPRECATE -D_SECURE_SCL=0 \
+           -D_HAS_ITERATOR_DEBUGGING=0 -Gy -Ox -GL
   PIN_DEFINES=/DTARGET_WINDOWS /DBIGARRAY_MULTIPLIER=1 /DUSING_XED \
-              /DTARGET_IA32 /DHOST_IA32a /DHOST_IA32 /D_SECURE_SCL=0 -DTS_PIN=1
-  PIN_INCLUDES=/I$(PIN_ROOT)/source/include /I$(PIN_ROOT)/source/include/gen /I$(PIN_ROOT)/extras/xed2-ia32/include \
+              /D$(PIN_TARGET) /D$(PIN_HOST) /D_SECURE_SCL=0 -DTS_PIN=1
+  PIN_INCLUDES=/I$(PIN_ROOT)/source/include /I$(PIN_ROOT)/source/include/gen \
+               /I$(PIN_ROOT)/extras/xed2-$(PIN_ARCH)/include \
                /I$(PIN_ROOT)/extras/components/include
-  PIN_LDFLAGS=/LTCG /DEBUG /DLL /EXPORT:main /NODEFAULTLIB /INCREMENTAL:NO /OPT:REF /MACHINE:x86 /ENTRY:Ptrace_DllMainCRTStartup@12 /BASE:0x55000000
+  PIN_LDFLAGS=/LTCG /DEBUG /DLL /EXPORT:main /NODEFAULTLIB /INCREMENTAL:NO /OPT:REF \
+              /MACHINE:$(LINK_ARCH) /ENTRY:$(ENTRY) /BASE:0x55000000
   LDFLAGS=/LTCG
-  PIN_LIBPATHS=/LIBPATH:$(PIN_ROOT)/ia32/lib /LIBPATH:$(PIN_ROOT)/ia32/lib-ext /LIBPATH:$(PIN_ROOT)/extras/xed2-ia32/lib
-  PIN_LIBS=pin.lib libxed.lib libcpmt.lib libcmt.lib pinvm.lib kernel32.lib ntdll-32.lib winmm.lib
+  PIN_LIBPATHS=/LIBPATH:$(PIN_ROOT)/$(PIN_ARCH)/lib /LIBPATH:$(PIN_ROOT)/$(PIN_ARCH)/lib-ext \
+              /LIBPATH:$(PIN_ROOT)/extras/xed2-$(PIN_ARCH)/lib
+  PIN_LIBS=pin.lib libxed.lib libcpmt.lib libcmt.lib pinvm.lib kernel32.lib $(NTDLL).lib winmm.lib
   DR_OS=WINDOWS
 else
   OS=UNKNOWN_OS
@@ -141,11 +155,16 @@ la:
 
 w: w32
 w32: w32o w32d
+w64: w64o w64d
 
 w32d:
 	$(MAKE) all OS=windows ARCH=x86 DEBUG=1
 w32o:
 	$(MAKE) all OS=windows ARCH=x86 DEBUG=0
+w64d:
+	$(MAKE) all OS=windows ARCH=amd64 DEBUG=1
+w64o:
+	$(MAKE) all OS=windows ARCH=amd64 DEBUG=0
 
 m: m32 m64
 m32: m32o m32d
