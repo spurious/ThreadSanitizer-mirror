@@ -90,7 +90,7 @@ $(BIN)racecheck_unittest-$(BUILD)$(EXE): $(BIN)racecheck_unittest-$(BUILD).$(OBJ
 	                                 $(BIN)old_test_suite-$(BUILD).$(OBJ) \
 					 $(BIN)atomicity_tests-$(BUILD).$(OBJ) \
 		$(TEST_UTILS_O) $(GTEST_LIB)  ${DYNAMIC_ANNOTATIONS_O} | bin
-	${LD} ${LDFLAGS} $^ $(LIBS) $(LINKO)$@
+	${LD} $^ $(LIBS) ${LDFLAGS} $(LINKO)$@
 
 ifeq ($(OS), windows)
 $(BIN)racecheck_unittest-$(BUILD)$(EXE): $(BIN)windows_tests-$(BUILD).$(OBJ)
@@ -111,22 +111,22 @@ endif
 
 $(BIN)deadlock_unittest-$(BUILD)$(EXE): $(BIN)deadlock_unittest-$(BUILD).$(OBJ) $(BIN)old_test_suite-$(BUILD).$(OBJ) \
 		$(TEST_UTILS_O) $(GTEST_LIB)  ${DYNAMIC_ANNOTATIONS_O} | bin
-	${LD} ${LDFLAGS} $^ $(LIBS) $(LINKO)$@
+	${LD} $^ $(LIBS) ${LDFLAGS} $(LINKO)$@
 
 $(BIN)demo_tests-$(BUILD)$(EXE): $(BIN)demo_tests-$(BUILD).$(OBJ) \
 		$(TEST_UTILS_O) $(GTEST_LIB) ${DYNAMIC_ANNOTATIONS_O} | bin
-	${LD} $(LDFLAGS) $^ $(LIBS) $(LINKO)$@
+	${LD} $^ $(LIBS) $(LDFLAGS) $(LINKO)$@
 
 $(BIN)output_tests/%-$(BUILD)$(EXE): $(BIN)output_tests/%-$(BUILD).$(OBJ) \
 		${TEST_UTILS_O} ${DYNAMIC_ANNOTATIONS_O} | bin
-	${LD} $(LDFLAGS) $^ $(LIBS) $(LINKO)$@
+	${LD} $^ $(LIBS) $(LDFLAGS) $(LINKO)$@
 
 $(BIN)bigtest-$(BUILD)$(EXE): $(BIN)bigtest-$(BUILD).$(OBJ) ${DYNAMIC_ANNOTATIONS_O} | bin
-	${LD} $(LDFLAGS) $^ $(LIBS) $(LINKO)$@
+	${LD} $^ $(LIBS) $(LDFLAGS) $(LINKO)$@
 
 $(BIN)memory_unittest-$(BUILD)$(EXE): $(BIN)memory_unittest-$(BUILD).$(OBJ) $(BIN)old_test_suite-$(BUILD).$(OBJ) \
 		$(TEST_UTILS_O) $(GTEST_LIB) ${DYNAMIC_ANNOTATIONS_O} | bin
-	${LD} $(LDFLAGS) $^ $(LIBS) $(LINKO)$@
+	${LD} $^ $(LIBS) $(LDFLAGS) $(LINKO)$@
 
 $(BIN)%-$(BUILD).$(OBJ): %.cc ${DYNAMIC_ANNOTATIONS} thread_wrappers.h \
 		thread_wrappers_win.h thread_wrappers_pthread.h old_test_suite.h \
