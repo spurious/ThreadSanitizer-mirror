@@ -1576,7 +1576,12 @@ class Mask {
     size_t ret;
 #ifdef __GNUC__
     ret =  __builtin_ctzl(m_);
-#elif defined(_MSC_VER)
+#elif defined(_WIN64)
+    unsigned long index;
+    DCHECK(sizeof(uintptr_t) == 8);
+    _BitScanReverse64(&index, m_);
+    ret = index;
+#elif defined(_WIN32)
     unsigned long index;
     DCHECK(sizeof(uintptr_t) == 4);
     _BitScanReverse(&index, m_);
