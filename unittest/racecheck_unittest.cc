@@ -2553,7 +2553,7 @@ void Writer() {
   }
 }
 void Reader() {
-  while (GLOB < 20) usleep(1000);
+  while (AtomicLoad(&GLOB) < 20) usleep(1000);
 }
 void Run() {
   GLOB = 0;

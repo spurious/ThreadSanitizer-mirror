@@ -76,6 +76,10 @@ int AtomicIncrement(volatile int *value, int increment) {
                                 increment) + increment;
 }
 
+int AtomicLoad(volatile int *value) {
+  return InterlockedExchangeAdd(reinterpret_cast<volatile LONG*>(value), 0);
+}
+
 class Mutex {
   friend class CondVar;
  public:
