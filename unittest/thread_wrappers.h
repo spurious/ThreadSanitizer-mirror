@@ -82,6 +82,7 @@ class Condition {
 
 // Define platform-specific types, constant and functions {{{1
 static int AtomicIncrement(volatile int *value, int increment);
+static int AtomicLoad(volatile int *value);
 static int GetTimeInMs();
 
 class CondVar;
