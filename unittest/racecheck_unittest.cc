@@ -8408,13 +8408,20 @@ void CheckStrncmpResult() {
   EXPECT_LT(strncmp(GLOB2, GLOB, 6), 0);
 }
 
-void RunThreads(void (*f1)(void), void (*f2)(void), void *address,
+void RunThreads(void (*f1)(void), void (*f2)(void),
+                int racy_offset1, int racy_offset2,
                 const char *desc) {
   GLOB = (char*)malloc(10);
   GLOB2 = (char*)malloc(10);
   strcpy(GLOB, "abcdef");
   strcpy(GLOB2, "abcdef");
   GLOB2[2] = 0;
+
+  void *address = 0;
+  if (racy_offset1 >= 0)
+    address = GLOB + racy_offset1;
+  else if (racy_offset2 >= 0)
+    address = GLOB2 + racy_offset2;
 
   if (address != NULL) {
     ANNOTATE_EXPECT_RACE_FOR_TSAN(address, desc);
@@ -8438,34 +8445,34 @@ TEST(NegativeTests, LibcStringFunctions) {
   }
 
   // in "abcdef" look for "c", and overwrite "d"
-  RunThreads(WriteD, CheckMemchrResult, NULL, "WriteD, CheckMemchrResult");
-  RunThreads(WriteD, CheckStrchrResult, NULL, "WriteD, CheckStrchrResult");
+  RunThreads(WriteD, CheckMemchrResult, -1, -1, "WriteD, CheckMemchrResult");
+  RunThreads(WriteD, CheckStrchrResult, -1, -1, "WriteD, CheckStrchrResult");
 #if !defined(_WIN32) && !defined(__MACH__)
-  RunThreads(WriteD, CheckStrchrnulResult, NULL,
+  RunThreads(WriteD, CheckStrchrnulResult, -1, -1,
              "WriteD, CheckStrchrnulResult");
 #endif
 
   // In "ab\0def" look for "c" in "ab", and overwrite "d"
-  RunThreads(WriteD2, CheckStrrchrResult, NULL, "WriteD2, CheckStrrchrResult");
+  RunThreads(WriteD2, CheckStrrchrResult, -1, -1, "WriteD2, CheckStrrchrResult");
 
   // In "ab\0def" look for length of "ab", and overwrite "d"
-  RunThreads(WriteD2, CheckStrlenResult, NULL, "WriteD2, CheckStrlenResult");
+  RunThreads(WriteD2, CheckStrlenResult, -1, -1, "WriteD2, CheckStrlenResult");
 
   // Copy "ab" from "ab\0def" to "ab" in "abcdef", and overwrite "c"
-  RunThreads(WriteC, CheckMemcpyResult, NULL, "WriteC, CheckMemcpyResult");
-  RunThreads(WriteC, CheckMemmoveResult, NULL, "WriteC, CheckMemmoveResult");
+  RunThreads(WriteC, CheckMemcpyResult, -1, -1, "WriteC, CheckMemcpyResult");
+  RunThreads(WriteC, CheckMemmoveResult, -1, -1, "WriteC, CheckMemmoveResult");
 
   // Compare "ab\0def" and "abcdef", and overwrite "d"
-  RunThreads(WriteD, CheckMemcmpResult, NULL, "WriteD, CheckMemcmpResult");
-  RunThreads(WriteD, CheckStrcmpResult, NULL, "WriteD, CheckStrcmpResult");
-  RunThreads(WriteD, CheckStrncmpResult, NULL, "WriteD, CheckStrncmpResult");
+  RunThreads(WriteD, CheckMemcmpResult, -1, -1, "WriteD, CheckMemcmpResult");
+  RunThreads(WriteD, CheckStrcmpResult, -1, -1, "WriteD, CheckStrcmpResult");
+  RunThreads(WriteD, CheckStrncmpResult, -1, -1, "WriteD, CheckStrncmpResult");
 
   // Copy "ab\0" from "ab\0def" to "abcdef" (+ restore "c"), and overwrite "d"
-  RunThreads(WriteD, CheckStrcpyResult, NULL, "WriteD, CheckStrcpyResult");
+  RunThreads(WriteD, CheckStrcpyResult, -1, -1, "WriteD, CheckStrcpyResult");
 #if !defined(_WIN32) && !defined(ANDROID)
-  RunThreads(WriteD, CheckStpcpyResult, NULL, "WriteD, CheckStpcpyResult");
+  RunThreads(WriteD, CheckStpcpyResult, -1, -1, "WriteD, CheckStpcpyResult");
 #endif
-  RunThreads(WriteD, CheckStrncpyResult, NULL, "WriteD, CheckStrncpyResult");
+  RunThreads(WriteD, CheckStrncpyResult, -1, -1, "WriteD, CheckStrncpyResult");
 }
 
 TEST(PositiveTests, LibcStringFunctions) {
@@ -8476,37 +8483,37 @@ TEST(PositiveTests, LibcStringFunctions) {
   }
 
   // in "abcdef" look for "c", and overwrite "c"
-  RunThreads(WriteC, CheckMemchrResult, GLOB + 2, "WriteC, CheckMemchrResult");
-  RunThreads(WriteC, CheckStrchrResult, GLOB + 2, "WriteC, CheckStrchrResult");
+  RunThreads(WriteC, CheckMemchrResult, 2, -1, "WriteC, CheckMemchrResult");
+  RunThreads(WriteC, CheckStrchrResult, 2, -1, "WriteC, CheckStrchrResult");
 #if !defined(_WIN32) && !defined(__MACH__)
-  RunThreads(WriteC, CheckStrchrnulResult, GLOB + 2,
+  RunThreads(WriteC, CheckStrchrnulResult, 2, -1,
              "WriteC, CheckStrchrnulResult");
 #endif
 
   // In "ab\0def" look for "c" in "ab", and overwrite "\0"
-  RunThreads(Write0, CheckStrrchrResult, GLOB2 + 2,
+  RunThreads(Write0, CheckStrrchrResult, -1, 2,
              "Write0, CheckStrrchrResult");
 
   // In "ab\0def" look for length of "ab", and overwrite "\0"
-  RunThreads(Write0, CheckStrlenResult, GLOB2 + 2, "Write0, CheckStrlenResult");
+  RunThreads(Write0, CheckStrlenResult, -1, 2, "Write0, CheckStrlenResult");
 
   // Copy "ab" from "ab\0def" to "ab" in "abcdef", and overwrite "b"
-  RunThreads(WriteB, CheckMemcpyResult, GLOB + 1, "WriteB, CheckMemcpyResult");
-  RunThreads(WriteB, CheckMemmoveResult, GLOB + 1,
+  RunThreads(WriteB, CheckMemcpyResult, 1, -1, "WriteB, CheckMemcpyResult");
+  RunThreads(WriteB, CheckMemmoveResult, 1, -1,
              "WriteB, CheckMemmoveResult");
 
   // Compare "ab\0def" and "abcdef", and overwrite "\0"
-  RunThreads(Write0, CheckMemcmpResult, GLOB2 + 2, "Write0, CheckMemcmpResult");
-  RunThreads(Write0, CheckStrcmpResult, GLOB2 + 2, "Write0, CheckStrcmpResult");
-  RunThreads(Write0, CheckStrncmpResult, GLOB2 + 2,
+  RunThreads(Write0, CheckMemcmpResult, -1, 2, "Write0, CheckMemcmpResult");
+  RunThreads(Write0, CheckStrcmpResult, -1, 2, "Write0, CheckStrcmpResult");
+  RunThreads(Write0, CheckStrncmpResult, -1, 2,
              "Write0, CheckStrncmpResult");
 
   // Copy "ab\0" from "ab\0def" to "abcdef" (+ restore "c"), and overwrite "c"
-  RunThreads(WriteC, CheckStrcpyResult, GLOB + 2, "WriteC, CheckStrcpyResult");
+  RunThreads(WriteC, CheckStrcpyResult, 2, -1, "WriteC, CheckStrcpyResult");
 #if !defined(_WIN32) && !defined(ANDROID)
-  RunThreads(WriteC, CheckStpcpyResult, GLOB + 2, "WriteC, CheckStpcpyResult");
+  RunThreads(WriteC, CheckStpcpyResult, 2, -1, "WriteC, CheckStpcpyResult");
 #endif
-  RunThreads(WriteC, CheckStrncpyResult, GLOB + 2,
+  RunThreads(WriteC, CheckStrncpyResult, 2, -1,
              "WriteC, CheckStrncpyResult");
 }
 
