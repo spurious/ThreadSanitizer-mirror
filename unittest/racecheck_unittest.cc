@@ -8326,8 +8326,8 @@ TEST(PositiveTests, FlushVsThreadStart) {
 }  // namespace
 
 namespace LibcStringFuncitonsTests {  // {{{1
-char *GLOB = (char*)malloc(10); //[a, b, c, d, e, f, \0]
-char *GLOB2 = (char*)malloc(10); //[a, b, \0, d, e, f, \0]
+char *GLOB = 0;
+char *GLOB2 = 0;
 
 void WriteB() {
   GLOB[1] = 'b';
@@ -8410,6 +8410,8 @@ void CheckStrncmpResult() {
 
 void RunThreads(void (*f1)(void), void (*f2)(void), void *address,
                 const char *desc) {
+  GLOB = (char*)malloc(10);
+  GLOB2 = (char*)malloc(10);
   strcpy(GLOB, "abcdef");
   strcpy(GLOB2, "abcdef");
   GLOB2[2] = 0;
@@ -8423,6 +8425,9 @@ void RunThreads(void (*f1)(void), void (*f2)(void), void *address,
   if (address != NULL) {
     ANNOTATE_FLUSH_EXPECTED_RACES();
   }
+  // Intentionally leak GLOB and GLOB2 so that all races are detected on
+  // different memory locations.
+  GLOB = GLOB2 = 0;
 }
 
 TEST(NegativeTests, LibcStringFunctions) {
