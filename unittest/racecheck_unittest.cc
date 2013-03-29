@@ -8408,6 +8408,9 @@ void CheckStrncmpResult() {
   EXPECT_LT(strncmp(GLOB2, GLOB, 6), 0);
 }
 
+static void *leaked_pointers[1000];
+static int n_leaked_pointers;
+
 void RunThreads(void (*f1)(void), void (*f2)(void),
                 int racy_offset1, int racy_offset2,
                 const char *desc) {
@@ -8433,7 +8436,9 @@ void RunThreads(void (*f1)(void), void (*f2)(void),
     ANNOTATE_FLUSH_EXPECTED_RACES();
   }
   // Intentionally leak GLOB and GLOB2 so that all races are detected on
-  // different memory locations.
+  // different memory locations. But silence the leak detectors.
+  leaked_pointers[n_leaked_pointers++] = GLOB;
+  leaked_pointers[n_leaked_pointers++] = GLOB2;
   GLOB = GLOB2 = 0;
 }
 
