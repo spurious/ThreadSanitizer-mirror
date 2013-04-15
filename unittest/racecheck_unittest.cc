@@ -5854,7 +5854,7 @@ namespace NegativeTests_PerThreadTest {  // {{{1
 //
 // test131 does the same for stack.
 
-static TLS int per_thread_global[10] = {0};
+static TLS int per_thread_global[10];
 
 void RealWorker() {  // Touch per_thread_global.
   per_thread_global[1]++;
