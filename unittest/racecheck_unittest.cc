@@ -7676,8 +7676,7 @@ namespace test513 {
 const int N_THREADS = 2,
           HG_CACHELINE_SIZE  = 1 << 6,
           ARRAY_SIZE = HG_CACHELINE_SIZE * 512,
-          MUTEX_ID_BITS = 8,
-          MUTEX_ID_MASK = (1 << MUTEX_ID_BITS) - 1;
+          MUTEX_ID_BITS = 8;
 
 // Each thread has its own cacheline and tackles with it intensively
 const int ITERATIONS = 1024;
