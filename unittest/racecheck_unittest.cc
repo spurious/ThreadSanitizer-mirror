@@ -3174,11 +3174,11 @@ void WorkerX() {
 #ifndef _WIN32
   EXPECT_EQ(str, index(str, 'X'));
   EXPECT_EQ(str+1, index(str, 'x'));
-  EXPECT_EQ(NULL, index(str, 'Y'));
+  EXPECT_EQ(0, index(str, 'Y'));
 #ifndef ANDROID
   EXPECT_EQ(str+2, rindex(str, 'X'));
   EXPECT_EQ(str+3, rindex(str, 'x'));
-  EXPECT_EQ(NULL, rindex(str, 'Y'));
+  EXPECT_EQ(0, rindex(str, 'Y'));
 #endif
 #else
   EXPECT_EQ(0, lstrlenA(NULL));
@@ -3186,7 +3186,7 @@ void WorkerX() {
 #endif
   EXPECT_EQ(str, strchr(str, 'X'));
   EXPECT_EQ(str+1, strchr(str, 'x'));
-  EXPECT_EQ(NULL, strchr(str, 'Y'));
+  EXPECT_EQ(0, strchr(str, 'Y'));
 #if !defined(_WIN32) && !defined(__MACH__)
   EXPECT_EQ(str, strchrnul(str, 'X'));
   EXPECT_EQ(str+1, strchrnul(str, 'x'));
@@ -3217,15 +3217,18 @@ void WorkerX() {
 #endif
   EXPECT_EQ(str+2, strrchr(str, 'X'));
   EXPECT_EQ(str+3, strrchr(str, 'x'));
-  EXPECT_EQ(NULL, strrchr(str, 'Y'));
+  EXPECT_EQ(0, strrchr(str, 'Y'));
 
   char tmp3[100] = "a//index.html";
   EXPECT_EQ(tmp3 + 7, memmove(tmp3 + 7, tmp3 + 3, strlen(tmp3 + 3)));
 
+  char tmp4[100] = "0123456789";
+  memmove(tmp4 + 4, tmp4 + 2, 4);
 #ifndef _WIN64
   // TODO(timurrrr): resolve issue where overlapping memmove works like
   // memcpy in Win64 under tsan, although it works correctly natively. 
-  EXPECT_EQ(0, strcmp(tmp3, "a//indeindex.html"));
+  EXPECT_STREQ("a//indeindex.html", tmp3);
+  EXPECT_STREQ("0123234589", tmp4);
 #endif
 }
 void WorkerY() {
@@ -3257,7 +3260,7 @@ TEST(NegativeTests, StrlenAndFriends) {
   EXPECT_TRUE(strchr(foo, 128) != NULL);
   EXPECT_TRUE(strchr(foo, 250) != NULL);
   EXPECT_TRUE(strchr(foo, -50) != NULL);
-  EXPECT_EQ(NULL, strchr(foo, -60));
+  EXPECT_EQ(0, strchr(foo, -60));
   EXPECT_EQ(foo + strlen(foo), strchr(foo, 0));
 
 #if !defined(_WIN32) && !defined(__MACH__)
@@ -3274,7 +3277,7 @@ TEST(NegativeTests, StrlenAndFriends) {
   EXPECT_TRUE(strrchr(foo, 0) != NULL);
   EXPECT_EQ(foo + strlen(foo), strrchr(foo, 0));
   EXPECT_TRUE(strrchr(foo, 250) != NULL);
-  EXPECT_EQ(NULL, strrchr(foo, -60));
+  EXPECT_EQ(0, strrchr(foo, -60));
   delete [] str;
   delete [] tmp2;
   // TODO(kcc): add more tests to check that interceptors are correct.
@@ -8363,7 +8366,7 @@ void CheckStrchrnulResult() {
 #endif
 
 void CheckStrrchrResult() {
-  EXPECT_EQ(NULL, strrchr(GLOB2, 'c'));
+  EXPECT_EQ(0, strrchr(GLOB2, 'c'));
 }
 
 void CheckStrlenResult() {
