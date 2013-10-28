@@ -2394,6 +2394,7 @@ MEMCPY(VG_Z_LIBC_SONAME, __GI_memcpy);
             ( void *dst, const void *src, SizeT len ) \
    { return Replace_memmove(dst, src, len); }
 
+MEMMOVE(VG_Z_LIBC_SONAME, __memmove_ssse3)
 MEMMOVE(VG_Z_LIBC_SONAME, memmove)
 MEMMOVE(NONE, memmove)
 #if defined(VGO_linux)
